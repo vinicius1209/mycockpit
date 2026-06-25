@@ -30,7 +30,7 @@ export function ChatPanel() {
         <div className="mx-auto flex min-h-full max-w-[760px] flex-col items-center justify-center px-6 py-10">
           <div className="animate-cockpit-rise text-center">
             <Reticle className="mx-auto mb-6 size-8" />
-            <h1 className="font-display text-[42px] leading-[1.1] tracking-[-0.01em] text-foreground">
+            <h1 className="text-[38px] font-medium leading-[1.1] tracking-[-0.025em] text-foreground">
               {greeting}, Vinícius.
             </h1>
             <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-muted-foreground">

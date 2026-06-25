@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client"
 // Fontes offline (Fontsource) — sem depender de CDN em runtime
 import "@fontsource-variable/geist"
 import "@fontsource-variable/geist-mono"
-import "@fontsource/instrument-serif"
 
 import "./index.css"
 import App from "./App.tsx"
