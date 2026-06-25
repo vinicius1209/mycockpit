@@ -5,7 +5,16 @@ export type AgentEvent =
   | { type: "session"; session_id: string; model: string | null; tools: number }
   | { type: "text"; text: string }
   | { type: "tool"; id: string; name: string; input: unknown }
-  | { type: "result"; ok: boolean; text: string | null; cost_usd: number | null }
+  | {
+      type: "result"
+      ok: boolean
+      text: string | null
+      cost_usd: number | null
+      input_tokens: number
+      output_tokens: number
+      cache_read: number
+      cache_creation: number
+    }
   | { type: "done"; code: number | null }
 
 /** Dispara o Claude Code na pasta `cwd` e streama eventos via Channel. */

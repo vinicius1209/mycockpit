@@ -5,11 +5,24 @@ export type ChatItem =
   | { kind: "user"; id: string; text: string }
   | { kind: "text"; id: string; text: string }
   | { kind: "tool"; id: string; name: string; input: unknown }
-  | { kind: "result"; id: string; ok: boolean; costUsd?: number }
+  | {
+      kind: "result"
+      id: string
+      ok: boolean
+      costUsd?: number
+      model?: string | null
+      usage?: {
+        input: number
+        output: number
+        cacheRead: number
+        cacheCreation: number
+      }
+    }
 
 interface ChatState {
   items: ChatItem[]
   sessionId: string | null
+  model: string | null
   running: boolean
   projectId: string | null
 
@@ -31,14 +44,15 @@ function uid(): string {
 export const useChat = create<ChatState>((set) => ({
   items: [],
   sessionId: null,
+  model: null,
   running: false,
   projectId: null,
 
   resetFor: (projectId) =>
-    set({ items: [], sessionId: null, running: false, projectId }),
+    set({ items: [], sessionId: null, model: null, running: false, projectId }),
 
   hydrate: (projectId, items, sessionId) =>
-    set({ items, sessionId, running: false, projectId }),
+    set({ items, sessionId, model: null, running: false, projectId }),
 
   start: (text) =>
     set((s) => ({
@@ -50,7 +64,7 @@ export const useChat = create<ChatState>((set) => ({
     set((s) => {
       switch (e.type) {
         case "session":
-          return { sessionId: e.session_id }
+          return { sessionId: e.session_id, model: e.model }
         case "text":
           return { items: [...s.items, { kind: "text", id: uid(), text: e.text }] }
         case "tool":
@@ -69,6 +83,13 @@ export const useChat = create<ChatState>((set) => ({
                 id: uid(),
                 ok: e.ok,
                 costUsd: e.cost_usd ?? undefined,
+                model: s.model,
+                usage: {
+                  input: e.input_tokens,
+                  output: e.output_tokens,
+                  cacheRead: e.cache_read,
+                  cacheCreation: e.cache_creation,
+                },
               },
             ],
             running: false,

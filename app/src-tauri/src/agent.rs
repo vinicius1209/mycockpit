@@ -31,6 +31,10 @@ pub enum AgentEvent {
         ok: bool,
         text: Option<String>,
         cost_usd: Option<f64>,
+        input_tokens: u64,
+        output_tokens: u64,
+        cache_read: u64,
+        cache_creation: u64,
     },
     Done {
         code: Option<i32>,
@@ -159,11 +163,24 @@ fn map_events(v: &serde_json::Value) -> Vec<AgentEvent> {
             }
             out
         }
-        "result" => vec![AgentEvent::Result {
-            ok: !v.get("is_error").and_then(|x| x.as_bool()).unwrap_or(false),
-            text: v.get("result").and_then(|x| x.as_str()).map(str::to_string),
-            cost_usd: v.get("total_cost_usd").and_then(|x| x.as_f64()),
-        }],
+        "result" => {
+            let usage = v.get("usage");
+            let tok = |k: &str| {
+                usage
+                    .and_then(|u| u.get(k))
+                    .and_then(|x| x.as_u64())
+                    .unwrap_or(0)
+            };
+            vec![AgentEvent::Result {
+                ok: !v.get("is_error").and_then(|x| x.as_bool()).unwrap_or(false),
+                text: v.get("result").and_then(|x| x.as_str()).map(str::to_string),
+                cost_usd: v.get("total_cost_usd").and_then(|x| x.as_f64()),
+                input_tokens: tok("input_tokens"),
+                output_tokens: tok("output_tokens"),
+                cache_read: tok("cache_read_input_tokens"),
+                cache_creation: tok("cache_creation_input_tokens"),
+            }]
+        }
         _ => vec![],
     }
 }

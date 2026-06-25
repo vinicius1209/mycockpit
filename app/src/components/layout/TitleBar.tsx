@@ -1,9 +1,50 @@
 import { PanelLeft, PanelRight } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Wordmark } from "@/components/common/Wordmark"
 import { StatusDot } from "@/components/common/StatusDot"
 import { useApp, useActiveProject } from "@/store/app"
+import { cn } from "@/lib/utils"
+
+const MODES = [
+  { id: "linear", label: "Linear", available: true },
+  { id: "fusion", label: "Fusion", available: false },
+  { id: "sdd", label: "SDD", available: false },
+] as const
+
+/** Seletor de modo de trabalho. Linear ativo; Fusion/SDD chegam depois. */
+function ModeSwitcher() {
+  const active = "linear"
+  return (
+    <div className="pointer-events-auto absolute left-1/2 hidden -translate-x-1/2 items-center gap-0.5 rounded-full border bg-secondary/50 p-0.5 sm:flex">
+      {MODES.map((m) => (
+        <button
+          key={m.id}
+          disabled={!m.available}
+          onClick={() => {
+            if (!m.available)
+              toast(`Modo ${m.label} chega depois de endurecer o Linear`)
+          }}
+          title={m.available ? undefined : "Em breve"}
+          className={cn(
+            "flex items-center gap-1 rounded-full px-3 py-1 text-[12px] transition-colors",
+            m.id === active
+              ? "bg-card text-foreground shadow-[var(--shadow-sm)]"
+              : "text-muted-foreground enabled:hover:text-foreground disabled:opacity-50",
+          )}
+        >
+          {m.label}
+          {!m.available && (
+            <span className="text-[9px] tracking-wide text-muted-foreground/60">
+              soon
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 function InstrumentStrip() {
   const project = useActiveProject()
@@ -36,6 +77,8 @@ export function TitleBar() {
           </span>
         </>
       )}
+
+      <ModeSwitcher />
 
       <div className="pointer-events-none ml-auto flex items-center gap-2">
         <InstrumentStrip />

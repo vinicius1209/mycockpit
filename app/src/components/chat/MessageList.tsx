@@ -40,6 +40,11 @@ function toolSummary(input: unknown): string {
   }
 }
 
+function fmtTokens(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`
+  return String(n)
+}
+
 const mdComponents: Components = {
   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
   ul: ({ children }) => (
@@ -206,7 +211,7 @@ export function MessageList({
         return (
           <div
             key={it.id}
-            className="flex items-center gap-2 pt-1 text-[12px] text-muted-foreground"
+            className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-1 text-[12px] text-muted-foreground"
           >
             {it.ok ? (
               <Check className="size-3.5 text-st-success" />
@@ -214,8 +219,16 @@ export function MessageList({
               <AlertCircle className="size-3.5 text-st-error" />
             )}
             <span>{it.ok ? "concluído" : "erro"}</span>
-            {it.costUsd != null && (
+            {it.model && <span className="font-mono">· {it.model}</span>}
+            {it.usage && (it.usage.input > 0 || it.usage.output > 0) && (
               <span className="font-mono tabular-nums">
+                · {fmtTokens(it.usage.input)} in · {fmtTokens(it.usage.output)} out
+                {it.usage.cacheRead > 0 &&
+                  ` · ${fmtTokens(it.usage.cacheRead)} cache`}
+              </span>
+            )}
+            {it.costUsd != null && (
+              <span className="font-mono tabular-nums text-foreground/70">
                 · US${it.costUsd.toFixed(3)}
               </span>
             )}
