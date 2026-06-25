@@ -85,8 +85,8 @@ quando entrarem agents sem saída estruturada e/ou um terminal interativo de ver
 
 | Marco | Entrega | Aceite |
 |---|---|---|
-| **M0 · Spike de risco** | Provar `spawn` do `claude -p --output-format stream-json` + parse robusto do JSONL (já existe em `spikes/m0-stream-json/`, **compila**) | Roda o checklist do `spikes/m0-stream-json/README.md`; achados anotados em `docs/stream-json-notes.md` |
-| **M1 · Esqueleto** | Tauri+React+shadcn, SQLite ligado, layout: *sidebar projetos │ chat │ painel de contexto* | App abre vazio e persiste estado |
+| **M0 · Spike de risco** ✅ | Provar `spawn` do `claude -p --output-format stream-json` + parse robusto do JSONL (em `spikes/m0-stream-json/`) | **Feito** — validado contra prime-sales-hub (claude 2.1.187); achados em `docs/stream-json-notes.md` |
+| **M1 · Esqueleto** ✅ | Tauri+React+shadcn, SQLite ligado, layout: *sidebar projetos │ chat │ painel de contexto* | **Feito** — em `app/`. Design system "cockpit", console ai-02, SQLite + seleção de pasta. Ver `app/README.md` |
 | **M2 · Abrir projeto** | seletor de pasta → lê `CLAUDE.md`/`AGENTS.md`/`.claude` → painel "o que o sistema sabe"; projeto salvo no SQLite | Abro a pasta e vejo o contexto do projeto |
 | **M3 · Dispatch (coração)** | chat dispara Claude Code na pasta → `text`/`tool_use`/`result` viram cartões (reusa M0) | Peço uma tarefa e vejo o agent trabalhando no chat |
 | **M4 · Sessão contínua** | captura `session_id`, follow-up via `--resume`, histórico no SQLite | "agora roda os testes" continua a mesma conversa |

@@ -38,6 +38,7 @@ funciona; constrói nativo só onde agrega — em etapas.
 | [`docs/agent-runner.md`](./docs/agent-runner.md) | **A abstração de runner** — como Claude/Codex/OpenCode/Aider encaixam sem retrabalho (design do v0.2). |
 | [`docs/decisions.md`](./docs/decisions.md) | Log de decisões (ADRs) tomadas na fase de planejamento. |
 | [`docs/stream-json-notes.md`](./docs/stream-json-notes.md) | O que sabemos do `stream-json` do Claude Code + o que o spike precisa confirmar. |
+| [`app/`](./app/) | **O app (M1+)** — Tauri 2 + React + Tailwind v4 + shadcn. Shell de 3 painéis, design system, SQLite. Ver [`app/README.md`](./app/README.md). |
 | [`spikes/m0-stream-json/`](./spikes/m0-stream-json/) | **Spike M0** — prova o coração técnico do v0.1. |
 
 ## Por onde começar (dev)
