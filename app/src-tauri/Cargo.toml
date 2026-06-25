@@ -6,7 +6,7 @@ authors = ["you"]
 license = ""
 repository = ""
 edition = "2021"
-rust-version = "1.87"
+rust-version = "1.88"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -27,7 +27,6 @@ tauri-plugin-sql = { version = "2.4.0", features = ["sqlite"] }
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-decorum = "1.1.1"
 
-# Resolver MSRV-aware: escolhe versões de deps compatíveis com a rust-version acima
-# (rustc 1.87 local). Evita puxar time/darling/plist/serde_with que exigem 1.88.
+# Resolver MSRV-aware (boa prática). Toolchain local: rustc 1.96 (Homebrew).
 [workspace]
 resolver = "3"
