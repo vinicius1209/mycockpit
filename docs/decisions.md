@@ -61,6 +61,9 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **Decisão:** autonomia é **parametrizada por projeto**, com default são
   (`acceptEdits` + Bash pergunta), sobrescrevível.
 - **Consequência:** segurança sem fricção fixa; é a única decisão de segurança do v0.1.
+- **Achado M0 (validado):** `--allowedTools` é só auto-aprovação e **NÃO restringe** (o
+  agent rodou `Bash` fora da lista). O gate real é `--disallowedTools`/`--tools`; gating
+  fino mid-run exige o callback `canUseTool` do Agent SDK (pode reabrir o ADR-006).
 
 ### ADR-010 — `AgentEvent` normalizado + trait `AgentRunner` como costura ✅
 - **Decisão:** a UI conhece só eventos normalizados; cada agent é um adapter. Definir o

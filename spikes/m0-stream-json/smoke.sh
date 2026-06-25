@@ -14,7 +14,7 @@ echo "────────────────────────�
 claude -p "$PROMPT" \
   --output-format stream-json \
   --verbose \
-  --allowedTools "Read,Glob,Grep" \
+  --disallowedTools "Bash,Edit,Write,MultiEdit,NotebookEdit" \
   | tee "$OUT" \
   | jq -rc 'select(.type) | {type, subtype: (.subtype // null), event: (.event.type // null)}'
 

@@ -1,79 +1,79 @@
 # Notas: `stream-json` do Claude Code
 
-> Compilado de pesquisa (mid-2026). **Detalhes variam por versão do CLI** — o spike M0
-> (`spikes/m0-stream-json/`) existe para confirmar o comportamento real. Atualize esta
-> página com seus achados e a versão testada.
+> Compilado de pesquisa + **validado pelo spike M0** rodando contra o `prime-sales-hub`.
+> Detalhes variam por versão — re-rode o spike ao atualizar o CLI.
 
 ## Versão validada
 
-- `claude --version`: `____________` (preencher ao rodar o spike)
-- Data da validação: `____________`
+- `claude --version`: **2.1.187 (Claude Code)**
+- Data da validação: **2026-06-25**
+- Alvo: `~/projetos/prime/prime-sales-hub` · modelo observado: `claude-opus-4-8[1m]` · 31 tools.
 
-## Flags relevantes
+## 🔴 Achado de segurança (o mais importante do M0)
+
+Rodando com `--allowedTools "Read,Glob,Grep"`, o agent **mesmo assim executou `Bash`**
+(`ls -d */`). O `claude --help` confirma o modelo mental correto:
+
+| Flag | O que faz de verdade |
+|---|---|
+| `--allowedTools` / `--allowed-tools` | **Auto-aprovação** (sem prompt). **NÃO impede** outras tools de rodar. |
+| `--disallowedTools` / `--disallowed-tools` | **Gate real**: remove a tool do conjunto. ✅ Validado: com `--disallowedTools "Bash"`, o agent reportou *"Bash tool isn't available"*. |
+| `--tools` | Define o conjunto de tools disponíveis (`default` = todas, ou lista). |
+| `--permission-mode <modo>` | Comportamento de aprovação. Modos confirmados no help: `default`, `bypassPermissions` (lista completa: rodar `claude --help`). |
+| `--dangerously-skip-permissions` / `--allow-dangerously-skip-permissions` | Bypassa **tudo**. Só em confiança total. |
+| `--add-dir` | Permite tools acessarem diretórios extras. |
+
+**Implicação para o MyCockpit (ADR-009 / `agent-runner.md` §7):** a política de permissão
+por projeto **não** pode se apoiar em `--allowedTools` para restringir. Para *remover*
+capacidade perigosa, usar `--disallowedTools` (ou `--tools`). Para gating interativo fino
+mid-run, o caminho é o callback `canUseTool` do **Agent SDK** (reavaliar ADR-006).
+
+## Flags de saída / sessão
 
 | Flag | Comportamento |
 |---|---|
-| `-p` / `--print` | Modo não-interativo: uma chamada, resposta, sai |
-| `--output-format text` | (padrão) texto puro |
-| `--output-format json` | JSON único com `result`, `session_id`, `usage`, `total_cost_usd` |
-| `--output-format stream-json` | **JSONL** (uma linha JSON por evento, em tempo real) |
-| `--verbose` | **necessário** com `stream-json` para emitir os eventos completos |
-| `--include-partial-messages` | inclui deltas parciais (eventos `stream_event`); requer `stream-json` + `--verbose` |
-| `--input-format stream-json` | aceita JSONL no stdin |
-| `--resume <session_id>` | retoma uma sessão |
+| `-p` / `--print` | Não-interativo: uma chamada, resposta, sai |
+| `--output-format stream-json` | **JSONL** (uma linha JSON por evento) |
+| `--verbose` | **necessário** com `stream-json` |
+| `--include-partial-messages` | inclui deltas (`stream_event`); **sem ela, texto vem como `assistant` completo** (confirmado) |
+| `--resume <session_id>` | retoma a sessão — ✅ validado (lembrou do contexto do projeto) |
 | `--continue` | retoma a sessão mais recente do diretório |
-| `--allowedTools "<lista>"` | whitelist de tools (ex.: `"Read,Glob,Grep"`, `"Bash(git *)"`) |
-| `--permission-mode <modo>` | modos conhecidos: `default`, `acceptEdits`, `plan`, `bypassPermissions` |
 
-> ⚠️ **Cautela:** alguns nomes de `--permission-mode` que apareceram em fontes
-> secundárias (`dontAsk`, `auto`) **não estão confirmados** — validar contra
-> `claude --help` da sua versão antes de usar.
+## Inventário de eventos observado (spike M0)
 
-## Tipos de evento (stream-json)
+Tipos realmente emitidos nesta versão (todos tratados sem crash):
 
-Cada linha é um JSON independente com um campo `type`:
+- `system/init` — tem `session_id`, `model`, `tools` (qtd). **Onde o `session_id` aparece.**
+- `system/hook_started`, `system/hook_response` — hooks do usuário disparando (4+4 aqui).
+- `system/thinking_tokens` — contagem de thinking.
+- `assistant` — `message.content[]` com blocos `text` e `tool_use`. (texto chega aqui)
+- `user` — `tool_result` devolvido ao modelo.
+- `result` (subtype `success`) — `result`, `is_error`, `session_id`, `total_cost_usd` (~0,34 USD aqui).
+- `rate_limit_event` — **não documentado**; traz `rate_limit_info` (janela `five_hour`,
+  `overageStatus`). Tratado como `Unknown` pelo parser. Útil para a UI mostrar limites.
 
-- `system` (subtype `init`): `session_id`, `model`, `tools` disponíveis, MCP servers, plugins.
-- `assistant`: mensagem do modelo sob `message.content[]` (blocos `text` e `tool_use`).
-- `stream_event`: eventos parciais (com `--include-partial-messages`):
-  `message_start`, `content_block_start`, `content_block_delta` (`text_delta`,
-  `input_json_delta`), `content_block_stop`, `message_delta`, `message_stop`.
-- `user`: `tool_result` devolvido ao modelo.
-- `result`: final — `result`, `is_error`, `session_id`, `usage`, `total_cost_usd`
-  (e `structured_output` se `--json-schema`/`--output-schema` foi usado).
-
-## Continuação de sessão
-
-```bash
-# captura
-sid=$(claude -p "Analise o projeto" --output-format json | jq -r '.session_id')
-# retoma
-claude -p "Agora foque no módulo de auth" --resume "$sid"
-```
-Transcrições ficam em `~/.claude/` (escopo: projeto + worktrees). Para portar entre
-máquinas, salvar o arquivo de transcrição.
+> Lição confirmada: **nunca dropar evento desconhecido** — `rate_limit_event` e os
+> `system/*` de hook não estavam previstos e apareceram. O parser defensivo aguentou.
 
 ## Permissões em headless (sem terminal)
 
-- **Não há prompt interativo** em `-p`: tudo é decidido por `--allowedTools` +
-  `--permission-mode` (ou, via Agent SDK, callback `canUseTool` / hooks `PreToolUse`).
-- Combos seguros (a confirmar):
-  - read-only: `--allowedTools "Read,Glob,Grep"` (o que o spike usa).
-  - commits só: `--allowedTools "Read,Edit,Bash(git *)"`.
-  - dev local confiável: `--permission-mode acceptEdits`.
-  - ⚠️ `--permission-mode bypassPermissions`: **só** em ambiente de confiança total.
+- Não há prompt interativo em `-p`. Restrição real = `--disallowedTools`/`--tools`;
+  auto-aprovação = `--allowedTools`; bypass total = `--dangerously-skip-permissions`.
+- Default são do MyCockpit (M5): remover tools perigosas via `--disallowedTools` por
+  projeto + `--permission-mode` adequado. Confirmar interação com o `settings.json` do
+  usuário (que tem `acceptEdits` global e hooks).
 
-## ✅ Checklist a preencher rodando o spike
+## Checklist do M0 — ✅ resolvido
 
-- [ ] Texto vem como `assistant` completo, como `stream_event` deltas, ou ambos?
-- [ ] `--include-partial-messages` muda isso como?
-- [ ] `--allowedTools` aceita vírgula, espaço, ou ambos?
-- [ ] `--permission-mode` — quais valores a SUA versão aceita (`claude --help`)?
-- [ ] `session_id` aparece em quais eventos?
-- [ ] Tool **não permitida** em `-p`: deny silencioso, erro, ou trava?
-- [ ] Formato exato do `tool_use` e do `tool_result` (anexar 1 exemplo de cada).
+- [x] Texto vem como `assistant` completo (deltas só com `--include-partial-messages`).
+- [x] `--allowedTools` aceita vírgula **ou** espaço; mas **não restringe** (ver achado).
+- [x] `--permission-mode` existe (`default`, `bypassPermissions`, …) — listar com `--help`.
+- [x] `session_id` aparece no `system/init`.
+- [x] Tool não permitida: **roda mesmo assim** com allowedTools; **bloqueia** com disallowedTools.
+- [x] `tool_use` (bloco em `assistant`) e `tool_result` (evento `user`) renderizados.
+- [x] `--resume <id>` continua a conversa. Custo ~US$0,34/run (opus 4.8).
 
 ## Fontes
 
-- Claude Code CLI Reference / Headless / Agent SDK (code.claude.com/docs)
-- OpenCode docs (opencode.ai/docs/cli), Aider (aider.chat/docs), Codex (developers.openai.com/codex)
+- Validação empírica: `spikes/m0-stream-json/` + `claude --help` (v2.1.187).
+- Docs: code.claude.com/docs (CLI/Headless/Agent SDK), opencode.ai, aider.chat, developers.openai.com/codex.

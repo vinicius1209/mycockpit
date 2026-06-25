@@ -168,7 +168,10 @@ struct PermissionPolicy {
 
 - Guardada **por projeto** (SQLite e/ou `.mycockpit/permissions.json` na pasta).
 - O adapter **traduz a política para as flags nativas** do agent:
-  - Claude Code → `--allowedTools` / `--permission-mode`.
+  - Claude Code → restrição REAL via `--disallowedTools`/`--tools`; auto-aprovação via
+    `--allowedTools`; comportamento via `--permission-mode`. ⚠️ **`--allowedTools` NÃO
+    sandboxa** (achado validado no M0 — ver `stream-json-notes.md`). Gating fino mid-run
+    exige o callback `canUseTool` do Agent SDK.
   - Outros → melhor esforço conforme a capacidade.
   - **PTY (Aider)** → ⚠️ não dá para interceptar mid-run; mitigar com *worktree* (v0.3)
     e/ou config nativa do agent. **Documentar esse limite na UI.**

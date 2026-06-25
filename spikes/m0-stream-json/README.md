@@ -7,7 +7,7 @@
 
 ## O que ele faz
 
-1. Executa `claude -p "<prompt>" --output-format stream-json --verbose --allowedTools "Read,Glob,Grep"`.
+1. Executa `claude -p "<prompt>" --output-format stream-json --verbose --disallowedTools "Bash,Edit,Write,MultiEdit,NotebookEdit"`.
 2. Lê o stdout **linha a linha** (cada linha é um JSON).
 3. Classifica cada evento (`system`, `assistant`, `stream_event`, `user`, `result`, e **desconhecidos**)
    e imprime uma renderização legível — simulando os cartões do chat.
@@ -49,17 +49,16 @@ cargo run -- --resume <session_id_impresso_acima> "agora liste os TODOs"
 - [ ] O `--resume <id>` continua a conversa anterior.
 - [ ] Nenhuma linha derruba o parser (eventos `[tipo desconhecido]` apenas logam).
 
-## ⚠️ Known-unknowns que este spike resolve
+## ✅ Achados do M0 (validado em `claude` 2.1.187 — 2026-06-25)
 
-Estes detalhes **variam por versão** do CLI — o spike serve justamente para descobrir
-o comportamento real na sua máquina. Anote os achados em `../../docs/stream-json-notes.md`:
+> Detalhes completos em [`../../docs/stream-json-notes.md`](../../docs/stream-json-notes.md).
 
-1. **Texto vem como `assistant` completo ou como `stream_event` deltas?**
-   (Deltas só aparecem com `--include-partial-messages` — teste adicionando essa flag.)
-2. **Nome/sintaxe exata de `--allowedTools`** (vírgula vs espaço) e dos `--permission-mode`.
-3. **Onde aparece o `session_id`** (no `system/init`? no `result`? em ambos?).
-4. **O que acontece quando uma tool NÃO permitida é pedida** em `-p` (deny silencioso? erro? trava?).
-5. **Formato dos `tool_use` aninhados** e dos `tool_result` (evento `user`).
-
-> Se algum nome de flag estiver errado para a sua versão, o spike ainda roda — só
-> ajuste a construção do comando em `src/main.rs` e re-rode. Esse é o ponto do spike.
+1. **Texto** veio como eventos `assistant` **completos** (sem `--include-partial-messages`).
+   Para deltas em tempo real (`stream_event`/`text_delta`), adicione essa flag.
+2. **🔴 SEGURANÇA:** `--allowedTools` é **auto-aprovação**, NÃO sandbox — o agent rodou
+   `Bash` mesmo fora da lista. **`--disallowedTools` é o gate real** (remove a tool).
+   Por isso o spike agora usa `--disallowedTools`.
+3. **`session_id`** aparece cedo (no `system/init`) e se mantém; `--resume` confirmado.
+4. **Eventos extras** observados e tratados como `Unknown` sem quebrar: `rate_limit_event`,
+   `system/hook_started`, `system/hook_response`, `system/thinking_tokens`.
+5. **Custo** de um "summarize" simples: ~US$0,34 (modelo `claude-opus-4-8[1m]`, 31 tools).

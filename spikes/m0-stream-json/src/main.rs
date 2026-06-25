@@ -10,8 +10,8 @@
 //! Uso:
 //!   cargo run -- [PROMPT] [--cwd <dir>] [--resume <session_id>]
 //!
-//! Segurança: o spike só habilita ferramentas READ-ONLY (Read,Glob,Grep), então
-//! não modifica nada no projeto-alvo.
+//! Segurança: o spike usa `--disallowedTools` para REMOVER as tools que modificam
+//! (Bash/Edit/Write/...), que é o gate real. (`--allowedTools` NÃO sandboxa — achado do M0.)
 
 use std::collections::BTreeMap;
 use std::env;
@@ -63,7 +63,7 @@ fn main() {
     if let Some(r) = &resume {
         println!("  resume : {r}");
     }
-    println!("  tools  : Read,Glob,Grep (read-only — o spike não modifica nada)");
+    println!("  guard  : --disallowedTools Bash,Edit,Write,MultiEdit,NotebookEdit (read-only real)");
     println!("{}", "─".repeat(64));
 
     let mut cmd = Command::new("claude");
@@ -72,9 +72,10 @@ fn main() {
         .arg("--output-format")
         .arg("stream-json")
         .arg("--verbose")
-        // Read-only: nada de Edit/Write/Bash. Ajuste aqui para testar mais tools.
-        .arg("--allowedTools")
-        .arg("Read,Glob,Grep");
+        // SEGURANÇA (achado do M0): --disallowedTools é o gate REAL — remove a tool do
+        // conjunto. --allowedTools é só AUTO-APROVAÇÃO e NÃO impede a tool de rodar.
+        .arg("--disallowedTools")
+        .arg("Bash,Edit,Write,MultiEdit,NotebookEdit");
     if let Some(r) = &resume {
         cmd.arg("--resume").arg(r);
     }
