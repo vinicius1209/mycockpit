@@ -14,15 +14,18 @@ interface ChatState {
   projectId: string | null
 
   resetFor: (projectId: string | null) => void
+  hydrate: (
+    projectId: string | null,
+    items: ChatItem[],
+    sessionId: string | null,
+  ) => void
   start: (text: string) => void
   handleEvent: (e: AgentEvent) => void
   finish: () => void
 }
 
-let counter = 0
 function uid(): string {
-  counter += 1
-  return `i${counter}`
+  return crypto.randomUUID()
 }
 
 export const useChat = create<ChatState>((set) => ({
@@ -33,6 +36,9 @@ export const useChat = create<ChatState>((set) => ({
 
   resetFor: (projectId) =>
     set({ items: [], sessionId: null, running: false, projectId }),
+
+  hydrate: (projectId, items, sessionId) =>
+    set({ items, sessionId, running: false, projectId }),
 
   start: (text) =>
     set((s) => ({

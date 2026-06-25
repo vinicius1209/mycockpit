@@ -7,19 +7,38 @@ mod context;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let migrations = vec![Migration {
-        version: 1,
-        description: "create_projects",
-        sql: "CREATE TABLE IF NOT EXISTS projects ( \
-                id TEXT PRIMARY KEY, \
-                name TEXT NOT NULL, \
-                path TEXT NOT NULL UNIQUE, \
-                created_at INTEGER NOT NULL, \
-                has_claude_md INTEGER NOT NULL DEFAULT 0, \
-                has_agents_md INTEGER NOT NULL DEFAULT 0 \
-              );",
-        kind: MigrationKind::Up,
-    }];
+    let migrations = vec![
+        Migration {
+            version: 1,
+            description: "create_projects",
+            sql: "CREATE TABLE IF NOT EXISTS projects ( \
+                    id TEXT PRIMARY KEY, \
+                    name TEXT NOT NULL, \
+                    path TEXT NOT NULL UNIQUE, \
+                    created_at INTEGER NOT NULL, \
+                    has_claude_md INTEGER NOT NULL DEFAULT 0, \
+                    has_agents_md INTEGER NOT NULL DEFAULT 0 \
+                  );",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 2,
+            description: "create_conversations",
+            sql: "CREATE TABLE IF NOT EXISTS conversations ( \
+                    project_id TEXT PRIMARY KEY, \
+                    session_id TEXT, \
+                    items TEXT NOT NULL, \
+                    updated_at INTEGER NOT NULL \
+                  );",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 3,
+            description: "projects_permission_mode",
+            sql: "ALTER TABLE projects ADD COLUMN permission_mode TEXT NOT NULL DEFAULT 'padrao';",
+            kind: MigrationKind::Up,
+        },
+    ];
 
     tauri::Builder::default()
         .plugin(tauri_plugin_decorum::init())

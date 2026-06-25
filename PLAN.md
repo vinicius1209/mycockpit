@@ -81,7 +81,7 @@ quando entrarem agents sem saída estruturada e/ou um terminal interativo de ver
 
 ## 6. Marcos de construção (ordem importa)
 
-> Cada marco tem um critério de aceite. **Não pule o M0.**
+> Cada marco tem um critério de aceite. **Status: v0.1 COMPLETO (jun/2026) — M0→M6 todos ✅.** Falta só o teste E2E manual no `tauri dev` com o `claude` real.
 
 | Marco | Entrega | Aceite |
 |---|---|---|
@@ -89,9 +89,9 @@ quando entrarem agents sem saída estruturada e/ou um terminal interativo de ver
 | **M1 · Esqueleto** ✅ | Tauri+React+shadcn, SQLite ligado, layout: *sidebar projetos │ chat │ painel de contexto* | **Feito** — em `app/`. Design system "cockpit", console ai-02, SQLite + seleção de pasta. Ver `app/README.md` |
 | **M2 · Abrir projeto** ✅ | seletor de pasta → lê `CLAUDE.md`/`AGENTS.md`/`.claude` → painel "o que o sistema sabe"; projeto salvo no SQLite | **Feito** — `read_project_context` lê do disco + preview expansível no painel |
 | **M3 · Dispatch (coração)** ✅ | chat dispara Claude Code na pasta → `text`/`tool_use`/`result` viram cartões (reusa M0) | **Feito** — `run_claude` (tokio + `ipc::Channel`) → cartões no chat. Falta o teste E2E no `tauri dev` |
-| **M4 · Sessão contínua** | captura `session_id`, follow-up via `--resume`, histórico no SQLite | "agora roda os testes" continua a mesma conversa |
-| **M5 · Permissões por projeto** | config `allowedTools`/`permission-mode` por projeto (default: `acceptEdits` + Bash pergunta) + aprovação in-app | Posso ajustar a autonomia por projeto e sou avisado nas ações de risco |
-| **M6 · Superfície** | input `ai-02` (seletor, anexo, chips), markdown, diffs de `Edit` visíveis | A UX da entrada está completa e legível |
+| **M4 · Sessão contínua** ✅ | captura `session_id`, follow-up via `--resume`, conversa persistida no SQLite (tabela `conversations`) | **Feito** — conversa carrega/salva por projeto; resume sobrevive a restart |
+| **M5 · Permissões por projeto** ✅ | modo por projeto (Leitura/Padrão/Liberado) → flags (`--disallowedTools`/`--permission-mode`) | **Feito** — seletor no painel de contexto, persistido. ⚠️ Aprovação interativa mid-run fica pra quando usarmos o Agent SDK (limite do CLI subprocess) |
+| **M6 · Superfície** ✅ | input `ai-02` (seletor, anexo, chips), **markdown** nos cartões (react-markdown), **diffs de `Edit`** expansíveis | **Feito** — conversa rica e legível |
 
 ### Caminho feliz (aceite do v0.1)
 

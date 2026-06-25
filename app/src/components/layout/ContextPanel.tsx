@@ -9,11 +9,19 @@ import {
   PanelRight,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { useActiveProject } from "@/store/app"
+import { useActiveProject, useApp } from "@/store/app"
 import { readProjectContext } from "@/lib/agent"
 import type { ContextFile, ProjectContext } from "@/lib/agent"
-import { isTauri } from "@/lib/db"
+import type { PermissionMode } from "@/lib/types"
+import { isTauri, updateProjectPermission } from "@/lib/db"
 import { cn, shortPath } from "@/lib/utils"
 
 function Section({
@@ -90,6 +98,13 @@ export function ContextPanel() {
   const project = useActiveProject()
   const [ctx, setCtx] = useState<ProjectContext | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const setProjectPermission = useApp((s) => s.setProjectPermission)
+
+  function onPermissionChange(mode: PermissionMode) {
+    if (!project) return
+    setProjectPermission(project.id, mode)
+    void updateProjectPermission(project.id, mode)
+  }
 
   const projectPath = project?.path
   useEffect(() => {
@@ -146,6 +161,23 @@ export function ContextPanel() {
             >
               {shortPath(project.path)}
             </div>
+          </div>
+
+          <div className="flex items-center justify-between px-4 pb-3">
+            <span className="label-mono">Permissões</span>
+            <Select
+              value={project.permissionMode ?? "padrao"}
+              onValueChange={(v) => onPermissionChange(v as PermissionMode)}
+            >
+              <SelectTrigger className="h-7 w-fit gap-1.5 rounded-full border bg-secondary/50 pr-1.5 pl-2.5 text-[12px] shadow-none focus-visible:ring-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                <SelectItem value="leitura">Leitura</SelectItem>
+                <SelectItem value="padrao">Padrão</SelectItem>
+                <SelectItem value="liberado">Liberado</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <Separator className="my-2" />

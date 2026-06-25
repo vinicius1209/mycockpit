@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import type { Project } from "@/lib/types"
+import type { PermissionMode, Project } from "@/lib/types"
 
 type Theme = "dark" | "light"
 
@@ -14,6 +14,7 @@ interface AppState {
   setProjects: (p: Project[]) => void
   addProject: (p: Project) => void
   setActiveProject: (id: string | null) => void
+  setProjectPermission: (id: string, mode: PermissionMode) => void
   toggleTheme: () => void
   toggleSidebar: () => void
   toggleContext: () => void
@@ -40,6 +41,12 @@ export const useApp = create<AppState>((set) => ({
   addProject: (p) =>
     set((s) => ({ projects: [p, ...s.projects], activeProjectId: p.id })),
   setActiveProject: (id) => set({ activeProjectId: id }),
+  setProjectPermission: (id, mode) =>
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === id ? { ...p, permissionMode: mode } : p,
+      ),
+    })),
   toggleTheme: () =>
     set((s) => {
       const theme: Theme = s.theme === "dark" ? "light" : "dark"

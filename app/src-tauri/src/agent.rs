@@ -42,6 +42,7 @@ pub async fn run_claude(
     prompt: String,
     cwd: String,
     resume: Option<String>,
+    permission: String,
     on_event: Channel<AgentEvent>,
 ) -> Result<(), String> {
     let mut cmd = Command::new("claude");
@@ -53,6 +54,22 @@ pub async fn run_claude(
         .current_dir(&cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
+
+    // Política de permissão por projeto (ver docs/agent-runner.md §7).
+    // Achado do M0: `--allowedTools` NÃO sandboxa; o gate real é `--disallowedTools`.
+    match permission.as_str() {
+        "leitura" => {
+            cmd.arg("--disallowedTools")
+                .arg("Bash,Edit,Write,MultiEdit,NotebookEdit");
+        }
+        "liberado" => {
+            cmd.arg("--permission-mode").arg("bypassPermissions");
+        }
+        _ => {
+            cmd.arg("--permission-mode").arg("acceptEdits");
+        }
+    }
+
     if let Some(r) = &resume {
         cmd.arg("--resume").arg(r);
     }

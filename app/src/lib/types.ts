@@ -1,5 +1,8 @@
 export type AgentStatus = "idle" | "running" | "queued" | "success" | "error"
 
+/** Política de permissão por projeto (vira flags do claude — ver agent-runner.md §7). */
+export type PermissionMode = "leitura" | "padrao" | "liberado"
+
 export interface Project {
   id: string
   name: string
@@ -9,6 +12,7 @@ export interface Project {
   hasClaudeMd?: boolean
   hasAgentsMd?: boolean
   status?: AgentStatus
+  permissionMode?: PermissionMode
 }
 
 /** Destino do console de comando: um agent ou (futuro) um modelo direto. */

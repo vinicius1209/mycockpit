@@ -13,11 +13,12 @@ export async function runClaude(
   prompt: string,
   cwd: string,
   resume: string | null,
+  permission: string,
   onEvent: (e: AgentEvent) => void,
 ): Promise<void> {
   const channel = new Channel<AgentEvent>()
   channel.onmessage = onEvent
-  await invoke("run_claude", { prompt, cwd, resume, onEvent: channel })
+  await invoke("run_claude", { prompt, cwd, resume, permission, onEvent: channel })
 }
 
 export interface ContextFile {

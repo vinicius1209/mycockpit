@@ -6,7 +6,7 @@ import { Reticle } from "@/components/common/Wordmark"
 import { useActiveProject } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { runClaude } from "@/lib/agent"
-import { isTauri } from "@/lib/db"
+import { isTauri, loadConversation, saveConversation } from "@/lib/db"
 
 function greetingFor(date: Date): string {
   const h = date.getHours()
@@ -19,8 +19,8 @@ export function ChatPanel() {
   const project = useActiveProject()
   const items = useChat((s) => s.items)
   const running = useChat((s) => s.running)
-  const sessionId = useChat((s) => s.sessionId)
   const resetFor = useChat((s) => s.resetFor)
+  const hydrate = useChat((s) => s.hydrate)
   const start = useChat((s) => s.start)
   const handleEvent = useChat((s) => s.handleEvent)
   const finish = useChat((s) => s.finish)
@@ -29,8 +29,23 @@ export function ChatPanel() {
   // Reseta a conversa ao trocar de projeto (M4 persiste por projeto).
   const projectId = project?.id ?? null
   useEffect(() => {
-    resetFor(projectId)
-  }, [projectId, resetFor])
+    let cancelled = false
+    async function load() {
+      if (projectId && isTauri()) {
+        const conv = await loadConversation(projectId)
+        if (cancelled) return
+        if (conv) {
+          hydrate(projectId, conv.items, conv.sessionId)
+          return
+        }
+      }
+      if (!cancelled) resetFor(projectId)
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, resetFor, hydrate])
 
   // Autoscroll conforme a conversa cresce.
   useEffect(() => {
@@ -46,11 +61,19 @@ export function ChatPanel() {
     }
     start(text)
     try {
-      await runClaude(text, project.path, sessionId, handleEvent)
+      await runClaude(
+        text,
+        project.path,
+        useChat.getState().sessionId,
+        project.permissionMode ?? "padrao",
+        handleEvent,
+      )
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha ao executar o agent")
     } finally {
       finish()
+      const s = useChat.getState()
+      void saveConversation(project.id, s.sessionId, s.items)
     }
   }
 
