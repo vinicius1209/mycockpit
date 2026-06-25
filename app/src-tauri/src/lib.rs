@@ -2,6 +2,9 @@ use tauri::Manager;
 use tauri_plugin_decorum::WebviewWindowExt;
 use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 
+mod agent;
+mod context;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![Migration {
@@ -44,6 +47,10 @@ pub fn run() {
                 .add_migrations("sqlite:mycockpit.db", migrations)
                 .build(),
         )
+        .invoke_handler(tauri::generate_handler![
+            agent::run_claude,
+            context::read_project_context
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

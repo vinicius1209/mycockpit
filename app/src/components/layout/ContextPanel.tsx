@@ -1,9 +1,20 @@
+import { useEffect, useState } from "react"
 import type { ReactNode } from "react"
-import { Check, FileText, FolderGit2, Minus, PanelRight } from "lucide-react"
+import {
+  Check,
+  ChevronDown,
+  FileText,
+  FolderGit2,
+  Minus,
+  PanelRight,
+} from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { useActiveProject } from "@/store/app"
-import { shortPath } from "@/lib/utils"
+import { readProjectContext } from "@/lib/agent"
+import type { ContextFile, ProjectContext } from "@/lib/agent"
+import { isTauri } from "@/lib/db"
+import { cn, shortPath } from "@/lib/utils"
 
 function Section({
   title,
@@ -27,17 +38,49 @@ function Section({
   )
 }
 
-function DetectRow({ label, present }: { label: string; present: boolean }) {
+function DetectRow({
+  file,
+  expanded,
+  onToggle,
+}: {
+  file: ContextFile
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const canExpand = file.exists && !!file.content
   return (
-    <div className="flex items-center justify-between rounded-md px-2 py-1.5">
-      <span className="flex items-center gap-2 font-mono text-[12.5px] text-foreground/90">
-        <FileText className="size-3.5 text-muted-foreground" />
-        {label}
-      </span>
-      {present ? (
-        <Check className="size-3.5 text-st-success" />
-      ) : (
-        <Minus className="size-3.5 text-muted-foreground/45" />
+    <div>
+      <button
+        disabled={!canExpand}
+        onClick={onToggle}
+        className="flex w-full items-center justify-between rounded-md px-2 py-1.5 transition-colors enabled:hover:bg-accent/45 disabled:cursor-default"
+      >
+        <span className="flex items-center gap-2 font-mono text-[12.5px] text-foreground/90">
+          <FileText className="size-3.5 text-muted-foreground" />
+          {file.name}
+        </span>
+        {file.exists ? (
+          canExpand ? (
+            <ChevronDown
+              className={cn(
+                "size-3.5 text-muted-foreground transition-transform",
+                expanded && "rotate-180",
+              )}
+            />
+          ) : (
+            <Check className="size-3.5 text-st-success" />
+          )
+        ) : (
+          <Minus className="size-3.5 text-muted-foreground/45" />
+        )}
+      </button>
+      {expanded && file.content && (
+        <pre
+          data-selectable
+          className="mt-1 mb-1 max-h-72 overflow-auto rounded-md border bg-background/40 p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground"
+        >
+          {file.content}
+        </pre>
       )}
     </div>
   )
@@ -45,6 +88,35 @@ function DetectRow({ label, present }: { label: string; present: boolean }) {
 
 export function ContextPanel() {
   const project = useActiveProject()
+  const [ctx, setCtx] = useState<ProjectContext | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  const projectPath = project?.path
+  useEffect(() => {
+    let cancelled = false
+    setExpanded(null)
+    if (!projectPath || !isTauri()) {
+      setCtx(null)
+      return
+    }
+    readProjectContext(projectPath)
+      .then((c) => {
+        if (!cancelled) setCtx(c)
+      })
+      .catch(() => {
+        if (!cancelled) setCtx(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectPath])
+
+  // Fonte real (disco) quando no app; senão cai pros flags semente.
+  const files: ContextFile[] = ctx?.files ?? [
+    { name: "CLAUDE.md", exists: !!project?.hasClaudeMd, content: null },
+    { name: "AGENTS.md", exists: !!project?.hasAgentsMd, content: null },
+  ]
+  const hasClaudeDir = ctx?.has_claude_dir ?? !!project?.hasClaudeMd
 
   return (
     <aside className="reveal-right flex h-full w-full flex-col bg-rail">
@@ -78,11 +150,26 @@ export function ContextPanel() {
 
           <Separator className="my-2" />
 
-          <Section title="O que o sistema sabe" note="lido do disco no M2">
+          <Section
+            title="O que o sistema sabe"
+            note={ctx ? undefined : "no app (tauri dev)"}
+          >
             <div className="flex flex-col gap-0.5">
-              <DetectRow label="CLAUDE.md" present={!!project.hasClaudeMd} />
-              <DetectRow label="AGENTS.md" present={!!project.hasAgentsMd} />
-              <DetectRow label=".claude/" present={!!project.hasClaudeMd} />
+              {files.map((f) => (
+                <DetectRow
+                  key={f.name}
+                  file={f}
+                  expanded={expanded === f.name}
+                  onToggle={() =>
+                    setExpanded((cur) => (cur === f.name ? null : f.name))
+                  }
+                />
+              ))}
+              <DetectRow
+                file={{ name: ".claude/", exists: hasClaudeDir, content: null }}
+                expanded={false}
+                onToggle={() => {}}
+              />
             </div>
           </Section>
 
