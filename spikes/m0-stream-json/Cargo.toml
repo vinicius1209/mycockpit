@@ -1,0 +1,12 @@
+[package]
+name = "m0-stream-json"
+version = "0.1.0"
+edition = "2021"
+description = "Spike M0 do MyCockpit: dirige o `claude` CLI em modo headless e parseia o stream-json."
+
+[dependencies]
+serde_json = "1"
+
+[[bin]]
+name = "m0"
+path = "src/main.rs"

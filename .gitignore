@@ -1,0 +1,33 @@
+# Rust
+target/
+**/target/
+Cargo.lock.bak
+
+# Node / Tauri (quando o app existir)
+node_modules/
+dist/
+dist-ssr/
+.vite/
+src-tauri/target/
+*.local
+
+# Banco local / artefatos de runtime
+*.sqlite
+*.sqlite-journal
+*.db
+
+# Ambiente
+.env
+.env.*
+!.env.example
+
+# SO / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Logs / temporários
+*.log
+/tmp/
