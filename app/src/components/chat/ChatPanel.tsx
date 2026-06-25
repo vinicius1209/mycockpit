@@ -22,7 +22,7 @@ export function ChatPanel() {
   }
 
   return (
-    <section className="relative flex min-w-0 flex-1 flex-col bg-background">
+    <section className="relative flex h-full w-full min-w-0 flex-col bg-background">
       {/* halo brass sutil subindo do console (atmosfera) */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-96 bg-[radial-gradient(62%_80%_at_50%_100%,var(--brass-soft),transparent_72%)] opacity-70" />
 

@@ -47,7 +47,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   const toggleTheme = useApp((s) => s.toggleTheme)
 
   return (
-    <aside className="reveal-left flex w-[260px] shrink-0 flex-col border-r bg-rail">
+    <aside className="reveal-left flex h-full w-full flex-col bg-rail">
       <header className="flex h-11 shrink-0 items-center justify-between px-3">
         <div className="flex items-center gap-2">
           <span className="label-mono">Projetos</span>

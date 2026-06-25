@@ -27,23 +27,23 @@ export function TitleBar() {
       data-tauri-drag-region
       className="relative z-20 flex h-11 shrink-0 items-center gap-2.5 border-b bg-rail pr-2.5 pl-20"
     >
-      <Wordmark />
+      <Wordmark className="pointer-events-none" />
       {project && (
         <>
-          <span className="text-muted-foreground/35">/</span>
-          <span className="truncate text-[13px] text-muted-foreground">
+          <span className="pointer-events-none text-muted-foreground/35">/</span>
+          <span className="pointer-events-none truncate text-[13px] text-muted-foreground">
             {project.name}
           </span>
         </>
       )}
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="pointer-events-none ml-auto flex items-center gap-2">
         <InstrumentStrip />
         <Separator orientation="vertical" className="h-4!" />
         <Button
           variant="ghost"
           size="icon-sm"
-          className="text-muted-foreground hover:text-foreground"
+          className="pointer-events-auto text-muted-foreground hover:text-foreground"
           onClick={toggleSidebar}
           title="Alternar projetos"
           aria-label="Alternar projetos"
@@ -53,7 +53,7 @@ export function TitleBar() {
         <Button
           variant="ghost"
           size="icon-sm"
-          className="text-muted-foreground hover:text-foreground"
+          className="pointer-events-auto text-muted-foreground hover:text-foreground"
           onClick={toggleContext}
           title="Alternar contexto"
           aria-label="Alternar contexto"

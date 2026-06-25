@@ -8,6 +8,11 @@ import { TitleBar } from "@/components/layout/TitleBar"
 import { Sidebar } from "@/components/layout/Sidebar"
 import { ContextPanel } from "@/components/layout/ContextPanel"
 import { ChatPanel } from "@/components/chat/ChatPanel"
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable"
 import { useApp } from "@/store/app"
 import { isTauri, listProjects, insertProject } from "@/lib/db"
 import type { Project } from "@/lib/types"
@@ -120,11 +125,40 @@ export default function App() {
       <TooltipProvider delayDuration={300}>
         <div className="grain flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
           <TitleBar />
-          <div className="flex min-h-0 flex-1">
-            {sidebarOpen && <Sidebar onAddProject={handleAddProject} />}
-            <ChatPanel />
-            {contextOpen && <ContextPanel />}
-          </div>
+          <ResizablePanelGroup
+            orientation="horizontal"
+            className="min-h-0 flex-1"
+          >
+            {sidebarOpen && (
+              <>
+                <ResizablePanel
+                  id="sidebar"
+                  defaultSize="19%"
+                  minSize="190px"
+                  maxSize="32%"
+                >
+                  <Sidebar onAddProject={handleAddProject} />
+                </ResizablePanel>
+                <ResizableHandle className="transition-colors hover:bg-brass/50 after:w-2" />
+              </>
+            )}
+            <ResizablePanel id="chat" defaultSize="57%" minSize="34%">
+              <ChatPanel />
+            </ResizablePanel>
+            {contextOpen && (
+              <>
+                <ResizableHandle className="transition-colors hover:bg-brass/50 after:w-2" />
+                <ResizablePanel
+                  id="context"
+                  defaultSize="24%"
+                  minSize="240px"
+                  maxSize="36%"
+                >
+                  <ContextPanel />
+                </ResizablePanel>
+              </>
+            )}
+          </ResizablePanelGroup>
         </div>
         <Toaster position="bottom-center" theme={theme} />
       </TooltipProvider>

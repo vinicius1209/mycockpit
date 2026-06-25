@@ -15,8 +15,8 @@ function Section({
   children: ReactNode
 }) {
   return (
-    <section className="px-3 py-3">
-      <div className="mb-2 flex items-center justify-between">
+    <section className="px-4 py-4">
+      <div className="mb-3 flex items-center justify-between">
         <span className="label-mono">{title}</span>
         {note && (
           <span className="text-[10px] text-muted-foreground/70">{note}</span>
@@ -47,7 +47,7 @@ export function ContextPanel() {
   const project = useActiveProject()
 
   return (
-    <aside className="reveal-right flex w-80 shrink-0 flex-col border-l bg-rail">
+    <aside className="reveal-right flex h-full w-full flex-col bg-rail">
       <header className="flex h-11 shrink-0 items-center gap-2 px-3">
         <PanelRight className="size-3.5 text-muted-foreground" />
         <span className="label-mono">Contexto</span>
@@ -61,7 +61,7 @@ export function ContextPanel() {
         </div>
       ) : (
         <ScrollArea className="flex-1">
-          <div className="px-3 pt-3 pb-1">
+          <div className="px-4 pt-4 pb-2">
             <div className="flex items-center gap-2">
               <FolderGit2 className="size-4 shrink-0 text-brass" />
               <span className="truncate text-[14px] font-medium text-foreground">
@@ -76,9 +76,9 @@ export function ContextPanel() {
             </div>
           </div>
 
-          <Separator className="my-1" />
+          <Separator className="my-2" />
 
-          <Section title="O que o sistema sabe" note="lê do disco no M2">
+          <Section title="O que o sistema sabe" note="lido do disco no M2">
             <div className="flex flex-col gap-0.5">
               <DetectRow label="CLAUDE.md" present={!!project.hasClaudeMd} />
               <DetectRow label="AGENTS.md" present={!!project.hasAgentsMd} />
@@ -86,7 +86,7 @@ export function ContextPanel() {
             </div>
           </Section>
 
-          <Separator className="my-1" />
+          <Separator className="my-2" />
 
           {["Specs", "Regras", "Personas", "Memórias"].map((s) => (
             <Section key={s} title={s}>
