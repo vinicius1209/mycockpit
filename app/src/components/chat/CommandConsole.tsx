@@ -122,7 +122,12 @@ export function CommandConsole({
             .filter((a) => a.toLowerCase().includes(atQuery.toLowerCase()))
             .map((a) => ({ kind: "agent" as const, value: a })),
           ...files
-            .filter((f) => f.toLowerCase().includes(atQuery.toLowerCase()))
+            // tira os .claude/agents/*.md — já estão listados como AGENT acima
+            .filter(
+              (f) =>
+                !f.startsWith(".claude/agents/") &&
+                f.toLowerCase().includes(atQuery.toLowerCase()),
+            )
             .map((f) => ({ kind: "file" as const, value: f })),
         ].slice(0, 8)
   const showAt = !atDismissed && atItems.length > 0
