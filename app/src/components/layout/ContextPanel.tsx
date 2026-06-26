@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import type { ReactNode } from "react"
 import {
   AlertCircle,
+  AlertTriangle,
   Brain,
   ChevronDown,
   FileText,
@@ -384,6 +385,24 @@ export function ContextPanel() {
 
             {status === "ready" && ctx && (
               <div className="flex flex-col gap-3">
+                {sources && sources.drift.length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    {sources.drift.map((d) => (
+                      <div
+                        key={d.copy}
+                        className="flex items-start gap-2 rounded-md border border-st-queued/40 bg-st-queued/10 px-2.5 py-1.5 text-[11.5px] leading-snug text-foreground/85"
+                      >
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-st-queued" />
+                        <span>
+                          <span className="font-mono">{d.copy}</span> está{" "}
+                          {d.days_stale}d atrás de{" "}
+                          <span className="font-mono">{d.source}</span> — cópia
+                          stale
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex flex-col gap-0.5">
                   <div className="mb-0.5 text-[10.5px] text-muted-foreground/55">
                     Instruções

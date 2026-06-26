@@ -26,11 +26,20 @@ pub struct MemoryInfo {
     pub path: Option<String>,
 }
 
+/// Aviso de drift: uma cópia legada está mais velha que a fonte real.
+#[derive(Serialize)]
+pub struct Drift {
+    pub copy: String,
+    pub source: String,
+    pub days_stale: i64,
+}
+
 #[derive(Serialize)]
 pub struct ProjectSources {
     pub personas: Vec<Persona>,
     pub specs: Vec<Spec>,
     pub memory: MemoryInfo,
+    pub drift: Vec<Drift>,
 }
 
 /// Lê um campo do frontmatter YAML (bloco entre as 2 primeiras linhas `---`).
@@ -154,12 +163,40 @@ fn read_memory(project_path: &str) -> MemoryInfo {
     }
 }
 
+/// Pares conhecidos cópia-legada → fonte. Sinaliza se a cópia ficou pra trás
+/// (o estudo achou .cockpit/profile.md ~5 semanas atrás do AGENTS.md no prime).
+fn read_drift(base: &Path) -> Vec<Drift> {
+    let mut out = Vec::new();
+    let pairs = [(".cockpit/profile.md", "AGENTS.md")];
+    for (copy_rel, src_rel) in pairs {
+        let (Ok(cm), Ok(sm)) = (
+            std::fs::metadata(base.join(copy_rel)),
+            std::fs::metadata(base.join(src_rel)),
+        ) else {
+            continue;
+        };
+        let (Ok(ct), Ok(st)) = (cm.modified(), sm.modified()) else {
+            continue;
+        };
+        if let Ok(d) = st.duration_since(ct) {
+            out.push(Drift {
+                copy: copy_rel.to_string(),
+                source: src_rel.to_string(),
+                days_stale: (d.as_secs() / 86400) as i64,
+            });
+        }
+    }
+    out
+}
+
 #[tauri::command]
 pub fn read_project_sources(path: String) -> ProjectSources {
-    let cd = Path::new(&path).join(".claude");
+    let base = Path::new(&path);
+    let cd = base.join(".claude");
     ProjectSources {
         personas: read_personas(&cd),
         specs: read_specs(&cd),
         memory: read_memory(&path),
+        drift: read_drift(base),
     }
 }

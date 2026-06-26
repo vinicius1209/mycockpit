@@ -19,10 +19,17 @@ export interface MemoryInfo {
   path: string | null
 }
 
+export interface Drift {
+  copy: string
+  source: string
+  days_stale: number
+}
+
 export interface ProjectSources {
   personas: Persona[]
   specs: Spec[]
   memory: MemoryInfo
+  drift: Drift[]
 }
 
 export async function readProjectSources(path: string): Promise<ProjectSources> {
