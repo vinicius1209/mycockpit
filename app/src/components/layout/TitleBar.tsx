@@ -23,6 +23,7 @@ function ModeSwitcher() {
         <button
           key={m.id}
           disabled={!m.available}
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={() => {
             if (!m.available)
               toast(`Modo ${m.label} chega depois de endurecer o Linear`)
@@ -90,6 +91,7 @@ export function TitleBar() {
           variant="ghost"
           size="icon-sm"
           className="pointer-events-auto text-muted-foreground hover:text-foreground"
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={toggleSidebar}
           title="Alternar projetos"
           aria-label="Alternar projetos"
@@ -100,6 +102,7 @@ export function TitleBar() {
           variant="ghost"
           size="icon-sm"
           className="pointer-events-auto text-muted-foreground hover:text-foreground"
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={toggleContext}
           title="Alternar contexto"
           aria-label="Alternar contexto"
