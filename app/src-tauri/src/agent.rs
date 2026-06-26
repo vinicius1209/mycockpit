@@ -192,10 +192,11 @@ pub fn cancel_claude(run_id: String, registry: tauri::State<'_, RunRegistry>) {
 
 /// Helper one-shot (Sprint 3): roda um modelo barato (ex. `haiku`) SEM tools,
 /// sem persistir sessão, p/ meta-tarefas (sugestões/títulos). Retorna o texto puro.
+/// NÃO usa `--bare`: esse modo "minimal" pula o carregamento das credenciais e a
+/// chamada cai em "Not logged in". Os runs principais (sem --bare) são autenticados.
 #[tauri::command]
 pub async fn suggest(model: String, cwd: String, prompt: String) -> Result<String, String> {
     let out = Command::new("claude")
-        .arg("--bare")
         .arg("-p")
         .arg(&prompt)
         .arg("--model")
@@ -209,10 +210,18 @@ pub async fn suggest(model: String, cwd: String, prompt: String) -> Result<Strin
         .output()
         .await
         .map_err(|e| format!("falha ao rodar claude: {e}"))?;
+    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    // Surfaça stdout no erro também: o "Not logged in" do claude sai no stdout.
     if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        let msg = if !stderr.is_empty() { stderr } else { stdout };
+        return Err(if msg.is_empty() {
+            "claude saiu com código de erro".into()
+        } else {
+            msg
+        });
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    Ok(stdout)
 }
 
 /// Mapeia um evento bruto do stream-json para 0..N eventos normalizados.
