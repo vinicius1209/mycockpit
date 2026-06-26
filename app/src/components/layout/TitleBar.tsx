@@ -93,8 +93,10 @@ export function TitleBar() {
           variant="ghost"
           size="icon-sm"
           className="pointer-events-auto text-muted-foreground hover:text-foreground"
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={toggleSidebar}
+          onPointerDown={(e) => {
+            e.stopPropagation()
+            toggleSidebar()
+          }}
           title="Alternar projetos"
           aria-label="Alternar projetos"
         >
@@ -104,8 +106,10 @@ export function TitleBar() {
           variant="ghost"
           size="icon-sm"
           className="pointer-events-auto text-muted-foreground hover:text-foreground"
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={toggleContext}
+          onPointerDown={(e) => {
+            e.stopPropagation()
+            toggleContext()
+          }}
           title="Alternar contexto"
           aria-label="Alternar contexto"
         >
