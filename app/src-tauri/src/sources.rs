@@ -331,3 +331,58 @@ pub fn read_project_commands(path: String) -> Vec<SlashCommand> {
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
 }
+
+/// Walk de fallback (projeto sem git): pula pastas pesadas, cap embutido.
+fn walk_files(base: &Path, dir: &Path, out: &mut Vec<String>, depth: usize) {
+    if out.len() >= 8000 || depth > 10 {
+        return;
+    }
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in rd.filter_map(|e| e.ok()) {
+        let p = e.path();
+        let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if p.is_dir() {
+            if matches!(
+                name,
+                "node_modules" | ".git" | "target" | "dist" | "build" | ".next"
+            ) {
+                continue;
+            }
+            walk_files(base, &p, out, depth + 1);
+        } else if let Ok(rel) = p.strip_prefix(base) {
+            out.push(rel.to_string_lossy().to_string());
+        }
+    }
+}
+
+/// Lista arquivos do projeto p/ o "@" (referência). git ls-files respeita o
+/// .gitignore e é rápido; fallback p/ walk em projeto sem git.
+#[tauri::command]
+pub fn list_project_files(path: String) -> Vec<String> {
+    if let Ok(out) = std::process::Command::new("git")
+        .args([
+            "-C",
+            &path,
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ])
+        .output()
+    {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout);
+            let mut v: Vec<String> =
+                s.lines().take(8000).map(str::to_string).collect();
+            v.sort();
+            return v;
+        }
+    }
+    let base = Path::new(&path);
+    let mut out = Vec::new();
+    walk_files(base, base, &mut out, 0);
+    out.sort();
+    out
+}

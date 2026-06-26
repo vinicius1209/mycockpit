@@ -54,3 +54,8 @@ export async function readProjectCommands(
 ): Promise<SlashCommand[]> {
   return invoke<SlashCommand[]>("read_project_commands", { path })
 }
+
+/** Lista arquivos do projeto (respeita .gitignore) p/ o "@". */
+export async function listProjectFiles(path: string): Promise<string[]> {
+  return invoke<string[]>("list_project_files", { path })
+}

@@ -12,7 +12,11 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useActiveConv } from "@/store/chat"
 import { useActiveProject } from "@/store/app"
-import { readProjectCommands } from "@/lib/sources"
+import {
+  readProjectCommands,
+  listProjectFiles,
+  readProjectSources,
+} from "@/lib/sources"
 import type { SlashCommand } from "@/lib/sources"
 import { isTauri } from "@/lib/db"
 import { cn } from "@/lib/utils"
@@ -84,6 +88,62 @@ export function CommandConsole({
     ref.current?.focus()
   }
 
+  // ---- "@" referências (arquivos + agents), mid-text ----
+  const [files, setFiles] = useState<string[]>([])
+  const [agents, setAgents] = useState<string[]>([])
+  const [cursor, setCursor] = useState(0)
+  const [atIdx, setAtIdx] = useState(0)
+  const [atDismissed, setAtDismissed] = useState(false)
+  const mentionLoadedRef = useRef<string | null>(null)
+
+  // token "@..." antes do cursor (precedido por início ou espaço)
+  const before = value.slice(0, cursor)
+  const atMatch = before.match(/(?:^|\s)@(\S*)$/)
+  const atQuery = atMatch ? atMatch[1] : null
+
+  // carrega arquivos + agents lazy (1ª vez que o @ aparece, cache por projeto)
+  useEffect(() => {
+    if (atQuery === null || !project || !isTauri()) return
+    if (mentionLoadedRef.current === project.path) return
+    mentionLoadedRef.current = project.path
+    void listProjectFiles(project.path)
+      .then(setFiles)
+      .catch(() => setFiles([]))
+    void readProjectSources(project.path)
+      .then((s) => setAgents(s.personas.map((p) => p.name)))
+      .catch(() => setAgents([]))
+  }, [atQuery, project?.path])
+
+  const atItems: { kind: "agent" | "file"; value: string }[] =
+    atQuery === null
+      ? []
+      : [
+          ...agents
+            .filter((a) => a.toLowerCase().includes(atQuery.toLowerCase()))
+            .map((a) => ({ kind: "agent" as const, value: a })),
+          ...files
+            .filter((f) => f.toLowerCase().includes(atQuery.toLowerCase()))
+            .map((f) => ({ kind: "file" as const, value: f })),
+        ].slice(0, 8)
+  const showAt = !atDismissed && atItems.length > 0
+
+  useEffect(() => {
+    setAtIdx(0)
+  }, [atQuery])
+
+  function insertMention(val: string) {
+    if (!atMatch) return
+    const atStart = cursor - (atMatch[1].length + 1)
+    const next = `${value.slice(0, atStart)}@${val} ${value.slice(cursor)}`
+    const pos = atStart + val.length + 2
+    setValue(next)
+    requestAnimationFrame(() => {
+      ref.current?.focus()
+      ref.current?.setSelectionRange(pos, pos)
+      setCursor(pos)
+    })
+  }
+
   const dest = DESTINATIONS.find((d) => d.id === destination) ?? DESTINATIONS[0]
   const canSend = value.trim().length > 0 && !disabled && !running
 
@@ -142,6 +202,33 @@ export function CommandConsole({
           </div>
         </div>
       )}
+      {showAt && !showSlash && (
+        <div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-xl border bg-popover shadow-[var(--shadow-pop)]">
+          <div className="border-b px-3 py-1.5 text-[10px] tracking-wide text-muted-foreground uppercase">
+            Referências{project ? ` · ${project.name}` : ""}
+          </div>
+          <div className="max-h-64 overflow-auto p-1">
+            {atItems.map((m, i) => (
+              <button
+                key={`${m.kind}:${m.value}`}
+                onMouseEnter={() => setAtIdx(i)}
+                onClick={() => insertMention(m.value)}
+                className={cn(
+                  "flex w-full items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-left",
+                  i === atIdx ? "bg-accent" : "hover:bg-accent/50",
+                )}
+              >
+                <span className="truncate font-mono text-[12.5px] text-foreground">
+                  @{m.value}
+                </span>
+                <span className="shrink-0 rounded border px-1 py-px text-[8.5px] tracking-wide text-muted-foreground uppercase">
+                  {m.kind}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div
         onClick={() => ref.current?.focus()}
         className={cn(
@@ -157,8 +244,11 @@ export function CommandConsole({
           value={value}
           onChange={(e) => {
             setValue(e.target.value)
+            setCursor(e.target.selectionStart ?? e.target.value.length)
             setSlashDismissed(false)
+            setAtDismissed(false)
           }}
+          onSelect={(e) => setCursor(e.currentTarget.selectionStart ?? 0)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={(e) => {
@@ -183,6 +273,28 @@ export function CommandConsole({
               if (e.key === "Escape") {
                 e.preventDefault()
                 setSlashDismissed(true)
+                return
+              }
+            }
+            if (showAt && !showSlash) {
+              if (e.key === "ArrowDown") {
+                e.preventDefault()
+                setAtIdx((i) => (i + 1) % atItems.length)
+                return
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault()
+                setAtIdx((i) => (i - 1 + atItems.length) % atItems.length)
+                return
+              }
+              if (e.key === "Enter" || e.key === "Tab") {
+                e.preventDefault()
+                insertMention(atItems[atIdx].value)
+                return
+              }
+              if (e.key === "Escape") {
+                e.preventDefault()
+                setAtDismissed(true)
                 return
               }
             }
