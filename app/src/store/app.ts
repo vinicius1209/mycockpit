@@ -3,6 +3,14 @@ import type { PermissionMode, Project } from "@/lib/types"
 
 type Theme = "dark" | "light"
 
+/** Config por projeto (espelho resolvido de .mycockpit/config.toml — Fase 1). */
+export interface ProjectConfig {
+  exists: boolean
+  permission: PermissionMode
+  helper: string | null // null = sugestões desligadas
+  mode: string // linear | fusion | sdd
+}
+
 interface AppState {
   projects: Project[]
   activeProjectId: string | null
@@ -10,14 +18,15 @@ interface AppState {
   sidebarOpen: boolean
   contextOpen: boolean
   ready: boolean
-  /** Modelo auxiliar p/ sugestões/títulos (Sprint 3). null = desligado. */
-  helperModel: string | null
+  /** Config por projeto vinda de .mycockpit/config.toml (Fase 1). */
+  mycockpit: Record<string, ProjectConfig>
 
   setProjects: (p: Project[]) => void
   addProject: (p: Project) => void
   setActiveProject: (id: string | null) => void
   setProjectPermission: (id: string, mode: PermissionMode) => void
-  setHelperModel: (m: string | null) => void
+  setMycockpit: (id: string, cfg: ProjectConfig) => void
+  patchMycockpit: (id: string, patch: Partial<ProjectConfig>) => void
   toggleTheme: () => void
   toggleSidebar: () => void
   toggleContext: () => void
@@ -35,7 +44,7 @@ export const useApp = create<AppState>((set) => ({
   sidebarOpen: true,
   contextOpen: true,
   ready: false,
-  helperModel: "haiku",
+  mycockpit: {},
 
   setProjects: (projects) =>
     set((s) => ({
@@ -51,7 +60,14 @@ export const useApp = create<AppState>((set) => ({
         p.id === id ? { ...p, permissionMode: mode } : p,
       ),
     })),
-  setHelperModel: (helperModel) => set({ helperModel }),
+  setMycockpit: (id, cfg) =>
+    set((s) => ({ mycockpit: { ...s.mycockpit, [id]: cfg } })),
+  patchMycockpit: (id, patch) =>
+    set((s) => {
+      const cur = s.mycockpit[id]
+      if (!cur) return {}
+      return { mycockpit: { ...s.mycockpit, [id]: { ...cur, ...patch } } }
+    }),
   toggleTheme: () =>
     set((s) => {
       const theme: Theme = s.theme === "dark" ? "light" : "dark"

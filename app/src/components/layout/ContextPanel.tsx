@@ -19,8 +19,10 @@ import {
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { useActiveProject, useApp } from "@/store/app"
+import type { ProjectConfig } from "@/store/app"
 import { readProjectContext } from "@/lib/agent"
 import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/agent"
+import { writeMycockpitConfig } from "@/lib/mycockpit"
 import type { PermissionMode } from "@/lib/types"
 import { isTauri, updateProjectPermission } from "@/lib/db"
 import { cn, shortPath } from "@/lib/utils"
@@ -193,13 +195,34 @@ export function ContextPanel() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
   const setProjectPermission = useApp((s) => s.setProjectPermission)
-  const helperModel = useApp((s) => s.helperModel)
-  const setHelperModel = useApp((s) => s.setHelperModel)
+  const setMycockpit = useApp((s) => s.setMycockpit)
+  const cfg = useApp((s) => (project ? s.mycockpit[project.id] : undefined))
+
+  // upsert da config do projeto em memória (cria com defaults se ainda não há)
+  function upsertConfig(patch: Partial<ProjectConfig>) {
+    if (!project) return
+    const cur: ProjectConfig = cfg ?? {
+      exists: true,
+      permission: project.permissionMode ?? "padrao",
+      helper: "haiku",
+      mode: "linear",
+    }
+    setMycockpit(project.id, { ...cur, ...patch, exists: true })
+  }
 
   function onPermissionChange(mode: PermissionMode) {
     if (!project) return
+    // run_claude lê project.permissionMode (cache); SQLite cache; .mycockpit = truth
     setProjectPermission(project.id, mode)
     void updateProjectPermission(project.id, mode)
+    upsertConfig({ permission: mode })
+    void writeMycockpitConfig(project.path, { permission: mode })
+  }
+
+  function onHelperChange(v: string) {
+    if (!project) return
+    upsertConfig({ helper: v === "off" ? null : v })
+    void writeMycockpitConfig(project.path, { helper: v })
   }
 
   const projectPath = project?.path
@@ -273,7 +296,7 @@ export function ContextPanel() {
                   Permissões
                 </span>
                 <Select
-                  value={project.permissionMode ?? "padrao"}
+                  value={cfg?.permission ?? project.permissionMode ?? "padrao"}
                   onValueChange={(v) => onPermissionChange(v as PermissionMode)}
                 >
                   <SelectTrigger className="h-7 w-fit gap-1.5 rounded-full border bg-secondary/50 pr-1.5 pl-2.5 text-[12px] shadow-none focus-visible:ring-0">
@@ -291,8 +314,8 @@ export function ContextPanel() {
                   Modelo das sugestões
                 </span>
                 <Select
-                  value={helperModel ?? "off"}
-                  onValueChange={(v) => setHelperModel(v === "off" ? null : v)}
+                  value={cfg ? (cfg.helper ?? "off") : "haiku"}
+                  onValueChange={onHelperChange}
                 >
                   <SelectTrigger className="h-7 w-fit gap-1.5 rounded-full border bg-secondary/50 pr-1.5 pl-2.5 text-[12px] shadow-none focus-visible:ring-0">
                     <SelectValue />
@@ -303,6 +326,11 @@ export function ContextPanel() {
                   </SelectContent>
                 </Select>
               </div>
+              {cfg?.exists && (
+                <p className="text-[10.5px] text-muted-foreground/55">
+                  salvo em <span className="font-mono">.mycockpit/config.toml</span>
+                </p>
+              )}
             </div>
           </Section>
 

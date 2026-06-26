@@ -4,6 +4,7 @@ use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 
 mod agent;
 mod context;
+mod mycockpit;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -119,7 +120,9 @@ pub fn run() {
             agent::run_claude,
             agent::cancel_claude,
             agent::suggest,
-            context::read_project_context
+            context::read_project_context,
+            mycockpit::read_mycockpit_config,
+            mycockpit::write_mycockpit_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

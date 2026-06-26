@@ -15,8 +15,15 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable"
 import { useApp } from "@/store/app"
-import { isTauri, listProjects, insertProject } from "@/lib/db"
-import type { Project } from "@/lib/types"
+import type { ProjectConfig } from "@/store/app"
+import {
+  isTauri,
+  listProjects,
+  insertProject,
+  updateProjectPermission,
+} from "@/lib/db"
+import { readMycockpitConfig } from "@/lib/mycockpit"
+import type { PermissionMode, Project } from "@/lib/types"
 
 const queryClient = new QueryClient()
 
@@ -58,6 +65,7 @@ export default function App() {
   const addProject = useApp((s) => s.addProject)
   const setReady = useApp((s) => s.setReady)
   const theme = useApp((s) => s.theme)
+  const activeProjectId = useApp((s) => s.activeProjectId)
 
   useEffect(() => {
     let cancelled = false
@@ -89,6 +97,32 @@ export default function App() {
       cancelled = true
     }
   }, [setProjects, setReady])
+
+  // Fase 1 — carrega a config do projeto ativo de .mycockpit/config.toml (truth)
+  // e sincroniza o cache de permissão que o run_claude lê.
+  useEffect(() => {
+    if (!activeProjectId || !isTauri()) return
+    const proj = useApp.getState().projects.find((p) => p.id === activeProjectId)
+    if (!proj) return
+    void readMycockpitConfig(proj.path)
+      .then((raw) => {
+        const resolved: ProjectConfig = {
+          exists: raw.exists,
+          permission:
+            (raw.permission as PermissionMode) ??
+            proj.permissionMode ??
+            "padrao",
+          helper: raw.helper === "off" ? null : (raw.helper ?? "haiku"),
+          mode: raw.mode ?? "linear",
+        }
+        useApp.getState().setMycockpit(proj.id, resolved)
+        if (raw.exists && resolved.permission !== proj.permissionMode) {
+          useApp.getState().setProjectPermission(proj.id, resolved.permission)
+          void updateProjectPermission(proj.id, resolved.permission)
+        }
+      })
+      .catch(() => {})
+  }, [activeProjectId])
 
   async function handleAddProject() {
     if (!isTauri()) {

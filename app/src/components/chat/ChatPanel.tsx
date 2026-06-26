@@ -117,8 +117,7 @@ export function ChatPanel() {
 
   // Gera sugestões contextuais após o turno (fire-and-forget; degrada pros chips).
   async function generateSuggestions(convId: string) {
-    const helperModel = useApp.getState().helperModel
-    if (!helperModel || !isTauri()) return
+    if (!isTauri()) return
     const c = useChat.getState().byId[convId]
     if (!c || !c.items.some((it) => it.kind === "text")) return
     const proj = useApp.getState().projects.find((p) => p.id === c.projectId)
@@ -126,6 +125,10 @@ export function ChatPanel() {
       console.warn("[sugestões] projeto não encontrado p/ convId", convId, c.projectId)
       return
     }
+    // modelo helper por projeto (.mycockpit/config.toml); default haiku, null = off
+    const cfg = useApp.getState().mycockpit[c.projectId]
+    const helperModel = cfg ? cfg.helper : "haiku"
+    if (!helperModel) return
     useChat.getState().setSuggesting(convId, true)
     try {
       const raw = await suggest(
