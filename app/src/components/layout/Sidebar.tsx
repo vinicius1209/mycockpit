@@ -94,22 +94,24 @@ function ConversationList({ projectId }: { projectId: string }) {
             <button
               onClick={() => void switchConversation(c.id)}
               className={cn(
-                "flex min-w-0 flex-1 items-center px-2 py-1 text-left text-[12px]",
+                "flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left text-[12px]",
                 isActive
                   ? "text-foreground"
                   : "text-muted-foreground group-hover/c:text-foreground",
               )}
             >
+              {/* slot fixo à esquerda → spinner quando roda, sem deslocar o título */}
+              <span className="grid size-3 shrink-0 place-items-center">
+                {isRunning && (
+                  <Loader2
+                    className="size-3 animate-spin text-brass"
+                    aria-label="rodando"
+                  />
+                )}
+              </span>
               <span className="truncate">{c.title ?? "Nova conversa"}</span>
             </button>
-            {/* rodando → spinner à direita (não desloca o título);
-                ocioso → excluir no hover */}
-            {isRunning ? (
-              <Loader2
-                className="mr-1.5 size-3 shrink-0 animate-spin text-brass"
-                aria-label="rodando"
-              />
-            ) : (
+            {!isRunning && (
               <button
                 onClick={() => void removeConversation(c.id)}
                 className="mr-1 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:text-st-error group-hover/c:opacity-100"
