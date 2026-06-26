@@ -5,12 +5,14 @@ export interface Persona {
   name: string
   description: string | null
   model: string | null
+  path: string
 }
 
 export interface Spec {
   slug: string
   stage: string | null
   title: string | null
+  path: string
 }
 
 export interface MemoryInfo {
@@ -34,4 +36,9 @@ export interface ProjectSources {
 
 export async function readProjectSources(path: string): Promise<ProjectSources> {
   return invoke<ProjectSources>("read_project_sources", { path })
+}
+
+/** Lê o conteúdo de um arquivo (persona/spec/memória) p/ o detalhe. */
+export async function readTextFile(path: string): Promise<string> {
+  return invoke<string>("read_text_file", { path })
 }

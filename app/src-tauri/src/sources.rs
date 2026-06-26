@@ -10,6 +10,7 @@ pub struct Persona {
     pub name: String,
     pub description: Option<String>,
     pub model: Option<String>,
+    pub path: String,
 }
 
 #[derive(Serialize)]
@@ -17,12 +18,14 @@ pub struct Spec {
     pub slug: String,
     pub stage: Option<String>,
     pub title: Option<String>,
+    pub path: String,
 }
 
 #[derive(Serialize)]
 pub struct MemoryInfo {
     pub exists: bool,
     pub count: usize,
+    /// Caminho do MEMORY.md (índice) p/ o detalhe. None se ausente.
     pub path: Option<String>,
 }
 
@@ -42,25 +45,51 @@ pub struct ProjectSources {
     pub drift: Vec<Drift>,
 }
 
-/// Lê um campo do frontmatter YAML (bloco entre as 2 primeiras linhas `---`).
-/// Parser mínimo `key: value` — evita dep de YAML; tolera aspas.
+/// Lê um campo do frontmatter YAML. Entende valor inline (`key: foo`) E block
+/// scalar (`key: |` / `>`), devolvendo o 1º parágrafo do bloco. Parser mínimo
+/// (sem dep de YAML) — suficiente p/ name/description/model dos agents.
 fn frontmatter(text: &str, key: &str) -> Option<String> {
-    let mut lines = text.lines();
-    if lines.next()?.trim() != "---" {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.first()?.trim() != "---" {
         return None;
     }
     let prefix = format!("{key}:");
-    for line in lines {
-        let t = line.trim();
-        if t == "---" {
-            break;
+    let mut i = 1;
+    while i < lines.len() {
+        let line = lines[i];
+        if line.trim() == "---" {
+            return None;
         }
-        if let Some(rest) = t.strip_prefix(&prefix) {
-            let v = rest.trim().trim_matches('"').trim_matches('\'').trim();
-            if !v.is_empty() {
-                return Some(v.to_string());
+        if let Some(rest) = line.trim_start().strip_prefix(&prefix) {
+            let v = rest.trim();
+            // valor inline
+            if !v.is_empty() && v != "|" && v != ">" && v != "|-" && v != ">-" {
+                return Some(v.trim_matches('"').trim_matches('\'').to_string());
             }
+            // block scalar → junta só o 1º parágrafo das linhas indentadas
+            let mut para: Vec<String> = Vec::new();
+            i += 1;
+            while i < lines.len() {
+                let bl = lines[i];
+                if bl.trim() == "---" {
+                    break;
+                }
+                if bl.trim().is_empty() {
+                    if !para.is_empty() {
+                        break;
+                    }
+                    i += 1;
+                    continue;
+                }
+                if !bl.starts_with(' ') && !bl.starts_with('\t') {
+                    break; // próxima chave não-indentada
+                }
+                para.push(bl.trim().to_string());
+                i += 1;
+            }
+            return (!para.is_empty()).then(|| para.join(" "));
         }
+        i += 1;
     }
     None
 }
@@ -83,6 +112,7 @@ fn read_personas(claude_dir: &Path) -> Vec<Persona> {
                     name: frontmatter(&text, "name").unwrap_or(stem),
                     description: frontmatter(&text, "description"),
                     model: frontmatter(&text, "model"),
+                    path: p.to_string_lossy().to_string(),
                 });
             }
         }
@@ -118,7 +148,18 @@ fn read_specs(claude_dir: &Path) -> Vec<Spec> {
                     )
                 })
                 .unwrap_or((None, None));
-            out.push(Spec { slug, stage, title });
+            // detalhe: prefere SPEC.md → PRD.md → manifest.json
+            let detail = ["SPEC.md", "PRD.md", "manifest.json"]
+                .iter()
+                .map(|f| dir.join(f))
+                .find(|p| p.is_file())
+                .unwrap_or_else(|| manifest.clone());
+            out.push(Spec {
+                slug,
+                stage,
+                title,
+                path: detail.to_string_lossy().to_string(),
+            });
         }
     }
     out.sort_by(|a, b| a.slug.cmp(&b.slug));
@@ -156,15 +197,17 @@ fn read_memory(project_path: &str) -> MemoryInfo {
     } else {
         0
     };
+    let index = dir.join("MEMORY.md");
     MemoryInfo {
         exists,
         count,
-        path: exists.then(|| dir.to_string_lossy().to_string()),
+        path: index
+            .is_file()
+            .then(|| index.to_string_lossy().to_string()),
     }
 }
 
-/// Pares conhecidos cópia-legada → fonte. Sinaliza se a cópia ficou pra trás
-/// (o estudo achou .cockpit/profile.md ~5 semanas atrás do AGENTS.md no prime).
+/// Pares conhecidos cópia-legada → fonte. Sinaliza se a cópia ficou pra trás.
 fn read_drift(base: &Path) -> Vec<Drift> {
     let mut out = Vec::new();
     let pairs = [(".cockpit/profile.md", "AGENTS.md")];
@@ -199,4 +242,17 @@ pub fn read_project_sources(path: String) -> ProjectSources {
         memory: read_memory(&path),
         drift: read_drift(base),
     }
+}
+
+/// Lê um arquivo de texto (p/ o detalhe de persona/spec/memória). Trunca p/ a UI.
+#[tauri::command]
+pub fn read_text_file(path: String) -> Result<String, String> {
+    let c = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    Ok(if c.chars().count() > 24000 {
+        let mut out: String = c.chars().take(24000).collect();
+        out.push_str("\n…");
+        out
+    } else {
+        c
+    })
 }

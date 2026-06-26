@@ -124,7 +124,8 @@ pub fn run() {
             context::read_project_context,
             mycockpit::read_mycockpit_config,
             mycockpit::write_mycockpit_config,
-            sources::read_project_sources
+            sources::read_project_sources,
+            sources::read_text_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -20,11 +20,19 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Markdown } from "@/components/common/Markdown"
 import { useActiveProject, useApp } from "@/store/app"
 import type { ProjectConfig } from "@/store/app"
 import { readProjectContext } from "@/lib/agent"
 import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/agent"
-import { readProjectSources } from "@/lib/sources"
+import { readProjectSources, readTextFile } from "@/lib/sources"
 import type { ProjectSources } from "@/lib/sources"
 import { writeMycockpitConfig } from "@/lib/mycockpit"
 import type { PermissionMode } from "@/lib/types"
@@ -190,6 +198,54 @@ function SkeletonRows() {
   )
 }
 
+type DetailTarget = { title: string; path: string }
+
+/** Detalhe de um item de contexto (persona/spec/memória): lê o arquivo e renderiza. */
+function DetailDialog({
+  target,
+  onClose,
+}: {
+  target: DetailTarget | null
+  onClose: () => void
+}) {
+  const [content, setContent] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!target) return
+    setContent(null)
+    setLoading(true)
+    readTextFile(target.path)
+      .then(setContent)
+      .catch(() => setContent("_não foi possível ler o arquivo._"))
+      .finally(() => setLoading(false))
+  }, [target])
+
+  return (
+    <Dialog open={!!target} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="flex max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="border-b px-5 py-3 text-left">
+          <DialogTitle className="font-mono text-[14px]">
+            {target?.title}
+          </DialogTitle>
+          {target && (
+            <DialogDescription className="truncate font-mono text-[10.5px]">
+              {shortPath(target.path)}
+            </DialogDescription>
+          )}
+        </DialogHeader>
+        <div className="overflow-auto px-5 py-4">
+          {loading ? (
+            <p className="text-[13px] text-muted-foreground">carregando…</p>
+          ) : (
+            content && <Markdown text={content} />
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /** Estágio do manifest SDD (discovery→…→done). */
 function StageBadge({ stage }: { stage: string }) {
   const done = stage === "done"
@@ -214,6 +270,7 @@ export function ContextPanel() {
   const [status, setStatus] = useState<Status>("loading")
   const [expanded, setExpanded] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
+  const [detail, setDetail] = useState<DetailTarget | null>(null)
   const setProjectPermission = useApp((s) => s.setProjectPermission)
   const setMycockpit = useApp((s) => s.setMycockpit)
   const cfg = useApp((s) => (project ? s.mycockpit[project.id] : undefined))
@@ -454,15 +511,16 @@ export function ContextPanel() {
               <Section title="Personas">
                 <div className="flex flex-col gap-1.5">
                   {sources.personas.map((p) => (
-                    <div
+                    <button
                       key={p.name}
-                      className="rounded-md px-2 py-1.5 transition-colors hover:bg-accent/40"
+                      onClick={() => setDetail({ title: p.name, path: p.path })}
+                      className="w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="truncate font-mono text-[12.5px] text-foreground/90">
                           {p.name}
                         </span>
-                        {p.model && (
+                        {p.model && p.model !== "inherit" && (
                           <span className="shrink-0 rounded border px-1 py-px text-[9px] tracking-wide text-muted-foreground uppercase">
                             {p.model}
                           </span>
@@ -473,7 +531,7 @@ export function ContextPanel() {
                           {p.description}
                         </p>
                       )}
-                    </div>
+                    </button>
                   ))}
                 </div>
               </Section>
@@ -486,15 +544,18 @@ export function ContextPanel() {
               <Section title="Specs">
                 <div className="flex flex-col gap-1">
                   {sources.specs.map((s) => (
-                    <div
+                    <button
                       key={s.slug}
-                      className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/40"
+                      onClick={() =>
+                        setDetail({ title: s.title ?? s.slug, path: s.path })
+                      }
+                      className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40"
                     >
                       <span className="truncate text-[12px] text-foreground/90">
                         {s.title ?? s.slug}
                       </span>
                       {s.stage && <StageBadge stage={s.stage} />}
-                    </div>
+                    </button>
                   ))}
                 </div>
               </Section>
@@ -505,7 +566,14 @@ export function ContextPanel() {
             <>
               <Separator />
               <Section title="Memórias">
-                <div className="flex items-center justify-between rounded-md px-2 py-1.5">
+                <button
+                  onClick={() =>
+                    sources.memory.path &&
+                    setDetail({ title: "MEMORY.md", path: sources.memory.path })
+                  }
+                  disabled={!sources.memory.path}
+                  className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40 disabled:cursor-default disabled:hover:bg-transparent"
+                >
                   <span className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
                     <Brain className="size-3.5" />
                     memória do projeto
@@ -514,12 +582,14 @@ export function ContextPanel() {
                     {sources.memory.count}{" "}
                     {sources.memory.count === 1 ? "nota" : "notas"}
                   </span>
-                </div>
+                </button>
               </Section>
             </>
           )}
         </ScrollArea>
       )}
+
+      <DetailDialog target={detail} onClose={() => setDetail(null)} />
     </aside>
   )
 }
