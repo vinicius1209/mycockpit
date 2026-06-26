@@ -100,7 +100,7 @@ export function TitleBar() {
           title="Alternar projetos"
           aria-label="Alternar projetos"
         >
-          <PanelLeft className="size-4" />
+          <PanelLeft className="size-4 pointer-events-auto!" />
         </Button>
         <Button
           variant="ghost"
@@ -113,7 +113,7 @@ export function TitleBar() {
           title="Alternar contexto"
           aria-label="Alternar contexto"
         >
-          <PanelRight className="size-4" />
+          <PanelRight className="size-4 pointer-events-auto!" />
         </Button>
       </div>
     </header>
