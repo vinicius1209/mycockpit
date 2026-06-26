@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import type { ReactNode } from "react"
 import {
   AlertCircle,
+  Brain,
   ChevronDown,
   FileText,
   FolderGit2,
@@ -22,6 +23,8 @@ import { useActiveProject, useApp } from "@/store/app"
 import type { ProjectConfig } from "@/store/app"
 import { readProjectContext } from "@/lib/agent"
 import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/agent"
+import { readProjectSources } from "@/lib/sources"
+import type { ProjectSources } from "@/lib/sources"
 import { writeMycockpitConfig } from "@/lib/mycockpit"
 import type { PermissionMode } from "@/lib/types"
 import { isTauri, updateProjectPermission } from "@/lib/db"
@@ -186,11 +189,27 @@ function SkeletonRows() {
   )
 }
 
+/** Estágio do manifest SDD (discovery→…→done). */
+function StageBadge({ stage }: { stage: string }) {
+  const done = stage === "done"
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded-full px-2 py-0.5 text-[9px] font-medium tracking-wide uppercase",
+        done ? "bg-st-success/15 text-st-success" : "bg-brass/15 text-brass",
+      )}
+    >
+      {stage}
+    </span>
+  )
+}
+
 type Status = "loading" | "ready" | "error" | "browser"
 
 export function ContextPanel() {
   const project = useActiveProject()
   const [ctx, setCtx] = useState<ProjectContext | null>(null)
+  const [sources, setSources] = useState<ProjectSources | null>(null)
   const [status, setStatus] = useState<Status>("loading")
   const [expanded, setExpanded] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
@@ -233,20 +252,26 @@ export function ContextPanel() {
     // Separar 'fora do app' de 'erro de disco' (antes ambos viravam ctx=null).
     if (!isTauri()) {
       setCtx(null)
+      setSources(null)
       setStatus("browser")
       return
     }
     setStatus("loading")
-    readProjectContext(projectPath)
-      .then((c) => {
+    Promise.all([
+      readProjectContext(projectPath),
+      readProjectSources(projectPath),
+    ])
+      .then(([c, s]) => {
         if (!cancelled) {
           setCtx(c)
+          setSources(s)
           setStatus("ready")
         }
       })
       .catch(() => {
         if (!cancelled) {
           setCtx(null)
+          setSources(null)
           setStatus("error")
         }
       })
@@ -402,6 +427,78 @@ export function ContextPanel() {
               </div>
             )}
           </Section>
+
+          {/* Fase 2 — fontes REAIS indexadas (não copiadas) */}
+          {status === "ready" && sources && sources.personas.length > 0 && (
+            <>
+              <Separator />
+              <Section title="Personas">
+                <div className="flex flex-col gap-1.5">
+                  {sources.personas.map((p) => (
+                    <div
+                      key={p.name}
+                      className="rounded-md px-2 py-1.5 transition-colors hover:bg-accent/40"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-mono text-[12.5px] text-foreground/90">
+                          {p.name}
+                        </span>
+                        {p.model && (
+                          <span className="shrink-0 rounded border px-1 py-px text-[9px] tracking-wide text-muted-foreground uppercase">
+                            {p.model}
+                          </span>
+                        )}
+                      </div>
+                      {p.description && (
+                        <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-muted-foreground/80">
+                          {p.description}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            </>
+          )}
+
+          {status === "ready" && sources && sources.specs.length > 0 && (
+            <>
+              <Separator />
+              <Section title="Specs">
+                <div className="flex flex-col gap-1">
+                  {sources.specs.map((s) => (
+                    <div
+                      key={s.slug}
+                      className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/40"
+                    >
+                      <span className="truncate text-[12px] text-foreground/90">
+                        {s.title ?? s.slug}
+                      </span>
+                      {s.stage && <StageBadge stage={s.stage} />}
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            </>
+          )}
+
+          {status === "ready" && sources?.memory.exists && (
+            <>
+              <Separator />
+              <Section title="Memórias">
+                <div className="flex items-center justify-between rounded-md px-2 py-1.5">
+                  <span className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+                    <Brain className="size-3.5" />
+                    memória do projeto
+                  </span>
+                  <span className="text-[10.5px] text-muted-foreground/70">
+                    {sources.memory.count}{" "}
+                    {sources.memory.count === 1 ? "nota" : "notas"}
+                  </span>
+                </div>
+              </Section>
+            </>
+          )}
         </ScrollArea>
       )}
     </aside>
