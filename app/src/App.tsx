@@ -8,6 +8,7 @@ import { TitleBar } from "@/components/layout/TitleBar"
 import { Sidebar } from "@/components/layout/Sidebar"
 import { ContextPanel } from "@/components/layout/ContextPanel"
 import { ChatPanel } from "@/components/chat/ChatPanel"
+import { CommandMenu } from "@/components/common/CommandMenu"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -172,6 +173,7 @@ export default function App() {
             </ResizablePanel>
           </ResizablePanelGroup>
         </div>
+        <CommandMenu />
         <Toaster position="bottom-center" theme={theme} />
       </TooltipProvider>
     </QueryClientProvider>

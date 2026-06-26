@@ -43,9 +43,12 @@ interface ChatState {
   /** Sugestões dinâmicas pós-turno (Sprint 3). */
   suggestions: string[]
   suggesting: boolean
+  /** Prompt enfileirado por outra UI (ex.: ⌘K) p/ o ChatPanel disparar. */
+  queuedPrompt: string | null
 
   setSuggestions: (s: string[]) => void
   setSuggesting: (v: boolean) => void
+  queuePrompt: (t: string | null) => void
   openProject: (projectId: string | null) => Promise<void>
   newConversation: (projectId: string) => Promise<void>
   switchConversation: (id: string) => Promise<void>
@@ -94,9 +97,11 @@ export const useChat = create<ChatState>((set, get) => ({
   conversations: [],
   suggestions: [],
   suggesting: false,
+  queuedPrompt: null,
 
   setSuggestions: (suggestions) => set({ suggestions }),
   setSuggesting: (suggesting) => set({ suggesting }),
+  queuePrompt: (queuedPrompt) => set({ queuedPrompt }),
 
   // S1/S2 — abre um projeto: carrega a lista de conversas e a mais recente
   // (ou cria a primeira se o projeto ainda não tiver nenhuma).

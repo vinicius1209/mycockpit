@@ -70,6 +70,16 @@ export function ChatPanel() {
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
   }, [items.length, running])
 
+  // ⌘K (ou outra UI) pode enfileirar um prompt → dispara aqui.
+  const queuedPrompt = useChat((s) => s.queuedPrompt)
+  useEffect(() => {
+    if (!queuedPrompt) return
+    const text = queuedPrompt
+    useChat.getState().queuePrompt(null)
+    void handleSend(text)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queuedPrompt])
+
   async function handleSend(text: string) {
     if (!project) return
     if (!isTauri()) {
