@@ -116,7 +116,7 @@ export function CommandConsole({
           <div className="max-h-64 overflow-auto p-1">
             {slashMatches.map((c, i) => (
               <button
-                key={c.name}
+                key={`${c.kind}:${c.name}`}
                 onMouseEnter={() => setSlashIdx(i)}
                 onClick={() => insertCommand(c.name)}
                 className={cn(
@@ -124,8 +124,13 @@ export function CommandConsole({
                   i === slashIdx ? "bg-accent" : "hover:bg-accent/50",
                 )}
               >
-                <span className="font-mono text-[13px] text-foreground">
-                  /{c.name}
+                <span className="flex w-full items-center justify-between gap-2">
+                  <span className="font-mono text-[13px] text-foreground">
+                    /{c.name}
+                  </span>
+                  <span className="shrink-0 rounded border px-1 py-px text-[8.5px] tracking-wide text-muted-foreground uppercase">
+                    {c.kind === "skill" ? "skill" : "cmd"}
+                  </span>
                 </span>
                 {c.description && (
                   <span className="line-clamp-1 text-[11.5px] text-muted-foreground">

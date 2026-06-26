@@ -257,11 +257,12 @@ pub fn read_text_file(path: String) -> Result<String, String> {
     })
 }
 
-/// Comando slash do projeto (.claude/commands). Subpasta vira namespace `ns:cmd`.
+/// Opção invocável por "/" — comando (.claude/commands) OU skill (.claude/skills).
 #[derive(Serialize)]
 pub struct SlashCommand {
     pub name: String,
     pub description: Option<String>,
+    pub kind: String, // "command" | "skill"
 }
 
 fn collect_commands(dir: &Path, prefix: &str, out: &mut Vec<SlashCommand>) {
@@ -288,19 +289,45 @@ fn collect_commands(dir: &Path, prefix: &str, out: &mut Vec<SlashCommand>) {
             let description = std::fs::read_to_string(&p)
                 .ok()
                 .and_then(|t| frontmatter(&t, "description"));
-            out.push(SlashCommand { name, description });
+            out.push(SlashCommand {
+                name,
+                description,
+                kind: "command".to_string(),
+            });
         }
+    }
+}
+
+/// Skills do projeto (.claude/skills/<name>/SKILL.md) — invocáveis por /<name>.
+fn collect_skills(dir: &Path, out: &mut Vec<SlashCommand>) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in rd.filter_map(|e| e.ok()) {
+        let p = e.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let Some(name) = p.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let description = std::fs::read_to_string(p.join("SKILL.md"))
+            .ok()
+            .and_then(|t| frontmatter(&t, "description"));
+        out.push(SlashCommand {
+            name: name.to_string(),
+            description,
+            kind: "skill".to_string(),
+        });
     }
 }
 
 #[tauri::command]
 pub fn read_project_commands(path: String) -> Vec<SlashCommand> {
+    let cd = Path::new(&path).join(".claude");
     let mut out = Vec::new();
-    collect_commands(
-        &Path::new(&path).join(".claude").join("commands"),
-        "",
-        &mut out,
-    );
+    collect_commands(&cd.join("commands"), "", &mut out);
+    collect_skills(&cd.join("skills"), &mut out);
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
 }

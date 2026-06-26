@@ -46,6 +46,7 @@ export async function readTextFile(path: string): Promise<string> {
 export interface SlashCommand {
   name: string
   description: string | null
+  kind: string // "command" | "skill"
 }
 
 export async function readProjectCommands(
