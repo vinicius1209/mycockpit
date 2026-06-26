@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react"
 import type { ReactNode } from "react"
 import {
-  Check,
+  AlertCircle,
   ChevronDown,
   FileText,
   FolderGit2,
-  Minus,
   PanelRight,
+  Plug,
+  RefreshCw,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
@@ -19,34 +20,30 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { useActiveProject, useApp } from "@/store/app"
 import { readProjectContext } from "@/lib/agent"
-import type { ContextFile, ProjectContext } from "@/lib/agent"
+import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/agent"
 import type { PermissionMode } from "@/lib/types"
 import { isTauri, updateProjectPermission } from "@/lib/db"
 import { cn, shortPath } from "@/lib/utils"
 
-function Section({
-  title,
-  note,
-  children,
-}: {
-  title: string
-  note?: string
-  children: ReactNode
-}) {
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="px-5 py-4">
-      <div className="mb-3 flex items-center justify-between">
+    <section className="px-5 py-3">
+      <div className="mb-2">
         <span className="label-mono">{title}</span>
-        {note && (
-          <span className="text-[10px] text-muted-foreground/70">{note}</span>
-        )}
       </div>
       {children}
     </section>
   )
 }
 
-function DetectRow({
+/** Linha de arquivo de instrução — 3 estados (presente/ausente), sem cheque. */
+function FileRow({
   file,
   expanded,
   onToggle,
@@ -61,26 +58,33 @@ function DetectRow({
       <button
         disabled={!canExpand}
         onClick={onToggle}
-        className="flex w-full items-center justify-between rounded-md px-2 py-1.5 transition-colors enabled:hover:bg-accent/45 disabled:cursor-default"
+        className={cn(
+          "flex w-full items-center justify-between rounded-md px-2 py-1.5 transition-colors",
+          canExpand ? "hover:bg-accent/45" : "cursor-default",
+          !file.exists && "opacity-45",
+        )}
       >
         <span className="flex items-center gap-2 font-mono text-[12.5px] text-foreground/90">
           <FileText className="size-3.5 text-muted-foreground" />
           {file.name}
         </span>
-        {file.exists ? (
-          canExpand ? (
+        <span className="flex items-center gap-1.5">
+          {file.exists ? (
+            <span className="font-mono text-[10.5px] tabular-nums text-muted-foreground/70">
+              {fmtBytes(file.bytes)}
+            </span>
+          ) : (
+            <span className="text-[10.5px] text-muted-foreground/45">ausente</span>
+          )}
+          {canExpand && (
             <ChevronDown
               className={cn(
                 "size-3.5 text-muted-foreground transition-transform",
                 expanded && "rotate-180",
               )}
             />
-          ) : (
-            <Check className="size-3.5 text-st-success" />
-          )
-        ) : (
-          <Minus className="size-3.5 text-muted-foreground/45" />
-        )}
+          )}
+        </span>
       </button>
       {expanded && file.content && (
         <pre
@@ -94,10 +98,100 @@ function DetectRow({
   )
 }
 
+/** Nó .claude/ expansível com as contagens reais por categoria. */
+function ClaudeNode({ cd }: { cd: ClaudeDir }) {
+  const [open, setOpen] = useState(false)
+
+  if (!cd.exists) {
+    return (
+      <div className="flex items-center justify-between rounded-md px-2 py-1.5 opacity-45">
+        <span className="flex items-center gap-2 font-mono text-[12.5px]">
+          <FolderGit2 className="size-3.5 text-muted-foreground" />
+          .claude/
+        </span>
+        <span className="text-[10.5px] text-muted-foreground/45">ausente</span>
+      </div>
+    )
+  }
+
+  const rows: [string, number][] = [
+    ["Subagents", cd.agents],
+    ["Comandos", cd.commands],
+    ["Skills", cd.skills],
+    ["Planos", cd.plans],
+    ["Hooks", cd.hooks],
+  ]
+  const present = rows.filter(([, n]) => n > 0)
+  const kinds = present.length + (cd.settings ? 1 : 0)
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-accent/45"
+      >
+        <span className="flex items-center gap-2 font-mono text-[12.5px] text-foreground/90">
+          <FolderGit2 className="size-3.5 text-muted-foreground" />
+          .claude/
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="text-[10.5px] text-muted-foreground/70">
+            {kinds} {kinds === 1 ? "tipo" : "tipos"}
+          </span>
+          <ChevronDown
+            className={cn(
+              "size-3.5 text-muted-foreground transition-transform",
+              open && "rotate-180",
+            )}
+          />
+        </span>
+      </button>
+      {open && (
+        <div className="animate-reveal-down mt-0.5 mb-1 ml-[18px] flex flex-col gap-px border-l border-border/60 pl-2">
+          {present.map(([label, n]) => (
+            <div
+              key={label}
+              className="flex items-center justify-between px-2 py-1 text-[12px]"
+            >
+              <span className="text-muted-foreground">{label}</span>
+              <span className="font-mono tabular-nums text-foreground/80">{n}</span>
+            </div>
+          ))}
+          {cd.settings && (
+            <div className="flex items-center justify-between px-2 py-1 text-[12px]">
+              <span className="text-muted-foreground">Permissões</span>
+              <span className="font-mono text-foreground/70">settings.json</span>
+            </div>
+          )}
+          {kinds === 0 && (
+            <div className="px-2 py-1 text-[12px] text-muted-foreground/60">
+              vazio
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SkeletonRows() {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="h-7 animate-pulse rounded-md bg-accent/40" />
+      ))}
+    </div>
+  )
+}
+
+type Status = "loading" | "ready" | "error" | "browser"
+
 export function ContextPanel() {
   const project = useActiveProject()
   const [ctx, setCtx] = useState<ProjectContext | null>(null)
+  const [status, setStatus] = useState<Status>("loading")
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [reload, setReload] = useState(0)
   const setProjectPermission = useApp((s) => s.setProjectPermission)
   const helperModel = useApp((s) => s.helperModel)
   const setHelperModel = useApp((s) => s.setHelperModel)
@@ -112,28 +206,31 @@ export function ContextPanel() {
   useEffect(() => {
     let cancelled = false
     setExpanded(null)
-    if (!projectPath || !isTauri()) {
+    if (!projectPath) return
+    // Separar 'fora do app' de 'erro de disco' (antes ambos viravam ctx=null).
+    if (!isTauri()) {
       setCtx(null)
+      setStatus("browser")
       return
     }
+    setStatus("loading")
     readProjectContext(projectPath)
       .then((c) => {
-        if (!cancelled) setCtx(c)
+        if (!cancelled) {
+          setCtx(c)
+          setStatus("ready")
+        }
       })
       .catch(() => {
-        if (!cancelled) setCtx(null)
+        if (!cancelled) {
+          setCtx(null)
+          setStatus("error")
+        }
       })
     return () => {
       cancelled = true
     }
-  }, [projectPath])
-
-  // Fonte real (disco) quando no app; senão cai pros flags semente.
-  const files: ContextFile[] = ctx?.files ?? [
-    { name: "CLAUDE.md", exists: !!project?.hasClaudeMd, content: null },
-    { name: "AGENTS.md", exists: !!project?.hasAgentsMd, content: null },
-  ]
-  const hasClaudeDir = ctx?.has_claude_dir ?? !!project?.hasClaudeMd
+  }, [projectPath, reload])
 
   return (
     <aside className="reveal-right flex h-full w-full flex-col bg-transparent">
@@ -150,7 +247,8 @@ export function ContextPanel() {
         </div>
       ) : (
         <ScrollArea className="flex-1">
-          <div className="px-5 pt-4 pb-2">
+          {/* Identidade do projeto */}
+          <div className="px-5 pt-3 pb-3">
             <div className="flex items-center gap-2">
               <FolderGit2 className="size-4 shrink-0 text-brass" />
               <span className="truncate text-[14px] font-medium text-foreground">
@@ -165,73 +263,117 @@ export function ContextPanel() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between px-5 pb-3">
-            <span className="label-mono">Permissões</span>
-            <Select
-              value={project.permissionMode ?? "padrao"}
-              onValueChange={(v) => onPermissionChange(v as PermissionMode)}
-            >
-              <SelectTrigger className="h-7 w-fit gap-1.5 rounded-full border bg-secondary/50 pr-1.5 pl-2.5 text-[12px] shadow-none focus-visible:ring-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="end">
-                <SelectItem value="leitura">Leitura</SelectItem>
-                <SelectItem value="padrao">Padrão</SelectItem>
-                <SelectItem value="liberado">Liberado</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <Separator />
 
-          <div className="flex items-center justify-between px-5 pb-3">
-            <span className="label-mono">Sugestões</span>
-            <Select
-              value={helperModel ?? "off"}
-              onValueChange={(v) => setHelperModel(v === "off" ? null : v)}
-            >
-              <SelectTrigger className="h-7 w-fit gap-1.5 rounded-full border bg-secondary/50 pr-1.5 pl-2.5 text-[12px] shadow-none focus-visible:ring-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="end">
-                <SelectItem value="haiku">Haiku</SelectItem>
-                <SelectItem value="off">Desligado</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Separator className="my-2" />
-
-          <Section
-            title="O que o sistema sabe"
-            note={ctx ? undefined : "no app (tauri dev)"}
-          >
-            <div className="flex flex-col gap-0.5">
-              {files.map((f) => (
-                <DetectRow
-                  key={f.name}
-                  file={f}
-                  expanded={expanded === f.name}
-                  onToggle={() =>
-                    setExpanded((cur) => (cur === f.name ? null : f.name))
-                  }
-                />
-              ))}
-              <DetectRow
-                file={{ name: ".claude/", exists: hasClaudeDir, content: null }}
-                expanded={false}
-                onToggle={() => {}}
-              />
+          {/* Zona de CONTROLES (inputs que mudam o comportamento do agente) */}
+          <Section title="Ajustes">
+            <div className="flex flex-col gap-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[12.5px] text-muted-foreground">
+                  Permissões
+                </span>
+                <Select
+                  value={project.permissionMode ?? "padrao"}
+                  onValueChange={(v) => onPermissionChange(v as PermissionMode)}
+                >
+                  <SelectTrigger className="h-7 w-fit gap-1.5 rounded-full border bg-secondary/50 pr-1.5 pl-2.5 text-[12px] shadow-none focus-visible:ring-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    <SelectItem value="leitura">Leitura</SelectItem>
+                    <SelectItem value="padrao">Padrão</SelectItem>
+                    <SelectItem value="liberado">Liberado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[12.5px] text-muted-foreground">
+                  Modelo das sugestões
+                </span>
+                <Select
+                  value={helperModel ?? "off"}
+                  onValueChange={(v) => setHelperModel(v === "off" ? null : v)}
+                >
+                  <SelectTrigger className="h-7 w-fit gap-1.5 rounded-full border bg-secondary/50 pr-1.5 pl-2.5 text-[12px] shadow-none focus-visible:ring-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    <SelectItem value="haiku">Haiku</SelectItem>
+                    <SelectItem value="off">Desligado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </Section>
 
-          <Separator className="my-2" />
+          <Separator />
 
-          {["Specs", "Regras", "Personas", "Memórias"].map((s) => (
-            <Section key={s} title={s}>
+          {/* Zona de INVENTÁRIO (read-only): o que o claude enxerga no cwd */}
+          <Section title="No contexto do agente">
+            {status === "loading" && <SkeletonRows />}
+
+            {status === "browser" && (
               <p className="text-[12.5px] leading-relaxed text-muted-foreground/70">
-                Será populado ao conectar o projeto.
+                Inventário disponível no app (tauri dev).
               </p>
-            </Section>
-          ))}
+            )}
+
+            {status === "error" && (
+              <button
+                onClick={() => setReload((r) => r + 1)}
+                className="flex w-full items-center gap-2 rounded-md border border-st-error/40 bg-st-error/10 px-3 py-2 text-[12px] text-foreground/85 transition-colors hover:bg-st-error/15"
+              >
+                <AlertCircle className="size-3.5 shrink-0 text-st-error" />
+                Não foi possível ler o contexto
+                <RefreshCw className="ml-auto size-3.5 text-muted-foreground" />
+              </button>
+            )}
+
+            {status === "ready" && ctx && (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-0.5">
+                  <div className="mb-0.5 text-[10.5px] text-muted-foreground/55">
+                    Instruções
+                  </div>
+                  {ctx.files.map((f) => (
+                    <FileRow
+                      key={f.name}
+                      file={f}
+                      expanded={expanded === f.name}
+                      onToggle={() =>
+                        setExpanded((cur) => (cur === f.name ? null : f.name))
+                      }
+                    />
+                  ))}
+                </div>
+
+                <div className="flex flex-col gap-0.5">
+                  <div className="mb-0.5 text-[10.5px] text-muted-foreground/55">
+                    Extensões
+                  </div>
+                  <ClaudeNode cd={ctx.claude_dir} />
+                </div>
+
+                {ctx.mcp_servers != null && (
+                  <div className="flex flex-col gap-0.5">
+                    <div className="mb-0.5 text-[10.5px] text-muted-foreground/55">
+                      MCP
+                    </div>
+                    <div className="flex items-center justify-between rounded-md px-2 py-1.5">
+                      <span className="flex items-center gap-2 font-mono text-[12.5px] text-foreground/90">
+                        <Plug className="size-3.5 text-muted-foreground" />
+                        .mcp.json
+                      </span>
+                      <span className="text-[10.5px] text-muted-foreground/70">
+                        {ctx.mcp_servers}{" "}
+                        {ctx.mcp_servers === 1 ? "servidor" : "servidores"}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </Section>
         </ScrollArea>
       )}
     </aside>

@@ -59,11 +59,23 @@ export interface ContextFile {
   name: string
   exists: boolean
   content: string | null
+  bytes: number
+}
+
+export interface ClaudeDir {
+  exists: boolean
+  agents: number
+  commands: number
+  skills: number
+  plans: number
+  hooks: number
+  settings: boolean
 }
 
 export interface ProjectContext {
   files: ContextFile[]
-  has_claude_dir: boolean
+  claude_dir: ClaudeDir
+  mcp_servers: number | null
 }
 
 export async function readProjectContext(path: string): Promise<ProjectContext> {
