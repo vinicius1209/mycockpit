@@ -1,4 +1,4 @@
-import { Plus, Moon, Sun, FolderGit2 } from "lucide-react"
+import { Plus, Moon, Sun, FolderGit2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { StatusDot } from "@/components/common/StatusDot"
@@ -39,6 +39,56 @@ function ProjectRow({
         </div>
       </div>
     </button>
+  )
+}
+
+/** Lista de conversas (tarefas) do projeto ativo — accordion sob o projeto. */
+function ConversationList({ projectId }: { projectId: string }) {
+  const conversations = useChat((s) => s.conversations)
+  const activeId = useChat((s) => s.conversationId)
+  const newConversation = useChat((s) => s.newConversation)
+  const switchConversation = useChat((s) => s.switchConversation)
+  const removeConversation = useChat((s) => s.removeConversation)
+
+  return (
+    <div className="mt-0.5 mb-1 ml-[18px] flex flex-col gap-px border-l border-border/60 pl-2">
+      {conversations.map((c) => (
+        <div
+          key={c.id}
+          className={cn(
+            "group/c flex items-center rounded-md",
+            c.id === activeId ? "bg-accent" : "hover:bg-accent/50",
+          )}
+        >
+          <button
+            onClick={() => void switchConversation(c.id)}
+            className={cn(
+              "min-w-0 flex-1 truncate px-2 py-1 text-left text-[12px]",
+              c.id === activeId
+                ? "text-foreground"
+                : "text-muted-foreground group-hover/c:text-foreground",
+            )}
+          >
+            {c.title ?? "Nova conversa"}
+          </button>
+          <button
+            onClick={() => void removeConversation(c.id)}
+            className="mr-1 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:text-st-error group-hover/c:opacity-100"
+            title="Excluir conversa"
+            aria-label="Excluir conversa"
+          >
+            <X className="size-3" />
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={() => void newConversation(projectId)}
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+      >
+        <Plus className="size-3" />
+        nova tarefa
+      </button>
+    </div>
   )
 }
 
@@ -86,13 +136,15 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
             </div>
           ) : (
             projects.map((p) => (
-              <ProjectRow
-                key={p.id}
-                project={p}
-                active={p.id === activeId}
-                status={p.id === runningId ? "running" : (p.status ?? "idle")}
-                onSelect={() => setActive(p.id)}
-              />
+              <div key={p.id} className="flex flex-col">
+                <ProjectRow
+                  project={p}
+                  active={p.id === activeId}
+                  status={p.id === runningId ? "running" : (p.status ?? "idle")}
+                  onSelect={() => setActive(p.id)}
+                />
+                {p.id === activeId && <ConversationList projectId={p.id} />}
+              </div>
             ))
           )}
         </div>

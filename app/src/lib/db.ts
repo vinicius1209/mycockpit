@@ -79,40 +79,93 @@ export async function updateProjectPermission(
   ])
 }
 
-interface ConversationRow {
+export interface ConversationMeta {
+  id: string
+  title: string | null
+  updatedAt: number
+}
+
+interface ConvListRow {
+  id: string
+  title: string | null
+  updated_at: number
+}
+
+/** Lista as conversas de um projeto (mais recentes primeiro). */
+export async function listConversations(
+  projectId: string,
+): Promise<ConversationMeta[] | null> {
+  const db = await getDb()
+  if (!db) return null
+  const rows = await db.select<ConvListRow[]>(
+    "SELECT id, title, updated_at FROM conversations WHERE project_id = $1 ORDER BY updated_at DESC",
+    [projectId],
+  )
+  return rows.map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at }))
+}
+
+interface ConvLoadRow {
   session_id: string | null
   items: string
+  title: string | null
 }
 
 export async function loadConversation(
-  projectId: string,
-): Promise<{ sessionId: string | null; items: ChatItem[] } | null> {
+  id: string,
+): Promise<{
+  sessionId: string | null
+  items: ChatItem[]
+  title: string | null
+} | null> {
   const db = await getDb()
   if (!db) return null
-  const rows = await db.select<ConversationRow[]>(
-    "SELECT session_id, items FROM conversations WHERE project_id = $1",
-    [projectId],
+  const rows = await db.select<ConvLoadRow[]>(
+    "SELECT session_id, items, title FROM conversations WHERE id = $1",
+    [id],
   )
   if (!rows.length) return null
   try {
     return {
       sessionId: rows[0].session_id,
       items: JSON.parse(rows[0].items) as ChatItem[],
+      title: rows[0].title,
     }
   } catch {
     return null
   }
 }
 
-export async function saveConversation(
+/** Cria uma conversa vazia. O `id` é gerado pelo chamador (crypto.randomUUID). */
+export async function createConversation(
   projectId: string,
+  id: string,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  const now = Date.now()
+  await db.execute(
+    "INSERT INTO conversations (id, project_id, title, session_id, items, created_at, updated_at) VALUES ($1, $2, NULL, NULL, '[]', $3, $3)",
+    [id, projectId, now],
+  )
+}
+
+export async function saveConversation(
+  id: string,
+  projectId: string,
+  title: string | null,
   sessionId: string | null,
   items: ChatItem[],
 ): Promise<void> {
   const db = await getDb()
   if (!db) return
   await db.execute(
-    "INSERT INTO conversations (project_id, session_id, items, updated_at) VALUES ($1, $2, $3, $4) ON CONFLICT(project_id) DO UPDATE SET session_id = excluded.session_id, items = excluded.items, updated_at = excluded.updated_at",
-    [projectId, sessionId, JSON.stringify(items), Date.now()],
+    "INSERT INTO conversations (id, project_id, title, session_id, items, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $6) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, updated_at = excluded.updated_at",
+    [id, projectId, title, sessionId, JSON.stringify(items), Date.now()],
   )
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute("DELETE FROM conversations WHERE id = $1", [id])
 }

@@ -6,7 +6,7 @@ import { Reticle } from "@/components/common/Wordmark"
 import { useActiveProject } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { runClaude, cancelClaude } from "@/lib/agent"
-import { isTauri, loadConversation, saveConversation } from "@/lib/db"
+import { isTauri } from "@/lib/db"
 
 function greetingFor(date: Date): string {
   const h = date.getHours()
@@ -19,34 +19,18 @@ export function ChatPanel() {
   const project = useActiveProject()
   const items = useChat((s) => s.items)
   const running = useChat((s) => s.running)
-  const resetFor = useChat((s) => s.resetFor)
-  const hydrate = useChat((s) => s.hydrate)
+  const openProject = useChat((s) => s.openProject)
   const start = useChat((s) => s.start)
   const handleEvent = useChat((s) => s.handleEvent)
   const finish = useChat((s) => s.finish)
   const scrollRef = useRef<HTMLDivElement>(null)
   const runIdRef = useRef<string | null>(null)
 
-  // Reseta a conversa ao trocar de projeto (M4 persiste por projeto).
+  // Abre o projeto ao trocar: carrega as conversas e a mais recente (Sprint 2).
   const projectId = project?.id ?? null
   useEffect(() => {
-    let cancelled = false
-    async function load() {
-      if (projectId && isTauri()) {
-        const conv = await loadConversation(projectId)
-        if (cancelled) return
-        if (conv) {
-          hydrate(projectId, conv.items, conv.sessionId)
-          return
-        }
-      }
-      if (!cancelled) resetFor(projectId)
-    }
-    void load()
-    return () => {
-      cancelled = true
-    }
-  }, [projectId, resetFor, hydrate])
+    void openProject(projectId)
+  }, [projectId, openProject])
 
   // Autoscroll conforme a conversa cresce.
   useEffect(() => {
@@ -77,8 +61,7 @@ export function ChatPanel() {
     } finally {
       runIdRef.current = null
       finish()
-      const s = useChat.getState()
-      void saveConversation(project.id, s.sessionId, s.items)
+      void useChat.getState().persist()
     }
   }
 

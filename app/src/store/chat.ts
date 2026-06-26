@@ -1,5 +1,13 @@
 import { create } from "zustand"
 import type { AgentEvent } from "@/lib/agent"
+import {
+  listConversations as dbList,
+  loadConversation as dbLoad,
+  createConversation as dbCreate,
+  saveConversation as dbSave,
+  deleteConversation as dbDelete,
+  type ConversationMeta,
+} from "@/lib/db"
 
 export type ChatItem =
   | { kind: "user"; id: string; text: string }
@@ -30,13 +38,14 @@ interface ChatState {
   streamingTextId: string | null
   running: boolean
   projectId: string | null
+  conversationId: string | null
+  conversations: ConversationMeta[]
 
-  resetFor: (projectId: string | null) => void
-  hydrate: (
-    projectId: string | null,
-    items: ChatItem[],
-    sessionId: string | null,
-  ) => void
+  openProject: (projectId: string | null) => Promise<void>
+  newConversation: (projectId: string) => Promise<void>
+  switchConversation: (id: string) => Promise<void>
+  removeConversation: (id: string) => Promise<void>
+  persist: () => Promise<void>
   start: (text: string) => void
   handleEvent: (e: AgentEvent) => void
   finish: () => void
@@ -46,40 +55,150 @@ function uid(): string {
   return crypto.randomUUID()
 }
 
-export const useChat = create<ChatState>((set) => ({
+/** Título derivado do 1º prompt do usuário (S4). */
+function deriveTitle(items: ChatItem[]): string | null {
+  const first = items.find((it) => it.kind === "user")
+  if (first && first.kind === "user") {
+    const t = first.text.trim().replace(/\s+/g, " ")
+    return t.length > 44 ? `${t.slice(0, 44)}…` : t
+  }
+  return null
+}
+
+/** Estado base de uma conversa "limpa" (não toca projeto/conversa/lista). */
+function freshState() {
+  return {
+    items: [] as ChatItem[],
+    sessionId: null as string | null,
+    model: null as string | null,
+    streamingTextId: null as string | null,
+    running: false,
+  }
+}
+
+export const useChat = create<ChatState>((set, get) => ({
   items: [],
   sessionId: null,
   model: null,
   streamingTextId: null,
   running: false,
   projectId: null,
+  conversationId: null,
+  conversations: [],
 
-  resetFor: (projectId) =>
+  // S1/S2 — abre um projeto: carrega a lista de conversas e a mais recente
+  // (ou cria a primeira se o projeto ainda não tiver nenhuma).
+  openProject: async (projectId) => {
+    if (!projectId) {
+      set({ ...freshState(), projectId: null, conversationId: null, conversations: [] })
+      return
+    }
+    const list = (await dbList(projectId)) ?? []
+    if (list.length === 0) {
+      const id = uid()
+      await dbCreate(projectId, id)
+      set({
+        ...freshState(),
+        projectId,
+        conversationId: id,
+        conversations: [{ id, title: null, updatedAt: Date.now() }],
+      })
+      return
+    }
+    const conv = await dbLoad(list[0].id)
     set({
-      items: [],
-      sessionId: null,
-      model: null,
-      streamingTextId: null,
-      running: false,
+      ...freshState(),
+      items: conv?.items ?? [],
+      sessionId: conv?.sessionId ?? null,
       projectId,
-    }),
+      conversationId: list[0].id,
+      conversations: list,
+    })
+  },
 
-  hydrate: (projectId, items, sessionId) =>
-    set({
-      items,
-      sessionId,
-      model: null,
-      streamingTextId: null,
-      running: false,
+  newConversation: async (projectId) => {
+    const id = uid()
+    await dbCreate(projectId, id)
+    set((s) => ({
+      ...freshState(),
       projectId,
-    }),
+      conversationId: id,
+      conversations: [
+        { id, title: null, updatedAt: Date.now() },
+        ...s.conversations,
+      ],
+    }))
+  },
+
+  switchConversation: async (id) => {
+    if (get().conversationId === id) return
+    const conv = await dbLoad(id)
+    set({
+      ...freshState(),
+      items: conv?.items ?? [],
+      sessionId: conv?.sessionId ?? null,
+      conversationId: id,
+    })
+  },
+
+  removeConversation: async (id) => {
+    await dbDelete(id)
+    const s = get()
+    const remaining = s.conversations.filter((c) => c.id !== id)
+    if (s.conversationId !== id) {
+      set({ conversations: remaining })
+      return
+    }
+    // a conversa ativa foi removida → abre a próxima ou cria uma nova
+    if (remaining.length > 0) {
+      const conv = await dbLoad(remaining[0].id)
+      set({
+        ...freshState(),
+        items: conv?.items ?? [],
+        sessionId: conv?.sessionId ?? null,
+        conversationId: remaining[0].id,
+        conversations: remaining,
+      })
+    } else if (s.projectId) {
+      const id = uid()
+      await dbCreate(s.projectId, id)
+      set({
+        ...freshState(),
+        conversationId: id,
+        conversations: [{ id, title: null, updatedAt: Date.now() }],
+      })
+    } else {
+      set({ ...freshState(), conversationId: null, conversations: [] })
+    }
+  },
+
+  // Salva a conversa ativa + atualiza a lista (título + ordem).
+  persist: async () => {
+    const s = get()
+    if (!s.projectId || !s.conversationId) return
+    const title = deriveTitle(s.items)
+    await dbSave(s.conversationId, s.projectId, title, s.sessionId, s.items)
+    const now = Date.now()
+    set((st) => ({
+      conversations: st.conversations
+        .map((c) =>
+          c.id === st.conversationId ? { ...c, title, updatedAt: now } : c,
+        )
+        .sort((a, b) => b.updatedAt - a.updatedAt),
+    }))
+  },
 
   start: (text) =>
-    set((s) => ({
-      items: [...s.items, { kind: "user", id: uid(), text }],
-      streamingTextId: null,
-      running: true,
-    })),
+    set((s) => {
+      const items = [...s.items, { kind: "user" as const, id: uid(), text }]
+      // título imediato na lista a partir do 1º prompt (S4)
+      const conversations = s.conversations.map((c) =>
+        c.id === s.conversationId && !c.title
+          ? { ...c, title: deriveTitle(items) }
+          : c,
+      )
+      return { items, conversations, streamingTextId: null, running: true }
+    }),
 
   handleEvent: (e) =>
     set((s) => {

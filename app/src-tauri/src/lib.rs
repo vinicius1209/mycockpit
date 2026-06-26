@@ -38,6 +38,48 @@ pub fn run() {
             sql: "ALTER TABLE projects ADD COLUMN permission_mode TEXT NOT NULL DEFAULT 'padrao';",
             kind: MigrationKind::Up,
         },
+        // Multi-conversa (Sprint 2): conversa vira entidade com id próprio.
+        // Split em 5 migrações de 1 statement — tauri-plugin-sql roda 1 por vez.
+        Migration {
+            version: 4,
+            description: "conversations_v2_create",
+            sql: "CREATE TABLE conversations_new ( \
+                    id TEXT PRIMARY KEY, \
+                    project_id TEXT NOT NULL, \
+                    title TEXT, \
+                    session_id TEXT, \
+                    items TEXT NOT NULL, \
+                    created_at INTEGER NOT NULL, \
+                    updated_at INTEGER NOT NULL \
+                  );",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 5,
+            description: "conversations_v2_migrate",
+            sql: "INSERT INTO conversations_new (id, project_id, title, session_id, items, created_at, updated_at) \
+                  SELECT lower(hex(randomblob(16))), project_id, NULL, session_id, items, updated_at, updated_at \
+                  FROM conversations;",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 6,
+            description: "conversations_v2_drop_old",
+            sql: "DROP TABLE conversations;",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 7,
+            description: "conversations_v2_rename",
+            sql: "ALTER TABLE conversations_new RENAME TO conversations;",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 8,
+            description: "conversations_project_idx",
+            sql: "CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id);",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
