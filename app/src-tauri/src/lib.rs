@@ -112,6 +112,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             agent::run_claude,
             agent::cancel_claude,
+            agent::suggest,
             context::read_project_context
         ])
         .run(tauri::generate_context!())

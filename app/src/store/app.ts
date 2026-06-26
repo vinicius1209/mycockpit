@@ -10,11 +10,14 @@ interface AppState {
   sidebarOpen: boolean
   contextOpen: boolean
   ready: boolean
+  /** Modelo auxiliar p/ sugestões/títulos (Sprint 3). null = desligado. */
+  helperModel: string | null
 
   setProjects: (p: Project[]) => void
   addProject: (p: Project) => void
   setActiveProject: (id: string | null) => void
   setProjectPermission: (id: string, mode: PermissionMode) => void
+  setHelperModel: (m: string | null) => void
   toggleTheme: () => void
   toggleSidebar: () => void
   toggleContext: () => void
@@ -32,6 +35,7 @@ export const useApp = create<AppState>((set) => ({
   sidebarOpen: true,
   contextOpen: true,
   ready: false,
+  helperModel: "haiku",
 
   setProjects: (projects) =>
     set((s) => ({
@@ -47,6 +51,7 @@ export const useApp = create<AppState>((set) => ({
         p.id === id ? { ...p, permissionMode: mode } : p,
       ),
     })),
+  setHelperModel: (helperModel) => set({ helperModel }),
   toggleTheme: () =>
     set((s) => {
       const theme: Theme = s.theme === "dark" ? "light" : "dark"

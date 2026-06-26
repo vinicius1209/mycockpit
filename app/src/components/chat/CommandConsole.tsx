@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { ArrowUp, Paperclip, Square } from "lucide-react"
+import { ArrowUp, Paperclip, Sparkles, Square } from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { useChat } from "@/store/chat"
 import { cn } from "@/lib/utils"
 import type { Destination } from "@/lib/types"
 
@@ -40,6 +41,8 @@ export function CommandConsole({
   const [destination, setDestination] = useState(DESTINATIONS[0].id)
   const [focused, setFocused] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
+  const suggestions = useChat((s) => s.suggestions)
+  const suggesting = useChat((s) => s.suggesting)
 
   const dest = DESTINATIONS.find((d) => d.id === destination) ?? DESTINATIONS[0]
   const canSend = value.trim().length > 0 && !disabled && !running
@@ -152,19 +155,40 @@ export function CommandConsole({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {CHIPS.map((c) => (
-          <button
-            key={c.label}
-            onClick={() => {
-              setValue(c.prompt)
-              ref.current?.focus()
-            }}
-            className="rounded-full border border-border bg-card/40 px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:border-border-strong hover:bg-accent hover:text-foreground"
-          >
-            {c.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-2">
+        {suggesting && suggestions.length === 0 ? (
+          <span className="flex items-center gap-1.5 rounded-full border border-border bg-card/40 px-3 py-1.5 text-[13px] text-muted-foreground">
+            <Sparkles className="size-3.5 animate-pulse text-brass" />
+            buscando sugestões…
+          </span>
+        ) : suggestions.length > 0 ? (
+          suggestions.map((s, i) => (
+            <button
+              key={i}
+              onClick={() => {
+                setValue(s)
+                ref.current?.focus()
+              }}
+              className="flex items-center gap-1.5 rounded-full border border-brass/30 bg-brass/5 px-3 py-1.5 text-[13px] text-foreground/80 transition-colors hover:border-brass/60 hover:bg-brass/10 hover:text-foreground"
+            >
+              <Sparkles className="size-3 text-brass" />
+              {s}
+            </button>
+          ))
+        ) : (
+          CHIPS.map((c) => (
+            <button
+              key={c.label}
+              onClick={() => {
+                setValue(c.prompt)
+                ref.current?.focus()
+              }}
+              className="rounded-full border border-border bg-card/40 px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:border-border-strong hover:bg-accent hover:text-foreground"
+            >
+              {c.label}
+            </button>
+          ))
+        )}
       </div>
     </div>
   )

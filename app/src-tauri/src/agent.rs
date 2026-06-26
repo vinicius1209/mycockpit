@@ -190,6 +190,31 @@ pub fn cancel_claude(run_id: String, registry: tauri::State<'_, RunRegistry>) {
     }
 }
 
+/// Helper one-shot (Sprint 3): roda um modelo barato (ex. `haiku`) SEM tools,
+/// sem persistir sessão, p/ meta-tarefas (sugestões/títulos). Retorna o texto puro.
+#[tauri::command]
+pub async fn suggest(model: String, cwd: String, prompt: String) -> Result<String, String> {
+    let out = Command::new("claude")
+        .arg("--bare")
+        .arg("-p")
+        .arg(&prompt)
+        .arg("--model")
+        .arg(&model)
+        .arg("--tools")
+        .arg("")
+        .arg("--output-format")
+        .arg("text")
+        .arg("--no-session-persistence")
+        .current_dir(&cwd)
+        .output()
+        .await
+        .map_err(|e| format!("falha ao rodar claude: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
 /// Mapeia um evento bruto do stream-json para 0..N eventos normalizados.
 fn map_events(v: &serde_json::Value) -> Vec<AgentEvent> {
     match v.get("type").and_then(|x| x.as_str()).unwrap_or("") {

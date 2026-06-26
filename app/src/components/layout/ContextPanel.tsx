@@ -99,6 +99,8 @@ export function ContextPanel() {
   const [ctx, setCtx] = useState<ProjectContext | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
   const setProjectPermission = useApp((s) => s.setProjectPermission)
+  const helperModel = useApp((s) => s.helperModel)
+  const setHelperModel = useApp((s) => s.setHelperModel)
 
   function onPermissionChange(mode: PermissionMode) {
     if (!project) return
@@ -176,6 +178,22 @@ export function ContextPanel() {
                 <SelectItem value="leitura">Leitura</SelectItem>
                 <SelectItem value="padrao">Padrão</SelectItem>
                 <SelectItem value="liberado">Liberado</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center justify-between px-4 pb-3">
+            <span className="label-mono">Sugestões</span>
+            <Select
+              value={helperModel ?? "off"}
+              onValueChange={(v) => setHelperModel(v === "off" ? null : v)}
+            >
+              <SelectTrigger className="h-7 w-fit gap-1.5 rounded-full border bg-secondary/50 pr-1.5 pl-2.5 text-[12px] shadow-none focus-visible:ring-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                <SelectItem value="haiku">Haiku</SelectItem>
+                <SelectItem value="off">Desligado</SelectItem>
               </SelectContent>
             </Select>
           </div>

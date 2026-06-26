@@ -46,6 +46,15 @@ export async function cancelClaude(runId: string): Promise<void> {
   await invoke("cancel_claude", { runId })
 }
 
+/** Helper one-shot (Sprint 3): roda um modelo barato e retorna o texto puro. */
+export async function suggest(
+  model: string,
+  cwd: string,
+  prompt: string,
+): Promise<string> {
+  return invoke<string>("suggest", { model, cwd, prompt })
+}
+
 export interface ContextFile {
   name: string
   exists: boolean

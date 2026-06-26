@@ -40,7 +40,12 @@ interface ChatState {
   projectId: string | null
   conversationId: string | null
   conversations: ConversationMeta[]
+  /** Sugestões dinâmicas pós-turno (Sprint 3). */
+  suggestions: string[]
+  suggesting: boolean
 
+  setSuggestions: (s: string[]) => void
+  setSuggesting: (v: boolean) => void
   openProject: (projectId: string | null) => Promise<void>
   newConversation: (projectId: string) => Promise<void>
   switchConversation: (id: string) => Promise<void>
@@ -73,6 +78,8 @@ function freshState() {
     model: null as string | null,
     streamingTextId: null as string | null,
     running: false,
+    suggestions: [] as string[],
+    suggesting: false,
   }
 }
 
@@ -85,6 +92,11 @@ export const useChat = create<ChatState>((set, get) => ({
   projectId: null,
   conversationId: null,
   conversations: [],
+  suggestions: [],
+  suggesting: false,
+
+  setSuggestions: (suggestions) => set({ suggestions }),
+  setSuggesting: (suggesting) => set({ suggesting }),
 
   // S1/S2 — abre um projeto: carrega a lista de conversas e a mais recente
   // (ou cria a primeira se o projeto ainda não tiver nenhuma).
@@ -199,7 +211,14 @@ export const useChat = create<ChatState>((set, get) => ({
           ? { ...c, title: deriveTitle(items) }
           : c,
       )
-      return { items, conversations, streamingTextId: null, running: true }
+      return {
+        items,
+        conversations,
+        streamingTextId: null,
+        running: true,
+        suggestions: [],
+        suggesting: false,
+      }
     }),
 
   handleEvent: (e) =>
