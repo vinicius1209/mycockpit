@@ -3,16 +3,19 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { StatusDot } from "@/components/common/StatusDot"
 import { useApp } from "@/store/app"
+import { useChat } from "@/store/chat"
 import { cn, shortPath } from "@/lib/utils"
-import type { Project } from "@/lib/types"
+import type { AgentStatus, Project } from "@/lib/types"
 
 function ProjectRow({
   project,
   active,
+  status,
   onSelect,
 }: {
   project: Project
   active: boolean
+  status: AgentStatus
   onSelect: () => void
 }) {
   return (
@@ -26,7 +29,7 @@ function ProjectRow({
       {active && (
         <span className="absolute top-1/2 left-0 h-5 w-[2.5px] -translate-y-1/2 rounded-full bg-brass" />
       )}
-      <StatusDot status={project.status ?? "idle"} />
+      <StatusDot status={status} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-foreground">
           {project.name}
@@ -45,6 +48,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   const setActive = useApp((s) => s.setActiveProject)
   const theme = useApp((s) => s.theme)
   const toggleTheme = useApp((s) => s.toggleTheme)
+  const runningId = useChat((s) => (s.running ? s.projectId : null))
 
   return (
     <aside className="reveal-left flex h-full w-full flex-col bg-rail">
@@ -86,6 +90,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                 key={p.id}
                 project={p}
                 active={p.id === activeId}
+                status={p.id === runningId ? "running" : (p.status ?? "idle")}
                 onSelect={() => setActive(p.id)}
               />
             ))

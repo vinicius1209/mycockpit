@@ -5,6 +5,7 @@ import { Separator } from "@/components/ui/separator"
 import { Wordmark } from "@/components/common/Wordmark"
 import { StatusDot } from "@/components/common/StatusDot"
 import { useApp, useActiveProject } from "@/store/app"
+import { useChat } from "@/store/chat"
 import { cn } from "@/lib/utils"
 
 const MODES = [
@@ -48,12 +49,13 @@ function ModeSwitcher() {
 
 function InstrumentStrip() {
   const project = useActiveProject()
+  const running = useChat((s) => s.running)
   return (
     <div className="hidden items-center gap-2 md:flex">
       <span className="label-mono">{project ? project.name : "sem projeto"}</span>
       <span className="text-muted-foreground/35">·</span>
       <span className="label-mono">Claude Code</span>
-      <StatusDot status="idle" className="ml-0.5" />
+      <StatusDot status={running ? "running" : "idle"} className="ml-0.5" />
     </div>
   )
 }
