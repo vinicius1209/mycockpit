@@ -46,44 +46,62 @@ function ProjectRow({
 function ConversationList({ projectId }: { projectId: string }) {
   const conversations = useChat((s) => s.conversations)
   const activeId = useChat((s) => s.conversationId)
+  const running = useChat((s) => s.running)
   const newConversation = useChat((s) => s.newConversation)
   const switchConversation = useChat((s) => s.switchConversation)
   const removeConversation = useChat((s) => s.removeConversation)
 
   return (
     <div className="mt-0.5 mb-1 ml-[18px] flex flex-col gap-px border-l border-border/60 pl-2">
-      {conversations.map((c) => (
-        <div
-          key={c.id}
-          className={cn(
-            "group/c flex items-center rounded-md",
-            c.id === activeId ? "bg-accent" : "hover:bg-accent/50",
-          )}
-        >
-          <button
-            onClick={() => void switchConversation(c.id)}
+      {conversations.map((c) => {
+        const isActive = c.id === activeId
+        const isRunning = running && isActive
+        const locked = running && !isActive
+        return (
+          <div
+            key={c.id}
             className={cn(
-              "min-w-0 flex-1 truncate px-2 py-1 text-left text-[12px]",
-              c.id === activeId
-                ? "text-foreground"
-                : "text-muted-foreground group-hover/c:text-foreground",
+              "group/c flex items-center rounded-md",
+              isActive ? "bg-accent" : "hover:bg-accent/50",
             )}
           >
-            {c.title ?? "Nova conversa"}
-          </button>
-          <button
-            onClick={() => void removeConversation(c.id)}
-            className="mr-1 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:text-st-error group-hover/c:opacity-100"
-            title="Excluir conversa"
-            aria-label="Excluir conversa"
-          >
-            <X className="size-3" />
-          </button>
-        </div>
-      ))}
+            <button
+              onClick={() => void switchConversation(c.id)}
+              disabled={locked}
+              title={
+                locked ? "Pare o run atual para trocar de conversa" : undefined
+              }
+              className={cn(
+                "flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left text-[12px]",
+                isActive
+                  ? "text-foreground"
+                  : "text-muted-foreground group-hover/c:text-foreground",
+                locked && "opacity-40",
+              )}
+            >
+              {isRunning && <StatusDot status="running" className="shrink-0" />}
+              <span className="truncate">{c.title ?? "Nova conversa"}</span>
+            </button>
+            <button
+              onClick={() => void removeConversation(c.id)}
+              disabled={isRunning}
+              className="mr-1 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:text-st-error group-hover/c:opacity-100 disabled:hidden"
+              title="Excluir conversa"
+              aria-label="Excluir conversa"
+            >
+              <X className="size-3" />
+            </button>
+          </div>
+        )
+      })}
       <button
         onClick={() => void newConversation(projectId)}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+        disabled={running}
+        title={running ? "Pare o run atual para criar outra tarefa" : undefined}
+        className={cn(
+          "flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground",
+          running && "opacity-40 hover:bg-transparent hover:text-muted-foreground",
+        )}
       >
         <Plus className="size-3" />
         nova tarefa

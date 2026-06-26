@@ -117,6 +117,7 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   newConversation: async (projectId) => {
+    if (get().running) return
     const id = uid()
     await dbCreate(projectId, id)
     set((s) => ({
@@ -131,7 +132,8 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   switchConversation: async (id) => {
-    if (get().conversationId === id) return
+    const s = get()
+    if (s.running || s.conversationId === id) return
     const conv = await dbLoad(id)
     set({
       ...freshState(),
