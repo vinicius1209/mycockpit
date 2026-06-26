@@ -5,7 +5,7 @@ import { MessageList } from "@/components/chat/MessageList"
 import { Reticle } from "@/components/common/Wordmark"
 import { useActiveProject } from "@/store/app"
 import { useChat } from "@/store/chat"
-import { runClaude } from "@/lib/agent"
+import { runClaude, cancelClaude } from "@/lib/agent"
 import { isTauri, loadConversation, saveConversation } from "@/lib/db"
 
 function greetingFor(date: Date): string {
@@ -25,6 +25,7 @@ export function ChatPanel() {
   const handleEvent = useChat((s) => s.handleEvent)
   const finish = useChat((s) => s.finish)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const runIdRef = useRef<string | null>(null)
 
   // Reseta a conversa ao trocar de projeto (M4 persiste por projeto).
   const projectId = project?.id ?? null
@@ -59,9 +60,12 @@ export function ChatPanel() {
       toast("O dispatch do Claude Code roda no app (bun run tauri dev)")
       return
     }
+    const runId = crypto.randomUUID()
+    runIdRef.current = runId
     start(text)
     try {
       await runClaude(
+        runId,
         text,
         project.path,
         useChat.getState().sessionId,
@@ -71,10 +75,15 @@ export function ChatPanel() {
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha ao executar o agent")
     } finally {
+      runIdRef.current = null
       finish()
       const s = useChat.getState()
       void saveConversation(project.id, s.sessionId, s.items)
     }
+  }
+
+  function handleStop() {
+    if (runIdRef.current) void cancelClaude(runIdRef.current)
   }
 
   const hasConversation = items.length > 0
@@ -108,7 +117,12 @@ export function ChatPanel() {
 
       <div className="relative z-10 shrink-0 px-6 pb-6">
         <div className="mx-auto max-w-[760px]">
-          <CommandConsole onSend={handleSend} disabled={!project || running} />
+          <CommandConsole
+            onSend={handleSend}
+            disabled={!project}
+            running={running}
+            onStop={handleStop}
+          />
         </div>
       </div>
     </section>

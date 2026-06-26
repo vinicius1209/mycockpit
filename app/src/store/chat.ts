@@ -9,6 +9,7 @@ export type ChatItem =
       kind: "result"
       id: string
       ok: boolean
+      text?: string
       costUsd?: number
       model?: string | null
       usage?: {
@@ -18,11 +19,15 @@ export type ChatItem =
         cacheCreation: number
       }
     }
+  | { kind: "error"; id: string; message: string }
+  | { kind: "cancelled"; id: string }
 
 interface ChatState {
   items: ChatItem[]
   sessionId: string | null
   model: string | null
+  /** Id da bolha de texto em streaming (H2). null = nenhuma aberta. */
+  streamingTextId: string | null
   running: boolean
   projectId: string | null
 
@@ -45,18 +50,34 @@ export const useChat = create<ChatState>((set) => ({
   items: [],
   sessionId: null,
   model: null,
+  streamingTextId: null,
   running: false,
   projectId: null,
 
   resetFor: (projectId) =>
-    set({ items: [], sessionId: null, model: null, running: false, projectId }),
+    set({
+      items: [],
+      sessionId: null,
+      model: null,
+      streamingTextId: null,
+      running: false,
+      projectId,
+    }),
 
   hydrate: (projectId, items, sessionId) =>
-    set({ items, sessionId, model: null, running: false, projectId }),
+    set({
+      items,
+      sessionId,
+      model: null,
+      streamingTextId: null,
+      running: false,
+      projectId,
+    }),
 
   start: (text) =>
     set((s) => ({
       items: [...s.items, { kind: "user", id: uid(), text }],
+      streamingTextId: null,
       running: true,
     })),
 
@@ -65,14 +86,37 @@ export const useChat = create<ChatState>((set) => ({
       switch (e.type) {
         case "session":
           return { sessionId: e.session_id, model: e.model }
+        // H2 — texto completo do assistant: se já veio por deltas, descarta (dedup);
+        // senão (CLI sem partial messages) renderiza.
         case "text":
-          return { items: [...s.items, { kind: "text", id: uid(), text: e.text }] }
+          if (s.streamingTextId) return { streamingTextId: null }
+          return {
+            items: [...s.items, { kind: "text", id: uid(), text: e.text }],
+          }
+        // H2 — delta em streaming: acumula na bolha corrente (cria se não houver).
+        case "text_delta":
+          if (s.streamingTextId) {
+            return {
+              items: s.items.map((it) =>
+                it.id === s.streamingTextId && it.kind === "text"
+                  ? { ...it, text: it.text + e.text }
+                  : it,
+              ),
+            }
+          } else {
+            const id = uid()
+            return {
+              items: [...s.items, { kind: "text", id, text: e.text }],
+              streamingTextId: id,
+            }
+          }
         case "tool":
           return {
             items: [
               ...s.items,
               { kind: "tool", id: uid(), name: e.name, input: e.input },
             ],
+            streamingTextId: null,
           }
         case "result":
           return {
@@ -82,6 +126,7 @@ export const useChat = create<ChatState>((set) => ({
                 kind: "result",
                 id: uid(),
                 ok: e.ok,
+                text: e.text ?? undefined,
                 costUsd: e.cost_usd ?? undefined,
                 model: s.model,
                 usage: {
@@ -93,13 +138,31 @@ export const useChat = create<ChatState>((set) => ({
               },
             ],
             running: false,
+            streamingTextId: null,
+          }
+        // H3 — erro do processo/agent.
+        case "error":
+          return {
+            items: [
+              ...s.items,
+              { kind: "error", id: uid(), message: e.message },
+            ],
+            running: false,
+            streamingTextId: null,
+          }
+        // H1 — run interrompido pelo usuário.
+        case "cancelled":
+          return {
+            items: [...s.items, { kind: "cancelled", id: uid() }],
+            running: false,
+            streamingTextId: null,
           }
         case "done":
-          return { running: false }
+          return { running: false, streamingTextId: null }
         default:
           return {}
       }
     }),
 
-  finish: () => set({ running: false }),
+  finish: () => set({ running: false, streamingTextId: null }),
 }))

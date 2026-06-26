@@ -4,6 +4,7 @@ import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import {
   AlertCircle,
+  Ban,
   Check,
   ChevronDown,
   FilePen,
@@ -208,30 +209,72 @@ export function MessageList({
           return <ToolCard key={it.id} item={it} />
         }
 
+        if (it.kind === "error") {
+          return (
+            <div
+              key={it.id}
+              className="rounded-lg border border-st-error/40 bg-st-error/10 px-3 py-2.5"
+            >
+              <div className="mb-1 flex items-center gap-2 text-st-error">
+                <AlertCircle className="size-3.5" />
+                <span className="label-mono text-st-error">erro</span>
+              </div>
+              <div
+                data-selectable
+                className="font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-foreground/85"
+              >
+                {it.message}
+              </div>
+            </div>
+          )
+        }
+
+        if (it.kind === "cancelled") {
+          return (
+            <div
+              key={it.id}
+              className="flex items-center gap-2 pt-1 text-[12px] text-muted-foreground"
+            >
+              <Ban className="size-3.5" />
+              <span>interrompido</span>
+            </div>
+          )
+        }
+
         return (
-          <div
-            key={it.id}
-            className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-1 text-[12px] text-muted-foreground"
-          >
-            {it.ok ? (
-              <Check className="size-3.5 text-st-success" />
-            ) : (
-              <AlertCircle className="size-3.5 text-st-error" />
+          <div key={it.id} className="flex flex-col gap-1.5">
+            {!it.ok && it.text && (
+              <div className="rounded-lg border border-st-error/40 bg-st-error/10 px-3 py-2">
+                <div
+                  data-selectable
+                  className="font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-foreground/85"
+                >
+                  {it.text}
+                </div>
+              </div>
             )}
-            <span>{it.ok ? "concluído" : "erro"}</span>
-            {it.model && <span className="font-mono">· {it.model}</span>}
-            {it.usage && (it.usage.input > 0 || it.usage.output > 0) && (
-              <span className="font-mono tabular-nums">
-                · {fmtTokens(it.usage.input)} in · {fmtTokens(it.usage.output)} out
-                {it.usage.cacheRead > 0 &&
-                  ` · ${fmtTokens(it.usage.cacheRead)} cache`}
-              </span>
-            )}
-            {it.costUsd != null && (
-              <span className="font-mono tabular-nums text-foreground/70">
-                · US${it.costUsd.toFixed(3)}
-              </span>
-            )}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-1 text-[12px] text-muted-foreground">
+              {it.ok ? (
+                <Check className="size-3.5 text-st-success" />
+              ) : (
+                <AlertCircle className="size-3.5 text-st-error" />
+              )}
+              <span>{it.ok ? "concluído" : "erro"}</span>
+              {it.model && <span className="font-mono">· {it.model}</span>}
+              {it.usage && (it.usage.input > 0 || it.usage.output > 0) && (
+                <span className="font-mono tabular-nums">
+                  · {fmtTokens(it.usage.input)} in · {fmtTokens(it.usage.output)}{" "}
+                  out
+                  {it.usage.cacheRead > 0 &&
+                    ` · ${fmtTokens(it.usage.cacheRead)} cache`}
+                </span>
+              )}
+              {it.costUsd != null && (
+                <span className="font-mono tabular-nums text-foreground/70">
+                  · US${it.costUsd.toFixed(3)}
+                </span>
+              )}
+            </div>
           </div>
         )
       })}

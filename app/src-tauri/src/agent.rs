@@ -1,14 +1,22 @@
 //! M3 — dispatch do Claude Code.
 //!
-//! Spawna `claude -p --output-format stream-json --verbose` na pasta do projeto,
-//! parseia o JSONL (lógica portada do spike M0) e streama eventos normalizados
-//! para o frontend via tauri::ipc::Channel.
+//! Spawna `claude -p --output-format stream-json --verbose --include-partial-messages`
+//! na pasta do projeto, parseia o JSONL (lógica portada do spike M0) e streama
+//! eventos normalizados para o frontend via tauri::ipc::Channel.
 
 use serde::Serialize;
+use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
+use tokio::sync::Notify;
+
+/// Registro de runs ativos → permite cancelar um run em andamento (H1).
+/// Mapeia run_id → sinal de cancelamento; o loop do run escuta esse sinal.
+#[derive(Default)]
+pub struct RunRegistry(pub Mutex<HashMap<String, Arc<Notify>>>);
 
 /// Evento normalizado enviado ao frontend (1º adapter do docs/agent-runner.md).
 #[derive(Clone, Serialize)]
@@ -19,7 +27,12 @@ pub enum AgentEvent {
         model: Option<String>,
         tools: usize,
     },
+    /// Texto completo de um bloco assistant (fallback p/ CLIs sem partial messages).
     Text {
+        text: String,
+    },
+    /// Pedaço de texto em streaming (H2 — `--include-partial-messages`).
+    TextDelta {
         text: String,
     },
     Tool {
@@ -36,6 +49,12 @@ pub enum AgentEvent {
         cache_read: u64,
         cache_creation: u64,
     },
+    /// Erro do processo/agent (H3): spawn, stderr ou exit code ≠ 0.
+    Error {
+        message: String,
+    },
+    /// Run interrompido pelo usuário (H1).
+    Cancelled,
     Done {
         code: Option<i32>,
     },
@@ -43,11 +62,13 @@ pub enum AgentEvent {
 
 #[tauri::command]
 pub async fn run_claude(
+    run_id: String,
     prompt: String,
     cwd: String,
     resume: Option<String>,
     permission: String,
     on_event: Channel<AgentEvent>,
+    registry: tauri::State<'_, RunRegistry>,
 ) -> Result<(), String> {
     let mut cmd = Command::new("claude");
     cmd.arg("-p")
@@ -55,9 +76,10 @@ pub async fn run_claude(
         .arg("--output-format")
         .arg("stream-json")
         .arg("--verbose")
+        .arg("--include-partial-messages")
         .current_dir(&cwd)
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
 
     // Política de permissão por projeto (ver docs/agent-runner.md §7).
     // Achado do M0: `--allowedTools` NÃO sandboxa; o gate real é `--disallowedTools`.
@@ -83,29 +105,92 @@ pub async fn run_claude(
     })?;
 
     let stdout = child.stdout.take().ok_or("sem stdout do processo")?;
+    let stderr = child.stderr.take();
     let mut reader = BufReader::new(stdout).lines();
 
-    while let Some(line) = reader.next_line().await.map_err(|e| e.to_string())? {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
+    // H3 — coleta o stderr em paralelo p/ reportar erros de processo.
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = String::new();
+        if let Some(se) = stderr {
+            let mut lines = BufReader::new(se).lines();
+            while let Ok(Some(l)) = lines.next_line().await {
+                buf.push_str(&l);
+                buf.push('\n');
+            }
         }
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-            for ev in map_events(&v) {
-                let _ = on_event.send(ev);
+        buf
+    });
+
+    // H1 — registra o sinal de cancelamento deste run.
+    let notify = Arc::new(Notify::new());
+    if let Ok(mut map) = registry.0.lock() {
+        map.insert(run_id.clone(), notify.clone());
+    }
+
+    let mut cancelled = false;
+    loop {
+        tokio::select! {
+            line = reader.next_line() => {
+                match line {
+                    Ok(Some(line)) => {
+                        let line = line.trim();
+                        if line.is_empty() {
+                            continue;
+                        }
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                            for ev in map_events(&v) {
+                                let _ = on_event.send(ev);
+                            }
+                        }
+                    }
+                    Ok(None) => break, // EOF — processo terminou
+                    Err(_) => break,
+                }
+            }
+            _ = notify.notified() => {
+                cancelled = true;
+                // SIGKILL no processo; a sessão segue resumível via --resume.
+                let _ = child.start_kill();
+                break;
             }
         }
     }
 
+    if let Ok(mut map) = registry.0.lock() {
+        map.remove(&run_id);
+    }
+
     let status = child.wait().await.map_err(|e| e.to_string())?;
+    let stderr_text = stderr_task.await.unwrap_or_default();
+
+    if cancelled {
+        let _ = on_event.send(AgentEvent::Cancelled);
+    } else if !status.success() {
+        let msg = if stderr_text.trim().is_empty() {
+            format!("o `claude` saiu com código {}", status.code().unwrap_or(-1))
+        } else {
+            stderr_text.trim().to_string()
+        };
+        let _ = on_event.send(AgentEvent::Error { message: msg });
+    }
+
     let _ = on_event.send(AgentEvent::Done {
         code: status.code(),
     });
     Ok(())
 }
 
+/// Cancela um run em andamento (H1) — sinaliza o loop, que mata o processo.
+#[tauri::command]
+pub fn cancel_claude(run_id: String, registry: tauri::State<'_, RunRegistry>) {
+    if let Ok(map) = registry.0.lock() {
+        if let Some(n) = map.get(&run_id) {
+            n.notify_one();
+        }
+    }
+}
+
 /// Mapeia um evento bruto do stream-json para 0..N eventos normalizados.
-/// Eventos de ruído (hooks, thinking_tokens, rate_limit, tool_result) são ignorados no M3.
 fn map_events(v: &serde_json::Value) -> Vec<AgentEvent> {
     match v.get("type").and_then(|x| x.as_str()).unwrap_or("") {
         "system" => {
@@ -116,10 +201,7 @@ fn map_events(v: &serde_json::Value) -> Vec<AgentEvent> {
                         .and_then(|x| x.as_str())
                         .unwrap_or_default()
                         .to_string(),
-                    model: v
-                        .get("model")
-                        .and_then(|x| x.as_str())
-                        .map(str::to_string),
+                    model: v.get("model").and_then(|x| x.as_str()).map(str::to_string),
                     tools: v
                         .get("tools")
                         .and_then(|x| x.as_array())
@@ -130,6 +212,28 @@ fn map_events(v: &serde_json::Value) -> Vec<AgentEvent> {
                 vec![]
             }
         }
+        // H2 — deltas de texto em streaming. Outros sub-eventos (block start/stop,
+        // tool input deltas, message_*) são ignorados; o texto é montado pelos deltas.
+        "stream_event" => {
+            let ev = v.get("event");
+            let is_delta = ev.and_then(|e| e.get("type")).and_then(|x| x.as_str())
+                == Some("content_block_delta");
+            if is_delta {
+                let delta = ev.and_then(|e| e.get("delta"));
+                let is_text = delta.and_then(|d| d.get("type")).and_then(|x| x.as_str())
+                    == Some("text_delta");
+                if is_text {
+                    if let Some(t) = delta.and_then(|d| d.get("text")).and_then(|x| x.as_str()) {
+                        return vec![AgentEvent::TextDelta {
+                            text: t.to_string(),
+                        }];
+                    }
+                }
+            }
+            vec![]
+        }
+        // Mensagem assistant completa: emite o texto (o frontend deduplica com os
+        // deltas) e os tool_use como cartões.
         "assistant" => {
             let mut out = Vec::new();
             if let Some(content) = v.pointer("/message/content").and_then(|x| x.as_array()) {
@@ -138,9 +242,7 @@ fn map_events(v: &serde_json::Value) -> Vec<AgentEvent> {
                         Some("text") => {
                             if let Some(t) = block.get("text").and_then(|x| x.as_str()) {
                                 if !t.trim().is_empty() {
-                                    out.push(AgentEvent::Text {
-                                        text: t.to_string(),
-                                    });
+                                    out.push(AgentEvent::Text { text: t.to_string() });
                                 }
                             }
                         }
@@ -155,7 +257,10 @@ fn map_events(v: &serde_json::Value) -> Vec<AgentEvent> {
                                 .and_then(|x| x.as_str())
                                 .unwrap_or("tool")
                                 .to_string(),
-                            input: block.get("input").cloned().unwrap_or(serde_json::Value::Null),
+                            input: block
+                                .get("input")
+                                .cloned()
+                                .unwrap_or(serde_json::Value::Null),
                         }),
                         _ => {}
                     }

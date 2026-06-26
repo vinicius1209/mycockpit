@@ -4,6 +4,7 @@ import { invoke, Channel } from "@tauri-apps/api/core"
 export type AgentEvent =
   | { type: "session"; session_id: string; model: string | null; tools: number }
   | { type: "text"; text: string }
+  | { type: "text_delta"; text: string }
   | { type: "tool"; id: string; name: string; input: unknown }
   | {
       type: "result"
@@ -15,10 +16,13 @@ export type AgentEvent =
       cache_read: number
       cache_creation: number
     }
+  | { type: "error"; message: string }
+  | { type: "cancelled" }
   | { type: "done"; code: number | null }
 
 /** Dispara o Claude Code na pasta `cwd` e streama eventos via Channel. */
 export async function runClaude(
+  runId: string,
   prompt: string,
   cwd: string,
   resume: string | null,
@@ -27,7 +31,19 @@ export async function runClaude(
 ): Promise<void> {
   const channel = new Channel<AgentEvent>()
   channel.onmessage = onEvent
-  await invoke("run_claude", { prompt, cwd, resume, permission, onEvent: channel })
+  await invoke("run_claude", {
+    runId,
+    prompt,
+    cwd,
+    resume,
+    permission,
+    onEvent: channel,
+  })
+}
+
+/** Cancela um run em andamento (H1). */
+export async function cancelClaude(runId: string): Promise<void> {
+  await invoke("cancel_claude", { runId })
 }
 
 export interface ContextFile {

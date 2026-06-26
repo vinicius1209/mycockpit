@@ -66,8 +66,10 @@ pub fn run() {
                 .add_migrations("sqlite:mycockpit.db", migrations)
                 .build(),
         )
+        .manage(agent::RunRegistry::default())
         .invoke_handler(tauri::generate_handler![
             agent::run_claude,
+            agent::cancel_claude,
             context::read_project_context
         ])
         .run(tauri::generate_context!())

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { ArrowUp, Paperclip } from "lucide-react"
+import { ArrowUp, Paperclip, Square } from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -28,9 +28,13 @@ const CHIPS = [
 export function CommandConsole({
   onSend,
   disabled,
+  running,
+  onStop,
 }: {
   onSend: (text: string, destinationId: string) => void
   disabled?: boolean
+  running?: boolean
+  onStop?: () => void
 }) {
   const [value, setValue] = useState("")
   const [destination, setDestination] = useState(DESTINATIONS[0].id)
@@ -38,7 +42,7 @@ export function CommandConsole({
   const ref = useRef<HTMLTextAreaElement>(null)
 
   const dest = DESTINATIONS.find((d) => d.id === destination) ?? DESTINATIONS[0]
-  const canSend = value.trim().length > 0 && !disabled
+  const canSend = value.trim().length > 0 && !disabled && !running
 
   function submit() {
     if (!canSend) return
@@ -123,15 +127,27 @@ export function CommandConsole({
             >
               <Paperclip className="size-4" />
             </Button>
-            <Button
-              size="icon-sm"
-              onClick={submit}
-              disabled={!canSend}
-              className="rounded-full"
-              aria-label="Enviar"
-            >
-              <ArrowUp className="size-4" />
-            </Button>
+            {running ? (
+              <Button
+                size="icon-sm"
+                onClick={onStop}
+                className="rounded-full"
+                aria-label="Parar"
+                title="Parar"
+              >
+                <Square className="size-3 fill-current" />
+              </Button>
+            ) : (
+              <Button
+                size="icon-sm"
+                onClick={submit}
+                disabled={!canSend}
+                className="rounded-full"
+                aria-label="Enviar"
+              >
+                <ArrowUp className="size-4" />
+              </Button>
+            )}
           </div>
         </div>
       </div>
