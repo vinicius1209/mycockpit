@@ -18,7 +18,7 @@ const MODES = [
 function ModeSwitcher() {
   const active = "linear"
   return (
-    <div className="pointer-events-auto absolute left-1/2 hidden -translate-x-1/2 items-center gap-0.5 rounded-full border bg-secondary/50 p-0.5 sm:flex">
+    <div className="pointer-events-auto absolute left-1/2 z-10 hidden -translate-x-1/2 items-center gap-0.5 rounded-full border bg-secondary/50 p-0.5 sm:flex">
       {MODES.map((m) => (
         <button
           key={m.id}
@@ -68,15 +68,17 @@ export function TitleBar() {
   const toggleContext = useApp((s) => s.toggleContext)
 
   return (
-    <header
-      data-tauri-drag-region
-      className="relative z-20 flex h-11 shrink-0 items-center gap-2.5 bg-rail pr-2.5 pl-20"
-    >
-      <Wordmark className="pointer-events-none" />
+    <header className="relative z-20 flex h-11 shrink-0 items-center gap-2.5 bg-rail pr-2.5 pl-20">
+      {/* Drag region só nesta camada de fundo — assim os botões (acima) não têm
+          ancestral draggable e o clique neles nunca vira drag (closest() não acha). */}
+      <div data-tauri-drag-region className="absolute inset-0 z-0" />
+      <Wordmark className="pointer-events-none relative z-10" />
       {project && (
         <>
-          <span className="pointer-events-none text-muted-foreground/35">/</span>
-          <span className="pointer-events-none truncate text-[13px] text-muted-foreground">
+          <span className="pointer-events-none relative z-10 text-muted-foreground/35">
+            /
+          </span>
+          <span className="pointer-events-none relative z-10 truncate text-[13px] text-muted-foreground">
             {project.name}
           </span>
         </>
@@ -84,7 +86,7 @@ export function TitleBar() {
 
       <ModeSwitcher />
 
-      <div className="pointer-events-none ml-auto flex items-center gap-2">
+      <div className="pointer-events-none relative z-10 ml-auto flex items-center gap-2">
         <InstrumentStrip />
         <Separator orientation="vertical" className="h-4!" />
         <Button
