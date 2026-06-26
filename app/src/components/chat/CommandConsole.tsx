@@ -1,5 +1,6 @@
 import { useRef, useState } from "react"
 import { ArrowUp, Paperclip, Sparkles, Square } from "lucide-react"
+import { open } from "@tauri-apps/plugin-dialog"
 import {
   Select,
   SelectContent,
@@ -10,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useChat } from "@/store/chat"
+import { isTauri } from "@/lib/db"
 import { cn } from "@/lib/utils"
 import type { Destination } from "@/lib/types"
 
@@ -51,6 +53,18 @@ export function CommandConsole({
     if (!canSend) return
     onSend(value.trim(), destination)
     setValue("")
+    ref.current?.focus()
+  }
+
+  // Anexo real (B3 — inspirado no ai-04): file picker do Tauri → insere @path.
+  async function attach() {
+    if (!isTauri()) return
+    const sel = await open({ multiple: true, title: "Anexar arquivo(s)" })
+    if (!sel) return
+    const paths = (Array.isArray(sel) ? sel : [sel]).filter(Boolean) as string[]
+    if (!paths.length) return
+    const refs = paths.map((p) => `@${p}`).join(" ")
+    setValue((v) => (v.trim() ? `${v} ${refs}` : refs))
     ref.current?.focus()
   }
 
@@ -124,6 +138,7 @@ export function CommandConsole({
             <Button
               variant="ghost"
               size="icon-sm"
+              onClick={attach}
               className="rounded-full text-muted-foreground hover:text-foreground"
               title="Anexar arquivo"
               aria-label="Anexar arquivo"

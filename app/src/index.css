@@ -278,3 +278,55 @@
     transition-duration: 0.001ms !important;
   }
 }
+
+/* syntax highlight (rehype-highlight / hljs) — tema cockpit (B3) */
+.hljs {
+  color: var(--foreground);
+  background: transparent;
+}
+.hljs-comment,
+.hljs-quote {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-name,
+.hljs-tag {
+  color: #d8a657;
+}
+.hljs-string,
+.hljs-attr,
+.hljs-symbol {
+  color: #a3c785;
+}
+.hljs-number,
+.hljs-built_in {
+  color: #d99a6c;
+}
+.hljs-title,
+.hljs-section {
+  color: #82a8d8;
+}
+.hljs-variable,
+.hljs-template-variable,
+.hljs-attribute,
+.hljs-type {
+  color: #c4b6e8;
+}
+.hljs-meta {
+  color: var(--muted-foreground);
+}
+.hljs-deletion {
+  color: var(--st-error);
+}
+.hljs-addition {
+  color: var(--st-success);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}

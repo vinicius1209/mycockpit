@@ -1,12 +1,14 @@
-import { useState } from "react"
+import { useRef, useState, type ReactNode } from "react"
 import ReactMarkdown from "react-markdown"
 import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
+import rehypeHighlight from "rehype-highlight"
 import {
   AlertCircle,
   Ban,
   Check,
   ChevronDown,
+  Copy,
   FilePen,
   FileText,
   Search,
@@ -46,6 +48,41 @@ function fmtTokens(n: number): string {
   return String(n)
 }
 
+function CodeBlock({ children }: { children?: ReactNode }) {
+  const ref = useRef<HTMLPreElement>(null)
+  const [copied, setCopied] = useState(false)
+  function copy() {
+    const text = ref.current?.textContent ?? ""
+    if (!text) return
+    void navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1400)
+  }
+  return (
+    <div className="group/code relative mb-2">
+      <button
+        type="button"
+        onClick={copy}
+        className="absolute top-2 right-2 z-10 rounded-md border bg-card/80 p-1 text-muted-foreground opacity-0 transition hover:text-foreground group-hover/code:opacity-100"
+        aria-label="Copiar"
+        title="Copiar"
+      >
+        {copied ? (
+          <Check className="size-3 text-st-success" />
+        ) : (
+          <Copy className="size-3" />
+        )}
+      </button>
+      <pre
+        ref={ref}
+        className="overflow-auto rounded-md border bg-background/50 p-3 text-[12.5px] leading-relaxed"
+      >
+        {children}
+      </pre>
+    </div>
+  )
+}
+
 const mdComponents: Components = {
   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
   ul: ({ children }) => (
@@ -74,11 +111,7 @@ const mdComponents: Components = {
   h3: ({ children }) => (
     <h4 className="mt-2 mb-1 text-[13px] font-semibold">{children}</h4>
   ),
-  pre: ({ children }) => (
-    <pre className="mb-2 overflow-auto rounded-md border bg-background/50 p-3 text-[12.5px] leading-relaxed">
-      {children}
-    </pre>
-  ),
+  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
   code: ({ className, children }) => {
     const block =
       String(children).includes("\n") || /language-/.test(className ?? "")
@@ -97,7 +130,11 @@ function Markdown({ text }: { text: string }) {
       data-selectable
       className="text-[14px] leading-relaxed text-foreground"
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeHighlight]}
+        components={mdComponents}
+      >
         {text}
       </ReactMarkdown>
     </div>
