@@ -122,7 +122,10 @@ export function ChatPanel() {
     const c = useChat.getState().byId[convId]
     if (!c || !c.items.some((it) => it.kind === "text")) return
     const proj = useApp.getState().projects.find((p) => p.id === c.projectId)
-    if (!proj) return
+    if (!proj) {
+      console.warn("[sugestões] projeto não encontrado p/ convId", convId, c.projectId)
+      return
+    }
     useChat.getState().setSuggesting(convId, true)
     try {
       const raw = await suggest(
@@ -131,12 +134,15 @@ export function ChatPanel() {
         `${SUGGEST_PROMPT}\n\nConversa recente:\n${buildContext(c.items)}`,
       )
       const list = parseSuggestions(raw)
+      if (!list.length) {
+        console.warn("[sugestões] resposta sem JSON parseável:", raw)
+      }
       const after = useChat.getState().byId[convId]
       if (list.length && after && !after.running) {
         useChat.getState().setSuggestions(convId, list)
       }
-    } catch {
-      // silencioso — mantém os chips estáticos
+    } catch (e) {
+      console.warn("[sugestões] erro ao gerar:", e)
     } finally {
       useChat.getState().setSuggesting(convId, false)
     }

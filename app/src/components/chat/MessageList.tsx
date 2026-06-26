@@ -122,6 +122,29 @@ const mdComponents: Components = {
       </code>
     )
   },
+  blockquote: ({ children }) => (
+    <blockquote className="mb-2 border-l-2 border-brass/40 pl-3 text-foreground/80">
+      {children}
+    </blockquote>
+  ),
+  hr: () => <hr className="my-3 border-border/60" />,
+  table: ({ children }) => (
+    <div className="mb-2 overflow-x-auto rounded-md border">
+      <table className="w-full border-collapse text-[13px]">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-secondary/40">{children}</thead>,
+  tr: ({ children }) => (
+    <tr className="border-b border-border/50 last:border-0">{children}</tr>
+  ),
+  th: ({ children }) => (
+    <th className="px-3 py-1.5 text-left font-semibold text-foreground">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="px-3 py-1.5 align-top text-foreground/85">{children}</td>
+  ),
 }
 
 function Markdown({ text }: { text: string }) {
