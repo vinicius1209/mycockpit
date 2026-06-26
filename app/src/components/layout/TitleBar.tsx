@@ -3,7 +3,6 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Wordmark } from "@/components/common/Wordmark"
-import { StatusDot } from "@/components/common/StatusDot"
 import { useApp, useActiveProject } from "@/store/app"
 import { useActiveConv } from "@/store/chat"
 import { cn } from "@/lib/utils"
@@ -49,15 +48,14 @@ function ModeSwitcher() {
 
 function InstrumentStrip() {
   const project = useActiveProject()
-  const conv = useActiveConv()
-  const running = conv.running
-  const model = conv.model
+  const model = useActiveConv().model
+  // Sem dot de status aqui — o "rodando" já aparece na sidebar (spinner por
+  // conversa + dot do projeto), no botão de stop e no "Claude Code trabalhando…".
   return (
     <div className="hidden items-center gap-2 md:flex">
       <span className="label-mono">{project ? project.name : "sem projeto"}</span>
       <span className="text-muted-foreground/35">·</span>
       <span className="label-mono">{model ?? "Claude Code"}</span>
-      <StatusDot status={running ? "running" : "idle"} className="ml-0.5" />
     </div>
   )
 }
