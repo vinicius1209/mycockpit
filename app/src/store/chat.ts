@@ -26,6 +26,8 @@ export type ChatItem =
         cacheRead: number
         cacheCreation: number
       }
+      /** Duração total do turno em ms (start→result). */
+      durationMs?: number
     }
   | { kind: "error"; id: string; message: string }
   | { kind: "cancelled"; id: string }
@@ -41,6 +43,8 @@ export interface ConvState {
   running: boolean
   /** runId do run em andamento (p/ cancelar). */
   runId: string | null
+  /** Timestamp (ms) de início do run atual — p/ cronômetro ao vivo. */
+  startedAt: number | null
   /** Sugestões dinâmicas pós-turno (Sprint 3). */
   suggestions: string[]
   suggesting: boolean
@@ -91,6 +95,7 @@ function emptyConv(projectId: string): ConvState {
     streamingTextId: null,
     running: false,
     runId: null,
+    startedAt: null,
     suggestions: [],
     suggesting: false,
   }
@@ -149,11 +154,13 @@ function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
               cacheRead: e.cache_read,
               cacheCreation: e.cache_creation,
             },
+            durationMs: c.startedAt ? Date.now() - c.startedAt : undefined,
           },
         ],
         running: false,
         streamingTextId: null,
         runId: null,
+        startedAt: null,
       }
     case "error":
       return {
@@ -161,6 +168,7 @@ function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
         running: false,
         streamingTextId: null,
         runId: null,
+        startedAt: null,
       }
     case "cancelled":
       return {
@@ -168,9 +176,15 @@ function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
         running: false,
         streamingTextId: null,
         runId: null,
+        startedAt: null,
       }
     case "done":
-      return { running: false, streamingTextId: null, runId: null }
+      return {
+        running: false,
+        streamingTextId: null,
+        runId: null,
+        startedAt: null,
+      }
     default:
       return {}
   }
@@ -321,6 +335,7 @@ export const useChat = create<ChatState>((set, get) => {
               streamingTextId: null,
               running: true,
               runId,
+              startedAt: Date.now(),
               suggestions: [],
               suggesting: false,
             },

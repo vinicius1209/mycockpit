@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import ReactMarkdown from "react-markdown"
 import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -46,6 +46,23 @@ function toolSummary(input: unknown): string {
 function fmtTokens(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`
   return String(n)
+}
+
+function fmtDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  return `${m}:${String(s % 60).padStart(2, "0")}`
+}
+
+/** Cronômetro ao vivo enquanto o run pensa (atualiza a cada 1s). */
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  return <span className="tabular-nums">{fmtDuration(now - since)}</span>
 }
 
 function CodeBlock({ children }: { children?: ReactNode }) {
@@ -241,9 +258,11 @@ function ToolCard({ item }: { item: ToolItem }) {
 export function MessageList({
   items,
   running,
+  startedAt,
 }: {
   items: ChatItem[]
   running: boolean
+  startedAt: number | null
 }) {
   return (
     <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-8 py-8">
@@ -321,6 +340,11 @@ export function MessageList({
               )}
               <span>{it.ok ? "concluído" : "erro"}</span>
               {it.model && <span className="font-mono">· {it.model}</span>}
+              {it.durationMs != null && (
+                <span className="font-mono tabular-nums">
+                  · {fmtDuration(it.durationMs)}
+                </span>
+              )}
               {it.usage && (it.usage.input > 0 || it.usage.output > 0) && (
                 <span className="font-mono tabular-nums">
                   · {fmtTokens(it.usage.input)} in · {fmtTokens(it.usage.output)}{" "}
@@ -342,7 +366,12 @@ export function MessageList({
       {running && (
         <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
           <span className="animate-cockpit-pulse size-2 rounded-full bg-st-running" />
-          Claude Code trabalhando…
+          <span>Claude Code trabalhando…</span>
+          {startedAt && (
+            <span className="font-mono text-foreground/70">
+              <Elapsed since={startedAt} />
+            </span>
+          )}
         </div>
       )}
     </div>
