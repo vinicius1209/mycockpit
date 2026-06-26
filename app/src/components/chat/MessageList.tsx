@@ -186,7 +186,7 @@ export function MessageList({
   running: boolean
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-6 py-8">
+    <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-8 py-8">
       {items.map((it) => {
         if (it.kind === "user") {
           return (

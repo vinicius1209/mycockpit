@@ -157,7 +157,7 @@ export function ChatPanel() {
         )}
       </div>
 
-      <div className="relative z-10 shrink-0 px-6 pb-6">
+      <div className="relative z-10 shrink-0 px-8 pb-7">
         <div className="mx-auto max-w-[760px]">
           <CommandConsole
             onSend={handleSend}

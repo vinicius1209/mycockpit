@@ -34,7 +34,7 @@ function Section({
   children: ReactNode
 }) {
   return (
-    <section className="px-4 py-4">
+    <section className="px-5 py-4">
       <div className="mb-3 flex items-center justify-between">
         <span className="label-mono">{title}</span>
         {note && (
@@ -137,7 +137,7 @@ export function ContextPanel() {
 
   return (
     <aside className="reveal-right flex h-full w-full flex-col bg-transparent">
-      <header className="flex h-11 shrink-0 items-center gap-2 px-3">
+      <header className="flex h-11 shrink-0 items-center gap-2 px-5">
         <PanelRight className="size-3.5 text-muted-foreground" />
         <span className="label-mono">Contexto</span>
       </header>
@@ -150,7 +150,7 @@ export function ContextPanel() {
         </div>
       ) : (
         <ScrollArea className="flex-1">
-          <div className="px-4 pt-4 pb-2">
+          <div className="px-5 pt-4 pb-2">
             <div className="flex items-center gap-2">
               <FolderGit2 className="size-4 shrink-0 text-brass" />
               <span className="truncate text-[14px] font-medium text-foreground">
@@ -165,7 +165,7 @@ export function ContextPanel() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between px-4 pb-3">
+          <div className="flex items-center justify-between px-5 pb-3">
             <span className="label-mono">Permissões</span>
             <Select
               value={project.permissionMode ?? "padrao"}
@@ -182,7 +182,7 @@ export function ContextPanel() {
             </Select>
           </div>
 
-          <div className="flex items-center justify-between px-4 pb-3">
+          <div className="flex items-center justify-between px-5 pb-3">
             <span className="label-mono">Sugestões</span>
             <Select
               value={helperModel ?? "off"}

@@ -139,7 +139,7 @@ export default function App() {
                 >
                   <Sidebar onAddProject={handleAddProject} />
                 </ResizablePanel>
-                <ResizableHandle className="bg-transparent after:w-2 hover:after:bg-brass/40" />
+                <ResizableHandle className="bg-transparent transition-colors after:w-4 data-[resize-handle-state=hover]:bg-border/50 data-[resize-handle-state=drag]:bg-border/70" />
               </>
             )}
             {/* Conteúdo principal como "card inset" flutuando no rail. */}
@@ -155,7 +155,7 @@ export default function App() {
                     </ResizablePanel>
                     {contextOpen && (
                       <>
-                        <ResizableHandle className="bg-border/60 transition-colors hover:bg-brass/50 after:w-2" />
+                        <ResizableHandle className="bg-border/40 transition-colors after:w-3 data-[resize-handle-state=hover]:bg-brass/50 data-[resize-handle-state=drag]:bg-brass/60" />
                         <ResizablePanel
                           id="context"
                           defaultSize="30%"
