@@ -69,7 +69,7 @@ export function TitleBar() {
   return (
     <header
       data-tauri-drag-region
-      className="relative z-20 flex h-11 shrink-0 items-center gap-2.5 border-b bg-rail pr-2.5 pl-20"
+      className="relative z-20 flex h-11 shrink-0 items-center gap-2.5 bg-rail pr-2.5 pl-20"
     >
       <Wordmark className="pointer-events-none" />
       {project && (

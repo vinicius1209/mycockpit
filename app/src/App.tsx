@@ -123,7 +123,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={300}>
-        <div className="grain flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
+        <div className="grain flex h-screen w-screen flex-col overflow-hidden bg-rail text-foreground">
           <TitleBar />
           <ResizablePanelGroup
             orientation="horizontal"
@@ -139,25 +139,37 @@ export default function App() {
                 >
                   <Sidebar onAddProject={handleAddProject} />
                 </ResizablePanel>
-                <ResizableHandle className="transition-colors hover:bg-brass/50 after:w-2" />
+                <ResizableHandle className="bg-transparent after:w-2 hover:after:bg-brass/40" />
               </>
             )}
-            <ResizablePanel id="chat" defaultSize="57%" minSize="34%">
-              <ChatPanel />
+            {/* Conteúdo principal como "card inset" flutuando no rail. */}
+            <ResizablePanel id="main" defaultSize="81%" minSize="40%">
+              <div className="h-full py-2 pr-2 pl-1">
+                <div className="flex h-full overflow-hidden rounded-xl border bg-background shadow-[var(--shadow-pop)]">
+                  <ResizablePanelGroup
+                    orientation="horizontal"
+                    className="h-full"
+                  >
+                    <ResizablePanel id="chat" defaultSize="70%" minSize="42%">
+                      <ChatPanel />
+                    </ResizablePanel>
+                    {contextOpen && (
+                      <>
+                        <ResizableHandle className="bg-border/60 transition-colors hover:bg-brass/50 after:w-2" />
+                        <ResizablePanel
+                          id="context"
+                          defaultSize="30%"
+                          minSize="240px"
+                          maxSize="42%"
+                        >
+                          <ContextPanel />
+                        </ResizablePanel>
+                      </>
+                    )}
+                  </ResizablePanelGroup>
+                </div>
+              </div>
             </ResizablePanel>
-            {contextOpen && (
-              <>
-                <ResizableHandle className="transition-colors hover:bg-brass/50 after:w-2" />
-                <ResizablePanel
-                  id="context"
-                  defaultSize="24%"
-                  minSize="240px"
-                  maxSize="36%"
-                >
-                  <ContextPanel />
-                </ResizablePanel>
-              </>
-            )}
           </ResizablePanelGroup>
         </div>
         <Toaster position="bottom-center" theme={theme} />

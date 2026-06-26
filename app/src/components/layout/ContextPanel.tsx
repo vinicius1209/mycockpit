@@ -136,7 +136,7 @@ export function ContextPanel() {
   const hasClaudeDir = ctx?.has_claude_dir ?? !!project?.hasClaudeMd
 
   return (
-    <aside className="reveal-right flex h-full w-full flex-col bg-rail">
+    <aside className="reveal-right flex h-full w-full flex-col bg-transparent">
       <header className="flex h-11 shrink-0 items-center gap-2 px-3">
         <PanelRight className="size-3.5 text-muted-foreground" />
         <span className="label-mono">Contexto</span>
