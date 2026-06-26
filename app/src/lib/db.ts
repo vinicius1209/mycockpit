@@ -91,14 +91,14 @@ interface ConvListRow {
   updated_at: number
 }
 
-/** Lista as conversas de um projeto (mais recentes primeiro). */
+/** Lista as conversas de um projeto em ordem de criação (estável; novas embaixo). */
 export async function listConversations(
   projectId: string,
 ): Promise<ConversationMeta[] | null> {
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ConvListRow[]>(
-    "SELECT id, title, updated_at FROM conversations WHERE project_id = $1 ORDER BY updated_at DESC",
+    "SELECT id, title, updated_at FROM conversations WHERE project_id = $1 ORDER BY created_at ASC",
     [projectId],
   )
   return rows.map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at }))

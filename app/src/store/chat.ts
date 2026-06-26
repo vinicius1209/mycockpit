@@ -234,7 +234,11 @@ export const useChat = create<ChatState>((set, get) => {
         }))
         return
       }
-      const activeId = list[0].id
+      // exibe em ordem de criação, mas abre a usada mais recentemente
+      const activeId = list.reduce(
+        (best, c) => (c.updatedAt > best.updatedAt ? c : best),
+        list[0],
+      ).id
       set({ projectId, activeId, conversations: list })
       await ensureLoaded(projectId, activeId)
     },
@@ -246,8 +250,8 @@ export const useChat = create<ChatState>((set, get) => {
         projectId,
         activeId: id,
         conversations: [
-          { id, title: null, updatedAt: Date.now() },
           ...s.conversations,
+          { id, title: null, updatedAt: Date.now() },
         ],
         byId: { ...s.byId, [id]: emptyConv(projectId) },
       }))
@@ -289,10 +293,11 @@ export const useChat = create<ChatState>((set, get) => {
       const title = deriveTitle(c.items)
       await dbSave(convId, c.projectId, title, c.sessionId, c.items)
       const now = Date.now()
+      // atualiza no lugar — sem reordenar (ordem de criação é estável)
       set((st) => ({
-        conversations: st.conversations
-          .map((cv) => (cv.id === convId ? { ...cv, title, updatedAt: now } : cv))
-          .sort((a, b) => b.updatedAt - a.updatedAt),
+        conversations: st.conversations.map((cv) =>
+          cv.id === convId ? { ...cv, title, updatedAt: now } : cv,
+        ),
       }))
     },
 
