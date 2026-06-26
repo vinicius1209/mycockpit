@@ -262,10 +262,11 @@ pub fn read_text_file(path: String) -> Result<String, String> {
 pub struct SlashCommand {
     pub name: String,
     pub description: Option<String>,
-    pub kind: String, // "command" | "skill"
+    pub kind: String,   // "command" | "skill"
+    pub origin: String, // "project" | "global"
 }
 
-fn collect_commands(dir: &Path, prefix: &str, out: &mut Vec<SlashCommand>) {
+fn collect_commands(dir: &Path, prefix: &str, origin: &str, out: &mut Vec<SlashCommand>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
     };
@@ -278,7 +279,7 @@ fn collect_commands(dir: &Path, prefix: &str, out: &mut Vec<SlashCommand>) {
             } else {
                 format!("{prefix}:{ns}")
             };
-            collect_commands(&p, &next, out);
+            collect_commands(&p, &next, origin, out);
         } else if p.extension().is_some_and(|x| x == "md") {
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
             let name = if prefix.is_empty() {
@@ -293,13 +294,14 @@ fn collect_commands(dir: &Path, prefix: &str, out: &mut Vec<SlashCommand>) {
                 name,
                 description,
                 kind: "command".to_string(),
+                origin: origin.to_string(),
             });
         }
     }
 }
 
-/// Skills do projeto (.claude/skills/<name>/SKILL.md) — invocáveis por /<name>.
-fn collect_skills(dir: &Path, out: &mut Vec<SlashCommand>) {
+/// Skills (.claude/skills/<name>/SKILL.md) — invocáveis por /<name>.
+fn collect_skills(dir: &Path, origin: &str, out: &mut Vec<SlashCommand>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
     };
@@ -318,16 +320,27 @@ fn collect_skills(dir: &Path, out: &mut Vec<SlashCommand>) {
             name: name.to_string(),
             description,
             kind: "skill".to_string(),
+            origin: origin.to_string(),
         });
     }
 }
 
 #[tauri::command]
 pub fn read_project_commands(path: String) -> Vec<SlashCommand> {
-    let cd = Path::new(&path).join(".claude");
     let mut out = Vec::new();
-    collect_commands(&cd.join("commands"), "", &mut out);
-    collect_skills(&cd.join("skills"), &mut out);
+    // projeto (.claude/) — entra primeiro → vence no dedup
+    let cd = Path::new(&path).join(".claude");
+    collect_commands(&cd.join("commands"), "", "project", &mut out);
+    collect_skills(&cd.join("skills"), "project", &mut out);
+    // global (~/.claude/)
+    if let Ok(home) = std::env::var("HOME") {
+        let gd = Path::new(&home).join(".claude");
+        collect_commands(&gd.join("commands"), "", "global", &mut out);
+        collect_skills(&gd.join("skills"), "global", &mut out);
+    }
+    // dedup por (kind, name) — o do projeto (inserido antes) vence
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|c| seen.insert((c.kind.clone(), c.name.clone())));
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
 }

@@ -193,8 +193,15 @@ export function CommandConsole({
                   <span className="font-mono text-[13px] text-foreground">
                     /{c.name}
                   </span>
-                  <span className="shrink-0 rounded border px-1 py-px text-[8.5px] tracking-wide text-muted-foreground uppercase">
-                    {c.kind === "skill" ? "skill" : "cmd"}
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    {c.origin === "global" && (
+                      <span className="text-[8.5px] tracking-wide text-muted-foreground/55 uppercase">
+                        global
+                      </span>
+                    )}
+                    <span className="rounded border px-1 py-px text-[8.5px] tracking-wide text-muted-foreground uppercase">
+                      {c.kind === "skill" ? "skill" : "cmd"}
+                    </span>
                   </span>
                 </span>
                 {c.description && (

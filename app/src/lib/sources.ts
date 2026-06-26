@@ -47,6 +47,7 @@ export interface SlashCommand {
   name: string
   description: string | null
   kind: string // "command" | "skill"
+  origin: string // "project" | "global"
 }
 
 export async function readProjectCommands(
