@@ -140,6 +140,8 @@ export function ChatPanel() {
       const after = useChat.getState().byId[convId]
       if (list.length && after && !after.running) {
         useChat.getState().setSuggestions(convId, list)
+        // persiste p/ as sugestões sobreviverem a fechar/minimizar/reabrir
+        void useChat.getState().persist(convId)
       }
     } catch (e) {
       console.warn("[sugestões] erro ao gerar:", e)

@@ -213,6 +213,7 @@ export const useChat = create<ChatState>((set, get) => {
                 ...emptyConv(projectId),
                 items: conv?.items ?? [],
                 sessionId: conv?.sessionId ?? null,
+                suggestions: conv?.suggestions ?? [],
               },
             },
           },
@@ -305,7 +306,14 @@ export const useChat = create<ChatState>((set, get) => {
       const c = get().byId[convId]
       if (!c) return
       const title = deriveTitle(c.items)
-      await dbSave(convId, c.projectId, title, c.sessionId, c.items)
+      await dbSave(
+        convId,
+        c.projectId,
+        title,
+        c.sessionId,
+        c.items,
+        c.suggestions,
+      )
       const now = Date.now()
       // atualiza no lugar — sem reordenar (ordem de criação é estável)
       set((st) => ({

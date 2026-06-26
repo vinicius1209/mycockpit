@@ -80,6 +80,12 @@ pub fn run() {
             sql: "CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id);",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 9,
+            description: "conversations_suggestions",
+            sql: "ALTER TABLE conversations ADD COLUMN suggestions TEXT NOT NULL DEFAULT '[]';",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

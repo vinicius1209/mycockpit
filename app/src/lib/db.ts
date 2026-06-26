@@ -108,6 +108,7 @@ interface ConvLoadRow {
   session_id: string | null
   items: string
   title: string | null
+  suggestions: string | null
 }
 
 export async function loadConversation(
@@ -116,11 +117,12 @@ export async function loadConversation(
   sessionId: string | null
   items: ChatItem[]
   title: string | null
+  suggestions: string[]
 } | null> {
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ConvLoadRow[]>(
-    "SELECT session_id, items, title FROM conversations WHERE id = $1",
+    "SELECT session_id, items, title, suggestions FROM conversations WHERE id = $1",
     [id],
   )
   if (!rows.length) return null
@@ -129,6 +131,9 @@ export async function loadConversation(
       sessionId: rows[0].session_id,
       items: JSON.parse(rows[0].items) as ChatItem[],
       title: rows[0].title,
+      suggestions: rows[0].suggestions
+        ? (JSON.parse(rows[0].suggestions) as string[])
+        : [],
     }
   } catch {
     return null
@@ -155,12 +160,21 @@ export async function saveConversation(
   title: string | null,
   sessionId: string | null,
   items: ChatItem[],
+  suggestions: string[],
 ): Promise<void> {
   const db = await getDb()
   if (!db) return
   await db.execute(
-    "INSERT INTO conversations (id, project_id, title, session_id, items, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $6) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, updated_at = excluded.updated_at",
-    [id, projectId, title, sessionId, JSON.stringify(items), Date.now()],
+    "INSERT INTO conversations (id, project_id, title, session_id, items, suggestions, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $7) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, suggestions = excluded.suggestions, updated_at = excluded.updated_at",
+    [
+      id,
+      projectId,
+      title,
+      sessionId,
+      JSON.stringify(items),
+      JSON.stringify(suggestions),
+      Date.now(),
+    ],
   )
 }
 
