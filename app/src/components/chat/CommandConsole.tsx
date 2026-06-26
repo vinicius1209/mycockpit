@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ArrowUp, Paperclip, Sparkles, Square } from "lucide-react"
 import { open } from "@tauri-apps/plugin-dialog"
 import {
@@ -11,6 +11,9 @@ import {
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useActiveConv } from "@/store/chat"
+import { useActiveProject } from "@/store/app"
+import { readProjectCommands } from "@/lib/sources"
+import type { SlashCommand } from "@/lib/sources"
 import { isTauri } from "@/lib/db"
 import { cn } from "@/lib/utils"
 import type { Destination } from "@/lib/types"
@@ -46,6 +49,40 @@ export function CommandConsole({
   const conv = useActiveConv()
   const suggestions = conv.suggestions
   const suggesting = conv.suggesting
+  const project = useActiveProject()
+  const [commands, setCommands] = useState<SlashCommand[]>([])
+  const [slashIdx, setSlashIdx] = useState(0)
+  const [slashDismissed, setSlashDismissed] = useState(false)
+
+  // comandos do projeto p/ o "/" (.claude/commands)
+  useEffect(() => {
+    if (!project || !isTauri()) {
+      setCommands([])
+      return
+    }
+    readProjectCommands(project.path)
+      .then(setCommands)
+      .catch(() => setCommands([]))
+  }, [project?.path])
+
+  // "/" no início do input (sem espaço) → modo slash
+  const slashQuery = value.match(/^\/([\w:-]*)$/)?.[1] ?? null
+  const slashMatches =
+    slashQuery !== null
+      ? commands
+          .filter((c) => c.name.toLowerCase().includes(slashQuery.toLowerCase()))
+          .slice(0, 8)
+      : []
+  const showSlash = !slashDismissed && slashMatches.length > 0
+
+  useEffect(() => {
+    setSlashIdx(0)
+  }, [slashQuery])
+
+  function insertCommand(name: string) {
+    setValue(`/${name} `)
+    ref.current?.focus()
+  }
 
   const dest = DESTINATIONS.find((d) => d.id === destination) ?? DESTINATIONS[0]
   const canSend = value.trim().length > 0 && !disabled && !running
@@ -70,7 +107,36 @@ export function CommandConsole({
   }
 
   return (
-    <div className="flex w-full flex-col gap-3">
+    <div className="relative flex w-full flex-col gap-3">
+      {showSlash && (
+        <div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-xl border bg-popover shadow-[var(--shadow-pop)]">
+          <div className="border-b px-3 py-1.5 text-[10px] tracking-wide text-muted-foreground uppercase">
+            Comandos{project ? ` · ${project.name}` : ""}
+          </div>
+          <div className="max-h-64 overflow-auto p-1">
+            {slashMatches.map((c, i) => (
+              <button
+                key={c.name}
+                onMouseEnter={() => setSlashIdx(i)}
+                onClick={() => insertCommand(c.name)}
+                className={cn(
+                  "flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-1.5 text-left",
+                  i === slashIdx ? "bg-accent" : "hover:bg-accent/50",
+                )}
+              >
+                <span className="font-mono text-[13px] text-foreground">
+                  /{c.name}
+                </span>
+                {c.description && (
+                  <span className="line-clamp-1 text-[11.5px] text-muted-foreground">
+                    {c.description}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div
         onClick={() => ref.current?.focus()}
         className={cn(
@@ -84,16 +150,47 @@ export function CommandConsole({
         <Textarea
           ref={ref}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value)
+            setSlashDismissed(false)
+          }}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={(e) => {
+            if (showSlash) {
+              if (e.key === "ArrowDown") {
+                e.preventDefault()
+                setSlashIdx((i) => (i + 1) % slashMatches.length)
+                return
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault()
+                setSlashIdx(
+                  (i) => (i - 1 + slashMatches.length) % slashMatches.length,
+                )
+                return
+              }
+              if (e.key === "Enter" || e.key === "Tab") {
+                e.preventDefault()
+                insertCommand(slashMatches[slashIdx].name)
+                return
+              }
+              if (e.key === "Escape") {
+                e.preventDefault()
+                setSlashDismissed(true)
+                return
+              }
+            }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault()
               submit()
             }
           }}
-          placeholder="Peça algo ao seu time de agents…"
+          placeholder={
+            commands.length > 0
+              ? "Peça algo…  ou / para comandos"
+              : "Peça algo ao seu time de agents…"
+          }
           rows={1}
           className="max-h-[240px] min-h-[56px] resize-none border-0 bg-transparent! px-4 pt-3.5 text-[15px] leading-relaxed text-foreground shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
         />

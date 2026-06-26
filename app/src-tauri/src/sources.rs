@@ -256,3 +256,51 @@ pub fn read_text_file(path: String) -> Result<String, String> {
         c
     })
 }
+
+/// Comando slash do projeto (.claude/commands). Subpasta vira namespace `ns:cmd`.
+#[derive(Serialize)]
+pub struct SlashCommand {
+    pub name: String,
+    pub description: Option<String>,
+}
+
+fn collect_commands(dir: &Path, prefix: &str, out: &mut Vec<SlashCommand>) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in rd.filter_map(|e| e.ok()) {
+        let p = e.path();
+        if p.is_dir() {
+            let ns = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            let next = if prefix.is_empty() {
+                ns.to_string()
+            } else {
+                format!("{prefix}:{ns}")
+            };
+            collect_commands(&p, &next, out);
+        } else if p.extension().is_some_and(|x| x == "md") {
+            let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            let name = if prefix.is_empty() {
+                stem.to_string()
+            } else {
+                format!("{prefix}:{stem}")
+            };
+            let description = std::fs::read_to_string(&p)
+                .ok()
+                .and_then(|t| frontmatter(&t, "description"));
+            out.push(SlashCommand { name, description });
+        }
+    }
+}
+
+#[tauri::command]
+pub fn read_project_commands(path: String) -> Vec<SlashCommand> {
+    let mut out = Vec::new();
+    collect_commands(
+        &Path::new(&path).join(".claude").join("commands"),
+        "",
+        &mut out,
+    );
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}

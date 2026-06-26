@@ -42,3 +42,14 @@ export async function readProjectSources(path: string): Promise<ProjectSources> 
 export async function readTextFile(path: string): Promise<string> {
   return invoke<string>("read_text_file", { path })
 }
+
+export interface SlashCommand {
+  name: string
+  description: string | null
+}
+
+export async function readProjectCommands(
+  path: string,
+): Promise<SlashCommand[]> {
+  return invoke<SlashCommand[]>("read_project_commands", { path })
+}
