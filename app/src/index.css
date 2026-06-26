@@ -234,6 +234,21 @@
   animation: reveal-right 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+/* lista de conversas descendo (sidebar collapsible — B2) */
+@keyframes reveal-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-reveal-down {
+  animation: reveal-down 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 /* scrollbar discreta */
 * {
   scrollbar-width: thin;

@@ -1,4 +1,4 @@
-import { Plus, Moon, Sun, FolderGit2, X } from "lucide-react"
+import { Plus, Moon, Sun, FolderGit2, X, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { StatusDot } from "@/components/common/StatusDot"
@@ -38,6 +38,12 @@ function ProjectRow({
           {shortPath(project.path)}
         </div>
       </div>
+      <ChevronRight
+        className={cn(
+          "size-3.5 shrink-0 text-muted-foreground/40 transition-transform duration-200",
+          active && "rotate-90 text-muted-foreground/70",
+        )}
+      />
     </button>
   )
 }
@@ -52,7 +58,7 @@ function ConversationList({ projectId }: { projectId: string }) {
   const removeConversation = useChat((s) => s.removeConversation)
 
   return (
-    <div className="mt-0.5 mb-1 ml-[18px] flex flex-col gap-px border-l border-border/60 pl-2">
+    <div className="animate-reveal-down mt-0.5 mb-1 ml-[18px] flex flex-col gap-px border-l border-border/60 pl-2">
       {conversations.map((c) => {
         const isActive = c.id === activeId
         const isRunning = running && isActive
