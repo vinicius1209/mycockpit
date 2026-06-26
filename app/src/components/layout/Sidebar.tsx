@@ -48,21 +48,33 @@ function ProjectRow({
   )
 }
 
+/** Ids das conversas rodando, como string estável (só muda em transição de run
+ *  — não a cada delta de streaming, evitando re-render da sidebar inteira). */
+function useRunningConvIds(): Set<string> {
+  const key = useChat((s) =>
+    Object.entries(s.byId)
+      .filter(([, c]) => c.running)
+      .map(([id]) => id)
+      .sort()
+      .join(","),
+  )
+  return new Set(key ? key.split(",") : [])
+}
+
 /** Lista de conversas (tarefas) do projeto ativo — accordion sob o projeto. */
 function ConversationList({ projectId }: { projectId: string }) {
   const conversations = useChat((s) => s.conversations)
-  const activeId = useChat((s) => s.conversationId)
-  const running = useChat((s) => s.running)
+  const activeId = useChat((s) => s.activeId)
   const newConversation = useChat((s) => s.newConversation)
   const switchConversation = useChat((s) => s.switchConversation)
   const removeConversation = useChat((s) => s.removeConversation)
+  const running = useRunningConvIds()
 
   return (
     <div className="animate-reveal-down mt-0.5 mb-1 ml-[18px] flex flex-col gap-px border-l border-border/60 pl-2">
       {conversations.map((c) => {
         const isActive = c.id === activeId
-        const isRunning = running && isActive
-        const locked = running && !isActive
+        const isRunning = running.has(c.id)
         return (
           <div
             key={c.id}
@@ -73,16 +85,11 @@ function ConversationList({ projectId }: { projectId: string }) {
           >
             <button
               onClick={() => void switchConversation(c.id)}
-              disabled={locked}
-              title={
-                locked ? "Pare o run atual para trocar de conversa" : undefined
-              }
               className={cn(
                 "flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left text-[12px]",
                 isActive
                   ? "text-foreground"
                   : "text-muted-foreground group-hover/c:text-foreground",
-                locked && "opacity-40",
               )}
             >
               {isRunning && <StatusDot status="running" className="shrink-0" />}
@@ -102,12 +109,7 @@ function ConversationList({ projectId }: { projectId: string }) {
       })}
       <button
         onClick={() => void newConversation(projectId)}
-        disabled={running}
-        title={running ? "Pare o run atual para criar outra tarefa" : undefined}
-        className={cn(
-          "flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground",
-          running && "opacity-40 hover:bg-transparent hover:text-muted-foreground",
-        )}
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
       >
         <Plus className="size-3" />
         nova tarefa
@@ -122,7 +124,21 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   const setActive = useApp((s) => s.setActiveProject)
   const theme = useApp((s) => s.theme)
   const toggleTheme = useApp((s) => s.toggleTheme)
-  const runningId = useChat((s) => (s.running ? s.projectId : null))
+  // Projetos com QUALQUER conversa rodando (string estável → menos re-render).
+  const runningProjectsKey = useChat((s) =>
+    Array.from(
+      new Set(
+        Object.values(s.byId)
+          .filter((c) => c.running)
+          .map((c) => c.projectId),
+      ),
+    )
+      .sort()
+      .join(","),
+  )
+  const runningProjects = new Set(
+    runningProjectsKey ? runningProjectsKey.split(",") : [],
+  )
 
   return (
     <aside className="reveal-left flex h-full w-full flex-col bg-rail">
@@ -164,7 +180,9 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                 <ProjectRow
                   project={p}
                   active={p.id === activeId}
-                  status={p.id === runningId ? "running" : (p.status ?? "idle")}
+                  status={
+                    runningProjects.has(p.id) ? "running" : (p.status ?? "idle")
+                  }
                   onSelect={() => setActive(p.id)}
                 />
                 {p.id === activeId && <ConversationList projectId={p.id} />}

@@ -62,7 +62,9 @@ export function CommandMenu() {
   const switchConversation = useChat((s) => s.switchConversation)
   const newConversation = useChat((s) => s.newConversation)
   const queuePrompt = useChat((s) => s.queuePrompt)
-  const running = useChat((s) => s.running)
+  const activeRunning = useChat((s) =>
+    s.activeId ? (s.byId[s.activeId]?.running ?? false) : false,
+  )
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -114,7 +116,6 @@ export function CommandMenu() {
               {activeProjectId && (
                 <CommandItem
                   className={ITEM}
-                  disabled={running}
                   onSelect={() =>
                     run(() => void newConversation(activeProjectId))
                   }
@@ -131,7 +132,7 @@ export function CommandMenu() {
                 <CommandItem
                   key={a.label}
                   className={ITEM}
-                  disabled={running || !activeProjectId}
+                  disabled={activeRunning || !activeProjectId}
                   onSelect={() => run(() => queuePrompt(a.prompt))}
                 >
                   <a.icon aria-hidden />
@@ -146,7 +147,6 @@ export function CommandMenu() {
                   <CommandItem
                     key={c.id}
                     className={ITEM}
-                    disabled={running}
                     onSelect={() => run(() => void switchConversation(c.id))}
                   >
                     <MessageSquare aria-hidden />

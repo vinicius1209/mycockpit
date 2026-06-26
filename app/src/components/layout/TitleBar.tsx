@@ -5,7 +5,7 @@ import { Separator } from "@/components/ui/separator"
 import { Wordmark } from "@/components/common/Wordmark"
 import { StatusDot } from "@/components/common/StatusDot"
 import { useApp, useActiveProject } from "@/store/app"
-import { useChat } from "@/store/chat"
+import { useActiveConv } from "@/store/chat"
 import { cn } from "@/lib/utils"
 
 const MODES = [
@@ -49,8 +49,9 @@ function ModeSwitcher() {
 
 function InstrumentStrip() {
   const project = useActiveProject()
-  const running = useChat((s) => s.running)
-  const model = useChat((s) => s.model)
+  const conv = useActiveConv()
+  const running = conv.running
+  const model = conv.model
   return (
     <div className="hidden items-center gap-2 md:flex">
       <span className="label-mono">{project ? project.name : "sem projeto"}</span>

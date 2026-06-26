@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { useChat } from "@/store/chat"
+import { useActiveConv } from "@/store/chat"
 import { isTauri } from "@/lib/db"
 import { cn } from "@/lib/utils"
 import type { Destination } from "@/lib/types"
@@ -43,8 +43,9 @@ export function CommandConsole({
   const [destination, setDestination] = useState(DESTINATIONS[0].id)
   const [focused, setFocused] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
-  const suggestions = useChat((s) => s.suggestions)
-  const suggesting = useChat((s) => s.suggesting)
+  const conv = useActiveConv()
+  const suggestions = conv.suggestions
+  const suggesting = conv.suggesting
 
   const dest = DESTINATIONS.find((d) => d.id === destination) ?? DESTINATIONS[0]
   const canSend = value.trim().length > 0 && !disabled && !running

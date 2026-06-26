@@ -30,33 +30,42 @@ export type ChatItem =
   | { kind: "error"; id: string; message: string }
   | { kind: "cancelled"; id: string }
 
-interface ChatState {
+/** Estado de UMA conversa — vive em byId[convId]; runs em background escrevem aqui. */
+export interface ConvState {
+  projectId: string
   items: ChatItem[]
   sessionId: string | null
   model: string | null
   /** Id da bolha de texto em streaming (H2). null = nenhuma aberta. */
   streamingTextId: string | null
   running: boolean
-  projectId: string | null
-  conversationId: string | null
-  conversations: ConversationMeta[]
+  /** runId do run em andamento (p/ cancelar). */
+  runId: string | null
   /** Sugestões dinâmicas pós-turno (Sprint 3). */
   suggestions: string[]
   suggesting: boolean
+}
+
+interface ChatState {
+  projectId: string | null
+  activeId: string | null
+  conversations: ConversationMeta[]
+  /** Estado de cada conversa carregada (Sprint 4 — runs em background). */
+  byId: Record<string, ConvState>
   /** Prompt enfileirado por outra UI (ex.: ⌘K) p/ o ChatPanel disparar. */
   queuedPrompt: string | null
 
-  setSuggestions: (s: string[]) => void
-  setSuggesting: (v: boolean) => void
-  queuePrompt: (t: string | null) => void
   openProject: (projectId: string | null) => Promise<void>
   newConversation: (projectId: string) => Promise<void>
   switchConversation: (id: string) => Promise<void>
   removeConversation: (id: string) => Promise<void>
-  persist: () => Promise<void>
-  start: (text: string) => void
-  handleEvent: (e: AgentEvent) => void
-  finish: () => void
+  persist: (convId: string) => Promise<void>
+  start: (convId: string, text: string, runId: string) => void
+  handleEvent: (convId: string, e: AgentEvent) => void
+  finish: (convId: string) => void
+  setSuggestions: (convId: string, s: string[]) => void
+  setSuggesting: (convId: string, v: boolean) => void
+  queuePrompt: (t: string | null) => void
 }
 
 function uid(): string {
@@ -73,241 +82,260 @@ function deriveTitle(items: ChatItem[]): string | null {
   return null
 }
 
-/** Estado base de uma conversa "limpa" (não toca projeto/conversa/lista). */
-function freshState() {
+function emptyConv(projectId: string): ConvState {
   return {
-    items: [] as ChatItem[],
-    sessionId: null as string | null,
-    model: null as string | null,
-    streamingTextId: null as string | null,
+    projectId,
+    items: [],
+    sessionId: null,
+    model: null,
+    streamingTextId: null,
     running: false,
-    suggestions: [] as string[],
+    runId: null,
+    suggestions: [],
     suggesting: false,
   }
 }
 
-export const useChat = create<ChatState>((set, get) => ({
-  items: [],
-  sessionId: null,
-  model: null,
-  streamingTextId: null,
-  running: false,
-  projectId: null,
-  conversationId: null,
-  conversations: [],
-  suggestions: [],
-  suggesting: false,
-  queuedPrompt: null,
+const EMPTY_CONV = emptyConv("")
 
-  setSuggestions: (suggestions) => set({ suggestions }),
-  setSuggesting: (suggesting) => set({ suggesting }),
-  queuePrompt: (queuedPrompt) => set({ queuedPrompt }),
-
-  // S1/S2 — abre um projeto: carrega a lista de conversas e a mais recente
-  // (ou cria a primeira se o projeto ainda não tiver nenhuma).
-  openProject: async (projectId) => {
-    if (!projectId) {
-      set({ ...freshState(), projectId: null, conversationId: null, conversations: [] })
-      return
+/** Reduz um evento do agent sobre o estado de UMA conversa. */
+function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
+  switch (e.type) {
+    case "session":
+      return { sessionId: e.session_id, model: e.model }
+    // H2 — texto completo do assistant: se já veio por deltas, descarta (dedup).
+    case "text":
+      if (c.streamingTextId) return { streamingTextId: null }
+      return { items: [...c.items, { kind: "text", id: uid(), text: e.text }] }
+    // H2 — delta em streaming: acumula na bolha corrente (cria se não houver).
+    case "text_delta": {
+      if (c.streamingTextId) {
+        return {
+          items: c.items.map((it) =>
+            it.id === c.streamingTextId && it.kind === "text"
+              ? { ...it, text: it.text + e.text }
+              : it,
+          ),
+        }
+      }
+      const id = uid()
+      return {
+        items: [...c.items, { kind: "text", id, text: e.text }],
+        streamingTextId: id,
+      }
     }
-    const list = (await dbList(projectId)) ?? []
-    if (list.length === 0) {
+    case "tool":
+      return {
+        items: [
+          ...c.items,
+          { kind: "tool", id: uid(), name: e.name, input: e.input },
+        ],
+        streamingTextId: null,
+      }
+    case "result":
+      return {
+        items: [
+          ...c.items,
+          {
+            kind: "result",
+            id: uid(),
+            ok: e.ok,
+            text: e.text ?? undefined,
+            costUsd: e.cost_usd ?? undefined,
+            model: c.model,
+            usage: {
+              input: e.input_tokens,
+              output: e.output_tokens,
+              cacheRead: e.cache_read,
+              cacheCreation: e.cache_creation,
+            },
+          },
+        ],
+        running: false,
+        streamingTextId: null,
+        runId: null,
+      }
+    case "error":
+      return {
+        items: [...c.items, { kind: "error", id: uid(), message: e.message }],
+        running: false,
+        streamingTextId: null,
+        runId: null,
+      }
+    case "cancelled":
+      return {
+        items: [...c.items, { kind: "cancelled", id: uid() }],
+        running: false,
+        streamingTextId: null,
+        runId: null,
+      }
+    case "done":
+      return { running: false, streamingTextId: null, runId: null }
+    default:
+      return {}
+  }
+}
+
+export const useChat = create<ChatState>((set, get) => {
+  /** Aplica um patch parcial em UMA conversa (no-op se ela não existe mais). */
+  const patch = (convId: string, p: Partial<ConvState>) =>
+    set((s) => {
+      const cur = s.byId[convId]
+      if (!cur) return {}
+      return { byId: { ...s.byId, [convId]: { ...cur, ...p } } }
+    })
+
+  /** Garante que a conversa está carregada em byId (do disco se preciso). */
+  const ensureLoaded = async (projectId: string, convId: string) => {
+    if (get().byId[convId]) return
+    const conv = await dbLoad(convId)
+    set((s) =>
+      s.byId[convId]
+        ? {}
+        : {
+            byId: {
+              ...s.byId,
+              [convId]: {
+                ...emptyConv(projectId),
+                items: conv?.items ?? [],
+                sessionId: conv?.sessionId ?? null,
+              },
+            },
+          },
+    )
+  }
+
+  return {
+    projectId: null,
+    activeId: null,
+    conversations: [],
+    byId: {},
+    queuedPrompt: null,
+
+    queuePrompt: (queuedPrompt) => set({ queuedPrompt }),
+    setSuggestions: (convId, suggestions) => patch(convId, { suggestions }),
+    setSuggesting: (convId, suggesting) => patch(convId, { suggesting }),
+
+    openProject: async (projectId) => {
+      if (!projectId) {
+        set({ projectId: null, activeId: null, conversations: [] })
+        return
+      }
+      let list = (await dbList(projectId)) ?? []
+      if (list.length === 0) {
+        const id = uid()
+        await dbCreate(projectId, id)
+        list = [{ id, title: null, updatedAt: Date.now() }]
+        set((s) => ({
+          projectId,
+          activeId: id,
+          conversations: list,
+          byId: s.byId[id] ? s.byId : { ...s.byId, [id]: emptyConv(projectId) },
+        }))
+        return
+      }
+      const activeId = list[0].id
+      set({ projectId, activeId, conversations: list })
+      await ensureLoaded(projectId, activeId)
+    },
+
+    newConversation: async (projectId) => {
       const id = uid()
       await dbCreate(projectId, id)
-      set({
-        ...freshState(),
+      set((s) => ({
         projectId,
-        conversationId: id,
-        conversations: [{ id, title: null, updatedAt: Date.now() }],
+        activeId: id,
+        conversations: [
+          { id, title: null, updatedAt: Date.now() },
+          ...s.conversations,
+        ],
+        byId: { ...s.byId, [id]: emptyConv(projectId) },
+      }))
+    },
+
+    switchConversation: async (id) => {
+      const s = get()
+      if (s.activeId === id) return
+      set({ activeId: id })
+      if (s.projectId) await ensureLoaded(s.projectId, id)
+    },
+
+    removeConversation: async (id) => {
+      await dbDelete(id)
+      const wasActive = get().activeId === id
+      const projectId = get().projectId
+      set((s) => {
+        const rest = { ...s.byId }
+        delete rest[id]
+        return {
+          byId: rest,
+          conversations: s.conversations.filter((c) => c.id !== id),
+        }
       })
-      return
-    }
-    const conv = await dbLoad(list[0].id)
-    set({
-      ...freshState(),
-      items: conv?.items ?? [],
-      sessionId: conv?.sessionId ?? null,
-      projectId,
-      conversationId: list[0].id,
-      conversations: list,
-    })
-  },
+      if (!wasActive) return
+      const remaining = get().conversations
+      if (remaining.length > 0) {
+        await get().switchConversation(remaining[0].id)
+      } else if (projectId) {
+        await get().newConversation(projectId)
+      } else {
+        set({ activeId: null })
+      }
+    },
 
-  newConversation: async (projectId) => {
-    if (get().running) return
-    const id = uid()
-    await dbCreate(projectId, id)
-    set((s) => ({
-      ...freshState(),
-      projectId,
-      conversationId: id,
-      conversations: [
-        { id, title: null, updatedAt: Date.now() },
-        ...s.conversations,
-      ],
-    }))
-  },
+    persist: async (convId) => {
+      const c = get().byId[convId]
+      if (!c) return
+      const title = deriveTitle(c.items)
+      await dbSave(convId, c.projectId, title, c.sessionId, c.items)
+      const now = Date.now()
+      set((st) => ({
+        conversations: st.conversations
+          .map((cv) => (cv.id === convId ? { ...cv, title, updatedAt: now } : cv))
+          .sort((a, b) => b.updatedAt - a.updatedAt),
+      }))
+    },
 
-  switchConversation: async (id) => {
-    const s = get()
-    if (s.running || s.conversationId === id) return
-    const conv = await dbLoad(id)
-    set({
-      ...freshState(),
-      items: conv?.items ?? [],
-      sessionId: conv?.sessionId ?? null,
-      conversationId: id,
-    })
-  },
-
-  removeConversation: async (id) => {
-    await dbDelete(id)
-    const s = get()
-    const remaining = s.conversations.filter((c) => c.id !== id)
-    if (s.conversationId !== id) {
-      set({ conversations: remaining })
-      return
-    }
-    // a conversa ativa foi removida → abre a próxima ou cria uma nova
-    if (remaining.length > 0) {
-      const conv = await dbLoad(remaining[0].id)
-      set({
-        ...freshState(),
-        items: conv?.items ?? [],
-        sessionId: conv?.sessionId ?? null,
-        conversationId: remaining[0].id,
-        conversations: remaining,
-      })
-    } else if (s.projectId) {
-      const id = uid()
-      await dbCreate(s.projectId, id)
-      set({
-        ...freshState(),
-        conversationId: id,
-        conversations: [{ id, title: null, updatedAt: Date.now() }],
-      })
-    } else {
-      set({ ...freshState(), conversationId: null, conversations: [] })
-    }
-  },
-
-  // Salva a conversa ativa + atualiza a lista (título + ordem).
-  persist: async () => {
-    const s = get()
-    if (!s.projectId || !s.conversationId) return
-    const title = deriveTitle(s.items)
-    await dbSave(s.conversationId, s.projectId, title, s.sessionId, s.items)
-    const now = Date.now()
-    set((st) => ({
-      conversations: st.conversations
-        .map((c) =>
-          c.id === st.conversationId ? { ...c, title, updatedAt: now } : c,
+    start: (convId, text, runId) =>
+      set((s) => {
+        const cur = s.byId[convId] ?? emptyConv(s.projectId ?? "")
+        const items = [
+          ...cur.items,
+          { kind: "user" as const, id: uid(), text },
+        ]
+        const conversations = s.conversations.map((c) =>
+          c.id === convId && !c.title ? { ...c, title: deriveTitle(items) } : c,
         )
-        .sort((a, b) => b.updatedAt - a.updatedAt),
-    }))
-  },
+        return {
+          conversations,
+          byId: {
+            ...s.byId,
+            [convId]: {
+              ...cur,
+              items,
+              streamingTextId: null,
+              running: true,
+              runId,
+              suggestions: [],
+              suggesting: false,
+            },
+          },
+        }
+      }),
 
-  start: (text) =>
-    set((s) => {
-      const items = [...s.items, { kind: "user" as const, id: uid(), text }]
-      // título imediato na lista a partir do 1º prompt (S4)
-      const conversations = s.conversations.map((c) =>
-        c.id === s.conversationId && !c.title
-          ? { ...c, title: deriveTitle(items) }
-          : c,
-      )
-      return {
-        items,
-        conversations,
-        streamingTextId: null,
-        running: true,
-        suggestions: [],
-        suggesting: false,
-      }
-    }),
+    handleEvent: (convId, e) =>
+      set((s) => {
+        const cur = s.byId[convId]
+        if (!cur) return {}
+        return { byId: { ...s.byId, [convId]: { ...cur, ...reduceEvent(cur, e) } } }
+      }),
 
-  handleEvent: (e) =>
-    set((s) => {
-      switch (e.type) {
-        case "session":
-          return { sessionId: e.session_id, model: e.model }
-        // H2 — texto completo do assistant: se já veio por deltas, descarta (dedup);
-        // senão (CLI sem partial messages) renderiza.
-        case "text":
-          if (s.streamingTextId) return { streamingTextId: null }
-          return {
-            items: [...s.items, { kind: "text", id: uid(), text: e.text }],
-          }
-        // H2 — delta em streaming: acumula na bolha corrente (cria se não houver).
-        case "text_delta":
-          if (s.streamingTextId) {
-            return {
-              items: s.items.map((it) =>
-                it.id === s.streamingTextId && it.kind === "text"
-                  ? { ...it, text: it.text + e.text }
-                  : it,
-              ),
-            }
-          } else {
-            const id = uid()
-            return {
-              items: [...s.items, { kind: "text", id, text: e.text }],
-              streamingTextId: id,
-            }
-          }
-        case "tool":
-          return {
-            items: [
-              ...s.items,
-              { kind: "tool", id: uid(), name: e.name, input: e.input },
-            ],
-            streamingTextId: null,
-          }
-        case "result":
-          return {
-            items: [
-              ...s.items,
-              {
-                kind: "result",
-                id: uid(),
-                ok: e.ok,
-                text: e.text ?? undefined,
-                costUsd: e.cost_usd ?? undefined,
-                model: s.model,
-                usage: {
-                  input: e.input_tokens,
-                  output: e.output_tokens,
-                  cacheRead: e.cache_read,
-                  cacheCreation: e.cache_creation,
-                },
-              },
-            ],
-            running: false,
-            streamingTextId: null,
-          }
-        // H3 — erro do processo/agent.
-        case "error":
-          return {
-            items: [
-              ...s.items,
-              { kind: "error", id: uid(), message: e.message },
-            ],
-            running: false,
-            streamingTextId: null,
-          }
-        // H1 — run interrompido pelo usuário.
-        case "cancelled":
-          return {
-            items: [...s.items, { kind: "cancelled", id: uid() }],
-            running: false,
-            streamingTextId: null,
-          }
-        case "done":
-          return { running: false, streamingTextId: null }
-        default:
-          return {}
-      }
-    }),
+    finish: (convId) =>
+      patch(convId, { running: false, streamingTextId: null, runId: null }),
+  }
+})
 
-  finish: () => set({ running: false, streamingTextId: null }),
-}))
+/** A conversa ativa (ou um estado vazio estável se nenhuma). */
+export function useActiveConv(): ConvState {
+  return useChat((s) => (s.activeId ? s.byId[s.activeId] : undefined) ?? EMPTY_CONV)
+}

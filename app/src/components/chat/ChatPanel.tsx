@@ -4,7 +4,7 @@ import { CommandConsole } from "@/components/chat/CommandConsole"
 import { MessageList } from "@/components/chat/MessageList"
 import { Reticle } from "@/components/common/Wordmark"
 import { useActiveProject, useApp } from "@/store/app"
-import { useChat } from "@/store/chat"
+import { useChat, useActiveConv } from "@/store/chat"
 import type { ChatItem } from "@/store/chat"
 import { runClaude, cancelClaude, suggest } from "@/lib/agent"
 import { isTauri } from "@/lib/db"
@@ -49,14 +49,12 @@ function parseSuggestions(raw: string): string[] {
 
 export function ChatPanel() {
   const project = useActiveProject()
-  const items = useChat((s) => s.items)
-  const running = useChat((s) => s.running)
+  const conv = useActiveConv()
   const openProject = useChat((s) => s.openProject)
-  const start = useChat((s) => s.start)
-  const handleEvent = useChat((s) => s.handleEvent)
-  const finish = useChat((s) => s.finish)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const runIdRef = useRef<string | null>(null)
+
+  const items = conv.items
+  const running = conv.running
 
   // Abre o projeto ao trocar: carrega as conversas e a mais recente (Sprint 2).
   const projectId = project?.id ?? null
@@ -86,55 +84,61 @@ export function ChatPanel() {
       toast("O dispatch do Claude Code roda no app (bun run tauri dev)")
       return
     }
+    const convId = useChat.getState().activeId
+    if (!convId) return
+    if (useChat.getState().byId[convId]?.running) return // já rodando nesta conversa
     const runId = crypto.randomUUID()
-    runIdRef.current = runId
-    start(text)
+    const sessionId = useChat.getState().byId[convId]?.sessionId ?? null
+    // Sprint 4 — o run escreve em byId[convId] mesmo se o usuário trocar de aba.
+    useChat.getState().start(convId, text, runId)
     try {
       await runClaude(
         runId,
         text,
         project.path,
-        useChat.getState().sessionId,
+        sessionId,
         project.permissionMode ?? "padrao",
-        handleEvent,
+        (e) => useChat.getState().handleEvent(convId, e),
       )
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha ao executar o agent")
     } finally {
-      runIdRef.current = null
-      finish()
-      void useChat.getState().persist()
-      void generateSuggestions()
+      useChat.getState().finish(convId)
+      void useChat.getState().persist(convId)
+      void generateSuggestions(convId)
     }
   }
 
   function handleStop() {
-    if (runIdRef.current) void cancelClaude(runIdRef.current)
+    const convId = useChat.getState().activeId
+    const runId = convId ? useChat.getState().byId[convId]?.runId : null
+    if (runId) void cancelClaude(runId)
   }
 
   // Gera sugestões contextuais após o turno (fire-and-forget; degrada pros chips).
-  async function generateSuggestions() {
+  async function generateSuggestions(convId: string) {
     const helperModel = useApp.getState().helperModel
-    if (!helperModel || !project || !isTauri()) return
-    const before = useChat.getState()
-    if (!before.items.some((it) => it.kind === "text")) return
-    const convId = before.conversationId
-    before.setSuggesting(true)
+    if (!helperModel || !isTauri()) return
+    const c = useChat.getState().byId[convId]
+    if (!c || !c.items.some((it) => it.kind === "text")) return
+    const proj = useApp.getState().projects.find((p) => p.id === c.projectId)
+    if (!proj) return
+    useChat.getState().setSuggesting(convId, true)
     try {
       const raw = await suggest(
         helperModel,
-        project.path,
-        `${SUGGEST_PROMPT}\n\nConversa recente:\n${buildContext(before.items)}`,
+        proj.path,
+        `${SUGGEST_PROMPT}\n\nConversa recente:\n${buildContext(c.items)}`,
       )
       const list = parseSuggestions(raw)
-      const after = useChat.getState()
-      if (list.length && !after.running && after.conversationId === convId) {
-        after.setSuggestions(list)
+      const after = useChat.getState().byId[convId]
+      if (list.length && after && !after.running) {
+        useChat.getState().setSuggestions(convId, list)
       }
     } catch {
       // silencioso — mantém os chips estáticos
     } finally {
-      useChat.getState().setSuggesting(false)
+      useChat.getState().setSuggesting(convId, false)
     }
   }
 
