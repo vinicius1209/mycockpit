@@ -50,11 +50,12 @@ function ModeSwitcher() {
 function InstrumentStrip() {
   const project = useActiveProject()
   const running = useChat((s) => s.running)
+  const model = useChat((s) => s.model)
   return (
     <div className="hidden items-center gap-2 md:flex">
       <span className="label-mono">{project ? project.name : "sem projeto"}</span>
       <span className="text-muted-foreground/35">·</span>
-      <span className="label-mono">Claude Code</span>
+      <span className="label-mono">{model ?? "Claude Code"}</span>
       <StatusDot status={running ? "running" : "idle"} className="ml-0.5" />
     </div>
   )
