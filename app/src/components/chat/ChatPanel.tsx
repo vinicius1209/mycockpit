@@ -7,7 +7,9 @@ import { useActiveProject, useApp } from "@/store/app"
 import { useChat, useActiveConv } from "@/store/chat"
 import type { ChatItem } from "@/store/chat"
 import { runAgent, cancelAgent, suggest } from "@/lib/agent"
-import { isTauri } from "@/lib/db"
+import type { Attachment } from "@/lib/attachments"
+import { gcAttachments } from "@/lib/attachments"
+import { isTauri, listConvRefs } from "@/lib/db"
 
 function greetingFor(date: Date): string {
   const h = date.getHours()
@@ -89,11 +91,30 @@ export function ChatPanel() {
     return () => Object.values(timers).forEach(clearTimeout)
   }, [])
 
+  // GC dos anexos no boot (throttled 1×/24h no backend). F1: só roda se as refs
+  // vierem não-null (null = falha → não arrisca o orphan-sweep com lista vazia).
+  useEffect(() => {
+    if (!isTauri()) return
+    void (async () => {
+      const refs = await listConvRefs()
+      if (!refs) return
+      try {
+        const r = await gcAttachments(refs)
+        if (r.freed_bytes > 0) {
+          toast(`Cache de anexos: ${(r.freed_bytes / 1048576).toFixed(1)} MB liberados`)
+        }
+      } catch {
+        // GC é best-effort
+      }
+    })()
+  }, [])
+
   // destinationId = o agent escolhido no seletor (v0.2-α: o seam que descartava
   // o destino agora é threadado até o runAgent). Default 'claude-code'.
   async function handleSend(
     text: string,
     cfg?: { agent: string; model: string | null; effort: string | null },
+    attachments: Attachment[] = [],
   ) {
     if (!project) return
     if (!isTauri()) {
@@ -117,7 +138,7 @@ export function ChatPanel() {
     const runId = crypto.randomUUID()
     const sessionId = conv?.sessionId ?? null
     // Sprint 4 — o run escreve em byId[convId] mesmo se o usuário trocar de aba.
-    useChat.getState().start(convId, text, runId, agent, model, effort)
+    useChat.getState().start(convId, text, runId, agent, model, effort, attachments)
     try {
       await runAgent(
         runId,
@@ -129,7 +150,7 @@ export function ChatPanel() {
         project.path,
         sessionId,
         project.permissionMode ?? "padrao",
-        [], // anexos — vêm da UI no Sprint C (paste/chips)
+        attachments,
         (e) => useChat.getState().handleEvent(convId, e),
       )
     } catch (e) {

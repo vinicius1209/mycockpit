@@ -205,6 +205,18 @@ export function MessageList({
           )
         }
 
+        if (it.kind === "notice") {
+          return (
+            <div
+              key={it.id}
+              className="flex items-center gap-2 px-1 text-[11.5px] text-muted-foreground/80"
+            >
+              <AlertCircle className="size-3 shrink-0" />
+              <span>{it.message}</span>
+            </div>
+          )
+        }
+
         return (
           <div key={it.id} className="flex flex-col gap-1.5">
             {!it.ok && it.text && (

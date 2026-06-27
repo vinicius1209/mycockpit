@@ -1,6 +1,7 @@
 import Database from "@tauri-apps/plugin-sql"
 import type { Project } from "@/lib/types"
 import type { ChatItem } from "@/store/chat"
+import type { ConvRef } from "@/lib/attachments"
 
 const DB_URL = "sqlite:mycockpit.db" // DEVE bater com add_migrations no lib.rs
 
@@ -197,4 +198,20 @@ export async function deleteConversation(id: string): Promise<void> {
   const db = await getDb()
   if (!db) return
   await db.execute("DELETE FROM conversations WHERE id = $1", [id])
+}
+
+/** Refs de TODAS as conversas (id + updatedAt) p/ o GC de anexos. Retorna `null`
+ *  em qualquer falha/não-Tauri (F1: o boot NÃO chama o GC com null — só com `[]`
+ *  o GC pode rodar o orphan-sweep). */
+export async function listConvRefs(): Promise<ConvRef[] | null> {
+  const db = await getDb()
+  if (!db) return null
+  try {
+    const rows = await db.select<{ id: string; updated_at: number }[]>(
+      "SELECT id, updated_at FROM conversations",
+    )
+    return rows.map((r) => ({ id: r.id, updated_at: r.updated_at }))
+  } catch {
+    return null
+  }
 }

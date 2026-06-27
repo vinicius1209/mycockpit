@@ -2,6 +2,8 @@
 // O blob mora em app_data_dir/attachments/<convId>/<hash>.<ext>; aqui trafega só
 // o metadado (path relativo + nome de display + mime + tamanho), nunca o payload.
 
+import { invoke } from "@tauri-apps/api/core"
+
 export type AttachmentKind = "image" | "pdf" | "other"
 
 export interface Attachment {
@@ -26,4 +28,51 @@ export const AGENT_CAPS: Record<string, { image: boolean; pdf: boolean }> = {
   "claude-code": { image: true, pdf: true },
   codex: { image: true, pdf: false },
   opencode: { image: false, pdf: false },
+}
+
+export interface GcSummary {
+  freed_bytes: number
+  removed_dirs: number
+  skipped: boolean
+}
+
+// ---------------- wrappers dos comandos Tauri ----------------
+
+/** Salva bytes colados → Attachment (path relativo). `bytes` vai como number[]. */
+export async function saveAttachment(
+  convId: string,
+  name: string,
+  declaredMime: string,
+  bytes: Uint8Array,
+): Promise<Attachment> {
+  return invoke<Attachment>("save_attachment", {
+    convId,
+    name,
+    declaredMime,
+    bytes: Array.from(bytes),
+  })
+}
+
+/** Anexa um arquivo já em disco (file picker) → Attachment. */
+export async function attachPath(
+  convId: string,
+  srcPath: string,
+): Promise<Attachment> {
+  return invoke<Attachment>("attach_path", { convId, srcPath })
+}
+
+export async function deleteAttachment(path: string): Promise<void> {
+  await invoke("delete_attachment", { path })
+}
+
+/** GC do cache (boot). `validConvs` = ConvRef[] autoritativo do DB. */
+export async function gcAttachments(
+  validConvs: ConvRef[],
+): Promise<GcSummary> {
+  return invoke<GcSummary>("gc_attachments", { validConvs })
+}
+
+/** Apaga todos os anexos de uma conversa (ao deletá-la). */
+export async function wipeAttachments(convId: string): Promise<void> {
+  await invoke("wipe_conv_attachments", { convId })
 }

@@ -1,5 +1,7 @@
 import { create } from "zustand"
 import type { AgentEvent } from "@/lib/agent"
+import type { Attachment } from "@/lib/attachments"
+import { wipeAttachments } from "@/lib/attachments"
 import {
   listConversations as dbList,
   loadConversation as dbLoad,
@@ -10,7 +12,7 @@ import {
 } from "@/lib/db"
 
 export type ChatItem =
-  | { kind: "user"; id: string; text: string }
+  | { kind: "user"; id: string; text: string; attachments?: Attachment[] }
   | { kind: "text"; id: string; text: string }
   | { kind: "tool"; id: string; name: string; input: unknown }
   | {
@@ -32,6 +34,7 @@ export type ChatItem =
     }
   | { kind: "error"; id: string; message: string }
   | { kind: "cancelled"; id: string }
+  | { kind: "notice"; id: string; message: string }
 
 /** Estado de UMA conversa — vive em byId[convId]; runs em background escrevem aqui. */
 export interface ConvState {
@@ -81,6 +84,7 @@ interface ChatState {
     agent: string,
     model: string | null,
     effort: string | null,
+    attachments: Attachment[],
   ) => void
   handleEvent: (convId: string, e: AgentEvent) => void
   finish: (convId: string) => void
@@ -186,6 +190,11 @@ function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
         streamingTextId: null,
         runId: null,
         startedAt: null,
+      }
+    // aviso não-fatal (anexo expirado/não-suportado) — só adiciona a linha.
+    case "notice":
+      return {
+        items: [...c.items, { kind: "notice", id: uid(), message: e.message }],
       }
     case "error":
       return {
@@ -310,6 +319,7 @@ export const useChat = create<ChatState>((set, get) => {
 
     removeConversation: async (id) => {
       await dbDelete(id)
+      void wipeAttachments(id) // apaga os blobs da conversa (privacidade imediata)
       const wasActive = get().activeId === id
       const projectId = get().projectId
       set((s) => {
@@ -355,12 +365,17 @@ export const useChat = create<ChatState>((set, get) => {
       }))
     },
 
-    start: (convId, text, runId, agent, model, effort) =>
+    start: (convId, text, runId, agent, model, effort, attachments) =>
       set((s) => {
         const cur = s.byId[convId] ?? emptyConv(s.projectId ?? "")
         const items = [
           ...cur.items,
-          { kind: "user" as const, id: uid(), text },
+          {
+            kind: "user" as const,
+            id: uid(),
+            text,
+            attachments: attachments.length ? attachments : undefined,
+          },
         ]
         const conversations = s.conversations.map((c) =>
           c.id === convId && !c.title ? { ...c, title: deriveTitle(items) } : c,
