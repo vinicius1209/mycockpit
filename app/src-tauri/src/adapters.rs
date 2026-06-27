@@ -3,7 +3,7 @@
 //! `agent::run_agent`. O adapter varia só em 2 pontos: montar o `Command` e
 //! mapear cada linha JSON → `AgentEvent`. O Claude porta a lógica atual 1:1.
 
-use crate::agent::AgentEvent;
+use crate::agent::{AgentEvent, CostSource};
 use tokio::process::Command;
 
 /// Parâmetros de um run — montados pelo `run_agent`, consumidos pelo adapter.
@@ -161,10 +161,17 @@ impl AgentAdapter for ClaudeAdapter {
                         .and_then(|x| x.as_u64())
                         .unwrap_or(0)
                 };
+                // O Claude entrega o custo pronto (total_cost_usd) → Reported.
+                let cost_usd = v.get("total_cost_usd").and_then(|x| x.as_f64());
                 vec![AgentEvent::Result {
                     ok: !v.get("is_error").and_then(|x| x.as_bool()).unwrap_or(false),
                     text: v.get("result").and_then(|x| x.as_str()).map(str::to_string),
-                    cost_usd: v.get("total_cost_usd").and_then(|x| x.as_f64()),
+                    cost_source: if cost_usd.is_some() {
+                        CostSource::Reported
+                    } else {
+                        CostSource::Unknown
+                    },
+                    cost_usd,
                     input_tokens: tok("input_tokens"),
                     output_tokens: tok("output_tokens"),
                     cache_read: tok("cache_read_input_tokens"),

@@ -19,6 +19,7 @@ export type ChatItem =
       ok: boolean
       text?: string
       costUsd?: number
+      costSource?: "reported" | "estimated" | "unknown"
       model?: string | null
       usage?: {
         input: number
@@ -147,6 +148,7 @@ function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
             ok: e.ok,
             text: e.text ?? undefined,
             costUsd: e.cost_usd ?? undefined,
+            costSource: e.cost_source,
             model: c.model,
             usage: {
               input: e.input_tokens,

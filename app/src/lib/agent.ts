@@ -11,6 +11,7 @@ export type AgentEvent =
       ok: boolean
       text: string | null
       cost_usd: number | null
+      cost_source: "reported" | "estimated" | "unknown"
       input_tokens: number
       output_tokens: number
       cache_read: number

@@ -19,6 +19,16 @@ use tokio::sync::Notify;
 #[derive(Default)]
 pub struct RunRegistry(pub Mutex<HashMap<String, Arc<Notify>>>);
 
+/// Proveniência do custo: reportado pelo CLI ($ direto, ex. Claude), estimado
+/// (tokens × tabela de preço, ex. Codex) ou desconhecido (sem custo nem usage).
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CostSource {
+    Reported,
+    Estimated,
+    Unknown,
+}
+
 /// Evento normalizado enviado ao frontend.
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -45,6 +55,7 @@ pub enum AgentEvent {
         ok: bool,
         text: Option<String>,
         cost_usd: Option<f64>,
+        cost_source: CostSource,
         input_tokens: u64,
         output_tokens: u64,
         cache_read: u64,

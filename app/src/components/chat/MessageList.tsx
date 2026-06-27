@@ -234,8 +234,16 @@ export function MessageList({
                 </span>
               )}
               {it.costUsd != null && (
-                <span className="font-mono tabular-nums text-foreground/70">
-                  · US${it.costUsd.toFixed(3)}
+                <span
+                  className="font-mono tabular-nums text-foreground/70"
+                  title={
+                    it.costSource === "estimated"
+                      ? "estimado: tokens × tabela de preço"
+                      : undefined
+                  }
+                >
+                  · {it.costSource === "estimated" ? "~" : ""}US$
+                  {it.costUsd.toFixed(3)}
                 </span>
               )}
             </div>
