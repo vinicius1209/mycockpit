@@ -68,6 +68,12 @@ const EFFORTS: Record<string, { value: string; label: string }[]> = {
     { value: "xhigh", label: "xhigh" },
   ],
 }
+// Modelo pré-selecionado por agent (o default observado de cada um). Como passar
+// o default explícito é equivalente a não passar, é seguro pré-selecionar.
+const DEFAULT_MODEL: Record<string, string> = {
+  "claude-code": "opus",
+  codex: "gpt-5.5",
+}
 
 export function CommandConsole({
   onSend,
@@ -85,7 +91,9 @@ export function CommandConsole({
 }) {
   const [value, setValue] = useState("")
   const [destination, setDestination] = useState(DESTINATIONS[0].id)
-  const [model, setModel] = useState("default")
+  const [model, setModel] = useState(
+    DEFAULT_MODEL[DESTINATIONS[0].id] ?? "default",
+  )
   const [effort, setEffort] = useState("default")
   const [focused, setFocused] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -378,7 +386,7 @@ export function CommandConsole({
             value={effectiveDest}
             onValueChange={(v) => {
               setDestination(v)
-              setModel("default")
+              setModel(DEFAULT_MODEL[v] ?? "default")
               setEffort("default")
             }}
             disabled={locked}

@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { agentLabel } from "@/lib/agent"
 import { Markdown } from "@/components/common/Markdown"
 import type { ChatItem } from "@/store/chat"
 
@@ -139,10 +140,12 @@ export function MessageList({
   items,
   running,
   startedAt,
+  agent,
 }: {
   items: ChatItem[]
   running: boolean
   startedAt: number | null
+  agent: string
 }) {
   return (
     <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-8 py-8">
@@ -254,7 +257,7 @@ export function MessageList({
       {running && (
         <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
           <span className="animate-cockpit-pulse size-2 rounded-full bg-st-running" />
-          <span>Claude Code trabalhando…</span>
+          <span>{agentLabel(agent)} trabalhando…</span>
           {startedAt && (
             <span className="font-mono text-foreground/70">
               <Elapsed since={startedAt} />

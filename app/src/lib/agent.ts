@@ -55,6 +55,17 @@ export async function cancelAgent(runId: string): Promise<void> {
   await invoke("cancel_agent", { runId })
 }
 
+/** Rótulo de exibição de um agent (id → nome). */
+const AGENT_LABELS: Record<string, string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  opencode: "OpenCode",
+  model: "Modelo direto",
+}
+export function agentLabel(agent: string): string {
+  return AGENT_LABELS[agent] ?? agent
+}
+
 /** Helper one-shot (Sprint 3): roda um modelo barato e retorna o texto puro. */
 export async function suggest(
   model: string,

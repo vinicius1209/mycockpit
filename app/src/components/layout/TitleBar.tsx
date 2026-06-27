@@ -5,6 +5,7 @@ import { Separator } from "@/components/ui/separator"
 import { Wordmark } from "@/components/common/Wordmark"
 import { useApp, useActiveProject } from "@/store/app"
 import { useActiveConv } from "@/store/chat"
+import { agentLabel } from "@/lib/agent"
 import { cn } from "@/lib/utils"
 
 const MODES = [
@@ -48,14 +49,14 @@ function ModeSwitcher() {
 
 function InstrumentStrip() {
   const project = useActiveProject()
-  const model = useActiveConv().model
+  const conv = useActiveConv()
   // Sem dot de status aqui — o "rodando" já aparece na sidebar (spinner por
-  // conversa + dot do projeto), no botão de stop e no "Claude Code trabalhando…".
+  // conversa + dot do projeto), no botão de stop e no "… trabalhando…".
   return (
     <div className="hidden items-center gap-2 md:flex">
       <span className="label-mono">{project ? project.name : "sem projeto"}</span>
       <span className="text-muted-foreground/35">·</span>
-      <span className="label-mono">{model ?? "Claude Code"}</span>
+      <span className="label-mono">{conv.model ?? agentLabel(conv.agent)}</span>
     </div>
   )
 }

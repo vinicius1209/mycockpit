@@ -182,6 +182,7 @@ export function ChatPanel() {
             items={items}
             running={running}
             startedAt={conv.startedAt}
+            agent={conv.agent}
           />
         ) : (
           <div className="mx-auto flex min-h-full max-w-[760px] flex-col items-center justify-center px-6 py-10">
