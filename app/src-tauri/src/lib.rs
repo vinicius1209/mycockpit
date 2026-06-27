@@ -111,6 +111,16 @@ pub fn run() {
             sql: "ALTER TABLE conversations ADD COLUMN effort TEXT;",
             kind: MigrationKind::Up,
         },
+        // Conserta conversas legadas (pré-persistência de agent): a v10 jogou
+        // 'claude-code' em TODAS, inclusive as do Codex. Sessão uuid-v7 (15ª
+        // char='7') = Codex; uuid-v4 ('4') = Claude. Reetiqueta só as v7 ainda
+        // marcadas claude-code, senão o resume usa o CLI errado.
+        Migration {
+            version: 13,
+            description: "fix_legacy_codex_agent",
+            sql: "UPDATE conversations SET agent = 'codex' WHERE agent = 'claude-code' AND substr(session_id, 15, 1) = '7';",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
