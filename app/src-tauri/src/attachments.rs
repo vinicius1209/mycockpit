@@ -8,7 +8,7 @@
 //! vira caminho de disco (usamos o hash) nem é injetado no prompt.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
@@ -327,4 +327,180 @@ pub fn resolve_live(app: &AppHandle, atts: Vec<Attachment>) -> (Vec<Attachment>,
         }
     }
     (live, missing)
+}
+
+// ---------------- GC (A5) — garante que o cache NÃO acumula pra sempre ----------------
+
+const TTL_MS: i64 = 30 * 24 * 3600 * 1000; // 30 dias desde o ÚLTIMO uso da conversa
+const GC_THROTTLE_MS: i64 = 24 * 3600 * 1000; // roda no máx 1×/24h
+
+#[derive(Serialize, Default)]
+pub struct GcSummary {
+    pub freed_bytes: u64,
+    pub removed_dirs: usize,
+    pub skipped: bool,
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Nome de pasta de conversa válido: uuid (36, hex+dashes) ou 32-hex. Blinda o
+/// sweep contra apagar dotfiles (.gc-meta) ou arquivos soltos (F4).
+fn is_conv_dir_name(name: &str) -> bool {
+    if name.starts_with('.') {
+        return false;
+    }
+    let n = name.len();
+    (n == 32 || n == 36) && name.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+}
+
+fn recently_gced(meta: &Path) -> bool {
+    std::fs::read_to_string(meta)
+        .ok()
+        .and_then(|s| s.trim().parse::<i64>().ok())
+        .map(|last| now_ms().saturating_sub(last) < GC_THROTTLE_MS)
+        .unwrap_or(false)
+}
+
+/// Remove .*.tmp órfãos (crash no meio da escrita atômica) com idade > 1h.
+fn sweep_tmp(dir: &Path) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') && name.ends_with(".tmp") {
+                if let Ok(m) = e.metadata() {
+                    if m.modified()
+                        .ok()
+                        .and_then(|t| t.elapsed().ok())
+                        .map(|d| d.as_secs() > 3600)
+                        .unwrap_or(false)
+                    {
+                        let _ = std::fs::remove_file(e.path());
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// LRU por `updatedAt` da CONVERSA (não mtime do arquivo — F3/F5): evicta as menos
+/// recentes até LOW_WATER. Pula conversas com run ativo (F23).
+fn lru_evict(
+    root: &Path,
+    updated: &HashMap<String, i64>,
+    active: &ActiveConvs,
+    s: &mut GcSummary,
+) {
+    let mut total = 0u64;
+    let mut dirs: Vec<(String, PathBuf, u64, i64)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(root) {
+        for e in entries.flatten() {
+            let p = e.path();
+            let name = e.file_name().to_string_lossy().to_string();
+            if p.is_dir() && is_conv_dir_name(&name) {
+                let (size, _) = dir_size_mtime(&p);
+                total += size;
+                let upd = updated.get(&name).copied().unwrap_or(0); // desconhecido = mais antigo
+                dirs.push((name, p, size, upd));
+            }
+        }
+    }
+    if total <= CAP_BYTES {
+        return;
+    }
+    dirs.sort_by_key(|(_, _, _, upd)| *upd); // menos recente primeiro
+    for (name, p, size, _) in dirs {
+        if total <= LOW_WATER {
+            break;
+        }
+        if active.contains(&name) {
+            continue;
+        }
+        if std::fs::remove_dir_all(&p).is_ok() {
+            total = total.saturating_sub(size);
+            s.freed_bytes += size;
+            s.removed_dirs += 1;
+        }
+    }
+}
+
+/// GC do cache de anexos (chamado no boot com os ConvRef autoritativos do DB).
+/// Ordem: throttle → (tmp-sweep + orphan + TTL por pasta) → LRU. Pula run ativo.
+#[tauri::command]
+pub async fn gc_attachments(
+    app: AppHandle,
+    valid_convs: Vec<ConvRef>,
+    active: tauri::State<'_, ActiveConvs>,
+) -> Result<GcSummary, String> {
+    let root = attachments_root(&app)?;
+    if !root.exists() {
+        return Ok(GcSummary::default());
+    }
+    let meta = root.join(".gc-meta");
+    if recently_gced(&meta) {
+        return Ok(GcSummary {
+            skipped: true,
+            ..Default::default()
+        });
+    }
+
+    let valid: HashSet<String> = valid_convs.iter().map(|c| sanitize_conv_id(&c.id)).collect();
+    let updated: HashMap<String, i64> = valid_convs
+        .iter()
+        .map(|c| (sanitize_conv_id(&c.id), c.updated_at))
+        .collect();
+
+    let mut conv_dirs: Vec<(String, PathBuf)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&root) {
+        for e in entries.flatten() {
+            let p = e.path();
+            let name = e.file_name().to_string_lossy().to_string();
+            if p.is_dir() && is_conv_dir_name(&name) {
+                conv_dirs.push((name, p));
+            }
+        }
+    }
+
+    let mut s = GcSummary::default();
+    let now = now_ms();
+    // F1: orphan sweep só roda com lista de refs NÃO-vazia (deletar-tudo é só wipe).
+    let do_orphans = !valid.is_empty();
+
+    for (name, p) in &conv_dirs {
+        if active.contains(name) {
+            continue; // F23: run ativo → não toca
+        }
+        sweep_tmp(p);
+        let is_orphan = do_orphans && !valid.contains(name);
+        let expired = updated
+            .get(name)
+            .map(|&u| now.saturating_sub(u) > TTL_MS)
+            .unwrap_or(false);
+        if is_orphan || expired {
+            let (size, _) = dir_size_mtime(p);
+            if std::fs::remove_dir_all(p).is_ok() {
+                s.freed_bytes += size;
+                s.removed_dirs += 1;
+            }
+        }
+    }
+
+    lru_evict(&root, &updated, active.inner(), &mut s);
+    let _ = std::fs::write(&meta, now_ms().to_string());
+    Ok(s)
+}
+
+/// Apaga TODOS os anexos de uma conversa (ao deletá-la) — reclaim + privacidade
+/// imediatos. Síncrono e sem depender do GC throttled.
+#[tauri::command]
+pub async fn wipe_conv_attachments(app: AppHandle, conv_id: String) -> Result<(), String> {
+    let dir = conv_dir(&app, &conv_id)?;
+    if dir.exists() {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    Ok(())
 }

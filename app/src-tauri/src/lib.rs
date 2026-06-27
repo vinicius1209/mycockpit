@@ -154,7 +154,9 @@ pub fn run() {
             sources::list_project_files,
             attachments::save_attachment,
             attachments::attach_path,
-            attachments::delete_attachment
+            attachments::delete_attachment,
+            attachments::gc_attachments,
+            attachments::wipe_conv_attachments
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
