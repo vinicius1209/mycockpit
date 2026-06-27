@@ -24,7 +24,7 @@ import type { Destination } from "@/lib/types"
 
 const DESTINATIONS: Destination[] = [
   { id: "claude-code", label: "Claude Code", kind: "agent", available: true, hint: "Agent" },
-  { id: "codex", label: "Codex", kind: "agent", available: false, hint: "em breve" },
+  { id: "codex", label: "Codex", kind: "agent", available: true, hint: "Agent" },
   { id: "opencode", label: "OpenCode", kind: "agent", available: false, hint: "em breve" },
   { id: "model", label: "Modelo direto", kind: "model", available: false, hint: "em breve" },
 ]
@@ -149,7 +149,11 @@ export function CommandConsole({
     })
   }
 
-  const dest = DESTINATIONS.find((d) => d.id === destination) ?? DESTINATIONS[0]
+  // conversa estabelecida trava no agent dela; o seletor reflete e desabilita
+  const locked = conv.items.length > 0
+  const effectiveDest = locked ? conv.agent : destination
+  const dest =
+    DESTINATIONS.find((d) => d.id === effectiveDest) ?? DESTINATIONS[0]
   const canSend = value.trim().length > 0 && !disabled && !running
 
   function submit() {
@@ -325,7 +329,11 @@ export function CommandConsole({
         />
 
         <div className="flex items-center gap-2 p-2.5 pt-1">
-          <Select value={destination} onValueChange={setDestination}>
+          <Select
+            value={effectiveDest}
+            onValueChange={setDestination}
+            disabled={locked}
+          >
             <SelectTrigger className="h-8 w-fit gap-2 rounded-full border bg-secondary/50 pr-2 pl-2.5 text-[13px] text-foreground shadow-none focus-visible:ring-0 data-[size=default]:h-8">
               <span
                 className={cn(

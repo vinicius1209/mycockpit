@@ -36,6 +36,8 @@ export type ChatItem =
 /** Estado de UMA conversa — vive em byId[convId]; runs em background escrevem aqui. */
 export interface ConvState {
   projectId: string
+  /** Agent que roda esta conversa (claude-code|codex|…) — trava no 1º run. */
+  agent: string
   items: ChatItem[]
   sessionId: string | null
   model: string | null
@@ -65,7 +67,7 @@ interface ChatState {
   switchConversation: (id: string) => Promise<void>
   removeConversation: (id: string) => Promise<void>
   persist: (convId: string) => Promise<void>
-  start: (convId: string, text: string, runId: string) => void
+  start: (convId: string, text: string, runId: string, agent: string) => void
   handleEvent: (convId: string, e: AgentEvent) => void
   finish: (convId: string) => void
   setSuggestions: (convId: string, s: string[]) => void
@@ -90,6 +92,7 @@ function deriveTitle(items: ChatItem[]): string | null {
 function emptyConv(projectId: string): ConvState {
   return {
     projectId,
+    agent: "claude-code",
     items: [],
     sessionId: null,
     model: null,
@@ -325,7 +328,7 @@ export const useChat = create<ChatState>((set, get) => {
       }))
     },
 
-    start: (convId, text, runId) =>
+    start: (convId, text, runId, agent) =>
       set((s) => {
         const cur = s.byId[convId] ?? emptyConv(s.projectId ?? "")
         const items = [
@@ -341,6 +344,7 @@ export const useChat = create<ChatState>((set, get) => {
             ...s.byId,
             [convId]: {
               ...cur,
+              agent,
               items,
               streamingTextId: null,
               running: true,

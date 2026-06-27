@@ -88,15 +88,18 @@ export function ChatPanel() {
     }
     const convId = useChat.getState().activeId
     if (!convId) return
-    if (useChat.getState().byId[convId]?.running) return // já rodando nesta conversa
+    const conv = useChat.getState().byId[convId]
+    if (conv?.running) return // já rodando nesta conversa
+    // conversa estabelecida trava no agent do 1º run; nova usa o seletor
+    const agent = conv && conv.items.length > 0 ? conv.agent : destinationId
     const runId = crypto.randomUUID()
-    const sessionId = useChat.getState().byId[convId]?.sessionId ?? null
+    const sessionId = conv?.sessionId ?? null
     // Sprint 4 — o run escreve em byId[convId] mesmo se o usuário trocar de aba.
-    useChat.getState().start(convId, text, runId)
+    useChat.getState().start(convId, text, runId, agent)
     try {
       await runAgent(
         runId,
-        destinationId,
+        agent,
         text,
         project.path,
         sessionId,

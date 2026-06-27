@@ -6,6 +6,7 @@ mod adapters;
 mod agent;
 mod context;
 mod mycockpit;
+mod pricing;
 mod sources;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
