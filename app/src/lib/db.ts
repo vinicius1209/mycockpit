@@ -109,6 +109,9 @@ interface ConvLoadRow {
   items: string
   title: string | null
   suggestions: string | null
+  agent: string | null
+  req_model: string | null
+  effort: string | null
 }
 
 export async function loadConversation(
@@ -118,11 +121,14 @@ export async function loadConversation(
   items: ChatItem[]
   title: string | null
   suggestions: string[]
+  agent: string
+  reqModel: string | null
+  effort: string | null
 } | null> {
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ConvLoadRow[]>(
-    "SELECT session_id, items, title, suggestions FROM conversations WHERE id = $1",
+    "SELECT session_id, items, title, suggestions, agent, req_model, effort FROM conversations WHERE id = $1",
     [id],
   )
   if (!rows.length) return null
@@ -134,6 +140,9 @@ export async function loadConversation(
       suggestions: rows[0].suggestions
         ? (JSON.parse(rows[0].suggestions) as string[])
         : [],
+      agent: rows[0].agent ?? "claude-code",
+      reqModel: rows[0].req_model,
+      effort: rows[0].effort,
     }
   } catch {
     return null
@@ -161,11 +170,14 @@ export async function saveConversation(
   sessionId: string | null,
   items: ChatItem[],
   suggestions: string[],
+  agent: string,
+  reqModel: string | null,
+  effort: string | null,
 ): Promise<void> {
   const db = await getDb()
   if (!db) return
   await db.execute(
-    "INSERT INTO conversations (id, project_id, title, session_id, items, suggestions, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $7) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, suggestions = excluded.suggestions, updated_at = excluded.updated_at",
+    "INSERT INTO conversations (id, project_id, title, session_id, items, suggestions, agent, req_model, effort, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, suggestions = excluded.suggestions, agent = excluded.agent, req_model = excluded.req_model, effort = excluded.effort, updated_at = excluded.updated_at",
     [
       id,
       projectId,
@@ -173,6 +185,9 @@ export async function saveConversation(
       sessionId,
       JSON.stringify(items),
       JSON.stringify(suggestions),
+      agent,
+      reqModel,
+      effort,
       Date.now(),
     ],
   )

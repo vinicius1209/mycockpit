@@ -90,6 +90,26 @@ pub fn run() {
             sql: "ALTER TABLE conversations ADD COLUMN suggestions TEXT NOT NULL DEFAULT '[]';",
             kind: MigrationKind::Up,
         },
+        // v0.2.x — persiste o agent + modelo + effort por conversa (cross-restart),
+        // p/ o resume usar o CLI certo e a UI refletir o que travou no 1º run.
+        Migration {
+            version: 10,
+            description: "conversations_agent",
+            sql: "ALTER TABLE conversations ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude-code';",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 11,
+            description: "conversations_req_model",
+            sql: "ALTER TABLE conversations ADD COLUMN req_model TEXT;",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 12,
+            description: "conversations_effort",
+            sql: "ALTER TABLE conversations ADD COLUMN effort TEXT;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

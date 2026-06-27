@@ -240,6 +240,9 @@ export const useChat = create<ChatState>((set, get) => {
                 items: conv?.items ?? [],
                 sessionId: conv?.sessionId ?? null,
                 suggestions: conv?.suggestions ?? [],
+                agent: conv?.agent ?? "claude-code",
+                reqModel: conv?.reqModel ?? null,
+                effort: conv?.effort ?? null,
               },
             },
           },
@@ -339,6 +342,9 @@ export const useChat = create<ChatState>((set, get) => {
         c.sessionId,
         c.items,
         c.suggestions,
+        c.agent,
+        c.reqModel,
+        c.effort,
       )
       const now = Date.now()
       // atualiza no lugar — sem reordenar (ordem de criação é estável)
