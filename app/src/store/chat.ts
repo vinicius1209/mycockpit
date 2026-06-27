@@ -128,8 +128,19 @@ function emptyConv(projectId: string): ConvState {
 
 const EMPTY_CONV = emptyConv("")
 
-/** Reduz um evento do agent sobre o estado de UMA conversa. */
-function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
+/** Campos de CONTEÚDO de uma conversa — o que o reducer de itens lê/escreve.
+ *  Usado pelo Linear (via reduceEvent) e por cada lane do Fusion. */
+export type ItemReducible = Pick<
+  ConvState,
+  "items" | "streamingTextId" | "model" | "sessionId" | "startedAt"
+>
+
+/** Núcleo PURO de itens (T1.1). NÃO mexe em running/finalizing/runId/startedAt —
+ *  o controle fica no controlFlow (Linear) ou no status da lane (Fusion). */
+export function reduceItems(
+  c: ItemReducible,
+  e: AgentEvent,
+): Partial<ItemReducible> {
   switch (e.type) {
     case "session":
       return { sessionId: e.session_id, model: e.model }
@@ -183,13 +194,7 @@ function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
             durationMs: c.startedAt ? Date.now() - c.startedAt : undefined,
           },
         ],
-        running: false,
-        // o turno acabou, mas o processo ainda finaliza (flush da sessão) →
-        // segura o próximo send até o Done (processo sair de fato).
-        finalizing: true,
         streamingTextId: null,
-        runId: null,
-        startedAt: null,
       }
     // aviso não-fatal (anexo expirado/não-suportado) — só adiciona a linha.
     case "notice":
@@ -199,30 +204,40 @@ function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
     case "error":
       return {
         items: [...c.items, { kind: "error", id: uid(), message: e.message }],
-        running: false,
         streamingTextId: null,
-        runId: null,
-        startedAt: null,
       }
     case "cancelled":
       return {
         items: [...c.items, { kind: "cancelled", id: uid() }],
-        running: false,
         streamingTextId: null,
-        runId: null,
-        startedAt: null,
       }
     case "done":
-      return {
-        running: false,
-        finalizing: false,
-        streamingTextId: null,
-        runId: null,
-        startedAt: null,
-      }
+      return { streamingTextId: null }
     default:
       return {}
   }
+}
+
+/** Controle do turno Linear (running/finalizing/runId/startedAt). Só o Linear usa
+ *  — a lane do Fusion deriva o status dela explicitamente (handleCandidateEvent). */
+function controlFlow(_c: ConvState, e: AgentEvent): Partial<ConvState> {
+  switch (e.type) {
+    case "result":
+      // turno acabou, mas o processo ainda finaliza (flush) → segura até o Done.
+      return { running: false, finalizing: true, runId: null, startedAt: null }
+    case "error":
+    case "cancelled":
+      return { running: false, runId: null, startedAt: null }
+    case "done":
+      return { running: false, finalizing: false, runId: null, startedAt: null }
+    default:
+      return {}
+  }
+}
+
+/** Reduz um evento do agent sobre o estado de UMA conversa (Linear). */
+function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
+  return { ...reduceItems(c, e), ...controlFlow(c, e) }
 }
 
 export const useChat = create<ChatState>((set, get) => {
