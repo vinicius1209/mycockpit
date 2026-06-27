@@ -9,9 +9,9 @@ pub struct NormalizedUsage {
     /// Total de input (pode INCLUIR o cache — convenção varia por CLI).
     pub input: u64,
     pub cached_input: u64,
-    /// Output (inclui reasoning no Codex — por isso não somamos reasoning à parte).
+    /// Output — JÁ inclui o reasoning no Codex, então NÃO somamos reasoning à
+    /// parte (seria cobrar em dobro); por isso não guardamos reasoning_tokens.
     pub output: u64,
-    pub reasoning: u64,
 }
 
 struct Price {

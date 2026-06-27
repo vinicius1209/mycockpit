@@ -275,7 +275,6 @@ impl AgentAdapter for CodexAdapter {
                     input: tok("input_tokens"),
                     cached_input: tok("cached_input_tokens"),
                     output: tok("output_tokens"),
-                    reasoning: tok("reasoning_output_tokens"),
                 };
                 // Codex NÃO dá USD → estima por tokens × tabela (default = config gpt-5.5)
                 let model = self.model.clone().unwrap_or_else(|| "gpt-5.5".to_string());
