@@ -276,6 +276,20 @@ pub async fn delete_attachment(app: AppHandle, path: String) -> Result<(), Strin
     }
 }
 
+/// Lê os bytes de um anexo (p/ thumbnail no histórico). Valida sob attachments/.
+#[tauri::command]
+pub async fn read_attachment(app: AppHandle, path: String) -> Result<Vec<u8>, String> {
+    let root = attachments_root(&app)?;
+    let abs = app_data(&app)?.join(&path);
+    let canon_root = root.canonicalize().unwrap_or(root);
+    match abs.canonicalize() {
+        Ok(canon) if canon.starts_with(&canon_root) => {
+            std::fs::read(&canon).map_err(|e| e.to_string())
+        }
+        _ => Err("caminho de anexo inválido".to_string()),
+    }
+}
+
 // ---------------- suporte ao run + GC (A4/A5) ----------------
 
 /// Conversas com run em andamento — o GC pula a pasta delas (não apaga um blob que

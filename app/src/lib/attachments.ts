@@ -30,6 +30,10 @@ export const AGENT_CAPS: Record<string, { image: boolean; pdf: boolean }> = {
   opencode: { image: false, pdf: false },
 }
 
+/** Limites (espelham o backend): 10 MB por arquivo, 8 anexos por mensagem. */
+export const MAX_ATTACH_BYTES = 10 * 1024 * 1024
+export const MAX_ATTACH_COUNT = 8
+
 export interface GcSummary {
   freed_bytes: number
   removed_dirs: number
@@ -75,4 +79,19 @@ export async function gcAttachments(
 /** Apaga todos os anexos de uma conversa (ao deletá-la). */
 export async function wipeAttachments(convId: string): Promise<void> {
   await invoke("wipe_conv_attachments", { convId })
+}
+
+// URL de object cacheada por path (F6: não re-lê bytes a cada render).
+const urlCache = new Map<string, string>()
+
+/** Bytes do anexo → object URL (cacheado) p/ thumbnail no histórico. */
+export async function attachmentUrl(att: Attachment): Promise<string> {
+  const cached = urlCache.get(att.path)
+  if (cached) return cached
+  const bytes = await invoke<number[]>("read_attachment", { path: att.path })
+  const url = URL.createObjectURL(
+    new Blob([new Uint8Array(bytes)], { type: att.mime }),
+  )
+  urlCache.set(att.path, url)
+  return url
 }

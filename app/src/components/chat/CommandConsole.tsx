@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from "react"
-import { ArrowUp, Paperclip, Sparkles, Square } from "lucide-react"
+import {
+  ArrowUp,
+  FileText,
+  Image as ImageIcon,
+  Paperclip,
+  Sparkles,
+  Square,
+  X,
+} from "lucide-react"
+import { toast } from "sonner"
 import { open } from "@tauri-apps/plugin-dialog"
 import {
   Select,
@@ -20,6 +29,14 @@ import {
 import type { SlashCommand } from "@/lib/sources"
 import { isTauri } from "@/lib/db"
 import { cn } from "@/lib/utils"
+import type { Attachment } from "@/lib/attachments"
+import {
+  AGENT_CAPS,
+  MAX_ATTACH_BYTES,
+  MAX_ATTACH_COUNT,
+  saveAttachment,
+  deleteAttachment,
+} from "@/lib/attachments"
 import type { Destination } from "@/lib/types"
 
 const DESTINATIONS: Destination[] = [
@@ -85,6 +102,7 @@ export function CommandConsole({
   onSend: (
     text: string,
     cfg: { agent: string; model: string | null; effort: string | null },
+    attachments: Attachment[],
   ) => void
   disabled?: boolean
   running?: boolean
@@ -97,6 +115,7 @@ export function CommandConsole({
     DEFAULT_MODEL[DESTINATIONS[0].id] ?? "default",
   )
   const [effort, setEffort] = useState("default")
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [focused, setFocused] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const conv = useActiveConv()
@@ -209,8 +228,17 @@ export function CommandConsole({
   const effectiveEffort = locked ? (conv.effort ?? "default") : effort
   const dest =
     DESTINATIONS.find((d) => d.id === effectiveDest) ?? DESTINATIONS[0]
+  // trava de capacidade: o agent-alvo precisa suportar cada anexo (espelha o trait)
+  const caps = AGENT_CAPS[effectiveDest] ?? { image: false, pdf: false }
+  const allSupported = attachments.every((a) =>
+    a.kind === "image" ? caps.image : a.kind === "pdf" ? caps.pdf : false,
+  )
   const canSend =
-    value.trim().length > 0 && !disabled && !running && !finalizing
+    (value.trim().length > 0 || attachments.length > 0) &&
+    !disabled &&
+    !running &&
+    !finalizing &&
+    allSupported
 
   // Histórico tipo shell: os prompts já enviados nesta conversa (mais novo = fim).
   const userPrompts = conv.items.flatMap((it) =>
@@ -249,23 +277,84 @@ export function CommandConsole({
     }
   }, [histIdx])
 
-  // trocar de conversa zera a navegação de histórico
+  // trocar de conversa zera o histórico + os anexos pendentes (F19)
   useEffect(() => {
     setHistIdx(null)
     setDraft("")
+    setAttachments([])
   }, [activeId])
 
   function submit() {
     if (!canSend) return
-    onSend(value.trim(), {
-      agent: effectiveDest,
-      model: model === "default" ? null : model,
-      effort: effort === "default" ? null : effort,
-    })
+    onSend(
+      value.trim(),
+      {
+        agent: effectiveDest,
+        model: model === "default" ? null : model,
+        effort: effort === "default" ? null : effort,
+      },
+      attachments,
+    )
     setValue("")
+    setAttachments([])
     setHistIdx(null)
     setDraft("")
     ref.current?.focus()
+  }
+
+  function removeAttachment(path: string) {
+    setAttachments((a) => a.filter((x) => x.path !== path))
+    void deleteAttachment(path)
+  }
+
+  function insertAtCursor(insert: string) {
+    const ta = ref.current
+    if (!ta) {
+      setValue((v) => v + insert)
+      return
+    }
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    setValue((v) => v.slice(0, start) + insert + v.slice(end))
+  }
+
+  // Colar imagem/PDF: captura os File SÍNCRONO antes de qualquer await (F21),
+  // preserva o texto colado junto (F20), valida tamanho/contagem (F8/F22), salva.
+  async function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    if (!isTauri() || !activeId) return
+    const files = [...e.clipboardData.items]
+      .filter((it) => it.kind === "file")
+      .map((it) => it.getAsFile())
+      .filter(
+        (f): f is File =>
+          !!f &&
+          (f.type.startsWith("image/") ||
+            f.type === "application/pdf" ||
+            f.type === ""),
+      )
+    if (!files.length) return // paste de texto puro → comportamento default
+    const text = e.clipboardData.getData("text/plain")
+    e.preventDefault()
+    if (text) insertAtCursor(text)
+    let count = attachments.length
+    for (const f of files) {
+      if (f.size > MAX_ATTACH_BYTES) {
+        toast.error(`"${f.name || "anexo"}" excede 10 MB`)
+        continue
+      }
+      if (count >= MAX_ATTACH_COUNT) {
+        toast.error("máx. 8 anexos por mensagem")
+        break
+      }
+      try {
+        const buf = new Uint8Array(await f.arrayBuffer())
+        const att = await saveAttachment(activeId, f.name || "colado", f.type, buf)
+        setAttachments((a) => [...a, att])
+        count++
+      } catch (err) {
+        toast.error(typeof err === "string" ? err : "falha ao anexar")
+      }
+    }
   }
 
   // Anexo real (B3 — inspirado no ai-04): file picker do Tauri → insere @path.
@@ -360,6 +449,43 @@ export function CommandConsole({
             : "hover:border-border-strong",
         )}
       >
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+            {attachments.map((a) => {
+              const ok =
+                a.kind === "image"
+                  ? caps.image
+                  : a.kind === "pdf"
+                    ? caps.pdf
+                    : false
+              const Icon = a.kind === "pdf" ? FileText : ImageIcon
+              return (
+                <span
+                  key={a.path}
+                  title={ok ? a.name : `${a.name} — não suportado por ${dest.label}`}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px]",
+                    ok
+                      ? "bg-secondary/50 text-foreground/80"
+                      : "border-st-error/50 bg-st-error/10 text-st-error",
+                  )}
+                >
+                  <Icon className="size-3 shrink-0" />
+                  <span className="max-w-[140px] truncate">{a.name}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      removeAttachment(a.path)
+                    }}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              )
+            })}
+          </div>
+        )}
         <Textarea
           ref={ref}
           value={value}
@@ -371,6 +497,7 @@ export function CommandConsole({
             setHistIdx(null)
           }}
           onSelect={(e) => setCursor(e.currentTarget.selectionStart ?? 0)}
+          onPaste={onPaste}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={(e) => {

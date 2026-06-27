@@ -13,6 +13,8 @@ import {
 import type { LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { agentLabel } from "@/lib/agent"
+import type { Attachment } from "@/lib/attachments"
+import { attachmentUrl } from "@/lib/attachments"
 import { Markdown } from "@/components/common/Markdown"
 import type { ChatItem } from "@/store/chat"
 
@@ -136,6 +138,47 @@ function ToolCard({ item }: { item: ToolItem }) {
   )
 }
 
+/** Thumbnail de um anexo no histórico (bytes → object URL cacheado). */
+function AttachmentThumb({ att }: { att: Attachment }) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let alive = true
+    attachmentUrl(att)
+      .then((u) => alive && setUrl(u))
+      .catch(() => alive && setFailed(true))
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [att.path])
+  if (att.kind === "pdf") {
+    return (
+      <span className="flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-[12px] text-muted-foreground">
+        <FileText className="size-3.5 shrink-0" />
+        <span className="max-w-[160px] truncate">{att.name}</span>
+      </span>
+    )
+  }
+  if (failed) {
+    return (
+      <span className="rounded-md border bg-card px-2.5 py-1.5 text-[11.5px] text-muted-foreground">
+        anexo expirado
+      </span>
+    )
+  }
+  if (!url) {
+    return <span className="size-20 animate-pulse rounded-lg border bg-secondary/40" />
+  }
+  return (
+    <img
+      src={url}
+      alt={att.name}
+      className="max-h-44 max-w-[220px] rounded-lg border object-contain"
+    />
+  )
+}
+
 export function MessageList({
   items,
   running,
@@ -154,13 +197,22 @@ export function MessageList({
       {items.map((it) => {
         if (it.kind === "user") {
           return (
-            <div key={it.id} className="flex justify-end">
-              <div
-                data-selectable
-                className="max-w-[82%] rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[14px] whitespace-pre-wrap text-foreground"
-              >
-                {it.text}
-              </div>
+            <div key={it.id} className="flex flex-col items-end gap-1.5">
+              {it.attachments && it.attachments.length > 0 && (
+                <div className="flex max-w-[82%] flex-wrap justify-end gap-1.5">
+                  {it.attachments.map((a) => (
+                    <AttachmentThumb key={a.path} att={a} />
+                  ))}
+                </div>
+              )}
+              {it.text && (
+                <div
+                  data-selectable
+                  className="max-w-[82%] rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[14px] whitespace-pre-wrap text-foreground"
+                >
+                  {it.text}
+                </div>
+              )}
             </div>
           )
         }

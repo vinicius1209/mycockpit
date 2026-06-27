@@ -155,6 +155,7 @@ pub fn run() {
             attachments::save_attachment,
             attachments::attach_path,
             attachments::delete_attachment,
+            attachments::read_attachment,
             attachments::gc_attachments,
             attachments::wipe_conv_attachments
         ])
