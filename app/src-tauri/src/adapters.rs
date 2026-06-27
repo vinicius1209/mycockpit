@@ -13,6 +13,10 @@ pub struct RunRequest {
     pub cwd: String,
     pub resume: Option<String>,
     pub permission: String,
+    /// Modelo escolhido (None = default do CLI/config).
+    pub model: Option<String>,
+    /// Nível de esforço de raciocínio (None = default). Valores diferem por agent.
+    pub effort: Option<String>,
 }
 
 pub trait AgentAdapter: Send {
@@ -73,6 +77,13 @@ impl AgentAdapter for ClaudeAdapter {
             _ => {
                 cmd.arg("--permission-mode").arg("acceptEdits");
             }
+        }
+        // Claude: --model <alias> · --effort low|medium|high|xhigh|max (verificado)
+        if let Some(m) = &req.model {
+            cmd.arg("--model").arg(m);
+        }
+        if let Some(e) = &req.effort {
+            cmd.arg("--effort").arg(e);
         }
         if let Some(r) = &req.resume {
             cmd.arg("--resume").arg(r);
@@ -218,6 +229,14 @@ impl AgentAdapter for CodexAdapter {
             _ => "workspace-write",
         };
         cmd.arg("-s").arg(sandbox);
+        // Codex: -m <model> · effort via override de config (não tem flag dedicada
+        // no exec). Valores: minimal|low|medium|high|xhigh. ANTES de `resume`.
+        if let Some(m) = &req.model {
+            cmd.arg("-m").arg(m);
+        }
+        if let Some(e) = &req.effort {
+            cmd.arg("-c").arg(format!("model_reasoning_effort={e}"));
+        }
         // resume: `codex exec resume <thread_id> <prompt>`
         if let Some(r) = &req.resume {
             cmd.arg("resume").arg(r);

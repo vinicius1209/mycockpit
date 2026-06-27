@@ -80,7 +80,10 @@ export function ChatPanel() {
 
   // destinationId = o agent escolhido no seletor (v0.2-α: o seam que descartava
   // o destino agora é threadado até o runAgent). Default 'claude-code'.
-  async function handleSend(text: string, destinationId = "claude-code") {
+  async function handleSend(
+    text: string,
+    cfg?: { agent: string; model: string | null; effort: string | null },
+  ) {
     if (!project) return
     if (!isTauri()) {
       toast("O dispatch dos agents roda no app (bun run tauri dev)")
@@ -90,16 +93,21 @@ export function ChatPanel() {
     if (!convId) return
     const conv = useChat.getState().byId[convId]
     if (conv?.running) return // já rodando nesta conversa
-    // conversa estabelecida trava no agent do 1º run; nova usa o seletor
-    const agent = conv && conv.items.length > 0 ? conv.agent : destinationId
+    // conversa estabelecida trava no agent/modelo/effort do 1º run; nova usa o seletor
+    const locked = conv != null && conv.items.length > 0
+    const agent = locked ? conv!.agent : (cfg?.agent ?? "claude-code")
+    const model = locked ? conv!.reqModel : (cfg?.model ?? null)
+    const effort = locked ? conv!.effort : (cfg?.effort ?? null)
     const runId = crypto.randomUUID()
     const sessionId = conv?.sessionId ?? null
     // Sprint 4 — o run escreve em byId[convId] mesmo se o usuário trocar de aba.
-    useChat.getState().start(convId, text, runId, agent)
+    useChat.getState().start(convId, text, runId, agent, model, effort)
     try {
       await runAgent(
         runId,
         agent,
+        model,
+        effort,
         text,
         project.path,
         sessionId,

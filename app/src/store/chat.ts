@@ -38,6 +38,9 @@ export interface ConvState {
   projectId: string
   /** Agent que roda esta conversa (claude-code|codex|…) — trava no 1º run. */
   agent: string
+  /** Modelo + effort escolhidos (null = default do CLI) — travam no 1º run. */
+  reqModel: string | null
+  effort: string | null
   items: ChatItem[]
   sessionId: string | null
   model: string | null
@@ -67,7 +70,14 @@ interface ChatState {
   switchConversation: (id: string) => Promise<void>
   removeConversation: (id: string) => Promise<void>
   persist: (convId: string) => Promise<void>
-  start: (convId: string, text: string, runId: string, agent: string) => void
+  start: (
+    convId: string,
+    text: string,
+    runId: string,
+    agent: string,
+    model: string | null,
+    effort: string | null,
+  ) => void
   handleEvent: (convId: string, e: AgentEvent) => void
   finish: (convId: string) => void
   setSuggestions: (convId: string, s: string[]) => void
@@ -93,6 +103,8 @@ function emptyConv(projectId: string): ConvState {
   return {
     projectId,
     agent: "claude-code",
+    reqModel: null,
+    effort: null,
     items: [],
     sessionId: null,
     model: null,
@@ -328,7 +340,7 @@ export const useChat = create<ChatState>((set, get) => {
       }))
     },
 
-    start: (convId, text, runId, agent) =>
+    start: (convId, text, runId, agent, model, effort) =>
       set((s) => {
         const cur = s.byId[convId] ?? emptyConv(s.projectId ?? "")
         const items = [
@@ -345,6 +357,8 @@ export const useChat = create<ChatState>((set, get) => {
             [convId]: {
               ...cur,
               agent,
+              reqModel: model,
+              effort,
               items,
               streamingTextId: null,
               running: true,

@@ -35,19 +35,58 @@ const CHIPS = [
   { label: "Criar uma branch", prompt: "Crie uma branch nova a partir da main para esta tarefa." },
 ]
 
+// Modelo + effort por agent (valores verificados vs --help/doc oficial).
+// "default" = não passa flag (usa o default do CLI/config).
+const MODELS: Record<string, { value: string; label: string }[]> = {
+  "claude-code": [
+    { value: "default", label: "modelo" },
+    { value: "opus", label: "Opus" },
+    { value: "sonnet", label: "Sonnet" },
+    { value: "haiku", label: "Haiku" },
+  ],
+  codex: [
+    { value: "default", label: "modelo" },
+    { value: "gpt-5.5", label: "gpt-5.5" },
+    { value: "o3", label: "o3" },
+  ],
+}
+const EFFORTS: Record<string, { value: string; label: string }[]> = {
+  "claude-code": [
+    { value: "default", label: "effort" },
+    { value: "low", label: "low" },
+    { value: "medium", label: "medium" },
+    { value: "high", label: "high" },
+    { value: "xhigh", label: "xhigh" },
+    { value: "max", label: "max" },
+  ],
+  codex: [
+    { value: "default", label: "effort" },
+    { value: "minimal", label: "minimal" },
+    { value: "low", label: "low" },
+    { value: "medium", label: "medium" },
+    { value: "high", label: "high" },
+    { value: "xhigh", label: "xhigh" },
+  ],
+}
+
 export function CommandConsole({
   onSend,
   disabled,
   running,
   onStop,
 }: {
-  onSend: (text: string, destinationId: string) => void
+  onSend: (
+    text: string,
+    cfg: { agent: string; model: string | null; effort: string | null },
+  ) => void
   disabled?: boolean
   running?: boolean
   onStop?: () => void
 }) {
   const [value, setValue] = useState("")
   const [destination, setDestination] = useState(DESTINATIONS[0].id)
+  const [model, setModel] = useState("default")
+  const [effort, setEffort] = useState("default")
   const [focused, setFocused] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const conv = useActiveConv()
@@ -149,16 +188,22 @@ export function CommandConsole({
     })
   }
 
-  // conversa estabelecida trava no agent dela; o seletor reflete e desabilita
+  // conversa estabelecida trava no agent/modelo/effort dela; o seletor reflete
   const locked = conv.items.length > 0
   const effectiveDest = locked ? conv.agent : destination
+  const effectiveModel = locked ? (conv.reqModel ?? "default") : model
+  const effectiveEffort = locked ? (conv.effort ?? "default") : effort
   const dest =
     DESTINATIONS.find((d) => d.id === effectiveDest) ?? DESTINATIONS[0]
   const canSend = value.trim().length > 0 && !disabled && !running
 
   function submit() {
     if (!canSend) return
-    onSend(value.trim(), destination)
+    onSend(value.trim(), {
+      agent: effectiveDest,
+      model: model === "default" ? null : model,
+      effort: effort === "default" ? null : effort,
+    })
     setValue("")
     ref.current?.focus()
   }
@@ -331,7 +376,11 @@ export function CommandConsole({
         <div className="flex items-center gap-2 p-2.5 pt-1">
           <Select
             value={effectiveDest}
-            onValueChange={setDestination}
+            onValueChange={(v) => {
+              setDestination(v)
+              setModel("default")
+              setEffort("default")
+            }}
             disabled={locked}
           >
             <SelectTrigger className="h-8 w-fit gap-2 rounded-full border bg-secondary/50 pr-2 pl-2.5 text-[13px] text-foreground shadow-none focus-visible:ring-0 data-[size=default]:h-8">
@@ -364,6 +413,36 @@ export function CommandConsole({
                       {d.hint}
                     </span>
                   </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={effectiveModel} onValueChange={setModel} disabled={locked}>
+            <SelectTrigger className="h-8 w-fit gap-1 rounded-full border bg-secondary/50 px-2.5 text-[12px] text-muted-foreground shadow-none focus-visible:ring-0 data-[size=default]:h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start">
+              {(MODELS[effectiveDest] ?? []).map((m) => (
+                <SelectItem key={m.value} value={m.value} className="text-[13px]">
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={effectiveEffort}
+            onValueChange={setEffort}
+            disabled={locked}
+          >
+            <SelectTrigger className="h-8 w-fit gap-1 rounded-full border bg-secondary/50 px-2.5 text-[12px] text-muted-foreground shadow-none focus-visible:ring-0 data-[size=default]:h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start">
+              {(EFFORTS[effectiveDest] ?? []).map((e) => (
+                <SelectItem key={e.value} value={e.value} className="text-[13px]">
+                  {e.label}
                 </SelectItem>
               ))}
             </SelectContent>

@@ -84,6 +84,8 @@ pub enum AgentEvent {
 pub async fn run_agent(
     run_id: String,
     agent: String,
+    model: Option<String>,
+    effort: Option<String>,
     prompt: String,
     cwd: String,
     resume: Option<String>,
@@ -97,6 +99,8 @@ pub async fn run_agent(
         cwd,
         resume,
         permission,
+        model,
+        effort,
     };
     let mut cmd = adapter.build_command(&req)?;
     // stdin null é OBRIGATÓRIO: sem isso o `codex exec` trava lendo stdin

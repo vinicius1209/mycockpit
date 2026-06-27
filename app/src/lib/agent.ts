@@ -27,6 +27,8 @@ export type AgentEvent =
 export async function runAgent(
   runId: string,
   agent: string,
+  model: string | null,
+  effort: string | null,
   prompt: string,
   cwd: string,
   resume: string | null,
@@ -38,6 +40,8 @@ export async function runAgent(
   await invoke("run_agent", {
     runId,
     agent,
+    model,
+    effort,
     prompt,
     cwd,
     resume,
