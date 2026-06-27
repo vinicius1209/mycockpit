@@ -139,11 +139,13 @@ function ToolCard({ item }: { item: ToolItem }) {
 export function MessageList({
   items,
   running,
+  finalizing,
   startedAt,
   agent,
 }: {
   items: ChatItem[]
   running: boolean
+  finalizing: boolean
   startedAt: number | null
   agent: string
 }) {
@@ -254,11 +256,13 @@ export function MessageList({
         )
       })}
 
-      {running && (
+      {(running || finalizing) && (
         <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
           <span className="animate-cockpit-pulse size-2 rounded-full bg-st-running" />
-          <span>{agentLabel(agent)} trabalhando…</span>
-          {startedAt && (
+          <span>
+            {finalizing ? "finalizando…" : `${agentLabel(agent)} trabalhando…`}
+          </span>
+          {running && startedAt && (
             <span className="font-mono text-foreground/70">
               <Elapsed since={startedAt} />
             </span>

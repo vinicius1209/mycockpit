@@ -55,6 +55,7 @@ export function ChatPanel() {
 
   const items = conv.items
   const running = conv.running
+  const finalizing = conv.finalizing
 
   // Abre o projeto ao trocar: carrega as conversas e a mais recente (Sprint 2).
   const projectId = project?.id ?? null
@@ -92,7 +93,9 @@ export function ChatPanel() {
     const convId = useChat.getState().activeId
     if (!convId) return
     const conv = useChat.getState().byId[convId]
-    if (conv?.running) return // já rodando nesta conversa
+    // bloqueia se rodando OU finalizando — o processo do CLI precisa sair de fato
+    // (flush da sessão) antes do próximo run, senão o resume não acha a sessão.
+    if (conv?.running || conv?.finalizing) return
     // conversa estabelecida trava no agent/modelo/effort do 1º run; nova usa o seletor
     const locked = conv != null && conv.items.length > 0
     const agent = locked ? conv!.agent : (cfg?.agent ?? "claude-code")
@@ -181,6 +184,7 @@ export function ChatPanel() {
           <MessageList
             items={items}
             running={running}
+            finalizing={finalizing}
             startedAt={conv.startedAt}
             agent={conv.agent}
           />
@@ -207,6 +211,7 @@ export function ChatPanel() {
             onSend={handleSend}
             disabled={!project}
             running={running}
+            finalizing={finalizing}
             onStop={handleStop}
           />
         </div>

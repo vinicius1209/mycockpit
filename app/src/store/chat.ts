@@ -47,6 +47,10 @@ export interface ConvState {
   /** Id da bolha de texto em streaming (H2). null = nenhuma aberta. */
   streamingTextId: string | null
   running: boolean
+  /** Turno terminou (Result) mas o processo do CLI ainda finaliza — ex. flush da
+   *  sessão do Codex. Bloqueia o próximo send p/ o resume não cair em "session
+   *  not found" (corrida: liberar no Result dispara o resume antes do flush). */
+  finalizing: boolean
   /** runId do run em andamento (p/ cancelar). */
   runId: string | null
   /** Timestamp (ms) de início do run atual — p/ cronômetro ao vivo. */
@@ -110,6 +114,7 @@ function emptyConv(projectId: string): ConvState {
     model: null,
     streamingTextId: null,
     running: false,
+    finalizing: false,
     runId: null,
     startedAt: null,
     suggestions: [],
@@ -175,6 +180,9 @@ function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
           },
         ],
         running: false,
+        // o turno acabou, mas o processo ainda finaliza (flush da sessão) →
+        // segura o próximo send até o Done (processo sair de fato).
+        finalizing: true,
         streamingTextId: null,
         runId: null,
         startedAt: null,
@@ -198,6 +206,7 @@ function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
     case "done":
       return {
         running: false,
+        finalizing: false,
         streamingTextId: null,
         runId: null,
         startedAt: null,
@@ -362,6 +371,7 @@ export const useChat = create<ChatState>((set, get) => {
               items,
               streamingTextId: null,
               running: true,
+              finalizing: false,
               runId,
               startedAt: Date.now(),
               suggestions: [],
@@ -379,7 +389,12 @@ export const useChat = create<ChatState>((set, get) => {
       }),
 
     finish: (convId) =>
-      patch(convId, { running: false, streamingTextId: null, runId: null }),
+      patch(convId, {
+        running: false,
+        finalizing: false,
+        streamingTextId: null,
+        runId: null,
+      }),
   }
 })
 

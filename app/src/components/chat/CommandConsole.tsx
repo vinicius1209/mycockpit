@@ -79,6 +79,7 @@ export function CommandConsole({
   onSend,
   disabled,
   running,
+  finalizing,
   onStop,
 }: {
   onSend: (
@@ -87,6 +88,7 @@ export function CommandConsole({
   ) => void
   disabled?: boolean
   running?: boolean
+  finalizing?: boolean
   onStop?: () => void
 }) {
   const [value, setValue] = useState("")
@@ -203,7 +205,8 @@ export function CommandConsole({
   const effectiveEffort = locked ? (conv.effort ?? "default") : effort
   const dest =
     DESTINATIONS.find((d) => d.id === effectiveDest) ?? DESTINATIONS[0]
-  const canSend = value.trim().length > 0 && !disabled && !running
+  const canSend =
+    value.trim().length > 0 && !disabled && !running && !finalizing
 
   function submit() {
     if (!canSend) return
