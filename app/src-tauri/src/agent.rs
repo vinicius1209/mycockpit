@@ -1,9 +1,10 @@
-//! M3 — dispatch do Claude Code.
+//! M3 / v0.2-α — dispatch de agents de código.
 //!
-//! Spawna `claude -p --output-format stream-json --verbose --include-partial-messages`
-//! na pasta do projeto, parseia o JSONL (lógica portada do spike M0) e streama
-//! eventos normalizados para o frontend via tauri::ipc::Channel.
+//! O LOOP de execução (spawn, leitura do JSONL linha-a-linha, cancel, stderr,
+//! Done) é compartilhado em `run_agent`; cada CLI (Claude/Codex/OpenCode) vira
+//! um `adapters::AgentAdapter` que só varia em montar o comando e mapear linhas.
 
+use crate::adapters::{self, RunRequest};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::process::Stdio;
@@ -18,7 +19,7 @@ use tokio::sync::Notify;
 #[derive(Default)]
 pub struct RunRegistry(pub Mutex<HashMap<String, Arc<Notify>>>);
 
-/// Evento normalizado enviado ao frontend (1º adapter do docs/agent-runner.md).
+/// Evento normalizado enviado ao frontend.
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentEvent {
@@ -58,11 +59,20 @@ pub enum AgentEvent {
     Done {
         code: Option<i32>,
     },
+    /// Linha de tipo desconhecido — surfaçada em vez de descartada (regra de ouro
+    /// do agent-runner.md). A UI ignora; serve p/ não perder eventos quando o CLI
+    /// muda. No-op no front (default do reduceEvent).
+    Unknown {
+        raw: serde_json::Value,
+    },
 }
 
+/// Roda um agent de código na pasta `cwd` e streama eventos normalizados via Channel.
+/// `agent` seleciona o adapter (claude-code / codex / opencode).
 #[tauri::command]
-pub async fn run_claude(
+pub async fn run_agent(
     run_id: String,
+    agent: String,
     prompt: String,
     cwd: String,
     resume: Option<String>,
@@ -70,38 +80,23 @@ pub async fn run_claude(
     on_event: Channel<AgentEvent>,
     registry: tauri::State<'_, RunRegistry>,
 ) -> Result<(), String> {
-    let mut cmd = Command::new("claude");
-    cmd.arg("-p")
-        .arg(&prompt)
-        .arg("--output-format")
-        .arg("stream-json")
-        .arg("--verbose")
-        .arg("--include-partial-messages")
-        .current_dir(&cwd)
+    let mut adapter = adapters::resolve(&agent)?;
+    let req = RunRequest {
+        prompt,
+        cwd,
+        resume,
+        permission,
+    };
+    let mut cmd = adapter.build_command(&req)?;
+    // stdin null é OBRIGATÓRIO: sem isso o `codex exec` trava lendo stdin
+    // (verificado). Inofensivo p/ o Claude (que não lê stdin em -p).
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    // Política de permissão por projeto (ver docs/agent-runner.md §7).
-    // Achado do M0: `--allowedTools` NÃO sandboxa; o gate real é `--disallowedTools`.
-    match permission.as_str() {
-        "leitura" => {
-            cmd.arg("--disallowedTools")
-                .arg("Bash,Edit,Write,MultiEdit,NotebookEdit");
-        }
-        "liberado" => {
-            cmd.arg("--permission-mode").arg("bypassPermissions");
-        }
-        _ => {
-            cmd.arg("--permission-mode").arg("acceptEdits");
-        }
-    }
-
-    if let Some(r) = &resume {
-        cmd.arg("--resume").arg(r);
-    }
-
+    let bin = adapter.id();
     let mut child = cmd.spawn().map_err(|e| {
-        format!("não consegui executar `claude`: {e}. Ele está instalado e no PATH?")
+        format!("não consegui executar o agent `{bin}`: {e}. Ele está instalado e no PATH?")
     })?;
 
     let stdout = child.stdout.take().ok_or("sem stdout do processo")?;
@@ -138,7 +133,7 @@ pub async fn run_claude(
                             continue;
                         }
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-                            for ev in map_events(&v) {
+                            for ev in adapter.map_line(&v) {
                                 let _ = on_event.send(ev);
                             }
                         }
@@ -149,10 +144,17 @@ pub async fn run_claude(
             }
             _ = notify.notified() => {
                 cancelled = true;
-                // SIGKILL no processo; a sessão segue resumível via --resume.
+                // SIGKILL no processo; a sessão segue resumível via resume.
                 let _ = child.start_kill();
                 break;
             }
+        }
+    }
+
+    // Flush de itens pendentes (begin sem end) só no fim normal, não no cancel.
+    if !cancelled {
+        for ev in adapter.on_close() {
+            let _ = on_event.send(ev);
         }
     }
 
@@ -167,7 +169,10 @@ pub async fn run_claude(
         let _ = on_event.send(AgentEvent::Cancelled);
     } else if !status.success() {
         let msg = if stderr_text.trim().is_empty() {
-            format!("o `claude` saiu com código {}", status.code().unwrap_or(-1))
+            format!(
+                "o agent `{bin}` saiu com código {}",
+                status.code().unwrap_or(-1)
+            )
         } else {
             stderr_text.trim().to_string()
         };
@@ -182,7 +187,7 @@ pub async fn run_claude(
 
 /// Cancela um run em andamento (H1) — sinaliza o loop, que mata o processo.
 #[tauri::command]
-pub fn cancel_claude(run_id: String, registry: tauri::State<'_, RunRegistry>) {
+pub fn cancel_agent(run_id: String, registry: tauri::State<'_, RunRegistry>) {
     if let Ok(map) = registry.0.lock() {
         if let Some(n) = map.get(&run_id) {
             n.notify_one();
@@ -222,104 +227,4 @@ pub async fn suggest(model: String, cwd: String, prompt: String) -> Result<Strin
         });
     }
     Ok(stdout)
-}
-
-/// Mapeia um evento bruto do stream-json para 0..N eventos normalizados.
-fn map_events(v: &serde_json::Value) -> Vec<AgentEvent> {
-    match v.get("type").and_then(|x| x.as_str()).unwrap_or("") {
-        "system" => {
-            if v.get("subtype").and_then(|x| x.as_str()) == Some("init") {
-                vec![AgentEvent::Session {
-                    session_id: v
-                        .get("session_id")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    model: v.get("model").and_then(|x| x.as_str()).map(str::to_string),
-                    tools: v
-                        .get("tools")
-                        .and_then(|x| x.as_array())
-                        .map(Vec::len)
-                        .unwrap_or(0),
-                }]
-            } else {
-                vec![]
-            }
-        }
-        // H2 — deltas de texto em streaming. Outros sub-eventos (block start/stop,
-        // tool input deltas, message_*) são ignorados; o texto é montado pelos deltas.
-        "stream_event" => {
-            let ev = v.get("event");
-            let is_delta = ev.and_then(|e| e.get("type")).and_then(|x| x.as_str())
-                == Some("content_block_delta");
-            if is_delta {
-                let delta = ev.and_then(|e| e.get("delta"));
-                let is_text = delta.and_then(|d| d.get("type")).and_then(|x| x.as_str())
-                    == Some("text_delta");
-                if is_text {
-                    if let Some(t) = delta.and_then(|d| d.get("text")).and_then(|x| x.as_str()) {
-                        return vec![AgentEvent::TextDelta {
-                            text: t.to_string(),
-                        }];
-                    }
-                }
-            }
-            vec![]
-        }
-        // Mensagem assistant completa: emite o texto (o frontend deduplica com os
-        // deltas) e os tool_use como cartões.
-        "assistant" => {
-            let mut out = Vec::new();
-            if let Some(content) = v.pointer("/message/content").and_then(|x| x.as_array()) {
-                for block in content {
-                    match block.get("type").and_then(|x| x.as_str()) {
-                        Some("text") => {
-                            if let Some(t) = block.get("text").and_then(|x| x.as_str()) {
-                                if !t.trim().is_empty() {
-                                    out.push(AgentEvent::Text { text: t.to_string() });
-                                }
-                            }
-                        }
-                        Some("tool_use") => out.push(AgentEvent::Tool {
-                            id: block
-                                .get("id")
-                                .and_then(|x| x.as_str())
-                                .unwrap_or_default()
-                                .to_string(),
-                            name: block
-                                .get("name")
-                                .and_then(|x| x.as_str())
-                                .unwrap_or("tool")
-                                .to_string(),
-                            input: block
-                                .get("input")
-                                .cloned()
-                                .unwrap_or(serde_json::Value::Null),
-                        }),
-                        _ => {}
-                    }
-                }
-            }
-            out
-        }
-        "result" => {
-            let usage = v.get("usage");
-            let tok = |k: &str| {
-                usage
-                    .and_then(|u| u.get(k))
-                    .and_then(|x| x.as_u64())
-                    .unwrap_or(0)
-            };
-            vec![AgentEvent::Result {
-                ok: !v.get("is_error").and_then(|x| x.as_bool()).unwrap_or(false),
-                text: v.get("result").and_then(|x| x.as_str()).map(str::to_string),
-                cost_usd: v.get("total_cost_usd").and_then(|x| x.as_f64()),
-                input_tokens: tok("input_tokens"),
-                output_tokens: tok("output_tokens"),
-                cache_read: tok("cache_read_input_tokens"),
-                cache_creation: tok("cache_creation_input_tokens"),
-            }]
-        }
-        _ => vec![],
-    }
 }

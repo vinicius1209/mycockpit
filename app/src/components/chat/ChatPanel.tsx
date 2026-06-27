@@ -6,7 +6,7 @@ import { Reticle } from "@/components/common/Wordmark"
 import { useActiveProject, useApp } from "@/store/app"
 import { useChat, useActiveConv } from "@/store/chat"
 import type { ChatItem } from "@/store/chat"
-import { runClaude, cancelClaude, suggest } from "@/lib/agent"
+import { runAgent, cancelAgent, suggest } from "@/lib/agent"
 import { isTauri } from "@/lib/db"
 
 function greetingFor(date: Date): string {
@@ -78,10 +78,12 @@ export function ChatPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queuedPrompt])
 
-  async function handleSend(text: string) {
+  // destinationId = o agent escolhido no seletor (v0.2-α: o seam que descartava
+  // o destino agora é threadado até o runAgent). Default 'claude-code'.
+  async function handleSend(text: string, destinationId = "claude-code") {
     if (!project) return
     if (!isTauri()) {
-      toast("O dispatch do Claude Code roda no app (bun run tauri dev)")
+      toast("O dispatch dos agents roda no app (bun run tauri dev)")
       return
     }
     const convId = useChat.getState().activeId
@@ -92,8 +94,9 @@ export function ChatPanel() {
     // Sprint 4 — o run escreve em byId[convId] mesmo se o usuário trocar de aba.
     useChat.getState().start(convId, text, runId)
     try {
-      await runClaude(
+      await runAgent(
         runId,
+        destinationId,
         text,
         project.path,
         sessionId,
@@ -112,7 +115,7 @@ export function ChatPanel() {
   function handleStop() {
     const convId = useChat.getState().activeId
     const runId = convId ? useChat.getState().byId[convId]?.runId : null
-    if (runId) void cancelClaude(runId)
+    if (runId) void cancelAgent(runId)
   }
 
   // Gera sugestões contextuais após o turno (fire-and-forget; degrada pros chips).

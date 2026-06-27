@@ -2,6 +2,7 @@ use tauri::Manager;
 use tauri_plugin_decorum::WebviewWindowExt;
 use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 
+mod adapters;
 mod agent;
 mod context;
 mod mycockpit;
@@ -118,8 +119,8 @@ pub fn run() {
         )
         .manage(agent::RunRegistry::default())
         .invoke_handler(tauri::generate_handler![
-            agent::run_claude,
-            agent::cancel_claude,
+            agent::run_agent,
+            agent::cancel_agent,
             agent::suggest,
             context::read_project_context,
             mycockpit::read_mycockpit_config,

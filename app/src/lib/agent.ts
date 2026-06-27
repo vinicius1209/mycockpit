@@ -19,10 +19,13 @@ export type AgentEvent =
   | { type: "error"; message: string }
   | { type: "cancelled" }
   | { type: "done"; code: number | null }
+  | { type: "unknown"; raw: unknown }
 
-/** Dispara o Claude Code na pasta `cwd` e streama eventos via Channel. */
-export async function runClaude(
+/** Dispara um agent de código (`agent` = claude-code | codex | opencode) na pasta
+ *  `cwd` e streama eventos via Channel. */
+export async function runAgent(
   runId: string,
+  agent: string,
   prompt: string,
   cwd: string,
   resume: string | null,
@@ -31,8 +34,9 @@ export async function runClaude(
 ): Promise<void> {
   const channel = new Channel<AgentEvent>()
   channel.onmessage = onEvent
-  await invoke("run_claude", {
+  await invoke("run_agent", {
     runId,
+    agent,
     prompt,
     cwd,
     resume,
@@ -42,8 +46,8 @@ export async function runClaude(
 }
 
 /** Cancela um run em andamento (H1). */
-export async function cancelClaude(runId: string): Promise<void> {
-  await invoke("cancel_claude", { runId })
+export async function cancelAgent(runId: string): Promise<void> {
+  await invoke("cancel_agent", { runId })
 }
 
 /** Helper one-shot (Sprint 3): roda um modelo barato e retorna o texto puro. */
