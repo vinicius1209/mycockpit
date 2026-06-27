@@ -4,6 +4,7 @@
 //! mapear cada linha JSON → `AgentEvent`. O Claude porta a lógica atual 1:1.
 
 use crate::agent::{AgentEvent, CostSource};
+use crate::attachments::{Attachment, AttachmentKind};
 use std::path::PathBuf;
 use tokio::process::Command;
 
@@ -17,6 +18,9 @@ pub struct RunRequest {
     pub model: Option<String>,
     /// Nível de esforço de raciocínio (None = default). Valores diferem por agent.
     pub effort: Option<String>,
+    /// Anexos JÁ resolvidos: path ABSOLUTO, existente em disco, filtrado por
+    /// `supports_attachment` (garantido pelo run_agent). O adapter só decide a sintaxe.
+    pub attachments: Vec<Attachment>,
 }
 
 pub trait AgentAdapter: Send {
@@ -31,6 +35,19 @@ pub trait AgentAdapter: Send {
     /// Flush de itens pendentes no fim do stream (EOF normal).
     fn on_close(&mut self) -> Vec<AgentEvent> {
         Vec::new()
+    }
+
+    /// Capacidade declarada por tipo de anexo. Default = NÃO suporta nada → um
+    /// agent novo é OBRIGADO a decidir (sem no-op que engole anexo em silêncio).
+    fn supports_attachment(&self, _kind: &AttachmentKind) -> bool {
+        false
+    }
+
+    /// Renderiza os anexos no comando/prompt. INVARIANTE: `atts` chega com path
+    /// ABSOLUTO, existente, e já filtrado por `supports_attachment` — o adapter só
+    /// decide a SINTAXE (flags/posição). Default no-op.
+    fn render_attachments(&self, atts: &[Attachment], cmd: &mut Command, prompt: &mut String) {
+        let _ = (atts, cmd, prompt);
     }
 }
 
@@ -57,8 +74,11 @@ impl AgentAdapter for ClaudeAdapter {
 
     fn build_command(&self, req: &RunRequest) -> Result<Command, String> {
         let mut cmd = Command::new("claude");
+        // anexos: injeta os paths no prompt (Read tool) + --add-dir (acesso fora do cwd)
+        let mut prompt = req.prompt.clone();
+        self.render_attachments(&req.attachments, &mut cmd, &mut prompt);
         cmd.arg("-p")
-            .arg(&req.prompt)
+            .arg(&prompt)
             .arg("--output-format")
             .arg("stream-json")
             .arg("--verbose")
@@ -89,6 +109,25 @@ impl AgentAdapter for ClaudeAdapter {
             cmd.arg("--resume").arg(r);
         }
         Ok(cmd)
+    }
+
+    fn supports_attachment(&self, kind: &AttachmentKind) -> bool {
+        matches!(kind, AttachmentKind::Image | AttachmentKind::Pdf)
+    }
+
+    fn render_attachments(&self, atts: &[Attachment], cmd: &mut Command, prompt: &mut String) {
+        if atts.is_empty() {
+            return;
+        }
+        // concede ao Read tool acesso à pasta da conversa (verificado: --add-dir)
+        if let Some(dir) = std::path::Path::new(&atts[0].path).parent() {
+            cmd.arg("--add-dir").arg(dir);
+        }
+        prompt.push_str("\n\nArquivos anexados (use o Read tool para abri-los):\n");
+        for a in atts {
+            // path ABSOLUTO entre crases (blinda espaços, ex. "Application Support")
+            prompt.push_str(&format!("- `{}` ({})\n", a.path, a.mime));
+        }
     }
 
     fn map_line(&mut self, v: &serde_json::Value) -> Vec<AgentEvent> {
@@ -237,12 +276,30 @@ impl AgentAdapter for CodexAdapter {
         if let Some(e) = &req.effort {
             cmd.arg("-c").arg(format!("model_reasoning_effort={e}"));
         }
-        // resume: `codex exec resume <thread_id> <prompt>`
+        // resume: `codex exec resume <thread_id> …`
         if let Some(r) = &req.resume {
             cmd.arg("resume").arg(r);
         }
-        cmd.arg(&req.prompt);
+        // anexos: -i por imagem (após `resume` — é opção do subcomando ativo). O -i
+        // é VARIÁDICO (<FILE>...) e comeria o prompt → separa com `--` (verificado A0).
+        let mut prompt = req.prompt.clone();
+        self.render_attachments(&req.attachments, &mut cmd, &mut prompt);
+        if !req.attachments.is_empty() {
+            cmd.arg("--");
+        }
+        cmd.arg(&prompt);
         Ok(cmd)
+    }
+
+    fn supports_attachment(&self, kind: &AttachmentKind) -> bool {
+        // -i do Codex é só imagem; PDF é bloqueado no envio (capacidade explícita).
+        matches!(kind, AttachmentKind::Image)
+    }
+
+    fn render_attachments(&self, atts: &[Attachment], cmd: &mut Command, _prompt: &mut String) {
+        for a in atts {
+            cmd.arg("-i").arg(&a.path); // path absoluto; argv não passa por shell
+        }
     }
 
     fn map_line(&mut self, v: &serde_json::Value) -> Vec<AgentEvent> {

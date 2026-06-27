@@ -1,4 +1,5 @@
 import { invoke, Channel } from "@tauri-apps/api/core"
+import type { Attachment } from "@/lib/attachments"
 
 /** Eventos normalizados emitidos pelo backend (espelha AgentEvent no Rust). */
 export type AgentEvent =
@@ -18,6 +19,7 @@ export type AgentEvent =
       cache_creation: number
     }
   | { type: "error"; message: string }
+  | { type: "notice"; message: string }
   | { type: "cancelled" }
   | { type: "done"; code: number | null }
   | { type: "unknown"; raw: unknown }
@@ -26,6 +28,7 @@ export type AgentEvent =
  *  `cwd` e streama eventos via Channel. */
 export async function runAgent(
   runId: string,
+  convId: string,
   agent: string,
   model: string | null,
   effort: string | null,
@@ -33,12 +36,14 @@ export async function runAgent(
   cwd: string,
   resume: string | null,
   permission: string,
+  attachments: Attachment[],
   onEvent: (e: AgentEvent) => void,
 ): Promise<void> {
   const channel = new Channel<AgentEvent>()
   channel.onmessage = onEvent
   await invoke("run_agent", {
     runId,
+    convId,
     agent,
     model,
     effort,
@@ -46,6 +51,7 @@ export async function runAgent(
     cwd,
     resume,
     permission,
+    attachments,
     onEvent: channel,
   })
 }

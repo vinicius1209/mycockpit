@@ -140,6 +140,7 @@ pub fn run() {
                 .build(),
         )
         .manage(agent::RunRegistry::default())
+        .manage(attachments::ActiveConvs::default())
         .invoke_handler(tauri::generate_handler![
             agent::run_agent,
             agent::cancel_agent,

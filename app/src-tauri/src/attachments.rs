@@ -8,7 +8,9 @@
 //! vira caminho de disco (usamos o hash) nem é injetado no prompt.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
 /// Tipo do anexo, derivado do MIME sniffado. `render_attachments` do adapter casa
@@ -272,4 +274,57 @@ pub async fn delete_attachment(app: AppHandle, path: String) -> Result<(), Strin
         }
         _ => Err("caminho de anexo inválido".to_string()),
     }
+}
+
+// ---------------- suporte ao run + GC (A4/A5) ----------------
+
+/// Conversas com run em andamento — o GC pula a pasta delas (não apaga um blob que
+/// o agent ainda vai ler). Refcount p/ robustez (F23).
+#[derive(Default)]
+pub struct ActiveConvs(pub Mutex<HashMap<String, usize>>);
+
+impl ActiveConvs {
+    pub fn insert(&self, conv_id: &str) {
+        if let Ok(mut m) = self.0.lock() {
+            *m.entry(conv_id.to_string()).or_insert(0) += 1;
+        }
+    }
+    pub fn remove(&self, conv_id: &str) {
+        if let Ok(mut m) = self.0.lock() {
+            if let Some(c) = m.get_mut(conv_id) {
+                *c = c.saturating_sub(1);
+                if *c == 0 {
+                    m.remove(conv_id);
+                }
+            }
+        }
+    }
+    #[allow(dead_code)] // usado na A5 (gc_attachments)
+    pub fn contains(&self, conv_id: &str) -> bool {
+        self.0
+            .lock()
+            .map(|m| m.contains_key(conv_id))
+            .unwrap_or(false)
+    }
+}
+
+/// Anexos (path RELATIVO, vindos do JS) → path ABSOLUTO; descarta os que sumiram do
+/// disco (o GC pode ter limpado). Retorna (vivos com path absoluto, nº de sumidos).
+pub fn resolve_live(app: &AppHandle, atts: Vec<Attachment>) -> (Vec<Attachment>, usize) {
+    let base = match app_data(app) {
+        Ok(b) => b,
+        Err(_) => return (Vec::new(), atts.len()),
+    };
+    let mut live = Vec::new();
+    let mut missing = 0usize;
+    for mut a in atts {
+        let abs = base.join(&a.path);
+        if abs.is_file() {
+            a.path = abs.to_string_lossy().to_string();
+            live.push(a);
+        } else {
+            missing += 1;
+        }
+    }
+    (live, missing)
 }

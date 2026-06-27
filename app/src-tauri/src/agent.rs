@@ -5,6 +5,7 @@
 //! um `adapters::AgentAdapter` que só varia em montar o comando e mapear linhas.
 
 use crate::adapters::{self, RunRequest};
+use crate::attachments::{self, ActiveConvs, Attachment};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::process::Stdio;
@@ -18,6 +19,18 @@ use tokio::sync::Notify;
 /// Mapeia run_id → sinal de cancelamento; o loop do run escuta esse sinal.
 #[derive(Default)]
 pub struct RunRegistry(pub Mutex<HashMap<String, Arc<Notify>>>);
+
+/// Guard RAII: remove a conversa de ActiveConvs ao sair do run (qualquer path),
+/// liberando-a p/ o GC. Evita vazar a marca de "ativa" num early-return.
+struct ActiveGuard<'a> {
+    active: &'a ActiveConvs,
+    conv_id: String,
+}
+impl Drop for ActiveGuard<'_> {
+    fn drop(&mut self) {
+        self.active.remove(&self.conv_id);
+    }
+}
 
 /// Proveniência do custo: reportado pelo CLI ($ direto, ex. Claude), estimado
 /// (tokens × tabela de preço, ex. Codex) ou desconhecido (sem custo nem usage).
@@ -65,6 +78,11 @@ pub enum AgentEvent {
     Error {
         message: String,
     },
+    /// Aviso de UI não-fatal (ex. anexo expirado/não-suportado). NUNCA entra no
+    /// prompt do modelo — vai direto pro front como uma linha discreta.
+    Notice {
+        message: String,
+    },
     /// Run interrompido pelo usuário (H1).
     Cancelled,
     Done {
@@ -81,8 +99,11 @@ pub enum AgentEvent {
 /// Roda um agent de código na pasta `cwd` e streama eventos normalizados via Channel.
 /// `agent` seleciona o adapter (claude-code / codex / opencode).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn run_agent(
+    app: tauri::AppHandle,
     run_id: String,
+    conv_id: String,
     agent: String,
     model: Option<String>,
     effort: Option<String>,
@@ -90,10 +111,33 @@ pub async fn run_agent(
     cwd: String,
     resume: Option<String>,
     permission: String,
+    attachments: Vec<Attachment>,
     on_event: Channel<AgentEvent>,
     registry: tauri::State<'_, RunRegistry>,
+    active: tauri::State<'_, ActiveConvs>,
 ) -> Result<(), String> {
     let mut adapter = adapters::resolve(&agent)?;
+    // anexos: rel→abs + descarta sumidos; particiona por capacidade do agent.
+    let (live, missing) = attachments::resolve_live(&app, attachments);
+    let (used, unsupported): (Vec<_>, Vec<_>) = live
+        .into_iter()
+        .partition(|a| adapter.supports_attachment(&a.kind));
+    if missing > 0 {
+        let _ = on_event.send(AgentEvent::Notice {
+            message: format!("{missing} anexo(s) expiraram e não foram enviados."),
+        });
+    }
+    for a in &unsupported {
+        let _ = on_event.send(AgentEvent::Notice {
+            message: format!("\"{}\" não é suportado pelo {agent} e foi ignorado.", a.name),
+        });
+    }
+    // F23: marca a conversa como ativa p/ o GC não apagar os blobs durante o run.
+    active.insert(&conv_id);
+    let _active_guard = ActiveGuard {
+        active: active.inner(),
+        conv_id: conv_id.clone(),
+    };
     let req = RunRequest {
         prompt,
         cwd,
@@ -101,6 +145,7 @@ pub async fn run_agent(
         permission,
         model,
         effort,
+        attachments: used,
     };
     let mut cmd = adapter.build_command(&req)?;
     // stdin null é OBRIGATÓRIO: sem isso o `codex exec` trava lendo stdin

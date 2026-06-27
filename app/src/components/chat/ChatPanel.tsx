@@ -121,6 +121,7 @@ export function ChatPanel() {
     try {
       await runAgent(
         runId,
+        convId,
         agent,
         model,
         effort,
@@ -128,6 +129,7 @@ export function ChatPanel() {
         project.path,
         sessionId,
         project.permissionMode ?? "padrao",
+        [], // anexos — vêm da UI no Sprint C (paste/chips)
         (e) => useChat.getState().handleEvent(convId, e),
       )
     } catch (e) {
