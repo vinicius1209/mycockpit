@@ -83,6 +83,11 @@ pub enum AgentEvent {
     Notice {
         message: String,
     },
+    /// INTERNO: o adapter detectou que o resume falhou porque a sessão não existe.
+    /// O run_once intercepta (não vai pro front) e o run_agent recomeça sem resume.
+    SessionNotFound {
+        message: String,
+    },
     /// Run interrompido pelo usuário (H1).
     Cancelled,
     Done {
@@ -147,7 +152,59 @@ pub async fn run_agent(
         effort,
         attachments: used,
     };
-    let mut cmd = adapter.build_command(&req)?;
+    let resume_was = req.resume.is_some();
+    let cmd = adapter.build_command(&req)?;
+    let mut outcome =
+        run_once(cmd, &run_id, resume_was, &on_event, &mut adapter, &registry).await?;
+
+    // Degradação graciosa: se o resume falhou porque a sessão sumiu (CLI limpou a
+    // sessão, ou conversa legada), em vez de ERRO o app recomeça SEM resume + avisa.
+    // Nunca trava o turno. (A SessionNotFound já foi suprimida dentro do run_once.)
+    if outcome.session_not_found && !outcome.cancelled {
+        let _ = on_event.send(AgentEvent::Notice {
+            message: "Sessão anterior não encontrada — comecei uma nova.".to_string(),
+        });
+        let mut req2 = req;
+        req2.resume = None;
+        let mut adapter2 = adapters::resolve(&agent)?;
+        let cmd2 = adapter2.build_command(&req2)?;
+        outcome = run_once(cmd2, &run_id, false, &on_event, &mut adapter2, &registry).await?;
+    }
+
+    if outcome.cancelled {
+        let _ = on_event.send(AgentEvent::Cancelled);
+    } else if !outcome.success {
+        let msg = if outcome.stderr.trim().is_empty() {
+            format!("o agent `{agent}` saiu com código {}", outcome.code.unwrap_or(-1))
+        } else {
+            outcome.stderr.trim().to_string()
+        };
+        let _ = on_event.send(AgentEvent::Error { message: msg });
+    }
+    let _ = on_event.send(AgentEvent::Done { code: outcome.code });
+    Ok(())
+}
+
+/// Resultado de UMA tentativa de run (sem emitir os eventos terminais).
+struct Outcome {
+    cancelled: bool,
+    success: bool,
+    code: Option<i32>,
+    stderr: String,
+    session_not_found: bool,
+}
+
+/// Spawn + loop (streama os eventos) + wait, UMA vez. NÃO emite Cancelled/Error/
+/// Done — quem orquestra (run_agent) decide, p/ poder reexecutar sem resume na
+/// degradação graciosa. Num resume, intercepta SessionNotFound (suprime + marca).
+async fn run_once(
+    mut cmd: Command,
+    run_id: &str,
+    resume_is_some: bool,
+    on_event: &Channel<AgentEvent>,
+    adapter: &mut Box<dyn adapters::AgentAdapter>,
+    registry: &RunRegistry,
+) -> Result<Outcome, String> {
     // stdin null é OBRIGATÓRIO: sem isso o `codex exec` trava lendo stdin
     // (verificado). Inofensivo p/ o Claude (que não lê stdin em -p).
     cmd.stdin(Stdio::null())
@@ -179,10 +236,11 @@ pub async fn run_agent(
     // H1 — registra o sinal de cancelamento deste run.
     let notify = Arc::new(Notify::new());
     if let Ok(mut map) = registry.0.lock() {
-        map.insert(run_id.clone(), notify.clone());
+        map.insert(run_id.to_string(), notify.clone());
     }
 
     let mut cancelled = false;
+    let mut session_not_found = false;
     loop {
         tokio::select! {
             line = reader.next_line() => {
@@ -194,6 +252,14 @@ pub async fn run_agent(
                         }
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
                             for ev in adapter.map_line(&v) {
+                                if matches!(ev, AgentEvent::SessionNotFound { .. }) {
+                                    if resume_is_some {
+                                        session_not_found = true; // suprime + retry
+                                    } else if let AgentEvent::SessionNotFound { message } = ev {
+                                        let _ = on_event.send(AgentEvent::Error { message });
+                                    }
+                                    continue;
+                                }
                                 let _ = on_event.send(ev);
                             }
                         }
@@ -219,30 +285,19 @@ pub async fn run_agent(
     }
 
     if let Ok(mut map) = registry.0.lock() {
-        map.remove(&run_id);
+        map.remove(run_id);
     }
 
     let status = child.wait().await.map_err(|e| e.to_string())?;
     let stderr_text = stderr_task.await.unwrap_or_default();
 
-    if cancelled {
-        let _ = on_event.send(AgentEvent::Cancelled);
-    } else if !status.success() {
-        let msg = if stderr_text.trim().is_empty() {
-            format!(
-                "o agent `{bin}` saiu com código {}",
-                status.code().unwrap_or(-1)
-            )
-        } else {
-            stderr_text.trim().to_string()
-        };
-        let _ = on_event.send(AgentEvent::Error { message: msg });
-    }
-
-    let _ = on_event.send(AgentEvent::Done {
+    Ok(Outcome {
+        cancelled,
+        success: status.success(),
         code: status.code(),
-    });
-    Ok(())
+        stderr: stderr_text,
+        session_not_found,
+    })
 }
 
 /// Cancela um run em andamento (H1) — sinaliza o loop, que mata o processo.

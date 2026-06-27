@@ -63,6 +63,15 @@ pub fn resolve(agent: &str) -> Result<Box<dyn AgentAdapter>, String> {
     }
 }
 
+/// O erro indica que a sessão do resume não existe? (Claude: "No conversation
+/// found with session ID"). Dispara a degradação graciosa (recomeçar sem resume).
+fn is_session_not_found(s: &str) -> bool {
+    let l = s.to_lowercase();
+    l.contains("no conversation found")
+        || l.contains("session not found")
+        || (l.contains("session") && l.contains("not found"))
+}
+
 // ---------------- Claude Code (porta o map_events 1:1) ----------------
 
 pub struct ClaudeAdapter;
@@ -209,6 +218,24 @@ impl AgentAdapter for ClaudeAdapter {
                 out
             }
             "result" => {
+                let is_error = v.get("is_error").and_then(|x| x.as_bool()).unwrap_or(false);
+                // resume falhou (sessão não existe) → sinaliza p/ degradação graciosa,
+                // em vez de virar um cartão de erro (o run_agent recomeça sem resume).
+                if is_error {
+                    let errs = v
+                        .get("errors")
+                        .and_then(|x| x.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|e| e.as_str())
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        })
+                        .unwrap_or_default();
+                    if is_session_not_found(&errs) {
+                        return vec![AgentEvent::SessionNotFound { message: errs }];
+                    }
+                }
                 let usage = v.get("usage");
                 let tok = |k: &str| {
                     usage
@@ -219,7 +246,7 @@ impl AgentAdapter for ClaudeAdapter {
                 // O Claude entrega o custo pronto (total_cost_usd) → Reported.
                 let cost_usd = v.get("total_cost_usd").and_then(|x| x.as_f64());
                 vec![AgentEvent::Result {
-                    ok: !v.get("is_error").and_then(|x| x.as_bool()).unwrap_or(false),
+                    ok: !is_error,
                     text: v.get("result").and_then(|x| x.as_str()).map(str::to_string),
                     cost_source: if cost_usd.is_some() {
                         CostSource::Reported
@@ -353,7 +380,11 @@ impl AgentAdapter for CodexAdapter {
                     .and_then(|x| x.as_str())
                     .unwrap_or("o turno do codex falhou")
                     .to_string();
-                vec![AgentEvent::Error { message: msg }]
+                if is_session_not_found(&msg) {
+                    vec![AgentEvent::SessionNotFound { message: msg }]
+                } else {
+                    vec![AgentEvent::Error { message: msg }]
+                }
             }
             // begin/started e turn.started não viram cartão (mostramos no completed)
             "item.started" | "item.updated" | "turn.started" => vec![],
