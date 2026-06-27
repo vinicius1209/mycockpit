@@ -28,6 +28,8 @@ tauri-plugin-dialog = "2.7.1"
 tauri-plugin-decorum = "1.1.1"
 tokio = { version = "1", features = ["process", "io-util", "macros", "rt", "sync"] }
 toml_edit = "0.22"
+blake3 = "1"      # hash do conteúdo de anexos (nome de arquivo + dedup)
+infer = "0.16"    # sniff de MIME por magic bytes (não confia no clipboard)
 
 # Resolver MSRV-aware (boa prática). Toolchain local: rustc 1.96 (Homebrew).
 [workspace]

@@ -1,0 +1,275 @@
+//! v0.2.x — anexos (imagem + PDF). Salva bytes colados/escolhidos em disco
+//! estável, valida por magic-bytes (não confia no clipboard) e resolve caminhos.
+//!
+//! Layout: `app_data_dir()/attachments/<convId>/<hash16>.<ext>` (blob = conteúdo).
+//! O DB guarda só o path RELATIVO "attachments/<convId>/<file>" — a linha do DB é
+//! a verdade; o blob é retido enquanto a conversa vive (TTL/LRU + wipe ao deletar).
+//! Invariante de segurança: o NOME original do usuário é só display (chip), nunca
+//! vira caminho de disco (usamos o hash) nem é injetado no prompt.
+
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use tauri::{AppHandle, Manager};
+
+/// Tipo do anexo, derivado do MIME sniffado. `render_attachments` do adapter casa
+/// com isso; `Other` nunca deve chegar nos adapters (allowlist barra antes).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AttachmentKind {
+    Image,
+    Pdf,
+    Other,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Attachment {
+    /// RELATIVO ao app_data_dir: "attachments/<convId>/<hash16>.<ext>".
+    pub path: String,
+    /// Nome original — SÓ display (chip). Nunca usado em path de disco nem no prompt.
+    pub name: String,
+    pub kind: AttachmentKind,
+    /// MIME sniffado (magic bytes), já dentro da allowlist.
+    pub mime: String,
+    /// Tamanho em bytes (nunca o payload).
+    pub bytes: u64,
+}
+
+/// Referência de conversa p/ o GC (id + recência autoritativa do DB). (A5)
+#[allow(dead_code)] // construído na A5 (gc_attachments)
+#[derive(Clone, Debug, Deserialize)]
+pub struct ConvRef {
+    pub id: String,
+    pub updated_at: i64,
+}
+
+/// 10 MB por arquivo (validado no JS antes de materializar + aqui no backstop).
+const MAX_BYTES: u64 = 10 * 1024 * 1024;
+/// Teto global do cache de anexos; ao passar, evicta por LRU até a marca baixa.
+const CAP_BYTES: u64 = 256 * 1024 * 1024;
+const LOW_WATER: u64 = 205 * 1024 * 1024;
+
+// ---------------- helpers puros ----------------
+
+/// Allowlist pós-sniff → extensão canônica. None = tipo rejeitado.
+fn ext_for_mime(mime: &str) -> Option<&'static str> {
+    match mime {
+        "image/png" => Some("png"),
+        "image/jpeg" => Some("jpg"),
+        "image/webp" => Some("webp"),
+        "image/gif" => Some("gif"),
+        "application/pdf" => Some("pdf"),
+        _ => None,
+    }
+}
+
+pub fn classify(mime: &str) -> AttachmentKind {
+    if mime == "application/pdf" {
+        AttachmentKind::Pdf
+    } else if mime.starts_with("image/") {
+        AttachmentKind::Image
+    } else {
+        AttachmentKind::Other
+    }
+}
+
+/// MIME pelos magic bytes (não confia no `type` do clipboard). None = desconhecido.
+pub fn sniff(bytes: &[u8]) -> Option<String> {
+    infer::get(bytes).map(|t| t.mime_type().to_string())
+}
+
+/// blake3 truncado a 16 hex — nome do arquivo + dedup por-conversa.
+pub fn hash16(bytes: &[u8]) -> String {
+    blake3::hash(bytes).to_hex()[..16].to_string()
+}
+
+/// convId só pode ser hex/uuid — blinda contra path traversal no nome da pasta.
+fn sanitize_conv_id(id: &str) -> String {
+    id.chars()
+        .filter(|c| c.is_ascii_hexdigit() || *c == '-')
+        .collect()
+}
+
+fn app_data(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map_err(|e| format!("sem app_data_dir: {e}"))
+}
+
+pub fn attachments_root(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data(app)?.join("attachments"))
+}
+
+pub fn conv_dir(app: &AppHandle, conv_id: &str) -> Result<PathBuf, String> {
+    Ok(attachments_root(app)?.join(sanitize_conv_id(conv_id)))
+}
+
+/// Escrita atômica (.tmp + rename) com permissão 0600 — evita blob meio-escrito.
+fn write_atomic(abs: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let name = abs
+        .file_name()
+        .ok_or("caminho sem nome")?
+        .to_string_lossy()
+        .to_string();
+    let tmp = abs.with_file_name(format!(".{name}.tmp"));
+    {
+        let mut f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+        f.write_all(bytes).map_err(|e| e.to_string())?;
+        f.flush().map_err(|e| e.to_string())?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    }
+    std::fs::rename(&tmp, abs).map_err(|e| e.to_string())
+}
+
+/// Tamanho + mtime de uma pasta (soma rasa dos arquivos diretos — basta p/ o cap).
+fn dir_size_mtime(dir: &Path) -> (u64, std::time::SystemTime) {
+    let mut size = 0u64;
+    let mut mtime = std::time::UNIX_EPOCH;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for e in entries.flatten() {
+            if let Ok(m) = e.metadata() {
+                if m.is_file() {
+                    size += m.len();
+                    if let Ok(t) = m.modified() {
+                        if t > mtime {
+                            mtime = t;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (size, mtime)
+}
+
+/// Teto no INGEST (guardião primário — F2): se o total passar de CAP, evicta
+/// pastas por mtime ascendente (a pasta ativa tem mtime fresco → protegida) até
+/// LOW_WATER. Sem ConvRef aqui; mtime-de-pasta é proxy seguro porque a pasta
+/// sendo escrita agora é a mais recente.
+fn enforce_cap(app: &AppHandle) -> Result<(), String> {
+    let root = attachments_root(app)?;
+    let mut total = 0u64;
+    let mut dirs: Vec<(PathBuf, std::time::SystemTime, u64)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&root) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                let (size, mtime) = dir_size_mtime(&p);
+                total += size;
+                dirs.push((p, mtime, size));
+            }
+        }
+    }
+    if total <= CAP_BYTES {
+        return Ok(());
+    }
+    dirs.sort_by_key(|(_, mtime, _)| *mtime); // mais antigas primeiro
+    for (p, _, size) in dirs {
+        if total <= LOW_WATER {
+            break;
+        }
+        let _ = std::fs::remove_dir_all(&p);
+        total = total.saturating_sub(size);
+    }
+    Ok(())
+}
+
+/// Núcleo comum de save_attachment/attach_path: valida tamanho, sniffa o MIME,
+/// aplica allowlist, grava atômico (dedup por hash) e aplica o teto.
+fn save_to_disk(
+    app: &AppHandle,
+    conv_id: &str,
+    name: &str,
+    declared_mime: Option<String>,
+    bytes: &[u8],
+) -> Result<Attachment, String> {
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err(format!(
+            "\"{name}\" excede {} MB",
+            MAX_BYTES / 1024 / 1024
+        ));
+    }
+    // sniff dos magic bytes manda; o declared_mime do clipboard é só fallback.
+    let mime = sniff(bytes)
+        .or(declared_mime)
+        .ok_or_else(|| "não consegui identificar o tipo do arquivo".to_string())?;
+    let ext = ext_for_mime(&mime).ok_or_else(|| format!("tipo não suportado: {mime}"))?;
+
+    let dir = conv_dir(app, conv_id)?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let fname = format!("{}.{ext}", hash16(bytes));
+    let abs = dir.join(&fname);
+    if !abs.exists() {
+        // dedup por-conversa: mesmo conteúdo → mesmo arquivo, não reescreve.
+        write_atomic(&abs, bytes)?;
+    }
+    enforce_cap(app)?;
+
+    Ok(Attachment {
+        path: format!("attachments/{}/{}", sanitize_conv_id(conv_id), fname),
+        name: name.to_string(),
+        kind: classify(&mime),
+        mime,
+        bytes: bytes.len() as u64,
+    })
+}
+
+// ---------------- comandos Tauri ----------------
+
+/// Salva bytes colados (clipboard) → Attachment. `declared_mime` vem do clipboard
+/// (não-confiável); o sniff decide de verdade.
+#[tauri::command]
+pub async fn save_attachment(
+    app: AppHandle,
+    conv_id: String,
+    name: String,
+    declared_mime: String,
+    bytes: Vec<u8>,
+) -> Result<Attachment, String> {
+    let declared = if declared_mime.is_empty() {
+        None
+    } else {
+        Some(declared_mime)
+    };
+    save_to_disk(&app, &conv_id, &name, declared, &bytes)
+}
+
+/// Anexa um arquivo já em disco (file picker). Checa o tamanho ANTES de ler o
+/// payload (F8) e copia p/ o cache (estabilidade: o original pode sumir/mudar).
+#[tauri::command]
+pub async fn attach_path(
+    app: AppHandle,
+    conv_id: String,
+    src_path: String,
+) -> Result<Attachment, String> {
+    let meta = std::fs::metadata(&src_path).map_err(|e| e.to_string())?;
+    if meta.len() > MAX_BYTES {
+        return Err(format!("excede {} MB", MAX_BYTES / 1024 / 1024));
+    }
+    let bytes = std::fs::read(&src_path).map_err(|e| e.to_string())?;
+    let name = Path::new(&src_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "anexo".to_string());
+    save_to_disk(&app, &conv_id, &name, None, &bytes)
+}
+
+/// Remove um anexo individual (chip pré-envio ou botão no histórico). `path` é o
+/// relativo do Attachment; valida que resolve DENTRO de attachments/ (anti-traversal).
+#[tauri::command]
+pub async fn delete_attachment(app: AppHandle, path: String) -> Result<(), String> {
+    let root = attachments_root(&app)?;
+    let abs = app_data(&app)?.join(&path);
+    let canon_root = root.canonicalize().unwrap_or(root);
+    match abs.canonicalize() {
+        Ok(canon) if canon.starts_with(&canon_root) => {
+            let _ = std::fs::remove_file(&canon);
+            Ok(())
+        }
+        _ => Err("caminho de anexo inválido".to_string()),
+    }
+}

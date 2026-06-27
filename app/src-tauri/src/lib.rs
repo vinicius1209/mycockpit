@@ -4,6 +4,7 @@ use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 
 mod adapters;
 mod agent;
+mod attachments;
 mod context;
 mod mycockpit;
 mod pricing;
@@ -149,7 +150,10 @@ pub fn run() {
             sources::read_project_sources,
             sources::read_text_file,
             sources::read_project_commands,
-            sources::list_project_files
+            sources::list_project_files,
+            attachments::save_attachment,
+            attachments::attach_path,
+            attachments::delete_attachment
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
