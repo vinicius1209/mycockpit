@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { useActiveConv } from "@/store/chat"
+import { useActiveConv, useChat } from "@/store/chat"
 import { useActiveProject } from "@/store/app"
 import {
   readProjectCommands,
@@ -106,6 +106,10 @@ export function CommandConsole({
   const [commands, setCommands] = useState<SlashCommand[]>([])
   const [slashIdx, setSlashIdx] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
+  // histórico tipo shell (↑/↓ recupera prompts já enviados). null = editando.
+  const [histIdx, setHistIdx] = useState<number | null>(null)
+  const [draft, setDraft] = useState("")
+  const activeId = useChat((s) => s.activeId)
 
   // comandos do projeto p/ o "/" (.claude/commands)
   useEffect(() => {
@@ -208,6 +212,49 @@ export function CommandConsole({
   const canSend =
     value.trim().length > 0 && !disabled && !running && !finalizing
 
+  // Histórico tipo shell: os prompts já enviados nesta conversa (mais novo = fim).
+  const userPrompts = conv.items.flatMap((it) =>
+    it.kind === "user" ? [it.text] : [],
+  )
+
+  function recallPrev() {
+    if (userPrompts.length === 0) return
+    if (histIdx === null) {
+      setDraft(value)
+      setHistIdx(userPrompts.length - 1)
+      setValue(userPrompts[userPrompts.length - 1])
+    } else if (histIdx > 0) {
+      setHistIdx(histIdx - 1)
+      setValue(userPrompts[histIdx - 1])
+    }
+  }
+
+  function recallNext() {
+    if (histIdx === null) return
+    const idx = histIdx + 1
+    if (idx >= userPrompts.length) {
+      setHistIdx(null)
+      setValue(draft)
+    } else {
+      setHistIdx(idx)
+      setValue(userPrompts[idx])
+    }
+  }
+
+  // depois de recuperar, leva o cursor pro fim p/ editar
+  useEffect(() => {
+    if (histIdx !== null && ref.current) {
+      const len = ref.current.value.length
+      ref.current.setSelectionRange(len, len)
+    }
+  }, [histIdx])
+
+  // trocar de conversa zera a navegação de histórico
+  useEffect(() => {
+    setHistIdx(null)
+    setDraft("")
+  }, [activeId])
+
   function submit() {
     if (!canSend) return
     onSend(value.trim(), {
@@ -216,6 +263,8 @@ export function CommandConsole({
       effort: effort === "default" ? null : effort,
     })
     setValue("")
+    setHistIdx(null)
+    setDraft("")
     ref.current?.focus()
   }
 
@@ -319,6 +368,7 @@ export function CommandConsole({
             setCursor(e.target.selectionStart ?? e.target.value.length)
             setSlashDismissed(false)
             setAtDismissed(false)
+            setHistIdx(null)
           }}
           onSelect={(e) => setCursor(e.currentTarget.selectionStart ?? 0)}
           onFocus={() => setFocused(true)}
@@ -367,6 +417,31 @@ export function CommandConsole({
               if (e.key === "Escape") {
                 e.preventDefault()
                 setAtDismissed(true)
+                return
+              }
+            }
+            // histórico tipo shell: ↑ recupera prompts (cursor na 1ª linha),
+            // ↓ avança; só fora dos popovers de / e @.
+            if (!showSlash && !showAt) {
+              const ta = e.currentTarget
+              const before = value.slice(0, ta.selectionStart ?? 0)
+              const after = value.slice(ta.selectionEnd ?? value.length)
+              if (
+                e.key === "ArrowUp" &&
+                !before.includes("\n") &&
+                userPrompts.length > 0
+              ) {
+                e.preventDefault()
+                recallPrev()
+                return
+              }
+              if (
+                e.key === "ArrowDown" &&
+                histIdx !== null &&
+                !after.includes("\n")
+              ) {
+                e.preventDefault()
+                recallNext()
                 return
               }
             }

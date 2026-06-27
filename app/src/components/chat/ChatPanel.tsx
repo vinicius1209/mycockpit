@@ -52,6 +52,10 @@ export function ChatPanel() {
   const conv = useActiveConv()
   const openProject = useChat((s) => s.openProject)
   const scrollRef = useRef<HTMLDivElement>(null)
+  // sugestões: debounce + invalidação por geração (evita concorrência e geração
+  // dupla quando se manda outro prompt logo após a resposta).
+  const suggestTimer = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const suggestGen = useRef<Record<string, number>>({})
 
   const items = conv.items
   const running = conv.running
@@ -79,6 +83,12 @@ export function ChatPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queuedPrompt])
 
+  // limpa timers de sugestão pendentes ao desmontar
+  useEffect(() => {
+    const timers = suggestTimer.current
+    return () => Object.values(timers).forEach(clearTimeout)
+  }, [])
+
   // destinationId = o agent escolhido no seletor (v0.2-α: o seam que descartava
   // o destino agora é threadado até o runAgent). Default 'claude-code'.
   async function handleSend(
@@ -96,6 +106,9 @@ export function ChatPanel() {
     // bloqueia se rodando OU finalizando — o processo do CLI precisa sair de fato
     // (flush da sessão) antes do próximo run, senão o resume não acha a sessão.
     if (conv?.running || conv?.finalizing) return
+    // novo run → invalida geração de sugestão pendente/em-voo desta conversa
+    suggestGen.current[convId] = (suggestGen.current[convId] ?? 0) + 1
+    clearTimeout(suggestTimer.current[convId])
     // conversa estabelecida trava no agent/modelo/effort do 1º run; nova usa o seletor
     const locked = conv != null && conv.items.length > 0
     const agent = locked ? conv!.agent : (cfg?.agent ?? "claude-code")
@@ -122,7 +135,7 @@ export function ChatPanel() {
     } finally {
       useChat.getState().finish(convId)
       void useChat.getState().persist(convId)
-      void generateSuggestions(convId)
+      scheduleSuggestions(convId)
     }
   }
 
@@ -132,11 +145,21 @@ export function ChatPanel() {
     if (runId) void cancelAgent(runId)
   }
 
+  // Debounce: agenda a geração ~700ms após o turno. Um novo run cancela o timer
+  // (e bumpa o token), então rajadas de prompts não geram sugestões intermediárias.
+  function scheduleSuggestions(convId: string) {
+    clearTimeout(suggestTimer.current[convId])
+    suggestTimer.current[convId] = setTimeout(() => {
+      void generateSuggestions(convId)
+    }, 700)
+  }
+
   // Gera sugestões contextuais após o turno (fire-and-forget; degrada pros chips).
   async function generateSuggestions(convId: string) {
     if (!isTauri()) return
     const c = useChat.getState().byId[convId]
-    if (!c || !c.items.some((it) => it.kind === "text")) return
+    if (!c || c.running || c.finalizing) return // run em andamento → não gera
+    if (!c.items.some((it) => it.kind === "text")) return
     const proj = useApp.getState().projects.find((p) => p.id === c.projectId)
     if (!proj) {
       console.warn("[sugestões] projeto não encontrado p/ convId", convId, c.projectId)
@@ -146,6 +169,8 @@ export function ChatPanel() {
     const cfg = useApp.getState().mycockpit[c.projectId]
     const helperModel = cfg ? cfg.helper : "haiku"
     if (!helperModel) return
+    // token desta geração: se um novo run começar enquanto geramos, descartamos.
+    const myGen = suggestGen.current[convId] ?? 0
     useChat.getState().setSuggesting(convId, true)
     try {
       const raw = await suggest(
@@ -153,6 +178,8 @@ export function ChatPanel() {
         proj.path,
         `${SUGGEST_PROMPT}\n\nConversa recente:\n${buildContext(c.items)}`,
       )
+      // descarta se um novo run começou enquanto gerava (anti-concorrência)
+      if ((suggestGen.current[convId] ?? 0) !== myGen) return
       const list = parseSuggestions(raw)
       if (!list.length) {
         console.warn("[sugestões] resposta sem JSON parseável:", raw)
@@ -166,7 +193,10 @@ export function ChatPanel() {
     } catch (e) {
       console.warn("[sugestões] erro ao gerar:", e)
     } finally {
-      useChat.getState().setSuggesting(convId, false)
+      // só limpa o "buscando…" se ainda formos a geração corrente
+      if ((suggestGen.current[convId] ?? 0) === myGen) {
+        useChat.getState().setSuggesting(convId, false)
+      }
     }
   }
 
