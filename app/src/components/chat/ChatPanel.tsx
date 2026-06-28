@@ -5,6 +5,8 @@ import { MessageList } from "@/components/chat/MessageList"
 import { Reticle } from "@/components/common/Wordmark"
 import { useActiveProject, useApp } from "@/store/app"
 import { useChat, useActiveConv } from "@/store/chat"
+import { useFusion } from "@/store/fusion"
+import { FusionBoard } from "@/components/fusion/FusionBoard"
 import type { ChatItem } from "@/store/chat"
 import { runAgent, cancelAgent, suggest } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
@@ -62,6 +64,8 @@ export function ChatPanel() {
   const items = conv.items
   const running = conv.running
   const finalizing = conv.finalizing
+  const activeId = useChat((s) => s.activeId)
+  const fusionActive = useFusion((s) => (activeId ? !!s.byConv[activeId] : false))
 
   // Abre o projeto ao trocar: carrega as conversas e a mais recente (Sprint 2).
   const projectId = project?.id ?? null
@@ -256,6 +260,7 @@ export function ChatPanel() {
             </div>
           </div>
         )}
+        {activeId && fusionActive && <FusionBoard convId={activeId} />}
       </div>
 
       <div className="relative z-10 shrink-0 px-8 pb-7">

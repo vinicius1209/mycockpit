@@ -37,6 +37,7 @@ import {
   saveAttachment,
   deleteAttachment,
 } from "@/lib/attachments"
+import { useFusion, type LeagueConfig } from "@/store/fusion"
 import type { Destination } from "@/lib/types"
 
 const DESTINATIONS: Destination[] = [
@@ -300,6 +301,32 @@ export function CommandConsole({
     setHistIdx(null)
     setDraft("")
     ref.current?.focus()
+  }
+
+  // Fusion — dispara a disputa com a liga default (agent atual + o complementar).
+  // O League Builder configurável é o próximo polimento.
+  async function submitFusion() {
+    const text = value.trim()
+    if (!text || !project || !activeId) return
+    const complementary = effectiveDest === "codex" ? "claude-code" : "codex"
+    const cfg: LeagueConfig = {
+      scope: "read-only",
+      judgeModel: "sonnet",
+      candidates: [
+        {
+          agent: effectiveDest,
+          model: model === "default" ? null : model,
+          effort: effort === "default" ? null : effort,
+        },
+        { agent: complementary, model: null, effort: null },
+      ],
+    }
+    setValue("")
+    setHistIdx(null)
+    setDraft("")
+    await useFusion
+      .getState()
+      .launch(activeId, cfg, text, [], project.path, project.permissionMode ?? "padrao")
   }
 
   function removeAttachment(path: string) {
@@ -662,6 +689,16 @@ export function CommandConsole({
           </Select>
 
           <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => void submitFusion()}
+              disabled={!value.trim() || disabled || running || finalizing}
+              title="Disputar entre agents (Fusion)"
+              className="rounded-full text-muted-foreground hover:text-brass"
+            >
+              <Sparkles className="size-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon-sm"
