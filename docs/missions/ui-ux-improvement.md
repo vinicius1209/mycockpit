@@ -1,6 +1,6 @@
 # MISSÃO — UI/UX Improvement (MyCockpit)
 
-> **Status:** em avaliação por um time de agents (não aprovado para implementação).
+> **Status:** ✅ CONCLUÍDA — avaliada por um time de 10 agents (ver `ui-ux-evaluation.md`); Ondas **P0 + P1 + P2** implementadas (commits 117ed22 / 9ad558d / este). Merge e features caras de LLM (semantic-diff/tags/summaries/confidence) **reprovadas com justificativa**.
 > **Aberta:** 2026-06-28 · **Fonte:** relatório de um revisor externo de UI/UX.
 > **Regra:** cada ponto deve ser avaliado criticamente contra (a) o código atual, (b) a visão do produto + decisões já tomadas, (c) viabilidade na arquitetura CLI-driven, (d) o princípio "minimal/elegante". Pontos que contradizem decisões já validadas (ex.: **seleção ≫ fusão**) devem ser sinalizados, não implementados às cegas.
 

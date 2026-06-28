@@ -180,6 +180,7 @@ export function FusionArena() {
             <CandidateLane
               c={c}
               selected={selected === c.id}
+              userPicked={chosen === c.id}
               suggested={fusion.judge.suggestedId === c.id}
               deciding={!!deciding}
               onChoose={() => setChosen(c.id)}

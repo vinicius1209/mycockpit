@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils"
 export function CandidateLane({
   c,
   selected,
+  userPicked,
   suggested,
   deciding,
   onChoose,
@@ -31,6 +32,8 @@ export function CandidateLane({
 }: {
   c: FusionCandidate
   selected: boolean
+  /** O usuário clicou NESTA lane (vs. a pré-seleção automática do juiz). */
+  userPicked: boolean
   suggested: boolean
   deciding: boolean
   onChoose: () => void
@@ -66,12 +69,14 @@ export function CandidateLane({
       onClick={onChoose}
       className={cn(
         "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
-        selected
+        userPicked
           ? "border-brass bg-brass/10 text-brass"
-          : "text-muted-foreground hover:text-foreground",
+          : selected
+            ? "border-brass/35 text-brass/80"
+            : "text-muted-foreground hover:text-foreground",
       )}
     >
-      {selected ? "✓ escolhida" : "escolher esta"}
+      {userPicked ? "✓ escolhida" : selected ? "pré-selecionada" : "escolher esta"}
     </button>
   )
 
@@ -138,10 +143,14 @@ export function CandidateLane({
             <div className="flex shrink-0 justify-end border-t px-5 py-3">
               <Button
                 size="sm"
-                variant={selected ? "default" : "outline"}
+                variant={userPicked ? "default" : "outline"}
                 onClick={onChoose}
               >
-                {selected ? "✓ escolhida" : "escolher esta"}
+                {userPicked
+                  ? "✓ escolhida"
+                  : selected
+                    ? "pré-selecionada"
+                    : "escolher esta"}
               </Button>
             </div>
           )}
@@ -190,6 +199,7 @@ export function FusionBoard({ convId }: { convId: string }) {
           key={c.id}
           c={c}
           selected={selected === c.id}
+          userPicked={chosen === c.id}
           suggested={fusion.judge.suggestedId === c.id}
           deciding={deciding}
           onChoose={() => setChosen(c.id)}
