@@ -14,7 +14,7 @@ import { useAttachments } from "@/hooks/useAttachments"
 import { useActiveConv, useChat } from "@/store/chat"
 import { useActiveProject } from "@/store/app"
 import type { Attachment } from "@/lib/attachments"
-import { DESTINATIONS, defaultModelFor, agentCaps } from "@/lib/agents"
+import { DESTINATIONS, defaultModelFor, agentCaps, agentDef } from "@/lib/agents"
 import { useFusion, defaultLeague } from "@/store/fusion"
 import type { AgentRunConfig } from "@/lib/types"
 
@@ -114,6 +114,17 @@ export function CommandConsole({
     !finalizing &&
     allSupported
 
+  // Liga default da disputa (agent atual + complementar) — reusada no submit e no
+  // título do botão Disputar (consciência de gasto: nomeia a liga + nº de runs).
+  const fusionLeague = defaultLeague({
+    agent: effectiveDest,
+    model: effectiveModel === "default" ? null : effectiveModel,
+    effort: effectiveEffort === "default" ? null : effectiveEffort,
+  })
+  const fusionTitle = `Disputar: ${fusionLeague.candidates
+    .map((c) => agentDef(c.agent)?.shortLabel ?? c.agent)
+    .join(" + ")} (${fusionLeague.candidates.length} runs)`
+
   function submit() {
     if (!canSend) return
     onSend(
@@ -138,14 +149,8 @@ export function CommandConsole({
   async function submitFusion() {
     const text = value.trim()
     if (!text || !project || !activeId) return
-    // mesmo config EFETIVO do submit: o candidato roda o modelo do PILL visível,
-    // não o estado local que sobrou de outra conversa. A liga default (agent +
-    // complementar) é política da store/fusion.
-    const cfg = defaultLeague({
-      agent: effectiveDest,
-      model: effectiveModel === "default" ? null : effectiveModel,
-      effort: effectiveEffort === "default" ? null : effectiveEffort,
-    })
+    // mesma liga do título do botão (o candidato roda o modelo do PILL visível).
+    const cfg = fusionLeague
     setValue("")
     resetHistory()
     await useFusion
@@ -294,6 +299,7 @@ export function CommandConsole({
             onEffortChange={setEffort}
             onFusion={() => void submitFusion()}
             fusionDisabled={!value.trim() || disabled || running || finalizing}
+            fusionTitle={fusionTitle}
             onAttach={attach}
             running={running}
             onStop={onStop}

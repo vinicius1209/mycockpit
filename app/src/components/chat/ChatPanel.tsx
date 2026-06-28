@@ -167,7 +167,7 @@ export function ChatPanel() {
               </h1>
               <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-muted-foreground">
                 {project
-                  ? `Abra um chat e coloque seu time de agents para trabalhar em ${project.name}.`
+                  ? `Descreva uma tarefa para seu time de agents em ${project.name}.`
                   : "Selecione ou adicione um projeto na barra lateral para começar."}
               </p>
             </div>

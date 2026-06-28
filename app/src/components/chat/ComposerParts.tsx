@@ -256,6 +256,7 @@ export function ComposerControls({
   onEffortChange,
   onFusion,
   fusionDisabled,
+  fusionTitle,
   onAttach,
   running,
   onStop,
@@ -271,6 +272,7 @@ export function ComposerControls({
   onEffortChange: (v: string) => void
   onFusion: () => void
   fusionDisabled?: boolean
+  fusionTitle?: string
   onAttach: () => void
   running?: boolean
   onStop?: () => void
@@ -317,7 +319,7 @@ export function ComposerControls({
           size="icon-sm"
           onClick={onFusion}
           disabled={fusionDisabled}
-          title="Disputar entre agents (Fusion)"
+          title={fusionTitle ?? "Disputar entre agents (Fusion)"}
           aria-label="Disputar entre agents"
           className="rounded-full text-muted-foreground hover:text-brass"
         >

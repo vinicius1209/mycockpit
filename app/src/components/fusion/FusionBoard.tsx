@@ -7,6 +7,7 @@ import {
   type FusionCandidate,
   type FusionRun,
 } from "@/store/fusion"
+import { useApp } from "@/store/app"
 import { candidateText } from "@/lib/fusion"
 import { fmtCost, liveCostOf } from "@/lib/format"
 import { Markdown } from "@/components/common/Markdown"
@@ -86,7 +87,9 @@ export function CandidateLane({
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           {statusIcon}
-          <span className="label-mono truncate text-foreground/80">{c.label}</span>
+          <span className="truncate text-[13px] font-medium text-foreground">
+            {c.label}
+          </span>
           {suggestedBadge}
         </div>
         <div className="flex shrink-0 items-center gap-2 font-mono text-[11px] tabular-nums text-muted-foreground">
@@ -173,6 +176,13 @@ export function FusionBoard({ convId }: { convId: string }) {
         <span className="ml-auto font-mono tabular-nums">
           ~US${liveCost.toFixed(3)}
         </span>
+        <button
+          onClick={() => useApp.getState().setViewMode("fusion")}
+          className="underline-offset-2 transition-colors hover:text-foreground hover:underline"
+          title="Abrir em tela cheia (colunas paralelas)"
+        >
+          tela cheia
+        </button>
       </div>
 
       {fusion.candidates.map((c) => (
