@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react"
+import { memo, useRef, useState, type ReactNode } from "react"
 import ReactMarkdown from "react-markdown"
 import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -104,8 +104,9 @@ const mdComponents: Components = {
   ),
 }
 
-/** Render de markdown (GFM + highlight) reusado no chat e no detalhe de contexto. */
-export function Markdown({ text }: { text: string }) {
+/** Render de markdown (GFM + highlight) reusado no chat e no detalhe de contexto.
+ *  `memo`: blocos antigos não re-rodam react-markdown+highlight a cada token (F12). */
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div data-selectable className="text-[14px] leading-relaxed text-foreground">
       <ReactMarkdown
@@ -117,4 +118,4 @@ export function Markdown({ text }: { text: string }) {
       </ReactMarkdown>
     </div>
   )
-}
+})

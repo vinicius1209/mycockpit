@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { PillSelect } from "@/components/ui/PillSelect"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useActiveConv, useChat } from "@/store/chat"
@@ -33,12 +34,16 @@ import type { Attachment } from "@/lib/attachments"
 import {
   AGENT_CAPS,
   MAX_ATTACH_BYTES,
+  MAX_ATTACH_MB,
   MAX_ATTACH_COUNT,
   saveAttachment,
   deleteAttachment,
 } from "@/lib/attachments"
 import { useFusion, type LeagueConfig } from "@/store/fusion"
-import type { Destination } from "@/lib/types"
+import type { AgentRunConfig, Destination } from "@/lib/types"
+
+/** Máx. de itens mostrados nos popovers de "/" (comandos) e "@" (referências). */
+const MAX_POPOVER_ITEMS = 8
 
 const DESTINATIONS: Destination[] = [
   { id: "claude-code", label: "Claude Code", kind: "agent", available: true, hint: "Agent" },
@@ -102,7 +107,7 @@ export function CommandConsole({
 }: {
   onSend: (
     text: string,
-    cfg: { agent: string; model: string | null; effort: string | null },
+    cfg: AgentRunConfig,
     attachments: Attachment[],
   ) => void
   disabled?: boolean
@@ -137,9 +142,13 @@ export function CommandConsole({
       setCommands([])
       return
     }
+    let cancelled = false
     readProjectCommands(project.path)
-      .then(setCommands)
-      .catch(() => setCommands([]))
+      .then((c) => !cancelled && setCommands(c))
+      .catch(() => !cancelled && setCommands([]))
+    return () => {
+      cancelled = true
+    }
   }, [project?.path])
 
   // "/" no início do input (sem espaço) → modo slash
@@ -148,7 +157,7 @@ export function CommandConsole({
     slashQuery !== null
       ? commands
           .filter((c) => c.name.toLowerCase().includes(slashQuery.toLowerCase()))
-          .slice(0, 8)
+          .slice(0, MAX_POPOVER_ITEMS)
       : []
   const showSlash = !slashDismissed && slashMatches.length > 0
 
@@ -178,13 +187,30 @@ export function CommandConsole({
   useEffect(() => {
     if (atQuery === null || !project || !isTauri()) return
     if (mentionLoadedRef.current === project.path) return
-    mentionLoadedRef.current = project.path
-    void listProjectFiles(project.path)
-      .then(setFiles)
-      .catch(() => setFiles([]))
-    void readProjectSources(project.path)
-      .then((s) => setAgents(s.personas.map((p) => p.name)))
-      .catch(() => setAgents([]))
+    const path = project.path
+    mentionLoadedRef.current = path
+    let cancelled = false
+    let settled = false
+    Promise.all([
+      listProjectFiles(path).then(
+        (f) => !cancelled && setFiles(f),
+        () => !cancelled && setFiles([]),
+      ),
+      readProjectSources(path).then(
+        (s) => !cancelled && setAgents(s.personas.map((p) => p.name)),
+        () => !cancelled && setAgents([]),
+      ),
+    ]).finally(() => {
+      settled = true
+    })
+    return () => {
+      cancelled = true
+      // cancelado ANTES de terminar (troca rápida de projeto) → libera o cache-once
+      // p/ recarregar; se já terminou, mantém (não recarrega a cada tecla do @).
+      if (!settled && mentionLoadedRef.current === path) {
+        mentionLoadedRef.current = null
+      }
+    }
   }, [atQuery, project?.path])
 
   const atItems: { kind: "agent" | "file"; value: string }[] =
@@ -202,7 +228,7 @@ export function CommandConsole({
                 f.toLowerCase().includes(atQuery.toLowerCase()),
             )
             .map((f) => ({ kind: "file" as const, value: f })),
-        ].slice(0, 8)
+        ].slice(0, MAX_POPOVER_ITEMS)
   const showAt = !atDismissed && atItems.length > 0
 
   useEffect(() => {
@@ -366,11 +392,11 @@ export function CommandConsole({
     let count = attachments.length
     for (const f of files) {
       if (f.size > MAX_ATTACH_BYTES) {
-        toast.error(`"${f.name || "anexo"}" excede 10 MB`)
+        toast.error(`"${f.name || "anexo"}" excede ${MAX_ATTACH_MB} MB`)
         continue
       }
       if (count >= MAX_ATTACH_COUNT) {
-        toast.error("máx. 8 anexos por mensagem")
+        toast.error(`máx. ${MAX_ATTACH_COUNT} anexos por mensagem`)
         break
       }
       try {
@@ -505,6 +531,7 @@ export function CommandConsole({
                       removeAttachment(a.path)
                     }}
                     className="text-muted-foreground hover:text-foreground"
+                    aria-label="Remover anexo"
                   >
                     <X className="size-3" />
                   </button>
@@ -658,35 +685,25 @@ export function CommandConsole({
             </SelectContent>
           </Select>
 
-          <Select value={effectiveModel} onValueChange={setModel} disabled={locked}>
-            <SelectTrigger className="h-8 w-fit gap-1 rounded-full border bg-secondary/50 px-2.5 text-[12px] text-muted-foreground shadow-none focus-visible:ring-0 data-[size=default]:h-8">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start">
-              {(MODELS[effectiveDest] ?? []).map((m) => (
-                <SelectItem key={m.value} value={m.value} className="text-[13px]">
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <PillSelect
+            value={effectiveModel}
+            onValueChange={setModel}
+            disabled={locked}
+            options={MODELS[effectiveDest] ?? []}
+            triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
+            itemClassName="text-[13px]"
+            aria-label="Modelo"
+          />
 
-          <Select
+          <PillSelect
             value={effectiveEffort}
             onValueChange={setEffort}
             disabled={locked}
-          >
-            <SelectTrigger className="h-8 w-fit gap-1 rounded-full border bg-secondary/50 px-2.5 text-[12px] text-muted-foreground shadow-none focus-visible:ring-0 data-[size=default]:h-8">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start">
-              {(EFFORTS[effectiveDest] ?? []).map((e) => (
-                <SelectItem key={e.value} value={e.value} className="text-[13px]">
-                  {e.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            options={EFFORTS[effectiveDest] ?? []}
+            triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
+            itemClassName="text-[13px]"
+            aria-label="Esforço de raciocínio"
+          />
 
           <div className="ml-auto flex items-center gap-1.5">
             <Button
@@ -695,6 +712,7 @@ export function CommandConsole({
               onClick={() => void submitFusion()}
               disabled={!value.trim() || disabled || running || finalizing}
               title="Disputar entre agents (Fusion)"
+              aria-label="Disputar entre agents"
               className="rounded-full text-muted-foreground hover:text-brass"
             >
               <Sparkles className="size-4" />

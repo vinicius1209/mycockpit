@@ -15,6 +15,13 @@ export interface Project {
   permissionMode?: PermissionMode
 }
 
+/** Configuração de UM run: qual agent + modelo/effort (null = default do CLI). */
+export interface AgentRunConfig {
+  agent: string
+  model: string | null
+  effort: string | null
+}
+
 /** Destino do console de comando: um agent ou (futuro) um modelo direto. */
 export interface Destination {
   id: string

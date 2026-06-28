@@ -1,15 +1,16 @@
 import { useState } from "react"
 import { AlertCircle, Check, Loader2, Sparkles } from "lucide-react"
-import { useFusion, type FusionCandidate } from "@/store/fusion"
+import {
+  useFusion,
+  isFailed,
+  isRunning,
+  type FusionCandidate,
+} from "@/store/fusion"
 import { candidateText } from "@/lib/fusion"
+import { fmtCost, liveCostOf } from "@/lib/format"
 import { Markdown } from "@/components/common/Markdown"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-
-function fmtCost(c: number | undefined, src?: string): string {
-  if (c == null) return ""
-  return `${src === "estimated" ? "~" : ""}US$${c.toFixed(3)}`
-}
 
 export function CandidateLane({
   c,
@@ -28,9 +29,8 @@ export function CandidateLane({
   fill?: boolean
 }) {
   const text = candidateText(c)
-  const running = c.status === "running" || c.status === "queued"
-  const failed =
-    c.status === "error" || c.status === "cancelled" || c.status === "killed"
+  const running = isRunning(c.status)
+  const failed = isFailed(c.status)
   return (
     <div
       className={cn(
@@ -101,7 +101,7 @@ export function FusionBoard({ convId }: { convId: string }) {
   const judging = fusion.phase === "judging"
   const deciding = fusion.phase === "deciding"
   const selected = chosen ?? fusion.chosenId
-  const liveCost = fusion.candidates.reduce((a, c) => a + (c.costUsd ?? 0), 0)
+  const liveCost = liveCostOf(fusion)
   const unavailable = fusion.judge.status === "unavailable"
 
   return (

@@ -99,7 +99,7 @@ fn read_personas(claude_dir: &Path) -> Vec<Persona> {
     if let Ok(rd) = std::fs::read_dir(claude_dir.join("agents")) {
         for e in rd.filter_map(|e| e.ok()) {
             let p = e.path();
-            if !p.extension().is_some_and(|x| x == "md") {
+            if p.extension().is_none_or(|x| x != "md") {
                 continue;
             }
             if let Ok(text) = std::fs::read_to_string(&p) {
@@ -117,7 +117,7 @@ fn read_personas(claude_dir: &Path) -> Vec<Persona> {
             }
         }
     }
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|p| p.name.to_lowercase());
     out
 }
 

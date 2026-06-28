@@ -1,6 +1,9 @@
 import { invoke, Channel } from "@tauri-apps/api/core"
 import type { Attachment } from "@/lib/attachments"
 
+/** Proveniência do custo (espelha CostSource no Rust). */
+export type CostSource = "reported" | "estimated" | "unknown"
+
 /** Eventos normalizados emitidos pelo backend (espelha AgentEvent no Rust). */
 export type AgentEvent =
   | { type: "session"; session_id: string; model: string | null; tools: number }
@@ -12,7 +15,7 @@ export type AgentEvent =
       ok: boolean
       text: string | null
       cost_usd: number | null
-      cost_source: "reported" | "estimated" | "unknown"
+      cost_source: CostSource
       input_tokens: number
       output_tokens: number
       cache_read: number
@@ -79,31 +82,4 @@ export async function suggest(
   prompt: string,
 ): Promise<string> {
   return invoke<string>("suggest", { model, cwd, prompt })
-}
-
-export interface ContextFile {
-  name: string
-  exists: boolean
-  content: string | null
-  bytes: number
-}
-
-export interface ClaudeDir {
-  exists: boolean
-  agents: number
-  commands: number
-  skills: number
-  plans: number
-  hooks: number
-  settings: boolean
-}
-
-export interface ProjectContext {
-  files: ContextFile[]
-  claude_dir: ClaudeDir
-  mcp_servers: number | null
-}
-
-export async function readProjectContext(path: string): Promise<ProjectContext> {
-  return invoke<ProjectContext>("read_project_context", { path })
 }

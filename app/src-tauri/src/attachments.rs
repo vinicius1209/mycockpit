@@ -329,15 +329,24 @@ pub fn resolve_live(app: &AppHandle, atts: Vec<Attachment>) -> (Vec<Attachment>,
         Ok(b) => b,
         Err(_) => return (Vec::new(), atts.len()),
     };
+    // Raiz canônica dos anexos: TODO path resolvido (este é o único caminho que
+    // entrega path ao CLI) precisa morar sob ela — mesma checagem anti-traversal de
+    // read_attachment/delete_attachment. Um path forjado (`../../etc/passwd`) cai em missing.
+    let canon_root = match attachments_root(app) {
+        Ok(r) => r.canonicalize().unwrap_or(r),
+        Err(_) => return (Vec::new(), atts.len()),
+    };
     let mut live = Vec::new();
     let mut missing = 0usize;
     for mut a in atts {
         let abs = base.join(&a.path);
-        if abs.is_file() {
-            a.path = abs.to_string_lossy().to_string();
-            live.push(a);
-        } else {
-            missing += 1;
+        match abs.canonicalize() {
+            // canonicalize já garante que o arquivo existe; valida contenção sob a raiz.
+            Ok(canon) if canon.is_file() && canon.starts_with(&canon_root) => {
+                a.path = abs.to_string_lossy().to_string();
+                live.push(a);
+            }
+            _ => missing += 1,
         }
     }
     (live, missing)

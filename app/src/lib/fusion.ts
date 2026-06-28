@@ -4,6 +4,7 @@
 // e mapeia o rótulo embaralhado de volta pro candidato.
 
 import { invoke } from "@tauri-apps/api/core"
+import { extractJson } from "@/lib/format"
 import type { ChatItem } from "@/store/chat"
 import type { FusionCandidate, FusionJudge } from "@/store/fusion"
 
@@ -63,19 +64,14 @@ interface JudgePass {
 }
 
 function parseJudge(text: string, labels: string[]): JudgePass | null {
-  const m = text.match(/\{[\s\S]*\}/)
-  if (!m) return null
-  try {
-    const o = JSON.parse(m[0]) as Record<string, unknown>
-    const w = typeof o.winner === "string" && labels.includes(o.winner) ? o.winner : null
-    const r =
-      typeof o.runnerup === "string" && labels.includes(o.runnerup)
-        ? o.runnerup
-        : null
-    return { winner: w, reason: typeof o.reason === "string" ? o.reason : "", runnerup: r }
-  } catch {
-    return null
-  }
+  const o = extractJson<Record<string, unknown>>(text, "object")
+  if (!o) return null
+  const w = typeof o.winner === "string" && labels.includes(o.winner) ? o.winner : null
+  const r =
+    typeof o.runnerup === "string" && labels.includes(o.runnerup)
+      ? o.runnerup
+      : null
+  return { winner: w, reason: typeof o.reason === "string" ? o.reason : "", runnerup: r }
 }
 
 const LABELS = ["A", "B", "C", "D", "E"]
@@ -89,7 +85,8 @@ function shuffle<T>(arr: T[]): T[] {
   return a
 }
 
-function emptyJudge(): FusionJudge {
+/** Estado inicial do juiz (idle). Fonte única — o store importa daqui. */
+export function emptyJudge(): FusionJudge {
   return {
     status: "idle",
     suggestedId: null,

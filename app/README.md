@@ -47,8 +47,7 @@ app/
 │   └── components/
 │       ├── common/            # StatusDot, Wordmark (retículo)
 │       ├── layout/            # TitleBar, Sidebar, ContextPanel
-│       ├── chat/              # ChatPanel, CommandConsole (ai-02 adaptado)
-│       ├── ai-02.tsx          # bloco original do blocks.so (referência)
+│       ├── chat/              # ChatPanel, CommandConsole
 │       └── ui/                # componentes shadcn (new-york)
 └── src-tauri/
     ├── src/lib.rs             # registra plugins sql (migração `projects`) + dialog

@@ -63,6 +63,14 @@ pub fn resolve(agent: &str) -> Result<Box<dyn AgentAdapter>, String> {
     }
 }
 
+/// Lê um inteiro não-negativo de um sub-objeto `usage` (0 se ausente/inválido).
+fn usage_u64(usage: Option<&serde_json::Value>, key: &str) -> u64 {
+    usage
+        .and_then(|u| u.get(key))
+        .and_then(|x| x.as_u64())
+        .unwrap_or(0)
+}
+
 /// O erro indica que a sessão do resume não existe? (Claude: "No conversation
 /// found with session ID"). Dispara a degradação graciosa (recomeçar sem resume).
 fn is_session_not_found(s: &str) -> bool {
@@ -246,12 +254,6 @@ impl AgentAdapter for ClaudeAdapter {
                     }
                 }
                 let usage = v.get("usage");
-                let tok = |k: &str| {
-                    usage
-                        .and_then(|u| u.get(k))
-                        .and_then(|x| x.as_u64())
-                        .unwrap_or(0)
-                };
                 // O Claude entrega o custo pronto (total_cost_usd) → Reported.
                 let cost_usd = v.get("total_cost_usd").and_then(|x| x.as_f64());
                 vec![AgentEvent::Result {
@@ -263,10 +265,10 @@ impl AgentAdapter for ClaudeAdapter {
                         CostSource::Unknown
                     },
                     cost_usd,
-                    input_tokens: tok("input_tokens"),
-                    output_tokens: tok("output_tokens"),
-                    cache_read: tok("cache_read_input_tokens"),
-                    cache_creation: tok("cache_creation_input_tokens"),
+                    input_tokens: usage_u64(usage, "input_tokens"),
+                    output_tokens: usage_u64(usage, "output_tokens"),
+                    cache_read: usage_u64(usage, "cache_read_input_tokens"),
+                    cache_creation: usage_u64(usage, "cache_creation_input_tokens"),
                 }]
             }
             // Regra de ouro do agent-runner.md: tipo desconhecido vira Unknown,
@@ -358,16 +360,10 @@ impl AgentAdapter for CodexAdapter {
             },
             "turn.completed" => {
                 let usage = v.get("usage");
-                let tok = |k: &str| {
-                    usage
-                        .and_then(|u| u.get(k))
-                        .and_then(|x| x.as_u64())
-                        .unwrap_or(0)
-                };
                 let nu = crate::pricing::NormalizedUsage {
-                    input: tok("input_tokens"),
-                    cached_input: tok("cached_input_tokens"),
-                    output: tok("output_tokens"),
+                    input: usage_u64(usage, "input_tokens"),
+                    cached_input: usage_u64(usage, "cached_input_tokens"),
+                    output: usage_u64(usage, "output_tokens"),
                 };
                 // Codex NÃO dá USD → estima por tokens × tabela (default = config gpt-5.5)
                 let model = self.model.clone().unwrap_or_else(|| "gpt-5.5".to_string());

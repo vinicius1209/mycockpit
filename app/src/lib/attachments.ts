@@ -31,7 +31,8 @@ export const AGENT_CAPS: Record<string, { image: boolean; pdf: boolean }> = {
 }
 
 /** Limites (espelham o backend): 10 MB por arquivo, 8 anexos por mensagem. */
-export const MAX_ATTACH_BYTES = 10 * 1024 * 1024
+export const MAX_ATTACH_MB = 10
+export const MAX_ATTACH_BYTES = MAX_ATTACH_MB * 1024 * 1024
 export const MAX_ATTACH_COUNT = 8
 
 export interface GcSummary {

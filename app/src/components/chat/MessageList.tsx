@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { memo, useEffect, useState } from "react"
 import {
   AlertCircle,
   Ban,
@@ -13,12 +13,16 @@ import {
 import type { LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { agentLabel } from "@/lib/agent"
+import { fmtCost, fmtDuration, fmtTokens } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
 import { Markdown } from "@/components/common/Markdown"
 import type { ChatItem } from "@/store/chat"
 
 type ToolItem = Extract<ChatItem, { kind: "tool" }>
+
+/** Máx. de linhas mostradas num bloco de diff (Edit/Write) antes de "… +N linhas". */
+const DIFF_MAX_LINES = 80
 
 function toolIcon(name: string): LucideIcon {
   if (name === "Bash") return Terminal
@@ -42,18 +46,6 @@ function toolSummary(input: unknown): string {
   }
 }
 
-function fmtTokens(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`
-  return String(n)
-}
-
-function fmtDuration(ms: number): string {
-  const s = Math.max(0, Math.round(ms / 1000))
-  if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  return `${m}:${String(s % 60).padStart(2, "0")}`
-}
-
 /** Cronômetro ao vivo enquanto o run pensa (atualiza a cada 1s). */
 function Elapsed({ since }: { since: number }) {
   const [now, setNow] = useState(() => Date.now())
@@ -66,7 +58,7 @@ function Elapsed({ since }: { since: number }) {
 
 function DiffBlock({ text, kind }: { text: string; kind: "del" | "add" }) {
   const all = text.split("\n")
-  const lines = all.slice(0, 80)
+  const lines = all.slice(0, DIFF_MAX_LINES)
   const sign = kind === "del" ? "−" : "+"
   const color = kind === "del" ? "text-st-error" : "text-st-success"
   const bg = kind === "del" ? "bg-st-error/10" : "bg-st-success/10"
@@ -87,7 +79,7 @@ function DiffBlock({ text, kind }: { text: string; kind: "del" | "add" }) {
   )
 }
 
-function ToolCard({ item }: { item: ToolItem }) {
+const ToolCard = memo(function ToolCard({ item }: { item: ToolItem }) {
   const [open, setOpen] = useState(false)
   const Icon = toolIcon(item.name)
   const i = (item.input ?? {}) as Record<string, unknown>
@@ -136,7 +128,7 @@ function ToolCard({ item }: { item: ToolItem }) {
       )}
     </div>
   )
-}
+})
 
 /** Thumbnail de um anexo no histórico (bytes → object URL cacheado). */
 function AttachmentThumb({ att }: { att: Attachment }) {
@@ -179,6 +171,123 @@ function AttachmentThumb({ att }: { att: Attachment }) {
   )
 }
 
+/** Um item da conversa. `memo`: só re-renderiza quando a REFERÊNCIA do item muda
+ *  (itens não-streaming têm ref estável) → não re-pinta tudo a cada text_delta (F12). */
+const MessageItem = memo(function MessageItem({ item: it }: { item: ChatItem }) {
+  if (it.kind === "user") {
+    return (
+      <div className="flex flex-col items-end gap-1.5">
+        {it.attachments && it.attachments.length > 0 && (
+          <div className="flex max-w-[82%] flex-wrap justify-end gap-1.5">
+            {it.attachments.map((a) => (
+              <AttachmentThumb key={a.path} att={a} />
+            ))}
+          </div>
+        )}
+        {it.text && (
+          <div
+            data-selectable
+            className="max-w-[82%] rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[14px] whitespace-pre-wrap text-foreground"
+          >
+            {it.text}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (it.kind === "text") {
+    return <Markdown text={it.text} />
+  }
+
+  if (it.kind === "tool") {
+    return <ToolCard item={it} />
+  }
+
+  if (it.kind === "error") {
+    return (
+      <div className="rounded-lg border border-st-error/40 bg-st-error/10 px-3 py-2.5">
+        <div className="mb-1 flex items-center gap-2 text-st-error">
+          <AlertCircle className="size-3.5" />
+          <span className="label-mono text-st-error">erro</span>
+        </div>
+        <div
+          data-selectable
+          className="font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-foreground/85"
+        >
+          {it.message}
+        </div>
+      </div>
+    )
+  }
+
+  if (it.kind === "cancelled") {
+    return (
+      <div className="flex items-center gap-2 pt-1 text-[12px] text-muted-foreground">
+        <Ban className="size-3.5" />
+        <span>interrompido</span>
+      </div>
+    )
+  }
+
+  if (it.kind === "notice") {
+    return (
+      <div className="flex items-center gap-2 px-1 text-[11.5px] text-muted-foreground/80">
+        <AlertCircle className="size-3 shrink-0" />
+        <span>{it.message}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {!it.ok && it.text && (
+        <div className="rounded-lg border border-st-error/40 bg-st-error/10 px-3 py-2">
+          <div
+            data-selectable
+            className="font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-foreground/85"
+          >
+            {it.text}
+          </div>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-1 text-[12px] text-muted-foreground">
+        {it.ok ? (
+          <Check className="size-3.5 text-st-success" />
+        ) : (
+          <AlertCircle className="size-3.5 text-st-error" />
+        )}
+        <span>{it.ok ? "concluído" : "erro"}</span>
+        {it.model && <span className="font-mono">· {it.model}</span>}
+        {it.durationMs != null && (
+          <span className="font-mono tabular-nums">
+            · {fmtDuration(it.durationMs)}
+          </span>
+        )}
+        {it.usage && (it.usage.input > 0 || it.usage.output > 0) && (
+          <span className="font-mono tabular-nums">
+            · {fmtTokens(it.usage.input)} in · {fmtTokens(it.usage.output)} out
+            {it.usage.cacheRead > 0 &&
+              ` · ${fmtTokens(it.usage.cacheRead)} cache`}
+          </span>
+        )}
+        {it.costUsd != null && (
+          <span
+            className="font-mono tabular-nums text-foreground/70"
+            title={
+              it.costSource === "estimated"
+                ? "estimado: tokens × tabela de preço"
+                : undefined
+            }
+          >
+            · {fmtCost(it.costUsd, it.costSource)}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+})
+
 export function MessageList({
   items,
   running,
@@ -194,131 +303,9 @@ export function MessageList({
 }) {
   return (
     <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-8 py-8">
-      {items.map((it) => {
-        if (it.kind === "user") {
-          return (
-            <div key={it.id} className="flex flex-col items-end gap-1.5">
-              {it.attachments && it.attachments.length > 0 && (
-                <div className="flex max-w-[82%] flex-wrap justify-end gap-1.5">
-                  {it.attachments.map((a) => (
-                    <AttachmentThumb key={a.path} att={a} />
-                  ))}
-                </div>
-              )}
-              {it.text && (
-                <div
-                  data-selectable
-                  className="max-w-[82%] rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[14px] whitespace-pre-wrap text-foreground"
-                >
-                  {it.text}
-                </div>
-              )}
-            </div>
-          )
-        }
-
-        if (it.kind === "text") {
-          return <Markdown key={it.id} text={it.text} />
-        }
-
-        if (it.kind === "tool") {
-          return <ToolCard key={it.id} item={it} />
-        }
-
-        if (it.kind === "error") {
-          return (
-            <div
-              key={it.id}
-              className="rounded-lg border border-st-error/40 bg-st-error/10 px-3 py-2.5"
-            >
-              <div className="mb-1 flex items-center gap-2 text-st-error">
-                <AlertCircle className="size-3.5" />
-                <span className="label-mono text-st-error">erro</span>
-              </div>
-              <div
-                data-selectable
-                className="font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-foreground/85"
-              >
-                {it.message}
-              </div>
-            </div>
-          )
-        }
-
-        if (it.kind === "cancelled") {
-          return (
-            <div
-              key={it.id}
-              className="flex items-center gap-2 pt-1 text-[12px] text-muted-foreground"
-            >
-              <Ban className="size-3.5" />
-              <span>interrompido</span>
-            </div>
-          )
-        }
-
-        if (it.kind === "notice") {
-          return (
-            <div
-              key={it.id}
-              className="flex items-center gap-2 px-1 text-[11.5px] text-muted-foreground/80"
-            >
-              <AlertCircle className="size-3 shrink-0" />
-              <span>{it.message}</span>
-            </div>
-          )
-        }
-
-        return (
-          <div key={it.id} className="flex flex-col gap-1.5">
-            {!it.ok && it.text && (
-              <div className="rounded-lg border border-st-error/40 bg-st-error/10 px-3 py-2">
-                <div
-                  data-selectable
-                  className="font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-foreground/85"
-                >
-                  {it.text}
-                </div>
-              </div>
-            )}
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-1 text-[12px] text-muted-foreground">
-              {it.ok ? (
-                <Check className="size-3.5 text-st-success" />
-              ) : (
-                <AlertCircle className="size-3.5 text-st-error" />
-              )}
-              <span>{it.ok ? "concluído" : "erro"}</span>
-              {it.model && <span className="font-mono">· {it.model}</span>}
-              {it.durationMs != null && (
-                <span className="font-mono tabular-nums">
-                  · {fmtDuration(it.durationMs)}
-                </span>
-              )}
-              {it.usage && (it.usage.input > 0 || it.usage.output > 0) && (
-                <span className="font-mono tabular-nums">
-                  · {fmtTokens(it.usage.input)} in · {fmtTokens(it.usage.output)}{" "}
-                  out
-                  {it.usage.cacheRead > 0 &&
-                    ` · ${fmtTokens(it.usage.cacheRead)} cache`}
-                </span>
-              )}
-              {it.costUsd != null && (
-                <span
-                  className="font-mono tabular-nums text-foreground/70"
-                  title={
-                    it.costSource === "estimated"
-                      ? "estimado: tokens × tabela de preço"
-                      : undefined
-                  }
-                >
-                  · {it.costSource === "estimated" ? "~" : ""}US$
-                  {it.costUsd.toFixed(3)}
-                </span>
-              )}
-            </div>
-          </div>
-        )
-      })}
+      {items.map((it) => (
+        <MessageItem key={it.id} item={it} />
+      ))}
 
       {(running || finalizing) && (
         <div className="flex items-center gap-2 text-[12px] text-muted-foreground">

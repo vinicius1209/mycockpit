@@ -11,7 +11,15 @@ import type { ChatItem } from "@/store/chat"
 import { runAgent, cancelAgent, suggest } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { gcAttachments } from "@/lib/attachments"
+import { extractJson, BYTES_PER_MB } from "@/lib/format"
+import type { AgentRunConfig } from "@/lib/types"
 import { isTauri, listConvRefs } from "@/lib/db"
+
+// Janela de contexto enviada ao modelo de sugestões.
+const CONTEXT_ITEMS = 6 // últimas N mensagens consideradas
+const CHAR_CAP = 1200 // corte por mensagem de assistente
+const TOTAL_CAP = 4000 // corte do contexto montado
+const SUGGEST_DEBOUNCE_MS = 700 // espera após o turno antes de gerar
 
 function greetingFor(date: Date): string {
   const h = date.getHours()
@@ -28,27 +36,20 @@ Exemplo: ["Rodar os testes do módulo","Fazer o commit pendente","Documentar a f
 
 function buildContext(items: ChatItem[]): string {
   const lines: string[] = []
-  for (const it of items.slice(-6)) {
+  for (const it of items.slice(-CONTEXT_ITEMS)) {
     if (it.kind === "user") lines.push(`Usuário: ${it.text}`)
     else if (it.kind === "text")
-      lines.push(`Assistente: ${it.text.slice(0, 1200)}`)
+      lines.push(`Assistente: ${it.text.slice(0, CHAR_CAP)}`)
     else if (it.kind === "tool") lines.push(`(ferramenta: ${it.name})`)
   }
-  return lines.join("\n").slice(-4000)
+  return lines.join("\n").slice(-TOTAL_CAP)
 }
 
 function parseSuggestions(raw: string): string[] {
-  const m = raw.match(/\[[\s\S]*\]/)
-  if (!m) return []
-  try {
-    const arr: unknown = JSON.parse(m[0])
-    if (Array.isArray(arr)) {
-      return arr.filter((x): x is string => typeof x === "string").slice(0, 3)
-    }
-  } catch {
-    // resposta malformada → mantém os chips estáticos
-  }
-  return []
+  // resposta malformada / sem array → mantém os chips estáticos
+  const arr = extractJson<unknown>(raw, "array")
+  if (!Array.isArray(arr)) return []
+  return arr.filter((x): x is string => typeof x === "string").slice(0, 3)
 }
 
 export function ChatPanel() {
@@ -105,7 +106,9 @@ export function ChatPanel() {
       try {
         const r = await gcAttachments(refs)
         if (r.freed_bytes > 0) {
-          toast(`Cache de anexos: ${(r.freed_bytes / 1048576).toFixed(1)} MB liberados`)
+          toast(
+            `Cache de anexos: ${(r.freed_bytes / BYTES_PER_MB).toFixed(1)} MB liberados`,
+          )
         }
       } catch {
         // GC é best-effort
@@ -124,7 +127,7 @@ export function ChatPanel() {
   // o destino agora é threadado até o runAgent). Default 'claude-code'.
   async function handleSend(
     text: string,
-    cfg?: { agent: string; model: string | null; effort: string | null },
+    cfg?: AgentRunConfig,
     attachments: Attachment[] = [],
   ) {
     if (!project) return
@@ -185,7 +188,7 @@ export function ChatPanel() {
     clearTimeout(suggestTimer.current[convId])
     suggestTimer.current[convId] = setTimeout(() => {
       void generateSuggestions(convId)
-    }, 700)
+    }, SUGGEST_DEBOUNCE_MS)
   }
 
   // Gera sugestões contextuais após o turno (fire-and-forget; degrada pros chips).

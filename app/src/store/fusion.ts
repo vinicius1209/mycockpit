@@ -3,11 +3,17 @@
 // o `status` da lane é fonte ÚNICA (não derivada do controle do Linear).
 
 import { create } from "zustand"
-import { runAgent, type AgentEvent } from "@/lib/agent"
+import { runAgent, type AgentEvent, type CostSource } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { reduceItems, useChat, type ChatItem } from "@/store/chat"
-import { runJudge, serializeContext, runWithConcurrency } from "@/lib/fusion"
+import {
+  runJudge,
+  serializeContext,
+  runWithConcurrency,
+  emptyJudge,
+} from "@/lib/fusion"
 import { saveFusionRun, loadPendingFusion, clearPendingFusion } from "@/lib/db"
+import type { AgentRunConfig } from "@/lib/types"
 
 export type CandStatus =
   | "queued"
@@ -17,6 +23,15 @@ export type CandStatus =
   | "error"
   | "cancelled"
   | "killed"
+
+/** Candidato ainda em voo (na fila ou rodando). */
+export function isRunning(s: CandStatus): boolean {
+  return s === "running" || s === "queued"
+}
+/** Candidato que terminou mal (erro / cancelado / morto por orçamento). */
+export function isFailed(s: CandStatus): boolean {
+  return s === "error" || s === "cancelled" || s === "killed"
+}
 
 export interface FusionCandidate {
   id: string // slot estável (UI)
@@ -34,7 +49,7 @@ export interface FusionCandidate {
   finishOrder: number | null
   result?: Extract<ChatItem, { kind: "result" }>
   costUsd?: number
-  costSource?: "reported" | "estimated" | "unknown"
+  costSource?: CostSource
   durationMs?: number
   killedReason?: "budget" | "user"
   cwd: string
@@ -81,7 +96,7 @@ export interface FusionRun {
 export interface LeagueConfig {
   scope: "read-only" | "write"
   judgeModel: string
-  candidates: { agent: string; model: string | null; effort: string | null }[]
+  candidates: AgentRunConfig[]
 }
 
 const AGENT_LABEL: Record<string, string> = {
@@ -104,16 +119,6 @@ function familyOf(s: string): string {
   if (/opencode|glm/.test(l)) return "opencode"
   return l
 }
-
-const emptyJudge = (): FusionJudge => ({
-  status: "idle",
-  suggestedId: null,
-  rationale: null,
-  agreement: null,
-  runnerupId: null,
-  passes: [],
-  notes: {},
-})
 
 /** Monta um FusionRun com os candidatos em `queued` (T1.2). O fan-out real
  *  (runAgent por candidato) entra no T2.2. */
@@ -201,7 +206,21 @@ function patchCand(
   }
 }
 
-export const useFusion = create<FusionState>((set, get) => ({
+export const useFusion = create<FusionState>((set, get) => {
+  /** Patch parcial de UM FusionRun (no-op se a conversa não tem disputa).
+   *  Espelha o `patch` do chat store. */
+  const patchConv = (
+    convId: string,
+    p: Partial<FusionRun> | ((cur: FusionRun) => Partial<FusionRun>),
+  ) =>
+    set((s) => {
+      const cur = s.byConv[convId]
+      if (!cur) return {}
+      const partial = typeof p === "function" ? p(cur) : p
+      return { byConv: { ...s.byConv, [convId]: { ...cur, ...partial } } }
+    })
+
+  return {
   byConv: {},
 
   start: (convId, run) => set((s) => ({ byConv: { ...s.byConv, [convId]: run } })),
@@ -241,15 +260,11 @@ export const useFusion = create<FusionState>((set, get) => ({
       const fusion = s.byConv[convId]
       if (!fusion) return {}
       const order = fusion.candidates.filter((c) => c.finishOrder != null).length
-      const next = patchCand(fusion, candId, (c) => {
-        const terminal =
-          c.status === "error" || c.status === "cancelled" || c.status === "killed"
-        return {
-          ...c,
-          status: terminal ? c.status : "done",
-          finishOrder: c.finishOrder ?? order,
-        }
-      })
+      const next = patchCand(fusion, candId, (c) => ({
+        ...c,
+        status: isFailed(c.status) ? c.status : "done",
+        finishOrder: c.finishOrder ?? order,
+      }))
       return { byConv: { ...s.byConv, [convId]: next } }
     }),
 
@@ -279,14 +294,11 @@ export const useFusion = create<FusionState>((set, get) => ({
         return {
           byConv: {
             ...s.byConv,
-            [convId]: {
-              ...f,
-              candidates: f.candidates.map((x) =>
-                x.id === c.id
-                  ? { ...x, status: "running" as CandStatus, startedAt: Date.now() }
-                  : x,
-              ),
-            },
+            [convId]: patchCand(f, c.id, (x) => ({
+              ...x,
+              status: "running" as CandStatus,
+              startedAt: Date.now(),
+            })),
           },
         }
       })
@@ -320,26 +332,14 @@ export const useFusion = create<FusionState>((set, get) => ({
   runJudgePhase: async (convId) => {
     const f = get().byConv[convId]
     if (!f) return
-    set((s) => {
-      const cur = s.byConv[convId]
-      if (!cur) return {}
-      return {
-        byConv: {
-          ...s.byConv,
-          [convId]: {
-            ...cur,
-            phase: "judging",
-            judge: { ...cur.judge, status: "running" },
-          },
-        },
-      }
-    })
+    patchConv(convId, (cur) => ({
+      phase: "judging",
+      judge: { ...cur.judge, status: "running" },
+    }))
     const cwd = f.candidates[0]?.cwd ?? ""
     const cands = get().byConv[convId]?.candidates ?? []
     const { judge, cost } = await runJudge(f.prompt, f.judgeModel, cwd, cands)
-    set((s) => {
-      const cur = s.byConv[convId]
-      if (!cur) return {}
+    patchConv(convId, (cur) => {
       const jf = familyOf(cur.judgeModel)
       const neutral = !cur.candidates.some(
         (c) =>
@@ -353,16 +353,10 @@ export const useFusion = create<FusionState>((set, get) => ({
             ? judge.suggestedId
             : null
       return {
-        byConv: {
-          ...s.byConv,
-          [convId]: {
-            ...cur,
-            phase: "deciding",
-            judge,
-            chosenId,
-            costTotal: cur.costTotal + cost,
-          },
-        },
+        phase: "deciding",
+        judge,
+        chosenId,
+        costTotal: cur.costTotal + cost,
       }
     })
     // Caso 2: persiste a disputa pendente (sobrevive ao restart até você decidir).
@@ -379,16 +373,7 @@ export const useFusion = create<FusionState>((set, get) => ({
     if (!f) return
     const winner = f.candidates.find((c) => c.id === candId)
     if (!winner) return
-    set((s) => {
-      const cur = s.byConv[convId]
-      if (!cur) return {}
-      return {
-        byConv: {
-          ...s.byConv,
-          [convId]: { ...cur, chosenId: candId, phase: "promoting" },
-        },
-      }
-    })
+    patchConv(convId, { chosenId: candId, phase: "promoting" })
     await useChat.getState().promoteFusion(convId, winner)
     // arquiva (pending=0): sai da fila de restauração, fica só pra "ver disputa".
     void saveFusionRun(f.id, convId, { ...f, chosenId: candId, phase: "done" }, false)
@@ -409,4 +394,5 @@ export const useFusion = create<FusionState>((set, get) => ({
     get().clear(convId)
     void clearPendingFusion(convId)
   },
-}))
+  }
+})

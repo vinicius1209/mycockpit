@@ -6,6 +6,7 @@ import { useFusion, type FusionRun, type LeagueConfig } from "@/store/fusion"
 import { CandidateLane } from "@/components/fusion/FusionBoard"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { PillSelect } from "@/components/ui/PillSelect"
 import {
   Select,
   SelectContent,
@@ -13,6 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { liveCostOf } from "@/lib/format"
+import type { AgentRunConfig } from "@/lib/types"
 
 const AGENTS = [
   { id: "claude-code", label: "Claude Code" },
@@ -28,7 +31,12 @@ function nameOf(fusion: FusionRun, id: string | null): string {
   return fusion.candidates.find((c) => c.id === id)?.label ?? "—"
 }
 
-type Cand = { agent: string; model: string | null; effort: string | null }
+/** Candidato da liga + um id estável local (p/ a key do React na lista mutável). */
+type LeagueEntry = AgentRunConfig & { id: string }
+
+function newEntry(agent: string): LeagueEntry {
+  return { id: crypto.randomUUID(), agent, model: null, effort: null }
+}
 
 /** Modo Fusion — a Arena. OCIOSO: launch pad centralizado (liga + tarefa).
  *  DISPUTANDO: barra de status fina + candidatos em COLUNAS paralelas + veredito. */
@@ -39,9 +47,9 @@ export function FusionArena() {
   const confirm = useFusion((s) => s.confirm)
   const setViewMode = useApp((s) => s.setViewMode)
 
-  const [league, setLeague] = useState<Cand[]>([
-    { agent: "claude-code", model: null, effort: null },
-    { agent: "codex", model: null, effort: null },
+  const [league, setLeague] = useState<LeagueEntry[]>([
+    newEntry("claude-code"),
+    newEntry("codex"),
   ])
   const [judge, setJudge] = useState("sonnet")
   const [task, setTask] = useState("")
@@ -50,9 +58,7 @@ export function FusionArena() {
   const deciding = fusion?.phase === "deciding"
   const judging = fusion?.phase === "judging"
   const selected = chosen ?? fusion?.chosenId ?? null
-  const liveCost = fusion
-    ? fusion.candidates.reduce((a, c) => a + (c.costUsd ?? 0), 0)
-    : 0
+  const liveCost = fusion ? liveCostOf(fusion) : 0
 
   async function dispute() {
     if (!task.trim() || !project || !activeId || league.length < 2) return
@@ -95,7 +101,7 @@ export function FusionArena() {
               </span>
               {league.map((c, i) => (
                 <span
-                  key={i}
+                  key={c.id}
                   className="flex items-center gap-0.5 rounded-full border bg-secondary/50 py-0.5 pr-1.5 pl-1"
                 >
                   <Select
@@ -119,6 +125,7 @@ export function FusionArena() {
                     <button
                       onClick={() => setLeague((l) => l.filter((_, j) => j !== i))}
                       className="text-muted-foreground hover:text-foreground"
+                      aria-label="Remover candidato"
                     >
                       <X className="size-3" />
                     </button>
@@ -127,12 +134,7 @@ export function FusionArena() {
               ))}
               {league.length < 5 && (
                 <button
-                  onClick={() =>
-                    setLeague((l) => [
-                      ...l,
-                      { agent: "claude-code", model: null, effort: null },
-                    ])
-                  }
+                  onClick={() => setLeague((l) => [...l, newEntry("claude-code")])}
                   className="flex items-center gap-1 rounded-full border border-dashed px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground"
                 >
                   <Plus className="size-3" /> candidato
@@ -158,18 +160,14 @@ export function FusionArena() {
             <div className="flex items-center gap-2 px-1 pt-1">
               <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
                 juiz
-                <Select value={judge} onValueChange={setJudge}>
-                  <SelectTrigger className="h-7 w-fit gap-1 rounded-full border bg-secondary/50 px-2.5 text-[12px] text-foreground shadow-none focus-visible:ring-0 data-[size=default]:h-7">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent align="start">
-                    {JUDGES.map((j) => (
-                      <SelectItem key={j.id} value={j.id} className="text-[13px]">
-                        {j.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <PillSelect
+                  value={judge}
+                  onValueChange={setJudge}
+                  options={JUDGES.map((j) => ({ value: j.id, label: j.label }))}
+                  triggerClassName="h-7 gap-1 px-2.5 text-foreground data-[size=default]:h-7"
+                  itemClassName="text-[13px]"
+                  aria-label="Juiz da disputa"
+                />
               </span>
               <Button
                 onClick={() => void dispute()}

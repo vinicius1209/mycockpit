@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Wordmark } from "@/components/common/Wordmark"
 import { useApp, useActiveProject } from "@/store/app"
-import { useActiveConv } from "@/store/chat"
+import { useChat } from "@/store/chat"
 import { agentLabel } from "@/lib/agent"
 import { cn } from "@/lib/utils"
 
@@ -53,14 +53,19 @@ function ModeSwitcher() {
 
 function InstrumentStrip() {
   const project = useActiveProject()
-  const conv = useActiveConv()
+  // Seletores estreitos (não `useActiveConv()` inteiro): não re-renderiza a cada
+  // text_delta do run — só quando o model/agent da conversa ativa muda (F13).
+  const model = useChat((s) => (s.activeId ? s.byId[s.activeId]?.model : null) ?? null)
+  const agent = useChat(
+    (s) => (s.activeId ? s.byId[s.activeId]?.agent : null) ?? "claude-code",
+  )
   // Sem dot de status aqui — o "rodando" já aparece na sidebar (spinner por
   // conversa + dot do projeto), no botão de stop e no "… trabalhando…".
   return (
     <div className="hidden items-center gap-2 md:flex">
       <span className="label-mono">{project ? project.name : "sem projeto"}</span>
       <span className="text-muted-foreground/35">·</span>
-      <span className="label-mono">{conv.model ?? agentLabel(conv.agent)}</span>
+      <span className="label-mono">{model ?? agentLabel(agent)}</span>
     </div>
   )
 }

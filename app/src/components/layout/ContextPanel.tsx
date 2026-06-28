@@ -12,13 +12,7 @@ import {
   RefreshCw,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { PillSelect } from "@/components/ui/PillSelect"
 import { Separator } from "@/components/ui/separator"
 import {
   Dialog,
@@ -30,20 +24,15 @@ import {
 import { Markdown } from "@/components/common/Markdown"
 import { useActiveProject, useApp } from "@/store/app"
 import type { ProjectConfig } from "@/store/app"
-import { readProjectContext } from "@/lib/agent"
-import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/agent"
+import { readProjectContext } from "@/lib/context"
+import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/context"
 import { readProjectSources, readTextFile } from "@/lib/sources"
 import type { ProjectSources } from "@/lib/sources"
 import { writeMycockpitConfig } from "@/lib/mycockpit"
+import { fmtBytes } from "@/lib/format"
 import type { PermissionMode } from "@/lib/types"
 import { isTauri, updateProjectPermission } from "@/lib/db"
 import { cn, shortPath } from "@/lib/utils"
-
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`
-}
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -213,12 +202,16 @@ function DetailDialog({
 
   useEffect(() => {
     if (!target) return
+    let cancelled = false
     setContent(null)
     setLoading(true)
     readTextFile(target.path)
-      .then(setContent)
-      .catch(() => setContent("_não foi possível ler o arquivo._"))
-      .finally(() => setLoading(false))
+      .then((c) => !cancelled && setContent(c))
+      .catch(() => !cancelled && setContent("_não foi possível ler o arquivo._"))
+      .finally(() => !cancelled && setLoading(false))
+    return () => {
+      cancelled = true
+    }
   }, [target])
 
   return (
@@ -378,36 +371,34 @@ export function ContextPanel() {
                 <span className="text-[12.5px] text-muted-foreground">
                   Permissões
                 </span>
-                <Select
+                <PillSelect
                   value={cfg?.permission ?? project.permissionMode ?? "padrao"}
                   onValueChange={(v) => onPermissionChange(v as PermissionMode)}
-                >
-                  <SelectTrigger className="h-7 w-fit gap-1.5 rounded-full border bg-secondary/50 pr-1.5 pl-2.5 text-[12px] shadow-none focus-visible:ring-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent align="end">
-                    <SelectItem value="leitura">Leitura</SelectItem>
-                    <SelectItem value="padrao">Padrão</SelectItem>
-                    <SelectItem value="liberado">Liberado</SelectItem>
-                  </SelectContent>
-                </Select>
+                  align="end"
+                  triggerClassName="h-7 gap-1.5 pr-1.5 pl-2.5"
+                  aria-label="Permissões do projeto"
+                  options={[
+                    { value: "leitura", label: "Leitura" },
+                    { value: "padrao", label: "Padrão" },
+                    { value: "liberado", label: "Liberado" },
+                  ]}
+                />
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-[12.5px] text-muted-foreground">
                   Modelo das sugestões
                 </span>
-                <Select
+                <PillSelect
                   value={cfg ? (cfg.helper ?? "off") : "haiku"}
                   onValueChange={onHelperChange}
-                >
-                  <SelectTrigger className="h-7 w-fit gap-1.5 rounded-full border bg-secondary/50 pr-1.5 pl-2.5 text-[12px] shadow-none focus-visible:ring-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent align="end">
-                    <SelectItem value="haiku">Haiku</SelectItem>
-                    <SelectItem value="off">Desligado</SelectItem>
-                  </SelectContent>
-                </Select>
+                  align="end"
+                  triggerClassName="h-7 gap-1.5 pr-1.5 pl-2.5"
+                  aria-label="Modelo das sugestões"
+                  options={[
+                    { value: "haiku", label: "Haiku" },
+                    { value: "off", label: "Desligado" },
+                  ]}
+                />
               </div>
               {cfg?.exists && (
                 <p className="text-[10.5px] text-muted-foreground/55">

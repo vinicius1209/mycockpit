@@ -141,7 +141,7 @@ pub async fn run_agent(
     active.insert(&conv_id);
     let _active_guard = ActiveGuard {
         active: active.inner(),
-        conv_id: conv_id.clone(),
+        conv_id, // move: conv_id não é mais lido após o registro em ActiveConvs acima
     };
     let req = RunRequest {
         prompt,
@@ -262,6 +262,13 @@ async fn run_once(
                                 }
                                 let _ = on_event.send(ev);
                             }
+                        } else {
+                            // Regra de ouro (agent-runner.md): linha não-JSON é surfaçada
+                            // como Unknown (no-op no front), NUNCA descartada em silêncio —
+                            // assim um banner de auth/deprecation no stdout não some.
+                            let _ = on_event.send(AgentEvent::Unknown {
+                                raw: serde_json::Value::String(line.to_string()),
+                            });
                         }
                     }
                     Ok(None) => break, // EOF — processo terminou
@@ -317,30 +324,53 @@ pub struct JudgeResult {
     pub cost_usd: Option<f64>,
 }
 
+/// Builder comum dos one-shots `claude -p` (juiz + sugestões): SEM tools, sem
+/// persistir sessão. `format` = "json" (juiz: captura `total_cost_usd`) ou "text"
+/// (sugestões). `no_mcp` desliga TODO MCP (juiz: determinístico, sem efeito externo).
+/// NÃO usa `--bare`: esse modo "minimal" pula as credenciais e cai em "Not logged in".
+fn claude_oneshot(model: &str, cwd: &str, prompt: &str, format: &str, no_mcp: bool) -> Command {
+    let mut cmd = Command::new("claude");
+    cmd.arg("-p")
+        .arg(prompt)
+        .arg("--model")
+        .arg(model)
+        .arg("--tools")
+        .arg("")
+        .arg("--output-format")
+        .arg(format)
+        .arg("--no-session-persistence")
+        .current_dir(cwd)
+        .stdin(Stdio::null());
+    if no_mcp {
+        cmd.arg("--strict-mcp-config")
+            .arg("--mcp-config")
+            .arg("{\"mcpServers\":{}}");
+    }
+    cmd
+}
+
 /// Juiz do Fusion: roda um modelo forte SEM tools e SEM MCP, com `--output-format
 /// json` (→ captura `total_cost_usd` Reported). Retorna o texto (a decisão do juiz,
 /// que o front parseia) + o custo. (Cancelável fica p/ a robustez, Sprint 4.)
 #[tauri::command]
 pub async fn judge(model: String, cwd: String, prompt: String) -> Result<JudgeResult, String> {
-    let out = Command::new("claude")
-        .arg("-p")
-        .arg(&prompt)
-        .arg("--model")
-        .arg(&model)
-        .arg("--tools")
-        .arg("")
-        .arg("--output-format")
-        .arg("json")
-        .arg("--no-session-persistence")
-        .arg("--strict-mcp-config")
-        .arg("--mcp-config")
-        .arg("{\"mcpServers\":{}}")
-        .current_dir(&cwd)
-        .stdin(Stdio::null())
+    let out = claude_oneshot(&model, &cwd, &prompt, "json", true)
         .output()
         .await
         .map_err(|e| format!("falha ao rodar o juiz: {e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Antes de parsear: se o processo falhou (rate-limit/login/modelo inválido),
+    // surfaça a causa REAL (stderr→stdout) em vez de mascarar como "envelope inválido".
+    if !out.status.success() {
+        let msg = stderr.trim();
+        let msg = if msg.is_empty() { stdout.trim() } else { msg };
+        return Err(if msg.is_empty() {
+            "o juiz saiu com código de erro".into()
+        } else {
+            msg.to_string()
+        });
+    }
     let env: serde_json::Value = serde_json::from_str(stdout.trim())
         .map_err(|e| format!("juiz: envelope JSON inválido: {e}"))?;
     Ok(JudgeResult {
@@ -355,21 +385,9 @@ pub async fn judge(model: String, cwd: String, prompt: String) -> Result<JudgeRe
 
 /// Helper one-shot (Sprint 3): roda um modelo barato (ex. `haiku`) SEM tools,
 /// sem persistir sessão, p/ meta-tarefas (sugestões/títulos). Retorna o texto puro.
-/// NÃO usa `--bare`: esse modo "minimal" pula o carregamento das credenciais e a
-/// chamada cai em "Not logged in". Os runs principais (sem --bare) são autenticados.
 #[tauri::command]
 pub async fn suggest(model: String, cwd: String, prompt: String) -> Result<String, String> {
-    let out = Command::new("claude")
-        .arg("-p")
-        .arg(&prompt)
-        .arg("--model")
-        .arg(&model)
-        .arg("--tools")
-        .arg("")
-        .arg("--output-format")
-        .arg("text")
-        .arg("--no-session-persistence")
-        .current_dir(&cwd)
+    let out = claude_oneshot(&model, &cwd, &prompt, "text", false)
         .output()
         .await
         .map_err(|e| format!("falha ao rodar claude: {e}"))?;

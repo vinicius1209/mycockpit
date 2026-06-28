@@ -123,7 +123,9 @@ export default function App() {
           void updateProjectPermission(proj.id, resolved.permission)
         }
       })
-      .catch(() => {})
+      .catch((e) =>
+        console.warn("[mycockpit] falha ao ler config.toml:", e),
+      )
   }, [activeProjectId])
 
   async function handleAddProject() {

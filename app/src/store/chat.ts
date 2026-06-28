@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import type { AgentEvent } from "@/lib/agent"
+import type { AgentEvent, CostSource } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { wipeAttachments } from "@/lib/attachments"
 import type { FusionCandidate } from "@/store/fusion"
@@ -22,7 +22,7 @@ export type ChatItem =
       ok: boolean
       text?: string
       costUsd?: number
-      costSource?: "reported" | "estimated" | "unknown"
+      costSource?: CostSource
       model?: string | null
       usage?: {
         input: number

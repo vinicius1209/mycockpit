@@ -151,10 +151,12 @@ pub fn run() {
 
             // Titlebar overlay (decorum): visual unificado + traffic lights encaixados +
             // drag funcionando (sem o bug do Overlay nativo).
-            let main_window = app.get_webview_window("main").unwrap();
-            main_window.create_overlay_titlebar().unwrap();
+            let main_window = app
+                .get_webview_window("main")
+                .ok_or("janela main ausente")?;
+            main_window.create_overlay_titlebar()?;
             #[cfg(target_os = "macos")]
-            main_window.set_traffic_lights_inset(16.0, 17.0).unwrap();
+            main_window.set_traffic_lights_inset(16.0, 17.0)?;
 
             Ok(())
         })
