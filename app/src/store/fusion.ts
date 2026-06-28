@@ -11,6 +11,8 @@ import {
   serializeContext,
   runWithConcurrency,
   emptyJudge,
+  candLabel,
+  decideChosen,
 } from "@/lib/fusion"
 import { saveFusionRun, loadPendingFusion, clearPendingFusion } from "@/lib/db"
 import type { AgentRunConfig } from "@/lib/types"
@@ -99,25 +101,19 @@ export interface LeagueConfig {
   candidates: AgentRunConfig[]
 }
 
-const AGENT_LABEL: Record<string, string> = {
-  "claude-code": "Claude",
-  codex: "Codex",
-  opencode: "OpenCode",
-}
-
-/** Rótulo legível de um candidato ("Claude · Opus"). */
-export function candLabel(agent: string, model: string | null): string {
-  const a = AGENT_LABEL[agent] ?? agent
-  return model ? `${a} · ${model}` : a
-}
-
-/** Família do modelo/agent (claude/openai/…) — p/ manter o juiz FORA da liga. */
-function familyOf(s: string): string {
-  const l = s.toLowerCase()
-  if (/claude|opus|sonnet|haiku/.test(l)) return "claude"
-  if (/codex|gpt|o3/.test(l)) return "openai"
-  if (/opencode|glm/.test(l)) return "opencode"
-  return l
+/** Liga default do botão "Disputar": o agent EFETIVO + o complementar
+ *  (codex↔claude-code), read-only, juiz sonnet. Política de orquestração — fica
+ *  ao lado de `launch` p/ todo caller herdar a mesma default. */
+export function defaultLeague(run: AgentRunConfig): LeagueConfig {
+  const complementary = run.agent === "codex" ? "claude-code" : "codex"
+  return {
+    scope: "read-only",
+    judgeModel: "sonnet",
+    candidates: [
+      { agent: run.agent, model: run.model, effort: run.effort },
+      { agent: complementary, model: null, effort: null },
+    ],
+  }
 }
 
 /** Monta um FusionRun com os candidatos em `queued` (T1.2). O fan-out real
@@ -339,29 +335,18 @@ export const useFusion = create<FusionState>((set, get) => {
     const cwd = f.candidates[0]?.cwd ?? ""
     const cands = get().byConv[convId]?.candidates ?? []
     const { judge, cost } = await runJudge(f.prompt, f.judgeModel, cwd, cands)
-    patchConv(convId, (cur) => {
-      const jf = familyOf(cur.judgeModel)
-      const neutral = !cur.candidates.some(
-        (c) =>
-          familyOf(c.agent) === jf ||
-          (c.reqModel != null && familyOf(c.reqModel) === jf),
-      )
-      const chosenId =
-        judge.status === "single"
-          ? judge.suggestedId
-          : judge.agreement && neutral
-            ? judge.suggestedId
-            : null
-      return {
-        phase: "deciding",
-        judge,
-        chosenId,
-        costTotal: cur.costTotal + cost,
-      }
-    })
+    patchConv(convId, (cur) => ({
+      phase: "deciding",
+      judge,
+      chosenId: decideChosen(judge, cur.candidates, cur.judgeModel),
+      costTotal: cur.costTotal + cost,
+    }))
     // Caso 2: persiste a disputa pendente (sobrevive ao restart até você decidir).
     const pending = get().byConv[convId]
     if (pending && pending.phase === "deciding") {
+      // disputa concluída → some o spinner/Stop da conversa (agora espera SUA decisão,
+      // não um processo). beginFusion marcou running=true; aqui zera.
+      useChat.getState().finish(convId)
       void saveFusionRun(pending.id, convId, pending, true)
       void useChat.getState().persist(convId) // garante o prompt do usuário no DB
     }

@@ -1,7 +1,15 @@
 import { create } from "zustand"
 import type { AgentEvent, CostSource } from "@/lib/agent"
+import { suggest } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { wipeAttachments } from "@/lib/attachments"
+import {
+  SUGGEST_PROMPT,
+  SUGGEST_DEBOUNCE_MS,
+  buildContext,
+  parseSuggestions,
+} from "@/lib/suggestions"
+import { useApp } from "@/store/app"
 import type { FusionCandidate } from "@/store/fusion"
 import {
   listConversations as dbList,
@@ -9,6 +17,7 @@ import {
   createConversation as dbCreate,
   saveConversation as dbSave,
   deleteConversation as dbDelete,
+  isTauri,
   type ConversationMeta,
 } from "@/lib/db"
 
@@ -70,6 +79,8 @@ interface ChatState {
   conversations: ConversationMeta[]
   /** Estado de cada conversa carregada (Sprint 4 — runs em background). */
   byId: Record<string, ConvState>
+  /** Rascunho não-enviado por conversa — sobrevive a trocar de modo/conversa. */
+  drafts: Record<string, string>
   /** Prompt enfileirado por outra UI (ex.: ⌘K) p/ o ChatPanel disparar. */
   queuedPrompt: string | null
 
@@ -91,7 +102,16 @@ interface ChatState {
   finish: (convId: string) => void
   setSuggestions: (convId: string, s: string[]) => void
   setSuggesting: (convId: string, v: boolean) => void
+  /** Novo run desta conversa → invalida a geração de sugestão pendente/em-voo
+   *  (bumpa o token + cancela o timer). Chamar ANTES de iniciar o run. */
+  invalidateSuggestions: (convId: string) => void
+  /** Agenda a geração ~700ms após o turno (debounce contra rajadas). */
+  scheduleSuggestions: (convId: string) => void
+  /** Gera sugestões contextuais (fire-and-forget; degrada pros chips estáticos). */
+  generateSuggestions: (convId: string) => Promise<void>
   queuePrompt: (t: string | null) => void
+  /** Atualiza o rascunho (input não-enviado) de uma conversa. */
+  setDraft: (convId: string, text: string) => void
   /** Fusion: add o balão do usuário à conversa + marca running (turno visível). */
   beginFusion: (convId: string, text: string, attachments: Attachment[]) => void
   /** Fusion: promove o vencedor — anexa os itens dele + assume sessão/agent. */
@@ -246,6 +266,12 @@ function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
 }
 
 export const useChat = create<ChatState>((set, get) => {
+  // Sugestões: estado de orquestração por convId (espelha byId). Vive no closure
+  // do creator — a store é singleton, então a sugestão sobrevive a remount do
+  // painel. suggestTimer = debounce; suggestGen = token de invalidação.
+  const suggestTimer: Record<string, ReturnType<typeof setTimeout>> = {}
+  const suggestGen: Record<string, number> = {}
+
   /** Aplica um patch parcial em UMA conversa (no-op se ela não existe mais). */
   const patch = (convId: string, p: Partial<ConvState>) =>
     set((s) => {
@@ -283,11 +309,74 @@ export const useChat = create<ChatState>((set, get) => {
     activeId: null,
     conversations: [],
     byId: {},
+    drafts: {},
     queuedPrompt: null,
 
     queuePrompt: (queuedPrompt) => set({ queuedPrompt }),
     setSuggestions: (convId, suggestions) => patch(convId, { suggestions }),
     setSuggesting: (convId, suggesting) => patch(convId, { suggesting }),
+
+    // novo run → invalida geração de sugestão pendente/em-voo desta conversa
+    invalidateSuggestions: (convId) => {
+      suggestGen[convId] = (suggestGen[convId] ?? 0) + 1
+      clearTimeout(suggestTimer[convId])
+    },
+
+    // Debounce: agenda a geração ~700ms após o turno. Um novo run cancela o timer
+    // (e bumpa o token via invalidateSuggestions), então rajadas de prompts não
+    // geram sugestões intermediárias.
+    scheduleSuggestions: (convId) => {
+      clearTimeout(suggestTimer[convId])
+      suggestTimer[convId] = setTimeout(() => {
+        void get().generateSuggestions(convId)
+      }, SUGGEST_DEBOUNCE_MS)
+    },
+
+    // Gera sugestões contextuais após o turno (fire-and-forget; degrada pros chips).
+    generateSuggestions: async (convId) => {
+      if (!isTauri()) return
+      const c = get().byId[convId]
+      if (!c || c.running || c.finalizing) return // run em andamento → não gera
+      if (!c.items.some((it) => it.kind === "text")) return
+      const proj = useApp.getState().projects.find((p) => p.id === c.projectId)
+      if (!proj) {
+        console.warn("[sugestões] projeto não encontrado p/ convId", convId, c.projectId)
+        return
+      }
+      // modelo helper por projeto (.mycockpit/config.toml); default haiku, null = off
+      const cfg = useApp.getState().mycockpit[c.projectId]
+      const helperModel = cfg ? cfg.helper : "haiku"
+      if (!helperModel) return
+      // token desta geração: se um novo run começar enquanto geramos, descartamos.
+      const myGen = suggestGen[convId] ?? 0
+      get().setSuggesting(convId, true)
+      try {
+        const raw = await suggest(
+          helperModel,
+          proj.path,
+          `${SUGGEST_PROMPT}\n\nConversa recente:\n${buildContext(c.items)}`,
+        )
+        // descarta se um novo run começou enquanto gerava (anti-concorrência)
+        if ((suggestGen[convId] ?? 0) !== myGen) return
+        const list = parseSuggestions(raw)
+        if (!list.length) {
+          console.warn("[sugestões] resposta sem JSON parseável:", raw)
+        }
+        const after = get().byId[convId]
+        if (list.length && after && !after.running) {
+          get().setSuggestions(convId, list)
+          // persiste p/ as sugestões sobreviverem a fechar/minimizar/reabrir
+          void get().persist(convId)
+        }
+      } catch (e) {
+        console.warn("[sugestões] erro ao gerar:", e)
+      } finally {
+        // só limpa o "buscando…" se ainda formos a geração corrente
+        if ((suggestGen[convId] ?? 0) === myGen) {
+          get().setSuggesting(convId, false)
+        }
+      }
+    },
 
     openProject: async (projectId) => {
       if (!projectId) {
@@ -436,6 +525,9 @@ export const useChat = create<ChatState>((set, get) => {
         streamingTextId: null,
         runId: null,
       }),
+
+    setDraft: (convId, text) =>
+      set((s) => ({ drafts: { ...s.drafts, [convId]: text } })),
 
     beginFusion: (convId, text, attachments) =>
       set((s) => {

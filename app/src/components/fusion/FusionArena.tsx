@@ -2,34 +2,21 @@ import { useState } from "react"
 import { Plus, Sparkles, X } from "lucide-react"
 import { useChat } from "@/store/chat"
 import { useActiveProject, useApp } from "@/store/app"
-import { useFusion, type FusionRun, type LeagueConfig } from "@/store/fusion"
-import { CandidateLane } from "@/components/fusion/FusionBoard"
+import { useFusion, type LeagueConfig } from "@/store/fusion"
+import { CandidateLane, FusionVerdict } from "@/components/fusion/FusionBoard"
+import { AgentSelect } from "@/components/chat/ComposerParts"
+import { ComposerShell } from "@/components/chat/ComposerShell"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import { PillSelect } from "@/components/ui/PillSelect"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { liveCostOf } from "@/lib/format"
+import { LEAGUE_DESTINATIONS } from "@/lib/agents"
 import type { AgentRunConfig } from "@/lib/types"
 
-const AGENTS = [
-  { id: "claude-code", label: "Claude Code" },
-  { id: "codex", label: "Codex" },
-]
 const JUDGES = [
   { id: "sonnet", label: "Sonnet" },
   { id: "opus", label: "Opus" },
   { id: "haiku", label: "Haiku" },
 ]
-
-function nameOf(fusion: FusionRun, id: string | null): string {
-  return fusion.candidates.find((c) => c.id === id)?.label ?? "—"
-}
 
 /** Candidato da liga + um id estável local (p/ a key do React na lista mutável). */
 type LeagueEntry = AgentRunConfig & { id: string }
@@ -57,7 +44,8 @@ export function FusionArena() {
 
   const deciding = fusion?.phase === "deciding"
   const judging = fusion?.phase === "judging"
-  const selected = chosen ?? fusion?.chosenId ?? null
+  const selected =
+    chosen ?? fusion?.chosenId ?? fusion?.judge.suggestedId ?? null
   const liveCost = fusion ? liveCostOf(fusion) : 0
 
   async function dispute() {
@@ -94,90 +82,81 @@ export function FusionArena() {
             </p>
           </div>
 
-          <div className="rounded-2xl border bg-card p-3 shadow-[var(--shadow-pop)]">
-            <div className="mb-1 flex flex-wrap items-center gap-2 px-1">
-              <span className="text-[11px] tracking-wide text-muted-foreground uppercase">
-                Liga
-              </span>
-              {league.map((c, i) => (
-                <span
-                  key={c.id}
-                  className="flex items-center gap-0.5 rounded-full border bg-secondary/50 py-0.5 pr-1.5 pl-1"
-                >
-                  <Select
-                    value={c.agent}
-                    onValueChange={(v) =>
-                      setLeague((l) => l.map((x, j) => (j === i ? { ...x, agent: v } : x)))
-                    }
-                  >
-                    <SelectTrigger className="h-7 w-fit gap-1 border-0 bg-transparent px-2 text-[12px] shadow-none focus-visible:ring-0 data-[size=default]:h-7">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent align="start">
-                      {AGENTS.map((a) => (
-                        <SelectItem key={a.id} value={a.id} className="text-[13px]">
-                          {a.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {league.length > 2 && (
-                    <button
-                      onClick={() => setLeague((l) => l.filter((_, j) => j !== i))}
-                      className="text-muted-foreground hover:text-foreground"
-                      aria-label="Remover candidato"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  )}
+          <ComposerShell
+            value={task}
+            onChange={(e) => setTask(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault()
+                void dispute()
+              }
+            }}
+            placeholder="Descreva a tarefa para a liga disputar…"
+            disabled={!project}
+            rows={3}
+            cardClassName="p-3"
+            textareaClassName="max-h-44 min-h-[88px] resize-none border-0 bg-transparent px-1 text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
+            footerClassName="px-1 pt-1"
+            chips={
+              <div className="mb-1 flex flex-wrap items-center gap-2 px-1">
+                <span className="text-[11px] tracking-wide text-muted-foreground uppercase">
+                  Liga
                 </span>
-              ))}
-              {league.length < 5 && (
-                <button
-                  onClick={() => setLeague((l) => [...l, newEntry("claude-code")])}
-                  className="flex items-center gap-1 rounded-full border border-dashed px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground"
+                {league.map((c, i) => (
+                  <span key={c.id} className="flex items-center gap-1">
+                    <AgentSelect
+                      value={c.agent}
+                      onValueChange={(v) =>
+                        setLeague((l) =>
+                          l.map((x, j) => (j === i ? { ...x, agent: v } : x)),
+                        )
+                      }
+                      options={LEAGUE_DESTINATIONS}
+                    />
+                    {league.length > 2 && (
+                      <button
+                        onClick={() => setLeague((l) => l.filter((_, j) => j !== i))}
+                        className="text-muted-foreground hover:text-foreground"
+                        aria-label="Remover candidato"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    )}
+                  </span>
+                ))}
+                {league.length < 5 && (
+                  <button
+                    onClick={() => setLeague((l) => [...l, newEntry("claude-code")])}
+                    className="flex items-center gap-1 rounded-full border border-dashed px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground"
+                  >
+                    <Plus className="size-3" /> candidato
+                  </button>
+                )}
+              </div>
+            }
+            footer={
+              <>
+                <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                  juiz
+                  <PillSelect
+                    value={judge}
+                    onValueChange={setJudge}
+                    options={JUDGES.map((j) => ({ value: j.id, label: j.label }))}
+                    triggerClassName="h-7 gap-1 px-2.5 text-foreground data-[size=default]:h-7"
+                    itemClassName="text-[13px]"
+                    aria-label="Juiz da disputa"
+                  />
+                </span>
+                <Button
+                  onClick={() => void dispute()}
+                  disabled={!task.trim() || !project || league.length < 2}
+                  className="ml-auto gap-1.5"
                 >
-                  <Plus className="size-3" /> candidato
-                </button>
-              )}
-            </div>
-
-            <Textarea
-              value={task}
-              onChange={(e) => setTask(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault()
-                  void dispute()
-                }
-              }}
-              placeholder="Descreva a tarefa para a liga disputar…"
-              disabled={!project}
-              rows={3}
-              className="max-h-44 min-h-[88px] resize-none border-0 bg-transparent px-1 text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
-            />
-
-            <div className="flex items-center gap-2 px-1 pt-1">
-              <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                juiz
-                <PillSelect
-                  value={judge}
-                  onValueChange={setJudge}
-                  options={JUDGES.map((j) => ({ value: j.id, label: j.label }))}
-                  triggerClassName="h-7 gap-1 px-2.5 text-foreground data-[size=default]:h-7"
-                  itemClassName="text-[13px]"
-                  aria-label="Juiz da disputa"
-                />
-              </span>
-              <Button
-                onClick={() => void dispute()}
-                disabled={!task.trim() || !project || league.length < 2}
-                className="ml-auto gap-1.5"
-              >
-                <Sparkles className="size-4" /> Disputar
-              </Button>
-            </div>
-          </div>
+                  <Sparkles className="size-4" /> Disputar
+                </Button>
+              </>
+            }
+          />
         </div>
       </div>
     )
@@ -211,34 +190,13 @@ export function FusionArena() {
       </div>
 
       {deciding && (
-        <div className="flex shrink-0 items-center gap-3 border-t px-6 py-3">
-          {fusion.judge.status === "unavailable" ? (
-            <p className="flex-1 text-[12.5px] text-st-error">
-              {fusion.judge.rationale}
-            </p>
-          ) : (
-            <>
-              <Sparkles className="size-4 shrink-0 text-brass" />
-              <p className="flex-1 text-[12.5px] text-muted-foreground">
-                <span className="text-foreground/80">
-                  Juiz sugere {nameOf(fusion, fusion.judge.suggestedId)}.
-                </span>{" "}
-                {fusion.judge.agreement ? "✓ concordou nas 2 ordens. " : ""}
-                {fusion.judge.rationale}
-              </p>
-            </>
-          )}
-          <button
-            onClick={() => activeId && useFusion.getState().discard(activeId)}
-            className="text-[12px] text-muted-foreground hover:text-foreground"
-          >
-            descartar
-          </button>
-          {fusion.judge.status !== "unavailable" && (
-            <Button disabled={!selected} onClick={() => void decide()}>
-              Confirmar escolha
-            </Button>
-          )}
+        <div className="shrink-0 border-t p-4">
+          <FusionVerdict
+            fusion={fusion}
+            selected={selected}
+            onConfirm={() => void decide()}
+            onDiscard={() => activeId && useFusion.getState().discard(activeId)}
+          />
         </div>
       )}
     </div>

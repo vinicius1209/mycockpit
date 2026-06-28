@@ -151,8 +151,10 @@ fn dir_size_mtime(dir: &Path) -> (u64, std::time::SystemTime) {
 /// Teto no INGEST (guardião primário — F2): se o total passar de CAP, evicta
 /// pastas por mtime ascendente (a pasta ativa tem mtime fresco → protegida) até
 /// LOW_WATER. Sem ConvRef aqui; mtime-de-pasta é proxy seguro porque a pasta
-/// sendo escrita agora é a mais recente.
-fn enforce_cap(app: &AppHandle) -> Result<(), String> {
+/// sendo escrita agora é a mais recente. Pula conversas com run ATIVO (F23): a
+/// proteção-por-mtime só cobre a pasta sendo escrita agora; um run lendo o blob de
+/// OUTRA conversa (mtime mais velho) precisa do mesmo skip que o `lru_evict` faz.
+fn enforce_cap(app: &AppHandle, active: &ActiveConvs) -> Result<(), String> {
     let root = attachments_root(app)?;
     let mut total = 0u64;
     let mut dirs: Vec<(PathBuf, std::time::SystemTime, u64)> = Vec::new();
@@ -174,6 +176,12 @@ fn enforce_cap(app: &AppHandle) -> Result<(), String> {
         if total <= LOW_WATER {
             break;
         }
+        // F23: run ativo nesta conversa → não apaga o blob que o agent ainda vai ler.
+        if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+            if active.contains(name) {
+                continue;
+            }
+        }
         let _ = std::fs::remove_dir_all(&p);
         total = total.saturating_sub(size);
     }
@@ -188,6 +196,7 @@ fn save_to_disk(
     name: &str,
     declared_mime: Option<String>,
     bytes: &[u8],
+    active: &ActiveConvs,
 ) -> Result<Attachment, String> {
     if bytes.len() as u64 > MAX_BYTES {
         return Err(format!(
@@ -209,7 +218,7 @@ fn save_to_disk(
         // dedup por-conversa: mesmo conteúdo → mesmo arquivo, não reescreve.
         write_atomic(&abs, bytes)?;
     }
-    enforce_cap(app)?;
+    enforce_cap(app, active)?;
 
     Ok(Attachment {
         path: format!("attachments/{}/{}", sanitize_conv_id(conv_id), fname),
@@ -231,13 +240,14 @@ pub async fn save_attachment(
     name: String,
     declared_mime: String,
     bytes: Vec<u8>,
+    active: tauri::State<'_, ActiveConvs>,
 ) -> Result<Attachment, String> {
     let declared = if declared_mime.is_empty() {
         None
     } else {
         Some(declared_mime)
     };
-    save_to_disk(&app, &conv_id, &name, declared, &bytes)
+    save_to_disk(&app, &conv_id, &name, declared, &bytes, active.inner())
 }
 
 /// Anexa um arquivo já em disco (file picker). Checa o tamanho ANTES de ler o
@@ -247,6 +257,7 @@ pub async fn attach_path(
     app: AppHandle,
     conv_id: String,
     src_path: String,
+    active: tauri::State<'_, ActiveConvs>,
 ) -> Result<Attachment, String> {
     let meta = std::fs::metadata(&src_path).map_err(|e| e.to_string())?;
     if meta.len() > MAX_BYTES {
@@ -257,7 +268,7 @@ pub async fn attach_path(
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "anexo".to_string());
-    save_to_disk(&app, &conv_id, &name, None, &bytes)
+    save_to_disk(&app, &conv_id, &name, None, &bytes, active.inner())
 }
 
 /// Remove um anexo individual (chip pré-envio ou botão no histórico). `path` é o

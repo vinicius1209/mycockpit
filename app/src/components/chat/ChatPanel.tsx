@@ -3,23 +3,16 @@ import { toast } from "sonner"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { MessageList } from "@/components/chat/MessageList"
 import { Reticle } from "@/components/common/Wordmark"
-import { useActiveProject, useApp } from "@/store/app"
+import { useActiveProject } from "@/store/app"
 import { useChat, useActiveConv } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { FusionBoard } from "@/components/fusion/FusionBoard"
-import type { ChatItem } from "@/store/chat"
-import { runAgent, cancelAgent, suggest } from "@/lib/agent"
+import { runAgent, cancelAgent } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { gcAttachments } from "@/lib/attachments"
-import { extractJson, BYTES_PER_MB } from "@/lib/format"
+import { BYTES_PER_MB } from "@/lib/format"
 import type { AgentRunConfig } from "@/lib/types"
 import { isTauri, listConvRefs } from "@/lib/db"
-
-// Janela de contexto enviada ao modelo de sugestões.
-const CONTEXT_ITEMS = 6 // últimas N mensagens consideradas
-const CHAR_CAP = 1200 // corte por mensagem de assistente
-const TOTAL_CAP = 4000 // corte do contexto montado
-const SUGGEST_DEBOUNCE_MS = 700 // espera após o turno antes de gerar
 
 function greetingFor(date: Date): string {
   const h = date.getHours()
@@ -28,39 +21,11 @@ function greetingFor(date: Date): string {
   return "Boa noite"
 }
 
-// Sprint 3 — sugestões dinâmicas via modelo auxiliar.
-const SUGGEST_PROMPT = `Você sugere as PRÓXIMAS AÇÕES úteis para o usuário continuar este trabalho de desenvolvimento, com base na conversa abaixo.
-
-Responda APENAS com um array JSON de até 3 strings curtas (máx 6 palavras cada), em pt-BR, acionáveis e específicas ao contexto. Nada além do JSON.
-Exemplo: ["Rodar os testes do módulo","Fazer o commit pendente","Documentar a função nova"]`
-
-function buildContext(items: ChatItem[]): string {
-  const lines: string[] = []
-  for (const it of items.slice(-CONTEXT_ITEMS)) {
-    if (it.kind === "user") lines.push(`Usuário: ${it.text}`)
-    else if (it.kind === "text")
-      lines.push(`Assistente: ${it.text.slice(0, CHAR_CAP)}`)
-    else if (it.kind === "tool") lines.push(`(ferramenta: ${it.name})`)
-  }
-  return lines.join("\n").slice(-TOTAL_CAP)
-}
-
-function parseSuggestions(raw: string): string[] {
-  // resposta malformada / sem array → mantém os chips estáticos
-  const arr = extractJson<unknown>(raw, "array")
-  if (!Array.isArray(arr)) return []
-  return arr.filter((x): x is string => typeof x === "string").slice(0, 3)
-}
-
 export function ChatPanel() {
   const project = useActiveProject()
   const conv = useActiveConv()
   const openProject = useChat((s) => s.openProject)
   const scrollRef = useRef<HTMLDivElement>(null)
-  // sugestões: debounce + invalidação por geração (evita concorrência e geração
-  // dupla quando se manda outro prompt logo após a resposta).
-  const suggestTimer = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
-  const suggestGen = useRef<Record<string, number>>({})
 
   const items = conv.items
   const running = conv.running
@@ -89,12 +54,6 @@ export function ChatPanel() {
     void handleSend(text)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queuedPrompt])
-
-  // limpa timers de sugestão pendentes ao desmontar
-  useEffect(() => {
-    const timers = suggestTimer.current
-    return () => Object.values(timers).forEach(clearTimeout)
-  }, [])
 
   // GC dos anexos no boot (throttled 1×/24h no backend). F1: só roda se as refs
   // vierem não-null (null = falha → não arrisca o orphan-sweep com lista vazia).
@@ -142,8 +101,7 @@ export function ChatPanel() {
     // (flush da sessão) antes do próximo run, senão o resume não acha a sessão.
     if (conv?.running || conv?.finalizing) return
     // novo run → invalida geração de sugestão pendente/em-voo desta conversa
-    suggestGen.current[convId] = (suggestGen.current[convId] ?? 0) + 1
-    clearTimeout(suggestTimer.current[convId])
+    useChat.getState().invalidateSuggestions(convId)
     // conversa estabelecida trava no agent/modelo/effort do 1º run; nova usa o seletor
     const locked = conv != null && conv.items.length > 0
     const agent = locked ? conv!.agent : (cfg?.agent ?? "claude-code")
@@ -172,7 +130,7 @@ export function ChatPanel() {
     } finally {
       useChat.getState().finish(convId)
       void useChat.getState().persist(convId)
-      scheduleSuggestions(convId)
+      useChat.getState().scheduleSuggestions(convId)
     }
   }
 
@@ -180,61 +138,6 @@ export function ChatPanel() {
     const convId = useChat.getState().activeId
     const runId = convId ? useChat.getState().byId[convId]?.runId : null
     if (runId) void cancelAgent(runId)
-  }
-
-  // Debounce: agenda a geração ~700ms após o turno. Um novo run cancela o timer
-  // (e bumpa o token), então rajadas de prompts não geram sugestões intermediárias.
-  function scheduleSuggestions(convId: string) {
-    clearTimeout(suggestTimer.current[convId])
-    suggestTimer.current[convId] = setTimeout(() => {
-      void generateSuggestions(convId)
-    }, SUGGEST_DEBOUNCE_MS)
-  }
-
-  // Gera sugestões contextuais após o turno (fire-and-forget; degrada pros chips).
-  async function generateSuggestions(convId: string) {
-    if (!isTauri()) return
-    const c = useChat.getState().byId[convId]
-    if (!c || c.running || c.finalizing) return // run em andamento → não gera
-    if (!c.items.some((it) => it.kind === "text")) return
-    const proj = useApp.getState().projects.find((p) => p.id === c.projectId)
-    if (!proj) {
-      console.warn("[sugestões] projeto não encontrado p/ convId", convId, c.projectId)
-      return
-    }
-    // modelo helper por projeto (.mycockpit/config.toml); default haiku, null = off
-    const cfg = useApp.getState().mycockpit[c.projectId]
-    const helperModel = cfg ? cfg.helper : "haiku"
-    if (!helperModel) return
-    // token desta geração: se um novo run começar enquanto geramos, descartamos.
-    const myGen = suggestGen.current[convId] ?? 0
-    useChat.getState().setSuggesting(convId, true)
-    try {
-      const raw = await suggest(
-        helperModel,
-        proj.path,
-        `${SUGGEST_PROMPT}\n\nConversa recente:\n${buildContext(c.items)}`,
-      )
-      // descarta se um novo run começou enquanto gerava (anti-concorrência)
-      if ((suggestGen.current[convId] ?? 0) !== myGen) return
-      const list = parseSuggestions(raw)
-      if (!list.length) {
-        console.warn("[sugestões] resposta sem JSON parseável:", raw)
-      }
-      const after = useChat.getState().byId[convId]
-      if (list.length && after && !after.running) {
-        useChat.getState().setSuggestions(convId, list)
-        // persiste p/ as sugestões sobreviverem a fechar/minimizar/reabrir
-        void useChat.getState().persist(convId)
-      }
-    } catch (e) {
-      console.warn("[sugestões] erro ao gerar:", e)
-    } finally {
-      // só limpa o "buscando…" se ainda formos a geração corrente
-      if ((suggestGen.current[convId] ?? 0) === myGen) {
-        useChat.getState().setSuggesting(convId, false)
-      }
-    }
   }
 
   const hasConversation = items.length > 0

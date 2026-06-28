@@ -5,12 +5,47 @@
 
 import { invoke } from "@tauri-apps/api/core"
 import { extractJson } from "@/lib/format"
+import { agentDef } from "@/lib/agents"
 import type { ChatItem } from "@/store/chat"
 import type { FusionCandidate, FusionJudge } from "@/store/fusion"
 
 interface JudgeResult {
   text: string
   cost_usd: number | null
+}
+
+/** Rótulo legível de um candidato ("Claude · Opus"). Fonte única: lib/agents. */
+export function candLabel(agent: string, model: string | null): string {
+  const a = agentDef(agent)?.shortLabel ?? agent
+  return model ? `${a} · ${model}` : a
+}
+
+/** Família do modelo/agent (claude/openai/…) — p/ manter o juiz FORA da liga. */
+function familyOf(s: string): string {
+  const l = s.toLowerCase()
+  if (/claude|opus|sonnet|haiku/.test(l)) return "claude"
+  if (/codex|gpt|o3/.test(l)) return "openai"
+  if (/opencode|glm/.test(l)) return "opencode"
+  return l
+}
+
+/** Pré-seleção do vencedor (decisão PURA, idêntica pra qualquer caller):
+ *  - juiz `single` (único candidato válido) → sempre auto-seleciona;
+ *  - senão só se as 2 passadas CONCORDARAM e o juiz é NEUTRO (família fora da liga).
+ *  Caso contrário deixa null (o usuário decide). */
+export function decideChosen(
+  judge: FusionJudge,
+  candidates: FusionCandidate[],
+  judgeModel: string,
+): string | null {
+  const jf = familyOf(judgeModel)
+  const neutral = !candidates.some(
+    (c) =>
+      familyOf(c.agent) === jf ||
+      (c.reqModel != null && familyOf(c.reqModel) === jf),
+  )
+  if (judge.status === "single") return judge.suggestedId
+  return judge.agreement && neutral ? judge.suggestedId : null
 }
 
 async function callJudge(

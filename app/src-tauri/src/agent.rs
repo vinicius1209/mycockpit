@@ -32,6 +32,23 @@ impl Drop for ActiveGuard<'_> {
     }
 }
 
+/// Guard RAII: remove o run do RunRegistry ao sair (qualquer path, inclusive os
+/// early-returns do `?`). O Notify é registrado UMA vez no início do run_agent —
+/// antes do spawn e reusado entre as 2 tentativas da degradação graciosa — para
+/// que um cancel no gap (entre run_agent e o loop, ou entre tentativas) fique
+/// retido como permit e seja consumido pela próxima `notified()`.
+struct RunGuard<'a> {
+    registry: &'a RunRegistry,
+    run_id: &'a str,
+}
+impl Drop for RunGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut map) = self.registry.0.lock() {
+            map.remove(self.run_id);
+        }
+    }
+}
+
 /// Proveniência do custo: reportado pelo CLI ($ direto, ex. Claude), estimado
 /// (tokens × tabela de preço, ex. Codex) ou desconhecido (sem custo nem usage).
 #[derive(Clone, Serialize)]
@@ -122,6 +139,18 @@ pub async fn run_agent(
     active: tauri::State<'_, ActiveConvs>,
 ) -> Result<(), String> {
     let mut adapter = adapters::resolve(&agent)?;
+    // H1 — registra o sinal de cancelamento ANTES de qualquer spawn e UMA vez só.
+    // Reusado entre as 2 tentativas (degradação graciosa): um cancel que chega no
+    // gap fica retido como permit do Notify e mata o filho na 1ª `notified()`. O
+    // RunGuard tira o run_id do registry em qualquer saída (inclusive nos `?`).
+    let notify = Arc::new(Notify::new());
+    if let Ok(mut map) = registry.0.lock() {
+        map.insert(run_id.clone(), notify.clone());
+    }
+    let _run_guard = RunGuard {
+        registry: registry.inner(),
+        run_id: &run_id,
+    };
     // anexos: rel→abs + descarta sumidos; particiona por capacidade do agent.
     let (live, missing) = attachments::resolve_live(&app, attachments);
     let (used, unsupported): (Vec<_>, Vec<_>) = live
@@ -154,8 +183,7 @@ pub async fn run_agent(
     };
     let resume_was = req.resume.is_some();
     let cmd = adapter.build_command(&req)?;
-    let mut outcome =
-        run_once(cmd, &run_id, resume_was, &on_event, &mut adapter, &registry).await?;
+    let mut outcome = run_once(cmd, resume_was, &on_event, &mut adapter, &notify).await?;
 
     // Degradação graciosa: se o resume falhou porque a sessão sumiu (CLI limpou a
     // sessão, ou conversa legada), em vez de ERRO o app recomeça SEM resume + avisa.
@@ -168,7 +196,7 @@ pub async fn run_agent(
         req2.resume = None;
         let mut adapter2 = adapters::resolve(&agent)?;
         let cmd2 = adapter2.build_command(&req2)?;
-        outcome = run_once(cmd2, &run_id, false, &on_event, &mut adapter2, &registry).await?;
+        outcome = run_once(cmd2, false, &on_event, &mut adapter2, &notify).await?;
     }
 
     if outcome.cancelled {
@@ -199,11 +227,10 @@ struct Outcome {
 /// degradação graciosa. Num resume, intercepta SessionNotFound (suprime + marca).
 async fn run_once(
     mut cmd: Command,
-    run_id: &str,
     resume_is_some: bool,
     on_event: &Channel<AgentEvent>,
     adapter: &mut Box<dyn adapters::AgentAdapter>,
-    registry: &RunRegistry,
+    notify: &Arc<Notify>,
 ) -> Result<Outcome, String> {
     // stdin null é OBRIGATÓRIO: sem isso o `codex exec` trava lendo stdin
     // (verificado). Inofensivo p/ o Claude (que não lê stdin em -p).
@@ -233,12 +260,8 @@ async fn run_once(
         buf
     });
 
-    // H1 — registra o sinal de cancelamento deste run.
-    let notify = Arc::new(Notify::new());
-    if let Ok(mut map) = registry.0.lock() {
-        map.insert(run_id.to_string(), notify.clone());
-    }
-
+    // H1 — o `notify` é registrado/desregistrado no run_agent (RunGuard); aqui só
+    // escutamos o sinal. Reusar o MESMO Arc entre as tentativas retém o cancel.
     let mut cancelled = false;
     let mut session_not_found = false;
     loop {
@@ -291,12 +314,18 @@ async fn run_once(
         }
     }
 
-    if let Ok(mut map) = registry.0.lock() {
-        map.remove(run_id);
-    }
-
     let status = child.wait().await.map_err(|e| e.to_string())?;
     let stderr_text = stderr_task.await.unwrap_or_default();
+
+    // Codex reporta sessão inexistente no STDERR ("no rollout found for thread id"),
+    // não no stream JSON → detecta aqui também p/ a degradação graciosa pegar Codex.
+    if resume_is_some
+        && !cancelled
+        && !session_not_found
+        && adapters::is_session_not_found(&stderr_text)
+    {
+        session_not_found = true;
+    }
 
     Ok(Outcome {
         cancelled,

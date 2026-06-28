@@ -22,13 +22,8 @@ export interface ConvRef {
   updated_at: number
 }
 
-/** Capacidade por agent (espelha `supports_attachment` no trait Rust). O envio
- *  é bloqueado no front quando um anexo não é suportado pelo agent-alvo. */
-export const AGENT_CAPS: Record<string, { image: boolean; pdf: boolean }> = {
-  "claude-code": { image: true, pdf: true },
-  codex: { image: true, pdf: false },
-  opencode: { image: false, pdf: false },
-}
+// Capacidade por agent (`supports_attachment` no trait Rust) agora vive no
+// registry único: `agentCaps()` em lib/agents.ts.
 
 /** Limites (espelham o backend): 10 MB por arquivo, 8 anexos por mensagem. */
 export const MAX_ATTACH_MB = 10
@@ -80,6 +75,12 @@ export async function gcAttachments(
 /** Apaga todos os anexos de uma conversa (ao deletá-la). */
 export async function wipeAttachments(convId: string): Promise<void> {
   await invoke("wipe_conv_attachments", { convId })
+  // os blobs acabaram de sumir do disco → libera os object URLs cacheados deles
+  // (o convId está embutido no path "attachments/<convId>/…"), senão vazam.
+  const prefix = `attachments/${convId}/`
+  for (const path of [...urlCache.keys()]) {
+    if (path.startsWith(prefix)) revokeAttachmentUrl(path)
+  }
 }
 
 // URL de object cacheada por path (F6: não re-lê bytes a cada render).
@@ -95,4 +96,16 @@ export async function attachmentUrl(att: Attachment): Promise<string> {
   )
   urlCache.set(att.path, url)
   return url
+}
+
+/** Revoga o object URL cacheado de um anexo. Atrele ao CICLO DE VIDA do blob
+ *  (remover o anexo / wipe da conversa), NUNCA ao unmount do thumbnail: o URL é
+ *  cacheado por path e o mesmo blob (dedup por hash) pode estar montado em outra
+ *  <img> — revogar no unmount apagaria a imagem ainda visível. */
+export function revokeAttachmentUrl(path: string): void {
+  const url = urlCache.get(path)
+  if (url) {
+    URL.revokeObjectURL(url)
+    urlCache.delete(path)
+  }
 }

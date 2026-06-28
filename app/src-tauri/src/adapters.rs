@@ -73,11 +73,16 @@ fn usage_u64(usage: Option<&serde_json::Value>, key: &str) -> u64 {
 
 /// O erro indica que a sessão do resume não existe? (Claude: "No conversation
 /// found with session ID"). Dispara a degradação graciosa (recomeçar sem resume).
-fn is_session_not_found(s: &str) -> bool {
+/// Casa só as FRASES exatas: o AND genérico (`session` && `not found`) casava
+/// qualquer erro de tool/stderr com os dois termos → dropava o resume e perdia
+/// contexto em silêncio. A falha segura é ser preciso (no pior caso, card de erro).
+/// NEEDS-VERIFY: a frase do Codex no `turn.failed` ao dar resume de thread
+/// inexistente ainda não foi capturada de um run real; se diferir, a degradação
+/// graciosa para de valer p/ o Codex (vira card de erro), e `cargo` não pega isso.
+pub(crate) fn is_session_not_found(s: &str) -> bool {
     let l = s.to_lowercase();
-    l.contains("no conversation found")
-        || l.contains("session not found")
-        || (l.contains("session") && l.contains("not found"))
+    l.contains("no conversation found with session id") // Claude (verificado)
+        || l.contains("no rollout found for thread id") // Codex (verificado — vem no stderr)
 }
 
 // ---------------- Claude Code (porta o map_events 1:1) ----------------

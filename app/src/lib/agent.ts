@@ -1,5 +1,6 @@
 import { invoke, Channel } from "@tauri-apps/api/core"
 import type { Attachment } from "@/lib/attachments"
+import { agentDef } from "@/lib/agents"
 
 /** Proveniência do custo (espelha CostSource no Rust). */
 export type CostSource = "reported" | "estimated" | "unknown"
@@ -64,15 +65,9 @@ export async function cancelAgent(runId: string): Promise<void> {
   await invoke("cancel_agent", { runId })
 }
 
-/** Rótulo de exibição de um agent (id → nome). */
-const AGENT_LABELS: Record<string, string> = {
-  "claude-code": "Claude Code",
-  codex: "Codex",
-  opencode: "OpenCode",
-  model: "Modelo direto",
-}
+/** Rótulo de exibição de um agent (id → nome). Fonte única: lib/agents. */
 export function agentLabel(agent: string): string {
-  return AGENT_LABELS[agent] ?? agent
+  return agentDef(agent)?.label ?? agent
 }
 
 /** Helper one-shot (Sprint 3): roda um modelo barato e retorna o texto puro. */

@@ -1,15 +1,23 @@
 import { useState } from "react"
-import { AlertCircle, Check, Loader2, Sparkles } from "lucide-react"
+import { AlertCircle, Check, Loader2, Maximize2, Sparkles } from "lucide-react"
 import {
   useFusion,
   isFailed,
   isRunning,
   type FusionCandidate,
+  type FusionRun,
 } from "@/store/fusion"
 import { candidateText } from "@/lib/fusion"
 import { fmtCost, liveCostOf } from "@/lib/format"
 import { Markdown } from "@/components/common/Markdown"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 
 export function CandidateLane({
@@ -31,6 +39,41 @@ export function CandidateLane({
   const text = candidateText(c)
   const running = isRunning(c.status)
   const failed = isFailed(c.status)
+  const [expanded, setExpanded] = useState(false)
+
+  const statusIcon = running ? (
+    <Loader2 className="size-3.5 shrink-0 animate-spin text-st-running" />
+  ) : failed ? (
+    <AlertCircle className="size-3.5 shrink-0 text-st-error" />
+  ) : (
+    <Check className="size-3.5 shrink-0 text-st-success" />
+  )
+  const suggestedBadge = suggested && (
+    <span className="shrink-0 rounded border border-brass/40 px-1 py-px text-[9px] tracking-wide text-brass uppercase">
+      sugerido
+    </span>
+  )
+  const body = text ? (
+    <Markdown text={text} />
+  ) : (
+    <span className="text-[12px] text-muted-foreground">
+      {running ? "pensando…" : failed ? "falhou" : "—"}
+    </span>
+  )
+  const chooseBtn = deciding && !failed && (
+    <button
+      onClick={onChoose}
+      className={cn(
+        "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+        selected
+          ? "border-brass bg-brass/10 text-brass"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {selected ? "✓ escolhida" : "escolher esta"}
+    </button>
+  )
+
   return (
     <div
       className={cn(
@@ -41,36 +84,22 @@ export function CandidateLane({
       )}
     >
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-        <div className="flex items-center gap-2">
-          {running ? (
-            <Loader2 className="size-3.5 animate-spin text-st-running" />
-          ) : failed ? (
-            <AlertCircle className="size-3.5 text-st-error" />
-          ) : (
-            <Check className="size-3.5 text-st-success" />
-          )}
-          <span className="label-mono text-foreground/80">{c.label}</span>
-          {suggested && (
-            <span className="rounded border border-brass/40 px-1 py-px text-[9px] tracking-wide text-brass uppercase">
-              sugerido
-            </span>
-          )}
+        <div className="flex min-w-0 items-center gap-2">
+          {statusIcon}
+          <span className="label-mono truncate text-foreground/80">{c.label}</span>
+          {suggestedBadge}
         </div>
-        <div className="flex items-center gap-2 font-mono text-[11px] tabular-nums text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-2 font-mono text-[11px] tabular-nums text-muted-foreground">
           {c.costUsd != null && <span>{fmtCost(c.costUsd, c.costSource)}</span>}
-          {deciding && !failed && (
-            <button
-              onClick={onChoose}
-              className={cn(
-                "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
-                selected
-                  ? "border-brass bg-brass/10 text-brass"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {selected ? "✓ escolhida" : "escolher esta"}
-            </button>
-          )}
+          <button
+            onClick={() => setExpanded(true)}
+            className="transition-colors hover:text-foreground"
+            aria-label="Expandir resposta"
+            title="Expandir"
+          >
+            <Maximize2 className="size-3.5" />
+          </button>
+          {chooseBtn}
         </div>
       </div>
       <div
@@ -79,14 +108,42 @@ export function CandidateLane({
           fill ? "min-h-0 flex-1" : "max-h-56",
         )}
       >
-        {text ? (
-          <Markdown text={text} />
-        ) : (
-          <span className="text-[12px] text-muted-foreground">
-            {running ? "pensando…" : failed ? "falhou" : "—"}
-          </span>
-        )}
+        {body}
       </div>
+
+      <Dialog open={expanded} onOpenChange={setExpanded}>
+        <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+          <DialogHeader className="border-b px-5 py-3 text-left">
+            <DialogTitle className="flex items-center gap-2 pr-7 text-[14px]">
+              {statusIcon}
+              <span className="label-mono text-foreground/90">{c.label}</span>
+              {suggestedBadge}
+              {c.costUsd != null && (
+                <span className="ml-auto font-mono text-[11px] font-normal text-muted-foreground">
+                  {fmtCost(c.costUsd, c.costSource)}
+                </span>
+              )}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Conteúdo completo da resposta de {c.label}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-auto px-5 py-4 text-[14px] leading-relaxed">
+            {body}
+          </div>
+          {deciding && !failed && (
+            <div className="flex shrink-0 justify-end border-t px-5 py-3">
+              <Button
+                size="sm"
+                variant={selected ? "default" : "outline"}
+                onClick={onChoose}
+              >
+                {selected ? "✓ escolhida" : "escolher esta"}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -100,9 +157,10 @@ export function FusionBoard({ convId }: { convId: string }) {
 
   const judging = fusion.phase === "judging"
   const deciding = fusion.phase === "deciding"
-  const selected = chosen ?? fusion.chosenId
+  // default da seleção = a sugestão do juiz (mesmo quando a auto-confirmação foi
+  // suprimida por anti-viés) → "Confirmar" já funciona com 1 clique; dá pra trocar.
+  const selected = chosen ?? fusion.chosenId ?? fusion.judge.suggestedId
   const liveCost = liveCostOf(fusion)
-  const unavailable = fusion.judge.status === "unavailable"
 
   return (
     <div className="mx-auto flex w-full max-w-[760px] flex-col gap-2.5 px-8 py-4">
@@ -129,34 +187,66 @@ export function FusionBoard({ convId }: { convId: string }) {
       ))}
 
       {deciding && (
-        <div className="flex items-center gap-3 pt-1">
-          {unavailable ? (
-            <p className="flex-1 text-[12px] text-st-error">
-              {fusion.judge.rationale}
-            </p>
-          ) : (
-            <p className="flex-1 text-[12px] text-muted-foreground">
-              {fusion.judge.agreement ? "✓ juiz concordou nas 2 ordens. " : ""}
-              {fusion.judge.rationale}
-            </p>
-          )}
-          <button
-            onClick={() => useFusion.getState().discard(convId)}
-            className="text-[12px] text-muted-foreground hover:text-foreground"
-          >
-            descartar
-          </button>
-          {!unavailable && (
-            <Button
-              size="sm"
-              disabled={!selected}
-              onClick={() => selected && void confirm(convId, selected)}
-            >
-              Confirmar escolha
-            </Button>
-          )}
-        </div>
+        <FusionVerdict
+          fusion={fusion}
+          selected={selected}
+          onConfirm={() => selected && void confirm(convId, selected)}
+          onDiscard={() => useFusion.getState().discard(convId)}
+        />
       )}
+    </div>
+  )
+}
+
+/** Veredito do juiz: racional em largura cheia + ações numa linha separada.
+ *  Único (Board + Arena reusam) — antes era duplicado e espremido. */
+export function FusionVerdict({
+  fusion,
+  selected,
+  onConfirm,
+  onDiscard,
+}: {
+  fusion: FusionRun
+  selected: string | null
+  onConfirm: () => void
+  onDiscard: () => void
+}) {
+  const unavailable = fusion.judge.status === "unavailable"
+  const labelOf = (id: string | null) =>
+    fusion.candidates.find((c) => c.id === id)?.label
+  const selectedLabel = labelOf(selected)
+
+  return (
+    <div className="flex flex-col gap-2.5 rounded-xl border bg-secondary/30 p-3">
+      <div className="flex items-start gap-2">
+        <Sparkles className="mt-px size-4 shrink-0 text-brass" />
+        {unavailable ? (
+          <p className="text-[12.5px] leading-relaxed text-st-error">
+            {fusion.judge.rationale}
+          </p>
+        ) : (
+          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+            <span className="font-medium text-foreground/85">
+              Juiz sugere {labelOf(fusion.judge.suggestedId)}.
+            </span>{" "}
+            {fusion.judge.agreement ? "✓ concordou nas 2 ordens. " : ""}
+            {fusion.judge.rationale}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center justify-end gap-3">
+        <button
+          onClick={onDiscard}
+          className="text-[12px] text-muted-foreground hover:text-foreground"
+        >
+          descartar
+        </button>
+        {!unavailable && (
+          <Button size="sm" disabled={!selected} onClick={onConfirm}>
+            {selectedLabel ? `Confirmar ${selectedLabel}` : "Escolha um candidato"}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }
