@@ -10,13 +10,14 @@ import { cn } from "@/lib/utils"
 
 const MODES = [
   { id: "linear", label: "Linear", available: true },
-  { id: "fusion", label: "Fusion", available: false },
+  { id: "fusion", label: "Fusion", available: true },
   { id: "sdd", label: "SDD", available: false },
 ] as const
 
 /** Seletor de modo de trabalho. Linear ativo; Fusion/SDD chegam depois. */
 function ModeSwitcher() {
-  const active = "linear"
+  const viewMode = useApp((s) => s.viewMode)
+  const setViewMode = useApp((s) => s.setViewMode)
   return (
     <div className="pointer-events-auto absolute left-1/2 hidden -translate-x-1/2 items-center gap-0.5 rounded-full border bg-secondary/50 p-0.5 sm:flex">
       {MODES.map((m) => (
@@ -24,13 +25,16 @@ function ModeSwitcher() {
           key={m.id}
           disabled={!m.available}
           onClick={() => {
-            if (!m.available)
-              toast(`Modo ${m.label} chega depois de endurecer o Linear`)
+            if (!m.available) {
+              toast(`Modo ${m.label} chega depois`)
+            } else if (m.id === "linear" || m.id === "fusion") {
+              setViewMode(m.id)
+            }
           }}
           title={m.available ? undefined : "Em breve"}
           className={cn(
             "flex items-center gap-1 rounded-full px-3 py-1 text-[12px] transition-colors",
-            m.id === active
+            m.id === viewMode
               ? "bg-card text-foreground shadow-[var(--shadow-sm)]"
               : "text-muted-foreground enabled:hover:text-foreground disabled:opacity-50",
           )}

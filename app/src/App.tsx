@@ -8,6 +8,7 @@ import { TitleBar } from "@/components/layout/TitleBar"
 import { Sidebar } from "@/components/layout/Sidebar"
 import { ContextPanel } from "@/components/layout/ContextPanel"
 import { ChatPanel } from "@/components/chat/ChatPanel"
+import { FusionArena } from "@/components/fusion/FusionArena"
 import { CommandMenu } from "@/components/common/CommandMenu"
 import {
   ResizableHandle,
@@ -61,6 +62,7 @@ const SEED: Project[] = [
 export default function App() {
   const sidebarOpen = useApp((s) => s.sidebarOpen)
   const contextOpen = useApp((s) => s.contextOpen)
+  const viewMode = useApp((s) => s.viewMode)
   const setProjects = useApp((s) => s.setProjects)
   const addProject = useApp((s) => s.addProject)
   const setReady = useApp((s) => s.setReady)
@@ -186,9 +188,9 @@ export default function App() {
                     className="h-full"
                   >
                     <ResizablePanel id="chat" defaultSize="70%" minSize="42%">
-                      <ChatPanel />
+                      {viewMode === "fusion" ? <FusionArena /> : <ChatPanel />}
                     </ResizablePanel>
-                    {contextOpen && (
+                    {contextOpen && viewMode !== "fusion" && (
                       <>
                         <ResizableHandle className="bg-border/40 transition-colors after:w-3 data-[resize-handle-state=hover]:bg-brass/50 data-[resize-handle-state=drag]:bg-brass/60" />
                         <ResizablePanel

@@ -17,6 +17,8 @@ interface AppState {
   theme: Theme
   sidebarOpen: boolean
   contextOpen: boolean
+  /** Modo do centro: chat Linear ou a Arena do Fusion. */
+  viewMode: "linear" | "fusion"
   ready: boolean
   /** Config por projeto vinda de .mycockpit/config.toml (Fase 1). */
   mycockpit: Record<string, ProjectConfig>
@@ -30,6 +32,7 @@ interface AppState {
   toggleTheme: () => void
   toggleSidebar: () => void
   toggleContext: () => void
+  setViewMode: (m: "linear" | "fusion") => void
   setReady: (v: boolean) => void
 }
 
@@ -43,6 +46,7 @@ export const useApp = create<AppState>((set) => ({
   theme: "dark",
   sidebarOpen: true,
   contextOpen: true,
+  viewMode: "linear",
   ready: false,
   mycockpit: {},
 
@@ -75,6 +79,7 @@ export const useApp = create<AppState>((set) => ({
       return { theme }
     }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  setViewMode: (viewMode) => set({ viewMode }),
   toggleContext: () => set((s) => ({ contextOpen: !s.contextOpen })),
   setReady: (ready) => set({ ready }),
 }))

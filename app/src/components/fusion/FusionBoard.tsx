@@ -11,18 +11,21 @@ function fmtCost(c: number | undefined, src?: string): string {
   return `${src === "estimated" ? "~" : ""}US$${c.toFixed(3)}`
 }
 
-function CandidateLane({
+export function CandidateLane({
   c,
   selected,
   suggested,
   deciding,
   onChoose,
+  fill,
 }: {
   c: FusionCandidate
   selected: boolean
   suggested: boolean
   deciding: boolean
   onChoose: () => void
+  /** Preenche a altura (modo Arena, colunas) em vez de max-h fixo (board). */
+  fill?: boolean
 }) {
   const text = candidateText(c)
   const running = c.status === "running" || c.status === "queued"
@@ -32,6 +35,7 @@ function CandidateLane({
     <div
       className={cn(
         "rounded-xl border bg-card transition-[box-shadow,border-color]",
+        fill && "flex h-full min-h-0 flex-col",
         selected && "border-brass/70 shadow-[0_0_0_2px_var(--brass-soft)]",
         failed && "opacity-60",
       )}
@@ -69,7 +73,12 @@ function CandidateLane({
           )}
         </div>
       </div>
-      <div className="max-h-56 overflow-auto px-3 py-2 text-[13px]">
+      <div
+        className={cn(
+          "overflow-auto px-3 py-2 text-[13px]",
+          fill ? "min-h-0 flex-1" : "max-h-56",
+        )}
+      >
         {text ? (
           <Markdown text={text} />
         ) : (
