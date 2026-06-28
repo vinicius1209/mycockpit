@@ -3,9 +3,11 @@
 // o `status` da lane é fonte ÚNICA (não derivada do controle do Linear).
 
 import { create } from "zustand"
-import type { AgentEvent } from "@/lib/agent"
+import { runAgent, type AgentEvent } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
-import { reduceItems, type ChatItem } from "@/store/chat"
+import { reduceItems, useChat, type ChatItem } from "@/store/chat"
+import { runJudge, serializeContext, runWithConcurrency } from "@/lib/fusion"
+import { saveFusionRun } from "@/lib/db"
 
 export type CandStatus =
   | "queued"
@@ -94,6 +96,15 @@ export function candLabel(agent: string, model: string | null): string {
   return model ? `${a} · ${model}` : a
 }
 
+/** Família do modelo/agent (claude/openai/…) — p/ manter o juiz FORA da liga. */
+function familyOf(s: string): string {
+  const l = s.toLowerCase()
+  if (/claude|opus|sonnet|haiku/.test(l)) return "claude"
+  if (/codex|gpt|o3/.test(l)) return "openai"
+  if (/opencode|glm/.test(l)) return "opencode"
+  return l
+}
+
 const emptyJudge = (): FusionJudge => ({
   status: "idle",
   suggestedId: null,
@@ -160,6 +171,19 @@ interface FusionState {
   finishCandidate: (convId: string, candId: string) => void
   /** Remove o Fusion da conversa (após promover ou abortar). */
   clear: (convId: string) => void
+  /** Dispara o Fusion: fan-out de N candidatos read-only em paralelo + juiz. */
+  launch: (
+    convId: string,
+    cfg: LeagueConfig,
+    prompt: string,
+    attachments: Attachment[],
+    projectPath: string,
+    permission: string,
+  ) => Promise<void>
+  /** Roda o juiz (dupla-passada) sobre os sobreviventes → fase deciding. */
+  runJudgePhase: (convId: string) => Promise<void>
+  /** Confirma o vencedor → promove pra conversa + arquiva + limpa o board. */
+  confirm: (convId: string, candId: string) => Promise<void>
 }
 
 function patchCand(
@@ -173,7 +197,7 @@ function patchCand(
   }
 }
 
-export const useFusion = create<FusionState>((set) => ({
+export const useFusion = create<FusionState>((set, get) => ({
   byConv: {},
 
   start: (convId, run) => set((s) => ({ byConv: { ...s.byConv, [convId]: run } })),
@@ -231,4 +255,132 @@ export const useFusion = create<FusionState>((set) => ({
       delete rest[convId]
       return { byConv: rest }
     }),
+
+  // T2.2 — fan-out de N candidatos read-only em paralelo (concorrência limitada=3).
+  launch: async (convId, cfg, prompt, attachments, projectPath, permission) => {
+    const prevConv = useChat.getState().byId[convId]
+    const preamble =
+      prevConv && prevConv.items.length ? serializeContext(prevConv.items) : null
+    const run = buildFusionRun(convId, cfg, prompt, preamble, attachments, projectPath)
+    set((s) => ({ byConv: { ...s.byConv, [convId]: run } }))
+    useChat.getState().beginFusion(convId, prompt, attachments)
+
+    const fullPrompt = preamble ? `${preamble}\n\n---\n\n${prompt}` : prompt
+    const perm = cfg.scope === "read-only" ? "fusion-ro" : permission
+
+    await runWithConcurrency(run.candidates, 3, async (c) => {
+      set((s) => {
+        const f = s.byConv[convId]
+        if (!f) return {}
+        return {
+          byConv: {
+            ...s.byConv,
+            [convId]: {
+              ...f,
+              candidates: f.candidates.map((x) =>
+                x.id === c.id
+                  ? { ...x, status: "running" as CandStatus, startedAt: Date.now() }
+                  : x,
+              ),
+            },
+          },
+        }
+      })
+      try {
+        await runAgent(
+          c.runId,
+          convId,
+          c.agent,
+          c.reqModel,
+          c.effort,
+          fullPrompt,
+          c.cwd,
+          null, // resume=null: candidato é sessão fresca
+          perm,
+          attachments,
+          (e) => get().handleCandidateEvent(convId, c.id, e),
+        )
+      } catch {
+        get().handleCandidateEvent(convId, c.id, {
+          type: "error",
+          message: "falha ao iniciar o candidato",
+        })
+      }
+      get().finishCandidate(convId, c.id)
+    })
+
+    await get().runJudgePhase(convId)
+  },
+
+  // T2.4/T2.5 — juiz dupla-passada + pré-seleção CONDICIONAL (concordou + neutro).
+  runJudgePhase: async (convId) => {
+    const f = get().byConv[convId]
+    if (!f) return
+    set((s) => {
+      const cur = s.byConv[convId]
+      if (!cur) return {}
+      return {
+        byConv: {
+          ...s.byConv,
+          [convId]: {
+            ...cur,
+            phase: "judging",
+            judge: { ...cur.judge, status: "running" },
+          },
+        },
+      }
+    })
+    const cwd = f.candidates[0]?.cwd ?? ""
+    const cands = get().byConv[convId]?.candidates ?? []
+    const { judge, cost } = await runJudge(f.prompt, f.judgeModel, cwd, cands)
+    set((s) => {
+      const cur = s.byConv[convId]
+      if (!cur) return {}
+      const jf = familyOf(cur.judgeModel)
+      const neutral = !cur.candidates.some(
+        (c) =>
+          familyOf(c.agent) === jf ||
+          (c.reqModel != null && familyOf(c.reqModel) === jf),
+      )
+      const chosenId =
+        judge.status === "single"
+          ? judge.suggestedId
+          : judge.agreement && neutral
+            ? judge.suggestedId
+            : null
+      return {
+        byConv: {
+          ...s.byConv,
+          [convId]: {
+            ...cur,
+            phase: "deciding",
+            judge,
+            chosenId,
+            costTotal: cur.costTotal + cost,
+          },
+        },
+      }
+    })
+  },
+
+  // T2.8 — confirma o vencedor → promove pra conversa + arquiva + limpa.
+  confirm: async (convId, candId) => {
+    const f = get().byConv[convId]
+    if (!f) return
+    const winner = f.candidates.find((c) => c.id === candId)
+    if (!winner) return
+    set((s) => {
+      const cur = s.byConv[convId]
+      if (!cur) return {}
+      return {
+        byConv: {
+          ...s.byConv,
+          [convId]: { ...cur, chosenId: candId, phase: "promoting" },
+        },
+      }
+    })
+    await useChat.getState().promoteFusion(convId, winner)
+    void saveFusionRun(f.id, convId, { ...f, chosenId: candId })
+    get().clear(convId)
+  },
 }))

@@ -2,6 +2,7 @@ import { create } from "zustand"
 import type { AgentEvent } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { wipeAttachments } from "@/lib/attachments"
+import type { FusionCandidate } from "@/store/fusion"
 import {
   listConversations as dbList,
   loadConversation as dbLoad,
@@ -91,6 +92,10 @@ interface ChatState {
   setSuggestions: (convId: string, s: string[]) => void
   setSuggesting: (convId: string, v: boolean) => void
   queuePrompt: (t: string | null) => void
+  /** Fusion: add o balão do usuário à conversa + marca running (turno visível). */
+  beginFusion: (convId: string, text: string, attachments: Attachment[]) => void
+  /** Fusion: promove o vencedor — anexa os itens dele + assume sessão/agent. */
+  promoteFusion: (convId: string, winner: FusionCandidate) => Promise<void>
 }
 
 function uid(): string {
@@ -431,6 +436,54 @@ export const useChat = create<ChatState>((set, get) => {
         streamingTextId: null,
         runId: null,
       }),
+
+    beginFusion: (convId, text, attachments) =>
+      set((s) => {
+        const cur = s.byId[convId] ?? emptyConv(s.projectId ?? "")
+        const items = [
+          ...cur.items,
+          {
+            kind: "user" as const,
+            id: uid(),
+            text,
+            attachments: attachments.length ? attachments : undefined,
+          },
+        ]
+        const conversations = s.conversations.map((c) =>
+          c.id === convId && !c.title ? { ...c, title: deriveTitle(items) } : c,
+        )
+        return {
+          conversations,
+          byId: {
+            ...s.byId,
+            [convId]: { ...cur, items, running: true, finalizing: false },
+          },
+        }
+      }),
+
+    promoteFusion: async (convId, winner) => {
+      set((s) => {
+        const cur = s.byId[convId]
+        if (!cur) return {}
+        return {
+          byId: {
+            ...s.byId,
+            [convId]: {
+              ...cur,
+              items: [...cur.items, ...winner.items],
+              sessionId: winner.sessionId,
+              agent: winner.agent,
+              reqModel: winner.reqModel,
+              effort: winner.effort,
+              model: winner.model,
+              running: false,
+              finalizing: false,
+            },
+          },
+        }
+      })
+      await get().persist(convId)
+    },
   }
 })
 

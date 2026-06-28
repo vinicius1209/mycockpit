@@ -200,6 +200,35 @@ export async function deleteConversation(id: string): Promise<void> {
   await db.execute("DELETE FROM conversations WHERE id = $1", [id])
 }
 
+/** Arquiva uma disputa de Fusion (auditável pós-restart; alimenta "ver disputa"). */
+export async function saveFusionRun(
+  id: string,
+  convId: string,
+  data: unknown,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute(
+    "INSERT INTO fusion_runs (id, conv_id, data, created_at) VALUES ($1, $2, $3, $4) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+    [id, convId, JSON.stringify(data), Date.now()],
+  )
+}
+
+/** Disputas arquivadas de uma conversa (mais antiga primeiro). */
+export async function loadFusionRuns(convId: string): Promise<unknown[]> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    const rows = await db.select<{ data: string }[]>(
+      "SELECT data FROM fusion_runs WHERE conv_id = $1 ORDER BY created_at ASC",
+      [convId],
+    )
+    return rows.map((r) => JSON.parse(r.data))
+  } catch {
+    return []
+  }
+}
+
 /** Refs de TODAS as conversas (id + updatedAt) p/ o GC de anexos. Retorna `null`
  *  em qualquer falha/não-Tauri (F1: o boot NÃO chama o GC com null — só com `[]`
  *  o GC pode rodar o orphan-sweep). */
