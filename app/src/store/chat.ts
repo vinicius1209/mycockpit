@@ -114,8 +114,13 @@ interface ChatState {
   setDraft: (convId: string, text: string) => void
   /** Fusion: add o balão do usuário à conversa + marca running (turno visível). */
   beginFusion: (convId: string, text: string, attachments: Attachment[]) => void
-  /** Fusion: promove o vencedor — anexa os itens dele + assume sessão/agent. */
-  promoteFusion: (convId: string, winner: FusionCandidate) => Promise<void>
+  /** Fusion: promove o vencedor — anexa os itens dele + assume sessão/agent.
+   *  `notice` (opcional) marca a promoção no transcript (rastro da disputa). */
+  promoteFusion: (
+    convId: string,
+    winner: FusionCandidate,
+    notice?: string,
+  ) => Promise<void>
 }
 
 function uid(): string {
@@ -553,16 +558,20 @@ export const useChat = create<ChatState>((set, get) => {
         }
       }),
 
-    promoteFusion: async (convId, winner) => {
+    promoteFusion: async (convId, winner, notice) => {
       set((s) => {
         const cur = s.byId[convId]
         if (!cur) return {}
+        // marca a vitória da disputa no transcript (senão vira turno comum sem rastro)
+        const lead = notice
+          ? [{ kind: "notice" as const, id: uid(), message: notice }]
+          : []
         return {
           byId: {
             ...s.byId,
             [convId]: {
               ...cur,
-              items: [...cur.items, ...winner.items],
+              items: [...cur.items, ...lead, ...winner.items],
               sessionId: winner.sessionId,
               agent: winner.agent,
               reqModel: winner.reqModel,

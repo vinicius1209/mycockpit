@@ -189,11 +189,13 @@ export function AgentSelect({
   onValueChange,
   disabled,
   options = DESTINATIONS,
+  title,
 }: {
   value: string
   onValueChange: (v: string) => void
   disabled?: boolean
   options?: Destination[]
+  title?: string
 }) {
   const dest =
     options.find((d) => d.id === value) ??
@@ -201,7 +203,10 @@ export function AgentSelect({
     DESTINATIONS[0]
   return (
     <Select value={value} onValueChange={onValueChange} disabled={disabled}>
-      <SelectTrigger className="h-8 w-fit gap-2 rounded-full border bg-secondary/50 pr-2 pl-2.5 text-[13px] text-foreground shadow-none focus-visible:ring-0 data-[size=default]:h-8">
+      <SelectTrigger
+        title={title}
+        className="h-8 w-fit gap-2 rounded-full border bg-secondary/50 pr-2 pl-2.5 text-[13px] text-foreground shadow-none focus-visible:ring-0 data-[size=default]:h-8"
+      >
         <span
           className={cn(
             "size-1.5 rounded-full",
@@ -272,18 +277,23 @@ export function ComposerControls({
   onSubmit: () => void
   canSend: boolean
 }) {
+  const lockTitle = locked
+    ? "Agent e modelo ficam fixos a partir do 1º envio desta conversa"
+    : undefined
   return (
     <>
       <AgentSelect
         value={effectiveDest}
         onValueChange={onDestChange}
         disabled={locked}
+        title={lockTitle}
       />
 
       <PillSelect
         value={effectiveModel}
         onValueChange={onModelChange}
         disabled={locked}
+        title={lockTitle}
         options={agentModels(effectiveDest)}
         triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
         itemClassName="text-[13px]"
@@ -294,6 +304,7 @@ export function ComposerControls({
         value={effectiveEffort}
         onValueChange={onEffortChange}
         disabled={locked}
+        title={lockTitle}
         options={agentEfforts(effectiveDest)}
         triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
         itemClassName="text-[13px]"

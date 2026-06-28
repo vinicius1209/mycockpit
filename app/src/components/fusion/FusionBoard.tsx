@@ -215,6 +215,12 @@ export function FusionVerdict({
   const labelOf = (id: string | null) =>
     fusion.candidates.find((c) => c.id === id)?.label
   const selectedLabel = labelOf(selected)
+  // 2º lugar que o juiz JÁ calcula (sinal comparativo de custo zero — sem fundir).
+  const runnerupLabel =
+    fusion.judge.runnerupId &&
+    fusion.judge.runnerupId !== fusion.judge.suggestedId
+      ? labelOf(fusion.judge.runnerupId)
+      : undefined
 
   return (
     <div className="flex flex-col gap-2.5 rounded-xl border bg-secondary/30 p-3">
@@ -229,6 +235,11 @@ export function FusionVerdict({
             <span className="font-medium text-foreground/85">
               Juiz sugere {labelOf(fusion.judge.suggestedId)}.
             </span>{" "}
+            {runnerupLabel && (
+              <span className="text-muted-foreground/70">
+                2º: {runnerupLabel}.{" "}
+              </span>
+            )}
             {fusion.judge.agreement ? "✓ concordou nas 2 ordens. " : ""}
             {fusion.judge.rationale}
           </p>

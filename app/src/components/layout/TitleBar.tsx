@@ -9,9 +9,24 @@ import { agentLabel } from "@/lib/agent"
 import { cn } from "@/lib/utils"
 
 const MODES = [
-  { id: "linear", label: "Linear", available: true },
-  { id: "fusion", label: "Fusion", available: true },
-  { id: "sdd", label: "SDD", available: false },
+  {
+    id: "linear",
+    label: "Linear",
+    available: true,
+    desc: "Fluxo simples com um agente principal",
+  },
+  {
+    id: "fusion",
+    label: "Fusion",
+    available: true,
+    desc: "Vários agents respondem, um juiz compara e você confirma o vencedor",
+  },
+  {
+    id: "sdd",
+    label: "SDD",
+    available: false,
+    desc: "Fluxo por especificações e etapas — em breve",
+  },
 ] as const
 
 /** Seletor de modo de trabalho. Linear ativo; Fusion/SDD chegam depois. */
@@ -31,7 +46,7 @@ function ModeSwitcher() {
               setViewMode(m.id)
             }
           }}
-          title={m.available ? undefined : "Em breve"}
+          title={m.desc}
           className={cn(
             "flex items-center gap-1 rounded-full px-3 py-1 text-[12px] transition-colors",
             m.id === viewMode

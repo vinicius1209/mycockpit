@@ -30,6 +30,7 @@ export function PillSelect({
   itemClassName,
   contentClassName,
   placeholder,
+  title,
   "aria-label": ariaLabel,
 }: {
   value: string
@@ -41,12 +42,14 @@ export function PillSelect({
   itemClassName?: string
   contentClassName?: string
   placeholder?: string
+  title?: string
   "aria-label"?: string
 }) {
   return (
     <Select value={value} onValueChange={onValueChange} disabled={disabled}>
       <SelectTrigger
         aria-label={ariaLabel}
+        title={title}
         className={cn(PILL_TRIGGER, triggerClassName)}
       >
         <SelectValue placeholder={placeholder} />

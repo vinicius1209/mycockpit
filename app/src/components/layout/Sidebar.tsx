@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { StatusDot } from "@/components/common/StatusDot"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
+import { useFusion } from "@/store/fusion"
 import { cn, shortPath } from "@/lib/utils"
 import type { AgentStatus, Project } from "@/lib/types"
 
@@ -69,6 +70,18 @@ function useRunningConvIds(): Set<string> {
   return new Set(key ? key.split(",") : [])
 }
 
+/** Ids das conversas com disputa de Fusion esperando DECISÃO (string estável). */
+function useDecidingConvIds(): Set<string> {
+  const key = useFusion((s) =>
+    Object.entries(s.byConv)
+      .filter(([, f]) => f.phase === "deciding")
+      .map(([id]) => id)
+      .sort()
+      .join(","),
+  )
+  return new Set(key ? key.split(",") : [])
+}
+
 /** Lista de conversas (tarefas) do projeto ativo — accordion sob o projeto. */
 function ConversationList({ projectId }: { projectId: string }) {
   const conversations = useChat((s) => s.conversations)
@@ -77,12 +90,14 @@ function ConversationList({ projectId }: { projectId: string }) {
   const switchConversation = useChat((s) => s.switchConversation)
   const removeConversation = useChat((s) => s.removeConversation)
   const running = useRunningConvIds()
+  const deciding = useDecidingConvIds()
 
   return (
     <div className="animate-reveal-down mt-0.5 mb-1 ml-[18px] flex flex-col gap-px border-l border-border/60 pl-2">
       {conversations.map((c) => {
         const isActive = c.id === activeId
         const isRunning = running.has(c.id)
+        const isDeciding = deciding.has(c.id)
         return (
           <div
             key={c.id}
@@ -102,12 +117,18 @@ function ConversationList({ projectId }: { projectId: string }) {
             >
               {/* slot fixo à esquerda → spinner quando roda, sem deslocar o título */}
               <span className="grid size-3 shrink-0 place-items-center">
-                {isRunning && (
+                {isRunning ? (
                   <Loader2
                     className="size-3 animate-spin text-brass"
                     aria-label="rodando"
                   />
-                )}
+                ) : isDeciding ? (
+                  <span
+                    className="size-1.5 rounded-full bg-brass"
+                    title="Disputa esperando sua decisão"
+                    aria-label="decisão pendente"
+                  />
+                ) : null}
               </span>
               <span className="truncate">{c.title ?? "Nova conversa"}</span>
             </button>

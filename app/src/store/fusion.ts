@@ -358,8 +358,16 @@ export const useFusion = create<FusionState>((set, get) => {
     if (!f) return
     const winner = f.candidates.find((c) => c.id === candId)
     if (!winner) return
+    // rastro da disputa no Linear: quem ganhou e o que o juiz havia sugerido.
+    const suggested = f.candidates.find((c) => c.id === f.judge.suggestedId)
+    const notice =
+      suggested && suggested.id === winner.id
+        ? `Vencedor da disputa · ${winner.label} (sugerido pelo juiz)`
+        : suggested
+          ? `Vencedor da disputa · ${winner.label} (juiz sugeriu ${suggested.label})`
+          : `Vencedor da disputa · ${winner.label}`
     patchConv(convId, { chosenId: candId, phase: "promoting" })
-    await useChat.getState().promoteFusion(convId, winner)
+    await useChat.getState().promoteFusion(convId, winner, notice)
     // arquiva (pending=0): sai da fila de restauração, fica só pra "ver disputa".
     void saveFusionRun(f.id, convId, { ...f, chosenId: candId, phase: "done" }, false)
     get().clear(convId)

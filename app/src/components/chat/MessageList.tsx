@@ -301,6 +301,18 @@ export function MessageList({
   startedAt: number | null
   agent: string
 }) {
+  // Custo acumulado da sessão (soma dos turnos com result) — consciência de gasto.
+  let sessionCost = 0
+  let sessionEstimated = false
+  let resultCount = 0
+  for (const it of items) {
+    if (it.kind === "result") {
+      resultCount++
+      sessionCost += it.costUsd ?? 0
+      if (it.costSource === "estimated" || it.costSource === "unknown")
+        sessionEstimated = true
+    }
+  }
   return (
     <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-8 py-8">
       {items.map((it) => (
@@ -318,6 +330,15 @@ export function MessageList({
               <Elapsed since={startedAt} />
             </span>
           )}
+        </div>
+      )}
+
+      {resultCount >= 2 && sessionCost > 0 && (
+        <div className="pt-1 text-[11px] text-muted-foreground/60">
+          <span className="font-mono tabular-nums">
+            sessão ·{" "}
+            {fmtCost(sessionCost, sessionEstimated ? "estimated" : "reported")}
+          </span>
         </div>
       )}
     </div>
