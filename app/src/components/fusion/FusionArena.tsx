@@ -213,11 +213,13 @@ export function FusionArena() {
       </div>
 
       {deciding && (
-        <div className="shrink-0 border-t px-6 py-3">
+        <div className="flex shrink-0 items-center gap-3 border-t px-6 py-3">
           {fusion.judge.status === "unavailable" ? (
-            <p className="text-[12.5px] text-st-error">{fusion.judge.rationale}</p>
+            <p className="flex-1 text-[12.5px] text-st-error">
+              {fusion.judge.rationale}
+            </p>
           ) : (
-            <div className="flex items-center gap-3">
+            <>
               <Sparkles className="size-4 shrink-0 text-brass" />
               <p className="flex-1 text-[12.5px] text-muted-foreground">
                 <span className="text-foreground/80">
@@ -226,10 +228,18 @@ export function FusionArena() {
                 {fusion.judge.agreement ? "✓ concordou nas 2 ordens. " : ""}
                 {fusion.judge.rationale}
               </p>
-              <Button disabled={!selected} onClick={() => void decide()}>
-                Confirmar escolha
-              </Button>
-            </div>
+            </>
+          )}
+          <button
+            onClick={() => activeId && useFusion.getState().discard(activeId)}
+            className="text-[12px] text-muted-foreground hover:text-foreground"
+          >
+            descartar
+          </button>
+          {fusion.judge.status !== "unavailable" && (
+            <Button disabled={!selected} onClick={() => void decide()}>
+              Confirmar escolha
+            </Button>
           )}
         </div>
       )}

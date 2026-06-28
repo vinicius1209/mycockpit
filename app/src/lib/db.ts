@@ -2,6 +2,7 @@ import Database from "@tauri-apps/plugin-sql"
 import type { Project } from "@/lib/types"
 import type { ChatItem } from "@/store/chat"
 import type { ConvRef } from "@/lib/attachments"
+import type { FusionRun } from "@/store/fusion"
 
 const DB_URL = "sqlite:mycockpit.db" // DEVE bater com add_migrations no lib.rs
 
@@ -205,12 +206,13 @@ export async function saveFusionRun(
   id: string,
   convId: string,
   data: unknown,
+  pending: boolean,
 ): Promise<void> {
   const db = await getDb()
   if (!db) return
   await db.execute(
-    "INSERT INTO fusion_runs (id, conv_id, data, created_at) VALUES ($1, $2, $3, $4) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
-    [id, convId, JSON.stringify(data), Date.now()],
+    "INSERT INTO fusion_runs (id, conv_id, data, created_at, pending) VALUES ($1, $2, $3, $4, $5) ON CONFLICT(id) DO UPDATE SET data = excluded.data, pending = excluded.pending",
+    [id, convId, JSON.stringify(data), Date.now(), pending ? 1 : 0],
   )
 }
 
@@ -227,6 +229,34 @@ export async function loadFusionRuns(convId: string): Promise<unknown[]> {
   } catch {
     return []
   }
+}
+
+/** A disputa PENDENTE (esperando decisão) de uma conversa, se houver — caso 2. */
+export async function loadPendingFusion(
+  convId: string,
+): Promise<FusionRun | null> {
+  const db = await getDb()
+  if (!db) return null
+  try {
+    const rows = await db.select<{ data: string }[]>(
+      "SELECT data FROM fusion_runs WHERE conv_id = $1 AND pending = 1 ORDER BY created_at DESC LIMIT 1",
+      [convId],
+    )
+    if (!rows.length) return null
+    return JSON.parse(rows[0].data) as FusionRun
+  } catch {
+    return null
+  }
+}
+
+/** Marca as disputas pendentes da conversa como resolvidas (descartar). */
+export async function clearPendingFusion(convId: string): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute(
+    "UPDATE fusion_runs SET pending = 0 WHERE conv_id = $1 AND pending = 1",
+    [convId],
+  )
 }
 
 /** Refs de TODAS as conversas (id + updatedAt) p/ o GC de anexos. Retorna `null`

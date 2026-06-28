@@ -113,6 +113,13 @@ export function ChatPanel() {
     })()
   }, [])
 
+  // Caso 2 — restaura uma disputa de Fusion PENDENTE (esperando decisão) ao abrir
+  // a conversa, pra não perder o que já rodou + foi pago.
+  useEffect(() => {
+    if (!activeId || !isTauri()) return
+    void useFusion.getState().restorePending(activeId)
+  }, [activeId])
+
   // destinationId = o agent escolhido no seletor (v0.2-α: o seam que descartava
   // o destino agora é threadado até o runAgent). Default 'claude-code'.
   async function handleSend(

@@ -7,7 +7,7 @@ import { runAgent, type AgentEvent } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { reduceItems, useChat, type ChatItem } from "@/store/chat"
 import { runJudge, serializeContext, runWithConcurrency } from "@/lib/fusion"
-import { saveFusionRun } from "@/lib/db"
+import { saveFusionRun, loadPendingFusion, clearPendingFusion } from "@/lib/db"
 
 export type CandStatus =
   | "queued"
@@ -184,6 +184,10 @@ interface FusionState {
   runJudgePhase: (convId: string) => Promise<void>
   /** Confirma o vencedor → promove pra conversa + arquiva + limpa o board. */
   confirm: (convId: string, candId: string) => Promise<void>
+  /** Restaura uma disputa PENDENTE do disco (caso 2) ao abrir a conversa. */
+  restorePending: (convId: string) => Promise<void>
+  /** Descarta uma disputa pendente — limpa o board + marca resolvida no disco. */
+  discard: (convId: string) => void
 }
 
 function patchCand(
@@ -361,6 +365,12 @@ export const useFusion = create<FusionState>((set, get) => ({
         },
       }
     })
+    // Caso 2: persiste a disputa pendente (sobrevive ao restart até você decidir).
+    const pending = get().byConv[convId]
+    if (pending && pending.phase === "deciding") {
+      void saveFusionRun(pending.id, convId, pending, true)
+      void useChat.getState().persist(convId) // garante o prompt do usuário no DB
+    }
   },
 
   // T2.8 — confirma o vencedor → promove pra conversa + arquiva + limpa.
@@ -380,7 +390,23 @@ export const useFusion = create<FusionState>((set, get) => ({
       }
     })
     await useChat.getState().promoteFusion(convId, winner)
-    void saveFusionRun(f.id, convId, { ...f, chosenId: candId })
+    // arquiva (pending=0): sai da fila de restauração, fica só pra "ver disputa".
+    void saveFusionRun(f.id, convId, { ...f, chosenId: candId, phase: "done" }, false)
     get().clear(convId)
+  },
+
+  restorePending: async (convId) => {
+    if (get().byConv[convId]) return
+    const run = await loadPendingFusion(convId)
+    if (run && run.phase === "deciding") {
+      set((s) =>
+        s.byConv[convId] ? {} : { byConv: { ...s.byConv, [convId]: run } },
+      )
+    }
+  },
+
+  discard: (convId) => {
+    get().clear(convId)
+    void clearPendingFusion(convId)
   },
 }))

@@ -128,23 +128,34 @@ export function FusionBoard({ convId }: { convId: string }) {
         />
       ))}
 
-      {deciding && !unavailable && (
+      {deciding && (
         <div className="flex items-center gap-3 pt-1">
-          <p className="flex-1 text-[12px] text-muted-foreground">
-            {fusion.judge.agreement ? "✓ juiz concordou nas 2 ordens. " : ""}
-            {fusion.judge.rationale}
-          </p>
-          <Button
-            size="sm"
-            disabled={!selected}
-            onClick={() => selected && void confirm(convId, selected)}
+          {unavailable ? (
+            <p className="flex-1 text-[12px] text-st-error">
+              {fusion.judge.rationale}
+            </p>
+          ) : (
+            <p className="flex-1 text-[12px] text-muted-foreground">
+              {fusion.judge.agreement ? "✓ juiz concordou nas 2 ordens. " : ""}
+              {fusion.judge.rationale}
+            </p>
+          )}
+          <button
+            onClick={() => useFusion.getState().discard(convId)}
+            className="text-[12px] text-muted-foreground hover:text-foreground"
           >
-            Confirmar escolha
-          </Button>
+            descartar
+          </button>
+          {!unavailable && (
+            <Button
+              size="sm"
+              disabled={!selected}
+              onClick={() => selected && void confirm(convId, selected)}
+            >
+              Confirmar escolha
+            </Button>
+          )}
         </div>
-      )}
-      {deciding && unavailable && (
-        <p className="pt-1 text-[12px] text-st-error">{fusion.judge.rationale}</p>
       )}
     </div>
   )

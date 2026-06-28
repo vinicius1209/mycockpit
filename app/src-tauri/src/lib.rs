@@ -128,6 +128,14 @@ pub fn run() {
             sql: "CREATE TABLE IF NOT EXISTS fusion_runs (id TEXT PRIMARY KEY, conv_id TEXT NOT NULL, data TEXT NOT NULL, created_at INTEGER NOT NULL);",
             kind: MigrationKind::Up,
         },
+        // v15 — `pending`=1 marca uma disputa esperando DECISÃO (caso 2): sobrevive
+        // ao restart até o usuário escolher o vencedor. Confirmar/descartar zera.
+        Migration {
+            version: 15,
+            description: "fusion_runs_pending",
+            sql: "ALTER TABLE fusion_runs ADD COLUMN pending INTEGER NOT NULL DEFAULT 0;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
