@@ -310,6 +310,49 @@ pub fn cancel_agent(run_id: String, registry: tauri::State<'_, RunRegistry>) {
     }
 }
 
+/// Resultado do juiz do Fusion: o texto da decisão (JSON do juiz) + custo Reported.
+#[derive(Serialize)]
+pub struct JudgeResult {
+    pub text: String,
+    pub cost_usd: Option<f64>,
+}
+
+/// Juiz do Fusion: roda um modelo forte SEM tools e SEM MCP, com `--output-format
+/// json` (→ captura `total_cost_usd` Reported). Retorna o texto (a decisão do juiz,
+/// que o front parseia) + o custo. (Cancelável fica p/ a robustez, Sprint 4.)
+#[tauri::command]
+pub async fn judge(model: String, cwd: String, prompt: String) -> Result<JudgeResult, String> {
+    let out = Command::new("claude")
+        .arg("-p")
+        .arg(&prompt)
+        .arg("--model")
+        .arg(&model)
+        .arg("--tools")
+        .arg("")
+        .arg("--output-format")
+        .arg("json")
+        .arg("--no-session-persistence")
+        .arg("--strict-mcp-config")
+        .arg("--mcp-config")
+        .arg("{\"mcpServers\":{}}")
+        .current_dir(&cwd)
+        .stdin(Stdio::null())
+        .output()
+        .await
+        .map_err(|e| format!("falha ao rodar o juiz: {e}"))?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let env: serde_json::Value = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("juiz: envelope JSON inválido: {e}"))?;
+    Ok(JudgeResult {
+        text: env
+            .get("result")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        cost_usd: env.get("total_cost_usd").and_then(|x| x.as_f64()),
+    })
+}
+
 /// Helper one-shot (Sprint 3): roda um modelo barato (ex. `haiku`) SEM tools,
 /// sem persistir sessão, p/ meta-tarefas (sugestões/títulos). Retorna o texto puro.
 /// NÃO usa `--bare`: esse modo "minimal" pula o carregamento das credenciais e a

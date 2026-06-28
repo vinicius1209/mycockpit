@@ -121,6 +121,13 @@ pub fn run() {
             sql: "UPDATE conversations SET agent = 'codex' WHERE agent = 'claude-code' AND substr(session_id, 15, 1) = '7';",
             kind: MigrationKind::Up,
         },
+        // v0.3 Fusion — arquiva cada disputa (auditável pós-restart; alimenta "ver disputa").
+        Migration {
+            version: 14,
+            description: "fusion_runs",
+            sql: "CREATE TABLE IF NOT EXISTS fusion_runs (id TEXT PRIMARY KEY, conv_id TEXT NOT NULL, data TEXT NOT NULL, created_at INTEGER NOT NULL);",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -155,6 +162,7 @@ pub fn run() {
             agent::run_agent,
             agent::cancel_agent,
             agent::suggest,
+            agent::judge,
             context::read_project_context,
             mycockpit::read_mycockpit_config,
             mycockpit::write_mycockpit_config,

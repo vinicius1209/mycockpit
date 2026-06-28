@@ -100,6 +100,15 @@ impl AgentAdapter for ClaudeAdapter {
                 cmd.arg("--disallowedTools")
                     .arg("Bash,Edit,Write,MultiEdit,NotebookEdit");
             }
+            // Fusion read-only: bloqueia edição E desliga TODO MCP (candidatos
+            // especulativos não podem ter efeito externo — email/Notion/infra).
+            "fusion-ro" => {
+                cmd.arg("--disallowedTools")
+                    .arg("Bash,Edit,Write,MultiEdit,NotebookEdit")
+                    .arg("--strict-mcp-config")
+                    .arg("--mcp-config")
+                    .arg("{\"mcpServers\":{}}");
+            }
             "liberado" => {
                 cmd.arg("--permission-mode").arg("bypassPermissions");
             }
@@ -290,7 +299,7 @@ impl AgentAdapter for CodexAdapter {
             .current_dir(&req.cwd);
         // permissão (3 níveis) → sandbox do Codex (exec não tem --ask-for-approval)
         let sandbox = match req.permission.as_str() {
-            "leitura" => "read-only",
+            "leitura" | "fusion-ro" => "read-only",
             "liberado" => "danger-full-access",
             _ => "workspace-write",
         };
