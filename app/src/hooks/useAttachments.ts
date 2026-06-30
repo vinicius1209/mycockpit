@@ -89,7 +89,7 @@ export function useAttachments({
     }
   }
 
-  // Anexo real (B3 — inspirado no ai-04): file picker do Tauri → insere @path.
+  // Anexo real (B3, inspirado no ai-04): file picker do Tauri → insere @path.
   async function attach() {
     if (!isTauri()) return
     const sel = await open({ multiple: true, title: "Anexar arquivo(s)" })

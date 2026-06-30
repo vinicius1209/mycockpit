@@ -46,12 +46,12 @@ export type ChatItem =
   | { kind: "cancelled"; id: string }
   | { kind: "notice"; id: string; message: string }
 
-/** Estado de UMA conversa — vive em byId[convId]; runs em background escrevem aqui. */
+/** Estado de UMA conversa, vive em byId[convId]; runs em background escrevem aqui. */
 export interface ConvState {
   projectId: string
-  /** Agent que roda esta conversa (claude-code|codex|…) — trava no 1º run. */
+  /** Agent que roda esta conversa (claude-code|codex|…), trava no 1º run. */
   agent: string
-  /** Modelo + effort escolhidos (null = default do CLI) — travam no 1º run. */
+  /** Modelo + effort escolhidos (null = default do CLI), travam no 1º run. */
   reqModel: string | null
   effort: string | null
   items: ChatItem[]
@@ -60,13 +60,13 @@ export interface ConvState {
   /** Id da bolha de texto em streaming (H2). null = nenhuma aberta. */
   streamingTextId: string | null
   running: boolean
-  /** Turno terminou (Result) mas o processo do CLI ainda finaliza — ex. flush da
+  /** Turno terminou (Result) mas o processo do CLI ainda finaliza, ex. flush da
    *  sessão do Codex. Bloqueia o próximo send p/ o resume não cair em "session
    *  not found" (corrida: liberar no Result dispara o resume antes do flush). */
   finalizing: boolean
   /** runId do run em andamento (p/ cancelar). */
   runId: string | null
-  /** Timestamp (ms) de início do run atual — p/ cronômetro ao vivo. */
+  /** Timestamp (ms) de início do run atual, p/ cronômetro ao vivo. */
   startedAt: number | null
   /** Sugestões dinâmicas pós-turno (Sprint 3). */
   suggestions: string[]
@@ -77,9 +77,9 @@ interface ChatState {
   projectId: string | null
   activeId: string | null
   conversations: ConversationMeta[]
-  /** Estado de cada conversa carregada (Sprint 4 — runs em background). */
+  /** Estado de cada conversa carregada (Sprint 4, runs em background). */
   byId: Record<string, ConvState>
-  /** Rascunho não-enviado por conversa — sobrevive a trocar de modo/conversa. */
+  /** Rascunho não-enviado por conversa, sobrevive a trocar de modo/conversa. */
   drafts: Record<string, string>
   /** Prompt enfileirado por outra UI (ex.: ⌘K) p/ o ChatPanel disparar. */
   queuedPrompt: string | null
@@ -114,7 +114,7 @@ interface ChatState {
   setDraft: (convId: string, text: string) => void
   /** Fusion: add o balão do usuário à conversa + marca running (turno visível). */
   beginFusion: (convId: string, text: string, attachments: Attachment[]) => void
-  /** Fusion: promove o vencedor — anexa os itens dele + assume sessão/agent.
+  /** Fusion: promove o vencedor, anexa os itens dele + assume sessão/agent.
    *  `notice` (opcional) marca a promoção no transcript (rastro da disputa). */
   promoteFusion: (
     convId: string,
@@ -158,14 +158,14 @@ function emptyConv(projectId: string): ConvState {
 
 const EMPTY_CONV = emptyConv("")
 
-/** Campos de CONTEÚDO de uma conversa — o que o reducer de itens lê/escreve.
+/** Campos de CONTEÚDO de uma conversa, o que o reducer de itens lê/escreve.
  *  Usado pelo Linear (via reduceEvent) e por cada lane do Fusion. */
 export type ItemReducible = Pick<
   ConvState,
   "items" | "streamingTextId" | "model" | "sessionId" | "startedAt"
 >
 
-/** Núcleo PURO de itens (T1.1). NÃO mexe em running/finalizing/runId/startedAt —
+/** Núcleo PURO de itens (T1.1). NÃO mexe em running/finalizing/runId/startedAt,
  *  o controle fica no controlFlow (Linear) ou no status da lane (Fusion). */
 export function reduceItems(
   c: ItemReducible,
@@ -174,11 +174,11 @@ export function reduceItems(
   switch (e.type) {
     case "session":
       return { sessionId: e.session_id, model: e.model }
-    // H2 — texto completo do assistant: se já veio por deltas, descarta (dedup).
+    // H2, texto completo do assistant: se já veio por deltas, descarta (dedup).
     case "text":
       if (c.streamingTextId) return { streamingTextId: null }
       return { items: [...c.items, { kind: "text", id: uid(), text: e.text }] }
-    // H2 — delta em streaming: acumula na bolha corrente (cria se não houver).
+    // H2, delta em streaming: acumula na bolha corrente (cria se não houver).
     case "text_delta": {
       if (c.streamingTextId) {
         return {
@@ -226,7 +226,7 @@ export function reduceItems(
         ],
         streamingTextId: null,
       }
-    // aviso não-fatal (anexo expirado/não-suportado) — só adiciona a linha.
+    // aviso não-fatal (anexo expirado/não-suportado), só adiciona a linha.
     case "notice":
       return {
         items: [...c.items, { kind: "notice", id: uid(), message: e.message }],
@@ -249,7 +249,7 @@ export function reduceItems(
 }
 
 /** Controle do turno Linear (running/finalizing/runId/startedAt). Só o Linear usa
- *  — a lane do Fusion deriva o status dela explicitamente (handleCandidateEvent). */
+ * , a lane do Fusion deriva o status dela explicitamente (handleCandidateEvent). */
 function controlFlow(_c: ConvState, e: AgentEvent): Partial<ConvState> {
   switch (e.type) {
     case "result":
@@ -272,7 +272,7 @@ function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
 
 export const useChat = create<ChatState>((set, get) => {
   // Sugestões: estado de orquestração por convId (espelha byId). Vive no closure
-  // do creator — a store é singleton, então a sugestão sobrevive a remount do
+  // do creator, a store é singleton, então a sugestão sobrevive a remount do
   // painel. suggestTimer = debounce; suggestGen = token de invalidação.
   const suggestTimer: Record<string, ReturnType<typeof setTimeout>> = {}
   const suggestGen: Record<string, number> = {}
@@ -471,7 +471,7 @@ export const useChat = create<ChatState>((set, get) => {
         c.effort,
       )
       const now = Date.now()
-      // atualiza no lugar — sem reordenar (ordem de criação é estável)
+      // atualiza no lugar, sem reordenar (ordem de criação é estável)
       set((st) => ({
         conversations: st.conversations.map((cv) =>
           cv.id === convId ? { ...cv, title, updatedAt: now } : cv,

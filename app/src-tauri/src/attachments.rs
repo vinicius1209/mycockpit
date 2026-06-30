@@ -1,8 +1,8 @@
-//! v0.2.x — anexos (imagem + PDF). Salva bytes colados/escolhidos em disco
+//! v0.2.x, anexos (imagem + PDF). Salva bytes colados/escolhidos em disco
 //! estável, valida por magic-bytes (não confia no clipboard) e resolve caminhos.
 //!
 //! Layout: `app_data_dir()/attachments/<convId>/<hash16>.<ext>` (blob = conteúdo).
-//! O DB guarda só o path RELATIVO "attachments/<convId>/<file>" — a linha do DB é
+//! O DB guarda só o path RELATIVO "attachments/<convId>/<file>", a linha do DB é
 //! a verdade; o blob é retido enquanto a conversa vive (TTL/LRU + wipe ao deletar).
 //! Invariante de segurança: o NOME original do usuário é só display (chip), nunca
 //! vira caminho de disco (usamos o hash) nem é injetado no prompt.
@@ -27,7 +27,7 @@ pub enum AttachmentKind {
 pub struct Attachment {
     /// RELATIVO ao app_data_dir: "attachments/<convId>/<hash16>.<ext>".
     pub path: String,
-    /// Nome original — SÓ display (chip). Nunca usado em path de disco nem no prompt.
+    /// Nome original, SÓ display (chip). Nunca usado em path de disco nem no prompt.
     pub name: String,
     pub kind: AttachmentKind,
     /// MIME sniffado (magic bytes), já dentro da allowlist.
@@ -79,12 +79,12 @@ pub fn sniff(bytes: &[u8]) -> Option<String> {
     infer::get(bytes).map(|t| t.mime_type().to_string())
 }
 
-/// blake3 truncado a 16 hex — nome do arquivo + dedup por-conversa.
+/// blake3 truncado a 16 hex, nome do arquivo + dedup por-conversa.
 pub fn hash16(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex()[..16].to_string()
 }
 
-/// convId só pode ser hex/uuid — blinda contra path traversal no nome da pasta.
+/// convId só pode ser hex/uuid, blinda contra path traversal no nome da pasta.
 fn sanitize_conv_id(id: &str) -> String {
     id.chars()
         .filter(|c| c.is_ascii_hexdigit() || *c == '-')
@@ -105,7 +105,7 @@ pub fn conv_dir(app: &AppHandle, conv_id: &str) -> Result<PathBuf, String> {
     Ok(attachments_root(app)?.join(sanitize_conv_id(conv_id)))
 }
 
-/// Escrita atômica (.tmp + rename) com permissão 0600 — evita blob meio-escrito.
+/// Escrita atômica (.tmp + rename) com permissão 0600, evita blob meio-escrito.
 fn write_atomic(abs: &Path, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
     let name = abs
@@ -127,7 +127,7 @@ fn write_atomic(abs: &Path, bytes: &[u8]) -> Result<(), String> {
     std::fs::rename(&tmp, abs).map_err(|e| e.to_string())
 }
 
-/// Tamanho + mtime de uma pasta (soma rasa dos arquivos diretos — basta p/ o cap).
+/// Tamanho + mtime de uma pasta (soma rasa dos arquivos diretos, basta p/ o cap).
 fn dir_size_mtime(dir: &Path) -> (u64, std::time::SystemTime) {
     let mut size = 0u64;
     let mut mtime = std::time::UNIX_EPOCH;
@@ -148,7 +148,7 @@ fn dir_size_mtime(dir: &Path) -> (u64, std::time::SystemTime) {
     (size, mtime)
 }
 
-/// Teto no INGEST (guardião primário — F2): se o total passar de CAP, evicta
+/// Teto no INGEST (guardião primário, F2): se o total passar de CAP, evicta
 /// pastas por mtime ascendente (a pasta ativa tem mtime fresco → protegida) até
 /// LOW_WATER. Sem ConvRef aqui; mtime-de-pasta é proxy seguro porque a pasta
 /// sendo escrita agora é a mais recente. Pula conversas com run ATIVO (F23): a
@@ -303,7 +303,7 @@ pub async fn read_attachment(app: AppHandle, path: String) -> Result<Vec<u8>, St
 
 // ---------------- suporte ao run + GC (A4/A5) ----------------
 
-/// Conversas com run em andamento — o GC pula a pasta delas (não apaga um blob que
+/// Conversas com run em andamento, o GC pula a pasta delas (não apaga um blob que
 /// o agent ainda vai ler). Refcount p/ robustez (F23).
 #[derive(Default)]
 pub struct ActiveConvs(pub Mutex<HashMap<String, usize>>);
@@ -341,7 +341,7 @@ pub fn resolve_live(app: &AppHandle, atts: Vec<Attachment>) -> (Vec<Attachment>,
         Err(_) => return (Vec::new(), atts.len()),
     };
     // Raiz canônica dos anexos: TODO path resolvido (este é o único caminho que
-    // entrega path ao CLI) precisa morar sob ela — mesma checagem anti-traversal de
+    // entrega path ao CLI) precisa morar sob ela, mesma checagem anti-traversal de
     // read_attachment/delete_attachment. Um path forjado (`../../etc/passwd`) cai em missing.
     let canon_root = match attachments_root(app) {
         Ok(r) => r.canonicalize().unwrap_or(r),
@@ -363,7 +363,7 @@ pub fn resolve_live(app: &AppHandle, atts: Vec<Attachment>) -> (Vec<Attachment>,
     (live, missing)
 }
 
-// ---------------- GC (A5) — garante que o cache NÃO acumula pra sempre ----------------
+// ---------------- GC (A5), garante que o cache NÃO acumula pra sempre ----------------
 
 const TTL_MS: i64 = 30 * 24 * 3600 * 1000; // 30 dias desde o ÚLTIMO uso da conversa
 const GC_THROTTLE_MS: i64 = 24 * 3600 * 1000; // roda no máx 1×/24h
@@ -421,7 +421,7 @@ fn sweep_tmp(dir: &Path) {
     }
 }
 
-/// LRU por `updatedAt` da CONVERSA (não mtime do arquivo — F3/F5): evicta as menos
+/// LRU por `updatedAt` da CONVERSA (não mtime do arquivo, F3/F5): evicta as menos
 /// recentes até LOW_WATER. Pula conversas com run ativo (F23).
 fn lru_evict(
     root: &Path,
@@ -528,7 +528,7 @@ pub async fn gc_attachments(
     Ok(s)
 }
 
-/// Apaga TODOS os anexos de uma conversa (ao deletá-la) — reclaim + privacidade
+/// Apaga TODOS os anexos de uma conversa (ao deletá-la), reclaim + privacidade
 /// imediatos. Síncrono e sem depender do GC throttled.
 #[tauri::command]
 pub async fn wipe_conv_attachments(app: AppHandle, conv_id: String) -> Result<(), String> {

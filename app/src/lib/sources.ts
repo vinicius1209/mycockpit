@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core"
 
-/** Fase 2 — fontes reais do projeto, indexadas (não copiadas). */
+/** Fase 2, fontes reais do projeto, indexadas (não copiadas). */
 export interface Persona {
   name: string
   description: string | null

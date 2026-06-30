@@ -61,7 +61,7 @@ export function CandidateLane({
     <Markdown text={text} />
   ) : (
     <span className="text-[12px] text-muted-foreground">
-      {running ? "pensando…" : failed ? "falhou" : "—"}
+      {running ? "pensando…" : failed ? "falhou" : "sem resposta"}
     </span>
   )
   const chooseBtn = deciding && !failed && (
@@ -219,7 +219,7 @@ export function FusionBoard({ convId }: { convId: string }) {
 }
 
 /** Veredito do juiz: racional em largura cheia + ações numa linha separada.
- *  Único (Board + Arena reusam) — antes era duplicado e espremido. */
+ *  Único (Board + Arena reusam), antes era duplicado e espremido. */
 export function FusionVerdict({
   fusion,
   selected,
@@ -235,7 +235,7 @@ export function FusionVerdict({
   const labelOf = (id: string | null) =>
     fusion.candidates.find((c) => c.id === id)?.label
   const selectedLabel = labelOf(selected)
-  // 2º lugar que o juiz JÁ calcula (sinal comparativo de custo zero — sem fundir).
+  // 2º lugar que o juiz JÁ calcula (sinal comparativo de custo zero, sem fundir).
   const runnerupLabel =
     fusion.judge.runnerupId &&
     fusion.judge.runnerupId !== fusion.judge.suggestedId

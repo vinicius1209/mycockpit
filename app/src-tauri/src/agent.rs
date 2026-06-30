@@ -1,4 +1,4 @@
-//! M3 / v0.2-α — dispatch de agents de código.
+//! M3 / v0.2-α, dispatch de agents de código.
 //!
 //! O LOOP de execução (spawn, leitura do JSONL linha-a-linha, cancel, stderr,
 //! Done) é compartilhado em `run_agent`; cada CLI (Claude/Codex/OpenCode) vira
@@ -33,8 +33,8 @@ impl Drop for ActiveGuard<'_> {
 }
 
 /// Guard RAII: remove o run do RunRegistry ao sair (qualquer path, inclusive os
-/// early-returns do `?`). O Notify é registrado UMA vez no início do run_agent —
-/// antes do spawn e reusado entre as 2 tentativas da degradação graciosa — para
+/// early-returns do `?`). O Notify é registrado UMA vez no início do run_agent,
+/// antes do spawn e reusado entre as 2 tentativas da degradação graciosa, para
 /// que um cancel no gap (entre run_agent e o loop, ou entre tentativas) fique
 /// retido como permit e seja consumido pela próxima `notified()`.
 struct RunGuard<'a> {
@@ -72,7 +72,7 @@ pub enum AgentEvent {
     Text {
         text: String,
     },
-    /// Pedaço de texto em streaming (H2 — `--include-partial-messages`).
+    /// Pedaço de texto em streaming (H2, `--include-partial-messages`).
     TextDelta {
         text: String,
     },
@@ -96,7 +96,7 @@ pub enum AgentEvent {
         message: String,
     },
     /// Aviso de UI não-fatal (ex. anexo expirado/não-suportado). NUNCA entra no
-    /// prompt do modelo — vai direto pro front como uma linha discreta.
+    /// prompt do modelo, vai direto pro front como uma linha discreta.
     Notice {
         message: String,
     },
@@ -110,7 +110,7 @@ pub enum AgentEvent {
     Done {
         code: Option<i32>,
     },
-    /// Linha de tipo desconhecido — surfaçada em vez de descartada (regra de ouro
+    /// Linha de tipo desconhecido, surfaçada em vez de descartada (regra de ouro
     /// do agent-runner.md). A UI ignora; serve p/ não perder eventos quando o CLI
     /// muda. No-op no front (default do reduceEvent).
     Unknown {
@@ -139,7 +139,7 @@ pub async fn run_agent(
     active: tauri::State<'_, ActiveConvs>,
 ) -> Result<(), String> {
     let mut adapter = adapters::resolve(&agent)?;
-    // H1 — registra o sinal de cancelamento ANTES de qualquer spawn e UMA vez só.
+    // H1, registra o sinal de cancelamento ANTES de qualquer spawn e UMA vez só.
     // Reusado entre as 2 tentativas (degradação graciosa): um cancel que chega no
     // gap fica retido como permit do Notify e mata o filho na 1ª `notified()`. O
     // RunGuard tira o run_id do registry em qualquer saída (inclusive nos `?`).
@@ -190,7 +190,7 @@ pub async fn run_agent(
     // Nunca trava o turno. (A SessionNotFound já foi suprimida dentro do run_once.)
     if outcome.session_not_found && !outcome.cancelled {
         let _ = on_event.send(AgentEvent::Notice {
-            message: "Sessão anterior não encontrada — comecei uma nova.".to_string(),
+            message: "Sessão anterior não encontrada. Comecei uma nova.".to_string(),
         });
         let mut req2 = req;
         req2.resume = None;
@@ -223,7 +223,7 @@ struct Outcome {
 }
 
 /// Spawn + loop (streama os eventos) + wait, UMA vez. NÃO emite Cancelled/Error/
-/// Done — quem orquestra (run_agent) decide, p/ poder reexecutar sem resume na
+/// Done, quem orquestra (run_agent) decide, p/ poder reexecutar sem resume na
 /// degradação graciosa. Num resume, intercepta SessionNotFound (suprime + marca).
 async fn run_once(
     mut cmd: Command,
@@ -247,7 +247,7 @@ async fn run_once(
     let stderr = child.stderr.take();
     let mut reader = BufReader::new(stdout).lines();
 
-    // H3 — coleta o stderr em paralelo p/ reportar erros de processo.
+    // H3, coleta o stderr em paralelo p/ reportar erros de processo.
     let stderr_task = tokio::spawn(async move {
         let mut buf = String::new();
         if let Some(se) = stderr {
@@ -260,7 +260,7 @@ async fn run_once(
         buf
     });
 
-    // H1 — o `notify` é registrado/desregistrado no run_agent (RunGuard); aqui só
+    // H1, o `notify` é registrado/desregistrado no run_agent (RunGuard); aqui só
     // escutamos o sinal. Reusar o MESMO Arc entre as tentativas retém o cancel.
     let mut cancelled = false;
     let mut session_not_found = false;
@@ -287,14 +287,14 @@ async fn run_once(
                             }
                         } else {
                             // Regra de ouro (agent-runner.md): linha não-JSON é surfaçada
-                            // como Unknown (no-op no front), NUNCA descartada em silêncio —
+                            // como Unknown (no-op no front), NUNCA descartada em silêncio,
                             // assim um banner de auth/deprecation no stdout não some.
                             let _ = on_event.send(AgentEvent::Unknown {
                                 raw: serde_json::Value::String(line.to_string()),
                             });
                         }
                     }
-                    Ok(None) => break, // EOF — processo terminou
+                    Ok(None) => break, // EOF, processo terminou
                     Err(_) => break,
                 }
             }
@@ -336,7 +336,7 @@ async fn run_once(
     })
 }
 
-/// Cancela um run em andamento (H1) — sinaliza o loop, que mata o processo.
+/// Cancela um run em andamento (H1), sinaliza o loop, que mata o processo.
 #[tauri::command]
 pub fn cancel_agent(run_id: String, registry: tauri::State<'_, RunRegistry>) {
     if let Ok(map) = registry.0.lock() {

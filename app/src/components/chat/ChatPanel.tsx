@@ -75,7 +75,7 @@ export function ChatPanel() {
     })()
   }, [])
 
-  // Caso 2 — restaura uma disputa de Fusion PENDENTE (esperando decisão) ao abrir
+  // Caso 2, restaura uma disputa de Fusion PENDENTE (esperando decisão) ao abrir
   // a conversa, pra não perder o que já rodou + foi pago.
   useEffect(() => {
     if (!activeId || !isTauri()) return
@@ -97,7 +97,7 @@ export function ChatPanel() {
     const convId = useChat.getState().activeId
     if (!convId) return
     const conv = useChat.getState().byId[convId]
-    // bloqueia se rodando OU finalizando — o processo do CLI precisa sair de fato
+    // bloqueia se rodando OU finalizando, o processo do CLI precisa sair de fato
     // (flush da sessão) antes do próximo run, senão o resume não acha a sessão.
     if (conv?.running || conv?.finalizing) return
     // novo run → invalida geração de sugestão pendente/em-voo desta conversa
@@ -109,7 +109,7 @@ export function ChatPanel() {
     const effort = locked ? conv!.effort : (cfg?.effort ?? null)
     const runId = crypto.randomUUID()
     const sessionId = conv?.sessionId ?? null
-    // Sprint 4 — o run escreve em byId[convId] mesmo se o usuário trocar de aba.
+    // Sprint 4, o run escreve em byId[convId] mesmo se o usuário trocar de aba.
     useChat.getState().start(convId, text, runId, agent, model, effort, attachments)
     try {
       await runAgent(

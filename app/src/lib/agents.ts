@@ -3,7 +3,7 @@
 // (lib/agent.ts AGENT_LABELS, store/fusion.ts AGENT_LABEL, FusionArena AGENTS,
 // CommandConsole DESTINATIONS/MODELS/EFFORTS/DEFAULT_MODEL, attachments.ts AGENT_CAPS)
 // e divergia em silêncio. Os limites de tamanho/contagem de anexo continuam em
-// lib/attachments.ts (espelham o backend) — aqui é só a IDENTIDADE do agent.
+// lib/attachments.ts (espelham o backend), aqui é só a IDENTIDADE do agent.
 
 import type { Destination } from "@/lib/types"
 
@@ -14,9 +14,9 @@ export interface AgentModelOption {
 
 export interface AgentDef {
   id: string
-  /** Rótulo longo ("Claude Code") — TitleBar, MessageList, DESTINATIONS, liga. */
+  /** Rótulo longo ("Claude Code"), TitleBar, MessageList, DESTINATIONS, liga. */
   label: string
-  /** Rótulo curto ("Claude") — candLabel do Fusion (desambigua repetidos). */
+  /** Rótulo curto ("Claude"), candLabel do Fusion (desambigua repetidos). */
   shortLabel: string
   kind: "agent" | "model"
   available: boolean
@@ -131,7 +131,7 @@ export const LEAGUE_AGENTS = AGENTS.filter(
   (a) => a.available && a.kind === "agent",
 )
 
-/** Destinos da liga (subconjunto de DESTINATIONS) — p/ o AgentSelect na Arena. */
+/** Destinos da liga (subconjunto de DESTINATIONS), p/ o AgentSelect na Arena. */
 export const LEAGUE_DESTINATIONS: Destination[] = DESTINATIONS.filter(
   (d) => d.available && d.kind === "agent",
 )

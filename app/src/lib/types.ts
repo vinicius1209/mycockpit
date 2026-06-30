@@ -1,6 +1,6 @@
 export type AgentStatus = "idle" | "running" | "queued" | "success" | "error"
 
-/** Política de permissão por projeto (vira flags do claude — ver agent-runner.md §7). */
+/** Política de permissão por projeto (vira flags do claude, ver agent-runner.md §7). */
 export type PermissionMode = "leitura" | "padrao" | "liberado"
 
 export interface Project {

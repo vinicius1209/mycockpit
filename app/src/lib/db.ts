@@ -249,7 +249,7 @@ export async function loadFusionRuns(convId: string): Promise<unknown[]> {
   }
 }
 
-/** A disputa PENDENTE (esperando decisão) de uma conversa, se houver — caso 2. */
+/** A disputa PENDENTE (esperando decisão) de uma conversa, se houver, caso 2. */
 export async function loadPendingFusion(
   convId: string,
 ): Promise<FusionRun | null> {
@@ -278,7 +278,7 @@ export async function clearPendingFusion(convId: string): Promise<void> {
 }
 
 /** Refs de TODAS as conversas (id + updatedAt) p/ o GC de anexos. Retorna `null`
- *  em qualquer falha/não-Tauri (F1: o boot NÃO chama o GC com null — só com `[]`
+ *  em qualquer falha/não-Tauri (F1: o boot NÃO chama o GC com null, só com `[]`
  *  o GC pode rodar o orphan-sweep). */
 export async function listConvRefs(): Promise<ConvRef[] | null> {
   const db = await getDb()

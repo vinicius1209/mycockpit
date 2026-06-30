@@ -1,5 +1,5 @@
-//! M2 — leitura do contexto do projeto (lê do disco).
-//! Fase 0: inventário HONESTO do que o `claude` enxerga no cwd — arquivos de
+//! M2, leitura do contexto do projeto (lê do disco).
+//! Fase 0: inventário HONESTO do que o `claude` enxerga no cwd, arquivos de
 //! instrução (com tamanho), o .claude/ enumerado por categoria, e .mcp.json.
 
 use serde::Serialize;
@@ -10,11 +10,11 @@ pub struct ContextFile {
     pub name: String,
     pub exists: bool,
     pub content: Option<String>,
-    /// Tamanho do arquivo em bytes (0 se ausente) — vira o chip de metadado.
+    /// Tamanho do arquivo em bytes (0 se ausente), vira o chip de metadado.
     pub bytes: u64,
 }
 
-/// Conteúdo enumerado do .claude/ — contagens por categoria.
+/// Conteúdo enumerado do .claude/, contagens por categoria.
 #[derive(Serialize)]
 pub struct ClaudeDir {
     pub exists: bool,

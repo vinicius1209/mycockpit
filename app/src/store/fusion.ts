@@ -1,4 +1,4 @@
-// v0.3 Fusion — store IRMÃO do useChat (não estende ConvState). Um Fusion por
+// v0.3 Fusion, store IRMÃO do useChat (não estende ConvState). Um Fusion por
 // conversa. A lane de cada candidato reusa SÓ o reducer de conteúdo (reduceItems);
 // o `status` da lane é fonte ÚNICA (não derivada do controle do Linear).
 
@@ -102,7 +102,7 @@ export interface LeagueConfig {
 }
 
 /** Liga default do botão "Disputar": o agent EFETIVO + o complementar
- *  (codex↔claude-code), read-only, juiz sonnet. Política de orquestração — fica
+ *  (codex↔claude-code), read-only, juiz sonnet. Política de orquestração, fica
  *  ao lado de `launch` p/ todo caller herdar a mesma default. */
 export function defaultLeague(run: AgentRunConfig): LeagueConfig {
   const complementary = run.agent === "codex" ? "claude-code" : "codex"
@@ -187,7 +187,7 @@ interface FusionState {
   confirm: (convId: string, candId: string) => Promise<void>
   /** Restaura uma disputa PENDENTE do disco (caso 2) ao abrir a conversa. */
   restorePending: (convId: string) => Promise<void>
-  /** Descarta uma disputa pendente — limpa o board + marca resolvida no disco. */
+  /** Descarta uma disputa pendente, limpa o board + marca resolvida no disco. */
   discard: (convId: string) => void
 }
 
@@ -221,7 +221,7 @@ export const useFusion = create<FusionState>((set, get) => {
 
   start: (convId, run) => set((s) => ({ byConv: { ...s.byConv, [convId]: run } })),
 
-  // T1.3 — `set` síncrono; só a lane-alvo muda; status é fonte ÚNICA (não vem do
+  // T1.3, `set` síncrono; só a lane-alvo muda; status é fonte ÚNICA (não vem do
   // reduceEvent). Sem `await` entre ler e escrever → elimina o race de N escritas.
   handleCandidateEvent: (convId, candId, e) =>
     set((s) => {
@@ -250,7 +250,7 @@ export const useFusion = create<FusionState>((set, get) => {
       return { byConv: { ...s.byConv, [convId]: next } }
     }),
 
-  // T1.4 — Done (processo saiu). Se ainda não-terminal, marca done + finishOrder.
+  // T1.4, Done (processo saiu). Se ainda não-terminal, marca done + finishOrder.
   finishCandidate: (convId, candId) =>
     set((s) => {
       const fusion = s.byConv[convId]
@@ -271,7 +271,7 @@ export const useFusion = create<FusionState>((set, get) => {
       return { byConv: rest }
     }),
 
-  // T2.2 — fan-out de N candidatos read-only em paralelo (concorrência limitada=3).
+  // T2.2, fan-out de N candidatos read-only em paralelo (concorrência limitada=3).
   launch: async (convId, cfg, prompt, attachments, projectPath, permission) => {
     const prevConv = useChat.getState().byId[convId]
     const preamble =
@@ -324,7 +324,7 @@ export const useFusion = create<FusionState>((set, get) => {
     await get().runJudgePhase(convId)
   },
 
-  // T2.4/T2.5 — juiz dupla-passada + pré-seleção CONDICIONAL (concordou + neutro).
+  // T2.4/T2.5, juiz dupla-passada + pré-seleção CONDICIONAL (concordou + neutro).
   runJudgePhase: async (convId) => {
     const f = get().byConv[convId]
     if (!f) return
@@ -352,7 +352,7 @@ export const useFusion = create<FusionState>((set, get) => {
     }
   },
 
-  // T2.8 — confirma o vencedor → promove pra conversa + arquiva + limpa.
+  // T2.8, confirma o vencedor → promove pra conversa + arquiva + limpa.
   confirm: async (convId, candId) => {
     const f = get().byConv[convId]
     if (!f) return

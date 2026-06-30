@@ -45,7 +45,7 @@ pub fn run() {
             kind: MigrationKind::Up,
         },
         // Multi-conversa (Sprint 2): conversa vira entidade com id próprio.
-        // Split em 5 migrações de 1 statement — tauri-plugin-sql roda 1 por vez.
+        // Split em 5 migrações de 1 statement, tauri-plugin-sql roda 1 por vez.
         Migration {
             version: 4,
             description: "conversations_v2_create",
@@ -92,7 +92,7 @@ pub fn run() {
             sql: "ALTER TABLE conversations ADD COLUMN suggestions TEXT NOT NULL DEFAULT '[]';",
             kind: MigrationKind::Up,
         },
-        // v0.2.x — persiste o agent + modelo + effort por conversa (cross-restart),
+        // v0.2.x, persiste o agent + modelo + effort por conversa (cross-restart),
         // p/ o resume usar o CLI certo e a UI refletir o que travou no 1º run.
         Migration {
             version: 10,
@@ -122,14 +122,14 @@ pub fn run() {
             sql: "UPDATE conversations SET agent = 'codex' WHERE agent = 'claude-code' AND substr(session_id, 15, 1) = '7';",
             kind: MigrationKind::Up,
         },
-        // v0.3 Fusion — arquiva cada disputa (auditável pós-restart; alimenta "ver disputa").
+        // v0.3 Fusion, arquiva cada disputa (auditável pós-restart; alimenta "ver disputa").
         Migration {
             version: 14,
             description: "fusion_runs",
             sql: "CREATE TABLE IF NOT EXISTS fusion_runs (id TEXT PRIMARY KEY, conv_id TEXT NOT NULL, data TEXT NOT NULL, created_at INTEGER NOT NULL);",
             kind: MigrationKind::Up,
         },
-        // v15 — `pending`=1 marca uma disputa esperando DECISÃO (caso 2): sobrevive
+        // v15, `pending`=1 marca uma disputa esperando DECISÃO (caso 2): sobrevive
         // ao restart até o usuário escolher o vencedor. Confirmar/descartar zera.
         Migration {
             version: 15,
@@ -137,7 +137,7 @@ pub fn run() {
             sql: "ALTER TABLE fusion_runs ADD COLUMN pending INTEGER NOT NULL DEFAULT 0;",
             kind: MigrationKind::Up,
         },
-        // v16 — soft delete de projeto (deleted_at NULL = ativo): restaurar + métricas.
+        // v16, soft delete de projeto (deleted_at NULL = ativo): restaurar + métricas.
         Migration {
             version: 16,
             description: "projects_deleted_at",
@@ -193,6 +193,9 @@ pub fn run() {
             sdd::pr_info,
             sdd::sdd_ready,
             sdd::seed_sdd,
+            sdd::approve_prd,
+            sdd::create_plan,
+            sdd::set_plan_stage,
             attachments::save_attachment,
             attachments::attach_path,
             attachments::delete_attachment,

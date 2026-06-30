@@ -101,7 +101,7 @@ export default function App() {
     }
   }, [setProjects, setReady])
 
-  // Fase 1 — carrega a config do projeto ativo de .mycockpit/config.toml (truth)
+  // Fase 1, carrega a config do projeto ativo de .mycockpit/config.toml (truth)
   // e sincroniza o cache de permissão que o run_claude lê.
   useEffect(() => {
     if (!activeProjectId || !isTauri()) return

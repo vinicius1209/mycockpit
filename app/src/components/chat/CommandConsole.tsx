@@ -59,7 +59,7 @@ export function CommandConsole({
   const project = useActiveProject()
   const activeId = useChat((s) => s.activeId)
 
-  // Popover "/" (comandos), popover "@" (referências), histórico ↑/↓ e anexos —
+  // Popover "/" (comandos), popover "@" (referências), histórico ↑/↓ e anexos,
   // cada feature num hook. A precedência das teclas (slash > at > histórico >
   // Enter) continua montada no onKeyDown abaixo, intacta.
   const slash = useSlashCommands({ project, value, setValue, textareaRef: ref })
@@ -114,7 +114,7 @@ export function CommandConsole({
     !finalizing &&
     allSupported
 
-  // Liga default da disputa (agent atual + complementar) — reusada no submit e no
+  // Liga default da disputa (agent atual + complementar), reusada no submit e no
   // título do botão Disputar (consciência de gasto: nomeia a liga + nº de runs).
   const fusionLeague = defaultLeague({
     agent: effectiveDest,
@@ -131,7 +131,7 @@ export function CommandConsole({
       value.trim(),
       {
         // usa o config EFETIVO (numa conv travada = o do 1º run, exibido nos pills),
-        // nunca o estado local cru — que sobra de outra conv e não reseta na troca.
+        // nunca o estado local cru, que sobra de outra conv e não reseta na troca.
         agent: effectiveDest,
         model: effectiveModel === "default" ? null : effectiveModel,
         effort: effectiveEffort === "default" ? null : effectiveEffort,
@@ -144,7 +144,7 @@ export function CommandConsole({
     ref.current?.focus()
   }
 
-  // Fusion — dispara a disputa com a liga default (agent atual + o complementar).
+  // Fusion, dispara a disputa com a liga default (agent atual + o complementar).
   // O League Builder configurável é o próximo polimento.
   async function submitFusion() {
     const text = value.trim()

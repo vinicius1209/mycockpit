@@ -1,6 +1,6 @@
 // Formatadores compartilhados (custo / bytes / duração / tokens) + extração de
 // JSON embutido em texto de modelo. Extraídos de call sites que reimplementavam
-// as mesmas funções — comportamento idêntico ao original de cada lugar.
+// as mesmas funções, comportamento idêntico ao original de cada lugar.
 
 import type { CostSource } from "@/lib/agent"
 

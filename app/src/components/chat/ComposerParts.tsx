@@ -29,7 +29,7 @@ const CHIPS = [
   { label: "Criar uma branch", prompt: "Crie uma branch nova a partir da main para esta tarefa." },
 ]
 
-/** Popover do "/" — comandos/skills do projeto (e globais). */
+/** Popover do "/", comandos/skills do projeto (e globais). */
 export function SlashPopover({
   project,
   matches,
@@ -86,7 +86,7 @@ export function SlashPopover({
   )
 }
 
-/** Popover do "@" — arquivos + agents do projeto (mid-text). */
+/** Popover do "@", arquivos + agents do projeto (mid-text). */
 export function AtPopover({
   project,
   items,
@@ -155,7 +155,7 @@ export function AttachmentChips({
         return (
           <span
             key={a.path}
-            title={ok ? a.name : `${a.name} — não suportado por ${destLabel}`}
+            title={ok ? a.name : `${a.name} não é suportado por ${destLabel}`}
             className={cn(
               "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px]",
               ok
@@ -182,7 +182,7 @@ export function AttachmentChips({
   )
 }
 
-/** Pill de seleção de agent (dot + rótulo + badge). ÚNICO — o composer do Linear e
+/** Pill de seleção de agent (dot + rótulo + badge). ÚNICO, o composer do Linear e
  *  a liga do Fusion reusam, pra ficarem visualmente idênticos. */
 export function AgentSelect({
   value,

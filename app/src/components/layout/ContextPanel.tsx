@@ -45,7 +45,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-/** Linha de arquivo de instrução — 3 estados (presente/ausente), sem cheque. */
+/** Linha de arquivo de instrução, 3 estados (presente/ausente), sem cheque. */
 function FileRow({
   file,
   expanded,
@@ -444,8 +444,8 @@ export function ContextPanel() {
                         <span>
                           <span className="font-mono">{d.copy}</span> está{" "}
                           {d.days_stale}d atrás de{" "}
-                          <span className="font-mono">{d.source}</span> — cópia
-                          stale
+                          <span className="font-mono">{d.source}</span> (cópia
+                          stale)
                         </span>
                       </div>
                     ))}
@@ -495,7 +495,7 @@ export function ContextPanel() {
             )}
           </Section>
 
-          {/* Fase 2 — fontes REAIS indexadas (não copiadas) */}
+          {/* Fase 2, fontes REAIS indexadas (não copiadas) */}
           {status === "ready" && sources && sources.personas.length > 0 && (
             <>
               <Separator />

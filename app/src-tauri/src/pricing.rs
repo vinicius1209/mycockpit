@@ -1,4 +1,4 @@
-//! v0.2-β — cost adapter: tabela de preço (SEED embutido, refinável depois via
+//! v0.2-β, cost adapter: tabela de preço (SEED embutido, refinável depois via
 //! models.dev) + `estimate()` p/ agents que não reportam $ (Codex não dá USD).
 //! O `cost_source=Estimated` + o "~" na UI deixam claro que é estimativa.
 
@@ -6,10 +6,10 @@ use crate::agent::CostSource;
 
 #[derive(Default)]
 pub struct NormalizedUsage {
-    /// Total de input (pode INCLUIR o cache — convenção varia por CLI).
+    /// Total de input (pode INCLUIR o cache, convenção varia por CLI).
     pub input: u64,
     pub cached_input: u64,
-    /// Output — JÁ inclui o reasoning no Codex, então NÃO somamos reasoning à
+    /// Output, JÁ inclui o reasoning no Codex, então NÃO somamos reasoning à
     /// parte (seria cobrar em dobro); por isso não guardamos reasoning_tokens.
     pub output: u64,
 }
@@ -20,7 +20,7 @@ struct Price {
     output: f64,
 }
 
-/// $/1M tokens. SEED — Claude validado; OpenAI aproximado (refinar via models.dev
+/// $/1M tokens. SEED, Claude validado; OpenAI aproximado (refinar via models.dev
 /// na v0.2.x). O label Estimated + "~" comunicam que é estimativa.
 fn price_for(model: &str) -> Option<Price> {
     let m = model.to_lowercase();

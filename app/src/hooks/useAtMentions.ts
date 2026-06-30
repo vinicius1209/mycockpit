@@ -71,7 +71,7 @@ export function useAtMentions({
             .filter((a) => a.toLowerCase().includes(atQuery.toLowerCase()))
             .map((a) => ({ kind: "agent" as const, value: a })),
           ...files
-            // tira os .claude/agents/*.md — já estão listados como AGENT acima
+            // tira os .claude/agents/*.md, já estão listados como AGENT acima
             .filter(
               (f) =>
                 !f.startsWith(".claude/agents/") &&

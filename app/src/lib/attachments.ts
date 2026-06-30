@@ -1,4 +1,4 @@
-// v0.2.x — anexos (imagem + PDF). Espelha os tipos do Rust (attachments.rs).
+// v0.2.x, anexos (imagem + PDF). Espelha os tipos do Rust (attachments.rs).
 // O blob mora em app_data_dir/attachments/<convId>/<hash>.<ext>; aqui trafega só
 // o metadado (path relativo + nome de display + mime + tamanho), nunca o payload.
 
@@ -9,7 +9,7 @@ export type AttachmentKind = "image" | "pdf" | "other"
 export interface Attachment {
   /** Relativo ao app_data_dir: "attachments/<convId>/<hash>.<ext>". */
   path: string
-  /** Nome original — só display (chip). */
+  /** Nome original, só display (chip). */
   name: string
   kind: AttachmentKind
   mime: string
@@ -101,7 +101,7 @@ export async function attachmentUrl(att: Attachment): Promise<string> {
 /** Revoga o object URL cacheado de um anexo. Atrele ao CICLO DE VIDA do blob
  *  (remover o anexo / wipe da conversa), NUNCA ao unmount do thumbnail: o URL é
  *  cacheado por path e o mesmo blob (dedup por hash) pode estar montado em outra
- *  <img> — revogar no unmount apagaria a imagem ainda visível. */
+ *  <img>, revogar no unmount apagaria a imagem ainda visível. */
 export function revokeAttachmentUrl(path: string): void {
   const url = urlCache.get(path)
   if (url) {

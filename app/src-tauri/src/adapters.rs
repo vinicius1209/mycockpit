@@ -1,4 +1,4 @@
-//! v0.2-α — abstração de agent. Cada CLI vira um adapter; o LOOP de execução
+//! v0.2-α, abstração de agent. Cada CLI vira um adapter; o LOOP de execução
 //! (spawn, leitura linha-a-linha, cancel, stderr, Done) é compartilhado em
 //! `agent::run_agent`. O adapter varia só em 2 pontos: montar o `Command` e
 //! mapear cada linha JSON → `AgentEvent`. O Claude porta a lógica atual 1:1.
@@ -8,7 +8,7 @@ use crate::attachments::{Attachment, AttachmentKind};
 use std::path::PathBuf;
 use tokio::process::Command;
 
-/// Parâmetros de um run — montados pelo `run_agent`, consumidos pelo adapter.
+/// Parâmetros de um run, montados pelo `run_agent`, consumidos pelo adapter.
 pub struct RunRequest {
     pub prompt: String,
     pub cwd: String,
@@ -27,7 +27,7 @@ pub trait AgentAdapter: Send {
     /// Id estável (= binário lógico), usado em mensagens de erro.
     fn id(&self) -> &'static str;
     /// Monta o `Command` (binário + flags). O loop compartilhado null-a o stdin
-    /// e pipa stdout/stderr — o adapter NÃO cuida disso.
+    /// e pipa stdout/stderr, o adapter NÃO cuida disso.
     fn build_command(&self, req: &RunRequest) -> Result<Command, String>;
     /// Mapeia uma linha JSON do stream → 0..N eventos normalizados. `&mut self`
     /// permite guardar estado de parsing (correlação begin/end de ferramentas).
@@ -44,7 +44,7 @@ pub trait AgentAdapter: Send {
     }
 
     /// Renderiza os anexos no comando/prompt. INVARIANTE: `atts` chega com path
-    /// ABSOLUTO, existente, e já filtrado por `supports_attachment` — o adapter só
+    /// ABSOLUTO, existente, e já filtrado por `supports_attachment`, o adapter só
     /// decide a SINTAXE (flags/posição). Default no-op.
     fn render_attachments(&self, atts: &[Attachment], cmd: &mut Command, prompt: &mut String) {
         let _ = (atts, cmd, prompt);
@@ -82,7 +82,7 @@ fn usage_u64(usage: Option<&serde_json::Value>, key: &str) -> u64 {
 pub(crate) fn is_session_not_found(s: &str) -> bool {
     let l = s.to_lowercase();
     l.contains("no conversation found with session id") // Claude (verificado)
-        || l.contains("no rollout found for thread id") // Codex (verificado — vem no stderr)
+        || l.contains("no rollout found for thread id") // Codex (verificado, vem no stderr)
 }
 
 // ---------------- Claude Code (porta o map_events 1:1) ----------------
@@ -114,7 +114,7 @@ impl AgentAdapter for ClaudeAdapter {
                     .arg("Bash,Edit,Write,MultiEdit,NotebookEdit");
             }
             // Fusion read-only: bloqueia edição E desliga TODO MCP (candidatos
-            // especulativos não podem ter efeito externo — email/Notion/infra).
+            // especulativos não podem ter efeito externo, email/Notion/infra).
             "fusion-ro" => {
                 cmd.arg("--disallowedTools")
                     .arg("Bash,Edit,Write,MultiEdit,NotebookEdit")
@@ -182,7 +182,7 @@ impl AgentAdapter for ClaudeAdapter {
                     vec![]
                 }
             }
-            // H2 — deltas de texto em streaming. Outros sub-eventos (block
+            // H2, deltas de texto em streaming. Outros sub-eventos (block
             // start/stop, tool input deltas) são ignorados; o texto vem dos deltas.
             "stream_event" => {
                 let ev = v.get("event");
@@ -323,7 +323,7 @@ impl AgentAdapter for CodexAdapter {
         if let Some(r) = &req.resume {
             cmd.arg("resume").arg(r);
         }
-        // anexos: -i por imagem (após `resume` — é opção do subcomando ativo). O -i
+        // anexos: -i por imagem (após `resume`, é opção do subcomando ativo). O -i
         // é VARIÁDICO (<FILE>...) e comeria o prompt → separa com `--` (verificado A0).
         let mut prompt = req.prompt.clone();
         self.render_attachments(&req.attachments, &mut cmd, &mut prompt);
@@ -448,7 +448,7 @@ fn map_codex_item(item: &serde_json::Value) -> Vec<AgentEvent> {
             name: "Edit".to_string(),
             input: item.get("changes").cloned().unwrap_or(serde_json::Value::Null),
         }],
-        // reasoning, todo_list, error (não-fatal — ex. plugin warp quebrado) → ignora
+        // reasoning, todo_list, error (não-fatal, ex. plugin warp quebrado) → ignora
         _ => vec![],
     }
 }

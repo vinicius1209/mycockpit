@@ -68,12 +68,12 @@ function ModeSwitcher() {
 
 function InstrumentStrip() {
   // Seletores estreitos (não `useActiveConv()` inteiro): não re-renderiza a cada
-  // text_delta do run — só quando o model/agent da conversa ativa muda (F13).
+  // text_delta do run, só quando o model/agent da conversa ativa muda (F13).
   const model = useChat((s) => (s.activeId ? s.byId[s.activeId]?.model : null) ?? null)
   const agent = useChat(
     (s) => (s.activeId ? s.byId[s.activeId]?.agent : null) ?? "claude-code",
   )
-  // Sem dot de status aqui — o "rodando" já aparece na sidebar (spinner por
+  // Sem dot de status aqui, o "rodando" já aparece na sidebar (spinner por
   // conversa + dot do projeto), no botão de stop e no "… trabalhando…".
   return (
     <div className="hidden items-center gap-2 md:flex">
@@ -91,7 +91,7 @@ export function TitleBar() {
   // height:32px z-index:100 com data-tauri-drag-region). Sem isso, esse overlay
   // cobria o topo dos botões e o clique virava drag (só a fatia abaixo de 32px
   // funcionava). Com o header acima do overlay + data-tauri-drag-region nele, o
-  // drag.js do Tauri reconhece o <button> (clicável) e NÃO arrasta — o clique passa.
+  // drag.js do Tauri reconhece o <button> (clicável) e NÃO arrasta, o clique passa.
   return (
     <header
       data-tauri-drag-region

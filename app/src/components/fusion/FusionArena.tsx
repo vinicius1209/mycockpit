@@ -25,7 +25,7 @@ function newEntry(agent: string): LeagueEntry {
   return { id: crypto.randomUUID(), agent, model: null, effort: null }
 }
 
-/** Modo Fusion — a Arena. OCIOSO: launch pad centralizado (liga + tarefa).
+/** Modo Fusion, a Arena. OCIOSO: launch pad centralizado (liga + tarefa).
  *  DISPUTANDO: barra de status fina + candidatos em COLUNAS paralelas + veredito. */
 export function FusionArena() {
   const activeId = useChat((s) => s.activeId)
@@ -78,7 +78,7 @@ export function FusionArena() {
             </h2>
             <p className="mx-auto mt-1.5 max-w-md text-[13.5px] leading-relaxed text-muted-foreground">
               Os agents resolvem a MESMA tarefa em paralelo, read-only. O juiz sugere
-              o melhor; você confirma — e o vencedor continua no Linear.
+              o melhor; você confirma e o vencedor continua no Linear.
             </p>
           </div>
 

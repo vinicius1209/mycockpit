@@ -31,7 +31,7 @@ function confirmDeleteProject(project: Project) {
         st.setActiveProject(remaining[0]?.id ?? null)
       }
       toast(`"${project.name}" removido`, {
-        description: "Arquivado — dá pra restaurar.",
+        description: "Arquivado. Dá pra restaurar.",
         action: {
           label: "Desfazer",
           onClick: () => {
@@ -112,7 +112,7 @@ function ProjectRow({
 }
 
 /** Ids das conversas rodando, como string estável (só muda em transição de run
- *  — não a cada delta de streaming, evitando re-render da sidebar inteira). */
+ * , não a cada delta de streaming, evitando re-render da sidebar inteira). */
 function useRunningConvIds(): Set<string> {
   const key = useChat((s) =>
     Object.entries(s.byId)
@@ -136,7 +136,7 @@ function useDecidingConvIds(): Set<string> {
   return new Set(key ? key.split(",") : [])
 }
 
-/** Lista de conversas (tarefas) do projeto ativo — accordion sob o projeto. */
+/** Lista de conversas (tarefas) do projeto ativo, accordion sob o projeto. */
 function ConversationList({ projectId }: { projectId: string }) {
   const conversations = useChat((s) => s.conversations)
   const activeId = useChat((s) => s.activeId)

@@ -1,4 +1,11 @@
-import { Fragment, useCallback, useEffect, useState } from "react"
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react"
 import {
   Check,
   ChevronDown,
@@ -7,23 +14,29 @@ import {
   GitPullRequest,
   GitPullRequestClosed,
   Loader2,
+  MessageCircle,
   Minus,
   Play,
+  Plus,
   Search,
   Sprout,
   X,
 } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { toast } from "sonner"
-import { useActiveProject } from "@/store/app"
+import { useActiveProject, useApp } from "@/store/app"
 import { runAgent } from "@/lib/agent"
-import { reduceItems, type ChatItem } from "@/store/chat"
+import { reduceItems, useChat, type ChatItem } from "@/store/chat"
 import { Markdown } from "@/components/common/Markdown"
 import {
   loadSddPlans,
   loadPrInfo,
   sddReady,
   seedSdd,
+  approvePrd,
+  createPlan,
+  setPlanStage,
+  producedStage,
   nextStep,
   stageLabel,
   stageIndex,
@@ -91,7 +104,7 @@ function fmtDateTime(iso: string): string {
   }
 }
 
-/** Modo SDD — v1: dashboard WATCHER read-only sobre `.claude/plans/`. Mostra o
+/** Modo SDD, v1: dashboard WATCHER read-only sobre `.claude/plans/`. Mostra o
  *  estado dos planos (pipeline + contrato + gates) sem dirigir nada ainda. */
 export function SddView() {
   const project = useActiveProject()
@@ -103,6 +116,10 @@ export function SddView() {
   const [ready, setReady] = useState<boolean | null>(null)
   const [seeding, setSeeding] = useState(false)
   const [seedResult, setSeedResult] = useState<SeedSummary | null>(null)
+  // v2.4, nova feature, bifurcada: descrição → Explorar (discovery/Linear) OU
+  // Criar plano e dirigir (Stage 0 determinístico no cockpit + gate no /prd).
+  const [newFeatOpen, setNewFeatOpen] = useState(false)
+  const [featDesc, setFeatDesc] = useState("")
 
   useEffect(() => {
     if (!project) {
@@ -126,7 +143,7 @@ export function SddView() {
     )
   }, [project?.path])
 
-  // refresh silencioso do manifest (após rodar uma etapa) — mantém a seleção.
+  // refresh silencioso do manifest (após rodar uma etapa), mantém a seleção.
   const reload = useCallback(() => {
     if (!project) return
     void loadSddPlans(project.path).then((ps) =>
@@ -134,7 +151,7 @@ export function SddView() {
     )
   }, [project?.path])
 
-  // v2.0 — instala o fluxo SDD num projeto que ainda não tem (scaffold do seed).
+  // v2.0, instala o fluxo SDD num projeto que ainda não tem (scaffold do seed).
   async function initSdd() {
     if (!project) return
     setSeeding(true)
@@ -149,6 +166,50 @@ export function SddView() {
     }
   }
 
+  // "Criar plano e dirigir": Stage 0 DETERMINÍSTICO (cockpit cria o manifest do
+  // template) + seleciona o plano. Sem rodar agent, o /prd vem depois, no detalhe,
+  // com o gate. Espelha o Stage 0 do /feature, sem o autopilot.
+  async function createAndDrive() {
+    if (!project) return
+    const desc = featDesc.trim()
+    if (!desc) return
+    setNewFeatOpen(false)
+    setFeatDesc("")
+    try {
+      const slug = await createPlan(project.path, desc)
+      const ps = (await loadSddPlans(project.path)).filter((p) => p.hasManifest)
+      setPlans(ps)
+      setSelected(slug)
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha ao criar o plano")
+    }
+  }
+
+  // "Explorar (discovery)": discovery é CONVERSA → abre no Linear com o composer
+  // pré-preenchido (/discovery <semente>). Você revisa e envia, sem gasto surpresa.
+  async function exploreDiscovery() {
+    if (!project) return
+    const desc = featDesc.trim()
+    if (!desc) return
+    setNewFeatOpen(false)
+    setFeatDesc("")
+    await useChat.getState().newConversation(project.id)
+    const convId = useChat.getState().activeId
+    if (convId) useChat.getState().setDraft(convId, `/discovery ${desc}`)
+    useApp.getState().setViewMode("linear")
+  }
+
+  // modal de descrição (montado em qualquer estado: lista/vazio).
+  const featUI = newFeatOpen ? (
+    <NewFeatureModal
+      value={featDesc}
+      onChange={setFeatDesc}
+      onCancel={() => setNewFeatOpen(false)}
+      onExplore={() => void exploreDiscovery()}
+      onCreate={() => void createAndDrive()}
+    />
+  ) : null
+
   const plan = plans.find((p) => p.slug === selected)
   const filtered = plans.filter((p) => matchesFilter(p, filter, query))
 
@@ -160,39 +221,40 @@ export function SddView() {
     )
   }
   if (plans.length === 0) {
-    // instalando — loading CENTRALIZADO (não um texto no botão).
+    // instalando, loading CENTRALIZADO (não um texto no botão).
     if (seeding) {
       return (
         <CenteredEmpty
           icon={<Loader2 className="size-7 animate-spin text-brass" />}
           title="Instalando o fluxo SDD…"
-          desc="Clonando o seed e copiando o scaffold pro .claude/ — uns segundos."
+          desc="Clonando o seed e copiando o scaffold pro .claude/. Leva uns segundos."
         />
       )
     }
-    // acabou de instalar — confirmação CENTRALIZADA com o que foi feito.
+    // acabou de instalar, confirmação CENTRALIZADA com o que foi feito.
     if (seedResult) {
       return (
-        <CenteredEmpty
-          icon={<Check className="size-8 text-st-success" />}
-          title="Fluxo SDD instalado"
-          desc={
-            <>
-              <span className="text-foreground/70">
-                {seedResult.copied.length} arquivos
-              </span>{" "}
-              copiados pro <code className="text-foreground/70">.claude/</code>
-              {seedResult.skipped.length > 0
-                ? ` · ${seedResult.skipped.length} já existiam (preservados)`
-                : ""}
-              . Pronto.
-              <span className="text-muted-foreground/60">
-                {" "}
-                (Descrever uma feature chega no v2.3.)
-              </span>
-            </>
-          }
-        />
+        <>
+          <CenteredEmpty
+            icon={<Check className="size-8 text-st-success" />}
+            title="Fluxo SDD instalado"
+            desc={
+              <>
+                <span className="text-foreground/70">
+                  {seedResult.copied.length} arquivos
+                </span>{" "}
+                copiados pro <code className="text-foreground/70">.claude/</code>
+                {seedResult.skipped.length > 0
+                  ? ` · ${seedResult.skipped.length} já existiam (preservados)`
+                  : ""}
+                . Descreva a primeira feature pra começar.
+              </>
+            }
+          >
+            <NewFeatureButton variant="solid" onClick={() => setNewFeatOpen(true)} />
+          </CenteredEmpty>
+          {featUI}
+        </>
       )
     }
     // não-seedado → oferece instalar (v2.0).
@@ -205,7 +267,7 @@ export function SddView() {
             <>
               Instalo o scaffold (skills do pipeline, agents, hooks, schema) no{" "}
               <code className="text-foreground/70">.claude/</code> a partir do seu
-              seed — non-destructive, não sobrescreve nada que já existe.
+              seed. Não sobrescreve nada que já existe.
             </>
           }
         >
@@ -220,20 +282,21 @@ export function SddView() {
     }
     // seedado, mas sem planos ainda.
     return (
-      <CenteredEmpty
-        icon={<FileText className="size-8 text-brass/50" />}
-        title="Nenhuma feature SDD ainda"
-        desc={
-          <>
-            O fluxo está instalado. Descreva uma feature e o pipeline (PRD → SPEC →
-            implementação → testes → review → PR) roda com gates.
-            <span className="text-muted-foreground/60">
-              {" "}
-              (Criar feature chega no v2.3.)
-            </span>
-          </>
-        }
-      />
+      <>
+        <CenteredEmpty
+          icon={<FileText className="size-8 text-brass/50" />}
+          title="Nenhuma feature SDD ainda"
+          desc={
+            <>
+              O fluxo está instalado. Descreva uma feature e o pipeline (PRD → SPEC →
+              implementação → testes → review → PR) roda com gates.
+            </>
+          }
+        >
+          <NewFeatureButton variant="solid" onClick={() => setNewFeatOpen(true)} />
+        </CenteredEmpty>
+        {featUI}
+      </>
     )
   }
 
@@ -266,6 +329,9 @@ export function SddView() {
               </button>
             ))}
           </div>
+          <div className="mt-2">
+            <NewFeatureButton onClick={() => setNewFeatOpen(true)} />
+          </div>
         </div>
         <div className="shrink-0 px-3 py-1.5 text-[10px] tracking-wide text-muted-foreground uppercase">
           {filtered.length} de {plans.length}
@@ -284,6 +350,7 @@ export function SddView() {
       <div className="min-w-0 flex-1 overflow-y-auto">
         {plan && <PlanDetail plan={plan} onReload={reload} />}
       </div>
+      {featUI}
     </div>
   )
 }
@@ -305,6 +372,144 @@ function CenteredEmpty({
       <p className="text-[15px] text-foreground/80">{title}</p>
       {desc && <p className="mt-1 max-w-md text-[13px] leading-relaxed">{desc}</p>}
       {children && <div className="mt-4">{children}</div>}
+    </div>
+  )
+}
+
+/** Botão "Nova feature", `solid` (pílula, nos estados vazios) ou ghost (na lista). */
+function NewFeatureButton({
+  onClick,
+  variant = "ghost",
+}: {
+  onClick: () => void
+  variant?: "ghost" | "solid"
+}) {
+  if (variant === "solid") {
+    return (
+      <button
+        onClick={onClick}
+        className="flex items-center gap-2 rounded-full border border-brass/40 bg-brass/10 px-4 py-2 text-[13px] text-brass transition-colors hover:bg-brass/20"
+      >
+        <Plus className="size-4" /> Nova feature
+      </button>
+    )
+  }
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-brass/40 hover:text-brass"
+    >
+      <Plus className="size-3.5" /> Nova feature
+    </button>
+  )
+}
+
+/** Modal da feature nova, bifurcado: a MESMA descrição alimenta os dois caminhos,
+ *  Explorar (discovery é conversa → Linear) ou Criar plano e dirigir (Stage 0 + gate). */
+function NewFeatureModal({
+  value,
+  onChange,
+  onCancel,
+  onExplore,
+  onCreate,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onCancel: () => void
+  onExplore: () => void
+  onCreate: () => void
+}) {
+  const empty = !value.trim()
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-8"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-[560px] rounded-xl border bg-card p-5 shadow-[var(--shadow-pop)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center gap-2">
+          <Sprout className="size-4 text-brass" />
+          <h2 className="text-[15px] font-medium text-foreground">Nova feature SDD</h2>
+        </div>
+        <p className="mb-3 text-[12.5px] leading-relaxed text-muted-foreground">
+          Descreva a ideia, vaga ou já clara. Os dois caminhos partem do mesmo texto.
+        </p>
+        <textarea
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !empty) onCreate()
+          }}
+          rows={3}
+          placeholder="Ex.: lembrete de jejum X horas antes do treino, configurável por usuário…"
+          className="w-full resize-none rounded-lg border bg-secondary/30 p-3 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus:border-brass/40"
+        />
+
+        {/* os dois caminhos (sua escolha): explorar (conversa) vs criar + dirigir */}
+        <div className="mt-4 flex flex-col gap-2.5">
+          <PathRow
+            badge="Ainda é vago"
+            desc="Conversa com o discovery no Linear. Ele pergunta (persona, flag, retroatividade…) e fecha o escopo com você."
+            action={
+              <button
+                onClick={onExplore}
+                disabled={empty}
+                className="flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-1.5 text-[12px] text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+              >
+                <MessageCircle className="size-3.5" /> Explorar
+              </button>
+            }
+          />
+          <PathRow
+            badge="Já está claro"
+            desc="Cria o plano agora (PRD → SPEC → … com gates). Você roda o /prd no detalhe e aprova antes do SPEC."
+            action={
+              <button
+                onClick={onCreate}
+                disabled={empty}
+                className="flex shrink-0 items-center gap-1.5 rounded-md border border-brass/40 bg-brass/10 px-3 py-1.5 text-[12px] text-brass transition-colors hover:bg-brass/20 disabled:opacity-50"
+              >
+                <Play className="size-3.5" /> Criar plano
+              </button>
+            }
+          />
+        </div>
+
+        <div className="mt-4 flex items-center justify-between">
+          <span className="text-[11px] text-muted-foreground">⌘↵ cria o plano</span>
+          <button
+            onClick={onCancel}
+            className="rounded-md border px-3 py-1.5 text-[12px] text-foreground hover:bg-accent"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PathRow({
+  badge,
+  desc,
+  action,
+}: {
+  badge: string
+  desc: string
+  action: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border bg-secondary/20 p-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-[12px] font-medium text-foreground">{badge}</p>
+        <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+          {desc}
+        </p>
+      </div>
+      {action}
     </div>
   )
 }
@@ -360,6 +565,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
   const project = useActiveProject()
   const [pr, setPr] = useState<PrInfo | null>(null)
   const [run, setRun] = useState<StageRun | null>(null)
+  const [approving, setApproving] = useState(false)
   // enriquece o PR (gh → git → manifest) ao trocar de plano. Lazy: 1 chamada/seleção.
   useEffect(() => {
     setPr(null)
@@ -376,37 +582,42 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
   const gc = gateCounts(plan.verification)
   const step = nextStep(plan)
 
-  // v2.1 — dirige a próxima etapa via o AgentRunner (claude -p "/{skill} {slug}").
+  // v2.1, dirige a próxima etapa via o AgentRunner (claude -p "/{skill} {slug}").
+  // v2.4, no sucesso, o cockpit AFIRMA o stage no manifest (determinístico).
   async function runStage() {
     if (!step || step.blockedBy || !project) return
-    const runId = crypto.randomUUID()
-    setRun({
-      skill: step.skill,
-      items: [],
-      streamingTextId: null,
-      model: null,
-      sessionId: null,
-      startedAt: Date.now(),
-      running: true,
-    })
-    try {
-      await runAgent(
-        runId,
-        `sdd:${plan.slug}`,
-        "claude-code",
-        null,
-        null,
-        step.prompt,
-        project.path,
-        null,
-        project.permissionMode ?? "padrao",
-        [],
-        (e) => setRun((r) => (r ? { ...r, ...reduceItems(r, e) } : r)),
-      )
-    } catch {
-      // erro já chega como card de Error no stream
+    const ok = await runSkillInto(
+      setRun,
+      project.path,
+      project.permissionMode ?? "padrao",
+      step.skill,
+      step.prompt,
+      `sdd:${plan.slug}`,
+    )
+    if (ok) {
+      const produced = producedStage(step.skill)
+      if (produced) {
+        try {
+          await setPlanStage(project.path, plan.slug, produced)
+        } catch {
+          /* best-effort, o reload mostra o que o agent já gravou */
+        }
+      }
     }
-    setRun((r) => (r ? { ...r, running: false } : r))
+  }
+
+  // v2.2, gate do PRD: o cockpit escreve a aprovação no manifest.
+  async function approveStage() {
+    if (!project) return
+    setApproving(true)
+    try {
+      await approvePrd(project.path, plan.slug)
+      onReload()
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha ao aprovar o PRD")
+    } finally {
+      setApproving(false)
+    }
   }
 
   return (
@@ -423,7 +634,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
             <span className="text-muted-foreground/60">· stage cru: {plan.stageRaw}</span>
           )}
         </div>
-        {/* resumo (#2): status · PR · gates — at-a-glance, fallback honesto */}
+        {/* resumo (#2): status · PR · gates, at-a-glance, fallback honesto */}
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
           <span
             className={cn(
@@ -459,13 +670,21 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
 
       {step &&
         (step.blockedBy === "prd" ? (
-          <p className="text-[12.5px]">
-            <span className="text-st-warning">Aprove o PRD</span>
-            <span className="text-muted-foreground">
-              {" "}
-              para liberar /spec — gate humano (v2.2)
-            </span>
-          </p>
+          <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+            <span>PRD aguardando sua aprovação:</span>
+            <button
+              onClick={() => void approveStage()}
+              disabled={approving}
+              className="flex items-center gap-1.5 rounded-full border border-brass/40 bg-brass/10 px-3 py-1 text-brass transition-colors hover:bg-brass/20 disabled:opacity-50"
+            >
+              {approving ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Check className="size-3.5" />
+              )}
+              Aprovar PRD
+            </button>
+          </div>
         ) : (
           <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
             <span>Próxima etapa:</span>
@@ -481,7 +700,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
 
       <ContractSection plan={plan} />
 
-      {/* gates tri-state — dinâmico */}
+      {/* gates tri-state, dinâmico */}
       <Section title="Gates de verificação">
         <Gates verification={plan.verification} />
       </Section>
@@ -574,6 +793,53 @@ interface StageRun {
   running: boolean
 }
 
+/** Roda uma skill via o AgentRunner, acumulando o stream num estado de StageRun.
+ *  Reusado pelo run de etapa (PlanDetail) e pela criação de feature nova (/prd). */
+async function runSkillInto(
+  setRun: Dispatch<SetStateAction<StageRun | null>>,
+  projectPath: string,
+  permission: string,
+  skill: string,
+  prompt: string,
+  convKey: string,
+): Promise<boolean> {
+  const runId = crypto.randomUUID()
+  let cur: StageRun = {
+    skill,
+    items: [],
+    streamingTextId: null,
+    model: null,
+    sessionId: null,
+    startedAt: Date.now(),
+    running: true,
+  }
+  setRun(cur)
+  try {
+    await runAgent(
+      runId,
+      convKey,
+      "claude-code",
+      null,
+      null,
+      prompt,
+      projectPath,
+      null,
+      permission,
+      [],
+      (e) => {
+        cur = { ...cur, ...reduceItems(cur, e) }
+        setRun(cur)
+      },
+    )
+  } catch {
+    // erro já chega como card de Error no stream
+  }
+  cur = { ...cur, running: false }
+  setRun(cur)
+  // ok = chegou um result bem-sucedido (não bumpa o stage num run que falhou).
+  return cur.items.some((it) => it.kind === "result" && it.ok === true)
+}
+
 function runText(items: ChatItem[]): string {
   const texts = items.filter(
     (it): it is Extract<ChatItem, { kind: "text" }> => it.kind === "text",
@@ -585,7 +851,7 @@ function runText(items: ChatItem[]): string {
   return result?.text ?? ""
 }
 
-/** Overlay do run de uma etapa (streaming ao vivo) — fechar re-lê o manifest. */
+/** Overlay do run de uma etapa (streaming ao vivo), fechar re-lê o manifest. */
 function StageRunOverlay({ run, onClose }: { run: StageRun; onClose: () => void }) {
   const text = runText(run.items)
   const result = run.items.find(
@@ -688,7 +954,7 @@ function Pipeline({ plan }: { plan: SddPlan }) {
   const allDone = plan.stage === "done"
   return (
     <div className="rounded-xl border bg-card px-5 py-4">
-      {/* trilho: pontos espalhados pela largura (conectores flex) — sem scroll */}
+      {/* trilho: pontos espalhados pela largura (conectores flex), sem scroll */}
       <div className="flex items-start">
         {SDD_STAGES.map((s, i) => {
           const isCurrent = s === plan.stage
@@ -737,7 +1003,7 @@ function Pipeline({ plan }: { plan: SddPlan }) {
   )
 }
 
-/** Resumo de um estágio (hover na pipeline) — só dado do manifest, sem dirigir. */
+/** Resumo de um estágio (hover na pipeline), só dado do manifest, sem dirigir. */
 function stageSummary(stage: string, plan: SddPlan): string[] {
   const a = plan.artifacts
   switch (stage) {
@@ -746,7 +1012,7 @@ function stageSummary(stage: string, plan: SddPlan): string[] {
     case "prd":
       return a.prd
         ? [`${a.prd.path} · ${a.prd.approved ? "aprovado" : "não aprovado"}`]
-        : ["—"]
+        : ["sem PRD"]
     case "spec":
       return [
         a.spec?.path ?? "SPEC.md",
@@ -955,7 +1221,7 @@ function Cell({ v }: { v: string | null }) {
   // célula vazia = ambiguidade não resolvida (filosofia do usuário) → marca em âmbar
   return (
     <td className="px-3 py-2 text-foreground/80">
-      {v ? v : <span className="text-st-warning/80">— vazio</span>}
+      {v ? v : <span className="text-st-warning/80">vazio</span>}
     </td>
   )
 }

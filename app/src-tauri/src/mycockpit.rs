@@ -1,4 +1,4 @@
-//! Fase 1 — `.mycockpit/config.toml`: lar durável da config POR PROJETO
+//! Fase 1, `.mycockpit/config.toml`: lar durável da config POR PROJETO
 //! (modo / modelo helper / permissão). Decisão do usuário: 100% local
 //! (`.mycockpit/.gitignore` = `*`). O arquivo é a fonte de verdade; o SQLite
 //! do app vira cache. Edição via toml_edit preserva comentários/formatação.

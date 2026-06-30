@@ -51,7 +51,7 @@ function normStage(s: string | undefined | null): string {
 // um dict {persona,input,ui,backend} (ui às vezes string, às vezes array), ou um
 // dict {persona,summary}. (E há manifest com scenario_matrix = int!) Normaliza tudo.
 export interface ScenarioRow {
-  /** Linha freeform (string) — alguns planos descrevem cenários como texto. */
+  /** Linha freeform (string), alguns planos descrevem cenários como texto. */
   text: string | null
   persona: string | null
   input: string | null
@@ -115,13 +115,13 @@ export interface SddPlan {
   scenarioMatrix: ScenarioRow[]
   navSurfaces: string[]
   consistencyAnchors: ConsistencyAnchor[]
-  /** Todos os gates presentes no manifest (dinâmico — o real tem 7, não 6). */
+  /** Todos os gates presentes no manifest (dinâmico, o real tem 7, não 6). */
   verification: Record<string, boolean | null>
   links: Record<string, string | null>
   mergedAt: string | null
   hasManifest: boolean
   logTail: string | null
-  /** Títulos dos passos `[x]` do LOG — timeline de atividade. */
+  /** Títulos dos passos `[x]` do LOG, timeline de atividade. */
   logEvents: string[]
 }
 
@@ -215,7 +215,7 @@ export interface PrInfo {
   mergedBy: string | null
   mergedAt: string | null
   createdAt: string | null
-  source: string // "gh" | "git" | "none" — proveniência honesta
+  source: string // "gh" | "git" | "none", proveniência honesta
 }
 
 /** Enriquece a info do PR de forma graciosa (gh → git → nada). null se não-Tauri. */
@@ -250,6 +250,52 @@ export interface SeedSummary {
 /** Instala o scaffold SDD (clona o seed + copia non-destructive pro .claude/). */
 export async function seedSdd(projectPath: string): Promise<SeedSummary> {
   return invoke<SeedSummary>("seed_sdd", { projectPath })
+}
+
+/** Gate do PRD (v2.2): o cockpit escreve a aprovação no manifest (approved=true). */
+export async function approvePrd(projectPath: string, slug: string): Promise<void> {
+  return invoke("approve_prd", {
+    projectPath,
+    slug,
+    approvedAt: new Date().toISOString(),
+  })
+}
+
+/** Stage 0 determinístico (v2.4): o cockpit cria o plano (manifest do template).
+ *  Devolve o slug derivado da descrição. Espelha o Stage 0 do `/feature`. */
+export async function createPlan(
+  projectPath: string,
+  description: string,
+): Promise<string> {
+  const r = await invoke<{ slug: string }>("create_plan", {
+    projectPath,
+    description,
+    createdAt: new Date().toISOString(),
+  })
+  return r.slug
+}
+
+/** O cockpit AFIRMA o stage do manifest após dirigir uma etapa (só avança). */
+export async function setPlanStage(
+  projectPath: string,
+  slug: string,
+  stage: string,
+): Promise<void> {
+  return invoke("set_plan_stage", { projectPath, slug, stage })
+}
+
+// skill dirigida → stage (normalizado) que ela produz. O cockpit afirma esse stage
+// no manifest após o run, fechando o loop de forma determinística.
+const SKILL_PRODUCES: Record<string, string> = {
+  prd: "prd",
+  spec: "spec",
+  developer: "implementation",
+  "test-suite": "test",
+  "code-review": "review",
+  pr: "pr",
+}
+export function producedStage(skill: string): string | null {
+  return SKILL_PRODUCES[skill] ?? null
 }
 
 /** Índice do stage no pipeline (deriva done/current/pending). -1 se desconhecido. */
@@ -323,7 +369,7 @@ export function gateText(k: string, v: boolean | null): string {
   return v === true ? g.pass : v === false ? g.fail : g.nrun
 }
 
-/** Contagem dos gates por estado — header, filtro da lista e resumo. */
+/** Contagem dos gates por estado, header, filtro da lista e resumo. */
 export function gateCounts(v: Record<string, boolean | null>): {
   pass: number
   fail: number

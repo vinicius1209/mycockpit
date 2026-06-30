@@ -1,4 +1,4 @@
-// v0.3 Fusion — o JUIZ (seleção, nunca merge) + helpers de orquestração.
+// v0.3 Fusion, o JUIZ (seleção, nunca merge) + helpers de orquestração.
 // O juiz roda no backend (comando `judge`: modelo forte, sem tools, sem MCP) e
 // aqui a gente faz a dupla-passada (ordens invertidas → concordância = confiança)
 // e mapeia o rótulo embaralhado de volta pro candidato.
@@ -20,7 +20,7 @@ export function candLabel(agent: string, model: string | null): string {
   return model ? `${a} · ${model}` : a
 }
 
-/** Família do modelo/agent (claude/openai/…) — p/ manter o juiz FORA da liga. */
+/** Família do modelo/agent (claude/openai/…), p/ manter o juiz FORA da liga. */
 function familyOf(s: string): string {
   const l = s.toLowerCase()
   if (/claude|opus|sonnet|haiku/.test(l)) return "claude"
@@ -56,7 +56,7 @@ async function callJudge(
   return invoke<JudgeResult>("judge", { model, cwd, prompt })
 }
 
-/** Texto final promovível de um candidato — o MESMO artefato que o juiz avalia. */
+/** Texto final promovível de um candidato, o MESMO artefato que o juiz avalia. */
 export function candidateText(c: FusionCandidate): string {
   const texts = c.items.filter(
     (it): it is Extract<ChatItem, { kind: "text" }> => it.kind === "text",
@@ -80,7 +80,7 @@ export function buildJudgePrompt(
   const blocks = labeled.map((l) => `[${l.label}]\n${truncate(l.text)}`).join("\n\n")
   return `Você é um JUIZ. Recebe a TAREFA original e respostas CANDIDATAS de agentes diferentes, rotuladas ${names}. Sua função é ESCOLHER a melhor resposta INTEIRA. NÃO combine, NÃO funda, NÃO reescreva, NÃO crie resposta nova: escolha exatamente UM rótulo existente.
 
-Critérios, nesta ordem: (1) correção/factualidade; (2) completude em relação ao que foi pedido; (3) clareza e ausência de alucinação. IGNORE o tamanho e a ORDEM em que aparecem — os rótulos foram embaralhados e não indicam qualidade nem origem. Se uma candidata estiver vazia, truncada [marcada assim] ou claramente falha, desconsidere-a.
+Critérios, nesta ordem: (1) correção/factualidade; (2) completude em relação ao que foi pedido; (3) clareza e ausência de alucinação. IGNORE o tamanho e a ORDEM em que aparecem, os rótulos foram embaralhados e não indicam qualidade nem origem. Se uma candidata estiver vazia, truncada [marcada assim] ou claramente falha, desconsidere-a.
 
 Responda SOMENTE com um único objeto JSON, sem nada antes ou depois:
 {"winner":"<rótulo>","confidence":<0..1>,"reason":"<=200 caracteres, pt-BR>","runnerup":"<rótulo ou null>"}
@@ -120,7 +120,7 @@ function shuffle<T>(arr: T[]): T[] {
   return a
 }
 
-/** Estado inicial do juiz (idle). Fonte única — o store importa daqui. */
+/** Estado inicial do juiz (idle). Fonte única, o store importa daqui. */
 export function emptyJudge(): FusionJudge {
   return {
     status: "idle",

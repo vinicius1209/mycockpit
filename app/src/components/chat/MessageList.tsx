@@ -301,7 +301,7 @@ export function MessageList({
   startedAt: number | null
   agent: string
 }) {
-  // Custo acumulado da sessão (soma dos turnos com result) — consciência de gasto.
+  // Custo acumulado da sessão (soma dos turnos com result), consciência de gasto.
   let sessionCost = 0
   let sessionEstimated = false
   let resultCount = 0

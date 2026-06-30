@@ -1,6 +1,6 @@
 // Watcher do SDD: lê `.claude/plans/*/manifest.json` do projeto e devolve o JSON
 // CRU + o tail do LOG.md. O parse/normalização (drift de stage, campos extras,
-// tri-state) vive no TS (lib/sdd.ts) — Rust só entrega os bytes, defensivo.
+// tri-state) vive no TS (lib/sdd.ts), Rust só entrega os bytes, defensivo.
 
 use serde::Serialize;
 use std::fs;
@@ -10,7 +10,7 @@ use std::path::Path;
 pub struct SddPlanRaw {
     /// Nome da pasta = slug do plano.
     pub slug: String,
-    /// manifest.json cru (None se a pasta não tem manifest — pastas operacionais).
+    /// manifest.json cru (None se a pasta não tem manifest, pastas operacionais).
     pub manifest: Option<String>,
     /// Últimas ~25 linhas do LOG.md (trecho cru), se existir.
     pub log_tail: Option<String>,
@@ -18,7 +18,7 @@ pub struct SddPlanRaw {
     pub log_events: Vec<String>,
 }
 
-/// Extrai os títulos dos passos concluídos do LOG (`- [x] **Título** — …`).
+/// Extrai os títulos dos passos concluídos do LOG (`- [x] **Título**, …`).
 fn extract_events(log: &str) -> Vec<String> {
     log.lines()
         .filter_map(|line| {
@@ -76,7 +76,7 @@ pub fn read_sdd_plans(project_path: String) -> Result<Vec<SddPlanRaw>, String> {
 #[derive(Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PrInfo {
-    /// OPEN | MERGED | CLOSED (do gh) — None se não enriqueceu.
+    /// OPEN | MERGED | CLOSED (do gh), None se não enriqueceu.
     pub state: Option<String>,
     pub merged_by: Option<String>,
     pub merged_at: Option<String>,
@@ -157,7 +157,7 @@ fn git_author(project_path: &str, sha: &str) -> Option<String> {
 }
 
 /// Enriquece a info do PR de forma INTELIGENTE + graciosa: tenta `gh` (estado, quem
-/// mergeou, datas precisas — autoritativo); se não tiver gh/auth, cai no git local
+/// mergeou, datas precisas, autoritativo); se não tiver gh/auth, cai no git local
 /// (autor do merge commit); senão, nada. `source` reporta de onde veio (honesto).
 #[tauri::command]
 pub fn pr_info(
@@ -244,7 +244,7 @@ fn copy_tree(
 }
 
 /// Instala o scaffold do fluxo SDD: clona o seed e copia pro `.claude/` do projeto
-/// (non-destructive — nunca sobrescreve arquivo existente). Nível 1 (mecânico); o
+/// (non-destructive, nunca sobrescreve arquivo existente). Nível 1 (mecânico); o
 /// nível 2 (domínio inteligente) é um agent separado.
 #[tauri::command]
 pub fn seed_sdd(project_path: String) -> Result<SeedSummary, String> {
@@ -273,7 +273,7 @@ pub fn seed_sdd(project_path: String) -> Result<SeedSummary, String> {
     for sub in ["skills", "agents", "hooks", "references", "schemas", "plans"] {
         copy_tree(&seeds.join(sub), &claude.join(sub), &claude, &mut copied, &mut skipped)?;
     }
-    // settings.json (wiring dos hooks) — só se não existir (não clobberar config).
+    // settings.json (wiring dos hooks), só se não existir (não clobberar config).
     let src_set = seeds.join("settings.json");
     let dst_set = claude.join("settings.json");
     if src_set.exists() && !dst_set.exists() {
@@ -281,8 +281,289 @@ pub fn seed_sdd(project_path: String) -> Result<SeedSummary, String> {
         fs::copy(&src_set, &dst_set).map_err(|e| e.to_string())?;
         copied.push("settings.json".into());
     } else if dst_set.exists() {
-        skipped.push("settings.json (já existe — wiring de hooks pode precisar de merge)".into());
+        skipped.push("settings.json (já existe, wiring de hooks pode precisar de merge)".into());
     }
     let _ = fs::remove_dir_all(&tmp);
     Ok(SeedSummary { copied, skipped })
+}
+
+// ---------------- Gate do PRD (v2.2) ----------------
+
+/// O cockpit ESCREVE a aprovação do PRD no manifest (único gate humano). `approved_at`
+/// vem do front (ISO) p/ evitar dep de chrono no Rust. Anexa ao LOG (best-effort).
+#[tauri::command]
+pub fn approve_prd(
+    project_path: String,
+    slug: String,
+    approved_at: String,
+) -> Result<(), String> {
+    let dir = Path::new(&project_path)
+        .join(".claude")
+        .join("plans")
+        .join(&slug);
+    let mf = dir.join("manifest.json");
+    let raw = fs::read_to_string(&mf).map_err(|e| e.to_string())?;
+    let mut v: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    if !v.get("artifacts").map(|a| a.is_object()).unwrap_or(false) {
+        v["artifacts"] = serde_json::json!({});
+    }
+    if !v["artifacts"]
+        .get("prd")
+        .map(|p| p.is_object())
+        .unwrap_or(false)
+    {
+        v["artifacts"]["prd"] = serde_json::json!({ "path": "PRD.md" });
+    }
+    v["artifacts"]["prd"]["approved"] = serde_json::Value::Bool(true);
+    v["artifacts"]["prd"]["approved_at"] = serde_json::Value::String(approved_at);
+    let pretty = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
+    fs::write(&mf, format!("{pretty}\n")).map_err(|e| e.to_string())?;
+    let log = dir.join("LOG.md");
+    if let Ok(mut c) = fs::read_to_string(&log) {
+        c.push_str("\n- [x] **PRD aprovado** (via cockpit)\n");
+        let _ = fs::write(&log, c);
+    }
+    Ok(())
+}
+
+// ---------------- Stage 0 + bumps determinísticos (v2.4) ----------------
+//
+// O cockpit dirige etapa-a-etapa (com gate), então VIRA o orquestrador. O repo
+// põe o bookkeeping do manifest na camada do agent (architect) + no `/feature`
+// (jq), confiável o bastante no terminal, mas é LLM. Aqui o cockpit faz as
+// operações DETERMINÍSTICAS que o `/feature` faz (Stage 0 `cp template`, bumps
+// de stage), deixando só o criativo (PRD/SPEC/código) pros agents.
+
+/// Transliteração mínima pt-BR → ASCII pro slug (histórico → historico).
+fn deaccent(c: char) -> char {
+    match c {
+        'á' | 'à' | 'â' | 'ã' | 'ä' => 'a',
+        'é' | 'è' | 'ê' | 'ë' => 'e',
+        'í' | 'ì' | 'î' | 'ï' => 'i',
+        'ó' | 'ò' | 'ô' | 'õ' | 'ö' => 'o',
+        'ú' | 'ù' | 'û' | 'ü' => 'u',
+        'ç' => 'c',
+        'ñ' => 'n',
+        other => other,
+    }
+}
+
+/// Slug estilo `/feature`: minúsculas, sem acento, só alnum+hífen, ~6 palavras.
+fn slugify(s: &str) -> String {
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for ch in s.chars() {
+        for lc in ch.to_lowercase() {
+            let a = deaccent(lc);
+            if a.is_ascii_alphanumeric() {
+                out.push(a);
+                prev_dash = false;
+            } else if !prev_dash && !out.is_empty() {
+                out.push('-');
+                prev_dash = true;
+            }
+        }
+    }
+    out.trim_matches('-')
+        .split('-')
+        .filter(|w| !w.is_empty())
+        .take(6)
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedPlan {
+    pub slug: String,
+}
+
+/// Stage 0 determinístico (espelha o `/feature`): cria `.claude/plans/{slug}/` com
+/// o manifest do template (slug/title/branch/created_at) + LOG. NÃO chama agent,
+/// o conteúdo (PRD) vem depois, quando você roda `/prd`.
+#[tauri::command]
+pub fn create_plan(
+    project_path: String,
+    description: String,
+    created_at: String,
+) -> Result<CreatedPlan, String> {
+    let desc = description.trim();
+    if desc.is_empty() {
+        return Err("descrição vazia".into());
+    }
+    let slug = slugify(desc);
+    if slug.is_empty() {
+        return Err("não consegui derivar um slug da descrição".into());
+    }
+    let plans = Path::new(&project_path).join(".claude").join("plans");
+    let dir = plans.join(&slug);
+    if dir.join("manifest.json").exists() {
+        return Err(format!("já existe um plano '{slug}'"));
+    }
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let title: String = desc.lines().next().unwrap_or(desc).chars().take(80).collect();
+    let branch = format!("feature/{slug}");
+
+    // manifest do template (fallback p/ um mínimo se o template sumir do repo).
+    let mut m: serde_json::Value = fs::read_to_string(plans.join("_manifest.template.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| {
+            serde_json::json!({
+                "stage": "discovery",
+                "stages_completed": [],
+                "artifacts": {
+                    "prd": { "path": "PRD.md", "approved": false, "approved_at": null },
+                    "spec": { "path": "SPEC.md", "approved_at": null },
+                    "migrations": [], "source_files": [], "tests": []
+                },
+                "promised_in_spec": {
+                    "scenario_matrix": [], "navigation_surfaces": [], "consistency_anchors": []
+                },
+                "verification": {},
+                "links": { "pr_url": null, "issue_url": null }
+            })
+        });
+    m["slug"] = serde_json::Value::String(slug.clone());
+    m["title"] = serde_json::Value::String(title);
+    m["branch"] = serde_json::Value::String(branch.clone());
+    m["created_at"] = serde_json::Value::String(created_at.clone());
+    // limpa o sponsor placeholder do template ("<sponsor name>"), vira null.
+    if m.get("sponsor")
+        .and_then(|v| v.as_str())
+        .map(|s| s.starts_with('<'))
+        .unwrap_or(false)
+    {
+        m["sponsor"] = serde_json::Value::Null;
+    }
+    let pretty = serde_json::to_string_pretty(&m).map_err(|e| e.to_string())?;
+    fs::write(dir.join("manifest.json"), format!("{pretty}\n")).map_err(|e| e.to_string())?;
+
+    // LOG espelhando o Stage 0 do `/feature`.
+    let log = format!(
+        "# Log: {slug}\n> Feature: {desc}\n> Started: {created_at}\n> Branch: {branch}\n> Manifest: .claude/plans/{slug}/manifest.json\n\n## Stages\n\n- [x] **Stage 0: Plano criado** (via cockpit)\n"
+    );
+    let _ = fs::write(dir.join("LOG.md"), log);
+    Ok(CreatedPlan { slug })
+}
+
+/// Ordem canônica das stages (espelha SDD_STAGES no TS), guard de "só avança".
+const STAGE_ORDER: [&str; 8] = [
+    "discovery",
+    "prd",
+    "spec",
+    "implementation",
+    "test",
+    "review",
+    "pr",
+    "done",
+];
+fn stage_idx(s: &str) -> i32 {
+    STAGE_ORDER
+        .iter()
+        .position(|&x| x == s)
+        .map(|i| i as i32)
+        .unwrap_or(-1)
+}
+
+/// O cockpit AFIRMA o stage após dirigir uma etapa. Só AVANÇA (nunca regride, se
+/// o architect já moveu além, respeita) e preserva os demais campos (read-modify-write).
+#[tauri::command]
+pub fn set_plan_stage(project_path: String, slug: String, stage: String) -> Result<(), String> {
+    let dir = Path::new(&project_path)
+        .join(".claude")
+        .join("plans")
+        .join(&slug);
+    let mf = dir.join("manifest.json");
+    let raw = fs::read_to_string(&mf).map_err(|e| e.to_string())?;
+    let mut v: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    let cur = v
+        .get("stage")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    if stage_idx(&stage) <= stage_idx(&cur) {
+        return Ok(()); // não regride / já está lá
+    }
+    if !cur.is_empty() && cur != stage {
+        match v.get_mut("stages_completed").and_then(|x| x.as_array_mut()) {
+            Some(a) => {
+                if !a.iter().any(|x| x.as_str() == Some(cur.as_str())) {
+                    a.push(serde_json::Value::String(cur.clone()));
+                }
+            }
+            None => v["stages_completed"] = serde_json::json!([cur.clone()]),
+        }
+    }
+    v["stage"] = serde_json::Value::String(stage.clone());
+    let pretty = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
+    fs::write(&mf, format!("{pretty}\n")).map_err(|e| e.to_string())?;
+    let log = dir.join("LOG.md");
+    if let Ok(mut c) = fs::read_to_string(&log) {
+        c.push_str(&format!("- [x] **Etapa {stage}** dirigida (via cockpit)\n"));
+        let _ = fs::write(&log, c);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slugify_pt_br() {
+        assert_eq!(
+            slugify("Histórico de transporte no pedido"),
+            "historico-de-transporte-no-pedido"
+        );
+        // limita a 6 palavras
+        assert_eq!(
+            slugify("Lembrete de jejum X horas antes do treino"),
+            "lembrete-de-jejum-x-horas-antes"
+        );
+        // pontuação/espaços viram um único hífen + trim
+        assert_eq!(slugify("  já!!  foi  "), "ja-foi");
+    }
+
+    #[test]
+    fn create_plan_then_advance_no_regress() {
+        let tmp = std::env::temp_dir().join(format!("mycockpit-sdd-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let plans = tmp.join(".claude").join("plans");
+        fs::create_dir_all(&plans).unwrap();
+        fs::write(
+            plans.join("_manifest.template.json"),
+            r#"{"slug":"X","title":"X","sponsor":"<sponsor name>","branch":"feature/X","created_at":"x","stage":"discovery","stages_completed":[],"artifacts":{"prd":{"path":"PRD.md","approved":false,"approved_at":null}},"verification":{},"links":{"pr_url":null}}"#,
+        )
+        .unwrap();
+        let pp = tmp.to_string_lossy().to_string();
+
+        // Stage 0, cria o plano do template, preenche e limpa o placeholder.
+        let r = create_plan(pp.clone(), "Recurso de teste".into(), "2026-06-30T00:00:00Z".into())
+            .unwrap();
+        assert_eq!(r.slug, "recurso-de-teste");
+        let mf = plans.join(&r.slug).join("manifest.json");
+        let m: serde_json::Value = serde_json::from_str(&fs::read_to_string(&mf).unwrap()).unwrap();
+        assert_eq!(m["slug"], "recurso-de-teste");
+        assert_eq!(m["stage"], "discovery");
+        assert_eq!(m["branch"], "feature/recurso-de-teste");
+        assert_eq!(m["created_at"], "2026-06-30T00:00:00Z");
+        assert!(m["sponsor"].is_null(), "placeholder do sponsor deve virar null");
+
+        // bump discovery → prd (completa stages_completed).
+        set_plan_stage(pp.clone(), r.slug.clone(), "prd".into()).unwrap();
+        let m: serde_json::Value = serde_json::from_str(&fs::read_to_string(&mf).unwrap()).unwrap();
+        assert_eq!(m["stage"], "prd");
+        assert_eq!(m["stages_completed"], serde_json::json!(["discovery"]));
+
+        // guard: NÃO regride (tentar voltar pra discovery não muda nada).
+        set_plan_stage(pp.clone(), r.slug.clone(), "discovery".into()).unwrap();
+        let m: serde_json::Value = serde_json::from_str(&fs::read_to_string(&mf).unwrap()).unwrap();
+        assert_eq!(m["stage"], "prd");
+
+        // não clobbera: criar o mesmo de novo falha.
+        assert!(create_plan(pp, "Recurso de teste".into(), "x".into()).is_err());
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
 }

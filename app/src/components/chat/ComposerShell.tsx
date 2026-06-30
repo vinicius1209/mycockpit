@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
  * Casca compartilhada dos composers (Linear `CommandConsole` + launch-pad da
  * Arena). É SÓ chrome: o cartão `rounded-2xl border bg-card`, um slot de chips
  * acima do <Textarea>, e um footer com os controles de cada lugar. A lógica
- * (popovers, histórico, paste, submit) fica nos consumidores — aqui não há
+ * (popovers, histórico, paste, submit) fica nos consumidores, aqui não há
  * regra de negócio.
  *
  * `focusRing` liga o comportamento do console Linear: cursor-text no cartão,

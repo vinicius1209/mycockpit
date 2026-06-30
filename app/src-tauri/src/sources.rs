@@ -1,4 +1,4 @@
-//! Fase 2 — "source resolver": indexa as fontes REAIS do projeto (NÃO copia).
+//! Fase 2, "source resolver": indexa as fontes REAIS do projeto (NÃO copia).
 //! Personas ← .claude/agents · Specs ← .claude/plans/{slug}/manifest.json ·
 //! Memórias ← dir path-encoded do Claude CLI. Sempre lê do disco; zero store paralelo.
 
@@ -47,7 +47,7 @@ pub struct ProjectSources {
 
 /// Lê um campo do frontmatter YAML. Entende valor inline (`key: foo`) E block
 /// scalar (`key: |` / `>`), devolvendo o 1º parágrafo do bloco. Parser mínimo
-/// (sem dep de YAML) — suficiente p/ name/description/model dos agents.
+/// (sem dep de YAML), suficiente p/ name/description/model dos agents.
 fn frontmatter(text: &str, key: &str) -> Option<String> {
     let lines: Vec<&str> = text.lines().collect();
     if lines.first()?.trim() != "---" {
@@ -257,7 +257,7 @@ pub fn read_text_file(path: String) -> Result<String, String> {
     })
 }
 
-/// Opção invocável por "/" — comando (.claude/commands) OU skill (.claude/skills).
+/// Opção invocável por "/", comando (.claude/commands) OU skill (.claude/skills).
 #[derive(Serialize)]
 pub struct SlashCommand {
     pub name: String,
@@ -300,7 +300,7 @@ fn collect_commands(dir: &Path, prefix: &str, origin: &str, out: &mut Vec<SlashC
     }
 }
 
-/// Skills (.claude/skills/<name>/SKILL.md) — invocáveis por /<name>.
+/// Skills (.claude/skills/<name>/SKILL.md), invocáveis por /<name>.
 fn collect_skills(dir: &Path, origin: &str, out: &mut Vec<SlashCommand>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
@@ -328,7 +328,7 @@ fn collect_skills(dir: &Path, origin: &str, out: &mut Vec<SlashCommand>) {
 #[tauri::command]
 pub fn read_project_commands(path: String) -> Vec<SlashCommand> {
     let mut out = Vec::new();
-    // projeto (.claude/) — entra primeiro → vence no dedup
+    // projeto (.claude/), entra primeiro → vence no dedup
     let cd = Path::new(&path).join(".claude");
     collect_commands(&cd.join("commands"), "", "project", &mut out);
     collect_skills(&cd.join("skills"), "project", &mut out);
@@ -338,7 +338,7 @@ pub fn read_project_commands(path: String) -> Vec<SlashCommand> {
         collect_commands(&gd.join("commands"), "", "global", &mut out);
         collect_skills(&gd.join("skills"), "global", &mut out);
     }
-    // dedup por (kind, name) — o do projeto (inserido antes) vence
+    // dedup por (kind, name), o do projeto (inserido antes) vence
     let mut seen = std::collections::HashSet::new();
     out.retain(|c| seen.insert((c.kind.clone(), c.name.clone())));
     out.sort_by(|a, b| a.name.cmp(&b.name));
