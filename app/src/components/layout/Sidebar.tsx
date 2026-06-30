@@ -142,7 +142,7 @@ function ProjectRow({
 
   // cor = tinge a linha inteira (identidade geral, estilo Warp), não um dot.
   const tint = project.color
-    ? `color-mix(in oklab, ${project.color} ${active ? 30 : 13}%, transparent)`
+    ? `color-mix(in oklab, ${project.color} ${active ? 33 : 18}%, transparent)`
     : undefined
 
   return (
@@ -298,7 +298,7 @@ function ConversationList({ projectId }: { projectId: string }) {
         ) : null
         // cor = tinge a linha inteira (identidade geral, estilo Warp), não um dot.
         const tint = c.color
-          ? `color-mix(in oklab, ${c.color} ${isActive ? 30 : 13}%, transparent)`
+          ? `color-mix(in oklab, ${c.color} ${isActive ? 33 : 18}%, transparent)`
           : undefined
         return (
           <ContextMenu key={c.id}>
