@@ -12,8 +12,31 @@ pub struct SddPlanRaw {
     pub slug: String,
     /// manifest.json cru (None se a pasta não tem manifest — pastas operacionais).
     pub manifest: Option<String>,
-    /// Últimas ~25 linhas do LOG.md (feed de atividade), se existir.
+    /// Últimas ~25 linhas do LOG.md (trecho cru), se existir.
     pub log_tail: Option<String>,
+    /// Títulos dos passos `- [x] **...**` do LOG (timeline de atividade limpa).
+    pub log_events: Vec<String>,
+}
+
+/// Extrai os títulos dos passos concluídos do LOG (`- [x] **Título** — …`).
+fn extract_events(log: &str) -> Vec<String> {
+    log.lines()
+        .filter_map(|line| {
+            let t = line.trim_start();
+            if !t.starts_with("- [x]") {
+                return None;
+            }
+            let rest = t.trim_start_matches("- [x]").trim();
+            // título em negrito **...**, senão o texto antes do travessão.
+            if let Some(after) = rest.strip_prefix("**").and_then(|r| r.split("**").next())
+            {
+                Some(after.trim().to_string())
+            } else {
+                let s = rest.split('—').next().unwrap_or(rest).trim();
+                (!s.is_empty()).then(|| s.chars().take(70).collect())
+            }
+        })
+        .collect()
 }
 
 /// Enumera os planos SDD de um projeto. Nunca falha por plano individual ruim:
@@ -32,7 +55,9 @@ pub fn read_sdd_plans(project_path: String) -> Result<Vec<SddPlanRaw>, String> {
         }
         let slug = entry.file_name().to_string_lossy().to_string();
         let manifest = fs::read_to_string(path.join("manifest.json")).ok();
-        let log_tail = fs::read_to_string(path.join("LOG.md")).ok().map(|s| {
+        let log = fs::read_to_string(path.join("LOG.md")).ok();
+        let log_events = log.as_deref().map(extract_events).unwrap_or_default();
+        let log_tail = log.map(|s| {
             let lines: Vec<&str> = s.lines().collect();
             let start = lines.len().saturating_sub(25);
             lines[start..].join("\n")
@@ -41,6 +66,7 @@ pub fn read_sdd_plans(project_path: String) -> Result<Vec<SddPlanRaw>, String> {
             slug,
             manifest,
             log_tail,
+            log_events,
         });
     }
     out.sort_by(|a, b| a.slug.cmp(&b.slug));

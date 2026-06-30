@@ -121,12 +121,15 @@ export interface SddPlan {
   mergedAt: string | null
   hasManifest: boolean
   logTail: string | null
+  /** Títulos dos passos `[x]` do LOG — timeline de atividade. */
+  logEvents: string[]
 }
 
 interface SddPlanRaw {
   slug: string
   manifest: string | null
   log_tail: string | null
+  log_events: string[]
 }
 
 function asStrArray(v: unknown): string[] {
@@ -193,6 +196,7 @@ function normalize(raw: SddPlanRaw): SddPlan {
     mergedAt: typeof m.merged_at === "string" ? m.merged_at : null,
     hasManifest,
     logTail: raw.log_tail,
+    logEvents: raw.log_events ?? [],
   }
 }
 

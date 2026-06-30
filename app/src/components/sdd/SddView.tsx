@@ -363,15 +363,49 @@ function PlanDetail({ plan }: { plan: SddPlan }) {
         </Section>
       </div>
 
-      {/* LOG.md — feed de atividade */}
-      {plan.logTail && (
-        <Section title="Atividade (LOG.md)">
-          <pre className="max-h-48 overflow-auto rounded-lg border bg-secondary/30 p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-foreground/75">
-            {plan.logTail}
-          </pre>
-        </Section>
-      )}
+      {(plan.logEvents.length > 0 || plan.logTail) && <ActivitySection plan={plan} />}
     </div>
+  )
+}
+
+/** Atividade (#10): timeline dos passos `[x]` + LOG cru colapsável. */
+function ActivitySection({ plan }: { plan: SddPlan }) {
+  const [showRaw, setShowRaw] = useState(false)
+  return (
+    <Section title="Atividade">
+      {plan.logEvents.length > 0 ? (
+        <ol className="flex flex-col gap-1.5">
+          {plan.logEvents.map((e, i) => (
+            <li key={i} className="flex items-start gap-2 text-[12.5px]">
+              <Check className="mt-0.5 size-3.5 shrink-0 text-st-success" />
+              <span className="text-foreground/80">{e}</span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="text-[12.5px] text-muted-foreground">
+          Sem etapas registradas no LOG.
+        </p>
+      )}
+      {plan.logTail && (
+        <div className="mt-3">
+          <button
+            onClick={() => setShowRaw((v) => !v)}
+            className="flex items-center gap-1 text-[12px] text-brass hover:underline"
+          >
+            <ChevronDown
+              className={cn("size-3.5 transition-transform", showRaw && "rotate-180")}
+            />
+            {showRaw ? "Ocultar trecho do LOG" : "Ver trecho do LOG"}
+          </button>
+          {showRaw && (
+            <pre className="mt-2 max-h-48 overflow-auto rounded-lg border bg-secondary/30 p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-foreground/75">
+              {plan.logTail}
+            </pre>
+          )}
+        </div>
+      )}
+    </Section>
   )
 }
 
@@ -408,7 +442,7 @@ function Pipeline({ plan }: { plan: SddPlan }) {
                   )}
                 />
               )}
-              <div className="flex shrink-0 flex-col items-center gap-2">
+              <div className="group relative flex shrink-0 flex-col items-center gap-2">
                 <span
                   className={cn(
                     "size-2.5 rounded-full transition-colors",
@@ -431,11 +465,64 @@ function Pipeline({ plan }: { plan: SddPlan }) {
                 >
                   {stageLabel(s)}
                 </span>
+                <StagePopover stage={s} plan={plan} />
               </div>
             </Fragment>
           )
         })}
       </div>
+    </div>
+  )
+}
+
+/** Resumo de um estágio (hover na pipeline) — só dado do manifest, sem dirigir. */
+function stageSummary(stage: string, plan: SddPlan): string[] {
+  const a = plan.artifacts
+  switch (stage) {
+    case "discovery":
+      return ["Refinamento do escopo"]
+    case "prd":
+      return a.prd
+        ? [`${a.prd.path} · ${a.prd.approved ? "aprovado" : "não aprovado"}`]
+        : ["—"]
+    case "spec":
+      return [
+        a.spec?.path ?? "SPEC.md",
+        `${plan.scenarioMatrix.length} cenários · ${plan.navSurfaces.length} superfícies`,
+      ]
+    case "implementation":
+      return [`${a.sourceFiles.length} arquivos · ${a.migrations.length} migrações`]
+    case "test":
+      return [`${a.tests.length} testes`]
+    case "review": {
+      const c = gateCounts(plan.verification)
+      return [gateSummary(c) || "sem gates registrados"]
+    }
+    case "pr":
+      return [
+        plan.links.pr_url ? prLabel(plan.links.pr_url) : "sem PR",
+        plan.mergedAt ? `mergeado ${fmtDateTime(plan.mergedAt)}` : "",
+      ].filter(Boolean)
+    case "done":
+      return [plan.mergedAt ? `concluído ${fmtDateTime(plan.mergedAt)}` : "concluído"]
+    default:
+      return []
+  }
+}
+
+function StagePopover({ stage, plan }: { stage: string; plan: SddPlan }) {
+  const lines = stageSummary(stage, plan)
+  if (lines.length === 0) return null
+  return (
+    <div className="pointer-events-none invisible absolute top-full left-1/2 z-20 mt-2 w-max max-w-[220px] -translate-x-1/2 rounded-lg border bg-popover p-2.5 text-left opacity-0 shadow-[var(--shadow-pop)] transition-opacity group-hover:visible group-hover:opacity-100">
+      <p className="mb-0.5 text-[11px] font-medium text-foreground">
+        {stageLabel(stage)}
+      </p>
+      {lines.map((l, i) => (
+        <p key={i} className="text-[11.5px] leading-relaxed text-muted-foreground">
+          {l}
+        </p>
+      ))}
     </div>
   )
 }
