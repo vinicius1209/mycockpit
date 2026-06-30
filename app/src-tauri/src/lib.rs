@@ -8,6 +8,7 @@ mod attachments;
 mod context;
 mod mycockpit;
 mod pricing;
+mod sdd;
 mod sources;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -161,6 +162,7 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(
             SqlBuilder::default()
                 .add_migrations("sqlite:mycockpit.db", migrations)
@@ -180,6 +182,8 @@ pub fn run() {
             sources::read_text_file,
             sources::read_project_commands,
             sources::list_project_files,
+            sdd::read_sdd_plans,
+            sdd::pr_info,
             attachments::save_attachment,
             attachments::attach_path,
             attachments::delete_attachment,

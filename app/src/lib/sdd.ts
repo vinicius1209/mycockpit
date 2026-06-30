@@ -1,0 +1,293 @@
+// Watcher do SDD (frontend): carrega + NORMALIZA os manifests do disco. O dado real
+// diverge do schema (developer/test-suite/code-review nas stages, lint_passing +
+// merge_commit + merged_at extras, pastas sem manifest) → parse tolerante aqui.
+
+import { invoke } from "@tauri-apps/api/core"
+import { isTauri } from "@/lib/db"
+
+export const SDD_STAGES = [
+  "discovery",
+  "prd",
+  "spec",
+  "implementation",
+  "test",
+  "review",
+  "pr",
+  "done",
+] as const
+export type SddStage = (typeof SDD_STAGES)[number]
+
+const STAGE_LABEL: Record<string, string> = {
+  discovery: "Descoberta",
+  prd: "PRD",
+  spec: "SPEC",
+  implementation: "Implementação",
+  test: "Testes",
+  review: "Review",
+  pr: "PR",
+  done: "Concluído",
+}
+export function stageLabel(s: string): string {
+  return STAGE_LABEL[s] ?? s
+}
+
+// Normaliza o drift: developer→implementation, test-suite→test, code-review→review,
+// release→pr (virtual pós-pr). Tolerante a stages desconhecidas (devolve como veio).
+const STAGE_ALIAS: Record<string, SddStage> = {
+  developer: "implementation",
+  implementation: "implementation",
+  "test-suite": "test",
+  test: "test",
+  "code-review": "review",
+  review: "review",
+  release: "pr",
+}
+function normStage(s: string | undefined | null): string {
+  if (!s) return ""
+  return STAGE_ALIAS[s] ?? s
+}
+
+// O dado real é heterogêneo: a linha da matriz pode ser uma STRING (descrição),
+// um dict {persona,input,ui,backend} (ui às vezes string, às vezes array), ou um
+// dict {persona,summary}. (E há manifest com scenario_matrix = int!) Normaliza tudo.
+export interface ScenarioRow {
+  /** Linha freeform (string) — alguns planos descrevem cenários como texto. */
+  text: string | null
+  persona: string | null
+  input: string | null
+  ui: string | null
+  backend: string | null
+  /** Forma alternativa {persona, summary}. */
+  summary: string | null
+}
+
+function uiToStr(v: unknown): string {
+  if (typeof v === "string") return v
+  if (Array.isArray(v)) return v.filter((x) => typeof x === "string").join(" · ")
+  return ""
+}
+
+const EMPTY_ROW: ScenarioRow = {
+  text: null,
+  persona: null,
+  input: null,
+  ui: null,
+  backend: null,
+  summary: null,
+}
+
+function normScenarioRow(r: unknown): ScenarioRow {
+  if (typeof r === "string") return { ...EMPTY_ROW, text: r }
+  if (r && typeof r === "object") {
+    const o = r as Record<string, unknown>
+    return {
+      text: null,
+      persona: typeof o.persona === "string" ? o.persona : null,
+      input: typeof o.input === "string" ? o.input : null,
+      ui: uiToStr(o.ui) || null,
+      backend: typeof o.backend === "string" ? o.backend : null,
+      summary: typeof o.summary === "string" ? o.summary : null,
+    }
+  }
+  return EMPTY_ROW
+}
+export interface ConsistencyAnchor {
+  category: string
+  canon_file: string
+  reference_doc: string
+}
+export interface SddPlan {
+  slug: string
+  title: string
+  sponsor: string | null
+  branch: string | null
+  createdAt: string | null
+  stage: string // normalizado
+  stageRaw: string
+  stagesCompleted: string[] // normalizado
+  artifacts: {
+    prd: { path: string; approved: boolean; approvedAt: string | null } | null
+    spec: { path: string; approvedAt: string | null } | null
+    migrations: string[]
+    sourceFiles: string[]
+    tests: string[]
+  }
+  scenarioMatrix: ScenarioRow[]
+  navSurfaces: string[]
+  consistencyAnchors: ConsistencyAnchor[]
+  /** Todos os gates presentes no manifest (dinâmico — o real tem 7, não 6). */
+  verification: Record<string, boolean | null>
+  links: Record<string, string | null>
+  mergedAt: string | null
+  hasManifest: boolean
+  logTail: string | null
+}
+
+interface SddPlanRaw {
+  slug: string
+  manifest: string | null
+  log_tail: string | null
+}
+
+function asStrArray(v: unknown): string[] {
+  return Array.isArray(v)
+    ? v.filter((x): x is string => typeof x === "string")
+    : []
+}
+
+function normalize(raw: SddPlanRaw): SddPlan {
+  let m: Record<string, any> = {}
+  let hasManifest = false
+  if (raw.manifest) {
+    try {
+      m = JSON.parse(raw.manifest)
+      hasManifest = true
+    } catch {
+      hasManifest = false
+    }
+  }
+  const a = (m.artifacts ?? {}) as Record<string, any>
+  const p = (m.promised_in_spec ?? {}) as Record<string, any>
+  const v = (m.verification ?? {}) as Record<string, unknown>
+  const verification: Record<string, boolean | null> = {}
+  for (const [k, val] of Object.entries(v)) {
+    verification[k] = val === true ? true : val === false ? false : null
+  }
+  return {
+    slug: raw.slug,
+    title: typeof m.title === "string" ? m.title : raw.slug,
+    sponsor: typeof m.sponsor === "string" ? m.sponsor : null,
+    branch: typeof m.branch === "string" ? m.branch : null,
+    createdAt: typeof m.created_at === "string" ? m.created_at : null,
+    stage: normStage(m.stage),
+    stageRaw: typeof m.stage === "string" ? m.stage : "",
+    stagesCompleted: asStrArray(m.stages_completed).map(normStage),
+    artifacts: {
+      prd: a.prd
+        ? {
+            path: a.prd.path ?? "PRD.md",
+            approved: !!a.prd.approved,
+            approvedAt: a.prd.approved_at ?? null,
+          }
+        : null,
+      spec: a.spec
+        ? { path: a.spec.path ?? "SPEC.md", approvedAt: a.spec.approved_at ?? null }
+        : null,
+      migrations: asStrArray(a.migrations),
+      sourceFiles: asStrArray(a.source_files),
+      tests: asStrArray(a.tests),
+    },
+    scenarioMatrix: Array.isArray(p.scenario_matrix)
+      ? p.scenario_matrix.map(normScenarioRow)
+      : [],
+    navSurfaces: asStrArray(p.navigation_surfaces),
+    consistencyAnchors: Array.isArray(p.consistency_anchors)
+      ? p.consistency_anchors.map((c: any) => ({
+          category: c?.category ?? "",
+          canon_file: c?.canon_file ?? "",
+          reference_doc: c?.reference_doc ?? "",
+        }))
+      : [],
+    verification,
+    links: (m.links ?? {}) as Record<string, string | null>,
+    mergedAt: typeof m.merged_at === "string" ? m.merged_at : null,
+    hasManifest,
+    logTail: raw.log_tail,
+  }
+}
+
+export async function loadSddPlans(projectPath: string): Promise<SddPlan[]> {
+  if (!isTauri()) return []
+  try {
+    const raw = await invoke<SddPlanRaw[]>("read_sdd_plans", { projectPath })
+    return raw.map(normalize)
+  } catch {
+    return []
+  }
+}
+
+export interface PrInfo {
+  state: string | null // OPEN | MERGED | CLOSED
+  mergedBy: string | null
+  mergedAt: string | null
+  createdAt: string | null
+  source: string // "gh" | "git" | "none" — proveniência honesta
+}
+
+/** Enriquece a info do PR de forma graciosa (gh → git → nada). null se não-Tauri. */
+export async function loadPrInfo(
+  projectPath: string,
+  prUrl: string,
+  mergeCommit: string | null,
+): Promise<PrInfo | null> {
+  if (!isTauri()) return null
+  try {
+    return await invoke<PrInfo>("pr_info", { projectPath, prUrl, mergeCommit })
+  } catch {
+    return null
+  }
+}
+
+/** Índice do stage no pipeline (deriva done/current/pending). -1 se desconhecido. */
+export function stageIndex(s: string): number {
+  return (SDD_STAGES as readonly string[]).indexOf(s)
+}
+
+// Rótulo ADAPTADO ao estado: o texto NUNCA diz "passando" quando cinza/falho.
+const GATE: Record<string, { pass: string; fail: string; nrun: string }> = {
+  scenarios_validated: {
+    pass: "Cenários validados",
+    fail: "Cenários reprovados",
+    nrun: "Cenários não validados",
+  },
+  all_nav_surfaces_updated: {
+    pass: "Superfícies atualizadas",
+    fail: "Superfícies desatualizadas",
+    nrun: "Superfícies não verificadas",
+  },
+  consistency_check_passed: {
+    pass: "Consistência validada",
+    fail: "Consistência reprovada",
+    nrun: "Consistência não verificada",
+  },
+  tests_passing: {
+    pass: "Testes passando",
+    fail: "Testes falhando",
+    nrun: "Testes não rodados",
+  },
+  build_passing: {
+    pass: "Build passando",
+    fail: "Build quebrado",
+    nrun: "Build não rodado",
+  },
+  type_check_passing: {
+    pass: "Typecheck passando",
+    fail: "Typecheck falhou",
+    nrun: "Typecheck não rodado",
+  },
+  lint_passing: { pass: "Lint passando", fail: "Lint falhou", nrun: "Lint não rodado" },
+}
+
+/** Rótulo do gate adaptado ao estado (true/false/null). */
+export function gateText(k: string, v: boolean | null): string {
+  const g = GATE[k]
+  if (!g) return k
+  return v === true ? g.pass : v === false ? g.fail : g.nrun
+}
+
+/** Contagem dos gates por estado — header, filtro da lista e resumo. */
+export function gateCounts(v: Record<string, boolean | null>): {
+  pass: number
+  fail: number
+  notRun: number
+} {
+  let pass = 0
+  let fail = 0
+  let notRun = 0
+  for (const val of Object.values(v)) {
+    if (val === true) pass++
+    else if (val === false) fail++
+    else notRun++
+  }
+  return { pass, fail, notRun }
+}

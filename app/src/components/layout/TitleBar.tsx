@@ -24,8 +24,8 @@ const MODES = [
   {
     id: "sdd",
     label: "SDD",
-    available: false,
-    desc: "Fluxo por especificações e etapas — em breve",
+    available: true,
+    desc: "Planeje, contrate e entregue uma feature com gates de verificação",
   },
 ] as const
 
@@ -42,7 +42,7 @@ function ModeSwitcher() {
           onClick={() => {
             if (!m.available) {
               toast(`Modo ${m.label} chega depois`)
-            } else if (m.id === "linear" || m.id === "fusion") {
+            } else {
               setViewMode(m.id)
             }
           }}

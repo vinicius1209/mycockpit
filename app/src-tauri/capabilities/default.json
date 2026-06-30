@@ -20,6 +20,8 @@
     "sql:allow-load",
     "sql:allow-close",
     "dialog:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "opener:default",
+    "opener:allow-open-url"
   ]
 }

@@ -17,8 +17,8 @@ interface AppState {
   theme: Theme
   sidebarOpen: boolean
   contextOpen: boolean
-  /** Modo do centro: chat Linear ou a Arena do Fusion. */
-  viewMode: "linear" | "fusion"
+  /** Modo do centro: chat Linear, a Arena do Fusion, ou o pipeline do SDD. */
+  viewMode: "linear" | "fusion" | "sdd"
   ready: boolean
   /** Config por projeto vinda de .mycockpit/config.toml (Fase 1). */
   mycockpit: Record<string, ProjectConfig>
@@ -32,7 +32,7 @@ interface AppState {
   toggleTheme: () => void
   toggleSidebar: () => void
   toggleContext: () => void
-  setViewMode: (m: "linear" | "fusion") => void
+  setViewMode: (m: "linear" | "fusion" | "sdd") => void
   setReady: (v: boolean) => void
 }
 

@@ -9,6 +9,7 @@ import { Sidebar } from "@/components/layout/Sidebar"
 import { ContextPanel } from "@/components/layout/ContextPanel"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { FusionArena } from "@/components/fusion/FusionArena"
+import { SddView } from "@/components/sdd/SddView"
 import { CommandMenu } from "@/components/common/CommandMenu"
 import {
   ResizableHandle,
@@ -190,9 +191,15 @@ export default function App() {
                     className="h-full"
                   >
                     <ResizablePanel id="chat" defaultSize="70%" minSize="42%">
-                      {viewMode === "fusion" ? <FusionArena /> : <ChatPanel />}
+                      {viewMode === "fusion" ? (
+                        <FusionArena />
+                      ) : viewMode === "sdd" ? (
+                        <SddView />
+                      ) : (
+                        <ChatPanel />
+                      )}
                     </ResizablePanel>
-                    {contextOpen && viewMode !== "fusion" && (
+                    {contextOpen && viewMode === "linear" && (
                       <>
                         <ResizableHandle className="bg-border/40 transition-colors after:w-3 data-[resize-handle-state=hover]:bg-brass/50 data-[resize-handle-state=drag]:bg-brass/60" />
                         <ResizablePanel
