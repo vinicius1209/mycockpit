@@ -1,3 +1,4 @@
+import { useState } from "react"
 import {
   Plus,
   Moon,
@@ -7,15 +8,30 @@ import {
   ChevronRight,
   Loader2,
   Trash2,
+  Pencil,
+  Copy,
+  Ban,
+  Archive,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { StatusDot } from "@/components/common/StatusDot"
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+  ContextMenuSubContent,
+} from "@/components/ui/context-menu"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { archiveProject, restoreProject } from "@/lib/db"
+import { LABEL_COLORS } from "@/lib/labelColors"
 import { cn, shortPath } from "@/lib/utils"
 import type { AgentStatus, Project } from "@/lib/types"
 
@@ -53,6 +69,52 @@ function confirmDeleteProject(project: Project) {
   })()
 }
 
+/** Submenu de cor reusado (conversa + projeto): swatches + remover. */
+function ColorSubmenu({
+  current,
+  onPick,
+}: {
+  current?: string | null
+  onPick: (color: string | null) => void
+}) {
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger>
+        <span
+          className="size-3.5 rounded-full border"
+          style={current ? { background: current } : undefined}
+        />
+        Cor
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent>
+        <div className="grid grid-cols-3 gap-1 p-1">
+          {LABEL_COLORS.map((c) => (
+            <ContextMenuItem
+              key={c.id}
+              title={c.name}
+              onSelect={() => onPick(c.hex)}
+              className="justify-center p-1.5"
+            >
+              <span
+                className={cn(
+                  "size-4 rounded-full",
+                  current === c.hex &&
+                    "ring-2 ring-foreground/40 ring-offset-1 ring-offset-popover",
+                )}
+                style={{ background: c.hex }}
+              />
+            </ContextMenuItem>
+          ))}
+        </div>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => onPick(null)}>
+          <Ban /> Remover cor
+        </ContextMenuItem>
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  )
+}
+
 function ProjectRow({
   project,
   active,
@@ -66,48 +128,109 @@ function ProjectRow({
   onSelect: () => void
   onDelete: () => void
 }) {
+  const renameProject = useApp((s) => s.renameProject)
+  const setProjectColor = useApp((s) => s.setProjectColor)
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState(project.name)
+
+  function commit() {
+    setEditing(false)
+    const v = val.trim()
+    if (v && v !== project.name) renameProject(project.id, v)
+    else setVal(project.name)
+  }
+
+  // cor = tinge a linha inteira (identidade geral, estilo Warp), não um dot.
+  const tint = project.color
+    ? `color-mix(in oklab, ${project.color} ${active ? 30 : 13}%, transparent)`
+    : undefined
+
   return (
-    <div
-      className={cn(
-        "group relative flex w-full items-center rounded-md transition-colors",
-        active ? "bg-accent" : "hover:bg-accent/55",
-      )}
-    >
-      {active && (
-        <span className="absolute top-1/2 left-0 h-5 w-[2.5px] -translate-y-1/2 rounded-full bg-brass" />
-      )}
-      <button
-        onClick={onSelect}
-        className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-1 pl-2.5 text-left"
-      >
-        <StatusDot status={status} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium text-foreground">
-            {project.name}
-          </div>
-          <div className="truncate font-mono text-[10.5px] text-muted-foreground">
-            {shortPath(project.path)}
-          </div>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          style={project.color ? { backgroundColor: tint } : undefined}
+          className={cn(
+            "group relative flex w-full items-center rounded-md transition-colors",
+            !project.color && (active ? "bg-accent" : "hover:bg-accent/55"),
+          )}
+        >
+          {active && (
+            <span className="absolute top-1/2 left-0 h-5 w-[2.5px] -translate-y-1/2 rounded-full bg-brass" />
+          )}
+          {editing ? (
+            <div className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-1 pl-2.5">
+              <StatusDot status={status} />
+              <input
+                autoFocus
+                value={val}
+                onChange={(e) => setVal(e.target.value)}
+                onBlur={commit}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commit()
+                  if (e.key === "Escape") {
+                    setVal(project.name)
+                    setEditing(false)
+                  }
+                }}
+                className="min-w-0 flex-1 rounded border border-brass/40 bg-background px-1.5 py-0.5 text-[13px] text-foreground outline-none"
+              />
+            </div>
+          ) : (
+            <button
+              onClick={onSelect}
+              className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-1 pl-2.5 text-left"
+            >
+              <StatusDot status={status} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-medium text-foreground">
+                  {project.name}
+                </div>
+                <div className="truncate font-mono text-[10.5px] text-muted-foreground">
+                  {shortPath(project.path)}
+                </div>
+              </div>
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
+            className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition hover:text-st-error group-hover:opacity-100"
+            title="Arquivar projeto"
+            aria-label="Arquivar projeto"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+          <ChevronRight
+            className={cn(
+              "mr-2 size-3.5 shrink-0 text-muted-foreground/40 transition-transform duration-200",
+              active && "rotate-90 text-muted-foreground/70",
+            )}
+          />
         </div>
-      </button>
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          onDelete()
-        }}
-        className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition hover:text-st-error group-hover:opacity-100"
-        title="Remover projeto do cockpit"
-        aria-label="Remover projeto"
-      >
-        <Trash2 className="size-3.5" />
-      </button>
-      <ChevronRight
-        className={cn(
-          "mr-2 size-3.5 shrink-0 text-muted-foreground/40 transition-transform duration-200",
-          active && "rotate-90 text-muted-foreground/70",
-        )}
-      />
-    </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
+        <ContextMenuItem
+          onSelect={() => {
+            setVal(project.name)
+            setEditing(true)
+          }}
+        >
+          <Pencil /> Renomear
+        </ContextMenuItem>
+        <ColorSubmenu
+          current={project.color}
+          onPick={(c) => setProjectColor(project.id, c)}
+        />
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={onDelete}>
+          <Archive /> Arquivar
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 
@@ -143,8 +266,19 @@ function ConversationList({ projectId }: { projectId: string }) {
   const newConversation = useChat((s) => s.newConversation)
   const switchConversation = useChat((s) => s.switchConversation)
   const removeConversation = useChat((s) => s.removeConversation)
+  const renameConversation = useChat((s) => s.renameConversation)
+  const setConversationColor = useChat((s) => s.setConversationColor)
+  const duplicateConversation = useChat((s) => s.duplicateConversation)
   const running = useRunningConvIds()
   const deciding = useDecidingConvIds()
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState("")
+
+  function commitRename(id: string) {
+    const v = editValue.trim()
+    setEditingId(null)
+    if (v) void renameConversation(id, v)
+  }
 
   return (
     <div className="animate-reveal-down mt-0.5 mb-1 ml-[18px] flex flex-col gap-px border-l border-border/60 pl-2">
@@ -152,51 +286,103 @@ function ConversationList({ projectId }: { projectId: string }) {
         const isActive = c.id === activeId
         const isRunning = running.has(c.id)
         const isDeciding = deciding.has(c.id)
+        const isEditing = editingId === c.id
+        const statusEl = isRunning ? (
+          <Loader2 className="size-3 animate-spin text-brass" aria-label="rodando" />
+        ) : isDeciding ? (
+          <span
+            className="size-1.5 rounded-full bg-brass"
+            title="Disputa esperando sua decisão"
+            aria-label="decisão pendente"
+          />
+        ) : null
+        // cor = tinge a linha inteira (identidade geral, estilo Warp), não um dot.
+        const tint = c.color
+          ? `color-mix(in oklab, ${c.color} ${isActive ? 30 : 13}%, transparent)`
+          : undefined
         return (
-          <div
-            key={c.id}
-            className={cn(
-              "group/c flex items-center rounded-md",
-              isActive ? "bg-accent" : "hover:bg-accent/50",
-            )}
-          >
-            <button
-              onClick={() => void switchConversation(c.id)}
-              className={cn(
-                "flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left text-[12px]",
-                isActive
-                  ? "text-foreground"
-                  : "text-muted-foreground group-hover/c:text-foreground",
-              )}
-            >
-              {/* slot fixo à esquerda → spinner quando roda, sem deslocar o título */}
-              <span className="grid size-3 shrink-0 place-items-center">
-                {isRunning ? (
-                  <Loader2
-                    className="size-3 animate-spin text-brass"
-                    aria-label="rodando"
-                  />
-                ) : isDeciding ? (
-                  <span
-                    className="size-1.5 rounded-full bg-brass"
-                    title="Disputa esperando sua decisão"
-                    aria-label="decisão pendente"
-                  />
-                ) : null}
-              </span>
-              <span className="truncate">{c.title ?? "Nova conversa"}</span>
-            </button>
-            {!isRunning && (
-              <button
-                onClick={() => void removeConversation(c.id)}
-                className="mr-1 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:text-st-error group-hover/c:opacity-100"
-                title="Excluir conversa"
-                aria-label="Excluir conversa"
+          <ContextMenu key={c.id}>
+            <ContextMenuTrigger asChild>
+              <div
+                style={c.color ? { backgroundColor: tint } : undefined}
+                className={cn(
+                  "group/c flex items-center rounded-md",
+                  !c.color && (isActive ? "bg-accent" : "hover:bg-accent/50"),
+                )}
               >
-                <X className="size-3" />
-              </button>
-            )}
-          </div>
+                {isEditing ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1">
+                    <span className="grid size-3 shrink-0 place-items-center">
+                      {statusEl}
+                    </span>
+                    <input
+                      autoFocus
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onBlur={() => commitRename(c.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitRename(c.id)
+                        if (e.key === "Escape") setEditingId(null)
+                      }}
+                      className="min-w-0 flex-1 rounded border border-brass/40 bg-background px-1 py-0.5 text-[12px] text-foreground outline-none"
+                    />
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => void switchConversation(c.id)}
+                    className={cn(
+                      "flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left text-[12px]",
+                      isActive
+                        ? "text-foreground"
+                        : "text-muted-foreground group-hover/c:text-foreground",
+                    )}
+                  >
+                    {/* slot fixo à esquerda: spinner/decisão/cor, sem deslocar o título */}
+                    <span className="grid size-3 shrink-0 place-items-center">
+                      {statusEl}
+                    </span>
+                    <span className="truncate">{c.title ?? "Nova conversa"}</span>
+                  </button>
+                )}
+                {!isRunning && !isEditing && (
+                  <button
+                    onClick={() => void removeConversation(c.id)}
+                    className="mr-1 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:text-st-error group-hover/c:opacity-100"
+                    title="Excluir conversa"
+                    aria-label="Excluir conversa"
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
+              <ContextMenuItem
+                onSelect={() => {
+                  setEditValue(c.title ?? "")
+                  setEditingId(c.id)
+                }}
+              >
+                <Pencil /> Renomear
+              </ContextMenuItem>
+              <ColorSubmenu
+                current={c.color}
+                onPick={(col) => void setConversationColor(c.id, col)}
+              />
+              <ContextMenuItem onSelect={() => void duplicateConversation(c.id)}>
+                <Copy /> Duplicar
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                variant="destructive"
+                disabled={isRunning}
+                onSelect={() => void removeConversation(c.id)}
+              >
+                <X /> Excluir
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
         )
       })}
       <button

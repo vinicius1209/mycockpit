@@ -17,6 +17,8 @@ import {
   createConversation as dbCreate,
   saveConversation as dbSave,
   deleteConversation as dbDelete,
+  renameConversation as dbRename,
+  setConversationColor as dbSetColor,
   isTauri,
   type ConversationMeta,
 } from "@/lib/db"
@@ -88,6 +90,12 @@ interface ChatState {
   newConversation: (projectId: string) => Promise<void>
   switchConversation: (id: string) => Promise<void>
   removeConversation: (id: string) => Promise<void>
+  /** Renomeia manualmente (o título passa a ser fixo, não mais auto-derivado). */
+  renameConversation: (id: string, title: string) => Promise<void>
+  /** Define/limpa (null) a cor-rótulo da conversa. */
+  setConversationColor: (id: string, color: string | null) => Promise<void>
+  /** Duplica a conversa (copia o histórico; sessão nova, sem resume). */
+  duplicateConversation: (id: string) => Promise<void>
   persist: (convId: string) => Promise<void>
   start: (
     convId: string,
@@ -392,7 +400,7 @@ export const useChat = create<ChatState>((set, get) => {
       if (list.length === 0) {
         const id = uid()
         await dbCreate(projectId, id)
-        list = [{ id, title: null, updatedAt: Date.now() }]
+        list = [{ id, title: null, updatedAt: Date.now(), color: null }]
         set((s) => ({
           projectId,
           activeId: id,
@@ -418,7 +426,7 @@ export const useChat = create<ChatState>((set, get) => {
         activeId: id,
         conversations: [
           ...s.conversations,
-          { id, title: null, updatedAt: Date.now() },
+          { id, title: null, updatedAt: Date.now(), color: null },
         ],
         byId: { ...s.byId, [id]: emptyConv(projectId) },
       }))
@@ -455,10 +463,67 @@ export const useChat = create<ChatState>((set, get) => {
       }
     },
 
+    renameConversation: async (id, title) => {
+      const t = title.trim()
+      if (!t) return
+      await dbRename(id, t)
+      set((s) => ({
+        conversations: s.conversations.map((c) =>
+          c.id === id ? { ...c, title: t } : c,
+        ),
+      }))
+    },
+
+    setConversationColor: async (id, color) => {
+      await dbSetColor(id, color)
+      set((s) => ({
+        conversations: s.conversations.map((c) =>
+          c.id === id ? { ...c, color } : c,
+        ),
+      }))
+    },
+
+    duplicateConversation: async (id) => {
+      const projectId = get().projectId
+      if (!projectId) return
+      const src = get().conversations.find((c) => c.id === id)
+      const loaded = await dbLoad(id)
+      const items = loaded?.items ?? get().byId[id]?.items ?? []
+      const agent = loaded?.agent ?? get().byId[id]?.agent ?? "claude-code"
+      const reqModel = loaded?.reqModel ?? get().byId[id]?.reqModel ?? null
+      const effort = loaded?.effort ?? get().byId[id]?.effort ?? null
+      const title = `${src?.title ?? loaded?.title ?? "Conversa"} (cópia)`
+      const newId = uid()
+      // sessão NULL de propósito: a cópia não herda a sessão do CLI (resume
+      // conflitaria); os items viram histórico visível, o próximo turno é fresh.
+      await dbSave(newId, projectId, title, null, items, [], agent, reqModel, effort)
+      if (src?.color != null) await dbSetColor(newId, src.color)
+      set((s) => ({
+        activeId: newId,
+        conversations: [
+          ...s.conversations,
+          { id: newId, title, updatedAt: Date.now(), color: src?.color ?? null },
+        ],
+        byId: {
+          ...s.byId,
+          [newId]: {
+            ...emptyConv(projectId),
+            items,
+            agent,
+            reqModel,
+            effort,
+            sessionId: null,
+          },
+        },
+      }))
+    },
+
     persist: async (convId) => {
       const c = get().byId[convId]
       if (!c) return
-      const title = deriveTitle(c.items)
+      // preserva o título atual (rename manual OU auto já fixado); só deriva se vazio
+      const meta = get().conversations.find((cv) => cv.id === convId)
+      const title = meta?.title ?? deriveTitle(c.items)
       await dbSave(
         convId,
         c.projectId,

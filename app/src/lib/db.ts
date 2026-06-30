@@ -27,6 +27,7 @@ interface ProjectRow {
   has_claude_md: number
   has_agents_md: number
   permission_mode: string
+  color: string | null
 }
 
 function toProject(r: ProjectRow): Project {
@@ -38,6 +39,7 @@ function toProject(r: ProjectRow): Project {
     hasClaudeMd: r.has_claude_md === 1,
     hasAgentsMd: r.has_agents_md === 1,
     permissionMode: (r.permission_mode as Project["permissionMode"]) ?? "padrao",
+    color: r.color ?? null,
     status: "idle",
   }
 }
@@ -46,9 +48,26 @@ export async function listProjects(): Promise<Project[] | null> {
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ProjectRow[]>(
-    "SELECT id, name, path, created_at, has_claude_md, has_agents_md, permission_mode FROM projects WHERE deleted_at IS NULL ORDER BY created_at DESC",
+    "SELECT id, name, path, created_at, has_claude_md, has_agents_md, permission_mode, color FROM projects WHERE deleted_at IS NULL ORDER BY created_at DESC",
   )
   return rows.map(toProject)
+}
+
+/** Renomeia um projeto (UPDATE pontual). */
+export async function renameProject(id: string, name: string): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute("UPDATE projects SET name = $1 WHERE id = $2", [name, id])
+}
+
+/** Define (ou limpa, com null) a cor-rótulo de um projeto. */
+export async function setProjectColor(
+  id: string,
+  color: string | null,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute("UPDATE projects SET color = $1 WHERE id = $2", [color, id])
 }
 
 export async function insertProject(p: Project): Promise<boolean> {
@@ -103,12 +122,14 @@ export interface ConversationMeta {
   id: string
   title: string | null
   updatedAt: number
+  color: string | null
 }
 
 interface ConvListRow {
   id: string
   title: string | null
   updated_at: number
+  color: string | null
 }
 
 /** Lista as conversas de um projeto em ordem de criação (estável; novas embaixo). */
@@ -118,10 +139,41 @@ export async function listConversations(
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ConvListRow[]>(
-    "SELECT id, title, updated_at FROM conversations WHERE project_id = $1 ORDER BY created_at ASC",
+    "SELECT id, title, updated_at, color FROM conversations WHERE project_id = $1 ORDER BY created_at ASC",
     [projectId],
   )
-  return rows.map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at }))
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    updatedAt: r.updated_at,
+    color: r.color ?? null,
+  }))
+}
+
+/** Renomeia uma conversa (UPDATE pontual; não toca em items/sessão). */
+export async function renameConversation(
+  id: string,
+  title: string,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute("UPDATE conversations SET title = $1 WHERE id = $2", [
+    title,
+    id,
+  ])
+}
+
+/** Define (ou limpa, com null) a cor-rótulo de uma conversa. */
+export async function setConversationColor(
+  id: string,
+  color: string | null,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute("UPDATE conversations SET color = $1 WHERE id = $2", [
+    color,
+    id,
+  ])
 }
 
 interface ConvLoadRow {

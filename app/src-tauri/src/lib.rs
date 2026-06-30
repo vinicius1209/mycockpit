@@ -144,6 +144,19 @@ pub fn run() {
             sql: "ALTER TABLE projects ADD COLUMN deleted_at INTEGER;",
             kind: MigrationKind::Up,
         },
+        // v17/v18, rótulo de cor (hex ou NULL) por conversa e por projeto.
+        Migration {
+            version: 17,
+            description: "conversations_color",
+            sql: "ALTER TABLE conversations ADD COLUMN color TEXT;",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 18,
+            description: "projects_color",
+            sql: "ALTER TABLE projects ADD COLUMN color TEXT;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

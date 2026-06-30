@@ -13,6 +13,8 @@ export interface Project {
   hasAgentsMd?: boolean
   status?: AgentStatus
   permissionMode?: PermissionMode
+  /** Rótulo de cor (hex) ou null/undefined = sem cor. */
+  color?: string | null
 }
 
 /** Configuração de UM run: qual agent + modelo/effort (null = default do CLI). */
