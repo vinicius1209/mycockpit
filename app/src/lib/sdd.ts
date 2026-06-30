@@ -232,9 +232,53 @@ export async function loadPrInfo(
   }
 }
 
+/** O projeto tem o fluxo SDD instalado (architect stages presentes)? */
+export async function sddReady(projectPath: string): Promise<boolean> {
+  if (!isTauri()) return false
+  try {
+    return await invoke<boolean>("sdd_ready", { projectPath })
+  } catch {
+    return false
+  }
+}
+
+export interface SeedSummary {
+  copied: string[]
+  skipped: string[]
+}
+
+/** Instala o scaffold SDD (clona o seed + copia non-destructive pro .claude/). */
+export async function seedSdd(projectPath: string): Promise<SeedSummary> {
+  return invoke<SeedSummary>("seed_sdd", { projectPath })
+}
+
 /** Índice do stage no pipeline (deriva done/current/pending). -1 se desconhecido. */
 export function stageIndex(s: string): number {
   return (SDD_STAGES as readonly string[]).indexOf(s)
+}
+
+// stage normalizado → a SKILL que avança pro próximo (nome real da skill no projeto).
+const NEXT_SKILL: Record<string, string> = {
+  "": "discovery",
+  discovery: "prd",
+  prd: "spec",
+  spec: "developer",
+  implementation: "test-suite",
+  test: "code-review",
+  review: "pr",
+}
+
+/** Próxima etapa a rodar (skill + prompt). null se done OU travado num gate humano. */
+export function nextStep(
+  plan: SddPlan,
+): { skill: string; prompt: string; blockedBy?: "prd" } | null {
+  // Gate do PRD (v2.2): PRD existe e não aprovado → não dispara /spec; espera você.
+  if (plan.stage === "prd" && plan.artifacts.prd && !plan.artifacts.prd.approved) {
+    return { skill: "spec", prompt: "", blockedBy: "prd" }
+  }
+  const skill = NEXT_SKILL[plan.stage]
+  if (!skill) return null
+  return { skill, prompt: `/${skill} ${plan.slug}` }
 }
 
 // Rótulo ADAPTADO ao estado: o texto NUNCA diz "passando" quando cinza/falho.

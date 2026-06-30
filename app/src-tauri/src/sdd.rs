@@ -187,3 +187,102 @@ pub fn pr_info(
         ..Default::default()
     }
 }
+
+// ---------------- Seed / Bootstrap SDD (v2.0) ----------------
+
+/// Repo de seeds do fluxo SDD (pipeline skills, agents, hooks, schema, template).
+/// Pessoal-primeiro: default no repo do usuário; trocável depois por config.
+const SEED_REPO: &str = "https://github.com/vinicius1209/skills";
+
+#[derive(Serialize)]
+pub struct SeedSummary {
+    pub copied: Vec<String>,
+    pub skipped: Vec<String>,
+}
+
+/// O projeto já tem o fluxo SDD instalado? (architect stages presentes.)
+#[tauri::command]
+pub fn sdd_ready(project_path: String) -> bool {
+    let skills = Path::new(&project_path).join(".claude").join("skills");
+    skills.join("prd").join("SKILL.md").exists()
+        || skills.join("spec").join("SKILL.md").exists()
+}
+
+/// Copia uma árvore NON-DESTRUCTIVE (pula o que já existe), coletando rel paths.
+fn copy_tree(
+    src: &Path,
+    dst: &Path,
+    base: &Path,
+    copied: &mut Vec<String>,
+    skipped: &mut Vec<String>,
+) -> Result<(), String> {
+    if !src.is_dir() {
+        return Ok(());
+    }
+    fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(src).map_err(|e| e.to_string())?.flatten() {
+        let s = entry.path();
+        let d = dst.join(entry.file_name());
+        if s.is_dir() {
+            copy_tree(&s, &d, base, copied, skipped)?;
+            continue;
+        }
+        let rel = d.strip_prefix(base).unwrap_or(&d).to_string_lossy().to_string();
+        if d.exists() {
+            skipped.push(rel);
+            continue;
+        }
+        fs::copy(&s, &d).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        if d.extension().map(|e| e == "sh").unwrap_or(false) {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&d, fs::Permissions::from_mode(0o755));
+        }
+        copied.push(rel);
+    }
+    Ok(())
+}
+
+/// Instala o scaffold do fluxo SDD: clona o seed e copia pro `.claude/` do projeto
+/// (non-destructive — nunca sobrescreve arquivo existente). Nível 1 (mecânico); o
+/// nível 2 (domínio inteligente) é um agent separado.
+#[tauri::command]
+pub fn seed_sdd(project_path: String) -> Result<SeedSummary, String> {
+    let tmp = std::env::temp_dir().join("mycockpit-sdd-seed");
+    let _ = fs::remove_dir_all(&tmp);
+    let out = std::process::Command::new("git")
+        .args(["clone", "--depth", "1", "--quiet", SEED_REPO])
+        .arg(&tmp)
+        .output()
+        .map_err(|e| format!("git não encontrado: {e}"))?;
+    if !out.status.success() {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(format!(
+            "clone do seed falhou: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let seeds = tmp.join("seeds");
+    if !seeds.is_dir() {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err("o repo de seed não tem a pasta seeds/".into());
+    }
+    let claude = Path::new(&project_path).join(".claude");
+    let mut copied = Vec::new();
+    let mut skipped = Vec::new();
+    for sub in ["skills", "agents", "hooks", "references", "schemas", "plans"] {
+        copy_tree(&seeds.join(sub), &claude.join(sub), &claude, &mut copied, &mut skipped)?;
+    }
+    // settings.json (wiring dos hooks) — só se não existir (não clobberar config).
+    let src_set = seeds.join("settings.json");
+    let dst_set = claude.join("settings.json");
+    if src_set.exists() && !dst_set.exists() {
+        fs::create_dir_all(&claude).ok();
+        fs::copy(&src_set, &dst_set).map_err(|e| e.to_string())?;
+        copied.push("settings.json".into());
+    } else if dst_set.exists() {
+        skipped.push("settings.json (já existe — wiring de hooks pode precisar de merge)".into());
+    }
+    let _ = fs::remove_dir_all(&tmp);
+    Ok(SeedSummary { copied, skipped })
+}

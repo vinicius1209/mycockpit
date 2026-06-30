@@ -137,6 +137,13 @@ pub fn run() {
             sql: "ALTER TABLE fusion_runs ADD COLUMN pending INTEGER NOT NULL DEFAULT 0;",
             kind: MigrationKind::Up,
         },
+        // v16 — soft delete de projeto (deleted_at NULL = ativo): restaurar + métricas.
+        Migration {
+            version: 16,
+            description: "projects_deleted_at",
+            sql: "ALTER TABLE projects ADD COLUMN deleted_at INTEGER;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -184,6 +191,8 @@ pub fn run() {
             sources::list_project_files,
             sdd::read_sdd_plans,
             sdd::pr_info,
+            sdd::sdd_ready,
+            sdd::seed_sdd,
             attachments::save_attachment,
             attachments::attach_path,
             attachments::delete_attachment,

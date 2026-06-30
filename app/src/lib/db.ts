@@ -46,7 +46,7 @@ export async function listProjects(): Promise<Project[] | null> {
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ProjectRow[]>(
-    "SELECT id, name, path, created_at, has_claude_md, has_agents_md, permission_mode FROM projects ORDER BY created_at DESC",
+    "SELECT id, name, path, created_at, has_claude_md, has_agents_md, permission_mode FROM projects WHERE deleted_at IS NULL ORDER BY created_at DESC",
   )
   return rows.map(toProject)
 }
@@ -79,6 +79,24 @@ export async function updateProjectPermission(
     mode,
     projectId,
   ])
+}
+
+/** Soft delete: arquiva o projeto (`deleted_at`). Conversas PRESERVADAS (métricas/
+ *  restauração). NÃO apaga nada no disco. */
+export async function archiveProject(id: string): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute("UPDATE projects SET deleted_at = $1 WHERE id = $2", [
+    Date.now(),
+    id,
+  ])
+}
+
+/** Restaura um projeto arquivado (limpa `deleted_at`). */
+export async function restoreProject(id: string): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute("UPDATE projects SET deleted_at = NULL WHERE id = $1", [id])
 }
 
 export interface ConversationMeta {

@@ -184,7 +184,7 @@ export default function App() {
             )}
             {/* Conteúdo principal como "card inset" flutuando no rail. */}
             <ResizablePanel id="main" defaultSize="81%" minSize="40%">
-              <div className="h-full py-2 pr-2 pl-1">
+              <div className="relative h-full py-2 pr-2 pl-1">
                 <div className="flex h-full overflow-hidden rounded-xl border bg-background shadow-[var(--shadow-pop)]">
                   <ResizablePanelGroup
                     orientation="horizontal"
@@ -214,12 +214,17 @@ export default function App() {
                     )}
                   </ResizablePanelGroup>
                 </div>
+                {/* Toaster ancorado ao CONTEÚDO (centra no card, não na janela). O
+                    wrapper com transform vira containing-block SÓ pro toaster; o
+                    pointer-events-none não bloqueia o card (sonner re-habilita o clique). */}
+                <div className="pointer-events-none absolute inset-0 [transform:translate(0)]">
+                  <Toaster position="bottom-center" theme={theme} />
+                </div>
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>
         </div>
         <CommandMenu />
-        <Toaster position="bottom-center" theme={theme} />
       </TooltipProvider>
     </QueryClientProvider>
   )

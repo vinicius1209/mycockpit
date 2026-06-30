@@ -6,54 +6,108 @@ import {
   X,
   ChevronRight,
   Loader2,
+  Trash2,
 } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { StatusDot } from "@/components/common/StatusDot"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
+import { archiveProject, restoreProject } from "@/lib/db"
 import { cn, shortPath } from "@/lib/utils"
 import type { AgentStatus, Project } from "@/lib/types"
+
+/** Soft-remove do projeto (arquiva, conversas preservadas) com Desfazer. Disco intocado. */
+function confirmDeleteProject(project: Project) {
+  void (async () => {
+    try {
+      await archiveProject(project.id)
+      const st = useApp.getState()
+      const remaining = st.projects.filter((p) => p.id !== project.id)
+      st.setProjects(remaining)
+      if (st.activeProjectId === project.id) {
+        st.setActiveProject(remaining[0]?.id ?? null)
+      }
+      toast(`"${project.name}" removido`, {
+        description: "Arquivado — dá pra restaurar.",
+        action: {
+          label: "Desfazer",
+          onClick: () => {
+            void (async () => {
+              await restoreProject(project.id)
+              const s = useApp.getState()
+              if (!s.projects.some((p) => p.id === project.id)) {
+                s.setProjects([project, ...s.projects])
+              }
+              s.setActiveProject(project.id)
+              toast.success(`"${project.name}" restaurado`)
+            })()
+          },
+        },
+      })
+    } catch {
+      toast.error("Falha ao remover o projeto")
+    }
+  })()
+}
 
 function ProjectRow({
   project,
   active,
   status,
   onSelect,
+  onDelete,
 }: {
   project: Project
   active: boolean
   status: AgentStatus
   onSelect: () => void
+  onDelete: () => void
 }) {
   return (
-    <button
-      onClick={onSelect}
+    <div
       className={cn(
-        "group relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors",
+        "group relative flex w-full items-center rounded-md transition-colors",
         active ? "bg-accent" : "hover:bg-accent/55",
       )}
     >
       {active && (
         <span className="absolute top-1/2 left-0 h-5 w-[2.5px] -translate-y-1/2 rounded-full bg-brass" />
       )}
-      <StatusDot status={status} />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-medium text-foreground">
-          {project.name}
+      <button
+        onClick={onSelect}
+        className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-1 pl-2.5 text-left"
+      >
+        <StatusDot status={status} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-medium text-foreground">
+            {project.name}
+          </div>
+          <div className="truncate font-mono text-[10.5px] text-muted-foreground">
+            {shortPath(project.path)}
+          </div>
         </div>
-        <div className="truncate font-mono text-[10.5px] text-muted-foreground">
-          {shortPath(project.path)}
-        </div>
-      </div>
+      </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          onDelete()
+        }}
+        className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition hover:text-st-error group-hover:opacity-100"
+        title="Remover projeto do cockpit"
+        aria-label="Remover projeto"
+      >
+        <Trash2 className="size-3.5" />
+      </button>
       <ChevronRight
         className={cn(
-          "size-3.5 shrink-0 text-muted-foreground/40 transition-transform duration-200",
+          "mr-2 size-3.5 shrink-0 text-muted-foreground/40 transition-transform duration-200",
           active && "rotate-90 text-muted-foreground/70",
         )}
       />
-    </button>
+    </div>
   )
 }
 
@@ -222,6 +276,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                     runningProjects.has(p.id) ? "running" : (p.status ?? "idle")
                   }
                   onSelect={() => setActive(p.id)}
+                  onDelete={() => confirmDeleteProject(p)}
                 />
                 {p.id === activeId && <ConversationList projectId={p.id} />}
               </div>

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react"
+import { Fragment, useCallback, useEffect, useState } from "react"
 import {
   Check,
   ChevronDown,
@@ -8,14 +8,23 @@ import {
   GitPullRequestClosed,
   Loader2,
   Minus,
+  Play,
   Search,
+  Sprout,
   X,
 } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
+import { toast } from "sonner"
 import { useActiveProject } from "@/store/app"
+import { runAgent } from "@/lib/agent"
+import { reduceItems, type ChatItem } from "@/store/chat"
+import { Markdown } from "@/components/common/Markdown"
 import {
   loadSddPlans,
   loadPrInfo,
+  sddReady,
+  seedSdd,
+  nextStep,
   stageLabel,
   stageIndex,
   gateText,
@@ -23,6 +32,7 @@ import {
   SDD_STAGES,
   type SddPlan,
   type PrInfo,
+  type SeedSummary,
 } from "@/lib/sdd"
 import { cn } from "@/lib/utils"
 
@@ -90,21 +100,54 @@ export function SddView() {
   const [selected, setSelected] = useState<string | null>(null)
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<FilterId>("todas")
+  const [ready, setReady] = useState<boolean | null>(null)
+  const [seeding, setSeeding] = useState(false)
+  const [seedResult, setSeedResult] = useState<SeedSummary | null>(null)
 
   useEffect(() => {
     if (!project) {
       setPlans([])
+      setReady(null)
       setLoading(false)
       return
     }
     setLoading(true)
-    void loadSddPlans(project.path).then((ps) => {
-      const real = ps.filter((p) => p.hasManifest)
-      setPlans(real)
-      setSelected((s) => (s && real.some((p) => p.slug === s) ? s : (real[0]?.slug ?? null)))
-      setLoading(false)
-    })
+    setSeedResult(null)
+    void Promise.all([loadSddPlans(project.path), sddReady(project.path)]).then(
+      ([ps, rdy]) => {
+        const real = ps.filter((p) => p.hasManifest)
+        setPlans(real)
+        setReady(rdy)
+        setSelected((s) =>
+          s && real.some((p) => p.slug === s) ? s : (real[0]?.slug ?? null),
+        )
+        setLoading(false)
+      },
+    )
   }, [project?.path])
+
+  // refresh silencioso do manifest (após rodar uma etapa) — mantém a seleção.
+  const reload = useCallback(() => {
+    if (!project) return
+    void loadSddPlans(project.path).then((ps) =>
+      setPlans(ps.filter((p) => p.hasManifest)),
+    )
+  }, [project?.path])
+
+  // v2.0 — instala o fluxo SDD num projeto que ainda não tem (scaffold do seed).
+  async function initSdd() {
+    if (!project) return
+    setSeeding(true)
+    try {
+      const sum = await seedSdd(project.path)
+      setSeedResult(sum)
+      setReady(true)
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha ao inicializar SDD")
+    } finally {
+      setSeeding(false)
+    }
+  }
 
   const plan = plans.find((p) => p.slug === selected)
   const filtered = plans.filter((p) => matchesFilter(p, filter, query))
@@ -117,16 +160,80 @@ export function SddView() {
     )
   }
   if (plans.length === 0) {
+    // instalando — loading CENTRALIZADO (não um texto no botão).
+    if (seeding) {
+      return (
+        <CenteredEmpty
+          icon={<Loader2 className="size-7 animate-spin text-brass" />}
+          title="Instalando o fluxo SDD…"
+          desc="Clonando o seed e copiando o scaffold pro .claude/ — uns segundos."
+        />
+      )
+    }
+    // acabou de instalar — confirmação CENTRALIZADA com o que foi feito.
+    if (seedResult) {
+      return (
+        <CenteredEmpty
+          icon={<Check className="size-8 text-st-success" />}
+          title="Fluxo SDD instalado"
+          desc={
+            <>
+              <span className="text-foreground/70">
+                {seedResult.copied.length} arquivos
+              </span>{" "}
+              copiados pro <code className="text-foreground/70">.claude/</code>
+              {seedResult.skipped.length > 0
+                ? ` · ${seedResult.skipped.length} já existiam (preservados)`
+                : ""}
+              . Pronto.
+              <span className="text-muted-foreground/60">
+                {" "}
+                (Descrever uma feature chega no v2.3.)
+              </span>
+            </>
+          }
+        />
+      )
+    }
+    // não-seedado → oferece instalar (v2.0).
+    if (ready === false) {
+      return (
+        <CenteredEmpty
+          icon={<Sprout className="size-8 text-brass/60" />}
+          title="Este projeto ainda não tem o fluxo SDD"
+          desc={
+            <>
+              Instalo o scaffold (skills do pipeline, agents, hooks, schema) no{" "}
+              <code className="text-foreground/70">.claude/</code> a partir do seu
+              seed — non-destructive, não sobrescreve nada que já existe.
+            </>
+          }
+        >
+          <button
+            onClick={() => void initSdd()}
+            className="flex items-center gap-2 rounded-full border border-brass/40 bg-brass/10 px-4 py-2 text-[13px] text-brass transition-colors hover:bg-brass/20"
+          >
+            <Sprout className="size-4" /> Inicializar SDD
+          </button>
+        </CenteredEmpty>
+      )
+    }
+    // seedado, mas sem planos ainda.
     return (
-      <div className="flex h-full flex-col items-center justify-center px-6 text-center text-muted-foreground">
-        <FileText className="mb-3 size-8 text-brass/50" />
-        <p className="text-[15px] text-foreground/80">Nenhuma feature SDD aqui</p>
-        <p className="mt-1 max-w-sm text-[13px] leading-relaxed">
-          O modo SDD lê os planos de <code className="text-foreground/70">.claude/plans/</code>.
-          Planeje, implemente e valide uma feature via PRD → SPEC → implementação →
-          testes → review → PR, com gates de verificação.
-        </p>
-      </div>
+      <CenteredEmpty
+        icon={<FileText className="size-8 text-brass/50" />}
+        title="Nenhuma feature SDD ainda"
+        desc={
+          <>
+            O fluxo está instalado. Descreva uma feature e o pipeline (PRD → SPEC →
+            implementação → testes → review → PR) roda com gates.
+            <span className="text-muted-foreground/60">
+              {" "}
+              (Criar feature chega no v2.3.)
+            </span>
+          </>
+        }
+      />
     )
   }
 
@@ -175,8 +282,29 @@ export function SddView() {
         </div>
       </aside>
       <div className="min-w-0 flex-1 overflow-y-auto">
-        {plan && <PlanDetail plan={plan} />}
+        {plan && <PlanDetail plan={plan} onReload={reload} />}
       </div>
+    </div>
+  )
+}
+
+function CenteredEmpty({
+  icon,
+  title,
+  desc,
+  children,
+}: {
+  icon: React.ReactNode
+  title: string
+  desc?: React.ReactNode
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-6 text-center text-muted-foreground">
+      <div className="mb-3">{icon}</div>
+      <p className="text-[15px] text-foreground/80">{title}</p>
+      {desc && <p className="mt-1 max-w-md text-[13px] leading-relaxed">{desc}</p>}
+      {children && <div className="mt-4">{children}</div>}
     </div>
   )
 }
@@ -228,9 +356,10 @@ function PlanRow({
   )
 }
 
-function PlanDetail({ plan }: { plan: SddPlan }) {
+function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void }) {
   const project = useActiveProject()
   const [pr, setPr] = useState<PrInfo | null>(null)
+  const [run, setRun] = useState<StageRun | null>(null)
   // enriquece o PR (gh → git → manifest) ao trocar de plano. Lazy: 1 chamada/seleção.
   useEffect(() => {
     setPr(null)
@@ -245,6 +374,41 @@ function PlanDetail({ plan }: { plan: SddPlan }) {
     pr?.state ?? (plan.stage === "done" || plan.mergedAt ? "MERGED" : "OPEN")
   const mergedAt = pr?.mergedAt ?? plan.mergedAt
   const gc = gateCounts(plan.verification)
+  const step = nextStep(plan)
+
+  // v2.1 — dirige a próxima etapa via o AgentRunner (claude -p "/{skill} {slug}").
+  async function runStage() {
+    if (!step || step.blockedBy || !project) return
+    const runId = crypto.randomUUID()
+    setRun({
+      skill: step.skill,
+      items: [],
+      streamingTextId: null,
+      model: null,
+      sessionId: null,
+      startedAt: Date.now(),
+      running: true,
+    })
+    try {
+      await runAgent(
+        runId,
+        `sdd:${plan.slug}`,
+        "claude-code",
+        null,
+        null,
+        step.prompt,
+        project.path,
+        null,
+        project.permissionMode ?? "padrao",
+        [],
+        (e) => setRun((r) => (r ? { ...r, ...reduceItems(r, e) } : r)),
+      )
+    } catch {
+      // erro já chega como card de Error no stream
+    }
+    setRun((r) => (r ? { ...r, running: false } : r))
+  }
+
   return (
     <div className="mx-auto flex max-w-[920px] flex-col gap-5 px-7 py-6">
       {/* header */}
@@ -292,6 +456,28 @@ function PlanDetail({ plan }: { plan: SddPlan }) {
       </div>
 
       <Pipeline plan={plan} />
+
+      {step &&
+        (step.blockedBy === "prd" ? (
+          <p className="text-[12.5px]">
+            <span className="text-st-warning">Aprove o PRD</span>
+            <span className="text-muted-foreground">
+              {" "}
+              para liberar /spec — gate humano (v2.2)
+            </span>
+          </p>
+        ) : (
+          <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+            <span>Próxima etapa:</span>
+            <button
+              onClick={() => void runStage()}
+              disabled={!!run?.running}
+              className="flex items-center gap-1.5 rounded-full border border-brass/40 bg-brass/10 px-3 py-1 text-brass transition-colors hover:bg-brass/20 disabled:opacity-50"
+            >
+              <Play className="size-3.5" /> Rodar /{step.skill}
+            </button>
+          </div>
+        ))}
 
       <ContractSection plan={plan} />
 
@@ -364,6 +550,82 @@ function PlanDetail({ plan }: { plan: SddPlan }) {
       </div>
 
       {(plan.logEvents.length > 0 || plan.logTail) && <ActivitySection plan={plan} />}
+
+      {run && (
+        <StageRunOverlay
+          run={run}
+          onClose={() => {
+            setRun(null)
+            onReload()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+interface StageRun {
+  skill: string
+  items: ChatItem[]
+  streamingTextId: string | null
+  model: string | null
+  sessionId: string | null
+  startedAt: number | null
+  running: boolean
+}
+
+function runText(items: ChatItem[]): string {
+  const texts = items.filter(
+    (it): it is Extract<ChatItem, { kind: "text" }> => it.kind === "text",
+  )
+  if (texts.length) return texts.map((t) => t.text).join("\n\n")
+  const result = items.find(
+    (it): it is Extract<ChatItem, { kind: "result" }> => it.kind === "result",
+  )
+  return result?.text ?? ""
+}
+
+/** Overlay do run de uma etapa (streaming ao vivo) — fechar re-lê o manifest. */
+function StageRunOverlay({ run, onClose }: { run: StageRun; onClose: () => void }) {
+  const text = runText(run.items)
+  const result = run.items.find(
+    (it): it is Extract<ChatItem, { kind: "result" }> => it.kind === "result",
+  )
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-8">
+      <div className="flex max-h-[80vh] w-full max-w-[760px] flex-col rounded-xl border bg-card shadow-[var(--shadow-pop)]">
+        <div className="flex shrink-0 items-center gap-2 border-b px-5 py-3">
+          {run.running ? (
+            <Loader2 className="size-4 animate-spin text-brass" />
+          ) : (
+            <Check className="size-4 text-st-success" />
+          )}
+          <span className="font-mono text-[13px] text-foreground">/{run.skill}</span>
+          <span className="text-[12px] text-muted-foreground">
+            {run.running ? "rodando…" : "concluído"}
+          </span>
+          {result?.costUsd != null && (
+            <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">
+              ~US${result.costUsd.toFixed(3)}
+            </span>
+          )}
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-[13px]">
+          {text ? (
+            <Markdown text={text} />
+          ) : (
+            <span className="text-muted-foreground">iniciando…</span>
+          )}
+        </div>
+        <div className="flex shrink-0 justify-end border-t px-5 py-3">
+          <button
+            onClick={onClose}
+            className="rounded-md border px-3 py-1.5 text-[12px] text-foreground hover:bg-accent"
+          >
+            {run.running ? "Fechar (continua em background)" : "Fechar e atualizar"}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
