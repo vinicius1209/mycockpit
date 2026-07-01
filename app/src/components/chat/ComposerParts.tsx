@@ -7,14 +7,7 @@ import {
   Square,
   X,
 } from "lucide-react"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { PillSelect } from "@/components/ui/PillSelect"
+import { RichSelect } from "@/components/ui/RichSelect"
 import { Button } from "@/components/ui/button"
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
 import type { SlashCommand } from "@/lib/sources"
@@ -182,8 +175,8 @@ export function AttachmentChips({
   )
 }
 
-/** Pill de seleção de agent (dot + rótulo + badge). ÚNICO, o composer do Linear e
- *  a liga do Fusion reusam, pra ficarem visualmente idênticos. */
+/** Seleção de agent (dot + nome + badge + descrição). ÚNICO, o composer do Linear e
+ *  a liga do Fusion reusam. Segue o padrão rico (RichSelect) dos demais selects. */
 export function AgentSelect({
   value,
   onValueChange,
@@ -197,51 +190,23 @@ export function AgentSelect({
   options?: Destination[]
   title?: string
 }) {
-  const dest =
-    options.find((d) => d.id === value) ??
-    DESTINATIONS.find((d) => d.id === value) ??
-    DESTINATIONS[0]
   return (
-    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
-      <SelectTrigger
-        title={title}
-        className="h-8 w-fit gap-2 rounded-full border bg-secondary/50 pr-2 pl-2.5 text-[13px] text-foreground shadow-none focus-visible:ring-0 data-[size=default]:h-8"
-      >
-        <span
-          className={cn(
-            "size-1.5 rounded-full",
-            dest.available ? "bg-brass" : "bg-st-idle",
-          )}
-        />
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent align="start" className="min-w-56">
-        {options.map((d) => (
-          <SelectItem
-            key={d.id}
-            value={d.id}
-            disabled={!d.available}
-            className="gap-2"
-          >
-            <span className="flex items-center gap-2">
-              <span className="text-[13px]">{d.label}</span>
-              {d.hint && (
-                <span
-                  className={cn(
-                    "rounded border px-1 py-px text-[9px] font-medium tracking-wide uppercase",
-                    d.available
-                      ? "border-brass/40 text-brass"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {d.hint}
-                </span>
-              )}
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <RichSelect
+      value={value}
+      onValueChange={onValueChange}
+      disabled={disabled}
+      title={title}
+      dot
+      aria-label="Agent"
+      triggerClassName="h-8 gap-2 pr-2 pl-2.5 text-[13px] text-foreground data-[size=default]:h-8"
+      options={options.map((d) => ({
+        value: d.id,
+        label: d.label,
+        description: d.description,
+        badge: d.hint,
+        disabled: !d.available,
+      }))}
+    />
   )
 }
 
@@ -291,25 +256,23 @@ export function ComposerControls({
         title={lockTitle}
       />
 
-      <PillSelect
+      <RichSelect
         value={effectiveModel}
         onValueChange={onModelChange}
         disabled={locked}
         title={lockTitle}
         options={agentModels(effectiveDest)}
         triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
-        itemClassName="text-[13px]"
         aria-label="Modelo"
       />
 
-      <PillSelect
+      <RichSelect
         value={effectiveEffort}
         onValueChange={onEffortChange}
         disabled={locked}
         title={lockTitle}
         options={agentEfforts(effectiveDest)}
         triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
-        itemClassName="text-[13px]"
         aria-label="Esforço de raciocínio"
       />
 

@@ -10,6 +10,8 @@ import type { Destination } from "@/lib/types"
 export interface AgentModelOption {
   value: string
   label: string
+  /** Linha secundária no seletor rico (padrão blocks.so ai-02). */
+  description?: string
 }
 
 export interface AgentDef {
@@ -21,6 +23,8 @@ export interface AgentDef {
   kind: "agent" | "model"
   available: boolean
   hint?: string
+  /** Descrição curta (linha secundária no seletor rico). */
+  description?: string
   /** Capacidade de anexo (espelha `supports_attachment` no trait Rust). */
   caps: { image: boolean; pdf: boolean }
   /** Opções de modelo (vazio = agent sem flag de modelo). 1ª = "default". */
@@ -32,31 +36,31 @@ export interface AgentDef {
 }
 
 const CLAUDE_MODELS: AgentModelOption[] = [
-  { value: "default", label: "modelo" },
-  { value: "opus", label: "Opus" },
-  { value: "sonnet", label: "Sonnet" },
-  { value: "haiku", label: "Haiku" },
+  { value: "default", label: "modelo", description: "Padrão do Claude Code" },
+  { value: "opus", label: "Opus", description: "O mais capaz" },
+  { value: "sonnet", label: "Sonnet", description: "Rápido e equilibrado" },
+  { value: "haiku", label: "Haiku", description: "Mais rápido e barato" },
 ]
 const CODEX_MODELS: AgentModelOption[] = [
-  { value: "default", label: "modelo" },
-  { value: "gpt-5.5", label: "gpt-5.5" },
-  { value: "o3", label: "o3" },
+  { value: "default", label: "modelo", description: "Padrão do Codex" },
+  { value: "gpt-5.5", label: "gpt-5.5", description: "Mais capaz" },
+  { value: "o3", label: "o3", description: "Raciocínio forte" },
 ]
 const CLAUDE_EFFORTS: AgentModelOption[] = [
-  { value: "default", label: "effort" },
-  { value: "low", label: "low" },
-  { value: "medium", label: "medium" },
-  { value: "high", label: "high" },
-  { value: "xhigh", label: "xhigh" },
-  { value: "max", label: "max" },
+  { value: "default", label: "effort", description: "Padrão do modelo" },
+  { value: "low", label: "low", description: "Rápido, mais raso" },
+  { value: "medium", label: "medium", description: "Equilíbrio" },
+  { value: "high", label: "high", description: "Raciocina mais fundo" },
+  { value: "xhigh", label: "xhigh", description: "Bem mais fundo" },
+  { value: "max", label: "max", description: "Esforço máximo" },
 ]
 const CODEX_EFFORTS: AgentModelOption[] = [
-  { value: "default", label: "effort" },
-  { value: "minimal", label: "minimal" },
-  { value: "low", label: "low" },
-  { value: "medium", label: "medium" },
-  { value: "high", label: "high" },
-  { value: "xhigh", label: "xhigh" },
+  { value: "default", label: "effort", description: "Padrão do modelo" },
+  { value: "minimal", label: "minimal", description: "Mínimo" },
+  { value: "low", label: "low", description: "Rápido, mais raso" },
+  { value: "medium", label: "medium", description: "Equilíbrio" },
+  { value: "high", label: "high", description: "Raciocina mais fundo" },
+  { value: "xhigh", label: "xhigh", description: "Bem mais fundo" },
 ]
 
 /** A liga de agents. Ordem = ordem de exibição no seletor de destino. */
@@ -67,7 +71,7 @@ export const AGENTS: AgentDef[] = [
     shortLabel: "Claude",
     kind: "agent",
     available: true,
-    hint: "Agent",
+    description: "CLI da Anthropic",
     caps: { image: true, pdf: true },
     models: CLAUDE_MODELS,
     efforts: CLAUDE_EFFORTS,
@@ -79,7 +83,7 @@ export const AGENTS: AgentDef[] = [
     shortLabel: "Codex",
     kind: "agent",
     available: true,
-    hint: "Agent",
+    description: "CLI da OpenAI",
     caps: { image: true, pdf: false },
     models: CODEX_MODELS,
     efforts: CODEX_EFFORTS,
@@ -92,6 +96,7 @@ export const AGENTS: AgentDef[] = [
     kind: "agent",
     available: false,
     hint: "em breve",
+    description: "Ainda não integrado",
     caps: { image: false, pdf: false },
     models: [],
     efforts: [],
@@ -104,6 +109,7 @@ export const AGENTS: AgentDef[] = [
     kind: "model",
     available: false,
     hint: "em breve",
+    description: "Chamar um modelo sem agent",
     caps: { image: false, pdf: false },
     models: [],
     efforts: [],
@@ -124,6 +130,7 @@ export const DESTINATIONS: Destination[] = AGENTS.map((a) => ({
   kind: a.kind,
   available: a.available,
   hint: a.hint,
+  description: a.description,
 }))
 
 /** Agents selecionáveis na liga do Fusion (disponíveis + kind agent). */

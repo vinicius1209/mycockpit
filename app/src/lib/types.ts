@@ -31,4 +31,6 @@ export interface Destination {
   kind: "agent" | "model"
   available: boolean
   hint?: string
+  /** Descrição curta (linha secundária no seletor rico). */
+  description?: string
 }
