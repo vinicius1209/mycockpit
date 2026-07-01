@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog"
 import { Markdown } from "@/components/common/Markdown"
 import { useActiveProject, useApp } from "@/store/app"
+import { useChat } from "@/store/chat"
 import type { ProjectConfig } from "@/store/app"
 import { readProjectContext } from "@/lib/context"
 import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/context"
@@ -299,6 +300,10 @@ export function ContextPanel() {
   const [reload, setReload] = useState(0)
   const [detail, setDetail] = useState<DetailTarget | null>(null)
   const [tab, setTab] = useState<"contexto" | "alteracoes">("contexto")
+  // diff atribuído à conversa ativa: worktree isolado dela, senão a pasta do projeto.
+  const activeWorktree = useChat(
+    (s) => s.conversations.find((c) => c.id === s.activeId)?.worktreePath ?? null,
+  )
   const setProjectPermission = useApp((s) => s.setProjectPermission)
   const setMycockpit = useApp((s) => s.setMycockpit)
   const cfg = useApp((s) => (project ? s.mycockpit[project.id] : undefined))
@@ -392,7 +397,7 @@ export function ContextPanel() {
           </p>
         </div>
       ) : tab === "alteracoes" ? (
-        <DiffPanel cwd={project.path} />
+        <DiffPanel cwd={activeWorktree ?? project.path} />
       ) : (
         <ScrollArea className="flex-1">
           {/* Identidade (nome/path) mora no titlebar + sidebar; copiar o caminho

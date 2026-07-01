@@ -12,6 +12,7 @@ import {
   Copy,
   Ban,
   Archive,
+  GitBranch,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -27,10 +28,11 @@ import {
   ContextMenuSubTrigger,
   ContextMenuSubContent,
 } from "@/components/ui/context-menu"
-import { useApp } from "@/store/app"
+import { useApp, useActiveProject } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { archiveProject, restoreProject } from "@/lib/db"
+import { createWorktree, removeWorktree } from "@/lib/git"
 import { LABEL_COLORS } from "@/lib/labelColors"
 import { cn, shortPath } from "@/lib/utils"
 import type { AgentStatus, Project } from "@/lib/types"
@@ -277,6 +279,8 @@ function ConversationList({ projectId }: { projectId: string }) {
   const renameConversation = useChat((s) => s.renameConversation)
   const setConversationColor = useChat((s) => s.setConversationColor)
   const duplicateConversation = useChat((s) => s.duplicateConversation)
+  const setWorktree = useChat((s) => s.setWorktree)
+  const project = useActiveProject()
   const running = useRunningConvIds()
   const deciding = useDecidingConvIds()
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -286,6 +290,33 @@ function ConversationList({ projectId }: { projectId: string }) {
     const v = editValue.trim()
     setEditingId(null)
     if (v) void renameConversation(id, v)
+  }
+
+  // v2.5 — isola a conversa num worktree (o cockpit cria) ou volta pra o projeto.
+  async function toggleWorktree(id: string, wt: string | null) {
+    if (!project) return
+    if (wt) {
+      try {
+        await removeWorktree(project.path, wt)
+        setWorktree(id, null)
+        toast.success("Isolamento removido")
+      } catch (e) {
+        // git recusa sem --force se houver mudança não-commitada (preserva o trabalho)
+        toast.error(
+          typeof e === "string" && e
+            ? e
+            : "Não removi — há mudanças não-commitadas no worktree?",
+        )
+      }
+    } else {
+      try {
+        const info = await createWorktree(project.path, id)
+        setWorktree(id, info.path)
+        toast.success(`Isolado em ${info.branch}`)
+      } catch (e) {
+        toast.error(typeof e === "string" ? e : "Falha ao isolar")
+      }
+    }
   }
 
   return (
@@ -351,6 +382,12 @@ function ConversationList({ projectId }: { projectId: string }) {
                       {statusEl}
                     </span>
                     <span className="truncate">{c.title ?? "Nova conversa"}</span>
+                    {c.worktreePath && (
+                      <GitBranch
+                        className="size-3 shrink-0 text-brass/60"
+                        aria-label="isolado em worktree"
+                      />
+                    )}
                   </button>
                 )}
                 {!isRunning && !isEditing && (
@@ -380,6 +417,12 @@ function ConversationList({ projectId }: { projectId: string }) {
               />
               <ContextMenuItem onSelect={() => void duplicateConversation(c.id)}>
                 <Copy /> Duplicar
+              </ContextMenuItem>
+              <ContextMenuItem
+                onSelect={() => void toggleWorktree(c.id, c.worktreePath)}
+              >
+                <GitBranch />{" "}
+                {c.worktreePath ? "Remover isolamento" : "Isolar em worktree"}
               </ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem

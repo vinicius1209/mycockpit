@@ -42,6 +42,27 @@ interface GitDiffRaw {
   patch: string
 }
 
+export interface WorktreeInfo {
+  path: string
+  branch: string
+}
+
+/** Cria (ou reusa) um worktree isolado pra uma conversa. O cockpit dirige. */
+export async function createWorktree(
+  projectPath: string,
+  convId: string,
+): Promise<WorktreeInfo> {
+  return invoke<WorktreeInfo>("create_worktree", { projectPath, convId })
+}
+
+/** Remove o worktree de uma conversa (sem --force; preserva se houver mudança). */
+export async function removeWorktree(
+  projectPath: string,
+  path: string,
+): Promise<void> {
+  return invoke("remove_worktree", { projectPath, path })
+}
+
 /** Carrega + parseia o diff da working tree de um diretório (cwd da conversa). */
 export async function loadGitDiff(cwd: string): Promise<GitDiff> {
   if (!isTauri()) return { isRepo: false, branch: null, files: [] }

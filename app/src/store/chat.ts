@@ -19,6 +19,7 @@ import {
   deleteConversation as dbDelete,
   renameConversation as dbRename,
   setConversationColor as dbSetColor,
+  setConversationWorktree as dbSetWorktree,
   isTauri,
   type ConversationMeta,
 } from "@/lib/db"
@@ -56,6 +57,8 @@ export interface ConvState {
   /** Modelo + effort escolhidos (null = default do CLI), travam no 1º run. */
   reqModel: string | null
   effort: string | null
+  /** Worktree isolado desta conversa (null = compartilha a pasta do projeto). */
+  worktreePath: string | null
   items: ChatItem[]
   sessionId: string | null
   model: string | null
@@ -94,6 +97,8 @@ interface ChatState {
   renameConversation: (id: string, title: string) => Promise<void>
   /** Define/limpa (null) a cor-rótulo da conversa. */
   setConversationColor: (id: string, color: string | null) => Promise<void>
+  /** Isola a conversa num worktree (path) ou volta pra pasta compartilhada (null). */
+  setWorktree: (convId: string, path: string | null) => void
   /** Duplica a conversa (copia o histórico; sessão nova, sem resume). */
   duplicateConversation: (id: string) => Promise<void>
   persist: (convId: string) => Promise<void>
@@ -151,6 +156,7 @@ function emptyConv(projectId: string): ConvState {
     agent: "claude-code",
     reqModel: null,
     effort: null,
+    worktreePath: null,
     items: [],
     sessionId: null,
     model: null,
@@ -311,6 +317,7 @@ export const useChat = create<ChatState>((set, get) => {
                 agent: conv?.agent ?? "claude-code",
                 reqModel: conv?.reqModel ?? null,
                 effort: conv?.effort ?? null,
+                worktreePath: conv?.worktreePath ?? null,
               },
             },
           },
@@ -400,7 +407,7 @@ export const useChat = create<ChatState>((set, get) => {
       if (list.length === 0) {
         const id = uid()
         await dbCreate(projectId, id)
-        list = [{ id, title: null, updatedAt: Date.now(), color: null }]
+        list = [{ id, title: null, updatedAt: Date.now(), color: null, worktreePath: null }]
         set((s) => ({
           projectId,
           activeId: id,
@@ -426,7 +433,7 @@ export const useChat = create<ChatState>((set, get) => {
         activeId: id,
         conversations: [
           ...s.conversations,
-          { id, title: null, updatedAt: Date.now(), color: null },
+          { id, title: null, updatedAt: Date.now(), color: null, worktreePath: null },
         ],
         byId: { ...s.byId, [id]: emptyConv(projectId) },
       }))
@@ -483,6 +490,18 @@ export const useChat = create<ChatState>((set, get) => {
       }))
     },
 
+    setWorktree: (convId, path) => {
+      void dbSetWorktree(convId, path)
+      set((s) => ({
+        conversations: s.conversations.map((c) =>
+          c.id === convId ? { ...c, worktreePath: path } : c,
+        ),
+        byId: s.byId[convId]
+          ? { ...s.byId, [convId]: { ...s.byId[convId], worktreePath: path } }
+          : s.byId,
+      }))
+    },
+
     duplicateConversation: async (id) => {
       const projectId = get().projectId
       if (!projectId) return
@@ -502,7 +521,13 @@ export const useChat = create<ChatState>((set, get) => {
         activeId: newId,
         conversations: [
           ...s.conversations,
-          { id: newId, title, updatedAt: Date.now(), color: src?.color ?? null },
+          {
+            id: newId,
+            title,
+            updatedAt: Date.now(),
+            color: src?.color ?? null,
+            worktreePath: null,
+          },
         ],
         byId: {
           ...s.byId,

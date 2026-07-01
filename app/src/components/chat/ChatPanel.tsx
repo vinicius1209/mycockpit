@@ -129,6 +129,8 @@ export function ChatPanel() {
     const effort = locked ? conv!.effort : (cfg?.effort ?? null)
     const runId = crypto.randomUUID()
     const sessionId = conv?.sessionId ?? null
+    // cwd = worktree isolado da conversa (v2.5), senão a pasta compartilhada do projeto.
+    const cwd = conv?.worktreePath ?? project.path
     // Sprint 4, o run escreve em byId[convId] mesmo se o usuário trocar de aba.
     useChat.getState().start(convId, text, runId, agent, model, effort, attachments)
     setAtBottom(true) // ao enviar, pula pro fim (ver a própria mensagem)
@@ -140,7 +142,7 @@ export function ChatPanel() {
         model,
         effort,
         text,
-        project.path,
+        cwd,
         sessionId,
         project.permissionMode ?? "padrao",
         attachments,

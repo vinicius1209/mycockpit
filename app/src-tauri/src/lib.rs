@@ -158,6 +158,13 @@ pub fn run() {
             sql: "ALTER TABLE projects ADD COLUMN color TEXT;",
             kind: MigrationKind::Up,
         },
+        // v19, worktree isolado por conversa (NULL = compartilha a pasta do projeto).
+        Migration {
+            version: 19,
+            description: "conversations_worktree_path",
+            sql: "ALTER TABLE conversations ADD COLUMN worktree_path TEXT;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -211,6 +218,8 @@ pub fn run() {
             sdd::create_plan,
             sdd::set_plan_stage,
             git::git_diff,
+            git::create_worktree,
+            git::remove_worktree,
             attachments::save_attachment,
             attachments::attach_path,
             attachments::delete_attachment,

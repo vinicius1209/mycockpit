@@ -123,6 +123,7 @@ export interface ConversationMeta {
   title: string | null
   updatedAt: number
   color: string | null
+  worktreePath: string | null
 }
 
 interface ConvListRow {
@@ -130,6 +131,7 @@ interface ConvListRow {
   title: string | null
   updated_at: number
   color: string | null
+  worktree_path: string | null
 }
 
 /** Lista as conversas de um projeto em ordem de criação (estável; novas embaixo). */
@@ -139,7 +141,7 @@ export async function listConversations(
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ConvListRow[]>(
-    "SELECT id, title, updated_at, color FROM conversations WHERE project_id = $1 ORDER BY created_at ASC",
+    "SELECT id, title, updated_at, color, worktree_path FROM conversations WHERE project_id = $1 ORDER BY created_at ASC",
     [projectId],
   )
   return rows.map((r) => ({
@@ -147,6 +149,7 @@ export async function listConversations(
     title: r.title,
     updatedAt: r.updated_at,
     color: r.color ?? null,
+    worktreePath: r.worktree_path ?? null,
   }))
 }
 
@@ -176,6 +179,19 @@ export async function setConversationColor(
   ])
 }
 
+/** Define/limpa o worktree isolado de uma conversa (NULL = compartilha o projeto). */
+export async function setConversationWorktree(
+  id: string,
+  path: string | null,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute("UPDATE conversations SET worktree_path = $1 WHERE id = $2", [
+    path,
+    id,
+  ])
+}
+
 interface ConvLoadRow {
   session_id: string | null
   items: string
@@ -184,6 +200,7 @@ interface ConvLoadRow {
   agent: string | null
   req_model: string | null
   effort: string | null
+  worktree_path: string | null
 }
 
 export async function loadConversation(
@@ -196,11 +213,12 @@ export async function loadConversation(
   agent: string
   reqModel: string | null
   effort: string | null
+  worktreePath: string | null
 } | null> {
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ConvLoadRow[]>(
-    "SELECT session_id, items, title, suggestions, agent, req_model, effort FROM conversations WHERE id = $1",
+    "SELECT session_id, items, title, suggestions, agent, req_model, effort, worktree_path FROM conversations WHERE id = $1",
     [id],
   )
   if (!rows.length) return null
@@ -215,6 +233,7 @@ export async function loadConversation(
       agent: rows[0].agent ?? "claude-code",
       reqModel: rows[0].req_model,
       effort: rows[0].effort,
+      worktreePath: rows[0].worktree_path,
     }
   } catch {
     return null
