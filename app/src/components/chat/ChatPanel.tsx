@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
+import { ArrowDown } from "lucide-react"
 import { toast } from "sonner"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { MessageList } from "@/components/chat/MessageList"
@@ -26,6 +27,19 @@ export function ChatPanel() {
   const conv = useActiveConv()
   const openProject = useChat((s) => s.openProject)
   const scrollRef = useRef<HTMLDivElement>(null)
+  // segue o fim só quando você já está lá; se subiu pra ler, não puxa de volta.
+  const [atBottom, setAtBottom] = useState(true)
+
+  function onScroll() {
+    const el = scrollRef.current
+    if (!el) return
+    setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
+  }
+  function scrollToBottom() {
+    const el = scrollRef.current
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+    setAtBottom(true)
+  }
 
   const items = conv.items
   const running = conv.running
@@ -39,11 +53,17 @@ export function ChatPanel() {
     void openProject(projectId)
   }, [projectId, openProject])
 
-  // Autoscroll conforme a conversa cresce.
+  // Autoscroll conforme a conversa cresce, MAS só se você já está no fim (senão
+  // ler mensagens antigas seria interrompido a cada evento).
   useEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
-  }, [items.length, running])
+    if (el && atBottom) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+  }, [items.length, running, atBottom])
+
+  // Ao trocar de conversa, volta a seguir o fim (a nova abre no rodapé).
+  useEffect(() => {
+    setAtBottom(true)
+  }, [activeId])
 
   // ⌘K (ou outra UI) pode enfileirar um prompt → dispara aqui.
   const queuedPrompt = useChat((s) => s.queuedPrompt)
@@ -111,6 +131,7 @@ export function ChatPanel() {
     const sessionId = conv?.sessionId ?? null
     // Sprint 4, o run escreve em byId[convId] mesmo se o usuário trocar de aba.
     useChat.getState().start(convId, text, runId, agent, model, effort, attachments)
+    setAtBottom(true) // ao enviar, pula pro fim (ver a própria mensagem)
     try {
       await runAgent(
         runId,
@@ -149,15 +170,26 @@ export function ChatPanel() {
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-96 bg-[radial-gradient(62%_80%_at_50%_100%,var(--brass-soft),transparent_72%)] opacity-70" />
       )}
 
-      <div ref={scrollRef} className="relative flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="relative flex-1 overflow-y-auto"
+      >
         {hasConversation ? (
-          <MessageList
-            items={items}
-            running={running}
-            finalizing={finalizing}
-            startedAt={conv.startedAt}
-            agent={conv.agent}
-          />
+          // key no activeId → o fade só replica ao TROCAR de conversa (não a cada
+          // token do streaming, que mantém o mesmo activeId).
+          <div
+            key={activeId ?? "none"}
+            className="animate-in fade-in-0 duration-300 ease-out"
+          >
+            <MessageList
+              items={items}
+              running={running}
+              finalizing={finalizing}
+              startedAt={conv.startedAt}
+              agent={conv.agent}
+            />
+          </div>
         ) : (
           <div className="mx-auto flex min-h-full max-w-[760px] flex-col items-center justify-center px-6 py-10">
             <div className="animate-cockpit-rise text-center">
@@ -177,6 +209,14 @@ export function ChatPanel() {
       </div>
 
       <div className="relative z-10 shrink-0 px-8 pb-7">
+        {hasConversation && !atBottom && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute -top-2 left-1/2 z-20 flex -translate-x-1/2 -translate-y-full items-center gap-1.5 rounded-full border bg-card/95 px-3 py-1.5 text-[12px] text-foreground shadow-[var(--shadow-pop)] backdrop-blur transition-colors hover:bg-accent"
+          >
+            <ArrowDown className="size-3.5" /> Rolar pro fim
+          </button>
+        )}
         <div className="mx-auto max-w-[760px]">
           <CommandConsole
             onSend={handleSend}
