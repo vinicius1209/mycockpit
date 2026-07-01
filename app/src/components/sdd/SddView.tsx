@@ -28,6 +28,7 @@ import { useActiveProject, useApp } from "@/store/app"
 import { runAgent } from "@/lib/agent"
 import { reduceItems, useChat, type ChatItem } from "@/store/chat"
 import { Markdown } from "@/components/common/Markdown"
+import { readTextFile } from "@/lib/sources"
 import {
   loadSddPlans,
   loadPrInfo,
@@ -565,7 +566,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
   const project = useActiveProject()
   const [pr, setPr] = useState<PrInfo | null>(null)
   const [run, setRun] = useState<StageRun | null>(null)
-  const [approving, setApproving] = useState(false)
+  const [doc, setDoc] = useState<DocView | null>(null)
   // enriquece o PR (gh → git → manifest) ao trocar de plano. Lazy: 1 chamada/seleção.
   useEffect(() => {
     setPr(null)
@@ -606,18 +607,25 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
     }
   }
 
-  // v2.2, gate do PRD: o cockpit escreve a aprovação no manifest.
-  async function approveStage() {
+  // Caminho de um artefato do plano no disco (.claude/plans/{slug}/{rel}).
+  function planFile(rel: string): string {
+    return `${project?.path ?? ""}/.claude/plans/${plan.slug}/${rel}`
+  }
+  // v2.2, gate do PRD: revisar o PRD (read + render); no gate, leva o aprovar junto.
+  function reviewPrd() {
     if (!project) return
-    setApproving(true)
-    try {
-      await approvePrd(project.path, plan.slug)
-      onReload()
-    } catch (e) {
-      toast.error(typeof e === "string" ? e : "Falha ao aprovar o PRD")
-    } finally {
-      setApproving(false)
-    }
+    const approved = plan.artifacts.prd?.approved
+    setDoc({
+      title: `PRD · ${plan.slug}`,
+      path: planFile(plan.artifacts.prd?.path ?? "PRD.md"),
+      status: approved ? "aprovado" : "não aprovado",
+      approve: approved ? undefined : () => approvePrd(project.path, plan.slug),
+    })
+  }
+  // Ver a SPEC (read-only).
+  function viewSpec() {
+    if (!project || !plan.artifacts.spec) return
+    setDoc({ title: `SPEC · ${plan.slug}`, path: planFile(plan.artifacts.spec.path) })
   }
 
   return (
@@ -673,16 +681,10 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
           <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
             <span>PRD aguardando sua aprovação:</span>
             <button
-              onClick={() => void approveStage()}
-              disabled={approving}
-              className="flex items-center gap-1.5 rounded-full border border-brass/40 bg-brass/10 px-3 py-1 text-brass transition-colors hover:bg-brass/20 disabled:opacity-50"
+              onClick={reviewPrd}
+              className="flex items-center gap-1.5 rounded-full border border-brass/40 bg-brass/10 px-3 py-1 text-brass transition-colors hover:bg-brass/20"
             >
-              {approving ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Check className="size-3.5" />
-              )}
-              Aprovar PRD
+              <FileText className="size-3.5" /> Revisar PRD
             </button>
           </div>
         ) : (
@@ -714,9 +716,12 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
                 label={plan.artifacts.prd.path}
                 note={plan.artifacts.prd.approved ? "aprovado" : "não aprovado"}
                 ok={plan.artifacts.prd.approved}
+                onClick={reviewPrd}
               />
             )}
-            {plan.artifacts.spec && <Artifact label={plan.artifacts.spec.path} />}
+            {plan.artifacts.spec && (
+              <Artifact label={plan.artifacts.spec.path} onClick={viewSpec} />
+            )}
             <p className="pt-0.5 text-[11px] tabular-nums text-muted-foreground">
               {plan.artifacts.sourceFiles.length} arquivos ·{" "}
               {plan.artifacts.migrations.length} migrações ·{" "}
@@ -775,6 +780,17 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
           run={run}
           onClose={() => {
             setRun(null)
+            onReload()
+          }}
+        />
+      )}
+
+      {doc && (
+        <DocViewer
+          doc={doc}
+          onClose={() => setDoc(null)}
+          onApproved={() => {
+            setDoc(null)
             onReload()
           }}
         />
@@ -897,6 +913,123 @@ function StageRunOverlay({ run, onClose }: { run: StageRun; onClose: () => void 
 }
 
 /** Atividade (#10): timeline dos passos `[x]` + LOG cru colapsável. */
+interface DocView {
+  title: string
+  path: string
+  status?: string
+  /** Presente = mostra "Aprovar PRD" no rodapé (contexto do gate). */
+  approve?: () => Promise<void>
+}
+
+/** Visor de um artefato (.md) do plano: lê do disco + render Markdown. No gate do
+ *  PRD carrega o aprovar junto (revisar e aprovar no mesmo lugar); na seção
+ *  Artefatos abre read-only. Sobrevive a restart (lê o disco, não o stream). */
+function DocViewer({
+  doc,
+  onClose,
+  onApproved,
+}: {
+  doc: DocView
+  onClose: () => void
+  onApproved: () => void
+}) {
+  const [text, setText] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [approving, setApproving] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    setText(null)
+    void readTextFile(doc.path)
+      .then(setText)
+      .catch(() => setText(null))
+      .finally(() => setLoading(false))
+  }, [doc.path])
+
+  async function approve() {
+    if (!doc.approve) return
+    setApproving(true)
+    try {
+      await doc.approve()
+      onApproved()
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha ao aprovar o PRD")
+      setApproving(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-8"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[82vh] w-full max-w-[820px] flex-col rounded-xl border bg-card shadow-[var(--shadow-pop)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b px-5 py-3">
+          <FileText className="size-4 text-brass" />
+          <span className="text-[13px] font-medium text-foreground">{doc.title}</span>
+          {doc.status && (
+            <span
+              className={cn(
+                "text-[11px]",
+                doc.status === "aprovado"
+                  ? "text-st-success"
+                  : "text-muted-foreground",
+              )}
+            >
+              · {doc.status}
+            </span>
+          )}
+          <button
+            onClick={onClose}
+            className="ml-auto rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Fechar"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-[13px]">
+          {loading ? (
+            <div className="flex h-full items-center justify-center text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+            </div>
+          ) : text ? (
+            <Markdown text={text} />
+          ) : (
+            <p className="text-muted-foreground">
+              Não consegui ler o arquivo. Talvez ainda não tenha sido gerado.
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t px-5 py-3">
+          <button
+            onClick={onClose}
+            className="rounded-md border px-3 py-1.5 text-[12px] text-foreground hover:bg-accent"
+          >
+            Fechar
+          </button>
+          {doc.approve && (
+            <button
+              onClick={() => void approve()}
+              disabled={approving}
+              className="flex items-center gap-1.5 rounded-md border border-brass/40 bg-brass/10 px-3 py-1.5 text-[12px] text-brass transition-colors hover:bg-brass/20 disabled:opacity-50"
+            >
+              {approving ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Check className="size-3.5" />
+              )}
+              Aprovar PRD
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ActivitySection({ plan }: { plan: SddPlan }) {
   const [showRaw, setShowRaw] = useState(false)
   return (
@@ -1283,9 +1416,19 @@ function Gates({ verification }: { verification: Record<string, boolean | null> 
   )
 }
 
-function Artifact({ label, note, ok }: { label: string; note?: string; ok?: boolean }) {
-  return (
-    <li className="flex items-center gap-2">
+function Artifact({
+  label,
+  note,
+  ok,
+  onClick,
+}: {
+  label: string
+  note?: string
+  ok?: boolean
+  onClick?: () => void
+}) {
+  const inner = (
+    <>
       <FileText className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="font-mono text-foreground/80">{label}</span>
       {note && (
@@ -1293,6 +1436,18 @@ function Artifact({ label, note, ok }: { label: string; note?: string; ok?: bool
           · {note}
         </span>
       )}
-    </li>
+    </>
   )
+  if (onClick) {
+    return (
+      <button
+        onClick={onClick}
+        title="Abrir no cockpit"
+        className="flex w-fit items-center gap-2 rounded text-left transition-colors hover:underline"
+      >
+        {inner}
+      </button>
+    )
+  }
+  return <div className="flex items-center gap-2">{inner}</div>
 }
