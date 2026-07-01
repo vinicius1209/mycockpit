@@ -5,13 +5,16 @@ import {
   AlertTriangle,
   Brain,
   ChevronDown,
+  FileDiff,
   FileText,
   FolderGit2,
   PanelRight,
   Plug,
   RefreshCw,
+  type LucideIcon,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { DiffPanel } from "@/components/layout/DiffPanel"
 import { PillSelect } from "@/components/ui/PillSelect"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -256,6 +259,37 @@ function StageBadge({ stage }: { stage: string }) {
 
 type Status = "loading" | "ready" | "error" | "browser"
 
+/** Tab do painel direito (Contexto | Alterações) com sublinhado brass no ativo. */
+function TabBtn({
+  active,
+  onClick,
+  icon: Icon,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: LucideIcon
+  children: ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "relative flex h-full items-center gap-1.5 text-[11px] font-medium tracking-[0.08em] uppercase transition-colors",
+        active
+          ? "text-foreground"
+          : "text-muted-foreground/50 hover:text-muted-foreground",
+      )}
+    >
+      <Icon className="size-3.5" />
+      {children}
+      {active && (
+        <span className="absolute inset-x-0 -bottom-px h-[2px] rounded-full bg-brass" />
+      )}
+    </button>
+  )
+}
+
 export function ContextPanel() {
   const project = useActiveProject()
   const [ctx, setCtx] = useState<ProjectContext | null>(null)
@@ -264,6 +298,7 @@ export function ContextPanel() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
   const [detail, setDetail] = useState<DetailTarget | null>(null)
+  const [tab, setTab] = useState<"contexto" | "alteracoes">("contexto")
   const setProjectPermission = useApp((s) => s.setProjectPermission)
   const setMycockpit = useApp((s) => s.setMycockpit)
   const cfg = useApp((s) => (project ? s.mycockpit[project.id] : undefined))
@@ -333,9 +368,21 @@ export function ContextPanel() {
 
   return (
     <aside className="reveal-right flex h-full w-full flex-col bg-transparent">
-      <header className="flex h-11 shrink-0 items-center gap-2 px-5">
-        <PanelRight className="size-3.5 text-muted-foreground" />
-        <span className="label-mono">Contexto</span>
+      <header className="flex h-11 shrink-0 items-center gap-4 px-5">
+        <TabBtn
+          active={tab === "contexto"}
+          onClick={() => setTab("contexto")}
+          icon={PanelRight}
+        >
+          Contexto
+        </TabBtn>
+        <TabBtn
+          active={tab === "alteracoes"}
+          onClick={() => setTab("alteracoes")}
+          icon={FileDiff}
+        >
+          Alterações
+        </TabBtn>
       </header>
 
       {!project ? (
@@ -344,27 +391,12 @@ export function ContextPanel() {
             Nenhum projeto selecionado.
           </p>
         </div>
+      ) : tab === "alteracoes" ? (
+        <DiffPanel cwd={project.path} />
       ) : (
         <ScrollArea className="flex-1">
-          {/* Identidade do projeto */}
-          <div className="px-5 pt-3 pb-3">
-            <div className="flex items-center gap-2">
-              <FolderGit2 className="size-4 shrink-0 text-brass" />
-              <span className="truncate text-[14px] font-medium text-foreground">
-                {project.name}
-              </span>
-            </div>
-            <div
-              data-selectable
-              className="mt-1 truncate font-mono text-[11px] text-muted-foreground"
-            >
-              {shortPath(project.path)}
-            </div>
-          </div>
-
-          <Separator />
-
-          {/* Zona de CONTROLES (inputs que mudam o comportamento do agente) */}
+          {/* Identidade (nome/path) mora no titlebar + sidebar; copiar o caminho
+              vive no menu de contexto do projeto. Painel começa nos controles. */}
           <Section title="Ajustes">
             <div className="flex flex-col gap-2.5">
               <div className="flex items-center justify-between">

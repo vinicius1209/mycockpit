@@ -6,6 +6,7 @@ mod adapters;
 mod agent;
 mod attachments;
 mod context;
+mod git;
 mod mycockpit;
 mod pricing;
 mod sdd;
@@ -209,6 +210,7 @@ pub fn run() {
             sdd::approve_prd,
             sdd::create_plan,
             sdd::set_plan_stage,
+            git::git_diff,
             attachments::save_attachment,
             attachments::attach_path,
             attachments::delete_attachment,

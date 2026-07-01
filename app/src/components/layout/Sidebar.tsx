@@ -225,6 +225,14 @@ function ProjectRow({
           current={project.color}
           onPick={(c) => setProjectColor(project.id, c)}
         />
+        <ContextMenuItem
+          onSelect={() => {
+            void navigator.clipboard.writeText(project.path)
+            toast.success("Caminho copiado")
+          }}
+        >
+          <Copy /> Copiar caminho
+        </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={onDelete}>
           <Archive /> Arquivar
