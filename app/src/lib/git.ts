@@ -63,6 +63,24 @@ export async function removeWorktree(
   return invoke("remove_worktree", { projectPath, path })
 }
 
+/** Stage tudo + commit no cwd. Devolve o SHA curto. Ação local. */
+export async function gitCommit(cwd: string, message: string): Promise<string> {
+  return invoke<string>("git_commit", { cwd, message })
+}
+
+export interface PrResult {
+  url: string
+}
+
+/** Push da branch + abre o PR (gh). Ação outward (confirmar antes de chamar). */
+export async function createPr(
+  cwd: string,
+  title: string,
+  body: string,
+): Promise<PrResult> {
+  return invoke<PrResult>("git_create_pr", { cwd, title, body })
+}
+
 /** Carrega + parseia o diff da working tree de um diretório (cwd da conversa). */
 export async function loadGitDiff(cwd: string): Promise<GitDiff> {
   if (!isTauri()) return { isRepo: false, branch: null, files: [] }

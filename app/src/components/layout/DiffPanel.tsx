@@ -1,6 +1,21 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { ChevronRight, GitBranch, Loader2, RefreshCw } from "lucide-react"
-import { loadGitDiff, type DiffFile, type GitDiff } from "@/lib/git"
+import {
+  Check,
+  ChevronRight,
+  GitBranch,
+  GitPullRequest,
+  Loader2,
+  RefreshCw,
+} from "lucide-react"
+import { openUrl } from "@tauri-apps/plugin-opener"
+import { toast } from "sonner"
+import {
+  loadGitDiff,
+  gitCommit,
+  createPr,
+  type DiffFile,
+  type GitDiff,
+} from "@/lib/git"
 import { cn } from "@/lib/utils"
 
 const STATUS_META: Record<
@@ -72,8 +87,9 @@ export function DiffPanel({ cwd }: { cwd: string }) {
       ) : !diff?.isRepo ? (
         <Empty>Este projeto não é um repositório git.</Empty>
       ) : (
-        // scroll NATIVO (mais leve que o Radix ScrollArea com muitos itens).
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <>
+          {/* scroll NATIVO (mais leve que o Radix ScrollArea com muitos itens). */}
+          <div className="min-h-0 flex-1 overflow-y-auto">
           {bar}
           {files.length === 0 ? (
             <div className="px-6 py-16 text-center text-[12.5px] text-muted-foreground">
@@ -98,8 +114,146 @@ export function DiffPanel({ cwd }: { cwd: string }) {
               ))}
             </div>
           )}
-        </div>
+          </div>
+          <ShipBar cwd={cwd} hasChanges={files.length > 0} onDone={reload} />
+        </>
       )}
+    </div>
+  )
+}
+
+/** Barra de shippar: Commit (local) + Abrir PR (outward, confirmação inline). */
+function ShipBar({
+  cwd,
+  hasChanges,
+  onDone,
+}: {
+  cwd: string
+  hasChanges: boolean
+  onDone: () => void
+}) {
+  const [mode, setMode] = useState<null | "commit" | "pr">(null)
+  const [text, setText] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [prUrl, setPrUrl] = useState<string | null>(null)
+
+  async function run(isPr: boolean) {
+    const v = text.trim()
+    if (!v) return
+    setBusy(true)
+    try {
+      if (isPr) {
+        const r = await createPr(cwd, v, "")
+        setPrUrl(r.url)
+        toast.success("PR aberto")
+      } else {
+        const sha = await gitCommit(cwd, v)
+        toast.success(`Commit ${sha}`)
+        onDone()
+      }
+      setText("")
+      setMode(null)
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha na operação")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (prUrl) {
+    return (
+      <div className="flex shrink-0 items-center gap-2 border-t px-3 py-2.5 text-[12px]">
+        <button
+          onClick={() => void openUrl(prUrl)}
+          className="flex items-center gap-1.5 text-[#3fb950] transition-colors hover:underline"
+        >
+          <GitPullRequest className="size-3.5" /> PR aberto, abrir no GitHub
+        </button>
+        <button
+          onClick={() => setPrUrl(null)}
+          className="ml-auto rounded p-1 text-muted-foreground hover:text-foreground"
+          title="Ok"
+        >
+          <Check className="size-3.5" />
+        </button>
+      </div>
+    )
+  }
+
+  if (mode) {
+    const isPr = mode === "pr"
+    return (
+      <div className="shrink-0 border-t p-3">
+        <textarea
+          autoFocus
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void run(isPr)
+            if (e.key === "Escape") {
+              setMode(null)
+              setText("")
+            }
+          }}
+          rows={isPr ? 1 : 2}
+          placeholder={isPr ? "Título do PR…" : "Mensagem do commit…"}
+          className="w-full resize-none rounded-md border bg-secondary/30 p-2 text-[12.5px] text-foreground outline-none focus:border-brass/40"
+        />
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-[10.5px] text-muted-foreground">
+            {isPr ? "push + gh pr create" : "add -A + commit"}
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setMode(null)
+                setText("")
+              }}
+              className="rounded-md border px-2.5 py-1 text-[12px] text-foreground hover:bg-accent"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => void run(isPr)}
+              disabled={busy || !text.trim()}
+              className="flex items-center gap-1.5 rounded-md border border-brass/40 bg-brass/10 px-2.5 py-1 text-[12px] text-brass transition-colors hover:bg-brass/20 disabled:opacity-50"
+            >
+              {busy ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : isPr ? (
+                <GitPullRequest className="size-3.5" />
+              ) : (
+                <Check className="size-3.5" />
+              )}
+              {isPr ? "Criar PR" : "Commitar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-t px-3 py-2.5">
+      <button
+        onClick={() => {
+          setText("")
+          setMode("commit")
+        }}
+        disabled={!hasChanges}
+        className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent disabled:opacity-40"
+      >
+        <Check className="size-3.5" /> Commit
+      </button>
+      <button
+        onClick={() => {
+          setText("")
+          setMode("pr")
+        }}
+        className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
+      >
+        <GitPullRequest className="size-3.5" /> Abrir PR
+      </button>
     </div>
   )
 }

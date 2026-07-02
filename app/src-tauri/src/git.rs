@@ -155,3 +155,49 @@ pub fn create_worktree(project_path: String, conv_id: String) -> Result<Worktree
 pub fn remove_worktree(project_path: String, path: String) -> Result<(), String> {
     run_git(&project_path, &["worktree", "remove", &path]).map(|_| ())
 }
+
+// ---------------- Shippar: commit + PR (v2.6) ----------------
+
+/// Stage tudo + commit no cwd (worktree da conversa ou pasta do projeto). Devolve
+/// o SHA curto. Ação LOCAL (reversível via git).
+#[tauri::command]
+pub fn git_commit(cwd: String, message: String) -> Result<String, String> {
+    if message.trim().is_empty() {
+        return Err("mensagem de commit vazia".into());
+    }
+    run_git(&cwd, &["add", "-A"])?;
+    run_git(&cwd, &["commit", "-m", &message])?;
+    Ok(git(&cwd, &["rev-parse", "--short", "HEAD"])
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrResult {
+    pub url: String,
+}
+
+/// Push da branch atual + abre o PR via `gh`. Ação OUTWARD (o front confirma antes).
+/// `gh` roda com cwd = o worktree/projeto (detecta o repo/remote de lá).
+#[tauri::command]
+pub fn git_create_pr(cwd: String, title: String, body: String) -> Result<PrResult, String> {
+    let branch = git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && s != "HEAD")
+        .ok_or("não consegui detectar a branch atual")?;
+    run_git(&cwd, &["push", "-u", "origin", &branch])?;
+    let out = Command::new("gh")
+        .arg("pr")
+        .arg("create")
+        .args(["--head", &branch, "--title", &title, "--body", &body])
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| format!("gh não encontrado: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    // gh pr create imprime a URL do PR no stdout.
+    let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    Ok(PrResult { url })
+}

@@ -220,6 +220,8 @@ pub fn run() {
             git::git_diff,
             git::create_worktree,
             git::remove_worktree,
+            git::git_commit,
+            git::git_create_pr,
             attachments::save_attachment,
             attachments::attach_path,
             attachments::delete_attachment,
