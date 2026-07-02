@@ -222,6 +222,7 @@ pub fn run() {
             git::remove_worktree,
             git::git_commit,
             git::git_create_pr,
+            git::pr_context,
             attachments::save_attachment,
             attachments::attach_path,
             attachments::delete_attachment,

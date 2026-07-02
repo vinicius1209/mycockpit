@@ -68,17 +68,41 @@ export async function gitCommit(cwd: string, message: string): Promise<string> {
   return invoke<string>("git_commit", { cwd, message })
 }
 
+export interface PrTemplate {
+  name: string
+  body: string
+}
+
+/** Contexto DETECTADO pro composer de PR (o cockpit propõe, o usuário ajusta). */
+export interface PrContext {
+  isRepo: boolean
+  branch: string | null
+  baseCandidates: string[]
+  baseDefault: string
+  accounts: string[]
+  accountCurrent: string | null
+  templates: PrTemplate[]
+  titleDefault: string
+  hasPrSkill: boolean
+}
+
+export async function prContext(cwd: string): Promise<PrContext> {
+  return invoke<PrContext>("pr_context", { cwd })
+}
+
 export interface PrResult {
   url: string
 }
 
-/** Push da branch + abre o PR (gh). Ação outward (confirmar antes de chamar). */
+/** Push + abre o PR com base/conta/título/corpo escolhidos. Outward (confirmar). */
 export async function createPr(
   cwd: string,
+  base: string,
+  account: string,
   title: string,
   body: string,
 ): Promise<PrResult> {
-  return invoke<PrResult>("git_create_pr", { cwd, title, body })
+  return invoke<PrResult>("git_create_pr", { cwd, base, account, title, body })
 }
 
 /** Carrega + parseia o diff da working tree de um diretório (cwd da conversa). */

@@ -3,6 +3,7 @@
 // diff vive no TS (lib/git.ts); aqui o Rust só roda o git e entrega o patch cru.
 
 use serde::Serialize;
+use std::fs;
 use std::path::Path;
 use std::process::Command;
 
@@ -178,26 +179,238 @@ pub struct PrResult {
     pub url: String,
 }
 
-/// Push da branch atual + abre o PR via `gh`. Ação OUTWARD (o front confirma antes).
-/// `gh` roda com cwd = o worktree/projeto (detecta o repo/remote de lá).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrTemplate {
+    pub name: String,
+    pub body: String,
+}
+
+/// Tudo que o PR composer precisa DETECTAR do projeto (base, contas, template…).
+/// O cockpit PROPÕE; o usuário ajusta na UI. Nada fixo.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrContext {
+    pub is_repo: bool,
+    pub branch: Option<String>,
+    pub base_candidates: Vec<String>,
+    pub base_default: String,
+    pub accounts: Vec<String>,
+    pub account_current: Option<String>,
+    pub templates: Vec<PrTemplate>,
+    pub title_default: String,
+    pub has_pr_skill: bool,
+}
+
+/// Contas gh autenticadas + a ativa (parse best-effort do `gh auth status`).
+fn gh_accounts() -> (Vec<String>, Option<String>) {
+    let out = match Command::new("gh").args(["auth", "status"]).output() {
+        Ok(o) => o,
+        Err(_) => return (vec![], None),
+    };
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut accounts: Vec<String> = Vec::new();
+    let mut current: Option<String> = None;
+    let mut last: Option<String> = None;
+    for line in text.lines() {
+        if let Some(idx) = line.find("account ") {
+            let name = line[idx + "account ".len()..]
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string();
+            if !name.is_empty() {
+                if !accounts.contains(&name) {
+                    accounts.push(name.clone());
+                }
+                last = Some(name);
+            }
+        }
+        if line.contains("Active account: true") {
+            current = last.clone();
+        }
+    }
+    if current.is_none() {
+        current = accounts.first().cloned();
+    }
+    (accounts, current)
+}
+
+/// Templates de PR do projeto: locais padrão + a pasta PULL_REQUEST_TEMPLATE/ +
+/// (fallback) `.md` soltos no `.github/` (prime usa default.md / release.md).
+fn read_tpl(name: String, path: &Path) -> Option<PrTemplate> {
+    let body = fs::read_to_string(path).ok()?;
+    if body.trim().is_empty() {
+        None
+    } else {
+        Some(PrTemplate { name, body })
+    }
+}
+
+fn read_templates(cwd: &str) -> Vec<PrTemplate> {
+    let gh = Path::new(cwd).join(".github");
+    let mut out: Vec<PrTemplate> = Vec::new();
+    for f in ["PULL_REQUEST_TEMPLATE.md", "pull_request_template.md"] {
+        if let Some(t) = read_tpl(f.to_string(), &gh.join(f)) {
+            if !out.iter().any(|x| x.name == t.name) {
+                out.push(t);
+            }
+        }
+    }
+    let dir = gh.join("PULL_REQUEST_TEMPLATE");
+    if dir.is_dir() {
+        if let Ok(rd) = fs::read_dir(&dir) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.extension().map(|x| x == "md").unwrap_or(false) {
+                    let n = p
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("template")
+                        .to_string();
+                    if let Some(t) = read_tpl(n, &p) {
+                        if !out.iter().any(|x| x.name == t.name) {
+                            out.push(t);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if out.is_empty() {
+        if let Ok(rd) = fs::read_dir(&gh) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if !p.extension().map(|x| x == "md").unwrap_or(false) {
+                    continue;
+                }
+                let n = p.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                let low = n.to_lowercase();
+                if low.contains("readme")
+                    || low.contains("contributing")
+                    || low.contains("code_of_conduct")
+                    || low.contains("security")
+                {
+                    continue;
+                }
+                if let Some(t) = read_tpl(n, &p) {
+                    out.push(t);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Detecta o contexto de PR do cwd (worktree ou projeto). Alimenta o composer.
 #[tauri::command]
-pub fn git_create_pr(cwd: String, title: String, body: String) -> Result<PrResult, String> {
+pub fn pr_context(cwd: String) -> PrContext {
+    let is_repo = git(&cwd, &["rev-parse", "--is-inside-work-tree"])
+        .map(|s| s.trim() == "true")
+        .unwrap_or(false);
+    if !is_repo {
+        return PrContext {
+            is_repo: false,
+            branch: None,
+            base_candidates: vec![],
+            base_default: String::new(),
+            accounts: vec![],
+            account_current: None,
+            templates: vec![],
+            title_default: String::new(),
+            has_pr_skill: false,
+        };
+    }
+    let branch = git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && s != "HEAD");
+    let mut base_candidates: Vec<String> = git(&cwd, &["branch", "--format=%(refname:short)"])
+        .map(|s| {
+            s.lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(b) = &branch {
+        base_candidates.retain(|c| c != b);
+    }
+    base_candidates.sort_by_key(|b| match b.as_str() {
+        "develop" => 0,
+        "main" => 1,
+        "master" => 2,
+        _ => 3,
+    });
+    let repo_default = git(&cwd, &["symbolic-ref", "refs/remotes/origin/HEAD"])
+        .map(|s| s.trim().rsplit('/').next().unwrap_or("main").to_string())
+        .unwrap_or_else(|| "main".into());
+    let base_default = if base_candidates.iter().any(|b| b == "develop") {
+        "develop".to_string()
+    } else if base_candidates.iter().any(|b| b == &repo_default) {
+        repo_default.clone()
+    } else {
+        base_candidates.first().cloned().unwrap_or(repo_default)
+    };
+    let (accounts, account_current) = gh_accounts();
+    let templates = read_templates(&cwd);
+    let title_default = git(&cwd, &["log", "-1", "--format=%s"])
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    let has_pr_skill = Path::new(&cwd).join(".claude/skills/pr/SKILL.md").exists()
+        || Path::new(&cwd).join(".claude/commands/pr.md").exists();
+    PrContext {
+        is_repo: true,
+        branch,
+        base_candidates,
+        base_default,
+        accounts,
+        account_current,
+        templates,
+        title_default,
+        has_pr_skill,
+    }
+}
+
+/// Push + abre o PR com base/conta/título/corpo ESCOLHIDOS no composer. Outward
+/// (a UI confirma). Troca a conta gh se pedido (o `/pr` do projeto faz igual).
+#[tauri::command]
+pub fn git_create_pr(
+    cwd: String,
+    base: String,
+    account: String,
+    title: String,
+    body: String,
+) -> Result<PrResult, String> {
     let branch = git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty() && s != "HEAD")
         .ok_or("não consegui detectar a branch atual")?;
+    if !account.trim().is_empty() {
+        let _ = Command::new("gh")
+            .args(["auth", "switch", "--user", account.trim()])
+            .output();
+    }
     run_git(&cwd, &["push", "-u", "origin", &branch])?;
+    let base_t = base.trim();
+    let mut args: Vec<&str> = vec![
+        "pr", "create", "--head", &branch, "--title", &title, "--body", &body,
+    ];
+    if !base_t.is_empty() {
+        args.push("--base");
+        args.push(base_t);
+    }
     let out = Command::new("gh")
-        .arg("pr")
-        .arg("create")
-        .args(["--head", &branch, "--title", &title, "--body", &body])
+        .args(&args)
         .current_dir(&cwd)
         .output()
         .map_err(|e| format!("gh não encontrado: {e}"))?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
-    // gh pr create imprime a URL do PR no stdout.
     let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
     Ok(PrResult { url })
 }
