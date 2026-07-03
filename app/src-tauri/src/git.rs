@@ -9,11 +9,9 @@ use std::process::Command;
 
 /// git -C <cwd> <args>, stdout no sucesso (None se falhar/git ausente).
 fn git(cwd: &str, args: &[&str]) -> Option<String> {
-    let out = Command::new("git").arg("-C").arg(cwd).args(args).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    let mut full: Vec<&str> = vec!["-C", cwd];
+    full.extend_from_slice(args);
+    crate::proc::run_ok("git", &full, None)
 }
 
 /// Máx. de linhas emitidas no diff sintético de um arquivo novo.
@@ -115,16 +113,9 @@ pub async fn git_diff(cwd: String) -> GitDiff {
 
 /// git -C <cwd> <args> com a MENSAGEM de erro (stderr) no Err (p/ o front mostrar).
 fn run_git(cwd: &str, args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(cwd)
-        .args(args)
-        .output()
-        .map_err(|e| format!("git não encontrado: {e}"))?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    let mut full: Vec<&str> = vec!["-C", cwd];
+    full.extend_from_slice(args);
+    crate::proc::run("git", &full, None)
 }
 
 #[derive(Serialize)]
@@ -458,17 +449,8 @@ fn create_pr_sync(
     // troca de conta CHECADA: falhar em silêncio abriria o PR com a conta errada
     // (o motivo exato de existir o parâmetro, contas pessoal vs trabalho).
     if !account.trim().is_empty() {
-        let out = Command::new("gh")
-            .args(["auth", "switch", "--user", account.trim()])
-            .output()
-            .map_err(|e| format!("gh não encontrado: {e}"))?;
-        if !out.status.success() {
-            return Err(format!(
-                "não consegui trocar pra conta gh '{}': {}",
-                account.trim(),
-                String::from_utf8_lossy(&out.stderr).trim()
-            ));
-        }
+        crate::proc::run("gh", &["auth", "switch", "--user", account.trim()], None)
+            .map_err(|e| format!("não consegui trocar pra conta gh '{}': {e}", account.trim()))?;
     }
     run_git(&cwd, &["push", "-u", "origin", &branch])?;
     let base_t = base.trim();
@@ -479,15 +461,8 @@ fn create_pr_sync(
         args.push("--base");
         args.push(base_t);
     }
-    let out = Command::new("gh")
-        .args(&args)
-        .current_dir(&cwd)
-        .output()
-        .map_err(|e| format!("gh não encontrado: {e}"))?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-    }
-    let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    // gh pr create imprime a URL do PR no stdout.
+    let url = crate::proc::run("gh", &args, Some(&cwd))?.trim().to_string();
     Ok(PrResult { url })
 }
 

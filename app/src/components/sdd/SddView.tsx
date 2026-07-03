@@ -618,6 +618,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
     setDoc({
       title: `PRD · ${plan.slug}`,
       path: planFile(plan.artifacts.prd?.path ?? "PRD.md"),
+      root: project.path,
       status: approved ? "aprovado" : "não aprovado",
       approve: approved ? undefined : () => approvePrd(project.path, plan.slug),
     })
@@ -625,7 +626,11 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
   // Ver a SPEC (read-only).
   function viewSpec() {
     if (!project || !plan.artifacts.spec) return
-    setDoc({ title: `SPEC · ${plan.slug}`, path: planFile(plan.artifacts.spec.path) })
+    setDoc({
+      title: `SPEC · ${plan.slug}`,
+      path: planFile(plan.artifacts.spec.path),
+      root: project.path,
+    })
   }
 
   return (
@@ -918,6 +923,8 @@ function StageRunOverlay({ run, onClose }: { run: StageRun; onClose: () => void 
 interface DocView {
   title: string
   path: string
+  /** Raiz permitida da leitura (a pasta do projeto). */
+  root: string
   status?: string
   /** Presente = mostra "Aprovar PRD" no rodapé (contexto do gate). */
   approve?: () => Promise<void>
@@ -942,7 +949,7 @@ function DocViewer({
   useEffect(() => {
     setLoading(true)
     setText(null)
-    void readTextFile(doc.path)
+    void readTextFile(doc.root, doc.path)
       .then(setText)
       .catch(() => setText(null))
       .finally(() => setLoading(false))

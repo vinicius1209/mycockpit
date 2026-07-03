@@ -245,9 +245,25 @@ pub fn read_project_sources(path: String) -> ProjectSources {
 }
 
 /// Lê um arquivo de texto (p/ o detalhe de persona/spec/memória). Trunca p/ a UI.
+/// ESCOPADO: só dentro da raiz dada (o projeto) ou de ~/.claude (memórias/skills
+/// globais). Markdown de agent renderizado na UI nunca deve virar primitiva de
+/// leitura arbitrária do disco (~/.ssh etc).
 #[tauri::command]
-pub fn read_text_file(path: String) -> Result<String, String> {
-    let c = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+pub fn read_text_file(root: String, path: String) -> Result<String, String> {
+    let canon = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
+    let mut allowed: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(r) = std::fs::canonicalize(&root) {
+        allowed.push(r);
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        if let Ok(c) = std::fs::canonicalize(Path::new(&home).join(".claude")) {
+            allowed.push(c);
+        }
+    }
+    if !allowed.iter().any(|a| canon.starts_with(a)) {
+        return Err("caminho fora do projeto (e de ~/.claude): leitura bloqueada".into());
+    }
+    let c = std::fs::read_to_string(&canon).map_err(|e| e.to_string())?;
     Ok(if c.chars().count() > 24000 {
         let mut out: String = c.chars().take(24000).collect();
         out.push_str("\n…");
@@ -374,24 +390,14 @@ fn walk_files(base: &Path, dir: &Path, out: &mut Vec<String>, depth: usize) {
 /// .gitignore e é rápido; fallback p/ walk em projeto sem git.
 #[tauri::command]
 pub fn list_project_files(path: String) -> Vec<String> {
-    if let Ok(out) = std::process::Command::new("git")
-        .args([
-            "-C",
-            &path,
-            "ls-files",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-        ])
-        .output()
-    {
-        if out.status.success() {
-            let s = String::from_utf8_lossy(&out.stdout);
-            let mut v: Vec<String> =
-                s.lines().take(8000).map(str::to_string).collect();
-            v.sort();
-            return v;
-        }
+    if let Some(s) = crate::proc::run_ok(
+        "git",
+        &["-C", &path, "ls-files", "--cached", "--others", "--exclude-standard"],
+        None,
+    ) {
+        let mut v: Vec<String> = s.lines().take(8000).map(str::to_string).collect();
+        v.sort();
+        return v;
     }
     let base = Path::new(&path);
     let mut out = Vec::new();

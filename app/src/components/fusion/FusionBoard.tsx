@@ -172,7 +172,8 @@ export function FusionBoard({ convId }: { convId: string }) {
   // default da seleção = a sugestão do juiz (mesmo quando a auto-confirmação foi
   // suprimida por anti-viés) → "Confirmar" já funciona com 1 clique; dá pra trocar.
   const selected = chosen ?? fusion.chosenId ?? fusion.judge.suggestedId
-  const liveCost = liveCostOf(fusion)
+  // total REAL (candidatos + juiz) quando o juiz já rodou; ao vivo soma as lanes.
+  const liveCost = fusion.costTotal > 0 ? fusion.costTotal : liveCostOf(fusion)
 
   return (
     <div className="mx-auto flex w-full max-w-[760px] flex-col gap-2.5 px-8 py-4">

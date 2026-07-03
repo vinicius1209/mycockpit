@@ -13,7 +13,7 @@ pub struct RunRequest {
     pub prompt: String,
     pub cwd: String,
     pub resume: Option<String>,
-    pub permission: String,
+    pub permission: Permission,
     /// Modelo escolhido (None = default do CLI/config).
     pub model: Option<String>,
     /// Nível de esforço de raciocínio (None = default). Valores diferem por agent.
@@ -21,6 +21,32 @@ pub struct RunRequest {
     /// Anexos JÁ resolvidos: path ABSOLUTO, existente em disco, filtrado por
     /// `supports_attachment` (garantido pelo run_agent). O adapter só decide a sintaxe.
     pub attachments: Vec<Attachment>,
+}
+
+/// Política de permissão POR RUN, parseada UMA vez na fronteira (run_agent).
+/// Enum EXAUSTIVO: valor desconhecido é erro na entrada, nunca fail-open
+/// (antes um typo caía no `_ =>` dos adapters e ganhava permissão de ESCRITA).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Permission {
+    Leitura,
+    Padrao,
+    Liberado,
+    /// Candidato do Fusion: read-only + MCP desligado (sem efeito externo).
+    FusionRo,
+}
+
+impl Permission {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s {
+            "leitura" => Ok(Self::Leitura),
+            "padrao" | "" => Ok(Self::Padrao),
+            "liberado" => Ok(Self::Liberado),
+            "fusion-ro" => Ok(Self::FusionRo),
+            other => Err(format!(
+                "modo de permissão desconhecido: '{other}' (esperado leitura|padrao|liberado)"
+            )),
+        }
+    }
 }
 
 pub trait AgentAdapter: Send {
@@ -50,6 +76,15 @@ pub trait AgentAdapter: Send {
     fn render_attachments(&self, atts: &[Attachment], cmd: &mut Command, prompt: &mut String) {
         let _ = (atts, cmd, prompt);
     }
+
+    /// A mensagem indica que a sessão do resume não existe NESTE CLI? Cada
+    /// adapter conhece só as SUAS frases (casar frase exata; o AND genérico
+    /// `session && not found` casava erro de tool e dropava resume em silêncio).
+    /// Default false: agent novo sem frase mapeada vira card de erro (seguro).
+    fn is_session_not_found(&self, msg: &str) -> bool {
+        let _ = msg;
+        false
+    }
 }
 
 /// Resolve o id do agent → adapter concreto.
@@ -72,19 +107,6 @@ fn usage_u64(usage: Option<&serde_json::Value>, key: &str) -> u64 {
         .unwrap_or(0)
 }
 
-/// O erro indica que a sessão do resume não existe? (Claude: "No conversation
-/// found with session ID"). Dispara a degradação graciosa (recomeçar sem resume).
-/// Casa só as FRASES exatas: o AND genérico (`session` && `not found`) casava
-/// qualquer erro de tool/stderr com os dois termos → dropava o resume e perdia
-/// contexto em silêncio. A falha segura é ser preciso (no pior caso, card de erro).
-/// NEEDS-VERIFY: a frase do Codex no `turn.failed` ao dar resume de thread
-/// inexistente ainda não foi capturada de um run real; se diferir, a degradação
-/// graciosa para de valer p/ o Codex (vira card de erro), e `cargo` não pega isso.
-pub(crate) fn is_session_not_found(s: &str) -> bool {
-    let l = s.to_lowercase();
-    l.contains("no conversation found with session id") // Claude (verificado)
-        || l.contains("no rollout found for thread id") // Codex (verificado, vem no stderr)
-}
 
 // ---------------- Claude Code (porta o map_events 1:1) ----------------
 
@@ -112,24 +134,24 @@ impl AgentAdapter for ClaudeAdapter {
             .current_dir(&req.cwd);
         // Política de permissão por projeto (docs/agent-runner.md §7). Achado do
         // M0: `--allowedTools` NÃO sandboxa; o gate real é `--disallowedTools`.
-        match req.permission.as_str() {
-            "leitura" => {
+        match req.permission {
+            Permission::Leitura => {
                 cmd.arg("--disallowedTools")
                     .arg("Bash,Edit,Write,MultiEdit,NotebookEdit");
             }
             // Fusion read-only: bloqueia edição E desliga TODO MCP (candidatos
             // especulativos não podem ter efeito externo, email/Notion/infra).
-            "fusion-ro" => {
+            Permission::FusionRo => {
                 cmd.arg("--disallowedTools")
                     .arg("Bash,Edit,Write,MultiEdit,NotebookEdit")
                     .arg("--strict-mcp-config")
                     .arg("--mcp-config")
                     .arg("{\"mcpServers\":{}}");
             }
-            "liberado" => {
+            Permission::Liberado => {
                 cmd.arg("--permission-mode").arg("bypassPermissions");
             }
-            _ => {
+            Permission::Padrao => {
                 cmd.arg("--permission-mode").arg("acceptEdits");
             }
         }
@@ -148,6 +170,11 @@ impl AgentAdapter for ClaudeAdapter {
 
     fn supports_attachment(&self, kind: &AttachmentKind) -> bool {
         matches!(kind, AttachmentKind::Image | AttachmentKind::Pdf)
+    }
+
+    fn is_session_not_found(&self, msg: &str) -> bool {
+        msg.to_lowercase()
+            .contains("no conversation found with session id") // verificado
     }
 
     fn render_attachments(&self, atts: &[Attachment], cmd: &mut Command, prompt: &mut String) {
@@ -303,7 +330,7 @@ impl AgentAdapter for ClaudeAdapter {
                                 .join(" ")
                         })
                         .unwrap_or_default();
-                    if is_session_not_found(&errs) {
+                    if self.is_session_not_found(&errs) {
                         return vec![AgentEvent::SessionNotFound { message: errs }];
                     }
                 }
@@ -359,10 +386,10 @@ impl AgentAdapter for CodexAdapter {
             .arg(&req.cwd)
             .current_dir(&req.cwd);
         // permissão (3 níveis) → sandbox do Codex (exec não tem --ask-for-approval)
-        let sandbox = match req.permission.as_str() {
-            "leitura" | "fusion-ro" => "read-only",
-            "liberado" => "danger-full-access",
-            _ => "workspace-write",
+        let sandbox = match req.permission {
+            Permission::Leitura | Permission::FusionRo => "read-only",
+            Permission::Liberado => "danger-full-access",
+            Permission::Padrao => "workspace-write",
         };
         cmd.arg("-s").arg(sandbox);
         // Codex: -m <model> · effort via override de config (não tem flag dedicada
@@ -390,6 +417,13 @@ impl AgentAdapter for CodexAdapter {
     fn supports_attachment(&self, kind: &AttachmentKind) -> bool {
         // -i do Codex é só imagem; PDF é bloqueado no envio (capacidade explícita).
         matches!(kind, AttachmentKind::Image)
+    }
+
+    /// NEEDS-VERIFY: a frase do `turn.failed` num resume de thread inexistente
+    /// ainda não foi capturada de um run real; a do stderr foi (verificado).
+    fn is_session_not_found(&self, msg: &str) -> bool {
+        msg.to_lowercase()
+            .contains("no rollout found for thread id") // verificado (stderr)
     }
 
     fn render_attachments(&self, atts: &[Attachment], cmd: &mut Command, _prompt: &mut String) {
@@ -443,7 +477,7 @@ impl AgentAdapter for CodexAdapter {
                     .and_then(|x| x.as_str())
                     .unwrap_or("o turno do codex falhou")
                     .to_string();
-                if is_session_not_found(&msg) {
+                if self.is_session_not_found(&msg) {
                     vec![AgentEvent::SessionNotFound { message: msg }]
                 } else {
                     vec![AgentEvent::Error { message: msg }]

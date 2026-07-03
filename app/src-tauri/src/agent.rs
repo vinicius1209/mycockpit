@@ -207,6 +207,9 @@ pub async fn run_agent(
         active: active.inner(),
         conv_id, // move: conv_id não é mais lido após o registro em ActiveConvs acima
     };
+    // Permissão parseada UMA vez na fronteira: valor desconhecido é ERRO aqui,
+    // nunca fail-open dentro de um adapter (typo ganhava escrita antes).
+    let permission = adapters::Permission::parse(&permission)?;
     let req = RunRequest {
         prompt,
         cwd,
@@ -387,7 +390,7 @@ async fn run_once(
     if resume_is_some
         && !cancelled
         && !session_not_found
-        && adapters::is_session_not_found(&stderr_text)
+        && adapter.is_session_not_found(&stderr_text)
     {
         session_not_found = true;
     }

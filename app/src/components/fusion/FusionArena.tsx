@@ -46,7 +46,12 @@ export function FusionArena() {
   const judging = fusion?.phase === "judging"
   const selected =
     chosen ?? fusion?.chosenId ?? fusion?.judge.suggestedId ?? null
-  const liveCost = fusion ? liveCostOf(fusion) : 0
+  // total REAL (candidatos + juiz) quando o juiz já rodou; ao vivo soma as lanes.
+  const liveCost = fusion
+    ? fusion.costTotal > 0
+      ? fusion.costTotal
+      : liveCostOf(fusion)
+    : 0
 
   async function dispute() {
     if (!task.trim() || !project || !activeId || league.length < 2) return

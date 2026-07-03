@@ -198,9 +198,12 @@ type DetailTarget = { title: string; path: string }
 
 /** Detalhe de um item de contexto (persona/spec/memória): lê o arquivo e renderiza. */
 function DetailDialog({
+  root,
   target,
   onClose,
 }: {
+  /** Raiz permitida da leitura (pasta do projeto; ~/.claude passa também). */
+  root: string
   target: DetailTarget | null
   onClose: () => void
 }) {
@@ -212,14 +215,14 @@ function DetailDialog({
     let cancelled = false
     setContent(null)
     setLoading(true)
-    readTextFile(target.path)
+    readTextFile(root, target.path)
       .then((c) => !cancelled && setContent(c))
       .catch(() => !cancelled && setContent("_não foi possível ler o arquivo._"))
       .finally(() => !cancelled && setLoading(false))
     return () => {
       cancelled = true
     }
-  }, [target])
+  }, [target, root])
 
   return (
     <Dialog open={!!target} onOpenChange={(o) => !o && onClose()}>
@@ -647,7 +650,11 @@ export function ContextPanel() {
         </ScrollArea>
       )}
 
-      <DetailDialog target={detail} onClose={() => setDetail(null)} />
+      <DetailDialog
+        root={project?.path ?? ""}
+        target={detail}
+        onClose={() => setDetail(null)}
+      />
     </aside>
   )
 }

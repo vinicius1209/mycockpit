@@ -38,9 +38,10 @@ export async function readProjectSources(path: string): Promise<ProjectSources> 
   return invoke<ProjectSources>("read_project_sources", { path })
 }
 
-/** Lê o conteúdo de um arquivo (persona/spec/memória) p/ o detalhe. */
-export async function readTextFile(path: string): Promise<string> {
-  return invoke<string>("read_text_file", { path })
+/** Lê o conteúdo de um arquivo (persona/spec/memória) p/ o detalhe. `root` =
+ *  raiz permitida (pasta do projeto); o backend também aceita ~/.claude. */
+export async function readTextFile(root: string, path: string): Promise<string> {
+  return invoke<string>("read_text_file", { root, path })
 }
 
 export interface SlashCommand {

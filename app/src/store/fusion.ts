@@ -367,11 +367,14 @@ export const useFusion = create<FusionState>((set, get) => {
     const cwd = f.candidates[0]?.cwd ?? ""
     const cands = get().byConv[convId]?.candidates ?? []
     const { judge, cost } = await runJudge(f.prompt, f.judgeModel, cwd, cands)
+    // custo ÚNICO da disputa: candidatos + juiz (antes eram dois totais parciais,
+    // liveCostOf só lanes e costTotal só juiz, e nenhum era o gasto real).
+    const candCost = cands.reduce((s, c) => s + (c.costUsd ?? 0), 0)
     patchConv(convId, (cur) => ({
       phase: "deciding",
       judge,
       chosenId: decideChosen(judge, cur.candidates, cur.judgeModel),
-      costTotal: cur.costTotal + cost,
+      costTotal: candCost + cost,
     }))
     // Caso 2: persiste a disputa pendente (sobrevive ao restart até você decidir).
     const pending = get().byConv[convId]

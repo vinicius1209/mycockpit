@@ -105,8 +105,9 @@ fn parse_pr_url(url: &str) -> Option<(String, String)> {
 
 /// Dado autoritativo via gh (None se gh ausente / sem auth / PR não encontrado).
 fn gh_pr_view(repo: &str, num: &str) -> Option<PrInfo> {
-    let out = std::process::Command::new("gh")
-        .args([
+    let out = crate::proc::run_ok(
+        "gh",
+        &[
             "pr",
             "view",
             num,
@@ -114,13 +115,10 @@ fn gh_pr_view(repo: &str, num: &str) -> Option<PrInfo> {
             repo,
             "--json",
             "state,mergedBy,mergedAt,createdAt",
-        ])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+        ],
+        None,
+    )?;
+    let v: serde_json::Value = serde_json::from_str(&out).ok()?;
     let s = |k: &str| {
         v.get(k)
             .and_then(|x| x.as_str())
@@ -151,17 +149,20 @@ fn git_author(project_path: &str, sha: &str) -> Option<String> {
     if !is_sha(sha) {
         return None;
     }
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(project_path)
-        .args(["show", "-s", "--format=%an", "--end-of-options"])
-        .arg(sha)
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let a = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let out = crate::proc::run_ok(
+        "git",
+        &[
+            "-C",
+            project_path,
+            "show",
+            "-s",
+            "--format=%an",
+            "--end-of-options",
+            sha,
+        ],
+        None,
+    )?;
+    let a = out.trim().to_string();
     if a.is_empty() {
         None
     } else {
@@ -276,18 +277,16 @@ fn copy_tree(
 fn seed_sdd_sync(project_path: String) -> Result<SeedSummary, String> {
     let tmp = std::env::temp_dir().join("mycockpit-sdd-seed");
     let _ = fs::remove_dir_all(&tmp);
-    let out = std::process::Command::new("git")
-        .args(["clone", "--depth", "1", "--quiet", SEED_REPO])
-        .arg(&tmp)
-        .output()
-        .map_err(|e| format!("git não encontrado: {e}"))?;
-    if !out.status.success() {
+    let tmp_s = tmp.to_string_lossy().to_string();
+    crate::proc::run(
+        "git",
+        &["clone", "--depth", "1", "--quiet", SEED_REPO, &tmp_s],
+        None,
+    )
+    .map_err(|e| {
         let _ = fs::remove_dir_all(&tmp);
-        return Err(format!(
-            "clone do seed falhou: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
+        format!("clone do seed falhou: {e}")
+    })?;
     let seeds = tmp.join("seeds");
     if !seeds.is_dir() {
         let _ = fs::remove_dir_all(&tmp);
@@ -351,7 +350,7 @@ pub fn approve_prd(
     v["artifacts"]["prd"]["approved"] = serde_json::Value::Bool(true);
     v["artifacts"]["prd"]["approved_at"] = serde_json::Value::String(approved_at);
     let pretty = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
-    fs::write(&mf, format!("{pretty}\n")).map_err(|e| e.to_string())?;
+    crate::fsx::write_atomic(&mf, &format!("{pretty}\n"))?;
     let log = dir.join("LOG.md");
     if let Ok(mut c) = fs::read_to_string(&log) {
         c.push_str("\n- [x] **PRD aprovado** (via cockpit)\n");
@@ -471,7 +470,7 @@ pub fn create_plan(
         m["sponsor"] = serde_json::Value::Null;
     }
     let pretty = serde_json::to_string_pretty(&m).map_err(|e| e.to_string())?;
-    fs::write(dir.join("manifest.json"), format!("{pretty}\n")).map_err(|e| e.to_string())?;
+    crate::fsx::write_atomic(&dir.join("manifest.json"), &format!("{pretty}\n"))?;
 
     // LOG espelhando o Stage 0 do `/feature`.
     let log = format!(
@@ -531,7 +530,7 @@ pub fn set_plan_stage(project_path: String, slug: String, stage: String) -> Resu
     }
     v["stage"] = serde_json::Value::String(stage.clone());
     let pretty = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
-    fs::write(&mf, format!("{pretty}\n")).map_err(|e| e.to_string())?;
+    crate::fsx::write_atomic(&mf, &format!("{pretty}\n"))?;
     let log = dir.join("LOG.md");
     if let Ok(mut c) = fs::read_to_string(&log) {
         c.push_str(&format!("- [x] **Etapa {stage}** dirigida (via cockpit)\n"));

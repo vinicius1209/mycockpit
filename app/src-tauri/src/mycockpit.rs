@@ -80,6 +80,6 @@ pub fn write_mycockpit_config(
         doc["permission"] = value(p);
     }
 
-    std::fs::write(&cfg, doc.to_string()).map_err(|e| e.to_string())?;
+    crate::fsx::write_atomic(&cfg, &doc.to_string())?;
     Ok(())
 }
