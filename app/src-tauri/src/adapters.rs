@@ -239,6 +239,51 @@ impl AgentAdapter for ClaudeAdapter {
                 }
                 out
             }
+            // Mensagens "user" no stream carregam os tool_result: viram um resumo
+            // ligado à linha da tool (id). O prompt ecoado do usuário não tem
+            // blocos tool_result e cai fora naturalmente.
+            "user" => {
+                let mut out = Vec::new();
+                if let Some(content) = v.pointer("/message/content").and_then(|x| x.as_array()) {
+                    for block in content {
+                        if block.get("type").and_then(|x| x.as_str()) != Some("tool_result") {
+                            continue;
+                        }
+                        let id = block
+                            .get("tool_use_id")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        if id.is_empty() {
+                            continue;
+                        }
+                        let ok = !block
+                            .get("is_error")
+                            .and_then(|x| x.as_bool())
+                            .unwrap_or(false);
+                        let full = match block.get("content") {
+                            Some(serde_json::Value::String(s)) => s.clone(),
+                            Some(serde_json::Value::Array(a)) => a
+                                .iter()
+                                .filter_map(|b| b.get("text").and_then(|x| x.as_str()))
+                                .collect::<Vec<_>>()
+                                .join("\n"),
+                            _ => String::new(),
+                        };
+                        let lines = if full.trim().is_empty() {
+                            0
+                        } else {
+                            full.lines().count() as u64
+                        };
+                        let mut text: String = full.chars().take(600).collect();
+                        if full.chars().count() > 600 {
+                            text.push('…');
+                        }
+                        out.push(AgentEvent::ToolResult { id, ok, text, lines });
+                    }
+                }
+                out
+            }
             "result" => {
                 let is_error = v.get("is_error").and_then(|x| x.as_bool()).unwrap_or(false);
                 // resume falhou (sessão não existe) → sinaliza p/ degradação graciosa,

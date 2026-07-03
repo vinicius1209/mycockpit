@@ -27,7 +27,16 @@ import {
 export type ChatItem =
   | { kind: "user"; id: string; text: string; attachments?: Attachment[] }
   | { kind: "text"; id: string; text: string }
-  | { kind: "tool"; id: string; name: string; input: unknown }
+  | {
+      kind: "tool"
+      id: string
+      name: string
+      input: unknown
+      /** tool_use_id do CLI (liga o tool_result à linha). */
+      toolId?: string
+      /** Resumo do resultado (texto truncado + nº de linhas do output). */
+      result?: { ok: boolean; text: string; lines: number }
+    }
   | {
       kind: "result"
       id: string
@@ -213,9 +222,18 @@ export function reduceItems(
       return {
         items: [
           ...c.items,
-          { kind: "tool", id: uid(), name: e.name, input: e.input },
+          { kind: "tool", id: uid(), name: e.name, input: e.input, toolId: e.id },
         ],
         streamingTextId: null,
+      }
+    // resultado resumido de uma tool: anexa à linha correspondente (pelo toolId).
+    case "tool_result":
+      return {
+        items: c.items.map((it) =>
+          it.kind === "tool" && it.toolId === e.id && !it.result
+            ? { ...it, result: { ok: e.ok, text: e.text, lines: e.lines } }
+            : it,
+        ),
       }
     case "result":
       return {

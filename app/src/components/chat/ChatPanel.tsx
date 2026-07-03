@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from "react"
-import { ArrowDown } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { ArrowDown, ChevronDown, ListChecks, Loader2 } from "lucide-react"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
+import { deriveTasks } from "@/lib/tasks"
+import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { MessageList } from "@/components/chat/MessageList"
 import { Reticle } from "@/components/common/Wordmark"
@@ -47,6 +50,17 @@ export function ChatPanel() {
   const activeId = useChat((s) => s.activeId)
   const fusionActive = useFusion((s) => (activeId ? !!s.byConv[activeId] : false))
 
+  // Checklist viva (P2): faixa fixa acima do composer enquanto o plano anda,
+  // o olho já mora aqui embaixo durante o run. Colapsada mostra a task atual.
+  const tasks = useMemo(() => deriveTasks(items), [items])
+  const doneTasks = tasks.filter((t) => t.status === "completed").length
+  const openTasks = tasks.length - doneTasks
+  const currentTask =
+    tasks.find((t) => t.status === "in_progress") ??
+    tasks.find((t) => t.status === "pending")
+  const [planOpen, setPlanOpen] = useState(false)
+  const showPlan = tasks.length > 0 && (running || openTasks > 0)
+
   // Abre o projeto ao trocar: carrega as conversas e a mais recente (Sprint 2).
   const projectId = project?.id ?? null
   useEffect(() => {
@@ -54,11 +68,15 @@ export function ChatPanel() {
   }, [projectId, openProject])
 
   // Autoscroll conforme a conversa cresce, MAS só se você já está no fim (senão
-  // ler mensagens antigas seria interrompido a cada evento).
+  // ler mensagens antigas seria interrompido a cada evento). O "tick" do
+  // streaming entra nas deps: items.length não muda a cada text_delta, sem ele
+  // o follow morria em respostas longas (achado do aval).
+  const last = items[items.length - 1]
+  const streamTick = last && last.kind === "text" ? last.text.length : 0
   useEffect(() => {
     const el = scrollRef.current
-    if (el && atBottom) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
-  }, [items.length, running, atBottom])
+    if (el && atBottom) el.scrollTo({ top: el.scrollHeight, behavior: "auto" })
+  }, [items.length, streamTick, running, atBottom])
 
   // Ao trocar de conversa, volta a seguir o fim (a nova abre no rodapé).
   useEffect(() => {
@@ -175,7 +193,7 @@ export function ChatPanel() {
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="relative flex-1 overflow-y-auto"
+        className="relative flex-1 overflow-x-hidden overflow-y-auto"
       >
         {hasConversation ? (
           // key no activeId → o fade só replica ao TROCAR de conversa (não a cada
@@ -218,6 +236,43 @@ export function ChatPanel() {
           >
             <ArrowDown className="size-3.5" /> Rolar pro fim
           </button>
+        )}
+        {showPlan && (
+          <div className="mx-auto mb-2 max-w-[760px]">
+            <div className="overflow-hidden rounded-lg border bg-card/95 shadow-[var(--shadow-pop)]">
+              <button
+                onClick={() => setPlanOpen((o) => !o)}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px]"
+              >
+                {openTasks > 0 && running ? (
+                  <Loader2 className="size-3.5 shrink-0 animate-spin text-brass" />
+                ) : (
+                  <ListChecks className="size-3.5 shrink-0 text-brass" />
+                )}
+                <span className="truncate text-foreground/85">
+                  {currentTask
+                    ? currentTask.status === "in_progress" && currentTask.active
+                      ? currentTask.active
+                      : currentTask.title
+                    : "Plano concluído"}
+                </span>
+                <span className="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+                  {doneTasks}/{tasks.length}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    "size-3.5 shrink-0 text-muted-foreground transition-transform",
+                    planOpen && "rotate-180",
+                  )}
+                />
+              </button>
+              {planOpen && (
+                <div className="max-h-56 overflow-y-auto border-t px-3 py-2">
+                  <TaskChecklist tasks={tasks} dense />
+                </div>
+              )}
+            </div>
+          </div>
         )}
         <div className="mx-auto max-w-[760px]">
           <CommandConsole

@@ -108,7 +108,10 @@ const mdComponents: Components = {
  *  `memo`: blocos antigos não re-rodam react-markdown+highlight a cada token (F12). */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
-    <div data-selectable className="text-[14px] leading-relaxed text-foreground">
+    <div
+      data-selectable
+      className="min-w-0 text-[14px] leading-relaxed break-words [overflow-wrap:anywhere] text-foreground"
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}

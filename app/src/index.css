@@ -330,3 +330,17 @@
 .hljs-strong {
   font-weight: 600;
 }
+
+/* Mono sem ligaduras: "===", "=>" etc. viram glifos-liga ilegíveis em tamanho
+   pequeno (os "quadrados pretos" nos comandos do chat). Código não usa ligadura. */
+code,
+kbd,
+samp,
+pre,
+.font-mono {
+  font-variant-ligatures: none;
+  font-feature-settings:
+    "liga" 0,
+    "calt" 0,
+    "dlig" 0;
+}

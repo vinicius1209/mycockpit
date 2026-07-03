@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 import {
   AlertCircle,
@@ -8,6 +8,7 @@ import {
   FileDiff,
   FileText,
   FolderGit2,
+  ListChecks,
   PanelRight,
   Plug,
   RefreshCw,
@@ -15,6 +16,8 @@ import {
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { DiffPanel } from "@/components/layout/DiffPanel"
+import { TaskChecklist } from "@/components/chat/TaskChecklist"
+import { deriveTasks } from "@/lib/tasks"
 import { PillSelect } from "@/components/ui/PillSelect"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -299,10 +302,19 @@ export function ContextPanel() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
   const [detail, setDetail] = useState<DetailTarget | null>(null)
-  const [tab, setTab] = useState<"contexto" | "alteracoes">("contexto")
+  const [tab, setTab] = useState<"contexto" | "alteracoes" | "plano">("contexto")
   // diff atribuído à conversa ativa: worktree isolado dela, senão a pasta do projeto.
   const activeWorktree = useChat(
     (s) => s.conversations.find((c) => c.id === s.activeId)?.worktreePath ?? null,
+  )
+  // items da conversa ativa SÓ quando a aba Plano está visível (evita re-render
+  // do painel inteiro a cada delta de streaming nas outras abas).
+  const planItems = useChat((s) =>
+    tab === "plano" && s.activeId ? s.byId[s.activeId]?.items : undefined,
+  )
+  const planTasks = useMemo(
+    () => (planItems ? deriveTasks(planItems) : []),
+    [planItems],
   )
   const setProjectPermission = useApp((s) => s.setProjectPermission)
   const setMycockpit = useApp((s) => s.setMycockpit)
@@ -388,6 +400,13 @@ export function ContextPanel() {
         >
           Alterações
         </TabBtn>
+        <TabBtn
+          active={tab === "plano"}
+          onClick={() => setTab("plano")}
+          icon={ListChecks}
+        >
+          Plano
+        </TabBtn>
       </header>
 
       {!project ? (
@@ -398,6 +417,17 @@ export function ContextPanel() {
         </div>
       ) : tab === "alteracoes" ? (
         <DiffPanel cwd={activeWorktree ?? project.path} />
+      ) : tab === "plano" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {planTasks.length > 0 ? (
+            <TaskChecklist tasks={planTasks} />
+          ) : (
+            <p className="px-2 py-10 text-center text-[12.5px] text-muted-foreground">
+              Sem plano nesta conversa. Quando o agent criar tarefas, a checklist
+              aparece aqui.
+            </p>
+          )}
+        </div>
       ) : (
         <ScrollArea className="flex-1">
           {/* Identidade (nome/path) mora no titlebar + sidebar; copiar o caminho

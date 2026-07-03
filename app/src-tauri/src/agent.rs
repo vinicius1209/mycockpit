@@ -81,6 +81,14 @@ pub enum AgentEvent {
         name: String,
         input: serde_json::Value,
     },
+    /// Resultado (resumido) de um tool_use: liga na linha da tool pelo `id`.
+    /// `text` truncado (~600 chars); `lines` conta as linhas do output completo.
+    ToolResult {
+        id: String,
+        ok: bool,
+        text: String,
+        lines: u64,
+    },
     Result {
         ok: bool,
         text: Option<String>,

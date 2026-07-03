@@ -1,11 +1,13 @@
-import { memo, useEffect, useState } from "react"
+import { memo, useEffect, useMemo, useState } from "react"
 import {
   AlertCircle,
   Ban,
+  Bot,
   Check,
-  ChevronDown,
+  ChevronRight,
   FilePen,
   FileText,
+  Globe,
   Search,
   Terminal,
   Wrench,
@@ -16,34 +18,28 @@ import { agentLabel } from "@/lib/agent"
 import { fmtCost, fmtDuration, fmtTokens } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
+import { presentTool, resultMeta, type ToolKind } from "@/lib/toolview"
+import { deriveTasks, isTaskTool } from "@/lib/tasks"
 import { Markdown } from "@/components/common/Markdown"
+import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import type { ChatItem } from "@/store/chat"
 
 type ToolItem = Extract<ChatItem, { kind: "tool" }>
 
 /** Máx. de linhas mostradas num bloco de diff (Edit/Write) antes de "… +N linhas". */
 const DIFF_MAX_LINES = 80
+/** A partir de quantas tools consecutivas o burst colapsa num grupo. */
+const GROUP_MIN = 4
 
-function toolIcon(name: string): LucideIcon {
-  if (name === "Bash") return Terminal
-  if (name === "Read") return FileText
-  if (name === "Edit" || name === "Write" || name === "MultiEdit") return FilePen
-  if (name === "Glob" || name === "Grep") return Search
-  return Wrench
-}
-
-function toolSummary(input: unknown): string {
-  if (input && typeof input === "object") {
-    const i = input as Record<string, unknown>
-    for (const key of ["command", "file_path", "pattern", "path", "query"]) {
-      if (typeof i[key] === "string") return i[key] as string
-    }
-  }
-  try {
-    return JSON.stringify(input)
-  } catch {
-    return ""
-  }
+const KIND_ICON: Record<ToolKind, LucideIcon> = {
+  bash: Terminal,
+  read: FileText,
+  edit: FilePen,
+  write: FilePen,
+  search: Search,
+  web: Globe,
+  agent: Bot,
+  generic: Wrench,
 }
 
 /** Cronômetro ao vivo enquanto o run pensa (atualiza a cada 1s). */
@@ -67,68 +63,155 @@ function DiffBlock({ text, kind }: { text: string; kind: "del" | "add" }) {
       {lines.map((l, idx) => (
         <div key={idx} className="flex gap-2">
           <span className={cn("shrink-0 select-none", color)}>{sign}</span>
-          <span data-selectable className="whitespace-pre-wrap text-foreground/85">
+          <span
+            data-selectable
+            className="break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/85"
+          >
             {l || " "}
           </span>
         </div>
       ))}
       {all.length > lines.length && (
-        <div className="pl-5 text-muted-foreground">… +{all.length - lines.length} linhas</div>
+        <div className="pl-5 text-muted-foreground">
+          … +{all.length - lines.length} linhas
+        </div>
       )}
     </div>
   )
 }
 
-const ToolCard = memo(function ToolCard({ item }: { item: ToolItem }) {
+/** Tool call como LINHA (ícone + rótulo humano + meta), colapsável pro cru.
+ *  A prosa do agent é o conteúdo; a ferramenta é rodapé, não caixa. */
+const ToolLine = memo(function ToolLine({ item }: { item: ToolItem }) {
   const [open, setOpen] = useState(false)
-  const Icon = toolIcon(item.name)
+  const p = presentTool(item.name, item.input)
+  const Icon = KIND_ICON[p.kind]
   const i = (item.input ?? {}) as Record<string, unknown>
   const isEdit =
     (item.name === "Edit" || item.name === "MultiEdit") &&
     typeof i.old_string === "string"
   const isWrite = item.name === "Write" && typeof i.content === "string"
-  const hasDiff = isEdit || isWrite
+  const failed = item.result?.ok === false
+  const res = resultMeta(item.name, item.result)
+  const meta = [p.meta, res].filter(Boolean).join(" · ")
+  const expandable = Boolean(p.detail || isEdit || isWrite || item.result?.text)
 
   return (
-    <div className="animate-cockpit-rise rounded-lg border bg-card">
+    <div className="min-w-0">
       <button
-        disabled={!hasDiff}
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-start gap-2.5 px-3 py-2 text-left disabled:cursor-default"
+        onClick={() => expandable && setOpen((o) => !o)}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-md px-1.5 py-[3px] text-left text-[12.5px] transition-colors",
+          expandable && "hover:bg-accent/40",
+        )}
       >
-        <Icon className="mt-0.5 size-3.5 shrink-0 text-brass" />
-        <div className="min-w-0 flex-1">
-          <div className="label-mono mb-1 text-foreground/80">{item.name}</div>
-          <div
-            data-selectable
-            className="truncate font-mono text-[12px] text-muted-foreground"
-          >
-            {toolSummary(item.input)}
-          </div>
-        </div>
-        {hasDiff && (
-          <ChevronDown
-            className={cn(
-              "mt-0.5 size-3.5 shrink-0 text-muted-foreground transition-transform",
-              open && "rotate-180",
-            )}
-          />
+        <ChevronRight
+          className={cn(
+            "size-3 shrink-0 transition-transform",
+            expandable ? "text-muted-foreground/40" : "text-transparent",
+            open && "rotate-90",
+          )}
+        />
+        <Icon
+          className={cn(
+            "size-3.5 shrink-0",
+            failed
+              ? "text-st-error"
+              : p.kind === "edit" || p.kind === "write"
+                ? "text-brass"
+                : "text-muted-foreground",
+          )}
+        />
+        <span
+          className={cn("truncate", failed ? "text-st-error" : "text-foreground/85")}
+        >
+          {p.label}
+        </span>
+        {meta && (
+          <span className="ml-auto max-w-[45%] shrink-0 truncate pl-2 font-mono text-[10.5px] text-muted-foreground/60">
+            {meta}
+          </span>
         )}
       </button>
-      {open && hasDiff && (
-        <div className="space-y-1 border-t px-3 py-2 font-mono text-[11.5px] leading-relaxed">
-          {isEdit && (
-            <>
-              <DiffBlock text={i.old_string as string} kind="del" />
-              <DiffBlock text={i.new_string as string} kind="add" />
-            </>
+      {open && (
+        <div className="mt-0.5 mb-1 ml-[26px] overflow-hidden rounded-md border bg-secondary/30">
+          {p.detail && (
+            <div
+              data-selectable
+              className="p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/75"
+            >
+              {p.detail}
+            </div>
           )}
-          {isWrite && <DiffBlock text={i.content as string} kind="add" />}
+          {(isEdit || isWrite) && (
+            <div className="space-y-1 border-t p-2 font-mono text-[11.5px] leading-relaxed">
+              {isEdit && (
+                <>
+                  <DiffBlock text={i.old_string as string} kind="del" />
+                  <DiffBlock text={i.new_string as string} kind="add" />
+                </>
+              )}
+              {isWrite && <DiffBlock text={i.content as string} kind="add" />}
+            </div>
+          )}
+          {item.result?.text && (
+            <div
+              data-selectable
+              className="border-t p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-muted-foreground"
+            >
+              {item.result.text}
+            </div>
+          )}
         </div>
       )}
     </div>
   )
 })
+
+/** Burst de tools consecutivas: colapsa num grupo (o último fica aberto
+ *  enquanto o run anda, pra atividade continuar visível). */
+function ToolGroup({
+  tools,
+  defaultOpen,
+}: {
+  tools: ToolItem[]
+  defaultOpen: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  const preview = tools
+    .slice(0, 3)
+    .map((t) => presentTool(t.name, t.input).label)
+    .join(" · ")
+  return (
+    <div className="min-w-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 rounded-md px-1.5 py-[3px] text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/40"
+      >
+        <ChevronRight
+          className={cn(
+            "size-3 shrink-0 text-muted-foreground/40 transition-transform",
+            open && "rotate-90",
+          )}
+        />
+        <span className="shrink-0">{tools.length} passos</span>
+        {!open && (
+          <span className="min-w-0 truncate font-mono text-[10.5px] text-muted-foreground/50">
+            {preview}
+            {tools.length > 3 ? " …" : ""}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="ml-[5px] flex flex-col gap-px border-l border-border/50 pl-2">
+          {tools.map((t) => (
+            <ToolLine key={t.id} item={t} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 /** Thumbnail de um anexo no histórico (bytes → object URL cacheado). */
 function AttachmentThumb({ att }: { att: Attachment }) {
@@ -171,8 +254,8 @@ function AttachmentThumb({ att }: { att: Attachment }) {
   )
 }
 
-/** Um item da conversa. `memo`: só re-renderiza quando a REFERÊNCIA do item muda
- *  (itens não-streaming têm ref estável) → não re-pinta tudo a cada text_delta (F12). */
+/** Um item NÃO-tool da conversa. `memo`: só re-renderiza quando a REFERÊNCIA do
+ *  item muda (itens não-streaming têm ref estável), não re-pinta a cada delta (F12). */
 const MessageItem = memo(function MessageItem({ item: it }: { item: ChatItem }) {
   if (it.kind === "user") {
     return (
@@ -187,7 +270,7 @@ const MessageItem = memo(function MessageItem({ item: it }: { item: ChatItem }) 
         {it.text && (
           <div
             data-selectable
-            className="max-w-[82%] rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[14px] whitespace-pre-wrap text-foreground"
+            className="max-w-[82%] rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[14px] break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground"
           >
             {it.text}
           </div>
@@ -201,7 +284,7 @@ const MessageItem = memo(function MessageItem({ item: it }: { item: ChatItem }) 
   }
 
   if (it.kind === "tool") {
-    return <ToolCard item={it} />
+    return <ToolLine item={it} />
   }
 
   if (it.kind === "error") {
@@ -213,7 +296,7 @@ const MessageItem = memo(function MessageItem({ item: it }: { item: ChatItem }) 
         </div>
         <div
           data-selectable
-          className="font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-foreground/85"
+          className="font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/85"
         >
           {it.message}
         </div>
@@ -245,7 +328,7 @@ const MessageItem = memo(function MessageItem({ item: it }: { item: ChatItem }) 
         <div className="rounded-lg border border-st-error/40 bg-st-error/10 px-3 py-2">
           <div
             data-selectable
-            className="font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-foreground/85"
+            className="font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/85"
           >
             {it.text}
           </div>
@@ -288,6 +371,42 @@ const MessageItem = memo(function MessageItem({ item: it }: { item: ChatItem }) 
   )
 })
 
+/** Nó de render: item comum, burst de tools, ou A checklist (task tools). */
+type Node =
+  | { type: "item"; key: string; item: ChatItem }
+  | { type: "tools"; key: string; tools: ToolItem[] }
+  | { type: "tasklist"; key: string }
+
+/** Agrupa: tools consecutivas viram um nó só; task tools somem do fluxo e viram
+ *  UMA checklist (na posição da primeira). */
+function buildNodes(items: ChatItem[]): Node[] {
+  const nodes: Node[] = []
+  let taskShown = false
+  let buf: ToolItem[] = []
+  const flush = () => {
+    if (buf.length) nodes.push({ type: "tools", key: buf[0].id, tools: buf })
+    buf = []
+  }
+  for (const it of items) {
+    if (it.kind === "tool" && isTaskTool(it.name)) {
+      flush()
+      if (!taskShown) {
+        nodes.push({ type: "tasklist", key: it.id })
+        taskShown = true
+      }
+      continue
+    }
+    if (it.kind === "tool") {
+      buf.push(it)
+      continue
+    }
+    flush()
+    nodes.push({ type: "item", key: it.id, item: it })
+  }
+  flush()
+  return nodes
+}
+
 export function MessageList({
   items,
   running,
@@ -301,6 +420,9 @@ export function MessageList({
   startedAt: number | null
   agent: string
 }) {
+  const nodes = useMemo(() => buildNodes(items), [items])
+  const tasks = useMemo(() => deriveTasks(items), [items])
+
   // Custo acumulado da sessão (soma dos turnos com result), consciência de gasto.
   let sessionCost = 0
   let sessionEstimated = false
@@ -314,10 +436,35 @@ export function MessageList({
     }
   }
   return (
-    <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-8 py-8">
-      {items.map((it) => (
-        <MessageItem key={it.id} item={it} />
-      ))}
+    <div className="mx-auto flex w-full max-w-[760px] min-w-0 flex-col gap-4 px-8 py-8">
+      {nodes.map((n, idx) => {
+        if (n.type === "tasklist") {
+          return (
+            <div key={n.key} className="animate-cockpit-rise">
+              <TaskChecklist tasks={tasks} />
+            </div>
+          )
+        }
+        if (n.type === "tools") {
+          if (n.tools.length >= GROUP_MIN) {
+            return (
+              <ToolGroup
+                key={n.key}
+                tools={n.tools}
+                defaultOpen={running && idx === nodes.length - 1}
+              />
+            )
+          }
+          return (
+            <div key={n.key} className="flex flex-col gap-px">
+              {n.tools.map((t) => (
+                <ToolLine key={t.id} item={t} />
+              ))}
+            </div>
+          )
+        }
+        return <MessageItem key={n.key} item={n.item} />
+      })}
 
       {(running || finalizing) && (
         <div className="flex items-center gap-2 text-[12px] text-muted-foreground">

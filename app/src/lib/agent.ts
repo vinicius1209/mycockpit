@@ -11,6 +11,7 @@ export type AgentEvent =
   | { type: "text"; text: string }
   | { type: "text_delta"; text: string }
   | { type: "tool"; id: string; name: string; input: unknown }
+  | { type: "tool_result"; id: string; ok: boolean; text: string; lines: number }
   | {
       type: "result"
       ok: boolean
