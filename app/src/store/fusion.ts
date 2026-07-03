@@ -275,6 +275,21 @@ export const useFusion = create<FusionState>((set, get) => {
 
   // T2.2, fan-out de N candidatos read-only em paralelo (concorrência limitada=3).
   launch: async (convId, cfg, prompt, attachments, projectPath, permission) => {
+    // UMA disputa por vez: relançar por cima de uma "deciding" criava zumbi
+    // (pending=1 órfão no DB que o restorePending ressuscitava do nada). Em
+    // voo → ignora o pedido; esperando decisão → descarta a antiga (marca
+    // resolvida no disco) antes de abrir a nova.
+    const existing = get().byConv[convId]
+    if (existing) {
+      if (
+        existing.phase === "running" ||
+        existing.phase === "judging" ||
+        existing.phase === "promoting"
+      ) {
+        return
+      }
+      get().discard(convId)
+    }
     const prevConv = useChat.getState().byId[convId]
     const preamble =
       prevConv && prevConv.items.length ? serializeContext(prevConv.items) : null

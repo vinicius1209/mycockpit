@@ -68,6 +68,9 @@ export interface ConvState {
   effort: string | null
   /** Worktree isolado desta conversa (null = compartilha a pasta do projeto). */
   worktreePath: string | null
+  /** Linha corrompida no banco (JSON não parseou): envio e persist BLOQUEADOS
+   *  pra não sobrescrever dados ainda recuperáveis via SQLite. */
+  corrupt?: boolean
   items: ChatItem[]
   sessionId: string | null
   model: string | null
@@ -321,24 +324,34 @@ export const useChat = create<ChatState>((set, get) => {
   const ensureLoaded = async (projectId: string, convId: string) => {
     if (get().byId[convId]) return
     const conv = await dbLoad(convId)
-    set((s) =>
-      s.byId[convId]
-        ? {}
-        : {
-            byId: {
-              ...s.byId,
-              [convId]: {
-                ...emptyConv(projectId),
-                items: conv?.items ?? [],
-                sessionId: conv?.sessionId ?? null,
-                suggestions: conv?.suggestions ?? [],
-                agent: conv?.agent ?? "claude-code",
-                reqModel: conv?.reqModel ?? null,
-                effort: conv?.effort ?? null,
-                worktreePath: conv?.worktreePath ?? null,
+    // linha corrompida: estado read-only com aviso (persist/envio bloqueados),
+    // nunca "conversa vazia" que o próximo persist gravaria por cima.
+    const state: ConvState =
+      conv === "corrupt"
+        ? {
+            ...emptyConv(projectId),
+            corrupt: true,
+            items: [
+              {
+                kind: "notice",
+                id: uid(),
+                message:
+                  "Histórico desta conversa está corrompido no banco. Envio bloqueado pra não sobrescrever (a linha segue recuperável via SQLite).",
               },
-            },
-          },
+            ],
+          }
+        : {
+            ...emptyConv(projectId),
+            items: conv?.items ?? [],
+            sessionId: conv?.sessionId ?? null,
+            suggestions: conv?.suggestions ?? [],
+            agent: conv?.agent ?? "claude-code",
+            reqModel: conv?.reqModel ?? null,
+            effort: conv?.effort ?? null,
+            worktreePath: conv?.worktreePath ?? null,
+          }
+    set((s) =>
+      s.byId[convId] ? {} : { byId: { ...s.byId, [convId]: state } },
     )
   }
 
@@ -525,6 +538,7 @@ export const useChat = create<ChatState>((set, get) => {
       if (!projectId) return
       const src = get().conversations.find((c) => c.id === id)
       const loaded = await dbLoad(id)
+      if (loaded === "corrupt") return // não duplica linha corrompida
       const items = loaded?.items ?? get().byId[id]?.items ?? []
       const agent = loaded?.agent ?? get().byId[id]?.agent ?? "claude-code"
       const reqModel = loaded?.reqModel ?? get().byId[id]?.reqModel ?? null
@@ -564,6 +578,7 @@ export const useChat = create<ChatState>((set, get) => {
     persist: async (convId) => {
       const c = get().byId[convId]
       if (!c) return
+      if (c.corrupt) return // nunca grava por cima de uma linha corrompida
       // preserva o título atual (rename manual OU auto já fixado); só deriva se vazio
       const meta = get().conversations.find((cv) => cv.id === convId)
       const title = meta?.title ?? deriveTitle(c.items)

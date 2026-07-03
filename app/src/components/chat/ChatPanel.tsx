@@ -141,6 +141,10 @@ export function ChatPanel() {
       toast("Conversa ainda carregando. Tenta de novo.")
       return
     }
+    if (conv.corrupt) {
+      toast.error("Histórico corrompido no banco. Envio bloqueado nesta conversa.")
+      return
+    }
     // bloqueia se rodando OU finalizando, o processo do CLI precisa sair de fato
     // (flush da sessão) antes do próximo run, senão o resume não acha a sessão.
     if (conv?.running || conv?.finalizing) return

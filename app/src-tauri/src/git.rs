@@ -455,10 +455,20 @@ fn create_pr_sync(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty() && s != "HEAD")
         .ok_or("não consegui detectar a branch atual")?;
+    // troca de conta CHECADA: falhar em silêncio abriria o PR com a conta errada
+    // (o motivo exato de existir o parâmetro, contas pessoal vs trabalho).
     if !account.trim().is_empty() {
-        let _ = Command::new("gh")
+        let out = Command::new("gh")
             .args(["auth", "switch", "--user", account.trim()])
-            .output();
+            .output()
+            .map_err(|e| format!("gh não encontrado: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "não consegui trocar pra conta gh '{}': {}",
+                account.trim(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
     }
     run_git(&cwd, &["push", "-u", "origin", &branch])?;
     let base_t = base.trim();

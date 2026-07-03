@@ -844,14 +844,16 @@ async function runSkillInto(
       [],
       (e) => {
         cur = { ...cur, ...reduceItems(cur, e) }
-        setRun(cur)
+        // update FUNCIONAL: overlay fechado (null) fica fechado; o setter direto
+        // ressuscitava o modal a cada evento do stream (achado do aval).
+        setRun((prev) => (prev ? cur : prev))
       },
     )
   } catch {
     // erro já chega como card de Error no stream
   }
   cur = { ...cur, running: false }
-  setRun(cur)
+  setRun((prev) => (prev ? cur : prev))
   // ok = chegou um result bem-sucedido (não bumpa o stage num run que falhou).
   return cur.items.some((it) => it.kind === "result" && it.ok === true)
 }

@@ -87,6 +87,10 @@ pub struct PrInfo {
 
 /// "https://github.com/org/repo/pull/476" → ("org/repo", "476").
 fn parse_pr_url(url: &str) -> Option<(String, String)> {
+    // a URL vem do manifest (escrito por agents): só aceita GitHub de verdade.
+    if !url.contains("github.com/") {
+        return None;
+    }
     let (prefix, rest) = url.split_once("/pull/")?;
     let num: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
     if num.is_empty() {
@@ -136,12 +140,21 @@ fn gh_pr_view(repo: &str, num: &str) -> Option<PrInfo> {
     })
 }
 
+/// Sha hex plausível (7-40 chars). O merge_commit vem do manifest (escrito por
+/// LLM): um valor arbitrário viraria argv do git (`--output=…` escreve arquivo).
+fn is_sha(s: &str) -> bool {
+    (7..=40).contains(&s.len()) && s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 /// Autor de um commit (fallback local). No merge do GitHub, `%an` é quem clicou Merge.
 fn git_author(project_path: &str, sha: &str) -> Option<String> {
+    if !is_sha(sha) {
+        return None;
+    }
     let out = std::process::Command::new("git")
         .arg("-C")
         .arg(project_path)
-        .args(["show", "-s", "--format=%an"])
+        .args(["show", "-s", "--format=%an", "--end-of-options"])
         .arg(sha)
         .output()
         .ok()?;
@@ -530,6 +543,15 @@ pub fn set_plan_stage(project_path: String, slug: String, stage: String) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sha_guard() {
+        assert!(is_sha("be8acf85"));
+        assert!(is_sha("0123456789abcdef0123456789abcdef01234567"));
+        assert!(!is_sha("--output=/tmp/x")); // manifest malicioso não vira argv
+        assert!(!is_sha("abc")); // curto demais
+        assert!(!is_sha("gg8acf85")); // não-hex
+    }
 
     #[test]
     fn slugify_pt_br() {

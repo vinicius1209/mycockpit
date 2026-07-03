@@ -230,6 +230,13 @@ pub fn run() {
             attachments::gc_attachments,
             attachments::wipe_conv_attachments
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Saída do app com run em voo: mata os CLIs de agent (senão ficam
+            // órfãos rodando headless, editando repo e gastando, sem UI).
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                app_handle.state::<agent::RunRegistry>().kill_all();
+            }
+        });
 }

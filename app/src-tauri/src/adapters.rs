@@ -27,8 +27,9 @@ pub trait AgentAdapter: Send {
     /// Id estável (= binário lógico), usado em mensagens de erro.
     fn id(&self) -> &'static str;
     /// Monta o `Command` (binário + flags). O loop compartilhado null-a o stdin
-    /// e pipa stdout/stderr, o adapter NÃO cuida disso.
-    fn build_command(&self, req: &RunRequest) -> Result<Command, String>;
+    /// e pipa stdout/stderr, o adapter NÃO cuida disso. `&mut self`: o adapter
+    /// pode fixar estado do run (ex. Codex guarda o modelo requisitado p/ custo).
+    fn build_command(&mut self, req: &RunRequest) -> Result<Command, String>;
     /// Mapeia uma linha JSON do stream → 0..N eventos normalizados. `&mut self`
     /// permite guardar estado de parsing (correlação begin/end de ferramentas).
     fn map_line(&mut self, v: &serde_json::Value) -> Vec<AgentEvent>;
@@ -94,7 +95,7 @@ impl AgentAdapter for ClaudeAdapter {
         "claude"
     }
 
-    fn build_command(&self, req: &RunRequest) -> Result<Command, String> {
+    fn build_command(&mut self, req: &RunRequest) -> Result<Command, String> {
         let mut cmd = Command::new("claude");
         // anexos: injeta os paths no prompt (Read tool) + --add-dir (acesso fora do cwd)
         let mut prompt = req.prompt.clone();
@@ -344,7 +345,12 @@ impl AgentAdapter for CodexAdapter {
         "codex"
     }
 
-    fn build_command(&self, req: &RunRequest) -> Result<Command, String> {
+    fn build_command(&mut self, req: &RunRequest) -> Result<Command, String> {
+        // o modelo REQUISITADO substitui o default do config: o Session event e a
+        // estimativa de custo leem self.model (senão estima com a tabela errada).
+        if let Some(m) = &req.model {
+            self.model = Some(m.clone());
+        }
         let mut cmd = Command::new("codex");
         cmd.arg("exec")
             .arg("--json")

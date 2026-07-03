@@ -19,19 +19,23 @@ pub struct McConfig {
 }
 
 #[tauri::command]
-pub fn read_mycockpit_config(path: String) -> McConfig {
+pub fn read_mycockpit_config(path: String) -> Result<McConfig, String> {
     let cfg = Path::new(&path).join(".mycockpit").join("config.toml");
     let Ok(text) = std::fs::read_to_string(&cfg) else {
-        return McConfig::default(); // exists: false
+        return Ok(McConfig::default()); // exists: false
     };
-    let doc = text.parse::<DocumentMut>().unwrap_or_default();
+    // TOML inválido NÃO vira "tudo default" em silêncio: o arquivo é editável à
+    // mão; mascarar um typo esconderia a config real (o front loga o warn).
+    let doc = text
+        .parse::<DocumentMut>()
+        .map_err(|e| format!("config.toml inválido: {e}"))?;
     let get = |k: &str| doc.get(k).and_then(|v| v.as_str()).map(str::to_string);
-    McConfig {
+    Ok(McConfig {
         exists: true,
         mode: get("mode"),
         helper: get("helper"),
         permission: get("permission"),
-    }
+    })
 }
 
 /// Escreve as chaves fornecidas em `.mycockpit/config.toml`, criando a pasta
@@ -53,14 +57,18 @@ pub fn write_mycockpit_config(
     }
 
     let cfg = dir.join("config.toml");
-    let mut doc = std::fs::read_to_string(&cfg)
-        .ok()
-        .and_then(|t| t.parse::<DocumentMut>().ok())
-        .unwrap_or_else(|| {
+    let mut doc = match std::fs::read_to_string(&cfg) {
+        // arquivo EXISTE mas não parseia: NÃO sobrescreve o conteúdo autoral
+        // (comentários/chaves) com um doc novo; o usuário conserta o TOML antes.
+        Ok(t) => t
+            .parse::<DocumentMut>()
+            .map_err(|e| format!("config.toml inválido, não vou sobrescrever: {e}"))?,
+        Err(_) => {
             let mut d = DocumentMut::new();
             d["version"] = value(1);
             d
-        });
+        }
+    };
 
     if let Some(m) = mode {
         doc["mode"] = value(m);

@@ -219,6 +219,9 @@ interface ConvLoadRow {
   worktree_path: string | null
 }
 
+/** `null` = conversa não existe; `"corrupt"` = a linha EXISTE mas o JSON não
+ *  parseou. O caller NÃO pode tratar corrupt como vazio: o persist (UPSERT de
+ *  linha inteira) destruiria dados ainda recuperáveis via SQLite. */
 export async function loadConversation(
   id: string,
 ): Promise<{
@@ -230,7 +233,7 @@ export async function loadConversation(
   reqModel: string | null
   effort: string | null
   worktreePath: string | null
-} | null> {
+} | null | "corrupt"> {
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ConvLoadRow[]>(
@@ -252,7 +255,7 @@ export async function loadConversation(
       worktreePath: rows[0].worktree_path,
     }
   } catch {
-    return null
+    return "corrupt"
   }
 }
 

@@ -15,10 +15,34 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Notify;
 
-/// Registro de runs ativos → permite cancelar um run em andamento (H1).
-/// Mapeia run_id → sinal de cancelamento; o loop do run escuta esse sinal.
+/// Registro de runs ativos → cancelar um run (H1) e matar TODOS na saída do app
+/// (sem isso, Cmd-Q no meio de um run deixa claude/codex órfãos rodando headless,
+/// possivelmente editando o repo e gastando tokens sem ninguém olhar).
+/// `.0`: run_id → sinal de cancelamento; `.1`: run_id → pid do processo vivo.
 #[derive(Default)]
-pub struct RunRegistry(pub Mutex<HashMap<String, Arc<Notify>>>);
+pub struct RunRegistry(
+    pub Mutex<HashMap<String, Arc<Notify>>>,
+    pub Mutex<HashMap<String, u32>>,
+);
+
+impl RunRegistry {
+    /// SIGKILL em todos os processos de agent vivos (hook de saída do app).
+    /// Síncrono de propósito: no exit o runtime async pode não rodar mais.
+    pub fn kill_all(&self) {
+        if let Ok(pids) = self.1.lock() {
+            for pid in pids.values() {
+                #[cfg(unix)]
+                {
+                    let _ = std::process::Command::new("kill")
+                        .args(["-9", &pid.to_string()])
+                        .output();
+                }
+                #[cfg(not(unix))]
+                let _ = pid;
+            }
+        }
+    }
+}
 
 /// Guard RAII: remove a conversa de ActiveConvs ao sair do run (qualquer path),
 /// liberando-a p/ o GC. Evita vazar a marca de "ativa" num early-return.
@@ -45,6 +69,9 @@ impl Drop for RunGuard<'_> {
     fn drop(&mut self) {
         if let Ok(mut map) = self.registry.0.lock() {
             map.remove(self.run_id);
+        }
+        if let Ok(mut pids) = self.registry.1.lock() {
+            pids.remove(self.run_id);
         }
     }
 }
@@ -191,7 +218,16 @@ pub async fn run_agent(
     };
     let resume_was = req.resume.is_some();
     let cmd = adapter.build_command(&req)?;
-    let mut outcome = run_once(cmd, resume_was, &on_event, &mut adapter, &notify).await?;
+    let mut outcome = run_once(
+        cmd,
+        resume_was,
+        &on_event,
+        &mut adapter,
+        &notify,
+        registry.inner(),
+        &run_id,
+    )
+    .await?;
 
     // Degradação graciosa: se o resume falhou porque a sessão sumiu (CLI limpou a
     // sessão, ou conversa legada), em vez de ERRO o app recomeça SEM resume + avisa.
@@ -204,7 +240,16 @@ pub async fn run_agent(
         req2.resume = None;
         let mut adapter2 = adapters::resolve(&agent)?;
         let cmd2 = adapter2.build_command(&req2)?;
-        outcome = run_once(cmd2, false, &on_event, &mut adapter2, &notify).await?;
+        outcome = run_once(
+            cmd2,
+            false,
+            &on_event,
+            &mut adapter2,
+            &notify,
+            registry.inner(),
+            &run_id,
+        )
+        .await?;
     }
 
     if outcome.cancelled {
@@ -239,17 +284,29 @@ async fn run_once(
     on_event: &Channel<AgentEvent>,
     adapter: &mut Box<dyn adapters::AgentAdapter>,
     notify: &Arc<Notify>,
+    registry: &RunRegistry,
+    run_id: &str,
 ) -> Result<Outcome, String> {
     // stdin null é OBRIGATÓRIO: sem isso o `codex exec` trava lendo stdin
     // (verificado). Inofensivo p/ o Claude (que não lê stdin em -p).
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        // filho morre se o future for dropado (não cobre process::exit; o
+        // kill_all no hook de saída do app cobre esse caso).
+        .kill_on_drop(true);
 
     let bin = adapter.id();
     let mut child = cmd.spawn().map_err(|e| {
         format!("não consegui executar o agent `{bin}`: {e}. Ele está instalado e no PATH?")
     })?;
+    // pid no registry: o hook de saída mata todos (órfãos de Cmd-Q). O RunGuard
+    // do run_agent limpa a entrada em qualquer saída.
+    if let Some(pid) = child.id() {
+        if let Ok(mut pids) = registry.1.lock() {
+            pids.insert(run_id.to_string(), pid);
+        }
+    }
 
     let stdout = child.stdout.take().ok_or("sem stdout do processo")?;
     let stderr = child.stderr.take();
