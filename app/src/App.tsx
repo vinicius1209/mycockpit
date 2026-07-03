@@ -22,6 +22,8 @@ import {
   isTauri,
   listProjects,
   insertProject,
+  findProjectByPath,
+  restoreProject,
   updateProjectPermission,
 } from "@/lib/db"
 import { readMycockpitConfig } from "@/lib/mycockpit"
@@ -151,7 +153,24 @@ export default function App() {
         hasAgentsMd: false,
         status: "idle",
       }
-      await insertProject(project)
+      const inserted = await insertProject(project)
+      if (!inserted) {
+        // path já cadastrado (talvez arquivado): restaura/seleciona o registro
+        // real em vez de criar um id fantasma que evapora no restart.
+        const existing = await findProjectByPath(dir)
+        if (existing) {
+          if (existing.deleted) await restoreProject(existing.id)
+          const fresh = await listProjects()
+          if (fresh) useApp.getState().setProjects(fresh)
+          useApp.getState().setActiveProject(existing.id)
+          toast.success(
+            existing.deleted
+              ? `Projeto restaurado: ${name}`
+              : `Projeto já existia: ${name}`,
+          )
+          return
+        }
+      }
       addProject(project)
       toast.success(`Projeto adicionado: ${name}`)
     } catch (e) {

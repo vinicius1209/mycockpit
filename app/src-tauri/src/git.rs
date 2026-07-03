@@ -16,16 +16,43 @@ fn git(cwd: &str, args: &[&str]) -> Option<String> {
     Some(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// `git diff --no-index` sai com código 1 quando HÁ diferença (esperado) — então
-/// aceita a saída independente do status; None só se vazia.
-fn git_allow_fail(cwd: &str, args: &[&str]) -> Option<String> {
-    let out = Command::new("git").arg("-C").arg(cwd).args(args).output().ok()?;
-    let s = String::from_utf8_lossy(&out.stdout).into_owned();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
+/// Máx. de linhas emitidas no diff sintético de um arquivo novo.
+const UNTRACKED_MAX_LINES: usize = 400;
+/// Arquivo novo maior que isso não vira diff de texto (evita ler blob gigante).
+const UNTRACKED_MAX_BYTES: u64 = 1_000_000;
+
+/// Patch unified sintético de um arquivo untracked (equivale ao `--no-index` vs
+/// /dev/null, SEM spawnar um git por arquivo, era N+1 e congelava a UI).
+fn untracked_patch(cwd: &str, rel: &str) -> String {
+    let full = Path::new(cwd).join(rel);
+    let mut out = format!(
+        "diff --git a/{rel} b/{rel}\nnew file mode 100644\n--- /dev/null\n+++ b/{rel}\n"
+    );
+    let too_big = fs::metadata(&full)
+        .map(|m| m.len() > UNTRACKED_MAX_BYTES)
+        .unwrap_or(true);
+    let bytes = if too_big { None } else { fs::read(&full).ok() };
+    let Some(bytes) = bytes else {
+        out.push_str("Binary files /dev/null and b/ differ\n");
+        return out;
+    };
+    if bytes.contains(&0) {
+        out.push_str("Binary files /dev/null and b/ differ\n");
+        return out;
     }
+    let text = String::from_utf8_lossy(&bytes);
+    let lines: Vec<&str> = text.lines().collect();
+    let shown = lines.len().min(UNTRACKED_MAX_LINES);
+    out.push_str(&format!("@@ -0,0 +1,{} @@\n", lines.len().max(1)));
+    for l in &lines[..shown] {
+        out.push('+');
+        out.push_str(l);
+        out.push('\n');
+    }
+    if lines.len() > shown {
+        out.push_str(&format!("+… +{} linhas\n", lines.len() - shown));
+    }
+    out
 }
 
 #[derive(Serialize)]
@@ -38,10 +65,9 @@ pub struct GitDiff {
 }
 
 /// Alterações não-commitadas de um diretório (o cwd da conversa). Rastreados via
-/// `git diff HEAD`; arquivos novos (untracked) viram diff sintético via `--no-index`.
-#[tauri::command]
-pub fn git_diff(cwd: String) -> GitDiff {
-    let is_repo = git(&cwd, &["rev-parse", "--is-inside-work-tree"])
+/// `git diff HEAD`; arquivos novos viram diff sintético (1 processo no total).
+fn diff_sync(cwd: &str) -> GitDiff {
+    let is_repo = git(cwd, &["rev-parse", "--is-inside-work-tree"])
         .map(|s| s.trim() == "true")
         .unwrap_or(false);
     if !is_repo {
@@ -51,19 +77,15 @@ pub fn git_diff(cwd: String) -> GitDiff {
             patch: String::new(),
         };
     }
-    let branch = git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
+    let branch = git(cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
     // rastreados (modificados + deletados) vs HEAD.
-    let mut patch = git(&cwd, &["diff", "HEAD", "--no-color"]).unwrap_or_default();
-    // novos (untracked, não-ignorados): diff sintético contra /dev/null.
-    if let Some(list) = git(&cwd, &["ls-files", "--others", "--exclude-standard"]) {
-        for f in list.lines().filter(|l| !l.is_empty()) {
-            if let Some(d) =
-                git_allow_fail(&cwd, &["diff", "--no-index", "--no-color", "--", "/dev/null", f])
-            {
-                patch.push_str(&d);
-            }
+    let mut patch = git(cwd, &["diff", "HEAD", "--no-color"]).unwrap_or_default();
+    // novos (untracked, não-ignorados): patch sintético, sem git por arquivo.
+    if let Some(list) = git(cwd, &["ls-files", "--others", "--exclude-standard", "-z"]) {
+        for f in list.split('\0').filter(|s| !s.is_empty()) {
+            patch.push_str(&untracked_patch(cwd, f));
         }
     }
     GitDiff {
@@ -71,6 +93,18 @@ pub fn git_diff(cwd: String) -> GitDiff {
         branch,
         patch,
     }
+}
+
+/// Async (spawn_blocking): git síncrono na main thread congelava a UI.
+#[tauri::command]
+pub async fn git_diff(cwd: String) -> GitDiff {
+    tauri::async_runtime::spawn_blocking(move || diff_sync(&cwd))
+        .await
+        .unwrap_or(GitDiff {
+            is_repo: false,
+            branch: None,
+            patch: String::new(),
+        })
 }
 
 // ---------------- Worktree isolado por conversa (v2.5) ----------------
@@ -101,8 +135,7 @@ pub struct WorktreeInfo {
 }
 
 /// Cria (ou reusa) um worktree isolado pra uma conversa. Branch a partir do HEAD.
-#[tauri::command]
-pub fn create_worktree(project_path: String, conv_id: String) -> Result<WorktreeInfo, String> {
+fn create_worktree_sync(project_path: String, conv_id: String) -> Result<WorktreeInfo, String> {
     let is_repo = git(&project_path, &["rev-parse", "--is-inside-work-tree"])
         .map(|s| s.trim() == "true")
         .unwrap_or(false);
@@ -150,11 +183,25 @@ pub fn create_worktree(project_path: String, conv_id: String) -> Result<Worktree
     Ok(WorktreeInfo { path: path_str, branch })
 }
 
+#[tauri::command]
+pub async fn create_worktree(
+    project_path: String,
+    conv_id: String,
+) -> Result<WorktreeInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || create_worktree_sync(project_path, conv_id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Remove o worktree de uma conversa. SEM --force: se houver mudança não-commitada,
 /// o git recusa e a gente preserva o trabalho (o branch continua no repo).
 #[tauri::command]
-pub fn remove_worktree(project_path: String, path: String) -> Result<(), String> {
-    run_git(&project_path, &["worktree", "remove", &path]).map(|_| ())
+pub async fn remove_worktree(project_path: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        run_git(&project_path, &["worktree", "remove", &path]).map(|_| ())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ---------------- Shippar: commit + PR (v2.6) ----------------
@@ -162,15 +209,19 @@ pub fn remove_worktree(project_path: String, path: String) -> Result<(), String>
 /// Stage tudo + commit no cwd (worktree da conversa ou pasta do projeto). Devolve
 /// o SHA curto. Ação LOCAL (reversível via git).
 #[tauri::command]
-pub fn git_commit(cwd: String, message: String) -> Result<String, String> {
-    if message.trim().is_empty() {
-        return Err("mensagem de commit vazia".into());
-    }
-    run_git(&cwd, &["add", "-A"])?;
-    run_git(&cwd, &["commit", "-m", &message])?;
-    Ok(git(&cwd, &["rev-parse", "--short", "HEAD"])
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default())
+pub async fn git_commit(cwd: String, message: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if message.trim().is_empty() {
+            return Err("mensagem de commit vazia".into());
+        }
+        run_git(&cwd, &["add", "-A"])?;
+        run_git(&cwd, &["commit", "-m", &message])?;
+        Ok(git(&cwd, &["rev-parse", "--short", "HEAD"])
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[derive(Serialize)]
@@ -307,8 +358,7 @@ fn read_templates(cwd: &str) -> Vec<PrTemplate> {
 }
 
 /// Detecta o contexto de PR do cwd (worktree ou projeto). Alimenta o composer.
-#[tauri::command]
-pub fn pr_context(cwd: String) -> PrContext {
+fn pr_context_sync(cwd: String) -> PrContext {
     let is_repo = git(&cwd, &["rev-parse", "--is-inside-work-tree"])
         .map(|s| s.trim() == "true")
         .unwrap_or(false);
@@ -375,10 +425,26 @@ pub fn pr_context(cwd: String) -> PrContext {
     }
 }
 
+#[tauri::command]
+pub async fn pr_context(cwd: String) -> PrContext {
+    tauri::async_runtime::spawn_blocking(move || pr_context_sync(cwd))
+        .await
+        .unwrap_or(PrContext {
+            is_repo: false,
+            branch: None,
+            base_candidates: vec![],
+            base_default: String::new(),
+            accounts: vec![],
+            account_current: None,
+            templates: vec![],
+            title_default: String::new(),
+            has_pr_skill: false,
+        })
+}
+
 /// Push + abre o PR com base/conta/título/corpo ESCOLHIDOS no composer. Outward
 /// (a UI confirma). Troca a conta gh se pedido (o `/pr` do projeto faz igual).
-#[tauri::command]
-pub fn git_create_pr(
+fn create_pr_sync(
     cwd: String,
     base: String,
     account: String,
@@ -413,4 +479,17 @@ pub fn git_create_pr(
     }
     let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
     Ok(PrResult { url })
+}
+
+#[tauri::command]
+pub async fn git_create_pr(
+    cwd: String,
+    base: String,
+    account: String,
+    title: String,
+    body: String,
+) -> Result<PrResult, String> {
+    tauri::async_runtime::spawn_blocking(move || create_pr_sync(cwd, base, account, title, body))
+        .await
+        .map_err(|e| e.to_string())?
 }

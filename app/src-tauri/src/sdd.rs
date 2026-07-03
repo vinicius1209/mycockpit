@@ -159,8 +159,7 @@ fn git_author(project_path: &str, sha: &str) -> Option<String> {
 /// Enriquece a info do PR de forma INTELIGENTE + graciosa: tenta `gh` (estado, quem
 /// mergeou, datas precisas, autoritativo); se não tiver gh/auth, cai no git local
 /// (autor do merge commit); senão, nada. `source` reporta de onde veio (honesto).
-#[tauri::command]
-pub fn pr_info(
+fn pr_info_sync(
     project_path: String,
     pr_url: Option<String>,
     merge_commit: Option<String>,
@@ -186,6 +185,21 @@ pub fn pr_info(
         source: "none".into(),
         ..Default::default()
     }
+}
+
+/// Async (spawn_blocking): `gh pr view` é rede, congelava a UI na main thread.
+#[tauri::command]
+pub async fn pr_info(
+    project_path: String,
+    pr_url: Option<String>,
+    merge_commit: Option<String>,
+) -> PrInfo {
+    tauri::async_runtime::spawn_blocking(move || pr_info_sync(project_path, pr_url, merge_commit))
+        .await
+        .unwrap_or(PrInfo {
+            source: "none".into(),
+            ..Default::default()
+        })
 }
 
 // ---------------- Seed / Bootstrap SDD (v2.0) ----------------
@@ -246,8 +260,7 @@ fn copy_tree(
 /// Instala o scaffold do fluxo SDD: clona o seed e copia pro `.claude/` do projeto
 /// (non-destructive, nunca sobrescreve arquivo existente). Nível 1 (mecânico); o
 /// nível 2 (domínio inteligente) é um agent separado.
-#[tauri::command]
-pub fn seed_sdd(project_path: String) -> Result<SeedSummary, String> {
+fn seed_sdd_sync(project_path: String) -> Result<SeedSummary, String> {
     let tmp = std::env::temp_dir().join("mycockpit-sdd-seed");
     let _ = fs::remove_dir_all(&tmp);
     let out = std::process::Command::new("git")
@@ -285,6 +298,14 @@ pub fn seed_sdd(project_path: String) -> Result<SeedSummary, String> {
     }
     let _ = fs::remove_dir_all(&tmp);
     Ok(SeedSummary { copied, skipped })
+}
+
+/// Async (spawn_blocking): `git clone` do seed é rede, congelava a UI.
+#[tauri::command]
+pub async fn seed_sdd(project_path: String) -> Result<SeedSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || seed_sdd_sync(project_path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 // ---------------- Gate do PRD (v2.2) ----------------

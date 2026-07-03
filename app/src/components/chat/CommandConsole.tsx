@@ -149,6 +149,9 @@ export function CommandConsole({
   async function submitFusion() {
     const text = value.trim()
     if (!text || !project || !activeId) return
+    // conversa ainda não carregada do disco: beginFusion recusaria e o board
+    // ficaria órfão do transcript (mesmo guard do send do Linear).
+    if (!useChat.getState().byId[activeId]) return
     // mesma liga do título do botão (o candidato roda o modelo do PILL visível).
     const cfg = fusionLeague
     setValue("")

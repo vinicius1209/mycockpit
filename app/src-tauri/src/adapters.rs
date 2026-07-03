@@ -99,7 +99,10 @@ impl AgentAdapter for ClaudeAdapter {
         // anexos: injeta os paths no prompt (Read tool) + --add-dir (acesso fora do cwd)
         let mut prompt = req.prompt.clone();
         self.render_attachments(&req.attachments, &mut cmd, &mut prompt);
+        // `--` antes do prompt posicional: texto começando com "-" (colar um
+        // diff `--- a/…` ou uma lista markdown) NÃO pode virar flag do CLI.
         cmd.arg("-p")
+            .arg("--")
             .arg(&prompt)
             .arg("--output-format")
             .arg("stream-json")
@@ -372,9 +375,8 @@ impl AgentAdapter for CodexAdapter {
         // é VARIÁDICO (<FILE>...) e comeria o prompt → separa com `--` (verificado A0).
         let mut prompt = req.prompt.clone();
         self.render_attachments(&req.attachments, &mut cmd, &mut prompt);
-        if !req.attachments.is_empty() {
-            cmd.arg("--");
-        }
+        // `--` SEMPRE (não só com anexos): prompt começando com "-" não vira flag.
+        cmd.arg("--");
         cmd.arg(&prompt);
         Ok(cmd)
     }

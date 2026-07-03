@@ -589,7 +589,10 @@ export const useChat = create<ChatState>((set, get) => {
 
     start: (convId, text, runId, agent, model, effort, attachments) =>
       set((s) => {
-        const cur = s.byId[convId] ?? emptyConv(s.projectId ?? "")
+        // conversa ainda não carregada do disco: NUNCA fabrica um estado vazio,
+        // o persist (UPSERT de linha inteira) sobrescreveria o histórico.
+        const cur = s.byId[convId]
+        if (!cur) return {}
         const items = [
           ...cur.items,
           {
@@ -644,7 +647,9 @@ export const useChat = create<ChatState>((set, get) => {
 
     beginFusion: (convId, text, attachments) =>
       set((s) => {
-        const cur = s.byId[convId] ?? emptyConv(s.projectId ?? "")
+        // mesmo guard do start: sem estado carregado, não fabrica conversa vazia.
+        const cur = s.byId[convId]
+        if (!cur) return {}
         const items = [
           ...cur.items,
           {

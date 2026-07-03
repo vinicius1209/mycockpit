@@ -70,10 +70,12 @@ export async function setProjectColor(
   await db.execute("UPDATE projects SET color = $1 WHERE id = $2", [color, id])
 }
 
+/** Insere o projeto. `false` = path já cadastrado (o OR IGNORE não inseriu);
+ *  o caller decide restaurar/selecionar o existente em vez de criar fantasma. */
 export async function insertProject(p: Project): Promise<boolean> {
   const db = await getDb()
   if (!db) return false
-  await db.execute(
+  const res = await db.execute(
     "INSERT OR IGNORE INTO projects (id, name, path, created_at, has_claude_md, has_agents_md, permission_mode) VALUES ($1, $2, $3, $4, $5, $6, $7)",
     [
       p.id,
@@ -85,7 +87,21 @@ export async function insertProject(p: Project): Promise<boolean> {
       p.permissionMode ?? "padrao",
     ],
   )
-  return true
+  return (res?.rowsAffected ?? 0) > 0
+}
+
+/** Procura um projeto pelo path, INCLUINDO arquivados (pro re-add restaurar). */
+export async function findProjectByPath(
+  path: string,
+): Promise<{ id: string; deleted: boolean } | null> {
+  const db = await getDb()
+  if (!db) return null
+  const rows = await db.select<{ id: string; deleted_at: number | null }[]>(
+    "SELECT id, deleted_at FROM projects WHERE path = $1",
+    [path],
+  )
+  if (!rows.length) return null
+  return { id: rows[0].id, deleted: rows[0].deleted_at != null }
 }
 
 export async function updateProjectPermission(

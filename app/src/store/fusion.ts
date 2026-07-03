@@ -3,7 +3,7 @@
 // o `status` da lane é fonte ÚNICA (não derivada do controle do Linear).
 
 import { create } from "zustand"
-import { runAgent, type AgentEvent, type CostSource } from "@/lib/agent"
+import { runAgent, cancelAgent, type AgentEvent, type CostSource } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { reduceItems, useChat, type ChatItem } from "@/store/chat"
 import {
@@ -183,6 +183,8 @@ interface FusionState {
   ) => Promise<void>
   /** Roda o juiz (dupla-passada) sobre os sobreviventes → fase deciding. */
   runJudgePhase: (convId: string) => Promise<void>
+  /** Aborta a disputa em voo: cancela os candidatos, pula o juiz, limpa o board. */
+  abort: (convId: string) => void
   /** Confirma o vencedor → promove pra conversa + arquiva + limpa o board. */
   confirm: (convId: string, candId: string) => Promise<void>
   /** Restaura uma disputa PENDENTE do disco (caso 2) ao abrir a conversa. */
@@ -321,7 +323,22 @@ export const useFusion = create<FusionState>((set, get) => {
       get().finishCandidate(convId, c.id)
     })
 
+    // abortada no meio do fan-out (board já limpo) → não gasta com o juiz.
+    if (!get().byConv[convId]) return
     await get().runJudgePhase(convId)
+  },
+
+  // Stop de verdade no Fusion (achado 3 do aval): cancela cada candidato em voo
+  // via cancel_agent, zera o spinner da conversa e descarta o board. O juiz
+  // one-shot não é cancelável; o guard do launch impede que ele sequer comece.
+  abort: (convId) => {
+    const f = get().byConv[convId]
+    if (!f || (f.phase !== "running" && f.phase !== "judging")) return
+    for (const c of f.candidates) {
+      if (isRunning(c.status)) void cancelAgent(c.runId)
+    }
+    useChat.getState().finish(convId)
+    get().discard(convId)
   },
 
   // T2.4/T2.5, juiz dupla-passada + pré-seleção CONDICIONAL (concordou + neutro).

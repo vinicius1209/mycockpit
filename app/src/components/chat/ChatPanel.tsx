@@ -135,6 +135,12 @@ export function ChatPanel() {
     const convId = useChat.getState().activeId
     if (!convId) return
     const conv = useChat.getState().byId[convId]
+    // conversa ainda carregando do disco (janela do switch): enviar agora
+    // criaria um estado vazio e o persist apagaria o histórico (achado 1 do aval).
+    if (!conv) {
+      toast("Conversa ainda carregando. Tenta de novo.")
+      return
+    }
     // bloqueia se rodando OU finalizando, o processo do CLI precisa sair de fato
     // (flush da sessão) antes do próximo run, senão o resume não acha a sessão.
     if (conv?.running || conv?.finalizing) return
@@ -177,7 +183,16 @@ export function ChatPanel() {
 
   function handleStop() {
     const convId = useChat.getState().activeId
-    const runId = convId ? useChat.getState().byId[convId]?.runId : null
+    if (!convId) return
+    // Disputa Fusion em voo: o Stop era no-op silencioso (runId null) enquanto
+    // N candidatos queimavam dinheiro. Agora aborta a disputa de verdade.
+    const fusion = useFusion.getState().byConv[convId]
+    if (fusion && (fusion.phase === "running" || fusion.phase === "judging")) {
+      useFusion.getState().abort(convId)
+      toast("Disputa cancelada")
+      return
+    }
+    const runId = useChat.getState().byId[convId]?.runId
     if (runId) void cancelAgent(runId)
   }
 
