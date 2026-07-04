@@ -238,10 +238,18 @@ export function reduceItems(
             : it,
         ),
       }
-    case "result":
+    case "result": {
+      // O CLI pode emitir results INTERMEDIÁRIOS na mesma invocação (fases/
+      // subagents), cada um com o total-até-ali: o ÚLTIMO carrega o total real
+      // do turno. Colapsa consecutivos (senão o custo da sessão soma os
+      // parciais e infla, visto no uso real: 5 results = US$120 "somados"
+      // num turno que custou US$31).
+      const prev = c.items[c.items.length - 1]
+      const base =
+        prev && prev.kind === "result" ? c.items.slice(0, -1) : c.items
       return {
         items: [
-          ...c.items,
+          ...base,
           {
             kind: "result",
             id: uid(),
@@ -256,11 +264,17 @@ export function reduceItems(
               cacheRead: e.cache_read,
               cacheCreation: e.cache_creation,
             },
-            durationMs: c.startedAt ? Date.now() - c.startedAt : undefined,
+            durationMs:
+              c.startedAt != null
+                ? Date.now() - c.startedAt
+                : prev && prev.kind === "result"
+                  ? prev.durationMs
+                  : undefined,
           },
         ],
         streamingTextId: null,
       }
+    }
     // aviso não-fatal (anexo expirado/não-suportado), só adiciona a linha.
     case "notice":
       return {

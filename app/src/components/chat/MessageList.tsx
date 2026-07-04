@@ -387,7 +387,11 @@ function buildNodes(items: ChatItem[]): Node[] {
     if (buf.length) nodes.push({ type: "tools", key: buf[0].id, tools: buf })
     buf = []
   }
-  for (const it of items) {
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i]
+    // results consecutivos = parciais da MESMA invocação (histórico antigo,
+    // persistido antes do colapso no reducer): só o último vale.
+    if (it.kind === "result" && items[i + 1]?.kind === "result") continue
     if (it.kind === "tool" && isTaskTool(it.name)) {
       flush()
       if (!taskShown) {
@@ -424,16 +428,18 @@ export function MessageList({
   const tasks = useMemo(() => deriveTasks(items), [items])
 
   // Custo acumulado da sessão (soma dos turnos com result), consciência de gasto.
+  // Pula results seguidos de outro result (parciais da mesma invocação): somar
+  // os parciais inflava a sessão (US$120 num turno que custou US$31).
   let sessionCost = 0
   let sessionEstimated = false
   let resultCount = 0
-  for (const it of items) {
-    if (it.kind === "result") {
-      resultCount++
-      sessionCost += it.costUsd ?? 0
-      if (it.costSource === "estimated" || it.costSource === "unknown")
-        sessionEstimated = true
-    }
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i]
+    if (it.kind !== "result" || items[i + 1]?.kind === "result") continue
+    resultCount++
+    sessionCost += it.costUsd ?? 0
+    if (it.costSource === "estimated" || it.costSource === "unknown")
+      sessionEstimated = true
   }
   return (
     <div className="mx-auto flex w-full max-w-[760px] min-w-0 flex-col gap-4 px-8 py-8">
