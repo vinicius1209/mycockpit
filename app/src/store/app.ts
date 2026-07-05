@@ -28,6 +28,8 @@ interface AppState {
   mycockpit: Record<string, ProjectConfig>
   /** Agents com limite de uso atingido (id → hint de reset), cross-conversa. */
   limitedAgents: Record<string, string | null>
+  /** Slug de plano SDD pra focar ao entrar no modo (navegação do inbox). */
+  sddFocusSlug: string | null
 
   setProjects: (p: Project[]) => void
   addProject: (p: Project) => void
@@ -46,6 +48,7 @@ interface AppState {
   setReady: (v: boolean) => void
   setAgentLimited: (agent: string, resetHint: string | null) => void
   clearAgentLimited: (agent: string) => void
+  setSddFocus: (slug: string | null) => void
 }
 
 function applyTheme(theme: Theme) {
@@ -62,6 +65,7 @@ export const useApp = create<AppState>((set) => ({
   ready: false,
   mycockpit: {},
   limitedAgents: {},
+  sddFocusSlug: null,
 
   setProjects: (projects) =>
     set((s) => ({
@@ -118,6 +122,7 @@ export const useApp = create<AppState>((set) => ({
       delete rest[agent]
       return { limitedAgents: rest }
     }),
+  setSddFocus: (sddFocusSlug) => set({ sddFocusSlug }),
 }))
 
 /** Seletor utilitário do projeto ativo. */

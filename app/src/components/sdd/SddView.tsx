@@ -144,6 +144,16 @@ export function SddView() {
     )
   }, [project?.path])
 
+  // Navegação do inbox: foco pedido de fora → seleciona o plano e consome.
+  const focusSlug = useApp((s) => s.sddFocusSlug)
+  useEffect(() => {
+    if (!focusSlug) return
+    if (plans.some((p) => p.slug === focusSlug)) {
+      setSelected(focusSlug)
+      useApp.getState().setSddFocus(null)
+    }
+  }, [focusSlug, plans])
+
   // refresh silencioso do manifest (após rodar uma etapa), mantém a seleção.
   const reload = useCallback(() => {
     if (!project) return

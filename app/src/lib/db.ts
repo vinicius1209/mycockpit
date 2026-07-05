@@ -357,6 +357,35 @@ export async function loadPendingFusion(
   }
 }
 
+/** Disputas pendentes de decisão em TODAS as conversas (pro inbox de decisões),
+ *  com o projeto e o título da conversa via join. */
+export async function listPendingDecisions(): Promise<
+  { convId: string; projectId: string; title: string | null; createdAt: number }[]
+> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    const rows = await db.select<
+      {
+        conv_id: string
+        project_id: string
+        title: string | null
+        created_at: number
+      }[]
+    >(
+      "SELECT f.conv_id, c.project_id, c.title, f.created_at FROM fusion_runs f JOIN conversations c ON c.id = f.conv_id WHERE f.pending = 1 ORDER BY f.created_at DESC",
+    )
+    return rows.map((r) => ({
+      convId: r.conv_id,
+      projectId: r.project_id,
+      title: r.title,
+      createdAt: r.created_at,
+    }))
+  } catch {
+    return []
+  }
+}
+
 /** Marca as disputas pendentes da conversa como resolvidas (descartar). */
 export async function clearPendingFusion(convId: string): Promise<void> {
   const db = await getDb()

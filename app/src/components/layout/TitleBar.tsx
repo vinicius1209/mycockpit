@@ -3,6 +3,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Wordmark } from "@/components/common/Wordmark"
+import { InboxBell } from "@/components/layout/InboxBell"
 import { useApp, useActiveProject } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { agentLabel } from "@/lib/agent"
@@ -112,6 +113,7 @@ export function TitleBar() {
       <div className="pointer-events-none ml-auto flex items-center gap-2">
         <InstrumentStrip />
         <Separator orientation="vertical" className="h-4!" />
+        <InboxBell />
         <Button
           variant="ghost"
           size="icon-sm"
