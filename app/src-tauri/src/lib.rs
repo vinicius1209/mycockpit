@@ -167,6 +167,20 @@ pub fn run() {
             sql: "ALTER TABLE conversations ADD COLUMN worktree_path TEXT;",
             kind: MigrationKind::Up,
         },
+        // v20/21, custo por ENTREGA: cada etapa SDD dirigida pelo cockpit vira
+        // uma linha (o join com o manifest responde "quanto custou a feature").
+        Migration {
+            version: 20,
+            description: "stage_runs",
+            sql: "CREATE TABLE IF NOT EXISTS stage_runs (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, slug TEXT NOT NULL, skill TEXT NOT NULL, agent TEXT NOT NULL, model TEXT, ok INTEGER NOT NULL, cost_usd REAL, cost_source TEXT, duration_ms INTEGER, created_at INTEGER NOT NULL);",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 21,
+            description: "stage_runs_idx",
+            sql: "CREATE INDEX IF NOT EXISTS idx_stage_runs_plan ON stage_runs(project_id, slug);",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

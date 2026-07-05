@@ -29,6 +29,13 @@ import { runAgent } from "@/lib/agent"
 import { reduceItems, useChat, type ChatItem } from "@/store/chat"
 import { Markdown } from "@/components/common/Markdown"
 import { readTextFile } from "@/lib/sources"
+import { fmtCost } from "@/lib/format"
+import {
+  insertStageRun,
+  listStageCosts,
+  listStageRuns,
+  type StageRunRow,
+} from "@/lib/db"
 import {
   loadSddPlans,
   loadPrInfo,
@@ -115,6 +122,9 @@ export function SddView() {
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<FilterId>("todas")
   const [ready, setReady] = useState<boolean | null>(null)
+  const [costs, setCosts] = useState<
+    Record<string, { total: number; runs: number; estimated: boolean }>
+  >({})
   const [seeding, setSeeding] = useState(false)
   const [seedResult, setSeedResult] = useState<SeedSummary | null>(null)
   // v2.4, nova feature, bifurcada: descrição → Explorar (discovery/Linear) OU
@@ -131,11 +141,15 @@ export function SddView() {
     }
     setLoading(true)
     setSeedResult(null)
-    void Promise.all([loadSddPlans(project.path), sddReady(project.path)]).then(
-      ([ps, rdy]) => {
+    void Promise.all([
+      loadSddPlans(project.path),
+      sddReady(project.path),
+      listStageCosts(project.id),
+    ]).then(([ps, rdy, cs]) => {
         const real = ps.filter((p) => p.hasManifest)
         setPlans(real)
         setReady(rdy)
+        setCosts(cs)
         setSelected((s) =>
           s && real.some((p) => p.slug === s) ? s : (real[0]?.slug ?? null),
         )
@@ -160,7 +174,9 @@ export function SddView() {
     void loadSddPlans(project.path).then((ps) =>
       setPlans(ps.filter((p) => p.hasManifest)),
     )
-  }, [project?.path])
+    void listStageCosts(project.id).then(setCosts)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.path, project?.id])
 
   // v2.0, instala o fluxo SDD num projeto que ainda não tem (scaffold do seed).
   async function initSdd() {
@@ -352,6 +368,7 @@ export function SddView() {
             <PlanRow
               key={p.slug}
               plan={p}
+              cost={costs[p.slug]}
               active={p.slug === selected}
               onSelect={() => setSelected(p.slug)}
             />
@@ -527,10 +544,12 @@ function PathRow({
 
 function PlanRow({
   plan,
+  cost,
   active,
   onSelect,
 }: {
   plan: SddPlan
+  cost?: { total: number; runs: number; estimated: boolean }
   active: boolean
   onSelect: () => void
 }) {
@@ -547,7 +566,7 @@ function PlanRow({
       <span className="w-full truncate text-[12.5px] font-medium text-foreground">
         {plan.title}
       </span>
-      <span className="flex items-center gap-1.5">
+      <span className="flex w-full items-center gap-1.5">
         <span
           className={cn(
             "rounded border px-1 py-px text-[9px] tracking-wide uppercase",
@@ -567,6 +586,11 @@ function PlanRow({
         {plan.links.pr_url && (
           <GitPullRequest className="size-3 text-muted-foreground/40" />
         )}
+        {cost && cost.total > 0.0005 && (
+          <span className="ml-auto font-mono text-[10px] tabular-nums text-muted-foreground/55">
+            {fmtCost(cost.total, cost.estimated ? "estimated" : "reported")}
+          </span>
+        )}
       </span>
     </button>
   )
@@ -577,6 +601,12 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
   const [pr, setPr] = useState<PrInfo | null>(null)
   const [run, setRun] = useState<StageRun | null>(null)
   const [doc, setDoc] = useState<DocView | null>(null)
+  // custo por entrega: as etapas dirigidas desta feature (breakdown no Entrega).
+  const [stageRuns, setStageRuns] = useState<StageRunRow[]>([])
+  useEffect(() => {
+    setStageRuns([])
+    if (project) void listStageRuns(project.id, plan.slug).then(setStageRuns)
+  }, [plan.slug, project?.id])
   // enriquece o PR (gh → git → manifest) ao trocar de plano. Lazy: 1 chamada/seleção.
   useEffect(() => {
     setPr(null)
@@ -599,11 +629,12 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
     if (!step || step.blockedBy || !project) return
     const ok = await runSkillInto(
       setRun,
+      project.id,
       project.path,
       project.permissionMode ?? "padrao",
       step.skill,
       step.prompt,
-      `sdd:${plan.slug}`,
+      plan.slug,
     )
     if (ok) {
       const produced = producedStage(step.skill)
@@ -784,6 +815,10 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
                 Criado em {fmtDateTime(plan.createdAt)}
               </span>
             )}
+            <CostBlock
+              merged={plan.stage === "done" || !!mergedAt}
+              runs={stageRuns}
+            />
           </div>
         </Section>
       </div>
@@ -796,6 +831,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
           onClose={() => {
             setRun(null)
             onReload()
+            if (project) void listStageRuns(project.id, plan.slug).then(setStageRuns)
           }}
         />
       )}
@@ -828,11 +864,12 @@ interface StageRun {
  *  Reusado pelo run de etapa (PlanDetail) e pela criação de feature nova (/prd). */
 async function runSkillInto(
   setRun: Dispatch<SetStateAction<StageRun | null>>,
+  projectId: string,
   projectPath: string,
   permission: string,
   skill: string,
   prompt: string,
-  convKey: string,
+  slug: string,
 ): Promise<boolean> {
   const runId = crypto.randomUUID()
   let cur: StageRun = {
@@ -848,7 +885,7 @@ async function runSkillInto(
   try {
     await runAgent(
       runId,
-      convKey,
+      `sdd:${slug}`,
       "claude-code",
       null,
       null,
@@ -869,8 +906,24 @@ async function runSkillInto(
   }
   cur = { ...cur, running: false }
   setRun((prev) => (prev ? cur : prev))
+  // Custo por ENTREGA: persiste a etapa dirigida (falha também conta como run;
+  // sem isso o custo do run morria junto com o overlay).
+  const result = [...cur.items]
+    .reverse()
+    .find((it): it is Extract<ChatItem, { kind: "result" }> => it.kind === "result")
+  void insertStageRun({
+    projectId,
+    slug,
+    skill,
+    agent: "claude-code",
+    model: result?.model ?? cur.model,
+    ok: result?.ok === true,
+    costUsd: result?.costUsd ?? null,
+    costSource: result?.costSource ?? null,
+    durationMs: cur.startedAt != null ? Date.now() - cur.startedAt : null,
+  })
   // ok = chegou um result bem-sucedido (não bumpa o stage num run que falhou).
-  return cur.items.some((it) => it.kind === "result" && it.ok === true)
+  return result?.ok === true
 }
 
 function runText(items: ChatItem[]): string {
@@ -1086,6 +1139,40 @@ function ActivitySection({ plan }: { plan: SddPlan }) {
         </div>
       )}
     </Section>
+  )
+}
+
+/** Custo por ENTREGA: soma das etapas dirigidas PELO COCKPIT (runs feitos no
+ *  terminal por fora não contam; o rótulo é honesto sobre isso). */
+function CostBlock({ merged, runs }: { merged: boolean; runs: StageRunRow[] }) {
+  const total = runs.reduce((s, r) => s + (r.costUsd ?? 0), 0)
+  if (total < 0.0005) return null
+  const estimated = runs.some(
+    (r) => r.costUsd != null && r.costSource !== "reported",
+  )
+  const bySkill = new Map<string, number>()
+  for (const r of runs) {
+    bySkill.set(r.skill, (bySkill.get(r.skill) ?? 0) + (r.costUsd ?? 0))
+  }
+  const breakdown = [...bySkill.entries()]
+    .filter(([, v]) => v > 0.0005)
+    .map(([k, v]) => `/${k} ${v.toFixed(2)}`)
+    .join(" · ")
+  return (
+    <div className="flex flex-col gap-0.5 pt-0.5">
+      <span className="text-muted-foreground">
+        {merged ? "Entregue por " : "Custo até aqui: "}
+        <span className="font-mono tabular-nums text-foreground/80">
+          {fmtCost(total, estimated ? "estimated" : "reported")}
+        </span>{" "}
+        em {runs.length} {runs.length === 1 ? "etapa dirigida" : "etapas dirigidas"}
+      </span>
+      {breakdown && (
+        <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
+          {breakdown}
+        </span>
+      )}
+    </div>
   )
 }
 

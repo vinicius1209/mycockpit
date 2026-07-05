@@ -357,6 +357,111 @@ export async function loadPendingFusion(
   }
 }
 
+// ---------------- Custo por entrega (stage_runs) ----------------
+
+export interface StageRunRow {
+  skill: string
+  agent: string
+  model: string | null
+  ok: boolean
+  costUsd: number | null
+  costSource: string | null
+  createdAt: number
+}
+
+/** Grava uma etapa SDD dirigida pelo cockpit (a matéria-prima do US$/feature). */
+export async function insertStageRun(r: {
+  projectId: string
+  slug: string
+  skill: string
+  agent: string
+  model: string | null
+  ok: boolean
+  costUsd: number | null
+  costSource: string | null
+  durationMs: number | null
+}): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute(
+    "INSERT INTO stage_runs (id, project_id, slug, skill, agent, model, ok, cost_usd, cost_source, duration_ms, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+    [
+      crypto.randomUUID(),
+      r.projectId,
+      r.slug,
+      r.skill,
+      r.agent,
+      r.model,
+      r.ok ? 1 : 0,
+      r.costUsd,
+      r.costSource,
+      r.durationMs,
+      Date.now(),
+    ],
+  )
+}
+
+/** Custo agregado por feature (slug) de um projeto: total + nº de runs + se
+ *  algum custo é estimado (o "~" honesto na soma). */
+export async function listStageCosts(
+  projectId: string,
+): Promise<Record<string, { total: number; runs: number; estimated: boolean }>> {
+  const db = await getDb()
+  if (!db) return {}
+  try {
+    const rows = await db.select<
+      { slug: string; total: number | null; runs: number; est: number }[]
+    >(
+      "SELECT slug, SUM(cost_usd) AS total, COUNT(*) AS runs, MAX(CASE WHEN cost_source != 'reported' THEN 1 ELSE 0 END) AS est FROM stage_runs WHERE project_id = $1 GROUP BY slug",
+      [projectId],
+    )
+    const out: Record<string, { total: number; runs: number; estimated: boolean }> =
+      {}
+    for (const r of rows) {
+      out[r.slug] = { total: r.total ?? 0, runs: r.runs, estimated: r.est === 1 }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+/** Runs de uma feature (breakdown por etapa no detalhe do plano). */
+export async function listStageRuns(
+  projectId: string,
+  slug: string,
+): Promise<StageRunRow[]> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    const rows = await db.select<
+      {
+        skill: string
+        agent: string
+        model: string | null
+        ok: number
+        cost_usd: number | null
+        cost_source: string | null
+        created_at: number
+      }[]
+    >(
+      "SELECT skill, agent, model, ok, cost_usd, cost_source, created_at FROM stage_runs WHERE project_id = $1 AND slug = $2 ORDER BY created_at ASC",
+      [projectId, slug],
+    )
+    return rows.map((r) => ({
+      skill: r.skill,
+      agent: r.agent,
+      model: r.model,
+      ok: r.ok === 1,
+      costUsd: r.cost_usd,
+      costSource: r.cost_source,
+      createdAt: r.created_at,
+    }))
+  } catch {
+    return []
+  }
+}
+
 /** Disputas pendentes de decisão em TODAS as conversas (pro inbox de decisões),
  *  com o projeto e o título da conversa via join. */
 export async function listPendingDecisions(): Promise<
