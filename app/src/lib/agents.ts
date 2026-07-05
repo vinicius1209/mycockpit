@@ -117,6 +117,18 @@ export const AGENTS: AgentDef[] = [
   },
 ]
 
+/** Janela de contexto CONHECIDA do modelo da sessão (tokens). null = não sabe,
+ *  e o anel não inventa porcentagem (honesto). O marcador "1m" do Claude
+ *  ("claude-…[1m]") indica a janela de 1M. */
+export function contextWindowFor(model: string | null): number | null {
+  if (!model) return null
+  const m = model.toLowerCase()
+  if (m.includes("claude")) {
+    return m.includes("1m") ? 1_000_000 : 200_000
+  }
+  return null
+}
+
 const BY_ID = new Map(AGENTS.map((a) => [a.id, a]))
 
 export function agentDef(id: string): AgentDef | undefined {

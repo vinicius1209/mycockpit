@@ -9,6 +9,8 @@ import {
 } from "lucide-react"
 import { RichSelect } from "@/components/ui/RichSelect"
 import { Button } from "@/components/ui/button"
+import { ContextRing } from "@/components/chat/ContextRing"
+import { useApp } from "@/store/app"
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
 import type { SlashCommand } from "@/lib/sources"
 import type { AtItem } from "@/hooks/useAtMentions"
@@ -190,6 +192,8 @@ export function AgentSelect({
   options?: Destination[]
   title?: string
 }) {
+  // agents com limite atingido (cross-conversa): o seletor avisa antes de tentar.
+  const limited = useApp((s) => s.limitedAgents)
   return (
     <RichSelect
       value={value}
@@ -199,13 +203,21 @@ export function AgentSelect({
       dot
       aria-label="Agent"
       triggerClassName="h-8 gap-2 pr-2 pl-2.5 text-[13px] text-foreground data-[size=default]:h-8"
-      options={options.map((d) => ({
-        value: d.id,
-        label: d.label,
-        description: d.description,
-        badge: d.hint,
-        disabled: !d.available,
-      }))}
+      options={options.map((d) => {
+        const isLimited = d.id in limited
+        const hint = limited[d.id]
+        return {
+          value: d.id,
+          label: d.label,
+          description: isLimited
+            ? hint
+              ? `limite atingido, volta ${hint}`
+              : "limite de uso atingido"
+            : d.description,
+          badge: isLimited ? "limitado" : d.hint,
+          disabled: !d.available,
+        }
+      })}
     />
   )
 }
@@ -277,6 +289,7 @@ export function ComposerControls({
       />
 
       <div className="ml-auto flex items-center gap-1.5">
+        <ContextRing />
         <Button
           variant="ghost"
           size="icon-sm"

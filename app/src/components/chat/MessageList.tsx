@@ -1,12 +1,14 @@
 import { memo, useEffect, useMemo, useState } from "react"
 import {
   AlertCircle,
+  ArrowRightLeft,
   Ban,
   Bot,
   Check,
   ChevronRight,
   FilePen,
   FileText,
+  Gauge,
   Globe,
   Search,
   Terminal,
@@ -15,6 +17,7 @@ import {
 import type { LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { agentLabel } from "@/lib/agent"
+import { DESTINATIONS } from "@/lib/agents"
 import { fmtCost, fmtDuration, fmtTokens } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
@@ -304,6 +307,28 @@ const MessageItem = memo(function MessageItem({ item: it }: { item: ChatItem }) 
     )
   }
 
+  if (it.kind === "limit") {
+    return (
+      <div className="rounded-lg border border-st-warning/40 bg-st-warning/10 px-3 py-2.5">
+        <div className="mb-1 flex items-center gap-2 text-st-warning">
+          <Gauge className="size-3.5" />
+          <span className="label-mono text-st-warning">limite de uso atingido</span>
+          {it.resetHint && (
+            <span className="text-[11.5px] text-st-warning/80">
+              volta {it.resetHint}
+            </span>
+          )}
+        </div>
+        <div
+          data-selectable
+          className="font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/85"
+        >
+          {it.message}
+        </div>
+      </div>
+    )
+  }
+
   if (it.kind === "cancelled") {
     return (
       <div className="flex items-center gap-2 pt-1 text-[12px] text-muted-foreground">
@@ -371,6 +396,44 @@ const MessageItem = memo(function MessageItem({ item: it }: { item: ChatItem }) 
   )
 })
 
+/** Revezamento: continuar a conversa em OUTRO agent (após limite ou erro).
+ *  `subtle` = versão discreta pro cartão de erro comum. */
+function ContinueRow({
+  current,
+  onPick,
+  subtle,
+}: {
+  current: string
+  onPick: (agent: string) => void
+  subtle?: boolean
+}) {
+  const targets = DESTINATIONS.filter(
+    (d) => d.available && d.kind === "agent" && d.id !== current,
+  )
+  if (targets.length === 0) return null
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {!subtle && (
+        <span className="text-[12px] text-muted-foreground">Revezamento:</span>
+      )}
+      {targets.map((d) => (
+        <button
+          key={d.id}
+          onClick={() => onPick(d.id)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] transition-colors",
+            subtle
+              ? "text-muted-foreground hover:bg-accent hover:text-foreground"
+              : "border-brass/40 bg-brass/10 text-brass hover:bg-brass/20",
+          )}
+        >
+          <ArrowRightLeft className="size-3.5" /> Continuar no {d.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 /** Nó de render: item comum, burst de tools, ou A checklist (task tools). */
 type Node =
   | { type: "item"; key: string; item: ChatItem }
@@ -417,12 +480,15 @@ export function MessageList({
   finalizing,
   startedAt,
   agent,
+  onContinueWith,
 }: {
   items: ChatItem[]
   running: boolean
   finalizing: boolean
   startedAt: number | null
   agent: string
+  /** Revezamento: continuar a conversa em outro agent (limite/erro). */
+  onContinueWith?: (agent: string) => void
 }) {
   const nodes = useMemo(() => buildNodes(items), [items])
   const tasks = useMemo(() => deriveTasks(items), [items])
@@ -466,6 +532,25 @@ export function MessageList({
               {n.tools.map((t) => (
                 <ToolLine key={t.id} item={t} />
               ))}
+            </div>
+          )
+        }
+        // cartão de limite/erro ganha a fileira de revezamento (só quando o
+        // turno não está rodando; durante o run o Stop é o caminho).
+        const continuable =
+          onContinueWith &&
+          !running &&
+          (n.item.kind === "limit" || n.item.kind === "error") &&
+          idx === nodes.length - 1
+        if (continuable) {
+          return (
+            <div key={n.key} className="flex flex-col gap-2">
+              <MessageItem item={n.item} />
+              <ContinueRow
+                current={agent}
+                onPick={onContinueWith}
+                subtle={n.item.kind === "error"}
+              />
             </div>
           )
         }

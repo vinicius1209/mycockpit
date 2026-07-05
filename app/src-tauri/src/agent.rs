@@ -116,6 +116,17 @@ pub enum AgentEvent {
         text: String,
         lines: u64,
     },
+    /// Footprint ATUAL do contexto (tokens de prompt da última chamada:
+    /// input + cache lido + cache criado). Alimenta o anel de contexto.
+    ContextUsage {
+        tokens: u64,
+    },
+    /// Limite de uso/cota do CLI atingido: vira cartão ACIONÁVEL (revezamento)
+    /// em vez de erro morto. `reset_hint` = trecho com a hora do reset, se veio.
+    LimitReached {
+        message: String,
+        reset_hint: Option<String>,
+    },
     Result {
         ok: bool,
         text: Option<String>,
@@ -263,7 +274,15 @@ pub async fn run_agent(
         } else {
             outcome.stderr.trim().to_string()
         };
-        let _ = on_event.send(AgentEvent::Error { message: msg });
+        // limite de uso/cota no stderr → cartão acionável (revezamento).
+        if let Some(hit) = adapter.classify_limit(&msg) {
+            let _ = on_event.send(AgentEvent::LimitReached {
+                message: msg,
+                reset_hint: hit.reset_hint,
+            });
+        } else {
+            let _ = on_event.send(AgentEvent::Error { message: msg });
+        }
     }
     let _ = on_event.send(AgentEvent::Done { code: outcome.code });
     Ok(())

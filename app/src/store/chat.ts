@@ -57,6 +57,8 @@ export type ChatItem =
   | { kind: "error"; id: string; message: string }
   | { kind: "cancelled"; id: string }
   | { kind: "notice"; id: string; message: string }
+  /** Limite de uso/cota do agent atingido: cartão acionável (revezamento). */
+  | { kind: "limit"; id: string; message: string; resetHint?: string }
 
 /** Estado de UMA conversa, vive em byId[convId]; runs em background escrevem aqui. */
 export interface ConvState {
@@ -71,6 +73,8 @@ export interface ConvState {
   /** Linha corrompida no banco (JSON não parseou): envio e persist BLOQUEADOS
    *  pra não sobrescrever dados ainda recuperáveis via SQLite. */
   corrupt?: boolean
+  /** Footprint atual do contexto (tokens do prompt da última chamada), o anel. */
+  contextTokens?: number
   items: ChatItem[]
   sessionId: string | null
   model: string | null
@@ -124,6 +128,10 @@ interface ChatState {
     attachments: Attachment[],
   ) => void
   handleEvent: (convId: string, e: AgentEvent) => void
+  /** Revezamento: assume OUTRO agent na MESMA conversa (sessão zerada; o
+   *  contexto vai por preâmbulo). NÃO adiciona item de usuário, o pedido
+   *  pendente já está no fio. */
+  beginTransplant: (convId: string, runId: string, agent: string) => void
   finish: (convId: string) => void
   setSuggestions: (convId: string, s: string[]) => void
   setSuggesting: (convId: string, v: boolean) => void
@@ -188,7 +196,7 @@ const EMPTY_CONV = emptyConv("")
  *  Usado pelo Linear (via reduceEvent) e por cada lane do Fusion. */
 export type ItemReducible = Pick<
   ConvState,
-  "items" | "streamingTextId" | "model" | "sessionId" | "startedAt"
+  "items" | "streamingTextId" | "model" | "sessionId" | "startedAt" | "contextTokens"
 >
 
 /** Núcleo PURO de itens (T1.1). NÃO mexe em running/finalizing/runId/startedAt,
@@ -275,6 +283,23 @@ export function reduceItems(
         streamingTextId: null,
       }
     }
+    // footprint do contexto (anel): só atualiza o número, sem item.
+    case "context_usage":
+      return { contextTokens: e.tokens }
+    // limite de uso/cota: cartão ACIONÁVEL no fio (o revezamento mora nele).
+    case "limit_reached":
+      return {
+        items: [
+          ...c.items,
+          {
+            kind: "limit",
+            id: uid(),
+            message: e.message,
+            resetHint: e.reset_hint ?? undefined,
+          },
+        ],
+        streamingTextId: null,
+      }
     // aviso não-fatal (anexo expirado/não-suportado), só adiciona a linha.
     case "notice":
       return {
@@ -656,11 +681,47 @@ export const useChat = create<ChatState>((set, get) => {
         }
       }),
 
-    handleEvent: (convId, e) =>
+    handleEvent: (convId, e) => {
+      // efeitos GLOBAIS: limite marca o agent como limitado (cross-conversa,
+      // o seletor avisa); um result ok do mesmo agent cura a marca.
+      if (e.type === "limit_reached") {
+        const agent = get().byId[convId]?.agent
+        if (agent) useApp.getState().setAgentLimited(agent, e.reset_hint ?? null)
+      } else if (e.type === "result" && e.ok) {
+        const agent = get().byId[convId]?.agent
+        if (agent) useApp.getState().clearAgentLimited(agent)
+      }
       set((s) => {
         const cur = s.byId[convId]
         if (!cur) return {}
         return { byId: { ...s.byId, [convId]: { ...cur, ...reduceEvent(cur, e) } } }
+      })
+    },
+
+    beginTransplant: (convId, runId, agent) =>
+      set((s) => {
+        const cur = s.byId[convId]
+        if (!cur) return {}
+        return {
+          byId: {
+            ...s.byId,
+            [convId]: {
+              ...cur,
+              agent,
+              reqModel: null,
+              effort: null,
+              sessionId: null, // a sessão do agent anterior não serve pro novo
+              contextTokens: undefined,
+              streamingTextId: null,
+              running: true,
+              finalizing: false,
+              runId,
+              startedAt: Date.now(),
+              suggestions: [],
+              suggesting: false,
+            },
+          },
+        }
       }),
 
     finish: (convId) =>

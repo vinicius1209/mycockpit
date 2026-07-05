@@ -85,6 +85,20 @@ pub trait AgentAdapter: Send {
         let _ = msg;
         false
     }
+
+    /// A mensagem indica LIMITE de uso/cota atingido neste CLI? Devolve o hint
+    /// de reset quando o CLI informa ("resets at 3pm"). Default None: agent sem
+    /// frase mapeada vira card de erro comum, que também oferece o revezamento
+    /// manual. NEEDS-VERIFY: frases de docs/relatos; o 1º estouro real é o fixture.
+    fn classify_limit(&self, msg: &str) -> Option<LimitHit> {
+        let _ = msg;
+        None
+    }
+}
+
+/// Sinal de limite de uso/cota atingido (+ hint de reset, se o CLI informou).
+pub struct LimitHit {
+    pub reset_hint: Option<String>,
 }
 
 /// Resolve o id do agent → adapter concreto.
@@ -175,6 +189,24 @@ impl AgentAdapter for ClaudeAdapter {
     fn is_session_not_found(&self, msg: &str) -> bool {
         msg.to_lowercase()
             .contains("no conversation found with session id") // verificado
+    }
+
+    fn classify_limit(&self, msg: &str) -> Option<LimitHit> {
+        let l = msg.to_lowercase();
+        if !l.contains("usage limit") {
+            return None;
+        }
+        // "…will reset at 3pm (America/Sao_Paulo)." → "3pm (america/sao_paulo)"
+        let reset_hint = l.find("reset at ").map(|i| {
+            l[i + "reset at ".len()..]
+                .chars()
+                .take(32)
+                .collect::<String>()
+                .trim_end_matches('.')
+                .trim()
+                .to_string()
+        });
+        Some(LimitHit { reset_hint })
     }
 
     fn render_attachments(&self, atts: &[Attachment], cmd: &mut Command, prompt: &mut String) {
@@ -268,6 +300,24 @@ impl AgentAdapter for ClaudeAdapter {
                         }
                     }
                 }
+                // Footprint ATUAL do contexto: usage da própria mensagem (input +
+                // cache lido + cache criado ≈ prompt desta chamada). Mensagens de
+                // SUBAGENT (parent_tool_use_id) têm contexto próprio e não contam.
+                // NEEDS-VERIFY: o filtro de subagent contra um run real.
+                let is_subagent = v
+                    .get("parent_tool_use_id")
+                    .map(|x| !x.is_null())
+                    .unwrap_or(false);
+                if !is_subagent {
+                    if let Some(u) = v.pointer("/message/usage") {
+                        let tokens = usage_u64(Some(u), "input_tokens")
+                            + usage_u64(Some(u), "cache_read_input_tokens")
+                            + usage_u64(Some(u), "cache_creation_input_tokens");
+                        if tokens > 0 {
+                            out.push(AgentEvent::ContextUsage { tokens });
+                        }
+                    }
+                }
                 out
             }
             // Mensagens "user" no stream carregam os tool_result: viram um resumo
@@ -332,6 +382,16 @@ impl AgentAdapter for ClaudeAdapter {
                         .unwrap_or_default();
                     if self.is_session_not_found(&errs) {
                         return vec![AgentEvent::SessionNotFound { message: errs }];
+                    }
+                    // Limite de uso/cota: cartão ACIONÁVEL (revezamento), não erro
+                    // morto. A mensagem humana costuma vir no campo `result`.
+                    let human = v.get("result").and_then(|x| x.as_str()).unwrap_or("");
+                    let msg = format!("{errs} {human}").trim().to_string();
+                    if let Some(hit) = self.classify_limit(&msg) {
+                        return vec![AgentEvent::LimitReached {
+                            message: msg,
+                            reset_hint: hit.reset_hint,
+                        }];
                     }
                 }
                 let usage = v.get("usage");
@@ -426,6 +486,14 @@ impl AgentAdapter for CodexAdapter {
             .contains("no rollout found for thread id") // verificado (stderr)
     }
 
+    fn classify_limit(&self, msg: &str) -> Option<LimitHit> {
+        let l = msg.to_lowercase();
+        let hit = l.contains("exceeded your current quota")
+            || l.contains("insufficient_quota")
+            || l.contains("usage limit");
+        hit.then(|| LimitHit { reset_hint: None })
+    }
+
     fn render_attachments(&self, atts: &[Attachment], cmd: &mut Command, _prompt: &mut String) {
         for a in atts {
             cmd.arg("-i").arg(&a.path); // path absoluto; argv não passa por shell
@@ -460,7 +528,13 @@ impl AgentAdapter for CodexAdapter {
                 // Codex NÃO dá USD → estima por tokens × tabela (default = config gpt-5.5)
                 let model = self.model.clone().unwrap_or_else(|| "gpt-5.5".to_string());
                 let (cost_usd, cost_source) = crate::pricing::estimate(&model, &nu);
-                vec![AgentEvent::Result {
+                let mut out = Vec::new();
+                // footprint do contexto do turno (prompt = novo + cacheado)
+                let ctx = nu.input + nu.cached_input;
+                if ctx > 0 {
+                    out.push(AgentEvent::ContextUsage { tokens: ctx });
+                }
+                out.push(AgentEvent::Result {
                     ok: true,
                     text: None,
                     cost_usd,
@@ -469,7 +543,8 @@ impl AgentAdapter for CodexAdapter {
                     output_tokens: nu.output,
                     cache_read: nu.cached_input,
                     cache_creation: 0,
-                }]
+                });
+                out
             }
             "turn.failed" => {
                 let msg = v
@@ -479,6 +554,11 @@ impl AgentAdapter for CodexAdapter {
                     .to_string();
                 if self.is_session_not_found(&msg) {
                     vec![AgentEvent::SessionNotFound { message: msg }]
+                } else if let Some(hit) = self.classify_limit(&msg) {
+                    vec![AgentEvent::LimitReached {
+                        message: msg,
+                        reset_hint: hit.reset_hint,
+                    }]
                 } else {
                     vec![AgentEvent::Error { message: msg }]
                 }

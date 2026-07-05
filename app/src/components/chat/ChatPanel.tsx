@@ -11,7 +11,8 @@ import { useActiveProject } from "@/store/app"
 import { useChat, useActiveConv } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { FusionBoard } from "@/components/fusion/FusionBoard"
-import { runAgent, cancelAgent } from "@/lib/agent"
+import { runAgent, cancelAgent, agentLabel } from "@/lib/agent"
+import { buildHandoff } from "@/lib/handoff"
 import type { Attachment } from "@/lib/attachments"
 import { gcAttachments } from "@/lib/attachments"
 import { BYTES_PER_MB } from "@/lib/format"
@@ -185,6 +186,61 @@ export function ChatPanel() {
     }
   }
 
+  // Revezamento: continua a MESMA conversa em OUTRO agent (limite/erro do
+  // atual). O contexto vai por preâmbulo determinístico (handoff, tail-biased);
+  // o disco (cwd/worktree) o novo agent herda de graça; o pedido pendente (o
+  // último prompt do usuário) é reenviado sem redigitar.
+  async function handleContinueWith(target: string) {
+    if (!project || !isTauri()) return
+    const convId = useChat.getState().activeId
+    if (!convId) return
+    const conv = useChat.getState().byId[convId]
+    if (!conv || conv.running || conv.finalizing || conv.corrupt) return
+    let lastUserIdx = -1
+    for (let i = conv.items.length - 1; i >= 0; i--) {
+      if (conv.items[i].kind === "user") {
+        lastUserIdx = i
+        break
+      }
+    }
+    const lastUser = lastUserIdx >= 0 ? conv.items[lastUserIdx] : null
+    const pending = lastUser && lastUser.kind === "user" ? lastUser.text : ""
+    if (!pending) return
+    // o handoff exclui o pedido pendente (ele volta destacado no fim do prompt)
+    const preamble = buildHandoff(conv.items.slice(0, lastUserIdx))
+    const prompt = `${preamble}\n\n---\n\nPedido pendente (responda a ele agora):\n${pending}`
+    const runId = crypto.randomUUID()
+    useChat.getState().invalidateSuggestions(convId)
+    useChat.getState().handleEvent(convId, {
+      type: "notice",
+      message: `revezamento: continuando no ${agentLabel(target)}`,
+    })
+    useChat.getState().beginTransplant(convId, runId, target)
+    setAtBottom(true)
+    const cwd = conv.worktreePath ?? project.path
+    try {
+      await runAgent(
+        runId,
+        convId,
+        target,
+        null,
+        null,
+        prompt,
+        cwd,
+        null, // sessão fresca no novo agent
+        project.permissionMode ?? "padrao",
+        [],
+        (e) => useChat.getState().handleEvent(convId, e),
+      )
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha no revezamento")
+    } finally {
+      useChat.getState().finish(convId)
+      void useChat.getState().persist(convId)
+      useChat.getState().scheduleSuggestions(convId)
+    }
+  }
+
   function handleStop() {
     const convId = useChat.getState().activeId
     if (!convId) return
@@ -227,6 +283,7 @@ export function ChatPanel() {
               finalizing={finalizing}
               startedAt={conv.startedAt}
               agent={conv.agent}
+              onContinueWith={(a) => void handleContinueWith(a)}
             />
           </div>
         ) : (

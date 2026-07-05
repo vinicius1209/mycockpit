@@ -26,6 +26,8 @@ interface AppState {
   ready: boolean
   /** Config por projeto vinda de .mycockpit/config.toml (Fase 1). */
   mycockpit: Record<string, ProjectConfig>
+  /** Agents com limite de uso atingido (id → hint de reset), cross-conversa. */
+  limitedAgents: Record<string, string | null>
 
   setProjects: (p: Project[]) => void
   addProject: (p: Project) => void
@@ -42,6 +44,8 @@ interface AppState {
   toggleContext: () => void
   setViewMode: (m: "linear" | "fusion" | "sdd") => void
   setReady: (v: boolean) => void
+  setAgentLimited: (agent: string, resetHint: string | null) => void
+  clearAgentLimited: (agent: string) => void
 }
 
 function applyTheme(theme: Theme) {
@@ -57,6 +61,7 @@ export const useApp = create<AppState>((set) => ({
   viewMode: "linear",
   ready: false,
   mycockpit: {},
+  limitedAgents: {},
 
   setProjects: (projects) =>
     set((s) => ({
@@ -104,6 +109,15 @@ export const useApp = create<AppState>((set) => ({
   setViewMode: (viewMode) => set({ viewMode }),
   toggleContext: () => set((s) => ({ contextOpen: !s.contextOpen })),
   setReady: (ready) => set({ ready }),
+  setAgentLimited: (agent, resetHint) =>
+    set((s) => ({ limitedAgents: { ...s.limitedAgents, [agent]: resetHint } })),
+  clearAgentLimited: (agent) =>
+    set((s) => {
+      if (!(agent in s.limitedAgents)) return {}
+      const rest = { ...s.limitedAgents }
+      delete rest[agent]
+      return { limitedAgents: rest }
+    }),
 }))
 
 /** Seletor utilitário do projeto ativo. */
