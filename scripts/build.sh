@@ -90,6 +90,7 @@ EOF
     echo "== testes =="
     if ls "$BUILDS"/test/*/meta.json >/dev/null 2>&1; then
       for m in "$BUILDS"/test/*/meta.json; do
+        [[ "$m" == */latest/* ]] && continue # symlink pro último, não duplica
         python3 -c "import json;d=json.load(open('$m'));print(f\"  #{d['num']:>3}  {d['sha']}{'  DIRTY' if d['dirty'] else ''}  {d['version']}  {d['date'][:16]}\")"
       done
     else
