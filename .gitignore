@@ -31,3 +31,4 @@ Thumbs.db
 # Logs / temporários
 *.log
 /tmp/
+builds/

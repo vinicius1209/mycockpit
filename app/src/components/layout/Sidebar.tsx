@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { getVersion } from "@tauri-apps/api/app"
 import {
   Plus,
   Moon,
@@ -447,6 +448,18 @@ function ConversationList({ projectId }: { projectId: string }) {
   )
 }
 
+/** Rodapé: "local · vX.Y.Z". Nos builds de teste a versão vira 0.1.0-test.N,
+ *  então você SEMPRE sabe qual build está rodando. */
+function AppVersion() {
+  const [version, setVersion] = useState("")
+  useEffect(() => {
+    getVersion()
+      .then(setVersion)
+      .catch(() => {}) // browser (vite dev): sem versão, só "local"
+  }, [])
+  return <div className="label-mono">local{version ? ` · v${version}` : ""}</div>
+}
+
 export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   const projects = useApp((s) => s.projects)
   const activeId = useApp((s) => s.activeProjectId)
@@ -530,7 +543,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
           <div className="truncate text-[12px] font-medium text-foreground">
             Vinícius
           </div>
-          <div className="label-mono">local</div>
+          <AppVersion />
         </div>
         <Button
           variant="ghost"
