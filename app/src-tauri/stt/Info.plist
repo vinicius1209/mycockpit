@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>dev.vinicius.mycockpit.stt</string>
+  <key>CFBundleName</key>
+  <string>mycockpit-stt</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Ditado de prompts no MyCockpit (o áudio não sai do seu Mac).</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Transcrição local (on-device) dos seus prompts em pt-BR.</string>
+</dict>
+</plist>

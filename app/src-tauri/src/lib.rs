@@ -13,6 +13,7 @@ mod proc;
 mod pricing;
 mod sdd;
 mod sources;
+mod stt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -214,6 +215,7 @@ pub fn run() {
         )
         .manage(agent::RunRegistry::default())
         .manage(attachments::ActiveConvs::default())
+        .manage(stt::SttSession::default())
         .invoke_handler(tauri::generate_handler![
             agent::run_agent,
             agent::cancel_agent,
@@ -239,6 +241,9 @@ pub fn run() {
             git::git_commit,
             git::git_create_pr,
             git::pr_context,
+            stt::stt_start,
+            stt::stt_stop,
+            stt::stt_cancel,
             attachments::save_attachment,
             attachments::attach_path,
             attachments::delete_attachment,

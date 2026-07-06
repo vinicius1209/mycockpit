@@ -10,6 +10,7 @@ import {
 import { RichSelect } from "@/components/ui/RichSelect"
 import { Button } from "@/components/ui/button"
 import { ContextRing } from "@/components/chat/ContextRing"
+import { MicButton } from "@/components/chat/MicButton"
 import { useApp } from "@/store/app"
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
 import type { SlashCommand } from "@/lib/sources"
@@ -290,6 +291,7 @@ export function ComposerControls({
 
       <div className="ml-auto flex items-center gap-1.5">
         <ContextRing />
+        <MicButton />
         <Button
           variant="ghost"
           size="icon-sm"
