@@ -79,6 +79,18 @@ guard micOK else {
     exit(1)
 }
 
+// ---- o reconhecedor pode levar um instante pra ficar disponível (conecta ao
+// serviço / verifica o asset on-device). Sem essa espera o task falha na hora.
+var availableWait = 0
+while !recognizer.isAvailable && availableWait < 50 {
+    Thread.sleep(forTimeInterval: 0.1)
+    availableWait += 1
+}
+guard recognizer.isAvailable else {
+    emit(["error": "reconhecedor pt-BR indisponível agora (o modelo on-device pode estar baixando — tente de novo em instantes)"])
+    exit(1)
+}
+
 // ---- pedido de reconhecimento: on-device quando suportado, pontuação, vocab.
 let request = SFSpeechAudioBufferRecognitionRequest()
 request.shouldReportPartialResults = true
@@ -120,14 +132,27 @@ let task = recognizer.recognitionTask(with: request) { result, err in
             emit(["partial": lastText])
         }
     }
-    if err != nil, !finished {
-        // erro DEPOIS do STOP com texto em mãos → devolve o que temos (graceful)
+    if let e = err as NSError?, !finished {
         finished = true
+        // erro DEPOIS do STOP com texto em mãos → devolve o que temos (graceful)
         if !lastText.isEmpty {
             emit(["text": lastText])
             exit(0)
         }
-        emit(["error": "o reconhecimento falhou (tente de novo)"])
+        // "No speech detected" (silêncio) não é falha: devolve vazio e sai limpo,
+        // a UI simplesmente não adiciona nada ao rascunho.
+        if e.domain == "kAFAssistantErrorDomain" && (e.code == 1110 || e.code == 203) {
+            emit(["text": ""])
+            exit(0)
+        }
+        // Ditado do sistema desligado: o SFSpeechRecognizer (mesmo on-device)
+        // exige o Ditado do macOS ligado. Aponta o caminho exato do Ajuste.
+        if e.domain == "kLSRErrorDomain" && e.code == 201 {
+            emit(["error": "ative o Ditado do macOS: Ajustes do Sistema → Teclado → Ditado (ligar). Baixe o pacote Português (Brasil)."])
+            exit(1)
+        }
+        // falha de verdade → carrega a causa real (domínio/código) pra dar pra ver.
+        emit(["error": "o reconhecimento falhou: \(e.localizedDescription) [\(e.domain) \(e.code)]"])
         exit(1)
     }
 }
