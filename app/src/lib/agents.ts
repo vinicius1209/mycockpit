@@ -59,6 +59,16 @@ const CLAUDE_EFFORTS: AgentModelOption[] = [
   { value: "xhigh", label: "xhigh", description: "Bem mais fundo" },
   { value: "max", label: "max", description: "Esforço máximo" },
 ]
+// agy: o `value` É a string EXATA que o `agy --model` espera (verificado com
+// `agy models`). "default" = deixa o agy escolher (Gemini 3.5 Flash). O effort já
+// vem embutido no nome do modelo (Low/High), então o agy não tem seletor de effort.
+const AGY_MODELS: AgentModelOption[] = [
+  { value: "default", label: "modelo", description: "Padrão do agy (Gemini Flash)" },
+  { value: "Gemini 3.5 Flash (Low)", label: "Flash", description: "Rápido e barato (Google)" },
+  { value: "Gemini 3.1 Pro (High)", label: "Gemini Pro", description: "Mais capaz (Google)" },
+  { value: "Claude Sonnet 4.6 (Thinking)", label: "Sonnet", description: "Claude via cota Google" },
+  { value: "Claude Opus 4.6 (Thinking)", label: "Opus", description: "Claude mais capaz, via Google" },
+]
 const CODEX_EFFORTS: AgentModelOption[] = [
   { value: "default", label: "effort", description: "Padrão do modelo" },
   { value: "minimal", label: "minimal", description: "Mínimo" },
@@ -93,6 +103,18 @@ export const AGENTS: AgentDef[] = [
     models: CODEX_MODELS,
     efforts: CODEX_EFFORTS,
     defaultModel: "gpt-5.5",
+  },
+  {
+    id: "agy",
+    label: "Antigravity",
+    shortLabel: "agy",
+    kind: "agent",
+    available: true,
+    description: "CLI do Google (cota Google)",
+    caps: { image: false, pdf: false },
+    models: AGY_MODELS,
+    efforts: [],
+    defaultModel: null,
   },
   {
     id: "opencode",

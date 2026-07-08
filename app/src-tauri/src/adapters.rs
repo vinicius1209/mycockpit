@@ -64,6 +64,24 @@ pub trait AgentAdapter: Send {
         Vec::new()
     }
 
+    /// Como tratar UMA linha CRUA de stdout. Default (adapters ESTRUTURADOS):
+    /// trima, pula vazia, parseia JSON → `map_line`; linha não-JSON vira `Unknown`
+    /// (regra de ouro: nunca descarta em silêncio). Adapters NÃO-estruturados
+    /// (sem stream JSON, ex. `agy -p`) sobrescrevem p/ tratar a linha como TEXTO
+    /// do assistente. Preserva o comportamento 1:1 do Claude/Codex.
+    fn on_stdout_line(&mut self, line: &str) -> Vec<AgentEvent> {
+        let line = line.trim();
+        if line.is_empty() {
+            return Vec::new();
+        }
+        match serde_json::from_str::<serde_json::Value>(line) {
+            Ok(v) => self.map_line(&v),
+            Err(_) => vec![AgentEvent::Unknown {
+                raw: serde_json::Value::String(line.to_string()),
+            }],
+        }
+    }
+
     /// Capacidade declarada por tipo de anexo. Default = NÃO suporta nada → um
     /// agent novo é OBRIGADO a decidir (sem no-op que engole anexo em silêncio).
     fn supports_attachment(&self, _kind: &AttachmentKind) -> bool {
@@ -109,6 +127,7 @@ pub fn resolve(agent: &str) -> Result<Box<dyn AgentAdapter>, String> {
             // o stream do codex NÃO emite o modelo → lê do config p/ estimar custo
             model: Some(codex_config_model()),
         })),
+        "agy" => Ok(Box::<AgyAdapter>::default()),
         other => Err(format!("agent não suportado ainda: {other}")),
     }
 }
@@ -621,6 +640,100 @@ fn map_codex_item(item: &serde_json::Value) -> Vec<AgentEvent> {
         }],
         // reasoning, todo_list, error (não-fatal, ex. plugin warp quebrado) → ignora
         _ => vec![],
+    }
+}
+
+// ---------------- Antigravity CLI (`agy -p`, print mode, NÃO-estruturado) ----------------
+//
+// O `agy` (sucessor do Gemini CLI) na v1.0.16 NÃO expõe `--output-format json`:
+// o print mode (`-p`) roda o loop de agente (edita arquivos, roda comandos) e
+// devolve só o TEXTO final no stdout. Então é o caso "agent sem JSON" que o
+// agent-runner.md previu (estratégia não-estruturada, gêmea do Aider): a UI
+// degrada graciosa (sem stream de tools, sem custo — reports_usage=false); a
+// observabilidade do que mudou vem do `git diff` na aba Alterações.
+//
+// Achados verificados na máquina (agy 1.0.16):
+//   • `-p` SEM --add-dir edita um scratch isolado, NÃO o cwd → --add-dir <cwd> é
+//     OBRIGATÓRIO p/ ele mexer no repo real.
+//   • print mode + stdin null TRAVA esperando aprovação → --dangerously-skip-
+//     permissions é obrigatório p/ não pendurar.
+//   • stdout é texto puro (exit 0, sem stderr no caminho feliz).
+// Roadmap: quando o agy ganhar `--output-format json`, migra p/ StructuredAdapter
+// (tool-view ao vivo + custo). Resume (--continue/--conversation) fica p/ depois:
+// o print mode não expõe o id da conversa no stdout.
+#[derive(Default)]
+pub struct AgyAdapter {
+    /// Session já emitido? (a 1ª linha de stdout dispara o Session uma vez).
+    started: bool,
+    /// Modelo requisitado (p/ o rótulo no Session). None = default do agy (Flash).
+    model: Option<String>,
+}
+
+impl AgentAdapter for AgyAdapter {
+    fn id(&self) -> &'static str {
+        "agy"
+    }
+
+    fn build_command(&mut self, req: &RunRequest) -> Result<Command, String> {
+        let mut cmd = Command::new("agy");
+        cmd.arg("-p")
+            .arg(&req.prompt)
+            // amarra o cwd real (senão o print mode edita o scratch, não o repo).
+            .arg("--add-dir")
+            .arg(&req.cwd)
+            .current_dir(&req.cwd);
+        // modelo: o value do front É a string exata do agy ("Gemini 3.5 Flash (Low)",
+        // "Claude Opus 4.6 (Thinking)"…). "default"/None = deixa o agy escolher.
+        if let Some(m) = &req.model {
+            if m != "default" {
+                self.model = Some(m.clone());
+                cmd.arg("--model").arg(m);
+            }
+        }
+        // print mode não tem TUI p/ aprovar mid-run e o stdin é null → auto-aprova
+        // sempre (senão trava). Leitura/Fusion ganham --sandbox como MELHOR ESFORÇO
+        // (não é read-only real; limite documentado, igual PTY no agent-runner.md §7).
+        cmd.arg("--dangerously-skip-permissions");
+        if matches!(req.permission, Permission::Leitura | Permission::FusionRo) {
+            cmd.arg("--sandbox");
+        }
+        Ok(cmd)
+    }
+
+    /// agy print mode não emite JSON → `map_line` não é chamado (o on_stdout_line
+    /// sobrescrito trata texto). Defensivo: se um dia emitir JSON, não perde a linha.
+    fn map_line(&mut self, v: &serde_json::Value) -> Vec<AgentEvent> {
+        vec![AgentEvent::Unknown { raw: v.clone() }]
+    }
+
+    /// NÃO-ESTRUTURADO: cada linha de stdout é TEXTO do assistente (não JSON). A 1ª
+    /// linha emite também o Session (rótulo do modelo). Blank lines são preservadas
+    /// (parágrafos do markdown). O turno fecha no Done (sem Result → sem custo).
+    fn on_stdout_line(&mut self, line: &str) -> Vec<AgentEvent> {
+        let mut out = Vec::new();
+        if !self.started {
+            self.started = true;
+            out.push(AgentEvent::Session {
+                session_id: String::new(),
+                model: self.model.clone(),
+                tools: 0,
+            });
+        }
+        out.push(AgentEvent::TextDelta {
+            text: format!("{line}\n"),
+        });
+        out
+    }
+
+    /// NEEDS-VERIFY: as frases reais de cota/limite do agy ainda não foram
+    /// capturadas de um estouro real; estas são o palpite (vira card de revezamento).
+    fn classify_limit(&self, msg: &str) -> Option<LimitHit> {
+        let l = msg.to_lowercase();
+        let hit = l.contains("quota")
+            || l.contains("rate limit")
+            || l.contains("usage limit")
+            || l.contains("resource_exhausted");
+        hit.then(|| LimitHit { reset_hint: None })
     }
 }
 

@@ -356,29 +356,20 @@ async fn run_once(
             line = reader.next_line() => {
                 match line {
                     Ok(Some(line)) => {
-                        let line = line.trim();
-                        if line.is_empty() {
-                            continue;
-                        }
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-                            for ev in adapter.map_line(&v) {
-                                if matches!(ev, AgentEvent::SessionNotFound { .. }) {
-                                    if resume_is_some {
-                                        session_not_found = true; // suprime + retry
-                                    } else if let AgentEvent::SessionNotFound { message } = ev {
-                                        let _ = on_event.send(AgentEvent::Error { message });
-                                    }
-                                    continue;
+                        // O adapter decide como tratar a linha crua: estruturados
+                        // (Claude/Codex) parseiam JSON → map_line; não-estruturados
+                        // (agy) tratam como texto. Default preserva o comportamento
+                        // antigo (JSON→map_line, senão Unknown; regra de ouro).
+                        for ev in adapter.on_stdout_line(&line) {
+                            if matches!(ev, AgentEvent::SessionNotFound { .. }) {
+                                if resume_is_some {
+                                    session_not_found = true; // suprime + retry
+                                } else if let AgentEvent::SessionNotFound { message } = ev {
+                                    let _ = on_event.send(AgentEvent::Error { message });
                                 }
-                                let _ = on_event.send(ev);
+                                continue;
                             }
-                        } else {
-                            // Regra de ouro (agent-runner.md): linha não-JSON é surfaçada
-                            // como Unknown (no-op no front), NUNCA descartada em silêncio,
-                            // assim um banner de auth/deprecation no stdout não some.
-                            let _ = on_event.send(AgentEvent::Unknown {
-                                raw: serde_json::Value::String(line.to_string()),
-                            });
+                            let _ = on_event.send(ev);
                         }
                     }
                     Ok(None) => break, // EOF, processo terminou
