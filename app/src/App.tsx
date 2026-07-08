@@ -236,7 +236,7 @@ export default function App() {
                 {/* Toaster ancorado ao CONTEÚDO (centra no card, não na janela). O
                     wrapper com transform vira containing-block SÓ pro toaster; o
                     pointer-events-none não bloqueia o card (sonner re-habilita o clique). */}
-                <div className="pointer-events-none absolute inset-0 [transform:translate(0)]">
+                <div className="pointer-events-none absolute inset-0 z-[120] [transform:translate(0)]">
                   <Toaster position="bottom-center" theme={theme} />
                 </div>
               </div>
