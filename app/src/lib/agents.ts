@@ -35,9 +35,14 @@ export interface AgentDef {
   defaultModel: string | null
 }
 
+// "opus[1m]" é a variante de contexto 1M do Claude Code: o CLI aceita
+// `--model opus[1m]` e o init reporta `claude-opus-4-8[1m]`, então o anel de
+// contexto (contextWindowFor) detecta o "1m" e mostra 1M em vez de 200k. Escolha
+// por conversa: Opus normal = 200k (default do CLI), Opus 1M = janela grande.
 const CLAUDE_MODELS: AgentModelOption[] = [
   { value: "default", label: "modelo", description: "Padrão do Claude Code" },
-  { value: "opus", label: "Opus", description: "O mais capaz" },
+  { value: "opus", label: "Opus", description: "O mais capaz (contexto 200k)" },
+  { value: "opus[1m]", label: "Opus 1M", description: "Opus com janela de 1M tokens" },
   { value: "sonnet", label: "Sonnet", description: "Rápido e equilibrado" },
   { value: "haiku", label: "Haiku", description: "Mais rápido e barato" },
 ]
