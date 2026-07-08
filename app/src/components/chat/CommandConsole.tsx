@@ -4,6 +4,7 @@ import {
   SlashPopover,
   AtPopover,
   AttachmentChips,
+  QueuedChips,
   ComposerControls,
   SuggestionChips,
 } from "@/components/chat/ComposerParts"
@@ -125,19 +126,28 @@ export function CommandConsole({
     .map((c) => agentDef(c.agent)?.shortLabel ?? c.agent)
     .join(" + ")} (${fusionLeague.candidates.length} runs)`
 
+  // config EFETIVO (numa conv travada = o do 1º run, exibido nos pills), nunca o
+  // estado local cru, que sobra de outra conv e não reseta na troca.
+  const effCfg = {
+    agent: effectiveDest,
+    model: effectiveModel === "default" ? null : effectiveModel,
+    effort: effectiveEffort === "default" ? null : effectiveEffort,
+  }
+
   function submit() {
+    const text = value.trim()
+    // Turno em andamento: Enter ENFILEIRA (só texto; os anexos ficam no composer
+    // p/ o próximo envio). O handleSend detecta o running e empilha na fila.
+    if (running || finalizing) {
+      if (!text || disabled) return
+      onSend(text, effCfg, [])
+      setValue("")
+      resetHistory()
+      ref.current?.focus()
+      return
+    }
     if (!canSend) return
-    onSend(
-      value.trim(),
-      {
-        // usa o config EFETIVO (numa conv travada = o do 1º run, exibido nos pills),
-        // nunca o estado local cru, que sobra de outra conv e não reseta na troca.
-        agent: effectiveDest,
-        model: effectiveModel === "default" ? null : effectiveModel,
-        effort: effectiveEffort === "default" ? null : effectiveEffort,
-      },
-      attachments,
-    )
+    onSend(text, effCfg, attachments)
     setValue("")
     setAttachments([])
     resetHistory()
@@ -179,6 +189,12 @@ export function CommandConsole({
           idx={atIdx}
           setIdx={setAtIdx}
           onPick={insertMention}
+        />
+      )}
+      {activeId && (
+        <QueuedChips
+          queued={conv.queued ?? []}
+          onRemove={(i) => useChat.getState().removeQueued(activeId, i)}
         />
       )}
       <ComposerShell
@@ -272,9 +288,11 @@ export function CommandConsole({
           }
         }}
         placeholder={
-          commands.length > 0
-            ? "Peça algo…  ou / para comandos"
-            : "Peça algo ao seu time de agents…"
+          running || finalizing
+            ? "Enfileirar próxima mensagem (envia junto ao terminar)…"
+            : commands.length > 0
+              ? "Peça algo…  ou / para comandos"
+              : "Peça algo ao seu time de agents…"
         }
         rows={1}
         textareaClassName="max-h-[240px] min-h-[56px] resize-none border-0 bg-transparent! px-4 pt-3.5 text-[15px] leading-relaxed text-foreground shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0"

@@ -178,6 +178,42 @@ export function AttachmentChips({
   )
 }
 
+/** Fila de mensagens digitadas durante o turno (acima do textarea). Enviadas
+ *  juntas, num único envio, quando o turno atual termina. */
+export function QueuedChips({
+  queued,
+  onRemove,
+}: {
+  queued: string[]
+  onRemove: (index: number) => void
+}) {
+  if (queued.length === 0) return null
+  return (
+    <div className="flex flex-col gap-1 px-1 pb-1">
+      <span className="px-1 text-[10px] tracking-wide text-muted-foreground/70 uppercase">
+        Na fila · enviam juntas ao terminar
+      </span>
+      {queued.map((text, i) => (
+        <span
+          key={i}
+          title={text}
+          className="flex items-center gap-1.5 rounded-md border border-brass/30 bg-brass/5 px-2 py-1 text-[12px] text-foreground/80"
+        >
+          <span className="text-muted-foreground/60">{i + 1}.</span>
+          <span className="min-w-0 flex-1 truncate">{text}</span>
+          <button
+            onClick={() => onRemove(i)}
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            aria-label="Remover da fila"
+          >
+            <X className="size-3" />
+          </button>
+        </span>
+      ))}
+    </div>
+  )
+}
+
 /** Seleção de agent (dot + nome + badge + descrição). ÚNICO, o composer do Linear e
  *  a liga do Fusion reusam. Segue o padrão rico (RichSelect) dos demais selects. */
 export function AgentSelect({

@@ -146,9 +146,13 @@ export function ChatPanel() {
       toast.error("Histórico corrompido no banco. Envio bloqueado nesta conversa.")
       return
     }
-    // bloqueia se rodando OU finalizando, o processo do CLI precisa sair de fato
-    // (flush da sessão) antes do próximo run, senão o resume não acha a sessão.
-    if (conv?.running || conv?.finalizing) return
+    // Rodando/finalizando: em vez de descartar, ENFILEIRA. O CLI precisa sair de
+    // fato (flush da sessão) antes do próximo run; ao terminar, o finally junta as
+    // pendentes num único envio (resume). Coalescer evita N resumes em sequência.
+    if (conv?.running || conv?.finalizing) {
+      useChat.getState().enqueue(convId, text)
+      return
+    }
     // novo run → invalida geração de sugestão pendente/em-voo desta conversa
     useChat.getState().invalidateSuggestions(convId)
     // conversa estabelecida trava no agent/modelo/effort do 1º run; nova usa o seletor
@@ -182,7 +186,14 @@ export function ChatPanel() {
     } finally {
       useChat.getState().finish(convId)
       void useChat.getState().persist(convId)
-      useChat.getState().scheduleSuggestions(convId)
+      // Fila: junta as mensagens digitadas durante o turno num ÚNICO envio (resume).
+      // Se há fila, o próximo turno já começa; senão, agenda as sugestões.
+      const pending = useChat.getState().dequeueQueued(convId)
+      if (pending.length > 0) {
+        void handleSend(pending.join("\n\n"))
+      } else {
+        useChat.getState().scheduleSuggestions(convId)
+      }
     }
   }
 

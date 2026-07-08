@@ -92,6 +92,9 @@ export interface ConvState {
   /** Sugestões dinâmicas pós-turno (Sprint 3). */
   suggestions: string[]
   suggesting: boolean
+  /** Mensagens digitadas ENQUANTO o turno roda: enfileiradas e coalescidas num
+   *  único envio quando o turno atual termina (Done). Efêmero (não persiste). */
+  queued?: string[]
 }
 
 interface ChatState {
@@ -143,6 +146,12 @@ interface ChatState {
   /** Gera sugestões contextuais (fire-and-forget; degrada pros chips estáticos). */
   generateSuggestions: (convId: string) => Promise<void>
   queuePrompt: (t: string | null) => void
+  /** Fila da conversa: enfileira uma mensagem digitada durante o turno. */
+  enqueue: (convId: string, text: string) => void
+  /** Esvazia a fila e devolve as mensagens pendentes (p/ coalescer no envio). */
+  dequeueQueued: (convId: string) => string[]
+  /** Remove UMA mensagem enfileirada (o X no chip da fila). */
+  removeQueued: (convId: string, index: number) => void
   /** Atualiza o rascunho (input não-enviado) de uma conversa. */
   setDraft: (convId: string, text: string) => void
   /** Fusion: add o balão do usuário à conversa + marca running (turno visível). */
@@ -768,6 +777,42 @@ export const useChat = create<ChatState>((set, get) => {
 
     setDraft: (convId, text) =>
       set((s) => ({ drafts: { ...s.drafts, [convId]: text } })),
+
+    enqueue: (convId, text) =>
+      set((s) => {
+        const cur = s.byId[convId]
+        if (!cur) return {}
+        return {
+          byId: {
+            ...s.byId,
+            [convId]: { ...cur, queued: [...(cur.queued ?? []), text] },
+          },
+        }
+      }),
+
+    dequeueQueued: (convId) => {
+      const cur = get().byId[convId]
+      const pending = cur?.queued ?? []
+      if (pending.length === 0) return []
+      set((s) => {
+        const c = s.byId[convId]
+        if (!c) return {}
+        return { byId: { ...s.byId, [convId]: { ...c, queued: [] } } }
+      })
+      return pending
+    },
+
+    removeQueued: (convId, index) =>
+      set((s) => {
+        const cur = s.byId[convId]
+        if (!cur?.queued) return {}
+        return {
+          byId: {
+            ...s.byId,
+            [convId]: { ...cur, queued: cur.queued.filter((_, i) => i !== index) },
+          },
+        }
+      }),
 
     beginFusion: (convId, text, attachments) =>
       set((s) => {
