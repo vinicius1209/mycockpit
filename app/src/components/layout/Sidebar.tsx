@@ -457,7 +457,11 @@ function AppVersion() {
       .then(setVersion)
       .catch(() => {}) // browser (vite dev): sem versão, só "local"
   }, [])
-  return <div className="label-mono">local{version ? ` · v${version}` : ""}</div>
+  return (
+    <div className="label-mono truncate text-[9px] normal-case tracking-normal text-muted-foreground/70">
+      local{version ? ` · v${version}` : ""}
+    </div>
+  )
 }
 
 export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
