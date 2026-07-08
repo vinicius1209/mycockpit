@@ -351,6 +351,27 @@ export const useChat = create<ChatState>((set, get) => {
   const suggestTimer: Record<string, ReturnType<typeof setTimeout>> = {}
   const suggestGen: Record<string, number> = {}
 
+  // Persistência incremental durante o run: sem isso o único persist era no
+  // finally do turno (ChatPanel), então QUALQUER interrupção mid-run (restart do
+  // dev, crash, fechar a janela) perdia a resposta inteira E o session_id (o run
+  // nem era resumível). schedulePersist é um throttle trailing: o 1º evento de um
+  // burst agenda um snapshot ~1.2s depois, e re-arma no próximo → grava a cada
+  // ~1.2s enquanto streama, sem martelar o disco a cada text_delta.
+  const persistTimer: Record<string, ReturnType<typeof setTimeout>> = {}
+  const schedulePersist = (convId: string) => {
+    if (persistTimer[convId]) return // já agendado neste burst → coalesce
+    persistTimer[convId] = setTimeout(() => {
+      delete persistTimer[convId]
+      void get().persist(convId)
+    }, 1200)
+  }
+  const cancelPersist = (convId: string) => {
+    if (persistTimer[convId]) {
+      clearTimeout(persistTimer[convId])
+      delete persistTimer[convId]
+    }
+  }
+
   /** Aplica um patch parcial em UMA conversa (no-op se ela não existe mais). */
   const patch = (convId: string, p: Partial<ConvState>) =>
     set((s) => {
@@ -696,6 +717,19 @@ export const useChat = create<ChatState>((set, get) => {
         if (!cur) return {}
         return { byId: { ...s.byId, [convId]: { ...cur, ...reduceEvent(cur, e) } } }
       })
+      // Persistência incremental (sobrevive a interrupção mid-run):
+      if (e.type === "session") {
+        // session_id é barato e torna o run RESUMÍVEL → grava na hora.
+        cancelPersist(convId)
+        void get().persist(convId)
+      } else if (e.type === "done" || e.type === "error" || e.type === "cancelled") {
+        // terminais: o finally do ChatPanel faz o persist final; só limpa o timer
+        // pendente pra não gravar um snapshot atrasado por cima.
+        cancelPersist(convId)
+      } else {
+        // texto/tool/result em streaming → snapshot throttled a cada ~1.2s.
+        schedulePersist(convId)
+      }
     },
 
     beginTransplant: (convId, runId, agent) =>
