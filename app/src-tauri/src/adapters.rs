@@ -136,11 +136,12 @@ impl AgentAdapter for ClaudeAdapter {
         // anexos: injeta os paths no prompt (Read tool) + --add-dir (acesso fora do cwd)
         let mut prompt = req.prompt.clone();
         self.render_attachments(&req.attachments, &mut cmd, &mut prompt);
-        // `--` antes do prompt posicional: texto começando com "-" (colar um
-        // diff `--- a/…` ou uma lista markdown) NÃO pode virar flag do CLI.
+        // ATENÇÃO à ordem: TODAS as flags vêm ANTES do prompt. O prompt é
+        // posicional e entra por último, atrás de `--` (ver fim da função). O `--`
+        // encerra o parsing de opções, então qualquer flag DEPOIS dele viraria
+        // posicional — foi o bug e9f7b737: `-- <prompt> --output-format …` fazia o
+        // Claude ignorar o stream-json e cair em modo TEXTO (UI sem output).
         cmd.arg("-p")
-            .arg("--")
-            .arg(&prompt)
             .arg("--output-format")
             .arg("stream-json")
             .arg("--verbose")
@@ -179,6 +180,9 @@ impl AgentAdapter for ClaudeAdapter {
         if let Some(r) = &req.resume {
             cmd.arg("--resume").arg(r);
         }
+        // Prompt POSICIONAL por último, atrás do `--`: protege texto que começa com
+        // "-" (diff `--- a/…`, lista markdown) SEM engolir as flags acima.
+        cmd.arg("--").arg(&prompt);
         Ok(cmd)
     }
 
