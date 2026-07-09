@@ -162,8 +162,10 @@ function ProjectRow({
             <span className="absolute top-1/2 left-0 h-5 w-[2.5px] -translate-y-1/2 rounded-full bg-brass" />
           )}
           {editing ? (
-            <div className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-1 pl-2.5">
-              <StatusDot status={status} />
+            <div className="flex min-w-0 flex-1 items-center gap-3 p-2">
+              <span className="grid size-5 shrink-0 place-items-center">
+                <StatusDot status={status} />
+              </span>
               <input
                 autoFocus
                 value={val}
@@ -183,9 +185,13 @@ function ProjectRow({
           ) : (
             <button
               onClick={onSelect}
-              className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-1 pl-2.5 text-left"
+              className="flex min-w-0 flex-1 items-center gap-3 p-2 text-left"
             >
-              <StatusDot status={status} />
+              {/* Slot de ícone de largura FIXA (20px, centrado): ancora o texto
+                  do pai — e, por consequência, o dos filhos — sempre no mesmo x. */}
+              <span className="grid size-5 shrink-0 place-items-center">
+                <StatusDot status={status} />
+              </span>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[13px] font-medium text-foreground">
                   {project.name}
@@ -321,7 +327,9 @@ function ConversationList({ projectId }: { projectId: string }) {
   }
 
   return (
-    <div className="animate-reveal-down mt-0.5 mb-1 ml-[18px] flex flex-col gap-px border-l border-border/60 pl-2">
+    // Sem border-l nem indentação de container: a hierarquia é só alinhamento.
+    // Cada filho recebe pl-10 (40px) → texto sob o texto do projeto.
+    <div className="animate-reveal-down mt-0.5 mb-1 flex flex-col gap-px">
       {conversations.map((c) => {
         const isActive = c.id === activeId
         const isRunning = running.has(c.id)
@@ -351,10 +359,7 @@ function ConversationList({ projectId }: { projectId: string }) {
                 )}
               >
                 {isEditing ? (
-                  <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1">
-                    <span className="grid size-3 shrink-0 place-items-center">
-                      {statusEl}
-                    </span>
+                  <div className="flex min-w-0 flex-1 items-center py-2 pr-2 pl-10">
                     <input
                       autoFocus
                       value={editValue}
@@ -372,22 +377,29 @@ function ConversationList({ projectId }: { projectId: string }) {
                   <button
                     onClick={() => void switchConversation(c.id)}
                     className={cn(
-                      "flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left text-[12px]",
+                      "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-10 text-left text-[12px]",
+                      // active = cor de destaque no texto (bg fixo vem do container);
+                      // inativo = cinza médio, clareia no hover.
                       isActive
-                        ? "text-foreground"
-                        : "text-muted-foreground group-hover/c:text-foreground",
+                        ? "font-normal text-brass"
+                        : "font-normal text-muted-foreground group-hover/c:text-foreground",
                     )}
                   >
-                    {/* slot fixo à esquerda: spinner/decisão/cor, sem deslocar o título */}
-                    <span className="grid size-3 shrink-0 place-items-center">
-                      {statusEl}
+                    {/* Sem ícone à esquerda: a indentação (pl-10) define a hierarquia.
+                        Título trunca; status/worktree ficam à DIREITA, nunca deslocam. */}
+                    <span className="min-w-0 flex-1 truncate">
+                      {c.title ?? "Nova conversa"}
                     </span>
-                    <span className="truncate">{c.title ?? "Nova conversa"}</span>
                     {c.worktreePath && (
                       <GitBranch
                         className="size-3 shrink-0 text-brass/60"
                         aria-label="isolado em worktree"
                       />
+                    )}
+                    {statusEl && (
+                      <span className="grid size-3 shrink-0 place-items-center">
+                        {statusEl}
+                      </span>
                     )}
                   </button>
                 )}
@@ -439,9 +451,13 @@ function ConversationList({ projectId }: { projectId: string }) {
       })}
       <button
         onClick={() => void newConversation(projectId)}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+        className="flex items-center gap-3 rounded-md p-2 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
       >
-        <Plus className="size-3" />
+        {/* Plus ocupa a mesma coluna de ícone (20px) do projeto → "nova tarefa"
+            alinha com as conversas, mantendo a leitura da coluna. */}
+        <span className="grid size-5 shrink-0 place-items-center">
+          <Plus className="size-3.5" />
+        </span>
         nova tarefa
       </button>
     </div>
