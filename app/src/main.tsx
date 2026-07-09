@@ -8,8 +8,17 @@ import "@fontsource-variable/geist-mono"
 import "./index.css"
 import App from "./App.tsx"
 
-// dark-first (o toggle de tema entra no polish do M1)
-document.documentElement.classList.add("dark")
+// Tema persistido (mc.app via zustand persist) aplicado ANTES do React p/ não
+// piscar dark no boot. Default = dark quando nada foi salvo.
+try {
+  const persisted = JSON.parse(localStorage.getItem("mc.app") ?? "null")
+  document.documentElement.classList.toggle(
+    "dark",
+    persisted?.state?.theme !== "light",
+  )
+} catch {
+  document.documentElement.classList.add("dark")
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

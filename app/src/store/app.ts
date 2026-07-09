@@ -1,5 +1,7 @@
 import { create } from "zustand"
+import { persist } from "zustand/middleware"
 import type { PermissionMode, Project } from "@/lib/types"
+import { type GlobalSettings, DEFAULT_SETTINGS } from "@/lib/settings"
 import {
   renameProject as dbRenameProject,
   setProjectColor as dbSetProjectColor,
@@ -30,6 +32,10 @@ interface AppState {
   limitedAgents: Record<string, string | null>
   /** Slug de plano SDD pra focar ao entrar no modo (navegação do inbox). */
   sddFocusSlug: string | null
+  /** Preferências globais (persistidas). */
+  settings: GlobalSettings
+  /** Modal de configurações aberto? */
+  settingsOpen: boolean
 
   setProjects: (p: Project[]) => void
   addProject: (p: Project) => void
@@ -49,81 +55,122 @@ interface AppState {
   setAgentLimited: (agent: string, resetHint: string | null) => void
   clearAgentLimited: (agent: string) => void
   setSddFocus: (slug: string | null) => void
+  /** Patch parcial das preferências globais. */
+  setSettings: (patch: Partial<GlobalSettings>) => void
+  setSettingsOpen: (v: boolean) => void
 }
 
 function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle("dark", theme === "dark")
 }
 
-export const useApp = create<AppState>((set) => ({
-  projects: [],
-  activeProjectId: null,
-  theme: "dark",
-  sidebarOpen: true,
-  contextOpen: true,
-  viewMode: "linear",
-  ready: false,
-  mycockpit: {},
-  limitedAgents: {},
-  sddFocusSlug: null,
+export const useApp = create<AppState>()(
+  persist(
+    (set) => ({
+      projects: [],
+      activeProjectId: null,
+      theme: "dark",
+      sidebarOpen: true,
+      contextOpen: true,
+      viewMode: "linear",
+      ready: false,
+      mycockpit: {},
+      limitedAgents: {},
+      sddFocusSlug: null,
+      settings: DEFAULT_SETTINGS,
+      settingsOpen: false,
 
-  setProjects: (projects) =>
-    set((s) => ({
-      projects,
-      activeProjectId: s.activeProjectId ?? projects[0]?.id ?? null,
-    })),
-  addProject: (p) =>
-    set((s) => ({ projects: [p, ...s.projects], activeProjectId: p.id })),
-  setActiveProject: (id) => set({ activeProjectId: id }),
-  setProjectPermission: (id, mode) =>
-    set((s) => ({
-      projects: s.projects.map((p) =>
-        p.id === id ? { ...p, permissionMode: mode } : p,
-      ),
-    })),
-  renameProject: (id, name) => {
-    const n = name.trim()
-    if (!n) return
-    set((s) => ({
-      projects: s.projects.map((p) => (p.id === id ? { ...p, name: n } : p)),
-    }))
-    void dbRenameProject(id, n)
-  },
-  setProjectColor: (id, color) => {
-    set((s) => ({
-      projects: s.projects.map((p) => (p.id === id ? { ...p, color } : p)),
-    }))
-    void dbSetProjectColor(id, color)
-  },
-  setMycockpit: (id, cfg) =>
-    set((s) => ({ mycockpit: { ...s.mycockpit, [id]: cfg } })),
-  patchMycockpit: (id, patch) =>
-    set((s) => {
-      const cur = s.mycockpit[id]
-      if (!cur) return {}
-      return { mycockpit: { ...s.mycockpit, [id]: { ...cur, ...patch } } }
+      setProjects: (projects) =>
+        set((s) => ({
+          projects,
+          activeProjectId: s.activeProjectId ?? projects[0]?.id ?? null,
+        })),
+      addProject: (p) =>
+        set((s) => ({ projects: [p, ...s.projects], activeProjectId: p.id })),
+      setActiveProject: (id) => set({ activeProjectId: id }),
+      setProjectPermission: (id, mode) =>
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === id ? { ...p, permissionMode: mode } : p,
+          ),
+        })),
+      renameProject: (id, name) => {
+        const n = name.trim()
+        if (!n) return
+        set((s) => ({
+          projects: s.projects.map((p) => (p.id === id ? { ...p, name: n } : p)),
+        }))
+        void dbRenameProject(id, n)
+      },
+      setProjectColor: (id, color) => {
+        set((s) => ({
+          projects: s.projects.map((p) => (p.id === id ? { ...p, color } : p)),
+        }))
+        void dbSetProjectColor(id, color)
+      },
+      setMycockpit: (id, cfg) =>
+        set((s) => ({ mycockpit: { ...s.mycockpit, [id]: cfg } })),
+      patchMycockpit: (id, patch) =>
+        set((s) => {
+          const cur = s.mycockpit[id]
+          if (!cur) return {}
+          return { mycockpit: { ...s.mycockpit, [id]: { ...cur, ...patch } } }
+        }),
+      toggleTheme: () =>
+        set((s) => {
+          const theme: Theme = s.theme === "dark" ? "light" : "dark"
+          applyTheme(theme)
+          return { theme }
+        }),
+      toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+      setViewMode: (viewMode) => set({ viewMode }),
+      toggleContext: () => set((s) => ({ contextOpen: !s.contextOpen })),
+      setReady: (ready) => set({ ready }),
+      setAgentLimited: (agent, resetHint) =>
+        set((s) => ({
+          limitedAgents: { ...s.limitedAgents, [agent]: resetHint },
+        })),
+      clearAgentLimited: (agent) =>
+        set((s) => {
+          if (!(agent in s.limitedAgents)) return {}
+          const rest = { ...s.limitedAgents }
+          delete rest[agent]
+          return { limitedAgents: rest }
+        }),
+      setSddFocus: (sddFocusSlug) => set({ sddFocusSlug }),
+      setSettings: (patch) =>
+        set((s) => ({ settings: { ...s.settings, ...patch } })),
+      setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
     }),
-  toggleTheme: () =>
-    set((s) => {
-      const theme: Theme = s.theme === "dark" ? "light" : "dark"
-      applyTheme(theme)
-      return { theme }
-    }),
-  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
-  setViewMode: (viewMode) => set({ viewMode }),
-  toggleContext: () => set((s) => ({ contextOpen: !s.contextOpen })),
-  setReady: (ready) => set({ ready }),
-  setAgentLimited: (agent, resetHint) =>
-    set((s) => ({ limitedAgents: { ...s.limitedAgents, [agent]: resetHint } })),
-  clearAgentLimited: (agent) =>
-    set((s) => {
-      if (!(agent in s.limitedAgents)) return {}
-      const rest = { ...s.limitedAgents }
-      delete rest[agent]
-      return { limitedAgents: rest }
-    }),
-  setSddFocus: (sddFocusSlug) => set({ sddFocusSlug }),
-}))
+    {
+      name: "mc.app",
+      version: 1,
+      // SÓ preferências: nunca persistir projects/mycockpit/limitedAgents/ready/
+      // activeProjectId — esses vêm do banco no boot.
+      partialize: (s) => ({
+        theme: s.theme,
+        sidebarOpen: s.sidebarOpen,
+        contextOpen: s.contextOpen,
+        viewMode: s.viewMode,
+        settings: s.settings,
+      }),
+      // deep-merge de settings p/ campos novos ganharem o default (evita undefined
+      // quando o schema cresce entre versões).
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<AppState>
+        return {
+          ...current,
+          ...p,
+          settings: { ...current.settings, ...(p.settings ?? {}) },
+        }
+      },
+      // DOM ↔ estado ao reidratar (o pre-mount do main.tsx já evitou o flash).
+      onRehydrateStorage: () => (state) => {
+        if (state) applyTheme(state.theme)
+      },
+    },
+  ),
+)
 
 /** Seletor utilitário do projeto ativo. */
 export function useActiveProject(): Project | null {

@@ -11,6 +11,7 @@ import { ChatPanel } from "@/components/chat/ChatPanel"
 import { FusionArena } from "@/components/fusion/FusionArena"
 import { SddView } from "@/components/sdd/SddView"
 import { CommandMenu } from "@/components/common/CommandMenu"
+import { SettingsDialog } from "@/components/settings/SettingsDialog"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -117,7 +118,10 @@ export default function App() {
             (raw.permission as PermissionMode) ??
             proj.permissionMode ??
             "padrao",
-          helper: raw.helper === "off" ? null : (raw.helper ?? "haiku"),
+          helper:
+            raw.helper === "off"
+              ? null
+              : (raw.helper ?? useApp.getState().settings.helperModel),
           mode: raw.mode ?? "linear",
         }
         useApp.getState().setMycockpit(proj.id, resolved)
@@ -244,6 +248,7 @@ export default function App() {
           </ResizablePanelGroup>
         </div>
         <CommandMenu />
+        <SettingsDialog />
       </TooltipProvider>
     </QueryClientProvider>
   )

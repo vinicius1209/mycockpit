@@ -465,7 +465,8 @@ export const useChat = create<ChatState>((set, get) => {
       }
       // modelo helper por projeto (.mycockpit/config.toml); default haiku, null = off
       const cfg = useApp.getState().mycockpit[c.projectId]
-      const helperModel = cfg ? cfg.helper : "haiku"
+      // projeto define no config.toml → vence; senão, o default global (Settings).
+      const helperModel = cfg ? cfg.helper : useApp.getState().settings.helperModel
       if (!helperModel) return
       // token desta geração: se um novo run começar enquanto geramos, descartamos.
       const myGen = suggestGen[convId] ?? 0

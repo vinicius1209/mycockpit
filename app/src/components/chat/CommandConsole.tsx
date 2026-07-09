@@ -13,7 +13,7 @@ import { useAtMentions } from "@/hooks/useAtMentions"
 import { usePromptHistory } from "@/hooks/usePromptHistory"
 import { useAttachments } from "@/hooks/useAttachments"
 import { useActiveConv, useChat } from "@/store/chat"
-import { useActiveProject } from "@/store/app"
+import { useApp, useActiveProject } from "@/store/app"
 import type { Attachment } from "@/lib/attachments"
 import { DESTINATIONS, defaultModelFor, agentCaps, agentDef } from "@/lib/agents"
 import { useFusion, defaultLeague } from "@/store/fusion"
@@ -50,9 +50,11 @@ export function CommandConsole({
         : v
     useChat.getState().setDraft(id, next)
   }, [])
-  const [destination, setDestination] = useState(DESTINATIONS[0].id)
-  const [model, setModel] = useState(defaultModelFor(DESTINATIONS[0].id))
-  const [effort, setEffort] = useState("default")
+  // defaults de novas conversas vêm das configurações globais (Settings).
+  const settings = useApp((s) => s.settings)
+  const [destination, setDestination] = useState(settings.defaultAgent)
+  const [model, setModel] = useState(settings.defaultModel ?? "default")
+  const [effort, setEffort] = useState(settings.defaultEffort ?? "default")
   const ref = useRef<HTMLTextAreaElement>(null)
   const conv = useActiveConv()
   const suggestions = conv.suggestions

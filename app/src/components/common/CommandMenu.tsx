@@ -8,6 +8,7 @@ import {
   PanelRight,
   Play,
   Plus,
+  Settings,
   SunMoon,
 } from "lucide-react"
 import {
@@ -58,6 +59,7 @@ export function CommandMenu() {
   const toggleTheme = useApp((s) => s.toggleTheme)
   const toggleSidebar = useApp((s) => s.toggleSidebar)
   const toggleContext = useApp((s) => s.toggleContext)
+  const setSettingsOpen = useApp((s) => s.setSettingsOpen)
   const conversations = useChat((s) => s.conversations)
   const switchConversation = useChat((s) => s.switchConversation)
   const newConversation = useChat((s) => s.newConversation)
@@ -181,6 +183,13 @@ export function CommandMenu() {
               <CommandItem className={ITEM} onSelect={() => run(toggleContext)}>
                 <PanelRight aria-hidden />
                 Alternar contexto
+              </CommandItem>
+              <CommandItem
+                className={ITEM}
+                onSelect={() => run(() => setSettingsOpen(true))}
+              >
+                <Settings aria-hidden />
+                Configurações
               </CommandItem>
             </CommandGroup>
           </CommandList>

@@ -1,4 +1,4 @@
-import { PanelLeft, PanelRight } from "lucide-react"
+import { PanelLeft, PanelRight, Settings } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -87,6 +87,7 @@ export function TitleBar() {
   const project = useActiveProject()
   const toggleSidebar = useApp((s) => s.toggleSidebar)
   const toggleContext = useApp((s) => s.toggleContext)
+  const setSettingsOpen = useApp((s) => s.setSettingsOpen)
 
   // z-[110]: ACIMA do overlay de drag que o decorum injeta (um div fixed top:0
   // height:32px z-index:100 com data-tauri-drag-region). Sem isso, esse overlay
@@ -114,6 +115,16 @@ export function TitleBar() {
         <InstrumentStrip />
         <Separator orientation="vertical" className="h-4!" />
         <InboxBell />
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="pointer-events-auto text-muted-foreground hover:text-foreground"
+          onClick={() => setSettingsOpen(true)}
+          title="Configurações"
+          aria-label="Configurações"
+        >
+          <Settings className="size-4" />
+        </Button>
         <Button
           variant="ghost"
           size="icon-sm"

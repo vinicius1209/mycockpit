@@ -4,14 +4,14 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { sttStart, sttStop, sttCancel } from "@/lib/stt"
 import { useChat } from "@/store/chat"
-import { useActiveProject } from "@/store/app"
+import { useApp, useActiveProject } from "@/store/app"
 import { DESTINATIONS } from "@/lib/agents"
 import { isTauri } from "@/lib/db"
 import { fmtDuration } from "@/lib/format"
 
 /** Termos que ditado genérico erra: os nomes da casa + do projeto vão como
  *  contextualStrings pro reconhecedor (a vantagem sobre o Wispr). */
-function buildVocab(projectName?: string): string[] {
+function buildVocab(projectName?: string, extra: string[] = []): string[] {
   const base = [
     "MyCockpit",
     "Fusion",
@@ -31,7 +31,7 @@ function buildVocab(projectName?: string): string[] {
     ...DESTINATIONS.filter((d) => d.available).map((d) => d.label),
   ]
   if (projectName) base.push(projectName)
-  return base
+  return [...base, ...extra]
 }
 
 type MicState = "idle" | "starting" | "rec" | "busy"
@@ -40,6 +40,8 @@ type MicState = "idle" | "starting" | "rec" | "busy"
  *  conversa pra você revisar antes do Enter. Esc cancela. */
 export function MicButton() {
   const project = useActiveProject()
+  const enabled = useApp((s) => s.settings.dictationEnabled)
+  const vocab = useApp((s) => s.settings.dictationVocab)
   const [state, setState] = useState<MicState>("idle")
   const [since, setSince] = useState(0)
   const [now, setNow] = useState(0)
@@ -73,7 +75,7 @@ export function MicButton() {
       }
       setState("starting")
       try {
-        await sttStart(buildVocab(project?.name))
+        await sttStart(buildVocab(project?.name, vocab))
         setSince(Date.now())
         setNow(Date.now())
         setState("rec")
@@ -102,6 +104,9 @@ export function MicButton() {
       setState("idle")
     }
   }
+
+  // ditado desligado nas configurações → sem botão de mic.
+  if (!enabled) return null
 
   if (state === "rec") {
     return (
