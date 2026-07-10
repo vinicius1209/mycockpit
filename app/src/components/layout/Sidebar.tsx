@@ -19,6 +19,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { StatusDot } from "@/components/common/StatusDot"
+import { confirm } from "@/lib/confirm"
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -41,6 +42,14 @@ import type { AgentStatus, Project } from "@/lib/types"
 /** Soft-remove do projeto (arquiva, conversas preservadas) com Desfazer. Disco intocado. */
 function confirmDeleteProject(project: Project) {
   void (async () => {
+    if (
+      !(await confirm({
+        title: `Arquivar "${project.name}"?`,
+        description: "As conversas são preservadas e dá pra restaurar depois.",
+        confirmLabel: "Arquivar",
+      }))
+    )
+      return
     try {
       await archiveProject(project.id)
       const st = useApp.getState()
@@ -314,6 +323,17 @@ function ConversationList({ projectId }: { projectId: string }) {
     if (v) void renameConversation(id, v)
   }
 
+  // conversa é HARD-DELETE (sem desfazer) → sempre confirma antes.
+  async function askDeleteConv(id: string, title: string | null) {
+    const ok = await confirm({
+      title: "Excluir conversa?",
+      description: `"${title ?? "Nova conversa"}" — o histórico e os anexos são apagados. Não dá pra desfazer.`,
+      confirmLabel: "Excluir",
+      danger: true,
+    })
+    if (ok) void removeConversation(id)
+  }
+
   // v2.5 — isola a conversa num worktree (o cockpit cria) ou volta pra o projeto.
   async function toggleWorktree(id: string, wt: string | null) {
     if (!project) return
@@ -420,7 +440,7 @@ function ConversationList({ projectId }: { projectId: string }) {
                 )}
                 {!isRunning && !isEditing && (
                   <button
-                    onClick={() => void removeConversation(c.id)}
+                    onClick={() => void askDeleteConv(c.id, c.title)}
                     className="mr-1 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:text-st-error group-hover/c:opacity-100"
                     title="Excluir conversa"
                     aria-label="Excluir conversa"
@@ -456,7 +476,7 @@ function ConversationList({ projectId }: { projectId: string }) {
               <ContextMenuItem
                 variant="destructive"
                 disabled={isRunning}
-                onSelect={() => void removeConversation(c.id)}
+                onSelect={() => void askDeleteConv(c.id, c.title)}
               >
                 <X /> Excluir
               </ContextMenuItem>

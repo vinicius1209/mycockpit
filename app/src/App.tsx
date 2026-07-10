@@ -12,6 +12,7 @@ import { FusionArena } from "@/components/fusion/FusionArena"
 import { SddView } from "@/components/sdd/SddView"
 import { CommandMenu } from "@/components/common/CommandMenu"
 import { SettingsDialog } from "@/components/settings/SettingsDialog"
+import { ConfirmHost } from "@/components/common/confirm"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -249,6 +250,7 @@ export default function App() {
         </div>
         <CommandMenu />
         <SettingsDialog />
+        <ConfirmHost />
       </TooltipProvider>
     </QueryClientProvider>
   )
