@@ -208,6 +208,7 @@ pub fn run() {
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(
             SqlBuilder::default()
                 .add_migrations("sqlite:mycockpit.db", migrations)

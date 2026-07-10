@@ -13,6 +13,7 @@ import { useFusion } from "@/store/fusion"
 import { FusionBoard } from "@/components/fusion/FusionBoard"
 import { runAgent, cancelAgent, agentLabel } from "@/lib/agent"
 import { buildHandoff } from "@/lib/handoff"
+import { notifyTurnEnd } from "@/lib/notify"
 import type { Attachment } from "@/lib/attachments"
 import { gcAttachments } from "@/lib/attachments"
 import { BYTES_PER_MB } from "@/lib/format"
@@ -192,6 +193,8 @@ export function ChatPanel() {
       if (pending.length > 0) {
         void handleSend(pending.join("\n\n"))
       } else {
+        // turno (e a fila) concluídos → notifica + sugestões.
+        notifyTurnEnd(convId, agent)
         useChat.getState().scheduleSuggestions(convId)
       }
     }
@@ -248,6 +251,7 @@ export function ChatPanel() {
     } finally {
       useChat.getState().finish(convId)
       void useChat.getState().persist(convId)
+      notifyTurnEnd(convId, target)
       useChat.getState().scheduleSuggestions(convId)
     }
   }
