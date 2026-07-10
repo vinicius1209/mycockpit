@@ -22,6 +22,7 @@ import { fmtCost, fmtDuration, fmtTokens } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
 import { presentTool, resultMeta, type ToolKind } from "@/lib/toolview"
+import { lineDiff, trimOuterContext, type DiffRow } from "@/lib/linediff"
 import { deriveTasks, isTaskTool } from "@/lib/tasks"
 import { Markdown } from "@/components/common/Markdown"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
@@ -55,29 +56,84 @@ function Elapsed({ since }: { since: number }) {
   return <span className="tabular-nums">{fmtDuration(now - since)}</span>
 }
 
-function DiffBlock({ text, kind }: { text: string; kind: "del" | "add" }) {
-  const all = text.split("\n")
-  const lines = all.slice(0, DIFF_MAX_LINES)
-  const sign = kind === "del" ? "−" : "+"
-  const color = kind === "del" ? "text-st-error" : "text-st-success"
-  const bg = kind === "del" ? "bg-st-error/10" : "bg-st-success/10"
+/** Reúne os hunks de um tool de edição + contagem. Edit → 1 hunk; MultiEdit →
+ *  1 por edição; Write → tudo adição. null = não é tool de edição. */
+function editHunks(
+  name: string,
+  input: Record<string, unknown>,
+): { hunks: DiffRow[][]; added: number; removed: number } | null {
+  const acc = { hunks: [] as DiffRow[][], added: 0, removed: 0 }
+  const push = (o: string, nw: string) => {
+    const d = lineDiff(o, nw)
+    acc.hunks.push(d.rows)
+    acc.added += d.added
+    acc.removed += d.removed
+  }
+  if (
+    name === "Edit" &&
+    typeof input.old_string === "string" &&
+    typeof input.new_string === "string"
+  ) {
+    push(input.old_string, input.new_string)
+    return acc
+  }
+  if (name === "MultiEdit" && Array.isArray(input.edits)) {
+    for (const e of input.edits as Record<string, unknown>[]) {
+      if (e && typeof e.old_string === "string") {
+        push(e.old_string, typeof e.new_string === "string" ? e.new_string : "")
+      }
+    }
+    return acc.hunks.length ? acc : null
+  }
+  if (name === "Write" && typeof input.content === "string") {
+    push("", input.content)
+    return acc
+  }
+  return null
+}
+
+/** Diff unificado (interleaved), estilo Warp: contexto cinza + add/del
+ *  coloridos, contexto externo aparado, cap de linhas. */
+function UnifiedDiff({ rows }: { rows: DiffRow[] }) {
+  const trimmed = trimOuterContext(rows)
+  const shown = trimmed.slice(0, DIFF_MAX_LINES)
+  const hidden = trimmed.length - shown.length
   return (
-    <div className={cn("rounded px-2 py-1", bg)}>
-      {lines.map((l, idx) => (
-        <div key={idx} className="flex gap-2">
-          <span className={cn("shrink-0 select-none", color)}>{sign}</span>
+    <div className="overflow-x-auto py-1 font-mono text-[11.5px] leading-relaxed">
+      {shown.map((r, idx) => (
+        <div
+          key={idx}
+          className={cn(
+            "flex gap-2 px-2",
+            r.type === "add" && "bg-st-success/10",
+            r.type === "del" && "bg-st-error/10",
+          )}
+        >
+          <span
+            className={cn(
+              "w-3 shrink-0 select-none text-center",
+              r.type === "add"
+                ? "text-st-success"
+                : r.type === "del"
+                  ? "text-st-error"
+                  : "text-transparent",
+            )}
+          >
+            {r.type === "add" ? "+" : r.type === "del" ? "−" : " "}
+          </span>
           <span
             data-selectable
-            className="break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/85"
+            className={cn(
+              "break-words whitespace-pre-wrap [overflow-wrap:anywhere]",
+              r.type === "ctx" ? "text-muted-foreground/70" : "text-foreground/85",
+            )}
           >
-            {l || " "}
+            {r.text || " "}
           </span>
         </div>
       ))}
-      {all.length > lines.length && (
-        <div className="pl-5 text-muted-foreground">
-          … +{all.length - lines.length} linhas
-        </div>
+      {hidden > 0 && (
+        <div className="px-2 pl-7 text-muted-foreground">… +{hidden} linhas</div>
       )}
     </div>
   )
@@ -86,18 +142,16 @@ function DiffBlock({ text, kind }: { text: string; kind: "del" | "add" }) {
 /** Tool call como LINHA (ícone + rótulo humano + meta), colapsável pro cru.
  *  A prosa do agent é o conteúdo; a ferramenta é rodapé, não caixa. */
 const ToolLine = memo(function ToolLine({ item }: { item: ToolItem }) {
-  const [open, setOpen] = useState(false)
   const p = presentTool(item.name, item.input)
   const Icon = KIND_ICON[p.kind]
   const i = (item.input ?? {}) as Record<string, unknown>
-  const isEdit =
-    (item.name === "Edit" || item.name === "MultiEdit") &&
-    typeof i.old_string === "string"
-  const isWrite = item.name === "Write" && typeof i.content === "string"
+  const diff = editHunks(item.name, i)
+  // edits abrem por padrão → a alteração fica visível no chat (estilo Warp).
+  const [open, setOpen] = useState(!!diff)
   const failed = item.result?.ok === false
   const res = resultMeta(item.name, item.result)
   const meta = [p.meta, res].filter(Boolean).join(" · ")
-  const expandable = Boolean(p.detail || isEdit || isWrite || item.result?.text)
+  const expandable = Boolean(p.detail || diff || item.result?.text)
 
   return (
     <div className="min-w-0">
@@ -130,10 +184,22 @@ const ToolLine = memo(function ToolLine({ item }: { item: ToolItem }) {
         >
           {p.label}
         </span>
-        {meta && (
-          <span className="ml-auto max-w-[45%] shrink-0 truncate pl-2 font-mono text-[10.5px] text-muted-foreground/60">
-            {meta}
+        {diff ? (
+          <span className="ml-auto shrink-0 pl-2 font-mono text-[10.5px] tabular-nums">
+            {diff.added > 0 && (
+              <span className="text-st-success">+{diff.added}</span>
+            )}
+            {diff.added > 0 && diff.removed > 0 && " "}
+            {diff.removed > 0 && (
+              <span className="text-st-error">−{diff.removed}</span>
+            )}
           </span>
+        ) : (
+          meta && (
+            <span className="ml-auto max-w-[45%] shrink-0 truncate pl-2 font-mono text-[10.5px] text-muted-foreground/60">
+              {meta}
+            </span>
+          )
         )}
       </button>
       {open && (
@@ -146,15 +212,16 @@ const ToolLine = memo(function ToolLine({ item }: { item: ToolItem }) {
               {p.detail}
             </div>
           )}
-          {(isEdit || isWrite) && (
-            <div className="space-y-1 border-t p-2 font-mono text-[11.5px] leading-relaxed">
-              {isEdit && (
-                <>
-                  <DiffBlock text={i.old_string as string} kind="del" />
-                  <DiffBlock text={i.new_string as string} kind="add" />
-                </>
-              )}
-              {isWrite && <DiffBlock text={i.content as string} kind="add" />}
+          {diff && (
+            <div className={cn(p.detail && "border-t")}>
+              {diff.hunks.map((rows, idx) => (
+                <div
+                  key={idx}
+                  className={cn(idx > 0 && "border-t border-border/40")}
+                >
+                  <UnifiedDiff rows={rows} />
+                </div>
+              ))}
             </div>
           )}
           {item.result?.text && (
