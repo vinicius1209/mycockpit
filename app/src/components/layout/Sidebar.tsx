@@ -121,14 +121,18 @@ function ColorSubmenu({
 function ProjectRow({
   project,
   active,
+  expanded,
   status,
   onSelect,
+  onToggle,
   onDelete,
 }: {
   project: Project
   active: boolean
+  expanded: boolean
   status: AgentStatus
   onSelect: () => void
+  onToggle: () => void
   onDelete: () => void
 }) {
   const renameProject = useApp((s) => s.renameProject)
@@ -213,12 +217,23 @@ function ProjectRow({
           >
             <Trash2 className="size-3.5" />
           </button>
-          <ChevronRight
-            className={cn(
-              "mr-2 size-3.5 shrink-0 text-muted-foreground/40 transition-transform duration-200",
-              active && "rotate-90 text-muted-foreground/70",
-            )}
-          />
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggle()
+            }}
+            title={expanded ? "Retrair" : "Expandir"}
+            aria-label={expanded ? "Retrair projeto" : "Expandir projeto"}
+            aria-expanded={expanded}
+            className="mr-1 shrink-0 rounded p-1.5 text-muted-foreground/50 transition-colors hover:bg-accent hover:text-muted-foreground"
+          >
+            <ChevronRight
+              className={cn(
+                "size-3.5 transition-transform duration-200",
+                expanded && "rotate-90",
+              )}
+            />
+          </button>
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
@@ -486,6 +501,30 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   const setActive = useApp((s) => s.setActiveProject)
   const theme = useApp((s) => s.theme)
   const toggleTheme = useApp((s) => s.toggleTheme)
+  // Só o projeto ATIVO carrega conversas no store; então a expansão = ativo, e
+  // `collapsed` guarda quando o usuário retraiu o ativo (via chevron) sem trocar.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const expand = (id: string) =>
+    setCollapsed((s) => {
+      if (!s.has(id)) return s
+      const n = new Set(s)
+      n.delete(id)
+      return n
+    })
+  function toggleExpand(id: string) {
+    // não-ativo → seleciona (passa a ser o ativo e abre); ativo → retrai/expande.
+    if (id !== activeId) {
+      setActive(id)
+      expand(id)
+      return
+    }
+    setCollapsed((s) => {
+      const n = new Set(s)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  }
   // Projetos com QUALQUER conversa rodando (string estável → menos re-render).
   const runningProjectsKey = useChat((s) =>
     Array.from(
@@ -542,13 +581,20 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                 <ProjectRow
                   project={p}
                   active={p.id === activeId}
+                  expanded={p.id === activeId && !collapsed.has(p.id)}
                   status={
                     runningProjects.has(p.id) ? "running" : (p.status ?? "idle")
                   }
-                  onSelect={() => setActive(p.id)}
+                  onSelect={() => {
+                    setActive(p.id)
+                    expand(p.id) // selecionar sempre abre; o chevron é quem retrai
+                  }}
+                  onToggle={() => toggleExpand(p.id)}
                   onDelete={() => confirmDeleteProject(p)}
                 />
-                {p.id === activeId && <ConversationList projectId={p.id} />}
+                {p.id === activeId && !collapsed.has(p.id) && (
+                  <ConversationList projectId={p.id} />
+                )}
               </div>
             ))
           )}
