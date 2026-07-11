@@ -156,19 +156,15 @@ function ProjectRow({
     else setVal(project.name)
   }
 
-  // cor = tinge a linha inteira (identidade geral, estilo Warp), não um dot.
-  const tint = project.color
-    ? `color-mix(in oklab, ${project.color} ${active ? 33 : 18}%, transparent)`
-    : undefined
-
+  // Cor-rótulo = DOT ao lado do nome (a tinta de linha inteira competia com o
+  // bg-accent/barra de seleção — 3 sinais no mesmo canal). Seleção é dona do bg.
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
-          style={project.color ? { backgroundColor: tint } : undefined}
           className={cn(
             "group relative flex w-full items-center rounded-md transition-colors",
-            !project.color && (active ? "bg-accent" : "hover:bg-accent/55"),
+            active ? "bg-accent" : "hover:bg-accent/55",
           )}
         >
           {active && (
@@ -206,8 +202,17 @@ function ProjectRow({
                 <StatusDot status={status} />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium text-foreground">
-                  {project.name}
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate text-[13px] font-medium text-foreground">
+                    {project.name}
+                  </span>
+                  {project.color && (
+                    <span
+                      className="size-2 shrink-0 rounded-full"
+                      style={{ background: project.color }}
+                      title="Cor do projeto"
+                    />
+                  )}
                 </div>
                 <div className="truncate font-mono text-[10.5px] text-muted-foreground">
                   {shortPath(project.path)}
@@ -379,18 +384,15 @@ function ConversationList({ projectId }: { projectId: string }) {
             aria-label="decisão pendente"
           />
         ) : null
-        // cor = tinge a linha inteira (identidade geral, estilo Warp), não um dot.
-        const tint = c.color
-          ? `color-mix(in oklab, ${c.color} ${isActive ? 33 : 18}%, transparent)`
-          : undefined
+        // Cor-rótulo = DOT à direita do título (tinta de linha competia com a
+        // seleção). Seleção é dona do background.
         return (
           <ContextMenu key={c.id}>
             <ContextMenuTrigger asChild>
               <div
-                style={c.color ? { backgroundColor: tint } : undefined}
                 className={cn(
                   "group/c flex items-center rounded-md",
-                  !c.color && (isActive ? "bg-accent" : "hover:bg-accent/50"),
+                  isActive ? "bg-accent" : "hover:bg-accent/50",
                 )}
               >
                 {isEditing ? (
@@ -425,6 +427,13 @@ function ConversationList({ projectId }: { projectId: string }) {
                     <span className="min-w-0 flex-1 truncate">
                       {c.title ?? "Nova conversa"}
                     </span>
+                    {c.color && (
+                      <span
+                        className="size-2 shrink-0 rounded-full"
+                        style={{ background: c.color }}
+                        title="Cor da conversa"
+                      />
+                    )}
                     {c.worktreePath && (
                       <GitBranch
                         className="size-3 shrink-0 text-brass/60"
