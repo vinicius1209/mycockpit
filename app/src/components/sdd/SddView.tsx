@@ -1299,7 +1299,12 @@ function ContractSection({ plan }: { plan: SddPlan }) {
   const [expanded, setExpanded] = useState(false)
   const nScen = plan.scenarioMatrix.length
   const nSurf = plan.navSurfaces.length
-  const nAnchor = plan.consistencyAnchors.length
+  // âncora sem NENHUM campo preenchido renderizava <li> vazio (título órfão no
+  // painel). Filtra e conta só as renderizáveis — a contagem fica honesta.
+  const anchors = plan.consistencyAnchors.filter(
+    (a) => a.category || a.canon_file || a.reference_doc,
+  )
+  const nAnchor = anchors.length
   const PREVIEW = 5
   return (
     <Section title="Contrato da SPEC">
@@ -1348,12 +1353,12 @@ function ContractSection({ plan }: { plan: SddPlan }) {
         <div>
           <SubLabel>Âncoras de consistência</SubLabel>
           <ul className="flex flex-col gap-1 text-[12px]">
-            {plan.consistencyAnchors.map((a, i) => (
+            {anchors.map((a, i) => (
               <li key={i} className="flex flex-wrap items-baseline gap-x-1.5">
                 {a.category && <span className="text-foreground/85">{a.category}</span>}
-                {a.canon_file && (
+                {(a.canon_file || a.reference_doc) && (
                   <span className="font-mono text-[11px] text-muted-foreground">
-                    {a.canon_file}
+                    {a.canon_file || a.reference_doc}
                   </span>
                 )}
               </li>
