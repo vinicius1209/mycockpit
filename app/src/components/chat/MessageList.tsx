@@ -34,6 +34,8 @@ type ToolItem = Extract<ChatItem, { kind: "tool" }>
 const DIFF_MAX_LINES = 80
 /** A partir de quantas tools consecutivas o burst colapsa num grupo. */
 const GROUP_MIN = 4
+/** Máx. de nós renderizados numa conversa longa (o resto atrás do botão). */
+const CHAT_WINDOW = 150
 
 const KIND_ICON: Record<ToolKind, LucideIcon> = {
   bash: Terminal,
@@ -560,6 +562,13 @@ export function MessageList({
   const nodes = useMemo(() => buildNodes(items), [items])
   const tasks = useMemo(() => deriveTasks(items), [items])
 
+  // Janela de renderização: conversa longa (já vimos 665KB de items) renderizava
+  // TUDO — com diffs abertos por padrão o DOM explodia. Mostra os últimos
+  // CHAT_WINDOW nós (agrupamento preservado) + botão pra revelar o histórico.
+  const [showAll, setShowAll] = useState(false)
+  const hiddenCount = showAll ? 0 : Math.max(0, nodes.length - CHAT_WINDOW)
+  const visible = hiddenCount > 0 ? nodes.slice(hiddenCount) : nodes
+
   // Custo acumulado da sessão (soma dos turnos com result), consciência de gasto.
   // Pula results seguidos de outro result (parciais da mesma invocação): somar
   // os parciais inflava a sessão (US$120 num turno que custou US$31).
@@ -576,7 +585,15 @@ export function MessageList({
   }
   return (
     <div className="mx-auto flex w-full max-w-[760px] min-w-0 flex-col gap-4 px-8 py-8">
-      {nodes.map((n, idx) => {
+      {hiddenCount > 0 && (
+        <button
+          onClick={() => setShowAll(true)}
+          className="mx-auto rounded-full border bg-card/60 px-3 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          Mostrar {hiddenCount} itens anteriores
+        </button>
+      )}
+      {visible.map((n, idx) => {
         if (n.type === "tasklist") {
           return (
             <div key={n.key} className="animate-cockpit-rise">
@@ -590,7 +607,7 @@ export function MessageList({
               <ToolGroup
                 key={n.key}
                 tools={n.tools}
-                defaultOpen={running && idx === nodes.length - 1}
+                defaultOpen={running && idx === visible.length - 1}
               />
             )
           }
@@ -608,7 +625,7 @@ export function MessageList({
           onContinueWith &&
           !running &&
           (n.item.kind === "limit" || n.item.kind === "error") &&
-          idx === nodes.length - 1
+          idx === visible.length - 1
         if (continuable) {
           return (
             <div key={n.key} className="flex flex-col gap-2">
