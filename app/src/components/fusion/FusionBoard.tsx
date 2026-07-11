@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { AlertCircle, Check, Loader2, Maximize2, Sparkles } from "lucide-react"
+import { AlertCircle, Check, Loader2, Maximize2, Swords } from "lucide-react"
 import {
   useFusion,
   isFailed,
@@ -178,7 +178,7 @@ export function FusionBoard({ convId }: { convId: string }) {
   return (
     <div className="mx-auto flex w-full max-w-[760px] flex-col gap-2.5 px-8 py-4">
       <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-        <Sparkles className="size-3.5 text-brass" />
+        <Swords className="size-3.5 text-brass" />
         <span>
           Disputa · {fusion.candidates.length} candidatos
           {judging ? " · juiz avaliando…" : deciding ? " · escolha o vencedor" : ""}
@@ -246,7 +246,7 @@ export function FusionVerdict({
   return (
     <div className="flex flex-col gap-2.5 rounded-xl border bg-secondary/30 p-3">
       <div className="flex items-start gap-2">
-        <Sparkles className="mt-px size-4 shrink-0 text-brass" />
+        <Swords className="mt-px size-4 shrink-0 text-brass" />
         {unavailable ? (
           <p className="text-[12.5px] leading-relaxed text-st-error">
             {fusion.judge.rationale}

@@ -5,6 +5,7 @@ import {
   Paperclip,
   Sparkles,
   Square,
+  Swords,
   TriangleAlert,
   X,
 } from "lucide-react"
@@ -350,7 +351,7 @@ export function ComposerControls({
           aria-label="Disputar entre agents"
           className="rounded-full text-muted-foreground hover:text-brass"
         >
-          <Sparkles className="size-4" />
+          <Swords className="size-4" />
         </Button>
         <Button
           variant="ghost"

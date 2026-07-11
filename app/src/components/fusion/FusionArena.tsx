@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Plus, Sparkles, X } from "lucide-react"
+import { Plus, Swords, X } from "lucide-react"
 import { useChat } from "@/store/chat"
 import { useActiveProject, useApp } from "@/store/app"
 import { useFusion, type LeagueConfig } from "@/store/fusion"
@@ -8,7 +8,7 @@ import { AgentSelect } from "@/components/chat/ComposerParts"
 import { ComposerShell } from "@/components/chat/ComposerShell"
 import { Button } from "@/components/ui/button"
 import { PillSelect } from "@/components/ui/PillSelect"
-import { liveCostOf } from "@/lib/format"
+import { fmtCost, liveCostOf } from "@/lib/format"
 import { LEAGUE_DESTINATIONS } from "@/lib/agents"
 import type { AgentRunConfig } from "@/lib/types"
 
@@ -77,7 +77,7 @@ export function FusionArena() {
         <div className="pointer-events-none absolute inset-x-0 top-1/2 h-72 -translate-y-1/2 bg-[radial-gradient(58%_70%_at_50%_50%,var(--brass-soft),transparent_72%)] opacity-50" />
         <div className="relative w-full max-w-[600px]">
           <div className="mb-5 text-center">
-            <Sparkles className="mx-auto mb-3 size-7 text-brass" />
+            <Swords className="mx-auto mb-3 size-7 text-brass" />
             <h2 className="text-[22px] font-medium tracking-[-0.02em] text-foreground">
               Disputa multi-agent
             </h2>
@@ -157,7 +157,7 @@ export function FusionArena() {
                   disabled={!task.trim() || !project || league.length < 2}
                   className="ml-auto gap-1.5"
                 >
-                  <Sparkles className="size-4" /> Disputar
+                  <Swords className="size-4" /> Disputar
                 </Button>
               </>
             }
@@ -171,12 +171,12 @@ export function FusionArena() {
   return (
     <div className="flex h-full flex-col bg-background">
       <div className="flex shrink-0 items-center gap-2 border-b px-6 py-2.5 text-[12px] text-muted-foreground">
-        <Sparkles className="size-3.5 text-brass" />
+        <Swords className="size-3.5 text-brass" />
         <span className="text-foreground/80">{fusion.candidates.length} candidatos</span>
         <span>
           {judging ? "· juiz avaliando…" : deciding ? "· escolha o vencedor" : "· disputando…"}
         </span>
-        <span className="ml-auto font-mono tabular-nums">~US${liveCost.toFixed(3)}</span>
+        <span className="ml-auto font-mono tabular-nums">{fmtCost(liveCost, "estimated")}</span>
       </div>
 
       <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-6 py-4">
