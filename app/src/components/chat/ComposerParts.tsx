@@ -5,6 +5,7 @@ import {
   Paperclip,
   Sparkles,
   Square,
+  TriangleAlert,
   X,
 } from "lucide-react"
 import { RichSelect } from "@/components/ui/RichSelect"
@@ -276,6 +277,7 @@ export function ComposerControls({
   onStop,
   onSubmit,
   canSend,
+  unsafe,
 }: {
   effectiveDest: string
   locked: boolean
@@ -292,6 +294,8 @@ export function ComposerControls({
   onStop?: () => void
   onSubmit: () => void
   canSend: boolean
+  /** true = permissões "liberado" (bypassPermissions): badge de alerta visível. */
+  unsafe?: boolean
 }) {
   const lockTitle = locked
     ? "Agent e modelo ficam fixos a partir do 1º envio desta conversa"
@@ -326,6 +330,15 @@ export function ComposerControls({
       />
 
       <div className="ml-auto flex items-center gap-1.5">
+        {unsafe && (
+          <span
+            title="Permissões LIBERADO: o agente executa e escreve sem pedir confirmação. Mude no painel de contexto."
+            className="flex h-6 items-center gap-1 rounded-full border border-st-warning/50 bg-st-warning/10 px-2 text-[11px] text-st-warning"
+          >
+            <TriangleAlert className="size-3" />
+            liberado
+          </span>
+        )}
         <ContextRing />
         <MicButton />
         <Button

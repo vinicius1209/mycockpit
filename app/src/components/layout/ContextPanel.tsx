@@ -445,15 +445,27 @@ export function ContextPanel() {
                   value={cfg?.permission ?? project.permissionMode ?? "padrao"}
                   onValueChange={(v) => onPermissionChange(v as PermissionMode)}
                   align="end"
-                  triggerClassName="h-7 gap-1.5 pr-1.5 pl-2.5"
+                  // "liberado" = bypassPermissions: a pílula fica em cor de alerta
+                  // pra você SEMPRE saber em que modo está (não parecer neutro).
+                  triggerClassName={cn(
+                    "h-7 gap-1.5 pr-1.5 pl-2.5",
+                    (cfg?.permission ?? project.permissionMode) === "liberado" &&
+                      "border-st-warning/60 bg-st-warning/15 text-st-warning",
+                  )}
                   aria-label="Permissões do projeto"
                   options={[
                     { value: "leitura", label: "Leitura" },
                     { value: "padrao", label: "Padrão" },
-                    { value: "liberado", label: "Liberado" },
+                    { value: "liberado", label: "⚠ Liberado" },
                   ]}
                 />
               </div>
+              {(cfg?.permission ?? project.permissionMode) === "liberado" && (
+                <p className="-mt-1 text-[11px] leading-snug text-st-warning/90">
+                  O agente executa comandos e escreve arquivos sem pedir
+                  confirmação.
+                </p>
+              )}
               <div className="flex items-center justify-between">
                 <span className="text-[12.5px] text-muted-foreground">
                   Modelo das sugestões

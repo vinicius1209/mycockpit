@@ -52,6 +52,14 @@ export function CommandConsole({
   }, [])
   // defaults de novas conversas vêm das configurações globais (Settings).
   const settings = useApp((s) => s.settings)
+  // permissões "liberado" (bypassPermissions) → badge de alerta no composer.
+  const unsafePerm = useApp(
+    (s) =>
+      (s.activeProjectId
+        ? (s.mycockpit[s.activeProjectId]?.permission ??
+          s.projects.find((p) => p.id === s.activeProjectId)?.permissionMode)
+        : null) === "liberado",
+  )
   const [destination, setDestination] = useState(settings.defaultAgent)
   const [model, setModel] = useState(settings.defaultModel ?? "default")
   const [effort, setEffort] = useState(settings.defaultEffort ?? "default")
@@ -328,6 +336,7 @@ export function CommandConsole({
             onStop={onStop}
             onSubmit={submit}
             canSend={canSend}
+            unsafe={unsafePerm}
           />
         }
       />
