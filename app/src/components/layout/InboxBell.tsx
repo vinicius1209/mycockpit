@@ -128,7 +128,16 @@ export function InboxBell() {
               onSelect={() => void goTo(d)}
               className="flex-col items-start gap-0.5 py-2"
             >
-              <span className="flex w-full items-center gap-2 text-[13px] text-foreground">
+              <span
+                className="flex w-full items-center gap-2 text-[13px] text-foreground"
+                title={
+                  d.kind === "fusion"
+                    ? d.title
+                    : d.kind === "prd"
+                      ? `Aprovar PRD: ${d.planTitle}`
+                      : `PR aberto: ${d.planTitle}`
+                }
+              >
                 {d.kind === "fusion" ? (
                   <Swords className="size-3.5 shrink-0 text-brass" />
                 ) : d.kind === "prd" ? (

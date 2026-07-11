@@ -313,6 +313,10 @@ export function ChatPanel() {
                   ? `Descreva uma tarefa para seu time de agents em ${project.name}.`
                   : "Selecione ou adicione um projeto na barra lateral para começar."}
               </p>
+              <p className="mt-4 text-[12px] text-muted-foreground/70">
+                <kbd className="rounded border bg-secondary/50 px-1.5 py-0.5 font-mono text-[11px]">⌘K</kbd>{" "}
+                para comandos e navegação
+              </p>
             </div>
           </div>
         )}

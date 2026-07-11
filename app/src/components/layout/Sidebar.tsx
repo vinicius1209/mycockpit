@@ -502,7 +502,7 @@ function ConversationList({ projectId }: { projectId: string }) {
         <span className="grid size-5 shrink-0 place-items-center">
           <Plus className="size-3.5" />
         </span>
-        nova tarefa
+        Nova tarefa
       </button>
     </div>
   )

@@ -1,0 +1,37 @@
+# CI mínima do MyCockpit: o projeto que cobra gates de verificação passa a ter
+# os próprios. Front (tsc + lint + testes) em ubuntu; Rust em macOS (plataforma
+# real do app, com swiftc pro sidecar de ditado).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: app }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: typecheck
+        run: bunx tsc --noEmit
+      - name: lint
+        run: bun run lint
+      - name: testes
+        run: bun run test
+
+  rust:
+    runs-on: macos-14
+    defaults:
+      run: { working-directory: app/src-tauri }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: app/src-tauri }
+      - name: cargo check
+        run: cargo check --locked

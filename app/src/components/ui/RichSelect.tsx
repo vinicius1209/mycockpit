@@ -80,7 +80,7 @@ export function RichSelect({
           </span>
         </SelectValue>
       </SelectTrigger>
-      <SelectContent align={align} className="min-w-60">
+      <SelectContent align={align} position="popper" className="min-w-60">
         {options.map((o) => (
           <SelectItem key={o.value} value={o.value} disabled={o.disabled}>
             <div className="flex flex-col gap-0.5">
