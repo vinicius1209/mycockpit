@@ -10,6 +10,8 @@ import type { Destination } from "@/lib/types"
 export interface AgentModelOption {
   value: string
   label: string
+  /** Rótulo compacto exibido só no trigger (ver RichOption.pill). */
+  pill?: string
   /** Linha secundária no seletor rico (padrão blocks.so ai-02). */
   description?: string
 }
@@ -40,19 +42,19 @@ export interface AgentDef {
 // contexto (contextWindowFor) detecta o "1m" e mostra 1M em vez de 200k. Escolha
 // por conversa: Opus normal = 200k (default do CLI), Opus 1M = janela grande.
 const CLAUDE_MODELS: AgentModelOption[] = [
-  { value: "default", label: "modelo", description: "Padrão do Claude Code" },
+  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Claude Code escolher" },
   { value: "opus", label: "Opus", description: "O mais capaz (contexto 200k)" },
   { value: "opus[1m]", label: "Opus 1M", description: "Opus com janela de 1M tokens" },
   { value: "sonnet", label: "Sonnet", description: "Rápido e equilibrado" },
   { value: "haiku", label: "Haiku", description: "Mais rápido e barato" },
 ]
 const CODEX_MODELS: AgentModelOption[] = [
-  { value: "default", label: "modelo", description: "Padrão do Codex" },
+  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Codex escolher" },
   { value: "gpt-5.5", label: "gpt-5.5", description: "Mais capaz" },
   { value: "o3", label: "o3", description: "Raciocínio forte" },
 ]
 const CLAUDE_EFFORTS: AgentModelOption[] = [
-  { value: "default", label: "effort", description: "Padrão do modelo" },
+  { value: "default", label: "Padrão", pill: "effort", description: "Padrão do modelo" },
   { value: "low", label: "low", description: "Rápido, mais raso" },
   { value: "medium", label: "medium", description: "Equilíbrio" },
   { value: "high", label: "high", description: "Raciocina mais fundo" },
@@ -63,14 +65,14 @@ const CLAUDE_EFFORTS: AgentModelOption[] = [
 // `agy models`). "default" = deixa o agy escolher (Gemini 3.5 Flash). O effort já
 // vem embutido no nome do modelo (Low/High), então o agy não tem seletor de effort.
 const AGY_MODELS: AgentModelOption[] = [
-  { value: "default", label: "modelo", description: "Padrão do agy (Gemini Flash)" },
+  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o agy escolher (Gemini Flash)" },
   { value: "Gemini 3.5 Flash (Low)", label: "Flash", description: "Rápido e barato (Google)" },
   { value: "Gemini 3.1 Pro (High)", label: "Gemini Pro", description: "Mais capaz (Google)" },
   { value: "Claude Sonnet 4.6 (Thinking)", label: "Sonnet", description: "Claude via cota Google" },
   { value: "Claude Opus 4.6 (Thinking)", label: "Opus", description: "Claude mais capaz, via Google" },
 ]
 const CODEX_EFFORTS: AgentModelOption[] = [
-  { value: "default", label: "effort", description: "Padrão do modelo" },
+  { value: "default", label: "Padrão", pill: "effort", description: "Padrão do modelo" },
   { value: "minimal", label: "minimal", description: "Mínimo" },
   { value: "low", label: "low", description: "Rápido, mais raso" },
   { value: "medium", label: "medium", description: "Equilíbrio" },

@@ -11,6 +11,9 @@ import { cn } from "@/lib/utils"
 export interface RichOption {
   value: string
   label: string
+  /** Rótulo compacto exibido SÓ no trigger (pílula). Default = label.
+   *  Permite dropdown claro ("Padrão") sem duas pílulas "Padrão" no composer. */
+  pill?: string
   description?: string
   badge?: string
   disabled?: boolean
@@ -72,7 +75,7 @@ export function RichSelect({
         )}
         <SelectValue>
           <span className="flex items-center gap-1.5">
-            <span>{selected?.label}</span>
+            <span>{selected?.pill ?? selected?.label}</span>
             {selected?.badge && <OptBadge>{selected.badge}</OptBadge>}
           </span>
         </SelectValue>

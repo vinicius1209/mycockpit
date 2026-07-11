@@ -2,6 +2,7 @@ import {
   ArrowUp,
   FileText,
   Image as ImageIcon,
+  Lock,
   Paperclip,
   Sparkles,
   Square,
@@ -303,6 +304,16 @@ export function ComposerControls({
     : undefined
   return (
     <>
+      {/* cadeado explícito: sem ele o lock só aparecia no hover (parecia bug) */}
+      {locked && (
+        <span
+          title={lockTitle}
+          aria-label="Agent e modelo travados nesta conversa"
+          className="grid shrink-0 place-items-center"
+        >
+          <Lock className="size-3 text-muted-foreground/60" />
+        </span>
+      )}
       <AgentSelect
         value={effectiveDest}
         onValueChange={onDestChange}
