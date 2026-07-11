@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { searchConversations, type ConvSearchHit } from "@/lib/db"
 import {
   FileText,
   FolderGit2,
@@ -79,6 +80,34 @@ export function CommandMenu() {
     return () => document.removeEventListener("keydown", down)
   }, [])
 
+  // Busca full-text no histórico (≥3 chars, debounce 250ms, cross-projeto).
+  const [query, setQuery] = useState("")
+  const [hits, setHits] = useState<ConvSearchHit[]>([])
+  useEffect(() => {
+    if (!open) {
+      setQuery("")
+      setHits([])
+    }
+  }, [open])
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 3) {
+      setHits([])
+      return
+    }
+    const t = setTimeout(() => {
+      void searchConversations(q).then(setHits).catch(() => setHits([]))
+    }, 250)
+    return () => clearTimeout(t)
+  }, [query])
+
+  async function goToHit(h: ConvSearchHit) {
+    useApp.getState().setActiveProject(h.projectId)
+    await useChat.getState().openProject(h.projectId)
+    await useChat.getState().switchConversation(h.id)
+    useApp.getState().setViewMode("linear")
+  }
+
   function run(fn: () => void) {
     setOpen(false)
     fn()
@@ -99,7 +128,9 @@ export function CommandMenu() {
         <Command className="bg-popover **:data-[slot=command-input-wrapper]:h-auto **:data-[slot=command-input-wrapper]:grow **:data-[slot=command-input-wrapper]:border-0 **:data-[slot=command-input-wrapper]:px-0">
           <div className="flex h-12 items-center gap-2 border-b border-border/60 px-4">
             <CommandInput
-              placeholder="O que você quer fazer?"
+              value={query}
+              onValueChange={setQuery}
+              placeholder="O que você quer fazer?  (3+ letras busca no histórico)"
               className="h-10 text-[15px]"
             />
             <button
@@ -153,6 +184,28 @@ export function CommandMenu() {
                   >
                     <MessageSquare aria-hidden />
                     {c.title ?? "Nova conversa"}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+
+            {hits.length > 0 && (
+              <CommandGroup heading="Busca no histórico">
+                {hits.map((h) => (
+                  <CommandItem
+                    key={`hit-${h.id}`}
+                    // value contém a query → o filtro do cmdk nunca esconde o hit
+                    value={`${query} ${h.title ?? ""} ${h.id}`}
+                    className={ITEM}
+                    onSelect={() => run(() => void goToHit(h))}
+                  >
+                    <MessageSquare aria-hidden />
+                    <span className="min-w-0 flex-1 truncate">
+                      {h.title ?? "Nova conversa"}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      {h.projectName}
+                    </span>
                   </CommandItem>
                 ))}
               </CommandGroup>

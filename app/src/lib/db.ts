@@ -169,6 +169,40 @@ export async function listConversations(
   }))
 }
 
+export interface ConvSearchHit {
+  id: string
+  projectId: string
+  projectName: string
+  title: string | null
+}
+
+/** Busca full-text simples (LIKE) em título + conteúdo das conversas, cross-
+ *  projeto (ignora projetos arquivados). Barato o bastante pro ⌘K debounced. */
+export async function searchConversations(q: string): Promise<ConvSearchHit[]> {
+  const db = await getDb()
+  if (!db) return []
+  // escapa curingas do LIKE (busca literal, não padrão)
+  const like = `%${q.replace(/[%_\\]/g, (m) => `\\${m}`)}%`
+  const rows = await db.select<
+    { id: string; project_id: string; project_name: string; title: string | null }[]
+  >(
+    `SELECT c.id, c.project_id, p.name AS project_name, c.title
+       FROM conversations c
+       JOIN projects p ON p.id = c.project_id
+      WHERE p.deleted_at IS NULL
+        AND (c.title LIKE $1 ESCAPE '\\' OR c.items LIKE $1 ESCAPE '\\')
+      ORDER BY c.updated_at DESC
+      LIMIT 12`,
+    [like],
+  )
+  return rows.map((r) => ({
+    id: r.id,
+    projectId: r.project_id,
+    projectName: r.project_name,
+    title: r.title,
+  }))
+}
+
 /** Renomeia uma conversa (UPDATE pontual; não toca em items/sessão). */
 export async function renameConversation(
   id: string,
