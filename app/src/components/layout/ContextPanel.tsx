@@ -255,7 +255,7 @@ function StageBadge({ stage }: { stage: string }) {
   return (
     <span
       className={cn(
-        "shrink-0 rounded-full px-2 py-0.5 text-[9px] font-medium tracking-wide uppercase",
+        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase",
         done ? "bg-st-success/15 text-st-success" : "bg-brass/15 text-brass",
       )}
     >
@@ -594,7 +594,7 @@ export function ContextPanel() {
                           {p.name}
                         </span>
                         {p.model && p.model !== "inherit" && (
-                          <span className="shrink-0 rounded border px-1 py-px text-[9px] tracking-wide text-muted-foreground uppercase">
+                          <span className="shrink-0 rounded border px-1 py-px text-[10px] tracking-wide text-muted-foreground uppercase">
                             {p.model}
                           </span>
                         )}

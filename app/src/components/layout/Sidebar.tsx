@@ -509,7 +509,7 @@ function AppVersion() {
       .catch(() => {}) // browser (vite dev): sem versão, só "local"
   }, [])
   return (
-    <div className="label-mono truncate text-[9px] normal-case tracking-normal text-muted-foreground/70">
+    <div className="label-mono truncate text-[10.5px] normal-case tracking-normal text-muted-foreground/80">
       local{version ? ` · v${version}` : ""}
     </div>
   )

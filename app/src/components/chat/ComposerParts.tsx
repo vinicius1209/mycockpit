@@ -62,11 +62,11 @@ export function SlashPopover({
               </span>
               <span className="flex shrink-0 items-center gap-1.5">
                 {c.origin === "global" && (
-                  <span className="text-[8.5px] tracking-wide text-muted-foreground/55 uppercase">
+                  <span className="text-[10px] tracking-wide text-muted-foreground/70 uppercase">
                     global
                   </span>
                 )}
-                <span className="rounded border px-1 py-px text-[8.5px] tracking-wide text-muted-foreground uppercase">
+                <span className="rounded border px-1 py-px text-[10px] tracking-wide text-muted-foreground uppercase">
                   {c.kind === "skill" ? "skill" : "cmd"}
                 </span>
               </span>
@@ -116,7 +116,7 @@ export function AtPopover({
             <span className="truncate font-mono text-[12.5px] text-foreground">
               @{m.value}
             </span>
-            <span className="shrink-0 rounded border px-1 py-px text-[8.5px] tracking-wide text-muted-foreground uppercase">
+            <span className="shrink-0 rounded border px-1 py-px text-[10px] tracking-wide text-muted-foreground uppercase">
               {m.kind}
             </span>
           </button>

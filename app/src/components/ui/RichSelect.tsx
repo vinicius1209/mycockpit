@@ -23,7 +23,7 @@ const BASE_TRIGGER =
 
 function OptBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded border border-brass/40 px-1 py-px text-[8.5px] font-medium tracking-wide text-brass uppercase">
+    <span className="rounded border border-brass/40 px-1 py-px text-[10px] font-medium tracking-wide text-brass uppercase">
       {children}
     </span>
   )

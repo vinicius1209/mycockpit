@@ -57,7 +57,7 @@ function ModeSwitcher() {
         >
           {m.label}
           {!m.available && (
-            <span className="text-[9px] tracking-wide text-muted-foreground/60">
+            <span className="text-[10px] tracking-wide text-muted-foreground/70">
               soon
             </span>
           )}

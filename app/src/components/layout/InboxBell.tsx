@@ -103,7 +103,7 @@ export function InboxBell() {
         >
           <Inbox className="size-4" />
           {badge > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 grid size-3.5 place-items-center rounded-full bg-brass text-[9px] font-semibold text-background">
+            <span className="absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-brass text-[10px] font-semibold text-background">
               {badge > 9 ? "9+" : badge}
             </span>
           )}

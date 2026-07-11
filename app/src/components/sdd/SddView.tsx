@@ -569,7 +569,7 @@ function PlanRow({
       <span className="flex w-full items-center gap-1.5">
         <span
           className={cn(
-            "rounded border px-1 py-px text-[9px] tracking-wide uppercase",
+            "rounded border px-1 py-px text-[10px] tracking-wide uppercase",
             done
               ? "border-st-success/40 text-st-success"
               : "border-brass/40 text-brass",

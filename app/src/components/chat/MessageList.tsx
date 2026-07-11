@@ -196,7 +196,7 @@ const ToolLine = memo(function ToolLine({ item }: { item: ToolItem }) {
           </span>
         ) : (
           meta && (
-            <span className="ml-auto max-w-[45%] shrink-0 truncate pl-2 font-mono text-[10.5px] text-muted-foreground/60">
+            <span className="ml-auto max-w-[45%] shrink-0 truncate pl-2 font-mono text-[11px] text-muted-foreground">
               {meta}
             </span>
           )
@@ -266,7 +266,7 @@ function ToolGroup({
         />
         <span className="shrink-0">{tools.length} passos</span>
         {!open && (
-          <span className="min-w-0 truncate font-mono text-[10.5px] text-muted-foreground/50">
+          <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground/75">
             {preview}
             {tools.length > 3 ? " …" : ""}
           </span>
@@ -639,7 +639,7 @@ export function MessageList({
       )}
 
       {resultCount >= 2 && sessionCost > 0 && (
-        <div className="pt-1 text-[11px] text-muted-foreground/60">
+        <div className="pt-1 text-[11px] text-muted-foreground/80">
           <span className="font-mono tabular-nums">
             sessão ·{" "}
             {fmtCost(sessionCost, sessionEstimated ? "estimated" : "reported")}
