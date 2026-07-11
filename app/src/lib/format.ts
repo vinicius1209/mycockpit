@@ -6,10 +6,15 @@ import type { CostSource } from "@/lib/agent"
 
 export const BYTES_PER_MB = 1024 * 1024
 
-/** Custo em US$ (3 casas). "" se ausente; prefixo "~" quando estimado. */
+/** Custo em US$, formato pt-BR (vírgula decimal): "US$ 12,00", "US$ 0,043".
+ *  3 casas com ponto ("US$12.000") lia-se DOZE MIL em pt-BR — bug real.
+ *  Precisão adaptativa: ≥ 1 → 2 casas; < 1 → 3 (não esconde custo sub-centavo).
+ *  "" se ausente; prefixo "~" quando estimado. */
 export function fmtCost(c: number | undefined, source?: CostSource | string): string {
   if (c == null) return ""
-  return `${source === "estimated" ? "~" : ""}US$${c.toFixed(3)}`
+  const decimals = c >= 1 ? 2 : 3
+  const num = c.toFixed(decimals).replace(".", ",")
+  return `${source === "estimated" ? "~" : ""}US$ ${num}`
 }
 
 /** Soma dos custos dos candidatos de um Fusion (custo ao vivo da disputa). */
@@ -19,12 +24,15 @@ export function liveCostOf(fusion: {
   return fusion.candidates.reduce((a, c) => a + (c.costUsd ?? 0), 0)
 }
 
-/** Duração em ms → "12s" ou "1:23". */
+/** Duração em ms → "12s", "26min 41s", "1h 05min". Com unidade explícita:
+ *  "26:41" era ambíguo (min:s? h:min?). */
 export function fmtDuration(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000))
   if (s < 60) return `${s}s`
   const m = Math.floor(s / 60)
-  return `${m}:${String(s % 60).padStart(2, "0")}`
+  if (m < 60) return `${m}min ${String(s % 60).padStart(2, "0")}s`
+  const h = Math.floor(m / 60)
+  return `${h}h ${String(m % 60).padStart(2, "0")}min`
 }
 
 /** Contagem de tokens → "950", "1.2k", "12k", "3.1M". */
