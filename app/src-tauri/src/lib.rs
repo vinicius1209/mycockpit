@@ -16,6 +16,55 @@ mod sources;
 mod stt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Backup rotativo do banco no boot (rede de segurança contra perda de dados).
+/// Copia db + WAL + SHM (snapshot consistente: roda antes do plugin SQL abrir)
+/// para app_data_dir/backups/mycockpit-{1..3}.db, no máx. 1x a cada ~20h.
+fn backup_database(app: &tauri::AppHandle) -> Result<(), String> {
+    let data = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("sem app_data_dir: {e}"))?;
+    let db = data.join("mycockpit.db");
+    if !db.exists() {
+        return Ok(()); // primeira execução: nada a proteger ainda
+    }
+    let dir = data.join("backups");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    // já tem backup fresco (<20h)? então não gira (1 backup por dia de uso).
+    let newest = dir.join("mycockpit-1.db");
+    if let Ok(meta) = std::fs::metadata(&newest) {
+        if let Ok(modified) = meta.modified() {
+            if let Ok(age) = std::time::SystemTime::now().duration_since(modified) {
+                if age < std::time::Duration::from_secs(20 * 60 * 60) {
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    // rotação 2→3, 1→2 (o 3 mais antigo cai), depois copia o atual pro 1.
+    for (from, to) in [(2u8, 3u8), (1, 2)] {
+        for ext in ["db", "db-wal", "db-shm"] {
+            let src = dir.join(format!("mycockpit-{from}.{ext}"));
+            if src.exists() {
+                let _ = std::fs::rename(&src, dir.join(format!("mycockpit-{to}.{ext}")));
+            }
+        }
+    }
+    for ext in ["db", "db-wal", "db-shm"] {
+        let src = data.join(format!("mycockpit.{ext}"));
+        let dst = dir.join(format!("mycockpit-1.{ext}"));
+        if src.exists() {
+            std::fs::copy(&src, &dst).map_err(|e| e.to_string())?;
+        } else {
+            let _ = std::fs::remove_file(&dst); // não deixa WAL órfão de outra era
+        }
+    }
+    log::info!("backup do banco atualizado em {}", dir.display());
+    Ok(())
+}
+
 pub fn run() {
     let migrations = vec![
         Migration {
@@ -193,6 +242,13 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+            }
+
+            // Backup rotativo do banco ANTES de qualquer escrita da sessão (o
+            // plugin SQL só abre depois, então db+wal+shm estão quiescentes).
+            // Rede de segurança contra corrupção/perda: nunca bloqueia o boot.
+            if let Err(e) = backup_database(app.handle()) {
+                log::warn!("backup do banco falhou (seguindo sem): {e}");
             }
 
             // Titlebar overlay (decorum): visual unificado + traffic lights encaixados +
