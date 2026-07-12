@@ -7,18 +7,18 @@
 
 ## TL;DR (a recomendação)
 
-**Sim, mas não como um 4º modo.** Mission deve ser um **time configurável que
-roda DENTRO do Linear** (v1) e depois **compõe com o SDD** (v2) — não uma nova
-superfície ao lado de Linear/Fusion/SDD. A tese: **SDD estrutura O QUÊ (fases,
-gates, entrega); Mission estrutura QUEM (papel → agent/modelo por etapa)**.
-São eixos ortogonais que compõem. Um 4º modo fragmentaria o produto — o OMO
-mesmo aprendeu isso: a v2 do Team Mode deles abandonou o tmux acoplado e virou
-"script-driven + git worktree por membro", exatamente as primitivas que o
-MyCockpit **já tem**.
+**Sim — como feature INDEPENDENTE, sem nenhum vínculo com o SDD.** Decisão de
+produto (2026-07-12): Mission e SDD são features separadas, cada uma validável
+por si — o SDD já tem skills e agents próprios definidos; o Mission é um
+**modo de uso**: um time configurável (papel → agent/modelo) que roda **dentro
+do Linear** como um tipo de run (igual o Fusion é acionável do composer), não
+uma nova superfície no switcher. O OMO mesmo aprendeu a lição das primitivas:
+a v2 do Team Mode deles abandonou o tmux acoplado e virou "script-driven +
+git worktree por membro" — exatamente o que o MyCockpit **já tem**.
 
 Reuso estimado: **runtime 100%** (run_agent/adapters já são agnósticos),
-handoff 100%, worktrees 100%, padrão de store do Fusion ~70%, gates do SDD
-~60%. Código novo: ~2,5k linhas (orquestrador + store + UI + config).
+handoff 100%, worktrees 100%, padrão de store do Fusion ~70%. Código novo:
+~2,5k linhas (orquestrador + store + UI + config), sem tocar no SDD.
 
 ---
 
@@ -99,10 +99,12 @@ US$/entrega — que é literalmente a métrica-assinatura do MyCockpit.
    chat. O reviewer recebe o diff real + o plano; o texto é complemento.
 
 ### Veredito
-**Construir, escopo v1 enxuto, como "run de missão" no Linear.** O custo de
-oportunidade é baixo (reuso alto), o diferencial competitivo é real (nenhum
-concorrente do estudo de mercado tem pipeline heterogêneo com juiz de custo),
-e compõe com os dois trunfos existentes (Fusion e SDD) em vez de competir.
+**Construir, escopo v1 enxuto, como "run de missão" no Linear — feature
+independente do SDD.** O custo de oportunidade é baixo (reuso alto de
+primitivas: runtime, handoff, worktrees), o diferencial competitivo é real
+(nenhum concorrente do estudo de mercado tem pipeline heterogêneo com controle
+de custo), e não compete com Fusion nem SDD: cada uma valida sua própria
+hipótese isoladamente.
 
 ---
 
@@ -127,7 +129,7 @@ composer ▸ botão Mission ─→ escolhe preset (ou monta ad-hoc) ─→ start
    ▼  handoff = buildHandoff(items) + plano íntegro
 [Fase 2..N: Executor(es) · agy/gemini, codex/gpt…]
    prompt = template(executor) + handoff + tarefa da fase
-   entre fases: gate opcional (tsc/test — reusa infra SDD)
+   entre fases: gate opcional (tsc/test — check próprio do Mission)
    ▼  handoff = plano + GIT DIFF acumulado (verdade real) + tail do chat
 [Fase final: Reviewer · claude-code/opus]
    prompt = template(reviewer) + diff + plano ("aprove ou liste correções")
@@ -190,15 +192,15 @@ registry + cancel) atende; a orquestração é 100% TypeScript por cima de
 ## 5. Fases de entrega
 - **M1 (v1 útil)**: lib/mission.ts + store + timeline no Linear + presets nas
   Settings + budget. Sequencial, 2-4 fases, retry=1. *~1 semana de trabalho.*
-- **M2**: gates entre fases (reusa SDD), fallback de agent por papel, resumo
-  compressivo de handoff, preset por projeto no config.toml.
-- **M3 (a aposta)**: **Mission × SDD** — cada estágio do SDD ganha um dono do
-  time (planner roda Descoberta/PRD, executor roda Implementação, reviewer
-  roda Review). Custo por entrega passa a discriminar custo por papel. É a
-  combinação que nenhum player do mercado tem.
-- **Explicitamente fora**: agente-líder autônomo delegando sozinho (Sisyphus)
-  — revisitar só com dados do M1/M2; paralelismo de executores; keyword
-  routing.
+- **M2**: gates entre fases (checks genéricos: tsc/test/lint no worktree —
+  implementação própria do Mission, sem tocar no SDD), fallback de agent por
+  papel, resumo compressivo de handoff, preset por projeto no config.toml.
+- **M3**: paralelismo de executores independentes (mailbox à la team-core) e
+  agente-líder que delega sozinho (Sisyphus-like) — só com dados do M1/M2.
+- **Explicitamente fora (decisão de produto)**: **qualquer acoplamento com o
+  SDD**. São features irmãs e independentes — o SDD tem skills/agents
+  próprios; o Mission é um modo de uso do Linear. Cada uma valida sua
+  hipótese sozinha. Keyword routing também fora (fragilidade confessa do OMO).
 
 ## 6. Referências do estudo
 - Clone analisado: `oh-my-openagent` @ HEAD 2026-07-12 (5.689 arquivos).
