@@ -725,14 +725,18 @@ impl AgentAdapter for AgyAdapter {
         out
     }
 
-    /// NEEDS-VERIFY: as frases reais de cota/limite do agy ainda não foram
-    /// capturadas de um estouro real; estas são o palpite (vira card de revezamento).
+    /// Frases extraídas do binário do agy 1.1.1 (strings do bundle Go/Codeium):
+    /// a UI de esgotamento usa "Out of credits"; a camada gRPC expõe
+    /// ResourceExhausted (com e sem underscore, conforme o formatador). Mantém
+    /// quota/rate limit como rede genérica de provedor.
     fn classify_limit(&self, msg: &str) -> Option<LimitHit> {
         let l = msg.to_lowercase();
-        let hit = l.contains("quota")
+        let hit = l.contains("out of credits")
+            || l.contains("resource_exhausted")
+            || l.contains("resourceexhausted")
+            || l.contains("quota")
             || l.contains("rate limit")
-            || l.contains("usage limit")
-            || l.contains("resource_exhausted");
+            || l.contains("usage limit");
         hit.then(|| LimitHit { reset_hint: None })
     }
 }
