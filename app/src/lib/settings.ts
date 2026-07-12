@@ -1,3 +1,8 @@
+import {
+  type MissionPreset,
+  DEFAULT_MISSION_PRESETS,
+} from "@/lib/missionTypes"
+
 // Preferências GLOBAIS do app (persistidas via zustand persist → localStorage,
 // que o webview do Tauri guarda em disco entre reinícios). Distinto do config
 // POR-PROJETO (.mycockpit/config.toml), que segue vivendo no ContextPanel.
@@ -15,6 +20,10 @@ export interface GlobalSettings {
   dictationEnabled: boolean
   /** Termos extras de vocabulário do ditado (somados aos fixos do MicButton). */
   dictationVocab: string[]
+  /** Missions (beta): habilita o botão de missão no composer. */
+  missionEnabled: boolean
+  /** Times salvos do Mission (papel → agent/modelo). */
+  missionPresets: MissionPreset[]
 }
 
 export const DEFAULT_SETTINGS: GlobalSettings = {
@@ -24,4 +33,6 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   helperModel: "haiku",
   dictationEnabled: true,
   dictationVocab: [],
+  missionEnabled: false,
+  missionPresets: DEFAULT_MISSION_PRESETS,
 }

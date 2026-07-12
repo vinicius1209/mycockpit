@@ -1,0 +1,178 @@
+// CONTRATO do modo Mission (docs/mission-mode.md): time configurável
+// papel→agent/modelo rodando como pipeline SEQUENCIAL dentro do Linear.
+// Feature independente do SDD (decisão de produto 2026-07-12).
+// Este arquivo é a fonte de verdade dos tipos — UI, store e settings
+// importam daqui; NÃO importar componentes/stores aqui (sem ciclos).
+
+export type MissionPersona = "planner" | "executor" | "reviewer"
+
+/** Definição de UMA fase do pipeline (parte do preset, editável). */
+export interface MissionPhaseDef {
+  /** Identificador estável dentro do preset (ex.: "plan", "ui", "review"). */
+  id: string
+  /** Rótulo humano exibido na timeline (ex.: "Planejar"). */
+  label: string
+  /** Persona → template de prompt (planner/executor/reviewer). */
+  persona: MissionPersona
+  /** Agent do registry (lib/agents.ts): "claude-code" | "codex" | "agy". */
+  agent: string
+  /** Modelo (value do registry) ou null = default do agent. */
+  model: string | null
+  /** Effort ou null = default. */
+  effort: string | null
+  /** Instrução específica da fase (opcional; soma ao template da persona). */
+  instructions?: string
+  /** Tentativas máximas da fase (1 = sem retry). */
+  maxRetries: number
+}
+
+/** Um time salvo (global nas Settings; ad-hoc no launch). */
+export interface MissionPreset {
+  id: string
+  name: string
+  phases: MissionPhaseDef[]
+  /** Teto de custo da missão em US$ (null = sem teto). RISCO Nº1 do design. */
+  maxCostUsd: number | null
+}
+
+export type MissionPhaseStatus =
+  | "queued"
+  | "running"
+  | "done"
+  | "error"
+  | "aborted"
+
+/** Estado de execução de UMA fase (runtime, não persiste no preset). */
+export interface MissionPhaseRun {
+  def: MissionPhaseDef
+  status: MissionPhaseStatus
+  /** Tentativa corrente (1-based; > 1 = houve retry). */
+  attempt: number
+  costUsd: number
+  startedAt: number | null
+  /** Mensagem de erro da última tentativa (se status error/aborted). */
+  error?: string
+}
+
+export type MissionStatus = "running" | "done" | "error" | "aborted"
+
+/** Uma missão em execução/terminada numa conversa. */
+export interface MissionRun {
+  id: string
+  convId: string
+  presetName: string
+  task: string
+  phases: MissionPhaseRun[]
+  /** Índice da fase corrente (aponta além do fim quando done). */
+  current: number
+  costTotal: number
+  maxCostUsd: number | null
+  status: MissionStatus
+  startedAt: number
+}
+
+/** Presets de fábrica (espelham categorias do OMO, sem keyword-magic). */
+export const DEFAULT_MISSION_PRESETS: MissionPreset[] = [
+  {
+    id: "feature",
+    name: "Feature completa",
+    maxCostUsd: 25,
+    phases: [
+      {
+        id: "plan",
+        label: "Planejar",
+        persona: "planner",
+        agent: "claude-code",
+        model: "opus",
+        effort: null,
+        maxRetries: 1,
+      },
+      {
+        id: "build",
+        label: "Executar",
+        persona: "executor",
+        agent: "codex",
+        model: null,
+        effort: null,
+        maxRetries: 2,
+      },
+      {
+        id: "review",
+        label: "Revisar",
+        persona: "reviewer",
+        agent: "claude-code",
+        model: "opus",
+        effort: null,
+        maxRetries: 1,
+      },
+    ],
+  },
+  {
+    id: "ui-first",
+    name: "UI-first",
+    maxCostUsd: 15,
+    phases: [
+      {
+        id: "plan",
+        label: "Planejar",
+        persona: "planner",
+        agent: "claude-code",
+        model: "sonnet",
+        effort: null,
+        maxRetries: 1,
+      },
+      {
+        id: "ui",
+        label: "Executar UI",
+        persona: "executor",
+        agent: "agy",
+        model: null,
+        effort: null,
+        maxRetries: 2,
+      },
+      {
+        id: "review",
+        label: "Revisar",
+        persona: "reviewer",
+        agent: "claude-code",
+        model: "sonnet",
+        effort: null,
+        maxRetries: 1,
+      },
+    ],
+  },
+  {
+    id: "barato",
+    name: "Econômico",
+    maxCostUsd: 5,
+    phases: [
+      {
+        id: "plan",
+        label: "Planejar",
+        persona: "planner",
+        agent: "claude-code",
+        model: "sonnet",
+        effort: null,
+        maxRetries: 1,
+      },
+      {
+        id: "build",
+        label: "Executar",
+        persona: "executor",
+        agent: "codex",
+        model: null,
+        effort: null,
+        maxRetries: 1,
+      },
+      {
+        id: "review",
+        label: "Revisar",
+        persona: "reviewer",
+        agent: "claude-code",
+        model: "sonnet",
+        effort: null,
+        maxRetries: 1,
+      },
+    ],
+  },
+]
