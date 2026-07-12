@@ -190,11 +190,25 @@ registry + cancel) atende; a orquestração é 100% TypeScript por cima de
 | Churn de modelos | Contínuo | presets referenciam o registry `agents.ts` (fonte única já existente) |
 
 ## 5. Fases de entrega
-- **M1 (v1 útil)**: lib/mission.ts + store + timeline no Linear + presets nas
-  Settings + budget. Sequencial, 2-4 fases, retry=1. *~1 semana de trabalho.*
+- **M1 (v1 útil)** ✅ ENTREGUE: lib/mission.ts (motor: phasePrompt/runPhase/
+  diffToText/checkBudget, +12 testes) + store/mission.ts (launch/abort/clear) +
+  MissionTimeline/MissionLauncher + MissionSettings (toggle beta + editor de
+  times) + botão 🚀 no composer. Sequencial, retry por fase, budget HARD.
+  Verde: tsc + 26 testes + oxlint. Persistência em memória (ver M2). O motor
+  vive isolado no próprio store (não escreve no fio do Linear) — a timeline é
+  a superfície da missão.
 - **M2**: gates entre fases (checks genéricos: tsc/test/lint no worktree —
   implementação própria do Mission, sem tocar no SDD), fallback de agent por
   papel, resumo compressivo de handoff, preset por projeto no config.toml.
+  Além disso, 3 arestas do M1 já mapeadas na implementação:
+  - **Bloquear o composer do Linear enquanto a missão roda** — hoje o usuário
+    pode disparar um run normal no mesmo worktree em paralelo à missão e
+    embolar o diff. Desabilitar envio quando `byConv[convId].status` = running.
+  - **Persistência no DB** — o `MissionRun` vive só em memória (some no
+    restart). Espelhar o padrão `saveFusionRun`/`loadPending` (lib/db).
+  - **Loop de correção do reviewer** — se o reviewer reprova, o M1 apenas
+    encerra; o M2 deve reinjetar as correções no executor até N iterações ou
+    aprovação.
 - **M3**: paralelismo de executores independentes (mailbox à la team-core) e
   agente-líder que delega sozinho (Sisyphus-like) — só com dados do M1/M2.
 - **Explicitamente fora (decisão de produto)**: **qualquer acoplamento com o
