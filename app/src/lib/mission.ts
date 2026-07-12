@@ -7,8 +7,8 @@
 import { runAgent, type AgentEvent, type CostSource } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { reduceItems, type ChatItem, type ItemReducible } from "@/store/chat"
-import type { GitDiff } from "@/lib/git"
 import type { MissionPersona } from "@/lib/missionTypes"
+import { handoffInstruction } from "@/lib/missionHandoff"
 
 /** Estado acumulável de UMA fase enquanto os eventos chegam (subset reduzível). */
 function emptyReducible(): ItemReducible {
@@ -22,45 +22,12 @@ function emptyReducible(): ItemReducible {
   }
 }
 
-// ── Handoff: diff-como-texto (a VERDADE primária entre fases, design §4) ──
-
-/** Achata um GitDiff parseado em texto p/ injetar no prompt do executor/reviewer.
- *  Corte tail-biased por orçamento: mantém os últimos arquivos (onde a fase
- *  anterior provavelmente parou) e sinaliza o que foi omitido. */
-export function diffToText(diff: GitDiff, budgetChars = 24_000): string {
-  if (!diff.isRepo) return "(fora de um repositório git — sem diff)"
-  if (diff.files.length === 0) return "(nenhuma mudança na working tree ainda)"
-
-  const blocks = diff.files.map((f) => {
-    const head = `── ${f.path} (${f.status} +${f.additions} -${f.deletions})`
-    if (f.binary) return `${head}\n[binário]`
-    const body = f.hunks
-      .map((h) => {
-        const lines = h.lines.map((l) => {
-          const sign = l.type === "add" ? "+" : l.type === "del" ? "-" : " "
-          return sign + l.text
-        })
-        return [h.header, ...lines].join("\n")
-      })
-      .join("\n")
-    return `${head}\n${body}`
-  })
-
-  // acumula do FIM até estourar o orçamento (tail-biased, como o buildHandoff).
-  const kept: string[] = []
-  let used = 0
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    used += blocks[i].length + 2
-    if (used > budgetChars && kept.length > 0) {
-      kept.unshift(`[… ${i + 1} arquivo(s) anterior(es) omitido(s) do diff …]`)
-      break
-    }
-    kept.unshift(blocks[i])
-  }
-  return kept.join("\n\n")
-}
-
 // ── Prompts por persona (templates curtos, pt-BR) ──
+//
+// Handoff = blackboard tipado (lib/missionHandoff): o contexto entre fases
+// carrega INTENÇÃO/decisões/pendências, não o código. Os arquivos alterados já
+// estão no worktree (mesmo cwd) — passamos só a lista como referência e o
+// agente roda `git diff` se precisar do conteúdo.
 
 const PERSONA_HEADER: Record<MissionPersona, string> = {
   planner:
@@ -74,38 +41,62 @@ const PERSONA_HEADER: Record<MissionPersona, string> = {
     "trabalho feito até aqui (mesmo diretório) — continue de onde parou, não " +
     "refaça o que já existe. Faça o mínimo necessário para cumprir o plano.",
   reviewer:
-    "Você é o REVIEWER de uma missão. Revise o DIFF real abaixo contra o PLANO. " +
-    "Se estiver correto e completo, responda APROVADO e explique em 1 linha. " +
-    "Se houver problemas, liste correções concretas e acionáveis (arquivo + o " +
-    "quê). NÃO reescreva o código você mesmo; só avalie.",
+    "Você é o REVIEWER de uma missão. Os arquivos alterados já estão no seu " +
+    "diretório de trabalho — rode `git diff` para ver o código real e avalie " +
+    "contra o PLANO/handoff abaixo. Se estiver correto e completo, responda " +
+    "APROVADO e explique em 1 linha. Se houver problemas, liste correções " +
+    "concretas e acionáveis (arquivo + o quê). NÃO reescreva o código; só avalie.",
 }
 
-/** Monta o prompt de uma fase juntando: cabeçalho da persona + tarefa +
- *  handoff (tail do chat anterior) + diff acumulado + instrução da fase. */
-export function phasePrompt(
-  persona: MissionPersona,
-  task: string,
-  handoffText: string | null,
-  diffText: string | null,
-  instructions?: string,
-): string {
+export interface PhasePromptInput {
+  persona: MissionPersona
+  task: string
+  /** Caminho onde ESTA fase deve gravar seu handoff JSON. */
+  handoffPath: string
+  /** Handoffs tipados das fases anteriores, já achatados (null na 1ª fase). */
+  priorHandoffs?: string | null
+  /** Lista leve dos arquivos mudados no worktree (referência, não o patch). */
+  changedFiles?: string | null
+  /** Fallback: tail do transcript da fase anterior, SÓ quando não houve
+   *  handoff tipado (o agente não emitiu o JSON). */
+  fallbackContext?: string | null
+  /** Instrução extra específica da fase (do preset). */
+  instructions?: string
+}
+
+/** Monta o prompt de uma fase: persona + tarefa + handoff tipado das fases
+ *  anteriores + referência de arquivos + instrução para gravar o próprio
+ *  handoff. O código NUNCA viaja no prompt — está no worktree. */
+export function phasePrompt(input: PhasePromptInput): string {
+  const { persona, task, handoffPath } = input
   const parts: string[] = [PERSONA_HEADER[persona]]
 
   parts.push("", "## Pedido da missão", task)
 
-  if (instructions && instructions.trim()) {
-    parts.push("", "## Instruções desta fase", instructions.trim())
+  if (input.instructions && input.instructions.trim()) {
+    parts.push("", "## Instruções desta fase", input.instructions.trim())
   }
 
-  // planner não recebe handoff/diff (é a primeira fase); executor/reviewer sim.
-  if (handoffText && handoffText.trim()) {
-    const heading = persona === "reviewer" ? "## Plano da missão" : "## Plano e contexto da fase anterior"
-    parts.push("", heading, handoffText.trim())
+  if (input.priorHandoffs && input.priorHandoffs.trim()) {
+    parts.push("", "## Handoff das fases anteriores", input.priorHandoffs.trim())
+  } else if (input.fallbackContext && input.fallbackContext.trim()) {
+    // agente anterior não emitiu handoff JSON → cai no tail do transcript.
+    parts.push(
+      "",
+      "## Contexto da fase anterior (resumo do transcript)",
+      input.fallbackContext.trim(),
+    )
   }
 
-  if (diffText && diffText.trim()) {
-    parts.push("", "## Diff acumulado no worktree (verdade real)", diffText.trim())
+  if (input.changedFiles && input.changedFiles.trim()) {
+    parts.push(
+      "",
+      "## Arquivos alterados no worktree (referência — rode `git diff` p/ o código)",
+      input.changedFiles.trim(),
+    )
   }
+
+  parts.push("", handoffInstruction(handoffPath))
 
   return parts.join("\n")
 }

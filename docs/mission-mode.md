@@ -209,7 +209,14 @@ registry + cancel) atende; a orquestração é 100% TypeScript por cima de
   - **Loop de correção do reviewer** — se o reviewer reprova, o M1 apenas
     encerra; o M2 deve reinjetar as correções no executor até N iterações ou
     aprovação.
-- **M2 — REPENSAR O HANDOFF (correção de rumo, pesquisa 2026-07-12)**: o M1 usa
+- **Handoff tipado (.mission/) ✅ ENTREGUE** (2026-07-12, antecipado do M2): o
+  handoff entre fases agora é blackboard — cada fase escreve `.mission/<i>-<
+  persona>.json` (intent/decisions/files_touched/open_questions/for_next_agent)
+  e o app injeta os JSONs anteriores + a lista LEVE de arquivos mudados no
+  prompt seguinte; o código não viaja no prompt (o agente roda `git diff` no
+  cwd). Fallback pro tail do transcript quando o agente não emite o JSON. Ver
+  `lib/missionHandoff.ts` (+6 testes: parse tolerante, caps, formatação, refs).
+- **M2 — motivação original da correção (pesquisa 2026-07-12)**: o M1 usava
   git diff + rabo do transcript como portador de contexto. A pesquisa dos
   sistemas que rodam agentes em contextos ISOLADos (Anthropic research-system,
   Claude Code sub-agents, Factory.ai) mostra que isso é subótimo:
@@ -231,6 +238,15 @@ registry + cancel) atende; a orquestração é 100% TypeScript por cima de
   - Fontes: anthropic.com/engineering/multi-agent-research-system, Claude Code
     sub-agents docs, factory.ai/news/evaluating-compression, arXiv 2510.01285
     (blackboard multi-agente: +13-57% de sucesso vs RAG/master-slave).
+  - **Referência de template**: a skill `handoff` do Matt Pocock
+    (github.com/mattpocock/skills productivity/handoff) chegou à mesma regra —
+    "não duplique o que já está em specs/plans/commits/diffs; **referencie por
+    path/URL**" + redigir segredos. Aproveitamos: (a) `files_touched` como
+    referência, (b) redação de segredos no artefato, (c) campo `for_next_agent`.
+    NÃO aproveitamos o gatilho dela: ela é manual e não calcula janela. Dois
+    handoffs distintos — INTER-fase (evento = transição, é o `.mission/`) vs
+    INTRA-fase (janela do agente enchendo no meio: cada CLI já auto-compacta;
+    não reimplementar por fora, frágil a update do `agy`).
 - **M3**: paralelismo de executores independentes (mailbox à la team-core) e
   agente-líder que delega sozinho (Sisyphus-like) — só com dados do M1/M2.
 - **Explicitamente fora (decisão de produto)**: **qualquer acoplamento com o

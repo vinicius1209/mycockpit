@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import type { AgentEvent } from "@/lib/agent"
-import type { GitDiff } from "@/lib/git"
-import { checkBudget, diffToText, phasePrompt, runPhase } from "./mission"
+import { checkBudget, phasePrompt, runPhase } from "./mission"
 
 function result(ok: boolean, cost: number | null): AgentEvent {
   return {
@@ -17,65 +16,49 @@ function result(ok: boolean, cost: number | null): AgentEvent {
   }
 }
 
-const emptyDiff: GitDiff = { isRepo: true, branch: "main", files: [] }
-
 describe("phasePrompt", () => {
-  it("planner: sem handoff nem diff, inclui a tarefa", () => {
-    const p = phasePrompt("planner", "criar login", null, null)
+  it("planner: 1ª fase só com a tarefa + instrução de handoff", () => {
+    const p = phasePrompt({
+      persona: "planner",
+      task: "criar login",
+      handoffPath: ".mission/0-planner.json",
+    })
     expect(p).toContain("PLANNER")
     expect(p).toContain("criar login")
+    expect(p).not.toContain("Handoff das fases anteriores")
+    // toda fase é instruída a gravar seu próprio handoff tipado.
+    expect(p).toContain(".mission/0-planner.json")
+    expect(p).toContain("Handoff obrigatório")
+  })
+
+  it("executor: injeta handoff tipado anterior + referência de arquivos, não o patch", () => {
+    const p = phasePrompt({
+      persona: "executor",
+      task: "tarefa",
+      handoffPath: ".mission/1-executor.json",
+      priorHandoffs: "### Planejar (planner)\nIntenção: fazer X",
+      changedFiles: "- M x.ts (+3 -1)",
+      instructions: "foco no back",
+    })
+    expect(p).toContain("EXECUTOR")
+    expect(p).toContain("Handoff das fases anteriores")
+    expect(p).toContain("Intenção: fazer X")
+    expect(p).toContain("Arquivos alterados no worktree")
+    expect(p).toContain("foco no back")
     expect(p).not.toContain("Diff acumulado")
   })
 
-  it("executor: inclui plano e diff quando presentes", () => {
-    const p = phasePrompt("executor", "tarefa", "PLANO: passo 1", "── x.ts", "foco no back")
-    expect(p).toContain("EXECUTOR")
-    expect(p).toContain("PLANO: passo 1")
-    expect(p).toContain("Diff acumulado")
-    expect(p).toContain("foco no back")
-  })
-
-  it("reviewer: rotula o handoff como plano", () => {
-    const p = phasePrompt("reviewer", "t", "PLANO", "diff", undefined)
+  it("reviewer: manda rodar git diff e cai no fallback quando não há handoff tipado", () => {
+    const p = phasePrompt({
+      persona: "reviewer",
+      task: "t",
+      handoffPath: ".mission/2-reviewer.json",
+      priorHandoffs: null,
+      fallbackContext: "resumo do transcript anterior",
+    })
     expect(p).toContain("REVIEWER")
-    expect(p).toContain("Plano da missão")
-  })
-})
-
-describe("diffToText", () => {
-  it("fora de repo / sem mudanças", () => {
-    expect(diffToText({ isRepo: false, branch: null, files: [] })).toContain("fora de um repositório")
-    expect(diffToText(emptyDiff)).toContain("nenhuma mudança")
-  })
-
-  it("achata arquivo com hunks e sinais", () => {
-    const diff: GitDiff = {
-      isRepo: true,
-      branch: "main",
-      files: [
-        {
-          path: "src/a.ts",
-          oldPath: null,
-          status: "modified",
-          additions: 1,
-          deletions: 1,
-          binary: false,
-          hunks: [
-            {
-              header: "@@ -1 +1 @@",
-              lines: [
-                { type: "del", oldNo: 1, newNo: null, text: "old" },
-                { type: "add", oldNo: null, newNo: 1, text: "new" },
-              ],
-            },
-          ],
-        },
-      ],
-    }
-    const txt = diffToText(diff)
-    expect(txt).toContain("src/a.ts")
-    expect(txt).toContain("-old")
-    expect(txt).toContain("+new")
+    expect(p).toContain("git diff")
+    expect(p).toContain("resumo do transcript anterior")
   })
 })
 

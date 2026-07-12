@@ -13,13 +13,14 @@ import type {
 import { buildHandoff } from "@/lib/handoff"
 import { loadGitDiff } from "@/lib/git"
 import { useChat, type ChatItem } from "@/store/chat"
+import { checkBudget, phasePrompt, runPhase, type PhaseResult } from "@/lib/mission"
 import {
-  checkBudget,
-  diffToText,
-  phasePrompt,
-  runPhase,
-  type PhaseResult,
-} from "@/lib/mission"
+  changedFilesRef,
+  formatPriorHandoffs,
+  handoffFileName,
+  readHandoff,
+  type PriorHandoff,
+} from "@/lib/missionHandoff"
 
 export interface MissionState {
   /** Missão por conversa (uma por vez; guarda anti-duplo-start no launch). */
@@ -125,25 +126,36 @@ export const useMission = create<MissionState>((set, get) => {
         }
 
         const def = preset.phases[i]
+        const handoffPath = handoffFileName(i, def.persona)
 
-        // fase 1 = task pura; fases seguintes = handoff (tail do chat anterior)
-        // + git diff acumulado do worktree (verdade primária, design §4).
-        let handoffText: string | null = null
-        let diffText: string | null = null
+        // fase 1 = task pura; fases seguintes = blackboard tipado (.mission/*.json
+        // que os agentes escreveram) + lista LEVE de arquivos mudados. O código
+        // não viaja no prompt — está no worktree. Se ninguém emitiu JSON, cai no
+        // fallback do tail do transcript (buildHandoff).
+        let priorHandoffs: string | null = null
+        let changedFiles: string | null = null
+        let fallbackContext: string | null = null
         if (i > 0) {
-          handoffText = buildHandoff(prevItems)
-          const diff = await loadGitDiff(cwd)
-          diffText = diffToText(diff)
-          // reviewer recebe o DIFF; o handoff dele é o plano da fase anterior.
+          const priors: PriorHandoff[] = []
+          for (let j = 0; j < i; j++) {
+            const pdef = preset.phases[j]
+            const doc = await readHandoff(cwd, handoffFileName(j, pdef.persona))
+            if (doc) priors.push({ label: pdef.label, persona: pdef.persona, doc })
+          }
+          if (priors.length > 0) priorHandoffs = formatPriorHandoffs(priors)
+          else fallbackContext = buildHandoff(prevItems)
+          changedFiles = changedFilesRef(await loadGitDiff(cwd))
         }
 
-        const prompt = phasePrompt(
-          def.persona,
+        const prompt = phasePrompt({
+          persona: def.persona,
           task,
-          handoffText,
-          diffText,
-          def.instructions,
-        )
+          handoffPath,
+          priorHandoffs,
+          changedFiles,
+          fallbackContext,
+          instructions: def.instructions,
+        })
 
         patchConv(convId, { current: i })
         patchPhase(convId, i, (ph) => ({
