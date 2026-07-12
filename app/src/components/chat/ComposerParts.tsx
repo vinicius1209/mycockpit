@@ -4,6 +4,7 @@ import {
   Image as ImageIcon,
   Lock,
   Paperclip,
+  Rocket,
   Sparkles,
   Square,
   Swords,
@@ -274,6 +275,8 @@ export function ComposerControls({
   onFusion,
   fusionDisabled,
   fusionTitle,
+  onMission,
+  missionDisabled,
   onAttach,
   running,
   onStop,
@@ -291,6 +294,9 @@ export function ComposerControls({
   onFusion: () => void
   fusionDisabled?: boolean
   fusionTitle?: string
+  /** Abre o MissionLauncher (botão só existe com settings.missionEnabled). */
+  onMission?: () => void
+  missionDisabled?: boolean
   onAttach: () => void
   running?: boolean
   onStop?: () => void
@@ -302,6 +308,8 @@ export function ComposerControls({
   const lockTitle = locked
     ? "Agent e modelo ficam fixos a partir do 1º envio desta conversa"
     : undefined
+  // Missions (beta): o botão só existe com a flag ligada nas Settings.
+  const missionEnabled = useApp((s) => s.settings.missionEnabled)
   return (
     <>
       {/* cadeado explícito: sem ele o lock só aparecia no hover (parecia bug) */}
@@ -364,6 +372,19 @@ export function ComposerControls({
         >
           <Swords className="size-4" />
         </Button>
+        {missionEnabled && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onMission}
+            disabled={missionDisabled}
+            title="Lançar missão (time de agents em fases)"
+            aria-label="Lançar missão"
+            className="rounded-full text-muted-foreground hover:text-brass"
+          >
+            <Rocket className="size-4" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"

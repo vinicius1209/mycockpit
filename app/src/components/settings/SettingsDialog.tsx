@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { getVersion } from "@tauri-apps/api/app"
-import { Bot, Info, Mic, Palette, Sparkles, X } from "lucide-react"
+import { Bot, Info, Mic, Palette, Sparkles, Waypoints, X } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -14,15 +14,23 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useApp } from "@/store/app"
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
+import { MissionSettings } from "@/components/settings/MissionSettings"
 import { cn } from "@/lib/utils"
 
-type Section = "appearance" | "agents" | "suggestions" | "dictation" | "about"
+type Section =
+  | "appearance"
+  | "agents"
+  | "suggestions"
+  | "dictation"
+  | "missions"
+  | "about"
 
 const SECTIONS: { id: Section; label: string; icon: typeof Bot }[] = [
   { id: "appearance", label: "Aparência", icon: Palette },
   { id: "agents", label: "Padrões", icon: Bot },
   { id: "suggestions", label: "Sugestões", icon: Sparkles },
   { id: "dictation", label: "Ditado", icon: Mic },
+  { id: "missions", label: "Missions", icon: Waypoints },
   { id: "about", label: "Sobre", icon: Info },
 ]
 
@@ -313,6 +321,8 @@ export function SettingsDialog() {
               </div>
             </div>
           )}
+
+          {section === "missions" && <MissionSettings />}
 
           {section === "about" && (
             <div>

@@ -11,6 +11,8 @@ import { useActiveProject } from "@/store/app"
 import { useChat, useActiveConv } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { FusionBoard } from "@/components/fusion/FusionBoard"
+import { useMission } from "@/store/mission"
+import { MissionTimeline } from "@/components/mission/MissionTimeline"
 import { runAgent, cancelAgent, agentLabel } from "@/lib/agent"
 import { buildHandoff } from "@/lib/handoff"
 import { notifyTurnEnd } from "@/lib/notify"
@@ -51,6 +53,9 @@ export function ChatPanel() {
   const finalizing = conv.finalizing
   const activeId = useChat((s) => s.activeId)
   const fusionActive = useFusion((s) => (activeId ? !!s.byConv[activeId] : false))
+  const missionActive = useMission((s) =>
+    activeId ? !!s.byConv[activeId] : false,
+  )
 
   // Checklist viva (P2): faixa fixa acima do composer enquanto o plano anda,
   // o olho já mora aqui embaixo durante o run. Colapsada mostra a task atual.
@@ -321,6 +326,7 @@ export function ChatPanel() {
           </div>
         )}
         {activeId && fusionActive && <FusionBoard convId={activeId} />}
+        {activeId && missionActive && <MissionTimeline convId={activeId} />}
       </div>
 
       <div className="relative z-10 shrink-0 px-8 pb-7">

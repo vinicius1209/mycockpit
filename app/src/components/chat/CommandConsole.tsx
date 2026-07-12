@@ -17,6 +17,7 @@ import { useApp, useActiveProject } from "@/store/app"
 import type { Attachment } from "@/lib/attachments"
 import { DESTINATIONS, defaultModelFor, agentCaps, agentDef } from "@/lib/agents"
 import { useFusion, defaultLeague } from "@/store/fusion"
+import { MissionLauncher } from "@/components/mission/MissionLauncher"
 import type { AgentRunConfig } from "@/lib/types"
 
 export function CommandConsole({
@@ -63,6 +64,8 @@ export function CommandConsole({
   const [destination, setDestination] = useState(settings.defaultAgent)
   const [model, setModel] = useState(settings.defaultModel ?? "default")
   const [effort, setEffort] = useState(settings.defaultEffort ?? "default")
+  // Mission (beta): dialog do launcher, acionado pelo Rocket do composer.
+  const [missionOpen, setMissionOpen] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const conv = useActiveConv()
   const suggestions = conv.suggestions
@@ -331,6 +334,8 @@ export function CommandConsole({
             onFusion={() => void submitFusion()}
             fusionDisabled={!value.trim() || disabled || running || finalizing}
             fusionTitle={fusionTitle}
+            onMission={() => setMissionOpen(true)}
+            missionDisabled={disabled || running || finalizing}
             onAttach={attach}
             running={running}
             onStop={onStop}
@@ -347,6 +352,17 @@ export function CommandConsole({
         onPick={(text) => {
           setValue(text)
           ref.current?.focus()
+        }}
+      />
+
+      <MissionLauncher
+        open={missionOpen}
+        onOpenChange={setMissionOpen}
+        initialTask={value.trim()}
+        onLaunched={() => {
+          // o rascunho virou a tarefa da missão → limpa o composer
+          setValue("")
+          resetHistory()
         }}
       />
     </div>
