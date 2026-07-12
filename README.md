@@ -1,6 +1,10 @@
-# MyCockpit
+<div align="center">
+  <img src="docs/assets/icon.png" width="128" alt="MyCockpit — horizonte artificial" />
 
-**Cockpit local-first para orquestrar as CLIs de code agents que você já tem instaladas — com custo por entrega, disputa multi-agent e pipeline spec-driven.**
+  # MyCockpit
+
+  **Cockpit local-first para orquestrar as CLIs de code agents que você já tem instaladas — com custo por entrega, disputa multi-agent e pipeline spec-driven.**
+</div>
 
 ![Plataforma](https://img.shields.io/badge/plataforma-macOS-black?logo=apple)
 ![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
@@ -13,6 +17,8 @@
 ![MyCockpit](docs/screenshot.png)
 
 ## O que é
+
+<img src="docs/assets/mascote.png" width="110" align="right" alt="Copiloto — o mascote do MyCockpit" />
 
 MyCockpit é um app desktop (Tauri 2 + React 19 + TypeScript) que vira a **única janela** para trabalhar com Claude Code, Codex e Antigravity — as CLIs que você já instalou e autenticou na sua máquina. Em vez de N abas de terminal, você abre um projeto e conversa com os agents em cartões, com diffs inline e custo visível. O diferencial: **custo por ENTREGA** (US$/feature, do PRD ao merge), **disputa multi-agent com juiz** e um **pipeline spec-driven com gates de verificação** antes do PR.
 
