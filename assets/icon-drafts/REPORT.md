@@ -4,6 +4,9 @@
 
 - `icon.svg`: fallback vetorial refinado do Reticle como icone de app macOS.
 - `icon-svg-1024.png`: PNG 1024x1024 renderizado a partir do SVG.
+- `icon-cream.svg` + `icon-cream-1024.png`: versao light com fundo cream e reticle brass escurecido para contraste.
+- `icon-thin.svg` + `icon-thin-1024.png`: versao dark com tracos cerca de 30% mais finos e dot central cerca de 40% maior.
+- `icon-glow.svg` + `icon-glow-1024.png`: versao dark com glow brass radial sutil atras do anel.
 
 ## Ferramentas
 

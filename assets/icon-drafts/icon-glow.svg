@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="MyCockpit app icon reticle glow">
+  <defs>
+    <linearGradient id="bg" x1="180" y1="78" x2="844" y2="946" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#191c20"/>
+      <stop offset="0.42" stop-color="#0c0d10"/>
+      <stop offset="1" stop-color="#060708"/>
+    </linearGradient>
+    <radialGradient id="plate" cx="50%" cy="42%" r="68%">
+      <stop offset="0" stop-color="#1e2126"/>
+      <stop offset="0.72" stop-color="#0c0d10"/>
+      <stop offset="1" stop-color="#0a0b0d"/>
+    </radialGradient>
+    <radialGradient id="reticle-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#f0bd76" stop-opacity="0"/>
+      <stop offset="0.42" stop-color="#e4a862" stop-opacity="0.16"/>
+      <stop offset="0.66" stop-color="#a9742b" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#a9742b" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="brass" x1="304" y1="214" x2="735" y2="829" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffe1a6"/>
+      <stop offset="0.2" stop-color="#e4a862"/>
+      <stop offset="0.56" stop-color="#a9742b"/>
+      <stop offset="0.82" stop-color="#f0bd76"/>
+      <stop offset="1" stop-color="#7e551f"/>
+    </linearGradient>
+    <linearGradient id="brass-soft" x1="257" y1="168" x2="767" y2="856" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f4c987" stop-opacity="0.72"/>
+      <stop offset="0.5" stop-color="#e4a862" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#a9742b" stop-opacity="0.46"/>
+    </linearGradient>
+    <filter id="outer-shadow" x="-12%" y="-12%" width="124%" height="124%">
+      <feDropShadow dx="0" dy="34" stdDeviation="32" flood-color="#000000" flood-opacity="0.46"/>
+      <feDropShadow dx="0" dy="-2" stdDeviation="1.5" flood-color="#ffffff" flood-opacity="0.08"/>
+    </filter>
+    <filter id="brass-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000000" flood-opacity="0.42"/>
+      <feDropShadow dx="0" dy="-1" stdDeviation="1.2" flood-color="#fff0cf" flood-opacity="0.22"/>
+    </filter>
+    <filter id="soft-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="18"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.035"/>
+      </feComponentTransfer>
+    </filter>
+    <clipPath id="squircle">
+      <rect x="68" y="68" width="888" height="888" rx="206"/>
+    </clipPath>
+  </defs>
+
+  <rect x="68" y="68" width="888" height="888" rx="206" fill="url(#bg)" filter="url(#outer-shadow)"/>
+  <g clip-path="url(#squircle)">
+    <rect x="68" y="68" width="888" height="888" fill="url(#plate)"/>
+    <circle cx="512" cy="512" r="390" fill="none" stroke="#fbfbfa" stroke-opacity="0.045" stroke-width="2"/>
+    <circle cx="512" cy="512" r="315" fill="none" stroke="#fbfbfa" stroke-opacity="0.055" stroke-width="2"/>
+    <path d="M88 236C192 122 350 78 512 78c242 0 396 128 444 318V68H68v888h888V626C900 834 747 946 512 946 268 946 88 795 88 552Z" fill="#fbfbfa" opacity="0.026"/>
+    <circle cx="512" cy="512" r="320" fill="url(#reticle-glow)" filter="url(#soft-glow)" opacity="0.92"/>
+    <rect x="68" y="68" width="888" height="888" filter="url(#grain)" opacity="0.55"/>
+  </g>
+
+  <rect x="82" y="82" width="860" height="860" rx="194" fill="none" stroke="#fbfbfa" stroke-opacity="0.08" stroke-width="2"/>
+  <rect x="100" y="100" width="824" height="824" rx="178" fill="none" stroke="#000000" stroke-opacity="0.3" stroke-width="2"/>
+
+  <g filter="url(#brass-shadow)" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="512" cy="512" r="225" fill="none" stroke="url(#brass-soft)" stroke-width="28"/>
+    <circle cx="512" cy="512" r="225" fill="none" stroke="#0a0b0d" stroke-opacity="0.32" stroke-width="12"/>
+    <circle cx="512" cy="512" r="225" fill="none" stroke="url(#brass)" stroke-width="14"/>
+
+    <path d="M512 164v150M512 710v150M164 512h150M710 512h150" stroke="#0a0b0d" stroke-opacity="0.42" stroke-width="44"/>
+    <path d="M512 164v150M512 710v150M164 512h150M710 512h150" stroke="url(#brass)" stroke-width="30"/>
+    <path d="M512 176v122M512 726v122M176 512h122M726 512h122" stroke="#fff0cf" stroke-opacity="0.28" stroke-width="7"/>
+
+    <circle cx="512" cy="512" r="62" fill="#0a0b0d" fill-opacity="0.62" stroke="url(#brass-soft)" stroke-width="12"/>
+    <circle cx="512" cy="512" r="36" fill="url(#brass)"/>
+    <circle cx="500" cy="498" r="11" fill="#fff1d1" opacity="0.58"/>
+  </g>
+</svg>
