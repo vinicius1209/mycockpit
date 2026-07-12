@@ -209,6 +209,28 @@ registry + cancel) atende; a orquestração é 100% TypeScript por cima de
   - **Loop de correção do reviewer** — se o reviewer reprova, o M1 apenas
     encerra; o M2 deve reinjetar as correções no executor até N iterações ou
     aprovação.
+- **M2 — REPENSAR O HANDOFF (correção de rumo, pesquisa 2026-07-12)**: o M1 usa
+  git diff + rabo do transcript como portador de contexto. A pesquisa dos
+  sistemas que rodam agentes em contextos ISOLADos (Anthropic research-system,
+  Claude Code sub-agents, Factory.ai) mostra que isso é subótimo:
+  - **O diff no prompt é redundante** — os agentes já leem os arquivos no
+    worktree (mesmo cwd). Passar o diff paga tokens por algo já visível. O que
+    o diff NÃO carrega é o que importa: intenção, alternativas rejeitadas,
+    pendências, contrato esperado pelo reviewer.
+  - **O transcript tail é ruído** (mistura thinking + tool-logs). Rebaixar a
+    fallback quando o handoff estruturado falhar.
+  - **Direção nova**: blackboard `.mission/` no worktree + handoff TIPADO por
+    fase (JSON: `intent`, `decisions[]`, `files_touched[]` como REFERÊNCIA (não
+    o diff), `open_questions[]`, `for_next_agent`). No prompt injeta só
+    `brief.md` (objetivo + fronteiras) + os JSONs anteriores + "os arquivos já
+    estão no seu cwd". Otimiza tokens-por-missão, não por request. Cap por
+    campo (máx ~5 decisions/open_questions) p/ o blackboard não crescer sem fim.
+  - Descartar compressor por LLM barato (overkill p/ 3 fases; `agy` nem tem
+    JSON) — cada agente já emite seu JSON estruturado de saída = compressão de
+    graça. `git diff --stat` fica só como ponteiro ("revise estes N arquivos").
+  - Fontes: anthropic.com/engineering/multi-agent-research-system, Claude Code
+    sub-agents docs, factory.ai/news/evaluating-compression, arXiv 2510.01285
+    (blackboard multi-agente: +13-57% de sucesso vs RAG/master-slave).
 - **M3**: paralelismo de executores independentes (mailbox à la team-core) e
   agente-líder que delega sozinho (Sisyphus-like) — só com dados do M1/M2.
 - **Explicitamente fora (decisão de produto)**: **qualquer acoplamento com o
