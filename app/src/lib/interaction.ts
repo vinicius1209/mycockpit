@@ -106,6 +106,25 @@ export async function onInteractionRequest(
   }
 }
 
+/** Escuta as resoluções FEITAS PELO BACKEND (fail-closed no fim/cancel do run):
+ *  o card daquele id morreu junto com o run → a UI deve removê-lo (senão ficava
+ *  travado dizendo "turno pausado" sobre um turno já morto — achado da revisão). */
+export async function onInteractionResolved(
+  cb: (id: string) => void,
+): Promise<UnlistenFn> {
+  return listen<{ id: string }>("interaction://resolved", (e) =>
+    cb(e.payload.id),
+  )
+}
+
+/** Resposta fail-closed por kind (o que o dismiss manual envia): nega a
+ *  aprovação / devolve pergunta sem respostas. */
+export function failClosedAnswer(kind: InteractionRequest["kind"]): InteractionAnswer {
+  return kind === "question"
+    ? { answers: [] }
+    : { allow: false, message: "dispensado pelo usuário" }
+}
+
 /** Entrega a resposta do usuário ao backend, que destrava o turno.
  *
  *  COMPAT: tenta o comando canônico `answer_interaction`; se ele não existir ainda

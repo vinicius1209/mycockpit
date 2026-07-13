@@ -10,7 +10,9 @@ import {
 } from "lucide-react"
 import {
   onInteractionRequest,
+  onInteractionResolved,
   answerInteraction,
+  failClosedAnswer,
   type InteractionRequest,
   type ApprovalData,
   type QuestionData,
@@ -35,23 +37,45 @@ export function InteractionHost() {
 
   useEffect(() => {
     if (!isTauri()) return
-    let unlisten: (() => void) | undefined
+    const unlisteners: (() => void)[] = []
     let alive = true
+    const keep = (fn: () => void) => {
+      if (alive) unlisteners.push(fn)
+      else fn() // desmontou antes do listener registrar
+    }
     void onInteractionRequest((req) => {
+      // pergunta VAZIA (modelo mandou lixo): sem guard o card habilitava
+      // "Responder" vacuamente (achado M4) → responde fail-closed e nem enfileira.
+      if (req.kind === "question") {
+        const d = req.data as QuestionData
+        if (!d?.questions?.length) {
+          void answerInteraction(req.id, failClosedAnswer("question")).catch(() => {})
+          return
+        }
+      }
       // dedup defensivo por id (um re-emit — ou o duplo canal de compat — não duplica o card).
       setQueue((q) => (q.some((r) => r.id === req.id) ? q : [...q, req]))
-    }).then((fn) => {
-      if (alive) unlisten = fn
-      else fn() // desmontou antes do listener registrar
-    })
+    }).then(keep)
+    // backend resolveu fail-closed (run acabou/cancelado) → derruba o card daquele
+    // id na hora (senão ficava travado sobre um turno já morto).
+    void onInteractionResolved((id) => {
+      setQueue((q) => q.filter((r) => r.id !== id))
+    }).then(keep)
     return () => {
       alive = false
-      unlisten?.()
+      for (const fn of unlisteners) fn()
     }
   }, [])
 
   function done(id: string) {
     setQueue((q) => q.filter((r) => r.id !== id))
+  }
+
+  /** Dispensar manual (escape hatch): responde fail-closed best-effort e SEMPRE
+   *  remove o card localmente — mesmo se o backend já morreu (answer rejeita). */
+  function dismiss(req: InteractionRequest) {
+    void answerInteraction(req.id, failClosedAnswer(req.kind)).catch(() => {})
+    done(req.id)
   }
 
   if (queue.length === 0) return null
@@ -69,6 +93,7 @@ export function InteractionHost() {
         busy={busy === req.id}
         setBusy={setBusy}
         onDone={done}
+        onDismiss={() => dismiss(req)}
       />
     )
   }
@@ -82,6 +107,7 @@ export function InteractionHost() {
       busy={busy === req.id}
       setBusy={setBusy}
       onDone={done}
+      onDismiss={() => dismiss(req)}
     />
   )
 }
@@ -89,6 +115,21 @@ export function InteractionHost() {
 function QueueHint({ extra }: { extra: number }) {
   if (extra <= 0) return null
   return <span className="text-muted-foreground"> (+{extra} na fila)</span>
+}
+
+/** X de dispensar: escape hatch p/ card órfão (run morto) ou pedido indesejado.
+ *  Responde fail-closed best-effort e SEMPRE remove o card (nunca trava a UI). */
+function DismissBtn({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <button
+      onClick={onDismiss}
+      title="Dispensar (nega/cancela)"
+      aria-label="Dispensar interação"
+      className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <X className="size-3.5" />
+    </button>
+  )
 }
 
 /** Card de aprovação (migrado 1:1 do ApprovalModal). */
@@ -99,6 +140,7 @@ function ApprovalCard({
   busy,
   setBusy,
   onDone,
+  onDismiss,
 }: {
   id: string
   data: ApprovalData
@@ -106,6 +148,7 @@ function ApprovalCard({
   busy: boolean
   setBusy: (v: string | null) => void
   onDone: (id: string) => void
+  onDismiss: () => void
 }) {
   async function decide(allow: boolean) {
     setBusy(id)
@@ -129,6 +172,7 @@ function ApprovalCard({
           <span className="font-medium text-brass">pausado</span> aguardando você.
           <QueueHint extra={extra} />
         </p>
+        <DismissBtn onDismiss={onDismiss} />
       </div>
       {data.command ? (
         <div className="mt-2 flex items-start gap-2 rounded-md border bg-card/70 px-2.5 py-1.5">
@@ -175,6 +219,7 @@ function QuestionCard({
   busy,
   setBusy,
   onDone,
+  onDismiss,
 }: {
   id: string
   data: QuestionData
@@ -182,6 +227,7 @@ function QuestionCard({
   busy: boolean
   setBusy: (v: string | null) => void
   onDone: (id: string) => void
+  onDismiss: () => void
 }) {
   const questions = data.questions ?? []
   const [state, setState] = useState<QState[]>(() =>
@@ -255,6 +301,7 @@ function QuestionCard({
             {qi + 1} de {total}
           </span>
         )}
+        <DismissBtn onDismiss={onDismiss} />
       </div>
 
       {q && (

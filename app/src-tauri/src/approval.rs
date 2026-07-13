@@ -120,6 +120,13 @@ pub struct ApprovalListener {
     task: tokio::task::JoinHandle<()>,
     pending: Arc<PendingApprovals>,
     ids: Arc<Mutex<Vec<String>>>,
+    /// Setado no Drop ANTES de resolver os pendentes: fecha a race da conexão
+    /// aceita-mas-ainda-não-registrada (handle_conn checa antes E depois de
+    /// registrar; se true, responde fail-closed na hora e não vaza).
+    shutdown: Arc<std::sync::atomic::AtomicBool>,
+    /// P/ o Drop avisar o front (`interaction://resolved`) dos cards que ele
+    /// resolveu fail-closed — senão o card ficava travado na UI p/ sempre.
+    app: tauri::AppHandle,
 }
 
 impl ApprovalListener {
@@ -142,9 +149,12 @@ impl ApprovalListener {
             }
         };
         let ids: Arc<Mutex<Vec<String>>> = Arc::default();
+        let shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let task = {
             let pending = pending.clone();
             let ids = ids.clone();
+            let app = app.clone();
+            let shutdown = shutdown.clone();
             tokio::spawn(async move {
                 // cada Ok = um pedido de interação, tratado em paralelo (o claude
                 // pode encadear tools; cada uma abre a sua conexão). Err (listener
@@ -154,18 +164,22 @@ impl ApprovalListener {
                     let run_id = run_id.clone();
                     let pending = pending.clone();
                     let ids = ids.clone();
+                    let shutdown = shutdown.clone();
                     tokio::spawn(async move {
-                        handle_conn(stream, app, run_id, pending, ids).await;
+                        handle_conn(stream, app, run_id, pending, ids, shutdown).await;
                     });
                 }
             })
         };
-        Some(Self { path, task, pending, ids })
+        Some(Self { path, task, pending, ids, shutdown, app })
     }
 }
 
 impl Drop for ApprovalListener {
     fn drop(&mut self) {
+        // shutdown ANTES de resolver: handle_conn em voo (aceita mas ainda não
+        // registrada) vê a flag e responde fail-closed sozinha — sem vazamento.
+        self.shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
         self.task.abort();
         let _ = std::fs::remove_file(&self.path);
         // resolve qualquer pedido pendente com o fail-closed por kind: o claude está
@@ -176,6 +190,11 @@ impl Drop for ApprovalListener {
                     if let Some(p) = map.remove(id) {
                         let ans = fail_closed_answer(&p.kind, "run encerrado antes da resposta");
                         let _ = p.tx.send(ans);
+                        // avisa o front: o card deste pedido morreu junto com o run
+                        // (senão ficava travado na UI dizendo "turno pausado").
+                        let _ = self
+                            .app
+                            .emit("interaction://resolved", serde_json::json!({ "id": id }));
                     }
                 }
             }
@@ -193,6 +212,7 @@ async fn handle_conn(
     run_id: String,
     pending: Arc<PendingApprovals>,
     ids: Arc<Mutex<Vec<String>>>,
+    shutdown: Arc<std::sync::atomic::AtomicBool>,
 ) {
     let (rd, mut wr) = stream.into_split();
     let mut reader = BufReader::new(rd);
@@ -221,6 +241,26 @@ async fn handle_conn(
         .to_string();
     let data = req.get("data").cloned().unwrap_or(serde_json::Value::Null);
 
+    // helper: responde fail-closed direto na conexão (sem registrar/emitir).
+    async fn reply_closed(
+        wr: &mut (impl tokio::io::AsyncWrite + Unpin),
+        kind: &str,
+        why: &str,
+    ) {
+        let out = serde_json::json!({ "answer": fail_closed_answer(kind, why) });
+        let mut buf = out.to_string();
+        buf.push('\n');
+        let _ = wr.write_all(buf.as_bytes()).await;
+        let _ = wr.flush().await;
+    }
+
+    // race M1 (revisão): conexão aceita mas o run já morreu (Drop em curso) —
+    // check ANTES de registrar: responde fail-closed na hora, sem vazar task/entrada.
+    if shutdown.load(std::sync::atomic::Ordering::SeqCst) {
+        reply_closed(&mut wr, &kind, "run encerrado").await;
+        return;
+    }
+
     // registra o canal da resposta ANTES de emitir o evento (evita perder um
     // answer_interaction que chegasse instantaneamente).
     let (tx, rx) = oneshot::channel::<Answer>();
@@ -231,6 +271,16 @@ async fn handle_conn(
         if let Ok(mut v) = ids.lock() {
             v.push(id.clone());
         }
+    }
+
+    // double-check DEPOIS de registrar: se o Drop rodou entre os dois pontos, a
+    // varredura dele pode já ter passado sem ver este id → desregistra e fecha.
+    if shutdown.load(std::sync::atomic::Ordering::SeqCst) {
+        if let Ok(mut map) = pending.0.lock() {
+            map.remove(&id);
+        }
+        reply_closed(&mut wr, &kind, "run encerrado").await;
+        return;
     }
 
     let _ = app.emit(

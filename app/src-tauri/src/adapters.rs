@@ -229,6 +229,17 @@ impl AgentAdapter for ClaudeAdapter {
                     }
                 });
                 cmd.arg("--mcp-config").arg(mcp.to_string());
+                // AUTO-APROVA a ask_user (achado A1 da revisão): sem isto, em
+                // acceptEdits cada pergunta disparava ANTES um card de aprovação
+                // ("aprovar uso de ask_user?") = 2 cards; e em Leitura (sem
+                // permission-mode) a tool ERRAVA "requires approval" — com o nudge
+                // ainda mandando o modelo insistir nela. A ask_user é tool de
+                // CONTEÚDO nossa (só pergunta ao usuário) → segura de allowlist.
+                cmd.arg("--allowedTools").arg(format!(
+                    "mcp__{}__{}",
+                    crate::approval::MCP_SERVER_NAME,
+                    crate::approval::ASK_USER_TOOL
+                ));
                 // permission-prompt-tool (aprovação granular) SÓ no Padrão.
                 if matches!(req.permission, Permission::Padrao) {
                     cmd.arg("--permission-prompt-tool").arg(format!(

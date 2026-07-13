@@ -35,6 +35,7 @@ import { isTauri, listConvRefs } from "@/lib/db"
 import {
   buildLearningBlocks,
   markLessonsUsed,
+  reinforceLessons,
   distillCandidate,
   saveLesson,
 } from "@/lib/learning"
@@ -449,7 +450,10 @@ export function ChatPanel() {
         const convId = useChat.getState().activeId
         if (!convId) return
         const ids = injectedLessonsRef.current[convId] ?? []
-        if (ids.length) await markLessonsUsed(ids)
+        // 👍 = REFORÇO (bumpa `reinforced`, o sinal que o curador lê). O `uses`
+        // já foi bumpado na INJEÇÃO (acima) — bumpar de novo aqui era o bug que
+        // acelerava o rebaixamento da lição boa (uses subia sem reinforced).
+        if (ids.length) await reinforceLessons(ids)
       },
       distill: (agentTurn: string, userNote: string) =>
         distillCandidate({ cwd, helperModel, agentTurn, userNote }),

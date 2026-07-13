@@ -345,7 +345,10 @@ export async function runCurator(
   try {
     const actives = await listActiveLessons(projectId)
 
-    // (a) DEDUP: varre pares quase-iguais. `removed` evita mexer 2× na mesma.
+    // (a) DEDUP: varre pares quase-iguais DO MESMO ESCOPO. Comparar escopos
+    // diferentes deletava uma lição GLOBAL por causa de uma duplicata local do
+    // projeto (hard-delete afetando TODOS os projetos) — achado da revisão.
+    // Mesmo-escopo: global×global (dedup legítimo) e projeto×projeto (idem).
     const removed = new Set<string>()
     for (let i = 0; i < actives.length; i++) {
       const a = actives[i]
@@ -353,6 +356,7 @@ export async function runCurator(
       for (let j = i + 1; j < actives.length; j++) {
         const b = actives[j]
         if (removed.has(b.id)) continue
+        if (a.scope !== b.scope) continue // nunca funde escopos diferentes
         if (isNovelRule(a.rule, [b.rule])) continue // não são quase-iguais
         // duplicata: mantém a de MAIOR uses (empate → a `a`, já ordenada desc).
         const [keep, drop] = a.uses >= b.uses ? [a, b] : [b, a]
@@ -365,8 +369,11 @@ export async function runCurator(
     }
 
     // (b) REBAIXA: sobreviventes muito injetadas e nunca reforçadas → candidate.
+    // SÓ lições do PROJETO: um run de curadoria num projeto não rebaixa uma
+    // GLOBAL (ela pode estar sendo útil em outros projetos) — achado da revisão.
     for (const l of actives) {
       if (removed.has(l.id)) continue
+      if (l.scope === "global") continue
       if (l.uses >= CURATOR_DEMOTE_USES && l.reinforced === 0) {
         await setLessonStatus(l.id, "candidate")
         summary.demoted++
