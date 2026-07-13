@@ -69,6 +69,7 @@ export function MissionLauncher({
         activeId,
         preset,
         task.trim(),
+        project.id,
         project.path,
         project.permissionMode ?? "padrao",
       )

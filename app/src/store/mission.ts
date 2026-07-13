@@ -13,6 +13,13 @@ import type {
 } from "@/lib/missionTypes"
 import { buildHandoff } from "@/lib/handoff"
 import { loadGitDiff } from "@/lib/git"
+import { insertDelivery } from "@/lib/db"
+import {
+  buildLearningBlocks,
+  distillLesson,
+  markLessonsUsed,
+} from "@/lib/learning"
+import { useApp } from "@/store/app"
 import { useChat, type ChatItem } from "@/store/chat"
 import {
   checkBudget,
@@ -38,6 +45,7 @@ export interface MissionState {
     convId: string,
     preset: MissionPreset,
     task: string,
+    projectId: string,
     projectPath: string,
     permission: string,
   ) => Promise<void>
@@ -104,7 +112,7 @@ export const useMission = create<MissionState>((set, get) => {
   return {
     byConv: {},
 
-    launch: async (convId, preset, task, projectPath, permission) => {
+    launch: async (convId, preset, task, projectId, projectPath, permission) => {
       // guarda anti-duplo-start (padrão do Fusion): missão rodando → ignora.
       const existing = get().byConv[convId]
       if (existing && isActive(existing.status)) return
@@ -112,6 +120,14 @@ export const useMission = create<MissionState>((set, get) => {
       // cwd: worktree da conversa se houver, senão a pasta do projeto.
       const conv = useChat.getState().byId[convId]
       const cwd = conv?.worktreePath ?? projectPath
+
+      // Modelo helper (Haiku) p/ destilar lições (M2). Config por projeto vence o
+      // default global; null = destilação desligada (mesma regra das sugestões).
+      const appState = useApp.getState()
+      const projCfg = appState.mycockpit[projectId]
+      const helperModel = projCfg
+        ? projCfg.helper
+        : appState.settings.helperModel
 
       const missionId = crypto.randomUUID()
       const run: MissionRun = {
@@ -140,6 +156,15 @@ export const useMission = create<MissionState>((set, get) => {
       // corretivo + re-review) quando o reviewer reprova, até MAX_REVIEW_LOOPS.
       const phases: MissionPhaseDef[] = [...preset.phases]
       let reviewLoops = 0
+      // M2: feedbacks de reprovação do reviewer que dispararam correção. Só
+      // destilamos lição se a missão terminar "done" (a correção foi REAL e
+      // resolvida — evento de alto sinal reprovado→corrigido→aprovado).
+      const corrections: string[] = []
+      // M1: matéria-prima da entrega (gravada no fim, se "done"). O plano vem do
+      // 1º planner; agent/model do 1º executor (quem de fato mexeu no código).
+      let plannerSummary = ""
+      let execAgent = ""
+      let execModel: string | null = null
       let i = 0
 
       while (i < phases.length) {
@@ -181,6 +206,16 @@ export const useMission = create<MissionState>((set, get) => {
           changedFiles = changedFilesRef(await loadGitDiff(cwd))
         }
 
+        // M1/M2 — injeta o que o projeto já aprendeu. Recall só no planner
+        // (alimenta o plano); lições em planner E executor. Best-effort: falha
+        // de DB degrada p/ blocos nulos (buildLearningBlocks já é tolerante).
+        const learn = await buildLearningBlocks(
+          projectId,
+          task,
+          def.persona === "planner",
+        )
+        if (learn.lessonIds.length) void markLessonsUsed(learn.lessonIds)
+
         const prompt = phasePrompt({
           persona: def.persona,
           task,
@@ -189,6 +224,8 @@ export const useMission = create<MissionState>((set, get) => {
           changedFiles,
           fallbackContext,
           instructions: def.instructions,
+          recallBlock: learn.recall,
+          lessonsBlock: learn.lessons,
         })
 
         patchConv(convId, { current: i })
@@ -231,6 +268,16 @@ export const useMission = create<MissionState>((set, get) => {
 
         prevItems = result.items
 
+        // M1: captura o plano (1º planner) e o executor (1º executor) p/ a
+        // entrega. `phaseText` já filtra só o texto (sem tool calls).
+        if (def.persona === "planner" && !plannerSummary) {
+          plannerSummary = phaseText(result.items)
+        }
+        if (def.persona === "executor" && !execAgent) {
+          execAgent = def.agent
+          execModel = def.model
+        }
+
         // M2 — loop de correção: reviewer terminou mas NÃO aprovou → reinjeta as
         // correções num executor corretivo + re-review, até MAX_REVIEW_LOOPS
         // (e sempre sob o teto de custo, checado no topo do while).
@@ -244,6 +291,7 @@ export const useMission = create<MissionState>((set, get) => {
             reviewLoops++
             const round = reviewLoops
             const feedback = phaseText(result.items)
+            corrections.push(feedback)
             const corrective: MissionPhaseDef = {
               ...execDef,
               id: `fix-${round}-${missionId.slice(0, 6)}`,
@@ -272,9 +320,47 @@ export const useMission = create<MissionState>((set, get) => {
       }
 
       // todas as fases passaram → done, current aponta além do fim.
+      const finalCost = get().byConv[convId]?.costTotal ?? 0
       patchConv(convId, { status: "done", current: phases.length })
-      // Persistência: OPCIONAL no M1 (fica em memória). TODO(M2): espelhar o
-      // padrão saveFusionRun (lib/db) p/ a missão sobreviver ao restart.
+
+      // ── M1: grava a ENTREGA (evento de alto sinal: passou nos gates) ──
+      // Arquivos = paths do diff do worktree; fallback = files_touched dos
+      // handoffs .mission/. Best-effort: nada aqui pode quebrar o "done".
+      try {
+        let files: string[] = []
+        const diff = await loadGitDiff(cwd)
+        if (diff.isRepo && diff.files.length) {
+          files = diff.files.map((f) => f.path)
+        } else {
+          const seen = new Set<string>()
+          for (let j = 0; j < phases.length; j++) {
+            const doc = await readHandoff(cwd, handoffFileName(j, phases[j].persona))
+            for (const f of doc?.files_touched ?? []) seen.add(f)
+          }
+          files = [...seen]
+        }
+        await insertDelivery({
+          projectId,
+          task,
+          planSummary: plannerSummary,
+          filesTouched: files,
+          costUsd: finalCost,
+          agent: execAgent,
+          model: execModel,
+        })
+      } catch {
+        // entrega não gravada não invalida a missão — só perde o recall futuro.
+      }
+
+      // ── M2: destila UMA lição das correções REAIS que foram resolvidas ──
+      if (corrections.length && helperModel) {
+        void distillLesson({
+          projectId,
+          cwd,
+          helperModel,
+          reviewerFeedback: corrections.join("\n\n---\n\n"),
+        })
+      }
     },
 
     // Stop de verdade: cancela o run da fase corrente via cancel_agent e marca

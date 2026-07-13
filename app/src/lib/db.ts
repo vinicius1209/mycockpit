@@ -3,6 +3,7 @@ import type { Project } from "@/lib/types"
 import type { ChatItem } from "@/store/chat"
 import type { ConvRef } from "@/lib/attachments"
 import type { FusionRun } from "@/store/fusion"
+import type { DeliveryRecord } from "@/lib/recall"
 
 const DB_URL = "sqlite:mycockpit.db" // DEVE bater com add_migrations no lib.rs
 
@@ -532,6 +533,205 @@ export async function clearPendingFusion(convId: string): Promise<void> {
   await db.execute(
     "UPDATE fusion_runs SET pending = 0 WHERE conv_id = $1 AND pending = 1",
     [convId],
+  )
+}
+
+// ---------------- Auto-aprendizado: deliveries + lessons (M1/M2) ----------------
+// Tabelas criadas do FRONTEND via CREATE TABLE IF NOT EXISTS (idempotente, sem
+// migration no lib.rs — decisão do M1/M2). `ensureLearningTables` roda uma vez
+// por processo (guarda de promessa) antes de qualquer leitura/escrita.
+
+let learningReady: Promise<void> | null = null
+
+async function ensureLearningTables(db: Database): Promise<void> {
+  if (!learningReady) {
+    learningReady = (async () => {
+      await db.execute(
+        `CREATE TABLE IF NOT EXISTS deliveries (
+           id TEXT PRIMARY KEY,
+           project_id TEXT NOT NULL,
+           task TEXT NOT NULL,
+           plan_summary TEXT,
+           files_touched TEXT,
+           cost_usd REAL,
+           agent TEXT,
+           model TEXT,
+           created_at INTEGER NOT NULL
+         )`,
+      )
+      await db.execute(
+        `CREATE INDEX IF NOT EXISTS idx_deliveries_project ON deliveries(project_id)`,
+      )
+      await db.execute(
+        `CREATE TABLE IF NOT EXISTS lessons (
+           id TEXT PRIMARY KEY,
+           project_id TEXT NOT NULL,
+           rule TEXT NOT NULL,
+           source TEXT,
+           created_at INTEGER NOT NULL,
+           uses INTEGER NOT NULL DEFAULT 0
+         )`,
+      )
+      await db.execute(
+        `CREATE INDEX IF NOT EXISTS idx_lessons_project ON lessons(project_id)`,
+      )
+    })()
+  }
+  return learningReady
+}
+
+interface DeliveryRow {
+  id: string
+  task: string
+  plan_summary: string | null
+  files_touched: string | null
+  cost_usd: number | null
+  agent: string | null
+  model: string | null
+  created_at: number
+}
+
+function toDelivery(r: DeliveryRow): DeliveryRecord {
+  let files: string[] = []
+  try {
+    const p = r.files_touched ? JSON.parse(r.files_touched) : []
+    if (Array.isArray(p)) files = p.filter((x): x is string => typeof x === "string")
+  } catch {
+    files = []
+  }
+  return {
+    id: r.id,
+    task: r.task,
+    planSummary: r.plan_summary ?? "",
+    filesTouched: files,
+    costUsd: r.cost_usd,
+    agent: r.agent ?? "",
+    model: r.model,
+    createdAt: r.created_at,
+  }
+}
+
+/** Grava UMA entrega que passou nos gates (Mission terminou "done"). É a
+ *  matéria-prima do recall (M1) — pares tarefa→resolução reusáveis. */
+export async function insertDelivery(d: {
+  projectId: string
+  task: string
+  planSummary: string
+  filesTouched: string[]
+  costUsd: number | null
+  agent: string
+  model: string | null
+}): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureLearningTables(db)
+  await db.execute(
+    "INSERT INTO deliveries (id, project_id, task, plan_summary, files_touched, cost_usd, agent, model, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+    [
+      crypto.randomUUID(),
+      d.projectId,
+      d.task,
+      d.planSummary,
+      JSON.stringify(d.filesTouched),
+      d.costUsd,
+      d.agent,
+      d.model,
+      Date.now(),
+    ],
+  )
+}
+
+/** Entregas passadas de um projeto (mais recentes primeiro), p/ o recall. */
+export async function listDeliveries(
+  projectId: string,
+  limit = 200,
+): Promise<DeliveryRecord[]> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    await ensureLearningTables(db)
+    const rows = await db.select<DeliveryRow[]>(
+      "SELECT id, task, plan_summary, files_touched, cost_usd, agent, model, created_at FROM deliveries WHERE project_id = $1 ORDER BY created_at DESC LIMIT $2",
+      [projectId, limit],
+    )
+    return rows.map(toDelivery)
+  } catch {
+    return []
+  }
+}
+
+export interface LessonRecord {
+  id: string
+  rule: string
+  source: string | null
+  createdAt: number
+  uses: number
+}
+
+interface LessonRow {
+  id: string
+  rule: string
+  source: string | null
+  created_at: number
+  uses: number
+}
+
+/** Grava UMA lição destilada (M2). O dedup por similaridade é responsabilidade
+ *  do chamador (lib/learning) — aqui é só o INSERT. */
+export async function insertLesson(l: {
+  projectId: string
+  rule: string
+  source: string
+}): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureLearningTables(db)
+  await db.execute(
+    "INSERT INTO lessons (id, project_id, rule, source, created_at, uses) VALUES ($1, $2, $3, $4, $5, 0)",
+    [crypto.randomUUID(), l.projectId, l.rule, l.source, Date.now()],
+  )
+}
+
+/** Lições de um projeto. Ordena por mais USADAS e mais RECENTES (as que valem
+ *  injetar primeiro). O cap é aplicado pelo chamador na injeção. */
+export async function listLessons(projectId: string): Promise<LessonRecord[]> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    await ensureLearningTables(db)
+    const rows = await db.select<LessonRow[]>(
+      "SELECT id, rule, source, created_at, uses FROM lessons WHERE project_id = $1 ORDER BY uses DESC, created_at DESC",
+      [projectId],
+    )
+    return rows.map((r) => ({
+      id: r.id,
+      rule: r.rule,
+      source: r.source,
+      createdAt: r.created_at,
+      uses: r.uses,
+    }))
+  } catch {
+    return []
+  }
+}
+
+/** Poda uma lição (UI de auditoria — princípio "nunca promover sem revisão"). */
+export async function deleteLesson(id: string): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute("DELETE FROM lessons WHERE id = $1", [id])
+}
+
+/** Incrementa o contador de usos das lições injetadas (feedback de relevância:
+ *  o ranking sobe as que reaparecem). */
+export async function bumpLessonUses(ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  const db = await getDb()
+  if (!db) return
+  const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ")
+  await db.execute(
+    `UPDATE lessons SET uses = uses + 1 WHERE id IN (${placeholders})`,
+    ids,
   )
 }
 

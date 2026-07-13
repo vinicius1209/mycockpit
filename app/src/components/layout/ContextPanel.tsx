@@ -30,6 +30,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Markdown } from "@/components/common/Markdown"
+import { LearningSection } from "@/components/layout/LearningSection"
 import { useActiveProject, useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import type { ProjectConfig } from "@/store/app"
@@ -605,6 +606,14 @@ export function ContextPanel() {
                 </p>
               )}
             </div>
+          </Section>
+
+          <Separator />
+
+          {/* Auto-aprendizado (M1/M2): entregas no recall + lições podáveis.
+              Auditável — o app propõe, você revisa/remove (princípio do doc). */}
+          <Section title="Aprendizado">
+            <LearningSection key={reload} projectId={project.id} />
           </Section>
 
           <Separator />

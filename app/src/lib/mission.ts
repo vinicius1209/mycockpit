@@ -62,6 +62,11 @@ export interface PhasePromptInput {
   fallbackContext?: string | null
   /** Instrução extra específica da fase (do preset). */
   instructions?: string
+  /** M1: bloco "Entregas similares já feitas (recall)" — só no planner, quando
+   *  há match high/medium. null = nada a injetar. */
+  recallBlock?: string | null
+  /** M2: bloco "Lições deste projeto" — planner e executor. null = sem lições. */
+  lessonsBlock?: string | null
 }
 
 /** Monta o prompt de uma fase: persona + tarefa + handoff tipado das fases
@@ -75,6 +80,15 @@ export function phasePrompt(input: PhasePromptInput): string {
 
   if (input.instructions && input.instructions.trim()) {
     parts.push("", "## Instruções desta fase", input.instructions.trim())
+  }
+
+  // Auto-aprendizado (M1/M2): recall de entregas similares (só planner) e
+  // lições do projeto. Vêm ANTES do handoff pra ancorar o raciocínio da fase.
+  if (input.recallBlock && input.recallBlock.trim()) {
+    parts.push("", input.recallBlock.trim())
+  }
+  if (input.lessonsBlock && input.lessonsBlock.trim()) {
+    parts.push("", input.lessonsBlock.trim())
   }
 
   if (input.priorHandoffs && input.priorHandoffs.trim()) {
