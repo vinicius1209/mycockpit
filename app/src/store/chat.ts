@@ -122,7 +122,13 @@ export interface ConvState {
 interface ChatState {
   projectId: string | null
   activeId: string | null
+  /** Metas das conversas do projeto ATIVO. Espelho de conversationsByProject[projectId]
+   *  (mantido p/ compat: leitores que só olham o projeto ativo seguem reativos). */
   conversations: ConversationMeta[]
+  /** Fonte de verdade: metas por projeto (árvore independente — vários projetos
+   *  podem estar expandidos ao mesmo tempo, cada um com sua lista). Populado lazy
+   *  ao expandir um projeto (loadProjectConversations). */
+  conversationsByProject: Record<string, ConversationMeta[]>
   /** Estado de cada conversa carregada (Sprint 4, runs em background). */
   byId: Record<string, ConvState>
   /** Rascunho não-enviado por conversa, sobrevive a trocar de modo/conversa. */
@@ -131,6 +137,9 @@ interface ChatState {
   queuedPrompt: string | null
 
   openProject: (projectId: string | null) => Promise<void>
+  /** Carrega (lazy) as metas de um projeto no mapa; no-op se já carregadas.
+   *  Chamada quando um projeto é expandido no sidebar. */
+  loadProjectConversations: (projectId: string) => Promise<void>
   newConversation: (projectId: string) => Promise<void>
   switchConversation: (id: string) => Promise<void>
   removeConversation: (id: string) => Promise<void>
@@ -196,6 +205,39 @@ interface ChatState {
 
 function uid(): string {
   return crypto.randomUUID()
+}
+
+/** Acha a chave (projectId) cujo array de metas contém `convId`. Como o id de
+ *  conversa é ÚNICO globalmente, no máximo um projeto casa → miramos a conversa
+ *  EXATA, sem risco de mexer no projeto errado. */
+function projectOfConv(
+  map: Record<string, ConversationMeta[]>,
+  convId: string,
+): string | undefined {
+  for (const [pid, list] of Object.entries(map)) {
+    if (list.some((c) => c.id === convId)) return pid
+  }
+  return undefined
+}
+
+/** Aplica um patch imutável na meta `convId` dentro do mapa por projeto (mira o
+ *  id único → projeto certo) E espelha em `conversations` se for o projeto ativo.
+ *  `update` recebe a meta atual e devolve a nova. Retorna o patch p/ set(). */
+function patchConvMeta(
+  s: Pick<ChatState, "conversationsByProject" | "conversations" | "projectId">,
+  convId: string,
+  update: (c: ConversationMeta) => ConversationMeta,
+): Pick<ChatState, "conversationsByProject" | "conversations"> {
+  const pid = projectOfConv(s.conversationsByProject, convId)
+  if (!pid) return { conversationsByProject: s.conversationsByProject, conversations: s.conversations }
+  const nextList = s.conversationsByProject[pid].map((c) =>
+    c.id === convId ? update(c) : c,
+  )
+  const conversationsByProject = { ...s.conversationsByProject, [pid]: nextList }
+  return {
+    conversationsByProject,
+    conversations: pid === s.projectId ? nextList : s.conversations,
+  }
 }
 
 /** Título derivado do 1º prompt do usuário (S4). */
@@ -457,6 +499,7 @@ export const useChat = create<ChatState>((set, get) => {
     projectId: null,
     activeId: null,
     conversations: [],
+    conversationsByProject: {},
     byId: {},
     drafts: {},
     queuedPrompt: null,
@@ -542,59 +585,133 @@ export const useChat = create<ChatState>((set, get) => {
           projectId,
           activeId: id,
           conversations: list,
+          conversationsByProject: { ...s.conversationsByProject, [projectId]: list },
           byId: s.byId[id] ? s.byId : { ...s.byId, [id]: emptyConv(projectId) },
         }))
         return
       }
       // exibe em ordem de criação, mas abre a usada mais recentemente
-      const activeId = list.reduce(
+      const mostRecent = list.reduce(
         (best, c) => (c.updatedAt > best.updatedAt ? c : best),
         list[0],
       ).id
-      set({ projectId, activeId, conversations: list })
+      // Se já estamos neste projeto e o activeId atual é uma conversa dele (ex.:
+      // o usuário acabou de clicar numa conversa de projeto não-ativo, que
+      // trocou o projeto ativo E chamou switchConversation), preserva a escolha
+      // — não pula pra "mais recente" e clobbra o clique. Senão, abre a recente.
+      const prev = get()
+      const keepActive =
+        prev.projectId === projectId &&
+        prev.activeId != null &&
+        list.some((c) => c.id === prev.activeId)
+      const activeId = keepActive ? prev.activeId! : mostRecent
+      set((s) => ({
+        projectId,
+        activeId,
+        conversations: list,
+        conversationsByProject: { ...s.conversationsByProject, [projectId]: list },
+      }))
       await ensureLoaded(projectId, activeId)
+    },
+
+    // Lazy: carrega as metas de um projeto no mapa quando ele é expandido no
+    // sidebar. No-op se já carregadas (não remexe no que já está na tela).
+    loadProjectConversations: async (projectId) => {
+      if (get().conversationsByProject[projectId]) return
+      const list = (await dbList(projectId)) ?? []
+      set((s) =>
+        s.conversationsByProject[projectId]
+          ? {}
+          : {
+              conversationsByProject: {
+                ...s.conversationsByProject,
+                [projectId]: list,
+              },
+            },
+      )
     },
 
     newConversation: async (projectId) => {
       const id = uid()
       await dbCreate(projectId, id)
-      set((s) => ({
-        projectId,
-        activeId: id,
-        conversations: [
-          ...s.conversations,
-          { id, title: null, updatedAt: Date.now(), color: null, worktreePath: null },
-        ],
-        byId: { ...s.byId, [id]: emptyConv(projectId) },
-      }))
+      set((s) => {
+        const meta: ConversationMeta = {
+          id,
+          title: null,
+          updatedAt: Date.now(),
+          color: null,
+          worktreePath: null,
+        }
+        // append na lista DAQUELE projeto (não do ativo antigo). Criar uma
+        // conversa também torna o projeto o ativo (abre no painel).
+        const prev = s.conversationsByProject[projectId] ?? s.conversations
+        const nextList = [...prev, meta]
+        return {
+          projectId,
+          activeId: id,
+          conversations: nextList,
+          conversationsByProject: {
+            ...s.conversationsByProject,
+            [projectId]: nextList,
+          },
+          byId: { ...s.byId, [id]: emptyConv(projectId) },
+        }
+      })
     },
 
     switchConversation: async (id) => {
       const s = get()
       if (s.activeId === id) return
-      set({ activeId: id })
-      if (s.projectId) await ensureLoaded(s.projectId, id)
+      // Descobre o projeto DONO desta conversa pelo id único. Se for outro
+      // projeto (clique numa conversa de projeto não-ativo no sidebar), sincroniza
+      // projectId + o espelho `conversations` na hora — não espera o openProject
+      // (que roda via efeito do ChatPanel) e não deixa a UI num estado misto.
+      const owner = projectOfConv(s.conversationsByProject, id) ?? s.projectId
+      set((st) => ({
+        activeId: id,
+        projectId: owner,
+        conversations:
+          owner && st.conversationsByProject[owner]
+            ? st.conversationsByProject[owner]
+            : st.conversations,
+      }))
+      if (owner) await ensureLoaded(owner, id)
     },
 
     removeConversation: async (id) => {
+      // Mira a conversa pelo id ÚNICO → deleta só a linha certa no DB e some do
+      // array do projeto DONO dela (mesmo que seja um projeto NÃO-ativo). O
+      // projeto ativo e as outras conversas ficam intactos.
       await dbDelete(id)
       void wipeAttachments(id) // apaga os blobs da conversa (privacidade imediata)
-      const wasActive = get().activeId === id
-      const projectId = get().projectId
+      const before = get()
+      const wasActive = before.activeId === id
+      // projeto DONO da conversa removida (pode não ser o ativo)
+      const owner =
+        projectOfConv(before.conversationsByProject, id) ?? before.projectId
       set((s) => {
         const rest = { ...s.byId }
         delete rest[id]
-        return {
-          byId: rest,
-          conversations: s.conversations.filter((c) => c.id !== id),
+        const conversationsByProject = { ...s.conversationsByProject }
+        if (owner && conversationsByProject[owner]) {
+          conversationsByProject[owner] = conversationsByProject[owner].filter(
+            (c) => c.id !== id,
+          )
         }
+        const mirror =
+          owner != null && owner === s.projectId && conversationsByProject[owner]
+            ? conversationsByProject[owner]
+            : s.conversations.filter((c) => c.id !== id)
+        return { byId: rest, conversationsByProject, conversations: mirror }
       })
+      // Se a removida não era a ATIVA (ex.: excluiu de um projeto não-ativo),
+      // nada mais a fazer — o painel ativo segue como estava.
       if (!wasActive) return
       const remaining = get().conversations
       if (remaining.length > 0) {
         await get().switchConversation(remaining[0].id)
-      } else if (projectId) {
-        await get().newConversation(projectId)
+      } else if (owner) {
+        await get().newConversation(owner)
       } else {
         set({ activeId: null })
       }
@@ -603,29 +720,22 @@ export const useChat = create<ChatState>((set, get) => {
     renameConversation: async (id, title) => {
       const t = title.trim()
       if (!t) return
+      // dbRename mira o id ÚNICO no DB; patchConvMeta acha o projeto DONO por esse
+      // mesmo id → renomeia a conversa exata (mesmo em projeto não-ativo), sem
+      // tocar em nenhuma outra.
       await dbRename(id, t)
-      set((s) => ({
-        conversations: s.conversations.map((c) =>
-          c.id === id ? { ...c, title: t } : c,
-        ),
-      }))
+      set((s) => patchConvMeta(s, id, (c) => ({ ...c, title: t })))
     },
 
     setConversationColor: async (id, color) => {
       await dbSetColor(id, color)
-      set((s) => ({
-        conversations: s.conversations.map((c) =>
-          c.id === id ? { ...c, color } : c,
-        ),
-      }))
+      set((s) => patchConvMeta(s, id, (c) => ({ ...c, color })))
     },
 
     setWorktree: (convId, path) => {
       void dbSetWorktree(convId, path)
       set((s) => ({
-        conversations: s.conversations.map((c) =>
-          c.id === convId ? { ...c, worktreePath: path } : c,
-        ),
+        ...patchConvMeta(s, convId, (c) => ({ ...c, worktreePath: path })),
         byId: s.byId[convId]
           ? { ...s.byId, [convId]: { ...s.byId[convId], worktreePath: path } }
           : s.byId,
@@ -633,9 +743,13 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     duplicateConversation: async (id) => {
-      const projectId = get().projectId
-      if (!projectId) return
-      const src = get().conversations.find((c) => c.id === id)
+      // Duplica no MESMO projeto da conversa-fonte (acha pelo id único), não
+      // necessariamente o ativo. A cópia entra no array daquele projeto.
+      const before = get()
+      const owner =
+        projectOfConv(before.conversationsByProject, id) ?? before.projectId
+      if (!owner) return
+      const src = before.conversationsByProject[owner]?.find((c) => c.id === id)
       const loaded = await dbLoad(id)
       if (loaded === "corrupt") return // não duplica linha corrompida
       const items = loaded?.items ?? get().byId[id]?.items ?? []
@@ -646,40 +760,49 @@ export const useChat = create<ChatState>((set, get) => {
       const newId = uid()
       // sessão NULL de propósito: a cópia não herda a sessão do CLI (resume
       // conflitaria); os items viram histórico visível, o próximo turno é fresh.
-      await dbSave(newId, projectId, title, null, items, [], agent, reqModel, effort)
+      await dbSave(newId, owner, title, null, items, [], agent, reqModel, effort)
       if (src?.color != null) await dbSetColor(newId, src.color)
-      set((s) => ({
-        activeId: newId,
-        conversations: [
-          ...s.conversations,
-          {
-            id: newId,
-            title,
-            updatedAt: Date.now(),
-            color: src?.color ?? null,
-            worktreePath: null,
+      set((s) => {
+        const meta: ConversationMeta = {
+          id: newId,
+          title,
+          updatedAt: Date.now(),
+          color: src?.color ?? null,
+          worktreePath: null,
+        }
+        const nextList = [...(s.conversationsByProject[owner] ?? []), meta]
+        return {
+          activeId: newId,
+          projectId: owner,
+          conversationsByProject: {
+            ...s.conversationsByProject,
+            [owner]: nextList,
           },
-        ],
-        byId: {
-          ...s.byId,
-          [newId]: {
-            ...emptyConv(projectId),
-            items,
-            agent,
-            reqModel,
-            effort,
-            sessionId: null,
+          conversations: owner === s.projectId ? nextList : s.conversations,
+          byId: {
+            ...s.byId,
+            [newId]: {
+              ...emptyConv(owner),
+              items,
+              agent,
+              reqModel,
+              effort,
+              sessionId: null,
+            },
           },
-        },
-      }))
+        }
+      })
     },
 
     persist: async (convId) => {
       const c = get().byId[convId]
       if (!c) return
       if (c.corrupt) return // nunca grava por cima de uma linha corrompida
-      // preserva o título atual (rename manual OU auto já fixado); só deriva se vazio
-      const meta = get().conversations.find((cv) => cv.id === convId)
+      // preserva o título atual (rename manual OU auto já fixado); só deriva se vazio.
+      // A meta vem do array do projeto DONO (c.projectId), não só do ativo — assim
+      // um run em background (projeto não-ativo) também atualiza sua própria lista.
+      const ownerList = get().conversationsByProject[c.projectId]
+      const meta = ownerList?.find((cv) => cv.id === convId)
       const title = meta?.title ?? deriveTitle(c.items)
       await dbSave(
         convId,
@@ -694,11 +817,21 @@ export const useChat = create<ChatState>((set, get) => {
       )
       const now = Date.now()
       // atualiza no lugar, sem reordenar (ordem de criação é estável)
-      set((st) => ({
-        conversations: st.conversations.map((cv) =>
+      set((st) => {
+        const list = st.conversationsByProject[c.projectId]
+        if (!list) return {}
+        const nextList = list.map((cv) =>
           cv.id === convId ? { ...cv, title, updatedAt: now } : cv,
-        ),
-      }))
+        )
+        return {
+          conversationsByProject: {
+            ...st.conversationsByProject,
+            [c.projectId]: nextList,
+          },
+          conversations:
+            c.projectId === st.projectId ? nextList : st.conversations,
+        }
+      })
     },
 
     start: (convId, text, runId, agent, model, effort, attachments) =>
@@ -716,11 +849,12 @@ export const useChat = create<ChatState>((set, get) => {
             attachments: attachments.length ? attachments : undefined,
           },
         ]
-        const conversations = s.conversations.map((c) =>
-          c.id === convId && !c.title ? { ...c, title: deriveTitle(items) } : c,
+        // deriva o título na lista do projeto DONO (via id único), espelha no ativo
+        const titled = patchConvMeta(s, convId, (c) =>
+          c.title ? c : { ...c, title: deriveTitle(items) },
         )
         return {
-          conversations,
+          ...titled,
           byId: {
             ...s.byId,
             [convId]: {
@@ -901,11 +1035,11 @@ export const useChat = create<ChatState>((set, get) => {
             attachments: attachments.length ? attachments : undefined,
           },
         ]
-        const conversations = s.conversations.map((c) =>
-          c.id === convId && !c.title ? { ...c, title: deriveTitle(items) } : c,
+        const titled = patchConvMeta(s, convId, (c) =>
+          c.title ? c : { ...c, title: deriveTitle(items) },
         )
         return {
-          conversations,
+          ...titled,
           byId: {
             ...s.byId,
             [convId]: { ...cur, items, running: true, finalizing: false },

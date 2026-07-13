@@ -30,7 +30,11 @@ export function notifyTurnEnd(convId: string, agent: string) {
   const last = c.items[c.items.length - 1]
   if (last?.kind === "cancelled") return // cancelamento do usuário não notifica
 
-  const meta = chat.conversations.find((cv) => cv.id === convId)
+  // usa o array do projeto DONO (c.projectId) — o turno pode ter rodado em
+  // background num projeto não-ativo, que não está no espelho `conversations`.
+  const meta = (chat.conversationsByProject[c.projectId] ?? chat.conversations).find(
+    (cv) => cv.id === convId,
+  )
   const title = meta?.title ?? "Conversa"
   const proj = useApp.getState().projects.find((p) => p.id === c.projectId)
   const errored = last?.kind === "error" || last?.kind === "limit"

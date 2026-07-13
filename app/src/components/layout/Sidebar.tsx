@@ -30,7 +30,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuSubContent,
 } from "@/components/ui/context-menu"
-import { useApp, useActiveProject } from "@/store/app"
+import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { archiveProject, restoreProject } from "@/lib/db"
@@ -312,9 +312,10 @@ function useDecidingConvIds(): Set<string> {
   return new Set(key ? key.split(",") : [])
 }
 
-/** Lista de conversas (tarefas) do projeto ativo, accordion sob o projeto. */
+/** Lista de conversas (tarefas) de UM projeto (árvore independente: pode haver
+ *  várias montadas ao mesmo tempo, cada uma lendo a lista do seu projectId). */
 function ConversationList({ projectId }: { projectId: string }) {
-  const conversations = useChat((s) => s.conversations)
+  const conversations = useChat((s) => s.conversationsByProject[projectId] ?? [])
   const activeId = useChat((s) => s.activeId)
   const newConversation = useChat((s) => s.newConversation)
   const switchConversation = useChat((s) => s.switchConversation)
@@ -323,11 +324,21 @@ function ConversationList({ projectId }: { projectId: string }) {
   const setConversationColor = useChat((s) => s.setConversationColor)
   const duplicateConversation = useChat((s) => s.duplicateConversation)
   const setWorktree = useChat((s) => s.setWorktree)
-  const project = useActiveProject()
+  // Projeto DESTA lista (não o ativo): worktree/isolamento usam o path certo,
+  // mesmo numa árvore de projeto não-ativo.
+  const project = useApp((s) => s.projects.find((p) => p.id === projectId) ?? null)
+  const setActiveProject = useApp((s) => s.setActiveProject)
   const running = useRunningConvIds()
   const deciding = useDecidingConvIds()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState("")
+
+  // Clicar numa conversa: torna o projeto DELA o ativo (abre no painel) e troca
+  // a conversa. Funciona pra projeto não-ativo (setActive + switch pelo id único).
+  function openConv(id: string) {
+    if (projectId !== useApp.getState().activeProjectId) setActiveProject(projectId)
+    void switchConversation(id)
+  }
 
   function commitRename(id: string) {
     const v = editValue.trim()
@@ -419,7 +430,7 @@ function ConversationList({ projectId }: { projectId: string }) {
                   </div>
                 ) : (
                   <button
-                    onClick={() => void switchConversation(c.id)}
+                    onClick={() => openConv(c.id)}
                     className={cn(
                       "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-10 text-left text-[12px]",
                       // active = cor de destaque no texto (bg fixo vem do container);
@@ -501,7 +512,12 @@ function ConversationList({ projectId }: { projectId: string }) {
         )
       })}
       <button
-        onClick={() => void newConversation(projectId)}
+        onClick={() => {
+          // Nova tarefa neste projeto → torna-o o ativo (abre no painel) e cria.
+          if (projectId !== useApp.getState().activeProjectId)
+            setActiveProject(projectId)
+          void newConversation(projectId)
+        }}
         className="flex items-center gap-3 rounded-md p-2 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
       >
         {/* Plus ocupa a mesma coluna de ícone (20px) do projeto → "nova tarefa"
@@ -537,30 +553,37 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   const setActive = useApp((s) => s.setActiveProject)
   const theme = useApp((s) => s.theme)
   const toggleTheme = useApp((s) => s.toggleTheme)
-  // Só o projeto ATIVO carrega conversas no store; então a expansão = ativo, e
-  // `collapsed` guarda quando o usuário retraiu o ativo (via chevron) sem trocar.
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  const expand = (id: string) =>
-    setCollapsed((s) => {
-      if (!s.has(id)) return s
+  const loadProjectConversations = useChat((s) => s.loadProjectConversations)
+  // Árvore INDEPENDENTE (Finder/VS Code): `expanded` guarda os projetos ABERTOS
+  // — vários ao mesmo tempo, DESATRELADO do ativo. Em memória (ok no v1).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Abrir um projeto = adicionar ao set + carregar (lazy) as conversas dele.
+  const openExpand = (id: string) => {
+    void loadProjectConversations(id)
+    setExpanded((s) => {
+      if (s.has(id)) return s
       const n = new Set(s)
-      n.delete(id)
-      return n
-    })
-  function toggleExpand(id: string) {
-    // não-ativo → seleciona (passa a ser o ativo e abre); ativo → retrai/expande.
-    if (id !== activeId) {
-      setActive(id)
-      expand(id)
-      return
-    }
-    setCollapsed((s) => {
-      const n = new Set(s)
-      if (n.has(id)) n.delete(id)
-      else n.add(id)
+      n.add(id)
       return n
     })
   }
+  // Chevron: alterna SÓ este projeto (não fecha os outros).
+  function toggleExpand(id: string) {
+    if (expanded.has(id)) {
+      setExpanded((s) => {
+        const n = new Set(s)
+        n.delete(id)
+        return n
+      })
+    } else {
+      openExpand(id)
+    }
+  }
+  // Auto-expande o projeto ativo (seleção via ⌘K, boot etc. abre a árvore dele).
+  useEffect(() => {
+    if (activeId) openExpand(activeId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId])
   // Projetos com QUALQUER conversa rodando (string estável → menos re-render).
   const runningProjectsKey = useChat((s) =>
     Array.from(
@@ -617,20 +640,18 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                 <ProjectRow
                   project={p}
                   active={p.id === activeId}
-                  expanded={p.id === activeId && !collapsed.has(p.id)}
+                  expanded={expanded.has(p.id)}
                   status={
                     runningProjects.has(p.id) ? "running" : (p.status ?? "idle")
                   }
                   onSelect={() => {
                     setActive(p.id)
-                    expand(p.id) // selecionar sempre abre; o chevron é quem retrai
+                    openExpand(p.id) // selecionar auto-expande, sem fechar os outros
                   }}
                   onToggle={() => toggleExpand(p.id)}
                   onDelete={() => confirmDeleteProject(p)}
                 />
-                {p.id === activeId && !collapsed.has(p.id) && (
-                  <ConversationList projectId={p.id} />
-                )}
+                {expanded.has(p.id) && <ConversationList projectId={p.id} />}
               </div>
             ))
           )}

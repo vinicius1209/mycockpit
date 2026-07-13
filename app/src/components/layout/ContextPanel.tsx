@@ -331,7 +331,11 @@ export function ContextPanel() {
   const [tab, setTab] = useState<"contexto" | "alteracoes" | "plano">("contexto")
   // diff atribuído à conversa ativa: worktree isolado dela, senão a pasta do projeto.
   const activeWorktree = useChat(
-    (s) => s.conversations.find((c) => c.id === s.activeId)?.worktreePath ?? null,
+    (s) =>
+      (s.projectId
+        ? s.conversationsByProject[s.projectId]
+        : undefined
+      )?.find((c) => c.id === s.activeId)?.worktreePath ?? null,
   )
   // running da conversa ativa: quando o turno termina, recarrega a contagem de
   // arquivos alterados (o diff mudou) → badge na aba Alterações.
