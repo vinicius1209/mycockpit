@@ -33,7 +33,7 @@ import {
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
-import { archiveProject, restoreProject } from "@/lib/db"
+import { archiveProject, restoreProject, type ConversationMeta } from "@/lib/db"
 import { createWorktree, removeWorktree } from "@/lib/git"
 import { LABEL_COLORS } from "@/lib/labelColors"
 import { cn } from "@/lib/utils"
@@ -314,8 +314,17 @@ function useDecidingConvIds(): Set<string> {
 
 /** Lista de conversas (tarefas) de UM projeto (árvore independente: pode haver
  *  várias montadas ao mesmo tempo, cada uma lendo a lista do seu projectId). */
+// Array vazio ESTÁVEL (module-level): o selector abaixo NÃO pode retornar um `[]`
+// novo a cada chamada — o useSyncExternalStore do React 18 detecta referência
+// nova a cada snapshot e entra em loop infinito ("getSnapshot should be cached"),
+// que dava TELA PRETA quando o projeto ainda não tinha as conversas carregadas.
+const EMPTY_CONVS: ConversationMeta[] = []
+
 function ConversationList({ projectId }: { projectId: string }) {
-  const conversations = useChat((s) => s.conversationsByProject[projectId] ?? [])
+  // default FORA do selector (?? numa constante estável): selector devolve o
+  // array do store (ref estável) ou undefined (estável) — nunca um `[]` novo.
+  const conversations =
+    useChat((s) => s.conversationsByProject[projectId]) ?? EMPTY_CONVS
   const activeId = useChat((s) => s.activeId)
   const newConversation = useChat((s) => s.newConversation)
   const switchConversation = useChat((s) => s.switchConversation)
