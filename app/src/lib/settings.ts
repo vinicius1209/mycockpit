@@ -21,6 +21,12 @@ export interface GlobalSettings {
   dictationEnabled: boolean
   /** Termos extras de vocabulário do ditado (somados aos fixos do MicButton). */
   dictationVocab: string[]
+  /** Auto-revive: quando o turno termina num rate limit / "vou tentar depois",
+   *  reenvia sozinho (após o reset) até concluir de verdade ou bater o cap.
+   *  OPT-IN (default false) porque cada resume é um run pago. */
+  autoResume: boolean
+  /** Teto de tentativas de auto-resume por turno (protege o custo). */
+  autoResumeMaxTries: number
   /** Missions (beta): habilita o botão de missão no composer. */
   missionEnabled: boolean
   /** Times salvos do Mission (papel → agent/modelo). */
@@ -40,6 +46,8 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   helperModel: "haiku",
   dictationEnabled: true,
   dictationVocab: [],
+  autoResume: false,
+  autoResumeMaxTries: 5,
   missionEnabled: false,
   missionPresets: DEFAULT_MISSION_PRESETS,
   onboarded: false,

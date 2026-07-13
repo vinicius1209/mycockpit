@@ -100,6 +100,23 @@ export interface ConvState {
    *  (detecção heurística em tool_result falho). Alimenta o banner "Liberar e
    *  reenviar". Efêmero. null/undefined = nada bloqueado. */
   blockedDir?: string | null
+  /** true se um `limit_reached` bateu no turno CORRENTE (limite da CLI). Alimenta
+   *  a detecção FORTE do auto-resume no fim do turno. Zerado a cada novo run. */
+  limitHitThisTurn?: boolean
+  /** Hint textual de quando o limite reseta (do último limit_reached do turno). */
+  resetHint?: string | null
+  /** Auto-revive em andamento nesta conversa (efêmero, NÃO persiste). Enquanto
+   *  existe, um resume está agendado; o banner no ChatPanel lê `nextAt`/`tries`. */
+  autoResume?: {
+    tries: number
+    maxTries: number
+    /** epoch (ms) do próximo resume agendado (countdown do banner). */
+    nextAt: number
+    /** motivo curto (limite da CLI / texto do turno), pro aviso. */
+    reason: string
+    /** timer do setTimeout (p/ cancelar). */
+    timer: ReturnType<typeof setTimeout>
+  }
 }
 
 interface ChatState {
@@ -138,6 +155,11 @@ interface ChatState {
   handleEvent: (convId: string, e: AgentEvent) => void
   /** Dispensa o aviso de pasta bloqueada desta conversa. */
   clearBlockedDir: (convId: string) => void
+  /** Registra um resume automático agendado (banner + timer). */
+  setAutoResume: (convId: string, s: ConvState["autoResume"]) => void
+  /** Cancela/limpa o auto-resume agendado (para o timer). Chamar ao enviar
+   *  manual, parar o run, ou quando o loop termina/atinge o cap. */
+  cancelAutoResume: (convId: string) => void
   /** Revezamento: assume OUTRO agent na MESMA conversa (sessão zerada; o
    *  contexto vai por preâmbulo). NÃO adiciona item de usuário, o pedido
    *  pendente já está no fio. */
@@ -715,6 +737,8 @@ export const useChat = create<ChatState>((set, get) => {
               suggestions: [],
               suggesting: false,
               blockedDir: null, // novo turno zera o aviso de pasta bloqueada
+              limitHitThisTurn: false, // e o sinal de limite do turno anterior
+              resetHint: null,
             },
           },
         }
@@ -726,6 +750,8 @@ export const useChat = create<ChatState>((set, get) => {
       if (e.type === "limit_reached") {
         const agent = get().byId[convId]?.agent
         if (agent) useApp.getState().setAgentLimited(agent, e.reset_hint ?? null)
+        // marca o sinal FORTE p/ o auto-resume ler no fim do turno (+ guarda o hint)
+        patch(convId, { limitHitThisTurn: true, resetHint: e.reset_hint ?? null })
       } else if (e.type === "result" && e.ok) {
         const agent = get().byId[convId]?.agent
         if (agent) useApp.getState().clearAgentLimited(agent)
@@ -776,6 +802,16 @@ export const useChat = create<ChatState>((set, get) => {
         return { byId: { ...s.byId, [convId]: { ...cur, blockedDir: null } } }
       }),
 
+    setAutoResume: (convId, autoResume) => patch(convId, { autoResume }),
+
+    cancelAutoResume: (convId) =>
+      set((s) => {
+        const cur = s.byId[convId]
+        if (!cur?.autoResume) return {}
+        clearTimeout(cur.autoResume.timer)
+        return { byId: { ...s.byId, [convId]: { ...cur, autoResume: undefined } } }
+      }),
+
     beginTransplant: (convId, runId, agent) =>
       set((s) => {
         const cur = s.byId[convId]
@@ -797,6 +833,8 @@ export const useChat = create<ChatState>((set, get) => {
               startedAt: Date.now(),
               suggestions: [],
               suggesting: false,
+              limitHitThisTurn: false,
+              resetHint: null,
             },
           },
         }

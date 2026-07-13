@@ -5,6 +5,7 @@ import {
   FolderGit2,
   ListChecks,
   Loader2,
+  Timer,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -23,6 +24,7 @@ import { useMission } from "@/store/mission"
 import { MissionTimeline } from "@/components/mission/MissionTimeline"
 import { runAgent, cancelAgent, agentLabel } from "@/lib/agent"
 import { buildHandoff } from "@/lib/handoff"
+import { wantsAutoResume } from "@/lib/autoResume"
 import { notifyTurnEnd } from "@/lib/notify"
 import type { Attachment } from "@/lib/attachments"
 import { gcAttachments } from "@/lib/attachments"
@@ -187,6 +189,7 @@ export function ChatPanel() {
     text: string,
     cfg?: AgentRunConfig,
     attachments: Attachment[] = [],
+    fromAutoResume = false,
   ) {
     if (!project) return
     if (!isTauri()) {
@@ -219,6 +222,10 @@ export function ChatPanel() {
       useChat.getState().enqueue(convId, text)
       return
     }
+    // Um envio MANUAL (digitado/⌘K/fila) supersede um auto-resume agendado: cancela
+    // o timer pra não disparar um resume redundante em cima do run que começa agora.
+    // Se ESTE send É o próprio resume, não cancela (o loop já limpou/regravou o estado).
+    if (!fromAutoResume) useChat.getState().cancelAutoResume(convId)
     // novo run → invalida geração de sugestão pendente/em-voo desta conversa
     useChat.getState().invalidateSuggestions(convId)
     // conversa estabelecida trava no agent/modelo/effort do 1º run; nova usa o seletor
@@ -257,12 +264,69 @@ export function ChatPanel() {
       const pending = useChat.getState().dequeueQueued(convId)
       if (pending.length > 0) {
         void handleSend(pending.join("\n\n"))
+      } else if (maybeScheduleAutoResume(convId, agent)) {
+        // turno bateu num rate limit / "vou tentar depois" e o auto-resume está
+        // ligado: agendamos um reenvio automático (banner mostra o countdown).
+        // Não notifica/sugere ainda — o loop ainda não terminou de verdade.
       } else {
         // turno (e a fila) concluídos → notifica + sugestões.
         notifyTurnEnd(convId, agent)
         useChat.getState().scheduleSuggestions(convId)
       }
     }
+  }
+
+  // Auto-revive: se o turno recém-encerrado pede resume (limite da CLI OU o texto
+  // final combina padrões de retry/espera) E a opção está ligada, agenda um
+  // reenvio automático via setTimeout. O prompt reusa buildHandoff (achata o fio)
+  // + um "continue a tarefa pendente". Cada resume é um run PAGO → o cap
+  // (autoResumeMaxTries) protege; o banner mostra quantas tentativas restam.
+  // Retorna true se agendou (o caller pula notify/sugestões).
+  function maybeScheduleAutoResume(convId: string, agent: string): boolean {
+    const settings = useApp.getState().settings
+    if (!settings.autoResume) return false
+    const conv = useChat.getState().byId[convId]
+    if (!conv || conv.corrupt) return false
+    // já esgotou o cap num loop anterior deste turno → para.
+    const prevTries = conv.autoResume?.tries ?? 0
+    if (prevTries >= settings.autoResumeMaxTries) {
+      useChat.getState().cancelAutoResume(convId)
+      return false
+    }
+    const verdict = wantsAutoResume(
+      conv.items,
+      { hit: !!conv.limitHitThisTurn, resetHint: conv.resetHint },
+      prevTries,
+    )
+    if (!verdict.resume) {
+      // turno concluiu SEM sinal de resume → sucesso: encerra o loop.
+      useChat.getState().cancelAutoResume(convId)
+      return false
+    }
+    const tries = prevTries + 1
+    const timer = setTimeout(() => {
+      const c = useChat.getState().byId[convId]
+      // corrida: usuário pode ter cancelado/enviado algo antes do disparo.
+      if (!c?.autoResume) return
+      if (c.running || c.finalizing) return
+      // reusa o padrão do revezamento: handoff do fio + pedido de continuar.
+      const preamble = buildHandoff(c.items)
+      const prompt = `${preamble}\n\n---\n\nO turno anterior parou num limite de uso/espera. O limite já deve ter resetado: continue a tarefa pendente de onde parou (não repita o que já foi feito).`
+      useChat.getState().handleEvent(convId, {
+        type: "notice",
+        message: `auto-resume: retomando (tentativa ${tries}/${settings.autoResumeMaxTries})`,
+      })
+      void handleSend(prompt, undefined, [], true)
+    }, verdict.delayMs)
+    useChat.getState().setAutoResume(convId, {
+      tries,
+      maxTries: settings.autoResumeMaxTries,
+      nextAt: Date.now() + verdict.delayMs,
+      reason: verdict.reason,
+      timer,
+    })
+    notifyTurnEnd(convId, agent)
+    return true
   }
 
   // Revezamento: continua a MESMA conversa em OUTRO agent (limite/erro do
@@ -324,6 +388,8 @@ export function ChatPanel() {
   function handleStop() {
     const convId = useChat.getState().activeId
     if (!convId) return
+    // parar o run também cancela qualquer auto-resume agendado (intenção explícita).
+    useChat.getState().cancelAutoResume(convId)
     // Disputa Fusion em voo: o Stop era no-op silencioso (runId null) enquanto
     // N candidatos queimavam dinheiro. Agora aborta a disputa de verdade.
     const fusion = useFusion.getState().byConv[convId]
@@ -436,6 +502,30 @@ export function ChatPanel() {
           </div>
         )}
         <div className="mx-auto max-w-[760px]">
+          {conv?.autoResume && (
+            <AutoResumeBanner
+              nextAt={conv.autoResume.nextAt}
+              tries={conv.autoResume.tries}
+              maxTries={conv.autoResume.maxTries}
+              onCancel={() =>
+                activeId && useChat.getState().cancelAutoResume(activeId)
+              }
+              onResumeNow={() => {
+                if (!activeId) return
+                const c = useChat.getState().byId[activeId]
+                if (!c?.autoResume) return
+                clearTimeout(c.autoResume.timer)
+                // dispara imediatamente reprogramando p/ agora (0ms).
+                useChat.getState().setAutoResume(activeId, {
+                  ...c.autoResume,
+                  nextAt: Date.now(),
+                })
+                const preamble = buildHandoff(c.items)
+                const prompt = `${preamble}\n\n---\n\nO turno anterior parou num limite de uso/espera. Continue a tarefa pendente de onde parou (não repita o que já foi feito).`
+                void handleSend(prompt, undefined, [], true)
+              }}
+            />
+          )}
           {conv?.blockedDir && project && (
             <BlockedDirBanner
               dir={conv.blockedDir}
@@ -456,6 +546,61 @@ export function ChatPanel() {
         </div>
       </div>
     </section>
+  )
+}
+
+/** Banner (acima do composer) quando um auto-resume está agendado: countdown ao
+ *  vivo até o próximo reenvio, quantas tentativas restam, e as saídas (Cancelar /
+ *  Retomar agora). Reusa o estilo st-warning do BlockedDirBanner. Um envio manual
+ *  (ou o Stop) cancela o agendamento por fora deste componente. */
+function AutoResumeBanner({
+  nextAt,
+  tries,
+  maxTries,
+  onCancel,
+  onResumeNow,
+}: {
+  nextAt: number
+  tries: number
+  maxTries: number
+  onCancel: () => void
+  onResumeNow: () => void
+}) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const secs = Math.max(0, Math.ceil((nextAt - now) / 1000))
+  const remaining = Math.max(0, maxTries - tries)
+  return (
+    <div className="mb-2 flex items-center gap-2.5 rounded-lg border border-st-warning/40 bg-st-warning/10 px-3 py-2">
+      <Timer className="size-4 shrink-0 animate-pulse text-st-warning" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[12.5px] text-foreground">
+          Aguardando reset do limite — retomando automaticamente em{" "}
+          <span className="font-mono tabular-nums">{secs}s</span>{" "}
+          <span className="text-muted-foreground">
+            (tentativa {tries}/{maxTries}
+            {remaining > 0 ? `, ${remaining} restante${remaining > 1 ? "s" : ""}` : ""})
+          </span>
+        </p>
+      </div>
+      <button
+        onClick={onResumeNow}
+        className="shrink-0 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
+      >
+        Retomar agora
+      </button>
+      <button
+        onClick={onCancel}
+        title="Cancelar auto-resume"
+        aria-label="Cancelar auto-resume"
+        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <X className="size-3.5" />
+      </button>
+    </div>
   )
 }
 

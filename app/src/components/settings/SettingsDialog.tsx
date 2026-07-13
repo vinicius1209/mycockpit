@@ -231,6 +231,38 @@ export function SettingsDialog() {
                 Conversas já iniciadas mantêm o config do 1º envio — isto vale só
                 para novas.
               </p>
+
+              <SectionTitle>Auto-revive em rate limit</SectionTitle>
+              <div className="divide-y divide-border/50">
+                <Field
+                  label="Retomar automaticamente"
+                  hint="Quando o turno para num limite de uso / “vou tentar depois”, reenvia sozinho após o reset. Cada tentativa é um run pago."
+                >
+                  <Switch
+                    checked={settings.autoResume}
+                    onCheckedChange={(v) => setSettings({ autoResume: v })}
+                    aria-label="Auto-revive em rate limit"
+                  />
+                </Field>
+                <Field
+                  label="Máximo de tentativas"
+                  hint="Teto de reenvios automáticos por turno (protege o custo)."
+                >
+                  <Input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={settings.autoResumeMaxTries}
+                    onChange={(e) => {
+                      const n = Math.max(1, Math.min(20, Number(e.target.value) || 1))
+                      setSettings({ autoResumeMaxTries: n })
+                    }}
+                    disabled={!settings.autoResume}
+                    className="h-8 w-20 text-[13px]"
+                    aria-label="Máximo de tentativas de auto-resume"
+                  />
+                </Field>
+              </div>
             </div>
           )}
 
