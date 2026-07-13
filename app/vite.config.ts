@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -10,6 +11,12 @@ export default defineConfig({
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
+  },
+  // Vitest (unit) NÃO deve coletar os specs de e2e/ — eles usam a API do
+  // @playwright/test, não a do vitest, e falhariam na coleção. O smoke-test de
+  // boot roda via `bun run test:e2e` (playwright), não pelo `bun run test`.
+  test: {
+    exclude: ["**/node_modules/**", "**/dist/**", "**/e2e/**"],
   },
   // Tauri expects a fixed dev port and doesn't need to clear the screen.
   clearScreen: false,

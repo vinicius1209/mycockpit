@@ -23,6 +23,14 @@ jobs:
         run: bun run lint
       - name: testes
         run: bun run test
+      # Smoke-test de BOOT: sobe o app buildado num chromium headless e checa que
+      # ele RENDERIZA (sem tela preta / loop de useSyncExternalStore). Pega a
+      # classe de bug que tsc+lint+unit NÃO pegam. O webServer do playwright.config
+      # faz o `bun run build` + `vite preview`.
+      - name: instala chromium (playwright)
+        run: bunx playwright install --with-deps chromium
+      - name: smoke-test de boot (e2e)
+        run: bun run test:e2e
 
   rust:
     runs-on: macos-14
