@@ -143,6 +143,83 @@ Isso mantém o ruído baixo e mata o over-engineering que afunda sistemas
 
 ---
 
+## Dimensão 2b — Aprender no LINEAR (feedback, não gates)
+
+Correção de rumo (pedido do usuário 2026-07-13): o aprendizado NÃO pode ficar
+preso aos gates do SDD. O **Linear** é onde é o trabalho do dia a dia, e lá o
+sinal não é "passou no teste" — é **o feedback do usuário**. E deve virar
+lição/skill no **domínio do MyCockpit**, desacoplado do SDD.
+
+### A arquitetura que resolve: MEMÓRIA (uma) × FONTES DE SINAL (várias)
+A camada de aprendizado é do domínio MyCockpit, **mode-agnostic**. Cada modo só
+contribui um sinal diferente pra MESMA tabela `lessons` (que já tem `source`):
+
+| Modo | Sinal | Vira |
+|---|---|---|
+| SDD / Mission | gates + loop do reviewer | `lesson` (source: gate/reviewer) |
+| **Linear** | **feedback do usuário** | `lesson` (source: linear) |
+| Fusion | qual candidato você escolheu | preferência de time (M3) |
+
+O Linear é só **mais uma fonte** alimentando o cofre. Não é retrabalho — é o
+campo `source`/`scope` + a captura de sinal. Zero acoplamento com o SDD.
+
+### Como o Hermes Agent (NousResearch) faz — e onde divergimos
+O "Hermes que aprende" é o `NousResearch/hermes-agent` ("the agent that grows
+with you") — a versão viva de "Linear + memória", SEM gates de teste:
+- **Skill induction**: cria uma skill markdown (padrão agentskills.io) quando
+  dispara um gatilho — **≥5 tool calls, recuperação de erro, correção do
+  usuário, ou workflow não-óbvio que funcionou**.
+- **Patch, não rewrite**: refina a skill só no trecho que mudou (anti
+  context-collapse, = ACE).
+- **Memória auto-editável via "nudge periódico"**: o agente revê e decide o que
+  persistir; `MEMORY.md` tem **cap de 3.575 chars** — força destilar, não acumular.
+- **Recall episódico**: sessões em SQLite FTS5, sumarizadas por LLM antes de
+  injetar (não despeja a sessão).
+- **DIVERGÊNCIA-CHAVE**: o Hermes cria skill **automaticamente, sem aprovação
+  humana**. Nós fazemos o OPOSTO (princípio do logion): o app **propõe**, você
+  aprova. É escolha de design deliberada — mantém o gate humano.
+
+### O caveat honesto (EMNLP 2025, arxiv 2507.23158)
+Feedback IMPLÍCITO é ótimo pra *entender* o usuário, mas **ruidoso como sinal de
+aprendizado** (o ganho some em tarefas longas/complexas). Regra de ouro:
+**explícito vira lição; implícito vira só ranking/candidato** (sempre confirmado).
+
+### Sinais no Linear (prioridade)
+**Explícitos (baixo ruído — v1):**
+- 👍/👎 por mensagem do agente (👎 abre "o que estava errado?").
+- "Salvar como regra" / "Salvar como skill" (promoção com gate humano).
+- Aceitar/Rejeitar/Editar um diff (o sinal mais forte e barato — padrão Copilot).
+
+**Implícitos (só candidato/ranking, nunca lição direta):**
+- Reprompt de correção ("na verdade…", "não é isso") → *candidato* (o Haiku
+  classifica "foi correção?" antes de propor lição).
+- Elogio curto ("perfeito", "isso") → reforço/bump do último turno.
+- Abandono vs continuação → sinal fraco.
+
+### Da correção → `lesson` de domínio (reusa a infra da Frente A)
+1. Detecta candidato (👎 / "salvar regra" / reprompt-correção).
+2. Destila com Haiku → **uma regra imperativa curta** (nunca o transcript).
+3. **Gate humano**: o app propõe num toast/inbox; você confirma/edita/descarta.
+4. Persiste em `lessons` com `source='linear'` + `scope`.
+5. Injeta no início do turno do Linear (top-N por relevância via `recall.ts` +
+   `uses`), e faz `bumpLessonUses` nas injetadas.
+
+### Camadas: GLOBAL (app) × PROJETO (Letta/MemGPT)
+| Camada | Guarda | Persiste | Injeta em |
+|---|---|---|---|
+| **GLOBAL** | verdades do domínio ("prefira patch a rewrite", "confirme antes de comando destrutivo") | `lessons` scope='global' (project_id `__global__`) + `~/.claude/cockpit/lessons-global.md` | todo projeto |
+| **PROJETO** | preso ao codebase ("testes rodam com `pnpm test`") | `lessons` scope='project' | só aquele projeto |
+
+Mínimo: coluna `scope` via `ALTER TABLE` idempotente; `listLessons` faz
+`WHERE scope='global' OR project_id=$1`.
+
+### Sequência Linear (menor risco → maior)
+1. **👍/👎 + "salvar como regra"** (explícito → lesson com gate) + coluna
+   `scope` — **primeiro tijolo do Linear**, baixo risco.
+2. Accept/reject/edit de diff como sinal.
+3. Detecção implícita de reprompt-correção (opt-in, sempre confirma).
+4. Promover workflow → `/command` skill (M5, humano no gate, por último).
+
 ## Estado da arte consultado (fontes)
 Reflexion (arxiv 2303.11366), Generative Agents (2304.03442), mem0 (2504.19413),
 Letta/MemGPT (2310.08560), ExpeL (2308.10144), Agent Workflow Memory / AWM ICML
