@@ -353,6 +353,9 @@ export const useMission = create<MissionState>((set, get) => {
       }
 
       // ── M2: destila UMA lição das correções REAIS que foram resolvidas ──
+      // Estágio 1 do funil: distillLesson grava como CANDIDATE (não injeta até
+      // ser promovida na auditoria) — sinal do loop é mais fraco que o save
+      // explícito do Linear.
       if (corrections.length && helperModel) {
         void distillLesson({
           projectId,

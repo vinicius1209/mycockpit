@@ -10,9 +10,14 @@
 import { suggest } from "@/lib/agent"
 import {
   bumpLessonUses,
+  deleteLesson,
   insertLesson,
+  listActiveLessons,
   listDeliveries,
   listLessons,
+  mergeLessonUses,
+  reinforceLessons as dbReinforceLessons,
+  setLessonStatus,
   type LessonRecord,
   type LessonScope,
 } from "@/lib/db"
@@ -53,7 +58,8 @@ export async function buildLearningBlocks(
   }
 
   try {
-    const all = await listLessons(projectId)
+    // Estágio 1: só lições ATIVAS entram no prompt (candidate/archived não).
+    const all = await listActiveLessons(projectId)
     const top = all.slice(0, MAX_LESSONS_INJECTED)
     if (top.length > 0) {
       lessons = renderLessons(top)
@@ -67,13 +73,22 @@ export async function buildLearningBlocks(
   return { recall, lessons, lessonIds }
 }
 
-/** Marca as lições injetadas como usadas (o ranking sobe as recorrentes). */
+/** Marca as lições injetadas como usadas (o ranking sobe as recorrentes) e
+ *  carimba `last_used_at`. */
 export async function markLessonsUsed(ids: string[]): Promise<void> {
   try {
     await bumpLessonUses(ids)
   } catch {
     // best-effort: contador é sinal secundário, não vale quebrar por ele.
   }
+}
+
+/** Reforça as lições injetadas quando o 👍 valida o turno — sinal de utilidade
+ *  REAL (o curador rebaixa as muito injetadas que NUNCA foram reforçadas).
+ *  Best-effort. Deve ser chamado no hook do 👍 junto de markLessonsUsed. */
+export async function reinforceLessons(ids: string[]): Promise<void> {
+  if (!ids.length) return
+  await dbReinforceLessons(ids)
 }
 
 function renderRecall(
@@ -191,7 +206,15 @@ export async function distillLesson(args: DistillArgs): Promise<string | null> {
     const existing = (await listLessons(args.projectId)).map((l) => l.rule)
     if (!isNovelRule(rule, existing)) return null
 
-    await insertLesson({ projectId: args.projectId, rule, source: "reviewer" })
+    // Estágio 1: lição derivada do loop do Mission entra como CANDIDATE — não
+    // injeta até o humano promover na auditoria (sinal mais fraco que o save
+    // explícito do Linear, que grava active).
+    await insertLesson({
+      projectId: args.projectId,
+      rule,
+      source: "reviewer",
+      status: "candidate",
+    })
     return rule
   } catch {
     return null
@@ -289,4 +312,68 @@ export async function saveLesson(args: {
   } catch {
     return false
   }
+}
+
+// ── Estágio 3: CURADOR de memória (docs/autonomy.md) ──
+// Higiene periódica das lições ATIVAS, disparada pelo botão "Revisar memória":
+//  (a) DEDUP: pares quase-iguais → mantém a de maior uses, soma os usos da outra
+//      na canônica e remove a duplicata.
+//  (b) REBAIXA: ativa muito injetada (uses ≥ N) mas NUNCA reforçada (reinforced
+//      = 0) provavelmente é ruído → vira candidate (reversível, não exclui).
+// Best-effort: nunca lança. Token-similarity (isNovelRule) já basta no v1 — não
+// gasta Haiku (o helperModel fica reservado p/ um dedup semântico futuro).
+
+/** Uses mínimos p/ suspeitar de ruído no rebaixamento (injetada muito, nunca
+ *  reforçada). */
+export const CURATOR_DEMOTE_USES = 5
+
+export interface CuratorSummary {
+  /** Quantas duplicatas foram fundidas + removidas. */
+  deduped: number
+  /** Quantas ativas viraram candidate (ruído suspeito). */
+  demoted: number
+}
+
+/** Roda o curador sobre as lições ATIVAS do projeto (próprias + globais).
+ *  `helperModel` fica disponível p/ um dedup semântico opcional; no v1 usamos só
+ *  a similaridade de token. Best-effort — qualquer falha degrada p/ no-op. */
+export async function runCurator(
+  projectId: string,
+  _helperModel?: string | null,
+): Promise<CuratorSummary> {
+  const summary: CuratorSummary = { deduped: 0, demoted: 0 }
+  try {
+    const actives = await listActiveLessons(projectId)
+
+    // (a) DEDUP: varre pares quase-iguais. `removed` evita mexer 2× na mesma.
+    const removed = new Set<string>()
+    for (let i = 0; i < actives.length; i++) {
+      const a = actives[i]
+      if (removed.has(a.id)) continue
+      for (let j = i + 1; j < actives.length; j++) {
+        const b = actives[j]
+        if (removed.has(b.id)) continue
+        if (isNovelRule(a.rule, [b.rule])) continue // não são quase-iguais
+        // duplicata: mantém a de MAIOR uses (empate → a `a`, já ordenada desc).
+        const [keep, drop] = a.uses >= b.uses ? [a, b] : [b, a]
+        await mergeLessonUses(keep.id, drop.uses)
+        await deleteLesson(drop.id)
+        removed.add(drop.id)
+        keep.uses += drop.uses // reflete pro passo (b) na mesma passada
+        summary.deduped++
+      }
+    }
+
+    // (b) REBAIXA: sobreviventes muito injetadas e nunca reforçadas → candidate.
+    for (const l of actives) {
+      if (removed.has(l.id)) continue
+      if (l.uses >= CURATOR_DEMOTE_USES && l.reinforced === 0) {
+        await setLessonStatus(l.id, "candidate")
+        summary.demoted++
+      }
+    }
+  } catch {
+    // best-effort: nunca quebra a auditoria.
+  }
+  return summary
 }

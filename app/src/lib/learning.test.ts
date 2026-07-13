@@ -3,6 +3,8 @@ import {
   distillLesson,
   isNovelRule,
   parseDistilledRule,
+  reinforceLessons,
+  runCurator,
 } from "./learning"
 
 describe("parseDistilledRule", () => {
@@ -91,5 +93,18 @@ describe("distillLesson", () => {
       run: run as never,
     })
     expect(r).toBeNull()
+  })
+})
+
+describe("runCurator", () => {
+  it("fora do Tauri (sem DB) → best-effort, zera o resumo e não lança", async () => {
+    const r = await runCurator("p")
+    expect(r).toEqual({ deduped: 0, demoted: 0 })
+  })
+})
+
+describe("reinforceLessons", () => {
+  it("ids vazio → no-op, não lança", async () => {
+    await expect(reinforceLessons([])).resolves.toBeUndefined()
   })
 })

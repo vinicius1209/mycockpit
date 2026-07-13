@@ -550,6 +550,11 @@ export const GLOBAL_PROJECT_ID = "__global__"
 
 export type LessonScope = "global" | "project"
 
+/** Estágio 1 do funil de aprendizado (docs/autonomy.md): `active` injeta no
+ *  prompt; `candidate` fica só na auditoria (derivada do loop do Mission, ainda
+ *  não promovida); `archived` foi retirada mas é reversível. */
+export type LessonStatus = "active" | "candidate" | "archived"
+
 async function ensureLearningTables(db: Database): Promise<void> {
   if (!learningReady) {
     learningReady = (async () => {
@@ -588,6 +593,27 @@ async function ensureLearningTables(db: Database): Promise<void> {
       try {
         await db.execute(
           `ALTER TABLE lessons ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'`,
+        )
+      } catch {
+        // coluna já existe (re-run) → no-op.
+      }
+      // Estágio 1 do funil (CURADOR): status + sinais de reforço. Cada ALTER é
+      // idempotente pelo mesmo motivo (falha se a coluna já existe → try/catch).
+      try {
+        await db.execute(
+          `ALTER TABLE lessons ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`,
+        )
+      } catch {
+        // coluna já existe (re-run) → no-op.
+      }
+      try {
+        await db.execute(`ALTER TABLE lessons ADD COLUMN last_used_at INTEGER`)
+      } catch {
+        // coluna já existe (re-run) → no-op.
+      }
+      try {
+        await db.execute(
+          `ALTER TABLE lessons ADD COLUMN reinforced INTEGER NOT NULL DEFAULT 0`,
         )
       } catch {
         // coluna já existe (re-run) → no-op.
@@ -684,6 +710,13 @@ export interface LessonRecord {
   createdAt: number
   uses: number
   scope: LessonScope
+  /** Estágio 1: só `active` é injetado; `candidate`/`archived` ficam na
+   *  auditoria (reversível via promover/rebaixar). */
+  status: LessonStatus
+  /** Último ms em que a lição foi injetada (markLessonsUsed). */
+  lastUsedAt: number | null
+  /** Quantas vezes o 👍 reforçou a lição (sinal de utilidade real). */
+  reinforced: number
   /** project_id da linha (GLOBAL_PROJECT_ID p/ lições globais) — pro badge. */
   projectId: string
 }
@@ -696,6 +729,13 @@ interface LessonRow {
   created_at: number
   uses: number
   scope: string | null
+  status: string | null
+  last_used_at: number | null
+  reinforced: number | null
+}
+
+function toStatus(s: string | null): LessonStatus {
+  return s === "candidate" || s === "archived" ? s : "active"
 }
 
 function toLesson(r: LessonRow): LessonRecord {
@@ -706,6 +746,9 @@ function toLesson(r: LessonRow): LessonRecord {
     createdAt: r.created_at,
     uses: r.uses,
     scope: r.scope === "global" ? "global" : "project",
+    status: toStatus(r.status),
+    lastUsedAt: r.last_used_at ?? null,
+    reinforced: r.reinforced ?? 0,
     projectId: r.project_id,
   }
 }
@@ -718,33 +761,93 @@ export async function insertLesson(l: {
   rule: string
   source: string
   scope?: LessonScope
+  /** Estágio 1: default `active` (save explícito injeta já). O loop do Mission
+   *  grava `candidate` — não injeta até promover. */
+  status?: LessonStatus
 }): Promise<void> {
   const db = await getDb()
   if (!db) return
   await ensureLearningTables(db)
   const scope: LessonScope = l.scope ?? "project"
+  const status: LessonStatus = l.status ?? "active"
   const projectId = scope === "global" ? GLOBAL_PROJECT_ID : l.projectId
   await db.execute(
-    "INSERT INTO lessons (id, project_id, rule, source, created_at, uses, scope) VALUES ($1, $2, $3, $4, $5, 0, $6)",
-    [crypto.randomUUID(), projectId, l.rule, l.source, Date.now(), scope],
+    "INSERT INTO lessons (id, project_id, rule, source, created_at, uses, scope, status, reinforced) VALUES ($1, $2, $3, $4, $5, 0, $6, $7, 0)",
+    [crypto.randomUUID(), projectId, l.rule, l.source, Date.now(), scope, status],
   )
 }
 
 /** Lições que valem num projeto: as PRÓPRIAS dele + as GLOBAIS (valem em todo
  *  projeto). Ordena por mais USADAS e mais RECENTES (as que valem injetar
  *  primeiro). O cap é aplicado pelo chamador na injeção. */
+const LESSON_COLS =
+  "id, project_id, rule, source, created_at, uses, scope, status, last_used_at, reinforced"
+
 export async function listLessons(projectId: string): Promise<LessonRecord[]> {
   const db = await getDb()
   if (!db) return []
   try {
     await ensureLearningTables(db)
     const rows = await db.select<LessonRow[]>(
-      "SELECT id, project_id, rule, source, created_at, uses, scope FROM lessons WHERE scope = 'global' OR project_id = $1 ORDER BY uses DESC, created_at DESC",
+      `SELECT ${LESSON_COLS} FROM lessons WHERE scope = 'global' OR project_id = $1 ORDER BY uses DESC, created_at DESC`,
       [projectId],
     )
     return rows.map(toLesson)
   } catch {
     return []
+  }
+}
+
+/** Lições ATIVAS de um projeto (próprias + globais) — as ÚNICAS que a injeção
+ *  considera (estágio 1: candidate/archived não injetam). */
+export async function listActiveLessons(
+  projectId: string,
+): Promise<LessonRecord[]> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    await ensureLearningTables(db)
+    const rows = await db.select<LessonRow[]>(
+      `SELECT ${LESSON_COLS} FROM lessons WHERE status = 'active' AND (scope = 'global' OR project_id = $1) ORDER BY uses DESC, created_at DESC`,
+      [projectId],
+    )
+    return rows.map(toLesson)
+  } catch {
+    return []
+  }
+}
+
+/** Muda o status de uma lição (promover candidate→active, rebaixar
+ *  active→candidate, arquivar). Reversível — NÃO exclui. Best-effort. */
+export async function setLessonStatus(
+  id: string,
+  status: LessonStatus,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  try {
+    await db.execute("UPDATE lessons SET status = $1 WHERE id = $2", [status, id])
+  } catch {
+    // best-effort: falha não vale quebrar a auditoria.
+  }
+}
+
+/** Funde os usos de uma lição duplicada na canônica (curador/dedup): soma o
+ *  `uses` da `fromId` no `intoId`. Best-effort. */
+export async function mergeLessonUses(
+  intoId: string,
+  fromUses: number,
+): Promise<void> {
+  if (fromUses <= 0) return
+  const db = await getDb()
+  if (!db) return
+  try {
+    await db.execute("UPDATE lessons SET uses = uses + $1 WHERE id = $2", [
+      fromUses,
+      intoId,
+    ])
+  } catch {
+    // best-effort.
   }
 }
 
@@ -761,11 +864,29 @@ export async function bumpLessonUses(ids: string[]): Promise<void> {
   if (ids.length === 0) return
   const db = await getDb()
   if (!db) return
-  const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ")
+  // $1 = agora (last_used_at); os ids vêm a partir de $2.
+  const placeholders = ids.map((_, i) => `$${i + 2}`).join(", ")
   await db.execute(
-    `UPDATE lessons SET uses = uses + 1 WHERE id IN (${placeholders})`,
-    ids,
+    `UPDATE lessons SET uses = uses + 1, last_used_at = $1 WHERE id IN (${placeholders})`,
+    [Date.now(), ...ids],
   )
+}
+
+/** Reforça as lições injetadas quando o 👍 valida o turno (sinal de utilidade
+ *  REAL — o curador rebaixa as muito injetadas mas nunca reforçadas). */
+export async function reinforceLessons(ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  const db = await getDb()
+  if (!db) return
+  const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ")
+  try {
+    await db.execute(
+      `UPDATE lessons SET reinforced = reinforced + 1 WHERE id IN (${placeholders})`,
+      ids,
+    )
+  } catch {
+    // best-effort: reforço é sinal secundário.
+  }
 }
 
 /** Refs de TODAS as conversas (id + updatedAt) p/ o GC de anexos. Retorna `null`
