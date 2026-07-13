@@ -8,6 +8,8 @@ import {
   GitPullRequest,
   Inbox,
   Swords,
+  Trash2,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -75,6 +77,8 @@ export function InboxBell() {
   const notifs = useNotifs((s) => s.items)
   const markRead = useNotifs((s) => s.markRead)
   const markAllRead = useNotifs((s) => s.markAllRead)
+  const removeNotif = useNotifs((s) => s.remove)
+  const clearNotifs = useNotifs((s) => s.clear)
   const [filter, setFilter] = useState<"all" | "unread">("all")
 
   const refresh = useCallback(() => {
@@ -222,6 +226,14 @@ export function InboxBell() {
                 >
                   <CheckCheck className="size-3.5" />
                 </button>
+                <button
+                  onClick={() => clearNotifs()}
+                  title="Limpar a atividade"
+                  aria-label="Limpar a atividade"
+                  className="rounded p-1 text-muted-foreground transition-colors hover:text-st-error"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
               </div>
             </div>
             {feed.length === 0 ? (
@@ -238,15 +250,27 @@ export function InboxBell() {
                   }}
                   className="flex-col items-start gap-0.5 py-2"
                 >
-                  <span className="flex w-full items-center gap-2 text-[13px] text-foreground">
+                  <span className="group/notif flex w-full items-center gap-2 text-[13px] text-foreground">
                     <NotifIcon kind={n.kind} />
                     <span className="min-w-0 flex-1 truncate">{n.title}</span>
                     <span className="shrink-0 text-[10.5px] text-muted-foreground/60">
                       {fmtRelative(n.ts)}
                     </span>
                     {!n.read && (
-                      <span className="size-1.5 shrink-0 rounded-full bg-brass" />
+                      <span className="size-1.5 shrink-0 rounded-full bg-brass group-hover/notif:hidden" />
                     )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        e.preventDefault()
+                        removeNotif(n.id)
+                      }}
+                      title="Dispensar"
+                      aria-label="Dispensar notificação"
+                      className="hidden shrink-0 rounded p-0.5 text-muted-foreground transition-colors group-hover/notif:block hover:text-st-error"
+                    >
+                      <X className="size-3" />
+                    </button>
                   </span>
                   <span className="w-full truncate pl-[22px] text-[11px] text-muted-foreground">
                     {n.subtitle} ·{" "}

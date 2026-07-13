@@ -19,6 +19,8 @@ interface NotifState {
   push: (n: Omit<Notification, "id" | "ts" | "read">) => void
   markRead: (id: string) => void
   markAllRead: () => void
+  /** Remove UMA notificação do feed (dispensar individual). */
+  remove: (id: string) => void
   clear: () => void
 }
 
@@ -41,6 +43,7 @@ export const useNotifs = create<NotifState>()(
         })),
       markAllRead: () =>
         set((s) => ({ items: s.items.map((x) => ({ ...x, read: true })) })),
+      remove: (id) => set((s) => ({ items: s.items.filter((x) => x.id !== id) })),
       clear: () => set({ items: [] }),
     }),
     { name: "mc.notifs", version: 1 },
