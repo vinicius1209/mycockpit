@@ -9,6 +9,7 @@ mod context;
 mod fsx;
 mod git;
 mod mycockpit;
+mod path;
 mod proc;
 mod pricing;
 mod sdd;
@@ -66,6 +67,10 @@ fn backup_database(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 pub fn run() {
+    // ANTES de tudo: hidrata o PATH (apps GUI do macOS herdam um PATH mínimo e
+    // não acham claude/codex/agy). Precisa rodar antes de qualquer spawn de CLI.
+    path::hydrate_path();
+
     let migrations = vec![
         Migration {
             version: 1,
