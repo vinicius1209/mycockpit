@@ -4,6 +4,7 @@ import {
   Plus,
   Moon,
   Sun,
+  Folder,
   FolderGit2,
   X,
   ChevronRight,
@@ -18,7 +19,6 @@ import {
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { StatusDot } from "@/components/common/StatusDot"
 import { confirm } from "@/lib/confirm"
 import {
   ContextMenu,
@@ -36,7 +36,7 @@ import { useFusion } from "@/store/fusion"
 import { archiveProject, restoreProject } from "@/lib/db"
 import { createWorktree, removeWorktree } from "@/lib/git"
 import { LABEL_COLORS } from "@/lib/labelColors"
-import { cn, shortPath } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 import type { AgentStatus, Project } from "@/lib/types"
 
 /** Soft-remove do projeto (arquiva, conversas preservadas) com Desfazer. Disco intocado. */
@@ -127,6 +127,28 @@ function ColorSubmenu({
   )
 }
 
+/** Ícone do projeto: pasta TINGIDA da cor-rótulo (cinza se sem cor), com um
+ *  pulso no canto quando o projeto tem um turno rodando. Marcador do container. */
+function ProjectFolder({
+  color,
+  status,
+}: {
+  color?: string | null
+  status: AgentStatus
+}) {
+  return (
+    <span className="relative grid size-5 shrink-0 place-items-center">
+      <Folder
+        className={cn("size-[18px]", !color && "text-muted-foreground/70")}
+        style={color ? { color } : undefined}
+      />
+      {status === "running" && (
+        <span className="animate-cockpit-pulse absolute -top-0.5 -right-0.5 size-2 rounded-full bg-st-running ring-2 ring-rail" />
+      )}
+    </span>
+  )
+}
+
 function ProjectRow({
   project,
   active,
@@ -172,9 +194,7 @@ function ProjectRow({
           )}
           {editing ? (
             <div className="flex min-w-0 flex-1 items-center gap-3 p-2">
-              <span className="grid size-5 shrink-0 place-items-center">
-                <StatusDot status={status} />
-              </span>
+              <ProjectFolder color={project.color} status={status} />
               <input
                 autoFocus
                 value={val}
@@ -194,30 +214,17 @@ function ProjectRow({
           ) : (
             <button
               onClick={onSelect}
-              className="flex min-w-0 flex-1 items-center gap-3 p-2 text-left"
+              className="flex min-w-0 flex-1 items-center gap-3 py-2.5 pr-1 pl-2 text-left"
             >
-              {/* Slot de ícone de largura FIXA (20px, centrado): ancora o texto
-                  do pai — e, por consequência, o dos filhos — sempre no mesmo x. */}
-              <span className="grid size-5 shrink-0 place-items-center">
-                <StatusDot status={status} />
+              {/* Pasta TINGIDA da cor do projeto (Codex-like): é o marcador do
+                  container. Path saiu da linha → vira tooltip (menos ruído). */}
+              <ProjectFolder color={project.color} status={status} />
+              <span
+                className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground"
+                title={project.path}
+              >
+                {project.name}
               </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="truncate text-[13px] font-medium text-foreground">
-                    {project.name}
-                  </span>
-                  {project.color && (
-                    <span
-                      className="size-2 shrink-0 rounded-full"
-                      style={{ background: project.color }}
-                      title="Cor do projeto"
-                    />
-                  )}
-                </div>
-                <div className="truncate font-mono text-[10.5px] text-muted-foreground">
-                  {shortPath(project.path)}
-                </div>
-              </div>
             </button>
           )}
           <button
