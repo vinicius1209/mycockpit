@@ -230,6 +230,27 @@ humano sozinho não basta (fardo + o humano deixa passar lixo). Solução:
 Mínimo-viável = estágio 0 (feito). Estágios 2/3 são **over-engineering agora**
 (decidir no ruído com poucas lições) — reservar os campos, implementar com volume.
 
+### Em construção (2026-07-13): CURADOR + SKILLS (decisão: Curador + Skills)
+Base compartilhada — **status da lição** (estágio 1): `lessons` ganha
+`status TEXT DEFAULT 'active'` ('active'|'candidate'|'archived'),
+`last_used_at INTEGER`, `reinforced INTEGER DEFAULT 0` (ALTER TABLE idempotente).
+Só `status='active'` é injetado. Save explícito (Linear 👎/salvar) → active;
+derivada do loop do Mission → candidate (não injeta até promover). 👍 que reforça
+lições injetadas bumpa `reinforced`; injeção bumpa `uses`+`last_used_at`.
+
+- **Curador** (estágio 3): função + botão "Revisar memória" na LearningSection.
+  (a) DEDUP de lições ativas quase-iguais (similaridade de token ≥ limiar; reusa
+  isNovelRule) → mantém uma, soma uses. (b) REBAIXA ativas com `uses ≥ N` e
+  `reinforced = 0` (injetadas muito, nunca reforçadas) → candidate/archived. UI:
+  badge de status + promover/rebaixar/excluir + "Revisar memória".
+- **Skills (M5)**: promover workflow vencedor a `/command`. Gatilho EXPLÍCITO
+  ("Salvar como skill" no ⌘K/CommandMenu). Fluxo: Haiku lê o transcript → rascunha
+  `.claude/commands/<name>.md` (nome+descrição+passos) → dialog editável → seu OK
+  → comando Rust `write_skill(projectPath, name, content)` grava (fsx atômico,
+  nome sanitizado). Aparece no inventário `.claude/` (context.ts já conta). SEMPRE
+  aprovação humana (Voyager+logion). Recorrência (auto-detectar workflow) fica p/ depois.
+- **Recorrência (estágio 2)**: gancho DORMENTE (campos existem; ativa com volume).
+
 ### Sequência Linear (menor risco → maior)
 1. **👍/👎 + "salvar como regra"** (explícito → lesson com gate) + coluna
    `scope` — **primeiro tijolo do Linear**, baixo risco.
