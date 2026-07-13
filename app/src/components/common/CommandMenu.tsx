@@ -10,6 +10,7 @@ import {
   Play,
   Plus,
   Settings,
+  Sparkles,
   SunMoon,
 } from "lucide-react"
 import {
@@ -28,6 +29,8 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
+import { SkillDraftDialog } from "@/components/skills/SkillDraftDialog"
+import { draftSkill, type SkillDraft } from "@/lib/skills"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 
@@ -68,6 +71,14 @@ export function CommandMenu() {
   const activeRunning = useChat((s) =>
     s.activeId ? (s.byId[s.activeId]?.running ?? false) : false,
   )
+  // Skill (M5): true se há conversa ativa com ≥1 turno (algum texto/usuário).
+  const canSaveSkill = useChat((s) => {
+    const c = s.activeId ? s.byId[s.activeId] : null
+    return !!c && c.items.some((it) => it.kind === "text" || it.kind === "user")
+  })
+  const [skillOpen, setSkillOpen] = useState(false)
+  const [skillDraft, setSkillDraft] = useState<SkillDraft | null>(null)
+  const [skillPath, setSkillPath] = useState<string | null>(null)
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -113,7 +124,29 @@ export function CommandMenu() {
     fn()
   }
 
+  // Promove a conversa ativa a uma skill: fecha o ⌘K, abre o dialog em loading
+  // (draft null), e rascunha via Haiku. O SAVE fica no dialog (gate humano).
+  async function startSaveSkill() {
+    const chat = useChat.getState()
+    const convId = chat.activeId
+    const conv = convId ? chat.byId[convId] : null
+    if (!conv) return
+    const proj = useApp.getState().projects.find((p) => p.id === conv.projectId)
+    if (!proj) return
+    const cfg = useApp.getState().mycockpit[conv.projectId]
+    const helperModel = cfg
+      ? cfg.helper
+      : useApp.getState().settings.helperModel
+    setOpen(false)
+    setSkillPath(proj.path)
+    setSkillDraft(null)
+    setSkillOpen(true)
+    const d = await draftSkill(proj.path, helperModel, conv.items)
+    setSkillDraft(d)
+  }
+
   return (
+    <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
         showCloseButton={false}
@@ -172,6 +205,15 @@ export function CommandMenu() {
                   {a.label}
                 </CommandItem>
               ))}
+              {canSaveSkill && (
+                <CommandItem
+                  className={ITEM}
+                  onSelect={() => void startSaveSkill()}
+                >
+                  <Sparkles aria-hidden />
+                  Salvar conversa como skill
+                </CommandItem>
+              )}
             </CommandGroup>
 
             {conversations.length > 0 && (
@@ -249,5 +291,12 @@ export function CommandMenu() {
         </Command>
       </DialogContent>
     </Dialog>
+    <SkillDraftDialog
+      open={skillOpen}
+      onOpenChange={setSkillOpen}
+      projectPath={skillPath}
+      draft={skillDraft}
+    />
+    </>
   )
 }

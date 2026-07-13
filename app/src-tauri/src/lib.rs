@@ -15,6 +15,7 @@ mod path;
 mod proc;
 mod pricing;
 mod sdd;
+mod skills;
 mod sources;
 mod stt;
 
@@ -313,6 +314,7 @@ pub fn run() {
             sdd::approve_prd,
             sdd::create_plan,
             sdd::set_plan_stage,
+            skills::write_skill,
             git::git_diff,
             git::create_worktree,
             git::remove_worktree,
