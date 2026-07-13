@@ -1,7 +1,5 @@
 import { useEffect } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { open } from "@tauri-apps/plugin-dialog"
-import { toast } from "sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
 import { TitleBar } from "@/components/layout/TitleBar"
@@ -13,6 +11,8 @@ import { SddView } from "@/components/sdd/SddView"
 import { CommandMenu } from "@/components/common/CommandMenu"
 import { SettingsDialog } from "@/components/settings/SettingsDialog"
 import { ConfirmHost } from "@/components/common/confirm"
+import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard"
+import { addProjectViaDialog } from "@/lib/projects"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -24,8 +24,6 @@ import {
   isTauri,
   listProjects,
   insertProject,
-  findProjectByPath,
-  restoreProject,
   updateProjectPermission,
 } from "@/lib/db"
 import { readMycockpitConfig } from "@/lib/mycockpit"
@@ -69,9 +67,9 @@ export default function App() {
   const contextOpen = useApp((s) => s.contextOpen)
   const viewMode = useApp((s) => s.viewMode)
   const setProjects = useApp((s) => s.setProjects)
-  const addProject = useApp((s) => s.addProject)
   const setReady = useApp((s) => s.setReady)
   const theme = useApp((s) => s.theme)
+  const onboarded = useApp((s) => s.settings.onboarded)
   const activeProjectId = useApp((s) => s.activeProjectId)
 
   useEffect(() => {
@@ -144,51 +142,7 @@ export default function App() {
   }, [activeProjectId])
 
   async function handleAddProject() {
-    if (!isTauri()) {
-      toast("Seleção de pasta disponível no app (tauri dev)")
-      return
-    }
-    try {
-      const dir = await open({
-        directory: true,
-        multiple: false,
-        title: "Escolha a pasta do projeto",
-      })
-      if (typeof dir !== "string") return
-      const name = dir.split("/").filter(Boolean).pop() ?? dir
-      const project: Project = {
-        id: crypto.randomUUID(),
-        name,
-        path: dir,
-        createdAt: Date.now(),
-        hasClaudeMd: false,
-        hasAgentsMd: false,
-        status: "idle",
-      }
-      const inserted = await insertProject(project)
-      if (!inserted) {
-        // path já cadastrado (talvez arquivado): restaura/seleciona o registro
-        // real em vez de criar um id fantasma que evapora no restart.
-        const existing = await findProjectByPath(dir)
-        if (existing) {
-          if (existing.deleted) await restoreProject(existing.id)
-          const fresh = await listProjects()
-          if (fresh) useApp.getState().setProjects(fresh)
-          useApp.getState().setActiveProject(existing.id)
-          toast.success(
-            existing.deleted
-              ? `Projeto restaurado: ${name}`
-              : `Projeto já existia: ${name}`,
-          )
-          return
-        }
-      }
-      addProject(project)
-      toast.success(`Projeto adicionado: ${name}`)
-    } catch (e) {
-      console.error(e)
-      toast.error("Não foi possível adicionar o projeto")
-    }
+    await addProjectViaDialog()
   }
 
   return (
@@ -258,6 +212,9 @@ export default function App() {
         <CommandMenu />
         <SettingsDialog />
         <ConfirmHost />
+        {/* Onboarding: overlay full-screen no 1º run (onboarded=false). O boot
+            de projetos segue por baixo; finish grava onboarded=true. */}
+        {!onboarded && <OnboardingWizard />}
       </TooltipProvider>
     </QueryClientProvider>
   )

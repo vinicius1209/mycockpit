@@ -2,6 +2,7 @@ import {
   type MissionPreset,
   DEFAULT_MISSION_PRESETS,
 } from "@/lib/missionTypes"
+import type { AgentProbe } from "@/lib/detect"
 
 // Preferências GLOBAIS do app (persistidas via zustand persist → localStorage,
 // que o webview do Tauri guarda em disco entre reinícios). Distinto do config
@@ -24,6 +25,12 @@ export interface GlobalSettings {
   missionEnabled: boolean
   /** Times salvos do Mission (papel → agent/modelo). */
   missionPresets: MissionPreset[]
+  /** Onboarding: false = mostra o wizard no boot. Migração seta true p/ quem já
+   *  tem estado persistido (não é primeira instalação). */
+  onboarded: boolean
+  /** Último snapshot da detecção de agents (por id). Alimenta o seletor e o
+   *  bloco "Agents na máquina" das Configurações. */
+  detected: Record<string, AgentProbe>
 }
 
 export const DEFAULT_SETTINGS: GlobalSettings = {
@@ -35,4 +42,6 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   dictationVocab: [],
   missionEnabled: false,
   missionPresets: DEFAULT_MISSION_PRESETS,
+  onboarded: false,
+  detected: {},
 }

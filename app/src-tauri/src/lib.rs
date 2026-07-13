@@ -6,6 +6,7 @@ mod adapters;
 mod agent;
 mod attachments;
 mod context;
+mod detect;
 mod fsx;
 mod git;
 mod mycockpit;
@@ -284,6 +285,7 @@ pub fn run() {
             agent::suggest,
             agent::judge,
             context::read_project_context,
+            detect::detect_agents,
             mycockpit::read_mycockpit_config,
             mycockpit::write_mycockpit_config,
             sources::read_project_sources,

@@ -145,7 +145,7 @@ export const useApp = create<AppState>()(
     }),
     {
       name: "mc.app",
-      version: 1,
+      version: 2,
       // SÓ preferências: nunca persistir projects/mycockpit/limitedAgents/ready/
       // activeProjectId — esses vêm do banco no boot.
       partialize: (s) => ({
@@ -155,6 +155,17 @@ export const useApp = create<AppState>()(
         viewMode: s.viewMode,
         settings: s.settings,
       }),
+      // v1→v2: quem já tinha estado persistido é usuário EXISTENTE (não 1ª
+      // instalação) → não deve ver o wizard de onboarding. Marca onboarded=true.
+      // Instalação nova (sem estado persistido) NÃO chama migrate → onboarded
+      // fica no default false → wizard aparece.
+      migrate: (persisted, fromVersion) => {
+        const p = (persisted ?? {}) as { settings?: Record<string, unknown> }
+        if (fromVersion < 2) {
+          p.settings = { ...(p.settings ?? {}), onboarded: true }
+        }
+        return p as AppState
+      },
       // deep-merge de settings p/ campos novos ganharem o default (evita undefined
       // quando o schema cresce entre versões).
       merge: (persisted, current) => {

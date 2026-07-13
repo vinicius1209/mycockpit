@@ -1,6 +1,13 @@
 # Onboarding de primeira instalação
 
-Status: design (parcialmente implementado) · Escopo: macOS, Tauri 2 + React
+Status: ✅ IMPLEMENTADO (2026-07-13) · Escopo: macOS, Tauri 2 + React
+
+Arquivos: `src-tauri/src/detect.rs` (`detect_agents`), `src/lib/detect.ts`,
+`src/lib/projects.ts` (`addProjectViaDialog` extraído do App), `src/lib/
+agents.ts` (`availability()`), `src/components/onboarding/OnboardingWizard.tsx`
+(6 passos), `settings.ts` (`onboarded`+`detected`), `store/app.ts` (migração
+v1→v2: usuário existente não vê o wizard), `App.tsx` (render + seed só em DEV),
+`SettingsDialog` ("Refazer onboarding"). O texto abaixo é o design que guiou.
 
 ## 0. Prontidão para distribuição ("nada fixo") — auditoria 2026-07-13
 

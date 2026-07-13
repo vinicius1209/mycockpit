@@ -6,6 +6,7 @@
 // lib/attachments.ts (espelham o backend), aqui é só a IDENTIDADE do agent.
 
 import type { Destination } from "@/lib/types"
+import type { AgentProbe } from "@/lib/detect"
 
 export interface AgentModelOption {
   value: string
@@ -162,6 +163,30 @@ const BY_ID = new Map(AGENTS.map((a) => [a.id, a]))
 
 export function agentDef(id: string): AgentDef | undefined {
   return BY_ID.get(id)
+}
+
+/** "ready"=usável · "installed-auth-unknown"=instalado, auth incerta (usável c/
+ *  aviso) · "missing"=não instalado · "not-integrated"=o app não integra. */
+export type Availability =
+  | "ready"
+  | "installed-auth-unknown"
+  | "missing"
+  | "not-integrated"
+
+/** Compõe o registry ESTÁTICO (o app integra este agent?) com a detecção em
+ *  RUNTIME (existe nesta máquina?). SEM snapshot → "ready": degrada ao
+ *  comportamento atual (não bloqueia quem nunca rodou a detecção). O registry
+ *  `AGENTS` segue sendo a fonte de verdade de identidade/capacidade. */
+export function availability(
+  id: string,
+  detected: Record<string, AgentProbe>,
+): Availability {
+  const def = agentDef(id)
+  if (!def || !def.available) return "not-integrated"
+  const probe = detected[id]
+  if (!probe) return "ready"
+  if (!probe.installed) return "missing"
+  return probe.auth === "ok" ? "ready" : "installed-auth-unknown"
 }
 
 /** Destinos do console de comando (deriva direto do registry). */

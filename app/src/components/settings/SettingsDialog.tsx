@@ -1,6 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { getVersion } from "@tauri-apps/api/app"
-import { Bot, Info, Mic, Palette, Sparkles, Waypoints, X } from "lucide-react"
+import {
+  Bot,
+  Info,
+  Mic,
+  Palette,
+  RotateCcw,
+  Sparkles,
+  Waypoints,
+  X,
+} from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -336,6 +345,18 @@ export function SettingsDialog() {
                   Cockpit de agents. Preferências globais ficam salvas localmente;
                   config por projeto vive no painel de contexto.
                 </p>
+              </div>
+              <div className="mt-4 border-t border-border/50 pt-3">
+                <button
+                  onClick={() => {
+                    setSettings({ onboarded: false })
+                    setOpen(false)
+                  }}
+                  className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground transition-colors hover:text-brass"
+                >
+                  <RotateCcw className="size-3.5" />
+                  Refazer onboarding (verificar agents de novo)
+                </button>
               </div>
             </div>
           )}
