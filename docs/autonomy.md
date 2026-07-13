@@ -213,6 +213,23 @@ aprendizado** (o ganho some em tarefas longas/complexas). Regra de ouro:
 Mínimo: coluna `scope` via `ALTER TABLE` idempotente; `listLessons` faz
 `WHERE scope='global' OR project_id=$1`.
 
+### Funil de LEARNABILITY (não basta o gate humano)
+Problema real (feedback do usuário 2026-07-13): 👍/👎 sem inteligência deixa
+ruído virar lição — uma resposta de status ("aguardando rate limit, rodo em
+3min") não tem NADA a aprender, mas a destilação fabricaria uma regra. O gate
+humano sozinho não basta (fardo + o humano deixa passar lixo). Solução:
+**o modelo filtra o lixo ANTES; o humano decide no topo do funil.**
+
+| Estágio | O que faz | Fonte | Status |
+|---|---|---|---|
+| **0 · Juiz de learnability** | antes de propor, o Haiku julga "há algo durável/genérico?" (à la *importance score* do Generative Agents). NENHUMA → avisa "pouco generalizável", mas NÃO bloqueia (o humano pode salvar mesmo assim — caveat EMNLP: o filtro erra nos dois sentidos) | Generative Agents 2304.03442 · EMNLP 2507.23158 | ✅ ENTREGUE (learning.ts `distillCandidate` → `{rule, learnable}`) |
+| **1 · Candidato × Ativo** | lição fraca fica candidata (não injeta); "salvar regra" explícito entra ativa | ExpeL 2308.10144 | ⏳ schema depois |
+| **2 · Recorrência** | one-off não promove; espera repetir 2-3× | convenção CC / AWM | ⏳ com volume |
+| **3 · Curador/decay** | poda lição nunca reusada / que correlaciona com pior resultado | ACE 2510.04618 | ⏳ M6, com volume |
+
+Mínimo-viável = estágio 0 (feito). Estágios 2/3 são **over-engineering agora**
+(decidir no ruído com poucas lições) — reservar os campos, implementar com volume.
+
 ### Sequência Linear (menor risco → maior)
 1. **👍/👎 + "salvar como regra"** (explícito → lesson com gate) + coluna
    `scope` — **primeiro tijolo do Linear**, baixo risco.

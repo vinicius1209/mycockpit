@@ -203,12 +203,15 @@ export async function distillLesson(args: DistillArgs): Promise<string | null> {
 // que a UI mostra num card editável; só o clique do usuário chama saveLesson.
 
 const LINEAR_DISTILL_PROMPT = [
-  "Você destila LIÇÕES REUSÁVEIS do feedback de um usuário sobre a resposta de",
-  "um agente de código. O usuário apontou o que faltou/errou (👎) ou o que",
-  "funcionou (salvar como regra). Extraia UMA regra curta, acionável e GENÉRICA",
-  "(aplicável a futuras tarefas, não só a esta), em português, no imperativo.",
-  "Responda APENAS com a regra numa linha (sem aspas, sem numeração, sem prosa).",
-  "Se não houver lição generalizável, responda exatamente: NENHUMA.",
+  "Você é um JUIZ DE LIÇÕES: decide se o feedback de um usuário sobre a resposta",
+  "de um agente de código contém algo REUSÁVEL e DURÁVEL o suficiente pra virar",
+  "uma regra permanente do projeto. Seja EXIGENTE. NÃO vira lição: mensagens de",
+  "status, resultados pontuais deste momento, elogios/críticas vagos, ou coisas",
+  "específicas só desta tarefa. VIRA lição: um padrão do código, uma convenção,",
+  "uma preferência durável, um erro que deve ser evitado sempre.",
+  "Se HOUVER lição: responda APENAS com UMA regra curta, acionável e genérica,",
+  "em português, no imperativo (uma linha, sem aspas/numeração/prosa).",
+  "Se NÃO houver: responda exatamente NENHUMA.",
 ].join(" ")
 
 export interface DistillCandidateArgs {
@@ -224,16 +227,25 @@ export interface DistillCandidateArgs {
   run?: typeof suggest
 }
 
+/** Resultado da destilação: a regra (editável) + se o juiz achou algo REALMENTE
+ *  learnable. `learnable:false` → a UI avisa "isso parece pouco generalizável"
+ *  mas AINDA deixa salvar (o humano tem a palavra final — caveat EMNLP: o filtro
+ *  automático erra nos dois sentidos). `null` = não deu pra julgar (helper off). */
+export interface DistillCandidate {
+  rule: string
+  learnable: boolean | null
+}
+
 /** Destila um CANDIDATO de regra do feedback do Linear via Haiku — NÃO grava.
- *  Se o helper está desligado (helperModel null) OU a destilação falha, faz
- *  fallback pro texto CRU do usuário (regra editável no card). Nunca lança:
- *  sempre devolve uma string pro card (o gate humano decide gravar/descartar). */
+ *  Estágio 0 do funil de learnability (docs/autonomy.md): o Haiku JULGA se há
+ *  algo durável/genérico antes de propor. Sem helper OU falha → devolve o texto
+ *  cru com learnable:null (não julga, não bloqueia). Nunca lança. */
 export async function distillCandidate(
   args: DistillCandidateArgs,
-): Promise<string> {
+): Promise<DistillCandidate> {
   const note = args.userNote.trim()
-  // Sem helper → grava o texto do usuário cru (o card ainda é editável).
-  if (!args.helperModel) return note
+  // Sem helper → não dá pra julgar; devolve o texto cru (card editável).
+  if (!args.helperModel) return { rule: note, learnable: null }
   try {
     const run = args.run ?? suggest
     const raw = await run(
@@ -245,10 +257,12 @@ export async function distillCandidate(
       )}\n\nFeedback do usuário:\n${truncate(note, 1000)}`,
     )
     const rule = parseDistilledRule(raw)
-    // NENHUMA / vazio → cai pro texto cru do usuário (não perde o sinal).
-    return rule ?? note
+    // regra → learnable; NENHUMA/vazio → não-learnable (mas devolve o cru p/ o
+    // humano poder salvar mesmo assim, ciente de que é fraco).
+    if (rule) return { rule, learnable: true }
+    return { rule: note, learnable: false }
   } catch {
-    return note
+    return { rule: note, learnable: null }
   }
 }
 

@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useState } from "react"
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowRightLeft,
   Ban,
   Bot,
@@ -347,8 +348,13 @@ function AttachmentThumb({ att }: { att: Attachment }) {
 export interface FeedbackApi {
   /** 👍 leve: reforça (bumpLessonUses) as lições injetadas no último turno. */
   onThumbUp: () => void | Promise<void>
-  /** Destila um candidato de regra (Haiku ou texto cru) SEM gravar. */
-  distill: (agentTurn: string, userNote: string) => Promise<string>
+  /** Destila um candidato de regra + o veredito de learnability (Haiku julga se
+   *  há algo durável). learnable:false → a UI avisa mas deixa salvar (gate humano). */
+  distill: (
+    agentTurn: string,
+    userNote: string,
+  ) => Promise<{ rule: string; learnable: boolean | null }>
+
   /** Grava a regra após o gate humano (dedup interno). Retorna false=duplicata. */
   save: (rule: string, scope: "global" | "project") => Promise<boolean>
 }
@@ -368,6 +374,8 @@ function FeedbackControls({
   const [thumbedUp, setThumbedUp] = useState(false)
   const [note, setNote] = useState("")
   const [rule, setRule] = useState("")
+  // veredito do juiz de learnability: false = pouco generalizável (avisa, não bloqueia).
+  const [learnable, setLearnable] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
 
   function thumbUp() {
@@ -389,7 +397,8 @@ function FeedbackControls({
     setBusy(true)
     try {
       const candidate = await api.distill(agentTurn, n)
-      setRule(candidate)
+      setRule(candidate.rule)
+      setLearnable(candidate.learnable)
       setMode("card")
     } finally {
       setBusy(false)
@@ -451,11 +460,26 @@ function FeedbackControls({
 
   if (mode === "card") {
     return (
-      <div className="mt-1.5 flex flex-col gap-2 rounded-lg border border-brass/40 bg-brass/5 p-2.5">
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <GraduationCap className="size-3.5 text-brass" /> Regra proposta —
-          revise antes de salvar
-        </div>
+      <div
+        className={cn(
+          "mt-1.5 flex flex-col gap-2 rounded-lg border p-2.5",
+          learnable === false
+            ? "border-st-warning/40 bg-st-warning/5"
+            : "border-brass/40 bg-brass/5",
+        )}
+      >
+        {learnable === false ? (
+          <div className="flex items-start gap-1.5 text-[11px] text-st-warning">
+            <AlertTriangle className="mt-px size-3.5 shrink-0" /> Isso parece
+            pouco generalizável — nada óbvio pra virar regra. Salve só se for
+            mesmo uma preferência durável.
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <GraduationCap className="size-3.5 text-brass" /> Regra proposta —
+            revise antes de salvar
+          </div>
+        )}
         <textarea
           value={rule}
           onChange={(e) => setRule(e.target.value)}
