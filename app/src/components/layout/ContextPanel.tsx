@@ -35,6 +35,7 @@ import { useChat } from "@/store/chat"
 import type { ProjectConfig } from "@/store/app"
 import { readProjectContext } from "@/lib/context"
 import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/context"
+import { loadGitDiff } from "@/lib/git"
 import { readProjectSources, readTextFile } from "@/lib/sources"
 import type { ProjectSources } from "@/lib/sources"
 import { open as openDialog } from "@tauri-apps/plugin-dialog"
@@ -275,11 +276,14 @@ function TabBtn({
   onClick,
   icon: Icon,
   children,
+  badge,
 }: {
   active: boolean
   onClick: () => void
   icon: LucideIcon
   children: ReactNode
+  /** Contador opcional (ex.: nº de arquivos alterados). 0 = sem badge. */
+  badge?: number
 }) {
   return (
     <button
@@ -293,6 +297,18 @@ function TabBtn({
     >
       <Icon className="size-3.5" />
       {children}
+      {badge != null && badge > 0 && (
+        <span
+          className={cn(
+            "grid min-w-4 place-items-center rounded-full px-1 text-[9.5px] font-semibold tabular-nums",
+            active
+              ? "bg-brass text-background"
+              : "bg-muted-foreground/25 text-foreground/80",
+          )}
+        >
+          {badge}
+        </span>
+      )}
       {active && (
         <span className="absolute inset-x-0 -bottom-px h-[2px] rounded-full bg-brass" />
       )}
@@ -307,12 +323,21 @@ export function ContextPanel() {
   const [status, setStatus] = useState<Status>("loading")
   const [expanded, setExpanded] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
+  // Referência do agente (personas/specs/memórias/instruções) COLAPSADA por
+  // padrão: é consulta rara, não deve dominar o painel. Abre sob demanda.
+  const [showAgentCtx, setShowAgentCtx] = useState(false)
   const [detail, setDetail] = useState<DetailTarget | null>(null)
   const [tab, setTab] = useState<"contexto" | "alteracoes" | "plano">("contexto")
   // diff atribuído à conversa ativa: worktree isolado dela, senão a pasta do projeto.
   const activeWorktree = useChat(
     (s) => s.conversations.find((c) => c.id === s.activeId)?.worktreePath ?? null,
   )
+  // running da conversa ativa: quando o turno termina, recarrega a contagem de
+  // arquivos alterados (o diff mudou) → badge na aba Alterações.
+  const running = useChat((s) =>
+    s.activeId ? (s.byId[s.activeId]?.running ?? false) : false,
+  )
+  const [changedCount, setChangedCount] = useState(0)
   // items da conversa ativa SÓ quando a aba Plano está visível (evita re-render
   // do painel inteiro a cada delta de streaming nas outras abas).
   const planItems = useChat((s) =>
@@ -370,11 +395,6 @@ export function ContextPanel() {
     void writeMycockpitConfig(project.path, { permission: mode })
   }
 
-  function onHelperChange(v: string) {
-    if (!project) return
-    upsertConfig({ helper: v === "off" ? null : v })
-    void writeMycockpitConfig(project.path, { helper: v })
-  }
 
   const projectPath = project?.path
   useEffect(() => {
@@ -412,6 +432,37 @@ export function ContextPanel() {
     }
   }, [projectPath, reload])
 
+  // Contagem de arquivos alterados p/ o badge da aba Alterações. Recarrega
+  // quando o worktree muda, no reload manual, e ao fim de cada turno (running).
+  useEffect(() => {
+    let cancelled = false
+    const cwd = activeWorktree ?? projectPath
+    if (!cwd) {
+      setChangedCount(0)
+      return
+    }
+    void loadGitDiff(cwd).then((d) => {
+      if (!cancelled) setChangedCount(d.isRepo ? d.files.length : 0)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [activeWorktree, projectPath, reload, running])
+
+  // Resumo numa linha do que o agente enxerga (cabeçalho colapsado).
+  const agentCtxSummary = (() => {
+    const parts: string[] = []
+    const instrTotal = ctx?.files.length ?? 0
+    const instrPresent = ctx?.files.filter((f) => f.exists).length ?? 0
+    if (instrTotal > 0) parts.push(`${instrPresent}/${instrTotal} instruções`)
+    const nP = sources?.personas.length ?? 0
+    if (nP) parts.push(`${nP} personas`)
+    const nS = sources?.specs.length ?? 0
+    if (nS) parts.push(`${nS} specs`)
+    if (sources?.memory.exists) parts.push(`${sources.memory.count} memórias`)
+    return parts.length ? parts.join(" · ") : "instruções, personas, memórias"
+  })()
+
   return (
     <aside className="reveal-right flex h-full w-full flex-col bg-transparent">
       <header className="flex h-11 shrink-0 items-center gap-4 px-5">
@@ -426,6 +477,7 @@ export function ContextPanel() {
           active={tab === "alteracoes"}
           onClick={() => setTab("alteracoes")}
           icon={FileDiff}
+          badge={changedCount}
         >
           Alterações
         </TabBtn>
@@ -492,22 +544,6 @@ export function ContextPanel() {
                   confirmação.
                 </p>
               )}
-              <div className="flex items-center justify-between">
-                <span className="text-[12.5px] text-muted-foreground">
-                  Modelo das sugestões
-                </span>
-                <PillSelect
-                  value={cfg ? (cfg.helper ?? "off") : "haiku"}
-                  onValueChange={onHelperChange}
-                  align="end"
-                  triggerClassName="h-7 gap-1.5 pr-1.5 pl-2.5"
-                  aria-label="Modelo das sugestões"
-                  options={[
-                    { value: "haiku", label: "Haiku" },
-                    { value: "off", label: "Desligado" },
-                  ]}
-                />
-              </div>
 
               {/* Pastas permitidas: viram --add-dir. Resolve o caso de o agent
                   precisar de um repo irmão fora do cwd (ex.: backend). Aplica ao
@@ -572,6 +608,35 @@ export function ContextPanel() {
           </Section>
 
           <Separator />
+
+          {/* Referência do agente colapsada: cabeçalho clicável + resumo numa
+              linha. O conteúdo (instruções/extensões/personas/specs/memórias)
+              só monta quando aberto — deixa o painel enxuto no dia a dia. */}
+          <button
+            onClick={() => setShowAgentCtx((v) => !v)}
+            className="flex w-full items-center gap-2 px-1 py-1 text-left"
+            aria-expanded={showAgentCtx}
+          >
+            <ChevronDown
+              className={cn(
+                "size-3.5 shrink-0 text-muted-foreground transition-transform",
+                showAgentCtx && "rotate-180",
+              )}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="text-[10.5px] font-medium tracking-wide text-muted-foreground/70 uppercase">
+                O que o agente enxerga
+              </div>
+              {!showAgentCtx && (
+                <div className="truncate text-[11.5px] text-muted-foreground/60">
+                  {agentCtxSummary}
+                </div>
+              )}
+            </div>
+          </button>
+
+          {showAgentCtx && (
+            <>
 
           {/* Zona de INVENTÁRIO (read-only): o que o claude enxerga no cwd */}
           <Section title="No contexto do agente">
@@ -738,6 +803,8 @@ export function ContextPanel() {
                   </span>
                 </button>
               </Section>
+            </>
+          )}
             </>
           )}
         </ScrollArea>
