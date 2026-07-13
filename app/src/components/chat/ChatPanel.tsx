@@ -32,6 +32,12 @@ import { gcAttachments } from "@/lib/attachments"
 import { BYTES_PER_MB } from "@/lib/format"
 import type { AgentRunConfig } from "@/lib/types"
 import { isTauri, listConvRefs } from "@/lib/db"
+import {
+  buildLearningBlocks,
+  markLessonsUsed,
+  distillCandidate,
+  saveLesson,
+} from "@/lib/learning"
 
 function greetingFor(date: Date): string {
   const h = date.getHours()
@@ -44,7 +50,11 @@ export function ChatPanel() {
   const project = useActiveProject()
   const conv = useActiveConv()
   const openProject = useChat((s) => s.openProject)
+  const viewMode = useApp((s) => s.viewMode)
   const scrollRef = useRef<HTMLDivElement>(null)
+  // Lições injetadas no ÚLTIMO turno desta conversa (p/ o 👍 reforçar — bump).
+  // Ref keyed por convId; efêmero, não persiste (é só o alvo do reforço leve).
+  const injectedLessonsRef = useRef<Record<string, string[]>>({})
   // segue o fim só quando você já está lá; se subiu pra ler, não puxa de volta.
   const [atBottom, setAtBottom] = useState(true)
 
@@ -241,6 +251,24 @@ export function ChatPanel() {
     // Sprint 4, o run escreve em byId[convId] mesmo se o usuário trocar de aba.
     useChat.getState().start(convId, text, runId, agent, model, effort, attachments)
     setAtBottom(true) // ao enviar, pula pro fim (ver a própria mensagem)
+    // M2 do Linear: injeta as lições relevantes (projeto + globais) no PROMPT
+    // (não na bolha visível). Best-effort: qualquer falha envia sem o bloco. Só
+    // no Linear — Fusion/Mission têm suas próprias fases de contexto.
+    let promptText = text
+    if (viewMode === "linear") {
+      try {
+        const blocks = await buildLearningBlocks(project.id, text, false)
+        if (blocks.lessons) {
+          promptText = `${blocks.lessons}\n\n---\n\n${text}`
+          injectedLessonsRef.current[convId] = blocks.lessonIds
+          void markLessonsUsed(blocks.lessonIds)
+        } else {
+          injectedLessonsRef.current[convId] = []
+        }
+      } catch {
+        injectedLessonsRef.current[convId] = []
+      }
+    }
     try {
       await runAgent(
         runId,
@@ -248,7 +276,7 @@ export function ChatPanel() {
         agent,
         model,
         effort,
-        text,
+        promptText,
         cwd,
         sessionId,
         project.permissionMode ?? "padrao",
@@ -406,6 +434,32 @@ export function ChatPanel() {
   const hasConversation = items.length > 0
   const greeting = greetingFor(new Date())
 
+  // Loop de feedback do Linear (M2): só no modo Linear e com projeto ativo.
+  // Resolve o helper (Haiku) na mesma regra das sugestões: cfg do projeto vence,
+  // senão o default global; null = destilação desligada (grava o texto cru).
+  const feedback = useMemo(() => {
+    if (viewMode !== "linear" || !project) return null
+    const cfg = useApp.getState().mycockpit[project.id]
+    const helperModel = cfg
+      ? cfg.helper
+      : useApp.getState().settings.helperModel
+    const cwd = conv?.worktreePath ?? project.path
+    return {
+      onThumbUp: async () => {
+        const convId = useChat.getState().activeId
+        if (!convId) return
+        const ids = injectedLessonsRef.current[convId] ?? []
+        if (ids.length) await markLessonsUsed(ids)
+      },
+      distill: (agentTurn: string, userNote: string) =>
+        distillCandidate({ cwd, helperModel, agentTurn, userNote }),
+      save: (rule: string, scope: "global" | "project") =>
+        saveLesson({ projectId: project.id, rule, scope }),
+    }
+    // conv.worktreePath entra p/ o cwd acompanhar o worktree da conversa ativa.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, project?.id, project?.path, conv?.worktreePath])
+
   return (
     <section className="relative flex h-full w-full min-w-0 flex-col bg-background">
       {!hasConversation && (
@@ -431,6 +485,7 @@ export function ChatPanel() {
               startedAt={conv.startedAt}
               agent={conv.agent}
               onContinueWith={(a) => void handleContinueWith(a)}
+              feedback={feedback}
             />
           </div>
         ) : (

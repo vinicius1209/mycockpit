@@ -3,7 +3,8 @@
 // silêncio"). Mostra, por projeto: nº de entregas no recall (M1) e a lista de
 // lições destiladas (M2), cada uma removível. Mínimo viável = listar + podar.
 import { useEffect, useState } from "react"
-import { GraduationCap, Trash2 } from "lucide-react"
+import { GraduationCap, Globe2, Trash2 } from "lucide-react"
+import { cn } from "@/lib/utils"
 import {
   deleteLesson,
   isTauri,
@@ -11,6 +12,13 @@ import {
   listLessons,
   type LessonRecord,
 } from "@/lib/db"
+
+/** Rótulo humano da origem da lição (o campo `source`). */
+const SOURCE_LABEL: Record<string, string> = {
+  reviewer: "reviewer",
+  gate: "gate",
+  linear: "chat",
+}
 
 export function LearningSection({ projectId }: { projectId: string }) {
   const [lessons, setLessons] = useState<LessonRecord[]>([])
@@ -72,14 +80,35 @@ export function LearningSection({ projectId }: { projectId: string }) {
                 key={l.id}
                 className="group/lesson flex items-start gap-1.5 rounded-md bg-secondary/40 px-2 py-1.5"
               >
-                <GraduationCap className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
+                {l.scope === "global" ? (
+                  <Globe2 className="mt-0.5 size-3.5 shrink-0 text-brass/80" />
+                ) : (
+                  <GraduationCap className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
+                )}
                 <span className="min-w-0 flex-1 text-[11.5px] leading-snug text-foreground/90">
                   {l.rule}
-                  {l.uses > 0 && (
-                    <span className="ml-1.5 text-[10px] tabular-nums text-muted-foreground/55">
-                      · usada {l.uses}×
+                  <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={cn(
+                        "rounded px-1 py-px text-[9.5px] font-medium uppercase tracking-wide",
+                        l.scope === "global"
+                          ? "bg-brass/15 text-brass"
+                          : "bg-secondary text-muted-foreground/70",
+                      )}
+                    >
+                      {l.scope === "global" ? "global" : "projeto"}
                     </span>
-                  )}
+                    {l.source && (
+                      <span className="text-[10px] text-muted-foreground/55">
+                        {SOURCE_LABEL[l.source] ?? l.source}
+                      </span>
+                    )}
+                    {l.uses > 0 && (
+                      <span className="text-[10px] tabular-nums text-muted-foreground/55">
+                        · usada {l.uses}×
+                      </span>
+                    )}
+                  </span>
                 </span>
                 <button
                   onClick={() => void remove(l.id)}

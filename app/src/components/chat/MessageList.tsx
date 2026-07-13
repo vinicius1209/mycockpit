@@ -10,11 +10,18 @@ import {
   FileText,
   Gauge,
   Globe,
+  Globe2,
+  GraduationCap,
+  Loader2,
   Search,
   Terminal,
+  ThumbsDown,
+  ThumbsUp,
   Wrench,
+  X,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
+import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { agentLabel } from "@/lib/agent"
 import { DESTINATIONS } from "@/lib/agents"
@@ -334,9 +341,202 @@ function AttachmentThumb({ att }: { att: Attachment }) {
   )
 }
 
+/** Contrato de feedback do Linear (M2), threadado do ChatPanel. `null` fora do
+ *  Linear (Fusion/Mission não têm este loop). O gate humano vive no card:
+ *  distill PROPÕE, o clique GRAVA. */
+export interface FeedbackApi {
+  /** 👍 leve: reforça (bumpLessonUses) as lições injetadas no último turno. */
+  onThumbUp: () => void | Promise<void>
+  /** Destila um candidato de regra (Haiku ou texto cru) SEM gravar. */
+  distill: (agentTurn: string, userNote: string) => Promise<string>
+  /** Grava a regra após o gate humano (dedup interno). Retorna false=duplicata. */
+  save: (rule: string, scope: "global" | "project") => Promise<boolean>
+}
+
+/** 👍/👎 + "salvar como regra" numa bolha de TEXTO do agente (kind text/result).
+ *  Discreto (aparece no hover, padrão do CopyButton). O 👎 e o "salvar regra"
+ *  abrem o MESMO fluxo: input inline → card de propor-regra com gate humano. */
+function FeedbackControls({
+  agentTurn,
+  api,
+}: {
+  agentTurn: string
+  api: FeedbackApi
+}) {
+  // "idle" | "ask" (input inline) | "card" (propor regra) | "done"
+  const [mode, setMode] = useState<"idle" | "ask" | "card" | "done">("idle")
+  const [thumbedUp, setThumbedUp] = useState(false)
+  const [note, setNote] = useState("")
+  const [rule, setRule] = useState("")
+  const [busy, setBusy] = useState(false)
+
+  function thumbUp() {
+    if (thumbedUp) return
+    setThumbedUp(true)
+    void api.onThumbUp()
+  }
+
+  // 👎 → abre input; "salvar como regra" → mesmo fluxo, seeded com "o que funcionou".
+  function openAsk(seed: string) {
+    setNote(seed)
+    setMode("ask")
+  }
+
+  // input enviado → destila (Haiku ou cru) e mostra o card editável (gate humano).
+  async function propose() {
+    const n = note.trim()
+    if (!n) return
+    setBusy(true)
+    try {
+      const candidate = await api.distill(agentTurn, n)
+      setRule(candidate)
+      setMode("card")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function commit(scope: "global" | "project") {
+    const r = rule.trim()
+    if (!r) return
+    setBusy(true)
+    try {
+      const ok = await api.save(r, scope)
+      setMode(ok ? "done" : "idle")
+      if (!ok) toastDuplicate()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (mode === "done") {
+    return (
+      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-st-success">
+        <GraduationCap className="size-3.5" /> Regra salva
+      </div>
+    )
+  }
+
+  if (mode === "ask") {
+    return (
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <input
+          autoFocus
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void propose()
+            if (e.key === "Escape") setMode("idle")
+          }}
+          placeholder="O que faltou / estava errado?"
+          className="min-w-0 flex-1 rounded-md border bg-background/60 px-2 py-1 text-[12px] outline-none focus:border-brass/60"
+        />
+        <button
+          onClick={() => void propose()}
+          disabled={busy || !note.trim()}
+          className="shrink-0 rounded-md bg-brass px-2 py-1 text-[11.5px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+        >
+          {busy ? <Loader2 className="size-3.5 animate-spin" /> : "Propor regra"}
+        </button>
+        <button
+          onClick={() => setMode("idle")}
+          aria-label="Cancelar"
+          className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+    )
+  }
+
+  if (mode === "card") {
+    return (
+      <div className="mt-1.5 flex flex-col gap-2 rounded-lg border border-brass/40 bg-brass/5 p-2.5">
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <GraduationCap className="size-3.5 text-brass" /> Regra proposta —
+          revise antes de salvar
+        </div>
+        <textarea
+          value={rule}
+          onChange={(e) => setRule(e.target.value)}
+          rows={2}
+          className="w-full resize-none rounded-md border bg-background/60 px-2 py-1.5 text-[12.5px] leading-snug outline-none focus:border-brass/60"
+        />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            onClick={() => void commit("project")}
+            disabled={busy || !rule.trim()}
+            className="rounded-md bg-brass px-2.5 py-1 text-[11.5px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+          >
+            Salvar regra
+          </button>
+          <button
+            onClick={() => void commit("global")}
+            disabled={busy || !rule.trim()}
+            className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11.5px] transition-colors hover:bg-accent disabled:opacity-40"
+          >
+            <Globe2 className="size-3.5" /> Salvar como global
+          </button>
+          <button
+            onClick={() => setMode("idle")}
+            className="rounded-md px-2 py-1 text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Descartar
+          </button>
+          {busy && <Loader2 className="size-3.5 animate-spin text-brass" />}
+        </div>
+      </div>
+    )
+  }
+
+  // idle: ícones discretos no hover.
+  return (
+    <div className="mt-0.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100">
+      <button
+        onClick={thumbUp}
+        title="Boa resposta (reforça as lições usadas)"
+        aria-label="Boa resposta"
+        className={cn(
+          "rounded p-1 text-muted-foreground transition-colors hover:text-st-success",
+          thumbedUp && "text-st-success",
+        )}
+      >
+        <ThumbsUp className="size-3.5" />
+      </button>
+      <button
+        onClick={() => openAsk("")}
+        title="Faltou algo / estava errado"
+        aria-label="Feedback negativo"
+        className="rounded p-1 text-muted-foreground transition-colors hover:text-st-error"
+      >
+        <ThumbsDown className="size-3.5" />
+      </button>
+      <button
+        onClick={() => openAsk("O que funcionou aqui e vale como regra: ")}
+        title="Salvar como regra"
+        aria-label="Salvar como regra"
+        className="rounded p-1 text-muted-foreground transition-colors hover:text-brass"
+      >
+        <GraduationCap className="size-3.5" />
+      </button>
+    </div>
+  )
+}
+
+/** Aviso leve de duplicata: dedup preferível a ruído (nunca grava 2 regras iguais). */
+function toastDuplicate() {
+  toast("Já existe uma regra parecida — não salvei de novo.")
+}
+
 /** Um item NÃO-tool da conversa. `memo`: só re-renderiza quando a REFERÊNCIA do
  *  item muda (itens não-streaming têm ref estável), não re-pinta a cada delta (F12). */
-const MessageItem = memo(function MessageItem({ item: it }: { item: ChatItem }) {
+const MessageItem = memo(function MessageItem({
+  item: it,
+  feedback,
+}: {
+  item: ChatItem
+  feedback?: FeedbackApi | null
+}) {
   if (it.kind === "user") {
     return (
       <div className="flex flex-col items-end gap-1.5">
@@ -360,6 +560,16 @@ const MessageItem = memo(function MessageItem({ item: it }: { item: ChatItem }) 
   }
 
   if (it.kind === "text") {
+    // No Linear (feedback != null), a bolha do agente ganha 👍/👎/salvar regra
+    // no hover (group/msg). Só faz sentido em texto NÃO-vazio.
+    if (feedback && it.text.trim()) {
+      return (
+        <div className="group/msg">
+          <Markdown text={it.text} />
+          <FeedbackControls agentTurn={it.text} api={feedback} />
+        </div>
+      )
+    }
     return <Markdown text={it.text} />
   }
 
@@ -425,7 +635,7 @@ const MessageItem = memo(function MessageItem({ item: it }: { item: ChatItem }) 
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="group/msg flex flex-col gap-1.5">
       {!it.ok && it.text && (
         <div className="rounded-lg border border-st-error/40 bg-st-error/10 px-3 py-2">
           <div
@@ -469,6 +679,9 @@ const MessageItem = memo(function MessageItem({ item: it }: { item: ChatItem }) 
           </span>
         )}
       </div>
+      {feedback && it.ok && (
+        <FeedbackControls agentTurn={it.text ?? ""} api={feedback} />
+      )}
     </div>
   )
 })
@@ -558,6 +771,7 @@ export function MessageList({
   startedAt,
   agent,
   onContinueWith,
+  feedback,
 }: {
   items: ChatItem[]
   running: boolean
@@ -566,6 +780,8 @@ export function MessageList({
   agent: string
   /** Revezamento: continuar a conversa em outro agent (limite/erro). */
   onContinueWith?: (agent: string) => void
+  /** Loop de feedback do Linear (M2). null/undefined fora do Linear. */
+  feedback?: FeedbackApi | null
 }) {
   const nodes = useMemo(() => buildNodes(items), [items])
   const tasks = useMemo(() => deriveTasks(items), [items])
@@ -637,7 +853,7 @@ export function MessageList({
         if (continuable) {
           return (
             <div key={n.key} className="flex flex-col gap-2">
-              <MessageItem item={n.item} />
+              <MessageItem item={n.item} feedback={feedback} />
               <ContinueRow
                 current={agent}
                 onPick={onContinueWith}
@@ -646,7 +862,7 @@ export function MessageList({
             </div>
           )
         }
-        return <MessageItem key={n.key} item={n.item} />
+        return <MessageItem key={n.key} item={n.item} feedback={feedback} />
       })}
 
       {(running || finalizing) && (

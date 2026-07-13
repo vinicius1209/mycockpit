@@ -543,6 +543,13 @@ export async function clearPendingFusion(convId: string): Promise<void> {
 
 let learningReady: Promise<void> | null = null
 
+/** project_id sentinela das lições GLOBAIS (valem em todo projeto). Uma lição
+ *  scope='global' é gravada com este project_id e o listLessons a traz em
+ *  qualquer projeto (WHERE scope='global' OR project_id=$1). */
+export const GLOBAL_PROJECT_ID = "__global__"
+
+export type LessonScope = "global" | "project"
+
 async function ensureLearningTables(db: Database): Promise<void> {
   if (!learningReady) {
     learningReady = (async () => {
@@ -575,6 +582,16 @@ async function ensureLearningTables(db: Database): Promise<void> {
       await db.execute(
         `CREATE INDEX IF NOT EXISTS idx_lessons_project ON lessons(project_id)`,
       )
+      // M2 do Linear: coluna `scope` (global × projeto). A tabela `lessons` já
+      // existe em bancos antigos → ALTER idempotente (falha se a coluna já
+      // existe; o try/catch absorve, mantendo o boot vivo).
+      try {
+        await db.execute(
+          `ALTER TABLE lessons ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'`,
+        )
+      } catch {
+        // coluna já existe (re-run) → no-op.
+      }
     })()
   }
   return learningReady
@@ -666,50 +683,66 @@ export interface LessonRecord {
   source: string | null
   createdAt: number
   uses: number
+  scope: LessonScope
+  /** project_id da linha (GLOBAL_PROJECT_ID p/ lições globais) — pro badge. */
+  projectId: string
 }
 
 interface LessonRow {
   id: string
+  project_id: string
   rule: string
   source: string | null
   created_at: number
   uses: number
+  scope: string | null
+}
+
+function toLesson(r: LessonRow): LessonRecord {
+  return {
+    id: r.id,
+    rule: r.rule,
+    source: r.source,
+    createdAt: r.created_at,
+    uses: r.uses,
+    scope: r.scope === "global" ? "global" : "project",
+    projectId: r.project_id,
+  }
 }
 
 /** Grava UMA lição destilada (M2). O dedup por similaridade é responsabilidade
- *  do chamador (lib/learning) — aqui é só o INSERT. */
+ *  do chamador (lib/learning) — aqui é só o INSERT. `scope='global'` usa o
+ *  project_id sentinela (GLOBAL_PROJECT_ID); o chamador NÃO precisa saber disso. */
 export async function insertLesson(l: {
   projectId: string
   rule: string
   source: string
+  scope?: LessonScope
 }): Promise<void> {
   const db = await getDb()
   if (!db) return
   await ensureLearningTables(db)
+  const scope: LessonScope = l.scope ?? "project"
+  const projectId = scope === "global" ? GLOBAL_PROJECT_ID : l.projectId
   await db.execute(
-    "INSERT INTO lessons (id, project_id, rule, source, created_at, uses) VALUES ($1, $2, $3, $4, $5, 0)",
-    [crypto.randomUUID(), l.projectId, l.rule, l.source, Date.now()],
+    "INSERT INTO lessons (id, project_id, rule, source, created_at, uses, scope) VALUES ($1, $2, $3, $4, $5, 0, $6)",
+    [crypto.randomUUID(), projectId, l.rule, l.source, Date.now(), scope],
   )
 }
 
-/** Lições de um projeto. Ordena por mais USADAS e mais RECENTES (as que valem
- *  injetar primeiro). O cap é aplicado pelo chamador na injeção. */
+/** Lições que valem num projeto: as PRÓPRIAS dele + as GLOBAIS (valem em todo
+ *  projeto). Ordena por mais USADAS e mais RECENTES (as que valem injetar
+ *  primeiro). O cap é aplicado pelo chamador na injeção. */
 export async function listLessons(projectId: string): Promise<LessonRecord[]> {
   const db = await getDb()
   if (!db) return []
   try {
     await ensureLearningTables(db)
     const rows = await db.select<LessonRow[]>(
-      "SELECT id, rule, source, created_at, uses FROM lessons WHERE project_id = $1 ORDER BY uses DESC, created_at DESC",
+      "SELECT id, project_id, rule, source, created_at, uses, scope FROM lessons WHERE scope = 'global' OR project_id = $1 ORDER BY uses DESC, created_at DESC",
       [projectId],
     )
-    return rows.map((r) => ({
-      id: r.id,
-      rule: r.rule,
-      source: r.source,
-      createdAt: r.created_at,
-      uses: r.uses,
-    }))
+    return rows.map(toLesson)
   } catch {
     return []
   }

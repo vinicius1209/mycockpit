@@ -14,6 +14,7 @@ import {
   listDeliveries,
   listLessons,
   type LessonRecord,
+  type LessonScope,
 } from "@/lib/db"
 import { recallMatches, strongMatches, tokenize } from "@/lib/recall"
 import { fmtCost } from "@/lib/format"
@@ -194,5 +195,84 @@ export async function distillLesson(args: DistillArgs): Promise<string | null> {
     return rule
   } catch {
     return null
+  }
+}
+
+// ── M2 do Linear: feedback do usuário → PROPOR uma regra (gate humano) ──
+// Diferença crucial pro fluxo do reviewer: aqui NÃO grava. Destila um CANDIDATO
+// que a UI mostra num card editável; só o clique do usuário chama saveLesson.
+
+const LINEAR_DISTILL_PROMPT = [
+  "Você destila LIÇÕES REUSÁVEIS do feedback de um usuário sobre a resposta de",
+  "um agente de código. O usuário apontou o que faltou/errou (👎) ou o que",
+  "funcionou (salvar como regra). Extraia UMA regra curta, acionável e GENÉRICA",
+  "(aplicável a futuras tarefas, não só a esta), em português, no imperativo.",
+  "Responda APENAS com a regra numa linha (sem aspas, sem numeração, sem prosa).",
+  "Se não houver lição generalizável, responda exatamente: NENHUMA.",
+].join(" ")
+
+export interface DistillCandidateArgs {
+  /** cwd p/ o helper (pasta do projeto/worktree). */
+  cwd: string
+  /** Modelo helper (Haiku) resolvido pelo chamador; null = destilação desligada. */
+  helperModel: string | null
+  /** Resposta do agente que o usuário avaliou (contexto do turno). */
+  agentTurn: string
+  /** O que o usuário apontou (👎 "o que faltou" / "o que funcionou"). */
+  userNote: string
+  /** Injetável nos testes; default = suggest real. */
+  run?: typeof suggest
+}
+
+/** Destila um CANDIDATO de regra do feedback do Linear via Haiku — NÃO grava.
+ *  Se o helper está desligado (helperModel null) OU a destilação falha, faz
+ *  fallback pro texto CRU do usuário (regra editável no card). Nunca lança:
+ *  sempre devolve uma string pro card (o gate humano decide gravar/descartar). */
+export async function distillCandidate(
+  args: DistillCandidateArgs,
+): Promise<string> {
+  const note = args.userNote.trim()
+  // Sem helper → grava o texto do usuário cru (o card ainda é editável).
+  if (!args.helperModel) return note
+  try {
+    const run = args.run ?? suggest
+    const raw = await run(
+      args.helperModel,
+      args.cwd,
+      `${LINEAR_DISTILL_PROMPT}\n\nResposta do agente:\n${truncate(
+        args.agentTurn,
+        2000,
+      )}\n\nFeedback do usuário:\n${truncate(note, 1000)}`,
+    )
+    const rule = parseDistilledRule(raw)
+    // NENHUMA / vazio → cai pro texto cru do usuário (não perde o sinal).
+    return rule ?? note
+  } catch {
+    return note
+  }
+}
+
+/** Grava uma lição vinda do Linear (após o gate humano do card). Dedup contra
+ *  as lições que já valem no projeto (próprias + globais). Retorna false se
+ *  vazia ou duplicata (a UI avisa "já existe algo parecido"). Best-effort. */
+export async function saveLesson(args: {
+  projectId: string
+  rule: string
+  scope: LessonScope
+}): Promise<boolean> {
+  const rule = args.rule.trim()
+  if (!rule) return false
+  try {
+    const existing = (await listLessons(args.projectId)).map((l) => l.rule)
+    if (!isNovelRule(rule, existing)) return false
+    await insertLesson({
+      projectId: args.projectId,
+      rule,
+      source: "linear",
+      scope: args.scope,
+    })
+    return true
+  } catch {
+    return false
   }
 }
