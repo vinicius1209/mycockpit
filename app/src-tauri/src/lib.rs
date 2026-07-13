@@ -4,6 +4,7 @@ use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 
 mod adapters;
 mod agent;
+mod approval;
 mod attachments;
 mod context;
 mod detect;
@@ -16,6 +17,13 @@ mod pricing;
 mod sdd;
 mod sources;
 mod stt;
+
+/// Ponto de entrada do subcomando `approval-server`: ESTE binário rodando como
+/// MCP server stdio quando o `claude -p` o spawna (aprovação granular inline).
+/// Chamado pelo `main.rs` ANTES do Tauri subir; nunca retorna ao app normal.
+pub fn run_approval_server() {
+    approval::run_mcp_server();
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Backup rotativo do banco no boot (rede de segurança contra perda de dados).
@@ -279,9 +287,14 @@ pub fn run() {
         .manage(agent::RunRegistry::default())
         .manage(attachments::ActiveConvs::default())
         .manage(stt::SttSession::default())
+        // aprovação granular inline: registro compartilhado (listener por-run +
+        // comando answer_approval) dos pedidos pendentes. Arc: o mesmo mapa é lido
+        // pelas conexões do socket e pelo comando que entrega a decisão do usuário.
+        .manage(std::sync::Arc::new(approval::PendingApprovals::default()))
         .invoke_handler(tauri::generate_handler![
             agent::run_agent,
             agent::cancel_agent,
+            approval::answer_approval,
             agent::suggest,
             agent::judge,
             context::read_project_context,

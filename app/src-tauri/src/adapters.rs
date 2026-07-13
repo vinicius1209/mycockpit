@@ -25,6 +25,11 @@ pub struct RunRequest {
     /// absolutos existentes (por `mycockpit::resolve_extra_dirs`). Cada adapter
     /// emite `--add-dir <dir>` — o gate de diretório é fixo no spawn (headless).
     pub extra_dirs: Vec<String>,
+    /// Aprovação granular inline (só Claude, modo Padrao): quando presente, liga o
+    /// MCP `--permission-prompt-tool`. `.0` = path do binário do MCP server (= este
+    /// app, subcomando `approval-server`); `.1` = path do socket app↔server (por-run).
+    /// None = sem gate inline (degrada p/ o acceptEdits puro de antes).
+    pub approval: Option<(String, String)>,
 }
 
 /// Política de permissão POR RUN, parseada UMA vez na fronteira (run_agent).
@@ -191,6 +196,32 @@ impl AgentAdapter for ClaudeAdapter {
             }
             Permission::Padrao => {
                 cmd.arg("--permission-mode").arg("acceptEdits");
+                // Aprovação GRANULAR inline: em acceptEdits, tools que precisam de OK
+                // (ex. um Bash não auto-aprovado) em vez de ERRAR "requires approval",
+                // chamam nosso MCP server → o app pergunta ao usuário (turno vivo).
+                // Só liga se o app conseguiu montar o socket (senão degrada p/ o
+                // acceptEdits puro de antes — nunca derruba o run). Ver approval.rs.
+                if let Some((server_bin, sock)) = &req.approval {
+                    let mcp = serde_json::json!({
+                        "mcpServers": {
+                            crate::approval::MCP_SERVER_NAME: {
+                                "type": "stdio",
+                                "command": server_bin,
+                                "args": ["approval-server"]
+                            }
+                        }
+                    });
+                    cmd.arg("--mcp-config")
+                        .arg(mcp.to_string())
+                        .arg("--permission-prompt-tool")
+                        .arg(format!(
+                            "mcp__{}__{}",
+                            crate::approval::MCP_SERVER_NAME,
+                            crate::approval::APPROVAL_TOOL
+                        ));
+                    // o socket é lido pelo MCP server (subprocesso) via env.
+                    cmd.env(crate::approval::SOCK_ENV, sock);
+                }
             }
         }
         // Claude: --model <alias> · --effort low|medium|high|xhigh|max (verificado)

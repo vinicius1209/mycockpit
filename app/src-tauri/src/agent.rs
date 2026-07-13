@@ -183,6 +183,7 @@ pub async fn run_agent(
     on_event: Channel<AgentEvent>,
     registry: tauri::State<'_, RunRegistry>,
     active: tauri::State<'_, ActiveConvs>,
+    pending_approvals: tauri::State<'_, std::sync::Arc<crate::approval::PendingApprovals>>,
 ) -> Result<(), String> {
     let mut adapter = adapters::resolve(&agent)?;
     // H1, registra o sinal de cancelamento ANTES de qualquer spawn e UMA vez só.
@@ -224,6 +225,33 @@ pub async fn run_agent(
     // pastas extras liberadas: lidas do .mycockpit/config.toml do projeto que
     // contém o cwd (cobre worktrees) → viram --add-dir. ANTES de mover cwd.
     let extra_dirs = crate::mycockpit::resolve_extra_dirs(&cwd);
+    // Aprovação GRANULAR inline (só Claude no modo Padrao): sobe um socket por-run
+    // + registra o listener que vira cada pedido num evento `approval://request`.
+    // O `_approval_listener` (RAII) limpa o socket e nega os pendentes no fim do
+    // run/cancel (qualquer path, inclusive os `?`), cobrindo as 2 tentativas da
+    // degradação graciosa. None (outro agent, ou socket falhou) = comportamento
+    // antigo (acceptEdits puro), nunca derruba o run.
+    let is_claude = agent == "claude-code" || agent.is_empty();
+    let approval_on = is_claude && matches!(permission, adapters::Permission::Padrao);
+    let mut approval = None;
+    let mut _approval_listener = None;
+    if approval_on {
+        if let Ok(server_bin) = std::env::current_exe() {
+            let listener = crate::approval::ApprovalListener::spawn(
+                app.clone(),
+                run_id.clone(),
+                pending_approvals.inner().clone(),
+            );
+            if listener.is_some() {
+                let sock = crate::approval::socket_path(&run_id);
+                approval = Some((
+                    server_bin.to_string_lossy().to_string(),
+                    sock.to_string_lossy().to_string(),
+                ));
+                _approval_listener = listener;
+            }
+        }
+    }
     let req = RunRequest {
         prompt,
         cwd,
@@ -233,6 +261,7 @@ pub async fn run_agent(
         effort,
         attachments: used,
         extra_dirs,
+        approval,
     };
     let resume_was = req.resume.is_some();
     let cmd = adapter.build_command(&req)?;

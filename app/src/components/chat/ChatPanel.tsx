@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils"
 import { deriveTasks } from "@/lib/tasks"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { CommandConsole } from "@/components/chat/CommandConsole"
+import { ApprovalModal } from "@/components/chat/ApprovalModal"
 import { MessageList } from "@/components/chat/MessageList"
 import { Reticle } from "@/components/common/Wordmark"
 import { useActiveProject, useApp } from "@/store/app"
@@ -502,6 +503,8 @@ export function ChatPanel() {
           </div>
         )}
         <div className="mx-auto max-w-[760px]">
+          {/* Aprovação granular inline: turno pausado esperando OK p/ uma tool. */}
+          <ApprovalModal />
           {conv?.autoResume && (
             <AutoResumeBanner
               nextAt={conv.autoResume.nextAt}
