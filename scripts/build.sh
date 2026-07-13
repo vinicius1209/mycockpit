@@ -47,6 +47,17 @@ case "${1:-test}" in
 {"num": $((10#$NUM)), "sha": "$SHA", "dirty": $([[ -n "$DIRTY" ]] && echo true || echo false), "version": "$VERSION", "date": "$(date +%Y-%m-%dT%H:%M:%S)"}
 EOF
     ln -sfn "$NUM-$SHA$DIRTY" "$BUILDS/test/latest"
+
+    # Auto-limpeza: mantém só os KEEP builds mais recentes (cada .app é ~20MB).
+    # Portável (BSD/macOS): sort -r = mais novo primeiro; tail -n +N pega do N-ésimo
+    # em diante (os que passam do KEEP). NNN prefixado garante ordem monotônica.
+    KEEP="${MC_KEEP_BUILDS:-3}"
+    N=0
+    while IFS= read -r d; do
+      [[ -n "$d" ]] && rm -rf "$d" && N=$((N+1))
+    done < <(find "$BUILDS/test" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*' | sort -r | tail -n +$((KEEP+1)))
+    [[ "$N" -gt 0 ]] && echo "  (auto-limpeza: $N build(s) antigo(s) apagado(s); mantidos os $KEEP mais recentes)"
+
     echo ""
     echo "✓ teste #$((10#$NUM)) pronto: $OUT/MyCockpit.app"
     echo "  testar:   open '$OUT/MyCockpit.app'"
