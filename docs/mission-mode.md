@@ -200,15 +200,18 @@ registry + cancel) atende; a orquestração é 100% TypeScript por cima de
 - **M2**: gates entre fases (checks genéricos: tsc/test/lint no worktree —
   implementação própria do Mission, sem tocar no SDD), fallback de agent por
   papel, resumo compressivo de handoff, preset por projeto no config.toml.
-  Além disso, 3 arestas do M1 já mapeadas na implementação:
-  - **Bloquear o composer do Linear enquanto a missão roda** — hoje o usuário
-    pode disparar um run normal no mesmo worktree em paralelo à missão e
-    embolar o diff. Desabilitar envio quando `byConv[convId].status` = running.
-  - **Persistência no DB** — o `MissionRun` vive só em memória (some no
-    restart). Espelhar o padrão `saveFusionRun`/`loadPending` (lib/db).
-  - **Loop de correção do reviewer** — se o reviewer reprova, o M1 apenas
-    encerra; o M2 deve reinjetar as correções no executor até N iterações ou
-    aprovação.
+  Além disso, 3 arestas do M1 mapeadas — status:
+  - ✅ **Bloquear o composer durante a missão** (ENTREGUE): envio manual travado
+    quando `byConv[convId].status === "running"` (bloqueio no handleSend +
+    composer desabilitado com placeholder); o botão 🚀 também some. Evita run
+    paralelo no mesmo worktree embolando o diff.
+  - ✅ **Loop de correção do reviewer** (ENTREGUE): se o reviewer não responde
+    APROVADO, o motor injeta um executor corretivo (com as correções como
+    instrução) + re-review, até `MAX_REVIEW_LOOPS` (2) e sempre sob o teto de
+    custo. `reviewerApproved`/`phaseText` em lib/mission (+testes); o loop do
+    store cresce a lista de fases dinamicamente (a timeline reflete).
+  - ⏳ **Persistência no DB** (pendente): o `MissionRun` vive só em memória (some
+    no restart). Espelhar o padrão `saveFusionRun`/`loadPending` (lib/db).
 - **Handoff tipado (.mission/) ✅ ENTREGUE** (2026-07-12, antecipado do M2): o
   handoff entre fases agora é blackboard — cada fase escreve `.mission/<i>-<
   persona>.json` (intent/decisions/files_touched/open_questions/for_next_agent)

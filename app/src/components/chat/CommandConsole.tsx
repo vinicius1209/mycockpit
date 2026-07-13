@@ -25,6 +25,7 @@ export function CommandConsole({
   disabled,
   running,
   finalizing,
+  missionRunning,
   onStop,
 }: {
   onSend: (
@@ -35,6 +36,8 @@ export function CommandConsole({
   disabled?: boolean
   running?: boolean
   finalizing?: boolean
+  /** Missão rodando nesta conversa → composer travado (envio manual bloqueado). */
+  missionRunning?: boolean
   onStop?: () => void
 }) {
   // Rascunho por-conversa na store → sobrevive a trocar de modo/conversa (não some
@@ -126,6 +129,7 @@ export function CommandConsole({
     !disabled &&
     !running &&
     !finalizing &&
+    !missionRunning &&
     allSupported
 
   // Liga default da disputa (agent atual + complementar), reusada no submit e no
@@ -301,11 +305,13 @@ export function CommandConsole({
           }
         }}
         placeholder={
-          running || finalizing
-            ? "Enfileirar próxima mensagem (envia junto ao terminar)…"
-            : commands.length > 0
-              ? "Peça algo…  ou / para comandos"
-              : "Peça algo ao seu time de agents…"
+          missionRunning
+            ? "Missão em andamento — pare a missão para enviar manualmente…"
+            : running || finalizing
+              ? "Enfileirar próxima mensagem (envia junto ao terminar)…"
+              : commands.length > 0
+                ? "Peça algo…  ou / para comandos"
+                : "Peça algo ao seu time de agents…"
         }
         rows={1}
         textareaClassName="max-h-[240px] min-h-[56px] resize-none border-0 bg-transparent! px-4 pt-3.5 text-[15px] leading-relaxed text-foreground shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
@@ -335,7 +341,7 @@ export function CommandConsole({
             fusionDisabled={!value.trim() || disabled || running || finalizing}
             fusionTitle={fusionTitle}
             onMission={() => setMissionOpen(true)}
-            missionDisabled={disabled || running || finalizing}
+            missionDisabled={disabled || running || finalizing || missionRunning}
             onAttach={attach}
             running={running}
             onStop={onStop}

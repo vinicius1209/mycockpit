@@ -64,6 +64,11 @@ export function ChatPanel() {
   const missionActive = useMission((s) =>
     activeId ? !!s.byConv[activeId] : false,
   )
+  // Missão RODANDO nesta conversa: trava o envio manual (as fases rodam no mesmo
+  // worktree; um run paralelo embolaria o diff/handoff — aresta do M2).
+  const missionRunning = useMission((s) =>
+    activeId ? s.byConv[activeId]?.status === "running" : false,
+  )
 
   // Checklist viva (P2): faixa fixa acima do composer enquanto o plano anda,
   // o olho já mora aqui embaixo durante o run. Colapsada mostra a task atual.
@@ -190,6 +195,12 @@ export function ChatPanel() {
     }
     const convId = useChat.getState().activeId
     if (!convId) return
+    // Missão rodando nesta conversa: as fases compartilham o worktree; um envio
+    // manual em paralelo embolaria o diff/handoff. Bloqueia (M2).
+    if (useMission.getState().byConv[convId]?.status === "running") {
+      toast("Missão em andamento. Pare a missão para enviar manualmente.")
+      return
+    }
     const conv = useChat.getState().byId[convId]
     // conversa ainda carregando do disco (janela do switch): enviar agora
     // criaria um estado vazio e o persist apagaria o histórico (achado 1 do aval).
@@ -439,6 +450,7 @@ export function ChatPanel() {
             disabled={!project}
             running={running}
             finalizing={finalizing}
+            missionRunning={missionRunning}
             onStop={handleStop}
           />
         </div>

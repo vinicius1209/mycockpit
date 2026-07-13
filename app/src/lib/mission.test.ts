@@ -1,6 +1,40 @@
 import { describe, expect, it, vi } from "vitest"
 import type { AgentEvent } from "@/lib/agent"
-import { checkBudget, phasePrompt, runPhase } from "./mission"
+import type { ChatItem } from "@/store/chat"
+import {
+  checkBudget,
+  phasePrompt,
+  phaseText,
+  reviewerApproved,
+  runPhase,
+} from "./mission"
+
+function textItem(text: string): ChatItem {
+  return { kind: "text", id: "t", text }
+}
+
+describe("reviewerApproved", () => {
+  it("true com APROVADO", () => {
+    expect(reviewerApproved([textItem("Tudo certo. APROVADO — cobre o caso.")])).toBe(true)
+  })
+  it("false com NÃO APROVADO", () => {
+    expect(reviewerApproved([textItem("NÃO APROVADO: faltou tratar o erro X.")])).toBe(false)
+  })
+  it("false sem a palavra", () => {
+    expect(reviewerApproved([textItem("Precisa ajustar o timeout.")])).toBe(false)
+  })
+})
+
+describe("phaseText", () => {
+  it("junta só os itens de texto", () => {
+    const items: ChatItem[] = [
+      textItem("linha 1"),
+      { kind: "tool", id: "x", name: "Bash", input: {}, toolId: "1" },
+      textItem("linha 2"),
+    ]
+    expect(phaseText(items)).toBe("linha 1\n\nlinha 2")
+  })
+})
 
 function result(ok: boolean, cost: number | null): AgentEvent {
   return {

@@ -5,6 +5,7 @@
 import { create } from "zustand"
 import { cancelAgent } from "@/lib/agent"
 import type {
+  MissionPhaseDef,
   MissionPhaseRun,
   MissionPreset,
   MissionRun,
@@ -13,7 +14,14 @@ import type {
 import { buildHandoff } from "@/lib/handoff"
 import { loadGitDiff } from "@/lib/git"
 import { useChat, type ChatItem } from "@/store/chat"
-import { checkBudget, phasePrompt, runPhase, type PhaseResult } from "@/lib/mission"
+import {
+  checkBudget,
+  phasePrompt,
+  phaseText,
+  reviewerApproved,
+  runPhase,
+  type PhaseResult,
+} from "@/lib/mission"
 import {
   changedFilesRef,
   formatPriorHandoffs,
@@ -39,9 +47,30 @@ export interface MissionState {
   clear: (convId: string) => void
 }
 
+/** Máx. de rodadas de correção quando o reviewer reprova (cada uma = executor
+ *  corretivo + re-review). Limita custo/loop; o teto de US$ ainda vale por cima. */
+const MAX_REVIEW_LOOPS = 2
+
 /** MissionRun em execução ainda tem fase corrente rodando/na fila. */
 function isActive(status: MissionStatus): boolean {
   return status === "running"
+}
+
+/** Cria o registro de fase (MissionPhaseRun) em estado inicial (fila). */
+function queuedRun(def: MissionPhaseDef): MissionPhaseRun {
+  return { def, status: "queued", attempt: 1, costUsd: 0, startedAt: null }
+}
+
+/** Acha a def do executor mais recente ANTES do índice `i` (p/ reinjetar a
+ *  correção). null se não houver executor antes do reviewer. */
+function lastExecutorBefore(
+  phases: MissionPhaseDef[],
+  i: number,
+): MissionPhaseDef | null {
+  for (let j = i - 1; j >= 0; j--) {
+    if (phases[j].persona === "executor") return phases[j]
+  }
+  return null
 }
 
 /** runId estável por fase p/ cancelamento (index-based, uma missão por conv). */
@@ -105,10 +134,15 @@ export const useMission = create<MissionState>((set, get) => {
       }
       set((s) => ({ byConv: { ...s.byConv, [convId]: run } }))
 
-      // itens da fase anterior (p/ buildHandoff) — o diff sai do worktree.
+      // itens da fase anterior (p/ fallback do handoff) — o diff sai do worktree.
       let prevItems: ChatItem[] = []
+      // lista MUTÁVEL: o loop de correção do M2 acrescenta fases (executor
+      // corretivo + re-review) quando o reviewer reprova, até MAX_REVIEW_LOOPS.
+      const phases: MissionPhaseDef[] = [...preset.phases]
+      let reviewLoops = 0
+      let i = 0
 
-      for (let i = 0; i < preset.phases.length; i++) {
+      while (i < phases.length) {
         // abortada por fora (byConv sumiu ou marcada aborted) → para o loop.
         const now = get().byConv[convId]
         if (!now || now.status !== "running") return
@@ -125,7 +159,7 @@ export const useMission = create<MissionState>((set, get) => {
           return
         }
 
-        const def = preset.phases[i]
+        const def = phases[i]
         const handoffPath = handoffFileName(i, def.persona)
 
         // fase 1 = task pura; fases seguintes = blackboard tipado (.mission/*.json
@@ -138,7 +172,7 @@ export const useMission = create<MissionState>((set, get) => {
         if (i > 0) {
           const priors: PriorHandoff[] = []
           for (let j = 0; j < i; j++) {
-            const pdef = preset.phases[j]
+            const pdef = phases[j]
             const doc = await readHandoff(cwd, handoffFileName(j, pdef.persona))
             if (doc) priors.push({ label: pdef.label, persona: pdef.persona, doc })
           }
@@ -196,10 +230,49 @@ export const useMission = create<MissionState>((set, get) => {
         }
 
         prevItems = result.items
+
+        // M2 — loop de correção: reviewer terminou mas NÃO aprovou → reinjeta as
+        // correções num executor corretivo + re-review, até MAX_REVIEW_LOOPS
+        // (e sempre sob o teto de custo, checado no topo do while).
+        if (
+          def.persona === "reviewer" &&
+          reviewLoops < MAX_REVIEW_LOOPS &&
+          !reviewerApproved(result.items)
+        ) {
+          const execDef = lastExecutorBefore(phases, i)
+          if (execDef) {
+            reviewLoops++
+            const round = reviewLoops
+            const feedback = phaseText(result.items)
+            const corrective: MissionPhaseDef = {
+              ...execDef,
+              id: `fix-${round}-${missionId.slice(0, 6)}`,
+              label: `Corrigir (rodada ${round})`,
+              instructions:
+                "O reviewer NÃO aprovou. Corrija exatamente estes pontos e nada " +
+                `além do necessário:\n\n${feedback}`,
+            }
+            const rereview: MissionPhaseDef = {
+              ...def,
+              id: `rereview-${round}-${missionId.slice(0, 6)}`,
+              label: `Revisar (rodada ${round})`,
+            }
+            phases.push(corrective, rereview)
+            patchConv(convId, (cur) => ({
+              phases: [
+                ...cur.phases,
+                queuedRun(corrective),
+                queuedRun(rereview),
+              ],
+            }))
+          }
+        }
+
+        i++
       }
 
       // todas as fases passaram → done, current aponta além do fim.
-      patchConv(convId, { status: "done", current: preset.phases.length })
+      patchConv(convId, { status: "done", current: phases.length })
       // Persistência: OPCIONAL no M1 (fica em memória). TODO(M2): espelhar o
       // padrão saveFusionRun (lib/db) p/ a missão sobreviver ao restart.
     },

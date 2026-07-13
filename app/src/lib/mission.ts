@@ -101,6 +101,28 @@ export function phasePrompt(input: PhasePromptInput): string {
   return parts.join("\n")
 }
 
+/** O reviewer aprovou? Varre o texto final da fase por "APROVADO" (o template
+ *  pede essa palavra), evitando o falso-positivo de "NÃO APROVADO". Usado pelo
+ *  loop de correção do M2 (reviewer reprova → volta ao executor). */
+export function reviewerApproved(items: ChatItem[]): boolean {
+  const text = items
+    .filter((i) => i.kind === "text")
+    .map((i) => (i as Extract<ChatItem, { kind: "text" }>).text)
+    .join("\n")
+    .toUpperCase()
+  if (!text.includes("APROVADO")) return false
+  return !/N[ÃA]O\s+APROVADO/.test(text)
+}
+
+/** Extrai o texto final de uma fase (as correções do reviewer p/ reinjetar). */
+export function phaseText(items: ChatItem[]): string {
+  return items
+    .filter((i) => i.kind === "text")
+    .map((i) => (i as Extract<ChatItem, { kind: "text" }>).text)
+    .join("\n\n")
+    .trim()
+}
+
 // ── runPhase: dispara o agent, reduz eventos, retry e custo ──
 
 export interface PhaseResult {
