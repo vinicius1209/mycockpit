@@ -28,6 +28,15 @@
 //! Cleanup: o socket é criado no início do run e o `ApprovalListener` (RAII) o
 //! remove + destrava todos os pedidos pendentes (deny p/ approval, cancelado p/
 //! question) no fim/cancelamento do run, para que o claude nunca fique pendurado.
+//!
+//! LIMITE DE CONFIANÇA do socket (M2 — decisão consciente, não bug silencioso):
+//! o Unix socket é same-uid, sem autenticação de peer. Um comando Bash JÁ APROVADO
+//! (ou qualquer processo do mesmo usuário) PODE remover/substituir o socket e se
+//! passar pelo app. Mas nesse ponto o atacante já executa código arbitrário como o
+//! usuário — o gate de aprovação já foi vencido por definição; auto-aprovar pedidos
+//! futuros não lhe dá nada que ele já não tenha. A fronteira de segurança REAL é o
+//! usuário do SO, não este socket. Endurecer aqui (peer creds, token) só mudaria a
+//! estética, não o modelo de ameaça.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -93,12 +102,48 @@ pub struct Pending {
     pub tx: oneshot::Sender<Answer>,
 }
 
-/// Gera um path de socket único por-run (dir temporário do SO). Curto de
-/// propósito: o limite de sun_path do Unix socket é ~104 bytes no macOS.
-pub fn socket_path(run_id: &str) -> PathBuf {
+/// Candidatos de path p/ o socket (M4), únicos por-run (dir temporário do SO):
+/// o base + sufixos -1/-2. O prefixo de 8 chars do run_id PODE colidir com um run
+/// vivo; nesse caso não podemos apagar o socket dele — tentamos o próximo
+/// candidato. Todos CURTOS de propósito: o limite de sun_path é ~104 bytes no
+/// macOS. O path realmente bindado sai em `ApprovalListener::path()`.
+fn socket_path_candidates(run_id: &str) -> [PathBuf; 3] {
     // usa só um prefixo do run_id (uuid) p/ caber no limite de sun_path.
     let short: String = run_id.chars().take(8).collect();
-    std::env::temp_dir().join(format!("mc-appr-{short}.sock"))
+    let dir = std::env::temp_dir();
+    [
+        dir.join(format!("mc-appr-{short}.sock")),
+        dir.join(format!("mc-appr-{short}-1.sock")),
+        dir.join(format!("mc-appr-{short}-2.sock")),
+    ]
+}
+
+/// Tenta bindar num dos candidatos SEM matar um run vivo (M4): primeiro CONECTA
+/// no path — se a conexão funciona, tem alguém vivo escutando (colisão de prefixo)
+/// e NÃO apagamos: pulamos pro próximo candidato. Se a conexão falha, o arquivo é
+/// stale (crash anterior): aí sim remove e binda.
+fn bind_socket(run_id: &str) -> Option<(PathBuf, UnixListener)> {
+    for cand in socket_path_candidates(run_id) {
+        if cand.exists() {
+            if std::os::unix::net::UnixStream::connect(&cand).is_ok() {
+                // alguém VIVO neste path — não é nosso p/ apagar; tenta o próximo.
+                log::warn!(
+                    "interação: socket {} está vivo (colisão de prefixo); tentando alternativo",
+                    cand.display()
+                );
+                continue;
+            }
+            // conexão falhou → stale de crash: seguro remover.
+            let _ = std::fs::remove_file(&cand);
+        }
+        match UnixListener::bind(&cand) {
+            Ok(l) => return Some((cand, l)),
+            Err(e) => {
+                log::warn!("interação: bind falhou em {} ({e})", cand.display());
+            }
+        }
+    }
+    None
 }
 
 /// Resposta de fail-closed por kind (Drop do listener, canal dropado): approval=deny,
@@ -138,13 +183,12 @@ impl ApprovalListener {
         run_id: String,
         pending: Arc<PendingApprovals>,
     ) -> Option<Self> {
-        let path = socket_path(&run_id);
-        // socket órfão de um crash anterior no mesmo path: remove antes de bindar.
-        let _ = std::fs::remove_file(&path);
-        let listener = match UnixListener::bind(&path) {
-            Ok(l) => l,
-            Err(e) => {
-                log::warn!("interação: não consegui criar o socket ({e}); seguindo sem gate inline");
+        // M4: nunca apaga o socket de um run VIVO (conecta antes de remover);
+        // colisão → paths alternativos (-1/-2). O path REAL fica em self.path().
+        let (path, listener) = match bind_socket(&run_id) {
+            Some(pl) => pl,
+            None => {
+                log::warn!("interação: não consegui criar o socket; seguindo sem gate inline");
                 return None;
             }
         };
@@ -172,6 +216,12 @@ impl ApprovalListener {
             })
         };
         Some(Self { path, task, pending, ids, shutdown, app })
+    }
+
+    /// Path REAL do socket bindado (pode ser um alternativo -1/-2 se o base
+    /// estava ocupado por um run vivo — M4). É este que vai no SOCK_ENV.
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
     }
 }
 
@@ -367,8 +417,11 @@ pub fn run_mcp_server() {
     rt.block_on(mcp_loop());
 }
 
-/// Protocolo MCP: mais atual e amplamente suportado. O claude negocia mas aceita.
+/// Protocolo MCP default (respondido quando o cliente pede uma versão desconhecida).
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
+/// Versões que sabemos falar: se o cliente pedir uma delas no initialize, ECOAMOS
+/// a pedida (M5 — o spec manda negociar, não impor a nossa).
+const MCP_KNOWN_VERSIONS: [&str; 3] = ["2024-11-05", "2025-03-26", "2025-06-18"];
 
 async fn mcp_loop() {
     let stdin = tokio::io::stdin();
@@ -386,20 +439,35 @@ async fn mcp_loop() {
         };
         let method = msg.get("method").and_then(|x| x.as_str()).unwrap_or("");
         let id = msg.get("id").cloned();
-        // Notificações (sem id) não recebem resposta.
+        // B6: mensagens SEM id são notificações (ou requests malformados) — o
+        // JSON-RPC manda NÃO responder (jamais responder com "id": null).
         match method {
             "initialize" => {
+                // M5: ecoa a protocolVersion pedida se for uma que conhecemos;
+                // desconhecida → responde o nosso default (o cliente decide).
+                let requested = msg
+                    .get("params")
+                    .and_then(|p| p.get("protocolVersion"))
+                    .and_then(|x| x.as_str());
+                let version = requested
+                    .filter(|v| MCP_KNOWN_VERSIONS.contains(v))
+                    .unwrap_or(MCP_PROTOCOL_VERSION);
                 let resp = rpc_result(
                     id,
                     serde_json::json!({
-                        "protocolVersion": MCP_PROTOCOL_VERSION,
+                        "protocolVersion": version,
                         "capabilities": { "tools": {} },
                         "serverInfo": { "name": MCP_SERVER_NAME, "version": "0.1.0" }
                     }),
                 );
-                write_line(&mut stdout, &resp).await;
+                write_opt(&mut stdout, resp).await;
             }
             "notifications/initialized" | "initialized" => { /* sem resposta */ }
+            "ping" => {
+                // M5: ping do spec MCP → result vazio (antes caía no -32601).
+                let resp = rpc_result(id, serde_json::json!({}));
+                write_opt(&mut stdout, resp).await;
+            }
             "tools/list" => {
                 // DUAS tools: approval_prompt (permissão) + ask_user (conteúdo).
                 // O ask_user espelha o AskUserQuestion built-in (que é desabilitado).
@@ -409,7 +477,7 @@ async fn mcp_loop() {
                         "tools": [
                             {
                                 "name": APPROVAL_TOOL,
-                                "description": "Solicita aprovação humana p/ uma tool que precisa de OK.",
+                                "description": "Ferramenta INTERNA do mecanismo de permissão — não chame diretamente. É invocada automaticamente pelo Claude Code (via --permission-prompt-tool) p/ solicitar aprovação humana de uma tool que precisa de OK.",
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {
@@ -455,9 +523,14 @@ async fn mcp_loop() {
                         ]
                     }),
                 );
-                write_line(&mut stdout, &resp).await;
+                write_opt(&mut stdout, resp).await;
             }
             "tools/call" => {
+                // B6: tools/call sem id (ou id null) é malformado — nem processa
+                // (evita bloquear numa interação que ninguém vai correlacionar).
+                if id.as_ref().is_none_or(|v| v.is_null()) {
+                    continue;
+                }
                 let params = msg.get("params");
                 let tool = params
                     .and_then(|p| p.get("name"))
@@ -499,11 +572,12 @@ async fn mcp_loop() {
                         }),
                     )
                 };
-                write_line(&mut stdout, &resp).await;
+                write_opt(&mut stdout, resp).await;
             }
             _ => {
-                // método não suportado: responde erro só se tinha id (request).
-                if id.is_some() {
+                // método não suportado: responde erro só se tinha id real (request);
+                // sem id (ou id null) = notificação/malformado → silêncio (B6).
+                if id.as_ref().is_some_and(|v| !v.is_null()) {
                     let resp = serde_json::json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -581,15 +655,11 @@ async fn ask_app_question(args: &serde_json::Value) -> serde_json::Value {
 async fn request_over_socket(kind: &str, data: &serde_json::Value) -> Option<serde_json::Value> {
     let sock = std::env::var(SOCK_ENV).ok()?;
     let mut stream = UnixStream::connect(&sock).await.ok()?;
-    // id único do pedido (correlaciona no app e na UI).
-    let id = format!(
-        "{kind}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    );
+    // id único do pedido (correlaciona no app e na UI): pid + contador atômico
+    // (B3 — SystemTime é não-monotônico e podia colidir; o contador nunca).
+    static REQ_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = REQ_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let id = format!("{kind}-{}-{seq}", std::process::id());
     let req = serde_json::json!({ "id": id, "kind": kind, "data": data });
     let mut buf = req.to_string();
     buf.push('\n');
@@ -604,9 +674,21 @@ async fn request_over_socket(kind: &str, data: &serde_json::Value) -> Option<ser
     v.get("answer").cloned()
 }
 
-/// Monta uma resposta JSON-RPC 2.0 de sucesso.
-fn rpc_result(id: Option<serde_json::Value>, result: serde_json::Value) -> serde_json::Value {
-    serde_json::json!({ "jsonrpc": "2.0", "id": id, "result": result })
+/// Monta uma resposta JSON-RPC 2.0 de sucesso. None quando NÃO há id (B6):
+/// notificação/malformado não recebe resposta — jamais respondemos "id": null.
+fn rpc_result(
+    id: Option<serde_json::Value>,
+    result: serde_json::Value,
+) -> Option<serde_json::Value> {
+    let id = id.filter(|v| !v.is_null())?;
+    Some(serde_json::json!({ "jsonrpc": "2.0", "id": id, "result": result }))
+}
+
+/// Escreve a resposta se houver (Some) — o None (sem id) é silêncio por contrato.
+async fn write_opt(stdout: &mut tokio::io::Stdout, msg: Option<serde_json::Value>) {
+    if let Some(m) = msg {
+        write_line(stdout, &m).await;
+    }
 }
 
 /// Escreve uma mensagem JSON-RPC como UMA linha no stdout (framing por linha).

@@ -53,7 +53,7 @@ impl Permission {
             "liberado" => Ok(Self::Liberado),
             "fusion-ro" => Ok(Self::FusionRo),
             other => Err(format!(
-                "modo de permissão desconhecido: '{other}' (esperado leitura|padrao|liberado)"
+                "modo de permissão desconhecido: '{other}' (esperado leitura|padrao|liberado|fusion-ro)"
             )),
         }
     }
@@ -594,7 +594,7 @@ impl AgentAdapter for CodexAdapter {
         let hit = l.contains("exceeded your current quota")
             || l.contains("insufficient_quota")
             || l.contains("usage limit");
-        hit.then(|| LimitHit { reset_hint: None })
+        hit.then_some(LimitHit { reset_hint: None })
     }
 
     fn render_attachments(&self, atts: &[Attachment], cmd: &mut Command, _prompt: &mut String) {
@@ -821,7 +821,7 @@ impl AgentAdapter for AgyAdapter {
             || l.contains("quota")
             || l.contains("rate limit")
             || l.contains("usage limit");
-        hit.then(|| LimitHit { reset_hint: None })
+        hit.then_some(LimitHit { reset_hint: None })
     }
 }
 

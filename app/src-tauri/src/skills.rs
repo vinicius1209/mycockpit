@@ -5,7 +5,7 @@
 //! o resto do contrato: nome SANITIZADO (slug, sem path traversal) e NÃO
 //! sobrescreve por padrão (a skill vencedora não pode ser apagada por engano).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Deaccent mínimo p/ nomes em pt-BR virarem slug ASCII (espelha sdd::deaccent).
 fn deaccent(c: char) -> char {
@@ -60,6 +60,35 @@ pub fn sanitize_name(name: &str) -> Result<String, String> {
     Ok(slug)
 }
 
+/// Valida o `project_path` recebido do front (M3): tem que EXISTIR, ser um
+/// DIRETÓRIO, e não pode ser uma raiz larga demais ("/" ou o próprio HOME) —
+/// senão o comando vira uma primitiva de escrita arbitrária no filesystem.
+/// Devolve o caminho CANÔNICO (symlinks resolvidos) p/ compor o destino.
+fn validate_project_path(project_path: &str) -> Result<PathBuf, String> {
+    let trimmed = project_path.trim();
+    if trimmed.is_empty() {
+        return Err("project_path vazio: informe o diretório do projeto".into());
+    }
+    let canon = std::fs::canonicalize(trimmed)
+        .map_err(|_| format!("project_path inválido: '{trimmed}' não existe"))?;
+    if !canon.is_dir() {
+        return Err(format!("project_path inválido: '{trimmed}' não é um diretório"));
+    }
+    if canon == Path::new("/") {
+        return Err("project_path inválido: '/' é largo demais — aponte pro diretório do projeto".into());
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let home_canon = std::fs::canonicalize(&home).unwrap_or_else(|_| PathBuf::from(&home));
+        if canon == home_canon {
+            return Err(
+                "project_path inválido: o HOME é largo demais — aponte pro diretório do projeto"
+                    .into(),
+            );
+        }
+    }
+    Ok(canon)
+}
+
 /// Grava uma skill em `<project_path>/.claude/commands/<slug>.md` (atômico).
 /// Por padrão NÃO sobrescreve (`overwrite=false`): se já existir, erra claro —
 /// a skill promovida é um artefato humano, não some por acidente. Devolve o
@@ -72,10 +101,13 @@ pub fn write_skill(
     overwrite: Option<bool>,
 ) -> Result<String, String> {
     let slug = sanitize_name(&name)?;
-    let dir = Path::new(&project_path).join(".claude").join("commands");
+    let root = validate_project_path(&project_path)?;
+    let dir = root.join(".claude").join("commands");
     let file = dir.join(format!("{slug}.md"));
     if file.exists() && !overwrite.unwrap_or(false) {
-        return Err(format!("já existe uma skill com esse nome ({slug})"));
+        return Err(format!(
+            "já existe uma skill com o slug '{slug}' (nomes parecidos podem resolver pro mesmo slug)"
+        ));
     }
     std::fs::create_dir_all(&dir).map_err(|e| format!("não criei .claude/commands: {e}"))?;
     let body = if content.ends_with('\n') {
@@ -114,9 +146,44 @@ mod tests {
     }
 
     #[test]
+    fn project_path_validation() {
+        // não existe → erro claro.
+        let err = write_skill(
+            "/caminho/que/nao/existe".into(),
+            "Skill".into(),
+            "x".into(),
+            None,
+        )
+        .unwrap_err();
+        assert!(err.contains("não existe"), "erro: {err}");
+
+        // raiz "/" → largo demais.
+        let err = write_skill("/".into(), "Skill".into(), "x".into(), None).unwrap_err();
+        assert!(err.contains("largo demais"), "erro: {err}");
+
+        // HOME em si → largo demais.
+        if let Some(home) = std::env::var_os("HOME") {
+            let err = write_skill(
+                home.to_string_lossy().to_string(),
+                "Skill".into(),
+                "x".into(),
+                None,
+            )
+            .unwrap_err();
+            assert!(err.contains("largo demais"), "erro: {err}");
+        }
+
+        // vazio → erro claro.
+        let err = write_skill("  ".into(), "Skill".into(), "x".into(), None).unwrap_err();
+        assert!(err.contains("vazio"), "erro: {err}");
+    }
+
+    #[test]
     fn write_then_no_overwrite() {
         let tmp = std::env::temp_dir().join(format!("mc-skill-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
+        // project_path agora precisa EXISTIR (validação M3).
+        std::fs::create_dir_all(&tmp).unwrap();
         let pp = tmp.to_string_lossy().to_string();
 
         let rel = write_skill(pp.clone(), "Minha Skill".into(), "# passos".into(), None).unwrap();

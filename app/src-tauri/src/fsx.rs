@@ -13,7 +13,11 @@ pub fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("arquivo");
-    let tmp = dir.join(format!(".{name}.tmp-{}", std::process::id()));
+    // pid + contador atômico (B4b): duas escritas concorrentes no MESMO processo
+    // não podem disputar o mesmo tmp (só o pid colidia).
+    static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = dir.join(format!(".{name}.tmp-{}-{seq}", std::process::id()));
     fs::write(&tmp, contents).map_err(|e| e.to_string())?;
     fs::rename(&tmp, path).map_err(|e| {
         let _ = fs::remove_file(&tmp);

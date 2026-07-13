@@ -239,19 +239,26 @@ pub async fn run_agent(
     let mut approval = None;
     let mut _approval_listener = None;
     if interaction_on {
-        if let Ok(server_bin) = std::env::current_exe() {
-            let listener = crate::approval::ApprovalListener::spawn(
-                app.clone(),
-                run_id.clone(),
-                pending_approvals.inner().clone(),
-            );
-            if listener.is_some() {
-                let sock = crate::approval::socket_path(&run_id);
-                approval = Some((
-                    server_bin.to_string_lossy().to_string(),
-                    sock.to_string_lossy().to_string(),
-                ));
-                _approval_listener = listener;
+        match std::env::current_exe() {
+            Ok(server_bin) => {
+                let listener = crate::approval::ApprovalListener::spawn(
+                    app.clone(),
+                    run_id.clone(),
+                    pending_approvals.inner().clone(),
+                );
+                if let Some(l) = listener {
+                    // usa o path REAL bindado (pode ser um alternativo -1/-2 se
+                    // houve colisão de prefixo com um run vivo — M4).
+                    let sock = l.path().to_string_lossy().to_string();
+                    approval = Some((server_bin.to_string_lossy().to_string(), sock));
+                    _approval_listener = Some(l);
+                }
+            }
+            Err(e) => {
+                // B2: degradação silenciosa era invisível — deixa rastro no log.
+                log::warn!(
+                    "interação: current_exe() falhou ({e}); seguindo sem approval server"
+                );
             }
         }
     }
