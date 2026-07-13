@@ -221,6 +221,9 @@ pub async fn run_agent(
     // Permissão parseada UMA vez na fronteira: valor desconhecido é ERRO aqui,
     // nunca fail-open dentro de um adapter (typo ganhava escrita antes).
     let permission = adapters::Permission::parse(&permission)?;
+    // pastas extras liberadas: lidas do .mycockpit/config.toml do projeto que
+    // contém o cwd (cobre worktrees) → viram --add-dir. ANTES de mover cwd.
+    let extra_dirs = crate::mycockpit::resolve_extra_dirs(&cwd);
     let req = RunRequest {
         prompt,
         cwd,
@@ -229,6 +232,7 @@ pub async fn run_agent(
         model,
         effort,
         attachments: used,
+        extra_dirs,
     };
     let resume_was = req.resume.is_some();
     let cmd = adapter.build_command(&req)?;

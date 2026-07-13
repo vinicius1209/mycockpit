@@ -8,10 +8,12 @@ import {
   FileDiff,
   FileText,
   FolderGit2,
+  FolderPlus,
   ListChecks,
   PanelRight,
   Plug,
   RefreshCw,
+  X,
   type LucideIcon,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -35,6 +37,7 @@ import { readProjectContext } from "@/lib/context"
 import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/context"
 import { readProjectSources, readTextFile } from "@/lib/sources"
 import type { ProjectSources } from "@/lib/sources"
+import { open as openDialog } from "@tauri-apps/plugin-dialog"
 import { writeMycockpitConfig } from "@/lib/mycockpit"
 import { fmtBytes } from "@/lib/format"
 import type { PermissionMode } from "@/lib/types"
@@ -331,8 +334,31 @@ export function ContextPanel() {
       permission: project.permissionMode ?? "padrao",
       helper: "haiku",
       mode: "linear",
+      extraDirs: [],
     }
     setMycockpit(project.id, { ...cur, ...patch, exists: true })
+  }
+
+  /** Adiciona/remove pastas liberadas (viram --add-dir no próximo turno). Persiste
+   *  no .mycockpit/config.toml; o Rust resolve no spawn. Aplica ao PRÓXIMO envio
+   *  (o gate de diretório do CLI é fixo no spawn — não expande mid-run). */
+  function setExtraDirs(dirs: string[]) {
+    if (!project) return
+    upsertConfig({ extraDirs: dirs })
+    void writeMycockpitConfig(project.path, { extraDirs: dirs })
+  }
+
+  async function onAddExtraDir() {
+    if (!project) return
+    const picked = await openDialog({
+      directory: true,
+      multiple: false,
+      title: "Liberar pasta ao agente",
+    })
+    if (typeof picked !== "string") return
+    const cur = cfg?.extraDirs ?? []
+    if (cur.includes(picked)) return
+    setExtraDirs([...cur, picked])
   }
 
   function onPermissionChange(mode: PermissionMode) {
@@ -482,6 +508,61 @@ export function ContextPanel() {
                   ]}
                 />
               </div>
+
+              {/* Pastas permitidas: viram --add-dir. Resolve o caso de o agent
+                  precisar de um repo irmão fora do cwd (ex.: backend). Aplica ao
+                  PRÓXIMO turno — o gate de diretório do CLI é fixo no spawn. */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12.5px] text-muted-foreground">
+                    Pastas permitidas
+                  </span>
+                  <button
+                    onClick={() => void onAddExtraDir()}
+                    className="flex h-7 items-center gap-1.5 rounded-md border border-border/60 px-2.5 text-[12px] text-muted-foreground transition-colors hover:border-brass/60 hover:text-brass"
+                    aria-label="Adicionar pasta permitida"
+                  >
+                    <FolderPlus className="size-3.5" />
+                    Adicionar
+                  </button>
+                </div>
+                {(cfg?.extraDirs?.length ?? 0) === 0 ? (
+                  <p className="text-[11px] leading-snug text-muted-foreground/70">
+                    Só o diretório do projeto é acessível. Libere um repo irmão
+                    (ex.: backend) para o agent alcançá-lo.
+                  </p>
+                ) : (
+                  <ul className="flex flex-col gap-1">
+                    {cfg!.extraDirs.map((dir) => (
+                      <li
+                        key={dir}
+                        className="group/dir flex items-center gap-1.5 rounded-md bg-secondary/40 px-2 py-1"
+                      >
+                        <FolderGit2 className="size-3.5 shrink-0 text-muted-foreground/70" />
+                        <span
+                          className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/90"
+                          title={dir}
+                        >
+                          {dir}
+                        </span>
+                        <button
+                          onClick={() =>
+                            setExtraDirs(
+                              cfg!.extraDirs.filter((d) => d !== dir),
+                            )
+                          }
+                          title="Remover"
+                          aria-label={`Remover ${dir}`}
+                          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity group-hover/dir:opacity-100 hover:text-st-error"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
               {cfg?.exists && (
                 <p className="text-[10.5px] text-muted-foreground/55">
                   salvo em <span className="font-mono">.mycockpit/config.toml</span>

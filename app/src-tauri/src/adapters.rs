@@ -21,6 +21,10 @@ pub struct RunRequest {
     /// Anexos JÁ resolvidos: path ABSOLUTO, existente em disco, filtrado por
     /// `supports_attachment` (garantido pelo run_agent). O adapter só decide a sintaxe.
     pub attachments: Vec<Attachment>,
+    /// Pastas extras liberadas ao agent (fora do cwd), JÁ resolvidas para paths
+    /// absolutos existentes (por `mycockpit::resolve_extra_dirs`). Cada adapter
+    /// emite `--add-dir <dir>` — o gate de diretório é fixo no spawn (headless).
+    pub extra_dirs: Vec<String>,
 }
 
 /// Política de permissão POR RUN, parseada UMA vez na fronteira (run_agent).
@@ -198,6 +202,10 @@ impl AgentAdapter for ClaudeAdapter {
         }
         if let Some(r) = &req.resume {
             cmd.arg("--resume").arg(r);
+        }
+        // pastas extras (fora do cwd): --add-dir por pasta (aceita múltiplas).
+        for d in &req.extra_dirs {
+            cmd.arg("--add-dir").arg(d);
         }
         // Prompt POSICIONAL por último, atrás do `--`: protege texto que começa com
         // "-" (diff `--- a/…`, lista markdown) SEM engolir as flags acima.
@@ -487,6 +495,10 @@ impl AgentAdapter for CodexAdapter {
         if let Some(r) = &req.resume {
             cmd.arg("resume").arg(r);
         }
+        // pastas extras (fora do cwd): --add-dir <DIR> (writable alongside workspace).
+        for d in &req.extra_dirs {
+            cmd.arg("--add-dir").arg(d);
+        }
         // anexos: -i por imagem (após `resume`, é opção do subcomando ativo). O -i
         // é VARIÁDICO (<FILE>...) e comeria o prompt → separa com `--` (verificado A0).
         let mut prompt = req.prompt.clone();
@@ -682,6 +694,10 @@ impl AgentAdapter for AgyAdapter {
             .arg("--add-dir")
             .arg(&req.cwd)
             .current_dir(&req.cwd);
+        // pastas extras (fora do cwd): mais um --add-dir por pasta.
+        for d in &req.extra_dirs {
+            cmd.arg("--add-dir").arg(d);
+        }
         // modelo: o value do front É a string exata do agy ("Gemini 3.5 Flash (Low)",
         // "Claude Opus 4.6 (Thinking)"…). "default"/None = deixa o agy escolher.
         if let Some(m) = &req.model {

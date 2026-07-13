@@ -15,6 +15,7 @@ export interface ProjectConfig {
   permission: PermissionMode
   helper: string | null // null = sugestões desligadas
   mode: string // linear | fusion | sdd
+  extraDirs: string[] // pastas extras liberadas ao agent (viram --add-dir)
 }
 
 interface AppState {

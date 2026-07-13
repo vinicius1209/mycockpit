@@ -124,6 +124,7 @@ export default function App() {
               ? null
               : (raw.helper ?? useApp.getState().settings.helperModel),
           mode: raw.mode ?? "linear",
+          extraDirs: raw.extra_dirs ?? [],
         }
         useApp.getState().setMycockpit(proj.id, resolved)
         if (raw.exists && resolved.permission !== proj.permissionMode) {
