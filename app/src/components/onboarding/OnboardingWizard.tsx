@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Reticle } from "@/components/common/Wordmark"
+import appIcon from "@/assets/app-icon.png"
 import { useApp } from "@/store/app"
 import { AGENTS, availability, type Availability } from "@/lib/agents"
 import {
@@ -141,7 +141,11 @@ export function OnboardingWizard({ onClose }: { onClose?: () => void }) {
         {/* passo 1 — boas-vindas */}
         {step === 0 && (
           <div className="flex flex-col items-center gap-4 py-6 text-center">
-            <Reticle className="size-14 text-brass" />
+            <img
+              src={appIcon}
+              alt="MyCockpit"
+              className="size-20 rounded-[22px] shadow-md"
+            />
             <div>
               <h1 className="text-xl font-semibold text-foreground">MyCockpit</h1>
               <p className="mt-1 text-[13px] text-muted-foreground">
@@ -149,8 +153,8 @@ export function OnboardingWizard({ onClose }: { onClose?: () => void }) {
               </p>
             </div>
             <p className="max-w-sm text-[13px] leading-relaxed text-muted-foreground">
-              Vamos verificar suas ferramentas e configurar o essencial em ~1
-              minuto.
+              Vamos verificar suas ferramentas e configurar o essencial em{" "}
+              <span className="whitespace-nowrap">~1 minuto</span>.
             </p>
           </div>
         )}
