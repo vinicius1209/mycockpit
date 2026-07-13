@@ -164,7 +164,7 @@ export const useApp = create<AppState>()(
         if (fromVersion < 2) {
           p.settings = { ...(p.settings ?? {}), onboarded: true }
         }
-        return p as AppState
+        return p as unknown as AppState
       },
       // deep-merge de settings p/ campos novos ganharem o default (evita undefined
       // quando o schema cresce entre versões).

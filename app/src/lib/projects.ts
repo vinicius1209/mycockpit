@@ -14,12 +14,12 @@ import { useApp } from "@/store/app"
 import type { Project } from "@/lib/types"
 
 /** Abre o picker de pasta, insere o projeto (dedupe por path; restaura se
- *  arquivado) e o seleciona. Devolve o Project adicionado/selecionado ou null
- *  (cancelou / fora do Tauri / erro). */
-export async function addProjectViaDialog(): Promise<Project | null> {
+ *  arquivado) e o seleciona. Não devolve nada — os chamadores observam a store
+ *  (projects) reativamente. */
+export async function addProjectViaDialog(): Promise<void> {
   if (!isTauri()) {
     toast("Seleção de pasta disponível no app (tauri dev)")
-    return null
+    return
   }
   try {
     const dir = await open({
@@ -27,7 +27,7 @@ export async function addProjectViaDialog(): Promise<Project | null> {
       multiple: false,
       title: "Escolha a pasta do projeto",
     })
-    if (typeof dir !== "string") return null
+    if (typeof dir !== "string") return
     const name = dir.split("/").filter(Boolean).pop() ?? dir
     const project: Project = {
       id: crypto.randomUUID(),
@@ -53,16 +53,14 @@ export async function addProjectViaDialog(): Promise<Project | null> {
             ? `Projeto restaurado: ${name}`
             : `Projeto já existia: ${name}`,
         )
-        return existing
+        return
       }
     }
     useApp.getState().addProject(project)
     useApp.getState().setActiveProject(project.id)
     toast.success(`Projeto adicionado: ${name}`)
-    return project
   } catch (e) {
     console.error(e)
     toast.error("Não foi possível adicionar o projeto")
-    return null
   }
 }
