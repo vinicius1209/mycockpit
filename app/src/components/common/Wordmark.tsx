@@ -1,38 +1,16 @@
 import { cn } from "@/lib/utils"
+import appIcon from "@/assets/app-icon.png"
 
-/** Marca "instrumento": um retículo de cockpit. Centro + cruz em brass. */
+/** Marca do app: o ícone horizonte (instrumento de cockpit), renderizado como
+ *  imagem arredondada. Unifica titlebar, empty state e onboarding num só lugar. */
 export function Reticle({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 20 20"
-      fill="none"
-      className={cn("text-foreground", className)}
+    <img
+      src={appIcon}
+      alt=""
       aria-hidden="true"
-    >
-      <rect
-        x="0.75"
-        y="0.75"
-        width="18.5"
-        height="18.5"
-        rx="5.5"
-        stroke="currentColor"
-        strokeOpacity="0.22"
-      />
-      <circle
-        cx="10"
-        cy="10"
-        r="4.6"
-        stroke="currentColor"
-        strokeOpacity="0.4"
-      />
-      <path
-        d="M10 1.6V5M10 15v3.4M1.6 10H5M15 10h3.4"
-        className="stroke-brass"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-      />
-      <circle cx="10" cy="10" r="1.7" className="fill-brass" />
-    </svg>
+      className={cn("rounded-[26%] object-contain select-none", className)}
+    />
   )
 }
 
