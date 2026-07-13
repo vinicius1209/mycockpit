@@ -431,6 +431,13 @@ export const useChat = create<ChatState>((set, get) => {
   const suggestTimer: Record<string, ReturnType<typeof setTimeout>> = {}
   const suggestGen: Record<string, number> = {}
 
+  // Token de geração do openProject (M1): um openProject(A) LENTO em voo não
+  // pode clobrar um clique posterior (openProject(B) ou switchConversation).
+  // Cada openProject captura ++openGen; após cada await, se o token mudou,
+  // aborta sem aplicar set. switchConversation também invalida ao trocar o
+  // projeto ativo (o guard keepActive só cobria o caso mesmo-projeto).
+  let openGen = 0
+
   // Persistência incremental durante o run: sem isso o único persist era no
   // finally do turno (ChatPanel), então QUALQUER interrupção mid-run (restart do
   // dev, crash, fechar a janela) perdia a resposta inteira E o session_id (o run
@@ -572,14 +579,19 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     openProject: async (projectId) => {
+      const gen = ++openGen
       if (!projectId) {
         set({ projectId: null, activeId: null, conversations: [] })
         return
       }
       let list = (await dbList(projectId)) ?? []
+      // outro openProject/switchConversation venceu enquanto o dbList voava →
+      // não clobra a escolha mais recente.
+      if (gen !== openGen) return
       if (list.length === 0) {
         const id = uid()
         await dbCreate(projectId, id)
+        if (gen !== openGen) return
         list = [{ id, title: null, updatedAt: Date.now(), color: null, worktreePath: null }]
         set((s) => ({
           projectId,
@@ -611,6 +623,8 @@ export const useChat = create<ChatState>((set, get) => {
         conversations: list,
         conversationsByProject: { ...s.conversationsByProject, [projectId]: list },
       }))
+      // ensureLoaded só ADICIONA em byId (guardado, não sobrescreve) → não há
+      // set de navegação após este await pra proteger com o token.
       await ensureLoaded(projectId, activeId)
     },
 
@@ -643,8 +657,10 @@ export const useChat = create<ChatState>((set, get) => {
           worktreePath: null,
         }
         // append na lista DAQUELE projeto (não do ativo antigo). Criar uma
-        // conversa também torna o projeto o ativo (abre no painel).
-        const prev = s.conversationsByProject[projectId] ?? s.conversations
+        // conversa também torna o projeto o ativo (abre no painel). Fallback
+        // `[]` (nunca s.conversations: o espelho pode ser a lista de OUTRO
+        // projeto e poluiria o mapa com conversas de owner errado).
+        const prev = s.conversationsByProject[projectId] ?? []
         const nextList = [...prev, meta]
         return {
           projectId,
@@ -667,6 +683,9 @@ export const useChat = create<ChatState>((set, get) => {
       // projectId + o espelho `conversations` na hora — não espera o openProject
       // (que roda via efeito do ChatPanel) e não deixa a UI num estado misto.
       const owner = projectOfConv(s.conversationsByProject, id) ?? s.projectId
+      // invalida qualquer openProject em voo: o clique do usuário é a escolha
+      // mais recente e não pode ser sobrescrito quando o dbList atrasado chegar.
+      openGen++
       set((st) => ({
         activeId: id,
         projectId: owner,
@@ -682,6 +701,9 @@ export const useChat = create<ChatState>((set, get) => {
       // Mira a conversa pelo id ÚNICO → deleta só a linha certa no DB e some do
       // array do projeto DONO dela (mesmo que seja um projeto NÃO-ativo). O
       // projeto ativo e as outras conversas ficam intactos.
+      // Cancela o persist throttled pendente ANTES do DELETE: um snapshot
+      // atrasado re-inseriria a linha deletada (UPSERT) = conversa-zumbi.
+      cancelPersist(id)
       await dbDelete(id)
       void wipeAttachments(id) // apaga os blobs da conversa (privacidade imediata)
       const before = get()
@@ -698,10 +720,14 @@ export const useChat = create<ChatState>((set, get) => {
             (c) => c.id !== id,
           )
         }
+        // Só recria o espelho se o DONO for o projeto ATIVO; owner ≠ ativo
+        // mantém a REFERÊNCIA (um filter no-op criaria ref nova à toa e
+        // re-renderizaria leitores do projeto ativo sem mudança real).
         const mirror =
-          owner != null && owner === s.projectId && conversationsByProject[owner]
-            ? conversationsByProject[owner]
-            : s.conversations.filter((c) => c.id !== id)
+          owner != null && owner === s.projectId
+            ? (conversationsByProject[owner] ??
+              s.conversations.filter((c) => c.id !== id))
+            : s.conversations
         return { byId: rest, conversationsByProject, conversations: mirror }
       })
       // Se a removida não era a ATIVA (ex.: excluiu de um projeto não-ativo),

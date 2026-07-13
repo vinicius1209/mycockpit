@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { getVersion } from "@tauri-apps/api/app"
 import {
   Plus,
@@ -566,8 +566,13 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   // Árvore INDEPENDENTE (Finder/VS Code): `expanded` guarda os projetos ABERTOS
   // — vários ao mesmo tempo, DESATRELADO do ativo. Em memória (ok no v1).
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Projetos que o usuário COLAPSOU de propósito (chevron): o auto-expand do
+  // ativo respeita a escolha e os pula. Expandir de novo (chevron/seleção)
+  // tira do set. Ref (não re-renderiza; só o efeito abaixo lê).
+  const userCollapsed = useRef<Set<string>>(new Set())
   // Abrir um projeto = adicionar ao set + carregar (lazy) as conversas dele.
   const openExpand = (id: string) => {
+    userCollapsed.current.delete(id) // expandir desfaz o colapso deliberado
     void loadProjectConversations(id)
     setExpanded((s) => {
       if (s.has(id)) return s
@@ -579,6 +584,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   // Chevron: alterna SÓ este projeto (não fecha os outros).
   function toggleExpand(id: string) {
     if (expanded.has(id)) {
+      userCollapsed.current.add(id) // colapso DELIBERADO → auto-expand pula
       setExpanded((s) => {
         const n = new Set(s)
         n.delete(id)
@@ -588,9 +594,10 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
       openExpand(id)
     }
   }
-  // Auto-expande o projeto ativo (seleção via ⌘K, boot etc. abre a árvore dele).
+  // Auto-expande o projeto ativo (seleção via ⌘K, boot etc. abre a árvore dele),
+  // EXCETO se o usuário o colapsou de propósito (userCollapsed).
   useEffect(() => {
-    if (activeId) openExpand(activeId)
+    if (activeId && !userCollapsed.current.has(activeId)) openExpand(activeId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId])
   // Projetos com QUALQUER conversa rodando (string estável → menos re-render).

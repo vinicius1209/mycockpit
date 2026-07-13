@@ -213,7 +213,13 @@ const ToolLine = memo(function ToolLine({
           expandable && "hover:bg-accent/40",
         )}
       >
-        <span className="grid size-3.5 shrink-0 place-items-center">
+        <span
+          className="grid size-3.5 shrink-0 place-items-center"
+          // "pendente" fora de um turno ativo = a tool nunca teve result gravado
+          // (turno interrompido/histórico antigo). O anel fica, o hover conta a
+          // verdade — sem fingir que ainda vai rodar.
+          title={status === "pending" ? "sem resultado registrado" : undefined}
+        >
           <StepDot status={status} />
         </span>
         <Icon

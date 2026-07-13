@@ -54,8 +54,10 @@ export function SkillDraftDialog({
       return
     }
     // Descrição vira frontmatter do command (Claude Code lê `description:`).
+    // JSON.stringify = string JSON-quoted (YAML aceita): aspas/':'/quebras na
+    // descrição não quebram o frontmatter.
     const content = description.trim()
-      ? `---\ndescription: ${description.trim()}\n---\n\n${body}`
+      ? `---\ndescription: ${JSON.stringify(description.trim())}\n---\n\n${body}`
       : body
     setSaving(true)
     try {

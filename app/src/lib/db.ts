@@ -555,9 +555,21 @@ export type LessonScope = "global" | "project"
  *  não promovida); `archived` foi retirada mas é reversível. */
 export type LessonStatus = "active" | "candidate" | "archived"
 
+/** ALTER idempotente: engole SÓ "duplicate column" (coluna já existe, re-run).
+ *  Qualquer OUTRO erro (ex.: 'database is locked' transitório) PROPAGA — senão
+ *  o schema fica sem a coluna e o cache fixaria o estado envenenado. */
+async function addColumn(db: Database, sql: string): Promise<void> {
+  try {
+    await db.execute(sql)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (!/duplicate column/i.test(msg)) throw e
+  }
+}
+
 async function ensureLearningTables(db: Database): Promise<void> {
   if (!learningReady) {
-    learningReady = (async () => {
+    const run = (async () => {
       await db.execute(
         `CREATE TABLE IF NOT EXISTS deliveries (
            id TEXT PRIMARY KEY,
@@ -588,37 +600,29 @@ async function ensureLearningTables(db: Database): Promise<void> {
         `CREATE INDEX IF NOT EXISTS idx_lessons_project ON lessons(project_id)`,
       )
       // M2 do Linear: coluna `scope` (global × projeto). A tabela `lessons` já
-      // existe em bancos antigos → ALTER idempotente (falha se a coluna já
-      // existe; o try/catch absorve, mantendo o boot vivo).
-      try {
-        await db.execute(
-          `ALTER TABLE lessons ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'`,
-        )
-      } catch {
-        // coluna já existe (re-run) → no-op.
-      }
-      // Estágio 1 do funil (CURADOR): status + sinais de reforço. Cada ALTER é
-      // idempotente pelo mesmo motivo (falha se a coluna já existe → try/catch).
-      try {
-        await db.execute(
-          `ALTER TABLE lessons ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`,
-        )
-      } catch {
-        // coluna já existe (re-run) → no-op.
-      }
-      try {
-        await db.execute(`ALTER TABLE lessons ADD COLUMN last_used_at INTEGER`)
-      } catch {
-        // coluna já existe (re-run) → no-op.
-      }
-      try {
-        await db.execute(
-          `ALTER TABLE lessons ADD COLUMN reinforced INTEGER NOT NULL DEFAULT 0`,
-        )
-      } catch {
-        // coluna já existe (re-run) → no-op.
-      }
+      // existe em bancos antigos → ALTER idempotente (só "duplicate column" é
+      // absorvido; erro real propaga e o cache reseta pra retentar).
+      await addColumn(
+        db,
+        `ALTER TABLE lessons ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'`,
+      )
+      // Estágio 1 do funil (CURADOR): status + sinais de reforço.
+      await addColumn(
+        db,
+        `ALTER TABLE lessons ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`,
+      )
+      await addColumn(db, `ALTER TABLE lessons ADD COLUMN last_used_at INTEGER`)
+      await addColumn(
+        db,
+        `ALTER TABLE lessons ADD COLUMN reinforced INTEGER NOT NULL DEFAULT 0`,
+      )
     })()
+    // o cache só fica FIXO em sucesso: em falha, reseta pra próxima chamada
+    // RETENTAR (um erro transitório não pode envenenar o processo inteiro).
+    learningReady = run.catch((e) => {
+      learningReady = null
+      throw e
+    })
   }
   return learningReady
 }

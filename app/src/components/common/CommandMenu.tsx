@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { searchConversations, type ConvSearchHit } from "@/lib/db"
 import {
   FileText,
@@ -79,6 +79,9 @@ export function CommandMenu() {
   const [skillOpen, setSkillOpen] = useState(false)
   const [skillDraft, setSkillDraft] = useState<SkillDraft | null>(null)
   const [skillPath, setSkillPath] = useState<string | null>(null)
+  // Token anti-stale do draftSkill: dois disparos rápidos → só o resultado da
+  // geração CORRENTE hidrata o dialog (a promise antiga é descartada).
+  const skillGen = useRef(0)
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -141,7 +144,9 @@ export function CommandMenu() {
     setSkillPath(proj.path)
     setSkillDraft(null)
     setSkillOpen(true)
+    const gen = ++skillGen.current
     const d = await draftSkill(proj.path, helperModel, conv.items)
+    if (gen !== skillGen.current) return // um disparo mais novo venceu → descarta
     setSkillDraft(d)
   }
 
