@@ -26,11 +26,28 @@ uma camada de UI que escolhe o card por `kind`.
 kind = "approval" | "question" | "plan"(futuro)
 ```
 
+### ⚠️ CORREÇÃO CRÍTICA DO ESTUDO (2026-07-13) — leia antes
+- O `--permission-prompt-tool` (que a aprovação usa) **NÃO responde tools
+  interativas**: a doc oficial converte `allow`→`deny` p/ tools com
+  `_meta["anthropic/requiresUserInteraction"]`. Só o `canUseTool` do SDK faria.
+- Logo, a `ask_user` **NÃO é uma tool de permissão** — é uma **tool de CONTEÚDO
+  normal**: o modelo a chama, ela bloqueia no socket, o app renderiza o card,
+  o usuário responde, e a resposta volta como o **RESULTADO da tool** (content
+  block). **NÃO** ligar `ask_user` no `--permission-prompt-tool`, **NÃO** marcar
+  `requiresUserInteraction`. Isso a torna robusta no `-p`.
+- Decisão: **opção B** (MCP tool própria). C (stream-json) descartada
+  (não-documentada, issue #24594 "not planned"). A (SDK) é norte futuro, fora
+  de escopo. AskUserQuestion + ExitPlanMode built-in **desabilitados**
+  (`--disallowedTools`) → nunca erram; degradam pra texto se o modelo não usar
+  a nossa tool.
+
 ### CONTRATO (fixo — o time coda contra isto)
 
 **1. MCP tools** (no nosso server stdio, ver approval.rs):
-- `approval_prompt` (JÁ EXISTE) — decisão de permissão.
-- `ask_user` (NOVO) — input schema ESPELHA o AskUserQuestion:
+- `approval_prompt` (JÁ EXISTE) — decisão de permissão, via `--permission-prompt-tool` (só Padrão).
+- `ask_user` (NOVO) — **tool de CONTEÚDO** (listada em tools/list, chamada
+  diretamente pelo modelo; o resultado É a resposta). Registrada em TODOS os
+  modos. Input schema ESPELHA o AskUserQuestion:
   ```jsonc
   // input
   { "questions": [
