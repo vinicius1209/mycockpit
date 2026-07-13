@@ -21,7 +21,12 @@ import { DESTINATIONS } from "@/lib/agents"
 import { fmtCost, fmtDuration, fmtTokens } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
-import { presentTool, resultMeta, type ToolKind } from "@/lib/toolview"
+import {
+  cleanResultText,
+  presentTool,
+  resultMeta,
+  type ToolKind,
+} from "@/lib/toolview"
 import { lineDiff, trimOuterContext, type DiffRow } from "@/lib/linediff"
 import { deriveTasks, isTaskTool } from "@/lib/tasks"
 import { Markdown } from "@/components/common/Markdown"
@@ -153,7 +158,10 @@ const ToolLine = memo(function ToolLine({ item }: { item: ToolItem }) {
   const failed = item.result?.ok === false
   const res = resultMeta(item.name, item.result)
   const meta = [p.meta, res].filter(Boolean).join(" · ")
-  const expandable = Boolean(p.detail || diff || item.result?.text)
+  // Suprime o boilerplate de sucesso do write/edit ("File created…") — vira ""
+  // e o bloco de result nem aparece (o cartão já mostra arquivo + diff).
+  const resultText = cleanResultText(item.name, item.result)
+  const expandable = Boolean(p.detail || diff || resultText)
 
   return (
     <div className="min-w-0">
@@ -226,12 +234,12 @@ const ToolLine = memo(function ToolLine({ item }: { item: ToolItem }) {
               ))}
             </div>
           )}
-          {item.result?.text && (
+          {resultText && (
             <div
               data-selectable
               className="border-t p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-muted-foreground"
             >
-              {item.result.text}
+              {resultText}
             </div>
           )}
         </div>

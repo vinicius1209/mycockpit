@@ -147,6 +147,36 @@ export function presentTool(name: string, input: unknown): ToolView {
   }
 }
 
+/** Boilerplate de sucesso do write/edit que a CLI injeta no result — não é
+ *  conteúdo útil (o cartão já mostra nome do arquivo + diff), então some do
+ *  render. Cobre "File created successfully at: …", "The file … has been
+ *  updated successfully." e o sufixo "(file state is current…no need to Read
+ *  it back)". NÃO mexe em erro nem em output de outras tools (Bash etc). */
+const WRITE_EDIT_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"])
+const SUCCESS_BOILERPLATE = [
+  /^\s*File created successfully at:.*$/i,
+  /^\s*(?:The file .*? has been (?:updated|created|edited) successfully\.?|.*?has been updated(?: successfully)?\.?)\s*$/i,
+]
+const STATE_SUFFIX = /\(file state is current[^)]*no need to Read it back\)/gi
+
+/** Limpa o result de write/edit: remove o boilerplate de sucesso e o sufixo
+ *  "(file state is current…)". Retorna o texto restante (ou "" se só sobrou
+ *  boilerplate). Para outras tools/erros, devolve o texto intacto. */
+export function cleanResultText(
+  name: string,
+  result: { ok: boolean; text: string } | undefined,
+): string {
+  const text = result?.text ?? ""
+  if (!text || result?.ok === false || !WRITE_EDIT_TOOLS.has(name)) return text
+  const cleaned = text
+    .replace(STATE_SUFFIX, "")
+    .split("\n")
+    .filter((line) => !SUCCESS_BOILERPLATE.some((re) => re.test(line)))
+    .join("\n")
+    .trim()
+  return cleaned
+}
+
 /** Meta do RESULTADO (a metade que faltava): "42 linhas", "erro", "ok". */
 export function resultMeta(
   name: string,

@@ -4,6 +4,13 @@
 
 export type DiffRow = { type: "ctx" | "add" | "del"; text: string }
 
+// TODO(diff-highlight): tokenizar cada linha (add/del/ctx) com hljs pra syntax
+// highlight leve DENTRO do diff. Não feito por custo/risco: exigiria detectar a
+// linguagem por arquivo, rodar hljs por linha (frágil em linha parcial) e usar
+// dangerouslySetInnerHTML — o que ameaça o add/del/ctx coloring atual (o sinal
+// mais importante). O highlight de bloco de código (Markdown) já cobre o caso
+// comum; priorizamos não quebrar o diff.
+
 export interface LineDiff {
   rows: DiffRow[]
   added: number

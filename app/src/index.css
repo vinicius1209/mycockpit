@@ -279,7 +279,24 @@
   }
 }
 
-/* syntax highlight (rehype-highlight / hljs) — tema cockpit (B3) */
+/* syntax highlight (rehype-highlight / hljs) — tema cockpit (B3)
+   Tokens casam com o design (brass/status) e têm variante clara+escura: os
+   defaults (:root) são tons legíveis sobre fundo claro; .hljs em .dark sobe o
+   brilho. Baseado num atom-one discreto, ajustado aos tokens do app. */
+:root {
+  --hljs-keyword: #9a5b1e; /* brass escuro */
+  --hljs-string: #4f7a32;
+  --hljs-number: #a35a2a;
+  --hljs-title: #2f6aa8;
+  --hljs-variable: #7a53b5;
+}
+.dark {
+  --hljs-keyword: #d8a657;
+  --hljs-string: #a3c785;
+  --hljs-number: #d99a6c;
+  --hljs-title: #82a8d8;
+  --hljs-variable: #c4b6e8;
+}
 .hljs {
   color: var(--foreground);
   background: transparent;
@@ -294,26 +311,26 @@
 .hljs-literal,
 .hljs-name,
 .hljs-tag {
-  color: #d8a657;
+  color: var(--hljs-keyword);
 }
 .hljs-string,
 .hljs-attr,
 .hljs-symbol {
-  color: #a3c785;
+  color: var(--hljs-string);
 }
 .hljs-number,
 .hljs-built_in {
-  color: #d99a6c;
+  color: var(--hljs-number);
 }
 .hljs-title,
 .hljs-section {
-  color: #82a8d8;
+  color: var(--hljs-title);
 }
 .hljs-variable,
 .hljs-template-variable,
 .hljs-attribute,
 .hljs-type {
-  color: #c4b6e8;
+  color: var(--hljs-variable);
 }
 .hljs-meta {
   color: var(--muted-foreground);
