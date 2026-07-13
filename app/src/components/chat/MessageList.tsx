@@ -154,9 +154,35 @@ function UnifiedDiff({ rows }: { rows: DiffRow[] }) {
   )
 }
 
-/** Tool call como LINHA (ícone + rótulo humano + meta), colapsável pro cru.
- *  A prosa do agent é o conteúdo; a ferramenta é rodapé, não caixa. */
-const ToolLine = memo(function ToolLine({ item }: { item: ToolItem }) {
+/** Status de um passo (tool): pendente/rodando/ok/erro → círculo à esquerda.
+ *  Substitui o chevron da frente (que duplicava com o ícone `>_` do Terminal). */
+type StepStatus = "ok" | "error" | "running" | "pending"
+
+function StepDot({ status }: { status: StepStatus }) {
+  if (status === "ok")
+    return <span className="size-[7px] shrink-0 rounded-full bg-st-success" />
+  if (status === "error")
+    return <span className="size-[7px] shrink-0 rounded-full bg-st-error" />
+  if (status === "running")
+    return (
+      <span className="animate-cockpit-pulse size-[7px] shrink-0 rounded-full bg-st-running" />
+    )
+  // pendente: anel vazado (ainda não rodou).
+  return (
+    <span className="size-[7px] shrink-0 rounded-full border-[1.5px] border-muted-foreground/40" />
+  )
+}
+
+/** Tool call como LINHA (círculo de status + ícone + rótulo + meta), colapsável.
+ *  A prosa do agent é o conteúdo; a ferramenta é rodapé, não caixa. `active` =
+ *  o turno está rodando E este é o passo corrente (sem result ainda). */
+const ToolLine = memo(function ToolLine({
+  item,
+  active = false,
+}: {
+  item: ToolItem
+  active?: boolean
+}) {
   const p = presentTool(item.name, item.input)
   const Icon = KIND_ICON[p.kind]
   const i = (item.input ?? {}) as Record<string, unknown>
@@ -164,6 +190,13 @@ const ToolLine = memo(function ToolLine({ item }: { item: ToolItem }) {
   // edits abrem por padrão → a alteração fica visível no chat (estilo Warp).
   const [open, setOpen] = useState(!!diff)
   const failed = item.result?.ok === false
+  const status: StepStatus = item.result
+    ? item.result.ok
+      ? "ok"
+      : "error"
+    : active
+      ? "running"
+      : "pending"
   const res = resultMeta(item.name, item.result)
   const meta = [p.meta, res].filter(Boolean).join(" · ")
   // Suprime o boilerplate de sucesso do write/edit ("File created…") — vira ""
@@ -176,17 +209,13 @@ const ToolLine = memo(function ToolLine({ item }: { item: ToolItem }) {
       <button
         onClick={() => expandable && setOpen((o) => !o)}
         className={cn(
-          "flex w-full items-center gap-2 rounded-md px-1.5 py-[3px] text-left text-[12.5px] transition-colors",
+          "group/step flex w-full items-center gap-2 rounded-md px-1.5 py-[3px] text-left text-[12.5px] transition-colors",
           expandable && "hover:bg-accent/40",
         )}
       >
-        <ChevronRight
-          className={cn(
-            "size-3 shrink-0 transition-transform",
-            expandable ? "text-muted-foreground/40" : "text-transparent",
-            open && "rotate-90",
-          )}
-        />
+        <span className="grid size-3.5 shrink-0 place-items-center">
+          <StepDot status={status} />
+        </span>
         <Icon
           className={cn(
             "size-3.5 shrink-0",
@@ -202,23 +231,34 @@ const ToolLine = memo(function ToolLine({ item }: { item: ToolItem }) {
         >
           {p.label}
         </span>
-        {diff ? (
-          <span className="ml-auto shrink-0 pl-2 font-mono text-[10.5px] tabular-nums">
-            {diff.added > 0 && (
-              <span className="text-st-success">+{diff.added}</span>
-            )}
-            {diff.added > 0 && diff.removed > 0 && " "}
-            {diff.removed > 0 && (
-              <span className="text-st-error">−{diff.removed}</span>
-            )}
-          </span>
-        ) : (
-          meta && (
-            <span className="ml-auto max-w-[45%] shrink-0 truncate pl-2 font-mono text-[11px] text-muted-foreground">
-              {meta}
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
+          {diff ? (
+            <span className="font-mono text-[10.5px] tabular-nums">
+              {diff.added > 0 && (
+                <span className="text-st-success">+{diff.added}</span>
+              )}
+              {diff.added > 0 && diff.removed > 0 && " "}
+              {diff.removed > 0 && (
+                <span className="text-st-error">−{diff.removed}</span>
+              )}
             </span>
-          )
-        )}
+          ) : (
+            meta && (
+              <span className="max-w-[220px] truncate font-mono text-[11px] text-muted-foreground">
+                {meta}
+              </span>
+            )
+          )}
+          {expandable && (
+            // seta de expandir no FIM (longe do ícone `>_` → sem duplicação).
+            <ChevronRight
+              className={cn(
+                "size-3 text-muted-foreground/30 transition-transform group-hover/step:text-muted-foreground/60",
+                open && "rotate-90",
+              )}
+            />
+          )}
+        </span>
       </button>
       {open && (
         <div className="mt-0.5 mb-1 ml-[26px] overflow-hidden rounded-md border bg-secondary/30">
@@ -261,9 +301,12 @@ const ToolLine = memo(function ToolLine({ item }: { item: ToolItem }) {
 function ToolGroup({
   tools,
   defaultOpen,
+  active = false,
 }: {
   tools: ToolItem[]
   defaultOpen: boolean
+  /** turno rodando E este é o grupo corrente → o passo sem result "roda". */
+  active?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const preview = tools
@@ -293,7 +336,7 @@ function ToolGroup({
       {open && (
         <div className="ml-[5px] flex flex-col gap-px border-l border-border/50 pl-2">
           {tools.map((t) => (
-            <ToolLine key={t.id} item={t} />
+            <ToolLine key={t.id} item={t} active={active && !t.result} />
           ))}
         </div>
       )}
@@ -856,13 +899,15 @@ export function MessageList({
                 key={n.key}
                 tools={n.tools}
                 defaultOpen={running && idx === visible.length - 1}
+                active={running && idx === visible.length - 1}
               />
             )
           }
+          const groupActive = running && idx === visible.length - 1
           return (
             <div key={n.key} className="flex flex-col gap-px">
               {n.tools.map((t) => (
-                <ToolLine key={t.id} item={t} />
+                <ToolLine key={t.id} item={t} active={groupActive && !t.result} />
               ))}
             </div>
           )
