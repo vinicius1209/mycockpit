@@ -294,6 +294,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             agent::run_agent,
             agent::cancel_agent,
+            approval::answer_interaction,
             approval::answer_approval,
             agent::suggest,
             agent::judge,

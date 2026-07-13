@@ -1,5 +1,4 @@
 import { invoke, Channel } from "@tauri-apps/api/core"
-import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import type { Attachment } from "@/lib/attachments"
 import { agentDef } from "@/lib/agents"
 
@@ -69,47 +68,7 @@ export async function cancelAgent(runId: string): Promise<void> {
   await invoke("cancel_agent", { runId })
 }
 
-/** Aprovação GRANULAR inline (autonomia, Dimensão 1): o pedido que o backend emite
- *  no evento global `approval://request` quando o Claude (modo Padrao) quer usar
- *  uma tool que precisa de OK. O turno FICA PAUSADO até `answerApproval`. Espelha
- *  `ApprovalRequest` no Rust. */
-export type ApprovalRequest = {
-  /** id do pedido (correlaciona com a resposta). */
-  id: string
-  /** run que está pausado esperando a decisão. */
-  run_id: string
-  /** tool que o Claude quer usar (ex. "Bash", "Write"). */
-  tool_name: string
-  /** comando extraído do input p/ Bash (vazio p/ outras tools). */
-  command: string
-  /** input cru da tool (a UI mostra o detalhe). */
-  input: unknown
-}
-
-/** Escuta os pedidos de aprovação inline (evento global do backend). Retorna o
- *  unlisten. O turno do Claude fica bloqueado até responder via `answerApproval`. */
-export async function onApprovalRequest(
-  cb: (req: ApprovalRequest) => void,
-): Promise<UnlistenFn> {
-  return listen<ApprovalRequest>("approval://request", (e) => cb(e.payload))
-}
-
-/** Entrega a decisão do usuário (Aprovar/Negar) ao backend, que destrava o turno.
- *  `updatedInput` (opcional) sanitiza o input antes de aprovar; `message` (opcional)
- *  vira o motivo do deny mostrado ao Claude. */
-export async function answerApproval(
-  id: string,
-  allow: boolean,
-  updatedInput?: unknown,
-  message?: string,
-): Promise<void> {
-  await invoke("answer_approval", {
-    id,
-    allow,
-    updatedInput: updatedInput ?? null,
-    message: message ?? null,
-  })
-}
+/** Aprovação/interação pendente movidas p/ lib/interaction.ts (padrão unificado). */
 
 /** Rótulo de exibição de um agent (id → nome). Fonte única: lib/agents. */
 export function agentLabel(agent: string): string {

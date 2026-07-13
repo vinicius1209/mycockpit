@@ -225,17 +225,20 @@ pub async fn run_agent(
     // pastas extras liberadas: lidas do .mycockpit/config.toml do projeto que
     // contém o cwd (cobre worktrees) → viram --add-dir. ANTES de mover cwd.
     let extra_dirs = crate::mycockpit::resolve_extra_dirs(&cwd);
-    // Aprovação GRANULAR inline (só Claude no modo Padrao): sobe um socket por-run
-    // + registra o listener que vira cada pedido num evento `approval://request`.
-    // O `_approval_listener` (RAII) limpa o socket e nega os pendentes no fim do
+    // Interação PENDENTE inline (Claude): sobe um socket por-run + registra o
+    // listener que vira cada pedido num evento `interaction://request`. Cobre 2
+    // kinds: `approval` (só modo Padrao, via --permission-prompt-tool) e `question`
+    // (tool `ask_user`, TODOS os modos com MCP ligado). O `_approval_listener`
+    // (RAII) limpa o socket e resolve os pendentes (deny/cancelado) no fim do
     // run/cancel (qualquer path, inclusive os `?`), cobrindo as 2 tentativas da
-    // degradação graciosa. None (outro agent, ou socket falhou) = comportamento
-    // antigo (acceptEdits puro), nunca derruba o run.
+    // degradação graciosa. None (outro agent, socket falhou, ou FusionRo que
+    // desliga MCP) = comportamento antigo, nunca derruba o run.
+    // FusionRo desliga TODO MCP (--strict-mcp-config {}) → sem ask_user nesse modo.
     let is_claude = agent == "claude-code" || agent.is_empty();
-    let approval_on = is_claude && matches!(permission, adapters::Permission::Padrao);
+    let interaction_on = is_claude && !matches!(permission, adapters::Permission::FusionRo);
     let mut approval = None;
     let mut _approval_listener = None;
-    if approval_on {
+    if interaction_on {
         if let Ok(server_bin) = std::env::current_exe() {
             let listener = crate::approval::ApprovalListener::spawn(
                 app.clone(),

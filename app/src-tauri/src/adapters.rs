@@ -25,10 +25,11 @@ pub struct RunRequest {
     /// absolutos existentes (por `mycockpit::resolve_extra_dirs`). Cada adapter
     /// emite `--add-dir <dir>` — o gate de diretório é fixo no spawn (headless).
     pub extra_dirs: Vec<String>,
-    /// Aprovação granular inline (só Claude, modo Padrao): quando presente, liga o
-    /// MCP `--permission-prompt-tool`. `.0` = path do binário do MCP server (= este
-    /// app, subcomando `approval-server`); `.1` = path do socket app↔server (por-run).
-    /// None = sem gate inline (degrada p/ o acceptEdits puro de antes).
+    /// Interação inline (só Claude): quando presente, registra o MCP server (socket)
+    /// da interação pendente — `ask_user` em TODOS os modos com MCP + o
+    /// `--permission-prompt-tool` só no Padrão. `.0` = path do binário do MCP server
+    /// (= este app, subcomando `approval-server`); `.1` = path do socket app↔server
+    /// (por-run). None = sem interação inline (degrada p/ o comportamento de antes).
     pub approval: Option<(String, String)>,
 }
 
@@ -177,17 +178,26 @@ impl AgentAdapter for ClaudeAdapter {
             .current_dir(&req.cwd);
         // Política de permissão por projeto (docs/agent-runner.md §7). Achado do
         // M0: `--allowedTools` NÃO sandboxa; o gate real é `--disallowedTools`.
+        //
+        // Interação PENDENTE (docs/interactive-input.md): o MCP server (socket) sobe
+        // em TODOS os modos com MCP ligado — `ask_user` (tool de CONTEÚDO) vale sempre.
+        // O `--permission-prompt-tool` (aprovação) segue SÓ no Padrão. Desabilitamos
+        // os built-ins interativos (AskUserQuestion, ExitPlanMode) SEMPRE (eles erram
+        // no `-p` headless) — o modelo usa a NOSSA `ask_user`; ExitPlanMode degrada p/
+        // texto. Os disallow são MESCLADOS com os de read-only (não sobrescreve).
+        const INTERACTIVE_BUILTINS: &str = "AskUserQuestion,ExitPlanMode";
+        let mut disallowed: Vec<&str> = vec![INTERACTIVE_BUILTINS];
         match req.permission {
             Permission::Leitura => {
-                cmd.arg("--disallowedTools")
-                    .arg("Bash,Edit,Write,MultiEdit,NotebookEdit");
+                disallowed.insert(0, "Bash,Edit,Write,MultiEdit,NotebookEdit");
             }
             // Fusion read-only: bloqueia edição E desliga TODO MCP (candidatos
-            // especulativos não podem ter efeito externo, email/Notion/infra).
+            // especulativos não podem ter efeito externo, email/Notion/infra). Sem
+            // MCP → sem ask_user aqui (perguntas viram texto); os built-ins seguem
+            // desabilitados p/ não errarem.
             Permission::FusionRo => {
-                cmd.arg("--disallowedTools")
-                    .arg("Bash,Edit,Write,MultiEdit,NotebookEdit")
-                    .arg("--strict-mcp-config")
+                disallowed.insert(0, "Bash,Edit,Write,MultiEdit,NotebookEdit");
+                cmd.arg("--strict-mcp-config")
                     .arg("--mcp-config")
                     .arg("{\"mcpServers\":{}}");
             }
@@ -196,32 +206,48 @@ impl AgentAdapter for ClaudeAdapter {
             }
             Permission::Padrao => {
                 cmd.arg("--permission-mode").arg("acceptEdits");
-                // Aprovação GRANULAR inline: em acceptEdits, tools que precisam de OK
-                // (ex. um Bash não auto-aprovado) em vez de ERRAR "requires approval",
-                // chamam nosso MCP server → o app pergunta ao usuário (turno vivo).
-                // Só liga se o app conseguiu montar o socket (senão degrada p/ o
-                // acceptEdits puro de antes — nunca derruba o run). Ver approval.rs.
-                if let Some((server_bin, sock)) = &req.approval {
-                    let mcp = serde_json::json!({
-                        "mcpServers": {
-                            crate::approval::MCP_SERVER_NAME: {
-                                "type": "stdio",
-                                "command": server_bin,
-                                "args": ["approval-server"]
-                            }
+            }
+        }
+        // disallowedTools (mesclado): o gate de escrita (por modo) + os interativos.
+        cmd.arg("--disallowedTools").arg(disallowed.join(","));
+
+        // MCP server (socket) da interação inline: sobe SEMPRE que o app montou o
+        // socket, EXCETO FusionRo (que desliga MCP acima). Registra as 2 tools
+        // (approval_prompt + ask_user via tools/list). Só liga o
+        // --permission-prompt-tool no Padrão. Se o socket não montou, degrada p/ o
+        // comportamento de antes — nunca derruba o run. Ver approval.rs.
+        let mcp_on = !matches!(req.permission, Permission::FusionRo);
+        if mcp_on {
+            if let Some((server_bin, sock)) = &req.approval {
+                let mcp = serde_json::json!({
+                    "mcpServers": {
+                        crate::approval::MCP_SERVER_NAME: {
+                            "type": "stdio",
+                            "command": server_bin,
+                            "args": ["approval-server"]
                         }
-                    });
-                    cmd.arg("--mcp-config")
-                        .arg(mcp.to_string())
-                        .arg("--permission-prompt-tool")
-                        .arg(format!(
-                            "mcp__{}__{}",
-                            crate::approval::MCP_SERVER_NAME,
-                            crate::approval::APPROVAL_TOOL
-                        ));
-                    // o socket é lido pelo MCP server (subprocesso) via env.
-                    cmd.env(crate::approval::SOCK_ENV, sock);
+                    }
+                });
+                cmd.arg("--mcp-config").arg(mcp.to_string());
+                // permission-prompt-tool (aprovação granular) SÓ no Padrão.
+                if matches!(req.permission, Permission::Padrao) {
+                    cmd.arg("--permission-prompt-tool").arg(format!(
+                        "mcp__{}__{}",
+                        crate::approval::MCP_SERVER_NAME,
+                        crate::approval::APPROVAL_TOOL
+                    ));
                 }
+                // Nudge: manda o modelo usar a NOSSA ask_user em vez de perguntar em
+                // texto quando houver escolhas claras. Flag verificada em `claude
+                // --help`: `--append-system-prompt <prompt>`.
+                cmd.arg("--append-system-prompt").arg(format!(
+                    "Quando precisar de uma decisão ou escolha do usuário, chame a tool mcp__{}__{} (do MCP {}) com as perguntas e opções, em vez de escrever a pergunta como texto.",
+                    crate::approval::MCP_SERVER_NAME,
+                    crate::approval::ASK_USER_TOOL,
+                    crate::approval::MCP_SERVER_NAME,
+                ));
+                // o socket é lido pelo MCP server (subprocesso) via env.
+                cmd.env(crate::approval::SOCK_ENV, sock);
             }
         }
         // Claude: --model <alias> · --effort low|medium|high|xhigh|max (verificado)
