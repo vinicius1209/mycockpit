@@ -86,16 +86,22 @@ export default function App() {
       if (cancelled) return
       if (existing && existing.length > 0) {
         setProjects(existing)
-      } else {
-        for (const p of SEED) await insertProject(p) // 1º run: semeia o banco
+      } else if (import.meta.env.DEV) {
+        // DEV only: semeia projetos de exemplo por conveniência local. NUNCA no
+        // build distribuído — install novo do amigo começa VAZIO (nada fixo do
+        // ambiente de quem desenvolveu). O onboarding (docs/onboarding.md) guia
+        // a adição do 1º projeto real.
+        for (const p of SEED) await insertProject(p)
         const seeded = await listProjects()
-        if (!cancelled) setProjects(seeded ?? SEED)
+        if (!cancelled) setProjects(seeded ?? [])
+      } else {
+        if (!cancelled) setProjects([])
       }
     }
     load()
       .catch((e) => {
         console.error("Falha ao carregar projetos:", e)
-        if (!cancelled) setProjects(SEED)
+        if (!cancelled) setProjects(import.meta.env.DEV ? SEED : [])
       })
       .finally(() => {
         if (!cancelled) setReady(true)

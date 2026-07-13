@@ -1,6 +1,27 @@
 # Onboarding de primeira instalação
 
-Status: design (não implementado) · Escopo: macOS, Tauri 2 + React
+Status: design (parcialmente implementado) · Escopo: macOS, Tauri 2 + React
+
+## 0. Prontidão para distribuição ("nada fixo") — auditoria 2026-07-13
+
+Objetivo: o amigo instala o `.dmg`, abre, e nada do ambiente de quem
+desenvolveu aparece. Auditoria do que estava fixo:
+
+| Item | Onde | Risco | Status |
+|---|---|---|---|
+| Projetos seed com paths `/Users/viniciusmachado/...` | `App.tsx` SEED | **Alto** — install novo do amigo ganhava 3 projetos-fantasma no banco | ✅ resolvido: seed só em `import.meta.env.DEV`; build distribuído nasce vazio |
+| PATH mínimo da GUI não acha os agents | spawn dos CLIs | **Alto** — nenhum agent roda | ✅ resolvido (build #10, `path.rs`) |
+| `available: true/false` estático no registry | `agents.ts` | **Médio** — app assume claude/codex instalados sem checar a máquina | ⏳ resolve com `detect_agents` + wizard (abaixo) |
+| `SEED_REPO = github.com/vinicius1209/skills` | `sdd.rs` | **Baixo** — repo pessoal de skills como default do SDD | ⏳ avaliar: tornar configurável ou remover o default pessoal |
+| Credenciais em texto no chat (chave OpenAI, senha API) | histórico do usuário | n/a (dado do próprio usuário) | ⚠️ não é código; rotacionar |
+
+Itens de DEV que NÃO vão pro amigo (não são risco de distribuição): o helper de
+push com `vinicius1209` (é do fluxo de git local, não do app) e as fixtures de
+teste com `/Users/vini/...` (não empacotadas).
+
+Fora de escopo desta feature mas no radar de distribuição: **assinatura +
+notarização** do `.app`/`.dmg` (senão o Gatekeeper barra o amigo com "app não
+verificado"). Ver `docs/packaging.md`.
 
 ## Problema
 
@@ -39,15 +60,17 @@ interface DetectedTool {
 | swiftc (ditado) | `swiftc --version` (ou `xcrun --find swiftc`) | n/a → sempre `unknown`. Espelha o `--selfcheck` do sidecar stt: se o binário do sidecar já existe, pode rodar `mycockpit-stt --selfcheck` como bônus. |
 | git | `git --version` | n/a |
 
-### Resolução de PATH (gotcha crítico)
+### Resolução de PATH (gotcha crítico) — ✅ RESOLVIDO (build #10, 2026-07-13)
 
-App .app aberto pelo Finder herda PATH mínimo (`/usr/bin:/bin:…`) — `claude`
-vive em `~/.nvm/...`, `agy` em `~/.local/bin`, `codex` em `/opt/homebrew/bin`.
-O probe (e futuramente os adapters) deve resolver o binário via login shell:
-`/bin/zsh -lc 'command -v claude'`, cacheando o path absoluto no resultado
-(`detail`). Isso também explica/previne o erro "não consegui executar" em
-builds empacotados. O `detect_agents` devolve o path resolvido; fase 2 (fora
-deste escopo) é os adapters usarem esse path.
+App .app aberto pelo Finder herda PATH mínimo (`/usr/bin:/bin:…`) — `claude` e
+`codex` vivem em `/opt/homebrew/bin`, `agy` em `~/.local/bin`. Isso causava o
+erro "não consegui executar o agent `claude`: No such file or directory (os
+error 2)" no build empacotado (o `tauri dev` herdava o PATH rico do terminal).
+**Corrigido** em `src-tauri/src/path.rs` (`hydrate_path()` no início do `run()`):
+recupera o PATH do login shell (`$SHELL -l -c`) + garante dirs comuns, dedup +
+só os existentes. O `detect_agents` roda DEPOIS disso, então os probes já
+enxergam os binários. (Se um dia quisermos o path absoluto por agent, o probe
+pode devolvê-lo em `detail` — mas com o PATH hidratado não é mais necessário.)
 
 ## 2. Fluxo do wizard
 
