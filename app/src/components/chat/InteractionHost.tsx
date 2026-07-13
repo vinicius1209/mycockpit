@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react"
-import { ShieldQuestion, Check, X, Terminal, MessageCircleQuestion } from "lucide-react"
+import {
+  ShieldQuestion,
+  Check,
+  X,
+  Terminal,
+  MessageCircleQuestion,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react"
 import {
   onInteractionRequest,
   answerInteraction,
@@ -179,6 +187,9 @@ function QuestionCard({
   const [state, setState] = useState<QState[]>(() =>
     questions.map(() => ({ selected: new Set<string>(), other: "" })),
   )
+  // UMA pergunta por vez (stepper): mantém o card compacto e o chat visível, e
+  // valida só a pergunta atual (não exige todas de uma vez).
+  const [qi, setQi] = useState(0)
 
   function toggle(qi: number, label: string, multi: boolean) {
     setState((prev) =>
@@ -197,10 +208,16 @@ function QuestionCard({
   }
 
   // "Outro" preenchido conta como uma seleção; toda pergunta precisa de ≥1.
+  const answered = (i: number) =>
+    state[i].selected.size > 0 || state[i].other.trim().length > 0
   const complete = useMemo(
-    () => state.every((s) => s.selected.size > 0 || s.other.trim().length > 0),
+    () => state.every((_, i) => answered(i)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [state],
   )
+  const total = questions.length
+  const last = qi >= total - 1
+  const curAnswered = total > 0 && answered(qi)
 
   async function respond() {
     if (!complete) return
@@ -222,6 +239,8 @@ function QuestionCard({
     }
   }
 
+  const q = questions[qi]
+
   return (
     <div className="mb-2 rounded-lg border border-brass/40 bg-brass/[0.07] px-3 py-2.5">
       <div className="flex items-center gap-2">
@@ -231,68 +250,89 @@ function QuestionCard({
           <span className="font-medium text-brass">pausado</span> aguardando você.
           <QueueHint extra={extra} />
         </p>
+        {total > 1 && (
+          <span className="shrink-0 text-[11px] font-medium text-muted-foreground tabular-nums">
+            {qi + 1} de {total}
+          </span>
+        )}
       </div>
 
-      <div className="mt-2 flex flex-col gap-2.5">
-        {questions.map((q, qi) => {
-          const s = state[qi]
-          return (
-            <div key={q.header + qi} className="rounded-md border bg-card/70 px-2.5 py-2">
-              <p className="text-[12.5px] font-medium text-foreground">{q.question}</p>
-              <div className="mt-1.5 flex flex-col gap-1">
-                {q.options.map((o) => {
-                  const on = s.selected.has(o.label)
-                  return (
-                    <button
-                      key={o.label}
-                      type="button"
-                      onClick={() => toggle(qi, o.label, q.multiSelect)}
-                      className={cn(
-                        "flex items-start gap-2 rounded-md border px-2 py-1.5 text-left transition-colors hover:bg-accent",
-                        on ? "border-brass/60 bg-brass/[0.08]" : "border-border/60",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "mt-0.5 flex size-4 shrink-0 items-center justify-center border",
-                          q.multiSelect ? "rounded-[4px]" : "rounded-full",
-                          on ? "border-brass bg-brass text-background" : "border-muted-foreground/50",
-                        )}
-                      >
-                        {on && <Check className="size-3" />}
+      {q && (
+        <div className="mt-2 max-h-[52vh] overflow-y-auto rounded-md border bg-card/70 px-2.5 py-2">
+          <p className="text-[12.5px] font-medium text-foreground">{q.question}</p>
+          <div className="mt-1.5 flex flex-col gap-1">
+            {q.options.map((o) => {
+              const on = state[qi].selected.has(o.label)
+              return (
+                <button
+                  key={o.label}
+                  type="button"
+                  onClick={() => toggle(qi, o.label, q.multiSelect)}
+                  className={cn(
+                    "flex items-start gap-2 rounded-md border px-2 py-1.5 text-left transition-colors hover:bg-accent",
+                    on ? "border-brass/60 bg-brass/[0.08]" : "border-border/60",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "mt-0.5 flex size-4 shrink-0 items-center justify-center border",
+                      q.multiSelect ? "rounded-[4px]" : "rounded-full",
+                      on ? "border-brass bg-brass text-background" : "border-muted-foreground/50",
+                    )}
+                  >
+                    {on && <Check className="size-3" />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12.5px] text-foreground">{o.label}</span>
+                    {o.description && (
+                      <span className="block text-[11.5px] leading-snug text-muted-foreground">
+                        {o.description}
                       </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[12.5px] text-foreground">{o.label}</span>
-                        {o.description && (
-                          <span className="block text-[11.5px] leading-snug text-muted-foreground">
-                            {o.description}
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-              <input
-                type="text"
-                value={s.other}
-                onChange={(e) => setOther(qi, e.target.value)}
-                placeholder="Outro (opcional)…"
-                className="mt-1.5 w-full rounded-md border border-border/60 bg-transparent px-2 py-1 text-[12px] text-foreground placeholder:text-muted-foreground/70 focus-visible:border-brass/60 focus-visible:outline-none"
-              />
-            </div>
-          )
-        })}
-      </div>
+                    )}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          <input
+            type="text"
+            value={state[qi].other}
+            onChange={(e) => setOther(qi, e.target.value)}
+            placeholder={
+              q.multiSelect ? "Outro (opcional)…" : "Ou responda com suas palavras…"
+            }
+            className="mt-1.5 w-full rounded-md border border-border/60 bg-transparent px-2 py-1 text-[12px] text-foreground placeholder:text-muted-foreground/70 focus-visible:border-brass/60 focus-visible:outline-none"
+          />
+        </div>
+      )}
 
-      <div className="mt-2.5 flex items-center justify-end gap-2">
+      {/* Navegação: setinha p/ passar pelas perguntas; chat continua visível. */}
+      <div className="mt-2.5 flex items-center justify-between gap-2">
         <button
-          onClick={() => void respond()}
-          disabled={busy || !complete}
-          className="flex items-center gap-1.5 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+          onClick={() => setQi((i) => Math.max(0, i - 1))}
+          disabled={qi === 0 || busy}
+          className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent disabled:opacity-40"
         >
-          <Check className="size-3.5" /> Responder
+          <ChevronLeft className="size-3.5" /> Anterior
         </button>
+        {last ? (
+          <button
+            onClick={() => void respond()}
+            disabled={busy || !complete}
+            title={!complete ? "Responda todas as perguntas" : undefined}
+            className="flex items-center gap-1.5 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            <Check className="size-3.5" /> Responder
+          </button>
+        ) : (
+          <button
+            onClick={() => setQi((i) => Math.min(total - 1, i + 1))}
+            disabled={busy || !curAnswered}
+            className="flex items-center gap-1 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            Próxima <ChevronRight className="size-3.5" />
+          </button>
+        )}
       </div>
     </div>
   )
