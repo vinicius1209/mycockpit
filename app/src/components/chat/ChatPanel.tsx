@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ArrowDown, ChevronDown, ListChecks, Loader2 } from "lucide-react"
+import {
+  ArrowDown,
+  ChevronDown,
+  FolderGit2,
+  ListChecks,
+  Loader2,
+  X,
+} from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { deriveTasks } from "@/lib/tasks"
@@ -7,8 +14,9 @@ import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { MessageList } from "@/components/chat/MessageList"
 import { Reticle } from "@/components/common/Wordmark"
-import { useActiveProject } from "@/store/app"
+import { useActiveProject, useApp } from "@/store/app"
 import { useChat, useActiveConv } from "@/store/chat"
+import { writeMycockpitConfig } from "@/lib/mycockpit"
 import { useFusion } from "@/store/fusion"
 import { FusionBoard } from "@/components/fusion/FusionBoard"
 import { useMission } from "@/store/mission"
@@ -129,6 +137,47 @@ export function ChatPanel() {
 
   // destinationId = o agent escolhido no seletor (v0.2-α: o seam que descartava
   // o destino agora é threadado até o runAgent). Default 'claude-code'.
+  // Phase 3 do extra_dirs: libera a pasta detectada (persiste no config.toml +
+  // memória) e REENVIA o último pedido do usuário — o novo turno nasce com
+  // --add-dir (o gate de diretório é fixo no spawn). Só resolve entre turnos.
+  async function allowBlockedDir(dir: string) {
+    if (!project) return
+    const app = useApp.getState()
+    const cur = app.mycockpit[project.id]
+    if (cur?.extraDirs?.includes(dir)) {
+      // já liberado (corrida) → só limpa o aviso.
+      if (activeId) useChat.getState().clearBlockedDir(activeId)
+      return
+    }
+    const next = [...(cur?.extraDirs ?? []), dir]
+    try {
+      await writeMycockpitConfig(project.path, { extraDirs: next })
+    } catch {
+      toast.error("Não consegui salvar a pasta permitida no config.")
+      return
+    }
+    app.setMycockpit(project.id, {
+      exists: true,
+      permission: cur?.permission ?? project.permissionMode ?? "padrao",
+      helper: cur?.helper ?? "haiku",
+      mode: cur?.mode ?? "linear",
+      extraDirs: next,
+    })
+    if (activeId) useChat.getState().clearBlockedDir(activeId)
+    // reenvia o último pedido do usuário (novo turno, agora com acesso à pasta).
+    const items = useChat.getState().byId[activeId ?? ""]?.items ?? []
+    let lastUser = ""
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i]
+      if (it.kind === "user") {
+        lastUser = it.text
+        break
+      }
+    }
+    toast.success("Pasta liberada. Reenviando o pedido…")
+    if (lastUser) void handleSend(lastUser)
+  }
+
   async function handleSend(
     text: string,
     cfg?: AgentRunConfig,
@@ -376,6 +425,15 @@ export function ChatPanel() {
           </div>
         )}
         <div className="mx-auto max-w-[760px]">
+          {conv?.blockedDir && project && (
+            <BlockedDirBanner
+              dir={conv.blockedDir}
+              onAllow={() => void allowBlockedDir(conv.blockedDir!)}
+              onDismiss={() =>
+                activeId && useChat.getState().clearBlockedDir(activeId)
+              }
+            />
+          )}
           <CommandConsole
             onSend={handleSend}
             disabled={!project}
@@ -386,5 +444,45 @@ export function ChatPanel() {
         </div>
       </div>
     </section>
+  )
+}
+
+/** Banner (acima do composer) quando o agent bateu no gate de diretório: um
+ *  clique libera a pasta (--add-dir) e reenvia o pedido. Heurístico → dispensável. */
+function BlockedDirBanner({
+  dir,
+  onAllow,
+  onDismiss,
+}: {
+  dir: string
+  onAllow: () => void
+  onDismiss: () => void
+}) {
+  return (
+    <div className="mb-2 flex items-center gap-2.5 rounded-lg border border-st-warning/40 bg-st-warning/10 px-3 py-2">
+      <FolderGit2 className="size-4 shrink-0 text-st-warning" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[12.5px] text-foreground">
+          O agente parece ter sido barrado ao acessar uma pasta fora do projeto.
+        </p>
+        <p className="truncate font-mono text-[11px] text-muted-foreground" title={dir}>
+          {dir}
+        </p>
+      </div>
+      <button
+        onClick={onAllow}
+        className="shrink-0 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
+      >
+        Liberar e reenviar
+      </button>
+      <button
+        onClick={onDismiss}
+        title="Dispensar"
+        aria-label="Dispensar aviso"
+        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <X className="size-3.5" />
+      </button>
+    </div>
   )
 }

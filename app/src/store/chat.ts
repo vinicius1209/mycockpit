@@ -3,6 +3,7 @@ import type { AgentEvent, CostSource } from "@/lib/agent"
 import { suggest } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { wipeAttachments } from "@/lib/attachments"
+import { detectBlockedDir } from "@/lib/blockedDir"
 import {
   SUGGEST_PROMPT,
   SUGGEST_DEBOUNCE_MS,
@@ -95,6 +96,10 @@ export interface ConvState {
   /** Mensagens digitadas ENQUANTO o turno roda: enfileiradas e coalescidas num
    *  único envio quando o turno atual termina (Done). Efêmero (não persiste). */
   queued?: string[]
+  /** Pasta que o agent tentou acessar e foi barrada pelo gate de diretório
+   *  (detecção heurística em tool_result falho). Alimenta o banner "Liberar e
+   *  reenviar". Efêmero. null/undefined = nada bloqueado. */
+  blockedDir?: string | null
 }
 
 interface ChatState {
@@ -131,6 +136,8 @@ interface ChatState {
     attachments: Attachment[],
   ) => void
   handleEvent: (convId: string, e: AgentEvent) => void
+  /** Dispensa o aviso de pasta bloqueada desta conversa. */
+  clearBlockedDir: (convId: string) => void
   /** Revezamento: assume OUTRO agent na MESMA conversa (sessão zerada; o
    *  contexto vai por preâmbulo). NÃO adiciona item de usuário, o pedido
    *  pendente já está no fio. */
@@ -707,6 +714,7 @@ export const useChat = create<ChatState>((set, get) => {
               startedAt: Date.now(),
               suggestions: [],
               suggesting: false,
+              blockedDir: null, // novo turno zera o aviso de pasta bloqueada
             },
           },
         }
@@ -727,6 +735,25 @@ export const useChat = create<ChatState>((set, get) => {
         if (!cur) return {}
         return { byId: { ...s.byId, [convId]: { ...cur, ...reduceEvent(cur, e) } } }
       })
+      // Phase 3 do extra_dirs: tool_result FALHO citando pasta fora da raiz →
+      // marca blockedDir p/ o banner "Liberar e reenviar". Best-effort (heurístico).
+      if (e.type === "tool_result" && !e.ok) {
+        const cur = get().byId[convId]
+        const proj = cur
+          ? useApp.getState().projects.find((p) => p.id === cur.projectId)
+          : undefined
+        if (cur && proj && !cur.blockedDir) {
+          const allowed = useApp.getState().mycockpit[cur.projectId]?.extraDirs ?? []
+          const dir = detectBlockedDir(e.text, proj.path, allowed)
+          if (dir) {
+            set((s) => {
+              const c = s.byId[convId]
+              if (!c) return {}
+              return { byId: { ...s.byId, [convId]: { ...c, blockedDir: dir } } }
+            })
+          }
+        }
+      }
       // Persistência incremental (sobrevive a interrupção mid-run):
       if (e.type === "session") {
         // session_id é barato e torna o run RESUMÍVEL → grava na hora.
@@ -741,6 +768,13 @@ export const useChat = create<ChatState>((set, get) => {
         schedulePersist(convId)
       }
     },
+
+    clearBlockedDir: (convId) =>
+      set((s) => {
+        const cur = s.byId[convId]
+        if (!cur || !cur.blockedDir) return {}
+        return { byId: { ...s.byId, [convId]: { ...cur, blockedDir: null } } }
+      }),
 
     beginTransplant: (convId, runId, agent) =>
       set((s) => {
