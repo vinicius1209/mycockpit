@@ -11,21 +11,27 @@ import { cn } from "@/lib/utils"
 
 const MODES = [
   {
+    id: "painel",
+    label: "Painel",
+    available: true,
+    desc: "Mission control: rodando agora, decisões e entregas de todos os projetos",
+  },
+  {
     id: "linear",
-    label: "Linear",
+    label: "Trabalho",
     available: true,
     desc: "Fluxo simples com um agente principal",
   },
   {
     id: "sdd",
-    label: "SDD",
+    label: "Features",
     available: true,
     desc: "Planeje, contrate e entregue uma feature com gates de verificação",
   },
 ] as const
 
-/** Seletor de modo de trabalho: Linear | SDD (F3: o Fusion virou o ⚔️ do
- *  composer — a disputa vive dentro da conversa, não numa superfície). */
+/** Seletor de superfície (F4): Painel | Trabalho | Features. O Fusion virou o
+ *  ⚔️ do composer — a disputa vive dentro da conversa, não numa superfície. */
 function ModeSwitcher() {
   const viewMode = useApp((s) => s.viewMode)
   const setViewMode = useApp((s) => s.setViewMode)

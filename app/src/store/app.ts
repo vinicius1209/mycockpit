@@ -24,9 +24,11 @@ interface AppState {
   theme: Theme
   sidebarOpen: boolean
   contextOpen: boolean
-  /** Modo do centro: chat Linear ou o pipeline do SDD (F3: a disputa Fusion
-   *  vive dentro da conversa via ⚔️ do composer, não é mais um modo). */
-  viewMode: "linear" | "sdd"
+  /** Superfície do centro (F4): Painel (home cross-projeto), Trabalho (chat
+   *  Linear) ou Features (SDD). A disputa Fusion vive dentro da conversa via
+   *  ⚔️ do composer, não é um modo. Valores antigos ("linear"/"sdd") seguem
+   *  válidos → sem migração de persist. */
+  viewMode: "painel" | "linear" | "sdd"
   ready: boolean
   /** Config por projeto vinda de .mycockpit/config.toml (Fase 1). */
   mycockpit: Record<string, ProjectConfig>
@@ -58,7 +60,7 @@ interface AppState {
   toggleTheme: () => void
   toggleSidebar: () => void
   toggleContext: () => void
-  setViewMode: (m: "linear" | "sdd") => void
+  setViewMode: (m: "painel" | "linear" | "sdd") => void
   setReady: (v: boolean) => void
   setAgentLimited: (agent: string, resetHint: string | null) => void
   clearAgentLimited: (agent: string) => void

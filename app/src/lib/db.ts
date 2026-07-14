@@ -707,6 +707,30 @@ export async function listDeliveries(
   }
 }
 
+/** Entrega com o projeto dono — o Painel (F4) lista cross-projeto. */
+export interface RecentDelivery extends DeliveryRecord {
+  projectId: string
+}
+
+/** Entregas mais recentes de TODOS os projetos (Painel, bloco "Entregas
+ *  recentes"): mais nova primeiro, limitado. */
+export async function listRecentDeliveries(
+  limit = 8,
+): Promise<RecentDelivery[]> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    await ensureLearningTables(db)
+    const rows = await db.select<(DeliveryRow & { project_id: string })[]>(
+      "SELECT id, project_id, task, plan_summary, files_touched, cost_usd, agent, model, created_at FROM deliveries ORDER BY created_at DESC LIMIT $1",
+      [limit],
+    )
+    return rows.map((r) => ({ ...toDelivery(r), projectId: r.project_id }))
+  } catch {
+    return []
+  }
+}
+
 export interface LessonRecord {
   id: string
   rule: string

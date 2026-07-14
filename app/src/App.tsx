@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/layout/Sidebar"
 import { ContextPanel } from "@/components/layout/ContextPanel"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { SddView } from "@/components/sdd/SddView"
+import { MissionControl } from "@/components/panel/MissionControl"
 import { CommandMenu } from "@/components/common/CommandMenu"
 import { SettingsDialog } from "@/components/settings/SettingsDialog"
 import { ConfirmHost } from "@/components/common/confirm"
@@ -175,7 +176,13 @@ export default function App() {
                     className="h-full"
                   >
                     <ResizablePanel id="chat" defaultSize="70%" minSize="42%">
-                      {viewMode === "sdd" ? <SddView /> : <ChatPanel />}
+                      {viewMode === "painel" ? (
+                        <MissionControl />
+                      ) : viewMode === "sdd" ? (
+                        <SddView />
+                      ) : (
+                        <ChatPanel />
+                      )}
                     </ResizablePanel>
                     {contextOpen && viewMode === "linear" && (
                       <>
