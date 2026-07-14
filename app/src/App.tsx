@@ -123,10 +123,12 @@ export default function App() {
     }
   }, [setProjects, setReady])
 
-  // Verificador de update dos agents (1x/dia no boot): re-detecta versões
-  // (instalada + latest do canal oficial), persiste o snapshot e notifica UMA
-  // vez por versão nova (dedupe em lastNotifiedVersions). No mesmo boot,
-  // atualiza os modelos dinâmicos do agy (falha → lista estática continua).
+  // Verificador de update dos agents: a DETECÇÃO roda em TODO boot (probes
+  // locais + latest, tudo paralelo e best-effort — o snapshot persistido nunca
+  // fica mentindo depois de um `npm i -g`/`brew upgrade` feito fora do app; foi
+  // um bug real: badges de update pra versões já instaladas). O que fica no
+  // gate diário é só o trabalho de rede não-essencial (catálogo de preços +
+  // curador semanal); a NOTIFICAÇÃO continua com dedupe por versão.
   useEffect(() => {
     if (!isTauri()) return
     // modelos reais do `agy models` → cache dinâmico (barato, todo boot).
@@ -134,14 +136,15 @@ export default function App() {
     // modelos aprovados do curador → cache do picker (barato, todo boot).
     void reloadActiveProposals()
     const last = useApp.getState().settings.lastUpdateCheck ?? 0
-    if (Date.now() - last < UPDATE_CHECK_INTERVAL_MS) return
-    // Camada A: refresh do catálogo de preços (models.dev) — best-effort (rede
-    // falhou = silêncio). Depois, o curador semanal (self-gated em
-    // lastCuratorRun; nunca roda com o helper global desligado).
-    void (async () => {
-      await refreshCatalogIntoSettings()
-      await runModelCurator()
-    })()
+    if (Date.now() - last >= UPDATE_CHECK_INTERVAL_MS) {
+      // Camada A: refresh do catálogo de preços (models.dev) — best-effort
+      // (rede falhou = silêncio). Depois, o curador semanal (self-gated em
+      // lastCuratorRun; nunca roda com o helper global desligado).
+      void (async () => {
+        await refreshCatalogIntoSettings()
+        await runModelCurator()
+      })()
+    }
     void (async () => {
       const tools = await detectAgents()
       const now = Date.now()
