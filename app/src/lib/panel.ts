@@ -94,6 +94,13 @@ export function prHealth(e: PrEnrichment | null | undefined): PrHealth {
   return "unknown"
 }
 
+/** PR já resolvida no GitHub (mergeada/fechada) — o manifest SDD local pode
+ *  estar desatualizado (merge feito fora do app), então o `state` real do
+ *  gh_pr_view é quem tira o card da fila (auto-cura da exibição). */
+export function prResolved(e: PrEnrichment | null | undefined): boolean {
+  return e != null && (e.state === "MERGED" || e.state === "CLOSED")
+}
+
 /** Rank da fila: PR checks-verdes (0) → disputa (1) → PRD (2) → PR sem dado /
  *  checks rodando (3) → PR com checks falhando por último (4). */
 export function queueRank(

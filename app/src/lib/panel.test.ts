@@ -7,6 +7,7 @@ import {
   parsePrView,
   mergeEligible,
   prHealth,
+  prResolved,
   orderQueue,
   costWindows,
   type PrEnrichment,
@@ -107,6 +108,18 @@ describe("parsePrView", () => {
     expect(e!.mergeable).toBe("")
     expect(e!.updatedAt).toBeNull()
     expect(e!.checksTotal).toBe(0)
+  })
+})
+
+describe("prResolved (auto-cura: merge feito fora do app)", () => {
+  it("MERGED/CLOSED → resolvida (sai da fila)", () => {
+    expect(prResolved(enr({ state: "MERGED" }))).toBe(true)
+    expect(prResolved(enr({ state: "CLOSED" }))).toBe(true)
+  })
+  it("OPEN ou sem enriquecimento → segue na fila", () => {
+    expect(prResolved(enr({ state: "OPEN" }))).toBe(false)
+    expect(prResolved(null)).toBe(false)
+    expect(prResolved(undefined)).toBe(false)
   })
 })
 

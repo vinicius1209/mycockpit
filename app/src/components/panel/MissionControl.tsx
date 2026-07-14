@@ -25,6 +25,7 @@ import {
   mergePr,
   orderQueue,
   prHealth,
+  prResolved,
   type PrEnrichment,
 } from "@/lib/panel"
 import { updateAvailable } from "@/lib/detect"
@@ -501,8 +502,12 @@ export function MissionControl() {
           "Disputa aguardando decisão",
       })
     }
+    // PR sai da fila se: mergeada nesta sessão OU o GitHub diz que já foi
+    // resolvida (merge feito fora do app — o manifest SDD local fica velho).
     const all = [...extra, ...decisions].filter(
-      (d) => d.kind !== "pr" || !merged.has(d.prUrl),
+      (d) =>
+        d.kind !== "pr" ||
+        (!merged.has(d.prUrl) && !prResolved(prData[d.prUrl])),
     )
     return orderQueue(all, prData)
   }, [decisions, decidingKey, projects, prData, merged])

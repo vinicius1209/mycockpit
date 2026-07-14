@@ -39,8 +39,15 @@ pub fn validate_pr_url(url: &str) -> Result<(), String> {
 
 /// Roda `gh` com args + timeout; devolve stdout em sucesso, Err curto em
 /// falha/timeout/gh ausente. O arg de URL já foi validado pelo chamador.
-async fn run_gh(args: &[&str], dur: Duration) -> Result<String, String> {
-    let out = timeout(dur, Command::new("gh").args(args).output())
+/// `token`: quando presente, vai como GH_TOKEN (vence o keyring) — é como o
+/// fallback multi-conta tenta outra identidade SEM trocar a conta ativa global.
+async fn run_gh(args: &[&str], dur: Duration, token: Option<&str>) -> Result<String, String> {
+    let mut cmd = Command::new("gh");
+    cmd.args(args);
+    if let Some(t) = token {
+        cmd.env("GH_TOKEN", t);
+    }
+    let out = timeout(dur, cmd.output())
         .await
         .map_err(|_| "gh demorou demais (timeout)".to_string())?
         .map_err(|_| "gh não encontrado na máquina".to_string())?;
@@ -55,6 +62,56 @@ async fn run_gh(args: &[&str], dur: Duration) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// Extrai os usuários logados do output de `gh auth status` (linhas
+/// "… account <nome> (keyring)"). Separado do subprocess p/ ser testável.
+fn parse_gh_accounts(status: &str) -> Vec<String> {
+    status
+        .lines()
+        .filter_map(|l| {
+            let (_, rest) = l.split_once(" account ")?;
+            let name = rest.split_whitespace().next()?;
+            (!name.is_empty()).then(|| name.to_string())
+        })
+        .collect()
+}
+
+/// Roda `gh` tentando TODAS as identidades logadas: 1º a conta ativa (keyring);
+/// se falhar, cada outra conta via `gh auth token --user X` + GH_TOKEN. Caso
+/// real: usuário com conta pessoal + de trabalho — a PR pode ser visível só pra
+/// conta que NÃO está ativa. Nunca troca a conta ativa global (sem `auth switch`).
+async fn run_gh_any_account(args: &[&str], dur: Duration) -> Result<String, String> {
+    let first_err = match run_gh(args, dur, None).await {
+        Ok(out) => return Ok(out),
+        Err(e) => e,
+    };
+    // `gh auth status` sai com código != 0 em cenários parciais → lê o output
+    // mesmo em "falha" rodando via output() direto (run_gh exigiria sucesso).
+    let status = match timeout(
+        Duration::from_secs(4),
+        Command::new("gh").args(["auth", "status"]).output(),
+    )
+    .await
+    {
+        Ok(Ok(o)) => format!(
+            "{}{}",
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr)
+        ),
+        _ => return Err(first_err),
+    };
+    for user in parse_gh_accounts(&status) {
+        let Ok(token) =
+            run_gh(&["auth", "token", "--user", &user], Duration::from_secs(4), None).await
+        else {
+            continue;
+        };
+        if let Ok(out) = run_gh(args, dur, Some(&token)).await {
+            return Ok(out);
+        }
+    }
+    Err(first_err)
+}
+
 /// Estado rico do PR pro card do Painel. Devolve o JSON CRU do `gh pr view`
 /// (state, checks, diffstat, mergeable, review, título…) — quem interpreta é o
 /// frontend. Qualquer erro → Err com mensagem curta e o front degrada pro card
@@ -62,7 +119,7 @@ async fn run_gh(args: &[&str], dur: Duration) -> Result<String, String> {
 #[tauri::command]
 pub async fn gh_pr_view(url: String) -> Result<serde_json::Value, String> {
     validate_pr_url(&url)?;
-    let out = run_gh(
+    let out = run_gh_any_account(
         &[
             "pr",
             "view",
@@ -82,7 +139,7 @@ pub async fn gh_pr_view(url: String) -> Result<serde_json::Value, String> {
 #[tauri::command]
 pub async fn gh_pr_merge(url: String) -> Result<String, String> {
     validate_pr_url(&url)?;
-    run_gh(
+    run_gh_any_account(
         &["pr", "merge", &url, "--squash", "--delete-branch=false"],
         MERGE_TIMEOUT,
     )
@@ -131,5 +188,12 @@ mod tests {
         assert!(validate_pr_url("https://github.com/owner/repo/pull/abc").is_err());
         assert!(validate_pr_url("https://github.com/owner/repo/pull/12a").is_err());
         assert!(validate_pr_url("https://github.com/owner/repo/pull/").is_err());
+    }
+
+    #[test]
+    fn parse_accounts_do_auth_status() {
+        let s = "github.com\n  ✓ Logged in to github.com account alice (keyring)\n  - Active account: true\n  ✓ Logged in to github.com account bob-work (keyring)\n";
+        assert_eq!(parse_gh_accounts(s), vec!["alice", "bob-work"]);
+        assert!(parse_gh_accounts("nada logado").is_empty());
     }
 }
