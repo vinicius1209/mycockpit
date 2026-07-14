@@ -31,6 +31,14 @@ pub struct RunRequest {
     /// (= este app, subcomando `approval-server`); `.1` = path do socket app↔server
     /// (por-run). None = sem interação inline (degrada p/ o comportamento de antes).
     pub approval: Option<(String, String)>,
+    /// "Planejar primeiro" POR TURNO: o agent só planeja, não edita. O default
+    /// false vale p/ turnos antigos/sem o campo — o struct não é desserializado
+    /// (é montado no run_agent a partir dos params do invoke), então o default
+    /// fica na fronteira (`Option<bool>::unwrap_or(false)` no comando tauri).
+    /// Cada adapter traduz: claude `--permission-mode plan` (validado 2.1.209,
+    /// headless planeja e NÃO edita); codex força `-s read-only` (sandbox de OS);
+    /// agy emula por prompt + --sandbox (melhor esforço, ver AgyAdapter).
+    pub plan_first: bool,
 }
 
 /// Política de permissão POR RUN, parseada UMA vez na fronteira (run_agent).
@@ -201,12 +209,23 @@ impl AgentAdapter for ClaudeAdapter {
                     .arg("--mcp-config")
                     .arg("{\"mcpServers\":{}}");
             }
+            // "Planejar primeiro" SUBSTITUI o --permission-mode do modo neste
+            // turno (senão emitiríamos a flag 2x). Emitido logo abaixo.
+            Permission::Liberado | Permission::Padrao if req.plan_first => {}
             Permission::Liberado => {
                 cmd.arg("--permission-mode").arg("bypassPermissions");
             }
             Permission::Padrao => {
                 cmd.arg("--permission-mode").arg("acceptEdits");
             }
+        }
+        // "Planejar primeiro" (validado claude 2.1.209): `-p --permission-mode plan`
+        // planeja e NÃO edita; o plano sai como texto final (ExitPlanMode não existe
+        // no headless — segue no disallow — e o gate de execução é o nosso, na UI).
+        // Em Leitura/FusionRo o disallow de escrita acima fica: plan por cima não
+        // conflita. O --permission-prompt-tool do Padrão pode ficar (inofensivo).
+        if req.plan_first {
+            cmd.arg("--permission-mode").arg("plan");
         }
         // disallowedTools (mesclado): o gate de escrita (por modo) + os interativos.
         cmd.arg("--disallowedTools").arg(disallowed.join(","));
@@ -544,11 +563,18 @@ impl AgentAdapter for CodexAdapter {
             .arg("-C")
             .arg(&req.cwd)
             .current_dir(&req.cwd);
-        // permissão (3 níveis) → sandbox do Codex (exec não tem --ask-for-approval)
-        let sandbox = match req.permission {
-            Permission::Leitura | Permission::FusionRo => "read-only",
-            Permission::Liberado => "danger-full-access",
-            Permission::Padrao => "workspace-write",
+        // permissão (3 níveis) → sandbox do Codex (exec não tem --ask-for-approval).
+        // "Planejar primeiro" força read-only NESTE turno, ignorando o mapeamento
+        // do modo: sandbox de OS segura de verdade (validado codex 0.144.4). As
+        // OPTIONS (-s, --json…) vêm ANTES do subcomando `resume` — depois, falham.
+        let sandbox = if req.plan_first {
+            "read-only"
+        } else {
+            match req.permission {
+                Permission::Leitura | Permission::FusionRo => "read-only",
+                Permission::Liberado => "danger-full-access",
+                Permission::Padrao => "workspace-write",
+            }
         };
         cmd.arg("-s").arg(sandbox);
         // Codex: -m <model> · effort via override de config (não tem flag dedicada
@@ -756,8 +782,21 @@ impl AgentAdapter for AgyAdapter {
 
     fn build_command(&mut self, req: &RunRequest) -> Result<Command, String> {
         let mut cmd = Command::new("agy");
+        // "Planejar primeiro" no agy é EMULAÇÃO POR PROMPT + --sandbox, sem
+        // garantia dura: o `--mode plan` do agy 1.1.2 é CONSULTIVO e FUROU no
+        // teste de 2026-07 (criou e executou arquivos no scratch com
+        // --dangerously-skip-permissions em headless) → NÃO usamos --mode plan.
+        // Melhor esforço documentado; o gate real de execução é o nosso, na UI.
+        let prompt = if req.plan_first {
+            format!(
+                "MODO PLANEJAMENTO: NÃO crie nem edite arquivos, NÃO execute comandos com efeito. Apenas apresente o plano de implementação passo a passo, com arquivos e riscos.\n\nTarefa: {}",
+                req.prompt
+            )
+        } else {
+            req.prompt.clone()
+        };
         cmd.arg("-p")
-            .arg(&req.prompt)
+            .arg(&prompt)
             // amarra o cwd real (senão o print mode edita o scratch, não o repo).
             .arg("--add-dir")
             .arg(&req.cwd)
@@ -775,10 +814,12 @@ impl AgentAdapter for AgyAdapter {
             }
         }
         // print mode não tem TUI p/ aprovar mid-run e o stdin é null → auto-aprova
-        // sempre (senão trava). Leitura/Fusion ganham --sandbox como MELHOR ESFORÇO
-        // (não é read-only real; limite documentado, igual PTY no agent-runner.md §7).
+        // sempre (senão trava). Leitura/Fusion — e "Planejar primeiro" — ganham
+        // --sandbox como MELHOR ESFORÇO (não é read-only real; limite documentado,
+        // igual PTY no agent-runner.md §7). Emitido UMA vez (sem duplicar quando
+        // plan_first coincide com Leitura/Fusion).
         cmd.arg("--dangerously-skip-permissions");
-        if matches!(req.permission, Permission::Leitura | Permission::FusionRo) {
+        if req.plan_first || matches!(req.permission, Permission::Leitura | Permission::FusionRo) {
             cmd.arg("--sandbox");
         }
         Ok(cmd)
@@ -836,4 +877,120 @@ fn codex_config_model() -> String {
         .and_then(|t| t.parse::<toml_edit::DocumentMut>().ok())
         .and_then(|doc| doc.get("model").and_then(|v| v.as_str()).map(str::to_string))
         .unwrap_or_else(|| "gpt-5.5".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// RunRequest mínimo p/ testar build_command (sem spawnar nada).
+    fn req(permission: Permission, plan_first: bool) -> RunRequest {
+        RunRequest {
+            prompt: "faça X".to_string(),
+            cwd: ".".to_string(),
+            resume: None,
+            permission,
+            model: None,
+            effort: None,
+            attachments: Vec::new(),
+            extra_dirs: Vec::new(),
+            approval: None,
+            plan_first,
+        }
+    }
+
+    /// argv do Command montado (só os args; o programa fica de fora).
+    fn argv(cmd: &Command) -> Vec<String> {
+        cmd.as_std()
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// O par `--flag valor` aparece no argv (adjacente, na ordem)?
+    fn has_pair(args: &[String], flag: &str, value: &str) -> bool {
+        args.windows(2).any(|w| w[0] == flag && w[1] == value)
+    }
+
+    // ---- claude ----
+
+    #[test]
+    fn claude_plan_first_troca_permission_mode_por_plan() {
+        for perm in [Permission::Padrao, Permission::Liberado] {
+            let mut a = ClaudeAdapter;
+            let args = argv(&a.build_command(&req(perm, true)).unwrap());
+            assert!(has_pair(&args, "--permission-mode", "plan"));
+            assert!(!args.contains(&"acceptEdits".to_string()));
+            assert!(!args.contains(&"bypassPermissions".to_string()));
+            // uma única --permission-mode (plan substitui, não acumula)
+            assert_eq!(args.iter().filter(|x| *x == "--permission-mode").count(), 1);
+            // built-ins interativos seguem no disallow (ExitPlanMode erra no -p)
+            assert!(args.iter().any(|x| x.contains("ExitPlanMode")));
+        }
+    }
+
+    #[test]
+    fn claude_sem_plan_first_mantem_modo_do_turno() {
+        let mut a = ClaudeAdapter;
+        let args = argv(&a.build_command(&req(Permission::Padrao, false)).unwrap());
+        assert!(has_pair(&args, "--permission-mode", "acceptEdits"));
+        let mut a = ClaudeAdapter;
+        let args = argv(&a.build_command(&req(Permission::Liberado, false)).unwrap());
+        assert!(has_pair(&args, "--permission-mode", "bypassPermissions"));
+    }
+
+    #[test]
+    fn claude_plan_first_em_leitura_mantem_disallow_de_escrita() {
+        let mut a = ClaudeAdapter;
+        let args = argv(&a.build_command(&req(Permission::Leitura, true)).unwrap());
+        assert!(has_pair(&args, "--permission-mode", "plan"));
+        assert!(args.iter().any(|x| x.contains("Bash,Edit,Write")));
+    }
+
+    // ---- codex ----
+
+    #[test]
+    fn codex_plan_first_forca_sandbox_read_only() {
+        // até no Liberado (danger-full-access) o turno de plano vira read-only
+        for perm in [Permission::Padrao, Permission::Liberado] {
+            let mut a = CodexAdapter::default();
+            let args = argv(&a.build_command(&req(perm, true)).unwrap());
+            assert!(has_pair(&args, "-s", "read-only"));
+        }
+        // sem plan_first, o mapeamento do modo segue valendo
+        let mut a = CodexAdapter::default();
+        let args = argv(&a.build_command(&req(Permission::Padrao, false)).unwrap());
+        assert!(has_pair(&args, "-s", "workspace-write"));
+    }
+
+    // ---- agy ----
+
+    #[test]
+    fn agy_plan_first_prefixa_prompt_e_liga_sandbox() {
+        let mut a = AgyAdapter::default();
+        let args = argv(&a.build_command(&req(Permission::Padrao, true)).unwrap());
+        // prompt é o arg logo após o -p
+        let i = args.iter().position(|x| x == "-p").unwrap();
+        assert!(args[i + 1].starts_with("MODO PLANEJAMENTO:"));
+        assert!(args[i + 1].contains("Tarefa: faça X"));
+        assert!(args.contains(&"--sandbox".to_string()));
+        // emulação NÃO usa --mode plan (consultivo; furou o gate em 2026-07)
+        assert!(!args.contains(&"--mode".to_string()));
+    }
+
+    #[test]
+    fn agy_sandbox_nao_duplica_em_leitura_com_plan_first() {
+        let mut a = AgyAdapter::default();
+        let args = argv(&a.build_command(&req(Permission::Leitura, true)).unwrap());
+        assert_eq!(args.iter().filter(|x| *x == "--sandbox").count(), 1);
+    }
+
+    #[test]
+    fn agy_sem_plan_first_prompt_intacto() {
+        let mut a = AgyAdapter::default();
+        let args = argv(&a.build_command(&req(Permission::Padrao, false)).unwrap());
+        let i = args.iter().position(|x| x == "-p").unwrap();
+        assert_eq!(args[i + 1], "faça X");
+        assert!(!args.contains(&"--sandbox".to_string()));
+    }
 }

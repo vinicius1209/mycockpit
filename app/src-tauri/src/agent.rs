@@ -179,6 +179,9 @@ pub async fn run_agent(
     cwd: String,
     resume: Option<String>,
     permission: String,
+    // "Planejar primeiro" POR TURNO. Option = default: invoke antigo/sem o campo
+    // (`planFirst` no front) desserializa como None → false (nunca quebra turno velho).
+    plan_first: Option<bool>,
     attachments: Vec<Attachment>,
     on_event: Channel<AgentEvent>,
     registry: tauri::State<'_, RunRegistry>,
@@ -272,6 +275,7 @@ pub async fn run_agent(
         attachments: used,
         extra_dirs,
         approval,
+        plan_first: plan_first.unwrap_or(false),
     };
     let resume_was = req.resume.is_some();
     let cmd = adapter.build_command(&req)?;

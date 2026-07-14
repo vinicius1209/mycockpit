@@ -22,6 +22,9 @@ export interface AgentRunConfig {
   agent: string
   model: string | null
   effort: string | null
+  /** "Planejar primeiro" (por turno): o motor segura os writes e o agent só
+   *  propõe um plano; a execução vem num turno seguinte, após aprovação. */
+  planFirst?: boolean
 }
 
 /** Destino do console de comando: um agent ou (futuro) um modelo direto. */

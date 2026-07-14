@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowDown,
   ChevronDown,
+  ClipboardList,
   FolderGit2,
   ListChecks,
   Loader2,
@@ -25,6 +26,7 @@ import { useMission } from "@/store/mission"
 import { MissionTimeline } from "@/components/mission/MissionTimeline"
 import { runAgent, cancelAgent, agentLabel } from "@/lib/agent"
 import { buildHandoff } from "@/lib/handoff"
+import { buildExecutionPrompt, extractPlanText, turnEndedOk } from "@/lib/planMode"
 import { wantsAutoResume } from "@/lib/autoResume"
 import { notifyTurnEnd } from "@/lib/notify"
 import type { Attachment } from "@/lib/attachments"
@@ -245,6 +247,10 @@ export function ChatPanel() {
     const agent = locked ? conv!.agent : (cfg?.agent ?? "claude-code")
     const model = locked ? conv!.reqModel : (cfg?.model ?? null)
     const effort = locked ? conv!.effort : (cfg?.effort ?? null)
+    // "Planejar primeiro" é POR TURNO (não trava com a conv): o cfg do composer
+    // carrega o toggle; envios sem cfg (⌘K, fila coalescida) leem o toggle da
+    // conversa. Auto-resume nunca planeja (é continuação de execução).
+    const planFirst = !fromAutoResume && (cfg?.planFirst ?? !!conv.planFirst)
     const runId = crypto.randomUUID()
     const sessionId = conv?.sessionId ?? null
     // cwd = worktree isolado da conversa (v2.5), senão a pasta compartilhada do projeto.
@@ -283,12 +289,22 @@ export function ChatPanel() {
         project.permissionMode ?? "padrao",
         attachments,
         (e) => useChat.getState().handleEvent(convId, e),
+        planFirst,
       )
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha ao executar o agent")
     } finally {
       useChat.getState().finish(convId)
       void useChat.getState().persist(convId)
+      // Gate de plano: o turno plan_first terminou BEM → captura o texto final
+      // do assistente (o plano) e arma o card "Aprovar e executar / Descartar".
+      // Um envio manual posterior limpa o estado (start zera pendingPlan).
+      if (planFirst) {
+        const after = useChat.getState().byId[convId]
+        const planText =
+          after && turnEndedOk(after.items) ? extractPlanText(after.items) : null
+        if (planText) useChat.getState().setPendingPlan(convId, planText)
+      }
       // Fila: junta as mensagens digitadas durante o turno num ÚNICO envio (resume).
       // Se há fila, o próximo turno já começa; senão, agenda as sugestões.
       const pending = useChat.getState().dequeueQueued(convId)
@@ -413,6 +429,21 @@ export function ChatPanel() {
       notifyTurnEnd(convId, target)
       useChat.getState().scheduleSuggestions(convId)
     }
+  }
+
+  // "Planejar primeiro": plano aprovado → dispara o turno de EXECUÇÃO (turno
+  // normal, SEM plan_first; o toggle da conversa desliga sozinho). claude/codex
+  // continuam via resume (o contexto do plano já está na sessão); agy não tem
+  // resume → o prompt embute o texto do plano aprovado.
+  function handleApprovePlan() {
+    const convId = useChat.getState().activeId
+    if (!convId) return
+    const c = useChat.getState().byId[convId]
+    if (!c?.pendingPlan || c.running || c.finalizing) return
+    const prompt = buildExecutionPrompt(c.agent, c.pendingPlan.text)
+    useChat.getState().clearPendingPlan(convId)
+    useChat.getState().setPlanFirst(convId, false)
+    void handleSend(prompt)
   }
 
   function handleStop() {
@@ -564,6 +595,14 @@ export function ChatPanel() {
         <div className="mx-auto max-w-[760px]">
           {/* Interação pendente (padrão unificado): turno pausado — aprovação ou pergunta. */}
           <InteractionHost />
+          {conv?.pendingPlan && !running && !finalizing && (
+            <PlanPendingCard
+              onApprove={handleApprovePlan}
+              onDiscard={() =>
+                activeId && useChat.getState().clearPendingPlan(activeId)
+              }
+            />
+          )}
           {conv?.autoResume && (
             <AutoResumeBanner
               nextAt={conv.autoResume.nextAt}
@@ -608,6 +647,45 @@ export function ChatPanel() {
         </div>
       </div>
     </section>
+  )
+}
+
+/** Card do "Planejar primeiro" (abaixo do último turno, acima do composer):
+ *  o turno plan_first terminou e o plano proposto está logo acima no fio.
+ *  Aprovar dispara o turno de execução; Descartar só limpa o estado (a conversa
+ *  segue normal). Visual no padrão dos cards de decisão (InteractionHost). */
+function PlanPendingCard({
+  onApprove,
+  onDiscard,
+}: {
+  onApprove: () => void
+  onDiscard: () => void
+}) {
+  return (
+    <div className="mb-2 rounded-lg border border-brass/40 bg-brass/[0.07] px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <ClipboardList className="size-4 shrink-0 text-brass" />
+        <p className="min-w-0 flex-1 text-[12.5px] text-foreground">
+          📋 <span className="font-medium">Plano proposto</span> — revise acima:
+          o agent só executa depois da{" "}
+          <span className="font-medium text-brass">sua aprovação</span>.
+        </p>
+      </div>
+      <div className="mt-2.5 flex items-center justify-end gap-2">
+        <button
+          onClick={onDiscard}
+          className="rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
+        >
+          Descartar
+        </button>
+        <button
+          onClick={onApprove}
+          className="rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
+        >
+          Aprovar e executar
+        </button>
+      </div>
+    </div>
   )
 }
 

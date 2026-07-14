@@ -134,12 +134,18 @@ export function CommandConsole({
     !missionRunning &&
     allSupported
 
+  // "Planejar primeiro" (por conversa, na store): NÃO trava com a conversa — é
+  // um modo do PRÓXIMO envio, não config fixa do 1º run. Fica ligado até o
+  // usuário desligar (ou até aprovar um plano, que desliga sozinho).
+  const planFirst = !!conv.planFirst
+
   // config EFETIVO (numa conv travada = o do 1º run, exibido nos pills), nunca o
   // estado local cru, que sobra de outra conv e não reseta na troca.
   const effCfg = {
     agent: effectiveDest,
     model: effectiveModel === "default" ? null : effectiveModel,
     effort: effectiveEffort === "default" ? null : effectiveEffort,
+    planFirst,
   }
 
   function submit() {
@@ -323,6 +329,11 @@ export function CommandConsole({
             onMission={() => setMissionOpen(true)}
             missionDisabled={disabled || running || finalizing || missionRunning}
             onAttach={attach}
+            planFirst={planFirst}
+            onTogglePlanFirst={() => {
+              const id = useChat.getState().activeId
+              if (id) useChat.getState().setPlanFirst(id, !planFirst)
+            }}
             running={running}
             onStop={onStop}
             onSubmit={submit}

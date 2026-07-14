@@ -45,6 +45,8 @@ export async function runAgent(
   permission: string,
   attachments: Attachment[],
   onEvent: (e: AgentEvent) => void,
+  /** "Planejar primeiro" (plan mode por turno): o motor segura os writes. */
+  planFirst = false,
 ): Promise<void> {
   const channel = new Channel<AgentEvent>()
   channel.onmessage = onEvent
@@ -59,6 +61,7 @@ export async function runAgent(
     resume,
     permission,
     attachments,
+    planFirst,
     onEvent: channel,
   })
 }

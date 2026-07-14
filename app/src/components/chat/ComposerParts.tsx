@@ -1,6 +1,7 @@
 import { useState } from "react"
 import {
   ArrowUp,
+  ClipboardList,
   FileText,
   Image as ImageIcon,
   Lock,
@@ -18,6 +19,7 @@ import { ContextRing } from "@/components/chat/ContextRing"
 import { MicButton } from "@/components/chat/MicButton"
 import { useApp } from "@/store/app"
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
+import { PLAN_FIRST_TOOLTIP } from "@/lib/planMode"
 import type { SlashCommand } from "@/lib/sources"
 import type { AtItem } from "@/hooks/useAtMentions"
 import type { Attachment } from "@/lib/attachments"
@@ -286,6 +288,8 @@ export function ComposerControls({
   onMission,
   missionDisabled,
   onAttach,
+  planFirst,
+  onTogglePlanFirst,
   running,
   onStop,
   onSubmit,
@@ -306,6 +310,9 @@ export function ComposerControls({
   onMission?: () => void
   missionDisabled?: boolean
   onAttach: () => void
+  /** "Planejar primeiro" ligado nesta conversa (o próximo envio propõe um plano). */
+  planFirst?: boolean
+  onTogglePlanFirst?: () => void
   running?: boolean
   onStop?: () => void
   onSubmit: () => void
@@ -436,6 +443,22 @@ export function ComposerControls({
         )}
         <ContextRing />
         <MicButton />
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onTogglePlanFirst}
+          title={PLAN_FIRST_TOOLTIP}
+          aria-label="Planejar primeiro"
+          aria-pressed={!!planFirst}
+          className={cn(
+            "rounded-full",
+            planFirst
+              ? "bg-brass/15 text-brass ring-1 ring-brass/50 hover:bg-brass/20 hover:text-brass"
+              : "text-muted-foreground hover:text-brass",
+          )}
+        >
+          <ClipboardList className="size-4" />
+        </Button>
         <Button
           variant="ghost"
           size="icon-sm"

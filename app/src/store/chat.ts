@@ -100,6 +100,14 @@ export interface ConvState {
    *  (detecção heurística em tool_result falho). Alimenta o banner "Liberar e
    *  reenviar". Efêmero. null/undefined = nada bloqueado. */
   blockedDir?: string | null
+  /** "Planejar primeiro" LIGADO nesta conversa: o próximo envio vai com
+   *  plan_first (o agent só propõe um plano). Desliga sozinho ao aprovar um
+   *  plano, ou manualmente no toggle do composer. Efêmero (não persiste). */
+  planFirst?: boolean
+  /** Plano PENDENTE de aprovação (turno plan_first terminou): guarda o texto
+   *  final do assistente (p/ agents sem resume, o prompt de execução embute).
+   *  Limpo ao aprovar, descartar, ou qualquer novo envio. Efêmero. */
+  pendingPlan?: { text: string }
   /** true se um `limit_reached` bateu no turno CORRENTE (limite da CLI). Alimenta
    *  a detecção FORTE do auto-resume no fim do turno. Zerado a cada novo run. */
   limitHitThisTurn?: boolean
@@ -164,6 +172,12 @@ interface ChatState {
   handleEvent: (convId: string, e: AgentEvent) => void
   /** Dispensa o aviso de pasta bloqueada desta conversa. */
   clearBlockedDir: (convId: string) => void
+  /** Liga/desliga o "Planejar primeiro" desta conversa (toggle do composer). */
+  setPlanFirst: (convId: string, v: boolean) => void
+  /** Registra o plano pendente de aprovação (fim de um turno plan_first). */
+  setPendingPlan: (convId: string, text: string) => void
+  /** Limpa o plano pendente (aprovar, descartar, ou novo envio manual). */
+  clearPendingPlan: (convId: string) => void
   /** Registra um resume automático agendado (banner + timer). */
   setAutoResume: (convId: string, s: ConvState["autoResume"]) => void
   /** Cancela/limpa o auto-resume agendado (para o timer). Chamar ao enviar
@@ -897,6 +911,7 @@ export const useChat = create<ChatState>((set, get) => {
               suggestions: [],
               suggesting: false,
               blockedDir: null, // novo turno zera o aviso de pasta bloqueada
+              pendingPlan: undefined, // e o plano pendente (envio manual supersede)
               limitHitThisTurn: false, // e o sinal de limite do turno anterior
               resetHint: null,
             },
@@ -962,6 +977,23 @@ export const useChat = create<ChatState>((set, get) => {
         return { byId: { ...s.byId, [convId]: { ...cur, blockedDir: null } } }
       }),
 
+    setPlanFirst: (convId, v) =>
+      set((s) => {
+        const cur = s.byId[convId]
+        if (!cur || !!cur.planFirst === v) return {}
+        return { byId: { ...s.byId, [convId]: { ...cur, planFirst: v } } }
+      }),
+
+    setPendingPlan: (convId, text) =>
+      patch(convId, { pendingPlan: { text } }),
+
+    clearPendingPlan: (convId) =>
+      set((s) => {
+        const cur = s.byId[convId]
+        if (!cur || !cur.pendingPlan) return {}
+        return { byId: { ...s.byId, [convId]: { ...cur, pendingPlan: undefined } } }
+      }),
+
     setAutoResume: (convId, autoResume) => patch(convId, { autoResume }),
 
     cancelAutoResume: (convId) =>
@@ -993,6 +1025,7 @@ export const useChat = create<ChatState>((set, get) => {
               startedAt: Date.now(),
               suggestions: [],
               suggesting: false,
+              pendingPlan: undefined,
               limitHitThisTurn: false,
               resetHint: null,
             },
@@ -1068,7 +1101,13 @@ export const useChat = create<ChatState>((set, get) => {
           ...titled,
           byId: {
             ...s.byId,
-            [convId]: { ...cur, items, running: true, finalizing: false },
+            [convId]: {
+              ...cur,
+              items,
+              running: true,
+              finalizing: false,
+              pendingPlan: undefined,
+            },
           },
         }
       }),

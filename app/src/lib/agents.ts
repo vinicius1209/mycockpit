@@ -44,15 +44,21 @@ export interface AgentDef {
 // por conversa: Opus normal = 200k (default do CLI), Opus 1M = janela grande.
 const CLAUDE_MODELS: AgentModelOption[] = [
   { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Claude Code escolher" },
-  { value: "opus", label: "Opus", description: "O mais capaz (contexto 200k)" },
+  { value: "fable", label: "Fable", description: "Topo de linha (Fable 5, ~2x o preço do Opus)" },
+  { value: "opus", label: "Opus", description: "O mais capaz do dia a dia (contexto 200k)" },
   { value: "opus[1m]", label: "Opus 1M", description: "Opus com janela de 1M tokens" },
   { value: "sonnet", label: "Sonnet", description: "Rápido e equilibrado" },
   { value: "haiku", label: "Haiku", description: "Mais rápido e barato" },
 ]
 const CODEX_MODELS: AgentModelOption[] = [
   { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Codex escolher" },
-  { value: "gpt-5.5", label: "gpt-5.5", description: "Mais capaz" },
-  { value: "o3", label: "o3", description: "Raciocínio forte" },
+  { value: "gpt-5.6-sol", label: "Sol (5.6)", description: "Frontier da família 5.6 — o mais capaz" },
+  { value: "gpt-5.6-terra", label: "Terra (5.6)", description: "Equilíbrio qualidade/custo da 5.6" },
+  { value: "gpt-5.6-luna", label: "Luna (5.6)", description: "Leve e rápido, alto volume" },
+  { value: "gpt-5.5", label: "gpt-5.5", description: "Geração anterior, ainda forte" },
+  { value: "gpt-5.4", label: "gpt-5.4", description: "Equilibrado, metade do preço do 5.5" },
+  { value: "gpt-5.3-codex", label: "gpt-5.3-codex", description: "Especializado em código, ótimo custo" },
+  { value: "o3", label: "o3", description: "Raciocínio forte (legado)" },
 ]
 const CLAUDE_EFFORTS: AgentModelOption[] = [
   { value: "default", label: "Padrão", pill: "effort", description: "Padrão do modelo" },
