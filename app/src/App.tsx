@@ -36,6 +36,8 @@ import {
   UPDATE_COMMANDS,
 } from "@/lib/detect"
 import { agentDef } from "@/lib/agents"
+import { refreshCatalogIntoSettings } from "@/lib/catalog"
+import { runModelCurator, reloadActiveProposals } from "@/lib/modelCurator"
 import type { PermissionMode, Project } from "@/lib/types"
 
 /** Intervalo mínimo entre checagens de update dos agents (1x/dia). */
@@ -129,8 +131,17 @@ export default function App() {
     if (!isTauri()) return
     // modelos reais do `agy models` → cache dinâmico (barato, todo boot).
     void refreshAgyModels()
+    // modelos aprovados do curador → cache do picker (barato, todo boot).
+    void reloadActiveProposals()
     const last = useApp.getState().settings.lastUpdateCheck ?? 0
     if (Date.now() - last < UPDATE_CHECK_INTERVAL_MS) return
+    // Camada A: refresh do catálogo de preços (models.dev) — best-effort (rede
+    // falhou = silêncio). Depois, o curador semanal (self-gated em
+    // lastCuratorRun; nunca roda com o helper global desligado).
+    void (async () => {
+      await refreshCatalogIntoSettings()
+      await runModelCurator()
+    })()
     void (async () => {
       const tools = await detectAgents()
       const now = Date.now()

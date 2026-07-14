@@ -233,8 +233,40 @@ export function agyModelOptions(lines: string[]): AgentModelOption[] {
   return [AGY_MODELS[0], ...lines.map((l) => ({ value: l, label: l }))]
 }
 
+// Cache module-level de modelos PROPOSTOS pelo curador e APROVADOS pelo humano
+// (model_proposals status='active'). Entram DEPOIS das opções estáticas/
+// dinâmicas, sem duplicar value. Mesmo padrão do DYNAMIC_MODELS: carregado no
+// boot (reloadActiveProposals) e recarregado após aprovar — só em effects/handlers.
+const APPROVED_MODELS = new Map<string, AgentModelOption[]>()
+
+/** Registra (ou limpa, com []) os modelos aprovados do curador p/ um agent. */
+export function setApprovedModels(id: string, options: AgentModelOption[]) {
+  if (options.length === 0) APPROVED_MODELS.delete(id)
+  else APPROVED_MODELS.set(id, options)
+}
+
+/** Anexa `extra` ao fim de `base` SEM duplicar value (base vence). Puro; com
+ *  `extra` vazio devolve `base` inalterado (referência estável). */
+export function mergeModelOptions(
+  base: AgentModelOption[],
+  extra: AgentModelOption[],
+): AgentModelOption[] {
+  if (extra.length === 0) return base
+  const seen = new Set(base.map((o) => o.value))
+  const out = [...base]
+  for (const o of extra) {
+    if (seen.has(o.value)) continue
+    seen.add(o.value)
+    out.push(o)
+  }
+  return out
+}
+
 export function agentModels(id: string): AgentModelOption[] {
-  return DYNAMIC_MODELS.get(id) ?? agentDef(id)?.models ?? []
+  return mergeModelOptions(
+    DYNAMIC_MODELS.get(id) ?? agentDef(id)?.models ?? [],
+    APPROVED_MODELS.get(id) ?? [],
+  )
 }
 export function agentEfforts(id: string): AgentModelOption[] {
   return agentDef(id)?.efforts ?? []

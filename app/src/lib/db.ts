@@ -917,6 +917,136 @@ export async function reinforceLessons(ids: string[]): Promise<void> {
   }
 }
 
+// ---------------- Curador de modelos: model_proposals ----------------
+// Propostas do curador LLM (Camada C): modelos novos do catálogo (models.dev)
+// que AINDA não estão nos pickers. `proposed` espera revisão humana em
+// Configurações ▸ Agents; `active` entra no picker (merge em agentModels);
+// `dismissed` fica como memória de "já ofereci" (o curador não re-propõe).
+// Mesmo padrão idempotente das tabelas de aprendizado (CREATE IF NOT EXISTS,
+// cache de promessa que RESETA em falha).
+
+export type ModelProposalStatus = "proposed" | "active" | "dismissed"
+
+export interface ModelProposal {
+  id: string
+  /** Agent dono do picker ("claude-code" | "codex"). */
+  agent: string
+  /** O que vai em `--model` (alias anthropic ou id openai). */
+  value: string
+  label: string
+  description: string
+  status: ModelProposalStatus
+  createdAt: number
+}
+
+let proposalsReady: Promise<void> | null = null
+
+async function ensureProposalTable(db: Database): Promise<void> {
+  if (!proposalsReady) {
+    const run = (async () => {
+      await db.execute(
+        `CREATE TABLE IF NOT EXISTS model_proposals (
+           id TEXT PRIMARY KEY,
+           agent TEXT NOT NULL,
+           value TEXT NOT NULL,
+           label TEXT NOT NULL,
+           description TEXT NOT NULL,
+           status TEXT NOT NULL DEFAULT 'proposed',
+           created_at INTEGER NOT NULL
+         )`,
+      )
+      await db.execute(
+        `CREATE INDEX IF NOT EXISTS idx_model_proposals_status ON model_proposals(status)`,
+      )
+    })()
+    // cache fixa SÓ em sucesso (falha transitória não envenena o processo).
+    proposalsReady = run.catch((e) => {
+      proposalsReady = null
+      throw e
+    })
+  }
+  return proposalsReady
+}
+
+interface ModelProposalRow {
+  id: string
+  agent: string
+  value: string
+  label: string
+  description: string
+  status: string
+  created_at: number
+}
+
+function toProposalStatus(s: string): ModelProposalStatus {
+  return s === "active" || s === "dismissed" ? s : "proposed"
+}
+
+/** Propostas do curador (todas, ou só de um status). [] em falha/não-Tauri. */
+export async function listModelProposals(
+  status?: ModelProposalStatus,
+): Promise<ModelProposal[]> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    await ensureProposalTable(db)
+    const rows = status
+      ? await db.select<ModelProposalRow[]>(
+          "SELECT id, agent, value, label, description, status, created_at FROM model_proposals WHERE status = $1 ORDER BY created_at ASC",
+          [status],
+        )
+      : await db.select<ModelProposalRow[]>(
+          "SELECT id, agent, value, label, description, status, created_at FROM model_proposals ORDER BY created_at ASC",
+        )
+    return rows.map((r) => ({
+      id: r.id,
+      agent: r.agent,
+      value: r.value,
+      label: r.label,
+      description: r.description,
+      status: toProposalStatus(r.status),
+      createdAt: r.created_at,
+    }))
+  } catch {
+    return []
+  }
+}
+
+/** Grava as propostas de UMA rodada do curador (status='proposed'). */
+export async function insertModelProposals(
+  rows: { agent: string; value: string; label: string; description: string }[],
+): Promise<void> {
+  if (rows.length === 0) return
+  const db = await getDb()
+  if (!db) return
+  await ensureProposalTable(db)
+  const now = Date.now()
+  for (const r of rows) {
+    await db.execute(
+      "INSERT INTO model_proposals (id, agent, value, label, description, status, created_at) VALUES ($1, $2, $3, $4, $5, 'proposed', $6)",
+      [crypto.randomUUID(), r.agent, r.value, r.label, r.description, now],
+    )
+  }
+}
+
+/** Decisão do gate humano: Aprovar → 'active' · Dispensar → 'dismissed'. */
+export async function setModelProposalStatus(
+  id: string,
+  status: ModelProposalStatus,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  try {
+    await ensureProposalTable(db)
+    await db.execute("UPDATE model_proposals SET status = $1 WHERE id = $2", [
+      status,
+      id,
+    ])
+  } catch {
+    // best-effort: a UI recarrega do banco na próxima abertura.
+  }
+}
+
 /** Refs de TODAS as conversas (id + updatedAt) p/ o GC de anexos. Retorna `null`
  *  em qualquer falha/não-Tauri (F1: o boot NÃO chama o GC com null, só com `[]`
  *  o GC pode rodar o orphan-sweep). */

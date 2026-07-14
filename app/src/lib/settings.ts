@@ -42,6 +42,13 @@ export interface GlobalSettings {
   /** Última versão `latest` já NOTIFICADA por agent (dedupe: nunca repete a
    *  notificação da mesma versão). */
   lastNotifiedVersions: Record<string, string>
+  /** Epoch ms do último refresh do catálogo de modelos (models.dev via Rust).
+   *  0 = nunca. Alimenta a linha "Tabela de preços" em Configurações ▸ Agents. */
+  lastCatalogRefresh: number
+  /** Nº de modelos no snapshot local do catálogo (informativo). */
+  catalogCount: number
+  /** Epoch ms da última rodada do curador de modelos (máx. 1x/semana). */
+  lastCuratorRun: number
 }
 
 export const DEFAULT_SETTINGS: GlobalSettings = {
@@ -59,4 +66,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   detected: {},
   lastUpdateCheck: 0,
   lastNotifiedVersions: {},
+  lastCatalogRefresh: 0,
+  catalogCount: 0,
+  lastCuratorRun: 0,
 }

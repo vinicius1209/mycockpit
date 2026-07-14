@@ -6,6 +6,7 @@ mod adapters;
 mod agent;
 mod approval;
 mod attachments;
+mod catalog;
 mod context;
 mod detect;
 mod fsx;
@@ -266,6 +267,10 @@ pub fn run() {
                 log::warn!("backup do banco falhou (seguindo sem): {e}");
             }
 
+            // Catálogo de preços (models.dev): registra onde fica o cache em
+            // disco p/ o pricing achar preços dinâmicos já na 1ª consulta.
+            catalog::init(app.handle());
+
             // Titlebar overlay (decorum): visual unificado + traffic lights encaixados +
             // drag funcionando (sem o bug do Overlay nativo).
             let main_window = app
@@ -302,6 +307,8 @@ pub fn run() {
             context::read_project_context,
             detect::detect_agents,
             detect::list_agy_models,
+            catalog::refresh_models_catalog,
+            catalog::get_models_catalog,
             mycockpit::read_mycockpit_config,
             mycockpit::write_mycockpit_config,
             sources::read_project_sources,

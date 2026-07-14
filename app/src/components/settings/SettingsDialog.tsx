@@ -26,7 +26,7 @@ import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useApp } from "@/store/app"
-import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
+import { DESTINATIONS, agentDef, agentModels, agentEfforts } from "@/lib/agents"
 import {
   detectAgents,
   refreshAgyModels,
@@ -34,6 +34,17 @@ import {
   updateAvailable,
   UPDATE_COMMANDS,
 } from "@/lib/detect"
+import {
+  getModelsCatalog,
+  refreshCatalogIntoSettings,
+  type CatalogModel,
+} from "@/lib/catalog"
+import { catalogEntryFor, reloadActiveProposals } from "@/lib/modelCurator"
+import {
+  listModelProposals,
+  setModelProposalStatus,
+  type ModelProposal,
+} from "@/lib/db"
 import { MissionSettings } from "@/components/settings/MissionSettings"
 import { cn } from "@/lib/utils"
 
@@ -73,14 +84,39 @@ function fmtCheckedAt(ts: number): string {
   return `há ${Math.floor(h / 24)} d`
 }
 
+/** "$3 in · $15 out por 1M tokens" (preço do catálogo p/ uma proposta). */
+function fmtCatalogPrice(m: CatalogModel | undefined): string | null {
+  if (!m || (m.input == null && m.output == null)) return null
+  const f = (v: number | null) => (v == null ? "?" : `$${v}`)
+  return `${f(m.input)} in · ${f(m.output)} out por 1M tokens`
+}
+
 /** Seção "Agents": versão instalada × última oficial, comando de update
  *  copiável e re-verificação manual. Mesmo visual do checklist do onboarding. */
 function AgentsToolsSection() {
   const detected = useApp((s) => s.settings.detected)
   const lastUpdateCheck = useApp((s) => s.settings.lastUpdateCheck)
+  const catalogCount = useApp((s) => s.settings.catalogCount)
+  const lastCatalogRefresh = useApp((s) => s.settings.lastCatalogRefresh)
   const setSettings = useApp((s) => s.setSettings)
   const [checking, setChecking] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
+  // Gate humano do curador: propostas pendentes + catálogo (pro preço).
+  const [proposals, setProposals] = useState<ModelProposal[]>([])
+  const [catalog, setCatalog] = useState<CatalogModel[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    void listModelProposals("proposed").then((p) => {
+      if (!cancelled) setProposals(p)
+    })
+    void getModelsCatalog().then((c) => {
+      if (!cancelled) setCatalog(c)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   async function checkNow() {
     setChecking(true)
@@ -90,7 +126,18 @@ function AgentsToolsSection() {
       setSettings({ detected: toProbeMap(tools, now), lastUpdateCheck: now })
     else setSettings({ lastUpdateCheck: now })
     await refreshAgyModels() // modelos dinâmicos do agy junto da verificação
+    await refreshCatalogIntoSettings() // tabela de preços (models.dev) junto
     setChecking(false)
+  }
+
+  async function decideProposal(
+    p: ModelProposal,
+    status: "active" | "dismissed",
+  ) {
+    await setModelProposalStatus(p.id, status)
+    // aprovado → recarrega o cache que o agentModels() mescla no picker.
+    if (status === "active") await reloadActiveProposals()
+    setProposals((prev) => prev.filter((x) => x.id !== p.id))
   }
 
   function copyCmd(id: string, cmd: string) {
@@ -184,6 +231,61 @@ function AgentsToolsSection() {
         {fmtCheckedAt(lastUpdateCheck)}). Quando sai versão nova você recebe uma
         notificação única por versão.
       </p>
+      <p className="mt-1.5 text-[11.5px] leading-snug text-muted-foreground">
+        Tabela de preços: models.dev · {catalogCount}{" "}
+        {catalogCount === 1 ? "modelo" : "modelos"} · atualizada{" "}
+        {fmtCheckedAt(lastCatalogRefresh)}
+      </p>
+
+      {proposals.length > 0 && (
+        <div className="mt-5">
+          <SectionTitle>Propostas do curador</SectionTitle>
+          <ul className="flex flex-col gap-1.5">
+            {proposals.map((p) => {
+              const price = fmtCatalogPrice(
+                catalogEntryFor(catalog, p.agent, p.value),
+              )
+              return (
+                <li
+                  key={p.id}
+                  className="flex items-center gap-3 rounded-lg border border-border/50 bg-secondary/20 px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] text-foreground">
+                      {p.label}{" "}
+                      <span className="text-muted-foreground">
+                        · {agentDef(p.agent)?.label ?? p.agent}
+                      </span>
+                    </div>
+                    <div className="truncate text-[11.5px] text-muted-foreground">
+                      {p.description}
+                      {price ? ` · ${price}` : ""}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void decideProposal(p, "active")}
+                  >
+                    Aprovar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void decideProposal(p, "dismissed")}
+                  >
+                    Dispensar
+                  </Button>
+                </li>
+              )
+            })}
+          </ul>
+          <p className="mt-2 text-[11.5px] leading-snug text-muted-foreground">
+            Modelos novos encontrados no catálogo pelo curador. Aprovar adiciona
+            ao seletor de modelos do agent; nada entra sem a sua revisão.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

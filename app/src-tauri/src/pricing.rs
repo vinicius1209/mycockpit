@@ -1,8 +1,10 @@
-//! v0.2-β, cost adapter: tabela de preço (SEED embutido, refinável depois via
-//! models.dev) + `estimate()` p/ agents que não reportam $ (Codex não dá USD).
-//! O `cost_source=Estimated` + o "~" na UI deixam claro que é estimativa.
+//! v0.2-β, cost adapter: catálogo dinâmico (catalog.rs, via models.dev) com a
+//! tabela SEED estática como fallback offline/primeira execução + `estimate()`
+//! p/ agents que não reportam $ (Codex não dá USD). O `cost_source=Estimated`
+//! + o "~" na UI deixam claro que é estimativa.
 
 use crate::agent::CostSource;
+use crate::catalog::{self, CatalogModel};
 
 #[derive(Default)]
 pub struct NormalizedUsage {
@@ -20,9 +22,28 @@ struct Price {
     output: f64,
 }
 
-/// $/1M tokens. Conferido contra developers.openai.com/api/docs/pricing e
-/// anthropic.com em 2026-07-14. O label Estimated + "~" comunicam que é estimativa.
+/// Converte um modelo do catálogo em Price. None quando o catálogo traz preço
+/// 0/0 (free tiers do models.dev) — "sem preço" de verdade, deixa o SEED
+/// decidir. cache_read ausente = cache cobrado como input cheio (sem desconto).
+fn catalog_price(c: CatalogModel) -> Option<Price> {
+    if c.input <= 0.0 && c.output <= 0.0 {
+        return None;
+    }
+    Some(Price {
+        input: c.input,
+        cached: c.cache_read.unwrap_or(c.input),
+        output: c.output,
+    })
+}
+
+/// $/1M tokens. Catálogo dinâmico (models.dev, exato > prefixo-mais-longo)
+/// primeiro; SEED estático como fallback (offline/primeira execução/modelo
+/// fora do catálogo). SEED conferido contra developers.openai.com/api/docs/
+/// pricing e anthropic.com em 2026-07-14. O "~" na UI comunica estimativa.
 fn price_for(model: &str) -> Option<Price> {
+    if let Some(p) = catalog::lookup(model).and_then(catalog_price) {
+        return Some(p);
+    }
     let m = model.to_lowercase();
     // Ordem importa: match por contains, então o mais ESPECÍFICO vem antes
     // ("gpt-5.4-mini" casaria com "gpt-5.4"; "gpt-5.5-pro" com "gpt-5.5"; tudo
@@ -121,5 +142,36 @@ mod tests {
         let (usd, src) = estimate("sei-la-9000", &NormalizedUsage::default());
         assert!(usd.is_none());
         assert!(matches!(src, CostSource::Unknown));
+    }
+
+    fn cm(input: f64, output: f64, cache_read: Option<f64>) -> CatalogModel {
+        CatalogModel {
+            provider: "openai".into(),
+            id: "x".into(),
+            name: "X".into(),
+            input,
+            output,
+            cache_read,
+            context: None,
+            release_date: None,
+        }
+    }
+
+    /// Free tier no catálogo (0/0) NÃO é preço: cai pro SEED, que continua
+    /// respondendo — os testes acima rodam com catálogo global vazio e provam
+    /// que o comportamento antigo segue intacto.
+    #[test]
+    fn zero_priced_catalog_model_falls_back_to_seed() {
+        assert!(catalog_price(cm(0.0, 0.0, None)).is_none());
+        assert_eq!(out_rate("claude-fable-5"), 50.0); // SEED responde
+    }
+
+    /// cache_read ausente no catálogo = cache cobrado como input cheio.
+    #[test]
+    fn catalog_without_cache_read_charges_cache_as_input() {
+        let p = catalog_price(cm(2.5, 15.0, None)).expect("tem preço");
+        assert_eq!(p.cached, 2.5);
+        let p = catalog_price(cm(2.5, 15.0, Some(0.25))).expect("tem preço");
+        assert_eq!(p.cached, 0.25);
     }
 }
