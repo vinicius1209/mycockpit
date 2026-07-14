@@ -33,6 +33,9 @@ interface AppState {
   limitedAgents: Record<string, string | null>
   /** Slug de plano SDD pra focar ao entrar no modo (navegação do inbox). */
   sddFocusSlug: string | null
+  /** Contador-gatilho: a sidebar pede "Nova feature" e o SddView (dono do form)
+   *  abre a criação ao ver o número mudar. Evita acoplamento direto. */
+  sddCreateRequested: number
   /** Preferências globais (persistidas). */
   settings: GlobalSettings
   /** Modal de configurações aberto? */
@@ -56,6 +59,8 @@ interface AppState {
   setAgentLimited: (agent: string, resetHint: string | null) => void
   clearAgentLimited: (agent: string) => void
   setSddFocus: (slug: string | null) => void
+  /** Pede a abertura do form de Nova feature (bump do contador). */
+  requestSddCreate: () => void
   /** Patch parcial das preferências globais. */
   setSettings: (patch: Partial<GlobalSettings>) => void
   setSettingsOpen: (v: boolean) => void
@@ -78,6 +83,7 @@ export const useApp = create<AppState>()(
       mycockpit: {},
       limitedAgents: {},
       sddFocusSlug: null,
+      sddCreateRequested: 0,
       settings: DEFAULT_SETTINGS,
       settingsOpen: false,
 
@@ -139,6 +145,8 @@ export const useApp = create<AppState>()(
           return { limitedAgents: rest }
         }),
       setSddFocus: (sddFocusSlug) => set({ sddFocusSlug }),
+      requestSddCreate: () =>
+        set((s) => ({ sddCreateRequested: s.sddCreateRequested + 1 })),
       setSettings: (patch) =>
         set((s) => ({ settings: { ...s.settings, ...patch } })),
       setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
