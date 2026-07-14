@@ -21,6 +21,8 @@ export type Decision =
       projectName: string
       slug: string
       planTitle: string
+      /** created_at do manifest (ISO) — a "idade" no card do Painel. */
+      createdAt: string | null
     }
   | {
       kind: "pr"
@@ -62,6 +64,7 @@ export async function scanDecisions(projects: Project[]): Promise<Decision[]> {
           projectName: p.name,
           slug: plan.slug,
           planTitle: plan.title,
+          createdAt: plan.createdAt,
         })
       } else if (plan.links.pr_url && plan.stage !== "done" && !plan.mergedAt) {
         out.push({

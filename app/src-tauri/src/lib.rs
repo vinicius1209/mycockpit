@@ -11,6 +11,7 @@ mod context;
 mod detect;
 mod fsx;
 mod git;
+mod github;
 mod mycockpit;
 mod path;
 mod proc;
@@ -330,6 +331,8 @@ pub fn run() {
             git::git_commit,
             git::git_create_pr,
             git::pr_context,
+            github::gh_pr_view,
+            github::gh_pr_merge,
             stt::stt_start,
             stt::stt_stop,
             stt::stt_cancel,

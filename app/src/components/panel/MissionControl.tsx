@@ -1,11 +1,15 @@
-// F4 — Painel (mission control): a home cross-projeto do trabalho autônomo.
-// Três blocos de LEITURA (sem ação primária): o que roda agora (qualquer
-// projeto), o que espera decisão sua e o que já foi entregue — cada linha
-// navega pra onde o objeto mora. Os dots são o sinal: pulse = vivo, âmbar =
-// precisa de você, verde = entregue.
+// F4 — Painel (mission control): o centro de controle cross-projeto.
+// Anatomia: (1) strip de frota no topo (contadores + custo hoje/7d, sempre
+// visível); (2) PRECISAM DE VOCÊ — a fila dominante, em cards com ação
+// primária (PR mergeia daqui); (3) ENTREGAS — ledger discreto com o custo da
+// semana; (4) empty state = Launchpad (frota detectada + atalhos) só quando a
+// fila está vazia E nada roda. Enriquecimento de PR via gh é lazy por card,
+// com cache de 60s e degrade silencioso (card simples sem 2ª linha).
 
 import { useEffect, useMemo, useState } from "react"
-import { FileText, GitPullRequest, Swords } from "lucide-react"
+import { FileText, GitPullRequest, Rocket, Swords } from "lucide-react"
+import { openUrl } from "@tauri-apps/plugin-opener"
+import { toast } from "sonner"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
@@ -13,6 +17,18 @@ import { useFusion } from "@/store/fusion"
 import { useMission } from "@/store/mission"
 import { scanDecisions, type Decision } from "@/lib/inbox"
 import { listRecentDeliveries, type RecentDelivery } from "@/lib/db"
+import {
+  cachedPrEnrichment,
+  costWindows,
+  fetchPrEnrichment,
+  mergeEligible,
+  mergePr,
+  orderQueue,
+  prHealth,
+  type PrEnrichment,
+} from "@/lib/panel"
+import { updateAvailable } from "@/lib/detect"
+import { confirm } from "@/lib/confirm"
 import { fmtCost } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -25,6 +41,13 @@ function fmtRelative(ts: number): string {
   const h = Math.floor(m / 60)
   if (h < 24) return `há ${h} h`
   return `há ${Math.floor(h / 24)} d`
+}
+
+/** Idade a partir de um ISO (manifest do SDD). null/inválido = sem idade. */
+function fmtRelativeIso(iso: string | null): string | null {
+  if (!iso) return null
+  const ts = Date.parse(iso)
+  return Number.isFinite(ts) ? fmtRelative(ts) : null
 }
 
 /** Abre a conversa dona do objeto vivo (turno/missão/disputa) no Trabalho. */
@@ -64,14 +87,21 @@ interface LiveRow {
   kind: LiveKind
 }
 
+/** CLIs que o Launchpad lista (mesmos rótulos das Configurações ▸ Agents). */
+const CLI_TOOLS: { id: string; label: string }[] = [
+  { id: "claude-code", label: "Claude Code" },
+  { id: "codex", label: "Codex" },
+  { id: "agy", label: "Antigravity" },
+]
+
 /** Título de uma seção do painel — mesmo label-mono das Sections do app. */
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="label-mono mb-1.5 px-3">{children}</h2>
+  return <h2 className="label-mono mb-1.5 px-1">{children}</h2>
 }
 
 function EmptyLine({ children }: { children: React.ReactNode }) {
   return (
-    <p className="px-3 py-2 text-[12.5px] text-muted-foreground/80">
+    <p className="px-1 py-2 text-[12.5px] text-muted-foreground/80">
       {children}
     </p>
   )
@@ -92,8 +122,237 @@ function Dot({ tone }: { tone: "live" | "need" | "done" }) {
   )
 }
 
+/** Botão brass (padrão do app: MessageList/aprovações). */
+function BrassButton({
+  children,
+  disabled,
+  onClick,
+}: {
+  children: React.ReactNode
+  disabled?: boolean
+  onClick: (e: React.MouseEvent) => void
+}) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      className="shrink-0 rounded-md bg-brass px-2.5 py-1 text-[11.5px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Ação secundária discreta dos cards. */
+function GhostAction({
+  children,
+  onClick,
+}: {
+  children: React.ReactNode
+  onClick: (e: React.MouseEvent) => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="shrink-0 rounded-md px-2 py-1 text-[11.5px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Moldura comum dos cards da fila. */
+function QueueCard({
+  onClick,
+  children,
+  className,
+}: {
+  onClick: () => void
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onClick()
+      }}
+      className={cn(
+        "cursor-pointer rounded-lg border border-border/70 bg-card/40 px-4 py-3 transition-colors hover:border-border hover:bg-accent/40",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+/** Card de PR: corpo e primária abrem a PR no browser; Merge (brass) só com
+ *  tudo verde; "Ver no SDD" é a navegação antiga, agora secundária. */
+function PrCard({
+  d,
+  enrich,
+  merging,
+  onMerge,
+}: {
+  d: Extract<Decision, { kind: "pr" }>
+  enrich: PrEnrichment | null
+  merging: boolean
+  onMerge: () => void
+}) {
+  const health = prHealth(enrich)
+  const failing = health === "failing"
+  const canMerge = mergeEligible(enrich)
+  const open = () => void openUrl(d.prUrl).catch(() => {})
+  return (
+    <QueueCard onClick={open}>
+      <div className="flex items-start gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2.5">
+            <GitPullRequest
+              className={cn(
+                "size-4 shrink-0",
+                failing ? "text-st-error" : "text-st-success",
+              )}
+            />
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+              {d.planTitle}
+            </span>
+            <span className="shrink-0 text-[11.5px] text-muted-foreground">
+              {d.projectName}
+            </span>
+            {enrich?.updatedAt != null && (
+              <span className="shrink-0 text-[11px] text-muted-foreground/60">
+                {fmtRelative(enrich.updatedAt)}
+              </span>
+            )}
+          </div>
+          {enrich && (
+            <p
+              className={cn(
+                "mt-1 pl-[26px] text-[11.5px] tabular-nums",
+                failing ? "text-st-error" : "text-muted-foreground",
+              )}
+            >
+              {enrich.checksTotal > 0 && (
+                <>
+                  {failing ? "✗" : health === "green" ? "✓" : ""}{" "}
+                  {enrich.checksPassed}/{enrich.checksTotal} checks ·{" "}
+                </>
+              )}
+              +{enrich.additions} −{enrich.deletions}
+              {enrich.mergeable === "MERGEABLE"
+                ? " · mergeable"
+                : enrich.mergeable === "CONFLICTING"
+                  ? " · conflito"
+                  : ""}
+              {enrich.isDraft ? " · draft" : ""}
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5 pt-px">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              open()
+            }}
+            className={cn(
+              "shrink-0 rounded-md border px-2.5 py-1 text-[11.5px] font-medium transition-colors",
+              failing
+                ? "border-st-error/50 text-st-error hover:bg-st-error/10"
+                : "border-border text-foreground hover:bg-accent/60",
+            )}
+          >
+            {failing ? "Ver falha ↗" : "Abrir PR ↗"}
+          </button>
+          {canMerge && (
+            <BrassButton
+              disabled={merging}
+              onClick={(e) => {
+                e.stopPropagation()
+                onMerge()
+              }}
+            >
+              {merging ? "Mergeando…" : "Merge"}
+            </BrassButton>
+          )}
+          <GhostAction
+            onClick={(e) => {
+              e.stopPropagation()
+              void goTo(d)
+            }}
+          >
+            Ver no SDD
+          </GhostAction>
+        </div>
+      </div>
+    </QueueCard>
+  )
+}
+
+/** Card de disputa: julgar é a única ação — corpo e primária navegam. */
+function FusionCard({ d }: { d: Extract<Decision, { kind: "fusion" }> }) {
+  const go = () => void goTo(d)
+  return (
+    <QueueCard onClick={go}>
+      <div className="flex items-center gap-2.5">
+        <Swords className="size-4 shrink-0 text-brass" />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+          {d.title}
+        </span>
+        <span className="shrink-0 text-[11.5px] text-muted-foreground">
+          {d.projectName}
+        </span>
+        <BrassButton
+          onClick={(e) => {
+            e.stopPropagation()
+            go()
+          }}
+        >
+          Julgar
+        </BrassButton>
+      </div>
+    </QueueCard>
+  )
+}
+
+/** Card de PRD: revisar no SDD (aqui o SDD É o destino certo). */
+function PrdCard({ d }: { d: Extract<Decision, { kind: "prd" }> }) {
+  const go = () => void goTo(d)
+  const age = fmtRelativeIso(d.createdAt)
+  return (
+    <QueueCard onClick={go}>
+      <div className="flex items-center gap-2.5">
+        <FileText className="size-4 shrink-0 text-brass" />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+          {d.planTitle}
+        </span>
+        <span className="shrink-0 text-[11.5px] text-muted-foreground">
+          {d.projectName}
+        </span>
+        {age && (
+          <span className="shrink-0 text-[11px] text-muted-foreground/60">
+            {age}
+          </span>
+        )}
+        <BrassButton
+          onClick={(e) => {
+            e.stopPropagation()
+            go()
+          }}
+        >
+          Revisar PRD
+        </BrassButton>
+      </div>
+    </QueueCard>
+  )
+}
+
 export function MissionControl() {
   const projects = useApp((s) => s.projects)
+  const detected = useApp((s) => s.settings.detected)
   // Ref do MAPA inteiro (estável entre updates) — nunca um objeto derivado novo.
   const convsByProject = useChat((s) => s.conversationsByProject)
 
@@ -133,7 +392,7 @@ export function MissionControl() {
       .join(SEP),
   )
 
-  // a. Rodando agora — turnos + missões + disputas vivas, cross-projeto.
+  // Strip de frota — turnos + missões + disputas vivas, cross-projeto.
   // Detalhes (projectId/task/prompt) lidos via getState() DENTRO do memo: são
   // imutáveis por run, e as keys acima disparam o recompute nas transições.
   const liveRows = useMemo<LiveRow[]>(() => {
@@ -162,7 +421,7 @@ export function MissionControl() {
     return rows
   }, [runningKey, missionKey, fusionLiveKey, projects, convsByProject])
 
-  // b/c. Varreduras assíncronas (SQL + fs) — só em useEffect com cancelamento,
+  // Varreduras assíncronas (SQL + fs) — só em useEffect com cancelamento,
   // ao montar e num refresh leve a cada 30s (interval limpo no unmount).
   const [decisions, setDecisions] = useState<Decision[]>([])
   const [deliveries, setDeliveries] = useState<RecentDelivery[]>([])
@@ -178,7 +437,8 @@ export function MissionControl() {
       } else {
         setDecisions([])
       }
-      void listRecentDeliveries(8)
+      // 60 entregas dão a janela de 7d do custo; o ledger mostra as 8 últimas.
+      void listRecentDeliveries(60)
         .then((d) => {
           if (!cancelled) setDeliveries(d)
         })
@@ -192,9 +452,35 @@ export function MissionControl() {
     }
   }, [projects])
 
-  // b. Precisam de você — scanDecisions (persistido) + disputas 'deciding' ao
-  // vivo que a varredura ainda não viu (dedupe por convId).
-  const needRows = useMemo<Decision[]>(() => {
+  // Enriquecimento gh por PR: lazy (não bloqueia o render), cache de 60s no
+  // lib/panel, fail-soft (null → card sem 2ª linha). Estado inicial vem do
+  // cache síncrono pra não piscar ao remontar o painel.
+  const [prData, setPrData] = useState<Record<string, PrEnrichment | null>>({})
+  useEffect(() => {
+    let cancelled = false
+    for (const d of decisions) {
+      if (d.kind !== "pr") continue
+      const url = d.prUrl
+      const hit = cachedPrEnrichment(url)
+      if (hit) setPrData((m) => (m[url] === hit ? m : { ...m, [url]: hit }))
+      void fetchPrEnrichment(url)
+        .then((e) => {
+          if (cancelled) return
+          setPrData((m) => (m[url] === e ? m : { ...m, [url]: e }))
+        })
+        .catch(() => {})
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [decisions])
+
+  // Fila "Precisam de você" — scanDecisions (persistido) + disputas 'deciding'
+  // ao vivo que a varredura ainda não viu (dedupe por convId), menos os PRs já
+  // mergeados nesta sessão, ordenada por rank (lib/panel.orderQueue).
+  const [merged, setMerged] = useState<ReadonlySet<string>>(() => new Set())
+  const [mergingUrl, setMergingUrl] = useState<string | null>(null)
+  const queue = useMemo<Decision[]>(() => {
     const seen = new Set(
       decisions.filter((d) => d.kind === "fusion").map((d) => d.convId),
     )
@@ -215,34 +501,117 @@ export function MissionControl() {
           "Disputa aguardando decisão",
       })
     }
-    return [...extra, ...decisions]
-  }, [decisions, decidingKey, projects])
+    const all = [...extra, ...decisions].filter(
+      (d) => d.kind !== "pr" || !merged.has(d.prUrl),
+    )
+    return orderQueue(all, prData)
+  }, [decisions, decidingKey, projects, prData, merged])
 
-  // c. Rodapé: soma do que está NA TELA (as N entregas exibidas).
-  const costShown = deliveries.reduce((a, d) => a + (d.costUsd ?? 0), 0)
+  async function handleMerge(d: Extract<Decision, { kind: "pr" }>) {
+    const ok = await confirm({
+      title: `Fazer merge de "${d.planTitle}"?`,
+      description:
+        `Squash merge do PR em ${d.projectName}. ` +
+        "O GitHub ainda valida as proteções da branch.",
+      confirmLabel: "Merge",
+    })
+    if (!ok) return
+    setMergingUrl(d.prUrl)
+    try {
+      await mergePr(d.prUrl)
+      toast.success(`PR mergeado — ${d.planTitle}`)
+      setMerged((prev) => new Set(prev).add(d.prUrl))
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha no merge")
+    } finally {
+      setMergingUrl(null)
+    }
+  }
+
+  // Custo por janela (hoje / 7d) — alimenta o strip, o Launchpad e o título
+  // das Entregas.
+  const windows = useMemo(() => costWindows(deliveries), [deliveries])
+  const hasDeliveries = deliveries.length > 0
+  const shownDeliveries = useMemo(() => deliveries.slice(0, 8), [deliveries])
   const projectNames = useMemo(
     () => new Map(projects.map((p) => [p.id, p.name])),
     [projects],
   )
 
+  const missionCount = liveRows.filter((r) => r.kind === "missão").length
+  const [expand, setExpand] = useState<"all" | "missão" | null>(null)
+  const expandedRows =
+    expand === "missão"
+      ? liveRows.filter((r) => r.kind === "missão")
+      : liveRows
+
+  // Empty state = Launchpad: SÓ quando a fila está vazia E nada roda.
+  const showLaunchpad = queue.length === 0 && liveRows.length === 0
+
+  function goLinear() {
+    useApp.getState().setViewMode("linear")
+  }
+  function goNewFeature() {
+    const app = useApp.getState()
+    app.setViewMode("sdd")
+    app.requestSddCreate()
+  }
+
   return (
     <ScrollArea className="h-full w-full bg-background">
-      <div className="mx-auto flex w-full max-w-[900px] flex-col gap-9 px-8 pt-10 pb-14">
-        {/* a. Rodando agora */}
-        <section>
-          <SectionTitle>Rodando agora</SectionTitle>
-          {liveRows.length === 0 ? (
-            <EmptyLine>Tudo quieto — nada rodando agora.</EmptyLine>
-          ) : (
-            <div className="flex flex-col gap-px">
-              {liveRows.map((r) => (
+      <div className="mx-auto flex w-full max-w-[900px] flex-col gap-8 px-8 pt-8 pb-14">
+        {/* 1. Strip de frota — 1 linha, sempre visível */}
+        <section aria-label="Frota">
+          <div className="flex min-h-[38px] items-center gap-2 rounded-lg border border-border/60 bg-card/30 px-4 py-2">
+            {liveRows.length === 0 ? (
+              <span className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+                <span
+                  aria-hidden
+                  className="size-2 shrink-0 rounded-full border border-muted-foreground/50"
+                />
+                Frota parada
+              </span>
+            ) : (
+              <>
+                <button
+                  onClick={() => setExpand(expand === "all" ? null : "all")}
+                  className="flex items-center gap-2 rounded px-1 text-[12.5px] text-foreground transition-colors hover:text-brass"
+                >
+                  <Dot tone="live" />
+                  {liveRows.length} rodando
+                </button>
+                {missionCount > 0 && (
+                  <>
+                    <span className="text-muted-foreground/40">·</span>
+                    <button
+                      onClick={() =>
+                        setExpand(expand === "missão" ? null : "missão")
+                      }
+                      className="rounded px-1 text-[12.5px] text-foreground transition-colors hover:text-brass"
+                    >
+                      {missionCount}{" "}
+                      {missionCount === 1 ? "missão" : "missões"}
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+            {hasDeliveries && (
+              <span className="ml-auto shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
+                hoje {fmtCost(windows.today)} · 7d {fmtCost(windows.week)}
+              </span>
+            )}
+          </div>
+          {expand && expandedRows.length > 0 && (
+            <div className="mt-1 flex flex-col gap-px">
+              {expandedRows.map((r) => (
                 <button
                   key={`${r.kind}:${r.convId}`}
                   onClick={() => void openConv(r.projectId, r.convId)}
-                  className="group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/50"
+                  className="group flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/50"
                 >
                   <Dot tone="live" />
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground">
                     {r.title}
                   </span>
                   <span className="shrink-0 text-[11.5px] text-muted-foreground">
@@ -257,76 +626,149 @@ export function MissionControl() {
           )}
         </section>
 
-        {/* b. Precisam de você */}
-        <section>
-          <SectionTitle>Precisam de você</SectionTitle>
-          {needRows.length === 0 ? (
-            <EmptyLine>Nada esperando você.</EmptyLine>
-          ) : (
-            <div className="flex flex-col gap-px">
-              {needRows.map((d, i) => (
-                <button
-                  key={i}
-                  onClick={() => void goTo(d)}
-                  className="group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/50"
-                >
-                  <Dot tone="need" />
-                  {d.kind === "fusion" ? (
-                    <Swords className="size-3.5 shrink-0 text-brass" />
-                  ) : d.kind === "prd" ? (
-                    <FileText className="size-3.5 shrink-0 text-brass" />
-                  ) : (
-                    <GitPullRequest className="size-3.5 shrink-0 text-st-success" />
-                  )}
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
-                    {d.kind === "fusion"
-                      ? `Escolher o vencedor da disputa — ${d.title}`
-                      : d.kind === "prd"
-                        ? `Aprovar PRD: ${d.planTitle}`
-                        : `PR aberto: ${d.planTitle}`}
-                  </span>
-                  <span className="shrink-0 text-[11.5px] text-muted-foreground">
-                    {d.projectName}
-                  </span>
-                </button>
-              ))}
+        {/* 2. Precisam de você — a fila dominante, OU 4. Launchpad (empty) */}
+        {showLaunchpad ? (
+          <section
+            aria-label="Launchpad"
+            className="rounded-xl border border-border/60 bg-card/30 px-6 py-6"
+          >
+            <h2 className="label-mono mb-3">Frota</h2>
+            <ul className="flex flex-col gap-1.5">
+              {CLI_TOOLS.map((t) => {
+                const p = detected[t.id]
+                if (!p?.installed) return null
+                const hasUpdate = updateAvailable(p)
+                return (
+                  <li
+                    key={t.id}
+                    className="flex items-center gap-2.5 text-[12.5px]"
+                  >
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-1.5 shrink-0 rounded-full",
+                        hasUpdate ? "bg-st-warning" : "bg-st-success",
+                      )}
+                    />
+                    <span className="text-foreground">{t.label}</span>
+                    <span className="text-muted-foreground">
+                      v{p.version ?? "?"}
+                    </span>
+                    {hasUpdate && (
+                      <span className="rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning uppercase">
+                        update v{p.latest}
+                      </span>
+                    )}
+                  </li>
+                )
+              })}
+              {CLI_TOOLS.every((t) => !detected[t.id]?.installed) && (
+                <li className="text-[12.5px] text-muted-foreground">
+                  Nenhuma CLI detectada ainda — verifique em Configurações ▸
+                  Agents.
+                </li>
+              )}
+            </ul>
+            <p className="mt-4 text-[11.5px] text-muted-foreground tabular-nums">
+              hoje {fmtCost(windows.today)} · 7d {fmtCost(windows.week)}
+            </p>
+            <div className="mt-5 grid grid-cols-3 gap-3">
+              <button
+                onClick={goLinear}
+                className="flex flex-col items-start gap-1.5 rounded-lg border border-border/70 bg-secondary/20 px-4 py-4 text-left transition-colors hover:border-brass/50 hover:bg-accent/40"
+              >
+                <Rocket className="size-4 text-brass" />
+                <span className="text-[13px] font-medium text-foreground">
+                  Nova missão
+                </span>
+                <span className="text-[11.5px] text-muted-foreground">
+                  Um time de agents numa tarefa
+                </span>
+              </button>
+              <button
+                onClick={goLinear}
+                className="flex flex-col items-start gap-1.5 rounded-lg border border-border/70 bg-secondary/20 px-4 py-4 text-left transition-colors hover:border-brass/50 hover:bg-accent/40"
+              >
+                <Swords className="size-4 text-brass" />
+                <span className="text-[13px] font-medium text-foreground">
+                  Nova disputa
+                </span>
+                <span className="text-[11.5px] text-muted-foreground">
+                  Agents competem, você julga
+                </span>
+              </button>
+              <button
+                onClick={goNewFeature}
+                className="flex flex-col items-start gap-1.5 rounded-lg border border-border/70 bg-secondary/20 px-4 py-4 text-left transition-colors hover:border-brass/50 hover:bg-accent/40"
+              >
+                <FileText className="size-4 text-brass" />
+                <span className="text-[13px] font-medium text-foreground">
+                  Nova feature
+                </span>
+                <span className="text-[11.5px] text-muted-foreground">
+                  Do PRD ao merge, com gates
+                </span>
+              </button>
             </div>
-          )}
-        </section>
+          </section>
+        ) : (
+          <section aria-label="Precisam de você">
+            <SectionTitle>Precisam de você ({queue.length})</SectionTitle>
+            {queue.length === 0 ? (
+              <EmptyLine>Nada esperando você.</EmptyLine>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {queue.map((d) =>
+                  d.kind === "pr" ? (
+                    <PrCard
+                      key={`pr:${d.prUrl}`}
+                      d={d}
+                      enrich={prData[d.prUrl] ?? null}
+                      merging={mergingUrl === d.prUrl}
+                      onMerge={() => void handleMerge(d)}
+                    />
+                  ) : d.kind === "fusion" ? (
+                    <FusionCard key={`fusion:${d.convId}`} d={d} />
+                  ) : (
+                    <PrdCard key={`prd:${d.projectId}:${d.slug}`} d={d} />
+                  ),
+                )}
+              </div>
+            )}
+          </section>
+        )}
 
-        {/* c. Entregas recentes */}
-        <section>
-          <SectionTitle>Entregas recentes</SectionTitle>
-          {deliveries.length === 0 ? (
+        {/* 3. Entregas — ledger discreto, custo da semana no título */}
+        <section aria-label="Entregas">
+          <SectionTitle>
+            Entregas
+            {hasDeliveries && ` · ${fmtCost(windows.week)} esta semana`}
+          </SectionTitle>
+          {shownDeliveries.length === 0 ? (
             <EmptyLine>Nenhuma entrega registrada ainda.</EmptyLine>
           ) : (
-            <>
-              <div className="flex flex-col gap-px">
-                {deliveries.map((d) => (
-                  <div
-                    key={d.id}
-                    className="flex w-full items-center gap-3 rounded-md px-3 py-2.5"
-                  >
-                    <Dot tone="done" />
-                    <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
-                      {d.task}
-                    </span>
-                    <span className="shrink-0 text-[11.5px] text-muted-foreground">
-                      {projectNames.get(d.projectId) ?? "projeto"}
-                    </span>
-                    <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
-                      {fmtCost(d.costUsd ?? undefined)}
-                    </span>
-                    <span className="shrink-0 text-[11px] text-muted-foreground/60">
-                      {fmtRelative(d.createdAt)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <p className="mt-2 border-t border-border/60 px-3 pt-2.5 text-[11.5px] text-muted-foreground">
-                {fmtCost(costShown)} nas últimas {deliveries.length} entregas
-              </p>
-            </>
+            <div className="flex flex-col gap-px">
+              {shownDeliveries.map((d) => (
+                <div
+                  key={d.id}
+                  className="flex w-full items-center gap-3 rounded-md px-3 py-2.5"
+                >
+                  <Dot tone="done" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+                    {d.task}
+                  </span>
+                  <span className="shrink-0 text-[11.5px] text-muted-foreground">
+                    {projectNames.get(d.projectId) ?? "projeto"}
+                  </span>
+                  <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
+                    {fmtCost(d.costUsd ?? undefined)}
+                  </span>
+                  <span className="shrink-0 text-[11px] text-muted-foreground/60">
+                    {fmtRelative(d.createdAt)}
+                  </span>
+                </div>
+              ))}
+            </div>
           )}
         </section>
       </div>
