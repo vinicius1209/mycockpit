@@ -66,7 +66,7 @@ export function usePromptHistory({
     setDraft("")
   }, [activeId])
 
-  /** Zera a navegação do histórico (chamado no submit / submitFusion). */
+  /** Zera a navegação do histórico (submit e lançamento de disputa/missão). */
   function resetHistory() {
     setHistIdx(null)
     setDraft("")

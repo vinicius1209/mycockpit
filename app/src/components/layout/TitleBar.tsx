@@ -17,12 +17,6 @@ const MODES = [
     desc: "Fluxo simples com um agente principal",
   },
   {
-    id: "fusion",
-    label: "Fusion",
-    available: true,
-    desc: "Vários agents respondem, um juiz compara e você confirma o vencedor",
-  },
-  {
     id: "sdd",
     label: "SDD",
     available: true,
@@ -30,7 +24,8 @@ const MODES = [
   },
 ] as const
 
-/** Seletor de modo de trabalho. Linear ativo; Fusion/SDD chegam depois. */
+/** Seletor de modo de trabalho: Linear | SDD (F3: o Fusion virou o ⚔️ do
+ *  composer — a disputa vive dentro da conversa, não numa superfície). */
 function ModeSwitcher() {
   const viewMode = useApp((s) => s.viewMode)
   const setViewMode = useApp((s) => s.setViewMode)

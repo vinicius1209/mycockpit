@@ -15,8 +15,8 @@ import { useAttachments } from "@/hooks/useAttachments"
 import { useActiveConv, useChat } from "@/store/chat"
 import { useApp, useActiveProject } from "@/store/app"
 import type { Attachment } from "@/lib/attachments"
-import { DESTINATIONS, defaultModelFor, agentCaps, agentDef } from "@/lib/agents"
-import { useFusion, defaultLeague } from "@/store/fusion"
+import { DESTINATIONS, defaultModelFor, agentCaps } from "@/lib/agents"
+import { FusionLauncher } from "@/components/fusion/FusionLauncher"
 import { MissionLauncher } from "@/components/mission/MissionLauncher"
 import type { AgentRunConfig } from "@/lib/types"
 
@@ -69,6 +69,8 @@ export function CommandConsole({
   const [effort, setEffort] = useState(settings.defaultEffort ?? "default")
   // Mission (beta): dialog do launcher, acionado pelo Rocket do composer.
   const [missionOpen, setMissionOpen] = useState(false)
+  // Fusion (F3): dialog do launcher da disputa, acionado pelo ⚔️ do composer.
+  const [fusionOpen, setFusionOpen] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const conv = useActiveConv()
   const suggestions = conv.suggestions
@@ -132,17 +134,6 @@ export function CommandConsole({
     !missionRunning &&
     allSupported
 
-  // Liga default da disputa (agent atual + complementar), reusada no submit e no
-  // título do botão Disputar (consciência de gasto: nomeia a liga + nº de runs).
-  const fusionLeague = defaultLeague({
-    agent: effectiveDest,
-    model: effectiveModel === "default" ? null : effectiveModel,
-    effort: effectiveEffort === "default" ? null : effectiveEffort,
-  })
-  const fusionTitle = `Disputar: ${fusionLeague.candidates
-    .map((c) => agentDef(c.agent)?.shortLabel ?? c.agent)
-    .join(" + ")} (${fusionLeague.candidates.length} runs)`
-
   // config EFETIVO (numa conv travada = o do 1º run, exibido nos pills), nunca o
   // estado local cru, que sobra de outra conv e não reseta na troca.
   const effCfg = {
@@ -169,23 +160,6 @@ export function CommandConsole({
     setAttachments([])
     resetHistory()
     ref.current?.focus()
-  }
-
-  // Fusion, dispara a disputa com a liga default (agent atual + o complementar).
-  // O League Builder configurável é o próximo polimento.
-  async function submitFusion() {
-    const text = value.trim()
-    if (!text || !project || !activeId) return
-    // conversa ainda não carregada do disco: beginFusion recusaria e o board
-    // ficaria órfão do transcript (mesmo guard do send do Linear).
-    if (!useChat.getState().byId[activeId]) return
-    // mesma liga do título do botão (o candidato roda o modelo do PILL visível).
-    const cfg = fusionLeague
-    setValue("")
-    resetHistory()
-    await useFusion
-      .getState()
-      .launch(activeId, cfg, text, [], project.path, project.permissionMode ?? "padrao")
   }
 
   return (
@@ -337,9 +311,15 @@ export function CommandConsole({
             onModelChange={setModel}
             effectiveEffort={effectiveEffort}
             onEffortChange={setEffort}
-            onFusion={() => void submitFusion()}
-            fusionDisabled={!value.trim() || disabled || running || finalizing}
-            fusionTitle={fusionTitle}
+            onFusion={() => setFusionOpen(true)}
+            fusionDisabled={
+              !activeId || disabled || running || finalizing || missionRunning
+            }
+            fusionTitle={
+              activeId
+                ? "Disputar entre agents — candidatos read-only; o vencedor continua nesta conversa"
+                : "Sem conversa ativa — a disputa precisa de uma conversa de destino"
+            }
             onMission={() => setMissionOpen(true)}
             missionDisabled={disabled || running || finalizing || missionRunning}
             onAttach={attach}
@@ -367,6 +347,18 @@ export function CommandConsole({
         initialTask={value.trim()}
         onLaunched={() => {
           // o rascunho virou a tarefa da missão → limpa o composer
+          setValue("")
+          resetHistory()
+        }}
+      />
+
+      <FusionLauncher
+        open={fusionOpen}
+        onOpenChange={setFusionOpen}
+        initialTask={value.trim()}
+        seed={effCfg}
+        onLaunched={() => {
+          // o rascunho virou a tarefa da disputa → limpa o composer
           setValue("")
           resetHistory()
         }}

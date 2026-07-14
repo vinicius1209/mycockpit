@@ -433,7 +433,7 @@ function ConversationList({ projectId }: { projectId: string }) {
       {conversations.map((c) => {
         const isActive = c.id === activeId
         // F1 — destaque PLENO (bg-accent + barra brass) só quando o Linear é a
-        // superfície ativa; em fusion/sdd a ativa fica DIM (bg sutil, texto
+        // superfície ativa; no SDD a ativa fica DIM (bg sutil, texto
         // muted): memória preservada, sem mentir que ela dirige o detalhe.
         const isFull = isActive && viewMode === "linear"
         const isDimmed = isActive && viewMode !== "linear"
@@ -470,7 +470,7 @@ function ConversationList({ projectId }: { projectId: string }) {
                   title={
                     isDeciding
                       ? "Disputa esperando sua decisão"
-                      : "Disputa Fusion nesta conversa"
+                      : "Disputa em andamento nesta conversa"
                   }
                 >
                   <Swords
@@ -812,9 +812,9 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   const projects = useApp((s) => s.projects)
   const activeId = useApp((s) => s.activeProjectId)
   const setActive = useApp((s) => s.setActiveProject)
-  // Superfície ativa decide o OBJETO listado sob cada projeto (F2): linear e
-  // fusion = conversas (a disputa ancora numa conversa); sdd = features do
-  // projeto ATIVO (não-ativos ficam só com a linha do projeto).
+  // Superfície ativa decide o OBJETO listado sob cada projeto (F2): linear =
+  // conversas (as disputas ⚔️ ancoram nelas); sdd = features do projeto ATIVO
+  // (não-ativos ficam só com a linha do projeto).
   const viewMode = useApp((s) => s.viewMode)
   const theme = useApp((s) => s.theme)
   const toggleTheme = useApp((s) => s.toggleTheme)

@@ -14,7 +14,7 @@ export interface ProjectConfig {
   exists: boolean
   permission: PermissionMode
   helper: string | null // null = sugestões desligadas
-  mode: string // linear | fusion | sdd
+  mode: string // linear | sdd (o valor legado "fusion" é aceito e ignorado)
   extraDirs: string[] // pastas extras liberadas ao agent (viram --add-dir)
 }
 
@@ -24,8 +24,9 @@ interface AppState {
   theme: Theme
   sidebarOpen: boolean
   contextOpen: boolean
-  /** Modo do centro: chat Linear, a Arena do Fusion, ou o pipeline do SDD. */
-  viewMode: "linear" | "fusion" | "sdd"
+  /** Modo do centro: chat Linear ou o pipeline do SDD (F3: a disputa Fusion
+   *  vive dentro da conversa via ⚔️ do composer, não é mais um modo). */
+  viewMode: "linear" | "sdd"
   ready: boolean
   /** Config por projeto vinda de .mycockpit/config.toml (Fase 1). */
   mycockpit: Record<string, ProjectConfig>
@@ -57,7 +58,7 @@ interface AppState {
   toggleTheme: () => void
   toggleSidebar: () => void
   toggleContext: () => void
-  setViewMode: (m: "linear" | "fusion" | "sdd") => void
+  setViewMode: (m: "linear" | "sdd") => void
   setReady: (v: boolean) => void
   setAgentLimited: (agent: string, resetHint: string | null) => void
   clearAgentLimited: (agent: string) => void
@@ -161,7 +162,7 @@ export const useApp = create<AppState>()(
     }),
     {
       name: "mc.app",
-      version: 2,
+      version: 3,
       // SÓ preferências: nunca persistir projects/mycockpit/limitedAgents/ready/
       // activeProjectId — esses vêm do banco no boot.
       partialize: (s) => ({
@@ -175,10 +176,18 @@ export const useApp = create<AppState>()(
       // instalação) → não deve ver o wizard de onboarding. Marca onboarded=true.
       // Instalação nova (sem estado persistido) NÃO chama migrate → onboarded
       // fica no default false → wizard aparece.
+      // v2→v3: o modo Fusion se dissolveu (F3) — quem tinha viewMode="fusion"
+      // persistido volta pro Linear (não pode abrir num modo que não existe).
       migrate: (persisted, fromVersion) => {
-        const p = (persisted ?? {}) as { settings?: Record<string, unknown> }
+        const p = (persisted ?? {}) as {
+          settings?: Record<string, unknown>
+          viewMode?: string
+        }
         if (fromVersion < 2) {
           p.settings = { ...(p.settings ?? {}), onboarded: true }
+        }
+        if (fromVersion < 3 && p.viewMode === "fusion") {
+          p.viewMode = "linear"
         }
         return p as unknown as AppState
       },

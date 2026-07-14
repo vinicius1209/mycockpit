@@ -219,7 +219,8 @@ export function QueuedChips({
 }
 
 /** Seleção de agent (dot + nome + badge + descrição). ÚNICO, o composer do Linear e
- *  a liga do Fusion reusam. Segue o padrão rico (RichSelect) dos demais selects. */
+ *  a liga da disputa (FusionLauncher) reusam. Segue o padrão rico (RichSelect)
+ *  dos demais selects. */
 export function AgentSelect({
   value,
   onValueChange,
@@ -366,7 +367,7 @@ export function ComposerControls({
           size="icon-sm"
           onClick={onFusion}
           disabled={fusionDisabled}
-          title={fusionTitle ?? "Disputar entre agents (Fusion)"}
+          title={fusionTitle ?? "Disputar entre agents (abre a liga)"}
           aria-label="Disputar entre agents"
           className="rounded-full text-muted-foreground hover:text-brass"
         >

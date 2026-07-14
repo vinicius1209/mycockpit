@@ -7,7 +7,6 @@ import {
   type FusionCandidate,
   type FusionRun,
 } from "@/store/fusion"
-import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { candidateText } from "@/lib/fusion"
 import { fmtCost, liveCostOf } from "@/lib/format"
@@ -204,13 +203,6 @@ export function FusionBoard({ convId }: { convId: string }) {
         <span className="ml-auto font-mono tabular-nums">
           ~US${liveCost.toFixed(3)}
         </span>
-        <button
-          onClick={() => useApp.getState().setViewMode("fusion")}
-          className="underline-offset-2 transition-colors hover:text-foreground hover:underline"
-          title="Abrir em tela cheia (colunas paralelas)"
-        >
-          tela cheia
-        </button>
       </div>
 
       {fusion.candidates.map((c) => (

@@ -171,7 +171,7 @@ export function SettingsDialog() {
                   />
                 </Field>
                 <div className="pt-3 text-[11.5px] leading-snug text-muted-foreground">
-                  Sidebar, painel de contexto e o modo (Linear/Fusion/SDD) também
+                  Sidebar, painel de contexto e o modo (Linear/SDD) também
                   são lembrados automaticamente ao reabrir o app.
                 </div>
               </div>
