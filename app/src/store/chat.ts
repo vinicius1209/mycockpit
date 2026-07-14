@@ -149,6 +149,14 @@ interface ChatState {
    *  Chamada quando um projeto é expandido no sidebar. */
   loadProjectConversations: (projectId: string) => Promise<void>
   newConversation: (projectId: string) => Promise<void>
+  /** F6 — cria uma conversa em BACKGROUND (automação agendada): grava no DB com
+   *  título fixo e registra no store SEM roubar a seleção do usuário (não mexe
+   *  em activeId/projectId ativo). O run escreve nela via start/handleEvent. */
+  registerConversation: (
+    projectId: string,
+    id: string,
+    title: string,
+  ) => Promise<void>
   switchConversation: (id: string) => Promise<void>
   removeConversation: (id: string) => Promise<void>
   /** Renomeia manualmente (o título passa a ser fixo, não mais auto-derivado). */
@@ -685,6 +693,40 @@ export const useChat = create<ChatState>((set, get) => {
             [projectId]: nextList,
           },
           byId: { ...s.byId, [id]: emptyConv(projectId) },
+        }
+      })
+    },
+
+    registerConversation: async (projectId, id, title) => {
+      await dbCreate(projectId, id)
+      await dbRename(id, title) // título fixo ("⏰ …") — o persist preserva
+      // garante a lista do projeto carregada ANTES de anexar a meta: criar um
+      // array só com esta conversa esconderia as demais (loadProjectConversations
+      // é no-op quando a chave existe).
+      await get().loadProjectConversations(projectId)
+      set((s) => {
+        const list = s.conversationsByProject[projectId] ?? []
+        // o load acima pode já ter trazido a linha recém-criada do DB → dedupe.
+        const nextList = list.some((c) => c.id === id)
+          ? list.map((c) => (c.id === id ? { ...c, title } : c))
+          : [
+              ...list,
+              {
+                id,
+                title,
+                updatedAt: Date.now(),
+                color: null,
+                worktreePath: null,
+              },
+            ]
+        return {
+          conversationsByProject: {
+            ...s.conversationsByProject,
+            [projectId]: nextList,
+          },
+          conversations:
+            projectId === s.projectId ? nextList : s.conversations,
+          byId: s.byId[id] ? s.byId : { ...s.byId, [id]: emptyConv(projectId) },
         }
       })
     },

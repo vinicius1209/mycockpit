@@ -1047,6 +1047,278 @@ export async function setModelProposalStatus(
   }
 }
 
+// ---------------- F6: automações agendadas (schedules + schedule_runs) ----------------
+// Mesmo padrão idempotente das tabelas de aprendizado: CREATE TABLE IF NOT
+// EXISTS do frontend, cache de promessa que RESETA em falha (erro transitório
+// não envenena o processo). A recorrência é um JSON string discriminado
+// (lib/schedules.Recurrence); o DB não interpreta.
+
+/** Permissão de uma automação. 'liberado' NUNCA existe aqui — nem no tipo. */
+export type SchedulePermission = "leitura" | "padrao"
+
+export interface ScheduleRecord {
+  id: string
+  name: string
+  projectId: string
+  agent: string
+  /** Valor cru do picker ("default" = deixa o CLI escolher). */
+  model: string | null
+  prompt: string
+  permission: SchedulePermission
+  /** JSON discriminado (lib/schedules.parseRecurrence valida na leitura). */
+  recurrence: string
+  enabled: boolean
+  nextRun: number | null
+  lastRunAt: number | null
+  lastRunStatus: string | null
+  createdAt: number
+}
+
+export interface ScheduleRunRecord {
+  id: string
+  scheduleId: string
+  startedAt: number
+  /** "ok" | "failed" (v1 não tem retry automático — falha fica falha). */
+  status: string
+  cost: number | null
+  convId: string | null
+}
+
+let schedulesReady: Promise<void> | null = null
+
+async function ensureScheduleTables(db: Database): Promise<void> {
+  if (!schedulesReady) {
+    const run = (async () => {
+      await db.execute(
+        `CREATE TABLE IF NOT EXISTS schedules (
+           id TEXT PRIMARY KEY,
+           name TEXT NOT NULL,
+           project_id TEXT NOT NULL,
+           agent TEXT NOT NULL,
+           model TEXT,
+           prompt TEXT NOT NULL,
+           permission TEXT NOT NULL DEFAULT 'leitura',
+           recurrence TEXT NOT NULL,
+           enabled INTEGER NOT NULL DEFAULT 1,
+           next_run INTEGER,
+           last_run_at INTEGER,
+           last_run_status TEXT,
+           created_at INTEGER NOT NULL
+         )`,
+      )
+      await db.execute(
+        `CREATE TABLE IF NOT EXISTS schedule_runs (
+           id TEXT PRIMARY KEY,
+           schedule_id TEXT NOT NULL,
+           started_at INTEGER NOT NULL,
+           status TEXT NOT NULL,
+           cost REAL,
+           conv_id TEXT
+         )`,
+      )
+      await db.execute(
+        `CREATE INDEX IF NOT EXISTS idx_schedule_runs_schedule ON schedule_runs(schedule_id)`,
+      )
+    })()
+    schedulesReady = run.catch((e) => {
+      schedulesReady = null
+      throw e
+    })
+  }
+  return schedulesReady
+}
+
+interface ScheduleRow {
+  id: string
+  name: string
+  project_id: string
+  agent: string
+  model: string | null
+  prompt: string
+  permission: string
+  recurrence: string
+  enabled: number
+  next_run: number | null
+  last_run_at: number | null
+  last_run_status: string | null
+  created_at: number
+}
+
+function toSchedule(r: ScheduleRow): ScheduleRecord {
+  return {
+    id: r.id,
+    name: r.name,
+    projectId: r.project_id,
+    agent: r.agent,
+    model: r.model,
+    prompt: r.prompt,
+    // clamp de leitura: qualquer valor estranho (inclusive um 'liberado'
+    // gravado à mão no SQLite) degrada pra 'leitura' — a regra dura do F6.
+    permission: r.permission === "padrao" ? "padrao" : "leitura",
+    recurrence: r.recurrence,
+    enabled: r.enabled === 1,
+    nextRun: r.next_run,
+    lastRunAt: r.last_run_at,
+    lastRunStatus: r.last_run_status,
+    createdAt: r.created_at,
+  }
+}
+
+const SCHEDULE_COLS =
+  "id, name, project_id, agent, model, prompt, permission, recurrence, enabled, next_run, last_run_at, last_run_status, created_at"
+
+/** Todas as automações (habilitadas ou não). null = fora do Tauri; [] = falha. */
+export async function listSchedules(): Promise<ScheduleRecord[] | null> {
+  const db = await getDb()
+  if (!db) return null
+  try {
+    await ensureScheduleTables(db)
+    const rows = await db.select<ScheduleRow[]>(
+      `SELECT ${SCHEDULE_COLS} FROM schedules ORDER BY created_at ASC`,
+    )
+    return rows.map(toSchedule)
+  } catch {
+    return []
+  }
+}
+
+export async function insertSchedule(s: ScheduleRecord): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureScheduleTables(db)
+  await db.execute(
+    "INSERT INTO schedules (id, name, project_id, agent, model, prompt, permission, recurrence, enabled, next_run, last_run_at, last_run_status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+    [
+      s.id,
+      s.name,
+      s.projectId,
+      s.agent,
+      s.model,
+      s.prompt,
+      s.permission,
+      s.recurrence,
+      s.enabled ? 1 : 0,
+      s.nextRun,
+      s.lastRunAt,
+      s.lastRunStatus,
+      s.createdAt,
+    ],
+  )
+}
+
+/** Liga/pausa uma automação. Ao ligar, o caller recalcula e passa o next_run. */
+export async function setScheduleEnabled(
+  id: string,
+  enabled: boolean,
+  nextRun: number | null,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  try {
+    await ensureScheduleTables(db)
+    await db.execute(
+      "UPDATE schedules SET enabled = $1, next_run = $2 WHERE id = $3",
+      [enabled ? 1 : 0, nextRun, id],
+    )
+  } catch {
+    // best-effort: a UI recarrega do banco.
+  }
+}
+
+export async function setScheduleNextRun(
+  id: string,
+  nextRun: number | null,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  try {
+    await ensureScheduleTables(db)
+    await db.execute("UPDATE schedules SET next_run = $1 WHERE id = $2", [
+      nextRun,
+      id,
+    ])
+  } catch {
+    // best-effort.
+  }
+}
+
+/** Marca o desfecho da última execução (o next_run já foi avançado no disparo). */
+export async function markScheduleRun(
+  id: string,
+  lastRunAt: number,
+  lastRunStatus: string,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  try {
+    await ensureScheduleTables(db)
+    await db.execute(
+      "UPDATE schedules SET last_run_at = $1, last_run_status = $2 WHERE id = $3",
+      [lastRunAt, lastRunStatus, id],
+    )
+  } catch {
+    // best-effort.
+  }
+}
+
+/** Exclui a automação E o histórico dela (hard delete, com confirm na UI). */
+export async function deleteSchedule(id: string): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureScheduleTables(db)
+  await db.execute("DELETE FROM schedule_runs WHERE schedule_id = $1", [id])
+  await db.execute("DELETE FROM schedules WHERE id = $1", [id])
+}
+
+export async function insertScheduleRun(r: ScheduleRunRecord): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  try {
+    await ensureScheduleTables(db)
+    await db.execute(
+      "INSERT INTO schedule_runs (id, schedule_id, started_at, status, cost, conv_id) VALUES ($1, $2, $3, $4, $5, $6)",
+      [r.id, r.scheduleId, r.startedAt, r.status, r.cost, r.convId],
+    )
+  } catch {
+    // best-effort: perder uma linha de histórico não pode derrubar o motor.
+  }
+}
+
+/** Histórico recente de TODAS as automações (a view agrupa por schedule_id —
+ *  alimenta o custo médio das últimas 5 e o histórico expandível). */
+export async function listScheduleRuns(
+  limit = 300,
+): Promise<ScheduleRunRecord[]> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    await ensureScheduleTables(db)
+    const rows = await db.select<
+      {
+        id: string
+        schedule_id: string
+        started_at: number
+        status: string
+        cost: number | null
+        conv_id: string | null
+      }[]
+    >(
+      "SELECT id, schedule_id, started_at, status, cost, conv_id FROM schedule_runs ORDER BY started_at DESC LIMIT $1",
+      [limit],
+    )
+    return rows.map((r) => ({
+      id: r.id,
+      scheduleId: r.schedule_id,
+      startedAt: r.started_at,
+      status: r.status,
+      cost: r.cost,
+      convId: r.conv_id,
+    }))
+  } catch {
+    return []
+  }
+}
+
 /** Refs de TODAS as conversas (id + updatedAt) p/ o GC de anexos. Retorna `null`
  *  em qualquer falha/não-Tauri (F1: o boot NÃO chama o GC com null, só com `[]`
  *  o GC pode rodar o orphan-sweep). */

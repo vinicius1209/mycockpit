@@ -20,6 +20,7 @@ mod sdd;
 mod skills;
 mod sources;
 mod stt;
+mod tray;
 
 /// Ponto de entrada do subcomando `approval-server`: ESTE binário rodando como
 /// MCP server stdio quando o `claude -p` o spawna (aprovação granular inline).
@@ -281,7 +282,21 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             main_window.set_traffic_lights_inset(16.0, 17.0)?;
 
+            // Tray: o app vive na barra de menu com a janela fechada (as
+            // automações agendadas continuam); só "Sair" encerra de verdade.
+            tray::create(app.handle())?;
+
             Ok(())
+        })
+        // Fechar a janela = esconder (app segue vivo no tray). Cmd+Q / "Sair"
+        // do tray NÃO passam por aqui (viram ExitRequested) e encerram normal.
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    tray::hide_main_window(window);
+                }
+            }
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -333,6 +348,7 @@ pub fn run() {
             git::pr_context,
             github::gh_pr_view,
             github::gh_pr_merge,
+            tray::set_tray_status,
             stt::stt_start,
             stt::stt_stop,
             stt::stt_cancel,

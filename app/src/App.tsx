@@ -1,4 +1,5 @@
 import { useEffect } from "react"
+import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
@@ -8,6 +9,7 @@ import { ContextPanel } from "@/components/layout/ContextPanel"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { SddView } from "@/components/sdd/SddView"
 import { MissionControl } from "@/components/panel/MissionControl"
+import { ScheduledView } from "@/components/scheduled/ScheduledView"
 import { CommandMenu } from "@/components/common/CommandMenu"
 import { SettingsDialog } from "@/components/settings/SettingsDialog"
 import { ConfirmHost } from "@/components/common/confirm"
@@ -20,7 +22,14 @@ import {
 } from "@/components/ui/resizable"
 import { useApp } from "@/store/app"
 import type { ProjectConfig } from "@/store/app"
+import { useChat } from "@/store/chat"
+import { useFusion } from "@/store/fusion"
+import { useMission } from "@/store/mission"
 import { useNotifs } from "@/store/notifications"
+import { useSchedules } from "@/store/schedules"
+import { tickSchedules } from "@/lib/scheduleEngine"
+import { fmtUntilShort, nextScheduled } from "@/lib/schedules"
+import { buildTrayStatus, updateTray } from "@/lib/tray"
 import {
   isTauri,
   listProjects,
@@ -80,6 +89,7 @@ export default function App() {
   const sidebarOpen = useApp((s) => s.sidebarOpen)
   const contextOpen = useApp((s) => s.contextOpen)
   const viewMode = useApp((s) => s.viewMode)
+  const scheduledOpen = useApp((s) => s.scheduledOpen)
   const setProjects = useApp((s) => s.setProjects)
   const setReady = useApp((s) => s.setReady)
   const theme = useApp((s) => s.theme)
@@ -182,6 +192,103 @@ export default function App() {
     })()
   }, [])
 
+  // F6 — motor das automações agendadas: tick IMEDIATO no boot (que também faz
+  // o catch-up explícito dos perdidos >5min) + a cada 60s. O reload após cada
+  // tick mantém o espelho (badge da sidebar / view / tray) fresco. Só no Tauri.
+  useEffect(() => {
+    if (!isTauri()) return
+    const run = () => {
+      void tickSchedules()
+        .catch(() => {})
+        .finally(() => {
+          void useSchedules.getState().reload()
+        })
+    }
+    run()
+    const t = setInterval(run, 60_000)
+    return () => clearInterval(t)
+  }, [])
+
+  // Tray (frente paralela no Rust): status da frota + próxima agendada, best-
+  // effort (o comando pode não existir). Selectors devolvem PRIMITIVOS (contagens
+  // /números) — só mudam em transição de estado, nunca a cada delta de stream.
+  const runningConvs = useChat((s) => {
+    let n = 0
+    for (const c of Object.values(s.byId)) if (c.running) n++
+    return n
+  })
+  const missionsRunning = useMission((s) => {
+    let n = 0
+    for (const m of Object.values(s.byConv)) if (m.status === "running") n++
+    return n
+  })
+  const fusionsLive = useFusion((s) => {
+    let n = 0
+    for (const f of Object.values(s.byConv))
+      if (
+        f.phase === "running" ||
+        f.phase === "judging" ||
+        f.phase === "promoting"
+      )
+        n++
+    return n
+  })
+  const decisionsPending = useFusion((s) => {
+    let n = 0
+    for (const f of Object.values(s.byConv)) if (f.phase === "deciding") n++
+    return n
+  })
+  const nextSchedName = useSchedules(
+    (s) => nextScheduled(s.schedules)?.name ?? null,
+  )
+  const nextSchedAt = useSchedules(
+    (s) => nextScheduled(s.schedules)?.nextRun ?? null,
+  )
+  useEffect(() => {
+    if (!isTauri()) return
+    const send = () => {
+      const running = runningConvs + missionsRunning + fusionsLive
+      const next =
+        nextSchedAt != null && nextSchedName
+          ? `⏰ ${nextSchedName} · ${fmtUntilShort(nextSchedAt - Date.now())}`
+          : null
+      updateTray(buildTrayStatus(running, decisionsPending), next)
+    }
+    send()
+    // re-envio de minuto: o "· 2h" da próxima agendada não pode mofar
+    // (updateTray dedupa — só invoca quando a string muda de verdade).
+    const t = setInterval(send, 60_000)
+    return () => clearInterval(t)
+  }, [runningConvs, missionsRunning, fusionsLive, decisionsPending, nextSchedName, nextSchedAt])
+
+  // Tray → "Nova tarefa": foca o composer da conversa ativa (garante a
+  // superfície Trabalho antes). Best-effort: fora do Tauri/sem tray, nada.
+  useEffect(() => {
+    if (!isTauri()) return
+    let un: UnlistenFn | null = null
+    let disposed = false
+    listen("tray://new-task", () => {
+      const app = useApp.getState()
+      app.setScheduledOpen(false)
+      app.setViewMode("linear")
+      // espera o ChatPanel montar/renderizar antes de focar.
+      setTimeout(() => {
+        document
+          .querySelector<HTMLTextAreaElement>('textarea[data-composer="console"]')
+          ?.focus()
+      }, 120)
+    })
+      .then((u) => {
+        if (disposed) u()
+        else un = u
+      })
+      .catch(() => {})
+    return () => {
+      disposed = true
+      un?.()
+    }
+  }, [])
+
   // Fase 1, carrega a config do projeto ativo de .mycockpit/config.toml (truth)
   // e sincroniza o cache de permissão que o run_claude lê.
   useEffect(() => {
@@ -249,7 +356,11 @@ export default function App() {
                     className="h-full"
                   >
                     <ResizablePanel id="chat" defaultSize="70%" minSize="42%">
-                      {viewMode === "painel" ? (
+                      {/* F7: a view global "Agendado" cobre o conteúdo via
+                          estado próprio — o switcher de superfícies fica como está. */}
+                      {scheduledOpen ? (
+                        <ScheduledView />
+                      ) : viewMode === "painel" ? (
                         <MissionControl />
                       ) : viewMode === "sdd" ? (
                         <SddView />
@@ -257,7 +368,7 @@ export default function App() {
                         <ChatPanel />
                       )}
                     </ResizablePanel>
-                    {contextOpen && viewMode === "linear" && (
+                    {contextOpen && viewMode === "linear" && !scheduledOpen && (
                       <>
                         <ResizableHandle className="bg-border/40 transition-colors after:w-3 data-[resize-handle-state=hover]:bg-brass/50 data-[resize-handle-state=drag]:bg-brass/60" />
                         <ResizablePanel

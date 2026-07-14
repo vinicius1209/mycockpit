@@ -68,6 +68,9 @@ export function ComposerShell({
       {chips}
       <Textarea
         ref={textareaRef}
+        // alvo estável p/ foco programático (tray://new-task): só o console
+        // Linear (focusRing) ganha a marca — o launch-pad da Arena não.
+        data-composer={focusRing ? "console" : undefined}
         value={value}
         onChange={onChange}
         onKeyDown={onKeyDown}

@@ -29,6 +29,10 @@ interface AppState {
    *  ⚔️ do composer, não é um modo. Valores antigos ("linear"/"sdd") seguem
    *  válidos → sem migração de persist. */
   viewMode: "painel" | "linear" | "sdd"
+  /** F7 — view GLOBAL "Agendado" aberta? Estado PRÓPRIO (não é um viewMode):
+   *  quando true, ela cobre o conteúdo principal; qualquer navegação (trocar
+   *  superfície/projeto) fecha. Não persiste. */
+  scheduledOpen: boolean
   ready: boolean
   /** Config por projeto vinda de .mycockpit/config.toml (Fase 1). */
   mycockpit: Record<string, ProjectConfig>
@@ -61,6 +65,8 @@ interface AppState {
   toggleSidebar: () => void
   toggleContext: () => void
   setViewMode: (m: "painel" | "linear" | "sdd") => void
+  /** Abre/fecha a view global "Agendado" (F7). */
+  setScheduledOpen: (v: boolean) => void
   setReady: (v: boolean) => void
   setAgentLimited: (agent: string, resetHint: string | null) => void
   clearAgentLimited: (agent: string) => void
@@ -87,6 +93,7 @@ export const useApp = create<AppState>()(
       sidebarOpen: true,
       contextOpen: true,
       viewMode: "linear",
+      scheduledOpen: false,
       ready: false,
       mycockpit: {},
       limitedAgents: {},
@@ -103,7 +110,9 @@ export const useApp = create<AppState>()(
         })),
       addProject: (p) =>
         set((s) => ({ projects: [p, ...s.projects], activeProjectId: p.id })),
-      setActiveProject: (id) => set({ activeProjectId: id }),
+      // trocar de projeto é navegação → fecha a view global "Agendado".
+      setActiveProject: (id) =>
+        set({ activeProjectId: id, scheduledOpen: false }),
       setProjectPermission: (id, mode) =>
         set((s) => ({
           projects: s.projects.map((p) =>
@@ -139,7 +148,9 @@ export const useApp = create<AppState>()(
           return { theme }
         }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
-      setViewMode: (viewMode) => set({ viewMode }),
+      // o switcher NÃO conhece o Agendado; trocar de superfície só o fecha.
+      setViewMode: (viewMode) => set({ viewMode, scheduledOpen: false }),
+      setScheduledOpen: (scheduledOpen) => set({ scheduledOpen }),
       toggleContext: () => set((s) => ({ contextOpen: !s.contextOpen })),
       setReady: (ready) => set({ ready }),
       setAgentLimited: (agent, resetHint) =>

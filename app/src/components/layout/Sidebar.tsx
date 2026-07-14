@@ -8,6 +8,7 @@ import {
   FolderGit2,
   X,
   ChevronRight,
+  Clock,
   Loader2,
   Trash2,
   Pencil,
@@ -37,6 +38,8 @@ import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { useMission } from "@/store/mission"
+import { useSchedules } from "@/store/schedules"
+import { fmtUntilShort, nextScheduled } from "@/lib/schedules"
 import {
   loadSddPlans,
   stageLabel,
@@ -379,6 +382,9 @@ function ConversationList({ projectId }: { projectId: string }) {
   // a conversa. Funciona pra projeto não-ativo (setActive + switch pelo id único).
   function openConv(id: string) {
     if (projectId !== useApp.getState().activeProjectId) setActiveProject(projectId)
+    // navegar pra uma conversa fecha a view global "Agendado" (se aberta) —
+    // mesmo quando o projeto já é o ativo (setActiveProject não roda).
+    useApp.getState().setScheduledOpen(false)
     void switchConversation(id)
   }
 
@@ -792,6 +798,65 @@ function SddFeatureList({ project }: { project: Project }) {
   )
 }
 
+/** F7 — seção GLOBAL "Agendado" no topo da sidebar (acima de PROJETOS,
+ *  discreta): coleção cross-projeto das automações do F6. Clique abre a view
+ *  no lugar do conteúdo principal (useApp.scheduledOpen — estado próprio, não
+ *  mexe no switcher). Badge = próxima execução ("2h"), refrescada a cada 60s. */
+function ScheduledEntry() {
+  // selector devolve PRIMITIVO (number|null) — estável entre snapshots.
+  const nextAt = useSchedules(
+    (s) => nextScheduled(s.schedules)?.nextRun ?? null,
+  )
+  const active = useApp((s) => s.scheduledOpen)
+  const setScheduledOpen = useApp((s) => s.setScheduledOpen)
+  // re-render de minuto SÓ quando há badge (o rótulo relativo não pode mofar).
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (nextAt == null) return
+    const t = setInterval(() => setTick((n) => n + 1), 60_000)
+    return () => clearInterval(t)
+  }, [nextAt])
+  return (
+    <div className="px-2 pt-2">
+      <button
+        onClick={() => setScheduledOpen(true)}
+        aria-label="Abrir Agendado"
+        className={cn(
+          "group relative flex w-full items-center gap-3 rounded-md p-2 text-left transition-colors",
+          active ? "bg-accent" : "hover:bg-accent/55",
+        )}
+      >
+        {active && (
+          <span className="absolute top-1/2 left-0 h-5 w-[2.5px] -translate-y-1/2 rounded-full bg-brass" />
+        )}
+        <span className="grid size-5 shrink-0 place-items-center">
+          <Clock
+            className={cn(
+              "size-4",
+              active ? "text-brass" : "text-muted-foreground/70",
+            )}
+          />
+        </span>
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-[13px]",
+            active
+              ? "font-medium text-brass"
+              : "text-muted-foreground group-hover:text-foreground",
+          )}
+        >
+          Agendado
+        </span>
+        {nextAt != null && (
+          <span className="shrink-0 rounded bg-brass/10 px-1.5 py-px text-[10px] tabular-nums text-brass/80">
+            {fmtUntilShort(nextAt - Date.now())}
+          </span>
+        )}
+      </button>
+    </div>
+  )
+}
+
 /** Rodapé: "local · vX.Y.Z". Nos builds de teste a versão vira 0.1.0-test.N,
  *  então você SEMPRE sabe qual build está rodando. */
 function AppVersion() {
@@ -874,6 +939,8 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
 
   return (
     <aside className="reveal-left flex h-full w-full flex-col bg-rail">
+      {/* F7 — rail global (coleções cross-projeto) acima de Projetos. */}
+      <ScheduledEntry />
       <header className="flex h-11 shrink-0 items-center justify-between px-3">
         <div className="flex items-center gap-2">
           <span className="label-mono">Projetos</span>

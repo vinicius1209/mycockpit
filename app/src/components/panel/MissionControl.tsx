@@ -7,7 +7,7 @@
 // com cache de 60s e degrade silencioso (card simples sem 2ª linha).
 
 import { useEffect, useMemo, useState } from "react"
-import { FileText, GitPullRequest, Rocket, Swords } from "lucide-react"
+import { Clock, FileText, GitPullRequest, Rocket, Swords } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { toast } from "sonner"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -15,6 +15,8 @@ import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { useMission } from "@/store/mission"
+import { useSchedules } from "@/store/schedules"
+import { fmtUntilShort } from "@/lib/schedules"
 import { scanDecisions, type Decision } from "@/lib/inbox"
 import { listRecentDeliveries, type RecentDelivery } from "@/lib/db"
 import {
@@ -550,6 +552,18 @@ export function MissionControl() {
       ? liveRows.filter((r) => r.kind === "missão")
       : liveRows
 
+  // F6 — as 2 PRÓXIMAS agendadas (habilitadas, com next_run) pro Launchpad.
+  // O array do store é ref estável; a derivação fica no memo (não no selector).
+  const allSchedules = useSchedules((s) => s.schedules)
+  const upcoming = useMemo(
+    () =>
+      allSchedules
+        .filter((s) => s.enabled && s.nextRun != null)
+        .sort((a, b) => (a.nextRun ?? 0) - (b.nextRun ?? 0))
+        .slice(0, 2),
+    [allSchedules],
+  )
+
   // Empty state = Launchpad: SÓ quando a fila está vazia E nada roda.
   const showLaunchpad = queue.length === 0 && liveRows.length === 0
 
@@ -674,6 +688,30 @@ export function MissionControl() {
                 </li>
               )}
             </ul>
+            {/* F6 — Próximas agendadas (2): clicar abre a view Agendado. */}
+            {upcoming.length > 0 && (
+              <div className="mt-4">
+                <h3 className="label-mono mb-1.5">Próximas agendadas</h3>
+                <ul className="flex flex-col gap-1">
+                  {upcoming.map((s) => (
+                    <li key={s.id}>
+                      <button
+                        onClick={() => useApp.getState().setScheduledOpen(true)}
+                        className="flex w-full items-center gap-2.5 rounded px-1 py-0.5 text-left text-[12.5px] transition-colors hover:bg-accent/50"
+                      >
+                        <Clock className="size-3.5 shrink-0 text-brass/80" />
+                        <span className="min-w-0 flex-1 truncate text-foreground">
+                          {s.name}
+                        </span>
+                        <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
+                          em {fmtUntilShort((s.nextRun ?? 0) - Date.now())}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <p className="mt-4 text-[11.5px] text-muted-foreground tabular-nums">
               hoje {fmtCost(windows.today)} · 7d {fmtCost(windows.week)}
             </p>
