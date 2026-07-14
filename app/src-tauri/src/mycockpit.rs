@@ -155,3 +155,160 @@ pub fn write_mycockpit_config(
     crate::fsx::write_atomic(&cfg, &doc.to_string())?;
     Ok(())
 }
+
+// ---------------- Export do contexto de conversa ----------------
+//
+// O frontend guarda a conversa (itens JSON) no SQLite e RENDERIZA o markdown;
+// aqui só gravamos com segurança em `.mycockpit/context/<conv_id>.md` — arquivo
+// legível por qualquer code agent, referenciado pelo caminho relativo no prompt.
+
+/// Máximo de exports retidos em `.mycockpit/context/` (limpeza best-effort).
+const MAX_CONTEXT_FILES: usize = 30;
+
+/// conv_id vira NOME DE ARQUIVO: só `[a-zA-Z0-9_-]`, senão Err — nada de
+/// traversal, espaço ou ponto (sem `..`, sem extensão disfarçada).
+fn safe_conv_id(conv_id: &str) -> Result<&str, String> {
+    if conv_id.is_empty() {
+        return Err("conv_id vazio".into());
+    }
+    if !conv_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(format!(
+            "conv_id inválido: '{conv_id}' (use só letras, números, '-' e '_')"
+        ));
+    }
+    Ok(conv_id)
+}
+
+/// Garante `dir` existente com um `.gitignore` auto-ignorante (`*`) dentro —
+/// mesmo padrão do `.mycockpit/` acima: 100% local, nunca vaza pro git.
+fn ensure_ignored_dir(dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let gi = dir.join(".gitignore");
+    if !gi.exists() {
+        std::fs::write(&gi, "*\n").map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Se sobrar mais que `keep` arquivos `.md` no dir, apaga os mais ANTIGOS por
+/// mtime. Best-effort: qualquer erro (mtime ilegível, remove falhou) é ignorado
+/// — limpeza nunca pode falhar o export.
+fn trim_old_exports(dir: &Path, keep: usize) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let mut mds: Vec<(std::time::SystemTime, std::path::PathBuf)> = rd
+        .flatten()
+        .filter_map(|e| {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) != Some("md") {
+                return None;
+            }
+            let mtime = e.metadata().and_then(|m| m.modified()).ok()?;
+            Some((mtime, p))
+        })
+        .collect();
+    if mds.len() <= keep {
+        return;
+    }
+    mds.sort_by_key(|(t, _)| *t); // mais antigo primeiro
+    for (_, p) in mds.iter().take(mds.len() - keep) {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
+/// Exporta o markdown (renderizado pelo front) da conversa pra
+/// `.mycockpit/context/<conv_id>.md` (write atômico, sobrescreve re-export).
+/// Devolve o caminho RELATIVO — é o que vai pro prompt do agent.
+#[tauri::command]
+pub fn export_conv_context(
+    project_path: String,
+    conv_id: String,
+    markdown: String,
+) -> Result<String, String> {
+    let id = safe_conv_id(&conv_id)?;
+    let root = crate::skills::validate_project_path(&project_path)?;
+    // `.mycockpit/` também ganha o .gitignore (o export pode rodar antes de
+    // qualquer config ser escrita — padrão do write_mycockpit_config).
+    ensure_ignored_dir(&root.join(".mycockpit"))?;
+    let dir = root.join(".mycockpit").join("context");
+    ensure_ignored_dir(&dir)?;
+    crate::fsx::write_atomic(&dir.join(format!("{id}.md")), &markdown)?;
+    trim_old_exports(&dir, MAX_CONTEXT_FILES);
+    Ok(format!(".mycockpit/context/{id}.md"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conv_id_sanitization() {
+        assert_eq!(safe_conv_id("abc-123_XYZ").unwrap(), "abc-123_XYZ");
+        assert!(safe_conv_id("").is_err());
+        assert!(safe_conv_id("../etc/passwd").is_err()); // traversal
+        assert!(safe_conv_id("a/b").is_err());
+        assert!(safe_conv_id("a\\b").is_err());
+        assert!(safe_conv_id("a b").is_err()); // espaço
+        assert!(safe_conv_id("a.md").is_err()); // ponto
+        assert!(safe_conv_id("é-conv").is_err()); // não-ASCII
+    }
+
+    #[test]
+    fn export_creates_dir_gitignore_and_overwrites() {
+        let tmp = std::env::temp_dir().join(format!("mycockpit-ctx-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let pp = tmp.to_string_lossy().to_string();
+
+        // export cria dir + gitignore + arquivo e devolve o RELATIVO.
+        let rel = export_conv_context(pp.clone(), "conv-1".into(), "# Oi\n".into()).unwrap();
+        assert_eq!(rel, ".mycockpit/context/conv-1.md");
+        let dir = tmp.join(".mycockpit").join("context");
+        assert_eq!(std::fs::read_to_string(dir.join(".gitignore")).unwrap(), "*\n");
+        assert_eq!(
+            std::fs::read_to_string(tmp.join(".mycockpit").join(".gitignore")).unwrap(),
+            "*\n"
+        );
+        assert_eq!(std::fs::read_to_string(dir.join("conv-1.md")).unwrap(), "# Oi\n");
+
+        // re-export SOBRESCREVE (last-writer-wins, sem erro).
+        let rel2 = export_conv_context(pp.clone(), "conv-1".into(), "# Novo\n".into()).unwrap();
+        assert_eq!(rel2, rel);
+        assert_eq!(std::fs::read_to_string(dir.join("conv-1.md")).unwrap(), "# Novo\n");
+
+        // conv_id malicioso não escreve nada.
+        assert!(export_conv_context(pp, "../fora".into(), "x".into()).is_err());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn trim_keeps_newest() {
+        let tmp = std::env::temp_dir().join(format!("mycockpit-ctx-trim-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        for i in 0..5 {
+            let p = tmp.join(format!("c{i}.md"));
+            std::fs::write(&p, "x").unwrap();
+            // mtime crescente explícito (granularidade de FS não é confiável).
+            let t = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1000 + i);
+            let _ = filetime_set(&p, t);
+        }
+        std::fs::write(tmp.join(".gitignore"), "*\n").unwrap(); // não pode ser apagado
+        trim_old_exports(&tmp, 3);
+        assert!(!tmp.join("c0.md").exists(), "mais antigo apagado");
+        assert!(!tmp.join("c1.md").exists());
+        assert!(tmp.join("c2.md").exists());
+        assert!(tmp.join("c4.md").exists(), "mais novo fica");
+        assert!(tmp.join(".gitignore").exists(), "só .md entra na limpeza");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// Seta o mtime sem dep externa: reabre o arquivo e usa set_modified (Rust 1.75+).
+    fn filetime_set(p: &Path, t: std::time::SystemTime) -> std::io::Result<()> {
+        let f = std::fs::OpenOptions::new().write(true).open(p)?;
+        f.set_modified(t)
+    }
+}

@@ -203,14 +203,129 @@ export async function runJudge(
   return { judge, cost }
 }
 
-/** Serializa o histórico da conversa num preâmbulo (Fusion no meio da conversa). */
-export function serializeContext(items: ChatItem[]): string {
-  const lines: string[] = ["Contexto da conversa até aqui:"]
-  for (const it of items) {
-    if (it.kind === "user") lines.push(`\nUsuário: ${it.text}`)
-    else if (it.kind === "text") lines.push(`\nAssistente: ${it.text}`)
+// ── Serialização de contexto (preâmbulo enriquecido) ────────────────────────
+// Além de user/text, tool calls entram como linha compacta ("· tool Read: a.ts"),
+// sequências do mesmo tool colapsam, e um orçamento de chars mantém o INÍCIO
+// (1º pedido do usuário) + o FINAL (mais recente), cortando o meio.
+
+const DIGEST_MAX = 80
+
+function firstLine(s: string): string {
+  const line = s.split("\n", 1)[0].trim()
+  return line.length > DIGEST_MAX ? `${line.slice(0, DIGEST_MAX)}…` : line
+}
+
+/** Digest compacto do input de uma tool: file_path OU command (1ª linha, ~80
+ *  chars) OU a chave principal do input. Puro e tolerante (input é unknown). */
+export function toolDigest(input: unknown): string {
+  if (input == null) return ""
+  if (typeof input === "string") return firstLine(input)
+  if (typeof input !== "object") return firstLine(String(input))
+  const o = input as Record<string, unknown>
+  const str = (k: string) => (typeof o[k] === "string" ? (o[k] as string) : null)
+  const main =
+    str("file_path") ??
+    str("path") ??
+    str("command") ??
+    str("pattern") ??
+    str("query") ??
+    str("url") ??
+    str("prompt") ??
+    str("description")
+  if (main != null) return firstLine(main)
+  // fallback: primeira chave com valor primitivo (a "chave principal" do input)
+  for (const [k, v] of Object.entries(o)) {
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+      return firstLine(`${k}=${String(v)}`)
+    }
   }
-  return lines.join("\n")
+  const keys = Object.keys(o)
+  return keys.length ? keys[0] : ""
+}
+
+/** Quantos digests distintos aparecem numa linha colapsada antes do "…". */
+const COLLAPSE_SHOWN = 3
+
+/** Itens → entradas de texto (uma por item/grupo). Sequências consecutivas do
+ *  MESMO tool colapsam numa linha ("· tool Read ×7: a.ts, b.rs, …"). */
+function contextEntries(items: ChatItem[]): string[] {
+  const out: string[] = []
+  let i = 0
+  while (i < items.length) {
+    const it = items[i]
+    if (it.kind === "user") {
+      out.push(`\nUsuário: ${it.text}`)
+      i++
+    } else if (it.kind === "text") {
+      out.push(`\nAssistente: ${it.text}`)
+      i++
+    } else if (it.kind === "tool") {
+      let j = i
+      const digests: string[] = []
+      while (j < items.length) {
+        const t = items[j]
+        if (t.kind !== "tool" || t.name !== it.name) break
+        const d = toolDigest(t.input)
+        if (d && !digests.includes(d)) digests.push(d)
+        j++
+      }
+      const count = j - i
+      const shown =
+        digests.slice(0, COLLAPSE_SHOWN).join(", ") +
+        (digests.length > COLLAPSE_SHOWN ? ", …" : "")
+      const head = count > 1 ? `· tool ${it.name} ×${count}` : `· tool ${it.name}`
+      out.push(shown ? `${head}: ${shown}` : head)
+      i = j
+    } else {
+      i++
+    }
+  }
+  return out
+}
+
+/** Orçamento default do preâmbulo (~10k chars ≈ 2.5k tokens). */
+export const CONTEXT_BUDGET = 10_000
+
+/** Serializa o histórico da conversa num preâmbulo (Fusion no meio da conversa,
+ *  revezamento pro agy sem resume). Enriquecido: tool calls viram linhas
+ *  compactas; acima do `budget`, mantém início + final e corta o meio com
+ *  "[… N itens omitidos …]". */
+export function serializeContext(
+  items: ChatItem[],
+  budget = CONTEXT_BUDGET,
+): string {
+  const header = "Contexto da conversa até aqui:"
+  const entries = contextEntries(items)
+  const full = [header, ...entries].join("\n")
+  if (full.length <= budget) return full
+
+  // início: o 1º pedido do usuário (sempre ao menos 1 entrada) até ~30%.
+  const headMax = Math.floor(budget * 0.3)
+  const tailMax = budget - headMax - 48 // folga pro marcador de corte
+  const head: string[] = []
+  let hLen = 0
+  let i = 0
+  while (i < entries.length && hLen + entries[i].length + 1 <= headMax) {
+    head.push(entries[i])
+    hLen += entries[i].length + 1
+    i++
+  }
+  if (head.length === 0 && entries.length > 0) {
+    head.push(entries[0]) // o 1º pedido entra mesmo se estourar o headMax
+    i = 1
+  }
+  // final: o mais recente, de trás pra frente, até ~70%.
+  const tail: string[] = []
+  let tLen = 0
+  let j = entries.length - 1
+  while (j >= i && tLen + entries[j].length + 1 <= tailMax) {
+    tail.unshift(entries[j])
+    tLen += entries[j].length + 1
+    j--
+  }
+  const omitted = j - i + 1
+  if (omitted <= 0) return full
+  return [header, ...head, `\n[… ${omitted} itens omitidos …]`, ...tail].join("\n")
 }
 
 /** Roda `fn` sobre `items` com no máximo `limit` em paralelo (stagger de candidatos). */

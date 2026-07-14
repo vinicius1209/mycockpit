@@ -311,6 +311,7 @@ pub fn run() {
             catalog::get_models_catalog,
             mycockpit::read_mycockpit_config,
             mycockpit::write_mycockpit_config,
+            mycockpit::export_conv_context,
             sources::read_project_sources,
             sources::read_text_file,
             sources::read_project_commands,

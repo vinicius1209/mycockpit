@@ -64,7 +64,8 @@ pub fn sanitize_name(name: &str) -> Result<String, String> {
 /// DIRETÓRIO, e não pode ser uma raiz larga demais ("/" ou o próprio HOME) —
 /// senão o comando vira uma primitiva de escrita arbitrária no filesystem.
 /// Devolve o caminho CANÔNICO (symlinks resolvidos) p/ compor o destino.
-fn validate_project_path(project_path: &str) -> Result<PathBuf, String> {
+/// `pub(crate)`: mycockpit::export_conv_context reusa a MESMA validação.
+pub(crate) fn validate_project_path(project_path: &str) -> Result<PathBuf, String> {
     let trimmed = project_path.trim();
     if trimmed.is_empty() {
         return Err("project_path vazio: informe o diretório do projeto".into());

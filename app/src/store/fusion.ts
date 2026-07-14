@@ -14,6 +14,11 @@ import {
   candLabel,
   decideChosen,
 } from "@/lib/fusion"
+import {
+  renderTranscript,
+  exportConvContext,
+  memoryPointerLine,
+} from "@/lib/transcript"
 import { saveFusionRun, loadPendingFusion, clearPendingFusion } from "@/lib/db"
 import type { AgentRunConfig } from "@/lib/types"
 
@@ -291,8 +296,23 @@ export const useFusion = create<FusionState>((set, get) => {
       get().discard(convId)
     }
     const prevConv = useChat.getState().byId[convId]
-    const preamble =
-      prevConv && prevConv.items.length ? serializeContext(prevConv.items) : null
+    // Preâmbulo enriquecido (user/text + tool calls compactadas) + MEMÓRIA
+    // PLENA consultável: exporta o transcript completo pro arquivo do projeto
+    // e aponta o caminho no preâmbulo — o candidato PUXA mais contexto se
+    // precisar. Best-effort: falha no export → segue só com o recap.
+    let preamble: string | null = null
+    if (prevConv && prevConv.items.length) {
+      preamble = serializeContext(prevConv.items)
+      if (projectPath) {
+        try {
+          const md = renderTranscript(prevConv.items, { agent: prevConv.agent })
+          const rel = await exportConvContext(projectPath, convId, md)
+          preamble += `\n\n${memoryPointerLine(rel)}`
+        } catch {
+          // sem ponteiro, a disputa segue com o recap
+        }
+      }
+    }
     const run = buildFusionRun(convId, cfg, prompt, preamble, attachments, projectPath)
     set((s) => ({ byConv: { ...s.byConv, [convId]: run } }))
     useChat.getState().beginFusion(convId, prompt, attachments)

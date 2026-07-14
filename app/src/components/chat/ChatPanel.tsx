@@ -27,6 +27,11 @@ import { MissionTimeline } from "@/components/mission/MissionTimeline"
 import { runAgent, cancelAgent, agentLabel } from "@/lib/agent"
 import { buildHandoff } from "@/lib/handoff"
 import { buildExecutionPrompt, extractPlanText, turnEndedOk } from "@/lib/planMode"
+import {
+  renderTranscript,
+  exportConvContext,
+  buildMemoryPrompt,
+} from "@/lib/transcript"
 import { wantsAutoResume } from "@/lib/autoResume"
 import { notifyTurnEnd } from "@/lib/notify"
 import type { Attachment } from "@/lib/attachments"
@@ -275,6 +280,23 @@ export function ChatPanel() {
       } catch {
         injectedLessonsRef.current[convId] = []
       }
+    }
+    // agy NÃO tem resume (todo turno é sessão fresca): injeta a memória da
+    // conversa no prompt — recap curto (~4k) + exporta o transcript pleno pro
+    // arquivo do projeto e aponta o caminho (o agent PUXA se precisar de mais).
+    // claude/codex não ganham isso em turno normal (resume nativo já resolve).
+    // Best-effort de ponta a ponta: falha no export → só o recap.
+    if (agent === "agy" && conv.items.length > 0) {
+      let pointer: string | null = null
+      try {
+        // exporta relativo ao cwd EFETIVO (worktree ou projeto), pro caminho
+        // relativo resolver de onde o agent roda.
+        const md = renderTranscript(conv.items, { agent: conv.agent })
+        pointer = await exportConvContext(cwd, convId, md)
+      } catch {
+        pointer = null
+      }
+      promptText = buildMemoryPrompt(conv.items, pointer, promptText)
     }
     try {
       await runAgent(
