@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { getVersion } from "@tauri-apps/api/app"
 import {
   Plus,
@@ -15,6 +15,9 @@ import {
   Ban,
   Archive,
   GitBranch,
+  Rocket,
+  Search,
+  Swords,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -33,6 +36,13 @@ import {
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
+import { useMission } from "@/store/mission"
+import {
+  loadSddPlans,
+  stageLabel,
+  effectiveStage,
+  type SddPlan,
+} from "@/lib/sdd"
 import { archiveProject, restoreProject, type ConversationMeta } from "@/lib/db"
 import { createWorktree, removeWorktree } from "@/lib/git"
 import { LABEL_COLORS } from "@/lib/labelColors"
@@ -312,6 +322,24 @@ function useDecidingConvIds(): Set<string> {
   return new Set(key ? key.split(",") : [])
 }
 
+/** Ids das conversas com QUALQUER disputa de Fusion viva (string estável). */
+function useFusionConvIds(): Set<string> {
+  const key = useFusion((s) => Object.keys(s.byConv).sort().join(","))
+  return new Set(key ? key.split(",") : [])
+}
+
+/** Ids das conversas com MISSÃO rodando (string estável, mesmo padrão acima). */
+function useMissionRunningConvIds(): Set<string> {
+  const key = useMission((s) =>
+    Object.entries(s.byConv)
+      .filter(([, m]) => m.status === "running")
+      .map(([id]) => id)
+      .sort()
+      .join(","),
+  )
+  return new Set(key ? key.split(",") : [])
+}
+
 /** Lista de conversas (tarefas) de UM projeto (árvore independente: pode haver
  *  várias montadas ao mesmo tempo, cada uma lendo a lista do seu projectId). */
 // Array vazio ESTÁVEL (module-level): o selector abaixo NÃO pode retornar um `[]`
@@ -337,8 +365,13 @@ function ConversationList({ projectId }: { projectId: string }) {
   // mesmo numa árvore de projeto não-ativo.
   const project = useApp((s) => s.projects.find((p) => p.id === projectId) ?? null)
   const setActiveProject = useApp((s) => s.setActiveProject)
+  // F1 — a seleção só DIRIGE o detalhe no modo linear; nos demais, o item ativo
+  // renderiza dimmed (memória preservada, ênfase removida). String estável.
+  const viewMode = useApp((s) => s.viewMode)
   const running = useRunningConvIds()
   const deciding = useDecidingConvIds()
+  const fusionAlive = useFusionConvIds()
+  const missionRunning = useMissionRunningConvIds()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState("")
 
@@ -399,18 +432,62 @@ function ConversationList({ projectId }: { projectId: string }) {
     <div className="animate-reveal-down mt-0.5 mb-1 flex flex-col gap-px">
       {conversations.map((c) => {
         const isActive = c.id === activeId
+        // F1 — destaque PLENO (bg-accent + barra brass) só quando o Linear é a
+        // superfície ativa; em fusion/sdd a ativa fica DIM (bg sutil, texto
+        // muted): memória preservada, sem mentir que ela dirige o detalhe.
+        const isFull = isActive && viewMode === "linear"
+        const isDimmed = isActive && viewMode !== "linear"
         const isRunning = running.has(c.id)
         const isDeciding = deciding.has(c.id)
+        const hasFusion = fusionAlive.has(c.id)
+        const hasMission = missionRunning.has(c.id)
         const isEditing = editingId === c.id
-        const statusEl = isRunning ? (
-          <Loader2 className="size-3 animate-spin text-brass" aria-label="rodando" />
-        ) : isDeciding ? (
-          <span
-            className="size-1.5 rounded-full bg-brass"
-            title="Disputa esperando sua decisão"
-            aria-label="decisão pendente"
-          />
-        ) : null
+        // Sinais discretos à direita (F2): spinner = run; foguete = missão;
+        // espadas = disputa (âmbar quando espera SUA decisão). Complementares.
+        const statusEl =
+          isRunning || hasMission || hasFusion ? (
+            <>
+              {isRunning && (
+                <Loader2
+                  className="size-3 shrink-0 animate-spin text-brass"
+                  aria-label="rodando"
+                />
+              )}
+              {hasMission && (
+                <span
+                  className="grid size-3 shrink-0 place-items-center"
+                  title="Missão rodando"
+                >
+                  <Rocket
+                    className="animate-cockpit-pulse size-3 text-brass"
+                    aria-label="missão rodando"
+                  />
+                </span>
+              )}
+              {hasFusion && (
+                <span
+                  className="grid size-3 shrink-0 place-items-center"
+                  title={
+                    isDeciding
+                      ? "Disputa esperando sua decisão"
+                      : "Disputa Fusion nesta conversa"
+                  }
+                >
+                  <Swords
+                    className={cn(
+                      "size-3",
+                      isDeciding
+                        ? "text-st-warning"
+                        : "text-muted-foreground/70",
+                    )}
+                    aria-label={
+                      isDeciding ? "decisão pendente" : "disputa em curso"
+                    }
+                  />
+                </span>
+              )}
+            </>
+          ) : null
         // Cor-rótulo = DOT à direita do título (tinta de linha competia com a
         // seleção). Seleção é dona do background.
         return (
@@ -418,10 +495,17 @@ function ConversationList({ projectId }: { projectId: string }) {
             <ContextMenuTrigger asChild>
               <div
                 className={cn(
-                  "group/c flex items-center rounded-md",
-                  isActive ? "bg-accent" : "hover:bg-accent/50",
+                  "group/c relative flex items-center rounded-md",
+                  isFull
+                    ? "bg-accent"
+                    : isDimmed
+                      ? "bg-accent/30"
+                      : "hover:bg-accent/50",
                 )}
               >
+                {isFull && (
+                  <span className="absolute top-1/2 left-0 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-brass" />
+                )}
                 {isEditing ? (
                   <div className="flex min-w-0 flex-1 items-center py-2 pr-2 pl-10">
                     <input
@@ -440,13 +524,17 @@ function ConversationList({ projectId }: { projectId: string }) {
                 ) : (
                   <button
                     onClick={() => openConv(c.id)}
+                    title={isDimmed ? "ativa no Linear" : undefined}
                     className={cn(
-                      "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-10 text-left text-[12px]",
-                      // active = cor de destaque no texto (bg fixo vem do container);
+                      "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-10 text-left text-[12px] font-normal",
+                      // pleno = cor de destaque no texto (bg fixo vem do container);
+                      // dim = ativa noutra superfície (muted, sem brass);
                       // inativo = cinza médio, clareia no hover.
-                      isActive
-                        ? "font-normal text-brass"
-                        : "font-normal text-muted-foreground group-hover/c:text-foreground",
+                      isFull
+                        ? "text-brass"
+                        : isDimmed
+                          ? "text-muted-foreground"
+                          : "text-muted-foreground group-hover/c:text-foreground",
                     )}
                   >
                     {/* Sem ícone à esquerda: a indentação (pl-10) define a hierarquia.
@@ -468,7 +556,7 @@ function ConversationList({ projectId }: { projectId: string }) {
                       />
                     )}
                     {statusEl && (
-                      <span className="grid size-3 shrink-0 place-items-center">
+                      <span className="flex shrink-0 items-center gap-1">
                         {statusEl}
                       </span>
                     )}
@@ -540,6 +628,170 @@ function ConversationList({ projectId }: { projectId: string }) {
   )
 }
 
+/** F2 — modo SDD: no projeto ATIVO, a sidebar lista FEATURES (o objeto da
+ *  superfície) no lugar das conversas. Carrega via loadSddPlans (async/invoke)
+ *  em useEffect com cancelamento — NUNCA em selector — e cacheia em estado
+ *  local, recarregando ao trocar de projeto (dep = project.path). */
+function SddFeatureList({ project }: { project: Project }) {
+  // Selectors devolvem primitivos/refs do store (estáveis) — nunca objeto novo.
+  const focusSlug = useApp((s) => s.sddFocusSlug)
+  const setSddFocus = useApp((s) => s.setSddFocus)
+  const requestSddCreate = useApp((s) => s.requestSddCreate)
+  // versão dos dados: o SddView bumpa ao criar/recarregar → esta lista recarrega.
+  const dataVersion = useApp((s) => s.sddDataVersion)
+  const [plans, setPlans] = useState<SddPlan[] | null>(null) // null = carregando
+  const [query, setQuery] = useState("")
+
+  // query só reseta ao TROCAR de projeto (não a cada bump de dados — senão a
+  // busca digitada sumia quando uma etapa concluía no fundo).
+  useEffect(() => {
+    setQuery("")
+    setPlans(null) // projeto novo → loader (bump de dados NÃO passa por aqui)
+  }, [project.path])
+
+  useEffect(() => {
+    let cancelled = false
+    // recarga por bump mantém a lista atual na tela (sem flash de loading);
+    // só a PRIMEIRA carga do projeto mostra o loader (plans === null).
+    loadSddPlans(project.path)
+      .then((p) => {
+        if (!cancelled) setPlans(p)
+      })
+      .catch(() => {
+        if (!cancelled) setPlans([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [project.path, dataVersion])
+
+  // Busca local (título/slug) + ordenação: em andamento primeiro, depois
+  // concluídas; dentro de cada grupo, por título. Stage EFETIVO (sem PR aqui).
+  const rows = useMemo(() => {
+    if (!plans) return []
+    const q = query.trim().toLowerCase()
+    return plans
+      .filter(
+        (p) =>
+          !q ||
+          p.title.toLowerCase().includes(q) ||
+          p.slug.toLowerCase().includes(q),
+      )
+      .map((p) => ({ plan: p, stage: effectiveStage(p, null) }))
+      .sort((a, b) => {
+        const ad = a.stage === "done" ? 1 : 0
+        const bd = b.stage === "done" ? 1 : 0
+        if (ad !== bd) return ad - bd
+        return a.plan.title.localeCompare(b.plan.title)
+      })
+  }, [plans, query])
+
+  const newFeatureBtn = (
+    <button
+      onClick={() => requestSddCreate()}
+      className="flex items-center gap-3 rounded-md p-2 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+    >
+      {/* Mesmo padrão visual do "+ Nova tarefa": ação primária da superfície. */}
+      <span className="grid size-5 shrink-0 place-items-center">
+        <Plus className="size-3.5" />
+      </span>
+      Nova feature
+    </button>
+  )
+
+  if (plans === null) {
+    return (
+      <div className="animate-reveal-down mt-0.5 mb-1 flex items-center gap-2 py-2 pl-10 text-[12px] text-muted-foreground/70">
+        <Loader2 className="size-3 animate-spin" aria-label="carregando" />
+        Carregando features…
+      </div>
+    )
+  }
+
+  if (plans.length === 0) {
+    return (
+      <div className="animate-reveal-down mt-0.5 mb-1 flex flex-col gap-px">
+        <p className="py-2 pl-10 text-[12px] text-muted-foreground/70">
+          Nenhuma feature ainda
+        </p>
+        {newFeatureBtn}
+      </div>
+    )
+  }
+
+  return (
+    <div className="animate-reveal-down mt-0.5 mb-1 flex flex-col gap-px">
+      {/* Busca compacta, alinhada à coluna de texto (pl-10) das linhas. */}
+      <div className="mr-2 mb-0.5 ml-10 flex items-center gap-1.5 rounded-md border border-border/70 bg-background/60 px-1.5 py-1">
+        <Search className="size-3 shrink-0 text-muted-foreground/60" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Buscar feature…"
+          aria-label="Buscar feature"
+          className="min-w-0 flex-1 bg-transparent text-[11.5px] text-foreground outline-none placeholder:text-muted-foreground/60"
+        />
+        {query && (
+          <button
+            onClick={() => setQuery("")}
+            className="shrink-0 rounded p-0.5 text-muted-foreground/60 hover:text-foreground"
+            title="Limpar busca"
+            aria-label="Limpar busca"
+          >
+            <X className="size-3" />
+          </button>
+        )}
+      </div>
+      {rows.length === 0 ? (
+        <p className="py-2 pl-10 text-[12px] text-muted-foreground/70">
+          Nenhuma feature encontrada
+        </p>
+      ) : (
+        rows.map(({ plan, stage }) => {
+          const selected = plan.slug === focusSlug
+          return (
+            <div
+              key={plan.slug}
+              className={cn(
+                "group/f relative flex items-center rounded-md",
+                selected ? "bg-accent" : "hover:bg-accent/50",
+              )}
+            >
+              {selected && (
+                <span className="absolute top-1/2 left-0 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-brass" />
+              )}
+              <button
+                onClick={() => setSddFocus(plan.slug)}
+                title={plan.slug}
+                className={cn(
+                  "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-10 text-left text-[12px] font-normal",
+                  selected
+                    ? "text-brass"
+                    : "text-muted-foreground group-hover/f:text-foreground",
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate">{plan.title}</span>
+                {/* Badge compacto do estágio EFETIVO: done=verde; resto=brass. */}
+                <span
+                  className={cn(
+                    "shrink-0 rounded-sm px-1 py-px text-[9.5px] leading-4 tracking-wide uppercase",
+                    stage === "done"
+                      ? "bg-st-success/15 text-st-success"
+                      : "bg-brass/10 text-brass/80",
+                  )}
+                >
+                  {stageLabel(stage)}
+                </span>
+              </button>
+            </div>
+          )
+        })
+      )}
+      {newFeatureBtn}
+    </div>
+  )
+}
+
 /** Rodapé: "local · vX.Y.Z". Nos builds de teste a versão vira 0.1.0-test.N,
  *  então você SEMPRE sabe qual build está rodando. */
 function AppVersion() {
@@ -560,6 +812,10 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   const projects = useApp((s) => s.projects)
   const activeId = useApp((s) => s.activeProjectId)
   const setActive = useApp((s) => s.setActiveProject)
+  // Superfície ativa decide o OBJETO listado sob cada projeto (F2): linear e
+  // fusion = conversas (a disputa ancora numa conversa); sdd = features do
+  // projeto ATIVO (não-ativos ficam só com a linha do projeto).
+  const viewMode = useApp((s) => s.viewMode)
   const theme = useApp((s) => s.theme)
   const toggleTheme = useApp((s) => s.toggleTheme)
   const loadProjectConversations = useChat((s) => s.loadProjectConversations)
@@ -667,7 +923,12 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                   onToggle={() => toggleExpand(p.id)}
                   onDelete={() => confirmDeleteProject(p)}
                 />
-                {expanded.has(p.id) && <ConversationList projectId={p.id} />}
+                {expanded.has(p.id) &&
+                  (viewMode === "sdd" ? (
+                    p.id === activeId && <SddFeatureList project={p} />
+                  ) : (
+                    <ConversationList projectId={p.id} />
+                  ))}
               </div>
             ))
           )}

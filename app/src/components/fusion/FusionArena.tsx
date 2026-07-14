@@ -3,7 +3,12 @@ import { Plus, Swords, X } from "lucide-react"
 import { useChat } from "@/store/chat"
 import { useActiveProject, useApp } from "@/store/app"
 import { useFusion, type LeagueConfig } from "@/store/fusion"
-import { CandidateLane, FusionVerdict } from "@/components/fusion/FusionBoard"
+import {
+  CandidateLane,
+  FusionVerdict,
+  truncateTitle,
+  useConvTitle,
+} from "@/components/fusion/FusionBoard"
 import { AgentSelect } from "@/components/chat/ComposerParts"
 import { ComposerShell } from "@/components/chat/ComposerShell"
 import { Button } from "@/components/ui/button"
@@ -29,7 +34,14 @@ function newEntry(agent: string): LeagueEntry {
  *  DISPUTANDO: barra de status fina + candidatos em COLUNAS paralelas + veredito. */
 export function FusionArena() {
   const activeId = useChat((s) => s.activeId)
+  const switchConversation = useChat((s) => s.switchConversation)
   const project = useActiveProject()
+  // Âncora da disputa É a conversa ativa (launch/promoção usam activeId) —
+  // o chip só torna esse acoplamento visível e editável, sem estado paralelo.
+  const projectConvs = useChat((s) =>
+    project ? s.conversationsByProject[project.id] : undefined,
+  )
+  const anchorTitle = useConvTitle(activeId)
   const fusion = useFusion((s) => (activeId ? s.byConv[activeId] : undefined))
   const confirm = useFusion((s) => s.confirm)
   const setViewMode = useApp((s) => s.setViewMode)
@@ -83,8 +95,42 @@ export function FusionArena() {
             </h2>
             <p className="mx-auto mt-1.5 max-w-md text-[13.5px] leading-relaxed text-muted-foreground">
               Os agents resolvem a MESMA tarefa em paralelo, read-only. O juiz sugere
-              o melhor; você confirma e o vencedor continua no Linear.
+              o melhor; você confirma e o vencedor continua em{" "}
+              {activeId ? `“${truncateTitle(anchorTitle)}”` : "uma conversa sua"}.
             </p>
+          </div>
+
+          {/* Âncora explícita (padrão “Also send to #channel”): nomeia a
+              consequência no ponto da ação e deixa TROCAR — trocar aqui é
+              trocar a conversa ativa, a única fonte de verdade da âncora. */}
+          <div className="mx-auto mb-2 flex w-fit max-w-full items-center gap-1.5 rounded-full border border-border/70 bg-secondary/30 py-1 pr-1 pl-3 text-[12px] text-muted-foreground">
+            <Swords className="size-3 shrink-0 text-brass/70" />
+            {activeId ? (
+              <>
+                <span className="shrink-0">vencedor será promovido para:</span>
+                <PillSelect
+                  value={activeId}
+                  onValueChange={(id) => {
+                    if (id !== activeId) void switchConversation(id)
+                  }}
+                  options={(projectConvs ?? []).map((c) => ({
+                    value: c.id,
+                    label: truncateTitle(c.title ?? "Nova conversa", 40),
+                  }))}
+                  placeholder="Nova conversa"
+                  triggerClassName="h-6 gap-1 border-0 bg-transparent px-1 text-[12px] text-foreground/90 shadow-none data-[size=default]:h-6"
+                  itemClassName="text-[12.5px]"
+                  contentClassName="max-w-[320px]"
+                  aria-label="Conversa que recebe o vencedor"
+                  title="A disputa ancora na conversa ativa — trocar aqui troca a conversa ativa"
+                />
+              </>
+            ) : (
+              <span className="pr-2">
+                sem conversa ativa — crie ou selecione uma na sidebar; o vencedor
+                será promovido pra ela
+              </span>
+            )}
           </div>
 
           <ComposerShell
@@ -154,7 +200,12 @@ export function FusionArena() {
                 </span>
                 <Button
                   onClick={() => void dispute()}
-                  disabled={!task.trim() || !project || league.length < 2}
+                  disabled={!task.trim() || !project || !activeId || league.length < 2}
+                  title={
+                    !activeId
+                      ? "Sem conversa ativa — o vencedor precisa de uma conversa de destino"
+                      : undefined
+                  }
                   className="ml-auto gap-1.5"
                 >
                   <Swords className="size-4" /> Disputar
@@ -200,6 +251,7 @@ export function FusionArena() {
           <FusionVerdict
             fusion={fusion}
             selected={selected}
+            convId={activeId}
             onConfirm={() => void decide()}
             onDiscard={() => activeId && useFusion.getState().discard(activeId)}
           />

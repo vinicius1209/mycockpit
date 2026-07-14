@@ -120,6 +120,7 @@
   --color-st-running: var(--st-running);
   --color-st-queued: var(--st-queued);
   --color-st-success: var(--st-success);
+  --color-st-warning: var(--st-queued); /* "precisa de você" (âmbar da fila) */
   --color-st-error: var(--st-error);
 
   --font-sans: var(--font-sans);

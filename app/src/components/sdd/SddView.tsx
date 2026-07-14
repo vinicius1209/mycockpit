@@ -2,6 +2,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useRef,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -19,7 +20,6 @@ import {
   Play,
   Plus,
   RefreshCw,
-  Search,
   Sprout,
   X,
 } from "lucide-react"
@@ -33,11 +33,13 @@ import { Markdown } from "@/components/common/Markdown"
 import { readTextFile } from "@/lib/sources"
 import { fmtCost } from "@/lib/format"
 import {
-  insertStageRun,
-  listStageCosts,
-  listStageRuns,
-  type StageRunRow,
-} from "@/lib/db"
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { insertStageRun, listStageRuns, type StageRunRow } from "@/lib/db"
 import {
   loadSddPlans,
   loadPrInfo,
@@ -60,32 +62,6 @@ import {
   type SeedSummary,
 } from "@/lib/sdd"
 import { cn } from "@/lib/utils"
-
-const FILTERS = [
-  { id: "todas", label: "Todas" },
-  { id: "andamento", label: "Em andamento" },
-  { id: "concluidas", label: "Concluídas" },
-  { id: "compr", label: "Com PR" },
-  { id: "comfalha", label: "Com falha" },
-] as const
-type FilterId = (typeof FILTERS)[number]["id"]
-
-function matchesFilter(p: SddPlan, filter: FilterId, query: string): boolean {
-  const q = query.trim().toLowerCase()
-  if (q && !p.title.toLowerCase().includes(q) && !p.slug.includes(q)) return false
-  switch (filter) {
-    case "andamento":
-      return p.stage !== "done"
-    case "concluidas":
-      return p.stage === "done"
-    case "compr":
-      return !!p.links.pr_url
-    case "comfalha":
-      return gateCounts(p.verification).fail > 0
-    default:
-      return true
-  }
-}
 
 /** "5 gates passaram · 1 falhou · 2 não rodados" (omite zeros). */
 function gateSummary(gc: { pass: number; fail: number; notRun: number }): string {
@@ -116,19 +92,15 @@ function fmtDateTime(iso: string): string {
   }
 }
 
-/** Modo SDD, v1: dashboard WATCHER read-only sobre `.claude/plans/`. Mostra o
- *  estado dos planos (pipeline + contrato + gates) sem dirigir nada ainda. */
+/** Modo SDD: o DETALHE de uma feature, em largura total. A lista de features
+ *  vive na SIDEBAR (F2, docs/product-evolution.md — uma lista só por objeto):
+ *  seleção via useApp.sddFocusSlug (fonte única) e criação via o contador
+ *  useApp.sddCreateRequested. */
 export function SddView() {
   const project = useActiveProject()
   const [plans, setPlans] = useState<SddPlan[]>([])
   const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState<string | null>(null)
-  const [query, setQuery] = useState("")
-  const [filter, setFilter] = useState<FilterId>("todas")
   const [ready, setReady] = useState<boolean | null>(null)
-  const [costs, setCosts] = useState<
-    Record<string, { total: number; runs: number; estimated: boolean }>
-  >({})
   const [seeding, setSeeding] = useState(false)
   const [seedResult, setSeedResult] = useState<SeedSummary | null>(null)
   // v2.4, nova feature, bifurcada: descrição → Explorar (discovery/Linear) OU
@@ -137,6 +109,9 @@ export function SddView() {
   const [featDesc, setFeatDesc] = useState("")
   // trilha da feature nova: full (PRD+SPEC formais) por default; quick pula pro código.
   const [featTrack, setFeatTrack] = useState<SddTrack>("full")
+
+  // Seleção = fonte ÚNICA: sddFocusSlug (sidebar e inbox setam via setSddFocus).
+  const focusSlug = useApp((s) => s.sddFocusSlug)
 
   useEffect(() => {
     if (!project) {
@@ -147,42 +122,40 @@ export function SddView() {
     }
     setLoading(true)
     setSeedResult(null)
-    void Promise.all([
-      loadSddPlans(project.path),
-      sddReady(project.path),
-      listStageCosts(project.id),
-    ]).then(([ps, rdy, cs]) => {
+    void Promise.all([loadSddPlans(project.path), sddReady(project.path)]).then(
+      ([ps, rdy]) => {
         const real = ps.filter((p) => p.hasManifest)
         setPlans(real)
         setReady(rdy)
-        setCosts(cs)
-        setSelected((s) =>
-          s && real.some((p) => p.slug === s) ? s : (real[0]?.slug ?? null),
-        )
+        // Auto-seleção: NADA focado → primeiro plano (a sidebar acompanha, é o
+        // mesmo estado). Slug focado que não existe fica como está — o render
+        // cai no estado vazio, sem roubar um foco setado por outra intenção.
+        const app = useApp.getState()
+        if (!app.sddFocusSlug && real[0]) app.setSddFocus(real[0].slug)
         setLoading(false)
       },
     )
   }, [project?.path])
 
-  // Navegação do inbox: foco pedido de fora → seleciona o plano e consome.
-  const focusSlug = useApp((s) => s.sddFocusSlug)
+  // Criação pedida de fora (sidebar): o contador MUDOU → abre o dialog.
+  // Pula o valor inicial (não abre ao montar/trocar de view).
+  const createRequested = useApp((s) => s.sddCreateRequested)
+  const createSeen = useRef(createRequested)
   useEffect(() => {
-    if (!focusSlug) return
-    if (plans.some((p) => p.slug === focusSlug)) {
-      setSelected(focusSlug)
-      useApp.getState().setSddFocus(null)
-    }
-  }, [focusSlug, plans])
+    if (createRequested === createSeen.current) return
+    createSeen.current = createRequested
+    setNewFeatOpen(true)
+  }, [createRequested])
 
   // refresh silencioso do manifest (após rodar uma etapa), mantém a seleção.
   const reload = useCallback(() => {
     if (!project) return
-    void loadSddPlans(project.path).then((ps) =>
-      setPlans(ps.filter((p) => p.hasManifest)),
-    )
-    void listStageCosts(project.id).then(setCosts)
+    void loadSddPlans(project.path).then((ps) => {
+      setPlans(ps.filter((p) => p.hasManifest))
+      useApp.getState().bumpSddData() // sidebar recarrega a lista dela
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.path, project?.id])
+  }, [project?.path])
 
   // v2.0, instala o fluxo SDD num projeto que ainda não tem (scaffold do seed).
   async function initSdd() {
@@ -214,7 +187,8 @@ export function SddView() {
       const slug = await createPlan(project.path, desc, track)
       const ps = (await loadSddPlans(project.path)).filter((p) => p.hasManifest)
       setPlans(ps)
-      setSelected(slug)
+      useApp.getState().setSddFocus(slug)
+      useApp.getState().bumpSddData() // a feature nova aparece na sidebar
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha ao criar o plano")
     }
@@ -234,21 +208,22 @@ export function SddView() {
     useApp.getState().setViewMode("linear")
   }
 
-  // modal de descrição (montado em qualquer estado: lista/vazio).
-  const featUI = newFeatOpen ? (
-    <NewFeatureModal
+  // dialog de descrição (montado em qualquer estado: detalhe/vazio).
+  const featUI = (
+    <NewFeatureDialog
+      open={newFeatOpen}
+      onOpenChange={setNewFeatOpen}
       value={featDesc}
       onChange={setFeatDesc}
       track={featTrack}
       onTrack={setFeatTrack}
-      onCancel={() => setNewFeatOpen(false)}
       onExplore={() => void exploreDiscovery()}
       onCreate={() => void createAndDrive()}
     />
-  ) : null
+  )
 
-  const plan = plans.find((p) => p.slug === selected)
-  const filtered = plans.filter((p) => matchesFilter(p, filter, query))
+  // seleção derivada, sem estado local: o slug focado que existir nos planos.
+  const plan = focusSlug ? plans.find((p) => p.slug === focusSlug) : undefined
 
   if (loading) {
     return (
@@ -288,7 +263,7 @@ export function SddView() {
               </>
             }
           >
-            <NewFeatureButton variant="solid" onClick={() => setNewFeatOpen(true)} />
+            <NewFeatureButton onClick={() => setNewFeatOpen(true)} />
           </CenteredEmpty>
           {featUI}
         </>
@@ -330,64 +305,31 @@ export function SddView() {
             </>
           }
         >
-          <NewFeatureButton variant="solid" onClick={() => setNewFeatOpen(true)} />
+          <NewFeatureButton onClick={() => setNewFeatOpen(true)} />
         </CenteredEmpty>
         {featUI}
       </>
     )
   }
 
+  // Detalhe em LARGURA TOTAL — a lista mora na sidebar. Sem seleção válida
+  // (nada focado sem planos? impossível aqui; slug morto/limpo) → estado vazio
+  // com saída: criar uma feature nova.
   return (
-    <div className="flex h-full bg-background">
-      <aside className="flex w-60 shrink-0 flex-col border-r">
-        <div className="shrink-0 border-b p-2">
-          <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar feature…"
-              className="w-full rounded-md border bg-secondary/30 py-1.5 pr-2 pl-7 text-[12px] text-foreground outline-none placeholder:text-muted-foreground focus:border-brass/40"
-            />
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1">
-            {FILTERS.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setFilter(f.id)}
-                className={cn(
-                  "rounded-full border px-2 py-0.5 text-[10.5px] transition-colors",
-                  filter === f.id
-                    ? "border-brass/50 bg-brass/10 text-brass"
-                    : "border-transparent text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-          <div className="mt-2">
-            <NewFeatureButton onClick={() => setNewFeatOpen(true)} />
-          </div>
-        </div>
-        <div className="shrink-0 px-3 py-1.5 text-[10px] tracking-wide text-muted-foreground uppercase">
-          {filtered.length} de {plans.length}
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-          {filtered.map((p) => (
-            <PlanRow
-              key={p.slug}
-              plan={p}
-              cost={costs[p.slug]}
-              active={p.slug === selected}
-              onSelect={() => setSelected(p.slug)}
-            />
-          ))}
-        </div>
-      </aside>
-      <div className="min-w-0 flex-1 overflow-y-auto">
-        {plan && <PlanDetail plan={plan} onReload={reload} />}
-      </div>
+    <div className="h-full overflow-y-auto bg-background">
+      {plan ? (
+        <PlanDetail plan={plan} onReload={reload} />
+      ) : (
+        <CenteredEmpty
+          icon={<FileText className="size-8 text-brass/50" />}
+          title="Selecione uma feature na barra lateral"
+          desc="As features SDD deste projeto agora vivem na sidebar. Escolha uma pra ver o pipeline, os gates e a entrega — ou comece uma nova."
+        >
+          <NewFeatureButton
+            onClick={() => useApp.getState().requestSddCreate()}
+          />
+        </CenteredEmpty>
+      )}
       {featUI}
     </div>
   )
@@ -414,70 +356,53 @@ function CenteredEmpty({
   )
 }
 
-/** Botão "Nova feature", `solid` (pílula, nos estados vazios) ou ghost (na lista). */
-function NewFeatureButton({
-  onClick,
-  variant = "ghost",
-}: {
-  onClick: () => void
-  variant?: "ghost" | "solid"
-}) {
-  if (variant === "solid") {
-    return (
-      <button
-        onClick={onClick}
-        className="flex items-center gap-2 rounded-full border border-brass/40 bg-brass/10 px-4 py-2 text-[13px] text-brass transition-colors hover:bg-brass/20"
-      >
-        <Plus className="size-4" /> Nova feature
-      </button>
-    )
-  }
+/** Botão "Nova feature" (pílula brass, usado nos estados vazios). */
+function NewFeatureButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-brass/40 hover:text-brass"
+      className="flex items-center gap-2 rounded-full border border-brass/40 bg-brass/10 px-4 py-2 text-[13px] text-brass transition-colors hover:bg-brass/20"
     >
-      <Plus className="size-3.5" /> Nova feature
+      <Plus className="size-4" /> Nova feature
     </button>
   )
 }
 
-/** Modal da feature nova, bifurcado: a MESMA descrição alimenta os dois caminhos,
- *  Explorar (discovery é conversa → Linear) ou Criar plano e dirigir (Stage 0 + gate). */
-function NewFeatureModal({
+/** Dialog da feature nova, bifurcado: a MESMA descrição alimenta os dois caminhos,
+ *  Explorar (discovery é conversa → Linear) ou Criar plano e dirigir (Stage 0 + gate).
+ *  Aberto localmente (estados vazios) ou de fora, via o contador sddCreateRequested. */
+function NewFeatureDialog({
+  open,
+  onOpenChange,
   value,
   onChange,
   track,
   onTrack,
-  onCancel,
   onExplore,
   onCreate,
 }: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
   value: string
   onChange: (v: string) => void
   track: SddTrack
   onTrack: (t: SddTrack) => void
-  onCancel: () => void
   onExplore: () => void
   onCreate: () => void
 }) {
   const empty = !value.trim()
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-8"
-      onClick={onCancel}
-    >
-      <div
-        className="w-full max-w-[560px] rounded-xl border bg-card p-5 shadow-[var(--shadow-pop)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-1 flex items-center gap-2">
-          <Sprout className="size-4 text-brass" />
-          <h2 className="text-[15px] font-medium text-foreground">Nova feature SDD</h2>
-        </div>
-        <p className="mb-3 text-[12.5px] leading-relaxed text-muted-foreground">
-          Descreva a ideia, vaga ou já clara. Os dois caminhos partem do mesmo texto.
-        </p>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[560px] gap-0 rounded-xl bg-card p-5 shadow-[var(--shadow-pop)] sm:max-w-[560px]">
+        <DialogHeader className="gap-1 text-left">
+          <DialogTitle className="flex items-center gap-2 text-[15px] leading-normal font-medium text-foreground">
+            <Sprout className="size-4 text-brass" /> Nova feature SDD
+          </DialogTitle>
+          <DialogDescription className="mb-3 text-[12.5px] leading-relaxed text-muted-foreground">
+            Descreva a ideia, vaga ou já clara. Os dois caminhos partem do mesmo
+            texto.
+          </DialogDescription>
+        </DialogHeader>
         <textarea
           autoFocus
           value={value}
@@ -552,14 +477,14 @@ function NewFeatureModal({
         <div className="mt-4 flex items-center justify-between">
           <span className="text-[11px] text-muted-foreground">⌘↵ cria o plano</span>
           <button
-            onClick={onCancel}
+            onClick={() => onOpenChange(false)}
             className="rounded-md border px-3 py-1.5 text-[12px] text-foreground hover:bg-accent"
           >
             Cancelar
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -582,60 +507,6 @@ function PathRow({
       </div>
       {action}
     </div>
-  )
-}
-
-function PlanRow({
-  plan,
-  cost,
-  active,
-  onSelect,
-}: {
-  plan: SddPlan
-  cost?: { total: number; runs: number; estimated: boolean }
-  active: boolean
-  onSelect: () => void
-}) {
-  const done = plan.stage === "done"
-  const failed = gateCounts(plan.verification).fail > 0
-  return (
-    <button
-      onClick={onSelect}
-      className={cn(
-        "flex w-full flex-col items-start gap-1 rounded-md px-2.5 py-2 text-left transition-colors",
-        active ? "bg-accent" : "hover:bg-accent/55",
-      )}
-    >
-      <span className="w-full truncate text-[12.5px] font-medium text-foreground">
-        {plan.title}
-      </span>
-      <span className="flex w-full items-center gap-1.5">
-        <span
-          className={cn(
-            "rounded border px-1 py-px text-[10px] tracking-wide uppercase",
-            done
-              ? "border-st-success/40 text-st-success"
-              : "border-brass/40 text-brass",
-          )}
-        >
-          {stageLabel(plan.stage)}
-        </span>
-        {failed && (
-          <span
-            className="size-1.5 rounded-full bg-st-error"
-            title="gates falhando"
-          />
-        )}
-        {plan.links.pr_url && (
-          <GitPullRequest className="size-3 text-muted-foreground/40" />
-        )}
-        {cost && cost.total > 0.0005 && (
-          <span className="ml-auto font-mono text-[10px] tabular-nums text-muted-foreground/55">
-            {fmtCost(cost.total, cost.estimated ? "estimated" : "reported")}
-          </span>
-        )}
-      </span>
-    </button>
   )
 }
 
@@ -760,7 +631,9 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
   }
 
   return (
-    <div className="mx-auto flex max-w-[920px] flex-col gap-5 px-7 py-6">
+    // largura total da view (a lista saiu): generosa e centrada — o pipeline
+    // e a matriz de cenários respiram em vez de espremer.
+    <div className="mx-auto flex max-w-[1100px] flex-col gap-5 px-8 py-6">
       {/* header */}
       <div>
         <h1 className="text-[20px] font-medium tracking-[-0.01em] text-foreground">

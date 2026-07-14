@@ -36,6 +36,9 @@ interface AppState {
   /** Contador-gatilho: a sidebar pede "Nova feature" e o SddView (dono do form)
    *  abre a criação ao ver o número mudar. Evita acoplamento direto. */
   sddCreateRequested: number
+  /** Versão dos DADOS do SDD: o SddView bumpa ao criar/recarregar planos e a
+   *  lista da sidebar recarrega ao ver mudar (dois caches, uma verdade). */
+  sddDataVersion: number
   /** Preferências globais (persistidas). */
   settings: GlobalSettings
   /** Modal de configurações aberto? */
@@ -61,6 +64,8 @@ interface AppState {
   setSddFocus: (slug: string | null) => void
   /** Pede a abertura do form de Nova feature (bump do contador). */
   requestSddCreate: () => void
+  /** Sinaliza que os planos SDD mudaram no disco (criação/etapa/seed). */
+  bumpSddData: () => void
   /** Patch parcial das preferências globais. */
   setSettings: (patch: Partial<GlobalSettings>) => void
   setSettingsOpen: (v: boolean) => void
@@ -84,6 +89,7 @@ export const useApp = create<AppState>()(
       limitedAgents: {},
       sddFocusSlug: null,
       sddCreateRequested: 0,
+      sddDataVersion: 0,
       settings: DEFAULT_SETTINGS,
       settingsOpen: false,
 
@@ -147,6 +153,8 @@ export const useApp = create<AppState>()(
       setSddFocus: (sddFocusSlug) => set({ sddFocusSlug }),
       requestSddCreate: () =>
         set((s) => ({ sddCreateRequested: s.sddCreateRequested + 1 })),
+      bumpSddData: () =>
+        set((s) => ({ sddDataVersion: s.sddDataVersion + 1 })),
       setSettings: (patch) =>
         set((s) => ({ settings: { ...s.settings, ...patch } })),
       setSettingsOpen: (settingsOpen) => set({ settingsOpen }),

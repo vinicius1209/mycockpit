@@ -8,6 +8,7 @@ import {
   type FusionRun,
 } from "@/store/fusion"
 import { useApp } from "@/store/app"
+import { useChat } from "@/store/chat"
 import { candidateText } from "@/lib/fusion"
 import { fmtCost, liveCostOf } from "@/lib/format"
 import { Markdown } from "@/components/common/Markdown"
@@ -20,6 +21,23 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+
+/** Trunca com reticências (títulos de conversa em botões/chips). */
+export function truncateTitle(s: string, max = 24): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s
+}
+
+/** Título da conversa-destino da promoção (mesmo fallback da sidebar). */
+export function useConvTitle(convId: string | null): string {
+  return useChat((s) => {
+    if (!convId) return "Nova conversa"
+    for (const list of Object.values(s.conversationsByProject)) {
+      const meta = list.find((c) => c.id === convId)
+      if (meta) return meta.title ?? "Nova conversa"
+    }
+    return "Nova conversa"
+  })
+}
 
 export function CandidateLane({
   c,
@@ -211,6 +229,7 @@ export function FusionBoard({ convId }: { convId: string }) {
         <FusionVerdict
           fusion={fusion}
           selected={selected}
+          convId={convId}
           onConfirm={() => selected && void confirm(convId, selected)}
           onDiscard={() => useFusion.getState().discard(convId)}
         />
@@ -224,14 +243,18 @@ export function FusionBoard({ convId }: { convId: string }) {
 export function FusionVerdict({
   fusion,
   selected,
+  convId,
   onConfirm,
   onDiscard,
 }: {
   fusion: FusionRun
   selected: string | null
+  /** Conversa que RECEBE o vencedor — nomeia a consequência no botão. */
+  convId: string | null
   onConfirm: () => void
   onDiscard: () => void
 }) {
+  const convTitle = useConvTitle(convId)
   const unavailable = fusion.judge.status === "unavailable"
   const labelOf = (id: string | null) =>
     fusion.candidates.find((c) => c.id === id)?.label
@@ -274,8 +297,19 @@ export function FusionVerdict({
           descartar
         </button>
         {!unavailable && (
-          <Button size="sm" disabled={!selected} onClick={onConfirm}>
-            {selectedLabel ? `Confirmar ${selectedLabel}` : "Escolha um candidato"}
+          <Button
+            size="sm"
+            disabled={!selected}
+            onClick={onConfirm}
+            title={
+              selectedLabel
+                ? `Promover ${selectedLabel} para “${convTitle}”`
+                : undefined
+            }
+          >
+            {selectedLabel
+              ? `Promover para “${truncateTitle(convTitle)}”`
+              : "Escolha um candidato"}
           </Button>
         )}
       </div>
