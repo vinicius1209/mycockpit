@@ -18,6 +18,7 @@ import {
   Minus,
   Play,
   Plus,
+  RefreshCw,
   Search,
   Sprout,
   X,
@@ -46,12 +47,14 @@ import {
   setPlanStage,
   producedStage,
   nextStep,
+  effectiveStage,
+  stagesForTrack,
   stageLabel,
   stageIndex,
   gateText,
   gateCounts,
-  SDD_STAGES,
   type SddPlan,
+  type SddTrack,
   type PrInfo,
   type SeedSummary,
 } from "@/lib/sdd"
@@ -131,6 +134,8 @@ export function SddView() {
   // Criar plano e dirigir (Stage 0 determinístico no cockpit + gate no /prd).
   const [newFeatOpen, setNewFeatOpen] = useState(false)
   const [featDesc, setFeatDesc] = useState("")
+  // trilha da feature nova: full (PRD+SPEC formais) por default; quick pula pro código.
+  const [featTrack, setFeatTrack] = useState<SddTrack>("full")
 
   useEffect(() => {
     if (!project) {
@@ -200,10 +205,12 @@ export function SddView() {
     if (!project) return
     const desc = featDesc.trim()
     if (!desc) return
+    const track = featTrack
     setNewFeatOpen(false)
     setFeatDesc("")
+    setFeatTrack("full")
     try {
-      const slug = await createPlan(project.path, desc)
+      const slug = await createPlan(project.path, desc, track)
       const ps = (await loadSddPlans(project.path)).filter((p) => p.hasManifest)
       setPlans(ps)
       setSelected(slug)
@@ -231,6 +238,8 @@ export function SddView() {
     <NewFeatureModal
       value={featDesc}
       onChange={setFeatDesc}
+      track={featTrack}
+      onTrack={setFeatTrack}
       onCancel={() => setNewFeatOpen(false)}
       onExplore={() => void exploreDiscovery()}
       onCreate={() => void createAndDrive()}
@@ -437,12 +446,16 @@ function NewFeatureButton({
 function NewFeatureModal({
   value,
   onChange,
+  track,
+  onTrack,
   onCancel,
   onExplore,
   onCreate,
 }: {
   value: string
   onChange: (v: string) => void
+  track: SddTrack
+  onTrack: (t: SddTrack) => void
   onCancel: () => void
   onExplore: () => void
   onCreate: () => void
@@ -475,6 +488,35 @@ function NewFeatureModal({
           placeholder="Ex.: lembrete de jejum X horas antes do treino, configurável por usuário…"
           className="w-full resize-none rounded-lg border bg-secondary/30 p-3 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus:border-brass/40"
         />
+
+        {/* trilha do plano (vale pro "Criar plano"): proporcional ao tamanho da mudança */}
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11.5px]">
+          <span className="mr-0.5 text-muted-foreground">Trilha:</span>
+          <button
+            onClick={() => onTrack("full")}
+            title="Pipeline inteiro: PRD e SPEC formais antes do código"
+            className={cn(
+              "rounded-full border px-2.5 py-0.5 transition-colors",
+              track === "full"
+                ? "border-brass/50 bg-brass/10 text-brass"
+                : "border-border text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Completa · PRD + SPEC
+          </button>
+          <button
+            onClick={() => onTrack("quick")}
+            title="Sem PRD/SPEC formais: Descoberta → Implementação → Testes → Review → PR"
+            className={cn(
+              "rounded-full border px-2.5 py-0.5 transition-colors",
+              track === "quick"
+                ? "border-brass/50 bg-brass/10 text-brass"
+                : "border-border text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Rápida · direto pra implementação
+          </button>
+        </div>
 
         {/* os dois caminhos (sua escolha): explorar (conversa) vs criar + dirigir */}
         <div className="mt-4 flex flex-col gap-2.5">
@@ -621,7 +663,27 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
     pr?.state ?? (plan.stage === "done" || plan.mergedAt ? "MERGED" : "OPEN")
   const mergedAt = pr?.mergedAt ?? plan.mergedAt
   const gc = gateCounts(plan.verification)
-  const step = nextStep(plan)
+  // STAGE EFETIVO (evidência fs+git do backend + estado real do PR); o declarado
+  // no manifest pode estar atrás da realidade → a UI segue a realidade.
+  const effective = effectiveStage(plan, pr)
+  const drift = stageIndex(effective) > stageIndex(plan.stage)
+  const step = nextStep(plan, effective)
+  const [syncing, setSyncing] = useState(false)
+
+  // "Sincronizar etapa": grava o stage EFETIVO no manifest (o cache declarado
+  // para de mentir) e recarrega os planos.
+  async function syncStage() {
+    if (!project) return
+    setSyncing(true)
+    try {
+      await setPlanStage(project.path, plan.slug, effective)
+      onReload()
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha ao sincronizar a etapa")
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   // v2.1, dirige a próxima etapa via o AgentRunner (claude -p "/{skill} {slug}").
   // v2.4, no sucesso, o cockpit AFIRMA o stage no manifest (determinístico).
@@ -720,31 +782,51 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
         </div>
       </div>
 
-      <Pipeline plan={plan} />
+      <Pipeline plan={plan} pr={pr} />
 
-      {step &&
-        (step.blockedBy === "prd" ? (
-          <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
-            <span>PRD aguardando sua aprovação:</span>
-            <button
-              onClick={reviewPrd}
-              className="flex items-center gap-1.5 rounded-full border border-brass/40 bg-brass/10 px-3 py-1 text-brass transition-colors hover:bg-brass/20"
-            >
-              <FileText className="size-3.5" /> Revisar PRD
-            </button>
+      {step?.blockedBy === "prd" ? (
+        <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+          <span>PRD aguardando sua aprovação:</span>
+          <button
+            onClick={reviewPrd}
+            className="flex items-center gap-1.5 rounded-full border border-brass/40 bg-brass/10 px-3 py-1 text-brass transition-colors hover:bg-brass/20"
+          >
+            <FileText className="size-3.5" /> Revisar PRD
+          </button>
+        </div>
+      ) : (
+        (step || drift) && (
+          <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+            {step && (
+              <>
+                <span>Próxima etapa:</span>
+                <button
+                  onClick={() => void runStage()}
+                  disabled={!!run?.running}
+                  className="flex items-center gap-1.5 rounded-full border border-brass/40 bg-brass/10 px-3 py-1 text-brass transition-colors hover:bg-brass/20 disabled:opacity-50"
+                >
+                  <Play className="size-3.5" /> Rodar /{step.skill}
+                </button>
+              </>
+            )}
+            {drift && (
+              <button
+                onClick={() => void syncStage()}
+                disabled={syncing}
+                title={`Grava "${stageLabel(effective)}" no manifest (hoje declara "${stageLabel(plan.stage)}")`}
+                className="flex items-center gap-1.5 rounded-full border px-3 py-1 text-foreground/80 transition-colors hover:bg-accent disabled:opacity-50"
+              >
+                {syncing ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3.5" />
+                )}
+                Sincronizar etapa
+              </button>
+            )}
           </div>
-        ) : (
-          <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
-            <span>Próxima etapa:</span>
-            <button
-              onClick={() => void runStage()}
-              disabled={!!run?.running}
-              className="flex items-center gap-1.5 rounded-full border border-brass/40 bg-brass/10 px-3 py-1 text-brass transition-colors hover:bg-brass/20 disabled:opacity-50"
-            >
-              <Play className="size-3.5" /> Rodar /{step.skill}
-            </button>
-          </div>
-        ))}
+        )
+      )}
 
       <ContractSection plan={plan} />
 
@@ -1187,18 +1269,47 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function Pipeline({ plan }: { plan: SddPlan }) {
-  const cur = stageIndex(plan.stage)
+/** Sinais que puxaram o stage efetivo à frente do declarado (tooltip do badge). */
+function evidenceSignals(plan: SddPlan, pr: PrInfo | null): string {
+  const sig: string[] = []
+  if (plan.evidence?.prdFile) sig.push("PRD.md no disco")
+  if (plan.evidence?.specFile) sig.push("SPEC.md no disco")
+  if (plan.evidence?.branchCommits) sig.push("branch com commits")
+  if (pr) sig.push(pr.state === "MERGED" ? "PR mergeada" : "PR existente")
+  return sig.length
+    ? `Sinais (fs + git + gh): ${sig.join(" · ")}. O manifest declara "${stageLabel(plan.stage)}".`
+    : `Detectado além do declarado ("${stageLabel(plan.stage)}").`
+}
+
+function Pipeline({ plan, pr }: { plan: SddPlan; pr: PrInfo | null }) {
+  // trilha do plano (quick pula PRD/SPEC) + stage EFETIVO por evidência: o trilho
+  // mostra a realidade, não o cache declarado do manifest.
+  const stages = stagesForTrack(plan.track)
+  const effective = effectiveStage(plan, pr)
+  const drift = stageIndex(effective) > stageIndex(plan.stage)
+  const cur = stageIndex(effective)
   const completed = new Set(plan.stagesCompleted)
-  const allDone = plan.stage === "done"
+  const allDone = effective === "done"
   return (
     <div className="rounded-xl border bg-card px-5 py-4">
+      {drift && (
+        <div className="mb-3 flex justify-end">
+          <span
+            title={evidenceSignals(plan, pr)}
+            className="cursor-help rounded-full border border-brass/30 bg-brass/5 px-2 py-0.5 text-[10.5px] text-brass/80"
+          >
+            {stageLabel(effective)} · detectado pela evidência
+          </span>
+        </div>
+      )}
       {/* trilho: pontos espalhados pela largura (conectores flex), sem scroll */}
       <div className="flex items-start">
-        {SDD_STAGES.map((s, i) => {
-          const isCurrent = s === plan.stage
+        {stages.map((s, i) => {
+          const isCurrent = s === effective
           const isDone =
-            allDone || completed.has(s) || (cur >= 0 && i < cur && s !== "done")
+            allDone ||
+            completed.has(s) ||
+            (cur >= 0 && stageIndex(s) < cur && s !== "done")
           return (
             <Fragment key={s}>
               {i > 0 && (

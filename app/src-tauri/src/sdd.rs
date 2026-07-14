@@ -16,6 +16,159 @@ pub struct SddPlanRaw {
     pub log_tail: Option<String>,
     /// Títulos dos passos `- [x] **...**` do LOG (timeline de atividade limpa).
     pub log_events: Vec<String>,
+    /// Evidência local determinística (fs + git, sem LLM/rede). None p/ pasta
+    /// sem manifest; o frontend deriva o stage efetivo (max monotônico).
+    pub evidence: Option<EvidenceRaw>,
+}
+
+// ---------------- Motor de evidência (docs/sdd-evolution.md item 1) ----------------
+//
+// O stage do manifest é DECLARADO e desatualiza quando o trabalho foge do fluxo.
+// Aqui o Rust computa a EVIDÊNCIA que a realidade local sustenta (arquivos na
+// pasta do plano + commits no branch), determinística e conservadora: qualquer
+// falha vira false, nunca inventa. PR/merged ficam no frontend via `pr_info`.
+
+#[derive(Serialize)]
+pub struct EvidenceRaw {
+    /// PRD.md existe na pasta do plano (ou o path de artifacts.prd do manifest).
+    pub prd_file: bool,
+    /// SPEC.md existe (idem via artifacts.spec).
+    pub spec_file: bool,
+    /// o branch do manifest existe NO REPO e tem >=1 commit à frente do default.
+    pub branch_commits: bool,
+    /// estágio máximo suportado pela evidência LOCAL: "prd" | "spec" | "implementation" | null.
+    pub evidence_stage: Option<String>,
+}
+
+/// Máximo que a evidência local sustenta (regra do max, pura).
+fn evidence_stage(prd: bool, spec: bool, branch: bool) -> Option<&'static str> {
+    if branch {
+        Some("implementation")
+    } else if spec {
+        Some("spec")
+    } else if prd {
+        Some("prd")
+    } else {
+        None
+    }
+}
+
+/// O branch vem do manifest (escrito por LLM) e vira argv do git: rejeita tudo
+/// fora de [A-Za-z0-9._/-], espaço e prefixo '-' (injeção de flag).
+fn safe_branch(b: &str) -> bool {
+    !b.is_empty()
+        && !b.starts_with('-')
+        && b.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '-'))
+}
+
+/// Path de artifact do manifest → existe? Relativo à PASTA DO PLANO (como as
+/// skills gravam, "PRD.md"); se tem diretório, pode ser relativo ao projeto
+/// (skill antiga) — testa o 2º candidato. Absoluto/`..` → false (LLM-written).
+fn artifact_exists(plan_dir: &Path, project: &Path, rel: &str) -> bool {
+    let rel = rel.trim();
+    if rel.is_empty() {
+        return false;
+    }
+    let p = Path::new(rel);
+    if p.is_absolute() || rel.split(['/', '\\']).any(|c| c == "..") {
+        return false;
+    }
+    plan_dir.join(p).is_file() || (rel.contains('/') && project.join(p).is_file())
+}
+
+/// Default branch do repo, 1x por chamada: origin/HEAD; fallback main → master.
+fn detect_default_branch(project_path: &str) -> Option<String> {
+    if let Some(out) = crate::proc::run_ok(
+        "git",
+        &["-C", project_path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+        None,
+    ) {
+        let t = out.trim();
+        let b = t.strip_prefix("origin/").unwrap_or(t);
+        if !b.is_empty() {
+            return Some(b.to_string());
+        }
+    }
+    for cand in ["main", "master"] {
+        let r = format!("refs/heads/{cand}");
+        if crate::proc::run_ok(
+            "git",
+            &["-C", project_path, "rev-parse", "--verify", "--quiet", &r],
+            None,
+        )
+        .is_some()
+        {
+            return Some(cand.to_string());
+        }
+    }
+    None
+}
+
+/// `branch` existe (local ou origin/) e está >=1 commit à frente do default?
+/// Conservador: branch É o default, não resolve, ou qualquer falha → false.
+fn branch_ahead_of_default(project_path: &str, branch: &str, default: &str) -> bool {
+    if !safe_branch(branch) || !safe_branch(default) || branch == default {
+        return false;
+    }
+    let resolve = |r: String| {
+        crate::proc::run_ok(
+            "git",
+            &["-C", project_path, "rev-parse", "--verify", "--quiet", "--end-of-options", &r],
+            None,
+        )
+    };
+    let Some(sha) = resolve(format!("refs/heads/{branch}"))
+        .or_else(|| resolve(format!("refs/remotes/origin/{branch}")))
+    else {
+        return false;
+    };
+    let sha = sha.trim().to_string();
+    if !is_sha(&sha) {
+        return false;
+    }
+    let range = format!("{default}..{sha}");
+    crate::proc::run_ok(
+        "git",
+        &["-C", project_path, "rev-list", "--count", "--end-of-options", &range],
+        None,
+    )
+    .and_then(|s| s.trim().parse::<u64>().ok())
+    .map(|n| n > 0)
+    .unwrap_or(false)
+}
+
+/// Evidência de um plano com manifest. Manifest quebrado não é erro: os paths
+/// default (PRD.md/SPEC.md) ainda contam — evidência olha a realidade, não o JSON.
+fn compute_evidence(
+    plan_dir: &Path,
+    project_path: &str,
+    manifest_raw: &str,
+    default_branch: &Option<String>,
+) -> EvidenceRaw {
+    let v: serde_json::Value =
+        serde_json::from_str(manifest_raw).unwrap_or(serde_json::Value::Null);
+    let art_path = |k: &str, def: &str| -> String {
+        v.get("artifacts")
+            .and_then(|a| a.get(k))
+            .and_then(|p| p.get("path"))
+            .and_then(|s| s.as_str())
+            .unwrap_or(def)
+            .to_string()
+    };
+    let project = Path::new(project_path);
+    let prd_file = artifact_exists(plan_dir, project, &art_path("prd", "PRD.md"));
+    let spec_file = artifact_exists(plan_dir, project, &art_path("spec", "SPEC.md"));
+    let branch_commits = match (v.get("branch").and_then(|b| b.as_str()), default_branch) {
+        (Some(b), Some(d)) => branch_ahead_of_default(project_path, b, d),
+        _ => false,
+    };
+    EvidenceRaw {
+        prd_file,
+        spec_file,
+        branch_commits,
+        evidence_stage: evidence_stage(prd_file, spec_file, branch_commits).map(String::from),
+    }
 }
 
 /// Extrai os títulos dos passos concluídos do LOG (`- [x] **Título**, …`).
@@ -48,6 +201,8 @@ pub fn read_sdd_plans(project_path: String) -> Result<Vec<SddPlanRaw>, String> {
         return Ok(vec![]);
     }
     let mut out = Vec::new();
+    // default branch descoberto UMA vez por chamada (lazy: só se algum plano tem manifest).
+    let mut default_branch: Option<Option<String>> = None;
     for entry in fs::read_dir(&plans_dir).map_err(|e| e.to_string())?.flatten() {
         let path = entry.path();
         if !path.is_dir() {
@@ -62,11 +217,18 @@ pub fn read_sdd_plans(project_path: String) -> Result<Vec<SddPlanRaw>, String> {
             let start = lines.len().saturating_sub(25);
             lines[start..].join("\n")
         });
+        let evidence = manifest.as_deref().map(|raw| {
+            let db = default_branch
+                .get_or_insert_with(|| detect_default_branch(&project_path))
+                .clone();
+            compute_evidence(&path, &project_path, raw, &db)
+        });
         out.push(SddPlanRaw {
             slug,
             manifest,
             log_tail,
             log_events,
+            evidence,
         });
     }
     out.sort_by(|a, b| a.slug.cmp(&b.slug));
@@ -412,13 +574,16 @@ pub struct CreatedPlan {
 }
 
 /// Stage 0 determinístico (espelha o `/feature`): cria `.claude/plans/{slug}/` com
-/// o manifest do template (slug/title/branch/created_at) + LOG. NÃO chama agent,
-/// o conteúdo (PRD) vem depois, quando você roda `/prd`.
+/// o manifest do template (slug/title/branch/created_at/track) + LOG. NÃO chama
+/// agent, o conteúdo (PRD) vem depois, quando você roda `/prd`. `track` escolhe a
+/// trilha proporcional ("quick" | "full"; default "full") — o frontend lê do
+/// manifest cru.
 #[tauri::command]
 pub fn create_plan(
     project_path: String,
     description: String,
     created_at: String,
+    track: Option<String>,
 ) -> Result<CreatedPlan, String> {
     let desc = description.trim();
     if desc.is_empty() {
@@ -461,6 +626,12 @@ pub fn create_plan(
     m["title"] = serde_json::Value::String(title);
     m["branch"] = serde_json::Value::String(branch.clone());
     m["created_at"] = serde_json::Value::String(created_at.clone());
+    // trilha proporcional: valor inválido/ausente cai no pipeline completo.
+    let track = match track.as_deref() {
+        Some("quick") => "quick",
+        _ => "full",
+    };
+    m["track"] = serde_json::Value::String(track.into());
     // limpa o sponsor placeholder do template ("<sponsor name>"), vira null.
     if m.get("sponsor")
         .and_then(|v| v.as_str())
@@ -581,8 +752,13 @@ mod tests {
         let pp = tmp.to_string_lossy().to_string();
 
         // Stage 0, cria o plano do template, preenche e limpa o placeholder.
-        let r = create_plan(pp.clone(), "Recurso de teste".into(), "2026-06-30T00:00:00Z".into())
-            .unwrap();
+        let r = create_plan(
+            pp.clone(),
+            "Recurso de teste".into(),
+            "2026-06-30T00:00:00Z".into(),
+            None,
+        )
+        .unwrap();
         assert_eq!(r.slug, "recurso-de-teste");
         let mf = plans.join(&r.slug).join("manifest.json");
         let m: serde_json::Value = serde_json::from_str(&fs::read_to_string(&mf).unwrap()).unwrap();
@@ -590,7 +766,24 @@ mod tests {
         assert_eq!(m["stage"], "discovery");
         assert_eq!(m["branch"], "feature/recurso-de-teste");
         assert_eq!(m["created_at"], "2026-06-30T00:00:00Z");
+        assert_eq!(m["track"], "full", "track ausente cai no pipeline completo");
         assert!(m["sponsor"].is_null(), "placeholder do sponsor deve virar null");
+
+        // track explícito: "quick" persiste; inválido normaliza pra "full".
+        let q = create_plan(pp.clone(), "Ajuste rápido".into(), "x".into(), Some("quick".into()))
+            .unwrap();
+        let mq: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(plans.join(&q.slug).join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(mq["track"], "quick");
+        let w = create_plan(pp.clone(), "Outra coisa".into(), "x".into(), Some("warp".into()))
+            .unwrap();
+        let mw: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(plans.join(&w.slug).join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(mw["track"], "full");
 
         // bump discovery → prd (completa stages_completed).
         set_plan_stage(pp.clone(), r.slug.clone(), "prd".into()).unwrap();
@@ -604,7 +797,111 @@ mod tests {
         assert_eq!(m["stage"], "prd");
 
         // não clobbera: criar o mesmo de novo falha.
-        assert!(create_plan(pp, "Recurso de teste".into(), "x".into()).is_err());
+        assert!(create_plan(pp, "Recurso de teste".into(), "x".into(), None).is_err());
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn evidence_stage_max_rule() {
+        // branch domina, depois spec, depois prd, senão nada.
+        assert_eq!(evidence_stage(true, true, true), Some("implementation"));
+        assert_eq!(evidence_stage(false, false, true), Some("implementation"));
+        assert_eq!(evidence_stage(true, true, false), Some("spec"));
+        assert_eq!(evidence_stage(false, true, false), Some("spec"));
+        assert_eq!(evidence_stage(true, false, false), Some("prd"));
+        assert_eq!(evidence_stage(false, false, false), None);
+    }
+
+    #[test]
+    fn branch_sanitization() {
+        assert!(safe_branch("feature/recurso-de-teste"));
+        assert!(safe_branch("fix/v1.2_hotfix"));
+        assert!(!safe_branch("")); // vazio
+        assert!(!safe_branch("-delete")); // vira flag do git
+        assert!(!safe_branch("--upload-pack=/bin/sh")); // injeção clássica
+        assert!(!safe_branch("feat x")); // espaço
+        assert!(!safe_branch("feat;rm -rf")); // metachar
+        assert!(!safe_branch("feat\nx")); // controle
+    }
+
+    #[test]
+    fn artifact_path_resolution() {
+        let tmp = std::env::temp_dir().join(format!("mycockpit-sdd-art-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let plan = tmp.join(".claude").join("plans").join("p");
+        fs::create_dir_all(&plan).unwrap();
+        fs::write(plan.join("PRD.md"), "# prd").unwrap();
+        fs::write(tmp.join("NOTES.md"), "x").unwrap();
+
+        // relativo à pasta do plano (o formato das skills).
+        assert!(artifact_exists(&plan, &tmp, "PRD.md"));
+        assert!(!artifact_exists(&plan, &tmp, "SPEC.md"));
+        // bare filename NÃO cai pro projeto; com diretório, sim.
+        assert!(!artifact_exists(&plan, &tmp, "NOTES.md"));
+        assert!(artifact_exists(&plan, &tmp, ".claude/plans/p/PRD.md"));
+        // manifest malicioso/quebrado: absoluto, traversal, vazio → false.
+        assert!(!artifact_exists(&plan, &tmp, "/etc/hosts"));
+        assert!(!artifact_exists(&plan, &tmp, "../p/PRD.md"));
+        assert!(!artifact_exists(&plan, &tmp, "  "));
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// git de verdade num repo tmp: default branch (fallback main), commits à
+    /// frente, branch==default, branch inexistente e branch não-sanitizado.
+    #[test]
+    fn branch_evidence_with_real_git() {
+        let tmp = std::env::temp_dir().join(format!("mycockpit-sdd-git-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let pp = tmp.to_string_lossy().to_string();
+        let git = |args: &[&str]| {
+            let mut full = vec![
+                "-C",
+                &pp,
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=T",
+                "-c",
+                "commit.gpgsign=false",
+            ];
+            full.extend_from_slice(args);
+            crate::proc::run("git", &full, None).unwrap();
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "base"]);
+
+        // sem origin/HEAD → fallback resolve "main".
+        assert_eq!(detect_default_branch(&pp).as_deref(), Some("main"));
+
+        // branch ainda sem commits à frente → false (conservador).
+        git(&["branch", "feature/x"]);
+        assert!(!branch_ahead_of_default(&pp, "feature/x", "main"));
+
+        // 1 commit à frente → evidência de implementação.
+        git(&["checkout", "-q", "feature/x"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "work"]);
+        assert!(branch_ahead_of_default(&pp, "feature/x", "main"));
+
+        // branch É o default / não existe / não passa na sanitização → false.
+        assert!(!branch_ahead_of_default(&pp, "main", "main"));
+        assert!(!branch_ahead_of_default(&pp, "feature/nope", "main"));
+        assert!(!branch_ahead_of_default(&pp, "--upload-pack=/bin/sh", "main"));
+
+        // fim-a-fim do compute_evidence: manifest com branch + PRD na pasta.
+        let plan = tmp.join(".claude").join("plans").join("p");
+        fs::create_dir_all(&plan).unwrap();
+        fs::write(plan.join("PRD.md"), "# prd").unwrap();
+        let raw = r#"{"branch":"feature/x","artifacts":{"prd":{"path":"PRD.md"},"spec":{"path":"SPEC.md"}}}"#;
+        let ev = compute_evidence(&plan, &pp, raw, &Some("main".into()));
+        assert!(ev.prd_file && !ev.spec_file && ev.branch_commits);
+        assert_eq!(ev.evidence_stage.as_deref(), Some("implementation"));
+        // manifest ilegível não zera a evidência de arquivo (defaults valem).
+        let ev = compute_evidence(&plan, &pp, "{broken", &Some("main".into()));
+        assert!(ev.prd_file && !ev.branch_commits);
+        assert_eq!(ev.evidence_stage.as_deref(), Some("prd"));
 
         let _ = fs::remove_dir_all(&tmp);
     }

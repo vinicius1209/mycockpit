@@ -96,14 +96,30 @@ export interface ConsistencyAnchor {
   canon_file: string
   reference_doc: string
 }
+
+/** Trilha do plano: full = pipeline inteiro; quick = sem PRD/SPEC formais. */
+export type SddTrack = "quick" | "full"
+
+/** Sinais de evidência LOCAL (fs + git) computados pelo backend. */
+export interface SddEvidence {
+  prdFile: boolean
+  specFile: boolean
+  branchCommits: boolean
+}
 export interface SddPlan {
   slug: string
   title: string
   sponsor: string | null
   branch: string | null
   createdAt: string | null
-  stage: string // normalizado
+  stage: string // normalizado (DECLARADO no manifest)
   stageRaw: string
+  /** Stage derivado da evidência local (fs+git) pelo backend; null sem evidência. */
+  evidenceStage: string | null
+  /** Sinais crus da evidência (tooltip do badge); null = backend antigo/sem dado. */
+  evidence: SddEvidence | null
+  /** Trilha escolhida na criação. Planos antigos (sem track) = "full". */
+  track: SddTrack
   stagesCompleted: string[] // normalizado
   artifacts: {
     prd: { path: string; approved: boolean; approvedAt: string | null } | null
@@ -130,6 +146,13 @@ interface SddPlanRaw {
   manifest: string | null
   log_tail: string | null
   log_events: string[]
+  /** Evidência local (fs+git). Defensivo: undefined em backend antigo → null. */
+  evidence?: {
+    prd_file: boolean
+    spec_file: boolean
+    branch_commits: boolean
+    evidence_stage: string | null
+  } | null
 }
 
 function asStrArray(v: unknown): string[] {
@@ -156,6 +179,7 @@ function normalize(raw: SddPlanRaw): SddPlan {
   for (const [k, val] of Object.entries(v)) {
     verification[k] = val === true ? true : val === false ? false : null
   }
+  const ev = raw.evidence ?? null // backend antigo não manda o campo → null
   return {
     slug: raw.slug,
     title: typeof m.title === "string" ? m.title : raw.slug,
@@ -164,6 +188,15 @@ function normalize(raw: SddPlanRaw): SddPlan {
     createdAt: typeof m.created_at === "string" ? m.created_at : null,
     stage: normStage(m.stage),
     stageRaw: typeof m.stage === "string" ? m.stage : "",
+    evidenceStage: ev ? normStage(ev.evidence_stage) || null : null,
+    evidence: ev
+      ? {
+          prdFile: !!ev.prd_file,
+          specFile: !!ev.spec_file,
+          branchCommits: !!ev.branch_commits,
+        }
+      : null,
+    track: m.track === "quick" ? "quick" : "full",
     stagesCompleted: asStrArray(m.stages_completed).map(normStage),
     artifacts: {
       prd: a.prd
@@ -266,11 +299,13 @@ export async function approvePrd(projectPath: string, slug: string): Promise<voi
 export async function createPlan(
   projectPath: string,
   description: string,
+  track: SddTrack = "full",
 ): Promise<string> {
   const r = await invoke<{ slug: string }>("create_plan", {
     projectPath,
     description,
     createdAt: new Date().toISOString(),
+    track,
   })
   return r.slug
 }
@@ -303,6 +338,33 @@ export function stageIndex(s: string): number {
   return (SDD_STAGES as readonly string[]).indexOf(s)
 }
 
+/** STAGE EFETIVO por evidência: max (por stageIndex) entre o declarado, o derivado
+ *  da evidência local (fs+git) e o estado real do PR (merged → done; PR existente →
+ *  pr). MONOTÔNICO: nunca menor que o declarado — evidência só puxa pra frente. */
+export function effectiveStage(plan: SddPlan, pr: PrInfo | null): string {
+  const candidates = [plan.stage]
+  if (plan.evidenceStage) candidates.push(plan.evidenceStage)
+  // pr carregado (só existe se há pr_url): MERGED → done; OPEN/CLOSED → ≥ pr.
+  if (pr) candidates.push(pr.state === "MERGED" ? "done" : "pr")
+  let best = plan.stage
+  let bestIdx = stageIndex(plan.stage)
+  for (const c of candidates) {
+    const i = stageIndex(c)
+    if (i > bestIdx) {
+      best = c
+      bestIdx = i
+    }
+  }
+  return best
+}
+
+/** Etapas da trilha: full = pipeline inteiro; quick pula PRD e SPEC formais
+ *  (Descoberta → Implementação → Testes → Review → PR → Concluído). */
+export function stagesForTrack(track: SddTrack): readonly SddStage[] {
+  if (track === "quick") return SDD_STAGES.filter((s) => s !== "prd" && s !== "spec")
+  return SDD_STAGES
+}
+
 // stage normalizado → a SKILL que avança pro próximo (nome real da skill no projeto).
 const NEXT_SKILL: Record<string, string> = {
   "": "discovery",
@@ -314,15 +376,37 @@ const NEXT_SKILL: Record<string, string> = {
   review: "pr",
 }
 
-/** Próxima etapa a rodar (skill + prompt). null se done OU travado num gate humano. */
+// Trilha quick: depois da descoberta vai DIRETO pra implementação (sem /prd, /spec).
+// prd/spec no mapa é defesa contra manifest antigo/inconsistente com track=quick.
+const NEXT_SKILL_QUICK: Record<string, string> = {
+  "": "discovery",
+  discovery: "developer",
+  prd: "developer",
+  spec: "developer",
+  implementation: "test-suite",
+  test: "code-review",
+  review: "pr",
+}
+
+/** Próxima etapa a rodar (skill + prompt), respeitando a trilha do plano. null se
+ *  done OU travado num gate humano. `stage` opcional: passe o stage EFETIVO pra
+ *  sugerir a etapa a partir da realidade (default: o declarado). */
 export function nextStep(
   plan: SddPlan,
+  stage: string = plan.stage,
 ): { skill: string; prompt: string; blockedBy?: "prd" } | null {
   // Gate do PRD (v2.2): PRD existe e não aprovado → não dispara /spec; espera você.
-  if (plan.stage === "prd" && plan.artifacts.prd && !plan.artifacts.prd.approved) {
+  // Só na trilha full — a quick não tem PRD formal.
+  if (
+    plan.track !== "quick" &&
+    stage === "prd" &&
+    plan.artifacts.prd &&
+    !plan.artifacts.prd.approved
+  ) {
     return { skill: "spec", prompt: "", blockedBy: "prd" }
   }
-  const skill = NEXT_SKILL[plan.stage]
+  const map = plan.track === "quick" ? NEXT_SKILL_QUICK : NEXT_SKILL
+  const skill = map[stage]
   if (!skill) return null
   return { skill, prompt: `/${skill} ${plan.slug}` }
 }
