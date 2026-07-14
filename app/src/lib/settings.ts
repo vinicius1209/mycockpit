@@ -37,6 +37,11 @@ export interface GlobalSettings {
   /** Último snapshot da detecção de agents (por id). Alimenta o seletor e o
    *  bloco "Agents na máquina" das Configurações. */
   detected: Record<string, AgentProbe>
+  /** Epoch ms da última checagem diária de update dos agents (0 = nunca). */
+  lastUpdateCheck: number
+  /** Última versão `latest` já NOTIFICADA por agent (dedupe: nunca repete a
+   *  notificação da mesma versão). */
+  lastNotifiedVersions: Record<string, string>
 }
 
 export const DEFAULT_SETTINGS: GlobalSettings = {
@@ -52,4 +57,6 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   missionPresets: DEFAULT_MISSION_PRESETS,
   onboarded: false,
   detected: {},
+  lastUpdateCheck: 0,
+  lastNotifiedVersions: {},
 }

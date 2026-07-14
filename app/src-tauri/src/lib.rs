@@ -301,6 +301,7 @@ pub fn run() {
             agent::judge,
             context::read_project_context,
             detect::detect_agents,
+            detect::list_agy_models,
             mycockpit::read_mycockpit_config,
             mycockpit::write_mycockpit_config,
             sources::read_project_sources,

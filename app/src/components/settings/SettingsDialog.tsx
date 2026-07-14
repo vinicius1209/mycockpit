@@ -1,7 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { getVersion } from "@tauri-apps/api/app"
 import {
+  AlertTriangle,
   Bot,
+  Check,
+  Copy,
+  Cpu,
   Info,
   Mic,
   Palette,
@@ -23,12 +27,20 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useApp } from "@/store/app"
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
+import {
+  detectAgents,
+  refreshAgyModels,
+  toProbeMap,
+  updateAvailable,
+  UPDATE_COMMANDS,
+} from "@/lib/detect"
 import { MissionSettings } from "@/components/settings/MissionSettings"
 import { cn } from "@/lib/utils"
 
 type Section =
   | "appearance"
   | "agents"
+  | "tools"
   | "suggestions"
   | "dictation"
   | "missions"
@@ -37,11 +49,144 @@ type Section =
 const SECTIONS: { id: Section; label: string; icon: typeof Bot }[] = [
   { id: "appearance", label: "Aparência", icon: Palette },
   { id: "agents", label: "Padrões", icon: Bot },
+  { id: "tools", label: "Agents", icon: Cpu },
   { id: "suggestions", label: "Sugestões", icon: Sparkles },
   { id: "dictation", label: "Ditado", icon: Mic },
   { id: "missions", label: "Missions", icon: Waypoints },
   { id: "about", label: "Sobre", icon: Info },
 ]
+
+/** Agents que a seção "Agents" lista (na ordem), com o rótulo do checklist. */
+const AGENT_TOOLS: { id: string; label: string; sub: string }[] = [
+  { id: "claude-code", label: "Claude Code", sub: "CLI da Anthropic" },
+  { id: "codex", label: "Codex", sub: "CLI da OpenAI" },
+  { id: "agy", label: "Antigravity", sub: "CLI do Google" },
+]
+
+function fmtCheckedAt(ts: number): string {
+  if (!ts) return "nunca"
+  const m = Math.floor((Date.now() - ts) / 60_000)
+  if (m < 1) return "agora"
+  if (m < 60) return `há ${m} min`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `há ${h} h`
+  return `há ${Math.floor(h / 24)} d`
+}
+
+/** Seção "Agents": versão instalada × última oficial, comando de update
+ *  copiável e re-verificação manual. Mesmo visual do checklist do onboarding. */
+function AgentsToolsSection() {
+  const detected = useApp((s) => s.settings.detected)
+  const lastUpdateCheck = useApp((s) => s.settings.lastUpdateCheck)
+  const setSettings = useApp((s) => s.setSettings)
+  const [checking, setChecking] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
+
+  async function checkNow() {
+    setChecking(true)
+    const tools = await detectAgents()
+    const now = Date.now()
+    if (tools.length > 0)
+      setSettings({ detected: toProbeMap(tools, now), lastUpdateCheck: now })
+    else setSettings({ lastUpdateCheck: now })
+    await refreshAgyModels() // modelos dinâmicos do agy junto da verificação
+    setChecking(false)
+  }
+
+  function copyCmd(id: string, cmd: string) {
+    void navigator.clipboard?.writeText(cmd).then(() => {
+      setCopied(id)
+      window.setTimeout(() => setCopied((c) => (c === id ? null : c)), 1500)
+    })
+  }
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <SectionTitle>Agents na máquina</SectionTitle>
+        <button
+          onClick={() => void checkNow()}
+          disabled={checking}
+          className="mb-1 flex items-center gap-1.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+        >
+          <RotateCcw className={cn("size-3.5", checking && "animate-spin")} />
+          Verificar agora
+        </button>
+      </div>
+      <ul className="flex flex-col gap-1.5">
+        {AGENT_TOOLS.map((tool) => {
+          const probe = detected[tool.id]
+          const hasUpdate = probe ? updateAvailable(probe) : false
+          const cmd = UPDATE_COMMANDS[tool.id]
+          return (
+            <li
+              key={tool.id}
+              className="flex items-center gap-3 rounded-lg border border-border/50 bg-secondary/20 px-3 py-2"
+            >
+              <span className="shrink-0">
+                {!probe || !probe.installed ? (
+                  <X className="size-4 text-st-error" />
+                ) : hasUpdate ? (
+                  <AlertTriangle className="size-4 text-st-warning" />
+                ) : (
+                  <Check className="size-4 text-st-success" />
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 text-[13px] text-foreground">
+                  <span>
+                    {tool.label}{" "}
+                    <span className="text-muted-foreground">· {tool.sub}</span>
+                  </span>
+                  {hasUpdate && (
+                    <span className="shrink-0 rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning uppercase">
+                      atualização disponível
+                    </span>
+                  )}
+                </div>
+                <div className="truncate text-[11.5px] text-muted-foreground">
+                  {!probe
+                    ? "não verificado ainda"
+                    : !probe.installed
+                      ? "não instalado"
+                      : `instalado v${probe.version ?? "?"}${
+                          probe.latest ? ` · última v${probe.latest}` : ""
+                        }`}
+                </div>
+              </div>
+              {cmd ? (
+                <button
+                  onClick={() => copyCmd(tool.id, cmd)}
+                  title="Copiar comando de update"
+                  className="flex shrink-0 items-center gap-1.5 rounded bg-background/60 px-1.5 py-0.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {copied === tool.id ? (
+                    <>
+                      <Check className="size-3 text-st-success" /> copiado
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="size-3" /> {cmd}
+                    </>
+                  )}
+                </button>
+              ) : (
+                <span className="shrink-0 text-[11px] text-muted-foreground/60">
+                  —
+                </span>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      <p className="mt-3 text-[11.5px] leading-snug text-muted-foreground">
+        Verificação automática 1×/dia ao abrir o app (última:{" "}
+        {fmtCheckedAt(lastUpdateCheck)}). Quando sai versão nova você recebe uma
+        notificação única por versão.
+      </p>
+    </div>
+  )
+}
 
 const HELPER_OPTIONS = [
   { value: "off", label: "Desligado", description: "Sem sugestões automáticas" },
@@ -265,6 +410,8 @@ export function SettingsDialog() {
               </div>
             </div>
           )}
+
+          {section === "tools" && <AgentsToolsSection />}
 
           {section === "suggestions" && (
             <div>

@@ -1,3 +1,4 @@
+import { useState } from "react"
 import {
   ArrowUp,
   FileText,
@@ -264,6 +265,12 @@ export function AgentSelect({
   )
 }
 
+// Sentinela do "Modelo custom…" no select de modelo — NUNCA chega ao adapter:
+// escolher abre o input inline; só o id digitado (confirmado) vira o model.
+const CUSTOM_MODEL = "__custom__"
+/** Agents cujas CLIs aceitam id arbitrário via --model/-m (dia-1 de modelo). */
+const CUSTOM_MODEL_AGENTS = new Set(["claude-code", "codex"])
+
 /** Controles do footer: destino + modelo + effort + Disputar/anexar/enviar. */
 export function ComposerControls({
   effectiveDest,
@@ -311,6 +318,52 @@ export function ComposerControls({
     : undefined
   // Missions (beta): o botão só existe com a flag ligada nas Settings.
   const missionEnabled = useApp((s) => s.settings.missionEnabled)
+
+  // "Modelo custom…" (claude-code/codex): id exato digitado num input inline.
+  // O select só muda quando o valor é confirmado (Enter); Esc/vazio cancela.
+  const [customEditing, setCustomEditing] = useState(false)
+  const [customDraft, setCustomDraft] = useState("")
+  const baseModels = agentModels(effectiveDest)
+  const supportsCustom = CUSTOM_MODEL_AGENTS.has(effectiveDest)
+  // valor atual fora da lista = modelo custom em uso → vira opção visível no
+  // select (senão o Radix não exibe o selecionado, inclusive em conv travada).
+  const isCustomValue =
+    effectiveModel !== "default" &&
+    !baseModels.some((o) => o.value === effectiveModel)
+  const modelOptions = supportsCustom
+    ? [
+        ...baseModels,
+        ...(isCustomValue
+          ? [
+              {
+                value: effectiveModel,
+                label: effectiveModel,
+                description: "Modelo custom",
+              },
+            ]
+          : []),
+        {
+          value: CUSTOM_MODEL,
+          label: "Modelo custom…",
+          description: "Digitar o id exato do modelo",
+        },
+      ]
+    : baseModels
+
+  function handleModelChange(v: string) {
+    if (v === CUSTOM_MODEL) {
+      setCustomDraft(isCustomValue ? effectiveModel : "")
+      setCustomEditing(true)
+      return
+    }
+    onModelChange(v)
+  }
+  function confirmCustom() {
+    const v = customDraft.trim()
+    if (v) onModelChange(v)
+    setCustomEditing(false)
+  }
+
   return (
     <>
       {/* cadeado explícito: sem ele o lock só aparecia no hover (parecia bug) */}
@@ -330,15 +383,36 @@ export function ComposerControls({
         title={lockTitle}
       />
 
-      <RichSelect
-        value={effectiveModel}
-        onValueChange={onModelChange}
-        disabled={locked}
-        title={lockTitle}
-        options={agentModels(effectiveDest)}
-        triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
-        aria-label="Modelo"
-      />
+      {customEditing ? (
+        <input
+          autoFocus
+          value={customDraft}
+          onChange={(e) => setCustomDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault()
+              confirmCustom()
+            } else if (e.key === "Escape") {
+              e.preventDefault()
+              setCustomEditing(false)
+            }
+          }}
+          onBlur={confirmCustom}
+          placeholder="id exato do modelo"
+          aria-label="Modelo custom"
+          className="h-8 w-44 rounded-md border border-border bg-secondary/40 px-2 font-mono text-[12px] text-foreground outline-none placeholder:font-sans placeholder:text-muted-foreground/60 focus:border-brass/50"
+        />
+      ) : (
+        <RichSelect
+          value={effectiveModel}
+          onValueChange={handleModelChange}
+          disabled={locked}
+          title={lockTitle}
+          options={modelOptions}
+          triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
+          aria-label="Modelo"
+        />
+      )}
 
       <RichSelect
         value={effectiveEffort}

@@ -209,8 +209,26 @@ export const LEAGUE_DESTINATIONS: Destination[] = DESTINATIONS.filter(
   (d) => d.available && d.kind === "agent",
 )
 
+// Cache module-level de modelos DINÂMICOS (descobertos em runtime, ex.: linhas
+// do `agy models`). Quando presente pra um agent, ganha do registry estático em
+// agentModels(). Setado só em effects/handlers (boot do App, "Verificar agora").
+const DYNAMIC_MODELS = new Map<string, AgentModelOption[]>()
+
+/** Registra (ou limpa, com []) os modelos dinâmicos de um agent. */
+export function setDynamicModels(id: string, options: AgentModelOption[]) {
+  if (options.length === 0) DYNAMIC_MODELS.delete(id)
+  else DYNAMIC_MODELS.set(id, options)
+}
+
+/** Converte as linhas do `agy models` em opções de modelo. O `value` é a linha
+ *  EXATA que o adapter passa em `agy --model` (mesmo contrato do AGY_MODELS
+ *  estático). Preserva a opção "Padrão" na frente (sentinela do composer). */
+export function agyModelOptions(lines: string[]): AgentModelOption[] {
+  return [AGY_MODELS[0], ...lines.map((l) => ({ value: l, label: l }))]
+}
+
 export function agentModels(id: string): AgentModelOption[] {
-  return agentDef(id)?.models ?? []
+  return DYNAMIC_MODELS.get(id) ?? agentDef(id)?.models ?? []
 }
 export function agentEfforts(id: string): AgentModelOption[] {
   return agentDef(id)?.efforts ?? []

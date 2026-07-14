@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/resizable"
 import { useApp } from "@/store/app"
 import type { ProjectConfig } from "@/store/app"
+import { useNotifs } from "@/store/notifications"
 import {
   isTauri,
   listProjects,
@@ -27,7 +28,18 @@ import {
   updateProjectPermission,
 } from "@/lib/db"
 import { readMycockpitConfig } from "@/lib/mycockpit"
+import {
+  detectAgents,
+  toProbeMap,
+  updateAvailable,
+  refreshAgyModels,
+  UPDATE_COMMANDS,
+} from "@/lib/detect"
+import { agentDef } from "@/lib/agents"
 import type { PermissionMode, Project } from "@/lib/types"
+
+/** Intervalo mínimo entre checagens de update dos agents (1x/dia). */
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 const queryClient = new QueryClient()
 
@@ -108,6 +120,53 @@ export default function App() {
       cancelled = true
     }
   }, [setProjects, setReady])
+
+  // Verificador de update dos agents (1x/dia no boot): re-detecta versões
+  // (instalada + latest do canal oficial), persiste o snapshot e notifica UMA
+  // vez por versão nova (dedupe em lastNotifiedVersions). No mesmo boot,
+  // atualiza os modelos dinâmicos do agy (falha → lista estática continua).
+  useEffect(() => {
+    if (!isTauri()) return
+    // modelos reais do `agy models` → cache dinâmico (barato, todo boot).
+    void refreshAgyModels()
+    const last = useApp.getState().settings.lastUpdateCheck ?? 0
+    if (Date.now() - last < UPDATE_CHECK_INTERVAL_MS) return
+    void (async () => {
+      const tools = await detectAgents()
+      const now = Date.now()
+      if (tools.length === 0) {
+        // detecção falhou/vazia: marca a tentativa (não martela a cada boot).
+        useApp.getState().setSettings({ lastUpdateCheck: now })
+        return
+      }
+      useApp.getState().setSettings({
+        detected: toProbeMap(tools, now),
+        lastUpdateCheck: now,
+      })
+      const notified = {
+        ...useApp.getState().settings.lastNotifiedVersions,
+      }
+      let changed = false
+      for (const t of tools) {
+        // só os code agents (git/swiftc ficam fora do aviso de update).
+        if (!(t.id in UPDATE_COMMANDS)) continue
+        if (!t.latest || !updateAvailable(t)) continue
+        if (notified[t.id] === t.latest) continue // já avisado desta versão
+        const label = agentDef(t.id)?.label ?? t.id
+        const cmd = UPDATE_COMMANDS[t.id]
+        useNotifs.getState().push({
+          kind: "run_done",
+          title: `Atualização disponível: ${label} ${t.latest}`,
+          subtitle: cmd ?? `instalado ${t.version ?? "?"} → ${t.latest}`,
+          projectId: useApp.getState().activeProjectId ?? "",
+        })
+        notified[t.id] = t.latest
+        changed = true
+      }
+      if (changed)
+        useApp.getState().setSettings({ lastNotifiedVersions: notified })
+    })()
+  }, [])
 
   // Fase 1, carrega a config do projeto ativo de .mycockpit/config.toml (truth)
   // e sincroniza o cache de permissão que o run_claude lê.
