@@ -25,6 +25,7 @@ import {
 } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { toast } from "sonner"
+import { confirm } from "@/lib/confirm"
 import { useActiveProject, useApp } from "@/store/app"
 import { runAgent } from "@/lib/agent"
 import { reduceItems, useChat, type ChatItem } from "@/store/chat"
@@ -685,6 +686,28 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
     }
   }
 
+  // Escape MANUAL (docs/sdd-evolution.md): quando a evidência NÃO consegue provar
+  // (ex.: trabalho feito numa branch diferente da declarada no manifest, mergeado
+  // sem PR vinculado), o humano marca a etapa clicando no trilho. Confirma antes;
+  // monotônico (set_plan_stage só avança).
+  async function markStage(stage: string) {
+    if (!project) return
+    const ok = await confirm({
+      title: `Marcar "${stageLabel(stage)}" como etapa atual?`,
+      description:
+        "Use quando o trabalho foi feito fora do fluxo e a evidência não alcança " +
+        "(ex.: branch diferente da declarada). As etapas anteriores contam como feitas.",
+      confirmLabel: "Marcar etapa",
+    })
+    if (!ok) return
+    try {
+      await setPlanStage(project.path, plan.slug, stage)
+      onReload()
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha ao marcar a etapa")
+    }
+  }
+
   // v2.1, dirige a próxima etapa via o AgentRunner (claude -p "/{skill} {slug}").
   // v2.4, no sucesso, o cockpit AFIRMA o stage no manifest (determinístico).
   async function runStage() {
@@ -782,7 +805,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
         </div>
       </div>
 
-      <Pipeline plan={plan} pr={pr} />
+      <Pipeline plan={plan} pr={pr} onMarkStage={(s) => void markStage(s)} />
 
       {step?.blockedBy === "prd" ? (
         <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
@@ -1281,7 +1304,16 @@ function evidenceSignals(plan: SddPlan, pr: PrInfo | null): string {
     : `Detectado além do declarado ("${stageLabel(plan.stage)}").`
 }
 
-function Pipeline({ plan, pr }: { plan: SddPlan; pr: PrInfo | null }) {
+function Pipeline({
+  plan,
+  pr,
+  onMarkStage,
+}: {
+  plan: SddPlan
+  pr: PrInfo | null
+  /** Escape manual: clicar numa etapa FUTURA a marca como atual (com confirm). */
+  onMarkStage?: (stage: string) => void
+}) {
   // trilha do plano (quick pula PRD/SPEC) + stage EFETIVO por evidência: o trilho
   // mostra a realidade, não o cache declarado do manifest.
   const stages = stagesForTrack(plan.track)
@@ -1321,16 +1353,27 @@ function Pipeline({ plan, pr }: { plan: SddPlan; pr: PrInfo | null }) {
                 />
               )}
               <div className="group relative flex shrink-0 flex-col items-center gap-2">
-                <span
-                  className={cn(
-                    "size-2.5 rounded-full transition-colors",
-                    isCurrent
-                      ? "bg-brass ring-[3px] ring-brass/20"
-                      : isDone
-                        ? "bg-st-success"
-                        : "bg-muted-foreground/25",
-                  )}
-                />
+                {/* etapa FUTURA + handler → clicável (escape manual p/ quando a
+                    evidência não alcança: trabalho em branch diferente etc.) */}
+                {!isCurrent && !isDone && onMarkStage ? (
+                  <button
+                    onClick={() => onMarkStage(s)}
+                    title={`Marcar "${stageLabel(s)}" como etapa atual`}
+                    aria-label={`Marcar ${stageLabel(s)} como etapa atual`}
+                    className="size-2.5 cursor-pointer rounded-full bg-muted-foreground/25 transition-all hover:scale-125 hover:bg-brass/60 hover:ring-[3px] hover:ring-brass/20"
+                  />
+                ) : (
+                  <span
+                    className={cn(
+                      "size-2.5 rounded-full transition-colors",
+                      isCurrent
+                        ? "bg-brass ring-[3px] ring-brass/20"
+                        : isDone
+                          ? "bg-st-success"
+                          : "bg-muted-foreground/25",
+                    )}
+                  />
+                )}
                 <span
                   className={cn(
                     "text-[10.5px] whitespace-nowrap",
