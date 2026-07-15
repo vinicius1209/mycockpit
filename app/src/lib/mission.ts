@@ -158,6 +158,10 @@ export interface RunPhaseArgs {
   cwd: string
   permission: string
   maxRetries: number
+  /** Anexos do usuário (imagem/PDF do launcher). Só a FASE 1 recebe — vão
+   *  junto do pedido da missão, pelo MESMO caminho do handleSend (runAgent já
+   *  aceitava a lista; nada muda no Rust). Default = sem anexos. */
+  attachments?: Attachment[]
   /** Callback por tentativa: informa a tentativa corrente (1-based) e os itens
    *  reduzidos até aqui, p/ o store espelhar na timeline. */
   onProgress?: (attempt: number, items: ChatItem[]) => void
@@ -172,7 +176,7 @@ export interface RunPhaseArgs {
 export async function runPhase(args: RunPhaseArgs): Promise<PhaseResult> {
   const run = args.run ?? runAgent
   const maxRetries = Math.max(1, args.maxRetries)
-  const attachments: Attachment[] = []
+  const attachments: Attachment[] = args.attachments ?? []
 
   let totalCost = 0
   let costSource: CostSource | undefined

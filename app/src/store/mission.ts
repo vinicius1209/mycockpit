@@ -4,6 +4,7 @@
 // Feature INDEPENDENTE do SDD — nada aqui importa lib/sdd.ts.
 import { create } from "zustand"
 import { cancelAgent } from "@/lib/agent"
+import type { Attachment } from "@/lib/attachments"
 import type {
   MissionPhaseDef,
   MissionPhaseRun,
@@ -48,6 +49,9 @@ export interface MissionState {
     projectId: string,
     projectPath: string,
     permission: string,
+    /** Anexos do launcher (imagem/PDF): só a FASE 1 recebe, junto da task —
+     *  mesmo caminho frontend do handleSend (nenhuma mudança em Rust). */
+    attachments?: Attachment[],
   ) => Promise<void>
 
   abort: (convId: string) => void
@@ -112,7 +116,15 @@ export const useMission = create<MissionState>((set, get) => {
   return {
     byConv: {},
 
-    launch: async (convId, preset, task, projectId, projectPath, permission) => {
+    launch: async (
+      convId,
+      preset,
+      task,
+      projectId,
+      projectPath,
+      permission,
+      attachments = [],
+    ) => {
       // guarda anti-duplo-start (padrão do Fusion): missão rodando → ignora.
       const existing = get().byConv[convId]
       if (existing && isActive(existing.status)) return
@@ -245,6 +257,9 @@ export const useMission = create<MissionState>((set, get) => {
           cwd,
           permission,
           maxRetries: def.maxRetries,
+          // anexos só na 1ª fase (i === 0): acompanham o pedido original; as
+          // fases seguintes herdam o contexto pelo handoff/worktree.
+          attachments: i === 0 ? attachments : undefined,
           onProgress: (attempt, items) =>
             patchPhase(convId, i, (ph) => ({ ...ph, attempt, items } as MissionPhaseRun)),
         })

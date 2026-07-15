@@ -37,8 +37,14 @@ function buildVocab(projectName?: string, extra: string[] = []): string[] {
 type MicState = "idle" | "starting" | "rec" | "busy"
 
 /** Ditado pt-BR 100% local: clica-fala-clica, o texto cai no rascunho da
- *  conversa pra você revisar antes do Enter. Esc cancela. */
-export function MicButton() {
+ *  conversa pra você revisar antes do Enter. Esc cancela.
+ *  `onText` (opcional) redireciona a transcrição p/ outro destino — ex.: o
+ *  textarea da tarefa no MissionLauncher — em vez do draft da conversa. */
+export function MicButton({
+  onText,
+}: {
+  onText?: (text: string) => void
+} = {}) {
   const project = useActiveProject()
   const enabled = useApp((s) => s.settings.dictationEnabled)
   const vocab = useApp((s) => s.settings.dictationVocab)
@@ -90,12 +96,16 @@ export function MicButton() {
     try {
       const text = await sttStop()
       if (text) {
-        const convId = useChat.getState().activeId
-        if (convId) {
-          const cur = useChat.getState().drafts[convId] ?? ""
-          useChat
-            .getState()
-            .setDraft(convId, cur ? `${cur.replace(/\s+$/, "")} ${text}` : text)
+        if (onText) {
+          onText(text)
+        } else {
+          const convId = useChat.getState().activeId
+          if (convId) {
+            const cur = useChat.getState().drafts[convId] ?? ""
+            useChat
+              .getState()
+              .setDraft(convId, cur ? `${cur.replace(/\s+$/, "")} ${text}` : text)
+          }
         }
       }
     } catch (e) {
