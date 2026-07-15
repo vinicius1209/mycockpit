@@ -1,16 +1,20 @@
 // F4 — Painel (mission control): o centro de controle cross-projeto.
-// Anatomia: (1) strip de frota no topo (contadores + custo hoje/7d, sempre
-// visível); (2) PRECISAM DE VOCÊ — a fila dominante, em cards com ação
-// primária (PR mergeia daqui); (3) ENTREGAS — ledger discreto com o custo da
-// semana; (4) empty state = Launchpad (frota detectada + atalhos) só quando a
-// fila está vazia E nada roda. Enriquecimento de PR via gh é lazy por card,
-// com cache de 60s e degrade silencioso (card simples sem 2ª linha).
+// Anatomia FIXA (a ordem dos blocos nunca muda): (1) strip de frota no topo
+// (contadores + custo hoje/7d, sempre visível); (2) AÇÕES — atalhos Nova
+// missão/disputa/feature, sempre visíveis; (3) PRECISAM DE VOCÊ — a fila
+// dominante, em cards com ação primária (PR mergeia daqui); fila vazia vira
+// uma linha discreta, não um bloco; (4) ENTREGAS — ledger discreto com o
+// custo da semana; (5) FROTA (detalhe) — CLIs + versões + agendadas, seção
+// compacta fixa no rodapé. No primeiro load, fila e entregas mostram
+// skeleton; refreshes seguintes (30s) atualizam em silêncio. Enriquecimento
+// de PR via gh é lazy por card, com cache de 60s e degrade silencioso.
 
 import { useEffect, useMemo, useState } from "react"
 import { Clock, FileText, GitPullRequest, Rocket, Swords } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { toast } from "sonner"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
@@ -90,7 +94,7 @@ interface LiveRow {
   kind: LiveKind
 }
 
-/** CLIs que o Launchpad lista (mesmos rótulos das Configurações ▸ Agents). */
+/** CLIs da seção Frota (detalhe) — mesmos rótulos das Configurações ▸ Agents. */
 const CLI_TOOLS: { id: string; label: string }[] = [
   { id: "claude-code", label: "Claude Code" },
   { id: "codex", label: "Codex" },
@@ -107,6 +111,41 @@ function EmptyLine({ children }: { children: React.ReactNode }) {
     <p className="px-1 py-2 text-[12.5px] text-muted-foreground/80">
       {children}
     </p>
+  )
+}
+
+/** Skeleton do primeiro load — linhas com pulse suave no lugar do conteúdo,
+ *  pra fila/entregas não "pularem" na tela. Refreshes seguintes não passam
+ *  por aqui (atualizam em silêncio). */
+function SkeletonRows({ rows }: { rows: number }) {
+  return (
+    <div aria-hidden className="flex flex-col gap-2">
+      {Array.from({ length: rows }, (_, i) => (
+        <Skeleton key={i} className="h-9 w-full bg-accent/40" />
+      ))}
+    </div>
+  )
+}
+
+/** Atalho compacto e SEMPRE visível (ícone + label, ~36px) — os launchers
+ *  do painel não somem mais quando a fila enche. */
+function QuickAction({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-secondary/20 px-3 text-[12.5px] font-medium text-foreground transition-colors hover:border-brass/50 hover:bg-accent/40"
+    >
+      <Icon className="size-3.5 text-brass" />
+      {label}
+    </button>
   )
 }
 
@@ -426,26 +465,27 @@ export function MissionControl() {
 
   // Varreduras assíncronas (SQL + fs) — só em useEffect com cancelamento,
   // ao montar e num refresh leve a cada 30s (interval limpo no unmount).
+  // `loaded` vira true quando a 1ª varredura completa (skeleton → conteúdo);
+  // nunca volta a false — refreshes seguintes atualizam em silêncio.
   const [decisions, setDecisions] = useState<Decision[]>([])
   const [deliveries, setDeliveries] = useState<RecentDelivery[]>([])
+  const [loaded, setLoaded] = useState(false)
   useEffect(() => {
     let cancelled = false
     const refresh = () => {
-      if (projects.length > 0) {
-        void scanDecisions(projects)
-          .then((d) => {
-            if (!cancelled) setDecisions(d)
-          })
-          .catch(() => {})
-      } else {
-        setDecisions([])
-      }
+      const scanP =
+        projects.length > 0
+          ? scanDecisions(projects).then((d) => {
+              if (!cancelled) setDecisions(d)
+            })
+          : Promise.resolve(setDecisions([]))
       // 60 entregas dão a janela de 7d do custo; o ledger mostra as 8 últimas.
-      void listRecentDeliveries(60)
-        .then((d) => {
-          if (!cancelled) setDeliveries(d)
-        })
-        .catch(() => {})
+      const deliveriesP = listRecentDeliveries(60).then((d) => {
+        if (!cancelled) setDeliveries(d)
+      })
+      void Promise.allSettled([scanP, deliveriesP]).then(() => {
+        if (!cancelled) setLoaded(true)
+      })
     }
     refresh()
     const timer = setInterval(refresh, 30_000)
@@ -564,9 +604,6 @@ export function MissionControl() {
     [allSchedules],
   )
 
-  // Empty state = Launchpad: SÓ quando a fila está vazia E nada roda.
-  const showLaunchpad = queue.length === 0 && liveRows.length === 0
-
   // "Nova missão"/"Nova disputa": cria uma CONVERSA NOVA no projeto ativo (os
   // launchers moram no composer de uma conversa) e pede a abertura do dialog
   // via contador. Antes só trocava pro Trabalho — caía na conversa ativa
@@ -589,8 +626,9 @@ export function MissionControl() {
   return (
     <ScrollArea className="h-full w-full bg-background">
       <div className="mx-auto flex w-full max-w-[900px] flex-col gap-8 px-8 pt-8 pb-14">
-        {/* 1. Strip de frota — 1 linha, sempre visível */}
-        <section aria-label="Frota">
+        <div className="flex flex-col gap-2">
+          {/* 1. Strip de frota — 1 linha, sempre visível */}
+          <section aria-label="Frota">
           <div className="flex min-h-[38px] items-center gap-2 rounded-lg border border-border/60 bg-card/30 px-4 py-2">
             {liveRows.length === 0 ? (
               <span className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
@@ -653,123 +691,42 @@ export function MissionControl() {
               ))}
             </div>
           )}
-        </section>
+          </section>
 
-        {/* 2. Precisam de você — a fila dominante, OU 4. Launchpad (empty) */}
-        {showLaunchpad ? (
-          <section
-            aria-label="Launchpad"
-            className="rounded-xl border border-border/60 bg-card/30 px-6 py-6"
-          >
-            <h2 className="label-mono mb-3">Frota</h2>
-            <ul className="flex flex-col gap-1.5">
-              {CLI_TOOLS.map((t) => {
-                const p = detected[t.id]
-                if (!p?.installed) return null
-                const hasUpdate = updateAvailable(p)
-                return (
-                  <li
-                    key={t.id}
-                    className="flex items-center gap-2.5 text-[12.5px]"
-                  >
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "size-1.5 shrink-0 rounded-full",
-                        hasUpdate ? "bg-st-warning" : "bg-st-success",
-                      )}
-                    />
-                    <span className="text-foreground">{t.label}</span>
-                    <span className="text-muted-foreground">
-                      v{p.version ?? "?"}
-                    </span>
-                    {hasUpdate && (
-                      <span className="rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning uppercase">
-                        update v{p.latest}
-                      </span>
-                    )}
-                  </li>
-                )
-              })}
-              {CLI_TOOLS.every((t) => !detected[t.id]?.installed) && (
-                <li className="text-[12.5px] text-muted-foreground">
-                  Nenhuma CLI detectada ainda — verifique em Configurações ▸
-                  Agents.
-                </li>
-              )}
-            </ul>
-            {/* F6 — Próximas agendadas (2): clicar abre a view Agendado. */}
-            {upcoming.length > 0 && (
-              <div className="mt-4">
-                <h3 className="label-mono mb-1.5">Próximas agendadas</h3>
-                <ul className="flex flex-col gap-1">
-                  {upcoming.map((s) => (
-                    <li key={s.id}>
-                      <button
-                        onClick={() => useApp.getState().setScheduledOpen(true)}
-                        className="flex w-full items-center gap-2.5 rounded px-1 py-0.5 text-left text-[12.5px] transition-colors hover:bg-accent/50"
-                      >
-                        <Clock className="size-3.5 shrink-0 text-brass/80" />
-                        <span className="min-w-0 flex-1 truncate text-foreground">
-                          {s.name}
-                        </span>
-                        <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
-                          em {fmtUntilShort((s.nextRun ?? 0) - Date.now())}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <p className="mt-4 text-[11.5px] text-muted-foreground tabular-nums">
-              hoje {fmtCost(windows.today)} · 7d {fmtCost(windows.week)}
-            </p>
-            <div className="mt-5 grid grid-cols-3 gap-3">
-              <button
+          {/* 2. Ações — atalhos compactos, SEMPRE visíveis */}
+          <section aria-label="Ações">
+            <div className="flex flex-wrap items-center gap-2">
+              <QuickAction
+                icon={Rocket}
+                label="Nova missão"
                 onClick={() => void goNewWork("mission")}
-                className="flex flex-col items-start gap-1.5 rounded-lg border border-border/70 bg-secondary/20 px-4 py-4 text-left transition-colors hover:border-brass/50 hover:bg-accent/40"
-              >
-                <Rocket className="size-4 text-brass" />
-                <span className="text-[13px] font-medium text-foreground">
-                  Nova missão
-                </span>
-                <span className="text-[11.5px] text-muted-foreground">
-                  Um time de agents numa tarefa
-                </span>
-              </button>
-              <button
+              />
+              <QuickAction
+                icon={Swords}
+                label="Nova disputa"
                 onClick={() => void goNewWork("fusion")}
-                className="flex flex-col items-start gap-1.5 rounded-lg border border-border/70 bg-secondary/20 px-4 py-4 text-left transition-colors hover:border-brass/50 hover:bg-accent/40"
-              >
-                <Swords className="size-4 text-brass" />
-                <span className="text-[13px] font-medium text-foreground">
-                  Nova disputa
-                </span>
-                <span className="text-[11.5px] text-muted-foreground">
-                  Agents competem, você julga
-                </span>
-              </button>
-              <button
+              />
+              <QuickAction
+                icon={FileText}
+                label="Nova feature"
                 onClick={goNewFeature}
-                className="flex flex-col items-start gap-1.5 rounded-lg border border-border/70 bg-secondary/20 px-4 py-4 text-left transition-colors hover:border-brass/50 hover:bg-accent/40"
-              >
-                <FileText className="size-4 text-brass" />
-                <span className="text-[13px] font-medium text-foreground">
-                  Nova feature
-                </span>
-                <span className="text-[11.5px] text-muted-foreground">
-                  Do PRD ao merge, com gates
-                </span>
-              </button>
+              />
             </div>
           </section>
-        ) : (
-          <section aria-label="Precisam de você">
-            <SectionTitle>Precisam de você ({queue.length})</SectionTitle>
-            {queue.length === 0 ? (
-              <EmptyLine>Nada esperando você.</EmptyLine>
-            ) : (
+        </div>
+
+        {/* 3. Precisam de você — a fila dominante; vazia vira linha discreta */}
+        <section aria-label="Precisam de você">
+          {!loaded ? (
+            <>
+              <SectionTitle>Precisam de você</SectionTitle>
+              <SkeletonRows rows={2} />
+            </>
+          ) : queue.length === 0 ? (
+            <EmptyLine>Nada esperando você — bom voo.</EmptyLine>
+          ) : (
+            <>
+              <SectionTitle>Precisam de você ({queue.length})</SectionTitle>
               <div className="flex flex-col gap-2">
                 {queue.map((d) =>
                   d.kind === "pr" ? (
@@ -787,17 +744,19 @@ export function MissionControl() {
                   ),
                 )}
               </div>
-            )}
-          </section>
-        )}
+            </>
+          )}
+        </section>
 
-        {/* 3. Entregas — ledger discreto, custo da semana no título */}
+        {/* 4. Entregas — ledger discreto, custo da semana no título */}
         <section aria-label="Entregas">
           <SectionTitle>
             Entregas
             {hasDeliveries && ` · ${fmtCost(windows.week)} esta semana`}
           </SectionTitle>
-          {shownDeliveries.length === 0 ? (
+          {!loaded ? (
+            <SkeletonRows rows={3} />
+          ) : shownDeliveries.length === 0 ? (
             <EmptyLine>Nenhuma entrega registrada ainda.</EmptyLine>
           ) : (
             <div className="flex flex-col gap-px">
@@ -823,6 +782,77 @@ export function MissionControl() {
               ))}
             </div>
           )}
+        </section>
+
+        {/* 5. Frota (detalhe) — CLIs + versões + agendadas, fixo no rodapé */}
+        <section
+          aria-label="Frota (detalhe)"
+          className="rounded-lg border border-border/60 bg-card/30 px-4 py-3"
+        >
+          <h2 className="label-mono mb-2">Frota</h2>
+          <ul className="flex flex-col gap-1">
+            {CLI_TOOLS.map((t) => {
+              const p = detected[t.id]
+              if (!p?.installed) return null
+              const hasUpdate = updateAvailable(p)
+              return (
+                <li
+                  key={t.id}
+                  className="flex items-center gap-2.5 text-[12.5px]"
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "size-1.5 shrink-0 rounded-full",
+                      hasUpdate ? "bg-st-warning" : "bg-st-success",
+                    )}
+                  />
+                  <span className="text-foreground">{t.label}</span>
+                  <span className="text-muted-foreground">
+                    v{p.version ?? "?"}
+                  </span>
+                  {hasUpdate && (
+                    <span className="rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning uppercase">
+                      update v{p.latest}
+                    </span>
+                  )}
+                </li>
+              )
+            })}
+            {CLI_TOOLS.every((t) => !detected[t.id]?.installed) && (
+              <li className="text-[12.5px] text-muted-foreground">
+                Nenhuma CLI detectada ainda — verifique em Configurações ▸
+                Agents.
+              </li>
+            )}
+          </ul>
+          {/* F6 — Próximas agendadas (2): clicar abre a view Agendado. */}
+          {upcoming.length > 0 && (
+            <div className="mt-3">
+              <h3 className="label-mono mb-1">Próximas agendadas</h3>
+              <ul className="flex flex-col gap-0.5">
+                {upcoming.map((s) => (
+                  <li key={s.id}>
+                    <button
+                      onClick={() => useApp.getState().setScheduledOpen(true)}
+                      className="flex w-full items-center gap-2.5 rounded px-1 py-0.5 text-left text-[12.5px] transition-colors hover:bg-accent/50"
+                    >
+                      <Clock className="size-3.5 shrink-0 text-brass/80" />
+                      <span className="min-w-0 flex-1 truncate text-foreground">
+                        {s.name}
+                      </span>
+                      <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
+                        em {fmtUntilShort((s.nextRun ?? 0) - Date.now())}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p className="mt-3 text-[11.5px] text-muted-foreground tabular-nums">
+            hoje {fmtCost(windows.today)} · 7d {fmtCost(windows.week)}
+          </p>
         </section>
       </div>
     </ScrollArea>
