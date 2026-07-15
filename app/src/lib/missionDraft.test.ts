@@ -6,6 +6,7 @@ import {
   clonePhases,
   draftDirty,
   editPhase,
+  parseCapInput,
   phasesCustomized,
 } from "./missionDraft"
 
@@ -94,6 +95,29 @@ describe("attachmentsSupported (trava de capacidade da fase 1)", () => {
   })
   it('"other" nunca é suportado', () => {
     expect(attachmentsSupported([att("other")], { image: true, pdf: true })).toBe(false)
+  })
+})
+
+describe("parseCapInput (teto de custo editável no launcher)", () => {
+  it("número válido vira teto ('25' → 25)", () => {
+    expect(parseCapInput("25")).toBe(25)
+    expect(parseCapInput(" 25 ")).toBe(25)
+  })
+  it("aceita vírgula decimal pt-BR ('12,50' → 12.5)", () => {
+    expect(parseCapInput("12,50")).toBe(12.5)
+    expect(parseCapInput("0.5")).toBe(0.5)
+  })
+  it("vazio e 0 = SEM teto (null — estado válido do checkBudget)", () => {
+    expect(parseCapInput("")).toBeNull()
+    expect(parseCapInput("   ")).toBeNull()
+    expect(parseCapInput("0")).toBeNull()
+    expect(parseCapInput("0,00")).toBeNull()
+  })
+  it("inválido (NaN/negativo/∞) → undefined (caller mantém o anterior)", () => {
+    expect(parseCapInput("abc")).toBeUndefined()
+    expect(parseCapInput("-3")).toBeUndefined()
+    expect(parseCapInput("1/2")).toBeUndefined()
+    expect(parseCapInput("Infinity")).toBeUndefined()
   })
 })
 

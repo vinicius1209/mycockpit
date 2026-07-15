@@ -156,6 +156,8 @@ export const useMission = create<MissionState>((set, get) => {
         })),
         current: 0,
         costTotal: 0,
+        // teto do preset EFETIVO: o launcher pode ter sobrescrito o teto (e as
+        // fases) editados no dialog — mesmo caminho, nada além do preset viaja.
         maxCostUsd: preset.maxCostUsd,
         status: "running",
         startedAt: Date.now(),

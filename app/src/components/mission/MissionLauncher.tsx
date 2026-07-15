@@ -1,7 +1,8 @@
 // Launcher da MISSÃO: dialog acionado do composer (Rocket). A TAREFA é a
 // estrela (textarea grande, ditado, anexos); o time do preset vira rascunho
 // editável fase-a-fase (agent+modelo inline → "Personalizado", lógica pura em
-// lib/missionDraft). Anexos reusam o pipeline do composer (useAttachments) com
+// lib/missionDraft), incluindo o TETO de custo (clique edita; vazio/0 = sem
+// teto) — o launch passa o teto ao store via preset efetivo. Anexos reusam o pipeline do composer (useAttachments) com
 // a MESMA trava de capacidade — valem p/ o agent da FASE 1 e vão no prompt
 // dela pelo caminho existente do runAgent (nada muda no Rust). Clicar fora NÃO
 // fecha (anti miss-click); Esc/X fecham, mas rascunho sujo pede confirmação.
@@ -29,6 +30,7 @@ import {
   clonePhases,
   draftDirty,
   editPhase,
+  parseCapInput,
   phasesCustomized,
   type PhaseEdit,
 } from "@/lib/missionDraft"
@@ -116,6 +118,12 @@ export function MissionLauncher({
   const [task, setTask] = useState("")
   // rascunho editável das fases (clone — editar aqui nunca muta o preset)
   const [phases, setPhases] = useState<MissionPhaseDef[]>([])
+  // TETO de custo editável (null = sem teto; inicia do preset, reseta ao trocar)
+  const [capUsd, setCapUsd] = useState<number | null>(null)
+  const [capEditing, setCapEditing] = useState(false)
+  const [capInput, setCapInput] = useState("")
+  // Esc cancela a edição do teto; o blur do unmount NÃO deve commitar por cima.
+  const capCancelRef = useRef(false)
   const taskRef = useRef<HTMLTextAreaElement>(null)
 
   const preset = presets.find((p) => p.id === presetId) ?? presets[0] ?? null
@@ -135,11 +143,16 @@ export function MissionLauncher({
       useApp.getState().settings.missionPresets[0] ??
       null
     setPhases(p ? clonePhases(p.phases) : [])
+    setCapUsd(p?.maxCostUsd ?? null)
+    setCapEditing(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialTask])
 
-  // editar uma fase → o seletor de time passa a mostrar "Personalizado"
-  const customized = preset ? phasesCustomized(preset.phases, phases) : false
+  // editar uma fase OU o teto → o seletor de time mostra "Personalizado"
+  const customized = preset
+    ? phasesCustomized(preset.phases, phases) ||
+      capUsd !== (preset.maxCostUsd ?? null)
+    : false
 
   // trava de capacidade: os anexos vão pro prompt da FASE 1 → valem as caps do
   // agent dela (mesma regra do composer, espelho do trait Rust).
@@ -171,7 +184,7 @@ export function MissionLauncher({
       opts.push({
         value: CUSTOM_PRESET,
         label: "Personalizado",
-        description: `baseado em ${preset.name} — fases editadas aqui`,
+        description: `baseado em ${preset.name} — editado aqui`,
       })
     }
     return opts
@@ -182,6 +195,16 @@ export function MissionLauncher({
     setPresetId(id)
     const p = presets.find((x) => x.id === id)
     setPhases(p ? clonePhases(p.phases) : [])
+    // trocar de preset RESETA o teto pro do preset (mesma regra das fases)
+    setCapUsd(p?.maxCostUsd ?? null)
+    setCapEditing(false)
+  }
+
+  /** Confirma o input do teto (Enter/blur). Inválido → mantém o anterior. */
+  function commitCap() {
+    const parsed = parseCapInput(capInput)
+    if (parsed !== undefined) setCapUsd(parsed)
+    setCapEditing(false)
   }
 
   /** Zera o estado local (rascunho descartado ou lançado). Com `deleteBlobs`,
@@ -194,7 +217,11 @@ export function MissionLauncher({
       setAttachments([])
     }
     setTask("")
-    if (preset) setPhases(clonePhases(preset.phases))
+    if (preset) {
+      setPhases(clonePhases(preset.phases))
+      setCapUsd(preset.maxCostUsd ?? null)
+    }
+    setCapEditing(false)
   }
 
   // Esc e o X do dialog caem aqui (controlado). Clicar FORA nem chega — o
@@ -219,11 +246,13 @@ export function MissionLauncher({
     // conversa ainda carregando do disco: lançar agora criaria estado órfão
     // (mesmo guard do send do Linear e do Fusion).
     if (!useChat.getState().byId[activeId]) return
-    // preset EFETIVO: fases do rascunho (editadas ou não) sobre o preset base.
+    // preset EFETIVO: fases E teto do rascunho (editados ou não) sobre o
+    // preset base — é ele que o store usa (maxCostUsd da missão sai daqui).
     const effective: MissionPreset = {
       ...preset,
       name: customized ? `${preset.name} · personalizado` : preset.name,
       phases: clonePhases(phases),
+      maxCostUsd: capUsd,
     }
     void useMission
       .getState()
@@ -349,11 +378,63 @@ export function MissionLauncher({
                     onEdit={(edit) => setPhases((cur) => editPhase(cur, i, edit))}
                   />
                 ))}
-                {preset.maxCostUsd != null && (
-                  <div className="mt-0.5 border-t py-1.5 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
-                    teto {fmtCost(preset.maxCostUsd)}
-                  </div>
-                )}
+                {/* teto EDITÁVEL: clique vira input compacto; Enter/blur
+                    confirma, Esc cancela; vazio/0 = SEM teto (checkBudget já
+                    trata null). Inválido → volta pro anterior (parseCapInput). */}
+                <div className="mt-0.5 flex h-8 items-center justify-end border-t">
+                  {capEditing ? (
+                    <label className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-muted-foreground">
+                      teto US$
+                      <input
+                        value={capInput}
+                        onChange={(e) => setCapInput(e.target.value)}
+                        onBlur={() => {
+                          if (capCancelRef.current) return
+                          commitCap()
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            commitCap()
+                          } else if (e.key === "Escape") {
+                            // Esc cancela SÓ a edição do teto, não o dialog.
+                            e.preventDefault()
+                            e.stopPropagation()
+                            capCancelRef.current = true
+                            setCapEditing(false)
+                          }
+                        }}
+                        inputMode="decimal"
+                        placeholder="sem teto"
+                        aria-label="Teto de custo da missão em US$ (vazio ou 0 = sem teto)"
+                        className="h-5.5 w-16 rounded border bg-background px-1.5 text-right font-mono text-[11px] tabular-nums text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-brass/50"
+                        autoFocus
+                      />
+                    </label>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        capCancelRef.current = false
+                        setCapInput(
+                          capUsd != null ? String(capUsd).replace(".", ",") : "",
+                        )
+                        setCapEditing(true)
+                      }}
+                      title="Editar teto de custo da missão (vazio ou 0 = sem teto)"
+                      aria-label="Editar teto de custo da missão"
+                      className="font-mono text-[11px] tabular-nums text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {capUsd != null ? (
+                        <>teto {fmtCost(capUsd)}</>
+                      ) : (
+                        <span className="text-muted-foreground/60">
+                          sem teto
+                        </span>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

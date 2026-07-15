@@ -61,6 +61,19 @@ export function attachmentsSupported(
   )
 }
 
+/** Parse do input do TETO de custo (US$) editado inline no launcher.
+ *  Aceita vírgula decimal (pt-BR). Retorno em 3 estados:
+ *  - number  → teto válido ("25" → 25, "12,50" → 12.5)
+ *  - null    → SEM teto (vazio ou 0 — estado válido, checkBudget já trata)
+ *  - undefined → inválido (NaN/negativo/∞) → o caller mantém o valor anterior */
+export function parseCapInput(raw: string): number | null | undefined {
+  const t = raw.trim()
+  if (t === "") return null
+  const n = Number(t.replace(",", "."))
+  if (!Number.isFinite(n) || n < 0) return undefined
+  return n === 0 ? null : n
+}
+
 /** Há rascunho a perder? Texto DIFERENTE do pré-preenchido (o rascunho do
  *  composer continua lá — descartar o igual não perde nada), anexos pendentes
  *  ou fases editadas. true → fechar pede confirmação (anti miss-click). */
