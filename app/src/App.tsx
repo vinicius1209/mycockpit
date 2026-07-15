@@ -1,5 +1,6 @@
 import { useEffect } from "react"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
+import { toast } from "sonner"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
@@ -278,6 +279,42 @@ export default function App() {
           ?.focus()
       }, 120)
     })
+      .then((u) => {
+        if (disposed) u()
+        else un = u
+      })
+      .catch(() => {})
+    return () => {
+      disposed = true
+      un?.()
+    }
+  }, [])
+
+  // MyCockpit resume: o motor avisa quando o resume NATIVO falhou e o run
+  // reiniciou fresh. Sempre zera a sessão morta da conversa (o novo run emite
+  // `session` e grava a nova). Se degradou COM a memória do cockpit
+  // (used_memory), marca o aviso na conversa + toast; sem fallback (ex. turno 1)
+  // não há o que avisar. Listener global: cobre runs em background também.
+  useEffect(() => {
+    if (!isTauri()) return
+    let un: UnlistenFn | null = null
+    let disposed = false
+    listen<{ conv_id: string; run_id: string; used_memory: boolean }>(
+      "resume://fallback",
+      (e) => {
+        const { conv_id, used_memory } = e.payload
+        const chat = useChat.getState()
+        if (!chat.byId[conv_id]) return
+        chat.clearSession(conv_id)
+        if (!used_memory) return
+        chat.handleEvent(conv_id, {
+          type: "notice",
+          message:
+            "Sessão nativa expirou — conversa retomada pela memória do MyCockpit",
+        })
+        toast("Sessão nativa expirou — conversa retomada pela memória do MyCockpit")
+      },
+    )
       .then((u) => {
         if (disposed) u()
         else un = u

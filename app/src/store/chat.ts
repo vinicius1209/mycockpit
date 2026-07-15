@@ -165,6 +165,9 @@ interface ChatState {
   setConversationColor: (id: string, color: string | null) => Promise<void>
   /** Isola a conversa num worktree (path) ou volta pra pasta compartilhada (null). */
   setWorktree: (convId: string, path: string | null) => void
+  /** Zera a sessão nativa da conversa (resume falhou → a sessão antiga está
+   *  morta; o run em fallback vai emitir `session` e gravar a nova). */
+  clearSession: (convId: string) => void
   /** Duplica a conversa (copia o histórico; sessão nova, sem resume). */
   duplicateConversation: (id: string) => Promise<void>
   persist: (convId: string) => Promise<void>
@@ -822,6 +825,14 @@ export const useChat = create<ChatState>((set, get) => {
           ? { ...s.byId, [convId]: { ...s.byId[convId], worktreePath: path } }
           : s.byId,
       }))
+    },
+
+    clearSession: (convId) => {
+      set((s) =>
+        s.byId[convId]
+          ? { byId: { ...s.byId, [convId]: { ...s.byId[convId], sessionId: null } } }
+          : s,
+      )
     },
 
     duplicateConversation: async (id) => {

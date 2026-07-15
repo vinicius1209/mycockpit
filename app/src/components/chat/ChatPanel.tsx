@@ -31,6 +31,8 @@ import {
   renderTranscript,
   exportConvContext,
   buildMemoryPrompt,
+  buildResumeFallback,
+  shouldAttachResumeFallback,
 } from "@/lib/transcript"
 import { wantsAutoResume } from "@/lib/autoResume"
 import { notifyTurnEnd } from "@/lib/notify"
@@ -298,6 +300,27 @@ export function ChatPanel() {
       }
       promptText = buildMemoryPrompt(conv.items, pointer, promptText)
     }
+    // MyCockpit resume (claude/codex): a conversa pertence ao cockpit, não à
+    // CLI. Quando o envio VAI tentar resume nativo (conv com itens + sessionId),
+    // exporta o transcript pleno (mesmo caminho do agy) e monta o fallback de
+    // memória (recap ~3k + ponteiro + linha de continuidade). O motor SÓ usa
+    // se o resume nativo falhar — o prompt normal NÃO muda. Best-effort de
+    // ponta a ponta: export falhou → só recap; tudo falhou → envia sem fallback.
+    let memoryFallback: string | null = null
+    if (shouldAttachResumeFallback(agent, conv.items, sessionId)) {
+      try {
+        let pointer: string | null = null
+        try {
+          const md = renderTranscript(conv.items, { agent: conv.agent })
+          pointer = await exportConvContext(cwd, convId, md)
+        } catch {
+          pointer = null
+        }
+        memoryFallback = buildResumeFallback(conv.items, pointer)
+      } catch {
+        memoryFallback = null
+      }
+    }
     try {
       await runAgent(
         runId,
@@ -312,6 +335,7 @@ export function ChatPanel() {
         attachments,
         (e) => useChat.getState().handleEvent(convId, e),
         planFirst,
+        memoryFallback,
       )
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha ao executar o agent")

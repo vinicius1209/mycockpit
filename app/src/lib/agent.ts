@@ -47,6 +47,10 @@ export async function runAgent(
   onEvent: (e: AgentEvent) => void,
   /** "Planejar primeiro" (plan mode por turno): o motor segura os writes. */
   planFirst = false,
+  /** MyCockpit resume: memória da conversa que o motor SÓ usa se o resume
+   *  nativo falhar (prepende ao prompt no restart e emite `resume://fallback`).
+   *  null = comportamento atual (falha do resume vira erro). */
+  memoryFallback: string | null = null,
 ): Promise<void> {
   const channel = new Channel<AgentEvent>()
   channel.onmessage = onEvent
@@ -62,6 +66,7 @@ export async function runAgent(
     permission,
     attachments,
     planFirst,
+    memoryFallback,
     onEvent: channel,
   })
 }

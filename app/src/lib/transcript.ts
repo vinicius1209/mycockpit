@@ -82,6 +82,40 @@ export function buildMemoryPrompt(
   return `${parts.join("\n\n")}\n\n---\n\n${prompt}`
 }
 
+/** Orçamento do recap do fallback de resume (claude/codex): curto — o motor
+ *  SÓ prepende ao prompt se o resume nativo falhar no restart. */
+export const RESUME_FALLBACK_BUDGET = 3_000
+
+/** Frase de continuidade do fallback (fecha o bloco de memória). */
+export const RESUME_FALLBACK_NOTE =
+  "A sessão nativa desta conversa expirou; o contexto acima é a memória do MyCockpit — continue a conversa normalmente."
+
+/** Decide se o envio leva `memoryFallback` (MyCockpit resume): só quando o run
+ *  VAI tentar resume nativo — conversa com histórico E sessionId. agy fica de
+ *  fora (não tem resume; a memória dele já vai em TODO turno via
+ *  buildMemoryPrompt). Conversa nova (sem itens ou sem sessão) não tem o que
+ *  retomar. PURO e testável. */
+export function shouldAttachResumeFallback(
+  agent: string,
+  items: ChatItem[],
+  sessionId: string | null,
+): boolean {
+  return agent !== "agy" && items.length > 0 && sessionId != null
+}
+
+/** Texto do `memoryFallback` (claude/codex): recap curto (~3k) + ponteiro pro
+ *  arquivo de memória plena (se exportou) + a linha de continuidade. O MOTOR
+ *  só usa se o resume nativo falhar (prepende ao prompt no restart). PURO. */
+export function buildResumeFallback(
+  items: ChatItem[],
+  pointer: string | null,
+): string {
+  const parts = [serializeContext(items, RESUME_FALLBACK_BUDGET)]
+  if (pointer) parts.push(memoryPointerLine(pointer))
+  parts.push(RESUME_FALLBACK_NOTE)
+  return parts.join("\n\n")
+}
+
 /** Grava a memória plena em .mycockpit/context/<convId>.md (backend: escrita
  *  atômica + gitignore) e devolve o caminho RELATIVO a `projectPath`. Pode
  *  lançar (convId inválido, disco) — os callers tratam como best-effort. */

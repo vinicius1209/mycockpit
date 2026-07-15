@@ -13,6 +13,11 @@ pub struct RunRequest {
     pub prompt: String,
     pub cwd: String,
     pub resume: Option<String>,
+    /// "MyCockpit resume": texto PRONTO montado pelo front (recap + ponteiro pro
+    /// transcript), usado SÓ no restart pós-resume-falho (degradação graciosa do
+    /// run_agent). Quando o resume nativo funciona, este campo é ignorado. None =
+    /// comportamento antigo (recomeça sem contexto).
+    pub memory_fallback: Option<String>,
     pub permission: Permission,
     /// Modelo escolhido (None = default do CLI/config).
     pub model: Option<String>,
@@ -889,6 +894,7 @@ mod tests {
             prompt: "faça X".to_string(),
             cwd: ".".to_string(),
             resume: None,
+            memory_fallback: None,
             permission,
             model: None,
             effort: None,

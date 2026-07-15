@@ -3,6 +3,9 @@ import {
   renderTranscript,
   buildMemoryPrompt,
   memoryPointerLine,
+  buildResumeFallback,
+  shouldAttachResumeFallback,
+  RESUME_FALLBACK_NOTE,
 } from "./transcript"
 import type { ChatItem } from "@/store/chat"
 
@@ -95,5 +98,57 @@ describe("buildMemoryPrompt (agy sem resume)", () => {
     // recap cortado (marcador presente) e bem menor que o transcript pleno
     expect(p).toContain("itens omitidos")
     expect(p.length).toBeLessThanOrEqual(4_500)
+  })
+})
+
+describe("shouldAttachResumeFallback (MyCockpit resume)", () => {
+  const items: ChatItem[] = [user("adiciona o botão"), text("Botão adicionado.")]
+
+  it("conv com itens + sessionId (claude/codex): anexa", () => {
+    expect(shouldAttachResumeFallback("claude-code", items, "sess-1")).toBe(true)
+    expect(shouldAttachResumeFallback("codex", items, "sess-1")).toBe(true)
+  })
+
+  it("conversa nova (sem itens) ou sem sessão: não anexa", () => {
+    expect(shouldAttachResumeFallback("claude-code", [], "sess-1")).toBe(false)
+    expect(shouldAttachResumeFallback("claude-code", items, null)).toBe(false)
+  })
+
+  it("agy nunca anexa (já tem a memória própria em todo turno)", () => {
+    expect(shouldAttachResumeFallback("agy", items, "sess-1")).toBe(false)
+  })
+})
+
+describe("buildResumeFallback (memoryFallback do motor)", () => {
+  const items: ChatItem[] = [
+    user("adiciona o botão"),
+    tool("Edit", { file_path: "src/App.tsx" }),
+    text("Botão adicionado."),
+  ]
+
+  it("recap + ponteiro + linha de continuidade, nesta ordem", () => {
+    const f = buildResumeFallback(items, ".mycockpit/context/abc.md")
+    expect(f).toContain("Contexto da conversa até aqui:")
+    expect(f).toContain(memoryPointerLine(".mycockpit/context/abc.md"))
+    expect(f.endsWith(RESUME_FALLBACK_NOTE)).toBe(true)
+    const recapIdx = f.indexOf("Contexto da conversa")
+    const ptrIdx = f.indexOf("Memória completa desta conversa")
+    const noteIdx = f.indexOf(RESUME_FALLBACK_NOTE)
+    expect(recapIdx).toBeLessThan(ptrIdx)
+    expect(ptrIdx).toBeLessThan(noteIdx)
+  })
+
+  it("sem ponteiro (export falhou): recap + linha de continuidade", () => {
+    const f = buildResumeFallback(items, null)
+    expect(f).not.toContain("Memória completa desta conversa")
+    expect(f.endsWith(RESUME_FALLBACK_NOTE)).toBe(true)
+  })
+
+  it("recap respeita o orçamento curto (~3k)", () => {
+    const many: ChatItem[] = [user("pedido")]
+    for (let i = 0; i < 300; i++) many.push(text(`r${i}: ${"y".repeat(100)}`, `t${i}`))
+    const f = buildResumeFallback(many, null)
+    expect(f).toContain("itens omitidos")
+    expect(f.length).toBeLessThanOrEqual(3_500)
   })
 })

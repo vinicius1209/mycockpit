@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
+use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Notify;
@@ -178,6 +179,10 @@ pub async fn run_agent(
     prompt: String,
     cwd: String,
     resume: Option<String>,
+    // "MyCockpit resume": recap pronto do front (`memoryFallback` no invoke), usado
+    // SÓ se o resume nativo falhar. Option = default: invoke antigo/sem o campo
+    // desserializa como None (mesmo padrão do plan_first; nunca quebra turno velho).
+    memory_fallback: Option<String>,
     permission: String,
     // "Planejar primeiro" POR TURNO. Option = default: invoke antigo/sem o campo
     // (`planFirst` no front) desserializa como None → false (nunca quebra turno velho).
@@ -220,7 +225,7 @@ pub async fn run_agent(
     active.insert(&conv_id);
     let _active_guard = ActiveGuard {
         active: active.inner(),
-        conv_id, // move: conv_id não é mais lido após o registro em ActiveConvs acima
+        conv_id: conv_id.clone(), // clone: o restart pós-resume-falho ainda lê conv_id
     };
     // Permissão parseada UMA vez na fronteira: valor desconhecido é ERRO aqui,
     // nunca fail-open dentro de um adapter (typo ganhava escrita antes).
@@ -269,6 +274,7 @@ pub async fn run_agent(
         prompt,
         cwd,
         resume,
+        memory_fallback,
         permission,
         model,
         effort,
@@ -297,8 +303,22 @@ pub async fn run_agent(
         let _ = on_event.send(AgentEvent::Notice {
             message: "Sessão anterior não encontrada. Comecei uma nova.".to_string(),
         });
+        // "MyCockpit resume": avisa o front que o resume nativo falhou e o run
+        // recomeçou (ele mostra o aviso e ZERA o session_id da conversa). SÓ é
+        // emitido neste caminho — quando o resume funciona, nada disso acontece.
+        let _ = app.emit(
+            "resume://fallback",
+            serde_json::json!({
+                "conv_id": conv_id,
+                "run_id": run_id,
+                "used_memory": req.memory_fallback.is_some(),
+            }),
+        );
         let mut req2 = req;
         req2.resume = None;
+        // Fallback de memória: o recap do front entra ANTES do prompt original,
+        // p/ o run recomeçado não esquecer a conversa. Sem fallback, prompt intacto.
+        req2.prompt = restart_prompt(req2.memory_fallback.as_deref(), &req2.prompt);
         let mut adapter2 = adapters::resolve(&agent)?;
         let cmd2 = adapter2.build_command(&req2)?;
         outcome = run_once(
@@ -333,6 +353,17 @@ pub async fn run_agent(
     }
     let _ = on_event.send(AgentEvent::Done { code: outcome.code });
     Ok(())
+}
+
+/// Prompt do run RECOMEÇADO após o resume nativo falhar (degradação graciosa):
+/// com fallback de memória (recap + ponteiro pro transcript, montado pelo front),
+/// ele vem ANTES do prompt original, separado por `---`; sem fallback, o prompt
+/// original segue intacto (comportamento antigo). Puro de propósito (testável).
+fn restart_prompt(memory_fallback: Option<&str>, original: &str) -> String {
+    match memory_fallback {
+        Some(fallback) => format!("{fallback}\n\n---\n\n{original}"),
+        None => original.to_string(),
+    }
 }
 
 /// Resultado de UMA tentativa de run (sem emitir os eventos terminais).
@@ -557,4 +588,30 @@ pub async fn suggest(model: String, cwd: String, prompt: String) -> Result<Strin
         });
     }
     Ok(stdout)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::restart_prompt;
+
+    #[test]
+    fn restart_sem_fallback_mantem_prompt_original() {
+        assert_eq!(restart_prompt(None, "continue a tarefa"), "continue a tarefa");
+    }
+
+    #[test]
+    fn restart_com_fallback_prefixa_recap_com_separador() {
+        let recap = "Recap: estávamos revisando o adapter do Codex.\nTranscript: .mycockpit/transcripts/abc.jsonl";
+        assert_eq!(
+            restart_prompt(Some(recap), "continue a tarefa"),
+            format!("{recap}\n\n---\n\ncontinue a tarefa")
+        );
+    }
+
+    #[test]
+    fn restart_com_fallback_vazio_ainda_prefixa() {
+        // String vazia é responsabilidade do front não mandar; se mandar, o
+        // separador ainda delimita (nunca corrompe o prompt original).
+        assert_eq!(restart_prompt(Some(""), "oi"), "\n\n---\n\noi");
+    }
 }
