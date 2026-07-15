@@ -49,6 +49,7 @@ import { agentDef } from "@/lib/agents"
 import { refreshCatalogIntoSettings } from "@/lib/catalog"
 import { runModelCurator, reloadActiveProposals } from "@/lib/modelCurator"
 import type { PermissionMode, Project } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 /** Intervalo mínimo entre checagens de update dos agents (1x/dia). */
 const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
@@ -394,16 +395,35 @@ export default function App() {
                   >
                     <ResizablePanel id="chat" defaultSize="70%" minSize="42%">
                       {/* F7: a view global "Agendado" cobre o conteúdo via
-                          estado próprio — o switcher de superfícies fica como está. */}
+                          estado próprio — o switcher de superfícies fica como está.
+                          Painel e Trabalho ficam SEMPRE MONTADOS (toggle por CSS):
+                          desmontar/remontar a árvore do chat (markdown gigante) a
+                          cada troca de aba travava o main thread — o memo dos
+                          itens não sobrevive a remount. SDD/Agendado seguem
+                          condicionais (menos frequentes, e o SddView recarrega
+                          planos ao montar de propósito). */}
+                      <div
+                        className={cn(
+                          "h-full",
+                          (scheduledOpen || viewMode !== "painel") && "hidden",
+                        )}
+                      >
+                        <MissionControl />
+                      </div>
+                      <div
+                        className={cn(
+                          "h-full",
+                          (scheduledOpen || viewMode === "painel" ||
+                            viewMode === "sdd") && "hidden",
+                        )}
+                      >
+                        <ChatPanel />
+                      </div>
                       {scheduledOpen ? (
                         <ScheduledView />
-                      ) : viewMode === "painel" ? (
-                        <MissionControl />
                       ) : viewMode === "sdd" ? (
                         <SddView />
-                      ) : (
-                        <ChatPanel />
-                      )}
+                      ) : null}
                     </ResizablePanel>
                     {contextOpen && viewMode === "linear" && !scheduledOpen && (
                       <>
