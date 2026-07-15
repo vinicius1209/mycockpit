@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest"
 import {
   CATCHUP_GRACE_MS,
   computeNextRun,
+  fmtRunShort,
   fmtUntilShort,
+  nextRuns,
   nextScheduled,
   parseCronExpr,
   parseRecurrence,
@@ -226,6 +228,28 @@ describe("splitDueAndMissed (catch-up puro)", () => {
     const { due, missed } = splitDueAndMissed(rows, now)
     expect(due).toEqual([])
     expect(missed).toEqual([])
+  })
+})
+
+describe("nextRuns + fmtRunShort (preview 'Próximas:' do dialog)", () => {
+  it("3 próximas de um daily 08:00: hoje (antes das 8), amanhã e depois", () => {
+    const daily: Recurrence = { kind: "daily", hour: 8, minute: 0 }
+    // ter 14/07/2026 06:00 → ter 14, qua 15 e qui 16 às 08:00
+    expect(nextRuns(daily, at(2026, 7, 14, 6, 0), 3)).toEqual([
+      at(2026, 7, 14, 8, 0).getTime(),
+      at(2026, 7, 15, 8, 0).getTime(),
+      at(2026, 7, 16, 8, 0).getTime(),
+    ])
+  })
+  it("formata cada item como 'ter 08:00' (dia curto + hora local)", () => {
+    // 14/07/2026 é uma terça
+    expect(fmtRunShort(at(2026, 7, 14, 8, 0).getTime())).toBe("ter 08:00")
+    expect(fmtRunShort(at(2026, 7, 17, 17, 5).getTime())).toBe("sex 17:05")
+  })
+  it("cron que nunca casa devolve lista vazia (a UI mostra o aviso)", () => {
+    expect(
+      nextRuns({ kind: "cron", expr: "0 0 31 2 *" }, at(2026, 7, 14), 3),
+    ).toEqual([])
   })
 })
 

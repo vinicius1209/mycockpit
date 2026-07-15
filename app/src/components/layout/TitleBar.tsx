@@ -31,10 +31,14 @@ const MODES = [
 ] as const
 
 /** Seletor de superfície (F4): Painel | Trabalho | Features. O Fusion virou o
- *  ⚔️ do composer — a disputa vive dentro da conversa, não numa superfície. */
+ *  ⚔️ do composer — a disputa vive dentro da conversa, não numa superfície.
+ *  Com o Agendado aberto (view própria, fora do switcher), NENHUMA aba fica
+ *  ativa — marcar "Painel" seria mentir. Clicar numa aba fecha o Agendado
+ *  (setViewMode já zera scheduledOpen no store) e ativa normalmente. */
 function ModeSwitcher() {
   const viewMode = useApp((s) => s.viewMode)
   const setViewMode = useApp((s) => s.setViewMode)
+  const scheduledOpen = useApp((s) => s.scheduledOpen)
   return (
     <div className="pointer-events-auto absolute left-1/2 hidden -translate-x-1/2 items-center gap-0.5 rounded-full border bg-secondary/50 p-0.5 sm:flex">
       {MODES.map((m) => (
@@ -51,7 +55,7 @@ function ModeSwitcher() {
           title={m.desc}
           className={cn(
             "flex items-center gap-1 rounded-full px-3 py-1 text-[12px] transition-colors",
-            m.id === viewMode
+            !scheduledOpen && m.id === viewMode
               ? "bg-card text-foreground shadow-[var(--shadow-sm)]"
               : "text-muted-foreground enabled:hover:text-foreground disabled:opacity-50",
           )}

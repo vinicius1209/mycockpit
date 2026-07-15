@@ -204,11 +204,33 @@ export function computeNextRun(r: Recurrence, from: Date): number | null {
   return null
 }
 
+/** Os próximos `count` disparos ESTRITAMENTE depois de `from` — alimenta o
+ *  preview "Próximas: ter 08:00 · qua 08:00 · …" do dialog. Cron que nunca
+ *  casa devolve lista vazia (a UI mostra o aviso no lugar). */
+export function nextRuns(r: Recurrence, from: Date, count: number): number[] {
+  const out: number[] = []
+  let cursor = from
+  for (let i = 0; i < count; i++) {
+    const t = computeNextRun(r, cursor)
+    if (t == null) break
+    out.push(t)
+    cursor = new Date(t)
+  }
+  return out
+}
+
 // ── Textos humanos ──
 
 const WEEKDAYS_PT = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"]
 
 const pad2 = (n: number) => String(n).padStart(2, "0")
+
+/** Epoch ms → "ter 08:00" (weekday curto + hora local) — um item do preview
+ *  de próximas execuções. */
+export function fmtRunShort(ts: number): string {
+  const d = new Date(ts)
+  return `${WEEKDAYS_PT[d.getDay()]} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
 
 /** Recorrência → texto humano da lista: "diário às 08:00", "semanal (seg) às
  *  09:00", "cron 0 8 * * 1". */

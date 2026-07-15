@@ -6,11 +6,15 @@
 
 import { useEffect, useMemo, useState } from "react"
 import {
+  Brush,
   ChevronDown,
   Clock,
+  FlaskConical,
+  Info,
   Loader2,
   Play,
   Plus,
+  Sunrise,
   Trash2,
   X,
 } from "lucide-react"
@@ -40,7 +44,9 @@ import { agentModels, defaultModelFor, LEAGUE_AGENTS } from "@/lib/agents"
 import type { SchedulePermission, ScheduleRecord, ScheduleRunRecord } from "@/lib/db"
 import { fmtCost } from "@/lib/format"
 import {
+  fmtRunShort,
   fmtUntilShort,
+  nextRuns,
   parseCronExpr,
   parseRecurrence,
   recurrenceToText,
@@ -267,15 +273,64 @@ function ScheduleRow({
 
 type RecurrenceMode = "daily" | "weekly" | "cron"
 
+/** Template do empty state: clicar abre o dialog PRÉ-PREENCHIDO — o usuário
+ *  só escolhe o projeto e confirma. Todos nascem com permissão Leitura. */
+interface ScheduleTemplate {
+  id: string
+  name: string
+  desc: string
+  icon: typeof Clock
+  prompt: string
+  mode: Exclude<RecurrenceMode, "cron">
+  time: string
+  weekday?: number
+}
+
+const TEMPLATES: ScheduleTemplate[] = [
+  {
+    id: "resumo-matinal",
+    name: "Resumo matinal",
+    desc: "diário às 08:00",
+    icon: Sunrise,
+    mode: "daily",
+    time: "08:00",
+    prompt:
+      "Resuma as PRs abertas e o estado do CI; liste o que precisa de decisão humana",
+  },
+  {
+    id: "testes-noturnos",
+    name: "Testes noturnos",
+    desc: "diário às 22:00",
+    icon: FlaskConical,
+    mode: "daily",
+    time: "22:00",
+    prompt: "Rode a suíte de testes e resuma falhas com suspeitas de causa",
+  },
+  {
+    id: "faxina-semanal",
+    name: "Faxina semanal",
+    desc: "semanal (sex) às 17:00",
+    icon: Brush,
+    mode: "weekly",
+    weekday: 5,
+    time: "17:00",
+    prompt:
+      "Liste arquivos temporários, branches mortas e dependências não usadas (só liste, não apague)",
+  },
+]
+
 /** Dialog "+ Nova automação": nome + projeto + agent/modelo + prompt +
- *  recorrência (presets com hora; cron no modo avançado, validado ao vivo) +
- *  permissão (Leitura default | Padrão — Liberado NEM aparece). */
+ *  recorrência (presets com hora; cron no modo avançado, validado ao vivo,
+ *  com preview das 3 próximas execuções) + permissão (Leitura default |
+ *  Padrão — Liberado NEM aparece). `template` pré-preenche o form. */
 function NewScheduleDialog({
   open,
   onOpenChange,
+  template,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
+  template: ScheduleTemplate | null
 }) {
   const projects = useApp((s) => s.projects)
   const activeProjectId = useApp((s) => s.activeProjectId)
@@ -293,17 +348,18 @@ function NewScheduleDialog({
   const [permission, setPermission] = useState<SchedulePermission>("leitura")
   const [saving, setSaving] = useState(false)
 
-  // reabrir o dialog reseta o form (e ancora o projeto no ativo).
+  // reabrir o dialog reseta o form (e ancora o projeto no ativo); com
+  // template, o form nasce preenchido — só falta escolher o projeto.
   useEffect(() => {
     if (!open) return
-    setName("")
+    setName(template?.name ?? "")
     setProjectId(activeProjectId ?? projects[0]?.id ?? "")
     setAgent("claude-code")
     setModel(defaultModelFor("claude-code"))
-    setPrompt("")
-    setMode("daily")
-    setTime("08:00")
-    setWeekday(1)
+    setPrompt(template?.prompt ?? "")
+    setMode(template?.mode ?? "daily")
+    setTime(template?.time ?? "08:00")
+    setWeekday(template?.weekday ?? 1)
     setCron("0 8 * * *")
     setPermission("leitura")
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -330,6 +386,10 @@ function NewScheduleDialog({
               minute: Number(timeParts[2]),
             }
         : null
+
+  // Preview VIVO das próximas execuções (lição das UIs de cron): recalcula a
+  // cada tecla — puro (computeNextRun), sem invoke nem estado extra.
+  const preview = recurrence ? nextRuns(recurrence, new Date(), 3) : []
 
   const canSave =
     !saving &&
@@ -512,18 +572,25 @@ function NewScheduleDialog({
                   className="font-mono text-[12.5px]"
                   aria-invalid={!cronValid}
                 />
-                <p
-                  className={cn(
-                    "text-[11px]",
-                    cronValid ? "text-muted-foreground/80" : "text-st-error",
-                  )}
-                >
-                  {cronValid
-                    ? "5 campos: números, *, */n e listas a,b (sem ranges na v1)."
-                    : "Expressão inválida — use números, *, */n ou listas a,b."}
-                </p>
               </div>
             )}
+            {/* linha viva: 3 próximas execuções; cron inválido mostra o erro
+                NO LUGAR do preview (mesma linha, sem pular layout). */}
+            {mode === "cron" && !cronValid ? (
+              <p className="text-[11px] text-st-error" data-testid="recurrence-preview">
+                Expressão inválida — 5 campos: números, *, */n e listas a,b
+                (sem ranges na v1).
+              </p>
+            ) : recurrence != null ? (
+              <p
+                className="text-[11px] text-muted-foreground/80 tabular-nums"
+                data-testid="recurrence-preview"
+              >
+                {preview.length > 0
+                  ? `Próximas: ${preview.map(fmtRunShort).join(" · ")}`
+                  : "Essa expressão nunca dispara."}
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -578,6 +645,14 @@ export function ScheduledView() {
   const projects = useApp((s) => s.projects)
   const setScheduledOpen = useApp((s) => s.setScheduledOpen)
   const [dialogOpen, setDialogOpen] = useState(false)
+  // template escolhido no empty state — null = form em branco.
+  const [dialogTemplate, setDialogTemplate] = useState<ScheduleTemplate | null>(
+    null,
+  )
+  function openDialog(t: ScheduleTemplate | null) {
+    setDialogTemplate(t)
+    setDialogOpen(true)
+  }
   // relógio de 30s: mantém os "em 2h" frescos e recarrega o espelho do banco
   // (o motor pode ter rodado algo em background).
   const [now, setNow] = useState(() => Date.now())
@@ -618,20 +693,36 @@ export function ScheduledView() {
   return (
     <ScrollArea className="h-full w-full bg-background">
       <div className="mx-auto flex w-full max-w-[820px] flex-col gap-4 px-8 pt-8 pb-14">
-        <header className="flex items-center gap-3">
-          <Clock className="size-4 text-brass" />
-          <h1 className="text-[15px] font-medium text-foreground">Agendado</h1>
-          <span className="text-[12px] text-muted-foreground tabular-nums">
-            {schedules.length}
+        {/* header enxuto: a sidebar já diz onde o usuário está — aqui é só a
+            etiqueta da seção. Contagem só quando > 0 (um "0" solto é ruído);
+            CTA só quando já existe automação (com lista vazia ele vive no
+            empty state — um CTA só na tela). A limitação honesta virou o ⓘ. */}
+        <header className="flex items-center gap-2">
+          <Clock className="size-3.5 text-brass" />
+          <h1 className="label-mono">Agendado</h1>
+          {schedules.length > 0 && (
+            <span className="text-[11.5px] text-muted-foreground/70 tabular-nums">
+              {schedules.length}
+            </span>
+          )}
+          <span
+            title="Automações rodam com o app aberto ou no tray. Fechar a janela não interrompe; Sair sim."
+            aria-label="Como as automações rodam"
+            className="cursor-help text-muted-foreground/50 transition-colors hover:text-muted-foreground"
+          >
+            <Info className="size-3.5" />
           </span>
-          <div className="ml-auto flex items-center gap-2">
-            <Button size="sm" onClick={() => setDialogOpen(true)}>
-              <Plus className="size-3.5" />
-              Nova automação
-            </Button>
+          <div className="ml-auto flex items-center gap-1.5">
+            {schedules.length > 0 && (
+              <Button size="sm" onClick={() => openDialog(null)}>
+                <Plus className="size-3.5" />
+                Nova automação
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon-sm"
+              className="ml-2 text-muted-foreground/70 hover:text-foreground"
               onClick={() => setScheduledOpen(false)}
               title="Fechar"
               aria-label="Fechar Agendado"
@@ -641,27 +732,45 @@ export function ScheduledView() {
           </div>
         </header>
 
-        <p className="text-[12px] text-muted-foreground/80">
-          Automações rodam com o app aberto (motor in-app, tick de 60s).
-          Execuções perdidas com o app fechado não rodam sozinhas — aparecem no
-          sino. Falha não tem retry automático: use “Rodar agora”.
-        </p>
-
         {!loaded ? (
           <div className="flex items-center gap-2 py-6 text-[12.5px] text-muted-foreground">
             <Loader2 className="size-3.5 animate-spin" /> Carregando…
           </div>
         ) : ordered.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-xl border border-border/60 bg-card/30 px-6 py-10 text-center">
+          /* empty state que ENSINA: templates clicáveis abrem o dialog já
+             preenchido — o usuário só escolhe o projeto e confirma. */
+          <div className="flex flex-col items-center gap-4 rounded-xl border border-border/60 bg-card/30 px-6 py-10 text-center">
             <Clock className="size-6 text-muted-foreground/60" />
             <p className="text-[13px] text-muted-foreground">
-              Nenhuma automação ainda. Crie a primeira — “toda manhã 8h, resuma
-              as PRs abertas e as falhas de CI”.
+              Um prompt que roda sozinho no horário que você definir. Comece
+              por um modelo:
             </p>
-            <Button size="sm" onClick={() => setDialogOpen(true)}>
-              <Plus className="size-3.5" />
-              Nova automação
-            </Button>
+            <div className="grid w-full max-w-[560px] grid-cols-1 gap-2 sm:grid-cols-3">
+              {TEMPLATES.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => openDialog(t)}
+                  data-testid={`schedule-template-${t.id}`}
+                  className="flex flex-col items-start gap-1.5 rounded-lg border border-border/70 bg-card/50 px-3 py-2.5 text-left transition-colors hover:border-brass/50 hover:bg-accent/40"
+                >
+                  <t.icon className="size-3.5 text-brass" />
+                  <span className="text-[12.5px] font-medium text-foreground">
+                    {t.name}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {t.desc}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => openDialog(null)}
+              className="text-[11.5px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+            >
+              ou comece do zero
+            </button>
           </div>
         ) : (
           <div className="flex flex-col gap-2">
@@ -677,7 +786,11 @@ export function ScheduledView() {
           </div>
         )}
       </div>
-      <NewScheduleDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <NewScheduleDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        template={dialogTemplate}
+      />
     </ScrollArea>
   )
 }
