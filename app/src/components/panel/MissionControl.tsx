@@ -567,8 +567,18 @@ export function MissionControl() {
   // Empty state = Launchpad: SÓ quando a fila está vazia E nada roda.
   const showLaunchpad = queue.length === 0 && liveRows.length === 0
 
-  function goLinear() {
-    useApp.getState().setViewMode("linear")
+  // "Nova missão"/"Nova disputa": cria uma CONVERSA NOVA no projeto ativo (os
+  // launchers moram no composer de uma conversa) e pede a abertura do dialog
+  // via contador. Antes só trocava pro Trabalho — caía na conversa ativa
+  // antiga, que era exatamente o bug reportado.
+  async function goNewWork(kind: "mission" | "fusion") {
+    const app = useApp.getState()
+    const projectId = app.activeProjectId ?? app.projects[0]?.id
+    if (!projectId) return
+    await useChat.getState().newConversation(projectId)
+    app.setViewMode("linear")
+    if (kind === "mission") app.requestMissionLaunch()
+    else app.requestFusionLaunch()
   }
   function goNewFeature() {
     const app = useApp.getState()
@@ -717,7 +727,7 @@ export function MissionControl() {
             </p>
             <div className="mt-5 grid grid-cols-3 gap-3">
               <button
-                onClick={goLinear}
+                onClick={() => void goNewWork("mission")}
                 className="flex flex-col items-start gap-1.5 rounded-lg border border-border/70 bg-secondary/20 px-4 py-4 text-left transition-colors hover:border-brass/50 hover:bg-accent/40"
               >
                 <Rocket className="size-4 text-brass" />
@@ -729,7 +739,7 @@ export function MissionControl() {
                 </span>
               </button>
               <button
-                onClick={goLinear}
+                onClick={() => void goNewWork("fusion")}
                 className="flex flex-col items-start gap-1.5 rounded-lg border border-border/70 bg-secondary/20 px-4 py-4 text-left transition-colors hover:border-brass/50 hover:bg-accent/40"
               >
                 <Swords className="size-4 text-brass" />

@@ -43,6 +43,10 @@ interface AppState {
   /** Contador-gatilho: a sidebar pede "Nova feature" e o SddView (dono do form)
    *  abre a criação ao ver o número mudar. Evita acoplamento direto. */
   sddCreateRequested: number
+  /** Contadores-gatilho dos launchers do composer (Launchpad pede, o
+   *  CommandConsole — dono dos dialogs — abre ao ver mudar). */
+  missionLaunchRequested: number
+  fusionLaunchRequested: number
   /** Versão dos DADOS do SDD: o SddView bumpa ao criar/recarregar planos e a
    *  lista da sidebar recarrega ao ver mudar (dois caches, uma verdade). */
   sddDataVersion: number
@@ -73,6 +77,9 @@ interface AppState {
   setSddFocus: (slug: string | null) => void
   /** Pede a abertura do form de Nova feature (bump do contador). */
   requestSddCreate: () => void
+  /** Pedem a abertura dos launchers de missão/disputa no composer. */
+  requestMissionLaunch: () => void
+  requestFusionLaunch: () => void
   /** Sinaliza que os planos SDD mudaram no disco (criação/etapa/seed). */
   bumpSddData: () => void
   /** Patch parcial das preferências globais. */
@@ -99,6 +106,8 @@ export const useApp = create<AppState>()(
       limitedAgents: {},
       sddFocusSlug: null,
       sddCreateRequested: 0,
+      missionLaunchRequested: 0,
+      fusionLaunchRequested: 0,
       sddDataVersion: 0,
       settings: DEFAULT_SETTINGS,
       settingsOpen: false,
@@ -167,6 +176,10 @@ export const useApp = create<AppState>()(
       setSddFocus: (sddFocusSlug) => set({ sddFocusSlug }),
       requestSddCreate: () =>
         set((s) => ({ sddCreateRequested: s.sddCreateRequested + 1 })),
+      requestMissionLaunch: () =>
+        set((s) => ({ missionLaunchRequested: s.missionLaunchRequested + 1 })),
+      requestFusionLaunch: () =>
+        set((s) => ({ fusionLaunchRequested: s.fusionLaunchRequested + 1 })),
       bumpSddData: () =>
         set((s) => ({ sddDataVersion: s.sddDataVersion + 1 })),
       setSettings: (patch) =>

@@ -1,4 +1,10 @@
-import { useCallback, useRef, useState, type SetStateAction } from "react"
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type SetStateAction,
+} from "react"
 import { ComposerShell } from "@/components/chat/ComposerShell"
 import {
   SlashPopover,
@@ -71,6 +77,24 @@ export function CommandConsole({
   const [missionOpen, setMissionOpen] = useState(false)
   // Fusion (F3): dialog do launcher da disputa, acionado pelo ⚔️ do composer.
   const [fusionOpen, setFusionOpen] = useState(false)
+  // Launchpad pede a abertura dos launchers via contador (padrão do
+  // sddCreateRequested): skip do valor inicial, abre a cada bump.
+  const missionReq = useApp((s) => s.missionLaunchRequested)
+  const fusionReq = useApp((s) => s.fusionLaunchRequested)
+  const missionReqSeen = useRef(missionReq)
+  const fusionReqSeen = useRef(fusionReq)
+  useEffect(() => {
+    if (missionReq !== missionReqSeen.current) {
+      missionReqSeen.current = missionReq
+      setMissionOpen(true)
+    }
+  }, [missionReq])
+  useEffect(() => {
+    if (fusionReq !== fusionReqSeen.current) {
+      fusionReqSeen.current = fusionReq
+      setFusionOpen(true)
+    }
+  }, [fusionReq])
   const ref = useRef<HTMLTextAreaElement>(null)
   const conv = useActiveConv()
   const suggestions = conv.suggestions
@@ -178,6 +202,17 @@ export function CommandConsole({
           setIdx={setSlashIdx}
           onPick={insertCommand}
         />
+      )}
+      {/* "/" digitado num projeto SEM comandos: dica no lugar do silêncio (que
+          parece bug — caso real: skills globais viraram symlinks quebrados). */}
+      {!showSlash && /^\/[\w:-]*$/.test(value) && commands.length === 0 && (
+        <div className="absolute bottom-full left-0 z-20 mb-2 w-full rounded-xl border bg-popover px-3 py-2.5 shadow-[var(--shadow-pop)]">
+          <p className="text-[12px] text-muted-foreground">
+            Nenhum comando ou skill neste projeto — crie arquivos .md em{" "}
+            <span className="font-mono">.claude/commands</span> ou skills em{" "}
+            <span className="font-mono">.claude/skills</span>.
+          </p>
+        </div>
       )}
       {showAt && !showSlash && (
         <AtPopover
