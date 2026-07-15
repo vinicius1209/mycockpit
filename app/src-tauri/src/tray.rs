@@ -114,17 +114,18 @@ pub fn hide_main_window(window: &tauri::Window) {
         .set_activation_policy(tauri::ActivationPolicy::Accessory);
 }
 
-/// Cria o tray no setup. Ícone: reusa o icon do app (não há variante template
-/// monocromática em icons/, então vai o normal — colorido — mesmo).
+/// Cria o tray no setup. Ícone: TEMPLATE monocromático (icons/tray-template
+/// @2x.png — glifo "horizonte" da marca, preto + alpha): o macOS pinta
+/// branco/preto conforme o tema da barra, como os ícones nativos. O app icon
+/// colorido ficava um bloco opaco grosseiro no meio dos templates.
 pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let menu = build_menu(app, DEFAULT_STATUS, None)?;
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .ok_or("ícone default do app ausente")?;
+    let icon =
+        tauri::image::Image::from_bytes(include_bytes!("../icons/tray-template@2x.png"))?;
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
+        .icon_as_template(true)
         .tooltip("MyCockpit")
         .menu(&menu)
         // clique esquerdo mostra a janela; o menu fica no clique direito.
