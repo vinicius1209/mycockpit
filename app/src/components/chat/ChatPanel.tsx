@@ -240,7 +240,7 @@ export function ChatPanel() {
     // fato (flush da sessão) antes do próximo run; ao terminar, o finally junta as
     // pendentes num único envio (resume). Coalescer evita N resumes em sequência.
     if (conv?.running || conv?.finalizing) {
-      useChat.getState().enqueue(convId, text)
+      useChat.getState().enqueue(convId, text, attachments)
       return
     }
     // Um envio MANUAL (digitado/⌘K/fila) supersede um auto-resume agendado: cancela
@@ -351,11 +351,19 @@ export function ChatPanel() {
           after && turnEndedOk(after.items) ? extractPlanText(after.items) : null
         if (planText) useChat.getState().setPendingPlan(convId, planText)
       }
-      // Fila: junta as mensagens digitadas durante o turno num ÚNICO envio (resume).
+      // Fila: junta as mensagens digitadas durante o turno num ÚNICO envio (resume),
+      // textos coalescidos + anexos de todos os itens (dedup por path — o dedup
+      // por hash do backend pode repetir o mesmo blob em itens diferentes).
       // Se há fila, o próximo turno já começa; senão, agenda as sugestões.
       const pending = useChat.getState().dequeueQueued(convId)
       if (pending.length > 0) {
-        void handleSend(pending.join("\n\n"))
+        const texts = pending.map((q) => q.text).filter(Boolean)
+        const atts = [
+          ...new Map(
+            pending.flatMap((q) => q.attachments).map((a) => [a.path, a]),
+          ).values(),
+        ]
+        void handleSend(texts.join("\n\n"), undefined, atts)
       } else if (maybeScheduleAutoResume(convId, agent)) {
         // turno bateu num rate limit / "vou tentar depois" e o auto-resume está
         // ligado: agendamos um reenvio automático (banner mostra o countdown).

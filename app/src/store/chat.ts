@@ -2,7 +2,11 @@ import { create } from "zustand"
 import type { AgentEvent, CostSource } from "@/lib/agent"
 import { suggest } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
-import { wipeAttachments } from "@/lib/attachments"
+import {
+  deleteAttachment,
+  revokeAttachmentUrl,
+  wipeAttachments,
+} from "@/lib/attachments"
 import { detectBlockedDir } from "@/lib/blockedDir"
 import {
   SUGGEST_PROMPT,
@@ -61,6 +65,12 @@ export type ChatItem =
   /** Limite de uso/cota do agent atingido: cartão acionável (revezamento). */
   | { kind: "limit"; id: string; message: string; resetHint?: string }
 
+/** Mensagem enfileirada durante o turno: texto + anexos do momento do Enter. */
+export interface QueuedMsg {
+  text: string
+  attachments: Attachment[]
+}
+
 /** Estado de UMA conversa, vive em byId[convId]; runs em background escrevem aqui. */
 export interface ConvState {
   projectId: string
@@ -94,8 +104,10 @@ export interface ConvState {
   suggestions: string[]
   suggesting: boolean
   /** Mensagens digitadas ENQUANTO o turno roda: enfileiradas e coalescidas num
-   *  único envio quando o turno atual termina (Done). Efêmero (não persiste). */
-  queued?: string[]
+   *  único envio quando o turno atual termina (Done). Cada item leva os anexos
+   *  do composer no momento do Enter — sem isso a imagem "enviada" fica órfã
+   *  no composer e nunca acompanha a mensagem. Efêmero (não persiste). */
+  queued?: QueuedMsg[]
   /** Pasta que o agent tentou acessar e foi barrada pelo gate de diretório
    *  (detecção heurística em tool_result falho). Alimenta o banner "Liberar e
    *  reenviar". Efêmero. null/undefined = nada bloqueado. */
@@ -209,10 +221,11 @@ interface ChatState {
   /** Gera sugestões contextuais (fire-and-forget; degrada pros chips estáticos). */
   generateSuggestions: (convId: string) => Promise<void>
   queuePrompt: (t: string | null) => void
-  /** Fila da conversa: enfileira uma mensagem digitada durante o turno. */
-  enqueue: (convId: string, text: string) => void
+  /** Fila da conversa: enfileira uma mensagem digitada durante o turno
+   *  (com os anexos pendentes do composer, que viajam junto). */
+  enqueue: (convId: string, text: string, attachments?: Attachment[]) => void
   /** Esvazia a fila e devolve as mensagens pendentes (p/ coalescer no envio). */
-  dequeueQueued: (convId: string) => string[]
+  dequeueQueued: (convId: string) => QueuedMsg[]
   /** Remove UMA mensagem enfileirada (o X no chip da fila). */
   removeQueued: (convId: string, index: number) => void
   /** Atualiza o rascunho (input não-enviado) de uma conversa. */
@@ -757,6 +770,21 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     removeConversation: async (id) => {
+      // Missão/disputa da conversa morrem JUNTO: sem a conversa elas seguiriam
+      // rodando invisíveis (fora da sidebar e do snapshot da tray, que
+      // subcontaria `running` e deixaria o "Sair" matar o trabalho sem
+      // confirmação). Import dinâmico: mission/fusion importam este módulo.
+      try {
+        const [{ useMission }, { useFusion }] = await Promise.all([
+          import("@/store/mission"),
+          import("@/store/fusion"),
+        ])
+        useMission.getState().abort(id)
+        useFusion.getState().abort(id) // no-op fora de running/judging
+        useFusion.getState().discard(id) // limpa board + pending do DB
+      } catch {
+        // best-effort: a deleção da conversa segue mesmo assim
+      }
       // Mira a conversa pelo id ÚNICO → deleta só a linha certa no DB e some do
       // array do projeto DONO dela (mesmo que seja um projeto NÃO-ativo). O
       // projeto ativo e as outras conversas ficam intactos.
@@ -1097,14 +1125,17 @@ export const useChat = create<ChatState>((set, get) => {
     setDraft: (convId, text) =>
       set((s) => ({ drafts: { ...s.drafts, [convId]: text } })),
 
-    enqueue: (convId, text) =>
+    enqueue: (convId, text, attachments = []) =>
       set((s) => {
         const cur = s.byId[convId]
         if (!cur) return {}
         return {
           byId: {
             ...s.byId,
-            [convId]: { ...cur, queued: [...(cur.queued ?? []), text] },
+            [convId]: {
+              ...cur,
+              queued: [...(cur.queued ?? []), { text, attachments }],
+            },
           },
         }
       }),
@@ -1121,7 +1152,8 @@ export const useChat = create<ChatState>((set, get) => {
       return pending
     },
 
-    removeQueued: (convId, index) =>
+    removeQueued: (convId, index) => {
+      const removed = get().byId[convId]?.queued?.[index]
       set((s) => {
         const cur = s.byId[convId]
         if (!cur?.queued) return {}
@@ -1131,7 +1163,22 @@ export const useChat = create<ChatState>((set, get) => {
             [convId]: { ...cur, queued: cur.queued.filter((_, i) => i !== index) },
           },
         }
-      }),
+      })
+      // Blobs do item removido: mesmo ciclo de vida do X do composer (URL +
+      // arquivo), poupando os ainda referenciados por outro item da fila
+      // (dedup por hash → paths iguais).
+      if (!removed) return
+      const kept = new Set(
+        (get().byId[convId]?.queued ?? []).flatMap((q) =>
+          q.attachments.map((a) => a.path),
+        ),
+      )
+      for (const a of removed.attachments) {
+        if (kept.has(a.path)) continue
+        revokeAttachmentUrl(a.path)
+        void deleteAttachment(a.path)
+      }
+    },
 
     beginFusion: (convId, text, attachments) =>
       set((s) => {

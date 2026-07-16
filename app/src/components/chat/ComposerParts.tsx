@@ -23,6 +23,7 @@ import { PLAN_FIRST_TOOLTIP } from "@/lib/planMode"
 import type { SlashCommand } from "@/lib/sources"
 import type { AtItem } from "@/hooks/useAtMentions"
 import type { Attachment } from "@/lib/attachments"
+import type { QueuedMsg } from "@/store/chat"
 import type { Destination, Project } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -191,7 +192,7 @@ export function QueuedChips({
   queued,
   onRemove,
 }: {
-  queued: string[]
+  queued: QueuedMsg[]
   onRemove: (index: number) => void
 }) {
   if (queued.length === 0) return null
@@ -200,14 +201,28 @@ export function QueuedChips({
       <span className="px-1 text-[10px] tracking-wide text-muted-foreground/70 uppercase">
         Na fila · enviam juntas ao terminar
       </span>
-      {queued.map((text, i) => (
+      {queued.map((msg, i) => (
         <span
           key={i}
-          title={text}
+          title={msg.text}
           className="flex items-center gap-1.5 rounded-md border border-brass/30 bg-brass/5 px-2 py-1 text-[12px] text-foreground/80"
         >
           <span className="text-muted-foreground/60">{i + 1}.</span>
-          <span className="min-w-0 flex-1 truncate">{text}</span>
+          <span className="min-w-0 flex-1 truncate">{msg.text}</span>
+          {/* anexos viajam com a mensagem enfileirada — mostra que foram junto */}
+          {msg.attachments.map((a) => {
+            const Icon = a.kind === "pdf" ? FileText : ImageIcon
+            return (
+              <span
+                key={a.path}
+                title={a.name}
+                className="flex shrink-0 items-center gap-1 rounded border bg-secondary/50 px-1.5 py-0.5 text-[10.5px] text-muted-foreground"
+              >
+                <Icon className="size-2.5 shrink-0" />
+                <span className="max-w-[90px] truncate">{a.name}</span>
+              </span>
+            )
+          })}
           <button
             onClick={() => onRemove(i)}
             className="shrink-0 text-muted-foreground hover:text-foreground"

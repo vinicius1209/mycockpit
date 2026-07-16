@@ -174,12 +174,15 @@ export function CommandConsole({
 
   function submit() {
     const text = value.trim()
-    // Turno em andamento: Enter ENFILEIRA (só texto; os anexos ficam no composer
-    // p/ o próximo envio). O handleSend detecta o running e empilha na fila.
+    // Turno em andamento: Enter ENFILEIRA (texto + anexos — deixar o anexo pra
+    // trás fazia a imagem "enviada" ficar órfã no composer e nunca ir junto).
+    // O handleSend detecta o running e empilha na fila.
     if (running || finalizing) {
-      if (!text || disabled) return
-      onSend(text, effCfg, [])
+      if ((!text && attachments.length === 0) || disabled || !allSupported)
+        return
+      onSend(text, effCfg, attachments)
       setValue("")
+      setAttachments([])
       resetHistory()
       ref.current?.focus()
       return
