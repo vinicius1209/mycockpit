@@ -162,13 +162,20 @@
 }
 
 /* O blur de verdade vem do vibrancy NATIVO (NSVisualEffectView aplicado no
-   Rust) — backdrop-filter não alcança o que está atrás da JANELA. Aqui só
-   entra um véu translúcido do token por cima do material, por tema. */
+   Rust) — backdrop-filter não alcança o que está atrás da JANELA. O material
+   já entrega o fosco translúcido; aqui entra só um véu FINO do token, o
+   suficiente pra legibilidade sem virar cartão opaco. */
 .tray-popover-shell {
-  background: color-mix(in srgb, var(--popover) 62%, transparent);
+  background: color-mix(in srgb, var(--popover) 30%, transparent);
 }
 .dark .tray-popover-shell {
-  background: color-mix(in srgb, var(--popover) 48%, transparent);
+  background: color-mix(in srgb, var(--popover) 24%, transparent);
+}
+/* Header/rodapé ganham um filete a mais de véu: onde o texto é mais denso,
+   garante contraste sobre wallpapers claros sem opacar o corpo. */
+.tray-popover-shell > header,
+.tray-popover-shell > footer {
+  background: color-mix(in srgb, var(--popover) 22%, transparent);
 }
 
 /* Assinatura do instrumento: um horizonte artificial discreto que responde

@@ -74,6 +74,9 @@ pub struct TrayState {
     /// entrega o Click(Up) — sem esta marca o toggle veria "invisível" e
     /// reabriria na hora, e o ícone nunca conseguiria fechar o popover.
     popover_blur_hidden_at: Mutex<Option<Instant>>,
+    /// Vibrancy nativa aplicada (uma vez). Aplicar no setup crasha (contentView
+    /// ainda nil); adiamos pro 1º show, quando a janela já está realizada.
+    vibrancy_applied: AtomicBool,
 }
 
 impl Default for TrayState {
@@ -83,6 +86,36 @@ impl Default for TrayState {
             keep_in_tray: AtomicBool::new(true),
             close_hint_shown: AtomicBool::new(false),
             popover_blur_hidden_at: Mutex::new(None),
+            vibrancy_applied: AtomicBool::new(false),
+        }
+    }
+}
+
+/// Aplica a vibrancy NATIVA (NSVisualEffectView) UMA vez — o fundo vira blur
+/// real do que está atrás da janela (backdrop-filter no CSS não alcança o
+/// desktop). Chamado no 1º show: no setup a contentView ainda é nil e o
+/// addSubview do cocoa faz null-deref (aborta o processo).
+#[allow(unused_variables)]
+fn ensure_vibrancy<R: Runtime>(app: &AppHandle<R>, win: &tauri::WebviewWindow<R>) {
+    let state = app.state::<TrayState>();
+    if state.vibrancy_applied.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+        // material Popover = o mesmo dos popovers nativos do macOS; raio
+        // acompanha o rounded-[13px] do shell.
+        if apply_vibrancy(
+            win,
+            NSVisualEffectMaterial::Popover,
+            Some(NSVisualEffectState::Active),
+            Some(13.0),
+        )
+        .is_err()
+        {
+            // falhou (deveria ser raro): re-arma pra tentar no próximo show.
+            state.vibrancy_applied.store(false, Ordering::Relaxed);
         }
     }
 }
@@ -403,6 +436,7 @@ fn toggle_popover(app: &AppHandle, rect: tauri::Rect) {
     }
     let s = snapshot(&app.state::<TrayState>());
     let _ = app.emit_to(POPOVER_LABEL, "tray://snapshot", s);
+    ensure_vibrancy(app, &win); // agora a janela está realizada (contentView ok)
     let _ = win.show();
     let _ = win.set_focus();
 }
@@ -412,7 +446,7 @@ pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // pode chegar na janela de boot, antes do React sincronizar via IPC.
     load_tray_preferences(app);
 
-    let popover = WebviewWindowBuilder::new(
+    WebviewWindowBuilder::new(
         app,
         POPOVER_LABEL,
         WebviewUrl::App("index.html?surface=tray".into()),
@@ -432,22 +466,8 @@ pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     .visible_on_all_workspaces(true)
     .visible(false)
     .build()?;
-
-    // Vibrancy NATIVA (NSVisualEffectView): o fundo é blur real do que está
-    // atrás da janela — backdrop-filter no CSS não alcança o desktop, só o
-    // conteúdo da própria página. O raio acompanha o rounded-[13px] do shell.
-    #[cfg(target_os = "macos")]
-    {
-        use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
-        let _ = apply_vibrancy(
-            &popover,
-            NSVisualEffectMaterial::Popover,
-            Some(NSVisualEffectState::Active),
-            Some(13.0),
-        );
-    }
-    #[cfg(not(target_os = "macos"))]
-    let _ = &popover;
+    // A vibrancy é aplicada no 1º show (ensure_vibrancy) — aqui a contentView
+    // ainda é nil e o addSubview do cocoa abortaria o processo.
 
     let initial = TraySnapshot::default();
     let menu = build_menu(app, &initial)?;
