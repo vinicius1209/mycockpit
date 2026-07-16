@@ -295,8 +295,9 @@ pub fn run() {
                 .get_webview_window("main")
                 .ok_or("janela main ausente")?;
             main_window.create_overlay_titlebar()?;
+            // Semáforos centrados no header de 56px (h-14): center 28 − ~6 = 22.
             #[cfg(target_os = "macos")]
-            main_window.set_traffic_lights_inset(16.0, 17.0)?;
+            main_window.set_traffic_lights_inset(18.0, 22.0)?;
 
             // Tray: o app vive na barra de menu com a janela fechada (as
             // automações agendadas continuam); só "Sair" encerra de verdade.

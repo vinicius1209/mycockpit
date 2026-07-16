@@ -102,7 +102,7 @@ export function TitleBar() {
   return (
     <header
       data-tauri-drag-region
-      className="relative z-[110] grid h-11 shrink-0 grid-cols-[1fr_auto_1fr] items-center bg-rail"
+      className="relative z-[110] grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center bg-rail"
     >
       {/* Grid de 3 zonas: o seletor central fica EM FLUXO (não mais absolute) →
           o pill fica no centro exato da janela e nunca colide com o nome do
