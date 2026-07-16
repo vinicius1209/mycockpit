@@ -12,8 +12,10 @@ import {
   costWindows,
   ledgerWindows,
   costByAgent,
+  costByProject,
   dailySpend,
   ledgerTokens,
+  windowRows,
   type PrEnrichment,
 } from "@/lib/panel"
 import type { Decision } from "@/lib/inbox"
@@ -226,12 +228,13 @@ describe("ledger de custo (Painel Instrumento)", () => {
   const now = new Date(2026, 6, 14, 12, 0, 0).getTime()
   const h = 60 * 60 * 1000
   const d = 24 * h
-  const row = (agent: string, costUsd: number | null, ago: number, tokens = 0) => ({
-    agent,
-    costUsd,
-    tokens,
-    createdAt: now - ago,
-  })
+  const row = (
+    agent: string,
+    costUsd: number | null,
+    ago: number,
+    tokens = 0,
+    projectId = "p1",
+  ) => ({ agent, projectId, costUsd, tokens, createdAt: now - ago })
 
   it("ledgerWindows soma hoje/7d/30d corridos, ignora futuro e null=0", () => {
     const { today, week, month } = ledgerWindows(
@@ -275,5 +278,23 @@ describe("ledger de custo (Painel Instrumento)", () => {
 
   it("ledgerTokens soma os tokens", () => {
     expect(ledgerTokens([row("a", 1, h, 100), row("b", 2, h, 250)])).toBe(350)
+  })
+
+  it("costByProject agrupa por projeto, ordena desc e calcula share", () => {
+    const r = costByProject([
+      row("codex", 30, h, 0, "alpha"),
+      row("claude-code", 10, h, 0, "beta"),
+      row("codex", 60, h, 0, "beta"),
+    ])
+    expect(r.map((x) => x.projectId)).toEqual(["beta", "alpha"])
+    expect(r[0]).toMatchObject({ costUsd: 70, share: 0.7 })
+    expect(r[1]).toMatchObject({ costUsd: 30, share: 0.3 })
+  })
+
+  it("windowRows recorta por janela (hoje/7d/30d)", () => {
+    const rows = [row("c", 1, h), row("c", 2, 3 * d), row("c", 4, 20 * d)]
+    expect(windowRows(rows, "today", now)).toHaveLength(1)
+    expect(windowRows(rows, "7d", now)).toHaveLength(2)
+    expect(windowRows(rows, "30d", now)).toHaveLength(3)
   })
 })

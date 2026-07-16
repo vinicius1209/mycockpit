@@ -737,6 +737,7 @@ export async function listRecentDeliveries(
  *  normalizados p/ as janelas hoje/7d/30d, o ranking por agente e o sparkline. */
 export interface LedgerEntry {
   agent: string
+  projectId: string
   costUsd: number | null
   tokens: number
   createdAt: number
@@ -790,15 +791,22 @@ export async function loadLedger(sinceMs: number): Promise<LedgerEntry[]> {
   if (!db) return []
   try {
     const rows = await db.select<
-      { agent: string; cost_usd: number | null; tokens: number; created_at: number }[]
+      {
+        agent: string
+        project_id: string
+        cost_usd: number | null
+        tokens: number
+        created_at: number
+      }[]
     >(
-      "SELECT agent, cost_usd, (input_tokens + output_tokens) AS tokens, created_at FROM turn_costs WHERE created_at >= $1 " +
+      "SELECT agent, project_id, cost_usd, (input_tokens + output_tokens) AS tokens, created_at FROM turn_costs WHERE created_at >= $1 " +
         "UNION ALL " +
-        "SELECT agent, cost_usd, 0 AS tokens, created_at FROM deliveries WHERE created_at >= $1",
+        "SELECT agent, project_id, cost_usd, 0 AS tokens, created_at FROM deliveries WHERE created_at >= $1",
       [sinceMs],
     )
     return rows.map((r) => ({
       agent: r.agent,
+      projectId: r.project_id,
       costUsd: r.cost_usd,
       tokens: r.tokens ?? 0,
       createdAt: r.created_at,

@@ -45,6 +45,7 @@ import {
 import { updateAvailable } from "@/lib/detect"
 import { confirm } from "@/lib/confirm"
 import { fmtCost, fmtTokens } from "@/lib/format"
+import { CostAudit } from "@/components/panel/CostAudit"
 import { cn } from "@/lib/utils"
 
 /** Cor categórica por agente (mesma linguagem dos mocks): Claude=brass,
@@ -668,6 +669,7 @@ export function MissionControl() {
 
   const missionCount = liveRows.filter((r) => r.kind === "missão").length
   const [expand, setExpand] = useState<"all" | "missão" | null>(null)
+  const [auditOpen, setAuditOpen] = useState(false)
   const expandedRows =
     expand === "missão"
       ? liveRows.filter((r) => r.kind === "missão")
@@ -775,8 +777,16 @@ export function MissionControl() {
 
             {fleet.byAgent.length > 0 && (
               <div className="mt-4">
-                <div className="label-mono mb-2 text-[9px]">
-                  Custo por agente · 30 dias
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="label-mono text-[9px]">
+                    Custo por agente · 30 dias
+                  </span>
+                  <button
+                    onClick={() => setAuditOpen(true)}
+                    className="text-[11px] font-medium text-brass transition-opacity hover:opacity-80"
+                  >
+                    auditoria →
+                  </button>
                 </div>
                 <div className="flex h-2.5 gap-[3px]">
                   {fleet.byAgent.map((a) => (
@@ -991,11 +1001,15 @@ export function MissionControl() {
               </ul>
             </div>
           )}
-          <p className="mt-3 text-[11.5px] text-muted-foreground tabular-nums">
-            hoje {fmtCost(windows.today)} · 7d {fmtCost(windows.week)}
-          </p>
         </section>
       </div>
+
+      <CostAudit
+        open={auditOpen}
+        onOpenChange={setAuditOpen}
+        ledger={ledger}
+        projectNames={projectNames}
+      />
     </ScrollArea>
   )
 }

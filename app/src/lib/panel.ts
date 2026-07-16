@@ -157,12 +157,31 @@ export function costWindows(
 
 export interface LedgerRow {
   agent: string
+  projectId: string
   costUsd: number | null
   tokens: number
   createdAt: number
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Recorta o ledger por janela (auditoria): 'today' (meia-noite local), '7d',
+ *  '30d'. Ignora timestamps futuros. */
+export function windowRows(
+  rows: LedgerRow[],
+  win: "today" | "7d" | "30d",
+  now = Date.now(),
+): LedgerRow[] {
+  let start: number
+  if (win === "today") {
+    const m = new Date(now)
+    m.setHours(0, 0, 0, 0)
+    start = m.getTime()
+  } else {
+    start = now - (win === "7d" ? 7 : 30) * DAY_MS
+  }
+  return rows.filter((r) => r.createdAt >= start && r.createdAt <= now)
+}
 
 /** Janelas hoje (meia-noite local) / 7d / 30d corridos, ignorando futuro. */
 export function ledgerWindows(
@@ -213,6 +232,31 @@ export function costByAgent(rows: LedgerRow[]): AgentSpend[] {
       costUsd: v.costUsd,
       tokens: v.tokens,
       share: total > 0 ? v.costUsd / total : 0,
+    }))
+    .sort((a, b) => b.costUsd - a.costUsd)
+}
+
+export interface ProjectSpend {
+  projectId: string
+  costUsd: number
+  share: number
+}
+
+/** Custo por projeto (desc), com share do total — o breakdown "por projeto" da
+ *  auditoria. Agrupa por projectId. */
+export function costByProject(rows: LedgerRow[]): ProjectSpend[] {
+  const by = new Map<string, number>()
+  let total = 0
+  for (const r of rows) {
+    const c = r.costUsd ?? 0
+    total += c
+    by.set(r.projectId, (by.get(r.projectId) ?? 0) + c)
+  }
+  return [...by.entries()]
+    .map(([projectId, costUsd]) => ({
+      projectId,
+      costUsd,
+      share: total > 0 ? costUsd / total : 0,
     }))
     .sort((a, b) => b.costUsd - a.costUsd)
 }

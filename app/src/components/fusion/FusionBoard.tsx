@@ -190,32 +190,43 @@ export function FusionBoard({ convId }: { convId: string }) {
   // suprimida por anti-viés) → "Confirmar" já funciona com 1 clique; dá pra trocar.
   const selected = chosen ?? fusion.chosenId ?? fusion.judge.suggestedId
   // total REAL (candidatos + juiz) quando o juiz já rodou; ao vivo soma as lanes.
-  const liveCost = fusion.costTotal > 0 ? fusion.costTotal : liveCostOf(fusion)
+  const final = fusion.costTotal > 0
+  const liveCost = final ? fusion.costTotal : liveCostOf(fusion)
+
+  // ARENA: candidatos OMBRO-A-OMBRO (o `fill` do CandidateLane, que existia mas
+  // nunca era acionado — antes empilhava vertical com scroll individual). 2–3
+  // colunas lado a lado; 4–5 quebram numa 2ª linha (grid de 3).
+  const n = fusion.candidates.length
+  const gridCols =
+    n <= 1 ? "grid-cols-1" : n === 2 ? "grid-cols-2" : "grid-cols-3"
 
   return (
-    <div className="mx-auto flex w-full max-w-[760px] flex-col gap-2.5 px-8 py-4">
+    <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-3 px-6 py-4">
       <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
         <Swords className="size-3.5 text-brass" />
         <span>
-          Disputa · {fusion.candidates.length} candidatos
+          Disputa · {n} candidatos
           {judging ? " · juiz avaliando…" : deciding ? " · escolha o vencedor" : ""}
         </span>
         <span className="ml-auto font-mono tabular-nums">
-          ~US${liveCost.toFixed(3)}
+          {fmtCost(liveCost, final ? "reported" : "estimated")}
         </span>
       </div>
 
-      {fusion.candidates.map((c) => (
-        <CandidateLane
-          key={c.id}
-          c={c}
-          selected={selected === c.id}
-          userPicked={chosen === c.id}
-          suggested={fusion.judge.suggestedId === c.id}
-          deciding={deciding}
-          onChoose={() => setChosen(c.id)}
-        />
-      ))}
+      <div className={cn("grid gap-3 auto-rows-[380px]", gridCols)}>
+        {fusion.candidates.map((c) => (
+          <CandidateLane
+            key={c.id}
+            c={c}
+            selected={selected === c.id}
+            userPicked={chosen === c.id}
+            suggested={fusion.judge.suggestedId === c.id}
+            deciding={deciding}
+            onChoose={() => setChosen(c.id)}
+            fill
+          />
+        ))}
+      </div>
 
       {deciding && (
         <FusionVerdict
