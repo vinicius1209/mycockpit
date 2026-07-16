@@ -294,7 +294,28 @@ pub fn run() {
             if window.label() == "main" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
-                    tray::hide_main_window(window);
+                    if tray::should_keep_in_tray(window.app_handle()) {
+                        tray::hide_main_window(window);
+                        tray::notify_window_hidden(window.app_handle());
+                    } else {
+                        // Mesma proteção do "Sair" da tray: com agents em voo,
+                        // confirma antes do exit(0) matar os runs (kill_all).
+                        tray::request_quit(window.app_handle());
+                    }
+                }
+            } else if window.label() == tray::POPOVER_LABEL {
+                match event {
+                    tauri::WindowEvent::Focused(false) => {
+                        tray::mark_popover_blur_hidden(window.app_handle());
+                        let _ = window.hide();
+                    }
+                    // Cmd+W (menu padrão do macOS) DESTRUIRIA o webview e o
+                    // popover nunca é recriado (create só roda no setup).
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    _ => {}
                 }
             }
         })
@@ -307,6 +328,7 @@ pub fn run() {
                 .build(),
         )
         .manage(agent::RunRegistry::default())
+        .manage(tray::TrayState::default())
         .manage(attachments::ActiveConvs::default())
         .manage(stt::SttSession::default())
         // aprovação granular inline: registro compartilhado (listener por-run +
@@ -348,7 +370,11 @@ pub fn run() {
             git::pr_context,
             github::gh_pr_view,
             github::gh_pr_merge,
-            tray::set_tray_status,
+            tray::set_tray_snapshot,
+            tray::get_tray_snapshot,
+            tray::set_tray_preferences,
+            tray::tray_action,
+            tray::force_quit,
             stt::stt_start,
             stt::stt_stop,
             stt::stt_cancel,

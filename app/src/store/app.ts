@@ -1,8 +1,10 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
+import { emit } from "@tauri-apps/api/event"
 import type { PermissionMode, Project } from "@/lib/types"
 import { type GlobalSettings, DEFAULT_SETTINGS } from "@/lib/settings"
 import {
+  isTauri,
   renameProject as dbRenameProject,
   setProjectColor as dbSetProjectColor,
 } from "@/lib/db"
@@ -89,6 +91,9 @@ interface AppState {
 
 function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle("dark", theme === "dark")
+  // O popover da tray é OUTRO contexto JS (webview próprio) e só lê o tema no
+  // boot — sem este broadcast ele ficaria no tema antigo até reiniciar o app.
+  if (isTauri()) void emit("app://theme", theme).catch(() => {})
 }
 
 export const useApp = create<AppState>()(

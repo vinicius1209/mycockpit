@@ -34,6 +34,10 @@ export interface GlobalSettings {
   /** Onboarding: false = mostra o wizard no boot. Migração seta true p/ quem já
    *  tem estado persistido (não é primeira instalação). */
   onboarded: boolean
+  /** Fechar a janela mantém o motor vivo e acessível pela barra de menus. */
+  keepInTrayOnClose: boolean
+  /** Dedupe persistido do aviso educativo exibido no primeiro hide. */
+  trayCloseHintShown: boolean
   /** Último snapshot da detecção de agents (por id). Alimenta o seletor e o
    *  bloco "Agents na máquina" das Configurações. */
   detected: Record<string, AgentProbe>
@@ -63,6 +67,8 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   missionEnabled: false,
   missionPresets: DEFAULT_MISSION_PRESETS,
   onboarded: false,
+  keepInTrayOnClose: true,
+  trayCloseHintShown: false,
   detected: {},
   lastUpdateCheck: 0,
   lastNotifiedVersions: {},

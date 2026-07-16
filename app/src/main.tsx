@@ -7,6 +7,7 @@ import "@fontsource-variable/geist-mono"
 
 import "./index.css"
 import App from "./App.tsx"
+import { TrayPopover } from "@/components/tray/TrayPopover"
 
 // Tema persistido (mc.app via zustand persist) aplicado ANTES do React p/ não
 // piscar dark no boot. Default = dark quando nada foi salvo.
@@ -22,6 +23,10 @@ try {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    {new URLSearchParams(window.location.search).get("surface") === "tray" ? (
+      <TrayPopover />
+    ) : (
+      <App />
+    )}
   </StrictMode>,
 )

@@ -1,5 +1,6 @@
 import { useEffect } from "react"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
+import { getCurrentWindow } from "@tauri-apps/api/window"
 import { toast } from "sonner"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -30,7 +31,14 @@ import { useNotifs } from "@/store/notifications"
 import { useSchedules } from "@/store/schedules"
 import { tickSchedules } from "@/lib/scheduleEngine"
 import { fmtUntilShort, nextScheduled } from "@/lib/schedules"
-import { buildTrayStatus, updateTray } from "@/lib/tray"
+import {
+  setTrayPreferences,
+  updateTray,
+  type TrayAction,
+  type TrayActivity,
+} from "@/lib/tray"
+import { nativeNotify } from "@/lib/notify"
+import { agentLabel, cancelAgent } from "@/lib/agent"
 import {
   isTauri,
   listProjects,
@@ -96,6 +104,8 @@ export default function App() {
   const setReady = useApp((s) => s.setReady)
   const theme = useApp((s) => s.theme)
   const onboarded = useApp((s) => s.settings.onboarded)
+  const keepInTrayOnClose = useApp((s) => s.settings.keepInTrayOnClose)
+  const trayCloseHintShown = useApp((s) => s.settings.trayCloseHintShown)
   const activeProjectId = useApp((s) => s.activeProjectId)
 
   useEffect(() => {
@@ -240,54 +250,320 @@ export default function App() {
     for (const f of Object.values(s.byConv)) if (f.phase === "deciding") n++
     return n
   })
-  const nextSchedName = useSchedules(
-    (s) => nextScheduled(s.schedules)?.name ?? null,
+  // Chaves semânticas: mudam quando a etapa exibida na telemetria muda, mas
+  // permanecem estáveis durante deltas de texto do streaming.
+  const chatTrayKey = useChat((s) =>
+    Object.entries(s.byId)
+      .filter(([, c]) => c.running)
+      .map(([id, c]) => {
+        const last = c.items[c.items.length - 1]
+        const tool = last?.kind === "tool" ? last.name : ""
+        return `${id}:${last?.kind ?? "idle"}:${tool}:${c.streamingTextId ?? ""}`
+      })
+      .sort()
+      .join("|"),
   )
-  const nextSchedAt = useSchedules(
-    (s) => nextScheduled(s.schedules)?.nextRun ?? null,
+  const missionTrayKey = useMission((s) =>
+    Object.entries(s.byConv)
+      .filter(([, m]) => m.status === "running")
+      .map(([id, m]) => `${id}:${m.current}:${m.phases[m.current]?.status ?? ""}`)
+      .sort()
+      .join("|"),
   )
+  const fusionTrayKey = useFusion((s) =>
+    Object.entries(s.byConv)
+      .filter(([, f]) => ["running", "judging", "promoting"].includes(f.phase))
+      .map(
+        ([id, f]) =>
+          `${id}:${f.phase}:${f.candidates.map((c) => c.status).join(",")}`,
+      )
+      .sort()
+      .join("|"),
+  )
+  const schedules = useSchedules((s) => s.schedules)
   useEffect(() => {
     if (!isTauri()) return
     const send = () => {
-      const running = runningConvs + missionsRunning + fusionsLive
-      const next =
-        nextSchedAt != null && nextSchedName
-          ? `⏰ ${nextSchedName} · ${fmtUntilShort(nextSchedAt - Date.now())}`
-          : null
-      updateTray(buildTrayStatus(running, decisionsPending), next)
+      const app = useApp.getState()
+      const chat = useChat.getState()
+      const missions = useMission.getState()
+      const fusions = useFusion.getState()
+      const scheduleState = useSchedules.getState()
+      const projectName = new Map(app.projects.map((p) => [p.id, p.name]))
+      const titleOf = (convId: string, projectId: string) =>
+        chat.conversationsByProject[projectId]?.find((c) => c.id === convId)
+          ?.title ?? "Conversa"
+      const activities = new Map<string, TrayActivity>()
+      const linearDetail = (convId: string): string => {
+        const c = chat.byId[convId]
+        const last = c?.items[c.items.length - 1]
+        if (last?.kind === "tool") {
+          const known: Record<string, string> = {
+            Bash: "Executando comando…",
+            Read: "Lendo arquivo…",
+            Edit: "Editando arquivos…",
+            Write: "Escrevendo arquivo…",
+            Glob: "Mapeando o projeto…",
+            Grep: "Buscando no projeto…",
+            WebSearch: "Pesquisando na web…",
+          }
+          return known[last.name] ?? `Usando ${last.name}…`
+        }
+        if (c?.streamingTextId || last?.kind === "text") return "Redigindo resposta…"
+        return "Analisando a tarefa…"
+      }
+      const push = (
+        convId: string,
+        kind: TrayActivity["kind"],
+        title?: string | null,
+        startedAt?: number | null,
+        agent = "",
+        model: string | null = null,
+        detail = "Em operação…",
+      ) => {
+        // Conversa deletada com missão/disputa ainda viva: NÃO some do
+        // snapshot — sumir subcontaria `running` e o "Sair" mataria o trabalho
+        // sem confirmação. Sem projectId a navegação vira no-op, mas a
+        // atividade continua visível, contada e parável.
+        const projectId = chat.byId[convId]?.projectId ?? ""
+        activities.set(convId, {
+          convId,
+          projectId,
+          title: title || titleOf(convId, projectId),
+          projectName: projectName.get(projectId) ?? "Projeto",
+          kind,
+          startedAt: startedAt ?? null,
+          agent,
+          model,
+          detail,
+        })
+      }
+      for (const [id, c] of Object.entries(chat.byId))
+        if (c.running)
+          push(
+            id,
+            "turno",
+            null,
+            c.startedAt,
+            agentLabel(c.agent),
+            c.model ?? c.reqModel,
+            linearDetail(id),
+          )
+      for (const [id, m] of Object.entries(missions.byConv)) {
+        if (m.status !== "running") continue
+        const phase = m.phases[m.current]
+        push(
+          id,
+          "missão",
+          m.task,
+          phase?.startedAt ?? m.startedAt,
+          phase ? agentLabel(phase.def.agent) : "Mission",
+          phase?.def.model ?? null,
+          phase ? `${phase.def.label}…` : "Preparando próxima etapa…",
+        )
+      }
+      for (const [id, f] of Object.entries(fusions.byConv)) {
+        if (!["running", "judging", "promoting"].includes(f.phase)) continue
+        const live = f.candidates.filter((c) =>
+          ["queued", "running", "finalizing"].includes(c.status),
+        )
+        const detail =
+          f.phase === "judging"
+            ? "Juiz avaliando os candidatos…"
+            : f.phase === "promoting"
+              ? "Promovendo a resposta escolhida…"
+              : `${live.length} ${live.length === 1 ? "agent trabalhando" : "agents trabalhando"}…`
+        push(
+          id,
+          "disputa",
+          f.prompt,
+          Math.min(...live.map((c) => c.startedAt ?? f.createdAt), f.createdAt),
+          live.length === 1 ? agentLabel(live[0].agent) : `${live.length} agents`,
+          live.length === 1 ? (live[0].model ?? live[0].reqModel) : null,
+          detail,
+        )
+      }
+
+      const decision = Object.entries(fusions.byConv).find(
+        ([, f]) => f.phase === "deciding",
+      )
+      const decisionConvId = decision?.[0] ?? null
+      const decisionProjectId = decisionConvId
+        ? (chat.byId[decisionConvId]?.projectId ?? null)
+        : null
+      const next = nextScheduled(scheduleState.schedules)
+      const last = [...scheduleState.schedules]
+        .filter((s) => s.lastRunAt != null)
+        .sort((a, b) => (b.lastRunAt ?? 0) - (a.lastRunAt ?? 0))[0]
+
+      updateTray({
+        running: activities.size,
+        decisions: decisionsPending,
+        activities: [...activities.values()].slice(0, 3),
+        decisionConvId,
+        decisionProjectId,
+        nextSchedule:
+          next?.nextRun != null
+            ? {
+                name: next.name,
+                at: next.nextRun,
+                relative: fmtUntilShort(next.nextRun - Date.now()),
+              }
+            : null,
+        lastRun:
+          last?.lastRunAt != null && last.lastRunStatus
+            ? {
+                name: last.name,
+                status: last.lastRunStatus,
+                at: last.lastRunAt,
+              }
+            : null,
+        enabledSchedules: scheduleState.schedules.filter((s) => s.enabled)
+          .length,
+      })
     }
     send()
     // re-envio de minuto: o "· 2h" da próxima agendada não pode mofar
     // (updateTray dedupa — só invoca quando a string muda de verdade).
     const t = setInterval(send, 60_000)
     return () => clearInterval(t)
-  }, [runningConvs, missionsRunning, fusionsLive, decisionsPending, nextSchedName, nextSchedAt])
+  }, [
+    runningConvs,
+    missionsRunning,
+    fusionsLive,
+    decisionsPending,
+    chatTrayKey,
+    missionTrayKey,
+    fusionTrayKey,
+    schedules,
+  ])
 
-  // Tray → "Nova tarefa": foca o composer da conversa ativa (garante a
-  // superfície Trabalho antes). Best-effort: fora do Tauri/sem tray, nada.
+  // Preferências persistidas do ciclo de vida → backend (que recebe o evento
+  // de fechar antes do React e, portanto, não pode consultar localStorage).
+  useEffect(() => {
+    setTrayPreferences(keepInTrayOnClose, trayCloseHintShown)
+  }, [keepInTrayOnClose, trayCloseHintShown])
+
+  // Ações do menu/popover chegam por um único canal e já abrem a janela. Cada
+  // ação navega até o objeto, sem deixar o usuário procurar novamente.
   useEffect(() => {
     if (!isTauri()) return
-    let un: UnlistenFn | null = null
+    const unlisteners: UnlistenFn[] = []
     let disposed = false
-    listen("tray://new-task", () => {
-      const app = useApp.getState()
-      app.setScheduledOpen(false)
-      app.setViewMode("linear")
-      // espera o ChatPanel montar/renderizar antes de focar.
+    const focusComposer = () =>
       setTimeout(() => {
         document
           .querySelector<HTMLTextAreaElement>('textarea[data-composer="console"]')
           ?.focus()
-      }, 120)
+      }, 140)
+    const openConversation = async (projectId?: string | null, convId?: string | null) => {
+      if (!projectId || !convId) return
+      const app = useApp.getState()
+      app.setActiveProject(projectId)
+      await useChat.getState().openProject(projectId)
+      await useChat.getState().switchConversation(convId)
+      app.setViewMode("linear")
+    }
+    // Ações de FUNDO (stop/pause) chegam com a janela principal escondida — um
+    // toast nela é invisível; notificação nativa cobre esse caso.
+    const feedback = async (message: string) => {
+      const visible = await getCurrentWindow()
+        .isVisible()
+        .catch(() => true)
+      if (visible) toast(message)
+      else void nativeNotify("MyCockpit", message)
+    }
+    listen<TrayAction>("tray://action", async ({ payload }) => {
+      const app = useApp.getState()
+      if (payload.action === "new-task") {
+        const projectId = app.activeProjectId ?? app.projects[0]?.id
+        if (!projectId) {
+          toast("Adicione um projeto antes de criar uma tarefa")
+          return
+        }
+        app.setActiveProject(projectId)
+        // Clique repetido (o popover some no blur e parece que falhou) não
+        // pode empilhar conversas vazias no banco: reusa a ativa se vazia.
+        const chat = useChat.getState()
+        const active = chat.activeId ? chat.byId[chat.activeId] : null
+        const activeEmpty =
+          active?.projectId === projectId &&
+          active.items.length === 0 &&
+          !active.running
+        if (!activeEmpty) await chat.newConversation(projectId)
+        app.setViewMode("linear")
+        focusComposer()
+      } else if (
+        payload.action === "review-decision" ||
+        payload.action === "open-activity"
+      ) {
+        await openConversation(payload.projectId, payload.convId)
+      } else if (payload.action === "stop-activity" && payload.convId) {
+        const convId = payload.convId
+        const mission = useMission.getState().byConv[convId]
+        const fusion = useFusion.getState().byConv[convId]
+        if (mission?.status === "running") {
+          useMission.getState().abort(convId)
+          void feedback("Missão interrompida")
+        } else if (
+          fusion &&
+          (fusion.phase === "running" || fusion.phase === "judging")
+        ) {
+          useFusion.getState().abort(convId)
+          void feedback("Disputa interrompida")
+        } else if (fusion?.phase === "promoting") {
+          // Promoção é one-shot (abort no-opa): não finge que parou.
+          void feedback("Disputa promovendo o vencedor — aguarde concluir")
+        } else {
+          const chat = useChat.getState()
+          chat.cancelAutoResume(convId)
+          const runId = chat.byId[convId]?.runId
+          if (runId) await cancelAgent(runId)
+          void feedback(
+            runId ? "Tarefa interrompida" : "Tarefa já não estava em execução",
+          )
+        }
+      } else if (payload.action === "show-running") {
+        app.setViewMode("painel")
+      } else if (payload.action === "open-schedules") {
+        app.setScheduledOpen(true)
+      } else if (payload.action === "open-settings") {
+        app.setSettingsOpen(true)
+      } else if (payload.action === "pause-schedules") {
+        const scheduleStore = useSchedules.getState()
+        const enabled = scheduleStore.schedules.filter((s) => s.enabled)
+        // toggles independentes (cada um mexe só na própria linha) → paralelo
+        await Promise.all(enabled.map((s) => scheduleStore.toggle(s.id, false)))
+        void feedback(
+          enabled.length === 1
+            ? "1 automação pausada"
+            : `${enabled.length} automações pausadas`,
+        )
+      }
+      // "confirm-quit" morreu: a confirmação de saída virou diálogo NATIVO no
+      // Rust (request_quit) — não depende deste webview estar vivo/visível.
     })
       .then((u) => {
         if (disposed) u()
-        else un = u
+        else unlisteners.push(u)
+      })
+      .catch(() => {})
+
+    listen("tray://first-hide", () => {
+      useApp.getState().setSettings({ trayCloseHintShown: true })
+      void nativeNotify(
+        "MyCockpit continua em operação",
+        "Agents e automações seguem rodando pela barra de menus.",
+      )
+    })
+      .then((u) => {
+        if (disposed) u()
+        else unlisteners.push(u)
       })
       .catch(() => {})
     return () => {
       disposed = true
-      un?.()
+      unlisteners.forEach((u) => u())
     }
   }, [])
 

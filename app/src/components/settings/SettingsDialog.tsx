@@ -8,6 +8,7 @@ import {
   Cpu,
   Info,
   Mic,
+  PanelTop,
   Palette,
   RotateCcw,
   Sparkles,
@@ -50,6 +51,7 @@ import { cn } from "@/lib/utils"
 
 type Section =
   | "appearance"
+  | "tray"
   | "agents"
   | "tools"
   | "suggestions"
@@ -59,6 +61,7 @@ type Section =
 
 const SECTIONS: { id: Section; label: string; icon: typeof Bot }[] = [
   { id: "appearance", label: "Aparência", icon: Palette },
+  { id: "tray", label: "Barra de menus", icon: PanelTop },
   { id: "agents", label: "Padrões", icon: Bot },
   { id: "tools", label: "Agents", icon: Cpu },
   { id: "suggestions", label: "Sugestões", icon: Sparkles },
@@ -422,6 +425,43 @@ export function SettingsDialog() {
                   são lembrados automaticamente ao reabrir o app.
                 </div>
               </div>
+            </div>
+          )}
+
+          {section === "tray" && (
+            <div>
+              <SectionTitle>Barra de menus</SectionTitle>
+              <div className="divide-y divide-border/50">
+                <Field
+                  label="Continuar ao fechar"
+                  hint="Mantém agents e automações rodando quando a janela é fechada. Use Sair para encerrar tudo."
+                >
+                  <Switch
+                    checked={settings.keepInTrayOnClose}
+                    onCheckedChange={(v) =>
+                      setSettings({ keepInTrayOnClose: v })
+                    }
+                    aria-label="Continuar na barra de menus ao fechar"
+                  />
+                </Field>
+                <div className="py-3">
+                  <div className="text-[13px] text-foreground">
+                    Instrumento compacto
+                  </div>
+                  <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">
+                    Um clique mostra frota, decisões e automações. O clique
+                    secundário abre o menu nativo de segurança.
+                  </p>
+                </div>
+              </div>
+              {settings.trayCloseHintShown && (
+                <button
+                  onClick={() => setSettings({ trayCloseHintShown: false })}
+                  className="mt-3 text-[12px] text-muted-foreground transition-colors hover:text-brass"
+                >
+                  Mostrar novamente o aviso ao fechar
+                </button>
+              )}
             </div>
           )}
 
