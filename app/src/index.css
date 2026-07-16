@@ -161,9 +161,14 @@
   }
 }
 
+/* O blur de verdade vem do vibrancy NATIVO (NSVisualEffectView aplicado no
+   Rust) — backdrop-filter não alcança o que está atrás da JANELA. Aqui só
+   entra um véu translúcido do token por cima do material, por tema. */
 .tray-popover-shell {
-  backdrop-filter: blur(24px) saturate(1.15);
-  -webkit-backdrop-filter: blur(24px) saturate(1.15);
+  background: color-mix(in srgb, var(--popover) 62%, transparent);
+}
+.dark .tray-popover-shell {
+  background: color-mix(in srgb, var(--popover) 48%, transparent);
 }
 
 /* Assinatura do instrumento: um horizonte artificial discreto que responde

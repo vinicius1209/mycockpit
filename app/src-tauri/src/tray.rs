@@ -412,7 +412,7 @@ pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // pode chegar na janela de boot, antes do React sincronizar via IPC.
     load_tray_preferences(app);
 
-    WebviewWindowBuilder::new(
+    let popover = WebviewWindowBuilder::new(
         app,
         POPOVER_LABEL,
         WebviewUrl::App("index.html?surface=tray".into()),
@@ -432,6 +432,22 @@ pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     .visible_on_all_workspaces(true)
     .visible(false)
     .build()?;
+
+    // Vibrancy NATIVA (NSVisualEffectView): o fundo é blur real do que está
+    // atrás da janela — backdrop-filter no CSS não alcança o desktop, só o
+    // conteúdo da própria página. O raio acompanha o rounded-[13px] do shell.
+    #[cfg(target_os = "macos")]
+    {
+        use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+        let _ = apply_vibrancy(
+            &popover,
+            NSVisualEffectMaterial::Popover,
+            Some(NSVisualEffectState::Active),
+            Some(13.0),
+        );
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = &popover;
 
     let initial = TraySnapshot::default();
     let menu = build_menu(app, &initial)?;

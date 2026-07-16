@@ -11,22 +11,29 @@ import { TrayPopover } from "@/components/tray/TrayPopover"
 
 // Tema persistido (mc.app via zustand persist) aplicado ANTES do React p/ não
 // piscar dark no boot. Default = dark quando nada foi salvo.
-try {
-  const persisted = JSON.parse(localStorage.getItem("mc.app") ?? "null")
-  document.documentElement.classList.toggle(
-    "dark",
-    persisted?.state?.theme !== "light",
-  )
-} catch {
-  document.documentElement.classList.add("dark")
+const dark = (() => {
+  try {
+    const persisted = JSON.parse(localStorage.getItem("mc.app") ?? "null")
+    return persisted?.state?.theme !== "light"
+  } catch {
+    return true
+  }
+})()
+document.documentElement.classList.toggle("dark", dark)
+
+const isTraySurface =
+  new URLSearchParams(window.location.search).get("surface") === "tray"
+
+// Popover: o vibrancy nativo segue o appearance do NSWindow, não a classe do
+// documento — alinha os dois já no boot (tema do app pode divergir do sistema).
+if (isTraySurface) {
+  void import("@tauri-apps/api/window")
+    .then(({ getCurrentWindow }) =>
+      getCurrentWindow().setTheme(dark ? "dark" : "light"),
+    )
+    .catch(() => {})
 }
 
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    {new URLSearchParams(window.location.search).get("surface") === "tray" ? (
-      <TrayPopover />
-    ) : (
-      <App />
-    )}
-  </StrictMode>,
+  <StrictMode>{isTraySurface ? <TrayPopover /> : <App />}</StrictMode>,
 )

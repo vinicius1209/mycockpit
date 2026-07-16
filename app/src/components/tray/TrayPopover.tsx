@@ -168,12 +168,15 @@ export function TrayPopover() {
     )
     // Este webview é um contexto JS próprio: o tema trocado na janela
     // principal só chega aqui por este evento (senão fica no tema do boot).
+    // setTheme também ajusta o NSWindow appearance — o vibrancy nativo
+    // (blur atrás da janela) escurece/clareia junto com o app.
     track(
       listen<string>("app://theme", (event) => {
-        document.documentElement.classList.toggle(
-          "dark",
-          event.payload === "dark",
-        )
+        const dark = event.payload === "dark"
+        document.documentElement.classList.toggle("dark", dark)
+        void getCurrentWindow()
+          .setTheme(dark ? "dark" : "light")
+          .catch(() => {})
       }),
     )
     const timer = setInterval(() => {
@@ -194,7 +197,7 @@ export function TrayPopover() {
   }, [])
 
   return (
-    <main className="tray-popover-shell flex h-screen flex-col overflow-hidden rounded-[13px] border border-border-strong bg-popover text-popover-foreground shadow-[var(--shadow-pop)]">
+    <main className="tray-popover-shell flex h-screen flex-col overflow-hidden rounded-[13px] border border-border-strong text-popover-foreground shadow-[var(--shadow-pop)]">
       <header className="relative overflow-hidden border-b border-border px-4 pt-4 pb-3.5">
         <div className="tray-horizon" aria-hidden>
           <span />

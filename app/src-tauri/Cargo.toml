@@ -32,6 +32,7 @@ blake3 = "1"      # hash do conteúdo de anexos (nome de arquivo + dedup)
 infer = "0.16"    # sniff de MIME por magic bytes (não confia no clipboard)
 tauri-plugin-opener = "2.5.4"
 tauri-plugin-notification = "2"
+window-vibrancy = "0.6" # NSVisualEffectView no popover da tray (blur nativo)
 
 # Resolver MSRV-aware (boa prática). Toolchain local: rustc 1.96 (Homebrew).
 [workspace]
