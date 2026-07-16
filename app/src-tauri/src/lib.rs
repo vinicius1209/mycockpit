@@ -249,6 +249,22 @@ pub fn run() {
             sql: "CREATE INDEX IF NOT EXISTS idx_stage_runs_plan ON stage_runs(project_id, slug);",
             kind: MigrationKind::Up,
         },
+        // v22, ledger de custo POR TURNO de chat linear (o gasto real que o strip
+        // "hoje/7d" não via — só missões gravavam deliveries). run_id como PK:
+        // o CLI emite results parciais na mesma invocação; o REPLACE por run_id
+        // colapsa nos totais finais do turno (mesmo racional do reducer do chat).
+        Migration {
+            version: 22,
+            description: "turn_costs",
+            sql: "CREATE TABLE IF NOT EXISTS turn_costs (run_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, conv_id TEXT NOT NULL, agent TEXT NOT NULL, model TEXT, cost_usd REAL, cost_source TEXT, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, cache_tokens INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 23,
+            description: "turn_costs_time_idx",
+            sql: "CREATE INDEX IF NOT EXISTS idx_turn_costs_time ON turn_costs(created_at);",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

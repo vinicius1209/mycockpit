@@ -151,6 +151,103 @@ export function costWindows(
   return { today, week }
 }
 
+// ───────────────── Ledger de custo (Painel "Instrumento") ─────────────────
+// Agregadores PUROS sobre o ledger unificado (turnos de chat + entregas). O
+// fetch mora em db.loadLedger; aqui só a matemática, testável sem banco.
+
+export interface LedgerRow {
+  agent: string
+  costUsd: number | null
+  tokens: number
+  createdAt: number
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Janelas hoje (meia-noite local) / 7d / 30d corridos, ignorando futuro. */
+export function ledgerWindows(
+  rows: LedgerRow[],
+  now = Date.now(),
+): { today: number; week: number; month: number } {
+  const midnight = new Date(now)
+  midnight.setHours(0, 0, 0, 0)
+  const startToday = midnight.getTime()
+  const start7d = now - 7 * DAY_MS
+  const start30d = now - 30 * DAY_MS
+  let today = 0
+  let week = 0
+  let month = 0
+  for (const r of rows) {
+    if (r.createdAt > now) continue
+    const c = r.costUsd ?? 0
+    if (r.createdAt >= start30d) month += c
+    if (r.createdAt >= start7d) week += c
+    if (r.createdAt >= startToday) today += c
+  }
+  return { today, week, month }
+}
+
+export interface AgentSpend {
+  agent: string
+  costUsd: number
+  tokens: number
+  /** fração 0–1 do total (p/ a barra segmentada + ranking). */
+  share: number
+}
+
+/** Custo por agente (desc), com share do total. Agrupa por `agent`. */
+export function costByAgent(rows: LedgerRow[]): AgentSpend[] {
+  const by = new Map<string, { costUsd: number; tokens: number }>()
+  let total = 0
+  for (const r of rows) {
+    const c = r.costUsd ?? 0
+    total += c
+    const cur = by.get(r.agent) ?? { costUsd: 0, tokens: 0 }
+    cur.costUsd += c
+    cur.tokens += r.tokens
+    by.set(r.agent, cur)
+  }
+  return [...by.entries()]
+    .map(([agent, v]) => ({
+      agent,
+      costUsd: v.costUsd,
+      tokens: v.tokens,
+      share: total > 0 ? v.costUsd / total : 0,
+    }))
+    .sort((a, b) => b.costUsd - a.costUsd)
+}
+
+/** Série de gasto por dia (do mais antigo → hoje), `days` posições, p/ o
+ *  sparkline. Cada bucket é um dia LOCAL; o último é hoje. */
+export function dailySpend(
+  rows: LedgerRow[],
+  days: number,
+  now = Date.now(),
+): number[] {
+  const midnight = new Date(now)
+  midnight.setHours(0, 0, 0, 0)
+  const startToday = midnight.getTime()
+  const out = new Array(days).fill(0)
+  for (const r of rows) {
+    if (r.createdAt > now) continue
+    // dias-atrás pela MEIA-NOITE LOCAL da entrada (senão hoje 12:00 daria índice
+    // negativo); round absorve a folga de DST.
+    const em = new Date(r.createdAt)
+    em.setHours(0, 0, 0, 0)
+    const dayIdx = Math.round((startToday - em.getTime()) / DAY_MS)
+    if (dayIdx < 0 || dayIdx >= days) continue
+    out[days - 1 - dayIdx] += r.costUsd ?? 0
+  }
+  return out
+}
+
+/** Total de tokens no ledger (readout "Tokens"). */
+export function ledgerTokens(rows: LedgerRow[]): number {
+  let t = 0
+  for (const r of rows) t += r.tokens
+  return t
+}
+
 // ─── Enriquecimento via gh (lazy, cache 60s, fail-soft) ─────────────────────
 
 const PR_CACHE_TTL_MS = 60_000

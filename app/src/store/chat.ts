@@ -25,6 +25,7 @@ import {
   renameConversation as dbRename,
   setConversationColor as dbSetColor,
   setConversationWorktree as dbSetWorktree,
+  recordTurnCost,
   isTauri,
   type ConversationMeta,
 } from "@/lib/db"
@@ -1011,6 +1012,26 @@ export const useChat = create<ChatState>((set, get) => {
       } else if (e.type === "result" && e.ok) {
         const agent = get().byId[convId]?.agent
         if (agent) useApp.getState().clearAgentLimited(agent)
+      }
+      // Ledger de custo por turno (F: "hoje/7d" só via missões). Grava CADA
+      // result com custo — chat linear é caminho disjunto de missão/disputa, sem
+      // dupla contagem. REPLACE por run_id colapsa os parciais no total final.
+      if (e.type === "result" && e.cost_usd != null) {
+        const cur = get().byId[convId]
+        if (cur?.runId) {
+          void recordTurnCost({
+            runId: cur.runId,
+            projectId: cur.projectId,
+            convId,
+            agent: cur.agent,
+            model: cur.model,
+            costUsd: e.cost_usd,
+            costSource: e.cost_source ?? null,
+            input: e.input_tokens ?? 0,
+            output: e.output_tokens ?? 0,
+            cache: (e.cache_read ?? 0) + (e.cache_creation ?? 0),
+          })
+        }
       }
       set((s) => {
         const cur = s.byId[convId]

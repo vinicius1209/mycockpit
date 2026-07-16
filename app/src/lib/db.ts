@@ -731,6 +731,83 @@ export async function listRecentDeliveries(
   }
 }
 
+// ---------------- Ledger de custo por turno (turn_costs) ----------------
+
+/** Uma linha do ledger de custo — turno de chat OU entrega de missão,
+ *  normalizados p/ as janelas hoje/7d/30d, o ranking por agente e o sparkline. */
+export interface LedgerEntry {
+  agent: string
+  costUsd: number | null
+  tokens: number
+  createdAt: number
+}
+
+/** Grava o custo de UM turno de chat linear. `INSERT OR REPLACE` por run_id:
+ *  results parciais do mesmo run colapsam no total final (o último vence).
+ *  Best-effort — perder uma linha de custo não pode derrubar o turno. */
+export async function recordTurnCost(r: {
+  runId: string
+  projectId: string
+  convId: string
+  agent: string
+  model: string | null
+  costUsd: number | null
+  costSource: string | null
+  input: number
+  output: number
+  cache: number
+}): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  try {
+    await db.execute(
+      "INSERT OR REPLACE INTO turn_costs (run_id, project_id, conv_id, agent, model, cost_usd, cost_source, input_tokens, output_tokens, cache_tokens, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+      [
+        r.runId,
+        r.projectId,
+        r.convId,
+        r.agent,
+        r.model,
+        r.costUsd,
+        r.costSource,
+        r.input,
+        r.output,
+        r.cache,
+        Date.now(),
+      ],
+    )
+  } catch {
+    // best-effort
+  }
+}
+
+/** Ledger unificado desde `sinceMs`: turnos de chat (turn_costs) + entregas de
+ *  missão (deliveries). São caminhos DISJUNTOS (missão usa runPhase, disputa usa
+ *  handleCandidateEvent — nenhuma passa pelo handleEvent do chat), então a união
+ *  não conta em dobro. Disputas ainda não entram (TODO). */
+export async function loadLedger(sinceMs: number): Promise<LedgerEntry[]> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    const rows = await db.select<
+      { agent: string; cost_usd: number | null; tokens: number; created_at: number }[]
+    >(
+      "SELECT agent, cost_usd, (input_tokens + output_tokens) AS tokens, created_at FROM turn_costs WHERE created_at >= $1 " +
+        "UNION ALL " +
+        "SELECT agent, cost_usd, 0 AS tokens, created_at FROM deliveries WHERE created_at >= $1",
+      [sinceMs],
+    )
+    return rows.map((r) => ({
+      agent: r.agent,
+      costUsd: r.cost_usd,
+      tokens: r.tokens ?? 0,
+      createdAt: r.created_at,
+    }))
+  } catch {
+    return []
+  }
+}
+
 export interface LessonRecord {
   id: string
   rule: string

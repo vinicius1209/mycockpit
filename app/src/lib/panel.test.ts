@@ -10,6 +10,10 @@ import {
   prResolved,
   orderQueue,
   costWindows,
+  ledgerWindows,
+  costByAgent,
+  dailySpend,
+  ledgerTokens,
   type PrEnrichment,
 } from "@/lib/panel"
 import type { Decision } from "@/lib/inbox"
@@ -215,5 +219,61 @@ describe("costWindows (janela de custo)", () => {
 
   it("sem entregas → zeros", () => {
     expect(costWindows([], now)).toEqual({ today: 0, week: 0 })
+  })
+})
+
+describe("ledger de custo (Painel Instrumento)", () => {
+  const now = new Date(2026, 6, 14, 12, 0, 0).getTime()
+  const h = 60 * 60 * 1000
+  const d = 24 * h
+  const row = (agent: string, costUsd: number | null, ago: number, tokens = 0) => ({
+    agent,
+    costUsd,
+    tokens,
+    createdAt: now - ago,
+  })
+
+  it("ledgerWindows soma hoje/7d/30d corridos, ignora futuro e null=0", () => {
+    const { today, week, month } = ledgerWindows(
+      [
+        row("codex", 1, h), // hoje
+        row("claude-code", 2, 13 * h), // ontem → 7d e 30d
+        row("codex", 4, 6 * d), // 7d e 30d
+        row("codex", 8, 20 * d), // só 30d
+        row("codex", 16, 40 * d), // fora
+        row("codex", null, h), // null = 0
+        row("codex", 99, -h), // futuro → fora
+      ],
+      now,
+    )
+    expect(today).toBe(1)
+    expect(week).toBe(7)
+    expect(month).toBe(15)
+  })
+
+  it("costByAgent agrupa, ordena desc e calcula share", () => {
+    const r = costByAgent([
+      row("codex", 30, h, 100),
+      row("claude-code", 60, h, 200),
+      row("codex", 10, h, 50),
+    ])
+    expect(r.map((x) => x.agent)).toEqual(["claude-code", "codex"])
+    expect(r[0]).toMatchObject({ costUsd: 60, tokens: 200, share: 0.6 })
+    expect(r[1]).toMatchObject({ costUsd: 40, tokens: 150, share: 0.4 })
+  })
+
+  it("costByAgent com total 0 → share 0 (sem divisão por zero)", () => {
+    const r = costByAgent([row("codex", 0, h), row("codex", null, h)])
+    expect(r[0].share).toBe(0)
+  })
+
+  it("dailySpend faz bucket por dia local, hoje no fim", () => {
+    const s = dailySpend([row("codex", 5, 0), row("codex", 3, 2 * d), row("codex", 7, 2 * d)], 3, now)
+    // 3 dias: [anteontem=10, ontem=0, hoje=5]
+    expect(s).toEqual([10, 0, 5])
+  })
+
+  it("ledgerTokens soma os tokens", () => {
+    expect(ledgerTokens([row("a", 1, h, 100), row("b", 2, h, 250)])).toBe(350)
   })
 })
