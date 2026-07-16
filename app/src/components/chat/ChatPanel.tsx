@@ -600,7 +600,7 @@ export function ChatPanel() {
         {activeId && missionActive && <MissionTimeline convId={activeId} />}
       </div>
 
-      <div className="relative z-10 shrink-0 px-8 pb-7">
+      <div className="relative z-10 shrink-0 pb-7">
         {hasConversation && !atBottom && (
           <button
             onClick={scrollToBottom}
@@ -610,7 +610,7 @@ export function ChatPanel() {
           </button>
         )}
         {showPlan && (
-          <div className="mx-auto mb-2 max-w-[760px]">
+          <div className="mx-auto mb-2 max-w-[760px] px-8">
             <div className="overflow-hidden rounded-lg border bg-card/95 shadow-[var(--shadow-pop)]">
               <button
                 onClick={() => setPlanOpen((o) => !o)}
@@ -646,7 +646,9 @@ export function ChatPanel() {
             </div>
           </div>
         )}
-        <div className="mx-auto max-w-[760px]">
+        {/* px-8 casa a borda do composer com o texto do transcript (que usa
+            max-w-[760px] + px-8) — sem isso o composer estoura ~64px pras laterais. */}
+        <div className="mx-auto max-w-[760px] px-8">
           {/* Interação pendente (padrão unificado): turno pausado — aprovação ou pergunta. */}
           <InteractionHost />
           {conv?.pendingPlan && !running && !finalizing && (

@@ -211,6 +211,8 @@ const ToolLine = memo(function ToolLine({
         className={cn(
           "group/step flex w-full items-center gap-2 rounded-md px-1.5 py-[3px] text-left text-[12.5px] transition-colors",
           expandable && "hover:bg-accent/40",
+          // passo em execução PULA da sequência: leve tinta st-running.
+          status === "running" && "bg-st-running/[0.06]",
         )}
       >
         <span
@@ -233,7 +235,18 @@ const ToolLine = memo(function ToolLine({
           )}
         />
         <span
-          className={cn("truncate", failed ? "text-st-error" : "text-foreground/85")}
+          className={cn(
+            "truncate",
+            // estado no PRÓPRIO rótulo (não só no ponto): concluído assenta,
+            // em execução fica pleno → a sequência ganha ritmo de progresso.
+            failed
+              ? "text-st-error"
+              : status === "ok"
+                ? "text-foreground/55"
+                : status === "running"
+                  ? "text-foreground"
+                  : "text-foreground/75",
+          )}
         >
           {p.label}
         </span>
@@ -259,7 +272,7 @@ const ToolLine = memo(function ToolLine({
             // seta de expandir no FIM (longe do ícone `>_` → sem duplicação).
             <ChevronRight
               className={cn(
-                "size-3 text-muted-foreground/30 transition-transform group-hover/step:text-muted-foreground/60",
+                "size-3 text-muted-foreground/45 transition-transform group-hover/step:text-muted-foreground/70",
                 open && "rotate-90",
               )}
             />
@@ -601,6 +614,95 @@ function toastDuplicate() {
   toast("Já existe uma regra parecida — não salvei de novo.")
 }
 
+/** Célula do strip de telemetria: micro-label mono + valor tabular. `end` ancora
+ *  a célula à direita (o custo fecha o strip como um total). */
+function TeleCell({
+  label,
+  children,
+  accent,
+  end,
+}: {
+  label: string
+  children: React.ReactNode
+  accent?: boolean
+  end?: boolean
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 flex-col gap-0.5 border-l border-border px-3 py-1.5 first:border-l-0",
+        end && "ml-auto border-l",
+      )}
+    >
+      <span className="label-mono text-[9px]">{label}</span>
+      <span
+        className={cn(
+          "font-mono text-[12px] tabular-nums whitespace-nowrap",
+          accent ? "font-semibold text-brass" : "text-foreground/80",
+        )}
+      >
+        {children}
+      </span>
+    </div>
+  )
+}
+
+/** Telemetria de fim de turno como INSTRUMENTO (não linha cinza corrida): o dado
+ *  mais denso do app — tempo, tokens por direção, cache, custo — em células
+ *  rotuladas, com o custo promovido a brass. */
+function TurnTelemetry({
+  it,
+}: {
+  it: Extract<ChatItem, { kind: "result" }>
+}) {
+  const hasUsage = it.usage && (it.usage.input > 0 || it.usage.output > 0)
+  return (
+    // largura do conteúdo (w-full): as bordas do strip batem com a prosa e as
+    // tools; o custo fecha à direita como um total. Nunca causa scroll lateral
+    // (o container do chat é overflow-x-hidden e as células têm min-w-0).
+    <div className="flex w-full flex-wrap items-stretch overflow-hidden rounded-lg border bg-card/40 text-muted-foreground">
+      <div
+        className={cn(
+          "flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium",
+          it.ok ? "text-st-success" : "text-st-error",
+        )}
+      >
+        {it.ok ? (
+          <Check className="size-3.5" />
+        ) : (
+          <AlertCircle className="size-3.5" />
+        )}
+        <span>{it.ok ? "concluído" : "erro"}</span>
+      </div>
+      {it.durationMs != null && (
+        <TeleCell label="Tempo">{fmtDuration(it.durationMs)}</TeleCell>
+      )}
+      {hasUsage && (
+        <TeleCell label="Tokens">
+          {fmtTokens(it.usage!.input)} ↓ · {fmtTokens(it.usage!.output)} ↑
+        </TeleCell>
+      )}
+      {it.usage && it.usage.cacheRead > 0 && (
+        <TeleCell label="Cache">{fmtTokens(it.usage.cacheRead)}</TeleCell>
+      )}
+      {it.model && <TeleCell label="Modelo">{it.model}</TeleCell>}
+      {it.costUsd != null && (
+        <TeleCell label="Custo" accent end>
+          <span
+            title={
+              it.costSource === "estimated"
+                ? "estimado: tokens × tabela de preço"
+                : undefined
+            }
+          >
+            {fmtCost(it.costUsd, it.costSource)}
+          </span>
+        </TeleCell>
+      )}
+    </div>
+  )
+}
+
 /** Um item NÃO-tool da conversa. `memo`: só re-renderiza quando a REFERÊNCIA do
  *  item muda (itens não-streaming têm ref estável), não re-pinta a cada delta (F12). */
 const MessageItem = memo(function MessageItem({
@@ -719,39 +821,7 @@ const MessageItem = memo(function MessageItem({
           </div>
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-1 text-[12px] text-muted-foreground">
-        {it.ok ? (
-          <Check className="size-3.5 text-st-success" />
-        ) : (
-          <AlertCircle className="size-3.5 text-st-error" />
-        )}
-        <span>{it.ok ? "concluído" : "erro"}</span>
-        {it.model && <span className="font-mono">· {it.model}</span>}
-        {it.durationMs != null && (
-          <span className="font-mono tabular-nums">
-            · {fmtDuration(it.durationMs)}
-          </span>
-        )}
-        {it.usage && (it.usage.input > 0 || it.usage.output > 0) && (
-          <span className="font-mono tabular-nums">
-            · {fmtTokens(it.usage.input)} in · {fmtTokens(it.usage.output)} out
-            {it.usage.cacheRead > 0 &&
-              ` · ${fmtTokens(it.usage.cacheRead)} cache`}
-          </span>
-        )}
-        {it.costUsd != null && (
-          <span
-            className="font-mono tabular-nums text-foreground/70"
-            title={
-              it.costSource === "estimated"
-                ? "estimado: tokens × tabela de preço"
-                : undefined
-            }
-          >
-            · {fmtCost(it.costUsd, it.costSource)}
-          </span>
-        )}
-      </div>
+      <TurnTelemetry it={it} />
       {feedback && it.ok && (
         <FeedbackControls agentTurn={it.text ?? ""} api={feedback} />
       )}
@@ -911,7 +981,12 @@ export function MessageList({
           }
           const groupActive = running && idx === visible.length - 1
           return (
-            <div key={n.key} className="flex flex-col gap-px">
+            // trilho leve: a sequência de passos lê como uma linha de instrumento
+            // encadeada, não linhas soltas (o border-l só firma o que já existe).
+            <div
+              key={n.key}
+              className="ml-[7px] flex flex-col gap-px border-l border-border/70 pl-3"
+            >
               {n.tools.map((t) => (
                 <ToolLine key={t.id} item={t} active={groupActive && !t.result} />
               ))}
@@ -955,9 +1030,9 @@ export function MessageList({
       )}
 
       {resultCount >= 2 && sessionCost > 0 && (
-        <div className="pt-1 text-[11px] text-muted-foreground/80">
-          <span className="font-mono tabular-nums">
-            sessão ·{" "}
+        <div className="flex items-center gap-2 self-start pt-1">
+          <span className="label-mono text-[9px]">Sessão</span>
+          <span className="font-mono text-[11.5px] font-semibold tabular-nums text-brass">
             {fmtCost(sessionCost, sessionEstimated ? "estimated" : "reported")}
           </span>
         </div>

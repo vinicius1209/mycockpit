@@ -40,7 +40,7 @@ function ModeSwitcher() {
   const setViewMode = useApp((s) => s.setViewMode)
   const scheduledOpen = useApp((s) => s.scheduledOpen)
   return (
-    <div className="pointer-events-auto absolute left-1/2 hidden -translate-x-1/2 items-center gap-0.5 rounded-full border bg-secondary/50 p-0.5 sm:flex">
+    <div className="pointer-events-auto hidden items-center gap-0.5 rounded-full border bg-secondary/50 p-0.5 sm:flex">
       {MODES.map((m) => (
         <button
           key={m.id}
@@ -102,21 +102,26 @@ export function TitleBar() {
   return (
     <header
       data-tauri-drag-region
-      className="relative z-[110] flex h-11 shrink-0 items-center gap-2.5 bg-rail pr-2.5 pl-20"
+      className="relative z-[110] grid h-11 shrink-0 grid-cols-[1fr_auto_1fr] items-center bg-rail"
     >
-      <Wordmark className="pointer-events-none" />
-      {project && (
-        <>
-          <span className="pointer-events-none text-muted-foreground/35">/</span>
-          <span className="pointer-events-none truncate text-[13px] text-muted-foreground">
-            {project.name}
-          </span>
-        </>
-      )}
+      {/* Grid de 3 zonas: o seletor central fica EM FLUXO (não mais absolute) →
+          o pill fica no centro exato da janela e nunca colide com o nome do
+          projeto (que trunca na zona esquerda). pl-20 reserva os semáforos. */}
+      <div className="flex min-w-0 items-center gap-2.5 pl-20">
+        <Wordmark className="pointer-events-none" />
+        {project && (
+          <>
+            <span className="pointer-events-none text-muted-foreground/35">/</span>
+            <span className="pointer-events-none truncate text-[13px] text-muted-foreground">
+              {project.name}
+            </span>
+          </>
+        )}
+      </div>
 
       <ModeSwitcher />
 
-      <div className="pointer-events-none ml-auto flex items-center gap-2">
+      <div className="pointer-events-none flex items-center justify-end gap-2 pr-2.5">
         <InstrumentStrip />
         <Separator orientation="vertical" className="h-4!" />
         <InboxBell />
