@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { Loader2, Mic } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -51,6 +52,21 @@ export function MicButton({
   const [state, setState] = useState<MicState>("idle")
   const [since, setSince] = useState(0)
   const [now, setNow] = useState(0)
+  const [partial, setPartial] = useState("")
+
+  // entrega a transcrição no destino (callback ou draft da conversa)
+  function deliver(text: string) {
+    if (onText) {
+      onText(text)
+      return
+    }
+    const convId = useChat.getState().activeId
+    if (!convId) return
+    const cur = useChat.getState().drafts[convId] ?? ""
+    useChat
+      .getState()
+      .setDraft(convId, cur ? `${cur.replace(/\s+$/, "")} ${text}` : text)
+  }
 
   // cronômetro da gravação
   useEffect(() => {
@@ -70,6 +86,42 @@ export function MicButton({
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
+  }, [state])
+
+  // Durante a gravação: parcial ao vivo (feedback de que o mic CAPTOU — perda
+  // de palavras fica visível na hora) + morte inesperada do sidecar (sem isso
+  // a UI ficava em "rec" com o mic morto). No stop normal o estado já é "busy"
+  // e estes listeners nem existem.
+  useEffect(() => {
+    if (state !== "rec") {
+      setPartial("")
+      return
+    }
+    let disposed = false
+    const uns: UnlistenFn[] = []
+    const track = (p: Promise<UnlistenFn>) =>
+      void p
+        .then((u) => {
+          if (disposed) u()
+          else uns.push(u)
+        })
+        .catch(() => {})
+    track(listen<string>("stt://partial", (e) => setPartial(e.payload)))
+    track(
+      listen<{ text?: string; error?: string }>("stt://ended", (e) => {
+        void sttCancel() // limpa a sessão do sidecar morto
+        const t = e.payload?.text?.trim()
+        if (t) deliver(t)
+        if (e.payload?.error) toast.error(e.payload.error)
+        else toast("O ditado encerrou sozinho — texto aproveitado no rascunho")
+        setState("idle")
+      }),
+    )
+    return () => {
+      disposed = true
+      uns.forEach((u) => u())
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
 
   async function toggle() {
@@ -95,19 +147,7 @@ export function MicButton({
     setState("busy")
     try {
       const text = await sttStop()
-      if (text) {
-        if (onText) {
-          onText(text)
-        } else {
-          const convId = useChat.getState().activeId
-          if (convId) {
-            const cur = useChat.getState().drafts[convId] ?? ""
-            useChat
-              .getState()
-              .setDraft(convId, cur ? `${cur.replace(/\s+$/, "")} ${text}` : text)
-          }
-        }
-      }
+      if (text) deliver(text)
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha na transcrição")
     } finally {
@@ -123,10 +163,18 @@ export function MicButton({
       <button
         onClick={() => void toggle()}
         title="Parar e transcrever (Esc cancela)"
-        className="flex h-7 items-center gap-1.5 rounded-full border border-st-error/50 bg-st-error/10 px-2.5 text-[11.5px] text-st-error transition-colors hover:bg-st-error/20"
+        className="flex h-7 min-w-0 items-center gap-1.5 rounded-full border border-st-error/50 bg-st-error/10 px-2.5 text-[11.5px] text-st-error transition-colors hover:bg-st-error/20"
       >
-        <span className="size-2 animate-pulse rounded-full bg-st-error" />
-        <span className="font-mono tabular-nums">{fmtDuration(now - since)}</span>
+        <span className="size-2 shrink-0 animate-pulse rounded-full bg-st-error" />
+        <span className="shrink-0 font-mono tabular-nums">
+          {fmtDuration(now - since)}
+        </span>
+        {/* cauda do parcial ao vivo: prova visual de que o mic está captando */}
+        {partial && (
+          <span className="max-w-[180px] truncate text-[11px] text-foreground/60">
+            {partial.length > 42 ? `…${partial.slice(-40)}` : partial}
+          </span>
+        )}
       </button>
     )
   }

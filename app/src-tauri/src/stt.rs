@@ -2,16 +2,30 @@
 // mesmo padrão dos agents: spawn + JSON por linha + linha de vida via stdin.
 // start abre o mic (espera "ready"); stop manda "STOP" e devolve o texto final;
 // cancel descarta. UMA gravação por vez (sessão global).
+//
+// O stdout é DRENADO durante a gravação (task leitor): sem isso, cada parcial
+// (texto completo até ali) acumulava no pipe de 64KB e o print do sidecar
+// BLOQUEAVA o callback de áudio do Speech framework — ditados longos congelavam
+// no meio. O leitor ainda: repassa parciais pra UI ("stt://partial") e detecta
+// morte inesperada do sidecar ("stt://ended" fora de um stop).
 
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
-use tokio::sync::Mutex;
+use tauri::Emitter;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStdin, Command};
+use tokio::sync::{mpsc, Mutex};
+
+/// Desfecho do sidecar, entregue pelo task leitor ao stop.
+pub enum SttMsg {
+    Final(String),
+    Error(String),
+    Eof,
+}
 
 pub struct SttChild {
     child: Child,
     stdin: ChildStdin,
-    lines: Lines<BufReader<ChildStdout>>,
+    rx: mpsc::Receiver<SttMsg>,
 }
 
 #[derive(Default)]
@@ -37,6 +51,7 @@ fn sidecar_path() -> Result<std::path::PathBuf, String> {
 /// termos do projeto injetados no reconhecedor, a vantagem sobre ditado genérico.
 #[tauri::command]
 pub async fn stt_start(
+    app: tauri::AppHandle,
     vocab: Vec<String>,
     session: tauri::State<'_, SttSession>,
 ) -> Result<(), String> {
@@ -78,43 +93,66 @@ pub async fn stt_start(
     .map_err(|_| "tempo esgotado esperando o microfone".to_string())?;
     waited?;
 
-    *guard = Some(SttChild {
-        child,
-        stdin,
-        lines,
+    // task leitor: drena o stdout até o desfecho (ver comentário do módulo).
+    let (tx, rx) = mpsc::channel::<SttMsg>(8);
+    let reader_app = app.clone();
+    tokio::spawn(async move {
+        let ended: serde_json::Value = loop {
+            match lines.next_line().await {
+                Ok(Some(l)) => {
+                    let Ok(v) = serde_json::from_str::<serde_json::Value>(&l) else {
+                        continue;
+                    };
+                    if let Some(p) = v.get("partial").and_then(|x| x.as_str()) {
+                        let _ = reader_app.emit("stt://partial", p.to_string());
+                    } else if let Some(t) = v.get("text").and_then(|x| x.as_str()) {
+                        let _ = tx.send(SttMsg::Final(t.to_string())).await;
+                        break serde_json::json!({ "text": t });
+                    } else if let Some(e) = v.get("error").and_then(|x| x.as_str()) {
+                        let _ = tx.send(SttMsg::Error(e.to_string())).await;
+                        break serde_json::json!({ "error": e });
+                    }
+                }
+                _ => {
+                    let _ = tx.send(SttMsg::Eof).await;
+                    break serde_json::json!({});
+                }
+            }
+        };
+        // num stop normal a UI está em "busy" e ignora; recebendo isto em "rec"
+        // é morte inesperada do sidecar → o MicButton solta o estado.
+        let _ = reader_app.emit("stt://ended", ended);
     });
+
+    *guard = Some(SttChild { child, stdin, rx });
     Ok(())
 }
 
 /// Encerra a gravação e devolve o texto final.
 #[tauri::command]
 pub async fn stt_stop(session: tauri::State<'_, SttSession>) -> Result<String, String> {
-    let mut guard = session.0.lock().await;
-    let Some(mut s) = guard.take() else {
-        return Err("nenhuma gravação ativa".into());
+    let mut s = {
+        let mut guard = session.0.lock().await;
+        let Some(s) = guard.take() else {
+            return Err("nenhuma gravação ativa".into());
+        };
+        s
+        // lock solto AQUI: a espera da transcrição não bloqueia cancel/start.
     };
     let _ = s.stdin.write_all(b"STOP\n").await;
     let _ = s.stdin.flush().await;
-    let text = tokio::time::timeout(std::time::Duration::from_secs(15), async {
-        while let Ok(Some(l)) = s.lines.next_line().await {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&l) {
-                if let Some(t) = v.get("text").and_then(|x| x.as_str()) {
-                    return Ok(t.to_string());
-                }
-                if let Some(e) = v.get("error").and_then(|x| x.as_str()) {
-                    return Err(e.to_string());
-                }
-            }
-        }
-        Err("a transcrição não retornou".to_string())
-    })
-    .await
-    .map_err(|_| "tempo esgotado na transcrição".to_string())?;
+    let msg = tokio::time::timeout(std::time::Duration::from_secs(15), s.rx.recv())
+        .await
+        .map_err(|_| "tempo esgotado na transcrição".to_string())?;
     let _ = s.child.wait().await;
-    text.map(|t| t.trim().to_string())
+    match msg {
+        Some(SttMsg::Final(t)) => Ok(t.trim().to_string()),
+        Some(SttMsg::Error(e)) => Err(e),
+        _ => Err("a transcrição não retornou".into()),
+    }
 }
 
-/// Descarta a gravação (Esc).
+/// Descarta a gravação (Esc) — e limpa sessão de sidecar já morto.
 #[tauri::command]
 pub async fn stt_cancel(session: tauri::State<'_, SttSession>) -> Result<(), String> {
     let mut guard = session.0.lock().await;

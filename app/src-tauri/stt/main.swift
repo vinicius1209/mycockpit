@@ -5,7 +5,7 @@
 //           "CANCEL" → descarta e sai
 //           EOF      → app morreu, sai (não vira órfão)
 //   stdout: {"ready":true} → gravando
-//           {"partial":"…"} → transcrição parcial (ao vivo)
+//           {"partial":"…"} → transcrição parcial (ao vivo, texto COMPLETO)
 //           {"text":"…"}    → texto final
 //           {"error":"…"}   → falha (permissão, mic, locale)
 //
@@ -13,16 +13,25 @@
 // (contextualStrings) no reconhecedor. Pontuação automática (macOS 13+).
 // Permissões: o Info.plist embutido via sectcreate (ver build.rs) faz o TCC
 // aceitar um binário de linha de comando.
+//
+// DITADO CONTÍNUO: o SFSpeechRecognizer encerra/reseta a utterance após pausas
+// na fala (isFinal ou reset silencioso do parcial). Guardar só o último parcial
+// descartava tudo antes da última pausa ("só as últimas palavras"). O padrão
+// canônico: ACUMULAR utterances finalizadas em `committed` e REINICIAR um task
+// novo — a gravação segue até o STOP, nunca morre numa pausa.
 
 import AVFoundation
 import Foundation
 import Speech
 
+let emitLock = NSLock()
 func emit(_ obj: [String: Any]) {
     guard let d = try? JSONSerialization.data(withJSONObject: obj),
           let s = String(data: d, encoding: .utf8) else { return }
+    emitLock.lock()
     print(s)
     fflush(stdout)
+    emitLock.unlock()
 }
 
 // ---- args: --vocab "termo1,termo2" · --selfcheck (diagnóstico sem gravar)
@@ -91,88 +100,163 @@ guard recognizer.isAvailable else {
     exit(1)
 }
 
-// ---- pedido de reconhecimento: on-device quando suportado, pontuação, vocab.
-let request = SFSpeechAudioBufferRecognitionRequest()
-request.shouldReportPartialResults = true
-if recognizer.supportsOnDeviceRecognition {
-    request.requiresOnDeviceRecognition = true
-}
-if #available(macOS 13.0, *) {
-    request.addsPunctuation = true
-}
-if !vocab.isEmpty {
-    request.contextualStrings = vocab
+// ---- estado do ditado contínuo (protegido por lock: callbacks do Speech +
+// thread de áudio + thread do stdin tocam nele).
+let stateLock = NSLock()
+var committed = ""   // utterances já finalizadas (o que NÃO pode mais se perder)
+var current = ""     // parcial da utterance corrente
+var stopped = false  // STOP recebido: o próximo final encerra o processo
+var finished = false // resposta final já emitida (once)
+var activeRequest: SFSpeechAudioBufferRecognitionRequest?
+var activeTask: SFSpeechRecognitionTask?
+
+func joined(_ a: String, _ b: String) -> String {
+    if a.isEmpty { return b }
+    if b.isEmpty { return a }
+    return a + " " + b
 }
 
-// ---- microfone → buffers → reconhecedor.
+func finish(_ text: String) {
+    stateLock.lock()
+    if finished {
+        stateLock.unlock()
+        return
+    }
+    finished = true
+    stateLock.unlock()
+    emit(["text": text])
+    exit(0)
+}
+
+func makeRequest() -> SFSpeechAudioBufferRecognitionRequest {
+    let request = SFSpeechAudioBufferRecognitionRequest()
+    request.shouldReportPartialResults = true
+    if recognizer.supportsOnDeviceRecognition {
+        request.requiresOnDeviceRecognition = true
+    }
+    if #available(macOS 13.0, *) {
+        request.addsPunctuation = true
+    }
+    if !vocab.isEmpty {
+        request.contextualStrings = vocab
+    }
+    return request
+}
+
+/// Inicia (ou REINICIA, após uma utterance fechar) um task de reconhecimento.
+func startUtterance() {
+    let request = makeRequest()
+    stateLock.lock()
+    activeRequest = request
+    stateLock.unlock()
+    activeTask = recognizer.recognitionTask(with: request) { result, err in
+        stateLock.lock()
+        // callback de um task já substituído pelo restart → ignora (stale)
+        guard request === activeRequest else {
+            stateLock.unlock()
+            return
+        }
+        if let r = result {
+            let t = r.bestTranscription.formattedString
+            // reset SILENCIOSO (sem isFinal): o parcial encolhe drasticamente →
+            // o reconhecedor recomeçou a utterance; preserva o que já tinha.
+            // (revisões legítimas nunca cortam um texto longo pela metade)
+            if !current.isEmpty && current.count > 20 && t.count * 2 < current.count
+                && !current.hasPrefix(t) {
+                committed = joined(committed, current)
+            }
+            current = t
+            let full = joined(committed, current)
+            if r.isFinal {
+                // utterance fechou (pausa na fala / limite do serviço): commita
+                // e, se ainda gravando, REINICIA — o ditado continua.
+                committed = full
+                current = ""
+                let wasStopped = stopped
+                stateLock.unlock()
+                if wasStopped {
+                    finish(full)
+                } else {
+                    startUtterance()
+                }
+                return
+            }
+            stateLock.unlock()
+            emit(["partial": full])
+            return
+        }
+        if let e = err as NSError? {
+            let full = joined(committed, current)
+            committed = full
+            current = ""
+            let wasStopped = stopped
+            stateLock.unlock()
+            // depois do STOP, qualquer desfecho entrega o que temos (graceful)
+            if wasStopped {
+                finish(full)
+                return
+            }
+            // silêncio / fim de utterance NO MEIO da gravação → reinicia (o
+            // usuário segue com o mic aberto; matar a sessão aqui perdia fala).
+            if e.domain == "kAFAssistantErrorDomain" && (e.code == 1110 || e.code == 203) {
+                startUtterance()
+                return
+            }
+            // Ditado do sistema desligado: aponta o caminho exato do Ajuste.
+            if e.domain == "kLSRErrorDomain" && e.code == 201 {
+                emit(["error": "ative o Ditado do macOS: Ajustes do Sistema → Teclado → Ditado (ligar). Baixe o pacote Português (Brasil)."])
+                exit(1)
+            }
+            // falha real: se já há texto acumulado, entrega em vez de perder.
+            if !full.isEmpty {
+                finish(full)
+                return
+            }
+            emit(["error": "o reconhecimento falhou: \(e.localizedDescription) [\(e.domain) \(e.code)]"])
+            exit(1)
+        } else {
+            stateLock.unlock()
+        }
+    }
+}
+
+// ---- microfone → buffers → reconhecedor CORRENTE (o request troca no restart).
 let engine = AVAudioEngine()
 let input = engine.inputNode
 let format = input.outputFormat(forBus: 0)
 input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-    request.append(buffer)
+    stateLock.lock()
+    let req = activeRequest
+    stateLock.unlock()
+    req?.append(buffer)
 }
 engine.prepare()
+startUtterance() // task pronto ANTES do engine ligar: nenhum buffer se perde
 do {
     try engine.start()
 } catch {
     emit(["error": "não consegui abrir o microfone: \(error.localizedDescription)"])
     exit(1)
 }
-
-var lastText = ""
-var finished = false
-let task = recognizer.recognitionTask(with: request) { result, err in
-    if let r = result {
-        lastText = r.bestTranscription.formattedString
-        if r.isFinal {
-            finished = true
-            emit(["text": lastText])
-            exit(0)
-        } else {
-            emit(["partial": lastText])
-        }
-    }
-    if let e = err as NSError?, !finished {
-        finished = true
-        // erro DEPOIS do STOP com texto em mãos → devolve o que temos (graceful)
-        if !lastText.isEmpty {
-            emit(["text": lastText])
-            exit(0)
-        }
-        // "No speech detected" (silêncio) não é falha: devolve vazio e sai limpo,
-        // a UI simplesmente não adiciona nada ao rascunho.
-        if e.domain == "kAFAssistantErrorDomain" && (e.code == 1110 || e.code == 203) {
-            emit(["text": ""])
-            exit(0)
-        }
-        // Ditado do sistema desligado: o SFSpeechRecognizer (mesmo on-device)
-        // exige o Ditado do macOS ligado. Aponta o caminho exato do Ajuste.
-        if e.domain == "kLSRErrorDomain" && e.code == 201 {
-            emit(["error": "ative o Ditado do macOS: Ajustes do Sistema → Teclado → Ditado (ligar). Baixe o pacote Português (Brasil)."])
-            exit(1)
-        }
-        // falha de verdade → carrega a causa real (domínio/código) pra dar pra ver.
-        emit(["error": "o reconhecimento falhou: \(e.localizedDescription) [\(e.domain) \(e.code)]"])
-        exit(1)
-    }
-}
-_ = task
 emit(["ready": true])
 
 // ---- controle via stdin (a mesma linha de vida dos agents).
 DispatchQueue.global().async {
     while let line = readLine(strippingNewline: true) {
         if line == "STOP" {
+            stateLock.lock()
+            stopped = true
+            let req = activeRequest
+            stateLock.unlock()
             engine.stop()
             input.removeTap(onBus: 0)
-            request.endAudio()
-            // se o isFinal demorar, devolve o último parcial (nunca trava a UI)
+            req?.endAudio()
+            // se o isFinal demorar, devolve o acumulado (nunca trava a UI)
             DispatchQueue.global().asyncAfter(deadline: .now() + 8) {
-                if !finished {
-                    finished = true
-                    emit(["text": lastText])
-                    exit(0)
-                }
+                stateLock.lock()
+                let full = joined(committed, current)
+                stateLock.unlock()
+                finish(full)
             }
             return
         }
