@@ -2,6 +2,11 @@ use tauri::Manager;
 use tauri_plugin_decorum::WebviewWindowExt;
 use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 
+/// Inset Y dos semáforos p/ centrá-los no header de 56px (h-14). Calibrado por
+/// medição no app real (o inset do decorum não é o centro geométrico do botão).
+#[cfg(target_os = "macos")]
+const TRAFFIC_LIGHTS_Y: f32 = 37.0;
+
 mod adapters;
 mod agent;
 mod approval;
@@ -295,9 +300,13 @@ pub fn run() {
                 .get_webview_window("main")
                 .ok_or("janela main ausente")?;
             main_window.create_overlay_titlebar()?;
-            // Semáforos centrados no header de 56px (h-14): center 28 − ~6 = 22.
+            // Semáforos centrados no header de 56px (h-14). Valor calibrado por
+            // medição no app (o inset do decorum NÃO é o centro do botão).
+            // O decorum reaplica a CONSTANTE (y=16) no observer de resize dele →
+            // reaplicamos o nosso a cada evento de janela (ver on_window_event),
+            // que roda DEPOIS (o delegate do decorum chama super = Tauri).
             #[cfg(target_os = "macos")]
-            main_window.set_traffic_lights_inset(18.0, 22.0)?;
+            main_window.set_traffic_lights_inset(18.0, TRAFFIC_LIGHTS_Y)?;
 
             // Tray: o app vive na barra de menu com a janela fechada (as
             // automações agendadas continuam); só "Sair" encerra de verdade.
@@ -309,6 +318,20 @@ pub fn run() {
         // do tray NÃO passam por aqui (viram ExitRequested) e encerram normal.
         .on_window_event(|window, event| {
             if window.label() == "main" {
+                // Reaplica o inset dos semáforos DEPOIS do decorum (que reseta
+                // pra y=16 no resize dele): resize/move/foco durante o boot ou
+                // pelo usuário reposicionavam os botões pro topo, desalinhando.
+                #[cfg(target_os = "macos")]
+                if matches!(
+                    event,
+                    tauri::WindowEvent::Resized(_)
+                        | tauri::WindowEvent::Moved(_)
+                        | tauri::WindowEvent::Focused(true)
+                ) {
+                    if let Some(w) = window.app_handle().get_webview_window("main") {
+                        let _ = w.set_traffic_lights_inset(18.0, TRAFFIC_LIGHTS_Y);
+                    }
+                }
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     if tray::should_keep_in_tray(window.app_handle()) {
