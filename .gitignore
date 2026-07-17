@@ -32,3 +32,8 @@ Thumbs.db
 *.log
 /tmp/
 builds/
+
+# Artefatos de missão (transientes / spikes gerados pelos agents; ficam no
+# disco mas fora do controle de versão). Remova daqui se quiser versionar.
+.mission/
+office-web/
