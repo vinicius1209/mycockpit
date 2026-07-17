@@ -38,7 +38,7 @@
   --brass-fg: #fbf6ee;
   --st-idle: #8a9099;
   --st-running: #2f8fbf;
-  --st-queued: #b07b2e;
+  --st-queued: #c1861f; /* âmbar da fila/atenção — distinto do brass (seleção) */
   --st-success: #1f9d6b;
   --st-error: #cf4a3e;
 
@@ -82,7 +82,7 @@
   --brass-fg: #1a1306;
   --st-idle: #687078;
   --st-running: #5bb8e8;
-  --st-queued: #e4a862;
+  --st-queued: #d99138; /* âmbar da fila/atenção — NÃO é o brass (#e4a862=seleção) */
   --st-success: #5bd6a0;
   --st-error: #f2766b;
 

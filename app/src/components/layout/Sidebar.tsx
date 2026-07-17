@@ -455,7 +455,7 @@ function ConversationList({ projectId }: { projectId: string }) {
             <>
               {isRunning && (
                 <Loader2
-                  className="size-3 shrink-0 animate-spin text-brass"
+                  className="size-3 shrink-0 animate-spin text-st-running"
                   aria-label="rodando"
                 />
               )}

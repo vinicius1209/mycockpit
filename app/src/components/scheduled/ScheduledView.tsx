@@ -39,6 +39,8 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { StatusDot } from "@/components/common/StatusDot"
+import type { AgentStatus } from "@/lib/types"
 import { confirm } from "@/lib/confirm"
 import { agentModels, defaultModelFor, LEAGUE_AGENTS } from "@/lib/agents"
 import type { SchedulePermission, ScheduleRecord, ScheduleRunRecord } from "@/lib/db"
@@ -86,21 +88,16 @@ async function openRunConv(projectId: string, convId: string) {
   app.setViewMode("linear")
 }
 
-/** Dot do último status: ok=verde · failed=vermelho · nunca rodou=cinza. */
-function StatusDot({ status }: { status: string | null }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "size-2 shrink-0 rounded-full",
-        status === "ok"
-          ? "bg-st-success"
-          : status === "failed"
-            ? "bg-st-error"
-            : "border border-muted-foreground/50",
-      )}
-    />
-  )
+/** Estado da automação → AgentStatus do StatusDot canônico (pulsa azul quando
+ *  rodando, verde ok, vermelho falhou, cinza nunca rodou). */
+function scheduleStatus(
+  lastRunStatus: string | null,
+  running: boolean,
+): AgentStatus {
+  if (running) return "running"
+  if (lastRunStatus === "ok") return "success"
+  if (lastRunStatus === "failed") return "error"
+  return "idle"
 }
 
 function ScheduleRow({
@@ -156,28 +153,32 @@ function ScheduleRow({
   }
 
   return (
-    <div className="rounded-lg border border-border/70 bg-card/40">
+    <div
+      className={cn(
+        "group rounded-lg border border-border/70 bg-card/40",
+        !s.enabled && "opacity-60", // pausada: a linha inteira recua
+      )}
+    >
       <div className="flex items-center gap-3 px-4 py-3">
-        <StatusDot status={s.lastRunStatus} />
+        <StatusDot status={scheduleStatus(s.lastRunStatus, running)} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="min-w-0 truncate text-[13px] font-medium text-foreground">
               {s.name}
             </span>
+            {!s.enabled && (
+              <span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground">
+                pausada
+              </span>
+            )}
             <span className="shrink-0 text-[11.5px] text-muted-foreground">
               {projectName}
             </span>
           </div>
-          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-muted-foreground">
+          {/* metadados discretos: recorrência + custo médio (a leitura forte é a
+              próxima execução, à direita) */}
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-muted-foreground/80">
             <span>{recurrenceToText(rec)}</span>
-            <span className="text-muted-foreground/40">·</span>
-            <span className="tabular-nums">
-              {!s.enabled
-                ? "pausada"
-                : s.nextRun != null
-                  ? `próxima em ${fmtUntilShort(s.nextRun - now)}`
-                  : "sem próxima execução"}
-            </span>
             {avgCost != null && (
               <>
                 <span className="text-muted-foreground/40">·</span>
@@ -188,29 +189,44 @@ function ScheduleRow({
             )}
           </p>
         </div>
+        {/* leitura de instrumento: PRÓXIMA execução (o número operacional) */}
+        {s.enabled && s.nextRun != null && (
+          <div className="shrink-0 text-right">
+            <div className="label-mono text-[9px]">Próxima</div>
+            <div className="font-mono text-[12.5px] tabular-nums text-foreground">
+              {fmtUntilShort(s.nextRun - now)}
+            </div>
+          </div>
+        )}
+        {/* Rodar agora aparece no hover — some da linha "em repouso" */}
         <button
           onClick={() => void handleRunNow()}
           disabled={running}
           title="Rodar agora (não altera o calendário)"
-          className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11.5px] font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-40"
+          className={cn(
+            "flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11.5px] font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-40",
+            !running && "opacity-0 group-hover:opacity-100 focus:opacity-100",
+          )}
         >
           {running ? (
             <Loader2 className="size-3 animate-spin" />
           ) : (
             <Play className="size-3" />
           )}
-          {running ? "Rodando…" : "Rodar agora"}
+          {running ? "Rodando…" : "Rodar"}
         </button>
         <Switch
           checked={s.enabled}
           onCheckedChange={(v) => void toggle(s.id, v)}
           aria-label={s.enabled ? "Pausar automação" : "Ativar automação"}
         />
+        {/* Excluir só aparece no hover — separado do Switch, evita o clique errado
+            que a linha antiga convidava (destrutivo colado no benigno). */}
         <button
           onClick={() => void handleDelete()}
           title="Excluir automação"
           aria-label="Excluir automação"
-          className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-st-error"
+          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-colors group-hover:opacity-100 focus:opacity-100 hover:text-st-error"
         >
           <Trash2 className="size-3.5" />
         </button>
@@ -247,7 +263,7 @@ function ScheduleRow({
                   title={r.convId ? "Abrir a conversa desta execução" : undefined}
                   className="flex items-center gap-2.5 rounded px-1 py-1.5 text-left text-[11.5px] transition-colors enabled:hover:bg-accent/50 disabled:cursor-default"
                 >
-                  <StatusDot status={r.status} />
+                  <StatusDot status={scheduleStatus(r.status, false)} />
                   <span className="tabular-nums text-foreground/85">
                     {fmtWhen(r.startedAt)}
                   </span>

@@ -59,14 +59,27 @@ type Section =
   | "missions"
   | "about"
 
-const SECTIONS: { id: Section; label: string; icon: typeof Bot }[] = [
-  { id: "appearance", label: "Aparência", icon: Palette },
+// Grupos rotulados (label-mono no rail) — o `group` marca o INÍCIO de um bloco.
+// Rótulos desambíguos: "Padrões"(=default de nova conversa) e "Agents"(=CLIs
+// instaladas) eram os dois "coisa de agente"; "Missions" estava em inglês.
+const SECTIONS: {
+  id: Section
+  label: string
+  icon: typeof Bot
+  group?: string
+}[] = [
+  { id: "appearance", label: "Aparência", icon: Palette, group: "Aparência" },
   { id: "tray", label: "Barra de menus", icon: PanelTop },
-  { id: "agents", label: "Padrões", icon: Bot },
-  { id: "tools", label: "Agents", icon: Cpu },
+  {
+    id: "agents",
+    label: "Novas conversas",
+    icon: Bot,
+    group: "Comportamento",
+  },
   { id: "suggestions", label: "Sugestões", icon: Sparkles },
   { id: "dictation", label: "Ditado", icon: Mic },
-  { id: "missions", label: "Missions", icon: Waypoints },
+  { id: "missions", label: "Missões", icon: Waypoints },
+  { id: "tools", label: "CLIs instaladas", icon: Cpu, group: "Sistema" },
   { id: "about", label: "Sobre", icon: Info },
 ]
 
@@ -372,27 +385,30 @@ export function SettingsDialog() {
           <DialogDescription>Preferências do MyCockpit.</DialogDescription>
         </DialogHeader>
 
-        {/* Rail de seções */}
+        {/* Rail de seções — agrupado (Aparência · Comportamento · Sistema) */}
         <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-border/60 bg-rail p-2">
-          <div className="px-2 pt-1 pb-2 text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
-            Configurações
-          </div>
           {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setSection(s.id)}
-              className={cn(
-                "flex items-center gap-2.5 rounded-md p-2 text-left text-[13px] transition-colors",
-                section === s.id
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            <div key={s.id} className="contents">
+              {s.group && (
+                <div className="label-mono px-2 pt-3 pb-1 text-[9px]">
+                  {s.group}
+                </div>
               )}
-            >
-              <span className="grid size-5 shrink-0 place-items-center">
-                <s.icon className="size-4" />
-              </span>
-              {s.label}
-            </button>
+              <button
+                onClick={() => setSection(s.id)}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-md p-2 text-left text-[13px] transition-colors",
+                  section === s.id
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                )}
+              >
+                <span className="grid size-5 shrink-0 place-items-center">
+                  <s.icon className="size-4" />
+                </span>
+                {s.label}
+              </button>
+            </div>
           ))}
         </nav>
 

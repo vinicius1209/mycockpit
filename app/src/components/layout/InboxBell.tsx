@@ -91,7 +91,6 @@ export function InboxBell() {
   }, [refresh])
 
   const unread = notifs.filter((n) => !n.read).length
-  const badge = decisions.length + unread
   const limitedIds = Object.keys(limited)
   const feed = filter === "unread" ? notifs.filter((n) => !n.read) : notifs
 
@@ -106,11 +105,19 @@ export function InboxBell() {
           aria-label="Notificações"
         >
           <Inbox className="size-4" />
-          {badge > 0 && (
+          {/* Decisões BLOQUEIAM você → contador brass (alarme). Só não-lidas →
+              ponto discreto (informativo). Não somar os dois: "3" seria ambíguo
+              entre "3 decisões esperando" e "3 turnos terminaram". */}
+          {decisions.length > 0 ? (
             <span className="absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-brass text-[10px] font-semibold text-background">
-              {badge > 9 ? "9+" : badge}
+              {decisions.length > 9 ? "9+" : decisions.length}
             </span>
-          )}
+          ) : unread > 0 ? (
+            <span
+              className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-muted-foreground ring-2 ring-rail"
+              title={`${unread} não lidas`}
+            />
+          ) : null}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -147,7 +154,7 @@ export function InboxBell() {
                 ) : d.kind === "prd" ? (
                   <FileText className="size-3.5 shrink-0 text-brass" />
                 ) : (
-                  <GitPullRequest className="size-3.5 shrink-0 text-[#3fb950]" />
+                  <GitPullRequest className="size-3.5 shrink-0 text-st-success" />
                 )}
                 <span className="truncate">
                   {d.kind === "fusion"
@@ -286,7 +293,7 @@ export function InboxBell() {
           </>
         )}
 
-        {badge === 0 && notifs.length === 0 && (
+        {decisions.length === 0 && notifs.length === 0 && (
           <div className="px-2 py-3 text-center text-[12.5px] text-muted-foreground">
             Tudo em dia. Nada por aqui.
           </div>
