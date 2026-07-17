@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "MyCockpit",
+  "productName": "Frota",
   "version": "0.1.0",
   "identifier": "dev.vinicius.mycockpit",
   "build": {
@@ -14,7 +14,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "MyCockpit",
+        "title": "Frota",
         "width": 1280,
         "height": 832,
         "minWidth": 940,

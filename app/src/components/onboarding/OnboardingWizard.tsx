@@ -143,11 +143,11 @@ export function OnboardingWizard({ onClose }: { onClose?: () => void }) {
           <div className="flex flex-col items-center gap-4 py-6 text-center">
             <img
               src={appIcon}
-              alt="MyCockpit"
+              alt="Frota"
               className="size-20 rounded-[22px] shadow-md"
             />
             <div>
-              <h1 className="text-xl font-semibold text-foreground">MyCockpit</h1>
+              <h1 className="text-xl font-semibold text-foreground">Frota</h1>
               <p className="mt-1 text-[13px] text-muted-foreground">
                 Seu cockpit de code agents no macOS.
               </p>

@@ -14,7 +14,7 @@ import { fmtDuration } from "@/lib/format"
  *  contextualStrings pro reconhecedor (a vantagem sobre o Wispr). */
 function buildVocab(projectName?: string, extra: string[] = []): string[] {
   const base = [
-    "MyCockpit",
+    "Frota",
     "Fusion",
     "SDD",
     "PRD",

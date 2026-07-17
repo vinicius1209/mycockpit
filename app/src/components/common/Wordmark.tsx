@@ -19,7 +19,7 @@ export function Wordmark({ className }: { className?: string }) {
     <div className={cn("flex items-center gap-2 select-none", className)}>
       <Reticle className="size-[18px]" />
       <span className="text-[13px] font-semibold tracking-[-0.01em] text-foreground">
-        MyCockpit
+        Frota
       </span>
     </div>
   )

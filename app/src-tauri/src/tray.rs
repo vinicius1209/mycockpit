@@ -228,7 +228,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>, s: &TraySnapshot) -> tauri::Result
     items.push(Box::new(MenuItem::with_id(
         app,
         "tray-open",
-        "Abrir MyCockpit",
+        "Abrir Frota",
         true,
         None::<&str>,
     )?));
@@ -452,7 +452,7 @@ pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         // Entry próprio do popover (só o TrayPopover, não o App inteiro).
         WebviewUrl::App("tray.html".into()),
     )
-    .title("MyCockpit")
+    .title("Frota")
     .inner_size(360.0, 430.0)
     .resizable(false)
     .decorations(false)
@@ -477,7 +477,8 @@ pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
         .icon_as_template(true)
-        .tooltip("MyCockpit · Frota parada")
+        // o próprio status já carrega a marca ("Frota parada" / "N tarefas…")
+        .tooltip(DEFAULT_STATUS)
         .menu(&menu)
         // O menu nativo fica no clique secundário; o primário abre o popover.
         .show_menu_on_left_click(false)
@@ -529,7 +530,7 @@ pub fn set_tray_snapshot(
                     let _ = tray.set_menu(Some(menu));
                 }
                 let _ = tray
-                    .set_tooltip(Some(format!("MyCockpit · {}", fleet_status(&snapshot))));
+                    .set_tooltip(Some(fleet_status(&snapshot)));
             }
         }
         // Popover escondido (estado comum) não recebe delta: toggle_popover

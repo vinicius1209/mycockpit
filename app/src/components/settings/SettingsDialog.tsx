@@ -382,7 +382,7 @@ export function SettingsDialog() {
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Configurações</DialogTitle>
-          <DialogDescription>Preferências do MyCockpit.</DialogDescription>
+          <DialogDescription>Preferências do app.</DialogDescription>
         </DialogHeader>
 
         {/* Rail de seções — agrupado (Aparência · Comportamento · Sistema) */}
@@ -674,7 +674,7 @@ export function SettingsDialog() {
             <div>
               <SectionTitle>Sobre</SectionTitle>
               <div className="space-y-1 text-[13px]">
-                <div className="font-medium text-foreground">MyCockpit</div>
+                <div className="font-medium text-foreground">Frota</div>
                 <div className="font-mono text-[12px] text-muted-foreground">
                   local{version ? ` · v${version}` : ""}
                 </div>

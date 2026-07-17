@@ -50,7 +50,7 @@ export function notifyTurnEnd(convId: string, agent: string) {
   // só incomoda com a nativa quando você NÃO estava olhando essa conversa.
   if (chat.activeId !== convId) {
     void nativeNotify(
-      "MyCockpit",
+      "Frota",
       `${title} — ${errored ? "turno falhou" : "turno concluído"}`,
     )
   }

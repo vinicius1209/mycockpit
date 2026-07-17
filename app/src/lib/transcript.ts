@@ -88,7 +88,7 @@ export const RESUME_FALLBACK_BUDGET = 3_000
 
 /** Frase de continuidade do fallback (fecha o bloco de memória). */
 export const RESUME_FALLBACK_NOTE =
-  "A sessão nativa desta conversa expirou; o contexto acima é a memória do MyCockpit — continue a conversa normalmente."
+  "A sessão nativa desta conversa expirou; o contexto acima é a memória do Frota — continue a conversa normalmente."
 
 /** Decide se o envio leva `memoryFallback` (MyCockpit resume): só quando o run
  *  VAI tentar resume nativo — conversa com histórico E sessionId. agy fica de

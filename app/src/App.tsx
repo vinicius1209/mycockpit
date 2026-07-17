@@ -471,7 +471,7 @@ export default function App() {
         .isVisible()
         .catch(() => true)
       if (visible) toast(message)
-      else void nativeNotify("MyCockpit", message)
+      else void nativeNotify("Frota", message)
     }
     listen<TrayAction>("tray://action", async ({ payload }) => {
       const app = useApp.getState()
@@ -552,7 +552,7 @@ export default function App() {
     listen("tray://first-hide", () => {
       useApp.getState().setSettings({ trayCloseHintShown: true })
       void nativeNotify(
-        "MyCockpit continua em operação",
+        "Frota continua em operação",
         "Agents e automações seguem rodando pela barra de menus.",
       )
     })
@@ -587,9 +587,9 @@ export default function App() {
         chat.handleEvent(conv_id, {
           type: "notice",
           message:
-            "Sessão nativa expirou — conversa retomada pela memória do MyCockpit",
+            "Sessão nativa expirou — conversa retomada pela memória do Frota",
         })
-        toast("Sessão nativa expirou — conversa retomada pela memória do MyCockpit")
+        toast("Sessão nativa expirou — conversa retomada pela memória do Frota")
       },
     )
       .then((u) => {

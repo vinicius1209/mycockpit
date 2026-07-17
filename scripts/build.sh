@@ -42,7 +42,7 @@ case "${1:-test}" in
 
     (cd "$APP_DIR" && bun tauri build --bundles app --config "{\"version\": \"$VERSION\"}")
 
-    cp -R "$APP_DIR/src-tauri/target/release/bundle/macos/MyCockpit.app" "$OUT/"
+    cp -R "$APP_DIR/src-tauri/target/release/bundle/macos/Frota.app" "$OUT/"
     cat > "$OUT/meta.json" <<EOF
 {"num": $((10#$NUM)), "sha": "$SHA", "dirty": $([[ -n "$DIRTY" ]] && echo true || echo false), "version": "$VERSION", "date": "$(date +%Y-%m-%dT%H:%M:%S)"}
 EOF
@@ -59,8 +59,8 @@ EOF
     [[ "$N" -gt 0 ]] && echo "  (auto-limpeza: $N build(s) antigo(s) apagado(s); mantidos os $KEEP mais recentes)"
 
     echo ""
-    echo "✓ teste #$((10#$NUM)) pronto: $OUT/MyCockpit.app"
-    echo "  testar:   open '$OUT/MyCockpit.app'"
+    echo "✓ teste #$((10#$NUM)) pronto: $OUT/Frota.app"
+    echo "  testar:   open '$OUT/Frota.app'"
     echo "  aprovar:  ./scripts/build.sh promote"
     ;;
 
@@ -76,15 +76,17 @@ EOF
 
     echo "→ promovendo o teste #$NUM ($SHA · $VERSION) a OFICIAL"
     mkdir -p "$BUILDS/official"
-    rm -rf "$BUILDS/official/MyCockpit.app"
-    cp -R "$SRC/MyCockpit.app" "$BUILDS/official/"
+    rm -rf "$BUILDS/official/Frota.app" "$BUILDS/official/MyCockpit.app"
+    cp -R "$SRC/Frota.app" "$BUILDS/official/"
     cp "$SRC/meta.json" "$BUILDS/official/meta.json"
 
-    # instala em /Applications (fecha o app se estiver aberto)
+    # instala em /Applications (fecha o app se estiver aberto; o nome legado
+    # MyCockpit sai de cena — rename pra Frota)
+    osascript -e 'quit app "Frota"' 2>/dev/null || true
     osascript -e 'quit app "MyCockpit"' 2>/dev/null || true
     sleep 1
-    rm -rf "/Applications/MyCockpit.app"
-    cp -R "$SRC/MyCockpit.app" /Applications/
+    rm -rf "/Applications/Frota.app" "/Applications/MyCockpit.app"
+    cp -R "$SRC/Frota.app" /Applications/
 
     # tag no git (só se o build veio de árvore limpa; dirty não é rastreável)
     if python3 -c "import json,sys;sys.exit(0 if not json.load(open('$SRC/meta.json'))['dirty'] else 1)"; then
@@ -94,7 +96,7 @@ EOF
       echo "  aviso: build veio de árvore DIRTY, sem tag no git"
     fi
     echo ""
-    echo "✓ OFICIAL: build #$NUM em /Applications/MyCockpit.app"
+    echo "✓ OFICIAL: build #$NUM em /Applications/Frota.app"
     ;;
 
   list)
