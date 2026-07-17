@@ -209,7 +209,7 @@ const ToolLine = memo(function ToolLine({
       <button
         onClick={() => expandable && setOpen((o) => !o)}
         className={cn(
-          "group/step flex w-full items-center gap-2 rounded-md px-1.5 py-[3px] text-left text-[12.5px] transition-colors",
+          "group/step flex w-full items-center gap-2.5 rounded-md px-2 py-[5px] text-left text-[12.5px] transition-colors",
           expandable && "hover:bg-accent/40",
           // passo em execução PULA da sequência: leve tinta st-running.
           status === "running" && "bg-st-running/[0.06]",
@@ -280,7 +280,7 @@ const ToolLine = memo(function ToolLine({
         </span>
       </button>
       {open && (
-        <div className="mt-0.5 mb-1 ml-[26px] overflow-hidden rounded-md border bg-secondary/30">
+        <div className="mt-1 mb-1.5 ml-[30px] overflow-hidden rounded-md border bg-secondary/30">
           {p.detail && (
             <div
               data-selectable
@@ -353,9 +353,16 @@ function ToolGroup({
         )}
       </button>
       {open && (
-        <div className="ml-[5px] flex flex-col gap-px border-l border-border/50 pl-2">
-          {tools.map((t) => (
-            <ToolLine key={t.id} item={t} active={active && !t.result} />
+        <div className="mt-1 ml-[5px] flex flex-col gap-0.5 border-l border-border/50 pl-2.5">
+          {tools.map((t, i) => (
+            <ToolLine
+              key={t.id}
+              item={t}
+              // "rodando" é SÓ o último passo emitido (o corrente). Codex não
+              // grava tool_result por passo — marcar todo sem-result como ativo
+              // pintava o grupo inteiro de azul (zebra densa, tudo "rodando").
+              active={active && i === tools.length - 1 && !t.result}
+            />
           ))}
         </div>
       )}
@@ -985,10 +992,15 @@ export function MessageList({
             // encadeada, não linhas soltas (o border-l só firma o que já existe).
             <div
               key={n.key}
-              className="ml-[7px] flex flex-col gap-px border-l border-border/70 pl-3"
+              className="ml-[7px] flex flex-col gap-0.5 border-l border-border/70 pl-3"
             >
-              {n.tools.map((t) => (
-                <ToolLine key={t.id} item={t} active={groupActive && !t.result} />
+              {n.tools.map((t, i) => (
+                <ToolLine
+                  key={t.id}
+                  item={t}
+                  // só o último passo emitido é o corrente (ver ToolGroup).
+                  active={groupActive && i === n.tools.length - 1 && !t.result}
+                />
               ))}
             </div>
           )

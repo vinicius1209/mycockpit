@@ -385,6 +385,10 @@ function ConversationList({ projectId }: { projectId: string }) {
     // navegar pra uma conversa fecha a view global "Agendado" (se aberta) —
     // mesmo quando o projeto já é o ativo (setActiveProject não roda).
     useApp.getState().setScheduledOpen(false)
+    // Clicar numa conversa NAVEGA até ela: estando no Painel/Features, troca pro
+    // Trabalho (senão o clique só muda o store e a tela não reage = cara de bug).
+    // Mesmo contrato dos outros caminhos (MissionControl, InboxBell, Agendado).
+    useApp.getState().setViewMode("linear")
     void switchConversation(id)
   }
 
@@ -616,9 +620,12 @@ function ConversationList({ projectId }: { projectId: string }) {
       })}
       <button
         onClick={() => {
-          // Nova tarefa neste projeto → torna-o o ativo (abre no painel) e cria.
+          // Nova tarefa neste projeto → ativa o projeto, cria a conversa e ABRE
+          // o Trabalho (criar e continuar olhando o Painel deixava o clique mudo).
           if (projectId !== useApp.getState().activeProjectId)
             setActiveProject(projectId)
+          useApp.getState().setScheduledOpen(false)
+          useApp.getState().setViewMode("linear")
           void newConversation(projectId)
         }}
         className="flex items-center gap-3 rounded-md p-2 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
