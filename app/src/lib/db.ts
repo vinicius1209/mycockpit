@@ -782,10 +782,11 @@ export async function recordTurnCost(r: {
   }
 }
 
-/** Ledger unificado desde `sinceMs`: turnos de chat (turn_costs) + entregas de
- *  missão (deliveries). São caminhos DISJUNTOS (missão usa runPhase, disputa usa
- *  handleCandidateEvent — nenhuma passa pelo handleEvent do chat), então a união
- *  não conta em dobro. Disputas ainda não entram (TODO). */
+/** Ledger unificado desde `sinceMs`: turnos de chat + candidatos de disputa
+ *  (turn_costs) + entregas de missão (deliveries) + etapas SDD (stage_runs).
+ *  São caminhos DISJUNTOS de execução, então a união NÃO conta em dobro:
+ *  chat/disputa gravam turn_costs, missão grava deliveries, SDD grava
+ *  stage_runs. (deliveries e stage_runs não guardam tokens → 0.) */
 export async function loadLedger(sinceMs: number): Promise<LedgerEntry[]> {
   const db = await getDb()
   if (!db) return []
@@ -801,7 +802,9 @@ export async function loadLedger(sinceMs: number): Promise<LedgerEntry[]> {
     >(
       "SELECT agent, project_id, cost_usd, (input_tokens + output_tokens) AS tokens, created_at FROM turn_costs WHERE created_at >= $1 " +
         "UNION ALL " +
-        "SELECT agent, project_id, cost_usd, 0 AS tokens, created_at FROM deliveries WHERE created_at >= $1",
+        "SELECT agent, project_id, cost_usd, 0 AS tokens, created_at FROM deliveries WHERE created_at >= $1 " +
+        "UNION ALL " +
+        "SELECT agent, project_id, cost_usd, 0 AS tokens, created_at FROM stage_runs WHERE created_at >= $1",
       [sinceMs],
     )
     return rows.map((r) => ({

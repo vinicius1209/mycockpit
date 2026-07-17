@@ -19,7 +19,12 @@ import {
   exportConvContext,
   memoryPointerLine,
 } from "@/lib/transcript"
-import { saveFusionRun, loadPendingFusion, clearPendingFusion } from "@/lib/db"
+import {
+  saveFusionRun,
+  loadPendingFusion,
+  clearPendingFusion,
+  recordTurnCost,
+} from "@/lib/db"
 import type { AgentRunConfig } from "@/lib/types"
 
 export type CandStatus =
@@ -230,7 +235,27 @@ export const useFusion = create<FusionState>((set, get) => {
 
   // T1.3, `set` síncrono; só a lane-alvo muda; status é fonte ÚNICA (não vem do
   // reduceEvent). Sem `await` entre ler e escrever → elimina o race de N escritas.
-  handleCandidateEvent: (convId, candId, e) =>
+  handleCandidateEvent: (convId, candId, e) => {
+    // Ledger: custo do candidato (disputa é caminho disjunto do chat/missão →
+    // sem dupla contagem). REPLACE por runId colapsa parciais no total final.
+    if (e.type === "result" && e.cost_usd != null) {
+      const cand = get().byConv[convId]?.candidates.find((c) => c.id === candId)
+      const projectId = useChat.getState().byId[convId]?.projectId
+      if (cand && projectId) {
+        void recordTurnCost({
+          runId: cand.runId,
+          projectId,
+          convId,
+          agent: cand.agent,
+          model: cand.model ?? cand.reqModel,
+          costUsd: e.cost_usd,
+          costSource: e.cost_source ?? null,
+          input: e.input_tokens ?? 0,
+          output: e.output_tokens ?? 0,
+          cache: (e.cache_read ?? 0) + (e.cache_creation ?? 0),
+        })
+      }
+    }
     set((s) => {
       const fusion = s.byConv[convId]
       if (!fusion) return {}
@@ -255,7 +280,8 @@ export const useFusion = create<FusionState>((set, get) => {
         return merged
       })
       return { byConv: { ...s.byConv, [convId]: next } }
-    }),
+    })
+  },
 
   // T1.4, Done (processo saiu). Se ainda não-terminal, marca done + finishOrder.
   finishCandidate: (convId, candId) =>
