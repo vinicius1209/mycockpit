@@ -3,6 +3,9 @@
 // Feature independente do SDD (decisão de produto 2026-07-12).
 // Este arquivo é a fonte de verdade dos tipos — UI, store e settings
 // importam daqui; NÃO importar componentes/stores aqui (sem ciclos).
+// (só um `import type` — apagado na compilação, sem ciclo em runtime.)
+
+import type { ChatItem } from "@/store/chat"
 
 export type MissionPersona = "planner" | "executor" | "reviewer"
 
@@ -50,6 +53,9 @@ export interface MissionPhaseRun {
   attempt: number
   costUsd: number
   startedAt: number | null
+  /** Itens ao vivo da fase (stream reduzido pelo runPhase/onProgress) — a
+   *  matéria-prima da atividade em tempo real e do resumo final. */
+  items?: ChatItem[]
   /** Mensagem de erro da última tentativa (se status error/aborted). */
   error?: string
 }

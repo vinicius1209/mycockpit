@@ -551,7 +551,7 @@ export function ChatPanel() {
 
   return (
     <section className="relative flex h-full w-full min-w-0 flex-col bg-background">
-      {!hasConversation && (
+      {!hasConversation && !missionActive && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-96 bg-[radial-gradient(62%_80%_at_50%_100%,var(--brass-soft),transparent_72%)] opacity-70" />
       )}
 
@@ -560,6 +560,10 @@ export function ChatPanel() {
         onScroll={onScroll}
         className="relative flex-1 overflow-x-hidden overflow-y-auto"
       >
+        {/* Missão TOMA a tela: renderiza primeiro e suprime o empty state (antes
+            ela flutuava como card sobre o "Boa tarde"). O chat (se houver) fica
+            abaixo. */}
+        {activeId && missionActive && <MissionTimeline convId={activeId} />}
         {hasConversation ? (
           // key no activeId → o fade só replica ao TROCAR de conversa (não a cada
           // token do streaming, que mantém o mesmo activeId).
@@ -577,7 +581,7 @@ export function ChatPanel() {
               feedback={feedback}
             />
           </div>
-        ) : (
+        ) : missionActive ? null : (
           <div className="mx-auto flex min-h-full max-w-[760px] flex-col items-center justify-center px-6 py-10">
             <div className="animate-cockpit-rise text-center">
               <Reticle className="mx-auto mb-6 size-8" />
@@ -597,7 +601,6 @@ export function ChatPanel() {
           </div>
         )}
         {activeId && fusionActive && <FusionBoard convId={activeId} />}
-        {activeId && missionActive && <MissionTimeline convId={activeId} />}
       </div>
 
       <div className="relative z-10 shrink-0 pb-7">
