@@ -12,6 +12,17 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  // Dois entries: a janela principal (index.html → main.tsx, o App) e o popover
+  // da tray (tray.html → tray.tsx, só o TrayPopover). O webview escondido para
+  // de bootar o grafo inteiro do App.
+  build: {
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        tray: fileURLToPath(new URL('./tray.html', import.meta.url)),
+      },
+    },
+  },
   // Vitest (unit) NÃO deve coletar os specs de e2e/ — eles usam a API do
   // @playwright/test, não a do vitest, e falhariam na coleção. O smoke-test de
   // boot roda via `bun run test:e2e` (playwright), não pelo `bun run test`.

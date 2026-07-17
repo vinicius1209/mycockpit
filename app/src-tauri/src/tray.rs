@@ -449,7 +449,8 @@ pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     WebviewWindowBuilder::new(
         app,
         POPOVER_LABEL,
-        WebviewUrl::App("index.html?surface=tray".into()),
+        // Entry próprio do popover (só o TrayPopover, não o App inteiro).
+        WebviewUrl::App("tray.html".into()),
     )
     .title("MyCockpit")
     .inner_size(360.0, 430.0)

@@ -7,10 +7,10 @@ import "@fontsource-variable/geist-mono"
 
 import "./index.css"
 import App from "./App.tsx"
-import { TrayPopover } from "@/components/tray/TrayPopover"
 
 // Tema persistido (mc.app via zustand persist) aplicado ANTES do React p/ não
-// piscar dark no boot. Default = dark quando nada foi salvo.
+// piscar dark no boot. Default = dark quando nada foi salvo. O popover da tray
+// tem seu próprio entry (tray.tsx) — este só monta o App.
 const dark = (() => {
   try {
     const persisted = JSON.parse(localStorage.getItem("mc.app") ?? "null")
@@ -21,19 +21,8 @@ const dark = (() => {
 })()
 document.documentElement.classList.toggle("dark", dark)
 
-const isTraySurface =
-  new URLSearchParams(window.location.search).get("surface") === "tray"
-
-// Popover: o vibrancy nativo segue o appearance do NSWindow, não a classe do
-// documento — alinha os dois já no boot (tema do app pode divergir do sistema).
-if (isTraySurface) {
-  void import("@tauri-apps/api/window")
-    .then(({ getCurrentWindow }) =>
-      getCurrentWindow().setTheme(dark ? "dark" : "light"),
-    )
-    .catch(() => {})
-}
-
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>{isTraySurface ? <TrayPopover /> : <App />}</StrictMode>,
+  <StrictMode>
+    <App />
+  </StrictMode>,
 )
