@@ -23,7 +23,9 @@ import {
 import { useApp } from "@/store/app"
 import { useChat, type ChatItem } from "@/store/chat"
 import {
+  buildGateDecisionsBlock,
   checkBudget,
+  gateQuestions,
   phasePrompt,
   phaseText,
   reviewerApproved,
@@ -57,6 +59,10 @@ export interface MissionState {
   abort: (convId: string) => void
 
   clear: (convId: string) => void
+
+  /** Gate humano: entrega as respostas do usuário e RETOMA a missão pausada.
+   *  answers[i] corresponde a gate.questions[i] (em branco = agente decide). */
+  answerGate: (convId: string, answers: string[]) => void
 }
 
 /** Máx. de rodadas de correção quando o reviewer reprova (cada uma = executor
@@ -89,6 +95,10 @@ function lastExecutorBefore(
 function phaseRunId(missionId: string, phaseIdx: number): string {
   return `${missionId}::phase-${phaseIdx}`
 }
+
+/** Gate humano: resolvedores das missões pausadas (por missionId). O loop do
+ *  launch fica aguardando; answerGate resolve com as respostas, abort com null. */
+const gateWaiters = new Map<string, (answers: string[] | null) => void>()
 
 export const useMission = create<MissionState>((set, get) => {
   /** Patch parcial do MissionRun de UMA conversa (no-op se não existir). */
@@ -179,6 +189,9 @@ export const useMission = create<MissionState>((set, get) => {
       let plannerSummary = ""
       let execAgent = ""
       let execModel: string | null = null
+      // Gate humano: bloco de decisões do usuário — SÓ a fase seguinte ao gate
+      // recebe (zera depois de usar).
+      let gateDecisions: string | null = null
       let i = 0
 
       while (i < phases.length) {
@@ -240,7 +253,9 @@ export const useMission = create<MissionState>((set, get) => {
           instructions: def.instructions,
           recallBlock: learn.recall,
           lessonsBlock: learn.lessons,
+          userDecisions: gateDecisions,
         })
+        gateDecisions = null // só a fase imediatamente após o gate recebe
 
         patchConv(convId, { current: i })
         patchPhase(convId, i, (ph) => ({
@@ -333,12 +348,53 @@ export const useMission = create<MissionState>((set, get) => {
           }
         }
 
+        // ── GATE HUMANO: a fase deixou perguntas em aberto e HÁ próxima fase →
+        // PAUSA a missão até o usuário responder (answerGate). As respostas
+        // viram diretriz no prompt da próxima fase. Abortar resolve com null.
+        const handoffDoc = await readHandoff(cwd, handoffPath)
+        const questions = gateQuestions(
+          handoffDoc?.open_questions,
+          i + 1 < phases.length,
+        )
+        if (questions.length > 0) {
+          const stillRunning = get().byConv[convId]
+          if (!stillRunning || stillRunning.status !== "running") return
+          patchConv(convId, { gate: { phase: i, questions } })
+          const answers = await new Promise<string[] | null>((resolve) => {
+            gateWaiters.set(missionId, resolve)
+          })
+          gateWaiters.delete(missionId)
+          patchConv(convId, { gate: null })
+          if (answers === null) return // abortada durante o gate
+          gateDecisions = buildGateDecisionsBlock(questions, answers)
+        }
+
         i++
       }
 
       // todas as fases passaram → done, current aponta além do fim.
       const finalCost = get().byConv[convId]?.costTotal ?? 0
       patchConv(convId, { status: "done", current: phases.length })
+
+      // ── Resumo estruturado da conclusão (UI "concluída"): intenção + arquivos
+      // + pendências, do handoff mais RECENTE que existir. Best-effort.
+      try {
+        for (let j = phases.length - 1; j >= 0; j--) {
+          const doc = await readHandoff(cwd, handoffFileName(j, phases[j].persona))
+          if (doc) {
+            patchConv(convId, {
+              doneSummary: {
+                intent: doc.intent || null,
+                openQuestions: doc.open_questions ?? [],
+                filesTouched: doc.files_touched ?? [],
+              },
+            })
+            break
+          }
+        }
+      } catch {
+        // sem resumo estruturado — a UI cai no texto final da fase.
+      }
 
       // ── M1: grava a ENTREGA (evento de alto sinal: passou nos gates) ──
       // Arquivos = paths do diff do worktree; fallback = files_touched dos
@@ -385,6 +441,7 @@ export const useMission = create<MissionState>((set, get) => {
 
     // Stop de verdade: cancela o run da fase corrente via cancel_agent e marca
     // aborted; fases feitas ficam no estado (nada se perde — está no worktree).
+    // Se estava PAUSADA num gate, libera o loop (resolve com null).
     abort: (convId) => {
       const run = get().byConv[convId]
       if (!run || !isActive(run.status)) return
@@ -394,17 +451,28 @@ export const useMission = create<MissionState>((set, get) => {
       }
       patchConv(convId, (cur) => ({
         status: "aborted",
+        gate: null,
         phases: cur.phases.map((ph, i) =>
           i === idx && ph.status === "running" ? { ...ph, status: "aborted" } : ph,
         ),
       }))
+      gateWaiters.get(run.id)?.(null)
     },
 
     clear: (convId) =>
       set((s) => {
+        // gate pendente em missão descartada → libera o loop (resolve null).
+        const run = s.byConv[convId]
+        if (run) gateWaiters.get(run.id)?.(null)
         const rest = { ...s.byConv }
         delete rest[convId]
         return { byConv: rest }
       }),
+
+    answerGate: (convId, answers) => {
+      const run = get().byConv[convId]
+      if (!run?.gate) return
+      gateWaiters.get(run.id)?.(answers)
+    },
   }
 })

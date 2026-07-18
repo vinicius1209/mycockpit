@@ -67,6 +67,9 @@ export interface PhasePromptInput {
   recallBlock?: string | null
   /** M2: bloco "Lições deste projeto" — planner e executor. null = sem lições. */
   lessonsBlock?: string | null
+  /** Gate humano: respostas do usuário às perguntas da fase anterior (bloco
+   *  pronto de buildGateDecisionsBlock). Só a fase seguinte ao gate recebe. */
+  userDecisions?: string | null
 }
 
 /** Monta o prompt de uma fase: persona + tarefa + handoff tipado das fases
@@ -91,6 +94,12 @@ export function phasePrompt(input: PhasePromptInput): string {
     parts.push("", input.lessonsBlock.trim())
   }
 
+  // Gate humano: as decisões do usuário vêm ANTES do handoff — são a diretriz
+  // mais forte da fase (respondem exatamente às open_questions anteriores).
+  if (input.userDecisions && input.userDecisions.trim()) {
+    parts.push("", input.userDecisions.trim())
+  }
+
   if (input.priorHandoffs && input.priorHandoffs.trim()) {
     parts.push("", "## Handoff das fases anteriores", input.priorHandoffs.trim())
   } else if (input.fallbackContext && input.fallbackContext.trim()) {
@@ -113,6 +122,38 @@ export function phasePrompt(input: PhasePromptInput): string {
   parts.push("", handoffInstruction(handoffPath))
 
   return parts.join("\n")
+}
+
+// ── Gate humano (onda 2): a missão PAUSA quando uma fase deixa perguntas ──
+
+/** Perguntas que justificam pausar a missão: as open_questions do handoff da
+ *  fase, SÓ quando existe uma próxima fase pra receber as respostas (no fim
+ *  da missão elas vão pro resumo, não pro gate). */
+export function gateQuestions(
+  openQuestions: string[] | undefined,
+  hasNextPhase: boolean,
+): string[] {
+  if (!hasNextPhase) return []
+  return (openQuestions ?? []).map((q) => q.trim()).filter(Boolean)
+}
+
+/** Bloco de prompt com as decisões do usuário (injetado na fase seguinte ao
+ *  gate). Resposta em branco vira delegação explícita — o agente decide. */
+export function buildGateDecisionsBlock(
+  questions: string[],
+  answers: string[],
+): string {
+  const lines = [
+    "## Decisões do usuário (gate humano)",
+    "A fase anterior deixou perguntas em aberto; o usuário respondeu. Estas decisões são DIRETRIZES — siga-as:",
+    "",
+  ]
+  questions.forEach((q, i) => {
+    const a = (answers[i] ?? "").trim()
+    lines.push(`${i + 1}. P: ${q}`)
+    lines.push(`   R: ${a || "(sem resposta — decida você, com bom senso)"}`)
+  })
+  return lines.join("\n")
 }
 
 /** O reviewer aprovou? Varre o texto final da fase por "APROVADO" (o template

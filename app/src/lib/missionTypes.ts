@@ -62,6 +62,21 @@ export interface MissionPhaseRun {
 
 export type MissionStatus = "running" | "done" | "error" | "aborted"
 
+/** Gate humano: a fase `phase` terminou deixando perguntas em aberto — a
+ *  missão PAUSA e só continua depois de answerGate() (as respostas são
+ *  injetadas no prompt da próxima fase). */
+export interface MissionGate {
+  phase: number
+  questions: string[]
+}
+
+/** Resumo estruturado da conclusão (do handoff da última fase que emitiu). */
+export interface MissionDoneSummary {
+  intent: string | null
+  openQuestions: string[]
+  filesTouched: string[]
+}
+
 /** Uma missão em execução/terminada numa conversa. */
 export interface MissionRun {
   id: string
@@ -75,6 +90,10 @@ export interface MissionRun {
   maxCostUsd: number | null
   status: MissionStatus
   startedAt: number
+  /** Gate pendente (precisa de você). null/undefined = nada pendente. */
+  gate?: MissionGate | null
+  /** Resumo estruturado quando done/error (best-effort dos handoffs). */
+  doneSummary?: MissionDoneSummary | null
 }
 
 /** Presets de fábrica (espelham categorias do OMO, sem keyword-magic). */

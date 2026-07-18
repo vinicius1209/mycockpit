@@ -140,6 +140,72 @@ function LiveActivity({ phase }: { phase: MissionPhaseRun }) {
   )
 }
 
+/** GATE — precisa de você: a missão pausou com as perguntas da fase anterior.
+ *  Uma resposta por pergunta (em branco = o agente decide); "Continuar" retoma
+ *  o pipeline injetando as respostas na próxima fase. */
+function GateCard({
+  questions,
+  onContinue,
+}: {
+  questions: string[]
+  onContinue: (answers: string[]) => void
+}) {
+  const [answers, setAnswers] = useState<string[]>(() =>
+    questions.map(() => ""),
+  )
+  const answered = answers.filter((a) => a.trim()).length
+  return (
+    <div className="mt-2.5 overflow-hidden rounded-xl border-[1.5px] border-brass/45 bg-brass/[0.04] shadow-[0_0_0_3px_var(--brass-soft)]">
+      <div className="flex items-center gap-2.5 border-b border-brass/20 px-4 py-3">
+        <span className="animate-cockpit-pulse size-2 shrink-0 rounded-full bg-brass" />
+        <div className="min-w-0">
+          <div className="text-[13px] font-semibold">
+            {questions.length === 1
+              ? "O agente tem 1 pergunta"
+              : `O agente tem ${questions.length} perguntas`}
+          </div>
+          <div className="text-[11.5px] text-muted-foreground">
+            A missão está pausada — responda pra continuar (em branco = o
+            agente decide)
+          </div>
+        </div>
+      </div>
+      {questions.map((q, i) => (
+        <div key={i} className="border-t border-border px-4 py-3 first:border-t-0">
+          <p className="text-[13px] leading-relaxed">
+            <span className="mr-1.5 font-mono text-[11px] text-brass">
+              {i + 1}.
+            </span>
+            {q}
+          </p>
+          <textarea
+            value={answers[i]}
+            onChange={(e) =>
+              setAnswers((prev) =>
+                prev.map((a, j) => (j === i ? e.target.value : a)),
+              )
+            }
+            rows={1}
+            placeholder="Sua resposta (opcional)…"
+            className="mt-2 w-full resize-y rounded-lg border bg-background px-3 py-2 text-[12.5px] outline-none placeholder:text-muted-foreground/60 focus:border-brass/60"
+          />
+        </div>
+      ))}
+      <div className="flex items-center gap-3 border-t border-brass/20 bg-brass/[0.03] px-4 py-3">
+        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+          {answered} de {questions.length} respondidas
+        </span>
+        <button
+          onClick={() => onContinue(answers)}
+          className="ml-auto rounded-lg bg-brass px-4 py-2 text-[12.5px] font-semibold text-brass-foreground transition-opacity hover:opacity-90"
+        >
+          Continuar missão →
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /** Uma fase como estação no plano de voo (nó na espinha + linha). */
 function PhaseNode({
   p,
@@ -243,12 +309,56 @@ function DoneSummary({ mission }: { mission: MissionRun }) {
             <Markdown text={verdict} />
           </div>
         </div>
+      ) : mission.doneSummary?.intent ? (
+        <div className="px-4 py-3">
+          <div className="label-mono mb-1.5 text-[9.5px]">O que foi feito</div>
+          <p className="text-[13px] leading-relaxed">
+            {mission.doneSummary.intent}
+          </p>
+        </div>
       ) : (
         <p className="px-4 py-3 text-[12.5px] text-muted-foreground">
           As mudanças estão no projeto. Continue a conversa abaixo pra pedir o
           resumo, testar ou seguir de onde parou.
         </p>
       )}
+      {mission.doneSummary?.filesTouched &&
+        mission.doneSummary.filesTouched.length > 0 && (
+          <div className="border-t px-4 py-3">
+            <div className="label-mono mb-1.5 text-[9.5px]">Arquivos</div>
+            <div className="flex flex-wrap gap-1.5">
+              {mission.doneSummary.filesTouched.slice(0, 8).map((f) => (
+                <code
+                  key={f}
+                  className="rounded bg-accent px-1.5 py-0.5 font-mono text-[10.5px]"
+                >
+                  {f}
+                </code>
+              ))}
+              {mission.doneSummary.filesTouched.length > 8 && (
+                <code className="rounded bg-accent px-1.5 py-0.5 font-mono text-[10.5px] text-muted-foreground">
+                  +{mission.doneSummary.filesTouched.length - 8}
+                </code>
+              )}
+            </div>
+          </div>
+        )}
+      {mission.doneSummary?.openQuestions &&
+        mission.doneSummary.openQuestions.length > 0 && (
+          <div className="border-t px-4 py-3">
+            <div className="label-mono mb-1.5 text-[9.5px]">
+              Pendências pra próxima etapa
+            </div>
+            {mission.doneSummary.openQuestions.slice(0, 5).map((q, i) => (
+              <div key={i} className="flex items-start gap-2 py-1 text-[12.5px]">
+                <span className="shrink-0 font-mono text-[11px] font-semibold text-brass">
+                  {i + 1}
+                </span>
+                <span className="leading-relaxed">{q}</span>
+              </div>
+            ))}
+          </div>
+        )}
     </div>
   )
 }
@@ -259,8 +369,10 @@ export function MissionTimeline({ convId }: { convId: string }) {
   const mission = useMission((s) => s.byConv[convId])
   const abort = useMission((s) => s.abort)
   const clear = useMission((s) => s.clear)
+  const answerGate = useMission((s) => s.answerGate)
   if (!mission) return null
 
+  const gated = mission.status === "running" && mission.gate != null
   const running = mission.status === "running"
   const n = mission.phases.length
   const cur = Math.min(mission.current, n - 1)
@@ -284,14 +396,21 @@ export function MissionTimeline({ convId }: { convId: string }) {
           <span
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[9.5px] tracking-wide uppercase",
-              running
-                ? "bg-st-running/15 text-st-running"
-                : mission.status === "done"
-                  ? "bg-st-success/15 text-st-success"
-                  : "bg-st-error/15 text-st-error",
+              gated
+                ? "bg-brass-soft text-brass"
+                : running
+                  ? "bg-st-running/15 text-st-running"
+                  : mission.status === "done"
+                    ? "bg-st-success/15 text-st-success"
+                    : "bg-st-error/15 text-st-error",
             )}
           >
-            {running ? (
+            {gated ? (
+              <>
+                <span className="animate-cockpit-pulse size-1.5 rounded-full bg-brass" />
+                pausada · precisa de você
+              </>
+            ) : running ? (
               <>
                 <span className="animate-cockpit-pulse size-1.5 rounded-full bg-st-running" />
                 em voo · fase {Math.min(mission.current + 1, n)}/{n}
@@ -354,15 +473,33 @@ export function MissionTimeline({ convId }: { convId: string }) {
         )}
       </div>
 
-      {/* plano de voo (espinha vertical) */}
+      {/* plano de voo (espinha vertical); o GATE entra como estação logo após
+          a fase que deixou as perguntas */}
       <div className="relative mt-6 pl-[34px] before:absolute before:top-3.5 before:bottom-5 before:left-3 before:w-0.5 before:bg-border">
         {mission.phases.map((p, i) => (
-          <PhaseNode
-            key={p.def.id}
-            p={p}
-            active={running && i === cur}
-            last={i === n - 1}
-          />
+          <div key={p.def.id}>
+            <PhaseNode p={p} active={running && !gated && i === cur} last={i === n - 1} />
+            {gated && mission.gate!.phase === i && (
+              <div className="relative mb-4">
+                <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 animate-cockpit-pulse rounded-full border-2 border-brass bg-brass shadow-[0_0_0_4px_var(--brass-soft)]" />
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[14px] font-semibold text-brass">
+                    Precisa de você
+                  </span>
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {mission.gate!.questions.length}{" "}
+                    {mission.gate!.questions.length === 1
+                      ? "decisão pendente"
+                      : "decisões pendentes"}
+                  </span>
+                </div>
+                <GateCard
+                  questions={mission.gate!.questions}
+                  onContinue={(answers) => answerGate(convId, answers)}
+                />
+              </div>
+            )}
+          </div>
         ))}
       </div>
 
