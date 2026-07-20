@@ -141,6 +141,9 @@ export interface ConversationMeta {
   updatedAt: number
   color: string | null
   worktreePath: string | null
+  /** Agent persistido da conversa (null = nunca rodou/persistiu — livre).
+   *  Permite ao office achar "a conversa da mesa" sem carregar cada linha. */
+  agent: string | null
 }
 
 interface ConvListRow {
@@ -149,6 +152,7 @@ interface ConvListRow {
   updated_at: number
   color: string | null
   worktree_path: string | null
+  agent: string | null
 }
 
 /** Lista as conversas de um projeto em ordem de criação (estável; novas embaixo). */
@@ -158,7 +162,7 @@ export async function listConversations(
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ConvListRow[]>(
-    "SELECT id, title, updated_at, color, worktree_path FROM conversations WHERE project_id = $1 ORDER BY created_at ASC",
+    "SELECT id, title, updated_at, color, worktree_path, agent FROM conversations WHERE project_id = $1 ORDER BY created_at ASC",
     [projectId],
   )
   return rows.map((r) => ({
@@ -167,6 +171,7 @@ export async function listConversations(
     updatedAt: r.updated_at,
     color: r.color ?? null,
     worktreePath: r.worktree_path ?? null,
+    agent: r.agent ?? null,
   }))
 }
 

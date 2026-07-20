@@ -164,13 +164,21 @@ interface ChatState {
   newConversation: (projectId: string) => Promise<void>
   /** F6 — cria uma conversa em BACKGROUND (automação agendada): grava no DB com
    *  título fixo e registra no store SEM roubar a seleção do usuário (não mexe
-   *  em activeId/projectId ativo). O run escreve nela via start/handleEvent. */
+   *  em activeId/projectId ativo). O run escreve nela via start/handleEvent.
+   *  `agent` (opcional, office §5.3) carimba o agent já na criação — meta,
+   *  byId E banco (a coluna nasce NOT NULL DEFAULT claude-code; sem o carimbo
+   *  a mesa de outro agent adotaria a conversa recém-criada). */
   registerConversation: (
     projectId: string,
     id: string,
     title: string,
+    agent?: string,
   ) => Promise<void>
   switchConversation: (id: string) => Promise<void>
+  /** Garante que a conversa está carregada em byId (do disco se preciso) SEM
+   *  roubar a seleção — não toca em activeId/projectId. É a `ensureLoaded`
+   *  promovida a action p/ superfícies fora do ChatPanel (ex.: office). */
+  ensureConversationLoaded: (projectId: string, convId: string) => Promise<void>
   removeConversation: (id: string) => Promise<void>
   /** Renomeia manualmente (o título passa a ser fixo, não mais auto-derivado). */
   renameConversation: (id: string, title: string) => Promise<void>
@@ -550,6 +558,9 @@ export const useChat = create<ChatState>((set, get) => {
     drafts: {},
     queuedPrompt: null,
 
+    // a closure ensureLoaded exposta como action (mesma semântica, zero seleção)
+    ensureConversationLoaded: ensureLoaded,
+
     queuePrompt: (queuedPrompt) => set({ queuedPrompt }),
     setSuggestions: (convId, suggestions) => patch(convId, { suggestions }),
     setSuggesting: (convId, suggesting) => patch(convId, { suggesting }),
@@ -631,7 +642,7 @@ export const useChat = create<ChatState>((set, get) => {
         const id = uid()
         await dbCreate(projectId, id)
         if (gen !== openGen) return
-        list = [{ id, title: null, updatedAt: Date.now(), color: null, worktreePath: null }]
+        list = [{ id, title: null, updatedAt: Date.now(), color: null, worktreePath: null, agent: null }]
         set((s) => ({
           projectId,
           activeId: id,
@@ -694,6 +705,7 @@ export const useChat = create<ChatState>((set, get) => {
           updatedAt: Date.now(),
           color: null,
           worktreePath: null,
+          agent: null,
         }
         // append na lista DAQUELE projeto (não do ativo antigo). Criar uma
         // conversa também torna o projeto o ativo (abre no painel). Fallback
@@ -714,7 +726,7 @@ export const useChat = create<ChatState>((set, get) => {
       })
     },
 
-    registerConversation: async (projectId, id, title) => {
+    registerConversation: async (projectId, id, title, agent) => {
       await dbCreate(projectId, id)
       await dbRename(id, title) // título fixo ("⏰ …") — o persist preserva
       // garante a lista do projeto carregada ANTES de anexar a meta: criar um
@@ -725,7 +737,9 @@ export const useChat = create<ChatState>((set, get) => {
         const list = s.conversationsByProject[projectId] ?? []
         // o load acima pode já ter trazido a linha recém-criada do DB → dedupe.
         const nextList = list.some((c) => c.id === id)
-          ? list.map((c) => (c.id === id ? { ...c, title } : c))
+          ? list.map((c) =>
+              c.id === id ? { ...c, title, agent: agent ?? c.agent } : c,
+            )
           : [
               ...list,
               {
@@ -734,6 +748,7 @@ export const useChat = create<ChatState>((set, get) => {
                 updatedAt: Date.now(),
                 color: null,
                 worktreePath: null,
+                agent: agent ?? null,
               },
             ]
         return {
@@ -743,9 +758,20 @@ export const useChat = create<ChatState>((set, get) => {
           },
           conversations:
             projectId === s.projectId ? nextList : s.conversations,
-          byId: s.byId[id] ? s.byId : { ...s.byId, [id]: emptyConv(projectId) },
+          byId: s.byId[id]
+            ? s.byId
+            : {
+                ...s.byId,
+                [id]: agent
+                  ? { ...emptyConv(projectId), agent }
+                  : emptyConv(projectId),
+              },
         }
       })
+      // carimba o agent no BANCO na hora: o dbCreate insere sem a coluna (fica
+      // o DEFAULT claude-code); o persist grava byId[id].agent na linha via
+      // UPSERT — e preserva o título fixo (a meta acima já está carregada).
+      if (agent) await get().persist(id)
     },
 
     switchConversation: async (id) => {
@@ -891,6 +917,8 @@ export const useChat = create<ChatState>((set, get) => {
           updatedAt: Date.now(),
           color: src?.color ?? null,
           worktreePath: null,
+          // a cópia já nasce gravada com este agent no DB (dbSave acima)
+          agent,
         }
         const nextList = [...(s.conversationsByProject[owner] ?? []), meta]
         return {
@@ -942,8 +970,10 @@ export const useChat = create<ChatState>((set, get) => {
       set((st) => {
         const list = st.conversationsByProject[c.projectId]
         if (!list) return {}
+        // espelha o agent gravado (dbSave acima escreve c.agent na linha) — a
+        // meta em memória não pode divergir do banco (office lê meta.agent).
         const nextList = list.map((cv) =>
-          cv.id === convId ? { ...cv, title, updatedAt: now } : cv,
+          cv.id === convId ? { ...cv, title, updatedAt: now, agent: c.agent } : cv,
         )
         return {
           conversationsByProject: {

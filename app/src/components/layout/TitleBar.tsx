@@ -28,6 +28,12 @@ const MODES = [
     available: true,
     desc: "Planeje, contrate e entregue uma feature com gates de verificação",
   },
+  {
+    id: "office",
+    label: "Escritório",
+    available: true,
+    desc: "Escritório virtual: seus agents trabalhando nas salas dos projetos",
+  },
 ] as const
 
 /** Seletor de superfície (F4): Painel | Trabalho | Features. O Fusion virou o

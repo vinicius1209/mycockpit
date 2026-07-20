@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { searchConversations, type ConvSearchHit } from "@/lib/db"
 import {
+  Building2,
   FileText,
   FolderGit2,
   GitBranch,
@@ -63,6 +64,7 @@ export function CommandMenu() {
   const toggleTheme = useApp((s) => s.toggleTheme)
   const toggleSidebar = useApp((s) => s.toggleSidebar)
   const toggleContext = useApp((s) => s.toggleContext)
+  const setViewMode = useApp((s) => s.setViewMode)
   const setSettingsOpen = useApp((s) => s.setSettingsOpen)
   const conversations = useChat((s) => s.conversations)
   const switchConversation = useChat((s) => s.switchConversation)
@@ -219,6 +221,13 @@ export function CommandMenu() {
                   Salvar conversa como skill
                 </CommandItem>
               )}
+              <CommandItem
+                className={ITEM}
+                onSelect={() => run(() => setViewMode("office"))}
+              >
+                <Building2 aria-hidden />
+                Abrir Escritório
+              </CommandItem>
             </CommandGroup>
 
             {conversations.length > 0 && (

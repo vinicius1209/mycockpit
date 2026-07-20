@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { toast } from "sonner"
@@ -13,6 +13,7 @@ import { SddView } from "@/components/sdd/SddView"
 import { MissionControl } from "@/components/panel/MissionControl"
 import { ScheduledView } from "@/components/scheduled/ScheduledView"
 import { CommandMenu } from "@/components/common/CommandMenu"
+import { GlobalInteractionHost } from "@/components/common/GlobalInteractionHost"
 import { SettingsDialog } from "@/components/settings/SettingsDialog"
 import { ConfirmHost } from "@/components/common/confirm"
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard"
@@ -28,6 +29,10 @@ import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { useMission } from "@/store/mission"
 import { useNotifs } from "@/store/notifications"
+// Side-effect: registra os listeners globais de interação (interaction://
+// request/resolved) no BOOT — approvals disparados antes da 1ª visita ao
+// office já entram na fila única (store) que host e derive compartilham.
+import "@/store/interactions"
 import { useSchedules } from "@/store/schedules"
 import { tickSchedules } from "@/lib/scheduleEngine"
 import { fmtUntilShort, nextScheduled } from "@/lib/schedules"
@@ -63,6 +68,10 @@ import { cn } from "@/lib/utils"
 const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 const queryClient = new QueryClient()
+
+// Agent Office (O1): lazy — o chunk (Pixi incluso) só baixa na 1ª visita ao
+// modo; depois fica montado com `hidden` (loop parado) como Painel/Trabalho.
+const OfficeMode = lazy(() => import("@/office/ui/OfficeMode"))
 
 // Seed do 1º run: projetos reais como exemplo. Persistem no SQLite a partir daí.
 const SEED: Project[] = [
@@ -107,6 +116,13 @@ export default function App() {
   const keepInTrayOnClose = useApp((s) => s.settings.keepInTrayOnClose)
   const trayCloseHintShown = useApp((s) => s.settings.trayCloseHintShown)
   const activeProjectId = useApp((s) => s.activeProjectId)
+
+  // Office: monta LAZY na 1ª visita e nunca desmonta (padrão Painel/Trabalho —
+  // remontar destruiria o mundo/canvas); ao sair fica hidden + loop parado.
+  const [officeVisited, setOfficeVisited] = useState(false)
+  useEffect(() => {
+    if (viewMode === "office") setOfficeVisited(true)
+  }, [viewMode])
 
   useEffect(() => {
     let cancelled = false
@@ -689,12 +705,30 @@ export default function App() {
                       <div
                         className={cn(
                           "h-full",
-                          (scheduledOpen || viewMode === "painel" ||
-                            viewMode === "sdd") && "hidden",
+                          (scheduledOpen || viewMode !== "linear") && "hidden",
                         )}
                       >
                         <ChatPanel />
                       </div>
+                      {/* Office (O1): lazy mount na 1ª visita, depois fica
+                          montado com `hidden` (o próprio OfficeMode esconde a
+                          raiz e PARA o loop/ticker — §7). Wrapper relative:
+                          o OfficeMode é absolute inset-0. */}
+                      {officeVisited && (
+                        <div
+                          className={cn(
+                            "relative h-full",
+                            (scheduledOpen || viewMode !== "office") &&
+                              "hidden",
+                          )}
+                        >
+                          <Suspense fallback={null}>
+                            <OfficeMode
+                              hidden={scheduledOpen || viewMode !== "office"}
+                            />
+                          </Suspense>
+                        </div>
+                      )}
                       {scheduledOpen ? (
                         <ScheduledView />
                       ) : viewMode === "sdd" ? (
@@ -727,6 +761,9 @@ export default function App() {
           </ResizablePanelGroup>
         </div>
         <CommandMenu />
+        {/* Host GLOBAL de interações (§6.1 item 4): approvals/perguntas têm
+            card em QUALQUER viewMode (o ChatPanel não o monta mais). */}
+        <GlobalInteractionHost />
         <SettingsDialog />
         <ConfirmHost />
         {/* Onboarding: overlay full-screen no 1º run (onboarded=false). O boot

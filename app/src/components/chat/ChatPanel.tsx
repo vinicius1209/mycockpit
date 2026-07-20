@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils"
 import { deriveTasks } from "@/lib/tasks"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { CommandConsole } from "@/components/chat/CommandConsole"
-import { InteractionHost } from "@/components/chat/InteractionHost"
 import { MessageList } from "@/components/chat/MessageList"
 import { Reticle } from "@/components/common/Wordmark"
 import { useActiveProject, useApp } from "@/store/app"
@@ -652,8 +651,9 @@ export function ChatPanel() {
         {/* px-8 casa a borda do composer com o texto do transcript (que usa
             max-w-[760px] + px-8) — sem isso o composer estoura ~64px pras laterais. */}
         <div className="mx-auto max-w-[760px] px-8">
-          {/* Interação pendente (padrão unificado): turno pausado — aprovação ou pergunta. */}
-          <InteractionHost />
+          {/* Interação pendente (aprovação/pergunta): host GLOBAL agora — vive no
+              GlobalInteractionHost montado no App.tsx, visível em QUALQUER
+              viewMode (o ChatPanel fica hidden no office e escondia o card). */}
           {conv?.pendingPlan && !running && !finalizing && (
             <PlanPendingCard
               onApprove={handleApprovePlan}

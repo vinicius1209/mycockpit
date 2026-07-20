@@ -27,10 +27,11 @@ interface AppState {
   sidebarOpen: boolean
   contextOpen: boolean
   /** Superfície do centro (F4): Painel (home cross-projeto), Trabalho (chat
-   *  Linear) ou Features (SDD). A disputa Fusion vive dentro da conversa via
-   *  ⚔️ do composer, não é um modo. Valores antigos ("linear"/"sdd") seguem
-   *  válidos → sem migração de persist. */
-  viewMode: "painel" | "linear" | "sdd"
+   *  Linear), Features (SDD) ou Escritório (Agent Office). A disputa Fusion
+   *  vive dentro da conversa via ⚔️ do composer, não é um modo. Valores
+   *  antigos ("linear"/"sdd") seguem válidos → sem migração de persist.
+   *  "office" NUNCA persiste como modo de boot (partialize grava "linear"). */
+  viewMode: "painel" | "linear" | "sdd" | "office"
   /** F7 — view GLOBAL "Agendado" aberta? Estado PRÓPRIO (não é um viewMode):
    *  quando true, ela cobre o conteúdo principal; qualquer navegação (trocar
    *  superfície/projeto) fecha. Não persiste. */
@@ -70,7 +71,7 @@ interface AppState {
   toggleTheme: () => void
   toggleSidebar: () => void
   toggleContext: () => void
-  setViewMode: (m: "painel" | "linear" | "sdd") => void
+  setViewMode: (m: "painel" | "linear" | "sdd" | "office") => void
   /** Abre/fecha a view global "Agendado" (F7). */
   setScheduledOpen: (v: boolean) => void
   setReady: (v: boolean) => void
@@ -200,7 +201,11 @@ export const useApp = create<AppState>()(
         theme: s.theme,
         sidebarOpen: s.sidebarOpen,
         contextOpen: s.contextOpen,
-        viewMode: s.viewMode,
+        // O Office não é modo de boot (§6.1): rehidrata como "linear". O cast
+        // mantém o tipo persistido na união completa (o migrate devolve AppState).
+        viewMode: (s.viewMode === "office"
+          ? "linear"
+          : s.viewMode) as AppState["viewMode"],
         settings: s.settings,
       }),
       // v1→v2: quem já tinha estado persistido é usuário EXISTENTE (não 1ª

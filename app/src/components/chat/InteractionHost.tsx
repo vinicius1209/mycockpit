@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import {
   ShieldQuestion,
   Check,
@@ -8,75 +8,31 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react"
-import {
-  onInteractionRequest,
-  onInteractionResolved,
-  answerInteraction,
-  failClosedAnswer,
-  type InteractionRequest,
-  type ApprovalData,
-  type QuestionData,
+import type {
+  ApprovalData,
+  QuestionAnswer,
+  QuestionData,
 } from "@/lib/interaction"
-import { isTauri } from "@/lib/db"
+import { useInteractions } from "@/store/interactions"
 import { cn } from "@/lib/utils"
 
-/** InteractionHost — host único das "interações pendentes" (padrão unificado). Enquanto
- *  o agente espera VOCÊ no meio do turno, o turno fica PAUSADO e este bloco (acima do
- *  composer) renderiza o card certo por `kind`:
+/** InteractionHost — card das "interações pendentes" (padrão unificado). Enquanto
+ *  o agente espera VOCÊ no meio do turno, o turno fica PAUSADO e este bloco
+ *  renderiza o card certo por `kind`:
  *   - approval: banner Aprovar/Negar com o comando exato.
  *   - question: card com um bloco por pergunta (radios/checkboxes + "Outro") + Responder.
- *  Vários pedidos empilham (o agente pode encadear); a fila mostra um card por vez (FIFO),
- *  cada um respondido pelo seu `id`. Só fecha o card depois que o backend confirmar (senão
- *  o card sumia antes de destravar o turno).
+ *  Vários pedidos empilham (o agente pode encadear); a fila mostra um card por vez
+ *  (FIFO), cada um respondido pelo seu `id`.
  *
- *  Independente do chat store (escuta o evento global do backend), por isso é só montado
- *  no ChatPanel. */
+ *  A fila mora no store/interactions (fonte ÚNICA, alimentada pelos eventos
+ *  globais no import do módulo) — o office (bridge/derive) lê a MESMA fila,
+ *  então o card daqui e a mão levantada na mesa nunca divergem. Responder
+ *  remove o card na hora: o backend não confirma resposta via resolved (só o
+ *  Drop fail-closed emite; ver o store). */
 export function InteractionHost() {
-  const [queue, setQueue] = useState<InteractionRequest[]>([])
-  const [busy, setBusy] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!isTauri()) return
-    const unlisteners: (() => void)[] = []
-    let alive = true
-    const keep = (fn: () => void) => {
-      if (alive) unlisteners.push(fn)
-      else fn() // desmontou antes do listener registrar
-    }
-    void onInteractionRequest((req) => {
-      // pergunta VAZIA (modelo mandou lixo): sem guard o card habilitava
-      // "Responder" vacuamente (achado M4) → responde fail-closed e nem enfileira.
-      if (req.kind === "question") {
-        const d = req.data as QuestionData
-        if (!d?.questions?.length) {
-          void answerInteraction(req.id, failClosedAnswer("question")).catch(() => {})
-          return
-        }
-      }
-      // dedup defensivo por id (um re-emit — ou o duplo canal de compat — não duplica o card).
-      setQueue((q) => (q.some((r) => r.id === req.id) ? q : [...q, req]))
-    }).then(keep)
-    // backend resolveu fail-closed (run acabou/cancelado) → derruba o card daquele
-    // id na hora (senão ficava travado sobre um turno já morto).
-    void onInteractionResolved((id) => {
-      setQueue((q) => q.filter((r) => r.id !== id))
-    }).then(keep)
-    return () => {
-      alive = false
-      for (const fn of unlisteners) fn()
-    }
-  }, [])
-
-  function done(id: string) {
-    setQueue((q) => q.filter((r) => r.id !== id))
-  }
-
-  /** Dispensar manual (escape hatch): responde fail-closed best-effort e SEMPRE
-   *  remove o card localmente — mesmo se o backend já morreu (answer rejeita). */
-  function dismiss(req: InteractionRequest) {
-    void answerInteraction(req.id, failClosedAnswer(req.kind)).catch(() => {})
-    done(req.id)
-  }
+  const queue = useInteractions((s) => s.queue)
+  const answer = useInteractions((s) => s.answer)
+  const dismiss = useInteractions((s) => s.dismiss)
 
   if (queue.length === 0) return null
   // mostra o pedido mais antigo (FIFO); os demais aguardam a vez.
@@ -87,12 +43,9 @@ export function InteractionHost() {
     return (
       <QuestionCard
         key={req.id}
-        id={req.id}
         data={req.data as QuestionData}
         extra={extra}
-        busy={busy === req.id}
-        setBusy={setBusy}
-        onDone={done}
+        onAnswer={(a) => answer(req.id, a)}
         onDismiss={() => dismiss(req)}
       />
     )
@@ -101,12 +54,9 @@ export function InteractionHost() {
   return (
     <ApprovalCard
       key={req.id}
-      id={req.id}
       data={req.data as ApprovalData}
       extra={extra}
-      busy={busy === req.id}
-      setBusy={setBusy}
-      onDone={done}
+      onDecide={(allow) => answer(req.id, { allow })}
       onDismiss={() => dismiss(req)}
     />
   )
@@ -134,34 +84,16 @@ function DismissBtn({ onDismiss }: { onDismiss: () => void }) {
 
 /** Card de aprovação (migrado 1:1 do ApprovalModal). */
 function ApprovalCard({
-  id,
   data,
   extra,
-  busy,
-  setBusy,
-  onDone,
+  onDecide,
   onDismiss,
 }: {
-  id: string
   data: ApprovalData
   extra: number
-  busy: boolean
-  setBusy: (v: string | null) => void
-  onDone: (id: string) => void
+  onDecide: (allow: boolean) => void
   onDismiss: () => void
 }) {
-  async function decide(allow: boolean) {
-    setBusy(id)
-    try {
-      await answerInteraction(id, { allow })
-      onDone(id)
-    } catch {
-      // se a resposta falhou, mantém o card (o usuário pode tentar de novo).
-    } finally {
-      setBusy(null)
-    }
-  }
-
   return (
     <div className="mb-2 rounded-lg border border-brass/40 bg-brass/[0.07] px-3 py-2.5">
       <div className="flex items-center gap-2">
@@ -188,16 +120,14 @@ function ApprovalCard({
       )}
       <div className="mt-2.5 flex items-center justify-end gap-2">
         <button
-          onClick={() => void decide(false)}
-          disabled={busy}
-          className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+          onClick={() => onDecide(false)}
+          className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
         >
           <X className="size-3.5" /> Negar
         </button>
         <button
-          onClick={() => void decide(true)}
-          disabled={busy}
-          className="flex items-center gap-1.5 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+          onClick={() => onDecide(true)}
+          className="flex items-center gap-1.5 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
         >
           <Check className="size-3.5" /> Aprovar
         </button>
@@ -213,20 +143,14 @@ type QState = { selected: Set<string>; other: string }
  *  (multiSelect=false) ou checkboxes (true), cada opção com label + description; um campo
  *  "Outro" discreto por pergunta. "Responder" habilita quando toda pergunta tem ≥1 seleção. */
 function QuestionCard({
-  id,
   data,
   extra,
-  busy,
-  setBusy,
-  onDone,
+  onAnswer,
   onDismiss,
 }: {
-  id: string
   data: QuestionData
   extra: number
-  busy: boolean
-  setBusy: (v: string | null) => void
-  onDone: (id: string) => void
+  onAnswer: (a: QuestionAnswer) => void
   onDismiss: () => void
 }) {
   const questions = data.questions ?? []
@@ -265,9 +189,8 @@ function QuestionCard({
   const last = qi >= total - 1
   const curAnswered = total > 0 && answered(qi)
 
-  async function respond() {
+  function respond() {
     if (!complete) return
-    setBusy(id)
     const answers = questions.map((q, i) => {
       const s = state[i]
       const selected = [...s.selected]
@@ -275,14 +198,7 @@ function QuestionCard({
       if (other) selected.push(other)
       return { header: q.header, selected }
     })
-    try {
-      await answerInteraction(id, { answers })
-      onDone(id)
-    } catch {
-      // mantém o card p/ nova tentativa.
-    } finally {
-      setBusy(null)
-    }
+    onAnswer({ answers })
   }
 
   const q = questions[qi]
@@ -357,15 +273,15 @@ function QuestionCard({
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <button
           onClick={() => setQi((i) => Math.max(0, i - 1))}
-          disabled={qi === 0 || busy}
+          disabled={qi === 0}
           className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent disabled:opacity-40"
         >
           <ChevronLeft className="size-3.5" /> Anterior
         </button>
         {last ? (
           <button
-            onClick={() => void respond()}
-            disabled={busy || !complete}
+            onClick={respond}
+            disabled={!complete}
             title={!complete ? "Responda todas as perguntas" : undefined}
             className="flex items-center gap-1.5 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
           >
@@ -374,7 +290,7 @@ function QuestionCard({
         ) : (
           <button
             onClick={() => setQi((i) => Math.min(total - 1, i + 1))}
-            disabled={busy || !curAnswered}
+            disabled={!curAnswered}
             className="flex items-center gap-1 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             Próxima <ChevronRight className="size-3.5" />
