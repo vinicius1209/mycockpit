@@ -11,6 +11,7 @@ import type {
   MissionPreset,
   MissionRun,
   MissionStatus,
+  RecoveryChoice,
 } from "@/lib/missionTypes"
 import { buildHandoff } from "@/lib/handoff"
 import { loadGitDiff } from "@/lib/git"
@@ -26,8 +27,10 @@ import {
   buildGateDecisionsBlock,
   checkBudget,
   gateQuestions,
+  isRecoverableFailure,
   phasePrompt,
   phaseText,
+  recoveryMessage,
   reviewerApproved,
   runPhase,
   type PhaseResult,
@@ -63,6 +66,15 @@ export interface MissionState {
   /** Gate humano: entrega as respostas do usuário e RETOMA a missão pausada.
    *  answers[i] corresponde a gate.questions[i] (em branco = agente decide). */
   answerGate: (convId: string, answers: string[]) => void
+
+  /** Recuperação: o usuário escolheu outro agent/modelo/effort → troca a def da
+   *  fase corrente e RE-RODA a MESMA fase (sem avançar). No-op se não há
+   *  recovery pendente. */
+  resolveRecovery: (convId: string, choice: RecoveryChoice) => void
+
+  /** Recuperação: o usuário desistiu → a missão vai a error (resolve com null,
+   *  mesmo efeito de não escolher agent). No-op se não há recovery pendente. */
+  abortRecovery: (convId: string) => void
 }
 
 /** Máx. de rodadas de correção quando o reviewer reprova (cada uma = executor
@@ -99,6 +111,12 @@ function phaseRunId(missionId: string, phaseIdx: number): string {
 /** Gate humano: resolvedores das missões pausadas (por missionId). O loop do
  *  launch fica aguardando; answerGate resolve com as respostas, abort com null. */
 const gateWaiters = new Map<string, (answers: string[] | null) => void>()
+
+/** Recuperação: resolvedores das missões pausadas numa falha recuperável (por
+ *  missionId). MESMO padrão do gate — o while da fase aguarda; resolveRecovery
+ *  resolve com a escolha (re-roda), abortRecovery/abort resolvem com null
+ *  (desiste). */
+const recoveryWaiters = new Map<string, (choice: RecoveryChoice | null) => void>()
 
 export const useMission = create<MissionState>((set, get) => {
   /** Patch parcial do MissionRun de UMA conversa (no-op se não existir). */
@@ -264,50 +282,137 @@ export const useMission = create<MissionState>((set, get) => {
           startedAt: Date.now(),
         }))
 
-        const result: PhaseResult = await runPhase({
-          runId: phaseRunId(missionId, i),
-          convId,
-          agent: def.agent,
-          model: def.model,
-          effort: def.effort,
-          prompt,
-          cwd,
-          permission,
-          maxRetries: def.maxRetries,
-          // anexos só na 1ª fase (i === 0): acompanham o pedido original; as
-          // fases seguintes herdam o contexto pelo handoff/worktree.
-          attachments: i === 0 ? attachments : undefined,
-          onProgress: (attempt, items) =>
-            patchPhase(convId, i, (ph) => ({ ...ph, attempt, items } as MissionPhaseRun)),
-        })
+        // ── RECUPERAÇÃO: re-roda a MESMA fase i (mesmo prompt, sem i++) quando a
+        // falha é RECUPERÁVEL (limite/rate-limit/crédito) e o usuário escolhe
+        // outro agent. Espelha o gate: pausa em recovery e aguarda a escolha. O
+        // custo é REAL a cada tentativa (soma todas), o prompt não muda entre
+        // elas — só o agent/modelo/effort da def da fase corrente.
+        let result: PhaseResult
+        while (true) {
+          const cur = phases[i]
+          result = await runPhase({
+            runId: phaseRunId(missionId, i),
+            convId,
+            agent: cur.agent,
+            model: cur.model,
+            effort: cur.effort,
+            prompt,
+            cwd,
+            permission,
+            maxRetries: cur.maxRetries,
+            // anexos só na 1ª fase (i === 0): acompanham o pedido original; as
+            // fases seguintes herdam o contexto pelo handoff/worktree.
+            attachments: i === 0 ? attachments : undefined,
+            onProgress: (attempt, items) =>
+              patchPhase(convId, i, (ph) => ({ ...ph, attempt, items } as MissionPhaseRun)),
+          })
 
-        // abortada DURANTE a fase (o run saiu por cancel) → não sobrescreve.
-        const after = get().byConv[convId]
-        if (!after || after.status !== "running") return
+          // abortada DURANTE a fase (o run saiu por cancel) → não sobrescreve.
+          const after = get().byConv[convId]
+          if (!after || after.status !== "running") return
 
-        patchConv(convId, (cur) => ({ costTotal: cur.costTotal + result.costUsd }))
-        patchPhase(convId, i, (ph) => ({
-          ...ph,
-          status: result.ok ? "done" : "error",
-          costUsd: result.costUsd,
-          error: result.error,
-        }))
+          // custo acumulado da fase E da missão — cada tentativa gastou de fato.
+          patchConv(convId, (c) => ({ costTotal: c.costTotal + result.costUsd }))
 
-        if (!result.ok) {
-          patchConv(convId, { status: "error", current: i })
-          return
+          if (result.ok) {
+            patchPhase(convId, i, (ph) => ({
+              ...ph,
+              status: "done",
+              costUsd: ph.costUsd + result.costUsd,
+              error: undefined,
+            }))
+            break
+          }
+
+          // falha NÃO-recuperável (bug, timeout, cancel) → kill atual: a fase e a
+          // missão vão a error e o loop morre (comportamento herdado).
+          if (!isRecoverableFailure(result)) {
+            patchPhase(convId, i, (ph) => ({
+              ...ph,
+              status: "error",
+              costUsd: ph.costUsd + result.costUsd,
+              error: result.error,
+            }))
+            patchConv(convId, { status: "error", current: i })
+            return
+          }
+
+          // falha RECUPERÁVEL → PAUSA em recovery e aguarda a escolha do usuário.
+          patchPhase(convId, i, (ph) => ({
+            ...ph,
+            status: "error",
+            costUsd: ph.costUsd + result.costUsd,
+            error: result.error,
+          }))
+          patchConv(convId, {
+            recovery: {
+              phase: i,
+              error: result.error ?? "falha recuperável",
+              message: recoveryMessage(result),
+            },
+          })
+          const choice = await new Promise<RecoveryChoice | null>((resolve) => {
+            recoveryWaiters.set(missionId, resolve)
+          })
+          recoveryWaiters.delete(missionId)
+          // abortada por fora durante a espera (abort/clear resolveram null e já
+          // marcaram aborted): não força error, só sai do loop da missão.
+          const still = get().byConv[convId]
+          if (!still || still.status !== "running") return
+          patchConv(convId, { recovery: null })
+          if (choice === null) {
+            // desistiu (abortRecovery) → a missão vai a error, como antes.
+            patchConv(convId, { status: "error", current: i })
+            return
+          }
+          // budget HARD também no re-run (o checkBudget do topo só roda ao ENTRAR
+          // numa fase nova; sem isto o teto seria furado ao retomar — o caminho
+          // mais caro é justamente re-rodar a fase que falhou). Recusa a
+          // recuperação já estourada em vez de gastar e só então morrer.
+          const rebud = checkBudget(still.costTotal, still.maxCostUsd)
+          if (!rebud.ok) {
+            patchPhase(convId, i, (ph) => ({
+              ...ph,
+              status: "error",
+              error: rebud.reason,
+            }))
+            patchConv(convId, { status: "error", current: i })
+            return
+          }
+          // troca a def da fase corrente e RE-RODA a MESMA fase (volta ao topo do
+          // while). O índice i NÃO avança; o prompt já montado é reusado.
+          phases[i] = {
+            ...phases[i],
+            agent: choice.agent,
+            model: choice.model,
+            effort: choice.effort,
+          }
+          patchPhase(convId, i, (ph) => ({
+            ...ph,
+            def: {
+              ...ph.def,
+              agent: choice.agent,
+              model: choice.model,
+              effort: choice.effort,
+            },
+            status: "running",
+            attempt: 1,
+            startedAt: Date.now(),
+            error: undefined,
+          }))
         }
 
         prevItems = result.items
 
         // M1: captura o plano (1º planner) e o executor (1º executor) p/ a
-        // entrega. `phaseText` já filtra só o texto (sem tool calls).
+        // entrega. `phaseText` já filtra só o texto (sem tool calls). O agent do
+        // executor sai de phases[i] (pode ter trocado na recuperação).
         if (def.persona === "planner" && !plannerSummary) {
           plannerSummary = phaseText(result.items)
         }
         if (def.persona === "executor" && !execAgent) {
-          execAgent = def.agent
-          execModel = def.model
+          execAgent = phases[i].agent
+          execModel = phases[i].model
         }
 
         // M2 — loop de correção: reviewer terminou mas NÃO aprovou → reinjeta as
@@ -333,7 +438,7 @@ export const useMission = create<MissionState>((set, get) => {
                 `além do necessário:\n\n${feedback}`,
             }
             const rereview: MissionPhaseDef = {
-              ...def,
+              ...phases[i],
               id: `rereview-${round}-${missionId.slice(0, 6)}`,
               label: `Revisar (rodada ${round})`,
             }
@@ -452,18 +557,25 @@ export const useMission = create<MissionState>((set, get) => {
       patchConv(convId, (cur) => ({
         status: "aborted",
         gate: null,
+        recovery: null,
         phases: cur.phases.map((ph, i) =>
           i === idx && ph.status === "running" ? { ...ph, status: "aborted" } : ph,
         ),
       }))
+      // libera o loop se estava pausado num gate OU numa recuperação (resolve
+      // null; o while checa status !== "running" e sai sem forçar error).
       gateWaiters.get(run.id)?.(null)
+      recoveryWaiters.get(run.id)?.(null)
     },
 
     clear: (convId) =>
       set((s) => {
-        // gate pendente em missão descartada → libera o loop (resolve null).
+        // gate/recovery pendente em missão descartada → libera o loop (null).
         const run = s.byConv[convId]
-        if (run) gateWaiters.get(run.id)?.(null)
+        if (run) {
+          gateWaiters.get(run.id)?.(null)
+          recoveryWaiters.get(run.id)?.(null)
+        }
         const rest = { ...s.byConv }
         delete rest[convId]
         return { byConv: rest }
@@ -473,6 +585,18 @@ export const useMission = create<MissionState>((set, get) => {
       const run = get().byConv[convId]
       if (!run?.gate) return
       gateWaiters.get(run.id)?.(answers)
+    },
+
+    resolveRecovery: (convId, choice) => {
+      const run = get().byConv[convId]
+      if (!run?.recovery) return
+      recoveryWaiters.get(run.id)?.(choice)
+    },
+
+    abortRecovery: (convId) => {
+      const run = get().byConv[convId]
+      if (!run?.recovery) return
+      recoveryWaiters.get(run.id)?.(null)
     },
   }
 })

@@ -6,6 +6,7 @@
 
 import { runAgent, type AgentEvent, type CostSource } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
+import { matchesResumePattern } from "@/lib/autoResume"
 import { reduceItems, type ChatItem, type ItemReducible } from "@/store/chat"
 import type { MissionPersona } from "@/lib/missionTypes"
 import { handoffInstruction } from "@/lib/missionHandoff"
@@ -277,6 +278,31 @@ export async function runPhase(args: RunPhaseArgs): Promise<PhaseResult> {
     costSource,
     error: lastError,
   }
+}
+
+// ── Recuperação de fase (onda 2): a fase falhou por LIMITE, não por bug ──
+
+/** A falha de uma fase é RECUPERÁVEL (trocar de agent/modelo resolve)? Sinais:
+ *  - FORTE: um item kind:"limit" no transcript da fase (limite da CLI durante o
+ *    run — o mesmo cartão acionável do chat).
+ *  - HEURÍSTICO: a mensagem de erro casa os padrões de rate-limit/espera/crédito
+ *    (reuso de lib/autoResume — mesmo detector do auto-resume).
+ *  Falha recuperável → a missão PAUSA em recovery em vez de morrer. */
+export function isRecoverableFailure(result: PhaseResult): boolean {
+  if (result.ok) return false
+  if (result.items.some((it) => it.kind === "limit")) return true
+  if (result.error && matchesResumePattern(result.error)) return true
+  return false
+}
+
+/** Mensagem humana do card de recuperação: explica a pausa e o que fazer. O
+ *  sinal FORTE (limit) e o heurístico têm textos levemente diferentes. */
+export function recoveryMessage(result: PhaseResult): string {
+  const hitLimit = result.items.some((it) => it.kind === "limit")
+  const base = hitLimit
+    ? "A fase bateu num limite de uso do agent."
+    : "A fase parou por limite de uso, espera ou crédito."
+  return `${base} Escolha outro agent/modelo para retomar de onde parou (o worktree e o handoff já estão prontos).`
 }
 
 // ── Budget ──

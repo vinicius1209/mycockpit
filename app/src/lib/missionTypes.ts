@@ -70,6 +70,27 @@ export interface MissionGate {
   questions: string[]
 }
 
+/** Recuperação de missão: a fase `phase` falhou de forma RECUPERÁVEL (limite de
+ *  uso / rate limit / crédito) — a missão PAUSA (espelha o gate) e só continua
+ *  depois de resolveRecovery() (troca de agent/modelo/effort e re-roda a MESMA
+ *  fase) ou abortRecovery() (desiste → a missão vai a error). */
+export interface MissionRecovery {
+  /** Índice da fase que falhou (a que será re-rodada com o novo agent). */
+  phase: number
+  /** Mensagem de erro crua da última tentativa (do PhaseResult.error). */
+  error: string
+  /** Mensagem humana pro card da UI (explica a pausa + o que fazer). */
+  message: string
+}
+
+/** Escolha do usuário na recuperação: novo agent/modelo/effort p/ re-rodar a
+ *  fase corrente. null (em resolveRecovery/abortRecovery) = desistir. */
+export interface RecoveryChoice {
+  agent: string
+  model: string | null
+  effort: string | null
+}
+
 /** Resumo estruturado da conclusão (do handoff da última fase que emitiu). */
 export interface MissionDoneSummary {
   intent: string | null
@@ -92,6 +113,10 @@ export interface MissionRun {
   startedAt: number
   /** Gate pendente (precisa de você). null/undefined = nada pendente. */
   gate?: MissionGate | null
+  /** Recuperação pendente: uma fase falhou de forma recuperável e a missão
+   *  aguarda a escolha de agent (resolveRecovery) ou a desistência
+   *  (abortRecovery). null/undefined = nada pendente. */
+  recovery?: MissionRecovery | null
   /** Resumo estruturado quando done/error (best-effort dos handoffs). */
   doneSummary?: MissionDoneSummary | null
 }

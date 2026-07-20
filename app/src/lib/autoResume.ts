@@ -32,6 +32,13 @@ const RESUME_PATTERNS: RegExp[] = [
   /back(ing)?[\s-]?off/i,
 ]
 
+/** O texto casa algum padrão de rate-limit / espera / retry? Reuso do detector
+ *  de auto-resume pela RECUPERAÇÃO de missão (lib/mission.isRecoverableFailure):
+ *  o mesmo sinal que revive um turno decide se uma fase falha é recuperável. */
+export function matchesResumePattern(text: string): boolean {
+  return RESUME_PATTERNS.some((re) => re.test(text))
+}
+
 export interface AutoResumeVerdict {
   /** true = o turno pede um resume automático. */
   resume: boolean
