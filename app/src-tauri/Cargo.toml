@@ -25,7 +25,11 @@ tauri = { version = "2.11.3", features = ["tray-icon", "image-png", "macos-priva
 tauri-plugin-log = "2"
 tauri-plugin-sql = { version = "2.4.0", features = ["sqlite"] }
 tauri-plugin-dialog = "2.7.1"
-tauri-plugin-decorum = "1.1.1"
+# Pin no git: o 1.1.1 do crates.io crasha no boot em macOS 26 (null pointer no
+# superview dos traffic lights ao criar janela SEM decoração — o tray-popover).
+# Fix mergeado em ago/2025 (issue #46 / PR #47) mas nunca lançado. Voltar ao
+# crates.io quando sair release > 1.1.1.
+tauri-plugin-decorum = { git = "https://github.com/clearlysid/tauri-plugin-decorum", rev = "9f1f73636821c3cb8b940524214b940b7999ef6e" }
 tokio = { version = "1", features = ["process", "io-util", "io-std", "net", "macros", "rt", "rt-multi-thread", "sync", "time"] }
 toml_edit = "0.22"
 blake3 = "1"      # hash do conteúdo de anexos (nome de arquivo + dedup)
