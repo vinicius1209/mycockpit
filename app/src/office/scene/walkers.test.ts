@@ -203,6 +203,45 @@ describe("createWalkerSystem", () => {
     sys.clear()
   })
 
+  it("callback que cancela OUTRO walker no meio do update não pula ninguém", () => {
+    const plan = openPlan()
+    const sys = createWalkerSystem(plan)
+    const a = sys.spawn({
+      agent: AGENT,
+      color: COLOR,
+      seed: 6,
+      from: { x: 1.5, y: 1.5 },
+      to: { x: 2.5, y: 1.5 }, // 1 tile: chega no primeiro update(1)
+    })
+    const b = sys.spawn({
+      agent: AGENT,
+      color: COLOR,
+      seed: 7,
+      from: { x: 5.5, y: 5.5 },
+      to: { x: 9.5, y: 5.5 },
+    })
+    const c = sys.spawn({
+      agent: AGENT,
+      color: COLOR,
+      seed: 8,
+      from: { x: 8.5, y: 8.5 },
+      to: { x: 12.5, y: 8.5 },
+    })
+    // A chega e, DENTRO do loop de update, cancela B (eviction via callback).
+    a.onArrive(() => b.cancel())
+    const cStart = { ...c.pos }
+    sys.update(1)
+    expect(b.done).toBe(true)
+    expect(b.root.destroyed).toBe(true)
+    // C (depois de B na lista) andou EXATAMENTE speed*dt neste MESMO frame —
+    // a eviction no meio do loop não pulou o update dele.
+    expect(dist(c.pos, cStart)).toBeCloseTo(WALKER_SPEED, 6)
+    // updates seguintes não explodem nem ressuscitam B
+    sys.update(0.1)
+    expect(b.done).toBe(true)
+    sys.clear()
+  })
+
   it("usa WALKER_SPEED (~3 tiles/s) por padrão", () => {
     expect(WALKER_SPEED).toBe(3)
     const plan = openPlan()

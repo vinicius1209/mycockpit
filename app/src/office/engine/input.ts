@@ -12,7 +12,6 @@
 import type { World } from "./types"
 
 export type InputHandlers = {
-  isDockOpen(): boolean
   isTextTarget(e: KeyboardEvent): boolean
   /** Office visível? O App mantém o office MONTADO (hidden) ao trocar de modo
    *  e o attachInput continua vivo — oculto, NENHUMA tecla é consumida (sem

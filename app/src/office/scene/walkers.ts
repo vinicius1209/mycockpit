@@ -218,8 +218,12 @@ export function createWalkerSystem(plan: FloorPlan): WalkerSystem {
 
     update(dtSec, reducedMotion = false) {
       clock += dtSec
-      for (let i = walkers.length - 1; i >= 0; i--) {
-        const st = walkers[i]
+      // Itera um SNAPSHOT: callbacks (fireArrive/fireGone) podem cancelar
+      // walkers — cancel() faz splice em `walkers` na hora — e um splice no
+      // meio da iteração pularia/duplicaria o update de um vizinho neste
+      // frame. A eviction dos que terminaram acontece DEPOIS do loop.
+      for (const st of [...walkers]) {
+        if (st.phase === "gone") continue // cancelado por callback neste frame
         const walking = st.path.length > 0
         if (walking) {
           const { dir, arrived } = stepAlongPath(st.pos, st.path, st.speed * dtSec)
@@ -232,8 +236,7 @@ export function createWalkerSystem(plan: FloorPlan): WalkerSystem {
               st.phase = "arrived"
               fireArrive(st)
             } else if (st.phase === "leaving") {
-              fireGone(st)
-              walkers.splice(i, 1)
+              fireGone(st) // avatar destruído; eviction pós-loop
               continue
             }
           }
@@ -244,11 +247,16 @@ export function createWalkerSystem(plan: FloorPlan): WalkerSystem {
           fireArrive(st)
         } else if (st.phase === "leaving") {
           fireGone(st)
-          walkers.splice(i, 1)
           continue
         }
-        st.avatar.updateAnim(clock, reducedMotion)
+        // widen: fireArrive pode ter cancelado ESTE walker (cancel() no
+        // callback muta st.phase → "gone"); o narrowing do TS não enxerga.
+        if ((st.phase as WalkerState["phase"]) !== "gone")
+          st.avatar.updateAnim(clock, reducedMotion)
       }
+      // Eviction pós-loop: remove todos os "gone" (cancel() já se removeu).
+      for (let i = walkers.length - 1; i >= 0; i--)
+        if (walkers[i].phase === "gone") walkers.splice(i, 1)
     },
 
     clear() {

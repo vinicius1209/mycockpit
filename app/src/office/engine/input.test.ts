@@ -38,7 +38,6 @@ function fakeKey(key: string, over: Record<string, unknown> = {}): KeyboardEvent
 
 function makeHandlers(over: Partial<InputHandlers> = {}): InputHandlers {
   return {
-    isDockOpen: () => false,
     isTextTarget: () => false,
     onEscape: vi.fn(),
     onInteract: vi.fn(),
@@ -96,7 +95,7 @@ describe("attachInput — roteamento de teclado (§5)", () => {
 
   it("Tab sempre segue a navegação de foco", () => {
     const world = makeWorld()
-    const handlers = makeHandlers({ isDockOpen: () => true })
+    const handlers = makeHandlers()
     const { target } = attach(world, handlers)
     const e = fakeKey("Tab")
     target.dispatch("keydown", e)

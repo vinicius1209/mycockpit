@@ -78,6 +78,19 @@ function safeScreenOffset(rightPanelW: number) {
   }
 }
 
+/** FONTE ÚNICA da largura do slot direito (dock da mesa/missão e Central
+ *  compartilham o slot). Todo deslocamento de câmera (screenOffset) e todo
+ *  enquadramento (inspect*) derivam DAQUI — nunca recalcule inline. */
+function rightPanelWidth(
+  dockOpen: boolean,
+  bossCenterOpen: boolean,
+  dockWide: boolean,
+) {
+  return dockOpen || bossCenterOpen
+    ? Math.max(activeDockWidth(dockWide), BOSS_CENTER_W)
+    : 0
+}
+
 function applyRoomFit(
   world: World,
   host: HTMLDivElement,
@@ -176,8 +189,11 @@ export default function OfficeMode({ hidden = false }: { hidden?: boolean }) {
 
   function activePanelWidth() {
     // Largura VIVA do slot direito: dock padrão ou ALARGADO (gate visível).
-    const w = activeDockWidth(useOfficeUi.getState().dockWide)
-    return dockOpen || bossCenterOpen ? Math.max(w, BOSS_CENTER_W) : 0
+    return rightPanelWidth(
+      dockOpen,
+      bossCenterOpen,
+      useOfficeUi.getState().dockWide,
+    )
   }
 
   // Selecao explicita de sala ⇒ inspect com zoom calculado para a area segura.
@@ -304,10 +320,6 @@ export default function OfficeMode({ hidden = false }: { hidden?: boolean }) {
 
       detach.push(
         attachInput(window, world, {
-          isDockOpen: () => {
-            const s = useOfficeUi.getState()
-            return s.dockDeskId !== null && !s.dockMinimized
-          },
           isTextTarget: (e: KeyboardEvent) => {
             const el = e.target as HTMLElement | null
             if (!el || typeof el.tagName !== "string") return false
@@ -406,14 +418,10 @@ export default function OfficeMode({ hidden = false }: { hidden?: boolean }) {
               : null
           if (promptTarget !== previousPromptTarget)
             stage.setPromptTarget(promptTarget)
-          // Dock aberto desloca o centro de framing por meia largura (§3).
-          // Convenção do engine/camera.ts: screenOffset é onde o ALVO aparece
-          // relativo ao centro — dock à DIREITA ⇒ alvo à esquerda ⇒ x NEGATIVO.
-          // dockWide (gate card visível) alarga o painel ⇒ mesmo tratamento.
-          if (open !== wasOpen || s.dockWide !== prev.dockWide)
-            world.camera.screenOffset = safeScreenOffset(
-              open ? activeDockWidth(s.dockWide) : 0,
-            )
+          // Nada de screenOffset aqui: o ESCRITOR ÚNICO é o effect
+          // [dockOpen, bossCenterOpen, dockWide, ready] lá embaixo — dockOpen e
+          // dockWide são estado React (useOfficeUi hooks), então qualquer
+          // mudança destes campos re-renderiza e o effect reaplica o offset.
           // Conversa aberta ⇒ o agent da mesa olha pro boss (§5.4 v2); fechar
           // (ou minimizar) devolve o flip original. Cobre também a TROCA de
           // mesa com o dock aberto.
@@ -537,13 +545,16 @@ export default function OfficeMode({ hidden = false }: { hidden?: boolean }) {
     if (dockOpen && bossCenterOpen) setBossCenterOpen(false)
   }, [dockOpen, bossCenterOpen])
 
+  // ESCRITOR ÚNICO de world.camera.screenOffset por estado de painel (§3).
+  // Convenção do engine/camera.ts: screenOffset é onde o ALVO aparece relativo
+  // ao centro — painel à DIREITA ⇒ alvo à esquerda ⇒ x NEGATIVO. O applyRoomFit
+  // (inspect explícito) também escreve, mas sempre derivando a MESMA largura
+  // via activePanelWidth/rightPanelWidth — uma única fonte, nunca diverge.
   useEffect(() => {
     const world = worldRef.current
     if (!world) return
     world.camera.screenOffset = safeScreenOffset(
-      dockOpen || bossCenterOpen
-        ? Math.max(activeDockWidth(dockWide), BOSS_CENTER_W)
-        : 0,
+      rightPanelWidth(dockOpen, bossCenterOpen, dockWide),
     )
   }, [dockOpen, bossCenterOpen, dockWide, ready])
 

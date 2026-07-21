@@ -1,4 +1,5 @@
-// HUD do Agent Office — topo no chrome do spike (office-web) com os tokens do
+// HUD do Agent Office — topo no chrome do spike office-web (arquivado em
+// docs/archive/office-web-spike.zip) com os tokens do
 // app: wordmark pequena, botão Central (👑 — briefing + missão), pílula de
 // custo TOTAL e chip do dock minimizado (§5.4). A NAVEGAÇÃO de sala vive 100%
 // na rail (Sidebar), incl. áreas comuns — o topo não repete badges. Rodapé =

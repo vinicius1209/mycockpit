@@ -36,7 +36,6 @@ builds/
 # Artefatos de missão (transientes / spikes gerados pelos agents; ficam no
 # disco mas fora do controle de versão). Remova daqui se quiser versionar.
 .mission/
-office-web/
 
 # Sessões locais do Claude Code (transcripts/estado — nunca versionar)
 .claude/projects/

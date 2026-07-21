@@ -1,9 +1,10 @@
 # Agent Office — escritório virtual interativo
 
 > Design doc v2 (revisado por painel adversarial: game feel, integração, performance).
-> Evolução do spike `office-web/` (M0, SVG estático) para uma superfície interativa
-> dentro do app. O spike permanece como **spec visual**; o código novo vive em
-> `app/src/office/`.
+> Evolução do spike office-web (M0, SVG estático) para uma superfície interativa
+> dentro do app. O spike foi arquivado como **spec visual** em
+> `docs/archive/office-web-spike.zip` (src + index.html + vite.config.ts +
+> README); o código vivo mora em `app/src/office/`.
 
 ## 1. Visão
 
@@ -27,7 +28,7 @@ game feel de verdade (60fps, câmera, colisão, proximidade).
 | O3 | **Sim em passo fixo 60Hz**; mundo mutável fora do React; zustand só recebe **transições discretas** | Clamp de 250ms no acumulador; pausa em `visibilitychange`; blur limpa teclas. **Boss renderiza sem interpolação** (snap ao estado da sim — latência de input mínima); interpolação só para NPCs e câmera. |
 | O4 | **Projeção diamond 2:1** (`TILE_W=64`, `TILE_H=32`), coordenadas contínuas em tiles (float), y-sort por escalar (`screenY` dos pés) | Fórmulas fechadas world↔screen p/ picking. Mesas fatiadas **base + tampo**; segmentos de parede lateral na camada dinâmica (ocluem o boss corretamente). Velocidade constante em **espaço de mundo**, vetor de input normalizado (mesma |v| nas 8 direções — teste de engine). |
 | O5 | **Grid global `Uint8Array`** com bitflags (`WALK\|DOOR\|INTERACT`), A* 8-direções próprio (heap binário, octile, sem corner-cutting) + string-pulling; move-and-slide com AABB nos pés | Salas pequenas; lib de pathfinding é dependência desnecessária. Clique em tile bloqueado clampa para o walkable alcançável mais próximo. |
-| O6 | **Visual = spec do spike**, portado como `Graphics`/`GraphicsContext` programáticos | Paths do spike não têm arcos (só M/L/h/v/c/Z) — portam direto. Sombras = elipses alpha (sem filtros); glow de lâmpada = elipses alpha empilhadas (sem radial gradient obrigatório). Avatar decomposto em **partes com pivot** (corpo/braços/cabeça/props de estado); partes monocromáticas em geometria branca + `tint` por instância. Animação só transform/alpha, **fase aleatória por instância** (nada de uníssono), 2–3 variações de idle. Boss: bob vertical ao andar + flip por direção + squash ao parar. `prefers-reduced-motion` ⇒ poses estáticas. |
+| O6 | **Visual = spec do spike** (arquivado em `docs/archive/office-web-spike.zip`), portado como `Graphics`/`GraphicsContext` programáticos | Paths do spike não têm arcos (só M/L/h/v/c/Z) — portam direto. Sombras = elipses alpha (sem filtros); glow de lâmpada = elipses alpha empilhadas (sem radial gradient obrigatório). Avatar decomposto em **partes com pivot** (corpo/braços/cabeça/props de estado); partes monocromáticas em geometria branca + `tint` por instância. Animação só transform/alpha, **fase aleatória por instância** (nada de uníssono), 2–3 variações de idle. Boss: bob vertical ao andar + flip por direção + squash ao parar. `prefers-reduced-motion` ⇒ poses estáticas. |
 | O7 | **Envio de mensagem via `office/bridge/send.ts`** compondo APIs exportadas — ChatPanel intocado. Pré-requisitos fora de `office/` (§6.1) | A coreografia completa está em §5.6 — inclui as guardas e as peças de continuidade que o `handleSend` real tem. Testes de paridade com lista fechada (§9). |
 | O8 | **Funciona no browser puro (vite dev) com dados simulados** — tudo que toca Tauri passa por `isTauri()` e tem fixture (`bridge/sim-data.ts`) | Desenvolvimento e verificação visual sem subir o Tauri; o spike já era "simulação". |
 
