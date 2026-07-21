@@ -1,7 +1,7 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
-export type NotifKind = "run_done" | "run_error" | "limit"
+export type NotifKind = "run_done" | "run_error" | "limit" | "gate"
 
 export interface Notification {
   id: string

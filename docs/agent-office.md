@@ -35,9 +35,12 @@ game feel de verdade (60fps, câmera, colisão, proximidade).
 
 - **Planta**: corredor horizontal central; salas em **duas fileiras** (acima e
   abaixo), uma por projeto (ordem de `listProjects`; alvo O-1: até 8 projetos).
-  Sala 10×8 tiles, porta de 2 tiles para o corredor. Com 1 projeto, o corredor
+  Sala 12×8 tiles, porta de 2 tiles para o corredor, faixa de estações ao norte,
+  circulação central livre e apoio/verde restrito ao perímetro. Com 1 projeto, o corredor
   encolhe ao tamanho da sala (nada de maquete vazia).
-- **Sala**: 3 mesas (claude-code, codex, agy), plantas, nome do projeto na parede
+- **Sala**: 3 estações (claude-code, codex, agy) recuadas da parede, com faixa
+  técnica para cadeiras, atendimento frontal e corredor transversal contínuo;
+  plantas e apoios ficam restritos aos nichos periféricos, e o nome do projeto aparece na parede
   (cor do projeto). CLI não detectado ⇒ mesa apagada; hover/clique explica
   ("Codex não detectado") e aponta para settings. Zero projetos ⇒ CTA de adicionar.
 - **Paredes**: sala vista de dentro — paredes norte/oeste altas (fundo), lados
@@ -47,7 +50,7 @@ game feel de verdade (60fps, câmera, colisão, proximidade).
   corredor. WASD/setas em espaço de **tela** convertido pra mundo; click-to-move
   com A*; WASD cancela click-to-move.
 - **Câmera — máquina de estados**: `follow` (deadzone + suavização exponencial) ·
-  `inspect` (entrado por Tab/pan manual/badge do HUD; sai no primeiro input de
+  `inspect` (entrado por R/badge do HUD; sai no primeiro input de
   movimento do boss, com lerp de retorno). Zoom 0.5–2.5 em torno do cursor;
   durante o gesto de zoom o alvo do follow congela. Dock aberto desloca o centro
   de framing pela metade da largura do painel. Clamp aos limites do mundo.
@@ -132,8 +135,8 @@ clique = câmera vai à sala (modo `inspect`). Gate fora da tela nunca fica invi
    que depende do CommandConsole dentro do ChatPanel oculto).
 
 **Teclado — roteamento**: `input.ts` descarta keydown vindo de
-input/textarea/contentEditable e, com dock aberto, devolve Tab à navegação de
-foco. Com dock fechado: `WASD`/setas move · `E` interage · `Tab` cicla salas
+input/textarea/contentEditable e devolve Tab à navegação de foco.
+`WASD`/setas move · `E` interage · `R` cicla salas
 (preventDefault) · `+/-`/wheel zoom. **Esc — coordenador único com prioridade**:
 gravando ⇒ cancela ditado; dock aberto ⇒ fecha dock; senão ⇒ nada (sair do
 office é pelo ModeSwitcher/⌘K). Teste de engine: tecla vinda de campo de texto
@@ -158,7 +161,8 @@ Regras de dependência: `engine` não importa nada; `scene` importa `engine`;
 `engine/types`); `ui` importa `bridge` + `scene` + `engine` (o `OfficeMode` é a
 raiz de composição — cria mundo/loop/input) e as utilidades sancionadas do app
 (`cn`, `Markdown`); stores do app na `ui` só via hooks do `bridge`. Nada fora
-de `office/` importa de dentro (exceto o lazy `OfficeMode` e o comando do ⌘K).
+de `office/` importa de dentro (exceto o lazy `OfficeMode`, o comando do ⌘K e
+a ponte do Companion Web — `src/lib/companion.ts`, §6.1 item 5).
 
 **Labels** (nome/estado): Pixi `Text` na camada própria, **escala inversa ao zoom**
 (texto sempre nítido, padrão Gather), `resolution = DPR`, criados após
@@ -183,6 +187,12 @@ projeta).
 4. `InteractionHost` sobe do ChatPanel para o `App.tsx` (host global único —
    funciona em qualquer modo; office adiciona só o beacon na mesa quando o
    request é mapeável). Sem segunda fila de interações.
+5. **Companion Web** (§8): `src/lib/companion.ts` é importador SANCIONADO do
+   `office/bridge/send` (`ensureDeskConversation`/`sendFromDesk`/
+   `cancelDeskTurn`) — o celular envia turnos às mesas pelos MESMOS fluxos e
+   guardas da mesa (nenhum caminho novo de envio). `App.tsx` importa
+   `@/lib/companion` por efeito (liga o push de estado + executor de
+   `companion://action`).
 
 ## 7. Performance (orçamento de frame)
 
@@ -201,6 +211,54 @@ projeta).
 
 ## 8. Ondas
 
+### Harness semântico de mobiliário
+
+- Móveis compostos não dependem apenas de pixels. A fonte única em
+  `engine/furniture.ts` descreve footprint, tampos, itens apoiados, assentos,
+  direção e eixos de uso; layout e renderer consomem a mesma especificação.
+- `validateFurnitureAssembly` falha quando um tampo sai do footprint, superfícies
+  se desconectam, equipamento fica sem apoio, cadeira escapa da colisão, posto de
+  trabalho perde o eixo ou assentos deixam de olhar para o alvo.
+- O teste negativo preserva o defeito conhecido (monitor deslocado em relação à
+  cadeira) como regressão detectável, em vez de comparar duas implementações.
+- A camada visual usa viewport, DPR, animação e relógio fixos e recortes E2E por
+  conjunto. Snapshots pixel a pixel entram somente para clipping e z-order; as
+  regras de arquitetura e ergonomia continuam geométricas para reduzir falsos
+  positivos.
+
+### Diretoria e Central do Boss
+
+- Referência conceitual gerada com GPT Image:
+  [`docs/visual-reference/office-boss-room-concept-v2.png`](visual-reference/office-boss-room-concept-v2.png).
+  A imagem orienta hierarquia, proporção e composição; o runtime continua
+  code-native para preservar y-sort, colisão, tema e acessibilidade.
+- O boss nasce em uma sala própria e determinística, com mesa executiva,
+  assento, quadro, estante e circulação preservada pelo mesmo grid de colisão do
+  restante do escritório.
+- A **Central do Boss** é uma projeção do `OfficeSnapshot`: atenção pendente,
+  agents ativos, entregas recentes, custo por projeto e composição das equipes.
+  Ela não inventa atividade nem faz chamadas adicionais aos agents.
+- Delegar para um agent abre o `convId` exato da mesa. **Nova missão** abre a
+  mesa de missão existente. Assim, texto, voz, escolha de modelo e effort
+  continuam usando os fluxos reais e suas guardas de segurança; a Central não
+  envia nem aprova ações automaticamente.
+- **Central-standup**: o topo da Central é uma linha-narrativa humana derivada
+  do `bossBriefing` ("3 precisam de você · 2 rodando · 1 entrega recente ·
+  US$ 15,00 hoje"), escondendo termos zerados — zero chamadas novas. O quad de
+  stats vira secundário (Atenção · Ativos · Entregas; o custo mora só na
+  narrativa) e o stat **Atenção** é clicável: voa até a primeira mesa com a mão
+  levantada. Delegar é enxuto: CTA "Nova missão" + um seletor compacto
+  "Falar com…" (projeto × agent) no lugar da antiga grade de botões.
+- **Posto de comando físico**: a mesa executiva da diretoria é um interactable
+  (`BOSS_DESK_ID`, mesmo padrão da `MISSION_TABLE_ID`) — proximidade mostra o
+  menu-balão "Abrir Central" e E/clique abre a Central (`requestBossCenter` no
+  store, consumido pelo OfficeMode). Andar até a própria mesa = abrir o próprio
+  briefing; o posto de comando é um LUGAR, não só um botão no HUD.
+- Visitas físicas ficam para a próxima onda e devem refletir um evento real por
+  uma máquina de estados explícita (`seated -> walking-to-boss -> waiting ->
+  returning`), com A*, fila, timeout e retorno à mesa. Movimento decorativo não
+  pode sugerir que existe uma solicitação ou entrega inexistente.
+
 - **O-1 (esta)**: engine + cena + salas por projeto (2 fileiras) + boss + câmera
   (máquina de estados) + estados ao vivo + dock de conversa real (texto e voz) +
   gates de missão + beacons de approval + HUD com badges + LOD + onboarding
@@ -210,6 +268,111 @@ projeta).
   entrega ricos; sons discretos; segunda janela (multi-monitor) com fan-out de
   eventos (`emit_to`).
 - **O-3**: minimapa; quadro de avisos (schedules); presença do Fusion.
+
+**Backlog (aprovado, aguardando onda):**
+- Reserva de mesa-ALVO nos comportamentos: a visita do reviewer mira a mesa do
+  executor, mas nada impede o executor de sair pro café no meio — o reviewer
+  revisa uma cadeira vazia. Fix: comportamento com alvo reserva a mesa visitada
+  (cancela/bloqueia café do alvo enquanto durar; prioridade da visita já é
+  maior). Teste: cenário exato da screenshot de 21/jul. [EM ANDAMENTO — onda
+  gate-reunião]
+- Aprovações CONTEXTUAIS: o GlobalInteractionHost (canto inferior direito) é
+  cego ao contexto — no Trabalho com a conversa dona do pedido VISÍVEL (ex.:
+  timeline de missão aberta), o card deveria renderizar INLINE no fluxo (no
+  card da fase que pediu), e o toast global ficar só para pedidos de outra
+  conversa/modo. Contextual quando você olha; global quando não.
+- COMPANION WEB (celular na mesma rede) — design aprovado em conceito,
+  planejar após o gate-reunião: espelho + controle remoto do app ABERTO
+  (nunca segundo cérebro — o motor vive na webview main; missões morrem com o
+  app, e isso não muda). Padrão da ponte = tray-snapshot/tray-action escalado:
+  servidor HTTP+WS pequeno no Rust; estado OUT = bossBriefing/snapshot que já
+  existem; ações IN = POST → `companion://action` → webview main executa pelos
+  MESMOS answerGate/answerInteraction/abort (guardas intactas). Pareamento por
+  QR nas Settings (token; LAN only). Sinergia: gate rico + celular = responder
+  gate anexando FOTO da câmera. Padrões absorvidos do estudo MyPeople
+  (~/projetos/mypeople): ping de eventos (WS + Web Notifications), watchdog
+  anti-abandono (gate mudo re-notifica), auth honesta (socket sem heartbeat
+  não é "conectado"). ESCOPO v1 DECIDIDO (21/jul): triagem + CHAT COMPLETO
+  (enviar turnos a qualquer mesa do celular — reusa sendFromDesk com todas as
+  guardas; o módulo companion entra na lista sancionada de importadores do
+  office/bridge). [ENTREGUE ondas 1-3 + fix WS + UX do chat]
+- COMPANION v2 — "POSTO DE TRABALHO REMOTO" (visão do Vinícius, 21/jul: "servir
+  pra quando estou longe do Mac — conseguir trabalhar, seguir uma atividade em
+  andamento"): (a) MISSÃO AO VIVO no celular — tela de detalhe da missão
+  (fases, tool corrente, custo subindo, gate inline) a partir de
+  snapshot.missions, não só o card de "Em execução"; (b) LANÇAR MISSÃO do
+  celular (projeto + tarefa ditada/digitada + preset — reusa launchTableMission
+  via ação nova na whitelist); (c) RECUPERAÇÃO no celular — rate-limit em fase
+  vira card de atenção com troca de agent/modelo (resolveRecovery na
+  whitelist); (d) PWA-like: manifest + ícone "adicionar à tela inicial".
+  VERDADE DE REDE (documentar na UI): o servidor é LAN-only por design; "longe
+  de casa" = Tailscale na frente (zero código: mesma porta pelo IP da
+  tailnet; `tailscale serve` ainda dá HTTPS com cert válido — o que TAMBÉM
+  destrava Web Notifications/PWA, bloqueados em origem http insegura pelos
+  browsers). Não construir relay em nuvem próprio (fere o local-first). Onda 2-3 (settings+QR+wiring)
+  PRONTA: setting `companionEnabled` (opt-in, default false, persistido) gate
+  REAL da ponte + do servidor (boot religa sozinho; toggle off para os dois);
+  Configurações ▸ Companion com QR de pareamento (`urlLan#token=…`) renderizado
+  por encoder QR CASEIRO (`lib/qr.ts`, byte-mode ECC M v1–10, zero dep de
+  runtime, validado por round-trip contra o decoder jsQR em teste), URL em
+  texto + copiar, status honesto (`connectedCount` = sockets WS vivos, novo no
+  CompanionInfo do Rust), aviso da permissão de rede do macOS e "Gerar novo
+  token" (stop → `companion_revoke_token` novo no Rust → start com retry).
+- Roles com DIGEST (padrão MyPeople): presets de missão como bundle
+  versionado por hash (personality+skills+policy), resolução fail-closed —
+  a versão madura dos "agents por projeto". Estudar quando presets evoluírem.
+
+### Onda "escritório vivo" — 16 features (estado REAL, nunca teatro)
+
+Regra dura da onda: **todo movimento reflete estado real do runtime** (sinais
+do `OfficeSnapshot` com TTL + memória de módulo no derive, ou o relógio de
+verdade). Nada de atividade inventada.
+
+Movimento/pessoas (packs de comportamento + walkers):
+
+1. **Kickoff de missão** — `kickoffs` (ausente/queued→running): reunião nas
+   mesas dos agents das fases.
+2. **Celebração** — `celebrations` (transição real →done na sala do projeto).
+3. **Bastão de revezamento** — `batons` (agent de uma conv COM items mudou):
+   courier mesa→mesa.
+4. **Chegada ao escritório** — `arrivals` (mesa off→disponível: CLI detectado).
+5. **Entrega ao Boss** — `bossDeliveries` (result de fim de turno): courier
+   leva o documento até a mesa executiva.
+6. **Handoff físico** — `handoffs` (fase done → próxima com agent diferente).
+7. **Pausa pro café** — viagem à cozinha da sala comum (idle real, cap de
+   walkers, aborta se o estado muda).
+8. **Descanso no sofá** — `desk.restUntil` (auto-resume agendado): o agent
+   espera no lounge até o `nextAt`.
+9. **Guerra do Fusion** — `room.war` (disputa ativa): candidatos reunidos; o
+   vencedor entrega ao Boss.
+10. **Micro-vida do idle** — agenda determinística por seed (alongar/olhar/gole
+    demorado; PRNG semeado, nunca `Math.random` solto).
+
+Ambiente/prédio (`scene/environment.ts` + `rooms.ts`/`props.ts`):
+
+11. **Dia/noite real** — fase pela hora local (manhã fria 6–11 · meio-dia
+    neutro · tarde quente 15–19 · noite 19–6 escurecida com luminárias âmbar).
+    Um quad de tint por sala + tint do corredor + boost das lâmpadas — só
+    tint/alpha (nunca re-tesselar), checado 1×/min em `rooms.tick`.
+12. **TV da sala comum viva** — custo total do dia + 3 barrinhas (maiores
+    custos por sala, cor do projeto), plano cisalhado na parede; redesenho
+    discreto no `applySnapshot` (nunca por frame).
+13. **Whiteboard = kanban da missão** — `room.mission`: um cartão por fase
+    (done=verde · running=azul pulsante · queued=cinza · erro/abortada nos
+    tons de status), risco sob a fase corrente; sem missão, os rabiscos baked
+    voltam.
+14. **Caixas de mudança** — sala que aparece DEPOIS do boot (projeto novo)
+    ganha caixas de papelão perto da porta por ~2min com fade; memória de
+    módulo das salas já vistas sobrevive à recriação do stage.
+15. **Cadeira vazia** — mesa "off" mostra a cadeira levemente girada no lugar
+    do avatar (o pack pessoal esconde o sentado; a caneca é prop do avatar e
+    some junto). Tela do monitor apagada + tampo esmaecido continuam.
+16. **Pilha de entregas do boss** — até 8 papéis empilhados no braço livre do
+    tampo executivo refletindo entregas não vistas (`bossDeliveries` do
+    snapshot; troca para `useOfficeUi.unseenDeliveries` quando o pack missão o
+    publicar — ver `[REGIÃO AMBIENTE]` no `applySnapshot`).
+
+Toda animação nova respeita `prefers-reduced-motion` (estática/desligada).
 
 ## 9. Testes de paridade do send.ts (lista fechada)
 

@@ -69,15 +69,34 @@ const CLAUDE_EFFORTS: AgentModelOption[] = [
   { value: "max", label: "max", description: "Esforço máximo" },
 ]
 // agy: o `value` É a string EXATA que o `agy --model` espera (verificado com
-// `agy models`). "default" = deixa o agy escolher (Gemini 3.5 Flash). O effort já
-// vem embutido no nome do modelo (Low/High), então o agy não tem seletor de effort.
+// `agy models`). A CLI 1.1.5 lista ids em kebab-case; o effort já vem embutido
+// no nome, então o agy não tem seletor de effort separado.
 const AGY_MODELS: AgentModelOption[] = [
-  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o agy escolher (Gemini Flash)" },
-  { value: "Gemini 3.5 Flash (Low)", label: "Flash", description: "Rápido e barato (Google)" },
-  { value: "Gemini 3.1 Pro (High)", label: "Gemini Pro", description: "Mais capaz (Google)" },
-  { value: "Claude Sonnet 4.6 (Thinking)", label: "Sonnet", description: "Claude via cota Google" },
-  { value: "Claude Opus 4.6 (Thinking)", label: "Opus", description: "Claude mais capaz, via Google" },
+  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o agy escolher (Gemini 3.6 Flash)" },
+  { value: "gemini-3.6-flash-high", label: "Flash 3.6 (High)", description: "Mais capaz (Google)" },
+  { value: "gemini-3.6-flash-medium", label: "Flash 3.6 (Med)", description: "Equilíbrio (Google)" },
+  { value: "gemini-3.6-flash-low", label: "Flash 3.6 (Low)", description: "Rápido e barato (Google)" },
+  { value: "gemini-3.5-flash-medium", label: "Flash 3.5 (Med)", description: "Geração anterior (Google)" },
+  { value: "gemini-3.1-pro-high", label: "Gemini Pro", description: "Mais capaz (Google)" },
+  { value: "claude-sonnet-4-6", label: "Sonnet", description: "Claude via cota Google" },
+  { value: "claude-opus-4-6-thinking", label: "Opus", description: "Claude mais capaz, via Google" },
 ]
+
+/** Valores gravados por versões anteriores do app, antes de `agy models`
+ * padronizar seus ids em kebab-case. Mantém conversas antigas executáveis. */
+const LEGACY_AGY_MODELS: Record<string, string> = {
+  // Flash 3.5 Low saiu da CLI 1.1.5; Medium é o vizinho compatível mais próximo.
+  "Gemini 3.5 Flash (Low)": "gemini-3.5-flash-medium",
+  "Gemini 3.1 Pro (High)": "gemini-3.1-pro-high",
+  "Claude Sonnet 4.6 (Thinking)": "claude-sonnet-4-6",
+  "Claude Opus 4.6 (Thinking)": "claude-opus-4-6-thinking",
+}
+
+/** Normaliza valores persistidos de uma conversa antes que cheguem ao adapter. */
+export function normalizeAgyModel(model: string | null): string | null {
+  if (!model || model === "default") return model
+  return LEGACY_AGY_MODELS[model] ?? model
+}
 const CODEX_EFFORTS: AgentModelOption[] = [
   { value: "default", label: "Padrão", pill: "effort", description: "Padrão do modelo" },
   { value: "minimal", label: "minimal", description: "Mínimo" },
@@ -230,7 +249,11 @@ export function setDynamicModels(id: string, options: AgentModelOption[]) {
  *  EXATA que o adapter passa em `agy --model` (mesmo contrato do AGY_MODELS
  *  estático). Preserva a opção "Padrão" na frente (sentinela do composer). */
 export function agyModelOptions(lines: string[]): AgentModelOption[] {
-  return [AGY_MODELS[0], ...lines.map((l) => ({ value: l, label: l }))]
+  const known = new Map(AGY_MODELS.map((option) => [option.value, option]))
+  return dedupeModelOptions([
+    AGY_MODELS[0],
+    ...lines.map((value) => known.get(value) ?? { value, label: value }),
+  ])
 }
 
 // Cache module-level de modelos PROPOSTOS pelo curador e APROVADOS pelo humano
@@ -262,9 +285,23 @@ export function mergeModelOptions(
   return out
 }
 
+/** Remove valores repetidos sem mudar a prioridade: a primeira opção vence. */
+function dedupeModelOptions(options: AgentModelOption[]): AgentModelOption[] {
+  const seen = new Set<string>()
+  for (const option of options) {
+    if (seen.has(option.value)) {
+      return options.filter((candidate, index) =>
+        options.findIndex((first) => first.value === candidate.value) === index,
+      )
+    }
+    seen.add(option.value)
+  }
+  return options
+}
+
 export function agentModels(id: string): AgentModelOption[] {
   return mergeModelOptions(
-    DYNAMIC_MODELS.get(id) ?? agentDef(id)?.models ?? [],
+    dedupeModelOptions(DYNAMIC_MODELS.get(id) ?? agentDef(id)?.models ?? []),
     APPROVED_MODELS.get(id) ?? [],
   )
 }

@@ -5,8 +5,22 @@ import { describe, it, expect } from "vitest"
 import {
   buildGateDecisionsBlock,
   gateQuestions,
+  normalizeGateAnswers,
   phasePrompt,
+  splitGateAttachments,
 } from "@/lib/mission"
+import type { Attachment, AttachmentKind } from "@/lib/attachments"
+import type { GateAnswer } from "@/lib/missionTypes"
+
+function att(name: string, kind: AttachmentKind): Attachment {
+  return {
+    path: `attachments/c1/${name}`,
+    name,
+    kind,
+    mime: kind === "pdf" ? "application/pdf" : "image/png",
+    bytes: 10,
+  }
+}
 
 describe("gateQuestions (quando a missão pausa)", () => {
   it("pausa quando há perguntas E existe próxima fase", () => {
@@ -61,5 +75,76 @@ describe("buildGateDecisionsBlock (respostas → prompt da próxima fase)", () =
     expect(iDecisions).toBeGreaterThan(-1)
     expect(prompt).toContain("R: R!")
     expect(iDecisions).toBeLessThan(iHandoff)
+  })
+})
+
+describe("normalizeGateAnswers (retrocompat string[] → GateAnswer[])", () => {
+  it("string[] legado vira GateAnswer[] sem anexos", () => {
+    expect(normalizeGateAnswers(["a", ""])).toEqual([
+      { text: "a" },
+      { text: "" },
+    ])
+  })
+
+  it("GateAnswer[] rico passa intacto (texto + anexos preservados)", () => {
+    const rich: GateAnswer[] = [
+      { text: "usa a 5175", attachments: [att("shot.png", "image")] },
+    ]
+    expect(normalizeGateAnswers(rich)).toEqual(rich)
+  })
+})
+
+describe("splitGateAttachments (caps do agent da PRÓXIMA fase)", () => {
+  it("agrega os anexos de todas as respostas na ordem", () => {
+    const answers: GateAnswer[] = [
+      { text: "a", attachments: [att("1.png", "image")] },
+      { text: "b" },
+      { text: "c", attachments: [att("2.png", "image")] },
+    ]
+    const { kept, dropped } = splitGateAttachments(answers, {
+      image: true,
+      pdf: true,
+    })
+    expect(kept.map((k) => k.name)).toEqual(["1.png", "2.png"])
+    expect(dropped).toEqual([])
+  })
+
+  it("caps parciais (codex: image sim, pdf não) → mantém imagem, descarta PDF", () => {
+    const answers: GateAnswer[] = [
+      { text: "a", attachments: [att("shot.png", "image"), att("spec.pdf", "pdf")] },
+    ]
+    const { kept, dropped } = splitGateAttachments(answers, {
+      image: true,
+      pdf: false,
+    })
+    expect(kept.map((k) => k.name)).toEqual(["shot.png"])
+    expect(dropped.map((d) => d.name)).toEqual(["spec.pdf"])
+  })
+
+  it("agent sem suporte nenhum (agy) → descarta tudo, nunca lança", () => {
+    const answers: GateAnswer[] = [
+      { text: "a", attachments: [att("shot.png", "image"), att("spec.pdf", "pdf")] },
+    ]
+    const { kept, dropped } = splitGateAttachments(answers, {
+      image: false,
+      pdf: false,
+    })
+    expect(kept).toEqual([])
+    expect(dropped).toHaveLength(2)
+  })
+
+  it("kind 'other' nunca passa (caps só declaram image/pdf)", () => {
+    const { kept, dropped } = splitGateAttachments(
+      [{ text: "a", attachments: [att("x.bin", "other")] }],
+      { image: true, pdf: true },
+    )
+    expect(kept).toEqual([])
+    expect(dropped.map((d) => d.name)).toEqual(["x.bin"])
+  })
+
+  it("respostas sem anexos → nada de nada", () => {
+    expect(
+      splitGateAttachments([{ text: "a" }], { image: true, pdf: true }),
+    ).toEqual({ kept: [], dropped: [] })
   })
 })

@@ -53,6 +53,9 @@ export interface GlobalSettings {
   catalogCount: number
   /** Epoch ms da última rodada do curador de modelos (máx. 1x/semana). */
   lastCuratorRun: number
+  /** Companion Web (celular na LAN): liga o servidor local + a ponte de push.
+   *  OPT-IN (default false) — abre uma porta na rede local. */
+  companionEnabled: boolean
 }
 
 export const DEFAULT_SETTINGS: GlobalSettings = {
@@ -75,4 +78,5 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   lastCatalogRefresh: 0,
   catalogCount: 0,
   lastCuratorRun: 0,
+  companionEnabled: false,
 }
