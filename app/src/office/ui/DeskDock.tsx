@@ -21,11 +21,14 @@ import {
   Mic,
   Minus,
   Square,
+  ThumbsDown,
+  ThumbsUp,
   Wrench,
   X,
 } from "lucide-react"
 import { Markdown } from "@/components/common/Markdown"
 import { RichSelect } from "@/components/ui/RichSelect"
+import { feedbackLesson } from "@/lib/learning"
 import { cn } from "@/lib/utils"
 import {
   MISSION_TABLE_ID,
@@ -203,16 +206,62 @@ function RevezamentoRow({
 
 // --- itens do histórico -----------------------------------------------------
 
+/** 👍/👎 do turno concluído (P6) — o MESMO caminho do onThumbUp do ChatPanel:
+ *  feedbackLesson (lib/learning) reforça as lições injetadas no último envio
+ *  da mesa (registro do sendFromDesk). O 👎 é sinal leve: como no ChatPanel,
+ *  sozinho ele não grava nada (o fluxo de propor regra, com nota + gate
+ *  humano, vive no Linear). */
+function ResultFeedback({ convId }: { convId: string }) {
+  const [verdict, setVerdict] = useState<"up" | "down" | null>(null)
+  function give(v: "up" | "down") {
+    if (verdict) return
+    setVerdict(v)
+    void feedbackLesson(convId, v)
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      <button
+        type="button"
+        title="Boa resposta (reforça as lições usadas)"
+        aria-label="Boa resposta"
+        onClick={() => give("up")}
+        className={cn(
+          "rounded p-0.5 text-muted-foreground transition-colors hover:text-st-success",
+          verdict === "up" && "text-st-success",
+          verdict === "down" && "opacity-40",
+        )}
+      >
+        <ThumbsUp className="size-3" />
+      </button>
+      <button
+        type="button"
+        title="Faltou algo / estava errado"
+        aria-label="Feedback negativo"
+        onClick={() => give("down")}
+        className={cn(
+          "rounded p-0.5 text-muted-foreground transition-colors hover:text-st-error",
+          verdict === "down" && "text-st-error",
+          verdict === "up" && "opacity-40",
+        )}
+      >
+        <ThumbsDown className="size-3" />
+      </button>
+    </span>
+  )
+}
+
 /** memo (S2): ChatItem é imutável por identidade (o reducer sempre TROCA o
  *  objeto ao mudar) — durante o streaming só o item da bolha corrente troca de
  *  ref, então as demais linhas (Markdown incluso) pulam o re-render. `rev` é
- *  null estável fora do último item. */
+ *  null estável fora do último item; `convId` é estável por conversa. */
 const DockItem = memo(function DockItem({
   item,
   rev,
+  convId,
 }: {
   item: ChatItem
   rev?: RevContext | null
+  convId?: string | null
 }) {
   switch (item.kind) {
     case "user":
@@ -242,8 +291,11 @@ const DockItem = memo(function DockItem({
       )
     case "result":
       return (
-        <p className="text-[11px] text-muted-foreground">
-          Turno concluído{item.costUsd ? ` · ${fmtCost(item.costUsd, item.costSource)}` : ""}
+        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span>
+            Turno concluído{item.costUsd ? ` · ${fmtCost(item.costUsd, item.costSource)}` : ""}
+          </span>
+          {item.ok && convId && <ResultFeedback convId={convId} />}
         </p>
       )
     case "error":
@@ -329,6 +381,7 @@ function DockItemsList({
         key={item.id}
         item={item}
         rev={i === items.length - 1 ? rev : null}
+        convId={convId}
       />,
     )
   }

@@ -37,6 +37,7 @@ import type { ProjectConfig } from "@/store/app"
 import { readProjectContext } from "@/lib/context"
 import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/context"
 import { loadGitDiff } from "@/lib/git"
+import { fixPrefill } from "@/lib/deliveryDiff"
 import { readProjectSources, readTextFile } from "@/lib/sources"
 import type { ProjectSources } from "@/lib/sources"
 import { open as openDialog } from "@tauri-apps/plugin-dialog"
@@ -337,6 +338,36 @@ export function ContextPanel() {
         : undefined
       )?.find((c) => c.id === s.activeId)?.worktreePath ?? null,
   )
+  // P3 — Entrega→diff em 1 clique: a intenção emitida (Central/strip de result)
+  // só vale enquanto a conversa dela é a ativa; ao bater, abre a aba Alterações.
+  const activeConvId = useChat((s) => s.activeId)
+  const deliveryDiff = useApp((s) => s.deliveryDiff)
+  const delivery =
+    deliveryDiff && deliveryDiff.convId === activeConvId ? deliveryDiff : null
+  useEffect(() => {
+    if (delivery) setTab("alteracoes")
+  }, [delivery])
+
+  /** "Pedir correção": prefill no composer da conversa + foco com o cursor no
+   *  fim (mesmo seletor do focusComposer do App). Consome a intenção. */
+  function requestDeliveryFix() {
+    if (!delivery) return
+    useChat.getState().setDraft(delivery.convId, fixPrefill(delivery.text))
+    useApp.getState().clearDeliveryDiff()
+    setTimeout(() => {
+      const ta = document.querySelector<HTMLTextAreaElement>(
+        'textarea[data-composer="console"]',
+      )
+      if (!ta) return
+      ta.focus()
+      ta.setSelectionRange(ta.value.length, ta.value.length)
+    }, 120)
+  }
+
+  function closeDeliveryDiff() {
+    useApp.getState().clearDeliveryDiff()
+    setTab("contexto")
+  }
   // running da conversa ativa: quando o turno termina, recarrega a contagem de
   // arquivos alterados (o diff mudou) → badge na aba Alterações.
   const running = useChat((s) =>
@@ -502,7 +533,12 @@ export function ContextPanel() {
           </p>
         </div>
       ) : tab === "alteracoes" ? (
-        <DiffPanel cwd={activeWorktree ?? project.path} />
+        <DiffPanel
+          cwd={activeWorktree ?? project.path}
+          delivery={delivery}
+          onRequestFix={requestDeliveryFix}
+          onCloseDelivery={closeDeliveryDiff}
+        />
       ) : tab === "plano" ? (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {planTasks.length > 0 ? (

@@ -645,8 +645,31 @@ fn sanitize_action(uploads: &HashMap<String, Attachment>, v: &Value) -> Result<V
             }
             let ids = attachment_ids()?;
             let atts = resolve_uploads(uploads, &ids)?;
-            json!({"kind": "send_message", "projectId": project, "agent": agent,
-                   "text": text, "attachmentIds": ids, "attachments": atts})
+            let mut out = json!({"kind": "send_message", "projectId": project, "agent": agent,
+                   "text": text, "attachmentIds": ids, "attachments": atts});
+            // convId OPCIONAL (P5): chat aberto numa conversa não-mesa manda o
+            // alvo explícito. Presente ⇒ precisa ser string não-vazia (payload
+            // adversarial com tipo errado é 400, não silêncio); ausente ⇒ o
+            // executor cai na conversa de mesa (fallback intacto). A validação
+            // de PERTENCIMENTO (conversa é do projeto) fica no executor JS.
+            if let Some(cv) = v.get("convId") {
+                let conv = cv
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .ok_or("convId inválido")?;
+                out["convId"] = json!(conv);
+            }
+            out
+        }
+        "feedback_lesson" => {
+            // P6: 👍/👎 de turno concluído → reforço de lições no front. Verdict
+            // é enum fechado (up|down) — qualquer outro valor é 400.
+            let conv = req_str("convId")?;
+            let verdict = req_str("verdict")?;
+            if verdict != "up" && verdict != "down" {
+                return Err("verdict inválido (up|down)".into());
+            }
+            json!({"kind": "feedback_lesson", "convId": conv, "verdict": verdict})
         }
         other => return Err(format!("ação desconhecida: {other}")),
     };
@@ -749,6 +772,8 @@ mod tests {
         assert!(COMPANION_PAGE.contains("escapeHtml") || COMPANION_PAGE.contains("function esc("));
         assert!(!COMPANION_PAGE.contains("src=\"http"));
         assert!(!COMPANION_PAGE.contains("href=\"http"));
+        // P6: a página fala o vocabulário whitelisted do 👍/👎
+        assert!(COMPANION_PAGE.contains("feedback_lesson"));
     }
 
     #[tokio::test]
@@ -915,6 +940,72 @@ mod tests {
                     "text": "olha", "attachmentIds": ["fantasma"]}),
         )
         .is_err());
+    }
+
+    #[test]
+    fn sanitize_send_message_conv_id_opcional() {
+        let up = HashMap::new();
+        // sem convId → payload SEM o campo (executor cai na mesa)
+        let out = sanitize_action(
+            &up,
+            &json!({"kind": "send_message", "projectId": "p1", "agent": "codex", "text": "oi"}),
+        )
+        .unwrap();
+        assert!(out.get("convId").is_none());
+        // convId válido → viaja no payload reconstruído
+        let out = sanitize_action(
+            &up,
+            &json!({"kind": "send_message", "projectId": "p1", "agent": "codex",
+                    "text": "oi", "convId": "abc123"}),
+        )
+        .unwrap();
+        assert_eq!(out["convId"], "abc123");
+        // convId presente mas inválido (vazio / tipo errado) → 400, não silêncio
+        assert!(sanitize_action(
+            &up,
+            &json!({"kind": "send_message", "projectId": "p1", "agent": "codex",
+                    "text": "oi", "convId": ""}),
+        )
+        .is_err());
+        assert!(sanitize_action(
+            &up,
+            &json!({"kind": "send_message", "projectId": "p1", "agent": "codex",
+                    "text": "oi", "convId": 42}),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn sanitize_feedback_lesson_verdict_fechado() {
+        let up = HashMap::new();
+        let out = sanitize_action(
+            &up,
+            &json!({"kind": "feedback_lesson", "convId": "c1", "verdict": "up", "hack": "x"}),
+        )
+        .unwrap();
+        // reconstrução: só os campos conhecidos, campos extras nunca passam
+        assert_eq!(
+            out,
+            json!({"kind": "feedback_lesson", "convId": "c1", "verdict": "up"})
+        );
+        let out = sanitize_action(
+            &up,
+            &json!({"kind": "feedback_lesson", "convId": "c1", "verdict": "down"}),
+        )
+        .unwrap();
+        assert_eq!(out["verdict"], "down");
+        // verdict fora do enum / campos faltando → erro
+        assert!(sanitize_action(
+            &up,
+            &json!({"kind": "feedback_lesson", "convId": "c1", "verdict": "meh"}),
+        )
+        .is_err());
+        assert!(
+            sanitize_action(&up, &json!({"kind": "feedback_lesson", "convId": "c1"})).is_err()
+        );
+        assert!(
+            sanitize_action(&up, &json!({"kind": "feedback_lesson", "verdict": "up"})).is_err()
+        );
     }
 
     #[test]

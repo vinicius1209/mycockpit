@@ -7,6 +7,7 @@ import {
   Bot,
   Check,
   ChevronRight,
+  FileDiff,
   FilePen,
   FileText,
   Gauge,
@@ -37,9 +38,10 @@ import {
 } from "@/lib/toolview"
 import { lineDiff, trimOuterContext, type DiffRow } from "@/lib/linediff"
 import { deriveTasks, isTaskTool } from "@/lib/tasks"
+import { openDeliveryDiff } from "@/lib/deliveryDiff"
 import { Markdown } from "@/components/common/Markdown"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
-import type { ChatItem } from "@/store/chat"
+import { useChat, type ChatItem } from "@/store/chat"
 
 type ToolItem = Extract<ChatItem, { kind: "tool" }>
 
@@ -705,6 +707,27 @@ function TurnTelemetry({
             {fmtCost(it.costUsd, it.costSource)}
           </span>
         </TeleCell>
+      )}
+      {/* P3 — Entrega→diff em 1 clique: o strip de result É a entrega no fio;
+          este botão abre o diff do worktree no painel de Alterações (com o
+          header Pedir correção/Fechar). Sem worktree/diff vazio ⇒ toast. */}
+      {it.ok && (
+        <button
+          type="button"
+          onClick={() => {
+            const convId = useChat.getState().activeId
+            if (!convId) return
+            void openDeliveryDiff({ convId, text: it.text ?? "" })
+          }}
+          title="Ver o diff desta entrega"
+          aria-label="Ver o diff desta entrega"
+          className={cn(
+            "flex items-center gap-1.5 border-l border-border px-3 text-[11px] transition-colors hover:bg-secondary hover:text-foreground",
+            it.costUsd == null && "ml-auto",
+          )}
+        >
+          <FileDiff className="size-3.5" /> Diff
+        </button>
       )}
     </div>
   )

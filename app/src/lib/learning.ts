@@ -91,6 +91,41 @@ export async function reinforceLessons(ids: string[]): Promise<void> {
   await dbReinforceLessons(ids)
 }
 
+// ── P6: feedback fora do ChatPanel (mesa do office + página do Companion) ──
+// O ChatPanel guarda os ids injetados num ref LOCAL do componente
+// (injectedLessonsRef) — a mesa e o celular não enxergam esse ref. Este
+// registro por conversa dá o mesmo insumo pro MESMO caminho do 👍
+// (reinforceLessons): sendFromDesk grava aqui a cada envio.
+
+const injectedByConv = new Map<string, string[]>()
+
+/** Registra as lições injetadas no ÚLTIMO envio da conversa (sobrescreve —
+ *  o 👍 só reforça o turno corrente, nunca ids de turnos velhos). */
+export function recordInjectedLessons(convId: string, ids: string[]): void {
+  injectedByConv.set(convId, ids)
+}
+
+/** 👍/👎 num turno concluído da mesa/companion — o MESMO caminho do onThumbUp
+ *  do ChatPanel: `up` reforça (reinforceLessons) as lições injetadas no último
+ *  turno da conversa. `down` não escreve nada hoje — no ChatPanel o 👎 sozinho
+ *  também não grava (abre o fluxo de propor regra, que exige nota + gate
+ *  humano, ambos vivos só na UI). Best-effort: nunca lança.
+ *  `run` é injetável nos testes (padrão do distillLesson). */
+export async function feedbackLesson(
+  convId: string,
+  verdict: "up" | "down",
+  run: typeof reinforceLessons = reinforceLessons,
+): Promise<void> {
+  if (verdict !== "up") return
+  const ids = injectedByConv.get(convId) ?? []
+  if (!ids.length) return
+  try {
+    await run(ids)
+  } catch {
+    // reforço é sinal secundário — não vale quebrar por ele.
+  }
+}
+
 function renderRecall(
   matches: ReturnType<typeof recallMatches>,
 ): string {

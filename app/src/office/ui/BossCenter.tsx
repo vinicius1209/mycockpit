@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { openDeliveryDiff } from "@/lib/deliveryDiff"
 import { agentLabel, fmtCost } from "../bridge/hooks"
 import { useOfficeUi } from "./store"
 import {
@@ -122,25 +123,23 @@ function DeskRow({
 function DeliveryRow({
   item,
   now,
-  onOpen,
+  onOpenDelivery,
   onInspectRoom,
 }: {
   item: BossDeliveryItem
   now: number
-  onOpen: (item: BossDeskTarget) => void
+  onOpenDelivery: (item: BossDeliveryItem) => void
   onInspectRoom: (projectId: string) => void
 }) {
-  const action = item.convId ? "Abrir conversa" : "Inspecionar sala"
+  const action = item.convId
+    ? "Abrir a conversa com o diff da entrega"
+    : "Inspecionar sala"
   return (
     <button
       type="button"
       onClick={() => {
         if (!item.convId) return onInspectRoom(item.projectId)
-        onOpen({
-          id: item.deskId,
-          projectId: item.projectId,
-          convId: item.convId,
-        })
+        onOpenDelivery(item)
       }}
       className="group flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       aria-label={`Entrega de ${agentLabel(item.agent)} em ${item.projectName}: ${item.text}. ${action}.`}
@@ -231,6 +230,18 @@ export function BossCenter({
   const inspectRoom = (projectId: string) => {
     onClose()
     onInspectRoom(projectId)
+  }
+  // P3 — Entrega→diff em 1 clique: entrega clicada vai DIRETO pra conversa no
+  // Trabalho com o diff do worktree aberto (helper navega + valida + toast
+  // honesto quando não há mudanças). Não passa pelo dock do Office.
+  const openDelivery = (item: BossDeliveryItem) => {
+    if (!item.convId) return inspectRoom(item.projectId)
+    onClose()
+    void openDeliveryDiff({
+      projectId: item.projectId,
+      convId: item.convId,
+      text: item.text,
+    })
   }
   const now = Date.now()
 
@@ -427,7 +438,7 @@ export function BossCenter({
                   key={item.id}
                   item={item}
                   now={now}
-                  onOpen={openDesk}
+                  onOpenDelivery={openDelivery}
                   onInspectRoom={inspectRoom}
                 />
               ))

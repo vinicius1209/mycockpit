@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { invoke } from "@tauri-apps/api/core"
 import type { Attachment } from "@/lib/attachments"
 import type { MissionRun } from "@/lib/missionTypes"
+import { feedbackLesson } from "@/lib/learning"
 import { cancelDeskTurn, ensureDeskConversation, sendFromDesk } from "@/office/bridge/send"
 import { useApp } from "@/store/app"
 import { useChat, type ConvState } from "@/store/chat"
@@ -42,6 +43,8 @@ vi.mock("@/office/bridge/send", () => ({
   sendFromDesk: vi.fn(async () => {}),
   cancelDeskTurn: vi.fn(async () => {}),
 }))
+// O reforço real (registro + reinforceLessons) é testado em learning.test.ts.
+vi.mock("@/lib/learning", () => ({ feedbackLesson: vi.fn(async () => {}) }))
 
 function makeConv(partial: Partial<ConvState> = {}): ConvState {
   return {
@@ -421,6 +424,66 @@ describe("handleCompanionAction — switch fechado", () => {
       text: "roda os testes",
       attachments: [att],
     })
+  })
+
+  it("send_message com convId das metas do projeto envia DIRETO nessa conversa (P5)", async () => {
+    useChat.setState({
+      conversationsByProject: {
+        p1: [
+          { id: "c9", title: "refatorar parser", updatedAt: 1, color: null, worktreePath: null, agent: "claude-code" },
+        ],
+      },
+    })
+    await handleCompanionAction({
+      kind: "send_message",
+      projectId: "p1",
+      agent: "codex",
+      text: "continua",
+      convId: "c9",
+    })
+    // alvo explícito válido: NÃO resolve mesa; o agent travado da conversa
+    // vence o da ação dentro do sendFromDesk (guarda existente)
+    expect(ensureDeskConversation).not.toHaveBeenCalled()
+    expect(sendFromDesk).toHaveBeenCalledWith(
+      expect.objectContaining({ convId: "c9", projectId: "p1", agent: "codex" }),
+    )
+  })
+
+  it("send_message com convId fora das metas do projeto cai na conversa de MESA", async () => {
+    useChat.setState({
+      conversationsByProject: {
+        p1: [
+          { id: "c9", title: "x", updatedAt: 1, color: null, worktreePath: null, agent: "claude-code" },
+        ],
+      },
+    })
+    await handleCompanionAction({
+      kind: "send_message",
+      projectId: "p1",
+      agent: "codex",
+      text: "oi",
+      convId: "fantasma",
+    })
+    expect(ensureDeskConversation).toHaveBeenCalledWith("p1", "codex")
+    expect(sendFromDesk).toHaveBeenCalledWith(
+      expect.objectContaining({ convId: "conv-mesa" }),
+    )
+  })
+
+  it("feedback_lesson roteia pro MESMO caminho do 👍 (feedbackLesson)", async () => {
+    await handleCompanionAction({ kind: "feedback_lesson", convId: "c1", verdict: "up" })
+    expect(feedbackLesson).toHaveBeenCalledWith("c1", "up")
+    await handleCompanionAction({ kind: "feedback_lesson", convId: "c1", verdict: "down" })
+    expect(feedbackLesson).toHaveBeenCalledWith("c1", "down")
+  })
+
+  it("feedback_lesson malformado (verdict fora do enum / sem convId) é inócuo", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    await handleCompanionAction({ kind: "feedback_lesson", convId: "c1", verdict: "meh" })
+    await handleCompanionAction({ kind: "feedback_lesson", verdict: "up" })
+    expect(feedbackLesson).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledTimes(2)
+    warn.mockRestore()
   })
 
   it("send_message com agent fora da whitelist ou projeto desconhecido é ignorado", async () => {

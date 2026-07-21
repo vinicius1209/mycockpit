@@ -372,7 +372,12 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
     upgrade(desk, {
       state: live.state,
       label: live.state === "typing" ? "Digitando" : "Pensando",
-      detail: live.detail,
+      // turno mudo (watchdog marcou): a mesa conta há quanto tempo (de graça).
+      detail:
+        live.detail ??
+        (c.stalledSince != null
+          ? `mudo há ${Math.max(1, Math.round((now - c.stalledSince) / 60_000))}min`
+          : undefined),
       convId,
     })
   }

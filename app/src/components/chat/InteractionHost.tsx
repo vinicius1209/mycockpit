@@ -14,7 +14,15 @@ import type {
   QuestionAnswer,
   QuestionData,
 } from "@/lib/interaction"
-import { useContextualSplit, useInteractions } from "@/store/interactions"
+import {
+  approvalSignature,
+  decideBatch,
+  pendingGroup,
+  useContextualSplit,
+  useInteractions,
+  type BatchAction,
+  type BatchConfirm,
+} from "@/store/interactions"
 import { cn } from "@/lib/utils"
 
 /** InteractionCard — card individual de UM pedido pendente (padrão unificado).
@@ -37,6 +45,10 @@ export function InteractionCard({
 }) {
   const answer = useInteractions((s) => s.answer)
   const dismiss = useInteractions((s) => s.dismiss)
+  const answerGroup = useInteractions((s) => s.answerGroup)
+  // Lote por ASSINATURA (P4): quantas pendentes na fila INTEIRA são idênticas
+  // a esta (mesmo tool_name + comando exato). Questions nunca agrupam.
+  const queue = useInteractions((s) => s.queue)
 
   if (req.kind === "question") {
     return (
@@ -49,10 +61,22 @@ export function InteractionCard({
     )
   }
 
+  const signature = approvalSignature(req)
+  const groupCount = pendingGroup(queue, req).length
+  const batch =
+    signature && groupCount >= 2
+      ? {
+          signature,
+          count: groupCount,
+          onAll: (allow: boolean) => answerGroup(signature, allow),
+        }
+      : null
+
   return (
     <ApprovalCard
       data={req.data as ApprovalData}
       extra={extra}
+      batch={batch}
       onDecide={(allow) => answer(req.id, { allow })}
       onDismiss={() => dismiss(req)}
     />
@@ -107,18 +131,38 @@ function DismissBtn({ onDismiss }: { onDismiss: () => void }) {
   )
 }
 
-/** Card de aprovação (migrado 1:1 do ApprovalModal). */
+/** Lote visível no card: contagem do grupo + executor (answerGroup do store). */
+interface BatchProps {
+  signature: string
+  count: number
+  onAll: (allow: boolean) => void
+}
+
+/** Card de aprovação (migrado 1:1 do ApprovalModal). Com `batch` (≥2 idênticas
+ *  na fila), mostra a linha "+N idênticas · Aprovar/Negar todas" — que abre
+ *  CONFIRMAÇÃO explícita (comando + contagem) antes de responder o lote. */
 function ApprovalCard({
   data,
   extra,
+  batch,
   onDecide,
   onDismiss,
 }: {
   data: ApprovalData
   extra: number
+  batch?: BatchProps | null
   onDecide: (allow: boolean) => void
   onDismiss: () => void
 }) {
+  // Fluxo de confirmação do lote: estado local + decisão PURA (decideBatch) —
+  // clicar em "todas" NUNCA executa direto. key={req.id} no pai reseta por card.
+  const [confirming, setConfirming] = useState<BatchConfirm | null>(null)
+  function dispatchBatch(action: BatchAction) {
+    const { pending, execute } = decideBatch(confirming, action)
+    setConfirming(pending)
+    if (execute && batch) batch.onAll(execute.allow)
+  }
+
   return (
     <div className="mb-2 rounded-lg border border-brass/40 bg-brass/[0.07] px-3 py-2.5">
       <div className="flex items-center gap-2">
@@ -143,6 +187,76 @@ function ApprovalCard({
           {JSON.stringify(data.input, null, 2)}
         </pre>
       )}
+
+      {/* Lote: hint das idênticas + atalho "todas" (abre confirmação). */}
+      {batch && !confirming && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-muted-foreground">
+          <span>+{batch.count - 1} idênticas na fila</span>
+          <span aria-hidden>·</span>
+          <button
+            onClick={() =>
+              dispatchBatch({
+                type: "request",
+                confirm: { signature: batch.signature, allow: true, count: batch.count },
+              })
+            }
+            className="font-medium text-brass underline-offset-2 transition-colors hover:underline"
+          >
+            Aprovar todas ({batch.count})
+          </button>
+          <span aria-hidden>·</span>
+          <button
+            onClick={() =>
+              dispatchBatch({
+                type: "request",
+                confirm: { signature: batch.signature, allow: false, count: batch.count },
+              })
+            }
+            className="font-medium text-foreground/80 underline-offset-2 transition-colors hover:underline"
+          >
+            Negar todas ({batch.count})
+          </button>
+        </div>
+      )}
+
+      {/* Confirmação OBRIGATÓRIA do lote: comando exato + contagem, sem atalho. */}
+      {batch && confirming && (
+        <div className="mt-2 rounded-md border border-brass/50 bg-card/70 px-2.5 py-2">
+          <p className="text-[12px] text-foreground">
+            {confirming.allow ? "Aprovar" : "Negar"}{" "}
+            <span className="font-medium">{batch.count} pedidos idênticos</span> de{" "}
+            <span className="font-medium">{data.tool_name}</span>?
+          </p>
+          <code className="mt-1 block whitespace-pre-wrap break-all font-mono text-[11px] text-foreground/80">
+            {data.command || JSON.stringify(data.input)}
+          </code>
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              onClick={() => dispatchBatch({ type: "cancel" })}
+              className="rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => dispatchBatch({ type: "confirm" })}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-opacity hover:opacity-90",
+                confirming.allow
+                  ? "bg-brass text-background"
+                  : "border border-destructive/50 text-destructive",
+              )}
+            >
+              {confirming.allow ? (
+                <Check className="size-3.5" />
+              ) : (
+                <X className="size-3.5" />
+              )}
+              {confirming.allow ? "Aprovar todas" : "Negar todas"} ({batch.count})
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="mt-2.5 flex items-center justify-end gap-2">
         <button
           onClick={() => onDecide(false)}

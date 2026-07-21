@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest"
 import {
   distillLesson,
+  feedbackLesson,
   isNovelRule,
   parseDistilledRule,
+  recordInjectedLessons,
   reinforceLessons,
   runCurator,
 } from "./learning"
@@ -106,5 +108,46 @@ describe("runCurator", () => {
 describe("reinforceLessons", () => {
   it("ids vazio → no-op, não lança", async () => {
     await expect(reinforceLessons([])).resolves.toBeUndefined()
+  })
+})
+
+describe("feedbackLesson (P6: 👍/👎 da mesa/companion)", () => {
+  it("up reforça as lições REGISTRADAS na conversa (mesmo caminho do ChatPanel)", async () => {
+    const run = vi.fn(async () => {})
+    recordInjectedLessons("conv-fb", ["l1", "l2"])
+    await feedbackLesson("conv-fb", "up", run)
+    expect(run).toHaveBeenCalledWith(["l1", "l2"])
+  })
+
+  it("down não escreve nada (no ChatPanel o 👎 sozinho também não grava)", async () => {
+    const run = vi.fn(async () => {})
+    recordInjectedLessons("conv-fb2", ["l1"])
+    await feedbackLesson("conv-fb2", "down", run)
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it("conversa sem registro (ou registro vazio) → no-op", async () => {
+    const run = vi.fn(async () => {})
+    await feedbackLesson("conv-desconhecida", "up", run)
+    recordInjectedLessons("conv-fb3", [])
+    await feedbackLesson("conv-fb3", "up", run)
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it("registro SOBRESCREVE por envio: o 👍 nunca reforça ids de turno velho", async () => {
+    const run = vi.fn(async () => {})
+    recordInjectedLessons("conv-fb4", ["velha"])
+    recordInjectedLessons("conv-fb4", ["nova"])
+    await feedbackLesson("conv-fb4", "up", run)
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(run).toHaveBeenCalledWith(["nova"])
+  })
+
+  it("falha no reforço é engolida (best-effort, nunca lança)", async () => {
+    const run = vi.fn(async () => {
+      throw new Error("db off")
+    })
+    recordInjectedLessons("conv-fb5", ["l1"])
+    await expect(feedbackLesson("conv-fb5", "up", run)).resolves.toBeUndefined()
   })
 })

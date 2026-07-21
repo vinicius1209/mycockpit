@@ -46,6 +46,7 @@ import {
   type TrayActivity,
 } from "@/lib/tray"
 import { nativeNotify } from "@/lib/notify"
+import { startTurnWatchdog } from "@/lib/watchdog"
 import { agentLabel, cancelAgent } from "@/lib/agent"
 import {
   isTauri,
@@ -222,6 +223,9 @@ export default function App() {
         useApp.getState().setSettings({ lastNotifiedVersions: notified })
     })()
   }, [])
+
+  // P2 — vigia de turno mudo: avisa quando um turno running fica sem produzir.
+  useEffect(() => startTurnWatchdog(), [])
 
   // F6 — motor das automações agendadas: tick IMEDIATO no boot (que também faz
   // o catch-up explícito dos perdidos >5min) + a cada 60s. O reload após cada

@@ -52,6 +52,7 @@ vi.mock("@/lib/learning", () => ({
     lessonIds: [] as string[],
   })),
   markLessonsUsed: vi.fn(async () => {}),
+  recordInjectedLessons: vi.fn(),
 }))
 vi.mock("@/lib/notify", () => ({ notifyTurnEnd: vi.fn() }))
 vi.mock("@/lib/transcript", () => ({

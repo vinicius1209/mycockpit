@@ -213,6 +213,10 @@ footer#costbar[hidden] { display: none !important; }
 .ci-tool .tn { color: var(--st-running); }
 .ci-result { font-size: 12px; color: var(--muted-foreground); text-align: center; padding: 4px 0; font-family: var(--font-mono); }
 .ci-result.bad { color: var(--st-error); }
+/* 👍/👎 do turno concluído (P6): discreto ao lado do "✓ turno concluído" */
+.ci-result .fb { font-size: 13px; opacity: .5; padding: 2px 5px; }
+.ci-result .fb.on { opacity: 1; }
+.fbrow { margin-left: 6px; white-space: nowrap; }
 .ci-notice { font-size: 12.5px; color: var(--muted-foreground); font-style: italic; text-align: center; }
 .ci-error { font-size: 13px; color: var(--st-error); background: color-mix(in srgb, var(--st-error) 10%, transparent); border-radius: 7px; padding: 8px 10px; overflow-wrap: anywhere; }
 .ci-limit { font-size: 13px; color: var(--st-queued); background: color-mix(in srgb, var(--st-queued) 10%, transparent); border-radius: 7px; padding: 8px 10px; }
@@ -359,7 +363,7 @@ var S = {
   answered: {},             // attentionId → true (otimista, até o snapshot confirmar)
   knownAttn: null,          // Set de ids já vistos (diff p/ notificação)
   agentsFor: null,          // projeto selecionado na tela de agents
-  chat: null,               // {projectId, projectName, agent, convId, items, echo:[], atts:[], sending, waitStart}
+  chat: null,               // {projectId, projectName, agent, convId, explicitConv, items, echo:[], atts:[], sending, waitStart, fb:{}}
   prevRunning: {},          // convId→1 do snapshot ANTERIOR (detecta fim de turno)
   pickCtx: null,            // pra onde vai o próximo anexo: {kind:"gate",id} | {kind:"chat"}
   sigs: {},                 // assinaturas por seção (evita re-render que rouba foco)
@@ -567,7 +571,7 @@ $("#btnBell").addEventListener("click", function () {
 function notifyNewAttention(items) {
   if (!notifOn() || typeof Notification === "undefined" || Notification.permission !== "granted") return;
   items.forEach(function (a) {
-    var kind = a.kind === "gate" ? "Gate de missão" : a.kind === "approval" ? "Aprovação pendente" : "Pergunta do agente";
+    var kind = a.kind === "gate" ? "Gate de missão" : a.kind === "approval" ? "Aprovação pendente" : a.kind === "stalled" ? "Turno mudo" : "Pergunta do agente";
     var body = (a.projectName ? a.projectName + " · " : "") + agentName(a.agent);
     try { new Notification("FROTA — " + kind, { body: body, tag: a.id }); } catch (e) {}
   });
@@ -660,6 +664,13 @@ function renderAttention() {
         '<div class="chips" data-chips="' + esc(a.id) + '">' + chips + '</div>' +
         '<div class="actions"><button class="btn icon" data-cam="' + esc(a.id) + '" aria-label="Anexar foto ou PDF">📷</button>' +
         '<button class="btn primary" data-answer="' + esc(a.id) + '">' + label + '</button></div></div>';
+    }
+    if (a.kind === "stalled") {
+      // turno mudo (watchdog): informativo + "Parar" via stop_turn (whitelisted)
+      return '<div class="card attn"><div class="cardhead"><span class="badge approval">mudo</span>' +
+        '<span class="ctx">' + ctxLine(a) + '</span></div>' +
+        '<div class="meta">Turno sem sinal de vida há ' + (a.minutes != null ? Number(a.minutes) : "?") + ' min — pode ter travado.</div>' +
+        '<div class="actions"><button class="btn danger" data-stop="' + esc(a.convId || "") + '" data-stopkind="stop_turn">Parar</button></div></div>';
     }
     // approval
     return '<div class="card attn"><div class="cardhead"><span class="badge approval">aprovação</span>' +
@@ -788,8 +799,12 @@ function openChat(projectId, agent, convId) {
   // resolução do histórico: convId explícito → mesa do snapshot → localStorage
   var desk = deskConvFromSnap(projectId, agent);
   var cid = convId || desk || lsGet(convKey(projectId, agent));
+  // conversa NÃO-mesa aberta explicitamente ("Abrir conversa"): o envio manda
+  // o convId (P5) — na mesa o fallback clássico (executor resolve) permanece.
+  var explicit = !!(convId && convId !== desk);
   S.chat = { projectId: projectId, projectName: name, agent: agent, convId: cid || null,
-             items: [], echo: [], atts: [], sending: false, waitStart: null };
+             explicitConv: explicit, items: [], echo: [], atts: [], sending: false,
+             waitStart: null, fb: {} };
   // persiste SÓ a conversa de MESA: um convId explícito de "Abrir conversa"
   // pode ser um turno do desktop — gravá-lo envenenaria o fallback da mesa.
   if (cid && (!convId || convId === desk)) lsSet(convKey(projectId, agent), cid);
@@ -887,7 +902,16 @@ function chatItemHtml(it) {
       var bits = [it.ok ? "✓ turno concluído" : "✗ turno falhou"];
       if (typeof it.costUsd === "number") bits.push(usd(it.costUsd));
       if (typeof it.durationMs === "number") bits.push(Math.round(it.durationMs / 1000) + "s");
-      return '<div class="ci-result' + (it.ok ? "" : " bad") + '">' + esc(bits.join(" · ")) + '</div>';
+      // 👍/👎 (P6): só em turno OK de conversa conhecida — a ação whitelisted
+      // feedback_lesson roteia pro MESMO caminho do 👍 do ChatPanel no desktop.
+      var fb = "";
+      if (it.ok && S.chat && S.chat.convId) {
+        var v = S.chat.fb[it.id];
+        fb = '<span class="fbrow">' +
+          '<button class="fb' + (v === "up" ? " on" : "") + '" data-fb="up" data-fbid="' + esc(it.id) + '" aria-label="Boa resposta">👍</button>' +
+          '<button class="fb' + (v === "down" ? " on" : "") + '" data-fb="down" data-fbid="' + esc(it.id) + '" aria-label="Faltou algo">👎</button></span>';
+      }
+      return '<div class="ci-result' + (it.ok ? "" : " bad") + '">' + esc(bits.join(" · ")) + fb + '</div>';
     }
     case "notice": return '<div class="ci-notice">' + esc(it.message) + '</div>';
     case "error": return '<div class="ci-error">' + esc(it.message) + '</div>';
@@ -949,7 +973,11 @@ function sendChat() {
   renderChatChips();
   renderChatItems();
   window.scrollTo(0, document.body.scrollHeight);
-  apiAction({ kind: "send_message", projectId: S.chat.projectId, agent: S.chat.agent, text: text, attachmentIds: ids })
+  var body = { kind: "send_message", projectId: S.chat.projectId, agent: S.chat.agent, text: text, attachmentIds: ids };
+  // P5: chat aberto numa conversa não-mesa manda o alvo explícito; o executor
+  // valida o pertencimento ao projeto (id estranho cai na mesa).
+  if (S.chat.explicitConv && S.chat.convId) body.convId = S.chat.convId;
+  apiAction(body)
     .then(function () {
       // 202 aceito: o turno REAL começou — segura o indicador de digitando até
       // o running[] do snapshot assumir (ou 20s, o que vier primeiro)
@@ -1014,7 +1042,7 @@ document.addEventListener("input", function (ev) {
 });
 
 document.addEventListener("click", function (ev) {
-  var el = ev.target.closest ? ev.target.closest("[data-nav],[data-proj],[data-pickagent],[data-answer],[data-approve],[data-deny],[data-stop],[data-openchat],[data-cam],[data-rmatt],[data-sug]") : null;
+  var el = ev.target.closest ? ev.target.closest("[data-nav],[data-proj],[data-pickagent],[data-answer],[data-approve],[data-deny],[data-stop],[data-openchat],[data-cam],[data-rmatt],[data-sug],[data-fb]") : null;
   if (!el) return;
 
   if (el.hasAttribute("data-nav")) { showScreen(el.getAttribute("data-nav")); return; }
@@ -1038,6 +1066,20 @@ document.addEventListener("click", function (ev) {
       var host = document.querySelector('[data-chips="' + CSS.escape(scope) + '"]');
       if (host) host.innerHTML = S.drafts[scope].atts.map(function (t, j) { return chipHtml(scope, j, t); }).join("");
     }
+    return;
+  }
+
+  if (el.hasAttribute("data-fb")) {
+    // 👍/👎 do turno concluído (P6): otimista — marca já, desfaz se a rede falhar.
+    var fid = el.getAttribute("data-fbid");
+    if (!S.chat || !S.chat.convId || S.chat.fb[fid]) return;
+    var verdict = el.getAttribute("data-fb");
+    S.chat.fb[fid] = verdict;
+    renderChatItems();
+    apiAction({ kind: "feedback_lesson", convId: S.chat.convId, verdict: verdict })
+      .catch(function () {
+        if (S.chat && S.chat.fb) { delete S.chat.fb[fid]; renderChatItems(); }
+      });
     return;
   }
 

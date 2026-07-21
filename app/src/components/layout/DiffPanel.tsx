@@ -1,10 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react"
 import {
   Check,
+  CheckCheck,
   ChevronRight,
   GitBranch,
   GitPullRequest,
   Loader2,
+  MessageSquareText,
   RefreshCw,
   X,
 } from "lucide-react"
@@ -32,8 +34,20 @@ const STATUS_META: Record<
 }
 
 /** Painel de alterações: diff da working tree do `cwd` (v1: não-commitado vs HEAD +
- *  arquivos novos). Lista por arquivo, colapsável; expande pros hunks. */
-export function DiffPanel({ cwd }: { cwd: string }) {
+ *  arquivos novos). Lista por arquivo, colapsável; expande pros hunks.
+ *  `delivery` (P3 — Entrega→diff): o painel abriu pelo clique numa entrega —
+ *  ganha o header de correção no topo (Pedir correção / Fechar). */
+export function DiffPanel({
+  cwd,
+  delivery,
+  onRequestFix,
+  onCloseDelivery,
+}: {
+  cwd: string
+  delivery?: { text: string } | null
+  onRequestFix?: () => void
+  onCloseDelivery?: () => void
+}) {
   const [diff, setDiff] = useState<GitDiff | null>(null)
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState<Set<string>>(new Set())
@@ -83,6 +97,36 @@ export function DiffPanel({ cwd }: { cwd: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {delivery && (
+        <div className="shrink-0 border-b border-brass/30 bg-brass/[0.07] px-3 py-2.5">
+          <div className="flex items-start gap-2">
+            <CheckCheck className="mt-0.5 size-3.5 shrink-0 text-st-success" aria-hidden="true" />
+            <p className="min-w-0 flex-1 text-[12px] leading-snug text-foreground/90">
+              <span className="font-medium">Entrega</span>
+              {delivery.text && (
+                <span className="text-muted-foreground"> — </span>
+              )}
+              <span className="line-clamp-2 inline text-muted-foreground">
+                {delivery.text}
+              </span>
+            </p>
+          </div>
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              onClick={onCloseDelivery}
+              className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
+            >
+              <X className="size-3.5" /> Fechar
+            </button>
+            <button
+              onClick={onRequestFix}
+              className="flex items-center gap-1.5 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
+            >
+              <MessageSquareText className="size-3.5" /> Pedir correção
+            </button>
+          </div>
+        </div>
+      )}
       {loading && !diff ? (
         <div className="flex flex-1 items-center justify-center text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />

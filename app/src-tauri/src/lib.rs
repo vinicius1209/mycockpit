@@ -396,6 +396,7 @@ pub fn run() {
             sources::read_text_file,
             sources::read_project_commands,
             sources::list_project_files,
+            sources::write_mission_state,
             sdd::read_sdd_plans,
             sdd::pr_info,
             sdd::sdd_ready,

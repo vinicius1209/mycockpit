@@ -25,6 +25,7 @@ import {
   type LedgerEntry,
   type RecentDelivery,
 } from "@/lib/db"
+import { feedbackLesson } from "@/lib/learning"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { convIdForInteraction, useInteractions } from "@/store/interactions"
@@ -42,12 +43,14 @@ import { perfSpan } from "@/office/engine/perf"
 // A onda 2 (página do celular) constrói EM CIMA deste shape — mudar é breaking.
 // Nunca inclui paths absolutos do disco (worktree/projectPath ficam fora).
 
-/** Item que PRECISA de você: gate de missão, aprovação de comando ou pergunta
- *  estruturada do agente. `agent` é o ID do registry (a página rotula). */
+/** Item que PRECISA de você: gate de missão, aprovação de comando, pergunta
+ *  estruturada do agente ou turno MUDO (watchdog P2). `agent` é o ID do
+ *  registry (a página rotula). */
 export interface CompanionAttention {
-  /** gate → "gate:<convId>"; approval/question → id do request (responder usa). */
+  /** gate → "gate:<convId>"; approval/question → id do request (responder usa);
+   *  stalled → "stalled:<convId>" (parar usa stop_turn com o convId). */
   id: string
-  kind: "gate" | "approval" | "question"
+  kind: "gate" | "approval" | "question" | "stalled"
   /** null = não mapeável a uma conversa (question não carrega run_id). */
   convId: string | null
   projectId: string | null
@@ -62,6 +65,8 @@ export interface CompanionAttention {
   /** approval: comando extraído (Bash) e a tool pedida. */
   command?: string
   toolName?: string
+  /** stalled: minutos de silêncio do turno ("mudo há X min"). */
+  minutes?: number
 }
 
 /** Atividade em execução agora (turno linear OU missão). */
@@ -258,6 +263,23 @@ export function buildCompanionSnapshot(
         questions: (d?.questions ?? []).map((q) => q.question),
       })
     }
+  }
+
+  // turno RUNNING mudo (o watchdog marcou stalledSince): card acionável no
+  // celular — "Parar" reaproveita a ação stop_turn já whitelisted no Rust.
+  for (const [convId, c] of Object.entries(chat.byId)) {
+    if (!c.running || c.stalledSince == null) continue
+    attention.push({
+      id: `stalled:${convId}`,
+      kind: "stalled",
+      convId,
+      projectId: c.projectId || null,
+      projectName: nameOf(c.projectId || null),
+      agent: c.agent,
+      phase: null,
+      phaseLabel: null,
+      minutes: Math.max(1, Math.round((Date.now() - c.stalledSince) / 60_000)),
+    })
   }
 
   // ── execução: turnos lineares rodando + missões running ──
@@ -512,7 +534,17 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
         return
       }
       const officeAgent = agent as OfficeAgentId
-      const convId = await ensureDeskConversation(projectId, officeAgent)
+      // P5: convId explícito ("abrir conversa" não-mesa no celular) SÓ vale se
+      // a conversa pertence às metas do projeto — qualquer outro id cai na
+      // conversa de MESA (nunca escreve numa conversa alheia/fantasma). As
+      // guardas do sendFromDesk cuidam do resto: ensureConversationLoaded,
+      // corrupt, missão rodando, e o agent TRAVADO da conversa VENCE o da ação.
+      const wanted = str(p.convId)
+      const metas = useChat.getState().conversationsByProject[projectId] ?? []
+      const convId =
+        wanted && metas.some((m) => m.id === wanted)
+          ? wanted
+          : await ensureDeskConversation(projectId, officeAgent)
       await sendFromDesk({
         convId,
         projectId,
@@ -521,6 +553,18 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
         text,
         attachments: uploadedAttachments(p),
       })
+      return
+    }
+    case "feedback_lesson": {
+      // P6: 👍/👎 do item de turno concluído no celular — MESMO caminho do
+      // ChatPanel (feedbackLesson → reinforceLessons das lições injetadas).
+      const convId = str(p.convId)
+      const verdict = str(p.verdict)
+      if (!convId || (verdict !== "up" && verdict !== "down")) {
+        console.warn("[companion] feedback_lesson malformado — ignorado", p)
+        return
+      }
+      await feedbackLesson(convId, verdict)
       return
     }
     default:

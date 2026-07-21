@@ -11,7 +11,11 @@ import type { Attachment } from "@/lib/attachments"
 import { wantsAutoResume } from "@/lib/autoResume"
 import { isTauri, listConversations, type ConversationMeta } from "@/lib/db"
 import { buildHandoff } from "@/lib/handoff"
-import { buildLearningBlocks, markLessonsUsed } from "@/lib/learning"
+import {
+  buildLearningBlocks,
+  markLessonsUsed,
+  recordInjectedLessons,
+} from "@/lib/learning"
 import { notifyTurnEnd } from "@/lib/notify"
 import { extractPlanText, turnEndedOk } from "@/lib/planMode"
 import {
@@ -193,8 +197,9 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   args.onAccepted?.("started")
   // M2: injeta as lições relevantes (projeto + globais) no PROMPT, não na
   // bolha visível — mesma injeção do handleSend no Linear. Best-effort:
-  // qualquer falha envia sem o bloco. (A mesa não tem o 👍 de feedback na O-1,
-  // então os ids injetados não são guardados pra reforço.)
+  // qualquer falha envia sem o bloco. Os ids injetados vão pro registro por
+  // conversa (recordInjectedLessons) — o 👍 do dock/companion (P6) reforça
+  // pelo MESMO caminho do ChatPanel (feedbackLesson → reinforceLessons).
   let promptText = text
   try {
     const blocks = await buildLearningBlocks(projectId, text, false)
@@ -202,8 +207,11 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
       promptText = `${blocks.lessons}\n\n---\n\n${text}`
       void markLessonsUsed(blocks.lessonIds)
     }
+    recordInjectedLessons(convId, blocks.lessonIds)
   } catch {
-    // sem lições — o envio segue normal
+    // sem lições — o envio segue normal (e zera o registro: 👍 deste turno
+    // não pode reforçar ids de um turno anterior)
+    recordInjectedLessons(convId, [])
   }
   // agy NÃO tem resume (todo turno é sessão fresca): injeta a memória da
   // conversa no prompt (recap + export do transcript pleno + ponteiro).
