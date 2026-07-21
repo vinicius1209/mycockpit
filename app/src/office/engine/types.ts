@@ -102,12 +102,40 @@ export type OfficeInteractable = {
   id: string
   /** Tile-âncora pro balão (centro visual do móvel). */
   tile: Vec2
+  /** Área clicável em torno da âncora, em tiles. */
+  footprint?: { w: number; h: number }
   /** Tile caminhável onde o boss interage. */
   interactTile: Vec2
 }
 
 /** Mesa de reunião da sala comum — lança missões reais (O-2, §8). */
 export const MISSION_TABLE_ID = "commons::mission"
+
+/** Mesa executiva da diretoria — posto de comando físico (§8): andar até ela
+ *  abre a Central do Boss. Mesmo espaço de ids dos interactables sem agent
+ *  (fora do padrão `${projectId}::${agent}` — a ui distingue pelo id). */
+export const BOSS_DESK_ID = "commons::bossdesk"
+
+/** Quadro de avisos do corredor — informação virando lugar: aproximar mostra
+ *  os PRÓXIMOS agendamentos (balão read-only); E/clique abre a view Agendado
+ *  do app. Mesmo espaço de ids dos interactables sem agent. */
+export const NOTICE_BOARD_ID = "corridor::board"
+
+/** Sala privada do usuário/chefe. Dados operacionais continuam no snapshot;
+ *  esta estrutura descreve apenas geometria determinística. */
+export type BossRoomPlacement = {
+  id: "boss"
+  origin: Vec2
+  w: number
+  h: number
+  doorTiles: Vec2[]
+  /** Canto NW e footprint completo da estação executiva física. */
+  deskTile: Vec2
+  deskFootprint: { w: number; h: number }
+  /** Posição caminhável de atendimento em frente à mesa. */
+  interactTile: Vec2
+  decor: RoomDecorItem[]
+}
 
 /** Sala comum no fim do corredor (sem projeto): mesa de reunião, lounge com
  *  sofá, cozinha. Tiles de móveis bloqueados na grid; resto caminhável. */
@@ -130,8 +158,10 @@ export type FloorPlan = {
   /** Flags por tile (T_WALK | T_DOOR | T_INTERACT). */
   grid: Uint8Array
   rooms: RoomPlacement[]
-  /** Spawn do boss (corredor), em coords contínuas. */
+  /** Spawn do boss, em coords contínuas (na planta real, sua própria sala). */
   spawn: Vec2
+  /** Sala física e fixa do chefe (ausente em plantas manuais/vazias). */
+  bossRoom?: BossRoomPlacement
   /** Sala comum no fim do corredor (ausente na planta vazia/teste). */
   commonRoom?: CommonRoomPlacement
   /** Pontos de interação sem mesa (mesa de reunião). Entram na proximidade. */
@@ -153,6 +183,35 @@ export type DeskVisualState =
   | "typing" //     turno rodando com text_delta/tool recente (braços digitando)
   | "hand" //       precisa do humano: gate de missão ou approval mapeada
 
+/** Persona da fase de missão (espelho estrutural de lib/missionTypes.
+ *  MissionPersona — engine/ não importa lib, então o union vive aqui e a
+ *  atribuição no bridge é estrutural). */
+export type OfficePersona = "planner" | "executor" | "reviewer"
+
+/** Status de fase de missão (espelho estrutural de MissionPhaseStatus). */
+export type OfficeMissionPhaseStatus =
+  | "queued"
+  | "running"
+  | "done"
+  | "error"
+  | "aborted"
+
+/** Kanban da missão do projeto (whiteboard da sala + visita do reviewer). */
+export type RoomMission = {
+  phases: {
+    label: string
+    persona: OfficePersona
+    /** Id cru do agent da fase (pode estar fora do trio com mesa). */
+    agent: string
+    status: OfficeMissionPhaseStatus
+  }[]
+  /** Índice da fase corrente (além do fim quando done). */
+  current: number
+  /** Mesa do agent da fase CORRENTE, quando mapeável (ausente se done ou o
+   *  agent da fase não tem mesa). */
+  executorDeskId?: string
+}
+
 export type DeskSnapshot = {
   id: string // `${projectId}::${agent}`
   projectId: string
@@ -166,6 +225,11 @@ export type DeskSnapshot = {
   convId?: string
   /** Motivo da mão levantada, quando state === "hand". */
   hand?: "gate" | "approval"
+  /** Persona da fase de missão corrente nesta mesa (missão ativa). */
+  persona?: OfficePersona
+  /** Auto-resume agendado (conv.autoResume.nextAt): a mesa "descansa" até
+   *  este timestamp (epoch ms) ⇒ sinal do sofá. */
+  restUntil?: number
 }
 
 export type RoomAggregate = "hand" | "running" | "idle"
@@ -192,25 +256,51 @@ export type RoomSnapshot = {
   /** Custo acumulado do projeto (ledger + missões em voo). */
   costUsd: number
   desks: DeskSnapshot[]
+  /** Kanban da missão do projeto (whiteboard) — a missão RODANDO; sem missão
+   *  ativa, a mais recente conhecida (o quadro persiste após done). */
+  mission?: RoomMission
+  /** Disputa Fusion ativa numa conv do projeto: mesas dos candidatos mapeáveis
+   *  (fallback: as 3 mesas da sala). Ausente = sem disputa. */
+  war?: { deskIds: string[] }
 }
 
 export type OfficeSnapshot = {
   rooms: RoomSnapshot[]
   /** Balões efêmeros de entrega: convId → resumo curto (limpo pelo consumidor). */
-  deliveries: { deskId: string; text: string; at: number }[]
+  deliveries: { deskId: string; convId?: string; text: string; at: number }[]
+  /** Handoffs físicos de missão (fase done → próxima com agent DIFERENTE, na
+   *  mesma sala): a cena spawna um courier mesa→mesa. Mesmo padrão efêmero das
+   *  deliveries (TTL no derive, ~20s); ausente = nenhum. */
+  handoffs?: { fromDeskId: string; toDeskId: string; at: number }[]
+  /** Missão saiu de ausente/queued → running: reunião de kickoff nas mesas dos
+   *  agents das fases. TTL ~25s. */
+  kickoffs?: { projectId: string; deskIds: string[]; at: number }[]
+  /** Missão → done: celebração na sala do projeto. TTL ~12s. */
+  celebrations?: { projectId: string; at: number }[]
+  /** Revezamento: o agent de uma conversa COM items mudou entre derives —
+   *  bastão mesa→mesa no mesmo projeto. TTL ~20s. */
+  batons?: { fromDeskId: string; toDeskId: string; at: number }[]
+  /** Mesa saiu de "off" → disponível (CLI detectado): chegada ao escritório.
+   *  TTL ~25s. */
+  arrivals?: { deskId: string; at: number }[]
+  /** Mesmo gatilho das deliveries (result de fim de turno), mas p/ o courier
+   *  levar o documento até a mesa do Boss. TTL ~30s. */
+  bossDeliveries?: { deskId: string; convId: string; at: number }[]
 }
 
 // ---------------------------------------------------------------------------
 // Estado do mundo (mutável, vive FORA do React; dono: engine/sim.ts)
 // ---------------------------------------------------------------------------
 
+export type BossFacing = "front" | "back" | "left" | "right"
+
 export type BossState = {
   pos: Vec2
   /** Posição do tick anterior (interpolação de NPCs usa o próprio; boss usa snap). */
   prev: Vec2
   vel: Vec2
-  /** 1 = olhando "direita" da tela, -1 = esquerda (flip do sprite). */
-  facing: 1 | -1
+  /** Direção visual preservada quando o personagem para. */
+  facing: BossFacing
   moving: boolean
   /** Caminho restante do click-to-move (waypoints em coords contínuas), ou null. */
   path: Vec2[] | null
@@ -242,7 +332,7 @@ export type InputState = {
   keys: Set<string>
   /** Clique de movimento pendente (coords de mundo), consumido pela sim. */
   clickWorld: Vec2 | null
-  /** Clique numa mesa (hit-test da cena), consumido pela sim. */
+  /** Clique numa mesa ou ponto interativo (hit-test da cena), consumido pela sim. */
   clickDeskId: string | null
 }
 

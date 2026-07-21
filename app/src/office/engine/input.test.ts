@@ -42,7 +42,7 @@ function makeHandlers(over: Partial<InputHandlers> = {}): InputHandlers {
     isTextTarget: () => false,
     onEscape: vi.fn(),
     onInteract: vi.fn(),
-    onTabRoom: vi.fn(),
+    onCycleRoom: vi.fn(),
     ...over,
   }
 }
@@ -94,24 +94,25 @@ describe("attachInput — roteamento de teclado (§5)", () => {
     expect(world.input.keys.size).toBe(0)
   })
 
-  it("com dock aberto, Tab segue a navegação de foco (sem preventDefault)", () => {
+  it("Tab sempre segue a navegação de foco", () => {
     const world = makeWorld()
     const handlers = makeHandlers({ isDockOpen: () => true })
     const { target } = attach(world, handlers)
     const e = fakeKey("Tab")
     target.dispatch("keydown", e)
     expect(e.preventDefault).not.toHaveBeenCalled()
-    expect(handlers.onTabRoom).not.toHaveBeenCalled()
+    expect(handlers.onCycleRoom).not.toHaveBeenCalled()
   })
 
-  it("com dock fechado, Tab cicla salas com preventDefault", () => {
+  it("R cicla salas sem sequestrar Tab", () => {
     const world = makeWorld()
     const handlers = makeHandlers()
     const { target } = attach(world, handlers)
-    const e = fakeKey("Tab")
-    target.dispatch("keydown", e)
-    expect(e.preventDefault).toHaveBeenCalled()
-    expect(handlers.onTabRoom).toHaveBeenCalledTimes(1)
+    const tab = fakeKey("Tab")
+    target.dispatch("keydown", tab)
+    expect(tab.preventDefault).not.toHaveBeenCalled()
+    target.dispatch("keydown", fakeKey("r"))
+    expect(handlers.onCycleRoom).toHaveBeenCalledTimes(1)
   })
 
   it("Esc delega ao coordenador da ui; E interage (ignorando auto-repeat)", () => {
@@ -140,7 +141,7 @@ describe("attachInput — roteamento de teclado (§5)", () => {
     expect(tab.preventDefault).not.toHaveBeenCalled()
     expect(seta.preventDefault).not.toHaveBeenCalled()
     expect(world.input.keys.size).toBe(0)
-    expect(handlers.onTabRoom).not.toHaveBeenCalled()
+    expect(handlers.onCycleRoom).not.toHaveBeenCalled()
     expect(handlers.onInteract).not.toHaveBeenCalled()
     expect(handlers.onEscape).not.toHaveBeenCalled()
   })

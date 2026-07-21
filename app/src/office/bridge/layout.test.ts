@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest"
 import { findPath } from "@/office/engine/astar"
 import {
+  NOTICE_BOARD_ID,
   OFFICE_AGENTS,
   T_DOOR,
   T_INTERACT,
@@ -16,6 +17,8 @@ import {
 } from "@/office/engine/types"
 import {
   buildFloorPlan,
+  BOSS_ROOM_H,
+  BOSS_ROOM_W,
   COMMONS_H,
   COMMONS_ID,
   COMMONS_W,
@@ -53,6 +56,10 @@ function alaW(n: number): number {
   return 1 + Math.ceil(n / 2) * (ROOM_W + 1)
 }
 
+function diretoriaEndX(n: number): number {
+  return alaW(n) + BOSS_ROOM_W + 1
+}
+
 const CORRIDOR_TOP = 1 + ROOM_H + 1
 
 describe("buildFloorPlan — determinismo", () => {
@@ -67,6 +74,9 @@ describe("buildFloorPlan — determinismo", () => {
     )
     expect(JSON.parse(JSON.stringify(b.commonRoom))).toEqual(
       JSON.parse(JSON.stringify(a.commonRoom)),
+    )
+    expect(JSON.parse(JSON.stringify(b.bossRoom))).toEqual(
+      JSON.parse(JSON.stringify(a.bossRoom)),
     )
     expect(JSON.parse(JSON.stringify(b.corridorDecor))).toEqual(
       JSON.parse(JSON.stringify(a.corridorDecor)),
@@ -98,20 +108,14 @@ describe("buildFloorPlan — dimensões", () => {
     // uma coluna, sem fileira de baixo
     expect(plan.rooms).toHaveLength(1)
     expect(plan.rooms[0].row).toBe(0)
-    expect(plan.w).toBe(alaW(1) + COMMONS_W + 1) // ala + sala comum + parede
+    expect(plan.w).toBe(diretoriaEndX(1) + COMMONS_W + 1)
     // altura dominada pela sala comum (9 tiles centrados no corredor)
     const commonsTop = CORRIDOR_TOP - Math.floor((COMMONS_H - CORRIDOR_H) / 2)
     expect(plan.h).toBe(commonsTop + COMMONS_H + 1)
-    // a largura caminhável do corredor (fileira do MEIO — decoração pode
-    // ocupar as fileiras encostadas nas paredes) É a largura da sala; o tile
-    // extra em x = alaW-1 é a PORTA da sala comum, fora da conta
+    // O corredor conecta projetos → diretoria → porta da sala comum.
     const midY = CORRIDOR_TOP + 1
-    const walkable = []
-    for (let x = 0; x < alaW(1) - 1; x++) {
-      if (tile(plan, x, midY) & T_WALK) walkable.push(x)
-    }
-    expect(walkable).toHaveLength(ROOM_W)
-    expect(tile(plan, alaW(1) - 1, midY) & T_DOOR).toBeTruthy()
+    expect(tile(plan, 1, midY) & T_WALK).toBeTruthy()
+    expect(tile(plan, diretoriaEndX(1) - 1, midY) & T_DOOR).toBeTruthy()
   })
 
   it("2+ projetos ganham a fileira de baixo (corredor no meio)", () => {
@@ -123,7 +127,7 @@ describe("buildFloorPlan — dimensões", () => {
   it("8 projetos cabem: 4 colunas × 2 fileiras + sala comum, tudo na grid", () => {
     const plan = buildFloorPlan(projetos(8))
     expect(plan.rooms).toHaveLength(8)
-    expect(plan.w).toBe(alaW(8) + COMMONS_W + 1)
+    expect(plan.w).toBe(diretoriaEndX(8) + COMMONS_W + 1)
     // alternância de fileiras: 0,1,0,1…
     expect(plan.rooms.map((r) => r.row)).toEqual([0, 1, 0, 1, 0, 1, 0, 1])
     for (const room of plan.rooms) {
@@ -175,12 +179,12 @@ describe("buildFloorPlan — portas", () => {
 })
 
 describe("buildFloorPlan — mesas e interação", () => {
-  it("mesas encostadas na parede NORTE nas DUAS fileiras, interação ao sul", () => {
+  it("estações recuam duas linhas da parede e atendem pela frente", () => {
     const plan = buildFloorPlan(projetos(4))
     for (const room of plan.rooms) {
       for (const desk of room.desks) {
-        // parede norte = primeira linha do interior (fundo alto do isométrico)
-        expect(desk.tile.y).toBe(room.origin.y)
+        // ry=0 é faixa técnica, ry=1 contém cadeira/agent e ry=2 contém mesa.
+        expect(desk.tile.y).toBe(room.origin.y + 2)
         // tile de interação SEMPRE ao sul, dentro da sala
         expect(desk.interactTile.y).toBe(desk.tile.y + 1)
       }
@@ -215,6 +219,36 @@ describe("buildFloorPlan — mesas e interação", () => {
     }
   })
 
+  it("reserva o footprint das cadeiras e dos agents atrás das mesas", () => {
+    const plan = buildFloorPlan(projetos(4))
+    for (const room of plan.rooms) {
+      for (const desk of room.desks) {
+        expect(tile(plan, desk.tile.x, desk.tile.y - 1) & T_WALK).toBeFalsy()
+        expect(tile(plan, desk.tile.x + 1, desk.tile.y - 1) & T_WALK).toBeFalsy()
+      }
+    }
+  })
+
+  it("mantém uma faixa frontal contínua para o boss cruzar a sala", () => {
+    const plan = buildFloorPlan(projetos(8))
+    for (const room of plan.rooms) {
+      const aisleY = room.origin.y + 4
+      for (let x = room.origin.x; x < room.origin.x + room.w; x++) {
+        expect(tile(plan, x, aisleY) & T_WALK).toBeTruthy()
+      }
+    }
+  })
+
+  it("estações mantêm ao menos um tile de respiro entre footprints", () => {
+    const plan = buildFloorPlan(projetos(4))
+    for (const room of plan.rooms) {
+      const sorted = room.desks.map((d) => d.tile.x).sort((a, b) => a - b)
+      for (let i = 1; i < sorted.length; i++) {
+        expect(sorted[i] - (sorted[i - 1] + 2)).toBeGreaterThanOrEqual(1)
+      }
+    }
+  })
+
   it("flip varia entre mesas (nada de fileira em uníssono)", () => {
     const plan = buildFloorPlan(projetos(2))
     for (const room of plan.rooms) {
@@ -225,17 +259,67 @@ describe("buildFloorPlan — mesas e interação", () => {
 })
 
 describe("buildFloorPlan — spawn", () => {
-  it("spawn cai no corredor, caminhável, em frente à porta da primeira sala", () => {
+  it("spawn cai caminhável dentro da sala do boss", () => {
     const plan = buildFloorPlan(projetos(3))
     const sx = Math.floor(plan.spawn.x)
     const sy = Math.floor(plan.spawn.y)
     expect(tile(plan, sx, sy) & T_WALK).toBeTruthy()
-    // linha imediatamente abaixo da porta da sala 0 (row 0)
-    const first = plan.rooms[0]
-    expect(sy).toBe(first.doorTiles[0].y + 1)
-    const doorXs = first.doorTiles.map((d) => d.x)
-    expect(plan.spawn.x).toBeGreaterThanOrEqual(Math.min(...doorXs))
-    expect(plan.spawn.x).toBeLessThanOrEqual(Math.max(...doorXs) + 1)
+    const boss = plan.bossRoom!
+    expect(plan.spawn.x).toBeGreaterThan(boss.origin.x)
+    expect(plan.spawn.x).toBeLessThan(boss.origin.x + boss.w)
+    expect(plan.spawn.y).toBeGreaterThan(boss.origin.y)
+    expect(plan.spawn.y).toBeLessThan(boss.origin.y + boss.h)
+  })
+})
+
+describe("buildFloorPlan — diretoria", () => {
+  it("é fixa, alcançável e mantém mesa/móveis fora da circulação central", () => {
+    const plan = buildFloorPlan(projetos(3))
+    const boss = plan.bossRoom!
+    expect(boss.id).toBe("boss")
+    expect(boss.origin.x).toBe(alaW(3))
+    expect(boss.w).toBe(BOSS_ROOM_W)
+    expect(boss.h).toBe(BOSS_ROOM_H)
+    expect(boss.doorTiles).toHaveLength(2)
+    expect(boss.deskFootprint).toEqual({ w: 4, h: 2 })
+    for (let fy = 0; fy < boss.deskFootprint.h; fy++) {
+      for (let fx = 0; fx < boss.deskFootprint.w; fx++) {
+        expect(tile(plan, boss.deskTile.x + fx, boss.deskTile.y + fy)).toBe(0)
+      }
+    }
+    const visitors = boss.decor.filter((item) => item.kind === "executive-visitor-chair")
+    expect(visitors).toHaveLength(2)
+    expect(visitors[1].tile.x - visitors[0].tile.x).toBeGreaterThanOrEqual(3)
+    expect(boss.decor.some((item) => item.kind === "executive-chair")).toBe(true)
+    const operatorChair = boss.decor.find((item) => item.kind === "executive-chair")!
+    expect(operatorChair.offset).toEqual({ x: -0.5, y: 0 })
+    expect(boss.decor.some((item) => item.kind === "executive-sideboard")).toBe(true)
+    for (const item of boss.decor.filter((entry) => isBlockingDecor(entry.kind))) {
+      const fp = DECOR_FOOTPRINTS[item.kind] ?? { w: 1, h: 1 }
+      for (let fy = 0; fy < fp.h; fy++) {
+        for (let fx = 0; fx < fp.w; fx++) {
+          expect(tile(plan, item.tile.x + fx, item.tile.y + fy)).toBe(0)
+        }
+      }
+    }
+    expect(tile(plan, boss.interactTile.x, boss.interactTile.y) & T_INTERACT).toBeTruthy()
+    expect(findPath(plan, plan.spawn, boss.interactTile)).not.toBeNull()
+    for (const door of boss.doorTiles) {
+      expect(tile(plan, door.x, door.y) & T_DOOR).toBeTruthy()
+      expect(findPath(plan, plan.spawn, { x: door.x + 0.5, y: door.y + 0.5 })).not.toBeNull()
+      expect(findPath(plan, { x: door.x + 0.5, y: door.y + 0.5 }, boss.interactTile)).not.toBeNull()
+    }
+  })
+
+  it("centraliza o spawn visualmente entre as cadeiras de visita", () => {
+    const plan = buildFloorPlan(projetos(3))
+    const visitors = plan.bossRoom!.decor.filter(
+      (item) => item.kind === "executive-visitor-chair",
+    )
+    const screenX = (x: number, y: number) => x - y
+    const chairXs = visitors.map((item) => screenX(item.tile.x + 0.5, item.tile.y + 0.5))
+    const midpoint = (chairXs[0] + chairXs[1]) / 2
+    expect(screenX(plan.spawn.x, plan.spawn.y)).toBeCloseTo(midpoint)
   })
 })
 
@@ -245,7 +329,7 @@ describe("buildFloorPlan — decoração procedural das salas", () => {
   const wallKinds = new Set<string>(WALL_PROP_KINDS)
   const floorKinds = new Set<string>(FLOOR_PROP_KINDS)
 
-  it("toda sala tem 1 tapete, 1–2 props de parede, 2–4 plantas, 0–2 de chão", () => {
+  it("toda sala tem 1 tapete, 1–2 props de parede, 1–2 plantas, 0–1 de apoio", () => {
     const plan = buildFloorPlan(projetos(8))
     for (const room of plan.rooms) {
       const decor = decorDe(room)
@@ -256,24 +340,32 @@ describe("buildFloorPlan — decoração procedural das salas", () => {
       expect(rugs).toHaveLength(1)
       expect(walls.length).toBeGreaterThanOrEqual(1)
       expect(walls.length).toBeLessThanOrEqual(2)
-      expect(plants.length).toBeGreaterThanOrEqual(2)
-      expect(plants.length).toBeLessThanOrEqual(4)
-      expect(floors.length).toBeLessThanOrEqual(2)
+      expect(plants.length).toBeGreaterThanOrEqual(1)
+      expect(plants.length).toBeLessThanOrEqual(2)
+      expect(floors.length).toBeLessThanOrEqual(1)
       expect(rugs.length + walls.length + plants.length + floors.length).toBe(
         decor.length,
       )
     }
   })
 
-  it("com 2 plantas ou mais, sempre há pelo menos 2 espécies", () => {
+  it("quando há 2 plantas, elas ocupam nichos semânticos espaçados e usam espécies distintas", () => {
     const plan = buildFloorPlan(projetos(8))
     for (const room of plan.rooms) {
-      const species = new Set(
-        decorDe(room)
-          .filter((d) => plantKinds.has(d.kind))
-          .map((d) => d.kind),
-      )
-      expect(species.size).toBeGreaterThanOrEqual(2)
+      const plants = decorDe(room).filter((d) => plantKinds.has(d.kind))
+      const allowed = new Set([`0,${room.h - 2}`, `${room.w - 2},${room.h - 2}`])
+      for (const plant of plants) {
+        const rx = plant.tile.x - room.origin.x
+        const ry = plant.tile.y - room.origin.y
+        expect(allowed.has(`${rx},${ry}`)).toBe(true)
+      }
+      if (plants.length === 2) {
+        expect(new Set(plants.map((d) => d.kind)).size).toBe(2)
+        const distance =
+          Math.abs(plants[0].tile.x - plants[1].tile.x) +
+          Math.abs(plants[0].tile.y - plants[1].tile.y)
+        expect(distance).toBeGreaterThanOrEqual(3)
+      }
     }
   })
 
@@ -322,13 +414,17 @@ describe("buildFloorPlan — decoração procedural das salas", () => {
         expect(deskTiles.has(key)).toBe(false)
         expect(doorTiles.has(key)).toBe(false)
         expect(interactTiles.has(key)).toBe(false)
-        // tile efetivamente bloqueado na grid
-        expect(tile(plan, d.tile.x, d.tile.y)).toBe(0)
-        // e dentro do interior da sala
-        expect(d.tile.x).toBeGreaterThanOrEqual(room.origin.x)
-        expect(d.tile.x).toBeLessThan(room.origin.x + room.w)
-        expect(d.tile.y).toBeGreaterThanOrEqual(room.origin.y)
-        expect(d.tile.y).toBeLessThan(room.origin.y + room.h)
+        // footprint inteiro bloqueado e contido no interior da sala
+        const fp = DECOR_FOOTPRINTS[d.kind] ?? { w: 1, h: 1 }
+        for (let fy = 0; fy < fp.h; fy++) {
+          for (let fx = 0; fx < fp.w; fx++) {
+            expect(tile(plan, d.tile.x + fx, d.tile.y + fy)).toBe(0)
+            expect(d.tile.x + fx).toBeGreaterThanOrEqual(room.origin.x)
+            expect(d.tile.x + fx).toBeLessThan(room.origin.x + room.w)
+            expect(d.tile.y + fy).toBeGreaterThanOrEqual(room.origin.y)
+            expect(d.tile.y + fy).toBeLessThan(room.origin.y + room.h)
+          }
+        }
       }
     }
   })
@@ -372,7 +468,7 @@ describe("buildFloorPlan — sala comum", () => {
     expect(commons.w).toBe(COMMONS_W)
     expect(commons.h).toBe(COMMONS_H)
     // a leste da ala de salas
-    expect(commons.origin.x).toBe(alaW(3))
+    expect(commons.origin.x).toBe(diretoriaEndX(3))
     expect(commons.doorTiles).toHaveLength(2)
     for (const d of commons.doorTiles) {
       const f = tile(plan, d.x, d.y)
@@ -431,6 +527,36 @@ describe("buildFloorPlan — sala comum", () => {
     }
   })
 
+  it("reserva a lateral oeste do mesão para o avatar não entrar no overhang", () => {
+    const plan = buildFloorPlan(projetos(2))
+    const c = plan.commonRoom!
+    expect(tile(plan, c.origin.x + 3, c.origin.y + 3)).toBe(0)
+    expect(tile(plan, c.origin.x + 3, c.origin.y + 4)).toBe(0)
+  })
+
+  it("lounge e copa mantêm respiro das paredes baixas/altas", () => {
+    const plan = buildFloorPlan(projetos(2))
+    const c = plan.commonRoom!
+    const sofa = c.decor.find((d) => d.kind === "sofa")!
+    const rug = c.decor.find((d) => d.kind === "rug-large")!
+    const plant = c.decor.find((d) => d.kind.startsWith("plant-"))!
+    const counter = c.decor.find((d) => d.kind === "kitchen-counter")!
+    const coffee = c.decor.find((d) => d.kind === "coffee-machine")!
+    const cooler = c.decor.find((d) => d.kind === "water-cooler")!
+    const sofaFp = DECOR_FOOTPRINTS.sofa
+    const rugFp = DECOR_FOOTPRINTS["rug-large"]
+    expect(sofa.tile.x + sofaFp.w).toBeLessThan(c.origin.x + c.w)
+    expect(rug.tile.x + rugFp.w).toBeLessThan(c.origin.x + c.w)
+    expect(rug.tile.y + rugFp.h).toBeLessThan(c.origin.y + c.h)
+    expect(plant.tile.x).toBeLessThan(c.origin.x + c.w - 1)
+    expect(counter.tile.x).toBe(c.origin.x + 1)
+    expect(counter.tile.y).toBe(c.origin.y)
+    expect(DECOR_FOOTPRINTS["kitchen-counter"]).toEqual({ w: 2, h: 1 })
+    expect(coffee.tile).toEqual(counter.tile)
+    expect(cooler.tile.x).toBeGreaterThan(c.origin.x)
+    expect(cooler.tile.y).toBe(c.origin.y)
+  })
+
   it("o boss chega do spawn ao interior da sala comum (A*)", () => {
     for (const n of [1, 2, 5, 8]) {
       const plan = buildFloorPlan(projetos(n))
@@ -447,12 +573,19 @@ describe("buildFloorPlan — sala comum", () => {
 })
 
 describe("buildFloorPlan — corredor decorado", () => {
-  it("tem bebedouro, plantas e quadro de avisos (6 projetos)", () => {
+  it("o eixo só tem o quadro de avisos, pendurado na LINHA DE PAREDE", () => {
     const plan = buildFloorPlan(projetos(6))
-    const kinds = plan.corridorDecor!.map((d) => d.kind)
-    expect(kinds).toContain("water-cooler")
-    expect(kinds).toContain("notice-board")
-    expect(kinds.some((k) => k.startsWith("plant-"))).toBe(true)
+    expect(plan.corridorDecor).toHaveLength(1)
+    const board = plan.corridorDecor![0]
+    expect(board.kind).toBe("notice-board")
+    expect(board.tile.y).toBe(CORRIDOR_TOP - 1) // parede norte do corredor
+    expect(isBlockingDecor(board.kind)).toBe(false) // parede — não bloqueia
+  })
+
+  it("não reserva nenhum tile caminhável para decoração", () => {
+    const plan = buildFloorPlan(projetos(8))
+    const floor = plan.corridorDecor!.filter((d) => isBlockingDecor(d.kind))
+    expect(floor).toEqual([])
   })
 
   it("a fileira do MEIO do corredor fica 100% caminhável", () => {
@@ -483,12 +616,46 @@ describe("buildFloorPlan — corredor decorado", () => {
       expect(tile(plan, d.tile.x, d.tile.y)).toBe(0)
     }
   })
+})
 
-  it("quadro de avisos fica na parede norte do corredor, sem porta", () => {
-    const plan = buildFloorPlan(projetos(4))
-    const board = plan.corridorDecor!.find((d) => d.kind === "notice-board")!
-    expect(board).toBeDefined()
-    expect(board.tile.y).toBe(CORRIDOR_TOP - 1)
-    expect(tile(plan, board.tile.x, board.tile.y) & T_DOOR).toBeFalsy()
+describe("buildFloorPlan — quadro de avisos (interactable do corredor)", () => {
+  it("registra NOTICE_BOARD_ID com interactTile caminhável e T_INTERACT", () => {
+    for (const n of [1, 3, 8]) {
+      const plan = buildFloorPlan(projetos(n))
+      const board = plan.interactables?.find((i) => i.id === NOTICE_BOARD_ID)
+      expect(board).toBeDefined()
+      const f = tile(plan, board!.interactTile.x, board!.interactTile.y)
+      expect(f & T_WALK).toBeTruthy()
+      expect(f & T_INTERACT).toBeTruthy()
+      // interactTile é o tile do corredor logo abaixo do quadro na parede
+      expect(board!.interactTile.y).toBe(CORRIDOR_TOP)
+      const decorBoard = plan.corridorDecor!.find((d) => d.kind === "notice-board")!
+      expect(board!.interactTile.x).toBe(decorBoard.tile.x)
+      // âncora do balão/hit = CENTRO do tile de parede (interactableContainsWorld)
+      expect(board!.tile).toEqual({
+        x: decorBoard.tile.x + 0.5,
+        y: decorBoard.tile.y + 0.5,
+      })
+    }
+  })
+
+  it("nunca colide com portas (diretoria/sala comum) e o boss ALCANÇA o quadro", () => {
+    for (const n of [1, 3, 8]) {
+      const plan = buildFloorPlan(projetos(n))
+      const board = plan.interactables!.find((i) => i.id === NOTICE_BOARD_ID)!
+      const decorBoard = plan.corridorDecor!.find((d) => d.kind === "notice-board")!
+      const doorKeys = new Set(
+        [...plan.bossRoom!.doorTiles, ...plan.commonRoom!.doorTiles].map(
+          (d) => `${d.x},${d.y}`,
+        ),
+      )
+      expect(doorKeys.has(`${decorBoard.tile.x},${decorBoard.tile.y}`)).toBe(false)
+      // A* real do engine, do spawn até o tile de interação (mesma métrica do boss)
+      const to = {
+        x: board.interactTile.x + 0.5,
+        y: board.interactTile.y + 0.5,
+      }
+      expect(findPath(plan, plan.spawn, to)).not.toBeNull()
+    }
   })
 })

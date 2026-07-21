@@ -3,14 +3,28 @@
 // esse acesso viver no bridge/. Tudo aqui é leitura seletiva (byId[convId],
 // drafts, gate) ou despacho pontual (setDraft, answerGate); NENHUM dado
 // por-frame passa por aqui.
+import { useMemo } from "react"
+import { useShallow } from "zustand/react/shallow"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useMission } from "@/store/mission"
-import type { ConvState } from "@/store/chat"
-import type { MissionGate, RecoveryChoice } from "@/lib/missionTypes"
+import { useSchedules } from "@/store/schedules"
+import { fmtUntilShort, upcomingScheduled } from "@/lib/schedules"
+import type { ChatItem, ConvState } from "@/store/chat"
+import type {
+  GateAnswer,
+  MissionGate,
+  MissionPhaseStatus,
+  MissionRun,
+  MissionStatus,
+  RecoveryChoice,
+} from "@/lib/missionTypes"
+import { presentTool } from "@/lib/toolview"
 import {
   AGENTS,
+  agentCaps,
   agentDef,
+  agentEfforts,
   agentModels,
   defaultModelFor,
   type AgentModelOption,
@@ -19,7 +33,7 @@ import { isTauri, type ConversationMeta } from "@/lib/db"
 import { buildExecutionPrompt } from "@/lib/planMode"
 import type { OfficeAgentId } from "../engine/types"
 import { DESK_TITLE_PREFIX } from "./send"
-import { simProjects } from "./sim-data"
+import { simProjects, simSchedules } from "./sim-data"
 
 // Re-exports utilitários pra ui/ não importar lib do app diretamente.
 export { fmtCost } from "@/lib/format"
@@ -55,7 +69,26 @@ export function availableAgents(): { id: string; label: string }[] {
  *  (estáticos + dinâmicos do `agy models` + aprovados do curador). A 1ª opção é
  *  sempre "Padrão" (value "default" = deixa o agent escolher). */
 export function modelsFor(agentId: string): AgentModelOption[] {
-  return agentModels(agentId)
+  return agentModels(agentId).map((option) =>
+    option.value === "default" ? { ...option, pill: "Padrão" } : option,
+  )
+}
+
+const OFFICE_EFFORT_LABELS: Record<string, string> = {
+  default: "Padrão",
+  minimal: "Mínimo",
+  low: "Baixo",
+  medium: "Médio",
+  high: "Alto",
+  xhigh: "Muito alto",
+  max: "Máximo",
+}
+
+export function effortsFor(agentId: string): AgentModelOption[] {
+  return agentEfforts(agentId).map((option) => {
+    const label = OFFICE_EFFORT_LABELS[option.value] ?? option.label
+    return { ...option, label, pill: label }
+  })
 }
 
 /** Modelo pré-selecionado de um agent ("default" se nenhum) — semente do seletor
@@ -106,12 +139,55 @@ export function officeProjectById(id: string): OfficeProject | undefined {
   return officeProjects().find((p) => p.id === id)
 }
 
-/** Estado da conversa da mesa. O streaming chega por aqui: o handleEvent do
- *  bridge/send.ts escreve em byId[convId] e o dock re-renderiza. */
-export function useDeskConversation(
-  convId: string | null,
-): ConvState | undefined {
-  return useChat((s) => (convId ? s.byId[convId] : undefined))
+/** Chrome do dock (S2 da investigação de perf): visão DISCRETA da conversa da
+ *  mesa — tudo que cabeçalho/composer/cards leem, SEM a identidade de `items`.
+ *  Assinar o ConvState inteiro re-renderizava o dock TODO (RichSelect,
+ *  composer…) a cada text_delta; aqui são escalares + refs estáveis entre
+ *  deltas (pendingPlan/autoResume só trocam em transições) via useShallow ⇒
+ *  re-render apenas em mudança discreta. A LISTA assina por conta própria
+ *  (useDeskItems, no filho DockItemsList do DeskDock). */
+export type DeskConvChrome = {
+  /** Conversa carregada em byId (false = "Abrindo a conversa da mesa…"). */
+  exists: boolean
+  running: boolean
+  finalizing: boolean
+  corrupt: boolean
+  /** Carregada e VAZIA (mostra os chips de sugestão). */
+  empty: boolean
+  /** Modelo/esforço travados (a conversa já tem itens). */
+  locked: boolean
+  reqModel: string | null
+  effort: string | null
+  startedAt: number | null
+  pendingPlan: ConvState["pendingPlan"]
+  autoResume: ConvState["autoResume"]
+}
+
+export function useDeskConvChrome(convId: string | null): DeskConvChrome {
+  return useChat(
+    useShallow((s): DeskConvChrome => {
+      const c = convId ? s.byId[convId] : undefined
+      return {
+        exists: !!c,
+        running: c?.running ?? false,
+        finalizing: c?.finalizing ?? false,
+        corrupt: c?.corrupt ?? false,
+        empty: !!c && c.items.length === 0,
+        locked: !!c && c.items.length > 0,
+        reqModel: c?.reqModel ?? null,
+        effort: c?.effort ?? null,
+        startedAt: c?.startedAt ?? null,
+        pendingPlan: c?.pendingPlan,
+        autoResume: c?.autoResume,
+      }
+    }),
+  )
+}
+
+/** Itens da conversa da mesa — SÓ a lista do dock assina (o streaming troca a
+ *  identidade a cada delta; o chrome fica de fora de propósito). */
+export function useDeskItems(convId: string | null): ChatItem[] | undefined {
+  return useChat((s) => (convId ? s.byId[convId]?.items : undefined))
 }
 
 /** Rascunho do composer da mesa — compartilhado com o ChatPanel via
@@ -131,9 +207,32 @@ export function useDeskGate(convId: string | null): MissionGate | null {
 }
 
 /** Responde o gate e RETOMA a missão (answers[i] ↔ gate.questions[i];
- *  em branco = o agente decide). */
-export function answerDeskGate(convId: string, answers: string[]): void {
+ *  em branco = o agente decide). Aceita GateAnswer[] rico (texto + anexos, o
+ *  card de decisão) ou string[] legado — o answerGate normaliza. */
+export function answerDeskGate(
+  convId: string,
+  answers: GateAnswer[] | string[],
+): void {
   useMission.getState().answerGate(convId, answers)
+}
+
+/** Capacidade de anexo do agent da PRÓXIMA fase (o destino dos anexos das
+ *  respostas do gate) + rótulo pro aviso do chip. Sem gate/próxima fase ⇒
+ *  nega tudo (o filtro REAL é do answerGate — descarta com notice). */
+export function useDeskGateCaps(convId: string | null): {
+  caps: { image: boolean; pdf: boolean }
+  label: string
+} {
+  const agent = useMission((s) => {
+    if (!convId) return null
+    const run = s.byConv[convId]
+    if (!run?.gate) return null
+    return run.phases[run.gate.phase + 1]?.def.agent ?? null
+  })
+  return {
+    caps: agentCaps(agent ?? ""),
+    label: agent ? (agentDef(agent)?.label ?? agent) : "o próximo agent",
+  }
 }
 
 /** Snapshot NÃO-reativo pro coordenador §5.4/Esc: existe draft? turno ativo?
@@ -155,6 +254,35 @@ export function dockLeaveCtx(convId: string | null): {
  *  existe na união hoje; "office" entra por fora, na lista fechada do §6.1). */
 export function exitOfficeToPainel(): void {
   useApp.getState().setViewMode("painel")
+}
+
+/** Quadro de avisos: abre a view Agendado do app POR CIMA do office (o
+ *  App.tsx esconde o canvas enquanto scheduledOpen — mesmo overlay da
+ *  Sidebar). Fechar lá devolve o office intacto. */
+export function openScheduledView(): void {
+  useApp.getState().setScheduledOpen(true)
+}
+
+/** Item do balão do quadro de avisos: nome + "quando" curto (fmtUntilShort —
+ *  mesma régua do badge da Sidebar). */
+export type BoardScheduleItem = { id: string; name: string; when: string }
+
+/** Os PRÓXIMOS agendamentos pro balão do quadro de avisos (máx. `max`).
+ *  Tauri: useSchedules (mesmo dado da Sidebar — upcomingScheduled é o
+ *  nextScheduled em lista); browser puro: fixture simSchedules (O8). O
+ *  "quando" congela no momento em que o balão abre (o componente monta ao
+ *  entrar em alcance) — não há tick por frame aqui. */
+export function useBoardSchedules(max = 4): BoardScheduleItem[] {
+  const schedules = useSchedules((s) => s.schedules)
+  return useMemo(() => {
+    const now = Date.now()
+    const source = isTauri() ? schedules : simSchedules(now)
+    return upcomingScheduled(source, max).map((s) => ({
+      id: s.id,
+      name: s.name,
+      when: fmtUntilShort((s.nextRun as number) - now),
+    }))
+  }, [schedules, max])
 }
 
 /** Cauda (≤90 chars) do último texto do assistente ENQUANTO o turno roda —
@@ -235,6 +363,106 @@ export function resolveDeskRecovery(
 /** Recuperação: o usuário desistiu → a missão vai a error (abortRecovery). */
 export function abortDeskRecovery(convId: string): void {
   useMission.getState().abortRecovery(convId)
+}
+
+// --- painel de missão no dock da mesa (task #14) ----------------------------
+
+/** Fase resumida por VALOR pro painel de missão do DeskDock. */
+export type DeskMissionPhaseView = {
+  label: string
+  agent: string
+  status: MissionPhaseStatus
+  costUsd: number
+}
+
+/** Tool-step recente da fase corrente (label curto do presentTool). */
+export type DeskMissionStep = { label: string; done: boolean }
+
+/** Resumo por VALOR da missão que a mesa hospeda — o que o painel compacto do
+ *  DeskDock desenha (fases, atividade ao vivo, custo). Sem os ChatItem crus. */
+export type DeskMissionView = {
+  convId: string
+  status: MissionStatus
+  /** Índice da fase corrente CLAMPADO ao total (running: sempre válido). */
+  current: number
+  total: number
+  /** Persona pt-BR da fase corrente ("planejador"/"executor"/"revisor"). */
+  persona: string
+  costTotal: number
+  maxCostUsd: number | null
+  phases: DeskMissionPhaseView[]
+  /** Últimos ≤4 tool-steps da fase corrente (atividade ao vivo mini). */
+  steps: DeskMissionStep[]
+  /** O que está acontecendo agora (espelho do phaseActivity da timeline). */
+  now: string
+  /** Início da fase corrente (cronômetro), se já rodou. */
+  startedAt: number | null
+}
+
+const DESK_MISSION_PERSONA: Record<string, string> = {
+  planner: "planejador",
+  executor: "executor",
+  reviewer: "revisor",
+}
+
+/** Reduz o MissionRun ao que o painel do dock precisa (puro; os items da fase
+ *  corrente viram ≤4 strings de tool-step — nunca vazam ChatItem crus). */
+function buildDeskMissionView(convId: string, run: MissionRun): DeskMissionView {
+  const total = run.phases.length
+  const cur = Math.max(0, Math.min(run.current, total - 1))
+  const phase = run.phases[cur]
+  const items = phase?.items ?? []
+  const tools = items.filter(
+    (i): i is Extract<ChatItem, { kind: "tool" }> => i.kind === "tool",
+  )
+  const last = items[items.length - 1]
+  const now =
+    last?.kind === "tool"
+      ? presentTool(last.name, last.input).label
+      : last?.kind === "text"
+        ? "redigindo resposta…"
+        : tools.length > 0
+          ? "trabalhando…"
+          : "preparando…"
+  const persona = phase?.def.persona ?? ""
+  return {
+    convId,
+    status: run.status,
+    current: cur,
+    total,
+    persona: DESK_MISSION_PERSONA[persona] ?? persona,
+    costTotal: run.costTotal,
+    maxCostUsd: run.maxCostUsd,
+    phases: run.phases.map((p) => ({
+      label: p.def.label,
+      agent: p.def.agent,
+      status: p.status,
+      costUsd: p.costUsd,
+    })),
+    steps: tools.slice(-4).map((t) => ({
+      label: presentTool(t.name, t.input).label,
+      done: t.result != null,
+    })),
+    now,
+    startedAt: phase?.startedAt ?? null,
+  }
+}
+
+/** A missão que a MESA hospeda (desk.convId do snapshot durante fase de
+ *  missão), resumida por VALOR: o seletor assina uma STRING (JSON) — os items
+ *  da fase corrente coalescem a cada onProgress, e só uma mudança VISÍVEL do
+ *  resumo re-renderiza o dock (mesma razão do useMissionTableSig). null =
+ *  conversa sem missão (turno linear ou mesa ociosa). */
+export function useDeskMissionView(convId: string | null): DeskMissionView | null {
+  const sig = useMission((s) => {
+    if (!convId) return null
+    const run = s.byConv[convId]
+    return run ? JSON.stringify(buildDeskMissionView(convId, run)) : null
+  })
+  return useMemo(
+    () => (sig ? (JSON.parse(sig) as DeskMissionView) : null),
+    [sig],
+  )
 }
 
 /** Custo acumulado da missão em voo da conversa (menu-balão), ou null. */

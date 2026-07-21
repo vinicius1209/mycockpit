@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest"
-import { DEAD_H, ZOOM_FREEZE_S, ZOOM_MAX, ZOOM_MIN, setInspect, updateCamera, zoomAt } from "./camera"
+import {
+  DEAD_H,
+  ZOOM_FREEZE_S,
+  ZOOM_MAX,
+  ZOOM_MIN,
+  setInspect,
+  snapInspect,
+  updateCamera,
+  zoomAt,
+} from "./camera"
 import { toScreen, toWorld } from "./iso"
 import { createWorld } from "./sim"
 import { SIM_DT, T_WALK } from "./types"
@@ -104,5 +113,21 @@ describe("inspect", () => {
     for (let i = 0; i < 600; i++) updateCamera(world, SIM_DT)
     expect(world.camera.pos.x).toBeCloseTo(5, 1)
     expect(world.camera.pos.y).toBeCloseTo(5, 1)
+  })
+
+  it("snapInspect enquadra imediatamente e incorpora o offset da area segura", () => {
+    const world = makeWorld()
+    const target = { x: 12, y: 8 }
+    world.camera.zoom = 1.2
+    world.camera.screenOffset = { x: -190, y: 10 }
+
+    snapInspect(world, target)
+
+    const st = toScreen(target.x, target.y)
+    const sc = toScreen(world.camera.pos.x, world.camera.pos.y)
+    expect((st.x - sc.x) * world.camera.zoom).toBeCloseTo(-190, 9)
+    expect((st.y - sc.y) * world.camera.zoom).toBeCloseTo(10, 9)
+    expect(world.camera.prev).toEqual(world.camera.pos)
+    expect(world.camera.inspectTarget).toEqual(target)
   })
 })

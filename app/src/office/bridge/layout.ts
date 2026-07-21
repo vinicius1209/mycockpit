@@ -1,7 +1,7 @@
 // Planta do escritório (docs/agent-office.md §3): geometria PURA derivada da
 // lista de projetos + DECORAÇÃO PROCEDURAL determinística. Corredor horizontal
-// central (3 tiles de altura), salas 10×8 em DUAS fileiras (row 0 acima, row 1
-// abaixo, alternando), porta de 2 tiles para o corredor, 3 mesas por sala (uma
+// central (3 tiles de altura), salas 12×8 em DUAS fileiras (row 0 acima, row 1
+// abaixo, alternando), porta de 2 tiles para o corredor e 3 mesas por sala (uma
 // por agent do registry) e uma SALA COMUM 12×9 no fim do corredor (mesa de
 // reunião, lounge, cozinha).
 //
@@ -15,12 +15,19 @@
 import { deskDisplayName } from "./hooks"
 import { findPath } from "@/office/engine/astar"
 import {
+  EXECUTIVE_STATION_SPEC,
+  furnitureRectTile,
+} from "@/office/engine/furniture"
+import {
   OFFICE_AGENTS,
   T_DOOR,
   T_INTERACT,
   T_WALK,
+  BOSS_DESK_ID,
   MISSION_TABLE_ID,
+  NOTICE_BOARD_ID,
   type CommonRoomPlacement,
+  type BossRoomPlacement,
   type DeskPlacement,
   type FloorPlan,
   type OfficeInteractable,
@@ -37,7 +44,7 @@ export type OfficeProjectRef = {
 }
 
 /** Interior da sala, em tiles. */
-export const ROOM_W = 10
+export const ROOM_W = 12
 export const ROOM_H = 8
 /** Altura do corredor central, em tiles. */
 export const CORRIDOR_H = 3
@@ -45,14 +52,17 @@ export const CORRIDOR_H = 3
 export const COMMONS_W = 12
 export const COMMONS_H = 9
 export const COMMONS_ID = "commons" as const
+/** Sala do chefe: fixa, compacta e nunca procedural. */
+export const BOSS_ROOM_W = 10
+export const BOSS_ROOM_H = 8
 /** Espessura de parede (tiles não-caminháveis entre/around as salas). */
 const WALL = 1
-/** Offset x (dentro da sala) do canto esquerdo de cada mesa (2×1 tiles).
- *  Row 0: ritmo regular. Row 1: a parede NORTE é a do corredor e tem a porta
- *  nas colunas 4–5 — as mesas se afastam para não bloquear a entrada (o tile
- *  ao sul de cada tile de porta precisa continuar caminhável). */
-const DESK_XS_ROW0 = [1, 4, 7]
-const DESK_XS_ROW1 = [1, 6, 8]
+/** Estações em bays consistentes dentro da sala 12×8. O primeiro tile fica
+ *  livre da parede oeste e o eixo da porta (5–6) mantém rota pela coluna 6. */
+const DESK_XS = [1, 4, 8] as const
+/** Zoneamento longitudinal da sala: parede técnica 0, cadeira 1, mesa 2,
+ *  interação 3 e corredor frontal contínuo 4. */
+const DESK_Y_INSET = 2
 /** Alvo O-1 do design doc: até 8 projetos (o excedente fica fora da planta). */
 export const MAX_ROOMS = 8
 
@@ -106,14 +116,18 @@ export const FLOOR_PROP_KINDS = [
   "water-cooler",
   "sofa-small",
 ] as const
+const STORAGE_PROP_KINDS = new Set<string>(["filing-cabinet", "bookshelf"])
 
 /** Footprint em tiles por kind (ausente ⇒ 1×1). `tile` do item = canto NW. */
 export const DECOR_FOOTPRINTS: Record<string, { w: number; h: number }> = {
   rug: { w: 3, h: 2 },
   "rug-large": { w: 4, h: 3 },
   "meeting-table": { w: 4, h: 2 },
+  "executive-chair": { w: 2, h: 1 },
+  "executive-sideboard": { w: 1, h: 2 },
+  "executive-visitor-chair": { w: 1, h: 1 },
   sofa: { w: 2, h: 1 },
-  "kitchen-counter": { w: 1, h: 2 },
+  "kitchen-counter": { w: 2, h: 1 },
 }
 
 /** Decoração que NÃO bloqueia: tapetes (chão visual) e itens de parede. */
@@ -173,17 +187,17 @@ function decorateRoom(plan: FloorPlan, room: RoomPlacement, rng: () => number): 
   const rugY = oy + 3 + Math.floor(rng() * 2)
   decor.push({ kind: large ? "rug-large" : "rug", tile: { x: rugX, y: rugY } })
 
-  // 2) Parede norte: 1–2 props nos tiles de parede livres entre mesas (e fora
-  //    da porta, que na row 1 divide a parede norte com as mesas). Não bloqueia.
-  const deskCols = new Set<number>()
+  // 2) Parede norte: 1–2 props nos tiles livres entre os bays de trabalho e
+  //    fora da porta. A zona técnica atrás das cadeiras permanece legível.
+  const workstationCols = new Set<number>()
   for (const d of room.desks) {
-    deskCols.add(d.tile.x - ox)
-    deskCols.add(d.tile.x + 1 - ox)
+    workstationCols.add(d.tile.x - ox)
+    workstationCols.add(d.tile.x + 1 - ox)
   }
   const doorCols = new Set(room.row === 1 ? room.doorTiles.map((d) => d.x - ox) : [])
   const freeWallXs: number[] = []
   for (let rx = 0; rx < room.w; rx++) {
-    if (!deskCols.has(rx) && !doorCols.has(rx)) freeWallXs.push(rx)
+    if (!workstationCols.has(rx) && !doorCols.has(rx)) freeWallXs.push(rx)
   }
   const wallCount = Math.min(1 + (rng() < 0.5 ? 1 : 0), freeWallXs.length)
   const wallXs = shuffle(freeWallXs, rng).slice(0, wallCount)
@@ -192,46 +206,78 @@ function decorateRoom(plan: FloorPlan, room: RoomPlacement, rng: () => number): 
     decor.push({ kind: wallKinds[i], tile: { x: ox + wallXs[i], y: oy - 1 } })
   }
 
-  // Pool de tiles SEGUROS para props de chão: bordas oeste/leste/sul do
-  // interior (longe da fileira de mesas ry=0 e da fileira de interação ry=1),
-  // menos os tiles de entrada da porta. Shuffle uma vez; plantas e props
-  // consomem da mesma fila.
+  // Slots arquitetônicos: estações ao norte, circulação inteiramente livre no
+  // centro e apoio/verde em nichos recuados das divisórias baixas. O PRNG
+  // escolhe variantes dentro desses slots; ele não inventa posições soltas.
   const entry = new Set(
     room.doorTiles.map((d) => `${d.x - ox},${room.row === 0 ? room.h - 1 : 0}`),
   )
-  const pool: Vec2[] = []
-  for (let ry = 2; ry < room.h; ry++) {
-    pool.push({ x: 0, y: ry })
-    pool.push({ x: room.w - 1, y: ry })
-  }
-  for (let rx = 1; rx < room.w - 1; rx++) pool.push({ x: rx, y: room.h - 1 })
-  const candidates = shuffle(
-    pool.filter((t) => !entry.has(`${t.x},${t.y}`)),
+  // Armários/arquivos têm slots próprios na parede OESTE alta e sempre são
+  // virados para acompanhar esse plano. Eles nunca disputam slots de plantas
+  // nem aparecem soltos junto às divisórias baixas/circulação.
+  const storagePool = shuffle(
+    [
+      { x: 0, y: 5 },
+      { x: 0, y: room.h - 2 },
+    ],
+    rng,
+  ).filter((t) => !entry.has(`${t.x},${t.y}`))
+  // Verde apenas nos dois nichos da faixa de distribuição. O eixo x=4..7 e
+  // todo o corredor frontal ry=4 ficam livres em ambas as orientações.
+  const plantSlots: Vec2[] = [
+    { x: 0, y: room.h - 2 },
+    { x: room.w - 2, y: room.h - 2 },
+  ]
+  const plantPool = shuffle(
+    plantSlots.filter((t) => !entry.has(`${t.x},${t.y}`)),
+    rng,
+  )
+  const supportPool = shuffle(
+    [
+      { x: 1, y: 5 },
+      { x: room.w - 2, y: 5 },
+    ].filter((t) => !entry.has(`${t.x},${t.y}`)),
     rng,
   )
 
   /** Bloqueia o próximo candidato que não sela porta→mesas; reverte se selar. */
-  const placeBlocking = (kind: string, flip: boolean): boolean => {
-    while (candidates.length > 0) {
-      const rel = candidates.shift()!
+  const placeBlocking = (
+    kind: string,
+    flip: boolean,
+    source: Vec2[],
+  ): boolean => {
+    while (source.length > 0) {
+      const rel = source.shift()!
       const x = ox + rel.x
       const y = oy + rel.y
-      const idx = y * plan.w + x
-      const saved = plan.grid[idx]
-      // nunca em cima de porta/interação/mesa (mesa já é 0 — cai no !T_WALK)
-      if ((saved & T_WALK) === 0 || (saved & (T_DOOR | T_INTERACT)) !== 0) continue
-      plan.grid[idx] = 0
+      const fp = DECOR_FOOTPRINTS[kind] ?? { w: 1, h: 1 }
+      if (rel.x < 0 || rel.y < 0 || rel.x + fp.w > room.w || rel.y + fp.h > room.h)
+        continue
+      const saved: Array<{ idx: number; flags: number }> = []
+      let free = true
+      for (let fy = 0; fy < fp.h; fy++) {
+        for (let fx = 0; fx < fp.w; fx++) {
+          const idx = (y + fy) * plan.w + x + fx
+          const flags = plan.grid[idx]
+          // Nunca sobre porta/interação/mesa ou outro móvel já reservado.
+          if ((flags & T_WALK) === 0 || (flags & (T_DOOR | T_INTERACT)) !== 0) free = false
+          saved.push({ idx, flags })
+        }
+      }
+      if (!free) continue
+      for (const cell of saved) plan.grid[cell.idx] = 0
       if (roomPathsOpen(plan, room)) {
         decor.push({ kind, tile: { x, y }, flip })
         return true
       }
-      plan.grid[idx] = saved
+      for (const cell of saved) plan.grid[cell.idx] = cell.flags
     }
     return false
   }
 
-  // 3) Plantas: 2–4, de pelo menos 2 espécies (a 2ª é forçada ≠ da 1ª).
-  const plantCount = 2 + Math.floor(rng() * 3)
+  // 3) Plantas: 1–2 por sala. Quando há duas, a segunda espécie é diferente;
+  // os próprios slots garantem pelo menos 3 tiles de espaçamento.
+  const plantCount = 1 + Math.floor(rng() * 2)
   const firstSpecies = Math.floor(rng() * PLANT_KINDS.length)
   for (let i = 0; i < plantCount; i++) {
     const species =
@@ -240,14 +286,17 @@ function decorateRoom(plan: FloorPlan, room: RoomPlacement, rng: () => number): 
         : i === 1
           ? (firstSpecies + 1 + Math.floor(rng() * 2)) % PLANT_KINDS.length
           : Math.floor(rng() * PLANT_KINDS.length)
-    placeBlocking(PLANT_KINDS[species], rng() < 0.5)
+    placeBlocking(PLANT_KINDS[species], rng() < 0.5, plantPool)
   }
 
-  // 4) Props de chão: 0–2, kinds sem repetição.
-  const floorCount = Math.floor(rng() * 3)
+  // 4) Apoio: no máximo um item além do verde. Armários têm parede própria;
+  // bebedouro/sofá pequeno usam os nichos laterais remanescentes.
+  const floorCount = Math.floor(rng() * 2)
   const floorKinds = shuffle(FLOOR_PROP_KINDS, rng)
   for (let i = 0; i < floorCount; i++) {
-    placeBlocking(floorKinds[i], rng() < 0.5)
+    const kind = floorKinds[i]
+    const storage = STORAGE_PROP_KINDS.has(kind)
+    placeBlocking(kind, storage ? true : rng() < 0.5, storage ? storagePool : supportPool)
   }
 
   return decor
@@ -262,8 +311,8 @@ function decorateRoom(plan: FloorPlan, room: RoomPlacement, rng: () => number): 
  *    mesão, fica 100% caminhável — é o interactTile da fase 2.
  *  - LOUNGE no canto SE: sofá olhando o SUL direto pra mesinha (lado do
  *    viewer), tapete por baixo do conjunto, planta fechando na parede leste.
- *  - COZINHA na parede oeste, ao norte da porta: cafeteira EM CIMA da bancada
- *    (rooms.ts pousa no tampo) e bebedouro fechando a linha até a porta.
+ *  - COZINHA na parede norte, recuada do canto oeste: cafeteira EM CIMA da
+ *    bancada (rooms.ts pousa no tampo) e bebedouro no mesmo conjunto.
  *  Layout FIXO (determinístico por construção); móveis bloqueiam na grid,
  *  resto caminhável, porta de 2 tiles na parede oeste dá pro corredor. */
 function buildCommons(plan: FloorPlan, origin: Vec2, corridorTop: number): CommonRoomPlacement {
@@ -318,6 +367,10 @@ function buildCommons(plan: FloorPlan, origin: Vec2, corridorTop: number): Commo
   // cabeceira LESTE (espelhada ⇒ olha pro oeste); a ponta oeste fica livre
   place("meeting-chair-back", MEET.x + 4, MEET.y, { flip: true, offset: { x: -TUCK, y: 0.5 } })
   block(MEET.x + 4, MEET.y + 1) // a cadeira da cabeceira senta entre ry 3–4
+  // O tampo tem overhang visual além do footprint. Reserva também a lateral
+  // oeste, que antes deixava o boss encostar o corpo dentro do mesão.
+  block(MEET.x - 1, MEET.y)
+  block(MEET.x - 1, MEET.y + 1)
   // faixas das cadeiras bloqueiam INTEIRAS (cada cadeira invade meio tile);
   // a faixa ry 6 ao sul NÃO entra aqui — fica livre pra fase 2
   for (let rx = MEET.x; rx < MEET.x + 4; rx++) {
@@ -335,16 +388,19 @@ function buildCommons(plan: FloorPlan, origin: Vec2, corridorTop: number): Commo
   const LOUNGE = { x: 9, y: 6 }
   // tapete grande: moldura visível em volta do conjunto (o pequeno somia
   // inteiro debaixo de sofá+mesinha)
-  place("rug-large", LOUNGE.x - 1, LOUNGE.y - 1, { offset: { x: 0, y: 0.6 } })
+  place("rug-large", LOUNGE.x - 2, LOUNGE.y - 1, { offset: { x: 0, y: 0.6 } })
   place("sofa", LOUNGE.x, LOUNGE.y) // encosto ao norte — olha a mesinha
   place("coffee-table", LOUNGE.x, LOUNGE.y + 1, { offset: { x: 0.5, y: 0 } }) // eixo do sofá
   block(LOUNGE.x + 1, LOUNGE.y + 1) // metade leste da mesinha (offset +0.5)
-  place("plant-b", LOUNGE.x + 2, LOUNGE.y) // fecha o conjunto na parede leste
+  place("plant-b", LOUNGE.x - 1, LOUNGE.y + 1) // fecha o conjunto, com respiro da parede leste
 
-  // --- CONJUNTO COZINHA (parede oeste, ao norte da porta) ------------------
-  place("kitchen-counter", 0, 0) // bancada 1×2, pia na metade sul
-  place("coffee-machine", 0, 0) // EM CIMA da bancada (metade norte do tampo)
-  place("water-cooler", 0, 2, { offset: { x: -0.18, y: 0 } }) // colado na parede, fecha a linha
+  // --- CONJUNTO COZINHA (parede norte, recuado do canto oeste) -------------
+  // A antiga bancada 1×2 começava em rx=0 e era cortada pela parede oeste.
+  // Agora o conjunto corre ao longo da parede norte e deixa um tile inteiro
+  // de respiro em relação ao encontro das paredes.
+  place("kitchen-counter", 1, 0) // bancada 2×1, pia na metade leste
+  place("coffee-machine", 1, 0) // EM CIMA da metade oeste da bancada
+  place("water-cooler", 3, 0) // mesma linha, sem invadir porta/circulação
 
   return {
     id: COMMONS_ID,
@@ -356,68 +412,12 @@ function buildCommons(plan: FloorPlan, origin: Vec2, corridorTop: number): Commo
   }
 }
 
-/** Decoração do corredor: bebedouro + plantas espaçadas deterministicamente
- *  nas fileiras ENCOSTADAS nas paredes (o meio do corredor nunca é bloqueado,
- *  nem os tiles em frente às portas) + 1 quadro de avisos na parede norte. */
-function decorateCorridor(
-  plan: FloorPlan,
-  rooms: RoomPlacement[],
-  corridorTop: number,
-  roomsW: number,
-  rng: () => number,
-): RoomDecorItem[] {
-  const topY = corridorTop
-  const botY = corridorTop + CORRIDOR_H - 1
-  // Tiles em frente às portas (lado do corredor) ficam livres — inclui o tile
-  // de spawn (frente da porta da sala 0) e a frente da porta da sala comum.
-  const blockedTop = new Set<number>([roomsW - 2])
-  const blockedBot = new Set<number>([roomsW - 2])
-  for (const r of rooms) {
-    for (const d of r.doorTiles) (r.row === 0 ? blockedTop : blockedBot).add(d.x)
-  }
-
-  const decor: RoomDecorItem[] = []
-  let placedCooler = false
-  let x = WALL + 1 + Math.floor(rng() * 2)
-  while (x < roomsW - 2) {
-    const preferTop = rng() < 0.5
-    const tryRows: Array<[number, Set<number>]> = preferTop
-      ? [
-          [topY, blockedTop],
-          [botY, blockedBot],
-        ]
-      : [
-          [botY, blockedBot],
-          [topY, blockedTop],
-        ]
-    for (const [y, blocked] of tryRows) {
-      if (blocked.has(x)) continue
-      const idx = y * plan.w + x
-      if (plan.grid[idx] !== T_WALK) continue // exige chão puro (sem porta/interact)
-      plan.grid[idx] = 0
-      const kind = placedCooler
-        ? PLANT_KINDS[Math.floor(rng() * PLANT_KINDS.length)]
-        : "water-cooler"
-      placedCooler = true
-      decor.push({ kind, tile: { x, y } })
-      break
-    }
-    x += 4 + Math.floor(rng() * 3)
-  }
-
-  // Quadro de avisos: parede norte do corredor, num tile de parede sem porta.
-  const wallY = corridorTop - 1
-  const wallXs: number[] = []
-  for (let wx = WALL; wx < roomsW - 1; wx++) {
-    if ((plan.grid[wallY * plan.w + wx] & T_DOOR) === 0) wallXs.push(wx)
-  }
-  if (wallXs.length > 0) {
-    decor.push({
-      kind: "notice-board",
-      tile: { x: wallXs[Math.floor(rng() * wallXs.length)], y: wallY },
-    })
-  }
-  return decor
+/** Infraestrutura do corredor. O eixo de circulação fica deliberadamente sem
+ * vasos ou sinalização solta; o único marco é o QUADRO DE AVISOS na parede
+ * norte (tile.y = linha de parede, corridorTop − 1) — os agendados moram nele
+ * (interactable NOTICE_BOARD_ID, registrado no buildFloorPlan). */
+function decorateCorridor(noticeBoardTile: Vec2): RoomDecorItem[] {
+  return [{ kind: "notice-board", tile: noticeBoardTile }]
 }
 
 /** Constrói a planta global a partir dos projetos (ordem de listProjects).
@@ -431,8 +431,9 @@ export function buildFloorPlan(projects: OfficeProjectRef[]): FloorPlan {
   const nCols = Math.ceil(list.length / 2)
   const hasBottom = list.length >= 2
 
-  /** Largura da ala de salas (termina na parede oeste da sala comum). */
-  const roomsW = WALL + nCols * (ROOM_W + WALL)
+  /** Projetos mantêm suas coordenadas; a diretoria ocupa a última coluna. */
+  const projectRoomsW = WALL + nCols * (ROOM_W + WALL)
+  const roomsW = projectRoomsW + BOSS_ROOM_W + WALL
   const w = roomsW + COMMONS_W + WALL
   /** Primeira linha (y) do corredor: parede externa + sala de cima + parede
    *  com porta. */
@@ -479,17 +480,19 @@ export function buildFloorPlan(projects: OfficeProjectRef[]): FloorPlan {
     ]
     for (const d of doorTiles) set(d.x, d.y, T_WALK | T_DOOR)
 
-    // Mesas (2×1 tiles, NÃO caminháveis) SEMPRE encostadas na parede NORTE da
-    // sala (a parede alta de fundo do isométrico — nas duas fileiras), com o
-    // tile de interação ao SUL, no interior da sala. Assim o agent sentado
-    // fica de frente pro viewer nas duas fileiras (nada de agent de costas).
-    const deskY = oy
+    // Cada estação ocupa um bay real: zona técnica junto à parede (ry=0),
+    // clearance da cadeira (ry=1), mesa (ry=2) e atendimento (ry=3). A linha
+    // ry=4 fica integralmente livre para o boss cruzar a sala.
+    const deskY = oy + DESK_Y_INSET
     const frontY = deskY + 1
-    const deskXs = row === 0 ? DESK_XS_ROW0 : DESK_XS_ROW1
     const desks: DeskPlacement[] = OFFICE_AGENTS.map((agent, k) => {
-      const dx = ox + deskXs[k]
+      const dx = ox + DESK_XS[k]
       // Flip variado mas determinístico (função do índice do projeto + mesa).
       const flip = (i + k) % 2 === 1
+      // A cadeira/agent não é piso atravessável. A linha de fundo (ry=0)
+      // continua visualmente livre e absorve a profundidade do avatar.
+      set(dx, deskY - 1, 0)
+      set(dx + 1, deskY - 1, 0)
       set(dx, deskY, 0) // mesa bloqueia os 2 tiles do footprint
       set(dx + 1, deskY, 0)
       return {
@@ -519,15 +522,79 @@ export function buildFloorPlan(projects: OfficeProjectRef[]): FloorPlan {
     })
   }
 
-  // Spawn: no corredor, em frente à porta da PRIMEIRA sala (projeto 0 é sempre
-  // row 0, então a porta dá na primeira linha do corredor).
-  const first = rooms[0]
-  const spawn: Vec2 = {
-    x: first.doorTiles[0].x + 1, // ponto médio da porta de 2 tiles
-    y: corridorTop + 0.5,
+  // Diretoria: layout fixo. Estação em L na parede norte, atendimento no eixo
+  // central e apoio na parede oeste; a circulação porta→mesa permanece livre.
+  const bossOrigin = { x: projectRoomsW, y: WALL }
+  for (let y = bossOrigin.y; y < bossOrigin.y + BOSS_ROOM_H; y++) {
+    for (let x = bossOrigin.x; x < bossOrigin.x + BOSS_ROOM_W; x++) set(x, y, T_WALK)
+  }
+  const bossDoorTiles: Vec2[] = [
+    { x: bossOrigin.x + BOSS_ROOM_W / 2 - 1, y: bossOrigin.y + BOSS_ROOM_H },
+    { x: bossOrigin.x + BOSS_ROOM_W / 2, y: bossOrigin.y + BOSS_ROOM_H },
+  ]
+  for (const d of bossDoorTiles) set(d.x, d.y, T_WALK | T_DOOR)
+  const bossDeskTile = { x: bossOrigin.x + 3, y: bossOrigin.y + 1 }
+  const bossDeskFootprint = { ...EXECUTIVE_STATION_SPEC.footprint }
+  for (let fy = 0; fy < bossDeskFootprint.h; fy++) {
+    for (let fx = 0; fx < bossDeskFootprint.w; fx++) {
+      set(bossDeskTile.x + fx, bossDeskTile.y + fy, 0)
+    }
+  }
+  const bossDeskAnchor = {
+    x: bossDeskTile.x + EXECUTIVE_STATION_SPEC.anchorFromTile.x,
+    y: bossDeskTile.y + EXECUTIVE_STATION_SPEC.anchorFromTile.y,
+  }
+  const bossInteractTile = {
+    x: bossDeskAnchor.x + EXECUTIVE_STATION_SPEC.interaction.x,
+    y: bossDeskAnchor.y + EXECUTIVE_STATION_SPEC.interaction.y,
+  }
+  set(bossInteractTile.x, bossInteractTile.y, T_WALK | T_INTERACT)
+  const operator = EXECUTIVE_STATION_SPEC.operator
+  const chairTile = furnitureRectTile(bossDeskAnchor, operator.chairCollision)
+  const chairOffset = {
+    x: operator.chairVisual.x - operator.chairCollision.x,
+    y: operator.chairVisual.y - operator.chairCollision.y,
+  }
+  const visitorItems: RoomDecorItem[] = EXECUTIVE_STATION_SPEC.visitors.map((visitor) => ({
+    kind: "executive-visitor-chair",
+    tile: furnitureRectTile(bossDeskAnchor, {
+      ...visitor.center,
+      ...visitor.footprint,
+    }),
+  }))
+  const bossDecor: RoomDecorItem[] = [
+    { kind: "rug-large", tile: { x: bossOrigin.x + 3, y: bossOrigin.y + 3 } },
+    { kind: "executive-chair", tile: chairTile, offset: chairOffset },
+    ...visitorItems,
+    { kind: "executive-sideboard", tile: { x: bossOrigin.x, y: bossOrigin.y + 1 } },
+    { kind: "plant-b", tile: { x: bossOrigin.x + 8, y: bossOrigin.y + 1 } },
+    { kind: "whiteboard", tile: { x: bossOrigin.x + 7, y: bossOrigin.y - 1 } },
+  ]
+  for (const item of bossDecor) {
+    if (!isBlockingDecor(item.kind)) continue
+    const fp = DECOR_FOOTPRINTS[item.kind] ?? { w: 1, h: 1 }
+    for (let fy = 0; fy < fp.h; fy++) {
+      for (let fx = 0; fx < fp.w; fx++) set(item.tile.x + fx, item.tile.y + fy, 0)
+    }
+  }
+  const bossRoom: BossRoomPlacement = {
+    id: "boss",
+    origin: bossOrigin,
+    w: BOSS_ROOM_W,
+    h: BOSS_ROOM_H,
+    doorTiles: bossDoorTiles,
+    deskTile: bossDeskTile,
+    deskFootprint: bossDeskFootprint,
+    interactTile: bossInteractTile,
+    decor: bossDecor,
   }
 
-  const plan: FloorPlan = { w, h, grid, rooms, spawn, corridorDecor: [] }
+  // O usuário começa em sua própria sala, diante da área de briefing.
+  // Centro VISUAL entre as duas cadeiras na projeção (sx = x - y). O centro
+  // cartesiano anterior deixava o avatar tangente à cadeira oeste.
+  const spawn: Vec2 = { x: bossOrigin.x + 6, y: bossOrigin.y + 5.5 }
+
+  const plan: FloorPlan = { w, h, grid, rooms, spawn, bossRoom, corridorDecor: [] }
 
   // Decoração — ordem fixa: sala comum (layout fixo) → salas (seed por
   // projectId) → corredor (seed pela lista de projetos).
@@ -537,20 +604,40 @@ export function buildFloorPlan(projects: OfficeProjectRef[]): FloorPlan {
   // (rx 4–7, ry 3–4 ⇒ centro rel 6,4; tile-âncora em float, só projeção).
   const missionTable: OfficeInteractable = {
     id: MISSION_TABLE_ID,
-    tile: { x: commonsOrigin.x + 5.5, y: commonsOrigin.y + 3.5 },
+    tile: { x: commonsOrigin.x + 6, y: commonsOrigin.y + 4 },
+    footprint: { w: 4, h: 2 },
     interactTile: { x: commonsOrigin.x + 6, y: commonsOrigin.y + 6 },
   }
-  plan.interactables = [missionTable]
+  // Posto de comando (§8): a mesa executiva entra na MESMA disputa de
+  // proximidade das mesas — chegar nela mostra o menu "Abrir Central". A
+  // âncora do interactable é CENTRADA (interactableContainsWorld) e o
+  // bossDeskAnchor já é o centro do footprint 4×2 da estação executiva.
+  const bossDesk: OfficeInteractable = {
+    id: BOSS_DESK_ID,
+    tile: bossDeskAnchor,
+    footprint: bossDeskFootprint,
+    interactTile: bossInteractTile,
+  }
+  // Quadro de avisos: parede norte do corredor (linha de parede corridorTop−1),
+  // a LESTE da porta da diretoria (portas em bossOrigin.x+4/5 — nunca colide) e
+  // a oeste da porta da sala comum. O interactTile é o tile do corredor logo
+  // abaixo; a âncora do balão/hit é o CENTRO do tile de parede
+  // (interactableContainsWorld), com footprint 2×2 pra apanhar cliques no
+  // quadro desenhado acima da linha de chão.
+  const noticeBoardTile = { x: bossOrigin.x + 7, y: corridorTop - 1 }
+  const boardInteractTile = { x: noticeBoardTile.x, y: corridorTop }
+  set(boardInteractTile.x, boardInteractTile.y, T_WALK | T_INTERACT)
+  const noticeBoard: OfficeInteractable = {
+    id: NOTICE_BOARD_ID,
+    tile: { x: noticeBoardTile.x + 0.5, y: noticeBoardTile.y + 0.5 },
+    footprint: { w: 2, h: 2 },
+    interactTile: boardInteractTile,
+  }
+  plan.interactables = [missionTable, bossDesk, noticeBoard]
   for (const room of rooms) {
     room.decor = decorateRoom(plan, room, mulberry32(hashSeed(room.projectId)))
   }
-  plan.corridorDecor = decorateCorridor(
-    plan,
-    rooms,
-    corridorTop,
-    roomsW,
-    mulberry32(hashSeed(`corridor|${list.map((p) => p.id).join("|")}`)),
-  )
+  plan.corridorDecor = decorateCorridor(noticeBoardTile)
 
   return plan
 }

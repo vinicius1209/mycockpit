@@ -3,7 +3,7 @@
  *  Regras duras:
  *  - keydown vindo de input/textarea/contentEditable NUNCA entra (o dono da
  *    checagem é o handler `isTextTarget`, injetado pela ui).
- *  - Com dock aberto, Tab segue a navegação de foco (sem preventDefault).
+ *  - Tab sempre segue a navegação de foco; R cicla salas.
  *  - Esc é delegado a `onEscape` (o coordenador de prioridade vive na ui).
  *  - blur limpa as teclas (nada de boss andando sozinho ao trocar de janela).
  *  - Este módulo só ESCREVE em world.input.keys e chama handlers; cliques
@@ -20,7 +20,7 @@ export type InputHandlers = {
   isActive?(): boolean
   onEscape(): void
   onInteract(): void
-  onTabRoom(): void
+  onCycleRoom(): void
 }
 
 /** Teclas de movimento aceitas em world.input.keys (normalizadas minúsculas). */
@@ -41,13 +41,12 @@ export function attachInput(target: Window, world: World, handlers: InputHandler
       handlers.onEscape()
       return
     }
-    if (key === "tab") {
-      if (handlers.isDockOpen()) return // devolve Tab à navegação de foco
-      e.preventDefault()
-      if (!e.repeat) handlers.onTabRoom()
+    if (key === "tab") return
+    if (e.metaKey || e.ctrlKey || e.altKey) return // atalhos do app (⌘K, ⌘R etc.)
+    if (key === "r") {
+      if (!e.repeat) handlers.onCycleRoom()
       return
     }
-    if (e.metaKey || e.ctrlKey || e.altKey) return // atalhos do app (⌘K etc.)
     if (key === "e") {
       if (!e.repeat) handlers.onInteract()
       return

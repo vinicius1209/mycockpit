@@ -51,6 +51,113 @@ export function worldToScreenWith(t: CameraTransform, wx: number, wy: number): V
 }
 
 // ---------------------------------------------------------------------------
+// Enquadramento responsivo de sala
+// ---------------------------------------------------------------------------
+
+export type IsoRoomRect = {
+  origin: Vec2
+  w: number
+  h: number
+}
+
+export type ViewportInsets = {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+export type ProjectedExtents = {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+export type ProjectedBounds = {
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+}
+
+export type RoomCameraFit = {
+  /** Alvo em coordenadas de mundo que centraliza os bounds visuais da sala. */
+  target: Vec2
+  zoom: number
+  /** Centro da area segura relativo ao centro do canvas. */
+  screenOffset: Vec2
+  projectedBounds: ProjectedBounds
+  safeRect: { x: number; y: number; w: number; h: number }
+}
+
+/** Enquadra uma sala isometrica na area util do canvas. `extents` cobre o que
+ *  ultrapassa o piso projetado, como paredes e props altos; `padding` permanece
+ *  constante em pixels de tela. */
+export function fitIsometricRoom(
+  room: IsoRoomRect,
+  viewport: { w: number; h: number },
+  options: {
+    insets: ViewportInsets
+    extents?: Partial<ProjectedExtents>
+    padding?: number
+    maxZoom?: number
+  },
+): RoomCameraFit {
+  const insets = options.insets
+  const extents: ProjectedExtents = {
+    top: Math.max(0, options.extents?.top ?? 0),
+    right: Math.max(0, options.extents?.right ?? 0),
+    bottom: Math.max(0, options.extents?.bottom ?? 0),
+    left: Math.max(0, options.extents?.left ?? 0),
+  }
+  const safeRect = {
+    x: Math.max(0, insets.left),
+    y: Math.max(0, insets.top),
+    w: Math.max(1, viewport.w - Math.max(0, insets.left) - Math.max(0, insets.right)),
+    h: Math.max(1, viewport.h - Math.max(0, insets.top) - Math.max(0, insets.bottom)),
+  }
+
+  const corners = [
+    toScreen(room.origin.x, room.origin.y),
+    toScreen(room.origin.x + room.w, room.origin.y),
+    toScreen(room.origin.x, room.origin.y + room.h),
+    toScreen(room.origin.x + room.w, room.origin.y + room.h),
+  ]
+  const projectedBounds: ProjectedBounds = {
+    minX: Math.min(...corners.map((point) => point.x)) - extents.left,
+    minY: Math.min(...corners.map((point) => point.y)) - extents.top,
+    maxX: Math.max(...corners.map((point) => point.x)) + extents.right,
+    maxY: Math.max(...corners.map((point) => point.y)) + extents.bottom,
+  }
+  const projectedW = Math.max(1, projectedBounds.maxX - projectedBounds.minX)
+  const projectedH = Math.max(1, projectedBounds.maxY - projectedBounds.minY)
+  const padding = Math.max(0, options.padding ?? 0)
+  const availableW = Math.max(1, safeRect.w - padding * 2)
+  const availableH = Math.max(1, safeRect.h - padding * 2)
+  const fitZoom = Math.min(availableW / projectedW, availableH / projectedH)
+  const zoom = Math.max(
+    0.001,
+    Math.min(options.maxZoom ?? Number.POSITIVE_INFINITY, fitZoom),
+  )
+  const projectedCenter = {
+    x: (projectedBounds.minX + projectedBounds.maxX) / 2,
+    y: (projectedBounds.minY + projectedBounds.maxY) / 2,
+  }
+
+  return {
+    target: toWorld(projectedCenter.x, projectedCenter.y),
+    zoom,
+    screenOffset: {
+      x: safeRect.x + safeRect.w / 2 - viewport.w / 2,
+      y: safeRect.y + safeRect.h / 2 - viewport.h / 2,
+    },
+    projectedBounds,
+    safeRect,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Y-sort — zIndex quantizado (re-sort só quando o inteiro muda)
 // ---------------------------------------------------------------------------
 
@@ -207,11 +314,11 @@ export function doorLightPulses(agg: RoomAggregate): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Hit-test de mesa (footprint 2×2 tiles a partir do tile de origem)
+// Hit-test de mesa (footprint físico de 2×1 tiles a partir do tile de origem)
 // ---------------------------------------------------------------------------
 
 export const DESK_FOOT_W = 2
-export const DESK_FOOT_H = 2
+export const DESK_FOOT_H = 1
 
 export function deskContainsWorld(deskTile: Vec2, wx: number, wy: number): boolean {
   return (
@@ -222,9 +329,23 @@ export function deskContainsWorld(deskTile: Vec2, wx: number, wy: number): boole
   )
 }
 
-/** Âncora visual da mesa (centro do footprint BLOQUEADO de 2×1 tiles), em
- *  mundo. O hit-test acima segue 2×2 de propósito: inclui a faixa da frente
- *  (interactTile) — clicar ali também leva o boss à mesa. */
+/** Âncora visual da mesa (centro do footprint bloqueado de 2×1 tiles). A faixa
+ *  livre à frente é somente aproximação: não pertence ao móvel nem ao clique. */
 export function deskAnchorWorld(deskTile: Vec2): Vec2 {
   return { x: deskTile.x + DESK_FOOT_W / 2, y: deskTile.y + 0.5 }
+}
+
+export function interactableContainsWorld(
+  anchor: Vec2,
+  footprint: { w: number; h: number } | undefined,
+  wx: number,
+  wy: number,
+): boolean {
+  const fp = footprint ?? { w: 1, h: 1 }
+  return (
+    wx >= anchor.x - fp.w / 2 &&
+    wx < anchor.x + fp.w / 2 &&
+    wy >= anchor.y - fp.h / 2 &&
+    wy < anchor.y + fp.h / 2
+  )
 }

@@ -8,8 +8,10 @@ import {
   cameraTransform,
   deskAnchorWorld,
   deskContainsWorld,
+  interactableContainsWorld,
   doorLightColor,
   doorLightPulses,
+  fitIsometricRoom,
   LABEL_LOD_MIN_ZOOM,
   labelTextVisibleAtZoom,
   partsForState,
@@ -52,6 +54,47 @@ describe("transform da câmera", () => {
     expect(w.x).toBeCloseTo(6.5, 10)
     expect(w.y).toBeCloseTo(2.25, 10)
   })
+})
+
+describe("enquadramento responsivo de sala", () => {
+  const room = { origin: { x: 22, y: 7 }, w: 12, h: 9 }
+  const extents = { top: 104, right: 16, bottom: 24, left: 16 }
+
+  for (const viewport of [
+    { w: 1280, h: 720 },
+    { w: 1920, h: 1080 },
+  ]) {
+    for (const rightPanel of [0, 380]) {
+      it(`mantem cantos e extents na area segura em ${viewport.w}x${viewport.h} com painel ${rightPanel}`, () => {
+        const fit = fitIsometricRoom(room, viewport, {
+          insets: { top: 44, right: rightPanel, bottom: 24, left: 0 },
+          extents,
+          padding: 24,
+          maxZoom: 1.25,
+        })
+        const transform = cameraTransform(
+          fit.target,
+          fit.zoom,
+          viewport.w,
+          viewport.h,
+          fit.screenOffset,
+        )
+        const left = fit.projectedBounds.minX * fit.zoom + transform.x
+        const top = fit.projectedBounds.minY * fit.zoom + transform.y
+        const right = fit.projectedBounds.maxX * fit.zoom + transform.x
+        const bottom = fit.projectedBounds.maxY * fit.zoom + transform.y
+
+        expect(left).toBeGreaterThanOrEqual(fit.safeRect.x + 24 - 0.001)
+        expect(top).toBeGreaterThanOrEqual(fit.safeRect.y + 24 - 0.001)
+        expect(right).toBeLessThanOrEqual(fit.safeRect.x + fit.safeRect.w - 24 + 0.001)
+        expect(bottom).toBeLessThanOrEqual(fit.safeRect.y + fit.safeRect.h - 24 + 0.001)
+        expect(fit.screenOffset).toEqual({
+          x: rightPanel === 0 ? 0 : -rightPanel / 2,
+          y: 10,
+        })
+      })
+    }
+  }
 })
 
 describe("quantização de zIndex (y-sort)", () => {
@@ -158,16 +201,27 @@ describe("cores de estado (beacon e luz da porta)", () => {
   })
 })
 
-describe("hit-test de mesa (footprint 2×2)", () => {
+describe("hit-test de mesa (footprint 2×1)", () => {
   it("contém pontos dentro do footprint e rejeita a borda exclusiva", () => {
     const tile = { x: 4, y: 6 }
     expect(deskContainsWorld(tile, 4, 6)).toBe(true)
-    expect(deskContainsWorld(tile, 5.99, 7.99)).toBe(true)
+    expect(deskContainsWorld(tile, 5.99, 6.99)).toBe(true)
     expect(deskContainsWorld(tile, 6, 7)).toBe(false)
+    expect(deskContainsWorld(tile, 5, 7)).toBe(false)
     expect(deskContainsWorld(tile, 3.99, 6.5)).toBe(false)
   })
 
   it("âncora é o centro do footprint", () => {
     expect(deskAnchorWorld({ x: 4, y: 6 })).toEqual({ x: 5, y: 6.5 })
+  })
+})
+
+describe("hit-test de ponto interativo", () => {
+  it("respeita o footprint centrado do mesão", () => {
+    const center = { x: 10, y: 8 }
+    expect(interactableContainsWorld(center, { w: 4, h: 2 }, 8, 7)).toBe(true)
+    expect(interactableContainsWorld(center, { w: 4, h: 2 }, 11.99, 8.99)).toBe(true)
+    expect(interactableContainsWorld(center, { w: 4, h: 2 }, 12, 8)).toBe(false)
+    expect(interactableContainsWorld(center, { w: 4, h: 2 }, 10, 9)).toBe(false)
   })
 })

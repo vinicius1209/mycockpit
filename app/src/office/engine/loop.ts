@@ -4,6 +4,7 @@
  *  re-zera `last` (sem delta gigante ao voltar de pausa/oclusão).
  */
 import { MAX_FRAME_MS, SIM_DT } from "./types"
+import { perfFrame } from "./perf"
 
 export type OfficeLoop = {
   start(): void
@@ -26,6 +27,7 @@ export function createLoop(opts: {
     if (last === null) last = now
     let delta = now - last
     last = now
+    perfFrame(delta) // telemetria de hitch (dt BRUTO; no-op sem mc.office.perf)
     if (delta > MAX_FRAME_MS) delta = MAX_FRAME_MS // anti espiral da morte
     if (delta < 0) delta = 0
     acc += delta

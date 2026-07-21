@@ -1,21 +1,23 @@
 // Dock da MESA DE REUNIÃO (O-2 — §8 do docs/agent-office.md): painel direito
 // no lugar do DeskDock quando o alvo é a mesa de reunião da sala comum.
-// Duas caras: FORMULÁRIO (projeto + tarefa com ditado + preset "feature" com
-// as fases visíveis + teto US$ opcional) e ACOMPANHAMENTO (fases com status,
-// custo, gate humano respondível — GateCard do DeskDock, fonte única).
+// Duas caras: FORMULÁRIO (projeto + tarefa com ditado + TIME editável: seletor
+// de preset, chips de fase que expandem em selects de agent/modelo — lógica
+// pura em lib/missionDraft, mesma do MissionLauncher — + teto US$ opcional) e
+// ACOMPANHAMENTO (fases com status,
+// custo, gate humano respondível — GateCard/PhaseRow de ./missionPanel,
+// fonte única compartilhada com o painel de missão do DeskDock).
 // O lançamento é REAL: bridge/mission.launchTableMission → useMission.launch
 // direto (nunca requestMissionLaunch). As mesas da sala do projeto acendem
 // sozinhas — o derive já mapeia missão→mesas; aqui só o cockpit da missão.
-import { useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import {
-  AlertCircle,
   AlertTriangle,
-  Check,
   Loader2,
   Mic,
   Minus,
   RefreshCw,
   Rocket,
+  RotateCcw,
   Square,
   X,
 } from "lucide-react"
@@ -28,6 +30,7 @@ import {
   availableAgents,
   defaultModelForAgent,
   dockLeaveCtx,
+  effortsFor,
   exitOfficeToPainel,
   fmtCost,
   modelsFor,
@@ -38,12 +41,17 @@ import {
 import { applyRecovery, buildRecoveryChoice, cancelRecovery } from "./recovery"
 import {
   abortTableMission,
+  clonePhases,
+  editPhase,
   launchTableMission,
   missionTablePreset,
+  missionTablePresets,
   parseCapInput,
+  phasesCustomized,
   useMissionTableRun,
-  type MissionPhaseRun,
+  type MissionPhaseDef,
   type MissionRun,
+  type PhaseEdit,
 } from "../bridge/mission"
 import {
   onDictationEnded,
@@ -51,29 +59,48 @@ import {
   startDictation,
   stopDictation,
 } from "../bridge/voice"
-import { DOCK_W, GateCard } from "./DeskDock"
+import { GateCard, PhaseRow, phaseRowData } from "./missionPanel"
 import {
   MISSION_TABLE_ID,
-  missionConversationTitle,
+  launchFromTable,
   missionLaunchBlock,
+  phaseAgentOptions,
+  presetDraft,
+  presetOptionLabel,
 } from "./missionTable"
-import { useOfficeUi } from "./store"
+import { activeDockWidth, useOfficeUi } from "./store"
 
 // --- pedaços ----------------------------------------------------------------
 
-/** Badge compacto de UMA fase do preset (form): nº + rótulo + agent na cor de
- *  identidade — o time fica visível sem editor (fases se editam no Linear). */
-function PhaseBadge({
+/** Chip de UMA fase do rascunho (form): nº + rótulo + agent na cor de
+ *  identidade. CLICÁVEL — expande a linha de edição do time da fase (o rótulo
+ *  é o papel e não muda; o time — agent/modelo — é quem muda). */
+function PhaseChip({
   index,
   label,
   agent,
+  expanded,
+  onToggle,
 }: {
   index: number
   label: string
   agent: string
+  expanded: boolean
+  onToggle: () => void
 }) {
   return (
-    <span className="flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] text-foreground/85">
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      title={`Editar o time da fase ${index + 1} (agent/modelo)`}
+      className={cn(
+        "flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] text-foreground/85 transition-colors",
+        expanded
+          ? "border-brass/60 bg-brass-soft"
+          : "border-border bg-background hover:border-brass/40",
+      )}
+    >
       <span className="font-mono text-[10px] tabular-nums text-muted-foreground/70">
         {index + 1}
       </span>
@@ -83,61 +110,70 @@ function PhaseBadge({
         style={{ background: agentCssColor(agent) }}
       />
       <span className="text-muted-foreground">{agentLabel(agent)}</span>
-    </span>
+    </button>
   )
 }
 
-/** Ícone de status de fase (acompanhamento). */
-function PhaseStatusIcon({ status }: { status: MissionPhaseRun["status"] }) {
-  switch (status) {
-    case "running":
-      return (
-        <Loader2 className="size-3.5 animate-spin text-st-running motion-reduce:animate-none" />
-      )
-    case "done":
-      return <Check className="size-3.5 text-st-success" />
-    case "error":
-      return <AlertCircle className="size-3.5 text-st-error" />
-    case "aborted":
-      return <Square className="size-3 text-muted-foreground" />
-    default:
-      return (
-        <span className="mx-0.5 size-2 rounded-full border border-border-strong" />
-      )
-  }
-}
-
-/** Linha de UMA fase no acompanhamento: status + rótulo + agent + custo. */
-function PhaseRow({ phase, index }: { phase: MissionPhaseRun; index: number }) {
+/** Linha de EDIÇÃO da fase expandida: selects compactos de agent (disponíveis;
+ *  indisponíveis fora — phaseAgentOptions) e modelo ("Padrão" primeiro, via
+ *  modelsFor) — mesma linguagem visual do RecoveryCard. Estado imutável via
+ *  editPhase (trocar de agent re-semeia modelo/effort pro default). */
+function PhaseEditRow({
+  phase,
+  index,
+  onEdit,
+}: {
+  phase: MissionPhaseDef
+  index: number
+  onEdit: (edit: PhaseEdit) => void
+}) {
+  const agents = phaseAgentOptions(availableAgents(), phase.agent)
+  const models = modelsFor(phase.agent)
   return (
-    <div
-      className={cn(
-        "flex items-center gap-2 py-1",
-        phase.status === "queued" && "opacity-60",
-      )}
-    >
-      <span className="w-4 shrink-0 text-center font-mono text-[10px] tabular-nums text-muted-foreground/70">
-        {index + 1}
-      </span>
-      <span className="flex w-4 shrink-0 items-center justify-center">
-        <PhaseStatusIcon status={phase.status} />
-      </span>
-      <span className="min-w-0 truncate text-[12.5px] text-foreground/90">
-        {phase.def.label}
-      </span>
-      <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-        <span
-          className="size-1.5 rounded-full"
-          style={{ background: agentCssColor(phase.def.agent) }}
-        />
-        {agentLabel(phase.def.agent)}
-        {phase.costUsd > 0 && (
-          <span className="font-mono tabular-nums">{fmtCost(phase.costUsd)}</span>
-        )}
-      </span>
+    <div className="grid basis-full grid-cols-2 gap-2 rounded-lg border border-brass/30 bg-secondary/30 p-2">
+      <label className="flex min-w-0 flex-col gap-1">
+        <span className="label-mono">Agent</span>
+        <select
+          value={phase.agent}
+          onChange={(e) => onEdit({ agent: e.target.value })}
+          aria-label={`Agent da fase ${index + 1}`}
+          className="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground outline-none focus:border-ring"
+        >
+          {agents.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex min-w-0 flex-col gap-1">
+        <span className="label-mono">Modelo</span>
+        <select
+          value={phase.model ?? "default"}
+          onChange={(e) =>
+            onEdit({ model: e.target.value === "default" ? null : e.target.value })
+          }
+          disabled={models.length === 0}
+          aria-label={`Modelo da fase ${index + 1}`}
+          className="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground outline-none focus:border-ring disabled:opacity-50"
+        >
+          {models.length === 0 ? (
+            <option value="default">Padrão</option>
+          ) : (
+            models.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))
+          )}
+        </select>
+      </label>
     </div>
   )
 }
+
+// PhaseStatusIcon/PhaseRow moraram aqui — agora vivem em ./missionPanel
+// (compartilhados com o painel de missão do DeskDock, fonte única).
 
 /** Linha-resumo do estado terminal da missão (done/error/aborted). */
 function RunOutcome({ run }: { run: MissionRun }) {
@@ -205,9 +241,14 @@ function RecoveryCard({
     () => (agents.some((a) => a.id === failedAgent) ? failedAgent : agents[0]?.id) ?? "",
   )
   const models = useMemo(() => modelsFor(agent), [agent])
+  const efforts = useMemo(() => effortsFor(agent), [agent])
   const [model, setModel] = useState<string>(() => defaultModelForAgent(agent))
+  const [effort, setEffort] = useState<string>("default")
   // Trocar de agent re-semeia o modelo (opções e default mudam por agent).
-  useEffect(() => setModel(defaultModelForAgent(agent)), [agent])
+  useEffect(() => {
+    setModel(defaultModelForAgent(agent))
+    setEffort("default")
+  }, [agent])
 
   const deps = { resolve: resolveDeskRecovery, abort: abortDeskRecovery }
 
@@ -228,7 +269,7 @@ function RecoveryCard({
         Escolha quem retoma esta fase — o contexto viaja pelo worktree; a fase
         re-roda do zero com o novo time.
       </p>
-      <div className="mt-2 flex gap-2">
+      <div className="mt-2 grid grid-cols-2 gap-2">
         <label className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="label-mono">Agent</span>
           <select
@@ -244,6 +285,23 @@ function RecoveryCard({
             ))}
           </select>
         </label>
+        {efforts.length > 0 && (
+          <label className="flex min-w-0 flex-col gap-1">
+            <span className="label-mono">Raciocínio</span>
+            <select
+              value={effort}
+              onChange={(e) => setEffort(e.target.value)}
+              aria-label="Esforço do agent que retoma a fase"
+              className="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground outline-none focus:border-ring"
+            >
+              {efforts.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="label-mono">Modelo</span>
           <select
@@ -279,7 +337,7 @@ function RecoveryCard({
           type="button"
           disabled={!agent}
           onClick={() =>
-            applyRecovery(deps, convId, buildRecoveryChoice(agent, model))
+            applyRecovery(deps, convId, buildRecoveryChoice(agent, model, effort))
           }
           className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-brass px-3 py-1.5 text-[13px] font-medium text-brass-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
         >
@@ -299,24 +357,38 @@ export function MissionDock() {
   const missionConvId = useOfficeUi((s) => s.missionTableConvId)
   const recording = useOfficeUi((s) => s.recording)
   const partial = useOfficeUi((s) => s.dictationPartial)
+  // Gate card montado ⇒ painel ALARGADO (mesma regra do DeskDock).
+  const dockWide = useOfficeUi((s) => s.dockWide)
 
   const projects = useOfficeProjects()
   const run = useMissionTableRun(missionConvId)
   const inApp = officeIsTauri()
 
-  // preset fixo da mesa ("feature" das Settings): fases NÃO se editam aqui —
-  // só o teto. Memo por abertura basta (Settings mudam fora do office).
-  const preset = useMemo(() => missionTablePreset(), [])
+  // presets da mesa (Settings; fallback fábrica) + default "feature". Memo por
+  // abertura basta (Settings mudam fora do office).
+  const presets = useMemo(() => missionTablePresets(), [])
+  const defaultPreset = useMemo(() => missionTablePreset(), [])
 
   // rascunho do formulário — o componente fica MONTADO (retorna null fechado),
-  // então fechar/minimizar não perde a tarefa digitada.
+  // então fechar/minimizar não perde a tarefa digitada nem o TIME editado.
+  // O time é POR LANÇAMENTO (independe do projeto): trocar de projeto NÃO
+  // reseta; só "restaurar padrão", troca de preset e pós-lançamento resetam.
   const [projectId, setProjectId] = useState<string | null>(null)
   const [task, setTask] = useState("")
+  const [presetId, setPresetId] = useState<string>(() => defaultPreset.id)
+  const preset = presets.find((p) => p.id === presetId) ?? defaultPreset
+  const [phases, setPhases] = useState<MissionPhaseDef[]>(() =>
+    clonePhases(defaultPreset.phases),
+  )
+  const [expandedPhase, setExpandedPhase] = useState<number | null>(null)
   const [capUsd, setCapUsd] = useState<number | null>(() => preset.maxCostUsd)
   const [capInput, setCapInput] = useState("")
   const [capEditing, setCapEditing] = useState(false)
   const [launching, setLaunching] = useState(false)
   const [micBusy, setMicBusy] = useState(false)
+
+  // fases editadas ⇒ indicador "time personalizado" + "restaurar padrão"
+  const customized = phasesCustomized(preset.phases, phases)
 
   // projeto default = primeiro da lista (e auto-corrige se o escolhido sumir)
   const chosenProject =
@@ -346,20 +418,38 @@ export function MissionDock() {
     task,
   })
 
+  /** Troca de preset / restaurar padrão: rascunho LIMPO do preset (fases
+   *  clonadas + teto dele) — descarta edições, fecha a fase expandida. */
+  function resetTeamTo(p: (typeof presets)[number]) {
+    const draft = presetDraft(p)
+    setPhases(draft.phases)
+    setCapUsd(draft.capUsd)
+    setCapEditing(false)
+    setExpandedPhase(null)
+  }
+
+  function pickPreset(id: string) {
+    const p = presets.find((x) => x.id === id)
+    if (!p) return
+    setPresetId(id)
+    resetTeamTo(p)
+  }
+
   async function handleLaunch() {
     if (block || launching || !chosenProject) return
     setLaunching(true)
     try {
-      // preset EFETIVO: só o teto muda por aqui (vazio/0 = sem teto)
-      const convId = await launchTableMission({
-        projectId: chosenProject.id,
-        title: missionConversationTitle(task),
-        task,
-        preset: { ...preset, maxCostUsd: capUsd },
-      })
+      // preset EFETIVO: fases do rascunho (editadas ou não) + teto — mesma
+      // régua do MissionLauncher (effectiveTablePreset via launchFromTable).
+      const convId = await launchFromTable(
+        { launch: launchTableMission },
+        { projectId: chosenProject.id, task, preset, phases, capUsd },
+      )
       if (convId) {
         useOfficeUi.getState().setMissionTableConv(convId)
         setTask("")
+        // time é por lançamento: pós-lançamento volta ao padrão do preset
+        resetTeamTo(preset)
       }
     } finally {
       setLaunching(false)
@@ -400,8 +490,8 @@ export function MissionDock() {
 
   return (
     <aside
-      className="pointer-events-auto absolute top-11 right-0 bottom-6 z-30 flex flex-col border-l border-border bg-card shadow-xl motion-safe:animate-in motion-safe:slide-in-from-right-4 motion-safe:fade-in-0 motion-safe:duration-200 motion-safe:ease-out"
-      style={{ width: DOCK_W }}
+      className="pointer-events-auto absolute top-11 right-0 bottom-6 z-30 flex flex-col border-l border-border bg-card shadow-xl transition-[width] motion-safe:animate-in motion-safe:slide-in-from-right-4 motion-safe:fade-in-0 motion-safe:duration-200 motion-safe:ease-out"
+      style={{ width: activeDockWidth(dockWide) }}
       aria-label="Mesa de reunião — missões"
     >
       {/* cabeçalho */}
@@ -502,7 +592,11 @@ export function MissionDock() {
                 </div>
                 <div className="rounded-lg border bg-secondary/30 px-2 py-1">
                   {run.phases.map((ph, i) => (
-                    <PhaseRow key={`${ph.def.id}-${i}`} phase={ph} index={i} />
+                    <PhaseRow
+                      key={`${ph.def.id}-${i}`}
+                      phase={phaseRowData(ph)}
+                      index={i}
+                    />
                   ))}
                 </div>
                 <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
@@ -515,6 +609,7 @@ export function MissionDock() {
             {run.gate && (
               <GateCard
                 gate={run.gate}
+                convId={missionConvId}
                 onAnswer={(a) => answerDeskGate(missionConvId, a)}
               />
             )}
@@ -604,7 +699,7 @@ export function MissionDock() {
 
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <span className="label-mono">Time · {preset.name}</span>
+                <span className="label-mono">Time</span>
                 {capEditing ? (
                   <label className="flex items-center gap-1 font-mono text-[10.5px] tabular-nums text-muted-foreground">
                     teto US$
@@ -645,16 +740,66 @@ export function MissionDock() {
                   </button>
                 )}
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {preset.phases.map((ph, i) => (
-                  <PhaseBadge
-                    key={ph.id}
-                    index={i}
-                    label={ph.label}
-                    agent={ph.agent}
-                  />
+              {/* seletor de PRESET: ponto de partida do time (o "feature" das
+                  Settings vem selecionado); trocar RESETA as edições de fase. */}
+              <select
+                value={preset.id}
+                onChange={(e) => pickPreset(e.target.value)}
+                aria-label="Preset do time da missão"
+                className="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground outline-none focus:border-ring"
+              >
+                {presets.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {presetOptionLabel(p)}
+                  </option>
+                ))}
+              </select>
+              {/* chips das fases: clicar expande a edição do time da fase */}
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {phases.map((ph, i) => (
+                  <Fragment key={ph.id}>
+                    <PhaseChip
+                      index={i}
+                      label={ph.label}
+                      agent={ph.agent}
+                      expanded={expandedPhase === i}
+                      onToggle={() =>
+                        setExpandedPhase((cur) => (cur === i ? null : i))
+                      }
+                    />
+                    {expandedPhase === i && (
+                      <PhaseEditRow
+                        phase={ph}
+                        index={i}
+                        onEdit={(edit) =>
+                          setPhases((cur) => editPhase(cur, i, edit))
+                        }
+                      />
+                    )}
+                  </Fragment>
                 ))}
               </div>
+              {expandedPhase === null && !customized && (
+                <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground/70">
+                  Clique numa fase pra trocar o agent/modelo dela.
+                </p>
+              )}
+              {customized && (
+                <div className="mt-1.5 flex items-center justify-between">
+                  <span className="text-[11px] text-brass">
+                    time personalizado
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => resetTeamTo(preset)}
+                    title="Descartar as edições e voltar ao time do preset"
+                    className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <RotateCcw className="size-3" />
+                    restaurar padrão
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -33,6 +33,9 @@ import { useNotifs } from "@/store/notifications"
 // request/resolved) no BOOT — approvals disparados antes da 1ª visita ao
 // office já entram na fila única (store) que host e derive compartilham.
 import "@/store/interactions"
+// Side-effect: liga a ponte do Companion Web (push de estado coalescido +
+// executor de companion://action) no boot — no-op fora do Tauri.
+import "@/lib/companion"
 import { useSchedules } from "@/store/schedules"
 import { tickSchedules } from "@/lib/scheduleEngine"
 import { fmtUntilShort, nextScheduled } from "@/lib/schedules"

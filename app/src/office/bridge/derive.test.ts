@@ -16,6 +16,11 @@ import type {
 import type { Project } from "@/lib/types"
 import { useApp } from "@/store/app"
 import { useChat, type ChatItem, type ConvState } from "@/store/chat"
+import {
+  useFusion,
+  type FusionCandidate,
+  type FusionRun,
+} from "@/store/fusion"
 import { useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 import { _resetDeriveState, deriveOfficeSnapshot, startDeriving } from "./derive"
@@ -104,6 +109,64 @@ function textoItem(text: string): ChatItem {
   return { kind: "text", id: crypto.randomUUID(), text }
 }
 
+function candidato(agent: string): FusionCandidate {
+  return {
+    id: `cand-${agent}`,
+    runId: `run-${agent}`,
+    agent,
+    reqModel: null,
+    effort: null,
+    label: agent,
+    status: "running",
+    items: [],
+    sessionId: null,
+    model: null,
+    streamingTextId: null,
+    startedAt: null,
+    finishOrder: null,
+    cwd: "/tmp/p1",
+  }
+}
+
+function fusion(convId: string, patch: Partial<FusionRun> = {}): FusionRun {
+  return {
+    id: "f1",
+    convId,
+    itemId: null,
+    prompt: "disputa",
+    preamble: null,
+    attachments: [],
+    scope: "read-only",
+    phase: "running",
+    candidates: [candidato("claude-code"), candidato("codex")],
+    judge: {
+      status: "idle",
+      suggestedId: null,
+      rationale: null,
+      agreement: null,
+      runnerupId: null,
+      passes: [],
+      notes: {},
+    },
+    chosenId: null,
+    judgeModel: "haiku",
+    costTotal: 0,
+    costDiscarded: 0,
+    createdAt: 0,
+    ...patch,
+  }
+}
+
+function autoResume(nextAt: number): ConvState["autoResume"] {
+  return {
+    tries: 1,
+    maxTries: 5,
+    nextAt,
+    reason: "Limite da CLI",
+    timer: 0 as unknown as ReturnType<typeof setTimeout>,
+  }
+}
+
 function setDetected(detected: Record<string, AgentProbe>) {
   useApp.setState({
     settings: { ...useApp.getState().settings, detected },
@@ -130,6 +193,7 @@ beforeEach(() => {
     queuedPrompt: null,
   })
   useMission.setState({ byConv: {} })
+  useFusion.setState({ byConv: {} })
   useApp.setState({ projects: [projeto("p1")] })
   setDetected({})
 })
@@ -179,6 +243,67 @@ describe("deriveOfficeSnapshot — missão", () => {
     })
     const room = deriveOfficeSnapshot().rooms[0]
     expect(room.costUsd).toBeCloseTo(2.5)
+  })
+})
+
+// ── handoff físico (transição de fase com agent diferente) ──────────────────
+
+describe("deriveOfficeSnapshot — handoffs", () => {
+  const t0 = 5_000_000
+
+  it("fase done → próxima com agent DIFERENTE vira handoff (e expira em 20s)", () => {
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    useMission.setState({ byConv: { c1: missao("c1", { current: 0 }) } })
+    deriveOfficeSnapshot(t0) // memoriza current=0 (nenhum handoff no 1º derive)
+
+    const m = missao("c1", { current: 1 })
+    m.phases[0].status = "done"
+    m.phases[1].status = "running"
+    useMission.setState({ byConv: { c1: m } })
+
+    const snap = deriveOfficeSnapshot(t0 + 1000)
+    expect(snap.handoffs).toEqual([
+      { fromDeskId: "p1::claude-code", toDeskId: "p1::codex", at: t0 + 1000 },
+    ])
+    // não re-emite no derive seguinte (memória de fase), mas segue vivo no TTL
+    expect(deriveOfficeSnapshot(t0 + 2000).handoffs).toHaveLength(1)
+    // 20s depois expira
+    expect(deriveOfficeSnapshot(t0 + 25_000).handoffs).toHaveLength(0)
+  })
+
+  it("mesmo agent nas duas fases ⇒ sem handoff (nada de courier pra si mesmo)", () => {
+    const phases = [
+      faseRun(fase("planner", "claude-code")),
+      faseRun(fase("executor", "claude-code")),
+    ]
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    useMission.setState({ byConv: { c1: missao("c1", { phases, current: 0 }) } })
+    deriveOfficeSnapshot(t0)
+
+    const done = [faseRun(fase("planner", "claude-code")), faseRun(fase("executor", "claude-code"))]
+    done[0].status = "done"
+    done[1].status = "running"
+    useMission.setState({ byConv: { c1: missao("c1", { phases: done, current: 1 }) } })
+    expect(deriveOfficeSnapshot(t0 + 1000).handoffs).toHaveLength(0)
+  })
+
+  it("missão histórica vista já na fase 1 no PRIMEIRO derive não gera handoff", () => {
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    const m = missao("c1", { current: 1 })
+    m.phases[0].status = "done"
+    useMission.setState({ byConv: { c1: m } })
+    expect(deriveOfficeSnapshot(t0).handoffs).toHaveLength(0)
+  })
+
+  it("fase anterior NÃO done (falha/retry) não gera handoff", () => {
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    useMission.setState({ byConv: { c1: missao("c1", { current: 0 }) } })
+    deriveOfficeSnapshot(t0)
+
+    const m = missao("c1", { current: 1 })
+    m.phases[0].status = "error"
+    useMission.setState({ byConv: { c1: m } })
+    expect(deriveOfficeSnapshot(t0 + 1000).handoffs).toHaveLength(0)
   })
 })
 
@@ -364,9 +489,260 @@ describe("deriveOfficeSnapshot — agregado e estados", () => {
     const snap = deriveOfficeSnapshot(t0 + 1000)
     expect(snap.deliveries).toHaveLength(1)
     expect(snap.deliveries[0].deskId).toBe("p1::claude-code")
+    expect(snap.deliveries[0].convId).toBe("c1")
     expect(snap.deliveries[0].text).toContain("Refatorei")
     // 15s depois o balão expira
     expect(deriveOfficeSnapshot(t0 + 20_000).deliveries).toHaveLength(0)
+  })
+})
+
+// ── persona + restUntil (sinais na mesa) ────────────────────────────────────
+
+describe("deriveOfficeSnapshot — persona e restUntil", () => {
+  it("mesa da fase corrente carrega a persona; as demais não", () => {
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    useMission.setState({ byConv: { c1: missao("c1", { current: 1 }) } })
+
+    const snap = deriveOfficeSnapshot()
+    expect(mesa(snap, "p1", "codex").persona).toBe("executor")
+    expect(mesa(snap, "p1", "claude-code").persona).toBeUndefined()
+  })
+
+  it("gate humano também carrega a persona da fase do gate", () => {
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    useMission.setState({
+      byConv: {
+        c1: missao("c1", {
+          current: 0,
+          gate: { phase: 0, questions: ["Sigo?"] },
+        }),
+      },
+    })
+    expect(mesa(deriveOfficeSnapshot(), "p1", "claude-code").persona).toBe(
+      "planner",
+    )
+  })
+
+  it("conv com autoResume agendado ⇒ restUntil na mesa do agent", () => {
+    const t0 = 1_000_000
+    useChat.setState({
+      byId: {
+        c1: conversa("p1", "claude-code", { autoResume: autoResume(t0 + 60_000) }),
+      },
+    })
+    const desk = mesa(deriveOfficeSnapshot(t0), "p1", "claude-code")
+    expect(desk.restUntil).toBe(t0 + 60_000)
+    // sem autoResume, nada de descanso
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    expect(
+      mesa(deriveOfficeSnapshot(t0 + 1000), "p1", "claude-code").restUntil,
+    ).toBeUndefined()
+  })
+})
+
+// ── room.mission (kanban do whiteboard) ─────────────────────────────────────
+
+describe("deriveOfficeSnapshot — room.mission", () => {
+  it("missão ativa vira kanban da sala (phases, current, executorDeskId)", () => {
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    const m = missao("c1", { current: 1 })
+    m.phases[0].status = "done"
+    m.phases[1].status = "running"
+    useMission.setState({ byConv: { c1: m } })
+
+    const room = deriveOfficeSnapshot().rooms[0]
+    expect(room.mission).toEqual({
+      phases: [
+        { label: "Planejar", persona: "planner", agent: "claude-code", status: "done" },
+        { label: "Executar", persona: "executor", agent: "codex", status: "running" },
+        { label: "Revisar", persona: "reviewer", agent: "claude-code", status: "queued" },
+      ],
+      current: 1,
+      executorDeskId: "p1::codex",
+    })
+  })
+
+  it("missão done persiste no quadro, sem executorDeskId (current além do fim)", () => {
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    const m = missao("c1", { current: 3, status: "done" })
+    for (const ph of m.phases) ph.status = "done"
+    useMission.setState({ byConv: { c1: m } })
+
+    const room = deriveOfficeSnapshot().rooms[0]
+    expect(room.mission?.current).toBe(3)
+    expect(room.mission?.executorDeskId).toBeUndefined()
+  })
+
+  it("sala sem missão não tem kanban", () => {
+    expect(deriveOfficeSnapshot().rooms[0].mission).toBeUndefined()
+  })
+})
+
+// ── room.war (disputa Fusion) ───────────────────────────────────────────────
+
+describe("deriveOfficeSnapshot — room.war", () => {
+  it("disputa ativa ⇒ war com as mesas dos candidatos mapeáveis", () => {
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    useFusion.setState({ byConv: { c1: fusion("c1") } })
+
+    expect(deriveOfficeSnapshot().rooms[0].war).toEqual({
+      deskIds: ["p1::claude-code", "p1::codex"],
+    })
+  })
+
+  it("nenhum candidato mapeável ⇒ as 3 mesas da sala", () => {
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    useFusion.setState({
+      byConv: { c1: fusion("c1", { candidates: [candidato("gpt-oss")] }) },
+    })
+
+    expect(deriveOfficeSnapshot().rooms[0].war).toEqual({
+      deskIds: ["p1::claude-code", "p1::codex", "p1::agy"],
+    })
+  })
+
+  it("fusion done/aborted/configuring ⇒ sem war", () => {
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    for (const phase of ["done", "aborted", "configuring"] as const) {
+      useFusion.setState({ byConv: { c1: fusion("c1", { phase }) } })
+      expect(deriveOfficeSnapshot().rooms[0].war).toBeUndefined()
+    }
+    // judging ainda é disputa
+    useFusion.setState({ byConv: { c1: fusion("c1", { phase: "judging" }) } })
+    expect(deriveOfficeSnapshot().rooms[0].war).toBeDefined()
+  })
+})
+
+// ── kickoffs e celebrações ──────────────────────────────────────────────────
+
+describe("deriveOfficeSnapshot — kickoffs e celebrações", () => {
+  const t0 = 7_000_000
+
+  it("missão ausente→running vira kickoff com as mesas ÚNICAS das fases (TTL 25s, sem re-emitir)", () => {
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    useMission.setState({ byConv: { c1: missao("c1") } })
+
+    const snap = deriveOfficeSnapshot(t0)
+    expect(snap.kickoffs).toEqual([
+      // claude-code aparece em 2 fases mas a mesa entra UMA vez
+      { projectId: "p1", deskIds: ["p1::claude-code", "p1::codex"], at: t0 },
+    ])
+    // segue running ⇒ não re-emite (memória de status), mas vive até o TTL
+    expect(deriveOfficeSnapshot(t0 + 1000).kickoffs).toHaveLength(1)
+    expect(deriveOfficeSnapshot(t0 + 30_000).kickoffs).toHaveLength(0)
+  })
+
+  it("running→done vira celebração (TTL 12s)", () => {
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    useMission.setState({ byConv: { c1: missao("c1") } })
+    deriveOfficeSnapshot(t0) // memoriza running
+    expect(deriveOfficeSnapshot(t0).celebrations).toHaveLength(0)
+
+    useMission.setState({
+      byConv: { c1: missao("c1", { status: "done", current: 3 }) },
+    })
+    const snap = deriveOfficeSnapshot(t0 + 1000)
+    expect(snap.celebrations).toEqual([{ projectId: "p1", at: t0 + 1000 }])
+    // sem re-emitir; expira em 12s
+    expect(deriveOfficeSnapshot(t0 + 2000).celebrations).toHaveLength(1)
+    expect(deriveOfficeSnapshot(t0 + 14_000).celebrations).toHaveLength(0)
+  })
+
+  it("missão já done no 1º derive é histórica: nem kickoff nem celebração", () => {
+    useChat.setState({ byId: { c1: conversa("p1") } })
+    useMission.setState({
+      byConv: { c1: missao("c1", { status: "done", current: 3 }) },
+    })
+    const snap = deriveOfficeSnapshot(t0)
+    expect(snap.kickoffs).toHaveLength(0)
+    expect(snap.celebrations).toHaveLength(0)
+  })
+})
+
+// ── batons (revezamento: agent da conversa mudou) ───────────────────────────
+
+describe("deriveOfficeSnapshot — batons", () => {
+  const t0 = 8_000_000
+
+  it("agent da conv COM items mudou entre derives ⇒ bastão (TTL 20s)", () => {
+    const items = [textoItem("trabalho feito")]
+    useChat.setState({ byId: { c1: conversa("p1", "claude-code", { items }) } })
+    expect(deriveOfficeSnapshot(t0).batons).toHaveLength(0) // 1º só memoriza
+
+    useChat.setState({ byId: { c1: conversa("p1", "codex", { items }) } })
+    const snap = deriveOfficeSnapshot(t0 + 1000)
+    expect(snap.batons).toEqual([
+      { fromDeskId: "p1::claude-code", toDeskId: "p1::codex", at: t0 + 1000 },
+    ])
+    // dedupe (memória atualizada) + TTL
+    expect(deriveOfficeSnapshot(t0 + 2000).batons).toHaveLength(1)
+    expect(deriveOfficeSnapshot(t0 + 25_000).batons).toHaveLength(0)
+  })
+
+  it("conv SEM items não gera bastão ao trocar de agent", () => {
+    useChat.setState({ byId: { c1: conversa("p1", "claude-code") } })
+    deriveOfficeSnapshot(t0)
+    useChat.setState({ byId: { c1: conversa("p1", "codex") } })
+    expect(deriveOfficeSnapshot(t0 + 1000).batons).toHaveLength(0)
+  })
+})
+
+// ── arrivals (mesa off → disponível) ────────────────────────────────────────
+
+describe("deriveOfficeSnapshot — arrivals", () => {
+  const t0 = 9_000_000
+  const probe = (installed: boolean) => ({
+    installed,
+    version: null,
+    auth: "na" as const,
+    detail: null,
+    latest: null,
+    checkedAt: 1,
+  })
+
+  it("off → disponível vira arrival (1º derive só memoriza; TTL 25s)", () => {
+    setDetected({ codex: probe(false) })
+    const first = deriveOfficeSnapshot(t0)
+    expect(mesa(first, "p1", "codex").state).toBe("off")
+    expect(first.arrivals).toHaveLength(0) // mesas já disponíveis não "chegam"
+
+    setDetected({ codex: probe(true) })
+    const snap = deriveOfficeSnapshot(t0 + 1000)
+    expect(mesa(snap, "p1", "codex").state).not.toBe("off")
+    expect(snap.arrivals).toEqual([{ deskId: "p1::codex", at: t0 + 1000 }])
+    // dedupe + TTL
+    expect(deriveOfficeSnapshot(t0 + 2000).arrivals).toHaveLength(1)
+    expect(deriveOfficeSnapshot(t0 + 30_000).arrivals).toHaveLength(0)
+  })
+})
+
+// ── bossDeliveries (courier até a mesa do Boss) ─────────────────────────────
+
+describe("deriveOfficeSnapshot — bossDeliveries", () => {
+  it("fim de turno gera bossDelivery junto com a delivery (TTL 30s > 15s)", () => {
+    const t0 = 3_000_000
+    useChat.setState({
+      byId: { c1: conversa("p1", "claude-code", { running: true, runId: "r-1" }) },
+    })
+    deriveOfficeSnapshot(t0) // observa rodando
+
+    useChat.setState({
+      byId: {
+        c1: conversa("p1", "claude-code", {
+          running: false,
+          items: [{ kind: "result", id: "res-1", ok: true, text: "Feito." }],
+        }),
+      },
+    })
+    const snap = deriveOfficeSnapshot(t0 + 1000)
+    expect(snap.bossDeliveries).toEqual([
+      { deskId: "p1::claude-code", convId: "c1", at: t0 + 1000 },
+    ])
+    // a delivery expira aos 15s; a entrega ao Boss vive até 30s
+    const meio = deriveOfficeSnapshot(t0 + 18_000)
+    expect(meio.deliveries).toHaveLength(0)
+    expect(meio.bossDeliveries).toHaveLength(1)
+    expect(deriveOfficeSnapshot(t0 + 35_000).bossDeliveries).toHaveLength(0)
   })
 })
 

@@ -171,20 +171,24 @@ describe("sendFromDesk — guardas", () => {
   })
 
   it("missão rodando na conversa bloqueia o envio", async () => {
+    const onAccepted = vi.fn()
     h.mission.byConv = { c1: { status: "running" } }
-    await sendFromDesk(args)
+    await sendFromDesk({ ...args, onAccepted })
     expect(toast).toHaveBeenCalledWith(
       "Missão em andamento. Pare a missão para enviar manualmente.",
     )
     expect(runAgent).not.toHaveBeenCalled()
+    expect(onAccepted).not.toHaveBeenCalled()
   })
 
   it("turno rodando ⇒ enfileira em vez de disparar novo run", async () => {
+    const onAccepted = vi.fn()
     arm(makeConv({ running: true }))
-    await sendFromDesk(args)
+    await sendFromDesk({ ...args, onAccepted })
     expect(chat.enqueue).toHaveBeenCalledWith("c1", "olá", [])
     expect(runAgent).not.toHaveBeenCalled()
     expect(chat.start).not.toHaveBeenCalled()
+    expect(onAccepted).toHaveBeenCalledWith("queued")
   })
 
   it("finalizando também enfileira (flush da sessão ainda em curso)", async () => {
@@ -202,6 +206,33 @@ describe("sendFromDesk — guardas", () => {
 })
 
 describe("sendFromDesk — coreografia do run", () => {
+  it("confirma o aceite do run antes de executar o agent", async () => {
+    const onAccepted = vi.fn()
+    await sendFromDesk({ ...args, onAccepted })
+    expect(onAccepted).toHaveBeenCalledWith("started")
+  })
+
+  it("propaga modelo e esforço escolhidos no primeiro envio", async () => {
+    await sendFromDesk({ ...args, model: "opus", effort: "high" })
+    const call = vi.mocked(runAgent).mock.calls[0]
+    expect(call[3]).toBe("opus")
+    expect(call[4]).toBe("high")
+  })
+
+  it("conversa estabelecida mantém o modelo e esforço travados", async () => {
+    arm(
+      makeConv({
+        items: [user("antes")],
+        reqModel: "sonnet",
+        effort: "medium",
+      }),
+    )
+    await sendFromDesk({ ...args, model: "opus", effort: "max" })
+    const call = vi.mocked(runAgent).mock.calls[0]
+    expect(call[3]).toBe("sonnet")
+    expect(call[4]).toBe("medium")
+  })
+
   it("sessionId da conversa é propagado como resume", async () => {
     arm(makeConv({ sessionId: "sess-1", items: [user("antes")] }))
     await sendFromDesk(args)

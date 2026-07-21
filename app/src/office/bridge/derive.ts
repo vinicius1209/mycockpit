@@ -15,21 +15,36 @@ import {
   type DeskVisualState,
   type OfficeAgentId,
   type OfficeSnapshot,
+  type RoomMission,
   type RoomSnapshot,
 } from "@/office/engine/types"
+import { perfSpan } from "@/office/engine/perf"
 import { availability } from "@/lib/agents"
 import { loadLedger } from "@/lib/db"
 import type { ApprovalData } from "@/lib/interaction"
 import type { MissionPersona, MissionRun } from "@/lib/missionTypes"
 import { useApp } from "@/store/app"
 import { useChat, type ChatItem } from "@/store/chat"
-import { useInteractions } from "@/store/interactions"
+import { useFusion } from "@/store/fusion"
+import { convIdForInteraction, useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 
 /** Janela de "output recente": houve text_delta/tool há ≤2.5s ⇒ digitando. */
 const TYPING_WINDOW_MS = 2500
 /** Balão de entrega fica vivo por 15s. */
 const DELIVERY_TTL_MS = 15_000
+/** Handoff físico fica vivo por 20s (a cena deduplica por from::to::at). */
+const HANDOFF_TTL_MS = 20_000
+/** Kickoff de missão (reunião nas mesas das fases) fica vivo por 25s. */
+const KICKOFF_TTL_MS = 25_000
+/** Celebração de missão done fica viva por 12s. */
+const CELEBRATION_TTL_MS = 12_000
+/** Bastão de revezamento (agent da conv mudou) fica vivo por 20s. */
+const BATON_TTL_MS = 20_000
+/** Chegada (mesa off → disponível) fica viva por 25s. */
+const ARRIVAL_TTL_MS = 25_000
+/** Entrega ao Boss (courier até a mesa executiva) fica viva por 30s. */
+const BOSS_DELIVERY_TTL_MS = 30_000
 /** Coalescing do espelho de UI: no máximo ~10 snapshots/s (trailing edge). */
 const COALESCE_MS = 100
 /** Re-derive periódico p/ decaimentos (typing→thinking, expirar balões). */
@@ -66,6 +81,28 @@ const activity = new Map<string, ActivityMark>()
 const wasRunning = new Set<string>()
 /** Balões de entrega vivos (expiram em 15s). */
 let deliveries: OfficeSnapshot["deliveries"] = []
+/** Fase corrente vista no ÚLTIMO derive, por convId de missão — é a memória
+ *  que permite detectar a TRANSIÇÃO (i done → i+1 running) e não re-emitir. */
+const missionPhaseSeen = new Map<string, number>()
+/** Handoffs físicos vivos (expiram em 20s). */
+let handoffs: NonNullable<OfficeSnapshot["handoffs"]> = []
+/** Último status de missão visto por convId — memória das transições
+ *  ausente/queued→running (kickoff) e →done (celebração). */
+const missionStatusSeen = new Map<string, MissionRun["status"]>()
+/** Último agent visto por conv COM items (bastão: agent MUDOU entre derives). */
+const lastAgentByConv = new Map<string, string>()
+/** Última condição "off" vista por mesa (arrival: off → disponível). */
+const lastOffByDesk = new Map<string, boolean>()
+/** Kickoffs vivos (expiram em 25s). */
+let kickoffs: NonNullable<OfficeSnapshot["kickoffs"]> = []
+/** Celebrações vivas (expiram em 12s). */
+let celebrations: NonNullable<OfficeSnapshot["celebrations"]> = []
+/** Bastões de revezamento vivos (expiram em 20s). */
+let batons: NonNullable<OfficeSnapshot["batons"]> = []
+/** Chegadas vivas (expiram em 25s). */
+let arrivals: NonNullable<OfficeSnapshot["arrivals"]> = []
+/** Entregas ao Boss vivas (expiram em 30s). */
+let bossDeliveries: NonNullable<OfficeSnapshot["bossDeliveries"]> = []
 /** Cache do ledger de custo agregado por projectId (query async). */
 let ledgerByProject: Record<string, number> = {}
 
@@ -77,6 +114,16 @@ export function _resetDeriveState(): void {
   activity.clear()
   wasRunning.clear()
   deliveries = []
+  missionPhaseSeen.clear()
+  handoffs = []
+  missionStatusSeen.clear()
+  lastAgentByConv.clear()
+  lastOffByDesk.clear()
+  kickoffs = []
+  celebrations = []
+  batons = []
+  arrivals = []
+  bossDeliveries = []
   ledgerByProject = {}
 }
 
@@ -167,13 +214,9 @@ function upgrade(
 // agregado da sala: fonte única em engine/types.roomAggregate (compartilhada
 // com a fixture sim-data — mesma régua no Tauri e no browser)
 
-/** Fase de uma missão apontada por um run_id `missionId::phase-N` (o formato
- *  do phaseRunId do store); null = sufixo em outro formato. */
-function phaseIndexFromRunId(run: MissionRun, runId: string): number | null {
-  const suffix = runId.slice(run.id.length + 2)
-  const m = /^phase-(\d+)$/.exec(suffix)
-  return m ? Number(m[1]) : null
-}
+// mapeamento request→conversa (run_id → turno linear / fase de missão):
+// fonte única em store/interactions.convIdForInteraction — a MESMA régua do
+// split contextual dos cards (inline vs toast global).
 
 // ---------------------------------------------------------------------------
 // A derivação
@@ -202,6 +245,12 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
         state: off ? "off" : "idle",
         label: off ? "Não detectado" : "Disponível",
       }
+      // Chegada: a mesa estava "off" no último derive e o CLI foi detectado ⇒
+      // o avatar entra pela porta. Primeiro derive só memoriza (mesa que já
+      // nasce disponível não é "chegada").
+      const prevOff = lastOffByDesk.get(desk.id)
+      if (prevOff === true && !off) arrivals.push({ deskId: desk.id, at: now })
+      lastOffByDesk.set(desk.id, off)
       deskByKey.set(desk.id, desk)
       return desk
     })
@@ -210,15 +259,80 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
 
   // 2) Missões: a fase corrente acende a mesa do agent da fase (label da
   //    persona); gate humano ⇒ mão levantada na mesa da fase do gate.
+  //    De quebra: kanban por projeto (whiteboard), kickoff e celebração.
+  const missionByProject = new Map<string, MissionRun>()
   for (const [convId, run] of Object.entries(missions.byConv)) {
     const projectId = projectOfConv(chat, convId)
     if (!projectId) continue
+    // Kanban do whiteboard: UMA missão por sala — rodando vence; entre iguais,
+    // a mais recente (startedAt). O quadro persiste depois de done.
+    const kanban = missionByProject.get(projectId)
+    const runActive = run.status === "running"
+    if (
+      !kanban ||
+      (runActive && kanban.status !== "running") ||
+      (runActive === (kanban.status === "running") &&
+        run.startedAt > kanban.startedAt)
+    ) {
+      missionByProject.set(projectId, run)
+    }
+    // Kickoff: ausente/queued → running (memória por convId; inclui o 1º
+    // avistamento já running — a missão está de fato decolando). Celebração:
+    // transição REAL → done (missão já done no 1º derive é histórica).
+    const statusSeen = missionStatusSeen.get(convId)
+    if (runActive && statusSeen !== "running") {
+      const deskIds = [
+        ...new Set(
+          run.phases
+            .map((ph) => officeAgent(ph.def.agent))
+            .filter((a): a is OfficeAgentId => a !== null)
+            .map((a) => `${projectId}::${a}`),
+        ),
+      ]
+      if (deskIds.length > 0) kickoffs.push({ projectId, deskIds, at: now })
+    }
+    if (
+      run.status === "done" &&
+      statusSeen !== undefined &&
+      statusSeen !== "done"
+    ) {
+      celebrations.push({ projectId, at: now })
+    }
+    missionStatusSeen.set(convId, run.status)
+    // Handoff físico: a fase avançou desde o último derive, a anterior está
+    // done e o agent MUDOU ⇒ courier mesa→mesa (mesma sala: mesmo projectId
+    // dos dois lados por construção). Primeiro derive só memoriza (missão
+    // histórica não vira courier).
+    const seen = missionPhaseSeen.get(convId)
+    if (seen !== undefined && run.current > seen) {
+      // origem = a fase IMEDIATAMENTE anterior à corrente (não a última vista):
+      // se um coalesce de 100ms engoliu mais de uma transição, o courier deve
+      // partir da mesa de quem acabou de entregar, não de fases atrás.
+      const fromDef = run.phases[run.current - 1]
+      const toDef = run.phases[run.current]
+      const fromAgent = fromDef ? officeAgent(fromDef.def.agent) : null
+      const toAgent = toDef ? officeAgent(toDef.def.agent) : null
+      if (
+        fromAgent &&
+        toAgent &&
+        fromAgent !== toAgent &&
+        fromDef.status === "done"
+      ) {
+        handoffs.push({
+          fromDeskId: `${projectId}::${fromAgent}`,
+          toDeskId: `${projectId}::${toAgent}`,
+          at: now,
+        })
+      }
+    }
+    missionPhaseSeen.set(convId, run.current)
     if (run.gate) {
       const phase = run.phases[run.gate.phase]
       const agent = phase ? officeAgent(phase.def.agent) : null
       if (agent) {
         const desk = deskByKey.get(`${projectId}::${agent}`)
         if (desk) {
+          desk.persona = phase.def.persona // a mesa hospeda a fase do gate
           upgrade(desk, {
             state: "hand",
             hand: "gate",
@@ -236,6 +350,7 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
     if (!phase || !agent) continue
     const desk = deskByKey.get(`${projectId}::${agent}`)
     if (!desk) continue
+    desk.persona = phase.def.persona // metadado ortogonal ao rank de estado
     const live = liveState(`${convId}#m${run.current}`, phase.items ?? [], now)
     upgrade(desk, {
       state: live.state,
@@ -262,6 +377,34 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
     })
   }
 
+  // 3b) Revezamento + descanso, por conversa conhecida: (a) o agent MUDOU
+  //     desde o último derive numa conv COM items ⇒ bastão mesa→mesa no mesmo
+  //     projeto (memória lastAgentByConv; conv vazia não memoriza — sem
+  //     trabalho, sem bastão); (b) auto-resume agendado ⇒ a mesa "descansa"
+  //     até nextAt (sinal do sofá).
+  for (const [convId, c] of Object.entries(chat.byId)) {
+    if (c.items.length > 0) {
+      const prevAgent = lastAgentByConv.get(convId)
+      if (prevAgent !== undefined && prevAgent !== c.agent) {
+        const from = officeAgent(prevAgent)
+        const to = officeAgent(c.agent)
+        if (from && to && from !== to) {
+          batons.push({
+            fromDeskId: `${c.projectId}::${from}`,
+            toDeskId: `${c.projectId}::${to}`,
+            at: now,
+          })
+        }
+      }
+      lastAgentByConv.set(convId, c.agent)
+    }
+    if (c.autoResume) {
+      const agent = officeAgent(c.agent)
+      const desk = agent ? deskByKey.get(`${c.projectId}::${agent}`) : undefined
+      if (desk) desk.restUntil = c.autoResume.nextAt
+    }
+  }
+
   // 4) Fim de turno linear ⇒ balão curto de entrega (só p/ convs que vimos
   //    rodando — um result histórico não vira balão no primeiro derive).
   for (const convId of [...wasRunning]) {
@@ -285,43 +428,60 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
     if (!agent) continue
     deliveries.push({
       deskId: `${c.projectId}::${agent}`,
+      convId,
       text: shortResult(terminal.text, terminal.ok),
       at: now,
     })
+    // Mesmo gatilho, outro palco: o courier leva o documento até o Boss.
+    bossDeliveries.push({ deskId: `${c.projectId}::${agent}`, convId, at: now })
   }
   deliveries = deliveries.filter((d) => now - d.at <= DELIVERY_TTL_MS)
+  handoffs = handoffs.filter((h) => now - h.at <= HANDOFF_TTL_MS)
+  kickoffs = kickoffs.filter((k) => now - k.at <= KICKOFF_TTL_MS)
+  celebrations = celebrations.filter((c) => now - c.at <= CELEBRATION_TTL_MS)
+  batons = batons.filter((b) => now - b.at <= BATON_TTL_MS)
+  arrivals = arrivals.filter((a) => now - a.at <= ARRIVAL_TTL_MS)
+  bossDeliveries = bossDeliveries.filter(
+    (d) => now - d.at <= BOSS_DELIVERY_TTL_MS,
+  )
+  for (const convId of [...missionPhaseSeen.keys()]) {
+    if (!missions.byConv[convId]) missionPhaseSeen.delete(convId)
+  }
+  for (const convId of [...missionStatusSeen.keys()]) {
+    if (!missions.byConv[convId]) missionStatusSeen.delete(convId)
+  }
+  for (const convId of [...lastAgentByConv.keys()]) {
+    if (!chat.byId[convId]) lastAgentByConv.delete(convId)
+  }
+  for (const deskId of [...lastOffByDesk.keys()]) {
+    if (!deskByKey.has(deskId)) lastOffByDesk.delete(deskId)
+  }
 
   // 5) Approvals pendentes (fila do useInteractions) mapeáveis ⇒ mão levantada.
   //    question NÃO tem run_id no payload ⇒ sem mesa (o host global cobre).
   //    Responder pelo card remove da fila NA HORA ⇒ a mão abaixa no mesmo
   //    derive (o backend não emite resolved pra respostas do usuário).
   for (const req of useInteractions.getState().queue) {
-    if (req.kind !== "approval") continue
+    // dono do pedido: helper compartilhado (question/sem run_id ⇒ null).
+    const home = convIdForInteraction(req, chat, missions)
+    if (!home) continue
     const data = req.data as Partial<ApprovalData> | null | undefined
-    const runId = typeof data?.run_id === "string" ? data.run_id : null
-    if (!runId) continue
 
     let target: { projectId: string; agent: OfficeAgentId; convId: string } | null =
       null
-    // 5a) turno linear: run_id É o runId corrente da conversa (turno pausado).
-    for (const [convId, c] of Object.entries(chat.byId)) {
-      if (c.runId !== runId) continue
-      const agent = officeAgent(c.agent)
-      if (agent) target = { projectId: c.projectId, agent, convId }
-      break
-    }
-    // 5b) missão: prefixo `missionId::` casa com byConv; a fase vem do sufixo
-    //     `phase-N` (fallback: fase corrente).
-    if (!target) {
-      for (const [convId, run] of Object.entries(missions.byConv)) {
-        if (!runId.startsWith(`${run.id}::`)) continue
-        const idx = phaseIndexFromRunId(run, runId) ?? run.current
-        const phase = run.phases[idx] ?? run.phases[run.current]
-        const agent = phase ? officeAgent(phase.def.agent) : null
-        const projectId = projectOfConv(chat, convId)
-        if (agent && projectId) target = { projectId, agent, convId }
-        break
-      }
+    if (home.kind === "linear") {
+      // 5a) turno linear: run_id É o runId corrente da conversa (turno pausado).
+      const c = chat.byId[home.convId]
+      const agent = c ? officeAgent(c.agent) : null
+      if (agent) target = { projectId: c.projectId, agent, convId: home.convId }
+    } else {
+      // 5b) missão: a fase resolvida veio do helper (sufixo `phase-N`,
+      //     fallback: fase corrente); null = irresolvível ⇒ sem mesa.
+      const run = missions.byConv[home.convId]
+      const phase = home.phase != null ? run?.phases[home.phase] : undefined
+      const agent = phase ? officeAgent(phase.def.agent) : null
+      const projectId = projectOfConv(chat, home.convId)
+      if (agent && projectId) target = { projectId, agent, convId: home.convId }
     }
     if (!target) continue
     const desk = deskByKey.get(`${target.projectId}::${target.agent}`)
@@ -344,17 +504,70 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
     if (pid) missionCost[pid] = (missionCost[pid] ?? 0) + run.costTotal
   }
 
-  const rooms: RoomSnapshot[] = roomsBase.map(({ project, desks }) => ({
-    projectId: project.id,
-    name: project.name,
-    color: project.color ?? undefined,
-    agg: roomAggregate(desks),
-    costUsd:
-      (ledgerByProject[project.id] ?? 0) + (missionCost[project.id] ?? 0),
-    desks,
-  }))
+  // 7) Guerra (Fusion): disputa ativa numa conv do projeto ⇒ mesas dos agents
+  //    candidatos mapeáveis; nenhum mapeável ⇒ as 3 mesas da sala.
+  const warByProject = new Map<string, { deskIds: string[] }>()
+  for (const [convId, fus] of Object.entries(useFusion.getState().byConv)) {
+    if (
+      fus.phase === "configuring" ||
+      fus.phase === "done" ||
+      fus.phase === "aborted"
+    ) {
+      continue
+    }
+    const pid = projectOfConv(chat, convId)
+    if (!pid) continue
+    const mapped = [
+      ...new Set(
+        fus.candidates
+          .map((c) => officeAgent(c.agent))
+          .filter((a): a is OfficeAgentId => a !== null),
+      ),
+    ]
+    const agents = mapped.length > 0 ? mapped : OFFICE_AGENTS
+    warByProject.set(pid, { deskIds: agents.map((a) => `${pid}::${a}`) })
+  }
 
-  return { rooms, deliveries: [...deliveries] }
+  const rooms: RoomSnapshot[] = roomsBase.map(({ project, desks }) => {
+    const kanban = missionByProject.get(project.id)
+    let mission: RoomMission | undefined
+    if (kanban) {
+      const cur = kanban.phases[kanban.current]
+      const curAgent = cur ? officeAgent(cur.def.agent) : null
+      mission = {
+        phases: kanban.phases.map((ph) => ({
+          label: ph.def.label,
+          persona: ph.def.persona,
+          agent: ph.def.agent,
+          status: ph.status,
+        })),
+        current: kanban.current,
+        executorDeskId: curAgent ? `${project.id}::${curAgent}` : undefined,
+      }
+    }
+    return {
+      projectId: project.id,
+      name: project.name,
+      color: project.color ?? undefined,
+      agg: roomAggregate(desks),
+      costUsd:
+        (ledgerByProject[project.id] ?? 0) + (missionCost[project.id] ?? 0),
+      desks,
+      mission,
+      war: warByProject.get(project.id),
+    }
+  })
+
+  return {
+    rooms,
+    deliveries: [...deliveries],
+    handoffs: [...handoffs],
+    kickoffs: [...kickoffs],
+    celebrations: [...celebrations],
+    batons: [...batons],
+    arrivals: [...arrivals],
+    bossDeliveries: [...bossDeliveries],
+  }
 }
 
 /** Recarrega o cache de custo por projeto (ledger unificado: turn_costs +
@@ -382,11 +595,17 @@ export function startDeriving(cb: (s: OfficeSnapshot) => void): () => void {
 
   const emit = () => {
     if (disposed) return
-    const snap = deriveOfficeSnapshot()
-    const json = JSON.stringify(snap)
-    if (json === lastJson) return // dedupe: nada mudou de verdade
-    lastJson = json
-    cb(snap)
+    // S7: derive + stringify do dedupe + cb (stage.applySnapshot/setSnapshot)
+    const endSpan = perfSpan("derive") // no-op sem mc.office.perf
+    try {
+      const snap = deriveOfficeSnapshot()
+      const json = JSON.stringify(snap)
+      if (json === lastJson) return // dedupe: nada mudou de verdade
+      lastJson = json
+      cb(snap)
+    } finally {
+      endSpan()
+    }
   }
 
   // Trailing edge: a 1ª mudança do burst agenda; as demais coalescem no timer.
@@ -406,6 +625,7 @@ export function startDeriving(cb: (s: OfficeSnapshot) => void): () => void {
     useMission.subscribe(schedule),
     useApp.subscribe(schedule),
     useInteractions.subscribe(schedule),
+    useFusion.subscribe(schedule), // guerra: disputa ativa vira room.war
   ]
 
   // Decaimentos precisam de relógio (typing→thinking após 2.5s de silêncio,

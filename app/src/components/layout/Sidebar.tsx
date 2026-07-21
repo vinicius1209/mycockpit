@@ -51,6 +51,7 @@ import { createWorktree, removeWorktree } from "@/lib/git"
 import { LABEL_COLORS } from "@/lib/labelColors"
 import { cn } from "@/lib/utils"
 import type { AgentStatus, Project } from "@/lib/types"
+import { OfficeRailContent } from "@/office/ui/OfficeRailContent"
 
 /** Soft-remove do projeto (arquiva, conversas preservadas) com Desfazer. Disco intocado. */
 function confirmDeleteProject(project: Project) {
@@ -948,66 +949,75 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
     <aside className="reveal-left flex h-full w-full flex-col bg-rail">
       {/* F7 — rail global (coleções cross-projeto) acima de Projetos. */}
       <ScheduledEntry />
-      <header className="flex h-11 shrink-0 items-center justify-between px-3">
-        <div className="flex items-center gap-2">
-          <span className="label-mono">Projetos</span>
-          <span className="text-[11px] text-muted-foreground tabular-nums">
-            {projects.length}
-          </span>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={onAddProject}
-          title="Adicionar projeto"
-          aria-label="Adicionar projeto"
-        >
-          <Plus className="size-4" />
-        </Button>
-      </header>
-
-      <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-0.5 px-2 pb-2">
-          {projects.length === 0 ? (
-            <div className="mt-10 flex flex-col items-center gap-3 px-4 text-center">
-              <FolderGit2 className="size-6 text-muted-foreground/60" />
-              <p className="text-[13px] text-muted-foreground">
-                Nenhum projeto ainda.
-              </p>
-              <Button variant="outline" size="sm" onClick={onAddProject}>
-                <Plus className="size-4" />
-                Adicionar projeto
-              </Button>
+      {/* No Escritório, o miolo "Projetos" (pastas — conceito de Trabalho) dá
+          lugar a um índice ESPACIAL da cena: Salas + Equipe. O shell da coluna
+          (Agendado acima, footer usuário/tema abaixo) fica igual. */}
+      {viewMode === "office" ? (
+        <OfficeRailContent />
+      ) : (
+        <>
+          <header className="flex h-11 shrink-0 items-center justify-between px-3">
+            <div className="flex items-center gap-2">
+              <span className="label-mono">Projetos</span>
+              <span className="text-[11px] text-muted-foreground tabular-nums">
+                {projects.length}
+              </span>
             </div>
-          ) : (
-            projects.map((p) => (
-              <div key={p.id} className="flex flex-col">
-                <ProjectRow
-                  project={p}
-                  active={p.id === activeId}
-                  expanded={expanded.has(p.id)}
-                  status={
-                    runningProjects.has(p.id) ? "running" : (p.status ?? "idle")
-                  }
-                  onSelect={() => {
-                    setActive(p.id)
-                    openExpand(p.id) // selecionar auto-expande, sem fechar os outros
-                  }}
-                  onToggle={() => toggleExpand(p.id)}
-                  onDelete={() => confirmDeleteProject(p)}
-                />
-                {expanded.has(p.id) &&
-                  (viewMode === "sdd" ? (
-                    p.id === activeId && <SddFeatureList project={p} />
-                  ) : (
-                    <ConversationList projectId={p.id} />
-                  ))}
-              </div>
-            ))
-          )}
-        </div>
-      </ScrollArea>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={onAddProject}
+              title="Adicionar projeto"
+              aria-label="Adicionar projeto"
+            >
+              <Plus className="size-4" />
+            </Button>
+          </header>
+
+          <ScrollArea className="flex-1">
+            <div className="flex flex-col gap-0.5 px-2 pb-2">
+              {projects.length === 0 ? (
+                <div className="mt-10 flex flex-col items-center gap-3 px-4 text-center">
+                  <FolderGit2 className="size-6 text-muted-foreground/60" />
+                  <p className="text-[13px] text-muted-foreground">
+                    Nenhum projeto ainda.
+                  </p>
+                  <Button variant="outline" size="sm" onClick={onAddProject}>
+                    <Plus className="size-4" />
+                    Adicionar projeto
+                  </Button>
+                </div>
+              ) : (
+                projects.map((p) => (
+                  <div key={p.id} className="flex flex-col">
+                    <ProjectRow
+                      project={p}
+                      active={p.id === activeId}
+                      expanded={expanded.has(p.id)}
+                      status={
+                        runningProjects.has(p.id) ? "running" : (p.status ?? "idle")
+                      }
+                      onSelect={() => {
+                        setActive(p.id)
+                        openExpand(p.id) // selecionar auto-expande, sem fechar os outros
+                      }}
+                      onToggle={() => toggleExpand(p.id)}
+                      onDelete={() => confirmDeleteProject(p)}
+                    />
+                    {expanded.has(p.id) &&
+                      (viewMode === "sdd" ? (
+                        p.id === activeId && <SddFeatureList project={p} />
+                      ) : (
+                        <ConversationList projectId={p.id} />
+                      ))}
+                  </div>
+                ))
+              )}
+            </div>
+          </ScrollArea>
+        </>
+      )}
 
       <footer className="flex h-12 shrink-0 items-center gap-2.5 border-t px-3">
         <div className="grid size-6 place-items-center rounded-full bg-brass/15 text-[11px] font-semibold text-brass">

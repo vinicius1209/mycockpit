@@ -14,14 +14,28 @@ import {
 } from "@/lib/missionTypes"
 
 // Re-exports pra ui/ não importar lib/stores do app diretamente (regra §6).
-export { parseCapInput } from "@/lib/missionDraft"
-export type { MissionPhaseRun, MissionPreset, MissionRun } from "@/lib/missionTypes"
+export { clonePhases, editPhase, parseCapInput, phasesCustomized } from "@/lib/missionDraft"
+export type { PhaseEdit } from "@/lib/missionDraft"
+export type {
+  MissionPhaseDef,
+  MissionPhaseRun,
+  MissionPreset,
+  MissionRun,
+} from "@/lib/missionTypes"
 
-/** Preset padrão da mesa de reunião: o "feature" das Settings (editável lá),
- *  senão o primeiro preset salvo, senão o de fábrica. A mesa NÃO edita fases
- *  (isso é papel do MissionLauncher do Linear) — só o teto de custo. */
-export function missionTablePreset(): MissionPreset {
+/** Presets selecionáveis no form da mesa: os das Settings (espelham os de
+ *  fábrica feature/ui-first/barato; editáveis lá), fallback pros de fábrica. */
+export function missionTablePresets(): MissionPreset[] {
   const presets = useApp.getState().settings.missionPresets
+  return presets.length > 0 ? presets : DEFAULT_MISSION_PRESETS
+}
+
+/** Preset DEFAULT do seletor da mesa: o "feature" das Settings (editável lá),
+ *  senão o primeiro preset salvo, senão o de fábrica. As fases viram rascunho
+ *  editável no dock (agent/modelo por fase + teto — mesma régua do
+ *  MissionLauncher do Linear); editar nunca muta o preset. */
+export function missionTablePreset(): MissionPreset {
+  const presets = missionTablePresets()
   return (
     presets.find((p) => p.id === "feature") ??
     presets[0] ??
@@ -68,8 +82,8 @@ export function abortTableMission(convId: string): void {
 }
 
 /** MissionRun da conversa lançada da mesa (acompanhamento no MissionDock —
- *  assinatura larga como o useDeskConversation do DeskDock: o painel É a
- *  superfície do stream). null = sem missão. */
+ *  assinatura larga de propósito: o painel É a superfície do stream, diferente
+ *  do chrome do DeskDock, que assina a visão discreta useDeskConvChrome). */
 export function useMissionTableRun(convId: string | null): MissionRun | null {
   return useMission((s) => (convId ? (s.byConv[convId] ?? null) : null))
 }

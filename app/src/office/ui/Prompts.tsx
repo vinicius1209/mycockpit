@@ -11,14 +11,24 @@
 // tem turno rodando (§5.4 v2 — não só minimizado) e as entregas vêm PRONTAS do
 // snapshot: o bridge/derive é o dono único do TTL.
 import { forwardRef, useImperativeHandle, useMemo, useRef } from "react"
-import type {
-  DeskPlacement,
-  DeskSnapshot,
-  FloorPlan,
-  Vec2,
+import {
+  BOSS_DESK_ID,
+  NOTICE_BOARD_ID,
+  type DeskPlacement,
+  type DeskSnapshot,
+  type FloorPlan,
+  type Vec2,
 } from "../engine/types"
+import { deskAnchorWorld } from "../scene/logic"
+import { GATE_WAIT_OFFSET } from "../scene/behaviors/mission"
 import { useDeskStreamSnippet } from "../bridge/hooks"
-import { DeskMenu, MissionTableMenu } from "./DeskMenu"
+import {
+  BossDeskMenu,
+  DeskMenu,
+  GateVisitMenu,
+  MissionTableMenu,
+  NoticeBoardMenu,
+} from "./DeskMenu"
 import { MISSION_TABLE_ID } from "./missionTable"
 import { useOfficeUi } from "./store"
 
@@ -33,6 +43,11 @@ export type PromptsHandle = {
 
 /** deskId sentinela dos balões ancorados no BOSS (posição vem do stage). */
 const BOSS_ANCHOR = "@boss"
+
+/** Âncora do PONTO DE ESPERA do gate-visit: onde o agent fica em pé na frente
+ *  da mesa do Boss (interactTile do posto de comando) — o balão "✋" fica
+ *  sobre a cabeça DELE, não sobre o tampo da mesa. */
+const GATE_WAIT_ANCHOR = "@gate-wait"
 
 /** Balões da cena são de RELANCE: ~2 linhas / ~90 chars. O line-clamp corta
  *  visualmente; o corte de texto evita uma palavra gigante furar a largura. */
@@ -63,6 +78,9 @@ export const Prompts = forwardRef<PromptsHandle, { plan: FloorPlan | null }>(
     const partial = useOfficeUi((s) => s.dictationPartial)
     const snapshot = useOfficeUi((s) => s.snapshot)
     const bossSay = useOfficeUi((s) => s.bossSay)
+    // Gate-visit: agent em pé na mesa do Boss esperando decisão (pack mission
+    // da cena → store). waiting=true acende o balão "✋" no ponto de espera.
+    const gateVisit = useOfficeUi((s) => s.gateVisit)
     // Streaming vira balão sobre o agent SEMPRE que a mesa do dock tem turno
     // rodando (§5.4 v2) — dock aberto incluso (o dock mostra o texto pleno).
     // Seletor por VALOR (string|null): só re-renderiza quando o snippet muda.
@@ -77,14 +95,25 @@ export const Prompts = forwardRef<PromptsHandle, { plan: FloorPlan | null }>(
     // Tiles-âncora da projeção: mesas + interactables sem mesa (mesa de
     // reunião — O-2). O frame() só precisa do tile; o resto do DeskPlacement
     // fica no mapa de mesas (menu/deliveries).
-    const anchorTiles = useMemo(() => {
+    const anchorPoints = useMemo(() => {
       const m = new Map<string, Vec2>()
-      for (const [id, d] of desks) m.set(id, d.tile)
-      for (const it of plan?.interactables ?? []) m.set(it.id, it.tile)
+      for (const [id, d] of desks) m.set(id, deskAnchorWorld(d.tile))
+      for (const it of plan?.interactables ?? []) {
+        m.set(it.id, it.tile)
+        // ponto de espera do gate-visit: atendimento do posto de comando
+        // (targets.bossDesk = interactTile+0.5) + o MESMO deslocamento
+        // lateral do pack — o balão "✋" cai sobre a cabeça do walker
+        if (it.id === BOSS_DESK_ID) {
+          m.set(GATE_WAIT_ANCHOR, {
+            x: it.interactTile.x + 0.5 + GATE_WAIT_OFFSET.x,
+            y: it.interactTile.y + 0.5 + GATE_WAIT_OFFSET.y,
+          })
+        }
+      }
       return m
     }, [desks, plan])
-    const anchorTilesRef = useRef(anchorTiles)
-    anchorTilesRef.current = anchorTiles
+    const anchorPointsRef = useRef(anchorPoints)
+    anchorPointsRef.current = anchorPoints
 
     /** DeskSnapshot da mesa `id` no último snapshot (estado vivo p/ menu). */
     const snapOf = (id: string | null): DeskSnapshot | undefined => {
@@ -129,11 +158,9 @@ export const Prompts = forwardRef<PromptsHandle, { plan: FloorPlan | null }>(
             if (deskId === BOSS_ANCHOR) {
               p = bossScreen
             } else {
-              const t = anchorTilesRef.current.get(deskId)
+              const t = anchorPointsRef.current.get(deskId)
               if (!t) continue
-              // Âncora no centro do tile da mesa; o offset visual (subir o
-              // balão) é CSS fixo dentro do elemento — só o anchor projeta.
-              p = worldToScreen(t.x + 0.5, t.y + 0.5)
+              p = worldToScreen(t.x, t.y)
             }
             el.style.transform = `translate3d(${Math.round(p.x)}px, ${Math.round(p.y)}px, 0)`
           }
@@ -157,8 +184,19 @@ export const Prompts = forwardRef<PromptsHandle, { plan: FloorPlan | null }>(
     // Mesa de reunião (O-2): menu próprio (lançar/acompanhar missão) — o
     // DeskMenu de agent não se aplica (não há DeskPlacement pro id).
     const missionMenu = menuDeskId === MISSION_TABLE_ID
+    // Mesa do Boss (posto de comando, §8): menu próprio "Abrir Central" — ou,
+    // com um agent esperando DECISÃO ali (gate-visit), o menu "✋ Responder".
+    // Com o dock DELE já aberto (Responder cumprido), o balão sai da frente.
+    const gateDesk = gateVisit ? desks.get(gateVisit.deskId) : undefined
+    const gateHandled =
+      gateVisit !== null && !dockMinimized && dockDeskId === gateVisit.deskId
+    const bossDeskMenu = menuDeskId === BOSS_DESK_ID && !gateHandled
+    // Quadro de avisos do corredor: menu próprio com os agendados (read-only).
+    const boardMenu = menuDeskId === NOTICE_BOARD_ID
     const menuDesk =
-      menuDeskId && !missionMenu ? desks.get(menuDeskId) : undefined
+      menuDeskId && !missionMenu && !bossDeskMenu && !boardMenu
+        ? desks.get(menuDeskId)
+        : undefined
 
     // Legenda do ditado ao vivo sobre a mesa do dock (§5.5).
     const dictationDeskId = recording && dockDeskId ? dockDeskId : null
@@ -173,7 +211,6 @@ export const Prompts = forwardRef<PromptsHandle, { plan: FloorPlan | null }>(
 
     return (
       <div
-        aria-hidden="true"
         className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
       >
         {menuDesk && (
@@ -194,6 +231,51 @@ export const Prompts = forwardRef<PromptsHandle, { plan: FloorPlan | null }>(
           >
             <div className="-translate-x-1/2 translate-y-[calc(-100%_-_84px)]">
               <MissionTableMenu />
+            </div>
+          </div>
+        )}
+
+        {bossDeskMenu && (
+          <div
+            ref={anchorRef(`menu:${BOSS_DESK_ID}`, BOSS_DESK_ID)}
+            className="absolute top-0 left-0 will-change-transform"
+          >
+            <div className="-translate-x-1/2 translate-y-[calc(-100%_-_84px)]">
+              {gateVisit && gateDesk ? (
+                <GateVisitMenu desk={gateDesk} snap={snapOf(gateDesk.id)} />
+              ) : (
+                <BossDeskMenu />
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* balão "✋" do gate-visit: o agent CHEGOU e espera em pé na frente da
+            mesa do Boss; some quando o menu (que já diz tudo) está aberto */}
+        {gateVisit?.waiting && !bossDeskMenu && (
+          <div
+            ref={anchorRef(`gate:${GATE_WAIT_ANCHOR}`, GATE_WAIT_ANCHOR)}
+            className="absolute top-0 left-0 will-change-transform"
+          >
+            <div className="-translate-x-1/2 -translate-y-[118px]">
+              <div className="relative w-max rounded-lg border border-st-queued/60 bg-card px-2.5 py-1.5 text-[12px] leading-snug shadow-md motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-200">
+                <p className="text-foreground/90">
+                  <span aria-hidden="true">✋</span> Preciso de uma decisão
+                </p>
+                <span className="absolute -bottom-[5px] left-1/2 size-2 -translate-x-1/2 rotate-45 border-r border-b border-st-queued/60 bg-card" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {boardMenu && (
+          <div
+            ref={anchorRef(`menu:${NOTICE_BOARD_ID}`, NOTICE_BOARD_ID)}
+            className="absolute top-0 left-0 will-change-transform"
+          >
+            {/* o quadro é desenhado ALTO na parede — folga maior que a das mesas */}
+            <div className="-translate-x-1/2 translate-y-[calc(-100%_-_96px)]">
+              <NoticeBoardMenu />
             </div>
           </div>
         )}

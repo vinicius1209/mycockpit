@@ -41,6 +41,12 @@ export interface DeskSendArgs {
    *  envio. Só vale enquanto a conversa está destravada (1º run); depois a
    *  conversa trava no modelo do 1º run. undefined/null = default do agent. */
   model?: string | null
+  /** Esforço do próximo envio destravado. "default" deve chegar normalizado
+   *  como null pelo chamador, igual ao composer principal. */
+  effort?: string | null
+  /** Confirma que o pedido foi aceito antes do trabalho assíncrono longo. A UI
+   *  só limpa o rascunho e mostra a fala depois deste sinal. */
+  onAccepted?: (outcome: "started" | "queued") => void
   /** true = este envio É o disparo do auto-resume agendado: não cancela o
    *  loop (o estado autoResume com o contador de tentativas fica) e nunca
    *  planeja (é continuação de execução) — mesma semântica do ChatPanel. */
@@ -158,6 +164,7 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   // coalesce — inclusive o turno disparado pela outra superfície).
   if (conv.running || conv.finalizing) {
     useChat.getState().enqueue(convId, text, attachments)
+    args.onAccepted?.("queued")
     return
   }
   // envio manual supersede um auto-resume agendado nesta conversa; se ESTE
@@ -171,7 +178,7 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   const locked = conv.items.length > 0
   const agent = locked ? conv.agent : args.agent
   const model = locked ? conv.reqModel : (args.model ?? null)
-  const effort = locked ? conv.effort : null
+  const effort = locked ? conv.effort : (args.effort ?? null)
   // "Planejar primeiro" da CONVERSA (toggle ligado por qualquer superfície);
   // auto-resume nunca planeja (é continuação de execução)
   const planFirst = !args.fromAutoResume && !!conv.planFirst
@@ -183,6 +190,7 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
     useApp.getState().projects.find((p) => p.id === projectId)
       ?.permissionMode ?? "padrao"
   useChat.getState().start(convId, text, runId, agent, model, effort, attachments)
+  args.onAccepted?.("started")
   // M2: injeta as lições relevantes (projeto + globais) no PROMPT, não na
   // bolha visível — mesma injeção do handleSend no Linear. Best-effort:
   // qualquer falha envia sem o bloco. (A mesa não tem o 👍 de feedback na O-1,
@@ -275,6 +283,7 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
         text: texts.join("\n\n"),
         attachments: atts,
         fromAutoResume: false,
+        onAccepted: undefined,
       })
     } else if (maybeScheduleDeskAutoResume(args, agent)) {
       // turno bateu num rate limit / "vou tentar depois" e o auto-resume está
@@ -425,6 +434,7 @@ function maybeScheduleDeskAutoResume(args: DeskSendArgs, agent: string): boolean
       text: prompt,
       attachments: [],
       fromAutoResume: true,
+      onAccepted: undefined,
     })
   }, verdict.delayMs)
   useChat.getState().setAutoResume(convId, {

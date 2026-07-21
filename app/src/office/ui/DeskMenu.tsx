@@ -8,16 +8,20 @@
 // Acompanhar) — a tecla E do OfficeMode chama deskMenuPrimary. "Parar" é a
 // única secundária com efeito próprio (cancelDeskTurn).
 import { useEffect, useRef, useState } from "react"
-import { Hand, MessageCircle, Rocket, Square } from "lucide-react"
-import type {
-  DeskPlacement,
-  DeskSnapshot,
-  DeskVisualState,
+import { ClipboardList, Crown, Hand, MessageCircle, Rocket, Square } from "lucide-react"
+import {
+  BOSS_DESK_ID,
+  NOTICE_BOARD_ID,
+  type DeskPlacement,
+  type DeskSnapshot,
+  type DeskVisualState,
 } from "../engine/types"
 import {
   agentCssColor,
   agentLabel,
   fmtCost,
+  openScheduledView,
+  useBoardSchedules,
   useDeskContinueTitle,
   useDeskMissionCost,
   useDeskMissionRecovery,
@@ -58,8 +62,26 @@ export function deskMenuKind(
 }
 
 /** AÇÃO PRIMÁRIA do menu (tecla E do OfficeMode e botão principal): abre o
- *  dock da mesa — pro estado hand, o card do gate/approval já está no fio. */
+ *  dock da mesa — pro estado hand, o card do gate/approval já está no fio.
+ *  Exceções: a MESA DO BOSS (posto de comando, §8) não tem dock — a primária
+ *  pede a Central via intenção no store (o OfficeMode consome); o QUADRO DE
+ *  AVISOS abre a view Agendado do app (read-only nesta onda). Com um agent
+ *  ESPERANDO DECISÃO em pé na mesa do Boss (gate-visit), a primária dela vira
+ *  "Responder": abre o dock da MESA DELE (o gate card já está no fio). */
 export function deskMenuPrimary(deskId: string): void {
+  if (deskId === BOSS_DESK_ID) {
+    const s = useOfficeUi.getState()
+    if (s.gateVisit) {
+      s.openDock(s.gateVisit.deskId)
+      return
+    }
+    s.requestBossCenter()
+    return
+  }
+  if (deskId === NOTICE_BOARD_ID) {
+    openScheduledView()
+    return
+  }
   useOfficeUi.getState().openDock(deskId)
 }
 
@@ -112,7 +134,11 @@ export function MissionTableMenu() {
   const open = () => deskMenuPrimary(MISSION_TABLE_ID)
 
   return (
-    <div className="pointer-events-auto relative w-max max-w-[250px] rounded-lg border border-border bg-card px-3 pt-2 pb-2.5 shadow-xl motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-150 motion-safe:ease-out">
+    <div
+      data-testid="mission-table-menu"
+      aria-label="Ações da mesa de reunião"
+      className="pointer-events-auto relative w-max max-w-[250px] rounded-lg border border-border bg-card px-3 pt-2 pb-2.5 shadow-xl motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-150 motion-safe:ease-out"
+    >
       <div className="mb-1.5 flex items-center gap-1.5">
         <Rocket className="size-3 text-brass" />
         <span className="text-[12px] font-semibold text-foreground">
@@ -141,6 +167,145 @@ export function MissionTableMenu() {
       )}
 
       {/* ponteiro do balão → mesa */}
+      <span className="absolute -bottom-[6px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 border-r border-b border-border bg-card" />
+    </div>
+  )
+}
+
+// --- menu da MESA DO BOSS (posto de comando — §8) ---------------------------
+
+/** Balão da mesa executiva: andar até sua própria mesa = abrir seu briefing.
+ *  A primária (E/clique) pede a Central via deskMenuPrimary(BOSS_DESK_ID) —
+ *  o posto de comando é um LUGAR, não só um botão no HUD. */
+export function BossDeskMenu() {
+  return (
+    <div
+      data-testid="boss-desk-menu"
+      aria-label="Ações da sua mesa"
+      className="pointer-events-auto relative w-max max-w-[250px] rounded-lg border border-border bg-card px-3 pt-2 pb-2.5 shadow-xl motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-150 motion-safe:ease-out"
+    >
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <Crown className="size-3 text-brass" aria-hidden="true" />
+        <span className="text-[12px] font-semibold text-foreground">
+          Sua mesa
+        </span>
+      </div>
+
+      <PrimaryButton onClick={() => deskMenuPrimary(BOSS_DESK_ID)}>
+        <Crown className="size-3.5" />
+        Abrir Central
+      </PrimaryButton>
+
+      {/* ponteiro do balão → mesa */}
+      <span className="absolute -bottom-[6px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 border-r border-b border-border bg-card" />
+    </div>
+  )
+}
+
+// --- menu do AGENT esperando decisão na mesa do Boss (gate-visit) -----------
+
+/** Balão do gate-visit: o agent LARGOU a própria mesa e está em pé na mesa do
+ *  Boss esperando uma DECISÃO de missão (pack mission da cena). Substitui o
+ *  menu da mesa executiva enquanto a visita durar — a primária (E/clique)
+ *  abre o dock da MESA DELE com o gate card; a Central fica na secundária. */
+export function GateVisitMenu({
+  desk,
+  snap,
+}: {
+  /** Mesa de ORIGEM do agent que veio esperar (placement da planta). */
+  desk: DeskPlacement
+  /** Snapshot da mesa dele (label/detail do gate), se houver. */
+  snap?: DeskSnapshot
+}) {
+  const name = desk.agentName ?? agentLabel(desk.agent)
+  const color = agentCssColor(desk.agent)
+  return (
+    <div
+      data-testid="gate-visit-menu"
+      aria-label={`${name} precisa de uma decisão`}
+      className="pointer-events-auto relative w-max max-w-[250px] rounded-lg border border-border bg-card px-3 pt-2 pb-2.5 shadow-xl motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-150 motion-safe:ease-out"
+    >
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <span className="size-2 rounded-full" style={{ background: color }} />
+        <span className="text-[12px] font-semibold text-foreground">{name}</span>
+        <span className="text-[11px] text-st-queued">· esperando você</span>
+      </div>
+
+      <p className="mb-1.5 max-w-[210px] text-[12px] leading-snug text-st-queued">
+        ✋ Preciso de uma decisão
+        {snap?.detail ? ` · ${snap.detail}` : ""}
+      </p>
+
+      <div className="flex items-center gap-1.5">
+        <PrimaryButton onClick={() => deskMenuPrimary(BOSS_DESK_ID)}>
+          <Hand className="size-3.5" />
+          Responder
+        </PrimaryButton>
+        <button
+          type="button"
+          title="Abrir Central"
+          onClick={() => useOfficeUi.getState().requestBossCenter()}
+          className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary"
+        >
+          <Crown className="size-3" />
+          Central
+        </button>
+      </div>
+
+      {/* ponteiro do balão → mesa do Boss */}
+      <span className="absolute -bottom-[6px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 border-r border-b border-border bg-card" />
+    </div>
+  )
+}
+
+// --- menu do QUADRO DE AVISOS (corredor — agendados como lugar) -------------
+
+/** Balão do quadro de avisos: lista os PRÓXIMOS agendamentos reais (mesmo dado
+ *  do badge da Sidebar — useBoardSchedules, máx. 4) em modo LEITURA; a única
+ *  ação é a primária (E/clique), que abre a view Agendado do app. Sem itens ⇒
+ *  "Nada agendado". */
+export function NoticeBoardMenu() {
+  const items = useBoardSchedules(4)
+
+  return (
+    <div
+      data-testid="notice-board-menu"
+      aria-label="Quadro de avisos — agendados"
+      className="pointer-events-auto relative w-max max-w-[250px] rounded-lg border border-border bg-card px-3 pt-2 pb-2.5 shadow-xl motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-150 motion-safe:ease-out"
+    >
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <ClipboardList className="size-3 text-brass" aria-hidden="true" />
+        <span className="text-[12px] font-semibold text-foreground">
+          Agendado
+        </span>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="mb-1.5 text-[12px] leading-snug text-muted-foreground">
+          Nada agendado
+        </p>
+      ) : (
+        <ul className="mb-1.5 flex flex-col gap-1">
+          {items.map((item) => (
+            <li
+              key={item.id}
+              className="flex items-baseline justify-between gap-3 text-[12px]"
+            >
+              <span className="truncate text-foreground/90">{item.name}</span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {item.when}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <PrimaryButton onClick={() => deskMenuPrimary(NOTICE_BOARD_ID)}>
+        <ClipboardList className="size-3.5" />
+        Ver agendados
+      </PrimaryButton>
+
+      {/* ponteiro do balão → quadro */}
       <span className="absolute -bottom-[6px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 border-r border-b border-border bg-card" />
     </div>
   )
@@ -176,7 +341,11 @@ export function DeskMenu({
     : null
 
   return (
-    <div className="pointer-events-auto relative w-max max-w-[250px] rounded-lg border border-border bg-card px-3 pt-2 pb-2.5 shadow-xl motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-150 motion-safe:ease-out">
+    <div
+      data-testid="desk-menu"
+      aria-label={`Ações de ${name}`}
+      className="pointer-events-auto relative w-max max-w-[250px] rounded-lg border border-border bg-card px-3 pt-2 pb-2.5 shadow-xl motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-150 motion-safe:ease-out"
+    >
       {/* cabeçalho: quem mora nesta mesa */}
       <div className="mb-1.5 flex items-center gap-1.5">
         <span className="size-2 rounded-full" style={{ background: color }} />

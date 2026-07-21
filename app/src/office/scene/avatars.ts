@@ -15,7 +15,7 @@
  *  uníssono). prefers-reduced-motion ⇒ poses estáticas.
  */
 import { Container, Graphics, GraphicsContext, GraphicsPath } from "pixi.js"
-import type { DeskVisualState, OfficeAgentId } from "../engine/types"
+import type { BossFacing, DeskVisualState, OfficeAgentId } from "../engine/types"
 import { partsForState } from "./logic"
 import { SPIKE_SCALE, createChairBack, createChairSeat, createMug } from "./props"
 import { createSteam, createThoughtDots } from "./effects"
@@ -358,9 +358,48 @@ function armPair(
   return c
 }
 
+/** Roupa comunica PAPEL, enquanto a cor continua comunicando provider/estado.
+ *  A variante determinística evita clones exatos entre salas sem transformar
+ *  os agents em pessoas aleatórias a cada sessão. */
+function createAgentOutfit(agent: OfficeAgentId, variant: number): Graphics {
+  const g = new Graphics()
+  const light = 0xf1ead9
+  const ink = 0x273034
+  if (agent === "claude-code") {
+    // Cardigan de arquiteto: gola clara, lapelas e botões discretos.
+    g.roundRect(-9, -34, 18, 7, 3).fill({ color: light, alpha: 0.95 })
+    g.moveTo(-8, -28).lineTo(0, -17).lineTo(8, -28).stroke({ width: 2, color: light, alpha: 0.8 })
+    for (const y of [-13, -6, 1]) g.circle(0, y, 1.2).fill({ color: ink, alpha: 0.75 })
+    if (variant === 1) g.roundRect(7, -14, 5, 7, 1).fill({ color: light, alpha: 0.75 })
+    if (variant === 2) g.circle(-9, -23, 2).fill({ color: 0xe4a862 })
+  } else if (agent === "codex") {
+    // Bomber técnica: gola alta, zíper e patch geométrico.
+    g.moveTo(-12, -30).quadraticCurveTo(-6, -35, 0, -29)
+      .quadraticCurveTo(6, -35, 12, -30)
+      .stroke({ width: 4, color: ink, alpha: 0.9 })
+    g.moveTo(0, -28).lineTo(0, 7).stroke({ width: 1.5, color: light, alpha: 0.65 })
+    g.roundRect(6, -15, 7, 7, 2).stroke({ width: 1.5, color: light, alpha: 0.8 })
+    if (variant === 1) g.moveTo(-12, 2).lineTo(-5, 2).stroke({ width: 2, color: light, alpha: 0.65 })
+    if (variant === 2) g.circle(9.5, -11.5, 1.5).fill({ color: 0x5bb8e8 })
+  } else {
+    // Overshirt de pesquisa: lapela assimétrica e crachá de campo.
+    g.moveTo(-11, -31).lineTo(-2, -18).lineTo(1, -30)
+      .moveTo(11, -31).lineTo(2, -18).lineTo(-1, -30)
+      .stroke({ width: 2.2, color: light, alpha: 0.85 })
+    g.roundRect(5, -13, 8, 10, 1.5).fill({ color: light, alpha: 0.82 })
+    g.roundRect(7, -10, 4, 2, 1).fill({ color: 0x5bd6a0, alpha: 0.9 })
+    if (variant === 1) g.moveTo(-10, -8).lineTo(-4, -8).stroke({ width: 2, color: light, alpha: 0.7 })
+    if (variant === 2) g.circle(-9, -22, 2).fill({ color: 0xf1ead9, alpha: 0.9 })
+  }
+  return g
+}
+
 // ---------------------------------------------------------------------------
 // Avatar de agent (sentado à mesa)
 // ---------------------------------------------------------------------------
+
+/** Duração do aceno sentado (cumprimento ao boss — pack pessoal). */
+export const SEATED_WAVE_S = 1.2
 
 export type AgentAvatar = {
   root: Container
@@ -368,6 +407,12 @@ export type AgentAvatar = {
   setState(state: DeskVisualState): void
   /** Espelha horizontalmente (mesa flip). */
   setFlip(flip: boolean): void
+  /** No trabalho olha para o monitor; em conversa olha para o visitante. */
+  setAttention(attention: "work" | "visitor"): void
+  /** Aceno curto (~SEATED_WAVE_S) com a variante de braço ERGUIDA, olhando
+   *  pro lado do boss (dir). OVERLAY temporário: não muda o estado — a pose
+   *  do estado corrente volta sozinha ao fim (troca de estado cancela). */
+  wave(nowSec: number, dir?: "left" | "right"): void
   /** Chamado a cada render com o relógio da sim (segundos). */
   updateAnim(timeSec: number, reducedMotion: boolean): void
   destroy(): void
@@ -382,6 +427,8 @@ export function createAgentAvatar(
   const cx = seatedCtxs()
   const root = new Container()
   root.scale.set(SPIKE_SCALE)
+  const rng = mulberry32(seed ?? (Math.random() * 0xffffffff) >>> 0)
+  const outfitVariant = Math.floor(rng() * 3)
 
   // sombra de contato (fora do bob de respiração)
   const shOut = new Graphics(cx.shadowOut)
@@ -407,8 +454,10 @@ export function createAgentAvatar(
   torso.tint = color
   const shade = new Graphics(cx.torsoShade)
   shade.alpha = SHADE_ALPHA
+  const outfit = createAgentOutfit(agent, outfitVariant)
 
-  // cabeça (pivot no pescoço p/ tilt de thinking)
+  // poseRoot guarda o olhar contextual sem brigar com micro-animações da cabeça.
+  const headPose = new Container()
   const headGroup = new Container()
   headGroup.pivot.set(NECK.x, NECK.y)
   headGroup.position.set(NECK.x, NECK.y)
@@ -422,6 +471,7 @@ export function createAgentAvatar(
   const hair = new Graphics(cx.hair[agent])
   hair.tint = HAIR_COLORS[agent]
   headGroup.addChild(head, eyes, brows, hair)
+  headPose.addChild(headGroup)
 
   // braço esquerdo (sempre pose "na mesa")
   const armL = new Container()
@@ -452,12 +502,11 @@ export function createAgentAvatar(
   const dots = createThoughtDots(color)
   dots.root.position.set(28, -76)
 
-  bodyRoot.addChild(torso, shade, headGroup, armL, armR, dots.root)
+  bodyRoot.addChild(torso, shade, outfit, headPose, armL, armR, dots.root)
 
   // determinismo: com seed (hash do projectId/deskId) a MESMA vida se repete
   // entre sessões (fase, variante de idle e agenda de micro-ações); sem seed
   // cai no comportamento antigo (aleatório por sessão)
-  const rng = mulberry32(seed ?? (Math.random() * 0xffffffff) >>> 0)
   const phase = rng() * 100
   const idleVariant = Math.floor(rng() * 3)
   const microSeed = Math.floor(rng() * 0xffffffff)
@@ -466,6 +515,21 @@ export function createAgentAvatar(
 
   let state: DeskVisualState = "idle"
   let p = partsForState(state)
+  let attention: "work" | "visitor" = "work"
+
+  // aceno (cumprimento ao boss): overlay temporário sobre a pose do estado —
+  // transições discretas no updateAnim (nunca reconstrói por frame)
+  let flipped = false
+  let waving = false
+  let waveUntil = -1
+  let waveDir: "left" | "right" | null = null
+
+  const applyAttention = (): void => {
+    const working = attention === "work"
+    headPose.rotation = working ? 0.055 : 0
+    headPose.y = working ? 1.5 : 0
+    eyes.position.set(working ? 1.4 : 0, EYES_Y + (working ? 1.5 : 0))
+  }
 
   const applyPose = (): void => {
     root.visible = p.visible
@@ -482,6 +546,7 @@ export function createAgentAvatar(
     armL.rotation = 0
     armR.rotation = 0
     eyes.scale.set(1)
+    applyAttention()
   }
   applyPose()
 
@@ -491,10 +556,22 @@ export function createAgentAvatar(
       if (next === state) return
       state = next
       p = partsForState(state)
+      waveUntil = -1 // estado novo cancela o aceno (o updateAnim restaura)
       applyPose()
     },
     setFlip(flip) {
-      flipRoot.scale.x = flip ? -1 : 1
+      flipped = flip
+      if (!waving) flipRoot.scale.x = flip ? -1 : 1
+    },
+    setAttention(next) {
+      if (next === attention) return
+      attention = next
+      applyAttention()
+    },
+    wave(nowSec, dir) {
+      if (!p.visible) return
+      waveUntil = nowSec + SEATED_WAVE_S
+      waveDir = dir ?? null
     },
     updateAnim(timeSec, reducedMotion) {
       if (!p.visible) return
@@ -505,12 +582,33 @@ export function createAgentAvatar(
       }
       const t = timeSec + phase
 
+      // aceno (overlay): transição DISCRETA — entra com a variante erguida
+      // (flip pro lado do boss) e sai restaurando a pose do estado corrente
+      const isWaving = timeSec < waveUntil
+      if (isWaving !== waving) {
+        waving = isWaving
+        if (waving) {
+          armRDown.visible = false
+          armRChin.visible = false
+          armRRaised.visible = true
+          coffee.visible = false // a caneca fica na mesa durante o aceno
+          if (waveDir) flipRoot.scale.x = waveDir === "left" ? -1 : 1
+        } else {
+          applyPose() // volta a variante de braço/props do estado
+          flipRoot.scale.x = flipped ? -1 : 1
+        }
+      }
+
       // respiração (typing acelera); piscada em qualquer estado
       const period = p.typingArms ? BREATHE_TYPING_PERIOD : BREATHE_IDLE_PERIOD
       bodyRoot.y = -1 + 1 * Math.cos((t * Math.PI * 2) / period)
       eyes.scale.y = blinkScaleY(t)
 
-      if (p.typingArms) {
+      if (waving) {
+        // aceno curto: mão erguida balançando + cabeça pende pro visitante
+        armR.rotation = 0.12 * Math.sin(t * 6.5)
+        headGroup.rotation = -0.03
+      } else if (p.typingArms) {
         // braços alternando no teclado + micro-nod da cabeça
         const w = (t * Math.PI * 2) / TYPE_CYCLE
         armL.rotation = (2 + 5 * Math.sin(w)) * DEG
@@ -572,6 +670,228 @@ export function createAgentAvatar(
 }
 
 // ---------------------------------------------------------------------------
+// Avatar de agent EM PÉ (locomoção de NPCs — handoff/café). MESMO personagem
+// do sentado (cabelo/pele/cor idênticos) sobre o rig de andar do boss
+// (pernas com pivô no quadril, braços em oposição, bob, flip).
+// ---------------------------------------------------------------------------
+
+/** Prop carregável na mão dianteira do NPC em pé. */
+export type StandingCarry = "doc" | "coffee" | null
+
+export type StandingAgentAvatar = {
+  root: Container
+  setMoving(moving: boolean): void
+  setFacing(facing: BossFacing): void
+  /** Documento branco ou caneca presa à mão dianteira (null = mãos livres). */
+  setCarrying(item: StandingCarry): void
+  updateAnim(timeSec: number, reducedMotion: boolean): void
+  destroy(): void
+}
+
+/** Delta do centro da cabeça: sentado (0,-46) → em pé (0,-62), como o boss. */
+const STAND_HEAD_DY = -16
+/** Braço dianteiro erguido segurando o prop (rad, fixo durante o andar). */
+const CARRY_ARM_ROT = -0.52
+
+export function createStandingAgentAvatar(
+  agent: OfficeAgentId,
+  color: string | number,
+  seed?: number,
+): StandingAgentAvatar {
+  const seat = seatedCtxs()
+  const cx = bossCtxs()
+  const skin = AGENT_SKINS[agent]
+  const rng = mulberry32(seed ?? (Math.random() * 0xffffffff) >>> 0)
+
+  const root = new Container()
+  root.scale.set(SPIKE_SCALE)
+
+  const shOut = new Graphics(seat.shadowOut)
+  shOut.tint = 0x11161c
+  shOut.alpha = 0.16
+  const shIn = new Graphics(seat.shadowIn)
+  shIn.tint = 0x11161c
+  shIn.alpha = 0.18
+  root.addChild(shOut, shIn)
+
+  const flipRoot = new Container()
+  root.addChild(flipRoot)
+  const poseRoot = new Container()
+  flipRoot.addChild(poseRoot)
+  const bodyRoot = new Container()
+  poseRoot.addChild(bodyRoot)
+
+  // pernas (contexts do boss — calça escura compartilhada; pivô no quadril)
+  const legL = new Container()
+  legL.pivot.set(BOSS_HIP_L.x, BOSS_HIP_L.y)
+  legL.position.set(BOSS_HIP_L.x, BOSS_HIP_L.y)
+  const legLG = new Graphics(cx.leg)
+  legLG.scale.x = -1
+  legL.addChild(legLG)
+  const legR = new Container()
+  legR.pivot.set(BOSS_HIP_R.x, BOSS_HIP_R.y)
+  legR.position.set(BOSS_HIP_R.x, BOSS_HIP_R.y)
+  legR.addChild(new Graphics(cx.leg))
+
+  const torso = new Graphics(cx.torso)
+  torso.tint = color
+  const shade = new Graphics(cx.torsoShade)
+  shade.alpha = SHADE_ALPHA
+
+  // cabeça: MESMAS partes do sentado (portadoras da identidade), erguida ao
+  // pescoço da silhueta em pé
+  const headGroup = new Container()
+  headGroup.pivot.set(0, -47)
+  headGroup.position.set(0, -47)
+  const headArt = new Container()
+  headArt.y = STAND_HEAD_DY
+  const head = new Graphics(seat.head)
+  head.tint = skin
+  const eyes = new Graphics(seat.eyes)
+  eyes.pivot.set(0, EYES_Y)
+  eyes.position.set(0, EYES_Y)
+  const brows = new Graphics(seat.brows)
+  brows.alpha = 0.5
+  const hair = new Graphics(seat.hair[agent])
+  hair.tint = HAIR_COLORS[agent]
+  headArt.addChild(head, eyes, brows, hair)
+  headGroup.addChild(headArt)
+
+  const armL = new Container()
+  armL.pivot.set(BOSS_SHOULDER_L.x, BOSS_SHOULDER_L.y)
+  armL.position.set(BOSS_SHOULDER_L.x, BOSS_SHOULDER_L.y)
+  armL.addChild(armPair(cx.armSkin, cx.armSleeve, skin, color, true))
+  const armR = new Container()
+  armR.pivot.set(BOSS_SHOULDER_R.x, BOSS_SHOULDER_R.y)
+  armR.position.set(BOSS_SHOULDER_R.x, BOSS_SHOULDER_R.y)
+  armR.addChild(armPair(cx.armSkin, cx.armSleeve, skin, color, false))
+
+  // prop na mão dianteira (filho do armR — segue a rotação do braço)
+  const carryRoot = new Container()
+  carryRoot.position.set(20, -22)
+  const doc = new Graphics()
+    .roundRect(-5, -6.5, 10, 13, 1.5)
+    .fill({ color: 0xf6efe3 })
+    .moveTo(-2.8, -3)
+    .lineTo(2.8, -3)
+    .moveTo(-2.8, 0)
+    .lineTo(2.8, 0)
+    .moveTo(-2.8, 3)
+    .lineTo(1.4, 3)
+    .stroke({ width: 1, color: 0x8d867a, alpha: 0.8, cap: "round" })
+  doc.rotation = -0.12
+  const mug = new Container()
+  mug.scale.set(0.55)
+  mug.position.set(-0.5, -3)
+  mug.addChild(createMug())
+  doc.visible = false
+  mug.visible = false
+  carryRoot.visible = false
+  carryRoot.addChild(doc, mug)
+  armR.addChild(carryRoot)
+
+  bodyRoot.addChild(legL, legR, torso, shade, headGroup, armL, armR)
+
+  const phase = rng() * 100
+  let moving = false
+  let facing: BossFacing = "front"
+  let carrying: StandingCarry = null
+  let squashStart = -1
+  let squashPending = false
+
+  const applyDirection = (): void => {
+    const side = facing === "left" || facing === "right"
+    flipRoot.scale.x = facing === "left" ? -1 : 1
+    poseRoot.scale.x = side ? 0.9 : 1
+    poseRoot.x = side ? 1 : 0
+  }
+  applyDirection()
+
+  const applyCarry = (): void => {
+    carryRoot.visible = carrying !== null
+    doc.visible = carrying === "doc"
+    mug.visible = carrying === "coffee"
+    // braço dianteiro segura o prop erguido (pose estática; anim respeita)
+    armR.rotation = carrying !== null ? CARRY_ARM_ROT : 0
+  }
+  applyCarry()
+
+  return {
+    root,
+    setMoving(next) {
+      if (next === moving) return
+      if (!next && moving) squashPending = true
+      moving = next
+    },
+    setFacing(f) {
+      if (f === facing) return
+      facing = f
+      applyDirection()
+    },
+    setCarrying(item) {
+      if (item === carrying) return
+      carrying = item
+      applyCarry()
+    },
+    updateAnim(timeSec, reducedMotion) {
+      if (squashPending) {
+        squashPending = false
+        squashStart = reducedMotion ? -1 : timeSec
+      }
+      if (reducedMotion) {
+        bodyRoot.position.set(0, 0)
+        bodyRoot.rotation = 0
+        bodyRoot.scale.set(1)
+        armL.rotation = 0
+        armR.rotation = carrying !== null ? CARRY_ARM_ROT : 0
+        legL.rotation = 0
+        legR.rotation = 0
+        eyes.scale.set(1)
+        return
+      }
+      const t = timeSec + phase
+      eyes.scale.y = blinkScaleY(t)
+      if (moving) {
+        // ciclo de andar: bob + lean + pernas/braços alternando em oposição
+        const s = Math.sin(t * BOB_FREQ)
+        bodyRoot.x = 0
+        bodyRoot.y = -3 * Math.abs(s)
+        bodyRoot.rotation = 0.06
+        legL.rotation = 0.38 * s
+        legR.rotation = -0.38 * s
+        armL.rotation = -0.2 * s
+        // carregando: mão dianteira firme no prop (não balança)
+        armR.rotation = carrying !== null ? CARRY_ARM_ROT : 0.2 * s
+        bodyRoot.scale.set(1)
+      } else {
+        // idle relaxado: respiração + balanço mínimo + peso alternando
+        const w = weightShiftSide(t)
+        bodyRoot.y = -1 + 1 * Math.cos((t * Math.PI * 2) / BREATHE_IDLE_PERIOD)
+        bodyRoot.x = w
+        bodyRoot.rotation = 0.015 * w
+        legL.rotation = 0
+        legR.rotation = 0
+        armL.rotation = 0.03 * Math.sin(t * 1.1)
+        armR.rotation =
+          carrying !== null ? CARRY_ARM_ROT + 0.02 * Math.sin(t * 1.1) : -0.03 * Math.sin(t * 1.1)
+        if (squashStart >= 0) {
+          const e = 1 - (timeSec - squashStart) / SQUASH_DURATION
+          if (e <= 0) {
+            squashStart = -1
+            bodyRoot.scale.set(1)
+          } else {
+            bodyRoot.scale.set(1 + 0.1 * e, 1 - 0.14 * e)
+          }
+        }
+      }
+    },
+    destroy() {
+      root.destroy({ children: true })
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Avatar do boss (em pé; óculos + grisalho, cor brass)
 // ---------------------------------------------------------------------------
 
@@ -581,7 +901,7 @@ const SQUASH_DURATION = 0.16 // s
 export type BossAvatar = {
   root: Container
   setMoving(moving: boolean): void
-  setFacing(facing: 1 | -1): void
+  setFacing(facing: BossFacing): void
   updateAnim(timeSec: number, reducedMotion: boolean): void
   destroy(): void
 }
@@ -604,8 +924,10 @@ export function createBossAvatar(color: string | number = "#e4a862"): BossAvatar
 
   const flipRoot = new Container()
   root.addChild(flipRoot)
+  const poseRoot = new Container()
+  flipRoot.addChild(poseRoot)
   const bodyRoot = new Container()
-  flipRoot.addChild(bodyRoot)
+  poseRoot.addChild(bodyRoot)
 
   // pernas (pivot no quadril — ciclo de andar de verdade, sem "patinar")
   const legL = new Container()
@@ -636,7 +958,100 @@ export function createBossAvatar(color: string | number = "#e4a862"): BossAvatar
   eyes.position.set(0, BOSS_EYES_Y)
   const glasses = new Graphics(cx.glasses)
   const hair = new Graphics(cx.hair)
-  headGroup.addChild(head, eyes, glasses, hair)
+
+  // Cada direção usa uma cabeça completa. Reaproveitar a cabeça frontal e
+  // esconder só algumas features deformava o aro no perfil e deixava uma
+  // faixa de pele atravessando a nuca nas costas.
+  const frontHead = new Container()
+  frontHead.addChild(head, eyes, glasses, hair)
+
+  const profileHead = new Container()
+  const profileSkull = new Graphics()
+    .path(
+      new GraphicsPath(
+        "M-14 -63 C-15 -73 -8 -78.5 1 -78.5 C10 -78.5 15 -72 15 -65 " +
+          "C18 -64 19.5 -62 17 -59.5 C19 -57.5 17.5 -55 14 -55 " +
+          "C11 -49.5 4 -46.5 -4 -47 C-12 -47.5 -16 -54 -14 -63 Z",
+      ),
+    )
+    .fill({ color: skin })
+    .ellipse(-11.5, -59, 2.7, 4.2)
+    .fill({ color: skin })
+  const profileHair = new Graphics()
+    .path(
+      new GraphicsPath(
+        "M-14.5 -62 C-16 -74 -7.5 -81 2 -80 C10 -79.5 15 -73 15 -65 " +
+          "C10.5 -69 5 -71.5 -1 -71 C-7 -70.5 -11.5 -67 -14.5 -62 Z",
+      ),
+    )
+    .fill({ color: 0x746e64 })
+    .ellipse(-13, -60, 2.2, 5)
+    .fill({ color: 0x746e64 })
+  const profileEyeGroup = new Container()
+  profileEyeGroup.position.set(7.5, -61.5)
+  profileEyeGroup.addChild(
+    new Graphics()
+      .ellipse(0.35, 0, 1.25, 1.45)
+      .fill({ color: INK })
+      .circle(0.7, -0.45, 0.35)
+      .fill({ color: 0xf6efe3, alpha: 0.9 }),
+  )
+  const profileGlasses = new Graphics()
+    .ellipse(7.4, -61.4, 3.9, 3.15)
+    .stroke({ width: 1.15, color: 0x22262b })
+    .moveTo(3.55, -61.25)
+    .lineTo(-8.8, -59.6)
+    .moveTo(11.25, -61.2)
+    .lineTo(14.2, -60.2)
+    .stroke({ width: 1.15, color: 0x22262b, cap: "round", join: "round" })
+  const profileBrow = new Graphics()
+    .moveTo(5.7, -66)
+    .quadraticCurveTo(8.1, -67, 10.2, -65.7)
+    .stroke({ width: 1.2, color: 0x50483f, alpha: 0.8, cap: "round" })
+  const profileMouth = new Graphics()
+    .moveTo(14.4, -54.5)
+    .quadraticCurveTo(16.4, -53.7, 14.6, -52.9)
+    .stroke({ width: 1.2, color: 0x4c3327, cap: "round" })
+  profileHead.addChild(
+    profileSkull,
+    profileHair,
+    profileBrow,
+    profileEyeGroup,
+    profileGlasses,
+    profileMouth,
+  )
+  profileHead.visible = false
+
+  const backHead = new Container()
+  const backSkull = new Graphics()
+    .ellipse(0, -62, 16.5, 15.5)
+    .fill({ color: skin })
+  const backHair = new Graphics()
+    .ellipse(0, -63, 16.8, 16)
+    .fill({ color: 0x746e64 })
+    .path(
+      new GraphicsPath(
+        "M-14 -64 C-9 -75 -1 -79 8 -75 C12 -73 15 -68 15 -63 " +
+          "C8 -68 -3 -69 -14 -64 Z",
+      ),
+    )
+    .fill({ color: 0x8a8479, alpha: 0.78 })
+  backHair
+    .moveTo(-12.5, -52.5)
+    .quadraticCurveTo(-6, -49.5, 0, -52)
+    .quadraticCurveTo(6, -49.5, 12.5, -52.5)
+    .stroke({ width: 1.5, color: 0x504c46, alpha: 0.72, cap: "round" })
+  const backEarsAndNape = new Graphics()
+    .ellipse(-16, -60, 2.4, 4.1)
+    .fill({ color: skin })
+    .ellipse(16, -60, 2.4, 4.1)
+    .fill({ color: skin })
+    .roundRect(-5, -49, 10, 7, 3)
+    .fill({ color: skin })
+  backHead.addChild(backSkull, backEarsAndNape, backHair)
+  backHead.visible = false
+
+  headGroup.addChild(frontHead, profileHead, backHead)
 
   const armL = new Container()
   armL.pivot.set(BOSS_SHOULDER_L.x, BOSS_SHOULDER_L.y)
@@ -651,9 +1066,22 @@ export function createBossAvatar(color: string | number = "#e4a862"): BossAvatar
 
   const phase = Math.random() * 100
   let moving = false
-  let facing: 1 | -1 = 1
+  let facing: BossFacing = "front"
   let squashStart = -1
   let squashPending = false
+
+  const applyDirection = (): void => {
+    const side = facing === "left" || facing === "right"
+    const back = facing === "back"
+    flipRoot.scale.x = facing === "left" ? -1 : 1
+    poseRoot.scale.x = side ? 0.9 : 1
+    poseRoot.x = side ? 1 : 0
+    frontHead.visible = facing === "front"
+    profileHead.visible = side
+    backHead.visible = back
+    collar.visible = !back
+  }
+  applyDirection()
 
   return {
     root,
@@ -663,8 +1091,9 @@ export function createBossAvatar(color: string | number = "#e4a862"): BossAvatar
       moving = next
     },
     setFacing(f) {
+      if (f === facing) return
       facing = f
-      flipRoot.scale.x = f
+      applyDirection()
     },
     updateAnim(timeSec, reducedMotion) {
       if (squashPending) {
@@ -680,10 +1109,13 @@ export function createBossAvatar(color: string | number = "#e4a862"): BossAvatar
         legL.rotation = 0
         legR.rotation = 0
         eyes.scale.set(1)
+        profileEyeGroup.scale.set(1)
         return
       }
       const t = timeSec + phase
-      eyes.scale.y = blinkScaleY(t)
+      const blink = blinkScaleY(t)
+      eyes.scale.y = blink
+      profileEyeGroup.scale.y = blink
       if (moving) {
         // ciclo de andar: bob + lean + pernas/braços alternando em oposição
         const s = Math.sin(t * BOB_FREQ)
@@ -716,7 +1148,6 @@ export function createBossAvatar(color: string | number = "#e4a862"): BossAvatar
           }
         }
       }
-      flipRoot.scale.x = facing
     },
     destroy() {
       root.destroy({ children: true })

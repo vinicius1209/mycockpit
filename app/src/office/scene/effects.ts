@@ -23,13 +23,15 @@ type FxCtxs = {
   /** Quad da tela do monitor (mesmo paralelogramo de props.monitorScreen) —
    *  empilhado vira o brilho pulsante de "digitando". */
   screenGlowQuad: GraphicsContext
+  /** Retalho de confete (retângulo pequeno; tint por partícula). */
+  confettiChip: GraphicsContext
 }
 
 let fx: FxCtxs | null = null
 
 function fxCtxs(): FxCtxs {
   if (fx) return fx
-  const floorGlow = new GraphicsContext().ellipse(0, 0, 64, 32).fill({ color: 0xffffff })
+  const floorGlow = new GraphicsContext().ellipse(0, 0, 54, 20).fill({ color: 0xffffff })
   const floorRing = new GraphicsContext()
     .ellipse(0, 0, 30, 15)
     .stroke({ width: 3, color: 0xffffff })
@@ -41,13 +43,21 @@ function fxCtxs(): FxCtxs {
   const dotMid = new GraphicsContext().circle(0, 0, 6).fill({ color: 0xffffff })
   const dotBig = new GraphicsContext().circle(0, 0, 9).fill({ color: 0xffffff })
   const screenGlowQuad = new GraphicsContext()
-    .moveTo(-22, -25)
-    .lineTo(-1, -14)
-    .lineTo(-1, 9)
-    .lineTo(-22, -2)
-    .closePath()
+    .roundRect(-22, -88, 44, 26, 1)
     .fill({ color: 0xffffff })
-  fx = { floorGlow, floorRing, steam, dotSmall, dotMid, dotBig, screenGlowQuad }
+  const confettiChip = new GraphicsContext()
+    .roundRect(-2.5, -1.5, 5, 3, 1)
+    .fill({ color: 0xffffff })
+  fx = {
+    floorGlow,
+    floorRing,
+    steam,
+    dotSmall,
+    dotMid,
+    dotBig,
+    screenGlowQuad,
+    confettiChip,
+  }
   return fx
 }
 
@@ -467,6 +477,104 @@ export function createAmbientMotes(seed: number, width = 90, height = 70): Ambie
       // cintilar lentíssimo (sempre baixíssimo)
       for (let i = 0; i < specs.length; i++) {
         dots[i].alpha = specs[i].alpha * (0.65 + 0.35 * Math.sin(0.5 * timeSec + specs[i].pa))
+      }
+    },
+  }
+}
+
+// --- confete de comemoração (missão concluída) -------------------------------
+
+const CONFETTI_DURATION = 1.5 // s
+/** 12–16 partículas por burst (quantidade sorteada por seed). */
+const CONFETTI_MIN = 12
+const CONFETTI_SPAN = 5
+/** Paleta festiva discreta: brass + running + success + papel claro. */
+const CONFETTI_COLORS = [0xe4a862, 0x5bb8e8, 0x5bd6a0, 0xf1ead9] as const
+
+export type Confetti = AmbientFx & {
+  /** Dispara o burst na posição de cena dada (ponto de ORIGEM; as partículas
+   *  caem a partir dele). Pooled: reutiliza os mesmos Graphics a cada burst —
+   *  zero alocação por disparo. */
+  burstAt(x: number, y: number, timeSec: number): void
+}
+
+/** Confete discreto de comemoração: 12–16 retalhos coloridos caem ~1.5s com
+ *  balanço lateral e giro (transform/alpha apenas), esvaindo no fim. Coords
+ *  locais do pai — anexar onde a chuva deve nascer (ex.: acima do avatar). */
+export function createConfetti(seed = 1): Confetti {
+  const root = new Container()
+  root.visible = false
+  const cx = fxCtxs()
+  const rng = mulberry32(seed)
+  const count = CONFETTI_MIN + Math.floor(rng() * (CONFETTI_SPAN + 1))
+  type Chip = {
+    g: Graphics
+    dx: number //     deslocamento lateral total (px locais)
+    fall: number //   queda total (px locais)
+    sway: number //   amplitude do balanço lateral
+    swayW: number //  frequência do balanço (rad/s)
+    spinW: number //  velocidade de giro (rad/s)
+    delay: number //  atraso do disparo (s)
+    scale: number
+    phase: number
+  }
+  const chips: Chip[] = []
+  for (let i = 0; i < count; i++) {
+    const g = new Graphics(cx.confettiChip)
+    g.tint = CONFETTI_COLORS[i % CONFETTI_COLORS.length]
+    g.visible = false
+    root.addChild(g)
+    const side = i % 2 === 0 ? 1 : -1
+    chips.push({
+      g,
+      dx: side * (6 + rng() * 22),
+      fall: 58 + rng() * 26,
+      sway: 3 + rng() * 5,
+      swayW: 5 + rng() * 5,
+      spinW: (rng() - 0.5) * 14,
+      delay: rng() * 0.18,
+      scale: 0.7 + rng() * 0.5,
+      phase: rng() * Math.PI * 2,
+    })
+  }
+  let startedAt = -1
+  return {
+    root,
+    burstAt(x, y, timeSec) {
+      root.position.set(x, y)
+      root.visible = true
+      startedAt = timeSec
+    },
+    update(timeSec, reducedMotion) {
+      if (!root.visible || startedAt < 0) return
+      if (reducedMotion) {
+        // estático ⇒ sem chuva de confete
+        root.visible = false
+        startedAt = -1
+        return
+      }
+      if ((timeSec - startedAt) / CONFETTI_DURATION >= 1) {
+        root.visible = false
+        startedAt = -1
+        return
+      }
+      for (const c of chips) {
+        const u = Math.min(
+          1,
+          Math.max(0, (timeSec - startedAt - c.delay) / (CONFETTI_DURATION - c.delay)),
+        )
+        c.g.visible = u > 0
+        if (u <= 0) continue
+        // queda com leve aceleração + espalhada lateral desacelerando
+        const drop = u * (0.55 + 0.45 * u)
+        const spread = 1 - (1 - u) * (1 - u)
+        c.g.position.set(
+          c.dx * spread + c.sway * Math.sin(c.phase + timeSec * c.swayW),
+          c.fall * drop,
+        )
+        c.g.rotation = c.phase + timeSec * c.spinW
+        c.g.scale.set(c.scale)
+        c.g.alpha = u < 0.68 ? 0.95 : 0.95 * (1 - (u - 0.68) / 0.32)
       }
     },
   }

@@ -59,16 +59,27 @@ describe("movimento por teclado (espaço de tela → mundo)", () => {
     expect(disp).toBeCloseTo(BOSS_SPEED * 10 * SIM_DT, 9)
   })
 
-  it("facing segue a velocidade X de tela", () => {
+  it("facing segue as quatro direções da tela e persiste ao parar", () => {
     const world = createWorld(makePlan({ w: 40, h: 40, spawn: { x: 20, y: 20 } }))
     const { tick } = collect(world)
     world.input.keys.add("d")
     tick()
-    expect(world.boss.facing).toBe(1)
+    expect(world.boss.facing).toBe("right")
     world.input.keys.clear()
     world.input.keys.add("a")
     tick()
-    expect(world.boss.facing).toBe(-1)
+    expect(world.boss.facing).toBe("left")
+    world.input.keys.clear()
+    world.input.keys.add("w")
+    tick()
+    expect(world.boss.facing).toBe("back")
+    world.input.keys.clear()
+    world.input.keys.add("s")
+    tick()
+    expect(world.boss.facing).toBe("front")
+    world.input.keys.clear()
+    tick()
+    expect(world.boss.facing).toBe("front")
   })
 
   it("prev é gravado no início do tick (render interpola por fora)", () => {
@@ -128,6 +139,28 @@ describe("click-to-move e WASD", () => {
     expect(world.boss.pos.y).toBeCloseTo(5.5, 0)
     // E a proximidade também disparou no caminho.
     expect(events.some((e) => e.kind === "near-desk" && e.deskId === desk.id)).toBe(true)
+  })
+
+  it("clique em interactable usa o alvo explícito em vez de clamp de chão", () => {
+    const plan = makePlan({ w: 12, h: 12, spawn: { x: 8.5, y: 5.5 } })
+    plan.interactables = [
+      {
+        id: "commons::mission",
+        tile: { x: 5, y: 3 },
+        footprint: { w: 4, h: 2 },
+        interactTile: { x: 5, y: 5 },
+      },
+    ]
+    plan.grid[5 * plan.w + 5] |= T_INTERACT
+    const world = createWorld(plan)
+    const { events, tick } = collect(world)
+    world.input.clickDeskId = "commons::mission"
+    tick()
+    expect(world.boss.pendingDeskId).toBe("commons::mission")
+    tick(90)
+    expect(events).toContainEqual({ kind: "arrived-at-desk", deskId: "commons::mission" })
+    expect(world.boss.pos.x).toBeCloseTo(5.5, 0)
+    expect(world.boss.pos.y).toBeCloseTo(5.5, 0)
   })
 
   it("clique em mesa desconhecida é consumido sem efeito (não trava a sim)", () => {

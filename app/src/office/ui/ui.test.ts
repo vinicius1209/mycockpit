@@ -2,7 +2,7 @@
 // vanilla + funções puras, sem DOM. Roda com:
 // bunx vitest run src/office/ui/ui.test.ts
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { SimEvent } from "../engine/types"
+import { BOSS_DESK_ID, NOTICE_BOARD_ID, type SimEvent } from "../engine/types"
 import { deskMenuKind, deskMenuPrimary } from "./DeskMenu"
 import {
   applyRecovery,
@@ -11,17 +11,27 @@ import {
   pickRevezamento,
   revezamentoTargets,
 } from "./recovery"
+import { editPhase, phasesCustomized } from "@/lib/missionDraft"
+import type { MissionPhaseDef, MissionPreset } from "@/lib/missionTypes"
 import {
   MISSION_TABLE_ID,
+  effectiveTablePreset,
+  launchFromTable,
   missionConversationTitle,
   missionLaunchBlock,
   missionTableMenu,
   parseMissionSig,
+  phaseAgentOptions,
+  presetDraft,
+  presetOptionLabel,
 } from "./missionTable"
+import { missionPanelSubtitle, showsMissionPanel } from "./missionPanel"
 import {
   BOSS_SAY_MS,
+  DOCK_ITEMS_WINDOW,
   decideDockLeave,
   decideEsc,
+  dockItemsStart,
   officeEscape,
   useOfficeUi,
   type DockLeaveCtx,
@@ -34,8 +44,12 @@ const h = vi.hoisted(() => ({
   ctx: { hasDraft: false, turnActive: false },
   cancelDictation: vi.fn(async () => {}),
   cancelDeskTurn: vi.fn(async () => {}),
+  openScheduledView: vi.fn(),
 }))
-vi.mock("../bridge/hooks", () => ({ dockLeaveCtx: () => h.ctx }))
+vi.mock("../bridge/hooks", () => ({
+  dockLeaveCtx: () => h.ctx,
+  openScheduledView: h.openScheduledView,
+}))
 vi.mock("../bridge/voice", () => ({ cancelDictation: h.cancelDictation }))
 vi.mock("../bridge/send", () => ({
   cancelDeskTurn: h.cancelDeskTurn,
@@ -68,6 +82,7 @@ beforeEach(() => {
   useOfficeUi.setState(useOfficeUi.getInitialState(), true)
   h.ctx = ctx()
   h.cancelDictation.mockClear()
+  h.openScheduledView.mockClear()
 })
 
 // --- chegada na mesa ⇒ MENU-BALÃO (§5.2/§5.3 v2) ----------------------------
@@ -454,6 +469,153 @@ describe("missionConversationTitle — título da conversa da missão", () => {
   })
 })
 
+// --- edição do TIME no form da mesa (preset + fases editáveis) ---------------
+
+function phaseDef(over: Partial<MissionPhaseDef> = {}): MissionPhaseDef {
+  return {
+    id: "plan",
+    label: "Planejar",
+    persona: "planner",
+    agent: "claude-code",
+    model: null,
+    effort: null,
+    maxRetries: 1,
+    ...over,
+  }
+}
+
+function presetOf(over: Partial<MissionPreset> = {}): MissionPreset {
+  return {
+    id: "feature",
+    name: "Feature completa",
+    maxCostUsd: 25,
+    phases: [
+      phaseDef(),
+      phaseDef({
+        id: "build",
+        label: "Executar",
+        persona: "executor",
+        agent: "codex",
+      }),
+      phaseDef({ id: "review", label: "Revisar", persona: "reviewer" }),
+    ],
+    ...over,
+  }
+}
+
+describe("effectiveTablePreset — preset efetivo do lançamento", () => {
+  it("sem edição ⇒ nome intacto, fases CLONADAS, teto do rascunho", () => {
+    const base = presetOf()
+    const eff = effectiveTablePreset(base, base.phases, 10)
+    expect(eff.name).toBe("Feature completa")
+    expect(eff.phases).toEqual(base.phases)
+    expect(eff.phases[0]).not.toBe(base.phases[0]) // clone, nunca o preset
+    expect(eff.maxCostUsd).toBe(10)
+  })
+
+  it("fase editada ⇒ '· personalizado' e o agent trocado no preset", () => {
+    const base = presetOf()
+    const edited = editPhase(base.phases, 1, { agent: "agy" })
+    const eff = effectiveTablePreset(base, edited, null)
+    expect(eff.name).toBe("Feature completa · personalizado")
+    expect(eff.phases[1].agent).toBe("agy")
+    expect(eff.phases[1].model).toBeNull() // troca de agent re-semeia o modelo
+    expect(eff.maxCostUsd).toBeNull()
+  })
+})
+
+type TableLaunchArgs = {
+  projectId: string
+  title: string
+  task: string
+  preset: MissionPreset
+}
+
+describe("launchFromTable — preset efetivo chega ao launch", () => {
+  it("fase editada + teto viajam no preset; título 'Missão · …'", async () => {
+    const launch = vi.fn(async (_args: TableLaunchArgs) => "conv-nova")
+    const base = presetOf()
+    const edited = editPhase(base.phases, 1, { agent: "agy" })
+    const convId = await launchFromTable(
+      { launch },
+      {
+        projectId: "p1",
+        task: "arruma o parser",
+        preset: base,
+        phases: edited,
+        capUsd: 12.5,
+      },
+    )
+    expect(convId).toBe("conv-nova")
+    expect(launch).toHaveBeenCalledTimes(1)
+    const args = launch.mock.calls[0][0]
+    expect(args.projectId).toBe("p1")
+    expect(args.title).toBe("Missão · arruma o parser")
+    expect(args.preset.phases[1].agent).toBe("agy")
+    expect(args.preset.name).toBe("Feature completa · personalizado")
+    expect(args.preset.maxCostUsd).toBe(12.5)
+  })
+
+  it("sem edição ⇒ o preset viaja limpo (nome e fases do preset)", async () => {
+    const launch = vi.fn(async (_args: TableLaunchArgs) => "conv-2")
+    const base = presetOf()
+    await launchFromTable(
+      { launch },
+      {
+        projectId: "p1",
+        task: "t",
+        preset: base,
+        phases: base.phases,
+        capUsd: base.maxCostUsd,
+      },
+    )
+    const args = launch.mock.calls[0][0]
+    expect(args.preset.name).toBe("Feature completa")
+    expect(args.preset.phases).toEqual(base.phases)
+  })
+})
+
+describe("presetDraft — troca de preset RESETA as edições", () => {
+  it("rascunho novo do preset destino: fases limpas + teto dele", () => {
+    const a = presetOf()
+    const edited = editPhase(a.phases, 0, { agent: "codex" })
+    expect(phasesCustomized(a.phases, edited)).toBe(true) // estava sujo
+    const b = presetOf({ id: "barato", name: "Econômico", maxCostUsd: 5 })
+    const draft = presetDraft(b)
+    expect(phasesCustomized(b.phases, draft.phases)).toBe(false) // limpo
+    expect(draft.capUsd).toBe(5)
+    expect(draft.phases[0]).not.toBe(b.phases[0]) // clone, editar não muta
+  })
+})
+
+describe("phaseAgentOptions — agent indisponível não aparece", () => {
+  const available = [
+    { id: "claude-code", label: "Claude Code" },
+    { id: "codex", label: "Codex" },
+  ]
+
+  it("agent atual disponível ⇒ só a lista de disponíveis (opencode fora)", () => {
+    const opts = phaseAgentOptions(available, "claude-code")
+    expect(opts).toEqual(available)
+    expect(opts.some((o) => o.id === "opencode")).toBe(false)
+  })
+
+  it("agent atual FORA do ar entra no topo (select não fica vazio), sem trazer outros indisponíveis", () => {
+    const opts = phaseAgentOptions(available, "opencode")
+    expect(opts[0].id).toBe("opencode")
+    expect(opts.slice(1)).toEqual(available)
+  })
+})
+
+describe("presetOptionLabel — nome + nº de fases", () => {
+  it("plural e singular", () => {
+    expect(presetOptionLabel(presetOf())).toBe("Feature completa · 3 fases")
+    expect(
+      presetOptionLabel(presetOf({ name: "Solo", phases: [phaseDef()] })),
+    ).toBe("Solo · 1 fase")
+  })
+})
+
 describe("mesa de reunião no store de UI", () => {
   it("deskMenuPrimary abre o dock genérico pro id da mesa de reunião", () => {
     deskMenuPrimary(MISSION_TABLE_ID)
@@ -463,11 +625,88 @@ describe("mesa de reunião no store de UI", () => {
     expect(s.dockConvId).toBeNull() // nunca resolve conversa de mesa pra ela
   })
 
+  it("deskMenuPrimary da MESA DO BOSS pede a Central (nunca abre dock)", () => {
+    deskMenuPrimary(BOSS_DESK_ID)
+    const s = useOfficeUi.getState()
+    expect(s.bossCenterRequested).toBe(true) // OfficeMode consome e abre
+    expect(s.dockDeskId).toBeNull() // posto de comando não tem dock
+    s.clearBossCenterRequest()
+    expect(useOfficeUi.getState().bossCenterRequested).toBe(false)
+  })
+
+  it("deskMenuPrimary da MESA DO BOSS com gate-visit vira 'Responder': abre o dock do agent", () => {
+    // agent esperando DECISÃO em pé na mesa do Boss (espelho do pack mission)
+    useOfficeUi.setState({ gateVisit: { deskId: DESK_A, waiting: true } })
+    deskMenuPrimary(BOSS_DESK_ID)
+    const s = useOfficeUi.getState()
+    expect(s.dockDeskId).toBe(DESK_A) // dock da mesa DELE (gate card no fio)
+    expect(s.dockMinimized).toBe(false)
+    expect(s.bossCenterRequested).toBe(false) // a Central fica na secundária
+  })
+
+  it("deskMenuPrimary do QUADRO DE AVISOS abre a view Agendado (nunca dock)", () => {
+    deskMenuPrimary(NOTICE_BOARD_ID)
+    const s = useOfficeUi.getState()
+    expect(h.openScheduledView).toHaveBeenCalledTimes(1) // bridge → useApp
+    expect(s.dockDeskId).toBeNull() // quadro é read-only, sem dock
+    expect(s.bossCenterRequested).toBe(false)
+  })
+
   it("setMissionTableConv registra/limpa a conversa da missão lançada", () => {
     useOfficeUi.getState().setMissionTableConv("conv-missao")
     expect(useOfficeUi.getState().missionTableConvId).toBe("conv-missao")
     useOfficeUi.getState().setMissionTableConv(null)
     expect(useOfficeUi.getState().missionTableConvId).toBeNull()
+  })
+})
+
+// --- painel de missão no dock da mesa (task #14) ----------------------------
+
+describe("showsMissionPanel — dock da mesa vira painel de missão", () => {
+  it("mesa hospedando missão RODANDO ⇒ painel toma o corpo do dock", () => {
+    expect(showsMissionPanel({ status: "running" })).toBe(true)
+  })
+
+  it("sem missão na conversa da mesa (null) ⇒ comportamento atual intacto", () => {
+    expect(showsMissionPanel(null)).toBe(false)
+  })
+
+  it("missão terminada (done/error/aborted) ⇒ volta à conversa da mesa", () => {
+    for (const status of ["done", "error", "aborted"]) {
+      expect(showsMissionPanel({ status })).toBe(false)
+    }
+  })
+})
+
+describe("missionPanelSubtitle — cabeçalho contextual do dock em missão", () => {
+  it("fase 1-based + persona da fase corrente", () => {
+    expect(
+      missionPanelSubtitle({ current: 1, total: 3, persona: "executor" }),
+    ).toBe("Executando missão · fase 2/3 · executor")
+  })
+
+  it("current além do fim clampa no total (nunca 'fase 4/3')", () => {
+    expect(
+      missionPanelSubtitle({ current: 3, total: 3, persona: "revisor" }),
+    ).toBe("Executando missão · fase 3/3 · revisor")
+  })
+})
+
+// --- janela do histórico do dock (S2 — perf) --------------------------------
+
+describe("dockItemsStart — cauda de DOCK_ITEMS_WINDOW itens", () => {
+  it("lista curta renderiza inteira (start 0)", () => {
+    expect(dockItemsStart(0, false)).toBe(0)
+    expect(dockItemsStart(DOCK_ITEMS_WINDOW, false)).toBe(0)
+  })
+
+  it("lista longa renderiza só a cauda", () => {
+    expect(dockItemsStart(DOCK_ITEMS_WINDOW + 1, false)).toBe(1)
+    expect(dockItemsStart(200, false)).toBe(200 - DOCK_ITEMS_WINDOW)
+  })
+
+  it("'ver tudo' abre a lista inteira", () => {
+    expect(dockItemsStart(200, true)).toBe(0)
   })
 })
 

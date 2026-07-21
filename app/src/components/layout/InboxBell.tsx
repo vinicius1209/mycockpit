@@ -3,6 +3,7 @@ import {
   AlertCircle,
   Check,
   CheckCheck,
+  CircleHelp,
   FileText,
   Gauge,
   GitPullRequest,
@@ -65,6 +66,8 @@ function NotifIcon({ kind }: { kind: Notification["kind"] }) {
     return <AlertCircle className="size-3.5 shrink-0 text-st-error" />
   if (kind === "limit")
     return <Gauge className="size-3.5 shrink-0 text-st-warning" />
+  if (kind === "gate")
+    return <CircleHelp className="size-3.5 shrink-0 text-st-warning" />
   return <Check className="size-3.5 shrink-0 text-st-success" />
 }
 
@@ -285,7 +288,9 @@ export function InboxBell() {
                       ? "turno falhou"
                       : n.kind === "limit"
                         ? "limite atingido"
-                        : "turno concluído"}
+                        : n.kind === "gate"
+                          ? "missão pausada"
+                          : "turno concluído"}
                   </span>
                 </DropdownMenuItem>
               ))

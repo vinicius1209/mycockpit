@@ -3,11 +3,20 @@
 // pelo próprio useChat (handleEvent do bridge/send.ts escreve em byId[convId]);
 // aqui só se lê via bridge/hooks. Fechar aplica §5.4: draft ou turno ativo ⇒
 // minimiza pro chip do HUD; senão fecha. Nunca descarta draft em silêncio.
-import { useEffect, useRef, useState, type KeyboardEvent } from "react"
+import {
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from "react"
 import {
   ArrowRightLeft,
   ArrowUp,
   ClipboardList,
+  Lock,
   Loader2,
   Mic,
   Minus,
@@ -16,6 +25,7 @@ import {
   X,
 } from "lucide-react"
 import { Markdown } from "@/components/common/Markdown"
+import { RichSelect } from "@/components/ui/RichSelect"
 import { cn } from "@/lib/utils"
 import {
   MISSION_TABLE_ID,
@@ -32,16 +42,25 @@ import {
   defaultModelForAgent,
   discardDeskPlan,
   dockLeaveCtx,
+  effortsFor,
   modelsFor,
   officeProjectById,
   setDeskDraft,
-  useDeskConversation,
+  useDeskConvChrome,
   useDeskDraft,
+  useDeskItems,
   useDeskGate,
+  useDeskMissionView,
   fmtCost,
   type ChatItem,
-  type MissionGate,
 } from "../bridge/hooks"
+import { abortTableMission } from "../bridge/mission"
+import {
+  DeskMissionPanel,
+  GateCard,
+  missionPanelSubtitle,
+  showsMissionPanel,
+} from "./missionPanel"
 import {
   continueInAgent,
   ensureDeskConversation,
@@ -57,10 +76,17 @@ import {
   stopDictation,
 } from "../bridge/voice"
 import { ElapsedSince } from "./DeskMenu"
-import { officeEscape, useOfficeUi } from "./store"
+import {
+  activeDockWidth,
+  dockItemsStart,
+  officeEscape,
+  useOfficeUi,
+} from "./store"
+import { perfSpan } from "../engine/perf"
 
-/** Largura do painel (o OfficeMode usa o mesmo valor pro screenOffset). */
-export const DOCK_W = 380
+// Larguras do painel (DOCK_W/DOCK_W_WIDE) moram no ./store (módulo puro) —
+// o OfficeMode usa o mesmo valor pro screenOffset.
+export { DOCK_W, DOCK_W_WIDE } from "./store"
 
 /** `${projectId}::${agent}` → partes (lastIndexOf: id de projeto nunca tem
  *  "::" hoje, mas o agent é sempre o último segmento). */
@@ -177,7 +203,17 @@ function RevezamentoRow({
 
 // --- itens do histórico -----------------------------------------------------
 
-function DockItem({ item, rev }: { item: ChatItem; rev?: RevContext | null }) {
+/** memo (S2): ChatItem é imutável por identidade (o reducer sempre TROCA o
+ *  objeto ao mudar) — durante o streaming só o item da bolha corrente troca de
+ *  ref, então as demais linhas (Markdown incluso) pulam o re-render. `rev` é
+ *  null estável fora do último item. */
+const DockItem = memo(function DockItem({
+  item,
+  rev,
+}: {
+  item: ChatItem
+  rev?: RevContext | null
+}) {
   switch (item.kind) {
     case "user":
       return (
@@ -234,54 +270,70 @@ function DockItem({ item, rev }: { item: ChatItem; rev?: RevContext | null }) {
         </div>
       )
   }
-}
+})
 
-// --- gate de missão ---------------------------------------------------------
-
-/** Card de gate humano da missão — exportado: o MissionDock (mesa de reunião)
- *  reusa o MESMO card (fonte única de resposta = answerGate via bridge). */
-export function GateCard({
-  gate,
-  onAnswer,
+/** Lista do histórico (S2): componente próprio que assina `items` SOZINHO
+ *  (useDeskItems) — cada text_delta re-renderiza só esta subárvore (janela de
+ *  DOCK_ITEMS_WINDOW itens memoizados + a bolha corrente), nunca o chrome do
+ *  dock (cabeçalho/RichSelect/composer, que leem useDeskConvChrome). */
+function DockItemsList({
+  convId,
+  rev,
+  showAll,
+  onShowAll,
+  scrollRef,
 }: {
-  gate: MissionGate
-  onAnswer: (answers: string[]) => void
+  convId: string | null
+  rev: RevContext | null
+  showAll: boolean
+  onShowAll: () => void
+  /** Container rolável do dock (o autoscroll vive junto da lista). */
+  scrollRef: RefObject<HTMLDivElement | null>
 }) {
-  const [answers, setAnswers] = useState<string[]>(() =>
-    gate.questions.map(() => ""),
-  )
-  // Gate novo (outra fase) ⇒ zera as respostas.
-  useEffect(() => setAnswers(gate.questions.map(() => "")), [gate])
+  const items = useDeskItems(convId)
 
-  return (
-    <div className="rounded-lg border border-st-warning/50 bg-st-warning/10 p-3">
-      <p className="mb-2 text-[12px] font-semibold text-st-warning">
-        A missão precisa de você (fase {gate.phase + 1})
-      </p>
-      <div className="flex flex-col gap-2">
-        {gate.questions.map((q, i) => (
-          <label key={i} className="flex flex-col gap-1">
-            <span className="text-[12px] leading-snug text-foreground/90">{q}</span>
-            <input
-              value={answers[i] ?? ""}
-              onChange={(e) =>
-                setAnswers((cur) => cur.map((a, j) => (j === i ? e.target.value : a)))
-              }
-              placeholder="Em branco = o agente decide"
-              className="rounded-md border border-input bg-background px-2 py-1.5 text-[13px] outline-none focus:border-ring"
-            />
-          </label>
-        ))}
-      </div>
+  // Autoscroll pro fim quando o histórico muda (streaming incluso: cada
+  // handleEvent troca a identidade de items).
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [items, scrollRef])
+
+  if (!items) return null
+  // S2: custo de recriar a LISTA a cada text_delta com o dock aberto (a
+  // renderização dos <Markdown> em si aparece no react:commit do <Profiler>
+  // do OfficeMode). No-op sem mc.office.perf.
+  const endSpan = perfSpan("dock:items")
+  // Janela (S2): só a cauda renderiza; o botão expande sob demanda.
+  const start = dockItemsStart(items.length, showAll)
+  const rows: ReactNode[] = []
+  if (start > 0)
+    rows.push(
       <button
+        key="dock-show-all"
         type="button"
-        onClick={() => onAnswer(answers)}
-        className="mt-2.5 w-full rounded-md bg-brass px-3 py-1.5 text-[13px] font-medium text-brass-foreground transition-opacity hover:opacity-90"
+        onClick={onShowAll}
+        className="self-center rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-brass/60 hover:text-foreground"
       >
-        Responder e retomar
-      </button>
-    </div>
-  )
+        Ver conversa completa · {start}{" "}
+        {start === 1 ? "item anterior" : "itens anteriores"}
+      </button>,
+    )
+  for (let i = start; i < items.length; i++) {
+    const item = items[i]
+    rows.push(
+      // Revezamento só no ÚLTIMO item (limit/error): continueInAgent age
+      // sobre o último pedido pendente da conversa — uma linha de ação por
+      // item histórico seria ruído (todas fariam o mesmo).
+      <DockItem
+        key={item.id}
+        item={item}
+        rev={i === items.length - 1 ? rev : null}
+      />,
+    )
+  }
+  endSpan()
+  return <>{rows}</>
 }
 
 // --- plano pendente ---------------------------------------------------------
@@ -365,20 +417,24 @@ export function DeskDock() {
   const snapshot = useOfficeUi((s) => s.snapshot)
   const recording = useOfficeUi((s) => s.recording)
   const partial = useOfficeUi((s) => s.dictationPartial)
+  // Card de decisão (gate) montado ⇒ painel ALARGADO (560px), cena visível.
+  const dockWide = useOfficeUi((s) => s.dockWide)
 
-  const conv = useDeskConversation(convId)
+  // Visão DISCRETA da conversa (S2): o chrome do dock nunca re-renderiza por
+  // text_delta — a lista (DockItemsList) assina os items por conta própria.
+  const conv = useDeskConvChrome(convId)
   const draft = useDeskDraft(convId)
   const gate = useDeskGate(convId)
 
   const listRef = useRef<HTMLDivElement>(null)
+  // "Ver tudo" da janela do histórico (S2) — volta à cauda ao trocar de conversa.
+  const [showAllItems, setShowAllItems] = useState(false)
   const [micBusy, setMicBusy] = useState(false)
   const [composerFocused, setComposerFocused] = useState(false)
-  // Modelo escolhido pro PRÓXIMO envio (entrega 2). Vale só nesta mesa; trocar
-  // de AGENT é via revezamento/andar até outra mesa (não há seletor de agent
-  // aqui de propósito). Semente = default do agent; re-semeado ao trocar de
-  // mesa (effect abaixo). NOTA: o envio ainda não consome — ver comentário no
-  // handleSend (DeskSendArgs precisa do campo `model`, fase motor).
+  // Modelo + esforço do PRÓXIMO envio. O agent continua sendo uma escolha
+  // espacial (a mesa); a conversa trava a configuração no primeiro turno.
   const [modelChoice, setModelChoice] = useState<string>("default")
+  const [effortChoice, setEffortChoice] = useState<string>("default")
 
   // Mesa de reunião (O-2) não é mesa de agent: o MissionDock assume — aqui o
   // parse viraria projectId "commons"/agent "mission" e o effect abaixo
@@ -389,20 +445,36 @@ export function DeskDock() {
     ? findDeskSnapshot(snapshot?.rooms ?? [], dockDeskId)
     : null
   const project = desk ? officeProjectById(desk.projectId) : undefined
-  const turnActive = !!conv && (conv.running || conv.finalizing)
+  const turnActive = conv.running || conv.finalizing
+
+  // MISSÃO NA MESA (task #14): durante uma fase de missão o derive carimba
+  // desk.convId com a conversa DA MISSÃO (≠ dockConvId, a conversa da mesa).
+  // Run ativo nela ⇒ o corpo do dock vira o painel de missão compacto — o
+  // status real aparece aqui, não só na mesa de reunião.
+  const missionConvId = snap?.desk.convId ?? null
+  const missionView = useDeskMissionView(missionConvId)
+  const missionGate = useDeskGate(missionConvId)
+  const missionActive = showsMissionPanel(missionView)
 
   // Modelos do agent da mesa pro seletor do cabeçalho (vazio = agent sem flag
   // de modelo ⇒ sem seletor).
   const deskAgent = desk?.agent
   const models = deskAgent ? modelsFor(deskAgent) : []
+  const efforts = deskAgent ? effortsFor(deskAgent) : []
+  const configLocked = conv.locked
+  const effectiveModel = configLocked ? (conv.reqModel ?? "default") : modelChoice
+  const effectiveEffort = configLocked ? (conv.effort ?? "default") : effortChoice
   const modelLabel =
-    models.find((m) => m.value === modelChoice)?.pill ??
-    models.find((m) => m.value === modelChoice)?.label ??
+    models.find((m) => m.value === effectiveModel)?.pill ??
+    models.find((m) => m.value === effectiveModel)?.label ??
     null
   // Re-semeia o modelo ao trocar de mesa (o agent muda) — cada mesa lembra o
   // default do seu agent até o usuário escolher outro.
   useEffect(() => {
-    if (deskAgent) setModelChoice(defaultModelForAgent(deskAgent))
+    if (deskAgent) {
+      setModelChoice(defaultModelForAgent(deskAgent))
+      setEffortChoice("default")
+    }
   }, [deskAgent])
 
   // Ao abrir a mesa: garante a conversa (mais recente do par projeto+agent ou
@@ -436,13 +508,10 @@ export function DeskDock() {
     }
   }, [])
 
-  // Autoscroll pro fim quando o histórico muda (streaming incluso: cada
-  // handleEvent troca a identidade de items).
-  const items = conv?.items
+  // Trocar de conversa fecha o "ver tudo" (a cauda é o modo padrão da janela).
   useEffect(() => {
-    const el = listRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [items])
+    setShowAllItems(false)
+  }, [convId])
 
   if (!dockDeskId || dockMinimized || !desk) return null
 
@@ -450,7 +519,7 @@ export function DeskDock() {
   // — o último pedido pendente vira o prompt do novo provedor (continueInAgent,
   // send.ts). null ⇒ os itens limit/error só mostram a mensagem, sem ação.
   const rev: RevContext | null =
-    !turnActive && convId && project && !conv?.corrupt
+    !turnActive && convId && project && !conv.corrupt
       ? {
           currentAgent: desk.agent,
           onPick: (target) =>
@@ -473,11 +542,9 @@ export function DeskDock() {
 
   async function handleSend() {
     const text = draft.trim()
-    if (!text || !convId || !desk || !project || conv?.corrupt) return
-    setDeskDraft(convId, "")
-    // Fala na cena (§5.4 v2): a mensagem vira balão curto sobre o BOSS (~3s).
-    // Só envios digitados aqui — fila/auto-resume/plano não são fala do boss.
-    useOfficeUi.getState().sayAsBoss(text)
+    // missionActive: UX espelha a guarda real do send.ts (missão manda na conv)
+    if (!text || !convId || !desk || !project || conv.corrupt || missionActive)
+      return
     // Modelo do seletor do cabeçalho: só vale na conversa DESTRAVADA (1º run);
     // "default" ⇒ null (default do agent). Conversa travada ignora (send.ts usa
     // o modelo do 1º run).
@@ -488,6 +555,11 @@ export function DeskDock() {
       agent: desk.agent,
       text,
       model: modelChoice === "default" ? null : modelChoice,
+      effort: effortChoice === "default" ? null : effortChoice,
+      onAccepted: () => {
+        setDeskDraft(convId, "")
+        useOfficeUi.getState().sayAsBoss(text)
+      },
     })
   }
 
@@ -539,8 +611,8 @@ export function DeskDock() {
 
   return (
     <aside
-      className="pointer-events-auto absolute top-11 right-0 bottom-6 z-30 flex flex-col border-l border-border bg-card shadow-xl motion-safe:animate-in motion-safe:slide-in-from-right-4 motion-safe:fade-in-0 motion-safe:duration-200 motion-safe:ease-out"
-      style={{ width: DOCK_W }}
+      className="pointer-events-auto absolute top-11 right-0 bottom-6 z-30 flex flex-col border-l border-border bg-card shadow-xl transition-[width] motion-safe:animate-in motion-safe:slide-in-from-right-4 motion-safe:fade-in-0 motion-safe:duration-200 motion-safe:ease-out"
+      style={{ width: activeDockWidth(dockWide) }}
       aria-label={`Conversa com ${agentLabel(desk.agent)}`}
     >
       {/* cabeçalho: retrato do agent / projeto / ATIVIDADE ao vivo */}
@@ -550,7 +622,12 @@ export function DeskDock() {
           <p className="truncate text-[13px] font-semibold text-foreground">
             {agentLabel(desk.agent)}
           </p>
-          {turnActive && conv?.startedAt ? (
+          {missionActive && missionView ? (
+            // Fase de missão nesta mesa ⇒ cabeçalho contextual da missão.
+            <p className="truncate text-[11px] text-st-running">
+              {missionPanelSubtitle(missionView)}
+            </p>
+          ) : turnActive && conv.startedAt ? (
             // Turno rodando ⇒ linha de estado vira ATIVIDADE viva: ferramenta
             // corrente (detail do snapshot) + tempo decorrido (tick de 1s).
             <p className="truncate text-[11px] text-st-running">
@@ -566,32 +643,11 @@ export function DeskDock() {
             </p>
           )}
         </div>
-        {/* seletor de MODELO (entrega 2): vale pro próximo envio nesta mesa.
-            Habilitado sempre; trocar de AGENT é via revezamento/andar até outra
-            mesa (não há seletor de agent aqui — daí o tooltip). */}
-        {models.length > 0 && (
-          <label
-            className="shrink-0"
-            title="Modelo do próximo envio nesta mesa. Para trocar de agente, use o revezamento (após um limite/erro) ou vá até a mesa de outro agente."
-          >
-            <span className="sr-only">Modelo do próximo envio</span>
-            <select
-              value={modelChoice}
-              onChange={(e) => setModelChoice(e.target.value)}
-              className="max-w-[92px] rounded-md border border-input bg-background px-1.5 py-1 text-[11px] text-foreground outline-none focus:border-ring"
-            >
-              {models.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.pill ?? m.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
         {turnActive && convId && (
           <button
             type="button"
             title="Parar o turno"
+            aria-label="Parar o turno"
             onClick={() => void cancelDeskTurn(convId)}
             className="rounded-md p-1.5 text-st-error transition-colors hover:bg-secondary"
           >
@@ -601,6 +657,7 @@ export function DeskDock() {
         <button
           type="button"
           title="Minimizar pro chip"
+          aria-label="Minimizar conversa"
           onClick={() => useOfficeUi.getState().minimizeDock()}
           className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
         >
@@ -609,6 +666,7 @@ export function DeskDock() {
         <button
           type="button"
           title="Fechar (com rascunho ou turno ativo, minimiza)"
+          aria-label="Fechar conversa"
           onClick={requestClose}
           className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
         >
@@ -616,31 +674,87 @@ export function DeskDock() {
         </button>
       </header>
 
-      {/* histórico */}
+      {/* seletor de próximo turno some em modo missão (envio bloqueado) */}
+      {!missionActive && (
+      <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-3">
+        <span className="label-mono mr-1">Próximo turno</span>
+        {models.length > 0 && (
+          <div className="flex items-center gap-0.5">
+            <span className="text-[9px] text-muted-foreground/70 uppercase">Modelo</span>
+            <RichSelect
+              value={effectiveModel}
+              onValueChange={setModelChoice}
+              options={models}
+              disabled={configLocked}
+              aria-label="Modelo do próximo turno"
+              title={configLocked ? "Modelo fixado no primeiro envio" : "Modelo do próximo turno"}
+              triggerClassName="h-7 max-w-[92px] px-1 text-muted-foreground"
+            />
+          </div>
+        )}
+        {efforts.length > 0 && (
+          <div className="flex items-center gap-0.5">
+            <span className="text-[9px] text-muted-foreground/70 uppercase">Raciocínio</span>
+            <RichSelect
+              value={effectiveEffort}
+              onValueChange={setEffortChoice}
+              options={efforts}
+              disabled={configLocked}
+              align="end"
+              aria-label="Esforço de raciocínio do próximo turno"
+              title={configLocked ? "Esforço fixado no primeiro envio" : "Esforço de raciocínio"}
+              triggerClassName="h-7 max-w-[82px] px-1 text-muted-foreground"
+            />
+          </div>
+        )}
+        {configLocked && (
+          <Lock
+            className="ml-auto size-3 text-muted-foreground/60"
+            aria-label="Modelo e esforço fixados nesta conversa"
+          />
+        )}
+      </div>
+      )}
+
+      {/* histórico — ou o PAINEL DE MISSÃO quando a mesa executa uma fase */}
       <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-        {!conv && (
+        {missionActive && missionView ? (
+          <DeskMissionPanel
+            view={missionView}
+            gate={missionGate}
+            onAnswerGate={(a) => answerDeskGate(missionView.convId, a)}
+            // só missão LANÇADA DA MESA DE REUNIÃO abre lá (o MissionDock
+            // rastreia missionTableConvId; para missões do Trabalho ele
+            // mostraria o formulário vazio)
+            onOpenTable={
+              useOfficeUi.getState().missionTableConvId === missionView.convId
+                ? () => useOfficeUi.getState().openDock(MISSION_TABLE_ID)
+                : undefined
+            }
+            onStop={() => abortTableMission(missionView.convId)}
+          />
+        ) : (
+        <>
+        {!conv.exists && (
           <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
             <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
             Abrindo a conversa da mesa…
           </div>
         )}
-        {conv?.corrupt && (
+        {conv.corrupt && (
           <p className="mb-2 rounded-md border border-st-error/50 bg-st-error/10 px-2.5 py-1.5 text-[12px] text-st-error">
             Conversa corrompida no banco — envio bloqueado.
           </p>
         )}
         <div className="flex flex-col gap-2.5">
-          {conv?.items.map((item, i) => (
-            // Revezamento só no ÚLTIMO item (limit/error): continueInAgent age
-            // sobre o último pedido pendente da conversa — uma linha de ação
-            // por item histórico seria ruído (todas fariam o mesmo).
-            <DockItem
-              key={item.id}
-              item={item}
-              rev={i === (conv.items.length - 1) ? rev : null}
-            />
-          ))}
-          {conv && conv.items.length === 0 && (
+          <DockItemsList
+            convId={convId}
+            rev={rev}
+            showAll={showAllItems}
+            onShowAll={() => setShowAllItems(true)}
+            scrollRef={listRef}
+          />
+          {conv.empty && (
             <div className="flex flex-col gap-2">
               <p className="text-[12px] text-muted-foreground">
                 Mesa de {agentLabel(desk.agent)}. Diga o que precisa — o turno
@@ -662,9 +776,13 @@ export function DeskDock() {
             </div>
           )}
           {gate && convId && (
-            <GateCard gate={gate} onAnswer={(a) => answerDeskGate(convId, a)} />
+            <GateCard
+              gate={gate}
+              convId={convId}
+              onAnswer={(a) => answerDeskGate(convId, a)}
+            />
           )}
-          {conv?.pendingPlan && !turnActive && convId && (
+          {conv.pendingPlan && !turnActive && convId && (
             <PlanCard
               onApprove={() => {
                 if (!desk || !project) return
@@ -684,6 +802,8 @@ export function DeskDock() {
             />
           )}
         </div>
+        </>
+        )}
       </div>
 
       {/* composer */}
@@ -707,15 +827,19 @@ export function DeskDock() {
             onFocus={() => setComposerFocused(true)}
             onBlur={() => setComposerFocused(false)}
             rows={2}
-            disabled={!convId || conv?.corrupt}
-            placeholder={`Mensagem para ${agentLabel(desk.agent)}…`}
+            disabled={!convId || conv.corrupt || missionActive}
+            placeholder={
+              missionActive
+                ? "Missão em andamento…"
+                : `Mensagem para ${agentLabel(desk.agent)}…`
+            }
             className="max-h-40 min-h-[38px] flex-1 resize-none rounded-md border border-input bg-background px-2.5 py-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus:border-ring disabled:opacity-50"
           />
           <button
             type="button"
             title={recording ? "Parar e revisar" : "Ditar (pt-BR, local)"}
             onClick={() => void toggleMic()}
-            disabled={!convId || micBusy}
+            disabled={!convId || micBusy || missionActive}
             className={cn(
               "rounded-md border border-border p-2 transition-colors hover:bg-secondary disabled:opacity-50",
               recording ? "text-st-error" : "text-muted-foreground",
@@ -731,13 +855,18 @@ export function DeskDock() {
             type="button"
             title={turnActive ? "Enfileirar pro fim do turno" : "Enviar"}
             onClick={() => void handleSend()}
-            disabled={!convId || !draft.trim() || conv?.corrupt}
+            disabled={!convId || !draft.trim() || conv.corrupt || missionActive}
             className="rounded-md bg-brass p-2 text-brass-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             <ArrowUp className="size-4" />
           </button>
         </div>
-        {turnActive && (
+        {missionActive && (
+          <p className="mt-1 px-0.5 text-[11px] text-muted-foreground">
+            Missão em andamento — envie pela missão ou aguarde.
+          </p>
+        )}
+        {turnActive && !missionActive && (
           <p className="mt-1 px-0.5 text-[11px] text-muted-foreground">
             Turno em andamento — Enter enfileira e envia quando terminar.
           </p>
@@ -747,7 +876,7 @@ export function DeskDock() {
             Esc devolve o teclado ao escritório (WASD anda) · Enter envia
           </p>
         )}
-        {conv?.autoResume && (
+        {conv.autoResume && (
           <AutoResumeLine
             nextAt={conv.autoResume.nextAt}
             tries={conv.autoResume.tries}

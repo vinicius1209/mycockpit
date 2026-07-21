@@ -7,6 +7,11 @@ import { create } from "zustand"
 import type { CameraMode, OfficeSnapshot, SimEvent } from "../engine/types"
 import { dockLeaveCtx } from "../bridge/hooks"
 import { cancelDictation } from "../bridge/voice"
+import {
+  onBossDeskDrop,
+  onGateVisitChange,
+  type GateVisit,
+} from "../scene/behaviors/mission"
 
 /** Contexto da decisão fechar-vs-minimizar (§5.4), lido do useChat pelo
  *  chamador (a ui/ não toca stores do app — isso é papel do bridge/hooks). */
@@ -64,6 +69,31 @@ export function officeEscape(): EscOutcome {
   return out
 }
 
+/** Largura padrão do painel direito (dock da mesa/mesa de reunião). Mora aqui
+ *  (módulo puro, sem DOM) pra lógica e testes não importarem componentes. */
+export const DOCK_W = 380
+/** Painel ALARGADO (~560px) enquanto o card de decisão (gate) está visível —
+ *  a cena permanece visível ao lado (decisão de design: sem modal). */
+export const DOCK_W_WIDE = 560
+
+/** Largura ativa do dock (o OfficeMode usa no screenOffset). */
+export function activeDockWidth(wide: boolean): number {
+  return wide ? DOCK_W_WIDE : DOCK_W
+}
+
+/** Janela do histórico do dock (S2 da investigação de perf): quantos itens a
+ *  lista renderiza por padrão. A medição (perf.ts, cenário streaming+dock
+ *  aberto) condenou a reconciliação da lista INTEIRA a cada text_delta —
+ *  conversa longa ⇒ react:commit de dezenas de ms por delta ⇒ FPS 60→20.
+ *  Só a cauda renderiza; "ver tudo" expande sob demanda. */
+export const DOCK_ITEMS_WINDOW = 40
+
+/** Índice do 1º item renderizado da lista do dock (puro): cauda de
+ *  DOCK_ITEMS_WINDOW itens, ou 0 com "ver tudo" ligado. */
+export function dockItemsStart(total: number, showAll: boolean): number {
+  return showAll ? 0 : Math.max(0, total - DOCK_ITEMS_WINDOW)
+}
+
 /** Balão do boss fica ~3s na tela (fala curta ao enviar da mesa, §5.4 v2). */
 export const BOSS_SAY_MS = 3000
 /** Fala do boss truncada em 60 chars (balão curto, não transcrição). */
@@ -92,6 +122,32 @@ export interface OfficeUiState {
   /** Conversa da ÚLTIMA missão lançada da mesa de reunião (O-2). O menu-balão
    *  e o MissionDock leem daqui; null = nenhuma missão lançada dali ainda. */
   missionTableConvId: string | null
+  /** Intenção "voar até a sala" emitida pela rail (fora do OfficeMode, sem ref
+   *  da câmera). O OfficeMode assina, traduz em inspect e LIMPA (set null).
+   *  Sentinelas de áreas comuns: "@commons" (Sala comum) e "@boss" (Central).
+   *  Qualquer outro valor é um projectId. */
+  focusRoomId: string | null
+  /** Intenção "enquadrar a sala do agent + abrir o dock" (a coreografia da
+   *  Central) emitida pela rail. Consumida e limpa pelo OfficeMode. */
+  focusDeskId: string | null
+  /** Intenção "abrir a Central do Boss" vinda do posto de comando físico
+   *  (menu-balão da mesa executiva / tecla E — BOSS_DESK_ID). O estado
+   *  bossCenterOpen vive no OfficeMode; ele consome e limpa. */
+  bossCenterRequested: boolean
+  /** Papéis deixados na mesa do Boss (courier de bossDelivery) ainda não
+   *  vistos — zera quando a Central abre. A pilha VISUAL de papel na mesa é
+   *  da cena (frente ambiente); aqui vive só o contador. */
+  unseenDeliveries: number
+  /** Agent ESPERANDO DECISÃO na mesa do Boss (gate-visit do pack missão da
+   *  cena; espelho discreto de onGateVisitChange). waiting=true = já chegou
+   *  e está parado lá — o Prompts acende o balão "✋" e o menu da mesa do
+   *  Boss vira "Responder". null = sem visita (mão levantada fica na mesa). */
+  gateVisit: GateVisit | null
+  /** Nº de cards de gate MONTADOS no dock (push no mount, pop no unmount). */
+  dockWideCount: number
+  /** Painel direito ALARGADO (DOCK_W_WIDE) — derivado de dockWideCount>0;
+   *  o DeskDock/MissionDock usam na largura, o OfficeMode no screenOffset. */
+  dockWide: boolean
 
   setNearDesk: (id: string | null) => void
   /** Abre o dock da mesa (mesma mesa minimizada ⇒ restaura, preservando a
@@ -105,6 +161,23 @@ export interface OfficeUiState {
   setDockConv: (convId: string | null) => void
   /** Registra (ou limpa) a conversa da missão lançada da mesa de reunião. */
   setMissionTableConv: (convId: string | null) => void
+  /** Rail pede pra voar até uma sala (projectId | "@commons" | "@boss"). Só
+   *  seta o campo; o OfficeMode consome no subscribe e limpa. */
+  focusRoom: (id: string | null) => void
+  /** Rail pede pra enquadrar a sala do agent + abrir o dock (openDeskFromBoss).
+   *  Só seta o campo; o OfficeMode consome no subscribe e limpa. */
+  focusDesk: (deskId: string | null) => void
+  /** Posto de comando pede pra abrir a Central (deskMenuPrimary do
+   *  BOSS_DESK_ID). Só seta a flag; o OfficeMode consome e limpa. */
+  requestBossCenter: () => void
+  clearBossCenterRequest: () => void
+  /** Central aberta ⇒ as entregas na mesa do Boss foram vistas. */
+  clearUnseenDeliveries: () => void
+  /** Gate card montou no dock ⇒ alarga o painel (contagem: dois cards
+   *  simultâneos não estreitam no unmount do primeiro). */
+  pushDockWide: () => void
+  /** Gate card desmontou ⇒ estreita quando o ÚLTIMO sai. */
+  popDockWide: () => void
   setRecording: (v: boolean) => void
   setDictationPartial: (t: string | null) => void
   setSnapshot: (s: OfficeSnapshot) => void
@@ -128,6 +201,13 @@ export const useOfficeUi = create<OfficeUiState>((set, get) => ({
   fps: null,
   bossSay: null,
   missionTableConvId: null,
+  focusRoomId: null,
+  focusDeskId: null,
+  bossCenterRequested: false,
+  unseenDeliveries: 0,
+  gateVisit: null,
+  dockWideCount: 0,
+  dockWide: false,
 
   setNearDesk: (id) => set({ nearDeskId: id }),
 
@@ -155,6 +235,25 @@ export const useOfficeUi = create<OfficeUiState>((set, get) => ({
   setDockConv: (convId) => set({ dockConvId: convId }),
 
   setMissionTableConv: (convId) => set({ missionTableConvId: convId }),
+
+  focusRoom: (id) => set({ focusRoomId: id }),
+
+  focusDesk: (deskId) => set({ focusDeskId: deskId }),
+
+  requestBossCenter: () => set({ bossCenterRequested: true }),
+
+  clearBossCenterRequest: () => set({ bossCenterRequested: false }),
+
+  clearUnseenDeliveries: () => set({ unseenDeliveries: 0 }),
+
+  pushDockWide: () =>
+    set((s) => ({ dockWideCount: s.dockWideCount + 1, dockWide: true })),
+
+  popDockWide: () =>
+    set((s) => {
+      const n = Math.max(0, s.dockWideCount - 1)
+      return { dockWideCount: n, dockWide: n > 0 }
+    }),
 
   // Parar de gravar limpa a legenda parcial junto (nunca fica órfã).
   setRecording: (v) =>
@@ -208,3 +307,15 @@ export const useOfficeUi = create<OfficeUiState>((set, get) => ({
     }
   },
 }))
+
+// Courier de missão deixou um papel na mesa do Boss (pack mission da cena):
+// contador de não-vistos sobe aqui — ui→scene é a direção de import permitida,
+// então a cena só EMITE (onBossDeskDrop) e o store se inscreve uma vez.
+onBossDeskDrop(() =>
+  useOfficeUi.setState((s) => ({ unseenDeliveries: s.unseenDeliveries + 1 })),
+)
+
+// Gate-visit (o agent veio até a mesa do Boss esperar a decisão): espelho
+// discreto pro menu "Responder" + balão "✋" do Prompts — mesma direção
+// ui→scene do onBossDeskDrop (a cena EMITE; o store se inscreve uma vez).
+onGateVisitChange((v) => useOfficeUi.setState({ gateVisit: v }))

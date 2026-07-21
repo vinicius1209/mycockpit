@@ -1,22 +1,20 @@
 /** GraphicsContexts compartilhados dos props (1 tesselação p/ N instâncias).
- *
- *  Geometria portada do spike `office-web/src/App.tsx` — os paths originais só
- *  usam M/m, L, h/v, c/C e Z; aqui foram normalizados para comandos explícitos
- *  (mesmos números) e desenhados via GraphicsPath/SVG string.
- *
- *  A mesa é FATIADA em base + tampo (contexts separados) para o y-sort:
- *  base atrás do avatar, tampo (com monitor/papéis) na frente.
+ *  A estação de trabalho é fatiada em base + tampo para o y-sort e ocupa o
+ *  mesmo footprint 2×1 da grade de colisão.
  */
 import { Container, Graphics, GraphicsContext, GraphicsPath } from "pixi.js"
+import { EXECUTIVE_STATION_SPEC } from "@/office/engine/furniture"
 import { createSteam, type Steam } from "./effects"
 
-/** Escala do desenho do spike (mesa de 152px de largura) para o mundo em tiles
- *  (footprint 2×2 tiles = 128px de largura na projeção 64×32). */
+/** Unidade histórica dos avatares/props para a projeção 64×32 do escritório. */
 export const SPIKE_SCALE = 128 / 152
 
 /** Tela do monitor acesa (cor do spike) e apagada (mesa "off"). */
 export const SCREEN_ON = 0x73aaa4
 export const SCREEN_OFF = 0x243030
+export const DESK_MONITOR_FRAME = { x: -21, y: -77, w: 42, h: 22 } as const
+/** Retângulo local da tela; exportado para efeitos que precisam acompanhá-la. */
+export const DESK_SCREEN_RECT = { x: -17, y: -72.5, w: 34, h: 12.5 } as const
 
 type Ctxs = {
   deskBase: GraphicsContext
@@ -38,36 +36,60 @@ function path(ctx: GraphicsContext, d: string, color: number, alpha = 1): void {
 }
 
 function build(): Ctxs {
-  // --- mesa: base (laterais + pés) --------------------------------------
+  const deskLift = 56
+
+  // --- estação de trabalho: estrutura metálica + gaveteiro --------------
   const deskBase = new GraphicsContext()
-  // lateral esquerda: "M-76 0 0 39v18l-76-38Z"
-  path(deskBase, "M-76 0 L0 39 L0 57 L-76 19 Z", 0x69746c)
-  // lateral direita (sombra derivada da esquerda — mesma luz de todo prop)
-  path(deskBase, "M76 0 L0 39 L0 57 L76 19 Z", mul(0x69746c, EAST_K))
-  // pés: "M-51 27v50l13 7V34ZM51 27v50l-13 7V34Z"
-  path(deskBase, "M-51 27 L-51 77 L-38 84 L-38 34 Z M51 27 L51 77 L38 84 L38 34 Z", 0x3a4541)
+  shadow(deskBase, 54, 17, 8, 0.14)
+  const frame = faces(0x56615f, 0x343f3e)
+  for (const [x, y] of [
+    [-0.78, -0.23],
+    [0.78, -0.23],
+    [-0.78, 0.23],
+    [0.78, 0.23],
+  ] as const) {
+    isoBox(deskBase, x, y, 0.1, 0.1, deskLift - 4, frame)
+  }
+  // travessa recuada e gaveteiro: deixam a silhueta legível como mesa real.
+  isoBox(deskBase, 0, -0.22, 1.5, 0.08, 7, frame, 22)
+  isoBox(deskBase, -0.62, -0.01, 0.34, 0.48, deskLift - 15, faces(0x8d9690, 0x65706c))
+  path(deskBase, "M-49 10 L-36 17 M-49 22 L-36 29", 0x3d4845, 0.72)
 
-  // --- mesa: tampo (superfície + papéis) --------------------------------
+  // --- tampo de madeira fina + equipamento de uso cotidiano -------------
   const deskTop = new GraphicsContext()
-  // tampo: "M-76 0 0-38 76 0 0 39Z"
-  path(deskTop, "M-76 0 L0 -38 L76 0 L0 39 Z", 0xd7d0b8)
-  // papel 1: "m27-9 24-12 13 7-24 12Z"
-  path(deskTop, "M27 -9 L51 -21 L64 -14 L40 -2 Z", 0xf2ead2)
-  // papel 2: "m-3 7 29-14 12 6L9 13Z"
-  path(deskTop, "M-3 7 L26 -7 L38 -1 L9 13 Z", 0xb9c1b2, 0.8)
+  isoBox(deskTop, 0, 0, 1.9, 0.82, 7, faces(0xe1d9c1, 0x8b8372), deskLift - 7)
+  // teclado, mouse e notebook fechado sobre o tampo.
+  isoBox(deskTop, 0.03, 0.18, 0.63, 0.22, 2.2, faces(0x454f51, 0x252d2f), deskLift)
+  isoBox(deskTop, 0.47, 0.18, 0.12, 0.15, 2.6, faces(0x5f6969, 0x343c3d), deskLift)
+  isoBox(deskTop, 0.63, -0.08, 0.38, 0.3, 3, faces(0xaeb8b2, 0x69736f), deskLift)
+  path(deskTop, "M39 -57 L47 -53 L45 -49 L37 -53 Z", 0x73aaa4, 0.72)
+  // cabo discreto saindo do monitor até a borda traseira.
+  deskTop
+    .moveTo(-4, -68)
+    .bezierCurveTo(-2, -54, -13, -49, -19, -43)
+    .stroke({ width: 1.5, color: 0x56615f, alpha: 0.62, cap: "round" })
 
-  // --- monitor (chassis; tela é context próprio p/ tint on/off) ----------
+  // --- monitor fino com base reconhecível; tela separada para tint -------
   const monitor = new GraphicsContext()
-  // topo: "m-28-30 43-21 32 16-43 22Z"
-  path(monitor, "M-28 -30 L15 -51 L47 -35 L4 -13 Z", 0x1c2225)
-  // frente: "m-28-30 32 17v32l-32-17Z"
-  path(monitor, "M-28 -30 L4 -13 L4 19 L-28 2 Z", 0x303a3c)
-  // pé do monitor: "M4 19v12l13-6V13Z"
-  path(monitor, "M4 19 L4 31 L17 25 L17 13 Z", 0x22292b)
+  // Widescreen baixo: preserva leitura de equipamento sem virar uma barreira
+  // na frente da gola, ombros e identidade visual do agent.
+  monitor
+    .roundRect(
+      DESK_MONITOR_FRAME.x,
+      DESK_MONITOR_FRAME.y,
+      DESK_MONITOR_FRAME.w,
+      DESK_MONITOR_FRAME.h,
+      3,
+    )
+    .fill({ color: 0x20282b })
+  monitor.roundRect(-18.5, -74.5, 37, 16.5, 1.5).fill({ color: 0x303a3c })
+  monitor.roundRect(-2.5, -55, 5, 7, 2).fill({ color: 0x30393b })
+  isoBox(monitor, 0, 0.02, 0.38, 0.24, 3, faces(0x485254, 0x252d2f), 50)
 
   const monitorScreen = new GraphicsContext()
-  // tela: "m-22-25 21 11V9L-22-2Z" — branca, tint por instância
-  path(monitorScreen, "M-22 -25 L-1 -14 L-1 9 L-22 -2 Z", 0xffffff)
+  monitorScreen
+    .roundRect(DESK_SCREEN_RECT.x, DESK_SCREEN_RECT.y, DESK_SCREEN_RECT.w, DESK_SCREEN_RECT.h, 1)
+    .fill({ color: 0xffffff })
 
   // --- caneca (prop de idle do avatar) -----------------------------------
   const mug = new GraphicsContext()
@@ -94,14 +116,30 @@ function build(): Ctxs {
     0x657d64,
   )
 
-  // --- cadeira (agent sentado) -------------------------------------------
-  // Encosto: roundRect que "espia" atrás do torso (ombros/laterais) + almofada.
+  // --- cadeira ergonômica: tela, braços, coluna e rodízios ----------------
   const chairBack = new GraphicsContext()
-  chairBack.roundRect(-24, -50, 48, 56, 14).fill({ color: 0x30393b })
-  chairBack.roundRect(-20, -46, 40, 48, 11).fill({ color: 0x404c4d })
+  chairBack.roundRect(-24, -53, 48, 55, 12).fill({ color: 0x273033 })
+  chairBack.roundRect(-19, -48, 38, 44, 9).fill({ color: 0x455153 })
+  chairBack
+    .roundRect(-15, -44, 30, 35, 7)
+    .stroke({ width: 2, color: 0x778382, alpha: 0.7 })
+  chairBack
+    .moveTo(-28, -18)
+    .lineTo(-22, -18)
+    .moveTo(22, -18)
+    .lineTo(28, -18)
+    .stroke({ width: 4, color: 0x273033, cap: "round" })
   const chairSeat = new GraphicsContext()
-  chairSeat.roundRect(-24, 3, 48, 13, 6).fill({ color: 0x28302f })
-  chairSeat.roundRect(-3, 13, 6, 9, 2).fill({ color: 0x20272a })
+  chairSeat.roundRect(-24, 1, 48, 14, 6).fill({ color: 0x303a3b })
+  chairSeat.roundRect(-3, 13, 6, 15, 2).fill({ color: 0x20282a })
+  chairSeat
+    .moveTo(0, 26)
+    .lineTo(-17, 32)
+    .moveTo(0, 26)
+    .lineTo(17, 32)
+    .stroke({ width: 3, color: 0x20282a, cap: "round" })
+  chairSeat.circle(-18, 33, 3).fill({ color: 0x1b2224 })
+  chairSeat.circle(18, 33, 3).fill({ color: 0x1b2224 })
 
   return { deskBase, deskTop, monitor, monitorScreen, mug, plant, chairBack, chairSeat }
 }
@@ -348,6 +386,11 @@ type DecorCtxs = {
   sofa: GraphicsContext
   sofaSmall: GraphicsContext
   coffeeTable: GraphicsContext
+  executiveDeskBase: GraphicsContext
+  executiveDeskTop: GraphicsContext
+  executiveChair: GraphicsContext
+  executiveVisitorChair: GraphicsContext
+  executiveSideboard: GraphicsContext
   meetingTableBase: GraphicsContext
   meetingTableTop: GraphicsContext
   meetingChair: GraphicsContext
@@ -376,9 +419,12 @@ function rugCtx(tx: number, ty: number): GraphicsContext {
   return ctx
 }
 
-/** Vaso do spike ancorado nos pés (base em y=0; aro sobe até -51). */
+/** Vaso do spike ancorado nos pés (base em y=0; aro sobe até -51).
+ *  A sombra fica centrada sob a base e inclui um contato curto. Sem esse
+ *  contato, a ponta sul do vaso parecia pairar alguns pixels sobre o piso. */
 function potInto(ctx: GraphicsContext): void {
-  shadow(ctx, 26, 10, 2)
+  shadow(ctx, 26, 9, 0, 0.14)
+  ctx.ellipse(0, -1, 13, 4).fill({ color: SHADOW_INK, alpha: 0.22 })
   poly(ctx, [[-20, -41], [0, -51], [20, -41], [0, -30]], POT_TOP)
   poly(ctx, [[-20, -41], [0, -30], [0, 0], [-20, -11]], POT_S)
   poly(ctx, [[20, -41], [0, -30], [0, 0], [20, -11]], POT_E)
@@ -650,17 +696,162 @@ function sofaSmallCtx(): GraphicsContext {
 /** Mesa de centro baixa com pilha de livros e caneca. */
 function coffeeTableCtx(): GraphicsContext {
   const ctx = new GraphicsContext()
-  shadow(ctx, 52, 15, 4)
-  isoBox(ctx, 0, 0, 1.15, 0.6, 26, faces(WOOD_TOP, WOOD_S))
-  isoBox(ctx, -0.18, 0.02, 0.28, 0.2, 3, faces(TEAL, 0x5b8a86), 26)
-  isoBox(ctx, -0.15, 0.04, 0.2, 0.15, 2.5, faces(POT_TOP, POT_S), 29)
-  const [mx, my] = tileToLocal(0.28, -0.02)
-  ctx.roundRect(mx - 3, my - 26 - 7, 6, 7, 1.5).fill({ color: CREAM })
-  ctx.ellipse(mx, my - 33, 2.9, 1.4).fill({ color: 0x5a4636 })
+  // O footprint continua no mesmo tile para colisão; só a massa visual avança
+  // para o sul e cria o corredor de uso entre sofá e mesa.
+  const forward = 0.32
+  const lift = 18
+  const [sx, sy] = tileToLocal(0, forward)
+  ctx.ellipse(sx, sy + 4, 46, 13).fill({ color: SHADOW_INK, alpha: 0.16 })
+  ctx.ellipse(sx, sy + 4, 32, 8).fill({ color: SHADOW_INK, alpha: 0.12 })
+  isoBox(ctx, 0, forward, 1, 0.46, lift, faces(WOOD_TOP, WOOD_S))
+  isoBox(ctx, -0.15, forward + 0.02, 0.26, 0.18, 3, faces(TEAL, 0x5b8a86), lift)
+  isoBox(ctx, -0.12, forward + 0.04, 0.18, 0.13, 2.5, faces(POT_TOP, POT_S), lift + 3)
+  const [mx, my] = tileToLocal(0.28, forward - 0.02)
+  ctx.roundRect(mx - 3, my - lift - 7, 6, 7, 1.5).fill({ color: CREAM })
+  ctx.ellipse(mx, my - lift - 7, 2.9, 1.4).fill({ color: 0x5a4636 })
   return ctx
 }
 
-const MEET_LIFT = 74 //  altura do tampo do mesão (px locais)
+const EXEC_DESK_LIFT = 58
+const EXEC_STONE_TOP = 0xe5ddc7
+const EXEC_STONE_SIDE = 0x817d70
+const EXEC_GRAPHITE = 0x35413f
+const EXEC_BRASS = 0xb98745
+
+/** Estação executiva em L: pedestais e painel traseiro, atrás dos visitantes. */
+function executiveDeskBaseCtx(): GraphicsContext {
+  const ctx = new GraphicsContext()
+  shadow(ctx, 122, 35, 8, 0.18)
+  const graphite = faces(0x53605d, EXEC_GRAPHITE)
+  // Gaveteiro oeste e pedestal da extensão formam uma base assimétrica.
+  isoBox(ctx, -1.25, -0.26, 0.5, 0.66, EXEC_DESK_LIFT - 8, graphite)
+  isoBox(ctx, 1.22, 0.24, 0.72, 1.08, EXEC_DESK_LIFT - 8, graphite)
+  // Painel de privacidade recuado: fecha a silhueta sem virar uma parede.
+  isoBox(ctx, -0.1, -0.5, 2.55, 0.1, 30, faces(0x56635f, 0x3b4744), 16)
+  return ctx
+}
+
+/** Tampo da estação executiva, monitor, desk pad e luminária de latão. */
+function executiveDeskTopCtx(): GraphicsContext {
+  const ctx = new GraphicsContext()
+  const stone = faces(EXEC_STONE_TOP, EXEC_STONE_SIDE)
+  const main = EXECUTIVE_STATION_SPEC.surfaces.main
+  const deskReturn = EXECUTIVE_STATION_SPEC.surfaces.return
+  isoBox(ctx, main.x, main.y, main.w, main.h, 8, stone, EXEC_DESK_LIFT - 8)
+  isoBox(ctx, deskReturn.x, deskReturn.y, deskReturn.w, deskReturn.h, 8, stone, EXEC_DESK_LIFT - 8)
+
+  // Desk pad, teclado e bloco de notas orientam a função da estação.
+  const pad = EXECUTIVE_STATION_SPEC.supported.deskPad.rect
+  const keyboard = EXECUTIVE_STATION_SPEC.supported.keyboard.rect
+  const notepad = EXECUTIVE_STATION_SPEC.supported.notepad.rect
+  isoBox(ctx, pad.x, pad.y, pad.w, pad.h, 2.2, faces(0x3f4948, 0x242c2d), EXEC_DESK_LIFT)
+  isoBox(ctx, keyboard.x, keyboard.y, keyboard.w, keyboard.h, 2, faces(0x66716f, 0x3c4545), EXEC_DESK_LIFT + 2)
+  isoBox(ctx, notepad.x, notepad.y, notepad.w, notepad.h, 2.2, faces(PAPER_SAGE, 0x7d857a), EXEC_DESK_LIFT)
+
+  // Monitor alto, deslocado para o braço principal do L.
+  const monitor = EXECUTIVE_STATION_SPEC.supported.monitor.rect
+  const [mx, my] = tileToLocal(monitor.x, monitor.y)
+  ctx.roundRect(mx - 22, my - 94, 44, 35, 4).fill({ color: 0x20282b })
+  ctx.roundRect(mx - 19, my - 91, 38, 28, 2).fill({ color: TEAL })
+  ctx.roundRect(mx - 3, my - 60, 6, 10, 2).fill({ color: CHASSIS })
+  isoBox(ctx, monitor.x, monitor.y, monitor.w, monitor.h, 3, faces(0x4d5857, 0x293233), EXEC_DESK_LIFT)
+
+  // Assinatura da sala: luminária articulada de latão, com luz voltada ao pad.
+  const lamp = EXECUTIVE_STATION_SPEC.supported.lamp.rect
+  const [lx, ly] = tileToLocal(lamp.x, lamp.y)
+  ctx.ellipse(lx, ly - EXEC_DESK_LIFT, 8, 4).fill({ color: mul(EXEC_BRASS, 0.82) })
+  ctx.moveTo(lx, ly - EXEC_DESK_LIFT - 2)
+    .lineTo(lx, ly - 88)
+    .lineTo(lx - 10, ly - 99)
+    .stroke({ width: 4, color: EXEC_BRASS, cap: "round", join: "round" })
+  poly(ctx, [
+    [lx - 17, ly - 100],
+    [lx - 6, ly - 105],
+    [lx, ly - 94],
+    [lx - 13, ly - 90],
+  ], EXEC_BRASS)
+  ctx.ellipse(lx - 10, ly - 96, 6, 2.6).fill({ color: 0xffe5a3, alpha: 0.5 })
+
+  // Credencial em latão voltada aos visitantes; pequena, não decorativa solta.
+  isoBox(ctx, 0.05, 0.38, 0.66, 0.1, 5, faces(0xd1a35b, 0x8e652f), EXEC_DESK_LIFT)
+  return ctx
+}
+
+/** Cadeira alta do chefe, voltada para o SUL, em direção aos visitantes.
+ *  Toda a geometria segue os eixos world-x/world-y do grid isométrico. */
+function executiveChairCtx(): GraphicsContext {
+  const ctx = new GraphicsContext()
+  shadow(ctx, 34, 12, 4, 0.2)
+
+  // Base de cinco apoios no mesmo plano do piso, não alinhada à tela.
+  const hub = tileToLocal(0, -0.04)
+  for (const [dx, dy] of [
+    [-0.36, -0.14],
+    [0.36, -0.14],
+    [-0.3, 0.2],
+    [0.3, 0.2],
+  ] as const) {
+    const foot = tileToLocal(dx, dy)
+    ctx.moveTo(hub[0], hub[1] - 2)
+      .lineTo(foot[0], foot[1])
+      .stroke({ width: 4, color: 0x20292a, cap: "round" })
+    ctx.circle(foot[0], foot[1], 2.6).fill({ color: 0x192122 })
+  }
+  ctx.moveTo(hub[0], hub[1] - 28)
+    .lineTo(hub[0], hub[1] - 1)
+    .stroke({ width: 5, color: 0x20292a, cap: "round" })
+
+  const leather = faces(0x465250, 0x2b3534)
+  // Encosto no lado NORTE: quem senta olha para +world-y, isto e, para a mesa.
+  isoBox(ctx, 0, -0.29, 0.82, 0.14, 59, faces(0x3b4745, 0x26302f), 29)
+  isoBox(ctx, 0, -0.23, 0.66, 0.06, 37, leather, 43)
+  isoBox(ctx, 0, 0, 0.8, 0.66, 9, leather, 22)
+  // Bracos acompanham a profundidade do assento.
+  isoBox(ctx, -0.39, 0.02, 0.08, 0.48, 5, faces(0x303a39, 0x20292a), 40)
+  isoBox(ctx, 0.39, 0.02, 0.08, 0.48, 5, faces(0x303a39, 0x20292a), 40)
+  return ctx
+}
+
+/** Cadeira cantilever de visita voltada para o NORTE, em direção à mesa.
+ *  O encosto ocupa a borda SUL do assento, portanto o usuário vê as costas
+ *  da cadeira ao entrar na sala, como numa sala executiva real. */
+function executiveVisitorChairCtx(): GraphicsContext {
+  const ctx = new GraphicsContext()
+  shadow(ctx, 28, 10, 4, 0.17)
+
+  // Estrutura tubular cantilever nos dois lados, projetada sobre o piso.
+  for (const x of [-0.3, 0.3] as const) {
+    const rear = tileToLocal(x, 0.3)
+    const front = tileToLocal(x, -0.27)
+    ctx.moveTo(rear[0], rear[1])
+      .lineTo(front[0], front[1])
+      .lineTo(front[0], front[1] - 23)
+      .stroke({ width: 4, color: 0x26302f, cap: "round", join: "round" })
+  }
+
+  const upholstery = faces(0x4c5b58, 0x303b3a)
+  isoBox(ctx, 0, -0.01, 0.7, 0.58, 7, upholstery, 21)
+  // Encosto ao sul, inequivocamente oposto ao encosto da cadeira do chefe.
+  isoBox(ctx, 0, 0.29, 0.72, 0.12, 40, faces(0x465552, 0x2b3535), 28)
+  isoBox(ctx, 0, 0.255, 0.58, 0.045, 25, faces(0x596663, 0x36413f), 38)
+  isoBox(ctx, -0.355, 0.01, 0.07, 0.4, 4, faces(0x303a39, 0x20292a), 38)
+  isoBox(ctx, 0.355, 0.01, 0.07, 0.4, 4, faces(0x303a39, 0x20292a), 38)
+  return ctx
+}
+
+/** Aparador baixo: armazenamento fechado e uma única caixa de credenciais. */
+function executiveSideboardCtx(): GraphicsContext {
+  const ctx = new GraphicsContext()
+  shadow(ctx, 68, 18, 5)
+  isoBox(ctx, 0, 0, 1.82, 0.58, 40, faces(0x65716d, 0x46514e))
+  ctx.moveTo(-4, -32).lineTo(-4, -2).stroke({ width: 1.5, color: 0x303a38, alpha: 0.65 })
+  ctx.circle(-18, -17, 2).fill({ color: EXEC_BRASS })
+  ctx.circle(11, -3, 2).fill({ color: EXEC_BRASS })
+  isoBox(ctx, 0.42, -0.05, 0.38, 0.24, 7, faces(0xc69a56, 0x855f32), 40)
+  return ctx
+}
+
+const MEET_LIFT = 60 // altura ergonômica relativa aos avatares do escritório
 
 /** Mesão de reunião — BASE (sombra + 4 pernas), fatia de trás do y-sort. */
 function meetingTableBaseCtx(): GraphicsContext {
@@ -689,7 +880,8 @@ function meetingTableTopCtx(): GraphicsContext {
   poly(ctx, [at(n, MEET_LIFT), at(e, MEET_LIFT), at(s, MEET_LIFT), at(w, MEET_LIFT)], WOOD_TOP)
   // passadeira central escura sutil
   const r = fpCorners(3.3, 0.5)
-  poly(ctx, [at(r.n, 74.5), at(r.e, 74.5), at(r.s, 74.5), at(r.w, 74.5)], SHADOW_INK, 0.08)
+  const surface = MEET_LIFT + 0.5
+  poly(ctx, [at(r.n, surface), at(r.e, surface), at(r.s, surface), at(r.w, surface)], SHADOW_INK, 0.08)
   // papéis espalhados (2 tons)
   const paperAt = (dx: number, dy: number, sz: number, color: number, alpha = 1): void => {
     const [ox, oy] = tileToLocal(dx, dy)
@@ -697,10 +889,10 @@ function meetingTableTopCtx(): GraphicsContext {
     poly(
       ctx,
       [
-        [p.n[0] + ox, p.n[1] + oy - 74.6],
-        [p.e[0] + ox, p.e[1] + oy - 74.6],
-        [p.s[0] + ox, p.s[1] + oy - 74.6],
-        [p.w[0] + ox, p.w[1] + oy - 74.6],
+        [p.n[0] + ox, p.n[1] + oy - surface - 0.1],
+        [p.e[0] + ox, p.e[1] + oy - surface - 0.1],
+        [p.s[0] + ox, p.s[1] + oy - surface - 0.1],
+        [p.w[0] + ox, p.w[1] + oy - surface - 0.1],
       ],
       color,
       alpha,
@@ -716,22 +908,20 @@ function meetingTableTopCtx(): GraphicsContext {
 /** Cadeira de reunião avulsa (voltada pro sul; espelhe com scale.x). */
 function meetingChairCtx(): GraphicsContext {
   const ctx = new GraphicsContext()
-  shadow(ctx, 22, 8, 3)
+  shadow(ctx, 25, 9, 3)
   const seatColors: BoxColors = faces(0x475354, 0x3a4547)
   // pernas visíveis (oeste, sul, leste) do assento até o chão
   for (const [px, py] of [
-    [-13.5, 0],
-    [0, 6.8],
-    [13.5, 0],
+    [-15.5, 0],
+    [0, 7.2],
+    [15.5, 0],
   ] as const) {
-    ctx.moveTo(px, py - 23)
+    ctx.moveTo(px, py - 21)
       .lineTo(px, py - 1)
       .stroke({ width: 4, color: 0x232b2d, cap: "round" })
   }
-  isoBox(ctx, 0, 0, 0.42, 0.42, 7, seatColors, 22)
-  // encosto ALTO (crista acima do tampo do mesão — senão a fileira norte
-  // desaparece atrás da mesa erguida)
-  isoBox(ctx, 0, -0.16, 0.42, 0.09, 40, seatColors, 29)
+  isoBox(ctx, 0, 0, 0.52, 0.46, 7, seatColors, 20)
+  isoBox(ctx, 0, -0.17, 0.52, 0.1, 36, seatColors, 27)
   return ctx
 }
 
@@ -739,22 +929,21 @@ function meetingChairCtx(): GraphicsContext {
  *  lado sul do mesão. Espelhe com scale.x pra cabeceira leste). */
 function meetingChairBackCtx(): GraphicsContext {
   const ctx = new GraphicsContext()
-  shadow(ctx, 22, 8, 3)
+  shadow(ctx, 25, 9, 3)
   const seatColors: BoxColors = faces(0x475354, 0x3a4547)
   // pernas visíveis (oeste, norte, leste); a do sul some atrás do encosto
   for (const [px, py] of [
-    [-13.5, 0],
-    [0, -6.8],
-    [13.5, 0],
+    [-15.5, 0],
+    [0, -7.2],
+    [15.5, 0],
   ] as const) {
-    ctx.moveTo(px, py - 23)
+    ctx.moveTo(px, py - 21)
       .lineTo(px, py - 1)
       .stroke({ width: 4, color: 0x232b2d, cap: "round" })
   }
-  isoBox(ctx, 0, 0, 0.42, 0.42, 7, seatColors, 22)
-  // encosto no lado SUL — é a face que o viewer vê; cobre parte do assento
-  // (mesma crista alta da variante de frente)
-  isoBox(ctx, 0, 0.16, 0.42, 0.09, 38, seatColors, 28)
+  isoBox(ctx, 0, 0, 0.52, 0.46, 7, seatColors, 20)
+  // Encosto no lado sul: mais largo e baixo, sem parecer uma lâmina vertical.
+  isoBox(ctx, 0, 0.17, 0.52, 0.1, 34, seatColors, 27)
   return ctx
 }
 
@@ -763,7 +952,7 @@ function meetingChairBackCtx(): GraphicsContext {
 export const KITCHEN_COUNTER_TOP = 56
 
 /** Bancada de cozinha: gabinete + tampo claro com pia e torneira na metade
- *  SUL — a metade norte do tampo fica livre pra cafeteira pousar. */
+ *  LESTE; a metade oeste do tampo fica livre para a cafeteira pousar. */
 function kitchenCounterCtx(): GraphicsContext {
   const ctx = new GraphicsContext()
   shadow(ctx, 84, 22, 6)
@@ -784,7 +973,7 @@ function kitchenCounterCtx(): GraphicsContext {
     .lineTo(fx, fy - 66)
     .quadraticCurveTo(fx - 5, fy - 68, fx - 6, fy - 63)
     .stroke({ width: 2.5, color: METAL_D, cap: "round" })
-  // tábua de corte pequena colada na pia (a metade norte é da cafeteira)
+  // tábua de corte pequena colada na pia (a metade oeste é da cafeteira)
   isoBox(ctx, 0.16, 0.28, 0.34, 0.26, 2.5, faces(0xc9b189, 0xa98f66), KITCHEN_COUNTER_TOP)
   return ctx
 }
@@ -857,6 +1046,11 @@ function buildDecor(): DecorCtxs {
     sofa: sofaCtx(),
     sofaSmall: sofaSmallCtx(),
     coffeeTable: coffeeTableCtx(),
+    executiveDeskBase: executiveDeskBaseCtx(),
+    executiveDeskTop: executiveDeskTopCtx(),
+    executiveChair: executiveChairCtx(),
+    executiveVisitorChair: executiveVisitorChairCtx(),
+    executiveSideboard: executiveSideboardCtx(),
     meetingTableBase: meetingTableBaseCtx(),
     meetingTableTop: meetingTableTopCtx(),
     meetingChair: meetingChairCtx(),
@@ -945,6 +1139,27 @@ export function createCoffeeTable(): Graphics {
   return decorGraphics(sharedDecorContexts().coffeeTable)
 }
 
+/** Fatias da estação executiva 4×2; compartilham a mesma âncora de footprint. */
+export function createExecutiveDeskBase(): Graphics {
+  return decorGraphics(sharedDecorContexts().executiveDeskBase)
+}
+
+export function createExecutiveDeskTop(): Graphics {
+  return decorGraphics(sharedDecorContexts().executiveDeskTop)
+}
+
+export function createExecutiveChair(): Graphics {
+  return decorGraphics(sharedDecorContexts().executiveChair)
+}
+
+export function createExecutiveVisitorChair(): Graphics {
+  return decorGraphics(sharedDecorContexts().executiveVisitorChair)
+}
+
+export function createExecutiveSideboard(): Graphics {
+  return decorGraphics(sharedDecorContexts().executiveSideboard)
+}
+
 /** Fatia de TRÁS do mesão (pernas + sombra) — mesma âncora do tampo. */
 export function createMeetingTableBase(): Graphics {
   return decorGraphics(sharedDecorContexts().meetingTableBase)
@@ -993,6 +1208,113 @@ export function createCoffeeMachine(): CoffeeMachine {
   steam.root.scale.set(0.9)
   root.addChild(body, steam.root)
   return { root, steam }
+}
+
+// ===========================================================================
+// Props do AMBIENTE (prédio vivo): caixas de mudança + pilha de entregas.
+// Mesmo padrão dos demais — contexts lazy compartilhados, âncora nos pés.
+// ===========================================================================
+
+type AmbientPropCtxs = {
+  movingBoxes: GraphicsContext
+  /** Folha de papel plana (geometria neutra) — pilha da mesa do boss. */
+  paperSheet: GraphicsContext
+}
+
+let ambientProps: AmbientPropCtxs | null = null
+
+/** Pilha de caixas de papelão (2 embaixo + 1 em cima) — sala recém-mudada. */
+function movingBoxesCtx(): GraphicsContext {
+  const ctx = new GraphicsContext()
+  shadow(ctx, 42, 14, 5, 0.15)
+  const cardboard = faces(0xcfa878, 0xa5825a)
+  const cardboardB = faces(0xc49e6e, 0x997752)
+  // duas caixas no chão, levemente desalinhadas (mudança de verdade)
+  isoBox(ctx, -0.16, 0.06, 0.52, 0.4, 26, cardboard)
+  isoBox(ctx, 0.34, 0.14, 0.46, 0.36, 22, cardboardB)
+  // caixa menor em cima da primeira, girada meio tile
+  isoBox(ctx, -0.1, 0.02, 0.38, 0.3, 19, cardboardB, 26)
+  // fita adesiva no topo das caixas (faixa escura cruzando o tampo)
+  const tape = (cxT: number, cyT: number, tx: number, lift: number): void => {
+    const a = tileToLocal(cxT - tx / 2, cyT)
+    const b = tileToLocal(cxT + tx / 2, cyT)
+    ctx
+      .moveTo(a[0], a[1] - lift)
+      .lineTo(b[0], b[1] - lift)
+      .stroke({ width: 3.5, color: 0x8a6b45, alpha: 0.85 })
+  }
+  tape(-0.16, 0.06, 0.5, 26)
+  tape(0.34, 0.14, 0.44, 22)
+  tape(-0.1, 0.02, 0.36, 45)
+  // rabisco de marcador na face sul da caixa da frente (etiqueta)
+  path(ctx, "M-2 -10 L8 -5 L8 -1 L-2 -6 Z", CREAM, 0.9)
+  return ctx
+}
+
+/** Folha de papel plana e fina, pousada (tint por instância na pilha).
+ *  Contorno escuro sutil no topo — sem ele a folha some no tampo de pedra
+ *  clara da mesa executiva. */
+function paperSheetCtx(): GraphicsContext {
+  const ctx = new GraphicsContext()
+  isoBox(ctx, 0, 0, 0.4, 0.3, 2, faces(0xffffff, 0xc9c2ab))
+  const { n, e, s, w } = fpCorners(0.4, 0.3)
+  ctx
+    .poly([n[0], n[1] - 2, e[0], e[1] - 2, s[0], s[1] - 2, w[0], w[1] - 2], true)
+    .stroke({ width: 1.2, color: 0x69746c, alpha: 0.55 })
+  // linhas de texto sugeridas (2 traços curtos)
+  ctx.moveTo(-8, -3.5).lineTo(4, 2.5).stroke({ width: 1.2, color: 0x8a8372, alpha: 0.6 })
+  ctx.moveTo(-6, 0).lineTo(2, 4).stroke({ width: 1.2, color: 0x8a8372, alpha: 0.45 })
+  return ctx
+}
+
+function sharedAmbientPropContexts(): AmbientPropCtxs {
+  if (!ambientProps) {
+    ambientProps = { movingBoxes: movingBoxesCtx(), paperSheet: paperSheetCtx() }
+  }
+  return ambientProps
+}
+
+/** Caixas de mudança (sala nova pós-boot) — a cena controla alpha/fade. */
+export function createMovingBoxes(): Graphics {
+  return decorGraphics(sharedAmbientPropContexts().movingBoxes)
+}
+
+export type DeliveryPile = {
+  root: Container
+  /** Papéis visíveis (0..8; 0 ⇒ pilha oculta). Troca DISCRETA — nunca por frame. */
+  setCount(n: number): void
+}
+
+/** Pilha de entregas na mesa executiva do boss: até 8 folhas empilhadas na
+ *  cota do tampo (EXEC_DESK_LIFT), com desalinhamento determinístico. A cena
+ *  posiciona o root no ponto de MUNDO do tampo e chama setCount a partir do
+ *  snapshot (useOfficeUi.unseenDeliveries / bossDeliveries). */
+export function createDeliveryPile(): DeliveryPile {
+  const cx = sharedAmbientPropContexts()
+  const root = new Container()
+  root.scale.set(SPIKE_SCALE)
+  const rng = mulberry32(hashSeed("boss|delivery-pile"))
+  const tints = [0xffffff, CREAM, PAPER_SAGE]
+  const sheets: Graphics[] = []
+  for (let i = 0; i < 8; i++) {
+    const g = new Graphics(cx.paperSheet)
+    // jitter determinístico: a pilha parece manuseada, mas idêntica entre sessões
+    g.position.set((rng() - 0.5) * 5, -EXEC_DESK_LIFT - i * 2 + (rng() - 0.5) * 0.8)
+    g.rotation = (rng() - 0.5) * 0.1
+    g.tint = tints[Math.floor(rng() * tints.length)]
+    g.visible = false
+    root.addChild(g)
+    sheets.push(g)
+  }
+  root.visible = false
+  return {
+    root,
+    setCount(n) {
+      const count = Math.max(0, Math.min(sheets.length, Math.floor(n)))
+      root.visible = count > 0
+      for (let i = 0; i < sheets.length; i++) sheets[i].visible = i < count
+    },
+  }
 }
 
 export type WallClock = {

@@ -5,7 +5,7 @@
  *  com histerese · relógio · câmera. Eventos discretos saem por `emit`.
  */
 import { BODY_HALF, BOSS_SPEED, REACH_ENTER, REACH_EXIT } from "./types"
-import type { BossState, DeskPlacement, FloorPlan, SimEvent, World } from "./types"
+import type { BossFacing, BossState, DeskPlacement, FloorPlan, SimEvent, Vec2, World } from "./types"
 import { inputDirToWorld } from "./iso"
 import { aabbFree } from "./grid"
 import { findPath } from "./astar"
@@ -23,7 +23,7 @@ export function createWorld(plan: FloorPlan): World {
       pos: { x: plan.spawn.x, y: plan.spawn.y },
       prev: { x: plan.spawn.x, y: plan.spawn.y },
       vel: { x: 0, y: 0 },
-      facing: 1,
+      facing: "front",
       moving: false,
       path: null,
       pendingDeskId: null,
@@ -52,13 +52,26 @@ function keyDir(keys: Set<string>): { ix: number; iy: number } {
   return { ix: (right ? 1 : 0) - (left ? 1 : 0), iy: (down ? 1 : 0) - (up ? 1 : 0) }
 }
 
-function findDesk(plan: FloorPlan, id: string): DeskPlacement | null {
+function findTarget(plan: FloorPlan, id: string): Pick<DeskPlacement, "id" | "interactTile"> | null {
   for (const room of plan.rooms) {
     for (const desk of room.desks) {
       if (desk.id === id) return desk
     }
   }
+  for (const target of plan.interactables ?? []) {
+    if (target.id === id) return target
+  }
   return null
+}
+
+/** Converte velocidade do mundo para a direção dominante na projeção 2:1.
+ *  Mantém a direção anterior quando parado para evitar estalos de pose. */
+export function bossFacingForVelocity(vel: Vec2, current: BossFacing): BossFacing {
+  const screenX = vel.x - vel.y
+  const screenY = (vel.x + vel.y) / 2
+  if (Math.abs(screenX) < 1e-9 && Math.abs(screenY) < 1e-9) return current
+  if (Math.abs(screenX) > Math.abs(screenY)) return screenX > 0 ? "right" : "left"
+  return screenY > 0 ? "front" : "back"
 }
 
 /** Move-and-slide por eixo: eixo bloqueado não anda (desliza no outro). */
@@ -176,7 +189,7 @@ export function simTick(world: World, dt: number, emit: (e: SimEvent) => void): 
 
   // Clique numa mesa: A* até o interactTile + auto-abrir dock na chegada.
   if (world.input.clickDeskId !== null) {
-    const desk = findDesk(world.plan, world.input.clickDeskId)
+    const desk = findTarget(world.plan, world.input.clickDeskId)
     world.input.clickDeskId = null
     if (desk) {
       const target = { x: desk.interactTile.x + 0.5, y: desk.interactTile.y + 0.5 }
@@ -217,10 +230,7 @@ export function simTick(world: World, dt: number, emit: (e: SimEvent) => void): 
     boss.vel = { x: 0, y: 0 }
   }
 
-  // Facing pela velocidade X de TELA: svx ∝ vel.x - vel.y.
-  const svx = boss.vel.x - boss.vel.y
-  if (svx > 1e-9) boss.facing = 1
-  else if (svx < -1e-9) boss.facing = -1
+  boss.facing = bossFacingForVelocity(boss.vel, boss.facing)
 
   boss.moving = boss.pos.x !== boss.prev.x || boss.pos.y !== boss.prev.y
 

@@ -13,10 +13,12 @@
  *  prev→pos por alpha). zIndex reatribuído só quando o valor quantizado muda.
  *  applySnapshot: dif por deskId — nunca recria objetos.
  */
-import { Application, Container } from "pixi.js"
+import { Application, Container, Graphics, Text } from "pixi.js"
 import {
   TILE_H,
+  type DeskVisualState,
   type FloorPlan,
+  type OfficeAgentId,
   type OfficeSnapshot,
   type Vec2,
   type World,
@@ -27,6 +29,7 @@ import {
   cameraTransform,
   deskAnchorWorld,
   deskContainsWorld,
+  interactableContainsWorld,
   labelTextVisibleAtZoom,
   quantizeZIndex,
   resolveThemeTokens,
@@ -35,7 +38,15 @@ import {
   zIndexChanged,
   type CameraTransform,
 } from "./logic"
-import { createDeskBase, createDeskTop, hashSeed, SPIKE_SCALE, type DeskTop } from "./props"
+import { perfSpan } from "../engine/perf"
+import {
+  createDeskBase,
+  createDeskTop,
+  DESK_SCREEN_RECT,
+  hashSeed,
+  SPIKE_SCALE,
+  type DeskTop,
+} from "./props"
 import {
   createAgentAvatar,
   createBossAvatar,
@@ -60,6 +71,18 @@ import {
   type DustPuff,
   type ScreenGlow,
 } from "./effects"
+import { createWalkerSystem } from "./walkers"
+import {
+  behaviorTargetsFromPlan,
+  createBehaviors,
+  type BehaviorCtx,
+  type BehaviorDeskInfo,
+} from "./behaviors"
+// [REGIÃO PACKS DE COMPORTAMENTO — imports, um por linha; frentes adicionam aqui]
+import { createCorePack } from "./behaviors/core"
+import { createPersonalPack } from "./behaviors/personal"
+import { activeGateVisit, createMissionPack } from "./behaviors/mission"
+import { createAmbientPack } from "./behaviors/ambient"
 
 /** Offset vertical dos "pés" do avatar (sombra do spike em y=17, escalada). */
 const FEET_OFFSET = 17 * SPIKE_SCALE
@@ -67,26 +90,38 @@ const FEET_OFFSET = 17 * SPIKE_SCALE
 /** Agent sentado ATRÁS da mesa: pés do avatar N px de TELA acima da âncora
  *  (reto, centrado). O tampo (zIndex maior) oclui colo+assento; cabeça, tronco
  *  e encosto da cadeira aparecem acima/atrás do tampo. */
-const AGENT_BEHIND_DY = 17
-/** zIndex relativo à âncora da mesa: parede norte oclusora (row 1) fica em
- *  ~anchor.y por tile ⇒ base/avatar precisam ficar À FRENTE dela e ATRÁS do
- *  tampo (anchor.y + TILE_H). */
+export const AGENT_BEHIND_DY = 50
+/** Geometria nativa do glow ainda segue o monitor histórico; a transformação
+ *  abaixo o encaixa no widescreen atual sem duplicar tesselação por mesa. */
+const SCREEN_GLOW_NATIVE = { x: -22, y: -88, w: 44, h: 26 } as const
+/** zIndex relativo à âncora da mesa. O tampo termina no limite sul do footprint
+ *  2×1; quem pisa na faixa de aproximação precisa aparecer à frente dele. */
 const DESK_BASE_ZBIAS = 2
 const AGENT_ZBIAS = 6
+const DESK_TOP_ZBIAS = TILE_H / 2
 /** Ponto de CENA (px acima da âncora da mesa) onde o label ancora: topo da
  *  cabeça do agent sentado (~84px acima da âncora) + margem. Escala com o
  *  zoom — o cartão nunca cobre o agent atrás da mesa. */
-const LABEL_ANCHOR_LIFT = 96
+const LABEL_ANCHOR_LIFT = 112
 /** Ponto de CENA (px acima da BASE da parede norte) onde o label de SALA
  *  ancora — folga acima do topo da parede (96px), fora do caminho dos
  *  cartões de mesa no zoom-in e da TV/placa na parede. */
 const ROOM_LABEL_LIFT = 152
+
+/** Vida do balão "📄 handoff" (s) — efeito de cena pedido pelos behaviors. */
+const HANDOFF_BUBBLE_LIFE_S = 1.6
+
+/** Hit-área mínima do WALKER de gate-visit (agent esperando decisão na mesa
+ *  do Boss), em px de CENA ao redor da posição projetada dos pés: o corpo é
+ *  ALTO na projeção 2:1, então a caixa sobe até a cabeça e desce um tico. */
+const GATE_WALKER_HIT = { halfW: 30, up: 110, down: 22 } as const
 
 export type OfficeStage = {
   applySnapshot(s: OfficeSnapshot): void
   render(world: World, alpha: number): void
   setHover(deskId: string | null): void
   setHighlight(deskId: string | null): void
+  setPromptTarget(targetId: string | null): void
   hitTestDesk(clientX: number, clientY: number): string | null
   worldToScreen(wx: number, wy: number): { x: number; y: number }
   screenToWorld(clientX: number, clientY: number): Vec2
@@ -107,6 +142,9 @@ export type OfficeStage = {
 type DeskView = {
   id: string
   projectId: string
+  agent: OfficeAgentId
+  /** Cor do agent (mesma dos labels) — courier/café usam no avatar em pé. */
+  color: string
   tile: Vec2
   anchor: Vec2
   anchorScene: Vec2
@@ -121,6 +159,8 @@ type DeskView = {
   applied: string
   /** Reposiciona o label no próximo frame mesmo com a câmera parada. */
   labelDirty: boolean
+  /** Estado corrente do snapshot (os behaviors leem via ctx.deskState). */
+  state: DeskVisualState
 }
 
 /** Label de SALA em escala de tela (LOD inverso ao das mesas). */
@@ -239,7 +279,7 @@ export async function createOfficeStage(
       base.zIndex = quantizeZIndex(anchorScene.y + DESK_BASE_ZBIAS)
       const top = createDeskTop()
       top.root.position.set(anchorScene.x, anchorScene.y)
-      top.root.zIndex = quantizeZIndex(anchorScene.y + TILE_H)
+      top.root.zIndex = quantizeZIndex(anchorScene.y + DESK_TOP_ZBIAS)
       if (desk.flip) {
         base.scale.x = -SPIKE_SCALE
         top.root.scale.x = -SPIKE_SCALE
@@ -249,6 +289,13 @@ export async function createOfficeStage(
       // brilho pulsante do monitor (irmão da tela dentro do deskTop; coords
       // locais) — ligado/desligado no applySnapshot (typing)
       const glow = createScreenGlow(hashSeed(desk.id))
+      const glowScaleX = DESK_SCREEN_RECT.w / SCREEN_GLOW_NATIVE.w
+      const glowScaleY = DESK_SCREEN_RECT.h / SCREEN_GLOW_NATIVE.h
+      glow.root.scale.set(glowScaleX, glowScaleY)
+      glow.root.position.set(
+        DESK_SCREEN_RECT.x - SCREEN_GLOW_NATIVE.x * glowScaleX,
+        DESK_SCREEN_RECT.y - SCREEN_GLOW_NATIVE.y * glowScaleY,
+      )
       top.root.addChild(glow.root)
 
       // agent SENTADO atrás da mesa: offset FIXO de tela a partir da âncora
@@ -272,6 +319,8 @@ export async function createOfficeStage(
       desks.set(desk.id, {
         id: desk.id,
         projectId: desk.projectId,
+        agent: desk.agent,
+        color,
         tile: desk.tile,
         anchor,
         anchorScene,
@@ -282,6 +331,7 @@ export async function createOfficeStage(
         glow,
         applied: "",
         labelDirty: true,
+        state: "idle",
       })
     }
   }
@@ -303,6 +353,144 @@ export async function createOfficeStage(
 
   // âncora do boss em px de TELA (scratch — atualizado a cada render)
   const bossScreenScratch: Vec2 = { x: 0, y: 0 }
+
+  // --- vida no escritório: sistema de COMPORTAMENTOS (scene/behaviors) -----
+  const walkers = createWalkerSystem(plan)
+  /** Centro caminhável de interação de cada mesa (origem/destino de walkers). */
+  const interactByDesk = new Map<string, Vec2>()
+  for (const room of plan.rooms) {
+    for (const d of room.desks) {
+      interactByDesk.set(d.id, {
+        x: d.interactTile.x + 0.5,
+        y: d.interactTile.y + 0.5,
+      })
+    }
+  }
+
+  /** Balões efêmeros "📄 handoff" na cena (poucos e discretos; só sem
+   *  reducedMotion — courier nem spawna com ela ligada). */
+  type Bubble = { root: Container; baseY: number; born: number }
+  const bubbles: Bubble[] = []
+  const spawnHandoffBubble = (view: DeskView): void => {
+    const root = new Container()
+    const text = new Text({
+      text: "📄 handoff",
+      style: {
+        fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif",
+        fontSize: 13,
+        fontWeight: "600",
+        fill: 0xf0f1f2,
+      },
+    })
+    text.anchor.set(0.5)
+    const pad = { x: 9, y: 5 }
+    const bg = new Graphics()
+      .roundRect(
+        -text.width / 2 - pad.x,
+        -text.height / 2 - pad.y,
+        text.width + pad.x * 2,
+        text.height + pad.y * 2,
+        9,
+      )
+      .fill({ color: 0x1c2127, alpha: 0.92 })
+      .stroke({ color: 0xffffff, alpha: 0.14, width: 1 })
+    root.addChild(bg, text)
+    const baseY = view.anchorScene.y - LABEL_ANCHOR_LIFT + 22
+    root.position.set(view.anchorScene.x, baseY)
+    root.zIndex = quantizeZIndex(view.anchorScene.y + DESK_TOP_ZBIAS) + 4
+    dynamicLayer.addChild(root)
+    bubbles.push({ root, baseY, born: lastTime })
+  }
+  const tickBubbles = (time: number): void => {
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+      const b = bubbles[i]
+      const t = time - b.born
+      if (t >= HANDOFF_BUBBLE_LIFE_S) {
+        b.root.destroy({ children: true })
+        bubbles.splice(i, 1)
+        continue
+      }
+      // sobe suave e some no último trecho (transform/alpha apenas)
+      b.root.position.y = b.baseY - 10 * (t / HANDOFF_BUBBLE_LIFE_S)
+      const fade = HANDOFF_BUBBLE_LIFE_S - 0.5
+      b.root.alpha = t < fade ? 1 : 1 - (t - fade) / 0.5
+    }
+  }
+
+  // --- comportamentos: orquestrador + ctx (ponte cena ↔ behaviors) ---------
+  const behaviors = createBehaviors({ plan, walkers, reducedMotion: opts.reducedMotion })
+  // [REGIÃO PACKS DE COMPORTAMENTO — registerPack, um por linha; frentes
+  //  adicionam aqui (mission/personal/ambient em scene/behaviors/*.ts)]
+  behaviors.registerPack(createCorePack())
+  behaviors.registerPack(createPersonalPack())
+  behaviors.registerPack(createMissionPack())
+  behaviors.registerPack(createAmbientPack({ layer: dynamicLayer }))
+
+  /** Dados de spawn por mesa (agent/cor/seed/âncora caminhável) — imutável. */
+  const infoByDesk = new Map<string, BehaviorDeskInfo>()
+  const deskIdList: string[] = []
+  for (const view of desks.values()) {
+    const anchor = interactByDesk.get(view.id)
+    if (!anchor) continue
+    deskIdList.push(view.id)
+    infoByDesk.set(view.id, {
+      id: view.id,
+      agent: view.agent,
+      color: view.color,
+      seed: hashSeed(view.id),
+      anchor,
+    })
+  }
+  /** Última posição conhecida do boss em MUNDO (render atualiza a referência). */
+  let bossWorldPos: Vec2 = { x: plan.spawn.x, y: plan.spawn.y }
+  const behaviorCtx: BehaviorCtx = {
+    hideSeated(deskId) {
+      const view = desks.get(deskId)
+      if (view) view.avatar.root.visible = false
+    },
+    showSeated(deskId) {
+      const view = desks.get(deskId)
+      // mesa "off" não ressuscita avatar: a pose do estado manda (a cadeira
+      // vazia do ambiente é quem representa a mesa apagada)
+      if (view) view.avatar.root.visible = view.state !== "off"
+    },
+    seatedVisible(deskId) {
+      return desks.get(deskId)?.avatar.root.visible ?? false
+    },
+    deskAnchor(deskId) {
+      return interactByDesk.get(deskId) ?? null
+    },
+    deskState(deskId) {
+      return desks.get(deskId)?.state ?? null
+    },
+    deskInfo(deskId) {
+      return infoByDesk.get(deskId) ?? null
+    },
+    deskIds() {
+      return deskIdList
+    },
+    bossPos() {
+      return bossWorldPos
+    },
+    targets: behaviorTargetsFromPlan(plan),
+    time: 0,
+    spawnWalker(spawnOpts) {
+      const walker = walkers.spawn(spawnOpts)
+      dynamicLayer.addChild(walker.root)
+      return walker
+    },
+    handoffBubble(deskId) {
+      const view = desks.get(deskId)
+      if (view) spawnHandoffBubble(view)
+    },
+    waveSeated(deskId) {
+      const view = desks.get(deskId)
+      if (!view) return
+      // olha pro lado do boss (mesma projeção do flip de conversa)
+      const bp = toScreen(bossWorldPos.x, bossWorldPos.y)
+      view.avatar.wave(lastTime, bp.x < view.anchorScene.x ? "left" : "right")
+    },
+  }
 
   // conversa ativa: avatar do desk flipa pro boss (histerese em px de CENA —
   // invariante ao zoom; dentro da banda mantém o flip corrente, sem tremer)
@@ -332,9 +520,29 @@ export async function createOfficeStage(
   }
   const hitTestDesk = (clientX: number, clientY: number): string | null => {
     const p = toCanvas(clientX, clientY)
+    // agent ESPERANDO DECISÃO na mesa do Boss (gate-visit): o clique no
+    // walker mapeia pro deskId DELE — caixa em px de tela (o corpo é alto na
+    // projeção; um teste por tile de mundo só acertaria os pés)
+    const gv = activeGateVisit()
+    if (gv) {
+      const gp = worldToScreenWith(lastTransform, gv.pos.x, gv.pos.y)
+      const sc = lastTransform.scale
+      const dx = p.x - gp.x
+      const dy = p.y - gp.y
+      if (
+        Math.abs(dx) <= GATE_WALKER_HIT.halfW * sc &&
+        dy >= -GATE_WALKER_HIT.up * sc &&
+        dy <= GATE_WALKER_HIT.down * sc
+      ) {
+        return gv.deskId
+      }
+    }
     const w = screenToWorldWith(lastTransform, p.x, p.y)
     for (const d of desks.values()) {
       if (deskContainsWorld(d.tile, w.x, w.y)) return d.id
+    }
+    for (const target of plan.interactables ?? []) {
+      if (interactableContainsWorld(target.tile, target.footprint, w.x, w.y)) return target.id
     }
     return null
   }
@@ -342,21 +550,27 @@ export async function createOfficeStage(
   // --- estado de hover/highlight ------------------------------------------
   let hoverId: string | null = null
   let highlightId: string | null = null
+  let promptTargetId: string | null = null
   const placeFx = (fx: DeskHighlight, deskId: string | null): void => {
     if (!deskId) {
       fx.hide()
       return
     }
     const d = desks.get(deskId)
-    if (!d) {
-      fx.hide()
+    if (d) {
+      fx.showAt(d.anchorScene.x, d.anchorScene.y)
       return
     }
-    fx.showAt(d.anchorScene.x, d.anchorScene.y)
+    const target = plan.interactables?.find((item) => item.id === deskId)
+    if (target) {
+      const p = toScreen(target.tile.x, target.tile.y)
+      fx.showAt(p.x, p.y)
+    } else fx.hide()
   }
 
   // --- snapshot (dif discreto) --------------------------------------------
   const applySnapshot = (s: OfficeSnapshot): void => {
+    const endSpan = perfSpan("applySnapshot") // S4 (no-op sem mc.office.perf)
     for (const room of s.rooms) {
       rooms.setRoomInfo(room.projectId, room.name, room.color)
       rooms.setRoomAggregate(room.projectId, room.agg)
@@ -368,6 +582,7 @@ export async function createOfficeStage(
       for (const desk of room.desks) {
         const view = desks.get(desk.id)
         if (!view) continue // mesa desconhecida no plan: nunca dropar — ignora visualmente
+        view.state = desk.state // vida ociosa/abortos leem o estado corrente
         const key = `${desk.state}|${desk.label}|${desk.detail ?? ""}|${desk.hand ?? ""}`
         if (view.applied === key) continue
         view.applied = key
@@ -380,11 +595,24 @@ export async function createOfficeStage(
     }
     // balões de entrega são do overlay DOM (ui/Prompts.tsx) — a cena não os
     // duplica; aqui só estados/labels/luzes.
+
+    // [REGIÃO AMBIENTE: snapshot → TV/kanban/cadeira vazia/pilha do boss —
+    //  dif discreto dentro de rooms.applyAmbient; quando o pack missão
+    //  publicar useOfficeUi.unseenDeliveries, passe { bossPile } aqui]
+    rooms.applyAmbient(s)
+
+    // comportamentos (handoff/café/...): abortos por estado + reação dos packs
+    behaviorCtx.time = lastTime
+    behaviors.applySnapshot(s, behaviorCtx)
+    endSpan()
   }
 
   // --- render por frame ----------------------------------------------------
   const render = (world: World, alpha: number): void => {
     if (destroyed) return
+    const endSpan = perfSpan("stage:render") // coração do frame (no-op sem flag)
+    // dt do relógio da sim (walkers avançam por ele; clamp anti-salto)
+    const dt = Math.min(Math.max(world.time - lastTime, 0), 0.25)
     lastTime = world.time
     const reduced = opts.reducedMotion
 
@@ -445,6 +673,18 @@ export async function createOfficeStage(
     bossWasMoving = world.boss.moving
     puff.update(world.time, reduced)
 
+    // comportamentos (handoff/café/...): pausas, ticks dos packs e o avanço
+    // dos walkers acontecem no orquestrador
+    bossWorldPos = world.boss.pos
+    behaviorCtx.time = world.time
+    behaviors.update(dt, behaviorCtx)
+    tickBubbles(world.time)
+
+    // [REGIÃO AMBIENTE: daylight/TV/pile]
+    // dia/noite real (1×/min), fade das caixas de mudança (1×/s) e pulso do
+    // kanban vivem DENTRO de rooms.tick (chamado abaixo); TV/kanban/cadeira
+    // vazia/pilha redesenham só no applySnapshot (rooms.applyAmbient).
+
     // labels em escala de TELA (camada fora do root) + LOD por zoom
     const textVisible = labelTextVisibleAtZoom(cam.zoom)
     for (const d of desks.values()) {
@@ -457,6 +697,7 @@ export async function createOfficeStage(
         )
       }
       d.label.setLod(textVisible, cam.zoom)
+      d.label.root.visible = d.id !== promptTargetId
       // revelação progressiva: cartão completo só na mesa em foco (hover do
       // mouse OU alvo de proximidade do boss); as demais ficam em pill. A mão
       // levantada expande sozinha (interno ao label).
@@ -484,6 +725,7 @@ export async function createOfficeStage(
     hoverFx.tick(world.time, reduced)
     reachFx.tick(world.time, reduced)
     clickFx.tick(world.time, reduced)
+    endSpan()
   }
 
   return {
@@ -492,8 +734,12 @@ export async function createOfficeStage(
     setHover(deskId) {
       if (deskId === hoverId) return
       hoverId = deskId
-      // hover não repete o realce quando a mesa já está em alcance
-      placeFx(hoverFx, hoverId === highlightId ? null : hoverId)
+      // hover não repete o realce quando a mesa já está em alcance; hover no
+      // WALKER do gate-visit não acende a mesa de ORIGEM (o corpo está na do
+      // Boss — realçar a cadeira vazia do outro lado da planta confundiria)
+      const suppress =
+        hoverId === highlightId || hoverId === activeGateVisit()?.deskId
+      placeFx(hoverFx, suppress ? null : hoverId)
       app.canvas.style.cursor = deskId ? "pointer" : "default"
     },
     setHighlight(deskId) {
@@ -501,6 +747,9 @@ export async function createOfficeStage(
       highlightId = deskId
       placeFx(reachFx, highlightId)
       if (hoverId === highlightId) placeFx(hoverFx, null)
+    },
+    setPromptTarget(targetId) {
+      promptTargetId = targetId
     },
     hitTestDesk,
     bossScreen() {
@@ -511,11 +760,13 @@ export async function createOfficeStage(
       if (conversing) {
         // restaura o flip ORIGINAL da planta ao sair da conversa
         conversing.view.avatar.setFlip(conversing.view.baseFlip)
+        conversing.view.avatar.setAttention("work")
         conversing = null
       }
       if (!deskId) return
       const view = desks.get(deskId)
       if (!view) return // mesa fora da planta (projeto removido): no-op
+      view.avatar.setAttention("visitor")
       conversing = { view, flip: view.baseFlip }
     },
     worldToScreen(wx, wy) {
@@ -532,6 +783,9 @@ export async function createOfficeStage(
     },
     destroy() {
       if (destroyed) return
+      behaviors.clear() // aborta viagens (restaura sentados) + walkers.clear
+      for (const b of bubbles) b.root.destroy({ children: true })
+      bubbles.length = 0
       for (const d of desks.values()) {
         d.avatar.destroy()
         d.label.destroy()

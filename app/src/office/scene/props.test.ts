@@ -4,6 +4,12 @@ import { describe, expect, it } from "vitest"
 import {
   createBookshelf,
   createCoffeeMachine,
+  createDeskTop,
+  createExecutiveChair,
+  createExecutiveDeskBase,
+  createExecutiveDeskTop,
+  createExecutiveSideboard,
+  createExecutiveVisitorChair,
   createMeetingTableBase,
   createMeetingTableTop,
   createPlantVariant,
@@ -12,12 +18,15 @@ import {
   createWallArt,
   createWallClock,
   createWhiteboard,
+  DESK_MONITOR_FRAME,
+  DESK_SCREEN_RECT,
   hashSeed,
   mulberry32,
   PLANT_VARIANTS,
   sharedDecorContexts,
   SPIKE_SCALE,
 } from "./props"
+import { AGENT_BEHIND_DY } from "./stage"
 
 describe("PRNG semeado (decoração determinística por sala)", () => {
   it("hashSeed é estável, uint32 e sensível ao projectId", () => {
@@ -90,6 +99,23 @@ describe("fábricas", () => {
     expect(large.tint).toBe(0x9cab8f)
   })
 
+  it("workstation revela roupa sem perder a leitura sentada atrás da mesa", () => {
+    const top = createDeskTop().root
+    const screen = top.children[1].getLocalBounds()
+    expect(screen.width).toBeCloseTo(DESK_SCREEN_RECT.w)
+    expect(screen.height).toBeCloseTo(DESK_SCREEN_RECT.h)
+    expect(DESK_MONITOR_FRAME.w / DESK_MONITOR_FRAME.h).toBeGreaterThan(1.8)
+
+    // Avatar sentado: torso local -34..10. Mede a faixa acima do primeiro
+    // pixel sólido do chassis, já considerando escala e offset do stage.
+    const torsoTop = -AGENT_BEHIND_DY - 34 * SPIKE_SCALE
+    const torsoHeight = 44 * SPIKE_SCALE
+    const monitorTop = DESK_MONITOR_FRAME.y * SPIKE_SCALE
+    const visibleRatio = (monitorTop - torsoTop) / torsoHeight
+    expect(visibleRatio).toBeGreaterThanOrEqual(0.25)
+    expect(visibleRatio).toBeLessThanOrEqual(0.5)
+  })
+
   it("mesão: fatias base/tampo separadas p/ y-sort, mesma âncora", () => {
     const base = createMeetingTableBase()
     const top = createMeetingTableTop()
@@ -98,6 +124,20 @@ describe("fábricas", () => {
     expect(top.getLocalBounds().maxY).toBeLessThan(0)
     // a base alcança o chão (sombra em volta de y=0)
     expect(base.getLocalBounds().maxY).toBeGreaterThan(0)
+  })
+
+  it("diretoria: estação fatiada e assentos têm proporções próprias", () => {
+    const base = createExecutiveDeskBase()
+    const top = createExecutiveDeskTop()
+    expect(base.context).not.toBe(top.context)
+    expect(base.getLocalBounds().maxY).toBeGreaterThan(0)
+    expect(top.getLocalBounds().maxY).toBeLessThan(0)
+
+    const chair = createExecutiveChair().getLocalBounds()
+    const visitor = createExecutiveVisitorChair().getLocalBounds()
+    expect(chair.minY).toBeLessThan(visitor.minY)
+    expect(chair.width).toBeGreaterThan(visitor.width)
+    expect(createExecutiveSideboard().getLocalBounds().maxY).toBeGreaterThan(0)
   })
 
   it("âncora nos pés: móveis de chão tocam y≈0; props de parede ficam acima", () => {

@@ -32,6 +32,22 @@ export function setInspect(world: World, target: Vec2): void {
   world.camera.inspectTarget = { x: target.x, y: target.y }
 }
 
+/** Entra em inspect e conclui o enquadramento no mesmo frame. Chips de sala
+ *  usam este caminho porque uma travessia longa da câmera pode mostrar apenas
+ *  o exterior da planta em renderers lentos. Movimento/follow continua suave. */
+export function snapInspect(world: World, target: Vec2): void {
+  const cam = world.camera
+  setInspect(world, target)
+  const st = toScreen(target.x, target.y)
+  const desired = toWorld(
+    st.x - cam.screenOffset.x / cam.zoom,
+    st.y - cam.screenOffset.y / cam.zoom,
+  )
+  cam.pos.x = clamp(desired.x, 0, world.plan.w)
+  cam.pos.y = clamp(desired.y, 0, world.plan.h)
+  cam.prev = { x: cam.pos.x, y: cam.pos.y }
+}
+
 /** Um passo de câmera (chamado pela sim a cada tick). Deadzone retangular no
  *  follow + suavização exponencial 1 - k^dt; inspect persegue o alvo direto. */
 export function updateCamera(world: World, dt: number): void {

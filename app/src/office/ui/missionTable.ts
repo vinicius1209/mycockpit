@@ -1,6 +1,10 @@
 // Lógica PURA da mesa de reunião (O-2 — lançar missões da sala comum): que
-// menu-balão mostrar e o que bloqueia o lançamento. Sem React/stores — o
+// menu-balão mostrar, o que bloqueia o lançamento e a EDIÇÃO DO TIME no form
+// (preset → rascunho de fases → preset efetivo). Sem React/stores — o
 // MissionDock/DeskMenu consomem; testável em isolamento (ui.test.ts).
+// lib/missionDraft é pura (sem stores) — importar direto não fura a regra §6.
+import { clonePhases, phasesCustomized } from "@/lib/missionDraft"
+import type { MissionPhaseDef, MissionPreset } from "@/lib/missionTypes"
 import { MISSION_TABLE_ID } from "../engine/types"
 
 export { MISSION_TABLE_ID }
@@ -78,4 +82,79 @@ export function missionConversationTitle(task: string): string {
   const first = task.replace(/\s+/g, " ").trim()
   const cut = first.length > TITLE_MAX ? `${first.slice(0, TITLE_MAX).trimEnd()}…` : first
   return `${MISSION_TITLE_PREFIX}${cut || "sem título"}`
+}
+
+// --- edição do TIME no form do dock (preset + fases editáveis) ---------------
+
+/** Rótulo de UMA opção do seletor de preset ("Feature completa · 3 fases"). */
+export function presetOptionLabel(p: MissionPreset): string {
+  const n = p.phases.length
+  return `${p.name} · ${n} ${n === 1 ? "fase" : "fases"}`
+}
+
+/** Rascunho LIMPO a partir de um preset — abrir o form, TROCAR de preset,
+ *  "restaurar padrão" e pós-lançamento caem aqui: fases clonadas (editar nunca
+ *  muta o preset) + teto do preset; edições anteriores são descartadas. */
+export function presetDraft(p: MissionPreset): {
+  phases: MissionPhaseDef[]
+  capUsd: number | null
+} {
+  return { phases: clonePhases(p.phases), capUsd: p.maxCostUsd }
+}
+
+/** Opções do select de AGENT de uma fase: só os DISPONÍVEIS (availableAgents
+ *  do bridge — indisponíveis ficam fora); se o agent atual da fase saiu do ar
+ *  (preset antigo), ele entra no topo pra o select não renderizar vazio — mas
+ *  nenhum OUTRO indisponível aparece. */
+export function phaseAgentOptions(
+  available: { id: string; label: string }[],
+  currentAgent: string,
+): { id: string; label: string }[] {
+  if (available.some((a) => a.id === currentAgent)) return available
+  return [{ id: currentAgent, label: currentAgent }, ...available]
+}
+
+/** Preset EFETIVO do lançamento — MESMA régua do MissionLauncher do Linear:
+ *  fases do rascunho (editadas ou não) + teto sobre o preset base; o nome
+ *  ganha "· personalizado" quando o time diverge do preset. */
+export function effectiveTablePreset(
+  base: MissionPreset,
+  phases: MissionPhaseDef[],
+  capUsd: number | null,
+): MissionPreset {
+  const customized = phasesCustomized(base.phases, phases)
+  return {
+    ...base,
+    name: customized ? `${base.name} · personalizado` : base.name,
+    phases: clonePhases(phases),
+    maxCostUsd: capUsd,
+  }
+}
+
+/** Lança a missão com o preset EFETIVO via deps injetadas (launchTableMission
+ *  do bridge em produção) — testável sem stores, mesma pegada do
+ *  pickRevezamento. Devolve o convId do launch (null = projeto sumiu). */
+export async function launchFromTable(
+  deps: {
+    launch: (args: {
+      projectId: string
+      title: string
+      task: string
+      preset: MissionPreset
+    }) => Promise<string | null>
+  },
+  input: {
+    projectId: string
+    task: string
+    preset: MissionPreset
+    phases: MissionPhaseDef[]
+    capUsd: number | null
+  },
+): Promise<string | null> {
+  return deps.launch({
+    projectId: input.projectId,
+    title: missionConversationTitle(input.task),
+    task: input.task,
+    preset: effectiveTablePreset(input.preset, input.phases, input.capUsd),
+  })
 }
