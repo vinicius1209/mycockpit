@@ -1,0 +1,1116 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0b0d">
+<title>FROTA · Companion</title>
+<style>
+/* ============================================================
+   FROTA · Companion — página mobile auto-contida (onda 3).
+   Tokens copiados do app (src/index.css, tema dark grafite).
+   Zero build, zero dependência: este arquivo é o deploy.
+   ============================================================ */
+:root {
+  --background: #0a0b0d;
+  --rail: #0c0d10;
+  --foreground: #e7e8ea;
+  --card: #141619;
+  --popover: #191c20;
+  --muted-foreground: #9aa0a7;
+  --accent: #1e2126;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.13);
+  --input: rgba(255, 255, 255, 0.12);
+  --brass: #e4a862;
+  --brass-soft: rgba(228, 168, 98, 0.14);
+  --brass-fg: #1a1306;
+  --st-idle: #687078;
+  --st-running: #5bb8e8;
+  --st-queued: #d99138;
+  --st-success: #5bd6a0;
+  --st-error: #f2766b;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius: 9px;
+}
+* { box-sizing: border-box; border-color: var(--border); }
+html { color-scheme: dark; }
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+textarea {
+  font: inherit; color: var(--foreground); background: var(--rail);
+  border: 1px solid var(--input); border-radius: 7px; padding: 8px 10px;
+  width: 100%; resize: none; min-height: 40px; max-height: 40vh;
+}
+textarea:focus { outline: none; border-color: var(--brass); }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--accent); border-radius: 4px; padding: 1px 4px; }
+.mono { font-family: var(--font-mono); font-variant-ligatures: none; }
+
+/* etiqueta "de instrumento" (label-mono do app) */
+.lm {
+  font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 0.6875rem; line-height: 1; color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- header ---------- */
+header {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 10px;
+  padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+  background: color-mix(in srgb, var(--background) 88%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.wordmark { font-weight: 650; letter-spacing: 0.02em; font-size: 15px; }
+.wordmark small { color: var(--muted-foreground); font-weight: 450; }
+.conn { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.dot { width: 8px; height: 8px; border-radius: 999px; background: var(--st-idle); flex: none; }
+.dot.on { background: var(--st-success); }
+.dot.connecting { background: var(--st-queued); animation: pulse 1.6s cubic-bezier(.4,0,.6,1) infinite; }
+.dot.off { background: var(--st-error); }
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+#connLabel { font-size: 11px; color: var(--muted-foreground); }
+#btnBell { font-size: 16px; opacity: .55; padding: 4px; }
+#btnBell.on { opacity: 1; }
+
+/* ---------- layout ---------- */
+main { max-width: 640px; margin: 0 auto; padding: 12px 14px 90px; }
+/* !important: vence o display:flex do #scr-chat (especificidade de ID) */
+section.screen[hidden] { display: none !important; }
+h2.sec {
+  font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.07em;
+  font-size: 11px; color: var(--muted-foreground); margin: 22px 2px 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+h2.sec::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+h2.sec .amber { color: var(--st-queued); }
+
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px; margin-bottom: 10px; box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+}
+.card.attn { border-color: color-mix(in srgb, var(--st-queued) 45%, transparent); }
+.badge {
+  display: inline-block; font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: .08em; padding: 3px 7px; border-radius: 5px;
+}
+.badge.gate { background: var(--brass-soft); color: var(--brass); }
+.badge.approval { background: color-mix(in srgb, var(--st-queued) 16%, transparent); color: var(--st-queued); }
+.badge.question { background: color-mix(in srgb, var(--st-running) 14%, transparent); color: var(--st-running); }
+.cardhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.cardhead .ctx { font-size: 12px; color: var(--muted-foreground); }
+.qblock { margin: 10px 0; }
+.qblock p { margin: 0 0 6px; font-size: 14px; }
+pre.cmd {
+  font-family: var(--font-mono); font-variant-ligatures: none; font-size: 12.5px;
+  background: var(--rail); border: 1px solid var(--border); border-radius: 7px;
+  padding: 9px 10px; margin: 8px 0; overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+}
+.row { display: flex; gap: 8px; align-items: center; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border-radius: 7px; padding: 9px 14px; font-size: 14px; font-weight: 550;
+  background: var(--accent); border: 1px solid var(--border-strong); min-height: 40px;
+}
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--brass); color: var(--brass-fg); border-color: transparent; }
+.btn.danger { background: color-mix(in srgb, var(--st-error) 18%, transparent); color: var(--st-error); border-color: color-mix(in srgb, var(--st-error) 40%, transparent); }
+.btn.ok { background: color-mix(in srgb, var(--st-success) 16%, transparent); color: var(--st-success); border-color: color-mix(in srgb, var(--st-success) 38%, transparent); }
+.btn[disabled] { opacity: .45; pointer-events: none; }
+.btn.icon { padding: 8px 10px; font-size: 17px; min-width: 42px; }
+.actions { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.sent { color: var(--st-success); font-size: 13px; padding: 6px 2px; }
+
+/* chips de anexo */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  background: var(--rail); border: 1px solid var(--border); border-radius: 999px;
+  padding: 3px 8px 3px 4px; font-size: 12px;
+}
+.chip img { width: 22px; height: 22px; border-radius: 999px; object-fit: cover; }
+.chip .file { width: 22px; height: 22px; border-radius: 999px; background: var(--accent); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
+.chip .nm { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip button { color: var(--muted-foreground); font-size: 14px; padding: 0 3px; }
+
+/* execução */
+.run .top { display: flex; align-items: baseline; gap: 8px; }
+.run .kind { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--st-running); }
+.run .label { font-weight: 550; font-size: 14px; overflow-wrap: anywhere; }
+.run .now { font-size: 12.5px; color: var(--muted-foreground); margin-top: 4px; }
+.run .now b { color: var(--st-running); font-weight: 550; }
+.phases { margin: 8px 0 2px; display: grid; gap: 4px; }
+.phase { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.phase .pd { width: 7px; height: 7px; border-radius: 999px; flex: none; background: var(--st-idle); }
+.phase.running .pd { background: var(--st-running); animation: pulse 1.6s infinite; }
+.phase.done .pd { background: var(--st-success); }
+.phase.error .pd, .phase.aborted .pd { background: var(--st-error); }
+.phase.queued .pd { background: var(--st-queued); opacity: .55; }
+.phase .pl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phase .pc { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
+.meta { font-size: 12px; color: var(--muted-foreground); margin-top: 6px; }
+
+/* entregas / projetos */
+.dl { display: flex; align-items: baseline; gap: 8px; }
+.dl .task { flex: 1; font-size: 13.5px; overflow-wrap: anywhere; }
+.dl .cost { font-family: var(--font-mono); font-size: 12px; color: var(--muted-foreground); white-space: nowrap; }
+.proj { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; }
+.proj .nm { font-weight: 550; flex: 1; }
+.proj .ar { color: var(--muted-foreground); }
+.agentbtn { width: 100%; text-align: left; display: flex; align-items: center; gap: 10px; }
+.agentbtn .glyph { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 12px; color: var(--brass); flex: none; }
+
+.empty { color: var(--muted-foreground); font-size: 13px; padding: 10px 2px; }
+.back { color: var(--muted-foreground); font-size: 14px; padding: 6px 8px 6px 0; }
+
+/* rodapé de custo */
+footer#costbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--rail) 92%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border);
+}
+#costbar .v { font-family: var(--font-mono); font-size: 13px; color: var(--brass); }
+footer#costbar[hidden] { display: none !important; }
+
+/* ---------- chat (linguagem Blocks.So do composer do app: pill arredondado,
+   botão brass circular, chips — ver PLAN.md ai-02 + tokens do index.css) ---- */
+#scr-chat { display: flex; flex-direction: column; min-height: calc(100dvh - 120px); }
+#chatBar { position: sticky; top: 52px; z-index: 10; background: var(--background); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+#chatTitle { flex: 1; }
+.dot.busy { background: var(--st-running); animation: pulse 1.6s cubic-bezier(.4,0,.6,1) infinite; }
+#chatItems { flex: 1; display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px; }
+.ci-user { align-self: flex-end; max-width: 86%; background: var(--brass-soft); border: 1px solid color-mix(in srgb, var(--brass) 30%, transparent); border-radius: 14px 14px 4px 14px; padding: 8px 12px; font-size: 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
+/* feedback em 3 tempos: enviando… (pré-202) e digitando (turno vivo) */
+.dots { display: inline-flex; gap: 3px; align-items: center; }
+.dots i { width: 5px; height: 5px; border-radius: 999px; background: var(--muted-foreground); animation: tblink 1.2s ease-in-out infinite; }
+.dots i:nth-child(2) { animation-delay: .18s; }
+.dots i:nth-child(3) { animation-delay: .36s; }
+@keyframes tblink { 0%, 70%, 100% { opacity: .25; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-2px); } }
+.ci-sending { align-self: flex-end; display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted-foreground); margin-top: -4px; padding-right: 4px; }
+.typing { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted-foreground); padding: 4px 2px; }
+.typing .tool { font-family: var(--font-mono); font-variant-ligatures: none; font-size: 11px; color: var(--st-running); background: color-mix(in srgb, var(--st-running) 12%, transparent); border-radius: 5px; padding: 2px 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52vw; }
+/* vazio: convite + chips de sugestão (os mesmos 3 do dock da mesa) */
+.chatempty { text-align: center; color: var(--muted-foreground); font-size: 13px; margin-top: 18vh; }
+.sugchips { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-top: 12px; }
+.sug { border: 1px solid var(--border); background: var(--card); border-radius: 999px; padding: 7px 13px; font-size: 12.5px; color: color-mix(in srgb, var(--foreground) 82%, transparent); }
+.sug:active { border-color: color-mix(in srgb, var(--brass) 60%, transparent); color: var(--foreground); transform: translateY(1px); }
+.ci-text { align-self: stretch; max-width: 100%; font-size: 14px; overflow-wrap: anywhere; }
+.ci-tool { font-family: var(--font-mono); font-variant-ligatures: none; font-size: 11.5px; color: var(--muted-foreground); background: var(--rail); border-left: 2px solid var(--st-running); border-radius: 0 6px 6px 0; padding: 5px 8px; overflow-x: auto; white-space: nowrap; }
+.ci-tool .tn { color: var(--st-running); }
+.ci-result { font-size: 12px; color: var(--muted-foreground); text-align: center; padding: 4px 0; font-family: var(--font-mono); }
+.ci-result.bad { color: var(--st-error); }
+.ci-notice { font-size: 12.5px; color: var(--muted-foreground); font-style: italic; text-align: center; }
+.ci-error { font-size: 13px; color: var(--st-error); background: color-mix(in srgb, var(--st-error) 10%, transparent); border-radius: 7px; padding: 8px 10px; overflow-wrap: anywhere; }
+.ci-limit { font-size: 13px; color: var(--st-queued); background: color-mix(in srgb, var(--st-queued) 10%, transparent); border-radius: 7px; padding: 8px 10px; }
+#composer { position: sticky; bottom: 0; background: linear-gradient(to top, var(--background) 78%, transparent); padding: 8px 0 10px; }
+#composer .pill {
+  display: flex; align-items: flex-end; gap: 4px;
+  background: var(--card); border: 1px solid var(--border-strong); border-radius: 24px;
+  padding: 5px 5px 5px 6px; box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+  transition: border-color .15s ease;
+}
+#composer .pill:focus-within { border-color: color-mix(in srgb, var(--brass) 55%, transparent); }
+#composer textarea { background: none; border: 0; min-height: 34px; padding: 7px 6px; }
+#composer textarea:focus { border: 0; }
+.iconbtn {
+  width: 38px; height: 38px; border-radius: 999px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 16px; color: var(--muted-foreground);
+}
+.iconbtn:active { transform: translateY(1px); }
+#chatSend { background: var(--brass); color: var(--brass-fg); font-size: 15px; }
+#chatSend[disabled] { opacity: .45; pointer-events: none; }
+#chatHint { font-size: 11.5px; color: var(--muted-foreground); margin-top: 6px; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wordmark">FROTA <small>· Companion</small></div>
+  <button id="btnBell" title="Notificações" aria-label="Ativar notificações">🔔</button>
+  <div class="conn"><span id="dot" class="dot off"></span><span id="connLabel">—</span></div>
+</header>
+
+<main>
+  <!-- pareamento -->
+  <section class="screen" id="scr-pair" hidden>
+    <div class="card" style="text-align:center; padding:34px 18px; margin-top:24vh">
+      <div style="font-size:34px; margin-bottom:10px">⛶</div>
+      <div style="font-weight:600; margin-bottom:6px">Escaneie o QR no app</div>
+      <div id="pairMsg" style="font-size:13px; color:var(--muted-foreground)">
+        Abra o FROTA no computador e escaneie o código do Companion para parear este aparelho.
+      </div>
+    </div>
+  </section>
+
+  <!-- briefing (home) -->
+  <section class="screen" id="scr-brief" hidden>
+    <h2 class="sec"><span class="amber">Precisa de você</span></h2>
+    <div id="attention"></div>
+    <h2 class="sec">Em execução</h2>
+    <div id="running"></div>
+    <h2 class="sec">Entregas recentes</h2>
+    <div id="deliveries"></div>
+    <h2 class="sec">Conversar</h2>
+    <div id="projects"></div>
+  </section>
+
+  <!-- escolha de agent -->
+  <section class="screen" id="scr-agents" hidden>
+    <button class="back" data-nav="brief">‹ Briefing</button>
+    <h2 class="sec" id="agentsTitle">Agent</h2>
+    <div id="agentList"></div>
+  </section>
+
+  <!-- chat -->
+  <section class="screen" id="scr-chat" hidden>
+    <div id="chatBar">
+      <button class="back" data-nav="brief">‹ Briefing</button>
+      <div id="chatTitle" style="font-weight:600; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"></div>
+      <span class="dot" id="chatDot" title="Estado do agent"></span>
+    </div>
+    <div id="chatItems"></div>
+    <div id="composer">
+      <div class="chips" id="chatChips" style="margin:0 0 6px"></div>
+      <div class="pill">
+        <button class="iconbtn" id="chatCam" aria-label="Anexar foto ou PDF">📷</button>
+        <textarea id="chatText" rows="1" placeholder="Mensagem…"></textarea>
+        <button class="iconbtn" id="chatSend" aria-label="Enviar">➤</button>
+      </div>
+      <div id="chatHint"></div>
+    </div>
+  </section>
+</main>
+
+<footer id="costbar" hidden>
+  <span class="lm">custo hoje</span>
+  <span class="v" id="costTotal">US$ 0.00</span>
+</footer>
+
+<input type="file" id="filePick" accept="image/*,application/pdf" capture="environment" hidden>
+
+<script>
+"use strict";
+/* ============================================================
+   FROTA · Companion — vanilla JS. Regras de ouro:
+   1) TODO texto vindo do servidor passa por esc() antes de virar
+      HTML (os items vêm de LLMs — tratados como hostis).
+   2) Nada de eval / innerHTML com string crua.
+   3) Token: fragment → localStorage → fragment apagado da URL.
+   ============================================================ */
+
+var LS_TOKEN = "frota-companion-token";
+var LS_NOTIF = "frota-companion-notif";
+var MOCK = new URLSearchParams(location.search).get("mock") === "1";
+
+// ---------------- helpers ----------------
+function $(sel) { return document.querySelector(sel); }
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+/* markdown mínimo SEGURO: escapa primeiro, depois `code` e **negrito**. */
+function fmt(s) {
+  var h = esc(s);
+  h = h.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  h = h.replace(/\*\*([^*\n]+?)\*\*/g, "<strong>$1</strong>");
+  return h.replace(/\n/g, "<br>");
+}
+function usd(v) { return "US$ " + (Math.round((v || 0) * 100) / 100).toFixed(2); }
+function ago(ts) {
+  if (!ts) return "";
+  var s = Math.max(0, (Date.now() - ts) / 1000);
+  if (s < 60) return "agora";
+  if (s < 3600) return "há " + Math.round(s / 60) + " min";
+  if (s < 86400) return "há " + Math.round(s / 3600) + " h";
+  return "há " + Math.round(s / 86400) + " d";
+}
+var AGENT_NAMES = { "claude-code": "Claude Code", "codex": "Codex", "agy": "Antigravity", "gemini": "Gemini" };
+function agentName(id) { return AGENT_NAMES[id] || id || "?"; }
+function autoGrow(t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, innerHeight * 0.4) + "px"; }
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+/* fallback offline-entre-pushes: a última conversa de mesa conhecida por
+   projeto+agent sobrevive a reload/snapshot atrasado */
+function convKey(pid, agent) { return "mc.companion.conv." + pid + "." + agent; }
+
+// ---------------- estado ----------------
+var S = {
+  token: null,
+  snap: null,               // CompanionSnapshot
+  screen: "brief",
+  conn: "off",              // off | connecting | on
+  drafts: {},               // attentionId → {texts:[], atts:[{id,name,url}], sent:false}
+  answered: {},             // attentionId → true (otimista, até o snapshot confirmar)
+  knownAttn: null,          // Set de ids já vistos (diff p/ notificação)
+  agentsFor: null,          // projeto selecionado na tela de agents
+  chat: null,               // {projectId, projectName, agent, convId, items, echo:[], atts:[], sending, waitStart}
+  prevRunning: {},          // convId→1 do snapshot ANTERIOR (detecta fim de turno)
+  pickCtx: null,            // pra onde vai o próximo anexo: {kind:"gate",id} | {kind:"chat"}
+  sigs: {},                 // assinaturas por seção (evita re-render que rouba foco)
+};
+
+// ---------------- mock (?mock=1) ----------------
+var mockSeq = 0;
+var MOCK_SNAP = {
+  attention: [
+    { id: "gate:conv-m1", kind: "gate", convId: "conv-m1", projectId: "p1", projectName: "mycockpit",
+      agent: "claude-code", phase: 1, phaseLabel: "Planejar",
+      questions: ["O plano prevê tocar no schema do banco. Posso seguir com a migração?", "Prefere manter compat com a coluna antiga?"] },
+    { id: "apr-77", kind: "approval", convId: "conv-t1", projectId: "p2", projectName: "site-maclan",
+      agent: "codex", phase: null, phaseLabel: null,
+      command: "rm -rf node_modules && bun install", toolName: "Bash" },
+    { id: "q-12", kind: "question", convId: "conv-t2", projectId: "p1", projectName: "mycockpit",
+      agent: "claude-code", phase: null, phaseLabel: null,
+      questions: ["Qual estratégia de cache prefere?"] }
+  ],
+  running: [
+    { convId: "conv-t1", projectId: "p2", projectName: "site-maclan", kind: "turno", agent: "codex",
+      label: "Ajustar formulário de contato", detail: "Executando comando…", startedAt: Date.now() - 4 * 60000 },
+    { convId: "conv-m1", projectId: "p1", projectName: "mycockpit", kind: "missão", agent: "claude-code",
+      label: "Migrar settings pro SQLite", detail: "Planejar…", startedAt: Date.now() - 11 * 60000,
+      missionPhases: [ { label: "Explorar", status: "done" }, { label: "Planejar", status: "running" }, { label: "Executar", status: "queued" }, { label: "Revisar", status: "queued" } ] }
+  ],
+  missions: [
+    { convId: "conv-m1", projectId: "p1", projectName: "mycockpit", task: "Migrar settings pro SQLite",
+      status: "running", current: 1, costTotal: 0.87, maxCostUsd: 5,
+      phases: [
+        { label: "Explorar", agent: "claude-code", status: "done", costUsd: 0.34 },
+        { label: "Planejar", agent: "claude-code", status: "running", costUsd: 0.53 },
+        { label: "Executar", agent: "codex", status: "queued", costUsd: 0 },
+        { label: "Revisar", agent: "claude-code", status: "queued", costUsd: 0 } ],
+      gate: { phase: 1, questions: ["O plano prevê tocar no schema do banco. Posso seguir com a migração?", "Prefere manter compat com a coluna antiga?"] } }
+  ],
+  deliveries: [
+    { projectId: "p1", projectName: "mycockpit", task: "Corrigir crash do ditado", agent: "claude-code", costUsd: 1.12, createdAt: Date.now() - 2 * 3600000 },
+    { projectId: "p2", projectName: "site-maclan", task: "Deploy da landing nova", agent: "codex", costUsd: 0.44, createdAt: Date.now() - 5 * 3600000 }
+  ],
+  costs: { totalUsd: 4.21, byProject: { p1: 3.1, p2: 1.11 } },
+  projects: [
+    { id: "p1", name: "mycockpit", agents: [{ agent: "claude-code" }, { agent: "codex" }] },
+    { id: "p2", name: "site-maclan", agents: [
+      { agent: "claude-code" }, { agent: "codex", deskConvId: "conv-t1", deskTitle: "Mesa · Codex" }, { agent: "agy" } ] }
+  ]
+};
+var MOCK_CONV = {
+  id: "conv-t1", title: "Ajustar formulário de contato", agent: "codex",
+  items: [
+    { kind: "user", id: "i1", text: "O formulário de contato não envia no Safari. Investiga?" },
+    { kind: "text", id: "i2", text: "Vou investigar. Primeiro olho o handler do **submit** e o `fetch` usado." },
+    { kind: "tool", id: "i3", name: "Grep", input: { pattern: "onSubmit", path: "src/" }, result: { ok: true, text: "3 matches", lines: 3 } },
+    { kind: "tool", id: "i4", name: "Bash", input: { command: "bun test contact-form" }, result: { ok: true, text: "5 pass", lines: 12 } },
+    { kind: "notice", id: "i5", message: "Contexto compactado (78% do limite)." },
+    { kind: "text", id: "i6", text: "Achei: o Safari bloqueia `FormData` com input file vazio.\nCorrigindo com um guard antes do append. <script>alert(1)<\/script> não executa aqui." },
+    { kind: "error", id: "i7", message: "ETIMEDOUT ao rodar o lint remoto (tentativa 1/2)." },
+    { kind: "result", id: "i8", ok: true, costUsd: 0.18, durationMs: 214000 }
+  ]
+};
+
+// ---------------- API (rede ou mock) ----------------
+function authHeaders() { return { "Authorization": "Bearer " + S.token }; }
+
+function apiState() {
+  if (MOCK) return Promise.resolve(JSON.parse(JSON.stringify(MOCK_SNAP)));
+  return fetch("/api/state", { headers: authHeaders() }).then(function (r) {
+    if (r.status === 401) { onUnauthorized(); throw new Error("401"); }
+    if (!r.ok) throw new Error("state " + r.status);
+    return r.json();
+  });
+}
+function apiConv(id) {
+  if (MOCK) return Promise.resolve(JSON.parse(JSON.stringify(MOCK_CONV)));
+  return fetch("/api/conv/" + encodeURIComponent(id), { headers: authHeaders() }).then(function (r) {
+    if (r.status === 401) { onUnauthorized(); throw new Error("401"); }
+    if (!r.ok) throw new Error("conv " + r.status);
+    return r.json();
+  });
+}
+function apiAction(body) {
+  if (MOCK) {
+    // simula o efeito no fixture pro teste visual fechar o ciclo
+    if (body.kind === "answer_gate") {
+      MOCK_SNAP.attention = MOCK_SNAP.attention.filter(function (a) { return a.id !== "gate:" + body.convId; });
+      MOCK_SNAP.missions.forEach(function (m) { if (m.convId === body.convId) m.gate = null; });
+    }
+    if (body.kind === "answer_interaction") {
+      MOCK_SNAP.attention = MOCK_SNAP.attention.filter(function (a) { return a.id !== body.id; });
+    }
+    if (body.kind === "stop_mission" || body.kind === "stop_turn") {
+      MOCK_SNAP.running = MOCK_SNAP.running.filter(function (r) { return r.convId !== body.convId; });
+    }
+    if (body.kind === "send_message") {
+      // fluxo G1 completo no mock: user gravado → running com detail → resposta
+      MOCK_CONV.items.push({ kind: "user", id: "mu" + (++mockSeq), text: body.text });
+      MOCK_SNAP.running.push({ convId: MOCK_CONV.id, projectId: body.projectId, projectName: "mock",
+        kind: "turno", agent: body.agent, label: "Mesa · " + agentName(body.agent),
+        detail: "Analisando a tarefa…", startedAt: Date.now() });
+      setTimeout(function () { applySnapshot(JSON.parse(JSON.stringify(MOCK_SNAP))); }, 550);
+      setTimeout(function () { onConvUpdated(MOCK_CONV.id); }, 900);
+      setTimeout(function () {
+        MOCK_CONV.items.push({ kind: "text", id: "mt" + (++mockSeq), text: "Resposta simulada (mock) pra: " + body.text });
+        MOCK_CONV.items.push({ kind: "result", id: "mr" + (++mockSeq), ok: true, costUsd: 0.01, durationMs: 2500 });
+        MOCK_SNAP.running = MOCK_SNAP.running.filter(function (r) { return r.convId !== MOCK_CONV.id; });
+        applySnapshot(JSON.parse(JSON.stringify(MOCK_SNAP)));
+        onConvUpdated(MOCK_CONV.id);
+      }, 2800);
+      return new Promise(function (res) { setTimeout(res, 450); }); // 202 com latência visível
+    }
+    setTimeout(function () { applySnapshot(JSON.parse(JSON.stringify(MOCK_SNAP))); }, 250);
+    return Promise.resolve();
+  }
+  return fetch("/api/action", {
+    method: "POST",
+    headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
+    body: JSON.stringify(body),
+  }).then(function (r) {
+    if (r.status === 401) { onUnauthorized(); throw new Error("401"); }
+    if (r.status !== 202) return r.text().then(function (t) { throw new Error(t || ("action " + r.status)); });
+  });
+}
+function apiUpload(file) {
+  if (MOCK) {
+    return new Promise(function (res) {
+      setTimeout(function () { res({ attachmentId: "mock-att-" + (++mockSeq) }); }, 250);
+    });
+  }
+  var fd = new FormData();
+  fd.append("file", file, file.name || "foto.jpg");
+  return fetch("/api/attachment", { method: "POST", headers: authHeaders(), body: fd }).then(function (r) {
+    if (r.status === 401) { onUnauthorized(); throw new Error("401"); }
+    if (!r.ok) return r.text().then(function (t) { throw new Error(t || ("upload " + r.status)); });
+    return r.json();
+  });
+}
+
+// ---------------- token / pareamento ----------------
+function initToken() {
+  var m = location.hash.match(/token=([0-9a-fA-F]{16,})/);
+  if (m) {
+    try { localStorage.setItem(LS_TOKEN, m[1]); } catch (e) {}
+    // o token NUNCA fica na URL depois de guardado
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+  try { S.token = localStorage.getItem(LS_TOKEN); } catch (e) { S.token = null; }
+  if (MOCK && !S.token) S.token = "mock";
+}
+function onUnauthorized() {
+  $("#pairMsg").textContent = "Token inválido ou expirado — escaneie o QR do Companion de novo no app.";
+  showScreen("pair");
+  setConn("off");
+}
+
+// ---------------- conexão (WS honesto + backoff) ----------------
+var ws = null, wsRetry = 0, wsTimer = null;
+function setConn(st) {
+  S.conn = st;
+  var d = $("#dot");
+  d.className = "dot " + (st === "on" ? "on" : st === "connecting" ? "connecting" : "off");
+  $("#connLabel").textContent = MOCK ? "mock" : st === "on" ? "conectado" : st === "connecting" ? "reconectando…" : "desconectado";
+}
+function connectWS() {
+  if (MOCK) { setConn("on"); return; }
+  if (!S.token) return;
+  setConn("connecting");
+  try {
+    var proto = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(proto + "://" + location.host + "/api/ws?token=" + encodeURIComponent(S.token));
+  } catch (e) { scheduleReconnect(); return; }
+  ws.onopen = function () { wsRetry = 0; setConn("on"); };
+  ws.onmessage = function (ev) {
+    var msg;
+    try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    if (msg && msg.type === "snapshot") applySnapshot(msg.data);
+    else if (msg && msg.type === "conv-updated") onConvUpdated(String(msg.convId || ""));
+  };
+  ws.onclose = function () { setConn("off"); scheduleReconnect(); };
+  ws.onerror = function () { try { ws.close(); } catch (e) {} };
+}
+function scheduleReconnect() {
+  if (wsTimer) return;
+  var wait = Math.min(15000, 1000 * Math.pow(2, wsRetry++));
+  wsTimer = setTimeout(function () { wsTimer = null; connectWS(); }, wait);
+}
+
+// ---------------- notificações (opt-in) ----------------
+function notifOn() { try { return localStorage.getItem(LS_NOTIF) === "1"; } catch (e) { return false; } }
+function renderBell() {
+  var on = notifOn() && typeof Notification !== "undefined" && Notification.permission === "granted";
+  $("#btnBell").classList.toggle("on", on);
+}
+$("#btnBell").addEventListener("click", function () {
+  if (typeof Notification === "undefined") return;
+  if (notifOn()) {
+    try { localStorage.setItem(LS_NOTIF, "0"); } catch (e) {}
+    renderBell();
+    return;
+  }
+  Notification.requestPermission().then(function (p) {
+    try { localStorage.setItem(LS_NOTIF, p === "granted" ? "1" : "0"); } catch (e) {}
+    renderBell();
+  });
+});
+function notifyNewAttention(items) {
+  if (!notifOn() || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  items.forEach(function (a) {
+    var kind = a.kind === "gate" ? "Gate de missão" : a.kind === "approval" ? "Aprovação pendente" : "Pergunta do agente";
+    var body = (a.projectName ? a.projectName + " · " : "") + agentName(a.agent);
+    try { new Notification("FROTA — " + kind, { body: body, tag: a.id }); } catch (e) {}
+  });
+}
+
+// ---------------- snapshot → telas ----------------
+function applySnapshot(snap) {
+  if (!snap || typeof snap !== "object") return;
+  var first = S.knownAttn === null;
+  var att = Array.isArray(snap.attention) ? snap.attention : [];
+  if (!first) {
+    var fresh = att.filter(function (a) { return !S.knownAttn.has(a.id); });
+    if (fresh.length) notifyNewAttention(fresh);
+  }
+  S.knownAttn = new Set(att.map(function (a) { return a.id; }));
+  // atenção que sumiu do snapshot: limpa o otimismo/rascunho correspondente
+  Object.keys(S.answered).forEach(function (id) { if (!S.knownAttn.has(id)) { delete S.answered[id]; delete S.drafts[id]; } });
+  S.snap = snap;
+  // fim de turno da conversa aberta: saiu de running[] ⇒ refetch FINAL da
+  // conversa (a resposta completa está persistida) + 🔔 se em background
+  var nowRunning = {};
+  (Array.isArray(snap.running) ? snap.running : []).forEach(function (r) { nowRunning[r.convId] = 1; });
+  var cid = S.chat && S.chat.convId;
+  if (cid && S.prevRunning[cid] && !nowRunning[cid]) {
+    S.chat.waitStart = null;
+    fetchConv();
+    notifyChatDone();
+  }
+  S.prevRunning = nowRunning;
+  renderBrief();
+  if (S.screen === "agents") renderAgents();
+  if (S.screen === "chat") { bindChatConv(); renderChatItems(); }
+}
+
+function showScreen(name) {
+  S.screen = name;
+  ["pair", "brief", "agents", "chat"].forEach(function (n) {
+    $("#scr-" + n).hidden = n !== name;
+  });
+  $("#costbar").hidden = name !== "brief";
+  window.scrollTo(0, 0);
+}
+
+// re-render de seção só quando a assinatura muda (não rouba foco de textarea)
+function sigChanged(key, sig) {
+  if (S.sigs[key] === sig) return false;
+  S.sigs[key] = sig;
+  return true;
+}
+
+function ctxLine(a) {
+  var parts = [];
+  if (a.projectName) parts.push(a.projectName);
+  parts.push(agentName(a.agent));
+  if (a.phaseLabel) parts.push("fase: " + a.phaseLabel);
+  return parts.map(esc).join(" · ");
+}
+
+function chipHtml(scope, i, att) {
+  var thumb = att.url
+    ? '<img src="' + esc(att.url) + '" alt="">'
+    : '<span class="file">📄</span>';
+  return '<span class="chip">' + thumb + '<span class="nm">' + esc(att.name) + '</span>' +
+    '<button data-rmatt="' + esc(scope) + '" data-i="' + i + '" aria-label="Remover anexo">✕</button></span>';
+}
+
+function renderAttention() {
+  var att = (S.snap && S.snap.attention) || [];
+  var sig = JSON.stringify([att, S.answered]);
+  if (!sigChanged("attention", sig)) return;
+  var host = $("#attention");
+  if (!att.length) { host.innerHTML = '<div class="empty">Nada pendente — a frota segue sozinha.</div>'; return; }
+  host.innerHTML = att.map(function (a) {
+    if (S.answered[a.id]) {
+      return '<div class="card attn"><div class="cardhead"><span class="badge ' + esc(a.kind) + '">' + esc(a.kind) + '</span>' +
+        '<span class="ctx">' + ctxLine(a) + '</span></div><div class="sent">✓ Resposta enviada — aguardando o app…</div></div>';
+    }
+    var d = S.drafts[a.id];
+    if (a.kind === "gate" || a.kind === "question") {
+      var qs = a.questions || [];
+      if (!d) { d = S.drafts[a.id] = { texts: qs.map(function () { return ""; }), atts: [] }; }
+      var blocks = qs.map(function (q, i) {
+        return '<div class="qblock"><p>' + fmt(q) + '</p>' +
+          '<textarea rows="1" data-gate="' + esc(a.id) + '" data-q="' + i + '" placeholder="Sua resposta…">' + esc(d.texts[i] || "") + '</textarea></div>';
+      }).join("");
+      var chips = d.atts.map(function (t, i) { return chipHtml(a.id, i, t); }).join("");
+      var label = a.kind === "gate" ? "Responder e retomar" : "Responder";
+      return '<div class="card attn"><div class="cardhead"><span class="badge ' + esc(a.kind) + '">' + (a.kind === "gate" ? "gate" : "pergunta") + '</span>' +
+        '<span class="ctx">' + ctxLine(a) + '</span></div>' + blocks +
+        '<div class="chips" data-chips="' + esc(a.id) + '">' + chips + '</div>' +
+        '<div class="actions"><button class="btn icon" data-cam="' + esc(a.id) + '" aria-label="Anexar foto ou PDF">📷</button>' +
+        '<button class="btn primary" data-answer="' + esc(a.id) + '">' + label + '</button></div></div>';
+    }
+    // approval
+    return '<div class="card attn"><div class="cardhead"><span class="badge approval">aprovação</span>' +
+      '<span class="ctx">' + ctxLine(a) + (a.toolName ? ' · <span class="mono">' + esc(a.toolName) + "</span>" : "") + '</span></div>' +
+      '<pre class="cmd">' + esc(a.command || "(comando não informado)") + '</pre>' +
+      '<div class="actions"><button class="btn danger" data-deny="' + esc(a.id) + '">Negar</button>' +
+      '<button class="btn ok" data-approve="' + esc(a.id) + '">Aprovar</button></div></div>';
+  }).join("");
+  host.querySelectorAll("textarea").forEach(autoGrow);
+}
+
+function renderRunning() {
+  var running = (S.snap && S.snap.running) || [];
+  var missions = (S.snap && S.snap.missions) || [];
+  var sig = JSON.stringify([running, missions]);
+  if (!sigChanged("running", sig)) return;
+  var host = $("#running");
+  if (!running.length) { host.innerHTML = '<div class="empty">Nenhum agente em execução.</div>'; return; }
+  host.innerHTML = running.map(function (r) {
+    var h = '<div class="card run"><div class="top"><span class="kind">' + esc(r.kind) + '</span>' +
+      '<span class="label">' + esc(r.label) + '</span></div>' +
+      '<div class="now"><b>Agora:</b> ' + esc(r.detail) + '</div>';
+    var m = null;
+    if (r.kind === "missão") {
+      for (var i = 0; i < missions.length; i++) if (missions[i].convId === r.convId) m = missions[i];
+    }
+    if (m) {
+      h += '<div class="phases">' + m.phases.map(function (p, i) {
+        return '<div class="phase ' + esc(p.status) + '"><span class="pd"></span>' +
+          '<span class="pl">' + esc(p.label) + ' <span style="color:var(--muted-foreground)">· ' + esc(agentName(p.agent)) + '</span></span>' +
+          (p.costUsd ? '<span class="pc">' + esc(usd(p.costUsd)) + '</span>' : "") + '</div>';
+      }).join("") + '</div>';
+      h += '<div class="meta">' + esc(usd(m.costTotal)) + (m.maxCostUsd ? " / teto " + esc(usd(m.maxCostUsd)) : "") + '</div>';
+    } else if (r.missionPhases) {
+      h += '<div class="phases">' + r.missionPhases.map(function (p) {
+        return '<div class="phase ' + esc(p.status) + '"><span class="pd"></span><span class="pl">' + esc(p.label) + '</span></div>';
+      }).join("") + '</div>';
+    }
+    h += '<div class="meta">' + [r.projectName ? esc(r.projectName) : null, esc(agentName(r.agent)), r.startedAt ? esc(ago(r.startedAt)) : null]
+      .filter(Boolean).join(" · ") + '</div>';
+    h += '<div class="actions">';
+    if (r.kind === "turno" && r.projectId) {
+      h += '<button class="btn" data-openchat="' + esc(r.convId) + '" data-pid="' + esc(r.projectId) + '" data-agent="' + esc(r.agent) + '">Abrir conversa</button>';
+    }
+    h += '<button class="btn danger" data-stop="' + esc(r.convId) + '" data-stopkind="' + (r.kind === "missão" ? "stop_mission" : "stop_turn") + '">Parar</button>';
+    h += '</div></div>';
+    return h;
+  }).join("");
+}
+
+function renderDeliveries() {
+  var dl = (S.snap && S.snap.deliveries) || [];
+  var sig = JSON.stringify(dl);
+  if (!sigChanged("deliveries", sig)) return;
+  var host = $("#deliveries");
+  if (!dl.length) { host.innerHTML = '<div class="empty">Sem entregas recentes.</div>'; return; }
+  host.innerHTML = dl.map(function (d) {
+    return '<div class="card dl"><span class="task">' + esc(d.task) +
+      '<div class="meta">' + [d.projectName ? esc(d.projectName) : null, esc(agentName(d.agent)), esc(ago(d.createdAt))].filter(Boolean).join(" · ") + '</div></span>' +
+      (d.costUsd != null ? '<span class="cost">' + esc(usd(d.costUsd)) + '</span>' : "") + '</div>';
+  }).join("");
+}
+
+function renderProjects() {
+  var ps = (S.snap && S.snap.projects) || [];
+  var sig = JSON.stringify(ps);
+  if (!sigChanged("projects", sig)) return;
+  var host = $("#projects");
+  if (!ps.length) { host.innerHTML = '<div class="empty">Nenhum projeto no app ainda.</div>'; return; }
+  host.innerHTML = ps.map(function (p) {
+    return '<button class="card proj" data-proj="' + esc(p.id) + '">' +
+      '<span class="nm">' + esc(p.name) + '</span>' +
+      '<span class="lm">' + p.agents.length + ' agent' + (p.agents.length === 1 ? "" : "s") + '</span>' +
+      '<span class="ar">›</span></button>';
+  }).join("");
+}
+
+function renderCost() {
+  var v = S.snap && S.snap.costs ? S.snap.costs.totalUsd : 0;
+  $("#costTotal").textContent = usd(v);
+}
+
+function renderBrief() {
+  renderAttention();
+  renderRunning();
+  renderDeliveries();
+  renderProjects();
+  renderCost();
+}
+
+// ---------------- tela de agents ----------------
+function renderAgents() {
+  var ps = (S.snap && S.snap.projects) || [];
+  var p = null;
+  for (var i = 0; i < ps.length; i++) if (ps[i].id === S.agentsFor) p = ps[i];
+  if (!p) { showScreen("brief"); return; }
+  $("#agentsTitle").textContent = p.name + " — escolher agent";
+  $("#agentList").innerHTML = (p.agents.length ? p.agents : []).map(function (a) {
+    var id = typeof a === "string" ? a : a.agent; // compat com snapshot antigo
+    var conv = (a && a.deskConvId) || "";
+    return '<button class="card agentbtn" data-pickagent="' + esc(id) + '" data-pid="' + esc(p.id) + '" data-conv="' + esc(conv) + '">' +
+      '<span class="glyph">' + esc(agentName(id).slice(0, 2).toUpperCase()) + '</span>' +
+      '<span style="flex:1; text-align:left">' + esc(agentName(id)) + '</span>' +
+      (conv ? '<span class="lm">histórico</span>' : '') + '</button>';
+  }).join("") || '<div class="empty">Nenhum agent disponível nesta máquina.</div>';
+}
+
+// ---------------- chat ----------------
+var convFetchBusy = false, convFetchQueued = false;
+/* conversa de MESA do snapshot (projects[].agents[].deskConvId — G2) */
+function deskConvFromSnap(pid, agent) {
+  var ps = (S.snap && S.snap.projects) || [];
+  for (var i = 0; i < ps.length; i++) {
+    if (ps[i].id !== pid) continue;
+    var ags = ps[i].agents || [];
+    for (var j = 0; j < ags.length; j++) {
+      if (ags[j] && ags[j].agent === agent) return ags[j].deskConvId || null;
+    }
+  }
+  return null;
+}
+function openChat(projectId, agent, convId) {
+  var ps = (S.snap && S.snap.projects) || [];
+  var name = projectId;
+  for (var i = 0; i < ps.length; i++) if (ps[i].id === projectId) name = ps[i].name;
+  // resolução do histórico: convId explícito → mesa do snapshot → localStorage
+  var desk = deskConvFromSnap(projectId, agent);
+  var cid = convId || desk || lsGet(convKey(projectId, agent));
+  S.chat = { projectId: projectId, projectName: name, agent: agent, convId: cid || null,
+             items: [], echo: [], atts: [], sending: false, waitStart: null };
+  // persiste SÓ a conversa de MESA: um convId explícito de "Abrir conversa"
+  // pode ser um turno do desktop — gravá-lo envenenaria o fallback da mesa.
+  if (cid && (!convId || convId === desk)) lsSet(convKey(projectId, agent), cid);
+  $("#chatTitle").textContent = name + " · " + agentName(agent);
+  $("#chatText").value = "";
+  renderChatChips();
+  renderChatItems();
+  showScreen("chat");
+  if (S.chat.convId) fetchConv(); else bindChatConv();
+}
+/* Sem convId até o desktop criar a conversa da mesa: adota o deskConvId assim
+   que o 1º snapshot pós-envio o trouxer, ou casa pelo running (projectId+agent)
+   enquanto o turno vive. Guardado no localStorage como fallback offline. */
+function bindChatConv() {
+  if (!S.chat || S.chat.convId) return;
+  var cid = deskConvFromSnap(S.chat.projectId, S.chat.agent);
+  if (!cid) {
+    var running = (S.snap && S.snap.running) || [];
+    for (var i = 0; i < running.length; i++) {
+      var r = running[i];
+      if (r.kind === "turno" && r.projectId === S.chat.projectId && r.agent === S.chat.agent) { cid = r.convId; break; }
+    }
+  }
+  if (cid) {
+    S.chat.convId = cid;
+    lsSet(convKey(S.chat.projectId, S.chat.agent), cid);
+    fetchConv();
+  }
+}
+/* turno vivo da conversa aberta (por convId; sem convId ainda, por projeto+agent) */
+function chatRunning() {
+  if (!S.chat) return null;
+  var running = (S.snap && S.snap.running) || [];
+  for (var i = 0; i < running.length; i++) {
+    var r = running[i];
+    if (S.chat.convId ? r.convId === S.chat.convId
+        : (r.kind === "turno" && r.projectId === S.chat.projectId && r.agent === S.chat.agent)) return r;
+  }
+  return null;
+}
+/* 🔔 resposta chegou com o chat em background (aba escondida ou outra tela) */
+function notifyChatDone() {
+  if (!S.chat) return;
+  if (!document.hidden && S.screen === "chat") return;
+  if (!notifOn() || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  try {
+    new Notification("FROTA — resposta chegou", {
+      body: S.chat.projectName + " · " + agentName(S.chat.agent),
+      tag: "chat-" + (S.chat.convId || S.chat.projectId),
+    });
+  } catch (e) {}
+}
+function onConvUpdated(convId) {
+  if (S.screen === "chat" && S.chat && S.chat.convId === convId) fetchConv();
+}
+function fetchConv() {
+  if (!S.chat || !S.chat.convId) return;
+  if (convFetchBusy) { convFetchQueued = true; return; }
+  convFetchBusy = true;
+  var id = S.chat.convId;
+  apiConv(id).then(function (conv) {
+    if (!S.chat || S.chat.convId !== id) return;
+    S.chat.items = Array.isArray(conv.items) ? conv.items : [];
+    // eco local: derruba o que o servidor já conhece (dedupe por texto)
+    S.chat.echo = S.chat.echo.filter(function (e) {
+      return !S.chat.items.some(function (it) { return it.kind === "user" && it.text === e.text; });
+    });
+    // turno já fechou no persist (último item = result) e nada roda ⇒ para de
+    // esperar (cinto extra caso a transição de running tenha passado batida)
+    var last = S.chat.items[S.chat.items.length - 1];
+    if (last && last.kind === "result" && !chatRunning()) S.chat.waitStart = null;
+    renderChatItems();
+  }).catch(function () {}).then(function () {
+    convFetchBusy = false;
+    if (convFetchQueued) { convFetchQueued = false; setTimeout(fetchConv, 400); }
+  });
+}
+function toolLine(it) {
+  var inp = it.input;
+  var summary = "";
+  if (inp && typeof inp === "object" && typeof inp.command === "string") summary = inp.command;
+  else if (inp && typeof inp === "object" && typeof inp.file_path === "string") summary = inp.file_path;
+  else if (inp && typeof inp === "object" && typeof inp.pattern === "string") summary = inp.pattern;
+  else if (inp != null) { try { summary = JSON.stringify(inp); } catch (e) { summary = ""; } }
+  if (summary.length > 140) summary = summary.slice(0, 140) + "…";
+  var res = it.result ? "  → " + (it.result.ok ? "" : "✗ ") + it.result.lines + " linha" + (it.result.lines === 1 ? "" : "s") : "";
+  return '<div class="ci-tool"><span class="tn">▸ ' + esc(it.name) + '</span>  ' + esc(summary) + esc(res) + '</div>';
+}
+function chatItemHtml(it) {
+  switch (it.kind) {
+    case "user": return '<div class="ci-user">' + esc(it.text) + '</div>';
+    case "text": return '<div class="ci-text">' + fmt(it.text) + '</div>';
+    case "tool": return toolLine(it);
+    case "result": {
+      var bits = [it.ok ? "✓ turno concluído" : "✗ turno falhou"];
+      if (typeof it.costUsd === "number") bits.push(usd(it.costUsd));
+      if (typeof it.durationMs === "number") bits.push(Math.round(it.durationMs / 1000) + "s");
+      return '<div class="ci-result' + (it.ok ? "" : " bad") + '">' + esc(bits.join(" · ")) + '</div>';
+    }
+    case "notice": return '<div class="ci-notice">' + esc(it.message) + '</div>';
+    case "error": return '<div class="ci-error">' + esc(it.message) + '</div>';
+    case "cancelled": return '<div class="ci-notice">— interrompido —</div>';
+    case "limit": return '<div class="ci-limit">' + esc(it.message) + (it.resetHint ? '<div class="meta">' + esc(it.resetHint) + '</div>' : "") + '</div>';
+    default: return "";
+  }
+}
+/* mesmos 3 chips do vazio inicial do dock da mesa (DeskDock SUGGESTION_CHIPS) */
+var SUGGESTION_CHIPS = ["Status do projeto", "O que você está fazendo agora?", "Continuar a última tarefa"];
+function renderChatItems() {
+  if (!S.chat) return;
+  var host = $("#chatItems");
+  // auto-scroll respeitando leitura: só acompanha se JÁ estava no fim
+  var atBottom = innerHeight + scrollY >= document.body.scrollHeight - 80;
+  var all = S.chat.items.concat(S.chat.echo);
+  var h = all.map(chatItemHtml).join("");
+  var run = chatRunning();
+  if (S.chat.sending) {
+    // tempo 1: bolha já está no eco; linha "enviando…" até o 202
+    h += '<div class="ci-sending"><span class="dots"><i></i><i></i><i></i></span>enviando…</div>';
+  } else if (run || (S.chat.waitStart && Date.now() - S.chat.waitStart < 20000)) {
+    // tempo 2: turno vivo — dots + a tool corrente do running[] quando houver
+    h += '<div class="typing"><span class="dots"><i></i><i></i><i></i></span>' +
+      '<span>' + esc(agentName(S.chat.agent)) + ' trabalhando…</span>' +
+      (run && run.detail ? '<span class="tool">⚙ ' + esc(run.detail) + '</span>' : '') + '</div>';
+  }
+  if (!h) {
+    h = '<div class="chatempty">' +
+      (S.chat.convId ? 'Carregando conversa…'
+        : 'Mesa de ' + esc(agentName(S.chat.agent)) + ' — diga o que precisa.<div class="sugchips">' +
+          SUGGESTION_CHIPS.map(function (s) { return '<button class="sug" data-sug="' + esc(s) + '">' + esc(s) + '</button>'; }).join("") +
+          '</div>') + '</div>';
+  }
+  host.innerHTML = h;
+  $("#chatHint").textContent = S.chat.convId || S.chat.sending || S.chat.waitStart ? "" : "O turno roda de verdade no projeto, direto do seu Mac.";
+  var dot = $("#chatDot");
+  if (dot) dot.className = "dot" + (run || S.chat.sending || S.chat.waitStart ? " busy" : "");
+  if (atBottom) window.scrollTo(0, document.body.scrollHeight);
+}
+function renderChatChips() {
+  if (!S.chat) return;
+  $("#chatChips").innerHTML = S.chat.atts.map(function (t, i) { return chipHtml("chat", i, t); }).join("");
+}
+function sendChat() {
+  if (!S.chat || S.chat.sending) return;
+  var text = $("#chatText").value.trim();
+  if (!text) return;
+  var atts = S.chat.atts;
+  var ids = atts.map(function (t) { return t.id; });
+  var btn = $("#chatSend");
+  // feedback IMEDIATO (tempo 1): bolha do usuário + "enviando…" antes do 202
+  S.chat.echo.push({ kind: "user", id: "echo-" + Date.now(), text: text });
+  S.chat.sending = true;
+  S.chat.atts = [];
+  btn.disabled = true;
+  $("#chatText").value = "";
+  autoGrow($("#chatText"));
+  renderChatChips();
+  renderChatItems();
+  window.scrollTo(0, document.body.scrollHeight);
+  apiAction({ kind: "send_message", projectId: S.chat.projectId, agent: S.chat.agent, text: text, attachmentIds: ids })
+    .then(function () {
+      // 202 aceito: o turno REAL começou — segura o indicador de digitando até
+      // o running[] do snapshot assumir (ou 20s, o que vier primeiro)
+      S.chat.sending = false;
+      var t0 = S.chat.waitStart = Date.now();
+      renderChatItems();
+      // honestidade: a janela expira MESMO sem snapshot novo (servidor caiu /
+      // running perdido) — re-render agendado derruba os dots e refetcha a
+      // verdade persistida em vez de "trabalhando…" eterno.
+      setTimeout(function () {
+        if (S.chat && S.chat.waitStart === t0 && !chatRunning()) {
+          S.chat.waitStart = null;
+          fetchConv();
+          renderChatItems();
+        }
+      }, 20500);
+    })
+    .catch(function (e) {
+      // falhou: NADA se perde — remove o eco e devolve rascunho + anexos
+      S.chat.sending = false;
+      S.chat.echo.pop();
+      S.chat.atts = atts;
+      $("#chatText").value = text;
+      autoGrow($("#chatText"));
+      renderChatChips();
+      renderChatItems();
+      alert("Falha ao enviar: " + (e && e.message ? e.message : e));
+    })
+    .then(function () { btn.disabled = false; });
+}
+
+// ---------------- anexos (gate + chat compartilham o input) ----------------
+function pickAttachment(ctx) {
+  S.pickCtx = ctx;
+  $("#filePick").value = "";
+  $("#filePick").click();
+}
+$("#filePick").addEventListener("change", function () {
+  var f = this.files && this.files[0];
+  var ctx = S.pickCtx;
+  if (!f || !ctx) return;
+  if (f.size > 10 * 1024 * 1024) { alert("Arquivo acima de 10MB."); return; }
+  var url = f.type && f.type.indexOf("image/") === 0 ? URL.createObjectURL(f) : null;
+  apiUpload(f).then(function (r) {
+    var att = { id: r.attachmentId, name: f.name || "foto.jpg", url: url };
+    if (ctx.kind === "chat" && S.chat) { S.chat.atts.push(att); renderChatChips(); }
+    else if (ctx.kind === "gate" && S.drafts[ctx.id]) {
+      S.drafts[ctx.id].atts.push(att);
+      var host = document.querySelector('[data-chips="' + CSS.escape(ctx.id) + '"]');
+      if (host) host.innerHTML = S.drafts[ctx.id].atts.map(function (t, i) { return chipHtml(ctx.id, i, t); }).join("");
+    }
+  }).catch(function (e) { alert("Falha no anexo: " + (e && e.message ? e.message : e)); });
+});
+
+// ---------------- eventos (delegação) ----------------
+document.addEventListener("input", function (ev) {
+  var t = ev.target;
+  if (t.tagName !== "TEXTAREA") return;
+  autoGrow(t);
+  var gid = t.getAttribute("data-gate");
+  if (gid && S.drafts[gid]) S.drafts[gid].texts[Number(t.getAttribute("data-q"))] = t.value;
+});
+
+document.addEventListener("click", function (ev) {
+  var el = ev.target.closest ? ev.target.closest("[data-nav],[data-proj],[data-pickagent],[data-answer],[data-approve],[data-deny],[data-stop],[data-openchat],[data-cam],[data-rmatt],[data-sug]") : null;
+  if (!el) return;
+
+  if (el.hasAttribute("data-nav")) { showScreen(el.getAttribute("data-nav")); return; }
+  if (el.hasAttribute("data-proj")) { S.agentsFor = el.getAttribute("data-proj"); renderAgents(); showScreen("agents"); return; }
+  if (el.hasAttribute("data-pickagent")) { openChat(el.getAttribute("data-pid"), el.getAttribute("data-pickagent"), el.getAttribute("data-conv") || null); return; }
+  if (el.hasAttribute("data-sug")) {
+    var t = $("#chatText");
+    t.value = el.getAttribute("data-sug");
+    autoGrow(t);
+    t.focus();
+    return;
+  }
+  if (el.hasAttribute("data-openchat")) { openChat(el.getAttribute("data-pid"), el.getAttribute("data-agent"), el.getAttribute("data-openchat")); return; }
+  if (el.hasAttribute("data-cam")) { pickAttachment({ kind: "gate", id: el.getAttribute("data-cam") }); return; }
+
+  if (el.hasAttribute("data-rmatt")) {
+    var scope = el.getAttribute("data-rmatt"), i = Number(el.getAttribute("data-i"));
+    if (scope === "chat" && S.chat) { S.chat.atts.splice(i, 1); renderChatChips(); }
+    else if (S.drafts[scope]) {
+      S.drafts[scope].atts.splice(i, 1);
+      var host = document.querySelector('[data-chips="' + CSS.escape(scope) + '"]');
+      if (host) host.innerHTML = S.drafts[scope].atts.map(function (t, j) { return chipHtml(scope, j, t); }).join("");
+    }
+    return;
+  }
+
+  if (el.hasAttribute("data-answer")) {
+    var id = el.getAttribute("data-answer");
+    var a = ((S.snap && S.snap.attention) || []).find(function (x) { return x.id === id; });
+    var d = S.drafts[id];
+    if (!a || !d) return;
+    el.disabled = true;
+    var answers = d.texts.map(function (t) { return { text: t || "" }; });
+    var p;
+    if (a.kind === "gate") {
+      p = apiAction({ kind: "answer_gate", convId: a.convId, answers: answers, attachmentIds: d.atts.map(function (t) { return t.id; }) });
+    } else {
+      // question estruturada: manda o texto livre como seleção (limitação: sem
+      // os headers/options originais no snapshot, seleção rica fica pro desktop)
+      p = apiAction({ kind: "answer_interaction", id: id, answer: { answers: answers.map(function (x) { return { header: "", selected: [x.text] }; }) } });
+    }
+    p.then(function () { S.answered[id] = true; S.sigs.attention = null; renderAttention(); })
+      .catch(function (e) { el.disabled = false; alert("Falha ao responder: " + (e && e.message ? e.message : e)); });
+    return;
+  }
+
+  if (el.hasAttribute("data-approve") || el.hasAttribute("data-deny")) {
+    var aid = el.getAttribute("data-approve") || el.getAttribute("data-deny");
+    var allow = el.hasAttribute("data-approve");
+    el.disabled = true;
+    apiAction({ kind: "answer_interaction", id: aid, answer: { allow: allow, message: allow ? undefined : "Negado pelo celular (Companion)." } })
+      .then(function () { S.answered[aid] = true; S.sigs.attention = null; renderAttention(); })
+      .catch(function (e) { el.disabled = false; alert("Falha: " + (e && e.message ? e.message : e)); });
+    return;
+  }
+
+  if (el.hasAttribute("data-stop")) {
+    // parada em 2 toques: arma → confirma (3,5s pra desistir)
+    if (el.getAttribute("data-armed") !== "1") {
+      el.setAttribute("data-armed", "1");
+      el.textContent = "Confirmar parada?";
+      setTimeout(function () {
+        if (el.isConnected) { el.removeAttribute("data-armed"); el.textContent = "Parar"; }
+      }, 3500);
+      return;
+    }
+    el.disabled = true;
+    apiAction({ kind: el.getAttribute("data-stopkind"), convId: el.getAttribute("data-stop") })
+      .catch(function () {})
+      .then(function () { if (el.isConnected) { el.disabled = false; el.removeAttribute("data-armed"); el.textContent = "Parar"; } });
+    return;
+  }
+});
+
+$("#chatSend").addEventListener("click", sendChat);
+$("#chatCam").addEventListener("click", function () { pickAttachment({ kind: "chat" }); });
+
+// refresh do estado quando a página volta do background (celular dorme muito)
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState !== "visible" || MOCK || !S.token) return;
+  apiState().then(applySnapshot).catch(function () {});
+  if (S.screen === "chat" && S.chat && S.chat.convId) fetchConv(); // voltou pro chat: histórico fresco
+  if (!ws || ws.readyState === WebSocket.CLOSED) connectWS();
+});
+
+// ---------------- boot ----------------
+initToken();
+renderBell();
+if (!S.token) {
+  showScreen("pair");
+  setConn("off");
+} else {
+  showScreen("brief");
+  apiState().then(applySnapshot).catch(function () {});
+  connectWS();
+}
+</script>
+</body>
+</html>

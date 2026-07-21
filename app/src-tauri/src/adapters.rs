@@ -810,8 +810,8 @@ impl AgentAdapter for AgyAdapter {
         for d in &req.extra_dirs {
             cmd.arg("--add-dir").arg(d);
         }
-        // modelo: o value do front É a string exata do agy ("Gemini 3.5 Flash (Low)",
-        // "Claude Opus 4.6 (Thinking)"…). "default"/None = deixa o agy escolher.
+        // modelo: o value do front É o id exato listado por `agy models` (ex.:
+        // "gemini-3.6-flash-low"). "default"/None = deixa o agy escolher.
         if let Some(m) = &req.model {
             if m != "default" {
                 self.model = Some(m.clone());
@@ -998,5 +998,14 @@ mod tests {
         let i = args.iter().position(|x| x == "-p").unwrap();
         assert_eq!(args[i + 1], "faça X");
         assert!(!args.contains(&"--sandbox".to_string()));
+    }
+
+    #[test]
+    fn agy_model_passa_direto_no_argv() {
+        let mut a = AgyAdapter::default();
+        let mut request = req(Permission::Padrao, false);
+        request.model = Some("gemini-3.6-flash-high".to_string());
+        let args = argv(&a.build_command(&request).unwrap());
+        assert!(has_pair(&args, "--model", "gemini-3.6-flash-high"));
     }
 }

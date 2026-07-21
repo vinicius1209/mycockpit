@@ -12,6 +12,7 @@ mod agent;
 mod approval;
 mod attachments;
 mod catalog;
+mod companion;
 mod context;
 mod detect;
 mod fsx;
@@ -371,6 +372,7 @@ pub fn run() {
         .manage(tray::TrayState::default())
         .manage(attachments::ActiveConvs::default())
         .manage(stt::SttSession::default())
+        .manage(companion::CompanionState::default())
         // aprovação granular inline: registro compartilhado (listener por-run +
         // comando answer_approval) dos pedidos pendentes. Arc: o mesmo mapa é lido
         // pelas conexões do socket e pelo comando que entrega a decisão do usuário.
@@ -423,7 +425,13 @@ pub fn run() {
             attachments::delete_attachment,
             attachments::read_attachment,
             attachments::gc_attachments,
-            attachments::wipe_conv_attachments
+            attachments::wipe_conv_attachments,
+            companion::companion_start,
+            companion::companion_stop,
+            companion::companion_status,
+            companion::companion_revoke_token,
+            companion::set_companion_snapshot,
+            companion::companion_conv_updated
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

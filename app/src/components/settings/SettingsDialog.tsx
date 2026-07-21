@@ -11,6 +11,7 @@ import {
   PanelTop,
   Palette,
   RotateCcw,
+  Smartphone,
   Sparkles,
   Waypoints,
   X,
@@ -47,6 +48,7 @@ import {
   type ModelProposal,
 } from "@/lib/db"
 import { MissionSettings } from "@/components/settings/MissionSettings"
+import { CompanionSettings } from "@/components/settings/CompanionSettings"
 import { cn } from "@/lib/utils"
 
 type Section =
@@ -57,6 +59,7 @@ type Section =
   | "suggestions"
   | "dictation"
   | "missions"
+  | "companion"
   | "about"
 
 // Grupos rotulados (label-mono no rail) — o `group` marca o INÍCIO de um bloco.
@@ -79,6 +82,7 @@ const SECTIONS: {
   { id: "suggestions", label: "Sugestões", icon: Sparkles },
   { id: "dictation", label: "Ditado", icon: Mic },
   { id: "missions", label: "Missões", icon: Waypoints },
+  { id: "companion", label: "Companion", icon: Smartphone },
   { id: "tools", label: "CLIs instaladas", icon: Cpu, group: "Sistema" },
   { id: "about", label: "Sobre", icon: Info },
 ]
@@ -669,6 +673,8 @@ export function SettingsDialog() {
           )}
 
           {section === "missions" && <MissionSettings />}
+
+          {section === "companion" && <CompanionSettings />}
 
           {section === "about" && (
             <div>

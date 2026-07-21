@@ -188,9 +188,10 @@ fn enforce_cap(app: &AppHandle, active: &ActiveConvs) -> Result<(), String> {
     Ok(())
 }
 
-/// Núcleo comum de save_attachment/attach_path: valida tamanho, sniffa o MIME,
-/// aplica allowlist, grava atômico (dedup por hash) e aplica o teto.
-fn save_to_disk(
+/// Núcleo comum de save_attachment/attach_path (e do upload do Companion):
+/// valida tamanho, sniffa o MIME, aplica allowlist, grava atômico (dedup por
+/// hash) e aplica o teto. pub(crate) p/ o companion.rs reusar a MESMA lógica.
+pub(crate) fn save_to_disk(
     app: &AppHandle,
     conv_id: &str,
     name: &str,
