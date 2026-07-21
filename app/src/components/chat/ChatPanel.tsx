@@ -22,7 +22,11 @@ import { writeMycockpitConfig } from "@/lib/mycockpit"
 import { useFusion } from "@/store/fusion"
 import { FusionBoard } from "@/components/fusion/FusionBoard"
 import { useMission } from "@/store/mission"
-import { MissionTimeline } from "@/components/mission/MissionTimeline"
+import {
+  MissionTimeline,
+  missionHostsInline,
+} from "@/components/mission/MissionTimeline"
+import { InlineInteractions } from "@/components/chat/InteractionHost"
 import { runAgent, cancelAgent, agentLabel } from "@/lib/agent"
 import { buildHandoff } from "@/lib/handoff"
 import { buildExecutionPrompt, extractPlanText, turnEndedOk } from "@/lib/planMode"
@@ -90,6 +94,12 @@ export function ChatPanel() {
   // worktree; um run paralelo embolaria o diff/handoff — aresta do M2).
   const missionRunning = useMission((s) =>
     activeId ? s.byConv[activeId]?.status === "running" : false,
+  )
+  // Aprovações contextuais: a MissionTimeline hospeda o card inline enquanto o
+  // bloco da fase corrente está na tela; fora disso (linear/gate/done) o card
+  // entra aqui, acima do composer. Nunca os dois — mesma régua nos dois lados.
+  const missionInline = useMission((s) =>
+    missionHostsInline(activeId ? s.byConv[activeId] : null),
   )
 
   // Checklist viva (P2): faixa fixa acima do composer enquanto o plano anda,
@@ -560,10 +570,12 @@ export function ChatPanel() {
         className="relative flex-1 overflow-x-hidden overflow-y-auto"
       >
         {/* Missão TOMA a tela: renderiza primeiro e suprime o empty state (antes
-            ela flutuava como card sobre o "Boa tarde"). O chat (se houver) fica
-            abaixo. */}
+            ela flutuava como card sobre o "Boa tarde"). Com run em MEMÓRIA a
+            timeline cobre a missão inteira — os marcos persistidos no fio
+            (recordHistory do store/mission.ts) só aparecem SEM run (restart),
+            senão o resumo sairia duplicado na mesma tela. */}
         {activeId && missionActive && <MissionTimeline convId={activeId} />}
-        {hasConversation ? (
+        {hasConversation && !missionActive ? (
           // key no activeId → o fade só replica ao TROCAR de conversa (não a cada
           // token do streaming, que mantém o mesmo activeId).
           <div
@@ -651,9 +663,12 @@ export function ChatPanel() {
         {/* px-8 casa a borda do composer com o texto do transcript (que usa
             max-w-[760px] + px-8) — sem isso o composer estoura ~64px pras laterais. */}
         <div className="mx-auto max-w-[760px] px-8">
-          {/* Interação pendente (aprovação/pergunta): host GLOBAL agora — vive no
-              GlobalInteractionHost montado no App.tsx, visível em QUALQUER
-              viewMode (o ChatPanel fica hidden no office e escondia o card). */}
+          {/* Interação pendente (aprovação/pergunta) CONTEXTUAL: pedidos da
+              conversa VISÍVEL renderizam aqui, no fluxo (o toast global os
+              suprime); os demais seguem no GlobalInteractionHost do App.tsx.
+              Com a missão rodando o card mora na MissionTimeline (fase
+              corrente) — não duplica aqui. */}
+          {activeId && !missionInline && <InlineInteractions convId={activeId} />}
           {conv?.pendingPlan && !running && !finalizing && (
             <PlanPendingCard
               onApprove={handleApprovePlan}

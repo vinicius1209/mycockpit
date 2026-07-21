@@ -10,6 +10,10 @@ import { InteractionHost } from "@/components/chat/InteractionHost"
  *  empilhando para cima — fora da coluna do composer, então não cobre o campo
  *  de digitação no modo linear.
  *
+ *  Aprovações CONTEXTUAIS (Backlog §8): o InteractionHost renderiza só o lado
+ *  GLOBAL do split (useContextualSplit) — pedidos da conversa VISÍVEL aparecem
+ *  inline no fluxo (MissionTimeline/ChatPanel) e este toast os suprime.
+ *
  *  z-40 DE PROPÓSITO: abaixo de Dialog/CommandMenu (z-50) e do Onboarding
  *  (z-[100]) — um overlay clicável acima de um modal furaria o focus-trap.
  *

@@ -6,6 +6,7 @@ import { create } from "zustand"
 import { cancelAgent } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import type {
+  GateAnswer,
   MissionPhaseDef,
   MissionPhaseRun,
   MissionPreset,
@@ -13,6 +14,8 @@ import type {
   MissionStatus,
   RecoveryChoice,
 } from "@/lib/missionTypes"
+import { agentCaps } from "@/lib/agents"
+import { notifyGate } from "@/lib/notify"
 import { buildHandoff } from "@/lib/handoff"
 import { loadGitDiff } from "@/lib/git"
 import { insertDelivery } from "@/lib/db"
@@ -28,11 +31,13 @@ import {
   checkBudget,
   gateQuestions,
   isRecoverableFailure,
+  normalizeGateAnswers,
   phasePrompt,
   phaseText,
   recoveryMessage,
   reviewerApproved,
   runPhase,
+  splitGateAttachments,
   type PhaseResult,
 } from "@/lib/mission"
 import {
@@ -64,8 +69,11 @@ export interface MissionState {
   clear: (convId: string) => void
 
   /** Gate humano: entrega as respostas do usuário e RETOMA a missão pausada.
-   *  answers[i] corresponde a gate.questions[i] (em branco = agente decide). */
-  answerGate: (convId: string, answers: string[]) => void
+   *  answers[i] corresponde a gate.questions[i] (em branco = agente decide).
+   *  Aceita GateAnswer[] (rico: texto + anexos) OU string[] legado — a UI atual
+   *  segue funcionando; anexos vão pro runPhase da PRÓXIMA fase (filtrados pelo
+   *  agentCaps do agent dela; não suportado ⇒ notice, nunca erro). */
+  answerGate: (convId: string, answers: GateAnswer[] | string[]) => void
 
   /** Recuperação: o usuário escolheu outro agent/modelo/effort → troca a def da
    *  fase corrente e RE-RODA a MESMA fase (sem avançar). No-op se não há
@@ -108,9 +116,41 @@ function phaseRunId(missionId: string, phaseIdx: number): string {
   return `${missionId}::phase-${phaseIdx}`
 }
 
+// ── Histórico persistente da missão (pendência M2 do docs/mission-mode.md):
+// a missão roda em memória (byConv), então sem gravar nada a conversa reabria
+// VAZIA após restart. Gravamos nos MARCOS (launch/fase/gate/recovery/fim) via
+// useChat.appendItems — barato e legível, não é o transcript pleno das fases.
+
+/** Tamanho máx. do resumo de fase gravado na conversa (o transcript inteiro
+ *  não cabe e não é o objetivo dos marcos). */
+const PHASE_SUMMARY_MAX = 2000
+
+/** Trunca o resumo de fase no teto (com reticências). */
+function summarize(text: string): string {
+  return text.length > PHASE_SUMMARY_MAX
+    ? `${text.slice(0, PHASE_SUMMARY_MAX)}…`
+    : text
+}
+
+function noticeItem(message: string): ChatItem {
+  return { kind: "notice", id: crypto.randomUUID(), message }
+}
+
+/** Grava itens de MARCO no fio da conversa. BEST-EFFORT: falha de persistência
+ *  NUNCA derruba a missão (o run em memória segue sendo a fonte da timeline);
+ *  o appendItems já no-opa se a conversa não está carregada (launcher garante). */
+async function recordHistory(convId: string, items: ChatItem[]): Promise<void> {
+  try {
+    await useChat.getState().appendItems(convId, items)
+  } catch (err) {
+    console.warn("[missão] falha ao gravar histórico na conversa:", err)
+  }
+}
+
 /** Gate humano: resolvedores das missões pausadas (por missionId). O loop do
- *  launch fica aguardando; answerGate resolve com as respostas, abort com null. */
-const gateWaiters = new Map<string, (answers: string[] | null) => void>()
+ *  launch fica aguardando; answerGate resolve com as respostas (já normalizadas
+ *  p/ GateAnswer[]), abort com null. */
+const gateWaiters = new Map<string, (answers: GateAnswer[] | null) => void>()
 
 /** Recuperação: resolvedores das missões pausadas numa falha recuperável (por
  *  missionId). MESMO padrão do gate — o while da fase aguarda; resolveRecovery
@@ -140,6 +180,20 @@ export const useMission = create<MissionState>((set, get) => {
     patchConv(convId, (cur) => ({
       phases: cur.phases.map((ph, i) => (i === phaseIdx ? fn(ph) : ph)),
     }))
+
+  /** Marco terminal de ERRO no fio: result !ok com o custo total + motivo. */
+  const recordError = (convId: string, reason: string) => {
+    const cost = get().byConv[convId]?.costTotal ?? 0
+    return recordHistory(convId, [
+      {
+        kind: "result",
+        id: crypto.randomUUID(),
+        ok: false,
+        costUsd: cost,
+        text: `Missão interrompida: ${reason}`,
+      },
+    ])
+  }
 
   return {
     byConv: {},
@@ -192,6 +246,20 @@ export const useMission = create<MissionState>((set, get) => {
       }
       set((s) => ({ byConv: { ...s.byConv, [convId]: run } }))
 
+      // marco: largada no fio da conversa (task + resumo do preset). O launcher
+      // já garantiu byId (ensureConversationLoaded) — Escritório e Trabalho.
+      await recordHistory(convId, [
+        {
+          kind: "user",
+          id: crypto.randomUUID(),
+          text: task,
+          attachments: attachments.length ? attachments : undefined,
+        },
+        noticeItem(
+          `🚀 Missão iniciada · preset ${preset.name} · ${preset.phases.length} fases`,
+        ),
+      ])
+
       // itens da fase anterior (p/ fallback do handoff) — o diff sai do worktree.
       let prevItems: ChatItem[] = []
       // lista MUTÁVEL: o loop de correção do M2 acrescenta fases (executor
@@ -210,6 +278,9 @@ export const useMission = create<MissionState>((set, get) => {
       // Gate humano: bloco de decisões do usuário — SÓ a fase seguinte ao gate
       // recebe (zera depois de usar).
       let gateDecisions: string | null = null
+      // Gate rico: anexos das respostas (já filtrados pelo agentCaps da próxima
+      // fase no answerGate) — mesma regra: SÓ a fase seguinte recebe.
+      let gateAttachments: Attachment[] = []
       let i = 0
 
       while (i < phases.length) {
@@ -226,6 +297,7 @@ export const useMission = create<MissionState>((set, get) => {
             status: "error",
             error: budget.reason,
           }))
+          await recordError(convId, budget.reason ?? "orçamento esgotado")
           return
         }
 
@@ -274,6 +346,11 @@ export const useMission = create<MissionState>((set, get) => {
           userDecisions: gateDecisions,
         })
         gateDecisions = null // só a fase imediatamente após o gate recebe
+        // anexos do gate: consumidos aqui (fase seguinte ao gate) e zerados —
+        // um re-run por recuperação da MESMA fase ainda os recebe (phaseAtts).
+        const phaseGateAtts: Attachment[] | undefined =
+          gateAttachments.length > 0 ? gateAttachments : undefined
+        gateAttachments = []
 
         patchConv(convId, { current: i })
         patchPhase(convId, i, (ph) => ({
@@ -300,9 +377,10 @@ export const useMission = create<MissionState>((set, get) => {
             cwd,
             permission,
             maxRetries: cur.maxRetries,
-            // anexos só na 1ª fase (i === 0): acompanham o pedido original; as
-            // fases seguintes herdam o contexto pelo handoff/worktree.
-            attachments: i === 0 ? attachments : undefined,
+            // anexos: 1ª fase (i === 0) = os do launcher, junto do pedido
+            // original; fase seguinte a um GATE = os das respostas ricas
+            // (phaseGateAtts). As demais herdam o contexto pelo handoff/worktree.
+            attachments: i === 0 ? attachments : phaseGateAtts,
             onProgress: (attempt, items) =>
               patchPhase(convId, i, (ph) => ({ ...ph, attempt, items } as MissionPhaseRun)),
           })
@@ -334,6 +412,7 @@ export const useMission = create<MissionState>((set, get) => {
               error: result.error,
             }))
             patchConv(convId, { status: "error", current: i })
+            await recordError(convId, result.error ?? "falha na fase")
             return
           }
 
@@ -363,6 +442,10 @@ export const useMission = create<MissionState>((set, get) => {
           if (choice === null) {
             // desistiu (abortRecovery) → a missão vai a error, como antes.
             patchConv(convId, { status: "error", current: i })
+            await recordError(
+              convId,
+              result.error ?? "fase parou por limite (recuperação abandonada)",
+            )
             return
           }
           // budget HARD também no re-run (o checkBudget do topo só roda ao ENTRAR
@@ -377,8 +460,15 @@ export const useMission = create<MissionState>((set, get) => {
               error: rebud.reason,
             }))
             patchConv(convId, { status: "error", current: i })
+            await recordError(convId, rebud.reason ?? "orçamento esgotado")
             return
           }
+          // marco: a pausa por limite + retomada com o agent escolhido no fio.
+          await recordHistory(convId, [
+            noticeItem(
+              `Fase ${i + 1} · ${phases[i].label} parou por limite; retomada com ${choice.agent}`,
+            ),
+          ])
           // troca a def da fase corrente e RE-RODA a MESMA fase (volta ao topo do
           // while). O índice i NÃO avança; o prompt já montado é reusado.
           phases[i] = {
@@ -403,6 +493,27 @@ export const useMission = create<MissionState>((set, get) => {
         }
 
         prevItems = result.items
+
+        // marco: fase concluída → notice (label/agent/custo) + resumo CURTO da
+        // fase no fio (phaseText truncado — o transcript pleno não é o objetivo).
+        {
+          const phCost =
+            get().byConv[convId]?.phases[i]?.costUsd ?? result.costUsd
+          const marks: ChatItem[] = [
+            noticeItem(
+              `Fase ${i + 1}/${phases.length} · ${phases[i].label} (${phases[i].agent}) — concluída · US$ ${phCost.toFixed(2)}`,
+            ),
+          ]
+          const summary = phaseText(result.items)
+          if (summary) {
+            marks.push({
+              kind: "text",
+              id: crypto.randomUUID(),
+              text: summarize(summary),
+            })
+          }
+          await recordHistory(convId, marks)
+        }
 
         // M1: captura o plano (1º planner) e o executor (1º executor) p/ a
         // entrega. `phaseText` já filtra só o texto (sem tool calls). O agent do
@@ -465,13 +576,58 @@ export const useMission = create<MissionState>((set, get) => {
           const stillRunning = get().byConv[convId]
           if (!stillRunning || stillRunning.status !== "running") return
           patchConv(convId, { gate: { phase: i, questions } })
-          const answers = await new Promise<string[] | null>((resolve) => {
+          // notificação nativa: o gate ABRIU — a missão está parada esperando
+          // você, em qualquer modo/app em background. 1 por gate (só aqui).
+          {
+            const projName =
+              useApp.getState().projects.find((p) => p.id === projectId)?.name ??
+              ""
+            notifyGate(convId, projName, phases[i].label)
+          }
+          // waiter registrado ANTES do record: o await do marco não pode abrir
+          // janela pro answerGate resolver no vazio.
+          const waiter = new Promise<GateAnswer[] | null>((resolve) => {
             gateWaiters.set(missionId, resolve)
           })
+          // marco: perguntas do gate no fio.
+          await recordHistory(convId, [
+            noticeItem(
+              `⏸️ Gate humano — a fase ${i + 1} deixou perguntas:\n${questions.map((q, k) => `${k + 1}. ${q}`).join("\n")}`,
+            ),
+          ])
+          const answers = await waiter
           gateWaiters.delete(missionId)
           patchConv(convId, { gate: null })
           if (answers === null) return // abortada durante o gate
-          gateDecisions = buildGateDecisionsBlock(questions, answers)
+          gateDecisions = buildGateDecisionsBlock(
+            questions,
+            answers.map((a) => a.text),
+          )
+          // anexos das respostas → runPhase da PRÓXIMA fase, filtrados pelo
+          // caps do agent dela (não suportado ⇒ descarta com notice, sem erro).
+          const nextAgent = phases[i + 1]?.agent ?? ""
+          const split = splitGateAttachments(answers, agentCaps(nextAgent))
+          gateAttachments = split.kept
+          // marco: respostas do usuário no fio (em branco = agente decide;
+          // resposta com anexos ganha o sufixo "+ N anexos").
+          const answered = questions.map((_q, k) => {
+            const a = answers[k]
+            const text =
+              (a?.text ?? "").trim() || "(sem resposta — o agente decide)"
+            const n = a?.attachments?.length ?? 0
+            return `${k + 1}. ${text}${n > 0 ? ` (+ ${n} ${n === 1 ? "anexo" : "anexos"})` : ""}`
+          })
+          const marks: ChatItem[] = [
+            noticeItem(`▶️ Gate respondido:\n${answered.join("\n")}`),
+          ]
+          if (split.dropped.length > 0) {
+            marks.push(
+              noticeItem(
+                `⚠️ ${split.dropped.length} ${split.dropped.length === 1 ? "anexo descartado" : "anexos descartados"} — ${nextAgent} não suporta: ${split.dropped.map((d) => d.name).join(", ")}`,
+              ),
+            )
+          }
+          await recordHistory(convId, marks)
         }
 
         i++
@@ -499,6 +655,37 @@ export const useMission = create<MissionState>((set, get) => {
         }
       } catch {
         // sem resumo estruturado — a UI cai no texto final da fase.
+      }
+
+      // marco: conclusão no fio — result (ok + custo total) + o doneSummary
+      // (veredito/arquivos/pendências) quando houver.
+      {
+        const ds = get().byConv[convId]?.doneSummary
+        const marks: ChatItem[] = [
+          {
+            kind: "result",
+            id: crypto.randomUUID(),
+            ok: true,
+            costUsd: finalCost,
+            text: `Missão concluída · preset ${preset.name}`,
+          },
+        ]
+        const lines: string[] = []
+        if (ds?.intent) lines.push(ds.intent)
+        if (ds?.filesTouched.length)
+          lines.push(`Arquivos: ${ds.filesTouched.join(", ")}`)
+        if (ds?.openQuestions.length)
+          lines.push(
+            `Pendências:\n${ds.openQuestions.map((q) => `- ${q}`).join("\n")}`,
+          )
+        if (lines.length) {
+          marks.push({
+            kind: "text",
+            id: crypto.randomUUID(),
+            text: lines.join("\n\n"),
+          })
+        }
+        await recordHistory(convId, marks)
       }
 
       // ── M1: grava a ENTREGA (evento de alto sinal: passou nos gates) ──
@@ -566,6 +753,17 @@ export const useMission = create<MissionState>((set, get) => {
       // null; o while checa status !== "running" e sai sem forçar error).
       gateWaiters.get(run.id)?.(null)
       recoveryWaiters.get(run.id)?.(null)
+      // marco terminal no fio (fire-and-forget: nunca segura o Stop; o
+      // appendItems no-opa se a conversa já saiu de byId, ex. deleção).
+      void recordHistory(convId, [
+        {
+          kind: "result",
+          id: crypto.randomUUID(),
+          ok: false,
+          costUsd: run.costTotal,
+          text: "Missão interrompida pelo usuário (Stop)",
+        },
+      ])
     },
 
     clear: (convId) =>
@@ -584,7 +782,8 @@ export const useMission = create<MissionState>((set, get) => {
     answerGate: (convId, answers) => {
       const run = get().byConv[convId]
       if (!run?.gate) return
-      gateWaiters.get(run.id)?.(answers)
+      // string[] legado (UI atual) vira GateAnswer[] sem anexos — retrocompat.
+      gateWaiters.get(run.id)?.(normalizeGateAnswers(answers))
     },
 
     resolveRecovery: (convId, choice) => {

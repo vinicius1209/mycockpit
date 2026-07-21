@@ -55,3 +55,36 @@ export function notifyTurnEnd(convId: string, agent: string) {
     )
   }
 }
+
+/** Chamado UMA vez quando um GATE humano abre (a missão pausou aguardando as
+ *  suas decisões). Empilha no feed e dispara a nativa SEMPRE — diferente do
+ *  notifyTurnEnd, o gate segura a missão inteira, então avisa em qualquer
+ *  modo (Escritório/Trabalho) e com o app em background. Sem spam: o store só
+ *  chama no momento em que o gate abre (1 por gate). */
+export function notifyGate(
+  convId: string,
+  projectName: string,
+  phaseLabel: string,
+) {
+  const chat = useChat.getState()
+  const c = chat.byId[convId]
+  const meta = c
+    ? (chat.conversationsByProject[c.projectId] ?? chat.conversations).find(
+        (cv) => cv.id === convId,
+      )
+    : undefined
+  const title = meta?.title ?? "Missão"
+
+  useNotifs.getState().push({
+    kind: "gate",
+    title,
+    subtitle: `Decisão pendente · ${phaseLabel}${projectName ? ` · ${projectName}` : ""}`,
+    projectId: c?.projectId ?? "",
+    convId,
+  })
+
+  void nativeNotify(
+    "Frota — decisão pendente",
+    `${title} — a fase ${phaseLabel} deixou perguntas; a missão está pausada esperando você.`,
+  )
+}

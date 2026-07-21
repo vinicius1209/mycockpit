@@ -10,39 +10,37 @@ import {
 } from "lucide-react"
 import type {
   ApprovalData,
+  InteractionRequest,
   QuestionAnswer,
   QuestionData,
 } from "@/lib/interaction"
-import { useInteractions } from "@/store/interactions"
+import { useContextualSplit, useInteractions } from "@/store/interactions"
 import { cn } from "@/lib/utils"
 
-/** InteractionHost — card das "interações pendentes" (padrão unificado). Enquanto
- *  o agente espera VOCÊ no meio do turno, o turno fica PAUSADO e este bloco
- *  renderiza o card certo por `kind`:
+/** InteractionCard — card individual de UM pedido pendente (padrão unificado).
+ *  Enquanto o agente espera VOCÊ no meio do turno, o turno fica PAUSADO e este
+ *  card renderiza por `kind`:
  *   - approval: banner Aprovar/Negar com o comando exato.
  *   - question: card com um bloco por pergunta (radios/checkboxes + "Outro") + Responder.
- *  Vários pedidos empilham (o agente pode encadear); a fila mostra um card por vez
- *  (FIFO), cada um respondido pelo seu `id`.
  *
- *  A fila mora no store/interactions (fonte ÚNICA, alimentada pelos eventos
- *  globais no import do módulo) — o office (bridge/derive) lê a MESMA fila,
- *  então o card daqui e a mão levantada na mesa nunca divergem. Responder
- *  remove o card na hora: o backend não confirma resposta via resolved (só o
- *  Drop fail-closed emite; ver o store). */
-export function InteractionHost() {
-  const queue = useInteractions((s) => s.queue)
+ *  Reutilizável nas DUAS superfícies das aprovações contextuais: toast global
+ *  (canto) e inline no fluxo da conversa visível (MissionTimeline/ChatPanel).
+ *  Responde SEMPRE via useInteractions.answer/dismiss (fonte única): responder
+ *  em qualquer superfície remove da fila NA HORA — a outra nunca pisca. */
+export function InteractionCard({
+  req,
+  extra = 0,
+}: {
+  req: InteractionRequest
+  /** Quantos pedidos aguardam atrás deste (hint "+N na fila"). */
+  extra?: number
+}) {
   const answer = useInteractions((s) => s.answer)
   const dismiss = useInteractions((s) => s.dismiss)
-
-  if (queue.length === 0) return null
-  // mostra o pedido mais antigo (FIFO); os demais aguardam a vez.
-  const req = queue[0]
-  const extra = queue.length - 1
 
   if (req.kind === "question") {
     return (
       <QuestionCard
-        key={req.id}
         data={req.data as QuestionData}
         extra={extra}
         onAnswer={(a) => answer(req.id, a)}
@@ -53,13 +51,40 @@ export function InteractionHost() {
 
   return (
     <ApprovalCard
-      key={req.id}
       data={req.data as ApprovalData}
       extra={extra}
       onDecide={(allow) => answer(req.id, { allow })}
       onDismiss={() => dismiss(req)}
     />
   )
+}
+
+/** InteractionHost — host GLOBAL (toast no canto, via GlobalInteractionHost).
+ *  Aprovações CONTEXTUAIS: renderiza só o `split.global` — pedidos da conversa
+ *  VISÍVEL saem daqui e aparecem inline no fluxo (InlineInteractions), nunca os
+ *  dois ao mesmo tempo. Vários pedidos empilham (o agente pode encadear); a
+ *  fila mostra um card por vez (FIFO), cada um respondido pelo seu `id`.
+ *
+ *  A fila mora no store/interactions (fonte ÚNICA, alimentada pelos eventos
+ *  globais no import do módulo) — o office (bridge/derive) lê a MESMA fila,
+ *  então o card daqui e a mão levantada na mesa nunca divergem. */
+export function InteractionHost() {
+  const { global } = useContextualSplit()
+  if (global.length === 0) return null
+  // mostra o pedido mais antigo (FIFO); os demais aguardam a vez.
+  const req = global[0]
+  return <InteractionCard key={req.id} req={req} extra={global.length - 1} />
+}
+
+/** Pedidos INLINE da conversa `convId` (a visível na tela): primeiro da fila +
+ *  hint dos demais. null quando nada pertence a ela — o host global cobre.
+ *  Montado no fluxo: MissionTimeline (bloco da fase corrente) ou ChatPanel
+ *  (acima do composer). */
+export function InlineInteractions({ convId }: { convId: string }) {
+  const { inline, inlineConvId } = useContextualSplit()
+  if (inlineConvId !== convId || inline.length === 0) return null
+  const req = inline[0]
+  return <InteractionCard key={req.id} req={req} extra={inline.length - 1} />
 }
 
 function QueueHint({ extra }: { extra: number }) {

@@ -16,6 +16,7 @@ import {
 } from "@/lib/suggestions"
 import { useApp } from "@/store/app"
 import type { FusionCandidate } from "@/store/fusion"
+import { normalizeAgyModel } from "@/lib/agents"
 import {
   listConversations as dbList,
   loadConversation as dbLoad,
@@ -29,6 +30,7 @@ import {
   isTauri,
   type ConversationMeta,
 } from "@/lib/db"
+import { perfSpan } from "@/office/engine/perf"
 
 export type ChatItem =
   | { kind: "user"; id: string; text: string; attachments?: Attachment[] }
@@ -192,6 +194,12 @@ interface ChatState {
   /** Duplica a conversa (copia o histórico; sessão nova, sem resume). */
   duplicateConversation: (id: string) => Promise<void>
   persist: (convId: string) => Promise<void>
+  /** Anexa itens PRONTOS ao fio da conversa e persiste (marcos da missão, M2).
+   *  EXIGE a conversa carregada em byId (ensureConversationLoaded antes) —
+   *  no-op com aviso se não, pra nunca fabricar estado vazio que o persist
+   *  (UPSERT de linha inteira) gravaria por cima do histórico real. NUNCA
+   *  mexe em running/runId — é só conteúdo, não controle de turno. */
+  appendItems: (convId: string, items: ChatItem[]) => Promise<void>
   start: (
     convId: string,
     text: string,
@@ -540,7 +548,12 @@ export const useChat = create<ChatState>((set, get) => {
             sessionId: conv?.sessionId ?? null,
             suggestions: conv?.suggestions ?? [],
             agent: conv?.agent ?? "claude-code",
-            reqModel: conv?.reqModel ?? null,
+            // Conversas antigas guardavam o nome de exibição do agy. Normaliza
+            // antes de qualquer composer/adapter poder reutilizar esse valor.
+            reqModel:
+              conv?.agent === "agy"
+                ? normalizeAgyModel(conv.reqModel)
+                : (conv?.reqModel ?? null),
             effort: conv?.effort ?? null,
             worktreePath: conv?.worktreePath ?? null,
           }
@@ -902,7 +915,8 @@ export const useChat = create<ChatState>((set, get) => {
       if (loaded === "corrupt") return // não duplica linha corrompida
       const items = loaded?.items ?? get().byId[id]?.items ?? []
       const agent = loaded?.agent ?? get().byId[id]?.agent ?? "claude-code"
-      const reqModel = loaded?.reqModel ?? get().byId[id]?.reqModel ?? null
+      const rawReqModel = loaded?.reqModel ?? get().byId[id]?.reqModel ?? null
+      const reqModel = agent === "agy" ? normalizeAgyModel(rawReqModel) : rawReqModel
       const effort = loaded?.effort ?? get().byId[id]?.effort ?? null
       const title = `${src?.title ?? loaded?.title ?? "Conversa"} (cópia)`
       const newId = uid()
@@ -954,6 +968,9 @@ export const useChat = create<ChatState>((set, get) => {
       const ownerList = get().conversationsByProject[c.projectId]
       const meta = ownerList?.find((cv) => cv.id === convId)
       const title = meta?.title ?? deriveTitle(c.items)
+      // S1: UPSERT de linha inteira (stringify da conversa TODA na main thread)
+      // — span de PAREDE (inclui o await do SQLite); no-op sem mc.office.perf.
+      const endSpan = perfSpan("persist")
       await dbSave(
         convId,
         c.projectId,
@@ -965,6 +982,7 @@ export const useChat = create<ChatState>((set, get) => {
         c.reqModel,
         c.effort,
       )
+      endSpan()
       const now = Date.now()
       // atualiza no lugar, sem reordenar (ordem de criação é estável)
       set((st) => {
@@ -984,6 +1002,35 @@ export const useChat = create<ChatState>((set, get) => {
             c.projectId === st.projectId ? nextList : st.conversations,
         }
       })
+    },
+
+    appendItems: async (convId, items) => {
+      if (items.length === 0) return
+      const cur = get().byId[convId]
+      if (!cur) {
+        // sem estado carregado NÃO fabricamos conversa vazia (o persist é UPSERT
+        // de linha inteira e apagaria o histórico do disco) — mesmo guard do start.
+        console.warn(
+          "[chat] appendItems: conversa não carregada em byId — itens descartados",
+          convId,
+        )
+        return
+      }
+      if (cur.corrupt) return // linha corrompida: persist bloqueado, nada a anexar
+      // metas do projeto carregadas ANTES do persist: sem elas o persist não acha
+      // meta.title e re-derivaria o título do 1º prompt (clobraria o título fixo
+      // "Missão · …") — mesmo padrão do ensureDeskConversation (bridge/send.ts).
+      await get().loadProjectConversations(cur.projectId)
+      const endSpan = perfSpan("appendItems") // S1 (no-op sem mc.office.perf)
+      set((s) => {
+        const c = s.byId[convId]
+        if (!c) return {}
+        return {
+          byId: { ...s.byId, [convId]: { ...c, items: [...c.items, ...items] } },
+        }
+      })
+      endSpan()
+      await get().persist(convId)
     },
 
     start: (convId, text, runId, agent, model, effort, attachments) =>

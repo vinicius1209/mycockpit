@@ -3,8 +3,9 @@
 // Feature independente do SDD (decisão de produto 2026-07-12).
 // Este arquivo é a fonte de verdade dos tipos — UI, store e settings
 // importam daqui; NÃO importar componentes/stores aqui (sem ciclos).
-// (só um `import type` — apagado na compilação, sem ciclo em runtime.)
+// (só `import type` — apagados na compilação, sem ciclo em runtime.)
 
+import type { Attachment } from "@/lib/attachments"
 import type { ChatItem } from "@/store/chat"
 
 export type MissionPersona = "planner" | "executor" | "reviewer"
@@ -68,6 +69,16 @@ export type MissionStatus = "running" | "done" | "error" | "aborted"
 export interface MissionGate {
   phase: number
   questions: string[]
+}
+
+/** Resposta RICA de UMA pergunta do gate: texto (em branco = o agente decide)
+ *  + anexos opcionais (imagem/PDF). Os textos viram diretriz no prompt da fase
+ *  seguinte; os anexos agregados vão pro runPhase dela (filtrados pelo caps do
+ *  agent — anexo não suportado é descartado com notice, nunca erro).
+ *  answerGate também aceita string[] legado (normalizado p/ cá). */
+export interface GateAnswer {
+  text: string
+  attachments?: Attachment[]
 }
 
 /** Recuperação de missão: a fase `phase` falhou de forma RECUPERÁVEL (limite de

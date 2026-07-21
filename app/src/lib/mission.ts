@@ -8,7 +8,7 @@ import { runAgent, type AgentEvent, type CostSource } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { matchesResumePattern } from "@/lib/autoResume"
 import { reduceItems, type ChatItem, type ItemReducible } from "@/store/chat"
-import type { MissionPersona } from "@/lib/missionTypes"
+import type { GateAnswer, MissionPersona } from "@/lib/missionTypes"
 import { handoffInstruction } from "@/lib/missionHandoff"
 
 /** Estado acumulável de UMA fase enquanto os eventos chegam (subset reduzível). */
@@ -157,6 +157,34 @@ export function buildGateDecisionsBlock(
   return lines.join("\n")
 }
 
+/** Normaliza as respostas do gate: string[] legado (Trabalho/Escritório atuais)
+ *  vira GateAnswer[] sem anexos. Retrocompat total — os texts seguem o MESMO
+ *  caminho (buildGateDecisionsBlock) nas duas formas. */
+export function normalizeGateAnswers(
+  answers: GateAnswer[] | string[],
+): GateAnswer[] {
+  return answers.map((a) => (typeof a === "string" ? { text: a } : a))
+}
+
+/** Anexos das respostas do gate divididos pela capacidade do agent da PRÓXIMA
+ *  fase (agentCaps): `kept` vai pro runPhase dela; `dropped` vira notice no
+ *  histórico (nunca erro). Agrega na ordem das respostas. */
+export function splitGateAttachments(
+  answers: GateAnswer[],
+  caps: { image: boolean; pdf: boolean },
+): { kept: Attachment[]; dropped: Attachment[] } {
+  const kept: Attachment[] = []
+  const dropped: Attachment[] = []
+  for (const a of answers) {
+    for (const att of a.attachments ?? []) {
+      const supported =
+        (att.kind === "image" && caps.image) || (att.kind === "pdf" && caps.pdf)
+      ;(supported ? kept : dropped).push(att)
+    }
+  }
+  return { kept, dropped }
+}
+
 /** O reviewer aprovou? Varre o texto final da fase por "APROVADO" (o template
  *  pede essa palavra), evitando o falso-positivo de "NÃO APROVADO". Usado pelo
  *  loop de correção do M2 (reviewer reprova → volta ao executor). */
@@ -200,9 +228,10 @@ export interface RunPhaseArgs {
   cwd: string
   permission: string
   maxRetries: number
-  /** Anexos do usuário (imagem/PDF do launcher). Só a FASE 1 recebe — vão
-   *  junto do pedido da missão, pelo MESMO caminho do handleSend (runAgent já
-   *  aceitava a lista; nada muda no Rust). Default = sem anexos. */
+  /** Anexos do usuário (imagem/PDF): na FASE 1 vêm do launcher (junto do
+   *  pedido); na fase seguinte a um GATE vêm das respostas ricas (answerGate).
+   *  Mesmo caminho do handleSend (runAgent já aceitava a lista; nada muda no
+   *  Rust). Default = sem anexos. */
   attachments?: Attachment[]
   /** Callback por tentativa: informa a tentativa corrente (1-based) e os itens
    *  reduzidos até aqui, p/ o store espelhar na timeline. */

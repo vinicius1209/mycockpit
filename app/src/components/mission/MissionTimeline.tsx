@@ -7,8 +7,17 @@ import { useEffect, useMemo, useState } from "react"
 import { Check, Rocket, X } from "lucide-react"
 import { useMission } from "@/store/mission"
 import type { ChatItem } from "@/store/chat"
-import type { MissionPhaseRun, MissionRun } from "@/lib/missionTypes"
-import { agentDef } from "@/lib/agents"
+import type {
+  GateAnswer,
+  MissionPhaseRun,
+  MissionRun,
+} from "@/lib/missionTypes"
+import type { InteractionRequest } from "@/lib/interaction"
+import { useContextualSplit } from "@/store/interactions"
+import { agentCaps, agentDef } from "@/lib/agents"
+import { GateAnswerForm } from "@/components/mission/GateAnswerForm"
+import { InteractionCard } from "@/components/chat/InteractionHost"
+import { MicButton } from "@/components/chat/MicButton"
 import { fmtCost, fmtDuration } from "@/lib/format"
 import { presentTool } from "@/lib/toolview"
 import { Markdown } from "@/components/common/Markdown"
@@ -80,9 +89,27 @@ function StepDot({ status }: { status: "ok" | "run" | "pending" }) {
   )
 }
 
+/** A timeline hospeda o card inline das aprovações contextuais quando o bloco
+ *  da fase corrente (LiveActivity) está na tela: missão rodando, sem gate e a
+ *  fase corrente de fato running. Fora disso (gate/recovery/done) o ChatPanel
+ *  renderiza o card acima do composer — mesma régua nos dois lados. */
+export function missionHostsInline(m: MissionRun | undefined | null): boolean {
+  if (!m || m.status !== "running" || m.gate) return false
+  const cur = m.phases[Math.min(m.current, m.phases.length - 1)]
+  return cur?.status === "running"
+}
+
 /** Atividade ao vivo da fase corrente: header (agent + cronômetro), scan e os
- *  últimos passos + "Agora:…". O dado JÁ existe no store (onProgress). */
-function LiveActivity({ phase }: { phase: MissionPhaseRun }) {
+ *  últimos passos + "Agora:…". O dado JÁ existe no store (onProgress).
+ *  `interactions` = pedidos pendentes DESTA conversa (aprovações contextuais):
+ *  o card entra AQUI, junto da cena que ele interrompeu — acima do "Agora:". */
+function LiveActivity({
+  phase,
+  interactions,
+}: {
+  phase: MissionPhaseRun
+  interactions?: InteractionRequest[]
+}) {
   const now = useNow(true)
   const { tools, now: nowLabel } = phaseActivity(phase.items)
   const elapsed = phase.startedAt ? now - phase.startedAt : 0
@@ -130,6 +157,17 @@ function LiveActivity({ phase }: { phase: MissionPhaseRun }) {
           })}
         </div>
       )}
+      {/* Aprovação contextual: o pedido pausou ESTA fase — o card mora na cena
+          (FIFO, um por vez), não num toast desconectado no canto. */}
+      {interactions && interactions.length > 0 && (
+        <div className="px-3.5 pt-2">
+          <InteractionCard
+            key={interactions[0].id}
+            req={interactions[0]}
+            extra={interactions.length - 1}
+          />
+        </div>
+      )}
       <div className="flex items-center gap-2 border-t border-border px-3.5 py-2 text-[12px] text-muted-foreground">
         <span className="animate-cockpit-pulse size-1.5 shrink-0 rounded-full bg-st-running" />
         <span className="min-w-0 truncate">
@@ -141,19 +179,22 @@ function LiveActivity({ phase }: { phase: MissionPhaseRun }) {
 }
 
 /** GATE — precisa de você: a missão pausou com as perguntas da fase anterior.
- *  Uma resposta por pergunta (em branco = o agente decide); "Continuar" retoma
- *  o pipeline injetando as respostas na próxima fase. */
+ *  Card RICO inline (a coluna do Trabalho é larga): textarea auto-grow + ditado
+ *  (MicButton/stt) + anexos por resposta, via GateAnswerForm compartilhado com
+ *  o dock do Escritório. "Continuar" retoma o pipeline injetando as respostas
+ *  (texto → diretriz; anexos → runPhase da próxima fase). */
 function GateCard({
+  convId,
   questions,
+  nextAgent,
   onContinue,
 }: {
+  convId: string
   questions: string[]
-  onContinue: (answers: string[]) => void
+  /** Agent da PRÓXIMA fase — destino dos anexos (aviso visual de capacidade). */
+  nextAgent: string | null
+  onContinue: (answers: GateAnswer[]) => void
 }) {
-  const [answers, setAnswers] = useState<string[]>(() =>
-    questions.map(() => ""),
-  )
-  const answered = answers.filter((a) => a.trim()).length
   return (
     <div className="mt-2.5 overflow-hidden rounded-xl border-[1.5px] border-brass/45 bg-brass/[0.04] shadow-[0_0_0_3px_var(--brass-soft)]">
       <div className="flex items-center gap-2.5 border-b border-brass/20 px-4 py-3">
@@ -170,38 +211,19 @@ function GateCard({
           </div>
         </div>
       </div>
-      {questions.map((q, i) => (
-        <div key={i} className="border-t border-border px-4 py-3 first:border-t-0">
-          <p className="text-[13px] leading-relaxed">
-            <span className="mr-1.5 font-mono text-[11px] text-brass">
-              {i + 1}.
-            </span>
-            {q}
-          </p>
-          <textarea
-            value={answers[i]}
-            onChange={(e) =>
-              setAnswers((prev) =>
-                prev.map((a, j) => (j === i ? e.target.value : a)),
-              )
-            }
-            rows={1}
-            placeholder="Sua resposta (opcional)…"
-            className="mt-2 w-full resize-y rounded-lg border bg-background px-3 py-2 text-[12.5px] outline-none placeholder:text-muted-foreground/60 focus:border-brass/60"
-          />
-        </div>
-      ))}
-      <div className="flex items-center gap-3 border-t border-brass/20 bg-brass/[0.03] px-4 py-3">
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-          {answered} de {questions.length} respondidas
-        </span>
-        <button
-          onClick={() => onContinue(answers)}
-          className="ml-auto rounded-lg bg-brass px-4 py-2 text-[12.5px] font-semibold text-brass-foreground transition-opacity hover:opacity-90"
-        >
-          Continuar missão →
-        </button>
-      </div>
+      <GateAnswerForm
+        convId={convId}
+        questions={questions}
+        caps={agentCaps(nextAgent ?? "")}
+        destLabel={
+          nextAgent
+            ? (agentDef(nextAgent)?.label ?? nextAgent)
+            : "o próximo agent"
+        }
+        submitLabel="Continuar missão →"
+        renderMic={(insert) => <MicButton onText={insert} />}
+        onSubmit={onContinue}
+      />
     </div>
   )
 }
@@ -211,10 +233,13 @@ function PhaseNode({
   p,
   active,
   last,
+  interactions,
 }: {
   p: MissionPhaseRun
   active: boolean
   last: boolean
+  /** Aprovações contextuais desta conversa (só a fase corrente recebe). */
+  interactions?: InteractionRequest[]
 }) {
   const nodeState =
     p.status === "done"
@@ -258,7 +283,9 @@ function PhaseNode({
       {p.error && (p.status === "error" || p.status === "aborted") && (
         <p className="mt-1 text-[12px] leading-snug text-st-error">{p.error}</p>
       )}
-      {nodeState === "run" && <LiveActivity phase={p} />}
+      {nodeState === "run" && (
+        <LiveActivity phase={p} interactions={interactions} />
+      )}
       {!last && <span className="sr-only">↓</span>}
     </div>
   )
@@ -370,6 +397,10 @@ export function MissionTimeline({ convId }: { convId: string }) {
   const abort = useMission((s) => s.abort)
   const clear = useMission((s) => s.clear)
   const answerGate = useMission((s) => s.answerGate)
+  // Aprovações contextuais: pedidos pendentes DESTA conversa (a visível) —
+  // renderizam dentro do bloco da fase corrente (o toast global os suprime).
+  const split = useContextualSplit()
+  const inlineReqs = split.inlineConvId === convId ? split.inline : []
   if (!mission) return null
 
   const gated = mission.status === "running" && mission.gate != null
@@ -478,7 +509,14 @@ export function MissionTimeline({ convId }: { convId: string }) {
       <div className="relative mt-6 pl-[34px] before:absolute before:top-3.5 before:bottom-5 before:left-3 before:w-0.5 before:bg-border">
         {mission.phases.map((p, i) => (
           <div key={p.def.id}>
-            <PhaseNode p={p} active={running && !gated && i === cur} last={i === n - 1} />
+            <PhaseNode
+              p={p}
+              active={running && !gated && i === cur}
+              last={i === n - 1}
+              interactions={
+                running && !gated && i === cur ? inlineReqs : undefined
+              }
+            />
             {gated && mission.gate!.phase === i && (
               <div className="relative mb-4">
                 <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 animate-cockpit-pulse rounded-full border-2 border-brass bg-brass shadow-[0_0_0_4px_var(--brass-soft)]" />
@@ -494,7 +532,11 @@ export function MissionTimeline({ convId }: { convId: string }) {
                   </span>
                 </div>
                 <GateCard
+                  convId={convId}
                   questions={mission.gate!.questions}
+                  nextAgent={
+                    mission.phases[mission.gate!.phase + 1]?.def.agent ?? null
+                  }
                   onContinue={(answers) => answerGate(convId, answers)}
                 />
               </div>
