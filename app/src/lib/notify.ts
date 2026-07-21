@@ -88,3 +88,27 @@ export function notifyGate(
     `${title} — a fase ${phaseLabel} deixou perguntas; a missão está pausada esperando você.`,
   )
 }
+
+/** Chamado UMA vez por episódio quando um turno RUNNING fica MUDO (sem nenhum
+ *  item novo) além do limiar (settings.stalledAfterMin). Dispara a nativa
+ *  SEMPRE — turno travado é exatamente o caso "ninguém está olhando" (app em
+ *  background/tray). O toast acionável in-app fica com o watchdog (chamador);
+ *  aqui é só o aviso de SO. Sem spam: o watchdog só chama 1x por episódio. */
+export function notifyTurnStalled(
+  convId: string,
+  agent: string,
+  minutes: number,
+) {
+  const chat = useChat.getState()
+  const c = chat.byId[convId]
+  const meta = c
+    ? (chat.conversationsByProject[c.projectId] ?? chat.conversations).find(
+        (cv) => cv.id === convId,
+      )
+    : undefined
+  const title = meta?.title ?? "Conversa"
+  void nativeNotify(
+    "Frota — turno mudo",
+    `${title} — ${agentLabel(agent)} está há ${minutes} min sem produzir nada novo. O turno pode ter travado.`,
+  )
+}

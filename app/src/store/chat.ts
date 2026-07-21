@@ -140,6 +140,10 @@ export interface ConvState {
     /** timer do setTimeout (p/ cancelar). */
     timer: ReturnType<typeof setTimeout>
   }
+  /** Turno MUDO (watchdog P2): epoch ms da ÚLTIMA atividade quando o episódio
+   *  foi notificado. Presente = já avisado neste episódio (1 aviso por
+   *  episódio); atividade nova/fim do turno limpa. Efêmero (não persiste). */
+  stalledSince?: number
 }
 
 interface ChatState {
@@ -223,6 +227,10 @@ interface ChatState {
   /** Cancela/limpa o auto-resume agendado (para o timer). Chamar ao enviar
    *  manual, parar o run, ou quando o loop termina/atinge o cap. */
   cancelAutoResume: (convId: string) => void
+  /** Watchdog: marca o turno como mudo (since = epoch da última atividade). */
+  markStalled: (convId: string, since: number) => void
+  /** Watchdog: atividade voltou / turno acabou — fecha o episódio de mudez. */
+  clearStalled: (convId: string) => void
   /** Revezamento: assume OUTRO agent na MESMA conversa (sessão zerada; o
    *  contexto vai por preâmbulo). NÃO adiciona item de usuário, o pedido
    *  pendente já está no fio. */
@@ -1073,6 +1081,7 @@ export const useChat = create<ChatState>((set, get) => {
               pendingPlan: undefined, // e o plano pendente (envio manual supersede)
               limitHitThisTurn: false, // e o sinal de limite do turno anterior
               resetHint: null,
+              stalledSince: undefined, // e o episódio de turno mudo
             },
           },
         }
@@ -1181,6 +1190,17 @@ export const useChat = create<ChatState>((set, get) => {
         if (!cur?.autoResume) return {}
         clearTimeout(cur.autoResume.timer)
         return { byId: { ...s.byId, [convId]: { ...cur, autoResume: undefined } } }
+      }),
+
+    markStalled: (convId, since) => patch(convId, { stalledSince: since }),
+
+    clearStalled: (convId) =>
+      set((s) => {
+        const cur = s.byId[convId]
+        if (cur?.stalledSince == null) return {}
+        return {
+          byId: { ...s.byId, [convId]: { ...cur, stalledSince: undefined } },
+        }
       }),
 
     beginTransplant: (convId, runId, agent) =>

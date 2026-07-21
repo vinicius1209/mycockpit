@@ -570,6 +570,27 @@ export function SettingsDialog() {
                   />
                 </Field>
               </div>
+
+              <SectionTitle>Vigia de turno mudo</SectionTitle>
+              <div className="divide-y divide-border/50">
+                <Field
+                  label="Avisar após (minutos)"
+                  hint="Turno rodando sem produzir nada novo por esse tempo dispara notificação + aviso acionável. 0 desliga."
+                >
+                  <Input
+                    type="number"
+                    min={0}
+                    max={120}
+                    value={settings.stalledAfterMin}
+                    onChange={(e) => {
+                      const n = Math.max(0, Math.min(120, Number(e.target.value) || 0))
+                      setSettings({ stalledAfterMin: n })
+                    }}
+                    className="h-8 w-20 text-[13px]"
+                    aria-label="Minutos de silêncio até avisar turno mudo"
+                  />
+                </Field>
+              </div>
             </div>
           )}
 

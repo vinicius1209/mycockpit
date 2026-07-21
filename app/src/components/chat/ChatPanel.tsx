@@ -23,6 +23,7 @@ import { useFusion } from "@/store/fusion"
 import { FusionBoard } from "@/components/fusion/FusionBoard"
 import { useMission } from "@/store/mission"
 import {
+  MissionResumeCard,
   MissionTimeline,
   missionHostsInline,
 } from "@/components/mission/MissionTimeline"
@@ -101,6 +102,18 @@ export function ChatPanel() {
   const missionInline = useMission((s) =>
     missionHostsInline(activeId ? s.byConv[activeId] : null),
   )
+  // P1 confiabilidade: missão interrompida por restart — o boot da conversa
+  // detecta o run-state.json `running` no worktree e oferece o card de
+  // retomada (só conversas com worktree: o disco da missão é o worktree).
+  const missionInterrupted = useMission((s) =>
+    activeId ? !!s.interrupted[activeId] : false,
+  )
+  const detectInterrupted = useMission((s) => s.detectInterrupted)
+  const worktreePath = conv?.worktreePath ?? null
+  useEffect(() => {
+    if (!activeId || !worktreePath) return
+    void detectInterrupted(activeId, worktreePath)
+  }, [activeId, worktreePath, missionActive, detectInterrupted])
 
   // Checklist viva (P2): faixa fixa acima do composer enquanto o plano anda,
   // o olho já mora aqui embaixo durante o run. Colapsada mostra a task atual.
@@ -575,6 +588,11 @@ export function ChatPanel() {
             (recordHistory do store/mission.ts) só aparecem SEM run (restart),
             senão o resumo sairia duplicado na mesma tela. */}
         {activeId && missionActive && <MissionTimeline convId={activeId} />}
+        {/* Retomada (P1): card acima do fio quando o restart engoliu a missão —
+            "Missão interrompida na fase X/N — Retomar · Descartar". */}
+        {activeId && !missionActive && missionInterrupted && (
+          <MissionResumeCard convId={activeId} />
+        )}
         {hasConversation && !missionActive ? (
           // key no activeId → o fade só replica ao TROCAR de conversa (não a cada
           // token do streaming, que mantém o mesmo activeId).

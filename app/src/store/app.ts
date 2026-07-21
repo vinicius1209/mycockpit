@@ -53,6 +53,10 @@ interface AppState {
   /** Versão dos DADOS do SDD: o SddView bumpa ao criar/recarregar planos e a
    *  lista da sidebar recarrega ao ver mudar (dois caches, uma verdade). */
   sddDataVersion: number
+  /** P3 — Entrega→diff em 1 clique: intenção "abrir a conversa com o painel de
+   *  Alterações já aberto" + o texto da entrega (vira o prefill de correção).
+   *  Efêmera (não persiste); o ContextPanel consome quando a conversa bate. */
+  deliveryDiff: { convId: string; text: string } | null
   /** Preferências globais (persistidas). */
   settings: GlobalSettings
   /** Modal de configurações aberto? */
@@ -85,6 +89,9 @@ interface AppState {
   requestFusionLaunch: () => void
   /** Sinaliza que os planos SDD mudaram no disco (criação/etapa/seed). */
   bumpSddData: () => void
+  /** Pede a abertura do diff de uma entrega (aba Alterações + header de correção). */
+  requestDeliveryDiff: (convId: string, text: string) => void
+  clearDeliveryDiff: () => void
   /** Patch parcial das preferências globais. */
   setSettings: (patch: Partial<GlobalSettings>) => void
   setSettingsOpen: (v: boolean) => void
@@ -115,6 +122,7 @@ export const useApp = create<AppState>()(
       missionLaunchRequested: 0,
       fusionLaunchRequested: 0,
       sddDataVersion: 0,
+      deliveryDiff: null,
       settings: DEFAULT_SETTINGS,
       settingsOpen: false,
 
@@ -188,6 +196,9 @@ export const useApp = create<AppState>()(
         set((s) => ({ fusionLaunchRequested: s.fusionLaunchRequested + 1 })),
       bumpSddData: () =>
         set((s) => ({ sddDataVersion: s.sddDataVersion + 1 })),
+      requestDeliveryDiff: (convId, text) =>
+        set({ deliveryDiff: { convId, text } }),
+      clearDeliveryDiff: () => set({ deliveryDiff: null }),
       setSettings: (patch) =>
         set((s) => ({ settings: { ...s.settings, ...patch } })),
       setSettingsOpen: (settingsOpen) => set({ settingsOpen }),

@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Check, Rocket, X } from "lucide-react"
 import { useMission } from "@/store/mission"
+import { useActiveProject } from "@/store/app"
 import type { ChatItem } from "@/store/chat"
 import type {
   GateAnswer,
@@ -386,6 +387,68 @@ function DoneSummary({ mission }: { mission: MissionRun }) {
             ))}
           </div>
         )}
+    </div>
+  )
+}
+
+/** Card de RETOMADA (P1): o app fechou com uma missão em voo — o
+ *  run-state.json do worktree ficou `running` e o boot detectou
+ *  (useMission.detectInterrupted). Retomar relança da fase corrente (os
+ *  handoffs .mission/ do disco reconstroem o contexto); Descartar marca o
+ *  arquivo como abandoned (não re-oferece) e grava o marco na conversa.
+ *  Renderiza null sem entrada detectada (o ChatPanel pode montar à vontade). */
+export function MissionResumeCard({ convId }: { convId: string }) {
+  const entry = useMission((s) => s.interrupted[convId])
+  const resumeInterrupted = useMission((s) => s.resumeInterrupted)
+  const discardInterrupted = useMission((s) => s.discardInterrupted)
+  const project = useActiveProject()
+  if (!entry || !project) return null
+  const st = entry.state
+  const n = st.preset.phases.length
+  const cur = Math.min(Math.max(0, st.current), n - 1)
+  const phaseLabel = st.preset.phases[cur]?.label ?? "?"
+  return (
+    <div className="mx-auto w-full max-w-[760px] px-8 pt-6">
+      <div className="overflow-hidden rounded-xl border-[1.5px] border-brass/45 bg-brass/[0.04] shadow-[0_0_0_3px_var(--brass-soft)]">
+        <div className="flex items-center gap-2.5 border-b border-brass/20 px-4 py-3">
+          <Rocket className="size-4 shrink-0 text-brass" />
+          <div className="min-w-0">
+            <div className="text-[13px] font-semibold">
+              Missão interrompida na fase {cur + 1}/{n} · {phaseLabel}
+            </div>
+            <div className="text-[11.5px] text-muted-foreground">
+              O app fechou com a missão em voo — o worktree e os handoffs
+              continuam no disco ({fmtCost(st.costTotal)} já gastos)
+            </div>
+          </div>
+        </div>
+        {st.task && (
+          <p className="line-clamp-2 px-4 pt-3 text-[12.5px] leading-relaxed text-muted-foreground">
+            {st.task}
+          </p>
+        )}
+        <div className="flex items-center gap-2 px-4 py-3">
+          <button
+            onClick={() =>
+              resumeInterrupted(
+                convId,
+                project.id,
+                project.path,
+                project.permissionMode ?? "padrao",
+              )
+            }
+            className="rounded-lg bg-brass px-3.5 py-1.5 text-[12px] font-semibold text-background transition-opacity hover:opacity-90"
+          >
+            Retomar missão →
+          </button>
+          <button
+            onClick={() => void discardInterrupted(convId)}
+            className="rounded-lg border border-border-strong px-3 py-1.5 text-[11.5px] text-muted-foreground transition-colors hover:border-st-error/50 hover:text-st-error"
+          >
+            Descartar
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

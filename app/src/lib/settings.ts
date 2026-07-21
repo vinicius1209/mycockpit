@@ -56,6 +56,9 @@ export interface GlobalSettings {
   /** Companion Web (celular na LAN): liga o servidor local + a ponte de push.
    *  OPT-IN (default false) — abre uma porta na rede local. */
   companionEnabled: boolean
+  /** Vigia de turno mudo: minutos de silêncio (turno running sem NENHUM item
+   *  novo) até notificar. 0 = desligado. */
+  stalledAfterMin: number
 }
 
 export const DEFAULT_SETTINGS: GlobalSettings = {
@@ -79,4 +82,5 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   catalogCount: 0,
   lastCuratorRun: 0,
   companionEnabled: false,
+  stalledAfterMin: 10,
 }

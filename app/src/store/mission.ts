@@ -47,10 +47,23 @@ import {
   readHandoff,
   type PriorHandoff,
 } from "@/lib/missionHandoff"
+import {
+  readRunState,
+  runToState,
+  shouldOfferResume,
+  writeRunState,
+  type InterruptedMission,
+  type MissionRunState,
+} from "@/lib/missionState"
 
 export interface MissionState {
   /** Missão por conversa (uma por vez; guarda anti-duplo-start no launch). */
   byConv: Record<string, MissionRun>
+
+  /** Missões INTERROMPIDAS por restart, detectadas no boot da conversa (o
+   *  run-state.json do worktree ficou `running` sem run em memória). O card de
+   *  retomada da conversa lê daqui; Retomar/Descartar limpam a entrada. */
+  interrupted: Record<string, InterruptedMission>
 
   launch: (
     convId: string,
@@ -62,7 +75,33 @@ export interface MissionState {
     /** Anexos do launcher (imagem/PDF): só a FASE 1 recebe, junto da task —
      *  mesmo caminho frontend do handleSend (nenhuma mudança em Rust). */
     attachments?: Attachment[],
+    /** INTERNO (retomada P1): snapshot do run-state.json — o launch começa em
+     *  `startPhase = state.current`, com as fases anteriores entrando como
+     *  done (custos do arquivo) e o costTotal retomado somando ao teto. O
+     *  prompt da fase corrente se reconstrói NATURALMENTE dos handoffs
+     *  .mission/*.json já no disco (mesmo caminho do loop). Gate/recovery
+     *  pendentes no crash NÃO sobrevivem: a fase corrente re-roda do zero e
+     *  re-pergunta se precisar. */
+    resume?: MissionRunState,
   ) => Promise<void>
+
+  /** Boot: detecta missão interrompida no worktree da conversa (run-state.json
+   *  `running` + convId da própria conversa + NENHUM run em memória). Popula
+   *  `interrupted[convId]` pro card de retomada; limpa quando não se aplica. */
+  detectInterrupted: (convId: string, cwd: string) => Promise<void>
+
+  /** Card de retomada → reconstrói o preset efetivo do arquivo e relança a
+   *  missão da fase corrente (launch com `resume`). No-op sem entrada. */
+  resumeInterrupted: (
+    convId: string,
+    projectId: string,
+    projectPath: string,
+    permission: string,
+  ) => void
+
+  /** Card de retomada → descarta: marca o arquivo como `abandoned` (não será
+   *  re-oferecido) e grava o marco na conversa. No-op sem entrada. */
+  discardInterrupted: (convId: string) => Promise<void>
 
   abort: (convId: string) => void
 
@@ -158,6 +197,11 @@ const gateWaiters = new Map<string, (answers: GateAnswer[] | null) => void>()
  *  (desiste). */
 const recoveryWaiters = new Map<string, (choice: RecoveryChoice | null) => void>()
 
+/** cwd da missão de cada conversa (worktree ou pasta do projeto) — alvo do
+ *  run-state.json. Fora do MissionRun de propósito: é plumbing de persistência,
+ *  não estado de UI (evita churn de tipo em quem consome o run). */
+const missionCwd = new Map<string, string>()
+
 export const useMission = create<MissionState>((set, get) => {
   /** Patch parcial do MissionRun de UMA conversa (no-op se não existir). */
   const patchConv = (
@@ -181,6 +225,18 @@ export const useMission = create<MissionState>((set, get) => {
       phases: cur.phases.map((ph, i) => (i === phaseIdx ? fn(ph) : ph)),
     }))
 
+  /** Persiste o snapshot do pipeline no worktree (run-state.json) — chamado em
+   *  cada MARCO (início/fase/gate/recovery/fim). BEST-EFFORT e fire-and-forget:
+   *  o writeRunState já engole falhas; persistir nunca segura nem derruba a
+   *  missão. `gateDecisions` = bloco de gate respondido destinado à fase
+   *  `current` (sobrevive ao restart; gate PENDENTE não — a fase re-roda). */
+  const persist = (convId: string, gateDecisions?: string | null) => {
+    const run = get().byConv[convId]
+    const cwd = missionCwd.get(convId)
+    if (!run || !cwd) return
+    void writeRunState(cwd, runToState(run, gateDecisions))
+  }
+
   /** Marco terminal de ERRO no fio: result !ok com o custo total + motivo. */
   const recordError = (convId: string, reason: string) => {
     const cost = get().byConv[convId]?.costTotal ?? 0
@@ -197,6 +253,67 @@ export const useMission = create<MissionState>((set, get) => {
 
   return {
     byConv: {},
+    interrupted: {},
+
+    detectInterrupted: async (convId, cwd) => {
+      // missão em memória (qualquer status: rodando OU timeline visível) ⇒ o
+      // card de retomada não se aplica.
+      if (get().byConv[convId]) return
+      const state = await readRunState(cwd)
+      const offer =
+        state && shouldOfferResume(state, convId) ? { state, cwd } : null
+      set((s) => {
+        if (s.byConv[convId]) return {} // missão chegou enquanto líamos
+        if (!offer) {
+          if (!s.interrupted[convId]) return {}
+          const interrupted = { ...s.interrupted }
+          delete interrupted[convId]
+          return { interrupted }
+        }
+        return { interrupted: { ...s.interrupted, [convId]: offer } }
+      })
+    },
+
+    resumeInterrupted: (convId, projectId, projectPath, permission) => {
+      const entry = get().interrupted[convId]
+      if (!entry) return
+      const st = entry.state
+      // preset EFETIVO reconstruído do arquivo: fases (corrigidas/apendadas
+      // até o crash) + teto. O launch com `resume` faz o resto — fases feitas
+      // entram como done e a corrente re-roda dos handoffs do disco.
+      const preset: MissionPreset = { ...st.preset, maxCostUsd: st.maxCostUsd }
+      void get().launch(
+        convId,
+        preset,
+        st.task,
+        projectId,
+        projectPath,
+        permission,
+        [],
+        st,
+      )
+    },
+
+    discardInterrupted: async (convId) => {
+      const entry = get().interrupted[convId]
+      if (!entry) return
+      set((s) => {
+        const interrupted = { ...s.interrupted }
+        delete interrupted[convId]
+        return { interrupted }
+      })
+      // `abandoned` é terminal: o boot não re-oferece a retomada nunca mais.
+      await writeRunState(entry.cwd, {
+        ...entry.state,
+        status: "abandoned",
+        updatedAt: Date.now(),
+      })
+      await recordHistory(convId, [
+        noticeItem(
+          "Missão interrompida descartada — o pipeline não será retomado (o worktree segue intacto).",
+        ),
+      ])
+    },
 
     launch: async (
       convId,
@@ -206,6 +323,7 @@ export const useMission = create<MissionState>((set, get) => {
       projectPath,
       permission,
       attachments = [],
+      resume,
     ) => {
       // guarda anti-duplo-start (padrão do Fusion): missão rodando → ignora.
       const existing = get().byConv[convId]
@@ -214,6 +332,25 @@ export const useMission = create<MissionState>((set, get) => {
       // cwd: worktree da conversa se houver, senão a pasta do projeto.
       const conv = useChat.getState().byId[convId]
       const cwd = conv?.worktreePath ?? projectPath
+      missionCwd.set(convId, cwd)
+
+      // RETOMADA (P1): começa na fase corrente do arquivo; as anteriores entram
+      // como done com os custos persistidos (clamp defensivo no range).
+      // Caso GATE RESPONDIDO: o marco persiste com `current` AINDA na fase do
+      // gate (o i++ vem depois), já done — e as decisões pertencem à PRÓXIMA
+      // fase. Avança 1 pra não RE-PAGAR uma fase concluída nem injetar as
+      // respostas do usuário na fase errada. (Gate PENDENTE não grava
+      // gateDecisions ⇒ segue re-rodando a fase done pra re-perguntar,
+      // comportamento documentado.)
+      const resumeFrom = resume
+        ? resume.gateDecisions &&
+          resume.phases[resume.current]?.status === "done"
+          ? resume.current + 1
+          : resume.current
+        : 0
+      const startPhase = resume
+        ? Math.min(Math.max(0, resumeFrom), preset.phases.length - 1)
+        : 0
 
       // Modelo helper (Haiku) p/ destilar lições (M2). Config por projeto vence o
       // default global; null = destilação desligada (mesma regra das sugestões).
@@ -223,42 +360,63 @@ export const useMission = create<MissionState>((set, get) => {
         ? projCfg.helper
         : appState.settings.helperModel
 
-      const missionId = crypto.randomUUID()
+      // retomada preserva o missionId (continuidade dos marcos e do arquivo).
+      const missionId = resume?.missionId ?? crypto.randomUUID()
       const run: MissionRun = {
         id: missionId,
         convId,
         presetName: preset.name,
         task,
-        phases: preset.phases.map((def) => ({
+        phases: preset.phases.map((def, idx) => ({
           def,
-          status: "queued",
+          // retomada: fases < current entram como done com o custo do arquivo.
+          status: resume && idx < startPhase ? "done" : "queued",
           attempt: 1,
-          costUsd: 0,
+          costUsd:
+            resume && idx < startPhase ? (resume.phases[idx]?.costUsd ?? 0) : 0,
           startedAt: null,
         })),
-        current: 0,
-        costTotal: 0,
+        current: startPhase,
+        // costTotal retomado soma ao teto corretamente (checkBudget usa ele).
+        costTotal: resume?.costTotal ?? 0,
         // teto do preset EFETIVO: o launcher pode ter sobrescrito o teto (e as
         // fases) editados no dialog — mesmo caminho, nada além do preset viaja.
         maxCostUsd: preset.maxCostUsd,
         status: "running",
         startedAt: Date.now(),
       }
-      set((s) => ({ byConv: { ...s.byConv, [convId]: run } }))
+      set((s) => {
+        // consumiu a retomada (ou relançou por cima) → o card sai da conversa.
+        const interrupted = { ...s.interrupted }
+        delete interrupted[convId]
+        return { byConv: { ...s.byConv, [convId]: run }, interrupted }
+      })
 
       // marco: largada no fio da conversa (task + resumo do preset). O launcher
       // já garantiu byId (ensureConversationLoaded) — Escritório e Trabalho.
-      await recordHistory(convId, [
-        {
-          kind: "user",
-          id: crypto.randomUUID(),
-          text: task,
-          attachments: attachments.length ? attachments : undefined,
-        },
-        noticeItem(
-          `🚀 Missão iniciada · preset ${preset.name} · ${preset.phases.length} fases`,
-        ),
-      ])
+      // Na retomada a task JÁ está no fio — só o notice de retomada entra.
+      await recordHistory(
+        convId,
+        resume
+          ? [
+              noticeItem(
+                `⟳ Missão retomada na fase ${startPhase + 1}/${preset.phases.length} · preset ${preset.name}`,
+              ),
+            ]
+          : [
+              {
+                kind: "user",
+                id: crypto.randomUUID(),
+                text: task,
+                attachments: attachments.length ? attachments : undefined,
+              },
+              noticeItem(
+                `🚀 Missão iniciada · preset ${preset.name} · ${preset.phases.length} fases`,
+              ),
+            ],
+      )
+      // marco em disco: início (ou retomada) — o pipeline agora sobrevive.
+      persist(convId, resume?.gateDecisions ?? null)
 
       // itens da fase anterior (p/ fallback do handoff) — o diff sai do worktree.
       let prevItems: ChatItem[] = []
@@ -277,11 +435,13 @@ export const useMission = create<MissionState>((set, get) => {
       let execModel: string | null = null
       // Gate humano: bloco de decisões do usuário — SÓ a fase seguinte ao gate
       // recebe (zera depois de usar).
-      let gateDecisions: string | null = null
+      // (retomada: um gate RESPONDIDO antes do crash sobrevive via arquivo e é
+      // reinjetado na fase corrente; anexos de gate não sobrevivem.)
+      let gateDecisions: string | null = resume?.gateDecisions ?? null
       // Gate rico: anexos das respostas (já filtrados pelo agentCaps da próxima
       // fase no answerGate) — mesma regra: SÓ a fase seguinte recebe.
       let gateAttachments: Attachment[] = []
-      let i = 0
+      let i = startPhase
 
       while (i < phases.length) {
         // abortada por fora (byConv sumiu ou marcada aborted) → para o loop.
@@ -298,6 +458,7 @@ export const useMission = create<MissionState>((set, get) => {
             error: budget.reason,
           }))
           await recordError(convId, budget.reason ?? "orçamento esgotado")
+          persist(convId)
           return
         }
 
@@ -345,6 +506,9 @@ export const useMission = create<MissionState>((set, get) => {
           lessonsBlock: learn.lessons,
           userDecisions: gateDecisions,
         })
+        // marco em disco leva o gate consumido POR esta fase: um crash no meio
+        // dela retoma re-rodando a fase com as MESMAS decisões do usuário.
+        const gateBlockForPhase = gateDecisions
         gateDecisions = null // só a fase imediatamente após o gate recebe
         // anexos do gate: consumidos aqui (fase seguinte ao gate) e zerados —
         // um re-run por recuperação da MESMA fase ainda os recebe (phaseAtts).
@@ -358,6 +522,8 @@ export const useMission = create<MissionState>((set, get) => {
           status: "running",
           startedAt: Date.now(),
         }))
+        // marco em disco: transição de fase (current = i, fase running).
+        persist(convId, gateBlockForPhase)
 
         // ── RECUPERAÇÃO: re-roda a MESMA fase i (mesmo prompt, sem i++) quando a
         // falha é RECUPERÁVEL (limite/rate-limit/crédito) e o usuário escolhe
@@ -413,6 +579,7 @@ export const useMission = create<MissionState>((set, get) => {
             }))
             patchConv(convId, { status: "error", current: i })
             await recordError(convId, result.error ?? "falha na fase")
+            persist(convId)
             return
           }
 
@@ -430,6 +597,9 @@ export const useMission = create<MissionState>((set, get) => {
               message: recoveryMessage(result),
             },
           })
+          // marco em disco: recovery aberto (a pausa não sobrevive a restart —
+          // retomar re-roda a fase corrente do zero, que re-falha se preciso).
+          persist(convId, gateBlockForPhase)
           const choice = await new Promise<RecoveryChoice | null>((resolve) => {
             recoveryWaiters.set(missionId, resolve)
           })
@@ -446,6 +616,7 @@ export const useMission = create<MissionState>((set, get) => {
               convId,
               result.error ?? "fase parou por limite (recuperação abandonada)",
             )
+            persist(convId)
             return
           }
           // budget HARD também no re-run (o checkBudget do topo só roda ao ENTRAR
@@ -461,6 +632,7 @@ export const useMission = create<MissionState>((set, get) => {
             }))
             patchConv(convId, { status: "error", current: i })
             await recordError(convId, rebud.reason ?? "orçamento esgotado")
+            persist(convId)
             return
           }
           // marco: a pausa por limite + retomada com o agent escolhido no fio.
@@ -490,9 +662,13 @@ export const useMission = create<MissionState>((set, get) => {
             startedAt: Date.now(),
             error: undefined,
           }))
+          // marco em disco: recovery resolvido (def da fase trocada, re-rodando).
+          persist(convId, gateBlockForPhase)
         }
 
         prevItems = result.items
+        // marco em disco: fase concluída (status/custos atualizados).
+        persist(convId)
 
         // marco: fase concluída → notice (label/agent/custo) + resumo CURTO da
         // fase no fio (phaseText truncado — o transcript pleno não é o objetivo).
@@ -561,6 +737,8 @@ export const useMission = create<MissionState>((set, get) => {
                 queuedRun(rereview),
               ],
             }))
+            // marco em disco: preset efetivo mudou (fases corretivas apendadas).
+            persist(convId)
           }
         }
 
@@ -576,6 +754,10 @@ export const useMission = create<MissionState>((set, get) => {
           const stillRunning = get().byConv[convId]
           if (!stillRunning || stillRunning.status !== "running") return
           patchConv(convId, { gate: { phase: i, questions } })
+          // marco em disco: gate ABERTO. O gate pendente NÃO sobrevive a
+          // restart (retomar re-roda a fase corrente do zero — ela re-pergunta
+          // se precisar); o marco mantém current/custos frescos no arquivo.
+          persist(convId)
           // notificação nativa: o gate ABRIU — a missão está parada esperando
           // você, em qualquer modo/app em background. 1 por gate (só aqui).
           {
@@ -628,6 +810,9 @@ export const useMission = create<MissionState>((set, get) => {
             )
           }
           await recordHistory(convId, marks)
+          // marco em disco: gate RESPONDIDO — as decisões sobrevivem a restart
+          // (reinjetadas na fase corrente ao retomar).
+          persist(convId, gateDecisions)
         }
 
         i++
@@ -636,6 +821,9 @@ export const useMission = create<MissionState>((set, get) => {
       // todas as fases passaram → done, current aponta além do fim.
       const finalCost = get().byConv[convId]?.costTotal ?? 0
       patchConv(convId, { status: "done", current: phases.length })
+      // marco em disco: fim normal — o arquivo vira `done` (terminal; a
+      // detecção do boot nunca oferece retomada de done).
+      persist(convId)
 
       // ── Resumo estruturado da conclusão (UI "concluída"): intenção + arquivos
       // + pendências, do handoff mais RECENTE que existir. Best-effort.
@@ -753,6 +941,8 @@ export const useMission = create<MissionState>((set, get) => {
       // null; o while checa status !== "running" e sai sem forçar error).
       gateWaiters.get(run.id)?.(null)
       recoveryWaiters.get(run.id)?.(null)
+      // marco em disco: aborted é terminal — o boot não oferece retomada.
+      persist(convId)
       // marco terminal no fio (fire-and-forget: nunca segura o Stop; o
       // appendItems no-opa se a conversa já saiu de byId, ex. deleção).
       void recordHistory(convId, [
