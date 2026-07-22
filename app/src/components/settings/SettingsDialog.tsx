@@ -28,7 +28,13 @@ import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useApp } from "@/store/app"
-import { DESTINATIONS, agentDef, agentModels, agentEfforts } from "@/lib/agents"
+import {
+  DESTINATIONS,
+  agentDef,
+  agentModels,
+  agentEfforts,
+  normalizeModelValue,
+} from "@/lib/agents"
 import {
   detectAgents,
   refreshAgyModels,
@@ -625,8 +631,16 @@ export function SettingsDialog() {
                   />
                 </Field>
                 <Field label="Modelo">
+                  {/* normaliza o persistido: id que saiu do picker (o3,
+                      gpt-5.3-codex) exibiria "Padrão" mentiroso no trigger
+                      enquanto os envios continuariam com o valor morto. */}
                   <RichSelect
-                    value={settings.defaultModel ?? "default"}
+                    value={
+                      normalizeModelValue(
+                        settings.defaultAgent,
+                        settings.defaultModel,
+                      ) ?? "default"
+                    }
                     onValueChange={(v) =>
                       setSettings({ defaultModel: v === "default" ? null : v })
                     }

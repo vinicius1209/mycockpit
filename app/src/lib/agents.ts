@@ -111,6 +111,37 @@ export function normalizeAgyModel(model: string | null): string | null {
   if (!model || model === "default") return model
   return LEGACY_AGY_MODELS[model] ?? model
 }
+
+/** Modelos do codex que SAÍRAM do catálogo do CLI (400 com auth ChatGPT desde
+ *  jul/2026). Remapeia pro vizinho vivo mais próximo — mesma disciplina do
+ *  LEGACY_AGY_MODELS: valor persistido (settings/schedule/conversa) não pode
+ *  virar erro fixo em todo envio. */
+const LEGACY_CODEX_MODELS: Record<string, string> = {
+  "gpt-5.3-codex": "gpt-5.5",
+  o3: "gpt-5.5",
+}
+
+/** "opus[1m]" saiu do picker nesta onda: o alias resolvia server-side pra
+ *  versão da vez (deu 4.7 em produção) e o pin exato é justamente o conserto.
+ *  Segue VÁLIDO no CLI, então o remap é escolha de produto, não correção de
+ *  erro: valor legado converge pro pin que o picker oferece hoje. */
+const LEGACY_CLAUDE_MODELS: Record<string, string> = {
+  "opus[1m]": "claude-opus-4-8[1m]",
+}
+
+/** Normalização de valor persistido de modelo, POR agent.
+ *  Ponto único pra UI (display honesto) e pros despachos (schedule/hydrate)
+ *  não reenviarem um id morto pra sempre. */
+export function normalizeModelValue(
+  agent: string,
+  model: string | null,
+): string | null {
+  if (!model || model === "default") return model
+  if (agent === "agy") return normalizeAgyModel(model)
+  if (agent === "codex") return LEGACY_CODEX_MODELS[model] ?? model
+  if (agent === "claude-code") return LEGACY_CLAUDE_MODELS[model] ?? model
+  return model
+}
 // max/ultra são exclusivos da família 5.6 (ultra só Sol/Terra: dispara
 // subagentes e consome quota agressivamente); 5.5/5.4 param em xhigh — o
 // backend rejeita acima disso, o erro aparece no fio (honesto, sem mascarar).

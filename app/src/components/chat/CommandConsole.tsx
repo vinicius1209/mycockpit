@@ -21,7 +21,12 @@ import { useAttachments } from "@/hooks/useAttachments"
 import { useActiveConv, useChat } from "@/store/chat"
 import { useApp, useActiveProject } from "@/store/app"
 import type { Attachment } from "@/lib/attachments"
-import { DESTINATIONS, defaultModelFor, agentCaps } from "@/lib/agents"
+import {
+  DESTINATIONS,
+  defaultModelFor,
+  agentCaps,
+  normalizeModelValue,
+} from "@/lib/agents"
 import { FusionLauncher } from "@/components/fusion/FusionLauncher"
 import { MissionLauncher } from "@/components/mission/MissionLauncher"
 import type { AgentRunConfig } from "@/lib/types"
@@ -71,7 +76,12 @@ export function CommandConsole({
         : null) === "liberado",
   )
   const [destination, setDestination] = useState(settings.defaultAgent)
-  const [model, setModel] = useState(settings.defaultModel ?? "default")
+  // normaliza o default persistido: um id que saiu do CLI (gpt-5.3-codex, o3)
+  // não pode virar 400 em todo envio novo com a UI fingindo normalidade.
+  const [model, setModel] = useState(
+    normalizeModelValue(settings.defaultAgent, settings.defaultModel) ??
+      "default",
+  )
   const [effort, setEffort] = useState(settings.defaultEffort ?? "default")
   // Mission (beta): dialog do launcher, acionado pelo Rocket do composer.
   const [missionOpen, setMissionOpen] = useState(false)

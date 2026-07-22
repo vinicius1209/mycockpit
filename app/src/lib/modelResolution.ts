@@ -53,12 +53,15 @@ export function expectedResolution(
       : family
   }
   if (base.startsWith("claude-")) {
-    // Pin por ID completo: match exato. Sem [1m] no pedido, tolera o CLI
-    // reportar o sufixo (1M é default nos modelos atuais); com [1m] pedido,
-    // exige o sufixo de volta.
+    // Pin por ID completo: match exato, tolerando duas formas que o CLI pode
+    // reportar sem quebrar o contrato do pin: o sufixo [1m] não pedido (1M é
+    // default nos modelos atuais) e a forma DATADA do mesmo ID (ex.:
+    // claude-opus-4-8 → claude-opus-4-8-20260322) — senão todo pin viraria
+    // falso "Modelo divergente" permanente. Com [1m] pedido, o sufixo tem
+    // que voltar.
     return oneMillion
-      ? new RegExp(`^${escapeRegExp(base)}\\[1m\\]$`)
-      : new RegExp(`^${escapeRegExp(base)}(\\[1m\\])?$`)
+      ? new RegExp(`^${escapeRegExp(base)}(-\\d{8})?\\[1m\\]$`)
+      : new RegExp(`^${escapeRegExp(base)}(-\\d{8})?(\\[1m\\])?$`)
   }
   return null
 }

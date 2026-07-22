@@ -32,6 +32,14 @@ describe("expectedResolution", () => {
     expect(pin1m.test("claude-opus-4-8")).toBe(false)
   })
 
+  it("pin tolera a forma DATADA do mesmo ID (sem falso divergente)", () => {
+    const pin1m = expectedResolution("claude-code", "claude-opus-4-8[1m]")!
+    expect(pin1m.test("claude-opus-4-8-20260322[1m]")).toBe(true)
+    expect(pin1m.test("claude-opus-4-7-20260101[1m]")).toBe(false) // outro modelo segue pego
+    const pin = expectedResolution("claude-code", "claude-sonnet-5")!
+    expect(pin.test("claude-sonnet-5-20260519")).toBe(true)
+  })
+
   it("opusplan aceita as duas famílias do modo (plano em Opus, execução em Sonnet)", () => {
     const plan = expectedResolution("claude-code", "opusplan")!
     expect(plan.test("claude-opus-4-8")).toBe(true)

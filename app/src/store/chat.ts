@@ -16,7 +16,7 @@ import {
 } from "@/lib/suggestions"
 import { useApp } from "@/store/app"
 import type { FusionCandidate } from "@/store/fusion"
-import { normalizeAgyModel } from "@/lib/agents"
+import { normalizeModelValue } from "@/lib/agents"
 import {
   aliasShiftNotice,
   isAliasRequest,
@@ -588,12 +588,13 @@ export const useChat = create<ChatState>((set, get) => {
             sessionId: conv?.sessionId ?? null,
             suggestions: conv?.suggestions ?? [],
             agent: conv?.agent ?? "claude-code",
-            // Conversas antigas guardavam o nome de exibição do agy. Normaliza
-            // antes de qualquer composer/adapter poder reutilizar esse valor.
-            reqModel:
-              conv?.agent === "agy"
-                ? normalizeAgyModel(conv.reqModel)
-                : (conv?.reqModel ?? null),
+            // Valores persistidos podem ter saído do CLI (display names do agy,
+            // modelos removidos do codex). Normaliza antes de qualquer
+            // composer/adapter poder reutilizar esse valor.
+            reqModel: normalizeModelValue(
+              conv?.agent ?? "claude-code",
+              conv?.reqModel ?? null,
+            ),
             effort: conv?.effort ?? null,
             // modelo RESOLVIDO da última sessão: TitleBar/validação não
             // degradam pro rótulo do agent depois de um restart.
@@ -959,7 +960,7 @@ export const useChat = create<ChatState>((set, get) => {
       const items = loaded?.items ?? get().byId[id]?.items ?? []
       const agent = loaded?.agent ?? get().byId[id]?.agent ?? "claude-code"
       const rawReqModel = loaded?.reqModel ?? get().byId[id]?.reqModel ?? null
-      const reqModel = agent === "agy" ? normalizeAgyModel(rawReqModel) : rawReqModel
+      const reqModel = normalizeModelValue(agent, rawReqModel)
       const effort = loaded?.effort ?? get().byId[id]?.effort ?? null
       const title = `${src?.title ?? loaded?.title ?? "Conversa"} (cópia)`
       const newId = uid()
@@ -1156,6 +1157,12 @@ export const useChat = create<ChatState>((set, get) => {
           })
         }
       }
+      // Modelo resolvido ANTERIOR da conversa (PRÉ-reduce): testemunha do
+      // alias-shift desta conversa. O ledger global não basta — outra conversa
+      // (ou lane do Fusion) pode já ter "aprendido" a resolução nova e
+      // mascarar o aviso exatamente na conversa retomada que mais precisa dele.
+      const prevModel =
+        e.type === "session" ? (get().byId[convId]?.model ?? null) : null
       set((s) => {
         const cur = s.byId[convId]
         if (!cur) return {}
@@ -1188,9 +1195,11 @@ export const useChat = create<ChatState>((set, get) => {
         // o momento exato em que preço/comportamento derivariam em silêncio.
         const cur = get().byId[convId]
         if (cur) {
-          const prev = useApp
+          const ledgerPrev = useApp
             .getState()
             .recordResolution(cur.agent, cur.reqModel, e.model)
+          // A própria conversa vence o ledger global como referência do shift.
+          const prev = prevModel ?? ledgerPrev
           if (
             prev &&
             e.model &&
@@ -1291,6 +1300,10 @@ export const useChat = create<ChatState>((set, get) => {
               reqModel: null,
               effort: null,
               sessionId: null, // a sessão do agent anterior não serve pro novo
+              // resolvido do agent ANTERIOR também não: desde a v24 ele
+              // persiste, e um transplante que falha antes do `session` novo
+              // gravaria um modelo Claude numa conversa Codex (achado #3).
+              model: null,
               contextTokens: undefined,
               streamingTextId: null,
               running: true,

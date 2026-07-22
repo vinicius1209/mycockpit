@@ -14,6 +14,7 @@
 // 'padrao'; 'liberado' é clampado fora AQUI além do tipo.
 
 import { runAgent } from "@/lib/agent"
+import { normalizeModelValue } from "@/lib/agents"
 import {
   insertScheduleRun,
   listSchedules,
@@ -129,7 +130,12 @@ export async function dispatchSchedule(
     await useChat.getState().registerConversation(s.projectId, convId, title)
 
     const runId = crypto.randomUUID()
-    const model = s.model && s.model !== "default" ? s.model : null
+    // normaliza id persistido: modelo que SAIU do CLI (ex. gpt-5.3-codex) não
+    // pode condenar a automação a falhar em todo disparo até alguém editar.
+    const model = normalizeModelValue(
+      s.agent,
+      s.model && s.model !== "default" ? s.model : null,
+    )
     // Regra dura do F6: automação NUNCA roda 'liberado'. Clamp além do tipo.
     const permission = s.permission === "padrao" ? "padrao" : "leitura"
 
