@@ -352,6 +352,24 @@ export async function saveConversation(
 export async function deleteConversation(id: string): Promise<void> {
   const db = await getDb()
   if (!db) return
+  // E1 (S1.2): o card NUNCA morre junto da conversa — ele é a intenção, e a
+  // intenção sobrevive à execução. Card ligado não-terminal volta pro backlog;
+  // o link some em TODOS (a conversa não existe mais, manter o id seria
+  // fingir). done/cancelled preservam o estado (histórico fechado fica fechado).
+  // A limpeza roda ANTES do DELETE (D1): sem transação no plugin, falha aqui
+  // deixa tudo intacto e o retry fica limpo — na ordem inversa, DELETE feito +
+  // UPDATE falho abortava o removeConversation antes de limpar o store, e o
+  // persist (UPSERT de linha inteira) ressuscitava a conversa-zumbi.
+  await ensureBoardTables(db)
+  const now = Date.now()
+  await db.execute(
+    "UPDATE cards SET state = 'backlog', updated_at = $1 WHERE conversation_id = $2 AND state NOT IN ('done', 'cancelled')",
+    [now, id],
+  )
+  await db.execute(
+    "UPDATE cards SET conversation_id = NULL, updated_at = $1 WHERE conversation_id = $2",
+    [now, id],
+  )
   await db.execute("DELETE FROM conversations WHERE id = $1", [id])
 }
 
@@ -1415,6 +1433,341 @@ export async function listScheduleRuns(
     }))
   } catch {
     return []
+  }
+}
+
+// ---------------- E1: Board de intenção (cards) ----------------
+// O CARD é a unidade durável de intenção, ligada à conversa que a executa.
+// Mesmo padrão idempotente das tabelas de aprendizado: CREATE TABLE IF NOT
+// EXISTS do frontend (`ensureBoardTables`), cache de promessa que RESETA em
+// falha. SEM migração no lib.rs (board não é tabela núcleo; v25/v26 ficam
+// reservadas pros presets do Sprint 3).
+
+export type CardState =
+  | "backlog"
+  | "working"
+  | "review"
+  | "blocked"
+  | "done"
+  | "cancelled"
+
+/** Máquina de estados EXPLÍCITA do card: backlog → working → review|blocked →
+ *  done|cancelled. Regressões honestas (review→working = retrabalho,
+ *  blocked→working = desbloqueou, working→backlog = recuar) são permitidas;
+ *  `cancelled` é alcançável de qualquer estado não-terminal (abandonar uma
+ *  intenção é sempre direito do humano). done/cancelled são TERMINAIS e só
+ *  entram via `closeCard` (gate humano-only — `setCardState` recusa).
+ *  EXCEÇÃO DE SISTEMA (documentada, não escondida): a limpeza do
+ *  `deleteConversation` devolve card ligado não-terminal pro backlog via SQL
+ *  direto — um bypass working|review|blocked→backlog fora da máquina, porque
+ *  ali não há gesto de board: a conversa sumiu e o card volta pra fila. */
+export const CARD_STATE_MACHINE: Record<CardState, readonly CardState[]> = {
+  backlog: ["working", "cancelled"],
+  working: ["review", "blocked", "backlog", "cancelled"],
+  review: ["working", "blocked", "done", "cancelled"],
+  blocked: ["working", "review", "done", "cancelled"],
+  done: [],
+  cancelled: [],
+}
+
+export const TERMINAL_CARD_STATES: readonly CardState[] = ["done", "cancelled"]
+
+export function isTerminalCardState(s: CardState): boolean {
+  return TERMINAL_CARD_STATES.includes(s)
+}
+
+/** Valida uma transição contra a máquina. Lança em transição inválida — o
+ *  chamador (store/UI) decide como apresentar. */
+export function assertCardTransition(from: CardState, to: CardState): void {
+  if (!CARD_STATE_MACHINE[from]?.includes(to)) {
+    throw new Error(`transição de card inválida: ${from} → ${to}`)
+  }
+}
+
+export interface CardRecord {
+  id: string
+  projectId: string
+  title: string
+  body: string | null
+  state: CardState
+  /** Agent que executou o 1º turno da conversa ligada (carimbo lazy, S1.4). */
+  assigneeAgent: string | null
+  /** Conversa que executa a intenção (sobrevive a resume/transplant). */
+  conversationId: string | null
+  /** Reservado pra identidade de persona (Sprint 3) — NÃO inventar antes. */
+  owner: string | null
+  pinned: boolean
+  pinRank: number | null
+  createdAt: number
+  updatedAt: number
+}
+
+let boardReady: Promise<void> | null = null
+
+async function ensureBoardTables(db: Database): Promise<void> {
+  if (!boardReady) {
+    const run = (async () => {
+      await db.execute(
+        `CREATE TABLE IF NOT EXISTS cards (
+           id TEXT PRIMARY KEY,
+           project_id TEXT,
+           title TEXT NOT NULL,
+           body TEXT,
+           state TEXT NOT NULL DEFAULT 'backlog',
+           assignee_agent TEXT,
+           conversation_id TEXT,
+           owner TEXT,
+           pinned INTEGER NOT NULL DEFAULT 0,
+           pin_rank INTEGER,
+           created_at INTEGER NOT NULL,
+           updated_at INTEGER NOT NULL
+         )`,
+      )
+      await db.execute(
+        `CREATE INDEX IF NOT EXISTS idx_cards_project ON cards(project_id, state)`,
+      )
+    })()
+    // cache fixa SÓ em sucesso (falha transitória não envenena o processo).
+    boardReady = run.catch((e) => {
+      boardReady = null
+      throw e
+    })
+  }
+  return boardReady
+}
+
+interface CardRow {
+  id: string
+  project_id: string
+  title: string
+  body: string | null
+  state: string
+  assignee_agent: string | null
+  conversation_id: string | null
+  owner: string | null
+  pinned: number
+  pin_rank: number | null
+  created_at: number
+  updated_at: number
+}
+
+const CARD_COLS =
+  "id, project_id, title, body, state, assignee_agent, conversation_id, owner, pinned, pin_rank, created_at, updated_at"
+
+/** Clamp de leitura: valor estranho gravado à mão degrada pra 'backlog'. */
+function toCardState(s: string): CardState {
+  return s in CARD_STATE_MACHINE ? (s as CardState) : "backlog"
+}
+
+function toCard(r: CardRow): CardRecord {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    title: r.title,
+    body: r.body,
+    state: toCardState(r.state),
+    assigneeAgent: r.assignee_agent,
+    conversationId: r.conversation_id,
+    owner: r.owner,
+    pinned: r.pinned === 1,
+    pinRank: r.pin_rank,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }
+}
+
+/** Cria um card no backlog e devolve o registro. Fora do Tauri o registro
+ *  existe só em memória (nada persiste, como todo o resto do dev no browser). */
+export async function createCard(c: {
+  projectId: string
+  title: string
+  body?: string | null
+}): Promise<CardRecord> {
+  const now = Date.now()
+  const card: CardRecord = {
+    id: crypto.randomUUID(),
+    projectId: c.projectId,
+    title: c.title,
+    body: c.body ?? null,
+    state: "backlog",
+    assigneeAgent: null,
+    conversationId: null,
+    owner: null,
+    pinned: false,
+    pinRank: null,
+    createdAt: now,
+    updatedAt: now,
+  }
+  const db = await getDb()
+  if (!db) return card
+  await ensureBoardTables(db)
+  await db.execute(
+    "INSERT INTO cards (id, project_id, title, body, state, assignee_agent, conversation_id, owner, pinned, pin_rank, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+    [
+      card.id,
+      card.projectId,
+      card.title,
+      card.body,
+      card.state,
+      card.assigneeAgent,
+      card.conversationId,
+      card.owner,
+      card.pinned ? 1 : 0,
+      card.pinRank,
+      card.createdAt,
+      card.updatedAt,
+    ],
+  )
+  return card
+}
+
+/** Cards (de um projeto, ou todos) em ordem de criação. SEM catch: erro real
+ *  propaga — o store decide manter o estado anterior em vez de zerar o board. */
+export async function listCards(projectId?: string): Promise<CardRecord[]> {
+  const db = await getDb()
+  if (!db) return []
+  await ensureBoardTables(db)
+  const rows = projectId
+    ? await db.select<CardRow[]>(
+        `SELECT ${CARD_COLS} FROM cards WHERE project_id = $1 ORDER BY created_at ASC`,
+        [projectId],
+      )
+    : await db.select<CardRow[]>(
+        `SELECT ${CARD_COLS} FROM cards ORDER BY created_at ASC`,
+      )
+  return rows.map(toCard)
+}
+
+/** Um card pelo id (interno da validação de transição). */
+async function loadCardState(db: Database, id: string): Promise<CardState> {
+  const rows = await db.select<{ state: string }[]>(
+    "SELECT state FROM cards WHERE id = $1",
+    [id],
+  )
+  // sem id técnico: a mensagem vaza pro toast da UI.
+  if (!rows.length) throw new Error("Card não encontrado no board")
+  return toCardState(rows[0].state)
+}
+
+/** Patch parcial (campo `undefined` = mantém; não há como limpar pra NULL no
+ *  v1 — se precisar, ganha função própria). Estado NÃO passa por aqui. */
+export async function updateCard(
+  id: string,
+  patch: {
+    title?: string
+    body?: string
+    pinned?: boolean
+    pinRank?: number
+  },
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureBoardTables(db)
+  await db.execute(
+    "UPDATE cards SET title = COALESCE($1, title), body = COALESCE($2, body), pinned = COALESCE($3, pinned), pin_rank = COALESCE($4, pin_rank), updated_at = $5 WHERE id = $6",
+    [
+      patch.title ?? null,
+      patch.body ?? null,
+      patch.pinned == null ? null : patch.pinned ? 1 : 0,
+      patch.pinRank ?? null,
+      Date.now(),
+      id,
+    ],
+  )
+}
+
+/** Move o card validando a máquina de estados. done/cancelled NUNCA entram por
+ *  aqui (gate humano-only): só via `closeCard`. Lança em transição inválida. */
+export async function setCardState(id: string, state: CardState): Promise<void> {
+  if (isTerminalCardState(state)) {
+    // pt-BR sem jargão: a mensagem vaza pro toast da UI (gate humano-only).
+    throw new Error(
+      "Concluir ou cancelar um card é gesto humano: use a ação de fechar do card",
+    )
+  }
+  const db = await getDb()
+  if (!db) return
+  await ensureBoardTables(db)
+  const cur = await loadCardState(db, id)
+  assertCardTransition(cur, state)
+  await db.execute("UPDATE cards SET state = $1, updated_at = $2 WHERE id = $3", [
+    state,
+    Date.now(),
+    id,
+  ])
+}
+
+/** Fecha o card (done/cancelled) — o ÚNICO caminho pros estados terminais,
+ *  reservado ao gesto humano (prepara o E3). Valida a máquina. */
+export async function closeCard(
+  id: string,
+  state: "done" | "cancelled",
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureBoardTables(db)
+  const cur = await loadCardState(db, id)
+  assertCardTransition(cur, state)
+  await db.execute("UPDATE cards SET state = $1, updated_at = $2 WHERE id = $3", [
+    state,
+    Date.now(),
+    id,
+  ])
+}
+
+/** Liga o card à conversa que o executa (S1.4). O link sobrevive a
+ *  resume/transplant (mesmo conversation_id). */
+export async function linkCardConversation(
+  id: string,
+  convId: string,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureBoardTables(db)
+  await db.execute(
+    "UPDATE cards SET conversation_id = $1, updated_at = $2 WHERE id = $3",
+    [convId, Date.now(), id],
+  )
+}
+
+/** Carimba o agent que o 1º turno da conversa ligada resolveu (S1.4). */
+export async function setCardAssignee(id: string, agent: string): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureBoardTables(db)
+  await db.execute(
+    "UPDATE cards SET assignee_agent = $1, updated_at = $2 WHERE id = $3",
+    [agent, Date.now(), id],
+  )
+}
+
+/** Custo por card v1 = soma de turn_costs por conv_id (cobre chat + disputas;
+ *  missão/SDD não têm conv_id e ficam FORA — a UI diz isso em vez de fingir
+ *  total). `estimated` = algum custo sem proveniência 'reported' (COALESCE:
+ *  cost_source NULL também conta como estimado — o "~" honesto). Erro PROPAGA
+ *  (nada de catch silencioso em polling): o caller mantém o last-known. */
+export async function listCardCosts(
+  convIds: string[],
+): Promise<Record<string, { total: number; estimated: boolean }>> {
+  if (convIds.length === 0) return {}
+  const db = await getDb()
+  if (!db) return {}
+  try {
+    const placeholders = convIds.map((_, i) => `$${i + 1}`).join(", ")
+    const rows = await db.select<
+      { conv_id: string; total: number | null; est: number }[]
+    >(
+      `SELECT conv_id, SUM(cost_usd) AS total, MAX(CASE WHEN COALESCE(cost_source, '') != 'reported' THEN 1 ELSE 0 END) AS est FROM turn_costs WHERE conv_id IN (${placeholders}) GROUP BY conv_id`,
+      convIds,
+    )
+    const out: Record<string, { total: number; estimated: boolean }> = {}
+    for (const r of rows) {
+      out[r.conv_id] = { total: r.total ?? 0, estimated: r.est === 1 }
+    }
+    return out
+  } catch (e) {
+    console.warn("[cards] listCardCosts falhou", e)
+    throw e
   }
 }
 

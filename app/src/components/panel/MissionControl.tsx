@@ -10,7 +10,14 @@
 // de PR via gh é lazy por card, com cache de 60s e degrade silencioso.
 
 import { useEffect, useMemo, useState } from "react"
-import { Clock, FileText, GitPullRequest, Rocket, Swords } from "lucide-react"
+import {
+  Clock,
+  FileText,
+  GitPullRequest,
+  Rocket,
+  SquareKanban,
+  Swords,
+} from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { toast } from "sonner"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -20,8 +27,9 @@ import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { useMission } from "@/store/mission"
 import { useSchedules } from "@/store/schedules"
+import { openCardConversation, useCards } from "@/store/cards"
 import { fmtUntilShort } from "@/lib/schedules"
-import { scanDecisions, type Decision } from "@/lib/inbox"
+import { cardDecisions, scanDecisions, type Decision } from "@/lib/inbox"
 import {
   listRecentDeliveries,
   loadLedger,
@@ -43,6 +51,7 @@ import {
   type PrEnrichment,
 } from "@/lib/panel"
 import { updateAvailable } from "@/lib/detect"
+import { BoardLane } from "@/components/panel/BoardLane"
 import { confirm } from "@/lib/confirm"
 import { fmtCost, fmtTokens } from "@/lib/format"
 import { CostAudit } from "@/components/panel/CostAudit"
@@ -128,7 +137,7 @@ async function openConv(projectId: string, convId: string) {
 }
 
 /** Navega pra ONDE a decisão mora (mesmo padrão do InboxBell.goTo): a conversa
- *  (Fusion) ou o plano (SDD). */
+ *  (Fusion), o card do board (E1) ou o plano (SDD). */
 async function goTo(d: Decision) {
   const app = useApp.getState()
   app.setActiveProject(d.projectId)
@@ -136,6 +145,9 @@ async function goTo(d: Decision) {
     await useChat.getState().openProject(d.projectId)
     await useChat.getState().switchConversation(d.convId)
     app.setViewMode("linear")
+  } else if (d.kind === "card") {
+    // com conversa ligada abre a conversa; sem, seleciona o card no board.
+    await openCardConversation(d.cardId)
   } else {
     app.setSddFocus(d.slug)
     app.setViewMode("sdd")
@@ -421,6 +433,48 @@ function FusionCard({ d }: { d: Extract<Decision, { kind: "fusion" }> }) {
   )
 }
 
+/** Card do board esperando você (E1: review/blocked): abrir leva à conversa
+ *  ligada, ou seleciona o card no board quando não há conversa. */
+function BoardQueueCard({ d }: { d: Extract<Decision, { kind: "card" }> }) {
+  const go = () => void goTo(d)
+  return (
+    <QueueCard onClick={go}>
+      <div className="flex items-center gap-2.5">
+        <SquareKanban
+          className={cn(
+            "size-4 shrink-0",
+            d.state === "blocked" ? "text-st-error" : "text-st-warning",
+          )}
+        />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+          {d.title}
+        </span>
+        <span className="shrink-0 text-[11.5px] text-muted-foreground">
+          {d.projectName}
+        </span>
+        <span
+          className={cn(
+            "shrink-0 rounded border px-1.5 py-px text-[10px] tracking-wide uppercase",
+            d.state === "blocked"
+              ? "border-st-error/50 bg-st-error/10 text-st-error"
+              : "border-st-warning/50 bg-st-warning/10 text-st-warning",
+          )}
+        >
+          {d.state === "blocked" ? "bloqueado" : "em revisão"}
+        </span>
+        <BrassButton
+          onClick={(e) => {
+            e.stopPropagation()
+            go()
+          }}
+        >
+          Abrir
+        </BrassButton>
+      </div>
+    </QueueCard>
+  )
+}
+
 /** Card de PRD: revisar no SDD (aqui o SDD É o destino certo). */
 function PrdCard({ d }: { d: Extract<Decision, { kind: "prd" }> }) {
   const go = () => void goTo(d)
@@ -593,6 +647,10 @@ export function MissionControl() {
   // mergeados nesta sessão, ordenada por rank (lib/panel.orderQueue).
   const [merged, setMerged] = useState<ReadonlySet<string>>(() => new Set())
   const [mergingUrl, setMergingUrl] = useState<string | null>(null)
+  // E1 (S1.6): cards em review/blocked entram na MESMA fila. Ref estável do
+  // array do store (só muda em mutação real, nunca por delta de stream); a
+  // saída da fila é derivação pura — card mudou de estado, some do memo.
+  const allCards = useCards((s) => s.all)
   const queue = useMemo<Decision[]>(() => {
     const seen = new Set(
       decisions.filter((d) => d.kind === "fusion").map((d) => d.convId),
@@ -616,13 +674,17 @@ export function MissionControl() {
     }
     // PR sai da fila se: mergeada nesta sessão OU o GitHub diz que já foi
     // resolvida (merge feito fora do app — o manifest SDD local fica velho).
-    const all = [...extra, ...decisions].filter(
+    const all = [
+      ...extra,
+      ...decisions,
+      ...cardDecisions(allCards, projects),
+    ].filter(
       (d) =>
         d.kind !== "pr" ||
         (!merged.has(d.prUrl) && !prResolved(prData[d.prUrl])),
     )
     return orderQueue(all, prData)
-  }, [decisions, decidingKey, projects, prData, merged])
+  }, [decisions, decidingKey, projects, prData, merged, allCards])
 
   async function handleMerge(d: Extract<Decision, { kind: "pr" }>) {
     const ok = await confirm({
@@ -869,6 +931,9 @@ export function MissionControl() {
           </section>
         </div>
 
+        {/* E1 (S1.5) — Board de intenção: entre AÇÕES e PRECISAM DE VOCÊ */}
+        <BoardLane />
+
         {/* 3. Precisam de você — a fila dominante; vazia vira linha discreta */}
         <section aria-label="Precisam de você">
           {!loaded ? (
@@ -893,6 +958,8 @@ export function MissionControl() {
                     />
                   ) : d.kind === "fusion" ? (
                     <FusionCard key={`fusion:${d.convId}`} d={d} />
+                  ) : d.kind === "card" ? (
+                    <BoardQueueCard key={`card:${d.cardId}`} d={d} />
                   ) : (
                     <PrdCard key={`prd:${d.projectId}:${d.slug}`} d={d} />
                   ),

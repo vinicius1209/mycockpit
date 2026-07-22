@@ -8,6 +8,7 @@ import {
   Gauge,
   GitPullRequest,
   Inbox,
+  SquareKanban,
   Swords,
   Trash2,
   X,
@@ -23,12 +24,14 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
+import { openCardConversation, useCards } from "@/store/cards"
 import { useNotifs, type Notification } from "@/store/notifications"
 import { agentLabel } from "@/lib/agent"
-import { scanDecisions, type Decision } from "@/lib/inbox"
+import { cardDecisions, scanDecisions, type Decision } from "@/lib/inbox"
 import { cn } from "@/lib/utils"
 
-/** Navega direto pra ONDE a decisão mora: a conversa (Fusion) ou o plano (SDD). */
+/** Navega direto pra ONDE a decisão mora: a conversa (Fusion), o card do
+ *  board (E1) ou o plano (SDD). */
 async function goTo(d: Decision) {
   const app = useApp.getState()
   app.setActiveProject(d.projectId)
@@ -36,6 +39,8 @@ async function goTo(d: Decision) {
     await useChat.getState().openProject(d.projectId)
     await useChat.getState().switchConversation(d.convId)
     app.setViewMode("linear")
+  } else if (d.kind === "card") {
+    await openCardConversation(d.cardId)
   } else {
     app.setSddFocus(d.slug)
     app.setViewMode("sdd")
@@ -86,7 +91,12 @@ export function InboxBell() {
 
   const refresh = useCallback(() => {
     if (projects.length === 0) return
-    void scanDecisions(projects).then(setDecisions)
+    // E1 (S1.6): cards em review/blocked entram no sino também (D4) — o store
+    // é hidratado no boot, então getState() dentro do refresh basta (mesmo
+    // ritmo do scan: ao abrir o dropdown e na troca de projetos).
+    void scanDecisions(projects).then((d) =>
+      setDecisions([...d, ...cardDecisions(useCards.getState().all, projects)]),
+    )
   }, [projects])
 
   useEffect(() => {
@@ -147,13 +157,17 @@ export function InboxBell() {
                 title={
                   d.kind === "fusion"
                     ? d.title
-                    : d.kind === "prd"
-                      ? `Aprovar PRD: ${d.planTitle}`
-                      : `PR aberto: ${d.planTitle}`
+                    : d.kind === "card"
+                      ? d.title
+                      : d.kind === "prd"
+                        ? `Aprovar PRD: ${d.planTitle}`
+                        : `PR aberto: ${d.planTitle}`
                 }
               >
                 {d.kind === "fusion" ? (
                   <Swords className="size-3.5 shrink-0 text-brass" />
+                ) : d.kind === "card" ? (
+                  <SquareKanban className="size-3.5 shrink-0 text-st-warning" />
                 ) : d.kind === "prd" ? (
                   <FileText className="size-3.5 shrink-0 text-brass" />
                 ) : (
@@ -162,9 +176,11 @@ export function InboxBell() {
                 <span className="truncate">
                   {d.kind === "fusion"
                     ? "Escolher o vencedor da disputa"
-                    : d.kind === "prd"
-                      ? `Aprovar PRD: ${d.planTitle}`
-                      : `PR aberto: ${d.planTitle}`}
+                    : d.kind === "card"
+                      ? `Card ${d.state === "blocked" ? "bloqueado" : "em revisão"}: ${d.title}`
+                      : d.kind === "prd"
+                        ? `Aprovar PRD: ${d.planTitle}`
+                        : `PR aberto: ${d.planTitle}`}
                 </span>
               </span>
               <span className="w-full truncate pl-[22px] text-[11px] text-muted-foreground">
