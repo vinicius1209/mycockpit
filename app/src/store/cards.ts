@@ -21,11 +21,19 @@ import {
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 
+/** Card no STORE = registro do banco + sinais transitórios de sessão. O vigia
+ *  (S2.2) marca `stalledSince` aqui, espelhando o `stalledSince` da conversa:
+ *  NUNCA persiste no banco (episódio morre com o processo, como nos turnos). */
+export type CardRow = CardRecord & {
+  /** Início do silêncio (updated_at no momento do aviso). Transient. */
+  stalledSince?: number
+}
+
 /** Cards com dispatch EM VOO (memória de módulo): guarda anti duplo-clique. */
 const dispatching = new Set<string>()
 
-function groupByProject(all: CardRecord[]): Record<string, CardRecord[]> {
-  const out: Record<string, CardRecord[]> = {}
+function groupByProject(all: CardRow[]): Record<string, CardRow[]> {
+  const out: Record<string, CardRow[]> = {}
   for (const c of all) {
     ;(out[c.projectId] ??= []).push(c)
   }
@@ -33,9 +41,9 @@ function groupByProject(all: CardRecord[]): Record<string, CardRecord[]> {
 }
 
 interface CardsState {
-  all: CardRecord[]
+  all: CardRow[]
   /** Derivado de `all` (recalculado a cada mutação — refs novas juntas). */
-  byProject: Record<string, CardRecord[]>
+  byProject: Record<string, CardRow[]>
   /** 1ª hidratação completa (skeleton → conteúdo; nunca volta a false). */
   loaded: boolean
   /** Card selecionado no board (S1.6: abrir card SEM conversa seleciona). */
@@ -57,16 +65,31 @@ interface CardsState {
   /** Carimbo do assignee (S1.4): chamado pelo chat quando um turno resolve o
    *  agent da conversa — espelha no card ligado (no-op sem card/mudança). */
   noteConversationAgent: (convId: string, agent: string) => void
+  /** (vigia, S2.2) marca o card como estagnado. NÃO toca updated_at: o sinal
+   *  de silêncio É o updated_at, e bumpar aqui fecharia o próprio episódio. */
+  markCardStalled: (id: string, since: number) => void
+  /** (vigia, S2.2) fecha o episódio (atividade/estado novo). No-op se limpo. */
+  clearCardStalled: (id: string) => void
 }
 
 export const useCards = create<CardsState>((set, get) => {
   /** Substitui a lista inteira (mantém byProject coerente). */
-  const setAll = (all: CardRecord[]) => set({ all, byProject: groupByProject(all) })
+  const setAll = (all: CardRow[]) => set({ all, byProject: groupByProject(all) })
 
-  /** Patch imutável de UM card (no-op se não existe). */
-  const patchCard = (id: string, patch: Partial<CardRecord>) => {
+  /** Patch imutável de UM card (no-op se não existe). Toda mutação REAL passa
+   *  por aqui: carimba updatedAt com o `now` da mutação (F1: o MESMO valor que
+   *  foi pro banco — um relógio só, senão um reload chega com drift de ms e o
+   *  vigia lê como atividade) e LIMPA o stalledSince transient (F3: mexeu no
+   *  card = episódio de estagnação acabou; o badge não mente nem por 5s). */
+  const patchCard = (
+    id: string,
+    patch: Partial<CardRow>,
+    now: number = Date.now(),
+  ) => {
     const next = get().all.map((c) =>
-      c.id === id ? { ...c, ...patch, updatedAt: Date.now() } : c,
+      c.id === id
+        ? { ...c, ...patch, stalledSince: undefined, updatedAt: now }
+        : c,
     )
     setAll(next)
   }
@@ -102,15 +125,17 @@ export const useCards = create<CardsState>((set, get) => {
       }
       const cur = get().all.find((c) => c.id === id)
       if (cur) assertCardTransition(cur.state, state) // valida ANTES do disco
-      await dbSetCardState(id, state) // revalida contra o estado do banco
-      patchCard(id, { state })
+      const now = Date.now() // F1: banco e store carimbam o MESMO relógio
+      await dbSetCardState(id, state, now) // revalida contra o estado do banco
+      patchCard(id, { state }, now)
     },
 
     closeCard: async (id, state) => {
       const cur = get().all.find((c) => c.id === id)
       if (cur) assertCardTransition(cur.state, state)
-      await dbCloseCard(id, state)
-      patchCard(id, { state })
+      const now = Date.now()
+      await dbCloseCard(id, state, now)
+      patchCard(id, { state }, now)
     },
 
     dispatch: async (id) => {
@@ -130,9 +155,10 @@ export const useCards = create<CardsState>((set, get) => {
         // o agent (noteConversationAgent).
         const convId = await useChat.getState().newConversation(card.projectId)
         if (!convId) return null
-        await dbLinkCardConversation(id, convId)
-        await dbSetCardState(id, "working")
-        patchCard(id, { conversationId: convId, state: "working" })
+        const now = Date.now() // F1: um relógio pra mutação inteira
+        await dbLinkCardConversation(id, convId, now)
+        await dbSetCardState(id, "working", now)
+        patchCard(id, { conversationId: convId, state: "working" }, now)
         return convId
       } finally {
         dispatching.delete(id)
@@ -146,10 +172,26 @@ export const useCards = create<CardsState>((set, get) => {
       // terminal fica fora: histórico fechado não é recarimbado.
       if (!card || isTerminalCardState(card.state) || card.assigneeAgent === agent)
         return
-      patchCard(card.id, { assigneeAgent: agent })
-      dbSetCardAssignee(card.id, agent).catch((e) => {
+      const now = Date.now()
+      patchCard(card.id, { assigneeAgent: agent }, now)
+      dbSetCardAssignee(card.id, agent, now).catch((e) => {
         console.warn("[cards] falha ao gravar o assignee do card", e)
       })
+    },
+
+    markCardStalled: (id, since) => {
+      const cur = get().all.find((c) => c.id === id)
+      if (!cur || cur.stalledSince === since) return
+      // patch direto (SEM patchCard): updated_at intocado, ver doc da action.
+      setAll(get().all.map((c) => (c.id === id ? { ...c, stalledSince: since } : c)))
+    },
+
+    clearCardStalled: (id) => {
+      const cur = get().all.find((c) => c.id === id)
+      if (cur?.stalledSince == null) return
+      setAll(
+        get().all.map((c) => (c.id === id ? { ...c, stalledSince: undefined } : c)),
+      )
     },
   }
 })

@@ -80,6 +80,17 @@ describe("cardDecisions (E1)", () => {
     expect(out).toEqual([])
   })
 
+  it("propaga o stalledSince do vigia (S2.3) pro destaque da fila", () => {
+    const [d] = cardDecisions(
+      [{ ...card({ id: "c9", state: "blocked" }), stalledSince: 123 }],
+      projects,
+    )
+    expect(d.kind === "card" && d.stalledSince).toBe(123)
+    // sem marca do vigia, o campo fica ausente (card na fila, mas não mudo)
+    const [semMarca] = cardDecisions([card({ state: "review" })], projects)
+    expect(semMarca.kind === "card" && semMarca.stalledSince).toBeUndefined()
+  })
+
   it("o card SAI da fila quando muda de estado (derivação pura)", () => {
     const emReview = [card({ state: "review" })]
     expect(cardDecisions(emReview, projects)).toHaveLength(1)

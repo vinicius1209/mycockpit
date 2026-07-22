@@ -188,7 +188,10 @@ export function InboxBell() {
                   ? `${d.title} · ${d.projectName}`
                   : d.kind === "pr"
                     ? `${d.projectName} · aguardando merge`
-                    : d.projectName}
+                    : d.kind === "card" && d.stalledSince != null
+                      ? // S2.3: card estagnado (vigia) ganha o "parado há X min"
+                        `${d.projectName} · parado há ${Math.max(1, Math.round((Date.now() - d.stalledSince) / 60_000))} min`
+                      : d.projectName}
               </span>
             </DropdownMenuItem>
           ))

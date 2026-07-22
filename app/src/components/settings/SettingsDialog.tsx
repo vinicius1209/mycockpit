@@ -725,11 +725,11 @@ export function SettingsDialog() {
                 </Field>
               </div>
 
-              <SectionTitle>Vigia de turno mudo</SectionTitle>
+              <SectionTitle>Vigia de silêncio</SectionTitle>
               <div className="divide-y divide-border/50">
                 <Field
                   label="Avisar após (minutos)"
-                  hint="Turno rodando sem produzir nada novo por esse tempo dispara notificação + aviso acionável. 0 desliga."
+                  hint="Cobre turnos rodando sem produzir nada novo E cards do board parados em revisão/bloqueado. Dispara notificação + aviso acionável. Só funciona com o app aberto. 0 desliga."
                 >
                   <Input
                     type="number"

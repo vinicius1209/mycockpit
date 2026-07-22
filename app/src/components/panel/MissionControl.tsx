@@ -434,9 +434,17 @@ function FusionCard({ d }: { d: Extract<Decision, { kind: "fusion" }> }) {
 }
 
 /** Card do board esperando você (E1: review/blocked): abrir leva à conversa
- *  ligada, ou seleciona o card no board quando não há conversa. */
+ *  ligada, ou seleciona o card no board quando não há conversa. Quando o vigia
+ *  marcou o card como estagnado (S2.3), o destaque "parado há X min" entra
+ *  aqui mesmo, sem layout novo. */
 function BoardQueueCard({ d }: { d: Extract<Decision, { kind: "card" }> }) {
   const go = () => void goTo(d)
+  // minutos calculados no render: a fila re-escaneia periodicamente, o valor
+  // acompanha; precisão de relógio vivo não vale um timer por card.
+  const stalledMin =
+    d.stalledSince != null
+      ? Math.max(1, Math.round((Date.now() - d.stalledSince) / 60_000))
+      : null
   return (
     <QueueCard onClick={go}>
       <div className="flex items-center gap-2.5">
@@ -452,6 +460,11 @@ function BoardQueueCard({ d }: { d: Extract<Decision, { kind: "card" }> }) {
         <span className="shrink-0 text-[11.5px] text-muted-foreground">
           {d.projectName}
         </span>
+        {stalledMin != null && (
+          <span className="shrink-0 rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning">
+            parado há {stalledMin} min
+          </span>
+        )}
         <span
           className={cn(
             "shrink-0 rounded border px-1.5 py-px text-[10px] tracking-wide uppercase",

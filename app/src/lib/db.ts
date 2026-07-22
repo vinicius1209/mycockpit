@@ -1677,8 +1677,15 @@ export async function updateCard(
 }
 
 /** Move o card validando a máquina de estados. done/cancelled NUNCA entram por
- *  aqui (gate humano-only): só via `closeCard`. Lança em transição inválida. */
-export async function setCardState(id: string, state: CardState): Promise<void> {
+ *  aqui (gate humano-only): só via `closeCard`. Lança em transição inválida.
+ *  `now` (S2.2/F1): UM relógio por mutação — o store passa o MESMO timestamp
+ *  que carimba no patch local, senão um reload do banco chega com updated_at
+ *  diferente por ms e o vigia lê drift como "atividade" (episódio duplicado). */
+export async function setCardState(
+  id: string,
+  state: CardState,
+  now: number = Date.now(),
+): Promise<void> {
   if (isTerminalCardState(state)) {
     // pt-BR sem jargão: a mensagem vaza pro toast da UI (gate humano-only).
     throw new Error(
@@ -1692,16 +1699,18 @@ export async function setCardState(id: string, state: CardState): Promise<void> 
   assertCardTransition(cur, state)
   await db.execute("UPDATE cards SET state = $1, updated_at = $2 WHERE id = $3", [
     state,
-    Date.now(),
+    now,
     id,
   ])
 }
 
 /** Fecha o card (done/cancelled) — o ÚNICO caminho pros estados terminais,
- *  reservado ao gesto humano (prepara o E3). Valida a máquina. */
+ *  reservado ao gesto humano (prepara o E3). Valida a máquina.
+ *  `now`: mesmo contrato de relógio único do setCardState. */
 export async function closeCard(
   id: string,
   state: "done" | "cancelled",
+  now: number = Date.now(),
 ): Promise<void> {
   const db = await getDb()
   if (!db) return
@@ -1710,34 +1719,41 @@ export async function closeCard(
   assertCardTransition(cur, state)
   await db.execute("UPDATE cards SET state = $1, updated_at = $2 WHERE id = $3", [
     state,
-    Date.now(),
+    now,
     id,
   ])
 }
 
 /** Liga o card à conversa que o executa (S1.4). O link sobrevive a
- *  resume/transplant (mesmo conversation_id). */
+ *  resume/transplant (mesmo conversation_id).
+ *  `now`: mesmo contrato de relógio único do setCardState. */
 export async function linkCardConversation(
   id: string,
   convId: string,
+  now: number = Date.now(),
 ): Promise<void> {
   const db = await getDb()
   if (!db) return
   await ensureBoardTables(db)
   await db.execute(
     "UPDATE cards SET conversation_id = $1, updated_at = $2 WHERE id = $3",
-    [convId, Date.now(), id],
+    [convId, now, id],
   )
 }
 
-/** Carimba o agent que o 1º turno da conversa ligada resolveu (S1.4). */
-export async function setCardAssignee(id: string, agent: string): Promise<void> {
+/** Carimba o agent que o 1º turno da conversa ligada resolveu (S1.4).
+ *  `now`: mesmo contrato de relógio único do setCardState. */
+export async function setCardAssignee(
+  id: string,
+  agent: string,
+  now: number = Date.now(),
+): Promise<void> {
   const db = await getDb()
   if (!db) return
   await ensureBoardTables(db)
   await db.execute(
     "UPDATE cards SET assignee_agent = $1, updated_at = $2 WHERE id = $3",
-    [agent, Date.now(), id],
+    [agent, now, id],
   )
 }
 
