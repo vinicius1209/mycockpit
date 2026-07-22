@@ -29,6 +29,7 @@ import {
 } from "@/components/mission/MissionTimeline"
 import { InlineInteractions } from "@/components/chat/InteractionHost"
 import { runAgent, cancelAgent, agentLabel } from "@/lib/agent"
+import { dispatchBlockReason } from "@/lib/agents"
 import { buildHandoff } from "@/lib/handoff"
 import { buildExecutionPrompt, extractPlanText, turnEndedOk } from "@/lib/planMode"
 import {
@@ -320,6 +321,18 @@ export function ChatPanel() {
     if (persona.status === "none" && locked && conv.presetId && conv.presetDigest) {
       void warnPresetDrift(convId, conv.presetId, conv.presetDigest)
     }
+    // F-A (follow-up S0) — guarda de availability ANTES do start: mandar turno
+    // pra CLI ausente/deslogada só rende erro cru no fim do run. Guarda o agent
+    // EFETIVO (o travado da conversa ou o do preset vence o do seletor); auth
+    // incerta segue (degradação honesta).
+    const dispatchBlock = dispatchBlockReason(
+      agent,
+      useApp.getState().settings.detected ?? {},
+    )
+    if (dispatchBlock) {
+      toast.error(dispatchBlock)
+      return
+    }
     // D2 — corrida do await acima: outro envio pode ter passado pelas guardas
     // e iniciado um run enquanto o preflight rodava. Re-checa com estado
     // FRESCO; run em andamento → ENFILEIRA (mesmo destino da guarda lá em
@@ -532,6 +545,16 @@ export function ChatPanel() {
     if (!convId) return
     const conv = useChat.getState().byId[convId]
     if (!conv || conv.running || conv.finalizing || conv.corrupt) return
+    // F-A — mesma guarda de availability do handleSend: revezar pra CLI
+    // ausente/deslogada só transplanta a conversa pra um erro cru.
+    const dispatchBlock = dispatchBlockReason(
+      target,
+      useApp.getState().settings.detected ?? {},
+    )
+    if (dispatchBlock) {
+      toast.error(dispatchBlock)
+      return
+    }
     let lastUserIdx = -1
     for (let i = conv.items.length - 1; i >= 0; i--) {
       if (conv.items[i].kind === "user") {

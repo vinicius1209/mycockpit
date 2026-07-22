@@ -15,10 +15,11 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 import type { Attachment, AttachmentKind } from "@/lib/attachments"
-import { AGENTS, availability } from "@/lib/agents"
+import { AGENTS, availability, dispatchBlockReason } from "@/lib/agents"
 import type { InteractionAnswer, ApprovalData, QuestionData } from "@/lib/interaction"
 import type { MissionPhaseStatus, MissionStatus } from "@/lib/missionTypes"
 import {
+  getPreset,
   isTauri,
   loadLedger,
   listRecentDeliveries,
@@ -26,6 +27,8 @@ import {
   type RecentDelivery,
 } from "@/lib/db"
 import { feedbackLesson } from "@/lib/learning"
+import { nativeNotify } from "@/lib/notify"
+import { hasAssistantReply } from "@/lib/presets"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { convIdForInteraction, useInteractions } from "@/store/interactions"
@@ -545,10 +548,52 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
       // corrupt, missão rodando, e o agent TRAVADO da conversa VENCE o da ação.
       const wanted = str(p.convId)
       const metas = useChat.getState().conversationsByProject[projectId] ?? []
-      const convId =
-        wanted && metas.some((m) => m.id === wanted)
-          ? wanted
-          : await ensureDeskConversation(projectId, officeAgent)
+      const useWanted = !!wanted && metas.some((m) => m.id === wanted)
+      const convId = useWanted
+        ? wanted
+        : await ensureDeskConversation(projectId, officeAgent)
+      // F-A (follow-up S0) — guarda de availability ANTES de despachar: CLI
+      // ausente/deslogada não recebe turno. O POST /api/action já devolveu 202
+      // (fire-and-forget), então a resposta honesta volta pro celular pelo
+      // MESMO envelope do histórico: notice persistido na conversa + ping de
+      // conv atualizada (a página refetcha e mostra o motivo). D3: a guarda
+      // vale pro agent EFETIVO da conversa resolvida — numa conversa travada o
+      // agent DELA vence o da ação (regra do sendFromDesk), e sem essa
+      // resolução o toast do desktop fechado seria a única resposta. A mesa já
+      // saiu carregada do ensureDeskConversation; o alvo explícito carrega
+      // aqui antes de ler o estado.
+      if (useWanted) {
+        await useChat.getState().ensureConversationLoaded(projectId, convId)
+      }
+      const conv = useChat.getState().byId[convId]
+      const locked = conv != null && conv.items.length > 0
+      let effectiveAgent: string = locked ? conv.agent : officeAgent
+      // Preset da conversa manda no agent do 1º turno (mesma resolução do
+      // sendFromDesk, inclusive a re-injeção D1: travada SEM resposta).
+      if (conv?.presetId && (!locked || !hasAssistantReply(conv.items))) {
+        try {
+          const preset = await getPreset(conv.presetId)
+          if (preset) effectiveAgent = preset.backend
+        } catch {
+          // preset ilegível: o preflight fail-closed do sendFromDesk cobre.
+        }
+      }
+      const dispatchBlock = dispatchBlockReason(
+        effectiveAgent,
+        useApp.getState().settings.detected ?? {},
+      )
+      if (dispatchBlock) {
+        await useChat.getState().ensureConversationLoaded(projectId, convId)
+        useChat.getState().handleEvent(convId, {
+          type: "notice",
+          message: dispatchBlock,
+        })
+        // D1: o ping só sai DEPOIS do UPSERT commitar — o refetch do celular
+        // lê o SQLite, e conversa idle não gera ping novo depois deste.
+        await useChat.getState().persist(convId)
+        pingConvUpdated(convId)
+        return
+      }
       await sendFromDesk({
         convId,
         projectId,
@@ -698,7 +743,15 @@ export function startCompanionBridge(): () => void {
 
   let disposed = false
   listen<unknown>("companion://action", (e) => {
-    void handleCompanionAction(e.payload)
+    handleCompanionAction(e.payload).catch((err) => {
+      // rejeição aqui morreria muda (o 202 já saiu): loga e avisa o humano
+      // pelo canal nativo — o celular percebe pela ausência de efeito.
+      console.warn("[companion] ação do celular falhou:", err)
+      void nativeNotify(
+        "Companion",
+        "Ação do celular falhou. Veja o app para detalhes.",
+      )
+    })
   })
     .then((un) => {
       if (disposed) un()

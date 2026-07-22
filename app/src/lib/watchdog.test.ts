@@ -30,6 +30,7 @@ import {
   cancelStalledTurn,
   checkStalledCards,
   checkStalledTurns,
+  stalledTurnEpisodeOpen,
 } from "./watchdog"
 
 const T0 = 1_700_000_000_000
@@ -328,5 +329,56 @@ describe("checkStalledCards (S2.2)", () => {
     checkStalledCards(T0 + 120 * MIN)
     expect(notifyCardStalled).not.toHaveBeenCalled()
     expect(toast).not.toHaveBeenCalled()
+  })
+})
+
+describe("dedupe turno mudo × card da MESMA conversa (F-D)", () => {
+  it("turno mudo já avisado ⇒ o card em review ligado à conversa NÃO avisa no mesmo ciclo", () => {
+    useCards.setState({ all: [card({ conversationId: "c1" })] })
+    useChat.setState({ byId: { c1: conv() } })
+
+    // mesma ordem do ticker real: turnos primeiro, cards depois, MESMO now
+    const cycle = (now: number) => {
+      checkStalledTurns(now)
+      checkStalledCards(now)
+    }
+    cycle(T0) // baseline
+    cycle(T0 + 10 * MIN)
+    // o humano foi cutucado UMA vez, pelo turno mudo — não duas
+    expect(notifyTurnStalled).toHaveBeenCalledTimes(1)
+    expect(notifyCardStalled).not.toHaveBeenCalled()
+    expect(stalledTurnEpisodeOpen("c1")).toBe(true)
+
+    // silêncio continuado: segue 1 aviso só
+    cycle(T0 + 60 * MIN)
+    expect(notifyTurnStalled).toHaveBeenCalledTimes(1)
+    expect(notifyCardStalled).not.toHaveBeenCalled()
+
+    // o turno terminou (episódio de turno fecha); o card continua parado à
+    // espera do humano ⇒ o AVISO DE CARD sai depois de um limiar completo
+    // contado do fim do turno — silêncio novo, cutucada nova, sem dobra.
+    const c = useChat.getState().byId.c1
+    useChat.setState({ byId: { c1: { ...c, running: false, runId: null } } })
+    cycle(T0 + 65 * MIN)
+    expect(stalledTurnEpisodeOpen("c1")).toBe(false)
+    expect(notifyCardStalled).not.toHaveBeenCalled() // 5min: ainda não
+    cycle(T0 + 70 * MIN) // 10min desde o fim do turno
+    expect(notifyCardStalled).toHaveBeenCalledTimes(1)
+  })
+
+  it("stalledTurnEpisodeOpen: só é aberto com turno rodando, marcado E avisado", () => {
+    expect(stalledTurnEpisodeOpen("nao-existe")).toBe(false)
+    useChat.setState({ byId: { c1: conv() } })
+    checkStalledTurns(T0) // baseline, sem aviso ainda
+    expect(stalledTurnEpisodeOpen("c1")).toBe(false)
+    checkStalledTurns(T0 + 10 * MIN) // avisou
+    expect(stalledTurnEpisodeOpen("c1")).toBe(true)
+    // atividade fecha o episódio
+    const c = useChat.getState().byId.c1
+    useChat.setState({
+      byId: { c1: { ...c, items: [...c.items, textItem("voltei")] } },
+    })
+    checkStalledTurns(T0 + 11 * MIN)
+    expect(stalledTurnEpisodeOpen("c1")).toBe(false)
   })
 })

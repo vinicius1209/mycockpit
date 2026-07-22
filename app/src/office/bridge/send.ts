@@ -7,6 +7,7 @@
 
 import { toast } from "sonner"
 import { agentLabel, cancelAgent, runAgent } from "@/lib/agent"
+import { dispatchBlockReason } from "@/lib/agents"
 import type { Attachment } from "@/lib/attachments"
 import { wantsAutoResume } from "@/lib/autoResume"
 import { isTauri, listConversations, type ConversationMeta } from "@/lib/db"
@@ -224,6 +225,18 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   if (persona.status === "none" && locked && conv.presetId && conv.presetDigest) {
     void warnPresetDrift(convId, conv.presetId, conv.presetDigest)
   }
+  // F-A (follow-up S0) — guarda de availability ANTES do start: CLI ausente/
+  // deslogada só renderia erro cru no fim do run. Guarda o agent EFETIVO (o
+  // travado da conversa ou o do preset vence o da mesa). Auth incerta segue
+  // (degradação honesta). onAccepted NÃO dispara: a UI preserva o rascunho.
+  const dispatchBlock = dispatchBlockReason(
+    agent,
+    useApp.getState().settings.detected ?? {},
+  )
+  if (dispatchBlock) {
+    toast.error(dispatchBlock)
+    return
+  }
   // D2 — corrida do await acima: outro envio pode ter iniciado um run durante
   // o preflight. Re-checa FRESCO; rodando → enfileira (mesmo destino da guarda
   // de cima), nunca um segundo run concorrente.
@@ -407,6 +420,16 @@ export async function continueInAgent(
   // reinicia running/runId). Bloqueia — o usuário para primeiro.
   if (conv.running || conv.finalizing) {
     toast("Turno em andamento. Espere terminar para revezar.")
+    return
+  }
+  // F-A — mesma guarda de availability do sendFromDesk: revezar pra CLI
+  // ausente/deslogada só transplanta a conversa pra um erro cru.
+  const dispatchBlock = dispatchBlockReason(
+    targetAgent,
+    useApp.getState().settings.detected ?? {},
+  )
+  if (dispatchBlock) {
+    toast.error(dispatchBlock)
     return
   }
   // último pedido do usuário → volta destacado no fim do prompt (o handoff

@@ -81,11 +81,17 @@ function LaneAction({
 function BoardCard({
   card,
   projectName,
+  archivedProject,
   cost,
   selected,
 }: {
   card: CardRecord
   projectName: string
+  /** F-E: o projeto do card foi arquivado (sumiu do useApp.projects). O card
+   *  fica no board (a intenção sobrevive), mas Iniciar/abrir conversa são
+   *  desabilitados — conversa em projeto invisível é armadilha. closeCard
+   *  segue permitido: encerrar intenção órfã é gesto legítimo. */
+  archivedProject: boolean
   cost: { total: number; estimated: boolean } | null
   selected: boolean
 }) {
@@ -96,7 +102,8 @@ function BoardCard({
   const [starting, setStarting] = useState(false)
   const terminal = card.state === "done" || card.state === "cancelled"
   const open = () => {
-    if (card.conversationId) void openCardConversation(card.id)
+    // projeto arquivado: nunca navega pra conversa invisível — só seleciona.
+    if (card.conversationId && !archivedProject) void openCardConversation(card.id)
     else useCards.getState().select(card.id)
   }
   return (
@@ -117,6 +124,11 @@ function BoardCard({
         <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground">
           {card.title}
         </span>
+        {archivedProject && (
+          <span className="shrink-0 rounded border border-border px-1.5 py-px text-[9.5px] tracking-wide text-muted-foreground uppercase">
+            projeto arquivado
+          </span>
+        )}
         {(card.state === "review" ||
           card.state === "blocked" ||
           card.state === "cancelled") && (
@@ -155,10 +167,11 @@ function BoardCard({
             <>
               <LaneAction
                 tone="brass"
-                disabled={starting}
+                // F-E: projeto arquivado não ganha conversa nova (invisível).
+                disabled={starting || archivedProject}
                 onClick={(e) => {
                   e.stopPropagation()
-                  if (starting) return
+                  if (starting || archivedProject) return
                   setStarting(true)
                   void startCard(card).finally(() => setStarting(false))
                 }}
@@ -228,12 +241,16 @@ function Lane({
   projectNames,
   costs,
   selectedId,
+  hiddenOlder = 0,
 }: {
   label: string
   cards: CardRecord[]
   projectNames: Map<string, string>
   costs: CardCosts
   selectedId: string | null
+  /** F-F: quantos cards mais antigos ficaram FORA do corte (só honestidade,
+   *  sem paginação). 0 = nada cortado. */
+  hiddenOlder?: number
 }) {
   return (
     <div className="min-w-0">
@@ -246,12 +263,18 @@ function Lane({
             key={c.id}
             card={c}
             projectName={projectNames.get(c.projectId) ?? "projeto"}
+            archivedProject={!projectNames.has(c.projectId)}
             cost={
               c.conversationId ? (costs[c.conversationId] ?? null) : null
             }
             selected={selectedId === c.id}
           />
         ))}
+        {hiddenOlder > 0 && (
+          <div className="px-1 py-0.5 text-[10.5px] text-muted-foreground/70">
+            e mais {hiddenOlder} {hiddenOlder === 1 ? "antigo" : "antigos"}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -270,9 +293,13 @@ export function BoardLane() {
   )
 
   // Colunas: "Em andamento" agrega working + review + blocked (o badge
-  // diferencia); "Feito" agrega done + cancelled, mais recentes primeiro.
-  const lanes = useMemo(
-    () => ({
+  // diferencia); "Feito" agrega done + cancelled, mais recentes primeiro,
+  // cortada em 8 — o corte é ANUNCIADO ("e mais N antigos", F-F), não mudo.
+  const lanes = useMemo(() => {
+    const doneAll = cards
+      .filter((c) => c.state === "done" || c.state === "cancelled")
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+    return {
       backlog: cards.filter((c) => c.state === "backlog"),
       doing: cards.filter(
         (c) =>
@@ -280,13 +307,10 @@ export function BoardLane() {
           c.state === "review" ||
           c.state === "blocked",
       ),
-      done: cards
-        .filter((c) => c.state === "done" || c.state === "cancelled")
-        .sort((a, b) => b.updatedAt - a.updatedAt)
-        .slice(0, 8),
-    }),
-    [cards],
-  )
+      done: doneAll.slice(0, 8),
+      doneHidden: Math.max(0, doneAll.length - 8),
+    }
+  }, [cards])
 
   // Custo por card: query direta em turn_costs por conv_id, refresh 30s (mesmo
   // ritmo das varreduras do Painel). Cobre chat + disputas; missão/SDD ficam
@@ -367,6 +391,7 @@ export function BoardLane() {
             projectNames={projectNames}
             costs={costs}
             selectedId={selectedId}
+            hiddenOlder={lanes.doneHidden}
           />
         </div>
       )}

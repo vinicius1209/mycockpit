@@ -213,6 +213,21 @@ describe("preflightPreset — fail-closed", () => {
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.error).toContain("sem personalidade")
   })
+
+  it("inventário COMPLETAMENTE vazio admite a causa provável (pasta vazia ou ilegível), sem acusar a skill", () => {
+    const r = preflightPreset(preset(), [])
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error).toContain("nenhum comando")
+      expect(r.error).toContain("vazia ou ilegível")
+      expect(r.error).toContain("abortado")
+      expect(r.error).not.toContain("não existe")
+    }
+  })
+
+  it("preset SEM skills passa mesmo com inventário vazio (nada a validar)", () => {
+    expect(preflightPreset(preset({ skills: [] }), [])).toEqual({ ok: true })
+  })
 })
 
 // ── veredito de drift ───────────────────────────────────────────────────────

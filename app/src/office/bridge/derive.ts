@@ -28,6 +28,7 @@ import { useChat, type ChatItem } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { convIdForInteraction, useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
+import { usePresets } from "@/store/presets"
 
 /** Janela de "output recente": houve text_delta/tool há ≤2.5s ⇒ digitando. */
 const TYPING_WINDOW_MS = 2500
@@ -221,20 +222,43 @@ export function deskBaseState(
   limited: boolean,
   resetHint: string | null,
 ): Pick<DeskSnapshot, "state" | "label" | "detail"> {
-  if (avail === "missing" || avail === "not-integrated") {
-    return { state: "off", label: "Não detectado" }
-  }
-  if (avail === "installed-not-authenticated") {
-    return { state: "off", label: "Instalado, sem login" }
-  }
-  if (limited) {
-    return {
-      state: "off",
-      label: "Em rate limit",
-      detail: resetHint ? `volta ${resetHint}` : undefined,
+  // switch EXAUSTIVO (F-C): membro novo de Availability quebra no tsc via o
+  // check `never` abaixo, em vez de cair em "Disponível" por omissão.
+  switch (avail) {
+    case "missing":
+    case "not-integrated":
+      return { state: "off", label: "Não detectado" }
+    case "installed-not-authenticated":
+      return { state: "off", label: "Instalado, sem login" }
+    case "ready":
+    case "installed-auth-unknown":
+      if (limited) {
+        return {
+          state: "off",
+          label: RATE_LIMIT_LABEL,
+          detail: resetHint ? `volta ${resetHint}` : undefined,
+        }
+      }
+      return { state: "idle", label: "Disponível" }
+    default: {
+      const exhaustive: never = avail
+      return exhaustive
     }
   }
-  return { state: "idle", label: "Disponível" }
+}
+
+/** Nome ATUAL do preset da conversa, resolvido no RENDER via o store de
+ *  presets (follow-up S3.5: renomear o preset atualiza a label da mesa sem
+ *  recarregar a conversa). Cai no carimbo `presetName` da conversa quando o
+ *  store não tem o preset (lista ainda não carregada, ou preset apagado — o
+ *  carimbo é o último nome conhecido, honesto como fallback). */
+function currentPresetName(
+  presetId: string | null | undefined,
+  stamped: string | null | undefined,
+): string | null {
+  if (!presetId) return stamped ?? null
+  const preset = usePresets.getState().list.find((p) => p.id === presetId)
+  return preset?.name ?? stamped ?? null
 }
 
 /** S3.5 — rótulo da mesa num turno linear sob persona: generaliza o
@@ -247,13 +271,24 @@ export function linearDeskLabel(
   return presetName ? `${base} como ${presetName}` : base
 }
 
+/** Label da mesa em rate limit — fonte ÚNICA da string (N2): deskBaseState
+ *  produz, offInstruction e o DeskMenu comparam via isRateLimitLabel. Renomear
+ *  a copy quebra em UM lugar só. */
+const RATE_LIMIT_LABEL = "Em rate limit"
+
+/** A mesa está apagada por rate limit? (sinal semântico pro DeskMenu, em vez
+ *  de comparar a string de copy espalhada). */
+export function isRateLimitLabel(label: string | null | undefined): boolean {
+  return label === RATE_LIMIT_LABEL
+}
+
 /** Instrução de UI por motivo de mesa apagada. Mora AQUI, colada nos labels que
  *  deskBaseState produz, pra copy e motivo não divergirem: "Verifique nos
  *  Ajustes" só vale pra ausência de binário; login é no terminal; rate limit
  *  não tem nada pra verificar em lugar nenhum, é esperar a janela. */
 export function offInstruction(label: string): string {
   if (label === "Instalado, sem login") return "Faça login pelo terminal da CLI."
-  if (label === "Em rate limit") return "Aguarde a janela liberar."
+  if (isRateLimitLabel(label)) return "Aguarde a janela liberar."
   return "Verifique nos Ajustes."
 }
 
@@ -430,8 +465,12 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
     upgrade(desk, {
       state: live.state,
       // S3.5: conversa sob preset → "Digitando como {preset.name}" (o persona-
-      // na-label das missões, generalizado pra personas de conversa).
-      label: linearDeskLabel(live.state, c.presetName),
+      // na-label das missões, generalizado pra personas de conversa). O nome
+      // vem do store de presets no render (rename atualiza a label).
+      label: linearDeskLabel(
+        live.state,
+        currentPresetName(c.presetId, c.presetName),
+      ),
       // turno mudo (watchdog marcou): a mesa conta há quanto tempo (de graça).
       detail:
         live.detail ??
@@ -691,6 +730,7 @@ export function startDeriving(cb: (s: OfficeSnapshot) => void): () => void {
     useApp.subscribe(schedule),
     useInteractions.subscribe(schedule),
     useFusion.subscribe(schedule), // guerra: disputa ativa vira room.war
+    usePresets.subscribe(schedule), // rename de preset re-rotula a mesa
   ]
 
   // Decaimentos precisam de relógio (typing→thinking após 2.5s de silêncio,

@@ -38,7 +38,7 @@ import {
   isTauri,
   type ConversationMeta,
 } from "@/lib/db"
-import { warnPresetDrift } from "@/lib/presets"
+import { clearPresetDriftWarning, warnPresetDrift } from "@/lib/presets"
 import { perfSpan } from "@/office/engine/perf"
 
 export type ChatItem =
@@ -922,6 +922,9 @@ export const useChat = create<ChatState>((set, get) => {
       // Cancela o persist throttled pendente ANTES do DELETE: um snapshot
       // atrasado re-inseriria a linha deletada (UPSERT) = conversa-zumbi.
       cancelPersist(id)
+      // follow-up S3: o episódio de aviso de drift morre com a conversa (a
+      // entrada no Map de módulo não fica órfã).
+      clearPresetDriftWarning(id)
       await dbDelete(id)
       // E1 (S1.2): o dbDelete devolveu o card ligado pro backlog no banco
       // (conversation_id = NULL) — re-hidrata o store do board pra UI refletir.

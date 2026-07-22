@@ -14,7 +14,7 @@
 // 'padrao'; 'liberado' é clampado fora AQUI além do tipo.
 
 import { runAgent } from "@/lib/agent"
-import { normalizeModelValue } from "@/lib/agents"
+import { dispatchBlockReason, normalizeModelValue } from "@/lib/agents"
 import {
   insertScheduleRun,
   listSchedules,
@@ -119,6 +119,33 @@ export async function dispatchSchedule(
         kind: "run_error",
         title: `Automação falhou: ${s.name}`,
         subtitle: "Projeto não encontrado (arquivado?).",
+        projectId: s.projectId,
+      })
+      return
+    }
+
+    // F-A (D2 do review) — preflight de availability ANTES do spawn: CLI
+    // ausente/deslogada às 3h não ganha conversa nem run gasto; a falha entra
+    // no histórico com o MOTIVO real. O next_run já avançou lá em cima, então
+    // não retenta em loop — re-rodar segue decisão humana ("Rodar agora").
+    const dispatchBlock = dispatchBlockReason(
+      s.agent,
+      useApp.getState().settings.detected ?? {},
+    )
+    if (dispatchBlock) {
+      await insertScheduleRun({
+        id: crypto.randomUUID(),
+        scheduleId: s.id,
+        startedAt,
+        status: "failed",
+        cost: null,
+        convId: null,
+      })
+      await markScheduleRun(s.id, startedAt, "failed")
+      useNotifs.getState().push({
+        kind: "run_error",
+        title: `Automação falhou: ${s.name}`,
+        subtitle: dispatchBlock,
         projectId: s.projectId,
       })
       return
