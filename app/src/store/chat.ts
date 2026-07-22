@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import { toast } from "sonner"
 import type { AgentEvent, CostSource } from "@/lib/agent"
 import { suggest } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
@@ -31,10 +32,13 @@ import {
   renameConversation as dbRename,
   setConversationColor as dbSetColor,
   setConversationWorktree as dbSetWorktree,
+  setConversationPreset as dbSetPreset,
+  getPreset,
   recordTurnCost,
   isTauri,
   type ConversationMeta,
 } from "@/lib/db"
+import { warnPresetDrift } from "@/lib/presets"
 import { perfSpan } from "@/office/engine/perf"
 
 export type ChatItem =
@@ -89,6 +93,14 @@ export interface ConvState {
   effort: string | null
   /** Worktree isolado desta conversa (null = compartilha a pasta do projeto). */
   worktreePath: string | null
+  /** Preset (persona) da conversa (S3): escolhido no composer antes do 1º run;
+   *  o digest é carimbado NO 1º run (persona injetada). Opcionais p/ não
+   *  quebrar factories — ausente = sem preset (camada crua). */
+  presetId?: string | null
+  presetDigest?: string | null
+  /** Nome do preset resolvido na hidratação (rótulo da mesa no Office, S3.5).
+   *  null com presetId presente = preset apagado (o drift avisa). */
+  presetName?: string | null
   /** Linha corrompida no banco (JSON não parseou): envio e persist BLOQUEADOS
    *  pra não sobrescrever dados ainda recuperáveis via SQLite. */
   corrupt?: boolean
@@ -200,6 +212,21 @@ interface ChatState {
   setConversationColor: (id: string, color: string | null) => Promise<void>
   /** Isola a conversa num worktree (path) ou volta pra pasta compartilhada (null). */
   setWorktree: (convId: string, path: string | null) => void
+  /** S3.6 — marca a conversa com um preset (seleção no composer, ANTES do 1º
+   *  run; null = volta pra camada crua). O digest fica null até o 1º run. */
+  setConversationPreset: (
+    convId: string,
+    preset: { id: string; name: string } | null,
+  ) => Promise<void>
+  /** S3.3 — carimbo do 1º run: a persona FOI injetada; grava preset_id +
+   *  preset_digest (a versão exata usada) na conversa. AWAIT no write (D4): o
+   *  carimbo é a fundação do drift check, falha não pode ser silenciosa. */
+  stampPreset: (
+    convId: string,
+    presetId: string,
+    digest: string,
+    name: string,
+  ) => Promise<void>
   /** Zera a sessão nativa da conversa (resume falhou → a sessão antiga está
    *  morta; o run em fallback vai emitir `session` e gravar a nova). */
   clearSession: (convId: string) => void
@@ -328,6 +355,9 @@ function emptyConv(projectId: string): ConvState {
     reqModel: null,
     effort: null,
     worktreePath: null,
+    presetId: null,
+    presetDigest: null,
+    presetName: null,
     items: [],
     sessionId: null,
     model: null,
@@ -569,6 +599,16 @@ export const useChat = create<ChatState>((set, get) => {
   const ensureLoaded = async (projectId: string, convId: string) => {
     if (get().byId[convId]) return
     const conv = await dbLoad(convId)
+    // S3: resolve o NOME do preset carimbado (rótulo da mesa/composer). Best-
+    // effort: preset apagado → name null (o drift do S3.4 dá o aviso formal).
+    let presetName: string | null = null
+    if (conv !== "corrupt" && conv?.presetId) {
+      try {
+        presetName = (await getPreset(conv.presetId))?.name ?? null
+      } catch {
+        presetName = null
+      }
+    }
     // linha corrompida: estado read-only com aviso (persist/envio bloqueados),
     // nunca "conversa vazia" que o próximo persist gravaria por cima.
     const state: ConvState =
@@ -603,6 +643,9 @@ export const useChat = create<ChatState>((set, get) => {
             // degradam pro rótulo do agent depois de um restart.
             model: conv?.model ?? null,
             worktreePath: conv?.worktreePath ?? null,
+            presetId: conv?.presetId ?? null,
+            presetDigest: conv?.presetDigest ?? null,
+            presetName,
           }
     set((s) =>
       s.byId[convId] ? {} : { byId: { ...s.byId, [convId]: state } },
@@ -946,6 +989,34 @@ export const useChat = create<ChatState>((set, get) => {
           ? { ...s.byId, [convId]: { ...s.byId[convId], worktreePath: path } }
           : s.byId,
       }))
+    },
+
+    // S3.6 — seleção de preset no composer (conversa ainda destravada). O
+    // digest fica null até o 1º run: só a persona INJETADA carimba versão.
+    setConversationPreset: async (convId, preset) => {
+      patch(convId, {
+        presetId: preset?.id ?? null,
+        presetName: preset?.name ?? null,
+        presetDigest: null,
+      })
+      await dbSetPreset(convId, preset?.id ?? null, null)
+    },
+
+    // S3.3 — carimbo do 1º run: a persona foi injetada NESTA versão do preset.
+    // D4: AWAIT + tratamento (padrão setConversationColor). Se o write falha,
+    // o restart perderia o digest e o drift check morreria em silêncio — avisa.
+    // A memória fica carimbada mesmo assim (o turno corrente segue correto) e
+    // a re-injeção do D1 cobre o caso "sem resposta" após restart.
+    stampPreset: async (convId, presetId, digest, name) => {
+      patch(convId, { presetId, presetDigest: digest, presetName: name })
+      try {
+        await dbSetPreset(convId, presetId, digest)
+      } catch (e) {
+        console.warn("[presets] falha ao gravar o carimbo da persona:", e)
+        toast(
+          "Não consegui gravar o carimbo da persona no banco. Após reiniciar, o aviso de mudança de persona pode não funcionar nesta conversa.",
+        )
+      }
     },
 
     clearSession: (convId) => {
@@ -1309,6 +1380,13 @@ export const useChat = create<ChatState>((set, get) => {
       void import("@/store/cards")
         .then((m) => m.useCards.getState().noteConversationAgent(convId, agent))
         .catch(() => {})
+      // S3.4 — agente revivido não volta sob outra doutrina em silêncio: se a
+      // conversa carrega preset carimbado, verifica o drift do digest (aviso;
+      // fire-and-forget, o transplante não bloqueia).
+      const before = get().byId[convId]
+      if (before?.presetId && before.presetDigest) {
+        void warnPresetDrift(convId, before.presetId, before.presetDigest)
+      }
       set((s) => {
         const cur = s.byId[convId]
         if (!cur) return {}

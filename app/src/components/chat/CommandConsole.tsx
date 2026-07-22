@@ -13,6 +13,7 @@ import {
   QueuedChips,
   ComposerControls,
   SuggestionChips,
+  NO_PRESET,
 } from "@/components/chat/ComposerParts"
 import { useSlashCommands } from "@/hooks/useSlashCommands"
 import { useAtMentions } from "@/hooks/useAtMentions"
@@ -30,6 +31,8 @@ import {
 import { FusionLauncher } from "@/components/fusion/FusionLauncher"
 import { MissionLauncher } from "@/components/mission/MissionLauncher"
 import type { AgentRunConfig } from "@/lib/types"
+import { usePresets } from "@/store/presets"
+import { isTauri } from "@/lib/db"
 
 export function CommandConsole({
   onSend,
@@ -153,6 +156,43 @@ export function CommandConsole({
   const effectiveDest = locked ? conv.agent : destination
   const effectiveModel = locked ? (conv.reqModel ?? "default") : model
   const effectiveEffort = locked ? (conv.effort ?? "default") : effort
+
+  // S3.6 — presets (personas): a seleção mora na CONVERSA (conv.presetId), não
+  // em estado local — o handleSend e a mesa leem de lá. Escolher um preset
+  // seta agent/modelo/esforço de uma vez; mexer na camada crua desfaz a
+  // seleção (o preset é o trio inteiro, não um item avulso).
+  const presets = usePresets((s) => s.list)
+  useEffect(() => {
+    if (isTauri()) void usePresets.getState().load()
+  }, [])
+  const effectivePreset = conv.presetId ?? NO_PRESET
+  const presetOptions = presets.map((p) => ({
+    value: p.id,
+    label: p.name,
+    description: `${p.backend}${p.model ? ` · ${p.model}` : ""}`,
+    badge: `v${p.version}`,
+  }))
+  function handlePresetChange(v: string) {
+    const id = activeId
+    if (!id) return
+    if (v === NO_PRESET) {
+      void useChat.getState().setConversationPreset(id, null)
+      return
+    }
+    const p = presets.find((x) => x.id === v)
+    if (!p) return
+    setDestination(p.backend)
+    setModel(normalizeModelValue(p.backend, p.model) ?? "default")
+    setEffort(p.effort ?? "default")
+    void useChat.getState().setConversationPreset(id, { id: p.id, name: p.name })
+  }
+  /** Mexeu manualmente em agent/modelo/esforço com preset marcado (conversa
+   *  ainda destravada) → volta pra camada crua (a persona é o trio fechado). */
+  function clearPresetOnManualChange() {
+    if (activeId && !locked && conv.presetId) {
+      void useChat.getState().setConversationPreset(activeId, null)
+    }
+  }
   const dest =
     DESTINATIONS.find((d) => d.id === effectiveDest) ?? DESTINATIONS[0]
   // trava de capacidade: o agent-alvo precisa suportar cada anexo (espelha o trait)
@@ -354,17 +394,27 @@ export function CommandConsole({
         }
         footer={
           <ComposerControls
+            presetValue={effectivePreset}
+            presetOptions={presetOptions}
+            onPresetChange={handlePresetChange}
             effectiveDest={effectiveDest}
             locked={locked}
             onDestChange={(v) => {
               setDestination(v)
               setModel(defaultModelFor(v))
               setEffort("default")
+              clearPresetOnManualChange()
             }}
             effectiveModel={effectiveModel}
-            onModelChange={setModel}
+            onModelChange={(v) => {
+              setModel(v)
+              clearPresetOnManualChange()
+            }}
             effectiveEffort={effectiveEffort}
-            onEffortChange={setEffort}
+            onEffortChange={(v) => {
+              setEffort(v)
+              clearPresetOnManualChange()
+            }}
             onFusion={() => setFusionOpen(true)}
             fusionDisabled={
               !activeId || disabled || running || finalizing || missionRunning

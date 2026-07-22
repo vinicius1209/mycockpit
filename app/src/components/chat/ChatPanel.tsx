@@ -52,6 +52,12 @@ import {
   distillCandidate,
   saveLesson,
 } from "@/lib/learning"
+import {
+  hasAssistantReply,
+  personaHandoffBlock,
+  resolveFirstTurnPersona,
+  warnPresetDrift,
+} from "@/lib/presets"
 
 function greetingFor(date: Date): string {
   const h = date.getHours()
@@ -273,9 +279,56 @@ export function ChatPanel() {
     useChat.getState().invalidateSuggestions(convId)
     // conversa estabelecida trava no agent/modelo/effort do 1º run; nova usa o seletor
     const locked = conv != null && conv.items.length > 0
-    const agent = locked ? conv!.agent : (cfg?.agent ?? "claude-code")
-    const model = locked ? conv!.reqModel : (cfg?.model ?? null)
-    const effort = locked ? conv!.effort : (cfg?.effort ?? null)
+    let agent = locked ? conv!.agent : (cfg?.agent ?? "claude-code")
+    let model = locked ? conv!.reqModel : (cfg?.model ?? null)
+    let effort = locked ? conv!.effort : (cfg?.effort ?? null)
+    // S3.3 — persona do preset SÓ no 1º turno (!locked). FAIL-CLOSED: preset
+    // quebrado (apagado, sem personality, skill fora do inventário do projeto)
+    // ABORTA aqui, ANTES do start — o run não inicia nem gasta turno.
+    let personaBlock: string | null = null
+    let personaStamp: { presetId: string; digest: string; name: string } | null =
+      null
+    const persona = await resolveFirstTurnPersona({
+      locked,
+      presetId: conv.presetId ?? null,
+      // D1: conversa travada SEM resposta de assistant = o 1º run morreu antes
+      // da doutrina chegar → re-injeta e re-carimba em vez de perder a persona.
+      hasReply: hasAssistantReply(conv.items),
+      projectPath: project.path,
+    })
+    if (persona.status === "blocked") {
+      toast.error(persona.error)
+      return
+    }
+    if (persona.status === "ready") {
+      // o preset define o trio de uma vez (a camada crua fica pra conversas
+      // sem preset)
+      agent = persona.agent
+      model = persona.model
+      effort = persona.effort
+      personaBlock = persona.block
+      personaStamp = {
+        presetId: persona.presetId,
+        digest: persona.digest,
+        name: persona.name,
+      }
+    }
+    // S3.4 — resume de conversa com preset carimbado: verifica o drift do
+    // digest (aviso obrigatório; o turno segue — recusa dura é maturação).
+    // Só quando NÃO estamos re-injetando (a re-injeção re-carimba a versão
+    // atual, drift não se aplica).
+    if (persona.status === "none" && locked && conv.presetId && conv.presetDigest) {
+      void warnPresetDrift(convId, conv.presetId, conv.presetDigest)
+    }
+    // D2 — corrida do await acima: outro envio pode ter passado pelas guardas
+    // e iniciado um run enquanto o preflight rodava. Re-checa com estado
+    // FRESCO; run em andamento → ENFILEIRA (mesmo destino da guarda lá em
+    // cima), nunca um segundo run concorrente.
+    const fresh = useChat.getState().byId[convId]
+    if (fresh?.running || fresh?.finalizing) {
+      useChat.getState().enqueue(convId, text, attachments)
+      return
+    }
     // "Planejar primeiro" é POR TURNO (não trava com a conv): o cfg do composer
     // carrega o toggle; envios sem cfg (⌘K, fila coalescida) leem o toggle da
     // conversa. Auto-resume nunca planeja (é continuação de execução).
@@ -286,6 +339,19 @@ export function ChatPanel() {
     const cwd = conv?.worktreePath ?? project.path
     // Sprint 4, o run escreve em byId[convId] mesmo se o usuário trocar de aba.
     useChat.getState().start(convId, text, runId, agent, model, effort, attachments)
+    // S3.3 — persona injetada NESTE run: carimba preset_id + digest da versão
+    // exata (a base do drift do S3.4). AWAIT (D4): falha do write avisa, não
+    // some em silêncio.
+    if (personaStamp) {
+      await useChat
+        .getState()
+        .stampPreset(
+          convId,
+          personaStamp.presetId,
+          personaStamp.digest,
+          personaStamp.name,
+        )
+    }
     setAtBottom(true) // ao enviar, pula pro fim (ver a própria mensagem)
     // M2 do Linear: injeta as lições relevantes (projeto + globais) no PROMPT
     // (não na bolha visível). Best-effort: qualquer falha envia sem o bloco. Só
@@ -304,6 +370,11 @@ export function ChatPanel() {
       } catch {
         injectedLessonsRef.current[convId] = []
       }
+    }
+    // persona vem ANTES de tudo no prompt (identidade primeiro, depois lições
+    // e o pedido) — mesmo cano do bloco de lições, só no 1º turno.
+    if (personaBlock) {
+      promptText = `${personaBlock}\n\n${promptText}`
     }
     // agy NÃO tem resume (todo turno é sessão fresca): injeta a memória da
     // conversa no prompt — recap curto (~4k) + exporta o transcript pleno pro
@@ -473,7 +544,17 @@ export function ChatPanel() {
     if (!pending) return
     // o handoff exclui o pedido pendente (ele volta destacado no fim do prompt)
     const preamble = buildHandoff(conv.items.slice(0, lastUserIdx))
-    const prompt = `${preamble}\n\n---\n\nPedido pendente (responda a ele agora):\n${pending}`
+    // D3 — conversa carimbada: a doutrina viaja no transplant (sessão fresca
+    // no novo agent = a persona do 1º turno NÃO está lá; sem isso o agent
+    // assume "pelado" com a mesa ainda dizendo "como X").
+    const personaBlock = await personaHandoffBlock(
+      conv.presetId,
+      conv.presetDigest,
+    )
+    // corrida do await (mesma classe do D2): re-checa antes de transplantar.
+    const fresh = useChat.getState().byId[convId]
+    if (!fresh || fresh.running || fresh.finalizing) return
+    const prompt = `${personaBlock ? `${personaBlock}\n\n` : ""}${preamble}\n\n---\n\nPedido pendente (responda a ele agora):\n${pending}`
     const runId = crypto.randomUUID()
     useChat.getState().invalidateSuggestions(convId)
     useChat.getState().handleEvent(convId, {

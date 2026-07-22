@@ -237,6 +237,16 @@ export function deskBaseState(
   return { state: "idle", label: "Disponível" }
 }
 
+/** S3.5 — rótulo da mesa num turno linear sob persona: generaliza o
+ *  "persona na label" que as fases de missão já usam (PERSONA_LABEL). Puro. */
+export function linearDeskLabel(
+  state: "typing" | "thinking",
+  presetName: string | null | undefined,
+): string {
+  const base = state === "typing" ? "Digitando" : "Pensando"
+  return presetName ? `${base} como ${presetName}` : base
+}
+
 /** Instrução de UI por motivo de mesa apagada. Mora AQUI, colada nos labels que
  *  deskBaseState produz, pra copy e motivo não divergirem: "Verifique nos
  *  Ajustes" só vale pra ausência de binário; login é no terminal; rate limit
@@ -419,7 +429,9 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
     const live = liveState(convId, c.items, now)
     upgrade(desk, {
       state: live.state,
-      label: live.state === "typing" ? "Digitando" : "Pensando",
+      // S3.5: conversa sob preset → "Digitando como {preset.name}" (o persona-
+      // na-label das missões, generalizado pra personas de conversa).
+      label: linearDeskLabel(live.state, c.presetName),
       // turno mudo (watchdog marcou): a mesa conta há quanto tempo (de graça).
       detail:
         live.detail ??
