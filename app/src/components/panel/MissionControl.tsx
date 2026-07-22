@@ -14,6 +14,7 @@ import {
   Clock,
   FileText,
   GitPullRequest,
+  Lightbulb,
   Rocket,
   SquareKanban,
   Swords,
@@ -31,6 +32,7 @@ import { openCardConversation, useCards } from "@/store/cards"
 import { fmtUntilShort } from "@/lib/schedules"
 import { cardDecisions, scanDecisions, type Decision } from "@/lib/inbox"
 import {
+  dismissProposal,
   listRecentDeliveries,
   loadLedger,
   type LedgerEntry,
@@ -140,6 +142,13 @@ async function openConv(projectId: string, convId: string) {
  *  (Fusion), o card do board (E1) ou o plano (SDD). */
 async function goTo(d: Decision) {
   const app = useApp.getState()
+  // proposta do lead mora NA PRÓPRIA fila (expande inline): navegar é só
+  // garantir o Painel na frente (o projectId é opcional — board inteiro).
+  if (d.kind === "proposal") {
+    if (d.projectId) app.setActiveProject(d.projectId)
+    app.setViewMode("painel")
+    return
+  }
   app.setActiveProject(d.projectId)
   if (d.kind === "fusion") {
     await useChat.getState().openProject(d.projectId)
@@ -488,6 +497,57 @@ function BoardQueueCard({ d }: { d: Extract<Decision, { kind: "card" }> }) {
   )
 }
 
+/** Card de proposta do lead (S4.2): "Ver proposta" expande o texto INLINE no
+ *  próprio card (sem modal novo); "Dispensar" marca dismissed e some da fila.
+ *  O lead NUNCA despacha: não existe botão de dispatch aqui — aprovar um item
+ *  é o gesto humano normal no board. */
+function ProposalCard({
+  d,
+  onDismiss,
+}: {
+  d: Extract<Decision, { kind: "proposal" }>
+  onDismiss: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <QueueCard onClick={() => setOpen((o) => !o)}>
+      <div className="flex items-center gap-2.5">
+        <Lightbulb className="size-4 shrink-0 text-brass" />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+          Proposta do lead: {d.excerpt}
+        </span>
+        <span className="shrink-0 text-[11.5px] text-muted-foreground">
+          {d.projectName ?? "board inteiro"}
+        </span>
+        <span className="shrink-0 text-[11px] text-muted-foreground/60">
+          {fmtRelative(d.createdAt)}
+        </span>
+        <GhostAction
+          onClick={(e) => {
+            e.stopPropagation()
+            onDismiss()
+          }}
+        >
+          Dispensar
+        </GhostAction>
+        <BrassButton
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpen((o) => !o)
+          }}
+        >
+          {open ? "Fechar" : "Ver proposta"}
+        </BrassButton>
+      </div>
+      {open && (
+        <p className="mt-2 pl-[26px] text-[12.5px] leading-relaxed whitespace-pre-wrap text-foreground/90">
+          {d.body}
+        </p>
+      )}
+    </QueueCard>
+  )
+}
+
 /** Card de PRD: revisar no SDD (aqui o SDD É o destino certo). */
 function PrdCard({ d }: { d: Extract<Decision, { kind: "prd" }> }) {
   const go = () => void goTo(d)
@@ -604,6 +664,9 @@ export function MissionControl() {
   // instrumento de frota (gasto hoje/7d/30d, sparkline, custo por agente).
   const [ledger, setLedger] = useState<LedgerEntry[]>([])
   const [loaded, setLoaded] = useState(false)
+  // S4.3: "Pedir proposta ao lead" (BoardLane) bumpa o tick pra proposta nova
+  // aparecer na fila JÁ, sem esperar o refresh de 30s.
+  const [refreshTick, setRefreshTick] = useState(0)
   useEffect(() => {
     let cancelled = false
     const refresh = () => {
@@ -630,7 +693,7 @@ export function MissionControl() {
       cancelled = true
       clearInterval(timer)
     }
-  }, [projects])
+  }, [projects, refreshTick])
 
   // Enriquecimento gh por PR: lazy (não bloqueia o render), cache de 60s no
   // lib/panel, fail-soft (null → card sem 2ª linha). Estado inicial vem do
@@ -698,6 +761,22 @@ export function MissionControl() {
     )
     return orderQueue(all, prData)
   }, [decisions, decidingKey, projects, prData, merged, allCards])
+
+  /** Dispensa a proposta do lead (persistido) e a tira da fila na hora. */
+  async function handleDismissProposal(
+    d: Extract<Decision, { kind: "proposal" }>,
+  ) {
+    try {
+      await dismissProposal(d.proposalId)
+      setDecisions((prev) =>
+        prev.filter(
+          (x) => !(x.kind === "proposal" && x.proposalId === d.proposalId),
+        ),
+      )
+    } catch {
+      toast.error("Falha ao dispensar a proposta")
+    }
+  }
 
   async function handleMerge(d: Extract<Decision, { kind: "pr" }>) {
     const ok = await confirm({
@@ -944,8 +1023,9 @@ export function MissionControl() {
           </section>
         </div>
 
-        {/* E1 (S1.5) — Board de intenção: entre AÇÕES e PRECISAM DE VOCÊ */}
-        <BoardLane />
+        {/* E1 (S1.5) — Board de intenção: entre AÇÕES e PRECISAM DE VOCÊ.
+            S4.3: proposta nova do lead re-escaneia a fila na hora. */}
+        <BoardLane onProposal={() => setRefreshTick((t) => t + 1)} />
 
         {/* 3. Precisam de você — a fila dominante; vazia vira linha discreta */}
         <section aria-label="Precisam de você">
@@ -973,6 +1053,12 @@ export function MissionControl() {
                     <FusionCard key={`fusion:${d.convId}`} d={d} />
                   ) : d.kind === "card" ? (
                     <BoardQueueCard key={`card:${d.cardId}`} d={d} />
+                  ) : d.kind === "proposal" ? (
+                    <ProposalCard
+                      key={`proposal:${d.proposalId}`}
+                      d={d}
+                      onDismiss={() => void handleDismissProposal(d)}
+                    />
                   ) : (
                     <PrdCard key={`prd:${d.projectId}:${d.slug}`} d={d} />
                   ),

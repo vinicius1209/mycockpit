@@ -5,11 +5,13 @@
 // por conv_id (chat + disputas); missão e SDD ficam fora, e a UI diz isso.
 
 import { useEffect, useMemo, useState } from "react"
+import { Lightbulb, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { useApp } from "@/store/app"
 import { openCardConversation, useCards } from "@/store/cards"
 import { listCardCosts, type CardRecord, type CardState } from "@/lib/db"
 import { fmtCost } from "@/lib/format"
+import { isOpenCardState, proposePlan } from "@/lib/lead"
 import { cn } from "@/lib/utils"
 
 type CardCosts = Record<string, { total: number; estimated: boolean }>
@@ -280,12 +282,47 @@ function Lane({
   )
 }
 
-export function BoardLane() {
+export function BoardLane({
+  /** S4.3: proposta nova gravada — o Painel re-escaneia a fila na hora. */
+  onProposal,
+}: {
+  onProposal?: () => void
+} = {}) {
   const projects = useApp((s) => s.projects)
   const activeProjectId = useApp((s) => s.activeProjectId)
   const cards = useCards((s) => s.all)
   const selectedId = useCards((s) => s.selectedId)
   const create = useCards((s) => s.create)
+
+  // ── S4.3: "Pedir proposta ao lead" (gesto manual, opt-in) ──
+  // O board aqui é cross-projeto, então a triagem é do BOARD INTEIRO
+  // (proposePlan sem projectId — helper resolvido pelo default global).
+  // Desabilitado sem card aberto: lead sem board não tem o que triar.
+  const [asking, setAsking] = useState(false)
+  const hasOpenCards = cards.some((c) => isOpenCardState(c.state))
+  async function askLead() {
+    if (asking) return
+    setAsking(true)
+    const toastId = toast.loading("Pedindo a proposta ao lead…")
+    try {
+      const id = await proposePlan()
+      if (id) {
+        toast.success('Proposta pronta. Veja em "Precisam de você".', {
+          id: toastId,
+        })
+        onProposal?.()
+      } else {
+        toast('O lead não teve o que propor.', { id: toastId })
+      }
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Falha ao pedir a proposta ao lead",
+        { id: toastId },
+      )
+    } finally {
+      setAsking(false)
+    }
+  }
 
   const projectNames = useMemo(
     () => new Map(projects.map((p) => [p.id, p.name])),
@@ -364,7 +401,27 @@ export function BoardLane() {
 
   return (
     <section aria-label="Board">
-      <h2 className="label-mono mb-1.5 px-1">Board</h2>
+      <div className="mb-1.5 flex items-center px-1">
+        <h2 className="label-mono">Board</h2>
+        {/* O lead SÓ propõe (texto na fila); despachar segue gesto humano. */}
+        <button
+          onClick={() => void askLead()}
+          disabled={asking || !hasOpenCards}
+          title={
+            hasOpenCards
+              ? "O lead lê os cards abertos e escreve uma proposta de triagem (nada é despachado)"
+              : "Sem cards abertos, o lead não tem o que triar"
+          }
+          className="ml-auto flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11.5px] font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-40"
+        >
+          {asking ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <Lightbulb className="size-3 text-brass" />
+          )}
+          {asking ? "Pedindo…" : "Pedir proposta ao lead"}
+        </button>
+      </div>
       {cards.length === 0 ? (
         <p className="px-1 py-1 text-[12.5px] text-muted-foreground/80">
           Nenhum card ainda. Crie a primeira intenção abaixo.

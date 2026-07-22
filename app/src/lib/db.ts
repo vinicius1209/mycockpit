@@ -789,6 +789,115 @@ export async function listRecentDeliveries(
   }
 }
 
+// ---------------- Lead propositor (S4.2): lead_proposals ----------------
+// A proposta do lead é TEXTO persistido (nunca ação): vira Decision
+// { kind: "proposal" } na fila "Precisam de você" + sino até o humano
+// dispensar. O lead não despacha nada — aprovar um item da proposta é o
+// gesto humano normal de despachar o card no board.
+
+let leadReady: Promise<void> | null = null
+
+async function ensureLeadTables(db: Database): Promise<void> {
+  if (!leadReady) {
+    const run = (async () => {
+      await db.execute(
+        `CREATE TABLE IF NOT EXISTS lead_proposals (
+           id TEXT PRIMARY KEY,
+           project_id TEXT,
+           body TEXT NOT NULL,
+           created_at INTEGER NOT NULL,
+           dismissed INTEGER NOT NULL DEFAULT 0
+         )`,
+      )
+    })()
+    // mesmo contrato do ensureLearningTables: cache só fixa em sucesso.
+    leadReady = run.catch((e) => {
+      leadReady = null
+      throw e
+    })
+  }
+  return leadReady
+}
+
+export interface LeadProposalRecord {
+  id: string
+  /** null = proposta do board inteiro (cross-projeto). */
+  projectId: string | null
+  body: string
+  createdAt: number
+}
+
+/** Grava UMA proposta do lead. Retorna o id gerado (fora do Tauri o id volta
+ *  mas nada persiste — fail-soft, padrão do módulo).
+ *  SUPERSEDE (D4 da revisão): a proposta nova soft-dismissa as ABERTAS do
+ *  MESMO escopo (mesmo project_id; ou todas as sem-projeto quando a nova é do
+ *  board inteiro) — um schedule diário ignorado por uma semana não vira 7
+ *  itens quase iguais na fila/sino; vale sempre a triagem mais fresca.
+ *  Escopos diferentes coexistem (a proposta do projeto A não apaga a do B nem
+ *  a do board inteiro). */
+export async function insertProposal(p: {
+  projectId: string | null
+  body: string
+}): Promise<string> {
+  const id = crypto.randomUUID()
+  const db = await getDb()
+  if (!db) return id
+  await ensureLeadTables(db)
+  if (p.projectId == null) {
+    await db.execute(
+      "UPDATE lead_proposals SET dismissed = 1 WHERE dismissed = 0 AND project_id IS NULL",
+    )
+  } else {
+    await db.execute(
+      "UPDATE lead_proposals SET dismissed = 1 WHERE dismissed = 0 AND project_id = $1",
+      [p.projectId],
+    )
+  }
+  await db.execute(
+    "INSERT INTO lead_proposals (id, project_id, body, created_at, dismissed) VALUES ($1, $2, $3, $4, 0)",
+    [id, p.projectId, p.body, Date.now()],
+  )
+  return id
+}
+
+/** Propostas ainda não dispensadas (mais novas primeiro) — a matéria-prima da
+ *  derivação proposal→Decision no inbox. */
+export async function listOpenProposals(): Promise<LeadProposalRecord[]> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    await ensureLeadTables(db)
+    const rows = await db.select<
+      {
+        id: string
+        project_id: string | null
+        body: string
+        created_at: number
+      }[]
+    >(
+      "SELECT id, project_id, body, created_at FROM lead_proposals WHERE dismissed = 0 ORDER BY created_at DESC",
+    )
+    return rows.map((r) => ({
+      id: r.id,
+      projectId: r.project_id,
+      body: r.body,
+      createdAt: r.created_at,
+    }))
+  } catch {
+    return []
+  }
+}
+
+/** Dispensa a proposta (soft: a linha fica, fora da fila). */
+export async function dismissProposal(id: string): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureLeadTables(db)
+  await db.execute("UPDATE lead_proposals SET dismissed = 1 WHERE id = $1", [
+    id,
+  ])
+}
+
 // ---------------- Ledger de custo por turno (turn_costs) ----------------
 
 /** Uma linha do ledger de custo — turno de chat OU entrega de missão,
@@ -1421,10 +1530,17 @@ export async function deletePreset(id: string): Promise<void> {
 /** Permissão de uma automação. 'liberado' NUNCA existe aqui — nem no tipo. */
 export type SchedulePermission = "leitura" | "padrao"
 
+/** Tipo do schedule (S4.3): "agent" roda runAgent numa conversa nova (o fluxo
+ *  F6 original); "lead" chama proposePlan — sem conversa, sem clamp extra (o
+ *  lead não roda agent de código, só o helper one-shot que escreve texto). */
+export type ScheduleKind = "agent" | "lead"
+
 export interface ScheduleRecord {
   id: string
   name: string
   projectId: string
+  /** Fluxo do disparo. Valor estranho no banco degrada pra "agent". */
+  kind: ScheduleKind
   agent: string
   /** Valor cru do picker ("default" = deixa o CLI escolher). */
   model: string | null
@@ -1484,6 +1600,12 @@ async function ensureScheduleTables(db: Database): Promise<void> {
       await db.execute(
         `CREATE INDEX IF NOT EXISTS idx_schedule_runs_schedule ON schedule_runs(schedule_id)`,
       )
+      // S4.3 — tipo do schedule (agent × lead). Tabela nasce do frontend, então
+      // coluna nova entra via addColumn (idempotente, padrão lessons.scope).
+      await addColumn(
+        db,
+        `ALTER TABLE schedules ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent'`,
+      )
     })()
     schedulesReady = run.catch((e) => {
       schedulesReady = null
@@ -1497,6 +1619,7 @@ interface ScheduleRow {
   id: string
   name: string
   project_id: string
+  kind: string
   agent: string
   model: string | null
   prompt: string
@@ -1514,6 +1637,8 @@ function toSchedule(r: ScheduleRow): ScheduleRecord {
     id: r.id,
     name: r.name,
     projectId: r.project_id,
+    // clamp de leitura: valor estranho degrada pra "agent" (fluxo original).
+    kind: r.kind === "lead" ? "lead" : "agent",
     agent: r.agent,
     model: r.model,
     prompt: r.prompt,
@@ -1530,7 +1655,7 @@ function toSchedule(r: ScheduleRow): ScheduleRecord {
 }
 
 const SCHEDULE_COLS =
-  "id, name, project_id, agent, model, prompt, permission, recurrence, enabled, next_run, last_run_at, last_run_status, created_at"
+  "id, name, project_id, kind, agent, model, prompt, permission, recurrence, enabled, next_run, last_run_at, last_run_status, created_at"
 
 /** Todas as automações (habilitadas ou não). null = fora do Tauri; [] = falha. */
 export async function listSchedules(): Promise<ScheduleRecord[] | null> {
@@ -1552,11 +1677,12 @@ export async function insertSchedule(s: ScheduleRecord): Promise<void> {
   if (!db) return
   await ensureScheduleTables(db)
   await db.execute(
-    "INSERT INTO schedules (id, name, project_id, agent, model, prompt, permission, recurrence, enabled, next_run, last_run_at, last_run_status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+    "INSERT INTO schedules (id, name, project_id, kind, agent, model, prompt, permission, recurrence, enabled, next_run, last_run_at, last_run_status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
     [
       s.id,
       s.name,
       s.projectId,
+      s.kind,
       s.agent,
       s.model,
       s.prompt,

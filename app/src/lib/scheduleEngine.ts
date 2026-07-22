@@ -15,6 +15,7 @@
 
 import { runAgent } from "@/lib/agent"
 import { dispatchBlockReason, normalizeModelValue } from "@/lib/agents"
+import { proposePlan } from "@/lib/lead"
 import {
   insertScheduleRun,
   listSchedules,
@@ -99,6 +100,49 @@ export async function dispatchSchedule(
       const rec = parseRecurrence(s.recurrence)
       const next = rec ? computeNextRun(rec, new Date()) : null
       await setScheduleNextRun(s.id, next)
+    }
+
+    // ── S4.3: schedule do LEAD chama proposePlan em vez de runAgent ──
+    // Sem conversa criada, sem preflight de CLI e sem clamp extra de
+    // permissão: o lead não roda agent de código — é o helper one-shot que
+    // só escreve uma proposta persistida (o despacho segue humano no board).
+    // O clamp "automação nunca roda liberado" do fluxo agent fica intocado.
+    if (s.kind === "lead") {
+      const startedAt = Date.now()
+      let ok = false
+      // D2 da revisão: a causa REAL vai pro sino (helper desligado, claude
+      // ausente/deslogado, invoke falhou...) — mesmo padrão do caminho manual
+      // do BoardLane, que mostra e.message no toast. Fallback genérico só
+      // quando a mensagem vem vazia.
+      let failMsg = ""
+      try {
+        // proposePlan devolve null com board vazio/helper mudo — a execução
+        // rodou bem mesmo assim (não havia o que propor): status ok.
+        await proposePlan(s.projectId || undefined)
+        ok = true
+      } catch (e) {
+        failMsg = (e instanceof Error ? e.message : String(e ?? "")).trim()
+        console.warn("[schedules] proposta do lead falhou", e)
+      }
+      await insertScheduleRun({
+        id: crypto.randomUUID(),
+        scheduleId: s.id,
+        startedAt,
+        status: ok ? "ok" : "failed",
+        cost: null,
+        convId: null,
+      })
+      await markScheduleRun(s.id, startedAt, ok ? "ok" : "failed")
+      if (!ok) {
+        useNotifs.getState().push({
+          kind: "run_error",
+          title: `Automação falhou: ${s.name}`,
+          subtitle:
+            failMsg || "O lead não conseguiu escrever a proposta.",
+          projectId: s.projectId,
+        })
+      }
+      return
     }
 
     const startedAt = Date.now()
