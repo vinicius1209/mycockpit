@@ -195,6 +195,18 @@ não introduzir TanStack Query só pro board se o padrão do Painel é store+efe
 card de SDD fica FORA do v1 (a entidade dele é projeto+slug, não conversa — quando
 entrar, ganha chave própria `sdd_slug`, não um `conversation_id` forçado).
 
+**✅ ENTREGUE 2026-07-22** (branch `sprint/s1-board`, aprovado pelo reviewer com
+ressalvas D1-D4, todas corrigidas antes do merge). 873 testes verdes (30 novos).
+Decisões que valem registro: máquina de estados ganhou regressões honestas
+(`review|blocked→working`, `working→backlog`, `cancelled` de qualquer não-terminal);
+`newConversation` passou a retornar `Promise<string>` (dispatch determinístico +
+guarda anti duplo-clique); assignee carimbado via hook em `start`/`beginTransplant`
+(lazy mentiria: `conversations.agent` tem DEFAULT claude-code); delete preserva
+cards terminais (só solta o link). **Follow-ups (nits do review):** card de projeto
+arquivado continua no board mas some da fila (divergência board×fila); coluna
+"Feito" corta em 8 sem indicar mais antigos; re-dispatch após falha parcial órfã a
+1ª conversa (auto-cura, comentado no código).
+
 ---
 
 ## Sprint 2 · E3 — Ownership + Watchdog (sobre o board)
