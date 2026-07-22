@@ -49,7 +49,6 @@ test("Central do Boss agrega o escritório e mantém o fluxo de foco", async ({
 
   await page.screenshot({
     path: `${EVIDENCE_DIR}/05-boss-center.png`,
-    fullPage: true,
   })
 
   await page.keyboard.press("Escape")
@@ -63,6 +62,5 @@ test("Central do Boss agrega o escritório e mantém o fluxo de foco", async ({
   await page.waitForTimeout(250)
   await page.screenshot({
     path: `${EVIDENCE_DIR}/05-boss-room.png`,
-    fullPage: true,
   })
 })

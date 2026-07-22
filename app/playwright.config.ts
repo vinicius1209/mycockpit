@@ -12,7 +12,9 @@ export default defineConfig({
   workers: 1,
   reporter: process.env.CI ? "github" : "list",
   // Teto por teste. Um loop de render nunca "estabiliza" → estoura aqui.
-  timeout: 30_000,
+  // No CI o chromium renderiza WebGL por SOFTWARE (3-4x mais lento que um Mac
+  // local) — o teto maior não afrouxa o gate, só absorve o runner fraco.
+  timeout: process.env.CI ? 90_000 : 30_000,
   use: {
     baseURL: "http://localhost:4173",
     trace: "retain-on-failure",

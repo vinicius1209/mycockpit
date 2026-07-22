@@ -66,12 +66,12 @@ async function enterOffice(page: Page) {
 test("o escritório renderiza a planta e abre uma mesa sem sobrepor seu rótulo", async ({
   page,
 }) => {
-  test.setTimeout(70_000)
+  // Percurso longo (2 salas + avatar andando). CI = renderer por software.
+  test.setTimeout(process.env.CI ? 180_000 : 70_000)
   await enterOffice(page)
 
   await page.screenshot({
     path: `${EVIDENCE_DIR}/01-office-overview.png`,
-    fullPage: true,
   })
 
   // Centraliza a sala de projeto vizinha à diretoria. Isso mantém o percurso
@@ -102,7 +102,6 @@ test("o escritório renderiza a planta e abre uma mesa sem sobrepor seu rótulo"
 
   await page.screenshot({
     path: `${EVIDENCE_DIR}/02-desk-menu.png`,
-    fullPage: true,
   })
 
   await menu.getByRole("button", { name: /Conversar|Abrir|Responder|Acompanhar/ }).click()
@@ -118,7 +117,6 @@ test("o escritório renderiza a planta e abre uma mesa sem sobrepor seu rótulo"
 
   await page.screenshot({
     path: `${EVIDENCE_DIR}/03-model-effort-dock.png`,
-    fullPage: true,
   })
 
   await page.getByRole("button", { name: "Fechar conversa" }).click()
@@ -131,7 +129,6 @@ test("o escritório renderiza a planta e abre uma mesa sem sobrepor seu rótulo"
   expect(commonsBox).not.toBeNull()
   await page.screenshot({
     path: `${EVIDENCE_DIR}/04-commons-preclick.png`,
-    fullPage: true,
   })
   const missionPoint = fittedRoomPoint(
     { w: commonsBox!.width, h: commonsBox!.height },
@@ -150,6 +147,5 @@ test("o escritório renderiza a planta e abre uma mesa sem sobrepor seu rótulo"
 
   await page.screenshot({
     path: `${EVIDENCE_DIR}/04-commons-interaction.png`,
-    fullPage: true,
   })
 })
