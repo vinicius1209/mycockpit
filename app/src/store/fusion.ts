@@ -6,6 +6,7 @@ import { create } from "zustand"
 import { runAgent, cancelAgent, type AgentEvent, type CostSource } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { reduceItems, useChat, type ChatItem } from "@/store/chat"
+import { useApp } from "@/store/app"
 import {
   runJudge,
   serializeContext,
@@ -236,6 +237,15 @@ export const useFusion = create<FusionState>((set, get) => {
   // T1.3, `set` síncrono; só a lane-alvo muda; status é fonte ÚNICA (não vem do
   // reduceEvent). Sem `await` entre ler e escrever → elimina o race de N escritas.
   handleCandidateEvent: (convId, candId, e) => {
+    // Ledger de resoluções observadas (P2): lanes da disputa também ensinam o
+    // app sobre o que cada CLI resolve (só grava; notices de shift ficam no
+    // chat Linear pra não poluir a arena).
+    if (e.type === "session") {
+      const cand = get().byConv[convId]?.candidates.find((c) => c.id === candId)
+      if (cand) {
+        useApp.getState().recordResolution(cand.agent, cand.reqModel, e.model)
+      }
+    }
     // Ledger: custo do candidato (disputa é caminho disjunto do chat/missão →
     // sem dupla contagem). REPLACE por runId colapsa parciais no total final.
     if (e.type === "result" && e.cost_usd != null) {

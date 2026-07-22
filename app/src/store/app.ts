@@ -95,6 +95,14 @@ interface AppState {
   /** Patch parcial das preferências globais. */
   setSettings: (patch: Partial<GlobalSettings>) => void
   setSettingsOpen: (v: boolean) => void
+  /** Grava no ledger a resolução de modelo observada num evento `session` e
+   *  devolve o `resolved` ANTERIOR do mesmo pedido (null = primeira vez).
+   *  Dedup: a mesma resolução não regrava (o `at` marca a 1ª observação). */
+  recordResolution: (
+    agent: string,
+    reqModel: string | null,
+    resolved: string | null,
+  ) => string | null
 }
 
 function applyTheme(theme: Theme) {
@@ -106,7 +114,7 @@ function applyTheme(theme: Theme) {
 
 export const useApp = create<AppState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       projects: [],
       activeProjectId: null,
       theme: "dark",
@@ -202,6 +210,27 @@ export const useApp = create<AppState>()(
       setSettings: (patch) =>
         set((s) => ({ settings: { ...s.settings, ...patch } })),
       setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+      recordResolution: (agent, reqModel, resolved) => {
+        if (!resolved) return null
+        const req = reqModel ?? "default"
+        const prev =
+          get().settings.observedResolutions[agent]?.[req]?.resolved ?? null
+        if (prev !== resolved) {
+          set((s) => ({
+            settings: {
+              ...s.settings,
+              observedResolutions: {
+                ...s.settings.observedResolutions,
+                [agent]: {
+                  ...(s.settings.observedResolutions[agent] ?? {}),
+                  [req]: { resolved, at: Date.now() },
+                },
+              },
+            },
+          }))
+        }
+        return prev
+      },
     }),
     {
       name: "mc.app",

@@ -17,7 +17,11 @@ import {
 import { useApp } from "@/store/app"
 import type { FusionCandidate } from "@/store/fusion"
 import { normalizeAgyModel } from "@/lib/agents"
-import { resolutionNotice } from "@/lib/modelResolution"
+import {
+  aliasShiftNotice,
+  isAliasRequest,
+  resolutionNotice,
+} from "@/lib/modelResolution"
 import {
   listConversations as dbList,
   loadConversation as dbLoad,
@@ -591,6 +595,9 @@ export const useChat = create<ChatState>((set, get) => {
                 ? normalizeAgyModel(conv.reqModel)
                 : (conv?.reqModel ?? null),
             effort: conv?.effort ?? null,
+            // modelo RESOLVIDO da última sessão: TitleBar/validação não
+            // degradam pro rótulo do agent depois de um restart.
+            model: conv?.model ?? null,
             worktreePath: conv?.worktreePath ?? null,
           }
     set((s) =>
@@ -958,7 +965,8 @@ export const useChat = create<ChatState>((set, get) => {
       const newId = uid()
       // sessão NULL de propósito: a cópia não herda a sessão do CLI (resume
       // conflitaria); os items viram histórico visível, o próximo turno é fresh.
-      await dbSave(newId, owner, title, null, items, [], agent, reqModel, effort)
+      // model NULL idem: o resolvido pertence à sessão antiga.
+      await dbSave(newId, owner, title, null, items, [], agent, reqModel, effort, null)
       if (src?.color != null) await dbSetColor(newId, src.color)
       set((s) => {
         const meta: ConversationMeta = {
@@ -1017,6 +1025,7 @@ export const useChat = create<ChatState>((set, get) => {
         c.agent,
         c.reqModel,
         c.effort,
+        c.model,
       )
       endSpan()
       const now = Date.now()
@@ -1173,6 +1182,44 @@ export const useChat = create<ChatState>((set, get) => {
       }
       // Persistência incremental (sobrevive a interrupção mid-run):
       if (e.type === "session") {
+        // Ledger de resoluções observadas (P2): o app aprende o que o CLI
+        // resolve pra cada pedido a cada run real. Quando um ALIAS muda de
+        // resolução entre sessões (ex.: opus 4.7→4.8), injeta um notice —
+        // o momento exato em que preço/comportamento derivariam em silêncio.
+        const cur = get().byId[convId]
+        if (cur) {
+          const prev = useApp
+            .getState()
+            .recordResolution(cur.agent, cur.reqModel, e.model)
+          if (
+            prev &&
+            e.model &&
+            prev !== e.model &&
+            isAliasRequest(cur.agent, cur.reqModel)
+          ) {
+            const msg = aliasShiftNotice(cur.reqModel!, prev, e.model)
+            set((s) => {
+              const c = s.byId[convId]
+              if (
+                !c ||
+                c.items.some((it) => it.kind === "notice" && it.message === msg)
+              )
+                return {}
+              return {
+                byId: {
+                  ...s.byId,
+                  [convId]: {
+                    ...c,
+                    items: [
+                      ...c.items,
+                      { kind: "notice", id: uid(), message: msg },
+                    ],
+                  },
+                },
+              }
+            })
+          }
+        }
         // session_id é barato e torna o run RESUMÍVEL → grava na hora.
         cancelPersist(convId)
         void get().persist(convId)

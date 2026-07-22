@@ -256,6 +256,8 @@ interface ConvLoadRow {
   agent: string | null
   req_model: string | null
   effort: string | null
+  /** Modelo RESOLVIDO da última sessão (o que o CLI reportou no init). */
+  model: string | null
   worktree_path: string | null
 }
 
@@ -272,12 +274,13 @@ export async function loadConversation(
   agent: string
   reqModel: string | null
   effort: string | null
+  model: string | null
   worktreePath: string | null
 } | null | "corrupt"> {
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ConvLoadRow[]>(
-    "SELECT session_id, items, title, suggestions, agent, req_model, effort, worktree_path FROM conversations WHERE id = $1",
+    "SELECT session_id, items, title, suggestions, agent, req_model, effort, model, worktree_path FROM conversations WHERE id = $1",
     [id],
   )
   if (!rows.length) return null
@@ -292,6 +295,7 @@ export async function loadConversation(
       agent: rows[0].agent ?? "claude-code",
       reqModel: rows[0].req_model,
       effort: rows[0].effort,
+      model: rows[0].model,
       worktreePath: rows[0].worktree_path,
     }
   } catch {
@@ -323,11 +327,12 @@ export async function saveConversation(
   agent: string,
   reqModel: string | null,
   effort: string | null,
+  model: string | null,
 ): Promise<void> {
   const db = await getDb()
   if (!db) return
   await db.execute(
-    "INSERT INTO conversations (id, project_id, title, session_id, items, suggestions, agent, req_model, effort, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, suggestions = excluded.suggestions, agent = excluded.agent, req_model = excluded.req_model, effort = excluded.effort, updated_at = excluded.updated_at",
+    "INSERT INTO conversations (id, project_id, title, session_id, items, suggestions, agent, req_model, effort, model, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, suggestions = excluded.suggestions, agent = excluded.agent, req_model = excluded.req_model, effort = excluded.effort, model = excluded.model, updated_at = excluded.updated_at",
     [
       id,
       projectId,
@@ -338,6 +343,7 @@ export async function saveConversation(
       agent,
       reqModel,
       effort,
+      model,
       Date.now(),
     ],
   )

@@ -64,6 +64,15 @@ export interface GlobalSettings {
   /** Vigia de turno mudo: minutos de silêncio (turno running sem NENHUM item
    *  novo) até notificar. 0 = desligado. */
   stalledAfterMin: number
+  /** Ledger de resoluções de modelo OBSERVADAS (P2 da auditoria de modelos):
+   *  a cada evento `session` o app grava o que o CLI resolveu pro pedido —
+   *  resposta prática à falta de enumeração headless (aprende de graça a cada
+   *  run real). agent → pedido ("opus", ID exato ou "default") → observação;
+   *  `at` = quando ESSA resolução foi vista pela 1ª vez (muda junto com ela). */
+  observedResolutions: Record<
+    string,
+    Record<string, { resolved: string; at: number }>
+  >
 }
 
 export const DEFAULT_SETTINGS: GlobalSettings = {
@@ -89,4 +98,5 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   lastCuratorRun: 0,
   companionEnabled: false,
   stalledAfterMin: 10,
+  observedResolutions: {},
 }

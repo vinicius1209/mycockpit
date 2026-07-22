@@ -271,6 +271,16 @@ pub fn run() {
             sql: "CREATE INDEX IF NOT EXISTS idx_turn_costs_time ON turn_costs(created_at);",
             kind: MigrationKind::Up,
         },
+        // P2 da auditoria de modelos: persiste o modelo RESOLVIDO da sessão
+        // (o que o CLI reportou no init), distinto do req_model (o pedido).
+        // TitleBar/histórico sobrevivem ao restart sem degradar pro rótulo do
+        // agent, e a validação pedido×resolvido segue válida pós-reload.
+        Migration {
+            version: 24,
+            description: "conversations_model",
+            sql: "ALTER TABLE conversations ADD COLUMN model TEXT;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
