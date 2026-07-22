@@ -6,6 +6,7 @@ import {
   Check,
   Copy,
   Cpu,
+  Drama,
   Info,
   Mic,
   PanelTop,
@@ -55,6 +56,7 @@ import {
 } from "@/lib/db"
 import { MissionSettings } from "@/components/settings/MissionSettings"
 import { CompanionSettings } from "@/components/settings/CompanionSettings"
+import { PresetSettings } from "@/components/settings/PresetSettings"
 import {
   DEFAULT_DICTATION_HOTKEY,
   captureHotkey,
@@ -66,6 +68,7 @@ type Section =
   | "appearance"
   | "tray"
   | "agents"
+  | "presets"
   | "tools"
   | "suggestions"
   | "dictation"
@@ -90,6 +93,7 @@ const SECTIONS: {
     icon: Bot,
     group: "Comportamento",
   },
+  { id: "presets", label: "Presets de persona", icon: Drama },
   { id: "suggestions", label: "Sugestões", icon: Sparkles },
   { id: "dictation", label: "Ditado", icon: Mic },
   { id: "missions", label: "Missões", icon: Waypoints },
@@ -747,6 +751,8 @@ export function SettingsDialog() {
               </div>
             </div>
           )}
+
+          {section === "presets" && <PresetSettings />}
 
           {section === "tools" && <AgentsToolsSection />}
 

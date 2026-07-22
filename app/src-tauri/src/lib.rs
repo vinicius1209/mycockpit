@@ -281,6 +281,23 @@ pub fn run() {
             sql: "ALTER TABLE conversations ADD COLUMN model TEXT;",
             kind: MigrationKind::Up,
         },
+        // Sprint 3 (E2, Agent Presets): a conversa carimba QUAL preset a
+        // iniciou (preset_id) e a versão exata dele via digest (preset_digest),
+        // padrão role_ref+role_digest do MyPeople. A tabela agent_presets em si
+        // nasce do frontend (ensureAgentPresetTables no db.ts); aqui só o
+        // carimbo em conversations. v25/v26 reservadas no plano pra isto.
+        Migration {
+            version: 25,
+            description: "conversations_preset_id",
+            sql: "ALTER TABLE conversations ADD COLUMN preset_id TEXT;",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 26,
+            description: "conversations_preset_digest",
+            sql: "ALTER TABLE conversations ADD COLUMN preset_digest TEXT;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

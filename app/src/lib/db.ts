@@ -4,6 +4,9 @@ import type { ChatItem } from "@/store/chat"
 import type { ConvRef } from "@/lib/attachments"
 import type { FusionRun } from "@/store/fusion"
 import type { DeliveryRecord } from "@/lib/recall"
+// ciclo db↔presets ACEITO e inofensivo: presetDigest é puro (não importa db) e
+// só é chamado dentro de funções async — nenhum lado toca o outro no init.
+import { presetDigest } from "@/lib/presets"
 
 const DB_URL = "sqlite:mycockpit.db" // DEVE bater com add_migrations no lib.rs
 
@@ -259,6 +262,10 @@ interface ConvLoadRow {
   /** Modelo RESOLVIDO da última sessão (o que o CLI reportou no init). */
   model: string | null
   worktree_path: string | null
+  /** Preset (persona) que iniciou a conversa + o digest da versão exata dele
+   *  no 1º run (S3.2, padrão role_ref+role_digest do MyPeople). */
+  preset_id: string | null
+  preset_digest: string | null
 }
 
 /** `null` = conversa não existe; `"corrupt"` = a linha EXISTE mas o JSON não
@@ -276,11 +283,13 @@ export async function loadConversation(
   effort: string | null
   model: string | null
   worktreePath: string | null
+  presetId: string | null
+  presetDigest: string | null
 } | null | "corrupt"> {
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ConvLoadRow[]>(
-    "SELECT session_id, items, title, suggestions, agent, req_model, effort, model, worktree_path FROM conversations WHERE id = $1",
+    "SELECT session_id, items, title, suggestions, agent, req_model, effort, model, worktree_path, preset_id, preset_digest FROM conversations WHERE id = $1",
     [id],
   )
   if (!rows.length) return null
@@ -297,13 +306,17 @@ export async function loadConversation(
       effort: rows[0].effort,
       model: rows[0].model,
       worktreePath: rows[0].worktree_path,
+      presetId: rows[0].preset_id ?? null,
+      presetDigest: rows[0].preset_digest ?? null,
     }
   } catch {
     return "corrupt"
   }
 }
 
-/** Cria uma conversa vazia. O `id` é gerado pelo chamador (crypto.randomUUID). */
+/** Cria uma conversa vazia. O `id` é gerado pelo chamador (crypto.randomUUID).
+ *  Preset NÃO entra aqui: a marcação/carimbo é sempre via setConversationPreset
+ *  (seleção no composer e 1º run). */
 export async function createConversation(
   projectId: string,
   id: string,
@@ -314,6 +327,22 @@ export async function createConversation(
   await db.execute(
     "INSERT INTO conversations (id, project_id, title, session_id, items, created_at, updated_at) VALUES ($1, $2, NULL, NULL, '[]', $3, $3)",
     [id, projectId, now],
+  )
+}
+
+/** Marca/carimba (ou limpa, com nulls) o preset de uma conversa. UPDATE
+ *  pontual, padrão setConversationColor — o persist (UPSERT) NÃO toca nessas
+ *  colunas, então o carimbo sobrevive aos saves de linha inteira. */
+export async function setConversationPreset(
+  id: string,
+  presetId: string | null,
+  presetDigest: string | null,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute(
+    "UPDATE conversations SET preset_id = $1, preset_digest = $2 WHERE id = $3",
+    [presetId, presetDigest, id],
   )
 }
 
@@ -1162,6 +1191,225 @@ export async function setModelProposalStatus(
   } catch {
     // best-effort: a UI recarrega do banco na próxima abertura.
   }
+}
+
+// ---------------- Sprint 3 (E2): agent_presets (personas versionadas) ----------------
+// Mesmo padrão idempotente do aprendizado: CREATE TABLE IF NOT EXISTS do
+// frontend (ensureAgentPresetTables), cache de promessa que RESETA em falha.
+// A identidade comportamental do preset é o DIGEST (presets.presetDigest,
+// sha256 da serialização canônica); editar = version+1 + digest recomputado —
+// conversas antigas guardam o digest velho e o drift (S3.4) é o aviso desejado.
+
+let presetsReady: Promise<void> | null = null
+
+export interface AgentPreset {
+  id: string
+  name: string
+  personalityMd: string
+  /** Nomes de skills/comandos do projeto (o preflight valida contra o
+   *  inventário real de .claude/commands + .claude/skills). */
+  skills: string[]
+  policy: string | null
+  /** Agent (CLI) que encarna a persona — obrigatório. */
+  backend: string
+  model: string | null
+  effort: string | null
+  digest: string
+  version: number
+  createdAt: number
+  updatedAt: number
+}
+
+/** Campos editáveis de um preset (o resto — digest/version/datas — é derivado). */
+export interface AgentPresetInput {
+  name: string
+  personalityMd: string
+  skills: string[]
+  policy: string | null
+  backend: string
+  model: string | null
+  effort: string | null
+}
+
+async function ensureAgentPresetTables(db: Database): Promise<void> {
+  if (!presetsReady) {
+    const run = (async () => {
+      await db.execute(
+        `CREATE TABLE IF NOT EXISTS agent_presets (
+           id TEXT PRIMARY KEY,
+           name TEXT NOT NULL,
+           personality_md TEXT,
+           skills_json TEXT,
+           policy TEXT,
+           backend TEXT NOT NULL,
+           model TEXT,
+           effort TEXT,
+           digest TEXT NOT NULL,
+           version INTEGER NOT NULL DEFAULT 1,
+           created_at INTEGER NOT NULL,
+           updated_at INTEGER NOT NULL
+         )`,
+      )
+    })()
+    // cache só fica FIXO em sucesso (falha reseta pra retentar) — padrão
+    // ensureLearningTables.
+    presetsReady = run.catch((e) => {
+      presetsReady = null
+      throw e
+    })
+  }
+  return presetsReady
+}
+
+interface PresetRow {
+  id: string
+  name: string
+  personality_md: string | null
+  skills_json: string | null
+  policy: string | null
+  backend: string
+  model: string | null
+  effort: string | null
+  digest: string
+  version: number
+  created_at: number
+  updated_at: number
+}
+
+function toPreset(r: PresetRow): AgentPreset {
+  let skills: string[] = []
+  try {
+    const p = r.skills_json ? JSON.parse(r.skills_json) : []
+    if (Array.isArray(p)) {
+      skills = p.filter((x): x is string => typeof x === "string")
+    }
+  } catch {
+    skills = []
+  }
+  return {
+    id: r.id,
+    name: r.name,
+    personalityMd: r.personality_md ?? "",
+    skills,
+    policy: r.policy ?? null,
+    backend: r.backend,
+    model: r.model ?? null,
+    effort: r.effort ?? null,
+    digest: r.digest,
+    version: r.version,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }
+}
+
+const PRESET_COLUMNS =
+  "id, name, personality_md, skills_json, policy, backend, model, effort, digest, version, created_at, updated_at"
+
+/** Cria um preset (version 1, digest computado dos campos). Retorna a linha
+ *  criada (null fora do Tauri). */
+export async function createPreset(
+  p: AgentPresetInput,
+): Promise<AgentPreset | null> {
+  const db = await getDb()
+  if (!db) return null
+  await ensureAgentPresetTables(db)
+  const digest = await presetDigest(p)
+  const now = Date.now()
+  const preset: AgentPreset = {
+    id: crypto.randomUUID(),
+    ...p,
+    digest,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  }
+  await db.execute(
+    `INSERT INTO agent_presets (${PRESET_COLUMNS}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [
+      preset.id,
+      preset.name,
+      preset.personalityMd,
+      JSON.stringify(preset.skills),
+      preset.policy,
+      preset.backend,
+      preset.model,
+      preset.effort,
+      preset.digest,
+      preset.version,
+      preset.createdAt,
+      preset.updatedAt,
+    ],
+  )
+  return preset
+}
+
+export async function listPresets(): Promise<AgentPreset[]> {
+  const db = await getDb()
+  if (!db) return []
+  await ensureAgentPresetTables(db)
+  const rows = await db.select<PresetRow[]>(
+    `SELECT ${PRESET_COLUMNS} FROM agent_presets ORDER BY name COLLATE NOCASE ASC`,
+  )
+  return rows.map(toPreset)
+}
+
+export async function getPreset(id: string): Promise<AgentPreset | null> {
+  const db = await getDb()
+  if (!db) return null
+  await ensureAgentPresetTables(db)
+  const rows = await db.select<PresetRow[]>(
+    `SELECT ${PRESET_COLUMNS} FROM agent_presets WHERE id = $1`,
+    [id],
+  )
+  return rows.length ? toPreset(rows[0]) : null
+}
+
+/** Edita um preset: muta a linha, `version + 1` e digest RECOMPUTADO dos
+ *  campos resultantes (correção 7 do plano). Conversas antigas guardam o
+ *  digest anterior — o drift do S3.4 detecta exatamente isso. Retorna a linha
+ *  atualizada (null se o preset não existe). */
+export async function updatePreset(
+  id: string,
+  patch: Partial<AgentPresetInput>,
+): Promise<AgentPreset | null> {
+  const db = await getDb()
+  if (!db) return null
+  const cur = await getPreset(id)
+  if (!cur) return null
+  const next: AgentPreset = {
+    ...cur,
+    ...patch,
+    id: cur.id,
+    version: cur.version + 1,
+    updatedAt: Date.now(),
+  }
+  next.digest = await presetDigest(next)
+  await db.execute(
+    "UPDATE agent_presets SET name = $1, personality_md = $2, skills_json = $3, policy = $4, backend = $5, model = $6, effort = $7, digest = $8, version = $9, updated_at = $10 WHERE id = $11",
+    [
+      next.name,
+      next.personalityMd,
+      JSON.stringify(next.skills),
+      next.policy,
+      next.backend,
+      next.model,
+      next.effort,
+      next.digest,
+      next.version,
+      next.updatedAt,
+      id,
+    ],
+  )
+  return next
+}
+
+/** Apaga um preset. Conversas que apontam pra ele MANTÊM preset_id/digest —
+ *  o aviso de "preset apagado" no resume (S3.4) é intencional, não órfão. */
+export async function deletePreset(id: string): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureAgentPresetTables(db)
+  await db.execute("DELETE FROM agent_presets WHERE id = $1", [id])
 }
 
 // ---------------- F6: automações agendadas (schedules + schedule_runs) ----------------

@@ -282,14 +282,21 @@ export function AgentSelect({
   )
 }
 
+// Sentinela do "Sem preset" no seletor de persona (S3.6) — nunca vira id real.
+export const NO_PRESET = "__none__"
+
 // Sentinela do "Modelo custom…" no select de modelo — NUNCA chega ao adapter:
 // escolher abre o input inline; só o id digitado (confirmado) vira o model.
 const CUSTOM_MODEL = "__custom__"
 /** Agents cujas CLIs aceitam id arbitrário via --model/-m (dia-1 de modelo). */
 const CUSTOM_MODEL_AGENTS = new Set(["claude-code", "codex"])
 
-/** Controles do footer: destino + modelo + effort + Disputar/anexar/enviar. */
+/** Controles do footer: preset (persona) + destino + modelo + effort +
+ *  Disputar/anexar/enviar. */
 export function ComposerControls({
+  presetValue,
+  presetOptions,
+  onPresetChange,
   effectiveDest,
   locked,
   onDestChange,
@@ -311,6 +318,12 @@ export function ComposerControls({
   canSend,
   unsafe,
 }: {
+  /** S3.6 — seletor de preset (persona), um nível acima da camada crua.
+   *  `presetValue` = id do preset da conversa (ou NO_PRESET). Sem opções
+   *  cadastradas o seletor não aparece (comportamento de hoje intacto). */
+  presetValue?: string
+  presetOptions?: { value: string; label: string; description?: string; badge?: string }[]
+  onPresetChange?: (v: string) => void
   effectiveDest: string
   locked: boolean
   onDestChange: (v: string) => void
@@ -397,6 +410,27 @@ export function ComposerControls({
         >
           <Lock className="size-3 text-muted-foreground/60" />
         </span>
+      )}
+      {/* S3.6 — persona um nível ACIMA da camada crua: escolher um preset seta
+          agent/modelo/esforço de uma vez e marca a conversa; "Sem preset"
+          mantém o comportamento de hoje. Só aparece com presets cadastrados. */}
+      {presetOptions && presetOptions.length > 0 && onPresetChange && (
+        <RichSelect
+          value={presetValue ?? NO_PRESET}
+          onValueChange={onPresetChange}
+          disabled={locked}
+          title={locked ? lockTitle : "Iniciar a conversa como uma persona"}
+          options={[
+            {
+              value: NO_PRESET,
+              label: "Sem preset",
+              description: "Camada crua: agent, modelo e esforço manuais",
+            },
+            ...presetOptions,
+          ]}
+          triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
+          aria-label="Preset de persona"
+        />
       )}
       <AgentSelect
         value={effectiveDest}

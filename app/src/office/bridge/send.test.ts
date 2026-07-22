@@ -8,9 +8,19 @@ import { wantsAutoResume } from "@/lib/autoResume"
 import { listConversations, type ConversationMeta } from "@/lib/db"
 import { buildLearningBlocks, markLessonsUsed } from "@/lib/learning"
 import { notifyTurnEnd } from "@/lib/notify"
+import {
+  personaHandoffBlock,
+  resolveFirstTurnPersona,
+  warnPresetDrift,
+} from "@/lib/presets"
 import { exportConvContext } from "@/lib/transcript"
 import type { ChatItem, ConvState, QueuedMsg } from "@/store/chat"
-import { cancelDeskTurn, ensureDeskConversation, sendFromDesk } from "./send"
+import {
+  cancelDeskTurn,
+  continueInAgent,
+  ensureDeskConversation,
+  sendFromDesk,
+} from "./send"
 
 // Estado compartilhado com as factories dos mocks (vi.hoisted roda antes).
 const h = vi.hoisted(() => ({
@@ -55,6 +65,19 @@ vi.mock("@/lib/learning", () => ({
   recordInjectedLessons: vi.fn(),
 }))
 vi.mock("@/lib/notify", () => ({ notifyTurnEnd: vi.fn() }))
+// Presets (S3): o núcleo tem testes próprios (presets.test.ts); aqui só a
+// COREOGRAFIA — none (default), ready (injeta+carimba) e blocked (aborta).
+vi.mock("@/lib/presets", () => ({
+  resolveFirstTurnPersona: vi.fn(async () => ({ status: "none" as const })),
+  warnPresetDrift: vi.fn(async () => null),
+  personaHandoffBlock: vi.fn(async () => null),
+  // mesma regra da função real (pura)
+  hasAssistantReply: vi.fn((items: { kind: string }[]) =>
+    items.some(
+      (it) => it.kind === "text" || it.kind === "tool" || it.kind === "result",
+    ),
+  ),
+}))
 vi.mock("@/lib/transcript", () => ({
   renderTranscript: vi.fn(() => "# transcript"),
   exportConvContext: vi.fn(async () => ".mycockpit/context/conv.md"),
@@ -114,6 +137,8 @@ function makeChat(conv: ConvState) {
     setAutoResume: vi.fn(),
     invalidateSuggestions: vi.fn(),
     start: vi.fn(),
+    stampPreset: vi.fn(async () => {}),
+    beginTransplant: vi.fn(),
     handleEvent: vi.fn(),
     finish: vi.fn(),
     persist: vi.fn(async () => {}),
@@ -323,6 +348,161 @@ describe("sendFromDesk — lições (M2)", () => {
     expect(vi.mocked(runAgent).mock.calls[0][5]).toBe(
       "[memória-agy|.mycockpit/context/conv.md] ## Lições\n\n---\n\nolá",
     )
+  })
+})
+
+describe("sendFromDesk — persona do preset (S3)", () => {
+  it("preflight bloqueado ABORTA antes do start (fail-closed, run não inicia)", async () => {
+    const onAccepted = vi.fn()
+    vi.mocked(resolveFirstTurnPersona).mockResolvedValueOnce({
+      status: "blocked",
+      error: 'O preset "UI" referencia uma skill que não existe: /testes.',
+    })
+    await sendFromDesk({ ...args, onAccepted })
+    expect(toast.error).toHaveBeenCalledWith(
+      'O preset "UI" referencia uma skill que não existe: /testes.',
+    )
+    expect(chat.start).not.toHaveBeenCalled()
+    expect(runAgent).not.toHaveBeenCalled()
+    expect(onAccepted).not.toHaveBeenCalled()
+  })
+
+  it("1º turno com preset: bloco prependido, trio do preset assume e o digest é carimbado", async () => {
+    arm(makeConv({ presetId: "pr1" }))
+    vi.mocked(resolveFirstTurnPersona).mockResolvedValueOnce({
+      status: "ready",
+      block: '<persona name="UI Engineer">…</persona>',
+      presetId: "pr1",
+      digest: "digest-v1",
+      name: "UI Engineer",
+      agent: "codex",
+      model: "gpt-x",
+      effort: "high",
+    })
+    await sendFromDesk(args)
+    const call = vi.mocked(runAgent).mock.calls[0]
+    expect(call[2]).toBe("codex") // o preset define o trio, não a mesa
+    expect(call[3]).toBe("gpt-x")
+    expect(call[4]).toBe("high")
+    expect(call[5]).toBe('<persona name="UI Engineer">…</persona>\n\nolá')
+    expect(chat.stampPreset).toHaveBeenCalledWith(
+      "c1",
+      "pr1",
+      "digest-v1",
+      "UI Engineer",
+    )
+  })
+
+  it("resume de conversa com preset carimbado dispara a verificação de drift", async () => {
+    arm(
+      makeConv({
+        items: [
+          user("primeiro turno"),
+          { kind: "text", id: "t1", text: "resposta do agent" },
+        ],
+        presetId: "pr1",
+        presetDigest: "digest-antigo",
+        sessionId: "s1",
+      }),
+    )
+    await sendFromDesk(args)
+    expect(warnPresetDrift).toHaveBeenCalledWith("c1", "pr1", "digest-antigo")
+    // e a persona NÃO re-injeta (locked + resposta chegam no resolvedor)
+    expect(resolveFirstTurnPersona).toHaveBeenCalledWith(
+      expect.objectContaining({ locked: true, presetId: "pr1", hasReply: true }),
+    )
+  })
+
+  it("D1: travada SEM resposta chega no resolvedor com hasReply false (re-injeção)", async () => {
+    arm(
+      makeConv({
+        items: [user("primeiro turno que morreu no spawn")],
+        presetId: "pr1",
+        presetDigest: "digest-do-run-morto",
+      }),
+    )
+    vi.mocked(resolveFirstTurnPersona).mockResolvedValueOnce({
+      status: "ready",
+      block: "<persona>doutrina</persona>",
+      presetId: "pr1",
+      digest: "digest-novo",
+      name: "UI Engineer",
+      agent: "codex",
+      model: null,
+      effort: null,
+    })
+    await sendFromDesk(args)
+    expect(resolveFirstTurnPersona).toHaveBeenCalledWith(
+      expect.objectContaining({ locked: true, hasReply: false }),
+    )
+    // re-injeta + re-carimba; e o drift NÃO avisa (a doutrina re-chegou fresca)
+    expect(vi.mocked(runAgent).mock.calls[0][5]).toBe(
+      "<persona>doutrina</persona>\n\nolá",
+    )
+    expect(chat.stampPreset).toHaveBeenCalledWith(
+      "c1",
+      "pr1",
+      "digest-novo",
+      "UI Engineer",
+    )
+    expect(warnPresetDrift).not.toHaveBeenCalled()
+  })
+
+  it("D2: run que começou DURANTE o preflight enfileira em vez de dobrar o run", async () => {
+    const onAccepted = vi.fn()
+    arm(makeConv({ presetId: "pr1" }))
+    vi.mocked(resolveFirstTurnPersona).mockImplementationOnce(async () => {
+      // outro envio venceu a corrida enquanto o preflight rodava
+      ;(h.chat.byId as Record<string, ConvState>).c1.running = true
+      return { status: "none" as const }
+    })
+    await sendFromDesk({ ...args, onAccepted })
+    expect(chat.enqueue).toHaveBeenCalledWith("c1", "olá", [])
+    expect(onAccepted).toHaveBeenCalledWith("queued")
+    expect(chat.start).not.toHaveBeenCalled()
+    expect(runAgent).not.toHaveBeenCalled()
+  })
+
+  it("conversa sem preset segue o caminho de hoje (sem drift, sem bloco)", async () => {
+    await sendFromDesk(args)
+    expect(warnPresetDrift).not.toHaveBeenCalled()
+    expect(chat.stampPreset).not.toHaveBeenCalled()
+    expect(vi.mocked(runAgent).mock.calls[0][5]).toBe("olá")
+  })
+
+  it("D3: transplant de conversa carimbada leva a doutrina no preâmbulo", async () => {
+    arm(
+      makeConv({
+        items: [user("pedido pendente")],
+        presetId: "pr1",
+        presetDigest: "digest-carimbado",
+      }),
+    )
+    vi.mocked(personaHandoffBlock).mockResolvedValueOnce(
+      '<persona name="UI Engineer">doutrina</persona>',
+    )
+    await continueInAgent(args, "codex")
+    expect(personaHandoffBlock).toHaveBeenCalledWith("pr1", "digest-carimbado")
+    const prompt = vi.mocked(runAgent).mock.calls[0][5] as string
+    expect(prompt.startsWith('<persona name="UI Engineer">doutrina</persona>\n\n')).toBe(
+      true,
+    )
+    expect(prompt).toContain("[handoff]")
+    expect(prompt).toContain("pedido pendente")
+  })
+
+  it("D3: preset apagado → transplant segue SEM bloco (o warn de apagado cobre)", async () => {
+    arm(
+      makeConv({
+        items: [user("pedido pendente")],
+        presetId: "pr1",
+        presetDigest: "digest-carimbado",
+      }),
+    )
+    // default do mock: personaHandoffBlock → null (preset sumiu / sem carimbo)
+    await continueInAgent(args, "codex")
+    const prompt = vi.mocked(runAgent).mock.calls[0][5] as string
+    expect(prompt.startsWith("[handoff]")).toBe(true)
   })
 })
 

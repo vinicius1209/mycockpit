@@ -27,6 +27,7 @@ import {
   _resetDeriveState,
   deriveOfficeSnapshot,
   deskBaseState,
+  linearDeskLabel,
   offInstruction,
   startDeriving,
 } from "./derive"
@@ -499,6 +500,52 @@ describe("deriveOfficeSnapshot — agregado e estados", () => {
     expect(snap.deliveries[0].text).toContain("Refatorei")
     // 15s depois o balão expira
     expect(deriveOfficeSnapshot(t0 + 20_000).deliveries).toHaveLength(0)
+  })
+})
+
+// ── S3.5: persona de PRESET na label da mesa ────────────────────────────────
+
+describe("deriveOfficeSnapshot — preset na mesa (S3.5)", () => {
+  it("linearDeskLabel: com preset vira 'Digitando/Pensando como {nome}'", () => {
+    expect(linearDeskLabel("typing", "UI Engineer")).toBe(
+      "Digitando como UI Engineer",
+    )
+    expect(linearDeskLabel("thinking", "UI Engineer")).toBe(
+      "Pensando como UI Engineer",
+    )
+    expect(linearDeskLabel("typing", null)).toBe("Digitando")
+    expect(linearDeskLabel("thinking", undefined)).toBe("Pensando")
+  })
+
+  it("conversa rodando sob preset acende a mesa 'como {preset.name}'", () => {
+    useChat.setState({
+      byId: {
+        c1: conversa("p1", "claude-code", {
+          running: true,
+          runId: "r-1",
+          presetName: "UI Engineer",
+          items: [textoItem("gerando…")],
+        }),
+      },
+    })
+    const desk = mesa(deriveOfficeSnapshot(1_000_000), "p1", "claude-code")
+    expect(desk.state).toBe("typing")
+    expect(desk.label).toBe("Digitando como UI Engineer")
+  })
+
+  it("sem preset a label segue a de hoje (Digitando/Pensando)", () => {
+    useChat.setState({
+      byId: {
+        c1: conversa("p1", "claude-code", {
+          running: true,
+          runId: "r-1",
+          items: [textoItem("gerando…")],
+        }),
+      },
+    })
+    expect(mesa(deriveOfficeSnapshot(1_000_000), "p1", "claude-code").label).toBe(
+      "Digitando",
+    )
   })
 })
 
