@@ -361,6 +361,18 @@ determinístico, fail-closed de skill faltante, verificação de drift no transp
 `agent-office.md`; aqui ele ganha esqueleto de tabela, cano de injeção real e pontos de
 integração.
 
+**✅ ENTREGUE 2026-07-22** (branch `sprint/s3-presets`, aprovado pelo reviewer com
+ressalvas D1-D4, todas corrigidas antes do merge). 935 testes verdes na main
+combinada (49 novos do sprint). Robustez adicionada pós-review: re-injeção quando a
+conversa nunca teve resposta (spawn morto não tranca a doutrina), transplant leva a
+doutrina no preâmbulo de handoff, carimbo com await, re-check de running pós-await
+nos sends E transplants. **Follow-ups (nits aceitos do review):** copy do preflight
+diz "skill não existe" quando a causa real pode ser FS ilegível (o inventário Rust
+degrada pra lista vazia); `presetName` da mesa resolve 1x no load (renomear preset
+não atualiza a label até recarregar); `driftWarned` Map não é limpo em delete de
+conversa (crescimento irrisório); dock do Office segue camada crua (preset só via
+composer principal); automações agendadas sem preset no v1.
+
 ---
 
 ## Sprint 4 · Futuro / opt-in (só depois do núcleo estável)
