@@ -465,6 +465,20 @@ handleCompanionAction dispatch_card/close_card (guardas), briefing com board.
 segunda fila de custo; PixiJS novo pro board (a superfície rica é BossCenter +
 Painel; o escritório isométrico ganha só o atalho no quadro de avisos).
 
+**✅ ENTREGUE 2026-07-22** (trilhas `sprint/s4a-lead-learning` e
+`sprint/s4b-superficies` em paralelo; A aprovada com ressalvas corrigidas, B teve
+S4.6 REPROVADO e recorrigido antes do merge). **1000 testes vitest + 65 Rust
+verdes na main.** Correções que valem registro: o `suggest` agora estripa MCP
+(`no_mcp=true`, igual ao judge — sem isso o "lead que nunca age" podia agir via
+MCP server de escopo user, inclusive agendado); a guarda de projeto arquivado
+desceu da UI pro STORE (`dispatch` lança; desktop, celular e callers futuros
+herdam); propostas têm supersede por escopo (schedule diário ignorado não vira
+pilha na fila). **Follow-ups aceitos:** erro de ação remota em card sem conversa
+só avisa no desktop; custo por card não viaja no snapshot (campo reservado);
+"parado há X min" congela no celular entre pushes; delivery de card sem `model`;
+hooks de projeto ainda rodam no cwd do suggest (tools e MCP estripados, hooks
+não).
+
 ---
 
 ## Definition of Done (transversal)
