@@ -38,27 +38,35 @@ export interface AgentDef {
   defaultModel: string | null
 }
 
-// "opus[1m]" é a variante de contexto 1M do Claude Code: o CLI aceita
-// `--model opus[1m]` e o init reporta `claude-opus-4-8[1m]`, então o anel de
-// contexto (contextWindowFor) detecta o "1m" e mostra 1M em vez de 200k. Escolha
-// por conversa: Opus normal = 200k (default do CLI), Opus 1M = janela grande.
+// Aliases do Claude Code ("opus", "sonnet"…) resolvem NO SERVIDOR e mudam com
+// versão do CLI/provider/entitlements (jul/2026: `opus` → Opus 4.8 na API;
+// antes da v2.1.207 → 4.7 — visto em produção). Pin confiável = ID COMPLETO.
+// 1M de contexto é DEFAULT no Opus 4.8/4.7, Sonnet 5 e Fable 5 (sem beta
+// header, preço padrão); o sufixo "[1m]" segue aceito e faz o init reportar
+// "…[1m]", que o contextWindowFor usa pro anel mostrar 1M — por isso os pins
+// abaixo carregam o sufixo.
 const CLAUDE_MODELS: AgentModelOption[] = [
   { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Claude Code escolher" },
+  { value: "claude-opus-4-8[1m]", label: "Opus 4.8", description: "Pin exato — 1M de contexto nativo" },
+  { value: "claude-sonnet-5[1m]", label: "Sonnet 5", description: "Pin exato — 1M nativo, rápido e equilibrado" },
   { value: "fable", label: "Fable", description: "Topo de linha (Fable 5, ~2x o preço do Opus)" },
-  { value: "opus", label: "Opus", description: "O mais capaz do dia a dia (contexto 200k)" },
-  { value: "opus[1m]", label: "Opus 1M", description: "Opus com janela de 1M tokens" },
-  { value: "sonnet", label: "Sonnet", description: "Rápido e equilibrado" },
-  { value: "haiku", label: "Haiku", description: "Mais rápido e barato" },
+  { value: "opus", label: "Opus (alias)", description: "O CLI decide a versão — pode divergir" },
+  { value: "sonnet", label: "Sonnet (alias)", description: "O CLI decide a versão — pode divergir" },
+  { value: "haiku", label: "Haiku", description: "Mais rápido e barato (200k)" },
 ]
+// Codex: sem família "-codex" desde o 5.4 (gpt-5.5-codex/5.6-codex NÃO existem);
+// `gpt-5.6` puro é ID de API (rejeitado com auth ChatGPT) — os slugs do CLI são
+// sol/terra/luna. Catálogo enumerável via `codex debug models` (JSON). Contexto
+// DENTRO do Codex = 272k (na API os mesmos modelos têm 1M). gpt-5.3-codex e o3
+// saíram do catálogo (400 com auth ChatGPT) — removidos do picker.
 const CODEX_MODELS: AgentModelOption[] = [
-  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Codex escolher" },
+  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Codex escolher (hoje Sol)" },
   { value: "gpt-5.6-sol", label: "Sol (5.6)", description: "Frontier da família 5.6 — o mais capaz" },
   { value: "gpt-5.6-terra", label: "Terra (5.6)", description: "Equilíbrio qualidade/custo da 5.6" },
   { value: "gpt-5.6-luna", label: "Luna (5.6)", description: "Leve e rápido, alto volume" },
   { value: "gpt-5.5", label: "gpt-5.5", description: "Geração anterior, ainda forte" },
   { value: "gpt-5.4", label: "gpt-5.4", description: "Equilibrado, metade do preço do 5.5" },
-  { value: "gpt-5.3-codex", label: "gpt-5.3-codex", description: "Especializado em código, ótimo custo" },
-  { value: "o3", label: "o3", description: "Raciocínio forte (legado)" },
+  { value: "gpt-5.4-mini", label: "gpt-5.4-mini", description: "Pequeno e rápido, alto volume" },
 ]
 const CLAUDE_EFFORTS: AgentModelOption[] = [
   { value: "default", label: "Padrão", pill: "effort", description: "Padrão do modelo" },
@@ -68,25 +76,31 @@ const CLAUDE_EFFORTS: AgentModelOption[] = [
   { value: "xhigh", label: "xhigh", description: "Bem mais fundo" },
   { value: "max", label: "max", description: "Esforço máximo" },
 ]
-// agy: o `value` É a string EXATA que o `agy --model` espera (verificado com
-// `agy models`). A CLI 1.1.5 lista ids em kebab-case; o effort já vem embutido
-// no nome, então o agy não tem seletor de effort separado.
+// agy: o `value` É a string EXATA que o `agy --model` espera. Slugs só ficaram
+// ESTÁVEIS na CLI 1.1.5 (release de 21/07/2026) — antes disso pinagem por nome
+// era frágil por design. Lista completa espelha `agy models` 1.1.5 (11 slugs);
+// o effort vem embutido no sufixo -high/-medium/-low, sem seletor separado. O
+// default de fábrica não é contratual (o agy persiste o último modelo do picker
+// no settings dele), então a descrição do "Padrão" não afirma qual modelo é.
 const AGY_MODELS: AgentModelOption[] = [
-  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o agy escolher (Gemini 3.6 Flash)" },
+  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o agy escolher" },
   { value: "gemini-3.6-flash-high", label: "Flash 3.6 (High)", description: "Mais capaz (Google)" },
   { value: "gemini-3.6-flash-medium", label: "Flash 3.6 (Med)", description: "Equilíbrio (Google)" },
   { value: "gemini-3.6-flash-low", label: "Flash 3.6 (Low)", description: "Rápido e barato (Google)" },
+  { value: "gemini-3.5-flash-high", label: "Flash 3.5 (High)", description: "Geração anterior, fundo (Google)" },
   { value: "gemini-3.5-flash-medium", label: "Flash 3.5 (Med)", description: "Geração anterior (Google)" },
-  { value: "gemini-3.1-pro-high", label: "Gemini Pro", description: "Mais capaz (Google)" },
+  { value: "gemini-3.5-flash-low", label: "Flash 3.5 (Low)", description: "Geração anterior, leve (Google)" },
+  { value: "gemini-3.1-pro-high", label: "Gemini Pro (High)", description: "Mais capaz (Google)" },
+  { value: "gemini-3.1-pro-low", label: "Gemini Pro (Low)", description: "Pro raso, mais rápido (Google)" },
   { value: "claude-sonnet-4-6", label: "Sonnet", description: "Claude via cota Google" },
   { value: "claude-opus-4-6-thinking", label: "Opus", description: "Claude mais capaz, via Google" },
+  { value: "gpt-oss-120b-medium", label: "GPT-OSS 120B", description: "Modelo aberto da OpenAI via Google" },
 ]
 
 /** Valores gravados por versões anteriores do app, antes de `agy models`
  * padronizar seus ids em kebab-case. Mantém conversas antigas executáveis. */
 const LEGACY_AGY_MODELS: Record<string, string> = {
-  // Flash 3.5 Low saiu da CLI 1.1.5; Medium é o vizinho compatível mais próximo.
-  "Gemini 3.5 Flash (Low)": "gemini-3.5-flash-medium",
+  "Gemini 3.5 Flash (Low)": "gemini-3.5-flash-low",
   "Gemini 3.1 Pro (High)": "gemini-3.1-pro-high",
   "Claude Sonnet 4.6 (Thinking)": "claude-sonnet-4-6",
   "Claude Opus 4.6 (Thinking)": "claude-opus-4-6-thinking",
@@ -97,6 +111,9 @@ export function normalizeAgyModel(model: string | null): string | null {
   if (!model || model === "default") return model
   return LEGACY_AGY_MODELS[model] ?? model
 }
+// max/ultra são exclusivos da família 5.6 (ultra só Sol/Terra: dispara
+// subagentes e consome quota agressivamente); 5.5/5.4 param em xhigh — o
+// backend rejeita acima disso, o erro aparece no fio (honesto, sem mascarar).
 const CODEX_EFFORTS: AgentModelOption[] = [
   { value: "default", label: "Padrão", pill: "effort", description: "Padrão do modelo" },
   { value: "minimal", label: "minimal", description: "Mínimo" },
@@ -104,6 +121,8 @@ const CODEX_EFFORTS: AgentModelOption[] = [
   { value: "medium", label: "medium", description: "Equilíbrio" },
   { value: "high", label: "high", description: "Raciocina mais fundo" },
   { value: "xhigh", label: "xhigh", description: "Bem mais fundo" },
+  { value: "max", label: "max", description: "Fundo máximo (só família 5.6)" },
+  { value: "ultra", label: "ultra", description: "Máximo + subagentes (Sol/Terra; pesa na cota)" },
 ]
 
 /** A liga de agents. Ordem = ordem de exibição no seletor de destino. */
@@ -118,7 +137,7 @@ export const AGENTS: AgentDef[] = [
     caps: { image: true, pdf: true },
     models: CLAUDE_MODELS,
     efforts: CLAUDE_EFFORTS,
-    defaultModel: "opus",
+    defaultModel: "claude-opus-4-8[1m]",
   },
   {
     id: "codex",
@@ -130,7 +149,7 @@ export const AGENTS: AgentDef[] = [
     caps: { image: true, pdf: false },
     models: CODEX_MODELS,
     efforts: CODEX_EFFORTS,
-    defaultModel: "gpt-5.5",
+    defaultModel: "gpt-5.6-sol",
   },
   {
     id: "agy",

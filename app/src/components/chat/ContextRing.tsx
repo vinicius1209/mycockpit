@@ -97,8 +97,8 @@ export function ContextRing() {
           </dl>
           {!is1m && (conv.model ?? "").toLowerCase().includes("opus") && (
             <p className="mt-2 border-t pt-2 text-[11px] leading-snug text-muted-foreground">
-              Precisa de mais? Escolha <span className="text-foreground">Opus 1M</span>{" "}
-              no seletor de modelo numa conversa nova.
+              Precisa de mais? Escolha <span className="text-foreground">Opus 4.8</span>{" "}
+              (pin com 1M nativo) no seletor de modelo numa conversa nova.
             </p>
           )}
         </div>

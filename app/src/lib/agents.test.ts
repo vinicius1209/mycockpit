@@ -10,8 +10,9 @@ afterEach(() => setDynamicModels("agy", []))
 
 describe("modelos do agy", () => {
   it("normaliza ids legados persistidos para kebab-case", () => {
+    // 3.5-flash-low voltou ao `agy models` na CLI 1.1.5 → mapeia 1:1 de novo.
     expect(normalizeAgyModel("Gemini 3.5 Flash (Low)")).toBe(
-      "gemini-3.5-flash-medium",
+      "gemini-3.5-flash-low",
     )
     expect(normalizeAgyModel("gemini-3.6-flash-low")).toBe(
       "gemini-3.6-flash-low",
