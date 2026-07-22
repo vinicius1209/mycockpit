@@ -202,9 +202,13 @@ function AgentsToolsSection() {
               className="flex items-center gap-3 rounded-lg border border-border/50 bg-secondary/20 px-3 py-2"
             >
               <span className="shrink-0">
+                {/* Auth honesta (Sprint 0): CLI deslogada ou com auth incerta
+                    nunca ganha o check verde — verde exige probe.auth ok/na. */}
                 {!probe || !probe.installed ? (
                   <X className="size-4 text-st-error" />
-                ) : hasUpdate ? (
+                ) : hasUpdate ||
+                  probe.auth === "missing" ||
+                  probe.auth === "unknown" ? (
                   <AlertTriangle className="size-4 text-st-warning" />
                 ) : (
                   <Check className="size-4 text-st-success" />
@@ -222,14 +226,35 @@ function AgentsToolsSection() {
                     </span>
                   )}
                 </div>
-                <div className="truncate text-[11.5px] text-muted-foreground">
-                  {!probe
-                    ? "não verificado ainda"
-                    : !probe.installed
-                      ? "não instalado"
-                      : `instalado v${probe.version ?? "?"}${
-                          probe.latest ? ` · última v${probe.latest}` : ""
-                        }`}
+                <div
+                  className="truncate text-[11.5px] text-muted-foreground"
+                  title={probe?.detail ?? undefined}
+                >
+                  {!probe ? (
+                    "não verificado ainda"
+                  ) : !probe.installed ? (
+                    "não instalado"
+                  ) : (
+                    <>
+                      {`instalado v${probe.version ?? "?"}${
+                        probe.latest ? ` · última v${probe.latest}` : ""
+                      }`}
+                      {probe.auth === "ok" && (
+                        <span>
+                          {" · logado"}
+                          {probe.detail ? ` (${probe.detail})` : ""}
+                        </span>
+                      )}
+                      {probe.auth === "missing" && (
+                        <span className="text-st-warning">{" · sem login"}</span>
+                      )}
+                      {probe.auth === "unknown" && (
+                        <span className="text-st-warning">
+                          {" · auth desconhecida"}
+                        </span>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
               {cmd ? (

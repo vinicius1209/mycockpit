@@ -240,10 +240,15 @@ export function agentDef(id: string): AgentDef | undefined {
   return BY_ID.get(id)
 }
 
-/** "ready"=usável · "installed-auth-unknown"=instalado, auth incerta (usável c/
- *  aviso) · "missing"=não instalado · "not-integrated"=o app não integra. */
+/** "ready"=usável · "installed-not-authenticated"=instalado e DESLOGADO
+ *  (probe.auth "missing" — NÃO usável até logar) · "installed-auth-unknown"=
+ *  instalado, auth incerta (usável com aviso; cobre "unknown" e "na" — o agy
+ *  não tem comando de auth e nunca reporta "missing", então "deslogado" não é
+ *  prometido pra ele) · "missing"=não instalado · "not-integrated"=o app não
+ *  integra. */
 export type Availability =
   | "ready"
+  | "installed-not-authenticated"
   | "installed-auth-unknown"
   | "missing"
   | "not-integrated"
@@ -261,7 +266,9 @@ export function availability(
   const probe = detected[id]
   if (!probe) return "ready"
   if (!probe.installed) return "missing"
-  return probe.auth === "ok" ? "ready" : "installed-auth-unknown"
+  if (probe.auth === "ok") return "ready"
+  if (probe.auth === "missing") return "installed-not-authenticated"
+  return "installed-auth-unknown"
 }
 
 /** Destinos do console de comando (deriva direto do registry). */

@@ -456,6 +456,9 @@ function PrdCard({ d }: { d: Extract<Decision, { kind: "prd" }> }) {
 export function MissionControl() {
   const projects = useApp((s) => s.projects)
   const detected = useApp((s) => s.settings.detected)
+  // Agents com rate limit atingido (cross-conversa, efêmero: marcado por
+  // limit_reached, curado por result ok) — a FROTA mostra o posto bloqueado.
+  const limitedAgents = useApp((s) => s.limitedAgents)
   // Ref do MAPA inteiro (estável entre updates) — nunca um objeto derivado novo.
   const convsByProject = useChat((s) => s.conversationsByProject)
 
@@ -946,22 +949,47 @@ export function MissionControl() {
               const p = detected[t.id]
               if (!p?.installed) return null
               const hasUpdate = updateAvailable(p)
+              // Auth honesta (Sprint 0): CLI deslogada nunca ganha dot verde;
+              // auth incerta também não (aviso, não bloqueio). Rate limit
+              // bloqueia a linha com o hint de volta.
+              const isLimited = t.id in limitedAgents
+              const resetHint = limitedAgents[t.id]
+              const noAuth = p.auth === "missing"
+              const authUnknown = p.auth === "unknown"
+              const ok = !noAuth && !authUnknown && !isLimited && !hasUpdate
               return (
                 <li
                   key={t.id}
                   className="flex items-center gap-2.5 text-[12.5px]"
+                  title={p.detail ?? undefined}
                 >
                   <span
                     aria-hidden
                     className={cn(
                       "size-1.5 shrink-0 rounded-full",
-                      hasUpdate ? "bg-st-warning" : "bg-st-success",
+                      ok ? "bg-st-success" : "bg-st-warning",
                     )}
                   />
                   <span className="text-foreground">{t.label}</span>
                   <span className="text-muted-foreground">
                     v{p.version ?? "?"}
                   </span>
+                  {p.auth === "ok" && (
+                    <span className="min-w-0 truncate text-muted-foreground/70">
+                      logado{p.detail ? ` (${p.detail})` : ""}
+                    </span>
+                  )}
+                  {noAuth && (
+                    <span className="text-st-warning">sem login</span>
+                  )}
+                  {authUnknown && (
+                    <span className="text-st-warning">auth desconhecida</span>
+                  )}
+                  {isLimited && (
+                    <span className="rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning uppercase">
+                      em rate limit{resetHint ? `, volta ${resetHint}` : ""}
+                    </span>
+                  )}
                   {hasUpdate && (
                     <span className="rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning uppercase">
                       update v{p.latest}

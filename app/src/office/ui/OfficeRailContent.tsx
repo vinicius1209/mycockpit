@@ -61,7 +61,11 @@ function AgentRow({ desk }: { desk: DeskSnapshot }) {
       type="button"
       disabled={off}
       onClick={() => focusDesk(desk.id)}
-      title={off ? `${agentLabel(desk.agent)} não detectado` : `Falar com ${agentLabel(desk.agent)}`}
+      title={
+        off
+          ? `${agentLabel(desk.agent)} · ${detail}`
+          : `Falar com ${agentLabel(desk.agent)}`
+      }
       aria-label={`${agentLabel(desk.agent)}: ${detail}. Abrir conversa.`}
       className={cn(
         "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
@@ -75,8 +79,10 @@ function AgentRow({ desk }: { desk: DeskSnapshot }) {
         <span className="block truncate text-[13px] text-foreground/90">
           {agentLabel(desk.agent)}
         </span>
+        {/* Mesa apagada mostra o MOTIVO real do snapshot ("Não detectado",
+            "Instalado, sem login", "Em rate limit · volta …") — auth honesta. */}
         <span className="block truncate text-[11px] text-muted-foreground">
-          {off ? "Não detectado" : detail}
+          {detail}
         </span>
       </span>
       {desk.state === "hand" && (

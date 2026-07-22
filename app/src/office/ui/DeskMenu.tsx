@@ -29,6 +29,7 @@ import {
   useDeskTurnStartedAt,
 } from "../bridge/hooks"
 import { cancelDeskTurn, DESK_TITLE_PREFIX } from "../bridge/send"
+import { offInstruction } from "../bridge/derive"
 import { useMissionTableSig } from "../bridge/mission"
 import { MISSION_TABLE_ID, missionTableMenu, parseMissionSig } from "./missionTable"
 import { useOfficeUi } from "./store"
@@ -359,8 +360,13 @@ export function DeskMenu({
       </div>
 
       {kind === "off" && (
+        // Motivo REAL da mesa apagada (auth honesta): não detectado, sem login
+        // ou rate limit — o label/detail do snapshot é a fonte única.
         <p className="max-w-[210px] text-[12px] leading-snug text-muted-foreground">
-          CLI não detectada — habilite nos Ajustes para acender esta mesa.
+          {snap
+            ? `${snap.label}${snap.detail ? `, ${snap.detail}` : ""}.`
+            : "CLI não detectada."}{" "}
+          {offInstruction(snap?.label ?? "")}
         </p>
       )}
 

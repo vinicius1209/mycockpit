@@ -95,6 +95,17 @@ das Settings) — não inventar sonda nova nem cache/TTL. Limitação aceita: ag
 reporta `missing` (não tem comando de auth), então "deslogado" não é prometido pra
 agy — degrada pra auth-unknown.
 
+**✅ ENTREGUE 2026-07-22** (branch `sprint/s0-auth-honesta`, aprovado pelo reviewer
+com ressalvas). 843 testes verdes (19 novos). Extras: rail/DeskMenu/BossCenter do
+Office mostravam "não detectado" pra QUALQUER mesa off — agora mostram o motivo
+real; instrução por motivo (`offInstruction` no derive, testada). **Follow-ups do
+review (fazer depois do núcleo):** (1) mesa em rate limit não tem affordance de
+retry no Office (a cura só vem de `result ok` via Composer, marca não expira por
+relógio); (2) despacho não consulta availability (`sendFromDesk` e
+`companion send_message` mandam turno pra CLI deslogada e falham com erro cru);
+(3) `availability()` sem probe degrada pra "ready" (mesa acende sem evidência se
+`detect_agents` falhar no boot) e `deskBaseState` é if-chain sem check `never`.
+
 ---
 
 ## Sprint 1 · E1 — Board de intenção (a espinha)
