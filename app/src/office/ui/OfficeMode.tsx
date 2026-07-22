@@ -125,10 +125,10 @@ function OnboardingOverlay() {
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-12 z-40 flex justify-center">
       <div className="flex flex-col gap-1 rounded-lg border border-border bg-card px-4 py-3 text-[12px] text-foreground/90 shadow-xl">
-        <p><b className="font-semibold">WASD / setas</b> — andar pelo escritório</p>
-        <p><b className="font-semibold">Clique ou E</b> — ir até a mesa e falar com o agent</p>
-        <p><b className="font-semibold">R</b> — ciclar salas · <b className="font-semibold">roda</b> — zoom</p>
-        <p><b className="font-semibold">Esc</b> — cancelar ditado / fechar a conversa{hotkey ? <> · <b className="font-semibold">{formatHotkey(hotkey)}</b> — ditar (toque ou segure)</> : null}</p>
+        <p><b className="font-semibold">WASD / setas</b>: andar pelo escritório</p>
+        <p><b className="font-semibold">Clique ou E</b>: ir até a mesa e falar com o agent</p>
+        <p><b className="font-semibold">R</b>: ciclar salas · <b className="font-semibold">roda</b>: zoom</p>
+        <p><b className="font-semibold">Esc</b>: cancelar ditado / fechar a conversa{hotkey ? <> · <b className="font-semibold">{formatHotkey(hotkey)}</b>: ditar (toque ou segure)</> : null}</p>
         <p className="mt-1 border-t border-border/60 pt-1.5 text-muted-foreground">
           rail = pra onde ir e com quem falar · <b className="font-semibold text-brass">👑</b> = briefing + missão · cena = presença ao vivo
         </p>

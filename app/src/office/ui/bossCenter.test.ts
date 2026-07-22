@@ -306,7 +306,7 @@ describe("bossStandupLine — narrativa do standup", () => {
 
   it("tudo zerado ⇒ frase de calmaria (nunca linha vazia)", () => {
     expect(bossStandupLine(buildBossBriefing(null), fmt)).toBe(
-      "Tudo tranquilo — nada pede sua atenção agora.",
+      "Tudo tranquilo. Nada pede sua atenção agora.",
     )
   })
 })

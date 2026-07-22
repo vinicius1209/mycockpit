@@ -2024,7 +2024,9 @@ async function loadCardState(db: Database, id: string): Promise<CardState> {
 }
 
 /** Patch parcial (campo `undefined` = mantém; não há como limpar pra NULL no
- *  v1 — se precisar, ganha função própria). Estado NÃO passa por aqui. */
+ *  v1 — se precisar, ganha função própria). Estado NÃO passa por aqui.
+ *  `now`: mesmo contrato de relógio único do setCardState (o store passa o
+ *  MESMO timestamp que carimba no patch local — sem drift de ms no vigia). */
 export async function updateCard(
   id: string,
   patch: {
@@ -2033,6 +2035,7 @@ export async function updateCard(
     pinned?: boolean
     pinRank?: number
   },
+  now: number = Date.now(),
 ): Promise<void> {
   const db = await getDb()
   if (!db) return
@@ -2044,7 +2047,7 @@ export async function updateCard(
       patch.body ?? null,
       patch.pinned == null ? null : patch.pinned ? 1 : 0,
       patch.pinRank ?? null,
-      Date.now(),
+      now,
       id,
     ],
   )

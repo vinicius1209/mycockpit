@@ -281,7 +281,7 @@ export function NoticeBoardMenu() {
   return (
     <div
       data-testid="notice-board-menu"
-      aria-label="Quadro de avisos — agendados"
+      aria-label="Quadro de avisos · agendados"
       className="pointer-events-auto relative w-max max-w-[250px] rounded-lg border border-border bg-card px-3 pt-2 pb-2.5 shadow-xl motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-150 motion-safe:ease-out"
     >
       <div className="mb-1.5 flex items-center gap-1.5">

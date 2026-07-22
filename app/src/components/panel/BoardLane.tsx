@@ -3,82 +3,28 @@
 // VOCÊ". Segue o visual das seções vizinhas (SectionTitle label-mono, cards
 // com a moldura da fila, ações brass/ghost). Custo por card v1 = turn_costs
 // por conv_id (chat + disputas); missão e SDD ficam fora, e a UI diz isso.
+// Ações/átomos do card moram em cardActions.tsx (compartilhados com o
+// CardDetailDialog — fonte única, nenhum caminho novo de estado).
 
 import { useEffect, useMemo, useState } from "react"
 import { Lightbulb, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { useApp } from "@/store/app"
-import { openCardConversation, useCards } from "@/store/cards"
-import { listCardCosts, type CardRecord, type CardState } from "@/lib/db"
+import { useCards } from "@/store/cards"
+import { listCardCosts, type CardRecord } from "@/lib/db"
 import { fmtCost } from "@/lib/format"
 import { isOpenCardState, proposePlan } from "@/lib/lead"
 import { cn } from "@/lib/utils"
+import { CardDetailDialog } from "@/components/panel/CardDetailDialog"
+import {
+  CardStateActions,
+  CardStateBadge,
+  tryAction,
+} from "@/components/panel/cardActions"
 
 type CardCosts = Record<string, { total: number; estimated: boolean }>
 
 const COST_HINT = "Custo de chat e disputas. Missão e SDD ficam fora no v1."
-
-/** Rótulo pt-BR de cada estado (badge do card). */
-const STATE_LABEL: Record<CardState, string> = {
-  backlog: "backlog",
-  working: "em andamento",
-  review: "em revisão",
-  blocked: "bloqueado",
-  done: "feito",
-  cancelled: "cancelado",
-}
-
-/** Executa uma ação do board; violação de gate/transição vira toast, não
- *  crash. Retorna se a ação COMPLETOU (o caller decide limpar formulário etc). */
-async function tryAction(fn: () => Promise<unknown>): Promise<boolean> {
-  try {
-    await fn()
-    return true
-  } catch (e) {
-    toast.error(e instanceof Error ? e.message : "Ação inválida no board")
-    return false
-  }
-}
-
-/** Inicia o card (S1.4, gesto humano): dispatch cria a conversa nova, liga e
- *  vira working — depois navega até ela (newConversation já a abriu no chat). */
-async function startCard(card: CardRecord): Promise<void> {
-  await tryAction(async () => {
-    const convId = await useCards.getState().dispatch(card.id)
-    if (!convId) return
-    const app = useApp.getState()
-    app.setActiveProject(card.projectId)
-    app.setViewMode("linear")
-  })
-}
-
-function LaneAction({
-  children,
-  tone = "ghost",
-  disabled,
-  onClick,
-}: {
-  children: React.ReactNode
-  tone?: "brass" | "ghost"
-  disabled?: boolean
-  onClick: (e: React.MouseEvent) => void
-}) {
-  return (
-    <button
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "disabled:opacity-40",
-        "shrink-0 rounded px-1.5 py-0.5 text-[10.5px] font-medium transition-colors",
-        tone === "brass"
-          ? "bg-brass text-background hover:opacity-90"
-          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
-  )
-}
 
 function BoardCard({
   card,
@@ -86,6 +32,7 @@ function BoardCard({
   archivedProject,
   cost,
   selected,
+  onOpenDetail,
 }: {
   card: CardRecord
   projectName: string
@@ -96,17 +43,15 @@ function BoardCard({
   archivedProject: boolean
   cost: { total: number; estimated: boolean } | null
   selected: boolean
+  onOpenDetail: (id: string) => void
 }) {
-  const move = useCards((s) => s.move)
-  const close = useCards((s) => s.closeCard)
-  // D2: além da guarda in-flight do store, o botão trava enquanto o dispatch
-  // voa — duplo-clique não cria segunda conversa nem pisca estado.
-  const [starting, setStarting] = useState(false)
   const terminal = card.state === "done" || card.state === "cancelled"
+  // Clique no CORPO abre o DETALHE (pedido real de uso: ver/acrescentar
+  // contexto). Navegar pra conversa continua a um clique, no botão "Abrir
+  // conversa" do detalhe — a fila "Precisam de você" segue navegando direto.
   const open = () => {
-    // projeto arquivado: nunca navega pra conversa invisível — só seleciona.
-    if (card.conversationId && !archivedProject) void openCardConversation(card.id)
-    else useCards.getState().select(card.id)
+    useCards.getState().select(card.id)
+    onOpenDetail(card.id)
   }
   return (
     <div
@@ -133,20 +78,7 @@ function BoardCard({
         )}
         {(card.state === "review" ||
           card.state === "blocked" ||
-          card.state === "cancelled") && (
-          <span
-            className={cn(
-              "shrink-0 rounded border px-1.5 py-px text-[9.5px] tracking-wide uppercase",
-              card.state === "blocked"
-                ? "border-st-error/50 bg-st-error/10 text-st-error"
-                : card.state === "review"
-                  ? "border-st-warning/50 bg-st-warning/10 text-st-warning"
-                  : "border-border text-muted-foreground",
-            )}
-          >
-            {STATE_LABEL[card.state]}
-          </span>
-        )}
+          card.state === "cancelled") && <CardStateBadge state={card.state} />}
       </div>
       <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
         <span className="min-w-0 truncate">{projectName}</span>
@@ -163,76 +95,11 @@ function BoardCard({
           </span>
         )}
       </div>
-      {!terminal && (
-        <div className="mt-1.5 flex items-center gap-1">
-          {card.state === "backlog" && (
-            <>
-              <LaneAction
-                tone="brass"
-                // F-E: projeto arquivado não ganha conversa nova (invisível).
-                disabled={starting || archivedProject}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (starting || archivedProject) return
-                  setStarting(true)
-                  void startCard(card).finally(() => setStarting(false))
-                }}
-              >
-                {starting ? "Iniciando…" : "Iniciar"}
-              </LaneAction>
-              <LaneAction
-                onClick={(e) => {
-                  e.stopPropagation()
-                  void tryAction(() => close(card.id, "cancelled"))
-                }}
-              >
-                Cancelar
-              </LaneAction>
-            </>
-          )}
-          {card.state === "working" && (
-            <>
-              <LaneAction
-                onClick={(e) => {
-                  e.stopPropagation()
-                  void tryAction(() => move(card.id, "review"))
-                }}
-              >
-                Revisão
-              </LaneAction>
-              <LaneAction
-                onClick={(e) => {
-                  e.stopPropagation()
-                  void tryAction(() => move(card.id, "blocked"))
-                }}
-              >
-                Bloqueado
-              </LaneAction>
-            </>
-          )}
-          {(card.state === "review" || card.state === "blocked") && (
-            <>
-              <LaneAction
-                tone="brass"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  void tryAction(() => close(card.id, "done"))
-                }}
-              >
-                Concluir
-              </LaneAction>
-              <LaneAction
-                onClick={(e) => {
-                  e.stopPropagation()
-                  void tryAction(() => move(card.id, "working"))
-                }}
-              >
-                Retomar
-              </LaneAction>
-            </>
-          )}
-        </div>
-      )}
+      <CardStateActions
+        card={card}
+        archivedProject={archivedProject}
+        className="mt-1.5"
+      />
     </div>
   )
 }
@@ -243,6 +110,7 @@ function Lane({
   projectNames,
   costs,
   selectedId,
+  onOpenDetail,
   hiddenOlder = 0,
 }: {
   label: string
@@ -250,13 +118,16 @@ function Lane({
   projectNames: Map<string, string>
   costs: CardCosts
   selectedId: string | null
+  onOpenDetail: (id: string) => void
   /** F-F: quantos cards mais antigos ficaram FORA do corte (só honestidade,
    *  sem paginação). 0 = nada cortado. */
   hiddenOlder?: number
 }) {
   return (
     <div className="min-w-0">
-      <div className="label-mono mb-1.5 px-1 text-[9px]">
+      {/* sub-cabeçalho de coluna: menor e mais apagado que o SectionTitle
+          BOARD — dois label-mono iguais e colados viravam um bloco só. */}
+      <div className="label-mono mb-1.5 px-1 text-[9px] opacity-70">
         {label} ({cards.length})
       </div>
       <div className="flex flex-col gap-1.5">
@@ -270,6 +141,7 @@ function Lane({
               c.conversationId ? (costs[c.conversationId] ?? null) : null
             }
             selected={selectedId === c.id}
+            onOpenDetail={onOpenDetail}
           />
         ))}
         {hiddenOlder > 0 && (
@@ -293,6 +165,10 @@ export function BoardLane({
   const cards = useCards((s) => s.all)
   const selectedId = useCards((s) => s.selectedId)
   const create = useCards((s) => s.create)
+  // Detalhe do card (dialog): aberto pelo clique no corpo do card. A seleção
+  // vinda da fila/BossCenter continua só destacando (não força modal em cima
+  // de uma navegação que o usuário não pediu).
+  const [detailId, setDetailId] = useState<string | null>(null)
 
   // ── S4.3: "Pedir proposta ao lead" (gesto manual, opt-in) ──
   // O board aqui é cross-projeto, então a triagem é do BOARD INTEIRO
@@ -401,7 +277,10 @@ export function BoardLane({
 
   return (
     <section aria-label="Board">
-      <div className="mb-1.5 flex items-center px-1">
+      {/* respiro título→colunas maior que o mb-1.5 das seções vizinhas de
+          propósito: aqui o conteúdo abre com OUTRO label-mono (BACKLOG…), não
+          com um card — sem o gap extra os dois títulos colavam num bloco só. */}
+      <div className="mb-3 flex items-center px-1">
         <h2 className="label-mono">Board</h2>
         {/* O lead SÓ propõe (texto na fila); despachar segue gesto humano. */}
         <button
@@ -427,13 +306,14 @@ export function BoardLane({
           Nenhum card ainda. Crie a primeira intenção abaixo.
         </p>
       ) : (
-        <div className="grid grid-cols-3 gap-2 px-1">
+        <div className="grid grid-cols-3 gap-3 px-1">
           <Lane
             label="Backlog"
             cards={lanes.backlog}
             projectNames={projectNames}
             costs={costs}
             selectedId={selectedId}
+            onOpenDetail={setDetailId}
           />
           <Lane
             label="Em andamento"
@@ -441,6 +321,7 @@ export function BoardLane({
             projectNames={projectNames}
             costs={costs}
             selectedId={selectedId}
+            onOpenDetail={setDetailId}
           />
           <Lane
             label="Feito"
@@ -448,11 +329,20 @@ export function BoardLane({
             projectNames={projectNames}
             costs={costs}
             selectedId={selectedId}
+            onOpenDetail={setDetailId}
             hiddenOlder={lanes.doneHidden}
           />
         </div>
       )}
-      <form onSubmit={submit} className="mt-2 flex items-center gap-2 px-1">
+      <CardDetailDialog
+        cardId={detailId}
+        onClose={() => setDetailId(null)}
+        projectNames={projectNames}
+        costs={costs}
+      />
+      {/* mt-3: a linha de criação é formulário, não card — sem o respiro ela
+          parecia um card grudado na coluna. */}
+      <form onSubmit={submit} className="mt-3 flex items-center gap-2 px-1">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}

@@ -411,7 +411,7 @@ function PlanCard({
       <div className="flex items-center gap-1.5">
         <ClipboardList className="size-3.5 shrink-0 text-brass" />
         <p className="text-[12px] font-semibold text-foreground">
-          Plano proposto — aguardando sua aprovação
+          Plano proposto, aguardando sua aprovação
         </p>
       </div>
       <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
@@ -830,7 +830,7 @@ export function DeskDock() {
         )}
         {conv.corrupt && (
           <p className="mb-2 rounded-md border border-st-error/50 bg-st-error/10 px-2.5 py-1.5 text-[12px] text-st-error">
-            Conversa corrompida no banco — envio bloqueado.
+            Conversa corrompida no banco. Envio bloqueado.
           </p>
         )}
         <div className="flex flex-col gap-2.5">
@@ -844,7 +844,7 @@ export function DeskDock() {
           {conv.empty && (
             <div className="flex flex-col gap-2">
               <p className="text-[12px] text-muted-foreground">
-                Mesa de {agentLabel(desk.agent)}. Diga o que precisa — o turno
+                Mesa de {agentLabel(desk.agent)}. Diga o que precisa, o turno
                 roda de verdade no projeto.
               </p>
               {/* vazio inicial = chips de sugestão que PREENCHEM o composer */}
@@ -955,12 +955,12 @@ export function DeskDock() {
         </div>
         {missionActive && (
           <p className="mt-1 px-0.5 text-[11px] text-muted-foreground">
-            Missão em andamento — envie pela missão ou aguarde.
+            Missão em andamento. Envie pela missão ou aguarde.
           </p>
         )}
         {turnActive && !missionActive && (
           <p className="mt-1 px-0.5 text-[11px] text-muted-foreground">
-            Turno em andamento — Enter enfileira e envia quando terminar.
+            Turno em andamento. Enter enfileira e envia quando terminar.
           </p>
         )}
         {composerFocused && (
