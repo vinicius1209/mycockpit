@@ -8,7 +8,9 @@
 // Acompanhar) — a tecla E do OfficeMode chama deskMenuPrimary. "Parar" é a
 // única secundária com efeito próprio (cancelDeskTurn).
 import { useEffect, useRef, useState } from "react"
-import { ClipboardList, Crown, Hand, MessageCircle, Rocket, Square } from "lucide-react"
+import { ClipboardList, Crown, Hand, MessageCircle, RefreshCw, Rocket, Square } from "lucide-react"
+import { toast } from "sonner"
+import { useApp } from "@/store/app"
 import {
   BOSS_DESK_ID,
   NOTICE_BOARD_ID,
@@ -29,7 +31,7 @@ import {
   useDeskTurnStartedAt,
 } from "../bridge/hooks"
 import { cancelDeskTurn, DESK_TITLE_PREFIX } from "../bridge/send"
-import { offInstruction } from "../bridge/derive"
+import { isRateLimitLabel, offInstruction } from "../bridge/derive"
 import { useMissionTableSig } from "../bridge/mission"
 import { MISSION_TABLE_ID, missionTableMenu, parseMissionSig } from "./missionTable"
 import { useOfficeUi } from "./store"
@@ -362,12 +364,33 @@ export function DeskMenu({
       {kind === "off" && (
         // Motivo REAL da mesa apagada (auth honesta): não detectado, sem login
         // ou rate limit — o label/detail do snapshot é a fonte única.
-        <p className="max-w-[210px] text-[12px] leading-snug text-muted-foreground">
-          {snap
-            ? `${snap.label}${snap.detail ? `, ${snap.detail}` : ""}.`
-            : "CLI não detectada."}{" "}
-          {offInstruction(snap?.label ?? "")}
-        </p>
+        <div className="flex flex-col gap-1.5">
+          <p className="max-w-[210px] text-[12px] leading-snug text-muted-foreground">
+            {snap
+              ? `${snap.label}${snap.detail ? `, ${snap.detail}` : ""}.`
+              : "CLI não detectada."}{" "}
+            {offInstruction(snap?.label ?? "")}
+          </p>
+          {/* F-B (follow-up S0): a marca de rate limit só cura com `result ok`,
+              mas quem decide se a janela já virou é o HUMANO — "Tentar de novo"
+              limpa a marca; se o limite ainda valer, o turno volta a falhar e o
+              limit_reached re-marca sozinho. Sem relógio mentiroso. */}
+          {isRateLimitLabel(snap?.label) && (
+            <button
+              type="button"
+              onClick={() => {
+                useApp.getState().clearAgentLimited(desk.agent)
+                toast(
+                  `Marca de limite do ${name} removida em todos os projetos. Se o limite ainda valer, o próximo turno volta a falhar e a marca retorna.`,
+                )
+              }}
+              className="flex items-center gap-1.5 self-start rounded-md border border-border px-2.5 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <RefreshCw className="size-3" />
+              Tentar de novo
+            </button>
+          )}
+        </div>
       )}
 
       {kind === "idle" && (

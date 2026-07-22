@@ -9,6 +9,14 @@ import { useNotifs } from "@/store/notifications"
 import { agentLabel } from "@/lib/agent"
 import { isTauri } from "@/lib/db"
 
+/** Truncamento defensivo de título em notificação nativa (follow-up S2): o
+ *  Notification Center corta sem avisar; melhor cortar NÓS com reticências
+ *  do que deixar o SO engolir o resto do corpo. */
+function clipTitle(title: string, max = 80): string {
+  const t = title.trim()
+  return t.length > max ? `${t.slice(0, max)}…` : t
+}
+
 /** Notificação NATIVA do SO (silenciosa se sem permissão/fora do app). */
 export async function nativeNotify(title: string, body: string) {
   if (!isTauri()) return
@@ -51,7 +59,7 @@ export function notifyTurnEnd(convId: string, agent: string) {
   if (chat.activeId !== convId) {
     void nativeNotify(
       "Frota",
-      `${title} — ${errored ? "turno falhou" : "turno concluído"}`,
+      `${clipTitle(title)} · ${errored ? "turno falhou" : "turno concluído"}`,
     )
   }
 }
@@ -84,8 +92,8 @@ export function notifyGate(
   })
 
   void nativeNotify(
-    "Frota — decisão pendente",
-    `${title} — a fase ${phaseLabel} deixou perguntas; a missão está pausada esperando você.`,
+    "Frota · decisão pendente",
+    `${clipTitle(title)}: a fase ${phaseLabel} deixou perguntas; a missão está pausada esperando você.`,
   )
 }
 
@@ -108,8 +116,8 @@ export function notifyTurnStalled(
     : undefined
   const title = meta?.title ?? "Conversa"
   void nativeNotify(
-    "Frota — turno mudo",
-    `${title} — ${agentLabel(agent)} está há ${minutes} min sem produzir nada novo. O turno pode ter travado.`,
+    "Frota · turno mudo",
+    `${clipTitle(title)}: ${agentLabel(agent)} está há ${minutes} min sem produzir nada novo. O turno pode ter travado.`,
   )
 }
 
@@ -126,6 +134,6 @@ export function notifyCardStalled(
   const situacao = state === "blocked" ? "bloqueado" : "em revisão"
   void nativeNotify(
     "Frota · card parado",
-    `${title} está ${situacao} há ${minutes} min, esperando você.`,
+    `${clipTitle(title)} está ${situacao} há ${minutes} min, esperando você.`,
   )
 }

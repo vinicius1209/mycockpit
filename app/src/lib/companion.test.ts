@@ -433,6 +433,9 @@ describe("handleCompanionAction — switch fechado", () => {
           { id: "c9", title: "refatorar parser", updatedAt: 1, color: null, worktreePath: null, agent: "claude-code" },
         ],
       },
+      // D3 resolve o agent efetivo do alvo explícito lendo byId — seed evita
+      // o ensureConversationLoaded real bater no SQLite dentro do teste.
+      byId: { c9: makeConv({ agent: "claude-code" }) },
     })
     await handleCompanionAction({
       kind: "send_message",
@@ -468,6 +471,207 @@ describe("handleCompanionAction — switch fechado", () => {
     expect(sendFromDesk).toHaveBeenCalledWith(
       expect.objectContaining({ convId: "conv-mesa" }),
     )
+  })
+
+  it("F-A: send_message pra CLI deslogada NÃO despacha; o motivo volta pro celular como notice na conversa", async () => {
+    const settings = useApp.getState().settings
+    useApp.setState({
+      settings: {
+        ...settings,
+        detected: {
+          codex: {
+            installed: true,
+            version: "1.0.0",
+            auth: "missing",
+            detail: null,
+            latest: null,
+            checkedAt: 0,
+          },
+        },
+      },
+    })
+    // conversa da mesa já carregada (ensureDeskConversation mocado devolve
+    // "conv-mesa"); persist stubado — o envelope aqui é o item na conversa.
+    const persistOriginal = useChat.getState().persist
+    const persist = vi.fn(async () => {})
+    useChat.setState({
+      byId: { "conv-mesa": makeConv({ agent: "codex" }) },
+      persist,
+    })
+    try {
+      await handleCompanionAction({
+        kind: "send_message",
+        projectId: "p1",
+        agent: "codex",
+        text: "roda os testes",
+      })
+      expect(sendFromDesk).not.toHaveBeenCalled()
+      const items = useChat.getState().byId["conv-mesa"].items
+      const notice = items.find((it) => it.kind === "notice")
+      expect(notice && notice.kind === "notice" ? notice.message : "").toContain(
+        "sem login",
+      )
+      // persistido: o GET /api/conv do celular lê o SQLite e vê o motivo.
+      expect(persist).toHaveBeenCalledWith("conv-mesa")
+    } finally {
+      useChat.setState({ persist: persistOriginal })
+      useApp.setState({ settings })
+    }
+  })
+
+  it("D1: o ping de conversa só sai DEPOIS do persist commitar (ordem, não só chamada)", async () => {
+    vi.useFakeTimers()
+    const settings = useApp.getState().settings
+    useApp.setState({
+      settings: {
+        ...settings,
+        detected: {
+          codex: {
+            installed: true,
+            version: "1.0.0",
+            auth: "missing",
+            detail: null,
+            latest: null,
+            checkedAt: 0,
+          },
+        },
+      },
+    })
+    // persist DEFERIDO: só resolve quando o teste soltar — se o código não
+    // esperar o commit, o ping dispara antes e a asserção pega.
+    let release!: () => void
+    const persistOriginal = useChat.getState().persist
+    const persist = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          release = r
+        }),
+    )
+    useChat.setState({
+      byId: { "conv-mesa": makeConv({ agent: "codex" }) },
+      persist,
+    })
+    try {
+      const acted = handleCompanionAction({
+        kind: "send_message",
+        projectId: "p1",
+        agent: "codex",
+        text: "oi",
+      })
+      // persist pendente: mesmo com o relógio andando, NENHUM ping sai.
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(persist).toHaveBeenCalledWith("conv-mesa")
+      expect(invoke).not.toHaveBeenCalledWith("companion_conv_updated", {
+        convId: "conv-mesa",
+      })
+      // persist commitou → agora sim o ping (o refetch verá o notice).
+      release()
+      await acted
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(invoke).toHaveBeenCalledWith("companion_conv_updated", {
+        convId: "conv-mesa",
+      })
+    } finally {
+      useChat.setState({ persist: persistOriginal })
+      useApp.setState({ settings })
+      vi.useRealTimers()
+    }
+  })
+
+  it("D3: convId explícito com agent TRAVADO deslogado bloqueia, mesmo com a mesa da ação saudável", async () => {
+    const settings = useApp.getState().settings
+    useApp.setState({
+      settings: {
+        ...settings,
+        detected: {
+          codex: {
+            installed: true,
+            version: "1.0.0",
+            auth: "missing",
+            detail: null,
+            latest: null,
+            checkedAt: 0,
+          },
+          "claude-code": {
+            installed: true,
+            version: "1.0.0",
+            auth: "ok",
+            detail: null,
+            latest: null,
+            checkedAt: 0,
+          },
+        },
+      },
+    })
+    const persistOriginal = useChat.getState().persist
+    const persist = vi.fn(async () => {})
+    useChat.setState({
+      conversationsByProject: {
+        p1: [
+          { id: "c9", title: "antiga", updatedAt: 1, color: null, worktreePath: null, agent: "codex" },
+        ],
+      },
+      // conversa TRAVADA no codex (items não-vazios): o agent dela vence o
+      // "claude-code" da ação — e o codex está deslogado.
+      byId: {
+        c9: makeConv({
+          agent: "codex",
+          items: [{ kind: "user", id: "u1", text: "antes" }],
+        }),
+      },
+      persist,
+    })
+    try {
+      await handleCompanionAction({
+        kind: "send_message",
+        projectId: "p1",
+        agent: "claude-code",
+        text: "continua",
+        convId: "c9",
+      })
+      expect(sendFromDesk).not.toHaveBeenCalled()
+      const items = useChat.getState().byId.c9.items
+      const notice = items.find((it) => it.kind === "notice")
+      expect(
+        notice && notice.kind === "notice" ? notice.message : "",
+      ).toContain("Codex")
+      expect(persist).toHaveBeenCalledWith("c9")
+    } finally {
+      useChat.setState({ persist: persistOriginal })
+      useApp.setState({ settings })
+    }
+  })
+
+  it("F-A: send_message com auth incerta SEGUE despachando (degradação honesta)", async () => {
+    const settings = useApp.getState().settings
+    useApp.setState({
+      settings: {
+        ...settings,
+        detected: {
+          codex: {
+            installed: true,
+            version: "1.0.0",
+            auth: "unknown",
+            detail: null,
+            latest: null,
+            checkedAt: 0,
+          },
+        },
+      },
+    })
+    try {
+      await handleCompanionAction({
+        kind: "send_message",
+        projectId: "p1",
+        agent: "codex",
+        text: "segue o jogo",
+      })
+      expect(sendFromDesk).toHaveBeenCalledWith(
+        expect.objectContaining({ convId: "conv-mesa", agent: "codex" }),
+      )
+    } finally {
+      useApp.setState({ settings })
+    }
   })
 
   it("feedback_lesson roteia pro MESMO caminho do 👍 (feedbackLesson)", async () => {

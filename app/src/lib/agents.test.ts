@@ -3,6 +3,7 @@ import {
   agentModels,
   agyModelOptions,
   availability,
+  dispatchBlockReason,
   normalizeAgyModel,
   normalizeModelValue,
   setDynamicModels,
@@ -97,8 +98,11 @@ describe("availability", () => {
     ).toBe("missing")
   })
 
-  it("sem snapshot de detecção degrada pra ready (não bloqueia quem nunca detectou)", () => {
-    expect(availability("codex", {})).toBe("ready")
+  it("sem snapshot de detecção degrada pra installed-auth-unknown (usável, mas sem prometer pronto)", () => {
+    // F-C: sem probe não há EVIDÊNCIA de prontidão — a mesa não acende "ready"
+    // por omissão (detect_agents pode ter falhado no boot), mas quem nunca
+    // rodou a detecção segue conseguindo despachar (degradação honesta).
+    expect(availability("codex", {})).toBe("installed-auth-unknown")
   })
 
   it("agent que o app não integra é not-integrated, com ou sem probe", () => {
@@ -113,5 +117,36 @@ describe("availability", () => {
     expect(availability("codex", { codex: probe({ auth: "na" }) })).toBe(
       "installed-auth-unknown",
     )
+  })
+})
+
+// ── dispatchBlockReason(): guarda de despacho (follow-up F-A do Sprint 0) ────
+
+describe("dispatchBlockReason", () => {
+  it("CLI deslogada bloqueia o despacho com instrução de login pelo terminal", () => {
+    const reason = dispatchBlockReason("codex", {
+      codex: probe({ auth: "missing" }),
+    })
+    expect(reason).toContain("Codex")
+    expect(reason).toContain("sem login")
+    expect(reason).toContain("terminal")
+  })
+
+  it("CLI não instalada bloqueia com o motivo honesto", () => {
+    const reason = dispatchBlockReason("claude-code", {
+      "claude-code": probe({ installed: false, version: null, auth: "missing" }),
+    })
+    expect(reason).toContain("Claude Code")
+    expect(reason).toContain("não está instalado")
+  })
+
+  it("agent não integrado bloqueia", () => {
+    expect(dispatchBlockReason("opencode", {})).toContain("não é integrado")
+  })
+
+  it("ready passa; auth incerta (inclusive SEM probe) também passa — degradação honesta", () => {
+    expect(dispatchBlockReason("claude-code", { "claude-code": probe() })).toBeNull()
+    expect(dispatchBlockReason("agy", { agy: probe({ auth: "unknown" }) })).toBeNull()
+    expect(dispatchBlockReason("codex", {})).toBeNull()
   })
 })

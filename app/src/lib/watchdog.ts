@@ -80,6 +80,16 @@ function itemsSignature(items: ChatItem[]): string {
   return `${items.length}:${last.id}:${last.kind}:${extra}`
 }
 
+/** F-D (follow-up S2): há episódio de TURNO MUDO aberto e JÁ AVISADO pra esta
+ *  conversa? É a consulta que o vigia de CARDS usa pra não cutucar o humano
+ *  duas vezes pelo MESMO ciclo de silêncio (o aviso de turno mudo já saiu).
+ *  Episódio aberto = turno rodando + marca viva no `marks` + flag transient
+ *  `stalledSince` na conversa (o "já avisado" do checkStalledTurns). */
+export function stalledTurnEpisodeOpen(convId: string): boolean {
+  const c = useChat.getState().byId[convId]
+  return c != null && c.running && c.stalledSince != null && marks.has(convId)
+}
+
 /** Cancela o turno mudo (ação do toast): mata o auto-resume agendado e o run
  *  corrente — o mesmo par do "stop-activity" da tray (App.tsx). */
 export async function cancelStalledTurn(convId: string): Promise<void> {
@@ -257,6 +267,13 @@ export function checkStalledCards(now: number = Date.now()): void {
     }
     const silentMs = now - mark.anchor
     if (silentMs < afterMin * 60_000) continue
+    // F-D — dedupe com o vigia de TURNO: se o turno mudo da MESMA conversa já
+    // foi avisado (episódio aberto), o humano já foi cutucado por este
+    // silêncio — SEGURA o card (sem marcar notified: fechado o episódio do
+    // turno, o card ainda parado avisa na passada seguinte). Hoje a guarda F2
+    // acima (conversa running re-ancora) já cobre o caso; esta é a garantia
+    // EXPLÍCITA, imune a mudanças na semântica do F2.
+    if (c.conversationId && stalledTurnEpisodeOpen(c.conversationId)) continue
     const minutes = Math.max(afterMin, Math.round(silentMs / 60_000))
     mark.notified = true
     cards.markCardStalled(c.id, mark.anchor) // transient; nunca vai pro banco

@@ -28,7 +28,11 @@ const h = vi.hoisted(() => ({
   mission: { byConv: {} as Record<string, { status: string }> },
   app: {
     projects: [{ id: "p1", path: "/proj", permissionMode: "padrao" }],
-    settings: { autoResume: false, autoResumeMaxTries: 5 },
+    settings: {
+      autoResume: false,
+      autoResumeMaxTries: 5,
+      detected: {} as Record<string, unknown>,
+    },
   },
   fusion: {
     byConv: {} as Record<string, { phase: string }>,
@@ -176,10 +180,24 @@ const args = {
 beforeEach(() => {
   vi.clearAllMocks()
   h.mission.byConv = {}
-  h.app.settings = { autoResume: false, autoResumeMaxTries: 5 }
+  h.app.settings = { autoResume: false, autoResumeMaxTries: 5, detected: {} }
   h.fusion.byConv = {}
   arm(makeConv())
 })
+
+/** Probe de detecção pro cenário da guarda F-A (shape do AgentProbe real). */
+function armDetected(agent: string, auth: "ok" | "missing" | "unknown" | "na") {
+  h.app.settings.detected = {
+    [agent]: {
+      installed: true,
+      version: "1.0.0",
+      auth,
+      detail: null,
+      latest: null,
+      checkedAt: 0,
+    },
+  }
+}
 
 afterEach(() => {
   vi.useRealTimers()
@@ -228,6 +246,45 @@ describe("sendFromDesk — guardas", () => {
     arm(makeConv({ agent: "codex", items: [user("antes")] }))
     await sendFromDesk(args) // mesa do claude-code
     expect(vi.mocked(runAgent).mock.calls[0][2]).toBe("codex")
+  })
+
+  it("F-A: CLI deslogada aborta ANTES do start, com aviso honesto e sem aceite", async () => {
+    const onAccepted = vi.fn()
+    armDetected("claude-code", "missing")
+    await sendFromDesk({ ...args, onAccepted })
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining("sem login"),
+    )
+    expect(chat.start).not.toHaveBeenCalled()
+    expect(runAgent).not.toHaveBeenCalled()
+    expect(onAccepted).not.toHaveBeenCalled()
+  })
+
+  it("F-A: a guarda vale pro agent EFETIVO (o travado da conversa, não o da mesa)", async () => {
+    arm(makeConv({ agent: "codex", items: [user("antes")] }))
+    armDetected("codex", "missing")
+    await sendFromDesk(args) // mesa do claude-code, conversa travada no codex
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining("Codex"),
+    )
+    expect(runAgent).not.toHaveBeenCalled()
+  })
+
+  it("F-A: auth incerta NÃO bloqueia (degradação honesta, o turno segue)", async () => {
+    armDetected("claude-code", "unknown")
+    await sendFromDesk(args)
+    expect(runAgent).toHaveBeenCalled()
+  })
+
+  it("F-A: revezamento pra CLI deslogada aborta antes do transplant", async () => {
+    arm(makeConv({ items: [user("pedido pendente")] }))
+    armDetected("codex", "missing")
+    await continueInAgent(args, "codex")
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining("sem login"),
+    )
+    expect(chat.beginTransplant).not.toHaveBeenCalled()
+    expect(runAgent).not.toHaveBeenCalled()
   })
 })
 
@@ -542,7 +599,7 @@ describe("sendFromDesk — finally", () => {
 describe("sendFromDesk — auto-resume em rate limit", () => {
   it("rate limit com auto-resume ligado agenda o reenvio (segura as sugestões)", async () => {
     vi.useFakeTimers()
-    h.app.settings = { autoResume: true, autoResumeMaxTries: 5 }
+    h.app.settings = { autoResume: true, autoResumeMaxTries: 5, detected: {} }
     vi.mocked(wantsAutoResume).mockReturnValueOnce({
       resume: true,
       delayMs: 1000,
@@ -584,7 +641,7 @@ describe("sendFromDesk — auto-resume em rate limit", () => {
   })
 
   it("cap de tentativas esgotado: encerra o loop e segue o fluxo normal", async () => {
-    h.app.settings = { autoResume: true, autoResumeMaxTries: 2 }
+    h.app.settings = { autoResume: true, autoResumeMaxTries: 2, detected: {} }
     arm(makeConv())
     chat.byId.c1.autoResume = {
       tries: 2,
@@ -602,7 +659,7 @@ describe("sendFromDesk — auto-resume em rate limit", () => {
   })
 
   it("auto-resume desligado nas settings: fluxo normal, sem agendar", async () => {
-    h.app.settings = { autoResume: false, autoResumeMaxTries: 5 }
+    h.app.settings = { autoResume: false, autoResumeMaxTries: 5, detected: {} }
     await sendFromDesk(args)
     expect(wantsAutoResume).not.toHaveBeenCalled()
     expect(chat.setAutoResume).not.toHaveBeenCalled()

@@ -145,6 +145,15 @@ export function preflightPreset(
   const have = new Set(available)
   const missing = preset.skills.filter((s) => !have.has(s))
   if (missing.length > 0) {
+    // Inventário COMPLETAMENTE vazio: a causa provável não é a skill, é o
+    // projeto (pasta .claude/commands vazia ou ilegível — o inventário Rust
+    // degrada pra lista vazia). A copy admite isso em vez de acusar a skill.
+    if (available.length === 0) {
+      return {
+        ok: false,
+        error: `Não encontrei nenhum comando neste projeto (pasta .claude/commands vazia ou ilegível), então não dá para validar as skills do preset "${preset.name}" (${preset.skills.map((m) => `/${m}`).join(", ")}). O envio foi abortado.`,
+      }
+    }
     return {
       ok: false,
       error: `O preset "${preset.name}" referencia ${missing.length === 1 ? "uma skill que não existe" : "skills que não existem"} neste projeto: ${missing.map((m) => `/${m}`).join(", ")}. Crie em .claude/commands (ou .claude/skills), ou remova do preset. O envio foi abortado.`,
@@ -271,6 +280,12 @@ const driftWarned = new Map<string, string>()
 /** (testes) zera a memória de avisos de drift. */
 export function _resetPresetDriftWarnings(): void {
   driftWarned.clear()
+}
+
+/** Hook do delete de conversa (follow-up S3): a conversa morreu, o episódio de
+ *  drift dela morre junto — a entrada não fica órfã no Map de módulo. */
+export function clearPresetDriftWarning(convId: string): void {
+  driftWarned.delete(convId)
 }
 
 /** S3.4 — verificação de drift no resume/transplant: recomputa o digest do
