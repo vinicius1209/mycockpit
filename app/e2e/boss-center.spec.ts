@@ -36,11 +36,15 @@ test("Central do Boss agrega o escritório e mantém o fluxo de foco", async ({
 
   const panel = page.getByRole("complementary", { name: "Central do Boss" })
   await expect(panel).toBeVisible()
-  await expect(panel.getByText("Precisa de você")).toBeVisible()
+  // Anatomia atual do painel (redesign de jul/2026): "Precisa de você" virou
+  // "Delegar" e o ranking "Custo por sala" virou "Maiores custos".
+  await expect(panel.getByText("Delegar")).toBeVisible()
   await expect(panel.getByText("Em execução")).toBeVisible()
   await expect(panel.getByText("Entregas recentes")).toBeVisible()
-  await expect(panel.getByText("Custo por sala")).toBeVisible()
-  await expect(panel.getByRole("button", { name: /Frota:.*Inspecionar sala/ })).toBeVisible()
+  await expect(panel.getByText("Maiores custos")).toBeVisible()
+  await expect(
+    panel.getByRole("button", { name: /maior custo:.*Inspecionar sala/ }).first(),
+  ).toBeVisible()
   await expect(panel.getByRole("button", { name: "Fechar Central do Boss" })).toBeFocused()
 
   await page.screenshot({

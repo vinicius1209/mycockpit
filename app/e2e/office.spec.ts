@@ -43,7 +43,9 @@ async function enterOffice(page: Page) {
       JSON.stringify({
         state: {
           theme: "dark",
-          sidebarOpen: false,
+          // rail do escritório vive no Sidebar desde a limpeza de redundância
+          // (jul/2026): a navegação por salas do teste depende dele aberto.
+          sidebarOpen: true,
           contextOpen: false,
           viewMode: "linear",
           settings: { onboarded: true },
@@ -74,10 +76,11 @@ test("o escritório renderiza a planta e abre uma mesa sem sobrepor seu rótulo"
 
   // Centraliza a sala de projeto vizinha à diretoria. Isso mantém o percurso
   // real do boss, mas evita que a estabilidade do teste dependa de atravessar
-  // toda a ala em um renderer headless com poucos FPS.
+  // toda a ala em um renderer headless com poucos FPS. A navegação por salas
+  // mora no rail do Sidebar ("Ir até a sala …") desde a limpeza da
+  // redundância do topo do escritório.
   await page
-    .getByTestId("office-mode")
-    .getByRole("button", { name: /^Lab de ideias:.*Inspecionar sala$/i })
+    .getByRole("button", { name: "Ir até a sala Lab de ideias" })
     .click()
   await page.waitForTimeout(1_800)
 
@@ -119,7 +122,7 @@ test("o escritório renderiza a planta e abre uma mesa sem sobrepor seu rótulo"
   })
 
   await page.getByRole("button", { name: "Fechar conversa" }).click()
-  await page.getByRole("button", { name: "Sala comum. Inspecionar sala" }).click()
+  await page.getByRole("button", { name: "Ir até a Sala comum" }).click()
   // Selecionar uma sala conclui o enquadramento no mesmo frame; um pequeno
   // intervalo deixa o WebGL apresentar o frame antes da evidência/clique.
   await page.waitForTimeout(250)
