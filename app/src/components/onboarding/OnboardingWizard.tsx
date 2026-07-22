@@ -83,6 +83,7 @@ function StatusIcon({ icon }: { icon: "ok" | "warn" | "missing" }) {
 
 const AVAIL_BADGE: Record<Availability, { label: string; cls: string } | null> = {
   ready: { label: "pronto", cls: "text-st-success" },
+  "installed-not-authenticated": { label: "sem login", cls: "text-st-warning" },
   "installed-auth-unknown": { label: "auth?", cls: "text-st-warning" },
   missing: { label: "ausente", cls: "text-st-error" },
   "not-integrated": null,

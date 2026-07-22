@@ -361,6 +361,10 @@ export function buildCompanionSnapshot(
   // de MESA de cada agent (mesma regra do ensureDeskConversation: meta.agent
   // igual E título "Mesa · …", a mais recente). As metas vêm de
   // conversationsByProject — a ponte as carrega lazy (maybeLoadDeskMetas). ──
+  // Allowlist EXPLÍCITA de prontidão (Sprint 0): "ready" e "installed-auth-
+  // unknown" (auth incerta é usável com aviso — inclui o agy, sem comando de
+  // auth). "installed-not-authenticated" (CLI deslogada) fica FORA: deslogado
+  // não é usável, e o companion não finge que é.
   const usableAgents = AGENTS.filter(
     (a) =>
       a.kind === "agent" &&

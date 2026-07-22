@@ -19,7 +19,7 @@ import {
   type RoomSnapshot,
 } from "@/office/engine/types"
 import { perfSpan } from "@/office/engine/perf"
-import { availability } from "@/lib/agents"
+import { availability, type Availability } from "@/lib/agents"
 import { loadLedger } from "@/lib/db"
 import type { ApprovalData } from "@/lib/interaction"
 import type { MissionPersona, MissionRun } from "@/lib/missionTypes"
@@ -211,6 +211,42 @@ function upgrade(
   desk.hand = patch.hand
 }
 
+/** Estado-BASE honesto da mesa, antes de qualquer atividade (Sprint 0 · E4):
+ *  presença de binário não é prontidão. CLI deslogada e agent em rate limit
+ *  apagam a mesa COM o motivo — nunca acendem "Disponível". Auth incerta
+ *  (unknown/na, inclui o agy que não tem comando de auth) segue usável:
+ *  degradação honesta, não bloqueio. Pura e exportada p/ teste. */
+export function deskBaseState(
+  avail: Availability,
+  limited: boolean,
+  resetHint: string | null,
+): Pick<DeskSnapshot, "state" | "label" | "detail"> {
+  if (avail === "missing" || avail === "not-integrated") {
+    return { state: "off", label: "Não detectado" }
+  }
+  if (avail === "installed-not-authenticated") {
+    return { state: "off", label: "Instalado, sem login" }
+  }
+  if (limited) {
+    return {
+      state: "off",
+      label: "Em rate limit",
+      detail: resetHint ? `volta ${resetHint}` : undefined,
+    }
+  }
+  return { state: "idle", label: "Disponível" }
+}
+
+/** Instrução de UI por motivo de mesa apagada. Mora AQUI, colada nos labels que
+ *  deskBaseState produz, pra copy e motivo não divergirem: "Verifique nos
+ *  Ajustes" só vale pra ausência de binário; login é no terminal; rate limit
+ *  não tem nada pra verificar em lugar nenhum, é esperar a janela. */
+export function offInstruction(label: string): string {
+  if (label === "Instalado, sem login") return "Faça login pelo terminal da CLI."
+  if (label === "Em rate limit") return "Aguarde a janela liberar."
+  return "Verifique nos Ajustes."
+}
+
 // agregado da sala: fonte única em engine/types.roomAggregate (compartilhada
 // com a fixture sim-data — mesma régua no Tauri e no browser)
 
@@ -230,24 +266,36 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
   const app = useApp.getState()
   const detected = app.settings.detected
 
-  // 1) Base: uma sala por projeto, 3 mesas; CLI não detectado ⇒ mesa apagada.
-  //    (Fonte da detecção: settings.detected — snapshot de detect_agents/
-  //    toProbeMap gravado no boot do App e no "Verificar agora" das Settings.)
+  // 1) Base: uma sala por projeto, 3 mesas; CLI não detectado, DESLOGADA ou em
+  //    rate limit ⇒ mesa apagada com o motivo (deskBaseState — auth honesta).
+  //    Atividade REAL (turno rodando) ainda sobe o estado via upgrade(): estado
+  //    real vence rótulo. (Fonte da detecção: settings.detected — snapshot de
+  //    detect_agents/toProbeMap gravado no boot do App e no "Verificar agora"
+  //    das Settings. Fonte do rate limit: app.limitedAgents, marcado por
+  //    limit_reached e curado por result ok.)
+  const limitedAgents = app.limitedAgents
   const deskByKey = new Map<string, DeskSnapshot>()
   const roomsBase = app.projects.map((p) => {
     const desks = OFFICE_AGENTS.map((agent): DeskSnapshot => {
       const avail = availability(agent, detected)
-      const off = avail === "missing" || avail === "not-integrated"
+      const base = deskBaseState(
+        avail,
+        agent in limitedAgents,
+        limitedAgents[agent] ?? null,
+      )
+      const off = base.state === "off"
       const desk: DeskSnapshot = {
         id: `${p.id}::${agent}`,
         projectId: p.id,
         agent,
-        state: off ? "off" : "idle",
-        label: off ? "Não detectado" : "Disponível",
+        state: base.state,
+        label: base.label,
+        detail: base.detail,
       }
-      // Chegada: a mesa estava "off" no último derive e o CLI foi detectado ⇒
-      // o avatar entra pela porta. Primeiro derive só memoriza (mesa que já
-      // nasce disponível não é "chegada").
+      // Chegada: a mesa estava "off" no último derive e voltou a ficar usável
+      // (CLI detectado, login feito ou rate limit curado) ⇒ o avatar entra
+      // pela porta. Primeiro derive só memoriza (mesa que já nasce disponível
+      // não é "chegada").
       const prevOff = lastOffByDesk.get(desk.id)
       if (prevOff === true && !off) arrivals.push({ deskId: desk.id, at: now })
       lastOffByDesk.set(desk.id, off)

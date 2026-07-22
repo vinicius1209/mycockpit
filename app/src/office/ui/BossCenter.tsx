@@ -388,7 +388,8 @@ export function BossCenter({
                     disabled={desk.state === "off"}
                   >
                     {agentLabel(desk.agent)}
-                    {desk.state === "off" ? " (não detectado)" : ""}
+                    {/* motivo real da mesa apagada (auth honesta) */}
+                    {desk.state === "off" ? ` (${desk.label.toLowerCase()})` : ""}
                   </option>
                 ))}
               </select>

@@ -23,7 +23,13 @@ import {
 } from "@/store/fusion"
 import { useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
-import { _resetDeriveState, deriveOfficeSnapshot, startDeriving } from "./derive"
+import {
+  _resetDeriveState,
+  deriveOfficeSnapshot,
+  deskBaseState,
+  offInstruction,
+  startDeriving,
+} from "./derive"
 
 // ── factories locais ────────────────────────────────────────────────────────
 
@@ -194,7 +200,7 @@ beforeEach(() => {
   })
   useMission.setState({ byConv: {} })
   useFusion.setState({ byConv: {} })
-  useApp.setState({ projects: [projeto("p1")] })
+  useApp.setState({ projects: [projeto("p1")], limitedAgents: {} })
   setDetected({})
 })
 
@@ -782,5 +788,122 @@ describe("startDeriving", () => {
     useChat.setState({ byId: {} })
     await vi.advanceTimersByTimeAsync(500)
     expect(vistos).toHaveLength(2)
+  })
+})
+
+// ── auth honesta (Sprint 0): estado-base da mesa nunca mente ────────────────
+
+describe("deskBaseState — mapeamento estado→mesa", () => {
+  it("ready acende a mesa como Disponível", () => {
+    expect(deskBaseState("ready", false, null)).toEqual({
+      state: "idle",
+      label: "Disponível",
+    })
+  })
+
+  it("auth incerta segue usável (degradação honesta, não bloqueio)", () => {
+    expect(deskBaseState("installed-auth-unknown", false, null)).toEqual({
+      state: "idle",
+      label: "Disponível",
+    })
+  })
+
+  it("CLI deslogada apaga a mesa com o motivo, nunca Disponível", () => {
+    expect(deskBaseState("installed-not-authenticated", false, null)).toEqual({
+      state: "off",
+      label: "Instalado, sem login",
+    })
+  })
+
+  it("não instalado e não integrado apagam como Não detectado", () => {
+    expect(deskBaseState("missing", false, null).label).toBe("Não detectado")
+    expect(deskBaseState("not-integrated", false, null).state).toBe("off")
+  })
+
+  it("rate limit bloqueia o posto com o hint de volta (sem hint, só o rótulo)", () => {
+    expect(deskBaseState("ready", true, "~19h")).toEqual({
+      state: "off",
+      label: "Em rate limit",
+      detail: "volta ~19h",
+    })
+    expect(deskBaseState("ready", true, null)).toEqual({
+      state: "off",
+      label: "Em rate limit",
+      detail: undefined,
+    })
+  })
+
+  it("deslogado vence rate limit (sem login nem dá pra atingir limite novo)", () => {
+    expect(deskBaseState("installed-not-authenticated", true, "~19h").label).toBe(
+      "Instalado, sem login",
+    )
+  })
+
+  it("instrução por motivo de off acompanha o label (copy não diverge do motivo)", () => {
+    expect(offInstruction(deskBaseState("installed-not-authenticated", false, null).label)).toBe(
+      "Faça login pelo terminal da CLI.",
+    )
+    expect(offInstruction(deskBaseState("ready", true, "~19h").label)).toBe(
+      "Aguarde a janela liberar.",
+    )
+    expect(offInstruction(deskBaseState("missing", false, null).label)).toBe(
+      "Verifique nos Ajustes.",
+    )
+  })
+})
+
+describe("deriveOfficeSnapshot — auth honesta e rate limit na mesa", () => {
+  const probeAuth = (auth: "ok" | "missing" | "unknown") => ({
+    installed: true,
+    version: "2.0.0",
+    auth,
+    detail: null,
+    latest: null,
+    checkedAt: 1,
+  })
+
+  it("CLI instalada e DESLOGADA ⇒ mesa apagada com 'Instalado, sem login'", () => {
+    setDetected({ "claude-code": probeAuth("missing") })
+    const desk = mesa(deriveOfficeSnapshot(), "p1", "claude-code")
+    expect(desk.state).toBe("off")
+    expect(desk.label).toBe("Instalado, sem login")
+  })
+
+  it("auth unknown (caso agy) ⇒ mesa segue Disponível", () => {
+    setDetected({ agy: probeAuth("unknown") })
+    const desk = mesa(deriveOfficeSnapshot(), "p1", "agy")
+    expect(desk.state).toBe("idle")
+    expect(desk.label).toBe("Disponível")
+  })
+
+  it("agent em rate limit ⇒ posto bloqueado com o reset_hint", () => {
+    setDetected({ codex: probeAuth("ok") })
+    useApp.setState({ limitedAgents: { codex: "~19h" } })
+    const desk = mesa(deriveOfficeSnapshot(), "p1", "codex")
+    expect(desk.state).toBe("off")
+    expect(desk.label).toBe("Em rate limit")
+    expect(desk.detail).toBe("volta ~19h")
+  })
+
+  it("rate limit curado (result ok limpa a marca) ⇒ mesa volta e gera arrival", () => {
+    const t0 = 11_000_000
+    useApp.setState({ limitedAgents: { codex: "~19h" } })
+    expect(mesa(deriveOfficeSnapshot(t0), "p1", "codex").state).toBe("off")
+
+    useApp.setState({ limitedAgents: {} })
+    const snap = deriveOfficeSnapshot(t0 + 1000)
+    expect(mesa(snap, "p1", "codex").label).toBe("Disponível")
+    expect(snap.arrivals).toEqual([{ deskId: "p1::codex", at: t0 + 1000 }])
+  })
+
+  it("turno REALMENTE rodando vence o bloqueio (estado real, nunca teatro)", () => {
+    // auto-resume/retry pode rodar com a marca ainda de pé: atividade real sobe
+    // o estado da mesa — o rótulo de bloqueio não esconde trabalho de verdade.
+    useApp.setState({ limitedAgents: { "claude-code": "~19h" } })
+    useChat.setState({
+      byId: { c1: conversa("p1", "claude-code", { running: true, runId: "r-1" }) },
+    })
+    const desk = mesa(deriveOfficeSnapshot(), "p1", "claude-code")
+    expect(["thinking", "typing"]).toContain(desk.state)
   })
 })

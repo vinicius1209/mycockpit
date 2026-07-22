@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   agentModels,
   agyModelOptions,
+  availability,
   normalizeAgyModel,
   normalizeModelValue,
   setDynamicModels,
 } from "@/lib/agents"
+import type { AgentProbe } from "@/lib/detect"
 
 afterEach(() => setDynamicModels("agy", []))
 
@@ -49,5 +51,67 @@ describe("modelos do agy", () => {
       "default",
       "gemini-3.6-flash-low",
     ])
+  })
+})
+
+// ── availability(): registry estático × detecção runtime (auth honesta) ─────
+
+function probe(patch: Partial<AgentProbe> = {}): AgentProbe {
+  return {
+    installed: true,
+    version: "1.0.0",
+    auth: "ok",
+    detail: null,
+    latest: null,
+    checkedAt: 0,
+    ...patch,
+  }
+}
+
+describe("availability", () => {
+  it("instalado e logado (auth ok) é ready", () => {
+    expect(availability("claude-code", { "claude-code": probe() })).toBe("ready")
+  })
+
+  it("instalado e DESLOGADO (auth missing) é installed-not-authenticated", () => {
+    expect(
+      availability("claude-code", {
+        "claude-code": probe({ auth: "missing" }),
+      }),
+    ).toBe("installed-not-authenticated")
+  })
+
+  it("auth indeterminada (unknown) degrada pra installed-auth-unknown, não pra deslogado", () => {
+    // caso agy: a CLI não tem comando de auth — nunca reporta "missing", então
+    // "deslogado" não é prometido pra ela.
+    expect(availability("agy", { agy: probe({ auth: "unknown" }) })).toBe(
+      "installed-auth-unknown",
+    )
+  })
+
+  it("não instalado é missing", () => {
+    expect(
+      availability("codex", {
+        codex: probe({ installed: false, version: null, auth: "missing" }),
+      }),
+    ).toBe("missing")
+  })
+
+  it("sem snapshot de detecção degrada pra ready (não bloqueia quem nunca detectou)", () => {
+    expect(availability("codex", {})).toBe("ready")
+  })
+
+  it("agent que o app não integra é not-integrated, com ou sem probe", () => {
+    expect(availability("opencode", {})).toBe("not-integrated")
+    expect(availability("desconhecido", { desconhecido: probe() })).toBe(
+      "not-integrated",
+    )
+  })
+
+  it("auth na (sem conceito de auth) segue usável como installed-auth-unknown", () => {
+    // preserva o comportamento pré-Sprint 0 pra ferramentas sem auth checável.
+    expect(availability("codex", { codex: probe({ auth: "na" }) })).toBe(
+      "installed-auth-unknown",
+    )
   })
 })
