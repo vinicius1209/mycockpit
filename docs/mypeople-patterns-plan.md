@@ -375,6 +375,22 @@ composer principal); automações agendadas sem preset no v1.
 
 ---
 
+## Onda de follow-ups do núcleo (S0-S3)
+
+**✅ ENTREGUE 2026-07-22** (branch `chore/followups-nucleo`, aprovado com ressalvas
+D1-D3, todas corrigidas antes do merge). 954 testes verdes (19 novos). Fechou os
+follow-ups priorizados dos quatro reviews: guarda `dispatchBlockReason` em TODOS os
+caminhos de despacho por gesto (Composer, dock, revezamento, companion com agent
+efetivo e resposta ordenada persist→ping, e automações: schedule com CLI deslogada
+não spawna e registra o motivo real); "Tentar de novo" na mesa em rate limit;
+availability sem probe degrada honesto; dedupe explícito turno×card; board avisa
+projeto arquivado e corte do Feito; nativas sem travessão; presetName ao vivo.
+**Follow-ups aceitos:** Mission/Fusion/SDD sem guarda de availability (gesto humano
+presente, falha visível; lugar certo = preflight do time no launch, não por fase);
+título de schedule ainda gera travessão via nome da conversa.
+
+---
+
 ## Sprint 4 · Autonomia gated + superfícies (aterrado no código em 2026-07-22)
 
 > ⚠️ **Aterramento pré-implementação:** todas as peças de infraestrutura JÁ
