@@ -61,7 +61,9 @@ interface CardsState {
   closeCard: (id: string, state: "done" | "cancelled") => Promise<void>
   /** Despacho por GESTO HUMANO (S1.4): cria uma conversa NOVA no projeto do
    *  card (nunca sequestra thread existente), liga o card a ela e vira
-   *  working. Retorna o convId criado (null se nada foi criado). */
+   *  working. Retorna o convId criado. Semântica de falha (review S4.6):
+   *  LANÇA em card inexistente, fora do backlog ou projeto arquivado — null
+   *  só nos casos benignos (dispatch já em voo; conversa não criada). */
   dispatch: (id: string) => Promise<string | null>
   select: (id: string | null) => void
   /** Carimbo do assignee (S1.4): chamado pelo chat quando um turno resolve o
@@ -187,12 +189,26 @@ export const useCards = create<CardsState>((set, get) => {
 
     dispatch: async (id) => {
       // Guarda anti duplo-clique (D2): o check + add rodam SÍNCRONOS antes do
-      // 1º await — a 2ª chamada em voo sai na hora, sem 2ª conversa órfã.
+      // 1º await — a 2ª chamada em voo sai na hora, sem 2ª conversa órfã
+      // (null aqui é benigno: o 1º clique já está fazendo o trabalho).
       if (dispatching.has(id)) return null
       const card = get().all.find((c) => c.id === id)
-      if (!card) return null
+      // Card inexistente LANÇA (não null mudo): um caller com estado stale
+      // (ex.: snapshot velho no celular) recebe motivo, não silêncio.
+      if (!card) {
+        throw new Error("Card não encontrado no board")
+      }
       if (card.state !== "backlog") {
         throw new Error("Só um card no backlog pode ser iniciado")
+      }
+      // Guarda de projeto arquivado NO STORE (B1 do review S4.6): a F-E do
+      // BoardLane (disabled) é só UX — a verdade mora aqui, e desktop, remoto
+      // e qualquer caller futuro herdam de graça. Conversa nova em projeto
+      // invisível é armadilha (o desktop se recusa a abri-la).
+      if (!useApp.getState().projects.some((p) => p.id === card.projectId)) {
+        throw new Error(
+          "Projeto arquivado: restaure o projeto para iniciar este card",
+        )
       }
       dispatching.add(id)
       try {

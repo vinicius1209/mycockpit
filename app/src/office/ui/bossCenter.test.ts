@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 import type { OfficeSnapshot } from "../engine/types"
-import { bossStandupLine, buildBossBriefing, deliveryAge } from "./bossBriefing"
+import {
+  bossStandupLine,
+  buildBossBriefing,
+  deliveryAge,
+  type BossBoardCard,
+} from "./bossBriefing"
 
 const snapshot: OfficeSnapshot = {
   rooms: [
@@ -128,6 +133,7 @@ describe("buildBossBriefing", () => {
       roomCosts: [],
       teams: [],
       totalCostUsd: 0,
+      board: { counts: { backlog: 0, working: 0, waiting: 0 }, byProject: [], highlights: [] },
     })
   })
 
@@ -141,6 +147,94 @@ describe("buildBossBriefing", () => {
     ])
     expect(briefing.teams[0].desks[2].state).toBe("idle")
     expect(briefing.teams[1].desks[1].state).toBe("off")
+  })
+})
+
+describe("buildBossBriefing — seção Board (S4.4)", () => {
+  function makeCard(partial: Partial<BossBoardCard> & { id: string }): BossBoardCard {
+    return {
+      projectId: "p1",
+      title: `Card ${partial.id}`,
+      state: "backlog",
+      updatedAt: 100,
+      ...partial,
+    }
+  }
+
+  it("conta backlog/em andamento/esperando você, agregado e por projeto (terminais fora)", () => {
+    const cards: BossBoardCard[] = [
+      makeCard({ id: "k1", state: "backlog" }),
+      makeCard({ id: "k2", state: "working" }),
+      makeCard({ id: "k3", state: "review" }),
+      makeCard({ id: "k4", projectId: "p2", state: "blocked" }),
+      makeCard({ id: "k5", projectId: "p2", state: "backlog" }),
+      // terminais nunca contam nem destacam
+      makeCard({ id: "k6", state: "done" }),
+      makeCard({ id: "k7", projectId: "p2", state: "cancelled" }),
+    ]
+    const { board } = buildBossBriefing(snapshot, cards)
+    expect(board.counts).toEqual({ backlog: 2, working: 1, waiting: 2 })
+    // nomes vêm das salas do snapshot; ordem alfabética por nome
+    expect(board.byProject).toEqual([
+      { projectId: "p1", projectName: "Frota", backlog: 1, working: 1, waiting: 1 },
+      { projectId: "p2", projectName: "Prime", backlog: 1, working: 0, waiting: 1 },
+    ])
+  })
+
+  it("nome de projeto: mapa explícito vence a sala; sem os dois vira projeto arquivado", () => {
+    const cards = [makeCard({ id: "k1", projectId: "p-sumiu" })]
+    const named = buildBossBriefing(
+      snapshot,
+      cards,
+      new Map([["p-sumiu", "Legado"]]),
+    )
+    expect(named.board.byProject[0].projectName).toBe("Legado")
+    const orphan = buildBossBriefing(snapshot, cards)
+    expect(orphan.board.byProject[0].projectName).toBe("projeto arquivado")
+  })
+
+  it("destaca blocked/review/estagnados na ordem: estagnado (mais mudo antes), bloqueado, revisão", () => {
+    const cards: BossBoardCard[] = [
+      makeCard({ id: "rev", state: "review", updatedAt: 50 }),
+      makeCard({ id: "blq", state: "blocked", updatedAt: 10 }),
+      // estagnado vence o estado no motivo; o mais antigo (stalledSince menor) vem primeiro
+      makeCard({ id: "st-novo", state: "working", stalledSince: 900 }),
+      makeCard({ id: "st-velho", state: "blocked", stalledSince: 200 }),
+      // working sem estagnação NÃO destaca
+      makeCard({ id: "ok", state: "working" }),
+    ]
+    const { board } = buildBossBriefing(snapshot, cards)
+    expect(board.highlights.map((h) => `${h.id}:${h.reason}`)).toEqual([
+      "st-velho:stalled",
+      "st-novo:stalled",
+      "blq:blocked",
+      "rev:review",
+    ])
+    expect(board.highlights[0]).toMatchObject({
+      projectId: "p1",
+      projectName: "Frota",
+      title: "Card st-velho",
+      stalledSince: 200,
+    })
+  })
+
+  it("lista de destaque corta em 5 (as contagens seguem inteiras)", () => {
+    const cards: BossBoardCard[] = Array.from({ length: 7 }, (_, i) =>
+      makeCard({ id: `b${i}`, state: "blocked", updatedAt: i }),
+    )
+    const { board } = buildBossBriefing(snapshot, cards)
+    expect(board.highlights).toHaveLength(5)
+    // esperando há mais tempo primeiro (updatedAt asc)
+    expect(board.highlights.map((h) => h.id)).toEqual(["b0", "b1", "b2", "b3", "b4"])
+    expect(board.counts.waiting).toBe(7)
+  })
+
+  it("snapshot ausente NÃO apaga o board (derivação independe do office montado)", () => {
+    const { board } = buildBossBriefing(null, [
+      makeCard({ id: "k1", state: "review" }),
+    ])
+    expect(board.counts).toEqual({ backlog: 0, working: 0, waiting: 1 })
+    expect(board.highlights[0]).toMatchObject({ id: "k1", reason: "review" })
   })
 })
 
