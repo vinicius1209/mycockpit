@@ -8,6 +8,7 @@ import {
   Gauge,
   GitPullRequest,
   Inbox,
+  Lightbulb,
   SquareKanban,
   Swords,
   Trash2,
@@ -27,6 +28,7 @@ import { useChat } from "@/store/chat"
 import { openCardConversation, useCards } from "@/store/cards"
 import { useNotifs, type Notification } from "@/store/notifications"
 import { agentLabel } from "@/lib/agent"
+import { dismissProposal } from "@/lib/db"
 import { cardDecisions, scanDecisions, type Decision } from "@/lib/inbox"
 import { cn } from "@/lib/utils"
 
@@ -34,6 +36,13 @@ import { cn } from "@/lib/utils"
  *  board (E1) ou o plano (SDD). */
 async function goTo(d: Decision) {
   const app = useApp.getState()
+  // "Ver proposta" do sino: o card completo (expansível) mora na fila do
+  // Painel — navegar até lá é o gesto (projectId opcional: board inteiro).
+  if (d.kind === "proposal") {
+    if (d.projectId) app.setActiveProject(d.projectId)
+    app.setViewMode("painel")
+    return
+  }
   app.setActiveProject(d.projectId)
   if (d.kind === "fusion") {
     await useChat.getState().openProject(d.projectId)
@@ -153,7 +162,7 @@ export function InboxBell() {
               className="flex-col items-start gap-0.5 py-2"
             >
               <span
-                className="flex w-full items-center gap-2 text-[13px] text-foreground"
+                className="group/decision flex w-full items-center gap-2 text-[13px] text-foreground"
                 title={
                   d.kind === "fusion"
                     ? d.title
@@ -161,7 +170,9 @@ export function InboxBell() {
                       ? d.title
                       : d.kind === "prd"
                         ? `Aprovar PRD: ${d.planTitle}`
-                        : `PR aberto: ${d.planTitle}`
+                        : d.kind === "proposal"
+                          ? "Ver a proposta do lead no Painel"
+                          : `PR aberto: ${d.planTitle}`
                 }
               >
                 {d.kind === "fusion" ? (
@@ -170,28 +181,57 @@ export function InboxBell() {
                   <SquareKanban className="size-3.5 shrink-0 text-st-warning" />
                 ) : d.kind === "prd" ? (
                   <FileText className="size-3.5 shrink-0 text-brass" />
+                ) : d.kind === "proposal" ? (
+                  <Lightbulb className="size-3.5 shrink-0 text-brass" />
                 ) : (
                   <GitPullRequest className="size-3.5 shrink-0 text-st-success" />
                 )}
-                <span className="truncate">
+                <span className="min-w-0 flex-1 truncate">
                   {d.kind === "fusion"
                     ? "Escolher o vencedor da disputa"
                     : d.kind === "card"
                       ? `Card ${d.state === "blocked" ? "bloqueado" : "em revisão"}: ${d.title}`
                       : d.kind === "prd"
                         ? `Aprovar PRD: ${d.planTitle}`
-                        : `PR aberto: ${d.planTitle}`}
+                        : d.kind === "proposal"
+                          ? "Ver proposta do lead"
+                          : `PR aberto: ${d.planTitle}`}
                 </span>
+                {d.kind === "proposal" && (
+                  <button
+                    onClick={(e) => {
+                      // dispensa SEM navegar (o item some do sino na hora).
+                      e.stopPropagation()
+                      e.preventDefault()
+                      void dismissProposal(d.proposalId)
+                        .then(refresh)
+                        .catch((err) => {
+                          // falhou = o item FICA na fila (não some mentindo).
+                          console.warn(
+                            "[inbox] falha ao dispensar a proposta",
+                            err,
+                          )
+                        })
+                    }}
+                    title="Dispensar a proposta"
+                    aria-label="Dispensar a proposta"
+                    className="hidden shrink-0 rounded p-0.5 text-muted-foreground transition-colors group-hover/decision:block hover:text-st-error"
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
               </span>
               <span className="w-full truncate pl-[22px] text-[11px] text-muted-foreground">
                 {d.kind === "fusion"
                   ? `${d.title} · ${d.projectName}`
                   : d.kind === "pr"
                     ? `${d.projectName} · aguardando merge`
-                    : d.kind === "card" && d.stalledSince != null
-                      ? // S2.3: card estagnado (vigia) ganha o "parado há X min"
-                        `${d.projectName} · parado há ${Math.max(1, Math.round((Date.now() - d.stalledSince) / 60_000))} min`
-                      : d.projectName}
+                    : d.kind === "proposal"
+                      ? `${d.projectName ?? "board inteiro"} · ${d.excerpt}`
+                      : d.kind === "card" && d.stalledSince != null
+                        ? // S2.3: card estagnado (vigia) ganha o "parado há X min"
+                          `${d.projectName} · parado há ${Math.max(1, Math.round((Date.now() - d.stalledSince) / 60_000))} min`
+                        : d.projectName}
               </span>
             </DropdownMenuItem>
           ))

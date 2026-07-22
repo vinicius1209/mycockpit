@@ -51,6 +51,7 @@ function schedule(over: Partial<ScheduleRecord> = {}): ScheduleRecord {
     id: "s1",
     name: "varredura noturna",
     projectId: "p1",
+    kind: "agent",
     agent: "codex",
     model: null,
     prompt: "faz a varredura",

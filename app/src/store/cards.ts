@@ -9,9 +9,11 @@ import {
   assertCardTransition,
   closeCard as dbCloseCard,
   createCard as dbCreateCard,
+  insertDelivery,
   isTauri,
   isTerminalCardState,
   linkCardConversation as dbLinkCardConversation,
+  listCardCosts,
   listCards as dbListCards,
   setCardAssignee as dbSetCardAssignee,
   setCardState as dbSetCardState,
@@ -136,6 +138,51 @@ export const useCards = create<CardsState>((set, get) => {
       const now = Date.now()
       await dbCloseCard(id, state, now)
       patchCard(id, { state }, now)
+      // ── S4.1: card fechado como done COM conversa ligada vira ENTREGA ──
+      // O board é o 2º produtor de deliveries (o 1º é o Mission, mission.ts)
+      // e alimenta o recall M1 de graça. Best-effort: nada aqui pode quebrar
+      // o closeCard. Regras (decididas na story, documentadas aqui):
+      //  - cancelled NÃO grava (intenção abortada não é entrega);
+      //  - done SEM conversa NÃO grava: sem conversa não há evidência de
+      //    execução dentro do app — gravar seria inventar par tarefa→resolução;
+      //  - agent = assigneeAgent (carimbado quando o 1º turno resolveu o
+      //    agent); se nunca resolveu, grava "" honesto — chutar "claude-code"
+      //    envenenaria o ranking por agente do ledger;
+      //  - filesTouched = [] no v1: conversa linear não tem diff de worktree
+      //    rastreado (honesto, não inventa arquivos);
+      //  - planSummary = 1ª linha não-vazia do body (o corpo pode ser longo);
+      //  - custo = soma de turn_costs da conversa (mesma fonte do board);
+      //    falha no custo degrada pra null, sem perder a entrega.
+      if (state === "done" && cur?.conversationId) {
+        try {
+          let costUsd: number | null = null
+          try {
+            const costs = await listCardCosts([cur.conversationId])
+            costUsd = costs[cur.conversationId]?.total ?? null
+          } catch {
+            costUsd = null // custo é sinal secundário; a entrega vale sozinha
+          }
+          const firstLine =
+            (cur.body ?? "")
+              .split("\n")
+              .map((l) => l.trim())
+              .find((l) => l.length > 0) ?? ""
+          await insertDelivery({
+            projectId: cur.projectId,
+            task: cur.title,
+            planSummary: firstLine,
+            filesTouched: [],
+            costUsd,
+            agent: cur.assigneeAgent ?? "",
+            model: null,
+          })
+        } catch (e) {
+          console.warn(
+            "[cards] entrega do card não gravada (o card segue fechado)",
+            e,
+          )
+        }
+      }
     },
 
     dispatch: async (id) => {

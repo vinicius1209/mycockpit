@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# O lockfile do repo é o bun.lock; npm install de worktree não pode plantar
+# um segundo lockfile no diff.
+package-lock.json
+
 # Playwright (smoke-test de boot)
 /test-results/
 /playwright-report/

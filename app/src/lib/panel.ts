@@ -101,8 +101,9 @@ export function prResolved(e: PrEnrichment | null | undefined): boolean {
   return e != null && (e.state === "MERGED" || e.state === "CLOSED")
 }
 
-/** Rank da fila: PR checks-verdes (0) → disputa (1) → PRD e card do board (2)
- *  → PR sem dado / checks rodando (3) → PR com checks falhando por último (4). */
+/** Rank da fila: PR checks-verdes (0) → disputa (1) → PRD, card do board e
+ *  proposta do lead (2) → PR sem dado / checks rodando (3) → PR com checks
+ *  falhando por último (4). */
 export function queueRank(
   d: Decision,
   e: PrEnrichment | null | undefined,

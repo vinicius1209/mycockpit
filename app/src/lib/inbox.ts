@@ -3,7 +3,12 @@
 // veredito (fusion_runs pendentes no DB), PRD esperando aprovação e PR aberto
 // (manifests do SDD no disco). Varredura barata (SQL + fs), sob demanda.
 
-import { listPendingDecisions, type CardRecord } from "@/lib/db"
+import {
+  listOpenProposals,
+  listPendingDecisions,
+  type CardRecord,
+  type LeadProposalRecord,
+} from "@/lib/db"
 import { loadSddPlans } from "@/lib/sdd"
 import type { Project } from "@/lib/types"
 
@@ -45,6 +50,18 @@ export type Decision =
       planTitle: string
       prUrl: string
     }
+  | {
+      kind: "proposal"
+      proposalId: string
+      /** Ausente = proposta do board inteiro (cross-projeto). */
+      projectId?: string
+      projectName?: string
+      /** 1ª linha da proposta — a linha colapsada da fila/sino. */
+      excerpt: string
+      /** Texto completo — o "Ver proposta" expande inline no card da fila. */
+      body: string
+      createdAt: number
+    }
 
 /** E1 (S1.6): cards esperando o humano (review/blocked) viram Decision e
  *  entram na MESMA fila "Precisam de você". Derivação pura (sem dismiss
@@ -70,6 +87,38 @@ export function cardDecisions(
       title: c.title,
       state: c.state,
       stalledSince: c.stalledSince,
+    })
+  }
+  return out
+}
+
+/** S4.2: propostas do lead ainda não dispensadas viram Decision e entram na
+ *  MESMA fila (derivação pura, padrão cardDecisions — o dismiss persistido
+ *  fica no SQL, listOpenProposals já filtra). Proposta de projeto arquivado
+ *  segue a regra dos cards: some da fila, reaparece se o projeto voltar.
+ *  Proposta sem projectId (board inteiro) entra sempre. */
+export function proposalDecisions(
+  proposals: LeadProposalRecord[],
+  projects: Project[],
+): Decision[] {
+  const byId = new Map(projects.map((p) => [p.id, p]))
+  const out: Decision[] = []
+  for (const pr of proposals) {
+    const p = pr.projectId ? byId.get(pr.projectId) : undefined
+    if (pr.projectId && !p) continue // projeto arquivado
+    const firstLine =
+      pr.body
+        .split("\n")
+        .map((l) => l.trim())
+        .find((l) => l.length > 0) ?? ""
+    out.push({
+      kind: "proposal",
+      proposalId: pr.id,
+      projectId: pr.projectId ?? undefined,
+      projectName: p?.name,
+      excerpt: firstLine.length > 140 ? firstLine.slice(0, 140) + "…" : firstLine,
+      body: pr.body,
+      createdAt: pr.createdAt,
     })
   }
   return out
@@ -120,5 +169,8 @@ export async function scanDecisions(projects: Project[]): Promise<Decision[]> {
       }
     }
   }
+
+  // 3. propostas do lead esperando leitura/dispensa (S4.2, persistidas).
+  out.push(...proposalDecisions(await listOpenProposals(), projects))
   return out
 }

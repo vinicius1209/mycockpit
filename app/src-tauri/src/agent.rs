@@ -511,7 +511,8 @@ pub struct JudgeResult {
 
 /// Builder comum dos one-shots `claude -p` (juiz + sugestões): SEM tools, sem
 /// persistir sessão. `format` = "json" (juiz: captura `total_cost_usd`) ou "text"
-/// (sugestões). `no_mcp` desliga TODO MCP (juiz: determinístico, sem efeito externo).
+/// (sugestões). `no_mcp` desliga TODO MCP (`--tools ""` não cobre MCP) — juiz E
+/// suggest passam `true` hoje: one-shot é meta-tarefa, nunca pode agir.
 /// NÃO usa `--bare`: esse modo "minimal" pula as credenciais e cai em "Not logged in".
 fn claude_oneshot(model: &str, cwd: &str, prompt: &str, format: &str, no_mcp: bool) -> Command {
     let mut cmd = Command::new("claude");
@@ -570,9 +571,13 @@ pub async fn judge(model: String, cwd: String, prompt: String) -> Result<JudgeRe
 
 /// Helper one-shot (Sprint 3): roda um modelo barato (ex. `haiku`) SEM tools,
 /// sem persistir sessão, p/ meta-tarefas (sugestões/títulos). Retorna o texto puro.
+/// `no_mcp=true` (S4, revisão): `--tools ""` NÃO cobre MCP — com um server de
+/// escopo user carregado, o one-shot poderia AGIR (inclusive agendado, sem humano
+/// olhando: lead propositor). Nenhum uso do suggest precisa de MCP (lead,
+/// distillLesson, draftSkill, sugestões) — todos são texto puro.
 #[tauri::command]
 pub async fn suggest(model: String, cwd: String, prompt: String) -> Result<String, String> {
-    let out = claude_oneshot(&model, &cwd, &prompt, "text", false)
+    let out = claude_oneshot(&model, &cwd, &prompt, "text", true)
         .output()
         .await
         .map_err(|e| format!("falha ao rodar claude: {e}"))?;
@@ -592,7 +597,27 @@ pub async fn suggest(model: String, cwd: String, prompt: String) -> Result<Strin
 
 #[cfg(test)]
 mod tests {
-    use super::restart_prompt;
+    use super::{claude_oneshot, restart_prompt};
+
+    /// S4 (revisão D1): `--tools ""` NÃO cobre MCP — o one-shot com
+    /// `no_mcp=true` TEM que carregar o strict-mcp-config vazio, senão um MCP
+    /// server de escopo user com tools de efeito colateral deixaria o lead
+    /// agendado AGIR sem humano olhando.
+    #[test]
+    fn oneshot_no_mcp_estripa_todo_mcp() {
+        let cmd = claude_oneshot("haiku", "/tmp", "oi", "text", true);
+        let args: Vec<String> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(args.iter().any(|a| a == "--strict-mcp-config"));
+        let pos = args.iter().position(|a| a == "--mcp-config").unwrap();
+        assert_eq!(args[pos + 1], "{\"mcpServers\":{}}");
+        // e segue sem tools nativas também
+        let tools = args.iter().position(|a| a == "--tools").unwrap();
+        assert_eq!(args[tools + 1], "");
+    }
 
     #[test]
     fn restart_sem_fallback_mantem_prompt_original() {
