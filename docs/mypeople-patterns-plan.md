@@ -375,17 +375,79 @@ composer principal); automações agendadas sem preset no v1.
 
 ---
 
-## Sprint 4 · Futuro / opt-in (só depois do núcleo estável)
+## Sprint 4 · Autonomia gated + superfícies (aterrado no código em 2026-07-22)
 
-- **Lead propositor (autonomia gated):** um agente opt-in lê cards abertos e
-  **propõe** um plano no inbox (reusa o helper Haiku). Nunca despacha sozinho; você
-  aprova. Casa com o M3/M4 do `autonomy.md`.
-- **Board no Office:** a "Central do Boss" elevada de per-conversa para cross-projeto,
-  derivando o `OfficeSnapshot` de `cards` (whiteboard do portfólio).
-- **Board remoto:** cards + owner + watchdog no companion (triagem e despacho pelo
-  celular via `sendFromDesk`, guardas intactas), sobre Tailscale.
-- **Sinergia com aprendizado:** card entregue com `ok=true` alimenta o delivery
-  recall (M1) e o auto-tuning de time por custo (M3) que já estão no `autonomy.md`.
+> ⚠️ **Aterramento pré-implementação:** todas as peças de infraestrutura JÁ
+> existem; o sprint é composição. (1) Companion: snapshot puro
+> (`buildCompanionSnapshot`, `companion.ts:186-409`, SEM cards hoje), whitelist
+> FECHADA de ações no Rust (`companion.rs:616-674`) + switch fechado no front
+> (`handleCompanionAction`, `companion.ts:468-577`), cliente vanilla embutido
+> (`companion/index.html`), token 0600 + Bearer + rate-limit. (2) OfficeSnapshot
+> JÁ é cross-projeto (uma sala por projeto, `derive.ts:288-320`); a Central do
+> Boss é derivação pura dele (`buildBossBriefing`, `BossCenter.tsx:183`); o
+> NOTICE_BOARD mostra schedules (read-only) e serve só de atalho. (3) Helper
+> barato JÁ existe: `suggest(model, cwd, prompt)` (`agent.ts:86-93`, comando Tauri
+> one-shot, `settings.helperModel` default haiku) — mesmo primitivo do
+> `distillLesson`. (4) Deliveries: `insertDelivery` (`db.ts:721`) tem HOJE um
+> único produtor (`mission.ts:895`); o recall (`buildLearningBlocks` com
+> `withRecall`) consome deliveries direto. (5) Schedules: `dispatchSchedule`
+> (`scheduleEngine.ts:88-191`) com clamp duro "automação nunca roda liberado" e
+> guarda anti-duplo-disparo.
+
+**Trilha A — lógica (lead propositor + sinergia de aprendizado)**
+- **S4.1 — card→delivery (a mais barata e de maior valor):** hook no `closeCard`
+  do store (`cards.ts`): fechar como `done` um card com `conversationId` grava
+  `insertDelivery` best-effort (padrão do bloco M1 de `mission.ts:879-906`):
+  `task = título`, `agent = assigneeAgent`, `costUsd = listCardCosts([convId])`,
+  `projectId`. `planSummary` = body do card (ou 1ª linha); `filesTouched` fica
+  vazio no v1 (sem diff de worktree em conversa linear — honesto, não inventa).
+  O board vira o 2º produtor de deliveries e alimenta o recall M1 de graça.
+- **S4.2 — lead propositor (opt-in, NUNCA despacha):** `src/lib/lead.ts` novo:
+  `proposePlan(projectId?)` lê cards abertos de `useCards`, monta prompt de
+  triagem (priorização + próximos passos + card sugerido pra despachar) e chama
+  `suggest(helperModel, cwd, prompt)`. A proposta é PERSISTIDA (tabela
+  `lead_proposals` via `ensure*`, id/project_id/body/created_at/dismissed) e
+  derivada como nova variante `Decision { kind: "proposal" }` (molde da `prd`,
+  `inbox.ts:31-39`): entra em PRECISAM DE VOCÊ + sino, com ações "Ver proposta"
+  (abre modal/expande) e "Dispensar" (marca dismissed). Aprovar um item da
+  proposta = gesto humano normal de despachar o card no board (o lead não ganha
+  botão de dispatch).
+- **S4.3 — cadência opt-in:** botão "Pedir proposta ao lead" no BoardLane (gesto
+  manual sempre disponível) + opção de agendar via schedules existentes (um
+  schedule cujo dispatch chama `proposePlan` em vez de `runAgent` — novo kind no
+  `dispatchSchedule`, permissão irrelevante pois o lead não roda agent). O clamp
+  "automação nunca roda liberado" segue intocado.
+
+**Trilha B — superfícies (board no Office + board remoto)**
+- **S4.4 — board na Central do Boss:** `buildBossBriefing` ganha seção "Board"
+  derivada de `useCards` (contagens por estado por projeto + cards
+  blocked/review/stalled em destaque); clicar navega pro Painel com o card
+  selecionado (`useCards.select` + `setViewMode("painel")`). O NOTICE_BOARD
+  ganha, além dos schedules, a linha "N cards esperando você" como atalho.
+  NADA de estado novo: derivação pura do store, regra "estado real, nunca teatro".
+- **S4.5 — board remoto (companion, leitura):** `CompanionSnapshot` ganha
+  `cards[]` (id, projectName, title, state, stalledSince, custo) montado em
+  `buildCompanionSnapshot`; card estagnado entra também em `attention[]` (kind
+  "card", análogo ao "stalled" de turno que já existe em `companion.ts:270-283`).
+  Cliente `index.html`: seção Board (agrupada por estado) na home.
+- **S4.6 — board remoto (ações):** whitelist Rust + switch front ganham
+  `dispatch_card` e `close_card` (o celular É o humano: o gate humano-only vale —
+  ele proíbe sistema/agente, não o dono no sofá). `dispatch_card` reusa
+  `useCards.dispatch` (todas as guardas intactas, inclusive a de availability da
+  onda de follow-ups); `close_card` exige `state` explícito (`done`/`cancelled`)
+  no payload. Resposta de erro volta pro celular no envelope existente.
+
+**Critério de aceite:** fechar card done gera delivery que aparece no recall e na
+BossCenter; "Pedir proposta" gera Decision proposal no inbox (e dispensar some);
+proposta agendada roda sem despachar nada; BossCenter mostra o board e navega;
+celular vê cards (inclusive estagnado em attention), despacha e fecha card com as
+mesmas guardas do desktop. Testes (vitest, PT): hook card→delivery (done com/sem
+conversa, custo), proposal→Decision (derivação + dismissed), snapshot com cards,
+handleCompanionAction dispatch_card/close_card (guardas), briefing com board.
+
+**Não-fazer:** lead com botão de despacho (proposta é texto + gate humano);
+segunda fila de custo; PixiJS novo pro board (a superfície rica é BossCenter +
+Painel; o escritório isométrico ganha só o atalho no quadro de avisos).
 
 ---
 
