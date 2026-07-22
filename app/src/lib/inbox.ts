@@ -23,6 +23,10 @@ export type Decision =
       title: string
       /** Só review/blocked entram na fila (esperando humano). */
       state: "review" | "blocked"
+      /** (S2.3) início do silêncio quando o vigia marcou o card como
+       *  estagnado (transient do store, some com atividade). A fila usa pra
+       *  destacar "parado há X min" — ausente = card na fila, mas não mudo. */
+      stalledSince?: number
     }
   | {
       kind: "prd"
@@ -47,7 +51,9 @@ export type Decision =
  *  persistido): o card sai da fila quando muda de estado. Projeto arquivado
  *  segue a regra das disputas: o card reaparece se o projeto voltar. */
 export function cardDecisions(
-  cards: CardRecord[],
+  // aceita o CardRow do store (CardRecord + stalledSince transient do vigia)
+  // sem importar o store: inbox continua derivação pura sobre dados.
+  cards: (CardRecord & { stalledSince?: number })[],
   projects: Project[],
 ): Decision[] {
   const byId = new Map(projects.map((p) => [p.id, p]))
@@ -63,6 +69,7 @@ export function cardDecisions(
       projectName: p.name,
       title: c.title,
       state: c.state,
+      stalledSince: c.stalledSince,
     })
   }
   return out

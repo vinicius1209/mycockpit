@@ -8,12 +8,20 @@
 // acionável ("Ver conversa" / "Cancelar turno") + flag transient stalledSince
 // na conversa (derive do office e snapshot do Companion leem). Atividade nova
 // fecha o episódio — mudo DE NOVO por outro período completo ⇒ novo aviso.
+//
+// S2.2 generaliza o vigia pro BOARD: checkStalledCards varre cards em
+// review/blocked (esperando HUMANO) parados além do MESMO limiar (sinal =
+// updated_at do card), no MESMO ticker + subscribe (um listener a mais no
+// useCards, nunca um segundo setInterval). Card `working` com conversa muda
+// já é coberto por checkStalledTurns — aqui fica de fora (dedupe de aviso).
 
 import { toast } from "sonner"
 import { agentLabel, cancelAgent } from "@/lib/agent"
-import { notifyTurnStalled } from "@/lib/notify"
+import { notifyCardStalled, notifyTurnStalled } from "@/lib/notify"
 import { useApp } from "@/store/app"
+import { openCardConversation, useCards } from "@/store/cards"
 import { useChat, type ChatItem } from "@/store/chat"
+import type { CardState } from "@/lib/db"
 
 /** Coalescing do subscribe do chat (o vigia nunca roda por delta de stream). */
 const COALESCE_MS = 5_000
@@ -24,9 +32,33 @@ type Mark = { sig: string; at: number }
 /** Última assinatura de itens vista por conv running + quando ela MUDOU. */
 const marks = new Map<string, Mark>()
 
+/** Tolerância de drift store×banco (F1, defesa em profundidade): mutações
+ *  NOVAS usam um relógio só (o store passa o MESMO `now` pro db), mas linhas
+ *  gravadas por versões antigas ainda podem recarregar com updated_at alguns
+ *  ms diferente do que o store viu. Avanço dentro da tolerância NÃO é
+ *  atividade: o episódio segue o mesmo, sem re-aviso do MESMO silêncio. */
+const CARD_DRIFT_TOLERANCE_MS = 1_000
+
+type CardMark = {
+  state: CardState
+  updatedAt: number
+  /** Âncora do silêncio: de onde o cronômetro conta (updated_at na 1ª vista/
+   *  atividade; `now` da última passada enquanto a conversa ligada rodava). */
+  anchor: number
+  /** Já avisado NESTE episódio (1 aviso por episódio). */
+  notified: boolean
+}
+/** Memória de episódio por cardId (mesmo padrão do `marks`). Toda mutação
+ *  REAL de card bumpa updated_at (patchCard e db carimbam o mesmo relógio),
+ *  então "updated_at avançou além da tolerância" É o sinal de atividade que
+ *  fecha o episódio; o campo `state` na marca é defensivo, não a semântica
+ *  dominante (mover card = bump de updated_at de qualquer jeito). */
+const cardMarks = new Map<string, CardMark>()
+
 /** (testes) zera a memória do vigia. */
 export function _resetWatchdogState(): void {
   marks.clear()
+  cardMarks.clear()
 }
 
 /** Assinatura leve do andamento (padrão itemsSignature do derive): muda quando
@@ -126,22 +158,142 @@ export function checkStalledTurns(now: number = Date.now()): void {
   }
 }
 
-/** Liga o vigia: subscribe do useChat (coalescido ≥5s, trailing edge) + tick
- *  de 30s (silêncio não gera evento de store). Retorna o stop. */
+/** DECISÃO (S2.2): a primária do toast é "Abrir card" (contexto antes de
+ *  gesto), não "Concluir" — fechar às cegas de um toast é gesto forte demais
+ *  pra um clique sem olhar o card, e done/cancelled é gate humano do BOARD
+ *  (closeCard, com o card na frente). A secundária só dispensa o toast; a
+ *  nativa + a fila "Precisam de você" continuam cobrando. */
+function showStalledCardToast(
+  cardId: string,
+  title: string,
+  state: "review" | "blocked",
+  minutes: number,
+): void {
+  toast(`"${title}" está parado há ${minutes} min`, {
+    description:
+      state === "blocked"
+        ? "O card segue bloqueado, esperando um gesto seu."
+        : "O card segue em revisão, esperando um gesto seu.",
+    duration: 15_000,
+    action: {
+      // com conversa ligada abre a conversa; sem, seleciona o card no board
+      // (openCardConversation já bifurca — mesmo destino da fila do Painel).
+      label: "Abrir card",
+      onClick: () => void openCardConversation(cardId),
+    },
+    cancel: {
+      label: "Dispensar",
+      onClick: () => {}, // só fecha o toast; o episódio continua marcado
+    },
+  })
+}
+
+/** UMA passada do vigia de CARDS (determinística dado stores + memória; `now`
+ *  injetável p/ teste): varre SÓ review/blocked (esperando humano) — working
+ *  com conversa muda é papel do checkStalledTurns (dedupe), backlog é fila e
+ *  terminais são história. Sinal de vida = updated_at (toda mutação real
+ *  bumpa); 1 aviso por episódio via cardMarks. */
+export function checkStalledCards(now: number = Date.now()): void {
+  const afterMin = useApp.getState().settings.stalledAfterMin
+  const cards = useCards.getState()
+  const chat = useChat.getState()
+  if (afterMin <= 0) {
+    // 0 = desligado (mesmo contrato dos turnos): sem aviso, sem flag. Limpa
+    // TAMBÉM a memória de episódio (F4, simetria com os turnos): religar o
+    // knob re-avalia do zero — card ainda parado além do limiar re-avisa.
+    cardMarks.clear()
+    for (const c of cards.all) {
+      if (c.stalledSince != null) cards.clearCardStalled(c.id)
+    }
+    return
+  }
+  for (const c of cards.all) {
+    if (c.state !== "review" && c.state !== "blocked") {
+      // fora da sala de espera: fecha o episódio (se aberto) e some da memória.
+      cardMarks.delete(c.id)
+      if (c.stalledSince != null) cards.clearCardStalled(c.id)
+      continue
+    }
+    // F2: conversa ligada RODANDO = o agent está trabalhando, ninguém espera
+    // o humano — não é estagnação (turno mudo ali é papel do
+    // checkStalledTurns). Conta como ATIVIDADE: re-ancora a cada passada,
+    // então o cronômetro só começa do fim do turno (última passada running) —
+    // updated_at do card não muda quando o turno acaba, a âncora cobre isso.
+    const convRunning =
+      c.conversationId != null && chat.byId[c.conversationId]?.running === true
+    if (convRunning) {
+      cardMarks.set(c.id, {
+        state: c.state,
+        updatedAt: c.updatedAt,
+        anchor: now,
+        notified: false,
+      })
+      if (c.stalledSince != null) cards.clearCardStalled(c.id)
+      continue
+    }
+    let mark = cardMarks.get(c.id)
+    const activity =
+      mark != null &&
+      (mark.state !== c.state ||
+        c.updatedAt > mark.updatedAt + CARD_DRIFT_TOLERANCE_MS)
+    if (mark == null || activity) {
+      // 1ª vista ou mutação real: episódio novo ancorado no updated_at (o
+      // sinal PERSISTIDO de última atividade — card já parado há horas antes
+      // do boot avisa na primeira passada, sem esperar outro limiar).
+      mark = {
+        state: c.state,
+        updatedAt: c.updatedAt,
+        anchor: c.updatedAt,
+        notified: false,
+      }
+      cardMarks.set(c.id, mark)
+      if (c.stalledSince != null) cards.clearCardStalled(c.id)
+    }
+    if (mark.notified) {
+      // já avisado NESTE episódio: sem re-aviso; só re-afirma a flag se um
+      // reload do store derrubou o transient (o badge acompanha o episódio).
+      if (c.stalledSince == null) cards.markCardStalled(c.id, mark.anchor)
+      continue
+    }
+    const silentMs = now - mark.anchor
+    if (silentMs < afterMin * 60_000) continue
+    const minutes = Math.max(afterMin, Math.round(silentMs / 60_000))
+    mark.notified = true
+    cards.markCardStalled(c.id, mark.anchor) // transient; nunca vai pro banco
+    notifyCardStalled(c.title, c.state, minutes)
+    showStalledCardToast(c.id, c.title, c.state, minutes)
+  }
+  // card removido do board não deixa marca órfã
+  const alive = new Set(cards.all.map((c) => c.id))
+  for (const id of [...cardMarks.keys()]) {
+    if (!alive.has(id)) cardMarks.delete(id)
+  }
+}
+
+/** Liga o vigia: subscribe do useChat E do useCards (coalescidos ≥5s no MESMO
+ *  schedule, trailing edge) + UM tick de 30s (silêncio não gera evento de
+ *  store) varrendo turnos E cards. Retorna o stop (desassina os dois). */
 export function startTurnWatchdog(): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
+  const check = () => {
+    const now = Date.now()
+    checkStalledTurns(now)
+    checkStalledCards(now)
+  }
   const schedule = () => {
     if (timer) return // já agendado neste burst → coalesce
     timer = setTimeout(() => {
       timer = null
-      checkStalledTurns()
+      check()
     }, COALESCE_MS)
   }
-  const unsub = useChat.subscribe(schedule)
-  const ticker = setInterval(() => checkStalledTurns(), TICK_MS)
-  checkStalledTurns() // baseline imediato
+  const unsubChat = useChat.subscribe(schedule)
+  const unsubCards = useCards.subscribe(schedule)
+  const ticker = setInterval(check, TICK_MS)
+  check() // baseline imediato
   return () => {
-    unsub()
+    unsubChat()
+    unsubCards()
     clearInterval(ticker)
     if (timer) clearTimeout(timer)
   }

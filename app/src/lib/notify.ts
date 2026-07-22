@@ -112,3 +112,20 @@ export function notifyTurnStalled(
     `${title} — ${agentLabel(agent)} está há ${minutes} min sem produzir nada novo. O turno pode ter travado.`,
   )
 }
+
+/** Chamado UMA vez por episódio quando um CARD do board em review/blocked
+ *  (esperando VOCÊ, não um agent) fica parado além do limiar
+ *  (settings.stalledAfterMin, o mesmo knob dos turnos). Espelho do
+ *  notifyTurnStalled: aqui é só o aviso de SO; o toast acionável fica com o
+ *  watchdog. Sem spam: o vigia só chama 1x por episódio. */
+export function notifyCardStalled(
+  title: string,
+  state: "review" | "blocked",
+  minutes: number,
+) {
+  const situacao = state === "blocked" ? "bloqueado" : "em revisão"
+  void nativeNotify(
+    "Frota · card parado",
+    `${title} está ${situacao} há ${minutes} min, esperando você.`,
+  )
+}

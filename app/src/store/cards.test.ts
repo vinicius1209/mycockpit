@@ -55,7 +55,7 @@ import {
   type CardRecord,
   type CardState,
 } from "@/lib/db"
-import { openCardConversation, useCards } from "@/store/cards"
+import { openCardConversation, useCards, type CardRow } from "@/store/cards"
 
 function card(over: Partial<CardRecord> = {}): CardRecord {
   return {
@@ -76,8 +76,8 @@ function card(over: Partial<CardRecord> = {}): CardRecord {
 }
 
 /** Semeia o store com os cards dados (byProject coerente via load fake). */
-function seedStore(cards: CardRecord[]): void {
-  const byProject: Record<string, CardRecord[]> = {}
+function seedStore(cards: CardRow[]): void {
+  const byProject: Record<string, CardRow[]> = {}
   for (const c of cards) (byProject[c.projectId] ??= []).push(c)
   useCards.setState({ all: cards, byProject })
 }
@@ -100,8 +100,25 @@ describe("cards (E1): store", () => {
   it("move aplica transição válida e persiste (working → review)", async () => {
     seedStore([card({ state: "working" })])
     await useCards.getState().move("c1", "review")
-    expect(vi.mocked(dbSetCardState)).toHaveBeenCalledWith("c1", "review")
+    expect(vi.mocked(dbSetCardState)).toHaveBeenCalledWith(
+      "c1",
+      "review",
+      expect.any(Number),
+    )
     expect(useCards.getState().all[0].state).toBe("review")
+  })
+
+  it("move carimba o MESMO relógio no banco e no store (F1: sem drift de ms)", async () => {
+    seedStore([card({ state: "working" })])
+    await useCards.getState().move("c1", "review")
+    const nowNoBanco = vi.mocked(dbSetCardState).mock.calls[0][2]
+    expect(useCards.getState().all[0].updatedAt).toBe(nowNoBanco)
+  })
+
+  it("mutação real limpa o stalledSince transient (F3: badge não mente)", async () => {
+    seedStore([{ ...card({ state: "working" }), stalledSince: 123 }])
+    await useCards.getState().move("c1", "review")
+    expect(useCards.getState().all[0].stalledSince).toBeUndefined()
   })
 
   it("move LANÇA em done/cancelled sem tocar no banco (gate humano)", async () => {
@@ -126,7 +143,11 @@ describe("cards (E1): store", () => {
   it("closeCard fecha review → done pelo gate humano", async () => {
     seedStore([card({ state: "review" })])
     await useCards.getState().closeCard("c1", "done")
-    expect(vi.mocked(dbCloseCard)).toHaveBeenCalledWith("c1", "done")
+    expect(vi.mocked(dbCloseCard)).toHaveBeenCalledWith(
+      "c1",
+      "done",
+      expect.any(Number),
+    )
     expect(useCards.getState().all[0].state).toBe("done")
   })
 })
@@ -140,11 +161,20 @@ describe("cards (E1): dispatch por gesto humano", () => {
     expect(vi.mocked(dbLinkCardConversation)).toHaveBeenCalledWith(
       "c1",
       "conv-nova",
+      expect.any(Number),
     )
-    expect(vi.mocked(dbSetCardState)).toHaveBeenCalledWith("c1", "working")
+    expect(vi.mocked(dbSetCardState)).toHaveBeenCalledWith(
+      "c1",
+      "working",
+      expect.any(Number),
+    )
+    // F1: a mutação inteira (link + state + patch local) usa UM relógio só
+    const nowNoBanco = vi.mocked(dbSetCardState).mock.calls[0][2]
+    expect(vi.mocked(dbLinkCardConversation).mock.calls[0][2]).toBe(nowNoBanco)
     const c = useCards.getState().all[0]
     expect(c.state).toBe("working")
     expect(c.conversationId).toBe("conv-nova")
+    expect(c.updatedAt).toBe(nowNoBanco)
   })
 
   it("lança fora do backlog (nunca sequestra thread nem redespacha)", async () => {
@@ -173,7 +203,11 @@ describe("cards (E1): dispatch por gesto humano", () => {
     seedStore([card({ state: "working", conversationId: "conv-nova" })])
     useCards.getState().noteConversationAgent("conv-nova", "codex")
     expect(useCards.getState().all[0].assigneeAgent).toBe("codex")
-    expect(vi.mocked(dbSetCardAssignee)).toHaveBeenCalledWith("c1", "codex")
+    expect(vi.mocked(dbSetCardAssignee)).toHaveBeenCalledWith(
+      "c1",
+      "codex",
+      expect.any(Number),
+    )
     // mesmo agent de novo = no-op (não regrava)
     useCards.getState().noteConversationAgent("conv-nova", "codex")
     expect(vi.mocked(dbSetCardAssignee)).toHaveBeenCalledTimes(1)
