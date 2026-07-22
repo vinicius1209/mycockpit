@@ -276,6 +276,17 @@ card, owner imutável, gate humano-only, mapeamento card→Decision.
 **Riscos:** não transformar o vigia em daemon (ele é in-app por design); não prometer
 nudge com app fechado; não duplicar o ticker (um só, checando turnos E cards).
 
+**✅ ENTREGUE 2026-07-22** (branch `sprint/s2-ownership-watchdog`, aprovado pelo
+reviewer com ressalvas, todas corrigidas antes do merge). 886 testes verdes (13
+novos). Correções que valem registro: relógio ÚNICO por mutação de card (o store
+passa `now` pro banco — o drift store×banco duplicava aviso pós-reload); conversa
+ligada `running` segura o vigia e re-ancora o episódio (sem falso "esperando você"
+com agent trabalhando); toast sem "Concluir" às cegas (gate humano do board).
+**Follow-ups (nits aceitos):** aviso duplo legítimo card `review` + turno MUDO da
+mesma conversa (semanticamente distintos, barulhento); nativas antigas do vigia de
+turno ainda usam travessão (alinhar copy noutro diff); título de card longo sem
+truncamento defensivo na nativa.
+
 ---
 
 ## Sprint 3 · E2 — Agent Presets (personas versionadas)
