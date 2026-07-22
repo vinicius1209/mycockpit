@@ -12,6 +12,10 @@ const h = vi.hoisted(() => ({
     newConversation: vi.fn(async (_projectId: string) => "conv-nova"),
     openProject: vi.fn(async () => {}),
     switchConversation: vi.fn(async () => {}),
+    // TAREFA 3: o dispatch deixa a intenção do card como RASCUNHO do composer.
+    setDraft: vi.fn(),
+    // sentinela anti auto-send: o dispatch NUNCA dispara turno sozinho.
+    send: vi.fn(),
   },
   app: {
     // projetos VIVOS do app: a guarda de projeto arquivado do dispatch (B1)
@@ -46,6 +50,7 @@ vi.mock("@/lib/db", async (importOriginal) => ({
   closeCard: vi.fn(async () => {}),
   linkCardConversation: vi.fn(async () => {}),
   setCardAssignee: vi.fn(async () => {}),
+  updateCard: vi.fn(async () => {}),
 }))
 vi.mock("@/store/chat", () => ({ useChat: { getState: () => h.chat } }))
 vi.mock("@/store/app", () => ({ useApp: { getState: () => h.app } }))
@@ -55,6 +60,7 @@ import {
   linkCardConversation as dbLinkCardConversation,
   setCardAssignee as dbSetCardAssignee,
   setCardState as dbSetCardState,
+  updateCard as dbUpdateCard,
   type CardRecord,
   type CardState,
 } from "@/lib/db"
@@ -143,6 +149,46 @@ describe("cards (E1): store", () => {
     expect(vi.mocked(dbSetCardState)).not.toHaveBeenCalled()
   })
 
+  it("update persiste título/body e carimba banco e store com o MESMO relógio", async () => {
+    seedStore([card({ title: "antes", body: "corpo antigo" })])
+    await useCards.getState().update("c1", { title: "depois", body: "corpo novo" })
+    expect(vi.mocked(dbUpdateCard)).toHaveBeenCalledWith(
+      "c1",
+      { title: "depois", body: "corpo novo" },
+      expect.any(Number),
+    )
+    const nowNoBanco = vi.mocked(dbUpdateCard).mock.calls[0][2]
+    const c = useCards.getState().all[0]
+    expect(c.title).toBe("depois")
+    expect(c.body).toBe("corpo novo")
+    expect(c.updatedAt).toBe(nowNoBanco)
+  })
+
+  it("update REJEITA título vazio sem tocar no banco (o toast vem do caller)", async () => {
+    seedStore([card({ title: "antes" })])
+    for (const vazio of ["", "   "]) {
+      await expect(
+        useCards.getState().update("c1", { title: vazio }),
+      ).rejects.toThrow(/precisa de um título/)
+    }
+    expect(vi.mocked(dbUpdateCard)).not.toHaveBeenCalled()
+    expect(useCards.getState().all[0].title).toBe("antes")
+  })
+
+  it("update só de body mantém o título e apara o título quando enviado", async () => {
+    seedStore([card({ title: "antes", body: null })])
+    await useCards.getState().update("c1", { body: "só contexto" })
+    expect(vi.mocked(dbUpdateCard)).toHaveBeenCalledWith(
+      "c1",
+      { body: "só contexto" },
+      expect.any(Number),
+    )
+    expect(useCards.getState().all[0].title).toBe("antes")
+    // título com espaços nas pontas entra aparado
+    await useCards.getState().update("c1", { title: "  novo  " })
+    expect(useCards.getState().all[0].title).toBe("novo")
+  })
+
   it("closeCard fecha review → done pelo gate humano", async () => {
     seedStore([card({ state: "review" })])
     await useCards.getState().closeCard("c1", "done")
@@ -178,6 +224,27 @@ describe("cards (E1): dispatch por gesto humano", () => {
     expect(c.state).toBe("working")
     expect(c.conversationId).toBe("conv-nova")
     expect(c.updatedAt).toBe(nowNoBanco)
+  })
+
+  it("dispatch deixa a intenção (título+body) como RASCUNHO do composer, sem auto-send", async () => {
+    seedStore([
+      card({ state: "backlog", title: "Refatorar login", body: "Critérios:\n- MFA" }),
+    ])
+    await useCards.getState().dispatch("c1")
+    // formato natural de pedido: título na 1ª linha, body após linha em branco
+    expect(h.chat.setDraft).toHaveBeenCalledWith(
+      "conv-nova",
+      "Refatorar login\n\nCritérios:\n- MFA",
+    )
+    // rascunho, nunca turno: o envio é gesto humano (revisão no composer)
+    expect(h.chat.send).not.toHaveBeenCalled()
+  })
+
+  it("dispatch de card sem body rascunha só o título", async () => {
+    seedStore([card({ state: "backlog", title: "Só a intenção", body: null })])
+    await useCards.getState().dispatch("c1")
+    expect(h.chat.setDraft).toHaveBeenCalledWith("conv-nova", "Só a intenção")
+    expect(h.chat.send).not.toHaveBeenCalled()
   })
 
   it("lança fora do backlog (nunca sequestra thread nem redespacha)", async () => {

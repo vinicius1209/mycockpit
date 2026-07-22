@@ -282,7 +282,7 @@ export function bossStandupLine(
   if (briefing.totalCostUsd > 0) parts.push(`${fmtUsd(briefing.totalCostUsd)} hoje`)
   return parts.length > 0
     ? parts.join(" · ")
-    : "Tudo tranquilo — nada pede sua atenção agora."
+    : "Tudo tranquilo. Nada pede sua atenção agora."
 }
 
 export function deliveryAge(at: number, now = Date.now()): string {

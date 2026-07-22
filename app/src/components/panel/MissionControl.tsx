@@ -790,7 +790,7 @@ export function MissionControl() {
     setMergingUrl(d.prUrl)
     try {
       await mergePr(d.prUrl)
-      toast.success(`PR mergeado — ${d.planTitle}`)
+      toast.success(`PR mergeado: ${d.planTitle}`)
       setMerged((prev) => new Set(prev).add(d.prUrl))
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha no merge")
@@ -1035,7 +1035,7 @@ export function MissionControl() {
               <SkeletonRows rows={2} />
             </>
           ) : queue.length === 0 ? (
-            <EmptyLine>Nada esperando você — bom voo.</EmptyLine>
+            <EmptyLine>Nada esperando você. Bom voo.</EmptyLine>
           ) : (
             <>
               <SectionTitle>Precisam de você ({queue.length})</SectionTitle>
@@ -1166,7 +1166,7 @@ export function MissionControl() {
             })}
             {CLI_TOOLS.every((t) => !detected[t.id]?.installed) && (
               <li className="text-[12.5px] text-muted-foreground">
-                Nenhuma CLI detectada ainda — verifique em Configurações ▸
+                Nenhuma CLI detectada ainda. Verifique em Configurações ▸
                 Agents.
               </li>
             )}

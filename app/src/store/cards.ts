@@ -17,6 +17,7 @@ import {
   listCards as dbListCards,
   setCardAssignee as dbSetCardAssignee,
   setCardState as dbSetCardState,
+  updateCard as dbUpdateCard,
   type CardRecord,
   type CardState,
 } from "@/lib/db"
@@ -33,6 +34,14 @@ export type CardRow = CardRecord & {
 
 /** Cards com dispatch EM VOO (memória de módulo): guarda anti duplo-clique. */
 const dispatching = new Set<string>()
+
+/** Rascunho do composer a partir do card (dispatch leva a intenção junto):
+ *  título na 1ª linha; body embaixo, separado por linha em branco. Formato
+ *  natural de pedido, sem markup inventado. */
+export function cardDraft(card: Pick<CardRecord, "title" | "body">): string {
+  const body = card.body?.trim()
+  return body ? `${card.title}\n\n${body}` : card.title
+}
 
 function groupByProject(all: CardRow[]): Record<string, CardRow[]> {
   const out: Record<string, CardRow[]> = {}
@@ -54,6 +63,9 @@ interface CardsState {
   load: () => Promise<void>
   /** Cria um card no backlog do projeto. */
   create: (projectId: string, title: string, body?: string | null) => Promise<void>
+  /** Edita título/body (detalhe do card). Título vazio LANÇA (o caller mostra
+   *  o toast); persiste e carimba o patch local com o MESMO relógio (F1). */
+  update: (id: string, patch: { title?: string; body?: string }) => Promise<void>
   /** Move validando a máquina de estados. LANÇA em done/cancelled (terminais
    *  só via closeCard) e em transição inválida. */
   move: (id: string, state: CardState) => Promise<void>
@@ -118,6 +130,21 @@ export const useCards = create<CardsState>((set, get) => {
     create: async (projectId, title, body) => {
       const card = await dbCreateCard({ projectId, title, body: body ?? null })
       setAll([...get().all, card])
+    },
+
+    update: async (id, patch) => {
+      const next: { title?: string; body?: string } = {}
+      if (patch.title !== undefined) {
+        const title = patch.title.trim()
+        // título vazio não salva: a mensagem vaza pro toast do dialog.
+        if (!title) throw new Error("O card precisa de um título")
+        next.title = title
+      }
+      if (patch.body !== undefined) next.body = patch.body
+      if (next.title === undefined && next.body === undefined) return
+      const now = Date.now() // F1: banco e store carimbam o MESMO relógio
+      await dbUpdateCard(id, next, now)
+      patchCard(id, next, now)
     },
 
     move: async (id, state) => {
@@ -222,6 +249,15 @@ export const useCards = create<CardsState>((set, get) => {
         await dbLinkCardConversation(id, convId, now)
         await dbSetCardState(id, "working", now)
         patchCard(id, { conversationId: convId, state: "working" }, now)
+        // O card É o pedido: a conversa nova nasce com título+body no COMPOSER
+        // como RASCUNHO, nunca auto-send — despacho é gesto humano, o usuário
+        // revisa/complementa e envia (auto-send dispararia um turno com
+        // modelo/permissão default sem revisão). O rascunho mora no useChat
+        // (drafts por conversa, memória de sessão): no caminho remoto
+        // (dispatch_card via companion) ele espera no desktop enquanto o
+        // processo viver; após restart se perde — drafts não são persistidos,
+        // e tudo bem (o card segue inteiro no board).
+        useChat.getState().setDraft(convId, cardDraft(card))
         return convId
       } finally {
         dispatching.delete(id)

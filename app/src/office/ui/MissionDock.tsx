@@ -261,7 +261,7 @@ function RecoveryCard({
       <div className="flex items-center gap-1.5">
         <AlertTriangle className="size-3.5 shrink-0 text-st-warning" />
         <p className="text-[12px] font-semibold text-st-warning">
-          A fase {recovery.phase + 1} parou — {recovery.message}
+          A fase {recovery.phase + 1} parou: {recovery.message}
         </p>
       </div>
       {recovery.error && (
@@ -270,7 +270,7 @@ function RecoveryCard({
         </p>
       )}
       <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-        Escolha quem retoma esta fase — o contexto viaja pelo worktree; a fase
+        Escolha quem retoma esta fase. O contexto viaja pelo worktree; a fase
         re-roda do zero com o novo time.
       </p>
       <div className="mt-2 grid grid-cols-2 gap-2">
@@ -520,7 +520,7 @@ export function MissionDock() {
     <aside
       className="pointer-events-auto absolute top-11 right-0 bottom-6 z-30 flex flex-col border-l border-border bg-card shadow-xl transition-[width] motion-safe:animate-in motion-safe:slide-in-from-right-4 motion-safe:fade-in-0 motion-safe:duration-200 motion-safe:ease-out"
       style={{ width: activeDockWidth(dockWide) }}
-      aria-label="Mesa de reunião — missões"
+      aria-label="Mesa de reunião · missões"
     >
       {/* cabeçalho */}
       <header className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border px-3">
@@ -534,7 +534,7 @@ export function MissionDock() {
           <p className="truncate text-[11px] text-muted-foreground">
             {run?.status === "running"
               ? `Missão em andamento · ${fmtCost(run.costTotal)}`
-              : "Lançar missão — time de agents em fases"}
+              : "Lançar missão · time de agents em fases"}
           </p>
         </div>
         {run?.status === "running" && missionConvId && (
@@ -570,7 +570,7 @@ export function MissionDock() {
         {projects.length === 0 && (
           <div className="flex flex-col items-start gap-2 rounded-lg border border-border bg-secondary/30 p-3">
             <p className="text-[12.5px] leading-snug text-muted-foreground">
-              Nenhum projeto no cockpit — a missão roda dentro de um projeto.
+              Nenhum projeto no cockpit. A missão roda dentro de um projeto.
             </p>
             <button
               type="button"
@@ -628,7 +628,7 @@ export function MissionDock() {
                   ))}
                 </div>
                 <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
-                  As mesas da sala do projeto acendem com a fase corrente — o
+                  As mesas da sala do projeto acendem com a fase corrente; o
                   detalhe do turno vive lá.
                 </p>
               </div>
@@ -857,7 +857,7 @@ export function MissionDock() {
           </button>
           {block === "fora-do-app" && (
             <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
-              Lançar de verdade requer o app (bun run tauri dev) — aqui é só a
+              Lançar de verdade requer o app (bun run tauri dev). Aqui é só a
               simulação do escritório.
             </p>
           )}
