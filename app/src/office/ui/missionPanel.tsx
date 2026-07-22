@@ -13,6 +13,7 @@ import type {
   MissionPhaseRun,
   MissionPhaseStatus,
 } from "@/lib/missionTypes"
+import { DictationOverlay } from "@/components/chat/DictationOverlay"
 import { GateAnswerForm } from "@/components/mission/GateAnswerForm"
 import {
   agentCssColor,
@@ -132,6 +133,8 @@ export function PhaseRow({
  *  para/entrega; recording alheio desabilita. */
 function OfficeGateMic({ onText }: { onText: (text: string) => void }) {
   const recording = useOfficeUi((s) => s.recording)
+  const recordingSince = useOfficeUi((s) => s.recordingSince)
+  const partial = useOfficeUi((s) => s.dictationPartial)
   const [busy, setBusy] = useState(false)
   const [mine, setMine] = useState(false)
   // Fim do ditado por fora (Esc/sidecar morto) ⇒ solta o "meu" espelho.
@@ -161,23 +164,35 @@ function OfficeGateMic({ onText }: { onText: (text: string) => void }) {
 
   const active = recording && mine
   return (
-    <button
-      type="button"
-      onClick={() => void toggle()}
-      disabled={busy || (recording && !mine)}
-      title={active ? "Parar e revisar" : "Ditar a resposta (pt-BR, local)"}
-      aria-label={active ? "Parar o ditado" : "Ditar a resposta"}
-      className={cn(
-        "rounded-md p-1.5 transition-colors hover:bg-secondary disabled:opacity-40",
-        active ? "text-st-error" : "text-muted-foreground",
-      )}
-    >
-      {busy ? (
-        <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
-      ) : (
-        <Mic className="size-3.5" />
-      )}
-    </button>
+    // wrapper relative: o pill de gravação paira acima do botão (overlay
+    // absoluto, zero reflow no formulário do gate)
+    <span className="relative inline-flex">
+      <DictationOverlay
+        active={active}
+        partial={partial}
+        since={recordingSince ?? Date.now()}
+        className="absolute right-0 bottom-full mb-2 w-[280px] max-w-[60vw] justify-end"
+      />
+      <button
+        type="button"
+        onClick={() => void toggle()}
+        disabled={busy || (recording && !mine)}
+        title={active ? "Parar e revisar (Esc cancela)" : "Ditar a resposta (pt-BR, local)"}
+        aria-label={active ? "Parar o ditado" : "Ditar a resposta"}
+        className={cn(
+          "rounded-md p-1.5 transition-colors hover:bg-secondary disabled:opacity-40",
+          active
+            ? "text-st-error motion-safe:animate-pulse"
+            : "text-muted-foreground",
+        )}
+      >
+        {busy ? (
+          <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+        ) : (
+          <Mic className="size-3.5" />
+        )}
+      </button>
+    </span>
   )
 }
 

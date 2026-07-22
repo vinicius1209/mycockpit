@@ -49,6 +49,11 @@ import {
 } from "@/lib/db"
 import { MissionSettings } from "@/components/settings/MissionSettings"
 import { CompanionSettings } from "@/components/settings/CompanionSettings"
+import {
+  DEFAULT_DICTATION_HOTKEY,
+  captureHotkey,
+  formatHotkey,
+} from "@/lib/dictationHotkey"
 import { cn } from "@/lib/utils"
 
 type Section =
@@ -318,6 +323,116 @@ const HELPER_OPTIONS = [
 ]
 
 /** Linha rótulo + controle (uma preferência). */
+/** Campo "Atalho do ditado": mostra o combo formatado e grava um novo — em
+ *  modo captura o PRÓXIMO keydown com ≥1 modificador vira o combo (validação
+ *  em captureHotkey, pura); Esc cancela. Listener em CAPTURE + stopPropagation
+ *  pra tecla nenhuma vazar pro dialog (Esc fecharia as Configurações). */
+function HotkeyField() {
+  const combo = useApp((s) => s.settings.dictationHotkey)
+  const enabled = useApp((s) => s.settings.dictationEnabled)
+  const setSettings = useApp((s) => s.setSettings)
+  const [capturing, setCapturing] = useState(false)
+  const [warn, setWarn] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!capturing) return
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.code === "Escape") {
+        setCapturing(false)
+        setWarn(null)
+        return
+      }
+      const r = captureHotkey(e)
+      if (r.kind === "pending") return // só modificador — segue esperando
+      if (r.kind === "needs-modifier") {
+        setWarn("Use ao menos um modificador: ⌥, ⌃, ⇧ ou ⌘.")
+        return
+      }
+      if (r.kind === "reserved") {
+        setWarn("⌘K é a paleta de comandos do app — escolha outro combo.")
+        return
+      }
+      setSettings({ dictationHotkey: r.combo })
+      setCapturing(false)
+      setWarn(null)
+    }
+    window.addEventListener("keydown", onKey, true)
+    return () => window.removeEventListener("keydown", onKey, true)
+  }, [capturing, setSettings])
+
+  // fora do modo captura o aviso não fica pendurado
+  useEffect(() => {
+    if (!capturing) setWarn(null)
+  }, [capturing])
+
+  return (
+    <div className="py-3">
+      <div className="text-[13px] text-foreground">Atalho do ditado</div>
+      <div className="mb-2 text-[11.5px] leading-snug text-muted-foreground">
+        Toque alterna o ditado; segurar é push-to-talk (solta, insere).
+      </div>
+      <div className="flex items-center gap-2">
+        <span
+          className={cn(
+            "inline-flex h-8 min-w-[130px] items-center justify-center rounded-md border bg-secondary/40 px-2.5 font-mono text-[12.5px]",
+            capturing
+              ? "border-ring text-foreground motion-safe:animate-pulse"
+              : combo
+                ? "text-foreground"
+                : "text-muted-foreground",
+          )}
+          aria-live="polite"
+        >
+          {capturing
+            ? "pressione o combo…"
+            : combo
+              ? formatHotkey(combo)
+              : "desativado"}
+        </span>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={!enabled}
+          onClick={() => setCapturing((c) => !c)}
+        >
+          {capturing ? "Cancelar (Esc)" : "Gravar atalho"}
+        </Button>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-muted-foreground"
+          disabled={!enabled || combo === DEFAULT_DICTATION_HOTKEY}
+          onClick={() => {
+            setCapturing(false)
+            setSettings({ dictationHotkey: DEFAULT_DICTATION_HOTKEY })
+          }}
+        >
+          Restaurar padrão
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-muted-foreground"
+          disabled={!enabled || combo === null}
+          onClick={() => {
+            setCapturing(false)
+            setSettings({ dictationHotkey: null })
+          }}
+        >
+          Desativar
+        </Button>
+      </div>
+      {warn && (
+        <div className="mt-1.5 text-[11.5px] text-st-warning">{warn}</div>
+      )}
+    </div>
+  )
+}
+
 function Field({
   label,
   hint,
@@ -632,6 +747,7 @@ export function SettingsDialog() {
                     aria-label="Ativar ditado"
                   />
                 </Field>
+                <HotkeyField />
                 <div className="py-3">
                   <div className="text-[13px] text-foreground">
                     Vocabulário personalizado

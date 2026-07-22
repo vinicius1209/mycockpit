@@ -457,7 +457,9 @@ export function ComposerControls({
           </span>
         )}
         <ContextRing />
-        <MicButton />
+        {/* overlay="composer": o pill de gravação ancora na raiz relative do
+            CommandConsole e paira ACIMA do composer — a fileira não mexe. */}
+        <MicButton overlay="composer" />
         <Button
           variant="ghost"
           size="icon-sm"

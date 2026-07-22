@@ -18,6 +18,7 @@ import { SettingsDialog } from "@/components/settings/SettingsDialog"
 import { ConfirmHost } from "@/components/common/confirm"
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard"
 import { addProjectViaDialog } from "@/lib/projects"
+import { startDictationHotkey } from "@/lib/dictationHotkey"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -127,6 +128,24 @@ export default function App() {
   useEffect(() => {
     if (viewMode === "office") setOfficeVisited(true)
   }, [viewMode])
+
+  // Atalho de ditado (estilo Wispr): tap alterna, hold é push-to-talk. O combo
+  // vem de settings.dictationHotkey (lido por evento — trocar vale na hora;
+  // null = desativado). O alvo é o registro fino de lib/dictationHotkey
+  // (MicButton/docks do office); não dispara com modal aberto (⌘K e afins:
+  // dialog Radix com data-state=open) e respeita o MESMO gate do MicButton
+  // (settings.dictationEnabled).
+  useEffect(
+    () =>
+      startDictationHotkey({
+        combo: () => useApp.getState().settings.dictationHotkey,
+        enabled: () => useApp.getState().settings.dictationEnabled,
+        blocked: () =>
+          !!document.querySelector('[role="dialog"][data-state="open"]'),
+        onNoTarget: () => toast("Abra uma conversa para ditar"),
+      }),
+    [],
+  )
 
   useEffect(() => {
     let cancelled = false

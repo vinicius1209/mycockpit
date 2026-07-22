@@ -73,11 +73,15 @@ import {
 } from "../bridge/send"
 import { pickRevezamento, revezamentoTargets } from "./recovery"
 import {
+  cancelDictation,
   onDictationEnded,
   onDictationPartial,
   startDictation,
   stopDictation,
 } from "../bridge/voice"
+import { DictationOverlay } from "@/components/chat/DictationOverlay"
+import { formatHotkey, registerDictationTarget } from "@/lib/dictationHotkey"
+import { useApp } from "@/store/app"
 import { ElapsedSince } from "./DeskMenu"
 import {
   activeDockWidth,
@@ -469,7 +473,9 @@ export function DeskDock() {
   const convId = useOfficeUi((s) => s.dockConvId)
   const snapshot = useOfficeUi((s) => s.snapshot)
   const recording = useOfficeUi((s) => s.recording)
+  const recordingSince = useOfficeUi((s) => s.recordingSince)
   const partial = useOfficeUi((s) => s.dictationPartial)
+  const hotkey = useApp((s) => s.settings.dictationHotkey)
   // Card de decisão (gate) montado ⇒ painel ALARGADO (560px), cena visível.
   const dockWide = useOfficeUi((s) => s.dockWide)
 
@@ -565,6 +571,34 @@ export function DeskDock() {
   useEffect(() => {
     setShowAllItems(false)
   }, [convId])
+
+  // Alvo do atalho de ditado enquanto o dock está ABERTO (registrado por último ⇒
+  // vence o MicButton do Trabalho, que fica montado escondido). start/stop
+  // reusam o toggleMic (hoisted) via ref — as guardas (convId, missão, busy)
+  // são as mesmas do botão. Office escondido ⇒ offsetParent null ⇒ pulado.
+  const micBtnRef = useRef<HTMLButtonElement | null>(null)
+  const hotkeyRef = useRef({ toggle: () => Promise.resolve() })
+  hotkeyRef.current = {
+    toggle: () =>
+      !convId || conv.corrupt || missionActive
+        ? Promise.resolve()
+        : toggleMic(),
+  }
+  const dockOpen = !!dockDeskId && !dockMinimized && !isMissionTable
+  useEffect(() => {
+    if (!dockOpen) return
+    return registerDictationTarget({
+      start: () => {
+        if (!useOfficeUi.getState().recording) return hotkeyRef.current.toggle()
+      },
+      stop: () => {
+        if (useOfficeUi.getState().recording) return hotkeyRef.current.toggle()
+      },
+      cancel: () => cancelDictation(),
+      isRecording: () => useOfficeUi.getState().recording,
+      isAvailable: () => micBtnRef.current?.offsetParent != null,
+    })
+  }, [dockOpen])
 
   if (!dockDeskId || dockMinimized || !desk) return null
 
@@ -859,19 +893,15 @@ export function DeskDock() {
         )}
       </div>
 
-      {/* composer */}
-      <div className="shrink-0 border-t border-border p-2">
-        {recording && (
-          <div className="mb-2 flex items-center gap-2 rounded-md border border-st-running/40 bg-background px-2.5 py-1.5 text-[12px]">
-            <span className="size-1.5 shrink-0 rounded-full bg-st-error motion-safe:animate-pulse" />
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">
-              {partial?.trim() ? partial : "Ouvindo…"}
-            </span>
-            <span className="shrink-0 text-[10px] text-muted-foreground uppercase">
-              Esc cancela
-            </span>
-          </div>
-        )}
+      {/* composer — o pill de gravação PAIRA acima (overlay absoluto, zero
+          reflow: o composer não mexe um pixel durante o ditado) */}
+      <div className="relative shrink-0 border-t border-border p-2">
+        <DictationOverlay
+          active={recording}
+          partial={partial}
+          since={recordingSince ?? Date.now()}
+          className="absolute inset-x-2 bottom-full mb-2"
+        />
         <div className="flex items-end gap-1.5">
           <textarea
             value={draft}
@@ -889,13 +919,22 @@ export function DeskDock() {
             className="max-h-40 min-h-[38px] flex-1 resize-none rounded-md border border-input bg-background px-2.5 py-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus:border-ring disabled:opacity-50"
           />
           <button
+            ref={micBtnRef}
             type="button"
-            title={recording ? "Parar e revisar" : "Ditar (pt-BR, local)"}
+            title={
+              recording
+                ? "Parar e revisar (Esc cancela)"
+                : hotkey
+                  ? `Ditar (${formatHotkey(hotkey)})`
+                  : "Ditar"
+            }
             onClick={() => void toggleMic()}
             disabled={!convId || micBusy || missionActive}
             className={cn(
               "rounded-md border border-border p-2 transition-colors hover:bg-secondary disabled:opacity-50",
-              recording ? "text-st-error" : "text-muted-foreground",
+              recording
+                ? "text-st-error motion-safe:animate-pulse"
+                : "text-muted-foreground",
             )}
           >
             {micBusy ? (

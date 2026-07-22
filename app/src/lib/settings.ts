@@ -3,6 +3,7 @@ import {
   DEFAULT_MISSION_PRESETS,
 } from "@/lib/missionTypes"
 import type { AgentProbe } from "@/lib/detect"
+import { DEFAULT_DICTATION_HOTKEY } from "@/lib/dictationHotkey"
 
 // Preferências GLOBAIS do app (persistidas via zustand persist → localStorage,
 // que o webview do Tauri guarda em disco entre reinícios). Distinto do config
@@ -19,6 +20,10 @@ export interface GlobalSettings {
   helperModel: string | null
   /** Liga/desliga o botão de ditado (mic) globalmente. */
   dictationEnabled: boolean
+  /** Atalho do ditado, serializado "modificadores+e.code" (ex. "alt+Space",
+   *  "ctrl+alt+KeyD" — ver lib/dictationHotkey). null = atalho desativado
+   *  (o mic segue clicável). */
+  dictationHotkey: string | null
   /** Termos extras de vocabulário do ditado (somados aos fixos do MicButton). */
   dictationVocab: string[]
   /** Auto-revive: quando o turno termina num rate limit / "vou tentar depois",
@@ -67,6 +72,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   defaultEffort: null,
   helperModel: "haiku",
   dictationEnabled: true,
+  dictationHotkey: DEFAULT_DICTATION_HOTKEY,
   dictationVocab: [],
   autoResume: false,
   autoResumeMaxTries: 5,

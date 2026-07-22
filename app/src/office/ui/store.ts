@@ -110,6 +110,8 @@ export interface OfficeUiState {
   dockConvId: string | null
   /** Ditado do office em andamento (dono único do mic no modo — §5.5). */
   recording: boolean
+  /** Início da gravação corrente (timer mm:ss do pill). null = sem gravação. */
+  recordingSince: number | null
   /** Parcial do ditado (legenda ao vivo no balão/composer). */
   dictationPartial: string | null
   cameraMode: CameraMode
@@ -195,6 +197,7 @@ export const useOfficeUi = create<OfficeUiState>((set, get) => ({
   dockMinimized: false,
   dockConvId: null,
   recording: false,
+  recordingSince: null,
   dictationPartial: null,
   cameraMode: "follow",
   snapshot: null,
@@ -257,7 +260,11 @@ export const useOfficeUi = create<OfficeUiState>((set, get) => ({
 
   // Parar de gravar limpa a legenda parcial junto (nunca fica órfã).
   setRecording: (v) =>
-    set(v ? { recording: true } : { recording: false, dictationPartial: null }),
+    set(
+      v
+        ? { recording: true, recordingSince: Date.now() }
+        : { recording: false, recordingSince: null, dictationPartial: null },
+    ),
 
   setDictationPartial: (t) => set({ dictationPartial: t }),
 

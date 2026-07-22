@@ -9,7 +9,7 @@
 // O lançamento é REAL: bridge/mission.launchTableMission → useMission.launch
 // direto (nunca requestMissionLaunch). As mesas da sala do projeto acendem
 // sozinhas — o derive já mapeia missão→mesas; aqui só o cockpit da missão.
-import { Fragment, useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertTriangle,
   Loader2,
@@ -54,11 +54,15 @@ import {
   type PhaseEdit,
 } from "../bridge/mission"
 import {
+  cancelDictation,
   onDictationEnded,
   onDictationPartial,
   startDictation,
   stopDictation,
 } from "../bridge/voice"
+import { DictationOverlay } from "@/components/chat/DictationOverlay"
+import { formatHotkey, registerDictationTarget } from "@/lib/dictationHotkey"
+import { useApp } from "@/store/app"
 import { GateCard, PhaseRow, phaseRowData } from "./missionPanel"
 import {
   MISSION_TABLE_ID,
@@ -356,7 +360,9 @@ export function MissionDock() {
   const dockMinimized = useOfficeUi((s) => s.dockMinimized)
   const missionConvId = useOfficeUi((s) => s.missionTableConvId)
   const recording = useOfficeUi((s) => s.recording)
+  const recordingSince = useOfficeUi((s) => s.recordingSince)
   const partial = useOfficeUi((s) => s.dictationPartial)
+  const hotkey = useApp((s) => s.settings.dictationHotkey)
   // Gate card montado ⇒ painel ALARGADO (mesma regra do DeskDock).
   const dockWide = useOfficeUi((s) => s.dockWide)
 
@@ -408,6 +414,28 @@ export function MissionDock() {
       offEnded()
     }
   }, [])
+
+  // Alvo do atalho de ditado com a mesa de reunião aberta (mesmo padrão do DeskDock):
+  // start/stop reusam o toggleMic (hoisted) via ref. Só o FORMULÁRIO tem mic —
+  // na visão de acompanhamento o botão não existe (offsetParent null ⇒ pulado).
+  const micBtnRef = useRef<HTMLButtonElement | null>(null)
+  const hotkeyRef = useRef({ toggle: () => Promise.resolve() })
+  hotkeyRef.current = { toggle: () => toggleMic() }
+  const dockOpen = dockDeskId === MISSION_TABLE_ID && !dockMinimized
+  useEffect(() => {
+    if (!dockOpen) return
+    return registerDictationTarget({
+      start: () => {
+        if (!useOfficeUi.getState().recording) return hotkeyRef.current.toggle()
+      },
+      stop: () => {
+        if (useOfficeUi.getState().recording) return hotkeyRef.current.toggle()
+      },
+      cancel: () => cancelDictation(),
+      isRecording: () => useOfficeUi.getState().recording,
+      isAvailable: () => micBtnRef.current?.offsetParent != null,
+    })
+  }, [dockOpen])
 
   if (dockDeskId !== MISSION_TABLE_ID || dockMinimized) return null
 
@@ -653,18 +681,15 @@ export function MissionDock() {
 
             <div>
               <span className="label-mono">Tarefa</span>
-              {recording && (
-                <div className="mt-1 mb-1.5 flex items-center gap-2 rounded-md border border-st-running/40 bg-background px-2.5 py-1.5 text-[12px]">
-                  <span className="size-1.5 shrink-0 rounded-full bg-st-error motion-safe:animate-pulse" />
-                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                    {partial?.trim() ? partial : "Ouvindo…"}
-                  </span>
-                  <span className="shrink-0 text-[10px] text-muted-foreground uppercase">
-                    Esc cancela
-                  </span>
-                </div>
-              )}
-              <div className="mt-1 rounded-lg border bg-background transition-colors focus-within:border-brass/50">
+              {/* pill de gravação: overlay absoluto acima do campo — o form
+                  não mexe um pixel durante o ditado (zero reflow) */}
+              <div className="relative mt-1 rounded-lg border bg-background transition-colors focus-within:border-brass/50">
+                <DictationOverlay
+                  active={recording}
+                  partial={partial}
+                  since={recordingSince ?? Date.now()}
+                  className="absolute inset-x-0 bottom-full mb-2"
+                />
                 <textarea
                   value={task}
                   onChange={(e) => setTask(e.target.value)}
@@ -675,13 +700,22 @@ export function MissionDock() {
                 />
                 <div className="flex items-center gap-0.5 px-1.5 pb-1.5">
                   <button
+                    ref={micBtnRef}
                     type="button"
-                    title={recording ? "Parar e revisar" : "Ditar (pt-BR, local)"}
+                    title={
+                      recording
+                        ? "Parar e revisar (Esc cancela)"
+                        : hotkey
+                          ? `Ditar (${formatHotkey(hotkey)})`
+                          : "Ditar"
+                    }
                     onClick={() => void toggleMic()}
                     disabled={micBusy || !inApp}
                     className={cn(
                       "rounded-md p-1.5 transition-colors hover:bg-secondary disabled:opacity-40",
-                      recording ? "text-st-error" : "text-muted-foreground",
+                      recording
+                        ? "text-st-error motion-safe:animate-pulse"
+                        : "text-muted-foreground",
                     )}
                   >
                     {micBusy ? (

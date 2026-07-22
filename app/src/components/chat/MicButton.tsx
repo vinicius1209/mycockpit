@@ -1,14 +1,15 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
-import { Loader2, Mic } from "lucide-react"
+import { Loader2, Mic, Square } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { DictationOverlay } from "@/components/chat/DictationOverlay"
+import { formatHotkey, registerDictationTarget } from "@/lib/dictationHotkey"
 import { sttStart, sttStop, sttCancel } from "@/lib/stt"
 import { useChat } from "@/store/chat"
 import { useApp, useActiveProject } from "@/store/app"
 import { DESTINATIONS } from "@/lib/agents"
 import { isTauri } from "@/lib/db"
-import { fmtDuration } from "@/lib/format"
 
 /** Termos que ditado genérico erra: os nomes da casa + do projeto vão como
  *  contextualStrings pro reconhecedor (a vantagem sobre o Wispr). */
@@ -37,22 +38,38 @@ function buildVocab(projectName?: string, extra: string[] = []): string[] {
 
 type MicState = "idle" | "starting" | "rec" | "busy"
 
-/** Ditado pt-BR 100% local: clica-fala-clica, o texto cai no rascunho da
- *  conversa pra você revisar antes do Enter. Esc cancela.
+/** Ditado pt-BR 100% local: clica-fala-clica (ou o atalho de ditado), o texto cai no
+ *  rascunho da conversa pra você revisar antes do Enter. Esc cancela.
+ *  Durante a gravação a fileira de controles fica IDÊNTICA — só este botão
+ *  muda pro estado "parar" (mesmo tamanho); o feedback (timer + parcial ao
+ *  vivo) vive no DictationOverlay, um pill que PAIRA sobre a UI sem reflow.
  *  `onText` (opcional) redireciona a transcrição p/ outro destino — ex.: o
- *  textarea da tarefa no MissionLauncher — em vez do draft da conversa. */
+ *  textarea da tarefa no MissionLauncher — em vez do draft da conversa.
+ *  `overlay` ancora o pill: "composer" = acima do console (o ancestral
+ *  posicionado é a raiz do CommandConsole); "self" = acima do próprio botão
+ *  (gates/launchers, via wrapper relative local). */
 export function MicButton({
   onText,
+  overlay = "self",
 }: {
   onText?: (text: string) => void
+  overlay?: "composer" | "self"
 } = {}) {
   const project = useActiveProject()
   const enabled = useApp((s) => s.settings.dictationEnabled)
+  const hotkey = useApp((s) => s.settings.dictationHotkey)
   const vocab = useApp((s) => s.settings.dictationVocab)
   const [state, setState] = useState<MicState>("idle")
   const [since, setSince] = useState(0)
-  const [now, setNow] = useState(0)
   const [partial, setPartial] = useState("")
+  // Espelho SÍNCRONO do estado: o atalho de ditado decide (isRecording) e age
+  // (start→stop encadeado no hold) em microtasks, antes do re-render — closures
+  // presas no state do último render errariam a decisão.
+  const stateRef = useRef<MicState>("idle")
+  function go(next: MicState) {
+    stateRef.current = next
+    setState(next)
+  }
 
   // entrega a transcrição no destino (callback ou draft da conversa)
   function deliver(text: string) {
@@ -68,25 +85,70 @@ export function MicButton({
       .setDraft(convId, cur ? `${cur.replace(/\s+$/, "")} ${text}` : text)
   }
 
-  // cronômetro da gravação
-  useEffect(() => {
-    if (state !== "rec") return
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [state])
+  async function start() {
+    if (stateRef.current !== "idle") return
+    if (!isTauri()) {
+      toast("Ditado disponível no app (tauri dev)")
+      return
+    }
+    go("starting")
+    try {
+      await sttStart(buildVocab(project?.name, vocab))
+      setSince(Date.now())
+      go("rec")
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha ao iniciar o ditado")
+      go("idle")
+    }
+  }
+
+  // gravando → para e transcreve
+  async function stop() {
+    if (stateRef.current !== "rec") return
+    go("busy")
+    try {
+      const text = await sttStop()
+      if (text) deliver(text)
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha na transcrição")
+    } finally {
+      go("idle")
+    }
+  }
+
+  function cancel() {
+    if (stateRef.current !== "rec") return
+    void sttCancel()
+    go("idle")
+  }
 
   // Esc descarta a gravação
   useEffect(() => {
     if (state !== "rec") return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        void sttCancel()
-        setState("idle")
-      }
+      if (e.key === "Escape") cancel()
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
+
+  // Alvo do atalho de ditado (lib/dictationHotkey): registra ao montar; o último
+  // registrado E VISÍVEL vence — o ChatPanel fica montado `hidden` fora do
+  // modo linear, então a disponibilidade é o offsetParent do próprio botão.
+  const apiRef = useRef({ start, stop, cancel })
+  apiRef.current = { start, stop, cancel }
+  const btnRef = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (!enabled) return
+    return registerDictationTarget({
+      start: () => apiRef.current.start(),
+      stop: () => apiRef.current.stop(),
+      cancel: () => apiRef.current.cancel(),
+      isRecording: () => stateRef.current === "rec",
+      isAvailable: () => btnRef.current?.offsetParent != null,
+    })
+  }, [enabled])
 
   // Durante a gravação: parcial ao vivo (feedback de que o mic CAPTOU — perda
   // de palavras fica visível na hora) + morte inesperada do sidecar (sem isso
@@ -114,7 +176,7 @@ export function MicButton({
         if (t) deliver(t)
         if (e.payload?.error) toast.error(e.payload.error)
         else toast("O ditado encerrou sozinho — texto aproveitado no rascunho")
-        setState("idle")
+        go("idle")
       }),
     )
     return () => {
@@ -124,74 +186,73 @@ export function MicButton({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
 
-  async function toggle() {
-    if (state === "starting" || state === "busy") return
-    if (state === "idle") {
-      if (!isTauri()) {
-        toast("Ditado disponível no app (tauri dev)")
-        return
-      }
-      setState("starting")
-      try {
-        await sttStart(buildVocab(project?.name, vocab))
-        setSince(Date.now())
-        setNow(Date.now())
-        setState("rec")
-      } catch (e) {
-        toast.error(typeof e === "string" ? e : "Falha ao iniciar o ditado")
-        setState("idle")
-      }
-      return
-    }
-    // gravando → para e transcreve
-    setState("busy")
-    try {
-      const text = await sttStop()
-      if (text) deliver(text)
-    } catch (e) {
-      toast.error(typeof e === "string" ? e : "Falha na transcrição")
-    } finally {
-      setState("idle")
-    }
-  }
-
   // ditado desligado nas configurações → sem botão de mic.
   if (!enabled) return null
 
-  if (state === "rec") {
-    return (
+  // Pill flutuante (timer + parcial): overlay absoluto, fora do fluxo — a
+  // fileira de controles não mexe um pixel.
+  const pill = (
+    <DictationOverlay
+      active={state === "rec"}
+      partial={partial}
+      since={since}
+      className={
+        overlay === "composer"
+          ? "absolute inset-x-0 bottom-full mb-2"
+          : "absolute right-0 bottom-full mb-2 w-[300px] max-w-[75vw] justify-end"
+      }
+    />
+  )
+
+  const button =
+    state === "rec" ? (
+      // estado "parar": MESMO tamanho do botão idle (icon-sm = size-8) —
+      // vermelho pulsando no lugar, zero deslocamento dos vizinhos.
       <button
-        onClick={() => void toggle()}
+        ref={btnRef}
+        onClick={() => void stop()}
         title="Parar e transcrever (Esc cancela)"
-        className="flex h-7 min-w-0 items-center gap-1.5 rounded-full border border-st-error/50 bg-st-error/10 px-2.5 text-[11.5px] text-st-error transition-colors hover:bg-st-error/20"
+        aria-label="Parar e transcrever"
+        className="grid size-8 shrink-0 place-items-center rounded-full bg-st-error/15 text-st-error transition-colors hover:bg-st-error/25 motion-safe:animate-pulse"
       >
-        <span className="size-2 shrink-0 animate-pulse rounded-full bg-st-error" />
-        <span className="shrink-0 font-mono tabular-nums">
-          {fmtDuration(now - since)}
-        </span>
-        {/* cauda do parcial ao vivo: prova visual de que o mic está captando */}
-        {partial && (
-          <span className="max-w-[180px] truncate text-[11px] text-foreground/60">
-            {partial.length > 42 ? `…${partial.slice(-40)}` : partial}
-          </span>
-        )}
+        <Square className="size-3 fill-current" />
       </button>
+    ) : (
+      <Button
+        ref={btnRef}
+        variant="ghost"
+        size="icon-sm"
+        onClick={() => void (state === "idle" ? start() : null)}
+        className="rounded-full text-muted-foreground hover:text-foreground"
+        title={
+          hotkey
+            ? `Ditar (${formatHotkey(hotkey)} · pt-BR, 100% local)`
+            : "Ditar (pt-BR, 100% local)"
+        }
+        aria-label="Ditar"
+      >
+        {state === "idle" ? (
+          <Mic className="size-4" />
+        ) : (
+          <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+        )}
+      </Button>
+    )
+
+  if (overlay === "composer") {
+    // sem wrapper posicionado: o pill ancora no ancestral relative mais
+    // próximo — a raiz do CommandConsole — e paira ACIMA do composer inteiro.
+    return (
+      <>
+        {pill}
+        {button}
+      </>
     )
   }
   return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      onClick={() => void toggle()}
-      className="rounded-full text-muted-foreground hover:text-foreground"
-      title="Ditar em pt-BR (100% local, on-device)"
-      aria-label="Ditar"
-    >
-      {state === "idle" ? (
-        <Mic className="size-4" />
-      ) : (
-        <Loader2 className="size-4 animate-spin" />
-      )}
-    </Button>
+    <span className="relative inline-flex shrink-0">
+      {pill}
+      {button}
+    </span>
   )
 }

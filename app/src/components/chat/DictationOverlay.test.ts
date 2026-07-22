@@ -1,0 +1,40 @@
+// Truncamento PELO COMEÇO do parcial (clipPartialStart): as últimas palavras
+// ditas ficam sempre visíveis — o excesso some pelo início, com "…".
+import { describe, expect, it } from "vitest"
+import { PARTIAL_CLIP_CHARS, clipPartialStart } from "./DictationOverlay"
+
+describe("clipPartialStart", () => {
+  it("texto curto passa intacto (sem reticências)", () => {
+    expect(clipPartialStart("oi, tudo bem")).toBe("oi, tudo bem")
+  })
+
+  it("normaliza espaços repetidos e bordas", () => {
+    expect(clipPartialStart("  a  b\n c ")).toBe("a b c")
+  })
+
+  it("texto longo: corta pelo COMEÇO e prefixa …", () => {
+    const long = `${"blá ".repeat(80)}palavras finais`
+    const out = clipPartialStart(long)
+    expect(out.startsWith("…")).toBe(true)
+    expect(out.endsWith("palavras finais")).toBe(true)
+    expect(out.length).toBeLessThanOrEqual(PARTIAL_CLIP_CHARS + 1)
+  })
+
+  it("corta em fronteira de palavra quando ela está perto do corte", () => {
+    const long = `início ${"x".repeat(10)} ${"palavra ".repeat(30)}fim`
+    const out = clipPartialStart(long, 60)
+    // nunca começa com pedaço de palavra ("…alavra") — o resto após o corte
+    // em fronteira só contém palavras inteiras da cauda.
+    expect(out).toMatch(/^…(palavra )+fim$/)
+  })
+
+  it("sem espaço perto do corte (palavra gigante): mantém a cauda crua", () => {
+    const out = clipPartialStart("a".repeat(300), 50)
+    expect(out).toBe(`…${"a".repeat(50)}`)
+  })
+
+  it("max exato não trunca", () => {
+    const t = "b".repeat(100)
+    expect(clipPartialStart(t, 100)).toBe(t)
+  })
+})
