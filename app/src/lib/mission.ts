@@ -260,7 +260,10 @@ export async function runPhase(args: RunPhaseArgs): Promise<PhaseResult> {
     let resultOk: boolean | null = null
 
     const onEvent = (e: AgentEvent) => {
-      acc = { ...acc, ...reduceItems(acc, e) }
+      acc = {
+        ...acc,
+        ...reduceItems(acc, e, { agent: args.agent, reqModel: args.model }),
+      }
       if (e.type === "result") {
         totalCost += e.cost_usd ?? 0
         costSource = e.cost_source

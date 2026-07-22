@@ -17,6 +17,7 @@ import {
 import { useApp } from "@/store/app"
 import type { FusionCandidate } from "@/store/fusion"
 import { normalizeAgyModel } from "@/lib/agents"
+import { resolutionNotice } from "@/lib/modelResolution"
 import {
   listConversations as dbList,
   loadConversation as dbLoad,
@@ -342,15 +343,39 @@ export type ItemReducible = Pick<
   "items" | "streamingTextId" | "model" | "sessionId" | "startedAt" | "contextTokens"
 >
 
+/** Contexto opcional do run pro reducer validar pedido×resolvido no init da
+ *  sessão (lib/modelResolution). Sem ctx, comporta como sempre (sem checagem). */
+export interface ReduceCtx {
+  agent: string
+  reqModel: string | null
+}
+
 /** Núcleo PURO de itens (T1.1). NÃO mexe em running/finalizing/runId/startedAt,
  *  o controle fica no controlFlow (Linear) ou no status da lane (Fusion). */
 export function reduceItems(
   c: ItemReducible,
   e: AgentEvent,
+  ctx?: ReduceCtx,
 ): Partial<ItemReducible> {
   switch (e.type) {
-    case "session":
-      return { sessionId: e.session_id, model: e.model }
+    case "session": {
+      // Divergência DURA pedido×resolvido → notice no fio (não bloqueia; a
+      // verdade do CLI manda). Dedup por mensagem: cada retomada re-emite
+      // `session`, e a mesma divergência não deve virar eco a cada turno.
+      const warn = ctx
+        ? resolutionNotice(ctx.agent, ctx.reqModel, e.model)
+        : null
+      const fresh =
+        warn != null &&
+        !c.items.some((it) => it.kind === "notice" && it.message === warn)
+      return {
+        sessionId: e.session_id,
+        model: e.model,
+        ...(fresh
+          ? { items: [...c.items, { kind: "notice", id: uid(), message: warn }] }
+          : {}),
+      }
+    }
     // H2, texto completo do assistant: se já veio por deltas, descarta (dedup).
     case "text":
       if (c.streamingTextId) return { streamingTextId: null }
@@ -484,7 +509,10 @@ function controlFlow(_c: ConvState, e: AgentEvent): Partial<ConvState> {
 
 /** Reduz um evento do agent sobre o estado de UMA conversa (Linear). */
 function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
-  return { ...reduceItems(c, e), ...controlFlow(c, e) }
+  return {
+    ...reduceItems(c, e, { agent: c.agent, reqModel: c.reqModel }),
+    ...controlFlow(c, e),
+  }
 }
 
 export const useChat = create<ChatState>((set, get) => {

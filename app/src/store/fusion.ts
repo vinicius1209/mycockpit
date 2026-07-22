@@ -260,7 +260,10 @@ export const useFusion = create<FusionState>((set, get) => {
       const fusion = s.byConv[convId]
       if (!fusion) return {}
       const next = patchCand(fusion, candId, (c) => {
-        const merged = { ...c, ...reduceItems(c, e) }
+        const merged = {
+          ...c,
+          ...reduceItems(c, e, { agent: c.agent, reqModel: c.reqModel }),
+        }
         if (e.type === "result") {
           merged.status = "finalizing"
           merged.result = merged.items[merged.items.length - 1] as Extract<

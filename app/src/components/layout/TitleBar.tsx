@@ -7,6 +7,7 @@ import { InboxBell } from "@/components/layout/InboxBell"
 import { useApp, useActiveProject } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { agentLabel } from "@/lib/agent"
+import { resolutionNotice } from "@/lib/modelResolution"
 import { cn } from "@/lib/utils"
 
 const MODES = [
@@ -85,11 +86,22 @@ function InstrumentStrip() {
   const agent = useChat(
     (s) => (s.activeId ? s.byId[s.activeId]?.agent : null) ?? "claude-code",
   )
+  const reqModel = useChat(
+    (s) => (s.activeId ? s.byId[s.activeId]?.reqModel : null) ?? null,
+  )
+  // Divergência pedido×resolvido: o mostrador segue exibindo a VERDADE (o
+  // resolvido), só ganha cor de alerta + tooltip com o porquê.
+  const diverged = resolutionNotice(agent, reqModel, model)
   // Sem dot de status aqui, o "rodando" já aparece na sidebar (spinner por
   // conversa + dot do projeto), no botão de stop e no "… trabalhando…".
   return (
     <div className="hidden items-center gap-2 md:flex">
-      <span className="label-mono">{model ?? agentLabel(agent)}</span>
+      <span
+        className={cn("label-mono", diverged && "text-amber-500")}
+        title={diverged ?? undefined}
+      >
+        {model ?? agentLabel(agent)}
+      </span>
     </div>
   )
 }
