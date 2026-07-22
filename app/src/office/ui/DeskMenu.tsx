@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react"
 import { ClipboardList, Crown, Hand, MessageCircle, RefreshCw, Rocket, Square } from "lucide-react"
 import { toast } from "sonner"
 import { useApp } from "@/store/app"
+import { useCards } from "@/store/cards"
 import {
   BOSS_DESK_ID,
   NOTICE_BOARD_ID,
@@ -269,6 +270,13 @@ export function GateVisitMenu({
  *  "Nada agendado". */
 export function NoticeBoardMenu() {
   const items = useBoardSchedules(4)
+  // S4.4 — atalho do board: cards em review/blocked ("esperando você") viram
+  // uma linha acima dos agendamentos; a ação abre o Painel (a superfície rica
+  // do board). Derivação pura do useCards, seletor devolve primitivo.
+  const waitingCards = useCards(
+    (s) =>
+      s.all.filter((c) => c.state === "review" || c.state === "blocked").length,
+  )
 
   return (
     <div
@@ -283,6 +291,21 @@ export function NoticeBoardMenu() {
         </span>
       </div>
 
+      {waitingCards > 0 && (
+        <button
+          type="button"
+          onClick={() => useApp.getState().setViewMode("painel")}
+          className="mb-1.5 flex w-full items-center gap-1.5 rounded-md border border-st-queued/40 bg-st-queued/10 px-2 py-1 text-left text-[12px] text-st-queued transition-colors hover:bg-st-queued/20"
+          aria-label={`${waitingCards} ${waitingCards === 1 ? "card esperando" : "cards esperando"} você. Abrir o Painel.`}
+        >
+          <span className="min-w-0 flex-1 truncate">
+            {waitingCards === 1
+              ? "1 card esperando você"
+              : `${waitingCards} cards esperando você`}
+          </span>
+          <span aria-hidden="true">›</span>
+        </button>
+      )}
       {items.length === 0 ? (
         <p className="mb-1.5 text-[12px] leading-snug text-muted-foreground">
           Nada agendado

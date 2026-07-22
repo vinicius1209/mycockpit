@@ -14,6 +14,9 @@ const h = vi.hoisted(() => ({
     switchConversation: vi.fn(async () => {}),
   },
   app: {
+    // projetos VIVOS do app: a guarda de projeto arquivado do dispatch (B1)
+    // consulta esta lista — cards de projeto fora dela não despacham.
+    projects: [{ id: "p1", name: "alpha", path: "/proj/alpha", createdAt: 1 }],
     setActiveProject: vi.fn(),
     setViewMode: vi.fn(),
   },
@@ -181,6 +184,32 @@ describe("cards (E1): dispatch por gesto humano", () => {
     seedStore([card({ state: "working", conversationId: "conv-x" })])
     await expect(useCards.getState().dispatch("c1")).rejects.toThrow(
       /backlog/,
+    )
+    expect(h.chat.newConversation).not.toHaveBeenCalled()
+  })
+
+  it("LANÇA em projeto arquivado, no STORE (B1: remoto e desktop herdam a guarda)", async () => {
+    seedStore([card({ state: "backlog", projectId: "p-arquivado" })])
+    await expect(useCards.getState().dispatch("c1")).rejects.toThrow(
+      /Projeto arquivado/,
+    )
+    // nada roda: nem conversa nova nem estado no banco
+    expect(h.chat.newConversation).not.toHaveBeenCalled()
+    expect(vi.mocked(dbSetCardState)).not.toHaveBeenCalled()
+    expect(useCards.getState().all[0].state).toBe("backlog")
+    // a guarda in-flight soltou: com o projeto restaurado, o card despacha
+    h.app.projects.push({ id: "p-arquivado", name: "volta", path: "/v", createdAt: 2 })
+    try {
+      await expect(useCards.getState().dispatch("c1")).resolves.toBe("conv-nova")
+    } finally {
+      h.app.projects.pop()
+    }
+  })
+
+  it("LANÇA em card inexistente (D1: estado stale recebe motivo, não silêncio)", async () => {
+    seedStore([card({ state: "backlog" })])
+    await expect(useCards.getState().dispatch("c-fantasma")).rejects.toThrow(
+      /Card não encontrado no board/,
     )
     expect(h.chat.newConversation).not.toHaveBeenCalled()
   })

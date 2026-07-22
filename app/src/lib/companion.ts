@@ -21,8 +21,10 @@ import type { MissionPhaseStatus, MissionStatus } from "@/lib/missionTypes"
 import {
   getPreset,
   isTauri,
+  isTerminalCardState,
   loadLedger,
   listRecentDeliveries,
+  type CardState,
   type LedgerEntry,
   type RecentDelivery,
 } from "@/lib/db"
@@ -30,6 +32,7 @@ import { feedbackLesson } from "@/lib/learning"
 import { nativeNotify } from "@/lib/notify"
 import { hasAssistantReply } from "@/lib/presets"
 import { useApp } from "@/store/app"
+import { useCards } from "@/store/cards"
 import { useChat } from "@/store/chat"
 import { convIdForInteraction, useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
@@ -47,13 +50,14 @@ import { perfSpan } from "@/office/engine/perf"
 // Nunca inclui paths absolutos do disco (worktree/projectPath ficam fora).
 
 /** Item que PRECISA de você: gate de missão, aprovação de comando, pergunta
- *  estruturada do agente ou turno MUDO (watchdog P2). `agent` é o ID do
- *  registry (a página rotula). */
+ *  estruturada do agente, turno MUDO (watchdog P2) ou card ESTAGNADO do board
+ *  (vigia S2.2). `agent` é o ID do registry (a página rotula). */
 export interface CompanionAttention {
   /** gate → "gate:<convId>"; approval/question → id do request (responder usa);
-   *  stalled → "stalled:<convId>" (parar usa stop_turn com o convId). */
+   *  stalled → "stalled:<convId>" (parar usa stop_turn com o convId);
+   *  card → "card:<cardId>" (informativo; as ações moram na seção Board). */
   id: string
-  kind: "gate" | "approval" | "question" | "stalled"
+  kind: "gate" | "approval" | "question" | "stalled" | "card"
   /** null = não mapeável a uma conversa (question não carrega run_id). */
   convId: string | null
   projectId: string | null
@@ -68,8 +72,10 @@ export interface CompanionAttention {
   /** approval: comando extraído (Bash) e a tool pedida. */
   command?: string
   toolName?: string
-  /** stalled: minutos de silêncio do turno ("mudo há X min"). */
+  /** stalled/card: minutos de silêncio ("mudo há X min"). */
   minutes?: number
+  /** card: título do card estagnado (a página mostra O QUE está parado). */
+  title?: string
 }
 
 /** Atividade em execução agora (turno linear OU missão). */
@@ -145,6 +151,27 @@ export interface CompanionProject {
   agents: CompanionProjectAgent[]
 }
 
+/** Card ABERTO do board (S4.5) — terminal (done/cancelled) nunca viaja: done
+ *  já aparece como delivery e histórico fechado não é board. */
+export interface CompanionCard {
+  id: string
+  projectId: string
+  projectName: string | null
+  title: string
+  state: CardState
+  /** true quando o projeto do card saiu do app (arquivado): a página rotula
+   *  "projeto arquivado" e esconde "Iniciar" (defesa de UX — a guarda de
+   *  verdade LANÇA no useCards.dispatch, B1). Omitido quando o projeto vive. */
+  archived?: boolean
+  /** Início do silêncio (vigia S2.2) — transient, some quando o card mexe. */
+  stalledSince?: number
+  /** RESERVADO: o custo por card mora em turn_costs (query assíncrona do
+   *  Painel), não no store — e o snapshot é síncrono/puro sobre getState.
+   *  Enquanto o custo não for hidratado no useCards, o campo fica omitido
+   *  (nunca inventado). */
+  costUsd?: number
+}
+
 export interface CompanionSnapshot {
   attention: CompanionAttention[]
   running: CompanionRunning[]
@@ -152,6 +179,9 @@ export interface CompanionSnapshot {
   deliveries: CompanionDelivery[]
   costs: CompanionCosts
   projects: CompanionProject[]
+  /** Board (S4.5): opcional no shape (página antiga segue funcionando), mas o
+   *  builder sempre emite. */
+  cards?: CompanionCard[]
 }
 
 /** Dados assíncronos (DB) que temperam o snapshot; cacheados pelo bridge. */
@@ -285,6 +315,46 @@ export function buildCompanionSnapshot(
     })
   }
 
+  // ── board (S4.5): cards abertos do useCards + estagnados em attention ──
+  const boardCards = useCards.getState().all
+  const cards: CompanionCard[] = []
+  for (const c of boardCards) {
+    if (isTerminalCardState(c.state)) continue
+    const cardProjectName = nameOf(c.projectId)
+    cards.push({
+      id: c.id,
+      projectId: c.projectId,
+      projectName: cardProjectName,
+      title: c.title,
+      state: c.state,
+      // projeto fora do app = arquivado, marcado EXPLÍCITO (D2): a página
+      // rotula e esconde "Iniciar"; a guarda real lança no dispatch (B1).
+      ...(cardProjectName == null ? { archived: true } : {}),
+      // costUsd OMITIDO de propósito: ver o doc do CompanionCard.
+      ...(c.stalledSince != null ? { stalledSince: c.stalledSince } : {}),
+    })
+    // card ESTAGNADO (vigia S2.2) pede olho também em attention — análogo ao
+    // "stalled" de turno acima, com minutes. Informativo: as ações remotas
+    // (dispatch/close) moram na seção Board da página.
+    if (c.stalledSince != null) {
+      attention.push({
+        id: `card:${c.id}`,
+        kind: "card",
+        convId: c.conversationId,
+        projectId: c.projectId,
+        projectName: nameOf(c.projectId),
+        agent: c.assigneeAgent ?? "",
+        phase: null,
+        phaseLabel: null,
+        title: c.title,
+        minutes: Math.max(
+          1,
+          Math.round((Date.now() - c.stalledSince) / 60_000),
+        ),
+      })
+    }
+  }
+
   // ── execução: turnos lineares rodando + missões running ──
   const running: CompanionRunning[] = []
   for (const [convId, c] of Object.entries(chat.byId)) {
@@ -408,6 +478,7 @@ export function buildCompanionSnapshot(
     })),
     costs: { totalUsd, byProject },
     projects,
+    cards,
   }
 }
 
@@ -459,6 +530,31 @@ function isInteractionAnswer(v: unknown): v is InteractionAnswer {
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : ""
+}
+
+/** Erro de ação de card vinda do celular (S4.6): o 202 já saiu, então a
+ *  resposta honesta volta pelo MESMO envelope do send_message quando o card
+ *  TEM conversa — notice persistido + ping, o refetch mostra o motivo. Card
+ *  SEM conversa não tem envelope hoje (gap documentado, sem estado novo de
+ *  aviso transitório no snapshot): fica console.warn + aviso nativo no
+ *  desktop; o celular percebe pelo board que nada mudou. */
+async function reportCardActionError(
+  cardId: string,
+  err: unknown,
+): Promise<void> {
+  const message = err instanceof Error ? err.message : String(err)
+  console.warn("[companion] ação de card falhou:", cardId, message)
+  const card = useCards.getState().all.find((c) => c.id === cardId)
+  if (card?.conversationId) {
+    const convId = card.conversationId
+    await useChat.getState().ensureConversationLoaded(card.projectId, convId)
+    useChat.getState().handleEvent(convId, { type: "notice", message })
+    // mesma disciplina D1 do send_message: ping só DEPOIS do UPSERT commitar.
+    await useChat.getState().persist(convId)
+    pingConvUpdated(convId)
+    return
+  }
+  void nativeNotify("Companion", `Ação de card do celular falhou: ${message}`)
 }
 
 /** Executa UMA ação vinda do celular (payload do evento `companion://action`).
@@ -604,6 +700,43 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
       })
       return
     }
+    case "dispatch_card": {
+      // S4.6 — o CELULAR é o humano: o gate humano-only do board proíbe
+      // sistema/agente despachando sozinho, não o dono no sofá. A ação passa
+      // INTEIRA pelo useCards.dispatch — guardas intactas: backlog-only
+      // (lança), anti-duplo-clique (Set em voo) e o fluxo normal de conversa
+      // nova; a guarda de availability segue valendo no ENVIO do 1º turno
+      // (o dispatch só cria e liga a conversa, não roda agent).
+      const cardId = str(p.cardId)
+      if (!cardId) {
+        console.warn("[companion] dispatch_card malformado — ignorado", p)
+        return
+      }
+      try {
+        await useCards.getState().dispatch(cardId)
+      } catch (err) {
+        await reportCardActionError(cardId, err)
+      }
+      return
+    }
+    case "close_card": {
+      // S4.6 — fechar card é o gesto humano terminal do board; o celular
+      // conta como humano. `state` é enum FECHADO validado no Rust E aqui
+      // (defesa em profundidade); a máquina de estados do closeCard decide o
+      // resto (transição inválida vira erro reportado).
+      const cardId = str(p.cardId)
+      const state = str(p.state)
+      if (!cardId || (state !== "done" && state !== "cancelled")) {
+        console.warn("[companion] close_card malformado — ignorado", p)
+        return
+      }
+      try {
+        await useCards.getState().closeCard(cardId, state)
+      } catch (err) {
+        await reportCardActionError(cardId, err)
+      }
+      return
+    }
     case "feedback_lesson": {
       // P6: 👍/👎 do item de turno concluído no celular — MESMO caminho do
       // ChatPanel (feedbackLesson → reinforceLessons das lições injetadas).
@@ -739,6 +872,8 @@ export function startCompanionBridge(): () => void {
     useMission.subscribe(() => schedulePush()),
     useInteractions.subscribe(() => schedulePush()),
     useApp.subscribe(() => schedulePush()),
+    // S4.5 — board no snapshot: mutação de card (estado/estagnação) re-empurra.
+    useCards.subscribe(() => schedulePush()),
   )
 
   let disposed = false

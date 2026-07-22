@@ -7,16 +7,20 @@ import {
   MessageSquareText,
   ReceiptText,
   Rocket,
+  SquareKanban,
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { openDeliveryDiff } from "@/lib/deliveryDiff"
+import { useApp } from "@/store/app"
+import { useCards } from "@/store/cards"
 import { agentLabel, fmtCost } from "../bridge/hooks"
 import { useOfficeUi } from "./store"
 import {
   bossStandupLine,
   buildBossBriefing,
   deliveryAge,
+  type BossBoardHighlight,
   type BossDeliveryItem,
   type BossDeskItem,
 } from "./bossBriefing"
@@ -120,6 +124,48 @@ function DeskRow({
   )
 }
 
+/** Rótulo pt-BR do motivo do destaque no board (S4.4). */
+const HIGHLIGHT_LABEL: Record<BossBoardHighlight["reason"], string> = {
+  stalled: "estagnado",
+  blocked: "bloqueado",
+  review: "em revisão",
+}
+
+function BoardHighlightRow({
+  item,
+  onOpen,
+}: {
+  item: BossBoardHighlight
+  onOpen: (item: BossBoardHighlight) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(item)}
+      className="group flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      aria-label={`Card ${item.title} (${HIGHLIGHT_LABEL[item.reason]}) em ${item.projectName}. Abrir no Painel.`}
+    >
+      <span
+        className="size-2 shrink-0 rounded-full bg-st-queued shadow-[0_0_7px_var(--st-queued)]"
+        aria-hidden="true"
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[12px] font-medium text-foreground">
+          {item.title}
+        </span>
+        <span className="block truncate text-[11px]">
+          <span className="text-st-queued">{HIGHLIGHT_LABEL[item.reason]}</span>
+          <span className="text-muted-foreground"> · {item.projectName}</span>
+        </span>
+      </span>
+      <ArrowUpRight
+        className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
+        aria-hidden="true"
+      />
+    </button>
+  )
+}
+
 function DeliveryRow({
   item,
   now,
@@ -180,7 +226,19 @@ export function BossCenter({
   onOpenMission: () => void
 }) {
   const snapshot = useOfficeUi((s) => s.snapshot)
-  const briefing = useMemo(() => buildBossBriefing(snapshot), [snapshot])
+  // S4.4 — board: snapshot do useCards no momento do render (mesma disciplina
+  // do OfficeSnapshot: derivação pura, nada de estado novo). Nomes de projeto
+  // do useApp cobrem cards de projeto que não tem sala no office.
+  const cards = useCards((s) => s.all)
+  const projects = useApp((s) => s.projects)
+  const projectNames = useMemo(
+    () => new Map(projects.map((p) => [p.id, p.name])),
+    [projects],
+  )
+  const briefing = useMemo(
+    () => buildBossBriefing(snapshot, cards, projectNames),
+    [snapshot, cards, projectNames],
+  )
   // "Falar com…" (delegar enxuto): seleção derivada com fallback — se o
   // projeto/agent escolhido sair do briefing, cai no primeiro válido em vez de
   // precisar de efeito de sincronização.
@@ -243,6 +301,16 @@ export function BossCenter({
       text: item.text,
     })
   }
+  // S4.4 — card destacado: fecha o drawer ANTES (mesma coreografia das outras
+  // ações) e navega pro Painel com o card selecionado.
+  const openBoardCard = (item: BossBoardHighlight) => {
+    onClose()
+    useCards.getState().select(item.id)
+    useApp.getState().setViewMode("painel")
+  }
+  const boardCounts = briefing.board.counts
+  const boardTotal =
+    boardCounts.backlog + boardCounts.working + boardCounts.waiting
   const now = Date.now()
 
   return (
@@ -447,6 +515,62 @@ export function BossCenter({
               <EmptyLine>Nenhuma entrega recente.</EmptyLine>
             )}
           </div>
+        </section>
+
+        {/* S4.4 — Board: derivação pura do useCards (estado real, nunca
+            teatro). Contagens agregadas + por projeto e os cards que pedem
+            olho; clicar navega pro Painel com o card selecionado. */}
+        <section aria-labelledby={`${BOSS_CENTER_ID}-board`} className="mb-4">
+          <SectionTitle
+            id={`${BOSS_CENTER_ID}-board`}
+            icon={SquareKanban}
+            title="Board"
+            count={boardTotal}
+          />
+          {boardTotal === 0 ? (
+            <EmptyLine>Nenhum card aberto no board.</EmptyLine>
+          ) : (
+            <>
+              <p className="px-2 pb-1 text-[11px] text-muted-foreground">
+                {boardCounts.backlog} backlog · {boardCounts.working} em
+                andamento ·{" "}
+                <span
+                  className={cn(boardCounts.waiting > 0 && "text-st-queued")}
+                >
+                  {boardCounts.waiting} esperando você
+                </span>
+              </p>
+              <div className="flex flex-col">
+                {briefing.board.byProject.map((proj) => (
+                  <div
+                    key={proj.projectId}
+                    className="flex items-baseline gap-2 px-2 py-0.5 text-[11px]"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-foreground/90">
+                      {proj.projectName}
+                    </span>
+                    <span
+                      className="shrink-0 font-mono text-[10px] text-muted-foreground tabular-nums"
+                      title="backlog · em andamento · esperando você"
+                    >
+                      {proj.backlog} · {proj.working} · {proj.waiting}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {briefing.board.highlights.length > 0 && (
+                <div className="mt-1 flex flex-col">
+                  {briefing.board.highlights.map((item) => (
+                    <BoardHighlightRow
+                      key={item.id}
+                      item={item}
+                      onOpen={openBoardCard}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </section>
 
         <section aria-labelledby={`${BOSS_CENTER_ID}-costs`}>

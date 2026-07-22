@@ -1,3 +1,4 @@
+import type { CardRow } from "@/store/cards"
 import type {
   DeskVisualState,
   OfficeAgentId,
@@ -38,6 +39,129 @@ export type BossTeam = {
   desks: BossDeskItem[]
 }
 
+// ── board (S4.4): seção derivada do useCards — derivação PURA, sem estado novo
+
+/** Subset estrutural do CardRow que o briefing consome (mantém o módulo puro:
+ *  o import do store é só de tipo). */
+export type BossBoardCard = Pick<
+  CardRow,
+  "id" | "projectId" | "title" | "state" | "updatedAt" | "stalledSince"
+>
+
+export type BossBoardCounts = {
+  backlog: number
+  /** working ("em andamento"). */
+  working: number
+  /** review + blocked ("esperando você"). */
+  waiting: number
+}
+
+export type BossBoardProject = BossBoardCounts & {
+  projectId: string
+  projectName: string
+}
+
+export type BossBoardHighlight = {
+  id: string
+  projectId: string
+  projectName: string
+  title: string
+  /** Por que o card pede olho: estagnado (vigia) vence o estado no rótulo. */
+  reason: "stalled" | "blocked" | "review"
+  stalledSince?: number
+}
+
+export type BossBoard = {
+  counts: BossBoardCounts
+  /** Contagens por projeto (ordem alfabética por nome — determinística). */
+  byProject: BossBoardProject[]
+  /** Máx. 5 cards que pedem olho: estagnados primeiro (mais tempo mudo antes),
+   *  depois bloqueados, depois em revisão (esperando há mais tempo antes). */
+  highlights: BossBoardHighlight[]
+}
+
+const BOARD_HIGHLIGHT_MAX = 5
+
+const EMPTY_BOARD: BossBoard = {
+  counts: { backlog: 0, working: 0, waiting: 0 },
+  byProject: [],
+  highlights: [],
+}
+
+const HIGHLIGHT_RANK: Record<BossBoardHighlight["reason"], number> = {
+  stalled: 0,
+  blocked: 1,
+  review: 2,
+}
+
+/** Deriva a seção Board dos cards abertos (terminais ficam fora: histórico
+ *  fechado não é board). `nameOf` resolve o nome do projeto do card. */
+function buildBoard(
+  cards: readonly BossBoardCard[],
+  nameOf: (projectId: string) => string,
+): BossBoard {
+  if (cards.length === 0) return EMPTY_BOARD
+  const counts: BossBoardCounts = { backlog: 0, working: 0, waiting: 0 }
+  const perProject = new Map<string, BossBoardProject>()
+  const highlights: (BossBoardHighlight & { sortAt: number })[] = []
+  for (const card of cards) {
+    if (card.state === "done" || card.state === "cancelled") continue
+    const bucket =
+      card.state === "backlog"
+        ? "backlog"
+        : card.state === "working"
+          ? "working"
+          : "waiting"
+    counts[bucket] += 1
+    let proj = perProject.get(card.projectId)
+    if (!proj) {
+      proj = {
+        projectId: card.projectId,
+        projectName: nameOf(card.projectId),
+        backlog: 0,
+        working: 0,
+        waiting: 0,
+      }
+      perProject.set(card.projectId, proj)
+    }
+    proj[bucket] += 1
+    // destaque: estagnado (qualquer estado aberto) OU esperando você
+    const reason: BossBoardHighlight["reason"] | null =
+      card.stalledSince != null
+        ? "stalled"
+        : card.state === "blocked"
+          ? "blocked"
+          : card.state === "review"
+            ? "review"
+            : null
+    if (reason) {
+      highlights.push({
+        id: card.id,
+        projectId: card.projectId,
+        projectName: proj.projectName,
+        title: card.title,
+        reason,
+        stalledSince: card.stalledSince,
+        // esperando/mudo há mais tempo primeiro dentro de cada razão
+        sortAt: card.stalledSince ?? card.updatedAt,
+      })
+    }
+  }
+  highlights.sort(
+    (a, b) =>
+      HIGHLIGHT_RANK[a.reason] - HIGHLIGHT_RANK[b.reason] || a.sortAt - b.sortAt,
+  )
+  return {
+    counts,
+    byProject: [...perProject.values()].sort((a, b) =>
+      a.projectName.localeCompare(b.projectName),
+    ),
+    highlights: highlights
+      .slice(0, BOARD_HIGHLIGHT_MAX)
+      .map(({ sortAt: _sortAt, ...item }) => item),
+  }
+}
+
 export type BossBriefing = {
   attention: BossDeskItem[]
   running: BossDeskItem[]
@@ -45,6 +169,7 @@ export type BossBriefing = {
   roomCosts: BossRoomCost[]
   teams: BossTeam[]
   totalCostUsd: number
+  board: BossBoard
 }
 
 const EMPTY_BRIEFING: BossBriefing = {
@@ -54,12 +179,26 @@ const EMPTY_BRIEFING: BossBriefing = {
   roomCosts: [],
   teams: [],
   totalCostUsd: 0,
+  board: EMPTY_BOARD,
 }
 
 /** Converte o snapshot visual em um briefing operacional. Não infere trabalho:
- *  todas as linhas vêm de estados/entregas/custos que o Office já conhece. */
-export function buildBossBriefing(snapshot: OfficeSnapshot | null): BossBriefing {
-  if (!snapshot) return EMPTY_BRIEFING
+ *  todas as linhas vêm de estados/entregas/custos que o Office já conhece.
+ *  `cards`/`projectNames` (S4.4): snapshot do useCards no momento do render do
+ *  drawer — o board NÃO depende do office montado, só o resto do briefing.
+ *  Nome de projeto: mapa explícito → sala do snapshot → "projeto arquivado"
+ *  (a intenção sobrevive ao arquivamento, mesma honestidade do BoardLane). */
+export function buildBossBriefing(
+  snapshot: OfficeSnapshot | null,
+  cards: readonly BossBoardCard[] = [],
+  projectNames?: ReadonlyMap<string, string>,
+): BossBriefing {
+  const roomName = new Map<string, string>()
+  for (const room of snapshot?.rooms ?? []) roomName.set(room.projectId, room.name)
+  const nameOf = (pid: string): string =>
+    projectNames?.get(pid) ?? roomName.get(pid) ?? "projeto arquivado"
+  const board = buildBoard(cards, nameOf)
+  if (!snapshot) return { ...EMPTY_BRIEFING, board }
 
   const attention: BossDeskItem[] = []
   const running: BossDeskItem[] = []
@@ -119,6 +258,7 @@ export function buildBossBriefing(snapshot: OfficeSnapshot | null): BossBriefing
     roomCosts,
     teams,
     totalCostUsd: roomCosts.reduce((total, room) => total + room.costUsd, 0),
+    board,
   }
 }
 

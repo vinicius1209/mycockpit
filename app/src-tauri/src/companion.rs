@@ -661,6 +661,22 @@ fn sanitize_action(uploads: &HashMap<String, Attachment>, v: &Value) -> Result<V
             }
             out
         }
+        // S4.6 — board remoto: o celular É o humano (o gate humano-only do
+        // board proíbe sistema/agente despachando/fechando sozinho, não o
+        // dono no sofá). O executor JS revalida e roteia pelo useCards, com
+        // as guardas do store intactas (backlog-only, anti-duplo, máquina de
+        // estados do card).
+        "dispatch_card" => json!({"kind": "dispatch_card", "cardId": req_str("cardId")?}),
+        "close_card" => {
+            let card = req_str("cardId")?;
+            let state = req_str("state")?;
+            // enum FECHADO: card só fecha como done|cancelled — mesma regra
+            // do closeCard do front (defesa em profundidade nas duas pontas)
+            if state != "done" && state != "cancelled" {
+                return Err("state inválido (done|cancelled)".into());
+            }
+            json!({"kind": "close_card", "cardId": card, "state": state})
+        }
         "feedback_lesson" => {
             // P6: 👍/👎 de turno concluído → reforço de lições no front. Verdict
             // é enum fechado (up|down) — qualquer outro valor é 400.
@@ -774,6 +790,9 @@ mod tests {
         assert!(!COMPANION_PAGE.contains("href=\"http"));
         // P6: a página fala o vocabulário whitelisted do 👍/👎
         assert!(COMPANION_PAGE.contains("feedback_lesson"));
+        // S4.6: a página fala o vocabulário whitelisted do board
+        assert!(COMPANION_PAGE.contains("dispatch_card"));
+        assert!(COMPANION_PAGE.contains("close_card"));
     }
 
     #[tokio::test]
@@ -1005,6 +1024,46 @@ mod tests {
         );
         assert!(
             sanitize_action(&up, &json!({"kind": "feedback_lesson", "verdict": "up"})).is_err()
+        );
+    }
+
+    #[test]
+    fn sanitize_card_actions_reconstroi_e_valida_enum() {
+        let up = HashMap::new();
+        // dispatch_card: só o cardId viaja — campo extra morre na reconstrução
+        let out = sanitize_action(
+            &up,
+            &json!({"kind": "dispatch_card", "cardId": "k1", "hack": "sudo"}),
+        )
+        .unwrap();
+        assert_eq!(out, json!({"kind": "dispatch_card", "cardId": "k1"}));
+        assert!(sanitize_action(&up, &json!({"kind": "dispatch_card"})).is_err());
+        assert!(sanitize_action(&up, &json!({"kind": "dispatch_card", "cardId": ""})).is_err());
+        // close_card: state é enum FECHADO (done|cancelled)
+        let out = sanitize_action(
+            &up,
+            &json!({"kind": "close_card", "cardId": "k1", "state": "done", "hack": "x"}),
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            json!({"kind": "close_card", "cardId": "k1", "state": "done"})
+        );
+        let out = sanitize_action(
+            &up,
+            &json!({"kind": "close_card", "cardId": "k1", "state": "cancelled"}),
+        )
+        .unwrap();
+        assert_eq!(out["state"], "cancelled");
+        // fora do enum / campos faltando → 400, nunca viaja
+        assert!(sanitize_action(
+            &up,
+            &json!({"kind": "close_card", "cardId": "k1", "state": "working"}),
+        )
+        .is_err());
+        assert!(sanitize_action(&up, &json!({"kind": "close_card", "cardId": "k1"})).is_err());
+        assert!(
+            sanitize_action(&up, &json!({"kind": "close_card", "state": "done"})).is_err()
         );
     }
 
