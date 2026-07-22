@@ -172,7 +172,10 @@ interface ChatState {
   /** Carrega (lazy) as metas de um projeto no mapa; no-op se já carregadas.
    *  Chamada quando um projeto é expandido no sidebar. */
   loadProjectConversations: (projectId: string) => Promise<void>
-  newConversation: (projectId: string) => Promise<void>
+  /** Cria uma conversa vazia no projeto, abre-a (activeId) e RETORNA o id —
+   *  callers que precisam do id (ex.: dispatch de card) usam o retorno, nunca
+   *  inferem via activeId (corrida com outra navegação). */
+  newConversation: (projectId: string) => Promise<string>
   /** F6 — cria uma conversa em BACKGROUND (automação agendada): grava no DB com
    *  título fixo e registra no store SEM roubar a seleção do usuário (não mexe
    *  em activeId/projectId ativo). O run escreve nela via start/handleEvent.
@@ -781,6 +784,7 @@ export const useChat = create<ChatState>((set, get) => {
           byId: { ...s.byId, [id]: emptyConv(projectId) },
         }
       })
+      return id
     },
 
     registerConversation: async (projectId, id, title, agent) => {
@@ -876,6 +880,11 @@ export const useChat = create<ChatState>((set, get) => {
       // atrasado re-inseriria a linha deletada (UPSERT) = conversa-zumbi.
       cancelPersist(id)
       await dbDelete(id)
+      // E1 (S1.2): o dbDelete devolveu o card ligado pro backlog no banco
+      // (conversation_id = NULL) — re-hidrata o store do board pra UI refletir.
+      void import("@/store/cards")
+        .then((m) => m.useCards.getState().load())
+        .catch(() => {})
       void wipeAttachments(id) // apaga os blobs da conversa (privacidade imediata)
       const before = get()
       const wasActive = before.activeId === id
@@ -1079,7 +1088,13 @@ export const useChat = create<ChatState>((set, get) => {
       await get().persist(convId)
     },
 
-    start: (convId, text, runId, agent, model, effort, attachments) =>
+    start: (convId, text, runId, agent, model, effort, attachments) => {
+      // E1 (S1.4): o turno resolve o agent da conversa → espelha no card
+      // ligado (assignee_agent). Import dinâmico: cards importa este módulo.
+      // Best-effort: falha do espelho não pode travar o turno.
+      void import("@/store/cards")
+        .then((m) => m.useCards.getState().noteConversationAgent(convId, agent))
+        .catch(() => {})
       set((s) => {
         // conversa ainda não carregada do disco: NUNCA fabrica um estado vazio,
         // o persist (UPSERT de linha inteira) sobrescreveria o histórico.
@@ -1123,7 +1138,8 @@ export const useChat = create<ChatState>((set, get) => {
             },
           },
         }
-      }),
+      })
+    },
 
     handleEvent: (convId, e) => {
       // efeitos GLOBAIS: limite marca o agent como limitado (cross-conversa,
@@ -1287,7 +1303,12 @@ export const useChat = create<ChatState>((set, get) => {
         }
       }),
 
-    beginTransplant: (convId, runId, agent) =>
+    beginTransplant: (convId, runId, agent) => {
+      // E1 (S1.4): transplant mantém o conversation_id (o link do card
+      // sobrevive) mas troca o agent → o carimbo acompanha a realidade.
+      void import("@/store/cards")
+        .then((m) => m.useCards.getState().noteConversationAgent(convId, agent))
+        .catch(() => {})
       set((s) => {
         const cur = s.byId[convId]
         if (!cur) return {}
@@ -1318,7 +1339,8 @@ export const useChat = create<ChatState>((set, get) => {
             },
           },
         }
-      }),
+      })
+    },
 
     finish: (convId) =>
       patch(convId, {

@@ -34,6 +34,9 @@ import { useNotifs } from "@/store/notifications"
 // request/resolved) no BOOT — approvals disparados antes da 1ª visita ao
 // office já entram na fila única (store) que host e derive compartilham.
 import "@/store/interactions"
+// Side-effect: hidrata o board de cards (E1) no BOOT — o Painel abre com os
+// cards prontos e o vigia do Sprint 2 nunca varre um store vazio.
+import "@/store/cards"
 // Side-effect: liga a ponte do Companion Web (push de estado coalescido +
 // executor de companion://action) no boot — no-op fora do Tauri.
 import "@/lib/companion"

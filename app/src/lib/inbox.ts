@@ -3,7 +3,7 @@
 // veredito (fusion_runs pendentes no DB), PRD esperando aprovação e PR aberto
 // (manifests do SDD no disco). Varredura barata (SQL + fs), sob demanda.
 
-import { listPendingDecisions } from "@/lib/db"
+import { listPendingDecisions, type CardRecord } from "@/lib/db"
 import { loadSddPlans } from "@/lib/sdd"
 import type { Project } from "@/lib/types"
 
@@ -14,6 +14,15 @@ export type Decision =
       projectId: string
       projectName: string
       title: string
+    }
+  | {
+      kind: "card"
+      cardId: string
+      projectId: string
+      projectName: string
+      title: string
+      /** Só review/blocked entram na fila (esperando humano). */
+      state: "review" | "blocked"
     }
   | {
       kind: "prd"
@@ -32,6 +41,32 @@ export type Decision =
       planTitle: string
       prUrl: string
     }
+
+/** E1 (S1.6): cards esperando o humano (review/blocked) viram Decision e
+ *  entram na MESMA fila "Precisam de você". Derivação pura (sem dismiss
+ *  persistido): o card sai da fila quando muda de estado. Projeto arquivado
+ *  segue a regra das disputas: o card reaparece se o projeto voltar. */
+export function cardDecisions(
+  cards: CardRecord[],
+  projects: Project[],
+): Decision[] {
+  const byId = new Map(projects.map((p) => [p.id, p]))
+  const out: Decision[] = []
+  for (const c of cards) {
+    if (c.state !== "review" && c.state !== "blocked") continue
+    const p = byId.get(c.projectId)
+    if (!p) continue
+    out.push({
+      kind: "card",
+      cardId: c.id,
+      projectId: c.projectId,
+      projectName: p.name,
+      title: c.title,
+      state: c.state,
+    })
+  }
+  return out
+}
 
 export async function scanDecisions(projects: Project[]): Promise<Decision[]> {
   const out: Decision[] = []
