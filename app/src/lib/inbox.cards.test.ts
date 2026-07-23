@@ -20,6 +20,7 @@ function card(over: Partial<CardRecord> = {}): CardRecord {
     pinRank: null,
     createdAt: 1,
     updatedAt: 1,
+    archivedAt: null,
     ...over,
   }
 }

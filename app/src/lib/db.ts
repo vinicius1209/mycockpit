@@ -1874,6 +1874,10 @@ export interface CardRecord {
   pinRank: number | null
   createdAt: number
   updatedAt: number
+  /** Epoch ms de quando foi ARQUIVADO (sai do board, recuperável). null =
+   *  ativo. Dimensão ORTOGONAL ao state — arquivar não muda o estado, só tira
+   *  de vista. Apagar (deleteCard) é destrutivo e não passa por aqui. */
+  archivedAt: number | null
 }
 
 let boardReady: Promise<void> | null = null
@@ -1900,6 +1904,10 @@ async function ensureBoardTables(db: Database): Promise<void> {
       await db.execute(
         `CREATE INDEX IF NOT EXISTS idx_cards_project ON cards(project_id, state)`,
       )
+      // Arquivar (sai do board, recuperável): coluna ADITIVA idempotente,
+      // mesmo padrão do addColumn das tabelas de aprendizado. Board não é
+      // tabela núcleo (sem migração no lib.rs) — a evolução mora aqui.
+      await addColumn(db, `ALTER TABLE cards ADD COLUMN archived_at INTEGER`)
     })()
     // cache fixa SÓ em sucesso (falha transitória não envenena o processo).
     boardReady = run.catch((e) => {
@@ -1923,10 +1931,11 @@ interface CardRow {
   pin_rank: number | null
   created_at: number
   updated_at: number
+  archived_at: number | null
 }
 
 const CARD_COLS =
-  "id, project_id, title, body, state, assignee_agent, conversation_id, owner, pinned, pin_rank, created_at, updated_at"
+  "id, project_id, title, body, state, assignee_agent, conversation_id, owner, pinned, pin_rank, created_at, updated_at, archived_at"
 
 /** Clamp de leitura: valor estranho gravado à mão degrada pra 'backlog'. */
 function toCardState(s: string): CardState {
@@ -1947,6 +1956,7 @@ function toCard(r: CardRow): CardRecord {
     pinRank: r.pin_rank,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    archivedAt: r.archived_at,
   }
 }
 
@@ -1971,6 +1981,7 @@ export async function createCard(c: {
     pinRank: null,
     createdAt: now,
     updatedAt: now,
+    archivedAt: null,
   }
   const db = await getDb()
   if (!db) return card
@@ -2132,6 +2143,34 @@ export async function setCardAssignee(
     "UPDATE cards SET assignee_agent = $1, updated_at = $2 WHERE id = $3",
     [agent, now, id],
   )
+}
+
+/** Arquiva/desarquiva o card (sai/volta do board, recuperável). Ortogonal ao
+ *  state: NÃO valida a máquina — arquivar é sempre direito do humano, em
+ *  qualquer estado. `now` = mesmo contrato de relógio único (F1). */
+export async function setCardArchived(
+  id: string,
+  archivedAt: number | null,
+  now: number = Date.now(),
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureBoardTables(db)
+  await db.execute(
+    "UPDATE cards SET archived_at = $1, updated_at = $2 WHERE id = $3",
+    [archivedAt, now, id],
+  )
+}
+
+/** Apaga o card DE VEZ (destrutivo, sem volta). Só o gesto humano confirmado
+ *  chega aqui (dialog de confirmação no padrão blocks.so). Não deixa lixo:
+ *  o card some do banco; a conversa ligada (se houver) NÃO é tocada — ela é
+ *  entidade própria e pode ter histórico que o usuário ainda quer. */
+export async function deleteCard(id: string): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureBoardTables(db)
+  await db.execute("DELETE FROM cards WHERE id = $1", [id])
 }
 
 /** Custo por card v1 = soma de turn_costs por conv_id (cobre chat + disputas;

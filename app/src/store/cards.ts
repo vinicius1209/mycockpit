@@ -9,12 +9,14 @@ import {
   assertCardTransition,
   closeCard as dbCloseCard,
   createCard as dbCreateCard,
+  deleteCard as dbDeleteCard,
   insertDelivery,
   isTauri,
   isTerminalCardState,
   linkCardConversation as dbLinkCardConversation,
   listCardCosts,
   listCards as dbListCards,
+  setCardArchived as dbSetCardArchived,
   setCardAssignee as dbSetCardAssignee,
   setCardState as dbSetCardState,
   updateCard as dbUpdateCard,
@@ -52,7 +54,12 @@ function groupByProject(all: CardRow[]): Record<string, CardRow[]> {
 }
 
 interface CardsState {
+  /** Cards ATIVOS (não-arquivados). É o que o board, o vigia, o companion e o
+   *  BossCenter consomem — arquivar tira daqui, sem eles precisarem saber. */
   all: CardRow[]
+  /** Cards ARQUIVADOS (fora do board, recuperáveis). Lista à parte pra seção
+   *  "Arquivados" e pro Restaurar/Apagar; ninguém mais varre isto. */
+  archived: CardRow[]
   /** Derivado de `all` (recalculado a cada mutação — refs novas juntas). */
   byProject: Record<string, CardRow[]>
   /** 1ª hidratação completa (skeleton → conteúdo; nunca volta a false). */
@@ -63,6 +70,12 @@ interface CardsState {
   load: () => Promise<void>
   /** Cria um card no backlog do projeto. */
   create: (projectId: string, title: string, body?: string | null) => Promise<void>
+  /** Arquiva o card (sai do board pra lista de arquivados, recuperável). */
+  archive: (id: string) => Promise<void>
+  /** Restaura um card arquivado de volta ao board (mesmo estado que tinha). */
+  restore: (id: string) => Promise<void>
+  /** Apaga o card DE VEZ (destrutivo). O caller confirma antes (dialog). */
+  remove: (id: string) => Promise<void>
   /** Edita título/body (detalhe do card). Título vazio LANÇA (o caller mostra
    *  o toast); persiste e carimba o patch local com o MESMO relógio (F1). */
   update: (id: string, patch: { title?: string; body?: string }) => Promise<void>
@@ -88,8 +101,14 @@ interface CardsState {
   clearCardStalled: (id: string) => void
 }
 
+/** Arquivados primeiro os mais recentemente arquivados (lista de recuperação). */
+function byArchivedDesc(a: CardRow, b: CardRow): number {
+  return (b.archivedAt ?? 0) - (a.archivedAt ?? 0)
+}
+
 export const useCards = create<CardsState>((set, get) => {
-  /** Substitui a lista inteira (mantém byProject coerente). */
+  /** Substitui a lista de ATIVOS (mantém byProject coerente). Não toca em
+   *  `archived` — as duas listas mudam por caminhos próprios. */
   const setAll = (all: CardRow[]) => set({ all, byProject: groupByProject(all) })
 
   /** Patch imutável de UM card (no-op se não existe). Toda mutação REAL passa
@@ -112,6 +131,7 @@ export const useCards = create<CardsState>((set, get) => {
 
   return {
     all: [],
+    archived: [],
     byProject: {},
     loaded: false,
     selectedId: null,
@@ -119,8 +139,13 @@ export const useCards = create<CardsState>((set, get) => {
     load: async () => {
       try {
         const rows = await dbListCards()
-        setAll(rows)
-        set({ loaded: true })
+        // Particiona ativos × arquivados na hidratação: o board e os vigias só
+        // veem `all`; arquivar/restaurar movem entre as listas depois.
+        setAll(rows.filter((c) => c.archivedAt == null))
+        set({
+          archived: rows.filter((c) => c.archivedAt != null).sort(byArchivedDesc),
+          loaded: true,
+        })
       } catch (e) {
         // NÃO zera o board num erro transitório; loga e mantém o que há.
         console.warn("[cards] load falhou; mantendo o estado atual", e)
@@ -130,6 +155,42 @@ export const useCards = create<CardsState>((set, get) => {
     create: async (projectId, title, body) => {
       const card = await dbCreateCard({ projectId, title, body: body ?? null })
       setAll([...get().all, card])
+    },
+
+    archive: async (id) => {
+      const cur = get().all.find((c) => c.id === id)
+      if (!cur) return
+      const now = Date.now() // F1: banco e store carimbam o MESMO relógio
+      await dbSetCardArchived(id, now, now)
+      // sai de `all`, entra em `archived` (topo). Fecha episódio de estagnação.
+      setAll(get().all.filter((c) => c.id !== id))
+      set({
+        archived: [
+          { ...cur, archivedAt: now, updatedAt: now, stalledSince: undefined },
+          ...get().archived,
+        ],
+      })
+    },
+
+    restore: async (id) => {
+      const cur = get().archived.find((c) => c.id === id)
+      if (!cur) return
+      const now = Date.now()
+      await dbSetCardArchived(id, null, now)
+      set({ archived: get().archived.filter((c) => c.id !== id) })
+      // volta pro board no MESMO estado; reinsere por ordem de criação.
+      const restored = { ...cur, archivedAt: null, updatedAt: now }
+      setAll(
+        [...get().all, restored].sort((a, b) => a.createdAt - b.createdAt),
+      )
+    },
+
+    remove: async (id) => {
+      await dbDeleteCard(id)
+      // some das DUAS listas (podia estar em qualquer uma).
+      setAll(get().all.filter((c) => c.id !== id))
+      set({ archived: get().archived.filter((c) => c.id !== id) })
+      if (get().selectedId === id) set({ selectedId: null })
     },
 
     update: async (id, patch) => {

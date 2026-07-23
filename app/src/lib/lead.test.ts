@@ -34,6 +34,7 @@ function card(over: Partial<CardRow> = {}): CardRow {
     pinRank: null,
     createdAt: 1,
     updatedAt: 1,
+    archivedAt: null,
     ...over,
   }
 }

@@ -1,15 +1,17 @@
-// E1 — Detalhe do card (feedback real de uso: "senti falta de um clique no
-// card para ver mais detalhes ou acrescentar mais detalhes"). Dialog compacto
-// no padrão shadcn do repo (SettingsDialog/FusionLauncher): título e body
-// EDITÁVEIS com Salvar explícito (update do store, mesmo relógio banco+patch),
-// meta read-only (projeto, estado, criado/atualizado, custo, assignee) e as
-// MESMAS ações de estado do BoardLane no rodapé (cardActions — fonte única,
-// nenhum caminho novo de estado).
+// E1 — Detalhe do card. Redesenho no padrão blocks.so/dialogs: cabeçalho de
+// VERDADE (eyebrow + ações + fechar num banco só — o X ganha "casa" e não cai
+// mais sobre o campo de título), corpo editável (título+descrição), meta
+// read-only e rodapé com as ações de estado (cardActions, fonte única) +
+// Salvar. Arquivar (sai do board, recuperável) e Apagar (destrutivo, com
+// confirmação no padrão dialog-03: ícone de alerta + Cancelar/Apagar) moram no
+// canto do cabeçalho — nenhum caminho novo de estado, só lifecycle do card.
 
 import { useRef, useState } from "react"
 import { toast } from "sonner"
+import { AlertTriangle, Archive, Trash2, X } from "lucide-react"
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -48,6 +50,35 @@ function MetaRow({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
+/** Botão de ícone do cabeçalho (arquivar/apagar/fechar) — mesma pegada do X do
+ *  dialog base, com "casa" própria no banco do header. */
+function HeaderIconButton({
+  label,
+  danger,
+  onClick,
+  children,
+}: {
+  label: string
+  danger?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={
+        "grid size-7 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent/60 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&_svg]:size-4 " +
+        (danger ? "hover:bg-st-error/10 hover:text-st-error" : "")
+      }
+    >
+      {children}
+    </button>
+  )
+}
+
 function DetailBody({
   card,
   projectName,
@@ -66,7 +97,9 @@ function DetailBody({
   const [title, setTitle] = useState(card.title)
   const [body, setBody] = useState(card.body ?? "")
   const [saving, setSaving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const titleRef = useRef<HTMLInputElement>(null)
+  const isArchived = card.archivedAt != null
   const stalledMin =
     card.stalledSince != null
       ? Math.max(1, Math.round((Date.now() - card.stalledSince) / 60_000))
@@ -89,12 +122,38 @@ function DetailBody({
     if (ok) onClose()
   }
 
+  async function archive() {
+    const ok = await tryAction(() => useCards.getState().archive(card.id))
+    if (ok) {
+      toast("Card arquivado. Restaure em Arquivados, no board.")
+      onClose()
+    }
+  }
+
+  async function restore() {
+    const ok = await tryAction(() => useCards.getState().restore(card.id))
+    if (ok) {
+      toast.success("Card restaurado ao board.")
+      onClose()
+    }
+  }
+
+  async function remove() {
+    const ok = await tryAction(() => useCards.getState().remove(card.id))
+    setConfirmDelete(false)
+    if (ok) {
+      toast("Card apagado.")
+      onClose()
+    }
+  }
+
   const dirty = title !== card.title || body !== (card.body ?? "")
 
   return (
     <DialogContent
+      showCloseButton={false}
       className="gap-0 rounded-xl border-border/60 p-0 shadow-[var(--shadow-pop)] sm:max-w-xl"
-      // A11y do pedido: foco no TÍTULO ao abrir (não no botão de fechar).
+      // A11y do pedido: foco no TÍTULO ao abrir (não numa ação de canto).
       onOpenAutoFocus={(e) => {
         e.preventDefault()
         titleRef.current?.focus()
@@ -104,18 +163,58 @@ function DetailBody({
         <DialogTitle>Detalhe do card</DialogTitle>
         <DialogDescription>
           Edite o título e a descrição da intenção; as ações de estado ficam no
-          rodapé.
+          rodapé e as de arquivar/apagar no cabeçalho.
         </DialogDescription>
       </DialogHeader>
 
-      <div className="flex flex-col gap-3 px-5 pt-5 pb-4">
+      {/* cabeçalho: eyebrow (projeto · estado) + ações de canto num banco só */}
+      <div className="flex items-start justify-between gap-3 border-b border-border/60 px-5 py-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 pt-0.5">
+          <span className="min-w-0 truncate text-[12px] text-muted-foreground">
+            {archivedProject ? "projeto arquivado" : projectName}
+          </span>
+          <span className="text-muted-foreground/40">·</span>
+          <CardStateBadge state={card.state} />
+          {isArchived && (
+            <span className="shrink-0 rounded border border-border px-1.5 py-px text-[9.5px] tracking-wide text-muted-foreground uppercase">
+              arquivado
+            </span>
+          )}
+          {stalledMin != null && (
+            <span className="shrink-0 rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning">
+              parado há {stalledMin} min
+            </span>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          {isArchived ? (
+            <HeaderIconButton label="Restaurar ao board" onClick={() => void restore()}>
+              <Archive />
+            </HeaderIconButton>
+          ) : (
+            <HeaderIconButton label="Arquivar" onClick={() => void archive()}>
+              <Archive />
+            </HeaderIconButton>
+          )}
+          <HeaderIconButton label="Apagar de vez" danger onClick={() => setConfirmDelete(true)}>
+            <Trash2 />
+          </HeaderIconButton>
+          <DialogClose asChild>
+            <HeaderIconButton label="Fechar" onClick={onClose}>
+              <X />
+            </HeaderIconButton>
+          </DialogClose>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 px-5 pt-4 pb-4">
         <input
           ref={titleRef}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           aria-label="Título do card"
           placeholder="Título do card"
-          className="h-9 w-full rounded-md border border-border/70 bg-secondary/20 px-2.5 pr-8 text-[14px] font-medium text-foreground placeholder:text-muted-foreground/60 focus:border-brass/50 focus:outline-none"
+          className="h-9 w-full rounded-md border border-border/70 bg-secondary/20 px-2.5 text-[14px] font-medium text-foreground placeholder:text-muted-foreground/60 focus:border-brass/50 focus:outline-none"
         />
         <Textarea
           value={body}
@@ -125,24 +224,9 @@ function DetailBody({
           className="max-h-64 min-h-24 text-[13px] leading-relaxed"
         />
 
-        {/* meta read-only — o card não mente: projeto arquivado e estagnação
-            aparecem aqui com o mesmo vocabulário do board */}
+        {/* meta read-only — criado/atualizado/agent/custo (projeto e estado já
+            vivem no cabeçalho, sem repetir) */}
         <div className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-card/30 px-3 py-2.5">
-          <MetaRow label="Projeto">
-            {archivedProject ? (
-              <span className="text-muted-foreground">projeto arquivado</span>
-            ) : (
-              <span className="min-w-0 truncate">{projectName}</span>
-            )}
-          </MetaRow>
-          <MetaRow label="Estado">
-            <CardStateBadge state={card.state} />
-            {stalledMin != null && (
-              <span className="shrink-0 rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning">
-                parado há {stalledMin} min
-              </span>
-            )}
-          </MetaRow>
           <MetaRow label="Criado">{fmtRelative(card.createdAt)}</MetaRow>
           <MetaRow label="Atualizado">{fmtRelative(card.updatedAt)}</MetaRow>
           {card.assigneeAgent && (
@@ -191,6 +275,41 @@ function DetailBody({
           {saving ? "Salvando…" : "Salvar"}
         </Button>
       </div>
+
+      {/* confirmação destrutiva — padrão blocks.so dialog-03 (ícone de alerta,
+          Cancelar / Apagar). Dialog próprio empilhado sobre o detalhe. */}
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent className="sm:max-w-md">
+          <div className="flex items-start gap-4">
+            <div className="grid size-10 shrink-0 place-items-center rounded-full bg-st-error/10">
+              <AlertTriangle className="size-5 text-st-error" />
+            </div>
+            <DialogHeader className="space-y-1.5">
+              <DialogTitle>Apagar este card?</DialogTitle>
+              <DialogDescription>
+                “{card.title}” será removido de vez do board. Esta ação não pode
+                ser desfeita. A conversa ligada (se houver) não é apagada.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setConfirmDelete(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              className="bg-st-error text-white hover:bg-st-error/90"
+              onClick={() => void remove()}
+            >
+              Apagar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DialogContent>
   )
 }
@@ -208,9 +327,13 @@ export function CardDetailDialog({
   /** Mesmo mapa de custos que o BoardLane já mantém (por conv_id). */
   costs: Record<string, { total: number; estimated: boolean }>
 }) {
-  // assinatura viva do store: mover/fechar pelo rodapé re-renderiza o badge.
+  // assinatura viva do store: mover/arquivar/fechar re-renderiza. Procura nas
+  // DUAS listas — o detalhe abre tanto de card do board quanto de arquivado.
   const card = useCards((s) =>
-    cardId ? s.all.find((c) => c.id === cardId) : undefined,
+    cardId
+      ? (s.all.find((c) => c.id === cardId) ??
+        s.archived.find((c) => c.id === cardId))
+      : undefined,
   )
   return (
     <Dialog open={card != null} onOpenChange={(o) => !o && onClose()}>

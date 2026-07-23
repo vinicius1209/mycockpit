@@ -141,6 +141,7 @@ function makeCard(partial: Partial<CardRow> & { id: string }): CardRow {
     pinRank: null,
     createdAt: 1,
     updatedAt: 1,
+    archivedAt: null,
     ...partial,
   }
 }

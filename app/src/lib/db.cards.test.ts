@@ -18,6 +18,7 @@ interface FakeCardRow {
   pin_rank: number | null
   created_at: number
   updated_at: number
+  archived_at?: number | null
 }
 
 const h = vi.hoisted(() => ({
@@ -29,8 +30,32 @@ const h = vi.hoisted(() => ({
 vi.mock("@tauri-apps/plugin-sql", () => {
   const fakeDb = {
     execute: async (sql: string, params: unknown[] = []) => {
-      if (sql.startsWith("CREATE TABLE") || sql.startsWith("CREATE INDEX")) {
+      if (
+        sql.startsWith("CREATE TABLE") ||
+        sql.startsWith("CREATE INDEX") ||
+        sql.startsWith("ALTER TABLE cards ADD COLUMN")
+      ) {
         return { rowsAffected: 0 }
+      }
+      if (sql.startsWith("UPDATE cards SET archived_at = $1")) {
+        const [archivedAt, updatedAt, id] = params as [
+          number | null,
+          number,
+          string,
+        ]
+        for (const c of h.cards) {
+          if (c.id === id) {
+            c.archived_at = archivedAt
+            c.updated_at = updatedAt
+          }
+        }
+        return { rowsAffected: 1 }
+      }
+      if (sql.startsWith("DELETE FROM cards WHERE id")) {
+        const [id] = params as [string]
+        const i = h.cards.findIndex((c) => c.id === id)
+        if (i >= 0) h.cards.splice(i, 1)
+        return { rowsAffected: i >= 0 ? 1 : 0 }
       }
       if (sql.startsWith("INSERT INTO cards")) {
         const [

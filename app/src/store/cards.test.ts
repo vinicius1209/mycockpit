@@ -51,13 +51,17 @@ vi.mock("@/lib/db", async (importOriginal) => ({
   linkCardConversation: vi.fn(async () => {}),
   setCardAssignee: vi.fn(async () => {}),
   updateCard: vi.fn(async () => {}),
+  setCardArchived: vi.fn(async () => {}),
+  deleteCard: vi.fn(async () => {}),
 }))
 vi.mock("@/store/chat", () => ({ useChat: { getState: () => h.chat } }))
 vi.mock("@/store/app", () => ({ useApp: { getState: () => h.app } }))
 
 import {
   closeCard as dbCloseCard,
+  deleteCard as dbDeleteCard,
   linkCardConversation as dbLinkCardConversation,
+  setCardArchived as dbSetCardArchived,
   setCardAssignee as dbSetCardAssignee,
   setCardState as dbSetCardState,
   updateCard as dbUpdateCard,
@@ -80,6 +84,7 @@ function card(over: Partial<CardRecord> = {}): CardRecord {
     pinRank: null,
     createdAt: 1,
     updatedAt: 1,
+    archivedAt: null,
     ...over,
   }
 }
@@ -94,7 +99,13 @@ function seedStore(cards: CardRow[]): void {
 beforeEach(() => {
   vi.clearAllMocks()
   h.chat.activeId = null
-  useCards.setState({ all: [], byProject: {}, loaded: false, selectedId: null })
+  useCards.setState({
+    all: [],
+    archived: [],
+    byProject: {},
+    loaded: false,
+    selectedId: null,
+  })
 })
 
 describe("cards (E1): store", () => {
@@ -319,6 +330,55 @@ describe("cards (E1): dispatch por gesto humano", () => {
     useCards.getState().noteConversationAgent("conv-9", "claude-code")
     expect(useCards.getState().all[0].assigneeAgent).toBe("codex")
     expect(vi.mocked(dbSetCardAssignee)).not.toHaveBeenCalled()
+  })
+})
+
+describe("cards (E1): arquivar / restaurar / apagar", () => {
+  it("archive tira de `all` e põe em `archived` (topo, com archivedAt)", async () => {
+    seedStore([card({ id: "c1", state: "working" })])
+    await useCards.getState().archive("c1")
+    const s = useCards.getState()
+    expect(s.all).toHaveLength(0)
+    expect(s.byProject.p1 ?? []).toHaveLength(0) // sai também do byProject
+    expect(s.archived).toHaveLength(1)
+    expect(s.archived[0].id).toBe("c1")
+    expect(s.archived[0].archivedAt).not.toBeNull()
+    expect(dbSetCardArchived).toHaveBeenCalledTimes(1)
+  })
+
+  it("restore volta de `archived` pra `all` no mesmo estado", async () => {
+    useCards.setState({
+      archived: [card({ id: "c1", state: "review", archivedAt: 99 })],
+    })
+    await useCards.getState().restore("c1")
+    const s = useCards.getState()
+    expect(s.archived).toHaveLength(0)
+    expect(s.all).toHaveLength(1)
+    expect(s.all[0].state).toBe("review")
+    expect(s.all[0].archivedAt).toBeNull()
+    expect(dbSetCardArchived).toHaveBeenCalledWith("c1", null, expect.any(Number))
+  })
+
+  it("remove apaga de vez das duas listas e limpa a seleção", async () => {
+    seedStore([card({ id: "c1" })])
+    useCards.setState({ selectedId: "c1" })
+    await useCards.getState().remove("c1")
+    const s = useCards.getState()
+    expect(s.all).toHaveLength(0)
+    expect(s.archived).toHaveLength(0)
+    expect(s.selectedId).toBeNull()
+    expect(dbDeleteCard).toHaveBeenCalledWith("c1")
+  })
+
+  it("card arquivado NÃO aparece no board (all) após load particionar", async () => {
+    // simula o load particionando: um ativo em all, um arquivado em archived.
+    useCards.setState({
+      all: [card({ id: "ativo" })],
+      archived: [card({ id: "velho", archivedAt: 5 })],
+    })
+    const s = useCards.getState()
+    expect(s.all.map((c) => c.id)).toEqual(["ativo"])
+    expect(s.archived.map((c) => c.id)).toEqual(["velho"])
   })
 })
 
