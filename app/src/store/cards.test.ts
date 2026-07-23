@@ -370,6 +370,36 @@ describe("cards (E1): arquivar / restaurar / apagar", () => {
     expect(dbDeleteCard).toHaveBeenCalledWith("c1")
   })
 
+  it("move em card arquivado (fora de `all`) LANÇA e NÃO escreve no banco", async () => {
+    useCards.setState({
+      archived: [card({ id: "c1", state: "working", archivedAt: 9 })],
+    })
+    await expect(useCards.getState().move("c1", "review")).rejects.toThrow(
+      /não está no board/,
+    )
+    expect(dbSetCardState).not.toHaveBeenCalled()
+  })
+
+  it("closeCard em card arquivado LANÇA e NÃO escreve no banco (entrega não some)", async () => {
+    useCards.setState({
+      archived: [card({ id: "c1", state: "review", archivedAt: 9 })],
+    })
+    await expect(
+      useCards.getState().closeCard("c1", "done"),
+    ).rejects.toThrow(/não está no board/)
+    expect(dbCloseCard).not.toHaveBeenCalled()
+  })
+
+  it("update (Salvar) em card arquivado persiste na lista `archived`, não some", async () => {
+    useCards.setState({
+      archived: [card({ id: "c1", title: "velho", archivedAt: 9 })],
+    })
+    await useCards.getState().update("c1", { title: "novo" })
+    const s = useCards.getState()
+    expect(s.archived[0].title).toBe("novo") // patchCard achou em `archived`
+    expect(dbUpdateCard).toHaveBeenCalled()
+  })
+
   it("card arquivado NÃO aparece no board (all) após load particionar", async () => {
     // simula o load particionando: um ativo em all, um arquivado em archived.
     useCards.setState({

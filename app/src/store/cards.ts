@@ -115,18 +115,22 @@ export const useCards = create<CardsState>((set, get) => {
    *  por aqui: carimba updatedAt com o `now` da mutação (F1: o MESMO valor que
    *  foi pro banco — um relógio só, senão um reload chega com drift de ms e o
    *  vigia lê como atividade) e LIMPA o stalledSince transient (F3: mexeu no
-   *  card = episódio de estagnação acabou; o badge não mente nem por 5s). */
+   *  card = episódio de estagnação acabou; o badge não mente nem por 5s).
+   *  Atua na lista ONDE o card vive (`all` OU `archived`) — sem isso, editar
+   *  um arquivado (Salvar título/descrição) gravava no banco e divergia do
+   *  store até o próximo load. */
   const patchCard = (
     id: string,
     patch: Partial<CardRow>,
     now: number = Date.now(),
   ) => {
-    const next = get().all.map((c) =>
-      c.id === id
-        ? { ...c, ...patch, stalledSince: undefined, updatedAt: now }
-        : c,
-    )
-    setAll(next)
+    const bump = (c: CardRow): CardRow =>
+      c.id === id ? { ...c, ...patch, stalledSince: undefined, updatedAt: now } : c
+    if (get().all.some((c) => c.id === id)) {
+      setAll(get().all.map(bump))
+    } else if (get().archived.some((c) => c.id === id)) {
+      set({ archived: get().archived.map(bump) })
+    }
   }
 
   return {
@@ -215,8 +219,13 @@ export const useCards = create<CardsState>((set, get) => {
           "Concluir ou cancelar um card é gesto humano: use a ação de fechar do card",
         )
       }
+      // Fail-closed: card fora do board ativo (arquivado ou inexistente, ex.:
+      // snapshot velho do celular) NÃO escreve no banco às cegas — sem esta
+      // guarda, dbSetCardState revalidava só contra o banco e mutava um
+      // arquivado, divergindo do store (achado da revisão).
       const cur = get().all.find((c) => c.id === id)
-      if (cur) assertCardTransition(cur.state, state) // valida ANTES do disco
+      if (!cur) throw new Error("Este card não está no board (restaure-o para agir)")
+      assertCardTransition(cur.state, state) // valida ANTES do disco
       const now = Date.now() // F1: banco e store carimbam o MESMO relógio
       await dbSetCardState(id, state, now) // revalida contra o estado do banco
       patchCard(id, { state }, now)
@@ -224,7 +233,10 @@ export const useCards = create<CardsState>((set, get) => {
 
     closeCard: async (id, state) => {
       const cur = get().all.find((c) => c.id === id)
-      if (cur) assertCardTransition(cur.state, state)
+      // idem move: só o board ATIVO fecha um card (senão a entrega do "Concluir"
+      // era descartada em silêncio, com cur undefined).
+      if (!cur) throw new Error("Este card não está no board (restaure-o para agir)")
+      assertCardTransition(cur.state, state)
       const now = Date.now()
       await dbCloseCard(id, state, now)
       patchCard(id, { state }, now)
@@ -328,7 +340,11 @@ export const useCards = create<CardsState>((set, get) => {
     select: (id) => set({ selectedId: id }),
 
     noteConversationAgent: (convId, agent) => {
-      const card = get().all.find((c) => c.conversationId === convId)
+      // busca nas DUAS listas: um card arquivado com conversa em execução
+      // também merece o carimbo do agent (patchCard atua na lista certa).
+      const card =
+        get().all.find((c) => c.conversationId === convId) ??
+        get().archived.find((c) => c.conversationId === convId)
       // terminal fica fora: histórico fechado não é recarimbado.
       if (!card || isTerminalCardState(card.state) || card.assigneeAgent === agent)
         return

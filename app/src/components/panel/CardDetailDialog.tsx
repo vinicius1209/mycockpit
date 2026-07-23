@@ -263,9 +263,17 @@ function DetailBody({
         )}
       </div>
 
-      {/* rodapé: ações de estado (fonte única do board) + Salvar explícito */}
-      <div className="flex items-center gap-1 border-t border-border/60 px-5 py-3">
-        <CardStateActions card={card} archivedProject={archivedProject} />
+      {/* rodapé: ações de estado (fonte única do board) + Salvar explícito.
+          Arquivado é FORA do fluxo — não mostra Iniciar/Revisão/etc. (agir num
+          arquivado gravava no banco e divergia do store): pra agir, restaure. */}
+      <div className="flex items-center gap-2 border-t border-border/60 px-5 py-3">
+        {isArchived ? (
+          <span className="text-[11px] text-muted-foreground">
+            Arquivado — restaure para agir no fluxo.
+          </span>
+        ) : (
+          <CardStateActions card={card} archivedProject={archivedProject} />
+        )}
         <Button
           size="sm"
           className="ml-auto"
