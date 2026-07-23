@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { cleanResultText } from "./toolview"
+import {
+  cleanResultText,
+  presentTool,
+  summarizeToolGroup,
+  unwrapShellCommand,
+} from "./toolview"
 
 const ok = (text: string) => ({ ok: true, text, lines: text.split("\n").length })
 
@@ -37,5 +42,111 @@ describe("cleanResultText", () => {
 
   it("result vazio/undefined vira ''", () => {
     expect(cleanResultText("Write", undefined)).toBe("")
+  })
+})
+
+describe("presentTool", () => {
+  it("remove o launcher do Codex só para classificar", () => {
+    const raw = '/bin/zsh -lc "sqlite3 -readonly /tmp/app.db \\"SELECT count(*) FROM cards;\\""'
+    expect(unwrapShellCommand(raw)).toContain("sqlite3 -readonly")
+    const p = presentTool("Bash", { command: raw })
+    expect(p.label).toBe("Consultar dados locais")
+    expect(p.category).toBe("inspect")
+    expect(p.emphasis).toBe("quiet")
+    expect(p.detail).toBe(raw)
+    expect(p.label).not.toContain("/bin/zsh")
+  })
+
+  it.each([
+    ["rg -n 'ToolGroup' app/src", "Buscar no projeto", "inspect"],
+    ["git status --short", "Verificar o estado do repositório", "inspect"],
+    [
+      'for p in app docs; do find "$p" -maxdepth 1 -type f; done',
+      "Inspecionar arquivos",
+      "inspect",
+    ],
+    ["bun run test", "Executar testes", "validate"],
+    ["bun run build", "Gerar o build", "validate"],
+    ["git commit -m 'fix: caption'", "Criar commit", "change"],
+  ] as const)("classifica %s", (command, label, category) => {
+    const p = presentTool("Bash", { command })
+    expect(p.label).toBe(label)
+    expect(p.category).toBe(category)
+  })
+
+  it("mantém ação sensível evidente sem vazar argumentos", () => {
+    const p = presentTool("Bash", { command: "git push origin main" })
+    expect(p.label).toBe("Enviar alterações ao repositório")
+    expect(p.emphasis).toBe("warning")
+    expect(p.label).not.toContain("origin main")
+  })
+
+  it("prefere description humana e preserva o comando nos detalhes", () => {
+    const p = presentTool("Bash", {
+      description: "Verificando métricas do Cockpit",
+      command: "sqlite3 -readonly app.db 'select 1'",
+    })
+    expect(p.label).toBe("Verificando métricas do Cockpit")
+    expect(p.detail).toContain("sqlite3")
+  })
+
+  it("fallback genérico não promove payload a caption", () => {
+    const p = presentTool("mcp__server__run", { command: "segredo --token abc" })
+    expect(p.label).toBe("Executar ferramenta")
+    expect(p.meta).toBe("server · run")
+    expect(p.label).not.toContain("segredo")
+  })
+})
+
+describe("summarizeToolGroup", () => {
+  it("resume leituras concluídas como verificações", () => {
+    const view = summarizeToolGroup([
+      { name: "Read", input: { file_path: "/tmp/a.ts" }, result: { ok: true } },
+      { name: "Bash", input: { command: "rg foo src" }, result: { ok: true } },
+      {
+        name: "Bash",
+        input: { command: "sqlite3 -readonly app.db 'select 1'" },
+        result: { ok: true },
+      },
+    ])
+    expect(view).toMatchObject({
+      label: "3 verificações concluídas",
+      emphasis: "quiet",
+      state: "ok",
+    })
+  })
+
+  it("mostra a ação corrente durante o run", () => {
+    const view = summarizeToolGroup(
+      [
+        { name: "Read", input: { file_path: "/tmp/a.ts" }, result: { ok: true } },
+        { name: "Bash", input: { command: "bun test" } },
+      ],
+      true,
+    )
+    expect(view).toMatchObject({ label: "Executar testes", state: "running" })
+  })
+
+  it("falha vence qualquer resumo de categoria", () => {
+    const view = summarizeToolGroup([
+      { name: "Bash", input: { command: "bun test" }, result: { ok: false } },
+      { name: "Read", input: { file_path: "/tmp/a.ts" }, result: { ok: true } },
+    ])
+    expect(view).toMatchObject({
+      label: "Uma ação falhou",
+      emphasis: "warning",
+      state: "error",
+    })
+  })
+
+  it("histórico sem tool_result não finge que está pendente", () => {
+    const view = summarizeToolGroup([
+      { name: "Bash", input: { command: "ls" } },
+      { name: "Bash", input: { command: "pwd" } },
+    ])
+    expect(view).toMatchObject({
+      label: "2 verificações registradas",
+      state: "recorded",
+    })
   })
 })

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from "react"
+import { memo, useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertCircle,
   AlertTriangle,
@@ -34,6 +34,7 @@ import {
   cleanResultText,
   presentTool,
   resultMeta,
+  summarizeToolGroup,
   type ToolKind,
 } from "@/lib/toolview"
 import { lineDiff, trimOuterContext, type DiffRow } from "@/lib/linediff"
@@ -47,8 +48,6 @@ type ToolItem = Extract<ChatItem, { kind: "tool" }>
 
 /** Máx. de linhas mostradas num bloco de diff (Edit/Write) antes de "… +N linhas". */
 const DIFF_MAX_LINES = 80
-/** A partir de quantas tools consecutivas o burst colapsa num grupo. */
-const GROUP_MIN = 4
 /** Máx. de nós renderizados numa conversa longa (o resto atrás do botão). */
 const CHAT_WINDOW = 150
 
@@ -156,9 +155,9 @@ function UnifiedDiff({ rows }: { rows: DiffRow[] }) {
   )
 }
 
-/** Status de um passo (tool): pendente/rodando/ok/erro → círculo à esquerda.
- *  Substitui o chevron da frente (que duplicava com o ícone `>_` do Terminal). */
-type StepStatus = "ok" | "error" | "running" | "pending"
+/** Status de uma ação técnica. `recorded` é histórico antigo/adapter sem
+ * resultado: neutro, nunca finge que ainda está pendente. */
+type StepStatus = "ok" | "error" | "running" | "recorded"
 
 function StepDot({ status }: { status: StepStatus }) {
   if (status === "ok")
@@ -169,10 +168,7 @@ function StepDot({ status }: { status: StepStatus }) {
     return (
       <span className="animate-cockpit-pulse size-[7px] shrink-0 rounded-full bg-st-running" />
     )
-  // pendente: anel vazado (ainda não rodou).
-  return (
-    <span className="size-[7px] shrink-0 rounded-full border-[1.5px] border-muted-foreground/40" />
-  )
+  return <span className="size-[7px] shrink-0 rounded-full bg-muted-foreground/25" />
 }
 
 /** Tool call como LINHA (círculo de status + ícone + rótulo + meta), colapsável.
@@ -189,8 +185,9 @@ const ToolLine = memo(function ToolLine({
   const Icon = KIND_ICON[p.kind]
   const i = (item.input ?? {}) as Record<string, unknown>
   const diff = editHunks(item.name, i)
-  // edits abrem por padrão → a alteração fica visível no chat (estilo Warp).
-  const [open, setOpen] = useState(!!diff)
+  // Nível 2 do disclosure: primeiro se abre o grupo semântico; só um gesto
+  // explícito revela comando/input/output/diff desta ação.
+  const [open, setOpen] = useState(false)
   const failed = item.result?.ok === false
   const status: StepStatus = item.result
     ? item.result.ok
@@ -198,7 +195,7 @@ const ToolLine = memo(function ToolLine({
       : "error"
     : active
       ? "running"
-      : "pending"
+      : "recorded"
   const res = resultMeta(item.name, item.result)
   const meta = [p.meta, res].filter(Boolean).join(" · ")
   // Suprime o boilerplate de sucesso do write/edit ("File created…") — vira ""
@@ -213,16 +210,14 @@ const ToolLine = memo(function ToolLine({
         className={cn(
           "group/step flex w-full items-center gap-2.5 rounded-md px-2 py-[5px] text-left text-[12.5px] transition-colors",
           expandable && "hover:bg-accent/40",
+          p.emphasis === "warning" && status !== "error" && "text-brass",
           // passo em execução PULA da sequência: leve tinta st-running.
           status === "running" && "bg-st-running/[0.06]",
         )}
       >
         <span
           className="grid size-3.5 shrink-0 place-items-center"
-          // "pendente" fora de um turno ativo = a tool nunca teve result gravado
-          // (turno interrompido/histórico antigo). O anel fica, o hover conta a
-          // verdade — sem fingir que ainda vai rodar.
-          title={status === "pending" ? "sem resultado registrado" : undefined}
+          title={status === "recorded" ? "sem resultado registrado" : undefined}
         >
           <StepDot status={status} />
         </span>
@@ -231,7 +226,7 @@ const ToolLine = memo(function ToolLine({
             "size-3.5 shrink-0",
             failed
               ? "text-st-error"
-              : p.kind === "edit" || p.kind === "write"
+              : p.emphasis === "warning" || p.kind === "edit" || p.kind === "write"
                 ? "text-brass"
                 : "text-muted-foreground",
           )}
@@ -247,7 +242,9 @@ const ToolLine = memo(function ToolLine({
                 ? "text-foreground/55"
                 : status === "running"
                   ? "text-foreground"
-                  : "text-foreground/75",
+                  : p.emphasis === "warning"
+                    ? "text-brass"
+                    : "text-foreground/75",
           )}
         >
           {p.label}
@@ -282,17 +279,25 @@ const ToolLine = memo(function ToolLine({
         </span>
       </button>
       {open && (
-        <div className="mt-1 mb-1.5 ml-[30px] overflow-hidden rounded-md border bg-secondary/30">
+        <div className="mt-1 mb-1.5 ml-[30px] overflow-hidden rounded-md border border-border/60 bg-secondary/20">
           {p.detail && (
-            <div
-              data-selectable
-              className="p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/75"
-            >
-              {p.detail}
+            <div className="p-2">
+              <p className="mb-1 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
+                {p.kind === "bash" ? "Comando" : "Entrada"}
+              </p>
+              <div
+                data-selectable
+                className="font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/70"
+              >
+                {p.detail}
+              </div>
             </div>
           )}
           {diff && (
-            <div className={cn(p.detail && "border-t")}>
+            <div className={cn(p.detail && "border-t border-border/50")}>
+              <p className="px-2 pt-2 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
+                Alterações
+              </p>
               {diff.hunks.map((rows, idx) => (
                 <div
                   key={idx}
@@ -304,11 +309,19 @@ const ToolLine = memo(function ToolLine({
             </div>
           )}
           {resultText && (
-            <div
-              data-selectable
-              className="border-t p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-muted-foreground"
-            >
-              {resultText}
+            <div className="border-t border-border/50 p-2">
+              <p className="mb-1 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
+                {failed ? "Erro" : "Saída"}
+              </p>
+              <div
+                data-selectable
+                className={cn(
+                  "font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere]",
+                  failed ? "text-st-error" : "text-muted-foreground",
+                )}
+              >
+                {resultText}
+              </div>
             </div>
           )}
         </div>
@@ -317,8 +330,22 @@ const ToolLine = memo(function ToolLine({
   )
 })
 
-/** Burst de tools consecutivas: colapsa num grupo (o último fica aberto
- *  enquanto o run anda, pra atividade continuar visível). */
+function ToolGroupStatus({
+  state,
+}: {
+  state: ReturnType<typeof summarizeToolGroup>["state"]
+}) {
+  if (state === "running")
+    return <Loader2 className="size-3.5 shrink-0 animate-spin text-st-running" />
+  if (state === "error")
+    return <X className="size-3.5 shrink-0 text-st-error" aria-hidden="true" />
+  if (state === "ok")
+    return <Check className="size-3.5 shrink-0 text-st-success" aria-hidden="true" />
+  return <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
+}
+
+/** Registro de voo: UMA caption por burst. O primeiro clique revela ações
+ * humanas; cada ação guarda seu próprio nível técnico (comando/input/output). */
 function ToolGroup({
   tools,
   defaultOpen,
@@ -330,39 +357,80 @@ function ToolGroup({
   active?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
-  const preview = tools
-    .slice(0, 3)
-    .map((t) => presentTool(t.name, t.input).label)
-    .join(" · ")
+  const manuallyToggled = useRef(false)
+  const wasActive = useRef(active)
+  const summary = summarizeToolGroup(tools, active)
+  const diffTotal = tools.reduce(
+    (acc, t) => {
+      const d = editHunks(t.name, (t.input ?? {}) as Record<string, unknown>)
+      if (d) {
+        acc.added += d.added
+        acc.removed += d.removed
+      }
+      return acc
+    },
+    { added: 0, removed: 0 },
+  )
+
+  // A atividade corrente pode abrir pra dar feedback ao vivo. Quando termina,
+  // recolhe sozinha — exceto se o usuário assumiu o controle do disclosure.
+  useEffect(() => {
+    if (active && !manuallyToggled.current) setOpen(true)
+    if (wasActive.current && !active && !manuallyToggled.current) setOpen(false)
+    wasActive.current = active
+  }, [active])
+
   return (
     <div className="min-w-0">
       <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 rounded-md px-1.5 py-[3px] text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/40"
+        onClick={() => {
+          manuallyToggled.current = true
+          setOpen((o) => !o)
+        }}
+        aria-expanded={open}
+        className={cn(
+          "group/activity flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-[12px] transition-colors hover:bg-accent/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+          summary.state === "error"
+            ? "text-st-error"
+            : summary.state === "running"
+              ? "text-foreground"
+              : summary.emphasis === "warning"
+                ? "text-brass"
+                : summary.emphasis === "quiet"
+                  ? "text-muted-foreground/75"
+                  : "text-muted-foreground",
+        )}
       >
-        <ChevronRight
-          className={cn(
-            "size-3 shrink-0 text-muted-foreground/40 transition-transform",
-            open && "rotate-90",
-          )}
-        />
-        <span className="shrink-0">{tools.length} passos</span>
-        {!open && (
-          <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground/75">
-            {preview}
-            {tools.length > 3 ? " …" : ""}
+        <span className="grid size-4 shrink-0 place-items-center" aria-hidden="true">
+          <ToolGroupStatus state={summary.state} />
+        </span>
+        <span className="min-w-0 flex-1 truncate">{summary.label}</span>
+        {(diffTotal.added > 0 || diffTotal.removed > 0) && (
+          <span className="shrink-0 font-mono text-[10.5px] tabular-nums">
+            {diffTotal.added > 0 && (
+              <span className="text-st-success">+{diffTotal.added}</span>
+            )}
+            {diffTotal.added > 0 && diffTotal.removed > 0 && " "}
+            {diffTotal.removed > 0 && (
+              <span className="text-st-error">−{diffTotal.removed}</span>
+            )}
           </span>
         )}
+        <ChevronRight
+          className={cn(
+            "size-3 shrink-0 text-muted-foreground/35 transition-transform group-hover/activity:text-muted-foreground/70",
+            open && "rotate-90",
+          )}
+          aria-hidden="true"
+        />
       </button>
       {open && (
-        <div className="mt-1 ml-[5px] flex flex-col gap-0.5 border-l border-border/50 pl-2.5">
+        <div className="mt-0.5 ml-[7px] flex flex-col gap-px border-l border-border/40 pl-2.5">
           {tools.map((t, i) => (
             <ToolLine
               key={t.id}
               item={t}
-              // "rodando" é SÓ o último passo emitido (o corrente). Codex não
-              // grava tool_result por passo — marcar todo sem-result como ativo
-              // pintava o grupo inteiro de azul (zebra densa, tudo "rodando").
+              // "rodando" é SÓ o último passo emitido (o corrente).
               active={active && i === tools.length - 1 && !t.result}
             />
           ))}
@@ -999,33 +1067,13 @@ export function MessageList({
           )
         }
         if (n.type === "tools") {
-          if (n.tools.length >= GROUP_MIN) {
-            return (
-              <ToolGroup
-                key={n.key}
-                tools={n.tools}
-                defaultOpen={running && idx === visible.length - 1}
-                active={running && idx === visible.length - 1}
-              />
-            )
-          }
-          const groupActive = running && idx === visible.length - 1
           return (
-            // trilho leve: a sequência de passos lê como uma linha de instrumento
-            // encadeada, não linhas soltas (o border-l só firma o que já existe).
-            <div
+            <ToolGroup
               key={n.key}
-              className="ml-[7px] flex flex-col gap-0.5 border-l border-border/70 pl-3"
-            >
-              {n.tools.map((t, i) => (
-                <ToolLine
-                  key={t.id}
-                  item={t}
-                  // só o último passo emitido é o corrente (ver ToolGroup).
-                  active={groupActive && i === n.tools.length - 1 && !t.result}
-                />
-              ))}
-            </div>
+              tools={n.tools}
+              defaultOpen={running && idx === visible.length - 1}
+              active={running && idx === visible.length - 1}
+            />
           )
         }
         // cartão de limite/erro ganha a fileira de revezamento (só quando o

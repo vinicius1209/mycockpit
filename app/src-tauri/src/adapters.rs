@@ -704,6 +704,49 @@ impl AgentAdapter for CodexAdapter {
     }
 }
 
+/// Resultado de uma tool do Codex. Diferente do Claude, o Codex só expõe a
+/// tool quando o `item.completed` chega; portanto a mesma linha precisa gerar
+/// Tool + ToolResult. Sem isso o frontend preserva a tool como "sem resultado
+/// registrado" mesmo depois de concluída.
+fn codex_tool_result(item: &serde_json::Value, id: &str) -> AgentEvent {
+    let status = item.get("status").and_then(|x| x.as_str()).unwrap_or("");
+    let exit_code = item.get("exit_code").and_then(|x| x.as_i64());
+    let error = item.get("error").filter(|x| !x.is_null());
+    let ok = exit_code.map(|c| c == 0).unwrap_or(true)
+        && !matches!(status, "failed" | "error" | "cancelled")
+        && error.is_none();
+
+    let full = item
+        .get("aggregated_output")
+        .and_then(|x| x.as_str())
+        .or_else(|| item.get("output").and_then(|x| x.as_str()))
+        .map(str::to_string)
+        .or_else(|| {
+            error.map(|e| {
+                e.get("message")
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| e.to_string())
+            })
+        })
+        .unwrap_or_default();
+    let lines = if full.trim().is_empty() {
+        0
+    } else {
+        full.lines().count() as u64
+    };
+    let mut text: String = full.chars().take(600).collect();
+    if full.chars().count() > 600 {
+        text.push('…');
+    }
+    AgentEvent::ToolResult {
+        id: id.to_string(),
+        ok,
+        text,
+        lines,
+    }
+}
+
 /// Mapeia um `item` do Codex (em item.completed) → evento normalizado.
 fn map_codex_item(item: &serde_json::Value) -> Vec<AgentEvent> {
     let id = item
@@ -721,34 +764,52 @@ fn map_codex_item(item: &serde_json::Value) -> Vec<AgentEvent> {
             }
             vec![]
         }
-        "command_execution" => vec![AgentEvent::Tool {
-            id,
-            name: "Bash".to_string(),
-            input: serde_json::json!({
-                "command": item.get("command").and_then(|x| x.as_str()).unwrap_or("")
-            }),
-        }],
-        "mcp_tool_call" => vec![AgentEvent::Tool {
-            id,
-            name: item
-                .get("tool")
-                .and_then(|x| x.as_str())
-                .unwrap_or("mcp")
-                .to_string(),
-            input: item.get("arguments").cloned().unwrap_or(serde_json::Value::Null),
-        }],
-        "web_search" => vec![AgentEvent::Tool {
-            id,
-            name: "WebSearch".to_string(),
-            input: serde_json::json!({
-                "query": item.get("query").and_then(|x| x.as_str()).unwrap_or("")
-            }),
-        }],
-        "file_change" => vec![AgentEvent::Tool {
-            id,
-            name: "Edit".to_string(),
-            input: item.get("changes").cloned().unwrap_or(serde_json::Value::Null),
-        }],
+        "command_execution" => vec![
+            AgentEvent::Tool {
+                id: id.clone(),
+                name: "Bash".to_string(),
+                input: serde_json::json!({
+                    "command": item.get("command").and_then(|x| x.as_str()).unwrap_or("")
+                }),
+            },
+            codex_tool_result(item, &id),
+        ],
+        "mcp_tool_call" => vec![
+            AgentEvent::Tool {
+                id: id.clone(),
+                name: item
+                    .get("tool")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("mcp")
+                    .to_string(),
+                input: item
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null),
+            },
+            codex_tool_result(item, &id),
+        ],
+        "web_search" => vec![
+            AgentEvent::Tool {
+                id: id.clone(),
+                name: "WebSearch".to_string(),
+                input: serde_json::json!({
+                    "query": item.get("query").and_then(|x| x.as_str()).unwrap_or("")
+                }),
+            },
+            codex_tool_result(item, &id),
+        ],
+        "file_change" => vec![
+            AgentEvent::Tool {
+                id: id.clone(),
+                name: "Edit".to_string(),
+                input: item
+                    .get("changes")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null),
+            },
+            codex_tool_result(item, &id),
+        ],
         // reasoning, todo_list, error (não-fatal, ex. plugin warp quebrado) → ignora
         _ => vec![],
     }
@@ -967,6 +1028,61 @@ mod tests {
         let mut a = CodexAdapter::default();
         let args = argv(&a.build_command(&req(Permission::Padrao, false)).unwrap());
         assert!(has_pair(&args, "-s", "workspace-write"));
+    }
+
+    #[test]
+    fn codex_command_completed_emite_tool_e_resultado() {
+        let item = serde_json::json!({
+            "id": "item-1",
+            "type": "command_execution",
+            "command": "/bin/zsh -lc \"bun test\"",
+            "aggregated_output": "2 testes passaram\npronto",
+            "exit_code": 0,
+            "status": "completed"
+        });
+        let events = map_codex_item(&item);
+        assert_eq!(events.len(), 2);
+        match &events[0] {
+            AgentEvent::Tool { id, name, .. } => {
+                assert_eq!(id, "item-1");
+                assert_eq!(name, "Bash");
+            }
+            _ => panic!("esperava Tool"),
+        }
+        match &events[1] {
+            AgentEvent::ToolResult {
+                id,
+                ok,
+                text,
+                lines,
+            } => {
+                assert_eq!(id, "item-1");
+                assert!(*ok);
+                assert_eq!(text, "2 testes passaram\npronto");
+                assert_eq!(*lines, 2);
+            }
+            _ => panic!("esperava ToolResult"),
+        }
+    }
+
+    #[test]
+    fn codex_command_failed_preserva_erro() {
+        let item = serde_json::json!({
+            "id": "item-2",
+            "type": "command_execution",
+            "command": "bun test",
+            "aggregated_output": "teste falhou",
+            "exit_code": 1,
+            "status": "failed"
+        });
+        let events = map_codex_item(&item);
+        match &events[1] {
+            AgentEvent::ToolResult { ok, text, .. } => {
+                assert!(!ok);
+                assert_eq!(text, "teste falhou");
+            }
+            _ => panic!("esperava ToolResult"),
+        }
     }
 
     // ---- agy ----
