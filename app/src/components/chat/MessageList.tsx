@@ -164,10 +164,12 @@ function StepDot({ status }: { status: StepStatus }) {
     return <span className="size-[7px] shrink-0 rounded-full bg-st-success" />
   if (status === "error")
     return <span className="size-[7px] shrink-0 rounded-full bg-st-error" />
+  // Passo em execução GIRA (mesmo vocabulário do ToolGroupStatus): "girando =
+  // este passo executando". O dot pulsante fica reservado ao rodapé
+  // "trabalhando" (batimento do turno + cronômetro) — os dois sinais deixam de
+  // ser dois pontos azuis idênticos.
   if (status === "running")
-    return (
-      <span className="animate-cockpit-pulse size-[7px] shrink-0 rounded-full bg-st-running" />
-    )
+    return <Loader2 className="size-3 shrink-0 animate-spin text-st-running" />
   return <span className="size-[7px] shrink-0 rounded-full bg-muted-foreground/25" />
 }
 
