@@ -61,6 +61,13 @@ vi.mock("@/lib/missionState", async (importOriginal) => {
       const raw = h.disk.get(cwd)
       return raw ? mod.parseRunState(raw) : null
     }),
+    // ponteiro conv→dir é no-op no fake (uma missão por cwd no teste); a
+    // detecção lê o mesmo disco por cwd, exercitando o round-trip real.
+    writeActivePointer: vi.fn(async () => {}),
+    readInterruptedFor: vi.fn(async (cwd: string) => {
+      const raw = h.disk.get(cwd)
+      return raw ? mod.parseRunState(raw) : null
+    }),
   }
 })
 
@@ -105,6 +112,7 @@ function seededState(over: Partial<MissionRunState> = {}): MissionRunState {
   return {
     version: 1,
     missionId: "m-interrompida",
+    dir: ".mycockpit/missions/m-interrompida",
     convId: CONV,
     task: "tarefa retomada",
     preset: { id: "t", name: "Teste", phases, maxCostUsd: null },
@@ -215,6 +223,7 @@ describe("detecção no boot (card de retomada)", () => {
       id: "x",
       convId: CONV,
       presetName: "t",
+      dir: ".mycockpit/missions/x",
       task: "t",
       phases: [],
       current: 0,

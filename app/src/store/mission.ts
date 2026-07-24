@@ -44,14 +44,15 @@ import {
 import {
   changedFilesRef,
   formatPriorHandoffs,
-  handoffFileName,
   readHandoff,
   type PriorHandoff,
 } from "@/lib/missionHandoff"
+import { handoffFileName, missionDir, missionSlug } from "@/lib/missionPaths"
 import {
-  readRunState,
+  readInterruptedFor,
   runToState,
   shouldOfferResume,
+  writeActivePointer,
   writeRunState,
   type InterruptedMission,
   type MissionRunState,
@@ -260,7 +261,8 @@ export const useMission = create<MissionState>((set, get) => {
       // missão em memória (qualquer status: rodando OU timeline visível) ⇒ o
       // card de retomada não se aplica.
       if (get().byConv[convId]) return
-      const state = await readRunState(cwd)
+      // segue o ponteiro da conversa → run-state da pasta isolada da missão.
+      const state = await readInterruptedFor(cwd, convId)
       const offer =
         state && shouldOfferResume(state, convId) ? { state, cwd } : null
       set((s) => {
@@ -363,11 +365,15 @@ export const useMission = create<MissionState>((set, get) => {
 
       // retomada preserva o missionId (continuidade dos marcos e do arquivo).
       const missionId = resume?.missionId ?? crypto.randomUUID()
+      // pasta ISOLADA por missão: na retomada, a do arquivo; fresca, um slug
+      // novo (data + id curto + tarefa) → nunca sobrescreve outra missão.
+      const dir = resume?.dir ?? missionDir(missionSlug(task, missionId, Date.now()))
       const run: MissionRun = {
         id: missionId,
         convId,
         presetName: preset.name,
         task,
+        dir,
         phases: preset.phases.map((def, idx) => ({
           def,
           // retomada: fases < current entram como done com o custo do arquivo.
@@ -392,6 +398,9 @@ export const useMission = create<MissionState>((set, get) => {
         delete interrupted[convId]
         return { byConv: { ...s.byConv, [convId]: run }, interrupted }
       })
+      // ponteiro da conversa → dir desta missão, pro boot achar o run-state sem
+      // varrer o FS (as pastas de missão são gitignoradas). Best-effort.
+      void writeActivePointer(cwd, convId, dir)
 
       // marco: largada no fio da conversa (task + resumo do preset). O launcher
       // já garantiu byId (ensureConversationLoaded) — Escritório e Trabalho.
@@ -464,7 +473,7 @@ export const useMission = create<MissionState>((set, get) => {
         }
 
         const def = phases[i]
-        const handoffPath = handoffFileName(i, def.persona)
+        const handoffPath = handoffFileName(dir, i, def.persona)
 
         // fase 1 = task pura; fases seguintes = blackboard tipado (.mission/*.json
         // que os agentes escreveram) + lista LEVE de arquivos mudados. O código
@@ -477,7 +486,7 @@ export const useMission = create<MissionState>((set, get) => {
           const priors: PriorHandoff[] = []
           for (let j = 0; j < i; j++) {
             const pdef = phases[j]
-            const doc = await readHandoff(cwd, handoffFileName(j, pdef.persona))
+            const doc = await readHandoff(cwd, handoffFileName(dir, j, pdef.persona))
             if (doc) priors.push({ label: pdef.label, persona: pdef.persona, doc })
           }
           if (priors.length > 0) priorHandoffs = formatPriorHandoffs(priors)
@@ -832,7 +841,7 @@ export const useMission = create<MissionState>((set, get) => {
       // + pendências, do handoff mais RECENTE que existir. Best-effort.
       try {
         for (let j = phases.length - 1; j >= 0; j--) {
-          const doc = await readHandoff(cwd, handoffFileName(j, phases[j].persona))
+          const doc = await readHandoff(cwd, handoffFileName(dir, j, phases[j].persona))
           if (doc) {
             patchConv(convId, {
               doneSummary: {
@@ -890,7 +899,7 @@ export const useMission = create<MissionState>((set, get) => {
         } else {
           const seen = new Set<string>()
           for (let j = 0; j < phases.length; j++) {
-            const doc = await readHandoff(cwd, handoffFileName(j, phases[j].persona))
+            const doc = await readHandoff(cwd, handoffFileName(dir, j, phases[j].persona))
             for (const f of doc?.files_touched ?? []) seen.add(f)
           }
           files = [...seen]

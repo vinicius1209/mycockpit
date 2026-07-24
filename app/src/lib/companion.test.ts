@@ -78,6 +78,7 @@ function makeMission(partial: Partial<MissionRun> = {}): MissionRun {
     id: "m1",
     convId: "c2",
     presetName: "Feature completa",
+    dir: ".mycockpit/missions/test",
     task: "implementar o parser",
     phases: [
       {

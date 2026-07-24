@@ -406,20 +406,38 @@ pub fn list_project_files(path: String) -> Vec<String> {
     out
 }
 
-/// Persiste o estado do PIPELINE de missão no worktree (P1 confiabilidade:
-/// missão sobrevive a restart). ESCOPADO por construção: escreve SÓ o arquivo
-/// fixo `.mission/run-state.json` dentro do cwd dado — nenhum caminho vem do
-/// chamador, então não há traversal possível. Escrita atômica (fsx) porque os
-/// agents leem/escrevem o worktree em paralelo.
+/// Persiste um arquivo de estado da missão no worktree (P1 confiabilidade:
+/// missão sobrevive a restart). Agora recebe o `rel_path` (ex.:
+/// `.mycockpit/missions/<slug>/run-state.json`) pra ISOLAR cada missão numa
+/// pasta própria — antes o nome fixo `.mission/run-state.json` fazia missões no
+/// mesmo cwd se SOBRESCREVEREM. ESCOPADO: `rel_path` tem que ser relativo e não
+/// pode escapar do cwd (sem `..`, sem absoluto; o pai canônico tem que começar
+/// no root). Escrita atômica (fsx) porque os agents leem/escrevem em paralelo.
 #[tauri::command]
-pub fn write_mission_state(cwd: String, content: String) -> Result<(), String> {
+pub fn write_mission_state(cwd: String, rel_path: String, content: String) -> Result<(), String> {
     let root = std::fs::canonicalize(&cwd).map_err(|e| e.to_string())?;
     if !root.is_dir() {
         return Err("cwd da missão não é um diretório".into());
     }
-    let dir = root.join(".mission");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("não criei .mission: {e}"))?;
-    crate::fsx::write_atomic(&dir.join("run-state.json"), &content)
+    let rel = std::path::Path::new(&rel_path);
+    if rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("caminho de missão inválido (fora do cwd)".into());
+    }
+    let target = root.join(rel);
+    let parent = target
+        .parent()
+        .ok_or_else(|| "caminho de missão sem pasta-pai".to_string())?;
+    std::fs::create_dir_all(parent).map_err(|e| format!("não criei a pasta da missão: {e}"))?;
+    // defesa extra contra symlink/traversal: o pai REAL tem que estar no root.
+    let cparent = std::fs::canonicalize(parent).map_err(|e| e.to_string())?;
+    if !cparent.starts_with(&root) {
+        return Err("caminho de missão escaparia do cwd".into());
+    }
+    crate::fsx::write_atomic(&target, &content)
 }
 
 #[cfg(test)]
@@ -430,18 +448,36 @@ mod tests {
     fn write_mission_state_cria_pasta_e_grava() {
         let tmp = std::env::temp_dir().join(format!("mc-run-state-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
-        write_mission_state(tmp.to_string_lossy().into(), "{\"version\":1}".into()).unwrap();
-        let out = std::fs::read_to_string(tmp.join(".mission/run-state.json")).unwrap();
+        let rel = ".mycockpit/missions/2026-07-24-abc123-tarefa/run-state.json";
+        write_mission_state(tmp.to_string_lossy().into(), rel.into(), "{\"version\":1}".into())
+            .unwrap();
+        let out = std::fs::read_to_string(tmp.join(rel)).unwrap();
         assert_eq!(out, "{\"version\":1}");
         // regrava por cima (marcos seguintes) sem erro.
-        write_mission_state(tmp.to_string_lossy().into(), "{\"version\":2}".into()).unwrap();
-        let out = std::fs::read_to_string(tmp.join(".mission/run-state.json")).unwrap();
+        write_mission_state(tmp.to_string_lossy().into(), rel.into(), "{\"version\":2}".into())
+            .unwrap();
+        let out = std::fs::read_to_string(tmp.join(rel)).unwrap();
         assert_eq!(out, "{\"version\":2}");
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]
     fn write_mission_state_rejeita_cwd_invalido() {
-        assert!(write_mission_state("/caminho/que/nao/existe".into(), "x".into()).is_err());
+        assert!(
+            write_mission_state("/caminho/que/nao/existe".into(), "a/b.json".into(), "x".into())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn write_mission_state_rejeita_traversal() {
+        let tmp = std::env::temp_dir().join(format!("mc-trav-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let cwd: String = tmp.to_string_lossy().into();
+        // `..` no caminho é rejeitado (não escreve fora do cwd).
+        assert!(write_mission_state(cwd.clone(), "../fora.json".into(), "x".into()).is_err());
+        // caminho absoluto é rejeitado.
+        assert!(write_mission_state(cwd, "/etc/evil".into(), "x".into()).is_err());
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 }

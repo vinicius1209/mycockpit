@@ -76,6 +76,7 @@ function missao(convId: string, patch: Partial<MissionRun> = {}): MissionRun {
     id: "m1",
     convId,
     presetName: "Feature completa",
+    dir: ".mycockpit/missions/test",
     task: "tarefa",
     phases: [
       faseRun(fase("planner", "claude-code")),

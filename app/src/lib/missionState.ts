@@ -16,7 +16,7 @@
 //   detecção só oferece retomada para `running`).
 
 import { invoke } from "@tauri-apps/api/core"
-import { MISSION_DIR } from "@/lib/missionHandoff"
+import { activePointerPath, runStatePath } from "@/lib/missionPaths"
 import type {
   MissionPhaseStatus,
   MissionPreset,
@@ -24,7 +24,6 @@ import type {
   MissionStatus,
 } from "@/lib/missionTypes"
 
-export const RUN_STATE_PATH = `${MISSION_DIR}/run-state.json`
 export const RUN_STATE_VERSION = 1
 
 /** Status do arquivo: os do run + "abandoned" (usuário descartou a retomada). */
@@ -41,6 +40,10 @@ export interface RunStatePhase {
 export interface MissionRunState {
   version: number
   missionId: string
+  /** Pasta RELATIVA (sob o cwd) desta missão — ex.:
+   *  `.mycockpit/missions/<slug>`. Isola os artefatos de cada missão; o boot
+   *  lê o run-state DAQUI (via ponteiro da conversa). */
+  dir: string
   /** Dono do arquivo: só ESTA conversa pode retomar (o cwd pode ser a pasta do
    *  projeto quando não há worktree — o convId evita oferta cruzada). */
   convId: string
@@ -73,6 +76,7 @@ export function runToState(
   return {
     version: RUN_STATE_VERSION,
     missionId: run.id,
+    dir: run.dir,
     convId: run.convId,
     task: run.task,
     preset: {
@@ -118,6 +122,10 @@ export function parseRunState(raw: string): MissionRunState | null {
   const o = obj as Record<string, unknown>
   if (o.version !== RUN_STATE_VERSION) return null
   if (typeof o.missionId !== "string" || !o.missionId) return null
+  // Sem `dir` = run-state legado (era do `.mission/` fixo, pré-isolamento): não
+  // dá pra localizar com segurança e essas missões já estavam sujeitas à
+  // sobrescrita — não oferece retomada (null), sem quebrar nada.
+  if (typeof o.dir !== "string" || !o.dir) return null
   if (typeof o.convId !== "string" || !o.convId) return null
   if (typeof o.task !== "string") return null
   const preset = o.preset as MissionPreset | undefined
@@ -141,6 +149,7 @@ export function parseRunState(raw: string): MissionRunState | null {
   return {
     version: RUN_STATE_VERSION,
     missionId: o.missionId,
+    dir: o.dir,
     convId: o.convId,
     task: o.task,
     preset,
@@ -164,20 +173,74 @@ export function shouldOfferResume(
   return state.status === "running" && state.convId === convId
 }
 
-/** Lê o snapshot do worktree. null em qualquer falha (sem arquivo, JSON
- *  inválido, fora do Tauri) — o chamador não oferece retomada. */
+/** Lê o snapshot de UMA missão (pasta `dir` sob o cwd). null em qualquer falha
+ *  (sem arquivo, JSON inválido, fora do Tauri) — o chamador não oferece
+ *  retomada. */
 export async function readRunState(
   cwd: string,
+  dir: string,
 ): Promise<MissionRunState | null> {
   try {
+    const rel = runStatePath(dir)
     const raw = await invoke<string>("read_text_file", {
       root: cwd,
-      path: `${cwd}/${RUN_STATE_PATH}`,
+      path: `${cwd}/${rel}`,
     })
     return parseRunState(raw)
   } catch {
     return null
   }
+}
+
+/** Ponteiro por conversa → dir da missão ativa/última (retomada sem varrer FS,
+ *  já que as pastas são gitignoradas). */
+interface ActivePointer {
+  dir: string
+}
+
+/** Grava o ponteiro da conversa apontando pro dir da missão. Best-effort. */
+export async function writeActivePointer(
+  cwd: string,
+  convId: string,
+  dir: string,
+): Promise<void> {
+  try {
+    await invoke("write_mission_state", {
+      cwd,
+      relPath: activePointerPath(convId),
+      content: JSON.stringify({ dir } satisfies ActivePointer),
+    })
+  } catch (err) {
+    console.warn("[missão] falha ao gravar ponteiro de missão ativa:", err)
+  }
+}
+
+/** Lê o dir da missão ativa/última da conversa (null se não há ponteiro). */
+export async function readActivePointer(
+  cwd: string,
+  convId: string,
+): Promise<string | null> {
+  try {
+    const raw = await invoke<string>("read_text_file", {
+      root: cwd,
+      path: `${cwd}/${activePointerPath(convId)}`,
+    })
+    const o = JSON.parse(raw) as Partial<ActivePointer>
+    return typeof o.dir === "string" && o.dir ? o.dir : null
+  } catch {
+    return null
+  }
+}
+
+/** Detecta a missão interrompida de uma conversa: segue o ponteiro → lê o
+ *  run-state daquela pasta. null se não há ponteiro ou run-state. */
+export async function readInterruptedFor(
+  cwd: string,
+  convId: string,
+): Promise<MissionRunState | null> {
+  const dir = await readActivePointer(cwd, convId)
+  if (!dir) return null
+  return readRunState(cwd, dir)
 }
 
 /** Fila de escrita POR cwd: os marcos disparam fire-and-forget e o comando
@@ -195,13 +258,17 @@ export function writeRunState(
 ): Promise<void> {
   // serializa AGORA (snapshot do marco), grava na vez dela.
   const content = JSON.stringify(state, null, 2)
-  const next = (writeChain.get(cwd) ?? Promise.resolve()).then(async () => {
+  const relPath = runStatePath(state.dir)
+  // corrente por ARQUIVO (cwd+dir): missões diferentes no mesmo cwd têm dirs
+  // distintos e não competem; a ordem só importa dentro da MESMA missão.
+  const key = `${cwd}::${relPath}`
+  const next = (writeChain.get(key) ?? Promise.resolve()).then(async () => {
     try {
-      await invoke("write_mission_state", { cwd, content })
+      await invoke("write_mission_state", { cwd, relPath, content })
     } catch (err) {
       console.warn("[missão] falha ao persistir run-state no worktree:", err)
     }
   })
-  writeChain.set(cwd, next)
+  writeChain.set(key, next)
   return next
 }

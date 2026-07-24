@@ -11,12 +11,9 @@ import { invoke } from "@tauri-apps/api/core"
 import type { GitDiff } from "@/lib/git"
 import type { MissionPersona } from "@/lib/missionTypes"
 
-export const MISSION_DIR = ".mission"
-
-/** Diretório do worktree onde o agente escreve o handoff da fase. */
-export function handoffFileName(phaseIdx: number, persona: MissionPersona): string {
-  return `${MISSION_DIR}/${phaseIdx}-${persona}.json`
-}
+// Os caminhos (dir por missão, slug, run-state, ponteiro) vivem em
+// `lib/missionPaths.ts` — isolam cada missão numa pasta própria. Aqui mora só a
+// lógica do DOCUMENTO de handoff (parse/format/instrução).
 
 /** Uma decisão da fase (o "porquê" que o diff nunca carrega). */
 export interface HandoffDecision {
@@ -178,10 +175,11 @@ export function changedFilesRef(diff: GitDiff): string {
 /** Instrução (anexada ao prompt) que manda o agente escrever seu handoff JSON.
  *  É o único canal de contexto para a próxima fase. */
 export function handoffInstruction(relPath: string): string {
+  const dir = relPath.slice(0, relPath.lastIndexOf("/")) || "."
   return [
     "## Handoff obrigatório (para o próximo agente da missão)",
     `Ao terminar, escreva um arquivo JSON em \`${relPath}\` (crie a pasta ` +
-      `\`${MISSION_DIR}/\` se preciso) com EXATAMENTE estes campos:`,
+      `\`${dir}/\` se preciso) com EXATAMENTE estes campos:`,
     "```json",
     "{",
     '  "intent": "1-2 frases: o que você fez e POR QUÊ (a intenção, não o código)",',

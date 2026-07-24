@@ -141,6 +141,9 @@ export interface MissionRun {
   convId: string
   presetName: string
   task: string
+  /** Pasta RELATIVA (sob o cwd) desta missão: `.mycockpit/missions/<slug>`.
+   *  Isola os handoffs/run-state/relatórios — sem colisão entre missões. */
+  dir: string
   phases: MissionPhaseRun[]
   /** Índice da fase corrente (aponta além do fim quando done). */
   current: number

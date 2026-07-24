@@ -3,16 +3,8 @@ import type { GitDiff } from "@/lib/git"
 import {
   changedFilesRef,
   formatPriorHandoffs,
-  handoffFileName,
   parseHandoff,
 } from "./missionHandoff"
-
-describe("handoffFileName", () => {
-  it("é determinístico por índice+persona", () => {
-    expect(handoffFileName(0, "planner")).toBe(".mission/0-planner.json")
-    expect(handoffFileName(2, "reviewer")).toBe(".mission/2-reviewer.json")
-  })
-})
 
 describe("parseHandoff", () => {
   it("parseia JSON limpo e normaliza campos", () => {
