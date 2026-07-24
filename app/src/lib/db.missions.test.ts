@@ -41,22 +41,23 @@ vi.mock("@tauri-apps/plugin-sql", () => {
           cost_total,
           phase_current,
           phase_count,
-          ts,
+          created_at,
+          updated_at,
         ] = params as [
           string, string, string, string, string, string,
-          string | null, string, number, number, number, number,
+          string | null, string, number, number, number, number, number,
         ]
         const existing = h.rows.find((r) => r.id === id)
         if (existing) {
           // ON CONFLICT: preserva created_at, atualiza o resto.
           Object.assign(existing, {
             task, preset_name, status, cost_total,
-            phase_current, phase_count, updated_at: ts,
+            phase_current, phase_count, updated_at,
           })
         } else {
           h.rows.push({
             id, slug, dir, conv_id, project_id, task, preset_name, status,
-            cost_total, phase_current, phase_count, created_at: ts, updated_at: ts,
+            cost_total, phase_current, phase_count, created_at, updated_at,
           })
         }
         return { rowsAffected: 1 }
@@ -105,16 +106,18 @@ beforeEach(() => {
 })
 
 describe("índice de missões (banco)", () => {
-  it("upsert insere e depois atualiza status/custo preservando created_at", async () => {
-    await upsertMission(row({ createdAt: 100, updatedAt: 100 }))
+  it("upsert usa createdAt DISTINTO de updatedAt no insert e preserva no conflito", async () => {
+    // createdAt (startedAt da missão) ≠ updatedAt (marco) — o insert grava o
+    // createdAt certo, não o updatedAt (bug do $12/$12 corrigido).
+    await upsertMission(row({ createdAt: 100, updatedAt: 200 }))
     await upsertMission(
-      row({ status: "done", costTotal: 12.5, phaseCurrent: 3, updatedAt: 500 }),
+      row({ status: "done", costTotal: 12.5, phaseCurrent: 3, createdAt: 999, updatedAt: 500 }),
     )
     const all = await listMissions()
     expect(all).toHaveLength(1) // upsert, não duplica
     expect(all[0].status).toBe("done")
     expect(all[0].costTotal).toBe(12.5)
-    expect(all[0].createdAt).toBe(100) // ON CONFLICT preserva a criação
+    expect(all[0].createdAt).toBe(100) // do insert; ON CONFLICT NÃO mexe em created_at
     expect(all[0].updatedAt).toBe(500)
   })
 

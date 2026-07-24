@@ -767,7 +767,7 @@ export async function upsertMission(m: MissionIndexRow): Promise<void> {
   await ensureMissionsTable(db)
   await db.execute(
     `INSERT INTO missions (id, slug, dir, conv_id, project_id, task, preset_name, status, cost_total, phase_current, phase_count, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT(id) DO UPDATE SET
        task = excluded.task,
        preset_name = excluded.preset_name,
@@ -788,6 +788,7 @@ export async function upsertMission(m: MissionIndexRow): Promise<void> {
       m.costTotal,
       m.phaseCurrent,
       m.phaseCount,
+      m.createdAt,
       m.updatedAt,
     ],
   )
