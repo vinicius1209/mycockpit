@@ -49,6 +49,7 @@ import {
 } from "@/lib/missionHandoff"
 import { handoffFileName, missionDir, missionSlug } from "@/lib/missionPaths"
 import {
+  ensureMissionsGitignore,
   readInterruptedFor,
   runToState,
   shouldOfferResume,
@@ -81,7 +82,7 @@ export interface MissionState {
      *  `startPhase = state.current`, com as fases anteriores entrando como
      *  done (custos do arquivo) e o costTotal retomado somando ao teto. O
      *  prompt da fase corrente se reconstrói NATURALMENTE dos handoffs
-     *  .mission/*.json já no disco (mesmo caminho do loop). Gate/recovery
+     *  da pasta da missão já no disco (mesmo caminho do loop). Gate/recovery
      *  pendentes no crash NÃO sobrevivem: a fase corrente re-roda do zero e
      *  re-pergunta se precisar. */
     resume?: MissionRunState,
@@ -237,6 +238,12 @@ export const useMission = create<MissionState>((set, get) => {
     const cwd = missionCwd.get(convId)
     if (!run || !cwd) return
     void writeRunState(cwd, runToState(run, gateDecisions))
+    // ponteiro em CADA marco (não só no launch): se a escrita do launch falhou
+    // transitoriamente, um marco seguinte reabilita a retomada — a
+    // confiabilidade do ponteiro passa a igualar a do run-state (arquivo minúsculo,
+    // conteúdo constante {dir}). Fecha o achado da revisão (retomada dependia de
+    // um único write best-effort no launch).
+    void writeActivePointer(cwd, convId, run.dir)
   }
 
   /** Marco terminal de ERRO no fio: result !ok com o custo total + motivo. */
@@ -401,6 +408,9 @@ export const useMission = create<MissionState>((set, get) => {
       // ponteiro da conversa → dir desta missão, pro boot achar o run-state sem
       // varrer o FS (as pastas de missão são gitignoradas). Best-effort.
       void writeActivePointer(cwd, convId, dir)
+      // garante que os artefatos fiquem FORA do git mesmo num worktree fresco
+      // (o onboarding pode não ter semeado o .mycockpit/.gitignore ali).
+      void ensureMissionsGitignore(cwd)
 
       // marco: largada no fio da conversa (task + resumo do preset). O launcher
       // já garantiu byId (ensureConversationLoaded) — Escritório e Trabalho.

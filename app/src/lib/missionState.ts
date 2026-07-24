@@ -1,9 +1,11 @@
 // ESTADO PERSISTENTE do pipeline de missão (P1 confiabilidade): o run vive em
 // memória (store/mission.ts byConv) e morria com o app. Gravamos um snapshot em
-// `.mission/run-state.json` NO WORKTREE (o disco da missão já é o worktree —
-// zero migração de DB) a cada MARCO: início, transição de fase, gate
-// aberto/respondido, recovery, fim. No boot, uma conversa com worktree cujo
-// arquivo está `running` SEM missão em memória ganha o card de RETOMADA.
+// `.mycockpit/missions/<slug>/run-state.json` — pasta ISOLADA por missão (ver
+// lib/missionPaths.ts; antes era `.mission/run-state.json` fixo, que missões no
+// mesmo cwd sobrescreviam) — a cada MARCO: início, transição de fase, gate
+// aberto/respondido, recovery, fim. No boot, o ponteiro por conversa
+// (activePointerPath) aponta o dir da missão; se o run-state lá está `running`
+// SEM missão em memória, a conversa ganha o card de RETOMADA.
 //
 // Decisões documentadas:
 // - Best-effort SEMPRE: falha de escrita/leitura NUNCA derruba a missão.
@@ -241,6 +243,31 @@ export async function readInterruptedFor(
   const dir = await readActivePointer(cwd, convId)
   if (!dir) return null
   return readRunState(cwd, dir)
+}
+
+/** Garante que `.mycockpit/.gitignore` (=`*`) exista no cwd da missão. O
+ *  onboarding do projeto semeia isso, mas um worktree fresco (cwd de missão sem
+ *  onboarding) não teria — e os artefatos de missão ficariam rastreáveis no git.
+ *  Best-effort e SEM clobber: só escreve se o arquivo estiver AUSENTE. */
+export async function ensureMissionsGitignore(cwd: string): Promise<void> {
+  try {
+    await invoke<string>("read_text_file", {
+      root: cwd,
+      path: `${cwd}/.mycockpit/.gitignore`,
+    })
+    return // já existe (semeado pelo onboarding ou por nós) → não toca
+  } catch {
+    // ausente → semeia; write_mission_state cria a pasta e valida o caminho.
+    try {
+      await invoke("write_mission_state", {
+        cwd,
+        relPath: ".mycockpit/.gitignore",
+        content: "*\n",
+      })
+    } catch (err) {
+      console.warn("[missão] falha ao semear .mycockpit/.gitignore:", err)
+    }
+  }
 }
 
 /** Fila de escrita POR cwd: os marcos disparam fire-and-forget e o comando

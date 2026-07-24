@@ -64,6 +64,7 @@ vi.mock("@/lib/missionState", async (importOriginal) => {
     // ponteiro conv→dir é no-op no fake (uma missão por cwd no teste); a
     // detecção lê o mesmo disco por cwd, exercitando o round-trip real.
     writeActivePointer: vi.fn(async () => {}),
+    ensureMissionsGitignore: vi.fn(async () => {}),
     readInterruptedFor: vi.fn(async (cwd: string) => {
       const raw = h.disk.get(cwd)
       return raw ? mod.parseRunState(raw) : null
