@@ -257,16 +257,12 @@ function AgentsToolsSection() {
                 )}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 text-[13px] text-foreground">
-                  <span>
-                    {tool.label}{" "}
-                    <span className="text-muted-foreground">· {tool.sub}</span>
-                  </span>
-                  {hasUpdate && (
-                    <span className="shrink-0 rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning uppercase">
-                      atualização disponível
-                    </span>
-                  )}
+                {/* o "update disponível" já é sinalizado pelo ícone âmbar à
+                    esquerda + o botão "Atualizar agora" + a "última vX" abaixo,
+                    então nada de badge (era ele que estourava a linha). */}
+                <div className="truncate text-[13px] text-foreground">
+                  {tool.label}{" "}
+                  <span className="text-muted-foreground">· {tool.sub}</span>
                 </div>
                 <div
                   className="truncate text-[11.5px] text-muted-foreground"
@@ -301,14 +297,15 @@ function AgentsToolsSection() {
               </div>
               {cmd ? (
                 <div className="flex shrink-0 items-center gap-1.5">
-                  {/* "Atualizar agora" (roda o update in-app) SÓ quando há update
-                      novo; o "copiar comando" fica sempre como fallback. */}
+                  {/* "Atualizar agora" (roda o update in-app) só quando há update
+                      novo; o "copiar comando" é ÍCONE-ONLY (tooltip = comando)
+                      pra não estourar a largura do painel. */}
                   {hasUpdate && (
                     <button
                       onClick={() => void updateNow(tool.id, tool.label)}
                       disabled={updating != null}
                       title="Atualiza o CLI aqui (detecta npm/brew/self-update)"
-                      className="flex items-center gap-1.5 rounded bg-brass px-2 py-0.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+                      className="flex items-center gap-1 rounded bg-brass px-2 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
                     >
                       {updating === tool.id ? (
                         <>
@@ -316,25 +313,21 @@ function AgentsToolsSection() {
                         </>
                       ) : (
                         <>
-                          <Download className="size-3" /> Atualizar agora
+                          <Download className="size-3" /> Atualizar
                         </>
                       )}
                     </button>
                   )}
                   <button
                     onClick={() => copyCmd(tool.id, cmd)}
-                    title="Copiar o comando de update (rodar à mão)"
-                    className="flex items-center gap-1.5 rounded bg-background/60 px-1.5 py-0.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
+                    title={`Copiar comando de update: ${cmd}`}
+                    aria-label="Copiar comando de update"
+                    className="grid size-6 shrink-0 place-items-center rounded bg-background/60 text-muted-foreground transition-colors hover:text-foreground"
                   >
                     {copied === tool.id ? (
-                      <>
-                        <Check className="size-3 text-st-success" /> copiado
-                      </>
+                      <Check className="size-3 text-st-success" />
                     ) : (
-                      <>
-                        <Copy className="size-3" />{" "}
-                        <span className="max-w-[180px] truncate">{cmd}</span>
-                      </>
+                      <Copy className="size-3" />
                     )}
                   </button>
                 </div>

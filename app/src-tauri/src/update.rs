@@ -39,18 +39,24 @@ enum Method {
     Unknown,
 }
 
-/// Classifica o método pelo path REAL (já canonizado). Ordem importa: homebrew
-/// antes de npm (um binário sob Cellar pode ter "node" no nome do formula).
+/// Classifica o método pelo path REAL (já canonizado). Ordem importa e o sinal
+/// FORTE de npm vem PRIMEIRO: `node_modules` (e os version-managers) é
+/// inequívoco de npm e NUNCA aparece no path de uma fórmula brew (o node do brew
+/// mora em `/Cellar/node/.../bin/node`, sem `node_modules`). Sem isso, um
+/// `npm i -g` usando o node do Homebrew (path com `/opt/homebrew` E
+/// `node_modules`) era classificado Homebrew → `brew upgrade claude` falhava.
 fn classify(path: &str) -> Method {
     let p = path.to_lowercase();
-    if p.contains("/homebrew/") || p.contains("/cellar/") || p.contains("/opt/homebrew") {
-        Method::Homebrew
-    } else if p.contains("node_modules")
+    if p.contains("node_modules")
         || p.contains("/.nvm/")
         || p.contains("/fnm/")
         || p.contains("/.volta/")
-        || p.contains("/node/")
     {
+        Method::Npm
+    } else if p.contains("/homebrew/") || p.contains("/cellar/") || p.contains("/opt/homebrew") {
+        Method::Homebrew
+    } else if p.contains("/node/") {
+        // node genérico (fora de version-manager/homebrew) → npm.
         Method::Npm
     } else if p.contains("/.local/") || p.contains("/.claude/") {
         Method::Native
@@ -86,6 +92,7 @@ async fn resolve_bin(bin: &str) -> Option<String> {
         RESOLVE_TIMEOUT,
         Command::new("sh")
             .args(["-c", &format!("command -v {bin}")])
+            .kill_on_drop(true)
             .output(),
     )
     .await
@@ -138,7 +145,15 @@ pub async fn update_agent(agent: String) -> Result<UpdateOutcome, String> {
 
     let command = format!("{program} {}", args.join(" "));
 
-    match timeout(UPDATE_TIMEOUT, Command::new(program).args(&args).output()).await {
+    // kill_on_drop: no timeout o processo TEM que morrer (senão o npm/brew
+    // seguiria rodando em background — mensagem "interrompida" mentindo + risco
+    // de um 2º `npm i -g` concorrente no global). Padrão do repo (stt/agent.rs).
+    match timeout(
+        UPDATE_TIMEOUT,
+        Command::new(program).args(&args).kill_on_drop(true).output(),
+    )
+    .await
+    {
         Ok(Ok(out)) => {
             let mut combined = String::from_utf8_lossy(&out.stdout).to_string();
             let err = String::from_utf8_lossy(&out.stderr);
@@ -198,6 +213,12 @@ mod tests {
         assert_eq!(
             classify("/opt/homebrew/Cellar/codex/0.144.6/bin/codex"),
             Method::Homebrew
+        );
+        // npm-global usando o NODE do Homebrew: tem /opt/homebrew E node_modules
+        // → npm (não brew). Era o bug: casava homebrew primeiro e falhava.
+        assert_eq!(
+            classify("/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js"),
+            Method::Npm
         );
         assert_eq!(classify("/Users/x/.local/bin/claude"), Method::Native);
         assert_eq!(classify("/usr/bin/claude"), Method::Unknown);
