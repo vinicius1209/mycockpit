@@ -53,6 +53,12 @@ pub struct RunRequest {
 pub enum Permission {
     Leitura,
     Padrao,
+    /// "Auto": autonomia sem pausar pra aprovação MAS com o freio de segurança
+    /// de cada CLI — claude `--permission-mode auto` (classificador bloqueia o
+    /// perigoso), codex `-s workspace-write` + `approval_policy=never` (sandbox
+    /// do SO confina, sem pausa), agy skip-permissions + `--sandbox` (confinamento
+    /// best-effort). Meio-termo entre Padrão (pede) e Liberado (sem freio).
+    Auto,
     Liberado,
     /// Candidato do Fusion: read-only + MCP desligado (sem efeito externo).
     FusionRo,
@@ -63,10 +69,11 @@ impl Permission {
         match s {
             "leitura" => Ok(Self::Leitura),
             "padrao" | "" => Ok(Self::Padrao),
+            "auto" => Ok(Self::Auto),
             "liberado" => Ok(Self::Liberado),
             "fusion-ro" => Ok(Self::FusionRo),
             other => Err(format!(
-                "modo de permissão desconhecido: '{other}' (esperado leitura|padrao|liberado|fusion-ro)"
+                "modo de permissão desconhecido: '{other}' (esperado leitura|padrao|auto|liberado|fusion-ro)"
             )),
         }
     }
@@ -216,9 +223,17 @@ impl AgentAdapter for ClaudeAdapter {
             }
             // "Planejar primeiro" SUBSTITUI o --permission-mode do modo neste
             // turno (senão emitiríamos a flag 2x). Emitido logo abaixo.
-            Permission::Liberado | Permission::Padrao if req.plan_first => {}
+            Permission::Liberado | Permission::Padrao | Permission::Auto
+                if req.plan_first => {}
             Permission::Liberado => {
                 cmd.arg("--permission-mode").arg("bypassPermissions");
+            }
+            // Auto (validado docs 2026, claude 2.1.207+): roda sem pedir mas o
+            // classificador de segurança barra exfiltração/rm destrutivo/deploy —
+            // não leva o --permission-prompt-tool (só o Padrão precisa do gate
+            // granular; o Auto se autogoverna).
+            Permission::Auto => {
+                cmd.arg("--permission-mode").arg("auto");
             }
             Permission::Padrao => {
                 cmd.arg("--permission-mode").arg("acceptEdits");
@@ -578,10 +593,19 @@ impl AgentAdapter for CodexAdapter {
             match req.permission {
                 Permission::Leitura | Permission::FusionRo => "read-only",
                 Permission::Liberado => "danger-full-access",
-                Permission::Padrao => "workspace-write",
+                Permission::Padrao | Permission::Auto => "workspace-write",
             }
         };
         cmd.arg("-s").arg(sandbox);
+        // Auto (validado codex 0.144.6): `approval_policy=never` = nunca pausa,
+        // mas o sandbox workspace-write acima segue confinando (escrita só no
+        // workspace, rede off). exec já não pausa por não ter TTY — explicitar
+        // blinda contra um default futuro e deixa a intenção auditável. Vai como
+        // OPTION (antes de -m/resume). `--full-auto` foi REMOVIDO e `on-failure`
+        // é inválido nesta versão: não usar.
+        if matches!(req.permission, Permission::Auto) && !req.plan_first {
+            cmd.arg("-c").arg("approval_policy=never");
+        }
         // Codex: -m <model> · effort via override de config (não tem flag dedicada
         // no exec). Valores: minimal|low|medium|high|xhigh. ANTES de `resume`.
         if let Some(m) = &req.model {
@@ -885,7 +909,16 @@ impl AgentAdapter for AgyAdapter {
         // igual PTY no agent-runner.md §7). Emitido UMA vez (sem duplicar quando
         // plan_first coincide com Leitura/Fusion).
         cmd.arg("--dangerously-skip-permissions");
-        if req.plan_first || matches!(req.permission, Permission::Leitura | Permission::FusionRo) {
+        // --sandbox (confinamento best-effort do agy): Leitura/Fusion e "Planejar
+        // primeiro" — e também Auto, que é "autonomia COM freio" (o agy não tem
+        // classificador, então o sandbox é o único freio possível; sem ele, Auto
+        // seria idêntico a Liberado). Emitido UMA vez (sem duplicar).
+        if req.plan_first
+            || matches!(
+                req.permission,
+                Permission::Leitura | Permission::FusionRo | Permission::Auto
+            )
+        {
             cmd.arg("--sandbox");
         }
         Ok(cmd)
@@ -1007,6 +1040,26 @@ mod tests {
     }
 
     #[test]
+    fn claude_auto_usa_permission_mode_auto_sem_prompt_tool() {
+        let mut a = ClaudeAdapter;
+        let args = argv(&a.build_command(&req(Permission::Auto, false)).unwrap());
+        assert!(has_pair(&args, "--permission-mode", "auto"));
+        assert!(!args.contains(&"acceptEdits".to_string()));
+        assert!(!args.contains(&"bypassPermissions".to_string()));
+        // Auto se autogoverna: NÃO leva o gate granular (só o Padrão precisa).
+        assert!(!args.iter().any(|x| x == "--permission-prompt-tool"));
+    }
+
+    #[test]
+    fn claude_auto_com_plan_first_vira_plan() {
+        let mut a = ClaudeAdapter;
+        let args = argv(&a.build_command(&req(Permission::Auto, true)).unwrap());
+        assert!(has_pair(&args, "--permission-mode", "plan"));
+        assert!(!args.contains(&"auto".to_string()));
+        assert_eq!(args.iter().filter(|x| *x == "--permission-mode").count(), 1);
+    }
+
+    #[test]
     fn claude_plan_first_em_leitura_mantem_disallow_de_escrita() {
         let mut a = ClaudeAdapter;
         let args = argv(&a.build_command(&req(Permission::Leitura, true)).unwrap());
@@ -1028,6 +1081,23 @@ mod tests {
         let mut a = CodexAdapter::default();
         let args = argv(&a.build_command(&req(Permission::Padrao, false)).unwrap());
         assert!(has_pair(&args, "-s", "workspace-write"));
+    }
+
+    #[test]
+    fn codex_auto_workspace_write_e_approval_never() {
+        let mut a = CodexAdapter::default();
+        let args = argv(&a.build_command(&req(Permission::Auto, false)).unwrap());
+        assert!(has_pair(&args, "-s", "workspace-write"));
+        assert!(has_pair(&args, "-c", "approval_policy=never"));
+    }
+
+    #[test]
+    fn codex_auto_com_plan_first_nao_emite_approval_never() {
+        // plan_first força read-only e não deve carregar o approval=never do Auto.
+        let mut a = CodexAdapter::default();
+        let args = argv(&a.build_command(&req(Permission::Auto, true)).unwrap());
+        assert!(has_pair(&args, "-s", "read-only"));
+        assert!(!has_pair(&args, "-c", "approval_policy=never"));
     }
 
     #[test]
@@ -1114,6 +1184,16 @@ mod tests {
         let i = args.iter().position(|x| x == "-p").unwrap();
         assert_eq!(args[i + 1], "faça X");
         assert!(!args.contains(&"--sandbox".to_string()));
+    }
+
+    #[test]
+    fn agy_auto_liga_sandbox_como_freio() {
+        // agy não tem classificador: o --sandbox é o único freio do Auto (senão
+        // Auto = Liberado). skip-permissions segue (print mode trava sem ele).
+        let mut a = AgyAdapter::default();
+        let args = argv(&a.build_command(&req(Permission::Auto, false)).unwrap());
+        assert!(args.contains(&"--sandbox".to_string()));
+        assert!(args.contains(&"--dangerously-skip-permissions".to_string()));
     }
 
     #[test]

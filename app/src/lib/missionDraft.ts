@@ -15,6 +15,7 @@ export interface PhaseEdit {
   agent?: string
   model?: string | null
   effort?: string | null
+  autonomy?: "auto" | "inherit"
 }
 
 /** Aplica uma edição a UMA fase (imutável). Trocar de agent zera modelo e
@@ -27,14 +28,37 @@ export function editPhase(
   return phases.map((p, i) => {
     if (i !== idx) return p
     if (edit.agent !== undefined && edit.agent !== p.agent) {
+      // troca de agent preserva a autonomia da fase (é do MEMBRO, não do CLI).
       return { ...p, agent: edit.agent, model: null, effort: null }
     }
     return { ...p, ...edit }
   })
 }
 
-/** O rascunho diverge do preset? Compara só o que o launcher edita
- *  (agent/modelo/effort por fase). true → o seletor mostra "Personalizado". */
+/** Liga/desliga "auto" em TODO o time de uma vez (o toggle de missão). Preserva
+ *  o resto de cada fase. */
+export function setTeamAutonomy(
+  phases: MissionPhaseDef[],
+  autonomy: "auto" | "inherit",
+): MissionPhaseDef[] {
+  return phases.map((p) => ({ ...p, autonomy }))
+}
+
+/** Estado do toggle de missão a partir das fases: "auto" se TODAS são auto,
+ *  "inherit" se NENHUMA, "mixed" se algumas (a UI mostra o indeterminado). */
+export function teamAutonomy(
+  phases: MissionPhaseDef[],
+): "auto" | "inherit" | "mixed" {
+  if (phases.length === 0) return "inherit"
+  const autos = phases.filter((p) => p.autonomy === "auto").length
+  if (autos === 0) return "inherit"
+  if (autos === phases.length) return "auto"
+  return "mixed"
+}
+
+/** O rascunho diverge do preset? Compara o que o launcher edita
+ *  (agent/modelo/effort/autonomia por fase). true → o seletor mostra
+ *  "Personalizado". */
 export function phasesCustomized(
   base: MissionPhaseDef[],
   edited: MissionPhaseDef[],
@@ -45,7 +69,8 @@ export function phasesCustomized(
     return (
       b.agent !== e.agent ||
       (b.model ?? null) !== (e.model ?? null) ||
-      (b.effort ?? null) !== (e.effort ?? null)
+      (b.effort ?? null) !== (e.effort ?? null) ||
+      (b.autonomy ?? "inherit") !== (e.autonomy ?? "inherit")
     )
   })
 }

@@ -14,6 +14,7 @@ import type {
   MissionStatus,
   RecoveryChoice,
 } from "@/lib/missionTypes"
+import { phasePermission } from "@/lib/missionTypes"
 import { agentCaps } from "@/lib/agents"
 import { notifyGate } from "@/lib/notify"
 import { buildHandoff } from "@/lib/handoff"
@@ -541,7 +542,9 @@ export const useMission = create<MissionState>((set, get) => {
             effort: cur.effort,
             prompt,
             cwd,
-            permission,
+            // permissão POR MEMBRO: a fase marcada "auto" roda autônoma (com o
+            // freio do CLI); as demais herdam a permissão do projeto.
+            permission: phasePermission(permission, cur),
             maxRetries: cur.maxRetries,
             // anexos: 1ª fase (i === 0) = os do launcher, junto do pedido
             // original; fase seguinte a um GATE = os das respostas ricas

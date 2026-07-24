@@ -8,7 +8,10 @@ import {
   editPhase,
   parseCapInput,
   phasesCustomized,
+  setTeamAutonomy,
+  teamAutonomy,
 } from "./missionDraft"
+import { phasePermission } from "@/lib/missionTypes"
 
 function phase(over: Partial<MissionPhaseDef> = {}): MissionPhaseDef {
   return {
@@ -82,6 +85,46 @@ describe("phasesCustomized (preset → Personalizado ao editar fase)", () => {
 
   it("tamanhos diferentes contam como personalizado", () => {
     expect(phasesCustomized(base, [base[0]])).toBe(true)
+  })
+
+  it("mudar a autonomia de uma fase marca como personalizado", () => {
+    expect(
+      phasesCustomized(base, editPhase(clonePhases(base), 0, { autonomy: "auto" })),
+    ).toBe(true)
+  })
+})
+
+describe("autonomia da missão (auto por membro + toggle do time)", () => {
+  const base = [phase(), phase({ id: "build", persona: "executor" })]
+
+  it("phasePermission: fase auto vira 'auto'; herdar usa a permissão do projeto", () => {
+    expect(phasePermission("liberado", { autonomy: "auto" })).toBe("auto")
+    expect(phasePermission("padrao", { autonomy: "inherit" })).toBe("padrao")
+    expect(phasePermission("padrao", {})).toBe("padrao") // ausente = herda
+    expect(phasePermission("leitura", { autonomy: "auto" })).toBe("auto")
+  })
+
+  it("teamAutonomy resume o estado do toggle (auto/inherit/mixed)", () => {
+    expect(teamAutonomy(base)).toBe("inherit")
+    expect(teamAutonomy(setTeamAutonomy(base, "auto"))).toBe("auto")
+    const mixed = editPhase(setTeamAutonomy(base, "auto"), 0, { autonomy: "inherit" })
+    expect(teamAutonomy(mixed)).toBe("mixed")
+    expect(teamAutonomy([])).toBe("inherit")
+  })
+
+  it("setTeamAutonomy aplica a TODOS preservando o resto da fase", () => {
+    const all = setTeamAutonomy(base, "auto")
+    expect(all.every((p) => p.autonomy === "auto")).toBe(true)
+    expect(all[1].agent).toBe(base[1].agent) // resto intacto
+    expect(all.map((p) => p.id)).toEqual(base.map((p) => p.id))
+  })
+
+  it("editPhase preserva a autonomia ao trocar de agent (é do membro, não do CLI)", () => {
+    const auto = setTeamAutonomy(base, "auto")
+    const swapped = editPhase(auto, 0, { agent: "codex" })
+    expect(swapped[0].autonomy).toBe("auto")
+    expect(swapped[0].agent).toBe("codex")
+    expect(swapped[0].model).toBeNull() // troca de agent zera modelo, como antes
   })
 })
 

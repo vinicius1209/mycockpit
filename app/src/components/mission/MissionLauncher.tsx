@@ -7,7 +7,7 @@
 // dela pelo caminho existente do runAgent (nada muda no Rust). Clicar fora NÃO
 // fecha (anti miss-click); Esc/X fecham, mas rascunho sujo pede confirmação.
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Paperclip, Rocket } from "lucide-react"
+import { Paperclip, Rocket, Zap } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -32,8 +32,11 @@ import {
   editPhase,
   parseCapInput,
   phasesCustomized,
+  setTeamAutonomy,
+  teamAutonomy,
   type PhaseEdit,
 } from "@/lib/missionDraft"
+import { cn } from "@/lib/utils"
 import {
   LEAGUE_DESTINATIONS,
   agentCaps,
@@ -48,6 +51,43 @@ const CUSTOM_PRESET = "__custom__"
 
 const SELECT_TRIGGER =
   "h-7 gap-1 px-2 text-[12px] text-muted-foreground data-[size=default]:h-7"
+
+/** Pílula de autonomia POR MEMBRO: "auto" (roda sem pedir, com o freio do CLI)
+ *  vs "herda" (permissão do projeto). Um clique alterna — é o override por
+ *  membro que o toggle de missão seta em bloco. */
+function AutonomyPill({
+  autonomy,
+  label,
+  onToggle,
+}: {
+  autonomy: "auto" | "inherit"
+  label: string
+  onToggle: () => void
+}) {
+  const on = autonomy === "auto"
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={on}
+      title={
+        on
+          ? "Auto: roda sem pedir permissão (com o freio de segurança do CLI). Clique para herdar do projeto."
+          : "Herda a permissão do projeto. Clique para deixar esta fase em Auto."
+      }
+      aria-label={label}
+      className={cn(
+        "flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[10.5px] font-medium transition-colors",
+        on
+          ? "border-brass/50 bg-brass/15 text-brass"
+          : "border-border/60 text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Zap className="size-3" />
+      {on ? "Auto" : "Herda"}
+    </button>
+  )
+}
 
 /** UMA fase do rascunho: nº, rótulo e selects compactos de agent + modelo
  *  (mesmas opções do composer, via lib/agents; modelo respeita o agent). */
@@ -69,6 +109,15 @@ function PhaseDraftRow({
         {phase.label}
       </span>
       <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        <AutonomyPill
+          autonomy={phase.autonomy === "auto" ? "auto" : "inherit"}
+          label={`Autonomia da fase ${index + 1}`}
+          onToggle={() =>
+            onEdit({
+              autonomy: phase.autonomy === "auto" ? "inherit" : "auto",
+            })
+          }
+        />
         <RichSelect
           value={phase.agent}
           onValueChange={(v) => onEdit({ agent: v })}
@@ -365,6 +414,38 @@ export function MissionLauncher({
                 <span className="text-[12px] text-st-error">
                   Nenhum preset configurado (Settings ▸ Missions)
                 </span>
+              )}
+              {/* Toggle de missão: liga "auto" no TIME TODO (ou desliga). O
+                  estado "misto" (alguns membros em auto) aparece com o traço —
+                  clicar resolve pra auto-todos. Cada membro ainda pode divergir
+                  na pílula da própria linha. */}
+              {preset && phases.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPhases((cur) =>
+                      setTeamAutonomy(
+                        cur,
+                        teamAutonomy(cur) === "auto" ? "inherit" : "auto",
+                      ),
+                    )
+                  }
+                  aria-pressed={teamAutonomy(phases) === "auto"}
+                  title="Autonomia do time: em Auto, todos os membros rodam sem pedir permissão (cada CLI com seu freio de segurança). Você ainda pode ajustar membro a membro."
+                  className={cn(
+                    "ml-auto flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[11.5px] font-medium transition-colors",
+                    teamAutonomy(phases) === "auto"
+                      ? "border-brass/50 bg-brass/15 text-brass"
+                      : "border-border/60 text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Zap className="size-3" />
+                  {teamAutonomy(phases) === "auto"
+                    ? "Auto: time todo"
+                    : teamAutonomy(phases) === "mixed"
+                      ? "Auto: parcial"
+                      : "Autonomia"}
+                </button>
               )}
             </div>
 

@@ -28,6 +28,22 @@ export interface MissionPhaseDef {
   instructions?: string
   /** Tentativas máximas da fase (1 = sem retry). */
   maxRetries: number
+  /** Autonomia DESTA fase (por membro do time). "auto" = roda sem pedir
+   *  permissão, com o freio de segurança do CLI (claude classificador, codex
+   *  sandbox+approval=never, agy --sandbox). Ausente/"inherit" = usa a permissão
+   *  do PROJETO (comportamento atual). Viaja no def → sobrevive a resume e a
+   *  presets salvos sem migração. */
+  autonomy?: "auto" | "inherit"
+}
+
+/** Permissão EFETIVA de uma fase: "auto" força o modo autônomo-com-freio; senão
+ *  herda a permissão do projeto (leitura/padrao/liberado). Pura — testável e sem
+ *  store. Usada no loop da missão pra passar a permissão certa por membro. */
+export function phasePermission(
+  projectPermission: string,
+  phase: Pick<MissionPhaseDef, "autonomy">,
+): string {
+  return phase.autonomy === "auto" ? "auto" : projectPermission
 }
 
 /** Um time salvo (global nas Settings; ad-hoc no launch). */
