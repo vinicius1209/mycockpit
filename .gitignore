@@ -33,9 +33,10 @@ Thumbs.db
 /tmp/
 builds/
 
-# Artefatos de missão (transientes / spikes gerados pelos agents; ficam no
-# disco mas fora do controle de versão). Remova daqui se quiser versionar.
-.mission/
+# Artefatos de missão (transientes: handoffs/plano/relatórios/run-state por
+# missão). Desde jul/2026 vivem em .mycockpit/missions/<slug>/ (isolados por
+# missão) e já são cobertos pelo .mycockpit/.gitignore (=*). O .mission/ antigo
+# (fixo, sobrescrevível) foi aposentado.
 
 # Sessões locais do Claude Code (transcripts/estado — nunca versionar)
 .claude/projects/

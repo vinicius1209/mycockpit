@@ -5,6 +5,17 @@
 > Pergunta do produto: *"Opus planeja → Gemini executa front → Codex faz X →
 > Opus revisa"* — vale construir? Como? Data: 2026-07-12.
 
+> **Atualização (jul/2026) — confiabilidade dos artefatos.** As menções a
+> `.mission/` abaixo são HISTÓRICAS. Os artefatos de missão (handoffs
+> `<i>-<persona>.json`, `plan.md`, `reports/`, `run-state.json`) hoje vivem
+> ISOLADOS por missão em **`.mycockpit/missions/<slug>/`** (slug = data + id
+> curto + tarefa) — antes o `.mission/` fixo fazia missões no mesmo cwd se
+> sobrescreverem. A persistência marcada "⏳ pendente" mais abaixo foi
+> ENTREGUE: run-state por missão (retomada via ponteiro por conversa) + índice
+> `missions` no banco (histórico) + viewer no app ("Ver arquivos" + promover
+> pra `docs/`). Ver `lib/missionPaths.ts`, `lib/missionState.ts`,
+> `lib/missionFiles.ts`.
+
 ## TL;DR (a recomendação)
 
 **Sim — como feature INDEPENDENTE, sem nenhum vínculo com o SDD.** Decisão de
