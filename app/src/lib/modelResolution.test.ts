@@ -30,6 +30,12 @@ describe("expectedResolution", () => {
     const pin1m = expectedResolution("claude-code", "claude-opus-4-8[1m]")!
     expect(pin1m.test("claude-opus-4-8[1m]")).toBe(true)
     expect(pin1m.test("claude-opus-4-8")).toBe(false)
+
+    // Opus 5 (novo default do picker): mesma lógica, e o alias `opus` cobre.
+    const p5 = expectedResolution("claude-code", "claude-opus-5[1m]")!
+    expect(p5.test("claude-opus-5[1m]")).toBe(true)
+    expect(p5.test("claude-opus-4-8[1m]")).toBe(false)
+    expect(expectedResolution("claude-code", "opus")!.test("claude-opus-5")).toBe(true)
   })
 
   it("pin tolera a forma DATADA do mesmo ID (sem falso divergente)", () => {

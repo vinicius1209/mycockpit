@@ -39,18 +39,19 @@ export interface AgentDef {
 }
 
 // Aliases do Claude Code ("opus", "sonnet"…) resolvem NO SERVIDOR e mudam com
-// versão do CLI/provider/entitlements (jul/2026: `opus` → Opus 4.8 na API;
-// antes da v2.1.207 → 4.7 — visto em produção). Pin confiável = ID COMPLETO.
-// 1M de contexto é DEFAULT no Opus 4.8/4.7, Sonnet 5 e Fable 5 (sem beta
-// header, preço padrão); o sufixo "[1m]" segue aceito e faz o init reportar
-// "…[1m]", que o contextWindowFor usa pro anel mostrar 1M — por isso os pins
-// abaixo carregam o sufixo.
+// versão do CLI/provider/entitlements — `opus` já resolveu p/ 4.7, depois 4.8,
+// e desde o claude 2.1.219 (24/jul/2026) → **Opus 5** (novo default Opus). Pin
+// confiável = ID COMPLETO. 1M de contexto é DEFAULT no Opus 5/4.8, Sonnet 5 e
+// Fable 5 (sem beta header, preço padrão); o sufixo "[1m]" segue aceito e faz o
+// init reportar "…[1m]", que o contextWindowFor usa pro anel mostrar 1M — por
+// isso os pins abaixo carregam o sufixo.
 const CLAUDE_MODELS: AgentModelOption[] = [
   { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Claude Code escolher" },
-  { value: "claude-opus-4-8[1m]", label: "Opus 4.8", description: "Pin exato — 1M de contexto nativo" },
+  { value: "claude-opus-5[1m]", label: "Opus 5", description: "Pin exato — o Opus mais novo, 1M nativo ($5/$25)" },
   { value: "claude-sonnet-5[1m]", label: "Sonnet 5", description: "Pin exato — 1M nativo, rápido e equilibrado" },
   { value: "fable", label: "Fable", description: "Topo de linha (Fable 5, ~2x o preço do Opus)" },
-  { value: "opus", label: "Opus (alias)", description: "O CLI decide a versão — pode divergir" },
+  { value: "claude-opus-4-8[1m]", label: "Opus 4.8", description: "Pin da geração anterior (1M nativo)" },
+  { value: "opus", label: "Opus (alias)", description: "O CLI decide a versão (hoje → Opus 5) — pode divergir" },
   { value: "sonnet", label: "Sonnet (alias)", description: "O CLI decide a versão — pode divergir" },
   { value: "haiku", label: "Haiku", description: "Mais rápido e barato (200k)" },
 ]
@@ -121,12 +122,12 @@ const LEGACY_CODEX_MODELS: Record<string, string> = {
   o3: "gpt-5.5",
 }
 
-/** "opus[1m]" saiu do picker nesta onda: o alias resolvia server-side pra
- *  versão da vez (deu 4.7 em produção) e o pin exato é justamente o conserto.
- *  Segue VÁLIDO no CLI, então o remap é escolha de produto, não correção de
- *  erro: valor legado converge pro pin que o picker oferece hoje. */
+/** "opus[1m]" saiu do picker: o alias resolvia server-side pra versão da vez
+ *  (4.7, depois 4.8, hoje Opus 5) e o pin exato é o conserto. Segue VÁLIDO no
+ *  CLI, então o remap é escolha de produto: valor legado converge pro pin que o
+ *  picker oferece HOJE como topo (Opus 5). */
 const LEGACY_CLAUDE_MODELS: Record<string, string> = {
-  "opus[1m]": "claude-opus-4-8[1m]",
+  "opus[1m]": "claude-opus-5[1m]",
 }
 
 /** Normalização de valor persistido de modelo, POR agent.
@@ -168,7 +169,7 @@ export const AGENTS: AgentDef[] = [
     caps: { image: true, pdf: true },
     models: CLAUDE_MODELS,
     efforts: CLAUDE_EFFORTS,
-    defaultModel: "claude-opus-4-8[1m]",
+    defaultModel: "claude-opus-5[1m]",
   },
   {
     id: "codex",

@@ -28,9 +28,9 @@ describe("modelos do agy", () => {
     expect(normalizeModelValue("codex", "gpt-5.3-codex")).toBe("gpt-5.5")
     expect(normalizeModelValue("codex", "o3")).toBe("gpt-5.5")
     expect(normalizeModelValue("codex", "gpt-5.6-sol")).toBe("gpt-5.6-sol")
-    // claude: alias 1M legado converge pro pin do picker atual
+    // claude: alias 1M legado converge pro pin de topo do picker atual (Opus 5)
     expect(normalizeModelValue("claude-code", "opus[1m]")).toBe(
-      "claude-opus-4-8[1m]",
+      "claude-opus-5[1m]",
     )
     expect(normalizeModelValue("claude-code", "opus")).toBe("opus")
     // agy delega pro remap existente; default/null passam intactos

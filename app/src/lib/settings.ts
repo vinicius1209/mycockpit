@@ -77,7 +77,7 @@ export interface GlobalSettings {
 
 export const DEFAULT_SETTINGS: GlobalSettings = {
   defaultAgent: "claude-code",
-  defaultModel: "claude-opus-4-8[1m]",
+  defaultModel: "claude-opus-5[1m]",
   defaultEffort: null,
   helperModel: "haiku",
   dictationEnabled: true,
