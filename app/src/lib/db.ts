@@ -685,6 +685,158 @@ async function ensureLearningTables(db: Database): Promise<void> {
   return learningReady
 }
 
+// ── Índice de MISSÕES (histórico navegável) ──────────────────────────────
+// A missão grava seus artefatos em disco (.mycockpit/missions/<slug>/ — pasta
+// isolada, ver lib/missionPaths). Este é o ÍNDICE durável: sobrevive a mover/
+// apagar pasta, lista o histórico sem varrer o FS e guarda o `dir` de cada
+// missão pro viewer no app. Frontend-created (idempotente), como as tabelas de
+// aprendizado/board — sem migração no lib.rs.
+let missionsReady: Promise<void> | null = null
+async function ensureMissionsTable(db: Database): Promise<void> {
+  if (!missionsReady) {
+    const run = db
+      .execute(
+        `CREATE TABLE IF NOT EXISTS missions (
+           id TEXT PRIMARY KEY,
+           slug TEXT NOT NULL,
+           dir TEXT NOT NULL,
+           conv_id TEXT NOT NULL,
+           project_id TEXT NOT NULL,
+           task TEXT NOT NULL,
+           preset_name TEXT,
+           status TEXT NOT NULL,
+           cost_total REAL NOT NULL DEFAULT 0,
+           phase_current INTEGER NOT NULL DEFAULT 0,
+           phase_count INTEGER NOT NULL DEFAULT 0,
+           created_at INTEGER NOT NULL,
+           updated_at INTEGER NOT NULL
+         )`,
+      )
+      .then(() =>
+        db.execute(
+          `CREATE INDEX IF NOT EXISTS idx_missions_project ON missions(project_id, updated_at)`,
+        ),
+      )
+      .then(() => {})
+    missionsReady = run.catch((e) => {
+      missionsReady = null
+      throw e
+    })
+  }
+  return missionsReady
+}
+
+/** Linha do índice de missões (uma por missão, atualizada nos marcos). */
+export interface MissionIndexRow {
+  id: string
+  slug: string
+  dir: string
+  convId: string
+  projectId: string
+  task: string
+  presetName: string | null
+  status: string
+  costTotal: number
+  phaseCurrent: number
+  phaseCount: number
+  createdAt: number
+  updatedAt: number
+}
+
+interface MissionIndexDbRow {
+  id: string
+  slug: string
+  dir: string
+  conv_id: string
+  project_id: string
+  task: string
+  preset_name: string | null
+  status: string
+  cost_total: number
+  phase_current: number
+  phase_count: number
+  created_at: number
+  updated_at: number
+}
+
+/** Grava/atualiza a missão no índice. `created_at` só entra no INSERT (o
+ *  ON CONFLICT preserva a data de criação). Best-effort no caller. */
+export async function upsertMission(m: MissionIndexRow): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureMissionsTable(db)
+  await db.execute(
+    `INSERT INTO missions (id, slug, dir, conv_id, project_id, task, preset_name, status, cost_total, phase_current, phase_count, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+     ON CONFLICT(id) DO UPDATE SET
+       task = excluded.task,
+       preset_name = excluded.preset_name,
+       status = excluded.status,
+       cost_total = excluded.cost_total,
+       phase_current = excluded.phase_current,
+       phase_count = excluded.phase_count,
+       updated_at = excluded.updated_at`,
+    [
+      m.id,
+      m.slug,
+      m.dir,
+      m.convId,
+      m.projectId,
+      m.task,
+      m.presetName,
+      m.status,
+      m.costTotal,
+      m.phaseCurrent,
+      m.phaseCount,
+      m.updatedAt,
+    ],
+  )
+}
+
+function toMissionIndex(r: MissionIndexDbRow): MissionIndexRow {
+  return {
+    id: r.id,
+    slug: r.slug,
+    dir: r.dir,
+    convId: r.conv_id,
+    projectId: r.project_id,
+    task: r.task,
+    presetName: r.preset_name,
+    status: r.status,
+    costTotal: r.cost_total,
+    phaseCurrent: r.phase_current,
+    phaseCount: r.phase_count,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }
+}
+
+/** Missões do índice (de um projeto, ou todas), mais recentes primeiro.
+ *  Vazio em qualquer falha (histórico é secundário — nunca derruba a UI). */
+export async function listMissions(
+  projectId?: string,
+  limit = 100,
+): Promise<MissionIndexRow[]> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    await ensureMissionsTable(db)
+    const rows = projectId
+      ? await db.select<MissionIndexDbRow[]>(
+          "SELECT * FROM missions WHERE project_id = $1 ORDER BY updated_at DESC LIMIT $2",
+          [projectId, limit],
+        )
+      : await db.select<MissionIndexDbRow[]>(
+          "SELECT * FROM missions ORDER BY updated_at DESC LIMIT $1",
+          [limit],
+        )
+    return rows.map(toMissionIndex)
+  } catch (e) {
+    console.warn("[missões] listMissions falhou", e)
+    return []
+  }
+}
+
 interface DeliveryRow {
   id: string
   task: string

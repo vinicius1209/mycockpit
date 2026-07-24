@@ -19,7 +19,7 @@ import { agentCaps } from "@/lib/agents"
 import { notifyGate } from "@/lib/notify"
 import { buildHandoff } from "@/lib/handoff"
 import { loadGitDiff } from "@/lib/git"
-import { insertDelivery } from "@/lib/db"
+import { insertDelivery, upsertMission } from "@/lib/db"
 import {
   buildLearningBlocks,
   distillLesson,
@@ -244,6 +244,34 @@ export const useMission = create<MissionState>((set, get) => {
     // conteúdo constante {dir}). Fecha o achado da revisão (retomada dependia de
     // um único write best-effort no launch).
     void writeActivePointer(cwd, convId, run.dir)
+    // índice no banco (histórico navegável): espelha o marco. Disco = artefatos;
+    // banco = índice durável. Best-effort — falha nunca derruba a missão.
+    indexMission(convId)
+  }
+
+  /** Espelha a missão no índice `missions` do banco (upsert). projectId vem da
+   *  conversa (useChat), slug do dir. Best-effort e fire-and-forget. */
+  const indexMission = (convId: string) => {
+    const run = get().byConv[convId]
+    if (!run) return
+    const projectId = useChat.getState().byId[convId]?.projectId
+    if (!projectId) return
+    const slug = run.dir.slice(run.dir.lastIndexOf("/") + 1)
+    void upsertMission({
+      id: run.id,
+      slug,
+      dir: run.dir,
+      convId,
+      projectId,
+      task: run.task,
+      presetName: run.presetName,
+      status: run.status,
+      costTotal: run.costTotal,
+      phaseCurrent: run.current,
+      phaseCount: run.phases.length,
+      createdAt: run.startedAt,
+      updatedAt: Date.now(),
+    }).catch((e) => console.warn("[missão] falha ao indexar no banco:", e))
   }
 
   /** Marco terminal de ERRO no fio: result !ok com o custo total + motivo. */
@@ -411,6 +439,8 @@ export const useMission = create<MissionState>((set, get) => {
       // garante que os artefatos fiquem FORA do git mesmo num worktree fresco
       // (o onboarding pode não ter semeado o .mycockpit/.gitignore ali).
       void ensureMissionsGitignore(cwd)
+      // índice no banco desde a largada (status=running aparece no histórico).
+      indexMission(convId)
 
       // marco: largada no fio da conversa (task + resumo do preset). O launcher
       // já garantiu byId (ensureConversationLoaded) — Escritório e Trabalho.
