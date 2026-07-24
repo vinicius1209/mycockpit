@@ -417,6 +417,10 @@ export function reduceItems(
     case "text":
       if (c.streamingTextId) return { streamingTextId: null }
       return { items: [...c.items, { kind: "text", id: uid(), text: e.text }] }
+    // Fim de UM bloco de texto: fecha a bolha corrente pro próximo bloco
+    // começar limpo (sem colar no anterior nem no meio da palavra). Genérico.
+    case "text_stop":
+      return c.streamingTextId ? { streamingTextId: null } : {}
     // H2, delta em streaming: acumula na bolha corrente (cria se não houver).
     case "text_delta": {
       if (c.streamingTextId) {

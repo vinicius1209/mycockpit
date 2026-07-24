@@ -104,6 +104,10 @@ pub enum AgentEvent {
     TextDelta {
         text: String,
     },
+    /// Fim de UM bloco de texto (content_block_stop). Fecha a bolha corrente pro
+    /// próximo bloco não colar no anterior (nem no meio da palavra). Genérico —
+    /// qualquer adapter que streame por bloco emite; quem não streama, ignora.
+    TextStop,
     Tool {
         id: String,
         name: String,

@@ -10,6 +10,7 @@ export type AgentEvent =
   | { type: "session"; session_id: string; model: string | null; tools: number }
   | { type: "text"; text: string }
   | { type: "text_delta"; text: string }
+  | { type: "text_stop" }
   | { type: "tool"; id: string; name: string; input: unknown }
   | { type: "tool_result"; id: string; ok: boolean; text: string; lines: number }
   | { type: "context_usage"; tokens: number }

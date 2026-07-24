@@ -383,13 +383,14 @@ impl AgentAdapter for ClaudeAdapter {
                     vec![]
                 }
             }
-            // H2, deltas de texto em streaming. Outros sub-eventos (block
-            // start/stop, tool input deltas) são ignorados; o texto vem dos deltas.
+            // H2, streaming por bloco. text_delta → TextDelta; content_block_stop
+            // → TextStop (FECHA a bolha do bloco — sem isso, deltas de blocos
+            // diferentes colam na mesma bolha, às vezes no meio da palavra). Tool
+            // input deltas e block_start seguem ignorados.
             "stream_event" => {
                 let ev = v.get("event");
-                let is_delta = ev.and_then(|e| e.get("type")).and_then(|x| x.as_str())
-                    == Some("content_block_delta");
-                if is_delta {
+                let ev_type = ev.and_then(|e| e.get("type")).and_then(|x| x.as_str());
+                if ev_type == Some("content_block_delta") {
                     let delta = ev.and_then(|e| e.get("delta"));
                     let is_text = delta.and_then(|d| d.get("type")).and_then(|x| x.as_str())
                         == Some("text_delta");
@@ -401,6 +402,9 @@ impl AgentAdapter for ClaudeAdapter {
                             }];
                         }
                     }
+                } else if ev_type == Some("content_block_stop") {
+                    // fecha a bolha do bloco que acabou (o próximo começa limpo).
+                    return vec![AgentEvent::TextStop];
                 }
                 vec![]
             }
@@ -408,10 +412,20 @@ impl AgentAdapter for ClaudeAdapter {
             // + tool_use como cartões.
             "assistant" => {
                 let mut out = Vec::new();
+                // Subagent (Task): tem parent_tool_use_id. Mensagens do agente
+                // PRINCIPAL já vieram inteiras pelos deltas (--include-partial-
+                // messages) → o `text` consolidado é REDUNDANTE e, com ≥2 blocos,
+                // criava a bolha duplicada no meio da frase. Então só emitimos o
+                // `Text` consolidado pra SUBAGENT (que chega sem deltas — é a
+                // única fonte dele).
+                let is_subagent = v
+                    .get("parent_tool_use_id")
+                    .map(|x| !x.is_null())
+                    .unwrap_or(false);
                 if let Some(content) = v.pointer("/message/content").and_then(|x| x.as_array()) {
                     for block in content {
                         match block.get("type").and_then(|x| x.as_str()) {
-                            Some("text") => {
+                            Some("text") if is_subagent => {
                                 if let Some(t) = block.get("text").and_then(|x| x.as_str()) {
                                     if !t.trim().is_empty() {
                                         out.push(AgentEvent::Text { text: t.to_string() });
@@ -440,12 +454,8 @@ impl AgentAdapter for ClaudeAdapter {
                 }
                 // Footprint ATUAL do contexto: usage da própria mensagem (input +
                 // cache lido + cache criado ≈ prompt desta chamada). Mensagens de
-                // SUBAGENT (parent_tool_use_id) têm contexto próprio e não contam.
-                // NEEDS-VERIFY: o filtro de subagent contra um run real.
-                let is_subagent = v
-                    .get("parent_tool_use_id")
-                    .map(|x| !x.is_null())
-                    .unwrap_or(false);
+                // SUBAGENT (parent_tool_use_id) têm contexto próprio e não contam
+                // (mesmo `is_subagent` computado acima).
                 if !is_subagent {
                     if let Some(u) = v.pointer("/message/usage") {
                         let tokens = usage_u64(Some(u), "input_tokens")
