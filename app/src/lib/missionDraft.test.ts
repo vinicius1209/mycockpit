@@ -97,11 +97,17 @@ describe("phasesCustomized (preset → Personalizado ao editar fase)", () => {
 describe("autonomia da missão (auto por membro + toggle do time)", () => {
   const base = [phase(), phase({ id: "build", persona: "executor" })]
 
-  it("phasePermission: fase auto vira 'auto'; herdar usa a permissão do projeto", () => {
-    expect(phasePermission("liberado", { autonomy: "auto" })).toBe("auto")
+  it("phasePermission: auto é a versão sem-pausa do Padrão, clampado pelo teto do projeto", () => {
+    // Padrão é o caso que "morde": auto tira as pausas de aprovação.
+    expect(phasePermission("padrao", { autonomy: "auto" })).toBe("auto")
+    expect(phasePermission("", { autonomy: "auto" })).toBe("auto") // "" = padrão
+    // herdar/ausente = permissão do projeto, sem mexer.
     expect(phasePermission("padrao", { autonomy: "inherit" })).toBe("padrao")
-    expect(phasePermission("padrao", {})).toBe("padrao") // ausente = herda
-    expect(phasePermission("leitura", { autonomy: "auto" })).toBe("auto")
+    expect(phasePermission("padrao", {})).toBe("padrao")
+    // Leitura + auto NÃO escala pra escrita (teto duro read-only).
+    expect(phasePermission("leitura", { autonomy: "auto" })).toBe("leitura")
+    // Liberado + auto NÃO rebaixa o bypass deliberado.
+    expect(phasePermission("liberado", { autonomy: "auto" })).toBe("liberado")
   })
 
   it("teamAutonomy resume o estado do toggle (auto/inherit/mixed)", () => {

@@ -36,14 +36,24 @@ export interface MissionPhaseDef {
   autonomy?: "auto" | "inherit"
 }
 
-/** Permissão EFETIVA de uma fase: "auto" força o modo autônomo-com-freio; senão
- *  herda a permissão do projeto (leitura/padrao/liberado). Pura — testável e sem
- *  store. Usada no loop da missão pra passar a permissão certa por membro. */
+/** Permissão EFETIVA de uma fase. A permissão do PROJETO é o TETO — "auto" é a
+ *  versão SEM-PAUSA do Padrão, nunca uma escalada acima do que o projeto libera:
+ *  - projeto Padrão + auto → "auto" (autônomo-com-freio; o caso que resolve o
+ *    "me pede o tempo todo").
+ *  - projeto Leitura + auto → "leitura" (auto NÃO concede escrita — leitura já
+ *    não pausa porque não escreve; sem escalada de read-only pra workspace).
+ *  - projeto Liberado + auto → "liberado" (não rebaixa o bypass que o usuário
+ *    escolheu de propósito; auto seria MENOS privilegiado, com freio).
+ *  Pura — testável e sem store. Usada no loop da missão por membro. */
 export function phasePermission(
   projectPermission: string,
   phase: Pick<MissionPhaseDef, "autonomy">,
 ): string {
-  return phase.autonomy === "auto" ? "auto" : projectPermission
+  if (phase.autonomy !== "auto") return projectPermission
+  // auto só "morde" no Padrão (o modo que pausa); nos demais é no-op clampado.
+  return projectPermission === "padrao" || projectPermission === ""
+    ? "auto"
+    : projectPermission
 }
 
 /** Um time salvo (global nas Settings; ad-hoc no launch). */

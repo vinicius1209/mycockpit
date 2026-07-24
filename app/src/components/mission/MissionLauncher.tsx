@@ -156,6 +156,9 @@ export function MissionLauncher({
 }) {
   const presets = useApp((s) => s.settings.missionPresets)
   const project = useActiveProject()
+  // Teto de permissão da missão (o launch usa isto por baixo). Alimenta a nota
+  // de clamp: auto só "morde" no Padrão.
+  const projectPermission = project?.permissionMode ?? "padrao"
   const activeId = useChat((s) => s.activeId)
   // uma missão por conversa: com uma rodando, o launch do store ignora — aqui
   // o botão já desabilita e explica (guarda anti-duplo-start visível).
@@ -518,6 +521,20 @@ export function MissionLauncher({
                 </div>
               </div>
             )}
+
+            {/* Nota de clamp: auto é a versão SEM-PAUSA do Padrão. Se o projeto
+                está em Leitura ou Liberado, ligar auto numa fase não faz nada
+                (o teto do projeto manda) — dizer isso evita a surpresa de
+                "liguei auto e nada mudou". */}
+            {preset &&
+              teamAutonomy(phases) !== "inherit" &&
+              projectPermission !== "padrao" && (
+                <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+                  {projectPermission === "leitura"
+                    ? "Projeto em Leitura: Auto não concede escrita — as fases seguem só-leitura. O teto do projeto manda."
+                    : "Projeto em Liberado: já roda sem pedir e sem freio; Auto não altera (seria mais restrito). O teto do projeto manda."}
+                </p>
+              )}
           </div>
         </div>
 
