@@ -92,8 +92,12 @@ export function MissionFilesDialog({
 
   async function promote(f: string) {
     try {
-      const dest = await promoteToDocs(cwd, dir, f, slug)
-      toast.success(`Promovido para ${dest} (versionado no git)`)
+      const r = await promoteToDocs(cwd, dir, f, slug)
+      if (r.alreadyThere) {
+        toast(`Já estava em ${r.path} (idêntico)`)
+      } else {
+        toast.success(`Promovido para ${r.path} (versionado no git)`)
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Falha ao promover")
     }

@@ -370,6 +370,13 @@ fn walk_files(base: &Path, dir: &Path, out: &mut Vec<String>, depth: usize) {
         return;
     };
     for e in rd.filter_map(|e| e.ok()) {
+        // pula SYMLINKS (defesa em profundidade): sem isto, um link dentro da
+        // pasta apontando pra fora faria o walker ENUMERAR nomes de lá
+        // (list_mission_files). `e.file_type()` NÃO segue o link. Só pula o que
+        // é comprovadamente symlink (erro de tipo não esconde arquivo real).
+        if e.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
+            continue;
+        }
         let p = e.path();
         let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
         if p.is_dir() {
@@ -524,6 +531,28 @@ mod tests {
             list_mission_files(tmp.to_string_lossy().into(), dir.into()).unwrap();
         files.sort();
         assert_eq!(files, vec!["2-reviewer.json", "plan.md", "reports/05.md"]);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_mission_files_nao_segue_symlink_pra_fora() {
+        let tmp = std::env::temp_dir().join(format!("mc-sym-{}", std::process::id()));
+        let dir = ".mycockpit/missions/2026-07-24-abc-tarefa";
+        let base = tmp.join(dir);
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("plan.md"), "# plano").unwrap();
+        // "segredo" FORA da pasta da missão (mesmo cwd, mas fora do dir):
+        let secret = tmp.join("segredo");
+        std::fs::create_dir_all(&secret).unwrap();
+        std::fs::write(secret.join("chave.txt"), "sensível").unwrap();
+        // symlink DENTRO da missão apontando pro segredo:
+        std::os::unix::fs::symlink(&secret, base.join("link")).unwrap();
+        let files =
+            list_mission_files(tmp.to_string_lossy().into(), dir.into()).unwrap();
+        // só o arquivo real; NADA de dentro do symlink (nem o nome chave.txt).
+        assert_eq!(files, vec!["plan.md"]);
+        assert!(!files.iter().any(|f| f.contains("chave")));
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 
