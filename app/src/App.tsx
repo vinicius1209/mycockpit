@@ -779,16 +779,15 @@ export default function App() {
                     )}
                   </ResizablePanelGroup>
                 </div>
-                {/* Toaster ancorado ao CONTEÚDO (centra no card, não na janela). O
-                    wrapper com transform vira containing-block SÓ pro toaster; o
-                    pointer-events-none não bloqueia o card (sonner re-habilita o clique). */}
-                <div className="pointer-events-none absolute inset-0 z-[120] [transform:translate(0)]">
-                  <Toaster position="bottom-center" theme={theme} />
-                </div>
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>
         </div>
+        {/* Toaster na RAIZ da janela (sem ancestral com transform) → position
+            fixed = viewport, bottom-center REAL da janela. Antes vivia dentro do
+            painel de conteúdo com um wrapper transform, o que o centrava só na
+            coluna de conteúdo (parecia deslocado pra direita). */}
+        <Toaster position="bottom-center" theme={theme} />
         <CommandMenu />
         {/* Host GLOBAL de interações (§6.1 item 4): approvals/perguntas têm
             card em QUALQUER viewMode (o ChatPanel não o monta mais). */}
