@@ -131,7 +131,8 @@ export function PresetSettings() {
 
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between">
+      {/* pr-9: o "Novo preset" não passa por baixo do X do dialog (DialogCloseX). */}
+      <div className="mb-2 flex items-center justify-between pr-9">
         <h3 className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
           Presets de persona
         </h3>

@@ -200,9 +200,10 @@ function AgentsToolsSection() {
         toast.success(`${label} atualizado (${r.method}).`, { id: toastId })
         await checkNow() // reflete a nova versão instalada
       } else if (r.ran) {
-        toast.error(`Falha ao atualizar ${label}.`, {
+        // mostra o COMANDO que rodou (contexto) + o fim da saída de erro.
+        toast.error(`Falha ao atualizar ${label} (${r.command}).`, {
           id: toastId,
-          description: r.output.slice(-400),
+          description: r.output.slice(-300),
         })
       } else {
         // não rodou (sem canal / fora do PATH) → mostra o caminho manual.
@@ -222,7 +223,8 @@ function AgentsToolsSection() {
 
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between">
+      {/* pr-9: a ação "Verificar agora" não passa por baixo do X do dialog. */}
+      <div className="mb-2 flex items-center justify-between pr-9">
         <SectionTitle>Agents na máquina</SectionTitle>
         <button
           onClick={() => void checkNow()}
@@ -585,7 +587,8 @@ export function SettingsDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        showCloseButton={false}
+        // X: o DialogCloseX PADRÃO do dialog base (canto do dialog, z alto,
+        // chip) — nada de X custom dentro do scroll (era o bug recorrente).
         // mais largo E mais alto: a área de conteúdo estava com ~456px (o form
         // de preset de 3 colunas truncava tudo). Agora ~700px de conteúdo, com
         // teto por viewport pra não estourar telas baixas.
@@ -623,16 +626,10 @@ export function SettingsDialog() {
           ))}
         </nav>
 
-        {/* Conteúdo */}
+        {/* Conteúdo — o X padrão do dialog base flutua no canto sup-direito;
+            os cabeçalhos de seção com ação à direita reservam pr-9 pra não
+            passar por baixo dele (regra do DialogCloseX). */}
         <div className="relative flex-1 overflow-y-auto p-5">
-          <button
-            onClick={() => setOpen(false)}
-            className="absolute top-3 right-3 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label="Fechar"
-          >
-            <X className="size-4" />
-          </button>
-
           {section === "appearance" && (
             <div>
               <SectionTitle>Aparência & layout</SectionTitle>

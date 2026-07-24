@@ -70,7 +70,9 @@ fn classify(path: &str) -> Method {
 fn plan(agent: &str, m: &Method) -> Option<(&'static str, &'static str, Vec<&'static str>)> {
     match agent {
         "claude-code" => Some(match m {
-            Method::Homebrew => ("homebrew", "brew", vec!["upgrade", "claude"]),
+            // o CASK do brew chama-se `claude-code`, NÃO `claude` (o binário) —
+            // `brew upgrade claude` dava "Cask 'claude' is not installed".
+            Method::Homebrew => ("homebrew", "brew", vec!["upgrade", "claude-code"]),
             Method::Npm => ("npm", "npm", vec!["i", "-g", "@anthropic-ai/claude-code@latest"]),
             // nativo/desconhecido: o CLI tem auto-update embutido.
             _ => ("self-update", "claude", vec!["update"]),
@@ -233,8 +235,10 @@ mod tests {
         // claude nativo/desconhecido → self-update
         assert_eq!(plan("claude-code", &Method::Native).unwrap().0, "self-update");
         assert_eq!(plan("claude-code", &Method::Unknown).unwrap().0, "self-update");
-        // claude homebrew
-        assert_eq!(plan("claude-code", &Method::Homebrew).unwrap().0, "homebrew");
+        // claude homebrew → cask `claude-code`, NÃO `claude`
+        let (_, prog_h, args_h) = plan("claude-code", &Method::Homebrew).unwrap();
+        assert_eq!(prog_h, "brew");
+        assert_eq!(args_h, vec!["upgrade", "claude-code"]);
         // codex homebrew default
         assert_eq!(plan("codex", &Method::Unknown).unwrap().1, "brew");
         assert_eq!(plan("codex", &Method::Npm).unwrap().1, "npm");

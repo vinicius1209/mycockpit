@@ -67,17 +67,41 @@ function DialogContent({
         {...props}
       >
         {children}
-        {showCloseButton && (
-          <DialogPrimitive.Close
-            data-slot="dialog-close"
-            className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
-          >
-            <XIcon />
-            <span className="sr-only">Close</span>
-          </DialogPrimitive.Close>
-        )}
+        {showCloseButton && <DialogCloseX />}
       </DialogPrimitive.Content>
     </DialogPortal>
+  )
+}
+
+/** PADRÃO ÚNICO do botão de fechar (X) — replicável e à prova de UI. Regras:
+ *  - vive no canto SUP-DIREITO do DialogContent (não de containers internos:
+ *    nada de X dentro de um `overflow-y-auto`, que era a fonte dos bugs);
+ *  - z alto (fica ACIMA do conteúdo) + chip com hover → hit-area de 28px clara,
+ *    visível sobre qualquer fundo;
+ *  - qualquer conteúdo com ação no canto sup-direito reserva `pr-9` pra não
+ *    passar por baixo do X.
+ *  Dialogs com layout custom (p-0/scroll próprio) usam `showCloseButton={false}`
+ *  e renderizam <DialogCloseX/> como filho DIRETO do DialogContent. */
+function DialogCloseX({
+  className,
+  onClick,
+}: {
+  className?: string
+  onClick?: () => void
+}) {
+  return (
+    <DialogPrimitive.Close
+      data-slot="dialog-close"
+      onClick={onClick}
+      aria-label="Fechar"
+      className={cn(
+        "absolute top-3 right-3 z-20 grid size-7 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus:outline-none disabled:pointer-events-none [&_svg]:size-4",
+        className,
+      )}
+    >
+      <XIcon />
+      <span className="sr-only">Fechar</span>
+    </DialogPrimitive.Close>
   )
 }
 
@@ -147,6 +171,7 @@ function DialogDescription({
 export {
   Dialog,
   DialogClose,
+  DialogCloseX,
   DialogContent,
   DialogDescription,
   DialogFooter,
