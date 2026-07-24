@@ -27,6 +27,7 @@ mod skills;
 mod sources;
 mod stt;
 mod tray;
+mod update;
 
 /// Ponto de entrada do subcomando `approval-server`: ESTE binário rodando como
 /// MCP server stdio quando o `claude -p` o spawna (aprovação granular inline).
@@ -414,6 +415,7 @@ pub fn run() {
             context::read_project_context,
             detect::detect_agents,
             detect::list_agy_models,
+            update::update_agent,
             catalog::refresh_models_catalog,
             catalog::get_models_catalog,
             mycockpit::read_mycockpit_config,

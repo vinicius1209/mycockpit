@@ -1,13 +1,16 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { getVersion } from "@tauri-apps/api/app"
+import { toast } from "sonner"
 import {
   AlertTriangle,
   Bot,
   Check,
   Copy,
   Cpu,
+  Download,
   Drama,
   Info,
+  Loader2,
   Mic,
   PanelTop,
   Palette,
@@ -40,6 +43,7 @@ import {
   detectAgents,
   refreshAgyModels,
   toProbeMap,
+  updateAgent,
   updateAvailable,
   UPDATE_COMMANDS,
 } from "@/lib/detect"
@@ -136,6 +140,7 @@ function AgentsToolsSection() {
   const setSettings = useApp((s) => s.setSettings)
   const [checking, setChecking] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
+  const [updating, setUpdating] = useState<string | null>(null)
   // Gate humano do curador: propostas pendentes + catálogo (pro preço).
   const [proposals, setProposals] = useState<ModelProposal[]>([])
   const [catalog, setCatalog] = useState<CatalogModel[]>([])
@@ -180,6 +185,39 @@ function AgentsToolsSection() {
       setCopied(id)
       window.setTimeout(() => setCopied((c) => (c === id ? null : c)), 1500)
     })
+  }
+
+  /** "Atualizar agora": o Rust detecta o método e roda; a UI reflete o desfecho
+   *  e, em sucesso, re-verifica as versões. Falha/impossível → o comando pra
+   *  rodar à mão fica no toast (e o "copiar comando" segue como fallback). */
+  async function updateNow(id: string, label: string) {
+    if (updating) return
+    setUpdating(id)
+    const toastId = toast.loading(`Atualizando ${label}…`)
+    try {
+      const r = await updateAgent(id)
+      if (r.ran && r.ok) {
+        toast.success(`${label} atualizado (${r.method}).`, { id: toastId })
+        await checkNow() // reflete a nova versão instalada
+      } else if (r.ran) {
+        toast.error(`Falha ao atualizar ${label}.`, {
+          id: toastId,
+          description: r.output.slice(-400),
+        })
+      } else {
+        // não rodou (sem canal / fora do PATH) → mostra o caminho manual.
+        toast(`Não deu pra atualizar ${label} automaticamente.`, {
+          id: toastId,
+          description: r.output.slice(-400),
+        })
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `Falha ao atualizar ${label}`, {
+        id: toastId,
+      })
+    } finally {
+      setUpdating(null)
+    }
   }
 
   return (
@@ -262,21 +300,44 @@ function AgentsToolsSection() {
                 </div>
               </div>
               {cmd ? (
-                <button
-                  onClick={() => copyCmd(tool.id, cmd)}
-                  title="Copiar comando de update"
-                  className="flex shrink-0 items-center gap-1.5 rounded bg-background/60 px-1.5 py-0.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  {copied === tool.id ? (
-                    <>
-                      <Check className="size-3 text-st-success" /> copiado
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="size-3" /> {cmd}
-                    </>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {/* "Atualizar agora" (roda o update in-app) SÓ quando há update
+                      novo; o "copiar comando" fica sempre como fallback. */}
+                  {hasUpdate && (
+                    <button
+                      onClick={() => void updateNow(tool.id, tool.label)}
+                      disabled={updating != null}
+                      title="Atualiza o CLI aqui (detecta npm/brew/self-update)"
+                      className="flex items-center gap-1.5 rounded bg-brass px-2 py-0.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+                    >
+                      {updating === tool.id ? (
+                        <>
+                          <Loader2 className="size-3 animate-spin" /> atualizando…
+                        </>
+                      ) : (
+                        <>
+                          <Download className="size-3" /> Atualizar agora
+                        </>
+                      )}
+                    </button>
                   )}
-                </button>
+                  <button
+                    onClick={() => copyCmd(tool.id, cmd)}
+                    title="Copiar o comando de update (rodar à mão)"
+                    className="flex items-center gap-1.5 rounded bg-background/60 px-1.5 py-0.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {copied === tool.id ? (
+                      <>
+                        <Check className="size-3 text-st-success" /> copiado
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="size-3" />{" "}
+                        <span className="max-w-[180px] truncate">{cmd}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               ) : (
                 <span className="shrink-0 text-[11px] text-muted-foreground/60">
                   —

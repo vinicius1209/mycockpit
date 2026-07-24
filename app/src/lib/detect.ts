@@ -25,11 +25,31 @@ export interface AgentProbe {
   checkedAt: number
 }
 
-/** Comando de update por agent (null = sem canal de update conhecido). */
+/** Comando de update por agent (fallback pra "copiar e rodar à mão" quando o
+ *  "Atualizar agora" não consegue). null = sem canal conhecido. */
 export const UPDATE_COMMANDS: Record<string, string | null> = {
   "claude-code": "npm i -g @anthropic-ai/claude-code",
   codex: "brew upgrade codex",
   agy: null,
+}
+
+/** Resultado do "Atualizar agora" (espelha UpdateOutcome do Rust update.rs). */
+export interface UpdateOutcome {
+  agent: string
+  /** "npm" | "homebrew" | "self-update" | "none" */
+  method: string
+  command: string
+  /** tentou rodar? (false = sem canal OU programa fora do PATH) */
+  ran: boolean
+  /** saiu com sucesso? (só com ran=true) */
+  ok: boolean
+  output: string
+}
+
+/** Atualiza o CLI do agent in-app: o Rust detecta o método (npm/brew/self-update)
+ *  pelo path real e roda o comando certo, com fallback pro comando manual. */
+export async function updateAgent(id: string): Promise<UpdateOutcome> {
+  return invoke<UpdateOutcome>("update_agent", { agent: id })
 }
 
 /** Extrai os segmentos numéricos de uma versão ("v2.1.209 (x)" → [2,1,209]).
