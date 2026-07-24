@@ -4,10 +4,11 @@
 // (resumo + custos, card recolhível), erro/abortada. O gate humano
 // ("precisa de você") entra na onda 2 (precisa pausar o runner).
 import { useEffect, useMemo, useState } from "react"
-import { Check, Rocket, X } from "lucide-react"
+import { Check, FolderOpen, Rocket, X } from "lucide-react"
 import { useMission } from "@/store/mission"
-import { useActiveProject } from "@/store/app"
-import type { ChatItem } from "@/store/chat"
+import { useActiveProject, useApp } from "@/store/app"
+import { useChat, type ChatItem } from "@/store/chat"
+import { MissionFilesDialog } from "@/components/mission/MissionFilesDialog"
 import type {
   GateAnswer,
   MissionPhaseRun,
@@ -460,11 +461,21 @@ export function MissionTimeline({ convId }: { convId: string }) {
   const abort = useMission((s) => s.abort)
   const clear = useMission((s) => s.clear)
   const answerGate = useMission((s) => s.answerGate)
+  // cwd pro viewer de arquivos: worktree da conversa, senão a pasta do projeto.
+  const conv = useChat((s) => s.byId[convId])
+  const projects = useApp((s) => s.projects)
+  const [filesOpen, setFilesOpen] = useState(false)
   // Aprovações contextuais: pedidos pendentes DESTA conversa (a visível) —
   // renderizam dentro do bloco da fase corrente (o toast global os suprime).
   const split = useContextualSplit()
   const inlineReqs = split.inlineConvId === convId ? split.inline : []
   if (!mission) return null
+
+  const cwd =
+    conv?.worktreePath ??
+    projects.find((p) => p.id === conv?.projectId)?.path ??
+    ""
+  const missionSlug = mission.dir.slice(mission.dir.lastIndexOf("/") + 1)
 
   const gated = mission.status === "running" && mission.gate != null
   const running = mission.status === "running"
@@ -523,6 +534,18 @@ export function MissionTimeline({ convId }: { convId: string }) {
             <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground">
               {mission.task}
             </p>
+          )}
+          {/* Ver arquivos: abre o plano/relatórios/handoffs DESTA missão no app
+              (conserta o "concern 2" — não manda mais abrir arquivo gitignorado). */}
+          {cwd && (
+            <button
+              onClick={() => setFilesOpen(true)}
+              className="mt-2 flex items-center gap-1.5 rounded-md border border-border/60 px-2 py-1 text-[11.5px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              title="Ver plano, relatórios e handoffs desta missão"
+            >
+              <FolderOpen className="size-3 text-brass" />
+              Ver arquivos
+            </button>
           )}
         </div>
         <div className="w-[220px] shrink-0">
@@ -609,6 +632,16 @@ export function MissionTimeline({ convId }: { convId: string }) {
       </div>
 
       {!running && <DoneSummary mission={mission} />}
+
+      {cwd && (
+        <MissionFilesDialog
+          open={filesOpen}
+          onOpenChange={setFilesOpen}
+          cwd={cwd}
+          dir={mission.dir}
+          slug={missionSlug}
+        />
+      )}
     </div>
   )
 }

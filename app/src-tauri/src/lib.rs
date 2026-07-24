@@ -424,6 +424,7 @@ pub fn run() {
             sources::read_project_commands,
             sources::list_project_files,
             sources::write_mission_state,
+            sources::list_mission_files,
             sdd::read_sdd_plans,
             sdd::pr_info,
             sdd::sdd_ready,

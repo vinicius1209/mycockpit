@@ -440,6 +440,36 @@ pub fn write_mission_state(cwd: String, rel_path: String, content: String) -> Re
     crate::fsx::write_atomic(&target, &content)
 }
 
+/// Lista os arquivos de UMA pasta de missão (`.mycockpit/missions/<slug>/`).
+/// As pastas de missão são gitignoradas, então `list_project_files` (git
+/// ls-files) NÃO as enxerga — daí este walker escopado. Devolve caminhos
+/// RELATIVOS ao rel_dir (ex.: "plan.md", "reports/05.md", "2-reviewer.json").
+/// Mesmo guard do write: rel_dir relativo, sem `..`, base real dentro do root.
+#[tauri::command]
+pub fn list_mission_files(cwd: String, rel_dir: String) -> Result<Vec<String>, String> {
+    let root = std::fs::canonicalize(&cwd).map_err(|e| e.to_string())?;
+    let rel = std::path::Path::new(&rel_dir);
+    if rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("caminho de missão inválido".into());
+    }
+    let base = root.join(rel);
+    if !base.is_dir() {
+        return Ok(Vec::new()); // pasta ainda não criada = sem arquivos
+    }
+    let cbase = std::fs::canonicalize(&base).map_err(|e| e.to_string())?;
+    if !cbase.starts_with(&root) {
+        return Err("caminho de missão escaparia do cwd".into());
+    }
+    let mut out = Vec::new();
+    walk_files(&cbase, &cbase, &mut out, 0);
+    out.sort();
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -478,6 +508,35 @@ mod tests {
         assert!(write_mission_state(cwd.clone(), "../fora.json".into(), "x".into()).is_err());
         // caminho absoluto é rejeitado.
         assert!(write_mission_state(cwd, "/etc/evil".into(), "x".into()).is_err());
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn list_mission_files_lista_relativo_e_recursivo() {
+        let tmp = std::env::temp_dir().join(format!("mc-list-{}", std::process::id()));
+        let dir = ".mycockpit/missions/2026-07-24-abc-tarefa";
+        let base = tmp.join(dir);
+        std::fs::create_dir_all(base.join("reports")).unwrap();
+        std::fs::write(base.join("plan.md"), "# plano").unwrap();
+        std::fs::write(base.join("2-reviewer.json"), "{}").unwrap();
+        std::fs::write(base.join("reports/05.md"), "rel").unwrap();
+        let mut files =
+            list_mission_files(tmp.to_string_lossy().into(), dir.into()).unwrap();
+        files.sort();
+        assert_eq!(files, vec!["2-reviewer.json", "plan.md", "reports/05.md"]);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn list_mission_files_pasta_ausente_devolve_vazio() {
+        let tmp = std::env::temp_dir().join(format!("mc-list2-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let out =
+            list_mission_files(tmp.to_string_lossy().into(), ".mycockpit/missions/x".into())
+                .unwrap();
+        assert!(out.is_empty());
+        // traversal rejeitado.
+        assert!(list_mission_files(tmp.to_string_lossy().into(), "../x".into()).is_err());
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 }
