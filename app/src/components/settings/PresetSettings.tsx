@@ -204,7 +204,7 @@ export function PresetSettings() {
       )}
 
       {draft && (
-        <div className="mt-3 flex flex-col gap-3 rounded-lg border border-border/50 bg-secondary/10 p-3">
+        <div className="mt-3 flex flex-col gap-4 rounded-lg border border-border/50 bg-secondary/10 p-4">
           <FieldRow label="Nome">
             <Input
               value={draft.name}
@@ -245,7 +245,7 @@ export function PresetSettings() {
               aria-label="Política do preset"
             />
           </FieldRow>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-3">
             <FieldRow label="Agent">
               <RichSelect
                 value={draft.backend}

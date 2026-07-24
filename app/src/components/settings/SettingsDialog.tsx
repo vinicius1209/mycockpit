@@ -586,7 +586,10 @@ export function SettingsDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
         showCloseButton={false}
-        className="flex h-[520px] gap-0 overflow-hidden rounded-xl border-border/60 p-0 shadow-[var(--shadow-pop)] sm:max-w-2xl"
+        // mais largo E mais alto: a área de conteúdo estava com ~456px (o form
+        // de preset de 3 colunas truncava tudo). Agora ~700px de conteúdo, com
+        // teto por viewport pra não estourar telas baixas.
+        className="flex h-[min(88vh,640px)] w-[92vw] max-w-[900px] gap-0 overflow-hidden rounded-xl border-border/60 p-0 shadow-[var(--shadow-pop)] sm:max-w-[900px]"
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Configurações</DialogTitle>
