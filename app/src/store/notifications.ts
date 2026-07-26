@@ -1,7 +1,17 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
-export type NotifKind = "run_done" | "run_error" | "limit" | "gate"
+export type NotifKind =
+  | "run_done"
+  | "run_error"
+  | "limit"
+  | "gate"
+  /** Pedido de permissão: o turno está PARADO esperando aprovar/negar. */
+  | "approval"
+  /** Pergunta estruturada (`ask_user`): o turno está PARADO esperando resposta.
+   *  Irmão do approval — a diferença é que aqui o modelo quer CONTEÚDO, não
+   *  autorização (ver docs/interactive-input.md). */
+  | "question"
 
 export interface Notification {
   id: string

@@ -28,6 +28,7 @@ export function ComposerShell({
   textareaClassName,
   footerClassName,
   chips,
+  header,
   footer,
 }: {
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>
@@ -46,6 +47,11 @@ export function ComposerShell({
   footerClassName?: string
   /** Faixa acima do textarea (chips de anexo / liga). Já vem com seu wrapper. */
   chips?: React.ReactNode
+  /** Faixa no TOPO do cartão, acima dos chips: a linha de execução do console
+   *  Linear (permissão, planejar, contexto, identidade). Separada de `chips` de
+   *  propósito — se dividisse o slot, a ordem visual ficaria presa à presença de
+   *  anexo. */
+  header?: React.ReactNode
   footer: React.ReactNode
 }) {
   const [focused, setFocused] = useState(false)
@@ -65,6 +71,7 @@ export function ComposerShell({
           : cn("rounded-2xl border bg-card shadow-[var(--shadow-pop)]", cardClassName)
       }
     >
+      {header}
       {chips}
       <Textarea
         ref={textareaRef}

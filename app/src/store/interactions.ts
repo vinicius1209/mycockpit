@@ -20,6 +20,8 @@ import {
   type InteractionRequest,
   type QuestionData,
 } from "@/lib/interaction"
+import { summarizeApproval } from "@/lib/approvalSummary"
+import { notifyApproval, notifyQuestion } from "@/lib/notify"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useMission } from "@/store/mission"
@@ -171,11 +173,28 @@ export type InteractionTarget =
   | { convId: string; kind: "linear" }
   | { convId: string; kind: "mission"; phase: number | null }
 
-/** Conversa DONA de um request (extraído do bridge/derive — fonte única):
+/** Run de um pedido. O backend serializa `run_id` IRMÃO de `data` (approval.rs);
+ *  o canal de compat legado (`approval://request`) o replica dentro de `data`.
+ *  Ler só um dos dois deixava o roteamento cego: com o topo vazio TODO approval
+ *  caía no host global, mesmo com a conversa dona aberta na tela. */
+export function runIdOf(req: InteractionRequest): string | null {
+  if (typeof req.run_id === "string" && req.run_id) return req.run_id
+  const data = req.data as Partial<ApprovalData> | null | undefined
+  return typeof data?.run_id === "string" && data.run_id ? data.run_id : null
+}
+
+/** Conversa DONA de um pedido de APROVAÇÃO (extraído do bridge/derive):
  *  - linear: run_id === runId corrente da conversa (turno pausado);
  *  - missão: run_id tem prefixo `missionId::` e casa com byConv; a fase vem do
- *    sufixo `phase-N` (fallback: fase corrente);
- *  - question NÃO carrega run_id ⇒ null (sempre no host global). */
+ *    sufixo `phase-N` (fallback: fase corrente).
+ *
+ *  Restrito a `approval` de propósito, mas o MOTIVO não é mais "pergunta não tem
+ *  dono" (tem: o backend anexa run_id em todo pedido — ver `ownerByRunId`). É que
+ *  quem consome ESTE helper fala só de permissão: a mesa do office levanta a mão
+ *  com o rótulo "Aguardando aprovação" (bridge/derive) e o companion monta o item
+ *  de aprovação com comando/tool. Quem roteia por DONO, independente do kind
+ *  (split contextual, índice de espera da sidebar, notificação), usa
+ *  `ownerByRunId` — pergunta pendente para o turno igual e precisa dos dois. */
 export function convIdForInteraction(
   req: InteractionRequest,
   chat: { byId: Record<string, { runId: string | null }> },
@@ -186,9 +205,30 @@ export function convIdForInteraction(
     >
   },
 ): InteractionTarget | null {
+  // recorte, não cegueira: a pergunta tem dono (ownerByRunId resolve), só não
+  // tem lugar nas superfícies que este helper alimenta.
   if (req.kind !== "approval") return null
-  const data = req.data as Partial<ApprovalData> | null | undefined
-  const runId = typeof data?.run_id === "string" ? data.run_id : null
+  return ownerByRunId(req, chat, missions)
+}
+
+/** Conversa dona por run_id, SEM filtro de kind. O `handle_conn` do backend
+ *  anexa `run_id` em TODO pedido (approval e question — approval.rs, onde o campo
+ *  é `String`, não Option), então o dono de uma pergunta é tão resolvível quanto
+ *  o de uma permissão. É a régua de "quem está esperando você": notificação
+ *  (sino/nativa), split contextual (card inline na conversa dona) e índice de
+ *  espera da sidebar. O `convIdForInteraction` fica com o recorte approval-only
+ *  das superfícies que só sabem falar de permissão. */
+function ownerByRunId(
+  req: InteractionRequest,
+  chat: { byId: Record<string, { runId: string | null }> },
+  missions: {
+    byConv: Record<
+      string,
+      { id: string; current: number; phases: readonly unknown[] }
+    >
+  },
+): InteractionTarget | null {
+  const runId = runIdOf(req)
   if (!runId) return null
   // turno linear: run_id É o runId corrente da conversa.
   for (const [convId, c] of Object.entries(chat.byId)) {
@@ -218,8 +258,9 @@ export interface ContextualSplit {
   /** Dona dos `inline` (o convId visível); null = nada inline. Guarda dos
    *  componentes: só a superfície DESSA conversa renderiza os cards. */
   inlineConvId: string | null
-  /** O resto — toast global no canto, como sempre (inclui question sem run_id,
-   *  conversa não-ativa, outros viewModes: office/painel/sdd/agendado). */
+  /** O resto — toast global no canto, como sempre (conversa dona não-ativa,
+   *  outros viewModes: office/painel/sdd/agendado, ou pedido sem dono
+   *  resolvível: run órfão / sem run_id). */
   global: InteractionRequest[]
 }
 
@@ -241,7 +282,12 @@ export function computeContextualSplit(): ContextualSplit {
   const inline: InteractionRequest[] = []
   const global: InteractionRequest[] = []
   for (const req of queue) {
-    const target = convIdForInteraction(req, chat, missions)
+    // dono SEM filtro de kind (`ownerByRunId`): a PERGUNTA também carrega run_id
+    // (o backend anexa em todo pedido, ver approval.rs), então ela renderiza
+    // inline na conversa dona igual à permissão. Antes toda pergunta caía no
+    // toast global — inclusive a da conversa que estava aberta na sua frente,
+    // que é justo o caso em que o card pertence ao fluxo e não ao canto da tela.
+    const target = ownerByRunId(req, chat, missions)
     if (target?.convId === visible) inline.push(req)
     else global.push(req)
   }
@@ -294,15 +340,270 @@ export function useContextualSplit(): ContextualSplit {
   return useSyncExternalStore(subscribeSplit, splitSnapshot)
 }
 
+// ---------------------------------------------------------------------------
+// ORIGEM (projeto · conversa) e ÍNDICE de espera. Um pedido pendente (permissão
+// ou pergunta) é do PROJETO, não do app: o card precisa dizer de onde veio e a
+// sidebar precisa acender onde a resposta é esperada — senão o turno fica
+// pausado num canto que você não está olhando.
+// ---------------------------------------------------------------------------
+
+/** De onde veio um pedido, em nomes que dá pra ler no card. */
+export interface InteractionOrigin {
+  convId: string
+  projectId: string
+  /** Nome do projeto dono (fallback genérico se ele não está carregado). */
+  projectName: string
+  /** Título da conversa dona (idem). */
+  convTitle: string
+}
+
+/** Metas mínimas que a origem precisa (estrutural: o store real satisfaz). */
+interface ConvMetaLike {
+  id: string
+  title?: string | null
+}
+
+/** Resolve projeto+conversa de um pedido de APROVAÇÃO (usa a régua approval-only
+ *  do `convIdForInteraction` — é o cabeçalho "projeto · conversa" do card de
+ *  permissão). null quando o dono é irresolvível (run órfão) ou o kind não é
+ *  approval; p/ qualquer kind existe `currentOriginAnyKind`. */
+export function originForInteraction(
+  req: InteractionRequest,
+  chat: {
+    byId: Record<string, { runId: string | null; projectId?: string }>
+    conversations: ConvMetaLike[]
+    conversationsByProject: Record<string, ConvMetaLike[]>
+  },
+  app: { projects: { id: string; name: string }[] },
+  missions: {
+    byConv: Record<
+      string,
+      { id: string; current: number; phases: readonly unknown[] }
+    >
+  },
+): InteractionOrigin | null {
+  return originFrom(convIdForInteraction(req, chat, missions), chat, app)
+}
+
+/** Monta a origem a partir de um alvo JÁ resolvido (compartilhado pelas duas
+ *  réguas: a approval-only e a de qualquer kind). */
+function originFrom(
+  target: InteractionTarget | null,
+  chat: {
+    byId: Record<string, { runId: string | null; projectId?: string }>
+    conversations: ConvMetaLike[]
+    conversationsByProject: Record<string, ConvMetaLike[]>
+  },
+  app: { projects: { id: string; name: string }[] },
+): InteractionOrigin | null {
+  if (!target) return null
+  const { convId } = target
+  const projectId = chat.byId[convId]?.projectId ?? ""
+  // usa a lista do projeto DONO (o turno pode ter rodado em background, fora do
+  // espelho `conversations` do projeto ativo) — mesma régua do notifyTurnEnd.
+  const metas = chat.conversationsByProject[projectId] ?? chat.conversations
+  const meta = metas.find((c) => c.id === convId)
+  return {
+    convId,
+    projectId,
+    projectName: app.projects.find((p) => p.id === projectId)?.name ?? "Projeto",
+    convTitle: meta?.title?.trim() || "Conversa",
+  }
+}
+
+/** Origem de QUALQUER kind (approval E question), a partir dos stores vivos. É o
+ *  que a notificação e a tray usam: o aviso precisa dizer de qual conversa e
+ *  projeto o pedido veio, e levar você até lá, seja permissão ou pergunta. */
+export function currentOriginAnyKind(
+  req: InteractionRequest,
+): InteractionOrigin | null {
+  const chat = useChat.getState()
+  return originFrom(
+    ownerByRunId(req, chat, useMission.getState()),
+    chat,
+    useApp.getState(),
+  )
+}
+
+/** Origem a partir dos stores vivos (atalho do caminho de UI/notificação). */
+export function currentOrigin(req: InteractionRequest): InteractionOrigin | null {
+  return originForInteraction(
+    req,
+    useChat.getState(),
+    useApp.getState(),
+    useMission.getState(),
+  )
+}
+
+/** Onde há pedido pendente (permissão OU pergunta) — alimenta os sinais da
+ *  sidebar (conversa e projeto). Sets prontos p/ `.has()` na render de cada
+ *  linha. Os dois kinds param o turno, então os dois acendem. */
+export interface AwaitingIndex {
+  convIds: Set<string>
+  projectIds: Set<string>
+}
+
+const EMPTY_AWAITING: AwaitingIndex = {
+  convIds: new Set(),
+  projectIds: new Set(),
+}
+
+/** Chave estável do índice (mesmo idioma dos seletores da Sidebar: string
+ *  ordenada ⇒ streaming não re-renderiza a árvore inteira). */
+export function awaitingKey(
+  queue: InteractionRequest[],
+  chat: {
+    byId: Record<string, { runId: string | null; projectId?: string }>
+  },
+  missions: {
+    byConv: Record<
+      string,
+      { id: string; current: number; phases: readonly unknown[] }
+    >
+  },
+): string {
+  const pairs = new Set<string>()
+  for (const req of queue) {
+    // `ownerByRunId` (sem filtro de kind): uma PERGUNTA da tool ask_user deixa o
+    // turno tão parado quanto uma permissão, e o backend manda run_id nela também
+    // (approval.rs) — o dono é resolvível. Com o filtro de approval aqui, pergunta
+    // pendente não acendia NADA na sidebar: o turno esperava numa conversa que
+    // você não tinha como saber qual era.
+    const target = ownerByRunId(req, chat, missions)
+    if (!target) continue
+    // `convId|projectId`, pares separados por vírgula: os ids são uuid e nunca
+    // contêm nenhum dos dois separadores.
+    pairs.add(`${target.convId}|${chat.byId[target.convId]?.projectId ?? ""}`)
+  }
+  return [...pairs].sort().join(",")
+}
+
+let awaitingCacheKey: string | null = null
+let awaitingCache: AwaitingIndex = EMPTY_AWAITING
+
+function awaitingSnapshot(): AwaitingIndex {
+  const key = awaitingKey(
+    useInteractions.getState().queue,
+    useChat.getState(),
+    useMission.getState(),
+  )
+  if (key === awaitingCacheKey) return awaitingCache
+  awaitingCacheKey = key
+  awaitingCache = key
+    ? {
+        convIds: new Set(key.split(",").map((p) => p.split("|")[0])),
+        projectIds: new Set(
+          key
+            .split(",")
+            .map((p) => p.split("|")[1])
+            .filter(Boolean),
+        ),
+      }
+    : EMPTY_AWAITING
+  return awaitingCache
+}
+
+function subscribeAwaiting(cb: () => void): () => void {
+  const unsubs = [
+    useInteractions.subscribe(cb),
+    useChat.subscribe(cb),
+    useMission.subscribe(cb),
+  ]
+  return () => {
+    for (const u of unsubs) u()
+  }
+}
+
+/** Conversas/projetos esperando você (permissão ou pergunta pendente), com ref
+ *  estável entre mudanças. */
+export function useAwaiting(): AwaitingIndex {
+  return useSyncExternalStore(subscribeAwaiting, awaitingSnapshot)
+}
+
+/** Resumo de uma linha de um pedido de PERGUNTA: o `header` da 1ª pergunta (é o
+ *  rótulo curto que o próprio modelo escolheu), com o enunciado como reserva.
+ *  Puro — testado direto. */
+export function questionHeadline(data: QuestionData | undefined): string {
+  const first = data?.questions?.[0]
+  const header = (first?.header ?? "").trim()
+  if (header) return header
+  const q = (first?.question ?? "").trim()
+  if (!q) return "uma decisão"
+  return q.length > 60 ? `${q.slice(0, 60)}…` : q
+}
+
+/** Avisa que chegou interação pendente BLOQUEANTE (feed do sino + nativa quando
+ *  você não está olhando). Exportada só p/ teste (em runtime quem chama é o
+ *  listener de `interaction://request`, no fim deste módulo).
+ *  Cobre os dois kinds: `approval` (autorização) e
+ *  `question` (conteúdo) — os dois deixam o turno literalmente parado, então os
+ *  dois avisam. `before` é a fila ANTES do push: se a conversa dona já tinha
+ *  pedido pendente, este é continuação de rajada e não avisa de novo. */
+export function announceArrival(
+  req: InteractionRequest,
+  before: InteractionRequest[],
+): void {
+  // anyKind: o `convIdForInteraction` filtra approval (é o recorte das
+  // superfícies de permissão); aqui precisamos do dono de QUALQUER pedido
+  // bloqueante — mesma régua do split contextual e do índice de espera.
+  const origin = currentOriginAnyKind(req)
+  if (!origin) return // run órfão: sem conversa dona, não há onde mandar você
+
+  const chat = useChat.getState()
+  const missions = useMission.getState()
+  const burst = before.some(
+    (r) => ownerByRunId(r, chat, missions)?.convId === origin.convId,
+  )
+  if (burst) return
+
+  // "visível" = o card vai renderizar inline NESTA conversa E a janela está em
+  // foco. Fora disso (outro projeto, outro modo, app em background) a nativa é
+  // o único sinal que te alcança.
+  const split = computeContextualSplit()
+  const focused = typeof document !== "undefined" && document.hasFocus()
+  const seen = split.inlineConvId === origin.convId && focused
+
+  if (req.kind === "question") {
+    const data = req.data as QuestionData | undefined
+    notifyQuestion({
+      projectId: origin.projectId,
+      convId: origin.convId,
+      projectName: origin.projectName,
+      convTitle: origin.convTitle,
+      headline: questionHeadline(data),
+      count: data?.questions?.length ?? 1,
+      seen,
+    })
+    return
+  }
+
+  const data = req.data as ApprovalData
+  notifyApproval({
+    projectId: origin.projectId,
+    convId: origin.convId,
+    projectName: origin.projectName,
+    convTitle: origin.convTitle,
+    toolName: (data?.tool_name ?? "").trim() || "uma tool",
+    headline: summarizeApproval(data ?? ({} as ApprovalData)).headline,
+    seen,
+  })
+}
+
 // Alimentação ÚNICA da fila: assina os eventos globais no IMPORT do módulo —
 // o App.tsx importa cedo (side-effect), então approvals disparados no boot já
 // entram na fila antes da 1ª visita ao office. Listeners vivem a vida inteira
 // do app (sem unlisten, de propósito). Fora do Tauri não há eventos (o
 // sim-data do office cobre o dev no browser).
 if (isTauri()) {
-  void onInteractionRequest((req) =>
-    useInteractions.getState().push(req),
-  ).catch(() => {})
+  void onInteractionRequest((req) => {
+    const before = useInteractions.getState().queue
+    useInteractions.getState().push(req)
+    // só avisa o que REALMENTE entrou na fila: `push` descarta id duplicado
+    // (re-emit + canal de compat) e question vazia (fail-closed).
+    if (useInteractions.getState().queue.length > before.length) {
+      announceArrival(req, before)
+    }
+  }).catch(() => {})
   void onInteractionResolved((id) =>
     useInteractions.getState().resolve(id),
   ).catch(() => {})

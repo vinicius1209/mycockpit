@@ -11,10 +11,12 @@ import {
   AtPopover,
   AttachmentChips,
   QueuedChips,
-  ComposerControls,
+  ComposerActions,
+  IdentityControls,
   SuggestionChips,
   NO_PRESET,
 } from "@/components/chat/ComposerParts"
+import { ExecutionRow } from "@/components/chat/ExecutionRow"
 import { useSlashCommands } from "@/hooks/useSlashCommands"
 import { useAtMentions } from "@/hooks/useAtMentions"
 import { usePromptHistory } from "@/hooks/usePromptHistory"
@@ -26,6 +28,7 @@ import {
   DESTINATIONS,
   defaultModelFor,
   agentCaps,
+  agentModels,
   normalizeModelValue,
 } from "@/lib/agents"
 import { FusionLauncher } from "@/components/fusion/FusionLauncher"
@@ -70,14 +73,9 @@ export function CommandConsole({
   }, [])
   // defaults de novas conversas vêm das configurações globais (Settings).
   const settings = useApp((s) => s.settings)
-  // permissões "liberado" (bypassPermissions) → badge de alerta no composer.
-  const unsafePerm = useApp(
-    (s) =>
-      (s.activeProjectId
-        ? (s.mycockpit[s.activeProjectId]?.permission ??
-          s.projects.find((p) => p.id === s.activeProjectId)?.permissionMode)
-        : null) === "liberado",
-  )
+  // (o selo de "liberado" saiu daqui: a permissão agora é um controle de 3
+  // posições na ExecutionRow, que mostra o modo ATUAL em vez de só alertar
+  // depois que você já liberou.)
   const [destination, setDestination] = useState(settings.defaultAgent)
   // normaliza o default persistido: um id que saiu do CLI (gpt-5.3-codex, o3)
   // não pode virar 400 em todo envio novo com a UI fingindo normalidade.
@@ -195,6 +193,24 @@ export function CommandConsole({
   }
   const dest =
     DESTINATIONS.find((d) => d.id === effectiveDest) ?? DESTINATIONS[0]
+  // Resumo colapsado da identidade na linha de execução: os 4 seletores viraram
+  // UMA legenda clicável (eles travam no 1º envio — são estado, não controle).
+  // "default" não vira texto: dizer "default" não informa nada a mais que o
+  // nome do agent já diz.
+  const identityLabel = [
+    dest.label,
+    effectiveModel !== "default"
+      ? (agentModels(effectiveDest).find((m) => m.value === effectiveModel)?.pill ??
+        agentModels(effectiveDest).find((m) => m.value === effectiveModel)?.label ??
+        effectiveModel)
+      : null,
+    effectiveEffort !== "default" ? effectiveEffort : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  // agent EFETIVO da conversa — a nota honesta por agent (permissionNote) precisa
+  // saber QUEM vai obedecer (ou ignorar) o modo de permissão do projeto.
+  const convAgent = conv.items.length > 0 ? conv.agent : effectiveDest
   // trava de capacidade: o agent-alvo precisa suportar cada anexo (espelha o trait)
   const caps = agentCaps(effectiveDest)
   const allSupported = attachments.every((a) =>
@@ -392,29 +408,47 @@ export function CommandConsole({
             onRemove={removeAttachment}
           />
         }
+        header={
+          <ExecutionRow
+            project={project}
+            convAgent={convAgent}
+            planFirst={planFirst}
+            onTogglePlanFirst={() => {
+              const id = useChat.getState().activeId
+              if (id) useChat.getState().setPlanFirst(id, !planFirst)
+            }}
+            running={running}
+            identityLabel={identityLabel}
+            identityLocked={locked}
+            identity={
+              <IdentityControls
+                presetValue={effectivePreset}
+                presetOptions={presetOptions}
+                onPresetChange={handlePresetChange}
+                effectiveDest={effectiveDest}
+                locked={locked}
+                onDestChange={(v) => {
+                  setDestination(v)
+                  setModel(defaultModelFor(v))
+                  setEffort("default")
+                  clearPresetOnManualChange()
+                }}
+                effectiveModel={effectiveModel}
+                onModelChange={(v) => {
+                  setModel(v)
+                  clearPresetOnManualChange()
+                }}
+                effectiveEffort={effectiveEffort}
+                onEffortChange={(v) => {
+                  setEffort(v)
+                  clearPresetOnManualChange()
+                }}
+              />
+            }
+          />
+        }
         footer={
-          <ComposerControls
-            presetValue={effectivePreset}
-            presetOptions={presetOptions}
-            onPresetChange={handlePresetChange}
-            effectiveDest={effectiveDest}
-            locked={locked}
-            onDestChange={(v) => {
-              setDestination(v)
-              setModel(defaultModelFor(v))
-              setEffort("default")
-              clearPresetOnManualChange()
-            }}
-            effectiveModel={effectiveModel}
-            onModelChange={(v) => {
-              setModel(v)
-              clearPresetOnManualChange()
-            }}
-            effectiveEffort={effectiveEffort}
-            onEffortChange={(v) => {
-              setEffort(v)
-              clearPresetOnManualChange()
-            }}
+          <ComposerActions
             onFusion={() => setFusionOpen(true)}
             fusionDisabled={
               !activeId || disabled || running || finalizing || missionRunning
@@ -427,16 +461,10 @@ export function CommandConsole({
             onMission={() => setMissionOpen(true)}
             missionDisabled={disabled || running || finalizing || missionRunning}
             onAttach={attach}
-            planFirst={planFirst}
-            onTogglePlanFirst={() => {
-              const id = useChat.getState().activeId
-              if (id) useChat.getState().setPlanFirst(id, !planFirst)
-            }}
             running={running}
             onStop={onStop}
             onSubmit={submit}
             canSend={canSend}
-            unsafe={unsafePerm}
           />
         }
       />

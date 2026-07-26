@@ -12,6 +12,14 @@ export type InteractionKind = "approval" | "question"
 export interface InteractionRequest {
   /** id do pedido (correlaciona com a resposta). */
   id: string
+  /** Run que está pausado esperando a decisão — IRMÃO de `data`, é assim que o
+   *  backend serializa (approval.rs, struct InteractionRequest). É o que amarra
+   *  o pedido à conversa dona (store/interactions: ownerByRunId); sem ele o
+   *  pedido cai no host global e não acende nada na sidebar. Vem em TODO kind
+   *  (o campo é `String` no Rust, preenchido pelo handle_conn tanto p/ approval
+   *  quanto p/ question); opcional aqui só porque o canal de compat legado
+   *  (`approval://request`) o traz dentro de `data`. */
+  run_id?: string
   /** tipo da interação → escolhe o card na UI. */
   kind: InteractionKind
   /** payload específico do kind (ApprovalData | QuestionData). */
@@ -21,8 +29,10 @@ export interface InteractionRequest {
 /** `data` de um pedido de aprovação granular (kind="approval"). Mantém o shape que
  *  já vinha em `approval://request` (movido de lib/agent.ts). */
 export interface ApprovalData {
-  /** run que está pausado esperando a decisão. */
-  run_id: string
+  /** LEGADO: o run vinha aqui no canal `approval://request`. O backend atual
+   *  manda no TOPO do request (InteractionRequest.run_id) e NÃO repete aqui —
+   *  quem precisa do run lê `req.run_id ?? data.run_id`, nunca só este. */
+  run_id?: string
   /** tool que o Claude quer usar (ex. "Bash", "Write"). */
   tool_name: string
   /** comando extraído do input p/ Bash (vazio p/ outras tools). */
@@ -84,15 +94,19 @@ export async function onInteractionRequest(
   )
   // Compat: o backend antigo emite ApprovalRequest cru em `approval://request`
   // ({ id, run_id, tool_name, command, input }) — normaliza pro shape unificado.
+  // O run_id vai nos DOIS lugares (topo e data): o topo é o contrato atual, o
+  // data mantém quem ainda lê o shape legado.
   const un2 = await listen<Record<string, unknown>>(
     "approval://request",
     (e) => {
       const p = e.payload
+      const runId = typeof p.run_id === "string" ? p.run_id : undefined
       cb({
         id: String(p.id),
+        run_id: runId,
         kind: "approval",
         data: {
-          run_id: p.run_id,
+          run_id: runId,
           tool_name: p.tool_name,
           command: p.command,
           input: p.input,

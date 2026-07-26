@@ -42,8 +42,20 @@ export function ContextRing() {
   const is1m = win >= 1_000_000
   const free = Math.max(0, win - tokens)
 
+  // Acima de 90% o anel PARA de ser mudo: um arco de 16px em vermelho passa
+  // batido (foi o que aconteceu — o contexto bateu 100% e nada avisou). Aqui o
+  // número entra como texto ao lado, junto do que vai acontecer.
+  const loud = pct >= 0.9
   return (
-    <div ref={wrapRef} className="relative">
+    <div ref={wrapRef} className="relative flex items-center gap-1">
+      {loud && (
+        <span
+          className={cn("font-mono text-[10.5px] tabular-nums", color)}
+          title="Quando enche, o CLI compacta a conversa sozinho (o detalhe antigo vira resumo)."
+        >
+          contexto {Math.round(pct * 100)}%
+        </span>
+      )}
       <button
         onClick={() => setOpen((v) => !v)}
         title={`contexto: ~${fmtTokens(tokens)} de ${fmtTokens(win)} (${Math.round(pct * 100)}%) — clique p/ detalhes`}
@@ -95,6 +107,13 @@ export function ContextRing() {
             <Row k="Em uso" v={`~${fmtTokens(tokens)}`} />
             <Row k="Livre" v={`~${fmtTokens(free)}`} />
           </dl>
+          {loud && (
+            <p className="mt-2 border-t pt-2 text-[11px] leading-snug text-muted-foreground">
+              Quando encher, o CLI <span className="text-foreground">compacta a
+              conversa</span> sozinho: o histórico antigo vira resumo e o turno
+              segue. Você vê o aviso no fio quando acontecer.
+            </p>
+          )}
           {!is1m && (conv.model ?? "").toLowerCase().includes("opus") && (
             <p className="mt-2 border-t pt-2 text-[11px] leading-snug text-muted-foreground">
               Precisa de mais? Escolha <span className="text-foreground">Opus 5</span>{" "}

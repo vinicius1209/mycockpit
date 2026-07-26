@@ -18,6 +18,7 @@ import {
   GitBranch,
   Rocket,
   Search,
+  ShieldQuestion,
   Swords,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -37,6 +38,7 @@ import {
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
+import { useAwaiting } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 import { useSchedules } from "@/store/schedules"
 import { fmtUntilShort, nextScheduled } from "@/lib/schedules"
@@ -146,9 +148,13 @@ function ColorSubmenu({
 function ProjectFolder({
   color,
   status,
+  awaiting = false,
 }: {
   color?: string | null
   status: AgentStatus
+  /** Alguma conversa do projeto está esperando você: permissão OU pergunta
+   *  pendente (os dois param o turno). */
+  awaiting?: boolean
 }) {
   return (
     <span className="relative grid size-5 shrink-0 place-items-center">
@@ -156,8 +162,17 @@ function ProjectFolder({
         className={cn("size-[18px]", !color && "text-muted-foreground/70")}
         style={color ? { color } : undefined}
       />
-      {status === "running" && (
-        <span className="animate-cockpit-pulse absolute -top-0.5 -right-0.5 size-2 rounded-full bg-st-running ring-2 ring-rail" />
+      {/* Espera VENCE rodando no mesmo canto: um projeto que roda sozinho não
+          precisa de você; um que parou pra te perguntar algo, sim. */}
+      {awaiting ? (
+        <span
+          title="Este projeto parou esperando você"
+          className="animate-cockpit-pulse absolute -top-0.5 -right-0.5 size-2 rounded-full bg-st-warning ring-2 ring-rail"
+        />
+      ) : (
+        status === "running" && (
+          <span className="animate-cockpit-pulse absolute -top-0.5 -right-0.5 size-2 rounded-full bg-st-running ring-2 ring-rail" />
+        )
       )}
     </span>
   )
@@ -168,6 +183,7 @@ function ProjectRow({
   active,
   expanded,
   status,
+  awaiting = false,
   onSelect,
   onToggle,
   onDelete,
@@ -176,6 +192,9 @@ function ProjectRow({
   active: boolean
   expanded: boolean
   status: AgentStatus
+  /** Pedido pendente (permissão ou pergunta) em alguma conversa do projeto:
+   *  ponto âmbar na pasta. */
+  awaiting?: boolean
   onSelect: () => void
   onToggle: () => void
   onDelete: () => void
@@ -208,7 +227,7 @@ function ProjectRow({
           )}
           {editing ? (
             <div className="flex min-w-0 flex-1 items-center gap-3 p-2">
-              <ProjectFolder color={project.color} status={status} />
+              <ProjectFolder color={project.color} status={status} awaiting={awaiting} />
               <input
                 autoFocus
                 value={val}
@@ -232,7 +251,7 @@ function ProjectRow({
             >
               {/* Pasta TINGIDA da cor do projeto (Codex-like): é o marcador do
                   container. Path saiu da linha → vira tooltip (menos ruído). */}
-              <ProjectFolder color={project.color} status={status} />
+              <ProjectFolder color={project.color} status={status} awaiting={awaiting} />
               <span
                 className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground"
                 title={project.path}
@@ -376,6 +395,9 @@ function ConversationList({ projectId }: { projectId: string }) {
   const deciding = useDecidingConvIds()
   const fusionAlive = useFusionConvIds()
   const missionRunning = useMissionRunningConvIds()
+  // Pedido pendente (permissão ou pergunta do ask_user): o turno DESTA conversa
+  // está parado esperando você.
+  const awaiting = useAwaiting()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState("")
 
@@ -452,12 +474,26 @@ function ConversationList({ projectId }: { projectId: string }) {
         const isDeciding = deciding.has(c.id)
         const hasFusion = fusionAlive.has(c.id)
         const hasMission = missionRunning.has(c.id)
+        const isAwaiting = awaiting.convIds.has(c.id)
         const isEditing = editingId === c.id
-        // Sinais discretos à direita (F2): spinner = run; foguete = missão;
-        // espadas = disputa (âmbar quando espera SUA decisão). Complementares.
+        // Sinais discretos à direita (F2): escudo = pedido pendente, permissão
+        // ou pergunta (turno PARADO, vem primeiro: é o único que te cobra ação);
+        // spinner = run; foguete = missão; espadas = disputa (âmbar quando
+        // espera decisão).
         const statusEl =
-          isRunning || hasMission || hasFusion ? (
+          isRunning || hasMission || hasFusion || isAwaiting ? (
             <>
+              {isAwaiting && (
+                <span
+                  className="grid size-3 shrink-0 place-items-center"
+                  title="O turno parou esperando você (permissão ou pergunta)"
+                >
+                  <ShieldQuestion
+                    className="animate-cockpit-pulse size-3 text-st-warning"
+                    aria-label="esperando você"
+                  />
+                </span>
+              )}
               {isRunning && (
                 <Loader2
                   className="size-3 shrink-0 animate-spin text-st-running"
@@ -944,6 +980,10 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   const runningProjects = new Set(
     runningProjectsKey ? runningProjectsKey.split(",") : [],
   )
+  // Projetos com pedido pendente (permissão ou pergunta): o ponto âmbar na pasta
+  // é o que te leva ao pedido quando ele nasceu num projeto que você não está
+  // olhando.
+  const awaitingProjects = useAwaiting().projectIds
 
   return (
     <aside className="reveal-left flex h-full w-full flex-col bg-rail">
@@ -998,6 +1038,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                       status={
                         runningProjects.has(p.id) ? "running" : (p.status ?? "idle")
                       }
+                      awaiting={awaitingProjects.has(p.id)}
                       onSelect={() => {
                         setActive(p.id)
                         openExpand(p.id) // selecionar auto-expande, sem fechar os outros

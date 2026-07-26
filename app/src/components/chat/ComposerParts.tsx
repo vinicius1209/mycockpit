@@ -1,25 +1,28 @@
 import { useState } from "react"
 import {
   ArrowUp,
-  ClipboardList,
+  ChevronDown,
   FileText,
   Image as ImageIcon,
-  Lock,
   Paperclip,
   Rocket,
   Sparkles,
   Square,
   Swords,
-  TriangleAlert,
   X,
 } from "lucide-react"
 import { RichSelect } from "@/components/ui/RichSelect"
 import { Button } from "@/components/ui/button"
-import { ContextRing } from "@/components/chat/ContextRing"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { MicButton } from "@/components/chat/MicButton"
 import { useApp } from "@/store/app"
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
-import { PLAN_FIRST_TOOLTIP } from "@/lib/planMode"
 import type { SlashCommand } from "@/lib/sources"
 import type { AtItem } from "@/hooks/useAtMentions"
 import type { Attachment } from "@/lib/attachments"
@@ -291,9 +294,11 @@ const CUSTOM_MODEL = "__custom__"
 /** Agents cujas CLIs aceitam id arbitrário via --model/-m (dia-1 de modelo). */
 const CUSTOM_MODEL_AGENTS = new Set(["claude-code", "codex"])
 
-/** Controles do footer: preset (persona) + destino + modelo + effort +
- *  Disputar/anexar/enviar. */
-export function ComposerControls({
+/** IDENTIDADE do turno: preset (persona) + agent + modelo + esforço. Os quatro
+ *  TRAVAM no 1º envio da conversa, então não moram mais no rodapé (onde ficavam
+ *  ocupando o melhor espaço para exibir estado imutável) — a `ExecutionRow` os
+ *  revela sob demanda atrás do chip colapsado. */
+export function IdentityControls({
   presetValue,
   presetOptions,
   onPresetChange,
@@ -304,19 +309,6 @@ export function ComposerControls({
   onModelChange,
   effectiveEffort,
   onEffortChange,
-  onFusion,
-  fusionDisabled,
-  fusionTitle,
-  onMission,
-  missionDisabled,
-  onAttach,
-  planFirst,
-  onTogglePlanFirst,
-  running,
-  onStop,
-  onSubmit,
-  canSend,
-  unsafe,
 }: {
   /** S3.6 — seletor de preset (persona), um nível acima da camada crua.
    *  `presetValue` = id do preset da conversa (ou NO_PRESET). Sem opções
@@ -331,28 +323,10 @@ export function ComposerControls({
   onModelChange: (v: string) => void
   effectiveEffort: string
   onEffortChange: (v: string) => void
-  onFusion: () => void
-  fusionDisabled?: boolean
-  fusionTitle?: string
-  /** Abre o MissionLauncher (botão só existe com settings.missionEnabled). */
-  onMission?: () => void
-  missionDisabled?: boolean
-  onAttach: () => void
-  /** "Planejar primeiro" ligado nesta conversa (o próximo envio propõe um plano). */
-  planFirst?: boolean
-  onTogglePlanFirst?: () => void
-  running?: boolean
-  onStop?: () => void
-  onSubmit: () => void
-  canSend: boolean
-  /** true = permissões "liberado" (bypassPermissions): badge de alerta visível. */
-  unsafe?: boolean
 }) {
   const lockTitle = locked
     ? "Agent e modelo ficam fixos a partir do 1º envio desta conversa"
     : undefined
-  // Missions (beta): o botão só existe com a flag ligada nas Settings.
-  const missionEnabled = useApp((s) => s.settings.missionEnabled)
 
   // "Modelo custom…" (claude-code/codex): id exato digitado num input inline.
   // O select só muda quando o valor é confirmado (Enter); Esc/vazio cancela.
@@ -401,16 +375,6 @@ export function ComposerControls({
 
   return (
     <>
-      {/* cadeado explícito: sem ele o lock só aparecia no hover (parecia bug) */}
-      {locked && (
-        <span
-          title={lockTitle}
-          aria-label="Agent e modelo travados nesta conversa"
-          className="grid shrink-0 place-items-center"
-        >
-          <Lock className="size-3 text-muted-foreground/60" />
-        </span>
-      )}
       {/* S3.6 — persona um nível ACIMA da camada crua: escolher um preset seta
           agent/modelo/esforço de uma vez e marca a conversa; "Sem preset"
           mantém o comportamento de hoje. Só aparece com presets cadastrados. */}
@@ -479,61 +443,52 @@ export function ComposerControls({
         triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
         aria-label="Esforço de raciocínio"
       />
+    </>
+  )
+}
 
+/**
+ * Rodapé do composer — só o que MODIFICA a mensagem (ditado, anexo) e o que a
+ * DESPACHA (o split de enviar). A identidade (preset/agent/modelo/esforço) e o
+ * estado do turno (permissão, planejar, contexto) subiram pra `ExecutionRow`.
+ *
+ * Antes eram 13 alvos nesta linha, todos com o mesmo peso — e em tela estreita
+ * cortava justamente os acionáveis, que ficavam à direita.
+ */
+export function ComposerActions({
+  onFusion,
+  fusionDisabled,
+  fusionTitle,
+  onMission,
+  missionDisabled,
+  onAttach,
+  running,
+  onStop,
+  onSubmit,
+  canSend,
+}: {
+  onFusion: () => void
+  fusionDisabled?: boolean
+  fusionTitle?: string
+  onMission?: () => void
+  missionDisabled?: boolean
+  onAttach: () => void
+  running?: boolean
+  onStop?: () => void
+  onSubmit: () => void
+  canSend: boolean
+}) {
+  const missionEnabled = useApp((s) => s.settings.missionEnabled)
+  return (
+    <>
+      <span className="flex items-center gap-1.5 pl-1 font-mono text-[10.5px] text-muted-foreground/70">
+        <kbd className="rounded border border-border bg-secondary/50 px-1 py-px">/</kbd>
+        comandos
+      </span>
       <div className="ml-auto flex items-center gap-1.5">
-        {unsafe && (
-          <span
-            title="Permissões LIBERADO: o agente executa e escreve sem pedir confirmação. Mude no painel de contexto."
-            className="flex h-6 items-center gap-1 rounded-full border border-st-warning/50 bg-st-warning/10 px-2 text-[11px] text-st-warning"
-          >
-            <TriangleAlert className="size-3" />
-            liberado
-          </span>
-        )}
-        <ContextRing />
         {/* overlay="composer": o pill de gravação ancora na raiz relative do
             CommandConsole e paira ACIMA do composer — a fileira não mexe. */}
         <MicButton overlay="composer" />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onTogglePlanFirst}
-          title={PLAN_FIRST_TOOLTIP}
-          aria-label="Planejar primeiro"
-          aria-pressed={!!planFirst}
-          className={cn(
-            "rounded-full",
-            planFirst
-              ? "bg-brass/15 text-brass ring-1 ring-brass/50 hover:bg-brass/20 hover:text-brass"
-              : "text-muted-foreground hover:text-brass",
-          )}
-        >
-          <ClipboardList className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onFusion}
-          disabled={fusionDisabled}
-          title={fusionTitle ?? "Disputar entre agents (abre a liga)"}
-          aria-label="Disputar entre agents"
-          className="rounded-full text-muted-foreground hover:text-brass"
-        >
-          <Swords className="size-4" />
-        </Button>
-        {missionEnabled && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onMission}
-            disabled={missionDisabled}
-            title="Lançar missão (time de agents em fases)"
-            aria-label="Lançar missão"
-            className="rounded-full text-muted-foreground hover:text-brass"
-          >
-            <Rocket className="size-4" />
-          </Button>
-        )}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -544,29 +499,128 @@ export function ComposerControls({
         >
           <Paperclip className="size-4" />
         </Button>
-        {running ? (
-          <Button
-            size="icon-sm"
-            onClick={onStop}
-            className="rounded-full"
-            aria-label="Parar"
-            title="Parar"
-          >
-            <Square className="size-3 fill-current" />
-          </Button>
-        ) : (
-          <Button
-            size="icon-sm"
-            onClick={onSubmit}
-            disabled={!canSend}
-            className="rounded-full"
-            aria-label="Enviar"
-          >
-            <ArrowUp className="size-4" />
-          </Button>
-        )}
+        <SendSplit
+          running={running}
+          canSend={canSend}
+          onSubmit={onSubmit}
+          onStop={onStop}
+          onFusion={onFusion}
+          fusionDisabled={fusionDisabled}
+          fusionTitle={fusionTitle}
+          onMission={missionEnabled ? onMission : undefined}
+          missionDisabled={missionDisabled}
+        />
       </div>
     </>
+  )
+}
+
+/**
+ * Despacho: UM primário com as variantes penduradas. Enviar, Disputa e Missão
+ * consomem o MESMO rascunho — os launchers recebem `initialTask={value}` e
+ * limpam o composer (CommandConsole) —, então são a mesma ação com três
+ * destinos, não três ferramentas. Como dois ícones soltos no meio da barra, esse
+ * parentesco era invisível: ninguém adivinhava que ⚔/🚀 usam o texto digitado.
+ *
+ * Com turno rodando o primário vira Parar e o chevron desabilita (não há
+ * rascunho para despachar enquanto o turno corrente não termina).
+ */
+function SendSplit({
+  running,
+  canSend,
+  onSubmit,
+  onStop,
+  onFusion,
+  fusionDisabled,
+  fusionTitle,
+  onMission,
+  missionDisabled,
+}: {
+  running?: boolean
+  canSend: boolean
+  onSubmit: () => void
+  onStop?: () => void
+  onFusion: () => void
+  fusionDisabled?: boolean
+  fusionTitle?: string
+  onMission?: () => void
+  missionDisabled?: boolean
+}) {
+  if (running) {
+    return (
+      <Button
+        size="icon-sm"
+        onClick={onStop}
+        className="rounded-full"
+        aria-label="Parar"
+        title="Parar"
+      >
+        <Square className="size-3 fill-current" />
+      </Button>
+    )
+  }
+  return (
+    <div className="flex items-stretch overflow-hidden rounded-full bg-primary">
+      <button
+        type="button"
+        onClick={onSubmit}
+        disabled={!canSend}
+        aria-label="Enviar"
+        title="Enviar (⏎)"
+        className="grid size-8 place-items-center text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+      >
+        <ArrowUp className="size-4" />
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="Outras formas de enviar"
+            title="Outras formas de enviar"
+            className="grid w-5 place-items-center border-l border-primary-foreground/25 text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            <ChevronDown className="size-3" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" side="top" className="w-60">
+          <DropdownMenuItem onClick={onSubmit} disabled={!canSend}>
+            <ArrowUp className="size-4 text-muted-foreground" />
+            <span className="flex-1">Enviar</span>
+            <span className="font-mono text-[10.5px] text-muted-foreground">⏎</span>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={onFusion}
+            disabled={fusionDisabled}
+            title={fusionTitle}
+            className="items-start"
+          >
+            <Swords className="mt-0.5 size-4 text-muted-foreground" />
+            <span className="flex flex-col">
+              Disputa entre agents
+              <span className="text-[11px] text-muted-foreground">
+                N candidatos, um juiz decide
+              </span>
+            </span>
+          </DropdownMenuItem>
+          {onMission && (
+            <DropdownMenuItem
+              onClick={onMission}
+              disabled={missionDisabled}
+              className="items-start"
+            >
+              <Rocket className="mt-0.5 size-4 text-muted-foreground" />
+              <span className="flex flex-col">
+                Missão em fases
+                <span className="text-[11px] text-muted-foreground">
+                  time de agents, worktree isolado
+                </span>
+              </span>
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
 }
 

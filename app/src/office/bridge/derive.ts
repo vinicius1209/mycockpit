@@ -296,8 +296,10 @@ export function offInstruction(label: string): string {
 // com a fixture sim-data — mesma régua no Tauri e no browser)
 
 // mapeamento request→conversa (run_id → turno linear / fase de missão):
-// fonte única em store/interactions.convIdForInteraction — a MESMA régua do
-// split contextual dos cards (inline vs toast global).
+// fonte única em store/interactions — aqui usamos o recorte approval-only
+// (convIdForInteraction), porque a mão da mesa é de APROVAÇÃO; o split
+// contextual dos cards e o índice de espera da sidebar usam a mesma régua sem
+// filtro de kind (pergunta também tem dono).
 
 // ---------------------------------------------------------------------------
 // A derivação
@@ -562,11 +564,15 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
   }
 
   // 5) Approvals pendentes (fila do useInteractions) mapeáveis ⇒ mão levantada.
-  //    question NÃO tem run_id no payload ⇒ sem mesa (o host global cobre).
-  //    Responder pelo card remove da fila NA HORA ⇒ a mão abaixa no mesmo
-  //    derive (o backend não emite resolved pra respostas do usuário).
+  //    Só APPROVAL sobe mão aqui, e isso é uma escolha de copy, não falta de
+  //    dado: a pergunta TEM run_id (o backend anexa em todo pedido) e já acende
+  //    a conversa na sidebar + o card inline, mas a mesa só sabe dizer
+  //    "Aguardando aprovação" — levantar essa mão por uma pergunta seria mentir
+  //    sobre o que o agente pediu. Responder pelo card remove da fila NA HORA ⇒
+  //    a mão abaixa no mesmo derive (o backend não emite resolved pra respostas
+  //    do usuário).
   for (const req of useInteractions.getState().queue) {
-    // dono do pedido: helper compartilhado (question/sem run_id ⇒ null).
+    // dono do pedido: recorte approval-only (question / sem run_id ⇒ null).
     const home = convIdForInteraction(req, chat, missions)
     if (!home) continue
     const data = req.data as Partial<ApprovalData> | null | undefined

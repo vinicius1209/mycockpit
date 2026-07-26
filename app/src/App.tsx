@@ -33,7 +33,10 @@ import { useNotifs } from "@/store/notifications"
 // Side-effect: registra os listeners globais de interação (interaction://
 // request/resolved) no BOOT — approvals disparados antes da 1ª visita ao
 // office já entram na fila única (store) que host e derive compartilham.
-import "@/store/interactions"
+import {
+  currentOriginAnyKind,
+  useInteractions,
+} from "@/store/interactions"
 // Side-effect: hidrata o board de cards (E1) no BOOT — o Painel abre com os
 // cards prontos e o vigia do Sprint 2 nunca varre um store vazio.
 import "@/store/cards"
@@ -295,6 +298,10 @@ export default function App() {
     for (const f of Object.values(s.byConv)) if (f.phase === "deciding") n++
     return n
   })
+  // Pedidos bloqueantes (permissão/pergunta) entram na contagem de "decisões" da
+  // tray: é o sinal que alcança você com a janela fechada, sem depender do SO.
+  // Primitivo no seletor ⇒ estável durante o streaming.
+  const pendingInteractions = useInteractions((s) => s.queue.length)
   // Chaves semânticas: mudam quando a etapa exibida na telemetria muda, mas
   // permanecem estáveis durante deltas de texto do streaming.
   const chatTrayKey = useChat((s) =>
@@ -432,7 +439,17 @@ export default function App() {
       const decision = Object.entries(fusions.byConv).find(
         ([, f]) => f.phase === "deciding",
       )
-      const decisionConvId = decision?.[0] ?? null
+      // Interação pendente (permissão/pergunta) TAMBÉM é decisão esperando você.
+      // Sem isto a tray ficava cega justo no caso em que o app está em
+      // background — e a notificação nativa não pode ser o único sinal: ela
+      // depende de autorização do SO que builds ad-hoc não conseguem (ver
+      // nativeNotify em lib/notify.ts). A tray sempre funciona.
+      const pending = useInteractions.getState().queue
+      const decisionConvId =
+        decision?.[0] ??
+        (pending.length > 0
+          ? (currentOriginAnyKind(pending[0])?.convId ?? null)
+          : null)
       const decisionProjectId = decisionConvId
         ? (chat.byId[decisionConvId]?.projectId ?? null)
         : null
@@ -443,7 +460,7 @@ export default function App() {
 
       updateTray({
         running: activities.size,
-        decisions: decisionsPending,
+        decisions: decisionsPending + pendingInteractions,
         activities: [...activities.values()].slice(0, 3),
         decisionConvId,
         decisionProjectId,
@@ -477,6 +494,7 @@ export default function App() {
     missionsRunning,
     fusionsLive,
     decisionsPending,
+    pendingInteractions,
     chatTrayKey,
     missionTrayKey,
     fusionTrayKey,

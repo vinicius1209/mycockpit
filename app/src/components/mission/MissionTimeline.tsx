@@ -103,8 +103,9 @@ export function missionHostsInline(m: MissionRun | undefined | null): boolean {
 
 /** Atividade ao vivo da fase corrente: header (agent + cronômetro), scan e os
  *  últimos passos + "Agora:…". O dado JÁ existe no store (onProgress).
- *  `interactions` = pedidos pendentes DESTA conversa (aprovações contextuais):
- *  o card entra AQUI, junto da cena que ele interrompeu — acima do "Agora:". */
+ *  `interactions` = pedidos pendentes DESTA conversa, permissão OU pergunta (o
+ *  split contextual roteia os dois): o card entra AQUI, junto da cena que ele
+ *  interrompeu — acima do "Agora:". */
 function LiveActivity({
   phase,
   interactions,
@@ -240,7 +241,8 @@ function PhaseNode({
   p: MissionPhaseRun
   active: boolean
   last: boolean
-  /** Aprovações contextuais desta conversa (só a fase corrente recebe). */
+  /** Interações contextuais desta conversa, permissão ou pergunta (só a fase
+   *  corrente recebe). */
   interactions?: InteractionRequest[]
 }) {
   const nodeState =
@@ -465,8 +467,9 @@ export function MissionTimeline({ convId }: { convId: string }) {
   const conv = useChat((s) => s.byId[convId])
   const projects = useApp((s) => s.projects)
   const [filesOpen, setFilesOpen] = useState(false)
-  // Aprovações contextuais: pedidos pendentes DESTA conversa (a visível) —
-  // renderizam dentro do bloco da fase corrente (o toast global os suprime).
+  // Interações contextuais: pedidos pendentes DESTA conversa (a visível), de
+  // permissão ou de pergunta — renderizam dentro do bloco da fase corrente (o
+  // toast global os suprime).
   const split = useContextualSplit()
   const inlineReqs = split.inlineConvId === convId ? split.inline : []
   if (!mission) return null

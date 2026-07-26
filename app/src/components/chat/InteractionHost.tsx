@@ -7,6 +7,7 @@ import {
   MessageCircleQuestion,
   ChevronLeft,
   ChevronRight,
+  ArrowRight,
 } from "lucide-react"
 import type {
   ApprovalData,
@@ -16,14 +17,37 @@ import type {
 } from "@/lib/interaction"
 import {
   approvalSignature,
+  currentOrigin,
   decideBatch,
   pendingGroup,
   useContextualSplit,
   useInteractions,
   type BatchAction,
   type BatchConfirm,
+  type InteractionOrigin,
 } from "@/store/interactions"
+import { summarizeApproval, type ApprovalSummary } from "@/lib/approvalSummary"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { useApp } from "@/store/app"
+import { useChat } from "@/store/chat"
 import { cn } from "@/lib/utils"
+
+/** Leva você até a conversa dona do pedido (mesmo gesto do sino/tray): projeto
+ *  ativo + conversa aberta + modo linear. Lá o card renderiza inline, com o
+ *  contexto do turno em volta — que é onde dá pra decidir de verdade. */
+async function goToOrigin(origin: InteractionOrigin) {
+  const app = useApp.getState()
+  app.setActiveProject(origin.projectId)
+  await useChat.getState().openProject(origin.projectId)
+  await useChat.getState().switchConversation(origin.convId)
+  app.setViewMode("linear")
+}
 
 /** InteractionCard — card individual de UM pedido pendente (padrão unificado).
  *  Enquanto o agente espera VOCÊ no meio do turno, o turno fica PAUSADO e este
@@ -38,10 +62,14 @@ import { cn } from "@/lib/utils"
 export function InteractionCard({
   req,
   extra = 0,
+  compact = false,
 }: {
   req: InteractionRequest
   /** Quantos pedidos aguardam atrás deste (hint "+N na fila"). */
   extra?: number
+  /** Modo COMPACTO (toast global): só o resumo de uma linha + "Abrir". O
+   *  paredão de comando fica pro card inline, na conversa dona. */
+  compact?: boolean
 }) {
   const answer = useInteractions((s) => s.answer)
   const dismiss = useInteractions((s) => s.dismiss)
@@ -49,6 +77,15 @@ export function InteractionCard({
   // Lote por ASSINATURA (P4): quantas pendentes na fila INTEIRA são idênticas
   // a esta (mesmo tool_name + comando exato). Questions nunca agrupam.
   const queue = useInteractions((s) => s.queue)
+  // Origem e resumo NÃO mudam durante a vida do pedido, e o pai passa
+  // key={req.id} — memoizar por id evita recomputar a cada token de streaming
+  // (e mantém a sidebar/chat fora do caminho de re-render deste card).
+  const data = req.data as ApprovalData
+  const origin = useMemo(() => currentOrigin(req), [req.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const summary = useMemo(
+    () => (req.kind === "approval" ? summarizeApproval(data) : null),
+    [req.id], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   if (req.kind === "question") {
     return (
@@ -74,7 +111,10 @@ export function InteractionCard({
 
   return (
     <ApprovalCard
-      data={req.data as ApprovalData}
+      data={data}
+      summary={summary!}
+      origin={origin}
+      compact={compact}
       extra={extra}
       batch={batch}
       onDecide={(allow) => answer(req.id, { allow })}
@@ -96,8 +136,14 @@ export function InteractionHost() {
   const { global } = useContextualSplit()
   if (global.length === 0) return null
   // mostra o pedido mais antigo (FIFO); os demais aguardam a vez.
+  // COMPACTO: aqui o pedido é, por definição, de algo que você NÃO está olhando
+  // — mostrar o comando inteiro num toast de canto era o pior dos dois mundos
+  // (interrompe e ainda por cima ilegível). Resumo + "Abrir"; o detalhe mora na
+  // conversa dona. Negar/Aprovar continuam à mão: o turno está parado.
   const req = global[0]
-  return <InteractionCard key={req.id} req={req} extra={global.length - 1} />
+  return (
+    <InteractionCard key={req.id} req={req} extra={global.length - 1} compact />
+  )
 }
 
 /** Pedidos INLINE da conversa `convId` (a visível na tela): primeiro da fila +
@@ -143,12 +189,18 @@ interface BatchProps {
  *  CONFIRMAÇÃO explícita (comando + contagem) antes de responder o lote. */
 function ApprovalCard({
   data,
+  summary,
+  origin,
+  compact,
   extra,
   batch,
   onDecide,
   onDismiss,
 }: {
   data: ApprovalData
+  summary: ApprovalSummary
+  origin: InteractionOrigin | null
+  compact: boolean
   extra: number
   batch?: BatchProps | null
   onDecide: (allow: boolean) => void
@@ -157,6 +209,9 @@ function ApprovalCard({
   // Fluxo de confirmação do lote: estado local + decisão PURA (decideBatch) —
   // clicar em "todas" NUNCA executa direto. key={req.id} no pai reseta por card.
   const [confirming, setConfirming] = useState<BatchConfirm | null>(null)
+  // "Ver tudo": o integral abre em dialog, nunca estica o card (era isso que
+  // fazia um heredoc de 40 linhas ocupar a janela inteira).
+  const [showAll, setShowAll] = useState(false)
   function dispatchBatch(action: BatchAction) {
     const { pending, execute } = decideBatch(confirming, action)
     setConfirming(pending)
@@ -165,28 +220,61 @@ function ApprovalCard({
 
   return (
     <div className="mb-2 rounded-lg border border-brass/40 bg-brass/[0.07] px-3 py-2.5">
+      {/* De ONDE veio: sem isto, um pedido de outro projeto interrompe você sem
+          dizer de onde — e o toast global é justamente o caso "não é daqui". */}
+      {origin && (
+        <p className="mb-1.5 truncate text-[11px] text-muted-foreground">
+          {origin.projectName}
+          <span className="mx-1 opacity-50">·</span>
+          {origin.convTitle}
+        </p>
+      )}
       <div className="flex items-center gap-2">
         <ShieldQuestion className="size-4 shrink-0 text-brass" />
         <p className="min-w-0 flex-1 text-[12.5px] text-foreground">
-          O agente pediu permissão para usar{" "}
+          Permissão para{" "}
           <span className="font-medium">{data.tool_name}</span>. O turno está{" "}
           <span className="font-medium text-brass">pausado</span> aguardando você.
           <QueueHint extra={extra} />
         </p>
         <DismissBtn onDismiss={onDismiss} />
       </div>
-      {data.command ? (
-        <div className="mt-2 flex items-start gap-2 rounded-md border bg-card/70 px-2.5 py-1.5">
-          <Terminal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-          <code className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-[11.5px] text-foreground/90">
-            {data.command}
-          </code>
+
+      {/* A linha que decide: "deno run · v2-compat.smoke.ts". */}
+      <div className="mt-2 flex items-center gap-2 rounded-md border bg-card/70 px-2.5 py-1.5">
+        <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
+        <code
+          title={summary.headline}
+          className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground/90"
+        >
+          {summary.headline}
+        </code>
+      </div>
+
+      {/* Detalhe: só no card INLINE (na conversa dona). Com teto de altura e
+          scroll — o comando cru não manda mais na altura do card. */}
+      {!compact && (
+        <div className="mt-1.5">
+          <pre className="max-h-40 overflow-auto rounded-md border bg-card/70 px-2.5 py-1.5 font-mono text-[11px] break-all whitespace-pre-wrap text-foreground/80">
+            {summary.preview}
+          </pre>
+          {summary.truncated && (
+            <button
+              onClick={() => setShowAll(true)}
+              className="mt-1 text-[11.5px] font-medium text-brass underline-offset-2 transition-colors hover:underline"
+            >
+              Ver tudo ({summary.lines} linhas)
+            </button>
+          )}
         </div>
-      ) : (
-        <pre className="mt-2 max-h-32 overflow-auto rounded-md border bg-card/70 px-2.5 py-1.5 font-mono text-[11px] text-foreground/80">
-          {JSON.stringify(data.input, null, 2)}
-        </pre>
       )}
+
+      <DetailDialog
+        open={showAll}
+        onOpenChange={setShowAll}
+        summary={summary}
+        toolName={data.tool_name}
+      />
 
       {/* Lote: hint das idênticas + atalho "todas" (abre confirmação). */}
       {batch && !confirming && (
@@ -227,8 +315,8 @@ function ApprovalCard({
             <span className="font-medium">{batch.count} pedidos idênticos</span> de{" "}
             <span className="font-medium">{data.tool_name}</span>?
           </p>
-          <code className="mt-1 block whitespace-pre-wrap break-all font-mono text-[11px] text-foreground/80">
-            {data.command || JSON.stringify(data.input)}
+          <code className="mt-1 block truncate font-mono text-[11px] text-foreground/80">
+            {summary.headline}
           </code>
           <div className="mt-2 flex items-center justify-end gap-2">
             <button
@@ -258,6 +346,25 @@ function ApprovalCard({
       )}
 
       <div className="mt-2.5 flex items-center justify-end gap-2">
+        {/* No compacto o detalhe não está na tela: dá pra abrir o integral aqui
+            ou ir até a conversa, onde o card inline mostra tudo em contexto. */}
+        {compact && (
+          <button
+            onClick={() => setShowAll(true)}
+            className="mr-auto text-[11.5px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+          >
+            Ver detalhe
+          </button>
+        )}
+        {compact && origin && (
+          <button
+            onClick={() => void goToOrigin(origin)}
+            title="Abrir a conversa que pediu"
+            className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
+          >
+            Abrir <ArrowRight className="size-3.5" />
+          </button>
+        )}
         <button
           onClick={() => onDecide(false)}
           className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
@@ -272,6 +379,37 @@ function ApprovalCard({
         </button>
       </div>
     </div>
+  )
+}
+
+/** Integral do pedido, em dialog — o único lugar onde o texto pode ser grande.
+ *  Mantém o card com altura previsível sem esconder nada de você. */
+function DetailDialog({
+  open,
+  onOpenChange,
+  summary,
+  toolName,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  summary: ApprovalSummary
+  toolName: string
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Pedido de permissão · {toolName}</DialogTitle>
+          <DialogDescription>
+            {summary.headline}
+            {summary.lines > 1 ? ` — ${summary.lines} linhas` : ""}
+          </DialogDescription>
+        </DialogHeader>
+        <pre className="max-h-[60vh] overflow-auto rounded-md border bg-card/70 px-3 py-2 font-mono text-[11.5px] break-all whitespace-pre-wrap text-foreground/90">
+          {summary.detail}
+        </pre>
+      </DialogContent>
+    </Dialog>
   )
 }
 

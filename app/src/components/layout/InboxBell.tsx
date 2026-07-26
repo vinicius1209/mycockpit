@@ -9,6 +9,8 @@ import {
   GitPullRequest,
   Inbox,
   Lightbulb,
+  MessageCircleQuestion,
+  ShieldQuestion,
   SquareKanban,
   Swords,
   Trash2,
@@ -82,6 +84,12 @@ function NotifIcon({ kind }: { kind: Notification["kind"] }) {
     return <Gauge className="size-3.5 shrink-0 text-st-warning" />
   if (kind === "gate")
     return <CircleHelp className="size-3.5 shrink-0 text-st-warning" />
+  if (kind === "approval")
+    return <ShieldQuestion className="size-3.5 shrink-0 text-st-warning" />
+  // pergunta: mesma família âmbar do approval/gate (todos "esperam VOCÊ"), mas
+  // ícone de fala — é conteúdo que falta, não autorização.
+  if (kind === "question")
+    return <MessageCircleQuestion className="size-3.5 shrink-0 text-st-warning" />
   return <Check className="size-3.5 shrink-0 text-st-success" />
 }
 
@@ -349,7 +357,9 @@ export function InboxBell() {
                         ? "limite atingido"
                         : n.kind === "gate"
                           ? "missão pausada"
-                          : "turno concluído"}
+                          : n.kind === "approval" || n.kind === "question"
+                            ? "turno parado"
+                            : "turno concluído"}
                   </span>
                 </DropdownMenuItem>
               ))

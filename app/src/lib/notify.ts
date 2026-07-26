@@ -3,6 +3,8 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification"
+import { invoke } from "@tauri-apps/api/core"
+import { toast } from "sonner"
 import { useChat } from "@/store/chat"
 import { useApp } from "@/store/app"
 import { useNotifs } from "@/store/notifications"
@@ -17,16 +19,71 @@ function clipTitle(title: string, max = 80): string {
   return t.length > max ? `${t.slice(0, max)}…` : t
 }
 
-/** Notificação NATIVA do SO (silenciosa se sem permissão/fora do app). */
+/** Já avisamos que a notificação do SO não está disponível? (1× por sessão — o
+ *  aviso é informação, não alarme recorrente.) */
+let nativeBlockedWarned = false
+
+/** Notificação NATIVA do SO. Nunca derruba nada: sem autorização, o feed do sino
+ *  e a tray continuam sendo o sinal.
+ *
+ *  ⚠️ Isto FALHA em builds ad-hoc: o macOS só registra um app no Notification
+ *  Center quando ele consegue pedir autorização, e app não assinado com
+ *  identidade real costuma ser recusado direto — verificado nesta máquina, o
+ *  `dev.vinicius.mycockpit` não aparece em `com.apple.ncprefs` nem no db do
+ *  usernoted, ou seja NENHUMA nativa foi entregue até hoje. O `catch` vazio
+ *  fazia isso parecer "a feature não existe"; agora avisa uma vez e segue. */
 export async function nativeNotify(title: string, body: string) {
   if (!isTauri()) return
   try {
     let granted = await isPermissionGranted()
     if (!granted) granted = (await requestPermission()) === "granted"
-    if (granted) sendNotification({ title, body })
-  } catch {
-    // sem notificação nativa não é erro fatal — o feed in-app continua.
+    if (granted) {
+      sendNotification({ title, body })
+      return
+    }
+    await fallbackNotify(title, body, "sem autorização do sistema")
+  } catch (e) {
+    await fallbackNotify(
+      title,
+      body,
+      e instanceof Error ? e.message : String(e),
+    )
   }
+}
+
+/** Plano B: `osascript`, que usa a autorização do Script Editor (concedida) em
+ *  vez da nossa (que o macOS recusa por causa da assinatura ad-hoc — ver
+ *  src-tauri/src/osnotify.rs). A notificação sai atribuída ao Script Editor, não
+ *  ao Frota: feio, mas CHEGA. O texto vai como argv, nunca interpolado no
+ *  AppleScript (seria injeção — título de conversa é entrada não confiável).
+ *
+ *  Só quando os DOIS caminhos falham é que avisamos que não há aviso — senão o
+ *  toast apareceria em todo turno concluído. */
+async function fallbackNotify(title: string, body: string, why: string) {
+  try {
+    await invoke("notify_via_osascript", { title, body })
+    if (!nativeBlockedWarned) {
+      nativeBlockedWarned = true
+      console.warn(
+        `[notify] plugin nativo indisponível (${why}); usando osascript (a notificação aparece como "Script Editor")`,
+      )
+    }
+  } catch (e) {
+    warnNativeBlocked(`${why}; osascript também falhou: ${String(e)}`)
+  }
+}
+
+/** Deixa rastro da indisponibilidade UMA vez: console (pro log) + toast (pra
+ *  você). Sem isto o sintoma é "o app não me avisa" e a causa fica invisível. */
+function warnNativeBlocked(reason: string) {
+  if (nativeBlockedWarned) return
+  nativeBlockedWarned = true
+  console.warn(`[notify] nenhuma notificação de SO disponível: ${reason}`)
+  toast("Avisos do sistema indisponíveis — use o sino e o ícone da bandeja.", {
+    description:
+      "Nem o plugin nativo nem o osascript entregaram. O feed no app continua funcionando.",
+    duration: 8000,
+  })
 }
 
 /** Chamado no fim de UM turno (finally do run). Empilha no feed e, se a conversa
@@ -94,6 +151,79 @@ export function notifyGate(
   void nativeNotify(
     "Frota · decisão pendente",
     `${clipTitle(title)}: a fase ${phaseLabel} deixou perguntas; a missão está pausada esperando você.`,
+  )
+}
+
+/** Chamado quando chega um pedido de PERMISSÃO. O approval é o único evento que
+ *  deixa o turno literalmente parado esperando você — antes ele era o único que
+ *  NÃO avisava (gate, turno mudo e card parado avisavam). Empilha no feed
+ *  sempre; a nativa só quando você não está com o card na frente (`seen`),
+ *  porque com ele visível a notificação seria só barulho.
+ *
+ *  Sem spam: o chamador (store/interactions) só chama no PRIMEIRO pedido
+ *  pendente de cada conversa — uma rajada de 20 idênticos avisa uma vez. */
+export function notifyApproval(o: {
+  projectId: string
+  convId: string
+  projectName: string
+  convTitle: string
+  toolName: string
+  /** Resumo de uma linha (summarizeApproval().headline). */
+  headline: string
+  /** true = o card está visível na tela agora ⇒ não dispara a nativa. */
+  seen: boolean
+}) {
+  useNotifs.getState().push({
+    kind: "approval",
+    title: o.convTitle,
+    subtitle: `Permissão pendente · ${o.headline}${o.projectName ? ` · ${o.projectName}` : ""}`,
+    projectId: o.projectId,
+    convId: o.convId,
+  })
+
+  if (o.seen) return
+  void nativeNotify(
+    "Frota · permissão pendente",
+    `${clipTitle(o.convTitle)} (${o.projectName}): o turno parou pedindo ${o.toolName} — ${o.headline}`,
+  )
+}
+
+/** Chamado quando chega uma PERGUNTA (`ask_user`). Irmão do notifyApproval: o
+ *  turno também fica literalmente parado, mas esperando CONTEÚDO em vez de
+ *  autorização — então a cópia é outra ("perguntou", não "pediu permissão").
+ *
+ *  Este era o último evento bloqueante que NÃO avisava: o `announceArrival` do
+ *  store/interactions filtrava só `approval`, então uma pergunta ficava esperando
+ *  em silêncio até você olhar a tela por acaso.
+ *
+ *  Mesmo contrato do approval: feed SEMPRE; nativa só quando você não está com o
+ *  card na frente (`seen`). Sem spam — o chamador só chama no PRIMEIRO pendente
+ *  de cada conversa. */
+export function notifyQuestion(o: {
+  projectId: string
+  convId: string
+  projectName: string
+  convTitle: string
+  /** Resumo de uma linha: o `header` da 1ª pergunta (ou "uma decisão"). */
+  headline: string
+  /** Quantas perguntas vieram no pedido (>1 aparece no feed). */
+  count: number
+  /** true = o card está visível na tela agora ⇒ não dispara a nativa. */
+  seen: boolean
+}) {
+  const extra = o.count > 1 ? ` (+${o.count - 1})` : ""
+  useNotifs.getState().push({
+    kind: "question",
+    title: o.convTitle,
+    subtitle: `Pergunta pendente · ${o.headline}${extra}${o.projectName ? ` · ${o.projectName}` : ""}`,
+    projectId: o.projectId,
+    convId: o.convId,
+  })
+
+  if (o.seen) return
+  void nativeNotify(
+    "Frota · pergunta pendente",
+    `${clipTitle(o.convTitle)} (${o.projectName}): o turno parou esperando sua resposta — ${o.headline}${extra}`,
   )
 }
 

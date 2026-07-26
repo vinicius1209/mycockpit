@@ -38,13 +38,12 @@ import {
   type ToolKind,
 } from "@/lib/toolview"
 import { lineDiff, trimOuterContext, type DiffRow } from "@/lib/linediff"
-import { deriveTasks, isTaskTool } from "@/lib/tasks"
+import { deriveTasks } from "@/lib/tasks"
 import { openDeliveryDiff } from "@/lib/deliveryDiff"
 import { Markdown } from "@/components/common/Markdown"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
+import { buildNodes, type ToolItem } from "@/components/chat/messageNodes"
 import { useChat, type ChatItem } from "@/store/chat"
-
-type ToolItem = Extract<ChatItem, { kind: "tool" }>
 
 /** Máx. de linhas mostradas num bloco de diff (Edit/Write) antes de "… +N linhas". */
 const DIFF_MAX_LINES = 80
@@ -967,45 +966,8 @@ function ContinueRow({
   )
 }
 
-/** Nó de render: item comum, burst de tools, ou A checklist (task tools). */
-type Node =
-  | { type: "item"; key: string; item: ChatItem }
-  | { type: "tools"; key: string; tools: ToolItem[] }
-  | { type: "tasklist"; key: string }
-
-/** Agrupa: tools consecutivas viram um nó só; task tools somem do fluxo e viram
- *  UMA checklist (na posição da primeira). */
-function buildNodes(items: ChatItem[]): Node[] {
-  const nodes: Node[] = []
-  let taskShown = false
-  let buf: ToolItem[] = []
-  const flush = () => {
-    if (buf.length) nodes.push({ type: "tools", key: buf[0].id, tools: buf })
-    buf = []
-  }
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i]
-    // results consecutivos = parciais da MESMA invocação (histórico antigo,
-    // persistido antes do colapso no reducer): só o último vale.
-    if (it.kind === "result" && items[i + 1]?.kind === "result") continue
-    if (it.kind === "tool" && isTaskTool(it.name)) {
-      flush()
-      if (!taskShown) {
-        nodes.push({ type: "tasklist", key: it.id })
-        taskShown = true
-      }
-      continue
-    }
-    if (it.kind === "tool") {
-      buf.push(it)
-      continue
-    }
-    flush()
-    nodes.push({ type: "item", key: it.id, item: it })
-  }
-  flush()
-  return nodes
-}
+// Modelo de nós (buildNodes/continuesProse) mora em ./messageNodes — puro e
+// testável, sem estragar o fast-refresh deste arquivo de componentes.
 
 export function MessageList({
   items,
@@ -1068,13 +1030,32 @@ export function MessageList({
             </div>
           )
         }
+        const isLast = idx === visible.length - 1
+        if (n.type === "prose") {
+          // narração do turno (costurada) + as tools que ela disparou, juntas e
+          // apertadas (gap-1.5): a palavra não é mais estraçalhada por um grupo
+          // de status no meio. O grupo só "roda" quando é o último nó do run.
+          const active = running && isLast
+          const hasText = n.text.trim().length > 0
+          return (
+            <div key={n.key} className="group/msg flex flex-col gap-1.5">
+              {hasText && <Markdown text={n.text} />}
+              {n.tools.length > 0 && (
+                <ToolGroup tools={n.tools} defaultOpen={active} active={active} />
+              )}
+              {feedback && hasText && (
+                <FeedbackControls agentTurn={n.text} api={feedback} />
+              )}
+            </div>
+          )
+        }
         if (n.type === "tools") {
           return (
             <ToolGroup
               key={n.key}
               tools={n.tools}
-              defaultOpen={running && idx === visible.length - 1}
-              active={running && idx === visible.length - 1}
+              defaultOpen={running && isLast}
+              active={running && isLast}
             />
           )
         }
@@ -1084,7 +1065,7 @@ export function MessageList({
           onContinueWith &&
           !running &&
           (n.item.kind === "limit" || n.item.kind === "error") &&
-          idx === visible.length - 1
+          isLast
         if (continuable) {
           return (
             <div key={n.key} className="flex flex-col gap-2">

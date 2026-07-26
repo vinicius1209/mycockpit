@@ -70,3 +70,142 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   schema desde já, mesmo com um só agent.
 - **Consequência:** Codex/OpenCode/Aider entram no v0.2 sem reescrever a UI.
   (ver `agent-runner.md`)
+### ADR-011 — Codex pede permissão via `app-server`, não via `exec` ✅
+- **Contexto:** o seletor de permissões prometia um contrato uniforme ("Padrão = o agente
+  pede antes de agir") que **só o Claude cumpria**. `codex exec` é mão única: não existe
+  `--ask-for-approval` no subcomando (verificado no `--help` da 0.144.6) e, sem TTY, ele
+  nunca pausa. No modo Padrão o Codex mudava só o confinamento e **nunca perguntava nada**.
+- **Decisão:** para o modo **Padrão** do Codex, trocar o transporte para
+  `codex app-server` — o mesmo binário falando JSON-RPC (NDJSON) no stdio, que é o que a
+  extensão de IDE do Codex usa. Ele manda `item/commandExecution/requestApproval` e FICA
+  PARADO esperando a resposta. Os outros modos seguem no `exec` (battle-tested), e
+  `plan_first` também (turno read-only não tem o que aprovar).
+- **Consequência:** os cards de aprovação que já existiam passaram a valer para o Codex
+  **sem UI nova** — o payload traz `command`/`cwd`, o mesmo shape do `ApprovalData`.
+  Falha ANTES do turno (spawn/handshake/thread) cai no `exec` com aviso visível: perde-se
+  o gate naquele turno, nunca o turno.
+- **Achado que definiu o mapeamento (provado na máquina):** `approvalPolicy: "on-request"`
+  **não pede nada** — o modelo só escala se o sandbox barrar, e um `touch` fora do
+  workspace passou liso. Quem pede é `"untrusted"`. Teste que trava isso:
+  `padrao_usa_untrusted_o_unico_que_pergunta`.
+- **Risco aceito:** `codex app-server` é marcado `[experimental]` no `--help`. Por isso
+  ele não substitui o `exec`, só cobre o modo que estava quebrado.
+- **Limite honesto (agy):** `--dangerously-skip-permissions` é *"auto-approve all tool
+  permission requests"*; o agy TEM pedidos de permissão, mas só na TUI. Em `-p` não há
+  canal e sem a flag ele TRAVA esperando um humano que não aparece. Não há
+  `mcp-server`/`app-server`/ACP na 1.1.7 ⇒ **impossível** hoje. A UI passou a dizer isso
+  na cara (`lib/permissionNote.ts`) em vez de fingir contrato uniforme.
+
+### ADR-012 — Envio re-entrante mira a conversa de ORIGEM, nunca o foco ✅
+- **Contexto:** uma mensagem enfileirada numa conversa do projeto X foi enviada na conversa
+  aberta do projeto Y. O `handleSend` lia `useChat.getState().activeId`, e a drenagem da
+  fila (no `finally` do turno) **re-entrava** minutos depois, relendo o foco — que já era
+  outro. Pior: o `project` vinha do closure antigo, então rodava com o `cwd`/permissão de X
+  escrevendo na conversa de Y.
+- **Decisão:** todo envio resolve o alvo por `lib/sendTarget.ts`, e o projeto sai de
+  `conv.projectId` (o dono do fio), **nunca** do projeto em foco. Quem re-entra (drenagem
+  da fila, auto-resume) passa o `convId` de origem explicitamente.
+- **Consequência:** turno em background termina no lugar certo; o `notifyTurnEnd` já sabia
+  usar `c.projectId`, então o aviso sai com o nome do projeto dono.
+- **Nota:** o `office/bridge/send.ts` já era correto (recebe os ids explícitos). A regra
+  entrou na lista fechada de paridade do §9 do `agent-office.md`.
+
+### ADR-013 — Interação pendente avisa por 3 canais, e nenhum pode ser silencioso ✅
+- **Contexto:** o usuário não sabia quando um turno parava esperando ele. Três falhas
+  somadas: (1) `announceArrival` filtrava `kind !== "approval"` ⇒ **pergunta não avisava
+  nada**; (2) a bandeja contava só disputa do Fusion ⇒ cega justo com o app em background;
+  (3) a notificação nativa **nunca funcionou** — o `dev.vinicius.mycockpit` não está no
+  `com.apple.ncprefs` (que lista 17 apps de terceiro), quase certamente por assinatura
+  ad-hoc, e o `catch {}` do `nativeNotify` engolia isso desde sempre.
+- **Decisão:** pergunta e permissão avisam pelos mesmos três canais — feed do sino,
+  contagem de decisões da bandeja, e SO. Para o SO, fallback via `osascript` quando o
+  plugin nativo falha (usa a autorização do Script Editor, concedida). Silêncio total só
+  quando os DOIS caminhos falham, e aí com toast explicando.
+- **Consequência:** o aviso chega hoje, com o custo de sair atribuído ao "Script Editor".
+  O conserto definitivo é assinar o app com Developer ID.
+- **Segurança:** título/corpo vêm de nome de conversa e comando de agente — entrada NÃO
+  confiável. O texto vai como **argv** (`on run argv`), nunca interpolado no fonte do
+  AppleScript: interpolar seria injeção de código (`" & (do shell script "…") & "`).
+  Provado na máquina que a forma argv não injeta; travado pelo teste
+  `payload_vai_como_argv_nunca_no_fonte_do_script`. **Nunca trocar por `format!`.**
+
+### ADR-014 — Composer: estado do turno acima, despacho junto do enviar ✅
+- **Contexto:** 13 alvos de clique numa linha, todos com o mesmo peso visual. Quatro
+  (preset/agent/modelo/esforço) **travam no 1º envio** — ocupavam o melhor espaço da tela
+  para exibir estado imutável. A ação primária era o 13º círculo da fila. E o controle de
+  maior consequência (permissão) morava no painel de contexto, a três cliques.
+- **Decisão (variante B do mock + split D1):** uma **linha de execução** acima do campo
+  concentra o que altera o turno (permissão em 3 posições, planejar antes, contexto,
+  identidade colapsada); o rodapé fica só com o que modifica a mensagem (ditado, anexo) e
+  o que a despacha. Enviar/Disputa/Missão viram um **split button** — os três consomem o
+  MESMO rascunho (`initialTask={value}` + limpa o composer), logo são a mesma ação com
+  três destinos, não três ferramentas.
+- **Consequência:** 13 → 4 alvos no rodapé. Permissão sai do painel e passa a mostrar o
+  modo ATUAL em vez de só alertar depois que você liberou. Com turno rodando, a linha diz
+  "vale a partir do próximo envio" — o `--permission-mode` é fixo no spawn e sem esse
+  aviso o controle mentiria.
+- **Correção de rota registrada:** a primeira proposta jogava ⚔/🚀 no mesmo menu do anexo.
+  Errado — anexo *modifica* a mensagem, os outros dois a *despacham*. Famílias diferentes.
+- **Fonte única:** a troca de permissão escreve nas três camadas que precisam concordar
+  (store, SQLite, `.mycockpit/config.toml`) em `lib/permission.ts`. Duas cópias, e uma que
+  esquecesse o config.toml deixaria a UI mentindo sobre o próximo turno.
+
+### ADR-015 — Auto-compact do CLI é dele; nosso dever é não esconder ✅
+- **Contexto:** contexto a 100% e nada avisava. O `system/compact_boundary` do stream-json
+  caía no `vec![]` do `ClaudeAdapter` (todo `system` que não fosse `init` era descartado).
+- **Decisão:** não implementar compactação própria — o auto-compact do Claude Code existe
+  (`autoCompactEnabled`/`autoCompactWindow`/`autoCompactThreshold` no binário 2.1.219) e
+  está ligado por default. Nosso dever é **surfaçar**: `compact_boundary` e
+  `microcompact_boundary` viram aviso no fio, e o anel de contexto deixa de ser mudo acima
+  de 90% (ganha texto).
+- **Consequência:** você fica sabendo que o modelo perdeu detalhe, em vez de descobrir pelo
+  comportamento.
+- **Premissa descartada na verificação:** cogitou-se blindar `buildResumeFallback` com
+  orçamento de tokens, achando que ele mandava o fio inteiro. **Não manda:** já chama
+  `serializeContext(items, 3000)`, que corta cabeça 30% / cauda 70% com marcador. E o
+  `renderTranscript` é ilimitado de propósito — vai para DISCO
+  (`.mycockpit/context/<convId>.md`), não para o prompt. Não havia risco a blindar.
+
+### ADR-016 — Quem responde "quem está esperando você" é o run, não o kind ✅
+- **Contexto:** uma PERGUNTA (`ask_user`) pendente não acendia nada na sidebar e o card
+  dela sempre caía no toast do canto, mesmo com a conversa dona aberta na tela. Causa: os
+  resolvedores usavam `convIdForInteraction`, que devolvia `null` para question com o
+  comentário "question NÃO carrega run_id". **A afirmação era falsa** — em `approval.rs` o
+  campo é `run_id: String` e o `handle_conn` o anexa em TODA emissão, sem ramificar por kind.
+- **Decisão:** o dono de um pedido se resolve por `run_id` (`ownerByRunId`), sem filtro de
+  kind — é a régua de todo mundo que responde "quem está esperando você": aviso
+  (`announceArrival`), card inline (`computeContextualSplit`) e sinal da sidebar
+  (`awaitingKey`). O recorte approval-only sobrevive só onde a superfície fala de
+  permissão: a mão da mesa no Office (rótulo "Aguardando aprovação" — levantar essa mão
+  por uma pergunta seria teatro) e o item de aprovação do companion.
+- **Consequência:** pergunta pendente acende conversa + projeto e renderiza no fio da
+  conversa dona, como a permissão sempre fez.
+- **Achado que vale mais que a correção:** as fixtures de `question` das suítes **nunca
+  carregavam `run_id`**, contradizendo o payload real. Por isso a suíte era incapaz de
+  pegar esse bug — passava pelo motivo errado. As fixtures foram corrigidas, não os testes
+  afrouxados.
+- **Bônus da mesma família (achado pelo juiz no diff):** enquanto o `runIdOf` lia só
+  `data.run_id`, **nenhum approval real era roteado para a conversa dona** — todos caíam
+  no host global mesmo com a conversa aberta. Mesmo motivo: fixture com o campo no lugar
+  errado escondia o bug.
+- **Fica para depois (registrado, não esquecido):** o `InteractionHost` ainda usa a régua
+  approval-only para o cabeçalho e o botão "Abrir" do card, então pergunta no toast global
+  aparece sem origem; e o `QuestionCard` retorna antes de olhar `compact`, então o toast do
+  canto renderiza o formulário inteiro em vez do resumo de uma linha. O `companion.ts`
+  resolve o alvo uma vez com a régua approval-only e reusa no ramo `question`.
+
+### ADR-017 — Silêncio é aceitável para cosmético, nunca para quem está esperando ✅
+- **Contexto:** a notificação nativa ficou morta por meses atrás de um `catch {}` vazio, e
+  o sintoma para o usuário era "o app não me avisa". Uma auditoria varreu `app/src` inteiro:
+  **139 pontos de descarte TOTAL de erro** (25 `.catch(() => …)` + 114 blocos `catch {}`).
+- **Decisão:** silêncio segue permitido — a auditoria foi honesta e ~110 dos 139 são
+  fallback de parse com resultado visível, onde calar é correto. A régua nova é a pergunta:
+  **alguém está esperando um resultado deste caminho?** Se sim, o mínimo é uma linha de log.
+- **Os 4 de severidade alta (a corrigir):** `interactions.ts:78` (a entrega da SUA resposta
+  ao agente — não é best-effort, é o único caminho; falha = turno pendurado sem card),
+  `interactions.ts:604` (falha ao registrar o listener = a feature inteira apagando sem
+  sintoma), `learning.ts:347` (`catch { return false }`, mas `false` já significa
+  "duplicata" no contrato — erro e duplicata viram a mesma coisa na UI),
+  `SddView.tsx:882` (o comentário afirma que o erro chega pelo stream; falso para falha de spawn).
+- **Consequência:** a régua entra na revisão. Nenhuma correção foi aplicada em lote —
+  classificar "silêncio é correto aqui" é julgamento de produto, um por um.

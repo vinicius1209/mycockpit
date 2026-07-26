@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import {
   AlertCircle,
@@ -20,7 +20,6 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { DiffPanel } from "@/components/layout/DiffPanel"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { deriveTasks } from "@/lib/tasks"
-import { PillSelect } from "@/components/ui/PillSelect"
 import { Separator } from "@/components/ui/separator"
 import {
   Dialog,
@@ -43,8 +42,7 @@ import type { ProjectSources } from "@/lib/sources"
 import { open as openDialog } from "@tauri-apps/plugin-dialog"
 import { writeMycockpitConfig } from "@/lib/mycockpit"
 import { fmtBytes } from "@/lib/format"
-import type { PermissionMode } from "@/lib/types"
-import { isTauri, updateProjectPermission } from "@/lib/db"
+import { isTauri } from "@/lib/db"
 import { cn, shortPath } from "@/lib/utils"
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -330,6 +328,10 @@ export function ContextPanel() {
   const [showAgentCtx, setShowAgentCtx] = useState(false)
   const [detail, setDetail] = useState<DetailTarget | null>(null)
   const [tab, setTab] = useState<"contexto" | "alteracoes" | "plano">("contexto")
+  // Enquanto o agente TRABALHA o que interessa é o que ele mexeu — ajuste é
+  // coisa de antes de começar. Ao entrar em run, o painel vai pra Alterações uma
+  // vez; depois disso a sua escolha manda (não sequestra a aba a cada turno).
+  const jumpedOnRun = useRef(false)
   // diff atribuído à conversa ativa: worktree isolado dela, senão a pasta do projeto.
   const activeWorktree = useChat(
     (s) =>
@@ -374,6 +376,13 @@ export function ContextPanel() {
     s.activeId ? (s.byId[s.activeId]?.running ?? false) : false,
   )
   const [changedCount, setChangedCount] = useState(0)
+  useEffect(() => {
+    if (running && !jumpedOnRun.current) {
+      jumpedOnRun.current = true
+      setTab("alteracoes")
+    }
+    if (!running) jumpedOnRun.current = false
+  }, [running])
   // items da conversa ativa SÓ quando a aba Plano está visível (evita re-render
   // do painel inteiro a cada delta de streaming nas outras abas).
   const planItems = useChat((s) =>
@@ -383,7 +392,6 @@ export function ContextPanel() {
     () => (planItems ? deriveTasks(planItems) : []),
     [planItems],
   )
-  const setProjectPermission = useApp((s) => s.setProjectPermission)
   const setMycockpit = useApp((s) => s.setMycockpit)
   const cfg = useApp((s) => (project ? s.mycockpit[project.id] : undefined))
 
@@ -422,15 +430,8 @@ export function ContextPanel() {
     setExtraDirs([...cur, picked])
   }
 
-  function onPermissionChange(mode: PermissionMode) {
-    if (!project) return
-    // run_claude lê project.permissionMode (cache); SQLite cache; .mycockpit = truth
-    setProjectPermission(project.id, mode)
-    void updateProjectPermission(project.id, mode)
-    upsertConfig({ permission: mode })
-    void writeMycockpitConfig(project.path, { permission: mode })
-  }
-
+  // (a troca de permissão mora em lib/permission.ts, chamada pela ExecutionRow —
+  // as três camadas que precisam concordar estão lá, em fonte única.)
 
   const projectPath = project?.path
   useEffect(() => {
@@ -556,35 +557,10 @@ export function ContextPanel() {
               vive no menu de contexto do projeto. Painel começa nos controles. */}
           <Section title="Ajustes">
             <div className="flex flex-col gap-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[12.5px] text-muted-foreground">
-                  Permissões
-                </span>
-                <PillSelect
-                  value={cfg?.permission ?? project.permissionMode ?? "padrao"}
-                  onValueChange={(v) => onPermissionChange(v as PermissionMode)}
-                  align="end"
-                  // "liberado" = bypassPermissions: a pílula fica em cor de alerta
-                  // pra você SEMPRE saber em que modo está (não parecer neutro).
-                  triggerClassName={cn(
-                    "h-7 gap-1.5 pr-1.5 pl-2.5",
-                    (cfg?.permission ?? project.permissionMode) === "liberado" &&
-                      "border-st-warning/60 bg-st-warning/15 text-st-warning",
-                  )}
-                  aria-label="Permissões do projeto"
-                  options={[
-                    { value: "leitura", label: "Leitura" },
-                    { value: "padrao", label: "Padrão" },
-                    { value: "liberado", label: "⚠ Liberado" },
-                  ]}
-                />
-              </div>
-              {(cfg?.permission ?? project.permissionMode) === "liberado" && (
-                <p className="-mt-1 text-[11px] leading-snug text-st-warning/90">
-                  O agente executa comandos e escreve arquivos sem pedir
-                  confirmação.
-                </p>
-              )}
+              {/* Permissões MUDARAM DE CASA: viraram o controle de 3 posições na
+                  linha de execução do composer (ExecutionRow). Ficavam aqui, a
+                  três cliques do lugar onde a consequência aparece — e o composer
+                  só falava do assunto DEPOIS que você tinha liberado. */}
 
               {/* Pastas permitidas: viram --add-dir. Resolve o caso de o agent
                   precisar de um repo irmão fora do cwd (ex.: backend). Aplica ao
