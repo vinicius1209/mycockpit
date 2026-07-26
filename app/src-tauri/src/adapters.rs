@@ -364,25 +364,36 @@ impl AgentAdapter for ClaudeAdapter {
 
     fn map_line(&mut self, v: &serde_json::Value) -> Vec<AgentEvent> {
         match v.get("type").and_then(|x| x.as_str()).unwrap_or("") {
-            "system" => {
-                if v.get("subtype").and_then(|x| x.as_str()) == Some("init") {
-                    vec![AgentEvent::Session {
-                        session_id: v
-                            .get("session_id")
-                            .and_then(|x| x.as_str())
-                            .unwrap_or_default()
-                            .to_string(),
-                        model: v.get("model").and_then(|x| x.as_str()).map(str::to_string),
-                        tools: v
-                            .get("tools")
-                            .and_then(|x| x.as_array())
-                            .map(Vec::len)
-                            .unwrap_or(0),
-                    }]
-                } else {
-                    vec![]
-                }
-            }
+            "system" => match v.get("subtype").and_then(|x| x.as_str()) {
+                Some("init") => vec![AgentEvent::Session {
+                    session_id: v
+                        .get("session_id")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    model: v.get("model").and_then(|x| x.as_str()).map(str::to_string),
+                    tools: v
+                        .get("tools")
+                        .and_then(|x| x.as_array())
+                        .map(Vec::len)
+                        .unwrap_or(0),
+                }],
+                // AUTO-COMPACT do CLI (verificado no binário 2.1.219: as chaves
+                // autoCompactEnabled/Window/Threshold existem e o default é
+                // ligado). Quando a janela enche, o claude resume a conversa
+                // sozinho e avisa por aqui. Isto CAÍA no `vec![]`: a conversa era
+                // compactada, o modelo perdia detalhe e você nunca sabia — só via
+                // o anel travado em 100%. Agora vira linha no fio.
+                Some("compact_boundary") => vec![AgentEvent::Notice {
+                    message: "Contexto cheio: o Claude Code compactou a conversa — o detalhe antigo virou resumo.".to_string(),
+                }],
+                // microcompact: poda cirúrgica (tool results antigos), muito menos
+                // destrutiva que a compactação cheia — merece aviso mais discreto.
+                Some("microcompact_boundary") => vec![AgentEvent::Notice {
+                    message: "O Claude Code podou partes antigas do contexto para liberar espaço.".to_string(),
+                }],
+                _ => vec![],
+            },
             // H2, streaming por bloco. text_delta → TextDelta; content_block_stop
             // → TextStop (FECHA a bolha do bloco — sem isso, deltas de blocos
             // diferentes colam na mesma bolha, às vezes no meio da palavra). Tool
@@ -655,11 +666,7 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn classify_limit(&self, msg: &str) -> Option<LimitHit> {
-        let l = msg.to_lowercase();
-        let hit = l.contains("exceeded your current quota")
-            || l.contains("insufficient_quota")
-            || l.contains("usage limit");
-        hit.then_some(LimitHit { reset_hint: None })
+        codex_limit(msg)
     }
 
     fn render_attachments(&self, atts: &[Attachment], cmd: &mut Command, _prompt: &mut String) {
@@ -736,6 +743,18 @@ impl AgentAdapter for CodexAdapter {
             _ => vec![AgentEvent::Unknown { raw: v.clone() }],
         }
     }
+}
+
+/// Limite/cota do Codex a partir da mensagem de erro. Livre (não é método do
+/// trait) porque os DOIS transportes do Codex usam: o `exec` (via stderr/
+/// turn.failed) e o app-server (via notificação `error`) — a frase vem do
+/// provedor, não do enquadramento.
+pub fn codex_limit(msg: &str) -> Option<LimitHit> {
+    let l = msg.to_lowercase();
+    let hit = l.contains("exceeded your current quota")
+        || l.contains("insufficient_quota")
+        || l.contains("usage limit");
+    hit.then_some(LimitHit { reset_hint: None })
 }
 
 /// Resultado de uma tool do Codex. Diferente do Claude, o Codex só expõe a
@@ -988,6 +1007,17 @@ fn codex_config_model() -> String {
         .unwrap_or_else(|| "gpt-5.5".to_string())
 }
 
+/// Modelo usado p/ ESTIMAR o custo do Codex (ele nunca reporta USD): o
+/// requisitado no envio vence; sem ele, o default do `~/.codex/config.toml`.
+/// Mesma regra dos dois transportes (`exec` e app-server).
+pub fn codex_cost_model(requested: Option<&str>) -> Option<String> {
+    Some(
+        requested
+            .map(str::to_string)
+            .unwrap_or_else(codex_config_model),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1058,6 +1088,53 @@ mod tests {
         assert!(!args.contains(&"bypassPermissions".to_string()));
         // Auto se autogoverna: NÃO leva o gate granular (só o Padrão precisa).
         assert!(!args.iter().any(|x| x == "--permission-prompt-tool"));
+    }
+
+    /// AUTO-COMPACT: a linha `system/compact_boundary` do stream-json existe (48
+    /// ocorrências no binário 2.1.219) e caía no `vec![]` — a conversa era
+    /// compactada em silêncio. Agora tem que virar Notice visível no fio.
+    #[test]
+    fn claude_compact_boundary_vira_aviso_visivel() {
+        let mut a = ClaudeAdapter;
+        let linha = serde_json::json!({
+            "type": "system",
+            "subtype": "compact_boundary",
+            "session_id": "s1"
+        });
+        let evs = a.map_line(&linha);
+        assert_eq!(evs.len(), 1);
+        match &evs[0] {
+            AgentEvent::Notice { message } => {
+                assert!(message.contains("compactou"), "mensagem: {message}");
+            }
+            _ => panic!("esperava Notice"),
+        }
+    }
+
+    #[test]
+    fn claude_microcompact_avisa_mais_discreto() {
+        let mut a = ClaudeAdapter;
+        let evs = a.map_line(&serde_json::json!({
+            "type": "system", "subtype": "microcompact_boundary"
+        }));
+        match &evs[0] {
+            AgentEvent::Notice { message } => assert!(message.contains("podou")),
+            _ => panic!("esperava Notice"),
+        }
+    }
+
+    /// `system` de subtype desconhecido segue ignorado (não vira ruído no fio) e
+    /// o `init` continua virando Session — a mudança não pode ter vazado.
+    #[test]
+    fn claude_system_desconhecido_segue_ignorado_e_init_intacto() {
+        let mut a = ClaudeAdapter;
+        assert!(a
+            .map_line(&serde_json::json!({ "type": "system", "subtype": "outra_coisa" }))
+            .is_empty());
+        let evs = a.map_line(&serde_json::json!({
+            "type": "system", "subtype": "init", "session_id": "s9", "model": "opus"
+        }));
+        assert!(matches!(&evs[0], AgentEvent::Session { session_id, .. } if session_id == "s9"));
     }
 
     #[test]

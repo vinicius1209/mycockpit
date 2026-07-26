@@ -361,6 +361,101 @@ async fn handle_conn(
     let _ = wr.flush().await;
 }
 
+/// Gate de interação DIRETO: mesmo registro, mesmo evento e mesma resposta do
+/// socket — sem socket. Serve transportes que já falam com o agent na primeira
+/// pessoa (o `codex app-server`, que manda o pedido de aprovação no próprio
+/// stream JSON-RPC). Sem isto, o Codex precisaria de um MCP server intermediário
+/// que a CLI dele não oferece.
+///
+/// O ciclo de vida espelha o `ApprovalListener`: `shutdown()` (ou o Drop) resolve
+/// fail-closed TODOS os pedidos ainda abertos e avisa o front
+/// (`interaction://resolved`), pra nenhum card ficar preso a um run já morto.
+pub struct DirectInteractions {
+    app: tauri::AppHandle,
+    pending: Arc<PendingApprovals>,
+    ids: Arc<Mutex<Vec<String>>>,
+    shutdown: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl DirectInteractions {
+    pub fn new(app: tauri::AppHandle, pending: Arc<PendingApprovals>) -> Self {
+        Self {
+            app,
+            pending,
+            ids: Arc::default(),
+            shutdown: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    /// Levanta UM pedido e ESPERA a resposta do usuário (sem timeout: o turno do
+    /// agent está parado esperando). `id` é do chamador porque ele precisa
+    /// correlacionar com o pedido do protocolo dele.
+    pub async fn request(&self, run_id: &str, id: &str, kind: &str, data: serde_json::Value) -> Answer {
+        // run já encerrando → nega na hora, sem registrar nem piscar card.
+        if self.shutdown.load(std::sync::atomic::Ordering::SeqCst) {
+            return fail_closed_answer(kind, "run encerrado");
+        }
+        // registra ANTES de emitir (não perde um answer_interaction instantâneo).
+        let (tx, rx) = oneshot::channel::<Answer>();
+        if let Ok(mut map) = self.pending.0.lock() {
+            map.insert(id.to_string(), Pending { kind: kind.to_string(), tx });
+        }
+        if let Ok(mut v) = self.ids.lock() {
+            v.push(id.to_string());
+        }
+        // double-check: se o shutdown correu entre o check e o registro, a
+        // varredura dele pode já ter passado sem ver este id.
+        if self.shutdown.load(std::sync::atomic::Ordering::SeqCst) {
+            if let Ok(mut map) = self.pending.0.lock() {
+                map.remove(id);
+            }
+            return fail_closed_answer(kind, "run encerrado");
+        }
+        let _ = self.app.emit(
+            "interaction://request",
+            InteractionRequest {
+                id: id.to_string(),
+                run_id: run_id.to_string(),
+                kind: kind.to_string(),
+                data,
+            },
+        );
+        let answer = rx
+            .await
+            .unwrap_or_else(|_| fail_closed_answer(kind, "interação cancelada"));
+        if let Ok(mut map) = self.pending.0.lock() {
+            map.remove(id);
+        }
+        answer
+    }
+
+    /// Fecha o gate: resolve fail-closed o que sobrou e limpa os cards. Idempotente
+    /// (o Drop chama de novo sem efeito).
+    pub fn shutdown(&self) {
+        self.shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
+        let drained: Vec<String> = self
+            .ids
+            .lock()
+            .map(|mut v| std::mem::take(&mut *v))
+            .unwrap_or_default();
+        for id in drained {
+            let p = self.pending.0.lock().ok().and_then(|mut m| m.remove(&id));
+            if let Some(p) = p {
+                let _ = p.tx.send(fail_closed_answer(&p.kind, "run encerrado antes da resposta"));
+                let _ = self
+                    .app
+                    .emit("interaction://resolved", serde_json::json!({ "id": id }));
+            }
+        }
+    }
+}
+
+impl Drop for DirectInteractions {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
 /// Comando Tauri GENÉRICO: o front entrega a resposta do usuário (aprovação OU
 /// perguntas). Destrava a conexão do socket que está esperando (via o oneshot
 /// registrado em pending). O shape de `answer` varia por kind — o app repassa cru

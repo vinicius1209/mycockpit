@@ -287,6 +287,48 @@ pub async fn run_agent(
         approval,
         plan_first: plan_first.unwrap_or(false),
     };
+    // Codex no modo Padrão: transporte `codex app-server` (JSON-RPC no stdio) —
+    // o ÚNICO em que o Codex PEDE aprovação. O `codex exec` é mão única: sem
+    // `--ask-for-approval` e sem TTY ele nunca pausa, então "Padrão" no Codex
+    // mudava só o confinamento e nunca perguntava nada. Os outros modos seguem no
+    // `exec` (battle-tested): nenhum deles precisa de gate, e o app-server ainda é
+    // `[experimental]` na CLI. `plan_first` também fica no exec — o turno de plano
+    // é read-only, não há o que aprovar.
+    // Falha ANTES do turno (spawn/handshake/thread) cai no `exec` com aviso: o
+    // usuário perde o gate naquele turno, nunca o turno.
+    if agent == "codex"
+        && matches!(permission, adapters::Permission::Padrao)
+        && !req.plan_first
+    {
+        let out = crate::codex_appserver::run(
+            &app,
+            &run_id,
+            &conv_id,
+            &req,
+            adapters::codex_cost_model(req.model.as_deref()),
+            &on_event,
+            &notify,
+            registry.inner(),
+            pending_approvals.inner().clone(),
+        )
+        .await;
+        match out.startup_error {
+            None => {
+                if out.cancelled {
+                    let _ = on_event.send(AgentEvent::Cancelled);
+                }
+                let _ = on_event.send(AgentEvent::Done { code: Some(0) });
+                return Ok(());
+            }
+            Some(e) => {
+                log::warn!("codex app-server indisponível ({e}); caindo no `codex exec`");
+                let _ = on_event.send(AgentEvent::Notice {
+                    message: "Codex app-server indisponível: segui no modo antigo (este turno NÃO vai pedir permissão).".to_string(),
+                });
+            }
+        }
+    }
+
     let resume_was = req.resume.is_some();
     let cmd = adapter.build_command(&req)?;
     let mut outcome = run_once(

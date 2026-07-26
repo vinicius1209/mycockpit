@@ -177,6 +177,43 @@ struct PermissionPolicy {
     e/ou config nativa do agent. **Documentar esse limite na UI.**
 - Default são (M5): `AcceptEdits` + **Bash pergunta** (`ask_on: ["Bash"]`).
 
+### 7.1 Realidade por agent — o que cada CLI REALMENTE faz (verificado 2026-07)
+
+O seletor de Permissões é do **projeto**, mas quem obedece é a CLI da conversa — e
+elas divergem. Versões auditadas: claude 2.1.219, codex-cli 0.144.6, agy 1.1.7.
+
+| | Leitura | **Padrão (PEDE)** | Liberado |
+|---|---|---|---|
+| **claude** | `--disallowedTools` de escrita | `acceptEdits` + `--permission-prompt-tool` (MCP) | `bypassPermissions` |
+| **codex** | `-s read-only` (sandbox de SO) | **`app-server` + `approvalPolicy: untrusted`** | `-s danger-full-access` |
+| **agy** | `--sandbox` (best-effort) | ⚠️ **impossível** — nenhum canal | `--dangerously-skip-permissions` (é o único modo) |
+
+**Codex — por que existe um segundo transporte.** `codex exec` é mão única: não tem
+`--ask-for-approval` e, sem TTY, nunca pausa. No modo Padrão ele mudava só o
+confinamento e **nunca perguntava nada** — o seletor prometia um gate inexistente.
+O `codex app-server` (mesmo binário, JSON-RPC NDJSON no stdio, o que a extensão de
+IDE usa) manda `item/commandExecution/requestApproval` e **fica parado** esperando
+a resposta. Ver `src-tauri/src/codex_appserver.rs`.
+
+- **Só o Padrão** passa pelo app-server (`plan_first` também não: turno de plano é
+  read-only, não há o que aprovar). Os outros modos seguem no `exec`, que é
+  battle-tested — e o app-server ainda é `[experimental]` na CLI.
+- Falha **antes** do turno (spawn/handshake/thread) cai no `exec` com um `Notice`
+  visível: perde-se o gate naquele turno, nunca o turno.
+- Achado que define o mapeamento: `approvalPolicy: "on-request"` **não pede nada**
+  (o modelo só escala se o sandbox barrar — provado: um `touch` fora do workspace
+  passou liso). `"untrusted"` é o que pede. Teste que trava isso:
+  `padrao_usa_untrusted_o_unico_que_pergunta`.
+- Negar responde `decision: "decline"` (o turno continua e o modelo se explica),
+  nunca `"cancel"` (mataria o turno inteiro).
+
+**agy — limite honesto.** `--dangerously-skip-permissions` é *"auto-approve all tool
+permission requests without prompting"*: o agy TEM pedidos de permissão, mas só na
+TUI. Em `-p` (print) não há canal e, sem a flag, ele **trava** esperando um humano
+que não existe. Não há `mcp-server`/`app-server`/ACP na 1.1.7. O gate que vale para
+ele é o nosso, por turno: **"Planejar primeiro"**. A UI diz isso na cara
+(`lib/permissionNote.ts`) em vez de fingir um contrato uniforme.
+
 ## 8. Perguntas em aberto (para futuros devs)
 
 1. Semântica exata de *resume* do Codex e do OpenCode (confirmar com a doc/versão).

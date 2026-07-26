@@ -12,6 +12,7 @@ mod agent;
 mod approval;
 mod attachments;
 mod catalog;
+mod codex_appserver;
 mod companion;
 mod context;
 mod detect;
@@ -19,6 +20,7 @@ mod fsx;
 mod git;
 mod github;
 mod mycockpit;
+mod osnotify;
 mod path;
 mod proc;
 mod pricing;
@@ -410,6 +412,7 @@ pub fn run() {
             agent::cancel_agent,
             approval::answer_interaction,
             approval::answer_approval,
+            osnotify::notify_via_osascript,
             agent::suggest,
             agent::judge,
             context::read_project_context,

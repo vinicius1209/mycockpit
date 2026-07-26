@@ -1,0 +1,945 @@
+//! Transporte `codex app-server` — o ÚNICO caminho em que o Codex PEDE permissão.
+//!
+//! POR QUE existe: `codex exec` (o transporte histórico, ver `CodexAdapter`) é MÃO
+//! ÚNICA — ele conta o que JÁ fez. Não há `--ask-for-approval` no `exec` e, sem TTY,
+//! ele nunca pausa. Resultado: no modo "Padrão" o Codex nunca perguntava nada, só
+//! mudava o confinamento — o seletor de permissões prometia um contrato que não
+//! existia. O `codex app-server` é o MESMO binário falando JSON-RPC (NDJSON) pelo
+//! stdio: aí ele consegue mandar `item/commandExecution/requestApproval` e FICAR
+//! PARADO esperando a nossa resposta. É o que a extensão de IDE do Codex usa.
+//!
+//! VERIFICADO na máquina (codex-cli 0.144.6, 2026-07):
+//!   • enquadramento NDJSON; a RESPOSTA do servidor nem repete `"jsonrpc"` → o
+//!     parse classifica por forma (id+result/error = resposta, method+id = pedido,
+//!     method sozinho = notificação).
+//!   • `approvalPolicy: "on-request"` NÃO pediu nada (o modelo só escala se o
+//!     sandbox barrar) — `"untrusted"` pede de verdade. É o que o Padrão usa.
+//!   • responder `{"decision":"accept"}` destrava e o turno segue até
+//!     `turn/completed`. Foi assim que o gate foi provado ponta a ponta.
+//!
+//! LIMITE CONSCIENTE: `codex app-server` é marcado `[experimental]` no `--help`.
+//! Por isso ele NÃO substitui o `exec`: só o modo Padrão passa por aqui, e uma
+//! falha ANTES do turno (`startup_error`) faz o `run_agent` cair no `exec` com um
+//! aviso visível — nunca um turno morto.
+
+use crate::adapters::{Permission, RunRequest};
+use crate::agent::{AgentEvent, RunRegistry};
+use crate::approval::{DirectInteractions, PendingApprovals};
+use crate::pricing::NormalizedUsage;
+use serde_json::{json, Value};
+use std::collections::HashSet;
+use std::process::Stdio;
+use std::sync::Arc;
+use tauri::ipc::Channel;
+use tauri::Emitter;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{ChildStdin, Command};
+use tokio::sync::{Mutex, Notify};
+
+/// Ids das requisições que ESTE cliente inicia (o servidor ecoa no `id`).
+const ID_INITIALIZE: i64 = 1;
+const ID_THREAD: i64 = 2;
+const ID_TURN: i64 = 3;
+/// 2ª tentativa de abrir a thread, quando o `thread/resume` falhou (sessão sumiu).
+const ID_THREAD_RETRY: i64 = 4;
+
+/// Resultado de um run pelo app-server. Os eventos de conteúdo JÁ foram emitidos;
+/// quem chama só decide os terminais (Cancelled/Done) — mesma divisão do `run_once`.
+pub struct Outcome {
+    pub cancelled: bool,
+    /// Falha ANTES do turno começar (spawn, handshake, abertura da thread). É o
+    /// ÚNICO caso em que o caller pode cair no transporte antigo sem duplicar
+    /// nada na tela — depois do `turn/start` já saiu conteúdo.
+    pub startup_error: Option<String>,
+}
+
+impl Outcome {
+    fn startup(e: impl Into<String>) -> Self {
+        Self {
+            cancelled: false,
+            startup_error: Some(e.into()),
+        }
+    }
+    fn done(cancelled: bool) -> Self {
+        Self {
+            cancelled,
+            startup_error: None,
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Peças PURAS (política, params, mapeamento). Testadas sem subir processo algum.
+// ----------------------------------------------------------------------------
+
+/// Política do turno: (approvalPolicy, sandboxPolicy) por modo de permissão.
+///
+/// `untrusted` é o que faz o Codex PERGUNTAR (verificado: `on-request` deixa o
+/// modelo decidir e ele não pergunta). Os demais modos mantêm a semântica que o
+/// `exec` já tinha — a função cobre todos p/ o dia em que o app-server virar o
+/// transporte único, mas hoje só o Padrão chega aqui.
+pub fn policy(permission: Permission, writable_roots: &[String]) -> (Value, Value) {
+    match permission {
+        Permission::Leitura | Permission::FusionRo => {
+            (json!("never"), json!({ "type": "readOnly" }))
+        }
+        Permission::Padrao => (
+            json!("untrusted"),
+            json!({ "type": "workspaceWrite", "writableRoots": writable_roots }),
+        ),
+        Permission::Auto => (
+            json!("never"),
+            json!({ "type": "workspaceWrite", "writableRoots": writable_roots }),
+        ),
+        Permission::Liberado => (json!("never"), json!({ "type": "dangerFullAccess" })),
+    }
+}
+
+/// `sandbox` do `thread/start`/`thread/resume` — enum simples (SandboxMode), não
+/// o objeto tagueado do turno. Mesmo teto do `-s` do `codex exec`.
+pub fn sandbox_mode(permission: Permission) -> &'static str {
+    match permission {
+        Permission::Leitura | Permission::FusionRo => "read-only",
+        Permission::Padrao | Permission::Auto => "workspace-write",
+        Permission::Liberado => "danger-full-access",
+    }
+}
+
+/// Params de `thread/start` (thread nova) ou `thread/resume` (`resume` presente).
+pub fn thread_params(req: &RunRequest, resume: Option<&str>) -> Value {
+    let (approval, _) = policy(req.permission, &req.extra_dirs);
+    let mut p = json!({
+        "cwd": req.cwd,
+        "sandbox": sandbox_mode(req.permission),
+        "approvalPolicy": approval,
+    });
+    if let Some(m) = &req.model {
+        p["model"] = json!(m);
+    }
+    if let Some(t) = resume {
+        p["threadId"] = json!(t);
+    }
+    p
+}
+
+/// Params de `turn/start`. O prompt vai como `input[0]` de texto; cada anexo vira
+/// um item `localImage` (o app-server só recebe path — o `-i` do exec é o gêmeo).
+pub fn turn_params(thread_id: &str, req: &RunRequest, prompt: &str) -> Value {
+    let (approval, sandbox) = policy(req.permission, &req.extra_dirs);
+    let mut input = vec![json!({ "type": "text", "text": prompt })];
+    for a in &req.attachments {
+        input.push(json!({ "type": "localImage", "path": a.path }));
+    }
+    let mut p = json!({
+        "threadId": thread_id,
+        "cwd": req.cwd,
+        "approvalPolicy": approval,
+        "sandboxPolicy": sandbox,
+        "input": input,
+    });
+    if let Some(m) = &req.model {
+        p["model"] = json!(m);
+    }
+    if let Some(e) = &req.effort {
+        p["effort"] = json!(e);
+    }
+    p
+}
+
+/// Estado de parsing que precisa sobreviver entre notificações do stream.
+#[derive(Default)]
+pub struct StreamState {
+    /// itemIds de agentMessage que JÁ receberam delta: no `item/completed` deles
+    /// basta fechar a bolha (TextStop). Sem isso o texto sairia DUPLICADO — uma
+    /// vez em streaming e outra inteiro no fim.
+    streamed: HashSet<String>,
+    /// Último `tokenUsage.last` visto — o `turn/completed` não traz usage, então
+    /// o Result é montado com este.
+    last_usage: Option<NormalizedUsage>,
+    /// Modelo (do config/seleção) p/ estimar o custo: o Codex não reporta USD.
+    model: Option<String>,
+}
+
+impl StreamState {
+    pub fn new(model: Option<String>) -> Self {
+        Self {
+            model,
+            ..Default::default()
+        }
+    }
+}
+
+/// Corta um output longo p/ o cartão da tool (mesma régua do `codex_tool_result`).
+fn clip(full: &str) -> (String, u64) {
+    let lines = if full.trim().is_empty() {
+        0
+    } else {
+        full.lines().count() as u64
+    };
+    let mut text: String = full.chars().take(600).collect();
+    if full.chars().count() > 600 {
+        text.push('…');
+    }
+    (text, lines)
+}
+
+/// Um `ThreadItem` concluído → Tool + ToolResult (o Codex só fecha a tool no
+/// `item/completed`, igual ao transporte antigo — a UI espera o par).
+fn map_item_completed(item: &Value, st: &mut StreamState) -> Vec<AgentEvent> {
+    let id = item
+        .get("id")
+        .and_then(|x| x.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let kind = item.get("type").and_then(|x| x.as_str()).unwrap_or("");
+    let text_of = |k: &str| item.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+
+    let tool_result = |name_ok: bool, out: String| {
+        let (text, lines) = clip(&out);
+        AgentEvent::ToolResult {
+            id: id.clone(),
+            ok: name_ok,
+            text,
+            lines,
+        }
+    };
+
+    match kind {
+        "agentMessage" => {
+            // já streamado por delta → só fecha a bolha; senão manda o texto cheio
+            // (agent sem partial messages nunca fica mudo).
+            if st.streamed.remove(&id) {
+                return vec![AgentEvent::TextStop];
+            }
+            let t = text_of("text");
+            if t.trim().is_empty() {
+                return vec![];
+            }
+            vec![AgentEvent::Text { text: t }, AgentEvent::TextStop]
+        }
+        "commandExecution" => {
+            let exit = item.get("exitCode").and_then(|x| x.as_i64());
+            let ok = exit.map(|c| c == 0).unwrap_or(true);
+            let out = item
+                .get("aggregatedOutput")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
+            vec![
+                AgentEvent::Tool {
+                    id: id.clone(),
+                    name: "Bash".to_string(),
+                    input: json!({ "command": text_of("command") }),
+                },
+                tool_result(ok, out),
+            ]
+        }
+        "fileChange" => {
+            let status = item.get("status").and_then(|x| x.as_str()).unwrap_or("");
+            let ok = !matches!(status, "failed" | "declined" | "cancelled");
+            vec![
+                AgentEvent::Tool {
+                    id: id.clone(),
+                    name: "Edit".to_string(),
+                    input: item.get("changes").cloned().unwrap_or(Value::Null),
+                },
+                tool_result(ok, status.to_string()),
+            ]
+        }
+        "mcpToolCall" | "dynamicToolCall" => {
+            let err = item.get("error").filter(|x| !x.is_null());
+            let out = match err {
+                Some(e) => e.to_string(),
+                None => item
+                    .get("result")
+                    .map(|r| r.to_string())
+                    .unwrap_or_default(),
+            };
+            vec![
+                AgentEvent::Tool {
+                    id: id.clone(),
+                    name: item
+                        .get("tool")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("mcp")
+                        .to_string(),
+                    input: item.get("arguments").cloned().unwrap_or(Value::Null),
+                },
+                tool_result(err.is_none(), out),
+            ]
+        }
+        "webSearch" => vec![
+            AgentEvent::Tool {
+                id: id.clone(),
+                name: "WebSearch".to_string(),
+                input: json!({ "query": text_of("query") }),
+            },
+            tool_result(true, String::new()),
+        ],
+        // userMessage (o nosso próprio prompt), reasoning, plan… não viram cartão.
+        _ => vec![],
+    }
+}
+
+/// Notificação do servidor → eventos normalizados. PURA (o estado do stream entra
+/// por `st`), então o mapeamento inteiro é testável sem subir o `codex`.
+pub fn map_notification(method: &str, params: &Value, st: &mut StreamState) -> Vec<AgentEvent> {
+    match method {
+        "thread/started" => {
+            let id = params
+                .pointer("/thread/id")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string();
+            vec![AgentEvent::Session {
+                session_id: id,
+                model: st.model.clone(),
+                tools: 0,
+            }]
+        }
+        "item/agentMessage/delta" => {
+            let delta = params.get("delta").and_then(|x| x.as_str()).unwrap_or("");
+            if delta.is_empty() {
+                return vec![];
+            }
+            if let Some(item) = params.get("itemId").and_then(|x| x.as_str()) {
+                st.streamed.insert(item.to_string());
+            }
+            vec![AgentEvent::TextDelta {
+                text: delta.to_string(),
+            }]
+        }
+        "item/completed" => match params.get("item") {
+            Some(item) => map_item_completed(item, st),
+            None => vec![],
+        },
+        "thread/tokenUsage/updated" => {
+            let last = params.pointer("/tokenUsage/last");
+            let get = |k: &str| {
+                last.and_then(|u| u.get(k))
+                    .and_then(|x| x.as_u64())
+                    .unwrap_or(0)
+            };
+            let nu = NormalizedUsage {
+                input: get("inputTokens"),
+                cached_input: get("cachedInputTokens"),
+                output: get("outputTokens"),
+            };
+            let ctx = nu.input.max(nu.cached_input);
+            st.last_usage = Some(nu);
+            if ctx > 0 {
+                vec![AgentEvent::ContextUsage { tokens: ctx }]
+            } else {
+                vec![]
+            }
+        }
+        "turn/completed" => {
+            let nu = st.last_usage.take().unwrap_or(NormalizedUsage {
+                input: 0,
+                cached_input: 0,
+                output: 0,
+            });
+            // Codex não reporta USD → estima por tokens × tabela (igual ao exec).
+            let model = st.model.clone().unwrap_or_else(|| "gpt-5.5".to_string());
+            let (cost_usd, cost_source) = crate::pricing::estimate(&model, &nu);
+            vec![AgentEvent::Result {
+                ok: true,
+                text: None,
+                cost_usd,
+                cost_source,
+                input_tokens: nu.input,
+                output_tokens: nu.output,
+                cache_read: nu.cached_input,
+                cache_creation: 0,
+            }]
+        }
+        // Ruído de infraestrutura do app-server (subida de MCP, rate limits, hooks,
+        // status de thread…): não vira evento. NÃO é "descartar em silêncio" — o
+        // stream aqui é conversacional, não um log de turno como no `exec`.
+        _ => vec![],
+    }
+}
+
+/// Mensagem de erro estruturada de uma notificação `error`.
+pub fn error_message(params: &Value) -> String {
+    params
+        .pointer("/error/message")
+        .and_then(|x| x.as_str())
+        .unwrap_or("o turno do codex falhou")
+        .to_string()
+}
+
+/// Pedido servidor→cliente → cartão da UI (mesmo contrato do socket do Claude:
+/// kind + data). `None` = pedido que ainda não sabemos representar.
+pub fn approval_card(method: &str, params: &Value) -> Option<(&'static str, Value)> {
+    let s = |k: &str| params.get(k).and_then(|x| x.as_str()).unwrap_or("");
+    match method {
+        "item/commandExecution/requestApproval" => Some((
+            "approval",
+            json!({
+                "tool_name": "Bash",
+                "command": s("command"),
+                "input": { "command": s("command"), "cwd": s("cwd"), "reason": params.get("reason") },
+            }),
+        )),
+        "item/fileChange/requestApproval" => Some((
+            "approval",
+            json!({
+                "tool_name": "Edit",
+                "command": s("grantRoot"),
+                "input": { "reason": params.get("reason"), "grant_root": s("grantRoot") },
+            }),
+        )),
+        _ => None,
+    }
+}
+
+/// Resposta do usuário (contrato da UI: `{allow, message?}`) → `decision` do Codex.
+/// `decline` (e não `cancel`) no negar: o turno CONTINUA e o modelo pode explicar
+/// ou tentar outro caminho — `cancel` mataria o turno inteiro.
+pub fn decision(answer: &Value) -> Value {
+    let allow = answer
+        .get("allow")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    json!({ "decision": if allow { "accept" } else { "decline" } })
+}
+
+// ----------------------------------------------------------------------------
+// Driver: spawn + máquina de estados do handshake + loop do stream.
+// ----------------------------------------------------------------------------
+
+/// Escreve UMA mensagem NDJSON no stdin do app-server.
+async fn write_msg(stdin: &Arc<Mutex<ChildStdin>>, msg: &Value) -> std::io::Result<()> {
+    let mut buf = msg.to_string();
+    buf.push('\n');
+    let mut w = stdin.lock().await;
+    w.write_all(buf.as_bytes()).await?;
+    w.flush().await
+}
+
+fn request(id: i64, method: &str, params: Value) -> Value {
+    json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn run(
+    app: &tauri::AppHandle,
+    run_id: &str,
+    conv_id: &str,
+    req: &RunRequest,
+    cost_model: Option<String>,
+    on_event: &Channel<AgentEvent>,
+    notify: &Arc<Notify>,
+    registry: &RunRegistry,
+    pending: Arc<PendingApprovals>,
+) -> Outcome {
+    let mut cmd = Command::new("codex");
+    cmd.arg("app-server")
+        .current_dir(&req.cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return Outcome::startup(format!("não consegui subir o codex app-server: {e}")),
+    };
+    if let Some(pid) = child.id() {
+        if let Ok(mut pids) = registry.1.lock() {
+            pids.insert(run_id.to_string(), pid);
+        }
+    }
+    let stdin = match child.stdin.take() {
+        Some(s) => Arc::new(Mutex::new(s)),
+        None => return Outcome::startup("sem stdin do codex app-server"),
+    };
+    let stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => return Outcome::startup("sem stdout do codex app-server"),
+    };
+    // stderr do app-server é log (subida de MCP, avisos) — drena p/ o pipe não
+    // encher e travar o filho; só vira mensagem se o turno morrer sem explicação.
+    let stderr = child.stderr.take();
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = String::new();
+        if let Some(se) = stderr {
+            let mut lines = BufReader::new(se).lines();
+            while let Ok(Some(l)) = lines.next_line().await {
+                buf.push_str(&l);
+                buf.push('\n');
+            }
+        }
+        buf
+    });
+
+    // Gate de interação: MESMO registro/evento do socket do Claude, sem socket —
+    // aqui o pedido já chega pelo stream. O Drop/shutdown resolve fail-closed
+    // qualquer card ainda aberto quando o run morre.
+    let interactions = Arc::new(DirectInteractions::new(app.clone(), pending));
+
+    let mut reader = BufReader::new(stdout).lines();
+    let mut st = StreamState::new(cost_model);
+    let mut thread_id: Option<String> = None;
+    let mut turn_id: Option<String> = None;
+    let mut prompt = req.prompt.clone();
+    let mut turn_started = false;
+    let mut cancelled = false;
+    let mut startup_error: Option<String> = None;
+    let mut approval_seq: u64 = 0;
+
+    if let Err(e) = write_msg(
+        &stdin,
+        &request(
+            ID_INITIALIZE,
+            "initialize",
+            json!({ "clientInfo": { "name": "mycockpit", "version": env!("CARGO_PKG_VERSION") } }),
+        ),
+    )
+    .await
+    {
+        return Outcome::startup(format!("falha no handshake do app-server: {e}"));
+    }
+
+    loop {
+        tokio::select! {
+            line = reader.next_line() => {
+                let line = match line {
+                    Ok(Some(l)) => l,
+                    // EOF antes do turno = o app-server caiu na largada → o caller
+                    // ainda pode cair no `exec`. Depois do turno, fim normal.
+                    _ => {
+                        if !turn_started && startup_error.is_none() {
+                            startup_error = Some("o codex app-server encerrou antes do turno".into());
+                        }
+                        break;
+                    }
+                };
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                let msg: Value = match serde_json::from_str(line) {
+                    Ok(v) => v,
+                    Err(_) => continue, // log do servidor no stdout: ignora
+                };
+                let method = msg.get("method").and_then(|x| x.as_str());
+                let has_id = msg.get("id").is_some();
+
+                match (method, has_id) {
+                    // ---- pedido servidor→cliente: aprovação ----
+                    (Some(m), true) => {
+                        let id = msg.get("id").cloned().unwrap_or(Value::Null);
+                        let params = msg.get("params").cloned().unwrap_or(Value::Null);
+                        match approval_card(m, &params) {
+                            Some((kind, data)) => {
+                                approval_seq += 1;
+                                let req_id = format!("{run_id}-cx{approval_seq}");
+                                // task própria: o turno do Codex fica parado, mas o
+                                // stream segue sendo lido (e o cancelar continua vivo).
+                                let inter = interactions.clone();
+                                let stdin2 = stdin.clone();
+                                let run_id2 = run_id.to_string();
+                                let m2 = m.to_string();
+                                tokio::spawn(async move {
+                                    let answer = inter.request(&run_id2, &req_id, kind, data).await;
+                                    let out = json!({ "id": id, "result": decision(&answer) });
+                                    if let Err(e) = write_msg(&stdin2, &out).await {
+                                        log::warn!("codex app-server: falha ao responder {m2}: {e}");
+                                    }
+                                });
+                            }
+                            None => {
+                                // Pedido que ainda não sabemos representar (permissões
+                                // granulares, elicitação de MCP, pergunta de tool):
+                                // responde erro de método e AVISA — nunca pendura o
+                                // turno nem finge que aprovou.
+                                let out = json!({
+                                    "id": id,
+                                    "error": { "code": -32601, "message": "cliente não trata este pedido" }
+                                });
+                                let _ = write_msg(&stdin, &out).await;
+                                let _ = on_event.send(AgentEvent::Notice {
+                                    message: format!("Codex pediu `{m}`, que o app ainda não sabe mostrar — recusado."),
+                                });
+                            }
+                        }
+                    }
+                    // ---- notificação ----
+                    (Some(m), false) => {
+                        let params = msg.get("params").cloned().unwrap_or(Value::Null);
+                        if m == "turn/started" {
+                            turn_id = params
+                                .pointer("/turn/id")
+                                .and_then(|x| x.as_str())
+                                .map(str::to_string);
+                        }
+                        if m == "error" {
+                            let message = error_message(&params);
+                            let _ = on_event.send(match crate::adapters::codex_limit(&message) {
+                                Some(hit) => AgentEvent::LimitReached { message, reset_hint: hit.reset_hint },
+                                None => AgentEvent::Error { message },
+                            });
+                            break;
+                        }
+                        for ev in map_notification(m, &params, &mut st) {
+                            let _ = on_event.send(ev);
+                        }
+                        if m == "turn/completed" {
+                            break;
+                        }
+                    }
+                    // ---- resposta a uma requisição nossa ----
+                    _ => {
+                        let id = msg.get("id").and_then(|x| x.as_i64()).unwrap_or(-1);
+                        let err = msg.get("error");
+                        match (id, err) {
+                            (ID_INITIALIZE, None) => {
+                                let _ = write_msg(&stdin, &json!({
+                                    "jsonrpc": "2.0", "method": "initialized", "params": {}
+                                })).await;
+                                let p = thread_params(req, req.resume.as_deref());
+                                let m = if req.resume.is_some() { "thread/resume" } else { "thread/start" };
+                                let _ = write_msg(&stdin, &request(ID_THREAD, m, p)).await;
+                            }
+                            (ID_THREAD, Some(e)) | (ID_THREAD_RETRY, Some(e)) => {
+                                // resume falhou (sessão sumiu) → degradação graciosa:
+                                // thread NOVA + recap do front, o mesmo contrato do
+                                // `run_agent`. Se já era thread nova, é falha de start.
+                                if id == ID_THREAD && req.resume.is_some() {
+                                    let _ = on_event.send(AgentEvent::Notice {
+                                        message: "Sessão anterior não encontrada. Comecei uma nova.".into(),
+                                    });
+                                    let _ = app.emit("resume://fallback", json!({
+                                        "conv_id": conv_id,
+                                        "run_id": run_id,
+                                        "used_memory": req.memory_fallback.is_some(),
+                                    }));
+                                    if let Some(fb) = &req.memory_fallback {
+                                        prompt = format!("{fb}\n\n---\n\n{}", req.prompt);
+                                    }
+                                    let p = thread_params(req, None);
+                                    let _ = write_msg(&stdin, &request(ID_THREAD_RETRY, "thread/start", p)).await;
+                                } else {
+                                    startup_error = Some(format!("thread do codex não abriu: {e}"));
+                                    break;
+                                }
+                            }
+                            (ID_THREAD, None) | (ID_THREAD_RETRY, None) => {
+                                let tid = msg
+                                    .pointer("/result/thread/id")
+                                    .and_then(|x| x.as_str())
+                                    .map(str::to_string);
+                                match tid {
+                                    Some(t) => {
+                                        let p = turn_params(&t, req, &prompt);
+                                        thread_id = Some(t);
+                                        turn_started = true;
+                                        let _ = write_msg(&stdin, &request(ID_TURN, "turn/start", p)).await;
+                                    }
+                                    None => {
+                                        startup_error = Some("resposta de thread sem id".into());
+                                        break;
+                                    }
+                                }
+                            }
+                            (ID_TURN, Some(e)) => {
+                                let message = format!("o turno do codex não iniciou: {e}");
+                                let _ = on_event.send(AgentEvent::Error { message });
+                                break;
+                            }
+                            (ID_TURN, None) => {
+                                turn_id = msg
+                                    .pointer("/result/turn/id")
+                                    .and_then(|x| x.as_str())
+                                    .map(str::to_string);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            _ = notify.notified() => {
+                cancelled = true;
+                // interrupt educado ANTES do kill: dá ao Codex a chance de fechar a
+                // thread (o resume seguinte encontra a sessão íntegra).
+                if let (Some(t), Some(tu)) = (thread_id.as_ref(), turn_id.as_ref()) {
+                    let _ = write_msg(&stdin, &request(9, "turn/interrupt", json!({
+                        "threadId": t, "turnId": tu
+                    }))).await;
+                }
+                let _ = child.start_kill();
+                break;
+            }
+        }
+    }
+
+    // destrava (fail-closed) qualquer card ainda aberto: o turno morreu, ninguém
+    // pode ficar esperando resposta de um run que não existe mais.
+    interactions.shutdown();
+    let _ = child.start_kill();
+    let _ = child.wait().await;
+    let stderr_text = stderr_task.await.unwrap_or_default();
+
+    // Só reporta stderr quando o turno nem começou (senão vira ruído: o
+    // app-server loga falha de MCP de terceiros em run perfeitamente saudável).
+    if let Some(e) = &mut startup_error {
+        if !stderr_text.trim().is_empty() {
+            let tail: String = stderr_text.lines().rev().take(3).collect::<Vec<_>>().join(" | ");
+            e.push_str(&format!(" ({tail})"));
+        }
+    }
+
+    match startup_error {
+        Some(e) => Outcome::startup(e),
+        None => Outcome::done(cancelled),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::attachments::{Attachment, AttachmentKind};
+
+    fn req(permission: Permission) -> RunRequest {
+        RunRequest {
+            prompt: "faça X".into(),
+            cwd: "/repo".into(),
+            resume: None,
+            memory_fallback: None,
+            permission,
+            model: Some("gpt-5.5".into()),
+            effort: Some("high".into()),
+            attachments: vec![],
+            extra_dirs: vec![],
+            approval: None,
+            plan_first: false,
+        }
+    }
+
+    /// O achado que motivou o módulo: `on-request` NÃO pergunta (o modelo só
+    /// escala se o sandbox barrar). O Padrão TEM que ir de `untrusted`, senão o
+    /// gate volta a ser uma promessa vazia.
+    #[test]
+    fn padrao_usa_untrusted_o_unico_que_pergunta() {
+        let (approval, sandbox) = policy(Permission::Padrao, &[]);
+        assert_eq!(approval, json!("untrusted"));
+        assert_eq!(sandbox["type"], "workspaceWrite");
+    }
+
+    #[test]
+    fn liberado_nao_pergunta_e_nao_confina() {
+        let (approval, sandbox) = policy(Permission::Liberado, &[]);
+        assert_eq!(approval, json!("never"));
+        assert_eq!(sandbox["type"], "dangerFullAccess");
+    }
+
+    #[test]
+    fn leitura_e_fusion_ro_sao_read_only_sem_pedir() {
+        for p in [Permission::Leitura, Permission::FusionRo] {
+            let (approval, sandbox) = policy(p, &[]);
+            assert_eq!(approval, json!("never"));
+            assert_eq!(sandbox["type"], "readOnly");
+        }
+    }
+
+    #[test]
+    fn pastas_extras_viram_writable_roots() {
+        let mut r = req(Permission::Padrao);
+        r.extra_dirs = vec!["/outro/repo".into()];
+        let p = turn_params("t1", &r, "oi");
+        assert_eq!(p["sandboxPolicy"]["writableRoots"][0], "/outro/repo");
+    }
+
+    #[test]
+    fn thread_resume_carrega_o_thread_id() {
+        let mut r = req(Permission::Padrao);
+        r.resume = Some("th-123".into());
+        let p = thread_params(&r, r.resume.as_deref());
+        assert_eq!(p["threadId"], "th-123");
+        assert_eq!(p["cwd"], "/repo");
+        assert_eq!(p["sandbox"], "workspace-write");
+    }
+
+    #[test]
+    fn turn_leva_prompt_modelo_effort_e_anexos() {
+        let mut r = req(Permission::Padrao);
+        r.attachments = vec![Attachment {
+            path: "/tmp/a.png".into(),
+            name: "a.png".into(),
+            kind: AttachmentKind::Image,
+            mime: "image/png".into(),
+            bytes: 10,
+        }];
+        let p = turn_params("t1", &r, "prompt final");
+        assert_eq!(p["input"][0]["type"], "text");
+        assert_eq!(p["input"][0]["text"], "prompt final");
+        assert_eq!(p["input"][1]["type"], "localImage");
+        assert_eq!(p["input"][1]["path"], "/tmp/a.png");
+        assert_eq!(p["model"], "gpt-5.5");
+        assert_eq!(p["effort"], "high");
+    }
+
+    /// Payload REAL capturado do app-server 0.144.6 → o card que a UI já sabe
+    /// desenhar (mesmo shape do ApprovalData do Claude).
+    #[test]
+    fn pedido_de_comando_vira_card_de_aprovacao() {
+        let params = json!({
+            "threadId": "th", "turnId": "tu", "itemId": "call_1",
+            "command": "/bin/zsh -lc 'rm -rf alvo'",
+            "cwd": "/repo", "reason": null
+        });
+        let (kind, data) = approval_card("item/commandExecution/requestApproval", &params).unwrap();
+        assert_eq!(kind, "approval");
+        assert_eq!(data["tool_name"], "Bash");
+        assert_eq!(data["command"], "/bin/zsh -lc 'rm -rf alvo'");
+        assert_eq!(data["input"]["cwd"], "/repo");
+    }
+
+    #[test]
+    fn pedido_desconhecido_nao_vira_card() {
+        assert!(approval_card("mcpServer/elicitation/request", &json!({})).is_none());
+    }
+
+    /// Negar é `decline` (turno segue), NUNCA `cancel` (mataria o turno inteiro).
+    #[test]
+    fn resposta_do_usuario_vira_decision() {
+        assert_eq!(decision(&json!({ "allow": true }))["decision"], "accept");
+        assert_eq!(decision(&json!({ "allow": false }))["decision"], "decline");
+        // fail-closed: resposta sem `allow` (ou malformada) NEGA.
+        assert_eq!(decision(&json!({}))["decision"], "decline");
+    }
+
+    #[test]
+    fn thread_started_vira_session_com_o_modelo_do_custo() {
+        let mut st = StreamState::new(Some("gpt-5.5".into()));
+        let evs = map_notification(
+            "thread/started",
+            &json!({ "thread": { "id": "th-9" } }),
+            &mut st,
+        );
+        match &evs[0] {
+            AgentEvent::Session { session_id, model, .. } => {
+                assert_eq!(session_id, "th-9");
+                assert_eq!(model.as_deref(), Some("gpt-5.5"));
+            }
+            _ => panic!("esperava Session"),
+        }
+    }
+
+    /// A regressão que o `streamed` evita: com delta + item/completed o texto
+    /// sairia DUAS vezes (streaming + bloco inteiro).
+    #[test]
+    fn texto_streamado_fecha_a_bolha_sem_duplicar() {
+        let mut st = StreamState::new(None);
+        let d = map_notification(
+            "item/agentMessage/delta",
+            &json!({ "itemId": "m1", "delta": "oi" }),
+            &mut st,
+        );
+        assert!(matches!(d[0], AgentEvent::TextDelta { .. }));
+        let c = map_notification(
+            "item/completed",
+            &json!({ "item": { "type": "agentMessage", "id": "m1", "text": "oi" } }),
+            &mut st,
+        );
+        assert_eq!(c.len(), 1);
+        assert!(matches!(c[0], AgentEvent::TextStop));
+    }
+
+    #[test]
+    fn texto_sem_delta_sai_inteiro_no_completed() {
+        let mut st = StreamState::new(None);
+        let c = map_notification(
+            "item/completed",
+            &json!({ "item": { "type": "agentMessage", "id": "m2", "text": "resposta" } }),
+            &mut st,
+        );
+        match &c[0] {
+            AgentEvent::Text { text } => assert_eq!(text, "resposta"),
+            _ => panic!("esperava Text"),
+        }
+    }
+
+    #[test]
+    fn comando_concluido_vira_par_tool_mais_resultado() {
+        let mut st = StreamState::new(None);
+        let evs = map_notification(
+            "item/completed",
+            &json!({ "item": {
+                "type": "commandExecution", "id": "call_1",
+                "command": "ls -la", "exitCode": 0, "aggregatedOutput": "a\nb\n"
+            }}),
+            &mut st,
+        );
+        assert_eq!(evs.len(), 2);
+        match (&evs[0], &evs[1]) {
+            (AgentEvent::Tool { name, input, .. }, AgentEvent::ToolResult { ok, lines, .. }) => {
+                assert_eq!(name, "Bash");
+                assert_eq!(input["command"], "ls -la");
+                assert!(ok);
+                assert_eq!(*lines, 2);
+            }
+            _ => panic!("esperava Tool + ToolResult"),
+        }
+    }
+
+    #[test]
+    fn comando_com_exit_nao_zero_marca_falha() {
+        let mut st = StreamState::new(None);
+        let evs = map_notification(
+            "item/completed",
+            &json!({ "item": { "type": "commandExecution", "id": "c", "command": "x", "exitCode": 2 }}),
+            &mut st,
+        );
+        assert!(matches!(evs[1], AgentEvent::ToolResult { ok: false, .. }));
+    }
+
+    /// O `turn/completed` do app-server NÃO traz usage — o Result se monta com o
+    /// último `thread/tokenUsage/updated`. Sem isso todo turno sairia custando 0.
+    #[test]
+    fn usage_do_stream_alimenta_o_result_do_fim() {
+        let mut st = StreamState::new(Some("gpt-5.5".into()));
+        let ctx = map_notification(
+            "thread/tokenUsage/updated",
+            &json!({ "tokenUsage": { "last": {
+                "inputTokens": 21459, "cachedInputTokens": 13056, "outputTokens": 309
+            }}}),
+            &mut st,
+        );
+        assert!(matches!(ctx[0], AgentEvent::ContextUsage { tokens: 21459 }));
+        let end = map_notification("turn/completed", &json!({}), &mut st);
+        match &end[0] {
+            AgentEvent::Result { input_tokens, output_tokens, cache_read, .. } => {
+                assert_eq!(*input_tokens, 21459);
+                assert_eq!(*output_tokens, 309);
+                assert_eq!(*cache_read, 13056);
+            }
+            _ => panic!("esperava Result"),
+        }
+    }
+
+    #[test]
+    fn ruido_de_infra_do_app_server_nao_vira_evento() {
+        let mut st = StreamState::new(None);
+        for m in [
+            "mcpServer/startupStatus/updated",
+            "account/rateLimits/updated",
+            "thread/status/changed",
+            "hook/started",
+            "turn/started",
+        ] {
+            assert!(map_notification(m, &json!({}), &mut st).is_empty(), "{m} vazou");
+        }
+    }
+
+    #[test]
+    fn erro_estruturado_le_a_mensagem() {
+        assert_eq!(
+            error_message(&json!({ "error": { "message": "usage limit reached" } })),
+            "usage limit reached"
+        );
+        assert_eq!(error_message(&json!({})), "o turno do codex falhou");
+    }
+}
