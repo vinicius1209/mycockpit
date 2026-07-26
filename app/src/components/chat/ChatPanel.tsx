@@ -40,6 +40,7 @@ import {
   shouldAttachResumeFallback,
 } from "@/lib/transcript"
 import { wantsAutoResume } from "@/lib/autoResume"
+import { resolveSendTarget } from "@/lib/sendTarget"
 import { notifyTurnEnd } from "@/lib/notify"
 import type { Attachment } from "@/lib/attachments"
 import { gcAttachments } from "@/lib/attachments"
@@ -240,25 +241,36 @@ export function ChatPanel() {
     cfg?: AgentRunConfig,
     attachments: Attachment[] = [],
     fromAutoResume = false,
+    /** Conversa de ORIGEM. Quem RE-ENTRA (drenagem da fila, auto-resume) passa o
+     *  convId do turno que terminou: esses envios disparam tempo depois e, lendo
+     *  o foco, a fila digitada no projeto X ia parar na conversa aberta do
+     *  projeto Y. Sem alvo = envio manual, vale a conversa em foco AGORA. */
+    originConvId?: string,
   ) {
-    if (!project) return
     if (!isTauri()) {
       toast("O dispatch dos agents roda no app (bun run tauri dev)")
       return
     }
-    const convId = useChat.getState().activeId
-    if (!convId) return
+    // Alvo do envio: conversa + o projeto DONO dela (conv.projectId), nunca o
+    // projeto em foco — cwd, permissão e lições são os do fio, não os da tela.
+    // `conv`/`project` daqui SOMBREIAM os do componente de propósito.
+    const target = resolveSendTarget(
+      originConvId ?? useChat.getState().activeId,
+      useChat.getState().byId,
+      useApp.getState().projects,
+    )
+    // conversa ainda carregando do disco (janela do switch): enviar agora
+    // criaria um estado vazio e o persist apagaria o histórico (achado 1 do aval).
+    if (target.status === "loading") {
+      toast("Conversa ainda carregando. Tenta de novo.")
+      return
+    }
+    if (target.status !== "ok") return
+    const { convId, conv, project } = target
     // Missão rodando nesta conversa: as fases compartilham o worktree; um envio
     // manual em paralelo embolaria o diff/handoff. Bloqueia (M2).
     if (useMission.getState().byConv[convId]?.status === "running") {
       toast("Missão em andamento. Pare a missão para enviar manualmente.")
-      return
-    }
-    const conv = useChat.getState().byId[convId]
-    // conversa ainda carregando do disco (janela do switch): enviar agora
-    // criaria um estado vazio e o persist apagaria o histórico (achado 1 do aval).
-    if (!conv) {
-      toast("Conversa ainda carregando. Tenta de novo.")
       return
     }
     if (conv.corrupt) {
@@ -268,7 +280,7 @@ export function ChatPanel() {
     // Rodando/finalizando: em vez de descartar, ENFILEIRA. O CLI precisa sair de
     // fato (flush da sessão) antes do próximo run; ao terminar, o finally junta as
     // pendentes num único envio (resume). Coalescer evita N resumes em sequência.
-    if (conv?.running || conv?.finalizing) {
+    if (conv.running || conv.finalizing) {
       useChat.getState().enqueue(convId, text, attachments)
       return
     }
@@ -279,10 +291,10 @@ export function ChatPanel() {
     // novo run → invalida geração de sugestão pendente/em-voo desta conversa
     useChat.getState().invalidateSuggestions(convId)
     // conversa estabelecida trava no agent/modelo/effort do 1º run; nova usa o seletor
-    const locked = conv != null && conv.items.length > 0
-    let agent = locked ? conv!.agent : (cfg?.agent ?? "claude-code")
-    let model = locked ? conv!.reqModel : (cfg?.model ?? null)
-    let effort = locked ? conv!.effort : (cfg?.effort ?? null)
+    const locked = conv.items.length > 0
+    let agent = locked ? conv.agent : (cfg?.agent ?? "claude-code")
+    let model = locked ? conv.reqModel : (cfg?.model ?? null)
+    let effort = locked ? conv.effort : (cfg?.effort ?? null)
     // S3.3 — persona do preset SÓ no 1º turno (!locked). FAIL-CLOSED: preset
     // quebrado (apagado, sem personality, skill fora do inventário do projeto)
     // ABORTA aqui, ANTES do start — o run não inicia nem gasta turno.
@@ -347,9 +359,9 @@ export function ChatPanel() {
     // conversa. Auto-resume nunca planeja (é continuação de execução).
     const planFirst = !fromAutoResume && (cfg?.planFirst ?? !!conv.planFirst)
     const runId = crypto.randomUUID()
-    const sessionId = conv?.sessionId ?? null
+    const sessionId = conv.sessionId ?? null
     // cwd = worktree isolado da conversa (v2.5), senão a pasta compartilhada do projeto.
-    const cwd = conv?.worktreePath ?? project.path
+    const cwd = conv.worktreePath ?? project.path
     // Sprint 4, o run escreve em byId[convId] mesmo se o usuário trocar de aba.
     useChat.getState().start(convId, text, runId, agent, model, effort, attachments)
     // S3.3 — persona injetada NESTE run: carimba preset_id + digest da versão
@@ -365,7 +377,9 @@ export function ChatPanel() {
           personaStamp.name,
         )
     }
-    setAtBottom(true) // ao enviar, pula pro fim (ver a própria mensagem)
+    // ao enviar, pula pro fim (ver a própria mensagem) — só se o fio ALVO é o
+    // que está na tela (envio em background não mexe na rolagem de quem olha).
+    if (convId === useChat.getState().activeId) setAtBottom(true)
     // M2 do Linear: injeta as lições relevantes (projeto + globais) no PROMPT
     // (não na bolha visível). Best-effort: qualquer falha envia sem o bloco. Só
     // no Linear — Fusion/Mission têm suas próprias fases de contexto.
@@ -461,6 +475,8 @@ export function ChatPanel() {
       // textos coalescidos + anexos de todos os itens (dedup por path — o dedup
       // por hash do backend pode repetir o mesmo blob em itens diferentes).
       // Se há fila, o próximo turno já começa; senão, agenda as sugestões.
+      // `convId` explícito: a fila é DESTA conversa e o turno pode terminar com
+      // o usuário já noutro projeto — sem o alvo, o envio caía no fio em foco.
       const pending = useChat.getState().dequeueQueued(convId)
       if (pending.length > 0) {
         const texts = pending.map((q) => q.text).filter(Boolean)
@@ -469,7 +485,7 @@ export function ChatPanel() {
             pending.flatMap((q) => q.attachments).map((a) => [a.path, a]),
           ).values(),
         ]
-        void handleSend(texts.join("\n\n"), undefined, atts)
+        void handleSend(texts.join("\n\n"), undefined, atts, false, convId)
       } else if (maybeScheduleAutoResume(convId, agent)) {
         // turno bateu num rate limit / "vou tentar depois" e o auto-resume está
         // ligado: agendamos um reenvio automático (banner mostra o countdown).
@@ -522,7 +538,8 @@ export function ChatPanel() {
         type: "notice",
         message: `auto-resume: retomando (tentativa ${tries}/${settings.autoResumeMaxTries})`,
       })
-      void handleSend(prompt, undefined, [], true)
+      // alvo explícito: o timer dispara minutos depois, o foco já pode ser outro.
+      void handleSend(prompt, undefined, [], true, convId)
     }, verdict.delayMs)
     useChat.getState().setAutoResume(convId, {
       tries,
@@ -819,7 +836,7 @@ export function ChatPanel() {
                 })
                 const preamble = buildHandoff(c.items)
                 const prompt = `${preamble}\n\n---\n\nO turno anterior parou num limite de uso/espera. Continue a tarefa pendente de onde parou (não repita o que já foi feito).`
-                void handleSend(prompt, undefined, [], true)
+                void handleSend(prompt, undefined, [], true, activeId)
               }}
             />
           )}

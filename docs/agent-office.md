@@ -378,7 +378,10 @@ Toda animação nova respeita `prefers-reduced-motion` (estática/desligada).
 ## 9. Testes de paridade do send.ts (lista fechada)
 
 Comparar com o `handleSend` do ChatPanel: corrupt bloqueia · missão rodando
-bloqueia · running ⇒ enqueue (e drena no finally, coalescido) · agent travado
+bloqueia · running ⇒ enqueue (e drena no finally, coalescido, **na conversa de
+ORIGEM** — o turno pode acabar com o usuário já noutro projeto; envio
+re-entrante nunca relê o foco, e o projeto sai de `conv.projectId` via
+`resolveSendTarget`) · agent travado
 vence · sessionId propagado · lições ativas injetadas no prompt
 (`buildLearningBlocks` + `markLessonsUsed`, best-effort) · memória do agy
 injetada · `buildResumeFallback` p/ claude/codex com sessão · planFirst
