@@ -30,6 +30,7 @@ import { DESTINATIONS } from "@/lib/agents"
 import { fmtCost, fmtDuration, fmtTokens } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
+import { attachmentRead, attachmentReadLabel } from "@/lib/attachmentRead"
 import {
   cleanResultText,
   presentTool,
@@ -442,7 +443,14 @@ function ToolGroup({
 }
 
 /** Thumbnail de um anexo no histórico (bytes → object URL cacheado). */
-function AttachmentThumb({ att }: { att: Attachment }) {
+function AttachmentThumb({
+  att,
+  read,
+}: {
+  att: Attachment
+  /** Selo de leitura: null = nada a afirmar (inlinado / sem telemetria). */
+  read: { text: string; warn: boolean } | null
+}) {
   const [url, setUrl] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
@@ -460,6 +468,7 @@ function AttachmentThumb({ att }: { att: Attachment }) {
       <span className="flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-[12px] text-muted-foreground">
         <FileText className="size-3.5 shrink-0" />
         <span className="max-w-[160px] truncate">{att.name}</span>
+        <ReadBadge read={read} />
       </span>
     )
   }
@@ -474,11 +483,43 @@ function AttachmentThumb({ att }: { att: Attachment }) {
     return <span className="size-20 animate-pulse rounded-lg border bg-secondary/40" />
   }
   return (
-    <img
-      src={url}
-      alt={att.name}
-      className="max-h-44 max-w-[220px] rounded-lg border object-contain"
-    />
+    <span className="relative inline-flex">
+      <img
+        src={url}
+        alt={att.name}
+        className="max-h-44 max-w-[220px] rounded-lg border object-contain"
+      />
+      {read && (
+        <span className="absolute right-1 bottom-1">
+          <ReadBadge read={read} />
+        </span>
+      )}
+    </span>
+  )
+}
+
+/** Selo do anexo: prova (ou falta dela) de que o agent ABRIU o arquivo.
+ *  No Claude e no agy o anexo é um ponteiro — o modelo decide abrir —, então
+ *  "respondeu" nunca significou "olhou". O rastro já existia no fio (a chamada
+ *  da ferramenta de leitura); isto só o mostra. */
+function ReadBadge({ read }: { read: { text: string; warn: boolean } | null }) {
+  if (!read) return null
+  return (
+    <span
+      title={
+        read.warn
+          ? "O agent respondeu sem abrir este anexo — a resposta pode não considerá-lo."
+          : "O agent abriu este anexo durante o turno."
+      }
+      className={cn(
+        "rounded px-1.5 py-0.5 text-[10px] font-medium backdrop-blur-sm",
+        read.warn
+          ? "bg-st-warning/20 text-st-warning ring-1 ring-st-warning/40"
+          : "bg-card/85 text-muted-foreground ring-1 ring-border",
+      )}
+    >
+      {read.text}
+    </span>
   )
 }
 
@@ -807,9 +848,14 @@ function TurnTelemetry({
 const MessageItem = memo(function MessageItem({
   item: it,
   feedback,
+  reads,
 }: {
   item: ChatItem
   feedback?: FeedbackApi | null
+  /** Selo de leitura por PATH de anexo (só itens do usuário usam). Vem pronto
+   *  do MessageList: calcular aqui exigiria o fio inteiro dentro de um `memo`
+   *  por item, o que mataria a memoização a cada delta do streaming. */
+  reads?: Record<string, { text: string; warn: boolean } | null>
 }) {
   if (it.kind === "user") {
     return (
@@ -817,7 +863,7 @@ const MessageItem = memo(function MessageItem({
         {it.attachments && it.attachments.length > 0 && (
           <div className="flex max-w-[82%] flex-wrap justify-end gap-1.5">
             {it.attachments.map((a) => (
-              <AttachmentThumb key={a.path} att={a} />
+              <AttachmentThumb key={a.path} att={a} read={reads?.[a.path] ?? null} />
             ))}
           </div>
         )}
@@ -990,6 +1036,21 @@ export function MessageList({
 }) {
   const nodes = useMemo(() => buildNodes(items), [items])
   const tasks = useMemo(() => deriveTasks(items), [items])
+  // Selo "lido / não foi aberto" por anexo. Calculado UMA vez aqui (varre o fio)
+  // e entregue pronto ao MessageItem: fazer dentro do item quebraria o memo dele
+  // a cada delta do streaming. Só muda quando items/running mudam.
+  const attReads = useMemo(() => {
+    const out: Record<string, { text: string; warn: boolean } | null> = {}
+    items.forEach((it, i) => {
+      if (it.kind !== "user" || !it.attachments?.length) return
+      for (const a of it.attachments) {
+        out[a.path] = attachmentReadLabel(
+          attachmentRead(items, i, a, agent, running),
+        )
+      }
+    })
+    return out
+  }, [items, agent, running])
 
   // Janela de renderização: conversa longa (já vimos 665KB de items) renderizava
   // TUDO — com diffs abertos por padrão o DOM explodia. Mostra os últimos
@@ -1069,7 +1130,7 @@ export function MessageList({
         if (continuable) {
           return (
             <div key={n.key} className="flex flex-col gap-2">
-              <MessageItem item={n.item} feedback={feedback} />
+              <MessageItem item={n.item} feedback={feedback} reads={attReads} />
               <ContinueRow
                 current={agent}
                 onPick={onContinueWith}
@@ -1078,7 +1139,14 @@ export function MessageList({
             </div>
           )
         }
-        return <MessageItem key={n.key} item={n.item} feedback={feedback} />
+        return (
+          <MessageItem
+            key={n.key}
+            item={n.item}
+            feedback={feedback}
+            reads={attReads}
+          />
+        )
       })}
 
       {(running || finalizing) && (

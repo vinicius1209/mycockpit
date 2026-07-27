@@ -392,7 +392,7 @@ export function CommandConsole({
           missionRunning
             ? "Missão em andamento — pare a missão para enviar manualmente…"
             : running || finalizing
-              ? "Enfileirar próxima mensagem (envia junto ao terminar)…"
+              ? "Enfileirar próxima mensagem…"
               : commands.length > 0
                 ? "Peça algo…  ou / para comandos"
                 : "Peça algo ao seu time de agents…"

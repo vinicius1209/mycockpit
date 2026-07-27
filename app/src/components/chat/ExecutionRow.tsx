@@ -160,7 +160,11 @@ export function ExecutionRow({
             }
             className="flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
-            <span className="max-w-[220px] truncate">{identityLabel}</span>
+            {/* Expandido, os seletores logo abaixo já dizem tudo — repetir o
+                rótulo aqui era a mesma informação duas vezes na mesma caixa. */}
+            {!identityOpen && (
+              <span className="max-w-[220px] truncate">{identityLabel}</span>
+            )}
             {identityLocked && <Lock className="size-3 shrink-0 opacity-70" />}
             <ChevronDown
               className={cn(
