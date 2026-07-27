@@ -17,7 +17,7 @@ import type {
 } from "@/lib/interaction"
 import {
   approvalSignature,
-  currentOrigin,
+  currentOriginAnyKind,
   decideBatch,
   pendingGroup,
   useContextualSplit,
@@ -81,13 +81,33 @@ export function InteractionCard({
   // key={req.id} — memoizar por id evita recomputar a cada token de streaming
   // (e mantém a sidebar/chat fora do caminho de re-render deste card).
   const data = req.data as ApprovalData
-  const origin = useMemo(() => currentOrigin(req), [req.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Origem de QUALQUER kind: o `currentOrigin` é o recorte approval-only, e usá-lo
+  // aqui deixava toda PERGUNTA sem cabeçalho "projeto · conversa" e sem "Abrir" —
+  // justamente no toast global, que por definição é de conversa que você NÃO está
+  // olhando e é onde saber a origem mais importa.
+  const origin = useMemo(() => currentOriginAnyKind(req), [req.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const summary = useMemo(
     () => (req.kind === "approval" ? summarizeApproval(data) : null),
     [req.id], // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   if (req.kind === "question") {
+    // COMPACTO vale para pergunta também. Antes o QuestionCard retornava aqui
+    // ANTES de olhar `compact`, então o toast do canto renderizava o formulário
+    // INTEIRO (radios, checkbox, campo "Outro") de um turno que você não está
+    // olhando — um ask_user de 3 perguntas tomava a tela enquanto você
+    // trabalhava noutra coisa. Responder pergunta exige ler o contexto: o lugar
+    // do paredão é o card inline, na conversa dona.
+    if (compact) {
+      return (
+        <QuestionTeaser
+          data={req.data as QuestionData}
+          origin={origin}
+          extra={extra}
+          onDismiss={() => dismiss(req)}
+        />
+      )
+    }
     return (
       <QuestionCard
         data={req.data as QuestionData}
@@ -419,6 +439,70 @@ type QState = { selected: Set<string>; other: string }
 /** Card de pergunta estruturada (kind="question"): um bloco por pergunta com radios
  *  (multiSelect=false) ou checkboxes (true), cada opção com label + description; um campo
  *  "Outro" discreto por pergunta. "Responder" habilita quando toda pergunta tem ≥1 seleção. */
+/** Versão COMPACTA do pedido de pergunta (toast global): diz de onde veio, o que
+ *  foi perguntado em uma linha, e leva você até a conversa — onde o formulário
+ *  aparece em contexto. Espelha o contrato que o ApprovalCard já cumpria no
+ *  compacto; responder no canto da tela, sem o fio à vista, seria decidir no
+ *  escuro. Sem "Responder" aqui de propósito. */
+function QuestionTeaser({
+  data,
+  origin,
+  extra,
+  onDismiss,
+}: {
+  data: QuestionData
+  origin: InteractionOrigin | null
+  extra: number
+  onDismiss: () => void
+}) {
+  const questions = data.questions ?? []
+  const first = questions[0]
+  const headline =
+    (first?.header ?? "").trim() || (first?.question ?? "").trim() || "uma decisão"
+  return (
+    <div className="mb-2 rounded-lg border border-brass/40 bg-brass/[0.07] px-3 py-2.5">
+      {origin && (
+        <p className="mb-1.5 truncate text-[11px] text-muted-foreground">
+          {origin.projectName}
+          <span className="mx-1 opacity-50">·</span>
+          {origin.convTitle}
+        </p>
+      )}
+      <div className="flex items-center gap-2">
+        <MessageCircleQuestion className="size-4 shrink-0 text-brass" />
+        <p className="min-w-0 flex-1 truncate text-[12.5px] text-foreground">
+          O agente perguntou: <span className="font-medium">{headline}</span>
+          {questions.length > 1 && (
+            <span className="text-muted-foreground"> (+{questions.length - 1})</span>
+          )}
+        </p>
+      </div>
+      <div className="mt-2.5 flex items-center justify-end gap-2">
+        {extra > 0 && (
+          <span className="mr-auto text-[11px] text-muted-foreground">
+            +{extra} na fila
+          </span>
+        )}
+        <button
+          onClick={onDismiss}
+          className="rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
+        >
+          Dispensar
+        </button>
+        {origin && (
+          <button
+            onClick={() => void goToOrigin(origin)}
+            title="Abrir a conversa que perguntou"
+            className="flex items-center gap-1.5 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
+          >
+            Responder <ArrowRight className="size-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function QuestionCard({
   data,
   extra,

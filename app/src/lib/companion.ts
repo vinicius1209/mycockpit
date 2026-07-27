@@ -34,7 +34,7 @@ import { hasAssistantReply } from "@/lib/presets"
 import { useApp } from "@/store/app"
 import { useCards } from "@/store/cards"
 import { useChat } from "@/store/chat"
-import { convIdForInteraction, useInteractions } from "@/store/interactions"
+import { ownerByRunId, useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 import {
   cancelDeskTurn,
@@ -58,7 +58,9 @@ export interface CompanionAttention {
    *  card → "card:<cardId>" (informativo; as ações moram na seção Board). */
   id: string
   kind: "gate" | "approval" | "question" | "stalled" | "card"
-  /** null = não mapeável a uma conversa (question não carrega run_id). */
+  /** null = dono irresolvível (pedido sem run_id, ou run já morto). Vale para os
+   *  dois kinds: pergunta TAMBÉM carrega run_id (o backend anexa em toda
+   *  emissão), então ela chega com conversa e projeto como a aprovação. */
   convId: string | null
   projectId: string | null
   projectName: string | null
@@ -257,7 +259,11 @@ export function buildCompanionSnapshot(
     })
   }
   for (const req of queue) {
-    const target = convIdForInteraction(req, chat, missions)
+    // `ownerByRunId` (qualquer kind), não `convIdForInteraction` (approval-only):
+    // o alvo é resolvido UMA vez e usado nos DOIS ramos, então a régua restrita
+    // deixava toda PERGUNTA chegar no celular sem conversa, sem projeto e sem
+    // agent — justo o que você precisa pra decidir se vale voltar pro computador.
+    const target = ownerByRunId(req, chat, missions)
     const convId = target?.convId ?? null
     const pid = convId ? projectOf(convId) : null
     if (req.kind === "approval") {

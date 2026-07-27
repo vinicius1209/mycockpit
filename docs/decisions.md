@@ -188,11 +188,17 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   `data.run_id`, **nenhum approval real era roteado para a conversa dona** — todos caíam
   no host global mesmo com a conversa aberta. Mesmo motivo: fixture com o campo no lugar
   errado escondia o bug.
-- **Fica para depois (registrado, não esquecido):** o `InteractionHost` ainda usa a régua
-  approval-only para o cabeçalho e o botão "Abrir" do card, então pergunta no toast global
-  aparece sem origem; e o `QuestionCard` retorna antes de olhar `compact`, então o toast do
-  canto renderiza o formulário inteiro em vez do resumo de uma linha. O `companion.ts`
-  resolve o alvo uma vez com a régua approval-only e reusa no ramo `question`.
+- **As três superfícies que ficaram para trás (fechadas na revisão do juiz):** o
+  `InteractionHost` usava a régua approval-only para o cabeçalho e o "Abrir" do card, então
+  pergunta no toast global aparecia sem origem; o `QuestionCard` retornava antes de olhar
+  `compact`, e o toast do canto renderizava o formulário INTEIRO de um turno que você não
+  está olhando (agora é `QuestionTeaser`: resumo + "Responder" que leva à conversa, porque
+  decidir sem o fio à vista é decidir no escuro); e o `companion.ts` resolvia o alvo UMA vez
+  com a régua restrita e reusava no ramo `question`, mandando pergunta pro celular sem
+  conversa, sem projeto e sem agent. `ownerByRunId` deixou de ser privado para isso.
+- **Mesma fixture irreal, terceiro lugar:** a `question` do `companion.test.ts` também não
+  carregava `run_id` — a suíte "provava" que pergunta chega sem conversa, provando só que o
+  fixture era falso.
 
 ### ADR-017 — Silêncio é aceitável para cosmético, nunca para quem está esperando ✅
 - **Contexto:** a notificação nativa ficou morta por meses atrás de um `catch {}` vazio, e
@@ -209,3 +215,27 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   `SddView.tsx:882` (o comentário afirma que o erro chega pelo stream; falso para falha de spawn).
 - **Consequência:** a régua entra na revisão. Nenhuma correção foi aplicada em lote —
   classificar "silêncio é correto aqui" é julgamento de produto, um por um.
+
+### ADR-018 — O número da bandeja conta CONVERSAS, não pedidos ✅
+- **Contexto:** a contagem de "decisões" da tray somava o tamanho da fila de interações. Um
+  turno pode pedir 20 `Bash` idênticos, e um clique em "Aprovar todas" zera os 20 — a
+  bandeja anunciava "20 decisões" para uma decisão só.
+- **Decisão:** contar **conversas distintas** com pedido pendente
+  (`awaitingDecisionCount`). Pedido órfão (sem dono resolvível) conta como um: o card
+  continua na tela esperando, zerar esconderia um turno parado.
+- **Consequência:** o número volta a dizer quanto trabalho te espera. É a mesma colapsagem
+  que o aviso já fazia por episódio (`announceArrival` dedupa por conversa) e o card por
+  assinatura — agora os três concordam.
+
+### ADR-019 — Lições não dependem da tela em que você está ✅
+- **Contexto:** o `handleSend` injetava as lições do projeto no prompt só quando
+  `viewMode === "linear"`, e esse valor vinha do closure da render. Enfileirar na conversa A,
+  ir para o Escritório e deixar o turno terminar drenava a fila no alvo certo (a frente do
+  `sendTarget` consertou o alvo) mas **sem as lições**, só porque a tela tinha mudado.
+- **Decisão:** remover a condição. O `handleSend` **é** o turno linear — Fusion e Mission
+  têm dispatchers próprios e nunca passam por ele —, então o `viewMode` era um proxy, e um
+  proxy errado. O `sendFromDesk` do office já injetava sem condição; agora os dois caminhos
+  concordam.
+- **Consequência:** um turno em background aprende igual a um turno na tela.
+- **Padrão que isto reforça:** valor de TELA não decide comportamento de TURNO. Foi a mesma
+  causa raiz do ADR-012 (a fila lia o foco) — ali sobrou o `viewMode`, aqui foi fechado.

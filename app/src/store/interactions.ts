@@ -188,13 +188,16 @@ export function runIdOf(req: InteractionRequest): string | null {
  *  - missão: run_id tem prefixo `missionId::` e casa com byConv; a fase vem do
  *    sufixo `phase-N` (fallback: fase corrente).
  *
- *  Restrito a `approval` de propósito, mas o MOTIVO não é mais "pergunta não tem
- *  dono" (tem: o backend anexa run_id em todo pedido — ver `ownerByRunId`). É que
- *  quem consome ESTE helper fala só de permissão: a mesa do office levanta a mão
- *  com o rótulo "Aguardando aprovação" (bridge/derive) e o companion monta o item
- *  de aprovação com comando/tool. Quem roteia por DONO, independente do kind
- *  (split contextual, índice de espera da sidebar, notificação), usa
- *  `ownerByRunId` — pergunta pendente para o turno igual e precisa dos dois. */
+ *  Restrito a `approval` de propósito, mas o MOTIVO não é "pergunta não tem dono"
+ *  (tem: o backend anexa run_id em todo pedido — ver `ownerByRunId`). É que o
+ *  ÚNICO consumidor que sobrou fala só de permissão: a mesa do office levanta a
+ *  mão com o rótulo "Aguardando aprovação" (bridge/derive), e levantá-la por uma
+ *  pergunta seria mentir sobre o que o agente pediu.
+ *
+ *  ⚠️ Se você precisa do dono para QUALQUER kind, use `ownerByRunId`. Foi essa
+ *  confusão que deixou o companion mostrando pergunta pendente sem conversa, sem
+ *  projeto e sem agent: ele resolvia o alvo UMA vez com esta régua e reusava no
+ *  ramo `question`, onde ela devolve null. */
 export function convIdForInteraction(
   req: InteractionRequest,
   chat: { byId: Record<string, { runId: string | null }> },
@@ -218,7 +221,7 @@ export function convIdForInteraction(
  *  (sino/nativa), split contextual (card inline na conversa dona) e índice de
  *  espera da sidebar. O `convIdForInteraction` fica com o recorte approval-only
  *  das superfícies que só sabem falar de permissão. */
-function ownerByRunId(
+export function ownerByRunId(
   req: InteractionRequest,
   chat: { byId: Record<string, { runId: string | null }> },
   missions: {
@@ -450,6 +453,31 @@ const EMPTY_AWAITING: AwaitingIndex = {
 
 /** Chave estável do índice (mesmo idioma dos seletores da Sidebar: string
  *  ordenada ⇒ streaming não re-renderiza a árvore inteira). */
+/** Quantas DECISÕES esperam por você — CONVERSAS distintas, não pedidos.
+ *
+ *  É o número da bandeja. Um turno pode pedir 20 `Bash` idênticos e um clique em
+ *  "Aprovar todas" zerar os 20: anunciar "20 decisões" infla justamente o número
+ *  que deveria dizer quanto trabalho te espera. Mesma colapsagem que o aviso já
+ *  faz por episódio (`announceArrival` dedupa por conversa) e o card por
+ *  assinatura. Pedido órfão conta como um (não pode sumir do total). PURA. */
+export function awaitingDecisionCount(
+  queue: InteractionRequest[],
+  chat: { byId: Record<string, { runId: string | null }> },
+  missions: {
+    byConv: Record<
+      string,
+      { id: string; current: number; phases: readonly unknown[] }
+    >
+  },
+): number {
+  const convs = new Set<string>()
+  for (const req of queue) {
+    const target = ownerByRunId(req, chat, missions)
+    convs.add(target?.convId ?? `orfao:${req.id}`)
+  }
+  return convs.size
+}
+
 export function awaitingKey(
   queue: InteractionRequest[],
   chat: {

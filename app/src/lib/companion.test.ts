@@ -224,7 +224,12 @@ describe("buildCompanionSnapshot", () => {
           data: { run_id: "run-1", tool_name: "Bash", command: "rm -rf dist", input: {} },
         },
         {
+          // run_id NA PERGUNTA, como o backend realmente emite (approval.rs
+          // anexa em toda emissão, sem ramificar por kind). A fixture antiga
+          // omitia o campo, e por isso a suíte "provava" que pergunta chega ao
+          // celular sem conversa — provando só que o fixture era irreal.
           id: "q1",
+          run_id: "run-1",
           kind: "question",
           data: {
             questions: [
@@ -254,7 +259,7 @@ describe("buildCompanionSnapshot", () => {
       ],
     })
 
-    // atenção: gate da missão + approval mapeada pelo runId + question sem conv
+    // atenção: gate da missão + approval e question ambas mapeadas pelo run_id
     expect(snap.attention.map((a) => a.kind)).toEqual([
       "gate",
       "approval",
@@ -281,9 +286,15 @@ describe("buildCompanionSnapshot", () => {
       toolName: "Bash",
       phase: null,
     })
+    // pergunta chega COM origem: sem conversa/projeto/agent, o item no celular
+    // não te diz se vale voltar pro computador. O builder resolvia o alvo uma
+    // vez com a régua approval-only e reusava aqui, onde ela devolve null.
     expect(question).toMatchObject({
       id: "q1",
-      convId: null,
+      convId: "c1",
+      projectId: "p1",
+      projectName: "alpha",
+      agent: "claude-code",
       questions: ["Qual lib usar?"],
     })
 

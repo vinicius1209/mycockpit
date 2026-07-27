@@ -34,6 +34,7 @@ import { useNotifs } from "@/store/notifications"
 // request/resolved) no BOOT — approvals disparados antes da 1ª visita ao
 // office já entram na fila única (store) que host e derive compartilham.
 import {
+  awaitingDecisionCount,
   currentOriginAnyKind,
   useInteractions,
 } from "@/store/interactions"
@@ -300,8 +301,17 @@ export default function App() {
   })
   // Pedidos bloqueantes (permissão/pergunta) entram na contagem de "decisões" da
   // tray: é o sinal que alcança você com a janela fechada, sem depender do SO.
-  // Primitivo no seletor ⇒ estável durante o streaming.
-  const pendingInteractions = useInteractions((s) => s.queue.length)
+  //
+  // Conta CONVERSAS, não pedidos: um turno pode pedir 20 `Bash` idênticos, e um
+  // clique em "Aprovar todas" zera os 20 — anunciar "20 decisões" para uma
+  // decisão só é inflar o número que deveria te dizer quanto trabalho te espera.
+  // É a mesma colapsagem que o aviso já faz por episódio (announceArrival dedupa
+  // por conversa) e que o card faz por assinatura.
+  // Primitivo no seletor ⇒ estável durante o streaming. A regra é pura e testada
+  // em store/interactions (awaitingDecisionCount).
+  const pendingInteractions = useInteractions((s) =>
+    awaitingDecisionCount(s.queue, useChat.getState(), useMission.getState()),
+  )
   // Chaves semânticas: mudam quando a etapa exibida na telemetria muda, mas
   // permanecem estáveis durante deltas de texto do streaming.
   const chatTrayKey = useChat((s) =>

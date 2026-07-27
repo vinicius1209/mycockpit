@@ -380,11 +380,19 @@ export function ChatPanel() {
     // ao enviar, pula pro fim (ver a própria mensagem) — só se o fio ALVO é o
     // que está na tela (envio em background não mexe na rolagem de quem olha).
     if (convId === useChat.getState().activeId) setAtBottom(true)
-    // M2 do Linear: injeta as lições relevantes (projeto + globais) no PROMPT
-    // (não na bolha visível). Best-effort: qualquer falha envia sem o bloco. Só
-    // no Linear — Fusion/Mission têm suas próprias fases de contexto.
+    // M2: injeta as lições relevantes (projeto + globais) no PROMPT, não na
+    // bolha visível. Best-effort: qualquer falha envia sem o bloco.
+    //
+    // NÃO condicionar a `viewMode`: este handleSend É o turno linear (Fusion e
+    // Mission têm dispatchers próprios e nunca passam por aqui), então o
+    // viewMode era só um proxy — e um proxy ERRADO, porque é valor de TELA
+    // capturado no closure da render. Enfileirar na conversa A, ir pro
+    // Escritório e deixar o turno terminar drenava a fila no alvo certo (a
+    // frente do sendTarget consertou isso) mas SEM as lições, só porque a tela
+    // tinha mudado. O `sendFromDesk` do office já injetava sem condição — agora
+    // os dois caminhos concordam.
     let promptText = text
-    if (viewMode === "linear") {
+    {
       try {
         const blocks = await buildLearningBlocks(project.id, text, false)
         if (blocks.lessons) {
