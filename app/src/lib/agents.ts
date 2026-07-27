@@ -28,7 +28,12 @@ export interface AgentDef {
   hint?: string
   /** Descrição curta (linha secundária no seletor rico). */
   description?: string
-  /** Capacidade de anexo (espelha `supports_attachment` no trait Rust). */
+  /** Capacidade de anexo. ⚠️ FONTE DUPLICADA: o gate REAL é
+   *  `supports_attachment` no trait Rust (adapters.rs) — é ele que decide o que
+   *  o agent recebe. Este espelho existe porque a UI precisa validar o anexo
+   *  ANTES do envio (chip vermelho, bloqueio). Mexeu num, mexa no outro: ligar
+   *  só o Rust faz o front bloquear o que o backend aceitaria (e vice-versa,
+   *  pior: o chip promete e o anexo é descartado no spawn). */
   caps: { image: boolean; pdf: boolean }
   /** Opções de modelo (vazio = agent sem flag de modelo). 1ª = "default". */
   models: AgentModelOption[]
@@ -190,8 +195,14 @@ export const AGENTS: AgentDef[] = [
     kind: "agent",
     available: true,
     description: "CLI do Google (cota Google)",
-    caps: { image: false, pdf: false },
+    // Lê imagem e PDF pela ferramenta interna `view_file` (ponteiro no prompt +
+    // --add-dir, igual ao Claude). Melhor esforço: já alucinou lendo PDF sem
+    // sinalizar — ver AgyAdapter em adapters.rs e o ADR-020.
+    caps: { image: true, pdf: true },
     models: AGY_MODELS,
+    // O agy não tem eixo de esforço separado: ele vem embutido no id do modelo
+    // (`gemini-3.6-flash-low`), por isso a lista é vazia — e por isso o seletor
+    // de esforço NÃO deve ser renderizado pra ele (vinha como pílula vazia).
     efforts: [],
     defaultModel: null,
   },

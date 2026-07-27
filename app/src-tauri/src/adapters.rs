@@ -1346,6 +1346,28 @@ mod tests {
         assert!(a.supports_attachment(&AttachmentKind::Pdf));
     }
 
+    /// Matriz de anexo dos TRÊS adapters, num lugar só. GÊMEO do teste TS
+    /// `agents.caps.test.ts` — a capacidade mora em dois lugares (aqui é o gate
+    /// REAL; lá é o espelho que a UI usa pra validar antes do envio) e ligar só
+    /// um lado estraga: só Rust ⇒ o front bloqueia o que o backend aceitaria;
+    /// só TS ⇒ pior, o chip promete e o anexo some no spawn. Mexeu aqui, mexa lá.
+    #[test]
+    fn matriz_de_anexo_por_agent() {
+        let claude = ClaudeAdapter;
+        assert!(claude.supports_attachment(&AttachmentKind::Image));
+        assert!(claude.supports_attachment(&AttachmentKind::Pdf));
+
+        let codex = CodexAdapter { model: None };
+        assert!(codex.supports_attachment(&AttachmentKind::Image));
+        // PDF no `-i` do codex NÃO dá erro: exit 0, stderr vazio, e o arquivo
+        // vira o literal "image content" no rollout. O bloqueio é nosso.
+        assert!(!codex.supports_attachment(&AttachmentKind::Pdf));
+
+        let agy = AgyAdapter::default();
+        assert!(agy.supports_attachment(&AttachmentKind::Image));
+        assert!(agy.supports_attachment(&AttachmentKind::Pdf));
+    }
+
     /// A regressão que este teste existe para pegar: no agy o prompt é o VALOR
     /// do `-p`. Se o render_attachments rodar DEPOIS do `cmd.arg("-p")`, o
     /// comando sai sintaticamente válido e o anexo some SEM ERRO — o pior

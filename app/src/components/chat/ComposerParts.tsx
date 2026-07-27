@@ -434,15 +434,21 @@ export function IdentityControls({
         />
       )}
 
-      <RichSelect
-        value={effectiveEffort}
-        onValueChange={onEffortChange}
-        disabled={locked}
-        title={lockTitle}
-        options={agentEfforts(effectiveDest)}
-        triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
-        aria-label="Esforço de raciocínio"
-      />
+      {/* Esforço só existe pra quem TEM o eixo. O agy embute o esforço no id do
+          modelo (`gemini-3.6-flash-low`), então `efforts` é vazio — e um
+          RichSelect sem opções renderizava uma pílula VAZIA e inútil no meio da
+          linha. Mesma guarda que o seletor de preset já tinha. */}
+      {agentEfforts(effectiveDest).length > 0 && (
+        <RichSelect
+          value={effectiveEffort}
+          onValueChange={onEffortChange}
+          disabled={locked}
+          title={lockTitle}
+          options={agentEfforts(effectiveDest)}
+          triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
+          aria-label="Esforço de raciocínio"
+        />
+      )}
     </>
   )
 }

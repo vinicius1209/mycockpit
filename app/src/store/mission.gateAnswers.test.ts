@@ -242,12 +242,40 @@ describe("gate rico (GateAnswer[]: texto + anexos)", () => {
     expect(answered).not.toContain("anexo")
   })
 
-  it("agent da próxima fase sem suporte (agy) → anexo descartado com notice, nunca erro", async () => {
+  // O exemplo de "agent sem suporte" era o agy — até se provar que ele LÊ imagem
+  // e PDF (via `view_file`; ver ADR-020). O comportamento testado continua o
+  // mesmo; o que mudou foi qual par agent×tipo ainda é incompatível. Hoje é
+  // PDF no Codex: o `-i` dele só aceita PNG/JPEG/GIF/WebP e, com PDF, FALHA EM
+  // SILÊNCIO (exit 0, e o arquivo vira o literal "image content" no rollout) —
+  // ou seja, descartar aqui não é frescura, é o que impede o usuário de achar
+  // que enviou.
+  it("agent da próxima fase sem suporte (PDF no codex) → anexo descartado com notice, nunca erro", async () => {
     h.results = [ok(), ok()]
     h.handoffs = [gateHandoff(["Qual porta?"])]
     const p = launch(
-      preset([phaseDef(), phaseDef({ id: "p2", agent: "agy" })]),
+      preset([phaseDef(), phaseDef({ id: "p2", agent: "codex" })]),
     )
+
+    await waitFor(() => !!run()?.gate)
+    useMission.getState().answerGate(CONV, [
+      { text: "5175", attachments: [att("manual.pdf", "pdf")] },
+    ])
+    await waitFor(() => run()?.status === "done")
+    await p
+
+    // a missão CONCLUIU (descartar não é erro) e a fase codex rodou sem anexos.
+    expect(run().status).toBe("done")
+    expect(h.calls[1].agent).toBe("codex")
+    expect(h.calls[1].attachments).toBeUndefined()
+    const dropped = notices().find((m) => m.includes("descartado"))
+    expect(dropped).toContain("codex não suporta")
+    expect(dropped).toContain("manual.pdf")
+  })
+
+  it("agy agora RECEBE imagem no gate (era descartada antes do ADR-020)", async () => {
+    h.results = [ok(), ok()]
+    h.handoffs = [gateHandoff(["Qual porta?"])]
+    const p = launch(preset([phaseDef(), phaseDef({ id: "p2", agent: "agy" })]))
 
     await waitFor(() => !!run()?.gate)
     useMission.getState().answerGate(CONV, [
@@ -256,13 +284,9 @@ describe("gate rico (GateAnswer[]: texto + anexos)", () => {
     await waitFor(() => run()?.status === "done")
     await p
 
-    // a missão CONCLUIU (descartar não é erro) e a fase agy rodou sem anexos.
-    expect(run().status).toBe("done")
     expect(h.calls[1].agent).toBe("agy")
-    expect(h.calls[1].attachments).toBeUndefined()
-    const dropped = notices().find((m) => m.includes("descartado"))
-    expect(dropped).toContain("agy não suporta")
-    expect(dropped).toContain("shot.png")
+    expect(h.calls[1].attachments).toEqual([att("shot.png", "image")])
+    expect(notices().find((m) => m.includes("descartado"))).toBeUndefined()
   })
 
   it("caps parciais (codex: image sim, pdf não) → só o PDF cai fora", async () => {
