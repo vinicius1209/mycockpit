@@ -648,10 +648,17 @@ export function SuggestionChips({
   onPick: (text: string) => void
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    // Sugestão é OFERTA, não instrução: pesa menos que o composer inteiro logo
+    // acima. Antes cada pílula tinha borda brass + fundo brass + 13px + ícone
+    // próprio — três delas gritavam e quebravam em duas linhas, comendo altura
+    // útil. Agora: 12px, altura menor, borda neutra, e o brass só no hover (a
+    // cor de marca marca a INTENÇÃO de clicar, não o repouso). O ícone saiu de
+    // cada pílula e ficou só no estado "buscando", onde ele comunica atividade;
+    // repetido 3x era ruído e ainda roubava ~20px de largura por pílula.
+    <div className="flex flex-wrap items-center gap-1.5">
       {suggesting && suggestions.length === 0 ? (
-        <span className="flex items-center gap-1.5 rounded-full border border-border bg-card/40 px-3 py-1.5 text-[13px] text-muted-foreground">
-          <Sparkles className="size-3.5 animate-pulse text-brass" />
+        <span className="flex items-center gap-1.5 rounded-full border border-border bg-card/40 px-2.5 py-1 text-[12px] text-muted-foreground">
+          <Sparkles className="size-3 animate-pulse text-brass" />
           buscando sugestões…
         </span>
       ) : suggestions.length > 0 ? (
@@ -659,9 +666,9 @@ export function SuggestionChips({
           <button
             key={i}
             onClick={() => onPick(s)}
-            className="flex items-center gap-1.5 rounded-full border border-brass/30 bg-brass/5 px-3 py-1.5 text-[13px] text-foreground/80 transition-colors hover:border-brass/60 hover:bg-brass/10 hover:text-foreground"
+            title={s}
+            className="max-w-[280px] truncate rounded-full border border-border/70 bg-card/40 px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:border-brass/50 hover:bg-brass/10 hover:text-foreground"
           >
-            <Sparkles className="size-3 text-brass" />
             {s}
           </button>
         ))
