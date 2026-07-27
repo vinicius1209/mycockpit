@@ -239,3 +239,31 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **Consequência:** um turno em background aprende igual a um turno na tela.
 - **Padrão que isto reforça:** valor de TELA não decide comportamento de TURNO. Foi a mesma
   causa raiz do ADR-012 (a fila lia o foco) — ali sobrou o `viewMode`, aqui foi fechado.
+
+### ADR-020 — "Sem flag" nunca significou "não vê" ✅
+- **Contexto:** o `AgyAdapter` herdava `supports_attachment == false`, e todo anexo virava o
+  aviso "não é suportado pelo agy e foi ignorado". A justificativa registrada era que o
+  `agy` não tem flag de imagem — **verdade**, e com armadilha: o `-i` dele é
+  `--prompt-interactive`, não `--image` (quem assume paridade com o Codex abre sessão
+  interativa e trava sem TTY).
+- **O erro:** a justificativa confundiu "não tem flag" com "não vê imagem". O Claude
+  também não tem flag — recebe o path no prompt e abre com o `Read`. Provado na máquina:
+  de um cwd VAZIO, com o arquivo fora do cwd e alcançável só por `--add-dir`, o agy leu
+  PNG e PDF pela ferramenta interna `view_file` e respondeu certo sobre os dois.
+- **Decisão:** ligar `Image` e `Pdf` no agy, com `render_attachments` espelhando o Claude.
+  Detalhe que quebra em silêncio se invertido: no agy o prompt é o **valor** do `-p`,
+  então a lista de anexos entra ANTES de `cmd.arg("-p")` — no Codex é o oposto (depois do
+  `--`). Teste dedicado trava a ordem.
+- **⚠️ Melhor esforço, não paridade:** numa das 4 rodadas do teste o agy leu errado uma
+  página de PDF ("BANANA" no lugar de "BERIMBAU") **sem sinalizar falha**. Fica na mesma
+  categoria do `--sandbox` e do plan_first emulado. A amostra é pequena demais para virar
+  número — não sabemos se a taxa é 5% ou 25%.
+- **O que a pesquisa também derrubou:** o `codex exec -i` com PDF **não dá erro** — exit 0,
+  stderr vazio, e o rollout mostra o arquivo virando o literal `"image content"`. Nosso
+  bloqueio de PDF no Codex estava certo, mas por sorte; agora está documentado.
+- **O que decidimos NÃO fazer:** migrar o Claude para `--input-format stream-json`, apesar
+  de provado que funciona (imagem base64 e bloco `document`, convivendo com `--resume`).
+  Três motivos: o loop compartilhado força `stdin(Stdio::null())` porque o `codex exec`
+  trava sem isso; perderíamos o resize/recompress que o `Read` faz de graça; e o caminho é
+  não-documentado. Fica como plano B com o gatilho e as pegadinhas mapeados em
+  `agent-runner.md` §7.2.

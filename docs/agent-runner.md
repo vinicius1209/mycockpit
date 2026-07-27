@@ -214,6 +214,33 @@ que não existe. Não há `mcp-server`/`app-server`/ACP na 1.1.7. O gate que val
 ele é o nosso, por turno: **"Planejar primeiro"**. A UI diz isso na cara
 (`lib/permissionNote.ts`) em vez de fingir um contrato uniforme.
 
+### 7.2 Anexos (imagem e PDF) por agent — verificado 2026-07
+
+| | imagem | PDF | mecanismo |
+|---|---|---|---|
+| **claude** | ✅ | ✅ | path absoluto no prompt + `--add-dir`; o modelo abre com `Read`. Read **redimensiona** (3000×2000 → 2000×1333) e recomprime >500KB. PDF ≤10 páginas inteiro; acima disso o modelo usa `pages` sozinho (máx. 20/chamada) |
+| **codex** | ✅ | ❌ | `-i <PATH>` → vira `input_image` base64 `detail:high`. Formatos por **magic bytes** (PNG/JPEG/GIF/WebP) |
+| **agy** | ⚠️ | ⚠️ | igual ao claude (path + `--add-dir`), aberto pela ferramenta `view_file` |
+
+**Armadilhas que custam caro:**
+- `codex exec -i` é **variádico**: sem `--` antes do prompt, o prompt vira mais um
+  path de imagem. O adapter já emite o `--`.
+- **PDF no `codex -i` falha em SILÊNCIO**: exit 0, stderr vazio, e no rollout o
+  arquivo vira o literal `"image content"`. O modelo responde sobre nada. Por isso
+  `supports_attachment` do Codex é só `Image` — o bloqueio é nosso, não dele.
+- `-i` no **agy** é `--prompt-interactive`, não `--image`. Sem TTY, morre em
+  `bubbletea: error opening TTY`.
+- O agy **alucina**: 1 em 4 rodadas leu errado uma página de PDF sem sinalizar.
+  Melhor esforço, não paridade.
+
+**Plano B documentado (não implementado):** `claude -p --input-format stream-json`
+aceita content blocks `image` (base64) e `document` (PDF) e foi **provado** — inclusive
+convivendo com `--resume` e `--include-partial-messages`. Não migramos porque o loop
+compartilhado força `stdin(Stdio::null())` (o `codex exec` trava sem isso), porque
+perderíamos o resize automático do `Read`, e porque o caminho é não-documentado. Se
+um dia aparecer relato de "mandei imagem e o Claude ignorou", o gatilho está pronto:
+`--input-format stream-json` exige `--output-format stream-json`, que exige `--verbose`.
+
 ## 8. Perguntas em aberto (para futuros devs)
 
 1. Semântica exata de *resume* do Codex e do OpenCode (confirmar com a doc/versão).

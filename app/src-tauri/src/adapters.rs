@@ -883,6 +883,16 @@ fn map_codex_item(item: &serde_json::Value) -> Vec<AgentEvent> {
 //   • print mode + stdin null TRAVA esperando aprovação → --dangerously-skip-
 //     permissions é obrigatório p/ não pendurar.
 //   • stdout é texto puro (exit 0, sem stderr no caminho feliz).
+// Achado de 2026-07 (agy 1.1.7) que corrigiu uma premissa errada nossa:
+//   • ele LÊ imagem e PDF, pela ferramenta interna `view_file` (renderiza a
+//     página e faz OCR/visão). O anexo ficava desligado porque não há flag de
+//     imagem — e `-i` é `--prompt-interactive`, não `--image` (armadilha: quem
+//     assume paridade com o `-i` do Codex abre sessão interativa e trava sem
+//     TTY). Mas "sem flag" ≠ "não vê": o mecanismo é o do Claude — path
+//     absoluto no prompt + `--add-dir`. Provado de cwd VAZIO, arquivo fora do
+//     cwd, alcançável só pelo --add-dir.
+//   • ⚠️ alucina: 1 rodada em 4 leu errado uma página de PDF sem sinalizar.
+//     Melhor esforço, igual ao --sandbox e ao plan_first emulado.
 // Roadmap: quando o agy ganhar `--output-format json`, migra p/ StructuredAdapter
 // (tool-view ao vivo + custo). Resume (--continue/--conversation) fica p/ depois:
 // o print mode não expõe o id da conversa no stdout.
@@ -906,7 +916,7 @@ impl AgentAdapter for AgyAdapter {
         // teste de 2026-07 (criou e executou arquivos no scratch com
         // --dangerously-skip-permissions em headless) → NÃO usamos --mode plan.
         // Melhor esforço documentado; o gate real de execução é o nosso, na UI.
-        let prompt = if req.plan_first {
+        let mut prompt = if req.plan_first {
             format!(
                 "MODO PLANEJAMENTO: NÃO crie nem edite arquivos, NÃO execute comandos com efeito. Apenas apresente o plano de implementação passo a passo, com arquivos e riscos.\n\nTarefa: {}",
                 req.prompt
@@ -914,6 +924,11 @@ impl AgentAdapter for AgyAdapter {
         } else {
             req.prompt.clone()
         };
+        // ANEXOS ANTES do `-p`: no agy o prompt é o VALOR da flag, então o texto
+        // dos anexos precisa estar no String antes de ele ser passado. (No Codex
+        // é o oposto — o prompt vai no fim, depois do `--`.) Trocar a ordem aqui
+        // envia o prompt sem a lista e o anexo some sem erro.
+        self.render_attachments(&req.attachments, &mut cmd, &mut prompt);
         cmd.arg("-p")
             .arg(&prompt)
             // amarra o cwd real (senão o print mode edita o scratch, não o repo).
@@ -976,6 +991,42 @@ impl AgentAdapter for AgyAdapter {
             text: format!("{line}\n"),
         });
         out
+    }
+
+    /// O agy LÊ imagem e PDF — provado na máquina (2026-07): rodando de um
+    /// diretório vazio, com os arquivos FORA do cwd e liberados só por
+    /// `--add-dir`, ele abriu PNG e PDF pela ferramenta interna `view_file`
+    /// (renderiza a página e faz OCR/visão) e respondeu certo sobre os dois.
+    ///
+    /// Ficava em `false` (default do trait) porque o `agy` não tem flag de
+    /// imagem — e `-i` é `--prompt-interactive`, não `--image`. Mas "sem flag"
+    /// nunca significou "não vê": é o MESMO mecanismo do Claude (ponteiro no
+    /// prompt + `--add-dir`), e o Gemini é multimodal nativo.
+    ///
+    /// ⚠️ MELHOR ESFORÇO, como o `--sandbox` e o plan_first emulado acima: numa
+    /// das 4 rodadas do teste o agy respondeu "BANANA" para uma página cujo
+    /// código era "BERIMBAU", SEM sinalizar falha. Ele lê, mas alucina às vezes
+    /// e não avisa. Não é paridade com o Read do Claude.
+    fn supports_attachment(&self, kind: &AttachmentKind) -> bool {
+        matches!(kind, AttachmentKind::Image | AttachmentKind::Pdf)
+    }
+
+    /// Igual ao Claude: libera a pasta do anexo e cita o caminho ABSOLUTO no
+    /// prompt. Chamado no TOPO do build_command — aqui o prompt é o valor do
+    /// `-p`, então depois de `cmd.arg("-p")` já seria tarde.
+    fn render_attachments(&self, atts: &[Attachment], cmd: &mut Command, prompt: &mut String) {
+        if atts.is_empty() {
+            return;
+        }
+        // `--add-dir` é repetível (verificado no --help), então este soma aos
+        // extra_dirs sem conflito.
+        if let Some(dir) = std::path::Path::new(&atts[0].path).parent() {
+            cmd.arg("--add-dir").arg(dir);
+        }
+        prompt.push_str("\n\nArquivos anexados (abra-os antes de responder):\n");
+        for a in atts {
+            prompt.push_str(&format!("- `{}` ({})\n", a.path, a.mime));
+        }
     }
 
     /// Frases extraídas do binário do agy 1.1.1 (strings do bundle Go/Codeium):
@@ -1271,6 +1322,78 @@ mod tests {
         let i = args.iter().position(|x| x == "-p").unwrap();
         assert_eq!(args[i + 1], "faça X");
         assert!(!args.contains(&"--sandbox".to_string()));
+    }
+
+    /// RunRequest com um anexo (o path é o que vai pro prompt; nada é lido).
+    fn req_com_anexo(kind: AttachmentKind, path: &str, mime: &str) -> RunRequest {
+        let mut r = req(Permission::Padrao, false);
+        r.attachments = vec![Attachment {
+            path: path.to_string(),
+            name: "anexo".to_string(),
+            kind,
+            mime: mime.to_string(),
+            bytes: 10,
+        }];
+        r
+    }
+
+    /// O agy LÊ imagem e PDF (provado na máquina via `view_file`). Ficava em
+    /// `false` só porque não há flag de imagem — "sem flag" ≠ "não vê".
+    #[test]
+    fn agy_aceita_imagem_e_pdf() {
+        let a = AgyAdapter::default();
+        assert!(a.supports_attachment(&AttachmentKind::Image));
+        assert!(a.supports_attachment(&AttachmentKind::Pdf));
+    }
+
+    /// A regressão que este teste existe para pegar: no agy o prompt é o VALOR
+    /// do `-p`. Se o render_attachments rodar DEPOIS do `cmd.arg("-p")`, o
+    /// comando sai sintaticamente válido e o anexo some SEM ERRO — o pior
+    /// desfecho possível (é exatamente o que o `codex exec -i file.pdf` faz).
+    #[test]
+    fn agy_anexo_entra_no_valor_do_p_e_libera_a_pasta() {
+        let mut a = AgyAdapter::default();
+        let args = argv(
+            &a.build_command(&req_com_anexo(
+                AttachmentKind::Image,
+                "/tmp/anexos/c1/abc.png",
+                "image/png",
+            ))
+            .unwrap(),
+        );
+        let i = args.iter().position(|x| x == "-p").unwrap();
+        let prompt = &args[i + 1];
+        assert!(prompt.starts_with("faça X"), "prompt original preservado");
+        assert!(
+            prompt.contains("/tmp/anexos/c1/abc.png"),
+            "o path tem que estar DENTRO do valor do -p; veio: {prompt}"
+        );
+        // a pasta do anexo é liberada (senão o view_file não alcança o arquivo)
+        assert!(has_pair(&args, "--add-dir", "/tmp/anexos/c1"));
+        // e o --add-dir do cwd continua lá (o agy edita o repo real por causa dele)
+        assert!(args.iter().filter(|x| *x == "--add-dir").count() >= 2);
+    }
+
+    #[test]
+    fn agy_sem_anexo_nao_mexe_no_prompt() {
+        let mut a = AgyAdapter::default();
+        let args = argv(&a.build_command(&req(Permission::Padrao, false)).unwrap());
+        let i = args.iter().position(|x| x == "-p").unwrap();
+        assert_eq!(args[i + 1], "faça X", "sem anexo o prompt é intocado");
+    }
+
+    /// Anexo + plan_first: o preâmbulo de planejamento e a lista de anexos
+    /// convivem no MESMO valor de `-p` (os dois escrevem no prompt).
+    #[test]
+    fn agy_anexo_convive_com_plan_first() {
+        let mut a = AgyAdapter::default();
+        let mut r = req_com_anexo(AttachmentKind::Pdf, "/tmp/anexos/c1/doc.pdf", "application/pdf");
+        r.plan_first = true;
+        let args = argv(&a.build_command(&r).unwrap());
+        let i = args.iter().position(|x| x == "-p").unwrap();
+        let prompt = &args[i + 1];
+        assert!(prompt.starts_with("MODO PLANEJAMENTO"));
+        assert!(prompt.contains("/tmp/anexos/c1/doc.pdf"));
     }
 
     #[test]
