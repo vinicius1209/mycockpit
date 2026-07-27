@@ -48,6 +48,30 @@ o Launchpad mostra as 2 próximas agendadas.
 (diário) são automações hardcoded hoje — quando o F6 existir, migram pra
 `schedules` como automações de fábrica (visíveis, pausáveis).
 
+### Recorrência "Uma vez" (compromisso, não recorrência)
+
+"Hoje às 18:30 faz o merge da PR da release" não é recorrência. Cron não
+expressa isso (`30 18 * * *` roda todo dia e obriga o usuário a lembrar de
+desligar) e a data no prompt é inerte — o agent roda quando o DISPARO acontece.
+Daí o quarto kind: `{ kind: "once", at }` (epoch ms), com `computeNextRun`
+devolvendo `at` enquanto ele é futuro e `null` depois — nunca re-dispara.
+
+- **Encerramento, não exclusão.** Ao disparar (inclusive via "Rodar agora", pra
+  o merge não sair duas vezes), o motor grava `schedules.completed_at`,
+  desabilita e zera o `next_run`. A automação FICA na lista, marcada como
+  concluída e com "Reagendar": apagar não deixaria rastro de que rodou nem da
+  conversa que produziu, e o histórico é o que o usuário valoriza.
+- **Três estados distintos na lista** (`scheduleLifecycle`): `concluída` (rodou
+  e se encerrou), `pausada` (o usuário desligou) e `não vai rodar` (ligada sem
+  próximo disparo: horário perdido com o app fechado, ou cron que nunca casa).
+  Confundi-los faria o usuário achar que algo ainda vai rodar.
+- **Guardas de horário no passado**: no form (o botão Criar não habilita) e no
+  store (create e reschedule lançam) — automação que nasce morta é teatro.
+- **Persistência**: `recurrence` já era JSON livre, então o kind novo não pede
+  nada. `completed_at` entrou por `addColumn` no `ensureScheduleTables` (a
+  tabela nasce do frontend); **nenhuma migration no lib.rs** — v25/v26 seguem
+  reservadas pros presets.
+
 ## F7 — Sidebar: seções globais acima de Projetos
 
 Rail compacto no topo da sidebar (sem virar árvore de menus):

@@ -19,6 +19,7 @@ import { proposePlan } from "@/lib/lead"
 import {
   insertScheduleRun,
   listSchedules,
+  markScheduleCompleted,
   markScheduleRun,
   setScheduleNextRun,
   type ScheduleRecord,
@@ -28,6 +29,7 @@ import {
   parseRecurrence,
   splitDueAndMissed,
 } from "@/lib/schedules"
+import { clearUnattendedRun, markUnattendedRun } from "@/lib/unattendedRuns"
 import { useApp } from "@/store/app"
 import { useChat, type ChatItem } from "@/store/chat"
 import { useNotifs } from "@/store/notifications"
@@ -96,8 +98,15 @@ export async function dispatchSchedule(
     // Avança o next_run JÁ no disparo agendado: um run longo não re-dispara no
     // próximo tick, e o horário seguinte fica correto mesmo se o app fechar
     // no meio da execução.
-    if (!opts.manual) {
-      const rec = parseRecurrence(s.recurrence)
+    const rec = parseRecurrence(s.recurrence)
+    if (rec?.kind === "once") {
+      // "Uma vez" ENCERRA aqui, antes do run — inclusive no "Rodar agora": o
+      // botão normalmente não mexe no calendário, mas um disparo de uma vez que
+      // sobrevivesse ao clique rodaria DE NOVO no horário (o merge da release
+      // sairia duas vezes). Ela some do calendário, não da lista: fica
+      // desabilitada, marcada como concluída e com "Reagendar".
+      await markScheduleCompleted(s.id, Date.now())
+    } else if (!opts.manual) {
       const next = rec ? computeNextRun(rec, new Date()) : null
       await setScheduleNextRun(s.id, next)
     }
@@ -210,6 +219,15 @@ export async function dispatchSchedule(
     // Regra dura do F6: automação NUNCA roda 'liberado'. Clamp além do tipo.
     const permission = s.permission === "padrao" ? "padrao" : "leitura"
 
+    // Run DESASSISTIDO: ninguém está na frente da tela pra aprovar nada (nem no
+    // "Rodar agora" — a conversa nasce em background, sem roubar a seleção).
+    // Sem esta marca, um pedido de permissão ('padrao') ou uma pergunta
+    // (`ask_user`, que sobe até em 'leitura') PENDURA o turno pra sempre: o
+    // backend bloqueia esperando resposta sem timeout (src-tauri/approval.rs).
+    // Marcado, o vigia (lib/watchdog) responde fail-closed passado o limiar. O
+    // clear no `finally` é o cancelamento: run que termina antes do prazo não
+    // deixa nada pendurado.
+    markUnattendedRun(runId, convId)
     useChat.getState().start(convId, s.prompt, runId, s.agent, model, null, [])
     let invokeFailed = false
     try {
@@ -229,6 +247,9 @@ export async function dispatchSchedule(
     } catch {
       invokeFailed = true
     } finally {
+      // antes do finish/persist: o turno acabou, nada mais pode expirar por
+      // este run (e o notice que o vigia tenha injetado entra no persist final).
+      clearUnattendedRun(runId)
       useChat.getState().finish(convId)
       void useChat.getState().persist(convId)
     }

@@ -61,6 +61,7 @@ function schedule(over: Partial<ScheduleRecord> = {}): ScheduleRecord {
     nextRun: null,
     lastRunAt: null,
     lastRunStatus: null,
+    completedAt: null,
     createdAt: 0,
     ...over,
   }

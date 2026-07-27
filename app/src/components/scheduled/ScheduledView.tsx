@@ -7,6 +7,8 @@
 import { useEffect, useMemo, useState } from "react"
 import {
   Brush,
+  CalendarClock,
+  Check,
   ChevronDown,
   Clock,
   FlaskConical,
@@ -51,12 +53,16 @@ import type {
 } from "@/lib/db"
 import { fmtCost } from "@/lib/format"
 import {
+  computeNextRun,
   fmtRunShort,
   fmtUntilShort,
   nextRuns,
   parseCronExpr,
+  parseLocalDateTime,
   parseRecurrence,
   recurrenceToText,
+  scheduleLifecycle,
+  toLocalDateTimeValue,
   type Recurrence,
 } from "@/lib/schedules"
 import { isScheduleRunning } from "@/lib/scheduleEngine"
@@ -121,9 +127,21 @@ function ScheduleRow({
   const runNow = useSchedules((st) => st.runNow)
   const [open, setOpen] = useState(false)
   const [firing, setFiring] = useState(false)
+  const [reschedOpen, setReschedOpen] = useState(false)
   const running = firing || isScheduleRunning(s.id)
 
   const rec = parseRecurrence(s.recurrence)
+  // estado de vida DERIVADO dos campos reais (lib/schedules): concluída ≠
+  // pausada ≠ sem próxima execução.
+  const life = scheduleLifecycle(s)
+  // só a automação de uma vez pode ser reagendada: o botão troca o instante,
+  // não a recorrência (um cron quebrado vira outro assunto). Vale em QUALQUER
+  // estado dela — restringir a "concluída/sem próxima" criava dois becos sem
+  // saída: (a) marquei 18:30 e quero 19:00, mas ela ainda está ativa e não há
+  // como mexer; (b) pausei uma que já perdeu o horário e ela vira "pausada",
+  // sem botão nenhum — ligar o switch não recria disparo, então a linha ficava
+  // morta na lista.
+  const canReschedule = rec?.kind === "once"
   // custo médio das últimas 5 execuções COM custo reportado.
   const avgCost = useMemo(() => {
     const costs = runs
@@ -140,6 +158,15 @@ function ScheduleRow({
       await runNow(s.id)
     } finally {
       setFiring(false)
+    }
+  }
+
+  async function handleToggle(v: boolean) {
+    await toggle(s.id, v)
+    // ligar de volta uma "uma vez" cujo horário já passou NÃO cria disparo
+    // nenhum: avisa, em vez de deixar o switch verde mentindo.
+    if (v && rec && computeNextRun(rec, new Date()) == null) {
+      toast("Sem próxima execução: o horário já passou. Use Reagendar.")
     }
   }
 
@@ -177,9 +204,32 @@ function ScheduleRow({
                 lead
               </span>
             )}
-            {!s.enabled && (
+            {/* concluída ≠ pausada ≠ sem próxima: confundir os três faria o
+                usuário achar que a automação ainda vai rodar. */}
+            {life === "concluida" && (
+              <span
+                title={
+                  s.completedAt != null
+                    ? `Rodou e se encerrou em ${fmtWhen(s.completedAt)} (automação de uma vez).`
+                    : "Rodou e se encerrou (automação de uma vez)."
+                }
+                className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground"
+              >
+                <Check className="size-2.5" />
+                concluída
+              </span>
+            )}
+            {life === "pausada" && (
               <span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground">
                 pausada
+              </span>
+            )}
+            {life === "sem_proxima" && (
+              <span
+                title="Ligada, mas sem próxima execução (o horário passou com o app fechado, ou a recorrência nunca casa)."
+                className="shrink-0 rounded-full border border-st-queued/40 px-1.5 py-px text-[10px] font-medium text-st-queued"
+              >
+                não vai rodar
               </span>
             )}
             <span className="shrink-0 text-[11.5px] text-muted-foreground">
@@ -209,11 +259,28 @@ function ScheduleRow({
             </div>
           </div>
         )}
+        {/* Reagendar: a automação de uma vez que já rodou (ou perdeu o horário)
+            não some da lista — ganha um novo instante aqui. Fica no lugar do
+            Switch, que seria mentira (ligar não recria disparo nenhum). */}
+        {canReschedule && (
+          <button
+            onClick={() => setReschedOpen(true)}
+            title="Escolher uma nova data e hora"
+            className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11.5px] font-medium text-foreground transition-colors hover:bg-accent/60"
+          >
+            <CalendarClock className="size-3" />
+            Reagendar
+          </button>
+        )}
         {/* Rodar agora aparece no hover — some da linha "em repouso" */}
         <button
           onClick={() => void handleRunNow()}
           disabled={running}
-          title="Rodar agora (não altera o calendário)"
+          title={
+            rec?.kind === "once"
+              ? "Rodar agora (encerra a automação de uma vez)"
+              : "Rodar agora (não altera o calendário)"
+          }
           className={cn(
             "flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11.5px] font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-40",
             !running && "opacity-0 group-hover:opacity-100 focus:opacity-100",
@@ -226,11 +293,18 @@ function ScheduleRow({
           )}
           {running ? "Rodando…" : "Rodar"}
         </button>
-        <Switch
-          checked={s.enabled}
-          onCheckedChange={(v) => void toggle(s.id, v)}
-          aria-label={s.enabled ? "Pausar automação" : "Ativar automação"}
-        />
+        {/* O Switch só aparece quando LIGAR/DESLIGAR ainda significa alguma
+            coisa. Numa "uma vez" já concluída (ou que perdeu o horário) ligar
+            não recria disparo nenhum — seria um controle que mente. Aí só
+            Reagendar faz sentido. Ativa ou pausada, os dois convivem: pausar
+            uma marcada pra 18:30 é ação legítima e diferente de remarcar. */}
+        {(life === "ativa" || life === "pausada") && (
+          <Switch
+            checked={s.enabled}
+            onCheckedChange={(v) => void handleToggle(v)}
+            aria-label={s.enabled ? "Pausar automação" : "Ativar automação"}
+          />
+        )}
         {/* Excluir só aparece no hover — separado do Switch, evita o clique errado
             que a linha antiga convidava (destrutivo colado no benigno). */}
         <button
@@ -294,11 +368,125 @@ function ScheduleRow({
           )}
         </div>
       )}
+      <RescheduleDialog
+        s={s}
+        open={reschedOpen}
+        onOpenChange={setReschedOpen}
+      />
     </div>
   )
 }
 
-type RecurrenceMode = "daily" | "weekly" | "cron"
+/** Campo de data+hora do "Uma vez" (input nativo datetime-local, hora local).
+ *  `min` é só ajuda visual do browser — a guarda de verdade é o parse + a
+ *  comparação com agora, aqui e no store. */
+function DateTimeField({
+  value,
+  onChange,
+  autoFocus,
+}: {
+  value: string
+  onChange: (v: string) => void
+  autoFocus?: boolean
+}) {
+  return (
+    <Input
+      autoFocus={autoFocus}
+      type="datetime-local"
+      value={value}
+      min={toLocalDateTimeValue(Date.now())}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-[210px]"
+    />
+  )
+}
+
+/** Default do campo: a PRÓXIMA hora cheia. Previsível e sempre no futuro (um
+ *  "agora + 5min" nasceria colado no limite da guarda). */
+function nextFullHourValue(): string {
+  const d = new Date()
+  d.setMinutes(0, 0, 0)
+  d.setHours(d.getHours() + 1)
+  return toLocalDateTimeValue(d.getTime())
+}
+
+/** "Reagendar": dá um novo instante à automação de uma vez que já rodou (ou
+ *  que perdeu o horário). Ela volta a ficar ativa, sem perder o histórico. */
+function RescheduleDialog({
+  s,
+  open,
+  onOpenChange,
+}: {
+  s: ScheduleRecord
+  open: boolean
+  onOpenChange: (v: boolean) => void
+}) {
+  const reschedule = useSchedules((st) => st.reschedule)
+  const [at, setAt] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setAt(nextFullHourValue())
+  }, [open])
+
+  const ms = parseLocalDateTime(at)
+  const future = ms != null && ms > Date.now()
+
+  async function handleSave() {
+    if (ms == null || !future) return
+    setSaving(true)
+    try {
+      await reschedule(s.id, ms)
+      toast.success(`"${s.name}" reagendada para ${fmtWhen(ms)}`)
+      onOpenChange(false)
+    } catch (e) {
+      toast.error(
+        e instanceof Error && e.message ? e.message : "Falha ao reagendar",
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[420px]">
+        <DialogHeader>
+          <DialogTitle>Reagendar "{s.name}"</DialogTitle>
+          <DialogDescription>
+            Roda uma vez no novo horário e para de novo. O histórico anterior
+            fica.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-1.5">
+          <DateTimeField autoFocus value={at} onChange={setAt} />
+          {!future && (
+            <p className="text-[11px] text-st-error">
+              {ms == null
+                ? "Escolha uma data e um horário."
+                : "Esse horário já passou, escolha um no futuro."}
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button
+            size="sm"
+            disabled={!future || saving}
+            onClick={() => void handleSave()}
+          >
+            Reagendar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+type RecurrenceMode = "once" | "daily" | "weekly" | "cron"
 
 /** Template do empty state: clicar abre o dialog PRÉ-PREENCHIDO — o usuário
  *  só escolhe o projeto e confirma. Todos nascem com permissão Leitura. */
@@ -308,7 +496,7 @@ interface ScheduleTemplate {
   desc: string
   icon: typeof Clock
   prompt: string
-  mode: Exclude<RecurrenceMode, "cron">
+  mode: "daily" | "weekly"
   time: string
   weekday?: number
 }
@@ -375,6 +563,8 @@ function NewScheduleDialog({
   const [time, setTime] = useState("08:00")
   const [weekday, setWeekday] = useState(1)
   const [cron, setCron] = useState("0 8 * * *")
+  // "Uma vez": data+hora como o input nativo entrega ("2026-07-25T18:30").
+  const [onceAt, setOnceAt] = useState("")
   const [permission, setPermission] = useState<SchedulePermission>("leitura")
   const [saving, setSaving] = useState(false)
 
@@ -392,31 +582,40 @@ function NewScheduleDialog({
     setTime(template?.time ?? "08:00")
     setWeekday(template?.weekday ?? 1)
     setCron("0 8 * * *")
+    setOnceAt(nextFullHourValue())
     setPermission("leitura")
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   const timeParts = /^(\d{2}):(\d{2})$/.exec(time)
   const cronValid = parseCronExpr(cron) != null
+  const onceMs = mode === "once" ? parseLocalDateTime(onceAt) : null
+  // guarda do "Uma vez": data no passado NÃO vira automação (ela nasceria sem
+  // disparo nenhum). recurrence null ⇒ o botão Criar fica desabilitado.
+  const onceFuture = onceMs != null && onceMs > Date.now()
   const recurrence: Recurrence | null =
-    mode === "cron"
-      ? cronValid
-        ? { kind: "cron", expr: cron.trim() }
+    mode === "once"
+      ? onceFuture
+        ? { kind: "once", at: onceMs }
         : null
-      : timeParts
-        ? mode === "daily"
-          ? {
-              kind: "daily",
-              hour: Number(timeParts[1]),
-              minute: Number(timeParts[2]),
-            }
-          : {
-              kind: "weekly",
-              weekday,
-              hour: Number(timeParts[1]),
-              minute: Number(timeParts[2]),
-            }
-        : null
+      : mode === "cron"
+        ? cronValid
+          ? { kind: "cron", expr: cron.trim() }
+          : null
+        : timeParts
+          ? mode === "daily"
+            ? {
+                kind: "daily",
+                hour: Number(timeParts[1]),
+                minute: Number(timeParts[2]),
+              }
+            : {
+                kind: "weekly",
+                weekday,
+                hour: Number(timeParts[1]),
+                minute: Number(timeParts[2]),
+              }
+          : null
 
   // Preview VIVO das próximas execuções (lição das UIs de cron): recalcula a
   // cada tecla — puro (computeNextRun), sem invoke nem estado extra.
@@ -446,8 +645,14 @@ function NewScheduleDialog({
       })
       toast.success(`Automação "${name.trim()}" criada`)
       onOpenChange(false)
-    } catch {
-      toast.error("Falha ao criar a automação")
+    } catch (e) {
+      // motivo real quando existe (ex.: a guarda de horário no passado do
+      // store) — genérico só quando a falha vem muda.
+      toast.error(
+        e instanceof Error && e.message
+          ? e.message
+          : "Falha ao criar a automação",
+      )
     } finally {
       setSaving(false)
     }
@@ -586,17 +791,19 @@ function NewScheduleDialog({
 
           <div className="flex flex-col gap-1.5">
             <label className={fieldLabel}>Recorrência</label>
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               {(
                 [
-                  ["daily", "Diário"],
-                  ["weekly", "Semanal"],
-                  ["cron", "Avançado (cron)"],
+                  ["once", "Uma vez", "roda uma vez na data e hora e para"],
+                  ["daily", "Diário", "todo dia no mesmo horário"],
+                  ["weekly", "Semanal", "toda semana no mesmo dia e horário"],
+                  ["cron", "Avançado (cron)", "expressão de 5 campos"],
                 ] as const
-              ).map(([m, label]) => (
+              ).map(([m, label, hint]) => (
                 <button
                   key={m}
                   type="button"
+                  title={hint}
                   onClick={() => setMode(m)}
                   className={cn(
                     "rounded-md border px-2.5 py-1 text-[12px] transition-colors",
@@ -609,7 +816,13 @@ function NewScheduleDialog({
                 </button>
               ))}
             </div>
-            {mode !== "cron" ? (
+            {/* o campo segue o modo: data+hora no "Uma vez", cron no avançado
+                (o campo de cron SOME quando não é o modo escolhido). */}
+            {mode === "once" ? (
+              <div className="mt-1 flex items-center gap-2">
+                <DateTimeField value={onceAt} onChange={setOnceAt} />
+              </div>
+            ) : mode !== "cron" ? (
               <div className="mt-1 flex items-center gap-2">
                 {mode === "weekly" && (
                   <Select
@@ -654,14 +867,22 @@ function NewScheduleDialog({
                 Expressão inválida — 5 campos: números, *, */n e listas a,b
                 (sem ranges na v1).
               </p>
+            ) : mode === "once" && !onceFuture ? (
+              <p className="text-[11px] text-st-error" data-testid="recurrence-preview">
+                {onceMs == null
+                  ? "Escolha uma data e um horário."
+                  : "Esse horário já passou, escolha um no futuro."}
+              </p>
             ) : recurrence != null ? (
               <p
                 className="text-[11px] text-muted-foreground/80 tabular-nums"
                 data-testid="recurrence-preview"
               >
-                {preview.length > 0
-                  ? `Próximas: ${preview.map(fmtRunShort).join(" · ")}`
-                  : "Essa expressão nunca dispara."}
+                {recurrence.kind === "once"
+                  ? `Roda ${recurrenceToText(recurrence)} e para.`
+                  : preview.length > 0
+                    ? `Próximas: ${preview.map(fmtRunShort).join(" · ")}`
+                    : "Essa expressão nunca dispara."}
               </p>
             ) : null}
           </div>

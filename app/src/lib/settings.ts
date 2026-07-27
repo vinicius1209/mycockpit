@@ -64,6 +64,11 @@ export interface GlobalSettings {
   /** Vigia de turno mudo: minutos de silêncio (turno running sem NENHUM item
    *  novo) até notificar. 0 = desligado. */
   stalledAfterMin: number
+  /** Automação DESASSISTIDA: minutos que um pedido bloqueante (permissão ou
+   *  pergunta) de um run disparado por automação espera antes do app responder
+   *  fail-closed sozinho. Só vale pra run desassistido — conversa que você
+   *  digitou espera você pra sempre. 0 = desligado (volta a congelar). */
+  unattendedAnswerAfterMin: number
   /** Ledger de resoluções de modelo OBSERVADAS (P2 da auditoria de modelos):
    *  a cada evento `session` o app grava o que o CLI resolveu pro pedido —
    *  resposta prática à falta de enumeração headless (aprende de graça a cada
@@ -98,5 +103,6 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   lastCuratorRun: 0,
   companionEnabled: false,
   stalledAfterMin: 10,
+  unattendedAnswerAfterMin: 10,
   observedResolutions: {},
 }

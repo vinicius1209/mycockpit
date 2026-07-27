@@ -149,6 +149,37 @@ natural (o shape das perguntas dele ainda não foi capturado de um run real).
   Responder. Fila se vierem várias. Turno marcado PAUSADO. Reusa o
   ApprovalModal → vira `InteractionHost` genérico.
 
+## Run DESASSISTIDO: prazo de resposta (2026-07)
+
+Bloquear "sem timeout" (approval.rs) é o certo quando VOCÊ está na frente: a
+decisão é sua e o turno espera o tempo que precisar. Só que a automação agendada
+(view Agendado) dispara sozinha às 3h, em 'leitura' ou 'padrao', e nos DOIS o
+turno pode parar pedindo humano — 'padrao' liga o `--permission-prompt-tool` e a
+`ask_user` sobe em todo modo com MCP. Ninguém clica ⇒ o turno não falha e não
+avisa: congela pra sempre, e a automação some sem desfecho.
+
+Conserto no FRONT (o `ApprovalListener` não tem o Channel de eventos do run, de
+lá não dá pra avisar no fio):
+
+- quem DISPARA sabe se tem gente olhando: marca o run em `lib/unattendedRuns`
+  (`markUnattendedRun` antes do `runAgent`, `clearUnattendedRun` no `finally`).
+  Hoje só o `lib/scheduleEngine` marca (automação agendada e "Rodar agora", que
+  também nasce em conversa de background);
+- o vigia ÚNICO (`lib/watchdog`, mesma passada do turno mudo e do card parado)
+  cobra o prazo `settings.unattendedAnswerAfterMin` (default 10 min, 0 = desliga)
+  e responde FAIL-CLOSED pelo caminho normal (`store/interactions.answer`):
+  approval = deny com motivo honesto no `message` ("execução desassistida e
+  ninguém respondeu em N min"), question = `answers: []`;
+- o desfecho fica VISÍVEL: `notice` no fio da conversa (persistido junto com o
+  turno, é o que você lê ao abrir a conversa depois) + item no sino. Nativa nova
+  não sai: ela já saiu na CHEGADA do pedido;
+- turno que VOCÊ digitou nunca expira (run não marcado), e o prazo conta por
+  PEDIDO, não por run: cada decisão pendente tem a janela completa dela.
+
+Sem `setTimeout` por pedido: o ticker do watchdog é o timer, e a memória de
+prazos é podada contra a fila viva a cada passada — run que termina antes não
+deixa timer nem marca.
+
 ## Fora do escopo do v1 (a abstração já suporta depois)
 - `kind: "plan"` (ExitPlanMode) com card de plano — por ora ExitPlanMode
   desabilitado → texto.

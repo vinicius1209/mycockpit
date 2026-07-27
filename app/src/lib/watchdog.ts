@@ -14,13 +14,47 @@
 // updated_at do card), no MESMO ticker + subscribe (um listener a mais no
 // useCards, nunca um segundo setInterval). Card `working` com conversa muda
 // já é coberto por checkStalledTurns — aqui fica de fora (dedupe de aviso).
+//
+// checkUnattendedInteractions é a TERCEIRA passada do MESMO ticker e trata o
+// caso simétrico: não é o agent que está mudo, é VOCÊ — um pedido bloqueante
+// (permissão/pergunta) de um run DESASSISTIDO (automação; ver
+// lib/unattendedRuns) que ninguém responde congelaria o turno pra sempre,
+// porque o backend espera sem timeout. Passado o limiar, o app responde
+// fail-closed, o turno termina e o desfecho fica visível (notice no fio + sino).
+// Aqui NÃO há setTimeout por pedido: o ticker É o timer e a memória é podada
+// contra a fila viva, então run que acaba antes do prazo não deixa nada.
 
 import { toast } from "sonner"
 import { agentLabel, cancelAgent } from "@/lib/agent"
-import { notifyCardStalled, notifyTurnStalled } from "@/lib/notify"
+import { summarizeApproval } from "@/lib/approvalSummary"
+import {
+  failClosedAnswer,
+  type ApprovalData,
+  type InteractionRequest,
+  type QuestionData,
+} from "@/lib/interaction"
+import {
+  notifyCardStalled,
+  notifyTurnStalled,
+  notifyUnattendedTimeout,
+} from "@/lib/notify"
+import {
+  expiredUnattended,
+  unattendedConvOf,
+  unattendedRunIds,
+  type PendingMark,
+} from "@/lib/unattendedRuns"
 import { useApp } from "@/store/app"
 import { openCardConversation, useCards } from "@/store/cards"
 import { useChat, type ChatItem } from "@/store/chat"
+import {
+  currentOriginAnyKind,
+  ownerByRunId,
+  questionHeadline,
+  runIdOf,
+  useInteractions,
+} from "@/store/interactions"
+import { useMission } from "@/store/mission"
 import type { CardState } from "@/lib/db"
 
 /** Coalescing do subscribe do chat (o vigia nunca roda por delta de stream). */
@@ -55,10 +89,18 @@ type CardMark = {
  *  dominante (mover card = bump de updated_at de qualquer jeito). */
 const cardMarks = new Map<string, CardMark>()
 
+/** Memória do prazo de cada pedido bloqueante pendente (id do pedido → marca).
+ *  O carimbo `since` é a 1ª VISTA do vigia, não o instante exato da chegada: o
+ *  subscribe coalescido (5s) e o tick (30s) tornam a diferença irrelevante
+ *  diante de um limiar em MINUTOS, e assim não precisamos carregar timestamp
+ *  na fila do store (que espelha o payload do backend). */
+const pendingMarks = new Map<string, PendingMark>()
+
 /** (testes) zera a memória do vigia. */
 export function _resetWatchdogState(): void {
   marks.clear()
   cardMarks.clear()
+  pendingMarks.clear()
 }
 
 /** Assinatura leve do andamento (padrão itemsSignature do derive): muda quando
@@ -129,6 +171,17 @@ function showStalledToast(
   })
 }
 
+/** A conversa tem pedido pendente (permissão/pergunta) esperando resposta? Se
+ *  tem, o turno não está mudo — está bloqueado, com causa conhecida e card na
+ *  tela. Exportada p/ teste. */
+export function esperandoVoce(convId: string): boolean {
+  const chat = useChat.getState()
+  const missions = useMission.getState()
+  return useInteractions
+    .getState()
+    .queue.some((r) => ownerByRunId(r, chat, missions)?.convId === convId)
+}
+
 /** UMA passada do vigia (determinística dado stores + memória; `now` injetável
  *  p/ teste): marca atividade, detecta silêncio > limiar, fecha episódios. */
 export function checkStalledTurns(now: number = Date.now()): void {
@@ -155,6 +208,12 @@ export function checkStalledTurns(now: number = Date.now()): void {
       continue
     }
     if (c.stalledSince != null) continue // já avisado NESTE episódio
+    // Turno PARADO ESPERANDO VOCÊ não é turno mudo. O silêncio aqui tem causa
+    // conhecida e já avisada na chegada do pedido (notifyApproval/notifyQuestion),
+    // e o card está na tela. Sem esta guarda, uma automação bloqueada em
+    // aprovação disparava TRÊS avisos quase juntos (os dois limiares têm o mesmo
+    // default de 10 min): "turno mudo" + o notice/sino do timeout desassistido.
+    if (esperandoVoce(convId)) continue
     const silentMs = now - prev.at
     if (silentMs < afterMin * 60_000) continue
     const minutes = Math.max(afterMin, Math.round(silentMs / 60_000))
@@ -287,15 +346,121 @@ export function checkStalledCards(now: number = Date.now()): void {
   }
 }
 
-/** Liga o vigia: subscribe do useChat E do useCards (coalescidos ≥5s no MESMO
- *  schedule, trailing edge) + UM tick de 30s (silêncio não gera evento de
- *  store) varrendo turnos E cards. Retorna o stop (desassina os dois). */
+/** Fecha UM pedido que estourou o prazo do run desassistido: responde
+ *  fail-closed (o turno destrava e termina) e deixa o desfecho VISÍVEL. */
+function answerUnattended(
+  req: InteractionRequest,
+  mark: PendingMark,
+  minutes: number,
+): void {
+  const headline =
+    req.kind === "question"
+      ? questionHeadline(req.data as QuestionData | undefined)
+      : summarizeApproval((req.data ?? {}) as ApprovalData).headline
+  // origem ANTES de responder: `answer` tira o pedido da fila e o run termina
+  // logo em seguida — depois disso o dono não é mais resolvível pelos stores.
+  const origin = currentOriginAnyKind(req)
+
+  // 1. FAIL-CLOSED pelo mesmo caminho do dismiss manual (store.answer: remove
+  //    da fila + answerInteraction). O motivo vai HONESTO pro modelo: ninguém
+  //    dispensou nada, ninguém estava lá.
+  useInteractions
+    .getState()
+    .answer(
+      req.id,
+      failClosedAnswer(
+        req.kind,
+        `negado automaticamente: execução desassistida (automação) e ninguém respondeu em ${minutes} min`,
+      ),
+    )
+
+  // 2. rastro NO FIO (kind "notice", linha discreta): é o que sobrevive ao
+  //    turno e explica, quando você abrir a conversa, por que a automação
+  //    terminou sem fazer o que pediu. O convId registrado no disparo é o
+  //    fallback quando o dono já não resolve.
+  const convId = origin?.convId ?? unattendedConvOf(mark.runId)
+  if (convId) {
+    useChat.getState().handleEvent(convId, {
+      type: "notice",
+      message:
+        req.kind === "question"
+          ? `Pergunta devolvida sem resposta: "${headline}" esperou ${minutes} min numa execução desassistida.`
+          : `Permissão negada automaticamente: ${headline} esperou ${minutes} min sem resposta numa execução desassistida.`,
+    })
+  }
+
+  // 3. feed do sino (a conversa da automação nasce em background: sem isto o
+  //    desfecho só existiria numa tela que você não abriu).
+  notifyUnattendedTimeout({
+    projectId:
+      origin?.projectId ??
+      (convId ? (useChat.getState().byId[convId]?.projectId ?? "") : ""),
+    convId: convId ?? undefined,
+    projectName: origin?.projectName ?? "",
+    convTitle: origin?.convTitle ?? "Automação",
+    kind: req.kind,
+    headline,
+    minutes,
+  })
+}
+
+/** UMA passada do vigia de PEDIDO SEM RESPOSTA em run desassistido
+ *  (determinística dado stores + memória; `now` injetável p/ teste). */
+export function checkUnattendedInteractions(now: number = Date.now()): void {
+  const queue = useInteractions.getState().queue
+  // sincroniza a memória com a fila ANTES de decidir: pedido novo ganha o
+  // carimbo de 1ª vista (âncora do prazo) e pedido que saiu da fila (você
+  // respondeu, ou o run morreu e o Drop do backend resolveu) some daqui. É
+  // isto que substitui "cancelar o timer": não existe timer por pedido, existe
+  // memória podada contra a realidade a cada passada.
+  const alive = new Set<string>()
+  const marks: PendingMark[] = []
+  for (const req of queue) {
+    alive.add(req.id)
+    let mark = pendingMarks.get(req.id)
+    if (!mark) {
+      mark = { id: req.id, kind: req.kind, runId: runIdOf(req), since: now }
+      pendingMarks.set(req.id, mark)
+    }
+    marks.push(mark)
+  }
+  for (const id of [...pendingMarks.keys()]) {
+    if (!alive.has(id)) pendingMarks.delete(id)
+  }
+
+  const afterMin = useApp.getState().settings.unattendedAnswerAfterMin
+  const expired = expiredUnattended(marks, unattendedRunIds(), afterMin, now)
+  if (expired.length === 0) return
+  const byId = new Map(queue.map((r) => [r.id, r]))
+  for (const mark of expired) {
+    const req = byId.get(mark.id)
+    if (!req) continue
+    // some da memória ANTES de responder: um pedido só é cobrado UMA vez. Não
+    // há retentativa de propósito — o envio é best-effort e falha dele significa
+    // que o run já morreu (o Drop do backend fail-closed cobre o lado de lá).
+    pendingMarks.delete(mark.id)
+    const minutes = Math.max(afterMin, Math.round((now - mark.since) / 60_000))
+    // ruidoso mas NÃO fatal: sem o catch, um pedido problemático derrubava a
+    // passada inteira e os outros expirados só seriam cobrados no tick seguinte.
+    try {
+      answerUnattended(req, mark, minutes)
+    } catch (e) {
+      console.error("[vigia] falha ao negar pedido desassistido", mark.id, e)
+    }
+  }
+}
+
+/** Liga o vigia: subscribe do useChat, do useCards E do useInteractions
+ *  (coalescidos ≥5s no MESMO schedule, trailing edge) + UM tick de 30s
+ *  (silêncio não gera evento de store) varrendo turnos, cards e pedidos
+ *  pendentes de run desassistido. Retorna o stop (desassina os três). */
 export function startTurnWatchdog(): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
   const check = () => {
     const now = Date.now()
     checkStalledTurns(now)
     checkStalledCards(now)
+    checkUnattendedInteractions(now)
   }
   const schedule = () => {
     if (timer) return // já agendado neste burst → coalesce
@@ -306,11 +471,15 @@ export function startTurnWatchdog(): () => void {
   }
   const unsubChat = useChat.subscribe(schedule)
   const unsubCards = useCards.subscribe(schedule)
+  // pedido novo na fila só é carimbado quando o vigia OLHA: sem este subscribe
+  // o prazo começaria a contar até 30s depois da chegada (o tick lento).
+  const unsubInteractions = useInteractions.subscribe(schedule)
   const ticker = setInterval(check, TICK_MS)
   check() // baseline imediato
   return () => {
     unsubChat()
     unsubCards()
+    unsubInteractions()
     clearInterval(ticker)
     if (timer) clearTimeout(timer)
   }

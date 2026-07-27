@@ -805,6 +805,27 @@ export function SettingsDialog() {
                 </Field>
               </div>
 
+              <SectionTitle>Automação desassistida</SectionTitle>
+              <div className="divide-y divide-border/50">
+                <Field
+                  label="Responder sozinho após (minutos)"
+                  hint="Vale SÓ para runs disparados por automação (view Agendado). Se o agente pedir permissão ou fizer uma pergunta e ninguém responder nesse tempo, o app nega no seu lugar, o turno termina e o motivo fica no fio da conversa e no sino. Conversa que você digitou nunca expira. 0 desliga (o turno espera para sempre, e sem ninguém para responder ele congela)."
+                >
+                  <Input
+                    type="number"
+                    min={0}
+                    max={120}
+                    value={settings.unattendedAnswerAfterMin}
+                    onChange={(e) => {
+                      const n = Math.max(0, Math.min(120, Number(e.target.value) || 0))
+                      setSettings({ unattendedAnswerAfterMin: n })
+                    }}
+                    className="h-8 w-20 text-[13px]"
+                    aria-label="Minutos até responder sozinho numa automação desassistida"
+                  />
+                </Field>
+              </div>
+
               <SectionTitle>Notificações do sistema</SectionTitle>
               <div className="divide-y divide-border/50">
                 <Field
@@ -816,11 +837,31 @@ export function SettingsDialog() {
                     size="sm"
                     className="h-8 text-[12.5px]"
                     onClick={() => {
+                      // Diz QUAL caminho entregou — sem isto o botão só provava
+                      // que o clique aconteceu. E reporta SEMPRE: o aviso normal
+                      // de indisponibilidade só sai 1x por sessão, então um teste
+                      // depois de uma falha anterior falhava calado (foi o que
+                      // aconteceu na 1ª tentativa de diagnóstico).
                       void nativeNotify(
                         "Frota · teste",
                         "Se você está lendo isto, o canal de notificação funciona.",
-                      )
-                      toast("Notificação disparada — confira o canto da tela.")
+                      ).then((via) => {
+                        if (via === "nativo") {
+                          toast.success("Enviada pelo canal nativo — deve aparecer como “Frota”.")
+                        } else if (via === "osascript") {
+                          toast("Enviada pelo osascript — aparece como “Script Editor”.", {
+                            description:
+                              "O macOS não autorizou o app; este é o fallback. Se nada apareceu, nem ele passou.",
+                            duration: 9000,
+                          })
+                        } else if (via === "falhou") {
+                          toast.error("Nenhum canal entregou.", {
+                            description:
+                              "Nem o plugin nativo nem o osascript. O detalhe está no console (⌥⌘I).",
+                            duration: 9000,
+                          })
+                        }
+                      })
                     }}
                   >
                     Disparar notificação de teste

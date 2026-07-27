@@ -7,9 +7,12 @@ import {
   nextRuns,
   nextScheduled,
   parseCronExpr,
+  parseLocalDateTime,
   parseRecurrence,
   recurrenceToText,
+  scheduleLifecycle,
   splitDueAndMissed,
+  toLocalDateTimeValue,
   upcomingScheduled,
   type Recurrence,
 } from "./schedules"
@@ -162,6 +165,33 @@ describe("computeNextRun — cron", () => {
   })
 })
 
+describe("computeNextRun — once (uma vez)", () => {
+  // 25/07/2026 18:30 — o caso real: "hoje às 18:30, merge da PR da release".
+  const quando = at(2026, 7, 25, 18, 30).getTime()
+  const once: Recurrence = { kind: "once", at: quando }
+
+  it("devolve o instante enquanto ele está no futuro", () => {
+    expect(computeNextRun(once, at(2026, 7, 25, 9, 0))).toBe(quando)
+    expect(computeNextRun(once, at(2026, 7, 25, 18, 29))).toBe(quando)
+  })
+  it("no instante EXATO já não dispara (estritamente depois, como os outros)", () => {
+    expect(computeNextRun(once, at(2026, 7, 25, 18, 30))).toBeNull()
+  })
+  it("passou = null pra sempre — nunca re-dispara", () => {
+    expect(computeNextRun(once, at(2026, 7, 25, 18, 31))).toBeNull()
+    expect(computeNextRun(once, at(2027, 1, 1, 0, 0))).toBeNull()
+  })
+  it("nextRuns devolve UM disparo só (o preview do dialog não mente)", () => {
+    expect(nextRuns(once, at(2026, 7, 25, 9, 0), 3)).toEqual([quando])
+    expect(nextRuns(once, at(2026, 7, 26, 9, 0), 3)).toEqual([])
+  })
+  it("uma vez vencida NÃO entra em due nem em missed (fica sem next_run)", () => {
+    const now = at(2026, 7, 25, 20, 0).getTime()
+    const rows = [{ enabled: true, nextRun: null }]
+    expect(splitDueAndMissed(rows, now)).toEqual({ due: [], missed: [] })
+  })
+})
+
 describe("parseRecurrence", () => {
   it("aceita os três kinds válidos", () => {
     expect(parseRecurrence('{"kind":"daily","hour":8,"minute":0}')).toEqual({
@@ -186,6 +216,79 @@ describe("parseRecurrence", () => {
     ).toBeNull()
     expect(parseRecurrence('{"kind":"cron","expr":"1-5 * * * *"}')).toBeNull()
   })
+  it("aceita once com epoch ms inteiro (inclusive no passado, que ainda é legítimo)", () => {
+    // o instante passado continua válido: a automação que já rodou precisa dele
+    // pra lista mostrar o que foi agendado e oferecer o Reagendar.
+    const ts = at(2026, 7, 25, 18, 30).getTime()
+    expect(parseRecurrence(`{"kind":"once","at":${ts}}`)).toEqual({
+      kind: "once",
+      at: ts,
+    })
+    expect(parseRecurrence('{"kind":"once","at":1}')).toEqual({
+      kind: "once",
+      at: 1,
+    })
+  })
+  it("rejeita once sem epoch válido (string, zero, fração, ausente)", () => {
+    expect(parseRecurrence('{"kind":"once","at":"18:30"}')).toBeNull()
+    expect(parseRecurrence('{"kind":"once","at":0}')).toBeNull()
+    expect(parseRecurrence('{"kind":"once","at":-1}')).toBeNull()
+    expect(parseRecurrence('{"kind":"once","at":1.5}')).toBeNull()
+    expect(parseRecurrence('{"kind":"once"}')).toBeNull()
+  })
+})
+
+describe("parseLocalDateTime + toLocalDateTimeValue (input datetime-local)", () => {
+  it("lê o valor cru do input como hora LOCAL", () => {
+    expect(parseLocalDateTime("2026-07-25T18:30")).toBe(
+      at(2026, 7, 25, 18, 30).getTime(),
+    )
+  })
+  it("descarta os segundos (o motor trabalha em minuto)", () => {
+    expect(parseLocalDateTime("2026-07-25T18:30:59")).toBe(
+      at(2026, 7, 25, 18, 30).getTime(),
+    )
+  })
+  it("rejeita formato incompleto, lixo e data impossível (31/04 não vira 01/05)", () => {
+    expect(parseLocalDateTime("")).toBeNull()
+    expect(parseLocalDateTime("2026-07-25")).toBeNull()
+    expect(parseLocalDateTime("25/07/2026 18:30")).toBeNull()
+    expect(parseLocalDateTime("2026-04-31T10:00")).toBeNull()
+    expect(parseLocalDateTime("2026-13-01T10:00")).toBeNull()
+    expect(parseLocalDateTime("2026-07-25T24:00")).toBeNull()
+  })
+  it("faz o caminho de volta (epoch → valor do input) sem perder o minuto", () => {
+    const ts = at(2026, 7, 5, 8, 5).getTime()
+    expect(toLocalDateTimeValue(ts)).toBe("2026-07-05T08:05")
+    expect(parseLocalDateTime(toLocalDateTimeValue(ts))).toBe(ts)
+  })
+})
+
+describe("scheduleLifecycle (concluída ≠ pausada ≠ sem próxima)", () => {
+  it("concluída manda sobre tudo: ela é desabilitada por consequência", () => {
+    expect(
+      scheduleLifecycle({ enabled: false, nextRun: null, completedAt: 123 }),
+    ).toBe("concluida")
+  })
+  it("pausada é o gesto do usuário (nunca rodou e se encerrou)", () => {
+    expect(
+      scheduleLifecycle({ enabled: false, nextRun: null, completedAt: null }),
+    ).toBe("pausada")
+    // pausada com horário futuro guardado segue pausada (religar a traz de volta)
+    expect(
+      scheduleLifecycle({ enabled: false, nextRun: 9_000, completedAt: null }),
+    ).toBe("pausada")
+  })
+  it("ligada e sem próximo disparo = 'não vai rodar' (horário perdido/cron morto)", () => {
+    expect(
+      scheduleLifecycle({ enabled: true, nextRun: null, completedAt: null }),
+    ).toBe("sem_proxima")
+  })
+  it("ligada com próxima execução = ativa", () => {
+    expect(
+      scheduleLifecycle({ enabled: true, nextRun: 9_000, completedAt: null }),
+    ).toBe("ativa")
+  })
 })
 
 describe("recurrenceToText", () => {
@@ -199,6 +302,12 @@ describe("recurrenceToText", () => {
     expect(recurrenceToText({ kind: "cron", expr: "*/5 * * * *" })).toBe(
       "cron */5 * * * *",
     )
+    expect(
+      recurrenceToText({
+        kind: "once",
+        at: at(2026, 7, 25, 18, 30).getTime(),
+      }),
+    ).toBe("uma vez em 25/07 às 18:30")
     expect(recurrenceToText(null)).toBe("recorrência inválida")
   })
 })

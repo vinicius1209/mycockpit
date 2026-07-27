@@ -267,3 +267,44 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   trava sem isso; perderíamos o resize/recompress que o `Read` faz de graça; e o caminho é
   não-documentado. Fica como plano B com o gatilho e as pegadinhas mapeados em
   `agent-runner.md` §7.2.
+
+### ADR-021 — Automação desassistida não congela: o pedido expira, o turno morre honesto ✅
+- **Contexto:** automação (view Agendado) roda sem ninguém na frente. Em modo Padrão o
+  agent pede permissão e o backend **bloqueia sem timeout** (`approval.rs`: *"BLOQUEIA
+  esperando a resposta, turno vivo, sem timeout"*). Resultado: às 18:30 o turno dispara,
+  pede permissão e **fica pendurado** até você voltar. Não falha, não avisa — congela. E o
+  modo Leitura não escapa: o `--permission-prompt-tool` não sobe, mas a tool `ask_user`
+  sobe em todo modo com MCP.
+- **Decisão:** quem DISPARA declara o run como desassistido (`markUnattendedRun`), e o
+  vigia que já existe cobra o prazo (`settings.unattendedAnswerAfterMin`, default 10 min,
+  0 desliga). No estouro, responde fail-closed pelo caminho normal e o motivo é honesto:
+  *"negado automaticamente: execução desassistida e ninguém respondeu em N min"* — o
+  modelo não ouve "dispensado pelo usuário" num momento em que não havia usuário.
+- **Por que no front e não no Rust:** o `ApprovalListener` não tem o Channel de eventos do
+  run, então de lá não sairia aviso visível no fio. O front já tinha fila, resposta e
+  fail-closed prontos.
+- **Sem `setTimeout` por pedido:** a cobrança é a passada do ticker que já existe. Elimina
+  a classe de vazamento por construção — não há timer para cancelar.
+- **Prazo por PEDIDO, não por run:** ancorar no run faria um pedido novo nascer já vencido,
+  negando na cara de quem acabou de chegar para aprovar.
+- **Duas superfícies, não uma:** notice no fio (o rastro que responde "por que a automação
+  terminou sem fazer o que pedi") e item no sino (a conversa nasce em background; sem o
+  feed, o desfecho só existiria numa tela que você não abriu). Nativa não — ela já saiu na
+  chegada do pedido.
+- **Correção do juiz aplicada:** turno parado esperando você **não é turno mudo**. Sem essa
+  guarda, os dois limiares (ambos default 10 min) disparavam TRÊS avisos quase juntos.
+
+### ADR-022 — Recorrência "Uma vez": o agendamento que não se repete ✅
+- **Contexto:** "hoje às 18:30 quero o merge da PR da release" não é recorrência. O modelo
+  só tinha `daily | weekly | cron`, e cron **não expressa "uma vez"** — `30 18 * * *` roda
+  todo dia. Pôr o horário no prompt é inerte: o agent roda quando o disparo acontece, não
+  quando o texto pede. O caso não cabia em lugar nenhum.
+- **Decisão:** `{ kind: "once"; at }`. Depois de rodar, a automação **não some**: fica
+  desabilitada e marcada como concluída, com "Reagendar". Apagar não deixaria rastro de
+  que rodou nem do que produziu.
+- **Consequência colateral desejada:** com "uma vez" existindo, o cron deixa de ser o
+  escape para tudo — era ele que carregava casos que não são recorrentes.
+- **Correções do juiz aplicadas:** "Reagendar" vale em QUALQUER estado da automação de uma
+  vez (restringir a concluída/sem-próxima criava dois becos: mudar 18:30 para 19:00 era
+  impossível, e uma pausada que perdeu o horário ficava sem botão nenhum). E o Switch só
+  aparece quando ligar/desligar ainda significa algo — numa concluída ele mentiria.

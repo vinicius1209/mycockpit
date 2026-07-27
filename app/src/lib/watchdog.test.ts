@@ -11,6 +11,12 @@ vi.mock("sonner", () => ({ toast: vi.fn() }))
 vi.mock("@/lib/notify", () => ({
   notifyTurnStalled: vi.fn(),
   notifyCardStalled: vi.fn(),
+  // o vigia ganhou a 3ª passada (pedido sem resposta em run desassistido) e o
+  // store/interactions entra no grafo: a fábrica precisa cobrir os avisos deles
+  // também, senão o 1º acesso estoura "export não definido no mock".
+  notifyUnattendedTimeout: vi.fn(),
+  notifyApproval: vi.fn(),
+  notifyQuestion: vi.fn(),
   nativeNotify: vi.fn(async () => {}),
 }))
 // cancelAgent invoca o Tauri — mocado p/ não vazar (padrão mission.*.test).

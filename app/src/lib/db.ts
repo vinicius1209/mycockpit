@@ -1705,6 +1705,10 @@ export interface ScheduleRecord {
   nextRun: number | null
   lastRunAt: number | null
   lastRunStatus: string | null
+  /** Quando a automação SE ENCERROU (só a recorrência "uma vez" chega aqui):
+   *  ela fica na lista, desabilitada e marcada como concluída, com "Reagendar".
+   *  null = nunca encerrou. Distingue "concluída" de "pausada pelo usuário". */
+  completedAt: number | null
   createdAt: number
 }
 
@@ -1759,6 +1763,10 @@ async function ensureScheduleTables(db: Database): Promise<void> {
         db,
         `ALTER TABLE schedules ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent'`,
       )
+      // Recorrência "uma vez": marca de encerramento. Mesma via do `kind`
+      // (addColumn idempotente) — a tabela nasce do frontend, então NADA de
+      // migration no lib.rs (v25/v26 seguem reservadas pros presets).
+      await addColumn(db, `ALTER TABLE schedules ADD COLUMN completed_at INTEGER`)
     })()
     schedulesReady = run.catch((e) => {
       schedulesReady = null
@@ -1782,6 +1790,7 @@ interface ScheduleRow {
   next_run: number | null
   last_run_at: number | null
   last_run_status: string | null
+  completed_at: number | null
   created_at: number
 }
 
@@ -1803,12 +1812,13 @@ function toSchedule(r: ScheduleRow): ScheduleRecord {
     nextRun: r.next_run,
     lastRunAt: r.last_run_at,
     lastRunStatus: r.last_run_status,
+    completedAt: r.completed_at,
     createdAt: r.created_at,
   }
 }
 
 const SCHEDULE_COLS =
-  "id, name, project_id, kind, agent, model, prompt, permission, recurrence, enabled, next_run, last_run_at, last_run_status, created_at"
+  "id, name, project_id, kind, agent, model, prompt, permission, recurrence, enabled, next_run, last_run_at, last_run_status, completed_at, created_at"
 
 /** Todas as automações (habilitadas ou não). null = fora do Tauri; [] = falha. */
 export async function listSchedules(): Promise<ScheduleRecord[] | null> {
@@ -1830,7 +1840,7 @@ export async function insertSchedule(s: ScheduleRecord): Promise<void> {
   if (!db) return
   await ensureScheduleTables(db)
   await db.execute(
-    "INSERT INTO schedules (id, name, project_id, kind, agent, model, prompt, permission, recurrence, enabled, next_run, last_run_at, last_run_status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+    "INSERT INTO schedules (id, name, project_id, kind, agent, model, prompt, permission, recurrence, enabled, next_run, last_run_at, last_run_status, completed_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
     [
       s.id,
       s.name,
@@ -1845,6 +1855,7 @@ export async function insertSchedule(s: ScheduleRecord): Promise<void> {
       s.nextRun,
       s.lastRunAt,
       s.lastRunStatus,
+      s.completedAt,
       s.createdAt,
     ],
   )
@@ -1903,6 +1914,45 @@ export async function markScheduleRun(
   } catch {
     // best-effort.
   }
+}
+
+/** ENCERRA a automação de uma vez: desabilita, zera o next_run e carimba a
+ *  marca de concluída. Não apaga nada — o registro fica na lista com o
+ *  histórico do que rodou (apagar não deixaria rastro nem do disparo nem da
+ *  conversa que ele produziu). Best-effort com aviso no console: o motor não
+ *  pode cair aqui, mas uma falha silenciosa deixaria a automação re-disparável. */
+export async function markScheduleCompleted(
+  id: string,
+  completedAt: number,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  try {
+    await ensureScheduleTables(db)
+    await db.execute(
+      "UPDATE schedules SET enabled = 0, next_run = NULL, completed_at = $1 WHERE id = $2",
+      [completedAt, id],
+    )
+  } catch (e) {
+    console.warn("[schedules] markScheduleCompleted falhou", e)
+  }
+}
+
+/** Reagenda uma automação: nova recorrência + next_run, religa e LIMPA a marca
+ *  de concluída. É o botão "Reagendar" da lista — gesto humano explícito, então
+ *  a falha SOBE (a view mostra o erro em vez de fingir que salvou). */
+export async function rescheduleSchedule(
+  id: string,
+  recurrence: string,
+  nextRun: number,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureScheduleTables(db)
+  await db.execute(
+    "UPDATE schedules SET recurrence = $1, next_run = $2, enabled = 1, completed_at = NULL WHERE id = $3",
+    [recurrence, nextRun, id],
+  )
 }
 
 /** Exclui a automação E o histórico dela (hard delete, com confirm na UI). */

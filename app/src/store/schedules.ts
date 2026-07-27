@@ -7,6 +7,7 @@ import {
   insertSchedule,
   listScheduleRuns,
   listSchedules,
+  rescheduleSchedule,
   setScheduleEnabled,
   type ScheduleKind,
   type SchedulePermission,
@@ -44,6 +45,9 @@ interface SchedulesState {
   remove: (id: string) => Promise<void>
   /** "Rodar agora": dispara já, SEM mexer no next_run do calendário. */
   runNow: (id: string) => Promise<void>
+  /** "Reagendar" da automação de uma vez: novo instante (epoch ms), religa e
+   *  limpa a marca de concluída. LANÇA se o instante não for futuro. */
+  reschedule: (id: string, at: number) => Promise<void>
 }
 
 export const useSchedules = create<SchedulesState>((set, get) => ({
@@ -58,6 +62,14 @@ export const useSchedules = create<SchedulesState>((set, get) => ({
   },
 
   create: async (input) => {
+    // fail-closed: "uma vez" no passado NUNCA dispararia. O form já barra, isto
+    // é a rede — melhor recusar do que gravar algo que nasce morto.
+    if (
+      input.recurrence.kind === "once" &&
+      computeNextRun(input.recurrence, new Date()) == null
+    ) {
+      throw new Error("O horário escolhido já passou")
+    }
     const kind: ScheduleKind = input.kind === "lead" ? "lead" : "agent"
     const s: ScheduleRecord = {
       id: crypto.randomUUID(),
@@ -81,6 +93,7 @@ export const useSchedules = create<SchedulesState>((set, get) => ({
       nextRun: computeNextRun(input.recurrence, new Date()),
       lastRunAt: null,
       lastRunStatus: null,
+      completedAt: null,
       createdAt: Date.now(),
     }
     await insertSchedule(s)
@@ -110,6 +123,17 @@ export const useSchedules = create<SchedulesState>((set, get) => ({
     const s = get().schedules.find((x) => x.id === id)
     if (!s) return
     await dispatchSchedule(s, { manual: true })
+    await get().reload()
+  },
+
+  reschedule: async (id, at) => {
+    const rec: Recurrence = { kind: "once", at }
+    // mesma guarda do create: reagendar pro passado devolveria a automação pra
+    // lista já morta. Lança pra view mostrar o motivo (nada de falha muda).
+    if (computeNextRun(rec, new Date()) == null) {
+      throw new Error("O horário escolhido já passou")
+    }
+    await rescheduleSchedule(id, JSON.stringify(rec), at)
     await get().reload()
   },
 }))

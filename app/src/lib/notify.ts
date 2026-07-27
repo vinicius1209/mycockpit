@@ -32,18 +32,26 @@ let nativeBlockedWarned = false
  *  `dev.vinicius.mycockpit` não aparece em `com.apple.ncprefs` nem no db do
  *  usernoted, ou seja NENHUMA nativa foi entregue até hoje. O `catch` vazio
  *  fazia isso parecer "a feature não existe"; agora avisa uma vez e segue. */
-export async function nativeNotify(title: string, body: string) {
-  if (!isTauri()) return
+/** Por onde a notificação saiu — o botão de teste das Configurações mostra isto.
+ *  "nativo" = plugin do SO (nome/ícone do Frota); "osascript" = fallback (chega
+ *  como Script Editor); "falhou" = nenhum dos dois passou. */
+export type NotifyPath = "nativo" | "osascript" | "falhou" | "fora-do-app"
+
+export async function nativeNotify(
+  title: string,
+  body: string,
+): Promise<NotifyPath> {
+  if (!isTauri()) return "fora-do-app"
   try {
     let granted = await isPermissionGranted()
     if (!granted) granted = (await requestPermission()) === "granted"
     if (granted) {
       sendNotification({ title, body })
-      return
+      return "nativo"
     }
-    await fallbackNotify(title, body, "sem autorização do sistema")
+    return await fallbackNotify(title, body, "sem autorização do sistema")
   } catch (e) {
-    await fallbackNotify(
+    return await fallbackNotify(
       title,
       body,
       e instanceof Error ? e.message : String(e),
@@ -59,7 +67,11 @@ export async function nativeNotify(title: string, body: string) {
  *
  *  Só quando os DOIS caminhos falham é que avisamos que não há aviso — senão o
  *  toast apareceria em todo turno concluído. */
-async function fallbackNotify(title: string, body: string, why: string) {
+async function fallbackNotify(
+  title: string,
+  body: string,
+  why: string,
+): Promise<NotifyPath> {
   try {
     await invoke("notify_via_osascript", { title, body })
     if (!nativeBlockedWarned) {
@@ -68,8 +80,10 @@ async function fallbackNotify(title: string, body: string, why: string) {
         `[notify] plugin nativo indisponível (${why}); usando osascript (a notificação aparece como "Script Editor")`,
       )
     }
+    return "osascript"
   } catch (e) {
     warnNativeBlocked(`${why}; osascript também falhou: ${String(e)}`)
+    return "falhou"
   }
 }
 
@@ -225,6 +239,41 @@ export function notifyQuestion(o: {
     "Frota · pergunta pendente",
     `${clipTitle(o.convTitle)} (${o.projectName}): o turno parou esperando sua resposta — ${o.headline}${extra}`,
   )
+}
+
+/** Chamado quando um pedido bloqueante de um run DESASSISTIDO (automação)
+ *  estoura o limiar e o app responde fail-closed no seu lugar (lib/watchdog).
+ *
+ *  DECISÃO (2 superfícies, nenhuma nativa): o rastro que fica pra sempre é o
+ *  `notice` NO FIO da conversa (o watchdog injeta) — é lá que você vai olhar
+ *  quando abrir a conversa da automação amanhã, e ele é persistido junto com o
+ *  turno. O feed do sino entra porque a conversa da automação nasce em
+ *  background: sem ele o desfecho só existiria numa tela que você não abriu.
+ *  Nativa NÃO: ela já saiu na CHEGADA do pedido (notifyApproval/notifyQuestion);
+ *  repetir na expiração seria cutucar de novo justamente quem não estava lá. */
+export function notifyUnattendedTimeout(o: {
+  projectId: string
+  convId?: string
+  projectName: string
+  convTitle: string
+  kind: "approval" | "question"
+  /** Resumo de uma linha do que foi pedido. */
+  headline: string
+  minutes: number
+}) {
+  const acao =
+    o.kind === "approval"
+      ? "Permissão negada automaticamente"
+      : "Pergunta devolvida sem resposta"
+  useNotifs.getState().push({
+    // run_error: pro sino isto É um desfecho ruim da automação (o turno seguiu
+    // sem o que pediu), no mesmo idioma do "Automação falhou" do scheduleEngine.
+    kind: "run_error",
+    title: o.convTitle,
+    subtitle: `${acao} · ninguém respondeu em ${o.minutes} min · ${o.headline}${o.projectName ? ` · ${o.projectName}` : ""}`,
+    projectId: o.projectId,
+    convId: o.convId,
+  })
 }
 
 /** Chamado UMA vez por episódio quando um turno RUNNING fica MUDO (sem nenhum

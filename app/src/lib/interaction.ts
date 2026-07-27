@@ -132,11 +132,17 @@ export async function onInteractionResolved(
 }
 
 /** Resposta fail-closed por kind (o que o dismiss manual envia): nega a
- *  aprovação / devolve pergunta sem respostas. */
-export function failClosedAnswer(kind: InteractionRequest["kind"]): InteractionAnswer {
-  return kind === "question"
-    ? { answers: [] }
-    : { allow: false, message: "dispensado pelo usuário" }
+ *  aprovação / devolve pergunta sem respostas.
+ *
+ *  `reason` é o motivo que o MODELO lê no deny. O default descreve o dismiss
+ *  manual; quem fecha o pedido por outro motivo passa o seu — o timeout de run
+ *  desassistido (lib/watchdog) precisa disso, senão o modelo ouviria
+ *  "dispensado pelo usuário" justo no caso em que não havia usuário nenhum. */
+export function failClosedAnswer(
+  kind: InteractionRequest["kind"],
+  reason = "dispensado pelo usuário",
+): InteractionAnswer {
+  return kind === "question" ? { answers: [] } : { allow: false, message: reason }
 }
 
 /** Entrega a resposta do usuário ao backend, que destrava o turno.
