@@ -31,6 +31,7 @@ import { RichSelect } from "@/components/ui/RichSelect"
 import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { nativeNotify } from "@/lib/notify"
 import { useApp } from "@/store/app"
 import {
   DESTINATIONS,
@@ -801,6 +802,29 @@ export function SettingsDialog() {
                     className="h-8 w-20 text-[13px]"
                     aria-label="Minutos de silêncio até avisar turno mudo"
                   />
+                </Field>
+              </div>
+
+              <SectionTitle>Notificações do sistema</SectionTitle>
+              <div className="divide-y divide-border/50">
+                <Field
+                  label="Testar agora"
+                  hint="A nativa só dispara quando você NÃO está olhando a conversa que terminou — em cima dela, o sinal é o próprio conteúdo. Este botão ignora essa regra e testa o canal direto. Se não chegar nada, o macOS não autorizou o app (build ad-hoc): o Frota cai no osascript, que aparece como “Script Editor”."
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-[12.5px]"
+                    onClick={() => {
+                      void nativeNotify(
+                        "Frota · teste",
+                        "Se você está lendo isto, o canal de notificação funciona.",
+                      )
+                      toast("Notificação disparada — confira o canto da tela.")
+                    }}
+                  >
+                    Disparar notificação de teste
+                  </Button>
                 </Field>
               </div>
             </div>

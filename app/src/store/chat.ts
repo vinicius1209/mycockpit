@@ -157,6 +157,11 @@ export interface ConvState {
     /** timer do setTimeout (p/ cancelar). */
     timer: ReturnType<typeof setTimeout>
   }
+  /** Turno TERMINOU e você não viu (o fio não estava na sua frente). Vira o
+   *  selo de concluído/falhou na linha da conversa no sidebar — o spinner some
+   *  quando acaba e, sem isto, o fim do turno não deixava sinal NENHUM na
+   *  navegação. Limpo ao abrir a conversa. Efêmero (não persiste). */
+  finishedUnseen?: "ok" | "error"
   /** Turno MUDO (watchdog P2): epoch ms da ÚLTIMA atividade quando o episódio
    *  foi notificado. Presente = já avisado neste episódio (1 aviso por
    *  episódio); atividade nova/fim do turno limpa. Efêmero (não persiste). */
@@ -283,6 +288,8 @@ interface ChatState {
   queuePrompt: (t: string | null) => void
   /** Fila da conversa: enfileira uma mensagem digitada durante o turno
    *  (com os anexos pendentes do composer, que viajam junto). */
+  /** Limpa o selo de "terminou e você não viu" (ao abrir a conversa). */
+  markSeen: (convId: string) => void
   enqueue: (convId: string, text: string, attachments?: Attachment[]) => void
   /** Esvazia a fila e devolve as mensagens pendentes (p/ coalescer no envio). */
   dequeueQueued: (convId: string) => QueuedMsg[]
@@ -893,6 +900,8 @@ export const useChat = create<ChatState>((set, get) => {
       // invalida qualquer openProject em voo: o clique do usuário é a escolha
       // mais recente e não pode ser sobrescrito quando o dbList atrasado chegar.
       openGen++
+      // abriu a conversa ⇒ o selo de "terminou e você não viu" cumpriu o papel
+      get().markSeen(id)
       set((st) => ({
         activeId: id,
         projectId: owner,
@@ -1427,13 +1436,35 @@ export const useChat = create<ChatState>((set, get) => {
       })
     },
 
-    finish: (convId) =>
+    finish: (convId) => {
+      // Marca "terminou e você não viu" quando o fio NÃO estava na sua frente
+      // (outra conversa, outro modo, ou janela sem foco). Se você estava
+      // olhando, o próprio conteúdo é o feedback — selo ali seria ruído.
+      const c = get().byId[convId]
+      const last = c?.items[c.items.length - 1]
+      const olhando =
+        get().activeId === convId &&
+        typeof document !== "undefined" &&
+        document.hasFocus()
+      const unseen: ConvState["finishedUnseen"] = olhando
+        ? undefined
+        : last?.kind === "error" || last?.kind === "limit"
+          ? "error"
+          : "ok"
       patch(convId, {
         running: false,
         finalizing: false,
         streamingTextId: null,
         runId: null,
-      }),
+        finishedUnseen: unseen,
+      })
+    },
+
+    /** Você abriu a conversa ⇒ o selo de concluído cumpriu o papel e some. */
+    markSeen: (convId) => {
+      if (!get().byId[convId]?.finishedUnseen) return
+      patch(convId, { finishedUnseen: undefined })
+    },
 
     setDraft: (convId, text) =>
       set((s) => ({ drafts: { ...s.drafts, [convId]: text } })),

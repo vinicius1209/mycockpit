@@ -9,6 +9,8 @@ import {
   X,
   ChevronRight,
   Clock,
+  CircleAlert,
+  CircleCheck,
   Loader2,
   Trash2,
   Pencil,
@@ -333,6 +335,26 @@ function useRunningConvIds(): Set<string> {
   return new Set(key ? key.split(",") : [])
 }
 
+/** Conversas que TERMINARAM sem você ver → selo de concluído/falhou na linha.
+ *  O spinner some quando o turno acaba e, sem isto, o fim não deixava sinal
+ *  NENHUM na navegação: você só descobria abrindo. Chave estável (só muda na
+ *  transição), pelo mesmo motivo do useRunningConvIds. */
+function useFinishedUnseen(): Map<string, "ok" | "error"> {
+  const key = useChat((s) =>
+    Object.entries(s.byId)
+      .filter(([, c]) => c.finishedUnseen)
+      .map(([id, c]) => `${id}:${c.finishedUnseen}`)
+      .sort()
+      .join(","),
+  )
+  const m = new Map<string, "ok" | "error">()
+  for (const par of key ? key.split(",") : []) {
+    const [id, st] = par.split(":")
+    m.set(id, st === "error" ? "error" : "ok")
+  }
+  return m
+}
+
 /** Ids das conversas com disputa de Fusion esperando DECISÃO (string estável). */
 function useDecidingConvIds(): Set<string> {
   const key = useFusion((s) =>
@@ -392,6 +414,7 @@ function ConversationList({ projectId }: { projectId: string }) {
   // renderiza dimmed (memória preservada, ênfase removida). String estável.
   const viewMode = useApp((s) => s.viewMode)
   const running = useRunningConvIds()
+  const finished = useFinishedUnseen()
   const deciding = useDecidingConvIds()
   const fusionAlive = useFusionConvIds()
   const missionRunning = useMissionRunningConvIds()
@@ -471,6 +494,7 @@ function ConversationList({ projectId }: { projectId: string }) {
         const isFull = isActive && viewMode === "linear"
         const isDimmed = isActive && viewMode !== "linear"
         const isRunning = running.has(c.id)
+        const doneUnseen = finished.get(c.id)
         const isDeciding = deciding.has(c.id)
         const hasFusion = fusionAlive.has(c.id)
         const hasMission = missionRunning.has(c.id)
@@ -499,6 +523,30 @@ function ConversationList({ projectId }: { projectId: string }) {
                   className="size-3 shrink-0 animate-spin text-st-running"
                   aria-label="rodando"
                 />
+              )}
+              {/* Terminou e você não viu: o spinner sai e ENTRA o selo, então a
+                  linha nunca fica muda depois de trabalhar. Some ao abrir. */}
+              {!isRunning && doneUnseen && (
+                <span
+                  className="grid size-3 shrink-0 place-items-center"
+                  title={
+                    doneUnseen === "error"
+                      ? "O turno terminou com erro — abra para ver"
+                      : "Turno concluído — abra para ver"
+                  }
+                >
+                  {doneUnseen === "error" ? (
+                    <CircleAlert
+                      className="size-3 text-st-error"
+                      aria-label="turno falhou"
+                    />
+                  ) : (
+                    <CircleCheck
+                      className="size-3 text-st-success"
+                      aria-label="turno concluído"
+                    />
+                  )}
+                </span>
               )}
               {hasMission && (
                 <span
