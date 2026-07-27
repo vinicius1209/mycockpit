@@ -559,28 +559,24 @@ function SendSplit({
       </Button>
     )
   }
+  // O chevron é GHOST ao lado do enviar, não fundido nele: fundir dobrava a área
+  // preta (o `default` do Button é bg-primary) e o bloco pesava mais que tudo em
+  // volta — fora do padrão da barra, onde todo secundário é ghost. Assim o
+  // primário fica EXATAMENTE o que sempre foi e a variante é um affordance
+  // discreto, do mesmo peso do microfone e do clipe.
   return (
-    <div className="flex items-stretch overflow-hidden rounded-full bg-primary">
-      <button
-        type="button"
-        onClick={onSubmit}
-        disabled={!canSend}
-        aria-label="Enviar"
-        title="Enviar (⏎)"
-        className="grid size-8 place-items-center text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
-      >
-        <ArrowUp className="size-4" />
-      </button>
+    <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             aria-label="Outras formas de enviar"
-            title="Outras formas de enviar"
-            className="grid w-5 place-items-center border-l border-primary-foreground/25 text-primary-foreground transition-opacity hover:opacity-90"
+            title="Outras formas de enviar (disputa, missão)"
+            className="rounded-full text-muted-foreground hover:text-foreground"
           >
-            <ChevronDown className="size-3" />
-          </button>
+            <ChevronDown className="size-4" />
+          </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" side="top" className="w-60">
           <DropdownMenuItem onClick={onSubmit} disabled={!canSend}>
@@ -620,7 +616,18 @@ function SendSplit({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
+      {/* O primário: idêntico ao que sempre foi (mesma Button/size/raio). */}
+      <Button
+        size="icon-sm"
+        onClick={onSubmit}
+        disabled={!canSend}
+        className="rounded-full"
+        aria-label="Enviar"
+        title="Enviar (⏎)"
+      >
+        <ArrowUp className="size-4" />
+      </Button>
+    </>
   )
 }
 
