@@ -406,6 +406,7 @@ export function CommandConsole({
         }
         rows={1}
         textareaClassName="max-h-[240px] min-h-[56px] resize-none border-0 bg-transparent! px-4 pt-3.5 text-[15px] leading-relaxed text-foreground shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+        mentionNames={presets.map((p) => p.name)}
         footerClassName="p-2.5 pt-1"
         chips={
           <AttachmentChips

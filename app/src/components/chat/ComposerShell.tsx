@@ -1,5 +1,6 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Textarea } from "@/components/ui/textarea"
+import { splitMentions } from "@/components/chat/mentions"
 import { cn } from "@/lib/utils"
 
 /**
@@ -12,6 +13,12 @@ import { cn } from "@/lib/utils"
  * `focusRing` liga o comportamento do console Linear: cursor-text no cartão,
  * clique no cartão → foca o textarea, e o anel brass quando focado. O launch-pad
  * da Arena passa `focusRing={false}` e seu próprio `cardClassName` ("p-3").
+ *
+ * `mentionNames` (opt-in): destaca `@nome` AO VIVO enquanto digita. Textarea não
+ * estiliza pedaço de texto, então usamos a técnica do OVERLAY — um espelho atrás
+ * do textarea com o MESMO box (`textareaClassName`), mostrando o texto com os
+ * `@nomes-conhecidos` em chip brass; o textarea fica com texto transparente e só
+ * o cursor visível. Só o composer da conversa liga isso.
  */
 export function ComposerShell({
   textareaRef,
@@ -30,6 +37,7 @@ export function ComposerShell({
   chips,
   header,
   footer,
+  mentionNames,
 }: {
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>
   value: string
@@ -53,8 +61,47 @@ export function ComposerShell({
    *  anexo. */
   header?: React.ReactNode
   footer: React.ReactNode
+  /** Nomes de personas conhecidas — quando passado, `@nome` é destacado ao vivo. */
+  mentionNames?: string[]
 }) {
   const [focused, setFocused] = useState(false)
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const highlight = !!mentionNames && mentionNames.length > 0
+
+  const textarea = (
+    <Textarea
+      ref={textareaRef}
+      // alvo estável p/ foco programático (tray://new-task): só o console
+      // Linear (focusRing) ganha a marca — o launch-pad da Arena não.
+      data-composer={focusRing ? "console" : undefined}
+      value={value}
+      onChange={onChange}
+      onKeyDown={onKeyDown}
+      onPaste={onPaste}
+      onSelect={onSelect}
+      onScroll={
+        highlight
+          ? (e) => {
+              if (overlayRef.current)
+                overlayRef.current.scrollTop = e.currentTarget.scrollTop
+            }
+          : undefined
+      }
+      onFocus={focusRing ? () => setFocused(true) : undefined}
+      onBlur={focusRing ? () => setFocused(false) : undefined}
+      placeholder={placeholder}
+      rows={rows}
+      disabled={disabled}
+      className={cn(
+        textareaClassName,
+        // texto invisível (o overlay mostra o texto estilizado), cursor visível;
+        // texto SELECIONADO volta a aparecer pra a seleção não ficar fantasma.
+        highlight &&
+          "relative z-10 text-transparent caret-[var(--foreground)] selection:text-foreground",
+      )}
+    />
+  )
+
   return (
     <div
       onClick={focusRing ? () => textareaRef?.current?.focus() : undefined}
@@ -73,23 +120,40 @@ export function ComposerShell({
     >
       {header}
       {chips}
-      <Textarea
-        ref={textareaRef}
-        // alvo estável p/ foco programático (tray://new-task): só o console
-        // Linear (focusRing) ganha a marca — o launch-pad da Arena não.
-        data-composer={focusRing ? "console" : undefined}
-        value={value}
-        onChange={onChange}
-        onKeyDown={onKeyDown}
-        onPaste={onPaste}
-        onSelect={onSelect}
-        onFocus={focusRing ? () => setFocused(true) : undefined}
-        onBlur={focusRing ? () => setFocused(false) : undefined}
-        placeholder={placeholder}
-        rows={rows}
-        disabled={disabled}
-        className={textareaClassName}
-      />
+      {highlight ? (
+        <div className="relative">
+          {/* espelho: MESMO box do textarea (textareaClassName) → alinha pixel a
+              pixel. Mostra o texto; `@nome-conhecido` vira chip brass. */}
+          <div
+            ref={overlayRef}
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute inset-0 overflow-hidden break-words whitespace-pre-wrap",
+              textareaClassName,
+            )}
+          >
+            {splitMentions(value, mentionNames!).map((seg, i) =>
+              seg.type === "mention" ? (
+                <span
+                  key={i}
+                  className="rounded bg-brass/[0.14] font-medium text-brass"
+                >
+                  {seg.text}
+                </span>
+              ) : (
+                <span key={i} className="text-foreground">
+                  {seg.text}
+                </span>
+              ),
+            )}
+            {/* garante a altura da última linha quando o texto termina em \n */}
+            {"\n"}
+          </div>
+          {textarea}
+        </div>
+      ) : (
+        textarea
+      )}
       <div className={cn("flex items-center gap-2", footerClassName)}>{footer}</div>
     </div>
   )
