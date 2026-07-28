@@ -22,14 +22,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { AppDialog } from "@/components/ui/app-dialog"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
@@ -450,26 +443,20 @@ function RescheduleDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[420px]">
-        <DialogHeader>
-          <DialogTitle>Reagendar "{s.name}"</DialogTitle>
-          <DialogDescription>
-            Roda uma vez no novo horário e para de novo. O histórico anterior
-            fica.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-1.5">
-          <DateTimeField autoFocus value={at} onChange={setAt} />
-          {!future && (
-            <p className="text-[11px] text-st-error">
-              {ms == null
-                ? "Escolha uma data e um horário."
-                : "Esse horário já passou, escolha um no futuro."}
-            </p>
-          )}
-        </div>
-        <DialogFooter>
+    <AppDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      size="lg"
+      className="max-w-[420px]"
+      title={<>Reagendar "{s.name}"</>}
+      description={
+        <>
+          Roda uma vez no novo horário e para de novo. O histórico anterior
+          fica.
+        </>
+      }
+      footer={
+        <>
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
@@ -480,9 +467,20 @@ function RescheduleDialog({
           >
             Reagendar
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-1.5">
+        <DateTimeField autoFocus value={at} onChange={setAt} />
+        {!future && (
+          <p className="text-[11px] text-st-error">
+            {ms == null
+              ? "Escolha uma data e um horário."
+              : "Esse horário já passou, escolha um no futuro."}
+          </p>
+        )}
+      </div>
+    </AppDialog>
   )
 }
 
@@ -661,14 +659,24 @@ function NewScheduleDialog({
   const fieldLabel = "text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[520px]">
-        <DialogHeader>
-          <DialogTitle>Nova automação</DialogTitle>
-          <DialogDescription>
-            Um prompt que roda sozinho no projeto, no horário que você definir.
-          </DialogDescription>
-        </DialogHeader>
+    <AppDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      size="lg"
+      className="max-w-[520px]"
+      title="Nova automação"
+      description="Um prompt que roda sozinho no projeto, no horário que você definir."
+      footer={
+        <>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button size="sm" disabled={!canSave} onClick={() => void handleSave()}>
+            Criar automação
+          </Button>
+        </>
+      }
+    >
 
         <div className="flex flex-col gap-3.5">
           <div className="flex flex-col gap-1.5">
@@ -928,16 +936,7 @@ function NewScheduleDialog({
           )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button size="sm" disabled={!canSave} onClick={() => void handleSave()}>
-            Criar automação
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </AppDialog>
   )
 }
 
