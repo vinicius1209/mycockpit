@@ -46,6 +46,17 @@ export async function writeDoctrine(
   await invoke("write_project_doctrine", { path: projectPath, content })
 }
 
+/** Lê INTEGRALMENTE um arquivo de instrução de CLI (CLAUDE.md/AGENTS.md) pra
+ *  semear a 1ª doutrina. Não usa o conteúdo do inventário do painel de
+ *  propósito: aquele vem truncado em 8k pra preview, e semear regra cortada
+ *  perderia texto em silêncio. Erro sobe — semear é ação explícita. */
+export async function readDoctrineSeed(
+  projectPath: string,
+  name: string,
+): Promise<string> {
+  return invoke<string>("read_doctrine_seed", { path: projectPath, name })
+}
+
 /** Teto do bloco no prompt. Doutrina é contexto de TODO turno inicial — texto
  *  longo demais roubaria janela do trabalho. Acima disso o bloco corta e APONTA
  *  o arquivo: o agent tem acesso ao disco e puxa o resto se precisar. */

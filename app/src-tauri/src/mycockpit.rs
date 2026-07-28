@@ -230,6 +230,23 @@ pub fn read_project_doctrine(path: String) -> Result<Doctrine, String> {
     }
 }
 
+/// Nomes aceitos como SEMENTE da doutrina — lista FECHADA: o parâmetro vira
+/// caminho, e nome livre aqui seria leitura arbitrária de disco pela UI.
+const SEED_FILES: [&str; 2] = ["CLAUDE.md", "AGENTS.md"];
+
+/// Lê INTEGRALMENTE um arquivo de instrução de CLI, p/ semear a 1ª doutrina.
+/// Precisa ser um comando próprio: o inventário do painel (read_project_context)
+/// trunca em 8k pra preview, e semear com texto cortado perderia regra em
+/// silêncio — o pior desfecho possível num arquivo de regras.
+#[tauri::command]
+pub fn read_doctrine_seed(path: String, name: String) -> Result<String, String> {
+    if !SEED_FILES.contains(&name.as_str()) {
+        return Err(format!("'{name}' não é um arquivo de instrução conhecido"));
+    }
+    let root = crate::skills::validate_project_path(&path)?;
+    std::fs::read_to_string(root.join(&name)).map_err(|e| e.to_string())
+}
+
 /// Grava a doutrina (write atômico). Conteúdo vazio NÃO apaga o arquivo: limpar
 /// o texto no editor é reversível, apagar arquivo do usuário não seria — e o
 /// bloco de prompt já ignora doutrina em branco.
@@ -406,6 +423,26 @@ mod tests {
         let d = read_project_doctrine(pp).unwrap();
         assert!(d.exists);
         assert_eq!(d.bytes, 0);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn semente_le_integral_e_so_nomes_conhecidos() {
+        let tmp = tmp_project("semente");
+        let pp = tmp.to_string_lossy().to_string();
+        // 20k > os 8k que o inventário do painel trunca pra preview.
+        let grande = "r".repeat(20_000);
+        std::fs::write(tmp.join("CLAUDE.md"), &grande).unwrap();
+
+        let lido = read_doctrine_seed(pp.clone(), "CLAUDE.md".into()).unwrap();
+        assert_eq!(lido.len(), 20_000, "semente NÃO pode vir cortada");
+
+        // nome fora da lista fechada não vira caminho (nem existindo no disco).
+        std::fs::write(tmp.join("segredo.md"), "x").unwrap();
+        assert!(read_doctrine_seed(pp.clone(), "segredo.md".into()).is_err());
+        assert!(read_doctrine_seed(pp.clone(), "../fora.md".into()).is_err());
+        // conhecido mas ausente = erro de leitura (a UI só oferece o que existe).
+        assert!(read_doctrine_seed(pp, "AGENTS.md".into()).is_err());
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

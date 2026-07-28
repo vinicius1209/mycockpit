@@ -38,6 +38,17 @@ import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/context"
 import { loadGitDiff } from "@/lib/git"
 import { fixPrefill } from "@/lib/deliveryDiff"
 import { readProjectSources, readTextFile } from "@/lib/sources"
+import { agentLabel } from "@/lib/agent"
+import {
+  sourceLabel,
+  vendorReadingNote,
+  vendorSources,
+  type VendorFacts,
+} from "@/lib/contextSources"
+import {
+  DoctrineSection,
+  type DoctrineSeed,
+} from "@/components/layout/DoctrineSection"
 import type { ProjectSources } from "@/lib/sources"
 import { open as openDialog } from "@tauri-apps/plugin-dialog"
 import { writeMycockpitConfig } from "@/lib/mycockpit"
@@ -375,6 +386,13 @@ export function ContextPanel() {
   const running = useChat((s) =>
     s.activeId ? (s.byId[s.activeId]?.running ?? false) : false,
   )
+  // Agent da conversa ATIVA — a régua de quem lê o quê. Conversa nova já vem
+  // carimbada (setConversationAgent), então isto reflete a escolha do composer.
+  const defaultAgent = useApp((s) => s.settings.defaultAgent)
+  const convAgent = useChat((s) =>
+    s.activeId ? (s.byId[s.activeId]?.agent ?? null) : null,
+  )
+  const readerAgent = convAgent ?? defaultAgent ?? null
   const [changedCount, setChangedCount] = useState(0)
   useEffect(() => {
     if (running && !jumpedOnRun.current) {
@@ -486,18 +504,37 @@ export function ContextPanel() {
     }
   }, [activeWorktree, projectPath, reload, running])
 
-  // Resumo numa linha do que o agente enxerga (cabeçalho colapsado).
+  // Fatos do disco sobre as fontes de FORNECEDOR (cada uma tem um dono; ver
+  // lib/contextSources). O painel dizia "o que o agente enxerga" e contava tudo
+  // isso junto — numa conversa Codex era verdade sobre o disco e mentira sobre o
+  // contexto daquele agent.
+  const vendorFacts: VendorFacts = {
+    claudeMd: !!ctx?.files.find((f) => f.name === "CLAUDE.md")?.exists,
+    agentsMd: !!ctx?.files.find((f) => f.name === "AGENTS.md")?.exists,
+    personas: sources?.personas.length ?? 0,
+    memories: sources?.memory.exists ? sources.memory.count : 0,
+  }
+  const vendorNote = vendorReadingNote(
+    readerAgent,
+    readerAgent ? agentLabel(readerAgent) : "",
+    vendorFacts,
+  )
+  /** Sementes da doutrina: só os NOMES das instruções de CLI que existem e têm
+   *  conteúdo — o texto é lido integral na hora de semear. */
+  const doctrineSeeds: DoctrineSeed[] =
+    ctx?.files
+      .filter((f) => f.exists && f.content && f.content.trim())
+      .map((f) => f.name) ?? []
+
+  // Resumo numa linha do cabeçalho colapsado: as fontes do FORNECEDOR (o que o
+  // app injeta tem seção própria acima e não precisa ser recontado aqui).
   const agentCtxSummary = (() => {
-    const parts: string[] = []
-    const instrTotal = ctx?.files.length ?? 0
-    const instrPresent = ctx?.files.filter((f) => f.exists).length ?? 0
-    if (instrTotal > 0) parts.push(`${instrPresent}/${instrTotal} instruções`)
-    const nP = sources?.personas.length ?? 0
-    if (nP) parts.push(`${nP} personas`)
-    const nS = sources?.specs.length ?? 0
-    if (nS) parts.push(`${nS} specs`)
-    if (sources?.memory.exists) parts.push(`${sources.memory.count} memórias`)
-    return parts.length ? parts.join(" · ") : "instruções, personas, memórias"
+    const parts = vendorSources(vendorFacts)
+      .filter((s) => s.present)
+      .map(sourceLabel)
+    return parts.length
+      ? parts.join(" · ")
+      : "nenhum arquivo de CLI neste projeto"
   })()
 
   return (
@@ -626,6 +663,15 @@ export function ContextPanel() {
 
           <Separator />
 
+          {/* DOUTRINA: a instrução do próprio app, a única que alcança os três
+              agents (nós injetamos). Vem antes do aprendizado porque é a regra
+              escrita pelo humano — o resto abaixo é destilado por máquina. */}
+          <Section title="Doutrina">
+            <DoctrineSection projectPath={project.path} seeds={doctrineSeeds} />
+          </Section>
+
+          <Separator />
+
           {/* Auto-aprendizado (M1/M2): entregas no recall + lições podáveis.
               Auditável — o app propõe, você revisa/remove (princípio do doc). */}
           <Section title="Aprendizado">
@@ -634,9 +680,11 @@ export function ContextPanel() {
 
           <Separator />
 
-          {/* Referência do agente colapsada: cabeçalho clicável + resumo numa
-              linha. O conteúdo (instruções/extensões/personas/specs/memórias)
-              só monta quando aberto — deixa o painel enxuto no dia a dia. */}
+          {/* Arquivos DAS CLIs, colapsado. O título era "o que o agente
+              enxerga" e prometia demais: isto é mobília de fornecedor, cada
+              linha com um dono, e o agent da conversa pode não ler nada disso —
+              é o que a nota cruzada abaixo diz na cara. O conteúdo só monta
+              quando aberto (deixa o painel enxuto no dia a dia). */}
           <button
             onClick={() => setShowAgentCtx((v) => !v)}
             className="flex w-full items-center gap-2 px-1 py-1 text-left"
@@ -650,7 +698,7 @@ export function ContextPanel() {
             />
             <div className="min-w-0 flex-1">
               <div className="text-[10.5px] font-medium tracking-wide text-muted-foreground/70 uppercase">
-                O que o agente enxerga
+                Arquivos das CLIs
               </div>
               {!showAgentCtx && (
                 <div className="truncate text-[11.5px] text-muted-foreground/60">
@@ -662,6 +710,14 @@ export function ContextPanel() {
 
           {showAgentCtx && (
             <>
+          {/* A régua honesta: o que o agent DESTA conversa lê do disco. Sem
+              isto o painel listava 3 personas e 9 memórias do Claude Code numa
+              conversa Codex, como se fossem contexto dela. */}
+          {vendorNote && (
+            <p className="px-1 pb-1 text-[11px] leading-snug text-muted-foreground/75">
+              {vendorNote}
+            </p>
+          )}
 
           {/* Zona de INVENTÁRIO (read-only): o que o claude enxerga no cwd */}
           <Section title="No contexto do agente">
@@ -748,11 +804,13 @@ export function ContextPanel() {
             )}
           </Section>
 
-          {/* Fase 2, fontes REAIS indexadas (não copiadas) */}
+          {/* Fase 2, fontes REAIS indexadas (não copiadas). "Subagents", não
+              "Personas": persona do app é preset (.mycockpit/agents), e ter duas
+              seções com o mesmo nome e donos diferentes confundia. */}
           {status === "ready" && sources && sources.personas.length > 0 && (
             <>
               <Separator />
-              <Section title="Personas">
+              <Section title="Subagents do Claude Code">
                 <div className="flex flex-col gap-1.5">
                   {sources.personas.map((p) => (
                     <button

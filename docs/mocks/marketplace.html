@@ -45,9 +45,9 @@
   .foot .tg{margin-left:auto;width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--muted-foreground);display:grid;place-items:center}
 
   /* avatar */
-  .av{border-radius:9px;display:grid;place-items:center;flex:0 0 auto;position:relative;font-weight:700;color:#0d0f11;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),0 4px 14px -4px var(--glow)}
+  .av{border-radius:9px;flex:0 0 auto;position:relative;overflow:hidden;object-fit:cover;background:var(--card);box-shadow:inset 0 0 0 1px rgba(255,255,255,.10),0 4px 14px -4px var(--glow,rgba(0,0,0,.4))}
   .av.rnd{border-radius:50%}
-  .av .g{filter:drop-shadow(0 1px 1px rgba(0,0,0,.25))}
+  .chip .av,.presetsel .av{box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
 
   /* ===== CHAT (tela principal) ===== */
   .main{display:flex;flex-direction:column;min-width:0}
@@ -180,8 +180,11 @@
   .ta2{resize:vertical;min-height:64px;line-height:1.5}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .pickrow{display:flex;gap:7px;flex-wrap:wrap}
-  .glyphbtn{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--foreground);font-size:15px;display:grid;place-items:center}
-  .glyphbtn.on{border-color:var(--brass);color:var(--brass);background:var(--brass-soft)}
+  .glyphbtn{width:38px;height:38px;border-radius:9px;border:1px solid var(--border);background:var(--card);color:var(--muted-foreground);font-size:16px;display:grid;place-items:center}
+  .glyphbtn:hover{color:var(--foreground);border-color:var(--border-strong)}
+  .stylebtn{padding:2px;border-radius:9px;border:1px solid var(--border);background:var(--card);line-height:0}
+  .stylebtn img{border-radius:7px;display:block;background:var(--muted)}
+  .stylebtn.on{border-color:var(--brass);box-shadow:0 0 0 2px var(--brass-soft)}
   .colorbtn{width:28px;height:28px;border-radius:50%;border:2px solid transparent}
   .colorbtn.on{border-color:var(--foreground)}
   .rubitem{display:flex;align-items:center;gap:6px;font-size:12.5px;padding:4px 0;color:var(--foreground)}
@@ -242,7 +245,7 @@
         <textarea id="ta" rows="1" placeholder="Mensagem…  digite @ para chamar um especialista"></textarea>
         <div class="cbar">
           <button class="tool" onclick="triggerAt()">@</button><button class="tool">⧉</button>
-          <button class="presetsel" id="pilotSel"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg> Executor · pilotando ▾</button>
+          <button class="presetsel" id="pilotSel">Executor · pilotando ▾</button>
           <button class="send" onclick="sendMsg()">↑</button>
         </div>
       </div>
@@ -331,7 +334,10 @@ const ICONS={
   bot:'<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
 };
 function ICON(name,size,stroke){ return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke||'currentColor'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||ICONS.compass}</svg>`; }
-const av=(k,px,fs,cls="")=>{const s=SP[k];return `<div class="av ${s.rnd?'rnd':''} ${cls}" style="width:${px}px;height:${px}px;background:linear-gradient(140deg,${s.c1},${s.c2});--glow:${s.glow}"><span class="g">${ICON(s.g,Math.round(px*0.5))}</span></div>`;};
+/* DiceBear — avatar generativo por seed (no app: @dicebear/core + collection, offline; aqui: HTTP API) */
+const DB="https://api.dicebear.com/9.x/", DEF_STYLE="glass";
+function dbUrl(style,seed,px){return `${DB}${style||DEF_STYLE}/svg?seed=${encodeURIComponent(seed||"x")}&size=${px}&radius=20`;}
+const av=(k,px,fs,cls="")=>{const s=SP[k];return `<img class="av ${s.rnd?'rnd':''} ${cls}" width="${px}" height="${px}" src="${dbUrl(s.style,s.seed||s.nm,Math.round(px*2))}" style="--glow:${s.glow||'rgba(228,168,98,.3)'}">`;};
 
 /* ===== DIALOG ===== */
 function openDialog(){ document.getElementById("overlay").classList.add("open"); document.getElementById("dialog").classList.add("open"); backToList(); renderCats(); renderList(); }
@@ -367,32 +373,33 @@ function showDetail(k){ const s=SP[k];
 function backToList(){ document.getElementById("detailView").style.display="none"; document.getElementById("createView").style.display="none"; document.getElementById("listView").style.display="block"; }
 
 /* ===== CREATE ===== */
-const GLYPHS=["compass","shield","crown","gauge","layers","terminal","check-check","rotate-ccw","target","bot"];
-const COLORS=[{c1:"#7fe0b0",c2:"#2f8f6a",glow:"rgba(127,224,176,.5)"},{c1:"#f2a39b",c2:"#a8443c",glow:"rgba(242,163,155,.5)"},{c1:"#b3b3e6",c2:"#5a5aa0",glow:"rgba(179,179,230,.5)"},{c1:"#e4a862",c2:"#9c6a25",glow:"rgba(228,168,98,.5)"},{c1:"#9db8f0",c2:"#4a5fa8",glow:"rgba(157,184,240,.5)"},{c1:"#7fd6c4",c2:"#2f8f7d",glow:"rgba(127,214,196,.5)"}];
-let nw={g:"compass",ci:0,rubric:[]};
+const STYLES=[["glass","Vidro"],["shapes","Formas"],["thumbs","Thumbs"],["bottts","Bots"],["notionists","Pessoas"],["personas","Personas"],["identicon","Identicon"],["fun-emoji","Emoji"]];
+let nw={style:"glass",salt:"",rubric:[]};
 function openCreate(){ document.getElementById("listView").style.display="none"; document.getElementById("detailView").style.display="none"; document.getElementById("createView").style.display="flex";
-  nw={g:"compass",ci:0,rubric:["Fronteiras e responsabilidade única","Acoplamento e pontos de mudança"]};
+  nw={style:"glass",salt:"",rubric:["Fronteiras e responsabilidade única","Acoplamento e pontos de mudança"]};
   ["cvName","cvRole","cvResumo","cvBriefing","cvRub"].forEach(id=>document.getElementById(id).value="");
   document.getElementById("cvCat").value="Engenharia"; document.getElementById("cvModel").value="opus · alto";
   renderPickers(); renderRub(); syncNw(); }
 function tmpl(k){ if(k==="blank"){ openCreate(); return; } const s=SP[k];
   document.getElementById("cvName").value=""; document.getElementById("cvRole").value=s.role; document.getElementById("cvResumo").value=s.desc; document.getElementById("cvCat").value=s.cat; document.getElementById("cvModel").value=s.model; document.getElementById("cvBriefing").value=`(base: ${s.nm}) `+s.desc;
-  nw.g=s.g; nw.ci=Math.max(0,COLORS.findIndex(c=>c.c1===s.c1)); nw.rubric=[...(s.rubric||[])]; renderPickers(); renderRub(); syncNw(); }
-function renderPickers(){ document.getElementById("glyphPick").innerHTML=GLYPHS.map(g=>`<button class="glyphbtn ${g===nw.g?'on':''}" onclick="nw.g='${g}';renderPickers();syncNw()">${ICON(g,16)}</button>`).join("");
-  document.getElementById("colorPick").innerHTML=COLORS.map((c,i)=>`<button class="colorbtn ${i===nw.ci?'on':''}" style="background:linear-gradient(140deg,${c.c1},${c.c2})" onclick="nw.ci=${i};renderPickers();syncNw()"></button>`).join(""); }
+  nw.style=s.style||"glass"; nw.salt=""; nw.rubric=[...(s.rubric||[])]; renderPickers(); renderRub(); syncNw(); }
+function renderPickers(){ const seed=(document.getElementById("cvName").value||"especialista")+nw.salt;
+  document.getElementById("glyphPick").innerHTML=STYLES.map(([st,lb])=>`<button class="stylebtn ${st===nw.style?'on':''}" title="${lb}" onclick="nw.style='${st}';renderPickers();syncNw()"><img width="34" height="34" src="${dbUrl(st,seed,68)}"></button>`).join("")+`<button class="glyphbtn" title="Variar avatar" onclick="reroll()">⟳</button>`;
+  document.getElementById("colorPick").innerHTML=""; }
+function reroll(){ nw.salt=((parseInt(nw.salt)||0)+1)+""; renderPickers(); syncNw(); }
 function renderRub(){ document.getElementById("rubList").innerHTML=nw.rubric.map((r,i)=>`<div class="rubitem">• ${r}<span class="rx" onclick="nw.rubric.splice(${i},1);renderRub()">✕</span></div>`).join(""); }
 function addRub(){ const i=document.getElementById("cvRub"); if(i.value.trim()){ nw.rubric.push(i.value.trim()); i.value=""; renderRub(); } }
-function avNw(px,fs){ const c=COLORS[nw.ci]; return `<div class="av" style="width:${px}px;height:${px}px;font-size:${fs}px;background:linear-gradient(140deg,${c.c1},${c.c2});--glow:${c.glow}"><span class="g">${ICON(nw.g,Math.round(px*0.5))}</span></div>`; }
+function avNw(px,fs){ const seed=(document.getElementById("cvName").value||"especialista")+nw.salt; return `<img class="av" width="${px}" height="${px}" src="${dbUrl(nw.style,seed,Math.round(px*2))}" style="--glow:rgba(228,168,98,.3)">`; }
 function slugify(s){ return "/"+(s||"especialista").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); }
 function syncNw(){ const g=id=>document.getElementById(id).value;
-  const nm=g("cvName")||"Sem nome",role=g("cvRole")||"papel do especialista",resumo=g("cvResumo")||"Resumo do que ele faz aparece aqui.",catv=g("cvCat"),model=g("cvModel"),c=COLORS[nw.ci],slug=slugify(g("cvName"));
+  const nm=g("cvName")||"Sem nome",role=g("cvRole")||"papel do especialista",resumo=g("cvResumo")||"Resumo do que ele faz aparece aqui.",catv=g("cvCat"),model=g("cvModel"),slug=slugify(g("cvName"));
   document.getElementById("cvAv").innerHTML=avNw(46,22);
   document.getElementById("cvSlug").value=slug;
-  document.getElementById("cvPreview").innerHTML=`<div class="spcard" style="--glow:${c.glow};cursor:default"><div class="top">${avNw(40,19)}<div><div class="nm">${nm}</div><div class="rl">${role}</div></div></div><div class="desc">${resumo}</div><div class="meta"><span class="cattag">${catv}</span><span class="cattag">só leitura</span><span class="cattag br">${model}</span></div><div class="cardft"><span class="slug">${slug}</span><button class="btn btn-sm btn-outline">＋ Chamar</button></div></div>`;
+  document.getElementById("cvPreview").innerHTML=`<div class="spcard" style="--glow:rgba(228,168,98,.3);cursor:default"><div class="top">${avNw(40,19)}<div><div class="nm">${nm}</div><div class="rl">${role}</div></div></div><div class="desc">${resumo}</div><div class="meta"><span class="cattag">${catv}</span><span class="cattag">só leitura</span><span class="cattag br">${model}</span></div><div class="cardft"><span class="slug">${slug}</span><button class="btn btn-sm btn-outline">＋ Chamar</button></div></div>`;
   document.getElementById("cvJoinPrev").innerHTML=`${avNw(20,10)} <span><b style="color:var(--foreground)">${nm}</b> entrou na conversa como <b style="color:var(--foreground)">${role.toLowerCase()}</b> · só leitura</span>`; }
 function doCreate(){ const nm=document.getElementById("cvName").value.trim(); if(!nm){ toast("Dá um nome pro especialista"); document.getElementById("cvName").focus(); return; }
-  const key="new_"+slugify(nm).slice(1),c=COLORS[nw.ci],g=id=>document.getElementById(id).value;
-  SP[key]={nm,role:g("cvRole")||"Especialista",cat:g("cvCat"),g:nw.g,c1:c.c1,c2:c.c2,glow:c.glow,slug:slugify(nm),model:g("cvModel"),author:"você",desc:g("cvResumo")||"—",rubric:[...nw.rubric],verdict:["v-ok","✓ Pronto"],body:`<ul><li>${g("cvBriefing")?g("cvBriefing").slice(0,140):"Parecer do especialista aparece aqui."}</li></ul>`};
+  const key="new_"+slugify(nm).slice(1),g=id=>document.getElementById(id).value;
+  SP[key]={nm,role:g("cvRole")||"Especialista",cat:g("cvCat"),style:nw.style,seed:nm+nw.salt,glow:"rgba(228,168,98,.3)",slug:slugify(nm),model:g("cvModel"),author:"você",desc:g("cvResumo")||"—",rubric:[...nw.rubric],verdict:["v-ok","✓ Pronto"],body:`<ul><li>${g("cvBriefing")?g("cvBriefing").slice(0,140):"Parecer do especialista aparece aqui."}</li></ul>`};
   cat=g("cvCat"); backToList(); renderCats(); renderList(); toast(`"${nm}" criado — já está no marketplace`); }
 
 /* ===== call into conversation ===== */
@@ -410,12 +417,12 @@ function parecer(k){ const s=SP[k],slot=document.getElementById("slot"); const e
     <div class="inlineact"><button class="lnk" onclick="wheel('${k}',this)">↳ Passar o volante</button><button class="lnk" onclick="pull('${k}',this)">Trazer pro Executor</button><button class="lnk mut" onclick="leave('${k}',this)">Dispensar</button></div></div>`;
   slot.appendChild(el); el.scrollIntoView({behavior:"smooth",block:"end"});
 }
-function wheel(k,btn){ const s=SP[k];pilot=k;btn.closest(".inlineact").remove();renderPresence();document.getElementById("pilotSel").innerHTML=`${ICON(s.g,13)} ${s.nm} · pilotando ▾`;
+function wheel(k,btn){ const s=SP[k];pilot=k;btn.closest(".inlineact").remove();renderPresence();document.getElementById("pilotSel").innerHTML=`${av(k,18)} ${s.nm} · pilotando ▾`;
   const l=document.createElement("div");l.className="sysline fade";l.innerHTML=`<span class="ln"></span><span><span class="reticle sm" style="display:inline-block;vertical-align:-2px"></span> Frota passou o volante pra <b>${s.nm}</b> — ela age nos turnos, você aprova/cancela</span><span class="ln"></span>`;
   document.getElementById("slot").appendChild(l);l.scrollIntoView({behavior:"smooth",block:"end"});toast(`${s.nm} está pilotando`); }
 function pull(k,btn){ const s=SP[k];btn.closest(".inlineact").remove();const slot=document.getElementById("slot");
   const l=document.createElement("div");l.className="sysline fade";l.innerHTML=`<span class="ln"></span><span><span class="reticle sm" style="display:inline-block;vertical-align:-2px"></span> Frota levou o parecer de <b>${s.nm}</b> pro Executor</span><span class="ln"></span>`;slot.appendChild(l);
-  const el=document.createElement("div");el.className="msg fade";el.innerHTML=`${av("exec",26,13,"mav")}<div><div class="who">Executor <span class="wheel">pilotando</span> <span class="t">agora</span></div><div class="txt"><p>Peguei o parecer de <span class="chip">${ICON(s.g,13)} ${s.nm}</span>. Aplicando o que você aprovou…</p></div></div>`;slot.appendChild(el);el.scrollIntoView({behavior:"smooth",block:"end"});toast("Executor assumiu o parecer"); }
+  const el=document.createElement("div");el.className="msg fade";el.innerHTML=`${av("exec",26,13,"mav")}<div><div class="who">Executor <span class="wheel">pilotando</span> <span class="t">agora</span></div><div class="txt"><p>Peguei o parecer de <span class="chip">${av(k,15)} ${s.nm}</span>. Aplicando o que você aprovou…</p></div></div>`;slot.appendChild(el);el.scrollIntoView({behavior:"smooth",block:"end"});toast("Executor assumiu o parecer"); }
 function leave(k,btn){ btn.closest(".msg").remove();inConv.delete(k);if(pilot===k)pilot="exec";renderPresence(); }
 
 function renderPresence(){ document.getElementById("presence").innerHTML=[...inConv].map(k=>av(k,22,11)).join("")+`<span class="lbl">${inConv.size} na conversa · <b style="color:var(--brass)">${SP[pilot].nm}</b> pilota</span>`;
@@ -438,6 +445,7 @@ let tmo;function toast(m){const t=document.getElementById("toast");t.textContent
 document.getElementById("m1").innerHTML=`<div class="av rnd mav" style="width:26px;height:26px;font-size:12px;background:linear-gradient(135deg,#3a3f46,#20242a);color:#cdd2d8;--glow:transparent">V</div><div><div class="who">Você <span class="t">14:22</span></div><div class="txt"><p>Muda a aprovação desassistida pra <b>expirar</b> em vez de congelar: se ninguém aprovar em 10min, cancela o turno e notifica.</p></div></div>`;
 document.getElementById("m2").innerHTML=`${av("exec",26,13,"mav")}<div><div class="who">Executor <span class="wheel">pilotando</span> <span class="t">14:22</span></div><div class="txt"><p>Feito. Troquei o <code>freeze()</code> por um <code>expireAt</code> + watcher que cancela e dispara <code>notifyTurnEnd</code>.</p><div class="diffcard"><div class="h">app/src/lib/agents.ts</div><code><span class="del">- await freezeDispatch(turn.id)</span>
 <span class="add">+ turn.expireAt = now() + 10*60_000</span></code></div><p style="margin-top:8px">Chama alguém pra revisar? <span style="color:var(--muted-foreground)">(@ ou ✦)</span></p></div></div>`;
+document.getElementById("pilotSel").innerHTML=av("exec",18)+" Executor · pilotando ▾";
 renderPresence();
 </script>
 </body>
