@@ -493,6 +493,7 @@ export function ComposerActions({
   onMission,
   missionDisabled,
   onAttach,
+  onEspecialistas,
   running,
   onStop,
   onSubmit,
@@ -504,6 +505,8 @@ export function ComposerActions({
   onMission?: () => void
   missionDisabled?: boolean
   onAttach: () => void
+  /** Atalho ✦: abre o marketplace de Especialistas sobre a conversa. */
+  onEspecialistas?: () => void
   running?: boolean
   onStop?: () => void
   onSubmit: () => void
@@ -520,6 +523,18 @@ export function ComposerActions({
         {/* overlay="composer": o pill de gravação ancora na raiz relative do
             CommandConsole e paira ACIMA do composer — a fileira não mexe. */}
         <MicButton overlay="composer" />
+        {onEspecialistas && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onEspecialistas}
+            className="rounded-full text-muted-foreground hover:text-foreground"
+            title="Especialistas"
+            aria-label="Especialistas"
+          >
+            <Sparkles className="size-4" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"

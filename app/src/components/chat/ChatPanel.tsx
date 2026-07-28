@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils"
 import { deriveTasks } from "@/lib/tasks"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { CommandConsole } from "@/components/chat/CommandConsole"
+import { Especialistas } from "@/components/settings/Especialistas"
 import { MessageList } from "@/components/chat/MessageList"
 import { PresenceBar } from "@/components/chat/PresenceBar"
 import { Reticle } from "@/components/common/Wordmark"
@@ -100,6 +101,10 @@ export function ChatPanel() {
   const injectedLessonsRef = useRef<Record<string, string[]>>({})
   // segue o fim só quando você já está lá; se subiu pra ler, não puxa de volta.
   const [atBottom, setAtBottom] = useState(true)
+  // Atalho ✦ do composer: abre o marketplace de Especialistas SOBRE a conversa
+  // (reusa o wrapper Especialistas; o X/Esc do AppDialog fecham). Chamar uma
+  // persona segue pelo @ do composer.
+  const [especialistasOpen, setEspecialistasOpen] = useState(false)
 
   function onScroll() {
     const el = scrollRef.current
@@ -1021,9 +1026,15 @@ export function ChatPanel() {
             finalizing={finalizing}
             missionRunning={missionRunning}
             onStop={handleStop}
+            onOpenEspecialistas={() => setEspecialistasOpen(true)}
           />
         </div>
       </div>
+
+      <Especialistas
+        open={especialistasOpen}
+        onOpenChange={setEspecialistasOpen}
+      />
     </section>
   )
 }
