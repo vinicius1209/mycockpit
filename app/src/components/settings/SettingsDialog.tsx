@@ -751,6 +751,24 @@ export function SettingsDialog() {
                 para novas.
               </p>
 
+              <SectionTitle>Composer</SectionTitle>
+              <div className="divide-y divide-border/50">
+                <Field
+                  label="Composer Lexical (experimental)"
+                  hint="Editor com menção @ atômica (pill que o cursor não entra). Comandos /, colar anexo e histórico ↑/↓ seguem só no composer clássico por ora."
+                >
+                  <Switch
+                    checked={settings.composerEngine === "lexical"}
+                    onCheckedChange={(v) =>
+                      setSettings({
+                        composerEngine: v ? "lexical" : "textarea",
+                      })
+                    }
+                    aria-label="Composer Lexical experimental"
+                  />
+                </Field>
+              </div>
+
               <SectionTitle>Auto-revive em rate limit</SectionTitle>
               <div className="divide-y divide-border/50">
                 <Field

@@ -33,9 +33,15 @@ import {
 } from "@/lib/agents"
 import { FusionLauncher } from "@/components/fusion/FusionLauncher"
 import { MissionLauncher } from "@/components/mission/MissionLauncher"
+import { LexicalComposer } from "@/components/chat/LexicalComposer"
 import type { AgentRunConfig } from "@/lib/types"
 import { usePresets } from "@/store/presets"
 import { isTauri } from "@/lib/db"
+
+// Box do input do console — o MESMO pro <Textarea> e pro editor Lexical, senão
+// o cartão muda de pele ao alternar o motor nas Settings.
+const CONSOLE_INPUT_CLASS =
+  "max-h-[240px] min-h-[56px] resize-none border-0 bg-transparent! px-4 pt-3.5 text-[15px] leading-relaxed text-foreground shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
 
 export function CommandConsole({
   onSend,
@@ -76,6 +82,10 @@ export function CommandConsole({
   }, [])
   // defaults de novas conversas vêm das configurações globais (Settings).
   const settings = useApp((s) => s.settings)
+  // FASE 1 do Lexical: motor do input atrás de toggle (Settings →
+  // Comportamento). "textarea" = produção intacta; "lexical" troca SÓ o input
+  // dentro do MESMO ComposerShell (header/footer/chips/anel seguem os mesmos).
+  const engine = settings.composerEngine
   // (o selo de "liberado" saiu daqui: a permissão agora é um controle de 3
   // posições na ExecutionRow, que mostra o modo ATUAL em vez de só alertar
   // depois que você já liberou.)
@@ -110,6 +120,8 @@ export function CommandConsole({
     }
   }, [fusionReq])
   const ref = useRef<HTMLTextAreaElement>(null)
+  // foco programático do editor Lexical (preenchido pelo FocusBridgePlugin).
+  const lexicalFocus = useRef<(() => void) | null>(null)
   const conv = useActiveConv()
   const suggestions = conv.suggestions
   const suggesting = conv.suggesting
@@ -223,13 +235,16 @@ export function CommandConsole({
   const allSupported = attachments.every((a) =>
     a.kind === "image" ? caps.image : a.kind === "pdf" ? caps.pdf : false,
   )
-  const canSend =
-    (value.trim().length > 0 || attachments.length > 0) &&
+  // aceita um texto explícito porque no motor Lexical o submit chega com o
+  // texto serializado do editor (que pode estar 1 tick à frente do draft).
+  const canSendWith = (text: string) =>
+    (text.length > 0 || attachments.length > 0) &&
     !disabled &&
     !running &&
     !finalizing &&
     !missionRunning &&
     allSupported
+  const canSend = canSendWith(value.trim())
 
   // "Planejar primeiro" (por conversa, na store): NÃO trava com a conversa — é
   // um modo do PRÓXIMO envio, não config fixa do 1º run. Fica ligado até o
@@ -245,8 +260,16 @@ export function CommandConsole({
     planFirst,
   }
 
-  function submit() {
-    const text = value.trim()
+  /** Foca o input do console, qualquer que seja o motor. */
+  function focusComposer() {
+    if (engine === "lexical") lexicalFocus.current?.()
+    else ref.current?.focus()
+  }
+
+  /** Envio único dos dois motores. O textarea chama sem argumento (lê o draft);
+   *  o Lexical passa o texto que acabou de serializar (MESMA string `@nome`). */
+  function submit(overrideText?: string) {
+    const text = (overrideText ?? value).trim()
     // Turno em andamento: Enter ENFILEIRA (texto + anexos — deixar o anexo pra
     // trás fazia a imagem "enviada" ficar órfã no composer e nunca ir junto).
     // O handleSend detecta o running e empilha na fila.
@@ -257,20 +280,50 @@ export function CommandConsole({
       setValue("")
       setAttachments([])
       resetHistory()
-      ref.current?.focus()
+      focusComposer()
       return
     }
-    if (!canSend) return
+    if (!canSendWith(text)) return
     onSend(text, effCfg, attachments)
     setValue("")
     setAttachments([])
     resetHistory()
-    ref.current?.focus()
+    focusComposer()
   }
+
+  // Placeholder por estado (compartilhado pelos dois motores). No Lexical não
+  // existe "/" ainda (FASE 2) — anunciar comandos que não funcionam seria
+  // teatro, então a variante "/ para comandos" é exclusiva do textarea.
+  const placeholder = missionRunning
+    ? "Missão em andamento — pare a missão para enviar manualmente…"
+    : running || finalizing
+      ? "Enfileirar próxima mensagem…"
+      : engine === "textarea" && commands.length > 0
+        ? "Peça algo…  ou / para comandos"
+        : "Peça algo ao seu time de agents…"
+
+  // FASE 2 (motor Lexical): comandos "/" (SlashPopover), "@" de arquivos e
+  // recursos (AtPopover legado — o Lexical só menciona Especialistas por ora),
+  // paste → anexo direto no editor e histórico ↑/↓ estilo shell. Até lá esses
+  // fluxos seguem exclusivos do textarea (os popovers abaixo são gateados).
+  const lexicalInput =
+    engine === "lexical" ? (
+      <LexicalComposer
+        value={value}
+        onChangeText={setValue}
+        onSubmit={(text) => submit(text)}
+        placeholder={placeholder}
+        mentionNames={presets.map((p) => p.name)}
+        className={CONSOLE_INPUT_CLASS}
+        registerFocus={(fn) => {
+          lexicalFocus.current = fn
+        }}
+      />
+    ) : undefined
 
   return (
     <div className="relative flex w-full flex-col gap-3">
-      {showSlash && (
+      {engine === "textarea" && showSlash && (
         <SlashPopover
           project={project}
           matches={slashMatches}
@@ -281,7 +334,10 @@ export function CommandConsole({
       )}
       {/* "/" digitado num projeto SEM comandos: dica no lugar do silêncio (que
           parece bug — caso real: skills globais viraram symlinks quebrados). */}
-      {!showSlash && /^\/[\w:-]*$/.test(value) && commands.length === 0 && (
+      {engine === "textarea" &&
+        !showSlash &&
+        /^\/[\w:-]*$/.test(value) &&
+        commands.length === 0 && (
         <div className="absolute bottom-full left-0 z-20 mb-2 w-full rounded-xl border bg-popover px-3 py-2.5 shadow-[var(--shadow-pop)]">
           <p className="text-[12px] text-muted-foreground">
             Nenhum comando ou skill neste projeto — crie arquivos .md em{" "}
@@ -290,7 +346,7 @@ export function CommandConsole({
           </p>
         </div>
       )}
-      {showAt && !showSlash && (
+      {engine === "textarea" && showAt && !showSlash && (
         <AtPopover
           project={project}
           items={atItems}
@@ -395,18 +451,14 @@ export function CommandConsole({
             submit()
           }
         }}
-        placeholder={
-          missionRunning
-            ? "Missão em andamento — pare a missão para enviar manualmente…"
-            : running || finalizing
-              ? "Enfileirar próxima mensagem…"
-              : commands.length > 0
-                ? "Peça algo…  ou / para comandos"
-                : "Peça algo ao seu time de agents…"
-        }
+        placeholder={placeholder}
         rows={1}
-        textareaClassName="max-h-[240px] min-h-[56px] resize-none border-0 bg-transparent! px-4 pt-3.5 text-[15px] leading-relaxed text-foreground shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
-        mentionNames={presets.map((p) => p.name)}
+        textareaClassName={CONSOLE_INPUT_CLASS}
+        mentionNames={
+          engine === "textarea" ? presets.map((p) => p.name) : undefined
+        }
+        input={lexicalInput}
+        onCardClick={engine === "lexical" ? focusComposer : undefined}
         footerClassName="p-2.5 pt-1"
         chips={
           <AttachmentChips

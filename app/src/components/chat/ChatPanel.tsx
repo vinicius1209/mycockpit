@@ -14,8 +14,6 @@ import { cn } from "@/lib/utils"
 import { deriveTasks } from "@/lib/tasks"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { CommandConsole } from "@/components/chat/CommandConsole"
-// SPIKE — remover após validação.
-import { LexicalComposerSpike } from "@/components/chat/LexicalComposerSpike"
 import { Especialistas } from "@/components/settings/Especialistas"
 import { MessageList } from "@/components/chat/MessageList"
 import { PresenceBar } from "@/components/chat/PresenceBar"
@@ -1021,16 +1019,6 @@ export function ChatPanel() {
               }
             />
           )}
-          {/* SPIKE — remover após validação. Card rotulado ACIMA do composer
-              real; prova o feel da menção atômica (Lexical) sem tocar no
-              CommandConsole/ComposerShell de produção, que segue intacto abaixo. */}
-          <div className="mb-2">
-            <LexicalComposerSpike
-              onSubmit={(text) =>
-                toast(`Spike (serializado): ${text || "(vazio)"}`)
-              }
-            />
-          </div>
           <CommandConsole
             onSend={handleSend}
             disabled={!project}

@@ -19,6 +19,14 @@ import { cn } from "@/lib/utils"
  * do textarea com o MESMO box (`textareaClassName`), mostrando o texto com os
  * `@nomes-conhecidos` em chip brass; o textarea fica com texto transparente e só
  * o cursor visível. Só o composer da conversa liga isso.
+ *
+ * `input` (opt-in, FASE 1 do Lexical): substitui o <Textarea> interno por um
+ * editor próprio (o LexicalComposer da conversa) MANTENDO o cartão, o header
+ * de execução, os chips, o footer e o anel brass. Quando passado, as props de
+ * textarea (value/onChange/onKeyDown/onPaste/onSelect/mentionNames) são
+ * ignoradas; o clique no cartão foca via `onCardClick` e o anel de foco segue
+ * o focus/blur borbulhado do editor. Sem `input`, nada muda — o Textarea segue
+ * sendo o default.
  */
 export function ComposerShell({
   textareaRef,
@@ -38,11 +46,13 @@ export function ComposerShell({
   header,
   footer,
   mentionNames,
+  input,
+  onCardClick,
 }: {
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>
-  value: string
-  onChange: React.ChangeEventHandler<HTMLTextAreaElement>
-  onKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>
+  value?: string
+  onChange?: React.ChangeEventHandler<HTMLTextAreaElement>
+  onKeyDown?: React.KeyboardEventHandler<HTMLTextAreaElement>
   onPaste?: React.ClipboardEventHandler<HTMLTextAreaElement>
   onSelect?: React.ReactEventHandler<HTMLTextAreaElement>
   placeholder?: string
@@ -63,10 +73,14 @@ export function ComposerShell({
   footer: React.ReactNode
   /** Nomes de personas conhecidas — quando passado, `@nome` é destacado ao vivo. */
   mentionNames?: string[]
+  /** Input alternativo (editor Lexical) no lugar do <Textarea> interno. */
+  input?: React.ReactNode
+  /** Foco do clique no cartão quando `input` é usado (não há textareaRef). */
+  onCardClick?: () => void
 }) {
   const [focused, setFocused] = useState(false)
   const overlayRef = useRef<HTMLDivElement>(null)
-  const highlight = !!mentionNames && mentionNames.length > 0
+  const highlight = !input && !!mentionNames && mentionNames.length > 0
 
   const textarea = (
     <Textarea
@@ -104,7 +118,11 @@ export function ComposerShell({
 
   return (
     <div
-      onClick={focusRing ? () => textareaRef?.current?.focus() : undefined}
+      onClick={
+        focusRing
+          ? (onCardClick ?? (() => textareaRef?.current?.focus()))
+          : undefined
+      }
       className={
         focusRing
           ? cn(
@@ -120,7 +138,16 @@ export function ComposerShell({
     >
       {header}
       {chips}
-      {highlight ? (
+      {input ? (
+        // input alternativo (Lexical): o anel de foco escuta o focus/blur que
+        // borbulha do contenteditable (React delega focusin/focusout).
+        <div
+          onFocus={focusRing ? () => setFocused(true) : undefined}
+          onBlur={focusRing ? () => setFocused(false) : undefined}
+        >
+          {input}
+        </div>
+      ) : highlight ? (
         <div className="relative">
           {/* espelho: MESMO box do textarea (textareaClassName) → alinha pixel a
               pixel. Mostra o texto; `@nome-conhecido` vira chip brass. */}
@@ -132,7 +159,7 @@ export function ComposerShell({
               textareaClassName,
             )}
           >
-            {splitMentions(value, mentionNames!).map((seg, i) =>
+            {splitMentions(value ?? "", mentionNames!).map((seg, i) =>
               seg.type === "mention" ? (
                 <span
                   key={i}
