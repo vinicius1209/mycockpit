@@ -69,14 +69,18 @@ describe("finish → selo de concluído", () => {
     expect(useChat.getState().byId.c1.finishedUnseen).toBe("error")
   })
 
-  it("você ESTAVA olhando (conversa ativa + janela focada) ⇒ NÃO marca", () => {
-    // o próprio conteúdo aparecendo é o feedback; selo ali seria ruído.
+  it("marca TAMBÉM na conversa que você está olhando (regra revista)", () => {
+    // A 1ª versão suprimia este caso, com a teoria "o conteúdo aparecendo é o
+    // feedback". A teoria tem furo: o texto chega em STREAMING, sem momento
+    // nítido de fim — o spinner desaparecendo é sinal por AUSÊNCIA, que é
+    // exatamente o que faltava. Visto em uso: o turno acabou na conversa ativa
+    // e a sidebar não mudou nada.
     useChat.setState({ activeId: "c1", byId: { c1: conv({ items: [texto] }) } })
     useChat.getState().finish("c1")
-    expect(useChat.getState().byId.c1.finishedUnseen).toBeUndefined()
+    expect(useChat.getState().byId.c1.finishedUnseen).toBe("ok")
   })
 
-  it("conversa ativa MAS janela sem foco ⇒ marca (você estava noutro app)", () => {
+  it("janela sem foco também marca (nada a ver com foco agora)", () => {
     setFoco(false)
     useChat.setState({ activeId: "c1", byId: { c1: conv({ items: [texto] }) } })
     useChat.getState().finish("c1")
@@ -100,6 +104,18 @@ describe("markSeen → o selo cumpriu o papel", () => {
     useChat.getState().markSeen("c1")
     // mesma REFERÊNCIA: sem patch, sem re-render da sidebar inteira
     expect(useChat.getState().byId.c1).toBe(antes)
+  })
+
+  it("enviar de novo limpa o selo (agir na conversa É reconhecer)", () => {
+    // sem isto, o selo da conversa ATIVA só sairia se você trocasse de conversa
+    // e voltasse — absurdo para quem está trabalhando nela.
+    useChat.setState({
+      activeId: "c1",
+      byId: { c1: conv({ running: false, finishedUnseen: "ok" }) },
+    })
+    useChat.getState().start("c1", "próximo pedido", "r2", "claude-code", null, null, [])
+    expect(useChat.getState().byId.c1.finishedUnseen).toBeUndefined()
+    expect(useChat.getState().byId.c1.running).toBe(true)
   })
 
   it("conversa inexistente não quebra", () => {

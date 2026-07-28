@@ -9,8 +9,6 @@ import {
   X,
   ChevronRight,
   Clock,
-  CircleAlert,
-  CircleCheck,
   Loader2,
   Trash2,
   Pencil,
@@ -20,7 +18,6 @@ import {
   GitBranch,
   Rocket,
   Search,
-  ShieldQuestion,
   Swords,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -37,6 +34,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuSubContent,
 } from "@/components/ui/context-menu"
+import { AgentMark } from "@/components/common/AgentMark"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
@@ -504,50 +502,38 @@ function ConversationList({ projectId }: { projectId: string }) {
         // ou pergunta (turno PARADO, vem primeiro: é o único que te cobra ação);
         // spinner = run; foguete = missão; espadas = disputa (âmbar quando
         // espera decisão).
-        const statusEl =
-          isRunning || hasMission || hasFusion || isAwaiting ? (
+        // Estado do TURNO num slot fixo, sobre a marca do agent (padrão do
+        // Warp): a posição não muda quando o estado muda, e o slot nunca fica
+        // vazio porque a identidade do agent está sempre lá. Antes o ícone
+        // aparecia/desaparecia à direita do título e empurrava o layout — e o
+        // bloco inteiro virava null quando o turno acabava, que é por que o selo
+        // de concluído nunca chegava a renderizar.
+        const turnStatus = isAwaiting
+          ? ("awaiting" as const)
+          : isRunning
+            ? ("running" as const)
+            : doneUnseen === "error"
+              ? ("error" as const)
+              : doneUnseen === "ok"
+                ? ("done" as const)
+                : null
+        const statusEl = (
             <>
-              {isAwaiting && (
-                <span
-                  className="grid size-3 shrink-0 place-items-center"
-                  title="O turno parou esperando você (permissão ou pergunta)"
-                >
-                  <ShieldQuestion
-                    className="animate-cockpit-pulse size-3 text-st-warning"
-                    aria-label="esperando você"
-                  />
-                </span>
-              )}
-              {isRunning && (
-                <Loader2
-                  className="size-3 shrink-0 animate-spin text-st-running"
-                  aria-label="rodando"
-                />
-              )}
-              {/* Terminou e você não viu: o spinner sai e ENTRA o selo, então a
-                  linha nunca fica muda depois de trabalhar. Some ao abrir. */}
-              {!isRunning && doneUnseen && (
-                <span
-                  className="grid size-3 shrink-0 place-items-center"
-                  title={
-                    doneUnseen === "error"
-                      ? "O turno terminou com erro — abra para ver"
-                      : "Turno concluído — abra para ver"
-                  }
-                >
-                  {doneUnseen === "error" ? (
-                    <CircleAlert
-                      className="size-3 text-st-error"
-                      aria-label="turno falhou"
-                    />
-                  ) : (
-                    <CircleCheck
-                      className="size-3 text-st-success"
-                      aria-label="turno concluído"
-                    />
-                  )}
-                </span>
-              )}
+              <AgentMark
+                agent={c.agent ?? "claude-code"}
+                status={turnStatus}
+                title={
+                  turnStatus === "awaiting"
+                    ? "O turno parou esperando você (permissão ou pergunta)"
+                    : turnStatus === "running"
+                      ? "Turno rodando"
+                      : turnStatus === "error"
+                        ? "O turno terminou com erro — abra para ver"
+                        : turnStatus === "done"
+                          ? "Turno concluído — abra para ver"
+                          : undefined
+                }
+              />
               {hasMission && (
                 <span
                   className="grid size-3 shrink-0 place-items-center"
@@ -582,7 +568,7 @@ function ConversationList({ projectId }: { projectId: string }) {
                 </span>
               )}
             </>
-          ) : null
+        )
         // Cor-rótulo = DOT à direita do título (tinta de linha competia com a
         // seleção). Seleção é dona do background.
         return (

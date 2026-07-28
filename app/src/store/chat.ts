@@ -1218,6 +1218,9 @@ export const useChat = create<ChatState>((set, get) => {
               suggestions: [],
               suggesting: false,
               blockedDir: null, // novo turno zera o aviso de pasta bloqueada
+              // enviar de novo É reconhecer o turno anterior: o selo de
+              // concluído sai sozinho, sem exigir que você troque de conversa.
+              finishedUnseen: undefined,
               pendingPlan: undefined, // e o plano pendente (envio manual supersede)
               limitHitThisTurn: false, // e o sinal de limite do turno anterior
               resetHint: null,
@@ -1437,20 +1440,15 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     finish: (convId) => {
-      // Marca "terminou e você não viu" quando o fio NÃO estava na sua frente
-      // (outra conversa, outro modo, ou janela sem foco). Se você estava
-      // olhando, o próprio conteúdo é o feedback — selo ali seria ruído.
+      // Marca SEMPRE que o turno termina — inclusive na conversa que você está
+      // olhando. A 1ª versão suprimia esse caso ("o conteúdo é o feedback"), e a
+      // teoria tem furo: o texto chega em STREAMING, sem momento nítido de fim.
+      // O spinner desaparecendo é sinal por AUSÊNCIA, que é justamente o que
+      // faltava. O selo sai quando você age na conversa (abre ou envia de novo).
       const c = get().byId[convId]
       const last = c?.items[c.items.length - 1]
-      const olhando =
-        get().activeId === convId &&
-        typeof document !== "undefined" &&
-        document.hasFocus()
-      const unseen: ConvState["finishedUnseen"] = olhando
-        ? undefined
-        : last?.kind === "error" || last?.kind === "limit"
-          ? "error"
-          : "ok"
+      const unseen: ConvState["finishedUnseen"] =
+        last?.kind === "error" || last?.kind === "limit" ? "error" : "ok"
       patch(convId, {
         running: false,
         finalizing: false,

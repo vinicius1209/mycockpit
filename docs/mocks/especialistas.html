@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>mycockpit · Especialistas inline (mock v2)</title>
+<style>
+  :root{
+    --background:#0a0b0d; --rail:#0c0d10; --card:#141619; --popover:#191c20;
+    --foreground:#e7e8ea; --muted-foreground:#9aa0a7; --accent:#1e2126;
+    --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#fbf6ee;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13);
+    --st-running:#5bb8e8; --st-queued:#d99138; --st-success:#5bd6a0; --st-error:#f2766b; --st-idle:#8a9099;
+    --radius:9px;
+    --sans:ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;color:inherit;cursor:pointer}
+  .app{display:grid;grid-template-columns:238px 1fr 46px;height:100vh;overflow:hidden}
+
+  /* ===== LEFT SIDEBAR (fiel ao real) ===== */
+  .rail{background:var(--rail);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:12px 8px 8px}
+  .brandrow{display:flex;align-items:center;gap:8px;padding:4px 8px 6px}
+  .reticle{width:15px;height:15px;border:1.6px solid var(--brass);border-radius:50%;position:relative;flex:0 0 auto}
+  .reticle::after{content:"";position:absolute;inset:4.5px;border-radius:50%;background:var(--brass)}
+  .reticle.sm{width:12px;height:12px;border-width:1.4px}.reticle.sm::after{inset:3.4px}
+  .brandname{font-weight:600;letter-spacing:.2px;font-size:14px}
+  .row{position:relative;display:flex;align-items:center;gap:11px;padding:7px 8px;border-radius:7px;color:var(--muted-foreground);border:none;background:none;width:100%;text-align:left;font-size:13px}
+  .row:hover{background:rgba(255,255,255,.045);color:var(--foreground)}
+  .row.sel{background:var(--accent);color:var(--brass);font-weight:500}
+  .row.sel::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);height:18px;width:2.5px;border-radius:3px;background:var(--brass)}
+  .row .ic{width:16px;height:16px;flex:0 0 auto;display:grid;place-items:center;opacity:.85;font-size:13px}
+  .row .badge{margin-left:auto;font-size:10px;background:rgba(228,168,98,.1);color:rgba(228,168,98,.8);border-radius:5px;padding:1px 6px;font-variant-numeric:tabular-nums}
+  .row .dot{margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--brass)}
+  .sec{font-size:10.5px;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.6px;padding:14px 8px 4px;opacity:.75}
+  .proj{padding-left:8px}
+  .conv{padding-left:34px;font-size:12.5px}
+  .conv .swords{margin-left:auto;font-size:11px;opacity:.6}
+  .chev{transition:transform .15s;font-size:10px;opacity:.6}
+  .spacer{flex:1}
+  .foot{display:flex;align-items:center;gap:8px;padding:8px;border-top:1px solid var(--border);margin-top:6px}
+  .foot .ver{font-family:var(--mono);font-size:10.5px;color:var(--muted-foreground);opacity:.8}
+  .foot .tg{margin-left:auto;width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--muted-foreground);display:grid;place-items:center}
+
+  /* ===== CENTER ===== */
+  .main{display:flex;flex-direction:column;min-width:0}
+  .topbar{height:48px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;padding:0 18px;flex:0 0 auto}
+  .convtitle{font-weight:600;font-size:13px}
+  .convtitle small{color:var(--muted-foreground);font-weight:400;margin-left:8px}
+  .topbtn{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .motorpill{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted-foreground);border:1px solid var(--border);border-radius:999px;padding:4px 11px 4px 8px;background:var(--card)}
+  .motorpill.on{border-color:rgba(228,168,98,.35);color:var(--brass)}
+  .switch{width:26px;height:15px;border-radius:999px;background:rgba(255,255,255,.12);position:relative;flex:0 0 auto;transition:.15s}
+  .switch::after{content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:var(--muted-foreground);transition:.15s}
+  .motorpill.on .switch{background:var(--brass-soft)}.motorpill.on .switch::after{left:13px;background:var(--brass)}
+  .iconbtn{width:30px;height:30px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--muted-foreground);display:grid;place-items:center;font-size:14px}
+  .iconbtn:hover{color:var(--foreground);border-color:var(--border-strong)}
+
+  .stream{flex:1;overflow-y:auto;padding:22px 30px 8px}
+  .stream::-webkit-scrollbar{width:9px}.stream::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:9px}
+  .wrap{max-width:720px}
+
+  .msg{display:flex;gap:11px;margin-bottom:20px}
+  .msg .av{width:26px;height:26px;border-radius:7px;flex:0 0 auto;display:grid;place-items:center;font-size:13px;font-weight:600}
+  .av.user{background:linear-gradient(135deg,#3a3f46,#20242a);color:#cdd2d8;border-radius:50%}
+  .av.agent{background:#101b22;color:var(--st-running);border:1px solid rgba(91,184,232,.25)}
+  .who{font-weight:600;font-size:13px;display:flex;align-items:center;gap:7px;margin-bottom:2px}
+  .who .t{color:var(--muted-foreground);font-weight:400;font-size:11px}
+  .txt p{margin:0 0 7px}.txt p:last-child{margin-bottom:0}
+  .txt code{font-family:var(--mono);font-size:12px;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:5px}
+  .chip{display:inline-flex;align-items:center;gap:5px;background:var(--brass-soft);color:var(--brass);border-radius:6px;padding:0 7px;font-size:12px;font-weight:600}
+  .chip .d{width:9px;height:9px;border-radius:3px;background:currentColor;opacity:.8}
+  .diffcard{border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,.02);padding:9px 11px;font-size:12px;margin:4px 0 2px;max-width:520px}
+  .diffcard .h{font-family:var(--mono);color:var(--muted-foreground);font-size:11px;margin-bottom:5px}
+  .diffcard code{font-family:var(--mono);display:block;font-size:11.5px;line-height:1.7}
+  .diffcard .add{color:var(--st-success)}.diffcard .del{color:var(--st-error)}
+
+  /* ===== MOTOR (Frota) — a linha de orquestração, quieta ===== */
+  .motorline{display:flex;align-items:center;gap:9px;margin:0 0 18px;padding-left:2px;color:var(--muted-foreground);font-size:12px}
+  .motorline .rk{display:flex;align-items:center;gap:6px;color:var(--brass);font-weight:500}
+  .motorline .lead{flex:0 0 auto}
+  .motorline .track{flex:1;height:1px;background:linear-gradient(90deg,rgba(228,168,98,.35),var(--border) 60%,transparent)}
+  .motorline b{color:var(--foreground);font-weight:600}
+
+  /* ===== ESPECIALISTA inline — clean, sem cartão pesado ===== */
+  .sp{display:flex;gap:11px;margin-bottom:20px;position:relative}
+  .sp::before{content:"";position:absolute;left:12px;top:30px;bottom:-8px;width:1.5px;background:linear-gradient(180deg,var(--brass-soft),transparent);opacity:.7}
+  .sp .av{width:26px;height:26px;border-radius:7px;flex:0 0 auto;display:grid;place-items:center;font-size:13px;font-weight:600;z-index:1}
+  .sp .who .ro{font-size:10px;font-weight:400;color:var(--st-idle);border:1px solid var(--border);border-radius:999px;padding:0 7px}
+  .sp .verdict{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:12px;padding:1px 9px;border-radius:6px;margin:3px 0 8px}
+  .v-warn{background:rgba(217,145,56,.14);color:var(--st-queued)}
+  .v-ok{background:rgba(91,214,160,.14);color:var(--st-success)}
+  .v-block{background:rgba(242,118,107,.14);color:var(--st-error)}
+  .sp ul{margin:5px 0 0;padding-left:17px}.sp li{margin-bottom:5px;color:var(--foreground)}
+  .sp li b{font-weight:600}
+  .sp .inlineact{display:flex;gap:14px;margin-top:11px}
+  .lnk{background:none;border:none;padding:0;font-size:12.5px;font-weight:500;color:var(--brass)}
+  .lnk:hover{text-decoration:underline}
+  .lnk.mut{color:var(--muted-foreground)}.lnk.mut:hover{color:var(--foreground)}
+
+  /* síntese do motor (mesa) */
+  .synth{border:1px solid rgba(228,168,98,.28);border-radius:11px;background:linear-gradient(180deg,rgba(228,168,98,.06),transparent 70%);padding:12px 14px;margin-bottom:20px;max-width:640px}
+  .synth .sh{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--brass);font-weight:600;margin-bottom:8px}
+  .synth ul{margin:0;padding-left:17px}.synth li{margin-bottom:4px;font-size:13px}
+  .synth .act{display:flex;gap:10px;margin-top:11px}
+
+  /* ===== COMPOSER ===== */
+  .composerwrap{padding:8px 30px 20px;flex:0 0 auto}
+  .composer{border:1px solid var(--border-strong);background:var(--card);border-radius:14px;padding:10px 12px 8px;position:relative;max-width:720px;transition:border-color .15s}
+  .composer.focus{border-color:var(--brass);box-shadow:0 0 0 3px var(--brass-soft)}
+  .composer textarea{width:100%;border:none;background:none;color:var(--foreground);resize:none;outline:none;font-family:inherit;font-size:14px;min-height:22px}
+  .composer textarea::placeholder{color:var(--muted-foreground)}
+  .cbar{display:flex;align-items:center;gap:6px;margin-top:8px}
+  .cbar .tool{width:26px;height:26px;border-radius:6px;border:none;background:none;color:var(--muted-foreground);display:grid;place-items:center;font-size:14px}
+  .cbar .tool:hover{background:rgba(255,255,255,.06);color:var(--foreground)}
+  .cbar .presetsel{font-size:12px;color:var(--muted-foreground);border:1px solid var(--border);border-radius:7px;padding:4px 9px;background:none;display:flex;gap:6px;align-items:center}
+  .cbar .send{margin-left:auto;width:30px;height:30px;border-radius:8px;background:var(--brass);color:#1a1306;border:none;display:grid;place-items:center;font-size:15px}
+  .hintline{font-size:11px;color:var(--muted-foreground);padding:6px 4px 0;display:flex;gap:6px;align-items:center;max-width:720px}
+  .kbd{font-family:var(--mono);font-size:10.5px;border:1px solid var(--border);border-radius:4px;padding:0 4px;color:var(--muted-foreground)}
+
+  .pop{position:absolute;left:12px;bottom:calc(100% + 8px);width:350px;background:var(--popover);border:1px solid var(--border-strong);border-radius:11px;box-shadow:0 12px 40px -8px rgba(0,0,0,.6);overflow:hidden;display:none}
+  .pop.open{display:block}
+  .pop .head{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted-foreground);padding:9px 12px 5px;display:flex;justify-content:space-between}
+  .pop .opt{display:flex;align-items:center;gap:10px;padding:8px 12px;border:none;background:none;width:100%;text-align:left}
+  .pop .opt:hover,.pop .opt.hi{background:var(--brass-soft)}
+  .pop .opt .av{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:13px;flex:0 0 auto}
+  .pop .opt .nm{font-size:13px;font-weight:600}.pop .opt .rl{font-size:11px;color:var(--muted-foreground)}
+  .pop .opt .ro{margin-left:auto;font-size:10px;color:var(--st-idle);border:1px solid var(--border);border-radius:999px;padding:1px 7px}
+  .pop .sep{border-top:1px solid var(--border);margin:4px 0}
+  .pop .opt.mesa .av{background:var(--card);border:1px solid rgba(228,168,98,.35);color:var(--brass)}
+
+  /* ===== RIGHT collapsed rail (o painel que já existe) ===== */
+  .rrail{background:var(--rail);border-left:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:6px}
+  .rrail button{width:30px;height:30px;border-radius:7px;border:none;background:none;color:var(--muted-foreground);display:grid;place-items:center;font-size:14px}
+  .rrail button:hover{background:rgba(255,255,255,.05);color:var(--foreground)}
+  .rrail .lbl{writing-mode:vertical-rl;font-size:9.5px;color:var(--muted-foreground);opacity:.5;margin-top:6px;letter-spacing:.5px}
+
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;place-items:center;z-index:40}
+  .scrim.open{display:grid}
+  .gallery{width:min(860px,92vw);max-height:84vh;background:var(--popover);border:1px solid var(--border-strong);border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 70px -12px rgba(0,0,0,.7)}
+  .gallery .gh{padding:18px 20px 12px;border-bottom:1px solid var(--border)}
+  .gallery .gh h2{margin:0;font-size:16px}.gallery .gh p{margin:3px 0 0;color:var(--muted-foreground);font-size:12.5px}
+  .gallery .grid{overflow-y:auto;padding:16px 20px 20px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .spcard{border:1px solid var(--border);border-radius:11px;padding:13px;background:var(--card);display:flex;flex-direction:column;gap:8px}
+  .spcard:hover{border-color:var(--border-strong)}
+  .spcard .top{display:flex;gap:10px;align-items:center}
+  .spcard .av{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-size:16px;flex:0 0 auto}
+  .spcard .nm{font-weight:600;font-size:13.5px}.spcard .rl{font-size:11px;color:var(--muted-foreground)}
+  .spcard .desc{font-size:12px;color:var(--muted-foreground);min-height:32px}
+  .spcard .meta{display:flex;flex-wrap:wrap;gap:6px}
+  .tag{font-size:10.5px;border:1px solid var(--border);border-radius:999px;padding:1px 8px;color:var(--muted-foreground)}
+  .tag.ro{color:var(--st-idle)}.tag.br{color:var(--brass);border-color:rgba(228,168,98,.3)}
+  .spcard .ft{display:flex;align-items:center;justify-content:space-between;margin-top:2px}
+  .spcard .slug{font-family:var(--mono);font-size:11px;color:var(--muted-foreground)}
+  .btn{border:1px solid var(--border-strong);background:var(--card);border-radius:7px;padding:5px 12px;font-size:12px;font-weight:500;color:var(--foreground)}
+  .btn:hover{border-color:var(--brass);color:var(--brass)}
+  .btn.primary{background:var(--brass);color:#1a1306;border-color:var(--brass)}.btn.primary:hover{filter:brightness(1.06);color:#1a1306}
+
+  .toast{position:fixed;bottom:22px;left:calc(50% - 23px);transform:translateX(-50%) translateY(20px);background:var(--popover);border:1px solid var(--border-strong);border-radius:10px;padding:10px 16px;font-size:13px;box-shadow:0 12px 40px -8px rgba(0,0,0,.6);opacity:0;transition:.25s;z-index:60;max-width:420px}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .fade{animation:fade .32s ease}@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .thinking{font-size:12px;color:var(--muted-foreground);display:flex;gap:7px;align-items:center}
+  .dots span{animation:blink 1.2s infinite}.dots span:nth-child(2){animation-delay:.2s}.dots span:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,60%,100%{opacity:.25}30%{opacity:1}}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ===== LEFT SIDEBAR (fiel) ===== -->
+  <aside class="rail">
+    <div class="brandrow"><div class="reticle"></div><span class="brandname">mycockpit</span></div>
+    <button class="row"><span class="ic">◷</span> Agendado <span class="badge">2h</span></button>
+
+    <div class="sec">Projetos</div>
+    <button class="row proj" onclick="toggleTree(this)"><span class="ic chev">▾</span><span class="ic" style="margin-left:-4px">◆</span> mycockpit</button>
+    <div class="tree">
+      <button class="row conv sel"><span class="ic">#</span> aprovação-desassistida <span class="dot"></span></button>
+      <button class="row conv"><span class="ic">#</span> notificações-turno <span class="swords">⚔</span></button>
+      <button class="row conv"><span class="ic">#</span> sugestões-pílulas</button>
+    </div>
+    <button class="row proj"><span class="ic chev" style="transform:rotate(-90deg)">▾</span><span class="ic" style="margin-left:-4px">◆</span> mypeople</button>
+
+    <div class="spacer"></div>
+    <div class="foot"><span class="ver">local · v0.1.0-test.42</span><button class="tg" title="tema">☾</button></div>
+  </aside>
+
+  <!-- ===== CENTER ===== -->
+  <div class="main">
+    <div class="topbar">
+      <span class="convtitle"># aprovação-desassistida <small>opus · executor</small></span>
+      <div class="topbtn">
+        <button class="motorpill on" id="motorPill" onclick="toggleMotor()" title="Motor Frota: orquestra os especialistas">
+          <span class="reticle sm"></span> Motor Frota <span class="switch"></span>
+        </button>
+        <button class="iconbtn" title="Especialistas" onclick="openGallery()">✦</button>
+      </div>
+    </div>
+
+    <div class="stream" id="stream"><div class="wrap" id="wrap">
+      <div class="msg">
+        <div class="av user">V</div>
+        <div><div class="who">Você <span class="t">14:22</span></div>
+          <div class="txt"><p>Muda a aprovação desassistida pra <b>expirar</b> em vez de congelar. Se ninguém aprovar em 10min, cancela o turno e notifica.</p></div></div>
+      </div>
+      <div class="msg">
+        <div class="av agent">◈</div>
+        <div><div class="who">Executor <span class="t">14:22</span></div>
+          <div class="txt">
+            <p>Feito. Troquei o <code>freeze()</code> por um <code>expireAt</code> no dispatch e um watcher que cancela + dispara <code>notifyTurnEnd</code>.</p>
+            <div class="diffcard"><div class="h">app/src/lib/agents.ts</div>
+              <code><span class="del">- await freezeDispatch(turn.id)</span>
+<span class="add">+ turn.expireAt = now() + 10*60_000</span>
+<span class="add">+ scheduleExpiry(turn.id, turn.expireAt)</span></code></div>
+            <p style="margin-top:8px">Quer que eu rode os testes de <code>interactions.awaiting</code>?</p></div></div>
+      </div>
+      <div id="slot"></div>
+    </div></div>
+
+    <div class="composerwrap">
+      <div class="composer" id="composer">
+        <div class="pop" id="pop">
+          <div class="head"><span>Especialistas · conselho read-only</span><span style="opacity:.6">↑↓ ⏎</span></div>
+          <button class="opt" data-sp="arq"><span class="av" style="background:#1b2320;color:#8fd6b0">△</span><div><div class="nm">Aline · Arquiteta</div><div class="rl">trava a fronteira antes de escrever</div></div><span class="ro">só leitura</span></button>
+          <button class="opt" data-sp="sec"><span class="av" style="background:#241a1a;color:#f2a39b">◇</span><div><div class="nm">Vault · Segurança</div><div class="rl">rubrica de risco no diff</div></div><span class="ro">só leitura</span></button>
+          <button class="opt" data-sp="ceo"><span class="av" style="background:#20202a;color:#b3b3e6">◎</span><div><div class="nm">Marco · Estratégia</div><div class="rl">"é a coisa certa agora?"</div></div><span class="ro">só leitura</span></button>
+          <button class="opt" data-sp="perf"><span class="av" style="background:#231f14;color:var(--brass)">⊘</span><div><div class="nm">Nero · Custo/Perf</div><div class="rl">orçamento de latência e tokens</div></div><span class="ro">só leitura</span></button>
+          <div class="sep"></div>
+          <button class="opt mesa" data-sp="__mesa"><span class="av">✦</span><div><div class="nm">Convocar mesa</div><div class="rl">Frota reúne os certos e sintetiza</div></div></button>
+        </div>
+        <textarea id="ta" rows="1" placeholder="Mensagem pro executor…  digite @ para chamar um especialista"></textarea>
+        <div class="cbar">
+          <button class="tool" title="@ menção" onclick="triggerAt()">@</button>
+          <button class="tool" title="anexo">⧉</button>
+          <button class="presetsel">◈ Executor · opus ▾</button>
+          <button class="send" onclick="sendMsg()">↑</button>
+        </div>
+      </div>
+      <div class="hintline"><span class="kbd">@</span> chama especialista · <span class="kbd">⏎</span> envia · <b style="color:var(--brass)">especialistas respondem inline, o Motor Frota roteia e sintetiza</b></div>
+    </div>
+  </div>
+
+  <!-- ===== RIGHT collapsed rail (já existe) ===== -->
+  <aside class="rrail">
+    <button title="Contexto">◔</button>
+    <button title="Alterações">±</button>
+    <button title="Aprendizados">✦</button>
+    <span class="lbl">painel</span>
+  </aside>
+</div>
+
+<div class="scrim" id="scrim" onclick="if(event.target===this)closeGallery()">
+  <div class="gallery">
+    <div class="gh"><h2>Especialistas <span style="color:var(--muted-foreground);font-weight:400;font-size:13px">· 7 em 4 packs</span></h2>
+      <p>Conselheiros read-only. Cada um = system prompt + rubrica + escopo + modelo. Reusáveis entre projetos; leem o contexto da conversa. O Motor Frota decide quem entra e sintetiza.</p></div>
+    <div class="grid" id="galgrid"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const SP = {
+  arq:{nm:"Aline · Arquiteta",role:"Arquitetura",av:"△",avbg:"#1b2320",avfg:"#8fd6b0",slug:"/arq",tags:["Engenharia","Review"],model:"opus · alto",
+    desc:"Trava a fronteira e o acoplamento antes de uma linha ser escrita.",
+    verdict:["v-warn","⚠︎ 1 fronteira frágil"],
+    body:`<ul>
+      <li><b>Fronteira frágil:</b> <code>scheduleExpiry</code> é timer em memória — se o app reinicia no meio dos 10min, ninguém re-agenda. Derive o expiry de <code>expireAt</code> no boot.</li>
+      <li><b>Acoplamento:</b> o watcher chama <code>notifyTurnEnd</code> direto; emita <code>turn.expired</code> e deixe a notificação assinar. Senão todo fim novo vira um if aqui.</li>
+      <li><b>Idempotência:</b> expirar + humano aprovar no mesmo segundo não pode rodar o turno duas vezes.</li></ul>`,
+    one:"re-derivar expiry no boot + trocar chamada direta por evento <code>turn.expired</code>"},
+  sec:{nm:"Vault · Segurança",role:"Risco",av:"◇",avbg:"#241a1a",avfg:"#f2a39b",slug:"/sec",tags:["Qualidade","Review"],model:"opus · alto",
+    desc:"Passa a rubrica de risco/permissões no diff. Não escreve, só aponta.",
+    verdict:["v-ok","✓ Sem risco novo"],
+    body:`<ul>
+      <li><b>Fail-closed:</b> na dúvida (timer perdido, clock skew) o turno deve <b>cancelar</b>, nunca auto-aprovar. Confirme o default.</li>
+      <li><b>Trilha:</b> registre <code>expired_by: system</code> no audit pra não confundir com cancelamento humano.</li></ul>`,
+    one:"garantir default fail-closed + carimbar <code>expired_by: system</code> no audit"},
+  ceo:{nm:"Marco · Estratégia",role:"Produto",av:"◎",avbg:"#20202a",avfg:"#b3b3e6",slug:"/estrategia",tags:["Estratégia"],model:"opus · alto",
+    desc:"Antes de refinar: isso é a coisa certa pra construir agora?",
+    verdict:["v-warn","⚠︎ Pergunta antes de seguir"],
+    body:`<ul>
+      <li><b>10min é arbitrário?</b> Se a aprovação desassistida existe pra você <i>não</i> ficar de babá, expirar em 10min te obriga a ficar por perto. Talvez "expira ao fim do turno" ou configurável.</li>
+      <li><b>Comportamento premiado:</b> se o objetivo é confiança progressiva, talvez seja <b>aprovar-por-padrão com veto</b>, não expirar.</li></ul>`,
+    one:"tornar a janela configurável (não fixa em 10min)"},
+  perf:{nm:"Nero · Custo/Perf",role:"Custo",av:"⊘",avbg:"#231f14",avfg:"#e4a862",slug:"/custo",tags:["Ops"],model:"sonnet · médio",
+    desc:"Lente de custo: tokens, latência, chamadas desnecessárias.",
+    verdict:["v-ok","✓ Barato"],
+    body:`<ul><li><b>Nada de polling</b> de 1s pra checar expiry. Um <code>setTimeout</code> único em <code>expireAt</code> (ou job agendado) evita acordar o app à toa.</li></ul>`,
+    one:"usar timeout único, sem polling"},
+  design:{nm:"Íris · Design",role:"Rubrica de produto",av:"❖",avbg:"#1e2230",avfg:"#9db8f0",slug:"/design",tags:["Design"],model:"opus · alto",
+    desc:"Avalia contra um produto padrão-ouro. Fricção, primeiro uso, clareza."},
+  dx:{nm:"Dev · DX",role:"Experiência do dev",av:"⌘",avbg:"#1a2321",avfg:"#7fd6c4",slug:"/dx",tags:["Engenharia"],model:"sonnet · médio",
+    desc:"Fricção de quem desenvolve: naming, testabilidade, docs, primeiro run."},
+  retro:{nm:"Eco · Retrô",role:"Retrospectiva",av:"↺",avbg:"#241f26",avfg:"#d5a3e6",slug:"/retro",tags:["Ops"],model:"sonnet · médio",
+    desc:"Olha o histórico do turno e diz o que repetir e o que cortar."},
+};
+
+let motorOn = true;
+let atOpen = false;
+
+function toggleMotor(){ motorOn=!motorOn; const p=document.getElementById("motorPill"); p.classList.toggle("on",motorOn);
+  toast(motorOn?"Motor Frota ligado — ele roteia o especialista certo e sintetiza a mesa":"Motor desligado — vira só menção crua, sem orquestração (modo Buzz)"); }
+
+/* ---- @ ---- */
+function triggerAt(){ const ta=document.getElementById("ta"); ta.focus(); if(!ta.value.endsWith("@")) ta.value+=(ta.value&&!ta.value.endsWith(" ")?" @":"@"); openPop(); }
+function openPop(){ document.getElementById("pop").classList.add("open"); atOpen=true; }
+function closePop(){ document.getElementById("pop").classList.remove("open"); atOpen=false; }
+document.getElementById("ta").addEventListener("input",e=>{ if(/(?:^|\s)@\S*$/.test(e.target.value)) openPop(); });
+const comp=document.getElementById("composer");
+comp.addEventListener("focusin",()=>comp.classList.add("focus"));
+comp.addEventListener("focusout",()=>comp.classList.remove("focus"));
+document.querySelectorAll(".pop .opt").forEach(o=>o.addEventListener("click",()=>{ closePop(); const ta=document.getElementById("ta"); ta.value=ta.value.replace(/@\S*$/,""); if(o.dataset.sp==="__mesa") convokeMesa(); else consult(o.dataset.sp); }));
+document.addEventListener("click",e=>{ if(!e.target.closest("#composer")) closePop(); });
+
+const slot=()=>document.getElementById("slot");
+function scrollEnd(el){ el.scrollIntoView({behavior:"smooth",block:"end"}); }
+
+/* ---- motor line ---- */
+function motorLine(text){ const el=document.createElement("div"); el.className="motorline fade";
+  el.innerHTML=`<span class="rk lead"><span class="reticle sm"></span> Frota</span> <span>${text}</span><span class="track"></span>`;
+  slot().appendChild(el); return el; }
+
+/* ---- single specialist inline ---- */
+function consult(key){
+  const s=SP[key];
+  if(motorOn) motorLine(`roteou pra <b>${s.nm.split(" ")[0]}</b> · ${s.role.toLowerCase()} · <span style="color:var(--st-idle)">só leitura</span>`);
+  const think=document.createElement("div"); think.className="sp fade";
+  think.innerHTML=`<div class="av" style="background:${s.avbg};color:${s.avfg}">${s.av}</div><div style="padding-top:3px"><div class="thinking">${s.nm.split(" ")[0]} lendo o contexto <span class="dots"><span>·</span><span>·</span><span>·</span></span></div></div>`;
+  slot().appendChild(think); scrollEnd(think);
+  setTimeout(()=>{ think.remove(); postParecer(key); },850);
+}
+function postParecer(key){
+  const s=SP[key]; const el=document.createElement("div"); el.className="sp fade";
+  el.innerHTML=`<div class="av" style="background:${s.avbg};color:${s.avfg}">${s.av}</div>
+    <div><div class="who">${s.nm} <span class="ro">só leitura</span> <span class="t">agora</span></div>
+    <span class="verdict ${s.verdict[0]}">${s.verdict[1]}</span>${s.body}
+    <div class="inlineact"><button class="lnk" onclick="passToExec('${key}',this)">↳ Passar pro Executor</button><button class="lnk mut" onclick="this.closest('.sp').remove()">Dispensar</button></div></div>`;
+  slot().appendChild(el); scrollEnd(el);
+}
+function passToExec(key,btn){
+  const s=SP[key]; btn.closest(".inlineact").remove();
+  if(motorOn) motorLine(`handoff <b>${s.nm.split(" ")[0]} → Executor</b>`);
+  const el=document.createElement("div"); el.className="msg fade";
+  el.innerHTML=`<div class="av agent">◈</div><div><div class="who">Executor <span class="t">agora</span></div>
+    <div class="txt"><p>Peguei o parecer de <span class="chip"><span class="d"></span>${s.nm.split(" ")[0]}</span>. Vou ${s.one}. Aplicando…</p></div></div>`;
+  slot().appendChild(el); scrollEnd(el); toast("O executor assumiu o parecer");
+}
+
+/* ---- MESA: motor convokes + synthesizes ---- */
+function convokeMesa(){
+  const keys=["arq","sec","perf"];
+  motorLine(`analisou o diff e convocou <b>3 especialistas</b> · arquitetura, segurança, custo`);
+  let done=0;
+  keys.forEach((k,i)=>setTimeout(()=>{ postParecerCompact(k); done++; if(done===keys.length) setTimeout(synth,700); }, 500+i*750));
+}
+function postParecerCompact(key){
+  const s=SP[key]; const el=document.createElement("div"); el.className="sp fade";
+  el.innerHTML=`<div class="av" style="background:${s.avbg};color:${s.avfg}">${s.av}</div>
+    <div><div class="who">${s.nm} <span class="ro">só leitura</span></div>
+    <span class="verdict ${s.verdict[0]}">${s.verdict[1]}</span>${s.body}</div>`;
+  slot().appendChild(el); scrollEnd(el);
+}
+function synth(){
+  const el=document.createElement("div"); el.className="synth fade";
+  el.innerHTML=`<div class="sh"><span class="reticle sm"></span> Frota · síntese da mesa</div>
+    <div style="font-size:12.5px;color:var(--muted-foreground);margin-bottom:8px">3 pareceres · <b style="color:var(--st-queued)">1 atenção</b> · 2 ok. Consolidei em 3 ações, sem duplicar:</div>
+    <ul>
+      <li><b>Bloqueante:</b> re-derivar <code>expireAt</code> no boot (senão o reinício perde o timer). <span style="color:var(--st-idle)">— Aline + Nero</span></li>
+      <li>Emitir evento <code>turn.expired</code> em vez de chamar <code>notifyTurnEnd</code> direto. <span style="color:var(--st-idle)">— Aline</span></li>
+      <li>Default <b>fail-closed</b> + <code>expired_by: system</code> no audit. <span style="color:var(--st-idle)">— Vault</span></li>
+    </ul>
+    <div class="act"><button class="btn primary" onclick="applySynth()">↳ Aplicar as 3 com o Executor</button><button class="btn" onclick="toast('Só a #1 marcada como bloqueante')">Só o bloqueante</button></div>`;
+  slot().appendChild(el); scrollEnd(el);
+}
+function applySynth(){
+  if(motorOn) motorLine(`consolidou a mesa → <b>Executor</b> (3 ações)`);
+  const el=document.createElement("div"); el.className="msg fade";
+  el.innerHTML=`<div class="av agent">◈</div><div><div class="who">Executor <span class="t">agora</span></div>
+    <div class="txt"><p>Recebi a síntese da <span class="chip"><span class="d"></span>mesa</span>: (1) re-derivo o expiry no boot, (2) emito <code>turn.expired</code>, (3) default fail-closed + audit. Aplicando as três…</p></div></div>`;
+  slot().appendChild(el); scrollEnd(el); toast("Mesa consolidada — 3 ações no executor");
+}
+
+/* ---- send ---- */
+function sendMsg(){ const ta=document.getElementById("ta"); if(!ta.value.trim())return;
+  const el=document.createElement("div"); el.className="msg fade";
+  el.innerHTML=`<div class="av user">V</div><div><div class="who">Você <span class="t">agora</span></div><div class="txt"><p>${ta.value.replace(/</g,"&lt;")}</p></div></div>`;
+  slot().appendChild(el); ta.value=""; ta.style.height="auto"; scrollEnd(el); }
+document.getElementById("ta").addEventListener("keydown",e=>{ if(e.key==="Enter"&&!e.shiftKey&&!atOpen){e.preventDefault();sendMsg();} if(e.key==="Escape")closePop(); });
+const taEl=document.getElementById("ta"); taEl.addEventListener("input",()=>{taEl.style.height="auto";taEl.style.height=taEl.scrollHeight+"px";});
+
+/* ---- tree ---- */
+function toggleTree(btn){ const t=btn.nextElementSibling; const c=btn.querySelector(".chev"); const open=t.style.display!=="none";
+  t.style.display=open?"none":"block"; c.style.transform=open?"rotate(-90deg)":""; }
+
+/* ---- gallery ---- */
+function openGallery(){ const g=document.getElementById("galgrid"); g.innerHTML="";
+  Object.entries(SP).forEach(([k,s])=>{ const c=document.createElement("div"); c.className="spcard";
+    c.innerHTML=`<div class="top"><div class="av" style="background:${s.avbg};color:${s.avfg}">${s.av}</div><div><div class="nm">${s.nm}</div><div class="rl">${s.role}</div></div></div>
+      <div class="desc">${s.desc}</div>
+      <div class="meta"><span class="tag ro">● só leitura</span>${s.tags.map(t=>`<span class="tag">${t}</span>`).join("")}<span class="tag br">${s.model}</span></div>
+      <div class="ft"><span class="slug">${s.slug}</span><button class="btn" onclick="addSp('${k}')">Chamar</button></div>`;
+    g.appendChild(c); });
+  document.getElementById("scrim").classList.add("open"); }
+function closeGallery(){ document.getElementById("scrim").classList.remove("open"); }
+function addSp(k){ closeGallery(); consult(k); }
+
+let tmo; function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(tmo); tmo=setTimeout(()=>t.classList.remove("show"),3000); }
+</script>
+</body>
+</html>
