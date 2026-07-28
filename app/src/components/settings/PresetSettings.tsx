@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Pencil, Plus, Trash2 } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -15,9 +16,11 @@ import {
   agentModels,
   normalizeModelValue,
 } from "@/lib/agents"
-import type { AgentPreset, AgentPresetInput } from "@/lib/db"
+import type { AgentPresetInput } from "@/lib/db"
+import type { AgentDef, PresetScope } from "@/lib/agentDefs"
 import { parseSkillsText, presetDigest, shortDigest } from "@/lib/presets"
 import { usePresets } from "@/store/presets"
+import { useActiveProject } from "@/store/app"
 
 const SELECT_TRIGGER =
   "h-8 gap-1.5 rounded-md border bg-secondary/40 px-2.5 text-[13px] text-foreground data-[size=default]:h-8"
@@ -25,6 +28,9 @@ const SELECT_TRIGGER =
 interface Draft {
   /** null = criando; senão editando o preset deste id. */
   id: string | null
+  /** Onde o arquivo mora. Só editável na CRIAÇÃO — mudar depois moveria o
+   *  arquivo e quebraria o carimbo das conversas que apontam pra ele. */
+  scope: PresetScope
   name: string
   personalityMd: string
   /** Skills como texto (uma por linha ou separadas por vírgula). */
@@ -35,9 +41,10 @@ interface Draft {
   effort: string
 }
 
-function emptyDraft(): Draft {
+function emptyDraft(scope: PresetScope): Draft {
   return {
     id: null,
+    scope,
     name: "",
     personalityMd: "",
     skillsText: "",
@@ -48,9 +55,10 @@ function emptyDraft(): Draft {
   }
 }
 
-function draftFrom(p: AgentPreset): Draft {
+function draftFrom(p: AgentDef): Draft {
   return {
     id: p.id,
+    scope: p.scope,
     name: p.name,
     personalityMd: p.personalityMd,
     skillsText: p.skills.join("\n"),
@@ -88,9 +96,11 @@ export function PresetSettings() {
   const [digestPreview, setDigestPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
+  const project = useActiveProject()
+  const projectPath = project?.path ?? null
   useEffect(() => {
-    void usePresets.getState().load()
-  }, [])
+    void usePresets.getState().load(projectPath)
+  }, [projectPath])
 
   // Preview do digest AO VIVO: recomputa a cada mudança do draft (sha256 é
   // barato; o token de corrida descarta resultados atrasados).
@@ -119,7 +129,7 @@ export function PresetSettings() {
     setSaving(true)
     try {
       if (draft.id) await usePresets.getState().update(draft.id, input)
-      else await usePresets.getState().create(input)
+      else await usePresets.getState().create(input, draft.scope)
       setDraft(null)
     } finally {
       setSaving(false)
@@ -138,7 +148,7 @@ export function PresetSettings() {
         </h3>
         {!draft && (
           <button
-            onClick={() => setDraft(emptyDraft())}
+            onClick={() => setDraft(emptyDraft(projectPath ? "projeto" : "global"))}
             className="mb-1 flex items-center gap-1.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
           >
             <Plus className="size-3.5" />
@@ -167,6 +177,23 @@ export function PresetSettings() {
                   <span className="truncate">{p.name}</span>
                   <span className="shrink-0 rounded border px-1 py-px text-[10px] tracking-wide text-muted-foreground uppercase">
                     v{p.version}
+                  </span>
+                  {/* Escopo: persona de projeto some ao trocar de projeto — o
+                      selo evita a impressão de que ela "sumiu". */}
+                  <span
+                    className={cn(
+                      "shrink-0 rounded px-1 py-px text-[10px] font-medium tracking-wide uppercase",
+                      p.scope === "projeto"
+                        ? "bg-brass/15 text-brass"
+                        : "bg-secondary text-muted-foreground/70",
+                    )}
+                    title={
+                      p.scope === "projeto"
+                        ? "Vale só neste projeto (.mycockpit/agents)"
+                        : "Vale em todos os projetos (~/.mycockpit/agents)"
+                    }
+                  >
+                    {p.scope}
                   </span>
                 </div>
                 <div className="truncate text-[11.5px] text-muted-foreground">
@@ -206,6 +233,37 @@ export function PresetSettings() {
 
       {draft && (
         <div className="mt-3 flex flex-col gap-4 rounded-lg border border-border/50 bg-secondary/10 p-4">
+          {/* Escopo só na CRIAÇÃO: trocar depois moveria o arquivo e as
+              conversas carimbadas passariam a achar a persona apagada. */}
+          {!draft.id && (
+            <FieldRow label="Onde vale">
+              <div className="flex items-center gap-0.5 self-start rounded-lg bg-secondary/70 p-0.5">
+                {(["projeto", "global"] as PresetScope[]).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    disabled={s === "projeto" && !projectPath}
+                    onClick={() => setDraft({ ...draft, scope: s })}
+                    title={
+                      s === "projeto"
+                        ? projectPath
+                          ? `Só neste projeto · ${projectPath}/.mycockpit/agents`
+                          : "Abra um projeto para criar uma persona só dele"
+                        : "Em todos os projetos · ~/.mycockpit/agents"
+                    }
+                    className={cn(
+                      "h-6 rounded-md px-2.5 text-[12px] transition-colors disabled:opacity-40",
+                      draft.scope === s
+                        ? "bg-card text-foreground shadow-[var(--shadow-sm)]"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {s === "projeto" ? "Este projeto" : "Todos os projetos"}
+                  </button>
+                ))}
+              </div>
+            </FieldRow>
+          )}
           <FieldRow label="Nome">
             <Input
               value={draft.name}

@@ -15,6 +15,7 @@ import {
   buildContext,
   parseSuggestions,
 } from "@/lib/suggestions"
+import { getAgentDef } from "@/lib/agentDefs"
 import { useApp } from "@/store/app"
 import type { FusionCandidate } from "@/store/fusion"
 import { normalizeModelValue } from "@/lib/agents"
@@ -33,7 +34,6 @@ import {
   setConversationColor as dbSetColor,
   setConversationWorktree as dbSetWorktree,
   setConversationPreset as dbSetPreset,
-  getPreset,
   recordTurnCost,
   isTauri,
   type ConversationMeta,
@@ -617,7 +617,12 @@ export const useChat = create<ChatState>((set, get) => {
     let presetName: string | null = null
     if (conv !== "corrupt" && conv?.presetId) {
       try {
-        presetName = (await getPreset(conv.presetId))?.name ?? null
+        // personas moram em arquivo (projeto + global) desde jul/2026 — sem o
+        // caminho do projeto, uma persona local ficaria sem nome na mesa.
+        const path =
+          useApp.getState().projects.find((p) => p.id === projectId)?.path ??
+          null
+        presetName = (await getAgentDef(path, conv.presetId))?.name ?? null
       } catch {
         presetName = null
       }
@@ -1426,7 +1431,12 @@ export const useChat = create<ChatState>((set, get) => {
       // fire-and-forget, o transplante não bloqueia).
       const before = get().byId[convId]
       if (before?.presetId && before.presetDigest) {
-        void warnPresetDrift(convId, before.presetId, before.presetDigest)
+        // as personas moram em arquivo (projeto + global): sem o caminho do
+        // projeto, uma persona de escopo local pareceria APAGADA.
+        const path =
+          useApp.getState().projects.find((p) => p.id === before.projectId)
+            ?.path ?? null
+        void warnPresetDrift(convId, before.presetId, before.presetDigest, path)
       }
       set((s) => {
         const cur = s.byId[convId]

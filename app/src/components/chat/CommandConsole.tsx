@@ -160,9 +160,12 @@ export function CommandConsole({
   // seta agent/modelo/esforço de uma vez; mexer na camada crua desfaz a
   // seleção (o preset é o trio inteiro, não um item avulso).
   const presets = usePresets((s) => s.list)
+  // As personas viraram ARQUIVO e ganharam escopo: recarrega ao trocar de
+  // projeto, senão a lista mostraria as personas do projeto anterior.
+  const presetProjectPath = project?.path ?? null
   useEffect(() => {
-    if (isTauri()) void usePresets.getState().load()
-  }, [])
+    if (isTauri()) void usePresets.getState().load(presetProjectPath)
+  }, [presetProjectPath])
   const effectivePreset = conv.presetId ?? NO_PRESET
   const presetOptions = presets.map((p) => ({
     value: p.id,

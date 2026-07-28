@@ -1,7 +1,8 @@
 // Sprint 3 · E2 — Agent Presets: digest canônico estável, bloco de persona só
 // no 1º turno, preflight FAIL-CLOSED de skills e verificação de drift no
-// resume/transplant. DB (getPreset) e inventário (readProjectCommands)
-// mockados; o núcleo puro roda de verdade (sha256 via crypto.subtle).
+// resume/transplant. O disco (getAgentDef, que lê .mycockpit/agents) e o
+// inventário (readProjectCommands) são mockados; o núcleo puro roda de verdade
+// (sha256 via crypto.subtle).
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { AgentPreset } from "@/lib/db"
@@ -9,17 +10,17 @@ import type { AgentPreset } from "@/lib/db"
 const h = vi.hoisted(() => ({
   preset: null as unknown,
   commands: [] as { name: string }[],
-  getPresetThrows: false,
+  getAgentDefThrows: false,
   commandsThrow: false,
 }))
 
 vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
 }))
-vi.mock("@/lib/db", () => ({
-  isTauri: () => true,
-  getPreset: vi.fn(async () => {
-    if (h.getPresetThrows) throw new Error("db indisponível")
+vi.mock("@/lib/db", () => ({ isTauri: () => true }))
+vi.mock("@/lib/agentDefs", () => ({
+  getAgentDef: vi.fn(async () => {
+    if (h.getAgentDefThrows) throw new Error("disco indisponível")
     return h.preset
   }),
 }))
@@ -31,7 +32,7 @@ vi.mock("@/lib/sources", () => ({
 }))
 
 import { toast } from "sonner"
-import { getPreset } from "@/lib/db"
+import { getAgentDef } from "@/lib/agentDefs"
 import { readProjectCommands } from "@/lib/sources"
 import {
   _resetPresetDriftWarnings,
@@ -71,7 +72,7 @@ beforeEach(() => {
   _resetPresetDriftWarnings()
   h.preset = preset()
   h.commands = [{ name: "revisar-pr" }, { name: "testes" }]
-  h.getPresetThrows = false
+  h.getAgentDefThrows = false
   h.commandsThrow = false
 })
 
@@ -260,7 +261,7 @@ describe("resolveFirstTurnPersona", () => {
         projectPath: "/proj",
       }),
     ).toEqual({ status: "none" })
-    expect(getPreset).not.toHaveBeenCalled()
+    expect(getAgentDef).not.toHaveBeenCalled()
   })
 
   it("caminho feliz: bloco + digest recomputado + trio do preset", async () => {
@@ -332,22 +333,22 @@ describe("resolveFirstTurnPersona", () => {
 
 describe("personaHandoffBlock — a doutrina viaja no transplant", () => {
   it("conversa carimbada com preset vivo → bloco de persona ATUAL", async () => {
-    const block = await personaHandoffBlock("pr1", "digest-carimbado")
+    const block = await personaHandoffBlock("pr1", "digest-carimbado", "/proj")
     expect(block).toContain('<persona name="UI Engineer">')
   })
 
   it("preset apagado ou DB fora → null (segue sem bloco, o warn avisa)", async () => {
     h.preset = null
-    expect(await personaHandoffBlock("pr1", "digest")).toBeNull()
+    expect(await personaHandoffBlock("pr1", "digest", "/proj")).toBeNull()
     h.preset = preset()
-    h.getPresetThrows = true
-    expect(await personaHandoffBlock("pr1", "digest")).toBeNull()
+    h.getAgentDefThrows = true
+    expect(await personaHandoffBlock("pr1", "digest", "/proj")).toBeNull()
   })
 
   it("conversa sem carimbo não tem doutrina a levar", async () => {
-    expect(await personaHandoffBlock(null, null)).toBeNull()
-    expect(await personaHandoffBlock("pr1", null)).toBeNull()
-    expect(getPreset).not.toHaveBeenCalled()
+    expect(await personaHandoffBlock(null, null, "/proj")).toBeNull()
+    expect(await personaHandoffBlock("pr1", null, "/proj")).toBeNull()
+    expect(getAgentDef).not.toHaveBeenCalled()
   })
 })
 
@@ -356,37 +357,37 @@ describe("personaHandoffBlock — a doutrina viaja no transplant", () => {
 describe("warnPresetDrift — aviso obrigatório, turno segue", () => {
   it("digest carimbado igual ao atual → ok, sem toast", async () => {
     const stamped = await presetDigest(preset())
-    const v = await warnPresetDrift("c1", "pr1", stamped)
+    const v = await warnPresetDrift("c1", "pr1", stamped, "/proj")
     expect(v).toBe("ok")
     expect(toast).not.toHaveBeenCalled()
   })
 
   it("digest antigo ≠ atual dispara o aviso de persona mudada", async () => {
-    const v = await warnPresetDrift("c1", "pr1", "digest-de-quando-começou")
+    const v = await warnPresetDrift("c1", "pr1", "digest-de-quando-começou", "/proj")
     expect(v).toBe("drift")
     expect(toast).toHaveBeenCalledTimes(1)
     expect(vi.mocked(toast).mock.calls[0][0]).toContain('"UI Engineer" mudou')
   })
 
   it("mesma divergência não re-toasta a cada turno (1 aviso por episódio)", async () => {
-    await warnPresetDrift("c1", "pr1", "digest-velho")
-    await warnPresetDrift("c1", "pr1", "digest-velho")
+    await warnPresetDrift("c1", "pr1", "digest-velho", "/proj")
+    await warnPresetDrift("c1", "pr1", "digest-velho", "/proj")
     expect(toast).toHaveBeenCalledTimes(1)
     // outra conversa é outro episódio
-    await warnPresetDrift("c2", "pr1", "digest-velho")
+    await warnPresetDrift("c2", "pr1", "digest-velho", "/proj")
     expect(toast).toHaveBeenCalledTimes(2)
   })
 
   it("preset apagado com conversa apontando → aviso equivalente", async () => {
     h.preset = null
-    const v = await warnPresetDrift("c1", "pr1", "digest-velho")
+    const v = await warnPresetDrift("c1", "pr1", "digest-velho", "/proj")
     expect(v).toBe("deleted")
     expect(vi.mocked(toast).mock.calls[0][0]).toContain("apagado")
   })
 
   it("sem carimbo (preset escolhido mas nunca rodou) não verifica nada", async () => {
-    expect(await warnPresetDrift("c1", "pr1", null)).toBeNull()
-    expect(await warnPresetDrift("c1", null, "x")).toBeNull()
-    expect(getPreset).not.toHaveBeenCalled()
+    expect(await warnPresetDrift("c1", "pr1", null, "/proj")).toBeNull()
+    expect(await warnPresetDrift("c1", null, "x", "/proj")).toBeNull()
+    expect(getAgentDef).not.toHaveBeenCalled()
   })
 })

@@ -230,7 +230,7 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   // obrigatório; o turno segue). Só quando NÃO re-injetamos (re-injeção
   // re-carimba a versão atual).
   if (persona.status === "none" && locked && conv.presetId && conv.presetDigest) {
-    void warnPresetDrift(convId, conv.presetId, conv.presetDigest)
+    void warnPresetDrift(convId, conv.presetId, conv.presetDigest, projectPath)
   }
   // F-A (follow-up S0) — guarda de availability ANTES do start: CLI ausente/
   // deslogada só renderia erro cru no fim do run. Guarda o agent EFETIVO (o
@@ -463,7 +463,11 @@ export async function continueInAgent(
   const preamble = buildHandoff(conv.items.slice(0, lastUserIdx))
   // D3 — conversa carimbada: a doutrina viaja no transplant (sessão fresca no
   // novo agent), paridade com o handleContinueWith do ChatPanel.
-  const personaBlock = await personaHandoffBlock(conv.presetId, conv.presetDigest)
+  const personaBlock = await personaHandoffBlock(
+    conv.presetId,
+    conv.presetDigest,
+    projectPath,
+  )
   // corrida do await (mesma classe do D2): re-checa antes de transplantar.
   const fresh = useChat.getState().byId[convId]
   if (!fresh || fresh.running || fresh.finalizing) {

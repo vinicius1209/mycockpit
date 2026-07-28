@@ -11,7 +11,8 @@
 // skills, não o conteúdo dos arquivos .md — drift de conteúdo não é detectado.
 
 import { toast } from "sonner"
-import { getPreset, isTauri, type AgentPreset } from "@/lib/db"
+import { isTauri, type AgentPreset } from "@/lib/db"
+import { getAgentDef } from "@/lib/agentDefs"
 import { readProjectCommands } from "@/lib/sources"
 
 // ---------------------------------------------------------------------------
@@ -213,7 +214,7 @@ export async function resolveFirstTurnPersona(opts: {
   }
   let preset: AgentPreset | null
   try {
-    preset = await getPreset(opts.presetId!)
+    preset = await getAgentDef(opts.projectPath, opts.presetId!)
   } catch {
     return {
       status: "blocked",
@@ -261,11 +262,13 @@ export async function resolveFirstTurnPersona(opts: {
 export async function personaHandoffBlock(
   presetId: string | null | undefined,
   presetDigest: string | null | undefined,
+  /** Raiz do projeto: as personas moram em arquivo (projeto + global). */
+  projectPath: string | null,
 ): Promise<string | null> {
   if (!presetId || !presetDigest) return null
   if (!isTauri()) return null
   try {
-    const preset = await getPreset(presetId)
+    const preset = await getAgentDef(projectPath, presetId)
     return preset ? buildPersonaBlock(preset) : null
   } catch {
     return null
@@ -297,14 +300,16 @@ export async function warnPresetDrift(
   convId: string,
   presetId: string | null | undefined,
   stampedDigest: string | null | undefined,
+  /** Raiz do projeto: as personas moram em arquivo (projeto + global). */
+  projectPath: string | null,
 ): Promise<PresetDriftVerdict | null> {
   if (!presetId || !stampedDigest) return null
   if (!isTauri()) return null
   let preset: AgentPreset | null
   try {
-    preset = await getPreset(presetId)
+    preset = await getAgentDef(projectPath, presetId)
   } catch {
-    return null // DB indisponível não é drift — não inventa aviso
+    return null // disco indisponível não é drift — não inventa aviso
   }
   // recomputa dos CAMPOS atuais (não confia no digest gravado): é a régua
   // "a doutrina que vale é a que está na linha agora".

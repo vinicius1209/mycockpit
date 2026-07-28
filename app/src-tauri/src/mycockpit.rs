@@ -258,6 +258,154 @@ pub fn write_project_doctrine(path: String, content: String) -> Result<(), Strin
     crate::fsx::write_atomic(&dir.join(DOCTRINE_FILE), &content)
 }
 
+// ---------------- Personas (.mycockpit/agents/*.md) ----------------
+//
+// Arquivo é a FONTE (mesmo padrão do config.toml). Dois escopos, como o
+// `.claude/commands`: do PROJETO (`<projeto>/.mycockpit/agents/`) e GLOBAL do
+// usuário (`~/.mycockpit/agents/`), com o do projeto vencendo no mesmo slug —
+// o desempate é feito no front, que é onde tem teste barato.
+//
+// O Rust aqui é deliberadamente burro: lista, lê e grava texto. Frontmatter,
+// digest e versão são do TS (lib/agentDefs.ts), junto com o resto da máquina de
+// preset que já existia.
+
+#[derive(Serialize)]
+pub struct AgentDefFile {
+    pub slug: String,
+    /// "projeto" | "global"
+    pub scope: String,
+    pub path: String,
+    pub content: String,
+    /// mtime em ms (epoch). 0 quando o FS não sabe informar.
+    pub updated_at: i64,
+}
+
+/// Slug vira NOME DE ARQUIVO: minúsculas, dígitos, '-' e '_'. Mesma disciplina
+/// do safe_conv_id — nada de traversal, espaço ou ponto.
+fn safe_slug(slug: &str) -> Result<&str, String> {
+    if slug.is_empty() {
+        return Err("slug vazio".into());
+    }
+    if !slug
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+    {
+        return Err(format!(
+            "slug inválido: '{slug}' (use minúsculas, números, '-' e '_')"
+        ));
+    }
+    Ok(slug)
+}
+
+/// Pasta de personas do escopo. `global` mora em ~/.mycockpit/agents (não é
+/// repositório: não leva .gitignore).
+fn agents_dir(scope: &str, project_path: Option<&str>) -> Result<std::path::PathBuf, String> {
+    match scope {
+        "global" => {
+            let home = std::env::var("HOME").map_err(|_| "sem HOME".to_string())?;
+            Ok(Path::new(&home).join(".mycockpit").join("agents"))
+        }
+        "projeto" => {
+            let p = project_path.ok_or_else(|| "escopo de projeto sem projeto".to_string())?;
+            let root = crate::skills::validate_project_path(p)?;
+            Ok(root.join(".mycockpit").join("agents"))
+        }
+        other => Err(format!("escopo desconhecido: '{other}'")),
+    }
+}
+
+fn mtime_ms(md: &std::fs::Metadata) -> i64 {
+    md.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn collect_defs(dir: &Path, scope: &str, out: &mut Vec<AgentDefFile>) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for e in rd.filter_map(|e| e.ok()) {
+        let p = e.path();
+        if p.extension().is_none_or(|x| x != "md") {
+            continue;
+        }
+        let Some(slug) = p.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        // arquivo com nome fora da disciplina é IGNORADO, não corrigido: o app
+        // não renomeia arquivo do usuário pelas costas.
+        if safe_slug(slug).is_err() {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&p) else {
+            continue;
+        };
+        out.push(AgentDefFile {
+            slug: slug.to_string(),
+            scope: scope.to_string(),
+            path: p.to_string_lossy().to_string(),
+            content,
+            updated_at: e.metadata().map(|m| mtime_ms(&m)).unwrap_or(0),
+        });
+    }
+}
+
+/// Lista as personas dos dois escopos. Pasta ausente = lista vazia (estado
+/// normal), nunca erro — persona é opcional.
+#[tauri::command]
+pub fn read_agent_defs(project_path: Option<String>) -> Vec<AgentDefFile> {
+    let mut out = Vec::new();
+    if let Ok(d) = agents_dir("global", None) {
+        collect_defs(&d, "global", &mut out);
+    }
+    if let Some(pp) = project_path.as_deref() {
+        if let Ok(d) = agents_dir("projeto", Some(pp)) {
+            collect_defs(&d, "projeto", &mut out);
+        }
+    }
+    out.sort_by(|a, b| a.slug.cmp(&b.slug));
+    out
+}
+
+/// Grava uma persona e devolve o caminho absoluto. Escopo de projeto também
+/// instala o `.gitignore` seletivo (a pasta agents/ é versionada).
+#[tauri::command]
+pub fn write_agent_def(
+    project_path: Option<String>,
+    scope: String,
+    slug: String,
+    content: String,
+) -> Result<String, String> {
+    let s = safe_slug(&slug)?;
+    let dir = agents_dir(&scope, project_path.as_deref())?;
+    if scope == "projeto" {
+        if let Some(parent) = dir.parent() {
+            ensure_mycockpit_dir(parent)?;
+        }
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let f = dir.join(format!("{s}.md"));
+    crate::fsx::write_atomic(&f, &content)?;
+    Ok(f.to_string_lossy().to_string())
+}
+
+/// Apaga uma persona. Ausente é sucesso (idempotente): a UI é otimista e o
+/// estado final desejado — "não existe" — foi alcançado de qualquer forma.
+#[tauri::command]
+pub fn delete_agent_def(
+    project_path: Option<String>,
+    scope: String,
+    slug: String,
+) -> Result<(), String> {
+    let s = safe_slug(&slug)?;
+    let f = agents_dir(&scope, project_path.as_deref())?.join(format!("{s}.md"));
+    match std::fs::remove_file(&f) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 // ---------------- Export do contexto de conversa ----------------
 //
 // O frontend guarda a conversa (itens JSON) no SQLite e RENDERIZA o markdown;
@@ -450,6 +598,83 @@ mod tests {
     fn doutrina_rejeita_projeto_invalido() {
         assert!(read_project_doctrine("/nao/existe/mesmo".into()).is_err());
         assert!(write_project_doctrine("/nao/existe/mesmo".into(), "x".into()).is_err());
+    }
+
+    #[test]
+    fn personas_round_trip_no_escopo_do_projeto() {
+        let tmp = tmp_project("agents");
+        let pp = tmp.to_string_lossy().to_string();
+
+        // pasta ausente = lista vazia (persona é opcional, não é erro).
+        assert!(read_agent_defs(Some(pp.clone())).is_empty());
+
+        let md = "---\nname: Revisor\n---\n\nSeja cético.\n";
+        let escrito = write_agent_def(
+            Some(pp.clone()),
+            "projeto".into(),
+            "revisor".into(),
+            md.into(),
+        )
+        .unwrap();
+        assert!(escrito.ends_with(".mycockpit/agents/revisor.md"));
+
+        let defs = read_agent_defs(Some(pp.clone()));
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].slug, "revisor");
+        assert_eq!(defs[0].scope, "projeto");
+        assert_eq!(defs[0].content, md);
+        assert!(defs[0].updated_at > 0);
+
+        // gravar persona instala o .gitignore seletivo: a pasta é VERSIONADA,
+        // então ela não pode nascer ignorada pelo `*` legado.
+        assert!(std::fs::read_to_string(tmp.join(".mycockpit").join(".gitignore"))
+            .unwrap()
+            .contains("!agents/"));
+
+        // apagar é idempotente (a UI é otimista).
+        delete_agent_def(Some(pp.clone()), "projeto".into(), "revisor".into()).unwrap();
+        delete_agent_def(Some(pp.clone()), "projeto".into(), "revisor".into()).unwrap();
+        assert!(read_agent_defs(Some(pp)).is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn slug_e_escopo_sao_validados() {
+        let tmp = tmp_project("agents-slug");
+        let pp = tmp.to_string_lossy().to_string();
+        let w = |slug: &str| {
+            write_agent_def(Some(pp.clone()), "projeto".into(), slug.into(), "x".into())
+        };
+        assert!(w("../fora").is_err()); // traversal
+        assert!(w("com espaco").is_err());
+        assert!(w("MAIUSCULA").is_err()); // caso do FS varia entre plataformas
+        assert!(w("a.md").is_err());
+        assert!(w("").is_err());
+        assert!(w("revisor-2_x").is_ok());
+        // escopo desconhecido não vira pasta nenhuma.
+        assert!(
+            write_agent_def(Some(pp.clone()), "sei-la".into(), "x".into(), "y".into()).is_err()
+        );
+        // escopo de projeto SEM projeto é erro (não cai em global por engano).
+        assert!(write_agent_def(None, "projeto".into(), "x".into(), "y".into()).is_err());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn arquivo_com_nome_fora_da_disciplina_e_ignorado_nao_renomeado() {
+        let tmp = tmp_project("agents-estranho");
+        let pp = tmp.to_string_lossy().to_string();
+        let dir = tmp.join(".mycockpit").join("agents");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Nome Estranho.md"), "x").unwrap();
+        std::fs::write(dir.join("ok.md"), "y").unwrap();
+        std::fs::write(dir.join("leia-me.txt"), "z").unwrap();
+        let defs = read_agent_defs(Some(pp));
+        assert_eq!(defs.len(), 1, "só o .md com slug válido entra");
+        assert_eq!(defs[0].slug, "ok");
+        // e o arquivo estranho continua no disco, intacto.
+        assert!(dir.join("Nome Estranho.md").is_file());
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

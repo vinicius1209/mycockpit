@@ -4,9 +4,6 @@ import type { ChatItem } from "@/store/chat"
 import type { ConvRef } from "@/lib/attachments"
 import type { FusionRun } from "@/store/fusion"
 import type { DeliveryRecord } from "@/lib/recall"
-// ciclo db↔presets ACEITO e inofensivo: presetDigest é puro (não importa db) e
-// só é chamado dentro de funções async — nenhum lado toca o outro no init.
-import { presetDigest } from "@/lib/presets"
 
 const DB_URL = "sqlite:mycockpit.db" // DEVE bater com add_migrations no lib.rs
 
@@ -1567,44 +1564,10 @@ function toPreset(r: PresetRow): AgentPreset {
 const PRESET_COLUMNS =
   "id, name, personality_md, skills_json, policy, backend, model, effort, digest, version, created_at, updated_at"
 
-/** Cria um preset (version 1, digest computado dos campos). Retorna a linha
- *  criada (null fora do Tauri). */
-export async function createPreset(
-  p: AgentPresetInput,
-): Promise<AgentPreset | null> {
-  const db = await getDb()
-  if (!db) return null
-  await ensureAgentPresetTables(db)
-  const digest = await presetDigest(p)
-  const now = Date.now()
-  const preset: AgentPreset = {
-    id: crypto.randomUUID(),
-    ...p,
-    digest,
-    version: 1,
-    createdAt: now,
-    updatedAt: now,
-  }
-  await db.execute(
-    `INSERT INTO agent_presets (${PRESET_COLUMNS}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-    [
-      preset.id,
-      preset.name,
-      preset.personalityMd,
-      JSON.stringify(preset.skills),
-      preset.policy,
-      preset.backend,
-      preset.model,
-      preset.effort,
-      preset.digest,
-      preset.version,
-      preset.createdAt,
-      preset.updatedAt,
-    ],
-  )
-  return preset
-}
-
+/** LEGADO: a única leitura que sobrou da tabela agent_presets. As personas
+ *  moram em arquivo desde jul/2026 (.mycockpit/agents — lib/agentDefs); esta
+ *  função existe só como ORIGEM DA MIGRAÇÃO (store/presets.migrarLegado). Não
+ *  há mais caminho de escrita: a tabela é histórico, não estado. */
 export async function listPresets(): Promise<AgentPreset[]> {
   const db = await getDb()
   if (!db) return []
@@ -1613,65 +1576,6 @@ export async function listPresets(): Promise<AgentPreset[]> {
     `SELECT ${PRESET_COLUMNS} FROM agent_presets ORDER BY name COLLATE NOCASE ASC`,
   )
   return rows.map(toPreset)
-}
-
-export async function getPreset(id: string): Promise<AgentPreset | null> {
-  const db = await getDb()
-  if (!db) return null
-  await ensureAgentPresetTables(db)
-  const rows = await db.select<PresetRow[]>(
-    `SELECT ${PRESET_COLUMNS} FROM agent_presets WHERE id = $1`,
-    [id],
-  )
-  return rows.length ? toPreset(rows[0]) : null
-}
-
-/** Edita um preset: muta a linha, `version + 1` e digest RECOMPUTADO dos
- *  campos resultantes (correção 7 do plano). Conversas antigas guardam o
- *  digest anterior — o drift do S3.4 detecta exatamente isso. Retorna a linha
- *  atualizada (null se o preset não existe). */
-export async function updatePreset(
-  id: string,
-  patch: Partial<AgentPresetInput>,
-): Promise<AgentPreset | null> {
-  const db = await getDb()
-  if (!db) return null
-  const cur = await getPreset(id)
-  if (!cur) return null
-  const next: AgentPreset = {
-    ...cur,
-    ...patch,
-    id: cur.id,
-    version: cur.version + 1,
-    updatedAt: Date.now(),
-  }
-  next.digest = await presetDigest(next)
-  await db.execute(
-    "UPDATE agent_presets SET name = $1, personality_md = $2, skills_json = $3, policy = $4, backend = $5, model = $6, effort = $7, digest = $8, version = $9, updated_at = $10 WHERE id = $11",
-    [
-      next.name,
-      next.personalityMd,
-      JSON.stringify(next.skills),
-      next.policy,
-      next.backend,
-      next.model,
-      next.effort,
-      next.digest,
-      next.version,
-      next.updatedAt,
-      id,
-    ],
-  )
-  return next
-}
-
-/** Apaga um preset. Conversas que apontam pra ele MANTÊM preset_id/digest —
- *  o aviso de "preset apagado" no resume (S3.4) é intencional, não órfão. */
-export async function deletePreset(id: string): Promise<void> {
-  const db = await getDb()
-  if (!db) return
-  await ensureAgentPresetTables(db)
-  await db.execute("DELETE FROM agent_presets WHERE id = $1", [id])
 }
 
 // ---------------- F6: automações agendadas (schedules + schedule_runs) ----------------

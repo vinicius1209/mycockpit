@@ -525,7 +525,12 @@ describe("sendFromDesk — persona do preset (S3)", () => {
       }),
     )
     await sendFromDesk(args)
-    expect(warnPresetDrift).toHaveBeenCalledWith("c1", "pr1", "digest-antigo")
+    expect(warnPresetDrift).toHaveBeenCalledWith(
+      "c1",
+      "pr1",
+      "digest-antigo",
+      "/proj", // personas moram em arquivo: sem o projeto, a de escopo local pareceria apagada
+    )
     // e a persona NÃO re-injeta (locked + resposta chegam no resolvedor)
     expect(resolveFirstTurnPersona).toHaveBeenCalledWith(
       expect.objectContaining({ locked: true, presetId: "pr1", hasReply: true }),
@@ -601,7 +606,11 @@ describe("sendFromDesk — persona do preset (S3)", () => {
       '<persona name="UI Engineer">doutrina</persona>',
     )
     await continueInAgent(args, "codex")
-    expect(personaHandoffBlock).toHaveBeenCalledWith("pr1", "digest-carimbado")
+    expect(personaHandoffBlock).toHaveBeenCalledWith(
+      "pr1",
+      "digest-carimbado",
+      "/proj",
+    )
     const prompt = vi.mocked(runAgent).mock.calls[0][5] as string
     expect(prompt.startsWith('<persona name="UI Engineer">doutrina</persona>\n\n')).toBe(
       true,

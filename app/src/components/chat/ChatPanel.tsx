@@ -339,7 +339,7 @@ export function ChatPanel() {
     // Só quando NÃO estamos re-injetando (a re-injeção re-carimba a versão
     // atual, drift não se aplica).
     if (persona.status === "none" && locked && conv.presetId && conv.presetDigest) {
-      void warnPresetDrift(convId, conv.presetId, conv.presetDigest)
+      void warnPresetDrift(convId, conv.presetId, conv.presetDigest, project.path)
     }
     // F-A (follow-up S0) — guarda de availability ANTES do start: mandar turno
     // pra CLI ausente/deslogada só rende erro cru no fim do run. Guarda o agent
@@ -615,6 +615,7 @@ export function ChatPanel() {
     const personaBlock = await personaHandoffBlock(
       conv.presetId,
       conv.presetDigest,
+      project.path,
     )
     // corrida do await (mesma classe do D2): re-checa antes de transplantar.
     const fresh = useChat.getState().byId[convId]

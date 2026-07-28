@@ -13,13 +13,13 @@
 // office montado: tudo sai dos stores direto.
 
 import { invoke } from "@tauri-apps/api/core"
+import { getAgentDef } from "@/lib/agentDefs"
 import { listen } from "@tauri-apps/api/event"
 import type { Attachment, AttachmentKind } from "@/lib/attachments"
 import { AGENTS, availability, dispatchBlockReason } from "@/lib/agents"
 import type { InteractionAnswer, ApprovalData, QuestionData } from "@/lib/interaction"
 import type { MissionPhaseStatus, MissionStatus } from "@/lib/missionTypes"
 import {
-  getPreset,
   isTauri,
   isTerminalCardState,
   loadLedger,
@@ -674,7 +674,11 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
       // sendFromDesk, inclusive a re-injeção D1: travada SEM resposta).
       if (conv?.presetId && (!locked || !hasAssistantReply(conv.items))) {
         try {
-          const preset = await getPreset(conv.presetId)
+          const preset = await getAgentDef(
+            useApp.getState().projects.find((p) => p.id === projectId)?.path ??
+              null,
+            conv.presetId,
+          )
           if (preset) effectiveAgent = preset.backend
         } catch {
           // preset ilegível: o preflight fail-closed do sendFromDesk cobre.
