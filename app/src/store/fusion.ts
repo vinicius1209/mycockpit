@@ -5,6 +5,7 @@
 import { create } from "zustand"
 import { runAgent, cancelAgent, type AgentEvent, type CostSource } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
+import { buildDoctrineBlock, readDoctrine } from "@/lib/doctrine"
 import { reduceItems, useChat, type ChatItem } from "@/store/chat"
 import { useApp } from "@/store/app"
 import {
@@ -356,7 +357,15 @@ export const useFusion = create<FusionState>((set, get) => {
     set((s) => ({ byConv: { ...s.byConv, [convId]: run } }))
     useChat.getState().beginFusion(convId, prompt, attachments)
 
-    const fullPrompt = preamble ? `${preamble}\n\n---\n\n${prompt}` : prompt
+    let fullPrompt = preamble ? `${preamble}\n\n---\n\n${prompt}` : prompt
+    // DOUTRINA do projeto: cada candidato é um run NOVO de uma CLI diferente —
+    // sem este bloco a disputa acontece com metade dos concorrentes cegos às
+    // regras do projeto (só o Claude Code leria um CLAUDE.md). Sempre injeta
+    // (não existe "1º turno" aqui). Best-effort: sem arquivo, segue igual.
+    if (projectPath) {
+      const block = buildDoctrineBlock((await readDoctrine(projectPath)).content)
+      if (block) fullPrompt = `${block}\n\n${fullPrompt}`
+    }
     const perm = cfg.scope === "read-only" ? "fusion-ro" : permission
 
     await runWithConcurrency(run.candidates, 3, async (c) => {

@@ -82,6 +82,36 @@ describe("phasePrompt", () => {
     expect(p).not.toContain("Diff acumulado")
   })
 
+  it("doutrina do projeto entra ANTES do aprendizado (regra humana > destilada)", () => {
+    const p = phasePrompt({
+      persona: "executor",
+      task: "t",
+      handoffPath: ".mission/1-executor.json",
+      doctrineBlock: "<doutrina>não use any</doutrina>",
+      lessonsBlock: "## Lições deste projeto",
+      instructions: "foco no back",
+    })
+    expect(p).toContain("não use any")
+    // ordem: instrução da fase → doutrina do projeto → lições aprendidas.
+    expect(p.indexOf("foco no back")).toBeLessThan(p.indexOf("não use any"))
+    expect(p.indexOf("não use any")).toBeLessThan(p.indexOf("Lições deste projeto"))
+  })
+
+  it("sem doutrina o prompt não ganha bloco vazio", () => {
+    const semNada = phasePrompt({
+      persona: "executor",
+      task: "t",
+      handoffPath: "h.json",
+    })
+    const comVazia = phasePrompt({
+      persona: "executor",
+      task: "t",
+      handoffPath: "h.json",
+      doctrineBlock: "   ",
+    })
+    expect(comVazia).toBe(semNada)
+  })
+
   it("reviewer: manda rodar git diff e cai no fallback quando não há handoff tipado", () => {
     const p = phasePrompt({
       persona: "reviewer",

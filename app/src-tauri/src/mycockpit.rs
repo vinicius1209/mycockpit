@@ -1,11 +1,55 @@
-//! Fase 1, `.mycockpit/config.toml`: lar durável da config POR PROJETO
-//! (modo / modelo helper / permissão). Decisão do usuário: 100% local
-//! (`.mycockpit/.gitignore` = `*`). O arquivo é a fonte de verdade; o SQLite
-//! do app vira cache. Edição via toml_edit preserva comentários/formatação.
+//! `.mycockpit/` — a pasta do PRÓPRIO app no projeto, o análogo de `.claude/`
+//! sem depender de fornecedor. Mora aqui:
+//!   - `config.toml`   — config por projeto (modo / helper / permissão / dirs);
+//!   - `instructions.md` — a DOUTRINA do projeto, que o app injeta no prompt de
+//!     qualquer CLI (ver `doctrine.ts`). É o que torna a instrução agnóstica:
+//!     `CLAUDE.md` só o Claude Code lê, `AGENTS.md` só o Codex, e o agy não lê
+//!     nenhum dos dois — este arquivo vale pros três porque quem injeta é o app;
+//!   - `agents/*.md`   — as personas (Onda 3);
+//!   - `context/`      — export do fio de conversa (local, descartável).
+//!
+//! O arquivo é sempre a FONTE DE VERDADE; o SQLite do app vira cache. Edição do
+//! TOML via toml_edit preserva comentários/formatação.
+//!
+//! Git: a pasta nasceu 100% local (`.gitignore` = `*`). Desde a decisão de
+//! jul/2026 ela é SELETIVA — doutrina e personas são versionadas (revisáveis em
+//! PR, viajam no clone), o resto segue fora. Ver `MYCOCKPIT_GITIGNORE`.
 
 use serde::Serialize;
 use std::path::Path;
 use toml_edit::{value, DocumentMut};
+
+/// Conteúdo do `.mycockpit/.gitignore`. Ignora tudo e reabre exceções: a ordem
+/// importa (git precisa "desingorar" a PASTA antes dos arquivos dentro dela,
+/// senão o `*` — que casa em qualquer nível — continua vencendo).
+const MYCOCKPIT_GITIGNORE: &str = "\
+# Pasta do MyCockpit. Local por padrão: contexto exportado, missões e worktrees
+# não vão pro git. As exceções abaixo são VERSIONADAS de propósito — a doutrina
+# e as personas do projeto devem viajar no clone e ser revisáveis em PR.
+*
+!.gitignore
+!instructions.md
+!agents/
+!agents/*.md
+";
+
+/// Conteúdo do `.gitignore` legado (a pasta inteira local). Só ele é elegível a
+/// upgrade automático — qualquer outro conteúdo é edição AUTORAL e fica de pé.
+const LEGACY_GITIGNORE: &str = "*";
+
+/// Cria `dir` e garante o `.gitignore` do `.mycockpit/`: escreve se faltar,
+/// faz upgrade se ainda for o `*` legado, e NÃO TOCA se o usuário editou.
+fn ensure_mycockpit_dir(dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let gi = dir.join(".gitignore");
+    match std::fs::read_to_string(&gi) {
+        Ok(cur) if cur.trim() == LEGACY_GITIGNORE => {
+            crate::fsx::write_atomic(&gi, MYCOCKPIT_GITIGNORE)
+        }
+        Ok(_) => Ok(()), // conteúdo autoral (ou já novo): preservado
+        Err(_) => crate::fsx::write_atomic(&gi, MYCOCKPIT_GITIGNORE),
+    }
+}
 
 #[derive(Serialize, Default)]
 pub struct McConfig {
@@ -108,13 +152,7 @@ pub fn write_mycockpit_config(
     extra_dirs: Option<Vec<String>>,
 ) -> Result<(), String> {
     let dir = Path::new(&path).join(".mycockpit");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-
-    // 100% local: ignora tudo dentro de .mycockpit/
-    let gi = dir.join(".gitignore");
-    if !gi.exists() {
-        std::fs::write(&gi, "*\n").map_err(|e| e.to_string())?;
-    }
+    ensure_mycockpit_dir(&dir)?;
 
     let cfg = dir.join("config.toml");
     let mut doc = match std::fs::read_to_string(&cfg) {
@@ -154,6 +192,53 @@ pub fn write_mycockpit_config(
 
     crate::fsx::write_atomic(&cfg, &doc.to_string())?;
     Ok(())
+}
+
+// ---------------- Doutrina do projeto (.mycockpit/instructions.md) ----------------
+//
+// O app INJETA este arquivo no prompt (bloco no 1º turno, como a persona), então
+// ele vale para claude, codex e agy igualmente. Não confundir com `CLAUDE.md` /
+// `AGENTS.md`: aqueles são lidos pela própria CLI, cada um só pelo seu dono, e o
+// app nunca os injeta — só os inventaria no painel.
+
+/// Nome do arquivo de doutrina dentro de `.mycockpit/`.
+pub const DOCTRINE_FILE: &str = "instructions.md";
+
+#[derive(Serialize, Default)]
+pub struct Doctrine {
+    pub exists: bool,
+    /// Conteúdo INTEGRAL (o editor grava de volta o que leu — truncar aqui
+    /// perderia texto do usuário no round-trip). O corte p/ o prompt é no front.
+    pub content: String,
+    pub bytes: usize,
+}
+
+#[tauri::command]
+pub fn read_project_doctrine(path: String) -> Result<Doctrine, String> {
+    let root = crate::skills::validate_project_path(&path)?;
+    let f = root.join(".mycockpit").join(DOCTRINE_FILE);
+    match std::fs::read_to_string(&f) {
+        Ok(content) => Ok(Doctrine {
+            exists: true,
+            bytes: content.len(),
+            content,
+        }),
+        // ausente é estado NORMAL (projeto sem doutrina) → exists: false.
+        // Erro de leitura real (permissão) também cai aqui; o painel oferece
+        // criar, e o write dirá a verdade se o disco estiver bloqueado.
+        Err(_) => Ok(Doctrine::default()),
+    }
+}
+
+/// Grava a doutrina (write atômico). Conteúdo vazio NÃO apaga o arquivo: limpar
+/// o texto no editor é reversível, apagar arquivo do usuário não seria — e o
+/// bloco de prompt já ignora doutrina em branco.
+#[tauri::command]
+pub fn write_project_doctrine(path: String, content: String) -> Result<(), String> {
+    let root = crate::skills::validate_project_path(&path)?;
+    let dir = root.join(".mycockpit");
+    ensure_mycockpit_dir(&dir)?;
+    crate::fsx::write_atomic(&dir.join(DOCTRINE_FILE), &content)
 }
 
 // ---------------- Export do contexto de conversa ----------------
@@ -231,7 +316,7 @@ pub fn export_conv_context(
     let root = crate::skills::validate_project_path(&project_path)?;
     // `.mycockpit/` também ganha o .gitignore (o export pode rodar antes de
     // qualquer config ser escrita — padrão do write_mycockpit_config).
-    ensure_ignored_dir(&root.join(".mycockpit"))?;
+    ensure_mycockpit_dir(&root.join(".mycockpit"))?;
     let dir = root.join(".mycockpit").join("context");
     ensure_ignored_dir(&dir)?;
     crate::fsx::write_atomic(&dir.join(format!("{id}.md")), &markdown)?;
@@ -242,6 +327,93 @@ pub fn export_conv_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Pasta de teste com um projeto plausível (validate_project_path exige que
+    /// o caminho exista e seja um diretório).
+    fn tmp_project(tag: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("mc-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn gitignore_novo_versiona_doutrina_e_personas() {
+        let tmp = tmp_project("gi-novo");
+        let dir = tmp.join(".mycockpit");
+        ensure_mycockpit_dir(&dir).unwrap();
+        let gi = std::fs::read_to_string(dir.join(".gitignore")).unwrap();
+        // ignora tudo…
+        assert!(gi.lines().any(|l| l == "*"));
+        // …menos a doutrina e as personas (a PASTA precisa vir antes dos .md).
+        let pos = |needle: &str| gi.lines().position(|l| l == needle);
+        assert!(pos("!instructions.md").is_some());
+        assert!(pos("!agents/").unwrap() < pos("!agents/*.md").unwrap());
+        // o próprio .gitignore tem que ser rastreável, senão a regra não viaja.
+        assert!(pos("!.gitignore").is_some());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn gitignore_legado_ganha_upgrade_mas_edicao_autoral_fica_de_pe() {
+        let tmp = tmp_project("gi-upgrade");
+        let dir = tmp.join(".mycockpit");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // legado exato ("*") → upgrade (projetos que já rodaram o app antigo).
+        std::fs::write(dir.join(".gitignore"), "*\n").unwrap();
+        ensure_mycockpit_dir(&dir).unwrap();
+        assert!(std::fs::read_to_string(dir.join(".gitignore"))
+            .unwrap()
+            .contains("!instructions.md"));
+
+        // conteúdo AUTORAL → intocado (não é nosso direito reescrever).
+        let autoral = "*\n!minhas-notas.md\n";
+        std::fs::write(dir.join(".gitignore"), autoral).unwrap();
+        ensure_mycockpit_dir(&dir).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join(".gitignore")).unwrap(),
+            autoral
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn doutrina_round_trip() {
+        let tmp = tmp_project("doutrina");
+        let pp = tmp.to_string_lossy().to_string();
+
+        // ausente = estado normal, não erro.
+        let d = read_project_doctrine(pp.clone()).unwrap();
+        assert!(!d.exists);
+        assert_eq!(d.content, "");
+
+        let texto = "# Regras\n\n- Testes em pt-BR.\n";
+        write_project_doctrine(pp.clone(), texto.into()).unwrap();
+        let d = read_project_doctrine(pp.clone()).unwrap();
+        assert!(d.exists);
+        assert_eq!(d.content, texto, "round-trip INTEGRAL (nada de truncar)");
+        assert_eq!(d.bytes, texto.len());
+
+        // escrever a doutrina também instala o .gitignore seletivo (o arquivo
+        // precisa ser rastreável desde o 1º save, senão nasce ignorado).
+        assert!(std::fs::read_to_string(tmp.join(".mycockpit").join(".gitignore"))
+            .unwrap()
+            .contains("!instructions.md"));
+
+        // limpar o texto NÃO apaga o arquivo (limpar é reversível; apagar não).
+        write_project_doctrine(pp.clone(), String::new()).unwrap();
+        let d = read_project_doctrine(pp).unwrap();
+        assert!(d.exists);
+        assert_eq!(d.bytes, 0);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn doutrina_rejeita_projeto_invalido() {
+        assert!(read_project_doctrine("/nao/existe/mesmo".into()).is_err());
+        assert!(write_project_doctrine("/nao/existe/mesmo".into(), "x".into()).is_err());
+    }
 
     #[test]
     fn conv_id_sanitization() {
@@ -266,10 +438,13 @@ mod tests {
         let rel = export_conv_context(pp.clone(), "conv-1".into(), "# Oi\n".into()).unwrap();
         assert_eq!(rel, ".mycockpit/context/conv-1.md");
         let dir = tmp.join(".mycockpit").join("context");
+        // o contexto exportado é descartável: a subpasta segue 100% local.
         assert_eq!(std::fs::read_to_string(dir.join(".gitignore")).unwrap(), "*\n");
-        assert_eq!(
-            std::fs::read_to_string(tmp.join(".mycockpit").join(".gitignore")).unwrap(),
-            "*\n"
+        // a pasta-mãe é SELETIVA (doutrina/personas versionadas) — antes era "*".
+        assert!(
+            std::fs::read_to_string(tmp.join(".mycockpit").join(".gitignore"))
+                .unwrap()
+                .contains("!instructions.md")
         );
         assert_eq!(std::fs::read_to_string(dir.join("conv-1.md")).unwrap(), "# Oi\n");
 

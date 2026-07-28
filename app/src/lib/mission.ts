@@ -63,6 +63,10 @@ export interface PhasePromptInput {
   fallbackContext?: string | null
   /** Instrução extra específica da fase (do preset). */
   instructions?: string
+  /** Doutrina do projeto (.mycockpit/instructions.md), já em bloco. Vale em
+   *  TODAS as fases: cada fase é um run novo de CLI, e a maioria delas roda em
+   *  codex/agy, que não leem CLAUDE.md. null = projeto sem doutrina. */
+  doctrineBlock?: string | null
   /** M1: bloco "Entregas similares já feitas (recall)" — só no planner, quando
    *  há match high/medium. null = nada a injetar. */
   recallBlock?: string | null
@@ -84,6 +88,12 @@ export function phasePrompt(input: PhasePromptInput): string {
 
   if (input.instructions && input.instructions.trim()) {
     parts.push("", "## Instruções desta fase", input.instructions.trim())
+  }
+
+  // Doutrina do projeto ANTES do aprendizado: regra escrita pelo humano vem
+  // antes de regra destilada por máquina (mesma cascata do chat).
+  if (input.doctrineBlock && input.doctrineBlock.trim()) {
+    parts.push("", input.doctrineBlock.trim())
   }
 
   // Auto-aprendizado (M1/M2): recall de entregas similares (só planner) e

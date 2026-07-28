@@ -423,6 +423,8 @@ pub fn run() {
             catalog::get_models_catalog,
             mycockpit::read_mycockpit_config,
             mycockpit::write_mycockpit_config,
+            mycockpit::read_project_doctrine,
+            mycockpit::write_project_doctrine,
             mycockpit::export_conv_context,
             sources::read_project_sources,
             sources::read_text_file,

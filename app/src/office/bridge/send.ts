@@ -13,6 +13,11 @@ import { wantsAutoResume } from "@/lib/autoResume"
 import { isTauri, listConversations, type ConversationMeta } from "@/lib/db"
 import { buildHandoff } from "@/lib/handoff"
 import {
+  buildDoctrineBlock,
+  readDoctrine,
+  shouldInjectDoctrine,
+} from "@/lib/doctrine"
+import {
   buildLearningBlocks,
   markLessonsUsed,
   recordInjectedLessons,
@@ -196,12 +201,14 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   let personaBlock: string | null = null
   let personaStamp: { presetId: string; digest: string; name: string } | null =
     null
+  // régua do "1º prompt chegou no CLI", compartilhada com a doutrina.
+  const hasReply = hasAssistantReply(conv.items)
   const persona = await resolveFirstTurnPersona({
     locked,
     presetId: conv.presetId ?? null,
     // D1: travada SEM resposta de assistant = 1º run morreu antes da doutrina
     // chegar → re-injeta e re-carimba.
-    hasReply: hasAssistantReply(conv.items),
+    hasReply,
     projectPath,
   })
   if (persona.status === "blocked") {
@@ -289,8 +296,14 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
     // não pode reforçar ids de um turno anterior)
     recordInjectedLessons(convId, [])
   }
-  // persona vem ANTES de tudo no prompt (identidade primeiro, depois lições e
-  // o pedido) — paridade com o handleSend do ChatPanel.
+  // DOUTRINA do projeto (.mycockpit/instructions.md): paridade com o
+  // handleSend do ChatPanel — a mesa e o celular mandam sob as MESMAS regras.
+  if (shouldInjectDoctrine(agent, locked, hasReply)) {
+    const block = buildDoctrineBlock((await readDoctrine(projectPath)).content)
+    if (block) promptText = `${block}\n\n${promptText}`
+  }
+  // persona vem ANTES de tudo no prompt (identidade primeiro, depois a doutrina,
+  // as lições e o pedido) — paridade com o handleSend do ChatPanel.
   if (personaBlock) {
     promptText = `${personaBlock}\n\n${promptText}`
   }

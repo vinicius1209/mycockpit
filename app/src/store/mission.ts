@@ -20,6 +20,7 @@ import { notifyGate } from "@/lib/notify"
 import { buildHandoff } from "@/lib/handoff"
 import { loadGitDiff } from "@/lib/git"
 import { insertDelivery, upsertMission } from "@/lib/db"
+import { buildDoctrineBlock, readDoctrine } from "@/lib/doctrine"
 import {
   buildLearningBlocks,
   distillLesson,
@@ -398,6 +399,14 @@ export const useMission = create<MissionState>((set, get) => {
         ? projCfg.helper
         : appState.settings.helperModel
 
+      // Doutrina do projeto (.mycockpit/instructions.md) — lida UMA vez e
+      // injetada em TODAS as fases: cada fase é um run novo de CLI e a maioria
+      // roda em codex/agy, que não leem CLAUDE.md. Lê da RAIZ do projeto, não do
+      // worktree (o worktree só teria o arquivo depois do 1º commit dele).
+      const doctrineBlock = buildDoctrineBlock(
+        (await readDoctrine(projectPath)).content,
+      )
+
       // retomada preserva o missionId (continuidade dos marcos e do arquivo).
       const missionId = resume?.missionId ?? crypto.randomUUID()
       // pasta ISOLADA por missão: na retomada, a do arquivo; fresca, um slug
@@ -552,6 +561,7 @@ export const useMission = create<MissionState>((set, get) => {
           changedFiles,
           fallbackContext,
           instructions: def.instructions,
+          doctrineBlock,
           recallBlock: learn.recall,
           lessonsBlock: learn.lessons,
           userDecisions: gateDecisions,

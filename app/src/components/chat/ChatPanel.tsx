@@ -60,6 +60,11 @@ import {
   resolveFirstTurnPersona,
   warnPresetDrift,
 } from "@/lib/presets"
+import {
+  buildDoctrineBlock,
+  readDoctrine,
+  shouldInjectDoctrine,
+} from "@/lib/doctrine"
 
 function greetingFor(date: Date): string {
   const h = date.getHours()
@@ -301,12 +306,15 @@ export function ChatPanel() {
     let personaBlock: string | null = null
     let personaStamp: { presetId: string; digest: string; name: string } | null =
       null
+    // "o 1º prompt CHEGOU no CLI" — régua compartilhada pela persona e pela
+    // doutrina (as duas só entram no turno inicial).
+    const hasReply = hasAssistantReply(conv.items)
     const persona = await resolveFirstTurnPersona({
       locked,
       presetId: conv.presetId ?? null,
       // D1: conversa travada SEM resposta de assistant = o 1º run morreu antes
       // da doutrina chegar → re-injeta e re-carimba em vez de perder a persona.
-      hasReply: hasAssistantReply(conv.items),
+      hasReply,
       projectPath: project.path,
     })
     if (persona.status === "blocked") {
@@ -406,8 +414,17 @@ export function ChatPanel() {
         injectedLessonsRef.current[convId] = []
       }
     }
-    // persona vem ANTES de tudo no prompt (identidade primeiro, depois lições
-    // e o pedido) — mesmo cano do bloco de lições, só no 1º turno.
+    // DOUTRINA do projeto (.mycockpit/instructions.md) — a instrução agnóstica:
+    // o app injeta, então vale igual em claude, codex e agy. Entra DEPOIS da
+    // persona e ANTES das lições na cascata final do prompt: quem você é → as
+    // regras deste projeto → o que já aprendemos → o pedido. Best-effort: sem
+    // arquivo, ou com falha de disco, o envio segue sem o bloco.
+    if (shouldInjectDoctrine(agent, locked, hasReply)) {
+      const block = buildDoctrineBlock((await readDoctrine(project.path)).content)
+      if (block) promptText = `${block}\n\n${promptText}`
+    }
+    // persona vem ANTES de tudo no prompt (identidade primeiro, depois a
+    // doutrina, as lições e o pedido) — mesmo cano do bloco de lições.
     if (personaBlock) {
       promptText = `${personaBlock}\n\n${promptText}`
     }

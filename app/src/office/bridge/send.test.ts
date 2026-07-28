@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { cancelAgent, runAgent } from "@/lib/agent"
 import { wantsAutoResume } from "@/lib/autoResume"
 import { listConversations, type ConversationMeta } from "@/lib/db"
+import { readDoctrine } from "@/lib/doctrine"
 import { buildLearningBlocks, markLessonsUsed } from "@/lib/learning"
 import { notifyTurnEnd } from "@/lib/notify"
 import {
@@ -59,6 +60,13 @@ vi.mock("@/lib/db", () => ({
   listConversations: vi.fn(async () => null),
 }))
 vi.mock("@/lib/handoff", () => ({ buildHandoff: vi.fn(() => "[handoff]") }))
+// Doutrina: mantém as funções PURAS reais (o bloco e a regra de quando injetar
+// têm testes próprios em doctrine.test.ts) e troca só a LEITURA de disco. O
+// default é "projeto sem doutrina" — os outros testes de prompt seguem valendo.
+vi.mock("@/lib/doctrine", async (orig) => ({
+  ...(await orig<typeof import("@/lib/doctrine")>()),
+  readDoctrine: vi.fn(async () => ({ exists: false, content: "", bytes: 0 })),
+}))
 vi.mock("@/lib/learning", () => ({
   buildLearningBlocks: vi.fn(async () => ({
     recall: null,
@@ -105,6 +113,30 @@ vi.mock("@/store/fusion", () => ({ useFusion: { getState: () => h.fusion } }))
 
 function user(text: string): ChatItem {
   return { kind: "user", id: "u", text }
+}
+
+/** Resposta do assistant — o sinal de "o 1º prompt CHEGOU no CLI"
+ *  (hasAssistantReply), que é o que fecha a porta da doutrina/persona. */
+function assistant(text: string): ChatItem {
+  return { kind: "text", id: "t", text } as ChatItem
+}
+
+/** Arma o disco com uma doutrina para ESTE teste (o default é sem doutrina). */
+function comDoutrina(content: string) {
+  vi.mocked(readDoctrine).mockResolvedValue({
+    exists: true,
+    content,
+    bytes: content.length,
+  })
+}
+
+/** Volta ao default: projeto sem `.mycockpit/instructions.md`. */
+function semDoutrina() {
+  vi.mocked(readDoctrine).mockResolvedValue({
+    exists: false,
+    content: "",
+    bytes: 0,
+  })
 }
 
 function makeConv(partial: Partial<ConvState> = {}): ConvState {
@@ -179,6 +211,9 @@ const args = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // clearAllMocks zera CHAMADAS, não implementações: sem isto o comDoutrina de
+  // um teste vazaria pro seguinte e mudaria todo prompt esperado.
+  semDoutrina()
   h.mission.byConv = {}
   h.app.settings = { autoResume: false, autoResumeMaxTries: 5, detected: {} }
   h.fusion.byConv = {}
@@ -337,6 +372,33 @@ describe("sendFromDesk — coreografia do run", () => {
     expect(call[5]).toBe("[memória-agy|.mycockpit/context/conv.md] olá")
     // agy não leva fallback de resume (não tem resume nativo)
     expect(call[12]).toBeNull()
+  })
+
+  // ── Doutrina do projeto (.mycockpit/instructions.md) ──
+  // A mesa manda pelo MESMO cano do chat: sem isto, enviar do Escritório
+  // rodaria sem as regras do projeto — o mesmo bug que as lições já tiveram.
+  it("doutrina do projeto entra no prompt (vale pra qualquer agent)", async () => {
+    comDoutrina("- Testes em pt-BR.")
+    await sendFromDesk({ ...args, agent: "codex" })
+    const prompt = vi.mocked(runAgent).mock.calls[0][5]
+    expect(prompt).toContain("<doutrina")
+    expect(prompt).toContain("- Testes em pt-BR.")
+    // o pedido do usuário continua no fim (a doutrina é prefixo, não substituto)
+    expect(prompt.endsWith("olá")).toBe(true)
+  })
+
+  it("turno seguinte de claude/codex NÃO repete a doutrina (resume carrega)", async () => {
+    comDoutrina("- Testes em pt-BR.")
+    arm(makeConv({ items: [user("antes"), assistant("respondi")] }))
+    await sendFromDesk(args)
+    expect(vi.mocked(runAgent).mock.calls[0][5]).toBe("olá")
+  })
+
+  it("agy recebe a doutrina em TODO turno (não tem resume)", async () => {
+    comDoutrina("- Testes em pt-BR.")
+    arm(makeConv({ agent: "agy", items: [user("antes"), assistant("respondi")] }))
+    await sendFromDesk({ ...args, agent: "agy" })
+    expect(vi.mocked(runAgent).mock.calls[0][5]).toContain("<doutrina")
   })
 
   it("claude/codex com sessão levam o memoryFallback do resume", async () => {
