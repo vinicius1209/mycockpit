@@ -482,7 +482,9 @@ function ConversationList({ projectId }: { projectId: string }) {
 
   return (
     // Sem border-l nem indentação de container: a hierarquia é só alinhamento.
-    // Cada filho recebe pl-10 (40px) → texto sob o texto do projeto.
+    // Cada filho recebe ~40px de recuo → texto sob o texto do projeto. Na linha
+    // de conversa, parte desse recuo é a marca do agent (esquerda), então o
+    // padding cai para 18px e a soma continua batendo.
     <div className="animate-reveal-down mt-0.5 mb-1 flex flex-col gap-px">
       {conversations.map((c) => {
         const isActive = c.id === activeId
@@ -517,23 +519,22 @@ function ConversationList({ projectId }: { projectId: string }) {
               : doneUnseen === "ok"
                 ? ("done" as const)
                 : null
-        const statusEl = (
+        // Título do estado, compartilhado pela marca (à esquerda).
+        const statusTitle =
+          turnStatus === "awaiting"
+            ? "O turno parou esperando você (permissão ou pergunta)"
+            : turnStatus === "running"
+              ? "Turno rodando"
+              : turnStatus === "error"
+                ? "O turno terminou com erro — abra para ver"
+                : turnStatus === "done"
+                  ? "Turno concluído — abra para ver"
+                  : undefined
+        // À DIREITA sobram só missão e disputa: são TIPOS de execução, não
+        // estado do turno. Estado mora na marca do agent, à esquerda.
+        const statusEl =
+          hasMission || hasFusion ? (
             <>
-              <AgentMark
-                agent={c.agent ?? "claude-code"}
-                status={turnStatus}
-                title={
-                  turnStatus === "awaiting"
-                    ? "O turno parou esperando você (permissão ou pergunta)"
-                    : turnStatus === "running"
-                      ? "Turno rodando"
-                      : turnStatus === "error"
-                        ? "O turno terminou com erro — abra para ver"
-                        : turnStatus === "done"
-                          ? "Turno concluído — abra para ver"
-                          : undefined
-                }
-              />
               {hasMission && (
                 <span
                   className="grid size-3 shrink-0 place-items-center"
@@ -568,7 +569,7 @@ function ConversationList({ projectId }: { projectId: string }) {
                 </span>
               )}
             </>
-        )
+          ) : null
         // Cor-rótulo = DOT à direita do título (tinta de linha competia com a
         // seleção). Seleção é dona do background.
         return (
@@ -607,7 +608,11 @@ function ConversationList({ projectId }: { projectId: string }) {
                     onClick={() => openConv(c.id)}
                     title={isDimmed ? "ativa no Linear" : undefined}
                     className={cn(
-                      "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-10 text-left text-[12px] font-normal",
+                      // pl-[18px] + marca (16px) + gap-2 (8px) = 42px ≈ o pl-10
+                      // (40px) de antes: o TEXTO cai praticamente no mesmo x, então
+                      // a hierarquia "texto sob o texto do projeto" se mantém. O
+                      // modo edição segue em pl-10 (input não tem marca).
+                      "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-[18px] text-left text-[12px] font-normal",
                       // pleno = cor de destaque no texto (bg fixo vem do container);
                       // dim = ativa noutra superfície (muted, sem brass);
                       // inativo = cinza médio, clareia no hover.
@@ -618,8 +623,19 @@ function ConversationList({ projectId }: { projectId: string }) {
                           : "text-muted-foreground group-hover/c:text-foreground",
                     )}
                   >
-                    {/* Sem ícone à esquerda: a indentação (pl-10) define a hierarquia.
-                        Título trunca; status/worktree ficam à DIREITA, nunca deslocam. */}
+                    {/* Marca do agent + selo de estado À ESQUERDA, dentro da
+                        indentação (pl-10 vira pl-4 + o slot): é a borda que você
+                        varre descendo a lista, e é a mesma gramática das linhas
+                        de projeto, que também têm ícone à esquerda. O texto NÃO
+                        se desloca — o slot ocupa espaço que a indentação já
+                        reservava e estava vazio.
+                        Direita fica só com o que é SEU: a cor-rótulo e o
+                        worktree. Cada borda com um dono. */}
+                    <AgentMark
+                      agent={c.agent ?? "claude-code"}
+                      status={turnStatus}
+                      title={statusTitle}
+                    />
                     <span className="min-w-0 flex-1 truncate">
                       {c.title ?? "Nova conversa"}
                     </span>
@@ -636,6 +652,8 @@ function ConversationList({ projectId }: { projectId: string }) {
                         aria-label="isolado em worktree"
                       />
                     )}
+                    {/* à direita sobram só os sinais de OUTRO tipo de execução
+                        (missão/disputa), que não são estado de turno. */}
                     {statusEl && (
                       <span className="flex shrink-0 items-center gap-1">
                         {statusEl}
