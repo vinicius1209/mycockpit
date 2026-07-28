@@ -413,6 +413,7 @@ function ConversationList({ projectId }: { projectId: string }) {
   const viewMode = useApp((s) => s.viewMode)
   const running = useRunningConvIds()
   const finished = useFinishedUnseen()
+  const defaultAgent = useApp((s) => s.settings.defaultAgent)
   const deciding = useDecidingConvIds()
   const fusionAlive = useFusionConvIds()
   const missionRunning = useMissionRunningConvIds()
@@ -632,7 +633,10 @@ function ConversationList({ projectId }: { projectId: string }) {
                         Direita fica só com o que é SEU: a cor-rótulo e o
                         worktree. Cada borda com um dono. */}
                     <AgentMark
-                      agent={c.agent ?? "claude-code"}
+                      // sem carimbo ainda (conversa nova, nada enviado) → mostra
+                      // o SEU default, não "claude-code" fixo: a linha não pode
+                      // afirmar um agent que você não escolheu.
+                      agent={c.agent ?? defaultAgent}
                       status={turnStatus}
                       title={statusTitle}
                     />

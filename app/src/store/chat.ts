@@ -215,6 +215,8 @@ interface ChatState {
   renameConversation: (id: string, title: string) => Promise<void>
   /** Define/limpa (null) a cor-rótulo da conversa. */
   setConversationColor: (id: string, color: string | null) => Promise<void>
+  /** Agent escolhido antes do 1º envio (conversa vazia). No-op se já tem itens. */
+  setConversationAgent: (convId: string, agent: string) => void
   /** Isola a conversa num worktree (path) ou volta pra pasta compartilhada (null). */
   setWorktree: (convId: string, path: string | null) => void
   /** S3.6 — marca a conversa com um preset (seleção no composer, ANTES do 1º
@@ -995,6 +997,26 @@ export const useChat = create<ChatState>((set, get) => {
     setConversationColor: async (id, color) => {
       await dbSetColor(id, color)
       set((s) => patchConvMeta(s, id, (c) => ({ ...c, color })))
+    },
+
+    /** Agent escolhido no composer de uma conversa AINDA VAZIA. Sem isto, o
+     *  seletor era estado local do CommandConsole até o 1º envio, e a sidebar
+     *  mostrava o logo do default (Claude Code) mesmo com Antigravity escolhido
+     *  — você via uma coisa e a linha dizia outra. Também faz a mesa certa do
+     *  Office adotar a conversa desde já (derive usa conv.agent).
+     *
+     *  NO-OP em conversa com itens: aí o agent está TRAVADO no 1º run e mexer
+     *  aqui mentiria sobre quem produziu o histórico. */
+    setConversationAgent: (convId, agent) => {
+      const cur = get().byId[convId]
+      if (!cur || cur.items.length > 0 || cur.agent === agent) return
+      set((s) => ({
+        ...patchConvMeta(s, convId, (c) => ({ ...c, agent })),
+        byId: { ...s.byId, [convId]: { ...s.byId[convId], agent } },
+      }))
+      // persiste p/ sobreviver a restart (linha vazia: o UPSERT não tem
+      // histórico a atropelar). Best-effort — a UI já refletiu.
+      void get().persist(convId)
     },
 
     setWorktree: (convId, path) => {

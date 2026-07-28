@@ -432,6 +432,10 @@ export function CommandConsole({
                   setModel(defaultModelFor(v))
                   setEffort("default")
                   clearPresetOnManualChange()
+                  // carimba na conversa VAZIA: sem isto a escolha ficava só
+                  // neste estado local até o 1º envio, e a sidebar mostrava o
+                  // logo do default. No-op se já tem itens (agent travado).
+                  if (activeId) useChat.getState().setConversationAgent(activeId, v)
                 }}
                 effectiveModel={effectiveModel}
                 onModelChange={(v) => {

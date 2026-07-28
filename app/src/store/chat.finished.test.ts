@@ -12,6 +12,9 @@ import { useChat, type ChatItem, type ConvState } from "./chat"
 vi.mock("@/lib/db", () => ({
   isTauri: () => false,
   listConversations: vi.fn(async () => null),
+  // o carimbo do agent persiste (linha vazia, sem histórico a atropelar), então
+  // o mock precisa cobrir o caminho do persist — senão vira unhandled rejection.
+  saveConversation: vi.fn(async () => {}),
 }))
 
 function conv(patch: Partial<ConvState> = {}): ConvState {
@@ -120,5 +123,38 @@ describe("markSeen → o selo cumpriu o papel", () => {
 
   it("conversa inexistente não quebra", () => {
     expect(() => useChat.getState().markSeen("fantasma")).not.toThrow()
+  })
+})
+
+// ── agent carimbado ANTES do 1º envio ───────────────────────────────────────
+// Sem isto o seletor do composer era estado local até a 1ª mensagem: você
+// escolhia Antigravity e a sidebar seguia mostrando o logo do Claude Code.
+describe("setConversationAgent", () => {
+  it("conversa VAZIA aceita o carimbo (a sidebar reflete a escolha)", () => {
+    useChat.setState({ byId: { c1: conv({ running: false, items: [] }) } })
+    useChat.getState().setConversationAgent("c1", "agy")
+    expect(useChat.getState().byId.c1.agent).toBe("agy")
+  })
+
+  it("conversa COM itens é NO-OP: o agent travou no 1º run", () => {
+    // mexer aqui mentiria sobre quem produziu o histórico que já está no fio.
+    const antes = conv({ running: false, items: [texto], agent: "claude-code" })
+    useChat.setState({ byId: { c1: antes } })
+    useChat.getState().setConversationAgent("c1", "agy")
+    expect(useChat.getState().byId.c1.agent).toBe("claude-code")
+    expect(useChat.getState().byId.c1).toBe(antes) // nem re-renderiza
+  })
+
+  it("escolher o mesmo agent não mexe no estado", () => {
+    const antes = conv({ running: false, agent: "codex" })
+    useChat.setState({ byId: { c1: antes } })
+    useChat.getState().setConversationAgent("c1", "codex")
+    expect(useChat.getState().byId.c1).toBe(antes)
+  })
+
+  it("conversa inexistente não quebra", () => {
+    expect(() =>
+      useChat.getState().setConversationAgent("fantasma", "agy"),
+    ).not.toThrow()
   })
 })
