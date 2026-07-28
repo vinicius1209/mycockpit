@@ -327,25 +327,32 @@ export async function distillCandidate(
 /** Grava uma lição vinda do Linear (após o gate humano do card). Dedup contra
  *  as lições que já valem no projeto (próprias + globais). Retorna false se
  *  vazia ou duplicata (a UI avisa "já existe algo parecido"). Best-effort. */
+/** Desfecho de salvar uma lição. Era `boolean`, e isso confundia DUPLICATA com
+ *  FALHA: o `catch { return false }` fazia um erro de banco chegar na UI como
+ *  "já existe uma regra parecida" — o usuário achava que estava tudo bem e a
+ *  regra dele simplesmente não existia. Três desfechos, três mensagens. */
+export type SaveLessonOutcome = "salva" | "duplicata" | "erro"
+
 export async function saveLesson(args: {
   projectId: string
   rule: string
   scope: LessonScope
-}): Promise<boolean> {
+}): Promise<SaveLessonOutcome> {
   const rule = args.rule.trim()
-  if (!rule) return false
+  if (!rule) return "erro"
   try {
     const existing = (await listLessons(args.projectId)).map((l) => l.rule)
-    if (!isNovelRule(rule, existing)) return false
+    if (!isNovelRule(rule, existing)) return "duplicata"
     await insertLesson({
       projectId: args.projectId,
       rule,
       source: "linear",
       scope: args.scope,
     })
-    return true
-  } catch {
-    return false
+    return "salva"
+  } catch (e) {
+    console.warn("[lições] falha ao salvar", e)
+    return "erro"
   }
 }
 

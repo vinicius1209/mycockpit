@@ -31,7 +31,6 @@ import { RichSelect } from "@/components/ui/RichSelect"
 import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { nativeNotify } from "@/lib/notify"
 import { useApp } from "@/store/app"
 import {
   DESTINATIONS,
@@ -826,48 +825,6 @@ export function SettingsDialog() {
                 </Field>
               </div>
 
-              <SectionTitle>Notificações do sistema</SectionTitle>
-              <div className="divide-y divide-border/50">
-                <Field
-                  label="Testar agora"
-                  hint="A nativa só dispara quando você NÃO está olhando a conversa que terminou — em cima dela, o sinal é o próprio conteúdo. Este botão ignora essa regra e testa o canal direto. Se não chegar nada, o macOS não autorizou o app (build ad-hoc): o Frota cai no osascript, que aparece como “Script Editor”."
-                >
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-[12.5px]"
-                    onClick={() => {
-                      // Diz QUAL caminho entregou — sem isto o botão só provava
-                      // que o clique aconteceu. E reporta SEMPRE: o aviso normal
-                      // de indisponibilidade só sai 1x por sessão, então um teste
-                      // depois de uma falha anterior falhava calado (foi o que
-                      // aconteceu na 1ª tentativa de diagnóstico).
-                      void nativeNotify(
-                        "Frota · teste",
-                        "Se você está lendo isto, o canal de notificação funciona.",
-                      ).then((via) => {
-                        if (via === "nativo") {
-                          toast.success("Enviada pelo canal nativo — deve aparecer como “Frota”.")
-                        } else if (via === "osascript") {
-                          toast("Enviada pelo osascript — aparece como “Script Editor”.", {
-                            description:
-                              "O macOS não autorizou o app; este é o fallback. Se nada apareceu, nem ele passou.",
-                            duration: 9000,
-                          })
-                        } else if (via === "falhou") {
-                          toast.error("Nenhum canal entregou.", {
-                            description:
-                              "Nem o plugin nativo nem o osascript. O detalhe está no console (⌥⌘I).",
-                            duration: 9000,
-                          })
-                        }
-                      })
-                    }}
-                  >
-                    Disparar notificação de teste
-                  </Button>
-                </Field>
-              </div>
             </div>
           )}
 

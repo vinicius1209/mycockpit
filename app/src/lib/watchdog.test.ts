@@ -6,7 +6,11 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("sonner", () => ({ toast: vi.fn() }))
+vi.mock("sonner", () => ({
+  // Object.assign: o store/interactions usa `toast.error` (a resposta do usuário
+  // não pode falhar em silêncio), então o mock precisa das duas formas.
+  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
+}))
 // notify importa o plugin nativo do Tauri — mock inteiro (só o spy interessa).
 vi.mock("@/lib/notify", () => ({
   notifyTurnStalled: vi.fn(),

@@ -1681,7 +1681,10 @@ export async function deletePreset(id: string): Promise<void> {
 // (lib/schedules.Recurrence); o DB não interpreta.
 
 /** Permissão de uma automação. 'liberado' NUNCA existe aqui — nem no tipo. */
-export type SchedulePermission = "leitura" | "padrao"
+/** Permissão de uma automação. "liberado" segue FORA de propósito: bypass total
+ *  numa execução sem ninguém na frente não tem quem segure um erro. "auto" é o
+ *  meio-termo — roda sem pedir, mas com o freio de cada CLI (ver ADR-023). */
+export type SchedulePermission = "leitura" | "padrao" | "auto"
 
 /** Tipo do schedule (S4.3): "agent" roda runAgent numa conversa nova (o fluxo
  *  F6 original); "lead" chama proposePlan — sem conversa, sem clamp extra (o

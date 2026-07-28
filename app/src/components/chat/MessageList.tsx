@@ -31,6 +31,7 @@ import { fmtCost, fmtDuration, fmtTokens } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
 import { attachmentRead, attachmentReadLabel } from "@/lib/attachmentRead"
+import type { SaveLessonOutcome } from "@/lib/learning"
 import {
   cleanResultText,
   presentTool,
@@ -536,8 +537,10 @@ export interface FeedbackApi {
     userNote: string,
   ) => Promise<{ rule: string; learnable: boolean | null }>
 
-  /** Grava a regra após o gate humano (dedup interno). Retorna false=duplicata. */
-  save: (rule: string, scope: "global" | "project") => Promise<boolean>
+  /** Grava a regra após o gate humano (dedup interno). O desfecho distingue
+   *  duplicata de FALHA — antes os dois viravam `false` e a UI dizia "duplicata"
+   *  quando o banco tinha caído. */
+  save: (rule: string, scope: "global" | "project") => Promise<SaveLessonOutcome>
 }
 
 /** 👍/👎 + "salvar como regra" numa bolha de TEXTO do agente (kind text/result).
@@ -591,9 +594,14 @@ function FeedbackControls({
     if (!r) return
     setBusy(true)
     try {
-      const ok = await api.save(r, scope)
-      setMode(ok ? "done" : "idle")
-      if (!ok) toastDuplicate()
+      const r2 = await api.save(r, scope)
+      setMode(r2 === "salva" ? "done" : "idle")
+      if (r2 === "duplicata") toastDuplicate()
+      if (r2 === "erro") {
+        toast.error("Não consegui salvar a regra.", {
+          description: "O detalhe está no console. Sua regra NÃO foi gravada.",
+        })
+      }
     } finally {
       setBusy(false)
     }

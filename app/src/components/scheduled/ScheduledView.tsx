@@ -894,7 +894,8 @@ function NewScheduleDialog({
               {(
                 [
                   ["leitura", "Leitura", "só lê e relata (recomendado)"],
-                  ["padrao", "Padrão", "pode editar, aprovações normais"],
+                  ["padrao", "Padrão", "pode editar; o que pedir permissão expira sem ninguém"],
+                  ["auto", "Auto", "roda sem pedir, com o freio de segurança da CLI"],
                 ] as const
               ).map(([p, label, hint]) => (
                 <button
@@ -913,8 +914,15 @@ function NewScheduleDialog({
                 </button>
               ))}
             </div>
-            <p className="text-[11px] text-muted-foreground/70">
-              Automação nunca roda com permissão Liberado.
+            <p className="text-[11px] leading-snug text-muted-foreground/70">
+              Automação nunca roda com <strong className="font-medium">Liberado</strong>:
+              bypass total sem ninguém na frente não tem quem segure um erro.
+              O <strong className="font-medium">Auto</strong> é o meio-termo — roda sem
+              pedir, mas com o freio da CLI (Claude barra o destrutivo por
+              classificador; Codex confina em sandbox de SO; Antigravity só tem
+              sandbox best-effort, então lá o freio é o mais fraco dos três).
+              Em <strong className="font-medium">Padrão</strong>, o que pedir permissão
+              expira sozinho e o turno morre — não há quem aprove às 3h.
             </p>
           </div>
           )}

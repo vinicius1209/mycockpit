@@ -8,6 +8,7 @@
 // (fail-closed local); o resolved do Drop cobre o resto (run morto/cancelado).
 
 import { useSyncExternalStore } from "react"
+import { toast } from "sonner"
 import { create } from "zustand"
 import { isTauri } from "@/lib/db"
 import {
@@ -74,8 +75,23 @@ export const useInteractions = create<InteractionsState>()((set, get) => ({
   answer: (id, answer) => {
     const { queue } = get()
     if (!queue.some((r) => r.id === id)) return // já respondido/resolvido
+    const req = queue.find((r) => r.id === id)
     set({ queue: queue.filter((r) => r.id !== id) })
-    void answerInteraction(id, answer).catch(() => {})
+    // Isto NÃO é best-effort: é a ÚNICA entrega da sua decisão. O comentário
+    // antigo supunha "se falhou, o run já morreu e o Drop do backend cobre" —
+    // suposição, não fato: o invoke pode falhar com o run VIVO, e aí o card já
+    // saiu da tela (a linha acima removeu) e o turno fica pendurado sem que
+    // ninguém saiba. Mesmo desenho que deixou a notificação nativa morta por
+    // meses atrás de um catch vazio.
+    void answerInteraction(id, answer).catch((e) => {
+      console.error("[interações] resposta não entregue", id, e)
+      // devolve o pedido pra fila: o card volta e você pode tentar de novo,
+      // que é melhor que um turno parado sem sintoma.
+      if (req) get().push(req)
+      toast.error("Não consegui entregar sua resposta ao agent.", {
+        description: "O pedido voltou para a fila — tente responder de novo.",
+      })
+    })
   },
   dismiss: (req) => get().answer(req.id, failClosedAnswer(req.kind)),
   answerGroup: (signature, allow) => {
@@ -631,10 +647,23 @@ if (isTauri()) {
     if (useInteractions.getState().queue.length > before.length) {
       announceArrival(req, before)
     }
-  }).catch(() => {})
+  }).catch((e) => {
+    // Sem este listener não existe pedido de permissão NENHUM nesta sessão: a
+    // feature inteira apaga e o sintoma é "o agent travou sozinho". Falha rara,
+    // custo de diagnosticar altíssimo — por isso grita.
+    console.error("[interações] listener de pedidos não registrou", e)
+    toast.error("Pedidos de permissão não vão aparecer nesta sessão.", {
+      description: "Reinicie o app. Enquanto isso, turnos que pedirem permissão podem ficar parados.",
+      duration: 12_000,
+    })
+  })
   void onInteractionResolved((id) =>
     useInteractions.getState().resolve(id),
-  ).catch(() => {})
+  ).catch((e) =>
+    // menos grave (o `answer` já remove da fila localmente), mas sem ele um card
+    // resolvido pelo backend fica na tela até você dispensar.
+    console.warn("[interações] listener de resolvidos não registrou", e),
+  )
 }
 
 // Loop visual (dev no browser, SEM Tauri — não entra no build): expõe os

@@ -217,7 +217,16 @@ export async function dispatchSchedule(
       s.model && s.model !== "default" ? s.model : null,
     )
     // Regra dura do F6: automação NUNCA roda 'liberado'. Clamp além do tipo.
-    const permission = s.permission === "padrao" ? "padrao" : "leitura"
+    // Clamp explícito: "liberado" NUNCA passa (bypass sem humano na frente não
+    // tem quem segure um erro). "auto" passa — roda sem pedir, mas com o freio
+    // de cada CLI: claude classificador, codex sandbox de SO, agy --sandbox.
+    // Valor desconhecido cai em "leitura", o mais restrito (fail-closed).
+    const permission =
+      s.permission === "padrao"
+        ? "padrao"
+        : s.permission === "auto"
+          ? "auto"
+          : "leitura"
 
     // Run DESASSISTIDO: ninguém está na frente da tela pra aprovar nada (nem no
     // "Rodar agora" — a conversa nasce em background, sem roubar a seleção).

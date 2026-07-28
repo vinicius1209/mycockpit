@@ -879,8 +879,20 @@ async function runSkillInto(
         setRun((prev) => (prev ? cur : prev))
       },
     )
-  } catch {
-    // erro já chega como card de Error no stream
+  } catch (e) {
+    // O comentário antigo dizia "erro já chega como card de Error no stream" —
+    // e isso é FALSO para falha de SPAWN: se o runAgent rejeita antes de abrir o
+    // stream (CLI ausente, cwd inválido), nenhum evento chega e o overlay
+    // simplesmente para, sem dizer nada. Injeta o erro no fio, que é o que
+    // store/fusion.ts e lib/mission.ts já fazem na mesma classe de chamada.
+    const msg = typeof e === "string" ? e : e instanceof Error ? e.message : String(e)
+    console.error("[sdd] etapa dirigida falhou antes do stream", e)
+    cur = {
+      ...cur,
+      items: [...cur.items, { kind: "error", id: crypto.randomUUID(), message: msg }],
+    }
+    setRun((prev) => (prev ? cur : prev))
+    toast.error("A etapa não iniciou.", { description: msg })
   }
   cur = { ...cur, running: false }
   setRun((prev) => (prev ? cur : prev))

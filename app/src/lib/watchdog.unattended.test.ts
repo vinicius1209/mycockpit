@@ -6,7 +6,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("sonner", () => ({ toast: vi.fn() }))
+vi.mock("sonner", () => ({
+  // Object.assign: o store/interactions usa `toast.error` (a resposta do usuário
+  // não pode falhar em silêncio), então o mock precisa das duas formas.
+  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
+}))
 // notify puxa o plugin nativo do Tauri — mock inteiro. Inclui os avisos que o
 // store/interactions importa (a fábrica substitui o módulo pra todo mundo).
 vi.mock("@/lib/notify", () => ({
@@ -328,7 +332,12 @@ describe("checkUnattendedInteractions", () => {
 
     expect(itensDaConversa().at(-1)?.kind).toBe("notice")
     expect(notifyUnattendedTimeout).toHaveBeenCalledTimes(1)
-    expect(useInteractions.getState().queue).toHaveLength(0)
+    // O pedido VOLTA pra fila quando a entrega falha (o `answer` do store passou
+    // a re-empurrar em vez de engolir o erro). Está certo: se o invoke falhou, o
+    // agent pode continuar bloqueado do outro lado — sumir com o card seria
+    // afirmar que a decisão chegou. O aviso já saiu, então não há descarte
+    // silencioso; e se o run estava morto mesmo, o resolved do backend limpa.
+    expect(useInteractions.getState().queue).toHaveLength(1)
   })
 
   it("knob religado cobra quem já esperou demais (não zera o relógio)", () => {

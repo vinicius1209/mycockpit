@@ -308,3 +308,45 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   vez (restringir a concluída/sem-próxima criava dois becos: mudar 18:30 para 19:00 era
   impossível, e uma pausada que perdeu o horário ficava sem botão nenhum). E o Switch só
   aparece quando ligar/desligar ainda significa algo — numa concluída ele mentiria.
+
+### ADR-023 — Automação ganha "Auto", não "Liberado" ✅
+- **Contexto:** o usuário pediu permissão Liberado em automação. O motivo é legítimo: sem
+  ela, uma automação que precise escrever fica inútil — em Padrão, o que pedir permissão
+  expira sozinho (ADR-021) porque não há quem aprove às 3h. O clamp cego não protegia,
+  empurrava o trabalho de volta para a mão.
+- **Decisão:** expor **Auto** e manter Liberado fora. Auto roda **sem pedir** — resolve o
+  travamento — mas com o freio de cada CLI: Claude `--permission-mode auto` (classificador
+  barra exfiltração, `rm` destrutivo, deploy), Codex `approval_policy=never` + sandbox de
+  SO, agy `--sandbox`. O enum `Permission::Auto` já existia no Rust e não estava exposto em
+  nenhum seletor.
+- **Por que não Liberado:** o custo do erro é assimétrico. Auto barrando demais custa uma
+  execução repetida; Liberado errando às 3h custa o repositório ou um deploy que você não
+  pediu — e você descobre depois. Com você na frente, Liberado é escolha em tempo real; numa
+  automação, é aposta feita de manhã.
+- **A UI diz a garantia POR AGENT**, porque "Auto" não vale o mesmo nos três: no Claude é
+  classificador de verdade, no Codex é sandbox de SO, e **no agy é só `--sandbox`
+  best-effort** — o freio mais fraco dos três, no agent que já alucinou (ADR-020). Esconder
+  isso repetiria o erro que o `permissionNote` corrigiu.
+- **Fail-closed preservado:** valor desconhecido cai em Leitura, e "liberado" continua
+  barrado no engine além do tipo.
+
+### ADR-024 — Silêncio não vale para quem está esperando: os 4 pontos altos ✅
+- **Contexto:** a auditoria dos 139 descartes totais de erro (ADR-017) elegeu 4 de
+  severidade alta. Todos aplicados agora, e o critério foi o mesmo: **alguém está esperando
+  um resultado deste caminho?**
+- **`interactions.ts` (`answer`)** — a entrega da SUA decisão ao agent era `.catch(() => {})`.
+  Não é best-effort: é o ÚNICO caminho. O comentário antigo supunha "se falhou, o run já
+  morreu e o Drop cobre" — suposição, não fato: o invoke pode falhar com o run VIVO, e o
+  card já saiu da tela. Agora loga, avisa e **devolve o pedido à fila** — se a entrega
+  falhou, o agent pode continuar bloqueado, e sumir com o card afirmaria que a decisão
+  chegou.
+- **`interactions.ts` (listener)** — falha ao registrar `interaction://request` apagava a
+  feature INTEIRA sem sintoma; o usuário veria "o agent travou sozinho". Agora grita com
+  instrução (reiniciar o app).
+- **`learning.ts` (`saveLesson`)** — `catch { return false }`, mas `false` já significava
+  DUPLICATA no contrato: erro de banco chegava na UI como "já existe uma regra parecida".
+  Você achava que estava tudo bem e a regra não existia. Virou
+  `"salva" | "duplicata" | "erro"`, três desfechos e três mensagens.
+- **`SddView.tsx`** — o comentário afirmava "erro já chega como card de Error no stream", o
+  que é falso para falha de SPAWN: sem stream aberto, nenhum evento chega e o overlay só
+  parava. Agora injeta o erro no fio, como fusion e mission já faziam.
