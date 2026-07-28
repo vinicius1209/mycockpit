@@ -617,10 +617,14 @@ export function ChatPanel() {
       conv.presetDigest,
       project.path,
     )
+    // A doutrina do projeto também viaja: o transplante é uma sessão FRESCA,
+    // muitas vezes numa CLI diferente da que começou a conversa — sem o bloco,
+    // o agent que assume seria o único do fio a trabalhar sem as regras.
+    const doctrine = buildDoctrineBlock((await readDoctrine(project.path)).content)
     // corrida do await (mesma classe do D2): re-checa antes de transplantar.
     const fresh = useChat.getState().byId[convId]
     if (!fresh || fresh.running || fresh.finalizing) return
-    const prompt = `${personaBlock ? `${personaBlock}\n\n` : ""}${preamble}\n\n---\n\nPedido pendente (responda a ele agora):\n${pending}`
+    const prompt = `${personaBlock ? `${personaBlock}\n\n` : ""}${doctrine ? `${doctrine}\n\n` : ""}${preamble}\n\n---\n\nPedido pendente (responda a ele agora):\n${pending}`
     const runId = crypto.randomUUID()
     useChat.getState().invalidateSuggestions(convId)
     useChat.getState().handleEvent(convId, {

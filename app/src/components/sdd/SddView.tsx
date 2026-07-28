@@ -28,6 +28,7 @@ import { toast } from "sonner"
 import { confirm } from "@/lib/confirm"
 import { useActiveProject, useApp } from "@/store/app"
 import { runAgent } from "@/lib/agent"
+import { buildDoctrineBlock, readDoctrine } from "@/lib/doctrine"
 import { reduceItems, useChat, type ChatItem } from "@/store/chat"
 import { Markdown } from "@/components/common/Markdown"
 import { readTextFile } from "@/lib/sources"
@@ -860,6 +861,10 @@ async function runSkillInto(
     running: true,
   }
   setRun(cur)
+  // DOUTRINA do projeto: a etapa do SDD é uma sessão fresca que ESCREVE spec e
+  // código no repo. Roda em claude-code, que leria um CLAUDE.md — mas o
+  // projeto pode não ter um, e as regras do MyCockpit moram na doutrina.
+  const doctrine = buildDoctrineBlock((await readDoctrine(projectPath)).content)
   try {
     await runAgent(
       runId,
@@ -867,7 +872,7 @@ async function runSkillInto(
       "claude-code",
       null,
       null,
-      prompt,
+      doctrine ? `${doctrine}\n\n${prompt}` : prompt,
       projectPath,
       null,
       permission,

@@ -14,6 +14,7 @@
 // 'padrao'; 'liberado' é clampado fora AQUI além do tipo.
 
 import { runAgent } from "@/lib/agent"
+import { buildDoctrineBlock, readDoctrine } from "@/lib/doctrine"
 import { dispatchBlockReason, normalizeModelValue } from "@/lib/agents"
 import { proposePlan } from "@/lib/lead"
 import {
@@ -238,6 +239,13 @@ export async function dispatchSchedule(
     // deixa nada pendurado.
     markUnattendedRun(runId, convId)
     useChat.getState().start(convId, s.prompt, runId, s.agent, model, null, [])
+    // DOUTRINA do projeto: cada execução é uma sessão FRESCA, e aqui não há
+    // ninguém na frente pra corrigir o rumo — as regras do projeto importam
+    // mais numa automação das 18:30, não menos. O fio guarda `s.prompt` (o que
+    // você escreveu); o bloco vai só pro prompt do CLI.
+    const doctrine = buildDoctrineBlock(
+      (await readDoctrine(project.path)).content,
+    )
     let invokeFailed = false
     try {
       await runAgent(
@@ -246,7 +254,7 @@ export async function dispatchSchedule(
         s.agent,
         model,
         null,
-        s.prompt,
+        doctrine ? `${doctrine}\n\n${s.prompt}` : s.prompt,
         project.path,
         null, // sessão fresca — cada execução é um turno independente
         permission,

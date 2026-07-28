@@ -29,7 +29,8 @@ aprendizado usa esses dados pra tornar a próxima autonomia mais barata e certei
 | **`stage_runs`** (skill/agent/model/**ok**/**cost_usd**) | — | **o reward já existe** (M1, M3) |
 | Custo por entrega (US$/feature) | — | sinal de eficiência (M3) |
 | Worktrees git por conversa | isolamento p/ rodar em paralelo | diff = verdade da entrega |
-| `.claude/` (CLAUDE.md, skills, commands, memory) | contexto injetado nos CLIs | **onde a memória aprendida mora** (M2/M5/M6) |
+| `.claude/` (CLAUDE.md, skills, commands, memory) | contexto que **só o Claude Code** lê | — (ver `.mycockpit/`) |
+| **`.mycockpit/`** (instructions.md, agents/, config.toml) | **contexto que o APP injeta — vale nos três** | doutrina e personas versionadas no git (ADR-025) |
 | Helper Haiku pós-turno (sugestões) | — | motor barato p/ destilar/curar (M2/M4/M6) |
 | **Auto-revive em rate limit** (entregue 2026-07-13) | não morre à noite | — |
 

@@ -1452,12 +1452,13 @@ export async function setModelProposalStatus(
   }
 }
 
-// ---------------- Sprint 3 (E2): agent_presets (personas versionadas) ----------------
-// Mesmo padrão idempotente do aprendizado: CREATE TABLE IF NOT EXISTS do
-// frontend (ensureAgentPresetTables), cache de promessa que RESETA em falha.
-// A identidade comportamental do preset é o DIGEST (presets.presetDigest,
-// sha256 da serialização canônica); editar = version+1 + digest recomputado —
-// conversas antigas guardam o digest velho e o drift (S3.4) é o aviso desejado.
+// ---------------- agent_presets: LEGADO, só leitura para migrar ----------------
+// As personas viviam aqui (Sprint 3 · E2) e desde jul/2026 moram em arquivo —
+// `.mycockpit/agents/*.md`, ver lib/agentDefs e ADR-025. Sobrou a LEITURA, que
+// alimenta a migração uma vez por sessão; não há mais caminho de escrita, então
+// esta tabela é histórico, não estado. O CREATE IF NOT EXISTS fica porque numa
+// instalação nova a tabela não existe e o SELECT precisa devolver vazio, não
+// estourar. O tipo AgentPreset segue sendo o formato compartilhado da persona.
 
 let presetsReady: Promise<void> | null = null
 

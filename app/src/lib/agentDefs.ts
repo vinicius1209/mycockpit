@@ -168,28 +168,35 @@ export function dedupeByScope(defs: AgentDef[]): AgentDef[] {
 // Disco
 // ---------------------------------------------------------------------------
 
-/** Todas as personas visíveis num projeto (global + do projeto, deduplicadas).
- *  Fora do Tauri ou em falha: lista vazia — persona é opcional. */
-export async function listAgentDefs(
+/** TODAS as personas dos dois escopos, SEM deduplicar e SEM engolir erro.
+ *  Sem dedup porque quem aloca slug precisa enxergar até a persona global que
+ *  está sombreada por uma do projeto — senão criar uma nova com o mesmo nome
+ *  sobrescreveria o arquivo escondido. Sem catch porque quem resolve UMA
+ *  persona precisa distinguir "não existe" de "não consegui ler". */
+export async function readAllAgentDefs(
   projectPath: string | null,
 ): Promise<AgentDef[]> {
   if (!isTauri()) return []
-  let files: AgentDefFile[]
-  try {
-    files = await invoke<AgentDefFile[]>("read_agent_defs", {
-      projectPath,
-    })
-  } catch (e) {
-    console.warn("[personas] falha ao listar", e)
-    return []
-  }
-  const defs = await Promise.all(
+  const files = await invoke<AgentDefFile[]>("read_agent_defs", { projectPath })
+  return Promise.all(
     files.map(async (f) => {
       const base = defFieldsFrom(f)
       return { ...base, digest: await presetDigest(base) }
     }),
   )
-  return dedupeByScope(defs)
+}
+
+/** Personas visíveis num projeto (deduplicadas, projeto > global). Falha vira
+ *  lista vazia — é a leitura de EXIBIÇÃO, e persona é opcional. */
+export async function listAgentDefs(
+  projectPath: string | null,
+): Promise<AgentDef[]> {
+  try {
+    return dedupeByScope(await readAllAgentDefs(projectPath))
+  } catch (e) {
+    console.warn("[personas] falha ao listar", e)
+    return []
+  }
 }
 
 /** Grava (cria ou substitui) uma persona. `slug` fixo na edição — renomear o
@@ -234,10 +241,16 @@ export async function deleteAgentDef(
 
 /** Uma persona pelo id (o que as conversas carimbam). Varre os dois escopos —
  *  é barato (poucos arquivos pequenos) e evita um índice paralelo pra manter
- *  sincronizado. */
+ *  sincronizado.
+ *
+ *  LANÇA se o disco falhar, de propósito: quem chama (resolveFirstTurnPersona)
+ *  é fail-closed e tem mensagens diferentes pra "a persona não existe mais" e
+ *  "não consegui carregar". Engolir aqui faria um erro de leitura chegar ao
+ *  usuário como "essa persona foi apagada" — mentira, sobre um arquivo intacto. */
 export async function getAgentDef(
   projectPath: string | null,
   id: string,
 ): Promise<AgentDef | null> {
-  return (await listAgentDefs(projectPath)).find((d) => d.id === id) ?? null
+  const todas = await readAllAgentDefs(projectPath)
+  return dedupeByScope(todas).find((d) => d.id === id) ?? null
 }

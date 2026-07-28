@@ -468,13 +468,17 @@ export async function continueInAgent(
     conv.presetDigest,
     projectPath,
   )
+  // A doutrina do projeto também viaja: o transplante é uma sessão FRESCA,
+  // muitas vezes numa CLI diferente da que começou a conversa — sem o bloco,
+  // o agent que assume seria o único do fio a trabalhar sem as regras.
+  const doctrine = buildDoctrineBlock((await readDoctrine(projectPath)).content)
   // corrida do await (mesma classe do D2): re-checa antes de transplantar.
   const fresh = useChat.getState().byId[convId]
   if (!fresh || fresh.running || fresh.finalizing) {
     toast("Turno em andamento. Espere terminar para revezar.")
     return
   }
-  const prompt = `${personaBlock ? `${personaBlock}\n\n` : ""}${preamble}\n\n---\n\nPedido pendente (responda a ele agora):\n${pending}`
+  const prompt = `${personaBlock ? `${personaBlock}\n\n` : ""}${doctrine ? `${doctrine}\n\n` : ""}${preamble}\n\n---\n\nPedido pendente (responda a ele agora):\n${pending}`
   const runId = crypto.randomUUID()
   // revezamento é intenção explícita: derruba auto-resume agendado e invalida
   // sugestões pendentes (mesma coreografia do handleContinueWith).

@@ -9,6 +9,11 @@ vi.mock("@/lib/agent", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@/lib/agent")>()
   return { ...mod, runAgent: vi.fn(async () => {}) }
 })
+// Doutrina: funções puras reais, só a leitura de disco é fingida.
+vi.mock("@/lib/doctrine", async (orig) => ({
+  ...(await orig<typeof import("@/lib/doctrine")>()),
+  readDoctrine: vi.fn(async () => ({ exists: false, content: "", bytes: 0 })),
+}))
 vi.mock("@/lib/db", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@/lib/db")>()
   return {
@@ -22,6 +27,7 @@ vi.mock("@/lib/db", async (importOriginal) => {
 })
 
 import { runAgent } from "@/lib/agent"
+import { readDoctrine } from "@/lib/doctrine"
 import type { AgentProbe } from "@/lib/detect"
 import {
   insertScheduleRun,
@@ -89,6 +95,13 @@ function armDetected(detected: Record<string, AgentProbe>) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // clearAllMocks zera CHAMADAS, não implementações: sem isto a doutrina
+  // armada num teste vazaria pro seguinte e mudaria o prompt esperado.
+  vi.mocked(readDoctrine).mockResolvedValue({
+    exists: false,
+    content: "",
+    bytes: 0,
+  })
   useApp.setState({
     projects: [
       {
@@ -146,6 +159,31 @@ describe("dispatchSchedule — preflight de availability (D2)", () => {
     expect(useNotifs.getState().items[0].subtitle).toContain(
       "não está instalado",
     )
+  })
+
+  // A automação roda DESASSISTIDA: ninguém corrige o rumo às 3h, então as
+  // regras do projeto importam mais aqui, não menos. Sem este bloco, o único
+  // caminho de spawn sem doutrina seria justamente o sem supervisão.
+  it("a doutrina do projeto entra no prompt da automação", async () => {
+    stubChat()
+    armDetected({ codex: probe() })
+    vi.mocked(readDoctrine).mockResolvedValue({
+      exists: true,
+      content: "- Nunca commite direto na main.",
+      bytes: 30,
+    })
+    await dispatchSchedule(schedule({ id: "s-doutrina" }))
+    const prompt = vi.mocked(runAgent).mock.calls[0][5] as string
+    expect(prompt).toContain("<doutrina")
+    expect(prompt).toContain("Nunca commite direto na main")
+    expect(prompt.endsWith(schedule().prompt)).toBe(true)
+  })
+
+  it("projeto sem doutrina manda o prompt cru (nada de bloco vazio)", async () => {
+    stubChat()
+    armDetected({ codex: probe() })
+    await dispatchSchedule(schedule({ id: "s-sem-doutrina" }))
+    expect(vi.mocked(runAgent).mock.calls[0][5]).toBe(schedule().prompt)
   })
 
   it("auth ok (ou incerta) segue pro spawn normal", async () => {

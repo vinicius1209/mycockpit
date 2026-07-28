@@ -241,6 +241,38 @@ perderíamos o resize automático do `Read`, e porque o caminho é não-document
 um dia aparecer relato de "mandei imagem e o Claude ignorou", o gatilho está pronto:
 `--input-format stream-json` exige `--output-format stream-json`, que exige `--verbose`.
 
+### 7.3 Contexto do projeto: quem lê o quê (e o que o app injeta)
+
+A instrução era a única camada do contexto **não agnóstica**: cada CLI lê o arquivo do
+próprio fornecedor, e o app nunca injetou nenhum deles — só os inventariava no painel.
+
+| fonte | dono (quem lê do disco) | o app injeta? |
+|---|---|---|
+| `CLAUDE.md` | claude | não — a CLI lê sozinha |
+| `AGENTS.md` | codex | não — a CLI lê sozinha |
+| `.claude/agents`, `.claude/skills`, `~/.claude/projects/<path>/memory` | claude | não |
+| **`.mycockpit/instructions.md`** (doutrina) | **os três** | **sim** — bloco no prompt |
+| **`.mycockpit/agents/*.md`** (personas) | **os três** | **sim** — bloco de persona |
+| lições e recall (SQLite) | os três | sim — bloco no prompt |
+
+O agy **não tem convenção de arquivo de instrução conhecida**: sem a doutrina injetada,
+ele roda sem nenhuma regra do projeto. O painel diz isso na cara em vez de inventar.
+
+**Quando a doutrina entra** — a régua é "toda sessão nova de CLI recebe". São seis
+pontos de spawn no app, e todos estão cobertos:
+
+| ponto de spawn | quando injeta |
+|---|---|
+| chat (`ChatPanel`) e mesa (`office/bridge/send`) | **1º turno** de claude/codex (o resume nativo carrega dali em diante); **todo turno** do agy (sessão fresca, e o recap não carrega o prefixo do prompt) |
+| revezamento entre agents (transplante, nas duas superfícies) | **sempre** — é sessão fresca, quase sempre em outra CLI |
+| missão (`store/mission`) | **toda fase** (cada fase é um run novo) |
+| disputa (`store/fusion`) | **todo candidato** (senão metade dos concorrentes disputa cega) |
+| automação agendada (`lib/scheduleEngine`) | **sempre** — é o run DESASSISTIDO: ninguém corrige o rumo às 3h |
+| etapa do SDD (`SddView`) | **sempre** — escreve spec e código no repo |
+
+Teto de 12k caracteres no bloco; acima disso corta e **aponta o arquivo** — o agent tem
+acesso ao disco e puxa o resto se precisar. Ver ADR-025.
+
 ## 8. Perguntas em aberto (para futuros devs)
 
 1. Semântica exata de *resume* do Codex e do OpenCode (confirmar com a doc/versão).

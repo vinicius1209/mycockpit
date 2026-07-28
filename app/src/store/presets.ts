@@ -10,7 +10,8 @@ import { create } from "zustand"
 import { toast } from "sonner"
 import {
   deleteAgentDef,
-  listAgentDefs,
+  dedupeByScope,
+  readAllAgentDefs,
   saveAgentDef,
   slugify,
   type AgentDef,
@@ -19,7 +20,12 @@ import {
 import { isTauri, listPresets, type AgentPresetInput } from "@/lib/db"
 
 interface PresetsState {
+  /** O que a UI mostra: deduplicado, projeto vence global no mesmo slug. */
   list: AgentDef[]
+  /** TODAS as personas em disco, inclusive as SOMBREADAS pela dedup. Só serve
+   *  pra alocar slug: sem isto, criar uma global com o nome de uma global já
+   *  escondida por uma do projeto sobrescreveria o arquivo escondido. */
+  todas: AgentDef[]
   loaded: boolean
   /** Projeto cujas personas estão carregadas (null = só as globais). */
   projectPath: string | null
@@ -93,8 +99,21 @@ async function migrarLegado(existentes: AgentDef[]): Promise<boolean> {
   }
 }
 
+/** Lê o disco tolerando falha: a UI não pode ficar sem a lista porque uma
+ *  leitura engasgou (quem PRECISA distinguir erro de ausência é o
+ *  resolveFirstTurnPersona, que usa o getAgentDef, esse sim lança). */
+async function lerTodas(projectPath: string | null): Promise<AgentDef[]> {
+  try {
+    return await readAllAgentDefs(projectPath)
+  } catch (e) {
+    console.warn("[personas] falha ao listar", e)
+    return []
+  }
+}
+
 export const usePresets = create<PresetsState>((set, get) => ({
   list: [],
+  todas: [],
   loaded: false,
   projectPath: null,
 
@@ -103,13 +122,13 @@ export const usePresets = create<PresetsState>((set, get) => ({
       set({ loaded: true, projectPath })
       return
     }
-    let list = await listAgentDefs(projectPath)
-    if (await migrarLegado(list)) list = await listAgentDefs(projectPath)
-    set({ list, loaded: true, projectPath })
+    let todas = await lerTodas(projectPath)
+    if (await migrarLegado(todas)) todas = await lerTodas(projectPath)
+    set({ todas, list: dedupeByScope(todas), loaded: true, projectPath })
   },
 
   create: async (p, scope) => {
-    const { list, projectPath } = get()
+    const { todas, projectPath } = get()
     if (scope === "projeto" && !projectPath) {
       toast.error("Abra um projeto para criar uma persona só dele.")
       return null
@@ -118,11 +137,12 @@ export const usePresets = create<PresetsState>((set, get) => ({
       const criada = await saveAgentDef({
         projectPath,
         scope,
-        slug: slugLivre(slugify(p.name), scope, list),
+        slug: slugLivre(slugify(p.name), scope, todas),
         input: p,
         version: 1,
       })
-      set({ list: [...list, criada] })
+      const proximas = [...todas, criada]
+      set({ todas: proximas, list: dedupeByScope(proximas) })
       return criada
     } catch (e) {
       console.error("[personas] falha ao criar", e)
@@ -132,8 +152,8 @@ export const usePresets = create<PresetsState>((set, get) => ({
   },
 
   update: async (id, patch) => {
-    const { list, projectPath } = get()
-    const cur = list.find((d) => d.id === id)
+    const { todas, projectPath } = get()
+    const cur = todas.find((d) => d.id === id)
     if (!cur) return null
     try {
       // version + 1 e digest recomputado (saveAgentDef faz o digest): conversas
@@ -156,7 +176,8 @@ export const usePresets = create<PresetsState>((set, get) => ({
         // carimbada passaria a achar que a persona foi apagada.
         id: cur.id.includes(":") ? undefined : cur.id,
       })
-      set({ list: list.map((d) => (d.id === id ? nova : d)) })
+      const proximas = todas.map((d) => (d.id === id ? nova : d))
+      set({ todas: proximas, list: dedupeByScope(proximas) })
       return nova
     } catch (e) {
       console.error("[personas] falha ao salvar", e)
@@ -166,12 +187,13 @@ export const usePresets = create<PresetsState>((set, get) => ({
   },
 
   remove: async (id) => {
-    const { list, projectPath } = get()
-    const cur = list.find((d) => d.id === id)
+    const { todas, projectPath } = get()
+    const cur = todas.find((d) => d.id === id)
     if (!cur) return
     try {
       await deleteAgentDef(projectPath, cur.scope, cur.slug)
-      set({ list: list.filter((d) => d.id !== id) })
+      const proximas = todas.filter((d) => d.id !== id)
+      set({ todas: proximas, list: dedupeByScope(proximas) })
     } catch (e) {
       console.error("[personas] falha ao apagar", e)
       toast.error("Não consegui apagar a persona.")

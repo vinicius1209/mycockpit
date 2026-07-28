@@ -29,19 +29,17 @@ vi.mock("@/lib/agentDefs", async (orig) => {
   const real = await orig<typeof import("@/lib/agentDefs")>()
   return {
     ...real,
-    listAgentDefs: vi.fn(async () =>
-      real.dedupeByScope(
-        h.arquivos.map((a) => ({
-          ...real.defFieldsFrom({
-            slug: a.slug,
-            scope: a.scope as "projeto" | "global",
-            path: `/fake/${a.slug}.md`,
-            content: a.content,
-            updated_at: 1,
-          }),
-          digest: "d",
-        })),
-      ),
+    readAllAgentDefs: vi.fn(async () =>
+      h.arquivos.map((a) => ({
+        ...real.defFieldsFrom({
+          slug: a.slug,
+          scope: a.scope as "projeto" | "global",
+          path: `/fake/${a.slug}.md`,
+          content: a.content,
+          updated_at: 1,
+        }),
+        digest: "d",
+      })),
     ),
     saveAgentDef: vi.fn(async (opts: Parameters<typeof real.saveAgentDef>[0]) => {
       const content = real.serializeAgentDef({
@@ -155,5 +153,59 @@ describe("migração do SQLite para arquivo", () => {
     await store.getState().load(null)
     expect(saveAgentDef).not.toHaveBeenCalled()
     expect(store.getState().list).toEqual([])
+  })
+})
+
+describe("alocação de slug", () => {
+  it("não sobrescreve a persona GLOBAL escondida por uma do projeto", async () => {
+    // A lista da UI é deduplicada (projeto vence global no mesmo slug). Se a
+    // alocação de slug olhasse só pra ela, criar uma global chamada "Revisor"
+    // acharia o slug livre e gravaria por cima do ~/.mycockpit/agents/revisor.md
+    // que existe e está apenas SOMBREADO. Perda silenciosa de arquivo.
+    h.arquivos = [
+      { slug: "revisor", scope: "global", content: "---\nname: Revisor\n---\nantigo" },
+      { slug: "revisor", scope: "projeto", content: "---\nname: Revisor\n---\ndo projeto" },
+    ]
+    const store = await storeFresco()
+    await store.getState().load("/proj")
+    expect(store.getState().list).toHaveLength(1) // a UI mostra uma só
+    expect(store.getState().todas).toHaveLength(2) // o disco tem duas
+
+    await store.getState().create(
+      {
+        name: "Revisor",
+        personalityMd: "novo",
+        skills: [],
+        policy: null,
+        backend: "codex",
+        model: null,
+        effort: null,
+      },
+      "global",
+    )
+    const slug = vi.mocked(saveAgentDef).mock.calls[0][0].slug
+    expect(slug).toBe("revisor-2")
+  })
+
+  it("slug repetido no MESMO escopo também ganha sufixo", async () => {
+    h.arquivos = [
+      { slug: "revisor", scope: "global", content: "---\nname: Revisor\n---\nx" },
+      { slug: "revisor-2", scope: "global", content: "---\nname: Revisor\n---\ny" },
+    ]
+    const store = await storeFresco()
+    await store.getState().load(null)
+    await store.getState().create(
+      {
+        name: "Revisor",
+        personalityMd: "z",
+        skills: [],
+        policy: null,
+        backend: "codex",
+        model: null,
+        effort: null,
+      },
+      "global",
+    )
+    expect(vi.mocked(saveAgentDef).mock.calls[0][0].slug).toBe("revisor-3")
   })
 })

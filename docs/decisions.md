@@ -350,3 +350,29 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **`SddView.tsx`** — o comentário afirmava "erro já chega como card de Error no stream", o
   que é falso para falha de SPAWN: sem stream aberto, nenhum evento chega e o overlay só
   parava. Agora injeta o erro no fio, como fusion e mission já faziam.
+
+### ADR-025 — O app tem contexto próprio: `.mycockpit/` é o `.claude/` da casa ✅
+- **Contexto:** o **ADR-002** decidiu que "reexplicar contexto não é a dor — `CLAUDE.md` /
+  `AGENTS.md` / memórias do CLI já cobrem". Era verdade quando o app era **só Claude Code**
+  (ADR-005). Com três agents, virou furo, e dá pra medir neste repo: **0 de 2** arquivos de
+  instrução presentes, **3 personas e 9 memórias** que só o Claude Code lê, e **4 das 5
+  entregas gravadas feitas pelo codex** — que lê exatamente o `AGENTS.md` ausente. Os
+  agents rodavam sem doutrina nenhuma, e o painel chamava aquilo de "o que o agente
+  enxerga".
+- **Decisão:** o contexto proprietário passa a morar em `.mycockpit/`, e o que torna isso
+  agnóstico é o app **INJETAR** — não delegar à convenção de cada fornecedor:
+  - `instructions.md` — a doutrina do projeto, injetada como bloco no prompt (1º turno em
+    claude/codex, todo turno no agy, toda fase de missão, todo candidato de disputa);
+  - `agents/*.md` — as personas, com escopo de projeto e global (`~/.mycockpit/agents`);
+  - `config.toml` e `context/` — o que já existia.
+- **Cascata do prompt:** persona → doutrina → lições → pedido. Regra escrita pelo humano vem
+  antes de regra destilada por máquina.
+- **Git:** a pasta nasceu 100% local (`.gitignore` = `*`). Agora é **seletiva** — doutrina e
+  personas versionadas (revisáveis em PR, viajam no clone), `context/`, missões e worktrees
+  fora. Upgrade automático do `*` legado; `.gitignore` editado à mão é preservado.
+- **Consequência:** `CLAUDE.md` e `AGENTS.md` continuam existindo e sendo lidos pelos donos
+  deles — o app só parou de fingir que aquilo era contexto de todo mundo. O painel agora
+  cruza cada fonte com o agent da conversa e diz quem lê o quê.
+- **O que NÃO entrou:** skills (`.claude/commands`, `.claude/skills`). Torná-las agnósticas
+  exige o app injetar o CONTEÚDO da skill, não só validar o nome no preflight — é outro
+  trabalho, com outro risco.
