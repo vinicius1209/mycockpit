@@ -890,6 +890,7 @@ export function ChatPanel() {
               finalizing={finalizing}
               startedAt={conv.startedAt}
               agent={conv.agent}
+              presetId={conv.presetId}
               advising={conv.advising}
               onContinueWith={(a) => void handleContinueWith(a)}
               feedback={feedback}

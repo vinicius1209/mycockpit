@@ -262,6 +262,92 @@ describe("passar o volante — drift reflete a troca, não erro (S3.2)", () => {
   })
 })
 
+describe("retomar o volante (E3) — devolve a direção ao executor-base", () => {
+  it("zera presetId/presetName/presetDigest (volta pro base) e retorna true", async () => {
+    useChat.setState({
+      byId: {
+        c1: conv({
+          presetId: "projeto:aline",
+          presetDigest: "stamped",
+          presetName: "Aline",
+          items: [user],
+        }),
+      },
+    })
+    const ok = await useChat.getState().returnWheel("c1")
+    expect(ok).toBe(true)
+    const c = useChat.getState().byId.c1
+    expect(c.presetId).toBeNull()
+    expect(c.presetName).toBeNull()
+    expect(c.presetDigest).toBeNull()
+    // base não tem persona: nada a re-injetar
+    expect(needsPersonaReinject(c)).toBe(false)
+    // a presença deixa de ter piloto
+    expect(conversationPresence(c).pilotId).toBeNull()
+  })
+
+  it("no-op quando já não há piloto (retorna false, sem escrita)", async () => {
+    useChat.setState({
+      byId: { c1: conv({ presetId: null, items: [user] }) },
+    })
+    const ok = await useChat.getState().returnWheel("c1")
+    expect(ok).toBe(false)
+    expect(useChat.getState().byId.c1.presetId).toBeNull()
+  })
+
+  it("no-op com turno em voo (retorna false, o piloto fica)", async () => {
+    useChat.setState({
+      byId: {
+        c1: conv({ presetId: "projeto:aline", running: true, items: [user] }),
+      },
+    })
+    const ok = await useChat.getState().returnWheel("c1")
+    expect(ok).toBe(false)
+    expect(useChat.getState().byId.c1.presetId).toBe("projeto:aline")
+  })
+})
+
+describe("tirar da conversa (E3) — removeAdvice tira só a persona alvo", () => {
+  it("remove TODOS os pareceres daquela persona; outros itens e outra persona ficam", () => {
+    useChat.setState({
+      byId: {
+        c1: conv({
+          presetId: "projeto:exec",
+          items: [
+            advice("a1", "projeto:aline", "Aline"),
+            user,
+            advice("a2", "projeto:bob", "Bob"),
+            advice("a3", "projeto:aline", "Aline"), // 2º parecer da Aline
+          ],
+        }),
+      },
+    })
+    useChat.getState().removeAdvice("c1", "projeto:aline")
+    const c = useChat.getState().byId.c1
+    // os dois pareceres da Aline saíram; o user e o parecer do Bob ficaram
+    expect(c.items.map((it) => it.id)).toEqual(["u1", "a2"])
+  })
+
+  it("depois de removeAdvice, conversationPresence não lista mais aquele convidado", () => {
+    useChat.setState({
+      byId: {
+        c1: conv({
+          presetId: "projeto:exec",
+          items: [
+            advice("a1", "projeto:aline", "Aline"),
+            advice("a2", "projeto:bob", "Bob"),
+          ],
+        }),
+      },
+    })
+    useChat.getState().removeAdvice("c1", "projeto:aline")
+    const c = useChat.getState().byId.c1
+    expect(conversationPresence(c).guests).toEqual([
+      { id: "projeto:bob", name: "Bob" },
+    ])
+  })
+})
+
 describe("dropNativeSession (S3.2/#2) — higiene de transplante (achado #3)", () => {
   it("zera sessão, resolvido (model) e anel (contextTokens) juntos", () => {
     useChat.setState({

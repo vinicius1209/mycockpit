@@ -21,14 +21,15 @@ import {
   Terminal,
   ThumbsDown,
   ThumbsUp,
+  User,
   Wrench,
   X,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import { agentLabel } from "@/lib/agent"
 import { DESTINATIONS } from "@/lib/agents"
+import type { AgentDef } from "@/lib/agentDefs"
 import { fmtCost, fmtDuration, fmtTokens } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
@@ -45,8 +46,10 @@ import { lineDiff, trimOuterContext, type DiffRow } from "@/lib/linediff"
 import { deriveTasks } from "@/lib/tasks"
 import { openDeliveryDiff } from "@/lib/deliveryDiff"
 import { Markdown } from "@/components/common/Markdown"
+import { AgentLogo, agentLogoLabel } from "@/components/common/AgentLogo"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
-import { buildNodes, type ToolItem } from "@/components/chat/messageNodes"
+import { buildNodes, type Node, type ToolItem } from "@/components/chat/messageNodes"
+import { groupByAuthor, type MessageGroup } from "@/components/chat/messageGroups"
 import { buildAdviceHandoffBlock } from "@/lib/advisor"
 import { shortDigest } from "@/lib/presets"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
@@ -748,39 +751,6 @@ function toastDuplicate() {
   toast("Já existe uma regra parecida — não salvei de novo.")
 }
 
-/** Célula do strip de telemetria: micro-label mono + valor tabular. `end` ancora
- *  a célula à direita (o custo fecha o strip como um total). */
-function TeleCell({
-  label,
-  children,
-  accent,
-  end,
-}: {
-  label: string
-  children: React.ReactNode
-  accent?: boolean
-  end?: boolean
-}) {
-  return (
-    <div
-      className={cn(
-        "flex min-w-0 flex-col gap-0.5 border-l border-border px-3 py-1.5 first:border-l-0",
-        end && "ml-auto border-l",
-      )}
-    >
-      <span className="label-mono text-[9px]">{label}</span>
-      <span
-        className={cn(
-          "font-mono text-[12px] tabular-nums whitespace-nowrap",
-          accent ? "font-semibold text-brass" : "text-foreground/80",
-        )}
-      >
-        {children}
-      </span>
-    </div>
-  )
-}
-
 /** Telemetria de fim de turno como INSTRUMENTO (não linha cinza corrida): o dado
  *  mais denso do app — tempo, tokens por direção, cache, custo — em células
  *  rotuladas, com o custo promovido a brass. */
@@ -790,39 +760,55 @@ function TurnTelemetry({
   it: Extract<ChatItem, { kind: "result" }>
 }) {
   const hasUsage = it.usage && (it.usage.input > 0 || it.usage.output > 0)
+  // Caption de fim de turno: linha DISCRETA, alinhada ao conteúdo da mensagem
+  // (sem sangrar pro gutter, sem cartão). O dado continua todo lá — só que como
+  // legenda: custo em brass, "concluído" verde. flex-wrap + min-w-0 = sem scroll.
   return (
-    // largura do conteúdo (w-full): as bordas do strip batem com a prosa e as
-    // tools; o custo fecha à direita como um total. Nunca causa scroll lateral
-    // (o container do chat é overflow-x-hidden e as células têm min-w-0).
-    <div className="flex w-full flex-wrap items-stretch overflow-hidden rounded-lg border bg-card/40 text-muted-foreground">
-      <div
+    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground/80">
+      <span
         className={cn(
-          "flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium",
+          "flex items-center gap-1 font-medium",
           it.ok ? "text-st-success" : "text-st-error",
         )}
       >
         {it.ok ? (
-          <Check className="size-3.5" />
+          <Check className="size-3" />
         ) : (
-          <AlertCircle className="size-3.5" />
+          <AlertCircle className="size-3" />
         )}
-        <span>{it.ok ? "concluído" : "erro"}</span>
-      </div>
+        {it.ok ? "concluído" : "erro"}
+      </span>
       {it.durationMs != null && (
-        <TeleCell label="Tempo">{fmtDuration(it.durationMs)}</TeleCell>
+        <>
+          <Sep />
+          <span className="tabular-nums">{fmtDuration(it.durationMs)}</span>
+        </>
       )}
       {hasUsage && (
-        <TeleCell label="Tokens">
-          {fmtTokens(it.usage!.input)} ↓ · {fmtTokens(it.usage!.output)} ↑
-        </TeleCell>
+        <>
+          <Sep />
+          <span className="tabular-nums">
+            {fmtTokens(it.usage!.input)} ↓ · {fmtTokens(it.usage!.output)} ↑
+          </span>
+        </>
       )}
       {it.usage && it.usage.cacheRead > 0 && (
-        <TeleCell label="Cache">{fmtTokens(it.usage.cacheRead)}</TeleCell>
+        <>
+          <Sep />
+          <span className="tabular-nums">cache {fmtTokens(it.usage.cacheRead)}</span>
+        </>
       )}
-      {it.model && <TeleCell label="Modelo">{it.model}</TeleCell>}
+      {it.model && (
+        <>
+          <Sep />
+          <span className="truncate">{it.model}</span>
+        </>
+      )}
       {it.costUsd != null && (
-        <TeleCell label="Custo" accent end>
+        <>
+          <Sep />
           <span
+            className="font-medium tabular-nums text-brass"
             title={
               it.costSource === "estimated"
                 ? "estimado: tokens × tabela de preço"
@@ -831,11 +817,9 @@ function TurnTelemetry({
           >
             {fmtCost(it.costUsd, it.costSource)}
           </span>
-        </TeleCell>
+        </>
       )}
-      {/* P3 — Entrega→diff em 1 clique: o strip de result É a entrega no fio;
-          este botão abre o diff do worktree no painel de Alterações (com o
-          header Pedir correção/Fechar). Sem worktree/diff vazio ⇒ toast. */}
+      {/* Entrega→diff em 1 clique: abre o diff do worktree no painel de Alterações. */}
       {it.ok && (
         <button
           type="button"
@@ -846,16 +830,19 @@ function TurnTelemetry({
           }}
           title="Ver o diff desta entrega"
           aria-label="Ver o diff desta entrega"
-          className={cn(
-            "flex items-center gap-1.5 border-l border-border px-3 text-[11px] transition-colors hover:bg-secondary hover:text-foreground",
-            it.costUsd == null && "ml-auto",
-          )}
+          className="flex items-center gap-1 transition-colors hover:text-foreground"
         >
-          <FileDiff className="size-3.5" /> Diff
+          <Sep />
+          <FileDiff className="size-3" /> Diff
         </button>
       )}
     </div>
   )
+}
+
+/** Separador "·" da caption de telemetria. */
+function Sep() {
+  return <span className="text-muted-foreground/30">·</span>
 }
 
 /** Texto de bolha com CHIP de menção (Especialistas): `@nome` que casa com uma
@@ -902,28 +889,34 @@ function AdviceArrivalRow({
     s.list.find((p) => p.id === advising.id || p.name === advising.name),
   )
   return (
-    <div className="group/msg flex items-center gap-2.5 animate-cockpit-rise">
-      <AgentAvatar
-        def={persona}
-        seed={persona ? undefined : advising.id || advising.name}
-        size={22}
-        rounded
-      />
-      <span className="text-[13px] font-medium text-foreground">
-        {persona?.name ?? advising.name}
-      </span>
-      <span className="text-[12.5px] text-muted-foreground">
-        está lendo o contexto
-      </span>
-      <span className="flex items-center gap-1" aria-hidden>
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            className="animate-cockpit-pulse size-1.5 rounded-full bg-brass/70"
-            style={{ animationDelay: `${i * 0.18}s` }}
-          />
-        ))}
-      </span>
+    <div className="flex gap-3 animate-cockpit-rise">
+      <div className="w-7 shrink-0 pt-0.5">
+        <AgentAvatar
+          def={persona}
+          seed={persona ? undefined : advising.id || advising.name}
+          size={28}
+          rounded
+        />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex items-baseline gap-2">
+          <span className="text-[13px] font-medium text-brass">
+            {persona?.name ?? advising.name}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+          <span>está lendo o contexto</span>
+          <span className="flex items-center gap-1" aria-hidden>
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="animate-cockpit-pulse size-1.5 rounded-full bg-brass/70"
+                style={{ animationDelay: `${i * 0.18}s` }}
+              />
+            ))}
+          </span>
+        </div>
+      </div>
     </div>
   )
 }
@@ -954,16 +947,9 @@ function AdviceCard({ item }: { item: Extract<ChatItem, { kind: "advice" }> }) {
   return (
     <div className="group/msg rounded-lg border border-brass/40 bg-brass/[0.05] px-3.5 py-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <AgentAvatar
-          def={persona}
-          seed={persona ? undefined : item.personaId || item.personaName}
-          size={22}
-          rounded
-        />
+        {/* avatar + nome da persona vivem no cabeçalho do grupo (gutter Slack);
+            aqui fica só a natureza do bloco (selo) + o carimbo de versão. */}
         <MessageSquareQuote className="size-4 shrink-0 text-brass" />
-        <span className="text-[13px] font-medium text-foreground">
-          {item.personaName}
-        </span>
         <span className="rounded-full border border-brass/40 bg-brass/10 px-2 py-0.5 text-[10.5px] font-medium text-brass">
           parecer · só leitura
         </span>
@@ -1046,10 +1032,12 @@ const MessageItem = memo(function MessageItem({
   reads?: Record<string, { text: string; warn: boolean } | null>
 }) {
   if (it.kind === "user") {
+    // Slack-style: alinhado à esquerda sob o gutter "Você" (o autor está no
+    // cabeçalho do grupo), não mais bolha à direita.
     return (
-      <div className="flex flex-col items-end gap-1.5">
+      <div className="flex flex-col items-start gap-1.5">
         {it.attachments && it.attachments.length > 0 && (
-          <div className="flex max-w-[82%] flex-wrap justify-end gap-1.5">
+          <div className="flex max-w-full flex-wrap gap-1.5">
             {it.attachments.map((a) => (
               <AttachmentThumb key={a.path} att={a} read={reads?.[a.path] ?? null} />
             ))}
@@ -1058,7 +1046,7 @@ const MessageItem = memo(function MessageItem({
         {it.text && (
           <div
             data-selectable
-            className="max-w-[82%] rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[14px] break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground"
+            className="max-w-full rounded-2xl rounded-tl-md bg-secondary px-4 py-2.5 text-[14px] break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground"
           >
             <MentionText text={it.text} />
           </div>
@@ -1207,12 +1195,219 @@ function ContinueRow({
 // Modelo de nós (buildNodes/continuesProse) mora em ./messageNodes — puro e
 // testável, sem estragar o fast-refresh deste arquivo de componentes.
 
+interface NodeCtx {
+  isLast: boolean
+  running: boolean
+  tasks: ReturnType<typeof deriveTasks>
+  feedback?: FeedbackApi | null
+  attReads: Record<string, { text: string; warn: boolean } | null>
+  agent: string
+  onContinueWith?: (agent: string) => void
+}
+
+/** Corpo de UM nó de render (sem gutter/cabeçalho — isso é do grupo). Mantém
+ *  intactos os caminhos existentes: prose costurada + ToolGroup, burst de tools,
+ *  checklist e os cartões de item (user/result/erro/limite/advice…). */
+function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
+  if (n.type === "tasklist") {
+    return (
+      <div className="animate-cockpit-rise">
+        <TaskChecklist tasks={ctx.tasks} />
+      </div>
+    )
+  }
+  if (n.type === "prose") {
+    // narração do turno (costurada) + as tools que ela disparou, juntas e
+    // apertadas (gap-1.5). O grupo só "roda" quando é o último nó do run.
+    const active = ctx.running && ctx.isLast
+    const hasText = n.text.trim().length > 0
+    return (
+      <div className="group/msg flex flex-col gap-1.5">
+        {hasText && <Markdown text={n.text} />}
+        {n.tools.length > 0 && (
+          <ToolGroup tools={n.tools} defaultOpen={active} active={active} />
+        )}
+        {ctx.feedback && hasText && (
+          <FeedbackControls agentTurn={n.text} api={ctx.feedback} />
+        )}
+      </div>
+    )
+  }
+  if (n.type === "tools") {
+    const active = ctx.running && ctx.isLast
+    return <ToolGroup tools={n.tools} defaultOpen={active} active={active} />
+  }
+  // cartão de limite/erro ganha a fileira de revezamento (só fora do run; durante
+  // o run o Stop é o caminho).
+  const continuable =
+    ctx.onContinueWith &&
+    !ctx.running &&
+    (n.item.kind === "limit" || n.item.kind === "error") &&
+    ctx.isLast
+  if (continuable) {
+    return (
+      <div className="flex flex-col gap-2">
+        <MessageItem item={n.item} feedback={ctx.feedback} reads={ctx.attReads} />
+        <ContinueRow
+          current={ctx.agent}
+          onPick={ctx.onContinueWith!}
+          subtle={n.item.kind === "error"}
+        />
+      </div>
+    )
+  }
+  return <MessageItem item={n.item} feedback={ctx.feedback} reads={ctx.attReads} />
+}
+
+/** Identidade do EXECUTOR pro gutter (compartilhada entre o cabeçalho do grupo
+ *  e o indicador de "trabalhando…", pra não duplicar a resolução): a
+ *  persona-piloto quando a conversa tem preset resolvido na lista; senão o logo
+ *  do code agent num círculo + o rótulo do produto. Puro dada a lista de presets. */
+export function resolveExecutorIdentity(
+  presets: AgentDef[],
+  agent: string,
+  presetId: string | null,
+): { gutter: React.ReactNode; name: string } {
+  const pilot = presetId ? presets.find((p) => p.id === presetId) : undefined
+  if (pilot) {
+    return { gutter: <AgentAvatar def={pilot} size={28} rounded />, name: pilot.name }
+  }
+  return {
+    gutter: (
+      <span className="grid size-7 place-items-center rounded-full border bg-card">
+        <AgentLogo agent={agent} className="size-4 text-muted-foreground" />
+      </span>
+    ),
+    name: agentLogoLabel(agent),
+  }
+}
+
+/** Indicador "trabalhando…" estilo Slack/typing: o avatar do executor no mesmo
+ *  gutter das mensagens + "está trabalhando…" com dots escalonados + cronômetro.
+ *  `finalizando…` mantém o formato (só troca o verbo). */
+function WorkingIndicator({
+  agent,
+  presetId,
+  finalizing,
+  running,
+  startedAt,
+}: {
+  agent: string
+  presetId: string | null
+  finalizing: boolean
+  running: boolean
+  startedAt: number | null
+}) {
+  const presets = usePresets((s) => s.list)
+  const { gutter, name } = resolveExecutorIdentity(presets, agent, presetId)
+  return (
+    <div className="flex gap-3">
+      <div className="w-7 shrink-0 pt-0.5">{gutter}</div>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex items-baseline gap-2">
+          <span className="text-[13px] font-medium text-foreground">{name}</span>
+        </div>
+        <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+          <span>{finalizing ? "finalizando…" : "está trabalhando…"}</span>
+          <span className="flex items-center gap-1" aria-hidden>
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="animate-cockpit-pulse size-1.5 rounded-full bg-st-running/70"
+                style={{ animationDelay: `${i * 0.18}s` }}
+              />
+            ))}
+          </span>
+          {running && startedAt && (
+            <span className="ml-1 font-mono text-foreground/70">
+              <Elapsed since={startedAt} />
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Uma linha de grupo estilo Slack: avatar no gutter + cabeçalho (nome) UMA vez,
+ *  e os corpos dos nós contíguos daquele autor indentados sob o mesmo gutter
+ *  (largura fixa 28px, o fio fica coeso pra todos os tipos). O autor sistema
+ *  (interrupção/aviso) é voz sem dono: sem gutter nem cabeçalho. */
+function GroupRow({
+  group,
+  agent,
+  presetId,
+  lastKey,
+  ctxBase,
+}: {
+  group: MessageGroup
+  agent: string
+  presetId: string | null
+  lastKey: string | null
+  ctxBase: Omit<NodeCtx, "isLast">
+}) {
+  const presets = usePresets((s) => s.list)
+  const author = group.author
+
+  const bodies = group.nodes.map((n) => (
+    <div key={n.key} className="min-w-0">
+      {renderNode(n, { ...ctxBase, isLast: n.key === lastKey })}
+    </div>
+  ))
+
+  if (author.kind === "system") {
+    return <div className="flex flex-col gap-1.5">{bodies}</div>
+  }
+
+  let gutter: React.ReactNode
+  let name: string
+  let nameClass = "text-foreground"
+  if (author.kind === "you") {
+    gutter = (
+      <span className="grid size-7 place-items-center rounded-full bg-secondary text-muted-foreground">
+        <User className="size-4" />
+      </span>
+    )
+    name = "Você"
+  } else if (author.kind === "especialista") {
+    const persona = presets.find((p) => p.id === author.personaId)
+    gutter = (
+      <AgentAvatar
+        def={persona}
+        seed={persona ? undefined : author.personaId || author.personaName}
+        size={28}
+        rounded
+      />
+    )
+    name = author.personaName
+    nameClass = "text-brass"
+  } else {
+    // executor: identidade compartilhada com o indicador de "trabalhando…".
+    const id = resolveExecutorIdentity(presets, agent, presetId)
+    gutter = id.gutter
+    name = id.name
+  }
+
+  return (
+    <div className="flex gap-3">
+      <div className="w-7 shrink-0 pt-0.5">{gutter}</div>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex items-baseline gap-2">
+          <span className={cn("text-[13px] font-medium", nameClass)}>{name}</span>
+        </div>
+        <div className="flex min-w-0 flex-col gap-2">{bodies}</div>
+      </div>
+    </div>
+  )
+}
+
 export function MessageList({
   items,
   running,
   finalizing,
   startedAt,
   agent,
+  presetId,
   advising,
   onContinueWith,
   feedback,
@@ -1222,6 +1417,9 @@ export function MessageList({
   finalizing: boolean
   startedAt: number | null
   agent: string
+  /** Preset (persona-piloto) carimbado na conversa — resolve o avatar/nome do
+   *  autor "executor" no gutter. null/undefined = sem piloto (usa o logo do agent). */
+  presetId?: string | null
   /** Especialistas E1: conselheiro em consulta (id+nome) — enquanto setado, a
    *  linha de chegada aparece no fim do fio; some quando o item `advice` cai. */
   advising?: { id: string; name: string } | null
@@ -1255,22 +1453,21 @@ export function MessageList({
   const hiddenCount = showAll ? 0 : Math.max(0, nodes.length - CHAT_WINDOW)
   const visible = hiddenCount > 0 ? nodes.slice(hiddenCount) : nodes
 
-  // Custo acumulado da sessão (soma dos turnos com result), consciência de gasto.
-  // Pula results seguidos de outro result (parciais da mesma invocação): somar
-  // os parciais inflava a sessão (US$120 num turno que custou US$31).
-  let sessionCost = 0
-  let sessionEstimated = false
-  let resultCount = 0
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i]
-    if (it.kind !== "result" || items[i + 1]?.kind === "result") continue
-    resultCount++
-    sessionCost += it.costUsd ?? 0
-    if (it.costSource === "estimated" || it.costSource === "unknown")
-      sessionEstimated = true
+  // Agrupamento estilo Slack: nós contíguos do mesmo autor viram um grupo
+  // (avatar/cabeçalho uma vez). `lastKey` mantém o "último nó do run roda" —
+  // agora comparado por key, não por índice, porque o nó vive dentro do grupo.
+  const groups = groupByAuthor(visible)
+  const lastKey = visible.length ? visible[visible.length - 1].key : null
+  const ctxBase: Omit<NodeCtx, "isLast"> = {
+    running,
+    tasks,
+    feedback,
+    attReads,
+    agent,
+    onContinueWith,
   }
   return (
-    <div className="mx-auto flex w-full max-w-[760px] min-w-0 flex-col gap-4 px-8 py-8">
+    <div className="mx-auto flex w-full max-w-[760px] min-w-0 flex-col gap-5 px-8 py-8">
       {hiddenCount > 0 && (
         <button
           onClick={() => setShowAll(true)}
@@ -1279,95 +1476,27 @@ export function MessageList({
           Mostrar {hiddenCount} itens anteriores
         </button>
       )}
-      {visible.map((n, idx) => {
-        if (n.type === "tasklist") {
-          return (
-            <div key={n.key} className="animate-cockpit-rise">
-              <TaskChecklist tasks={tasks} />
-            </div>
-          )
-        }
-        const isLast = idx === visible.length - 1
-        if (n.type === "prose") {
-          // narração do turno (costurada) + as tools que ela disparou, juntas e
-          // apertadas (gap-1.5): a palavra não é mais estraçalhada por um grupo
-          // de status no meio. O grupo só "roda" quando é o último nó do run.
-          const active = running && isLast
-          const hasText = n.text.trim().length > 0
-          return (
-            <div key={n.key} className="group/msg flex flex-col gap-1.5">
-              {hasText && <Markdown text={n.text} />}
-              {n.tools.length > 0 && (
-                <ToolGroup tools={n.tools} defaultOpen={active} active={active} />
-              )}
-              {feedback && hasText && (
-                <FeedbackControls agentTurn={n.text} api={feedback} />
-              )}
-            </div>
-          )
-        }
-        if (n.type === "tools") {
-          return (
-            <ToolGroup
-              key={n.key}
-              tools={n.tools}
-              defaultOpen={running && isLast}
-              active={running && isLast}
-            />
-          )
-        }
-        // cartão de limite/erro ganha a fileira de revezamento (só quando o
-        // turno não está rodando; durante o run o Stop é o caminho).
-        const continuable =
-          onContinueWith &&
-          !running &&
-          (n.item.kind === "limit" || n.item.kind === "error") &&
-          isLast
-        if (continuable) {
-          return (
-            <div key={n.key} className="flex flex-col gap-2">
-              <MessageItem item={n.item} feedback={feedback} reads={attReads} />
-              <ContinueRow
-                current={agent}
-                onPick={onContinueWith}
-                subtle={n.item.kind === "error"}
-              />
-            </div>
-          )
-        }
-        return (
-          <MessageItem
-            key={n.key}
-            item={n.item}
-            feedback={feedback}
-            reads={attReads}
-          />
-        )
-      })}
+      {groups.map((g) => (
+        <GroupRow
+          key={g.key}
+          group={g}
+          agent={agent}
+          presetId={presetId ?? null}
+          lastKey={lastKey}
+          ctxBase={ctxBase}
+        />
+      ))}
 
       {advising && <AdviceArrivalRow advising={advising} />}
 
       {(running || finalizing) && (
-        <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-          <span className="animate-cockpit-pulse size-2 rounded-full bg-st-running" />
-          <span>
-            {finalizing ? "finalizando…" : `${agentLabel(agent)} trabalhando…`}
-          </span>
-          {running && startedAt && (
-            <span className="font-mono text-foreground/70">
-              <Elapsed since={startedAt} />
-            </span>
-          )}
-        </div>
-      )}
-
-      {resultCount >= 2 && sessionCost > 0 && (
-        <div className="flex items-center gap-2 self-start pt-1">
-          <span className="label-mono text-[9px]">Sessão</span>
-          <span className="font-mono text-[11.5px] font-semibold tabular-nums text-brass">
-            {fmtCost(sessionCost, sessionEstimated ? "estimated" : "reported")}
-          </span>
-        </div>
+        <WorkingIndicator
+          agent={agent}
+          presetId={presetId ?? null}
+          finalizing={finalizing}
+          running={running}
+          startedAt={startedAt}
+        />
       )}
     </div>
   )

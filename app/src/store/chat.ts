@@ -131,6 +131,30 @@ export function conversationPresence(
   }
 }
 
+/** Custo acumulado da sessão (soma dos turnos com `result`), consciência de
+ *  gasto. Pula results SEGUIDOS de outro result (parciais da mesma invocação):
+ *  somar os parciais inflava a sessão (US$120 num turno que custou US$31).
+ *  `turns` conta os results finais (a UI só mostra o custo com ≥2 turnos). Puro,
+ *  testável, fonte única do strip de custo (agora na barra de topo). */
+export function sessionCost(items: ChatItem[]): {
+  total: number
+  estimated: boolean
+  turns: number
+} {
+  let total = 0
+  let estimated = false
+  let turns = 0
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i]
+    if (it.kind !== "result" || items[i + 1]?.kind === "result") continue
+    turns++
+    total += it.costUsd ?? 0
+    if (it.costSource === "estimated" || it.costSource === "unknown")
+      estimated = true
+  }
+  return { total, estimated, turns }
+}
+
 /** Especialistas E3 (S3.2) — o próximo turno precisa RE-INJETAR a persona?
  *  DERIVADO de estado PERSISTIDO (sobrevive a restart), não de flag efêmera:
  *  há persona carimbada (`presetId`), o digest foi ZERADO (o gesto de passar o
@@ -327,6 +351,14 @@ interface ChatState {
     personaId: string,
     name: string,
   ) => Promise<boolean>
+  /** Especialistas E3 — "retomar o volante": devolve a direção ao EXECUTOR-BASE
+   *  (o code agent, sem persona-piloto). Zera presetId/presetName/presetDigest e
+   *  persiste via dbSetPreset(convId, null, null), mesma disciplina do passWheel
+   *  mas pra null. Os próximos turnos rodam o agent base; NÃO precisa re-injeção
+   *  (needsPersonaReinject volta false com presetId null). Não mexe em sessão.
+   *  Retorna `true` se aplicou, `false` no no-op (já sem piloto, turno em voo,
+   *  conversa sumiu) — o caller só anuncia quando efetivou. */
+  returnWheel: (convId: string) => Promise<boolean>
   /** Zera a sessão nativa da conversa (resume falhou → a sessão antiga está
    *  morta; o run em fallback vai emitir `session` e gravar a nova). */
   clearSession: (convId: string) => void
@@ -402,6 +434,10 @@ interface ChatState {
   takePendingAdvice: (convId: string) => string | null
   /** Especialistas E1: "Dispensar" — remove o item de parecer do fio + persiste. */
   dismissAdvice: (convId: string, id: string) => void
+  /** Especialistas E3 — "tirar da conversa": remove TODOS os pareceres (kind
+   *  "advice") daquela persona do fio + persiste. A persona sai da presença, que
+   *  é DERIVADA (conversationPresence deixa de listar o convidado). */
+  removeAdvice: (convId: string, personaId: string) => void
   enqueue: (convId: string, text: string, attachments?: Attachment[]) => void
   /** Esvazia a fila e devolve as mensagens pendentes (p/ coalescer no envio). */
   dequeueQueued: (convId: string) => QueuedMsg[]
@@ -1211,6 +1247,29 @@ export const useChat = create<ChatState>((set, get) => {
       return true
     },
 
+    // S3 (E3) — retomar o volante: devolve a direção ao executor-base (sem
+    // persona). Zera presetId/presetName/presetDigest e persiste pra null (mesma
+    // disciplina do passWheel). needsPersonaReinject volta false com presetId
+    // null → nenhuma re-injeção; não toca em sessão. No-op (false) se já não há
+    // piloto, turno em voo, ou a conversa sumiu.
+    returnWheel: async (convId) => {
+      const cur = get().byId[convId]
+      if (!cur || cur.corrupt) return false
+      if (cur.running || cur.finalizing) return false // turno em voo: espera
+      if (cur.presetId == null) return false // já sem piloto → no-op
+      patch(convId, {
+        presetId: null,
+        presetDigest: null,
+        presetName: null,
+      })
+      try {
+        await dbSetPreset(convId, null, null)
+      } catch (e) {
+        console.warn("[presets] falha ao devolver o volante ao base:", e)
+      }
+      return true
+    },
+
     clearSession: (convId) => {
       set((s) =>
         s.byId[convId]
@@ -1677,6 +1736,20 @@ export const useChat = create<ChatState>((set, get) => {
       const cur = get().byId[convId]
       if (!cur) return
       patch(convId, { items: cur.items.filter((it) => it.id !== id) })
+      void get().persist(convId)
+    },
+
+    // S3 (E3) — tirar da conversa: remove TODOS os pareceres daquela persona (a
+    // presença é derivada, então some da barra). Mesma escrita do dismissAdvice,
+    // filtrando por personaId em vez de por id do item.
+    removeAdvice: (convId, personaId) => {
+      const cur = get().byId[convId]
+      if (!cur) return
+      patch(convId, {
+        items: cur.items.filter(
+          (it) => !(it.kind === "advice" && it.personaId === personaId),
+        ),
+      })
       void get().persist(convId)
     },
 
