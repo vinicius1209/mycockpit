@@ -62,6 +62,20 @@ export interface MessageGroup {
   nodes: Node[]
 }
 
+/** Hora (epoch ms) de um GRUPO = o `ts` do PRIMEIRO item dele. buildNodes usa o
+ *  id do 1º item de cada segmento como `key` do nó, então a key do 1º nó do
+ *  grupo resolve, via `tsById`, o carimbo do item que abriu o grupo (estilo
+ *  Slack: o cabeçalho mostra quando a conversa daquele autor começou).
+ *  `undefined` quando o item é antigo e não tem `ts` — a UI omite a hora (sem
+ *  "undefined" fantasma). Puro. */
+export function groupTs(
+  group: MessageGroup,
+  tsById: Map<string, number | undefined>,
+): number | undefined {
+  const first = group.nodes[0]
+  return first ? tsById.get(first.key) : undefined
+}
+
 /** Colapsa nós contíguos do mesmo autor. Troca de autor abre um grupo novo. */
 export function groupByAuthor(nodes: Node[]): MessageGroup[] {
   const groups: MessageGroup[] = []

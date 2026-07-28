@@ -41,7 +41,7 @@ import {
 import { clearPresetDriftWarning, warnPresetDrift } from "@/lib/presets"
 import { perfSpan } from "@/office/engine/perf"
 
-export type ChatItem =
+type ChatItemBody =
   | { kind: "user"; id: string; text: string; attachments?: Attachment[] }
   | { kind: "text"; id: string; text: string }
   | {
@@ -90,6 +90,14 @@ export type ChatItem =
       question: string
       text: string
     }
+
+/** Todo item do fio carrega o instante em que NASCEU (epoch ms), carimbado na
+ *  criação com Date.now() (estilo Slack: a hora vira cabeçalho do grupo).
+ *  Opcional: itens gravados antes deste campo não têm carimbo — a UI tolera
+ *  `undefined` e omite a hora nesses casos (sem "undefined" fantasma). A
+ *  intersecção sobre a união preserva o discriminante `kind` (narrowing e
+ *  Extract<> seguem funcionando) sem repetir o campo em cada variante. */
+export type ChatItem = ChatItemBody & { ts?: number }
 
 /** Itens de EXECUTOR de uma conversa: exclui os pareceres de conselheiro (kind
  *  "advice"), que são laterais e NÃO contam como turno do executor
@@ -560,6 +568,9 @@ export function reduceItems(
   c: ItemReducible,
   e: AgentEvent,
   ctx?: ReduceCtx,
+  /** Instante de nascimento dos itens criados neste reduce (epoch ms).
+   *  Injetável nos testes; default Date.now() em produção. */
+  now: number = Date.now(),
 ): Partial<ItemReducible> {
   switch (e.type) {
     case "session": {
@@ -576,14 +587,21 @@ export function reduceItems(
         sessionId: e.session_id,
         model: e.model,
         ...(fresh
-          ? { items: [...c.items, { kind: "notice", id: uid(), message: warn }] }
+          ? {
+              items: [
+                ...c.items,
+                { kind: "notice", id: uid(), message: warn, ts: now },
+              ],
+            }
           : {}),
       }
     }
     // H2, texto completo do assistant: se já veio por deltas, descarta (dedup).
     case "text":
       if (c.streamingTextId) return { streamingTextId: null }
-      return { items: [...c.items, { kind: "text", id: uid(), text: e.text }] }
+      return {
+        items: [...c.items, { kind: "text", id: uid(), text: e.text, ts: now }],
+      }
     // Fim de UM bloco de texto: fecha a bolha corrente pro próximo bloco
     // começar limpo (sem colar no anterior nem no meio da palavra). Genérico.
     case "text_stop":
@@ -601,7 +619,7 @@ export function reduceItems(
       }
       const id = uid()
       return {
-        items: [...c.items, { kind: "text", id, text: e.text }],
+        items: [...c.items, { kind: "text", id, text: e.text, ts: now }],
         streamingTextId: id,
       }
     }
@@ -609,7 +627,14 @@ export function reduceItems(
       return {
         items: [
           ...c.items,
-          { kind: "tool", id: uid(), name: e.name, input: e.input, toolId: e.id },
+          {
+            kind: "tool",
+            id: uid(),
+            name: e.name,
+            input: e.input,
+            toolId: e.id,
+            ts: now,
+          },
         ],
         streamingTextId: null,
       }
@@ -654,6 +679,7 @@ export function reduceItems(
                 : prev && prev.kind === "result"
                   ? prev.durationMs
                   : undefined,
+            ts: now,
           },
         ],
         streamingTextId: null,
@@ -672,6 +698,7 @@ export function reduceItems(
             id: uid(),
             message: e.message,
             resetHint: e.reset_hint ?? undefined,
+            ts: now,
           },
         ],
         streamingTextId: null,
@@ -679,16 +706,22 @@ export function reduceItems(
     // aviso não-fatal (anexo expirado/não-suportado), só adiciona a linha.
     case "notice":
       return {
-        items: [...c.items, { kind: "notice", id: uid(), message: e.message }],
+        items: [
+          ...c.items,
+          { kind: "notice", id: uid(), message: e.message, ts: now },
+        ],
       }
     case "error":
       return {
-        items: [...c.items, { kind: "error", id: uid(), message: e.message }],
+        items: [
+          ...c.items,
+          { kind: "error", id: uid(), message: e.message, ts: now },
+        ],
         streamingTextId: null,
       }
     case "cancelled":
       return {
-        items: [...c.items, { kind: "cancelled", id: uid() }],
+        items: [...c.items, { kind: "cancelled", id: uid(), ts: now }],
         streamingTextId: null,
       }
     case "done":
@@ -1442,6 +1475,7 @@ export const useChat = create<ChatState>((set, get) => {
             id: uid(),
             text,
             attachments: attachments.length ? attachments : undefined,
+            ts: Date.now(),
           },
         ]
         // deriva o título na lista do projeto DONO (via id único), espelha no ativo
@@ -1575,7 +1609,7 @@ export const useChat = create<ChatState>((set, get) => {
                     ...c,
                     items: [
                       ...c.items,
-                      { kind: "notice", id: uid(), message: msg },
+                      { kind: "notice", id: uid(), message: msg, ts: Date.now() },
                     ],
                   },
                 },
@@ -1823,6 +1857,7 @@ export const useChat = create<ChatState>((set, get) => {
             id: uid(),
             text,
             attachments: attachments.length ? attachments : undefined,
+            ts: Date.now(),
           },
         ]
         const titled = patchConvMeta(s, convId, (c) =>
@@ -1849,7 +1884,7 @@ export const useChat = create<ChatState>((set, get) => {
         if (!cur) return {}
         // marca a vitória da disputa no transcript (senão vira turno comum sem rastro)
         const lead = notice
-          ? [{ kind: "notice" as const, id: uid(), message: notice }]
+          ? [{ kind: "notice" as const, id: uid(), message: notice, ts: Date.now() }]
           : []
         return {
           byId: {

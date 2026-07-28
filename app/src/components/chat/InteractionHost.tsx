@@ -27,13 +27,7 @@ import {
   type InteractionOrigin,
 } from "@/store/interactions"
 import { summarizeApproval, type ApprovalSummary } from "@/lib/approvalSummary"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { AppDialog } from "@/components/ui/app-dialog"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { cn } from "@/lib/utils"
@@ -416,20 +410,23 @@ function DetailDialog({
   toolName: string
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Pedido de permissão · {toolName}</DialogTitle>
-          <DialogDescription>
-            {summary.headline}
-            {summary.lines > 1 ? ` — ${summary.lines} linhas` : ""}
-          </DialogDescription>
-        </DialogHeader>
-        <pre className="max-h-[60vh] overflow-auto rounded-md border bg-card/70 px-3 py-2 font-mono text-[11.5px] break-all whitespace-pre-wrap text-foreground/90">
-          {summary.detail}
-        </pre>
-      </DialogContent>
-    </Dialog>
+    <AppDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      size="lg"
+      className="max-w-2xl"
+      title={<>Pedido de permissão · {toolName}</>}
+      description={
+        <>
+          {summary.headline}
+          {summary.lines > 1 ? ` — ${summary.lines} linhas` : ""}
+        </>
+      }
+    >
+      <pre className="max-h-[60vh] overflow-auto rounded-md border bg-card/70 px-3 py-2 font-mono text-[11.5px] break-all whitespace-pre-wrap text-foreground/90">
+        {summary.detail}
+      </pre>
+    </AppDialog>
   )
 }
 

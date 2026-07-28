@@ -44,6 +44,7 @@ export function CommandConsole({
   finalizing,
   missionRunning,
   onStop,
+  onOpenEspecialistas,
 }: {
   onSend: (
     text: string,
@@ -56,6 +57,8 @@ export function CommandConsole({
   /** Missão rodando nesta conversa → composer travado (envio manual bloqueado). */
   missionRunning?: boolean
   onStop?: () => void
+  /** Atalho ✦ do composer: abre o marketplace de Especialistas sobre a conversa. */
+  onOpenEspecialistas?: () => void
 }) {
   // Rascunho por-conversa na store → sobrevive a trocar de modo/conversa (não some
   // no desmonte do componente). Isolado por seletor: escrever não re-renderiza quem
@@ -469,6 +472,7 @@ export function CommandConsole({
             onMission={() => setMissionOpen(true)}
             missionDisabled={disabled || running || finalizing || missionRunning}
             onAttach={attach}
+            onEspecialistas={onOpenEspecialistas}
             running={running}
             onStop={onStop}
             onSubmit={submit}

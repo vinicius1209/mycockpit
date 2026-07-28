@@ -30,7 +30,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { DESTINATIONS } from "@/lib/agents"
 import type { AgentDef } from "@/lib/agentDefs"
-import { fmtCost, fmtDuration, fmtTokens } from "@/lib/format"
+import { fmtCost, fmtDuration, fmtTime, fmtTokens } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
 import { attachmentRead, attachmentReadLabel } from "@/lib/attachmentRead"
@@ -49,7 +49,7 @@ import { Markdown } from "@/components/common/Markdown"
 import { AgentLogo, agentLogoLabel } from "@/components/common/AgentLogo"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { buildNodes, type Node, type ToolItem } from "@/components/chat/messageNodes"
-import { groupByAuthor, type MessageGroup } from "@/components/chat/messageGroups"
+import { groupByAuthor, groupTs, type MessageGroup } from "@/components/chat/messageGroups"
 import { buildAdviceHandoffBlock } from "@/lib/advisor"
 import { shortDigest } from "@/lib/presets"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
@@ -1337,17 +1337,22 @@ function GroupRow({
   group,
   agent,
   presetId,
+  ts,
   lastKey,
   ctxBase,
 }: {
   group: MessageGroup
   agent: string
   presetId: string | null
+  /** Hora (epoch ms) do 1º item do grupo — vira "HH:MM" ao lado do nome, estilo
+   *  Slack. undefined (itens antigos sem carimbo) omite a hora. */
+  ts?: number
   lastKey: string | null
   ctxBase: Omit<NodeCtx, "isLast">
 }) {
   const presets = usePresets((s) => s.list)
   const author = group.author
+  const time = fmtTime(ts)
 
   const bodies = group.nodes.map((n) => (
     <div key={n.key} className="min-w-0">
@@ -1394,6 +1399,11 @@ function GroupRow({
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-baseline gap-2">
           <span className={cn("text-[13px] font-medium", nameClass)}>{name}</span>
+          {time && (
+            <span className="text-[11px] tabular-nums text-muted-foreground/60">
+              {time}
+            </span>
+          )}
         </div>
         <div className="flex min-w-0 flex-col gap-2">{bodies}</div>
       </div>
@@ -1458,6 +1468,13 @@ export function MessageList({
   // agora comparado por key, não por índice, porque o nó vive dentro do grupo.
   const groups = groupByAuthor(visible)
   const lastKey = visible.length ? visible[visible.length - 1].key : null
+  // id → ts do item (o cabeçalho do grupo lê o ts do 1º item via a key do 1º nó,
+  // que buildNodes deriva do id desse item). Itens antigos sem `ts` → undefined,
+  // e o grupo omite a hora. Recalcula só quando o fio muda.
+  const tsById = useMemo(
+    () => new Map(items.map((it) => [it.id, it.ts] as const)),
+    [items],
+  )
   const ctxBase: Omit<NodeCtx, "isLast"> = {
     running,
     tasks,
@@ -1482,6 +1499,7 @@ export function MessageList({
           group={g}
           agent={agent}
           presetId={presetId ?? null}
+          ts={groupTs(g, tsById)}
           lastKey={lastKey}
           ctxBase={ctxBase}
         />

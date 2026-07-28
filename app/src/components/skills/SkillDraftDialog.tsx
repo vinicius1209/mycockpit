@@ -1,14 +1,7 @@
 import { useEffect, useState } from "react"
 import { Loader2, Sparkles } from "lucide-react"
 import { toast } from "sonner"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { AppDialog } from "@/components/ui/app-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -74,19 +67,38 @@ export function SkillDraftDialog({
   const loading = draft === null
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="size-4" aria-hidden />
-            Salvar como skill
-          </DialogTitle>
-          <DialogDescription>
-            Promova este workflow a um /command reutilizável em
-            {" "}.claude/commands/. Revise antes de salvar.
-          </DialogDescription>
-        </DialogHeader>
-
+    <AppDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      size="lg"
+      title={
+        <span className="flex items-center gap-2">
+          <Sparkles className="size-4" aria-hidden />
+          Salvar como skill
+        </span>
+      }
+      description={
+        <>
+          Promova este workflow a um /command reutilizável em
+          {" "}.claude/commands/. Revise antes de salvar.
+        </>
+      }
+      footer={
+        <>
+          <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+          >
+            Cancelar
+          </Button>
+          <Button onClick={onSave} disabled={loading || saving || !projectPath}>
+            {saving && <Loader2 className="size-4 animate-spin" aria-hidden />}
+            Salvar skill
+          </Button>
+        </>
+      }
+    >
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -132,21 +144,6 @@ export function SkillDraftDialog({
             </div>
           </div>
         )}
-
-        <DialogFooter>
-          <Button
-            variant="ghost"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
-          >
-            Cancelar
-          </Button>
-          <Button onClick={onSave} disabled={loading || saving || !projectPath}>
-            {saving && <Loader2 className="size-4 animate-spin" aria-hidden />}
-            Salvar skill
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </AppDialog>
   )
 }
