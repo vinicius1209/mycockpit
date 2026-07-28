@@ -35,6 +35,17 @@ export function fmtDuration(ms: number): string {
   return `${h}h ${String(m % 60).padStart(2, "0")}min`
 }
 
+/** Epoch ms → hora local "HH:MM" (24h), estilo Slack no cabeçalho do grupo.
+ *  `null`/`undefined` (itens antigos sem carimbo `ts`) → "" (a UI omite, sem
+ *  "undefined" fantasma). */
+export function fmtTime(ts: number | null | undefined): string {
+  if (ts == null) return ""
+  const d = new Date(ts)
+  const hh = String(d.getHours()).padStart(2, "0")
+  const mm = String(d.getMinutes()).padStart(2, "0")
+  return `${hh}:${mm}`
+}
+
 /** Contagem de tokens → "950", "1.2k", "12k", "3.1M". */
 export function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`

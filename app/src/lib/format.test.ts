@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { fmtBytes, fmtCost, fmtDuration, fmtTokens } from "./format"
+import { fmtBytes, fmtCost, fmtDuration, fmtTime, fmtTokens } from "./format"
 
 describe("fmtCost", () => {
   it("usa vírgula decimal e 2 casas para valores ≥ 1 (nunca 'US$12.000')", () => {
@@ -45,5 +45,19 @@ describe("fmtBytes", () => {
     expect(fmtBytes(512)).toBe("512 B")
     expect(fmtBytes(1536)).toBe("1.5 KB")
     expect(fmtBytes(2.3 * 1024 * 1024)).toBe("2.3 MB")
+  })
+})
+
+describe("fmtTime — hora do cabeçalho do grupo (estilo Slack)", () => {
+  it("formata epoch ms como HH:MM local, com zero à esquerda", () => {
+    // constrói um instante local determinístico (09:05) e confere o formato
+    const d = new Date(2026, 6, 28, 9, 5, 0)
+    expect(fmtTime(d.getTime())).toBe("09:05")
+    const d2 = new Date(2026, 6, 28, 23, 47, 0)
+    expect(fmtTime(d2.getTime())).toBe("23:47")
+  })
+  it("retorna '' para ts ausente (itens antigos sem carimbo, sem fantasma)", () => {
+    expect(fmtTime(undefined)).toBe("")
+    expect(fmtTime(null)).toBe("")
   })
 })

@@ -195,6 +195,8 @@ export function buildAdviceItem(
   def: Pick<AgentDef, "id" | "name" | "version" | "digest">,
   question: string,
   text: string,
+  /** Instante de nascimento do parecer (epoch ms). Injetável nos testes. */
+  now: number = Date.now(),
 ): AdviceItem {
   return {
     kind: "advice",
@@ -205,6 +207,7 @@ export function buildAdviceItem(
     digest: def.digest,
     question,
     text,
+    ts: now,
   }
 }
 

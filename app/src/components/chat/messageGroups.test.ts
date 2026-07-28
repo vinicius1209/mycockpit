@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { buildNodes } from "./messageNodes"
-import { groupByAuthor, nodeAuthor } from "./messageGroups"
+import { groupByAuthor, groupTs, nodeAuthor } from "./messageGroups"
 import type { ChatItem } from "@/store/chat"
 
 const user = (id: string, text: string): ChatItem => ({ kind: "user", id, text })
@@ -93,5 +93,28 @@ describe("groupByAuthor — colapsa contíguos, quebra na troca de autor", () =>
     const nodes = buildNodes([user("u1", "oi")])
     const [g] = groupByAuthor(nodes)
     expect(g.key).toContain("you#")
+  })
+})
+
+describe("groupTs — hora do grupo via a key do 1º nó (estilo Slack)", () => {
+  it("resolve o ts do PRIMEIRO item do grupo", () => {
+    const items: ChatItem[] = [
+      { ...user("u1", "oi"), ts: 1000 },
+      { ...text("t1", "resposta"), ts: 2000 },
+      { ...text("t2", "mais"), ts: 3000 },
+    ]
+    const tsById = new Map(items.map((it) => [it.id, it.ts] as const))
+    const groups = groupByAuthor(buildNodes(items))
+    // você (1º item) e executor (o texto seguinte) → dois grupos
+    expect(groups).toHaveLength(2)
+    expect(groupTs(groups[0], tsById)).toBe(1000) // 1º item do grupo "você"
+    expect(groupTs(groups[1], tsById)).toBe(2000) // 1º texto do executor
+  })
+
+  it("grupo cujo 1º item não tem ts (histórico antigo) → undefined (sem fantasma)", () => {
+    const items: ChatItem[] = [user("u1", "oi")] // sem ts
+    const tsById = new Map(items.map((it) => [it.id, it.ts] as const))
+    const groups = groupByAuthor(buildNodes(items))
+    expect(groupTs(groups[0], tsById)).toBeUndefined()
   })
 })
