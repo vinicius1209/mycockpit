@@ -108,7 +108,7 @@ export function parseSkillsList(v: string): string[] {
  *  à mão não a incrementa — e não precisa, porque quem detecta mudança de
  *  comportamento é o DIGEST, recomputado do conteúdo. */
 export function serializeAgentDef(
-  p: AgentPresetInput & { version: number; id?: string },
+  p: AgentPresetInput & { version: number; id?: string; slug?: string },
 ): string {
   const fm: string[] = ["---"]
   // `id` só existe nas personas MIGRADAS do SQLite: preserva o UUID que as
@@ -120,9 +120,43 @@ export function serializeAgentDef(
   if (p.effort) fm.push(`effort: ${citar(p.effort)}`)
   if (p.skills.length) fm.push(`skills: ${p.skills.join(", ")}`)
   if (p.policy) fm.push(`policy: ${citar(p.policy)}`)
+  // E2 — só escreve os campos novos quando carregam informação além do default,
+  // pra não poluir arquivos existentes nem inventar linha mentirosa. category
+  // "Geral" e avatar_style "thumbs" são os defaults; avatar_seed = slug idem.
+  if (p.category && p.category !== "Geral") {
+    fm.push(`category: ${citar(p.category)}`)
+  }
+  // rubrica: itens têm vírgula/pontuação, então array JSON de UMA linha (não a
+  // lista "a, b" das skills) — o parse desambigua pelo "[" inicial.
+  if (p.rubric.length) fm.push(`rubric: ${JSON.stringify(p.rubric)}`)
+  // avatar_style só quando é OVERRIDE (!= default do sistema). A UI não pica
+  // mais estilo; isto cobre a edição à mão do arquivo.
+  if (p.avatarStyle && p.avatarStyle !== "thumbs") {
+    fm.push(`avatar_style: ${citar(p.avatarStyle)}`)
+  }
+  if (p.avatarSeed && p.avatarSeed !== p.slug) {
+    fm.push(`avatar_seed: ${citar(p.avatarSeed)}`)
+  }
   fm.push(`version: ${p.version}`)
   fm.push("---", "")
   return `${fm.join("\n")}${p.personalityMd.trim()}\n`
+}
+
+/** Rubrica do frontmatter → lista. Array JSON de uma linha (o que a gente
+ *  escreve) OU a forma "a, b" (editada à mão) — o "[" inicial desambigua. */
+export function parseRubric(v: string): string[] {
+  const t = v.trim()
+  if (t.startsWith("[")) {
+    try {
+      const arr = JSON.parse(t)
+      if (Array.isArray(arr)) {
+        return arr.filter((x): x is string => typeof x === "string")
+      }
+    } catch {
+      // JSON quebrado (editado à mão sem fechar) — cai no fallback de lista.
+    }
+  }
+  return parseSkillsList(v)
 }
 
 /** Campos crus do arquivo → preset (sem o digest, que é assíncrono). */
@@ -140,6 +174,12 @@ export function defFieldsFrom(file: AgentDefFile): Omit<AgentDef, "digest"> {
     backend: fields.backend || "claude-code",
     model: fields.model || null,
     effort: fields.effort || null,
+    // E2 — defaults na ausência (persona antiga carrega sem quebrar): category
+    // "Geral", rubric [], avatar_style "thumbs" (default do sistema), seed = slug.
+    category: fields.category || "Geral",
+    rubric: fields.rubric ? parseRubric(fields.rubric) : [],
+    avatarStyle: fields.avatar_style || "thumbs",
+    avatarSeed: fields.avatar_seed || file.slug,
     version: Number.isFinite(v) && v > 0 ? v : 1,
     createdAt: file.updated_at,
     updatedAt: file.updated_at,
@@ -214,6 +254,8 @@ export async function saveAgentDef(opts: {
     ...opts.input,
     version: opts.version,
     id: opts.id,
+    // slug: permite omitir avatar_seed quando é o default (= slug).
+    slug: opts.slug,
   })
   const path = await invoke<string>("write_agent_def", {
     projectPath: opts.projectPath,

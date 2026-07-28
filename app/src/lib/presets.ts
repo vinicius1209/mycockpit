@@ -20,7 +20,14 @@ import { readProjectCommands } from "@/lib/sources"
 // ---------------------------------------------------------------------------
 
 /** Campos que ENTRAM no digest — a identidade comportamental do preset.
- *  Nome/ids ficam de fora (renomear não muda o comportamento). */
+ *  Nome/ids ficam de fora (renomear não muda o comportamento).
+ *
+ *  E2 (Especialistas): `category` e `avatar` NÃO entram — são identidade
+ *  cosmética, mudá-los não muda como a persona atua. `rubric` ENTRA (é um
+ *  checklist de conduta, muda o comportamento), mas de forma RETROCOMPATÍVEL:
+ *  a chave só aparece no canônico quando a rubrica é NÃO-VAZIA, então personas
+ *  antigas (rubric ausente/[]) produzem exatamente o mesmo hash de antes — o
+ *  drift das conversas já carimbadas não dispara à toa. */
 export interface PresetDigestInput {
   personalityMd: string
   skills: string[]
@@ -28,6 +35,7 @@ export interface PresetDigestInput {
   backend: string
   model: string | null
   effort: string | null
+  rubric?: string[]
 }
 
 /** SHA-256 (hex minúsculo) da serialização canônica ESTÁVEL do preset:
@@ -36,13 +44,15 @@ export interface PresetDigestInput {
  *  muda o hash; reordenar skills não. */
 export async function presetDigest(p: PresetDigestInput): Promise<string> {
   // ordem de chaves FIXA no literal (JSON.stringify preserva a ordem de
-  // inserção) — é o contrato de estabilidade do digest.
+  // inserção) — é o contrato de estabilidade do digest. `rubric` entra ANTES
+  // de `skills` e SÓ quando não-vazia (preserva o hash das personas antigas).
   const canonical = JSON.stringify({
     backend: p.backend,
     effort: p.effort ?? null,
     model: p.model ?? null,
     personality_md: p.personalityMd,
     policy: p.policy ?? null,
+    ...(p.rubric && p.rubric.length > 0 ? { rubric: [...p.rubric] } : {}),
     skills: [...p.skills].sort(),
   })
   const bytes = new TextEncoder().encode(canonical)
@@ -78,7 +88,10 @@ export function parseSkillsText(text: string): string[] {
 /** Monta o bloco de persona prependido ao prompt do PRIMEIRO turno. Mesmo
  *  cano das lições (learning.ts): bloco no prompt, não bolha visível. */
 export function buildPersonaBlock(
-  preset: Pick<AgentPreset, "name" | "personalityMd" | "skills" | "policy">,
+  preset: Pick<
+    AgentPreset,
+    "name" | "personalityMd" | "skills" | "policy" | "rubric"
+  >,
 ): string {
   const lines = [
     `<persona name="${preset.name}">`,
@@ -88,6 +101,16 @@ export function buildPersonaBlock(
   ]
   if (preset.policy?.trim()) {
     lines.push("", `Política de atuação: ${preset.policy.trim()}`)
+  }
+  // A rubrica entra no prompt do executor também: é o MESMO campo que entra no
+  // presetDigest, então mudá-la muda de fato o que o modelo recebe (o aviso de
+  // drift deixa de ser fantasma). Só aparece quando não-vazia.
+  if (preset.rubric.length > 0) {
+    lines.push(
+      "",
+      "Rubrica que você aplica nesta conversa (guie seu trabalho por cada item):",
+      ...preset.rubric.map((r) => `- ${r}`),
+    )
   }
   if (preset.skills.length > 0) {
     lines.push(
@@ -116,13 +139,21 @@ export function hasAssistantReply(items: { kind: string }[]): boolean {
  *  1º run morreu antes da doutrina chegar (ex.: binário ausente), então o
  *  próximo envio re-injeta e re-carimba, em vez de deixar a persona perdida
  *  pra sempre atrás do lock. `locked` = conv.items.length > 0 (o sinal dos
- *  dois pontos de send); `hasReply` = hasAssistantReply(conv.items). */
+ *  dois pontos de send); `hasReply` = hasAssistantReply(conv.items).
+ *
+ *  E3 (S3.2, passar o volante): `forceReinject` re-arma a injeção NO MEIO da
+ *  conversa quando o piloto foi trocado por gesto humano — a doutrina da nova
+ *  persona precisa viajar no PRÓXIMO turno mesmo com a conversa travada e já
+ *  respondida. É ADITIVO: default `false` preserva a invariante "persona
+ *  travada no turno-1" intacta (nenhum caminho existente muda de comportamento). */
 export function shouldInjectPersona(
   locked: boolean,
   presetId: string | null | undefined,
   hasReply: boolean,
+  forceReinject = false,
 ): boolean {
   if (!presetId) return false
+  if (forceReinject) return true
   return !locked || !hasReply
 }
 
@@ -208,8 +239,18 @@ export async function resolveFirstTurnPersona(opts: {
    *  morreu antes de qualquer resposta). */
   hasReply: boolean
   projectPath: string
+  /** S3.2 (passar o volante): força a re-injeção da persona no meio da conversa
+   *  (piloto trocado por gesto humano). Default false = comportamento de sempre. */
+  forceReinject?: boolean
 }): Promise<FirstTurnPersona> {
-  if (!shouldInjectPersona(opts.locked, opts.presetId, opts.hasReply)) {
+  if (
+    !shouldInjectPersona(
+      opts.locked,
+      opts.presetId,
+      opts.hasReply,
+      opts.forceReinject ?? false,
+    )
+  ) {
     return { status: "none" }
   }
   let preset: AgentPreset | null

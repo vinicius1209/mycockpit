@@ -18,6 +18,7 @@ import {
   type PresetScope,
 } from "@/lib/agentDefs"
 import { isTauri, listPresets, type AgentPresetInput } from "@/lib/db"
+import { STARTER_TEAM } from "@/lib/marketplace"
 
 interface PresetsState {
   /** O que a UI mostra: deduplicado, projeto vence global no mesmo slug. */
@@ -39,6 +40,9 @@ interface PresetsState {
     patch: Partial<AgentPresetInput>,
   ) => Promise<AgentDef | null>
   remove: (id: string) => Promise<void>
+  /** Semeia a equipe inicial (escopo global). Idempotente: pula slug já
+   *  existente. Devolve quantos foram criados de fato. */
+  installStarterTeam: () => Promise<number>
 }
 
 /** Slug livre naquele escopo: "revisor", "revisor-2", "revisor-3"… Evita que
@@ -69,10 +73,11 @@ async function migrarLegado(existentes: AgentDef[]): Promise<boolean> {
     let n = 0
     for (const p of antigos) {
       if (jaTem.has(p.id)) continue
+      const slug = slugLivre(slugify(p.name), "global", existentes)
       await saveAgentDef({
         projectPath: null,
         scope: "global",
-        slug: slugLivre(slugify(p.name), "global", existentes),
+        slug,
         input: {
           name: p.name,
           personalityMd: p.personalityMd,
@@ -81,6 +86,11 @@ async function migrarLegado(existentes: AgentDef[]): Promise<boolean> {
           backend: p.backend,
           model: p.model,
           effort: p.effort,
+          // E2 — legado não tinha estes campos; usa os defaults (seed = slug).
+          category: p.category,
+          rubric: p.rubric,
+          avatarStyle: p.avatarStyle,
+          avatarSeed: p.avatarSeed || slug,
         },
         version: p.version,
         id: p.id, // preserva o carimbo das conversas antigas
@@ -170,6 +180,10 @@ export const usePresets = create<PresetsState>((set, get) => ({
           backend: patch.backend ?? cur.backend,
           model: patch.model !== undefined ? patch.model : cur.model,
           effort: patch.effort !== undefined ? patch.effort : cur.effort,
+          category: patch.category ?? cur.category,
+          rubric: patch.rubric ?? cur.rubric,
+          avatarStyle: patch.avatarStyle ?? cur.avatarStyle,
+          avatarSeed: patch.avatarSeed ?? cur.avatarSeed,
         },
         version: cur.version + 1,
         // id legado (UUID) tem que sobreviver à edição, senão a conversa
@@ -198,5 +212,28 @@ export const usePresets = create<PresetsState>((set, get) => ({
       console.error("[personas] falha ao apagar", e)
       toast.error("Não consegui apagar a persona.")
     }
+  },
+
+  installStarterTeam: async () => {
+    // Idempotência POR SLUG no escopo global (o que vamos gravar): se já existe
+    // um arquivo com aquele slug global, pula — nunca sobrescreve o do usuário.
+    // Reusa o create() (mesmo CRUD → saveAgentDef), sem depender do sufixo do
+    // slugLivre pra decidir o que existe.
+    let criados = 0
+    for (const input of STARTER_TEAM) {
+      const slug = slugify(input.name)
+      const existe = get().todas.some(
+        (d) => d.scope === "global" && d.slug === slug,
+      )
+      if (existe) continue
+      const criada = await get().create(input, "global")
+      if (criada) criados++
+    }
+    if (criados > 0) {
+      toast(
+        `${criados} ${criados === 1 ? "especialista instalado" : "especialistas instalados"} (equipe inicial, em ~/.mycockpit/agents).`,
+      )
+    }
+    return criados
   },
 }))

@@ -1474,6 +1474,17 @@ export interface AgentPreset {
   backend: string
   model: string | null
   effort: string | null
+  /** Categoria de marketplace (Especialistas E2). Cosmético — NÃO entra no
+   *  digest. Ausente no arquivo = "Geral". */
+  category: string
+  /** Rubrica: o checklist que a persona aplica. Entra no DIGEST (muda o
+   *  comportamento). Ausente = []. */
+  rubric: string[]
+  /** Identidade visual DiceBear (Especialistas E2). Cosméticos — NÃO entram no
+   *  digest. Ausentes = style "thumbs" (default do sistema), seed = slug; a cor
+   *  vem da categoria (lib/avatar.avatarFor). avatarStyle é override avançado. */
+  avatarStyle: string
+  avatarSeed: string
   digest: string
   version: number
   createdAt: number
@@ -1489,6 +1500,10 @@ export interface AgentPresetInput {
   backend: string
   model: string | null
   effort: string | null
+  category: string
+  rubric: string[]
+  avatarStyle: string
+  avatarSeed: string
 }
 
 async function ensureAgentPresetTables(db: Database): Promise<void> {
@@ -1555,6 +1570,13 @@ function toPreset(r: PresetRow): AgentPreset {
     backend: r.backend,
     model: r.model ?? null,
     effort: r.effort ?? null,
+    // Legado (tabela SQLite) nunca teve estes campos — defaults honestos. A
+    // migração pra arquivo grava o slug de fato como seed (avatarSeed "" cai
+    // no fallback do defFieldsFrom/AgentAvatar).
+    category: "Geral",
+    rubric: [],
+    avatarStyle: "thumbs",
+    avatarSeed: "",
     digest: r.digest,
     version: r.version,
     createdAt: r.created_at,

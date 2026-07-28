@@ -8,7 +8,6 @@ import {
   Copy,
   Cpu,
   Download,
-  Drama,
   Info,
   Loader2,
   Mic,
@@ -17,6 +16,7 @@ import {
   RotateCcw,
   Smartphone,
   Sparkles,
+  Users,
   Waypoints,
   X,
 } from "lucide-react"
@@ -60,7 +60,7 @@ import {
 } from "@/lib/db"
 import { MissionSettings } from "@/components/settings/MissionSettings"
 import { CompanionSettings } from "@/components/settings/CompanionSettings"
-import { PresetSettings } from "@/components/settings/PresetSettings"
+import { EspecialistasContent } from "@/components/settings/Especialistas"
 import {
   DEFAULT_DICTATION_HOTKEY,
   captureHotkey,
@@ -97,7 +97,7 @@ const SECTIONS: {
     icon: Bot,
     group: "Comportamento",
   },
-  { id: "presets", label: "Presets de persona", icon: Drama },
+  { id: "presets", label: "Especialistas", icon: Users },
   { id: "suggestions", label: "Sugestões", icon: Sparkles },
   { id: "dictation", label: "Ditado", icon: Mic },
   { id: "missions", label: "Missões", icon: Waypoints },
@@ -828,7 +828,13 @@ export function SettingsDialog() {
             </div>
           )}
 
-          {section === "presets" && <PresetSettings />}
+          {section === "presets" && (
+            // Uma superfície só: o marketplace inline (grid + detalhe + criar),
+            // sem dialog-sobre-dialog. Altura própria pro scroll interno.
+            <div className="flex h-[min(70vh,560px)] flex-col overflow-hidden rounded-xl border border-border/60 bg-card/30">
+              <EspecialistasContent />
+            </div>
+          )}
 
           {section === "tools" && <AgentsToolsSection />}
 

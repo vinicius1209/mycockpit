@@ -54,6 +54,16 @@ export function renderTranscript(
       case "limit":
         lines.push("", `> Limite de uso atingido: ${it.message}`)
         break
+      case "advice":
+        // Parecer de conselheiro (só leitura) — entra na memória como um bloco
+        // atribuído à persona, não como turno do executor.
+        lines.push(
+          "",
+          `## Parecer de ${it.personaName} (conselheiro, só leitura)`,
+          "",
+          it.text,
+        )
+        break
       // result: o texto final já veio no item "text"; não duplica.
       default:
         break

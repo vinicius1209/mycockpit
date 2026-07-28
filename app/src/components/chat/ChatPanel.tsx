@@ -15,9 +15,16 @@ import { deriveTasks } from "@/lib/tasks"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { MessageList } from "@/components/chat/MessageList"
+import { PresenceBar } from "@/components/chat/PresenceBar"
 import { Reticle } from "@/components/common/Wordmark"
 import { useActiveProject, useApp } from "@/store/app"
-import { useChat, useActiveConv } from "@/store/chat"
+import {
+  useChat,
+  useActiveConv,
+  executorItems,
+  hasExecutorTurn,
+  needsPersonaReinject,
+} from "@/store/chat"
 import { writeMycockpitConfig } from "@/lib/mycockpit"
 import { useFusion } from "@/store/fusion"
 import { FusionBoard } from "@/components/fusion/FusionBoard"
@@ -65,6 +72,15 @@ import {
   readDoctrine,
   shouldInjectDoctrine,
 } from "@/lib/doctrine"
+import { serializeContext } from "@/lib/fusion"
+import { listAgentDefs, type AgentDef } from "@/lib/agentDefs"
+import {
+  buildAdviceItem,
+  buildAdvisorPrompt,
+  detectAdvisorMention,
+  resolveAdvisor,
+  runAdvisor,
+} from "@/lib/advisor"
 
 function greetingFor(date: Date): string {
   const h = date.getHours()
@@ -282,6 +298,38 @@ export function ChatPanel() {
       toast.error("Histórico corrompido no banco. Envio bloqueado nesta conversa.")
       return
     }
+    // Especialistas E1 — CONSULTA de conselheiro: `@persona` conhecida no envio
+    // dispara um parecer lateral read-only, NÃO um turno de executor. Só custa
+    // uma leitura das personas quando há um `@token` (envio comum: zero). Persona
+    // não casa → segue o fluxo normal (o `@` pode ser arquivo/texto literal).
+    if (/(?:^|\s)@\S/.test(text)) {
+      const defs = await listAgentDefs(project.path)
+      const mention = detectAdvisorMention(text, defs)
+      if (mention) {
+        // estado FRESCO (o await de listAgentDefs pode ter deixado o snapshot
+        // `conv` velho): um turno pode ter começado nesse meio-tempo.
+        const fresh = useChat.getState().byId[convId]
+        if (fresh?.running || fresh?.finalizing || fresh?.advising) {
+          toast("Termine o turno atual antes de pedir um parecer.")
+          return
+        }
+        // fail-closed: re-resolve pelo id (getAgentDef distingue "não existe" de
+        // "não consegui ler" — arquivo intacto vs leitura quebrada).
+        const resolved = await resolveAdvisor(project.path, mention.def.id)
+        if (resolved.status === "unreadable") {
+          toast.error(
+            `Não consegui ler a persona "${mention.def.name}" do disco. Tente de novo.`,
+          )
+          return
+        }
+        if (resolved.status === "missing") {
+          toast.error(`A persona "${mention.def.name}" não existe mais.`)
+          return
+        }
+        await handleConsult(convId, resolved.def, mention.question, project)
+        return
+      }
+    }
     // Rodando/finalizando: em vez de descartar, ENFILEIRA. O CLI precisa sair de
     // fato (flush da sessão) antes do próximo run; ao terminar, o finally junta as
     // pendentes num único envio (resume). Coalescer evita N resumes em sequência.
@@ -295,8 +343,12 @@ export function ChatPanel() {
     if (!fromAutoResume) useChat.getState().cancelAutoResume(convId)
     // novo run → invalida geração de sugestão pendente/em-voo desta conversa
     useChat.getState().invalidateSuggestions(convId)
-    // conversa estabelecida trava no agent/modelo/effort do 1º run; nova usa o seletor
-    const locked = conv.items.length > 0
+    // conversa estabelecida trava no agent/modelo/effort do 1º run; nova usa o
+    // seletor. Pareceres de conselheiro (advice) são laterais e NÃO contam como
+    // turno de executor — senão uma consulta antes do 1º envio "travaria" a
+    // conversa e roubaria a injeção de persona/doutrina do turno inicial (E1).
+    const execItems = executorItems(conv.items)
+    const locked = execItems.length > 0
     let agent = locked ? conv.agent : (cfg?.agent ?? "claude-code")
     let model = locked ? conv.reqModel : (cfg?.model ?? null)
     let effort = locked ? conv.effort : (cfg?.effort ?? null)
@@ -308,7 +360,12 @@ export function ChatPanel() {
       null
     // "o 1º prompt CHEGOU no CLI" — régua compartilhada pela persona e pela
     // doutrina (as duas só entram no turno inicial).
-    const hasReply = hasAssistantReply(conv.items)
+    const hasReply = hasAssistantReply(execItems)
+    // S3.2 — passar o volante: força a re-injeção NESTE turno (mesma máquina do
+    // turno-1, sem duplicar a lógica). DERIVADO de estado persistido
+    // (needsPersonaReinject: persona carimbada + digest zerado + turno de
+    // executor), então sobrevive a restart entre a troca e o envio.
+    const reinject = needsPersonaReinject(conv)
     const persona = await resolveFirstTurnPersona({
       locked,
       presetId: conv.presetId ?? null,
@@ -316,6 +373,7 @@ export function ChatPanel() {
       // da doutrina chegar → re-injeta e re-carimba em vez de perder a persona.
       hasReply,
       projectPath: project.path,
+      forceReinject: reinject,
     })
     if (persona.status === "blocked") {
       toast.error(persona.error)
@@ -334,6 +392,17 @@ export function ChatPanel() {
         name: persona.name,
       }
     }
+    // S3.2 — passar o volante trocou o BACKEND junto (a nova persona roda noutro
+    // agent que o do fio): a sessão nativa do agent anterior não serve pro novo →
+    // sessão fresca + o contexto do fio viaja no preâmbulo (mesma disciplina do
+    // revezamento, buildHandoff). Piloto de MESMO backend mantém o resume nativo:
+    // só a nova doutrina é prependida na sessão que continua.
+    const wheelSwitch =
+      reinject &&
+      persona.status === "ready" &&
+      agent !== conv.agent &&
+      conv.sessionId != null
+    const wheelHandoff = wheelSwitch ? buildHandoff(execItems) : null
     // S3.4 — resume de conversa com preset carimbado: verifica o drift do
     // digest (aviso obrigatório; o turno segue — recusa dura é maturação).
     // Só quando NÃO estamos re-injetando (a re-injeção re-carimba a versão
@@ -367,11 +436,18 @@ export function ChatPanel() {
     // conversa. Auto-resume nunca planeja (é continuação de execução).
     const planFirst = !fromAutoResume && (cfg?.planFirst ?? !!conv.planFirst)
     const runId = crypto.randomUUID()
-    const sessionId = conv.sessionId ?? null
+    // sessão fresca quando o volante trocou de backend (o resume nativo do agent
+    // anterior não vale pro novo); senão o resume normal da conversa.
+    const sessionId = wheelSwitch ? null : (conv.sessionId ?? null)
     // cwd = worktree isolado da conversa (v2.5), senão a pasta compartilhada do projeto.
     const cwd = conv.worktreePath ?? project.path
     // Sprint 4, o run escreve em byId[convId] mesmo se o usuário trocar de aba.
     useChat.getState().start(convId, text, runId, agent, model, effort, attachments)
+    // S3.2 — troca de volante entre backends: zera sessão + resolvido + anel do
+    // agent anterior DO STORE (o start os preserva) — mesma higiene do
+    // beginTransplant (achado #3), senão um run que falhe antes do novo
+    // `session` deixa o modelo/sessão do backend antigo colado no novo.
+    if (wheelSwitch) useChat.getState().dropNativeSession(convId)
     // S3.3 — persona injetada NESTE run: carimba preset_id + digest da versão
     // exata (a base do drift do S3.4). AWAIT (D4): falha do write avisa, não
     // some em silêncio.
@@ -414,6 +490,13 @@ export function ChatPanel() {
         injectedLessonsRef.current[convId] = []
       }
     }
+    // Especialistas E1 — "Trazer pro Executor": o parecer que você trouxe entra
+    // como CONTEXTO deste turno (bloco no prompt, não bolha), acima do pedido.
+    // Consumido uma vez (takePendingAdvice limpa).
+    const broughtAdvice = useChat.getState().takePendingAdvice(convId)
+    if (broughtAdvice) {
+      promptText = `${broughtAdvice}\n\n---\n\n${promptText}`
+    }
     // DOUTRINA do projeto (.mycockpit/instructions.md) — a instrução agnóstica:
     // o app injeta, então vale igual em claude, codex e agy. Entra DEPOIS da
     // persona e ANTES das lições na cascata final do prompt: quem você é → as
@@ -422,6 +505,12 @@ export function ChatPanel() {
     if (shouldInjectDoctrine(agent, locked, hasReply)) {
       const block = buildDoctrineBlock((await readDoctrine(project.path)).content)
       if (block) promptText = `${block}\n\n${promptText}`
+    }
+    // S3.2 — troca de volante com sessão fresca (backend novo): o fio até aqui
+    // viaja como preâmbulo, senão a nova persona assumiria sem memória do que já
+    // foi conversado (mesmo cano do revezamento).
+    if (wheelHandoff) {
+      promptText = `${wheelHandoff}\n\n---\n\n${promptText}`
     }
     // persona vem ANTES de tudo no prompt (identidade primeiro, depois a
     // doutrina, as lições e o pedido) — mesmo cano do bloco de lições.
@@ -433,7 +522,7 @@ export function ChatPanel() {
     // arquivo do projeto e aponta o caminho (o agent PUXA se precisar de mais).
     // claude/codex não ganham isso em turno normal (resume nativo já resolve).
     // Best-effort de ponta a ponta: falha no export → só o recap.
-    if (agent === "agy" && conv.items.length > 0) {
+    if (agent === "agy" && hasExecutorTurn(conv.items)) {
       let pointer: string | null = null
       try {
         // exporta relativo ao cwd EFETIVO (worktree ou projeto), pro caminho
@@ -520,6 +609,45 @@ export function ChatPanel() {
         notifyTurnEnd(convId, agent)
         useChat.getState().scheduleSuggestions(convId)
       }
+    }
+  }
+
+  // Especialistas E1 — consulta de conselheiro: monta o prompt (persona +
+  // contexto serializado da conversa ATUAL + pergunta), dispara pelo runAgent no
+  // modo LEITURA (read-only, nada tocado no disco) e anexa UM item de parecer,
+  // carimbado com persona id+version+digest. NÃO passa pelo reducer do executor.
+  async function handleConsult(
+    convId: string,
+    def: AgentDef,
+    question: string,
+    proj: { path: string },
+  ) {
+    useChat.getState().setAdvising(convId, { id: def.id, name: def.name })
+    try {
+      const conv = useChat.getState().byId[convId]
+      const cwd = conv?.worktreePath ?? proj.path
+      // contexto serializado da conversa atual (reusa o serializeContext do
+      // Fusion — o mesmo preâmbulo enriquecido, não reimplementa).
+      const context = serializeContext(conv?.items ?? [])
+      const prompt = buildAdvisorPrompt({ def, context, question })
+      const res = await runAdvisor({ def, prompt, cwd })
+      if (!res.text) {
+        toast.error(
+          res.error
+            ? `O parecer de ${def.name} falhou: ${res.error}`
+            : `O parecer de ${def.name} veio vazio.`,
+        )
+        return
+      }
+      await useChat
+        .getState()
+        .appendItems(convId, [buildAdviceItem(def, question, res.text)])
+    } catch (e) {
+      toast.error(
+        typeof e === "string" ? e : `Não consegui consultar ${def.name}.`,
+      )
+    } finally {
+      useChat.getState().setAdvising(convId, null)
     }
   }
 
@@ -728,6 +856,11 @@ export function ChatPanel() {
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-96 bg-[radial-gradient(62%_80%_at_50%_100%,var(--brass-soft),transparent_72%)] opacity-70" />
       )}
 
+      {/* S3.3 — barra de presença: participantes + quem pilota. Só aparece com
+          conversa aberta e fora da missão (que toma a tela). Derivada, some
+          sozinha em conversa crua sem preset nem convidados. */}
+      {hasConversation && !missionActive && <PresenceBar />}
+
       <div
         ref={scrollRef}
         onScroll={onScroll}
@@ -757,6 +890,7 @@ export function ChatPanel() {
               finalizing={finalizing}
               startedAt={conv.startedAt}
               agent={conv.agent}
+              advising={conv.advising}
               onContinueWith={(a) => void handleContinueWith(a)}
               feedback={feedback}
             />

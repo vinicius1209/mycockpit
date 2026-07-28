@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>mycockpit · Sistema de avatar (candidatos)</title>
+<style>
+  :root{
+    --bg:#0a0b0d; --card:#141619; --rail:#0c0d10; --fg:#e7e8ea; --muted:#9aa0a7;
+    --brass:#e4a862; --border:rgba(255,255,255,.08); --border2:rgba(255,255,255,.13);
+    --sans:ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;padding:34px 40px 60px}
+  h1{font-size:22px;margin:0 0 4px;letter-spacing:-.3px}
+  .sub{color:var(--muted);max-width:760px;margin:0 0 20px}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 30px}
+  .lg{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:4px 11px}
+  .lg .sw{width:11px;height:11px;border-radius:3px}
+  .sys{border:1px solid var(--border);border-radius:16px;background:linear-gradient(180deg,var(--card),rgba(20,22,25,.5));padding:20px 22px;margin-bottom:16px}
+  .sys .h{display:flex;align-items:baseline;gap:12px;margin-bottom:4px}
+  .sys .h h2{font-size:16px;margin:0}
+  .sys .h .tag{font-family:var(--mono);font-size:11px;color:var(--brass);border:1px solid rgba(228,168,98,.3);border-radius:6px;padding:1px 7px}
+  .sys .desc{color:var(--muted);font-size:12.5px;margin:0 0 16px;max-width:720px}
+  .team{display:flex;flex-wrap:wrap;gap:20px}
+  .mem{display:flex;flex-direction:column;align-items:center;gap:7px;width:88px}
+  .mem img{width:60px;height:60px;border-radius:16px;background:var(--card);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1),0 6px 18px -6px rgba(0,0,0,.5)}
+  .mem .nm{font-size:12px;font-weight:600}
+  .mem .ct{font-size:10.5px;color:var(--muted)}
+  /* small variety strip: same category, more seeds — mostra coesão dentro da cor */
+  .vary{display:flex;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);align-items:center}
+  .vary .lbl{font-size:11px;color:var(--muted);margin-right:4px}
+  .vary img{width:34px;height:34px;border-radius:10px;background:var(--card);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
+  .note{font-size:12px;color:var(--muted);margin-top:26px;border-top:1px solid var(--border);padding-top:14px}
+  .note b{color:var(--fg)}
+</style>
+</head>
+<body>
+  <h1>Sistema de avatar — escolha a direção</h1>
+  <p class="sub">Cada bloco é um sistema COERENTE: <b style="color:var(--fg)">um estilo base só</b> + a cor vinda da <b style="color:var(--fg)">categoria</b> (paleta LABEL_COLORS do app) + seed = nome. Compare os times lado a lado e diga qual leva a identidade a sério. Depois eu conecto no <code>avatar.ts</code>.</p>
+  <div class="legend" id="legend"></div>
+  <div id="systems"></div>
+  <div class="note">Renderizado via API do DiceBear só pra escolher a direção (precisa de internet). No app é <b>@dicebear/core offline</b>, determinístico. Nenhum destes usa o estilo cru "por especialista" — a cor é derivada da categoria, então o time é sempre uma família.</div>
+
+<script>
+const CAT = {
+  Engenharia:"60a5fa", Qualidade:"34d399", Estrategia:"a78bfa",
+  Ops:"fbbf24", Design:"f472b6", Seguranca:"f87171", Geral:"e4a862",
+};
+const CAT_LABEL = { Engenharia:"Engenharia", Qualidade:"Qualidade", Estrategia:"Estratégia", Ops:"Ops", Design:"Design", Seguranca:"Segurança", Geral:"Geral" };
+const TEAM = [
+  {nm:"Aline", cat:"Engenharia"},
+  {nm:"Vault", cat:"Seguranca"},
+  {nm:"Marco", cat:"Estrategia"},
+  {nm:"Nero",  cat:"Ops"},
+  {nm:"Íris",  cat:"Design"},
+  {nm:"Testa", cat:"Qualidade"},
+];
+
+// cada sistema: estilo base fixo + como a cor da categoria entra (params do estilo)
+const SYSTEMS = [
+  { key:"initials", tag:"initials", nome:"Iniciais", extra:(hex)=>`&backgroundColor=${hex}&fontFamily=Geist&fontWeight=600&chars=1`,
+    desc:"A inicial do nome sobre a cor do domínio. O mais sério/legível: lê como um app profissional, coeso, e você reconhece quem é. Zero cartoon." },
+  { key:"glass", tag:"glass", nome:"Vidro tingido", extra:(hex)=>`&backgroundColor=${hex}`,
+    desc:"Gradiente de vidro FORÇADO na cor da categoria (não o cinza-verde default que te incomodou). Abstrato, elegante, minimalista — a cor faz todo o trabalho." },
+  { key:"shapes", tag:"shapes", nome:"Formas", extra:(hex)=>`&backgroundColor=${hex}`,
+    desc:"Marca geométrica abstrata sobre a cor do domínio. Distinto por seed, com energia. Foreground varia (é o preço do estilo)." },
+  { key:"thumbs", tag:"thumbs", nome:"Thumbs", extra:(hex)=>`&backgroundColor=${hex}`,
+    desc:"Um toque de personagem, mas coeso pela cor + estilo único. Menos sério, mais amigável (vibe Slack)." },
+  { key:"rings", tag:"rings", nome:"Anéis", extra:(hex)=>`&backgroundColor=${hex}`,
+    desc:"Anéis concêntricos, minimal e techy. Muito 'sistema'. Discreto." },
+  { key:"identicon", tag:"identicon", nome:"Identicon", extra:(hex)=>`&backgroundColor=${hex}`,
+    desc:"Padrão geométrico determinístico (vibe GitHub). Techy, abstrato, coeso pela cor." },
+];
+
+function url(style, seed, hex, extraFn){
+  return `https://api.dicebear.com/9.x/${style}/svg?seed=${encodeURIComponent(seed)}&radius=20${extraFn(hex)}`;
+}
+
+// legend
+document.getElementById("legend").innerHTML = Object.entries(CAT).map(([k,hex])=>
+  `<span class="lg"><span class="sw" style="background:#${hex}"></span>${CAT_LABEL[k]}</span>`).join("");
+
+// systems
+document.getElementById("systems").innerHTML = SYSTEMS.map(sys=>`
+  <div class="sys">
+    <div class="h"><h2>${sys.nome}</h2><span class="tag">${sys.tag}</span></div>
+    <p class="desc">${sys.desc}</p>
+    <div class="team">
+      ${TEAM.map(m=>`<div class="mem">
+        <img src="${url(sys.key, m.nm, CAT[m.cat], sys.extra)}" alt="${m.nm}"/>
+        <span class="nm">${m.nm}</span><span class="ct">${CAT_LABEL[m.cat]}</span>
+      </div>`).join("")}
+    </div>
+    <div class="vary">
+      <span class="lbl">mesma categoria (Engenharia), seeds diferentes → coesão na cor:</span>
+      ${["Aline","Bruno","Caio","Dora","Enzo","Fabi"].map(s=>
+        `<img src="${url(sys.key, s, CAT.Engenharia, sys.extra)}" alt="${s}"/>`).join("")}
+    </div>
+  </div>`).join("");
+</script>
+</body>
+</html>

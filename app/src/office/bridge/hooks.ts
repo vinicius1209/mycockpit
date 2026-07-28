@@ -6,7 +6,7 @@
 import { useMemo } from "react"
 import { useShallow } from "zustand/react/shallow"
 import { useApp } from "@/store/app"
-import { useChat } from "@/store/chat"
+import { useChat, hasExecutorTurn } from "@/store/chat"
 import { useMission } from "@/store/mission"
 import { useSchedules } from "@/store/schedules"
 import { fmtUntilShort, upcomingScheduled } from "@/lib/schedules"
@@ -172,8 +172,10 @@ export function useDeskConvChrome(convId: string | null): DeskConvChrome {
         running: c?.running ?? false,
         finalizing: c?.finalizing ?? false,
         corrupt: c?.corrupt ?? false,
-        empty: !!c && c.items.length === 0,
-        locked: !!c && c.items.length > 0,
+        // pareceres de conselheiro (advice) NÃO iniciam a conversa nem travam a
+        // identidade do 1º turno (Especialistas E1) — o dock lê executorItems.
+        empty: !!c && !hasExecutorTurn(c.items),
+        locked: !!c && hasExecutorTurn(c.items),
         reqModel: c?.reqModel ?? null,
         effort: c?.effort ?? null,
         startedAt: c?.startedAt ?? null,

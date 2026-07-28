@@ -59,6 +59,10 @@ function preset(patch: Partial<AgentPreset> = {}): AgentPreset {
     backend: "codex",
     model: "gpt-x",
     effort: "high",
+    category: "Geral",
+    rubric: [],
+    avatarStyle: "glass",
+    avatarSeed: "ui-engineer",
     digest: "d-gravado",
     version: 2,
     createdAt: 0,
@@ -123,6 +127,32 @@ describe("presetDigest — estável e determinístico", () => {
     expect(shortDigest(d)).toBe(d.slice(0, 8))
     expect(shortDigest(d)).toHaveLength(8)
   })
+
+  // ── E2 · retrocompat do digest com a rubrica ──────────────────────────────
+  it("rubrica AUSENTE ou VAZIA não muda o hash (persona antiga bate igual)", async () => {
+    const semRubrica = await presetDigest(base)
+    const rubricaUndefined = await presetDigest({ ...base, rubric: undefined })
+    const rubricaVazia = await presetDigest({ ...base, rubric: [] })
+    expect(rubricaUndefined).toBe(semRubrica)
+    expect(rubricaVazia).toBe(semRubrica)
+  })
+
+  it("rubrica NÃO-VAZIA muda o hash (é comportamento, entra no digest)", async () => {
+    const semRubrica = await presetDigest(base)
+    const comRubrica = await presetDigest({
+      ...base,
+      rubric: ["Fronteiras", "Corridas"],
+    })
+    expect(comRubrica).not.toBe(semRubrica)
+  })
+
+  it("mudar a rubrica muda o hash; repetir a mesma rubrica é estável", async () => {
+    const a = await presetDigest({ ...base, rubric: ["Fronteiras"] })
+    const b = await presetDigest({ ...base, rubric: ["Fronteiras"] })
+    const c = await presetDigest({ ...base, rubric: ["Acoplamento"] })
+    expect(a).toBe(b)
+    expect(c).not.toBe(a)
+  })
 })
 
 describe("parseSkillsText (campo das Settings)", () => {
@@ -152,6 +182,29 @@ describe("buildPersonaBlock", () => {
     const block = buildPersonaBlock(preset({ policy: null, skills: [] }))
     expect(block).not.toContain("Política de atuação")
     expect(block).not.toContain("Skills deste projeto")
+  })
+
+  it("rubrica não-vazia entra no bloco do executor", () => {
+    const block = buildPersonaBlock(
+      preset({ rubric: ["Fronteiras e responsabilidade única", "Corridas"] }),
+    )
+    expect(block).toContain("Rubrica que você aplica")
+    expect(block).toContain("- Fronteiras e responsabilidade única")
+    expect(block).toContain("- Corridas")
+  })
+
+  it("rubrica vazia não inventa o bloco de rubrica", () => {
+    const block = buildPersonaBlock(preset({ rubric: [] }))
+    expect(block).not.toContain("Rubrica que você aplica")
+  })
+
+  // INVARIANTE E2: o campo que muda o digest é o MESMO que muda o prompt — o
+  // aviso de drift deixa de ser fantasma (mudou o hash ⇔ mudou o que o modelo vê).
+  it("a rubrica que muda o presetDigest é a mesma que muda o buildPersonaBlock", async () => {
+    const a = preset({ rubric: ["Fronteiras"] })
+    const b = preset({ rubric: ["Acoplamento"] })
+    expect(await presetDigest(a)).not.toBe(await presetDigest(b))
+    expect(buildPersonaBlock(a)).not.toBe(buildPersonaBlock(b))
   })
 })
 
@@ -187,6 +240,14 @@ describe("shouldInjectPersona — 1º turno (e o 1º run que morreu, D1)", () =>
     expect(shouldInjectPersona(false, null, false)).toBe(false)
     expect(shouldInjectPersona(false, undefined, false)).toBe(false)
     expect(shouldInjectPersona(true, null, false)).toBe(false)
+  })
+
+  it("S3.2: forceReinject re-injeta mesmo travada e já respondida (passar o volante)", () => {
+    // travada + respondida = normalmente NÃO injeta; a troca de piloto força.
+    expect(shouldInjectPersona(true, "pr1", true)).toBe(false)
+    expect(shouldInjectPersona(true, "pr1", true, true)).toBe(true)
+    // mas sem preset continua sem nada a injetar, mesmo forçando.
+    expect(shouldInjectPersona(true, null, true, true)).toBe(false)
   })
 })
 
@@ -290,6 +351,22 @@ describe("resolveFirstTurnPersona", () => {
       projectPath: "/proj",
     })
     expect(r.status).toBe("ready")
+  })
+
+  it("S3.2: forceReinject injeta a nova persona no meio da conversa (passar o volante)", async () => {
+    // travada E já respondida = não injetaria; a troca de piloto força a re-injeção.
+    const r = await resolveFirstTurnPersona({
+      locked: true,
+      presetId: "pr1",
+      hasReply: true,
+      projectPath: "/proj",
+      forceReinject: true,
+    })
+    expect(r.status).toBe("ready")
+    if (r.status === "ready") {
+      expect(r.block).toContain('<persona name="UI Engineer">')
+      expect(r.digest).toBe(await presetDigest(preset()))
+    }
   })
 
   it("skill fora do inventário do projeto BLOQUEIA (run não inicia)", async () => {

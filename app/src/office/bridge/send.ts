@@ -38,7 +38,12 @@ import {
   shouldAttachResumeFallback,
 } from "@/lib/transcript"
 import { useApp } from "@/store/app"
-import { useChat } from "@/store/chat"
+import {
+  useChat,
+  hasExecutorTurn,
+  executorItems,
+  needsPersonaReinject,
+} from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { useMission } from "@/store/mission"
 import type { OfficeAgentId } from "@/office/engine/types"
@@ -191,7 +196,8 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   // conversa estabelecida trava no agent/modelo/effort do 1º run: o agent
   // TRAVADO da conversa vence o da mesa. Destravada (1º run), o modelo vem do
   // seletor do cabeçalho do dock (args.model), senão o default do agent.
-  const locked = conv.items.length > 0
+  // pareceres de conselheiro (advice) NÃO travam o 1º turno (Especialistas E1).
+  const locked = hasExecutorTurn(conv.items)
   let agent: string = locked ? conv.agent : args.agent
   let model = locked ? conv.reqModel : (args.model ?? null)
   let effort = locked ? conv.effort : (args.effort ?? null)
@@ -203,6 +209,11 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
     null
   // régua do "1º prompt chegou no CLI", compartilhada com a doutrina.
   const hasReply = hasAssistantReply(conv.items)
+  // S3.2 — passar o volante: força a re-injeção da nova doutrina NESTE turno
+  // (paridade com o handleSend). DERIVADO de estado persistido
+  // (needsPersonaReinject), então re-injeta mesmo se o próximo turno sair da
+  // mesa depois de um restart.
+  const reinject = needsPersonaReinject(conv)
   const persona = await resolveFirstTurnPersona({
     locked,
     presetId: conv.presetId ?? null,
@@ -210,6 +221,7 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
     // chegar → re-injeta e re-carimba.
     hasReply,
     projectPath,
+    forceReinject: reinject,
   })
   if (persona.status === "blocked") {
     toast.error(persona.error)
@@ -226,6 +238,14 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
       name: persona.name,
     }
   }
+  // troca de volante com backend novo: sessão fresca + o fio viaja no preâmbulo
+  // (mesma disciplina do revezamento); mesmo backend mantém o resume nativo.
+  const wheelSwitch =
+    reinject &&
+    persona.status === "ready" &&
+    agent !== conv.agent &&
+    conv.sessionId != null
+  const wheelHandoff = wheelSwitch ? buildHandoff(executorItems(conv.items)) : null
   // S3.4 — resume com preset carimbado: verifica drift do digest (aviso
   // obrigatório; o turno segue). Só quando NÃO re-injetamos (re-injeção
   // re-carimba a versão atual).
@@ -257,13 +277,19 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   // auto-resume nunca planeja (é continuação de execução)
   const planFirst = !args.fromAutoResume && !!conv.planFirst
   const runId = crypto.randomUUID()
-  const sessionId = conv.sessionId ?? null
+  // sessão fresca quando o volante trocou de backend (resume do agent anterior
+  // não vale pro novo); senão o resume normal da conversa.
+  const sessionId = wheelSwitch ? null : (conv.sessionId ?? null)
   // cwd = worktree isolado da conversa, senão a pasta compartilhada do projeto
   const cwd = conv.worktreePath ?? projectPath
   const permission =
     useApp.getState().projects.find((p) => p.id === projectId)
       ?.permissionMode ?? "padrao"
   useChat.getState().start(convId, text, runId, agent, model, effort, attachments)
+  // S3.2 — troca de volante entre backends: zera sessão + resolvido + anel do
+  // agent anterior do store (start os preserva) — mesma higiene do
+  // beginTransplant (achado #3).
+  if (wheelSwitch) useChat.getState().dropNativeSession(convId)
   // S3.3 — persona injetada NESTE run: carimba preset_id + digest da versão
   // exata (base do drift do S3.4). AWAIT (D4): falha do write avisa, não some
   // em silêncio.
@@ -302,6 +328,11 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
     const block = buildDoctrineBlock((await readDoctrine(projectPath)).content)
     if (block) promptText = `${block}\n\n${promptText}`
   }
+  // S3.2 — troca de volante com sessão fresca (backend novo): o fio até aqui
+  // viaja como preâmbulo (senão a nova persona assumiria sem memória).
+  if (wheelHandoff) {
+    promptText = `${wheelHandoff}\n\n---\n\n${promptText}`
+  }
   // persona vem ANTES de tudo no prompt (identidade primeiro, depois a doutrina,
   // as lições e o pedido) — paridade com o handleSend do ChatPanel.
   if (personaBlock) {
@@ -310,7 +341,7 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   // agy NÃO tem resume (todo turno é sessão fresca): injeta a memória da
   // conversa no prompt (recap + export do transcript pleno + ponteiro).
   // Best-effort de ponta a ponta: falha no export → só o recap.
-  if (agent === "agy" && conv.items.length > 0) {
+  if (agent === "agy" && hasExecutorTurn(conv.items)) {
     let pointer: string | null = null
     try {
       const md = renderTranscript(conv.items, { agent: conv.agent })

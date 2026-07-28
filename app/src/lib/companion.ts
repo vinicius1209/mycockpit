@@ -33,7 +33,7 @@ import { nativeNotify } from "@/lib/notify"
 import { hasAssistantReply } from "@/lib/presets"
 import { useApp } from "@/store/app"
 import { useCards } from "@/store/cards"
-import { useChat } from "@/store/chat"
+import { useChat, hasExecutorTurn } from "@/store/chat"
 import { ownerByRunId, useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 import {
@@ -668,7 +668,8 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
         await useChat.getState().ensureConversationLoaded(projectId, convId)
       }
       const conv = useChat.getState().byId[convId]
-      const locked = conv != null && conv.items.length > 0
+      // pareceres de conselheiro (advice) NÃO travam o agent do 1º turno (E1).
+      const locked = conv != null && hasExecutorTurn(conv.items)
       let effectiveAgent: string = locked ? conv.agent : officeAgent
       // Preset da conversa manda no agent do 1º turno (mesma resolução do
       // sendFromDesk, inclusive a re-injeção D1: travada SEM resposta).

@@ -20,6 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import { MicButton } from "@/components/chat/MicButton"
 import { useApp } from "@/store/app"
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
@@ -95,13 +96,13 @@ export function SlashPopover({
 
 /** Popover do "@", arquivos + agents do projeto (mid-text). */
 export function AtPopover({
-  project,
   items,
   idx,
   setIdx,
   onPick,
 }: {
-  project: Project | null
+  /** mantido na API (o caller passa) — o header por-projeto saiu do popover. */
+  project?: Project | null
   items: AtItem[]
   idx: number
   setIdx: (i: number) => void
@@ -109,28 +110,52 @@ export function AtPopover({
 }) {
   return (
     <div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-xl border bg-popover shadow-[var(--shadow-pop)]">
-      <div className="border-b px-3 py-1.5 text-[10px] tracking-wide text-muted-foreground uppercase">
-        Referências{project ? ` · ${project.name}` : ""}
-      </div>
+      {/* Menu de menção estilo Slack/Linear: avatar/ícone + nome, agrupado por
+          tipo. O "@" é o gatilho (já digitado), não vai no rótulo; badges de
+          tipo saem — a seção + o avatar/ícone já dizem o que é. */}
       <div className="max-h-64 overflow-auto p-1">
-        {items.map((m, i) => (
-          <button
-            key={`${m.kind}:${m.value}`}
-            onMouseEnter={() => setIdx(i)}
-            onClick={() => onPick(m.value)}
-            className={cn(
-              "flex w-full items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-left",
-              i === idx ? "bg-accent" : "hover:bg-accent/50",
-            )}
-          >
-            <span className="truncate font-mono text-[12.5px] text-foreground">
-              @{m.value}
-            </span>
-            <span className="shrink-0 rounded border px-1 py-px text-[10px] tracking-wide text-muted-foreground uppercase">
-              {m.kind}
-            </span>
-          </button>
-        ))}
+        {items.map((m, i) => {
+          // cabeçalho de seção quando o tipo muda (buildAtItems agrupa: agents
+          // primeiro, depois files — então os grupos são contíguos).
+          const header =
+            i === 0 || items[i - 1].kind !== m.kind ? (
+              <div
+                key={`h:${m.kind}`}
+                className="px-3 pt-2 pb-1 text-[10px] tracking-wide text-muted-foreground/80 uppercase"
+              >
+                {m.kind === "agent" ? "Especialistas" : "Arquivos"}
+              </div>
+            ) : null
+          return (
+            <div key={`${m.kind}:${m.value}`}>
+              {header}
+              <button
+                onMouseEnter={() => setIdx(i)}
+                onClick={() => onPick(m.value)}
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left",
+                  i === idx ? "bg-accent" : "hover:bg-accent/50",
+                )}
+              >
+                {m.kind === "agent" && m.def ? (
+                  <AgentAvatar def={m.def} size={20} rounded />
+                ) : (
+                  <FileText className="size-[18px] shrink-0 text-muted-foreground/70" />
+                )}
+                <span
+                  className={cn(
+                    "truncate text-[13px]",
+                    m.kind === "agent"
+                      ? "font-medium text-foreground"
+                      : "font-mono text-[12px] text-muted-foreground",
+                  )}
+                >
+                  {m.value}
+                </span>
+              </button>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

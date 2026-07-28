@@ -54,7 +54,11 @@ vi.mock("@/lib/db", async (importOriginal) => ({
   setCardArchived: vi.fn(async () => {}),
   deleteCard: vi.fn(async () => {}),
 }))
-vi.mock("@/store/chat", () => ({ useChat: { getState: () => h.chat } }))
+vi.mock("@/store/chat", () => ({
+  useChat: { getState: () => h.chat },
+  hasExecutorTurn: (items: { kind: string }[]) => items.some((it) => it.kind !== "advice"),
+  executorItems: (items: { kind: string }[]) => items.filter((it) => it.kind !== "advice"),
+}))
 vi.mock("@/store/app", () => ({ useApp: { getState: () => h.app } }))
 
 import {

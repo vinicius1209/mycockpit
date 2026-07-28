@@ -806,7 +806,9 @@ export function ContextPanel() {
 
           {/* Fase 2, fontes REAIS indexadas (não copiadas). "Subagents", não
               "Personas": persona do app é preset (.mycockpit/agents), e ter duas
-              seções com o mesmo nome e donos diferentes confundia. */}
+              seções com o mesmo nome e donos diferentes confundia. Isto aqui é
+              CONTEXTO EXTERNO lido por code agents (.claude/agents, AGENTS.md),
+              não os especialistas do app, que é o que o "@" do composer menciona. */}
           {status === "ready" && sources && sources.personas.length > 0 && (
             <>
               <Separator />

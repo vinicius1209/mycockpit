@@ -104,7 +104,19 @@ vi.mock("@/lib/transcript", () => ({
   ),
   buildResumeFallback: vi.fn(() => "[fallback-resume]"),
 }))
-vi.mock("@/store/chat", () => ({ useChat: { getState: () => h.chat } }))
+vi.mock("@/store/chat", () => ({
+  useChat: { getState: () => h.chat },
+  hasExecutorTurn: (items: { kind: string }[]) => items.some((it) => it.kind !== "advice"),
+  executorItems: (items: { kind: string }[]) => items.filter((it) => it.kind !== "advice"),
+  needsPersonaReinject: (c: {
+    presetId?: string | null
+    presetDigest?: string | null
+    items: { kind: string }[]
+  }) =>
+    c.presetId != null &&
+    (c.presetDigest == null || c.presetDigest === "") &&
+    c.items.some((it) => it.kind !== "advice"),
+}))
 vi.mock("@/store/mission", () => ({ useMission: { getState: () => h.mission } }))
 vi.mock("@/store/app", () => ({ useApp: { getState: () => h.app } }))
 vi.mock("@/store/fusion", () => ({ useFusion: { getState: () => h.fusion } }))
@@ -174,6 +186,7 @@ function makeChat(conv: ConvState) {
     invalidateSuggestions: vi.fn(),
     start: vi.fn(),
     stampPreset: vi.fn(async () => {}),
+    dropNativeSession: vi.fn(),
     beginTransplant: vi.fn(),
     handleEvent: vi.fn(),
     finish: vi.fn(),

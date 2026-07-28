@@ -76,6 +76,77 @@ export type ChatItem =
   | { kind: "notice"; id: string; message: string }
   /** Limite de uso/cota do agent atingido: cartão acionável (revezamento). */
   | { kind: "limit"; id: string; message: string; resetHint?: string }
+  /** Parecer de um CONSELHEIRO (Especialistas E1): uma persona chamada inline
+   *  (`@aline`) opinou sobre o contexto atual, read-only. Item ADITIVO — não é
+   *  turno de executor. Carimba persona id+version+digest (auditoria/drift). */
+  | {
+      kind: "advice"
+      id: string
+      personaId: string
+      personaName: string
+      personaVersion: number
+      digest: string
+      /** A pergunta que originou o parecer (rastro). */
+      question: string
+      text: string
+    }
+
+/** Itens de EXECUTOR de uma conversa: exclui os pareceres de conselheiro (kind
+ *  "advice"), que são laterais e NÃO contam como turno do executor
+ *  (Especialistas E1). FONTE ÚNICA do "1º turno / já iniciada / travar
+ *  identidade": sem isto, um parecer trazido ANTES do 1º envio travaria a
+ *  escolha de agent/preset e roubaria a injeção de persona/doutrina do turno
+ *  inicial. Usar em TODO lugar que hoje deriva "locked" de items.length. */
+export function executorItems(items: ChatItem[]): ChatItem[] {
+  return items.filter((it) => it.kind !== "advice")
+}
+
+/** A conversa já teve algum turno de EXECUTOR? (ignora pareceres de conselheiro) */
+export function hasExecutorTurn(items: ChatItem[]): boolean {
+  return items.some((it) => it.kind !== "advice")
+}
+
+/** Presença de uma conversa (Especialistas E3, S3.1). DERIVADA, sem estado novo:
+ *  o PILOTO é o preset-executor já carimbado (`presetId`) e os CONVIDADOS são as
+ *  personas distintas que já opinaram (itens `advice`), dedupe por id, o piloto
+ *  fora da lista (ele pilota, não é convidado). Puro e testável. */
+export interface ConversationPresence {
+  pilotId: string | null
+  guests: { id: string; name: string }[]
+}
+
+export function conversationPresence(
+  conv: Pick<ConvState, "presetId" | "items">,
+): ConversationPresence {
+  const pilotId = conv.presetId ?? null
+  const guests = new Map<string, string>()
+  for (const it of conv.items) {
+    if (it.kind !== "advice") continue
+    if (it.personaId === pilotId) continue // o piloto não é convidado de si mesmo
+    if (!guests.has(it.personaId)) guests.set(it.personaId, it.personaName)
+  }
+  return {
+    pilotId,
+    guests: [...guests].map(([id, name]) => ({ id, name })),
+  }
+}
+
+/** Especialistas E3 (S3.2) — o próximo turno precisa RE-INJETAR a persona?
+ *  DERIVADO de estado PERSISTIDO (sobrevive a restart), não de flag efêmera:
+ *  há persona carimbada (`presetId`), o digest foi ZERADO (o gesto de passar o
+ *  volante limpa) e a conversa JÁ tem turno de executor (distingue do 1º turno
+ *  real, onde o digest também é null mas ainda não há executor → o turno-1
+ *  injeta pelo caminho `!locked`). `presetId`/`presetDigest`/`items` são todos
+ *  persistidos, então A→B + reload + próximo envio ainda re-injeta B. Puro. */
+export function needsPersonaReinject(
+  conv: Pick<ConvState, "presetId" | "presetDigest" | "items">,
+): boolean {
+  return (
+    conv.presetId != null &&
+    (conv.presetDigest == null || conv.presetDigest === "") &&
+    hasExecutorTurn(conv.items)
+  )
+}
 
 /** Mensagem enfileirada durante o turno: texto + anexos do momento do Enter. */
 export interface QueuedMsg {
@@ -166,6 +237,15 @@ export interface ConvState {
    *  foi notificado. Presente = já avisado neste episódio (1 aviso por
    *  episódio); atividade nova/fim do turno limpa. Efêmero (não persiste). */
   stalledSince?: number
+  /** Especialistas E1: um conselheiro está sendo consultado nesta conversa
+   *  (id + nome da persona) — a "linha de chegada" no fim do fio enquanto o
+   *  parecer não chega resolve o AgentDef por esse id (fallback: nome). NÃO é
+   *  `running` (não trava o envio nem finge turno de executor). Efêmero. */
+  advising?: { id: string; name: string } | null
+  /** Especialistas E1: pareceres "trazidos pro Executor" e ainda não enviados —
+   *  bloco(s) que o próximo turno do executor prepende ao prompt (mesmo cano da
+   *  doutrina/lições). Efêmero (não persiste). */
+  pendingAdvice?: string
 }
 
 interface ChatState {
@@ -234,9 +314,27 @@ interface ChatState {
     digest: string,
     name: string,
   ) => Promise<void>
+  /** S3.2 — "passar o volante": troca o preset-executor da conversa por outra
+   *  persona (ex.: a de um parecer) por GESTO HUMANO. Re-carimba presetId e
+   *  ZERA o digest — o próximo turno re-injeta a doutrina e re-carimba a versão
+   *  atual (a necessidade de re-injeção é DERIVADA de needsPersonaReinject, que
+   *  sobrevive a restart). NÃO dispara run — só muda quem pilota o PRÓXIMO
+   *  turno. Um piloto por vez. Retorna `true` se a troca foi aplicada, `false`
+   *  no no-op (turno em voo, já pilota, conversa sumiu) — o caller só anuncia
+   *  quando efetivou. */
+  passWheel: (
+    convId: string,
+    personaId: string,
+    name: string,
+  ) => Promise<boolean>
   /** Zera a sessão nativa da conversa (resume falhou → a sessão antiga está
    *  morta; o run em fallback vai emitir `session` e gravar a nova). */
   clearSession: (convId: string) => void
+  /** S3.2 — higiene de transplante (achado #3): zera sessão nativa E o resolvido
+   *  (model) E o anel (contextTokens) juntos. Sem zerar model/contextTokens, um
+   *  transplante que falha antes do novo `session` deixa o modelo/anel do
+   *  backend ANTIGO colado numa conversa cujo agent já é o novo. */
+  dropNativeSession: (convId: string) => void
   /** Duplica a conversa (copia o histórico; sessão nova, sem resume). */
   duplicateConversation: (id: string) => Promise<void>
   persist: (convId: string) => Promise<void>
@@ -292,6 +390,18 @@ interface ChatState {
    *  (com os anexos pendentes do composer, que viajam junto). */
   /** Limpa o selo de "terminou e você não viu" (ao abrir a conversa). */
   markSeen: (convId: string) => void
+  /** Especialistas E1: marca/limpa o conselheiro em consulta (id+nome ou null). */
+  setAdvising: (
+    convId: string,
+    advising: { id: string; name: string } | null,
+  ) => void
+  /** Especialistas E1: "Trazer pro Executor" — enfileira o bloco do parecer p/
+   *  o próximo turno do executor (acumula se houver mais de um). */
+  bringAdviceToExecutor: (convId: string, block: string) => void
+  /** Especialistas E1: consome e limpa os pareceres pendentes (no envio). */
+  takePendingAdvice: (convId: string) => string | null
+  /** Especialistas E1: "Dispensar" — remove o item de parecer do fio + persiste. */
+  dismissAdvice: (convId: string, id: string) => void
   enqueue: (convId: string, text: string, attachments?: Attachment[]) => void
   /** Esvazia a fila e devolve as mensagens pendentes (p/ coalescer no envio). */
   dequeueQueued: (convId: string) => QueuedMsg[]
@@ -381,6 +491,18 @@ function emptyConv(projectId: string): ConvState {
 }
 
 const EMPTY_CONV = emptyConv("")
+
+/** Higiene da sessão nativa num transplante (achado #3): a sessão do agent
+ *  anterior não vale pro novo, e o resolvido (model) + o anel (contextTokens)
+ *  dele também não — desde a v24 o model persiste, então um transplante que
+ *  falha ANTES do novo `session` gravaria o modelo/anel do backend antigo numa
+ *  conversa cujo agent já é o novo. Fonte única de beginTransplant (revezamento)
+ *  e dropNativeSession (S3.2, passar o volante entre backends). */
+const TRANSPLANT_SESSION_RESET = {
+  sessionId: null,
+  model: null,
+  contextTokens: undefined,
+} as const
 
 /** Campos de CONTEÚDO de uma conversa, o que o reducer de itens lê/escreve.
  *  Usado pelo Linear (via reduceEvent) e por cada lane do Fusion. */
@@ -1014,7 +1136,9 @@ export const useChat = create<ChatState>((set, get) => {
      *  aqui mentiria sobre quem produziu o histórico. */
     setConversationAgent: (convId, agent) => {
       const cur = get().byId[convId]
-      if (!cur || cur.items.length > 0 || cur.agent === agent) return
+      // pareceres de conselheiro (advice) são laterais e NÃO travam o agent — o
+      // executor ainda não rodou se só há pareceres no fio (Especialistas E1).
+      if (!cur || hasExecutorTurn(cur.items) || cur.agent === agent) return
       set((s) => ({
         ...patchConvMeta(s, convId, (c) => ({ ...c, agent })),
         byId: { ...s.byId, [convId]: { ...s.byId[convId], agent } },
@@ -1062,10 +1186,48 @@ export const useChat = create<ChatState>((set, get) => {
       }
     },
 
+    // S3.2 — passar o volante: gesto humano que troca o piloto. Reusa o mesmo
+    // par presetId/presetDigest do carimbo; a INJEÇÃO da nova doutrina é
+    // reaproveitada de resolveFirstTurnPersona no próximo envio (a condição
+    // forceReinject é DERIVADA de needsPersonaReinject, que lê estado
+    // persistido). Zera o digest → o próximo turno re-carimba a versão ATUAL da
+    // nova persona (drift honesto: não avisa erro, reflete a troca). Retorna
+    // `false` no no-op pra o caller não anunciar um gesto sem efeito.
+    passWheel: async (convId, personaId, name) => {
+      const cur = get().byId[convId]
+      if (!cur || cur.corrupt) return false
+      if (cur.running || cur.finalizing) return false // turno em voo: espera
+      if (cur.presetId === personaId) return false // já pilota → no-op
+      patch(convId, {
+        presetId: personaId,
+        presetDigest: null,
+        presetName: name,
+      })
+      try {
+        await dbSetPreset(convId, personaId, null)
+      } catch (e) {
+        console.warn("[presets] falha ao gravar a troca de piloto:", e)
+      }
+      return true
+    },
+
     clearSession: (convId) => {
       set((s) =>
         s.byId[convId]
           ? { byId: { ...s.byId, [convId]: { ...s.byId[convId], sessionId: null } } }
+          : s,
+      )
+    },
+
+    dropNativeSession: (convId) => {
+      set((s) =>
+        s.byId[convId]
+          ? {
+              byId: {
+                ...s.byId,
+                [convId]: { ...s.byId[convId], ...TRANSPLANT_SESSION_RESET },
+              },
+            }
           : s,
       )
     },
@@ -1449,12 +1611,9 @@ export const useChat = create<ChatState>((set, get) => {
               agent,
               reqModel: null,
               effort: null,
-              sessionId: null, // a sessão do agent anterior não serve pro novo
-              // resolvido do agent ANTERIOR também não: desde a v24 ele
-              // persiste, e um transplante que falha antes do `session` novo
-              // gravaria um modelo Claude numa conversa Codex (achado #3).
-              model: null,
-              contextTokens: undefined,
+              // sessão/resolvido/anel do agent anterior não servem pro novo
+              // (achado #3) — fonte única com o dropNativeSession do S3.2.
+              ...TRANSPLANT_SESSION_RESET,
               streamingTextId: null,
               running: true,
               finalizing: false,
@@ -1494,6 +1653,31 @@ export const useChat = create<ChatState>((set, get) => {
     markSeen: (convId) => {
       if (!get().byId[convId]?.finishedUnseen) return
       patch(convId, { finishedUnseen: undefined })
+    },
+
+    // Especialistas E1 — estado do conselheiro inline (patch no-op se a conversa
+    // sumiu). advising é indicador visual, NÃO trava o envio nem finge turno.
+    setAdvising: (convId, advising) => patch(convId, { advising }),
+
+    bringAdviceToExecutor: (convId, block) => {
+      const cur = get().byId[convId]
+      if (!cur) return
+      const next = cur.pendingAdvice ? `${cur.pendingAdvice}\n\n${block}` : block
+      patch(convId, { pendingAdvice: next })
+    },
+
+    takePendingAdvice: (convId) => {
+      const cur = get().byId[convId]
+      const block = cur?.pendingAdvice ?? null
+      if (block) patch(convId, { pendingAdvice: undefined })
+      return block
+    },
+
+    dismissAdvice: (convId, id) => {
+      const cur = get().byId[convId]
+      if (!cur) return
+      patch(convId, { items: cur.items.filter((it) => it.id !== id) })
+      void get().persist(convId)
     },
 
     setDraft: (convId, text) =>

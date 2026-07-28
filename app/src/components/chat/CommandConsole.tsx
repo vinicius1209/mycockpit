@@ -21,7 +21,7 @@ import { useSlashCommands } from "@/hooks/useSlashCommands"
 import { useAtMentions } from "@/hooks/useAtMentions"
 import { usePromptHistory } from "@/hooks/usePromptHistory"
 import { useAttachments } from "@/hooks/useAttachments"
-import { useActiveConv, useChat } from "@/store/chat"
+import { useActiveConv, useChat, hasExecutorTurn } from "@/store/chat"
 import { useApp, useActiveProject } from "@/store/app"
 import type { Attachment } from "@/lib/attachments"
 import {
@@ -149,8 +149,9 @@ export function CommandConsole({
     history
   const { attachments, setAttachments, removeAttachment, onPaste, attach } = att
 
-  // conversa estabelecida trava no agent/modelo/effort dela; o seletor reflete
-  const locked = conv.items.length > 0
+  // conversa estabelecida trava no agent/modelo/effort dela; o seletor reflete.
+  // Pareceres de conselheiro (advice) NÃO travam a identidade (Especialistas E1).
+  const locked = hasExecutorTurn(conv.items)
   const effectiveDest = locked ? conv.agent : destination
   const effectiveModel = locked ? (conv.reqModel ?? "default") : model
   const effectiveEffort = locked ? (conv.effort ?? "default") : effort
@@ -213,7 +214,7 @@ export function CommandConsole({
     .join(" · ")
   // agent EFETIVO da conversa — a nota honesta por agent (permissionNote) precisa
   // saber QUEM vai obedecer (ou ignorar) o modo de permissão do projeto.
-  const convAgent = conv.items.length > 0 ? conv.agent : effectiveDest
+  const convAgent = hasExecutorTurn(conv.items) ? conv.agent : effectiveDest
   // trava de capacidade: o agent-alvo precisa suportar cada anexo (espelha o trait)
   const caps = agentCaps(effectiveDest)
   const allSupported = attachments.every((a) =>

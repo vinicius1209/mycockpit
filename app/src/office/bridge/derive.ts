@@ -24,7 +24,7 @@ import { loadLedger } from "@/lib/db"
 import type { ApprovalData } from "@/lib/interaction"
 import type { MissionPersona, MissionRun } from "@/lib/missionTypes"
 import { useApp } from "@/store/app"
-import { useChat, type ChatItem } from "@/store/chat"
+import { useChat, hasExecutorTurn, type ChatItem } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { convIdForInteraction, useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
@@ -489,7 +489,9 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
   //     trabalho, sem bastão); (b) auto-resume agendado ⇒ a mesa "descansa"
   //     até nextAt (sinal do sofá).
   for (const [convId, c] of Object.entries(chat.byId)) {
-    if (c.items.length > 0) {
+    // conv só com pareceres de conselheiro (advice) não é "trabalho" de executor
+    // → não memoriza agent nem gera bastão espúrio (Especialistas E1).
+    if (hasExecutorTurn(c.items)) {
       const prevAgent = lastAgentByConv.get(convId)
       if (prevAgent !== undefined && prevAgent !== c.agent) {
         const from = officeAgent(prevAgent)

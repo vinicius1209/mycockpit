@@ -1,10 +1,57 @@
 import { useEffect, useRef, useState } from "react"
-import { listProjectFiles, readProjectSources } from "@/lib/sources"
+import { listProjectFiles } from "@/lib/sources"
+import { listAgentDefs, type AgentDef } from "@/lib/agentDefs"
 import { isTauri } from "@/lib/db"
 import type { Project } from "@/lib/types"
 import { MAX_POPOVER_ITEMS } from "@/hooks/useSlashCommands"
 
-export type AtItem = { kind: "agent" | "file"; value: string }
+// `value` é o que entra como "@nome" (comportamento do insertMention); `id` é a
+// identidade resolvível da persona (scope:slug) — reservado pro Sprint 1 saber
+// QUAL persona invocar sem ambiguidade de nome. `def` carrega só o que o
+// <AgentAvatar> precisa pra desenhar a cara da persona no popover. Item de
+// arquivo só tem `value` (sem `id`/`def`).
+export type AtItem = {
+  kind: "agent" | "file"
+  value: string
+  id?: string
+  def?: Pick<AgentDef, "category" | "avatarStyle" | "avatarSeed" | "slug" | "name">
+}
+
+/** Personas (as reais do app, `.mycockpit/agents`) + arquivos, filtrados pela
+ *  query do "@" e limitados. Personas antes de arquivos; os `.md` das duas
+ *  pastas de agents ficam de fora dos arquivos (já entram como persona ou são
+ *  contexto de code agent externo). Puro, testável sem React. */
+export function buildAtItems(
+  agents: AgentDef[],
+  files: string[],
+  query: string,
+): AtItem[] {
+  const q = query.toLowerCase()
+  return [
+    ...agents
+      .filter((a) => a.name.toLowerCase().includes(q))
+      .map((a) => ({
+        kind: "agent" as const,
+        value: a.name,
+        id: a.id,
+        def: {
+          category: a.category,
+          avatarStyle: a.avatarStyle,
+          avatarSeed: a.avatarSeed,
+          slug: a.slug,
+          name: a.name,
+        },
+      })),
+    ...files
+      .filter(
+        (f) =>
+          !f.startsWith(".claude/agents/") &&
+          !f.startsWith(".mycockpit/agents/") &&
+          f.toLowerCase().includes(q),
+      )
+      .map((f) => ({ kind: "file" as const, value: f })),
+  ].slice(0, MAX_POPOVER_ITEMS)
+}
 
 /**
  * Estado + lógica do popover de "@" (arquivos + agents do projeto, mid-text).
@@ -22,7 +69,7 @@ export function useAtMentions({
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
 }) {
   const [files, setFiles] = useState<string[]>([])
-  const [agents, setAgents] = useState<string[]>([])
+  const [agents, setAgents] = useState<AgentDef[]>([])
   const [cursor, setCursor] = useState(0)
   const [atIdx, setAtIdx] = useState(0)
   const [atDismissed, setAtDismissed] = useState(false)
@@ -46,8 +93,8 @@ export function useAtMentions({
         (f) => !cancelled && setFiles(f),
         () => !cancelled && setFiles([]),
       ),
-      readProjectSources(path).then(
-        (s) => !cancelled && setAgents(s.personas.map((p) => p.name)),
+      listAgentDefs(path).then(
+        (defs) => !cancelled && setAgents(defs),
         () => !cancelled && setAgents([]),
       ),
     ]).finally(() => {
@@ -64,21 +111,7 @@ export function useAtMentions({
   }, [atQuery, project?.path])
 
   const atItems: AtItem[] =
-    atQuery === null
-      ? []
-      : [
-          ...agents
-            .filter((a) => a.toLowerCase().includes(atQuery.toLowerCase()))
-            .map((a) => ({ kind: "agent" as const, value: a })),
-          ...files
-            // tira os .claude/agents/*.md, já estão listados como AGENT acima
-            .filter(
-              (f) =>
-                !f.startsWith(".claude/agents/") &&
-                f.toLowerCase().includes(atQuery.toLowerCase()),
-            )
-            .map((f) => ({ kind: "file" as const, value: f })),
-        ].slice(0, MAX_POPOVER_ITEMS)
+    atQuery === null ? [] : buildAtItems(agents, files, atQuery)
   const showAt = !atDismissed && atItems.length > 0
 
   useEffect(() => {

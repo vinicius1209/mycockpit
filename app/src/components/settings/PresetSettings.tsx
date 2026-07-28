@@ -39,6 +39,12 @@ interface Draft {
   backend: string
   model: string
   effort: string
+  /** E2 — identidade/marketplace. Aqui (fallback) só passam adiante; a UI rica
+   *  (categoria/rubrica/avatar) mora no marketplace (Especialistas). */
+  category: string
+  rubric: string[]
+  avatarStyle: string
+  avatarSeed: string
 }
 
 function emptyDraft(scope: PresetScope): Draft {
@@ -52,6 +58,11 @@ function emptyDraft(scope: PresetScope): Draft {
     backend: "claude-code",
     model: "default",
     effort: "default",
+    category: "Geral",
+    rubric: [],
+    // vazio = default do sistema (thumbs); a cor vem da categoria (lib/avatar).
+    avatarStyle: "",
+    avatarSeed: "",
   }
 }
 
@@ -66,6 +77,10 @@ function draftFrom(p: AgentDef): Draft {
     backend: p.backend,
     model: p.model ?? "default",
     effort: p.effort ?? "default",
+    category: p.category,
+    rubric: p.rubric,
+    avatarStyle: p.avatarStyle,
+    avatarSeed: p.avatarSeed,
   }
 }
 
@@ -78,6 +93,11 @@ function toInput(d: Draft): AgentPresetInput {
     backend: d.backend,
     model: d.model === "default" ? null : d.model,
     effort: d.effort === "default" ? null : d.effort,
+    category: d.category.trim() || "Geral",
+    rubric: d.rubric,
+    avatarStyle: d.avatarStyle,
+    // seed vazia = default (= slug), resolvido no serialize/parse.
+    avatarSeed: d.avatarSeed,
   }
 }
 

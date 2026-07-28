@@ -6,6 +6,7 @@ import {
   dedupeByScope,
   defFieldsFrom,
   parseFrontmatter,
+  parseRubric,
   parseSkillsList,
   serializeAgentDef,
   slugify,
@@ -105,6 +106,10 @@ describe("serializeAgentDef ↔ round-trip", () => {
     backend: "codex",
     model: "gpt-5.2-codex",
     effort: "high",
+    category: "Geral",
+    rubric: [],
+    avatarStyle: "glass",
+    avatarSeed: "",
   }
 
   it("o que escrevemos volta igual ao ler", () => {
@@ -151,6 +156,169 @@ describe("serializeAgentDef ↔ round-trip", () => {
     expect(
       serializeAgentDef({ ...input, version: 1, id: "uuid-antigo" }),
     ).toContain("id: uuid-antigo")
+  })
+})
+
+// ── E2 · identidade & marketplace (category / rubric / avatar) ──────────────
+
+describe("defFieldsFrom — campos novos do E2 (retrocompat)", () => {
+  const file = {
+    slug: "aline",
+    scope: "projeto" as const,
+    path: "/p/.mycockpit/agents/aline.md",
+    content: ARQUIVO, // arquivo ANTIGO, sem os campos do E2
+    updated_at: 1,
+  }
+
+  it("persona SEM os campos novos carrega com os defaults", () => {
+    const d = defFieldsFrom(file)
+    expect(d.category).toBe("Geral")
+    expect(d.rubric).toEqual([])
+    expect(d.avatarStyle).toBe("thumbs")
+    // seed default = slug (identidade estável sem inventar linha no arquivo)
+    expect(d.avatarSeed).toBe("aline")
+  })
+
+  it("lê category, rubric (array JSON) e avatar quando presentes", () => {
+    const content = `---
+name: Aline
+backend: claude-code
+category: Engenharia
+rubric: ["Fronteiras, e responsabilidade","Corridas: reinício?"]
+avatar_style: bottts
+avatar_seed: aline-2
+version: 1
+---
+corpo`
+    const d = defFieldsFrom({ ...file, content })
+    expect(d.category).toBe("Engenharia")
+    // rubrica com vírgula/pontuação sobrevive intacta (array JSON)
+    expect(d.rubric).toEqual([
+      "Fronteiras, e responsabilidade",
+      "Corridas: reinício?",
+    ])
+    expect(d.avatarStyle).toBe("bottts")
+    expect(d.avatarSeed).toBe("aline-2")
+  })
+
+  it("rubrica escrita à mão como lista 'a, b' também é aceita (fallback)", () => {
+    const content = `---
+name: Aline
+backend: claude-code
+rubric: fronteiras, acoplamento
+version: 1
+---
+corpo`
+    expect(defFieldsFrom({ ...file, content }).rubric).toEqual([
+      "fronteiras",
+      "acoplamento",
+    ])
+  })
+})
+
+describe("serializeAgentDef ↔ round-trip dos campos do E2", () => {
+  const base = {
+    name: "Aline",
+    personalityMd: "Você é a Aline.",
+    skills: [],
+    policy: null,
+    backend: "claude-code",
+    model: null,
+    effort: null,
+    version: 1,
+  }
+
+  it("o que escrevemos dos 3 campos volta igual ao ler (com vírgula na rubrica)", () => {
+    const md = serializeAgentDef({
+      ...base,
+      slug: "aline",
+      category: "Engenharia",
+      rubric: ["Fronteiras, e acoplamento", "Idempotência: reinício?"],
+      avatarStyle: "bottts",
+      avatarSeed: "semente-custom",
+    })
+    const d = defFieldsFrom({
+      slug: "aline",
+      scope: "projeto",
+      path: "/x.md",
+      content: md,
+      updated_at: 1,
+    })
+    expect(d.category).toBe("Engenharia")
+    expect(d.rubric).toEqual([
+      "Fronteiras, e acoplamento",
+      "Idempotência: reinício?",
+    ])
+    expect(d.avatarStyle).toBe("bottts")
+    expect(d.avatarSeed).toBe("semente-custom")
+  })
+
+  it("defaults do E2 NÃO viram linhas no arquivo (legível à mão)", () => {
+    const md = serializeAgentDef({
+      ...base,
+      slug: "aline",
+      category: "Geral",
+      rubric: [],
+      avatarStyle: "thumbs", // = default do sistema; nada a escrever
+      avatarSeed: "aline", // = slug
+    })
+    expect(md).not.toContain("category:")
+    expect(md).not.toContain("rubric:")
+    expect(md).not.toContain("avatar_style:")
+    expect(md).not.toContain("avatar_seed:")
+  })
+
+  it("avatar_seed só é escrita quando difere do slug", () => {
+    const igual = serializeAgentDef({
+      ...base,
+      slug: "aline",
+      category: "Geral",
+      rubric: [],
+      avatarStyle: "glass",
+      avatarSeed: "aline",
+    })
+    expect(igual).not.toContain("avatar_seed:")
+    const diferente = serializeAgentDef({
+      ...base,
+      slug: "aline",
+      category: "Geral",
+      rubric: [],
+      avatarStyle: "glass",
+      avatarSeed: "outra-seed",
+    })
+    expect(diferente).toContain("avatar_seed: outra-seed")
+  })
+
+  it("rubrica é serializada como array JSON de UMA linha", () => {
+    const md = serializeAgentDef({
+      ...base,
+      slug: "aline",
+      category: "Geral",
+      rubric: ["Um item", "Outro, com vírgula"],
+      avatarStyle: "glass",
+      avatarSeed: "aline",
+    })
+    expect(md).toContain('rubric: ["Um item","Outro, com vírgula"]')
+  })
+})
+
+describe("parseRubric", () => {
+  it("array JSON preserva vírgulas e pontuação dos itens", () => {
+    expect(parseRubric('["Fronteiras, e acoplamento","Corridas: reinício?"]')).toEqual([
+      "Fronteiras, e acoplamento",
+      "Corridas: reinício?",
+    ])
+  })
+
+  it("lista 'a, b' (mão) cai no fallback de parseSkillsList", () => {
+    expect(parseRubric("fronteiras, acoplamento")).toEqual([
+      "fronteiras",
+      "acoplamento",
+    ])
+  })
+
+  it("JSON quebrado não estoura — degrada pro fallback", () => {
+    expect(parseRubric('["sem fechar')).toEqual(['"sem fechar'])
   })
 })
 
