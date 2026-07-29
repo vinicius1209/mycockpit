@@ -16,7 +16,7 @@
 // FASE 2 (ainda só no textarea): comandos "/" (SlashPopover), "@" de arquivos
 // (AtPopover legado), paste → anexo, histórico ↑/↓ estilo shell.
 
-import { useEffect, useMemo, useRef } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { LexicalComposer as LexicalComposerBase } from "@lexical/react/LexicalComposer"
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin"
 import { ContentEditable } from "@lexical/react/LexicalContentEditable"
@@ -227,10 +227,21 @@ export function LexicalComposer({
 // card popover da casa + cabeçalho de seção "Especialistas" + itens avatar+nome
 // (sem o "@" na frente, o gatilho já foi digitado).
 //
-// A lib porta o menu num anchor posicionado abaixo do cursor (LexicalTypeahead),
-// então NÃO posicionamos aqui — só o chrome do card. O atributo
-// `data-beautiful-mention-menu` é a guarda do EnterToSubmitPlugin (menu aberto
-// → Enter escolhe, não envia); não remover.
+// POSICIONAMENTO — o certo, não o hack CSS: a lib (LexicalTypeaheadMenuPlugin)
+// porta este menu num container `position:absolute` colado ao CURSOR e anexado
+// ao <body>. O flip-pra-cima nativo dela só dispara quando há espaço acima
+// DENTRO do editor root — e o nosso root é um input de UMA linha, então nunca
+// flipa e o menu cairia fora da viewport (o composer vive no rodapé). Em vez de
+// brigar com o anchor por-cursor, ancoramos ao COMPOSER como o AtPopover: um
+// painel `position:fixed` medido a partir do rect do editor (getRootElement),
+// aberto SEMPRE pra cima (`bottom` acima do topo do input), alinhado à esquerda
+// e com a largura do input. `fixed` ignora o container por-cursor da lib (que
+// segue invisível), então não há dupla-deslocação nem gap.
+//
+// O atributo `data-beautiful-mention-menu` é a guarda do EnterToSubmitPlugin
+// (menu aberto → Enter escolhe, não envia); não remover.
+const MENU_GAP_PX = 8
+
 function MentionsMenu({
   loading,
   children,
@@ -239,10 +250,55 @@ function MentionsMenu({
   loading?: boolean
   children?: React.ReactNode
 } & React.HTMLAttributes<HTMLUListElement>) {
+  const [editor] = useLexicalComposerContext()
+  const [pos, setPos] = useState<{
+    left: number
+    bottom: number
+    width: number
+  } | null>(null)
+
+  useLayoutEffect(() => {
+    const root = editor.getRootElement()
+    if (!root) return
+    const measure = () => {
+      const r = root.getBoundingClientRect()
+      setPos({
+        left: r.left,
+        // topo do input, subindo (bottom cresce a lista pra cima → colado).
+        bottom: window.innerHeight - r.top + MENU_GAP_PX,
+        width: r.width,
+      })
+    }
+    measure()
+    // o composer é fixo no rodapé (não rola com a conversa); só resize move o
+    // input. ResizeObserver pega mudança de largura/altura do próprio input.
+    window.addEventListener("resize", measure)
+    const ro = new ResizeObserver(measure)
+    ro.observe(root)
+    return () => {
+      window.removeEventListener("resize", measure)
+      ro.disconnect()
+    }
+  }, [editor])
+
   return (
     <ul
       data-beautiful-mention-menu
-      className="z-50 mt-1 max-h-72 w-[240px] overflow-auto rounded-xl border bg-popover p-1 shadow-[var(--shadow-pop)]"
+      style={
+        pos
+          ? {
+              position: "fixed",
+              left: pos.left,
+              bottom: pos.bottom,
+              width: pos.width,
+              // sobrescreve o `top` que a lib seta imperativamente no elemento.
+              top: "auto",
+              right: "auto",
+            }
+          : // antes da 1ª medida: fora da tela, evita flash colado ao cursor.
+            { position: "fixed", visibility: "hidden", top: 0, left: 0 }
+      }
+      className="z-50 max-h-72 overflow-auto rounded-xl border bg-popover p-1 shadow-[var(--shadow-pop)]"
       {...props}
     >
       {/* Cabeçalho de seção, como o AtPopover. Só especialistas por ora

@@ -454,9 +454,6 @@ export function CommandConsole({
         placeholder={placeholder}
         rows={1}
         textareaClassName={CONSOLE_INPUT_CLASS}
-        mentionNames={
-          engine === "textarea" ? presets.map((p) => p.name) : undefined
-        }
         input={lexicalInput}
         onCardClick={engine === "lexical" ? focusComposer : undefined}
         footerClassName="p-2.5 pt-1"
