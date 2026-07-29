@@ -7,6 +7,14 @@ import type { Project } from "@/lib/types"
 /** Máx. de itens mostrados nos popovers de "/" (comandos) e "@" (referências). */
 export const MAX_POPOVER_ITEMS = 8
 
+/** Parse PURO do modo "/": o input INTEIRO precisa ser "/token" (sem espaço,
+ *  sem quebra de linha). Devolve a query (o que vem depois da barra) ou null.
+ *  Compartilhado pelos dois motores do composer — textarea e Lexical decidem o
+ *  popover a partir da MESMA string do draft. */
+export function slashQueryOf(value: string): string | null {
+  return value.match(/^\/([\w:-]*)$/)?.[1] ?? null
+}
+
 /**
  * Estado + lógica do popover de "/" (comandos do projeto no início do input).
  * A precedência das teclas (slash > at > histórico > Enter) fica no onKeyDown
@@ -43,7 +51,7 @@ export function useSlashCommands({
   }, [project?.path])
 
   // "/" no início do input (sem espaço) → modo slash
-  const slashQuery = value.match(/^\/([\w:-]*)$/)?.[1] ?? null
+  const slashQuery = slashQueryOf(value)
   const slashMatches =
     slashQuery !== null
       ? commands

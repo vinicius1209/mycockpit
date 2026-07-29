@@ -12,6 +12,30 @@ import {
   revokeAttachmentUrl,
 } from "@/lib/attachments"
 
+/** Filtra do clipboard os File anexáveis: imagem, PDF ou sem mime declarado.
+ *  Compartilhado pelos dois motores do composer (onPaste do textarea e
+ *  PASTE_COMMAND do Lexical). A captura precisa ser SÍNCRONA, antes de
+ *  qualquer await — depois o clipboard esvazia (F21). */
+export function collectPastedFiles(data: DataTransfer): File[] {
+  return [...data.items]
+    .filter((it) => it.kind === "file")
+    .map((it) => it.getAsFile())
+    .filter(
+      (f): f is File =>
+        !!f &&
+        (f.type.startsWith("image/") ||
+          f.type === "application/pdf" ||
+          f.type === ""),
+    )
+}
+
+/** Evento "paste-like": o React.ClipboardEvent do textarea e o ClipboardEvent
+ *  nativo (Lexical) satisfazem este shape — o hook não depende do motor. */
+type PasteLikeEvent = {
+  clipboardData: DataTransfer | null
+  preventDefault: () => void
+}
+
 /**
  * Anexos pendentes do composer: paste (captura síncrona dos File antes do await,
  * F21), file-picker do Tauri (insere @path) e remoção (libera o object URL junto
@@ -50,24 +74,11 @@ export function useAttachments({
     setValue((v) => v.slice(0, start) + insert + v.slice(end))
   }
 
-  // Colar imagem/PDF: captura os File SÍNCRONO antes de qualquer await (F21),
-  // preserva o texto colado junto (F20), valida tamanho/contagem (F8/F22), salva.
-  async function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+  // Núcleo do paste→anexo: valida tamanho/contagem (F8/F22) e salva cada File.
+  // O textarea chega aqui via onPaste; o editor Lexical chama direto
+  // (PASTE_COMMAND → onPasteFiles), a REGRA é uma só.
+  async function addFiles(files: File[]) {
     if (!isTauri() || !activeId) return
-    const files = [...e.clipboardData.items]
-      .filter((it) => it.kind === "file")
-      .map((it) => it.getAsFile())
-      .filter(
-        (f): f is File =>
-          !!f &&
-          (f.type.startsWith("image/") ||
-            f.type === "application/pdf" ||
-            f.type === ""),
-      )
-    if (!files.length) return // paste de texto puro → comportamento default
-    const text = e.clipboardData.getData("text/plain")
-    e.preventDefault()
-    if (text) insertAtCursor(text)
     let count = attachments.length
     for (const f of files) {
       if (f.size > MAX_ATTACH_BYTES) {
@@ -89,6 +100,20 @@ export function useAttachments({
     }
   }
 
+  // Colar imagem/PDF: captura os File SÍNCRONO antes de qualquer await (F21),
+  // preserva o texto colado junto (F20), valida tamanho/contagem e salva.
+  async function onPaste(e: PasteLikeEvent) {
+    if (!isTauri() || !activeId) return
+    const data = e.clipboardData
+    if (!data) return
+    const files = collectPastedFiles(data)
+    if (!files.length) return // paste de texto puro → comportamento default
+    const text = data.getData("text/plain")
+    e.preventDefault()
+    if (text) insertAtCursor(text)
+    await addFiles(files)
+  }
+
   // Anexo real (B3, inspirado no ai-04): file picker do Tauri → insere @path.
   async function attach() {
     if (!isTauri()) return
@@ -101,5 +126,5 @@ export function useAttachments({
     textareaRef.current?.focus()
   }
 
-  return { attachments, setAttachments, removeAttachment, onPaste, attach }
+  return { attachments, setAttachments, removeAttachment, onPaste, addFiles, attach }
 }

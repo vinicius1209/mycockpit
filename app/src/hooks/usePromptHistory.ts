@@ -1,6 +1,37 @@
 import { useEffect, useState } from "react"
 import type { ConvState } from "@/store/chat"
 
+/** Decisão PURA da borda do recall ↑/↓, compartilhada pelos dois motores do
+ *  composer: o textarea deriva `before`/`after` de selectionStart/End; o
+ *  Lexical, do texto ao redor do caret. A regra é uma só:
+ *  - ↑ só recupera com o cursor na 1ª linha (nada de "\n" antes) e havendo
+ *    prompts enviados;
+ *  - ↓ só avança quando JÁ se navega o histórico e o cursor está na última
+ *    linha (nada de "\n" depois).
+ *  Fora das bordas devolve null — a seta segue navegando o texto normalmente. */
+export function historyRecallIntent({
+  key,
+  before,
+  after,
+  canPrev,
+  navigating,
+}: {
+  key: "ArrowUp" | "ArrowDown"
+  /** Texto antes do cursor. */
+  before: string
+  /** Texto depois do cursor. */
+  after: string
+  /** Há prompts enviados pra recuperar (userPrompts.length > 0). */
+  canPrev: boolean
+  /** Já navegando o histórico (histIdx !== null). */
+  navigating: boolean
+}): "prev" | "next" | null {
+  if (key === "ArrowUp") {
+    return canPrev && !before.includes("\n") ? "prev" : null
+  }
+  return navigating && !after.includes("\n") ? "next" : null
+}
+
 /**
  * Histórico tipo shell: ↑/↓ recupera os prompts já enviados na conversa.
  * `histIdx === null` = editando (não navegando o histórico). `draft` guarda o

@@ -1,8 +1,8 @@
-// Composer Lexical da conversa (FASE 1 — núcleo). Promovido do spike validado.
+// Composer Lexical da conversa (FASE 2 — paridade). Promovido do spike validado.
 //
 // É o INPUT do console (substitui o <Textarea> via slot `input` do
 // ComposerShell quando Settings → Comportamento liga o "Composer Lexical").
-// O que ele entrega nesta fase:
+// O que ele entrega:
 //   - texto com Enter=envia / Shift+Enter=quebra linha (semântica do console);
 //   - `@` menção ATÔMICA (pill via lexical-beautiful-mentions) com o nosso
 //     menu (AgentAvatar + nome, seção "Especialistas");
@@ -11,10 +11,15 @@
 //     fora (troca de conversa, sugestão, limpeza pós-envio);
 //   - serialização = a MESMA string que o handleSend espera (menção → `@nome`),
 //     via lexicalDraft.ts;
-//   - alvo de foco `data-composer="console"` (tray://new-task e afins).
+//   - alvo de foco `data-composer="console"` (tray://new-task e afins);
+//   - FASE 2: comandos "/" (o MESMO SlashPopover/useSlashCommands do console —
+//     aqui só chegam os gestos do teclado, via SlashMenuKeysPlugin), paste →
+//     anexo (PASTE_COMMAND → useAttachments.addFiles) e histórico ↑/↓ estilo
+//     shell nas bordas (usePromptHistory + historyRecallIntent). O "/comando"
+//     é TEXTO normal, não pill — só a menção é atômica.
 //
-// FASE 2 (ainda só no textarea): comandos "/" (SlashPopover), "@" de arquivos
-// (AtPopover legado), paste → anexo, histórico ↑/↓ estilo shell.
+// FASE 3 (ainda só no textarea): "@" de arquivos/recursos (AtPopover legado);
+// depois, lazy-load, virar o default e aposentar o textarea.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { LexicalComposer as LexicalComposerBase } from "@lexical/react/LexicalComposer"
@@ -25,10 +30,21 @@ import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin"
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin"
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
 import {
+  $createLineBreakNode,
   $getRoot,
+  $getSelection,
+  $isElementNode,
+  $isRangeSelection,
+  $isRootNode,
   CLEAR_HISTORY_COMMAND,
+  COMMAND_PRIORITY_CRITICAL,
   COMMAND_PRIORITY_HIGH,
+  KEY_ARROW_DOWN_COMMAND,
+  KEY_ARROW_UP_COMMAND,
   KEY_ENTER_COMMAND,
+  KEY_ESCAPE_COMMAND,
+  KEY_TAB_COMMAND,
+  PASTE_COMMAND,
 } from "lexical"
 import {
   BeautifulMentionsPlugin,
@@ -36,6 +52,8 @@ import {
   type BeautifulMentionsTheme,
 } from "lexical-beautiful-mentions"
 import { $serializeDraft, $setDraft } from "@/components/chat/lexicalDraft"
+import { historyRecallIntent } from "@/hooks/usePromptHistory"
+import { collectPastedFiles } from "@/hooks/useAttachments"
 import { usePresets } from "@/store/presets"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import { cn } from "@/lib/utils"
@@ -84,6 +102,219 @@ function EnterToSubmitPlugin({ onSubmit }: { onSubmit: (text: string) => void })
   return null
 }
 
+/** Ponte do menu "/" de comandos: a LÓGICA (lista, filtro, inserção) mora no
+ *  useSlashCommands do CommandConsole e o menu é o MESMO SlashPopover do
+ *  textarea — aqui só chegam os gestos do teclado. */
+export type SlashMenuBridge = {
+  /** Popover visível (showSlash) → as teclas navegam o menu, não o texto. */
+  active: boolean
+  /** ↑/↓ movem a seleção (com wrap, como no textarea). */
+  move: (delta: 1 | -1) => void
+  /** Enter/Tab inserem o comando selecionado (insertCommand → "/nome "). */
+  pick: () => void
+  /** Esc fecha até a próxima edição (setSlashDismissed). */
+  dismiss: () => void
+}
+
+/** Ponte do histórico ↑/↓ estilo shell (usePromptHistory do CommandConsole). */
+export type HistoryBridge = {
+  /** Há prompts enviados pra recuperar (userPrompts.length > 0). */
+  canPrev: boolean
+  /** Já navegando o histórico (histIdx !== null). */
+  navigating: boolean
+  recallPrev: () => void
+  recallNext: () => void
+}
+
+/** Teclas do menu "/" — prioridade CRITICAL de propósito: com o popover aberto
+ *  elas vencem o Enter-envia (HIGH) e a navegação normal do editor. Quando o
+ *  menu está fechado, tudo devolve false e o fluxo segue intacto. As props
+ *  entram por ref pra não re-registrar comandos a cada render do console. */
+function SlashMenuKeysPlugin({ slash }: { slash?: SlashMenuBridge }) {
+  const [editor] = useLexicalComposerContext()
+  const slashRef = useRef(slash)
+  slashRef.current = slash
+  useEffect(() => {
+    const step =
+      (delta: 1 | -1) =>
+      (event: KeyboardEvent | null): boolean => {
+        const s = slashRef.current
+        if (!s?.active || event?.isComposing) return false
+        event?.preventDefault()
+        s.move(delta)
+        return true
+      }
+    const choose = (event: KeyboardEvent | null): boolean => {
+      const s = slashRef.current
+      if (!s?.active || event?.isComposing) return false
+      event?.preventDefault()
+      s.pick()
+      return true
+    }
+    const unregister = [
+      editor.registerCommand(
+        KEY_ARROW_DOWN_COMMAND,
+        step(1),
+        COMMAND_PRIORITY_CRITICAL,
+      ),
+      editor.registerCommand(
+        KEY_ARROW_UP_COMMAND,
+        step(-1),
+        COMMAND_PRIORITY_CRITICAL,
+      ),
+      editor.registerCommand(KEY_ENTER_COMMAND, choose, COMMAND_PRIORITY_CRITICAL),
+      editor.registerCommand(KEY_TAB_COMMAND, choose, COMMAND_PRIORITY_CRITICAL),
+      editor.registerCommand(
+        KEY_ESCAPE_COMMAND,
+        (event) => {
+          const s = slashRef.current
+          if (!s?.active) return false
+          event.preventDefault()
+          s.dismiss()
+          return true
+        },
+        COMMAND_PRIORITY_CRITICAL,
+      ),
+    ]
+    return () => unregister.forEach((u) => u())
+  }, [editor])
+  return null
+}
+
+/** Texto antes/depois do caret (selection colapsada), pra decisão de borda do
+ *  histórico. O conteúdo normal é UM parágrafo com LineBreakNode por "\n"
+ *  (contrato do $setDraft), então basta varrer os irmãos do nó do anchor; se um
+ *  paste criou mais parágrafos, os vizinhos contam como "\n" do lado deles. */
+function $textAroundCaret(): { before: string; after: string } | null {
+  const selection = $getSelection()
+  if (!$isRangeSelection(selection) || !selection.isCollapsed()) return null
+  const anchor = selection.anchor
+  const node = anchor.getNode()
+  let before = ""
+  let after = ""
+  if ($isElementNode(node)) {
+    // anchor num elemento: offset é índice de filho (parágrafo vazio, caret
+    // entre nós). No root, cada filho é um parágrafo → conta como linha.
+    const children = node.getChildren()
+    const sep = $isRootNode(node) ? "\n" : ""
+    before = children
+      .slice(0, anchor.offset)
+      .map((n) => n.getTextContent())
+      .join(sep)
+    after = children
+      .slice(anchor.offset)
+      .map((n) => n.getTextContent())
+      .join(sep)
+  } else {
+    const text = node.getTextContent()
+    before = text.slice(0, anchor.offset)
+    after = text.slice(anchor.offset)
+    for (let s = node.getPreviousSibling(); s; s = s.getPreviousSibling())
+      before = s.getTextContent() + before
+    for (let s = node.getNextSibling(); s; s = s.getNextSibling())
+      after = after + s.getTextContent()
+  }
+  if (!$isRootNode(node)) {
+    const top = node.getTopLevelElement()
+    if (top?.getPreviousSibling()) before = "\n" + before
+    if (top?.getNextSibling()) after = after + "\n"
+  }
+  return { before, after }
+}
+
+/** Histórico ↑/↓ estilo shell: recall SÓ nas bordas (↑ com o caret na 1ª
+ *  linha, ↓ na última) pra não atrapalhar a navegação normal de multi-linha —
+ *  a decisão é a `historyRecallIntent` pura do usePromptHistory. Prioridade
+ *  HIGH: perde pro menu "/" (CRITICAL) e cede a vez ao menu de menção aberto
+ *  (guarda explícita, as setas dele navegam o menu). */
+function HistoryRecallPlugin({ history }: { history?: HistoryBridge }) {
+  const [editor] = useLexicalComposerContext()
+  const historyRef = useRef(history)
+  historyRef.current = history
+  useEffect(() => {
+    const recall =
+      (key: "ArrowUp" | "ArrowDown") =>
+      (event: KeyboardEvent): boolean => {
+        const h = historyRef.current
+        if (!h || event.isComposing) return false
+        if (document.querySelector("[data-beautiful-mention-menu]")) return false
+        const around = $textAroundCaret()
+        if (!around) return false
+        const intent = historyRecallIntent({
+          key,
+          before: around.before,
+          after: around.after,
+          canPrev: h.canPrev,
+          navigating: h.navigating,
+        })
+        if (!intent) return false
+        event.preventDefault()
+        if (intent === "prev") h.recallPrev()
+        else h.recallNext()
+        return true
+      }
+    const unregister = [
+      editor.registerCommand(
+        KEY_ARROW_UP_COMMAND,
+        recall("ArrowUp"),
+        COMMAND_PRIORITY_HIGH,
+      ),
+      editor.registerCommand(
+        KEY_ARROW_DOWN_COMMAND,
+        recall("ArrowDown"),
+        COMMAND_PRIORITY_HIGH,
+      ),
+    ]
+    return () => unregister.forEach((u) => u())
+  }, [editor])
+  return null
+}
+
+/** Paste → anexo: clipboard com File anexável (imagem/PDF, filtro compartilhado
+ *  `collectPastedFiles`) roteia pro fluxo de anexos do console (addFiles → chip)
+ *  e o texto que veio JUNTO entra no caret (paridade com o F20 do textarea).
+ *  Paste de texto puro devolve false e segue no pipeline normal do RichText.
+ *  Sem handler (fora do Tauri / sem conversa) idem — o default fica de pé. */
+function PasteAttachmentsPlugin({
+  onPasteFiles,
+}: {
+  onPasteFiles?: (files: File[]) => void
+}) {
+  const [editor] = useLexicalComposerContext()
+  const handlerRef = useRef(onPasteFiles)
+  handlerRef.current = onPasteFiles
+  useEffect(() => {
+    return editor.registerCommand(
+      PASTE_COMMAND,
+      (event) => {
+        const handler = handlerRef.current
+        if (!handler) return false
+        if (!(event instanceof ClipboardEvent) || !event.clipboardData)
+          return false
+        // captura SÍNCRONA antes de qualquer await (F21) — depois esvazia.
+        const files = collectPastedFiles(event.clipboardData)
+        if (files.length === 0) return false
+        event.preventDefault()
+        const text = event.clipboardData.getData("text/plain")
+        if (text) {
+          const selection = $getSelection()
+          if ($isRangeSelection(selection)) {
+            // "\n" vira LineBreakNode no MESMO parágrafo (contrato do draft).
+            text.split("\n").forEach((line, i) => {
+              if (i > 0) selection.insertNodes([$createLineBreakNode()])
+              if (line) selection.insertText(line)
+            })
+          }
+        }
+        handler(files)
+        return true
+      },
+      COMMAND_PRIORITY_HIGH,
+    )
+  }, [editor])
+  return null
+}
+
 /** Mantém o editor espelhando o draft externo. `lastText` guarda o último
  *  texto que SAIU do editor (via OnChange) — se o valor externo divergir, foi
  *  mudança de fora (troca de conversa, sugestão, limpeza pós-envio) e o
@@ -105,6 +336,14 @@ function DraftSyncPlugin({
     editor.update(
       () => {
         $setDraft(value, mentionNames)
+        // Reconstrução com o editor FOCADO (recall ↑/↓, escolha de "/",
+        // sugestão): caret vai pro fim, como o setSelectionRange(len, len) do
+        // textarea. Sem foco, não mexe na seleção (não roubar o foco de quem
+        // só trocou de conversa).
+        const rootEl = editor.getRootElement()
+        if (rootEl && rootEl.contains(document.activeElement)) {
+          $getRoot().selectEnd()
+        }
       },
       { discrete: true },
     )
@@ -139,6 +378,9 @@ export function LexicalComposer({
   mentionNames,
   className,
   registerFocus,
+  slash,
+  history,
+  onPasteFiles,
 }: {
   /** Draft da conversa ativa (string com `@nome`) — fonte da verdade externa. */
   value: string
@@ -152,6 +394,12 @@ export function LexicalComposer({
   /** Classes do box do input (as MESMAS do textarea, pra alinhar o cartão). */
   className?: string
   registerFocus?: (fn: () => void) => void
+  /** FASE 2 — teclado do menu "/" (a lógica fica no useSlashCommands do dono). */
+  slash?: SlashMenuBridge
+  /** FASE 2 — recall ↑/↓ do histórico (usePromptHistory do dono). */
+  history?: HistoryBridge
+  /** FASE 2 — paste com File anexável roteia pra cá (useAttachments.addFiles). */
+  onPasteFiles?: (files: File[]) => void
 }) {
   // último texto emitido/recebido — evita loop OnChange ↔ DraftSync.
   const lastText = useRef<string | null>(null)
@@ -212,6 +460,9 @@ export function LexicalComposer({
           }}
         />
         <EnterToSubmitPlugin onSubmit={onSubmit} />
+        <SlashMenuKeysPlugin slash={slash} />
+        <HistoryRecallPlugin history={history} />
+        <PasteAttachmentsPlugin onPasteFiles={onPasteFiles} />
         <DraftSyncPlugin
           value={value}
           mentionNames={mentionNames}
@@ -302,7 +553,7 @@ function MentionsMenu({
       {...props}
     >
       {/* Cabeçalho de seção, como o AtPopover. Só especialistas por ora
-          (arquivos/recursos do "@" legado ficam pra FASE 2). */}
+          (arquivos/recursos do "@" legado ficam pra FASE 3). */}
       <li
         aria-hidden
         className="px-2 pt-1 pb-1 text-[10px] tracking-wide text-muted-foreground/80 uppercase"

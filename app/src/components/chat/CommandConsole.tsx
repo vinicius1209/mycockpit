@@ -162,7 +162,8 @@ export function CommandConsole({
   } = at
   const { histIdx, setHistIdx, resetHistory, userPrompts, recallPrev, recallNext } =
     history
-  const { attachments, setAttachments, removeAttachment, onPaste, attach } = att
+  const { attachments, setAttachments, removeAttachment, onPaste, addFiles, attach } =
+    att
 
   // conversa estabelecida trava no agent/modelo/effort dela; o seletor reflete.
   // Pareceres de conselheiro (advice) NÃO travam a identidade (Especialistas E1).
@@ -291,21 +292,39 @@ export function CommandConsole({
     focusComposer()
   }
 
-  // Placeholder por estado (compartilhado pelos dois motores). No Lexical não
-  // existe "/" ainda (FASE 2) — anunciar comandos que não funcionam seria
-  // teatro, então a variante "/ para comandos" é exclusiva do textarea.
+  // Placeholder por estado (compartilhado pelos dois motores). O "/" agora existe
+  // nos DOIS motores (FASE 2), então a dica de comandos não é mais exclusiva do
+  // textarea — sai só quando o projeto tem comandos de fato (senão seria teatro).
   const placeholder = missionRunning
     ? "Missão em andamento — pare a missão para enviar manualmente…"
     : running || finalizing
       ? "Enfileirar próxima mensagem…"
-      : engine === "textarea" && commands.length > 0
+      : commands.length > 0
         ? "Peça algo…  ou / para comandos"
         : "Peça algo ao seu time de agents…"
 
-  // FASE 2 (motor Lexical): comandos "/" (SlashPopover), "@" de arquivos e
-  // recursos (AtPopover legado — o Lexical só menciona Especialistas por ora),
-  // paste → anexo direto no editor e histórico ↑/↓ estilo shell. Até lá esses
-  // fluxos seguem exclusivos do textarea (os popovers abaixo são gateados).
+  // FASE 2 (motor Lexical): comandos "/", paste → anexo e histórico ↑/↓ estilo
+  // shell chegaram ao editor SEM reimplementar regra — o LexicalComposer recebe
+  // pontes pros MESMOS hooks que o textarea usa. O menu "/" é o próprio
+  // SlashPopover (renderizado abaixo, gateado só por showSlash); aqui vai apenas
+  // o teclado (navegar/escolher/fechar). O "@" de arquivos/recursos (AtPopover
+  // legado) segue exclusivo do textarea — fica pra FASE 3.
+  const slashBridge = {
+    active: showSlash,
+    move: (delta: 1 | -1) =>
+      setSlashIdx((i) => (i + delta + slashMatches.length) % slashMatches.length),
+    pick: () => {
+      const m = slashMatches[slashIdx]
+      if (m) insertCommand(m.name)
+    },
+    dismiss: () => setSlashDismissed(true),
+  }
+  const historyBridge = {
+    canPrev: userPrompts.length > 0,
+    navigating: histIdx !== null,
+    recallPrev,
+    recallNext,
+  }
   const lexicalInput =
     engine === "lexical" ? (
       <LexicalComposer
@@ -318,12 +337,17 @@ export function CommandConsole({
         registerFocus={(fn) => {
           lexicalFocus.current = fn
         }}
+        slash={slashBridge}
+        history={historyBridge}
+        onPasteFiles={addFiles}
       />
     ) : undefined
 
   return (
     <div className="relative flex w-full flex-col gap-3">
-      {engine === "textarea" && showSlash && (
+      {/* Menu "/" — o MESMO nos dois motores. No Lexical o teclado chega via
+          slashBridge (SlashMenuKeysPlugin); aqui é só a lista (clique inclusive). */}
+      {showSlash && (
         <SlashPopover
           project={project}
           matches={slashMatches}
@@ -334,8 +358,7 @@ export function CommandConsole({
       )}
       {/* "/" digitado num projeto SEM comandos: dica no lugar do silêncio (que
           parece bug — caso real: skills globais viraram symlinks quebrados). */}
-      {engine === "textarea" &&
-        !showSlash &&
+      {!showSlash &&
         /^\/[\w:-]*$/.test(value) &&
         commands.length === 0 && (
         <div className="absolute bottom-full left-0 z-20 mb-2 w-full rounded-xl border bg-popover px-3 py-2.5 shadow-[var(--shadow-pop)]">
