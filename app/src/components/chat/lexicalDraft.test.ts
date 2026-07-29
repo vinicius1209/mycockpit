@@ -66,6 +66,30 @@ describe("planDraft — draft (string) → plano de tokens por linha", () => {
       [{ type: "text", text: "oi @Ana" }],
     ])
   })
+
+  // FASE 3: caminho de arquivo também é mencionável (o vocabulário que o
+  // composer passa inclui os arquivos do projeto) — o pill serializa pro MESMO
+  // `@caminho` que o textarea insere.
+  it("@caminho de arquivo conhecido vira menção (pill de arquivo)", () => {
+    const vocab = [...NOMES, "src/lib/db.ts"]
+    expect(planDraft("revisa @src/lib/db.ts agora", vocab)).toEqual([
+      [
+        { type: "text", text: "revisa " },
+        { type: "mention", name: "src/lib/db.ts" },
+        { type: "text", text: " agora" },
+      ],
+    ])
+    expect(
+      serializePlan(planDraft("revisa @src/lib/db.ts agora", vocab)),
+    ).toBe("revisa @src/lib/db.ts agora")
+  })
+
+  it("@caminho parecido mas não listado fica texto puro", () => {
+    const vocab = [...NOMES, "src/lib/db.ts"]
+    expect(planDraft("olha @src/lib/db.test.ts", vocab)).toEqual([
+      [{ type: "text", text: "olha @src/lib/db.test.ts" }],
+    ])
+  })
 })
 
 describe("serializePlan — plano → string do draft (o que vai pro onSend)", () => {

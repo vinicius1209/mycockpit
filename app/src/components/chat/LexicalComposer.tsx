@@ -17,11 +17,24 @@
 //     anexo (PASTE_COMMAND → useAttachments.addFiles) e histórico ↑/↓ estilo
 //     shell nas bordas (usePromptHistory + historyRecallIntent). O "/comando"
 //     é TEXTO normal, não pill — só a menção é atômica.
+//   - FASE 3: "@" de arquivos do projeto (paridade com o AtPopover do
+//     textarea): os caminhos chegam por prop (`mentionFiles`, a MESMA listagem
+//     do useAtMentions), viram pill atômico que serializa pra `@caminho` e o
+//     menu agrupa Especialistas antes de Arquivos. Este arquivo também é
+//     carregado LAZY pelo console (React.lazy) — o chunk do Lexical só baixa
+//     quando o toggle liga o motor.
 //
-// FASE 3 (ainda só no textarea): "@" de arquivos/recursos (AtPopover legado);
-// depois, lazy-load, virar o default e aposentar o textarea.
+// Falta (passo final, com o usuário): virar o default e aposentar o textarea.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import {
+  Children,
+  isValidElement,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { LexicalComposer as LexicalComposerBase } from "@lexical/react/LexicalComposer"
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin"
 import { ContentEditable } from "@lexical/react/LexicalContentEditable"
@@ -51,15 +64,24 @@ import {
   BeautifulMentionNode,
   type BeautifulMentionsTheme,
 } from "lexical-beautiful-mentions"
+import { FileText } from "lucide-react"
 import { $serializeDraft, $setDraft } from "@/components/chat/lexicalDraft"
 import { historyRecallIntent } from "@/hooks/usePromptHistory"
 import { collectPastedFiles } from "@/hooks/useAttachments"
+import { buildLexicalAtItems } from "@/hooks/useAtMentions"
+import { MAX_POPOVER_ITEMS } from "@/hooks/useSlashCommands"
 import { usePresets } from "@/store/presets"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import { cn } from "@/lib/utils"
 
 // Tema da menção: chip brass no tema do app. As chaves casam o trigger (`@`);
 // `Focused` aplica o estado selecionado do pill.
+// Pontuação do matcher do "@" (FASE 3): o default da lib trata `.` `/` `_`
+// como fim de token, o que cortaria a busca de caminho no primeiro separador
+// (`@src/` pararia a query em "src"). Tira só esses três do conjunto — o resto
+// segue delimitando, e o token do textarea (\S*) já aceitava os três.
+const AT_PUNCTUATION = ",\\*\\?\\$\\|#{}\\(\\)\\^\\[\\]\\\\!%'\"~=<>:;"
+
 const mentionsTheme: BeautifulMentionsTheme = {
   "@": cn(
     "rounded bg-brass/[0.14] px-1 font-medium text-brass",
@@ -376,6 +398,7 @@ export function LexicalComposer({
   onSubmit,
   placeholder,
   mentionNames,
+  mentionFiles,
   className,
   registerFocus,
   slash,
@@ -391,6 +414,9 @@ export function LexicalComposer({
   placeholder: string
   /** Personas conhecidas (mesma fonte do marketplace) → itens do menu `@`. */
   mentionNames: string[]
+  /** FASE 3 — arquivos do projeto (a MESMA listagem do useAtMentions, via
+   *  prop): entram no menu `@` sob "Arquivos" e viram pill `@caminho`. */
+  mentionFiles?: string[]
   /** Classes do box do input (as MESMAS do textarea, pra alinhar o cartão). */
   className?: string
   registerFocus?: (fn: () => void) => void
@@ -403,7 +429,18 @@ export function LexicalComposer({
 }) {
   // último texto emitido/recebido — evita loop OnChange ↔ DraftSync.
   const lastText = useRef<string | null>(null)
-  const mentionItems = useMemo(() => ({ "@": mentionNames }), [mentionNames])
+  // Itens do "@" (FASE 3): personas + arquivos do projeto, na ORDEM que o menu
+  // agrupa (Especialistas antes de Arquivos, contíguos). A montagem é a pura
+  // buildLexicalAtItems (mesma regra de exclusão do textarea); o `kind` viaja
+  // como data do item e chega no menu/item pra separar seção e ícone.
+  const atItems = useMemo(
+    () => buildLexicalAtItems(mentionNames, mentionFiles ?? []),
+    [mentionNames, mentionFiles],
+  )
+  const mentionItems = useMemo(() => ({ "@": atItems }), [atItems])
+  // Tudo que pode virar pill (persona OU caminho) — é o vocabulário que o
+  // DraftSync usa pra reconstruir `@x` do draft como menção atômica.
+  const mentionValues = useMemo(() => atItems.map((i) => i.value), [atItems])
 
   const initialConfig = {
     namespace: "ChatComposer",
@@ -449,6 +486,14 @@ export function LexicalComposer({
           items={mentionItems}
           menuComponent={MentionsMenu}
           menuItemComponent={MentionsMenuItem}
+          // paridade com o popover do textarea: mesmo teto de itens…
+          menuItemLimit={MAX_POPOVER_ITEMS}
+          // …e query que atravessa `/` `.` `_` (caminhos de arquivo).
+          punctuation={AT_PUNCTUATION}
+          // o menu mostra as DUAS listas canônicas (personas + arquivos), não
+          // pills soltos do editor — que entrariam sem `kind` e cairiam na
+          // seção errada (o textarea tampouco sugere o que já está no texto).
+          showCurrentMentionsAsSuggestions={false}
         />
         <OnChangePlugin
           ignoreSelectionChange
@@ -465,7 +510,7 @@ export function LexicalComposer({
         <PasteAttachmentsPlugin onPasteFiles={onPasteFiles} />
         <DraftSyncPlugin
           value={value}
-          mentionNames={mentionNames}
+          mentionNames={mentionValues}
           lastText={lastText}
         />
         <FocusBridgePlugin registerFocus={registerFocus} />
@@ -492,6 +537,17 @@ export function LexicalComposer({
 // O atributo `data-beautiful-mention-menu` é a guarda do EnterToSubmitPlugin
 // (menu aberto → Enter escolhe, não envia); não remover.
 const MENU_GAP_PX = 8
+
+/** Kind do item de um filho do menu (o plugin renderiza cada opção como
+ *  <MentionsMenuItem item={{value, data}}> — o `kind` que pusemos no item viaja
+ *  em `item.data`). Sem data → persona (itens antigos só-string). */
+function childKind(child: React.ReactNode): "agent" | "file" {
+  if (!isValidElement(child)) return "agent"
+  const item = (
+    child.props as { item?: { data?: { kind?: unknown } } }
+  ).item
+  return item?.data?.kind === "file" ? "file" : "agent"
+}
 
 function MentionsMenu({
   loading,
@@ -552,37 +608,53 @@ function MentionsMenu({
       className="z-50 max-h-72 overflow-auto rounded-xl border bg-popover p-1 shadow-[var(--shadow-pop)]"
       {...props}
     >
-      {/* Cabeçalho de seção, como o AtPopover. Só especialistas por ora
-          (arquivos/recursos do "@" legado ficam pra FASE 3). */}
-      <li
-        aria-hidden
-        className="px-2 pt-1 pb-1 text-[10px] tracking-wide text-muted-foreground/80 uppercase"
-      >
-        Especialistas
-      </li>
       {loading ? (
         <li className="px-3 py-1.5 text-[12px] text-muted-foreground">
           Carregando…
         </li>
       ) : (
-        children
+        // Cabeçalhos de seção como no AtPopover: os itens chegam agrupados
+        // (personas primeiro, arquivos depois — ordem do buildLexicalAtItems,
+        // que o filtro da lib preserva), então basta inserir o título quando o
+        // kind muda de um filho pro outro.
+        Children.toArray(children).flatMap((child, i, all) => {
+          const kind = childKind(child)
+          const header =
+            i === 0 || childKind(all[i - 1]) !== kind ? (
+              <li
+                key={`h:${kind}`}
+                aria-hidden
+                className="px-2 pt-1 pb-1 text-[10px] tracking-wide text-muted-foreground/80 uppercase"
+              >
+                {kind === "file" ? "Arquivos" : "Especialistas"}
+              </li>
+            ) : null
+          return header ? [header, child] : [child]
+        })
       )}
     </ul>
   )
 }
 
-// Item: avatar da persona (resolvido pelo def) + nome. O def vem do usePresets
-// casando por nome (mesma fonte única do marketplace) — assim o AgentAvatar pega
-// a cara certa por categoria. Estilo idêntico ao item do AtPopover.
+// Item: persona = avatar (resolvido pelo def, via usePresets por nome — mesma
+// fonte única do marketplace) + nome; arquivo = ícone FileText + caminho em
+// mono. Estilo idêntico ao item do AtPopover do textarea. O `kind` chega duas
+// vezes (a lib espalha o data do item nas props) — destruturado pra não vazar
+// como atributo no <li>.
 function MentionsMenuItem({
   selected,
   item,
+  kind: _kind,
   ...props
 }: {
   selected: boolean
-  item: { value: string }
+  item: { value: string; data?: { kind?: "agent" | "file" } }
+  kind?: "agent" | "file"
 } & React.LiHTMLAttributes<HTMLLIElement>) {
-  const def = usePresets((s) => s.list.find((d) => d.name === item.value))
+  const isFile = item.data?.kind === "file"
+  const def = usePresets((s) =>
+    isFile ? undefined : s.list.find((d) => d.name === item.value),
+  )
   return (
     <li
       className={cn(
@@ -591,12 +663,21 @@ function MentionsMenuItem({
       )}
       {...props}
     >
-      {def ? (
+      {isFile ? (
+        <FileText className="size-[18px] shrink-0 text-muted-foreground/70" />
+      ) : def ? (
         <AgentAvatar def={def} size={20} rounded />
       ) : (
         <span className="size-5 shrink-0 rounded-full bg-brass/20" />
       )}
-      <span className="truncate text-[13px] font-medium text-foreground">
+      <span
+        className={cn(
+          "truncate",
+          isFile
+            ? "font-mono text-[12px] text-muted-foreground"
+            : "text-[13px] font-medium text-foreground",
+        )}
+      >
         {item.value}
       </span>
     </li>

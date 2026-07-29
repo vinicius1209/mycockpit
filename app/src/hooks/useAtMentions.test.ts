@@ -5,7 +5,7 @@
 // resolvível e os .md das duas pastas de agents NÃO virarem "arquivo".
 
 import { describe, expect, it } from "vitest"
-import { buildAtItems } from "./useAtMentions"
+import { buildAtItems, buildLexicalAtItems } from "./useAtMentions"
 import { dedupeByScope, type AgentDef } from "@/lib/agentDefs"
 
 function def(scope: AgentDef["scope"], slug: string, name: string): AgentDef {
@@ -105,5 +105,41 @@ describe("buildAtItems (popover do @)", () => {
     expect(itens).toHaveLength(8)
     expect(itens.slice(0, 6).every((i) => i.kind === "agent")).toBe(true)
     expect(itens.slice(6).every((i) => i.kind === "file")).toBe(true)
+  })
+})
+
+describe("buildLexicalAtItems (itens do @ no motor Lexical)", () => {
+  it("agrupa especialistas antes dos arquivos, contíguos", () => {
+    const itens = buildLexicalAtItems(
+      ["Aline", "Bruno"],
+      ["src/main.ts", "docs/plano.md"],
+    )
+    expect(itens).toEqual([
+      { value: "Aline", kind: "agent" },
+      { value: "Bruno", kind: "agent" },
+      { value: "src/main.ts", kind: "file" },
+      { value: "docs/plano.md", kind: "file" },
+    ])
+  })
+
+  it("exclui os .md das pastas de agents (mesma regra do textarea)", () => {
+    const itens = buildLexicalAtItems(
+      [],
+      [".mycockpit/agents/aline.md", ".claude/agents/externo.md", "src/main.ts"],
+    )
+    expect(itens.map((i) => i.value)).toEqual(["src/main.ts"])
+  })
+
+  it("não fatia a lista (o limite fica com o menu na renderização)", () => {
+    // No textarea o buildAtItems corta em 8; aqui a lib filtra pela query antes
+    // de limitar — cortar na montagem esconderia arquivos da busca.
+    const files = Array.from({ length: 20 }, (_, n) => `src/arquivo${n}.ts`)
+    const itens = buildLexicalAtItems(["Aline"], files)
+    expect(itens).toHaveLength(21)
+  })
+
+  it("sem arquivos carregados, lista só as personas", () => {
+    const itens = buildLexicalAtItems(["Aline"], [])
+    expect(itens).toEqual([{ value: "Aline", kind: "agent" }])
   })
 })

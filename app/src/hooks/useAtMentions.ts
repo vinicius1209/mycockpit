@@ -17,6 +17,14 @@ export type AtItem = {
   def?: Pick<AgentDef, "category" | "avatarStyle" | "avatarSeed" | "slug" | "name">
 }
 
+/** Regra ÚNICA de arquivo mencionável: os `.md` das duas pastas de agents ficam
+ *  fora (já entram como persona ou são contexto de code agent externo). Vale
+ *  pros DOIS motores do composer — textarea (buildAtItems) e Lexical
+ *  (buildLexicalAtItems). */
+export function isMentionableFile(f: string): boolean {
+  return !f.startsWith(".claude/agents/") && !f.startsWith(".mycockpit/agents/")
+}
+
 /** Personas (as reais do app, `.mycockpit/agents`) + arquivos, filtrados pela
  *  query do "@" e limitados. Personas antes de arquivos; os `.md` das duas
  *  pastas de agents ficam de fora dos arquivos (já entram como persona ou são
@@ -43,14 +51,31 @@ export function buildAtItems(
         },
       })),
     ...files
-      .filter(
-        (f) =>
-          !f.startsWith(".claude/agents/") &&
-          !f.startsWith(".mycockpit/agents/") &&
-          f.toLowerCase().includes(q),
-      )
+      .filter((f) => isMentionableFile(f) && f.toLowerCase().includes(q))
       .map((f) => ({ kind: "file" as const, value: f })),
   ].slice(0, MAX_POPOVER_ITEMS)
+}
+
+/** Item de menção do motor Lexical: só valor + tipo (o menu resolve avatar por
+ *  nome via usePresets; arquivo leva ícone). O `kind` viaja como data do item
+ *  do beautiful-mentions e agrupa o menu (Especialistas antes de Arquivos). */
+export type LexicalAtItem = { value: string; kind: "agent" | "file" }
+
+/** Montagem PURA dos itens do "@" do Lexical: personas primeiro, arquivos
+ *  depois (contíguos — o menu insere o cabeçalho na troca de kind), arquivos
+ *  passando pela MESMA regra de exclusão do textarea. SEM slice: o filtro por
+ *  query e o limite (MAX_POPOVER_ITEMS) ficam com o beautiful-mentions na hora
+ *  de renderizar, senão cortar aqui esconderia arquivos da busca. */
+export function buildLexicalAtItems(
+  names: string[],
+  files: string[],
+): LexicalAtItem[] {
+  return [
+    ...names.map((n) => ({ value: n, kind: "agent" as const })),
+    ...files
+      .filter(isMentionableFile)
+      .map((f) => ({ value: f, kind: "file" as const })),
+  ]
 }
 
 /**
@@ -62,11 +87,15 @@ export function useAtMentions({
   value,
   setValue,
   textareaRef,
+  eager,
 }: {
   project: Project | null
   value: string
   setValue: React.Dispatch<React.SetStateAction<string>>
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
+  /** Motor Lexical: carrega arquivos+agents já na montagem (lá não existe o
+   *  rastreio de cursor do textarea que dispara o lazy pelo "@" digitado). */
+  eager?: boolean
 }) {
   const [files, setFiles] = useState<string[]>([])
   const [agents, setAgents] = useState<AgentDef[]>([])
@@ -80,9 +109,10 @@ export function useAtMentions({
   const atMatch = before.match(/(?:^|\s)@(\S*)$/)
   const atQuery = atMatch ? atMatch[1] : null
 
-  // carrega arquivos + agents lazy (1ª vez que o @ aparece, cache por projeto)
+  // carrega arquivos + agents lazy (1ª vez que o @ aparece, cache por projeto;
+  // no motor Lexical `eager` antecipa pra montagem — mesma carga, mesmo cache)
   useEffect(() => {
-    if (atQuery === null || !project || !isTauri()) return
+    if ((atQuery === null && !eager) || !project || !isTauri()) return
     if (mentionLoadedRef.current === project.path) return
     const path = project.path
     mentionLoadedRef.current = path
@@ -108,7 +138,7 @@ export function useAtMentions({
         mentionLoadedRef.current = null
       }
     }
-  }, [atQuery, project?.path])
+  }, [atQuery, eager, project?.path])
 
   const atItems: AtItem[] =
     atQuery === null ? [] : buildAtItems(agents, files, atQuery)
@@ -139,5 +169,8 @@ export function useAtMentions({
     setAtDismissed,
     setCursor,
     insertMention,
+    /** Arquivos crus do projeto (cacheados) — o motor Lexical monta os itens
+     *  dele a partir daqui (buildLexicalAtItems), sem duplicar a listagem. */
+    files,
   }
 }

@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
@@ -33,10 +35,19 @@ import {
 } from "@/lib/agents"
 import { FusionLauncher } from "@/components/fusion/FusionLauncher"
 import { MissionLauncher } from "@/components/mission/MissionLauncher"
-import { LexicalComposer } from "@/components/chat/LexicalComposer"
 import type { AgentRunConfig } from "@/lib/types"
 import { usePresets } from "@/store/presets"
 import { isTauri } from "@/lib/db"
+
+// FASE 3 — o editor Lexical (+lexical +beautiful-mentions, ~82 kB gzip) é LAZY:
+// o chunk só baixa quando o toggle liga o motor "lexical"; o boot no modo
+// textarea (default) não paga esse peso. Nada além deste arquivo importa o
+// LexicalComposer, então o grafo do Lexical inteiro sai do chunk main.
+const LexicalComposer = lazy(() =>
+  import("@/components/chat/LexicalComposer").then((m) => ({
+    default: m.LexicalComposer,
+  })),
+)
 
 // Box do input do console — o MESMO pro <Textarea> e pro editor Lexical, senão
 // o cartão muda de pele ao alternar o motor nas Settings.
@@ -132,7 +143,16 @@ export function CommandConsole({
   // cada feature num hook. A precedência das teclas (slash > at > histórico >
   // Enter) continua montada no onKeyDown abaixo, intacta.
   const slash = useSlashCommands({ project, value, setValue, textareaRef: ref })
-  const at = useAtMentions({ project, value, setValue, textareaRef: ref })
+  // `eager` no motor Lexical: lá não existe o rastreio de cursor que dispara a
+  // carga lazy pelo "@" digitado — os arquivos precisam estar prontos quando o
+  // menu abrir (mesma listagem, mesmo cache por projeto).
+  const at = useAtMentions({
+    project,
+    value,
+    setValue,
+    textareaRef: ref,
+    eager: engine === "lexical",
+  })
   const history = usePromptHistory({
     conv,
     activeId,
@@ -159,6 +179,7 @@ export function CommandConsole({
     setAtDismissed,
     setCursor,
     insertMention,
+    files: projectFiles,
   } = at
   const { histIdx, setHistIdx, resetHistory, userPrompts, recallPrev, recallNext } =
     history
@@ -307,8 +328,9 @@ export function CommandConsole({
   // shell chegaram ao editor SEM reimplementar regra — o LexicalComposer recebe
   // pontes pros MESMOS hooks que o textarea usa. O menu "/" é o próprio
   // SlashPopover (renderizado abaixo, gateado só por showSlash); aqui vai apenas
-  // o teclado (navegar/escolher/fechar). O "@" de arquivos/recursos (AtPopover
-  // legado) segue exclusivo do textarea — fica pra FASE 3.
+  // o teclado (navegar/escolher/fechar). FASE 3: o "@" de arquivos também chegou
+  // ao Lexical — os caminhos vão por prop (mentionFiles, listagem do
+  // useAtMentions com `eager`); o AtPopover legado segue só no textarea.
   const slashBridge = {
     active: showSlash,
     move: (delta: 1 | -1) =>
@@ -327,20 +349,25 @@ export function CommandConsole({
   }
   const lexicalInput =
     engine === "lexical" ? (
-      <LexicalComposer
-        value={value}
-        onChangeText={setValue}
-        onSubmit={(text) => submit(text)}
-        placeholder={placeholder}
-        mentionNames={presets.map((p) => p.name)}
-        className={CONSOLE_INPUT_CLASS}
-        registerFocus={(fn) => {
-          lexicalFocus.current = fn
-        }}
-        slash={slashBridge}
-        history={historyBridge}
-        onPasteFiles={addFiles}
-      />
+      // Suspense do chunk lazy: o fallback segura a MESMA altura mínima do
+      // input (min-h do CONSOLE_INPUT_CLASS) pra troca não pular o layout.
+      <Suspense fallback={<div aria-hidden className="min-h-[56px]" />}>
+        <LexicalComposer
+          value={value}
+          onChangeText={setValue}
+          onSubmit={(text) => submit(text)}
+          placeholder={placeholder}
+          mentionNames={presets.map((p) => p.name)}
+          mentionFiles={projectFiles}
+          className={CONSOLE_INPUT_CLASS}
+          registerFocus={(fn) => {
+            lexicalFocus.current = fn
+          }}
+          slash={slashBridge}
+          history={historyBridge}
+          onPasteFiles={addFiles}
+        />
+      </Suspense>
     ) : undefined
 
   return (
