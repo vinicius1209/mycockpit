@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react"
 import type { ConvState } from "@/store/chat"
 
-/** Decisão PURA da borda do recall ↑/↓, compartilhada pelos dois motores do
- *  composer: o textarea deriva `before`/`after` de selectionStart/End; o
- *  Lexical, do texto ao redor do caret. A regra é uma só:
+/** Decisão PURA da borda do recall ↑/↓ do composer (o Lexical deriva
+ *  `before`/`after` do texto ao redor do caret). A regra:
  *  - ↑ só recupera com o cursor na 1ª linha (nada de "\n" antes) e havendo
  *    prompts enviados;
  *  - ↓ só avança quando JÁ se navega o histórico e o cursor está na última
@@ -42,13 +41,11 @@ export function usePromptHistory({
   activeId,
   value,
   setValue,
-  textareaRef,
 }: {
   conv: ConvState
   activeId: string | null
   value: string
   setValue: React.Dispatch<React.SetStateAction<string>>
-  textareaRef: React.RefObject<HTMLTextAreaElement | null>
 }) {
   const [histIdx, setHistIdx] = useState<number | null>(null)
   const [draft, setDraft] = useState("")
@@ -82,13 +79,8 @@ export function usePromptHistory({
     }
   }
 
-  // depois de recuperar, leva o cursor pro fim p/ editar
-  useEffect(() => {
-    if (histIdx !== null && textareaRef.current) {
-      const len = textareaRef.current.value.length
-      textareaRef.current.setSelectionRange(len, len)
-    }
-  }, [histIdx])
+  // (o caret vai pro fim no próprio editor: o DraftSyncPlugin do Lexical faz
+  // selectEnd() quando reconstrói o draft com o editor focado.)
 
   // trocar de conversa zera o histórico (F19). Os anexos pendentes saem no
   // useAttachments, num efeito irmão chaveado pelo mesmo activeId.

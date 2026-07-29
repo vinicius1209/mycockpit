@@ -1,8 +1,6 @@
-// Composer Lexical da conversa (FASE 2 — paridade). Promovido do spike validado.
-//
-// É o INPUT do console (substitui o <Textarea> via slot `input` do
-// ComposerShell quando Settings → Comportamento liga o "Composer Lexical").
-// O que ele entrega:
+// Composer Lexical da conversa — desde o cutover, o ÚNICO composer do console
+// (o textarea e o toggle de Settings foram aposentados). Entra pelo slot
+// `input` do ComposerShell. O que ele entrega:
 //   - texto com Enter=envia / Shift+Enter=quebra linha (semântica do console);
 //   - `@` menção ATÔMICA (pill via lexical-beautiful-mentions) com o nosso
 //     menu (AgentAvatar + nome, seção "Especialistas");
@@ -12,19 +10,16 @@
 //   - serialização = a MESMA string que o handleSend espera (menção → `@nome`),
 //     via lexicalDraft.ts;
 //   - alvo de foco `data-composer="console"` (tray://new-task e afins);
-//   - FASE 2: comandos "/" (o MESMO SlashPopover/useSlashCommands do console —
-//     aqui só chegam os gestos do teclado, via SlashMenuKeysPlugin), paste →
-//     anexo (PASTE_COMMAND → useAttachments.addFiles) e histórico ↑/↓ estilo
-//     shell nas bordas (usePromptHistory + historyRecallIntent). O "/comando"
-//     é TEXTO normal, não pill — só a menção é atômica.
-//   - FASE 3: "@" de arquivos do projeto (paridade com o AtPopover do
-//     textarea): os caminhos chegam por prop (`mentionFiles`, a MESMA listagem
-//     do useAtMentions), viram pill atômico que serializa pra `@caminho` e o
-//     menu agrupa Especialistas antes de Arquivos. Este arquivo também é
-//     carregado LAZY pelo console (React.lazy) — o chunk do Lexical só baixa
-//     quando o toggle liga o motor.
-//
-// Falta (passo final, com o usuário): virar o default e aposentar o textarea.
+//   - comandos "/" (o SlashPopover/useSlashCommands do console — aqui só
+//     chegam os gestos do teclado, via SlashMenuKeysPlugin), paste → anexo
+//     (PASTE_COMMAND → useAttachments.addFiles) e histórico ↑/↓ estilo shell
+//     nas bordas (usePromptHistory + historyRecallIntent). O "/comando" é
+//     TEXTO normal, não pill — só a menção é atômica.
+//   - "@" de arquivos do projeto: os caminhos chegam por prop (`mentionFiles`,
+//     a listagem do useAtMentions), viram pill atômico que serializa pra
+//     `@caminho` e o menu agrupa Especialistas antes de Arquivos. Este arquivo
+//     é carregado LAZY pelo console (React.lazy) — o grafo do Lexical fica
+//     fora do chunk main.
 
 import {
   Children,

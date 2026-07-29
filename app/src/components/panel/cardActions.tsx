@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { useApp } from "@/store/app"
 import { useCards } from "@/store/cards"
 import type { CardRecord, CardState } from "@/lib/db"
+import { focusConsoleComposer } from "@/lib/focusComposer"
 import { cn } from "@/lib/utils"
 
 /** Rótulo pt-BR de cada estado (badge do card). */
@@ -35,7 +36,7 @@ export async function tryAction(fn: () => Promise<unknown>): Promise<boolean> {
 /** Inicia o card (S1.4, gesto humano): dispatch cria a conversa nova, liga,
  *  vira working e deixa a intenção (título+body) como rascunho do composer —
  *  depois navega até ela (newConversation já a abriu no chat) e foca o
- *  composer com o cursor no fim (mesmo seletor do focusComposer do App). */
+ *  composer com o cursor no fim (mesmo helper do App: focusConsoleComposer). */
 export async function startCard(card: CardRecord): Promise<void> {
   await tryAction(async () => {
     const convId = await useCards.getState().dispatch(card.id)
@@ -43,14 +44,7 @@ export async function startCard(card: CardRecord): Promise<void> {
     const app = useApp.getState()
     app.setActiveProject(card.projectId)
     app.setViewMode("linear")
-    setTimeout(() => {
-      const ta = document.querySelector<HTMLTextAreaElement>(
-        'textarea[data-composer="console"]',
-      )
-      if (!ta) return
-      ta.focus()
-      ta.setSelectionRange(ta.value.length, ta.value.length)
-    }, 140)
+    setTimeout(focusConsoleComposer, 140)
   })
 }
 

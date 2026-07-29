@@ -8,28 +8,29 @@ import type { Project } from "@/lib/types"
 export const MAX_POPOVER_ITEMS = 8
 
 /** Parse PURO do modo "/": o input INTEIRO precisa ser "/token" (sem espaço,
- *  sem quebra de linha). Devolve a query (o que vem depois da barra) ou null.
- *  Compartilhado pelos dois motores do composer — textarea e Lexical decidem o
- *  popover a partir da MESMA string do draft. */
+ *  sem quebra de linha). Devolve a query (o que vem depois da barra) ou null —
+ *  o popover é decidido a partir da string do draft. */
 export function slashQueryOf(value: string): string | null {
   return value.match(/^\/([\w:-]*)$/)?.[1] ?? null
 }
 
 /**
  * Estado + lógica do popover de "/" (comandos do projeto no início do input).
- * A precedência das teclas (slash > at > histórico > Enter) fica no onKeyDown
- * do CommandConsole; aqui só vivem os dados e os setters que ele consome.
+ * O teclado (navegar/escolher/fechar) chega pelo SlashMenuKeysPlugin do editor
+ * Lexical, via slashBridge do CommandConsole; aqui só vivem os dados e os
+ * setters que ele consome.
  */
 export function useSlashCommands({
   project,
   value,
   setValue,
-  textareaRef,
+  focus,
 }: {
   project: Project | null
   value: string
   setValue: React.Dispatch<React.SetStateAction<string>>
-  textareaRef: React.RefObject<HTMLTextAreaElement | null>
+  /** Foco programático do editor (insertCommand devolve o caret ao composer). */
+  focus?: () => void
 }) {
   const [commands, setCommands] = useState<SlashCommand[]>([])
   const [slashIdx, setSlashIdx] = useState(0)
@@ -66,7 +67,7 @@ export function useSlashCommands({
 
   function insertCommand(name: string) {
     setValue(`/${name} `)
-    textareaRef.current?.focus()
+    focus?.()
   }
 
   return {

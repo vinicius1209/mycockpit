@@ -10,7 +10,6 @@ import {
 import { ComposerShell } from "@/components/chat/ComposerShell"
 import {
   SlashPopover,
-  AtPopover,
   AttachmentChips,
   QueuedChips,
   ComposerActions,
@@ -39,18 +38,18 @@ import type { AgentRunConfig } from "@/lib/types"
 import { usePresets } from "@/store/presets"
 import { isTauri } from "@/lib/db"
 
-// FASE 3 — o editor Lexical (+lexical +beautiful-mentions, ~82 kB gzip) é LAZY:
-// o chunk só baixa quando o toggle liga o motor "lexical"; o boot no modo
-// textarea (default) não paga esse peso. Nada além deste arquivo importa o
-// LexicalComposer, então o grafo do Lexical inteiro sai do chunk main.
+// O editor Lexical (+lexical +beautiful-mentions, ~82 kB gzip) segue LAZY
+// mesmo sendo o único composer: o chunk baixa em paralelo ao boot e o main
+// fica enxuto. Nada além deste arquivo importa o LexicalComposer, então o
+// grafo do Lexical inteiro sai do chunk main.
 const LexicalComposer = lazy(() =>
   import("@/components/chat/LexicalComposer").then((m) => ({
     default: m.LexicalComposer,
   })),
 )
 
-// Box do input do console — o MESMO pro <Textarea> e pro editor Lexical, senão
-// o cartão muda de pele ao alternar o motor nas Settings.
+// Box do input do console (dimensões/tipografia herdadas do antigo textarea —
+// o cartão não mudou de pele no cutover).
 const CONSOLE_INPUT_CLASS =
   "max-h-[240px] min-h-[56px] resize-none border-0 bg-transparent! px-4 pt-3.5 text-[15px] leading-relaxed text-foreground shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
 
@@ -93,10 +92,6 @@ export function CommandConsole({
   }, [])
   // defaults de novas conversas vêm das configurações globais (Settings).
   const settings = useApp((s) => s.settings)
-  // FASE 1 do Lexical: motor do input atrás de toggle (Settings →
-  // Comportamento). "textarea" = produção intacta; "lexical" troca SÓ o input
-  // dentro do MESMO ComposerShell (header/footer/chips/anel seguem os mesmos).
-  const engine = settings.composerEngine
   // (o selo de "liberado" saiu daqui: a permissão agora é um controle de 3
   // posições na ExecutionRow, que mostra o modo ATUAL em vez de só alertar
   // depois que você já liberou.)
@@ -130,7 +125,6 @@ export function CommandConsole({
       setFusionOpen(true)
     }
   }, [fusionReq])
-  const ref = useRef<HTMLTextAreaElement>(null)
   // foco programático do editor Lexical (preenchido pelo FocusBridgePlugin).
   const lexicalFocus = useRef<(() => void) | null>(null)
   const conv = useActiveConv()
@@ -139,28 +133,15 @@ export function CommandConsole({
   const project = useActiveProject()
   const activeId = useChat((s) => s.activeId)
 
-  // Popover "/" (comandos), popover "@" (referências), histórico ↑/↓ e anexos,
-  // cada feature num hook. A precedência das teclas (slash > at > histórico >
-  // Enter) continua montada no onKeyDown abaixo, intacta.
-  const slash = useSlashCommands({ project, value, setValue, textareaRef: ref })
-  // `eager` no motor Lexical: lá não existe o rastreio de cursor que dispara a
-  // carga lazy pelo "@" digitado — os arquivos precisam estar prontos quando o
-  // menu abrir (mesma listagem, mesmo cache por projeto).
-  const at = useAtMentions({
-    project,
-    value,
-    setValue,
-    textareaRef: ref,
-    eager: engine === "lexical",
-  })
-  const history = usePromptHistory({
-    conv,
-    activeId,
-    value,
-    setValue,
-    textareaRef: ref,
-  })
-  const att = useAttachments({ activeId, setValue, textareaRef: ref })
+  // Popover "/" (comandos), arquivos do "@", histórico ↑/↓ e anexos, cada
+  // feature num hook. O teclado chega pelos plugins do editor (slashBridge/
+  // historyBridge/PASTE_COMMAND); a lógica mora aqui fora.
+  const slash = useSlashCommands({ project, value, setValue, focus: focusComposer })
+  // arquivos do projeto prontos na montagem (cache por projeto) — o menu "@"
+  // do editor precisa deles quando abrir.
+  const at = useAtMentions({ project })
+  const history = usePromptHistory({ conv, activeId, value, setValue })
+  const att = useAttachments({ activeId, setValue, focus: focusComposer })
 
   const {
     commands,
@@ -171,20 +152,10 @@ export function CommandConsole({
     setSlashDismissed,
     insertCommand,
   } = slash
-  const {
-    atItems,
-    showAt,
-    atIdx,
-    setAtIdx,
-    setAtDismissed,
-    setCursor,
-    insertMention,
-    files: projectFiles,
-  } = at
+  const { files: projectFiles } = at
   const { histIdx, setHistIdx, resetHistory, userPrompts, recallPrev, recallNext } =
     history
-  const { attachments, setAttachments, removeAttachment, onPaste, addFiles, attach } =
-    att
+  const { attachments, setAttachments, removeAttachment, addFiles, attach } = att
 
   // conversa estabelecida trava no agent/modelo/effort dela; o seletor reflete.
   // Pareceres de conselheiro (advice) NÃO travam a identidade (Especialistas E1).
@@ -257,8 +228,8 @@ export function CommandConsole({
   const allSupported = attachments.every((a) =>
     a.kind === "image" ? caps.image : a.kind === "pdf" ? caps.pdf : false,
   )
-  // aceita um texto explícito porque no motor Lexical o submit chega com o
-  // texto serializado do editor (que pode estar 1 tick à frente do draft).
+  // aceita um texto explícito porque o submit do editor chega com o texto
+  // recém-serializado (que pode estar 1 tick à frente do draft).
   const canSendWith = (text: string) =>
     (text.length > 0 || attachments.length > 0) &&
     !disabled &&
@@ -282,14 +253,13 @@ export function CommandConsole({
     planFirst,
   }
 
-  /** Foca o input do console, qualquer que seja o motor. */
+  /** Foca o editor do console (FocusBridgePlugin do Lexical). */
   function focusComposer() {
-    if (engine === "lexical") lexicalFocus.current?.()
-    else ref.current?.focus()
+    lexicalFocus.current?.()
   }
 
-  /** Envio único dos dois motores. O textarea chama sem argumento (lê o draft);
-   *  o Lexical passa o texto que acabou de serializar (MESMA string `@nome`). */
+  /** Envio único: o botão chama sem argumento (lê o draft); o Enter do editor
+   *  passa o texto que acabou de serializar (MESMA string `@nome`). */
   function submit(overrideText?: string) {
     const text = (overrideText ?? value).trim()
     // Turno em andamento: Enter ENFILEIRA (texto + anexos — deixar o anexo pra
@@ -313,9 +283,8 @@ export function CommandConsole({
     focusComposer()
   }
 
-  // Placeholder por estado (compartilhado pelos dois motores). O "/" agora existe
-  // nos DOIS motores (FASE 2), então a dica de comandos não é mais exclusiva do
-  // textarea — sai só quando o projeto tem comandos de fato (senão seria teatro).
+  // Placeholder por estado. A dica de "/" sai só quando o projeto tem comandos
+  // de fato (senão seria teatro).
   const placeholder = missionRunning
     ? "Missão em andamento — pare a missão para enviar manualmente…"
     : running || finalizing
@@ -324,13 +293,11 @@ export function CommandConsole({
         ? "Peça algo…  ou / para comandos"
         : "Peça algo ao seu time de agents…"
 
-  // FASE 2 (motor Lexical): comandos "/", paste → anexo e histórico ↑/↓ estilo
-  // shell chegaram ao editor SEM reimplementar regra — o LexicalComposer recebe
-  // pontes pros MESMOS hooks que o textarea usa. O menu "/" é o próprio
-  // SlashPopover (renderizado abaixo, gateado só por showSlash); aqui vai apenas
-  // o teclado (navegar/escolher/fechar). FASE 3: o "@" de arquivos também chegou
-  // ao Lexical — os caminhos vão por prop (mentionFiles, listagem do
-  // useAtMentions com `eager`); o AtPopover legado segue só no textarea.
+  // Comandos "/", paste → anexo e histórico ↑/↓ estilo shell: o LexicalComposer
+  // recebe pontes pros hooks (a lógica mora aqui fora, os gestos de teclado nos
+  // plugins do editor). O menu "/" é o próprio SlashPopover (renderizado
+  // abaixo, gateado só por showSlash). O "@" de arquivos vai por prop
+  // (mentionFiles, listagem do useAtMentions).
   const slashBridge = {
     active: showSlash,
     move: (delta: 1 | -1) =>
@@ -347,33 +314,39 @@ export function CommandConsole({
     recallPrev,
     recallNext,
   }
-  const lexicalInput =
-    engine === "lexical" ? (
-      // Suspense do chunk lazy: o fallback segura a MESMA altura mínima do
-      // input (min-h do CONSOLE_INPUT_CLASS) pra troca não pular o layout.
-      <Suspense fallback={<div aria-hidden className="min-h-[56px]" />}>
-        <LexicalComposer
-          value={value}
-          onChangeText={setValue}
-          onSubmit={(text) => submit(text)}
-          placeholder={placeholder}
-          mentionNames={presets.map((p) => p.name)}
-          mentionFiles={projectFiles}
-          className={CONSOLE_INPUT_CLASS}
-          registerFocus={(fn) => {
-            lexicalFocus.current = fn
-          }}
-          slash={slashBridge}
-          history={historyBridge}
-          onPasteFiles={addFiles}
-        />
-      </Suspense>
-    ) : undefined
+  const lexicalInput = (
+    // Suspense do chunk lazy: o fallback segura a MESMA altura mínima do
+    // input (min-h do CONSOLE_INPUT_CLASS) pra carga não pular o layout.
+    <Suspense fallback={<div aria-hidden className="min-h-[56px]" />}>
+      <LexicalComposer
+        value={value}
+        onChangeText={(t) => {
+          setValue(t)
+          // edição REAL do usuário (mudanças externas são suprimidas pelo
+          // lastText do editor): reabre o "/" dispensado com Esc e sai da
+          // navegação do histórico — mesma disciplina do antigo onChange.
+          setSlashDismissed(false)
+          setHistIdx(null)
+        }}
+        onSubmit={(text) => submit(text)}
+        placeholder={placeholder}
+        mentionNames={presets.map((p) => p.name)}
+        mentionFiles={projectFiles}
+        className={CONSOLE_INPUT_CLASS}
+        registerFocus={(fn) => {
+          lexicalFocus.current = fn
+        }}
+        slash={slashBridge}
+        history={historyBridge}
+        onPasteFiles={addFiles}
+      />
+    </Suspense>
+  )
 
   return (
     <div className="relative flex w-full flex-col gap-3">
-      {/* Menu "/" — o MESMO nos dois motores. No Lexical o teclado chega via
-          slashBridge (SlashMenuKeysPlugin); aqui é só a lista (clique inclusive). */}
+      {/* Menu "/" — o teclado chega via slashBridge (SlashMenuKeysPlugin);
+          aqui é só a lista (clique inclusive). */}
       {showSlash && (
         <SlashPopover
           project={project}
@@ -396,15 +369,6 @@ export function CommandConsole({
           </p>
         </div>
       )}
-      {engine === "textarea" && showAt && !showSlash && (
-        <AtPopover
-          project={project}
-          items={atItems}
-          idx={atIdx}
-          setIdx={setAtIdx}
-          onPick={insertMention}
-        />
-      )}
       {activeId && (
         <QueuedChips
           queued={conv.queued ?? []}
@@ -412,100 +376,9 @@ export function CommandConsole({
         />
       )}
       <ComposerShell
-        textareaRef={ref}
         focusRing
-        value={value}
-        onChange={(e) => {
-          setValue(e.target.value)
-          setCursor(e.target.selectionStart ?? e.target.value.length)
-          setSlashDismissed(false)
-          setAtDismissed(false)
-          setHistIdx(null)
-        }}
-        onSelect={(e) => setCursor(e.currentTarget.selectionStart ?? 0)}
-        onPaste={onPaste}
-        onKeyDown={(e) => {
-          if (showSlash) {
-            if (e.key === "ArrowDown") {
-              e.preventDefault()
-              setSlashIdx((i) => (i + 1) % slashMatches.length)
-              return
-            }
-            if (e.key === "ArrowUp") {
-              e.preventDefault()
-              setSlashIdx(
-                (i) => (i - 1 + slashMatches.length) % slashMatches.length,
-              )
-              return
-            }
-            if (e.key === "Enter" || e.key === "Tab") {
-              e.preventDefault()
-              insertCommand(slashMatches[slashIdx].name)
-              return
-            }
-            if (e.key === "Escape") {
-              e.preventDefault()
-              setSlashDismissed(true)
-              return
-            }
-          }
-          if (showAt && !showSlash) {
-            if (e.key === "ArrowDown") {
-              e.preventDefault()
-              setAtIdx((i) => (i + 1) % atItems.length)
-              return
-            }
-            if (e.key === "ArrowUp") {
-              e.preventDefault()
-              setAtIdx((i) => (i - 1 + atItems.length) % atItems.length)
-              return
-            }
-            if (e.key === "Enter" || e.key === "Tab") {
-              e.preventDefault()
-              insertMention(atItems[atIdx].value)
-              return
-            }
-            if (e.key === "Escape") {
-              e.preventDefault()
-              setAtDismissed(true)
-              return
-            }
-          }
-          // histórico tipo shell: ↑ recupera prompts (cursor na 1ª linha),
-          // ↓ avança; só fora dos popovers de / e @.
-          if (!showSlash && !showAt) {
-            const ta = e.currentTarget
-            const before = value.slice(0, ta.selectionStart ?? 0)
-            const after = value.slice(ta.selectionEnd ?? value.length)
-            if (
-              e.key === "ArrowUp" &&
-              !before.includes("\n") &&
-              userPrompts.length > 0
-            ) {
-              e.preventDefault()
-              recallPrev()
-              return
-            }
-            if (
-              e.key === "ArrowDown" &&
-              histIdx !== null &&
-              !after.includes("\n")
-            ) {
-              e.preventDefault()
-              recallNext()
-              return
-            }
-          }
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault()
-            submit()
-          }
-        }}
-        placeholder={placeholder}
-        rows={1}
-        textareaClassName={CONSOLE_INPUT_CLASS}
         input={lexicalInput}
-        onCardClick={engine === "lexical" ? focusComposer : undefined}
+        onCardClick={focusComposer}
         footerClassName="p-2.5 pt-1"
         chips={
           <AttachmentChips
@@ -586,7 +459,7 @@ export function CommandConsole({
         suggestions={suggestions}
         onPick={(text) => {
           setValue(text)
-          ref.current?.focus()
+          focusComposer()
         }}
       />
 

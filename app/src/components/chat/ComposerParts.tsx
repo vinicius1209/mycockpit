@@ -20,12 +20,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import { MicButton } from "@/components/chat/MicButton"
 import { useApp } from "@/store/app"
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
 import type { SlashCommand } from "@/lib/sources"
-import type { AtItem } from "@/hooks/useAtMentions"
 import type { Attachment } from "@/lib/attachments"
 import type { QueuedMsg } from "@/store/chat"
 import type { Destination, Project } from "@/lib/types"
@@ -94,74 +92,7 @@ export function SlashPopover({
   )
 }
 
-/** Popover do "@", arquivos + agents do projeto (mid-text). */
-export function AtPopover({
-  items,
-  idx,
-  setIdx,
-  onPick,
-}: {
-  /** mantido na API (o caller passa) — o header por-projeto saiu do popover. */
-  project?: Project | null
-  items: AtItem[]
-  idx: number
-  setIdx: (i: number) => void
-  onPick: (value: string) => void
-}) {
-  return (
-    <div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-xl border bg-popover shadow-[var(--shadow-pop)]">
-      {/* Menu de menção estilo Slack/Linear: avatar/ícone + nome, agrupado por
-          tipo. O "@" é o gatilho (já digitado), não vai no rótulo; badges de
-          tipo saem — a seção + o avatar/ícone já dizem o que é. */}
-      <div className="max-h-64 overflow-auto p-1">
-        {items.map((m, i) => {
-          // cabeçalho de seção quando o tipo muda (buildAtItems agrupa: agents
-          // primeiro, depois files — então os grupos são contíguos).
-          const header =
-            i === 0 || items[i - 1].kind !== m.kind ? (
-              <div
-                key={`h:${m.kind}`}
-                className="px-3 pt-2 pb-1 text-[10px] tracking-wide text-muted-foreground/80 uppercase"
-              >
-                {m.kind === "agent" ? "Especialistas" : "Arquivos"}
-              </div>
-            ) : null
-          return (
-            <div key={`${m.kind}:${m.value}`}>
-              {header}
-              <button
-                onMouseEnter={() => setIdx(i)}
-                onClick={() => onPick(m.value)}
-                className={cn(
-                  "flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left",
-                  i === idx ? "bg-accent" : "hover:bg-accent/50",
-                )}
-              >
-                {m.kind === "agent" && m.def ? (
-                  <AgentAvatar def={m.def} size={20} rounded />
-                ) : (
-                  <FileText className="size-[18px] shrink-0 text-muted-foreground/70" />
-                )}
-                <span
-                  className={cn(
-                    "truncate text-[13px]",
-                    m.kind === "agent"
-                      ? "font-medium text-foreground"
-                      : "font-mono text-[12px] text-muted-foreground",
-                  )}
-                >
-                  {m.value}
-                </span>
-              </button>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-/** Faixa de chips dos anexos pendentes (acima do textarea). */
+/** Faixa de chips dos anexos pendentes (acima do input). */
 export function AttachmentChips({
   attachments,
   caps,

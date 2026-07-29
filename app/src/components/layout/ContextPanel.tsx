@@ -37,6 +37,7 @@ import { readProjectContext } from "@/lib/context"
 import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/context"
 import { loadGitDiff } from "@/lib/git"
 import { fixPrefill } from "@/lib/deliveryDiff"
+import { focusConsoleComposer } from "@/lib/focusComposer"
 import { readProjectSources, readTextFile } from "@/lib/sources"
 import { agentLabel } from "@/lib/agent"
 import {
@@ -362,19 +363,12 @@ export function ContextPanel() {
   }, [delivery])
 
   /** "Pedir correção": prefill no composer da conversa + foco com o cursor no
-   *  fim (mesmo seletor do focusComposer do App). Consome a intenção. */
+   *  fim (mesmo helper do App: focusConsoleComposer). Consome a intenção. */
   function requestDeliveryFix() {
     if (!delivery) return
     useChat.getState().setDraft(delivery.convId, fixPrefill(delivery.text))
     useApp.getState().clearDeliveryDiff()
-    setTimeout(() => {
-      const ta = document.querySelector<HTMLTextAreaElement>(
-        'textarea[data-composer="console"]',
-      )
-      if (!ta) return
-      ta.focus()
-      ta.setSelectionRange(ta.value.length, ta.value.length)
-    }, 120)
+    setTimeout(focusConsoleComposer, 120)
   }
 
   function closeDeliveryDiff() {

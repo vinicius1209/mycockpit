@@ -13,9 +13,9 @@ import {
 } from "@/lib/attachments"
 
 /** Filtra do clipboard os File anexáveis: imagem, PDF ou sem mime declarado.
- *  Compartilhado pelos dois motores do composer (onPaste do textarea e
- *  PASTE_COMMAND do Lexical). A captura precisa ser SÍNCRONA, antes de
- *  qualquer await — depois o clipboard esvazia (F21). */
+ *  Compartilhado pelos dois donos (PASTE_COMMAND do Lexical no console e
+ *  onPaste do textarea do MissionLauncher). A captura precisa ser SÍNCRONA,
+ *  antes de qualquer await — depois o clipboard esvazia (F21). */
 export function collectPastedFiles(data: DataTransfer): File[] {
   return [...data.items]
     .filter((it) => it.kind === "file")
@@ -29,8 +29,8 @@ export function collectPastedFiles(data: DataTransfer): File[] {
     )
 }
 
-/** Evento "paste-like": o React.ClipboardEvent do textarea e o ClipboardEvent
- *  nativo (Lexical) satisfazem este shape — o hook não depende do motor. */
+/** Evento "paste-like": o React.ClipboardEvent do textarea satisfaz este shape
+ *  — o hook não depende do dono. */
 type PasteLikeEvent = {
   clipboardData: DataTransfer | null
   preventDefault: () => void
@@ -39,16 +39,22 @@ type PasteLikeEvent = {
 /**
  * Anexos pendentes do composer: paste (captura síncrona dos File antes do await,
  * F21), file-picker do Tauri (insere @path) e remoção (libera o object URL junto
- * do blob). Reseta na troca de conversa.
+ * do blob). Reseta na troca de conversa. Dois donos: o console (editor Lexical,
+ * que roteia o paste via addFiles e foca via `focus`) e o MissionLauncher
+ * (textarea próprio, via `textareaRef` + onPaste).
  */
 export function useAttachments({
   activeId,
   setValue,
   textareaRef,
+  focus,
 }: {
   activeId: string | null
   setValue: React.Dispatch<React.SetStateAction<string>>
-  textareaRef: React.RefObject<HTMLTextAreaElement | null>
+  /** Textarea dono (MissionLauncher): cursor do paste + foco do clipe. */
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>
+  /** Foco programático sem textarea (o editor Lexical do console). */
+  focus?: () => void
 }) {
   const [attachments, setAttachments] = useState<Attachment[]>([])
 
@@ -64,7 +70,7 @@ export function useAttachments({
   }
 
   function insertAtCursor(insert: string) {
-    const ta = textareaRef.current
+    const ta = textareaRef?.current
     if (!ta) {
       setValue((v) => v + insert)
       return
@@ -75,8 +81,8 @@ export function useAttachments({
   }
 
   // Núcleo do paste→anexo: valida tamanho/contagem (F8/F22) e salva cada File.
-  // O textarea chega aqui via onPaste; o editor Lexical chama direto
-  // (PASTE_COMMAND → onPasteFiles), a REGRA é uma só.
+  // O editor Lexical chama direto (PASTE_COMMAND → onPasteFiles); o textarea do
+  // MissionLauncher chega via onPaste — a REGRA é uma só.
   async function addFiles(files: File[]) {
     if (!isTauri() || !activeId) return
     let count = attachments.length
@@ -123,7 +129,8 @@ export function useAttachments({
     if (!paths.length) return
     const refs = paths.map((p) => `@${p}`).join(" ")
     setValue((v) => (v.trim() ? `${v} ${refs}` : refs))
-    textareaRef.current?.focus()
+    if (textareaRef?.current) textareaRef.current.focus()
+    else focus?.()
   }
 
   return { attachments, setAttachments, removeAttachment, onPaste, addFiles, attach }

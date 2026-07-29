@@ -18,11 +18,6 @@ export interface GlobalSettings {
   /** Modelo helper das sugestões quando o projeto não define um no config.toml.
    *  null = sugestões desligadas por padrão. */
   helperModel: string | null
-  /** Motor do composer da conversa (FASE 1 do Lexical): "textarea" é o
-   *  composer de produção (default, fallback intacto); "lexical" liga o editor
-   *  com menção atômica (experimental — comandos "/", paste de anexo e
-   *  histórico ↑/↓ ainda são exclusivos do textarea). */
-  composerEngine: "textarea" | "lexical"
   /** Liga/desliga o botão de ditado (mic) globalmente. */
   dictationEnabled: boolean
   /** Atalho do ditado, serializado "modificadores+e.code" (ex. "alt+Space",
@@ -90,7 +85,6 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   defaultModel: "claude-opus-5[1m]",
   defaultEffort: null,
   helperModel: "haiku",
-  composerEngine: "textarea",
   dictationEnabled: true,
   dictationHotkey: DEFAULT_DICTATION_HOTKEY,
   dictationVocab: [],

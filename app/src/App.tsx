@@ -54,6 +54,7 @@ import {
   type TrayActivity,
 } from "@/lib/tray"
 import { nativeNotify } from "@/lib/notify"
+import { focusConsoleComposer } from "@/lib/focusComposer"
 import { startTurnWatchdog } from "@/lib/watchdog"
 import { agentLabel, cancelAgent } from "@/lib/agent"
 import {
@@ -523,12 +524,7 @@ export default function App() {
     if (!isTauri()) return
     const unlisteners: UnlistenFn[] = []
     let disposed = false
-    const focusComposer = () =>
-      setTimeout(() => {
-        document
-          .querySelector<HTMLTextAreaElement>('textarea[data-composer="console"]')
-          ?.focus()
-      }, 140)
+    const focusComposer = () => setTimeout(focusConsoleComposer, 140)
     const openConversation = async (projectId?: string | null, convId?: string | null) => {
       if (!projectId || !convId) return
       const app = useApp.getState()
