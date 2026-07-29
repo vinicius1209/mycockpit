@@ -376,3 +376,53 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **O que NÃO entrou:** skills (`.claude/commands`, `.claude/skills`). Torná-las agnósticas
   exige o app injetar o CONTEÚDO da skill, não só validar o nome no preflight — é outro
   trabalho, com outro risco.
+
+### ADR-026 — Especialista: a persona ganha um PAPEL (conselheiro read-only), não um modo ✅
+- **Contexto:** o **ADR-025** já materializou personas em `.mycockpit/agents/*.md`. A dor
+  que sobrava era **chamar uma persona pra opinar no MEIO da conversa** sem ela virar
+  executora — e sem inventar um "modo Especialista" ao lado de Mission (pipeline) e
+  Fusion (disputa). O medo declarado do dono era over-engineering ("motor Frota").
+- **Decisão:** **1 conceito só** — `Especialista`. Dois **papéis DERIVADOS do estado da
+  conversa**, não duas entidades nem tabela nova:
+  - **Conselheiro** — `@menção` no fio dispara a persona contra o **contexto atual**
+    (não o turno-1), em **read-only** (permissão `fusion-ro`: sem Bash/Edit/Write **e**
+    `--strict-mcp-config {}` = sem MCP/`ask_user`, então não há efeito colateral externo
+    nem *hang* esperando humano). O parecer entra **inline no fio** (estilo Slack),
+    carimbado `persona@version`; **não trava** a identidade da conversa.
+  - **Piloto (volante)** — `conv.presetId` = quem executa. Passar o volante re-carimba;
+    "retomar o volante" volta pro agent base; remover o especialista tira-o da jogada
+    (com confirmação). A reinjeção é `needsPersonaReinject(conv)`, **derivada do estado
+    persistido** (presetId + digest null + `hasExecutorTurn`) → **sobrevive a restart**,
+    ao contrário do flag efêmero que a S3 tentou primeiro.
+- **Identidade & marketplace (E2):** frontmatter ganhou `category/rubric/avatar`. A
+  **rubrica é injetada no prompt** (mesmo predicado do digest — não é decorativa). O
+  **avatar é DiceBear offline determinístico** (`@dicebear/core`): um estilo base
+  (`thumbs`) + **cor pela categoria** = o time vira uma *família* visual, a cor
+  **significa** o domínio. Marketplace num **Dialog** (padrão blocks.so), não tela full.
+- **Supervisão:** read-only é **fail-closed** e **reusa** ADR-013/021/024 — **nenhuma
+  trava nova**. O humano segue no comando; o especialista só lê e opina.
+- **O que NÃO entrou (E4, opt-in pós-MVP, JAMAIS modo):** mesa/grupo salvo,
+  especialista-de-síntese, auto-pitaco (a persona entrando sozinha). Campo reservado
+  vale mais que mecanismo especulativo (`autonomy.md`).
+
+### ADR-027 — O composer vira UM só: Lexical com menção atômica, textarea aposentado ✅
+- **Contexto:** o `@menção` (especialista/arquivo) num `<textarea>` era **texto solto** —
+  sem pill, sem átomo, edição frágil; o *overlay* de highlight ainda desalinhava o cursor
+  em multi-linha. Pra menção virar um objeto de verdade, o input precisava de um editor.
+- **Decisão:** migrar o composer do console pra **Lexical** (`lexical` + `@lexical/react`
+  + `lexical-beautiful-mentions`), com **pill de menção atômico**. Migração **em fases
+  atrás de um toggle** (`composerEngine`) até **paridade total** (`/` comandos, paste de
+  anexo, histórico ↑/↓, `@arquivos`), e então **cutover**: Lexical é o **único** composer;
+  `<textarea>`, toggle e a setting `composerEngine` **saíram** (o `ComposerShell` virou
+  só chrome + slot `input`).
+- **Boot:** o grafo do Lexical (~82 kB gzip) fica **lazy** (`React.lazy`) mesmo sendo o
+  único — baixa em paralelo ao boot e o chunk `main` fica enxuto (~94 kB gzip
+  economizados). Nenhum outro arquivo importa o `LexicalComposer`, então o grafo inteiro
+  sai do `main`.
+- **Escopo:** só o **CommandConsole** usa o composer novo. **Arena/Fusion/Mission** têm
+  `<Textarea>` próprio (não passam pelo `ComposerShell`) e **não foram tocados**. O foco
+  programático (tray://new-task, cards) virou `lib/focusComposer.ts`, mirando o alvo
+  estável `data-composer="console"` que agora vive no contenteditable do Lexical.
+- **Como foi feito:** time em **worktrees isolados** (paralelo, sem conflito), cada fase
+  com **gate de review** antes do merge; `vite build` (não só `tsc`) como portão real —
+  pegou `.kind`↔`.type` e `scope` fora do union que o `tsc` deixou passar.

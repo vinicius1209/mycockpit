@@ -1,5 +1,12 @@
 # Plano de ação — Especialistas
 
+> **✅ ENTREGUE (2026-07-29) — E1·E2·E3 na `main`.** Conselheiro read-only (`fusion-ro`),
+> marketplace + avatares DiceBear, piloto/volante + barra de presença, chat estilo Slack e
+> composer Lexical (menção atômica, único composer). Decisões congeladas em
+> **ADR-026** (Especialista: papel, não modo) e **ADR-027** (cutover do composer).
+> **E4** (mesa/síntese/auto-pitaco) segue **deliberadamente adiado** — aditivo, jamais modo.
+> Este arquivo fica como o registro do *intento*; a verdade do que existe está no código + ADRs.
+>
 > Backlog scrum da evolução "Especialistas" no MyCockpit. Data: 2026-07-28.
 > Inspiração de discovery: gallery "Personas by Garry Tan" + estudo do `block/buzz`
 > (Slack onde agentes são membros). Mocks: `docs/mocks/marketplace.html`.
