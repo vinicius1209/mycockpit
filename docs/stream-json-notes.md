@@ -73,7 +73,59 @@ Tipos realmente emitidos nesta versão (todos tratados sem crash):
 - [x] `tool_use` (bloco em `assistant`) e `tool_result` (evento `user`) renderizados.
 - [x] `--resume <id>` continua a conversa. Custo ~US$0,34/run (opus 4.8).
 
+## Background tasks / trabalho diferido (spike D0, v2.1.219 — 2026-07-31)
+
+> Validado por `spikes/deferred-work/driver.py` + forense do incidente deep-research
+> (sessão `e3b21a87`, projeto `~/projetos`). Base do `docs/deferred-work-plan.md`.
+
+Quando o modelo usa a tool `Workflow` (ou `Bash run_in_background`), o stream emite
+eventos `system` **estruturados** — hoje todos descartados pelo adapter:
+
+| subtype | payload relevante | semântica |
+|---|---|---|
+| `background_tasks_changed` | `tasks: [{task_id, task_type, description}]` | **lista COMPLETA** de tasks vivas; `[]` = nada pendente (o sinal canônico) |
+| `task_started` | `task_id`, **`tool_use_id`**, `task_type: "local_workflow"`, `workflow_name`, `prompt` | `tool_use_id` liga o task ao bloco `tool_use` `Workflow` que o criou (vínculo determinístico) |
+| `task_progress` | `description`, `usage {total_tokens, tool_uses, duration_ms}`, `workflow_progress [{workflow_phase / workflow_agent}]` | progresso ao vivo, inclusive **depois** do fim lógico do turno |
+| `task_updated` | `patch {status, end_time}` | mudança de estado |
+| `task_notification` | `status: completed\|stopped`, `summary`, `output_file` | conclusão (ou parada) do task |
+
+**Comportamento do `-p` one-shot com task pendente (o achado central):** o CLI
+**segura a emissão do `result`** — mantém o turno aberto streamando `task_progress`,
+re-invoca o modelo quando o workflow conclui (aparece um **segundo `system/init`**),
+e descarrega os DOIS `result` juntos antes do EOF. Custo do segundo `result` é
+**cumulativo**. Provado 2×: workflow rápido (13,9s total) e lento (38,1s; turno do
+modelo acabou aos 8s e o processo esperou).
+
+**Teto de espera (derivado do BUNDLE do CLI, v2.1.219 — não reproduzido em
+laboratório):** no código minificado do binário:
+`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS ?? 600000` (10 min) e grace de wind-down de
+`5000` ms, com os logs `"print wind-down: no longer waiting on background …
+after 5000ms grace"` / `"killing background shell … after 5000ms grace"`. No
+wind-down o CLI marca o task como `stopped`, mata shells background e sai —
+orfanando o trabalho. Bate com o incidente: workflow de ~20 min, `result`
+descarregado aos ~10min28s sem turno de conclusão. A env var é a alavanca do
+D2-A: o app sobe o teto para 4h no spawn (`adapters.rs`, ClaudeAdapter).
+Proveniência: engenharia reversa das strings do bundle + forense do incidente;
+um repro controlado (run >10 min com e sem a env) ainda não foi rodado — se o
+comportamento divergir numa versão futura, é aqui que se atualiza. O ceiling só
+arma com stdin FECHADO (gate `inputClosed`) — ver modo bidirecional acima.
+
+**Modo bidirecional (`--input-format stream-json`, stdin aberto):** o `result` do
+turno sai **imediatamente** (sem hold), o processo segue vivo, e a conclusão do
+task chega como **push espontâneo**: `task_notification` → segundo `system/init` →
+`assistant` novos → segundo `result`. O wind-down/ceiling só arma com stdin
+FECHADO (gate `inputClosed` no bundle) — com stdin aberto a espera é indefinida.
+É o transporte natural para turnos-push (D2-B).
+
+**Morte + resume:** se o processo morre com task pendente, o próximo
+`--resume` recebe injetada uma mensagem `user` (string) com
+`<task-notification>…<status>stopped</status>…` e instrução de relançar com
+`Workflow({scriptPath, resumeFromRunId})` — as fases completas voltam do cache
+(journal em `~/.claude/projects/<proj>/<sessão>/subagents/workflows/<runId>/`).
+Payload real arquivado no plano D1 e nas fixtures de teste.
+
 ## Fontes
 
-- Validação empírica: `spikes/m0-stream-json/` + `claude --help` (v2.1.187).
+- Validação empírica: `spikes/m0-stream-json/` + `claude --help` (v2.1.187);
+  `spikes/deferred-work/` (v2.1.219).
 - Docs: code.claude.com/docs (CLI/Headless/Agent SDK), opencode.ai, aider.chat, developers.openai.com/codex.

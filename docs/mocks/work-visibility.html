@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>mycockpit · Visibilidade de trabalho vivo — 3 propostas</title>
+<style>
+  :root{
+    --background:#0a0b0d; --rail:#0c0d10; --card:#141619; --card2:#101215; --popover:#191c20;
+    --foreground:#e7e8ea; --muted-foreground:#9aa0a7; --faint:#6b7178; --accent:#1e2126;
+    --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#fbf6ee;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13);
+    --st-running:#5bb8e8; --st-queued:#d99138; --st-success:#5bd6a0; --st-error:#f2766b; --st-idle:#8a9099;
+    --radius:9px;
+    --sans:ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;color:inherit;cursor:pointer}
+  .mono{font-family:var(--mono)}
+
+  /* ===== SWITCHER (chrome do mock, não faz parte do app) ===== */
+  .switcher{position:sticky;top:0;z-index:50;background:#050506;border-bottom:1px solid var(--border);padding:11px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .switcher .brand{font-weight:600;font-size:13px;color:var(--brass);letter-spacing:.2px;display:flex;align-items:center;gap:8px}
+  .switcher .brand .reticle{width:13px;height:13px;border:1.5px solid var(--brass);border-radius:50%;position:relative}
+  .switcher .brand .reticle::after{content:"";position:absolute;inset:3.6px;border-radius:50%;background:var(--brass)}
+  .segs{display:flex;gap:4px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:3px}
+  .seg{border:none;background:none;color:var(--muted-foreground);font-size:12.5px;font-weight:500;padding:6px 13px;border-radius:7px;display:flex;flex-direction:column;gap:1px;align-items:flex-start;min-width:150px}
+  .seg small{font-size:10px;color:var(--faint);font-weight:400}
+  .seg.on{background:var(--brass-soft);color:var(--brass)}
+  .seg.on small{color:rgba(228,168,98,.7)}
+  .switcher .hint{margin-left:auto;font-size:11.5px;color:var(--faint);max-width:340px}
+
+  .app{display:grid;grid-template-columns:210px 1fr 300px;height:calc(100vh - 55px);overflow:hidden}
+  body.no-right .app{grid-template-columns:210px 1fr}
+
+  /* ===== LEFT ===== */
+  .rail{background:var(--rail);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:12px 8px 8px;overflow:hidden}
+  .sec{font-size:10px;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.6px;padding:14px 8px 4px;opacity:.7}
+  .row{position:relative;display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:7px;color:var(--muted-foreground);border:none;background:none;width:100%;text-align:left;font-size:13px}
+  .row:hover{background:rgba(255,255,255,.045);color:var(--foreground)}
+  .row.sel{background:var(--accent);color:var(--brass);font-weight:500}
+  .row.sel::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);height:16px;width:2.5px;border-radius:3px;background:var(--brass)}
+  .row .ic{width:15px;text-align:center;opacity:.8}
+  .row .liv{margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--st-running);box-shadow:0 0 0 0 rgba(91,184,232,.5);animation:pulse 2s infinite}
+  .row.conv{padding-left:26px;font-size:12.5px}
+  .spacer{flex:1}
+  .foot{display:flex;align-items:center;gap:8px;padding:8px;border-top:1px solid var(--border);margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--faint)}
+
+  /* ===== CENTER ===== */
+  .main{display:flex;flex-direction:column;min-width:0}
+  .topbar{height:46px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;padding:0 18px;flex:0 0 auto}
+  .topbar .t{font-weight:600;font-size:13px}
+  .topbar .t small{color:var(--muted-foreground);font-weight:400;margin-left:7px}
+  .tabs{margin:0 auto;display:flex;gap:2px}
+  .tab{font-size:12px;color:var(--muted-foreground);padding:5px 12px;border-radius:7px;border:none;background:none}
+  .tab.on{background:var(--accent);color:var(--foreground)}
+  .modelchip{font-family:var(--mono);font-size:10.5px;color:var(--muted-foreground);letter-spacing:.3px}
+
+  .stream{flex:1;overflow-y:auto;padding:20px 26px 10px}
+  .stream::-webkit-scrollbar{width:8px}.stream::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:8px}
+  .wrap{max-width:720px;margin:0 auto}
+
+  .msg{display:flex;gap:11px;margin-bottom:18px}
+  .av{width:25px;height:25px;border-radius:7px;flex:0 0 auto;display:grid;place-items:center;font-size:12px;font-weight:600}
+  .av.user{background:linear-gradient(135deg,#3a3f46,#20242a);color:#cdd2d8;border-radius:50%}
+  .av.agent{background:#101b22;color:var(--st-running);border:1px solid rgba(91,184,232,.25)}
+  .who{font-weight:600;font-size:13px;display:flex;align-items:center;gap:7px;margin-bottom:3px}
+  .who .t{color:var(--muted-foreground);font-weight:400;font-size:11px}
+  .bd{min-width:0;flex:1}
+  .bd p{margin:0 0 8px}
+  code.k{font-family:var(--mono);font-size:12px;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:5px}
+
+  /* ===== PRIMITIVES compartilhados ===== */
+  .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .dot.run{background:var(--st-running);animation:pulse 2s infinite}
+  .dot.ok{background:var(--st-success)}
+  .dot.wait{background:var(--st-idle)}
+  .dot.err{background:var(--st-error)}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(91,184,232,.45)}70%{box-shadow:0 0 0 5px rgba(91,184,232,0)}100%{box-shadow:0 0 0 0 rgba(91,184,232,0)}}
+  .kindtag{font-size:9.5px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.4px;padding:1px 6px;border-radius:5px;border:1px solid var(--border);color:var(--faint)}
+  .kindtag.proc{color:#8ad6c4;border-color:rgba(138,214,196,.25)}
+  .kindtag.agent{color:#c7a6f0;border-color:rgba(199,166,240,.25)}
+  .kindtag.flow{color:var(--brass);border-color:rgba(228,168,98,.3)}
+  .meta{font-family:var(--mono);font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+  .lnk{background:none;border:none;padding:0;font-size:11.5px;color:var(--brass);font-weight:500}
+  .lnk:hover{text-decoration:underline}
+  .lnk.mut{color:var(--muted-foreground)}
+  .bar{height:3px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
+  .bar > i{display:block;height:100%;background:var(--brass);border-radius:3px}
+  .term{font-family:var(--mono);font-size:11px;line-height:1.65;color:#b9c0c7;background:#08090b;border:1px solid var(--border);border-radius:8px;padding:9px 11px;white-space:pre-wrap;max-height:140px;overflow:auto}
+  .term .g{color:var(--st-success)}.term .d{color:var(--faint)}.term .c{color:var(--st-running)}
+
+  /* ===== PROPOSTA A — FIO VIVO (inline tree) ===== */
+  .tree{border-left:1.5px solid var(--border);margin:2px 0 6px 4px;padding-left:0}
+  .tnode{position:relative;padding:2px 0}
+  .trow{display:flex;align-items:center;gap:9px;padding:6px 8px 6px 16px;border-radius:7px;position:relative}
+  .trow:hover{background:rgba(255,255,255,.03)}
+  .trow::before{content:"";position:absolute;left:0;top:50%;width:11px;height:1.5px;background:var(--border)}
+  .trow .cbx{width:14px;height:14px;border-radius:4px;border:1.5px solid var(--st-idle);flex:0 0 auto;display:grid;place-items:center;font-size:9px}
+  .trow.done .cbx{background:var(--st-success);border-color:var(--st-success);color:#08130d}
+  .trow.doing .cbx{border-color:var(--st-running)}
+  .trow .lbl{font-size:13px}
+  .trow.done .lbl{color:var(--faint);text-decoration:line-through}
+  .trow .exp{margin-left:auto;color:var(--faint);font-size:11px;display:flex;align-items:center;gap:7px}
+  .caret{font-size:9px;transition:transform .15s;color:var(--faint);width:10px;display:inline-block}
+  .collapsed .caret{transform:rotate(-90deg)}
+  .subtree{margin-left:26px;border-left:1.5px solid var(--border);padding-left:0}
+  .collapsed > .subtree{display:none}
+  .leaf{display:flex;align-items:center;gap:9px;padding:5px 8px 5px 16px;border-radius:7px;position:relative;font-size:12.5px}
+  .leaf:hover{background:rgba(255,255,255,.03)}
+  .leaf::before{content:"";position:absolute;left:0;top:50%;width:11px;height:1.5px;background:var(--border)}
+  .leaf .ttl{color:var(--foreground)}
+  .leaf .sub{color:var(--faint);font-size:11px}
+  .procbox{margin:4px 0 6px 42px}
+  body:not(.pa) .pa-only{display:none}
+  .errtag{font-size:9.5px;font-family:var(--mono);color:var(--st-error);border:1px solid rgba(242,118,107,.3);border-radius:5px;padding:1px 6px}
+  /* selos de provider (motor) e de plano (interno/externo) */
+  .prov{font-size:9px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.4px;padding:1px 5px;border-radius:4px;font-weight:600}
+  .prov.claude{color:#e4a862;background:rgba(228,168,98,.13)}
+  .prov.codex{color:#8ad6c4;background:rgba(138,214,196,.12)}
+  .prov.agy{color:#c7a6f0;background:rgba(199,166,240,.12)}
+  .plane{font-size:9px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.4px;color:var(--faint);border:1px dashed var(--border-strong);border-radius:4px;padding:1px 5px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--faint);margin:2px 0 12px}
+  .legend b{color:var(--muted-foreground);font-weight:600}
+  /* galeria de estados */
+  .statelabel{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--brass);font-weight:600;margin-bottom:12px;opacity:.85}
+  .statecard{border:1px solid var(--border);border-radius:10px;background:var(--card2);padding:11px 13px;margin-bottom:12px}
+  .statehd{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted-foreground);margin-bottom:8px}
+  .statehd .sn{width:17px;height:17px;border-radius:5px;background:var(--brass-soft);color:var(--brass);display:grid;place-items:center;font-size:10px;font-weight:700;font-family:var(--mono)}
+  .statenote{font-size:11.5px;color:var(--faint);margin-top:9px;line-height:1.5}
+  .statenote b{color:var(--muted-foreground);font-weight:600}
+
+  /* ===== PROPOSTA B — DOCK ORBITAL (barra persistente) ===== */
+  .dock{flex:0 0 auto;border-top:1px solid var(--border);background:var(--card2)}
+  .dockhead{display:flex;align-items:center;gap:10px;padding:8px 16px;overflow-x:auto}
+  .dockhead::-webkit-scrollbar{height:0}
+  .dchip{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:6px 11px;flex:0 0 auto;font-size:12px}
+  .dchip:hover{border-color:var(--border-strong)}
+  .dchip.sel{border-color:rgba(228,168,98,.4);background:var(--brass-soft)}
+  .dchip .nm{font-weight:500}
+  .dchip .mt{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+  .dchip .mbar{width:34px}
+  .docksummary{margin-left:auto;flex:0 0 auto;font-family:var(--mono);font-size:11px;color:var(--muted-foreground);display:flex;gap:14px;padding-right:4px}
+  .docksummary b{color:var(--foreground)}
+  .dockpanel{border-top:1px solid var(--border);padding:12px 16px 14px;max-height:230px;overflow:auto;background:var(--background)}
+  .dockpanel h4{margin:0 0 9px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted-foreground);font-weight:600;display:flex;align-items:center;gap:8px}
+  body:not(.pb) .pb-only{display:none}
+
+  /* ===== PROPOSTA C — COCKPIT LATERAL (painel direito) ===== */
+  .rpanel{background:var(--rail);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+  .rtabs{display:flex;gap:2px;padding:10px 12px;border-bottom:1px solid var(--border);flex:0 0 auto}
+  .rtab{font-size:11.5px;color:var(--muted-foreground);padding:5px 10px;border-radius:7px;border:none;background:none;display:flex;align-items:center;gap:6px}
+  .rtab.on{background:var(--accent);color:var(--foreground)}
+  .rtab .n{font-family:var(--mono);font-size:10px;color:var(--brass)}
+  .rbody{flex:1;overflow-y:auto;padding:12px}
+  .rbody::-webkit-scrollbar{width:7px}.rbody::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:7px}
+  .rgroup{margin-bottom:16px}
+  .rgroup > .gh{display:flex;align-items:center;gap:8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted-foreground);font-weight:600;margin-bottom:8px}
+  .rgroup > .gh .ct{margin-left:auto;font-family:var(--mono);color:var(--faint);letter-spacing:0}
+  .ritem{border:1px solid var(--border);border-radius:9px;background:var(--card);padding:9px 10px;margin-bottom:7px}
+  .ritem .ih{display:flex;align-items:center;gap:8px}
+  .ritem .ih .nm{font-size:12.5px;font-weight:500}
+  .ritem .cmd{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ritem .ft{display:flex;align-items:center;gap:10px;margin-top:8px}
+  .ritem .ft .meta{margin-right:auto}
+  .miniagent{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;border-top:1px solid var(--border);margin-top:7px;padding-top:7px}
+
+  /* ===== COMPOSER ===== */
+  .composerwrap{padding:10px 26px 16px;flex:0 0 auto}
+  .composer{border:1px solid var(--border-strong);background:var(--card);border-radius:13px;padding:10px 12px 8px;max-width:720px;margin:0 auto}
+  .composer .txt{color:var(--muted-foreground);font-size:14px;min-height:20px}
+  .cbar{display:flex;align-items:center;gap:6px;margin-top:9px}
+  .cbar .tool{width:24px;height:24px;border-radius:6px;border:none;background:none;color:var(--muted-foreground);display:grid;place-items:center;font-size:13px}
+  .cbar .send{margin-left:auto;width:28px;height:28px;border-radius:8px;background:var(--brass);color:#1a1306;border:none;display:grid;place-items:center;font-size:14px}
+  .cbar .exec{font-size:11px;color:var(--st-queued);border:1px solid rgba(217,145,56,.3);border-radius:999px;padding:2px 9px}
+</style>
+</head>
+<body class="pa no-right">
+
+  <div class="switcher">
+    <div class="brand"><span class="reticle"></span> mycockpit · trabalho vivo</div>
+    <div class="segs">
+      <button class="seg on" data-p="pa" onclick="setP('pa')">A · Fio Vivo ✓<small>inline, aninhado no chat</small></button>
+      <button class="seg" data-p="pb" onclick="setP('pb')">B · Dock Orbital<small>barra persistente</small></button>
+      <button class="seg" data-p="pc" onclick="setP('pc')">C · Cockpit Lateral<small>painel direito</small></button>
+    </div>
+    <div class="hint" id="hint"></div>
+  </div>
+
+  <div class="app">
+    <!-- ============ LEFT SIDEBAR ============ -->
+    <aside class="rail">
+      <div class="sec">Projetos</div>
+      <button class="row"><span class="ic">▸</span> mycockpit</button>
+      <button class="row sel"><span class="ic">▾</span> prime-sales-hub <span class="liv"></span></button>
+      <button class="row conv"><span class="dot run"></span> subir ambiente prime</button>
+      <button class="row conv" style="color:var(--faint)"><span class="dot wait"></span> rebrand Maclan</button>
+      <button class="row"><span class="ic">▸</span> workout-jejum</button>
+      <div class="spacer"></div>
+      <div class="foot">LOCAL · v0.1.0-test</div>
+    </aside>
+
+    <!-- ============ CENTER ============ -->
+    <main class="main">
+      <div class="topbar">
+        <div class="t">prime-sales-hub <small>subir ambiente prime</small></div>
+        <div class="tabs"><button class="tab">Painel</button><button class="tab on">Trabalho</button><button class="tab">Features</button><button class="tab">Escritório</button></div>
+        <div class="modelchip">CLAUDE-OPUS-4-8</div>
+      </div>
+
+      <div class="stream">
+        <div class="wrap">
+          <!-- user -->
+          <div class="msg">
+            <div class="av user">V</div>
+            <div class="bd">
+              <div class="who">Você</div>
+              <p>Pausa o ambiente da meuingresso (tem container rodando) e sobe o ambiente local da prime pra eu validar — docker/supabase e o app. Enquanto isso, toca a pesquisa de mercado em paralelo.</p>
+            </div>
+          </div>
+
+          <!-- agent -->
+          <div class="msg">
+            <div class="av agent">◈</div>
+            <div class="bd">
+              <div class="who">Claude Code <span class="prov claude">claude</span> <span class="t">Opus · executando</span></div>
+              <p>Parei o container da meuingresso e estou subindo a stack da prime. Deleguei a pesquisa a um time em paralelo. Segue o andamento:</p>
+
+              <!-- ======= PROPOSTA A: FIO VIVO (inline tree) ======= -->
+              <div class="pa-only">
+                <div class="tree">
+                  <!-- to-do como espinha -->
+                  <div class="tnode">
+                    <div class="trow done"><span class="cbx">✓</span><span class="lbl">Pausar ambiente meuingresso</span><span class="exp meta">docker stop · 1.2s</span></div>
+                  </div>
+
+                  <div class="tnode" id="A-supa">
+                    <div class="trow doing" onclick="tog('A-supa')"><span class="cbx"></span><span class="lbl">Subir Supabase local</span><span class="exp"><span class="kindtag proc">processo</span><span class="caret">▾</span></span></div>
+                    <div class="subtree">
+                      <div class="leaf"><span class="dot ok"></span><span class="ttl">supabase db reset</span><span class="sub mono">· 2.1s · 14 migrações</span></div>
+                      <div class="leaf"><span class="dot run"></span><span class="ttl">docker compose up -d</span><span class="sub mono">· 6/6 containers · :54321</span><span class="plane">externo</span><span style="margin-left:auto" class="lnk">ver saída ↗</span></div>
+                      <div class="procbox">
+                        <div class="term"><span class="d"># docker compose up -d — supabase</span>
+ <span class="g">✔</span> supabase-db        <span class="d">Healthy</span>
+ <span class="g">✔</span> supabase-auth      <span class="d">Started :9999</span>
+ <span class="g">✔</span> supabase-rest      <span class="d">Started</span>
+ <span class="c">◐</span> supabase-studio    <span class="d">Starting… :54323</span></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="tnode" id="A-app">
+                    <div class="trow doing" onclick="tog('A-app')"><span class="cbx"></span><span class="lbl">Subir app prime (dev server)</span><span class="exp"><span class="kindtag proc">processo</span><span class="caret">▾</span></span></div>
+                    <div class="subtree">
+                      <div class="leaf"><span class="dot run"></span><span class="ttl">pnpm dev</span><span class="sub mono">· vite · http://localhost:5173</span><span style="margin-left:auto" class="lnk">abrir ↗</span></div>
+                    </div>
+                  </div>
+
+                  <div class="tnode collapsed" id="A-flow">
+                    <div class="trow" onclick="tog('A-flow')"><span class="cbx" style="border-radius:50%"></span><span class="lbl">Pesquisa de mercado (time)</span><span class="exp"><span class="kindtag flow">workflow</span> <span class="meta">4/5 · 39m</span><span class="caret">▾</span></span></div>
+                    <div class="subtree">
+                      <div class="leaf"><span class="dot ok"></span><span class="ttl">Estuda docs oficiais</span><span class="sub mono">general-purpose · 268 linhas</span></div>
+                      <div class="leaf"><span class="dot ok"></span><span class="ttl">Estuda comunidade</span><span class="sub mono">general-purpose · 92 linhas</span></div>
+                      <div class="leaf"><span class="dot ok"></span><span class="ttl">Concorrentes diretos</span><span class="sub mono">general-purpose</span></div>
+                      <div class="leaf"><span class="dot ok"></span><span class="ttl">Pricing benchmark</span><span class="sub mono">general-purpose</span></div>
+                      <div class="leaf"><span class="dot run"></span><span class="ttl">Síntese final</span><span class="sub mono">general-purpose · ↓ 521k tokens</span></div>
+                    </div>
+                  </div>
+
+                  <div class="tnode"><div class="trow"><span class="cbx"></span><span class="lbl" style="color:var(--faint)">Validar no navegador</span></div></div>
+                  <div class="tnode"><div class="trow"><span class="cbx"></span><span class="lbl" style="color:var(--faint)">Rodar smoke tests</span></div></div>
+                </div>
+              </div>
+
+              <p style="color:var(--faint);font-size:12.5px">Assim que o studio subir e o dev server ficar pronto, te aviso pra validar.</p>
+
+              <!-- ======= GALERIA DE ESTADOS (só na Proposta A) ======= -->
+              <div class="pa-only" style="margin-top:26px;border-top:1px dashed var(--border);padding-top:14px">
+                <div class="statelabel">Galeria de estados — os casos difíceis que a Proposta A precisa resolver</div>
+                <div class="legend">
+                  <span><span class="plane">interno</span> = o motor reporta (varia por provider)</span>
+                  <span><span class="plane">externo</span> = processo do mycockpit (uniforme)</span>
+                  <span><b>selo:</b> <span class="prov claude">claude</span> <span class="prov codex">codex</span> <span class="prov agy">agy</span></span>
+                </div>
+
+                <!-- 1. Time colapsado (done) + um que falhou -->
+                <div class="statecard">
+                  <div class="statehd"><span class="sn">1</span> Time de sub-agents — done colapsa, falha fica à mostra</div>
+                  <div class="tree" style="margin-left:0">
+                    <div class="tnode collapsed" id="S-teamok">
+                      <div class="trow" onclick="tog('S-teamok')"><span class="dot ok"></span><span class="lbl">Estuda docs oficiais</span><span class="exp"><span class="kindtag agent">general-purpose</span><span class="meta">6 tools · 268 ln</span><span class="caret">▾</span></span></div>
+                      <div class="subtree">
+                        <div class="leaf"><span class="dot ok"></span><span class="ttl mono">Ler README.md</span><span class="sub mono">· 268 ln</span></div>
+                        <div class="leaf"><span class="dot ok"></span><span class="ttl mono">Ler VISION.md</span><span class="sub mono">· 238 ln</span></div>
+                        <div class="leaf"><span class="dot ok"></span><span class="ttl mono">grep "pricing"</span><span class="sub mono">· 12 ln</span></div>
+                      </div>
+                    </div>
+                    <div class="tnode" id="S-teamfail">
+                      <div class="trow" onclick="tog('S-teamfail')"><span class="dot err"></span><span class="lbl">Concorrentes diretos</span><span class="exp"><span class="kindtag agent">general-purpose</span><span class="errtag">✕ 1 ação falhou</span><span class="caret">▾</span></span></div>
+                      <div class="subtree">
+                        <div class="leaf"><span class="dot ok"></span><span class="ttl mono">WebSearch "pricing SaaS BR"</span></div>
+                        <div class="leaf"><span class="dot err"></span><span class="ttl mono">curl api.concorrente.com</span><span class="sub" style="color:var(--st-error)">· timeout após 30s</span><span style="margin-left:auto" class="lnk">ver erro ↗</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 2. Processos: os 4 estados -->
+                <div class="statecard">
+                  <div class="statehd"><span class="sn">2</span> Processo — os estados de um shell long-running</div>
+                  <div class="tree" style="margin-left:0">
+                    <div class="leaf"><span class="dot run"></span><span class="ttl">pnpm dev</span><span class="sub mono">· vivo · :5173 · 4m12s</span><span style="margin-left:auto" class="lnk">abrir ↗</span> <button class="lnk mut">parar</button></div>
+                    <div class="leaf"><span class="dot ok"></span><span class="ttl">supabase db reset</span><span class="sub mono">· encerrou 0 · 2.1s</span><span style="margin-left:auto" class="lnk mut">ver saída</span></div>
+                    <div class="leaf"><span class="dot err"></span><span class="ttl">docker compose up</span><span class="sub" style="color:var(--st-error)">· saiu 1 · porta 5432 em uso</span><span style="margin-left:auto" class="lnk">ver saída ↗</span> <button class="lnk">retentar</button></div>
+                    <div class="leaf" style="opacity:.6"><span class="dot" style="background:var(--st-idle)"></span><span class="ttl">ngrok http 5173</span><span class="sub mono">· encerrado — app reiniciado</span><button style="margin-left:auto" class="lnk mut">retomar</button></div>
+                  </div>
+                  <div class="statenote">O nó de processo tem ciclo de vida PRÓPRIO — não trava o turno esperando um <code class="k">tool_result</code> que nunca chega. Estados: <b>vivo</b> · <b>encerrou&nbsp;0</b> · <b>falhou</b> · <b>órfão</b> (pós-restart).</div>
+                </div>
+
+                <!-- 3. Fallback sem to-do -->
+                <div class="statecard">
+                  <div class="statehd"><span class="sn">3</span> Sem to-do — a espinha vira o próprio turno</div>
+                  <div class="tree" style="margin-left:0">
+                    <div class="leaf"><span class="dot ok"></span><span class="ttl mono">Ler app-sidebar.test.tsx</span><span class="sub mono">· 120 ln</span></div>
+                    <div class="leaf"><span class="dot run"></span><span class="ttl mono">npx tsc --noEmit</span><span class="sub mono">· rodando…</span></div>
+                    <div class="tnode collapsed" id="S-nolist">
+                      <div class="trow" onclick="tog('S-nolist')"><span class="dot ok"></span><span class="lbl">Revisar mudança</span><span class="exp"><span class="kindtag agent">code-reviewer</span><span class="caret">▾</span></span></div>
+                      <div class="subtree"><div class="leaf"><span class="dot ok"></span><span class="ttl mono">Ler diff</span></div></div>
+                    </div>
+                  </div>
+                  <div class="statenote">Quando o agent não abre checklist, agents/processos penduram direto sob a bolha do agent — mesmo primitivo de árvore, raiz diferente.</div>
+                </div>
+
+                <!-- 4. Multi-provider: granularidade honesta -->
+                <div class="statecard">
+                  <div class="statehd"><span class="sn">4</span> Multi-provider — cada motor mostra o que consegue reportar</div>
+                  <div class="tree" style="margin-left:0">
+                    <div class="tnode collapsed" id="S-claude">
+                      <div class="trow" onclick="tog('S-claude')"><span class="dot ok"></span><span class="lbl">Refatorar auth</span><span class="exp"><span class="prov claude">claude</span><span class="plane">interno</span><span class="meta">árvore rica · 8 tools · time</span><span class="caret">▾</span></span></div>
+                      <div class="subtree">
+                        <div class="leaf"><span class="dot ok"></span><span class="ttl mono">Edit auth.rs</span></div>
+                        <div class="leaf"><span class="dot ok"></span><span class="ttl">Revisar</span><span class="sub mono">code-reviewer · sub-agent</span></div>
+                      </div>
+                    </div>
+                    <div class="tnode collapsed" id="S-codex">
+                      <div class="trow" onclick="tog('S-codex')"><span class="dot ok"></span><span class="lbl">Rodar testes</span><span class="exp"><span class="prov codex">codex</span><span class="plane">interno</span><span class="meta">folhas, sem galhos · custo estimado</span><span class="caret">▾</span></span></div>
+                      <div class="subtree">
+                        <div class="leaf"><span class="dot ok"></span><span class="ttl mono">pytest -q</span><span class="sub mono">· em lote (só no fim) · sem sub-agent</span></div>
+                      </div>
+                    </div>
+                    <div class="tnode">
+                      <div class="trow"><span class="dot ok"></span><span class="lbl">Explicar o módulo</span><span class="exp"><span class="prov agy">agy</span><span class="plane">interno</span><span class="meta">só texto — sem tool-view (v1.0.16)</span></span></div>
+                    </div>
+                    <div class="leaf" style="border-top:1px dashed var(--border);margin-top:6px;padding-top:9px"><span class="dot run"></span><span class="ttl">docker compose up</span><span class="sub mono">· mesmo nó pra qualquer motor</span><span class="plane" style="margin-left:auto">externo · mycockpit</span></div>
+                  </div>
+                  <div class="statenote"><b>Degradação honesta:</b> não inventamos árvore que o motor não reporta. O selo deixa claro <b>quem</b> fez e <b>com que fidelidade</b>. Já o processo <b>externo</b> é do mycockpit — idêntico pra Claude, Codex ou agy (spawn+buffer+poll+kill via MCP).</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======= PROPOSTA B: DOCK ORBITAL ======= -->
+      <div class="dock pb-only">
+        <div class="dockhead">
+          <button class="dchip" onclick="dsel(this,'d-supa')"><span class="dot run"></span><span class="nm">supabase</span><span class="mt">:54321 · 6/6</span></button>
+          <button class="dchip" onclick="dsel(this,'d-app')"><span class="dot run"></span><span class="nm">app prime</span><span class="mt">:5173</span></button>
+          <button class="dchip sel" onclick="dsel(this,'d-flow')"><span class="dot run"></span><span class="nm">pesquisa-mercado</span><span class="mbar bar"><i style="width:80%"></i></span><span class="mt">4/5 · 39m</span></button>
+          <button class="dchip" onclick="dsel(this,'d-plan')"><span class="dot wait"></span><span class="nm">plano</span><span class="mt">1/5</span></button>
+          <div class="docksummary"><span>⏱ <b>39m 57s</b></span><span>↓ <b>521k</b> tok</span><span>US$ <b>3,47</b></span></div>
+        </div>
+        <div class="dockpanel" id="d-flow-panel">
+          <h4><span class="kindtag flow">workflow</span> pesquisa-multimodal-headless · 4 de 5 agents concluídos</h4>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:center;gap:9px;font-size:12.5px"><span class="dot ok"></span> Estuda docs oficiais <span class="meta" style="margin-left:auto">general-purpose · 268 ln</span></div>
+            <div style="display:flex;align-items:center;gap:9px;font-size:12.5px"><span class="dot ok"></span> Estuda comunidade <span class="meta" style="margin-left:auto">general-purpose · 92 ln</span></div>
+            <div style="display:flex;align-items:center;gap:9px;font-size:12.5px"><span class="dot ok"></span> Concorrentes diretos <span class="meta" style="margin-left:auto">general-purpose</span></div>
+            <div style="display:flex;align-items:center;gap:9px;font-size:12.5px"><span class="dot ok"></span> Pricing benchmark <span class="meta" style="margin-left:auto">general-purpose</span></div>
+            <div style="display:flex;align-items:center;gap:9px;font-size:12.5px"><span class="dot run"></span> Síntese final <span class="meta" style="margin-left:auto">↓ 521k tok · 39m</span> <button class="lnk">ver ↗</button></div>
+          </div>
+        </div>
+        <div class="dockpanel" id="d-supa-panel" style="display:none">
+          <h4><span class="kindtag proc">processo</span> docker compose · supabase local · :54321</h4>
+          <div class="term"><span class="d">$ docker compose up -d</span>
+ <span class="g">✔</span> supabase-db     Healthy      <span class="d">:5432</span>
+ <span class="g">✔</span> supabase-auth   Started      <span class="d">:9999</span>
+ <span class="g">✔</span> supabase-rest   Started      <span class="d">:3000</span>
+ <span class="c">◐</span> supabase-studio Starting…    <span class="d">:54323</span></div>
+          <div style="margin-top:9px;display:flex;gap:14px"><button class="lnk">abrir studio ↗</button><button class="lnk mut">parar</button><button class="lnk mut">reiniciar</button></div>
+        </div>
+        <div class="dockpanel" id="d-app-panel" style="display:none">
+          <h4><span class="kindtag proc">processo</span> pnpm dev · vite · app prime</h4>
+          <div class="term"><span class="d">$ pnpm dev</span>
+  VITE v5.4.2  ready in 611 ms
+  <span class="g">➜</span>  Local:   <span class="c">http://localhost:5173/</span>
+  <span class="g">➜</span>  Network: http://192.168.0.14:5173/</div>
+          <div style="margin-top:9px;display:flex;gap:14px"><button class="lnk">abrir no navegador ↗</button><button class="lnk mut">parar</button></div>
+        </div>
+        <div class="dockpanel" id="d-plan-panel" style="display:none">
+          <h4>Plano da conversa · 1 de 5</h4>
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:12.5px">
+            <div style="display:flex;gap:9px;align-items:center;color:var(--faint);text-decoration:line-through"><span class="dot ok"></span> Pausar ambiente meuingresso</div>
+            <div style="display:flex;gap:9px;align-items:center"><span class="dot run"></span> Subir Supabase local</div>
+            <div style="display:flex;gap:9px;align-items:center"><span class="dot run"></span> Subir app prime</div>
+            <div style="display:flex;gap:9px;align-items:center;color:var(--faint)"><span class="dot wait"></span> Validar no navegador</div>
+            <div style="display:flex;gap:9px;align-items:center;color:var(--faint)"><span class="dot wait"></span> Rodar smoke tests</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="composerwrap">
+        <div class="composer">
+          <div class="txt">Mensagem para o agente…</div>
+          <div class="cbar"><span class="exec">⚠ Liberado</span><button class="tool">/</button><button class="tool">◎</button><button class="send">↑</button></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ============ RIGHT PANEL (Proposta C) ============ -->
+    <aside class="rpanel pc-only">
+      <div class="rtabs">
+        <button class="rtab">Contexto</button>
+        <button class="rtab">Alterações <span class="n">23</span></button>
+        <button class="rtab on">Vivo <span class="n">3</span></button>
+      </div>
+      <div class="rbody">
+        <!-- PLANO -->
+        <div class="rgroup">
+          <div class="gh">◷ Plano <span class="ct">1/5</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px;padding-left:2px">
+            <div style="display:flex;gap:9px;align-items:center;font-size:12.5px;color:var(--faint);text-decoration:line-through"><span class="dot ok"></span> Pausar meuingresso</div>
+            <div style="display:flex;gap:9px;align-items:center;font-size:12.5px"><span class="dot run"></span> Subir Supabase local</div>
+            <div style="display:flex;gap:9px;align-items:center;font-size:12.5px"><span class="dot run"></span> Subir app prime</div>
+            <div style="display:flex;gap:9px;align-items:center;font-size:12.5px;color:var(--faint)"><span class="dot wait"></span> Validar no navegador</div>
+            <div style="display:flex;gap:9px;align-items:center;font-size:12.5px;color:var(--faint)"><span class="dot wait"></span> Rodar smoke tests</div>
+          </div>
+        </div>
+
+        <!-- PROCESSOS -->
+        <div class="rgroup">
+          <div class="gh"><span class="kindtag proc">proc</span> Processos <span class="ct">2 vivos</span></div>
+          <div class="ritem">
+            <div class="ih"><span class="dot run"></span><span class="nm">supabase</span><span class="meta" style="margin-left:auto">:54321</span></div>
+            <div class="cmd">docker compose up -d · 6/6 containers</div>
+            <div class="ft"><span class="meta">studio a subir…</span><button class="lnk">saída</button><button class="lnk mut">parar</button></div>
+          </div>
+          <div class="ritem">
+            <div class="ih"><span class="dot run"></span><span class="nm">app prime</span><span class="meta" style="margin-left:auto">:5173</span></div>
+            <div class="cmd">pnpm dev · vite ready 611ms</div>
+            <div class="ft"><span class="meta">pronto</span><button class="lnk">abrir ↗</button><button class="lnk mut">parar</button></div>
+          </div>
+        </div>
+
+        <!-- AGENTS / TIME -->
+        <div class="rgroup">
+          <div class="gh"><span class="kindtag flow">flow</span> Time · pesquisa <span class="ct">4/5</span></div>
+          <div class="ritem">
+            <div class="ih"><span class="dot run"></span><span class="nm">pesquisa-mercado</span><span class="meta" style="margin-left:auto">39m</span></div>
+            <div class="bar" style="margin-top:8px"><i style="width:80%"></i></div>
+            <div class="miniagent"><span class="dot ok"></span> Docs oficiais <span class="meta" style="margin-left:auto">268 ln</span></div>
+            <div class="miniagent"><span class="dot ok"></span> Comunidade <span class="meta" style="margin-left:auto">92 ln</span></div>
+            <div class="miniagent"><span class="dot ok"></span> Concorrentes</div>
+            <div class="miniagent"><span class="dot ok"></span> Pricing</div>
+            <div class="miniagent"><span class="dot run"></span> Síntese final <span class="meta" style="margin-left:auto">↓521k</span></div>
+          </div>
+        </div>
+
+        <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;gap:14px;font-family:var(--mono);font-size:11px;color:var(--muted-foreground)">
+          <span>⏱ <b style="color:var(--foreground)">39m</b></span><span>↓<b style="color:var(--foreground)">521k</b></span><span><b style="color:var(--foreground)">US$3,47</b></span>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+<script>
+  const hints={
+    pa:"A — Tudo aninhado no fio do chat: o to-do é a espinha e agents/processos penduram sob cada tarefa. Igual ao inline do CLI. Ótimo pra ler em ordem; long-running some no scroll.",
+    pb:"B — Barra persistente acima do composer (estilo rodapé do CLI). Chat limpo; o que está vivo fica sempre à vista. Clique num chip pra abrir o detalhe/saída.",
+    pc:"C — Painel direito 'Vivo' (ao lado de Contexto/Alterações). Mission-control por categoria: Plano · Processos · Time. Persistente e organizado; come espaço horizontal."
+  };
+  function setP(p){
+    document.body.classList.remove('pa','pb','pc','no-right');
+    document.body.classList.add(p);
+    if(p!=='pc') document.body.classList.add('no-right');
+    document.querySelectorAll('.seg').forEach(s=>s.classList.toggle('on',s.dataset.p===p));
+    document.getElementById('hint').textContent=hints[p];
+  }
+  function tog(id){document.getElementById(id).classList.toggle('collapsed');}
+  function dsel(el,id){
+    document.querySelectorAll('.dchip').forEach(c=>c.classList.remove('sel'));
+    el.classList.add('sel');
+    document.querySelectorAll('.dockpanel').forEach(p=>p.style.display='none');
+    document.getElementById(id+'-panel').style.display='block';
+  }
+  setP('pa');
+</script>
+</body>
+</html>

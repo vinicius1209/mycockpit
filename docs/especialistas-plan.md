@@ -223,3 +223,46 @@ vira modo**.
 - **Testes vitest em PT-BR**, cobrindo o critério de aceite (não só o caminho feliz);
   fail-closed testado; retrocompat das personas sem os campos novos.
 - **Escopo projeto + global** funciona em tudo (projeto vence global no mesmo slug).
+
+## E5 — Radar da "troca genuína" (03/08/2026, pós-clone do block/buzz)
+
+> Registro de intento, sem compromisso de entrega. Fontes: uso hardcore do
+> Warp multi-janela (a dor que criou o MyCockpit), `~/projetos/mypeople`
+> (absorver: roles+digest, ping, watchdog; NÃO absorver: despacho por LLM) e
+> `~/projetos/buzz` (clonado 03/08 — Slack self-hosted onde agentes são
+> membros; tudo é evento assinado num log único; buzz-agent: sessões baratas,
+> "quando não pode prosseguir, para").
+
+**Tese central: troca genuína = assimetria, não adjetivo.** Duas personas do
+mesmo modelo com o mesmo contexto e system prompts diferentes = teatro caro.
+A conversa só é genuína quando cada especialista (1) SABE coisas diferentes e
+(2) OLHOU para coisas diferentes. As camadas, em ordem de construção:
+
+1. **Inteligência alimentada por persona** (a base, sem RAG novo): as lições
+   ("Transformar em aprendizado") ganham DONO — cada especialista acumula as
+   suas, e o recall na injeção filtra pelo dono. O FTS que o ⌘K já usa cobre o
+   começo; embeddings só quando o corpus estourar o FTS (não antes — campo
+   reservado > mecanismo especulativo). Corpus opcional por persona:
+   `.mycockpit/agents/<slug>/knowledge/*.md`.
+2. **Quem fala quando = assinatura determinística + peek barato** (lição do
+   mypeople: jamais orquestrador-LLM com marca): a persona declara interesses
+   (globs de arquivo no diff, eventos: turno falhou, workflow concluiu, custo
+   estourou o teto, disputa aberta). Evento casa → o modelo HELPER (o mesmo
+   das sugestões) faz um peek no digest e decide se acorda a persona cara.
+   Interjeição tem orçamento por conversa + cooldown + custo visível.
+3. **Threads de verdade** (o que faz "sentir Slack"): o pitaco entra como
+   thread lateral ancorada na mensagem que o disparou, colapsada no fio
+   principal, com contexto ESCOPADO à thread (custo contido). Discussão entre
+   especialistas acontece NA thread; o fio principal segue do piloto.
+4. **Dedupe de vozes**: antes de acordar a persona B, o peek vê o que A já
+   disse na thread; instrução fixa "só entre se tiver algo NOVO" + teto duro
+   de N interjeições. Três personas dizendo o mesmo é o anti-padrão nº 1.
+5. **Do buzz, absorver**: presença de agente como membro (a barra E2 já
+   aponta pra isso), "tudo é evento num log só" (mycockpit já caminha:
+   work://, update://; a thread de especialistas seria mais um evento), e a
+   honestidade do buzz-agent (interjeição que não agrega, silencia — parar é
+   primeira classe).
+
+**Invariantes que NÃO mudam (ADR-026):** um pilota por vez; especialista
+opina, humano age; auto-pitaco é opt-in por persona×projeto, jamais modo;
+read-only fail-closed.

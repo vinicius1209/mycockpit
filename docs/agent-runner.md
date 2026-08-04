@@ -181,6 +181,37 @@ struct PermissionPolicy {
 
 O seletor de Permissões é do **projeto**, mas quem obedece é a CLI da conversa — e
 elas divergem. Versões auditadas: claude 2.1.219, codex-cli 0.144.6, agy 1.1.7.
+Re-checagem 31/07/2026 (foco MCP): claude 2.1.219 e codex 0.144.6 inalterados
+(`--mcp-config`/`--strict-mcp-config` presentes; `codex mcp list --json` com o
+shape que o registry consome); **agy 1.1.9** instalado — segue SEM comando/flag
+MCP, o limite honesto do control plane permanece válido.
+
+Re-checagem 03/08/2026 (foco canal SYSTEM, capability `system_channel` do
+prompt-hygiene-plan H1), **codex 0.146.0**: o config key
+`developer_instructions` EXISTE (achado por strings no binário; não aparece no
+`--help` nem na doc) e **funciona em sessão nova** do `exec` — teste real com
+`-c 'developer_instructions="…termine com ABACAXI"'` rendeu "Oi ABACAXI". Mas
+no **`exec resume` a instrução da sessão ORIGINAL venceu** uma
+`developer_instructions` diferente passada no resume (o modelo seguiu ABACAXI,
+ignorou MELANCIA) — ou seja, não há re-envio são por spawn, que é exatamente o
+contrato que o canal precisa cumprir (doutrina re-enviada/atualizável a cada
+turno). Não-documentado + não re-aplicável no resume = frágil ⇒
+`system_channel=false` pro codex (guarda do plano: na dúvida, false). Claude
+2.1.219 segue ✅ (`--append-system-prompt`, documentado); agy ❌. Re-checar a
+cada bump de versão do codex: se `developer_instructions` ganhar doc + efeito
+no resume, vira candidato a `true`.
+
+Re-checagem 04/08/2026 (foco compactação nativa, capability `native_compact`
+do /compactar builtin): **claude 2.1.220** — `claude -p --resume <sid>
+"/compact"` FUNCIONA em modo print: o comando é processado (teste real
+respondeu "Not enough messages to compact"), e o `compact_boundary` resultante
+o app já surfaça como aviso no fio (ADR-015) ⇒ `native_compact=true`.
+**codex 0.146** — `/compact` é comando só do TUI; `codex exec` não expõe (help
+verificado) ⇒ `false`. **agy** — nada ⇒ `false`. Motor sem a capability e COM
+`session_resume` (codex): o /compactar degrada pra renovação de sessão com
+recap (transplante para si mesmo, `lib/compact.ts`); sem `session_resume`
+(agy) não há o que compactar — cada turno já é sessão fresca com recap, e a
+UI diz isso em vez de fingir.
 
 | | Leitura | **Padrão (PEDE)** | Liberado |
 |---|---|---|---|
@@ -258,13 +289,33 @@ próprio fornecedor, e o app nunca injetou nenhum deles — só os inventariava 
 O agy **não tem convenção de arquivo de instrução conhecida**: sem a doutrina injetada,
 ele roda sem nenhuma regra do projeto. O painel diz isso na cara em vez de inventar.
 
-**Quando a doutrina entra** — a régua é "toda sessão nova de CLI recebe". São seis
-pontos de spawn no app, e todos estão cobertos:
+**Quando (e por ONDE) a doutrina entra** — a régua é "toda sessão nova de CLI
+recebe", e desde o prompt-hygiene-plan (H1/H2/H4, 03/08/2026) o CANAL e a
+cadência são por capability, nunca por nome:
+
+- **Motor com `system_channel` (claude)**: doutrina + persona vão no
+  `--append-system-prompt`, **re-enviadas a cada spawn** — nunca no corpo do
+  prompt. Zero inchaço de histórico, zero eco, frescor automático (edição da
+  doutrina mid-conversa chega no turno seguinte de graça). O anúncio de MCPs e
+  a TELEMETRIA do mc-work também moram só lá (o corpo fica limpo).
+- **Motor com resume e sem canal (codex)**: bloco no corpo do **1º turno** (o
+  resume carrega dali em diante) **+ re-injeção com prefixo "(doutrina
+  atualizada)" quando o arquivo muda mid-conversa** (H4 — fingerprint no
+  ledger efêmero `injected.doctrine` da conversa, store do chat; ledger zerado
+  por restart numa conversa já rodada CONTA como mudança — edição feita com o
+  app fechado nunca se perde). Sessão FRESCA no meio da conversa (S3.2
+  wheel-switch) sempre leva a doutrina, mesma régua do revezamento. O
+  preâmbulo de MCP/telemetria segue a mesma régua; mudança no PLANO de MCPs
+  mid-conversa re-anuncia via fingerprint (`injected.mcp`, evento
+  `mcp://announced`, emitido só depois do run nascer) — inclusive N→0
+  (bindings todos desligados anunciam "nenhuma" uma vez).
+- **Motor sem resume (agy)**: **todo turno** (sessão fresca, e o recap não
+  carrega o prefixo do prompt) — custo honesto, sem alternativa.
 
 | ponto de spawn | quando injeta |
 |---|---|
-| chat (`ChatPanel`) e mesa (`office/bridge/send`) | **1º turno** de claude/codex (o resume nativo carrega dali em diante); **todo turno** do agy (sessão fresca, e o recap não carrega o prefixo do prompt) |
-| revezamento entre agents (transplante, nas duas superfícies) | **sempre** — é sessão fresca, quase sempre em outra CLI |
+| chat (`ChatPanel`) e mesa (`office/bridge/send`) | régua por capability acima (canal system a cada spawn · corpo 1º turno + frescor · todo turno) |
+| revezamento entre agents (transplante, nas duas superfícies) | **sempre** — é sessão fresca, quase sempre em outra CLI (destino com canal system recebe pelo canal) |
 | missão (`store/mission`) | **toda fase** (cada fase é um run novo) |
 | disputa (`store/fusion`) | **todo candidato** (senão metade dos concorrentes disputa cega) |
 | automação agendada (`lib/scheduleEngine`) | **sempre** — é o run DESASSISTIDO: ninguém corrige o rumo às 3h |
@@ -272,6 +323,13 @@ pontos de spawn no app, e todos estão cobertos:
 
 Teto de 12k caracteres no bloco; acima disso corta e **aponta o arquivo** — o agent tem
 acesso ao disco e puxa o resto se precisar. Ver ADR-025.
+
+**Fronteira de confiança (H3)**: todo histórico SERIALIZADO reinjetado em
+prompt (recap do revezamento/transplante, `serializeContext`, transcript de
+retomada, memória sintética do agy) viaja emoldurado em
+`<historico-de-contexto>…</historico-de-contexto>` + a linha fixa de que o
+bloco é dado, não pedido (`lib/trust.ts`). O conteúdo nunca é reescrito — a
+defesa é a moldura.
 
 ## 8. Perguntas em aberto (para futuros devs)
 

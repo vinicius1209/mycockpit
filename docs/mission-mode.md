@@ -10,11 +10,28 @@
 > `<i>-<persona>.json`, `plan.md`, `reports/`, `run-state.json`) hoje vivem
 > ISOLADOS por missão em **`.mycockpit/missions/<slug>/`** (slug = data + id
 > curto + tarefa) — antes o `.mission/` fixo fazia missões no mesmo cwd se
-> sobrescreverem. A persistência marcada "⏳ pendente" mais abaixo foi
-> ENTREGUE: run-state por missão (retomada via ponteiro por conversa) + índice
-> `missions` no banco (histórico) + viewer no app ("Ver arquivos" + promover
-> pra `docs/`). Ver `lib/missionPaths.ts`, `lib/missionState.ts`,
-> `lib/missionFiles.ts`.
+> sobrescreverem. A persistência foi ENTREGUE: run-state por missão (retomada
+> via ponteiro por conversa) + índice `missions` no banco (histórico, com
+> consumidor na seção "Missões" do painel de contexto) + viewer no app ("Ver
+> arquivos" + promover pra `docs/`). Ver `lib/missionPaths.ts`,
+> `lib/missionState.ts`, `lib/missionFiles.ts`.
+>
+> **Atualização (ago/2026) — hardening MH1–MH4.** O registro vivo das decisões
+> e entregas do endurecimento da Missão é o `docs/mission-hardening-plan.md`
+> (bloco STATUS no topo). Destaques que mudam a leitura deste doc:
+> - **Desfecho honesto (MH1.1)**: rodadas de correção esgotadas sem APROVADO ⇒
+>   `done` COM RESSALVA explícita (`reviewCaveat` no run, no run-state e no
+>   índice `missions`), nunca "done" seco.
+> - **Política de gate por preset (MH3.3)**: `gatePolicy: "agente" |
+>   "sempre-apos-planejar" | "nunca"` (ausente = "agente", o clássico). Motor
+>   puro em `gateOutcome` (lib/mission.ts); "nunca" preserva as open_questions
+>   como notice no fio; "sempre-apos-planejar" abre gate obrigatório após a
+>   fase 1. A política viaja no run → run-state (sobrevive a restart).
+> - **Máquina de fases explícita (MH4.1)**: as transições do pipeline
+>   (budget/teto intra-fase/falha/recovery/loop de correção/gate/desfecho) são
+>   funções PURAS em `lib/missionEngine.ts`; o `launch` do `store/mission.ts` é
+>   casca fina que executa efeitos (runPhase/persist/notices/notify/ledger) sob
+>   comando do motor. Pré-requisito do M3 (paralelismo).
 
 ## TL;DR (a recomendação)
 
@@ -221,8 +238,12 @@ registry + cancel) atende; a orquestração é 100% TypeScript por cima de
     instrução) + re-review, até `MAX_REVIEW_LOOPS` (2) e sempre sob o teto de
     custo. `reviewerApproved`/`phaseText` em lib/mission (+testes); o loop do
     store cresce a lista de fases dinamicamente (a timeline reflete).
-  - ⏳ **Persistência no DB** (pendente): o `MissionRun` vive só em memória (some
-    no restart). Espelhar o padrão `saveFusionRun`/`loadPending` (lib/db).
+  - ✅ **Persistência** (ENTREGUE — caminho diferente do planejado): em vez de
+    espelhar `saveFusionRun`, o pipeline persiste em DOIS planos — run-state
+    por missão no worktree (`lib/missionState.ts`, marcos: largada/fase/gate/
+    recovery/fim; retomada via ponteiro por conversa e card na conversa) +
+    índice `missions` no banco (`lib/db.ts` upsert nos marcos; consumido pela
+    seção "Missões" do painel de contexto). Disco = artefatos; banco = índice.
 - **Handoff tipado (.mission/) ✅ ENTREGUE** (2026-07-12, antecipado do M2): o
   handoff entre fases agora é blackboard — cada fase escreve `.mission/<i>-<
   persona>.json` (intent/decisions/files_touched/open_questions/for_next_agent)

@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sidebar S2 — sinais (mock)</title>
+<style>
+  /* Tokens do design-system.md (dark-first) */
+  :root {
+    --bg:#0A0B0D; --bg-subtle:#0E1013; --surface:#141619; --surface-2:#191C20;
+    --border:rgba(255,255,255,.07); --border-strong:rgba(255,255,255,.12);
+    --text:#E7E8EA; --text-muted:#9AA0A7; --text-faint:#687078;
+    --accent:#E4A862; --accent-soft:rgba(228,168,98,.14);
+    --st-idle:#687078; --st-running:#5BB8E8; --st-queued:#E4A862;
+    --st-success:#5BD6A0; --st-error:#F2766B;
+    --rail:#0E1013;
+  }
+  html.light {
+    --bg:#FBFBFA; --bg-subtle:#F4F4F2; --surface:#FFF; --surface-2:#F7F7F5;
+    --border:rgba(0,0,0,.08); --border-strong:rgba(0,0,0,.14);
+    --text:#16181B; --text-muted:#5C6166; --text-faint:#8A9099;
+    --accent:#A9742B; --accent-soft:rgba(169,116,43,.12);
+    --rail:#F4F4F2;
+  }
+  * { box-sizing:border-box; margin:0; }
+  body {
+    background:var(--bg); color:var(--text);
+    font:14px/1.5 "Geist","Inter",ui-sans-serif,system-ui,sans-serif;
+    padding:32px; display:flex; flex-direction:column; gap:28px;
+  }
+  h1 { font-size:18px; font-weight:600; }
+  h2 { font-size:13px; font-weight:600; margin-bottom:8px; }
+  p.note { color:var(--text-muted); font-size:12.5px; max-width:72ch; }
+  .label { font-family:"Geist Mono",ui-monospace,monospace; font-size:9.5px;
+    letter-spacing:.06em; text-transform:uppercase; color:var(--text-faint); }
+  .cols { display:flex; gap:24px; flex-wrap:wrap; }
+  .rail {
+    width:264px; background:var(--rail); border:1px solid var(--border);
+    border-radius:13px; padding:10px 8px; display:flex; flex-direction:column; gap:1px;
+  }
+  .rail .label { padding:6px 8px 4px; display:flex; justify-content:space-between; }
+  .label b { color:var(--text-faint); font-weight:400; font-variant-numeric:tabular-nums; }
+
+  /* ---------- linha de projeto ---------- */
+  .proj { position:relative; display:flex; align-items:center; gap:10px;
+    padding:8px 8px; border-radius:6px; cursor:default; font-size:13px; font-weight:500; }
+  .proj:hover { background:var(--accent-soft); }
+  .proj.active { background:var(--accent-soft); }
+  .proj.active::before { content:""; position:absolute; left:0; top:50%;
+    translate:0 -50%; width:2.5px; height:18px; border-radius:99px; background:var(--accent); }
+  .chev { margin-left:auto; color:var(--text-faint); font-size:10px; }
+
+  /* marca (pasta ou agent) com ÚNICO lócus de status */
+  .mark { position:relative; width:20px; height:20px; flex:none;
+    display:grid; place-items:center; }
+  .mark svg { width:17px; height:17px; }
+  .mark .dot { position:absolute; right:-2px; bottom:-2px; width:7px; height:7px;
+    border-radius:99px; box-shadow:0 0 0 2px var(--rail); }
+  .dot.run  { background:var(--st-running); }
+  .dot.wait { background:var(--st-queued); animation:pulse 1.6s ease-in-out infinite; }
+  .dot.ok   { background:var(--st-success); }
+  .dot.err  { background:var(--st-error); }
+  @keyframes pulse { 50% { transform:scale(1.35); opacity:.6; } }
+
+  /* agent mark (conversa): quadradinho arredondado com inicial */
+  .agent { width:18px; height:18px; border-radius:5px; display:grid; place-items:center;
+    font-size:10px; font-weight:700; color:#1A1306; }
+  .agent.claude { background:#E07A54; }
+  .agent.codex  { background:#9AA0A7; }
+  .agent.esp    { background:#5B7BD6; color:#fff; border-radius:99px; }
+  /* cor-rótulo = ANEL fino (forma própria; paleta sem cores de status) */
+  .ring-lav  { box-shadow:0 0 0 1.5px #A78BDB; }
+  .ring-teal { box-shadow:0 0 0 1.5px #6BB8A8; }
+
+  /* ---------- conversa: 1 ou 2 linhas ---------- */
+  .conv { position:relative; display:grid; grid-template-columns:18px 1fr auto;
+    column-gap:8px; align-items:center; padding:6px 8px 6px 20px; border-radius:6px;
+    font-size:12px; color:var(--text-muted); cursor:default; }
+  .conv:hover { background:var(--accent-soft); color:var(--text); }
+  .conv.active { background:var(--accent-soft); color:var(--text); font-weight:500; }
+  .conv.active::before { content:""; position:absolute; left:0; top:50%;
+    translate:0 -50%; width:2.5px; height:15px; border-radius:99px; background:var(--accent); }
+  .conv.dim { background:color-mix(in srgb, var(--accent-soft) 45%, transparent); }
+  .conv .t { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .conv .sub { grid-column:2 / -1; font-size:10.5px; color:var(--text-faint);
+    font-family:"Geist Mono",ui-monospace,monospace; overflow:hidden;
+    white-space:nowrap; text-overflow:ellipsis; margin-top:1px; }
+  .conv .sub .warn { color:var(--st-queued); }
+
+  /* guia de árvore (S2 herda do plano: trilho hairline) */
+  .group { position:relative; }
+  .group::before { content:""; position:absolute; left:17px; top:2px; bottom:2px;
+    width:1px; background:var(--border); }
+
+  /* legenda / galeria */
+  table { border-collapse:collapse; font-size:12.5px; }
+  td, th { padding:6px 14px 6px 0; text-align:left; vertical-align:top; }
+  th { color:var(--text-faint); font-weight:500; }
+  .swatch { display:inline-block; width:8px; height:8px; border-radius:99px; margin-right:6px; }
+
+  .toggle { position:fixed; top:16px; right:16px; background:var(--surface);
+    color:var(--text); border:1px solid var(--border-strong); border-radius:8px;
+    padding:6px 12px; font-size:12px; cursor:pointer; }
+</style>
+</head>
+<body>
+<button class="toggle" onclick="document.documentElement.classList.toggle('light')">tema</button>
+
+<h1>Sidebar S2 — um lócus de status (proposta A, à la Warp)</h1>
+<p class="note">
+  Tese: o usuário sente UM evento por vez, no MESMO lugar — o dot sobre a marca
+  (pasta no projeto, agent na conversa). Pulso só quando ele é necessário
+  ("esperando você"). Contexto (worktree, missão, disputa) vira SUBLINHA de
+  texto, não sopa de ícones na borda direita. Cor-rótulo vira ANEL na marca,
+  com paleta que nunca colide com as cores de status.
+</p>
+
+<div class="cols">
+
+  <!-- =================== PROPOSTA A =================== -->
+  <div>
+    <h2>Proposta A</h2>
+    <div class="rail">
+      <div class="label">projetos <b>3</b></div>
+
+      <!-- projeto agregando "esperando você" -->
+      <div class="proj active">
+        <span class="mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#5B7BD6" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span class="dot wait" title="uma conversa parou esperando você"></span>
+        </span>
+        projetos <span class="chev">▾</span>
+      </div>
+      <div class="group">
+        <!-- esperando você: dot âmbar pulsa; sublinha diz o PORQUÊ -->
+        <div class="conv active">
+          <span class="agent claude">C</span>
+          <span class="t">finance monitor</span>
+          <div class="sub"><span class="warn">● pergunta esperando você</span></div>
+        </div>
+        <!-- rodando: ciano estático; contexto na sublinha -->
+        <div class="conv">
+          <span class="agent claude" style="position:relative">C<span class="dot run" style="position:absolute;right:-2px;bottom:-2px"></span></span>
+          <span class="t">estudo sobre openAi</span>
+          <div class="sub">⎇ worktree · missão · fase 2/4</div>
+        </div>
+        <!-- especialista, concluído não-visto, com anel de cor-rótulo -->
+        <div class="conv">
+          <span class="agent esp ring-lav" style="position:relative">N<span class="dot ok" style="position:absolute;right:-2px;bottom:-2px"></span></span>
+          <span class="t">Nossa casa</span>
+        </div>
+        <!-- dim: ativa noutra superfície -->
+        <div class="conv dim">
+          <span class="agent codex">X</span>
+          <span class="t">bugs duplicar + suspect</span>
+          <div class="sub">⚔ disputa em curso</div>
+        </div>
+      </div>
+
+      <!-- projeto quieto, rodando -->
+      <div class="proj">
+        <span class="mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#5BD6A0" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span class="dot run"></span>
+        </span>
+        prime-sales-hub <span class="chev">▸</span>
+      </div>
+
+      <!-- projeto idle -->
+      <div class="proj">
+        <span class="mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-faint)"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        </span>
+        workout-jejum <span class="chev">▸</span>
+      </div>
+
+      <div class="label" style="margin-top:8px">arquivados <b>2</b></div>
+    </div>
+  </div>
+
+  <!-- =================== HOJE (para comparação) =================== -->
+  <div>
+    <h2>Hoje (para comparação)</h2>
+    <div class="rail" style="opacity:.85">
+      <div class="label">projetos <b style="color:var(--text-muted)">3</b></div>
+      <div class="proj active">
+        <span class="mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#5B7BD6" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span class="dot wait"></span>
+        </span>
+        projetos <span class="chev">🗑 ▾</span>
+      </div>
+      <div>
+        <div class="conv active" style="grid-template-columns:18px 1fr auto auto auto">
+          <span class="agent claude" style="position:relative">C<span class="dot wait" style="position:absolute;right:-2px;bottom:-2px"></span></span>
+          <span class="t" style="color:var(--accent)">finance monitor</span>
+          <span style="width:8px;height:8px;border-radius:99px;background:#F2766B" title="cor-rótulo vermelha = parece erro"></span>
+          <span title="worktree" style="color:var(--accent)">⎇</span>
+          <span title="missão" style="color:var(--accent)">🚀</span>
+        </div>
+        <div class="conv" style="grid-template-columns:18px 1fr auto">
+          <span class="agent claude" style="position:relative">C<span class="dot run" style="position:absolute;right:-2px;bottom:-2px;animation:pulse 1.6s infinite"></span></span>
+          <span class="t">estudo sobre openAi</span>
+          <span title="disputa">⚔</span>
+        </div>
+      </div>
+      <p class="note" style="padding:8px; font-size:11px">
+        4 canais na mesma linha: texto brass + dot vermelho de RÓTULO (lê como
+        erro) + ⎇ brass + 🚀 brass pulsando. Lixeira do projeto nasce colada
+        no chevron.
+      </p>
+    </div>
+  </div>
+
+  <!-- =================== GALERIA =================== -->
+  <div style="max-width:420px">
+    <h2>Gramática (a tabela que a UI promete)</h2>
+    <table>
+      <tr><th>sinal</th><th>significado</th><th>movimento</th></tr>
+      <tr><td><span class="swatch" style="background:var(--st-queued)"></span>âmbar</td><td>esperando VOCÊ (permissão, pergunta, decisão de disputa)</td><td><b>pulsa</b> (único que pulsa)</td></tr>
+      <tr><td><span class="swatch" style="background:var(--st-running)"></span>ciano</td><td>rodando</td><td>estático</td></tr>
+      <tr><td><span class="swatch" style="background:var(--st-success)"></span>esmeralda</td><td>terminou ok e você não viu</td><td>estático, some ao abrir</td></tr>
+      <tr><td><span class="swatch" style="background:var(--st-error)"></span>rosa</td><td>terminou com erro e você não viu</td><td>estático, some ao abrir</td></tr>
+      <tr><td>anel fino</td><td>cor-rótulo (sua etiqueta) — paleta sem cores de status</td><td>—</td></tr>
+      <tr><td>sublinha mono</td><td>contexto: worktree · missão · disputa · por que está esperando</td><td>—</td></tr>
+      <tr><td>barra brass</td><td>seleção (dona do lugar), nunca status</td><td>—</td></tr>
+    </table>
+    <p class="note" style="margin-top:12px">
+      Projeto agrega o PIOR estado dos filhos no dot da pasta:
+      esperando &gt; erro-não-visto &gt; rodando &gt; ok-não-visto. A pasta
+      colorida segue sendo identidade (cor do projeto).
+    </p>
+  </div>
+</div>
+</body>
+</html>

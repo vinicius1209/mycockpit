@@ -426,3 +426,108 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **Como foi feito:** time em **worktrees isolados** (paralelo, sem conflito), cada fase
   com **gate de review** antes do merge; `vite build` (não só `tsc`) como portão real —
   pegou `.kind`↔`.type` e `scope` fora do union que o `tsc` deixou passar.
+
+### ADR-028 — Trabalho diferido do provider é cidadão do fio: narrado, nunca morto em silêncio ✅
+- **Contexto:** o incidente deep-research (31/07): o Claude Code lançou um workflow em
+  background (tool `Workflow`), o turno "concluiu" e o resultado NUNCA chegou — o usuário
+  cutucou 3 vezes em 2h até o modelo ler o journal na mão. Causa raiz: o app assumia que
+  todo trabalho vive dentro do turno, mas o provider tem primitivos que o ultrapassam —
+  e o `-p` espera background task por no máx. **10 min**
+  (`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS ?? 600000`, achado no bundle) antes do
+  wind-down que orfana o trabalho. Nada era detectado: os eventos `system/task_*` do
+  stream-json caíam no descarte (a MESMA lacuna do ADR-015, uma camada acima).
+- **Decisão:** conceito normalizado **`AgentEvent::DeferredWork`** (deferred-work-plan):
+  os 5 subtypes `system/task_*` + a string `<task-notification>` injetada no `--resume`
+  viram um nó no Fio Vivo com ciclo de vida PRÓPRIO (`rodando · concluiu ·
+  interrompido`), irmão do nó de processo externo do work-hierarchy-plan. O turno em
+  hold diz o que roda em background; `Done`/replay com diferido vivo marca
+  `interrupted` (nunca "rodando" falso); o quit avisa antes de matar; o spawn do claude
+  sobe o ceiling pra **4h**; o vigia de turno mudo trata progresso de diferido como
+  sinal de vida. Spike + inventário: `spikes/deferred-work/`, `stream-json-notes.md`.
+- **Consequência:** pesquisa longa termina e o turno de conclusão chega no MESMO
+  processo (comprovado: o CLI re-invoca o modelo e emite segundo `result` antes do EOF).
+  Push de verdade entre turnos (processo residente com stdin stream-json aberto — sem
+  ceiling; provado no spike) fica como evolução D2-B, que de quebra destrava anexo base64.
+- **Guardas:** fail-open (sem `task_*` → comportamento de hoje; codex/agy nunca emitem
+  → degradação honesta sem nó inventado); `<task-notification>` é entrada NÃO confiável
+  (render-only, jamais comando); o nó diferido nunca segura o `finalizing`.
+
+### ADR-029 — Evidência visual é cache com TTL, não acervo: o GC pode recolher, a UI nunca mente ✅
+- **Contexto:** o B1 (browser-plan) gravou capturas de tool_result em `evidence/<convId>/`
+  e o G3.3 estendeu o GC de anexos à pasta (mesma política: órfã só com refs
+  não-vazias/F1, TTL 30d por `updated_at`, LRU até LOW_WATER, run ativo segura/F23).
+  O review gate apontou a tensão: as refs do GC são por CONVERSA, não por item —
+  conversa viva parada >30d (ou vítima do LRU) perde a pasta inteira enquanto o
+  transcript ainda aponta os paths.
+- **Decisão (aceite explícito):** evidência é **cache reconstituível**, não acervo:
+  a fonte de verdade da conversa é o texto do fio; a captura é auxílio visual que
+  o agent pode refazer. O GC recolhe pela política padrão e a UI degrada honesta
+  (chip "evidência removida", nunca imagem quebrada — MessageList). Sem GC, um
+  usuário de Playwright acumularia screenshots sem teto.
+- **Consequência:** capturas de conversas antigas somem antes da conversa; quem
+  precisar de evidência permanente anexa/exporta. **Caminho de upgrade registrado:**
+  se isso morder de verdade, o conserto é refs por ITEM (`ChatItem.images` como
+  fonte do GC), não afrouxar o TTL.
+
+### ADR-030 — Custo de missão mora no ledger (turn_costs); deliveries sai da união, com perda transitória aceita ✅
+- **Contexto:** até o MH2.1, o custo de uma missão só existia em `deliveries`
+  (gravada UMA vez, no fim, e SÓ quando a missão terminava done) — missão
+  abortada/estourada/falhada não deixava custo em lugar nenhum, e as somas do
+  Painel misturavam duas fontes. O MH2.1 fez cada FASE gravar `turn_costs`
+  (inclusive tentativas descartadas e desfechos ruins), a mesma fonte única do
+  chat/disputa.
+- **Decisão:** `deliveries` deixa de participar da união de custo
+  (`loadLedger`, db.ts): vira registro de ENTREGA (recall/histórico; entrega ≠
+  custo). Mantê-la na união contaria as missões novas em DOBRO (fase em
+  turn_costs + total em deliveries), pra sempre.
+- **Consequência (perda transitória, aceita):** o custo de missões concluídas
+  ANTES do MH2.1 vivia só em `deliveries` e SOME das somas do Painel/cards.
+  Preferimos um buraco histórico finito e honesto a uma dupla contagem
+  permanente nas somas novas; quem precisar do valor antigo ainda o vê na
+  própria delivery (a linha não foi apagada).
+
+### ADR-031 — Fecho do gate MH3+MH4: presets congelados ao salvar time; prova de neutralidade exige commit por fase ✅
+- **Contexto:** o gate de review do mission-hardening (MH3+MH4) aprovou com
+  ressalvas e deixou dois aceites que merecem registro, não correção.
+- **Decisão (a) — presets de fábrica materializam ao salvar time no Dock:**
+  "Salvar como time" persiste a LISTA inteira de presets nas Settings
+  (`saveTableMissionPresets`), o que congela os presets de fábrica como cópias
+  do momento — um default futuro (novo teto, nova fase) NÃO alcança quem já
+  salvou um time. Trade-off aceito: é o mesmo comportamento do "restaurar
+  padrão" e de qualquer preset editado; a alternativa (merge por id a cada
+  boot) reintroduziria a mágica silenciosa que o app evita. Quem quiser os
+  defaults novos apaga o preset e o de fábrica volta.
+- **Decisão (b) — lição de processo: plano multi-fase commita por fase:** a
+  prova de neutralidade do MH4.1 (refactor do launch pra máquina de fases) se
+  apoiou nas suítes (26 arquivos / 214 testes intactos), mas ficou SEM lastro
+  auditável por diff — a árvore estava suja com MH1–MH3 não commitados e não
+  dá pra isolar "o que o MH4.1 mudou" a posteriori. Doravante, execução de
+  plano multi-fase fecha cada fase com commit próprio (mesmo em branch de
+  trabalho): o diff da fase é parte da Definition of Done, não cortesia.
+- **Consequência:** (a) documentado no mission-hardening-plan como quirk
+  conhecido; (b) vale pra todo plano novo em docs/*-plan.md — o gate de review
+  pode exigir o diff por fase como evidência.
+
+### ADR-032 — No inbox, DESCOBERTO ≠ PENDENTE: o badge é sinal de agora, não arqueologia ✅
+- **Contexto:** chat novo no `meuingresso3.0` e o sino acendeu "2" — dois "Aprovar PRD" de
+  planos SDD criados em MAIO/2026 pelo fluxo do usuário no terminal
+  (`.claude/plans/sdd-auth-05-mobile-mfa` e `sdd-auth-06-cleanup`, `stage:"prd"` e
+  `artifacts.prd.approved:false`). Ler o `.claude/plans` está certo (é a fonte real); contar
+  isso como interrupção não: o badge do sino significa "precisa de você AGORA", e 68 dias de
+  dívida herdada do terminal não é agora.
+- **Decisão:** gate do SDD (`prd`/`pr`) que o app apenas **descobriu no disco**, sem nenhum
+  gesto humano pelo app naquele plano, entra na lista numa seção separada ("Encontrados no
+  projeto", abaixo de "Precisam de você") e **não conta no badge nem na fila do Painel**. A
+  **adoção** — criar o plano no app, aprovar o PRD, rodar/marcar/sincronizar etapa pelo
+  SddView — promove o plano a pendência normal, e é **persistida** na tabela de frontend
+  `sdd_plan_marks` (`project_id` + `slug` + `adopted_at` + `ignored_at`, `CREATE TABLE IF
+  NOT EXISTS` em `lib/db.ts`, **sem migração no lib.rs**): vale cross-sessão. O que **nasceu
+  no app** (disputa do Fusion, card do board, proposta do curador) segue contando sempre.
+  "Ignorar este plano" some com o item e é reversível pela linha "N ignorados" do sino.
+- **Guardas:** (a) **fail-open** — falha ao ler `sdd_plan_marks` (ou ausência de banco)
+  volta ao comportamento antigo (tudo conta), com aviso no console; esconder pendência real
+  por erro de leitura seria o pior dos dois mundos. (b) O app **nunca escreve** essa marca
+  no `.claude/plans` do usuário: o plano é dado dele, o app só lê. (c) Origem e idade ficam
+  visíveis no item (`.claude/plans/<slug> · criado há N d`) — procedência é parte do estado.
+- **Consequência:** o número do sino volta a dizer "isto te espera". A régua da tray
+  (ADR-018) não muda: ela nunca contou gate de SDD, só interações e disputas.

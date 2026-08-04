@@ -1,165 +1,167 @@
-# Hierarquia de trabalho vivo — visibilidade estilo CLI
+# Visibilidade de trabalho vivo — Proposta A (Fio Vivo), multi-provider
 
-> Status: proposta / design. Nada implementado ainda.
-> Objetivo: dar ao mycockpit a visibilidade que o Claude Code CLI tem — ver
-> workflows, agents e processos rodando, com contexto e agrupamento, num lugar
-> sempre visível e navegável.
+> Status: implementado e validado em 30/07/2026.
+> Mock de validação: `docs/mocks/work-visibility.html` (abre na Proposta A;
+> galeria de estados no fim, incl. multi-provider e interno/externo).
+> Extensão (31/07): o Plano 1 ganhou nós com **ciclo de vida próprio** para
+> trabalho interno do provider que ULTRAPASSA o turno (tool `Workflow` /
+> background tasks do Claude) — ver `deferred-work-plan.md` e ADR-028. Mesmo
+> vocabulário de estados do nó de processo externo (A2.3), incl. `interrompido`.
 
-## O problema, em uma frase
+## Entregue
 
-Hoje o mycockpit **executa** trabalho concorrente (turnos, missões, sub-agents,
-disputas) e **já mede** tempo/tokens/custo de tudo isso — mas não **modela a
-hierarquia** entre as unidades de trabalho. O resultado são três sintomas que
-parecem separados e são o mesmo bug de fundação:
+- Fio Vivo inline no chat, com árvore acessível e navegação por
+  `↑`/`↓`/`←`/`→`; o ramo ativo abre sozinho e os detalhes continuam sob demanda.
+- O plano vivo tem um único instrumento canônico junto ao composer, aberto
+  enquanto o turno está em voo. No transcript fica apenas o marco compacto
+  `Plano publicado`, que vira resumo final expansível; planos são isolados por
+  pedido e nunca reutilizam tarefas de um turno anterior.
+- Sem update explícito do provider, a primeira etapa aparece como `Próxima`, não
+  como falsamente ativa. `TaskUpdate`/`work_update` são a única fonte de
+  progresso em andamento.
+- Ponteiros reais de pai/filho do Claude preservados até a UI; no Codex, comandos
+  aparecem desde `item/started`. Providers que não reportam estrutura continuam
+  no fallback plano, sem árvore inventada.
+- MCP interno uniforme `mc-work` para Claude e Codex, com `work_plan`,
+  `work_update`, `process_start`, `process_poll` e `process_stop`.
+- Processos externos pertencem ao MyCockpit: PID, grupo de processos,
+  stdout/stderr em tail, parar e repetir. Um processo que estava vivo no replay
+  vira `órfão`, nunca aparece falsamente como ainda executando.
+- Reação removida dos fragmentos intermediários. Há uma única faixa de emojis no
+  resultado terminal de cada pedido; transformar a reação em aprendizado abre
+  uma proposta editável e exige confirmação de escopo antes de gravar a memória.
+- Briefings de subagente ficam em disclosure compacto; durante a execução, ações
+  anteriores são agrupadas e só o ramo atual permanece em evidência. O provider
+  mora no cabeçalho do agente, e a interrupção informa quando só existe controle
+  do turno completo.
 
-1. **Sem tray global de trabalho vivo.** Não existe o rodapé do CLI
-   (`pesquisa-multimodal-headless · 4/5 agents done · 39m 57s · ↓521k tokens`).
-   A agregação existe espalhada em 3 lugares, nenhum é um dock persistente.
-2. **Sub-agents viram lista plana.** Quando o agent despacha um time, os
-   `Read`/`Bash` dos sub-agents escorrem num fio único, sem dizer quem fez o quê.
-3. **Processo não é cidadão.** `docker compose up` / `npm run dev` não existem
-   como nó rastreável — viram uma linha de tool que trava e trunca a ~600 chars.
+## O objetivo
 
-## A causa-raiz única: a árvore de trabalho
+O mycockpit é um **cockpit multi-provider**: conversa com Claude Code CLI, Codex,
+Antigravity (`agy`) — e adiante OpenCode. A visibilidade precisa deixar **CLARO
+pro usuário o que CADA motor está fazendo**, incluindo trabalho interno (raciocínio,
+tools, sub-agents) e processos externos (docker, dev servers, shells). Não é a
+"árvore do Claude" — é um modelo **normalizado e agnóstico de provider**, com
+degradação honesta conforme o que cada motor consegue reportar.
 
-Toda unidade de trabalho tem um pai. Se o app modelasse isso, as três telas
-caem de graça.
+## A decisão de UI: Proposta A — Fio Vivo (inline, aninhado no chat)
+
+Comparadas 3 abordagens (ver mock): A (inline), B (dock persistente), C (painel
+lateral). **Escolhida: A** — é evolução do que já existe (`buildNodes`,
+`TaskChecklist`, `ToolGroup`), não superfície nova. Escopo por conversa.
+
+---
+
+## Os DOIS planos de visibilidade (o eixo central)
+
+O "interno vs externo" mapeia em dois planos com **donos diferentes** — e é isso
+que resolve o multi-provider:
+
+### Plano 1 — Trabalho interno (reportado pelo PROVIDER)
+Raciocínio, tool calls, sub-agents. Quem produz é o motor; a granularidade é o
+que cada um emite. **Degradação honesta — não inventar árvore que o motor não
+reporta.** Cada nó leva o **selo do motor** (vem de `conv.agent`).
+
+| Motor | Tool calls | Sub-agents | Custo | Árvore |
+|---|---|---|---|---|
+| Claude Code (`adapters.rs:176`) | estruturados, ao vivo | sim (`parent_tool_use_id`, `adapters.rs:432`) | USD real | **rica** |
+| Codex (`adapters.rs:583`, `codex_appserver.rs`) | ao vivo desde `item.started` | não | estimado (`pricing::estimate`) | **média** (folhas) |
+| Antigravity `agy` (`adapters.rs:871`) | ❌ só texto cru (sem `--output-format json` na v1.0.16) | não | ❌ | **pobre** (bolha) |
+| OpenCode (`agents.ts:210`) | não implementado no Rust | — | — | — |
+
+### Plano 2 — Processos externos (do MYCOCKPIT, uniforme)
+Docker/dev servers/shells long-running. Chave: se o **agent** roda `pnpm dev` pela
+Bash-tool dele, o processo é filho da CLI do motor — o mycockpit **não tem o pid
+nem o stdout**, só vê um `Tool`. Não dá pra attachar.
+
+**Solução agnóstica:** o mycockpit vira o **dono do substrato de processos**. Ele
+já roda um MCP server interno (approval-server, `adapters.rs:260`); expõe uma
+capability de processo (spawn + buffer + poll + kill) via MCP, e **qualquer motor
+que fale MCP usa a mesma coisa**. Processo externo fica idêntico entre providers,
+com saída/parar/pid que o app controla de verdade. Onde não dá pra rotear (agy sem
+MCP), cai no Plano 1 (aparece como tool/texto). Honesto.
+
+> Interno = o motor reporta (granularidade variável). Externo = o mycockpit
+> spawna (uniforme). Um nó de processo tem **ciclo de vida próprio** — nunca trava
+> o turno esperando um `tool_result` que não vem (hoje trava: `adapters.rs:485`).
+
+---
+
+## A árvore de trabalho (modelo único)
 
 ```
-conversa
- └─ turno / missão (fase)
-     ├─ agent principal
-     │   ├─ tool (Read, Bash…)
-     │   └─ sub-agent (Task)          ← hoje: parentesco jogado fora
-     │       ├─ tool                  ← hoje: escorre plano no fio
-     │       └─ tool
-     └─ processo (docker/dev server)  ← hoje: nem existe como nó
+turno (bolha do agent) ── selo do motor (claude/codex/agy)
+ └─ [espinha]  = to-do se existir, senão o próprio turno
+     ├─ tarefa in_progress
+     │   ├─ tool (interno, granularidade do provider)
+     │   ├─ sub-agent (Task) ── só Claude reporta          ← determinístico
+     │   │   └─ tool  (parent_tool_use_id = Task)
+     │   └─ processo (externo, do mycockpit)               ← uniforme, via MCP
+     └─ tarefa pending…
 ```
 
-Uma causa, três superfícies consumidoras do **mesmo** modelo:
-
-- **Superfície 1 — Dock/tray global:** a árvore vista de cima, agregada.
-- **Superfície 2 — Aninhamento inline:** a árvore vista de dentro, no chat.
-- **Superfície 3 — Processo como nó:** docker/dev server rastreável e re-attachável.
+Dois vínculos: sub-agent→Task **determinístico** (`parent_tool_use_id`);
+tool/processo→tarefa **temporal** (tarefa `in_progress` no momento).
 
 ---
 
-## O que JÁ existe (reusar, não recriar)
+## Entrega implementada
 
-A infra está ~70% pronta. Mapa do que reaproveitar:
+### ✅ A1 — Primitivo de árvore + aninhar sub-agents + selo de provider
+Menor esforço, conserta a "lista plana" (print dos study agents) e planta a
+fundação (o nó de árvore + o selo do motor que tudo reusa).
+- **A1.1** — propagar o pai: adicionar `parent_tool_id: Option<String>` ao
+  `AgentEvent::Tool` (`agent.rs:111`); parar de descartar em `adapters.rs:446`
+  (hoje vira só `is_subagent`, `adapters.rs:432`). Equivalente no Codex.
+- **A1.2** — `parentToolId?` no `ChatItem` tool (`chat.ts:47`) + reducer (`chat.ts:441`).
+- **A1.3** — agrupar por pai em `buildNodes` (`messageNodes.ts:71`).
+- **A1.4** — card de sub-agent colapsável (○/✓/✕ agregado). `presentTool` já tem
+  `case "Task"` com `subagent_type` (`toolview.ts:336`).
+- **A1.5** — selo de provider no nó, derivado do `conv.agent` do turno (barato;
+  provider não vive no evento hoje — mas o turno inteiro é um motor só).
 
-### Registries de trabalho vivo
-- `app/src/store/chat.ts:87` — `ConvState`: `running`, `runId`, `startedAt`,
-  `contextTokens`, `items[]`. Um por conversa; N concorrentes.
-- `app/src/store/mission.ts:64` — `mission.byConv: Record<convId, MissionRun>`;
-  `MissionRun` (`app/src/lib/missionTypes.ts:139`) tem `phases[]`, `current`,
-  `costTotal`, `status`, `startedAt`. Já dá "X/Y fases".
-- `fusion.byConv` — disputas vivas.
-- Backend: `app/src-tauri/src/agent.rs:24` — `RunRegistry` (mapa `run_id → pid` +
-  sinal de cancel), suporta N runs; `attachments.rs:310` — `ActiveConvs`.
+### ✅ A2 — Plano de processos externos (mycockpit-owned, MCP) — cobre foreground E detached
+A capacidade nova de verdade. Escopo confirmado: **detached (`docker -d`) E
+foreground long-runner (`pnpm dev`)**.
+- **A2.1** — registry de processos no Rust (além do `RunRegistry` que só guarda o
+  pid da CLI de topo, `agent.rs:24`): spawn com stdout bufferizado (tail em anel),
+  poll, kill. Sem PTY (sem input interativo).
+- **A2.2** — expor via MCP interno (ao lado do approval-server) pra qualquer
+  motor iniciar/consultar/matar processo de forma uniforme.
+- **A2.3** — nó de processo com ciclo próprio + estados: **vivo · encerrou 0 ·
+  falhou (saiu N) · órfão** (morto no restart, `RunRegistry.kill_all`, `agent.rs:32`).
+- **A2.4** — UI: saída sob demanda (mini-terminal), ações abrir/parar/ver saída/
+  retentar/retomar. Marcado "externo".
 
-### Telemetria por turno (tempo/tokens/custo) — pronta
-- `app/src/store/chat.ts:57` — `ChatItem` tipo `"result"`: `costUsd`, `usage`,
-  `durationMs`. Preenchido no reducer em `chat.ts:475`.
-- `app/src/components/chat/MessageList.tsx:729` — `TeleStrip` (o card
-  "TEMPO/TOKENS/CACHE/CUSTO"). `sessionCost` somado on-the-fly em `:1001`.
-- `app/src/lib/format.ts` — `fmtCost`/`fmtDuration`/`fmtTokens` (pt-BR).
-- Persistência: `app/src/lib/db.ts:1069` `recordTurnCost` (tabela `turn_costs`);
-  `loadLedger` unifica `turn_costs ∪ deliveries ∪ stage_runs`.
-
-### Agregação cross-projeto — JÁ EXISTE (a mina de ouro)
-- `app/src/App.tsx:355-495` — o `useEffect` que monta `TraySnapshot` iterando
-  `chat.byId` running + `mission.byConv` running + `fusion.byConv`. **Esta é
-  literalmente a lógica do "4/5 agents done".** Precisa virar hook compartilhado.
-- `app/src/lib/tray.ts` — `TrayActivity`/`TraySnapshot` (`kind`, `startedAt`,
-  `agent`, `detail`, contadores).
-- `app/src/components/tray/TrayPopover.tsx` — popover que já renderiza isso.
-- `app/src/components/panel/MissionControl.tsx:628` — strip de frota + custo
-  hoje/7d/30d + sparkline. Quase um dashboard.
-- `app/src/components/layout/Sidebar.tsx:325` — `useRunningConvIds` etc.: pulso
-  de status por conversa/projeto.
-
-### Superfície visual — o Escritório
-- `app/src/office/bridge/derive.ts:312` `deriveScene` — já mapeia
-  missão/turno → mesas/avatares por projeto. É agregação visual pronta.
+### ✅ A3 — To-do como espinha
+Trabalho pendura sob a tarefa `in_progress` (vínculo temporal). Estende
+`deriveTasks`/`TaskChecklist` ou compõe em `buildNodes`.
 
 ---
 
-## O que NÃO existe (criar)
+## Decisões travadas
+1. **Espinha sem to-do** → to-do se existir, senão o turno.
+2. **Ordem de vínculo** → determinístico (A1) antes do temporal (A3); selo de
+   provider já em A1.
+3. **Escopo de A2** → detached **e** foreground long-runner (`/bashes` completo,
+   sem PTY), via substrato de processo do próprio mycockpit exposto por MCP.
 
-1. **Parentesco no dado.** `parent_tool_use_id` do stream-json é **descartado**
-   em `app/src-tauri/src/adapters.rs:432` (colapsado num booleano `is_subagent`,
-   id do pai jogado fora). Nunca chega ao frontend.
-2. **Hierarquia no store.** `ChatItem` tool (`chat.ts:47`) não tem `parentToolId`.
-   `buildNodes` (`app/src/components/chat/messageNodes.ts:38`) agrupa por
-   **adjacência de stream**, não por pai.
-3. **Agregado ao vivo somando tokens/custo/tempo dos runs ativos.** Hoje é
-   por-turno (MessageList) ou por-janela histórica (ledger). Falta o "39m 57s ·
-   521k tokens" somando o que respira agora.
-4. **Rodapé persistente único.** Hoje é tray popover + strip do MissionControl +
-   linha "Sessão" — nenhum é um dock sempre-visível.
-5. **Processo como cidadão.** Sem background shell, sem PTY, sem re-attach
-   (ver `docs/stream-json-notes.md` e a análise de shells).
+## Estados que a UI cobre (galeria do mock)
+- Time de sub-agents: done colapsa; falha à mostra ("✕ N ações falharam").
+- Processo nos 4 estados com ações contextuais.
+- Fallback sem to-do (espinha = turno).
+- **Multi-provider:** Claude (árvore rica) vs Codex (folhas, sem galhos) vs agy
+  (só texto) — degradação honesta com selo do motor.
 
----
+## Guardas
+- `parentToolId` ausente (Codex legacy/agy/streams antigos) → render plano
+  (fail-open).
+- Replay-safe: a árvore deriva de `items` (como `deriveTasks`); reconstrói após
+  restart. Processo órfão mostra estado honesto, não "rodando".
+- Nó de processo é assíncrono ao ciclo do turno — nunca trava.
+- Degradação honesta: nunca desenhar estrutura que o provider não reportou.
 
-## Plano por superfície
-
-### Superfície 2 primeiro — Aninhamento inline (menor risco, maior clareza)
-
-Conserta a "lista plana" e **prova o modelo de hierarquia** end-to-end antes de
-investir no dock. Cadeia mínima:
-
-- **S2.1 — Preservar o pai no adapter.** Adicionar `parent_tool_id: Option<String>`
-  ao `AgentEvent::Tool` (`agent.rs:111`) e parar de descartar em `adapters.rs:446`.
-  Fazer o equivalente no Codex app-server (`codex_appserver.rs`).
-- **S2.2 — Carregar no store.** Campo `parentToolId?` no `ChatItem` tool
-  (`chat.ts:47`); preencher no reducer (`chat.ts:441`).
-- **S2.3 — Agrupar por pai.** Em `messageNodes.ts:buildNodes`, quando um tool tem
-  `parentToolId`, aninhá-lo sob o card do Task pai (`presentTool` já tem
-  `case "Task"` com `subagent_type` em `toolview.ts:336`) em vez do `ToolGroup`
-  por adjacência.
-- **S2.4 — UI de aninhamento.** Card de sub-agent colapsável no `MessageList`,
-  com contagem "N tools · X linhas" e status ○/✓ agregado dos filhos.
-
-> Guarda: quando `parentToolId` estiver ausente (Codex legacy, streams antigos),
-> cair no comportamento plano atual — fail-open pra render.
-
-### Superfície 1 — Dock de trabalho vivo (o rodapé do CLI)
-
-- **S1.1 — Hook agregador compartilhado.** Extrair `App.tsx:355-495` para um
-  `useLiveWork()` que devolve a árvore de runs vivos + somatórios.
-- **S1.2 — Somatório ao vivo.** Somar tokens/custo/tempo através dos runs ativos
-  (hoje só conta `running` nº). Reusar `MissionRun.costTotal`/`phases` e
-  `ChatItem.result.usage`.
-- **S1.3 — Componente de dock persistente.** Rodapé fixo (ou promoção do
-  `TrayPopover`) listando cada unidade viva: nome, ○/✓, X/Y, tempo, tokens/custo,
-  **clicável pra focar a conversa/missão**. Reusar `TrayActivity` + `format.ts`.
-- **S1.4 — Onde encaixa.** Decisão de UX: rodapé global vs. faixa no Escritório
-  vs. ambos. (ver Perguntas abertas)
-
-### Superfície 3 — Processo como nó (maior esforço, decidir escopo)
-
-Duas rotas, escolher uma (ver análise de shells):
-- **Rota leve — background task estilo `/bashes`:** ensinar o adapter a lidar com
-  `run_in_background`/`BashOutput`, bufferizar stdout, expor como nó "processo" na
-  árvore com polling. Sem PTY.
-- **Rota completa — terminal PTY estilo Cursor:** `portable-pty` no Rust +
-  `xterm.js` no front. Melhor UX pra docker/dev server, muito mais custo.
-
-> Recomendação: adiar S3 pra depois de S1+S2 provarem o modelo. O ganho imediato
-> (visibilidade + agrupamento) vem de S1/S2 e não depende de PTY.
-
----
-
-## Ordem sugerida
-
-1. **S2** (aninhamento inline) — valida o modelo de hierarquia com risco baixo.
-2. **S1** (dock global) — reusa a agregação que já existe + o modelo de S2.
-3. **S3** (processo) — só depois, e primeiro a rota leve.
-
-## Perguntas abertas (decisões pendentes)
-
-- Onde o dock vive: rodapé global persistente, faixa no Escritório, ou os dois?
-- Escopo de S3: rota leve (`/bashes`) basta, ou você quer terminal PTY completo?
-- O dock agrega cross-projeto (toda a frota) ou só o projeto em foco?
+## Fora de escopo
+- Dock global cross-projeto (B) e painel lateral (C) — descartados.
+- Terminal PTY / input interativo no shell — não; só visibilidade + saída sob
+  demanda + parar.

@@ -79,7 +79,10 @@ flutuante, com glow brass sutil no foco e uma *status strip* viva.
 ## Espaçamento & densidade
 
 - Grid base **4px**; ritmo principal em múltiplos de 8.
-- Linha de projeto na sidebar: **34px**. Padding de chat: 24–28px. Gutter de painel: 16px.
+- Linha de projeto na sidebar: **~40px** (py 10px + texto 13px/1.5 — régua real
+  do código, medida em jul/2026; o valor antigo de 34px era mentira de doc).
+  Linha de conversa: **~34px** (py 8px + texto 12px/1.5). Padding de chat:
+  24–28px. Gutter de painel: 16px.
 - IDE-like: denso nas laterais, respirável no centro.
 
 ## Raios & elevação
@@ -125,5 +128,9 @@ Superfícies elevadas usam `--lift` (1px highlight) para sensação de "vidro/in
 ## Acessibilidade
 
 - Contraste mínimo AA no texto (`--text` sobre `--bg` ✓). `--text-muted` só em rótulos.
+- Brass como TEXTO pequeno reprova AA no tema claro sobre superfícies de hover
+  (medido: `#A9742B` sobre `--accent` claro = **3.56:1** < 4.5:1). Item ativo usa
+  texto `foreground`; brass fica na barra/fundo/ícone (o "ativo" não depende do
+  texto tingido).
 - Foco sempre visível (`--ring`). Navegação por teclado nos painéis e na lista.
 - `prefers-reduced-motion` desliga pulse/reveal.
