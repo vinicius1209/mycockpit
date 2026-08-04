@@ -963,7 +963,12 @@ function toolLine(it) {
   else if (inp != null) { try { summary = JSON.stringify(inp); } catch (e) { summary = ""; } }
   if (summary.length > 140) summary = summary.slice(0, 140) + "…";
   var res = it.result ? "  → " + (it.result.ok ? "" : "✗ ") + it.result.lines + " linha" + (it.result.lines === 1 ? "" : "s") : "";
-  return '<div class="ci-tool"><span class="tn">▸ ' + esc(it.name) + '</span>  ' + esc(summary) + esc(res) + '</div>';
+  // G3.3 — evidência de imagem vira TEXTO no celular ("2 capturas"): a página
+  // não renderiza os blobs, mas não esconde que a tool produziu imagem.
+  var caps = Array.isArray(it.images) && it.images.length
+    ? "  · " + it.images.length + (it.images.length === 1 ? " captura" : " capturas")
+    : "";
+  return '<div class="ci-tool"><span class="tn">▸ ' + esc(it.name) + '</span>  ' + esc(summary) + esc(res) + esc(caps) + '</div>';
 }
 function chatItemHtml(it) {
   switch (it.kind) {

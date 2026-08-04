@@ -13,8 +13,10 @@
 //   - comandos "/" (o SlashPopover/useSlashCommands do console — aqui só
 //     chegam os gestos do teclado, via SlashMenuKeysPlugin), paste → anexo
 //     (PASTE_COMMAND → useAttachments.addFiles) e histórico ↑/↓ estilo shell
-//     nas bordas (usePromptHistory + historyRecallIntent). O "/comando" é
-//     TEXTO normal, não pill — só a menção é atômica.
+//     nas bordas (usePromptHistory + historyRecallIntent). O "/comando"
+//     escolhido no popover (ou digitado + espaço, com match exato) vira pill
+//     ATÔMICO no INÍCIO do editor — mesmo mecanismo do pill de menção
+//     (trigger "/"), serializando pro MESMO `/nome` literal (slashPill.ts).
 //   - "@" de arquivos do projeto: os caminhos chegam por prop (`mentionFiles`,
 //     a listagem do useAtMentions), viram pill atômico que serializa pra
 //     `@caminho` e o menu agrupa Especialistas antes de Arquivos. Este arquivo
@@ -39,28 +41,43 @@ import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin"
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
 import {
   $createLineBreakNode,
+  $createTextNode,
   $getRoot,
   $getSelection,
   $isElementNode,
+  $isParagraphNode,
   $isRangeSelection,
   $isRootNode,
   CLEAR_HISTORY_COMMAND,
   COMMAND_PRIORITY_CRITICAL,
   COMMAND_PRIORITY_HIGH,
+  FORMAT_TEXT_COMMAND,
   KEY_ARROW_DOWN_COMMAND,
   KEY_ARROW_UP_COMMAND,
   KEY_ENTER_COMMAND,
   KEY_ESCAPE_COMMAND,
   KEY_TAB_COMMAND,
   PASTE_COMMAND,
+  TextNode,
+  type LexicalNode,
 } from "lexical"
 import {
   BeautifulMentionsPlugin,
-  BeautifulMentionNode,
+  $createBeautifulMentionNode,
+  $isBeautifulMentionNode,
+  createBeautifulMentionNode,
+  type BeautifulMentionComponentProps,
   type BeautifulMentionsTheme,
 } from "lexical-beautiful-mentions"
 import { FileText } from "lucide-react"
 import { $serializeDraft, $setDraft } from "@/components/chat/lexicalDraft"
+import {
+  SLASH_TRIGGER,
+  slashPillCaretOffset,
+  slashPillMatch,
+  slashPillSourceLabel,
+  type SlashPillCommand,
+} from "@/components/chat/slashPill"
 import { historyRecallIntent } from "@/hooks/usePromptHistory"
 import { collectPastedFiles } from "@/hooks/useAttachments"
 import { buildLexicalAtItems } from "@/hooks/useAtMentions"
@@ -86,6 +103,63 @@ const mentionsTheme: BeautifulMentionsTheme = {
     "rounded bg-brass/25 px-1 font-medium text-brass",
     "outline outline-1 outline-brass/50",
   ),
+  // Pill do comando "/": mesma família do de menção (brass, mesmo raio/fundo),
+  // distinguível pelo conteúdo — `/nome` em mono + micro-chip da origem
+  // (renderizados pelo ComposerMentionComponent). Tokens do tema (brass,
+  // muted-foreground, border) já resolvem claro/escuro.
+  [SLASH_TRIGGER]: cn(
+    "inline-flex items-baseline gap-1 rounded bg-brass/[0.14] px-1 text-brass",
+    "align-baseline transition-colors",
+  ),
+  [`${SLASH_TRIGGER}Focused`]: cn(
+    "inline-flex items-baseline gap-1 rounded bg-brass/25 px-1 text-brass",
+    "outline outline-1 outline-brass/50",
+  ),
+}
+
+/** Render dos pills. A menção "@" sai IDÊNTICA ao componente default da lib
+ *  (span com a classe do tema + `@nome`); o comando "/" ganha o corpo próprio:
+ *  `/nome` em mono + micro-chip da origem (o `data.source` que a criação do
+ *  node gravou — mesmo rótulo do commandBadges do popover). A atomicidade
+ *  (clique seleciona, backspace/delete removem inteiro, setas pulam) continua
+ *  toda no MentionComponent da lib, que nos envolve. */
+function ComposerMentionComponent({
+  trigger,
+  value,
+  data: _data,
+  children,
+  ...props
+}: BeautifulMentionComponentProps<{ source?: string }>) {
+  if (trigger !== SLASH_TRIGGER) {
+    // DOM igual ao default da lib: children é o `trigger+value` já pronto.
+    return <span {...props}>{children}</span>
+  }
+  const source = _data?.source
+  return (
+    <span {...props}>
+      <span className="font-mono">{`/${value}`}</span>
+      {source ? (
+        <span className="rounded border border-brass/30 px-1 py-px font-sans text-[9px] tracking-wide text-muted-foreground uppercase">
+          {source}
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
+// Node de menção com o NOSSO componente (pattern da lib): substitui o
+// BeautifulMentionNode via node replacement — o $createBeautifulMentionNode
+// (inclusive o do lexicalDraft) passa a instanciar esta classe.
+const [ComposerMentionNode, composerMentionReplacement] =
+  createBeautifulMentionNode(ComposerMentionComponent)
+
+/** O primeiro filho do primeiro parágrafo é um pill de comando "/"? (posição
+ *  ÚNICA em que ele pode existir — gramática de comando no início.) */
+function $hasLeadingSlashPill(): boolean {
+  const first = $getRoot().getFirstChild()
+  if (!$isElementNode(first)) return false
+  const child = first.getFirstChild()
+  return $isBeautifulMentionNode(child) && child.getTrigger() === SLASH_TRIGGER
 }
 
 /** Enter (sem shift) serializa e envia; Shift+Enter deixa o RichText quebrar
@@ -198,6 +272,118 @@ function SlashMenuKeysPlugin({ slash }: { slash?: SlashMenuBridge }) {
   return null
 }
 
+/** O nó está na posição-início do editor (sem irmão anterior, dentro do
+ *  PRIMEIRO parágrafo do root)? É a única posição onde o pill "/" pode viver. */
+function $isAtComposerStart(node: LexicalNode): boolean {
+  if (node.getPreviousSibling() !== null) return false
+  const parent = node.getParent()
+  if (!$isParagraphNode(parent)) return false
+  return parent.getPreviousSibling() === null && $isRootNode(parent.getParent())
+}
+
+/** Pill de comando "/" — as duas transforms que mantêm o editor honesto:
+ *
+ *  1. CONVERSÃO no gatilho (TextNode): o texto na posição-início que vira
+ *     "/nome<espaço>…" com match EXATO no inventário troca o prefixo pelo pill
+ *     atômico (mesma conversão-no-espaço das menções). Cobre digitação manual,
+ *     paste e o inventário que chega DEPOIS do draft (re-registrar a transform
+ *     marca os nós como dirty e ela revarre o conteúdo existente). Sem match,
+ *     texto segue texto (fail-open). Só a posição-início converte — "/" no
+ *     meio nunca vira pill (a gramática é comando único no começo).
+ *
+ *  2. DEMOÇÃO (node do pill): pill que deixou de estar no início (usuário
+ *     digitou/colou texto antes dele) volta a ser texto literal `/nome` —
+ *     pill fora do início seria teatro: o pipeline trataria como texto.
+ *
+ *  As duas são mutuamente exclusivas (conversão exige início, demoção exige
+ *  não-início), então não há loop. */
+function SlashPillPlugin({
+  commands,
+}: {
+  commands?: readonly SlashPillCommand[]
+}) {
+  const [editor] = useLexicalComposerContext()
+  const commandsRef = useRef(commands)
+  commandsRef.current = commands
+  // re-registra quando o INVENTÁRIO muda (nomes): registerNodeTransform marca
+  // os TextNodes como dirty, então um draft "/nome " restaurado antes do
+  // inventário carregar materializa o pill assim que os comandos chegam.
+  const namesKey = (commands ?? []).map((c) => c.name).join("\n")
+  useEffect(() => {
+    return editor.registerNodeTransform(TextNode, (node) => {
+      const cmds = commandsRef.current
+      if (!cmds || cmds.length === 0) return
+      if (!$isAtComposerStart(node)) return
+      const match = slashPillMatch(
+        node.getTextContent(),
+        cmds.map((c) => c.name),
+      )
+      if (!match) return
+      const cmd = cmds.find((c) => c.name === match.name)
+      if (!cmd) return
+      // caret ANTES da mutação: se estava neste nó, remapeia pro texto restante
+      // (o prefixo "/nome" sai do nó de texto e vira o pill).
+      const selection = $getSelection()
+      const oldOffset =
+        $isRangeSelection(selection) &&
+        selection.isCollapsed() &&
+        selection.anchor.key === node.getKey()
+          ? selection.anchor.offset
+          : null
+      node.insertBefore(
+        $createBeautifulMentionNode(SLASH_TRIGGER, match.name, {
+          source: slashPillSourceLabel(cmd),
+        }),
+      )
+      node.setTextContent(match.rest)
+      if (oldOffset !== null) {
+        const off = Math.min(
+          slashPillCaretOffset(oldOffset, match.name),
+          match.rest.length,
+        )
+        node.select(off, off)
+      }
+    })
+    // namesKey de propósito nas deps (e commands via ref): é a MUDANÇA do
+    // inventário que justifica revarrer; o objeto commands muda de identidade
+    // a cada render do console.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, namesKey])
+  useEffect(() => {
+    return editor.registerNodeTransform(ComposerMentionNode, (node) => {
+      if (node.getTrigger() !== SLASH_TRIGGER) return
+      if ($isAtComposerStart(node)) return
+      node.replace($createTextNode(node.getTextContent()))
+    })
+  }, [editor])
+  return null
+}
+
+/** Sinal de presença do pill "/" pro dono (CommandConsole): com pill presente
+ *  o popover de comandos não reabre (a mensagem já TEM o seu comando — a
+ *  gramática é um por envio). Vai por update listener, não pelo OnChange: a
+ *  conversão texto→pill não muda o texto serializado, então o OnChange (que
+ *  deduplica por texto) não veria a transição. */
+function SlashPillPresencePlugin({
+  onPresence,
+}: {
+  onPresence?: (present: boolean) => void
+}) {
+  const [editor] = useLexicalComposerContext()
+  const cbRef = useRef(onPresence)
+  cbRef.current = onPresence
+  const lastRef = useRef(false)
+  useEffect(() => {
+    return editor.registerUpdateListener(({ editorState }) => {
+      const present = editorState.read($hasLeadingSlashPill)
+      if (present === lastRef.current) return
+      lastRef.current = present
+      cbRef.current?.(present)
+    })
+  }, [editor])
+  return null
+}
+
 /** Texto antes/depois do caret (selection colapsada), pra decisão de borda do
  *  histórico. O conteúdo normal é UM parágrafo com LineBreakNode por "\n"
  *  (contrato do $setDraft), então basta varrer os irmãos do nó do anchor; se um
@@ -287,11 +473,16 @@ function HistoryRecallPlugin({ history }: { history?: HistoryBridge }) {
   return null
 }
 
-/** Paste → anexo: clipboard com File anexável (imagem/PDF, filtro compartilhado
- *  `collectPastedFiles`) roteia pro fluxo de anexos do console (addFiles → chip)
- *  e o texto que veio JUNTO entra no caret (paridade com o F20 do textarea).
- *  Paste de texto puro devolve false e segue no pipeline normal do RichText.
- *  Sem handler (fora do Tauri / sem conversa) idem — o default fica de pé. */
+/** Paste do console. Duas responsabilidades, um só handler:
+ *  1. TEXTO PURO SEMPRE — o composer serializa pra string, então formatação
+ *     (negrito/itálico que vêm no `text/html` de um copy rico) NÃO tem lugar
+ *     aqui. O default do RichText importaria o HTML e o `bold` "grudaria" no
+ *     cursor (todo texto novo sairia negrito). Colamos só o `text/plain` e
+ *     zeramos o formato da seleção antes, então nada de formatação entra.
+ *  2. Anexo — clipboard com File anexável (imagem/PDF, filtro compartilhado
+ *     `collectPastedFiles`) roteia pro fluxo de anexos do console (addFiles →
+ *     chip); o texto que veio JUNTO entra no caret. Sem handler de arquivo
+ *     (fora do Tauri / sem conversa), o texto ainda cola puro. */
 function PasteAttachmentsPlugin({
   onPasteFiles,
 }: {
@@ -304,18 +495,20 @@ function PasteAttachmentsPlugin({
     return editor.registerCommand(
       PASTE_COMMAND,
       (event) => {
-        const handler = handlerRef.current
-        if (!handler) return false
         if (!(event instanceof ClipboardEvent) || !event.clipboardData)
           return false
-        // captura SÍNCRONA antes de qualquer await (F21) — depois esvazia.
+        // captura SÍNCRONA antes de qualquer await (F21).
         const files = collectPastedFiles(event.clipboardData)
-        if (files.length === 0) return false
-        event.preventDefault()
         const text = event.clipboardData.getData("text/plain")
+        // nada aproveitável (nem texto, nem arquivo) → deixa o pipeline seguir.
+        if (files.length === 0 && !text) return false
+        event.preventDefault()
         if (text) {
           const selection = $getSelection()
           if ($isRangeSelection(selection)) {
+            // zera negrito/itálico eventualmente grudado na seleção antes de
+            // inserir — o texto colado sai sempre limpo.
+            selection.format = 0
             // "\n" vira LineBreakNode no MESMO parágrafo (contrato do draft).
             text.split("\n").forEach((line, i) => {
               if (i > 0) selection.insertNodes([$createLineBreakNode()])
@@ -323,9 +516,24 @@ function PasteAttachmentsPlugin({
             })
           }
         }
-        handler(files)
+        if (files.length > 0) handlerRef.current?.(files)
         return true
       },
+      COMMAND_PRIORITY_HIGH,
+    )
+  }, [editor])
+  return null
+}
+
+/** O composer é TEXTO PURO — não há negrito/itálico/sublinhado. Engole o
+ *  FORMAT_TEXT_COMMAND (⌘B/⌘I/⌘U) em prioridade ALTA pra vencer o RichText, então
+ *  nem atalho de teclado consegue introduzir formatação (que o paste já barra). */
+function PlainTextGuardPlugin() {
+  const [editor] = useLexicalComposerContext()
+  useEffect(() => {
+    return editor.registerCommand(
+      FORMAT_TEXT_COMMAND,
+      () => true,
       COMMAND_PRIORITY_HIGH,
     )
   }, [editor])
@@ -340,10 +548,12 @@ function PasteAttachmentsPlugin({
 function DraftSyncPlugin({
   value,
   mentionNames,
+  slashCommands,
   lastText,
 }: {
   value: string
   mentionNames: string[]
+  slashCommands?: readonly SlashPillCommand[]
   lastText: React.RefObject<string | null>
 }) {
   const [editor] = useLexicalComposerContext()
@@ -352,7 +562,7 @@ function DraftSyncPlugin({
     lastText.current = value
     editor.update(
       () => {
-        $setDraft(value, mentionNames)
+        $setDraft(value, mentionNames, slashCommands)
         // Reconstrução com o editor FOCADO (recall ↑/↓, escolha de "/",
         // sugestão): caret vai pro fim, como o setSelectionRange(len, len) do
         // textarea. Sem foco, não mexe na seleção (não roubar o foco de quem
@@ -365,9 +575,11 @@ function DraftSyncPlugin({
       { discrete: true },
     )
     editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined)
-    // mentionNames de propósito FORA das deps: a lista só importa na hora de
-    // reconstruir; mudar a lista sozinha não deve reescrever o que o usuário
-    // está digitando.
+    // mentionNames e slashCommands de propósito FORA das deps: as listas só
+    // importam na hora de reconstruir; mudar uma lista sozinha não deve
+    // reescrever o que o usuário está digitando. (O inventário "/" que chega
+    // depois do draft é coberto pela transform do SlashPillPlugin, que revarre
+    // no re-registro.)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, value, lastText])
   return null
@@ -399,6 +611,8 @@ export function LexicalComposer({
   slash,
   history,
   onPasteFiles,
+  slashCommands,
+  onSlashPill,
 }: {
   /** Draft da conversa ativa (string com `@nome`) — fonte da verdade externa. */
   value: string
@@ -421,6 +635,12 @@ export function LexicalComposer({
   history?: HistoryBridge
   /** FASE 2 — paste com File anexável roteia pra cá (useAttachments.addFiles). */
   onPasteFiles?: (files: File[]) => void
+  /** Inventário "/" da conversa (o MESMO do useSlashCommands): vocabulário do
+   *  pill atômico de comando — materialização do draft e conversão no espaço. */
+  slashCommands?: readonly SlashPillCommand[]
+  /** Presença do pill "/" no editor → o dono suprime o popover de comandos
+   *  (a gramática é UM comando por mensagem, sempre no início). */
+  onSlashPill?: (present: boolean) => void
 }) {
   // último texto emitido/recebido — evita loop OnChange ↔ DraftSync.
   const lastText = useRef<string | null>(null)
@@ -440,7 +660,10 @@ export function LexicalComposer({
   const initialConfig = {
     namespace: "ChatComposer",
     theme: { beautifulMentions: mentionsTheme },
-    nodes: [BeautifulMentionNode],
+    // node custom + replacement (pattern da lib): o pill de comando "/" e o de
+    // menção "@" são a MESMA classe de node, renderizada pelo
+    // ComposerMentionComponent (que só muda o corpo do "/").
+    nodes: [ComposerMentionNode, composerMentionReplacement],
     onError(error: Error) {
       // não engolir em silêncio, mas também não derrubar a conversa.
       console.error("[LexicalComposer]", error)
@@ -503,9 +726,13 @@ export function LexicalComposer({
         <SlashMenuKeysPlugin slash={slash} />
         <HistoryRecallPlugin history={history} />
         <PasteAttachmentsPlugin onPasteFiles={onPasteFiles} />
+        <PlainTextGuardPlugin />
+        <SlashPillPlugin commands={slashCommands} />
+        <SlashPillPresencePlugin onPresence={onSlashPill} />
         <DraftSyncPlugin
           value={value}
           mentionNames={mentionValues}
+          slashCommands={slashCommands}
           lastText={lastText}
         />
         <FocusBridgePlugin registerFocus={registerFocus} />

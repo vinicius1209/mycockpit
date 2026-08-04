@@ -20,6 +20,7 @@ import {
   RotateCcw,
   Square,
   X,
+  Zap,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -40,19 +41,27 @@ import {
 } from "../bridge/hooks"
 import { applyRecovery, buildRecoveryChoice, cancelRecovery } from "./recovery"
 import {
+  GATE_POLICY_OPTIONS,
+  SAVE_PRESET_ERROR_COPY,
   abortTableMission,
   clonePhases,
+  draftCustomized,
   editPhase,
   launchTableMission,
   missionTablePreset,
   missionTablePresets,
   parseCapInput,
-  phasesCustomized,
+  saveDraftAsPreset,
+  saveTableMissionPresets,
+  teamAutonomy,
+  toggleTeamAutonomyWithGate,
   useMissionTableRun,
+  type MissionGatePolicy,
   type MissionPhaseDef,
   type MissionRun,
   type PhaseEdit,
 } from "../bridge/mission"
+import { MissionPhaseRow } from "@/components/mission/PhaseRow"
 import {
   cancelDictation,
   onDictationEnded,
@@ -118,10 +127,11 @@ function PhaseChip({
   )
 }
 
-/** Linha de EDIÇÃO da fase expandida: selects compactos de agent (disponíveis;
- *  indisponíveis fora — phaseAgentOptions) e modelo ("Padrão" primeiro, via
- *  modelsFor) — mesma linguagem visual do RecoveryCard. Estado imutável via
- *  editPhase (trocar de agent re-semeia modelo/effort pro default). */
+/** Linha de EDIÇÃO da fase expandida (MH3.2): a MESMA linha do MissionLauncher
+ *  (components/mission/PhaseRow — pílulas autonomia/agent/modelo/effort; effort
+ *  existe aqui por construção). Só os agents DISPONÍVEIS entram no select
+ *  (phaseAgentOptions); editPhase segue a regra de sempre (trocar de agent
+ *  re-semeia modelo/effort). */
 function PhaseEditRow({
   phase,
   index,
@@ -131,47 +141,18 @@ function PhaseEditRow({
   index: number
   onEdit: (edit: PhaseEdit) => void
 }) {
-  const agents = phaseAgentOptions(availableAgents(), phase.agent)
-  const models = modelsFor(phase.agent)
+  const agents = phaseAgentOptions(availableAgents(), phase.agent).map((a) => ({
+    value: a.id,
+    label: a.label,
+  }))
   return (
-    <div className="grid basis-full grid-cols-2 gap-2 rounded-lg border border-brass/30 bg-secondary/30 p-2">
-      <label className="flex min-w-0 flex-col gap-1">
-        <span className="label-mono">Agent</span>
-        <select
-          value={phase.agent}
-          onChange={(e) => onEdit({ agent: e.target.value })}
-          aria-label={`Agent da fase ${index + 1}`}
-          className="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground outline-none focus:border-ring"
-        >
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex min-w-0 flex-col gap-1">
-        <span className="label-mono">Modelo</span>
-        <select
-          value={phase.model ?? "default"}
-          onChange={(e) =>
-            onEdit({ model: e.target.value === "default" ? null : e.target.value })
-          }
-          disabled={models.length === 0}
-          aria-label={`Modelo da fase ${index + 1}`}
-          className="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground outline-none focus:border-ring disabled:opacity-50"
-        >
-          {models.length === 0 ? (
-            <option value="default">Padrão</option>
-          ) : (
-            models.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))
-          )}
-        </select>
-      </label>
+    <div className="basis-full rounded-lg border border-brass/30 bg-secondary/30 px-2 py-0.5">
+      <MissionPhaseRow
+        phase={phase}
+        index={index}
+        onEdit={onEdit}
+        agentOptions={agents}
+      />
     </div>
   )
 }
@@ -182,11 +163,35 @@ function PhaseEditRow({
 /** Linha-resumo do estado terminal da missão (done/error/aborted). */
 function RunOutcome({ run }: { run: MissionRun }) {
   if (run.status === "done") {
+    // MH1.1 — done com ressalva: o revisor não aprovou; a caixa não pode
+    // dizer "concluída" seca.
+    const caveat = run.reviewCaveat ?? null
     return (
-      <div className="rounded-lg border border-st-success/40 bg-st-success/10 px-3 py-2">
-        <p className="text-[12px] font-semibold text-st-success">
-          Missão concluída
+      <div
+        className={cn(
+          "rounded-lg border px-3 py-2",
+          caveat
+            ? "border-st-warning/40 bg-st-warning/10"
+            : "border-st-success/40 bg-st-success/10",
+        )}
+      >
+        <p
+          className={cn(
+            "text-[12px] font-semibold",
+            caveat ? "text-st-warning" : "text-st-success",
+          )}
+        >
+          {caveat ? "Missão concluída com ressalva" : "Missão concluída"}
         </p>
+        {caveat && (
+          <p className="mt-0.5 text-[12px] leading-snug text-foreground/85">
+            O revisor não aprovou
+            {caveat.rounds > 0
+              ? ` após ${caveat.rounds} ${caveat.rounds === 1 ? "rodada" : "rodadas"} de correção`
+              : ""}
+            . Revise o parecer na conversa antes de confiar na entrega.
+          </p>
+        )}
         {run.doneSummary?.intent && (
           <p className="mt-0.5 text-[12px] leading-snug text-foreground/85">
             {run.doneSummary.intent}
@@ -370,9 +375,10 @@ export function MissionDock() {
   const run = useMissionTableRun(missionConvId)
   const inApp = officeIsTauri()
 
-  // presets da mesa (Settings; fallback fábrica) + default "feature". Memo por
-  // abertura basta (Settings mudam fora do office).
-  const presets = useMemo(() => missionTablePresets(), [])
+  // presets da mesa (Settings; fallback fábrica) + default "feature". Snapshot
+  // por abertura basta (Settings mudam fora do office) — o "Salvar como time"
+  // daqui (MH3.1) re-semeia o snapshot, senão o preset novo não apareceria.
+  const [presets, setPresets] = useState(() => missionTablePresets())
   const defaultPreset = useMemo(() => missionTablePreset(), [])
 
   // rascunho do formulário — o componente fica MONTADO (retorna null fechado),
@@ -390,11 +396,21 @@ export function MissionDock() {
   const [capUsd, setCapUsd] = useState<number | null>(() => preset.maxCostUsd)
   const [capInput, setCapInput] = useState("")
   const [capEditing, setCapEditing] = useState(false)
+  // política de GATE do rascunho (MH3.3; parte do preset, reseta com o time)
+  const [gatePolicy, setGatePolicy] = useState<MissionGatePolicy>(
+    () => presetDraft(defaultPreset).gatePolicy,
+  )
+  // "Salvar como time" (MH3.1): input inline do nome + erro honesto
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [saveName, setSaveName] = useState("")
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [launching, setLaunching] = useState(false)
   const [micBusy, setMicBusy] = useState(false)
 
-  // fases editadas ⇒ indicador "time personalizado" + "restaurar padrão"
-  const customized = phasesCustomized(preset.phases, phases)
+  // fases, política OU teto editados ⇒ "time personalizado" + "restaurar
+  // padrão" + "salvar como time" (régua ÚNICA com o Launcher: draftCustomized
+  // — antes o teto ficava fora e editar só o cap aqui não contava).
+  const customized = draftCustomized({ preset, phases, gatePolicy, capUsd })
 
   // projeto default = primeiro da lista (e auto-corrige se o escolhido sumir)
   const chosenProject =
@@ -452,8 +468,33 @@ export function MissionDock() {
     const draft = presetDraft(p)
     setPhases(draft.phases)
     setCapUsd(draft.capUsd)
+    setGatePolicy(draft.gatePolicy)
     setCapEditing(false)
     setExpandedPhase(null)
+    setSaveOpen(false)
+    setSaveError(null)
+  }
+
+  /** MH3.1 — salva o rascunho "personalizado" como time novo nas Settings e
+   *  aponta o seletor pra ele (mesma régua do MissionLauncher do Linear). */
+  function saveAsTeam() {
+    const res = saveDraftAsPreset({
+      name: saveName,
+      presets,
+      phases,
+      maxCostUsd: capUsd,
+      gatePolicy,
+    })
+    if (!res.ok) {
+      setSaveError(SAVE_PRESET_ERROR_COPY[res.error])
+      return
+    }
+    saveTableMissionPresets(res.presets)
+    setPresets(res.presets) // o preset novo entra no seletor na hora
+    setPresetId(res.preset.id)
+    setSaveOpen(false)
+    setSaveName("")
+    setSaveError(null)
   }
 
   function pickPreset(id: string) {
@@ -471,7 +512,7 @@ export function MissionDock() {
       // régua do MissionLauncher (effectiveTablePreset via launchFromTable).
       const convId = await launchFromTable(
         { launch: launchTableMission },
-        { projectId: chosenProject.id, task, preset, phases, capUsd },
+        { projectId: chosenProject.id, task, preset, phases, capUsd, gatePolicy },
       )
       if (convId) {
         useOfficeUi.getState().setMissionTableConv(convId)
@@ -788,6 +829,59 @@ export function MissionDock() {
                   </option>
                 ))}
               </select>
+              {/* política de GATE (MH3.3) + Autonomia do time (ao LIGAR também
+                  põe a política em "nunca"; desligar volta pra do preset). */}
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <select
+                  value={gatePolicy}
+                  onChange={(e) =>
+                    setGatePolicy(e.target.value as MissionGatePolicy)
+                  }
+                  aria-label="Política de gate humano da missão"
+                  title={
+                    GATE_POLICY_OPTIONS.find((o) => o.value === gatePolicy)
+                      ?.description
+                  }
+                  className="h-7 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-[12px] text-muted-foreground outline-none focus:border-ring"
+                >
+                  {GATE_POLICY_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = toggleTeamAutonomyWithGate({
+                      phases,
+                      gatePolicy,
+                      presetGatePolicy: preset.gatePolicy,
+                    })
+                    setPhases(next.phases)
+                    setGatePolicy(next.gatePolicy)
+                  }}
+                  aria-pressed={teamAutonomy(phases) === "auto"}
+                  title={
+                    teamAutonomy(phases) === "auto"
+                      ? "Autonomia total ligada: sem pausas de gate e permissão auto (cada CLI com seu freio de segurança). Desligar volta a política de gate do preset."
+                      : "Autonomia total: liga Auto no time todo, sem pausas de gate e permissão auto (cada CLI com seu freio de segurança)."
+                  }
+                  className={cn(
+                    "flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition-colors",
+                    teamAutonomy(phases) === "auto"
+                      ? "border-brass/50 bg-brass/15 text-brass"
+                      : "border-border text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Zap className="size-3" />
+                  {teamAutonomy(phases) === "auto"
+                    ? "Auto"
+                    : teamAutonomy(phases) === "mixed"
+                      ? "Parcial"
+                      : "Autonomia"}
+                </button>
+              </div>
               {/* chips das fases: clicar expande a edição do time da fase */}
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {phases.map((ph, i) => (
@@ -819,19 +913,86 @@ export function MissionDock() {
                 </p>
               )}
               {customized && (
-                <div className="mt-1.5 flex items-center justify-between">
+                <div className="mt-1.5 flex items-center justify-between gap-2">
                   <span className="text-[11px] text-brass">
                     time personalizado
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => resetTeamTo(preset)}
-                    title="Descartar as edições e voltar ao time do preset"
-                    className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    <RotateCcw className="size-3" />
-                    restaurar padrão
-                  </button>
+                  <div className="flex items-center gap-2.5">
+                    {/* MH3.1 — o rascunho pode virar time salvo nas Settings */}
+                    {!saveOpen && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSaveOpen(true)
+                          setSaveName("")
+                          setSaveError(null)
+                        }}
+                        title="Salvar este rascunho como um time novo nas Settings"
+                        className="text-[11px] text-brass transition-colors hover:text-brass/80"
+                      >
+                        salvar como time
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => resetTeamTo(preset)}
+                      title="Descartar as edições e voltar ao time do preset"
+                      className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      <RotateCcw className="size-3" />
+                      restaurar padrão
+                    </button>
+                  </div>
+                </div>
+              )}
+              {/* MH3.1 — input inline do nome (nunca window.prompt); Enter
+                  salva, Esc fecha SÓ o input; erro honesto embaixo. */}
+              {customized && saveOpen && (
+                <div className="mt-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      value={saveName}
+                      onChange={(e) => {
+                        setSaveName(e.target.value)
+                        setSaveError(null)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          saveAsTeam()
+                        } else if (e.key === "Escape") {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setSaveOpen(false)
+                          setSaveError(null)
+                        }
+                      }}
+                      placeholder="Nome do novo time"
+                      aria-label="Nome do novo time"
+                      className="h-7 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-brass/50"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={saveAsTeam}
+                      className="h-7 rounded-md bg-brass px-2.5 text-[12px] font-medium text-brass-foreground transition-opacity hover:opacity-90"
+                    >
+                      Salvar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSaveOpen(false)
+                        setSaveError(null)
+                      }}
+                      className="h-7 rounded-md border border-border px-2 text-[12px] text-muted-foreground transition-colors hover:bg-secondary"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                  {saveError && (
+                    <p className="mt-1 text-[11px] text-st-error">{saveError}</p>
+                  )}
                 </div>
               )}
             </div>

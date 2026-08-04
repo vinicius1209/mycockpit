@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { getVersion } from "@tauri-apps/api/app"
-import { toast } from "sonner"
 import {
   AlertTriangle,
   Bot,
@@ -11,6 +10,7 @@ import {
   Info,
   Loader2,
   Mic,
+  Network,
   PanelTop,
   Palette,
   RotateCcw,
@@ -40,13 +40,20 @@ import {
   normalizeModelValue,
 } from "@/lib/agents"
 import {
+  crossChannelNote,
   detectAgents,
+  latestLabel,
   refreshAgyModels,
   toProbeMap,
-  updateAgent,
   updateAvailable,
   UPDATE_COMMANDS,
 } from "@/lib/detect"
+import {
+  hydrateUpdateJobs,
+  startUpdate,
+  updateButtonState,
+  useUpdates,
+} from "@/lib/updates"
 import {
   getModelsCatalog,
   refreshCatalogIntoSettings,
@@ -60,6 +67,7 @@ import {
 } from "@/lib/db"
 import { MissionSettings } from "@/components/settings/MissionSettings"
 import { CompanionSettings } from "@/components/settings/CompanionSettings"
+import { McpSettings } from "@/components/settings/McpSettings"
 import { EspecialistasContent } from "@/components/settings/Especialistas"
 import {
   DEFAULT_DICTATION_HOTKEY,
@@ -78,6 +86,7 @@ type Section =
   | "dictation"
   | "missions"
   | "companion"
+  | "integrations"
   | "about"
 
 // Grupos rotulados (label-mono no rail) — o `group` marca o INÍCIO de um bloco.
@@ -102,7 +111,8 @@ const SECTIONS: {
   { id: "dictation", label: "Ditado", icon: Mic },
   { id: "missions", label: "Missões", icon: Waypoints },
   { id: "companion", label: "Companion", icon: Smartphone },
-  { id: "tools", label: "CLIs instaladas", icon: Cpu, group: "Sistema" },
+  { id: "integrations", label: "Integrações MCP", icon: Network, group: "Sistema" },
+  { id: "tools", label: "CLIs instaladas", icon: Cpu },
   { id: "about", label: "Sobre", icon: Info },
 ]
 
@@ -140,7 +150,9 @@ function AgentsToolsSection() {
   const setSettings = useApp((s) => s.setSettings)
   const [checking, setChecking] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
-  const [updating, setUpdating] = useState<string | null>(null)
+  // Jobs de update: estado GLOBAL (lib/updates), não do componente — o job é
+  // do app e sobrevive ao fechar/reabrir o modal (incidente dos N cliques).
+  const updateJobs = useUpdates((s) => s.byAgent)
   // Gate humano do curador: propostas pendentes + catálogo (pro preço).
   const [proposals, setProposals] = useState<ModelProposal[]>([])
   const [catalog, setCatalog] = useState<CatalogModel[]>([])
@@ -153,6 +165,9 @@ function AgentsToolsSection() {
     void getModelsCatalog().then((c) => {
       if (!cancelled) setCatalog(c)
     })
+    // Re-hidrata os jobs de update ao abrir o painel: job vivo volta a mostrar
+    // spinner; desfecho perdido com o modal fechado é anunciado agora.
+    void hydrateUpdateJobs()
     return () => {
       cancelled = true
     }
@@ -187,39 +202,9 @@ function AgentsToolsSection() {
     })
   }
 
-  /** "Atualizar agora": o Rust detecta o método e roda; a UI reflete o desfecho
-   *  e, em sucesso, re-verifica as versões. Falha/impossível → o comando pra
-   *  rodar à mão fica no toast (e o "copiar comando" segue como fallback). */
-  async function updateNow(id: string, label: string) {
-    if (updating) return
-    setUpdating(id)
-    const toastId = toast.loading(`Atualizando ${label}…`)
-    try {
-      const r = await updateAgent(id)
-      if (r.ran && r.ok) {
-        toast.success(`${label} atualizado (${r.method}).`, { id: toastId })
-        await checkNow() // reflete a nova versão instalada
-      } else if (r.ran) {
-        // mostra o COMANDO que rodou (contexto) + o fim da saída de erro.
-        toast.error(`Falha ao atualizar ${label} (${r.command}).`, {
-          id: toastId,
-          description: r.output.slice(-300),
-        })
-      } else {
-        // não rodou (sem canal / fora do PATH) → mostra o caminho manual.
-        toast(`Não deu pra atualizar ${label} automaticamente.`, {
-          id: toastId,
-          description: r.output.slice(-400),
-        })
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : `Falha ao atualizar ${label}`, {
-        id: toastId,
-      })
-    } finally {
-      setUpdating(null)
-    }
-  }
+  // "Atualizar": só dispara o JOB (lib/updates → update.rs). Dedupe, toast com
+  // id estável, timeout gentil e re-verificação pós-sucesso são do job — nada
+  // disso mora mais no componente, então fechar o modal não perde nada.
 
   return (
     <div>
@@ -240,6 +225,16 @@ function AgentsToolsSection() {
           const probe = detected[tool.id]
           const hasUpdate = probe ? updateAvailable(probe) : false
           const cmd = UPDATE_COMMANDS[tool.id]
+          const job = updateJobs[tool.id]
+          // spinning = o job DESTE agent está vivo; disabled = qualquer job
+          // vivo (um update por vez — dois brew brigam pelo lock).
+          const { spinning, disabled } = updateButtonState(updateJobs, tool.id)
+          // "última" POR CANAL do binário gerenciado, rotulada ("última
+          // v2.1.212 (homebrew)"): o teto do npm não vale pra binário do brew.
+          const latestText = probe ? latestLabel(probe) : null
+          // canal cruzado: outro canal tem versão maior que o teto do canal
+          // do binário — informação pra decisão humana, sem botão.
+          const channelNote = probe ? crossChannelNote(probe) : null
           return (
             <li
               key={tool.id}
@@ -277,7 +272,7 @@ function AgentsToolsSection() {
                   ) : (
                     <>
                       {`instalado v${probe.version ?? "?"}${
-                        probe.latest ? ` · última v${probe.latest}` : ""
+                        latestText ? ` · ${latestText}` : ""
                       }`}
                       {probe.auth === "ok" && (
                         <span>
@@ -296,20 +291,45 @@ function AgentsToolsSection() {
                     </>
                   )}
                 </div>
+                {/* Canal cruzado na cara: "o canal npm tem v2.1.220; este
+                    binário é homebrew (teto v2.1.212)". Sem botão — trocar de
+                    canal é gesto do usuário. */}
+                {channelNote && (
+                  <div
+                    className="truncate text-[11px] text-muted-foreground"
+                    title={channelNote}
+                  >
+                    {channelNote}
+                  </div>
+                )}
+                {/* Honestidade sobre instalações duplicadas: o "atualizei e não
+                    mudou nada" quase sempre é o app gerenciando uma cópia
+                    diferente da que o shell do usuário resolve (brew × nvm). */}
+                {job && job.otherPaths.length > 0 && (
+                  <div
+                    className="truncate text-[11px] text-st-warning"
+                    title={[job.managedPath, ...job.otherPaths].join("\n")}
+                  >
+                    {job.otherPaths.length + 1} instalações no PATH · o app
+                    gerencia {job.managedPath}
+                  </div>
+                )}
               </div>
               {cmd ? (
                 <div className="flex shrink-0 items-center gap-1.5">
-                  {/* "Atualizar agora" (roda o update in-app) só quando há update
-                      novo; o "copiar comando" é ÍCONE-ONLY (tooltip = comando)
-                      pra não estourar a largura do painel. */}
-                  {hasUpdate && (
+                  {/* "Atualizar" (dispara o job in-app) quando há update novo,
+                      OU spinner enquanto o job dele vive (mesmo depois de
+                      fechar e reabrir o modal); o "copiar comando" é
+                      ÍCONE-ONLY (tooltip = comando) pra não estourar a
+                      largura do painel. */}
+                  {(hasUpdate || spinning) && (
                     <button
-                      onClick={() => void updateNow(tool.id, tool.label)}
-                      disabled={updating != null}
+                      onClick={() => void startUpdate(tool.id)}
+                      disabled={disabled}
                       title="Atualiza o CLI aqui (detecta npm/brew/self-update)"
                       className="flex items-center gap-1 rounded bg-brass px-2 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
                     >
-                      {updating === tool.id ? (
+                      {spinning ? (
                         <>
                           <Loader2 className="size-3 animate-spin" /> atualizando…
                         </>
@@ -939,6 +959,8 @@ export function SettingsDialog() {
           {section === "missions" && <MissionSettings />}
 
           {section === "companion" && <CompanionSettings />}
+
+          {section === "integrations" && <McpSettings />}
 
           {section === "about" && (
             <div>

@@ -1,0 +1,2455 @@
+//! Control plane dos MCPs externos.
+//!
+//! Responsabilidades:
+//! - descobrir configurações existentes sem persistir segredos;
+//! - normalizar Claude, Codex e `.mcp.json` num registry canônico;
+//! - testar saúde por initialize + tools/list (stdio) ou reachability (HTTP);
+//! - guardar bindings por projeto/agent e montar um plano efêmero por run;
+//! - manter política/fallback fora do prompt e do julgamento do modelo.
+
+use rusqlite::{params, Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tauri::Manager;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStdout, Command};
+use tokio::time::timeout;
+
+const HEALTH_TTL_MS: i64 = 5 * 60 * 1_000;
+const PROBE_TIMEOUT: Duration = Duration::from_secs(6);
+const MAX_TOOL_NAMES: usize = 80;
+const MAX_DETAIL_CHARS: usize = 800;
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpLaunchConfig {
+    pub transport: String,
+    pub command: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub env_vars: Vec<String>,
+    pub cwd: Option<String>,
+    pub url: Option<String>,
+    pub bearer_token_env_var: Option<String>,
+    #[serde(default)]
+    pub http_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub env_http_headers: BTreeMap<String, String>,
+    /// Depende de extensão/autenticação privada do CLI de origem.
+    #[serde(default)]
+    pub native_only: bool,
+}
+
+impl McpLaunchConfig {
+    fn locator(&self) -> String {
+        self.command
+            .clone()
+            .or_else(|| self.url.as_deref().map(sanitize_url_for_display))
+            .unwrap_or_else(|| "configuração incompleta".into())
+    }
+
+    /// Credencial literal nunca entra em argv/config efêmero de outro agent.
+    /// Wrappers que consultam Keychain e nomes de env são portáveis; valores
+    /// literais de env/header precisam ser migrados pelo usuário primeiro.
+    fn portable(&self) -> bool {
+        !self.native_only
+            && self.env.is_empty()
+            && self.http_headers.is_empty()
+            && !args_look_sensitive(&self.args)
+            && self
+                .command
+                .as_deref()
+                .is_none_or(|value| !contains_env_template(value))
+            && self.args.iter().all(|value| !contains_env_template(value))
+            && self
+                .cwd
+                .as_deref()
+                .is_none_or(|value| !contains_env_template(value))
+            && self.url.as_deref().is_none_or(|value| {
+                !contains_env_template(value) && sanitize_url_for_display(value) == value
+            })
+    }
+
+    fn env_keys(&self) -> Vec<String> {
+        let mut keys: Vec<String> = self.env.keys().cloned().collect();
+        keys.extend(self.env_vars.iter().cloned());
+        keys.extend(self.env_http_headers.values().cloned());
+        if let Some(k) = &self.bearer_token_env_var {
+            keys.push(k.clone());
+        }
+        keys.sort();
+        keys.dedup();
+        keys
+    }
+
+    fn sanitized_fingerprint(&self) -> String {
+        let public = json!({
+            "transport": self.transport,
+            "command": self.command,
+            "args": self.args,
+            "envKeys": self.env_keys(),
+            "cwd": self.cwd,
+            // Query, fragment e userinfo podem carregar token. O registry só
+            // precisa detectar mudança de endpoint, não hashear credenciais.
+            "url": self.url.as_deref().map(sanitize_url_for_display),
+            "bearerTokenEnvVar": self.bearer_token_env_var,
+            "headerNames": self.http_headers.keys().collect::<Vec<_>>(),
+            "envHeaderNames": self.env_http_headers.keys().collect::<Vec<_>>(),
+            "nativeOnly": self.native_only,
+        });
+        blake3::hash(public.to_string().as_bytes())
+            .to_hex()
+            .to_string()
+    }
+
+    /// Cópia suficiente para o Codex validar uma tabela desabilitada, sem
+    /// transportar valores literais de env/header, credenciais em URL ou argv.
+    fn codex_public_transport(&self) -> Self {
+        let mut public = self.clone();
+        public.env.clear();
+        public.http_headers.clear();
+        if args_look_sensitive(&public.args) {
+            public.args.clear();
+        }
+        if let Some(url) = &public.url {
+            public.url = Some(sanitize_url_for_display(url));
+        }
+        public
+    }
+
+    pub fn claude_json(&self) -> Value {
+        if self.transport == "stdio" {
+            let mut out = serde_json::Map::new();
+            out.insert("type".into(), json!("stdio"));
+            out.insert("command".into(), json!(self.command));
+            out.insert("args".into(), json!(self.args));
+            let mut env = self.env.clone();
+            for key in &self.env_vars {
+                env.entry(key.clone())
+                    .or_insert_with(|| format!("${{{key}}}"));
+            }
+            if !env.is_empty() {
+                out.insert("env".into(), json!(env));
+            }
+            Value::Object(out)
+        } else {
+            let mut out = serde_json::Map::new();
+            out.insert("type".into(), json!("http"));
+            out.insert("url".into(), json!(self.url));
+            let mut headers = self.http_headers.clone();
+            for (header, env_var) in &self.env_http_headers {
+                headers
+                    .entry(header.clone())
+                    .or_insert_with(|| format!("${{{env_var}}}"));
+            }
+            if let Some(env_var) = &self.bearer_token_env_var {
+                headers
+                    .entry("Authorization".into())
+                    .or_insert_with(|| format!("Bearer ${{{env_var}}}"));
+            }
+            if !headers.is_empty() {
+                out.insert("headers".into(), json!(headers));
+            }
+            Value::Object(out)
+        }
+    }
+
+    pub fn configure_codex(&self, runtime_name: &str, cmd: &mut Command) {
+        let key = format!("mcp_servers.{runtime_name}");
+        cmd.arg("-c").arg(format!("{key}.enabled=true"));
+        if self.transport == "stdio" {
+            if let Some(program) = &self.command {
+                cmd.arg("-c")
+                    .arg(format!("{key}.command={}", json_string(program)));
+            }
+            cmd.arg("-c")
+                .arg(format!("{key}.args={}", json_array(&self.args)));
+            if let Some(cwd) = &self.cwd {
+                cmd.arg("-c").arg(format!("{key}.cwd={}", json_string(cwd)));
+            }
+            if !self.env_vars.is_empty() {
+                cmd.arg("-c")
+                    .arg(format!("{key}.env_vars={}", json_array(&self.env_vars)));
+            }
+        } else if let Some(url) = &self.url {
+            cmd.arg("-c").arg(format!("{key}.url={}", json_string(url)));
+            if let Some(var) = &self.bearer_token_env_var {
+                cmd.arg("-c")
+                    .arg(format!("{key}.bearer_token_env_var={}", json_string(var)));
+            }
+            for (header, env_var) in &self.env_http_headers {
+                cmd.arg("-c").arg(format!(
+                    "{key}.env_http_headers.{}={}",
+                    toml_key(header),
+                    json_string(env_var)
+                ));
+            }
+        }
+    }
+
+    /// Materializa o transporte público de um MCP nativo antes de desligá-lo.
+    ///
+    /// O Codex valida cada tabela `mcp_servers.<nome>` resultante dos overrides;
+    /// portanto, injetar somente `enabled=false` para um MCP vindo de plugin
+    /// cria uma tabela parcial e falha com `invalid transport`. Como o servidor
+    /// ficará desabilitado, valores literais de autenticação não são necessários
+    /// e nunca são copiados para a linha de comando efêmera.
+    fn disable_in_codex(&self, runtime_name: &str, cmd: &mut Command) {
+        let public = self.codex_public_transport();
+        let key = format!("mcp_servers.{runtime_name}");
+        if public.transport == "stdio" {
+            if let Some(program) = &public.command {
+                cmd.arg("-c")
+                    .arg(format!("{key}.command={}", json_string(program)));
+            }
+            cmd.arg("-c")
+                .arg(format!("{key}.args={}", json_array(&public.args)));
+            if let Some(cwd) = &public.cwd {
+                cmd.arg("-c").arg(format!("{key}.cwd={}", json_string(cwd)));
+            }
+            if !public.env_vars.is_empty() {
+                cmd.arg("-c")
+                    .arg(format!("{key}.env_vars={}", json_array(&public.env_vars)));
+            }
+        } else if let Some(url) = &public.url {
+            cmd.arg("-c").arg(format!("{key}.url={}", json_string(url)));
+            if let Some(var) = &public.bearer_token_env_var {
+                cmd.arg("-c")
+                    .arg(format!("{key}.bearer_token_env_var={}", json_string(var)));
+            }
+            for (header, env_var) in &public.env_http_headers {
+                cmd.arg("-c").arg(format!(
+                    "{key}.env_http_headers.{}={}",
+                    toml_key(header),
+                    json_string(env_var)
+                ));
+            }
+        }
+        // Deve vir depois do transporte: além de documentar a dependência,
+        // mantém o argv válido para parsers que aplicam overrides em ordem.
+        cmd.arg("-c").arg(format!("{key}.enabled=false"));
+    }
+}
+
+#[derive(Clone, Debug)]
+struct DiscoveredServer {
+    id: String,
+    name: String,
+    source: String,
+    scope: String,
+    source_agent: Option<String>,
+    enabled: bool,
+    managed: bool,
+    launch: Option<McpLaunchConfig>,
+}
+
+impl DiscoveredServer {
+    fn portable(&self) -> bool {
+        self.managed && self.launch.as_ref().is_some_and(McpLaunchConfig::portable)
+    }
+
+    fn compatible(&self, agent: &str) -> bool {
+        // Decisão por capability (G1.1), nunca por nome: roteável só pra agent
+        // com `managed_mcp`; e `cwd` no launch só pra quem documenta o campo
+        // (`mcp_launch_cwd`, hoje só o Codex) — o schema JSON do Claude não tem
+        // `cwd` e o campo sumiria em silêncio no handoff.
+        let Some(caps) = crate::adapters::capabilities_of(agent) else {
+            return false;
+        };
+        if !caps.managed_mcp || !self.portable() {
+            return false;
+        }
+        caps.mcp_launch_cwd || self.launch.as_ref().is_some_and(|c| c.cwd.is_none())
+    }
+
+    fn runtime_name(&self) -> String {
+        let source = slug(&self.source);
+        let scope = slug(&self.scope);
+        let name = slug(&self.name);
+        let digest = short_hash(&format!("{}:{}:{}", self.source, self.scope, self.name));
+        format!("mcx-{source}-{scope}-{name}-{digest}")
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpAgentState {
+    pub agent: String,
+    pub compatible: bool,
+    pub enabled: bool,
+    pub required: bool,
+    pub fallback: String,
+    pub health: String,
+    pub detail: Option<String>,
+    pub checked_at: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerView {
+    pub id: String,
+    pub name: String,
+    pub source: String,
+    pub scope: String,
+    pub transport: String,
+    pub locator: String,
+    pub env_keys: Vec<String>,
+    pub source_agent: Option<String>,
+    pub source_enabled: bool,
+    pub managed: bool,
+    pub portable: bool,
+    /// Nome que o servidor assume dentro de um run gerenciado deste projeto
+    /// (o que o usuário cita no prompt). Só existe com binding ativo.
+    pub runtime_name: Option<String>,
+    pub agent_states: Vec<McpAgentState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpBindingsSummary {
+    pub project_id: String,
+    pub count: i64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpHealthView {
+    pub server_id: String,
+    pub agent: String,
+    pub status: String,
+    pub detail: Option<String>,
+    pub checked_at: i64,
+    pub tool_count: usize,
+    pub tool_names: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct McpRunPlan {
+    pub managed: bool,
+    pub selected: Vec<McpRuntimeServer>,
+    /// MCPs já conhecidos pelo Codex que devem ficar fora deste run. Cada
+    /// entrada inclui o transporte descoberto para evitar tabelas parciais.
+    pub disabled_codex_servers: Vec<McpRuntimeServer>,
+    /// Compatibilidade transitória com construtores antigos. O plano real usa
+    /// `disabled_codex_servers`; nomes soltos não bastam para MCPs de plugin.
+    pub disabled_codex_names: Vec<String>,
+    pub notices: Vec<String>,
+    pub prompt_policy: Option<String>,
+    pub blocked: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct McpRuntimeServer {
+    pub runtime_name: String,
+    pub display_name: String,
+    pub launch: McpLaunchConfig,
+}
+
+impl McpRunPlan {
+    /// Fingerprint do CONJUNTO anunciável de MCPs deste plano (H2 do
+    /// prompt-hygiene-plan): é o que decide o re-anúncio mid-conversa em motor
+    /// 1º-turno-só quando o usuário liga/desliga um binding. Só nomes (runtime
+    /// + display), NUNCA launch/env — nada sensível vaza pro front. Ordenado →
+    /// estável a reordenação. None = plano NÃO gerenciado (legado intacto,
+    /// nunca anuncia). Plano gerenciado VAZIO tem fingerprint próprio (hash da
+    /// lista vazia): desligar TODOS os bindings também é mudança de plano —
+    /// N→0 precisa re-anunciar, senão o modelo segue chamando tool morta.
+    pub fn fingerprint(&self) -> Option<String> {
+        if !self.managed {
+            return None;
+        }
+        let mut lines: Vec<String> = self
+            .selected
+            .iter()
+            .map(|s| format!("{}\t{}", s.runtime_name, s.display_name))
+            .collect();
+        lines.sort();
+        // FNV-1a 64 (inline, sem dependência): determinístico entre builds.
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for byte in lines.join("\n").bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        Some(format!("{hash:016x}"))
+    }
+
+    pub fn configure_codex(&self, cmd: &mut Command) {
+        if !self.managed {
+            return;
+        }
+        for server in &self.disabled_codex_servers {
+            server.launch.disable_in_codex(&server.runtime_name, cmd);
+        }
+        for name in &self.disabled_codex_names {
+            cmd.arg("-c")
+                .arg(format!("mcp_servers.{}.enabled=false", toml_key(name)));
+        }
+        for server in &self.selected {
+            server.launch.configure_codex(&server.runtime_name, cmd);
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ProbeOutcome {
+    status: String,
+    detail: Option<String>,
+    tool_names: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+struct Binding {
+    server_id: String,
+    required: bool,
+    fallback: String,
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
+
+fn cap_detail(s: impl Into<String>) -> String {
+    s.into().chars().take(MAX_DETAIL_CHARS).collect()
+}
+
+fn contains_env_template(value: &str) -> bool {
+    value.contains("${")
+}
+
+fn args_look_sensitive(args: &[String]) -> bool {
+    const MARKERS: [&str; 8] = [
+        "token",
+        "api-key",
+        "api_key",
+        "apikey",
+        "secret",
+        "password",
+        "credential",
+        "authorization",
+    ];
+    args.iter().enumerate().any(|(index, arg)| {
+        let lower = arg.to_ascii_lowercase();
+        let sensitive_flag = (arg.starts_with('-') || arg.contains('='))
+            && MARKERS.iter().any(|marker| lower.contains(marker))
+            && (arg.contains('=') || args.get(index + 1).is_some());
+        let credential_url = arg.contains("://")
+            && (arg.contains('?')
+                || arg
+                    .split("://")
+                    .nth(1)
+                    .is_some_and(|rest| rest.contains('@')));
+        sensitive_flag || lower.contains("bearer ") || credential_url
+    })
+}
+
+fn pure_env_ref(value: &str) -> Option<&str> {
+    let key = value.strip_prefix("${")?.strip_suffix('}')?;
+    (!key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')).then_some(key)
+}
+
+fn bearer_env_ref(value: &str) -> Option<&str> {
+    pure_env_ref(value.strip_prefix("Bearer ")?)
+}
+
+/// O endpoint mostrado/persistido não carrega userinfo, query ou fragment.
+/// O URL completo continua somente no plano efêmero em memória.
+fn sanitize_url_for_display(raw: &str) -> String {
+    let (before_fragment, _) = raw.split_once('#').unwrap_or((raw, ""));
+    let (before_query, _) = before_fragment
+        .split_once('?')
+        .unwrap_or((before_fragment, ""));
+    let Some((scheme, rest)) = before_query.split_once("://") else {
+        return before_query.to_string();
+    };
+    let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let host = authority
+        .rsplit_once('@')
+        .map(|(_, host)| host)
+        .unwrap_or(authority);
+    if path.is_empty() {
+        format!("{scheme}://{host}")
+    } else {
+        format!("{scheme}://{host}/{path}")
+    }
+}
+
+fn json_string(s: &str) -> String {
+    serde_json::to_string(s).unwrap_or_else(|_| "\"\"".into())
+}
+
+fn json_array(values: &[String]) -> String {
+    serde_json::to_string(values).unwrap_or_else(|_| "[]".into())
+}
+
+fn toml_key(raw: &str) -> String {
+    if raw
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+    {
+        raw.to_string()
+    } else {
+        json_string(raw)
+    }
+}
+
+fn slug(raw: &str) -> String {
+    let out: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let out = out.trim_matches('-').to_string();
+    if out.is_empty() {
+        "server".into()
+    } else {
+        out
+    }
+}
+
+fn short_hash(raw: &str) -> String {
+    blake3::hash(raw.as_bytes()).to_hex()[..8].to_string()
+}
+
+/// Nomes que um MCP externo nunca pode assumir no runtime: os MCPs internos do
+/// app e os nomes extras do chamador (ex.: tabelas de origem do Codex que o
+/// plano desabilita — reconfigurar a mesma tabela mesclaria campos velhos da
+/// config de origem no run).
+fn reserved_runtime_names(extra: impl Iterator<Item = String>) -> HashSet<String> {
+    [
+        crate::context_gateway::MCP_SERVER_NAME,
+        crate::work_gateway::MCP_SERVER_NAME,
+        crate::approval::MCP_SERVER_NAME,
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .chain(extra)
+    .collect()
+}
+
+/// Slug amigável do display name quando ele é único entre os candidatos e não
+/// colide com nome reservado; `None` mantém o nome desambiguado `mcx-…`.
+/// Motivo de produto: o modelo nunca mapeia "playwright" para
+/// `mcx-claude-user-playwright-1a2b3c4d`; com um único candidato, o nome de
+/// runtime pode (e deve) ser o que o usuário digita no prompt.
+fn friendly_runtime_name(
+    display_name: &str,
+    counts: &HashMap<String, usize>,
+    reserved: &HashSet<String>,
+) -> Option<String> {
+    let candidate = slug(display_name);
+    (counts.get(&candidate).copied() == Some(1) && !reserved.contains(&candidate))
+        .then_some(candidate)
+}
+
+/// Reescreve os `runtime_name` dos selecionados para o slug amigável quando
+/// não há ambiguidade. Os nomes de ORIGEM em `disabled_codex_servers` /
+/// `disabled_codex_names` ficam intocados (o disable referencia a config do
+/// usuário) e entram como reservados para o par disable/configure nunca cair
+/// na mesma tabela.
+fn apply_friendly_runtime_names(plan: &mut McpRunPlan) {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for server in &plan.selected {
+        *counts.entry(slug(&server.display_name)).or_default() += 1;
+    }
+    let reserved = reserved_runtime_names(
+        plan.disabled_codex_servers
+            .iter()
+            .map(|server| server.runtime_name.clone())
+            .chain(plan.disabled_codex_names.iter().cloned()),
+    );
+    for server in &mut plan.selected {
+        if let Some(name) = friendly_runtime_name(&server.display_name, &counts, &reserved) {
+            server.runtime_name = name;
+        }
+    }
+}
+
+fn server_id(source: &str, scope: &str, name: &str) -> String {
+    format!(
+        "{}:{}:{}-{}",
+        slug(source),
+        slug(scope),
+        slug(name),
+        short_hash(&format!("{source}:{scope}:{name}"))
+    )
+}
+
+fn db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|p| p.join("mycockpit.db"))
+        .map_err(|e| format!("sem app_data_dir: {e}"))
+}
+
+fn db(app: &tauri::AppHandle) -> Result<Connection, String> {
+    let conn = Connection::open(db_path(app)?).map_err(|e| e.to_string())?;
+    conn.busy_timeout(Duration::from_secs(3))
+        .map_err(|e| e.to_string())?;
+    Ok(conn)
+}
+
+fn project_id_for_path(conn: &Connection, project_path: &str) -> Result<String, String> {
+    conn.query_row(
+        "SELECT id FROM projects WHERE path = ?1 AND deleted_at IS NULL",
+        [project_path],
+        |row| row.get(0),
+    )
+    .map_err(|_| "projeto não encontrado no registry do MyCockpit".into())
+}
+
+fn project_for_conv(
+    conn: &Connection,
+    conv_id: &str,
+    cwd: &str,
+) -> Result<(String, String), String> {
+    if let Ok(row) = conn.query_row(
+        "SELECT p.id, p.path FROM conversations c JOIN projects p ON p.id = c.project_id WHERE c.id = ?1",
+        [conv_id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+    ) {
+        return Ok(row);
+    }
+    let mut stmt = conn
+        .prepare("SELECT id, path FROM projects WHERE deleted_at IS NULL")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut best: Option<(String, String)> = None;
+    for row in rows.flatten() {
+        if Path::new(cwd).starts_with(&row.1)
+            && best
+                .as_ref()
+                .is_none_or(|(_, path)| row.1.len() > path.len())
+        {
+            best = Some(row);
+        }
+    }
+    best.ok_or_else(|| "não consegui resolver o projeto deste run".into())
+}
+
+fn parse_launch(raw: &Value) -> Option<McpLaunchConfig> {
+    let url = raw.get("url").and_then(Value::as_str).map(str::to_string);
+    let command = raw
+        .get("command")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    if url.is_none() && command.is_none() {
+        return None;
+    }
+    let raw_type = raw.get("type").and_then(Value::as_str).unwrap_or("");
+    let transport = if url.is_some() || matches!(raw_type, "http" | "sse" | "streamable_http") {
+        "http"
+    } else {
+        "stdio"
+    }
+    .to_string();
+    let native_only = matches!(raw_type, "sse" | "ws" | "websocket")
+        || raw.get("oauth").is_some()
+        || raw.get("headersHelper").is_some()
+        || raw.get("headers_helper").is_some();
+    let mut env = string_map(raw.get("env"));
+    let mut env_vars = string_array(raw.get("env_vars"));
+    // `.mcp.json` permite `KEY=${KEY}`. No modelo canônico isso vira apenas
+    // uma referência herdada, que Codex e Claude sabem receber sem o valor.
+    env.retain(|key, value| {
+        if pure_env_ref(value) == Some(key.as_str()) {
+            env_vars.push(key.clone());
+            false
+        } else {
+            true
+        }
+    });
+    env_vars.sort();
+    env_vars.dedup();
+
+    let mut http_headers = string_map(raw.get("http_headers").or_else(|| raw.get("headers")));
+    let mut env_http_headers = string_map(raw.get("env_http_headers"));
+    let mut bearer_token_env_var = raw
+        .get("bearer_token_env_var")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    http_headers.retain(|header, value| {
+        if header.eq_ignore_ascii_case("authorization") {
+            if let Some(env_var) = bearer_env_ref(value) {
+                bearer_token_env_var.get_or_insert_with(|| env_var.to_string());
+                return false;
+            }
+        }
+        if let Some(env_var) = pure_env_ref(value) {
+            env_http_headers
+                .entry(header.clone())
+                .or_insert_with(|| env_var.to_string());
+            false
+        } else {
+            true
+        }
+    });
+
+    Some(McpLaunchConfig {
+        transport,
+        command,
+        args: string_array(raw.get("args")),
+        env,
+        env_vars,
+        cwd: raw.get("cwd").and_then(Value::as_str).map(str::to_string),
+        url,
+        bearer_token_env_var,
+        http_headers,
+        env_http_headers,
+        native_only,
+    })
+}
+
+fn string_array(v: Option<&Value>) -> Vec<String> {
+    v.and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn string_map(v: Option<&Value>) -> BTreeMap<String, String> {
+    v.and_then(Value::as_object)
+        .map(|map| {
+            map.iter()
+                .filter_map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn push_json_servers(
+    out: &mut Vec<DiscoveredServer>,
+    root: Option<&Value>,
+    source: &str,
+    scope: &str,
+    source_agent: Option<&str>,
+) {
+    let Some(map) = root.and_then(Value::as_object) else {
+        return;
+    };
+    for (name, raw) in map {
+        let Some(launch) = parse_launch(raw) else {
+            continue;
+        };
+        out.push(DiscoveredServer {
+            id: server_id(source, scope, name),
+            name: name.clone(),
+            source: source.into(),
+            scope: scope.into(),
+            source_agent: source_agent.map(str::to_string),
+            enabled: raw.get("enabled").and_then(Value::as_bool).unwrap_or(true),
+            managed: true,
+            launch: Some(launch),
+        });
+    }
+}
+
+fn discover_claude(project_path: &str) -> Vec<DiscoveredServer> {
+    let mut out = Vec::new();
+    if let Some(home) = std::env::var_os("HOME") {
+        if let Ok(text) = std::fs::read_to_string(PathBuf::from(home).join(".claude.json")) {
+            if let Ok(root) = serde_json::from_str::<Value>(&text) {
+                push_json_servers(
+                    &mut out,
+                    root.get("mcpServers"),
+                    "claude",
+                    "user",
+                    Some("claude-code"),
+                );
+                // Claude guarda o escopo local dentro do mapa de projetos. A
+                // chave é o path; se a versão instalada não usar esse shape,
+                // simplesmente não há entradas locais.
+                if let Some(local) = root
+                    .get("projects")
+                    .and_then(|p| p.get(project_path))
+                    .and_then(|p| p.get("mcpServers"))
+                {
+                    push_json_servers(
+                        &mut out,
+                        Some(local),
+                        "claude",
+                        "local",
+                        Some("claude-code"),
+                    );
+                }
+            }
+        }
+    }
+    let shared = Path::new(project_path).join(".mcp.json");
+    if let Ok(text) = std::fs::read_to_string(shared) {
+        if let Ok(root) = serde_json::from_str::<Value>(&text) {
+            push_json_servers(&mut out, root.get("mcpServers"), "project", "project", None);
+        }
+    }
+    out
+}
+
+async fn discover_codex(project_path: &str) -> Result<Vec<DiscoveredServer>, String> {
+    let cwd = project_path.to_string();
+    let output = tokio::task::spawn_blocking(move || {
+        crate::proc::run("codex", &["mcp", "list", "--json"], Some(&cwd))
+    })
+    .await
+    .map_err(|e| format!("falha na task de discovery do Codex: {e}"))?
+    .map_err(|e| format!("`codex mcp list --json` falhou: {e}"))?;
+    let items = serde_json::from_str::<Vec<Value>>(&output)
+        .map_err(|e| format!("`codex mcp list --json` devolveu JSON inválido: {e}"))?;
+    Ok(items
+        .into_iter()
+        .filter_map(|item| {
+            let name = item.get("name")?.as_str()?.to_string();
+            let launch = parse_launch(item.get("transport")?)?;
+            Some(DiscoveredServer {
+                id: server_id("codex", "user", &name),
+                name,
+                source: "codex".into(),
+                scope: "user".into(),
+                source_agent: Some("codex".into()),
+                enabled: item.get("enabled").and_then(Value::as_bool).unwrap_or(true),
+                managed: true,
+                launch: Some(launch),
+            })
+        })
+        .collect())
+}
+
+/// Descoberta ao vivo + erros de inventário POR AGENT (a fonte que falhou se
+/// identifica; o código genérico só pergunta "o inventário do MEU agent está
+/// ok?" — sem comparar nome de fornecedor). Hoje só o Codex enumera via CLI
+/// (pode falhar); as demais fontes são leitura de arquivo, infalível-ish.
+async fn discover_live_with_status(
+    project_path: &str,
+) -> (Vec<DiscoveredServer>, HashMap<String, String>) {
+    let mut out = discover_claude(project_path);
+    let mut inventory_errors = HashMap::new();
+    match discover_codex(project_path).await {
+        Ok(servers) => {
+            out.extend(servers);
+        }
+        Err(error) => {
+            inventory_errors.insert("codex".to_string(), error);
+        }
+    };
+    out.push(DiscoveredServer {
+        id: "internal:run:mc-context".into(),
+        name: "mc-context".into(),
+        source: "mycockpit".into(),
+        scope: "run".into(),
+        source_agent: None,
+        enabled: true,
+        managed: false,
+        launch: None,
+    });
+    out.push(DiscoveredServer {
+        id: "internal:run:mc-approval".into(),
+        name: "mc-approval".into(),
+        source: "mycockpit".into(),
+        scope: "run".into(),
+        source_agent: Some("claude-code".into()),
+        enabled: true,
+        managed: false,
+        launch: None,
+    });
+    out.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then(a.source.cmp(&b.source))
+    });
+    (out, inventory_errors)
+}
+
+async fn discover_live(project_path: &str) -> Vec<DiscoveredServer> {
+    discover_live_with_status(project_path).await.0
+}
+
+fn persist_registry(conn: &Connection, servers: &[DiscoveredServer]) -> Result<(), String> {
+    let now = now_ms();
+    for server in servers {
+        let launch = server.launch.as_ref();
+        let transport = launch.map(|c| c.transport.as_str()).unwrap_or("internal");
+        let locator = launch
+            .map(McpLaunchConfig::locator)
+            .unwrap_or_else(|| "gerenciado pelo MyCockpit".into());
+        let env_keys = launch.map(McpLaunchConfig::env_keys).unwrap_or_default();
+        let fingerprint = launch
+            .map(McpLaunchConfig::sanitized_fingerprint)
+            .unwrap_or_default();
+        let old_fingerprint = conn
+            .query_row(
+                "SELECT fingerprint FROM mcp_servers WHERE id = ?1",
+                [&server.id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        if old_fingerprint
+            .as_deref()
+            .is_some_and(|old| old != fingerprint)
+        {
+            // Resultado de health pertence à configuração anterior. Mantê-lo
+            // até o TTL poderia rotear um run com um command/URL já trocado.
+            conn.execute("DELETE FROM mcp_health WHERE server_id = ?1", [&server.id])
+                .map_err(|e| e.to_string())?;
+        }
+        conn.execute(
+            "INSERT INTO mcp_servers
+               (id, name, source, scope, source_agent, transport, locator,
+                env_keys_json, fingerprint, managed, portable, source_enabled, last_seen_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(id) DO UPDATE SET
+               name=excluded.name, source=excluded.source, scope=excluded.scope,
+               source_agent=excluded.source_agent, transport=excluded.transport,
+               locator=excluded.locator, env_keys_json=excluded.env_keys_json,
+               fingerprint=excluded.fingerprint, managed=excluded.managed,
+               portable=excluded.portable, source_enabled=excluded.source_enabled,
+               last_seen_at=excluded.last_seen_at",
+            params![
+                server.id,
+                server.name,
+                server.source,
+                server.scope,
+                server.source_agent,
+                transport,
+                locator,
+                serde_json::to_string(&env_keys).unwrap_or_else(|_| "[]".into()),
+                fingerprint,
+                server.managed as i64,
+                server.portable() as i64,
+                server.enabled as i64,
+                now,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn agent_state(
+    conn: &Connection,
+    project_id: &str,
+    server: &DiscoveredServer,
+    agent: &str,
+) -> McpAgentState {
+    let binding = conn
+        .query_row(
+            "SELECT required, fallback FROM mcp_bindings
+             WHERE project_id = ?1 AND server_id = ?2 AND agent = ?3",
+            params![project_id, server.id, agent],
+            |row| Ok((row.get::<_, i64>(0)? != 0, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    let health = conn
+        .query_row(
+            "SELECT status, detail, checked_at FROM mcp_health
+             WHERE project_id = ?1 AND server_id = ?2 AND agent = ?3",
+            params![project_id, server.id, agent],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .ok()
+        .flatten();
+    McpAgentState {
+        agent: agent.into(),
+        compatible: server.compatible(agent),
+        enabled: binding.is_some(),
+        required: binding.as_ref().is_some_and(|b| b.0),
+        fallback: binding
+            .as_ref()
+            .map(|b| b.1.clone())
+            .unwrap_or_else(|| "ask".into()),
+        health: health
+            .as_ref()
+            .map(|h| h.0.clone())
+            .unwrap_or_else(|| "unchecked".into()),
+        detail: health.as_ref().and_then(|h| h.1.clone()),
+        checked_at: health.map(|h| h.2),
+    }
+}
+
+fn server_view(conn: &Connection, project_id: &str, server: &DiscoveredServer) -> McpServerView {
+    let launch = server.launch.as_ref();
+    McpServerView {
+        id: server.id.clone(),
+        name: server.name.clone(),
+        source: server.source.clone(),
+        scope: server.scope.clone(),
+        transport: launch
+            .map(|c| c.transport.clone())
+            .unwrap_or_else(|| "internal".into()),
+        locator: launch
+            .map(McpLaunchConfig::locator)
+            .unwrap_or_else(|| "gerenciado pelo MyCockpit".into()),
+        env_keys: launch.map(McpLaunchConfig::env_keys).unwrap_or_default(),
+        source_agent: server.source_agent.clone(),
+        source_enabled: server.enabled,
+        managed: server.managed,
+        portable: server.portable(),
+        runtime_name: None,
+        agent_states: crate::adapters::registered_agents()
+            .map(|agent| agent_state(conn, project_id, server, agent))
+            .collect(),
+    }
+}
+
+#[tauri::command]
+pub async fn discover_mcp_servers(
+    app: tauri::AppHandle,
+    project_path: String,
+) -> Result<Vec<McpServerView>, String> {
+    // Valida antes de ler `.mcp.json` ou executar CLI dentro do path recebido
+    // pelo WebView.
+    let validation = db(&app)?;
+    let project_id = project_id_for_path(&validation, &project_path)?;
+    drop(validation);
+    let servers = discover_live(&project_path).await;
+    let conn = db(&app)?;
+    persist_registry(&conn, &servers)?;
+    let mut views: Vec<McpServerView> = servers
+        .iter()
+        .map(|server| server_view(&conn, &project_id, server))
+        .collect();
+    annotate_runtime_names(&servers, &mut views);
+    Ok(views)
+}
+
+/// Preenche `runtime_name` nas views com as MESMAS regras do plano de run:
+/// slug amigável quando único entre os vinculados, senão o desambiguado
+/// `mcx-…`. Aproximação honesta e declarada: o plano real conta apenas os
+/// selecionados após o health check; aqui contam todos os vinculados do
+/// projeto (a diferença só aparece quando um homônimo cai por indisponível).
+fn annotate_runtime_names(servers: &[DiscoveredServer], views: &mut [McpServerView]) {
+    let reserved = reserved_runtime_names(
+        servers
+            .iter()
+            .filter(|server| server.source == "codex")
+            .map(|server| server.name.clone()),
+    );
+    let bound = |view: &McpServerView| view.agent_states.iter().any(|state| state.enabled);
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for (server, view) in servers.iter().zip(views.iter()) {
+        if bound(view) && server.portable() {
+            *counts.entry(slug(&server.name)).or_default() += 1;
+        }
+    }
+    for (server, view) in servers.iter().zip(views.iter_mut()) {
+        if !bound(view) || !server.portable() {
+            continue;
+        }
+        view.runtime_name = Some(
+            friendly_runtime_name(&server.name, &counts, &reserved)
+                .unwrap_or_else(|| server.runtime_name()),
+        );
+    }
+}
+
+/// Bindings existentes por projeto. Alimenta o seletor de projeto das
+/// Integrações MCP: "cadê meus toggles?" se responde vendo onde há contagem.
+fn bindings_summary(conn: &Connection) -> Result<Vec<McpBindingsSummary>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT project_id, COUNT(*) FROM mcp_bindings
+             GROUP BY project_id ORDER BY project_id",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(McpBindingsSummary {
+                project_id: row.get(0)?,
+                count: row.get(1)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(rows.flatten().collect())
+}
+
+#[tauri::command]
+pub async fn mcp_bindings_summary(
+    app: tauri::AppHandle,
+) -> Result<Vec<McpBindingsSummary>, String> {
+    let conn = db(&app)?;
+    bindings_summary(&conn)
+}
+
+fn validate_agent(agent: &str) -> Result<(), String> {
+    // Exato, sem canonicalizar: "" não é um binding válido. A lista vive na
+    // factory dos adapters — agent novo entra lá e passa a valer aqui.
+    if crate::adapters::is_registered(agent) {
+        Ok(())
+    } else {
+        Err("agent inválido".into())
+    }
+}
+
+fn validate_fallback(fallback: &str) -> Result<(), String> {
+    if matches!(fallback, "ask" | "deny" | "allow-readonly") {
+        Ok(())
+    } else {
+        Err("fallback inválido".into())
+    }
+}
+
+/// Recorte do registry persistido suficiente pra validar um binding sem
+/// re-descobrir ao vivo (a descoberta anterior já gravou `mcp_servers`).
+#[derive(Clone, Debug)]
+struct RegistryServer {
+    managed: bool,
+    portable: bool,
+}
+
+fn registry_server(conn: &Connection, server_id: &str) -> Result<Option<RegistryServer>, String> {
+    conn.query_row(
+        "SELECT managed, portable FROM mcp_servers WHERE id = ?1",
+        [server_id],
+        |row| {
+            Ok(RegistryServer {
+                managed: row.get::<_, i64>(0)? != 0,
+                portable: row.get::<_, i64>(1)? != 0,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+/// Validação de enable pelo registry. Mesmas mensagens do caminho ao vivo.
+/// A checagem fina de `cwd` (Codex → Claude) exige o launch config, que o
+/// registry não guarda; esse caso raro segue barrado no `plan_for_run`.
+fn validate_enable_from_registry(server: &RegistryServer, agent: &str) -> Result<(), String> {
+    if !server.managed {
+        return Err("MCP interno é gerenciado por run e não aceita binding manual".into());
+    }
+    if !server.portable {
+        return Err(
+            "config não portável: mova valores literais/extensões nativas para wrapper, Keychain ou env ref"
+                .into(),
+        );
+    }
+    // Capability, não nome: agent sem `managed_mcp` (hoje o agy) não roteia.
+    if !crate::adapters::capabilities_of(agent).is_some_and(|c| c.managed_mcp) {
+        return Err(format!("{agent} ainda não suporta este MCP"));
+    }
+    Ok(())
+}
+
+fn upsert_binding(
+    conn: &Connection,
+    project_id: &str,
+    server_id: &str,
+    agent: &str,
+    required: bool,
+    fallback: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO mcp_bindings
+           (project_id, server_id, agent, required, fallback, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(project_id, server_id, agent) DO UPDATE SET
+           required=excluded.required, fallback=excluded.fallback,
+           updated_at=excluded.updated_at",
+        params![
+            project_id,
+            server_id,
+            agent,
+            required as i64,
+            fallback,
+            now_ms()
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn set_mcp_binding(
+    app: tauri::AppHandle,
+    project_path: String,
+    server_id: String,
+    agent: String,
+    enabled: bool,
+    required: bool,
+    fallback: String,
+) -> Result<(), String> {
+    validate_agent(&agent)?;
+    validate_fallback(&fallback)?;
+    {
+        let conn = db(&app)?;
+        let project_id = project_id_for_path(&conn, &project_path)?;
+        if !enabled {
+            // Disable é sempre local: remover o binding não depende do servidor
+            // ainda existir na origem.
+            conn.execute(
+                "DELETE FROM mcp_bindings
+                 WHERE project_id = ?1 AND server_id = ?2 AND agent = ?3",
+                params![project_id, server_id, agent],
+            )
+            .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        // Caminho rápido: o registry persistido pela descoberta anterior já
+        // sabe se dá pra rotear. Nada de `codex mcp list` a cada toggle.
+        if let Some(server) = registry_server(&conn, &server_id)? {
+            validate_enable_from_registry(&server, &agent)?;
+            return upsert_binding(&conn, &project_id, &server_id, &agent, required, &fallback);
+        }
+    }
+    // Caso raro: servidor nunca descoberto nesta máquina. Só aqui a descoberta
+    // ao vivo (lenta) roda, com a validação completa de compatibilidade.
+    let servers = discover_live(&project_path).await;
+    let server = servers
+        .iter()
+        .find(|server| server.id == server_id)
+        .ok_or_else(|| "servidor não encontrado na descoberta atual".to_string())?;
+    if !server.compatible(&agent) {
+        return Err(if !server.portable() {
+            "config não portável: mova valores literais/extensões nativas para wrapper, Keychain ou env ref".into()
+        } else {
+            format!("{agent} ainda não suporta este MCP")
+        });
+    }
+    let conn = db(&app)?;
+    let project_id = project_id_for_path(&conn, &project_path)?;
+    persist_registry(&conn, &servers)?;
+    upsert_binding(&conn, &project_id, &server_id, &agent, required, &fallback)
+}
+
+async fn write_rpc(stdin: &mut tokio::process::ChildStdin, value: Value) -> Result<(), String> {
+    let mut line = value.to_string();
+    line.push('\n');
+    stdin
+        .write_all(line.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+    stdin.flush().await.map_err(|e| e.to_string())
+}
+
+async fn read_rpc(
+    reader: &mut tokio::io::Lines<BufReader<ChildStdout>>,
+    wanted_id: i64,
+) -> Result<Value, String> {
+    let read = async {
+        for _ in 0..60 {
+            let Some(line) = reader.next_line().await.map_err(|e| e.to_string())? else {
+                return Err("MCP fechou stdout antes da resposta".into());
+            };
+            let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
+                continue;
+            };
+            if value.get("id").and_then(Value::as_i64) == Some(wanted_id) {
+                return Ok(value);
+            }
+        }
+        Err("MCP emitiu respostas demais sem responder ao request".into())
+    };
+    timeout(PROBE_TIMEOUT, read)
+        .await
+        .map_err(|_| "timeout esperando resposta MCP".to_string())?
+}
+
+async fn finish_probe_child(
+    mut child: Child,
+    mut stderr_task: tokio::task::JoinHandle<String>,
+) -> String {
+    let _ = child.start_kill();
+    let _ = child.wait().await;
+    match timeout(Duration::from_secs(1), &mut stderr_task).await {
+        Ok(Ok(text)) => text,
+        _ => {
+            stderr_task.abort();
+            String::new()
+        }
+    }
+}
+
+fn redact_probe_detail(config: &McpLaunchConfig, text: String) -> String {
+    let mut redacted = text;
+    let mut values: Vec<String> = config.env.values().cloned().collect();
+    values.extend(
+        config
+            .env_keys()
+            .into_iter()
+            .filter_map(|key| std::env::var(key).ok()),
+    );
+    values.sort_by_key(|value| std::cmp::Reverse(value.len()));
+    values.dedup();
+    for value in values {
+        if value.len() >= 4 {
+            redacted = redacted.replace(&value, "[REDACTED]");
+        }
+    }
+    redacted
+}
+
+async fn probe_stdio(config: &McpLaunchConfig, project_path: &str) -> ProbeOutcome {
+    let Some(program) = &config.command else {
+        return ProbeOutcome {
+            status: "unavailable".into(),
+            detail: Some("command ausente".into()),
+            tool_names: Vec::new(),
+        };
+    };
+    let mut cmd = Command::new(program);
+    cmd.args(&config.args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let cwd = config
+        .cwd
+        .as_deref()
+        .filter(|cwd| Path::new(cwd).is_absolute())
+        .unwrap_or(project_path);
+    cmd.current_dir(cwd);
+    for (key, value) in &config.env {
+        cmd.env(key, value);
+    }
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            return ProbeOutcome {
+                status: "unavailable".into(),
+                detail: Some(cap_detail(format!("não iniciou: {e}"))),
+                tool_names: Vec::new(),
+            };
+        }
+    };
+    let Some(mut stdin) = child.stdin.take() else {
+        return ProbeOutcome {
+            status: "unavailable".into(),
+            detail: Some("stdin MCP indisponível".into()),
+            tool_names: Vec::new(),
+        };
+    };
+    let Some(stdout) = child.stdout.take() else {
+        return ProbeOutcome {
+            status: "unavailable".into(),
+            detail: Some("stdout MCP indisponível".into()),
+            tool_names: Vec::new(),
+        };
+    };
+    let mut stderr = child.stderr.take().expect("stderr pipado");
+    let stderr_task = tokio::spawn(async move {
+        let mut text = String::new();
+        let _ = stderr.read_to_string(&mut text).await;
+        text
+    });
+    let mut reader = BufReader::new(stdout).lines();
+    let result = async {
+        write_rpc(
+            &mut stdin,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name":"mycockpit-health","version":"1.0.0"}
+                }
+            }),
+        )
+        .await?;
+        let init = read_rpc(&mut reader, 1).await?;
+        if let Some(err) = init.pointer("/error/message").and_then(Value::as_str) {
+            return Err(format!("initialize: {err}"));
+        }
+        write_rpc(
+            &mut stdin,
+            json!({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}),
+        )
+        .await?;
+        write_rpc(
+            &mut stdin,
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}),
+        )
+        .await?;
+        let tools = read_rpc(&mut reader, 2).await?;
+        if let Some(err) = tools.pointer("/error/message").and_then(Value::as_str) {
+            return Err(format!("tools/list: {err}"));
+        }
+        let names = tools
+            .pointer("/result/tools")
+            .and_then(Value::as_array)
+            .map(|tools| {
+                tools
+                    .iter()
+                    .filter_map(|tool| tool.get("name").and_then(Value::as_str))
+                    .take(MAX_TOOL_NAMES)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        Ok::<_, String>(names)
+    }
+    .await;
+    let stderr = finish_probe_child(child, stderr_task).await;
+    match result {
+        Ok(tool_names) => ProbeOutcome {
+            status: "healthy".into(),
+            detail: Some(format!("{} tools disponíveis", tool_names.len())),
+            tool_names,
+        },
+        Err(error) => {
+            let detail = if stderr.trim().is_empty() {
+                error
+            } else {
+                format!("{error} · {}", stderr.lines().last().unwrap_or_default())
+            };
+            let detail = redact_probe_detail(config, detail);
+            ProbeOutcome {
+                status: if detail.to_lowercase().contains("auth")
+                    || detail.to_lowercase().contains("token")
+                {
+                    "auth-required".into()
+                } else {
+                    "unavailable".into()
+                },
+                detail: Some(cap_detail(detail)),
+                tool_names: Vec::new(),
+            }
+        }
+    }
+}
+
+async fn probe_http(config: &McpLaunchConfig) -> ProbeOutcome {
+    let Some(url) = &config.url else {
+        return ProbeOutcome {
+            status: "unavailable".into(),
+            detail: Some("URL ausente".into()),
+            tool_names: Vec::new(),
+        };
+    };
+    let output = timeout(
+        PROBE_TIMEOUT,
+        Command::new("curl")
+            .args([
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "5",
+                "--output",
+                "/dev/null",
+                "--write-out",
+                "%{http_code}",
+                "--request",
+                "POST",
+                "--header",
+                "Content-Type: application/json",
+                "--header",
+                "Accept: application/json, text/event-stream",
+                "--data",
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mycockpit-health","version":"1.0.0"}}}"#,
+                url,
+            ])
+            .output(),
+    )
+    .await;
+    match output {
+        Ok(Ok(out)) => {
+            let code = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let numeric = code.parse::<u16>().unwrap_or(0);
+            let status = match numeric {
+                200..=400 | 405 => "healthy",
+                401 | 403 if delegated_http_auth_available(config) => "auth-delegated",
+                401 | 403 => "auth-required",
+                _ => "unavailable",
+            };
+            let detail = if status == "auth-delegated" {
+                format!("HTTP {code}; endpoint alcançável, credencial delegada por env")
+            } else {
+                format!("HTTP {code}")
+            };
+            ProbeOutcome {
+                status: status.into(),
+                detail: Some(detail),
+                tool_names: Vec::new(),
+            }
+        }
+        Ok(Err(e)) => ProbeOutcome {
+            status: "unavailable".into(),
+            detail: Some(cap_detail(e.to_string())),
+            tool_names: Vec::new(),
+        },
+        Err(_) => ProbeOutcome {
+            status: "unavailable".into(),
+            detail: Some("timeout no endpoint HTTP".into()),
+            tool_names: Vec::new(),
+        },
+    }
+}
+
+fn delegated_http_auth_available(config: &McpLaunchConfig) -> bool {
+    let bearer_ok = config
+        .bearer_token_env_var
+        .as_deref()
+        .is_some_and(|key| std::env::var_os(key).is_some());
+    let headers_ok = !config.env_http_headers.is_empty()
+        && config
+            .env_http_headers
+            .values()
+            .all(|key| std::env::var_os(key).is_some());
+    bearer_ok || headers_ok
+}
+
+async fn probe(server: &DiscoveredServer, project_path: &str) -> ProbeOutcome {
+    let Some(config) = &server.launch else {
+        return ProbeOutcome {
+            status: if server.source == "mycockpit" {
+                "healthy".into()
+            } else {
+                "unavailable".into()
+            },
+            detail: Some("gerenciado internamente".into()),
+            tool_names: Vec::new(),
+        };
+    };
+    if config.transport == "stdio" {
+        probe_stdio(config, project_path).await
+    } else {
+        probe_http(config).await
+    }
+}
+
+fn persist_health(
+    conn: &Connection,
+    project_id: &str,
+    server_id: &str,
+    agent: &str,
+    outcome: &ProbeOutcome,
+) -> Result<McpHealthView, String> {
+    let at = now_ms();
+    conn.execute(
+        "INSERT INTO mcp_health
+           (project_id, server_id, agent, status, detail, tool_names_json, checked_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(project_id, server_id, agent) DO UPDATE SET
+           status=excluded.status, detail=excluded.detail,
+           tool_names_json=excluded.tool_names_json, checked_at=excluded.checked_at",
+        params![
+            project_id,
+            server_id,
+            agent,
+            outcome.status,
+            outcome.detail,
+            serde_json::to_string(&outcome.tool_names).unwrap_or_else(|_| "[]".into()),
+            at,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(McpHealthView {
+        server_id: server_id.into(),
+        agent: agent.into(),
+        status: outcome.status.clone(),
+        detail: outcome.detail.clone(),
+        checked_at: at,
+        tool_count: outcome.tool_names.len(),
+        tool_names: outcome.tool_names.clone(),
+    })
+}
+
+#[tauri::command]
+pub async fn check_mcp_server(
+    app: tauri::AppHandle,
+    project_path: String,
+    server_id: String,
+    agent: String,
+) -> Result<McpHealthView, String> {
+    validate_agent(&agent)?;
+    let validation = db(&app)?;
+    project_id_for_path(&validation, &project_path)?;
+    drop(validation);
+    let servers = discover_live(&project_path).await;
+    let server = servers
+        .iter()
+        .find(|server| server.id == server_id)
+        .ok_or_else(|| "servidor não encontrado".to_string())?;
+    if !server.compatible(&agent) && server.source != "mycockpit" {
+        return Err(format!("{agent} não é compatível com este servidor"));
+    }
+    let outcome = probe(server, &project_path).await;
+    let conn = db(&app)?;
+    let project_id = project_id_for_path(&conn, &project_path)?;
+    persist_registry(&conn, &servers)?;
+    persist_health(&conn, &project_id, &server_id, &agent, &outcome)
+}
+
+fn bindings_for_run(
+    conn: &Connection,
+    project_id: &str,
+    agent: &str,
+) -> Result<Vec<Binding>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT server_id, required, fallback FROM mcp_bindings
+             WHERE project_id = ?1 AND agent = ?2 ORDER BY server_id",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![project_id, agent], |row| {
+            Ok(Binding {
+                server_id: row.get(0)?,
+                required: row.get::<_, i64>(1)? != 0,
+                fallback: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(rows.flatten().collect())
+}
+
+fn cached_health(
+    conn: &Connection,
+    project_id: &str,
+    server_id: &str,
+    agent: &str,
+) -> Option<ProbeOutcome> {
+    conn.query_row(
+        "SELECT status, detail, tool_names_json, checked_at FROM mcp_health
+         WHERE project_id = ?1 AND server_id = ?2 AND agent = ?3",
+        params![project_id, server_id, agent],
+        |row| {
+            let checked_at: i64 = row.get(3)?;
+            if now_ms() - checked_at > HEALTH_TTL_MS {
+                return Ok(None);
+            }
+            let names: String = row.get(2)?;
+            Ok(Some(ProbeOutcome {
+                status: row.get(0)?,
+                detail: row.get(1)?,
+                tool_names: serde_json::from_str(&names).unwrap_or_default(),
+            }))
+        },
+    )
+    .optional()
+    .ok()
+    .flatten()
+    .flatten()
+}
+
+fn binding_blocks_without_server(binding: &Binding) -> bool {
+    binding.fallback == "ask" || (binding.required && binding.fallback != "allow-readonly")
+}
+
+/// Resolve somente bindings explícitos. Sem binding, preserva o comportamento
+/// legado dos CLIs (configs globais continuam visíveis). Com ao menos um
+/// binding, o run entra em modo gerenciado e só recebe os MCPs selecionados.
+pub async fn plan_for_run(
+    app: &tauri::AppHandle,
+    conv_id: &str,
+    agent: &str,
+    cwd: &str,
+) -> Result<McpRunPlan, String> {
+    let agent = crate::adapters::canonical_agent(agent);
+    if !crate::adapters::is_registered(agent) {
+        return Ok(McpRunPlan::default());
+    }
+    let conn = db(app)?;
+    let (project_id, project_path) = project_for_conv(&conn, conv_id, cwd)?;
+    let bindings = bindings_for_run(&conn, &project_id, agent)?;
+    if bindings.is_empty() {
+        return Ok(McpRunPlan::default());
+    }
+    let (servers, inventory_errors) = discover_live_with_status(&project_path).await;
+    // Inventário nativo do PRÓPRIO agent indisponível → bloqueia o run
+    // gerenciado (genérico: a fonte que falhou se identifica no mapa).
+    if let Some(error) = inventory_errors.get(agent) {
+        return Err(format!(
+            "inventário MCP do {agent} indisponível; run gerenciado bloqueado: {error}"
+        ));
+    }
+    persist_registry(&conn, &servers)?;
+    let by_id: HashMap<&str, &DiscoveredServer> = servers
+        .iter()
+        .map(|server| (server.id.as_str(), server))
+        .collect();
+    let mut plan = McpRunPlan {
+        managed: true,
+        disabled_codex_servers: servers
+            .iter()
+            .filter(|server| server.source == "codex")
+            .filter_map(|server| {
+                server.launch.as_ref().map(|launch| McpRuntimeServer {
+                    runtime_name: server.name.clone(),
+                    display_name: server.name.clone(),
+                    launch: launch.codex_public_transport(),
+                })
+            })
+            .collect(),
+        ..Default::default()
+    };
+    let mut policy_lines = Vec::new();
+    for binding in bindings {
+        let Some(server) = by_id.get(binding.server_id.as_str()).copied() else {
+            let message = format!(
+                "MCP {} não existe mais na configuração de origem",
+                binding.server_id
+            );
+            if binding_blocks_without_server(&binding) {
+                plan.blocked = Some(message);
+                break;
+            }
+            plan.notices.push(message);
+            continue;
+        };
+        if !server.compatible(agent) {
+            let message = format!("MCP {} não é portável/compatível com {agent}", server.name);
+            if binding_blocks_without_server(&binding) {
+                plan.blocked = Some(message);
+                break;
+            }
+            plan.notices.push(message);
+            continue;
+        }
+        let outcome = if let Some(cached) = cached_health(&conn, &project_id, &server.id, agent) {
+            cached
+        } else {
+            let outcome = probe(server, &project_path).await;
+            let _ = persist_health(&conn, &project_id, &server.id, agent, &outcome);
+            outcome
+        };
+        if matches!(outcome.status.as_str(), "healthy" | "auth-delegated") {
+            plan.selected.push(McpRuntimeServer {
+                runtime_name: server.runtime_name(),
+                display_name: server.name.clone(),
+                launch: server.launch.clone().expect("compatible exige launch"),
+            });
+            continue;
+        }
+        let detail = outcome
+            .detail
+            .clone()
+            .unwrap_or_else(|| outcome.status.clone());
+        let message = format!("MCP {} indisponível: {detail}", server.name);
+        if binding.fallback == "allow-readonly" {
+            plan.notices
+                .push(format!("{message}; fallback somente leitura autorizado"));
+            policy_lines.push(format!(
+                "- {} indisponível. Você pode usar um caminho alternativo SOMENTE LEITURA; não faça alterações externas.",
+                server.name
+            ));
+        } else if binding.fallback == "ask" {
+            plan.blocked = Some(format!(
+                "{message}. A política pede decisão humana; teste novamente ou altere o binding em Integrações MCP."
+            ));
+            break;
+        } else if binding.required {
+            plan.blocked = Some(format!(
+                "{message}. O projeto exige este MCP e a política `{}` não autoriza improviso.",
+                binding.fallback
+            ));
+            break;
+        } else {
+            plan.notices.push(message);
+        }
+    }
+    if !policy_lines.is_empty() {
+        plan.prompt_policy = Some(format!(
+            "## Política MCP do MyCockpit\n\n{}",
+            policy_lines.join("\n")
+        ));
+    }
+    apply_friendly_runtime_names(&mut plan);
+    Ok(plan)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parseia_stdio_e_nunca_expoe_valores_no_fingerprint() {
+        let raw = json!({
+            "command": "/bin/server",
+            "args": ["--x"],
+            "env": {"TOKEN":"segredo-absoluto"}
+        });
+        let cfg = parse_launch(&raw).unwrap();
+        assert_eq!(cfg.transport, "stdio");
+        assert_eq!(cfg.env_keys(), vec!["TOKEN"]);
+        assert!(!cfg.portable());
+        assert!(!cfg.sanitized_fingerprint().contains("segredo-absoluto"));
+    }
+
+    /// H2 (prompt-hygiene-plan) — o fingerprint do plano decide o re-anúncio
+    /// mid-conversa: estável a reordenação (mesmo conjunto = mesmo carimbo),
+    /// sensível ao CONJUNTO (ligar um binding muda), e nunca carrega launch/env
+    /// (só nomes viajam pro front via `mcp://announced`).
+    #[test]
+    fn fingerprint_do_plano_e_estavel_ao_conjunto_e_sem_segredos() {
+        let srv = |name: &str| McpRuntimeServer {
+            runtime_name: name.to_string(),
+            display_name: name.to_string(),
+            launch: Default::default(),
+        };
+        let plano = |names: &[&str]| McpRunPlan {
+            managed: true,
+            selected: names.iter().map(|n| srv(n)).collect(),
+            ..Default::default()
+        };
+        // não gerenciado (legado): nada a anunciar, nada a carimbar
+        assert_eq!(McpRunPlan::default().fingerprint(), None);
+        // gerenciado VAZIO tem carimbo próprio: desligar todos os bindings é
+        // mudança de plano (N→0 re-anuncia; ver preambulo_reanuncia_n_para_zero)
+        let vazio = plano(&[]).fingerprint();
+        assert!(vazio.is_some());
+        assert_ne!(vazio, plano(&["playwright"]).fingerprint());
+        // mesmo conjunto em outra ordem = mesmo carimbo
+        assert_eq!(
+            plano(&["playwright", "hostinger"]).fingerprint(),
+            plano(&["hostinger", "playwright"]).fingerprint()
+        );
+        // conjunto diferente = carimbo diferente (é o gatilho do re-anúncio)
+        assert_ne!(
+            plano(&["playwright"]).fingerprint(),
+            plano(&["playwright", "hostinger"]).fingerprint()
+        );
+    }
+
+    #[test]
+    fn wrapper_sem_segredo_literal_e_portavel() {
+        let raw = json!({
+            "type": "stdio",
+            "command": "/Users/me/.claude/bin/hostinger-wrapper.sh",
+            "args": []
+        });
+        let cfg = parse_launch(&raw).unwrap();
+        assert!(cfg.portable());
+    }
+
+    #[test]
+    fn extensao_nativa_e_credencial_em_url_nao_sao_roteadas() {
+        let oauth = parse_launch(&json!({
+            "type": "http",
+            "url": "https://mcp.example.com/mcp",
+            "oauth": {"clientId": "local"}
+        }))
+        .unwrap();
+        assert!(!oauth.portable());
+
+        let url_secret = parse_launch(&json!({
+            "type": "http",
+            "url": "https://user:pass@mcp.example.com/mcp?token=abc"
+        }))
+        .unwrap();
+        assert!(!url_secret.portable());
+
+        let argv_secret = parse_launch(&json!({
+            "command": "/bin/server",
+            "args": ["--api-key", "abc"]
+        }))
+        .unwrap();
+        assert!(!argv_secret.portable());
+    }
+
+    #[test]
+    fn cwd_do_codex_nao_e_prometido_ao_claude() {
+        let server = DiscoveredServer {
+            id: "codex:user:local".into(),
+            name: "local".into(),
+            source: "codex".into(),
+            scope: "user".into(),
+            source_agent: Some("codex".into()),
+            enabled: true,
+            managed: true,
+            launch: Some(McpLaunchConfig {
+                transport: "stdio".into(),
+                command: Some("node".into()),
+                cwd: Some("/plugin".into()),
+                ..Default::default()
+            }),
+        };
+        assert!(server.compatible("codex"));
+        assert!(!server.compatible("claude-code"));
+    }
+
+    #[test]
+    fn detalhe_de_probe_remove_valores_conhecidos() {
+        let config = McpLaunchConfig {
+            env: BTreeMap::from([("TOKEN".into(), "super-secret-value".into())]),
+            ..Default::default()
+        };
+        let detail = redact_probe_detail(&config, "falhou com token super-secret-value".into());
+        assert_eq!(detail, "falhou com token [REDACTED]");
+    }
+
+    #[test]
+    fn normaliza_refs_de_env_entre_claude_e_codex() {
+        let raw = json!({
+            "type": "http",
+            "url": "https://mcp.example.com/mcp",
+            "headers": {
+                "Authorization": "Bearer ${MCP_TOKEN}",
+                "X-Tenant": "${MCP_TENANT}"
+            }
+        });
+        let cfg = parse_launch(&raw).unwrap();
+        assert!(cfg.portable());
+        assert_eq!(cfg.bearer_token_env_var.as_deref(), Some("MCP_TOKEN"));
+        assert_eq!(
+            cfg.env_http_headers.get("X-Tenant").map(String::as_str),
+            Some("MCP_TENANT")
+        );
+        let claude = cfg.claude_json();
+        assert_eq!(claude["headers"]["Authorization"], "Bearer ${MCP_TOKEN}");
+        assert_eq!(claude["headers"]["X-Tenant"], "${MCP_TENANT}");
+    }
+
+    #[test]
+    fn registry_remove_segredos_de_url() {
+        let cfg = McpLaunchConfig {
+            transport: "http".into(),
+            url: Some("https://user:pass@example.com/mcp?token=abc#frag".into()),
+            ..Default::default()
+        };
+        assert_eq!(cfg.locator(), "https://example.com/mcp");
+        assert!(!cfg.sanitized_fingerprint().contains("abc"));
+    }
+
+    #[test]
+    fn config_codex_usa_override_efemero() {
+        let cfg = McpLaunchConfig {
+            transport: "stdio".into(),
+            command: Some("/bin/server".into()),
+            args: vec!["serve".into()],
+            ..Default::default()
+        };
+        let mut cmd = Command::new("codex");
+        cfg.configure_codex("mcx-test", &mut cmd);
+        let dbg = format!("{cmd:?}");
+        assert!(dbg.contains("mcp_servers.mcx-test.command"));
+        assert!(dbg.contains("/bin/server"));
+        assert!(!dbg.contains("config.toml"));
+    }
+
+    #[test]
+    fn config_codex_cita_header_que_nao_e_chave_toml_simples() {
+        let cfg = McpLaunchConfig {
+            transport: "http".into(),
+            url: Some("https://mcp.example.com/mcp".into()),
+            env_http_headers: BTreeMap::from([("X Tenant".into(), "TENANT".into())]),
+            ..Default::default()
+        };
+        let mut cmd = Command::new("codex");
+        cfg.configure_codex("mcx-test", &mut cmd);
+        assert!(format!("{cmd:?}").contains("env_http_headers.\\\"X Tenant\\\""));
+    }
+
+    fn command_args(cmd: &Command) -> Vec<String> {
+        cmd.as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn plano_codex_materializa_plugin_http_antes_de_desabilitar() {
+        let launch = McpLaunchConfig {
+            transport: "http".into(),
+            url: Some("http://user:literal-secret@127.0.0.1:29979/mcp?token=literal-secret".into()),
+            http_headers: BTreeMap::from([(
+                "Authorization".into(),
+                "Bearer literal-secret".into(),
+            )]),
+            ..Default::default()
+        }
+        .codex_public_transport();
+        assert_eq!(launch.url.as_deref(), Some("http://127.0.0.1:29979/mcp"));
+        assert!(launch.http_headers.is_empty());
+        let plan = McpRunPlan {
+            managed: true,
+            disabled_codex_servers: vec![McpRuntimeServer {
+                runtime_name: "paper".into(),
+                display_name: "Paper".into(),
+                launch,
+            }],
+            ..Default::default()
+        };
+        let mut cmd = Command::new("codex");
+        plan.configure_codex(&mut cmd);
+        let args = command_args(&cmd);
+        let url = args
+            .iter()
+            .position(|arg| arg == "mcp_servers.paper.url=\"http://127.0.0.1:29979/mcp\"")
+            .expect("transporte HTTP materializado");
+        let disabled = args
+            .iter()
+            .position(|arg| arg == "mcp_servers.paper.enabled=false")
+            .expect("plugin desabilitado");
+        assert!(url < disabled);
+        assert!(!args.join(" ").contains("literal-secret"));
+    }
+
+    #[test]
+    fn plano_codex_materializa_stdio_sem_copiar_env_literal() {
+        let launch = McpLaunchConfig {
+            transport: "stdio".into(),
+            command: Some("/opt/mcp/server".into()),
+            args: vec!["serve".into()],
+            env: BTreeMap::from([("TOKEN".into(), "literal-secret".into())]),
+            env_vars: vec!["INHERITED_TOKEN".into()],
+            cwd: Some("/opt/mcp".into()),
+            ..Default::default()
+        }
+        .codex_public_transport();
+        assert!(launch.env.is_empty());
+        let plan = McpRunPlan {
+            managed: true,
+            disabled_codex_servers: vec![McpRuntimeServer {
+                runtime_name: "local-tools".into(),
+                display_name: "Local tools".into(),
+                launch,
+            }],
+            ..Default::default()
+        };
+        let mut cmd = Command::new("codex");
+        plan.configure_codex(&mut cmd);
+        let args = command_args(&cmd);
+        let command = args
+            .iter()
+            .position(|arg| arg == "mcp_servers.local-tools.command=\"/opt/mcp/server\"")
+            .expect("comando stdio materializado");
+        let disabled = args
+            .iter()
+            .position(|arg| arg == "mcp_servers.local-tools.enabled=false")
+            .expect("stdio desabilitado");
+        assert!(command < disabled);
+        assert!(args
+            .iter()
+            .any(|arg| arg == "mcp_servers.local-tools.args=[\"serve\"]"));
+        assert!(args
+            .iter()
+            .any(|arg| arg == "mcp_servers.local-tools.env_vars=[\"INHERITED_TOKEN\"]"));
+        assert!(!args.join(" ").contains("literal-secret"));
+    }
+
+    #[test]
+    fn plano_codex_configura_selecionado_e_desabilitado_com_transportes_completos() {
+        let plan = McpRunPlan {
+            managed: true,
+            selected: vec![McpRuntimeServer {
+                runtime_name: "mcx-project-db".into(),
+                display_name: "Database".into(),
+                launch: McpLaunchConfig {
+                    transport: "stdio".into(),
+                    command: Some("/opt/mcp/database".into()),
+                    args: vec!["serve".into()],
+                    ..Default::default()
+                },
+            }],
+            disabled_codex_servers: vec![McpRuntimeServer {
+                runtime_name: "paper".into(),
+                display_name: "Paper".into(),
+                launch: McpLaunchConfig {
+                    transport: "http".into(),
+                    url: Some("http://127.0.0.1:29979/mcp".into()),
+                    ..Default::default()
+                },
+            }],
+            ..Default::default()
+        };
+        let mut cmd = Command::new("codex");
+        plan.configure_codex(&mut cmd);
+        let args = command_args(&cmd);
+        assert!(args
+            .iter()
+            .any(|arg| arg == "mcp_servers.paper.url=\"http://127.0.0.1:29979/mcp\""));
+        assert!(args
+            .iter()
+            .any(|arg| arg == "mcp_servers.paper.enabled=false"));
+        assert!(args
+            .iter()
+            .any(|arg| arg == "mcp_servers.mcx-project-db.command=\"/opt/mcp/database\""));
+        assert!(args
+            .iter()
+            .any(|arg| arg == "mcp_servers.mcx-project-db.enabled=true"));
+    }
+
+    fn runtime(display: &str, name: &str) -> McpRuntimeServer {
+        McpRuntimeServer {
+            runtime_name: name.into(),
+            display_name: display.into(),
+            launch: McpLaunchConfig {
+                transport: "stdio".into(),
+                command: Some("/bin/server".into()),
+                ..Default::default()
+            },
+        }
+    }
+
+    #[test]
+    fn nome_de_runtime_vira_slug_quando_unico_entre_os_selecionados() {
+        let mut plan = McpRunPlan {
+            managed: true,
+            selected: vec![runtime("Playwright", "mcx-claude-user-playwright-1a2b3c4d")],
+            ..Default::default()
+        };
+        apply_friendly_runtime_names(&mut plan);
+        assert_eq!(plan.selected[0].runtime_name, "playwright");
+        assert_eq!(plan.selected[0].display_name, "Playwright");
+    }
+
+    #[test]
+    fn colisao_de_display_name_mantem_os_nomes_desambiguados() {
+        let mut plan = McpRunPlan {
+            managed: true,
+            selected: vec![
+                runtime("playwright", "mcx-claude-user-playwright-1a2b3c4d"),
+                runtime("playwright", "mcx-project-project-playwright-9f8e7d6c"),
+            ],
+            ..Default::default()
+        };
+        apply_friendly_runtime_names(&mut plan);
+        assert_eq!(
+            plan.selected[0].runtime_name,
+            "mcx-claude-user-playwright-1a2b3c4d"
+        );
+        assert_eq!(
+            plan.selected[1].runtime_name,
+            "mcx-project-project-playwright-9f8e7d6c"
+        );
+    }
+
+    #[test]
+    fn disable_da_origem_codex_fica_intocado_e_reserva_o_nome() {
+        // MCP vindo do próprio Codex: a tabela de origem `playwright` é
+        // desligada pelo nome da config do usuário, e o selecionado NÃO pode
+        // assumir esse nome (reconfigurar a mesma tabela mesclaria campos
+        // velhos da config de origem no run).
+        let mut plan = McpRunPlan {
+            managed: true,
+            selected: vec![runtime("playwright", "mcx-codex-user-playwright-1a2b3c4d")],
+            disabled_codex_servers: vec![runtime("playwright", "playwright")],
+            ..Default::default()
+        };
+        apply_friendly_runtime_names(&mut plan);
+        assert_eq!(
+            plan.selected[0].runtime_name,
+            "mcx-codex-user-playwright-1a2b3c4d"
+        );
+        assert_eq!(plan.disabled_codex_servers[0].runtime_name, "playwright");
+        let mut cmd = Command::new("codex");
+        plan.configure_codex(&mut cmd);
+        let args = command_args(&cmd);
+        assert!(args
+            .iter()
+            .any(|arg| arg == "mcp_servers.playwright.enabled=false"));
+        assert!(args.iter().any(|arg| {
+            arg.contains("mcp_servers.mcx-codex-user-playwright-1a2b3c4d.command")
+        }));
+    }
+
+    #[test]
+    fn nomes_dos_mcps_internos_do_app_sao_reservados() {
+        let mut plan = McpRunPlan {
+            managed: true,
+            selected: vec![runtime("mc-work", "mcx-claude-user-mc-work-1a2b3c4d")],
+            ..Default::default()
+        };
+        apply_friendly_runtime_names(&mut plan);
+        assert_eq!(
+            plan.selected[0].runtime_name,
+            "mcx-claude-user-mc-work-1a2b3c4d"
+        );
+    }
+
+    fn discovered(name: &str, source: &str) -> DiscoveredServer {
+        DiscoveredServer {
+            id: server_id(source, "user", name),
+            name: name.into(),
+            source: source.into(),
+            scope: "user".into(),
+            source_agent: None,
+            enabled: true,
+            managed: true,
+            launch: Some(McpLaunchConfig {
+                transport: "stdio".into(),
+                command: Some("/usr/local/bin/server".into()),
+                ..Default::default()
+            }),
+        }
+    }
+
+    fn view_of(server: &DiscoveredServer, bound: bool) -> McpServerView {
+        McpServerView {
+            id: server.id.clone(),
+            name: server.name.clone(),
+            source: server.source.clone(),
+            scope: server.scope.clone(),
+            transport: "stdio".into(),
+            locator: "/usr/local/bin/server".into(),
+            env_keys: Vec::new(),
+            source_agent: None,
+            source_enabled: true,
+            managed: server.managed,
+            portable: server.portable(),
+            runtime_name: None,
+            agent_states: vec![McpAgentState {
+                agent: "codex".into(),
+                compatible: true,
+                enabled: bound,
+                required: false,
+                fallback: "ask".into(),
+                health: "unchecked".into(),
+                detail: None,
+                checked_at: None,
+            }],
+        }
+    }
+
+    #[test]
+    fn painel_anota_nome_de_sessao_so_para_servidores_vinculados() {
+        let servers = vec![
+            discovered("Playwright", "claude"),
+            discovered("hostinger", "claude"),
+        ];
+        let mut views = vec![view_of(&servers[0], true), view_of(&servers[1], false)];
+        annotate_runtime_names(&servers, &mut views);
+        assert_eq!(views[0].runtime_name.as_deref(), Some("playwright"));
+        assert_eq!(views[1].runtime_name, None);
+    }
+
+    #[test]
+    fn painel_usa_desambiguado_quando_o_nome_colide_com_origem_do_codex() {
+        // Config homônima no Codex: num run gerenciado a tabela de origem
+        // `playwright` é desligada, então o nome de sessão fica no `mcx-…`.
+        let servers = vec![
+            discovered("playwright", "claude"),
+            discovered("playwright", "codex"),
+        ];
+        let mut views = vec![view_of(&servers[0], true), view_of(&servers[1], false)];
+        annotate_runtime_names(&servers, &mut views);
+        assert_eq!(
+            views[0].runtime_name.as_deref(),
+            Some(servers[0].runtime_name().as_str())
+        );
+        assert!(views[0]
+            .runtime_name
+            .as_deref()
+            .unwrap()
+            .starts_with("mcx-claude-user-playwright-"));
+    }
+
+    #[test]
+    fn plano_codex_preserva_nome_real_ao_desabilitar() {
+        let plan = McpRunPlan {
+            managed: true,
+            disabled_codex_names: vec!["openaiDeveloperDocs".into()],
+            ..Default::default()
+        };
+        let mut cmd = Command::new("codex");
+        plan.configure_codex(&mut cmd);
+        assert!(format!("{cmd:?}").contains("mcp_servers.openaiDeveloperDocs.enabled=false"));
+    }
+
+    #[test]
+    fn descobre_mcp_json_de_projeto() {
+        let root = std::env::temp_dir().join(format!("mc-mcp-project-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join(".mcp.json"),
+            r#"{"mcpServers":{"repo-tools":{"command":"/bin/echo","args":["ok"]}}}"#,
+        )
+        .unwrap();
+        let found = discover_claude(root.to_str().unwrap());
+        assert!(found.iter().any(|server| {
+            server.name == "repo-tools" && server.source == "project" && server.scope == "project"
+        }));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn slug_e_ids_sao_estaveis() {
+        assert_eq!(slug("Hostinger API"), "hostinger-api");
+        let first = server_id("Claude", "User", "Hostinger API");
+        assert!(first.starts_with("claude:user:hostinger-api-"));
+        assert_eq!(first, server_id("Claude", "User", "Hostinger API"));
+        assert_ne!(
+            server_id("Claude", "User", "Hostinger API"),
+            server_id("Claude", "Local", "Hostinger API")
+        );
+    }
+
+    /// Mesmo schema da migração 27 (mcp_registry) em lib.rs.
+    fn conn_with_registry() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE mcp_servers ( \
+               id TEXT PRIMARY KEY, \
+               name TEXT NOT NULL, \
+               source TEXT NOT NULL, \
+               scope TEXT NOT NULL, \
+               source_agent TEXT, \
+               transport TEXT NOT NULL, \
+               locator TEXT NOT NULL, \
+               env_keys_json TEXT NOT NULL DEFAULT '[]', \
+               fingerprint TEXT NOT NULL, \
+               managed INTEGER NOT NULL DEFAULT 1, \
+               portable INTEGER NOT NULL DEFAULT 0, \
+               source_enabled INTEGER NOT NULL DEFAULT 1, \
+               last_seen_at INTEGER NOT NULL \
+             );",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert_registry_server(conn: &Connection, id: &str, managed: bool, portable: bool) {
+        conn.execute(
+            "INSERT INTO mcp_servers
+               (id, name, source, scope, transport, locator, fingerprint, managed, portable, last_seen_at)
+             VALUES (?1, ?1, 'claude', 'user', 'stdio', '/bin/server', 'fp', ?2, ?3, 1)",
+            params![id, managed as i64, portable as i64],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn toggle_valida_pelo_registry_persistido_sem_descoberta_ao_vivo() {
+        let conn = conn_with_registry();
+        insert_registry_server(&conn, "claude:user:hostinger-abc", true, true);
+        insert_registry_server(&conn, "claude:user:literal-def", true, false);
+        insert_registry_server(&conn, "internal:run:mc-context", false, false);
+
+        // Servidor conhecido: o caminho rápido resolve tudo pelo SQLite.
+        let ok = registry_server(&conn, "claude:user:hostinger-abc")
+            .unwrap()
+            .expect("registry conhece o servidor");
+        assert!(validate_enable_from_registry(&ok, "claude-code").is_ok());
+        assert!(validate_enable_from_registry(&ok, "codex").is_ok());
+        assert!(validate_enable_from_registry(&ok, "agy")
+            .unwrap_err()
+            .contains("agy"));
+
+        // Não portável e interno mantêm as recusas de sempre.
+        let literal = registry_server(&conn, "claude:user:literal-def")
+            .unwrap()
+            .unwrap();
+        assert!(validate_enable_from_registry(&literal, "codex")
+            .unwrap_err()
+            .contains("não portável"));
+        let internal = registry_server(&conn, "internal:run:mc-context")
+            .unwrap()
+            .unwrap();
+        assert!(validate_enable_from_registry(&internal, "codex")
+            .unwrap_err()
+            .contains("gerenciado por run"));
+
+        // Nunca descoberto: None sinaliza o fallback (único caso que
+        // re-descobre ao vivo).
+        assert!(registry_server(&conn, "codex:user:fantasma")
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn resumo_de_bindings_conta_por_projeto_em_ordem_estavel() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Mesmo schema da migração 28 (mcp_bindings) em lib.rs.
+        conn.execute_batch(
+            "CREATE TABLE mcp_bindings ( \
+               project_id TEXT NOT NULL, \
+               server_id TEXT NOT NULL, \
+               agent TEXT NOT NULL, \
+               required INTEGER NOT NULL DEFAULT 0, \
+               fallback TEXT NOT NULL DEFAULT 'ask', \
+               updated_at INTEGER NOT NULL, \
+               PRIMARY KEY (project_id, server_id, agent) \
+             );",
+        )
+        .unwrap();
+        assert_eq!(bindings_summary(&conn).unwrap(), Vec::new());
+        for (project, server, agent) in [
+            ("viniciusmachado", "claude:user:hostinger", "claude-code"),
+            ("viniciusmachado", "claude:user:hostinger", "codex"),
+            ("prime-sales-hub", "codex:user:repo-tools", "codex"),
+        ] {
+            conn.execute(
+                "INSERT INTO mcp_bindings (project_id, server_id, agent, required, fallback, updated_at)
+                 VALUES (?1, ?2, ?3, 0, 'ask', 1)",
+                params![project, server, agent],
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            bindings_summary(&conn).unwrap(),
+            vec![
+                McpBindingsSummary {
+                    project_id: "prime-sales-hub".into(),
+                    count: 1,
+                },
+                McpBindingsSummary {
+                    project_id: "viniciusmachado".into(),
+                    count: 2,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn fallback_ask_pausa_e_readonly_permanece_fail_soft() {
+        let binding = |required, fallback: &str| Binding {
+            server_id: "server".into(),
+            required,
+            fallback: fallback.into(),
+        };
+        assert!(binding_blocks_without_server(&binding(false, "ask")));
+        assert!(binding_blocks_without_server(&binding(true, "deny")));
+        assert!(!binding_blocks_without_server(&binding(false, "deny")));
+        assert!(!binding_blocks_without_server(&binding(
+            true,
+            "allow-readonly"
+        )));
+    }
+
+    #[tokio::test]
+    async fn health_stdio_faz_initialize_e_tools_list_reais() {
+        let script = r#"
+while IFS= read -r line; do
+  case "$line" in
+    *'"id":1'*) printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"fake","version":"1"}}}' ;;
+    *'"id":2'*) printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"inspect"},{"name":"search"}]}}' ;;
+  esac
+done
+"#;
+        let cfg = McpLaunchConfig {
+            transport: "stdio".into(),
+            command: Some("/bin/sh".into()),
+            args: vec!["-c".into(), script.into()],
+            ..Default::default()
+        };
+        let result = probe_stdio(&cfg, "/tmp").await;
+        assert_eq!(result.status, "healthy");
+        assert_eq!(result.tool_names, vec!["inspect", "search"]);
+    }
+}

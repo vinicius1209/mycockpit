@@ -27,6 +27,7 @@ const EMPTY: TraySnapshot = {
   nextSchedule: null,
   lastRun: null,
   enabledSchedules: 0,
+  deferred: 0,
 }
 
 function elapsed(startedAt: number | null, now: number): string {

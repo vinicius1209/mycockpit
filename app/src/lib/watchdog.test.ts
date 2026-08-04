@@ -150,6 +150,60 @@ describe("checkStalledTurns", () => {
     expect(notifyTurnStalled).toHaveBeenCalledTimes(2)
   })
 
+  it("progresso de trabalho diferido re-arma o cronômetro (não é turno mudo)", () => {
+    // deferred-work-plan D2A.3: durante o hold do CLI (result segurado com
+    // workflow em background), o task_progress atualiza o nó IN PLACE e um
+    // texto vem DEPOIS dele — o último item não muda. Sem o componente de
+    // diferido na assinatura, 10 min de pesquisa viravam falso "turno mudo".
+    const deferredTool = (
+      summary: string,
+      tokens: number | null = null,
+    ): ChatItem => ({
+      kind: "tool",
+      id: "deferred-w1",
+      name: "DeferredWork",
+      input: {},
+      toolId: "deferred:w1",
+      deferred: {
+        id: "w1",
+        toolUseId: null,
+        kind: "local_workflow",
+        name: "deep-research",
+        status: "running",
+        summary,
+        outputFile: null,
+        tokens,
+        startedAt: T0,
+        updatedAt: T0,
+      },
+    })
+    const swap = (item: ChatItem) => {
+      const c = useChat.getState().byId.c1
+      useChat.setState({ byId: { c1: { ...c, items: [item, c.items[1]] } } })
+    }
+    useChat.setState({
+      byId: {
+        c1: conv({ items: [deferredTool("fase 1"), textItem("aguarde")] }),
+      },
+    })
+    checkStalledTurns(T0)
+    // progresso novo ANTES do limiar: mesma posição, summary diferente
+    swap(deferredTool("fase 2", 1000))
+    checkStalledTurns(T0 + 10 * MIN)
+    expect(notifyTurnStalled).not.toHaveBeenCalled()
+
+    // fase LONGA: summary IGUAL por vários ticks, mas o usage avança — tokens
+    // na assinatura provam vida (sem eles, 15+ min na mesma fase = falso mudo)
+    swap(deferredTool("fase 2", 25_000))
+    checkStalledTurns(T0 + 20 * MIN)
+    expect(notifyTurnStalled).not.toHaveBeenCalled()
+
+    // diferido vivo mas SEM progresso (nem summary nem tokens) por um período
+    // completo segue avisando (mesma decisão da tool longa: informativo)
+    checkStalledTurns(T0 + 31 * MIN)
+    expect(notifyTurnStalled).toHaveBeenCalledTimes(1)
+  })
+
   it("fim do turno limpa o episódio sem notificar de novo", () => {
     useChat.setState({ byId: { c1: conv() } })
     checkStalledTurns(T0)

@@ -22,6 +22,7 @@ import { activePointerPath, runStatePath } from "@/lib/missionPaths"
 import type {
   MissionPhaseStatus,
   MissionPreset,
+  MissionReviewCaveat,
   MissionRun,
   MissionStatus,
 } from "@/lib/missionTypes"
@@ -60,8 +61,31 @@ export interface MissionRunState {
   /** Gate já RESPONDIDO cujas decisões pertencem à fase `current` (a próxima a
    *  rodar). Reinjetado no prompt ao retomar. null = nada pendente. */
   gateDecisions?: string | null
+  /** MH1.1 fix — memória do loop de revisão ATRAVÉS de crash: rodadas de
+   *  correção já disparadas. Sem isto a retomada re-armava o clamp de
+   *  MAX_REVIEW_LOOPS (até 4 fases extras pagas) e duplicava ids `fix-N`.
+   *  Ausente (arquivo legado) ⇒ o parse DERIVA das fases corretivas do preset
+   *  efetivo (ids `fix-N-*`/`rereview-N-*` já persistidos). */
+  reviewLoops?: number
+  /** Veredito da ÚLTIMA fase de revisão antes do marco (decide a ressalva do
+   *  desfecho se nenhum reviewer re-rodar após a retomada). null = não houve. */
+  lastReview?: RunStateReview | null
+  /** Audit trail do desfecho com ressalva (marco terminal `done`). */
+  reviewCaveat?: MissionReviewCaveat | null
   status: RunStateStatus
   updatedAt: number
+}
+
+/** Veredito persistido de uma fase de revisão (espelho do lastReview do loop). */
+export interface RunStateReview {
+  approved: boolean
+  feedback: string
+}
+
+/** Estado vivo do loop de revisão que o store passa ao serializar um marco. */
+export interface ReviewLoopState {
+  loops: number
+  last: RunStateReview | null
 }
 
 /** Entrada de missão interrompida detectada no boot (store.interrupted). */
@@ -70,10 +94,13 @@ export interface InterruptedMission {
   cwd: string
 }
 
-/** Serializa o run em memória num snapshot persistível. */
+/** Serializa o run em memória num snapshot persistível. `review` = estado vivo
+ *  do loop de revisão (loops disparados + último veredito) — sem ele, um crash
+ *  na re-review final re-armava o clamp na retomada. */
 export function runToState(
   run: MissionRun,
   gateDecisions?: string | null,
+  review?: ReviewLoopState | null,
 ): MissionRunState {
   return {
     version: RUN_STATE_VERSION,
@@ -86,6 +113,9 @@ export function runToState(
       name: run.presetName,
       phases: run.phases.map((p) => p.def),
       maxCostUsd: run.maxCostUsd,
+      // MH3.3 — a política sobrevive ao restart (retomada reconstrói o preset
+      // efetivo daqui; ausente = "agente", como sempre).
+      ...(run.gatePolicy ? { gatePolicy: run.gatePolicy } : {}),
     },
     current: run.current,
     phases: run.phases.map((p) => ({
@@ -96,6 +126,9 @@ export function runToState(
     costTotal: run.costTotal,
     maxCostUsd: run.maxCostUsd,
     gateDecisions: gateDecisions ?? null,
+    reviewLoops: review?.loops ?? 0,
+    lastReview: review?.last ?? null,
+    reviewCaveat: run.reviewCaveat ?? null,
     status: run.status,
     updatedAt: Date.now(),
   }
@@ -108,6 +141,40 @@ const STATUSES: RunStateStatus[] = [
   "aborted",
   "abandoned",
 ]
+
+/** Rodadas de correção DERIVADAS do preset efetivo: as fases corretivas já
+ *  apendadas carregam a rodada no id (`fix-N-*`/`rereview-N-*`,
+ *  store/mission.ts) — o maior N é o reviewLoops no momento do marco. É o
+ *  caminho de MIGRAÇÃO dos run-states gravados antes do campo `reviewLoops`
+ *  existir: sem derivar, a retomada re-armava o clamp de MAX_REVIEW_LOOPS. */
+function derivedReviewLoops(preset: MissionPreset): number {
+  let max = 0
+  for (const p of preset.phases) {
+    const m = /^(?:fix|rereview)-(\d+)-/.exec(p.id)
+    if (m) max = Math.max(max, Number(m[1]))
+  }
+  return max
+}
+
+/** Normaliza o veredito persistido (lixo/ausente ⇒ null). */
+function parseReview(v: unknown): RunStateReview | null {
+  if (!v || typeof v !== "object") return null
+  const o = v as Record<string, unknown>
+  if (typeof o.approved !== "boolean" || typeof o.feedback !== "string") {
+    return null
+  }
+  return { approved: o.approved, feedback: o.feedback }
+}
+
+/** Normaliza a ressalva persistida (lixo/ausente ⇒ null). */
+function parseCaveat(v: unknown): MissionReviewCaveat | null {
+  if (!v || typeof v !== "object") return null
+  const o = v as Record<string, unknown>
+  if (typeof o.rounds !== "number" || typeof o.feedback !== "string") {
+    return null
+  }
+  return { rounds: o.rounds, feedback: o.feedback }
+}
 
 /** Parse TOLERANTE do run-state.json: valida o esqueleto (versão, ids, preset
  *  com fases, status conhecido) e normaliza os numéricos. null = inaproveitável
@@ -160,6 +227,14 @@ export function parseRunState(raw: string): MissionRunState | null {
     costTotal: typeof o.costTotal === "number" ? o.costTotal : 0,
     maxCostUsd: typeof o.maxCostUsd === "number" ? o.maxCostUsd : null,
     gateDecisions: typeof o.gateDecisions === "string" ? o.gateDecisions : null,
+    // arquivo legado (pré-campo): deriva das fases corretivas do preset — a
+    // memória do clamp sobrevive mesmo a run-states antigos.
+    reviewLoops:
+      typeof o.reviewLoops === "number" && o.reviewLoops >= 0
+        ? o.reviewLoops
+        : derivedReviewLoops(preset),
+    lastReview: parseReview(o.lastReview),
+    reviewCaveat: parseCaveat(o.reviewCaveat),
     status,
     updatedAt: typeof o.updatedAt === "number" ? o.updatedAt : 0,
   }

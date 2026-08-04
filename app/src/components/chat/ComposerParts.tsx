@@ -24,6 +24,7 @@ import { MicButton } from "@/components/chat/MicButton"
 import { useApp } from "@/store/app"
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
 import type { SlashCommand } from "@/lib/sources"
+import { commandBadges } from "@/lib/slashCommands"
 import type { Attachment } from "@/lib/attachments"
 import type { QueuedMsg } from "@/store/chat"
 import type { Destination, Project } from "@/lib/types"
@@ -69,15 +70,17 @@ export function SlashPopover({
               <span className="font-mono text-[13px] text-foreground">
                 /{c.name}
               </span>
+              {/* chips de origem HONESTOS (fonte · escopo · tipo): o usuário
+                  vê de onde o comando vem e, portanto, quem o executa. */}
               <span className="flex shrink-0 items-center gap-1.5">
-                {c.origin === "global" && (
-                  <span className="text-[10px] tracking-wide text-muted-foreground/70 uppercase">
-                    global
+                {commandBadges(c).map((chip) => (
+                  <span
+                    key={chip}
+                    className="rounded border px-1 py-px text-[10px] tracking-wide text-muted-foreground uppercase"
+                  >
+                    {chip}
                   </span>
-                )}
-                <span className="rounded border px-1 py-px text-[10px] tracking-wide text-muted-foreground uppercase">
-                  {c.kind === "skill" ? "skill" : "cmd"}
-                </span>
+                ))}
               </span>
             </span>
             {c.description && (
@@ -427,6 +430,7 @@ export function ComposerActions({
   onEspecialistas,
   running,
   onStop,
+  stopTitle,
   onSubmit,
   canSend,
 }: {
@@ -440,6 +444,9 @@ export function ComposerActions({
   onEspecialistas?: () => void
   running?: boolean
   onStop?: () => void
+  /** Tooltip do Parar quando parar custa mais do que parece (ex. trabalho em
+   *  background do provider morre junto — deferred-work-plan D1.4). */
+  stopTitle?: string
   onSubmit: () => void
   canSend: boolean
 }) {
@@ -481,6 +488,7 @@ export function ComposerActions({
           canSend={canSend}
           onSubmit={onSubmit}
           onStop={onStop}
+          stopTitle={stopTitle}
           onFusion={onFusion}
           fusionDisabled={fusionDisabled}
           fusionTitle={fusionTitle}
@@ -507,6 +515,7 @@ function SendSplit({
   canSend,
   onSubmit,
   onStop,
+  stopTitle,
   onFusion,
   fusionDisabled,
   fusionTitle,
@@ -517,6 +526,7 @@ function SendSplit({
   canSend: boolean
   onSubmit: () => void
   onStop?: () => void
+  stopTitle?: string
   onFusion: () => void
   fusionDisabled?: boolean
   fusionTitle?: string
@@ -530,7 +540,7 @@ function SendSplit({
         onClick={onStop}
         className="rounded-full"
         aria-label="Parar"
-        title="Parar"
+        title={stopTitle ?? "Parar"}
       >
         <Square className="size-3 fill-current" />
       </Button>

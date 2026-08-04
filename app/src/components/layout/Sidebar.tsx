@@ -8,6 +8,8 @@ import {
   FolderGit2,
   X,
   ChevronRight,
+  ArrowUp,
+  ArrowDown,
   Clock,
   Loader2,
   Trash2,
@@ -15,6 +17,7 @@ import {
   Copy,
   Ban,
   Archive,
+  ArchiveRestore,
   GitBranch,
   Rocket,
   Search,
@@ -48,7 +51,15 @@ import {
   effectiveStage,
   type SddPlan,
 } from "@/lib/sdd"
-import { archiveProject, restoreProject, type ConversationMeta } from "@/lib/db"
+import {
+  archiveProject,
+  restoreProject,
+  listArchivedProjects,
+  hardDeleteProject,
+  listProjects,
+  type ConversationMeta,
+} from "@/lib/db"
+import { shortVersion } from "@/lib/version"
 import { createWorktree, removeWorktree } from "@/lib/git"
 import { LABEL_COLORS } from "@/lib/labelColors"
 import { cn } from "@/lib/utils"
@@ -163,7 +174,9 @@ function ProjectFolder({
         style={color ? { color } : undefined}
       />
       {/* Espera VENCE rodando no mesmo canto: um projeto que roda sozinho não
-          precisa de você; um que parou pra te perguntar algo, sim. */}
+          precisa de você; um que parou pra te perguntar algo, sim. S3.2 —
+          pulso SÓ no "esperando você" (o único evento que interrompe o
+          humano); rodando é presença calma → dot estático. */}
       {awaiting ? (
         <span
           title="Este projeto parou esperando você"
@@ -171,12 +184,20 @@ function ProjectFolder({
         />
       ) : (
         status === "running" && (
-          <span className="animate-cockpit-pulse absolute -top-0.5 -right-0.5 size-2 rounded-full bg-st-running ring-2 ring-rail" />
+          <span
+            title="Turno rodando neste projeto"
+            className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-st-running ring-2 ring-rail"
+          />
         )
       )}
     </span>
   )
 }
+
+// S1.2 — tipo do payload de drag de PROJETO (HTML5 dnd; não há lib de dnd no
+// repo). `types` é legível no dragover (getData não é), então o tipo é o
+// discriminador do que se aceita soltar.
+const PROJECT_DND = "application/x-mycockpit-project"
 
 function ProjectRow({
   project,
@@ -184,6 +205,8 @@ function ProjectRow({
   expanded,
   status,
   awaiting = false,
+  canMoveUp,
+  canMoveDown,
   onSelect,
   onToggle,
   onDelete,
@@ -195,12 +218,17 @@ function ProjectRow({
   /** Pedido pendente (permissão ou pergunta) em alguma conversa do projeto:
    *  ponto âmbar na pasta. */
   awaiting?: boolean
+  /** S1.2 — bordas da lista (desabilita "Mover para cima/baixo" no menu). */
+  canMoveUp: boolean
+  canMoveDown: boolean
   onSelect: () => void
   onToggle: () => void
   onDelete: () => void
 }) {
   const renameProject = useApp((s) => s.renameProject)
   const setProjectColor = useApp((s) => s.setProjectColor)
+  const reorderProjects = useApp((s) => s.reorderProjects)
+  const moveProject = useApp((s) => s.moveProject)
   const [editing, setEditing] = useState(false)
   const [val, setVal] = useState(project.name)
 
@@ -217,6 +245,23 @@ function ProjectRow({
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
+          // S1.2 — drag & drop reordena projetos (teclado cobre via context
+          // menu). Draggable sai durante a edição pra não brigar com a seleção
+          // de texto do input de renomear.
+          draggable={!editing}
+          onDragStart={(e) => {
+            e.dataTransfer.setData(PROJECT_DND, project.id)
+            e.dataTransfer.effectAllowed = "move"
+          }}
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes(PROJECT_DND)) e.preventDefault()
+          }}
+          onDrop={(e) => {
+            const dragId = e.dataTransfer.getData(PROJECT_DND)
+            if (!dragId || dragId === project.id) return
+            e.preventDefault()
+            reorderProjects(dragId, project.id)
+          }}
           className={cn(
             "group relative flex w-full items-center rounded-md transition-colors",
             active ? "bg-accent" : "hover:bg-accent/55",
@@ -260,17 +305,10 @@ function ProjectRow({
               </span>
             </button>
           )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete()
-            }}
-            className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition hover:text-st-error group-hover:opacity-100"
-            title="Arquivar projeto"
-            aria-label="Arquivar projeto"
-          >
-            <Trash2 className="size-3.5" />
-          </button>
+          {/* S1.4 — arquivamento saiu da linha (mora SÓ no context menu): a
+              lixeira materializava no hover COLADA no chevron e o caminho do
+              cursor cruzava a zona de arquivar. O chevron fica sozinho na
+              borda direita. */}
           <button
             onClick={(e) => {
               e.stopPropagation()
@@ -310,6 +348,20 @@ function ProjectRow({
           }}
         >
           <Copy /> Copiar caminho
+        </ContextMenuItem>
+        {/* S1.2 — reordenação por teclado (o drag não cobre acessibilidade). */}
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          disabled={!canMoveUp}
+          onSelect={() => moveProject(project.id, -1)}
+        >
+          <ArrowUp /> Mover para cima
+        </ContextMenuItem>
+        <ContextMenuItem
+          disabled={!canMoveDown}
+          onSelect={() => moveProject(project.id, 1)}
+        >
+          <ArrowDown /> Mover para baixo
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={onDelete}>
@@ -404,6 +456,12 @@ function ConversationList({ projectId }: { projectId: string }) {
   const setConversationColor = useChat((s) => s.setConversationColor)
   const duplicateConversation = useChat((s) => s.duplicateConversation)
   const setWorktree = useChat((s) => s.setWorktree)
+  const reorderConversations = useChat((s) => s.reorderConversations)
+  const moveConversation = useChat((s) => s.moveConversation)
+  // S1.2 — payload de drag de CONVERSA, escopado pelo projeto: o dragover de
+  // uma lista só aceita conversa DA MESMA lista (mover entre projetos está
+  // fora de escopo). O tipo é lowercased pelo browser — ids uuid já são.
+  const convDnd = `application/x-mycockpit-conv-${projectId.toLowerCase()}`
   // Projeto DESTA lista (não o ativo): worktree/isolamento usam o path certo,
   // mesmo numa árvore de projeto não-ativo.
   const project = useApp((s) => s.projects.find((p) => p.id === projectId) ?? null)
@@ -422,6 +480,19 @@ function ConversationList({ projectId }: { projectId: string }) {
   const awaiting = useAwaiting()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState("")
+  const editInputRef = useRef<HTMLInputElement>(null)
+
+  // O ContextMenu desmonta e restaura foco depois do onSelect. `autoFocus` no
+  // input acontece cedo demais e pode perder essa disputa. Focamos no próximo
+  // frame, já com o menu fechado, e selecionamos o título para renomear direto.
+  useEffect(() => {
+    if (!editingId) return
+    const frame = requestAnimationFrame(() => {
+      editInputRef.current?.focus()
+      editInputRef.current?.select()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [editingId])
 
   // Clicar numa conversa: torna o projeto DELA o ativo (abre no painel) e troca
   // a conversa. Funciona pra projeto não-ativo (setActive + switch pelo id único).
@@ -487,7 +558,7 @@ function ConversationList({ projectId }: { projectId: string }) {
     // de conversa, parte desse recuo é a marca do agent (esquerda), então o
     // padding cai para 18px e a soma continua batendo.
     <div className="animate-reveal-down mt-0.5 mb-1 flex flex-col gap-px">
-      {conversations.map((c) => {
+      {conversations.map((c, idx) => {
         const isActive = c.id === activeId
         // F1 — destaque PLENO (bg-accent + barra brass) só quando o Linear é a
         // superfície ativa; no SDD a ativa fica DIM (bg sutil, texto
@@ -541,8 +612,10 @@ function ConversationList({ projectId }: { projectId: string }) {
                   className="grid size-3 shrink-0 place-items-center"
                   title="Missão rodando"
                 >
+                  {/* S3.2 — pulso só no "esperando você"; missão rodando é
+                      presença calma. Brass sai (fica pra ativo + marca). */}
                   <Rocket
-                    className="animate-cockpit-pulse size-3 text-brass"
+                    className="size-3 text-muted-foreground"
                     aria-label="missão rodando"
                   />
                 </span>
@@ -577,6 +650,21 @@ function ConversationList({ projectId }: { projectId: string }) {
           <ContextMenu key={c.id}>
             <ContextMenuTrigger asChild>
               <div
+                // S1.2 — drag reordena DENTRO do projeto (tipo escopado acima).
+                draggable={!isEditing}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(convDnd, c.id)
+                  e.dataTransfer.effectAllowed = "move"
+                }}
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes(convDnd)) e.preventDefault()
+                }}
+                onDrop={(e) => {
+                  const dragId = e.dataTransfer.getData(convDnd)
+                  if (!dragId || dragId === c.id) return
+                  e.preventDefault()
+                  reorderConversations(projectId, dragId, c.id)
+                }}
                 className={cn(
                   "group/c relative flex items-center rounded-md",
                   isFull
@@ -585,6 +673,25 @@ function ConversationList({ projectId }: { projectId: string }) {
                       ? "bg-accent/30"
                       : "hover:bg-accent/50",
                 )}
+                // Cor-rótulo tinge a LINHA INTEIRA, SEMPRE (pedido do usuário,
+                // 04/08: a versão anterior degradava pra bolinha na linha ativa
+                // e a cor "sumia" justo na conversa aberta, duplicando sinal).
+                // Na ativa/dim a cor MISTURA com o fundo de seleção (a barra
+                // brass segue sendo o sinal de seleção); fora delas, lavagem
+                // sobre transparente. Sem bolinha em lugar nenhum.
+                style={
+                  c.color
+                    ? {
+                        background: `color-mix(in srgb, ${c.color} 12%, ${
+                          isFull
+                            ? "var(--accent)"
+                            : isDimmed
+                              ? "color-mix(in srgb, var(--accent) 30%, transparent)"
+                              : "transparent"
+                        })`,
+                      }
+                    : undefined
+                }
               >
                 {isFull && (
                   <span className="absolute top-1/2 left-0 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-brass" />
@@ -592,7 +699,8 @@ function ConversationList({ projectId }: { projectId: string }) {
                 {isEditing ? (
                   <div className="flex min-w-0 flex-1 items-center py-2 pr-2 pl-10">
                     <input
-                      autoFocus
+                      ref={editInputRef}
+                      aria-label="Renomear conversa"
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
                       onBlur={() => commitRename(c.id)}
@@ -614,11 +722,13 @@ function ConversationList({ projectId }: { projectId: string }) {
                       // a hierarquia "texto sob o texto do projeto" se mantém. O
                       // modo edição segue em pl-10 (input não tem marca).
                       "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-[18px] text-left text-[12px] font-normal",
-                      // pleno = cor de destaque no texto (bg fixo vem do container);
-                      // dim = ativa noutra superfície (muted, sem brass);
+                      // S3.6 — texto ativo em foreground: brass 12px sobre
+                      // bg-accent no tema claro media 3.56:1 (< 4.5:1, reprova
+                      // AA). Barra brass + bg-accent seguem donos do "ativo".
+                      // dim = ativa noutra superfície (muted, sem destaque);
                       // inativo = cinza médio, clareia no hover.
                       isFull
-                        ? "text-brass"
+                        ? "text-foreground"
                         : isDimmed
                           ? "text-muted-foreground"
                           : "text-muted-foreground group-hover/c:text-foreground",
@@ -643,16 +753,14 @@ function ConversationList({ projectId }: { projectId: string }) {
                     <span className="min-w-0 flex-1 truncate">
                       {c.title ?? "Nova conversa"}
                     </span>
-                    {c.color && (
-                      <span
-                        className="size-2 shrink-0 rounded-full"
-                        style={{ background: c.color }}
-                        title="Cor da conversa"
-                      />
-                    )}
+                    {/* Cor-rótulo é SÓ a lavagem da linha (inclusive na ativa,
+                        misturada à seleção) — bolinha nenhuma: duplicava sinal
+                        com o dot de status da marca (pedido do usuário, 04/08). */}
+                    {/* S3.2 — worktree é CONTEXTO, não seleção nem marca: sai
+                        do brass (que fica pra ativo + marca) e vira muted. */}
                     {c.worktreePath && (
                       <GitBranch
-                        className="size-3 shrink-0 text-brass/60"
+                        className="size-3 shrink-0 text-muted-foreground"
                         aria-label="isolado em worktree"
                       />
                     )}
@@ -665,16 +773,9 @@ function ConversationList({ projectId }: { projectId: string }) {
                     )}
                   </button>
                 )}
-                {!isRunning && !isEditing && (
-                  <button
-                    onClick={() => void askDeleteConv(c.id, c.title)}
-                    className="mr-1 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:text-st-error group-hover/c:opacity-100"
-                    title="Excluir conversa"
-                    aria-label="Excluir conversa"
-                  >
-                    <X className="size-3" />
-                  </button>
-                )}
+                {/* S1.4 — o excluir saiu da linha (mora SÓ no context menu):
+                    o X no hover ficava no caminho do cursor e um clique
+                    impreciso abria um confirm destrutivo. */}
               </div>
             </ContextMenuTrigger>
             <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
@@ -699,13 +800,28 @@ function ConversationList({ projectId }: { projectId: string }) {
                 <GitBranch />{" "}
                 {c.worktreePath ? "Remover isolamento" : "Isolar em worktree"}
               </ContextMenuItem>
+              {/* S1.2 — reordenação por teclado (o drag não cobre a11y). */}
               <ContextMenuSeparator />
+              <ContextMenuItem
+                disabled={idx === 0}
+                onSelect={() => moveConversation(projectId, c.id, -1)}
+              >
+                <ArrowUp /> Mover para cima
+              </ContextMenuItem>
+              <ContextMenuItem
+                disabled={idx === conversations.length - 1}
+                onSelect={() => moveConversation(projectId, c.id, 1)}
+              >
+                <ArrowDown /> Mover para baixo
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              {/* S1.4 — ícone honesto: excluir é LIXEIRA (o X dizia "fechar"). */}
               <ContextMenuItem
                 variant="destructive"
                 disabled={isRunning}
                 onSelect={() => void askDeleteConv(c.id, c.title)}
               >
-                <X /> Excluir
+                <Trash2 /> Excluir
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
@@ -871,8 +987,10 @@ function SddFeatureList({ project }: { project: Project }) {
                 title={plan.slug}
                 className={cn(
                   "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-10 text-left text-[12px] font-normal",
+                  // S3.6 — mesmo motivo da lista de conversas: brass 12px sobre
+                  // bg-accent reprova AA no claro (3.56:1); ativo = foreground.
                   selected
-                    ? "text-brass"
+                    ? "text-foreground"
                     : "text-muted-foreground group-hover/f:text-foreground",
                 )}
               >
@@ -918,6 +1036,12 @@ function ScheduledEntry() {
   }, [nextAt])
   return (
     <div className="px-2 pt-2">
+      {/* S3.4 — "Agendado" é outra CATEGORIA (coleção global, não conteúdo de
+          projeto): ganha o rótulo de seção e perde a barra brass lateral — a
+          barra é gramática de conteúdo; aqui o bg-accent basta pro "ativo". */}
+      <div className="px-1 pt-1 pb-1.5">
+        <span className="label-mono">Geral</span>
+      </div>
       <button
         onClick={() => setScheduledOpen(true)}
         aria-label="Abrir Agendado"
@@ -926,9 +1050,6 @@ function ScheduledEntry() {
           active ? "bg-accent" : "hover:bg-accent/55",
         )}
       >
-        {active && (
-          <span className="absolute top-1/2 left-0 h-5 w-[2.5px] -translate-y-1/2 rounded-full bg-brass" />
-        )}
         <span className="grid size-5 shrink-0 place-items-center">
           <Clock
             className={cn(
@@ -940,8 +1061,9 @@ function ScheduledEntry() {
         <span
           className={cn(
             "min-w-0 flex-1 truncate text-[13px]",
+            // S3.6 — ativo em foreground (brass sobre accent reprova AA no claro)
             active
-              ? "font-medium text-brass"
+              ? "font-medium text-foreground"
               : "text-muted-foreground group-hover:text-foreground",
           )}
         >
@@ -957,8 +1079,135 @@ function ScheduledEntry() {
   )
 }
 
+/** S1.3 — os arquivados EXISTEM: seção colapsada no fim da lista de projetos
+ *  (só aparece quando N>0), com Desarquivar na linha e no context menu, e
+ *  "Excluir de vez" (com confirm) SÓ no context menu. Antes, arquivar era um
+ *  buraco negro: sem lista, sem volta fora do toast de Desfazer. */
+function ArchivedSection() {
+  const projects = useApp((s) => s.projects)
+  const setProjects = useApp((s) => s.setProjects)
+  const setActiveProject = useApp((s) => s.setActiveProject)
+  const [archived, setArchived] = useState<Project[]>([])
+  const [open, setOpen] = useState(false)
+
+  // A lista de VIVOS mudar (arquivar/restaurar/adicionar) é o sinal barato de
+  // que o conjunto de arquivados pode ter mudado → recarrega do banco.
+  useEffect(() => {
+    let cancelled = false
+    listArchivedProjects()
+      .then((list) => {
+        if (!cancelled && list) setArchived(list)
+      })
+      // falha de leitura não pode ser muda (a seção sumiria fingindo N=0),
+      // mas também não pode virar toast em loop (o efeito reroda) → console.
+      .catch((e) => console.error("listArchivedProjects falhou:", e))
+    return () => {
+      cancelled = true
+    }
+  }, [projects])
+
+  async function unarchive(p: Project) {
+    try {
+      await restoreProject(p.id)
+      // relê do banco: o restaurado volta com o sort_order que tinha (S1.2).
+      const fresh = await listProjects()
+      if (fresh) setProjects(fresh)
+      setActiveProject(p.id)
+      toast.success(`"${p.name}" desarquivado`)
+    } catch {
+      toast.error("Falha ao desarquivar o projeto")
+    }
+  }
+
+  async function deleteForever(p: Project) {
+    if (
+      !(await confirm({
+        title: `Excluir "${p.name}" de vez?`,
+        description:
+          "Apaga do cockpit o projeto, as conversas e os agendamentos dele. A pasta no disco fica intocada. Não dá pra desfazer.",
+        confirmLabel: "Excluir de vez",
+        danger: true,
+      }))
+    )
+      return
+    try {
+      await hardDeleteProject(p.id)
+      setArchived((l) => l.filter((x) => x.id !== p.id))
+      // os agendamentos do projeto morreram no banco → re-hidrata a store
+      // (senão a view Agendado seguiria listando automação de projeto morto).
+      void useSchedules.getState().reload()
+      toast(`"${p.name}" excluído de vez`)
+    } catch {
+      toast.error("Falha ao excluir o projeto")
+    }
+  }
+
+  if (archived.length === 0) return null
+  return (
+    <div className="mt-2 flex flex-col gap-0.5">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] text-muted-foreground/70 transition-colors hover:bg-accent/40 hover:text-muted-foreground"
+      >
+        <ChevronRight
+          className={cn(
+            "size-3 transition-transform duration-200",
+            open && "rotate-90",
+          )}
+        />
+        Arquivados ({archived.length})
+      </button>
+      {open &&
+        archived.map((p) => (
+          <ContextMenu key={p.id}>
+            <ContextMenuTrigger asChild>
+              <div className="group/a flex items-center rounded-md hover:bg-accent/40">
+                <span
+                  className="flex min-w-0 flex-1 items-center gap-3 py-1.5 pl-2"
+                  title={p.path}
+                >
+                  <span className="grid size-5 shrink-0 place-items-center">
+                    <Archive className="size-[15px] text-muted-foreground/50" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">
+                    {p.name}
+                  </span>
+                </span>
+                {/* Desarquivar na linha é ok (ação de RESGATE, não destrutiva);
+                    o "Excluir de vez" fica só no context menu (S1.4). */}
+                <button
+                  onClick={() => void unarchive(p)}
+                  className="mr-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 transition hover:text-foreground group-hover/a:opacity-100"
+                  title="Desarquivar"
+                  aria-label={`Desarquivar ${p.name}`}
+                >
+                  <ArchiveRestore className="size-3.5" />
+                </button>
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
+              <ContextMenuItem onSelect={() => void unarchive(p)}>
+                <ArchiveRestore /> Desarquivar
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                variant="destructive"
+                onSelect={() => void deleteForever(p)}
+              >
+                <Trash2 /> Excluir de vez
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+        ))}
+    </div>
+  )
+}
+
 /** Rodapé: "local · vX.Y.Z". Nos builds de teste a versão vira 0.1.0-test.N,
- *  então você SEMPRE sabe qual build está rodando. */
+ *  então você SEMPRE sabe qual build está rodando. S3.1 — a versão NUNCA
+ *  trunca: formato curto ("v0.1.0-t177") na linha, string completa no tooltip
+ *  (o truncate comia justamente o número que identifica o build). */
 function AppVersion() {
   const [version, setVersion] = useState("")
   useEffect(() => {
@@ -967,8 +1216,11 @@ function AppVersion() {
       .catch(() => {}) // browser (vite dev): sem versão, só "local"
   }, [])
   return (
-    <div className="label-mono truncate text-[10.5px] normal-case tracking-normal text-muted-foreground/80">
-      local{version ? ` · v${version}` : ""}
+    <div
+      title={version ? `v${version}` : undefined}
+      className="label-mono whitespace-nowrap text-[10.5px] normal-case tracking-normal text-muted-foreground/80"
+    >
+      local{version ? ` · ${shortVersion(version)}` : ""}
     </div>
   )
 }
@@ -1055,7 +1307,8 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
           <header className="flex h-11 shrink-0 items-center justify-between px-3">
             <div className="flex items-center gap-2">
               <span className="label-mono">Projetos</span>
-              <span className="text-[11px] text-muted-foreground tabular-nums">
+              {/* S3.3 — contador é metadado, não conteúdo: um degrau abaixo. */}
+              <span className="text-[11px] text-faint tabular-nums">
                 {projects.length}
               </span>
             </div>
@@ -1085,7 +1338,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                   </Button>
                 </div>
               ) : (
-                projects.map((p) => (
+                projects.map((p, idx) => (
                   <div key={p.id} className="flex flex-col">
                     <ProjectRow
                       project={p}
@@ -1095,6 +1348,8 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                         runningProjects.has(p.id) ? "running" : (p.status ?? "idle")
                       }
                       awaiting={awaitingProjects.has(p.id)}
+                      canMoveUp={idx > 0}
+                      canMoveDown={idx < projects.length - 1}
                       onSelect={() => {
                         setActive(p.id)
                         openExpand(p.id) // selecionar auto-expande, sem fechar os outros
@@ -1111,6 +1366,8 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                   </div>
                 ))
               )}
+              {/* S1.3 — arquivados no FIM da lista (some quando N=0). */}
+              <ArchivedSection />
             </div>
           </ScrollArea>
         </>

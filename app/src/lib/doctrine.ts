@@ -13,6 +13,7 @@
 // já cobrem"), que era verdade quando o app era só Claude Code (ADR-005).
 
 import { invoke } from "@tauri-apps/api/core"
+import { agentDef } from "@/lib/agents"
 import { isTauri } from "@/lib/db"
 
 /** Caminho relativo, usado na cópia da UI e no rótulo do bloco. */
@@ -85,24 +86,104 @@ export function buildDoctrineBlock(content: string): string | null {
   return lines.join("\n")
 }
 
-/** Agents que NÃO têm resume nativo: cada turno é sessão nova, então a doutrina
- *  precisa voltar toda vez. O prefixo do prompt não é guardado nos itens da
- *  conversa, logo o recap que o app monta pro agy não a carrega de volta. */
-const SEM_RESUME = new Set(["agy"])
-
-/** A doutrina entra neste envio?
- *  - `locked` = a conversa já tem itens (mesmo sinal do shouldInjectPersona);
- *  - `hasReply` = já houve resposta de assistant, ou seja o 1º prompt CHEGOU.
+/** A doutrina entra neste envio (por QUALQUER canal)? Decidido por capability
+ *  (H5: nada de `agent === "agy"`):
+ *  - `systemChannel` (claude): TODO turno — o canal system re-envia a cada
+ *    spawn, fora do corpo do prompt (H1); frescor de graça, zero eco.
+ *  - sem `sessionResume` (agy, motor desconhecido): TODO turno — cada turno é
+ *    sessão nova e o recap não carrega o prefixo do prompt.
+ *  - com resume e sem canal (codex): só no 1º turno — o resume nativo carrega
+ *    dali em diante, e repetir a cada turno pagaria a mesma janela várias
+ *    vezes. A exceção do `!hasReply` é a mesma da persona: 1º run que morreu
+ *    antes de qualquer resposta não pode deixar a doutrina perdida pra sempre.
  *
- *  Em claude/codex vai só no 1º turno — o resume nativo carrega dali em diante,
- *  e repetir a cada turno seria pagar a mesma janela várias vezes. A exceção do
- *  `!hasReply` é a mesma da persona: 1º run que morreu antes de qualquer
- *  resposta (binário ausente) não pode deixar a doutrina perdida pra sempre. */
+ *  - `locked` = a conversa já tem itens (mesmo sinal do shouldInjectPersona);
+ *  - `hasReply` = já houve resposta de assistant, ou seja o 1º prompt CHEGOU. */
 export function shouldInjectDoctrine(
   agent: string,
   locked: boolean,
   hasReply: boolean,
 ): boolean {
-  if (SEM_RESUME.has(agent)) return true
+  const def = agentDef(agent)
+  if (def?.systemChannel) return true
+  if (!def?.sessionResume) return true
   return !locked || !hasReply
+}
+
+/** Fingerprint do bloco de doutrina (H4): FNV-1a 32 em hex — barato, estável,
+ *  serve só pra comparar "mudou desde a última injeção nesta conversa". */
+export function doctrineFingerprint(block: string): string {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < block.length; i++) {
+    hash ^= block.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0")
+}
+
+/** Prefixo do re-envio por FRESCOR (H4): avisa o motor que as regras mudaram
+ *  mid-conversa, em vez de fingir que o bloco é novidade. */
+export const DOCTRINE_UPDATED_PREFIX = "(doutrina atualizada)"
+
+/** Decisão de doutrina de UM envio, pronta pros dois canais (H1+H4). */
+export interface DoctrineDecision {
+  /** Bloco pro CORPO do prompt (motor sem canal system). null = nada. */
+  body: string | null
+  /** Bloco pro canal SYSTEM (re-enviado a cada spawn). null = nada. */
+  system: string | null
+  /** Fingerprint da doutrina ATUAL, a carimbar no ledger da conversa (sempre
+   *  que o arquivo existe — mesmo sem injetar, pro próximo envio detectar
+   *  mudança). null = sem doutrina. */
+  fingerprint: string | null
+}
+
+/** Decide a doutrina deste envio, por capability do motor. PURA (o caller lê o
+ *  disco — readDoctrine + buildDoctrineBlock — e passa o bloco):
+ *  - canal system → bloco vai em `system`, todo turno (H1);
+ *  - sessão FRESCA no meio da conversa (wheel-switch/backend novo) → bloco
+ *    SEMPRE entra (mesma régua do revezamento: a sessão nova nunca viu regra
+ *    nenhuma), sem prefixo de atualização;
+ *  - sem canal → `body` no 1º turno (regra de sempre) E TAMBÉM quando o
+ *    fingerprint carimbado nesta conversa diverge do atual (H4) — aí com o
+ *    prefixo "(doutrina atualizada)". Ledger ZERADO (restart do app) numa
+ *    conversa já rodada conta como divergência: a edição feita com o app
+ *    fechado não pode se perder (promessa "nunca perda" do plano); o custo é
+ *    UM bloco por conversa pós-restart, já precificado.
+ *  Best-effort como sempre: bloco null (sem arquivo/falha) → tudo null. */
+export function decideDoctrine(opts: {
+  agent: string
+  /** buildDoctrineBlock do conteúdo atual do arquivo (null = sem doutrina). */
+  block: string | null
+  locked: boolean
+  hasReply: boolean
+  /** Sessão nativa FRESCA no meio da conversa (S3.2 wheel-switch: o backend
+   *  trocou e o resume da origem não vale) → a doutrina sempre viaja. */
+  freshSession?: boolean
+  /** Último fingerprint carimbado nesta conversa (store `injected.doctrine`).
+   *  undefined = ledger zerado (restart) — tratado como divergência quando a
+   *  conversa já rodou (ver acima). */
+  lastFingerprint: string | undefined
+}): DoctrineDecision {
+  if (!opts.block) return { body: null, system: null, fingerprint: null }
+  const fingerprint = doctrineFingerprint(opts.block)
+  const def = agentDef(opts.agent)
+  if (def?.systemChannel) {
+    return { body: null, system: opts.block, fingerprint }
+  }
+  if (
+    opts.freshSession ||
+    shouldInjectDoctrine(opts.agent, opts.locked, opts.hasReply)
+  ) {
+    return { body: opts.block, system: null, fingerprint }
+  }
+  // Só se chega aqui com locked && hasReply (motor com resume): fingerprint
+  // divergente OU desconhecido (restart) → re-injeta com o prefixo honesto.
+  if (opts.lastFingerprint !== fingerprint) {
+    return {
+      body: `${DOCTRINE_UPDATED_PREFIX}\n${opts.block}`,
+      system: null,
+      fingerprint,
+    }
+  }
+  return { body: null, system: null, fingerprint }
 }

@@ -10,7 +10,7 @@ import { writeSkill, type SkillDraft } from "@/lib/skills"
 interface SkillDraftDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Caminho do projeto ativo (onde grava `.claude/commands/`). */
+  /** Caminho do projeto ativo (onde grava `.mycockpit/commands/`). */
   projectPath: string | null
   /** Rascunho do Haiku; null enquanto ainda está rascunhando (loading). */
   draft: SkillDraft | null
@@ -46,7 +46,8 @@ export function SkillDraftDialog({
       toast.error("Dê um nome à skill.")
       return
     }
-    // Descrição vira frontmatter do command (Claude Code lê `description:`).
+    // Descrição vira frontmatter do command (a descoberta do app lê
+    // `description:`; na expansão app-side o frontmatter é removido do prompt).
     // JSON.stringify = string JSON-quoted (YAML aceita): aspas/':'/quebras na
     // descrição não quebram o frontmatter.
     const content = description.trim()
@@ -80,7 +81,8 @@ export function SkillDraftDialog({
       description={
         <>
           Promova este workflow a um /command reutilizável em
-          {" "}.claude/commands/. Revise antes de salvar.
+          {" "}.mycockpit/commands/ (vale para qualquer agent). Revise antes de
+          salvar.
         </>
       }
       footer={

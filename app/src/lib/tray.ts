@@ -22,6 +22,9 @@ export interface TraySnapshot {
   nextSchedule: { name: string; at: number; relative: string } | null
   lastRun: { name: string; status: string; at: number } | null
   enabledSchedules: number
+  /** Trabalhos DIFERIDOS do provider vivos (Workflow/background task): o
+   *  diálogo nativo de saída avisa que eles morrem junto (D1.4). */
+  deferred: number
 }
 
 export interface TrayAction {

@@ -41,6 +41,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { insertStageRun, listStageRuns, type StageRunRow } from "@/lib/db"
+// Adoção do plano: todo gesto humano DAQUI marca o plano como "seu" no app, e
+// só então os gates dele contam como pendência no sino/painel (antes disso são
+// achado de disco). A marca é do app; o .claude/plans nunca é escrito por isso.
+import { adoptPlan } from "@/lib/inbox"
 import {
   loadSddPlans,
   loadPrInfo,
@@ -186,6 +190,8 @@ export function SddView() {
     setFeatTrack("full")
     try {
       const slug = await createPlan(project.path, desc, track)
+      // nasceu AQUI: já entra adotado (os gates dele contam desde o primeiro dia).
+      await adoptPlan(project.id, slug)
       const ps = (await loadSddPlans(project.path)).filter((p) => p.hasManifest)
       setPlans(ps)
       useApp.getState().setSddFocus(slug)
@@ -550,6 +556,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
     setSyncing(true)
     try {
       await setPlanStage(project.path, plan.slug, effective)
+      await adoptPlan(project.id, plan.slug)
       onReload()
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha ao sincronizar a etapa")
@@ -574,6 +581,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
     if (!ok) return
     try {
       await setPlanStage(project.path, plan.slug, stage)
+      await adoptPlan(project.id, plan.slug)
       onReload()
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha ao marcar a etapa")
@@ -594,6 +602,8 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
       plan.slug,
     )
     if (ok) {
+      // dirigiu uma etapa daqui: o plano passa a ser SEU no app (conta na fila).
+      await adoptPlan(project.id, plan.slug)
       const produced = producedStage(step.skill)
       if (produced) {
         try {
@@ -618,7 +628,14 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
       path: planFile(plan.artifacts.prd?.path ?? "PRD.md"),
       root: project.path,
       status: approved ? "aprovado" : "não aprovado",
-      approve: approved ? undefined : () => approvePrd(project.path, plan.slug),
+      approve: approved
+        ? undefined
+        : async () => {
+            await approvePrd(project.path, plan.slug)
+            // aprovou PELO APP: se ainda restar gate nesse plano, ele passa a
+            // contar como pendência de verdade (não mais "achado no disco").
+            await adoptPlan(project.id, plan.slug)
+          },
     })
   }
   // Ver a SPEC (read-only).

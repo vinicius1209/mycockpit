@@ -25,6 +25,90 @@ describe("reviewerApproved", () => {
   })
 })
 
+describe("reviewerApproved endurecido (MH1.1): frases armadilha não contam como aprovação", () => {
+  // Fixtures no formato REAL do parecer: o template pede "APROVADO e explique
+  // em 1 linha" — os pareceres reprovados vêm exatamente nessas variações.
+  it("'aprovado com ressalvas' é reprovação (a ressalva É a pendência)", () => {
+    expect(
+      reviewerApproved([
+        textItem(
+          "APROVADO COM RESSALVAS: o fluxo principal funciona, mas o erro de rede não é tratado em lib/sync.ts.",
+        ),
+      ]),
+    ).toBe(false)
+  })
+  it("'ainda não está aprovado' é reprovação", () => {
+    expect(
+      reviewerApproved([
+        textItem(
+          "O plano foi seguido, porém ainda não está aprovado: falta o teste do caso vazio em parser.test.ts.",
+        ),
+      ]),
+    ).toBe(false)
+  })
+  it("'não totalmente aprovado' é reprovação", () => {
+    expect(
+      reviewerApproved([
+        textItem(
+          "Não totalmente aprovado. Corrija: 1) src/api.ts ignora o status 429; 2) falta rollback na migração.",
+        ),
+      ]),
+    ).toBe(false)
+  })
+  it("'NÃO APROVADO' segue reprovação (caso já coberto, não pode regredir)", () => {
+    expect(
+      reviewerApproved([textItem("NÃO APROVADO: faltou tratar o erro X.")]),
+    ).toBe(false)
+  })
+  it("'não foi totalmente aprovado' (negação com 2 palavras no meio) é reprovação", () => {
+    expect(
+      reviewerApproved([
+        textItem("O trabalho não foi totalmente aprovado; ver itens abaixo."),
+      ]),
+    ).toBe(false)
+  })
+  it("'aprovado, mas…' é reprovação (aprovação qualificada)", () => {
+    expect(
+      reviewerApproved([
+        textItem("APROVADO, mas o teste de integração precisa ser reescrito."),
+      ]),
+    ).toBe(false)
+  })
+  it("aprovação seca segue valendo (o endurecimento não vira paranoia)", () => {
+    expect(
+      reviewerApproved([
+        textItem("APROVADO. O diff cobre o plano e os testes passam."),
+      ]),
+    ).toBe(true)
+  })
+  it("'DESAPROVADO' não passa por substring (fronteira de palavra)", () => {
+    expect(
+      reviewerApproved([
+        textItem("DESAPROVADO. Corrija: src/x.ts engole a exceção."),
+      ]),
+    ).toBe(false)
+  })
+  it("'REPROVADO' também não conta como aprovação", () => {
+    expect(
+      reviewerApproved([textItem("REPROVADO: o plano não foi seguido.")]),
+    ).toBe(false)
+  })
+  it("'NÃO-APROVADO' com hífen é reprovação (separador vale como espaço)", () => {
+    expect(
+      reviewerApproved([
+        textItem("NÃO-APROVADO: falta o rollback da migração."),
+      ]),
+    ).toBe(false)
+  })
+  it("regressão: APROVADO embutido em frase legítima segue aprovando", () => {
+    expect(
+      reviewerApproved([
+        textItem("O diff está correto e completo, portanto APROVADO."),
+      ]),
+    ).toBe(true)
+  })
+})
+
 describe("phaseText", () => {
   it("junta só os itens de texto", () => {
     const items: ChatItem[] = [

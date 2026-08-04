@@ -3,19 +3,19 @@
 // mora só o que a UI decide — o prompt de execução pós-aprovação por agent e a
 // captura do texto do plano no fio da conversa.
 
+import { agentDef } from "@/lib/agents"
 import type { ChatItem } from "@/store/chat"
 
 /** Tooltip do toggle no composer (fonte única p/ o botão). */
 export const PLAN_FIRST_TOOLTIP =
   "Planejar primeiro — o agent propõe um plano e só executa depois da sua aprovação"
 
-/** Agents SEM resume (cada turno é fresh): o prompt de execução precisa
- *  EMBUTIR o texto do plano, senão o agent não sabe o que aprovamos. */
-const NO_RESUME_AGENTS = new Set(["agy"])
-
-/** true se o agent não tem resume (o plano vai embutido no prompt de execução). */
+/** true se o agent não tem resume (o plano vai embutido no prompt de execução,
+ *  senão o agent não sabe o que aprovamos). H5: derivado da capability
+ *  `sessionResume` do registry — nunca de `agent === "agy"`; motor
+ *  desconhecido embute (fail-closed: não conta com resume que não provou). */
 export function needsPlanEmbedded(agent: string): boolean {
-  return NO_RESUME_AGENTS.has(agent)
+  return !(agentDef(agent)?.sessionResume ?? false)
 }
 
 /** Prompt do turno de EXECUÇÃO pós-aprovação:

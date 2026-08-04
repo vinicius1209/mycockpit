@@ -178,17 +178,17 @@ export function preflightPreset(
   const missing = preset.skills.filter((s) => !have.has(s))
   if (missing.length > 0) {
     // Inventário COMPLETAMENTE vazio: a causa provável não é a skill, é o
-    // projeto (pasta .claude/commands vazia ou ilegível — o inventário Rust
+    // projeto (pastas de comandos vazias ou ilegíveis — o inventário Rust
     // degrada pra lista vazia). A copy admite isso em vez de acusar a skill.
     if (available.length === 0) {
       return {
         ok: false,
-        error: `Não encontrei nenhum comando neste projeto (pasta .claude/commands vazia ou ilegível), então não dá para validar as skills do preset "${preset.name}" (${preset.skills.map((m) => `/${m}`).join(", ")}). O envio foi abortado.`,
+        error: `Não encontrei nenhum comando neste projeto (pastas .mycockpit/commands e as nativas do agent vazias ou ilegíveis), então não dá para validar as skills do preset "${preset.name}" (${preset.skills.map((m) => `/${m}`).join(", ")}). O envio foi abortado.`,
       }
     }
     return {
       ok: false,
-      error: `O preset "${preset.name}" referencia ${missing.length === 1 ? "uma skill que não existe" : "skills que não existem"} neste projeto: ${missing.map((m) => `/${m}`).join(", ")}. Crie em .claude/commands (ou .claude/skills), ou remova do preset. O envio foi abortado.`,
+      error: `O preset "${preset.name}" referencia ${missing.length === 1 ? "uma skill que não existe" : "skills que não existem"} para o agent dele neste projeto: ${missing.map((m) => `/${m}`).join(", ")}. Crie em .mycockpit/commands (vale para qualquer agent), ou remova do preset. O envio foi abortado.`,
     }
   }
   return { ok: true }
@@ -272,7 +272,11 @@ export async function resolveFirstTurnPersona(opts: {
   }
   let available: string[]
   try {
-    available = (await readProjectCommands(opts.projectPath)).map((c) => c.name)
+    // inventário POR AGENT: as skills do preset são validadas contra o que o
+    // BACKEND DELE enxerga de fato (a casa + a convenção nativa do motor).
+    available = (
+      await readProjectCommands(opts.projectPath, preset.backend)
+    ).map((c) => c.name)
   } catch {
     return {
       status: "blocked",

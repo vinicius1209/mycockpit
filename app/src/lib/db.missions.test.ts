@@ -25,7 +25,13 @@ const h = vi.hoisted(() => ({ rows: [] as Row[] }))
 vi.mock("@tauri-apps/plugin-sql", () => {
   const fakeDb = {
     execute: async (sql: string, params: unknown[] = []) => {
-      if (sql.startsWith("CREATE TABLE") || sql.startsWith("CREATE INDEX")) {
+      if (
+        sql.startsWith("CREATE TABLE") ||
+        sql.startsWith("CREATE INDEX") ||
+        // migração idempotente de coluna (addColumn, ex. review_caveat): o
+        // fake aceita o DDL como o sqlite real — nenhuma asserção muda.
+        sql.startsWith("ALTER TABLE")
+      ) {
         return { rowsAffected: 0 }
       }
       if (sql.startsWith("INSERT INTO missions")) {

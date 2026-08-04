@@ -1,14 +1,17 @@
-import { memo, useState } from "react"
+import { memo, useState, type KeyboardEvent } from "react"
 import { Check, Circle, ListChecks, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { AgentTask } from "@/lib/tasks"
 
-function TaskRow({ task }: { task: AgentTask }) {
+function TaskRow({ task, first }: { task: AgentTask; first: boolean }) {
   const [open, setOpen] = useState(false)
   return (
     <li>
       <button
         onClick={() => task.description && setOpen((o) => !o)}
+        data-work-task
+        aria-expanded={task.description ? open : undefined}
+        tabIndex={first ? 0 : -1}
         className={cn(
           "flex w-full items-start gap-2 rounded px-1 py-[3px] text-left text-[12.5px]",
           task.description && "hover:bg-accent/40",
@@ -46,8 +49,9 @@ function TaskRow({ task }: { task: AgentTask }) {
   )
 }
 
-/** A checklist viva do agent (derivada de TaskCreate/TaskUpdate). Reusada inline
- *  no chat, na faixa acima do composer e na aba Plano do painel direito. */
+/** Checklist do agent (derivada de TaskCreate/TaskUpdate). Durante o turno, a
+ * faixa acima do composer é a fonte viva; no transcript só reaparece sob demanda
+ * depois que o plano encerra. A aba Plano reutiliza a versão mais recente. */
 export const TaskChecklist = memo(function TaskChecklist({
   tasks,
   dense,
@@ -56,6 +60,31 @@ export const TaskChecklist = memo(function TaskChecklist({
   dense?: boolean
 }) {
   const done = tasks.filter((t) => t.status === "completed").length
+  function navigate(e: KeyboardEvent<HTMLOListElement>) {
+    const target = (e.target as HTMLElement).closest<HTMLElement>("[data-work-task]")
+    if (!target) return
+    const rows = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>("[data-work-task]"),
+    )
+    const index = rows.indexOf(target)
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault()
+      const delta = e.key === "ArrowDown" ? 1 : -1
+      rows[Math.max(0, Math.min(rows.length - 1, index + delta))]?.focus()
+    } else if (
+      e.key === "ArrowRight" &&
+      target.getAttribute("aria-expanded") === "false"
+    ) {
+      e.preventDefault()
+      target.click()
+    } else if (
+      e.key === "ArrowLeft" &&
+      target.getAttribute("aria-expanded") === "true"
+    ) {
+      e.preventDefault()
+      target.click()
+    }
+  }
   return (
     <div className={cn(!dense && "rounded-xl border bg-card px-3.5 py-2.5")}>
       {!dense && (
@@ -67,9 +96,13 @@ export const TaskChecklist = memo(function TaskChecklist({
           </span>
         </div>
       )}
-      <ol className="flex flex-col gap-0.5">
-        {tasks.map((t) => (
-          <TaskRow key={t.id} task={t} />
+      <ol
+        aria-label="Etapas do plano"
+        className="flex flex-col gap-0.5"
+        onKeyDown={navigate}
+      >
+        {tasks.map((t, index) => (
+          <TaskRow key={t.id} task={t} first={index === 0} />
         ))}
       </ol>
     </div>

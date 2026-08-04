@@ -2,7 +2,11 @@
 // edição inline de fases (agent/modelo) a partir do preset, detecção de
 // "Personalizado", trava de capacidade dos anexos e o "está sujo?" que guarda
 // o fechamento contra miss-click. Sem React/stores — testável em isolamento.
-import type { MissionPhaseDef } from "@/lib/missionTypes"
+import type {
+  MissionGatePolicy,
+  MissionPhaseDef,
+  MissionPreset,
+} from "@/lib/missionTypes"
 import type { Attachment } from "@/lib/attachments"
 
 /** Clona as fases do preset p/ o rascunho editável (nunca muta o preset). */
@@ -73,6 +77,139 @@ export function phasesCustomized(
       (b.autonomy ?? "inherit") !== (e.autonomy ?? "inherit")
     )
   })
+}
+
+/** Régua ÚNICA do "está personalizado?" (ressalva do gate MH3+MH4): fases
+ *  editadas OU política editada OU TETO editado. Launcher e Dock usam ISTO —
+ *  antes o Dock ignorava o teto e editar só o cap lá não oferecia "salvar
+ *  como time" nem marcava "· personalizado". */
+export function draftCustomized(input: {
+  preset: MissionPreset
+  phases: MissionPhaseDef[]
+  gatePolicy: MissionGatePolicy | null | undefined
+  capUsd: number | null
+}): boolean {
+  return (
+    phasesCustomized(input.preset.phases, input.phases) ||
+    gatePolicyCustomized(input.preset.gatePolicy, input.gatePolicy) ||
+    input.capUsd !== (input.preset.maxCostUsd ?? null)
+  )
+}
+
+// ── Política de gate no rascunho (MH3.3) ──
+
+/** Normaliza a política de gate: ausente = "agente" (comportamento clássico,
+ *  fail-open pra presets salvos antes do campo existir). */
+export function normalizeGatePolicy(
+  policy: MissionGatePolicy | null | undefined,
+): MissionGatePolicy {
+  return policy ?? "agente"
+}
+
+/** A política editada diverge da do preset? Entra no "está personalizado?"
+ *  junto do phasesCustomized (política editada = rascunho custom). */
+export function gatePolicyCustomized(
+  base: MissionGatePolicy | null | undefined,
+  edited: MissionGatePolicy | null | undefined,
+): boolean {
+  return normalizeGatePolicy(base) !== normalizeGatePolicy(edited)
+}
+
+/** Opções do seletor de política de gate (Launcher, Dock e MissionSettings —
+ *  fonte única da copy). */
+export const GATE_POLICY_OPTIONS: {
+  value: MissionGatePolicy
+  label: string
+  description: string
+}[] = [
+  {
+    value: "agente",
+    label: "Gate: agente decide",
+    description:
+      "Pausa quando uma fase deixa perguntas em aberto (comportamento padrão).",
+  },
+  {
+    value: "sempre-apos-planejar",
+    label: "Gate: sempre após planejar",
+    description:
+      "Pausa obrigatória após a fase 1, mesmo sem perguntas, pra você revisar o plano.",
+  },
+  {
+    value: "nunca",
+    label: "Gate: nunca",
+    description:
+      "Nunca pausa; perguntas em aberto entram como aviso no fio da conversa.",
+  },
+]
+
+/** Toggle "Autonomia" do time COM o acoplamento de gate (MH3.3): LIGAR põe o
+ *  time todo em auto E a política em "nunca" (autonomia total: sem pausas de
+ *  gate e permissão auto); DESLIGAR volta o time a herdar e a política pra do
+ *  preset. Puro — as duas superfícies aplicam o resultado. */
+export function toggleTeamAutonomyWithGate(input: {
+  phases: MissionPhaseDef[]
+  gatePolicy: MissionGatePolicy
+  /** Política do PRESET base (a "anterior" pra onde o desligar volta). */
+  presetGatePolicy: MissionGatePolicy | null | undefined
+}): { phases: MissionPhaseDef[]; gatePolicy: MissionGatePolicy } {
+  const turningOn = teamAutonomy(input.phases) !== "auto"
+  return turningOn
+    ? { phases: setTeamAutonomy(input.phases, "auto"), gatePolicy: "nunca" }
+    : {
+        phases: setTeamAutonomy(input.phases, "inherit"),
+        gatePolicy: normalizeGatePolicy(input.presetGatePolicy),
+      }
+}
+
+// ── Salvar o rascunho como time (MH3.1) ──
+
+export type SavePresetError = "vazio" | "duplicado"
+
+/** Valida o nome do time a salvar: vazio ou duplicado (case-insensitive, sem
+ *  espaços das pontas) → erro honesto pro inline da UI. null = pode salvar. */
+export function validatePresetName(
+  name: string,
+  existing: { name: string }[],
+): SavePresetError | null {
+  const t = name.trim()
+  if (!t) return "vazio"
+  const lower = t.toLowerCase()
+  if (existing.some((p) => p.name.trim().toLowerCase() === lower)) {
+    return "duplicado"
+  }
+  return null
+}
+
+/** Copy pt-BR dos erros do salvar (inline nas duas superfícies). */
+export const SAVE_PRESET_ERROR_COPY: Record<SavePresetError, string> = {
+  vazio: "Dê um nome ao time.",
+  duplicado: "Já existe um time com esse nome.",
+}
+
+/** Salva o rascunho corrente como um time NOVO: valida o nome, monta o preset
+ *  (fases clonadas + teto + política) e devolve a lista atualizada + o preset
+ *  salvo (o seletor passa a apontar pra ele). Puro — quem persiste é a
+ *  superfície (setSettings). `id` injetável só pra teste. */
+export function saveDraftAsPreset(input: {
+  name: string
+  presets: MissionPreset[]
+  phases: MissionPhaseDef[]
+  maxCostUsd: number | null
+  gatePolicy?: MissionGatePolicy
+  id?: string
+}):
+  | { ok: true; presets: MissionPreset[]; preset: MissionPreset }
+  | { ok: false; error: SavePresetError } {
+  const error = validatePresetName(input.name, input.presets)
+  if (error) return { ok: false, error }
+  const preset: MissionPreset = {
+    id: input.id ?? `preset-${Math.random().toString(36).slice(2, 8)}`,
+    name: input.name.trim(),
+    phases: clonePhases(input.phases),
+    maxCostUsd: input.maxCostUsd,
+    gatePolicy: normalizeGatePolicy(input.gatePolicy),
+  }
+  return { ok: true, presets: [...input.presets, preset], preset }
 }
 
 /** Todos os anexos são suportados pelas capacidades do agent da FASE 1?

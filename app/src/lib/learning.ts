@@ -337,6 +337,7 @@ export async function saveLesson(args: {
   projectId: string
   rule: string
   scope: LessonScope
+  source?: string
 }): Promise<SaveLessonOutcome> {
   const rule = args.rule.trim()
   if (!rule) return "erro"
@@ -346,7 +347,7 @@ export async function saveLesson(args: {
     await insertLesson({
       projectId: args.projectId,
       rule,
-      source: "linear",
+      source: args.source ?? "linear",
       scope: args.scope,
     })
     return "salva"

@@ -24,122 +24,33 @@ import { useAttachments } from "@/hooks/useAttachments"
 import { useApp, useActiveProject } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useMission } from "@/store/mission"
-import type { MissionPhaseDef, MissionPreset } from "@/lib/missionTypes"
+import type {
+  MissionGatePolicy,
+  MissionPhaseDef,
+  MissionPreset,
+} from "@/lib/missionTypes"
 import {
+  GATE_POLICY_OPTIONS,
+  SAVE_PRESET_ERROR_COPY,
   attachmentsSupported,
   clonePhases,
+  draftCustomized,
   draftDirty,
   editPhase,
+  normalizeGatePolicy,
   parseCapInput,
-  phasesCustomized,
-  setTeamAutonomy,
+  saveDraftAsPreset,
   teamAutonomy,
-  type PhaseEdit,
+  toggleTeamAutonomyWithGate,
 } from "@/lib/missionDraft"
+import { MissionPhaseRow } from "@/components/mission/PhaseRow"
 import { cn } from "@/lib/utils"
-import {
-  LEAGUE_DESTINATIONS,
-  agentCaps,
-  agentDef,
-  agentModels,
-} from "@/lib/agents"
+import { agentCaps, agentDef } from "@/lib/agents"
 import { fmtCost } from "@/lib/format"
 
 // Sentinela do seletor de time quando as fases foram editadas inline. Nunca
 // chega ao store — o launch monta o preset efetivo com as fases do rascunho.
 const CUSTOM_PRESET = "__custom__"
-
-const SELECT_TRIGGER =
-  "h-7 gap-1 px-2 text-[12px] text-muted-foreground data-[size=default]:h-7"
-
-/** Pílula de autonomia POR MEMBRO: "auto" (roda sem pedir, com o freio do CLI)
- *  vs "herda" (permissão do projeto). Um clique alterna — é o override por
- *  membro que o toggle de missão seta em bloco. */
-function AutonomyPill({
-  autonomy,
-  label,
-  onToggle,
-}: {
-  autonomy: "auto" | "inherit"
-  label: string
-  onToggle: () => void
-}) {
-  const on = autonomy === "auto"
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-pressed={on}
-      title={
-        on
-          ? "Auto: roda sem pedir permissão (com o freio de segurança do CLI). Clique para herdar do projeto."
-          : "Herda a permissão do projeto. Clique para deixar esta fase em Auto."
-      }
-      aria-label={label}
-      className={cn(
-        "flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[10.5px] font-medium transition-colors",
-        on
-          ? "border-brass/50 bg-brass/15 text-brass"
-          : "border-border/60 text-muted-foreground hover:text-foreground",
-      )}
-    >
-      <Zap className="size-3" />
-      {on ? "Auto" : "Herda"}
-    </button>
-  )
-}
-
-/** UMA fase do rascunho: nº, rótulo e selects compactos de agent + modelo
- *  (mesmas opções do composer, via lib/agents; modelo respeita o agent). */
-function PhaseDraftRow({
-  phase,
-  index,
-  onEdit,
-}: {
-  phase: MissionPhaseDef
-  index: number
-  onEdit: (edit: PhaseEdit) => void
-}) {
-  return (
-    <div className="flex items-center gap-2 py-1">
-      <span className="w-4 shrink-0 text-center font-mono text-[10px] tabular-nums text-muted-foreground/70">
-        {index + 1}
-      </span>
-      <span className="min-w-0 truncate text-[12.5px] text-foreground/85">
-        {phase.label}
-      </span>
-      <div className="ml-auto flex shrink-0 items-center gap-0.5">
-        <AutonomyPill
-          autonomy={phase.autonomy === "auto" ? "auto" : "inherit"}
-          label={`Autonomia da fase ${index + 1}`}
-          onToggle={() =>
-            onEdit({
-              autonomy: phase.autonomy === "auto" ? "inherit" : "auto",
-            })
-          }
-        />
-        <RichSelect
-          value={phase.agent}
-          onValueChange={(v) => onEdit({ agent: v })}
-          aria-label={`Agent da fase ${index + 1}`}
-          triggerClassName={SELECT_TRIGGER}
-          options={LEAGUE_DESTINATIONS.map((d) => ({
-            value: d.id,
-            label: d.label,
-            description: d.description,
-          }))}
-        />
-        <RichSelect
-          value={phase.model ?? "default"}
-          onValueChange={(v) => onEdit({ model: v === "default" ? null : v })}
-          aria-label={`Modelo da fase ${index + 1}`}
-          triggerClassName={SELECT_TRIGGER}
-          options={agentModels(phase.agent)}
-        />
-      </div>
-    </div>
-  )
-}
 
 export function MissionLauncher({
   open,
@@ -170,10 +81,16 @@ export function MissionLauncher({
   const [task, setTask] = useState("")
   // rascunho editável das fases (clone — editar aqui nunca muta o preset)
   const [phases, setPhases] = useState<MissionPhaseDef[]>([])
+  // política de GATE editável (MH3.3; inicia do preset, reseta ao trocar)
+  const [gatePolicy, setGatePolicy] = useState<MissionGatePolicy>("agente")
   // TETO de custo editável (null = sem teto; inicia do preset, reseta ao trocar)
   const [capUsd, setCapUsd] = useState<number | null>(null)
   const [capEditing, setCapEditing] = useState(false)
   const [capInput, setCapInput] = useState("")
+  // "Salvar como time" (MH3.1): input inline do nome + erro honesto.
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [saveName, setSaveName] = useState("")
+  const [saveError, setSaveError] = useState<string | null>(null)
   // Esc cancela a edição do teto; o blur do unmount NÃO deve commitar por cima.
   const capCancelRef = useRef(false)
   const taskRef = useRef<HTMLTextAreaElement>(null)
@@ -195,15 +112,19 @@ export function MissionLauncher({
       useApp.getState().settings.missionPresets[0] ??
       null
     setPhases(p ? clonePhases(p.phases) : [])
+    setGatePolicy(normalizeGatePolicy(p?.gatePolicy))
     setCapUsd(p?.maxCostUsd ?? null)
     setCapEditing(false)
+    setSaveOpen(false)
+    setSaveName("")
+    setSaveError(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialTask])
 
-  // editar uma fase OU o teto → o seletor de time mostra "Personalizado"
+  // editar uma fase, a política de gate OU o teto → "Personalizado"
+  // (régua ÚNICA compartilhada com o Dock: draftCustomized)
   const customized = preset
-    ? phasesCustomized(preset.phases, phases) ||
-      capUsd !== (preset.maxCostUsd ?? null)
+    ? draftCustomized({ preset, phases, gatePolicy, capUsd })
     : false
 
   // trava de capacidade: os anexos vão pro prompt da FASE 1 → valem as caps do
@@ -247,9 +168,33 @@ export function MissionLauncher({
     setPresetId(id)
     const p = presets.find((x) => x.id === id)
     setPhases(p ? clonePhases(p.phases) : [])
-    // trocar de preset RESETA o teto pro do preset (mesma regra das fases)
+    // trocar de preset RESETA teto e política pros do preset (regra das fases)
+    setGatePolicy(normalizeGatePolicy(p?.gatePolicy))
     setCapUsd(p?.maxCostUsd ?? null)
     setCapEditing(false)
+    setSaveOpen(false)
+    setSaveError(null)
+  }
+
+  /** MH3.1 — salva o rascunho "Personalizado" como time novo nas Settings e
+   *  aponta o seletor pra ele (o rascunho vira o próprio preset salvo). */
+  function saveAsTeam() {
+    const res = saveDraftAsPreset({
+      name: saveName,
+      presets,
+      phases,
+      maxCostUsd: capUsd,
+      gatePolicy,
+    })
+    if (!res.ok) {
+      setSaveError(SAVE_PRESET_ERROR_COPY[res.error])
+      return
+    }
+    useApp.getState().setSettings({ missionPresets: res.presets })
+    setPresetId(res.preset.id)
+    setSaveOpen(false)
+    setSaveName("")
+    setSaveError(null)
   }
 
   /** Confirma o input do teto (Enter/blur). Inválido → mantém o anterior. */
@@ -271,9 +216,13 @@ export function MissionLauncher({
     setTask("")
     if (preset) {
       setPhases(clonePhases(preset.phases))
+      setGatePolicy(normalizeGatePolicy(preset.gatePolicy))
       setCapUsd(preset.maxCostUsd ?? null)
     }
     setCapEditing(false)
+    setSaveOpen(false)
+    setSaveName("")
+    setSaveError(null)
   }
 
   // Esc e o X do dialog caem aqui (controlado). Clicar FORA nem chega — o
@@ -305,6 +254,7 @@ export function MissionLauncher({
       name: customized ? `${preset.name} · personalizado` : preset.name,
       phases: clonePhases(phases),
       maxCostUsd: capUsd,
+      gatePolicy,
     }
     void useMission
       .getState()
@@ -418,23 +368,45 @@ export function MissionLauncher({
                   Nenhum preset configurado (Settings ▸ Missions)
                 </span>
               )}
-              {/* Toggle de missão: liga "auto" no TIME TODO (ou desliga). O
-                  estado "misto" (alguns membros em auto) aparece com o traço —
+              {/* MH3.1 — rascunho "Personalizado" pode virar time salvo. */}
+              {preset && customized && !saveOpen && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSaveOpen(true)
+                    setSaveName("")
+                    setSaveError(null)
+                  }}
+                  title="Salvar este rascunho como um time novo nas Settings"
+                  className="shrink-0 text-[11.5px] text-brass transition-colors hover:text-brass/80"
+                >
+                  Salvar como time
+                </button>
+              )}
+              {/* Toggle de missão: liga "auto" no TIME TODO (ou desliga). Ao
+                  LIGAR também põe a política de gate em "nunca" (autonomia
+                  total); ao desligar, a política volta pra do preset (MH3.3).
+                  O estado "misto" (alguns membros em auto) aparece com o traço,
                   clicar resolve pra auto-todos. Cada membro ainda pode divergir
                   na pílula da própria linha. */}
               {preset && phases.length > 0 && (
                 <button
                   type="button"
-                  onClick={() =>
-                    setPhases((cur) =>
-                      setTeamAutonomy(
-                        cur,
-                        teamAutonomy(cur) === "auto" ? "inherit" : "auto",
-                      ),
-                    )
-                  }
+                  onClick={() => {
+                    const next = toggleTeamAutonomyWithGate({
+                      phases,
+                      gatePolicy,
+                      presetGatePolicy: preset.gatePolicy,
+                    })
+                    setPhases(next.phases)
+                    setGatePolicy(next.gatePolicy)
+                  }}
                   aria-pressed={teamAutonomy(phases) === "auto"}
-                  title="Autonomia do time: em Auto, todos os membros rodam sem pedir permissão (cada CLI com seu freio de segurança). Você ainda pode ajustar membro a membro."
+                  title={
+                    teamAutonomy(phases) === "auto"
+                      ? "Autonomia total ligada: sem pausas de gate e permissão auto (cada CLI com seu freio de segurança). Desligar volta a política de gate do preset."
+                      : "Autonomia total: liga Auto no time todo, sem pausas de gate e permissão auto (cada CLI com seu freio de segurança). Você ainda pode ajustar membro a membro."
+                  }
                   className={cn(
                     "ml-auto flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[11.5px] font-medium transition-colors",
                     teamAutonomy(phases) === "auto"
@@ -452,20 +424,76 @@ export function MissionLauncher({
               )}
             </div>
 
+            {/* MH3.1 — input inline do nome do time (nunca window.prompt);
+                Esc fecha SÓ o input, Enter salva; erro honesto embaixo. */}
+            {preset && saveOpen && (
+              <div className="mb-2">
+                <div className="flex items-center gap-1.5">
+                  <input
+                    value={saveName}
+                    onChange={(e) => {
+                      setSaveName(e.target.value)
+                      setSaveError(null)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        saveAsTeam()
+                      } else if (e.key === "Escape") {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setSaveOpen(false)
+                        setSaveError(null)
+                      }
+                    }}
+                    placeholder="Nome do novo time"
+                    aria-label="Nome do novo time"
+                    className="h-7 flex-1 rounded-md border bg-background px-2 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-brass/50"
+                    autoFocus
+                  />
+                  <Button size="sm" className="h-7" onClick={saveAsTeam}>
+                    Salvar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-muted-foreground"
+                    onClick={() => {
+                      setSaveOpen(false)
+                      setSaveError(null)
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+                {saveError && (
+                  <p className="mt-1 text-[11.5px] text-st-error">{saveError}</p>
+                )}
+              </div>
+            )}
+
             {preset && (
               <div className="rounded-lg border bg-secondary/30 px-3 py-1.5">
                 {phases.map((ph, i) => (
-                  <PhaseDraftRow
+                  <MissionPhaseRow
                     key={ph.id}
                     phase={ph}
                     index={i}
                     onEdit={(edit) => setPhases((cur) => editPhase(cur, i, edit))}
                   />
                 ))}
-                {/* teto EDITÁVEL: clique vira input compacto; Enter/blur
-                    confirma, Esc cancela; vazio/0 = SEM teto (checkBudget já
-                    trata null). Inválido → volta pro anterior (parseCapInput). */}
-                <div className="mt-0.5 flex h-8 items-center justify-end border-t">
+                {/* rodapé do time: política de GATE (MH3.3, discreta) à
+                    esquerda; teto EDITÁVEL à direita (clique vira input;
+                    Enter/blur confirma, Esc cancela; vazio/0 = SEM teto). */}
+                <div className="mt-0.5 flex h-8 items-center justify-between gap-2 border-t">
+                  <RichSelect
+                    value={gatePolicy}
+                    onValueChange={(v) => setGatePolicy(v as MissionGatePolicy)}
+                    aria-label="Política de gate humano da missão"
+                    title="Quando a missão pausa pra te perguntar (gate humano)"
+                    triggerClassName="h-6 gap-1 px-1 text-[11px] text-muted-foreground data-[size=default]:h-6"
+                    options={GATE_POLICY_OPTIONS}
+                  />
                   {capEditing ? (
                     <label className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-muted-foreground">
                       teto US$

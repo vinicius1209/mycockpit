@@ -29,12 +29,17 @@ export function authorKey(a: GroupAuthor): string {
   }
 }
 
-/** Autor de um nó de render. Prosa/tools/tasklist são sempre do EXECUTOR (o
+/** Autor de um nó de render. Prosa/tools/plano são sempre do EXECUTOR (o
  *  turno do code agent). Nos itens avulsos: user→você; advice→especialista (por
  *  persona); cancelled/notice→sistema (voz sem dono); o resto do turno
  *  (text/result/error/limit)→executor. */
 export function nodeAuthor(node: Node): GroupAuthor {
-  if (node.type === "prose" || node.type === "tools" || node.type === "tasklist")
+  if (
+    node.type === "prose" ||
+    node.type === "tools" ||
+    node.type === "plan" ||
+    node.type === "incident"
+  )
     return { kind: "executor" }
   const it = node.item
   switch (it.kind) {

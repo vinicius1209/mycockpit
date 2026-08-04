@@ -19,10 +19,16 @@ import {
 } from "@/components/chat/ComposerParts"
 import { ExecutionRow } from "@/components/chat/ExecutionRow"
 import { useSlashCommands } from "@/hooks/useSlashCommands"
+import { slashEmptyHint } from "@/lib/slashCommands"
 import { useAtMentions } from "@/hooks/useAtMentions"
 import { usePromptHistory } from "@/hooks/usePromptHistory"
 import { useAttachments } from "@/hooks/useAttachments"
-import { useActiveConv, useChat, hasExecutorTurn } from "@/store/chat"
+import {
+  useActiveConv,
+  useChat,
+  hasExecutorTurn,
+  pendingDeferred,
+} from "@/store/chat"
 import { useApp, useActiveProject } from "@/store/app"
 import type { Attachment } from "@/lib/attachments"
 import {
@@ -127,16 +133,35 @@ export function CommandConsole({
   }, [fusionReq])
   // foco programático do editor Lexical (preenchido pelo FocusBridgePlugin).
   const lexicalFocus = useRef<(() => void) | null>(null)
+  // pill de comando "/" presente no editor (SlashPillPresencePlugin): com ele,
+  // o popover de comandos não reabre — a gramática é UM comando por mensagem,
+  // e o pill já é ele. (Digitar "/" no meio nunca abriu o popover; isto cobre
+  // a borda em que o texto serializado volta a ser só "/nome".)
+  const [hasCommandPill, setHasCommandPill] = useState(false)
   const conv = useActiveConv()
   const suggestions = conv.suggestions
   const suggesting = conv.suggesting
   const project = useActiveProject()
   const activeId = useChat((s) => s.activeId)
 
+  // conversa estabelecida trava no agent/modelo/effort dela; o seletor reflete.
+  // Pareceres de conselheiro (advice) NÃO travam a identidade (Especialistas E1).
+  // (Computado ANTES dos hooks: o popover "/" descobre comandos POR AGENT.)
+  const locked = hasExecutorTurn(conv.items)
+  const effectiveDest = locked ? conv.agent : destination
+  const effectiveModel = locked ? (conv.reqModel ?? "default") : model
+  const effectiveEffort = locked ? (conv.effort ?? "default") : effort
+
   // Popover "/" (comandos), arquivos do "@", histórico ↑/↓ e anexos, cada
   // feature num hook. O teclado chega pelos plugins do editor (slashBridge/
   // historyBridge/PASTE_COMMAND); a lógica mora aqui fora.
-  const slash = useSlashCommands({ project, value, setValue, focus: focusComposer })
+  const slash = useSlashCommands({
+    project,
+    agent: effectiveDest,
+    value,
+    setValue,
+    focus: focusComposer,
+  })
   // arquivos do projeto prontos na montagem (cache por projeto) — o menu "@"
   // do editor precisa deles quando abrir.
   const at = useAtMentions({ project })
@@ -156,13 +181,6 @@ export function CommandConsole({
   const { histIdx, setHistIdx, resetHistory, userPrompts, recallPrev, recallNext } =
     history
   const { attachments, setAttachments, removeAttachment, addFiles, attach } = att
-
-  // conversa estabelecida trava no agent/modelo/effort dela; o seletor reflete.
-  // Pareceres de conselheiro (advice) NÃO travam a identidade (Especialistas E1).
-  const locked = hasExecutorTurn(conv.items)
-  const effectiveDest = locked ? conv.agent : destination
-  const effectiveModel = locked ? (conv.reqModel ?? "default") : model
-  const effectiveEffort = locked ? (conv.effort ?? "default") : effort
 
   // S3.6 — presets (personas): a seleção mora na CONVERSA (conv.presetId), não
   // em estado local — o handleSend e a mesa leem de lá. Escolher um preset
@@ -298,8 +316,10 @@ export function CommandConsole({
   // plugins do editor). O menu "/" é o próprio SlashPopover (renderizado
   // abaixo, gateado só por showSlash). O "@" de arquivos vai por prop
   // (mentionFiles, listagem do useAtMentions).
+  // popover "/" efetivo: o showSlash do hook, suprimido com pill presente.
+  const slashOpen = showSlash && !hasCommandPill
   const slashBridge = {
-    active: showSlash,
+    active: slashOpen,
     move: (delta: 1 | -1) =>
       setSlashIdx((i) => (i + delta + slashMatches.length) % slashMatches.length),
     pick: () => {
@@ -339,6 +359,8 @@ export function CommandConsole({
         slash={slashBridge}
         history={historyBridge}
         onPasteFiles={addFiles}
+        slashCommands={commands}
+        onSlashPill={setHasCommandPill}
       />
     </Suspense>
   )
@@ -347,7 +369,7 @@ export function CommandConsole({
     <div className="relative flex w-full flex-col gap-3">
       {/* Menu "/" — o teclado chega via slashBridge (SlashMenuKeysPlugin);
           aqui é só a lista (clique inclusive). */}
-      {showSlash && (
+      {slashOpen && (
         <SlashPopover
           project={project}
           matches={slashMatches}
@@ -357,15 +379,15 @@ export function CommandConsole({
         />
       )}
       {/* "/" digitado num projeto SEM comandos: dica no lugar do silêncio (que
-          parece bug — caso real: skills globais viraram symlinks quebrados). */}
+          parece bug — caso real: skills globais viraram symlinks quebrados).
+          Copy POR AGENT: a casa (.mycockpit/commands) sempre; a convenção
+          nativa só quando o motor da conversa a entende. */}
       {!showSlash &&
         /^\/[\w:-]*$/.test(value) &&
         commands.length === 0 && (
         <div className="absolute bottom-full left-0 z-20 mb-2 w-full rounded-xl border bg-popover px-3 py-2.5 shadow-[var(--shadow-pop)]">
           <p className="text-[12px] text-muted-foreground">
-            Nenhum comando ou skill neste projeto — crie arquivos .md em{" "}
-            <span className="font-mono">.claude/commands</span> ou skills em{" "}
-            <span className="font-mono">.claude/skills</span>.
+            {slashEmptyHint(effectiveDest)}
           </p>
         </div>
       )}
@@ -433,6 +455,11 @@ export function CommandConsole({
         }
         footer={
           <ComposerActions
+            stopTitle={
+              pendingDeferred(conv.items).length > 0
+                ? "Parar (o trabalho em background do agent morre junto e fica marcado como interrompido)"
+                : undefined
+            }
             onFusion={() => setFusionOpen(true)}
             fusionDisabled={
               !activeId || disabled || running || finalizing || missionRunning

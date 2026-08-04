@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { readProjectCommands } from "@/lib/sources"
 import type { SlashCommand } from "@/lib/sources"
+import { withAppCommands } from "@/lib/slashCommands"
 import { isTauri } from "@/lib/db"
 import type { Project } from "@/lib/types"
 
@@ -22,11 +23,15 @@ export function slashQueryOf(value: string): string | null {
  */
 export function useSlashCommands({
   project,
+  agent,
   value,
   setValue,
   focus,
 }: {
   project: Project | null
+  /** Agent EFETIVO da conversa: a descoberta é por motor (a casa
+   *  .mycockpit/commands vale pra todos; cada motor soma a convenção nativa). */
+  agent: string
   value: string
   setValue: React.Dispatch<React.SetStateAction<string>>
   /** Foco programático do editor (insertCommand devolve o caret ao composer). */
@@ -36,20 +41,23 @@ export function useSlashCommands({
   const [slashIdx, setSlashIdx] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
 
-  // comandos do projeto p/ o "/" (.claude/commands)
+  // comandos do projeto p/ o "/" — por agent da conversa (.mycockpit/commands
+  // sempre; .claude/* só em conversa claude; ~/.codex/prompts só em codex).
+  // Os BUILTINS do app (source "app", ex. /compactar) entram na frente em TODA
+  // conversa — não dependem do disco, então a falha da leitura não os apaga.
   useEffect(() => {
     if (!project || !isTauri()) {
       setCommands([])
       return
     }
     let cancelled = false
-    readProjectCommands(project.path)
-      .then((c) => !cancelled && setCommands(c))
-      .catch(() => !cancelled && setCommands([]))
+    readProjectCommands(project.path, agent)
+      .then((c) => !cancelled && setCommands(withAppCommands(c)))
+      .catch(() => !cancelled && setCommands(withAppCommands([])))
     return () => {
       cancelled = true
     }
-  }, [project?.path])
+  }, [project?.path, agent])
 
   // "/" no início do input (sem espaço) → modo slash
   const slashQuery = slashQueryOf(value)

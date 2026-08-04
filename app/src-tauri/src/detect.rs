@@ -10,8 +10,15 @@ use tokio::time::timeout;
 
 /// auth: "ok" (logado) | "missing" (instalado, deslogado) | "unknown"
 /// (instalado, auth indeterminada) | "na" (não se aplica: git/swiftc).
-/// latest: última versão oficial publicada (npm/GitHub); None = fonte
-/// indisponível, offline ou não aplicável. Comparação de versão é do FRONTEND.
+///
+/// latest é POR CANAL do binário gerenciado (incidente do sucesso falso: a
+/// "última" vinha do npm, o binário era do brew cujo tap topava numa versão
+/// menor — botão "Atualizar" eterno prometendo o impossível). O canal vem do
+/// MESMO classify do update.rs; a fonte é a daquele canal (npm registry ×
+/// formulae.brew.sh). alt_latest/alt_channel: a última do OUTRO canal, pra UI
+/// dizer na cara quando outro canal tem versão maior (trocar de canal é gesto
+/// do usuário, não botão). None = fonte indisponível/offline/não aplicável.
+/// Comparação de versão é do FRONTEND.
 #[derive(Serialize, Clone)]
 pub struct DetectedTool {
     pub id: String,
@@ -20,6 +27,13 @@ pub struct DetectedTool {
     pub auth: String,
     pub detail: Option<String>,
     pub latest: Option<String>,
+    /// canal da fonte do `latest` ("npm" | "homebrew").
+    #[serde(rename = "latestChannel")]
+    pub latest_channel: Option<String>,
+    #[serde(rename = "altLatest")]
+    pub alt_latest: Option<String>,
+    #[serde(rename = "altChannel")]
+    pub alt_channel: Option<String>,
 }
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(6);
@@ -41,6 +55,9 @@ fn tool(
         auth: auth.to_string(),
         detail,
         latest: None,
+        latest_channel: None,
+        alt_latest: None,
+        alt_channel: None,
     }
 }
 
@@ -58,7 +75,8 @@ async fn run(bin: &str, args: &[&str]) -> Option<(bool, String)> {
 
 /// Extrai o número de versão (1º token que começa com dígito e tem "."). Ex.:
 /// "2.1.145 (Claude Code)" → "2.1.145"; "codex-cli 0.141.0" → "0.141.0".
-fn extract_version(s: &str) -> Option<String> {
+/// pub(crate): o update.rs usa no probe antes×depois do desfecho verificado.
+pub(crate) fn extract_version(s: &str) -> Option<String> {
     s.lines().next().and_then(|line| {
         line.split_whitespace()
             .map(|t| t.trim_start_matches('v'))
@@ -69,11 +87,10 @@ fn extract_version(s: &str) -> Option<String> {
     })
 }
 
-/// Busca a última versão oficial via `curl` subprocess (o app já orquestra
-/// CLIs; zero dependência de HTTP client). Best-effort: qualquer falha (sem
-/// curl, offline, timeout, JSON inesperado) devolve None em silêncio.
-/// `json_path` é o campo top-level do JSON (ex.: "version", "tag_name").
-async fn fetch_latest(url: &str, json_path: &str) -> Option<String> {
+/// Busca um JSON via `curl` subprocess (o app já orquestra CLIs; zero
+/// dependência de HTTP client). Best-effort: qualquer falha (sem curl,
+/// offline, timeout, JSON inesperado) devolve None em silêncio.
+async fn fetch_json(url: &str) -> Option<serde_json::Value> {
     let out = timeout(
         LATEST_TIMEOUT,
         Command::new("curl")
@@ -86,39 +103,110 @@ async fn fetch_latest(url: &str, json_path: &str) -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-    v.get(json_path)
+    serde_json::from_slice(&out.stdout).ok()
+}
+
+// ---- última versão POR CANAL (parse puro + decisão pura, testáveis) --------
+
+/// npm registry `/latest` → `.version`.
+fn parse_npm_version(v: &serde_json::Value) -> Option<String> {
+    v.get("version")
         .and_then(|x| x.as_str())
         .map(str::to_string)
         .filter(|s| !s.is_empty())
 }
 
-/// Normaliza tag de release do GitHub p/ versão pura: "rust-v0.144.4" →
-/// "0.144.4"; "v1.2.3" → "1.2.3"; "1.2.3" fica como está.
-fn normalize_tag(tag: &str) -> String {
-    let t = tag.trim();
-    let t = t.strip_prefix("rust-v").unwrap_or(t);
-    let t = t.strip_prefix('v').unwrap_or(t);
-    t.to_string()
+/// formulae.brew.sh `/api/cask/<nome>.json` → `.version`. Casks às vezes
+/// carregam build depois da vírgula ("1.2.3,4567") — fica só a versão.
+fn parse_cask_version(v: &serde_json::Value) -> Option<String> {
+    v.get("version")
+        .and_then(|x| x.as_str())
+        .and_then(|s| s.split(',').next())
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
 }
 
-/// Última do Claude Code: npm registry (`.version`).
-async fn latest_claude() -> Option<String> {
-    fetch_latest(
-        "https://registry.npmjs.org/@anthropic-ai/claude-code/latest",
-        "version",
-    )
-    .await
+/// formulae.brew.sh `/api/formula/<nome>.json` → `.versions.stable`.
+fn parse_formula_stable(v: &serde_json::Value) -> Option<String> {
+    v.get("versions")
+        .and_then(|x| x.get("stable"))
+        .and_then(|x| x.as_str())
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
 }
 
-/// Última do Codex: GitHub releases (`.tag_name` = "rust-v0.144.4" → "0.144.4").
-async fn latest_codex() -> Option<String> {
-    fetch_latest(
-        "https://api.github.com/repos/openai/codex/releases/latest",
-        "tag_name",
-    )
-    .await
-    .map(|t| normalize_tag(&t))
+/// Fontes de "última" por agent: (pacote npm, nome no brew). None = sem canal
+/// conhecido (agy). Espelha o plan() do update.rs.
+fn channel_sources(agent: &str) -> Option<(&'static str, &'static str)> {
+    match agent {
+        "claude-code" => Some(("@anthropic-ai/claude-code", "claude-code")),
+        "codex" => Some(("@openai/codex", "codex")),
+        _ => None,
+    }
+}
+
+/// Decisão PURA de canais pelo método do binário gerenciado: (canal do
+/// `latest`, canal alternativo a informar). Homebrew/Npm têm alternativo (é a
+/// linha "o canal X tem vY" da UI); nativo/desconhecido usa npm como
+/// best-effort e não promete teto de canal nenhum.
+fn channels_for(method: &crate::update::Method) -> (&'static str, Option<&'static str>) {
+    use crate::update::Method;
+    match method {
+        Method::Homebrew => ("homebrew", Some("npm")),
+        Method::Npm => ("npm", Some("homebrew")),
+        Method::Native | Method::Unknown => ("npm", None),
+    }
+}
+
+/// Última do npm pro pacote.
+async fn latest_npm(package: &str) -> Option<String> {
+    parse_npm_version(&fetch_json(&format!("https://registry.npmjs.org/{package}/latest")).await?)
+}
+
+/// Última do brew: tenta CASK primeiro (claude-code e codex são casks hoje) e
+/// cai pra formula — resolve dinamicamente sem hardcodar o tipo.
+async fn latest_brew(name: &str) -> Option<String> {
+    if let Some(v) = fetch_json(&format!("https://formulae.brew.sh/api/cask/{name}.json"))
+        .await
+        .and_then(|j| parse_cask_version(&j))
+    {
+        return Some(v);
+    }
+    parse_formula_stable(&fetch_json(&format!("https://formulae.brew.sh/api/formula/{name}.json")).await?)
+}
+
+/// `latest` honesto pro agent: canal do BINÁRIO GERENCIADO (classify do
+/// update.rs sobre o path real) manda; o outro canal vira alt_latest — só
+/// informação, nunca botão. Preenche direto no DetectedTool.
+async fn fill_latest(t: &mut DetectedTool, bin: &str) {
+    let Some((npm_pkg, brew_name)) = channel_sources(&t.id) else {
+        return;
+    };
+    let method = crate::update::resolve_bin(bin)
+        .await
+        .as_deref()
+        .map(crate::update::classify)
+        .unwrap_or(crate::update::Method::Unknown);
+    let (primary, alt) = channels_for(&method);
+    let fetch = |channel: &'static str| async move {
+        match channel {
+            "homebrew" => latest_brew(brew_name).await,
+            _ => latest_npm(npm_pkg).await,
+        }
+    };
+    match alt {
+        Some(alt_channel) => {
+            let (latest, alt_latest) = tokio::join!(fetch(primary), fetch(alt_channel));
+            t.latest = latest;
+            t.latest_channel = Some(primary.to_string());
+            t.alt_latest = alt_latest;
+            t.alt_channel = Some(alt_channel.to_string());
+        }
+        None => {
+            t.latest = fetch(primary).await;
+            t.latest_channel = Some(primary.to_string());
+        }
+    }
 }
 
 async fn probe_claude() -> DetectedTool {
@@ -194,23 +282,20 @@ async fn probe_simple(id: &str, bin: &str) -> DetectedTool {
 }
 
 /// Detecta todas as ferramentas em PARALELO. Chamado pelo wizard e pela
-/// re-detecção nas Configurações. Nunca falha (cada probe degrada p/ missing/unknown).
-/// Os lookups de `latest` (rede, best-effort) rodam no MESMO join dos probes
-/// locais — nunca atrasam a detecção além do próprio timeout curto (4s < 6s).
-/// agy/git/swiftc: sem fonte pública conhecida → latest = None (honesto).
+/// re-detecção nas Configurações. Nunca falha (cada probe degrada p/
+/// missing/unknown). Os probes rodam num join; os lookups de `latest`
+/// (resolve do canal + rede best-effort) rodam num segundo join em cima dos
+/// resultados. agy/git/swiftc: sem fonte pública conhecida → latest = None.
 #[tauri::command]
 pub async fn detect_agents() -> Vec<DetectedTool> {
-    let (mut claude, mut codex, agy, git, swiftc, latest_claude, latest_codex) = tokio::join!(
+    let (mut claude, mut codex, agy, git, swiftc) = tokio::join!(
         probe_claude(),
         probe_codex(),
         probe_agy(),
         probe_simple("git", "git"),
         probe_simple("swiftc", "swiftc"),
-        latest_claude(),
-        latest_codex(),
     );
-    claude.latest = latest_claude;
-    codex.latest = latest_codex;
+    tokio::join!(fill_latest(&mut claude, "claude"), fill_latest(&mut codex, "codex"));
     vec![claude, codex, agy, git, swiftc]
 }
 
@@ -238,19 +323,79 @@ pub async fn list_agy_models() -> Vec<String> {
 mod tests {
     use super::*;
 
+    // ---- última por canal: parses com fixtures REAIS das APIs ----------------
+
     #[test]
-    fn normalize_tag_strips_rust_v_prefix() {
-        assert_eq!(normalize_tag("rust-v0.144.4"), "0.144.4");
+    fn parse_npm_registry_latest() {
+        // registry.npmjs.org/@anthropic-ai/claude-code/latest (recortado).
+        let fixture = serde_json::json!({
+            "name": "@anthropic-ai/claude-code",
+            "version": "2.1.220",
+            "description": "Use Claude, Anthropic's AI assistant, right from your terminal.",
+            "bin": { "claude": "cli.js" }
+        });
+        assert_eq!(parse_npm_version(&fixture), Some("2.1.220".to_string()));
+        assert_eq!(parse_npm_version(&serde_json::json!({})), None);
+        assert_eq!(parse_npm_version(&serde_json::json!({ "version": "" })), None);
     }
 
     #[test]
-    fn normalize_tag_strips_v_prefix() {
-        assert_eq!(normalize_tag("v1.2.3"), "1.2.3");
+    fn parse_cask_do_brew() {
+        // formulae.brew.sh/api/cask/claude-code.json (recortado): o tap do
+        // cask topava em 2.1.212 enquanto o npm já tinha 2.1.220 — a raiz do
+        // botão "Atualizar" eterno.
+        let fixture = serde_json::json!({
+            "token": "claude-code",
+            "full_token": "claude-code",
+            "tap": "homebrew/cask",
+            "name": ["Claude Code"],
+            "version": "2.1.212",
+            "url": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.212/darwin-arm64/claude-2.1.212.tar.gz"
+        });
+        assert_eq!(parse_cask_version(&fixture), Some("2.1.212".to_string()));
+        // cask com build depois da vírgula → fica só a versão.
+        let with_build = serde_json::json!({ "version": "1.2.3,45678" });
+        assert_eq!(parse_cask_version(&with_build), Some("1.2.3".to_string()));
+        assert_eq!(parse_cask_version(&serde_json::json!({})), None);
     }
 
     #[test]
-    fn normalize_tag_keeps_bare_version() {
-        assert_eq!(normalize_tag("1.2.3"), "1.2.3");
+    fn parse_formula_do_brew() {
+        // formulae.brew.sh/api/formula/<nome>.json (recortado).
+        let fixture = serde_json::json!({
+            "name": "codex",
+            "full_name": "codex",
+            "versions": { "stable": "0.146.0", "head": "HEAD", "bottle": true }
+        });
+        assert_eq!(parse_formula_stable(&fixture), Some("0.146.0".to_string()));
+        assert_eq!(parse_formula_stable(&serde_json::json!({})), None);
+        assert_eq!(
+            parse_formula_stable(&serde_json::json!({ "versions": {} })),
+            None
+        );
+    }
+
+    #[test]
+    fn decisao_de_canal_pelo_metodo_do_binario() {
+        use crate::update::Method;
+        // binário do brew → latest do brew, npm vira o canal informativo.
+        assert_eq!(channels_for(&Method::Homebrew), ("homebrew", Some("npm")));
+        // binário do npm → latest do npm, brew vira o informativo.
+        assert_eq!(channels_for(&Method::Npm), ("npm", Some("homebrew")));
+        // nativo/desconhecido: npm best-effort, sem promessa de outro canal.
+        assert_eq!(channels_for(&Method::Native), ("npm", None));
+        assert_eq!(channels_for(&Method::Unknown), ("npm", None));
+    }
+
+    #[test]
+    fn fontes_por_agent() {
+        assert_eq!(
+            channel_sources("claude-code"),
+            Some(("@anthropic-ai/claude-code", "claude-code"))
+        );
+        assert_eq!(channel_sources("codex"), Some(("@openai/codex", "codex")));
+        // agy: sem canal conhecido → sem latest (honesto).
+        assert_eq!(channel_sources("agy"), None);
     }
 
     #[test]

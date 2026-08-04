@@ -153,8 +153,9 @@ export function costWindows(
 }
 
 // ───────────────── Ledger de custo (Painel "Instrumento") ─────────────────
-// Agregadores PUROS sobre o ledger unificado (turnos de chat + entregas). O
-// fetch mora em db.loadLedger; aqui só a matemática, testável sem banco.
+// Agregadores PUROS sobre o ledger unificado (turnos de chat + disputa +
+// fases de missão em turn_costs, etapas SDD em stage_runs). O fetch mora em
+// db.loadLedger; aqui só a matemática, testável sem banco.
 
 export interface LedgerRow {
   agent: string

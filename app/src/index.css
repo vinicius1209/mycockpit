@@ -26,6 +26,7 @@
   --muted-foreground: #5c6166;
   --accent: #f1f1ef; /* superfície de hover (accent do shadcn) */
   --accent-foreground: #16181b;
+  --faint: #8a9099; /* --text-faint do DS: metadado (contadores), abaixo do muted */
   --destructive: #d6483b;
   --border: rgba(0, 0, 0, 0.09);
   --border-strong: rgba(0, 0, 0, 0.14);
@@ -71,6 +72,7 @@
   --muted-foreground: #9aa0a7;
   --accent: #1e2126;
   --accent-foreground: #e7e8ea;
+  --faint: #687078; /* --text-faint do DS (dark) */
   --destructive: #f2766b;
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.13);
@@ -107,6 +109,7 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-faint: var(--faint);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);

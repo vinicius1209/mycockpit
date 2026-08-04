@@ -273,16 +273,30 @@ pub fn read_text_file(root: String, path: String) -> Result<String, String> {
     })
 }
 
-/// Opção invocável por "/", comando (.claude/commands) OU skill (.claude/skills).
+/// Opção invocável por "/": comando da casa (.mycockpit/commands), comando
+/// nativo do motor (.claude/commands, ~/.codex/prompts) ou skill
+/// (.claude/skills). `body` é o markdown INTEIRO do arquivo (frontmatter
+/// incluso) — o front expande app-side quando o motor da conversa não
+/// interpreta `/comando` nativamente (codex/agy, ou comando da casa).
 #[derive(Serialize)]
 pub struct SlashCommand {
     pub name: String,
     pub description: Option<String>,
     pub kind: String,   // "command" | "skill"
     pub origin: String, // "project" | "global"
+    /// De onde o comando veio: "mycockpit" | "claude" | "codex".
+    pub source: String,
+    /// Conteúdo do .md (None se ilegível) p/ a expansão app-side.
+    pub body: Option<String>,
 }
 
-fn collect_commands(dir: &Path, prefix: &str, origin: &str, out: &mut Vec<SlashCommand>) {
+fn collect_commands(
+    dir: &Path,
+    prefix: &str,
+    origin: &str,
+    source: &str,
+    out: &mut Vec<SlashCommand>,
+) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
     };
@@ -295,7 +309,7 @@ fn collect_commands(dir: &Path, prefix: &str, origin: &str, out: &mut Vec<SlashC
             } else {
                 format!("{prefix}:{ns}")
             };
-            collect_commands(&p, &next, origin, out);
+            collect_commands(&p, &next, origin, source, out);
         } else if p.extension().is_some_and(|x| x == "md") {
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
             let name = if prefix.is_empty() {
@@ -303,14 +317,15 @@ fn collect_commands(dir: &Path, prefix: &str, origin: &str, out: &mut Vec<SlashC
             } else {
                 format!("{prefix}:{stem}")
             };
-            let description = std::fs::read_to_string(&p)
-                .ok()
-                .and_then(|t| frontmatter(&t, "description"));
+            let body = std::fs::read_to_string(&p).ok();
+            let description = body.as_deref().and_then(|t| frontmatter(t, "description"));
             out.push(SlashCommand {
                 name,
                 description,
                 kind: "command".to_string(),
                 origin: origin.to_string(),
+                source: source.to_string(),
+                body,
             });
         }
     }
@@ -329,36 +344,84 @@ fn collect_skills(dir: &Path, origin: &str, out: &mut Vec<SlashCommand>) {
         let Some(name) = p.file_name().and_then(|s| s.to_str()) else {
             continue;
         };
-        let description = std::fs::read_to_string(p.join("SKILL.md"))
-            .ok()
-            .and_then(|t| frontmatter(&t, "description"));
+        let body = std::fs::read_to_string(p.join("SKILL.md")).ok();
+        let description = body.as_deref().and_then(|t| frontmatter(t, "description"));
         out.push(SlashCommand {
             name: name.to_string(),
             description,
             kind: "skill".to_string(),
             origin: origin.to_string(),
+            source: "claude".to_string(),
+            body,
         });
     }
 }
 
-#[tauri::command]
-pub fn read_project_commands(path: String) -> Vec<SlashCommand> {
+/// Descoberta POR AGENT da conversa. A casa (.mycockpit/commands, agnóstica)
+/// vale pra qualquer motor; a convenção NATIVA de cada um vem da capability
+/// `command_sources` do registry (adapters.rs) — este código não conhece nome
+/// de agent, só o enum de convenções (G1.1 do capability-registry-plan).
+/// Dedup por NOME: quem entra antes vence — mycockpit antes de provider (a
+/// casa é canônica) e projeto antes de global. `home` injetável p/ teste.
+fn collect_agent_commands(project: &Path, home: Option<&Path>, agent: &str) -> Vec<SlashCommand> {
     let mut out = Vec::new();
-    // projeto (.claude/), entra primeiro → vence no dedup
-    let cd = Path::new(&path).join(".claude");
-    collect_commands(&cd.join("commands"), "", "project", &mut out);
-    collect_skills(&cd.join("skills"), "project", &mut out);
-    // global (~/.claude/)
-    if let Ok(home) = std::env::var("HOME") {
-        let gd = Path::new(&home).join(".claude");
-        collect_commands(&gd.join("commands"), "", "global", &mut out);
-        collect_skills(&gd.join("skills"), "global", &mut out);
+    // casa agnóstica primeiro (projeto, depois global): vence o dedup.
+    collect_commands(
+        &project.join(".mycockpit").join("commands"),
+        "",
+        "project",
+        "mycockpit",
+        &mut out,
+    );
+    if let Some(h) = home {
+        collect_commands(
+            &h.join(".mycockpit").join("commands"),
+            "",
+            "global",
+            "mycockpit",
+            &mut out,
+        );
     }
-    // dedup por (kind, name), o do projeto (inserido antes) vence
+    // Convenções nativas declaradas pelo adapter (agent desconhecido = nenhuma:
+    // fail-closed, só a casa).
+    let sources = crate::adapters::capabilities_of(agent)
+        .map(|c| c.command_sources)
+        .unwrap_or(&[]);
+    for source in sources {
+        match source {
+            crate::adapters::CommandSource::ClaudeDirs => {
+                let cd = project.join(".claude");
+                collect_commands(&cd.join("commands"), "", "project", "claude", &mut out);
+                collect_skills(&cd.join("skills"), "project", &mut out);
+                if let Some(h) = home {
+                    let gd = h.join(".claude");
+                    collect_commands(&gd.join("commands"), "", "global", "claude", &mut out);
+                    collect_skills(&gd.join("skills"), "global", &mut out);
+                }
+            }
+            crate::adapters::CommandSource::CodexPrompts => {
+                if let Some(h) = home {
+                    collect_commands(
+                        &h.join(".codex").join("prompts"),
+                        "",
+                        "global",
+                        "codex",
+                        &mut out,
+                    );
+                }
+            }
+        }
+    }
     let mut seen = std::collections::HashSet::new();
-    out.retain(|c| seen.insert((c.kind.clone(), c.name.clone())));
+    out.retain(|c| seen.insert(c.name.clone()));
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
+}
+
+#[tauri::command]
+pub fn read_project_commands(path: String, agent: String) -> Vec<SlashCommand> {
+    let home = std::env::var("HOME").ok().map(std::path::PathBuf::from);
+    collect_agent_commands(Path::new(&path), home.as_deref(), &agent)
 }
 
 /// Walk de fallback (projeto sem git): pula pastas pesadas, cap embutido.
@@ -480,6 +543,140 @@ pub fn list_mission_files(cwd: String, rel_dir: String) -> Result<Vec<String>, S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Fixture: projeto + "home" falso em tmpdir com as TRÊS convenções
+    /// (.mycockpit/commands, .claude/commands+skills, ~/.codex/prompts).
+    fn slash_fixture(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let base = std::env::temp_dir().join(format!("mc-slash-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let proj = base.join("proj");
+        let home = base.join("home");
+        // casa (agnóstica): projeto e global
+        std::fs::create_dir_all(proj.join(".mycockpit/commands")).unwrap();
+        std::fs::write(
+            proj.join(".mycockpit/commands/deploy.md"),
+            "---\ndescription: deploy da casa\n---\n\nFaça o deploy com $ARGUMENTS.\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(home.join(".mycockpit/commands")).unwrap();
+        std::fs::write(home.join(".mycockpit/commands/casa-global.md"), "corpo global\n").unwrap();
+        // claude: projeto (command + skill) e global
+        std::fs::create_dir_all(proj.join(".claude/commands")).unwrap();
+        std::fs::write(proj.join(".claude/commands/review.md"), "revise o diff\n").unwrap();
+        // MESMO nome que a casa: a casa tem que vencer o dedup
+        std::fs::write(proj.join(".claude/commands/deploy.md"), "deploy do claude\n").unwrap();
+        std::fs::create_dir_all(proj.join(".claude/skills/minha-skill")).unwrap();
+        std::fs::write(
+            proj.join(".claude/skills/minha-skill/SKILL.md"),
+            "---\ndescription: skill do projeto\n---\n\npassos\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(home.join(".claude/commands")).unwrap();
+        std::fs::write(home.join(".claude/commands/review.md"), "review global\n").unwrap();
+        // codex: prompts globais
+        std::fs::create_dir_all(home.join(".codex/prompts")).unwrap();
+        std::fs::write(home.join(".codex/prompts/triage.md"), "faça a triagem\n").unwrap();
+        (proj, home)
+    }
+
+    fn achar<'a>(v: &'a [SlashCommand], name: &str) -> &'a SlashCommand {
+        v.iter().find(|c| c.name == name).unwrap_or_else(|| panic!("comando {name} ausente"))
+    }
+
+    #[test]
+    fn descoberta_claude_ve_casa_e_claude_com_source_correto() {
+        let (proj, home) = slash_fixture("claude");
+        let out = collect_agent_commands(&proj, Some(&home), "claude-code");
+        let nomes: Vec<&str> = out.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(nomes, vec!["casa-global", "deploy", "minha-skill", "review"]);
+        // nada do codex numa conversa claude
+        assert!(!nomes.contains(&"triage"));
+        assert_eq!(achar(&out, "casa-global").source, "mycockpit");
+        assert_eq!(achar(&out, "casa-global").origin, "global");
+        assert_eq!(achar(&out, "review").source, "claude");
+        // projeto vence global no mesmo nome
+        assert_eq!(achar(&out, "review").origin, "project");
+        assert_eq!(achar(&out, "minha-skill").kind, "skill");
+        assert_eq!(
+            achar(&out, "minha-skill").description.as_deref(),
+            Some("skill do projeto")
+        );
+        let _ = std::fs::remove_dir_all(proj.parent().unwrap());
+    }
+
+    #[test]
+    fn dedup_mycockpit_vence_provider_no_mesmo_nome() {
+        let (proj, home) = slash_fixture("dedup");
+        let out = collect_agent_commands(&proj, Some(&home), "claude-code");
+        let deploy = achar(&out, "deploy");
+        assert_eq!(deploy.source, "mycockpit");
+        assert_eq!(deploy.description.as_deref(), Some("deploy da casa"));
+        assert!(deploy.body.as_deref().unwrap().contains("$ARGUMENTS"));
+        // só UMA entrada com o nome (dedup por nome)
+        assert_eq!(out.iter().filter(|c| c.name == "deploy").count(), 1);
+        let _ = std::fs::remove_dir_all(proj.parent().unwrap());
+    }
+
+    #[test]
+    fn descoberta_codex_ve_casa_e_prompts_globais_apenas() {
+        let (proj, home) = slash_fixture("codex");
+        let out = collect_agent_commands(&proj, Some(&home), "codex");
+        let nomes: Vec<&str> = out.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(nomes, vec!["casa-global", "deploy", "triage"]);
+        // nada de .claude numa conversa codex (o motor não interpretaria)
+        assert!(!nomes.contains(&"review"));
+        assert!(!nomes.contains(&"minha-skill"));
+        assert_eq!(achar(&out, "triage").source, "codex");
+        assert_eq!(achar(&out, "triage").origin, "global");
+        assert_eq!(achar(&out, "triage").body.as_deref(), Some("faça a triagem\n"));
+        let _ = std::fs::remove_dir_all(proj.parent().unwrap());
+    }
+
+    /// G1.4 (capability-registry-plan) — CONTRATO command_sources ↔ descoberta,
+    /// num loop sobre TODOS os agents registrados: a convenção declarada no
+    /// registry tem que corresponder exatamente ao que a descoberta devolve.
+    /// Agent novo sem declarar convenção vê só a casa (fail-closed).
+    #[test]
+    fn contrato_command_sources_por_agent_registrado() {
+        use crate::adapters::{capabilities_of, registered_agents, CommandSource};
+        let (proj, home) = slash_fixture("contrato");
+        for agent in registered_agents() {
+            let caps = capabilities_of(agent).unwrap();
+            let out = collect_agent_commands(&proj, Some(&home), agent);
+            let nomes: Vec<&str> = out.iter().map(|c| c.name.as_str()).collect();
+            // a casa é agnóstica: aparece pra todo agent, sempre.
+            assert!(nomes.contains(&"casa-global"), "{agent}: casa global sempre");
+            assert!(nomes.contains(&"deploy"), "{agent}: casa do projeto sempre");
+            let claude_dirs = caps.command_sources.contains(&CommandSource::ClaudeDirs);
+            assert_eq!(
+                nomes.contains(&"review"),
+                claude_dirs,
+                "{agent}: .claude/commands ↔ capability ClaudeDirs"
+            );
+            assert_eq!(
+                nomes.contains(&"minha-skill"),
+                claude_dirs,
+                "{agent}: .claude/skills ↔ capability ClaudeDirs"
+            );
+            let codex_prompts = caps.command_sources.contains(&CommandSource::CodexPrompts);
+            assert_eq!(
+                nomes.contains(&"triage"),
+                codex_prompts,
+                "{agent}: ~/.codex/prompts ↔ capability CodexPrompts"
+            );
+        }
+        let _ = std::fs::remove_dir_all(proj.parent().unwrap());
+    }
+
+    #[test]
+    fn descoberta_agy_ve_so_a_casa() {
+        let (proj, home) = slash_fixture("agy");
+        let out = collect_agent_commands(&proj, Some(&home), "agy");
+        let nomes: Vec<&str> = out.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(nomes, vec!["casa-global", "deploy"]);
+        assert!(out.iter().all(|c| c.source == "mycockpit"));
+        let _ = std::fs::remove_dir_all(proj.parent().unwrap());
+    }
 
     #[test]
     fn write_mission_state_cria_pasta_e_grava() {

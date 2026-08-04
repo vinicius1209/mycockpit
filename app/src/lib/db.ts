@@ -45,13 +45,58 @@ function toProject(r: ProjectRow): Project {
   }
 }
 
+// S1.2 — ordem do USUÁRIO (sort_order), não de ordenação automática. O guard
+// `sort_order IS NOT NULL` é defensivo: linha sem ordem (inserida por caminho
+// que esqueceu a coluna) cai no topo por created_at DESC, o mesmo lugar em que
+// o comportamento antigo a colocaria.
 export async function listProjects(): Promise<Project[] | null> {
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ProjectRow[]>(
-    "SELECT id, name, path, created_at, has_claude_md, has_agents_md, permission_mode, color FROM projects WHERE deleted_at IS NULL ORDER BY created_at DESC",
+    "SELECT id, name, path, created_at, has_claude_md, has_agents_md, permission_mode, color FROM projects WHERE deleted_at IS NULL ORDER BY (sort_order IS NOT NULL), sort_order ASC, created_at DESC",
   )
   return rows.map(toProject)
+}
+
+/** S1.3 — projetos ARQUIVADOS (deleted_at setado), mais recentes primeiro.
+ *  Alimenta a seção "Arquivados (N)" da sidebar — antes o arquivamento era um
+ *  buraco negro: sem lista, sem desarquivar. */
+export async function listArchivedProjects(): Promise<Project[] | null> {
+  const db = await getDb()
+  if (!db) return null
+  const rows = await db.select<ProjectRow[]>(
+    "SELECT id, name, path, created_at, has_claude_md, has_agents_md, permission_mode, color FROM projects WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+  )
+  return rows.map(toProject)
+}
+
+/** S1.2 — persiste a ordem manual dos projetos (ids na ordem de exibição).
+ *  Renumera todo mundo: a lista é pequena e a simplicidade evita buracos. */
+export async function persistProjectOrder(ids: string[]): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  for (let i = 0; i < ids.length; i++) {
+    await db.execute("UPDATE projects SET sort_order = $1 WHERE id = $2", [
+      i,
+      ids[i],
+    ])
+  }
+}
+
+/** S1.2 — persiste a ordem manual das conversas DE UM projeto. O filtro por
+ *  project_id impede que um id vazado de outra lista mexa em conversa alheia. */
+export async function persistConversationOrder(
+  projectId: string,
+  ids: string[],
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  for (let i = 0; i < ids.length; i++) {
+    await db.execute(
+      "UPDATE conversations SET sort_order = $1 WHERE id = $2 AND project_id = $3",
+      [i, ids[i], projectId],
+    )
+  }
 }
 
 /** Renomeia um projeto (UPDATE pontual). */
@@ -76,8 +121,10 @@ export async function setProjectColor(
 export async function insertProject(p: Project): Promise<boolean> {
   const db = await getDb()
   if (!db) return false
+  // sort_order = MIN-1: projeto novo entra no TOPO (comportamento herdado do
+  // created_at DESC), sem atropelar a ordem manual dos existentes (S1.2).
   const res = await db.execute(
-    "INSERT OR IGNORE INTO projects (id, name, path, created_at, has_claude_md, has_agents_md, permission_mode) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    "INSERT OR IGNORE INTO projects (id, name, path, created_at, has_claude_md, has_agents_md, permission_mode, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT COALESCE(MIN(sort_order), 1) - 1 FROM projects))",
     [
       p.id,
       p.name,
@@ -135,6 +182,24 @@ export async function restoreProject(id: string): Promise<void> {
   await db.execute("UPDATE projects SET deleted_at = NULL WHERE id = $1", [id])
 }
 
+/** S1.3 — "Excluir de vez" um projeto JÁ ARQUIVADO: apaga a linha do projeto,
+ *  as conversas e os agendamentos dele (um schedule apontando pra projeto morto
+ *  seguiria disparando automação fantasma). Cards do projeto morrem junto (o
+ *  board é por projeto; linha órfã seria lixo invisível). Métricas históricas
+ *  (stage_runs, turn_costs, deliveries, lessons) FICAM — são registro do que
+ *  aconteceu, não estado vivo. Blobs de anexo órfãos caem no GC (gcAttachments
+ *  via listConvRefs). Irreversível — o caller SEMPRE confirma antes. */
+export async function hardDeleteProject(id: string): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureScheduleTables(db)
+  await ensureBoardTables(db)
+  await db.execute("DELETE FROM schedules WHERE project_id = $1", [id])
+  await db.execute("DELETE FROM cards WHERE project_id = $1", [id])
+  await db.execute("DELETE FROM conversations WHERE project_id = $1", [id])
+  await db.execute("DELETE FROM projects WHERE id = $1", [id])
+}
+
 export interface ConversationMeta {
   id: string
   title: string | null
@@ -155,14 +220,15 @@ interface ConvListRow {
   agent: string | null
 }
 
-/** Lista as conversas de um projeto em ordem de criação (estável; novas embaixo). */
+/** Lista as conversas de um projeto na ordem MANUAL (S1.2; fallback: criação,
+ *  novas embaixo — linha sem sort_order cai no fim, onde o padrão a colocaria). */
 export async function listConversations(
   projectId: string,
 ): Promise<ConversationMeta[] | null> {
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ConvListRow[]>(
-    "SELECT id, title, updated_at, color, worktree_path, agent FROM conversations WHERE project_id = $1 ORDER BY created_at ASC",
+    "SELECT id, title, updated_at, color, worktree_path, agent FROM conversations WHERE project_id = $1 ORDER BY (sort_order IS NULL), sort_order ASC, created_at ASC",
     [projectId],
   )
   return rows.map((r) => ({
@@ -321,8 +387,10 @@ export async function createConversation(
   const db = await getDb()
   if (!db) return
   const now = Date.now()
+  // sort_order = MAX+1 do projeto: conversa nova entra no FIM da lista (mesmo
+  // lugar do padrão created_at ASC), respeitando a ordem manual (S1.2).
   await db.execute(
-    "INSERT INTO conversations (id, project_id, title, session_id, items, created_at, updated_at) VALUES ($1, $2, NULL, NULL, '[]', $3, $3)",
+    "INSERT INTO conversations (id, project_id, title, session_id, items, created_at, updated_at, sort_order) VALUES ($1, $2, NULL, NULL, '[]', $3, $3, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM conversations WHERE project_id = $2))",
     [id, projectId, now],
   )
 }
@@ -357,8 +425,11 @@ export async function saveConversation(
 ): Promise<void> {
   const db = await getDb()
   if (!db) return
+  // sort_order só no INSERT (linha nova, ex.: duplicar conversa → entra no fim
+  // da lista do projeto); o ON CONFLICT não toca nela — a ordem manual (S1.2)
+  // sobrevive aos saves de linha inteira, igual color/worktree/preset.
   await db.execute(
-    "INSERT INTO conversations (id, project_id, title, session_id, items, suggestions, agent, req_model, effort, model, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, suggestions = excluded.suggestions, agent = excluded.agent, req_model = excluded.req_model, effort = excluded.effort, model = excluded.model, updated_at = excluded.updated_at",
+    "INSERT INTO conversations (id, project_id, title, session_id, items, suggestions, agent, req_model, effort, model, created_at, updated_at, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM conversations WHERE project_id = $2)) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, suggestions = excluded.suggestions, agent = excluded.agent, req_model = excluded.req_model, effort = excluded.effort, model = excluded.model, updated_at = excluded.updated_at",
     [
       id,
       projectId,
@@ -705,9 +776,16 @@ async function ensureMissionsTable(db: Database): Promise<void> {
            cost_total REAL NOT NULL DEFAULT 0,
            phase_current INTEGER NOT NULL DEFAULT 0,
            phase_count INTEGER NOT NULL DEFAULT 0,
+           review_caveat TEXT,
            created_at INTEGER NOT NULL,
            updated_at INTEGER NOT NULL
          )`,
+      )
+      .then(() =>
+        // MH1.1 — audit trail do "done com ressalva" no histórico: coluna nova
+        // entra via addColumn (idempotente, padrão lessons.scope) pra bancos
+        // criados antes dela. JSON {rounds, feedback} ou NULL.
+        addColumn(db, `ALTER TABLE missions ADD COLUMN review_caveat TEXT`),
       )
       .then(() =>
         db.execute(
@@ -736,6 +814,10 @@ export interface MissionIndexRow {
   costTotal: number
   phaseCurrent: number
   phaseCount: number
+  /** MH1.1 — "done" SEM aprovação do revisor: {rounds, feedback} ou null. O
+   *  histórico não pode contar "concluída" seca quando houve ressalva.
+   *  Opcional na escrita (linhas antigas não tinham); a leitura sempre traz. */
+  reviewCaveat?: { rounds: number; feedback: string } | null
   createdAt: number
   updatedAt: number
 }
@@ -752,8 +834,25 @@ interface MissionIndexDbRow {
   cost_total: number
   phase_current: number
   phase_count: number
+  review_caveat: string | null
   created_at: number
   updated_at: number
+}
+
+/** Parse tolerante do review_caveat persistido (JSON ou lixo ⇒ null). */
+function parseMissionCaveat(
+  raw: string | null,
+): { rounds: number; feedback: string } | null {
+  if (!raw) return null
+  try {
+    const o = JSON.parse(raw) as { rounds?: unknown; feedback?: unknown }
+    if (typeof o?.rounds === "number" && typeof o?.feedback === "string") {
+      return { rounds: o.rounds, feedback: o.feedback }
+    }
+  } catch {
+    // lixo na coluna não derruba o histórico
+  }
+  return null
 }
 
 /** Grava/atualiza a missão no índice. `created_at` só entra no INSERT (o
@@ -763,8 +862,11 @@ export async function upsertMission(m: MissionIndexRow): Promise<void> {
   if (!db) return
   await ensureMissionsTable(db)
   await db.execute(
-    `INSERT INTO missions (id, slug, dir, conv_id, project_id, task, preset_name, status, cost_total, phase_current, phase_count, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    // review_caveat entra por ÚLTIMO de propósito: os 13 primeiros parâmetros
+    // preservam a ordem histórica (fakes/ferramentas que leem posicional não
+    // quebram com a coluna nova).
+    `INSERT INTO missions (id, slug, dir, conv_id, project_id, task, preset_name, status, cost_total, phase_current, phase_count, created_at, updated_at, review_caveat)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      ON CONFLICT(id) DO UPDATE SET
        task = excluded.task,
        preset_name = excluded.preset_name,
@@ -772,6 +874,7 @@ export async function upsertMission(m: MissionIndexRow): Promise<void> {
        cost_total = excluded.cost_total,
        phase_current = excluded.phase_current,
        phase_count = excluded.phase_count,
+       review_caveat = excluded.review_caveat,
        updated_at = excluded.updated_at`,
     [
       m.id,
@@ -787,6 +890,7 @@ export async function upsertMission(m: MissionIndexRow): Promise<void> {
       m.phaseCount,
       m.createdAt,
       m.updatedAt,
+      m.reviewCaveat ? JSON.stringify(m.reviewCaveat) : null,
     ],
   )
 }
@@ -804,6 +908,7 @@ function toMissionIndex(r: MissionIndexDbRow): MissionIndexRow {
     costTotal: r.cost_total,
     phaseCurrent: r.phase_current,
     phaseCount: r.phase_count,
+    reviewCaveat: parseMissionCaveat(r.review_caveat),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -1048,6 +1153,119 @@ export async function dismissProposal(id: string): Promise<void> {
   ])
 }
 
+// ------------- Adoção de planos SDD: sdd_plan_marks (inbox) -------------
+// Um gate do SDD (PRD por aprovar, PR aberto) que o app apenas DESCOBRIU no
+// disco NÃO é interrupção: ele nasceu no terminal do usuário e pode ter 68
+// dias. Só vira pendência (badge/contagem) quando o humano ENCOSTA nele PELO
+// APP. Esta tabela guarda esse gesto por (projeto, slug): `adopted_at` (criou
+// o plano aqui, aprovou o PRD, rodou/marcou/sincronizou etapa) e `ignored_at`
+// (mandou sumir da lista, reversível). Tabela do FRONTEND (CREATE TABLE IF NOT
+// EXISTS, sem migração no lib.rs — mesmo contrato do ensureLeadTables).
+// NUNCA escrevemos essa marca em .claude/plans: o plano é dado do usuário, o
+// app só lê de lá.
+
+let sddMarkReady: Promise<void> | null = null
+
+async function ensureSddMarkTables(db: Database): Promise<void> {
+  if (!sddMarkReady) {
+    const run = (async () => {
+      await db.execute(
+        `CREATE TABLE IF NOT EXISTS sdd_plan_marks (
+           project_id TEXT NOT NULL,
+           slug TEXT NOT NULL,
+           adopted_at INTEGER,
+           ignored_at INTEGER,
+           PRIMARY KEY (project_id, slug)
+         )`,
+      )
+      // ALTER idempotente por simetria com as outras tabelas de frontend: se um
+      // banco antigo já tiver a tabela sem a coluna, ela entra aqui.
+      await addColumn(
+        db,
+        `ALTER TABLE sdd_plan_marks ADD COLUMN ignored_at INTEGER`,
+      )
+    })()
+    // mesmo contrato do ensureLearningTables: o cache só fixa em sucesso.
+    sddMarkReady = run.catch((e) => {
+      sddMarkReady = null
+      throw e
+    })
+  }
+  return sddMarkReady
+}
+
+export interface SddPlanMark {
+  projectId: string
+  slug: string
+  /** epoch ms do 1º gesto do humano PELO APP nesse plano. null = só descoberto. */
+  adoptedAt: number | null
+  /** epoch ms em que o humano mandou o plano sumir da lista. null = visível. */
+  ignoredAt: number | null
+}
+
+/** Todas as marcas (tabela pequena: 1 linha por plano ENCOSTADO, não por plano
+ *  existente). REJEITA em erro real e devolve `null` quando não há banco — o
+ *  inbox PRECISA distinguir "nenhuma marca" de "não consegui ler" pra não
+ *  esconder pendência de verdade por falha de leitura (fail-open). */
+export async function listSddPlanMarks(): Promise<SddPlanMark[] | null> {
+  const db = await getDb()
+  if (!db) return null
+  await ensureSddMarkTables(db)
+  const rows = await db.select<
+    {
+      project_id: string
+      slug: string
+      adopted_at: number | null
+      ignored_at: number | null
+    }[]
+  >("SELECT project_id, slug, adopted_at, ignored_at FROM sdd_plan_marks")
+  return rows.map((r) => ({
+    projectId: r.project_id,
+    slug: r.slug,
+    adoptedAt: r.adopted_at,
+    ignoredAt: r.ignored_at,
+  }))
+}
+
+/** Marca a ADOÇÃO do plano (gesto humano pelo app). Idempotente: mantém o
+ *  primeiro `adopted_at`. Adotar LIMPA o ignorado — encostar no plano pelo app
+ *  é dizer que ele voltou a importar. */
+export async function adoptSddPlan(
+  projectId: string,
+  slug: string,
+  now = Date.now(),
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureSddMarkTables(db)
+  await db.execute(
+    `INSERT INTO sdd_plan_marks (project_id, slug, adopted_at, ignored_at)
+     VALUES ($1, $2, $3, NULL)
+     ON CONFLICT(project_id, slug) DO UPDATE SET
+       adopted_at = COALESCE(sdd_plan_marks.adopted_at, excluded.adopted_at),
+       ignored_at = NULL`,
+    [projectId, slug, now],
+  )
+}
+
+/** Liga/desliga o "ignorar este plano" (reversível pela lista de ignorados). */
+export async function setSddPlanIgnored(
+  projectId: string,
+  slug: string,
+  ignored: boolean,
+  now = Date.now(),
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await ensureSddMarkTables(db)
+  await db.execute(
+    `INSERT INTO sdd_plan_marks (project_id, slug, adopted_at, ignored_at)
+     VALUES ($1, $2, NULL, $3)
+     ON CONFLICT(project_id, slug) DO UPDATE SET ignored_at = excluded.ignored_at`,
+    [projectId, slug, ignored ? now : null],
+  )
+}
+
 // ---------------- Ledger de custo por turno (turn_costs) ----------------
 
 /** Uma linha do ledger de custo — turno de chat OU entrega de missão,
@@ -1060,9 +1278,12 @@ export interface LedgerEntry {
   createdAt: number
 }
 
-/** Grava o custo de UM turno de chat linear. `INSERT OR REPLACE` por run_id:
- *  results parciais do mesmo run colapsam no total final (o último vence).
- *  Best-effort — perder uma linha de custo não pode derrubar o turno. */
+/** Grava o custo de UM run: turno de chat linear, candidato de disputa OU
+ *  tentativa de fase de missão (MH2.1 — o store/mission gera um run_id por
+ *  tentativa). `INSERT OR REPLACE` por run_id: results parciais do mesmo run
+ *  colapsam no total final (o último vence — o custo dos parciais do CLI é
+ *  cumulativo). Best-effort — perder uma linha de custo não pode derrubar o
+ *  turno. */
 export async function recordTurnCost(r: {
   runId: string
   projectId: string
@@ -1099,11 +1320,18 @@ export async function recordTurnCost(r: {
   }
 }
 
-/** Ledger unificado desde `sinceMs`: turnos de chat + candidatos de disputa
- *  (turn_costs) + entregas de missão (deliveries) + etapas SDD (stage_runs).
- *  São caminhos DISJUNTOS de execução, então a união NÃO conta em dobro:
- *  chat/disputa gravam turn_costs, missão grava deliveries, SDD grava
- *  stage_runs. (deliveries e stage_runs não guardam tokens → 0.) */
+/** Ledger unificado desde `sinceMs`: turnos de chat + candidatos de disputa +
+ *  fases de missão (todos em turn_costs) + etapas SDD (stage_runs). São
+ *  caminhos DISJUNTOS de execução, então a união NÃO conta em dobro.
+ *
+ *  DIVISÃO (mudou no MH2.1): missão passou a gravar CADA fase em turn_costs
+ *  (fonte única de CUSTO — inclusive missão abortada/estourada/falhada, que
+ *  nunca chega a deliveries). `deliveries` segue existindo como registro de
+ *  ENTREGA (recall/histórico, entrega ≠ custo), mas saiu desta união: mantê-la
+ *  contaria as missões novas em DOBRO. Custo de missões concluídas ANTES do
+ *  MH2.1 (que só viviam em deliveries) deixa de aparecer nestas somas — perda
+ *  transitória e honesta, preferível à dupla contagem permanente.
+ *  (stage_runs não guarda tokens → 0.) */
 export async function loadLedger(sinceMs: number): Promise<LedgerEntry[]> {
   const db = await getDb()
   if (!db) return []
@@ -1118,8 +1346,6 @@ export async function loadLedger(sinceMs: number): Promise<LedgerEntry[]> {
       }[]
     >(
       "SELECT agent, project_id, cost_usd, (input_tokens + output_tokens) AS tokens, created_at FROM turn_costs WHERE created_at >= $1 " +
-        "UNION ALL " +
-        "SELECT agent, project_id, cost_usd, 0 AS tokens, created_at FROM deliveries WHERE created_at >= $1 " +
         "UNION ALL " +
         "SELECT agent, project_id, cost_usd, 0 AS tokens, created_at FROM stage_runs WHERE created_at >= $1",
       [sinceMs],
@@ -1467,7 +1693,8 @@ export interface AgentPreset {
   name: string
   personalityMd: string
   /** Nomes de skills/comandos do projeto (o preflight valida contra o
-   *  inventário real de .claude/commands + .claude/skills). */
+   *  inventário real POR AGENT: .mycockpit/commands + as convenções nativas
+   *  do backend do preset). */
   skills: string[]
   policy: string | null
   /** Agent (CLI) que encarna a persona — obrigatório. */
@@ -2306,9 +2533,10 @@ export async function deleteCard(id: string): Promise<void> {
   await db.execute("DELETE FROM cards WHERE id = $1", [id])
 }
 
-/** Custo por card v1 = soma de turn_costs por conv_id (cobre chat + disputas;
- *  missão/SDD não têm conv_id e ficam FORA — a UI diz isso em vez de fingir
- *  total). `estimated` = algum custo sem proveniência 'reported' (COALESCE:
+/** Custo por card v1 = soma de turn_costs por conv_id (cobre chat + disputas
+ *  e, desde o MH2.1, também fases de missão — elas gravam turn_costs com o
+ *  conv_id da conversa; SDD segue FORA, stage_runs não tem conv_id).
+ *  `estimated` = algum custo sem proveniência 'reported' (COALESCE:
  *  cost_source NULL também conta como estimado — o "~" honesto). Erro PROPAGA
  *  (nada de catch silencioso em polling): o caller mantém o last-known. */
 export async function listCardCosts(

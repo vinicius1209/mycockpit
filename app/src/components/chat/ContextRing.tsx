@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
-import { useActiveConv } from "@/store/chat"
+import { useActiveConv, useChat } from "@/store/chat"
 import { contextWindowFor } from "@/lib/agents"
+import { compactActionHint, offersCompactAction } from "@/lib/compact"
 import { fmtTokens } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -113,6 +114,28 @@ export function ContextRing() {
               conversa</span> sozinho: o histórico antigo vira resumo e o turno
               segue. Você vê o aviso no fio quando acontecer.
             </p>
+          )}
+          {/* ≥70% (offersCompactAction): a ação de compactar entra no menu.
+              Dispara o MESMO fluxo do builtin /compactar (queuePrompt → o
+              handleSend intercepta; turno rodando → entra na fila). O tooltip
+              diz o que VAI acontecer conforme o motor (nativo vs renovação
+              com resumo, lib/compact). */}
+          {offersCompactAction(pct) && (
+            <div className="mt-2 border-t pt-2">
+              <button
+                onClick={() => {
+                  setOpen(false)
+                  useChat.getState().queuePrompt("/compactar")
+                }}
+                title={compactActionHint(conv.agent)}
+                className="w-full rounded-lg border px-2 py-1.5 text-[12px] font-medium text-foreground hover:bg-accent"
+              >
+                Compactar contexto
+              </button>
+              <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+                {compactActionHint(conv.agent)}
+              </p>
+            </div>
           )}
           {!is1m && (conv.model ?? "").toLowerCase().includes("opus") && (
             <p className="mt-2 border-t pt-2 text-[11px] leading-snug text-muted-foreground">

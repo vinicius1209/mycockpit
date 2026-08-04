@@ -346,6 +346,36 @@ export function presentTool(name: string, input: unknown): ToolView {
         detail: str(i, "prompt"),
       }
     }
+    // Nó sintético de trabalho DIFERIDO do provider (deferred-work-plan D1.2):
+    // workflow/background task que vive além do turno. O estado (rodando/
+    // concluiu/interrompido) mora em item.deferred e vira meta na ToolLine;
+    // aqui só o rótulo humano + o resumo no expand.
+    case "DeferredWork": {
+      const name = str(i, "name") ?? str(i, "kind")
+      return {
+        kind: "agent",
+        label: name
+          ? `Trabalho em background: ${clip(name, 56)}`
+          : "Trabalho em background",
+        category: "delegate",
+        emphasis: "normal",
+        meta: str(i, "kind"),
+        detail: str(i, "description"),
+      }
+    }
+    case "ManagedProcess": {
+      return {
+        kind: "bash",
+        label: clip(
+          str(i, "label") ?? str(i, "command") ?? "Processo gerenciado",
+          72,
+        ),
+        category: "execute",
+        emphasis: "normal",
+        meta: str(i, "cwd"),
+        detail: str(i, "command"),
+      }
+    }
     default: {
       return {
         kind: "generic",
@@ -512,4 +542,12 @@ export function resultMeta(
     return `${result.lines} ${result.lines === 1 ? "resultado" : "resultados"}`
   if (name === "Bash") return result.lines > 1 ? `${result.lines} linhas` : null
   return null
+}
+
+/** Meta da evidência VISUAL (browser-plan B1): quantas capturas o resultado
+ *  trouxe, na régua da linha da tool. Sem imagem → null (linha idêntica à de
+ *  sempre, fail-open). */
+export function evidenceMeta(images: string[] | undefined): string | null {
+  if (!images || images.length === 0) return null
+  return images.length === 1 ? "1 captura" : `${images.length} capturas`
 }

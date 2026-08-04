@@ -3,15 +3,23 @@ import { isTauri } from "@/lib/db"
 import { setDynamicModels, agyModelOptions } from "@/lib/agents"
 
 /** Espelha DetectedTool do Rust (detect.rs). auth: "ok"=logado · "missing"=
- *  instalado+deslogado · "unknown"=instalado+auth indeterminada · "na"=n/a. */
+ *  instalado+deslogado · "unknown"=instalado+auth indeterminada · "na"=n/a.
+ *  latest é POR CANAL do binário gerenciado (incidente do sucesso falso: a
+ *  "última" vinha do npm, o binário era do brew com teto menor — botão
+ *  "Atualizar" eterno). altLatest/altChannel = a última do OUTRO canal, só
+ *  informação (trocar de canal é gesto do usuário). */
 export interface DetectedTool {
   id: string // "claude-code" | "codex" | "agy" | "git" | "swiftc"
   installed: boolean
   version: string | null
   auth: "ok" | "missing" | "unknown" | "na"
   detail: string | null
-  /** Última versão oficial publicada (null = indisponível/offline). */
+  /** Última versão oficial DO CANAL do binário (null = indisponível/offline). */
   latest: string | null
+  /** Canal da fonte do latest ("npm" | "homebrew"). */
+  latestChannel: string | null
+  altLatest: string | null
+  altChannel: string | null
 }
 
 /** Snapshot leve por ferramenta, persistido em GlobalSettings.detected. */
@@ -20,8 +28,11 @@ export interface AgentProbe {
   version: string | null
   auth: "ok" | "missing" | "unknown" | "na"
   detail: string | null
-  /** Última versão oficial conhecida no momento da checagem. */
+  /** Última versão oficial DO CANAL do binário no momento da checagem. */
   latest: string | null
+  latestChannel?: string | null
+  altLatest?: string | null
+  altChannel?: string | null
   checkedAt: number
 }
 
@@ -33,24 +44,36 @@ export const UPDATE_COMMANDS: Record<string, string | null> = {
   agy: null,
 }
 
-/** Resultado do "Atualizar agora" (espelha UpdateOutcome do Rust update.rs). */
-export interface UpdateOutcome {
-  agent: string
-  /** "npm" | "homebrew" | "self-update" | "none" */
-  method: string
-  command: string
-  /** tentou rodar? (false = sem canal OU programa fora do PATH) */
-  ran: boolean
-  /** saiu com sucesso? (só com ran=true) */
-  ok: boolean
-  output: string
+/** Comandos por agent×CANAL — espelho do plano por canal do update.rs (o
+ *  módulo por-provider legítimo): a notificação de update sugere o comando do
+ *  canal DETECTADO do binário, não o npm estático (incidente do "npm i" pra
+ *  binário do brew). Conhecimento de pacote é por-provider, mora aqui. */
+const CHANNEL_COMMANDS: Record<string, Record<string, string>> = {
+  "claude-code": {
+    npm: "npm i -g @anthropic-ai/claude-code@latest",
+    // o cask chama-se `claude-code`, NÃO `claude` (ver update.rs).
+    homebrew: "brew upgrade claude-code",
+  },
+  codex: {
+    npm: "npm i -g @openai/codex@latest",
+    homebrew: "brew upgrade codex",
+  },
 }
 
-/** Atualiza o CLI do agent in-app: o Rust detecta o método (npm/brew/self-update)
- *  pelo path real e roda o comando certo, com fallback pro comando manual. */
-export async function updateAgent(id: string): Promise<UpdateOutcome> {
-  return invoke<UpdateOutcome>("update_agent", { agent: id })
+/** Comando de update do CANAL detectado (G3.2). null = agent sem comando
+ *  conhecido OU canal desconhecido — o caller usa copy neutra ("use o painel
+ *  CLIs instaladas") em vez de sugerir o comando errado. Puro, testável. */
+export function commandForChannel(
+  agent: string,
+  channel: string | null | undefined,
+): string | null {
+  if (!channel) return null
+  return CHANNEL_COMMANDS[agent]?.[channel] ?? null
 }
+
+// O "Atualizar" virou JOB em background: ver @/lib/updates (store + toasts com
+// id estável) e update.rs (registry com dedupe). O UpdateOutcome request-
+// response morreu junto com o incidente dos N `brew upgrade` concorrentes.
 
 /** Extrai os segmentos numéricos de uma versão ("v2.1.209 (x)" → [2,1,209]).
  *  null = string sem versão comparável. */
@@ -81,6 +104,31 @@ export function updateAvailable(p: {
   return false
 }
 
+/** Rótulo "última vX (canal)" da linha do painel. null = sem latest conhecida.
+ *  O canal aparece pra versão fazer sentido: "última v2.1.212 (homebrew)" ao
+ *  lado de um npm v2.1.220 no aviso de canal cruzado não é contradição. */
+export function latestLabel(p: {
+  latest: string | null
+  latestChannel?: string | null
+}): string | null {
+  if (!p.latest) return null
+  return `última v${p.latest}${p.latestChannel ? ` (${p.latestChannel})` : ""}`
+}
+
+/** Linha informativa de canal CRUZADO: o outro canal tem versão MAIOR que o
+ *  teto do canal do binário. Só informação pra decisão humana — trocar de
+ *  canal é gesto do usuário, nunca botão. null = nada a dizer. */
+export function crossChannelNote(p: {
+  latest: string | null
+  latestChannel?: string | null
+  altLatest?: string | null
+  altChannel?: string | null
+}): string | null {
+  if (!p.latest || !p.latestChannel || !p.altLatest || !p.altChannel) return null
+  if (!updateAvailable({ version: p.latest, latest: p.altLatest })) return null
+  return `o canal ${p.altChannel} tem v${p.altLatest}; este binário é ${p.latestChannel} (teto v${p.latest})`
+}
+
 /** Roda a detecção (comando Rust em paralelo). Fora do Tauri devolve []. */
 export async function detectAgents(): Promise<DetectedTool[]> {
   if (!isTauri()) return []
@@ -104,6 +152,9 @@ export function toProbeMap(
       auth: t.auth,
       detail: t.detail,
       latest: t.latest ?? null,
+      latestChannel: t.latestChannel ?? null,
+      altLatest: t.altLatest ?? null,
+      altChannel: t.altChannel ?? null,
       checkedAt: now,
     }
   }

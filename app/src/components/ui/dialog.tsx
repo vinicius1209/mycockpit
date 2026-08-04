@@ -95,7 +95,11 @@ function DialogCloseX({
       onClick={onClick}
       aria-label="Fechar"
       className={cn(
-        "absolute top-3 right-3 z-20 grid size-7 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus:outline-none disabled:pointer-events-none [&_svg]:size-4",
+        // CHIP de verdade (fundo + borda + blur): o X flutua sobre áreas de
+        // scroll (regra do DialogCloseX) e sem fundo o conteúdo rolado colidia
+        // visualmente com o glifo — era a "falha do X sobreposto" do modal de
+        // Configurações. O blur mantém legível sobre qualquer card/texto.
+        "absolute top-3 right-3 z-20 grid size-7 place-items-center rounded-md border border-border/50 bg-background/85 shadow-sm backdrop-blur-sm text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus:outline-none disabled:pointer-events-none [&_svg]:size-4",
         className,
       )}
     >

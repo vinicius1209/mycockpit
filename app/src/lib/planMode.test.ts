@@ -19,16 +19,21 @@ describe("buildExecutionPrompt", () => {
       `Plano aprovado — execute-o agora:\n\n${plan}`,
     )
   })
-  it("agent desconhecido cai no caminho com resume (não embute)", () => {
+  it("agent desconhecido EMBUTE o plano (fail-closed: não conta com resume não provado)", () => {
+    // H5: a decisão vem da capability `sessionResume` do registry. Motor fora
+    // do registry (ou sem resume declarado) não pode apostar num resume que
+    // nunca provou — sem o embed, o turno de execução rodaria sem saber o que
+    // foi aprovado (perda silenciosa; embutir de novo é só redundância barata).
     expect(buildExecutionPrompt("opencode", "plano")).toBe(
-      "Plano aprovado. Execute todas as etapas agora.",
+      "Plano aprovado — execute-o agora:\n\nplano",
     )
   })
 })
 
-describe("needsPlanEmbedded", () => {
-  it("só o agy precisa do plano embutido", () => {
+describe("needsPlanEmbedded (capability sessionResume, H5)", () => {
+  it("motor sem resume (agy) e desconhecido embutem; claude/codex não", () => {
     expect(needsPlanEmbedded("agy")).toBe(true)
+    expect(needsPlanEmbedded("motor-novo")).toBe(true)
     expect(needsPlanEmbedded("claude-code")).toBe(false)
     expect(needsPlanEmbedded("codex")).toBe(false)
   })

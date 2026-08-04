@@ -7,7 +7,9 @@ import {
   isTauri,
   renameProject as dbRenameProject,
   setProjectColor as dbSetProjectColor,
+  persistProjectOrder as dbPersistProjectOrder,
 } from "@/lib/db"
+import { moveByDelta, reorderByIds } from "@/lib/reorder"
 
 type Theme = "dark" | "light"
 
@@ -70,6 +72,11 @@ interface AppState {
   renameProject: (id: string, name: string) => void
   /** Define/limpa (null) a cor-rótulo do projeto. */
   setProjectColor: (id: string, color: string | null) => void
+  /** S1.2 — drag & drop: move o projeto `dragId` pra posição do `overId` e
+   *  persiste a ordem manual (sort_order). */
+  reorderProjects: (dragId: string, overId: string) => void
+  /** S1.2 — teclado/context menu: move o projeto uma posição (cima/baixo). */
+  moveProject: (id: string, delta: -1 | 1) => void
   setMycockpit: (id: string, cfg: ProjectConfig) => void
   patchMycockpit: (id: string, patch: Partial<ProjectConfig>) => void
   toggleTheme: () => void
@@ -163,6 +170,20 @@ export const useApp = create<AppState>()(
           projects: s.projects.map((p) => (p.id === id ? { ...p, color } : p)),
         }))
         void dbSetProjectColor(id, color)
+      },
+      // S1.2 — a ordem exibida É a ordem persistida: no-op do helper (mesma
+      // referência) não grava nem re-renderiza; mudança grava a lista inteira.
+      reorderProjects: (dragId, overId) => {
+        const next = reorderByIds(get().projects, dragId, overId)
+        if (next === get().projects) return
+        set({ projects: next })
+        void dbPersistProjectOrder(next.map((p) => p.id))
+      },
+      moveProject: (id, delta) => {
+        const next = moveByDelta(get().projects, id, delta)
+        if (next === get().projects) return
+        set({ projects: next })
+        void dbPersistProjectOrder(next.map((p) => p.id))
       },
       setMycockpit: (id, cfg) =>
         set((s) => ({ mycockpit: { ...s.mycockpit, [id]: cfg } })),

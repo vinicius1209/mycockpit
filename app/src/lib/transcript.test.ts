@@ -5,6 +5,7 @@ import {
   memoryPointerLine,
   buildResumeFallback,
   shouldAttachResumeFallback,
+  toolImagesNote,
   RESUME_FALLBACK_NOTE,
 } from "./transcript"
 import type { ChatItem } from "@/store/chat"
@@ -150,5 +151,33 @@ describe("buildResumeFallback (memoryFallback do motor)", () => {
     const f = buildResumeFallback(many, null)
     expect(f).toContain("itens omitidos")
     expect(f.length).toBeLessThanOrEqual(3_500)
+  })
+})
+
+describe("toolImagesNote + capturas no transcript (G3.3)", () => {
+  it("singular, plural e silêncio no zero", () => {
+    expect(toolImagesNote(0)).toBeNull()
+    expect(toolImagesNote(1)).toBe("1 captura")
+    expect(toolImagesNote(3)).toBe("3 capturas")
+  })
+
+  it("tool com imagens vira menção TEXTUAL na memória (nunca render)", () => {
+    const items: ChatItem[] = [
+      user("tira um print da home"),
+      {
+        kind: "tool",
+        id: "x",
+        name: "computer",
+        input: { action: "screenshot" },
+        result: { ok: true, text: "ok", lines: 1 },
+        images: ["evidence/c1/t-0.png", "evidence/c1/t-1.png"],
+      },
+      tool("Read", { file_path: "src/a.ts" }),
+    ]
+    const md = renderTranscript(items)
+    expect(md).toContain("- tool `computer` — action=screenshot (2 capturas)")
+    // tool sem imagem segue sem menção nenhuma
+    expect(md).toContain("- tool `Read` — src/a.ts\n")
+    expect(md).not.toContain("src/a.ts (0")
   })
 })

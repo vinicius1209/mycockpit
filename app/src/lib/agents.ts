@@ -41,6 +41,43 @@ export interface AgentDef {
   efforts: AgentModelOption[]
   /** Modelo pré-selecionado (o default observado). null = "default". */
   defaultModel: string | null
+  // -- Espelho TS das Capabilities do Rust (adapters.rs, G1.2 do
+  // capability-registry-plan). COMPORTAMENTO genérico da UI consulta estes
+  // campos; o id do agent fica só pra identidade visual (logo/selo). Na
+  // dúvida, false/null: degradação honesta, nunca prometer o que não sabe. --
+  /** O CLI interpreta `/comando` nativamente: comando de fonte PRÓPRIA viaja
+   *  cru; qualquer outra combinação expande app-side (lib/slashCommands). */
+  nativeSlash: boolean
+  /** Fonte NATIVA de comandos "/" deste motor (valor de SlashCommand.source).
+   *  null = motor sem convenção própria (só a casa .mycockpit/commands). */
+  nativeCommandSource: string | null
+  /** Sufixo do empty-state do "/" citando a convenção nativa (copy pt-BR,
+   *  inclui a pontuação final). null = a frase da casa termina em ponto. */
+  slashEmptyExtra: string | null
+  /** O CLI tem canal SYSTEM são por-run (espelho de `system_channel`, H1 do
+   *  prompt-hygiene-plan): doutrina/persona viajam pelo canal, re-enviadas a
+   *  cada spawn, NUNCA no corpo do prompt. Teste-gêmeo: agents.channels.test.ts
+   *  ↔ `matriz_de_canais_por_agent` no Rust. */
+  systemChannel: boolean
+  /** Retoma sessão nativa (espelho de `session_resume`). false = todo turno é
+   *  sessão fresca → memória sintética no prompt (transcript.ts) e doutrina em
+   *  todo turno (doctrine.ts). Decide COMPORTAMENTO no lugar de `id === "agy"`
+   *  (H5: agnóstico de nome). */
+  sessionResume: boolean
+  /** Recebe o MCP read-only `mc-context` (espelho de `context_mcp`). false =
+   *  handoff degrada pra ponteiros de ARQUIVO (leitura direta), sem prometer
+   *  um MCP que o motor não alcança. */
+  contextMcp: boolean
+  /** Pode disputar no Fusion: entra como complementar da liga default. O agy
+   *  fica de fora porque o read-only dele é best-effort (candidato
+   *  especulativo precisa de confinamento real, ADR do FusionRo). */
+  disputes: boolean
+  /** O CLI compacta a PRÓPRIA sessão em modo headless (espelho de
+   *  `native_compact`, §7.1): o builtin /compactar manda um turno técnico com
+   *  o texto literal "/compact" via resume. false = renovação de sessão com
+   *  recap (transplante para si, lib/compact). Teste-gêmeo:
+   *  agents.compact.test.ts ↔ `matriz_native_compact_por_agent` no Rust. */
+  nativeCompact: boolean
 }
 
 // Aliases do Claude Code ("opus", "sonnet"…) resolvem NO SERVIDOR e mudam com
@@ -175,6 +212,17 @@ export const AGENTS: AgentDef[] = [
     models: CLAUDE_MODELS,
     efforts: CLAUDE_EFFORTS,
     defaultModel: "claude-opus-5[1m]",
+    nativeSlash: true,
+    nativeCommandSource: "claude",
+    slashEmptyExtra: ", em .claude/commands ou skills em .claude/skills.",
+    // claude 2.1.219: --append-system-prompt documentado (canal dos nudges).
+    systemChannel: true,
+    sessionResume: true,
+    contextMcp: true,
+    disputes: true,
+    // claude 2.1.220: `-p --resume <sid> "/compact"` processa o comando em
+    // modo print (empírico 04/08/2026, agent-runner §7.1).
+    nativeCompact: true,
   },
   {
     id: "codex",
@@ -187,6 +235,20 @@ export const AGENTS: AgentDef[] = [
     models: CODEX_MODELS,
     efforts: CODEX_EFFORTS,
     defaultModel: "gpt-5.6-sol",
+    // `codex exec` NÃO interpreta /prompt (a expansão é nossa, app-side) —
+    // mas a convenção de descoberta ~/.codex/prompts existe e entra no "/".
+    nativeSlash: false,
+    nativeCommandSource: "codex",
+    slashEmptyExtra: " ou prompts em ~/.codex/prompts.",
+    // codex 0.146: `-c developer_instructions` existe mas não re-aplica no
+    // `exec resume` (empírico 03/08/2026) → sem canal system são (§7.1).
+    systemChannel: false,
+    sessionResume: true,
+    contextMcp: true,
+    disputes: true,
+    // codex 0.146: `/compact` é só do TUI; `codex exec` não expõe (help
+    // verificado 04/08/2026) → /compactar renova a sessão com recap.
+    nativeCompact: false,
   },
   {
     id: "agy",
@@ -205,6 +267,14 @@ export const AGENTS: AgentDef[] = [
     // de esforço NÃO deve ser renderizado pra ele (vinha como pílula vazia).
     efforts: [],
     defaultModel: null,
+    nativeSlash: false,
+    nativeCommandSource: null,
+    slashEmptyExtra: null,
+    systemChannel: false,
+    sessionResume: false,
+    contextMcp: false,
+    disputes: false,
+    nativeCompact: false,
   },
   {
     id: "opencode",
@@ -218,6 +288,14 @@ export const AGENTS: AgentDef[] = [
     models: [],
     efforts: [],
     defaultModel: null,
+    nativeSlash: false,
+    nativeCommandSource: null,
+    slashEmptyExtra: null,
+    systemChannel: false,
+    sessionResume: false,
+    contextMcp: false,
+    disputes: false,
+    nativeCompact: false,
   },
   {
     id: "model",
@@ -231,6 +309,14 @@ export const AGENTS: AgentDef[] = [
     models: [],
     efforts: [],
     defaultModel: null,
+    nativeSlash: false,
+    nativeCommandSource: null,
+    slashEmptyExtra: null,
+    systemChannel: false,
+    sessionResume: false,
+    contextMcp: false,
+    disputes: false,
+    nativeCompact: false,
   },
 ]
 

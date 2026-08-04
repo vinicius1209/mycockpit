@@ -50,6 +50,17 @@ pub fn hydrate_path() {
         ] {
             parts.push(format!("{home}/{suffix}"));
         }
+        // 3b) nvm: o passo 1 roda o login shell NÃO-interativo, que lê
+        // ~/.zprofile mas NÃO lê ~/.zshrc — e é no .zshrc que o nvm costuma
+        // inicializar. Sem isso o app não enxergava os bins do node do nvm
+        // (`claude` instalado via npm-global do nvm) e resolvia/atualizava uma
+        // CÓPIA diferente da que o shell do usuário usa ("atualizei e não
+        // mudou nada"). Mesclamos o bin da versão MAIS ALTA achada no disco,
+        // ANTES dos dirs fixos do brew abaixo (ordem: login-shell primeiro,
+        // depois nvm detectado, depois brew/fixos).
+        if let Some(nvm_bin) = best_nvm_bin(&home) {
+            parts.push(nvm_bin);
+        }
     }
     for fixed in [
         "/opt/homebrew/bin",
@@ -75,5 +86,77 @@ pub fn hydrate_path() {
     }
 }
 
+/// Bin da versão de node MAIS ALTA instalada pelo nvm
+/// (`~/.nvm/versions/node/vX.Y.Z/bin`). None = sem nvm/sem versões.
+#[cfg(unix)]
+fn best_nvm_bin(home: &str) -> Option<String> {
+    let base = format!("{home}/.nvm/versions/node");
+    let names: Vec<String> = std::fs::read_dir(&base)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    let best = pick_highest_version(&names)?;
+    Some(format!("{base}/{best}/bin"))
+}
+
+/// Maior versão por ordenação semver SIMPLES: segmentos numéricos comparados
+/// como números ("v9.0.0" < "v10.0.0", coisa que a ordenação lexicográfica
+/// erraria). Segmento não-numérico conta como 0. Pura, testável.
+#[cfg(unix)]
+fn pick_highest_version(names: &[String]) -> Option<String> {
+    fn key(name: &str) -> Vec<u64> {
+        name.trim_start_matches('v')
+            .split('.')
+            .map(|seg| seg.parse::<u64>().unwrap_or(0))
+            .collect()
+    }
+    names
+        .iter()
+        .max_by(|a, b| key(a).cmp(&key(b)))
+        .cloned()
+}
+
 #[cfg(not(unix))]
 pub fn hydrate_path() {}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    fn v(names: &[&str]) -> Vec<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn maior_versao_e_numerica_nao_lexicografica() {
+        // lexicográfico diria "v9..." > "v24..."; a comparação certa é numérica.
+        assert_eq!(
+            pick_highest_version(&v(&["v9.11.2", "v24.16.0", "v22.14.0"])),
+            Some("v24.16.0".to_string())
+        );
+    }
+
+    #[test]
+    fn maior_versao_compara_todos_os_segmentos() {
+        assert_eq!(
+            pick_highest_version(&v(&["v24.2.0", "v24.16.0", "v24.16.1"])),
+            Some("v24.16.1".to_string())
+        );
+    }
+
+    #[test]
+    fn maior_versao_lista_vazia_e_none() {
+        assert_eq!(pick_highest_version(&[]), None);
+    }
+
+    #[test]
+    fn maior_versao_tolera_nome_sem_numero() {
+        // dir estranho no meio (".DS_Store"-like) não quebra nem vence.
+        assert_eq!(
+            pick_highest_version(&v(&["lixo", "v22.14.0"])),
+            Some("v22.14.0".to_string())
+        );
+    }
+}

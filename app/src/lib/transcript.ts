@@ -39,7 +39,14 @@ export function renderTranscript(
       case "tool": {
         const digest = toolDigest(it.input)
         const fail = it.result && !it.result.ok ? " (falhou)" : ""
-        lines.push(`- tool \`${it.name}\`${digest ? ` — ${digest}` : ""}${fail}`)
+        // G3.3 — evidência de imagem vira TEXTO na memória ("2 capturas"):
+        // nenhum motor recebe a imagem em si pelo recap, mas fica sabendo que
+        // ela existiu (antes as capturas sumiam do transcript em silêncio).
+        const note = toolImagesNote(it.images?.length ?? 0)
+        const caps = note ? ` (${note})` : ""
+        lines.push(
+          `- tool \`${it.name}\`${digest ? ` — ${digest}` : ""}${fail}${caps}`,
+        )
         break
       }
       case "error":
@@ -72,6 +79,14 @@ export function renderTranscript(
   return `${lines.join("\n")}\n`
 }
 
+/** Menção TEXTUAL às capturas de imagem de uma tool ("1 captura"/"N capturas").
+ *  null = sem imagem, nada a dizer. Vale pra qualquer motor que reporte
+ *  evidência visual — o recap é texto, nunca render. */
+export function toolImagesNote(count: number): string | null {
+  if (count <= 0) return null
+  return count === 1 ? "1 captura" : `${count} capturas`
+}
+
 /** Linha-ponteiro pro arquivo de memória (mesma frase no Fusion e no agy). */
 export function memoryPointerLine(relPath: string): string {
   return `Memória completa desta conversa (leia se precisar de mais contexto): ${relPath}`
@@ -101,16 +116,18 @@ export const RESUME_FALLBACK_NOTE =
   "A sessão nativa desta conversa expirou; o contexto acima é a memória do Frota — continue a conversa normalmente."
 
 /** Decide se o envio leva `memoryFallback` (MyCockpit resume): só quando o run
- *  VAI tentar resume nativo — conversa com histórico E sessionId. agy fica de
- *  fora (não tem resume; a memória dele já vai em TODO turno via
- *  buildMemoryPrompt). Conversa nova (sem itens ou sem sessão) não tem o que
- *  retomar. PURO e testável. */
+ *  VAI tentar resume nativo — motor com a capability `sessionResume` (H5:
+ *  derivado do registry, nunca de `agent === "agy"`), conversa com histórico E
+ *  sessionId. Motor sem resume fica de fora (a memória dele já vai em TODO
+ *  turno via buildMemoryPrompt); motor desconhecido idem (fail-closed: não
+ *  promete retomada que não existe). PURO e testável. */
 export function shouldAttachResumeFallback(
   agent: string,
   items: ChatItem[],
   sessionId: string | null,
 ): boolean {
-  return agent !== "agy" && items.length > 0 && sessionId != null
+  const resume = agentDef(agent)?.sessionResume ?? false
+  return resume && items.length > 0 && sessionId != null
 }
 
 /** Texto do `memoryFallback` (claude/codex): recap curto (~3k) + ponteiro pro

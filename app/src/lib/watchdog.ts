@@ -15,6 +15,13 @@
 // useCards, nunca um segundo setInterval). Card `working` com conversa muda
 // já é coberto por checkStalledTurns — aqui fica de fora (dedupe de aviso).
 //
+// checkStalledMissions (MH1.2) é outra passada do MESMO ticker: a missão NÃO
+// seta `running` na conversa (o pipeline vive no useMission), então uma fase
+// travada era invisível pros vigias. A passada varre as missões running com
+// fase corrente rodando (gate/recovery pendente = esperando VOCÊ, não mudo),
+// observa a assinatura dos itens da fase (onProgress espelha o stream) e avisa
+// UMA vez por episódio, com "Parar missão" no toast (abort real, não teatro).
+//
 // checkUnattendedInteractions é a TERCEIRA passada do MESMO ticker e trata o
 // caso simétrico: não é o agent que está mudo, é VOCÊ — um pedido bloqueante
 // (permissão/pergunta) de um run DESASSISTIDO (automação; ver
@@ -35,6 +42,7 @@ import {
 } from "@/lib/interaction"
 import {
   notifyCardStalled,
+  notifyMissionStalled,
   notifyTurnStalled,
   notifyUnattendedTimeout,
 } from "@/lib/notify"
@@ -89,6 +97,15 @@ type CardMark = {
  *  dominante (mover card = bump de updated_at de qualquer jeito). */
 const cardMarks = new Map<string, CardMark>()
 
+type MissionMark = {
+  sig: string
+  at: number
+  /** Já avisado NESTE episódio (1 aviso por episódio, padrão cardMarks). */
+  notified: boolean
+}
+/** Memória de episódio de FASE DE MISSÃO muda, por convId (MH1.2). */
+const missionMarks = new Map<string, MissionMark>()
+
 /** Memória do prazo de cada pedido bloqueante pendente (id do pedido → marca).
  *  O carimbo `since` é a 1ª VISTA do vigia, não o instante exato da chegada: o
  *  subscribe coalescido (5s) e o tick (30s) tornam a diferença irrelevante
@@ -101,6 +118,7 @@ export function _resetWatchdogState(): void {
   marks.clear()
   cardMarks.clear()
   pendingMarks.clear()
+  missionMarks.clear()
 }
 
 /** Assinatura leve do andamento (padrão itemsSignature do derive): muda quando
@@ -119,7 +137,21 @@ function itemsSignature(items: ChatItem[]): string {
       : last.kind === "tool"
         ? `${last.name}:${last.result ? 1 : 0}`
         : ""
-  return `${items.length}:${last.id}:${last.kind}:${extra}`
+  // Trabalho DIFERIDO vivo (deferred-work-plan D2A.3): o `task_progress`
+  // atualiza o nó IN PLACE — e ele raramente é o último item, então sem este
+  // componente uma pesquisa em background de 15 min viraria falso "turno mudo".
+  // Progresso de diferido É sinal de vida: muda a assinatura, re-arma o
+  // cronômetro. Além do summary, os TOKENS entram na assinatura: uma fase
+  // longa mantém a MESMA description por vários ticks, mas o usage avança —
+  // sem ele, fase de 15+ min virava falso aviso. Diferido vivo mas SEM
+  // progresso novo (nem summary nem tokens) segue contando como mudo (mesma
+  // DECISÃO da tool longa acima: aviso informativo, nada é cancelado).
+  let deferred = ""
+  for (const it of items) {
+    if (it.kind === "tool" && it.deferred?.status === "running")
+      deferred += `|${it.deferred.id}:${it.deferred.summary ?? ""}:${it.deferred.tokens ?? ""}`
+  }
+  return `${items.length}:${last.id}:${last.kind}:${extra}${deferred}`
 }
 
 /** F-D (follow-up S2): há episódio de TURNO MUDO aberto e JÁ AVISADO pra esta
@@ -224,6 +256,81 @@ export function checkStalledTurns(now: number = Date.now()): void {
   // conversa removida não deixa marca órfã
   for (const id of [...marks.keys()]) {
     if (!chat.byId[id]) marks.delete(id)
+  }
+}
+
+function showStalledMissionToast(
+  convId: string,
+  phaseLabel: string,
+  agent: string,
+  minutes: number,
+): void {
+  toast(`Missão: a fase "${phaseLabel}" está muda há ${minutes} min`, {
+    description: `${agentLabel(agent)} segue em execução, mas sem produzir nada novo.`,
+    duration: 15_000,
+    action: {
+      label: "Ver conversa",
+      onClick: () => void openStalledConv(convId),
+    },
+    cancel: {
+      // Stop REAL da missão (cancela o run da fase e marca aborted) — o mesmo
+      // gesto do "Parar" da timeline, nunca um dismiss disfarçado de ação.
+      label: "Parar missão",
+      onClick: () => useMission.getState().abort(convId),
+    },
+  })
+}
+
+/** UMA passada do vigia de FASE DE MISSÃO muda (MH1.2; determinística dado
+ *  stores + memória; `now` injetável p/ teste). A missão não seta `running`
+ *  na conversa, então checkStalledTurns não a cobre — este é o espelho:
+ *  fase corrente RUNNING sem nenhum item novo além do limiar
+ *  (settings.stalledAfterMin) avisa UMA vez por episódio. Gate/recovery
+ *  pendentes e pedidos de permissão/pergunta na fila são "esperando você"
+ *  (causa conhecida, já avisada) — nunca contam como mudo. */
+export function checkStalledMissions(now: number = Date.now()): void {
+  const afterMin = useApp.getState().settings.stalledAfterMin
+  const missions = useMission.getState().byConv
+  for (const [convId, m] of Object.entries(missions)) {
+    const cur = m.phases[m.current]
+    const phaseRunning =
+      m.status === "running" &&
+      !m.gate &&
+      !m.recovery &&
+      cur?.status === "running"
+    if (!phaseRunning) {
+      // fase acabou/pausou (gate, recovery, fim): fecha o episódio.
+      missionMarks.delete(convId)
+      continue
+    }
+    // assinatura inclui a fase e a tentativa: trocar de fase (ou re-rodar
+    // após recovery) é atividade — o cronômetro re-arma.
+    const sig = `${m.current}:${cur.attempt}:${itemsSignature(cur.items ?? [])}`
+    const prev = missionMarks.get(convId)
+    if (!prev || prev.sig !== sig) {
+      missionMarks.set(convId, { sig, at: now, notified: false })
+      continue
+    }
+    // pedido de permissão/pergunta pendente DESTA conversa = bloqueada com
+    // causa conhecida (o card na tela + o vigia desassistido cobrem o prazo).
+    // Conta como ATIVIDADE (re-ancora, padrão F2 dos cards): respondido o
+    // pedido, o agent ganha a janela COMPLETA antes de contar como mudo.
+    if (esperandoVoce(convId)) {
+      missionMarks.set(convId, { sig, at: now, notified: false })
+      continue
+    }
+    if (afterMin <= 0) continue // 0 = desligado: segue medindo, sem avisar
+    if (prev.notified) continue // já avisado NESTE episódio
+    const silentMs = now - prev.at
+    if (silentMs < afterMin * 60_000) continue
+    const minutes = Math.max(afterMin, Math.round(silentMs / 60_000))
+    prev.notified = true
+    notifyMissionStalled(convId, cur.def.agent, cur.def.label, minutes)
+    showStalledMissionToast(convId, cur.def.label, cur.def.agent, minutes)
+  }
+  // missão removida (clear) não deixa marca órfã
+  for (const id of [...missionMarks.keys()]) {
+    if (!missions[id]) missionMarks.delete(id)
   }
 }
 
@@ -450,15 +557,16 @@ export function checkUnattendedInteractions(now: number = Date.now()): void {
   }
 }
 
-/** Liga o vigia: subscribe do useChat, do useCards E do useInteractions
+/** Liga o vigia: subscribe do useChat, useCards, useMission E useInteractions
  *  (coalescidos ≥5s no MESMO schedule, trailing edge) + UM tick de 30s
- *  (silêncio não gera evento de store) varrendo turnos, cards e pedidos
- *  pendentes de run desassistido. Retorna o stop (desassina os três). */
+ *  (silêncio não gera evento de store) varrendo turnos, fases de missão,
+ *  cards e pedidos pendentes de run desassistido. Retorna o stop. */
 export function startTurnWatchdog(): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
   const check = () => {
     const now = Date.now()
     checkStalledTurns(now)
+    checkStalledMissions(now)
     checkStalledCards(now)
     checkUnattendedInteractions(now)
   }
@@ -471,6 +579,9 @@ export function startTurnWatchdog(): () => void {
   }
   const unsubChat = useChat.subscribe(schedule)
   const unsubCards = useCards.subscribe(schedule)
+  // o stream das fases de missão vive no useMission (onProgress): sem este
+  // subscribe a baseline da fase só chegaria no tick lento (até 30s depois).
+  const unsubMissions = useMission.subscribe(schedule)
   // pedido novo na fila só é carimbado quando o vigia OLHA: sem este subscribe
   // o prazo começaria a contar até 30s depois da chegada (o tick lento).
   const unsubInteractions = useInteractions.subscribe(schedule)
@@ -479,6 +590,7 @@ export function startTurnWatchdog(): () => void {
   return () => {
     unsubChat()
     unsubCards()
+    unsubMissions()
     unsubInteractions()
     clearInterval(ticker)
     if (timer) clearTimeout(timer)

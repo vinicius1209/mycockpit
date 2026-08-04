@@ -3,8 +3,17 @@
 // (preset → rascunho de fases → preset efetivo). Sem React/stores — o
 // MissionDock/DeskMenu consomem; testável em isolamento (ui.test.ts).
 // lib/missionDraft é pura (sem stores) — importar direto não fura a regra §6.
-import { clonePhases, phasesCustomized } from "@/lib/missionDraft"
-import type { MissionPhaseDef, MissionPreset } from "@/lib/missionTypes"
+import {
+  clonePhases,
+  gatePolicyCustomized,
+  normalizeGatePolicy,
+  phasesCustomized,
+} from "@/lib/missionDraft"
+import type {
+  MissionGatePolicy,
+  MissionPhaseDef,
+  MissionPreset,
+} from "@/lib/missionTypes"
 import { MISSION_TABLE_ID } from "../engine/types"
 
 export { MISSION_TABLE_ID }
@@ -98,8 +107,13 @@ export function presetOptionLabel(p: MissionPreset): string {
 export function presetDraft(p: MissionPreset): {
   phases: MissionPhaseDef[]
   capUsd: number | null
+  gatePolicy: MissionGatePolicy
 } {
-  return { phases: clonePhases(p.phases), capUsd: p.maxCostUsd }
+  return {
+    phases: clonePhases(p.phases),
+    capUsd: p.maxCostUsd,
+    gatePolicy: normalizeGatePolicy(p.gatePolicy),
+  }
 }
 
 /** Opções do select de AGENT de uma fase: só os DISPONÍVEIS (availableAgents
@@ -121,13 +135,20 @@ export function effectiveTablePreset(
   base: MissionPreset,
   phases: MissionPhaseDef[],
   capUsd: number | null,
+  /** Política de gate do rascunho (MH3.3). undefined = mantém a do preset
+   *  (call sites antigos seguem intactos). */
+  gatePolicy?: MissionGatePolicy,
 ): MissionPreset {
-  const customized = phasesCustomized(base.phases, phases)
+  const customized =
+    phasesCustomized(base.phases, phases) ||
+    (gatePolicy !== undefined &&
+      gatePolicyCustomized(base.gatePolicy, gatePolicy))
   return {
     ...base,
     name: customized ? `${base.name} · personalizado` : base.name,
     phases: clonePhases(phases),
     maxCostUsd: capUsd,
+    ...(gatePolicy !== undefined ? { gatePolicy } : {}),
   }
 }
 
@@ -149,12 +170,19 @@ export async function launchFromTable(
     preset: MissionPreset
     phases: MissionPhaseDef[]
     capUsd: number | null
+    /** Política de gate do rascunho (MH3.3; undefined = a do preset). */
+    gatePolicy?: MissionGatePolicy
   },
 ): Promise<string | null> {
   return deps.launch({
     projectId: input.projectId,
     title: missionConversationTitle(input.task),
     task: input.task,
-    preset: effectiveTablePreset(input.preset, input.phases, input.capUsd),
+    preset: effectiveTablePreset(
+      input.preset,
+      input.phases,
+      input.capUsd,
+      input.gatePolicy,
+    ),
   })
 }

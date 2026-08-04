@@ -233,6 +233,14 @@ function normalize(raw: SddPlanRaw): SddPlan {
   }
 }
 
+/** Normaliza UM plano cru (slug + conteúdo do manifest.json) → SddPlan. Exposto
+ *  para os testes montarem fixtures com manifests REAIS do disco em vez de
+ *  objetos inventados (lição do ADR-016): o parse tolerante daqui é justamente
+ *  o que precisa ser exercitado pelo dado de verdade. */
+export function parseSddPlan(slug: string, manifest: string | null): SddPlan {
+  return normalize({ slug, manifest, log_tail: null, log_events: [] })
+}
+
 export async function loadSddPlans(projectPath: string): Promise<SddPlan[]> {
   if (!isTauri()) return []
   try {

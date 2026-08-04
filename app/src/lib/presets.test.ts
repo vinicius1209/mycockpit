@@ -281,7 +281,7 @@ describe("preflightPreset — fail-closed", () => {
     expect(r.ok).toBe(false)
     if (!r.ok) {
       expect(r.error).toContain("nenhum comando")
-      expect(r.error).toContain("vazia ou ilegível")
+      expect(r.error).toContain("vazias ou ilegíveis")
       expect(r.error).toContain("abortado")
       expect(r.error).not.toContain("não existe")
     }
@@ -402,7 +402,8 @@ describe("resolveFirstTurnPersona", () => {
       projectPath: "/proj",
     })
     expect(r.status).toBe("blocked")
-    expect(readProjectCommands).toHaveBeenCalledWith("/proj")
+    // inventário POR AGENT: valida contra o backend do preset (codex)
+    expect(readProjectCommands).toHaveBeenCalledWith("/proj", "codex")
   })
 })
 

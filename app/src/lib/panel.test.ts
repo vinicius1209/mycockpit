@@ -38,6 +38,10 @@ function enr(patch: Partial<PrEnrichment> = {}): PrEnrichment {
   }
 }
 
+// Gate do SDD já ADOTADO (o humano encostou nele pelo app): a ordenação da fila
+// só enxerga o que é pendência, então é este o estado dos fixtures daqui.
+const adotado = { path: ".claude/plans/s", discovered: false, ignored: false }
+
 const pr = (url: string): Decision => ({
   kind: "pr",
   projectId: "p1",
@@ -45,6 +49,8 @@ const pr = (url: string): Decision => ({
   slug: "s",
   planTitle: "t",
   prUrl: url,
+  createdAt: null,
+  origin: adotado,
 })
 const fusion: Decision = {
   kind: "fusion",
@@ -60,6 +66,7 @@ const prd: Decision = {
   slug: "s2",
   planTitle: "prd",
   createdAt: null,
+  origin: { ...adotado, path: ".claude/plans/s2" },
 }
 
 describe("countChecks (statusCheckRollup → contagem)", () => {

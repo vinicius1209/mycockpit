@@ -63,6 +63,11 @@ pub struct TraySnapshot {
     pub next_schedule: Option<TraySchedule>,
     pub last_run: Option<TrayLastRun>,
     pub enabled_schedules: u32,
+    /// Trabalhos DIFERIDOS do provider vivos (tool `Workflow`/background task,
+    /// deferred-work-plan D1.4): morrem junto com o quit — o diálogo de saída
+    /// avisa. `default` p/ snapshots antigos (campo ausente = 0).
+    #[serde(default)]
+    pub deferred: u32,
 }
 
 pub struct TrayState {
@@ -167,6 +172,32 @@ fn fleet_status(s: &TraySnapshot) -> String {
         1 => format!("{running} · 1 decisão"),
         n => format!("{running} · {n} decisões"),
     }
+}
+
+/// Mensagem do diálogo de saída (deferred-work-plan, D1.4): morte CONSCIENTE.
+/// Com trabalho em background do provider vivo, o aviso diz explicitamente que
+/// ele morre junto e fica marcado como interrompido — nunca silêncio.
+fn quit_warning(s: &TraySnapshot) -> String {
+    let mut msg = String::from(
+        "Os agents em voo serão interrompidos. Feche a janela se quiser \
+         mantê-los rodando na tray.",
+    );
+    if s.deferred > 0 {
+        let deferred = if s.deferred == 1 {
+            "Há 1 trabalho em background do agent em andamento: ele morre \
+             junto com o app e ficará marcado como interrompido."
+                .to_string()
+        } else {
+            format!(
+                "Há {} trabalhos em background do agent em andamento: eles \
+                 morrem junto com o app e ficarão marcados como interrompidos.",
+                s.deferred
+            )
+        };
+        msg.push_str("\n\n");
+        msg.push_str(&deferred);
+    }
+    msg
 }
 
 fn build_menu<R: Runtime>(app: &AppHandle<R>, s: &TraySnapshot) -> tauri::Result<Menu<R>> {
@@ -316,8 +347,8 @@ fn emit_background_action(
 }
 
 pub fn request_quit(app: &AppHandle) {
-    let active = snapshot(&app.state::<TrayState>()).running > 0;
-    if !active {
+    let snap = snapshot(&app.state::<TrayState>());
+    if snap.running == 0 && snap.deferred == 0 {
         app.exit(0);
         return;
     }
@@ -326,10 +357,7 @@ pub fn request_quit(app: &AppHandle) {
     // de fechar pela tray. O callback roda fora da main thread do diálogo.
     let handle = app.clone();
     app.dialog()
-        .message(
-            "Os agents em voo serão interrompidos. Feche a janela se quiser \
-             mantê-los rodando na tray.",
-        )
+        .message(quit_warning(&snap))
         .title("Sair com tarefas em execução?")
         .buttons(MessageDialogButtons::OkCancelCustom(
             "Interromper e sair".into(),
@@ -599,6 +627,30 @@ pub fn force_quit(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// D1.4 (deferred-work-plan): sair com trabalho em background do provider
+    /// vivo avisa que ele morre junto — nunca morte silenciosa.
+    #[test]
+    fn quit_warning_avisa_do_trabalho_em_background_que_morre_junto() {
+        let base = quit_warning(&TraySnapshot {
+            running: 1,
+            ..Default::default()
+        });
+        assert!(!base.contains("background"));
+        let um = quit_warning(&TraySnapshot {
+            running: 1,
+            deferred: 1,
+            ..Default::default()
+        });
+        assert!(um.contains("1 trabalho em background"));
+        assert!(um.contains("interrompido"));
+        let dois = quit_warning(&TraySnapshot {
+            running: 1,
+            deferred: 2,
+            ..Default::default()
+        });
+        assert!(dois.contains("2 trabalhos em background"));
+    }
 
     #[test]
     fn fleet_status_pluraliza_e_prioriza_atencao() {

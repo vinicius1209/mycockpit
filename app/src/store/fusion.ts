@@ -28,6 +28,8 @@ import {
   recordTurnCost,
 } from "@/lib/db"
 import type { AgentRunConfig } from "@/lib/types"
+import { LEAGUE_AGENTS } from "@/lib/agents"
+import { expandDraftForAgent } from "@/lib/slashCommands"
 
 export type CandStatus =
   | "queued"
@@ -114,10 +116,19 @@ export interface LeagueConfig {
 }
 
 /** Liga default do botão "Disputar": o agent EFETIVO + o complementar
- *  (codex↔claude-code), read-only, juiz sonnet. Política de orquestração, fica
- *  ao lado de `launch` p/ todo caller herdar a mesma default. */
+ *  DERIVADO do registry (G1.3 do capability-registry-plan): o primeiro OUTRO
+ *  motor disponível com capacidade de disputa (`disputes`) — nunca um par fixo
+ *  de fornecedores. Com os dois disputantes de hoje instalados o resultado é o
+ *  de sempre (claude↔codex); um motor novo com a capability entra sozinho.
+ *  Read-only, juiz sonnet. Política de orquestração, fica ao lado de `launch`
+ *  p/ todo caller herdar a mesma default. */
 export function defaultLeague(run: AgentRunConfig): LeagueConfig {
-  const complementary = run.agent === "codex" ? "claude-code" : "codex"
+  const complementary =
+    LEAGUE_AGENTS.find((a) => a.disputes && a.id !== run.agent)?.id ??
+    // sem outro disputante declarado: qualquer outro motor disponível é mais
+    // honesto que repetir o mesmo (disputa de um só não compara nada).
+    LEAGUE_AGENTS.find((a) => a.id !== run.agent)?.id ??
+    run.agent
   return {
     scope: "read-only",
     judgeModel: "sonnet",
@@ -357,14 +368,27 @@ export const useFusion = create<FusionState>((set, get) => {
     set((s) => ({ byConv: { ...s.byConv, [convId]: run } }))
     useChat.getState().beginFusion(convId, prompt, attachments)
 
-    let fullPrompt = preamble ? `${preamble}\n\n---\n\n${prompt}` : prompt
+    const preamblePrefix = preamble ? `${preamble}\n\n---\n\n` : ""
     // DOUTRINA do projeto: cada candidato é um run NOVO de uma CLI diferente —
     // sem este bloco a disputa acontece com metade dos concorrentes cegos às
     // regras do projeto (só o Claude Code leria um CLAUDE.md). Sempre injeta
     // (não existe "1º turno" aqui). Best-effort: sem arquivo, segue igual.
+    let doctrinePrefix = ""
     if (projectPath) {
       const block = buildDoctrineBlock((await readDoctrine(projectPath)).content)
-      if (block) fullPrompt = `${block}\n\n${fullPrompt}`
+      if (block) doctrinePrefix = `${block}\n\n`
+    }
+    // G2.1 — `/comando` no campo da disputa expande POR CANDIDATO: cada lane
+    // pode rodar num motor diferente, e o inventário/semântica de expansão é
+    // do agent EFETIVO da lane (registry decide quem tem native_slash). Com
+    // preâmbulo/doutrina o pedido vai EMBUTIDO no prompt — aí nem o comando
+    // nativo pode viajar cru. Fail-open: sem match, o texto segue.
+    const embedded = preamblePrefix !== "" || doctrinePrefix !== ""
+    const promptFor = async (agent: string): Promise<string> => {
+      const sendText = await expandDraftForAgent(prompt, projectPath, agent, {
+        embedded,
+      })
+      return `${doctrinePrefix}${preamblePrefix}${sendText}`
     }
     const perm = cfg.scope === "read-only" ? "fusion-ro" : permission
 
@@ -390,7 +414,7 @@ export const useFusion = create<FusionState>((set, get) => {
           c.agent,
           c.reqModel,
           c.effort,
-          fullPrompt,
+          await promptFor(c.agent),
           c.cwd,
           null, // resume=null: candidato é sessão fresca
           perm,

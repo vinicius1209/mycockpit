@@ -1,4 +1,12 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react"
+import {
+  Fragment,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react"
 import {
   AlertCircle,
   AlertTriangle,
@@ -15,12 +23,13 @@ import {
   Globe,
   Globe2,
   GraduationCap,
+  ListChecks,
   Loader2,
   MessageSquareQuote,
+  RotateCcw,
   Search,
+  Square,
   Terminal,
-  ThumbsDown,
-  ThumbsUp,
   User,
   Wrench,
   X,
@@ -37,25 +46,39 @@ import { attachmentRead, attachmentReadLabel } from "@/lib/attachmentRead"
 import type { SaveLessonOutcome } from "@/lib/learning"
 import {
   cleanResultText,
+  evidenceMeta,
   presentTool,
   resultMeta,
   summarizeToolGroup,
   type ToolKind,
 } from "@/lib/toolview"
+import { EVIDENCE_MISSING, evidenceName, evidenceUrl } from "@/lib/evidence"
+import { useLightbox, type LightboxImage } from "@/store/lightbox"
 import { lineDiff, trimOuterContext, type DiffRow } from "@/lib/linediff"
-import { deriveTasks } from "@/lib/tasks"
+import { deriveTaskPlans, type AgentPlan } from "@/lib/tasks"
 import { openDeliveryDiff } from "@/lib/deliveryDiff"
 import { Markdown } from "@/components/common/Markdown"
 import { AgentLogo, agentLogoLabel } from "@/components/common/AgentLogo"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
-import { buildNodes, type Node, type ToolItem } from "@/components/chat/messageNodes"
+import {
+  buildNodes,
+  type IncidentNode,
+  type Node,
+  type ToolItem,
+} from "@/components/chat/messageNodes"
 import { groupByAuthor, groupTs, type MessageGroup } from "@/components/chat/messageGroups"
 import { buildAdviceHandoffBlock } from "@/lib/advisor"
 import { shortDigest } from "@/lib/presets"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import { splitMentions } from "@/components/chat/mentions"
 import { usePresets } from "@/store/presets"
-import { useChat, type ChatItem } from "@/store/chat"
+import {
+  deferredLabel,
+  pendingDeferred,
+  useChat,
+  type ChatItem,
+} from "@/store/chat"
+import { agentLabel } from "@/lib/agent"
 
 /** Máx. de linhas mostradas num bloco de diff (Edit/Write) antes de "… +N linhas". */
 const DIFF_MAX_LINES = 80
@@ -71,6 +94,61 @@ const KIND_ICON: Record<ToolKind, LucideIcon> = {
   web: Globe,
   agent: Bot,
   generic: Wrench,
+}
+
+export interface ToolTreeNode {
+  item: ToolItem
+  children: ToolTreeNode[]
+}
+
+/** Reconstrói a topologia reportada pelo provider. Pai ausente/desconhecido
+ * vira raiz (fail-open para históricos e adapters sem hierarquia). */
+export function buildToolForest(tools: ToolItem[]): ToolTreeNode[] {
+  const byToolId = new Map(
+    tools.filter((t) => t.toolId).map((t) => [t.toolId!, t] as const),
+  )
+  const children = new Map<string, ToolItem[]>()
+  const roots: ToolItem[] = []
+  for (const tool of tools) {
+    if (tool.parentToolId && byToolId.has(tool.parentToolId)) {
+      const list = children.get(tool.parentToolId) ?? []
+      list.push(tool)
+      children.set(tool.parentToolId, list)
+    } else {
+      roots.push(tool)
+    }
+  }
+  const building = new Set<string>()
+  const node = (item: ToolItem): ToolTreeNode => {
+    const key = item.toolId ?? item.id
+    if (building.has(key)) return { item, children: [] }
+    building.add(key)
+    const out = {
+      item,
+      children: (item.toolId ? children.get(item.toolId) : undefined)?.map(node) ?? [],
+    }
+    building.delete(key)
+    return out
+  }
+  return roots.map(node)
+}
+
+function branchContains(node: ToolTreeNode, itemId: string | null | undefined): boolean {
+  if (!itemId) return false
+  return (
+    node.item.id === itemId ||
+    node.children.some((child) => branchContains(child, itemId))
+  )
+}
+
+/** O ramo carrega trabalho diferido do provider ainda VIVO (D1.2)? Mantém o nó
+ *  do Workflow exposto (fora do histórico recolhido) enquanto o background
+ *  task roda de verdade dentro do CLI. */
+function branchHasLiveDeferred(node: ToolTreeNode): boolean {
+  return (
+    node.item.deferred?.status === "running" ||
+    node.children.some(branchHasLiveDeferred)
+  )
 }
 
 /** Cronômetro ao vivo enquanto o run pensa (atualiza a cada 1s). */
@@ -188,19 +266,38 @@ function StepDot({ status }: { status: StepStatus }) {
  *  A prosa do agent é o conteúdo; a ferramenta é rodapé, não caixa. `active` =
  *  o turno está rodando E este é o passo corrente (sem result ainda). */
 const ToolLine = memo(function ToolLine({
-  item,
-  active = false,
+  node,
+  activeToolId,
+  agent,
+  depth = 1,
+  deferredPending = false,
+  onStop,
+  onRetry,
 }: {
-  item: ToolItem
-  active?: boolean
+  node: ToolTreeNode
+  activeToolId?: string | null
+  agent: string
+  depth?: number
+  /** Há trabalho em background do provider vivo neste fio (D1.4): o botão de
+   *  interromper avisa que ele morre junto com o turno. */
+  deferredPending?: boolean
+  onStop?: (tool: ToolItem) => void
+  onRetry?: (tool: ToolItem) => void
 }) {
+  const { item, children } = node
+  const active =
+    branchContains(node, activeToolId) ||
+    item.managedProcess?.status === "running" ||
+    item.managedProcess?.status === "stopping" ||
+    item.deferred?.status === "running"
   const p = presentTool(item.name, item.input)
   const Icon = KIND_ICON[p.kind]
   const i = (item.input ?? {}) as Record<string, unknown>
   const diff = editHunks(item.name, i)
   // Nível 2 do disclosure: primeiro se abre o grupo semântico; só um gesto
   // explícito revela comando/input/output/diff desta ação.
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(active && children.length > 0)
+  const [briefingOpen, setBriefingOpen] = useState(false)
   const failed = item.result?.ok === false
   const status: StepStatus = item.result
     ? item.result.ok
@@ -210,24 +307,60 @@ const ToolLine = memo(function ToolLine({
       ? "running"
       : "recorded"
   const res = resultMeta(item.name, item.result)
-  const meta = [p.meta, res].filter(Boolean).join(" · ")
+  const processMeta = item.managedProcess
+    ? `PID ${item.managedProcess.pid} · ${item.managedProcess.status}`
+    : null
+  // Estado do trabalho diferido no PRÓPRIO rótulo da linha (D1.2): rodando de
+  // verdade dentro do CLI, concluiu, ou morreu sem concluir.
+  const deferredMeta = item.deferred
+    ? item.deferred.status === "running"
+      ? "em background"
+      : item.deferred.status === "completed"
+        ? "concluiu"
+        : "interrompido"
+    : null
+  const meta = [p.meta, processMeta, deferredMeta, res, evidenceMeta(item.images)]
+    .filter(Boolean)
+    .join(" · ")
   // Suprime o boilerplate de sucesso do write/edit ("File created…") — vira ""
   // e o bloco de result nem aparece (o cartão já mostra arquivo + diff).
   const resultText = cleanResultText(item.name, item.result)
-  const expandable = Boolean(p.detail || diff || resultText)
+  const expandable = Boolean(
+    p.detail ||
+      diff ||
+      resultText ||
+      item.agentSummary ||
+      item.deferred?.outputFile ||
+      children.length,
+  )
+  const stopInHeader =
+    active && onStop && (p.kind === "agent" || item.managedProcess != null)
+  const briefingLines = p.detail ? Math.max(1, p.detail.split("\n").length) : 0
+
+  useEffect(() => {
+    if (active && children.length) setOpen(true)
+  }, [active, children.length])
 
   return (
     <div className="min-w-0">
-      <button
-        onClick={() => expandable && setOpen((o) => !o)}
-        className={cn(
-          "group/step flex w-full items-center gap-2.5 rounded-md px-2 py-[5px] text-left text-[12.5px] transition-colors",
-          expandable && "hover:bg-accent/40",
-          p.emphasis === "warning" && status !== "error" && "text-brass",
-          // passo em execução PULA da sequência: leve tinta st-running.
-          status === "running" && "bg-st-running/[0.06]",
-        )}
-      >
+      <div className="flex min-w-0 items-center">
+        <button
+          onClick={() => expandable && setOpen((o) => !o)}
+          data-work-node
+          data-node-id={item.toolId ?? item.id}
+          data-parent-id={item.parentToolId}
+          role="treeitem"
+          aria-level={depth}
+          aria-expanded={expandable ? open : undefined}
+          tabIndex={-1}
+          className={cn(
+            "group/step flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-[5px] text-left text-[12.5px] transition-colors",
+            expandable && "hover:bg-accent/40",
+            p.emphasis === "warning" && status !== "error" && "text-brass",
+            // passo em execução PULA da sequência: leve tinta st-running.
+            status === "running" && "bg-st-running/[0.06]",
+          )}
+        >
         <span
           className="grid size-3.5 shrink-0 place-items-center"
           title={status === "recorded" ? "sem resultado registrado" : undefined}
@@ -280,6 +413,11 @@ const ToolLine = memo(function ToolLine({
               </span>
             )
           )}
+          {p.kind === "agent" && (
+            <span className="rounded border px-1 py-px text-[10px] text-muted-foreground">
+              {agentLabel(agent)}
+            </span>
+          )}
           {expandable && (
             // seta de expandir no FIM (longe do ícone `>_` → sem duplicação).
             <ChevronRight
@@ -290,58 +428,299 @@ const ToolLine = memo(function ToolLine({
             />
           )}
         </span>
-      </button>
+        </button>
+        {stopInHeader && (
+          <button
+            type="button"
+            onClick={() => onStop(item)}
+            title={
+              item.managedProcess
+                ? "Para este processo e os filhos dele"
+                : deferredPending
+                  ? "O provider não expõe cancelamento individual deste subagente; interrompe o turno completo e o trabalho em background morre junto"
+                  : "O provider não expõe cancelamento individual deste subagente; interrompe o turno completo"
+            }
+            className="mr-1 inline-flex shrink-0 items-center gap-1 rounded border border-st-error/30 px-1.5 py-0.5 text-[10px] text-st-error transition-colors hover:bg-st-error/10"
+          >
+            <Square className="size-2.5" />
+            <span className="hidden lg:inline">
+              {item.managedProcess ? "Parar" : "Interromper turno"}
+            </span>
+          </button>
+        )}
+      </div>
+      {/* Evidência VISUAL do resultado (B1): sempre à mostra (o valor é VER o
+          que o agent viu), thumbnail modesto — detalhe é no lightbox. Tool sem
+          imagem não rende nada aqui (fail-open). */}
+      {item.images && item.images.length > 0 && (
+        <div className="mt-1 mb-1 ml-7 flex flex-wrap gap-1.5">
+          {item.images.map((path, i) => (
+            <EvidenceThumb
+              key={path}
+              path={path}
+              onOpen={() =>
+                useLightbox.getState().open(evidenceGallery(item.images!), i)
+              }
+            />
+          ))}
+        </div>
+      )}
       {open && (
-        <div className="mt-1 mb-1.5 ml-[30px] overflow-hidden rounded-md border border-border/60 bg-secondary/20">
-          {p.detail && (
-            <div className="p-2">
-              <p className="mb-1 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
-                {p.kind === "bash" ? "Comando" : "Entrada"}
-              </p>
-              <div
-                data-selectable
-                className="font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/70"
+        <div className="ml-[7px] border-l border-border/45 pl-2.5">
+          {p.kind === "agent" && p.detail && (
+            <div className="mt-1 mb-1.5 overflow-hidden rounded-md border border-border/55 bg-secondary/10">
+              <button
+                type="button"
+                onClick={() => setBriefingOpen((value) => !value)}
+                aria-expanded={briefingOpen}
+                className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:bg-accent/35 hover:text-foreground"
               >
-                {p.detail}
-              </div>
-            </div>
-          )}
-          {diff && (
-            <div className={cn(p.detail && "border-t border-border/50")}>
-              <p className="px-2 pt-2 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
-                Alterações
-              </p>
-              {diff.hunks.map((rows, idx) => (
+                <MessageSquareQuote className="size-3.5 shrink-0" />
+                <span>Briefing do agente</span>
+                <span className="font-mono text-[10.5px] text-muted-foreground/70">
+                  · {briefingLines} linha{briefingLines === 1 ? "" : "s"}
+                </span>
+                <ChevronRight
+                  className={cn(
+                    "ml-auto size-3 text-muted-foreground/45 transition-transform",
+                    briefingOpen && "rotate-90",
+                  )}
+                />
+              </button>
+              {briefingOpen && (
                 <div
-                  key={idx}
-                  className={cn(idx > 0 && "border-t border-border/40")}
+                  data-selectable
+                  className="max-h-52 overflow-y-auto border-t border-border/45 p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/70"
                 >
-                  <UnifiedDiff rows={rows} />
+                  {p.detail}
                 </div>
-              ))}
+              )}
             </div>
           )}
-          {resultText && (
-            <div className="border-t border-border/50 p-2">
-              <p className="mb-1 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
-                {failed ? "Erro" : "Saída"}
-              </p>
-              <div
-                data-selectable
-                className={cn(
-                  "font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere]",
-                  failed ? "text-st-error" : "text-muted-foreground",
+          {((p.kind !== "agent" && p.detail) ||
+            diff ||
+            resultText ||
+            item.agentSummary ||
+            (item.result && onRetry)) && (
+            <div className="mt-1 mb-1.5 overflow-hidden rounded-md border border-border/60 bg-secondary/20">
+              {p.kind !== "agent" && p.detail && (
+                <div className="p-2">
+                  <p className="mb-1 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
+                    {p.kind === "bash" ? "Comando" : "Entrada"}
+                  </p>
+                  <div
+                    data-selectable
+                    className="font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/70"
+                  >
+                    {p.detail}
+                  </div>
+                </div>
+              )}
+              {diff && (
+                <div
+                  className={cn(
+                    p.kind !== "agent" &&
+                      p.detail &&
+                      "border-t border-border/50",
+                  )}
+                >
+                  <p className="px-2 pt-2 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
+                    Alterações
+                  </p>
+                  {diff.hunks.map((rows, idx) => (
+                    <div
+                      key={idx}
+                      className={cn(idx > 0 && "border-t border-border/40")}
+                    >
+                      <UnifiedDiff rows={rows} />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {resultText && (
+                <div className="border-t border-border/50 p-2">
+                  <p className="mb-1 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
+                    {failed ? "Erro" : "Saída"}
+                  </p>
+                  <div
+                    data-selectable
+                    className={cn(
+                      "font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere]",
+                      failed ? "text-st-error" : "text-muted-foreground",
+                    )}
+                  >
+                    {resultText}
+                  </div>
+                </div>
+              )}
+              {item.agentSummary && (
+                <div className="border-t border-border/50 p-2">
+                  <p className="mb-1 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
+                    Retorno do agente
+                  </p>
+                  <div
+                    data-selectable
+                    className="text-[11.5px] leading-relaxed whitespace-pre-wrap text-foreground/75"
+                  >
+                    {item.agentSummary}
+                  </div>
+                </div>
+              )}
+              {item.deferred?.outputFile && item.deferred.status !== "running" && (
+                <div className="border-t border-border/50 p-2">
+                  <p className="mb-1 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
+                    Resultado em disco
+                  </p>
+                  <div
+                    data-selectable
+                    className="font-mono text-[11px] leading-relaxed break-words [overflow-wrap:anywhere] text-muted-foreground"
+                  >
+                    {item.deferred.outputFile}
+                  </div>
+                </div>
+              )}
+              {/* Retomar ≠ repetir (decisão 3 do deferred-work-plan): num nó de
+                  trabalho diferido, "Repetir etapa" relançaria o workflow do
+                  zero pagando tudo de novo — só o INTERROMPIDO ganha ação, e
+                  ela é Retomar (reaproveita o cache via resumeFromRunId). */}
+              {item.result &&
+                onRetry &&
+                (!item.deferred || item.deferred.status === "interrupted") && (
+                  <div className="flex items-center justify-end gap-1.5 border-t border-border/50 px-2 py-1.5">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onRetry(item)
+                      }}
+                      title={
+                        item.deferred
+                          ? "Retoma o trabalho em background de onde parou, reaproveitando o cache do workflow (não relança do zero)"
+                          : undefined
+                      }
+                      className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[10.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      <RotateCcw className="size-3" />{" "}
+                      {item.deferred ? "Retomar" : "Repetir etapa"}
+                    </button>
+                  </div>
                 )}
-              >
-                {resultText}
-              </div>
             </div>
+          )}
+          {children.length > 0 && (
+            <ToolNodeList
+              nodes={children}
+              activeToolId={activeToolId}
+              agent={agent}
+              depth={depth + 1}
+              parentId={item.toolId ?? item.id}
+              live={active}
+              deferredPending={deferredPending}
+              onStop={onStop}
+              onRetry={onRetry}
+            />
           )}
         </div>
       )}
     </div>
   )
 })
+
+/** Durante o voo, ações já resolvidas viram um único registro recolhido e só o
+ * ramo ativo permanece exposto. Ao abrir o histórico, cada shell/arquivo volta
+ * a ser navegável individualmente pelas setas. */
+function ToolNodeList({
+  nodes,
+  activeToolId,
+  agent,
+  depth,
+  parentId,
+  live,
+  deferredPending,
+  onStop,
+  onRetry,
+}: {
+  nodes: ToolTreeNode[]
+  activeToolId?: string | null
+  agent: string
+  depth: number
+  parentId?: string
+  live: boolean
+  deferredPending?: boolean
+  onStop?: (tool: ToolItem) => void
+  onRetry?: (tool: ToolItem) => void
+}) {
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const activeNodes = nodes.filter(
+    (node) =>
+      branchContains(node, activeToolId) ||
+      node.item.managedProcess?.status === "running" ||
+      node.item.managedProcess?.status === "stopping" ||
+      branchHasLiveDeferred(node),
+  )
+  const settledNodes = nodes.filter((node) => !activeNodes.includes(node))
+  const groupSettled = live && settledNodes.length >= 2
+  const summary = summarizeToolGroup(
+    settledNodes.map((node) => node.item),
+    false,
+  )
+  const historyId = `history:${parentId ?? "root"}:${depth}`
+
+  const renderNode = (node: ToolTreeNode) => (
+    <ToolLine
+      key={node.item.id}
+      node={node}
+      activeToolId={activeToolId}
+      agent={agent}
+      depth={depth}
+      deferredPending={deferredPending}
+      onStop={onStop}
+      onRetry={onRetry}
+    />
+  )
+
+  if (!groupSettled) {
+    return (
+      <div role="group" className="flex flex-col gap-px">
+        {nodes.map(renderNode)}
+      </div>
+    )
+  }
+
+  return (
+    <div role="group" className="flex flex-col gap-px">
+      <button
+        type="button"
+        onClick={() => setHistoryOpen((value) => !value)}
+        data-work-node
+        data-node-id={historyId}
+        data-parent-id={parentId}
+        role="treeitem"
+        aria-level={depth}
+        aria-expanded={historyOpen}
+        tabIndex={-1}
+        className="group/history flex w-full items-center gap-2.5 rounded-md px-2 py-[5px] text-left text-[12px] text-muted-foreground/75 transition-colors hover:bg-accent/35 hover:text-foreground"
+      >
+        <span className="grid size-3.5 shrink-0 place-items-center">
+          <ToolGroupStatus state={summary.state} />
+        </span>
+        <span className="truncate">{summary.label}</span>
+        <ChevronRight
+          className={cn(
+            "ml-auto size-3 text-muted-foreground/40 transition-transform group-hover/history:text-muted-foreground/70",
+            historyOpen && "rotate-90",
+          )}
+        />
+      </button>
+      {historyOpen && (
+        <div className="ml-[7px] border-l border-border/40 pl-2">
+          {settledNodes.map(renderNode)}
+        </div>
+      )}
+      {activeNodes.map(renderNode)}
+    </div>
+  )
+}
 
 function ToolGroupStatus({
   state,
@@ -357,22 +736,89 @@ function ToolGroupStatus({
   return <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
 }
 
+function ActivityAge({ at, stalled }: { at?: number; stalled?: boolean }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  if (!at) return null
+  const seconds = Math.max(0, Math.floor((now - at) / 1000))
+  const label =
+    seconds < 5
+      ? "agora"
+      : seconds < 60
+        ? `há ${seconds}s`
+        : `há ${Math.floor(seconds / 60)}min`
+  return (
+    <span className={cn("font-mono text-[10px]", stalled && "text-st-warning")}>
+      {stalled ? "sem eventos " : "atividade "}
+      {label}
+    </span>
+  )
+}
+
 /** Registro de voo: UMA caption por burst. O primeiro clique revela ações
  * humanas; cada ação guarda seu próprio nível técnico (comando/input/output). */
 function ToolGroup({
   tools,
   defaultOpen,
   active = false,
+  agent,
+  stalledSince,
+  onStop,
+  onRetry,
 }: {
   tools: ToolItem[]
   defaultOpen: boolean
   /** turno rodando E este é o grupo corrente → o passo sem result "roda". */
   active?: boolean
+  agent: string
+  stalledSince?: number
+  onStop?: (tool: ToolItem) => void
+  onRetry?: (tool: ToolItem) => void
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const manuallyToggled = useRef(false)
   const wasActive = useRef(active)
-  const summary = summarizeToolGroup(tools, active)
+  const processLive = tools.some(
+    (tool) =>
+      tool.managedProcess?.status === "running" ||
+      tool.managedProcess?.status === "stopping",
+  )
+  // Trabalho diferido VIVO mantém o grupo aceso (D1.2): ele roda dentro do CLI
+  // mesmo com o texto do turno já parado.
+  const deferredLive = tools.some(
+    (tool) => tool.deferred?.status === "running",
+  )
+  const live = active || processLive || deferredLive
+  const forest = useMemo(() => buildToolForest(tools), [tools])
+  const activeToolId = live
+    ? [...tools]
+        .reverse()
+        .find(
+          (tool) =>
+            !tool.result ||
+            tool.managedProcess?.status === "running" ||
+            tool.managedProcess?.status === "stopping" ||
+            tool.deferred?.status === "running",
+        )?.id ?? null
+    : null
+  const summary = summarizeToolGroup(tools, live && activeToolId != null)
+  const agentCount = tools.filter((tool) =>
+    ["Task", "Agent"].includes(tool.name),
+  ).length
+  const shellCount = tools.filter(
+    (tool) => presentTool(tool.name, tool.input).kind === "bash",
+  ).length
+  const lastActivity = tools.reduce(
+    (latest, tool) =>
+      Math.max(
+        latest,
+        tool.managedProcess?.updatedAt ?? tool.activityAt ?? tool.ts ?? 0,
+      ),
+    0,
+  )
   const diffTotal = tools.reduce(
     (acc, t) => {
       const d = editHunks(t.name, (t.input ?? {}) as Record<string, unknown>)
@@ -388,21 +834,58 @@ function ToolGroup({
   // A atividade corrente pode abrir pra dar feedback ao vivo. Quando termina,
   // recolhe sozinha — exceto se o usuário assumiu o controle do disclosure.
   useEffect(() => {
-    if (active && !manuallyToggled.current) setOpen(true)
-    if (wasActive.current && !active && !manuallyToggled.current) setOpen(false)
-    wasActive.current = active
-  }, [active])
+    if (live && !manuallyToggled.current) setOpen(true)
+    if (wasActive.current && !live && !manuallyToggled.current) setOpen(false)
+    wasActive.current = live
+  }, [live])
+
+  function onTreeKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const target = (e.target as HTMLElement).closest<HTMLElement>(
+      "[data-work-root], [data-work-node]",
+    )
+    if (!target) return
+    const focusables = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>(
+        "[data-work-root], [data-work-node]",
+      ),
+    ).filter((el) => el.offsetParent !== null)
+    const index = focusables.indexOf(target)
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault()
+      const delta = e.key === "ArrowDown" ? 1 : -1
+      focusables[Math.max(0, Math.min(focusables.length - 1, index + delta))]?.focus()
+      return
+    }
+    if (e.key === "ArrowRight") {
+      e.preventDefault()
+      if (target.getAttribute("aria-expanded") === "false") target.click()
+      else focusables[index + 1]?.focus()
+      return
+    }
+    if (e.key === "ArrowLeft") {
+      e.preventDefault()
+      if (target.getAttribute("aria-expanded") === "true") {
+        target.click()
+        return
+      }
+      const parentId = target.dataset.parentId
+      const parent = focusables.find((el) => el.dataset.nodeId === parentId)
+      ;(parent ?? focusables[0])?.focus()
+    }
+  }
 
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" onKeyDown={onTreeKeyDown}>
       <button
         onClick={() => {
           manuallyToggled.current = true
           setOpen((o) => !o)
         }}
+        data-work-root
         aria-expanded={open}
         className={cn(
-          "group/activity flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-[12px] transition-colors hover:bg-accent/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+          "group/activity flex w-full items-center gap-2 rounded-md border-l-2 border-l-transparent px-1.5 py-1.5 text-left text-[12px] transition-colors hover:bg-accent/35 focus-visible:border-l-brass focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+          live && "border-l-st-running bg-st-running/[0.045]",
           summary.state === "error"
             ? "text-st-error"
             : summary.state === "running"
@@ -418,6 +901,30 @@ function ToolGroup({
           <ToolGroupStatus state={summary.state} />
         </span>
         <span className="min-w-0 flex-1 truncate">{summary.label}</span>
+        <span className="hidden shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground sm:flex">
+          {agentCount > 0 && (
+            <span>
+              {agentCount} agente{agentCount === 1 ? "" : "s"}
+            </span>
+          )}
+          {agentCount > 0 && shellCount > 0 && <span aria-hidden="true">·</span>}
+          {shellCount > 0 && (
+            <span>
+              {shellCount} shell{shellCount === 1 ? "" : "s"}
+            </span>
+          )}
+          {live && (
+            <>
+              {(agentCount > 0 || shellCount > 0) && (
+                <span aria-hidden="true">·</span>
+              )}
+              <ActivityAge
+                at={stalledSince ?? lastActivity}
+                stalled={stalledSince != null}
+              />
+            </>
+          )}
+        </span>
         {(diffTotal.added > 0 || diffTotal.removed > 0) && (
           <span className="shrink-0 font-mono text-[10.5px] tabular-nums">
             {diffTotal.added > 0 && (
@@ -438,18 +945,73 @@ function ToolGroup({
         />
       </button>
       {open && (
-        <div className="mt-0.5 ml-[7px] flex flex-col gap-px border-l border-border/40 pl-2.5">
-          {tools.map((t, i) => (
-            <ToolLine
-              key={t.id}
-              item={t}
-              // "rodando" é SÓ o último passo emitido (o corrente).
-              active={active && i === tools.length - 1 && !t.result}
-            />
-          ))}
+        <div
+          role="tree"
+          aria-label="Fio Vivo da execução"
+          className="mt-0.5 ml-[7px] flex flex-col gap-px border-l border-border/40 pl-2.5"
+        >
+          <ToolNodeList
+            nodes={forest}
+            activeToolId={activeToolId}
+            agent={agent}
+            depth={1}
+            live={live}
+            deferredPending={deferredLive}
+            onStop={onStop}
+            onRetry={onRetry}
+          />
         </div>
       )}
     </div>
+  )
+}
+
+/** Galeria de lightbox a partir dos paths de evidência de UMA tool. */
+function evidenceGallery(paths: string[]): LightboxImage[] {
+  return paths.map((path) => ({
+    path,
+    name: evidenceName(path),
+    source: "evidencia" as const,
+  }))
+}
+
+/** Thumbnail de evidência visual de tool_result (B1). Arquivo sumido do disco
+ *  → chip honesto ("evidência removida"), nunca <img> quebrada. */
+function EvidenceThumb({ path, onOpen }: { path: string; onOpen: () => void }) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let alive = true
+    evidenceUrl(path)
+      .then((u) => alive && setUrl(u))
+      .catch(() => alive && setFailed(true))
+    return () => {
+      alive = false
+    }
+  }, [path])
+  if (failed) {
+    return (
+      <span className="rounded-md border bg-card px-2.5 py-1.5 text-[11.5px] text-muted-foreground">
+        {EVIDENCE_MISSING}
+      </span>
+    )
+  }
+  if (!url) {
+    return <span className="h-20 w-28 animate-pulse rounded-lg border bg-secondary/40" />
+  }
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={`${evidenceName(path)} (clique para ampliar)`}
+      className="overflow-hidden rounded-lg border transition-colors hover:border-brass/60"
+    >
+      <img
+        src={url}
+        alt={evidenceName(path)}
+        className="max-h-32 max-w-[220px] object-contain"
+      />
+    </button>
   )
 }
 
@@ -457,10 +1019,13 @@ function ToolGroup({
 function AttachmentThumb({
   att,
   read,
+  onOpen,
 }: {
   att: Attachment
   /** Selo de leitura: null = nada a afirmar (inlinado / sem telemetria). */
   read: { text: string; warn: boolean } | null
+  /** Abre o anexo no lightbox (só imagens; PDF segue chip). */
+  onOpen?: () => void
 }) {
   const [url, setUrl] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
@@ -493,13 +1058,27 @@ function AttachmentThumb({
   if (!url) {
     return <span className="size-20 animate-pulse rounded-lg border bg-secondary/40" />
   }
+  // Parte 2 do B1: o anexo enviado volta a ser ABRÍVEL (feedback real:
+  // "depois de enviada eu não consigo abrir e ver detalhes") — clique abre o
+  // mesmo lightbox da evidência de tool.
   return (
     <span className="relative inline-flex">
-      <img
-        src={url}
-        alt={att.name}
-        className="max-h-44 max-w-[220px] rounded-lg border object-contain"
-      />
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={!onOpen}
+        title={onOpen ? `${att.name} (clique para ampliar)` : att.name}
+        className={cn(
+          "overflow-hidden rounded-lg border",
+          onOpen && "transition-colors hover:border-brass/60",
+        )}
+      >
+        <img
+          src={url}
+          alt={att.name}
+          className="max-h-44 max-w-[220px] object-contain"
+        />
+      </button>
       {read && (
         <span className="absolute right-1 bottom-1">
           <ReadBadge read={read} />
@@ -538,8 +1117,9 @@ function ReadBadge({ read }: { read: { text: string; warn: boolean } | null }) {
  *  Linear (Fusion/Mission não têm este loop). O gate humano vive no card:
  *  distill PROPÕE, o clique GRAVA. */
 export interface FeedbackApi {
-  /** 👍 leve: reforça (bumpLessonUses) as lições injetadas no último turno. */
-  onThumbUp: () => void | Promise<void>
+  /** Persiste a reação no RESULTADO terminal. Retorna true quando adicionou
+   *  (false = removeu), para o reforço só contar sinais positivos novos. */
+  onReact: (resultId: string, reaction: string) => Promise<boolean>
   /** Destila um candidato de regra + o veredito de learnability (Haiku julga se
    *  há algo durável). learnable:false → a UI avisa mas deixa salvar (gate humano). */
   distill: (
@@ -550,37 +1130,62 @@ export interface FeedbackApi {
   /** Grava a regra após o gate humano (dedup interno). O desfecho distingue
    *  duplicata de FALHA — antes os dois viravam `false` e a UI dizia "duplicata"
    *  quando o banco tinha caído. */
-  save: (rule: string, scope: "global" | "project") => Promise<SaveLessonOutcome>
+  save: (
+    rule: string,
+    scope: "global" | "project",
+    reaction?: string | null,
+  ) => Promise<SaveLessonOutcome>
 }
 
-/** 👍/👎 + "salvar como regra" numa bolha de TEXTO do agente (kind text/result).
- *  Discreto (aparece no hover, padrão do CopyButton). O 👎 e o "salvar regra"
- *  abrem o MESMO fluxo: input inline → card de propor-regra com gate humano. */
-function FeedbackControls({
+const TURN_REACTIONS = [
+  { emoji: "👍", label: "Gostei" },
+  { emoji: "🎯", label: "Preciso" },
+  { emoji: "🧠", label: "Boa análise" },
+  { emoji: "🧪", label: "Bem testado" },
+  { emoji: "⚡", label: "Eficiente" },
+  { emoji: "👎", label: "Precisa melhorar" },
+] as const
+const MORE_REACTIONS = ["🚀", "✨", "🔥", "💡", "🧹", "🐢", "⚠️", "❤️"] as const
+
+/** UMA superfície de feedback por resultado de turno. Emoji é sinal leve;
+ *  memória permanente exige nota → proposta editável → confirmação humana. */
+function TurnFeedback({
+  resultId,
   agentTurn,
+  reactions,
   api,
 }: {
+  resultId: string
   agentTurn: string
+  reactions: string[]
   api: FeedbackApi
 }) {
   // "idle" | "ask" (input inline) | "card" (propor regra) | "done"
   const [mode, setMode] = useState<"idle" | "ask" | "card" | "done">("idle")
-  const [thumbedUp, setThumbedUp] = useState(false)
+  const [selectedReaction, setSelectedReaction] = useState<string | null>(
+    reactions.at(-1) ?? null,
+  )
   const [note, setNote] = useState("")
   const [rule, setRule] = useState("")
   // veredito do juiz de learnability: false = pouco generalizável (avisa, não bloqueia).
   const [learnable, setLearnable] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
 
-  function thumbUp() {
-    if (thumbedUp) return
-    setThumbedUp(true)
-    void api.onThumbUp()
+  async function react(reaction: string) {
+    const added = await api.onReact(resultId, reaction)
+    setSelectedReaction(added ? reaction : null)
   }
 
-  // 👎 → abre input; "salvar como regra" → mesmo fluxo, seeded com "o que funcionou".
-  function openAsk(seed: string) {
-    setNote(seed)
+  function openAsk() {
+    const negative = selectedReaction === "👎"
+    setNote(
+      negative
+        ? ""
+        : selectedReaction
+          ? `O que funcionou com ${selectedReaction} e deve se repetir: `
+          : "",
+    )
     setMode("ask")
   }
 
@@ -604,7 +1209,7 @@ function FeedbackControls({
     if (!r) return
     setBusy(true)
     try {
-      const r2 = await api.save(r, scope)
+      const r2 = await api.save(r, scope, selectedReaction)
       setMode(r2 === "salva" ? "done" : "idle")
       if (r2 === "duplicata") toastDuplicate()
       if (r2 === "erro") {
@@ -617,17 +1222,82 @@ function FeedbackControls({
     }
   }
 
-  if (mode === "done") {
-    return (
-      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-st-success">
-        <GraduationCap className="size-3.5" /> Regra salva
+  return (
+    <div className="mt-2 border-t border-border/45 pt-2">
+      <div className="flex flex-wrap items-center gap-1">
+        {TURN_REACTIONS.map(({ emoji, label }) => {
+          const active = reactions.includes(emoji)
+          return (
+            <button
+              key={emoji}
+              type="button"
+              onClick={() => void react(emoji)}
+              aria-pressed={active}
+              title={label}
+              className={cn(
+                "rounded-full border px-1.5 py-0.5 text-[13px] leading-none transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                active
+                  ? "border-brass/45 bg-brass/10"
+                  : "border-transparent bg-secondary/50",
+              )}
+            >
+              <span aria-hidden>{emoji}</span>
+              <span className="sr-only">{label}</span>
+            </button>
+          )
+        })}
+        <button
+          type="button"
+          onClick={() => setMoreOpen((open) => !open)}
+          aria-expanded={moreOpen}
+          aria-label="Mais reações"
+          className="rounded-full border border-transparent bg-secondary/50 px-1.5 py-0.5 text-[13px] leading-none text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          ＋
+        </button>
+        {(moreOpen ||
+          reactions.some((reaction) =>
+            (MORE_REACTIONS as readonly string[]).includes(reaction),
+          )) && (
+          <span className="flex items-center gap-0.5 rounded-full border bg-card p-0.5 shadow-sm">
+            {MORE_REACTIONS.filter(
+              (emoji) => moreOpen || reactions.includes(emoji),
+            ).map((emoji) => {
+              const active = reactions.includes(emoji)
+              return (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => void react(emoji)}
+                  aria-pressed={active}
+                  aria-label={`Reagir com ${emoji}`}
+                  className={cn(
+                    "rounded-full px-1 py-0.5 text-[13px] leading-none hover:bg-accent",
+                    active && "bg-brass/10",
+                  )}
+                >
+                  {emoji}
+                </button>
+              )
+            })}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={openAsk}
+          className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-brass"
+        >
+          <GraduationCap className="size-3.5" /> Transformar em aprendizado
+        </button>
+        {mode === "done" && (
+          <span className="ml-auto inline-flex items-center gap-1 text-[10.5px] text-st-success">
+            <Check className="size-3" /> Regra salva
+          </span>
+        )}
       </div>
-    )
-  }
 
-  if (mode === "ask") {
-    return (
-      <div className="mt-1.5 flex items-center gap-1.5">
+      {mode === "ask" && (
+        <div className="mt-2 flex items-center gap-1.5">
         <input
           autoFocus
           value={note}
@@ -636,7 +1306,11 @@ function FeedbackControls({
             if (e.key === "Enter") void propose()
             if (e.key === "Escape") setMode("idle")
           }}
-          placeholder="O que faltou / estava errado?"
+          placeholder={
+            selectedReaction === "👎"
+              ? "O que faltou ou deveria mudar?"
+              : "O que funcionou e deve se repetir?"
+          }
           className="min-w-0 flex-1 rounded-md border bg-background/60 px-2 py-1 text-[12px] outline-none focus:border-brass/60"
         />
         <button
@@ -644,7 +1318,11 @@ function FeedbackControls({
           disabled={busy || !note.trim()}
           className="shrink-0 rounded-md bg-brass px-2 py-1 text-[11.5px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          {busy ? <Loader2 className="size-3.5 animate-spin" /> : "Propor regra"}
+          {busy ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            "Propor aprendizado"
+          )}
         </button>
         <button
           onClick={() => setMode("idle")}
@@ -654,11 +1332,9 @@ function FeedbackControls({
           <X className="size-3.5" />
         </button>
       </div>
-    )
-  }
+      )}
 
-  if (mode === "card") {
-    return (
+      {mode === "card" && (
       <div
         className={cn(
           "mt-1.5 flex flex-col gap-2 rounded-lg border p-2.5",
@@ -675,8 +1351,8 @@ function FeedbackControls({
           </div>
         ) : (
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <GraduationCap className="size-3.5 text-brass" /> Regra proposta —
-            revise antes de salvar
+            <GraduationCap className="size-3.5 text-brass" /> Aprendizado
+            proposto — confirme antes de tornar permanente
           </div>
         )}
         <textarea
@@ -709,39 +1385,7 @@ function FeedbackControls({
           {busy && <Loader2 className="size-3.5 animate-spin text-brass" />}
         </div>
       </div>
-    )
-  }
-
-  // idle: ícones discretos no hover.
-  return (
-    <div className="mt-0.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100">
-      <button
-        onClick={thumbUp}
-        title="Boa resposta (reforça as lições usadas)"
-        aria-label="Boa resposta"
-        className={cn(
-          "rounded p-1 text-muted-foreground transition-colors hover:text-st-success",
-          thumbedUp && "text-st-success",
-        )}
-      >
-        <ThumbsUp className="size-3.5" />
-      </button>
-      <button
-        onClick={() => openAsk("")}
-        title="Faltou algo / estava errado"
-        aria-label="Feedback negativo"
-        className="rounded p-1 text-muted-foreground transition-colors hover:text-st-error"
-      >
-        <ThumbsDown className="size-3.5" />
-      </button>
-      <button
-        onClick={() => openAsk("O que funcionou aqui e vale como regra: ")}
-        title="Salvar como regra"
-        aria-label="Salvar como regra"
-        className="rounded p-1 text-muted-foreground transition-colors hover:text-brass"
-      >
-        <GraduationCap className="size-3.5" />
-      </button>
+      )}
     </div>
   )
 }
@@ -756,8 +1400,10 @@ function toastDuplicate() {
  *  rotuladas, com o custo promovido a brass. */
 function TurnTelemetry({
   it,
+  incidentTone,
 }: {
   it: Extract<ChatItem, { kind: "result" }>
+  incidentTone?: "limit"
 }) {
   const hasUsage = it.usage && (it.usage.input > 0 || it.usage.output > 0)
   // Caption de fim de turno: linha DISCRETA, alinhada ao conteúdo da mensagem
@@ -768,15 +1414,21 @@ function TurnTelemetry({
       <span
         className={cn(
           "flex items-center gap-1 font-medium",
-          it.ok ? "text-st-success" : "text-st-error",
+          it.ok
+            ? "text-st-success"
+            : incidentTone === "limit"
+              ? "text-st-warning"
+              : "text-st-error",
         )}
       >
         {it.ok ? (
           <Check className="size-3" />
+        ) : incidentTone === "limit" ? (
+          <Gauge className="size-3" />
         ) : (
           <AlertCircle className="size-3" />
         )}
-        {it.ok ? "concluído" : "erro"}
+        {it.ok ? "concluído" : incidentTone === "limit" ? "turno encerrado" : "erro"}
       </span>
       {it.durationMs != null && (
         <>
@@ -872,6 +1524,23 @@ function MentionText({ text }: { text: string }) {
       )}
     </>
   )
+}
+
+/** Reset vem em formatos de vários CLIs. A UI só humaniza os casos inequívocos
+ * e mantém o texto original nos demais (sem inventar um relógio). */
+function formatIncidentReset(hint: string): string {
+  let formatted = hint
+    .trim()
+    .replace(/^reset(?:s|ting)?\s+(?:at\s+)?/i, "")
+  const time = formatted.match(/\b(\d{1,2}):(\d{2})\s*([ap])\.?m\.?\b/i)
+  if (time) {
+    let hour = Number(time[1]) % 12
+    if (time[3].toLowerCase() === "p") hour += 12
+    formatted = formatted.replace(time[0], `${String(hour).padStart(2, "0")}:${time[2]}`)
+  }
+  return formatted
+    .replace(/\s*\(America\/Sao_Paulo\)/i, " · horário de São Paulo")
+    .replace(/America\/Sao_Paulo/i, "horário de São Paulo")
 }
 
 /** Linha de CHEGADA do conselheiro (Especialistas E1): enquanto o parecer não
@@ -1017,15 +1686,137 @@ function AdviceCard({ item }: { item: Extract<ChatItem, { kind: "advice" }> }) {
   )
 }
 
+/** Um término vira UM instrumento acionável. Limite é estado operacional
+ * esperado (âmbar); vermelho fica reservado para falha real. O texto cru do
+ * provider existe para diagnóstico, mas não domina o fio. */
+function IncidentCard({
+  incident,
+  currentAgent,
+  onContinueWith,
+  feedback,
+  feedbackText,
+}: {
+  incident: IncidentNode
+  currentAgent: string
+  onContinueWith?: (agent: string) => void
+  feedback?: FeedbackApi | null
+  feedbackText?: string
+}) {
+  const limited = incident.severity === "limit"
+  const Icon = limited ? Gauge : AlertCircle
+  const title = limited
+    ? "Limite desta sessão atingido"
+    : "Não foi possível concluir esta execução"
+  const description = limited
+    ? "O agente precisa de uma pausa. O MyCockpit preservou seu histórico, contexto e arquivos."
+    : "O MyCockpit preservou a conversa e os arquivos para você tentar novamente ou continuar com outro agente."
+
+  return (
+    <div
+      className={cn(
+        "overflow-hidden rounded-lg border",
+        limited
+          ? "border-st-warning/45 bg-st-warning/[0.07]"
+          : "border-st-error/40 bg-st-error/[0.07]",
+      )}
+    >
+      <div className="px-3.5 py-3">
+        <div className="flex items-start gap-2.5">
+          <span
+            className={cn(
+              "mt-0.5 grid size-7 shrink-0 place-items-center rounded-md border",
+              limited
+                ? "border-st-warning/35 bg-st-warning/10 text-st-warning"
+                : "border-st-error/30 bg-st-error/10 text-st-error",
+            )}
+          >
+            <Icon className="size-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p
+              className={cn(
+                "text-[13px] font-medium",
+                limited ? "text-st-warning" : "text-st-error",
+              )}
+            >
+              {title}
+            </p>
+            <p className="mt-0.5 text-[12.5px] leading-relaxed text-foreground/75">
+              {description}
+            </p>
+          </div>
+        </div>
+
+        {limited && incident.resetHint && (
+          <div className="mt-2.5 flex items-center gap-2 rounded-md border border-st-warning/30 bg-st-warning/[0.08] px-2.5 py-2 text-[12px] text-foreground/80">
+            <RotateCcw className="size-3.5 shrink-0 text-st-warning" />
+            <span>Disponível novamente</span>
+            <strong className="font-mono font-medium text-st-warning">
+              {formatIncidentReset(incident.resetHint)}
+            </strong>
+          </div>
+        )}
+
+        {incident.result && (
+          <div className="mt-2.5 border-t border-border/45 pt-2">
+            <TurnTelemetry
+              it={incident.result}
+              incidentTone={limited ? "limit" : undefined}
+            />
+          </div>
+        )}
+
+        {onContinueWith && (
+          <div className="mt-2.5 border-t border-border/45 pt-2.5">
+            <ContinueRow
+              current={currentAgent}
+              onPick={onContinueWith}
+              subtle={!limited}
+            />
+          </div>
+        )}
+
+        {incident.details.length > 0 && (
+          <details className="group/details mt-2.5 border-t border-border/40 pt-2">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="size-3 transition-transform group-open/details:rotate-90" />
+              Detalhes técnicos
+            </summary>
+            <div
+              data-selectable
+              className="mt-2 max-h-40 overflow-y-auto rounded-md bg-background/45 px-2.5 py-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-muted-foreground"
+            >
+              {incident.details.join("\n")}
+            </div>
+          </details>
+        )}
+      </div>
+
+      {incident.result && feedback && (
+        <div className="border-t border-border/45 px-3.5 py-2">
+          <TurnFeedback
+            resultId={incident.result.id}
+            agentTurn={feedbackText ?? incident.result.text ?? ""}
+            reactions={incident.result.reactions ?? []}
+            api={feedback}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Um item NÃO-tool da conversa. `memo`: só re-renderiza quando a REFERÊNCIA do
  *  item muda (itens não-streaming têm ref estável), não re-pinta a cada delta (F12). */
 const MessageItem = memo(function MessageItem({
   item: it,
   feedback,
+  feedbackText,
   reads,
 }: {
   item: ChatItem
   feedback?: FeedbackApi | null
+  feedbackText?: string
   /** Selo de leitura por PATH de anexo (só itens do usuário usam). Vem pronto
    *  do MessageList: calcular aqui exigiria o fio inteiro dentro de um `memo`
    *  por item, o que mataria a memoização a cada delta do streaming. */
@@ -1034,12 +1825,36 @@ const MessageItem = memo(function MessageItem({
   if (it.kind === "user") {
     // Slack-style: alinhado à esquerda sob o gutter "Você" (o autor está no
     // cabeçalho do grupo), não mais bolha à direita.
+    // Galeria do lightbox = só as IMAGENS desta mensagem (PDF segue chip).
+    const gallery: LightboxImage[] = (it.attachments ?? [])
+      .filter((a) => a.kind === "image")
+      .map((a) => ({
+        path: a.path,
+        name: a.name,
+        source: "anexo" as const,
+        mime: a.mime,
+      }))
     return (
       <div className="flex flex-col items-start gap-1.5">
         {it.attachments && it.attachments.length > 0 && (
           <div className="flex max-w-full flex-wrap gap-1.5">
             {it.attachments.map((a) => (
-              <AttachmentThumb key={a.path} att={a} read={reads?.[a.path] ?? null} />
+              <AttachmentThumb
+                key={a.path}
+                att={a}
+                read={reads?.[a.path] ?? null}
+                onOpen={
+                  a.kind === "image"
+                    ? () =>
+                        useLightbox
+                          .getState()
+                          .open(
+                            gallery,
+                            gallery.findIndex((g) => g.path === a.path),
+                          )
+                    : undefined
+                }
+              />
             ))}
           </div>
         )}
@@ -1056,59 +1871,41 @@ const MessageItem = memo(function MessageItem({
   }
 
   if (it.kind === "text") {
-    // No Linear (feedback != null), a bolha do agente ganha 👍/👎/salvar regra
-    // no hover (group/msg). Só faz sentido em texto NÃO-vazio.
-    if (feedback && it.text.trim()) {
-      return (
-        <div className="group/msg">
-          <Markdown text={it.text} />
-          <FeedbackControls agentTurn={it.text} api={feedback} />
-        </div>
-      )
-    }
     return <Markdown text={it.text} />
   }
 
-  if (it.kind === "tool") {
-    return <ToolLine item={it} />
-  }
+  // Tools são agrupadas por buildNodes/ToolGroup. Este guard só torna a união
+  // exaustiva caso um item cru chegue aqui por histórico legado.
+  if (it.kind === "tool") return null
 
   if (it.kind === "error") {
     return (
-      <div className="rounded-lg border border-st-error/40 bg-st-error/10 px-3 py-2.5">
-        <div className="mb-1 flex items-center gap-2 text-st-error">
-          <AlertCircle className="size-3.5" />
-          <span className="label-mono text-st-error">erro</span>
-        </div>
-        <div
-          data-selectable
-          className="font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/85"
-        >
-          {it.message}
-        </div>
-      </div>
+      <IncidentCard
+        incident={{
+          type: "incident",
+          key: it.id,
+          severity: "error",
+          message: it.message,
+          details: [it.message],
+        }}
+        currentAgent=""
+      />
     )
   }
 
   if (it.kind === "limit") {
     return (
-      <div className="rounded-lg border border-st-warning/40 bg-st-warning/10 px-3 py-2.5">
-        <div className="mb-1 flex items-center gap-2 text-st-warning">
-          <Gauge className="size-3.5" />
-          <span className="label-mono text-st-warning">limite de uso atingido</span>
-          {it.resetHint && (
-            <span className="text-[11.5px] text-st-warning/80">
-              volta {it.resetHint}
-            </span>
-          )}
-        </div>
-        <div
-          data-selectable
-          className="font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/85"
-        >
-          {it.message}
-        </div>
-      </div>
+      <IncidentCard
+        incident={{
+          type: "incident",
+          key: it.id,
+          severity: "limit",
+          message: it.message,
+          resetHint: it.resetHint,
+          details: [it.message],
+        }}
+        currentAgent=""
+      />
     )
   }
 
@@ -1135,7 +1932,7 @@ const MessageItem = memo(function MessageItem({
   }
 
   return (
-    <div className="group/msg flex flex-col gap-1.5">
+    <div className="rounded-lg border border-border/55 bg-card/35 px-3 py-2.5">
       {!it.ok && it.text && (
         <div className="rounded-lg border border-st-error/40 bg-st-error/10 px-3 py-2">
           <div
@@ -1147,8 +1944,13 @@ const MessageItem = memo(function MessageItem({
         </div>
       )}
       <TurnTelemetry it={it} />
-      {feedback && it.ok && (
-        <FeedbackControls agentTurn={it.text ?? ""} api={feedback} />
+      {feedback && (
+        <TurnFeedback
+          resultId={it.id}
+          agentTurn={feedbackText ?? it.text ?? ""}
+          reactions={it.reactions ?? []}
+          api={feedback}
+        />
       )}
     </div>
   )
@@ -1198,22 +2000,113 @@ function ContinueRow({
 interface NodeCtx {
   isLast: boolean
   running: boolean
-  tasks: ReturnType<typeof deriveTasks>
+  taskPlans: AgentPlan[]
+  activePlanAnchor: string | null
   feedback?: FeedbackApi | null
   attReads: Record<string, { text: string; warn: boolean } | null>
   agent: string
+  stalledSince?: number
+  feedbackByResult: Map<string, string>
+  onStop?: (tool: ToolItem) => void
+  onRetry?: (tool: ToolItem) => void
   onContinueWith?: (agent: string) => void
+}
+
+/** O transcript registra que o plano nasceu e como terminou; a checklist viva
+ * mora exclusivamente junto ao composer. Assim o plano não disputa atenção
+ * consigo mesmo em dois pontos da tela. */
+function PlanMilestone({
+  plan,
+  live,
+}: {
+  plan: AgentPlan
+  live: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const done = plan.tasks.filter((task) => task.status === "completed").length
+  const complete = plan.tasks.length > 0 && done === plan.tasks.length
+  const expandable = !live && plan.tasks.length > 0
+  const label = live
+    ? "Plano publicado"
+    : complete
+      ? "Plano concluído"
+      : plan.terminal
+        ? "Plano encerrado"
+        : "Plano registrado"
+  const meta = live
+    ? `${plan.tasks.length} etapa${plan.tasks.length === 1 ? "" : "s"}`
+    : `${done}/${plan.tasks.length}`
+
+  return (
+    <div className="animate-cockpit-rise">
+      <button
+        type="button"
+        onClick={() => expandable && setOpen((value) => !value)}
+        aria-expanded={expandable ? open : undefined}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-[12px] text-muted-foreground transition-colors",
+          expandable && "hover:bg-accent/35 hover:text-foreground",
+        )}
+      >
+        {complete ? (
+          <Check className="size-3.5 shrink-0 text-st-success" />
+        ) : (
+          <ListChecks
+            className={cn(
+              "size-3.5 shrink-0",
+              live ? "text-brass" : "text-muted-foreground/65",
+            )}
+          />
+        )}
+        <span>{label}</span>
+        <span className="font-mono text-[11px] tabular-nums text-muted-foreground/75">
+          · {meta}
+        </span>
+        {expandable && (
+          <ChevronRight
+            className={cn(
+              "ml-auto size-3.5 text-muted-foreground/45 transition-transform",
+              open && "rotate-90",
+            )}
+          />
+        )}
+      </button>
+      {open && (
+        <div className="mt-1 ml-[7px] border-l border-border/45 py-1 pl-3">
+          <TaskChecklist tasks={plan.tasks} dense />
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** Corpo de UM nó de render (sem gutter/cabeçalho — isso é do grupo). Mantém
  *  intactos os caminhos existentes: prose costurada + ToolGroup, burst de tools,
  *  checklist e os cartões de item (user/result/erro/limite/advice…). */
 function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
-  if (n.type === "tasklist") {
+  if (n.type === "incident") {
+    const continuable = ctx.onContinueWith && !ctx.running && ctx.isLast
+    const resultId = n.result?.id
     return (
-      <div className="animate-cockpit-rise">
-        <TaskChecklist tasks={ctx.tasks} />
-      </div>
+      <IncidentCard
+        incident={n}
+        currentAgent={ctx.agent}
+        onContinueWith={continuable ? ctx.onContinueWith : undefined}
+        feedback={
+          resultId && ctx.feedbackByResult.has(resultId) ? ctx.feedback : null
+        }
+        feedbackText={resultId ? ctx.feedbackByResult.get(resultId) : undefined}
+      />
+    )
+  }
+  if (n.type === "plan") {
+    const plan = ctx.taskPlans.find((candidate) => candidate.anchorId === n.anchorId)
+    if (!plan) return null
+    return (
+      <PlanMilestone
+        plan={plan}
+        live={ctx.running && ctx.activePlanAnchor === n.anchorId}
+      />
     )
   }
   if (n.type === "prose") {
@@ -1225,17 +2118,32 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
       <div className="group/msg flex flex-col gap-1.5">
         {hasText && <Markdown text={n.text} />}
         {n.tools.length > 0 && (
-          <ToolGroup tools={n.tools} defaultOpen={active} active={active} />
-        )}
-        {ctx.feedback && hasText && (
-          <FeedbackControls agentTurn={n.text} api={ctx.feedback} />
+          <ToolGroup
+            tools={n.tools}
+            defaultOpen={active}
+            active={active}
+            agent={ctx.agent}
+            stalledSince={ctx.stalledSince}
+            onStop={ctx.onStop}
+            onRetry={ctx.onRetry}
+          />
         )}
       </div>
     )
   }
   if (n.type === "tools") {
     const active = ctx.running && ctx.isLast
-    return <ToolGroup tools={n.tools} defaultOpen={active} active={active} />
+    return (
+      <ToolGroup
+        tools={n.tools}
+        defaultOpen={active}
+        active={active}
+        agent={ctx.agent}
+        stalledSince={ctx.stalledSince}
+        onStop={ctx.onStop}
+        onRetry={ctx.onRetry}
+      />
+    )
   }
   // cartão de limite/erro ganha a fileira de revezamento (só fora do run; durante
   // o run o Stop é o caminho).
@@ -1247,7 +2155,14 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
   if (continuable) {
     return (
       <div className="flex flex-col gap-2">
-        <MessageItem item={n.item} feedback={ctx.feedback} reads={ctx.attReads} />
+        <MessageItem
+          item={n.item}
+          feedback={
+            ctx.feedbackByResult.has(n.item.id) ? ctx.feedback : null
+          }
+          feedbackText={ctx.feedbackByResult.get(n.item.id)}
+          reads={ctx.attReads}
+        />
         <ContinueRow
           current={ctx.agent}
           onPick={ctx.onContinueWith!}
@@ -1256,7 +2171,14 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
       </div>
     )
   }
-  return <MessageItem item={n.item} feedback={ctx.feedback} reads={ctx.attReads} />
+  return (
+    <MessageItem
+      item={n.item}
+      feedback={ctx.feedbackByResult.has(n.item.id) ? ctx.feedback : null}
+      feedbackText={ctx.feedbackByResult.get(n.item.id)}
+      reads={ctx.attReads}
+    />
+  )
 }
 
 /** Identidade do EXECUTOR pro gutter (compartilhada entre o cabeçalho do grupo
@@ -1284,22 +2206,33 @@ export function resolveExecutorIdentity(
 
 /** Indicador "trabalhando…" estilo Slack/typing: o avatar do executor no mesmo
  *  gutter das mensagens + "está trabalhando…" com dots escalonados + cronômetro.
- *  `finalizando…` mantém o formato (só troca o verbo). */
+ *  `finalizando…` mantém o formato (só troca o verbo). Com trabalho DIFERIDO
+ *  vivo (deferred-work-plan D1.3), o rótulo fica honesto: o CLI segura o turno
+ *  aberto enquanto o background task roda — o spinner mudo virava mentira. */
 function WorkingIndicator({
   agent,
   presetId,
   finalizing,
   running,
   startedAt,
+  deferredNames = [],
 }: {
   agent: string
   presetId: string | null
   finalizing: boolean
   running: boolean
   startedAt: number | null
+  /** Nomes dos trabalhos em background vivos (derivado de items). */
+  deferredNames?: string[]
 }) {
   const presets = usePresets((s) => s.list)
   const { gutter, name } = resolveExecutorIdentity(presets, agent, presetId)
+  const label =
+    deferredNames.length > 0
+      ? `trabalho em background rodando (${deferredNames.join(", ")})`
+      : finalizing
+        ? "finalizando…"
+        : "está trabalhando…"
   return (
     <div className="flex gap-3">
       <div className="w-7 shrink-0 pt-0.5">{gutter}</div>
@@ -1308,7 +2241,7 @@ function WorkingIndicator({
           <span className="text-[13px] font-medium text-foreground">{name}</span>
         </div>
         <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
-          <span>{finalizing ? "finalizando…" : "está trabalhando…"}</span>
+          <span>{label}</span>
           <span className="flex items-center gap-1" aria-hidden>
             {[0, 1, 2].map((i) => (
               <span
@@ -1411,6 +2344,35 @@ function GroupRow({
   )
 }
 
+/** Contexto consolidado do executor para o feedback do resultado. Recomeça em
+ * cada item do usuário; tools/subagentes não vazam como se fossem a resposta
+ * principal. */
+export function feedbackTextByResult(items: ChatItem[]): Map<string, string> {
+  const out = new Map<string, string>()
+  let parts: string[] = []
+  let previousResult: string | null = null
+  for (const item of items) {
+    if (item.kind === "user") {
+      parts = []
+      previousResult = null
+      continue
+    }
+    if (item.kind === "text" && item.text.trim()) {
+      parts.push(item.text)
+      continue
+    }
+    if (item.kind === "result") {
+      // Alguns providers publicam envelopes parciais. Dentro do mesmo pedido,
+      // só o resultado mais recente é um alvo de feedback.
+      if (previousResult) out.delete(previousResult)
+      const joined = parts.join("\n\n").trim()
+      out.set(item.id, joined || item.text?.trim() || "")
+      previousResult = item.id
+    }
+  }
+  return out
+}
+
 export function MessageList({
   items,
   running,
@@ -1419,6 +2381,10 @@ export function MessageList({
   agent,
   presetId,
   advising,
+  stalledSince,
+  unseenDividerId,
+  onStop,
+  onRetry,
   onContinueWith,
   feedback,
 }: {
@@ -1433,13 +2399,41 @@ export function MessageList({
   /** Especialistas E1: conselheiro em consulta (id+nome) — enquanto setado, a
    *  linha de chegada aparece no fim do fio; some quando o item `advice` cai. */
   advising?: { id: string; name: string } | null
+  /** Watchdog do turno: presente quando o provider está vivo, mas sem eventos
+   *  observáveis desde este instante. */
+  stalledSince?: number
+  /** S1.1 — id do primeiro item NÃO-VISTO (capturado ao abrir uma conversa com
+   *  finishedUnseen): o divisor "novas mensagens" entra antes do grupo que
+   *  começa nele. undefined = sem divisor nesta visita. */
+  unseenDividerId?: string
+  /** Controle capability-aware: hoje interrompe o run principal; processos
+   *  gerenciados podem especializar este callback depois. */
+  onStop?: (tool: ToolItem) => void
+  /** Repetição explícita vira um novo turno, nunca reexecuta efeito escondido. */
+  onRetry?: (tool: ToolItem) => void
   /** Revezamento: continuar a conversa em outro agent (limite/erro). */
   onContinueWith?: (agent: string) => void
   /** Loop de feedback do Linear (M2). null/undefined fora do Linear. */
   feedback?: FeedbackApi | null
 }) {
   const nodes = useMemo(() => buildNodes(items), [items])
-  const tasks = useMemo(() => deriveTasks(items), [items])
+  const taskPlans = useMemo(() => deriveTaskPlans(items), [items])
+  const latestUserId = items.findLast((item) => item.kind === "user")?.id
+  const latestPlan = taskPlans.at(-1)
+  const activePlanAnchor =
+    running &&
+    latestPlan &&
+    latestPlan.turnId === latestUserId &&
+    latestPlan.terminal == null
+      ? latestPlan.anchorId
+      : null
+  const feedbackByResult = useMemo(() => feedbackTextByResult(items), [items])
+  // Trabalho diferido VIVO (D1.3): alimenta o rótulo honesto do indicador de
+  // turno. Derivado de items — replay-safe, sem estado paralelo.
+  const deferredNames = useMemo(
+    () => pendingDeferred(items).map(deferredLabel),
+    [items],
+  )
   // Selo "lido / não foi aberto" por anexo. Calculado UMA vez aqui (varre o fio)
   // e entregue pronto ao MessageItem: fazer dentro do item quebraria o memo dele
   // a cada delta do streaming. Só muda quando items/running mudam.
@@ -1477,10 +2471,15 @@ export function MessageList({
   )
   const ctxBase: Omit<NodeCtx, "isLast"> = {
     running,
-    tasks,
+    taskPlans,
+    activePlanAnchor,
     feedback,
     attReads,
     agent,
+    stalledSince,
+    feedbackByResult,
+    onStop,
+    onRetry,
     onContinueWith,
   }
   return (
@@ -1494,15 +2493,33 @@ export function MessageList({
         </button>
       )}
       {groups.map((g) => (
-        <GroupRow
-          key={g.key}
-          group={g}
-          agent={agent}
-          presetId={presetId ?? null}
-          ts={groupTs(g, tsById)}
-          lastKey={lastKey}
-          ctxBase={ctxBase}
-        />
+        <Fragment key={g.key}>
+          {/* S1.1 — divisor "novas mensagens" na fronteira do não-visto. A key
+              do 1º nó de um grupo é o id do item que o abriu (buildNodes), e a
+              fronteira vem logo após uma mensagem SUA — troca de autor abre
+              grupo novo, então o divisor cai sempre ENTRE grupos. */}
+          {unseenDividerId != null && g.nodes[0]?.key === unseenDividerId && (
+            <div
+              role="separator"
+              aria-label="novas mensagens"
+              className="flex items-center gap-3"
+            >
+              <span className="h-px flex-1 bg-st-warning/40" />
+              <span className="text-[10.5px] font-medium tracking-wide text-st-warning/90 uppercase">
+                novas mensagens
+              </span>
+              <span className="h-px flex-1 bg-st-warning/40" />
+            </div>
+          )}
+          <GroupRow
+            group={g}
+            agent={agent}
+            presetId={presetId ?? null}
+            ts={groupTs(g, tsById)}
+            lastKey={lastKey}
+            ctxBase={ctxBase}
+          />
+        </Fragment>
       ))}
 
       {advising && <AdviceArrivalRow advising={advising} />}
@@ -1514,6 +2531,7 @@ export function MessageList({
           finalizing={finalizing}
           running={running}
           startedAt={startedAt}
+          deferredNames={deferredNames}
         />
       )}
     </div>

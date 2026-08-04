@@ -158,6 +158,9 @@ pub struct StreamState {
     last_usage: Option<NormalizedUsage>,
     /// Modelo (do config/seleção) p/ estimar o custo: o Codex não reporta USD.
     model: Option<String>,
+    /// Evidência visual (browser-plan B1): destino em disco dos blocos image
+    /// que vierem no `result` de um mcpToolCall. None = degrada sem evidência.
+    evidence: Option<crate::evidence::EvidenceSink>,
 }
 
 impl StreamState {
@@ -183,8 +186,59 @@ fn clip(full: &str) -> (String, u64) {
     (text, lines)
 }
 
-/// Um `ThreadItem` concluído → Tool + ToolResult (o Codex só fecha a tool no
-/// `item/completed`, igual ao transporte antigo — a UI espera o par).
+/// Item que começou a executar: publica a folha imediatamente. O completed
+/// posterior repete o mesmo id e o reducer deduplica a tool, anexando o result.
+fn map_item_started(item: &Value) -> Vec<AgentEvent> {
+    let id = item
+        .get("id")
+        .and_then(|x| x.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if id.is_empty() {
+        return vec![];
+    }
+    let text_of = |key: &str| {
+        item.get(key)
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    match item.get("type").and_then(|value| value.as_str()).unwrap_or("") {
+        "commandExecution" => vec![AgentEvent::Tool {
+            id,
+            name: "Bash".into(),
+            input: json!({ "command": text_of("command") }),
+            parent_tool_id: None,
+        }],
+        "fileChange" => vec![AgentEvent::Tool {
+            id,
+            name: "Edit".into(),
+            input: item.get("changes").cloned().unwrap_or(Value::Null),
+            parent_tool_id: None,
+        }],
+        "mcpToolCall" | "dynamicToolCall" => vec![AgentEvent::Tool {
+            id,
+            name: item
+                .get("tool")
+                .and_then(|value| value.as_str())
+                .unwrap_or("mcp")
+                .to_string(),
+            input: item.get("arguments").cloned().unwrap_or(Value::Null),
+            parent_tool_id: None,
+        }],
+        "webSearch" => vec![AgentEvent::Tool {
+            id,
+            name: "WebSearch".into(),
+            input: json!({ "query": text_of("query") }),
+            parent_tool_id: None,
+        }],
+        _ => vec![],
+    }
+}
+
+/// Um `ThreadItem` concluído → Tool + ToolResult. No app-server a Tool pode já
+/// ter vindo no `item/started`; repetir o id é intencional e replay-safe porque
+/// o reducer deduplica a abertura e anexa este resultado.
 fn map_item_completed(item: &Value, st: &mut StreamState) -> Vec<AgentEvent> {
     let id = item
         .get("id")
@@ -192,15 +246,21 @@ fn map_item_completed(item: &Value, st: &mut StreamState) -> Vec<AgentEvent> {
         .unwrap_or_default()
         .to_string();
     let kind = item.get("type").and_then(|x| x.as_str()).unwrap_or("");
-    let text_of = |k: &str| item.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let text_of = |k: &str| {
+        item.get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
 
-    let tool_result = |name_ok: bool, out: String| {
+    let tool_result = |name_ok: bool, out: String, images: Vec<String>| {
         let (text, lines) = clip(&out);
         AgentEvent::ToolResult {
             id: id.clone(),
             ok: name_ok,
             text,
             lines,
+            images,
         }
     };
 
@@ -230,8 +290,9 @@ fn map_item_completed(item: &Value, st: &mut StreamState) -> Vec<AgentEvent> {
                     id: id.clone(),
                     name: "Bash".to_string(),
                     input: json!({ "command": text_of("command") }),
+                    parent_tool_id: None,
                 },
-                tool_result(ok, out),
+                tool_result(ok, out, Vec::new()),
             ]
         }
         "fileChange" => {
@@ -242,18 +303,34 @@ fn map_item_completed(item: &Value, st: &mut StreamState) -> Vec<AgentEvent> {
                     id: id.clone(),
                     name: "Edit".to_string(),
                     input: item.get("changes").cloned().unwrap_or(Value::Null),
+                    parent_tool_id: None,
                 },
-                tool_result(ok, status.to_string()),
+                tool_result(ok, status.to_string(), Vec::new()),
             ]
         }
         "mcpToolCall" | "dynamicToolCall" => {
             let err = item.get("error").filter(|x| !x.is_null());
+            // B1: blocos image do CallToolResult MCP viram evidência em disco;
+            // com content estruturado, o texto do cartão vem dos blocos `text`
+            // (antes o JSON cru — base64 incluso — entrava no clip de 600).
+            let images = crate::evidence::collect_images(
+                st.evidence.as_ref(),
+                &id,
+                item.pointer("/result/content").unwrap_or(&Value::Null),
+            );
             let out = match err {
                 Some(e) => e.to_string(),
-                None => item
-                    .get("result")
-                    .map(|r| r.to_string())
-                    .unwrap_or_default(),
+                None => match item.pointer("/result/content").and_then(|c| c.as_array()) {
+                    Some(blocks) => blocks
+                        .iter()
+                        .filter_map(|b| b.get("text").and_then(|x| x.as_str()))
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                    None => item
+                        .get("result")
+                        .map(|r| r.to_string())
+                        .unwrap_or_default(),
+                },
             };
             vec![
                 AgentEvent::Tool {
@@ -264,8 +341,9 @@ fn map_item_completed(item: &Value, st: &mut StreamState) -> Vec<AgentEvent> {
                         .unwrap_or("mcp")
                         .to_string(),
                     input: item.get("arguments").cloned().unwrap_or(Value::Null),
+                    parent_tool_id: None,
                 },
-                tool_result(err.is_none(), out),
+                tool_result(err.is_none(), out, images),
             ]
         }
         "webSearch" => vec![
@@ -273,8 +351,9 @@ fn map_item_completed(item: &Value, st: &mut StreamState) -> Vec<AgentEvent> {
                 id: id.clone(),
                 name: "WebSearch".to_string(),
                 input: json!({ "query": text_of("query") }),
+                parent_tool_id: None,
             },
-            tool_result(true, String::new()),
+            tool_result(true, String::new(), Vec::new()),
         ],
         // userMessage (o nosso próprio prompt), reasoning, plan… não viram cartão.
         _ => vec![],
@@ -311,6 +390,10 @@ pub fn map_notification(method: &str, params: &Value, st: &mut StreamState) -> V
         }
         "item/completed" => match params.get("item") {
             Some(item) => map_item_completed(item, st),
+            None => vec![],
+        },
+        "item/started" => match params.get("item") {
+            Some(item) => map_item_started(item),
             None => vec![],
         },
         "thread/tokenUsage/updated" => {
@@ -422,6 +505,23 @@ fn request(id: i64, method: &str, params: Value) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params })
 }
 
+fn app_server_command(req: &RunRequest) -> Command {
+    let mut cmd = Command::new("codex");
+    // Mesmo MCP read-only do `codex exec`, por override efêmero. As opções
+    // globais precisam vir antes do subcomando `app-server`.
+    if !matches!(req.permission, Permission::FusionRo) {
+        req.mcp_plan.configure_codex(&mut cmd);
+        if let Some(gateway) = &req.context_gateway {
+            gateway.configure_codex(&mut cmd);
+        }
+        if let Some(gateway) = &req.work_gateway {
+            gateway.configure_codex(&mut cmd);
+        }
+    }
+    cmd.arg("app-server");
+    cmd
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     app: &tauri::AppHandle,
@@ -434,9 +534,8 @@ pub async fn run(
     registry: &RunRegistry,
     pending: Arc<PendingApprovals>,
 ) -> Outcome {
-    let mut cmd = Command::new("codex");
-    cmd.arg("app-server")
-        .current_dir(&req.cwd)
+    let mut cmd = app_server_command(req);
+    cmd.current_dir(&req.cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -481,6 +580,9 @@ pub async fn run(
 
     let mut reader = BufReader::new(stdout).lines();
     let mut st = StreamState::new(cost_model);
+    // Evidência visual (B1): mesmo sink do caminho `exec` — imagem de MCP
+    // vira arquivo, nunca base64 no Channel. None degrada honesto.
+    st.evidence = crate::evidence::EvidenceSink::for_conv(app, conv_id);
     let mut thread_id: Option<String> = None;
     let mut turn_id: Option<String> = None;
     let mut prompt = req.prompt.clone();
@@ -686,7 +788,12 @@ pub async fn run(
     // app-server loga falha de MCP de terceiros em run perfeitamente saudável).
     if let Some(e) = &mut startup_error {
         if !stderr_text.trim().is_empty() {
-            let tail: String = stderr_text.lines().rev().take(3).collect::<Vec<_>>().join(" | ");
+            let tail: String = stderr_text
+                .lines()
+                .rev()
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(" | ");
             e.push_str(&format!(" ({tail})"));
         }
     }
@@ -705,6 +812,7 @@ mod tests {
     fn req(permission: Permission) -> RunRequest {
         RunRequest {
             prompt: "faça X".into(),
+            system_prompt: None,
             cwd: "/repo".into(),
             resume: None,
             memory_fallback: None,
@@ -714,8 +822,32 @@ mod tests {
             attachments: vec![],
             extra_dirs: vec![],
             approval: None,
+            context_gateway: None,
+            work_gateway: None,
+            mcp_plan: crate::mcp_control::McpRunPlan::default(),
             plan_first: false,
         }
+    }
+
+    #[test]
+    fn command_started_fica_visivel_antes_do_completed() {
+        let mut st = StreamState::default();
+        let evs = map_notification(
+            "item/started",
+            &json!({
+                "item": {
+                    "id": "cmd-live",
+                    "type": "commandExecution",
+                    "command": "pnpm test"
+                }
+            }),
+            &mut st,
+        );
+        assert!(matches!(
+            &evs[0],
+            AgentEvent::Tool { id, name, .. }
+                if id == "cmd-live" && name == "Bash"
+        ));
     }
 
     /// O achado que motivou o módulo: `on-request` NÃO pergunta (o modelo só
@@ -750,6 +882,67 @@ mod tests {
         r.extra_dirs = vec!["/outro/repo".into()];
         let p = turn_params("t1", &r, "oi");
         assert_eq!(p["sandboxPolicy"]["writableRoots"][0], "/outro/repo");
+    }
+
+    #[test]
+    fn app_server_carrega_context_gateway_antes_do_subcomando() {
+        let mut r = req(Permission::Padrao);
+        r.context_gateway = Some(crate::context_gateway::GatewayConfig {
+            server_bin: "/app/mycockpit".into(),
+            root: "/repo".into(),
+            conv_id: "c1".into(),
+            db_path: Some("/data/mycockpit.db".into()),
+        });
+        let cmd = app_server_command(&r);
+        let args: Vec<String> = cmd
+            .as_std()
+            .get_args()
+            .map(|x| x.to_string_lossy().into_owned())
+            .collect();
+        let subcommand = args.iter().position(|x| x == "app-server").unwrap();
+        let cfg = args
+            .iter()
+            .position(|x| x.contains("mcp_servers.mc-context.command"))
+            .unwrap();
+        assert!(cfg < subcommand);
+        assert!(args.iter().any(|x| x.contains("context-server")));
+    }
+
+    #[test]
+    fn app_server_carrega_profile_mcp_gerenciado_antes_do_subcomando() {
+        let mut r = req(Permission::Padrao);
+        r.mcp_plan = crate::mcp_control::McpRunPlan {
+            managed: true,
+            selected: vec![crate::mcp_control::McpRuntimeServer {
+                runtime_name: "mcx-project-db".into(),
+                display_name: "Database".into(),
+                launch: crate::mcp_control::McpLaunchConfig {
+                    transport: "stdio".into(),
+                    command: Some("/opt/mcp/database".into()),
+                    args: vec!["serve".into()],
+                    ..Default::default()
+                },
+            }],
+            disabled_codex_names: vec!["global-db".into()],
+            ..Default::default()
+        };
+        let cmd = app_server_command(&r);
+        let args: Vec<String> = cmd
+            .as_std()
+            .get_args()
+            .map(|x| x.to_string_lossy().into_owned())
+            .collect();
+        let subcommand = args.iter().position(|arg| arg == "app-server").unwrap();
+        let disable = args
+            .iter()
+            .position(|arg| arg == "mcp_servers.global-db.enabled=false")
+            .unwrap();
+        let runtime = args
+            .iter()
+            .position(|arg| arg.contains("mcp_servers.mcx-project-db.command"))
+            .unwrap();
+        assert!(disable < subcommand);
+        assert!(runtime < subcommand);
     }
 
     #[test]
@@ -820,7 +1013,9 @@ mod tests {
             &mut st,
         );
         match &evs[0] {
-            AgentEvent::Session { session_id, model, .. } => {
+            AgentEvent::Session {
+                session_id, model, ..
+            } => {
                 assert_eq!(session_id, "th-9");
                 assert_eq!(model.as_deref(), Some("gpt-5.5"));
             }
@@ -885,6 +1080,52 @@ mod tests {
         }
     }
 
+    /// B1: mcpToolCall com CallToolResult de imagem → arquivo em disco + path
+    /// no evento; o texto do cartão vem dos blocos `text` (nunca o JSON cru
+    /// com base64 dentro).
+    #[test]
+    fn mcp_tool_call_com_imagem_vira_evidencia_em_disco() {
+        const PNG_1X1_B64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+        let dir = std::env::temp_dir().join(format!(
+            "mc-appserver-evidence-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = StreamState::new(None);
+        st.evidence = Some(crate::evidence::EvidenceSink::new(
+            dir.clone(),
+            "evidence/conv-x".to_string(),
+        ));
+        let evs = map_notification(
+            "item/completed",
+            &json!({ "item": {
+                "type": "mcpToolCall", "id": "call_shot",
+                "tool": "browser_take_screenshot",
+                "arguments": {},
+                "result": { "content": [
+                    { "type": "text", "text": "Screenshot saved" },
+                    { "type": "image", "data": PNG_1X1_B64, "mimeType": "image/png" }
+                ] }
+            }}),
+            &mut st,
+        );
+        match &evs[1] {
+            AgentEvent::ToolResult { ok, text, images, .. } => {
+                assert!(ok);
+                assert_eq!(text, "Screenshot saved");
+                assert_eq!(
+                    images,
+                    &vec!["evidence/conv-x/call_shot-0.png".to_string()]
+                );
+            }
+            _ => panic!("esperava ToolResult"),
+        }
+        assert!(dir.join("call_shot-0.png").is_file());
+        let wire = serde_json::to_string(&evs[1]).unwrap();
+        assert!(!wire.contains(PNG_1X1_B64));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn comando_com_exit_nao_zero_marca_falha() {
         let mut st = StreamState::new(None);
@@ -911,7 +1152,12 @@ mod tests {
         assert!(matches!(ctx[0], AgentEvent::ContextUsage { tokens: 21459 }));
         let end = map_notification("turn/completed", &json!({}), &mut st);
         match &end[0] {
-            AgentEvent::Result { input_tokens, output_tokens, cache_read, .. } => {
+            AgentEvent::Result {
+                input_tokens,
+                output_tokens,
+                cache_read,
+                ..
+            } => {
                 assert_eq!(*input_tokens, 21459);
                 assert_eq!(*output_tokens, 309);
                 assert_eq!(*cache_read, 13056);
@@ -930,7 +1176,10 @@ mod tests {
             "hook/started",
             "turn/started",
         ] {
-            assert!(map_notification(m, &json!({}), &mut st).is_empty(), "{m} vazou");
+            assert!(
+                map_notification(m, &json!({}), &mut st).is_empty(),
+                "{m} vazou"
+            );
         }
     }
 

@@ -1,9 +1,11 @@
 //! SKILLS (M5): promover um workflow vencedor a um `/command` reutilizável.
-//! Grava `.claude/commands/<slug>.md` (infra nativa do Claude Code: o context.ts
-//! já inventaria `.claude/commands`, então a skill aparece sozinha). SEMPRE com
-//! aprovação humana no front (o dialog só chama isto no clique). Aqui garantimos
-//! o resto do contrato: nome SANITIZADO (slug, sem path traversal) e NÃO
-//! sobrescreve por padrão (a skill vencedora não pode ser apagada por engano).
+//! Grava `.mycockpit/commands/<slug>.md` — a casa AGNÓSTICA: a skill promovida
+//! vale em TODOS os motores (claude/codex/agy) via expansão app-side, não só no
+//! Claude Code. `.claude/commands` continua sendo LIDO pela descoberta (nada
+//! quebra pra quem já tem arquivos lá); só o writer mudou de endereço. SEMPRE
+//! com aprovação humana no front (o dialog só chama isto no clique). Aqui
+//! garantimos o resto do contrato: nome SANITIZADO (slug, sem path traversal) e
+//! NÃO sobrescreve por padrão (a skill vencedora não pode ser apagada por engano).
 
 use std::path::{Path, PathBuf};
 
@@ -90,10 +92,10 @@ pub(crate) fn validate_project_path(project_path: &str) -> Result<PathBuf, Strin
     Ok(canon)
 }
 
-/// Grava uma skill em `<project_path>/.claude/commands/<slug>.md` (atômico).
+/// Grava uma skill em `<project_path>/.mycockpit/commands/<slug>.md` (atômico).
 /// Por padrão NÃO sobrescreve (`overwrite=false`): se já existir, erra claro —
 /// a skill promovida é um artefato humano, não some por acidente. Devolve o
-/// caminho RELATIVO (`.claude/commands/<slug>.md`) p/ o toast do front.
+/// caminho RELATIVO (`.mycockpit/commands/<slug>.md`) p/ o toast do front.
 #[tauri::command]
 pub fn write_skill(
     project_path: String,
@@ -103,21 +105,24 @@ pub fn write_skill(
 ) -> Result<String, String> {
     let slug = sanitize_name(&name)?;
     let root = validate_project_path(&project_path)?;
-    let dir = root.join(".claude").join("commands");
+    // garante o .mycockpit/ com o .gitignore da casa (commands/ é versionado:
+    // a skill promovida deve viajar no clone, como a doutrina e as personas).
+    crate::mycockpit::ensure_mycockpit_dir(&root.join(".mycockpit"))?;
+    let dir = root.join(".mycockpit").join("commands");
     let file = dir.join(format!("{slug}.md"));
     if file.exists() && !overwrite.unwrap_or(false) {
         return Err(format!(
             "já existe uma skill com o slug '{slug}' (nomes parecidos podem resolver pro mesmo slug)"
         ));
     }
-    std::fs::create_dir_all(&dir).map_err(|e| format!("não criei .claude/commands: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("não criei .mycockpit/commands: {e}"))?;
     let body = if content.ends_with('\n') {
         content
     } else {
         format!("{content}\n")
     };
     crate::fsx::write_atomic(&file, &body)?;
-    Ok(format!(".claude/commands/{slug}.md"))
+    Ok(format!(".mycockpit/commands/{slug}.md"))
 }
 
 #[cfg(test)]
@@ -188,8 +193,11 @@ mod tests {
         let pp = tmp.to_string_lossy().to_string();
 
         let rel = write_skill(pp.clone(), "Minha Skill".into(), "# passos".into(), None).unwrap();
-        assert_eq!(rel, ".claude/commands/minha-skill.md");
-        assert!(tmp.join(".claude/commands/minha-skill.md").exists());
+        assert_eq!(rel, ".mycockpit/commands/minha-skill.md");
+        assert!(tmp.join(".mycockpit/commands/minha-skill.md").exists());
+        // a casa nasce com o .gitignore que VERSIONA commands/ (a skill viaja no clone)
+        let gi = std::fs::read_to_string(tmp.join(".mycockpit/.gitignore")).unwrap();
+        assert!(gi.contains("!commands/"), "gitignore sem exceção de commands/: {gi}");
 
         // segunda gravação sem overwrite → erro claro.
         let err = write_skill(pp.clone(), "Minha Skill".into(), "outro".into(), None).unwrap_err();
@@ -197,8 +205,8 @@ mod tests {
 
         // com overwrite=true → grava.
         let rel2 = write_skill(pp, "Minha Skill".into(), "novo".into(), Some(true)).unwrap();
-        assert_eq!(rel2, ".claude/commands/minha-skill.md");
-        let got = std::fs::read_to_string(tmp.join(".claude/commands/minha-skill.md")).unwrap();
+        assert_eq!(rel2, ".mycockpit/commands/minha-skill.md");
+        let got = std::fs::read_to_string(tmp.join(".mycockpit/commands/minha-skill.md")).unwrap();
         assert_eq!(got, "novo\n");
 
         let _ = std::fs::remove_dir_all(&tmp);

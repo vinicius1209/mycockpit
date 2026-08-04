@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   AlertCircle,
   Check,
   CheckCheck,
+  ChevronDown,
+  ChevronRight,
   CircleHelp,
+  EyeOff,
   FileText,
   Gauge,
   GitPullRequest,
@@ -14,6 +17,7 @@ import {
   SquareKanban,
   Swords,
   Trash2,
+  Undo2,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -30,8 +34,15 @@ import { useChat } from "@/store/chat"
 import { openCardConversation, useCards } from "@/store/cards"
 import { useNotifs, type Notification } from "@/store/notifications"
 import { agentLabel } from "@/lib/agent"
-import { dismissProposal } from "@/lib/db"
-import { cardDecisions, scanDecisions, type Decision } from "@/lib/inbox"
+import { dismissProposal, setSddPlanIgnored } from "@/lib/db"
+import {
+  cardDecisions,
+  foundDecisions,
+  ignoredDecisions,
+  pendingDecisions,
+  scanDecisions,
+  type Decision,
+} from "@/lib/inbox"
 import { cn } from "@/lib/utils"
 
 /** Navega direto pra ONDE a decisão mora: a conversa (Fusion), o card do
@@ -77,6 +88,129 @@ function fmtRelative(ts: number): string {
   return `há ${Math.floor(h / 24)} d`
 }
 
+/** Idade a partir de um ISO (created_at do manifest do SDD). null/inválido =
+ *  sem idade (mesmo formatador relativo do resto do app). */
+function fmtRelativeIso(iso: string | null): string | null {
+  if (!iso) return null
+  const ts = Date.parse(iso)
+  return Number.isFinite(ts) ? fmtRelative(ts) : null
+}
+
+/** Chave estável por decisão (o índice do array mudaria de dono ao filtrar). */
+function decisionKey(d: Decision): string {
+  return d.kind === "fusion"
+    ? `fusion:${d.convId}`
+    : d.kind === "card"
+      ? `card:${d.cardId}`
+      : d.kind === "proposal"
+        ? `proposal:${d.proposalId}`
+        : `${d.kind}:${d.projectId}:${d.slug}`
+}
+
+function DecisionIcon({ d }: { d: Decision }) {
+  if (d.kind === "fusion") return <Swords className="size-3.5 shrink-0 text-brass" />
+  if (d.kind === "card")
+    return <SquareKanban className="size-3.5 shrink-0 text-st-warning" />
+  if (d.kind === "prd") return <FileText className="size-3.5 shrink-0 text-brass" />
+  if (d.kind === "proposal")
+    return <Lightbulb className="size-3.5 shrink-0 text-brass" />
+  return <GitPullRequest className="size-3.5 shrink-0 text-st-success" />
+}
+
+function decisionTitle(d: Decision): string {
+  return d.kind === "fusion"
+    ? "Escolher o vencedor da disputa"
+    : d.kind === "card"
+      ? `Card ${d.state === "blocked" ? "bloqueado" : "em revisão"}: ${d.title}`
+      : d.kind === "prd"
+        ? `Aprovar PRD: ${d.planTitle}`
+        : d.kind === "proposal"
+          ? "Ver proposta do lead"
+          : `PR aberto: ${d.planTitle}`
+}
+
+/** Tooltip: mostra o que o truncamento come (disputa/card mostram o título
+ *  cru; a proposta explica pra onde o clique leva). */
+function decisionHint(d: Decision): string {
+  return d.kind === "fusion" || d.kind === "card"
+    ? d.title
+    : d.kind === "proposal"
+      ? "Ver a proposta do lead no Painel"
+      : decisionTitle(d)
+}
+
+/** 2ª linha: pros gates do SDD, ORIGEM e IDADE visíveis (de onde o app leu e
+ *  quando o plano nasceu) — é o que separa "isso te espera" de "isso estava
+ *  aqui desde maio". */
+function decisionMeta(d: Decision): string {
+  if (d.kind === "fusion") return `${d.title} · ${d.projectName}`
+  if (d.kind === "proposal")
+    return `${d.projectName ?? "board inteiro"} · ${d.excerpt}`
+  if (d.kind === "card")
+    return d.stalledSince != null
+      ? // S2.3: card estagnado (vigia) ganha o "parado há X min"
+        `${d.projectName} · parado há ${Math.max(1, Math.round((Date.now() - d.stalledSince) / 60_000))} min`
+      : d.projectName
+  const age = fmtRelativeIso(d.createdAt)
+  return [
+    d.projectName,
+    d.origin.path,
+    age ? `criado ${age}` : null,
+    d.kind === "pr" ? "aguardando merge" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+}
+
+/** Uma linha do inbox. `action` é o gesto discreto do hover (dispensar a
+ *  proposta, ignorar o plano descoberto, restaurar o ignorado). */
+function DecisionRow({
+  d,
+  action,
+  muted,
+}: {
+  d: Decision
+  action?: { icon: typeof X; label: string; run: () => void }
+  muted?: boolean
+}) {
+  const Icon = action?.icon
+  return (
+    <DropdownMenuItem
+      onSelect={() => void goTo(d)}
+      className="flex-col items-start gap-0.5 py-2"
+    >
+      <span
+        className={cn(
+          "group/decision flex w-full items-center gap-2 text-[13px]",
+          muted ? "text-muted-foreground" : "text-foreground",
+        )}
+        title={decisionHint(d)}
+      >
+        <DecisionIcon d={d} />
+        <span className="min-w-0 flex-1 truncate">{decisionTitle(d)}</span>
+        {action && Icon && (
+          <button
+            onClick={(e) => {
+              // age SEM navegar (o item some/volta na hora).
+              e.stopPropagation()
+              e.preventDefault()
+              action.run()
+            }}
+            title={action.label}
+            aria-label={action.label}
+            className="hidden shrink-0 rounded p-0.5 text-muted-foreground transition-colors group-hover/decision:block hover:text-foreground"
+          >
+            <Icon className="size-3" />
+          </button>
+        )}
+      </span>
+      <span className="w-full truncate pl-[22px] text-[11px] text-muted-foreground">
+        {decisionMeta(d)}
+      </span>
+    </DropdownMenuItem>
+  )
+}
+
 function NotifIcon({ kind }: { kind: Notification["kind"] }) {
   if (kind === "run_error")
     return <AlertCircle className="size-3.5 shrink-0 text-st-error" />
@@ -105,13 +239,16 @@ export function InboxBell() {
   const removeNotif = useNotifs((s) => s.remove)
   const clearNotifs = useNotifs((s) => s.clear)
   const [filter, setFilter] = useState<"all" | "unread">("all")
+  const [showIgnored, setShowIgnored] = useState(false)
 
   const refresh = useCallback(() => {
     if (projects.length === 0) return
     // E1 (S1.6): cards em review/blocked entram no sino também (D4) — o store
     // é hidratado no boot, então getState() dentro do refresh basta (mesmo
     // ritmo do scan: ao abrir o dropdown e na troca de projetos).
-    void scanDecisions(projects).then((d) =>
+    // includeIgnored: o sino é o ÚNICO lugar que sabe reverter um "ignorar",
+    // então ele carrega os ignorados junto (fora das duas listas visíveis).
+    void scanDecisions(projects, { includeIgnored: true }).then((d) =>
       setDecisions([...d, ...cardDecisions(useCards.getState().all, projects)]),
     )
   }, [projects])
@@ -119,6 +256,25 @@ export function InboxBell() {
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  // Três listas com semânticas diferentes: o que ESPERA você (badge), o que o
+  // app só ACHOU no seu disco e o que você mandou sumir.
+  const pending = useMemo(() => pendingDecisions(decisions), [decisions])
+  const found = useMemo(() => foundDecisions(decisions), [decisions])
+  const ignored = useMemo(() => ignoredDecisions(decisions), [decisions])
+
+  /** Ignorar/restaurar um gate do SDD. Persistido na tabela do app (o
+   *  .claude/plans do usuário NUNCA é escrito). Falhou = o item NÃO some. */
+  const setIgnored = useCallback(
+    (d: Extract<Decision, { kind: "prd" | "pr" }>, ignore: boolean) => {
+      void setSddPlanIgnored(d.projectId, d.slug, ignore)
+        .then(refresh)
+        .catch((err) => {
+          console.warn("[inbox] falha ao ignorar/restaurar o plano", err)
+        })
+    },
+    [refresh],
+  )
 
   const unread = notifs.filter((n) => !n.read).length
   const limitedIds = Object.keys(limited)
@@ -137,10 +293,13 @@ export function InboxBell() {
           <Inbox className="size-4" />
           {/* Decisões BLOQUEIAM você → contador brass (alarme). Só não-lidas →
               ponto discreto (informativo). Não somar os dois: "3" seria ambíguo
-              entre "3 decisões esperando" e "3 turnos terminaram". */}
-          {decisions.length > 0 ? (
+              entre "3 decisões esperando" e "3 turnos terminaram".
+              O badge conta só o PENDENTE: gate do SDD que o app apenas achou no
+              disco (sem gesto seu por aqui) vive na seção de baixo e não acende
+              alarme, senão dívida de 68 dias vira "precisa de você agora". */}
+          {pending.length > 0 ? (
             <span className="absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-brass text-[10px] font-semibold text-background">
-              {decisions.length > 9 ? "9+" : decisions.length}
+              {pending.length > 9 ? "9+" : pending.length}
             </span>
           ) : unread > 0 ? (
             <span
@@ -158,91 +317,103 @@ export function InboxBell() {
         <DropdownMenuLabel className="text-[10px] tracking-wide text-muted-foreground uppercase">
           Precisam de você
         </DropdownMenuLabel>
-        {decisions.length === 0 ? (
+        {pending.length === 0 ? (
           <div className="px-2 py-2 text-center text-[12px] text-muted-foreground">
             Nada esperando você.
           </div>
         ) : (
-          decisions.map((d, i) => (
-            <DropdownMenuItem
-              key={i}
-              onSelect={() => void goTo(d)}
-              className="flex-col items-start gap-0.5 py-2"
-            >
-              <span
-                className="group/decision flex w-full items-center gap-2 text-[13px] text-foreground"
-                title={
-                  d.kind === "fusion"
-                    ? d.title
-                    : d.kind === "card"
-                      ? d.title
-                      : d.kind === "prd"
-                        ? `Aprovar PRD: ${d.planTitle}`
-                        : d.kind === "proposal"
-                          ? "Ver a proposta do lead no Painel"
-                          : `PR aberto: ${d.planTitle}`
-                }
-              >
-                {d.kind === "fusion" ? (
-                  <Swords className="size-3.5 shrink-0 text-brass" />
-                ) : d.kind === "card" ? (
-                  <SquareKanban className="size-3.5 shrink-0 text-st-warning" />
-                ) : d.kind === "prd" ? (
-                  <FileText className="size-3.5 shrink-0 text-brass" />
-                ) : d.kind === "proposal" ? (
-                  <Lightbulb className="size-3.5 shrink-0 text-brass" />
-                ) : (
-                  <GitPullRequest className="size-3.5 shrink-0 text-st-success" />
-                )}
-                <span className="min-w-0 flex-1 truncate">
-                  {d.kind === "fusion"
-                    ? "Escolher o vencedor da disputa"
-                    : d.kind === "card"
-                      ? `Card ${d.state === "blocked" ? "bloqueado" : "em revisão"}: ${d.title}`
-                      : d.kind === "prd"
-                        ? `Aprovar PRD: ${d.planTitle}`
-                        : d.kind === "proposal"
-                          ? "Ver proposta do lead"
-                          : `PR aberto: ${d.planTitle}`}
-                </span>
-                {d.kind === "proposal" && (
-                  <button
-                    onClick={(e) => {
-                      // dispensa SEM navegar (o item some do sino na hora).
-                      e.stopPropagation()
-                      e.preventDefault()
-                      void dismissProposal(d.proposalId)
-                        .then(refresh)
-                        .catch((err) => {
-                          // falhou = o item FICA na fila (não some mentindo).
-                          console.warn(
-                            "[inbox] falha ao dispensar a proposta",
-                            err,
-                          )
-                        })
-                    }}
-                    title="Dispensar a proposta"
-                    aria-label="Dispensar a proposta"
-                    className="hidden shrink-0 rounded p-0.5 text-muted-foreground transition-colors group-hover/decision:block hover:text-st-error"
-                  >
-                    <X className="size-3" />
-                  </button>
-                )}
-              </span>
-              <span className="w-full truncate pl-[22px] text-[11px] text-muted-foreground">
-                {d.kind === "fusion"
-                  ? `${d.title} · ${d.projectName}`
-                  : d.kind === "pr"
-                    ? `${d.projectName} · aguardando merge`
-                    : d.kind === "proposal"
-                      ? `${d.projectName ?? "board inteiro"} · ${d.excerpt}`
-                      : d.kind === "card" && d.stalledSince != null
-                        ? // S2.3: card estagnado (vigia) ganha o "parado há X min"
-                          `${d.projectName} · parado há ${Math.max(1, Math.round((Date.now() - d.stalledSince) / 60_000))} min`
-                        : d.projectName}
-              </span>
-            </DropdownMenuItem>
+          pending.map((d) => (
+            <DecisionRow
+              key={decisionKey(d)}
+              d={d}
+              action={
+                d.kind === "proposal"
+                  ? {
+                      icon: X,
+                      label: "Dispensar a proposta",
+                      run: () =>
+                        void dismissProposal(d.proposalId)
+                          .then(refresh)
+                          .catch((err) => {
+                            // falhou = o item FICA na fila (não some mentindo).
+                            console.warn(
+                              "[inbox] falha ao dispensar a proposta",
+                              err,
+                            )
+                          }),
+                    }
+                  : d.kind === "prd" || d.kind === "pr"
+                    ? {
+                        icon: EyeOff,
+                        label: "Ignorar este plano",
+                        run: () => setIgnored(d, true),
+                      }
+                    : undefined
+              }
+            />
           ))
+        )}
+
+        {/* Encontrados no projeto — o app LEU do disco, ninguém te chamou. Não
+            conta no badge; conta a partir do 1º gesto seu pelo app no plano. */}
+        {found.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[10px] tracking-wide text-muted-foreground uppercase">
+              Encontrados no projeto ({found.length})
+            </DropdownMenuLabel>
+            {found.map((d) => (
+              <DecisionRow
+                key={decisionKey(d)}
+                d={d}
+                muted
+                action={
+                  d.kind === "prd" || d.kind === "pr"
+                    ? {
+                        icon: EyeOff,
+                        label: "Ignorar este plano",
+                        run: () => setIgnored(d, true),
+                      }
+                    : undefined
+                }
+              />
+            ))}
+          </>
+        )}
+
+        {/* Ignorados — linha discreta que expande, pra ver e desfazer. */}
+        {ignored.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <button
+              onClick={() => setShowIgnored((v) => !v)}
+              className="flex w-full items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {showIgnored ? (
+                <ChevronDown className="size-3 shrink-0" />
+              ) : (
+                <ChevronRight className="size-3 shrink-0" />
+              )}
+              {ignored.length} ignorado{ignored.length > 1 ? "s" : ""}
+            </button>
+            {showIgnored &&
+              ignored.map((d) => (
+                <DecisionRow
+                  key={decisionKey(d)}
+                  d={d}
+                  muted
+                  action={
+                    d.kind === "prd" || d.kind === "pr"
+                      ? {
+                          icon: Undo2,
+                          label: "Trazer de volta",
+                          run: () => setIgnored(d, false),
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+          </>
         )}
 
         {limitedIds.length > 0 && (

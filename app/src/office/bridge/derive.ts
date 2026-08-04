@@ -682,8 +682,9 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
   }
 }
 
-/** Recarrega o cache de custo por projeto (ledger unificado: turn_costs +
- *  deliveries + stage_runs, desde sempre = custo ACUMULADO do projeto). */
+/** Recarrega o cache de custo por projeto (ledger unificado: turn_costs, que
+ *  desde o MH2.1 inclui as fases de missão, + stage_runs; desde sempre =
+ *  custo ACUMULADO do projeto). */
 async function refreshLedger(): Promise<void> {
   try {
     const entries = await loadLedger(0)

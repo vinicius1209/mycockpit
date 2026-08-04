@@ -4,11 +4,15 @@
 // cost_usd dos results). O store (store/mission.ts) encadeia as fases; aqui
 // mora só a lógica de uma fase + montagem de prompt por persona.
 
-import { runAgent, type AgentEvent, type CostSource } from "@/lib/agent"
+import { cancelAgent, runAgent, type AgentEvent, type CostSource } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { matchesResumePattern } from "@/lib/autoResume"
 import { reduceItems, type ChatItem, type ItemReducible } from "@/store/chat"
-import type { GateAnswer, MissionPersona } from "@/lib/missionTypes"
+import type {
+  GateAnswer,
+  MissionGatePolicy,
+  MissionPersona,
+} from "@/lib/missionTypes"
 import { handoffInstruction } from "@/lib/missionHandoff"
 
 /** Estado acumulável de UMA fase enquanto os eventos chegam (subset reduzível). */
@@ -148,6 +152,57 @@ export function gateQuestions(
   return (openQuestions ?? []).map((q) => q.trim()).filter(Boolean)
 }
 
+// ── Política de gate (MH3.3): o preset decide QUANDO a missão pausa ──
+
+/** Pergunta padrão do gate obrigatório de "sempre-apos-planejar" quando a fase
+ *  de planejamento não deixou perguntas próprias. */
+export const PLAN_GATE_QUESTION = "Revise o plano antes de executar"
+
+/** Decisão de gate depois de uma fase:
+ *  - "gate": pausa a missão com estas perguntas (fluxo clássico do answerGate).
+ *  - "notice": NÃO pausa, mas as perguntas entram no fio como aviso
+ *    (política "nunca" — informação nunca some).
+ *  - "none": segue direto. */
+export interface GateOutcome {
+  kind: "gate" | "notice" | "none"
+  questions: string[]
+}
+
+/** Aplica a política de gate do preset (MH3.3). `policy` ausente = "agente"
+ *  (fail-open: presets salvos antes do campo mantêm o comportamento clássico).
+ *  - "agente": gate quando a fase deixou open_questions E há próxima fase.
+ *  - "nunca": nunca abre gate; perguntas que abririam viram notice.
+ *  - "sempre-apos-planejar": além da regra do "agente", a fase 1 SEMPRE abre
+ *    gate (sem perguntas próprias entra a pergunta padrão PLAN_GATE_QUESTION).
+ *  Sem próxima fase nunca há gate (as pendências vão pro resumo final). */
+export function gateOutcome(input: {
+  policy: MissionGatePolicy | null | undefined
+  openQuestions: string[] | undefined
+  phaseIndex: number
+  hasNextPhase: boolean
+}): GateOutcome {
+  const questions = gateQuestions(input.openQuestions, input.hasNextPhase)
+  const policy = input.policy ?? "agente"
+  if (policy === "nunca") {
+    return questions.length > 0
+      ? { kind: "notice", questions }
+      : { kind: "none", questions: [] }
+  }
+  if (
+    policy === "sempre-apos-planejar" &&
+    input.phaseIndex === 0 &&
+    input.hasNextPhase
+  ) {
+    return {
+      kind: "gate",
+      questions: questions.length > 0 ? questions : [PLAN_GATE_QUESTION],
+    }
+  }
+  return questions.length > 0
+    ? { kind: "gate", questions }
+    : { kind: "none", questions: [] }
+}
+
 /** Bloco de prompt com as decisões do usuário (injetado na fase seguinte ao
  *  gate). Resposta em branco vira delegação explícita — o agente decide. */
 export function buildGateDecisionsBlock(
@@ -196,16 +251,28 @@ export function splitGateAttachments(
 }
 
 /** O reviewer aprovou? Varre o texto final da fase por "APROVADO" (o template
- *  pede essa palavra), evitando o falso-positivo de "NÃO APROVADO". Usado pelo
- *  loop de correção do M2 (reviewer reprova → volta ao executor). */
+ *  pede essa palavra). ENDURECIDO (MH1.1): aprovação qualificada NÃO conta —
+ *  "aprovado com ressalvas", "ainda não está aprovado", "não totalmente
+ *  aprovado" e "NÃO APROVADO" são reprovação. Na dúvida, fail-closed: contar
+ *  como reprovado dispara correção/ressalva; contar como aprovado esconde o
+ *  problema. Usado pelo loop de correção do M2 e pelo desfecho com ressalva. */
 export function reviewerApproved(items: ChatItem[]): boolean {
   const text = items
     .filter((i) => i.kind === "text")
     .map((i) => (i as Extract<ChatItem, { kind: "text" }>).text)
     .join("\n")
     .toUpperCase()
-  if (!text.includes("APROVADO")) return false
-  return !/N[ÃA]O\s+APROVADO/.test(text)
+  // fronteira de PALAVRA, não substring: "DESAPROVADO"/"REPROVADO" contêm
+  // "APROVADO" e passariam como aprovação (o bug do gate). Vale a ocorrência
+  // no início do texto ou precedida de não-letra (espaço, pontuação, hífen).
+  if (!/(^|[^A-ZÀ-Ü])APROVADO/.test(text)) return false
+  // negação com até 3 palavras no meio: "NÃO APROVADO", "NÃO-APROVADO" (hífen
+  // conta como separador), "NÃO ESTÁ APROVADO", "NÃO FOI TOTALMENTE APROVADO"…
+  if (/N[ÃA]O(?:[\s-]+\S+){0,3}[\s-]+APROVADO/.test(text)) return false
+  // aprovação com ressalva é reprovação disfarçada — o template pede APROVADO
+  // seco quando está correto E completo.
+  if (/APROVADO[,:]?\s+(?:MAS|POR[ÉE]M|COM\s+RESSALVAS?)/.test(text)) return false
+  return true
 }
 
 /** Extrai o texto final de uma fase (as correções do reviewer p/ reinjetar). */
@@ -226,6 +293,20 @@ export interface PhaseResult {
   costSource: CostSource | undefined
   /** Mensagem de erro da ÚLTIMA tentativa (undefined se ok). */
   error?: string
+  /** MH2.2 — a fase parou porque o custo acumulado cruzou o teto DURANTE a
+   *  execução (stopAtCostUsd): o run corrente foi cancelado e não houve retry.
+   *  O store leva a missão ao MESMO desfecho de teto do check entre fases. */
+  budgetExceeded?: boolean
+}
+
+/** MH2.1 — campos de custo de UM evento result (o que o ledger precisa).
+ *  Espelha o subset do AgentEvent result que chat/fusion já gravam. */
+export interface PhaseCostEvent {
+  costUsd: number
+  costSource: CostSource | undefined
+  input: number
+  output: number
+  cache: number
 }
 
 export interface RunPhaseArgs {
@@ -246,28 +327,60 @@ export interface RunPhaseArgs {
   /** Callback por tentativa: informa a tentativa corrente (1-based) e os itens
    *  reduzidos até aqui, p/ o store espelhar na timeline. */
   onProgress?: (attempt: number, items: ChatItem[]) => void
+  /** MH2.1 — chamado a CADA result com cost_usd (parciais e tentativas
+   *  descartadas inclusive; o gasto é real mesmo quando o retry joga o
+   *  transcript fora). O store grava o ledger por TENTATIVA: results do MESMO
+   *  attempt carregam custo CUMULATIVO do run (padrão do CLI, ver
+   *  docs/stream-json-notes.md), então o REPLACE por runId-da-tentativa
+   *  colapsa os parciais sem contar em dobro. */
+  onCost?: (attempt: number, e: PhaseCostEvent) => void
+  /** MH2.2 — teto RESTANTE da missão em US$ pra esta invocação (maxCostUsd
+   *  menos o costTotal já gasto pelas fases/tentativas anteriores). Cruzou
+   *  DURANTE a fase → cancela o run corrente e NÃO re-tenta (budgetExceeded).
+   *  Degradação HONESTA: os motores só reportam custo em eventos result
+   *  (claude no fim do run; codex estimado no fim) — sem custo incremental
+   *  mid-fase o corte simplesmente não dispara, e o teto morde no check entre
+   *  fases (checkBudget) como sempre. null/undefined = sem teto. */
+  stopAtCostUsd?: number | null
   /** Injetável nos testes; default = runAgent real. */
   run?: typeof runAgent
+  /** Injetável nos testes; default = cancelAgent real (corte do MH2.2). */
+  cancel?: typeof cancelAgent
 }
 
 /** Roda UMA fase com retry até maxRetries. Reduz os AgentEvent num array de
- *  ChatItem (como o chat/Fusion), soma cost_usd de TODOS os results (inclusive
- *  os das tentativas descartadas — o gasto é real) e devolve o resultado.
- *  Sucesso = o último result teve ok=true e não houve error/cancelled. */
+ *  ChatItem (como o chat/Fusion) e devolve o resultado. Sucesso = o último
+ *  result teve ok=true e não houve error/cancelled.
+ *
+ *  CUSTO (MH2.1): dentro de UMA tentativa o último result VENCE (o CLI pode
+ *  emitir 2 results no mesmo run e o custo do segundo é CUMULATIVO, ver
+ *  docs/stream-json-notes.md — somar os dois contaria em dobro, mesma razão do
+ *  REPLACE por run_id no ledger do chat); ENTRE tentativas o custo SOMA
+ *  (cada tentativa é um run novo, gasto próprio — inclusive as descartadas).
+ *
+ *  TETO (MH2.2): com stopAtCostUsd, cruzou o teto num result → cancela o run
+ *  corrente (o gasto para de crescer) e nunca re-tenta. Se mesmo assim a
+ *  tentativa terminou ok (o result era o último suspiro do run, corrida
+ *  benigna), a fase volta ok e o check entre fases dá o desfecho de teto. */
 export async function runPhase(args: RunPhaseArgs): Promise<PhaseResult> {
   const run = args.run ?? runAgent
+  const cancel = args.cancel ?? cancelAgent
   const maxRetries = Math.max(1, args.maxRetries)
   const attachments: Attachment[] = args.attachments ?? []
 
-  let totalCost = 0
+  /** Soma das tentativas já ENCERRADAS (a corrente entra ao terminar). */
+  let doneCost = 0
   let costSource: CostSource | undefined
   let lastItems: ChatItem[] = []
   let lastError: string | undefined
+  let budgetExceeded = false
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     let acc = emptyReducible()
     let sawError: string | null = null
     let resultOk: boolean | null = null
+    /** Custo da tentativa CORRENTE: o último result vence (cumulativo). */
+    let attemptCost = 0
 
     const onEvent = (e: AgentEvent) => {
       acc = {
@@ -275,9 +388,34 @@ export async function runPhase(args: RunPhaseArgs): Promise<PhaseResult> {
         ...reduceItems(acc, e, { agent: args.agent, reqModel: args.model }),
       }
       if (e.type === "result") {
-        totalCost += e.cost_usd ?? 0
+        if (e.cost_usd != null) {
+          attemptCost = e.cost_usd
+          args.onCost?.(attempt, {
+            costUsd: e.cost_usd,
+            costSource: e.cost_source,
+            input: e.input_tokens,
+            output: e.output_tokens,
+            cache: e.cache_read + e.cache_creation,
+          })
+        }
         costSource = e.cost_source
         resultOk = e.ok
+        // MH2.2 — corte intra-fase: o parcial cruzou o teto → cancela o run
+        // corrente (best-effort: se ele já saiu, o cancel é no-op) e marca pra
+        // nunca re-tentar. Só dispara quando um result com custo CHEGA antes do
+        // fim — sem custo incremental, degrada pro check entre fases.
+        if (
+          !budgetExceeded &&
+          args.stopAtCostUsd != null &&
+          doneCost + attemptCost >= args.stopAtCostUsd
+        ) {
+          budgetExceeded = true
+          // best-effort, mas nunca mudo: falha do cancel deixa rastro (o run
+          // pode já ter saído — aí o erro é esperado e o warn é barato).
+          cancel(args.runId).catch((e) =>
+            console.warn("[missão] falha ao cancelar fase no corte de teto:", e),
+          )
+        }
       } else if (e.type === "error") {
         sawError = e.message
       } else if (e.type === "cancelled") {
@@ -305,9 +443,22 @@ export async function runPhase(args: RunPhaseArgs): Promise<PhaseResult> {
     }
 
     lastItems = acc.items
+    doneCost += attemptCost // tentativa encerrada: consolida o gasto dela
     const ok = sawError == null && resultOk !== false
     if (ok) {
-      return { ok: true, items: lastItems, costUsd: totalCost, costSource }
+      // corrida benigna do corte: o run terminou ok antes do cancel morder —
+      // devolve ok (trabalho REAL entregue) e o checkBudget entre fases morde.
+      return { ok: true, items: lastItems, costUsd: doneCost, costSource }
+    }
+    if (budgetExceeded) {
+      return {
+        ok: false,
+        items: lastItems,
+        costUsd: doneCost,
+        costSource,
+        error: "teto de custo da missão atingido durante a fase",
+        budgetExceeded: true,
+      }
     }
     lastError = sawError ?? "a fase terminou sem sucesso"
     // esgotou as tentativas → sai com erro; senão tenta de novo (mesmo cwd).
@@ -316,7 +467,7 @@ export async function runPhase(args: RunPhaseArgs): Promise<PhaseResult> {
   return {
     ok: false,
     items: lastItems,
-    costUsd: totalCost,
+    costUsd: doneCost,
     costSource,
     error: lastError,
   }

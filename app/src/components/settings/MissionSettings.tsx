@@ -6,7 +6,9 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useApp } from "@/store/app"
 import { LEAGUE_DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
+import { GATE_POLICY_OPTIONS, normalizeGatePolicy } from "@/lib/missionDraft"
 import {
+  type MissionGatePolicy,
   type MissionPreset,
   type MissionPhaseDef,
   type MissionPersona,
@@ -209,6 +211,21 @@ function PresetCard({
       </Button>
 
       <div className="mt-2 flex items-center justify-between gap-2 border-t border-border/50 pt-2.5">
+        <span className="text-[11.5px] text-muted-foreground">
+          Gate humano (quando a missão pausa pra perguntar)
+        </span>
+        <RichSelect
+          value={normalizeGatePolicy(preset.gatePolicy)}
+          onValueChange={(v) =>
+            onChange({ ...preset, gatePolicy: v as MissionGatePolicy })
+          }
+          options={GATE_POLICY_OPTIONS}
+          triggerClassName={SELECT_TRIGGER}
+          aria-label="Política de gate humano do preset"
+        />
+      </div>
+
+      <div className="mt-2 flex items-center justify-between gap-2 pt-0.5">
         <span className="text-[11.5px] text-muted-foreground">
           Teto de custo US$ (vazio = sem teto)
         </span>

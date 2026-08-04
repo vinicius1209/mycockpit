@@ -14,14 +14,35 @@ import {
 } from "@/lib/missionTypes"
 
 // Re-exports pra ui/ não importar lib/stores do app diretamente (regra §6).
-export { clonePhases, editPhase, parseCapInput, phasesCustomized } from "@/lib/missionDraft"
+export {
+  GATE_POLICY_OPTIONS,
+  SAVE_PRESET_ERROR_COPY,
+  clonePhases,
+  draftCustomized,
+  editPhase,
+  gatePolicyCustomized,
+  normalizeGatePolicy,
+  parseCapInput,
+  phasesCustomized,
+  saveDraftAsPreset,
+  teamAutonomy,
+  toggleTeamAutonomyWithGate,
+} from "@/lib/missionDraft"
 export type { PhaseEdit } from "@/lib/missionDraft"
 export type {
+  MissionGatePolicy,
   MissionPhaseDef,
   MissionPhaseRun,
   MissionPreset,
   MissionRun,
 } from "@/lib/missionTypes"
+
+/** MH3.1 — persiste a lista de presets atualizada (o "Salvar como time" da
+ *  mesa monta a lista com saveDraftAsPreset e grava aqui, mesmo caminho do
+ *  MissionSettings: setSettings). */
+export function saveTableMissionPresets(presets: MissionPreset[]): void {
+  useApp.getState().setSettings({ missionPresets: presets })
+}
 
 /** Presets selecionáveis no form da mesa: os das Settings (espelham os de
  *  fábrica feature/ui-first/barato; editáveis lá), fallback pros de fábrica. */

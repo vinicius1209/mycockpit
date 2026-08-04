@@ -15,20 +15,10 @@ export function revezamentoTargets<T extends { id: string }>(
   return agents.filter((a) => a.id !== current)
 }
 
-/** Monta a escolha de recuperação a partir do que o usuário selecionou no card.
- *  "default" (1ª opção dos seletores do registry) vira null = deixa o agent
- *  decidir — mesma semântica do reqModel/effort do resto do app. */
-export function buildRecoveryChoice(
-  agent: string,
-  model: string | null,
-  effort: string | null = null,
-): RecoveryChoice {
-  return {
-    agent,
-    model: model && model !== "default" ? model : null,
-    effort: effort && effort !== "default" ? effort : null,
-  }
-}
+// buildRecoveryChoice subiu pra @/lib/recoveryChoice (fonte única com o card de
+// recovery do Trabalho, MissionTimeline) — re-exportado aqui pra manter os
+// consumidores do office (MissionDock, ui.test) intactos.
+export { buildRecoveryChoice } from "@/lib/recoveryChoice"
 
 // --- ações injetáveis (wiring testável sem DOM) -----------------------------
 // Os componentes chamam estes com as funções reais (continueInAgent do bridge/

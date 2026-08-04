@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dialog"
 import { Markdown } from "@/components/common/Markdown"
 import { LearningSection } from "@/components/layout/LearningSection"
+import { MissionsSection } from "@/components/layout/MissionsSection"
 import { useActiveProject, useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import type { ProjectConfig } from "@/store/app"
@@ -674,6 +675,19 @@ export function ContextPanel() {
 
           <Separator />
 
+          {/* MH4.3 — histórico das missões do projeto (o índice `missions` do
+              banco deixou de ser órfão): desfecho honesto (ressalva incluída),
+              custo e o viewer de artefatos por linha. */}
+          <Section title="Missões">
+            <MissionsSection
+              key={reload}
+              projectId={project.id}
+              projectPath={project.path}
+            />
+          </Section>
+
+          <Separator />
+
           {/* Arquivos DAS CLIs, colapsado. O título era "o que o agente
               enxerga" e prometia demais: isto é mobília de fornecedor, cada
               linha com um dono, e o agent da conversa pode não ler nada disso —
@@ -775,6 +789,20 @@ export function ContextPanel() {
                     Extensões
                   </div>
                   <ClaudeNode cd={ctx.claude_dir} />
+                  {/* comandos da CASA (onde a skill promovida mora): valem em
+                      qualquer motor via expansão app-side */}
+                  {ctx.mycockpit_commands > 0 && (
+                    <div className="flex items-center justify-between rounded-md px-2 py-1.5">
+                      <span className="flex items-center gap-2 font-mono text-[12.5px] text-foreground/90">
+                        <FolderGit2 className="size-3.5 text-muted-foreground" />
+                        .mycockpit/commands
+                      </span>
+                      <span className="text-[10.5px] text-muted-foreground/70">
+                        {ctx.mycockpit_commands}{" "}
+                        {ctx.mycockpit_commands === 1 ? "comando" : "comandos"}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {ctx.mcp_servers != null && (

@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core"
 import { extractJson } from "@/lib/format"
 import { agentDef } from "@/lib/agents"
+import { frameHistory } from "@/lib/trust"
 import type { ChatItem } from "@/store/chat"
 import type { FusionCandidate, FusionJudge } from "@/store/fusion"
 
@@ -289,7 +290,12 @@ export const CONTEXT_BUDGET = 10_000
 /** Serializa o histórico da conversa num preâmbulo (Fusion no meio da conversa,
  *  revezamento pro agy sem resume). Enriquecido: tool calls viram linhas
  *  compactas; acima do `budget`, mantém início + final e corta o meio com
- *  "[… N itens omitidos …]". */
+ *  "[… N itens omitidos …]".
+ *
+ *  H3 (prompt-hygiene-plan): o resultado sai EMOLDURADO (frameHistory) — é
+ *  conteúdo serializado reinjetado em prompt, então instrução plantada no
+ *  histórico fica dentro dos delimitadores, nunca vira pedido solto. O budget
+ *  vale pro conteúdo; a moldura é constante e fica fora da conta. */
 export function serializeContext(
   items: ChatItem[],
   budget = CONTEXT_BUDGET,
@@ -297,7 +303,7 @@ export function serializeContext(
   const header = "Contexto da conversa até aqui:"
   const entries = contextEntries(items)
   const full = [header, ...entries].join("\n")
-  if (full.length <= budget) return full
+  if (full.length <= budget) return frameHistory(full)
 
   // início: o 1º pedido do usuário (sempre ao menos 1 entrada) até ~30%.
   const headMax = Math.floor(budget * 0.3)
@@ -324,8 +330,10 @@ export function serializeContext(
     j--
   }
   const omitted = j - i + 1
-  if (omitted <= 0) return full
-  return [header, ...head, `\n[… ${omitted} itens omitidos …]`, ...tail].join("\n")
+  if (omitted <= 0) return frameHistory(full)
+  return frameHistory(
+    [header, ...head, `\n[… ${omitted} itens omitidos …]`, ...tail].join("\n"),
+  )
 }
 
 /** Roda `fn` sobre `items` com no máximo `limit` em paralelo (stagger de candidatos). */

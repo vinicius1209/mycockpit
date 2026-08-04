@@ -14,6 +14,7 @@ import { MissionControl } from "@/components/panel/MissionControl"
 import { ScheduledView } from "@/components/scheduled/ScheduledView"
 import { CommandMenu } from "@/components/common/CommandMenu"
 import { GlobalInteractionHost } from "@/components/common/GlobalInteractionHost"
+import { LightboxOverlay } from "@/components/chat/Lightbox"
 import { SettingsDialog } from "@/components/settings/SettingsDialog"
 import { ConfirmHost } from "@/components/common/confirm"
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard"
@@ -26,7 +27,7 @@ import {
 } from "@/components/ui/resizable"
 import { useApp } from "@/store/app"
 import type { ProjectConfig } from "@/store/app"
-import { useChat } from "@/store/chat"
+import { pendingDeferred, useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { useMission } from "@/store/mission"
 import { useNotifs } from "@/store/notifications"
@@ -44,6 +45,10 @@ import "@/store/cards"
 // Side-effect: liga a ponte do Companion Web (push de estado coalescido +
 // executor de companion://action) no boot — no-op fora do Tauri.
 import "@/lib/companion"
+// Side-effect: assina update://event no BOOT — o job de update de CLI é do
+// APP, não do modal de Configurações (toast estável + estado sobrevive ao
+// fechar/reabrir o modal). No-op fora do Tauri.
+import "@/lib/updates"
 import { useSchedules } from "@/store/schedules"
 import { tickSchedules } from "@/lib/scheduleEngine"
 import { fmtUntilShort, nextScheduled } from "@/lib/schedules"
@@ -65,6 +70,7 @@ import {
 } from "@/lib/db"
 import { readMycockpitConfig } from "@/lib/mycockpit"
 import {
+  commandForChannel,
   detectAgents,
   toProbeMap,
   updateAvailable,
@@ -236,11 +242,15 @@ export default function App() {
         if (!t.latest || !updateAvailable(t)) continue
         if (notified[t.id] === t.latest) continue // já avisado desta versão
         const label = agentDef(t.id)?.label ?? t.id
-        const cmd = UPDATE_COMMANDS[t.id]
+        // G3.2 — o comando sugerido é o do CANAL detectado do binário (npm vs
+        // homebrew); canal desconhecido → copy neutra em vez do comando errado.
+        const cmd = commandForChannel(t.id, t.latestChannel)
         useNotifs.getState().push({
           kind: "run_done",
           title: `Atualização disponível: ${label} ${t.latest}`,
-          subtitle: cmd ?? `instalado ${t.version ?? "?"} → ${t.latest}`,
+          subtitle:
+            cmd ??
+            `instalado ${t.version ?? "?"} → ${t.latest}, atualize pelo painel CLIs instaladas`,
           projectId: useApp.getState().activeProjectId ?? "",
         })
         notified[t.id] = t.latest
@@ -321,7 +331,10 @@ export default function App() {
       .map(([id, c]) => {
         const last = c.items[c.items.length - 1]
         const tool = last?.kind === "tool" ? last.name : ""
-        return `${id}:${last?.kind ?? "idle"}:${tool}:${c.streamingTextId ?? ""}`
+        // nº de diferidos vivos entra na chave: o snapshot da tray (e o aviso
+        // de saída, D1.4) precisa reagir quando um workflow nasce/termina.
+        const deferred = pendingDeferred(c.items).length
+        return `${id}:${last?.kind ?? "idle"}:${tool}:${c.streamingTextId ?? ""}:${deferred}`
       })
       .sort()
       .join("|"),
@@ -469,9 +482,17 @@ export default function App() {
         .filter((s) => s.lastRunAt != null)
         .sort((a, b) => (b.lastRunAt ?? 0) - (a.lastRunAt ?? 0))[0]
 
+      // Trabalho diferido do provider vivo em QUALQUER conversa carregada:
+      // conta pro aviso honesto do quit (D1.4). Derivado de items.
+      const deferredCount = Object.values(chat.byId).reduce(
+        (acc, c) => acc + pendingDeferred(c.items).length,
+        0,
+      )
+
       updateTray({
         running: activities.size,
         decisions: decisionsPending + pendingInteractions,
+        deferred: deferredCount,
         activities: [...activities.values()].slice(0, 3),
         decisionConvId,
         decisionProjectId,
@@ -672,6 +693,31 @@ export default function App() {
     }
   }, [])
 
+  // H2 (prompt-hygiene-plan): o Rust anunciou o plano de MCPs no corpo do
+  // prompt deste run → carimba o fingerprint no ledger efêmero da conversa
+  // (mesmo mecanismo do frescor da doutrina, H4). É ele que volta como
+  // `mcpFingerprint` no próximo envio: motor 1º-turno-só re-anuncia SÓ quando
+  // o plano muda mid-conversa. Listener global: cobre runs em background.
+  useEffect(() => {
+    if (!isTauri()) return
+    let un: UnlistenFn | null = null
+    let disposed = false
+    listen<{ conv_id: string; fingerprint: string }>("mcp://announced", (e) => {
+      useChat
+        .getState()
+        .recordInjectedFingerprint(e.payload.conv_id, "mcp", e.payload.fingerprint)
+    })
+      .then((u) => {
+        if (disposed) u()
+        else un = u
+      })
+      .catch(() => {})
+    return () => {
+      disposed = true
+      un?.()
+    }
+  }, [])
+
   // Fase 1, carrega a config do projeto ativo de .mycockpit/config.toml (truth)
   // e sincroniza o cache de permissão que o run_claude lê.
   useEffect(() => {
@@ -816,6 +862,10 @@ export default function App() {
         {/* Host GLOBAL de interações (§6.1 item 4): approvals/perguntas têm
             card em QUALQUER viewMode (o ChatPanel não o monta mais). */}
         <GlobalInteractionHost />
+        {/* Lightbox ÚNICO do fio (evidência de tool B1 + anexos do usuário):
+            host global — MessageList existe em Linear/Painel/Office e o
+            overlay é um só. Fechado renderiza null. */}
+        <LightboxOverlay />
         <SettingsDialog />
         <ConfirmHost />
         {/* Onboarding: overlay full-screen no 1º run (onboarded=false). O boot

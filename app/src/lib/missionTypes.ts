@@ -56,6 +56,17 @@ export function phasePermission(
     : projectPermission
 }
 
+/** Política de GATE humano do time (MH3.3):
+ *  - "agente": comportamento clássico — pausa quando uma fase deixa
+ *    open_questions no handoff E há próxima fase.
+ *  - "sempre-apos-planejar": gate OBRIGATÓRIO após a fase 1, mesmo sem
+ *    perguntas (pergunta padrão "Revise o plano antes de executar"); as demais
+ *    fases seguem a regra do "agente".
+ *  - "nunca": nunca pausa; perguntas em aberto entram como notice no fio
+ *    (informação nunca some).
+ *  Ausente = "agente" (fail-open pra presets salvos antes do campo existir). */
+export type MissionGatePolicy = "agente" | "sempre-apos-planejar" | "nunca"
+
 /** Um time salvo (global nas Settings; ad-hoc no launch). */
 export interface MissionPreset {
   id: string
@@ -63,6 +74,9 @@ export interface MissionPreset {
   phases: MissionPhaseDef[]
   /** Teto de custo da missão em US$ (null = sem teto). RISCO Nº1 do design. */
   maxCostUsd: number | null
+  /** Política de gate humano (MH3.3). Ausente = "agente" (comportamento
+   *  clássico) — presets antigos seguem funcionando sem migração. */
+  gatePolicy?: MissionGatePolicy
 }
 
 export type MissionPhaseStatus =
@@ -128,6 +142,17 @@ export interface RecoveryChoice {
   effort: string | null
 }
 
+/** MH1.1 — desfecho honesto: a missão terminou "done" mas o revisor NÃO
+ *  aprovou (rodadas de correção esgotadas, ou nenhum executor pra corrigir).
+ *  A entrega ACONTECEU (arquivos no worktree, delivery gravada); a ressalva
+ *  registra que ela não passou no gate do revisor — nunca um "done" seco. */
+export interface MissionReviewCaveat {
+  /** Rodadas de correção executadas antes de esgotar (0 = nenhuma possível). */
+  rounds: number
+  /** Parecer final do revisor (feedback da última revisão reprovada). */
+  feedback: string
+}
+
 /** Resumo estruturado da conclusão (do handoff da última fase que emitiu). */
 export interface MissionDoneSummary {
   intent: string | null
@@ -159,6 +184,12 @@ export interface MissionRun {
   recovery?: MissionRecovery | null
   /** Resumo estruturado quando done/error (best-effort dos handoffs). */
   doneSummary?: MissionDoneSummary | null
+  /** MH1.1 — done COM RESSALVA: o revisor não aprovou e as rodadas de correção
+   *  esgotaram. null/undefined = sem ressalva (aprovado ou sem reviewer). */
+  reviewCaveat?: MissionReviewCaveat | null
+  /** MH3.3 — política de gate do preset EFETIVO do launch (viaja no run pra
+   *  o run-state serializar e a retomada preservar). Ausente = "agente". */
+  gatePolicy?: MissionGatePolicy
 }
 
 /** Presets de fábrica (espelham categorias do OMO, sem keyword-magic). */

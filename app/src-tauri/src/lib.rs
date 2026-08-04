@@ -15,27 +15,43 @@ mod catalog;
 mod codex_appserver;
 mod companion;
 mod context;
+mod context_gateway;
 mod detect;
+mod evidence;
 mod fsx;
 mod git;
 mod github;
+mod mcp_control;
 mod mycockpit;
 mod osnotify;
 mod path;
-mod proc;
 mod pricing;
+mod proc;
 mod sdd;
 mod skills;
 mod sources;
 mod stt;
 mod tray;
 mod update;
+mod work_gateway;
 
 /// Ponto de entrada do subcomando `approval-server`: ESTE binário rodando como
 /// MCP server stdio quando o `claude -p` o spawna (aprovação granular inline).
 /// Chamado pelo `main.rs` ANTES do Tauri subir; nunca retorna ao app normal.
 pub fn run_approval_server() {
     approval::run_mcp_server();
+}
+
+/// Ponto de entrada do MCP read-only de memória/contexto. Diferente do server
+/// de aprovação, este contrato é igual para qualquer provider que fale MCP.
+pub fn run_context_server() {
+    context_gateway::run_mcp_server();
+}
+
+/// Ponto de entrada do MCP de trabalho/processos, compartilhado por todo
+/// provider que fale MCP.
+pub fn run_work_server() {
+    work_gateway::run_mcp_server();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -301,6 +317,93 @@ pub fn run() {
             sql: "ALTER TABLE conversations ADD COLUMN preset_digest TEXT;",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 27,
+            description: "mcp_registry",
+            sql: "CREATE TABLE IF NOT EXISTS mcp_servers ( \
+                    id TEXT PRIMARY KEY, \
+                    name TEXT NOT NULL, \
+                    source TEXT NOT NULL, \
+                    scope TEXT NOT NULL, \
+                    source_agent TEXT, \
+                    transport TEXT NOT NULL, \
+                    locator TEXT NOT NULL, \
+                    env_keys_json TEXT NOT NULL DEFAULT '[]', \
+                    fingerprint TEXT NOT NULL, \
+                    managed INTEGER NOT NULL DEFAULT 1, \
+                    portable INTEGER NOT NULL DEFAULT 0, \
+                    source_enabled INTEGER NOT NULL DEFAULT 1, \
+                    last_seen_at INTEGER NOT NULL \
+                  );",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 28,
+            description: "mcp_bindings",
+            sql: "CREATE TABLE IF NOT EXISTS mcp_bindings ( \
+                    project_id TEXT NOT NULL, \
+                    server_id TEXT NOT NULL, \
+                    agent TEXT NOT NULL, \
+                    required INTEGER NOT NULL DEFAULT 0, \
+                    fallback TEXT NOT NULL DEFAULT 'ask', \
+                    updated_at INTEGER NOT NULL, \
+                    PRIMARY KEY (project_id, server_id, agent) \
+                  );",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 29,
+            description: "mcp_health",
+            sql: "CREATE TABLE IF NOT EXISTS mcp_health ( \
+                    project_id TEXT NOT NULL, \
+                    server_id TEXT NOT NULL, \
+                    agent TEXT NOT NULL, \
+                    status TEXT NOT NULL, \
+                    detail TEXT, \
+                    tool_names_json TEXT NOT NULL DEFAULT '[]', \
+                    checked_at INTEGER NOT NULL, \
+                    PRIMARY KEY (project_id, server_id, agent) \
+                  );",
+            kind: MigrationKind::Up,
+        },
+        // Sidebar S1.2 (docs/sidebar-plan.md) — reordenação manual. v30-v33
+        // registradas no plano. `sort_order` é a ordem do USUÁRIO; os backfills
+        // preservam a ordem de exibição vigente (projetos: created_at DESC;
+        // conversas: created_at ASC dentro do projeto), com desempate por id
+        // pra ranking estável quando dois created_at empatam.
+        Migration {
+            version: 30,
+            description: "projects_sort_order",
+            sql: "ALTER TABLE projects ADD COLUMN sort_order INTEGER;",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 31,
+            description: "projects_sort_order_backfill",
+            sql: "UPDATE projects SET sort_order = ( \
+                    SELECT COUNT(*) FROM projects p2 \
+                     WHERE p2.created_at > projects.created_at \
+                        OR (p2.created_at = projects.created_at AND p2.id < projects.id) \
+                  );",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 32,
+            description: "conversations_sort_order",
+            sql: "ALTER TABLE conversations ADD COLUMN sort_order INTEGER;",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 33,
+            description: "conversations_sort_order_backfill",
+            sql: "UPDATE conversations SET sort_order = ( \
+                    SELECT COUNT(*) FROM conversations c2 \
+                     WHERE c2.project_id = conversations.project_id \
+                       AND (c2.created_at < conversations.created_at \
+                        OR (c2.created_at = conversations.created_at AND c2.id < conversations.id)) \
+                  );",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -399,6 +502,7 @@ pub fn run() {
                 .build(),
         )
         .manage(agent::RunRegistry::default())
+        .manage(std::sync::Arc::new(work_gateway::ProcessRegistry::default()))
         .manage(tray::TrayState::default())
         .manage(attachments::ActiveConvs::default())
         .manage(stt::SttSession::default())
@@ -407,6 +511,9 @@ pub fn run() {
         // comando answer_approval) dos pedidos pendentes. Arc: o mesmo mapa é lido
         // pelas conexões do socket e pelo comando que entrega a decisão do usuário.
         .manage(std::sync::Arc::new(approval::PendingApprovals::default()))
+        // jobs de update dos CLIs (update.rs): um job `running` por agent, com
+        // dedupe no backend — a trava real contra N `brew upgrade` concorrentes.
+        .manage(std::sync::Arc::new(update::UpdateJobs::default()))
         .invoke_handler(tauri::generate_handler![
             agent::run_agent,
             agent::cancel_agent,
@@ -419,6 +526,7 @@ pub fn run() {
             detect::detect_agents,
             detect::list_agy_models,
             update::update_agent,
+            update::update_jobs,
             catalog::refresh_models_catalog,
             catalog::get_models_catalog,
             mycockpit::read_mycockpit_config,
@@ -430,6 +538,7 @@ pub fn run() {
             mycockpit::write_agent_def,
             mycockpit::delete_agent_def,
             mycockpit::export_conv_context,
+            mycockpit::export_context_bundle,
             sources::read_project_sources,
             sources::read_text_file,
             sources::read_project_commands,
@@ -452,6 +561,13 @@ pub fn run() {
             git::pr_context,
             github::gh_pr_view,
             github::gh_pr_merge,
+            mcp_control::discover_mcp_servers,
+            mcp_control::set_mcp_binding,
+            mcp_control::check_mcp_server,
+            mcp_control::mcp_bindings_summary,
+            work_gateway::managed_process_stop,
+            work_gateway::managed_process_retry,
+            work_gateway::managed_process_start,
             tray::set_tray_snapshot,
             tray::get_tray_snapshot,
             tray::set_tray_preferences,
@@ -466,6 +582,8 @@ pub fn run() {
             attachments::read_attachment,
             attachments::gc_attachments,
             attachments::wipe_conv_attachments,
+            evidence::read_evidence,
+            evidence::open_conv_image,
             companion::companion_start,
             companion::companion_stop,
             companion::companion_status,
@@ -480,6 +598,9 @@ pub fn run() {
             // órfãos rodando headless, editando repo e gastando, sem UI).
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
                 app_handle.state::<agent::RunRegistry>().kill_all();
+                app_handle
+                    .state::<std::sync::Arc<work_gateway::ProcessRegistry>>()
+                    .kill_all();
             }
         });
 }

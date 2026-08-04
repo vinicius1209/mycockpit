@@ -49,12 +49,21 @@ export interface SlashCommand {
   description: string | null
   kind: string // "command" | "skill"
   origin: string // "project" | "global"
+  /** De onde o comando veio: "mycockpit" | "claude" | "codex". */
+  source: string
+  /** Markdown inteiro do arquivo (frontmatter incluso) p/ a expansão
+   *  app-side; null se o arquivo estava ilegível. */
+  body: string | null
 }
 
+/** Inventário de comandos "/" POR AGENT da conversa: a casa
+ *  (.mycockpit/commands) vale pra todos; claude-code soma .claude/commands e
+ *  .claude/skills; codex soma ~/.codex/prompts; agy só vê a casa. */
 export async function readProjectCommands(
   path: string,
+  agent: string,
 ): Promise<SlashCommand[]> {
-  return invoke<SlashCommand[]>("read_project_commands", { path })
+  return invoke<SlashCommand[]>("read_project_commands", { path, agent })
 }
 
 /** Lista arquivos do projeto (respeita .gitignore) p/ o "@". */

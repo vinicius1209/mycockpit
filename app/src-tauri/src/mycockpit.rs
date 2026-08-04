@@ -6,6 +6,8 @@
 //!     `CLAUDE.md` só o Claude Code lê, `AGENTS.md` só o Codex, e o agy não lê
 //!     nenhum dos dois — este arquivo vale pros três porque quem injeta é o app;
 //!   - `agents/*.md`   — as personas (Onda 3);
+//!   - `commands/*.md` — comandos "/" da CASA (agnósticos: valem em qualquer
+//!     motor via expansão app-side; é onde skills.rs grava a skill promovida);
 //!   - `context/`      — export do fio de conversa (local, descartável).
 //!
 //! O arquivo é sempre a FONTE DE VERDADE; o SQLite do app vira cache. Edição do
@@ -24,6 +26,25 @@ use toml_edit::{value, DocumentMut};
 /// senão o `*` — que casa em qualquer nível — continua vencendo).
 const MYCOCKPIT_GITIGNORE: &str = "\
 # Pasta do MyCockpit. Local por padrão: contexto exportado, missões e worktrees
+# não vão pro git. As exceções abaixo são VERSIONADAS de propósito — a doutrina,
+# as personas e os comandos do projeto devem viajar no clone e ser revisáveis em PR.
+*
+!.gitignore
+!instructions.md
+!agents/
+!agents/*.md
+!commands/
+!commands/*.md
+";
+
+/// Conteúdo do `.gitignore` legado (a pasta inteira local). Só ele é elegível a
+/// upgrade automático — qualquer outro conteúdo é edição AUTORAL e fica de pé.
+const LEGACY_GITIGNORE: &str = "*";
+
+/// Versão jul/2026 do `.gitignore` (antes de `commands/` existir). Também
+/// elegível a upgrade automático: foi o APP que a escreveu, não o usuário.
+const GITIGNORE_JUL2026: &str = "\
+# Pasta do MyCockpit. Local por padrão: contexto exportado, missões e worktrees
 # não vão pro git. As exceções abaixo são VERSIONADAS de propósito — a doutrina
 # e as personas do projeto devem viajar no clone e ser revisáveis em PR.
 *
@@ -33,17 +54,15 @@ const MYCOCKPIT_GITIGNORE: &str = "\
 !agents/*.md
 ";
 
-/// Conteúdo do `.gitignore` legado (a pasta inteira local). Só ele é elegível a
-/// upgrade automático — qualquer outro conteúdo é edição AUTORAL e fica de pé.
-const LEGACY_GITIGNORE: &str = "*";
-
 /// Cria `dir` e garante o `.gitignore` do `.mycockpit/`: escreve se faltar,
-/// faz upgrade se ainda for o `*` legado, e NÃO TOCA se o usuário editou.
-fn ensure_mycockpit_dir(dir: &Path) -> Result<(), String> {
+/// faz upgrade se for uma versão que o PRÓPRIO app escreveu (o `*` legado ou a
+/// versão jul/2026 sem `commands/`), e NÃO TOCA se o usuário editou.
+/// `pub(crate)`: skills.rs grava `.mycockpit/commands/` sob o mesmo contrato.
+pub(crate) fn ensure_mycockpit_dir(dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let gi = dir.join(".gitignore");
     match std::fs::read_to_string(&gi) {
-        Ok(cur) if cur.trim() == LEGACY_GITIGNORE => {
+        Ok(cur) if cur.trim() == LEGACY_GITIGNORE || cur == GITIGNORE_JUL2026 => {
             crate::fsx::write_atomic(&gi, MYCOCKPIT_GITIGNORE)
         }
         Ok(_) => Ok(()), // conteúdo autoral (ou já novo): preservado
@@ -323,7 +342,9 @@ fn mtime_ms(md: &std::fs::Metadata) -> i64 {
 }
 
 fn collect_defs(dir: &Path, scope: &str, out: &mut Vec<AgentDefFile>) {
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
     for e in rd.filter_map(|e| e.ok()) {
         let p = e.path();
         if p.extension().is_none_or(|x| x != "md") {
@@ -443,11 +464,13 @@ fn ensure_ignored_dir(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Se sobrar mais que `keep` arquivos `.md` no dir, apaga os mais ANTIGOS por
-/// mtime. Best-effort: qualquer erro (mtime ilegível, remove falhou) é ignorado
-/// — limpeza nunca pode falhar o export.
+/// Se sobrar mais que `keep` transcripts `.md` no dir, apaga os mais ANTIGOS e
+/// o manifesto irmão `<id>.handoff.json`. Best-effort: qualquer erro (mtime
+/// ilegível, remove falhou) é ignorado — limpeza nunca pode falhar o export.
 fn trim_old_exports(dir: &Path, keep: usize) {
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
     let mut mds: Vec<(std::time::SystemTime, std::path::PathBuf)> = rd
         .flatten()
         .filter_map(|e| {
@@ -465,7 +488,17 @@ fn trim_old_exports(dir: &Path, keep: usize) {
     mds.sort_by_key(|(t, _)| *t); // mais antigo primeiro
     for (_, p) in mds.iter().take(mds.len() - keep) {
         let _ = std::fs::remove_file(p);
+        if let Some(stem) = p.file_stem().and_then(|x| x.to_str()) {
+            let _ = std::fs::remove_file(dir.join(format!("{stem}.handoff.json")));
+        }
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextBundlePaths {
+    pub transcript_path: String,
+    pub manifest_path: String,
 }
 
 /// Exporta o markdown (renderizado pelo front) da conversa pra
@@ -487,6 +520,51 @@ pub fn export_conv_context(
     crate::fsx::write_atomic(&dir.join(format!("{id}.md")), &markdown)?;
     trim_old_exports(&dir, MAX_CONTEXT_FILES);
     Ok(format!(".mycockpit/context/{id}.md"))
+}
+
+/// Exporta, numa única fronteira validada, as duas camadas da memória híbrida:
+/// - `<conv>.md`: transcript humano, completo e legível por qualquer agent;
+/// - `<conv>.handoff.json`: índice estruturado/compacto, lido pelo prompt ou
+///   pelas tools do MCP `mc-context`.
+///
+/// O JSON é validado antes de qualquer write e recebe um teto generoso, mas
+/// finito: o manifesto é índice, nunca um segundo transcript disfarçado.
+#[tauri::command]
+pub fn export_context_bundle(
+    project_path: String,
+    conv_id: String,
+    markdown: String,
+    manifest: String,
+) -> Result<ContextBundlePaths, String> {
+    const MAX_MANIFEST_BYTES: usize = 256 * 1024;
+    if manifest.len() > MAX_MANIFEST_BYTES {
+        return Err(format!(
+            "manifesto de contexto excede {} KiB",
+            MAX_MANIFEST_BYTES / 1024
+        ));
+    }
+    let parsed: serde_json::Value =
+        serde_json::from_str(&manifest).map_err(|e| format!("manifesto inválido: {e}"))?;
+    if !parsed.is_object() {
+        return Err("manifesto de contexto precisa ser um objeto JSON".into());
+    }
+
+    let id = safe_conv_id(&conv_id)?;
+    let root = crate::skills::validate_project_path(&project_path)?;
+    ensure_mycockpit_dir(&root.join(".mycockpit"))?;
+    let dir = root.join(".mycockpit").join("context");
+    ensure_ignored_dir(&dir)?;
+
+    let transcript_name = format!("{id}.md");
+    let manifest_name = format!("{id}.handoff.json");
+    crate::fsx::write_atomic(&dir.join(&transcript_name), &markdown)?;
+    crate::fsx::write_atomic(&dir.join(&manifest_name), &manifest)?;
+    trim_old_exports(&dir, MAX_CONTEXT_FILES);
+
+    Ok(ContextBundlePaths {
+        transcript_path: format!(".mycockpit/context/{transcript_name}"),
+        manifest_path: format!(".mycockpit/context/{manifest_name}"),
+    })
 }
 
 #[cfg(test)]
@@ -562,9 +640,11 @@ mod tests {
 
         // escrever a doutrina também instala o .gitignore seletivo (o arquivo
         // precisa ser rastreável desde o 1º save, senão nasce ignorado).
-        assert!(std::fs::read_to_string(tmp.join(".mycockpit").join(".gitignore"))
-            .unwrap()
-            .contains("!instructions.md"));
+        assert!(
+            std::fs::read_to_string(tmp.join(".mycockpit").join(".gitignore"))
+                .unwrap()
+                .contains("!instructions.md")
+        );
 
         // limpar o texto NÃO apaga o arquivo (limpar é reversível; apagar não).
         write_project_doctrine(pp.clone(), String::new()).unwrap();
@@ -605,8 +685,11 @@ mod tests {
         let tmp = tmp_project("agents");
         let pp = tmp.to_string_lossy().to_string();
 
-        // pasta ausente = lista vazia (persona é opcional, não é erro).
-        assert!(read_agent_defs(Some(pp.clone())).is_empty());
+        // Pasta de PROJETO ausente = escopo vazio. A leitura também agrega
+        // personas globais reais; o teste não pode depender do HOME da máquina.
+        assert!(read_agent_defs(Some(pp.clone()))
+            .iter()
+            .all(|d| d.scope != "projeto"));
 
         let md = "---\nname: Revisor\n---\n\nSeja cético.\n";
         let escrito = write_agent_def(
@@ -618,7 +701,10 @@ mod tests {
         .unwrap();
         assert!(escrito.ends_with(".mycockpit/agents/revisor.md"));
 
-        let defs = read_agent_defs(Some(pp.clone()));
+        let defs: Vec<_> = read_agent_defs(Some(pp.clone()))
+            .into_iter()
+            .filter(|d| d.scope == "projeto")
+            .collect();
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].slug, "revisor");
         assert_eq!(defs[0].scope, "projeto");
@@ -627,14 +713,18 @@ mod tests {
 
         // gravar persona instala o .gitignore seletivo: a pasta é VERSIONADA,
         // então ela não pode nascer ignorada pelo `*` legado.
-        assert!(std::fs::read_to_string(tmp.join(".mycockpit").join(".gitignore"))
-            .unwrap()
-            .contains("!agents/"));
+        assert!(
+            std::fs::read_to_string(tmp.join(".mycockpit").join(".gitignore"))
+                .unwrap()
+                .contains("!agents/")
+        );
 
         // apagar é idempotente (a UI é otimista).
         delete_agent_def(Some(pp.clone()), "projeto".into(), "revisor".into()).unwrap();
         delete_agent_def(Some(pp.clone()), "projeto".into(), "revisor".into()).unwrap();
-        assert!(read_agent_defs(Some(pp)).is_empty());
+        assert!(read_agent_defs(Some(pp))
+            .iter()
+            .all(|d| d.scope != "projeto"));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -669,7 +759,10 @@ mod tests {
         std::fs::write(dir.join("Nome Estranho.md"), "x").unwrap();
         std::fs::write(dir.join("ok.md"), "y").unwrap();
         std::fs::write(dir.join("leia-me.txt"), "z").unwrap();
-        let defs = read_agent_defs(Some(pp));
+        let defs: Vec<_> = read_agent_defs(Some(pp))
+            .into_iter()
+            .filter(|d| d.scope == "projeto")
+            .collect();
         assert_eq!(defs.len(), 1, "só o .md com slug válido entra");
         assert_eq!(defs[0].slug, "ok");
         // e o arquivo estranho continua no disco, intacto.
@@ -701,23 +794,75 @@ mod tests {
         assert_eq!(rel, ".mycockpit/context/conv-1.md");
         let dir = tmp.join(".mycockpit").join("context");
         // o contexto exportado é descartável: a subpasta segue 100% local.
-        assert_eq!(std::fs::read_to_string(dir.join(".gitignore")).unwrap(), "*\n");
+        assert_eq!(
+            std::fs::read_to_string(dir.join(".gitignore")).unwrap(),
+            "*\n"
+        );
         // a pasta-mãe é SELETIVA (doutrina/personas versionadas) — antes era "*".
         assert!(
             std::fs::read_to_string(tmp.join(".mycockpit").join(".gitignore"))
                 .unwrap()
                 .contains("!instructions.md")
         );
-        assert_eq!(std::fs::read_to_string(dir.join("conv-1.md")).unwrap(), "# Oi\n");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("conv-1.md")).unwrap(),
+            "# Oi\n"
+        );
 
         // re-export SOBRESCREVE (last-writer-wins, sem erro).
         let rel2 = export_conv_context(pp.clone(), "conv-1".into(), "# Novo\n".into()).unwrap();
         assert_eq!(rel2, rel);
-        assert_eq!(std::fs::read_to_string(dir.join("conv-1.md")).unwrap(), "# Novo\n");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("conv-1.md")).unwrap(),
+            "# Novo\n"
+        );
 
         // conv_id malicioso não escreve nada.
         assert!(export_conv_context(pp, "../fora".into(), "x".into()).is_err());
 
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn bundle_exporta_transcript_e_manifesto_validados() {
+        let tmp =
+            std::env::temp_dir().join(format!("mycockpit-bundle-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let pp = tmp.to_string_lossy().to_string();
+
+        let paths = export_context_bundle(
+            pp.clone(),
+            "conv-2".into(),
+            "# Memória\n".into(),
+            r#"{"version":1,"pending_request":"continue"}"#.into(),
+        )
+        .unwrap();
+        assert_eq!(paths.transcript_path, ".mycockpit/context/conv-2.md");
+        assert_eq!(
+            paths.manifest_path,
+            ".mycockpit/context/conv-2.handoff.json"
+        );
+        let dir = tmp.join(".mycockpit/context");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("conv-2.md")).unwrap(),
+            "# Memória\n"
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(
+                &std::fs::read_to_string(dir.join("conv-2.handoff.json")).unwrap()
+            )
+            .unwrap()["pending_request"],
+            "continue"
+        );
+        // inválido falha antes de sobrescrever o par íntegro.
+        assert!(
+            export_context_bundle(pp, "conv-2".into(), "# Quebrado\n".into(), "{".into()).is_err()
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("conv-2.md")).unwrap(),
+            "# Memória\n"
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

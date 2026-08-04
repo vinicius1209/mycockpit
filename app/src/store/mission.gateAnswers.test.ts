@@ -67,6 +67,10 @@ vi.mock("@/lib/notify", () => ({
   notifyGate: vi.fn(),
   notifyTurnEnd: vi.fn(),
   nativeNotify: vi.fn(),
+  // MH2.3: o store passou a notificar desfecho/recovery — stubs pro mock
+  // parcial continuar completo (nenhuma asserção deste arquivo muda).
+  notifyMissionEnd: vi.fn(),
+  notifyMissionRecovery: vi.fn(),
 }))
 
 import { useMission } from "./mission"

@@ -6,7 +6,7 @@ import { toast } from "sonner"
 import { cancelAgent, runAgent } from "@/lib/agent"
 import { wantsAutoResume } from "@/lib/autoResume"
 import { listConversations, type ConversationMeta } from "@/lib/db"
-import { readDoctrine } from "@/lib/doctrine"
+import { buildDoctrineBlock, doctrineFingerprint, readDoctrine } from "@/lib/doctrine"
 import { buildLearningBlocks, markLessonsUsed } from "@/lib/learning"
 import { notifyTurnEnd } from "@/lib/notify"
 import {
@@ -59,7 +59,35 @@ vi.mock("@/lib/db", () => ({
   isTauri: () => true,
   listConversations: vi.fn(async () => null),
 }))
-vi.mock("@/lib/handoff", () => ({ buildHandoff: vi.fn(() => "[handoff]") }))
+vi.mock("@/lib/handoff", () => ({
+  buildHandoff: vi.fn(() => "[handoff]"),
+  prepareHybridHandoff: vi.fn(async (input: {
+    personaBlock?: string | null
+    doctrineBlock?: string | null
+    lessonsBlock?: string | null
+    items: ChatItem[]
+    pendingUserIndex: number
+  }) => {
+    const pending = input.items[input.pendingUserIndex]
+    const text = pending?.kind === "user" ? pending.text : ""
+    const prefix = [
+      input.personaBlock,
+      input.doctrineBlock,
+      input.lessonsBlock,
+      "[handoff]",
+    ]
+      .filter(Boolean)
+      .join("\n\n")
+    return {
+      prompt: `${prefix}\n\nPedido pendente:\n${text}`,
+      envelope: {},
+      paths: {
+        transcriptPath: ".mycockpit/context/c1.md",
+        manifestPath: ".mycockpit/context/c1.handoff.json",
+      },
+    }
+  }),
+}))
 // Doutrina: mantém as funções PURAS reais (o bloco e a regra de quando injetar
 // têm testes próprios em doctrine.test.ts) e troca só a LEITURA de disco. O
 // default é "projeto sem doutrina" — os outros testes de prompt seguem valendo.
@@ -188,6 +216,7 @@ function makeChat(conv: ConvState) {
     stampPreset: vi.fn(async () => {}),
     dropNativeSession: vi.fn(),
     beginTransplant: vi.fn(),
+    recordInjectedFingerprint: vi.fn(),
     handleEvent: vi.fn(),
     finish: vi.fn(),
     persist: vi.fn(async () => {}),
@@ -390,21 +419,80 @@ describe("sendFromDesk — coreografia do run", () => {
   // ── Doutrina do projeto (.mycockpit/instructions.md) ──
   // A mesa manda pelo MESMO cano do chat: sem isto, enviar do Escritório
   // rodaria sem as regras do projeto — o mesmo bug que as lições já tiveram.
-  it("doutrina do projeto entra no prompt (vale pra qualquer agent)", async () => {
+  // H1: o CANAL agora é por capability — claude (systemChannel) recebe pelo
+  // canal system em TODO turno; codex/agy seguem com bloco no corpo.
+  it("doutrina no corpo do 1º turno em motor sem canal system (codex)", async () => {
     comDoutrina("- Testes em pt-BR.")
     await sendFromDesk({ ...args, agent: "codex" })
-    const prompt = vi.mocked(runAgent).mock.calls[0][5]
+    const call = vi.mocked(runAgent).mock.calls[0]
+    const prompt = call[5]
     expect(prompt).toContain("<doutrina")
     expect(prompt).toContain("- Testes em pt-BR.")
     // o pedido do usuário continua no fim (a doutrina é prefixo, não substituto)
     expect(prompt.endsWith("olá")).toBe(true)
+    expect(call[13]).toBeNull()
+    // H4: o fingerprint da doutrina injetada é carimbado no ledger da conversa
+    expect(chat.recordInjectedFingerprint).toHaveBeenCalledWith(
+      "c1",
+      "doctrine",
+      expect.any(String),
+    )
   })
 
-  it("turno seguinte de claude/codex NÃO repete a doutrina (resume carrega)", async () => {
+  it("H1: claude recebe a doutrina pelo canal SYSTEM em todo turno, corpo limpo", async () => {
     comDoutrina("- Testes em pt-BR.")
     arm(makeConv({ items: [user("antes"), assistant("respondi")] }))
     await sendFromDesk(args)
-    expect(vi.mocked(runAgent).mock.calls[0][5]).toBe("olá")
+    const call = vi.mocked(runAgent).mock.calls[0]
+    expect(call[5]).toBe("olá")
+    expect(call[13]).toContain("<doutrina")
+    expect(call[13]).toContain("- Testes em pt-BR.")
+  })
+
+  it("turno seguinte de codex NÃO repete a doutrina (resume carrega, ledger em dia)", async () => {
+    comDoutrina("- Testes em pt-BR.")
+    // ledger carimbado com o fingerprint ATUAL (estado normal mid-sessão: o
+    // 1º turno injetou e carimbou) — sem o carimbo seria o cenário de restart,
+    // que RE-INJETA de propósito (teste abaixo).
+    const atual = doctrineFingerprint(buildDoctrineBlock("- Testes em pt-BR.")!)
+    arm(
+      makeConv({
+        agent: "codex",
+        items: [user("antes"), assistant("respondi")],
+        injected: { doctrine: atual },
+      }),
+    )
+    await sendFromDesk({ ...args, agent: "codex" })
+    const call = vi.mocked(runAgent).mock.calls[0]
+    expect(call[5]).toBe("olá")
+    expect(call[13]).toBeNull()
+  })
+
+  it("restart do app (ledger zerado) em conversa codex já rodada: re-injeta com o prefixo (edição offline não se perde)", async () => {
+    comDoutrina("- Testes em pt-BR.")
+    arm(makeConv({ agent: "codex", items: [user("antes"), assistant("respondi")] }))
+    await sendFromDesk({ ...args, agent: "codex" })
+    const prompt = vi.mocked(runAgent).mock.calls[0][5]
+    expect(prompt).toContain("(doutrina atualizada)")
+    expect(prompt).toContain("<doutrina")
+    expect(prompt.endsWith("olá")).toBe(true)
+  })
+
+  it("H4: doutrina mudou mid-conversa → codex re-injeta com o prefixo honesto", async () => {
+    comDoutrina("- Testes em pt-BR.")
+    arm(
+      makeConv({
+        agent: "codex",
+        items: [user("antes"), assistant("respondi")],
+        // ledger com o fingerprint de uma doutrina ANTIGA (≠ da atual)
+        injected: { doctrine: "fingerprint-antigo" },
+      }),
+    )
+    await sendFromDesk({ ...args, agent: "codex" })
+    const prompt = vi.mocked(runAgent).mock.calls[0][5]
+    expect(prompt).toContain("(doutrina atualizada)")
+    expect(prompt).toContain("<doutrina")
+    expect(prompt.endsWith("olá")).toBe(true)
   })
 
   it("agy recebe a doutrina em TODO turno (não tem resume)", async () => {
@@ -412,6 +500,12 @@ describe("sendFromDesk — coreografia do run", () => {
     arm(makeConv({ agent: "agy", items: [user("antes"), assistant("respondi")] }))
     await sendFromDesk({ ...args, agent: "agy" })
     expect(vi.mocked(runAgent).mock.calls[0][5]).toContain("<doutrina")
+  })
+
+  it("H2: o fingerprint do plano de MCPs da conversa viaja no run (ledger → mcpFingerprint)", async () => {
+    arm(makeConv({ injected: { mcp: "fp-do-plano-anunciado" } }))
+    await sendFromDesk(args)
+    expect(vi.mocked(runAgent).mock.calls[0][14]).toBe("fp-do-plano-anunciado")
   })
 
   it("claude/codex com sessão levam o memoryFallback do resume", async () => {
@@ -585,6 +679,44 @@ describe("sendFromDesk — persona do preset (S3)", () => {
     expect(warnPresetDrift).not.toHaveBeenCalled()
   })
 
+  it("S3.2 wheel-switch (backend novo, sessão fresca): a doutrina SEMPRE viaja no envelope (item 4 do review)", async () => {
+    comDoutrina("- Testes em pt-BR.")
+    // conversa claude com sessão nativa + reinject armado (presetDigest vazio
+    // no mock do needsPersonaReinject) + persona nova rodando em CODEX →
+    // wheelSwitch. Ledger com o fingerprint ATUAL: sem o freshSession, a
+    // decisão diria "não repete" e a sessão FRESCA do codex assumiria sem
+    // regra nenhuma (o gap pré-existente que o review mandou fechar).
+    const atual = doctrineFingerprint(buildDoctrineBlock("- Testes em pt-BR.")!)
+    arm(
+      makeConv({
+        items: [user("antes"), assistant("respondi")],
+        sessionId: "s1",
+        presetId: "pr1",
+        presetDigest: "",
+        injected: { doctrine: atual },
+      }),
+    )
+    vi.mocked(resolveFirstTurnPersona).mockResolvedValueOnce({
+      status: "ready",
+      block: "<persona>nova</persona>",
+      presetId: "pr1",
+      digest: "digest-novo",
+      name: "Nova",
+      agent: "codex",
+      model: null,
+      effort: null,
+    })
+    await sendFromDesk(args)
+    expect(chat.beginTransplant).toHaveBeenCalled()
+    const prompt = vi.mocked(runAgent).mock.calls[0][5] as string
+    // o mock do prepareHybridHandoff prependa os blocos recebidos: a doutrina
+    // chegou ao envelope, SEM o prefixo de atualização (sessão nova, bloco novo)
+    expect(prompt).toContain("<doutrina")
+    expect(prompt).not.toContain("(doutrina atualizada)")
+    expect(prompt).toContain("<persona>nova</persona>")
+    expect(prompt).toContain("[handoff]")
+  })
+
   it("D2: run que começou DURANTE o preflight enfileira em vez de dobrar o run", async () => {
     const onAccepted = vi.fn()
     arm(makeConv({ presetId: "pr1" }))
@@ -654,6 +786,10 @@ describe("sendFromDesk — finally", () => {
     expect(chat.finish).toHaveBeenCalledWith("c1")
     expect(chat.persist).toHaveBeenCalledWith("c1")
     expect(toast.error).toHaveBeenCalledWith("boom")
+    expect(chat.handleEvent).toHaveBeenCalledWith("c1", {
+      type: "error",
+      message: "boom",
+    })
     expect(notifyTurnEnd).toHaveBeenCalledWith("c1", "claude-code")
     expect(chat.scheduleSuggestions).toHaveBeenCalledWith("c1")
   })
@@ -703,11 +839,11 @@ describe("sendFromDesk — auto-resume em rate limit", () => {
     // agendou: notifica (o usuário sabe que pausou), mas NÃO sugere ainda
     expect(notifyTurnEnd).toHaveBeenCalledWith("c1", "claude-code")
     expect(chat.scheduleSuggestions).not.toHaveBeenCalled()
-    // dispara o timer → reenvio automático com handoff + pedido de continuar
+    // dispara o timer → reenvio automático mínimo (resume/fallback carregam memória)
     await vi.advanceTimersByTimeAsync(1000)
     expect(runAgent).toHaveBeenCalledTimes(2)
     const prompt = vi.mocked(runAgent).mock.calls[1][5] as string
-    expect(prompt).toContain("[handoff]")
+    expect(prompt).not.toContain("[handoff]")
     expect(prompt).toContain("continue a tarefa pendente")
     expect(chat.handleEvent).toHaveBeenCalledWith(
       "c1",

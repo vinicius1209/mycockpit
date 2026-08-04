@@ -23,6 +23,9 @@ export interface ClaudeDir {
 export interface ProjectContext {
   files: ContextFile[]
   claude_dir: ClaudeDir
+  /** Comandos "/" da casa (.mycockpit/commands/*.md), onde a skill promovida
+   *  mora desde a virada agnóstica (write_skill). */
+  mycockpit_commands: number
   mcp_servers: number | null
 }
 

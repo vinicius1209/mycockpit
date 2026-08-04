@@ -9,10 +9,43 @@ export type CostSource = "reported" | "estimated" | "unknown"
 export type AgentEvent =
   | { type: "session"; session_id: string; model: string | null; tools: number }
   | { type: "text"; text: string }
+  | { type: "subagent_text"; parent_tool_id: string; text: string }
   | { type: "text_delta"; text: string }
   | { type: "text_stop" }
-  | { type: "tool"; id: string; name: string; input: unknown }
-  | { type: "tool_result"; id: string; ok: boolean; text: string; lines: number }
+  | {
+      type: "tool"
+      id: string
+      name: string
+      input: unknown
+      parent_tool_id: string | null
+    }
+  /** `images` = evidência visual do resultado (browser-plan B1): paths
+   *  RELATIVOS ao app_data_dir ("evidence/<convId>/…"), gravados pelo backend.
+   *  Ausente/vazio = tool sem imagem (comportamento de sempre). */
+  | {
+      type: "tool_result"
+      id: string
+      ok: boolean
+      text: string
+      lines: number
+      images?: string[]
+    }
+  /** Trabalho DIFERIDO do provider (tool Workflow/background task): vive além
+   *  do turno que o criou (deferred-work-plan, D1). `tool_use_id` liga ao
+   *  tool_use Workflow de origem; `output_file` = resultado em DISCO da
+   *  task_notification (a lição do incidente: o relatório existia e ninguém
+   *  sabia); `progress` = cru do task_progress (workflow_progress/usage). */
+  | {
+      type: "deferred_work"
+      id: string
+      tool_use_id: string | null
+      kind: string | null
+      name: string | null
+      status: "running" | "progress" | "completed" | "stopped"
+      summary: string | null
+      output_file: string | null
+      progress: unknown
+    }
   | { type: "context_usage"; tokens: number }
   | { type: "limit_reached"; message: string; reset_hint: string | null }
   | {
@@ -52,6 +85,15 @@ export async function runAgent(
    *  nativo falhar (prepende ao prompt no restart e emite `resume://fallback`).
    *  null = comportamento atual (falha do resume vira erro). */
   memoryFallback: string | null = null,
+  /** H1 (prompt-hygiene-plan): conteúdo de SISTEMA por-run (persona+doutrina).
+   *  Motor com `systemChannel` recebe no canal nativo (re-enviado a cada
+   *  spawn); sem, o Rust dobra no corpo (fail-open). null = nada. */
+  systemPrompt: string | null = null,
+  /** H2: fingerprint do último plano de MCPs ANUNCIADO nesta conversa (ledger
+   *  `injected.mcp` da store, alimentado por `mcp://announced`). O Rust só
+   *  re-anuncia mid-conversa quando o plano atual diverge. null = desconhecido
+   *  (anuncia — fail-open pra visibilidade). */
+  mcpFingerprint: string | null = null,
 ): Promise<void> {
   const channel = new Channel<AgentEvent>()
   channel.onmessage = onEvent
@@ -68,6 +110,8 @@ export async function runAgent(
     attachments,
     planFirst,
     memoryFallback,
+    systemPrompt,
+    mcpFingerprint,
     onEvent: channel,
   })
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   cleanResultText,
+  evidenceMeta,
   presentTool,
   summarizeToolGroup,
   unwrapShellCommand,
@@ -148,5 +149,19 @@ describe("summarizeToolGroup", () => {
       label: "2 verificações registradas",
       state: "recorded",
     })
+  })
+})
+
+describe("evidenceMeta (B1)", () => {
+  it("conta as capturas na linha da tool, singular e plural", () => {
+    expect(evidenceMeta(["evidence/c/t-0.png"])).toBe("1 captura")
+    expect(
+      evidenceMeta(["evidence/c/t-0.png", "evidence/c/t-1.png"]),
+    ).toBe("2 capturas")
+  })
+
+  it("tool sem imagem não ganha meta nenhuma (linha idêntica à de hoje)", () => {
+    expect(evidenceMeta(undefined)).toBeNull()
+    expect(evidenceMeta([])).toBeNull()
   })
 })

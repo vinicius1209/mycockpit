@@ -34,12 +34,16 @@ import {
   setConversationColor as dbSetColor,
   setConversationWorktree as dbSetWorktree,
   setConversationPreset as dbSetPreset,
+  persistConversationOrder as dbPersistConvOrder,
   recordTurnCost,
   isTauri,
   type ConversationMeta,
 } from "@/lib/db"
+import { moveByDelta, reorderByIds } from "@/lib/reorder"
+import { unseenBoundary } from "@/lib/unseen"
 import { clearPresetDriftWarning, warnPresetDrift } from "@/lib/presets"
 import { perfSpan } from "@/office/engine/perf"
+import type { DeferredWork, WorkEvent, ManagedProcess } from "@/lib/work"
 
 type ChatItemBody =
   | { kind: "user"; id: string; text: string; attachments?: Attachment[] }
@@ -51,8 +55,27 @@ type ChatItemBody =
       input: unknown
       /** tool_use_id do CLI (liga o tool_result à linha). */
       toolId?: string
+      /** Tool `Task`/agent que originou esta ação. Preservado do provider para
+       *  reconstruir a árvore do Fio Vivo após restart. */
+      parentToolId?: string
+      /** Síntese final do subagente, mantida dentro do nó que o criou em vez de
+       *  virar uma fala solta do executor principal. */
+      agentSummary?: string
+      /** Processo externo cujo ciclo de vida pertence ao MyCockpit. */
+      managedProcess?: ManagedProcess
+      /** Trabalho DIFERIDO do provider (tool Workflow/background task): nó com
+       *  ciclo de vida PRÓPRIO, assíncrono ao turno (deferred-work-plan D1.2). */
+      deferred?: DeferredWork
+      /** Último evento observável desta ação (resultado/retorno do subagente).
+       * `ts` continua sendo o nascimento, usado na cronologia do transcript. */
+      activityAt?: number
       /** Resumo do resultado (texto truncado + nº de linhas do output). */
       result?: { ok: boolean; text: string; lines: number }
+      /** Evidência VISUAL do resultado (browser-plan B1): paths relativos ao
+       *  app_data_dir ("evidence/<convId>/<toolId>-<idx>.<ext>"). Persistem no
+       *  snapshot (replay-safe); arquivo sumido do disco vira placeholder na
+       *  UI, nunca imagem quebrada. */
+      images?: string[]
     }
   | {
       kind: "result"
@@ -70,6 +93,9 @@ type ChatItemBody =
       }
       /** Duração total do turno em ms (start→result). */
       durationMs?: number
+      /** Reações do usuário ao RESULTADO consolidado deste turno. Persistem no
+       *  próprio transcript e são agnósticas ao provider que o executou. */
+      reactions?: string[]
     }
   | { kind: "error"; id: string; message: string }
   | { kind: "cancelled"; id: string }
@@ -98,6 +124,92 @@ type ChatItemBody =
  *  intersecção sobre a união preserva o discriminante `kind` (narrowing e
  *  Extract<> seguem funcionando) sem repetir o campo em cada variante. */
 export type ChatItem = ChatItemBody & { ts?: number }
+
+/** Um processo marcado como vivo no snapshot anterior não pertence ao registry
+ * desta nova instância. Não finge "rodando": preserva PID/tail e marca órfão,
+ * deixando repetição explícita como caminho de recuperação. O mesmo vale pro
+ * trabalho DIFERIDO do provider (deferred-work-plan D1.5): ele vivia DENTRO do
+ * processo do CLI que morreu junto com a instância anterior — `running` vindo
+ * do disco vira `interrupted`, nunca "rodando" falso após restart. */
+export function markOrphanedProcesses(items: ChatItem[]): ChatItem[] {
+  return items.map((item) => {
+    if (item.kind !== "tool") return item
+    if (item.deferred?.status === "running") {
+      const message =
+        "O aplicativo reiniciou com este trabalho em background em andamento; ele morreu junto com o processo do agent. Envie uma nova mensagem para retomar."
+      return {
+        ...item,
+        deferred: {
+          ...item.deferred,
+          status: "interrupted" as const,
+          updatedAt: Date.now(),
+        },
+        result: { ok: false, text: message, lines: 1 },
+      }
+    }
+    if (
+      !item.managedProcess ||
+      !["running", "stopping"].includes(item.managedProcess.status)
+    )
+      return item
+    const message =
+      "O aplicativo reiniciou e perdeu o controle deste processo. O PID histórico foi preservado para auditoria."
+    return {
+      ...item,
+      managedProcess: {
+        ...item.managedProcess,
+        status: "orphaned",
+        updatedAt: Date.now(),
+      },
+      result: {
+        ok: false,
+        text: [item.managedProcess.output, message].filter(Boolean).join("\n"),
+        lines: item.managedProcess.output.trim()
+          ? item.managedProcess.output.split("\n").length + 1
+          : 1,
+      },
+    }
+  })
+}
+
+/** Trabalhos diferidos ainda VIVOS no fio (deferred-work-plan D1.3). DERIVADO
+ *  de items (replay-safe, fonte única): alimenta o meta honesto do turno
+ *  ("trabalho em background rodando"), o aviso do botão de parar e a contagem
+ *  do diálogo de saída. Puro e testável. */
+export function pendingDeferred(items: ChatItem[]): DeferredWork[] {
+  const out: DeferredWork[] = []
+  for (const it of items) {
+    if (it.kind === "tool" && it.deferred?.status === "running")
+      out.push(it.deferred)
+  }
+  return out
+}
+
+/** Nome humano de um trabalho diferido pro copy da UI (nunca id cru quando há
+ *  alternativa melhor). */
+export function deferredLabel(d: DeferredWork): string {
+  return d.name ?? (d.kind === "local_workflow" ? "workflow" : (d.kind ?? d.id))
+}
+
+/** Decisão travada 3 do deferred-work-plan: Retomar ≠ repetir. Num nó de
+ *  trabalho diferido, a ÚNICA ação de repetição permitida é retomar um
+ *  INTERROMPIDO reaproveitando o cache do workflow (a task-notification
+ *  injetada no resume traz o resumeFromRunId) — relançar do zero paga os
+ *  subagentes todos de novo. `running`/`completed` → nenhuma ação (null). */
+export function deferredResumePrompt(d: DeferredWork): string | null {
+  if (d.status !== "interrupted") return null
+  return `Retome o trabalho em background "${deferredLabel(d)}" de onde parou, reaproveitando o que já foi executado: use a tool Workflow com o resumeFromRunId indicado na task-notification desta conversa (chamadas agent() concluídas voltam do cache). NÃO relance do zero.`
+}
+
+/** Extrai o contador de progresso (usage.total_tokens) do `progress` cru do
+ *  task_progress. Tolerante: payload sem usage/total_tokens → null. */
+export function progressTokens(progress: unknown): number | null {
+  if (progress == null || typeof progress !== "object") return null
+  const usage = (progress as Record<string, unknown>).usage
+  if (usage == null || typeof usage !== "object") return null
+  const t = (usage as Record<string, unknown>).total_tokens
+  return typeof t === "number" ? t : null
+}
 
 /** Itens de EXECUTOR de uma conversa: exclui os pareceres de conselheiro (kind
  *  "advice"), que são laterais e NÃO contam como turno do executor
@@ -221,6 +333,17 @@ export interface ConvState {
   finalizing: boolean
   /** runId do run em andamento (p/ cancelar). */
   runId: string | null
+  /** Revezamento em duas fases: o target está iniciando, mas ainda NÃO assumiu
+   *  a conversa. O agent/sessão de origem só são trocados quando o novo CLI
+   *  emite `session`; falha antes disso deixa a origem integralmente retomável.
+   *  Efêmero (não persiste). */
+  pendingTransplant?: {
+    runId: string
+    targetAgent: string
+    /** Pedido de modelo/effort do destino. Ficam em quarentena até `session`. */
+    targetModel?: string | null
+    targetEffort?: string | null
+  }
   /** Timestamp (ms) de início do run atual, p/ cronômetro ao vivo. */
   startedAt: number | null
   /** Sugestões dinâmicas pós-turno (Sprint 3). */
@@ -265,6 +388,11 @@ export interface ConvState {
    *  quando acaba e, sem isto, o fim do turno não deixava sinal NENHUM na
    *  navegação. Limpo ao abrir a conversa. Efêmero (não persiste). */
   finishedUnseen?: "ok" | "error"
+  /** S1.1 — id do PRIMEIRO item não-visto, capturado ao ABRIR uma conversa que
+   *  estava com finishedUnseen: vira o divisor "novas mensagens" no fio. Vive
+   *  durante a visita; sai ao trocar de conversa ou enviar um turno novo.
+   *  Efêmero (não persiste). */
+  unseenDividerId?: string
   /** Turno MUDO (watchdog P2): epoch ms da ÚLTIMA atividade quando o episódio
    *  foi notificado. Presente = já avisado neste episódio (1 aviso por
    *  episódio); atividade nova/fim do turno limpa. Efêmero (não persiste). */
@@ -278,6 +406,17 @@ export interface ConvState {
    *  bloco(s) que o próximo turno do executor prepende ao prompt (mesmo cano da
    *  doutrina/lições). Efêmero (não persiste). */
   pendingAdvice?: string
+  /** Higiene de injeção (H2/H4 do prompt-hygiene-plan) — ledger POR CONVERSA
+   *  do último fingerprint injetado, por chave: `doctrine` = hash do bloco de
+   *  doutrina considerado no envio (H4, re-injeta só quando o arquivo muda);
+   *  `mcp` = fingerprint do plano de MCPs anunciado pelo Rust (H2, evento
+   *  `mcp://announced`; volta como `mcpFingerprint` no próximo run pra
+   *  re-anunciar só quando o plano muda). Efêmero (não persiste), padrão
+   *  unseenDividerId: após restart o custo é UM re-anúncio de MCP e UMA
+   *  re-injeção de doutrina com "(doutrina atualizada)" por conversa (edição
+   *  offline nunca se perde) — nunca migração na tabela `conversations` (que
+   *  só evolui via Migration no Rust). */
+  injected?: Record<string, string>
 }
 
 interface ChatState {
@@ -331,6 +470,12 @@ interface ChatState {
   setConversationAgent: (convId: string, agent: string) => void
   /** Isola a conversa num worktree (path) ou volta pra pasta compartilhada (null). */
   setWorktree: (convId: string, path: string | null) => void
+  /** S1.2 — drag & drop: move a conversa `dragId` pra posição da `overId`
+   *  DENTRO do projeto (mover entre projetos fica fora de escopo) e persiste a
+   *  ordem manual (sort_order). */
+  reorderConversations: (projectId: string, dragId: string, overId: string) => void
+  /** S1.2 — teclado/context menu: move a conversa uma posição (cima/baixo). */
+  moveConversation: (projectId: string, id: string, delta: -1 | 1) => void
   /** S3.6 — marca a conversa com um preset (seleção no composer, ANTES do 1º
    *  run; null = volta pra camada crua). O digest fica null até o 1º run. */
   setConversationPreset: (
@@ -394,10 +539,21 @@ interface ChatState {
     attachments: Attachment[],
   ) => void
   handleEvent: (convId: string, e: AgentEvent) => void
+  /** Telemetria do MCP mc-work (fora do Channel do provider). */
+  handleWorkEvent: (event: WorkEvent) => void
+  /** Alterna uma reação no resultado terminal do turno e persiste a conversa. */
+  toggleTurnReaction: (
+    convId: string,
+    resultId: string,
+    reaction: string,
+  ) => Promise<boolean>
   /** Dispensa o aviso de pasta bloqueada desta conversa. */
   clearBlockedDir: (convId: string) => void
   /** Liga/desliga o "Planejar primeiro" desta conversa (toggle do composer). */
   setPlanFirst: (convId: string, v: boolean) => void
+  /** Higiene de injeção (H2/H4): carimba o fingerprint da última injeção de
+   *  uma chave ("doctrine" | "mcp") no ledger efêmero da conversa. */
+  recordInjectedFingerprint: (convId: string, key: string, fp: string) => void
   /** Registra o plano pendente de aprovação (fim de um turno plan_first). */
   setPendingPlan: (convId: string, text: string) => void
   /** Limpa o plano pendente (aprovar, descartar, ou novo envio manual). */
@@ -411,10 +567,20 @@ interface ChatState {
   markStalled: (convId: string, since: number) => void
   /** Watchdog: atividade voltou / turno acabou — fecha o episódio de mudez. */
   clearStalled: (convId: string) => void
-  /** Revezamento: assume OUTRO agent na MESMA conversa (sessão zerada; o
-   *  contexto vai por preâmbulo). NÃO adiciona item de usuário, o pedido
-   *  pendente já está no fio. */
-  beginTransplant: (convId: string, runId: string, agent: string) => void
+  /** Revezamento: prepara OUTRO agent na MESMA conversa. A origem continua
+   *  intacta até o primeiro `session`. No revezamento explícito o pedido já
+   *  está no fio; na troca de piloto `user` registra o novo pedido sem assumir
+   *  prematuramente o backend de destino. */
+  beginTransplant: (
+    convId: string,
+    runId: string,
+    agent: string,
+    options?: {
+      model: string | null
+      effort: string | null
+      user?: { text: string; attachments: Attachment[] }
+    },
+  ) => void
   finish: (convId: string) => void
   setSuggestions: (convId: string, s: string[]) => void
   setSuggesting: (convId: string, v: boolean) => void
@@ -602,6 +768,19 @@ export function reduceItems(
       return {
         items: [...c.items, { kind: "text", id: uid(), text: e.text, ts: now }],
       }
+    case "subagent_text":
+      return {
+        items: c.items.map((it) =>
+          it.kind === "tool" && it.toolId === e.parent_tool_id
+            ? {
+                ...it,
+                agentSummary: [it.agentSummary, e.text].filter(Boolean).join("\n"),
+                activityAt: now,
+              }
+            : it,
+        ),
+        streamingTextId: null,
+      }
     // Fim de UM bloco de texto: fecha a bolha corrente pro próximo bloco
     // começar limpo (sem colar no anterior nem no meio da palavra). Genérico.
     case "text_stop":
@@ -624,6 +803,14 @@ export function reduceItems(
       }
     }
     case "tool":
+      if (
+        e.id &&
+        c.items.some(
+          (it) => it.kind === "tool" && it.toolId === e.id,
+        )
+      ) {
+        return { streamingTextId: null }
+      }
       return {
         items: [
           ...c.items,
@@ -633,17 +820,116 @@ export function reduceItems(
             name: e.name,
             input: e.input,
             toolId: e.id,
+            parentToolId: e.parent_tool_id ?? undefined,
             ts: now,
+            activityAt: now,
           },
         ],
         streamingTextId: null,
       }
+    // Trabalho DIFERIDO do provider (deferred-work-plan D1.2): vira/atualiza um
+    // item tool sintético "DeferredWork" com ciclo de vida PRÓPRIO, pendurado
+    // no tool_use `Workflow` de origem via parentToolId (Fio Vivo). O `stopped`
+    // do provider vira `interrupted`; item terminal nunca é rebaixado a
+    // "rodando" (o background_tasks_changed re-lista as tasks vivas).
+    case "deferred_work": {
+      const terminal = e.status === "completed" || e.status === "stopped"
+      const status: DeferredWork["status"] =
+        e.status === "completed"
+          ? "completed"
+          : e.status === "stopped"
+            ? "interrupted"
+            : "running"
+      const existing = c.items.some(
+        (it) => it.kind === "tool" && it.deferred?.id === e.id,
+      )
+      if (!existing) {
+        const deferred: DeferredWork = {
+          id: e.id,
+          toolUseId: e.tool_use_id,
+          kind: e.kind,
+          name: e.name,
+          status,
+          summary: e.summary,
+          outputFile: e.output_file,
+          tokens: progressTokens(e.progress),
+          startedAt: now,
+          updatedAt: now,
+        }
+        return {
+          items: [
+            ...c.items,
+            {
+              kind: "tool",
+              id: `deferred-${e.id}`,
+              name: "DeferredWork",
+              input: { name: e.name, kind: e.kind, description: e.summary },
+              toolId: `deferred:${e.id}`,
+              parentToolId: e.tool_use_id ?? undefined,
+              deferred,
+              ts: now,
+              activityAt: now,
+              ...(terminal
+                ? {
+                    result: {
+                      ok: status === "completed",
+                      text: e.summary ?? "",
+                      lines: e.summary ? e.summary.split("\n").length : 0,
+                    },
+                  }
+                : {}),
+            },
+          ],
+        }
+      }
+      return {
+        items: c.items.map((it) => {
+          if (it.kind !== "tool" || it.deferred?.id !== e.id) return it
+          // terminal é definitivo: um Running atrasado não ressuscita o nó
+          if (it.deferred.status !== "running" && !terminal) return it
+          const deferred: DeferredWork = {
+            ...it.deferred,
+            status,
+            toolUseId: it.deferred.toolUseId ?? e.tool_use_id,
+            kind: it.deferred.kind ?? e.kind,
+            name: it.deferred.name ?? e.name,
+            summary: e.summary ?? it.deferred.summary,
+            outputFile: e.output_file ?? it.deferred.outputFile,
+            tokens: progressTokens(e.progress) ?? it.deferred.tokens,
+            updatedAt: now,
+          }
+          const text = deferred.summary ?? ""
+          return {
+            ...it,
+            deferred,
+            parentToolId: it.parentToolId ?? deferred.toolUseId ?? undefined,
+            activityAt: now,
+            ...(terminal
+              ? {
+                  result: {
+                    ok: status === "completed",
+                    text,
+                    lines: text ? text.split("\n").length : 0,
+                  },
+                }
+              : {}),
+          }
+        }),
+      }
+    }
     // resultado resumido de uma tool: anexa à linha correspondente (pelo toolId).
     case "tool_result":
       return {
         items: c.items.map((it) =>
           it.kind === "tool" && it.toolId === e.id && !it.result
-            ? { ...it, result: { ok: e.ok, text: e.text, lines: e.lines } }
+            ? {
+                ...it,
+                result: { ok: e.ok, text: e.text, lines: e.lines },
+                // evidência visual (B1): preserva os paths no item (persistem
+                // no snapshot). Sem imagem → campo ausente, render idêntico.
+                ...(e.images?.length ? { images: e.images } : {}),
+                activityAt: now,
+              }
             : it,
         ),
       }
@@ -724,8 +1010,32 @@ export function reduceItems(
         items: [...c.items, { kind: "cancelled", id: uid(), ts: now }],
         streamingTextId: null,
       }
-    case "done":
-      return { streamingTextId: null }
+    // EOF do processo do CLI: trabalho diferido ainda "rodando" morreu junto —
+    // vira `interrupted` na hora (deferred-work-plan D1.3). Nunca "rodando"
+    // falso depois que o processo acabou.
+    case "done": {
+      if (!c.items.some((it) => it.kind === "tool" && it.deferred?.status === "running"))
+        return { streamingTextId: null }
+      const message =
+        "O processo do agent encerrou sem a conclusão deste trabalho em background. Envie uma nova mensagem para retomar."
+      return {
+        streamingTextId: null,
+        items: c.items.map((it) =>
+          it.kind === "tool" && it.deferred?.status === "running"
+            ? {
+                ...it,
+                deferred: {
+                  ...it.deferred,
+                  status: "interrupted" as const,
+                  updatedAt: now,
+                },
+                result: { ok: false, text: message, lines: 1 },
+                activityAt: now,
+              }
+            : it,
+        ),
+      }
+    }
     default:
       return {}
   }
@@ -836,7 +1146,7 @@ export const useChat = create<ChatState>((set, get) => {
           }
         : {
             ...emptyConv(projectId),
-            items: conv?.items ?? [],
+            items: markOrphanedProcesses(conv?.items ?? []),
             sessionId: conv?.sessionId ?? null,
             suggestions: conv?.suggestions ?? [],
             agent: conv?.agent ?? "claude-code",
@@ -1098,8 +1408,20 @@ export const useChat = create<ChatState>((set, get) => {
       // invalida qualquer openProject em voo: o clique do usuário é a escolha
       // mais recente e não pode ser sobrescrito quando o dbList atrasado chegar.
       openGen++
+      // S1.1 — a conversa estava marcada "terminou e você não viu"? Captura a
+      // fronteira ANTES do markSeen apagar o selo: ela vira o divisor "novas
+      // mensagens" desta visita. Derivada dos items já carregados (o selo só
+      // existe em conversa carregada — o turno rodou nela).
+      const opened = s.byId[id]
+      const divider = opened?.finishedUnseen
+        ? (unseenBoundary(opened.items) ?? undefined)
+        : undefined
+      // o divisor da conversa que você está DEIXANDO morre com a visita.
+      if (s.activeId && s.byId[s.activeId]?.unseenDividerId)
+        patch(s.activeId, { unseenDividerId: undefined })
       // abriu a conversa ⇒ o selo de "terminou e você não viu" cumpriu o papel
       get().markSeen(id)
+      if (divider) patch(id, { unseenDividerId: divider })
       set((st) => ({
         activeId: id,
         projectId: owner,
@@ -1227,6 +1549,45 @@ export const useChat = create<ChatState>((set, get) => {
       }))
     },
 
+    // S1.2 — ordem manual das conversas de UM projeto. A lista exibida É a
+    // persistida: no-op do helper (mesma referência) não grava nada; mudança
+    // atualiza o mapa + o espelho do projeto ativo e renumera o sort_order.
+    reorderConversations: (projectId, dragId, overId) => {
+      const cur = get().conversationsByProject[projectId]
+      if (!cur) return
+      const next = reorderByIds(cur, dragId, overId)
+      if (next === cur) return
+      set((s) => ({
+        conversationsByProject: {
+          ...s.conversationsByProject,
+          [projectId]: next,
+        },
+        conversations: projectId === s.projectId ? next : s.conversations,
+      }))
+      void dbPersistConvOrder(
+        projectId,
+        next.map((c) => c.id),
+      )
+    },
+
+    moveConversation: (projectId, id, delta) => {
+      const cur = get().conversationsByProject[projectId]
+      if (!cur) return
+      const next = moveByDelta(cur, id, delta)
+      if (next === cur) return
+      set((s) => ({
+        conversationsByProject: {
+          ...s.conversationsByProject,
+          [projectId]: next,
+        },
+        conversations: projectId === s.projectId ? next : s.conversations,
+      }))
+      void dbPersistConvOrder(
+        projectId,
+        next.map((c) => c.id),
+      )
+    },
+
     // S3.6 — seleção de preset no composer (conversa ainda destravada). O
     // digest fica null até o 1º run: só a persona INJETADA carimba versão.
     setConversationPreset: async (convId, preset) => {
@@ -1334,7 +1695,9 @@ export const useChat = create<ChatState>((set, get) => {
       const src = before.conversationsByProject[owner]?.find((c) => c.id === id)
       const loaded = await dbLoad(id)
       if (loaded === "corrupt") return // não duplica linha corrompida
-      const items = loaded?.items ?? get().byId[id]?.items ?? []
+      const items = markOrphanedProcesses(
+        loaded?.items ?? get().byId[id]?.items ?? [],
+      )
       const agent = loaded?.agent ?? get().byId[id]?.agent ?? "claude-code"
       const rawReqModel = loaded?.reqModel ?? get().byId[id]?.reqModel ?? null
       const reqModel = normalizeModelValue(agent, rawReqModel)
@@ -1503,6 +1866,7 @@ export const useChat = create<ChatState>((set, get) => {
               // enviar de novo É reconhecer o turno anterior: o selo de
               // concluído sai sozinho, sem exigir que você troque de conversa.
               finishedUnseen: undefined,
+              unseenDividerId: undefined, // o turno novo encerra a visita "novas mensagens"
               pendingPlan: undefined, // e o plano pendente (envio manual supersede)
               limitHitThisTurn: false, // e o sinal de limite do turno anterior
               resetHint: null,
@@ -1514,16 +1878,21 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     handleEvent: (convId, e) => {
+      const beforeEvent = get().byId[convId]
+      const pending = beforeEvent?.pendingTransplant
+      const pendingTarget = pending?.targetAgent
+      // Durante o preflight/startup do revezamento, a conversa ainda pertence
+      // ao source, mas telemetria/limites do processo em voo pertencem ao target.
+      const eventAgent = pendingTarget ?? beforeEvent?.agent
       // efeitos GLOBAIS: limite marca o agent como limitado (cross-conversa,
       // o seletor avisa); um result ok do mesmo agent cura a marca.
       if (e.type === "limit_reached") {
-        const agent = get().byId[convId]?.agent
-        if (agent) useApp.getState().setAgentLimited(agent, e.reset_hint ?? null)
+        if (eventAgent)
+          useApp.getState().setAgentLimited(eventAgent, e.reset_hint ?? null)
         // marca o sinal FORTE p/ o auto-resume ler no fim do turno (+ guarda o hint)
         patch(convId, { limitHitThisTurn: true, resetHint: e.reset_hint ?? null })
       } else if (e.type === "result" && e.ok) {
-        const agent = get().byId[convId]?.agent
-        if (agent) useApp.getState().clearAgentLimited(agent)
+        if (eventAgent) useApp.getState().clearAgentLimited(eventAgent)
       }
       // Ledger de custo por turno (F: "hoje/7d" só via missões). Grava CADA
       // result com custo — chat linear é caminho disjunto de missão/disputa, sem
@@ -1535,8 +1904,10 @@ export const useChat = create<ChatState>((set, get) => {
             runId: cur.runId,
             projectId: cur.projectId,
             convId,
-            agent: cur.agent,
-            model: cur.model,
+            agent: eventAgent ?? cur.agent,
+            // Antes de `session`, o modelo resolvido ainda pertence à origem.
+            // Nunca combine agent do target com model do source no ledger.
+            model: pending ? (pending.targetModel ?? null) : cur.model,
             costUsd: e.cost_usd,
             costSource: e.cost_source ?? null,
             input: e.input_tokens ?? 0,
@@ -1549,12 +1920,67 @@ export const useChat = create<ChatState>((set, get) => {
       // alias-shift desta conversa. O ledger global não basta — outra conversa
       // (ou lane do Fusion) pode já ter "aprendido" a resolução nova e
       // mascarar o aviso exatamente na conversa retomada que mais precisa dele.
+      const committingTransplant = e.type === "session" && pendingTarget != null
       const prevModel =
-        e.type === "session" ? (get().byId[convId]?.model ?? null) : null
+        e.type === "session" && !committingTransplant
+          ? (beforeEvent?.model ?? null)
+          : null
+      // O espelho do card e o drift da persona só acompanham um target que
+      // realmente abriu sessão. Antes disso a conversa continua sob o source.
+      if (committingTransplant && beforeEvent) {
+        void import("@/store/cards")
+          .then((m) =>
+            m.useCards
+              .getState()
+              .noteConversationAgent(convId, pendingTarget),
+          )
+          .catch(() => {})
+        if (beforeEvent.presetId && beforeEvent.presetDigest) {
+          const path =
+            useApp
+              .getState()
+              .projects.find((p) => p.id === beforeEvent.projectId)?.path ?? null
+          void warnPresetDrift(
+            convId,
+            beforeEvent.presetId,
+            beforeEvent.presetDigest,
+            path,
+          )
+        }
+      }
       set((s) => {
         const cur = s.byId[convId]
         if (!cur) return {}
-        return { byId: { ...s.byId, [convId]: { ...cur, ...reduceEvent(cur, e) } } }
+        const base = committingTransplant
+          ? {
+              ...cur,
+              agent: pendingTarget,
+              reqModel: pending?.targetModel ?? null,
+              effort: pending?.targetEffort ?? null,
+              ...TRANSPLANT_SESSION_RESET,
+              pendingTransplant: undefined,
+            }
+          : cur
+        // Result/telemetria pode chegar antes do `session` (por exemplo, um
+        // limite no startup). O item deve refletir o pedido do destino — ou
+        // modelo desconhecido — sem contaminar o modelo resolvido da origem.
+        const eventView =
+          !committingTransplant && pending && e.type === "result"
+            ? { ...base, model: pending.targetModel ?? null }
+            : base
+        // Context usage pré-sessão também pertence ao processo candidato. Sem
+        // uma sessão confirmada não há anel novo para comprometer; preserve o
+        // footprint da origem para retry.
+        const reduced =
+          !committingTransplant && pending && e.type === "context_usage"
+            ? {}
+            : reduceEvent(eventView, e)
+        return {
+          byId: {
+            ...s.byId,
+            [convId]: { ...base, ...reduced },
+          },
+        }
       })
       // Phase 3 do extra_dirs: tool_result FALHO citando pasta fora da raiz →
       // marca blockedDir p/ o banner "Liberar e reenviar". Best-effort (heurístico).
@@ -1630,6 +2056,176 @@ export const useChat = create<ChatState>((set, get) => {
       }
     },
 
+    handleWorkEvent: (event) => {
+      const process = event.data.process
+      const convId = process?.convId ?? event.data.convId
+      if (!convId) return
+      set((s) => {
+        const cur = s.byId[convId]
+        if (!cur) return {}
+        if (event.kind === "process_started" && process) {
+          const exists = cur.items.some(
+            (it) =>
+              it.kind === "tool" && it.managedProcess?.id === process.id,
+          )
+          if (exists) return {}
+          const item: ChatItem = {
+            kind: "tool",
+            id: `work-${process.id}`,
+            name: "ManagedProcess",
+            input: {
+              command: process.command,
+              label: process.label,
+              cwd: process.cwd,
+            },
+            toolId: `mc-process:${process.id}`,
+            managedProcess: process,
+            ts: process.startedAt,
+          }
+          return {
+            byId: {
+              ...s.byId,
+              [convId]: { ...cur, items: [...cur.items, item] },
+            },
+          }
+        }
+        if (
+          process &&
+          (event.kind === "process_output" ||
+            event.kind === "process_stopping" ||
+            event.kind === "process_exited")
+        ) {
+          const terminal =
+            process.status === "exited" ||
+            process.status === "failed" ||
+            process.status === "stopped" ||
+            process.status === "orphaned"
+          const items = cur.items.map((it) => {
+            if (
+              it.kind !== "tool" ||
+              it.managedProcess?.id !== process.id
+            )
+              return it
+            return {
+              ...it,
+              managedProcess: process,
+              ...(terminal
+                ? {
+                    result: {
+                      ok: process.status === "exited" && process.exitCode === 0,
+                      text: process.output,
+                      lines: process.output.trim()
+                        ? process.output.split("\n").length
+                        : 0,
+                    },
+                  }
+                : {}),
+            }
+          })
+          return { byId: { ...s.byId, [convId]: { ...cur, items } } }
+        }
+        if (event.kind === "work_plan" && event.data.tasks?.length) {
+          const run = event.data.runId ?? "run"
+          const additions: ChatItem[] = []
+          const existing = new Set(
+            cur.items
+              .filter(
+                (it): it is Extract<ChatItem, { kind: "tool" }> =>
+                  it.kind === "tool" && it.name === "TaskCreate",
+              )
+              .map((it) => {
+                const input = (it.input ?? {}) as Record<string, unknown>
+                return typeof input.taskId === "string" ? input.taskId : null
+              })
+              .filter((id): id is string => id != null),
+          )
+          for (const task of event.data.tasks) {
+            const taskId = `work:${run}:${task.id}`
+            if (!existing.has(taskId)) {
+              additions.push({
+                kind: "tool",
+                id: uid(),
+                name: "TaskCreate",
+                input: {
+                  taskId,
+                  subject: task.title,
+                  description: task.description,
+                  activeForm: task.title,
+                },
+                toolId: `mc-work:create:${taskId}`,
+                ts: Date.now(),
+              })
+            }
+            if (task.status && task.status !== "pending") {
+              additions.push({
+                kind: "tool",
+                id: uid(),
+                name: "TaskUpdate",
+                input: { taskId, status: task.status },
+                toolId: `mc-work:update:${taskId}:${task.status}`,
+                ts: Date.now(),
+              })
+            }
+          }
+          return {
+            byId: {
+              ...s.byId,
+              [convId]: { ...cur, items: [...cur.items, ...additions] },
+            },
+          }
+        }
+        if (event.kind === "work_update" && event.data.task) {
+          const run = event.data.runId ?? "run"
+          const task = event.data.task
+          const taskId = `work:${run}:${task.id}`
+          const update: ChatItem = {
+            kind: "tool",
+            id: uid(),
+            name: "TaskUpdate",
+            input: {
+              taskId,
+              status: task.status,
+              subject: task.title,
+              description: task.description,
+            },
+            toolId: `mc-work:update:${taskId}:${Date.now()}`,
+            ts: Date.now(),
+          }
+          return {
+            byId: {
+              ...s.byId,
+              [convId]: { ...cur, items: [...cur.items, update] },
+            },
+          }
+        }
+        return {}
+      })
+      schedulePersist(convId)
+    },
+
+    toggleTurnReaction: async (convId, resultId, reaction) => {
+      let added = false
+      set((s) => {
+        const cur = s.byId[convId]
+        if (!cur) return {}
+        const items = cur.items.map((it) => {
+          if (it.kind !== "result" || it.id !== resultId) return it
+          const reactions = it.reactions ?? []
+          const present = reactions.includes(reaction)
+          added = !present
+          return {
+            ...it,
+            reactions: present
+              ? reactions.filter((x) => x !== reaction)
+              : [...reactions, reaction],
+          }
+        })
+        return { byId: { ...s.byId, [convId]: { ...cur, items } } }
+      })
+      await get().persist(convId)
+      return added
+    },
+
     clearBlockedDir: (convId) =>
       set((s) => {
         const cur = s.byId[convId]
@@ -1642,6 +2238,18 @@ export const useChat = create<ChatState>((set, get) => {
         const cur = s.byId[convId]
         if (!cur || !!cur.planFirst === v) return {}
         return { byId: { ...s.byId, [convId]: { ...cur, planFirst: v } } }
+      }),
+
+    recordInjectedFingerprint: (convId, key, fp) =>
+      set((s) => {
+        const cur = s.byId[convId]
+        if (!cur || cur.injected?.[key] === fp) return {}
+        return {
+          byId: {
+            ...s.byId,
+            [convId]: { ...cur, injected: { ...cur.injected, [key]: fp } },
+          },
+        }
       }),
 
     setPendingPlan: (convId, text) =>
@@ -1675,38 +2283,49 @@ export const useChat = create<ChatState>((set, get) => {
         }
       }),
 
-    beginTransplant: (convId, runId, agent) => {
-      // E1 (S1.4): transplant mantém o conversation_id (o link do card
-      // sobrevive) mas troca o agent → o carimbo acompanha a realidade.
-      void import("@/store/cards")
-        .then((m) => m.useCards.getState().noteConversationAgent(convId, agent))
-        .catch(() => {})
-      // S3.4 — agente revivido não volta sob outra doutrina em silêncio: se a
-      // conversa carrega preset carimbado, verifica o drift do digest (aviso;
-      // fire-and-forget, o transplante não bloqueia).
-      const before = get().byId[convId]
-      if (before?.presetId && before.presetDigest) {
-        // as personas moram em arquivo (projeto + global): sem o caminho do
-        // projeto, uma persona de escopo local pareceria APAGADA.
-        const path =
-          useApp.getState().projects.find((p) => p.id === before.projectId)
-            ?.path ?? null
-        void warnPresetDrift(convId, before.presetId, before.presetDigest, path)
-      }
+    beginTransplant: (convId, runId, agent, options) => {
       set((s) => {
         const cur = s.byId[convId]
         if (!cur) return {}
+        const user = options?.user
+        const items = user
+          ? [
+              ...cur.items,
+              {
+                kind: "user" as const,
+                id: uid(),
+                text: user.text,
+                attachments: user.attachments.length
+                  ? user.attachments
+                  : undefined,
+                ts: Date.now(),
+              },
+            ]
+          : cur.items
+        const titled = user
+          ? patchConvMeta(s, convId, (c) =>
+              c.title ? c : { ...c, title: deriveTitle(items) },
+            )
+          : {}
         return {
+          ...titled,
           byId: {
             ...s.byId,
             [convId]: {
               ...cur,
-              agent,
-              reqModel: null,
-              effort: null,
-              // sessão/resolvido/anel do agent anterior não servem pro novo
-              // (achado #3) — fonte única com o dropNativeSession do S3.2.
-              ...TRANSPLANT_SESSION_RESET,
+              // Duas fases: por enquanto só registra a intenção/startup. O
+              // source continua sendo a verdade até o target emitir `session`.
+              pendingTransplant: {
+                runId,
+                targetAgent: agent,
+                ...(options
+                  ? {
+                      targetModel: options.model,
+                      targetEffort: options.effort,
+                    }
+                  : {}),
+              },
+              items,
               streamingTextId: null,
               running: true,
               finalizing: false,
@@ -1717,6 +2336,9 @@ export const useChat = create<ChatState>((set, get) => {
               pendingPlan: undefined,
               limitHitThisTurn: false,
               resetHint: null,
+              // revezar também É agir na conversa: a visita "novas mensagens"
+              // acaba aqui, igual ao start (S1.1).
+              unseenDividerId: undefined,
             },
           },
         }
@@ -1738,6 +2360,9 @@ export const useChat = create<ChatState>((set, get) => {
         finalizing: false,
         streamingTextId: null,
         runId: null,
+        // Startup falhou/cancelou antes de `session`: descarta apenas a intenção;
+        // agent, sessionId, model e contextTokens do source nunca foram tocados.
+        pendingTransplant: undefined,
         finishedUnseen: unseen,
       })
     },

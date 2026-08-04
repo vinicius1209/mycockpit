@@ -30,11 +30,18 @@ import { useMission } from "@/store/mission"
 import { useSchedules } from "@/store/schedules"
 import { openCardConversation, useCards } from "@/store/cards"
 import { fmtUntilShort } from "@/lib/schedules"
-import { cardDecisions, scanDecisions, type Decision } from "@/lib/inbox"
+import {
+  cardDecisions,
+  foundDecisions,
+  pendingDecisions,
+  scanDecisions,
+  type Decision,
+} from "@/lib/inbox"
 import {
   dismissProposal,
   listRecentDeliveries,
   loadLedger,
+  setSddPlanIgnored,
   type LedgerEntry,
   type RecentDelivery,
 } from "@/lib/db"
@@ -548,6 +555,55 @@ function ProposalCard({
   )
 }
 
+/** Linha de gate ENCONTRADO no disco (o app leu o .claude/plans do projeto e
+ *  ninguém te chamou). Discreta de propósito: não é fila, é achado. Origem e
+ *  idade explícitas — 68 dias de dívida não pode parecer urgência de hoje. */
+function FoundRow({
+  d,
+  onIgnore,
+}: {
+  d: Extract<Decision, { kind: "prd" | "pr" }>
+  onIgnore: () => void
+}) {
+  const go = () => void goTo(d)
+  const age = fmtRelativeIso(d.createdAt)
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={go}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") go()
+      }}
+      className="group flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/50"
+    >
+      {d.kind === "prd" ? (
+        <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+      ) : (
+        <GitPullRequest className="size-3.5 shrink-0 text-muted-foreground" />
+      )}
+      <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">
+        {d.kind === "prd" ? "PRD por aprovar" : "PR aberto"}: {d.planTitle}
+      </span>
+      <span className="shrink-0 text-[11.5px] text-muted-foreground/80">
+        {d.projectName}
+      </span>
+      <span className="shrink-0 font-mono text-[11px] text-muted-foreground/60">
+        {d.origin.path}
+        {age ? ` · criado ${age}` : ""}
+      </span>
+      <GhostAction
+        onClick={(e) => {
+          e.stopPropagation()
+          onIgnore()
+        }}
+      >
+        Ignorar
+      </GhostAction>
+    </div>
+  )
+}
+
 /** Card de PRD: revisar no SDD (aqui o SDD É o destino certo). */
 function PrdCard({ d }: { d: Extract<Decision, { kind: "prd" }> }) {
   const go = () => void goTo(d)
@@ -660,8 +716,9 @@ export function MissionControl() {
   // nunca volta a false — refreshes seguintes atualizam em silêncio.
   const [decisions, setDecisions] = useState<Decision[]>([])
   const [deliveries, setDeliveries] = useState<RecentDelivery[]>([])
-  // Ledger de custo dos últimos 30d (turnos de chat + entregas) — alimenta o
-  // instrumento de frota (gasto hoje/7d/30d, sparkline, custo por agente).
+  // Ledger de custo dos últimos 30d (turn_costs: chat + disputa + fases de
+  // missão desde o MH2.1; + etapas SDD) — alimenta o instrumento de frota
+  // (gasto hoje/7d/30d, sparkline, custo por agente).
   const [ledger, setLedger] = useState<LedgerEntry[]>([])
   const [loaded, setLoaded] = useState(false)
   // S4.3: "Pedir proposta ao lead" (BoardLane) bumpa o tick pra proposta nova
@@ -676,7 +733,8 @@ export function MissionControl() {
               if (!cancelled) setDecisions(d)
             })
           : Promise.resolve(setDecisions([]))
-      // 60 entregas dão a janela de 7d do custo; o ledger mostra as 8 últimas.
+      // entregas = a LISTA de entregas recentes (custo vem do ledger acima;
+      // desde o MH2.1 deliveries é registro de entrega, não fonte de custo).
       const deliveriesP = listRecentDeliveries(60).then((d) => {
         if (!cancelled) setDeliveries(d)
       })
@@ -761,6 +819,34 @@ export function MissionControl() {
     )
     return orderQueue(all, prData)
   }, [decisions, decidingKey, projects, prData, merged, allCards])
+
+  // "Precisam de você" = só PENDÊNCIA. Gate do SDD que o app apenas ACHOU no
+  // disco (nenhum gesto seu por aqui) desce pra "Encontrados no projeto": a
+  // fila é sinal de agora, não arqueologia do .claude/plans.
+  const pending = useMemo(() => pendingDecisions(queue), [queue])
+  const found = useMemo(
+    () => foundDecisions(queue) as Extract<Decision, { kind: "prd" | "pr" }>[],
+    [queue],
+  )
+
+  /** "Ignorar": some da lista (marca no BANCO DO APP, nunca no .claude/plans).
+   *  Reverter é no sino, que é quem lista os ignorados. Falhou = não some. */
+  function handleIgnorePlan(d: Extract<Decision, { kind: "prd" | "pr" }>) {
+    void setSddPlanIgnored(d.projectId, d.slug, true)
+      .then(() =>
+        setDecisions((prev) =>
+          prev.filter(
+            (x) =>
+              !(
+                (x.kind === "prd" || x.kind === "pr") &&
+                x.projectId === d.projectId &&
+                x.slug === d.slug
+              ),
+          ),
+        ),
+      )
+      .catch(() => toast.error("Falha ao ignorar o plano"))
+  }
 
   /** Dispensa a proposta do lead (persistido) e a tira da fila na hora. */
   async function handleDismissProposal(
@@ -1034,13 +1120,13 @@ export function MissionControl() {
               <SectionTitle>Precisam de você</SectionTitle>
               <SkeletonRows rows={2} />
             </>
-          ) : queue.length === 0 ? (
+          ) : pending.length === 0 ? (
             <EmptyLine>Nada esperando você. Bom voo.</EmptyLine>
           ) : (
             <>
-              <SectionTitle>Precisam de você ({queue.length})</SectionTitle>
+              <SectionTitle>Precisam de você ({pending.length})</SectionTitle>
               <div className="flex flex-col gap-2">
-                {queue.map((d) =>
+                {pending.map((d) =>
                   d.kind === "pr" ? (
                     <PrCard
                       key={`pr:${d.prUrl}`}
@@ -1065,6 +1151,23 @@ export function MissionControl() {
                 )}
               </div>
             </>
+          )}
+
+          {/* Encontrados no projeto — gates que o app LEU do .claude/plans e
+              você ainda não tocou por aqui. Abaixo da fila, sem alarme. */}
+          {loaded && found.length > 0 && (
+            <div className="mt-4">
+              <SectionTitle>Encontrados no projeto ({found.length})</SectionTitle>
+              <div className="flex flex-col gap-px">
+                {found.map((d) => (
+                  <FoundRow
+                    key={`found:${d.projectId}:${d.slug}`}
+                    d={d}
+                    onIgnore={() => handleIgnorePlan(d)}
+                  />
+                ))}
+              </div>
+            </div>
           )}
         </section>
 

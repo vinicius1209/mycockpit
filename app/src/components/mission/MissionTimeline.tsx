@@ -4,7 +4,7 @@
 // (resumo + custos, card recolhível), erro/abortada. O gate humano
 // ("precisa de você") entra na onda 2 (precisa pausar o runner).
 import { useEffect, useMemo, useState } from "react"
-import { Check, FolderOpen, Rocket, X } from "lucide-react"
+import { AlertTriangle, Check, FolderOpen, RefreshCw, Rocket, X } from "lucide-react"
 import { useMission } from "@/store/mission"
 import { useActiveProject, useApp } from "@/store/app"
 import { useChat, type ChatItem } from "@/store/chat"
@@ -12,11 +12,21 @@ import { MissionFilesDialog } from "@/components/mission/MissionFilesDialog"
 import type {
   GateAnswer,
   MissionPhaseRun,
+  MissionRecovery,
   MissionRun,
+  RecoveryChoice,
 } from "@/lib/missionTypes"
 import type { InteractionRequest } from "@/lib/interaction"
 import { useContextualSplit } from "@/store/interactions"
-import { agentCaps, agentDef } from "@/lib/agents"
+import {
+  AGENTS,
+  agentCaps,
+  agentDef,
+  agentEfforts,
+  agentModels,
+  defaultModelFor,
+} from "@/lib/agents"
+import { buildRecoveryChoice } from "@/lib/recoveryChoice"
 import { GateAnswerForm } from "@/components/mission/GateAnswerForm"
 import { InteractionCard } from "@/components/chat/InteractionHost"
 import { MicButton } from "@/components/chat/MicButton"
@@ -231,6 +241,149 @@ function GateCard({
   )
 }
 
+/** RECOVERY — precisa de você (MH1.3): a fase parou num limite recuperável e o
+ *  motor aguarda a troca de agent (resolveRecovery re-roda a MESMA fase) ou a
+ *  desistência (abortRecovery → error). Mesmas ações do card do Escritório
+ *  (office/ui/MissionDock.RecoveryCard); aqui a superfície é o Trabalho, no
+ *  bloco da própria fase. "default" nos seletores = null (o agent decide),
+ *  mesma semântica do resto do app. */
+function RecoveryCard({
+  convId,
+  recovery,
+  failedAgent,
+  onResolve,
+  onAbort,
+}: {
+  convId: string
+  recovery: MissionRecovery
+  /** Agent que rodava a fase que parou — semente do seletor. */
+  failedAgent: string
+  onResolve: (convId: string, choice: RecoveryChoice) => void
+  onAbort: (convId: string) => void
+}) {
+  const agents = useMemo(
+    () =>
+      AGENTS.filter((a) => a.available && a.kind === "agent").map((a) => ({
+        id: a.id,
+        label: a.label,
+      })),
+    [],
+  )
+  const [agent, setAgent] = useState<string>(
+    () =>
+      (agents.some((a) => a.id === failedAgent)
+        ? failedAgent
+        : agents[0]?.id) ?? "",
+  )
+  const models = useMemo(() => agentModels(agent), [agent])
+  const efforts = useMemo(() => agentEfforts(agent), [agent])
+  const [model, setModel] = useState<string>(() => defaultModelFor(agent))
+  const [effort, setEffort] = useState<string>("default")
+  // trocar de agent re-semeia modelo/effort (opções e default mudam por agent).
+  useEffect(() => {
+    setModel(defaultModelFor(agent))
+    setEffort("default")
+  }, [agent])
+
+  const selectCls =
+    "h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground outline-none focus:border-ring disabled:opacity-50"
+
+  return (
+    <div className="mt-2.5 overflow-hidden rounded-xl border-[1.5px] border-st-warning/50 bg-st-warning/[0.05]">
+      <div className="flex items-center gap-2.5 border-b border-st-warning/25 px-4 py-3">
+        <AlertTriangle className="size-4 shrink-0 text-st-warning" />
+        <div className="min-w-0">
+          <div className="text-[13px] font-semibold">
+            A fase parou por limite, precisa de você
+          </div>
+          <div className="text-[11.5px] text-muted-foreground">
+            {recovery.message}
+          </div>
+        </div>
+      </div>
+      {recovery.error && (
+        <p className="mx-4 mt-3 rounded-md border border-st-warning/30 bg-background/60 px-2 py-1.5 font-mono text-[11px] leading-snug break-words whitespace-pre-wrap text-foreground/80">
+          {recovery.error}
+        </p>
+      )}
+      <div className="grid grid-cols-2 gap-2 px-4 pt-3">
+        <label className="flex min-w-0 flex-col gap-1">
+          <span className="label-mono">Agent</span>
+          <select
+            value={agent}
+            onChange={(e) => setAgent(e.target.value)}
+            aria-label="Agent que retoma a fase"
+            className={selectCls}
+          >
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-col gap-1">
+          <span className="label-mono">Modelo</span>
+          <select
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            disabled={models.length === 0}
+            aria-label="Modelo do agent que retoma a fase"
+            className={selectCls}
+          >
+            {models.length === 0 ? (
+              <option value="default">Padrão</option>
+            ) : (
+              models.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
+        {efforts.length > 0 && (
+          <label className="flex min-w-0 flex-col gap-1">
+            <span className="label-mono">Raciocínio</span>
+            <select
+              value={effort}
+              onChange={(e) => setEffort(e.target.value)}
+              aria-label="Esforço do agent que retoma a fase"
+              className={selectCls}
+            >
+              {efforts.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+      <div className="flex items-center gap-2 px-4 py-3">
+        <button
+          type="button"
+          disabled={!agent}
+          onClick={() =>
+            onResolve(convId, buildRecoveryChoice(agent, model, effort))
+          }
+          className="flex items-center gap-1.5 rounded-lg bg-brass px-3.5 py-1.5 text-[12px] font-semibold text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+        >
+          <RefreshCw className="size-3.5" />
+          Trocar e retomar
+        </button>
+        <button
+          type="button"
+          onClick={() => onAbort(convId)}
+          className="rounded-lg border border-border-strong px-3 py-1.5 text-[11.5px] text-muted-foreground transition-colors hover:border-st-error/50 hover:text-st-error"
+        >
+          Desistir
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /** Uma fase como estação no plano de voo (nó na espinha + linha). */
 function PhaseNode({
   p,
@@ -308,15 +461,24 @@ function DoneSummary({ mission }: { mission: MissionRun }) {
     return null
   }, [mission.phases])
   const ok = mission.status === "done"
+  // MH1.1 — done com ressalva: o revisor não aprovou; dizer "concluída" seco
+  // aqui seria a mentira que o plano fecha.
+  const caveat = ok ? (mission.reviewCaveat ?? null) : null
   return (
     <div className="mt-4 overflow-hidden rounded-xl border bg-card">
       <div
         className={cn(
           "flex items-center gap-2.5 border-b px-4 py-3",
-          ok ? "bg-st-success/[0.05]" : "bg-st-error/[0.05]",
+          caveat
+            ? "bg-st-warning/[0.06]"
+            : ok
+              ? "bg-st-success/[0.05]"
+              : "bg-st-error/[0.05]",
         )}
       >
-        {ok ? (
+        {caveat ? (
+          <AlertTriangle className="size-4 shrink-0 text-st-warning" />
+        ) : ok ? (
           <Check className="size-4 shrink-0 text-st-success" />
         ) : (
           <X className="size-4 shrink-0 text-st-error" />
@@ -324,15 +486,28 @@ function DoneSummary({ mission }: { mission: MissionRun }) {
         <span
           className={cn(
             "text-[13px] font-semibold",
-            ok ? "text-st-success" : "text-st-error",
+            caveat ? "text-st-warning" : ok ? "text-st-success" : "text-st-error",
           )}
         >
-          {ok ? "Missão concluída" : "Missão interrompida"}
+          {caveat
+            ? "Missão concluída com ressalva"
+            : ok
+              ? "Missão concluída"
+              : "Missão interrompida"}
         </span>
         <span className="ml-auto font-mono text-[11.5px] tabular-nums text-muted-foreground">
           {mission.phases.length} fases · {fmtCost(mission.costTotal)}
         </span>
       </div>
+      {caveat && (
+        <p className="border-b px-4 py-2.5 text-[12px] leading-snug text-st-warning">
+          O revisor não aprovou a entrega
+          {caveat.rounds > 0
+            ? ` após ${caveat.rounds} ${caveat.rounds === 1 ? "rodada" : "rodadas"} de correção`
+            : ""}
+          . Revise o parecer abaixo antes de confiar no resultado.
+        </p>
+      )}
       {verdict ? (
         <div className="px-4 py-3">
           <div className="label-mono mb-1.5 text-[9.5px]">Resumo do revisor</div>
@@ -463,6 +638,8 @@ export function MissionTimeline({ convId }: { convId: string }) {
   const abort = useMission((s) => s.abort)
   const clear = useMission((s) => s.clear)
   const answerGate = useMission((s) => s.answerGate)
+  const resolveRecovery = useMission((s) => s.resolveRecovery)
+  const abortRecovery = useMission((s) => s.abortRecovery)
   // cwd pro viewer de arquivos: worktree da conversa, senão a pasta do projeto.
   const conv = useChat((s) => s.byId[convId])
   const projects = useApp((s) => s.projects)
@@ -482,6 +659,9 @@ export function MissionTimeline({ convId }: { convId: string }) {
 
   const gated = mission.status === "running" && mission.gate != null
   const running = mission.status === "running"
+  // MH1.3 — a pausa por limite recuperável agora tem cara no Trabalho (antes
+  // só o Escritório mostrava; aqui a missão parecia rodando pra sempre).
+  const inRecovery = running && mission.recovery != null
   const n = mission.phases.length
   const cur = Math.min(mission.current, n - 1)
   const pct =
@@ -506,11 +686,15 @@ export function MissionTimeline({ convId }: { convId: string }) {
               "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[9.5px] tracking-wide uppercase",
               gated
                 ? "bg-brass-soft text-brass"
-                : running
-                  ? "bg-st-running/15 text-st-running"
-                  : mission.status === "done"
-                    ? "bg-st-success/15 text-st-success"
-                    : "bg-st-error/15 text-st-error",
+                : inRecovery
+                  ? "bg-st-warning/15 text-st-warning"
+                  : running
+                    ? "bg-st-running/15 text-st-running"
+                    : mission.status === "done"
+                      ? mission.reviewCaveat
+                        ? "bg-st-warning/15 text-st-warning"
+                        : "bg-st-success/15 text-st-success"
+                      : "bg-st-error/15 text-st-error",
             )}
           >
             {gated ? (
@@ -518,13 +702,18 @@ export function MissionTimeline({ convId }: { convId: string }) {
                 <span className="animate-cockpit-pulse size-1.5 rounded-full bg-brass" />
                 pausada · precisa de você
               </>
+            ) : inRecovery ? (
+              <>
+                <span className="animate-cockpit-pulse size-1.5 rounded-full bg-st-warning" />
+                pausada · limite na fase {Math.min(mission.current + 1, n)}/{n}
+              </>
             ) : running ? (
               <>
                 <span className="animate-cockpit-pulse size-1.5 rounded-full bg-st-running" />
                 em voo · fase {Math.min(mission.current + 1, n)}/{n}
               </>
             ) : mission.status === "done" ? (
-              "✓ concluída"
+              mission.reviewCaveat ? "✓ concluída com ressalva" : "✓ concluída"
             ) : (
               mission.status === "error" ? "falhou" : "abortada"
             )}
@@ -606,6 +795,26 @@ export function MissionTimeline({ convId }: { convId: string }) {
                 running && !gated && i === cur ? inlineReqs : undefined
               }
             />
+            {inRecovery && mission.recovery!.phase === i && (
+              <div className="relative mb-4">
+                <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 animate-cockpit-pulse rounded-full border-2 border-st-warning bg-st-warning shadow-[0_0_0_4px_color-mix(in_srgb,var(--st-warning)_20%,transparent)]" />
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[14px] font-semibold text-st-warning">
+                    Precisa de você
+                  </span>
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    a fase {i + 1} parou por limite
+                  </span>
+                </div>
+                <RecoveryCard
+                  convId={convId}
+                  recovery={mission.recovery!}
+                  failedAgent={p.def.agent}
+                  onResolve={resolveRecovery}
+                  onAbort={abortRecovery}
+                />
+              </div>
+            )}
             {gated && mission.gate!.phase === i && (
               <div className="relative mb-4">
                 <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 animate-cockpit-pulse rounded-full border-2 border-brass bg-brass shadow-[0_0_0_4px_var(--brass-soft)]" />

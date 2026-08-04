@@ -26,10 +26,11 @@ MyCockpit é um app desktop (Tauri 2 + React 19 + TypeScript) que vira a **únic
 
 | | Feature | Descrição |
 |---|---|---|
-| 💬 | **Linear** | Chat com resume de sessão, fila de mensagens, diffs inline nos tools e custo por turno/sessão. |
+| 💬 | **Linear** | Chat com resume, revezamento entre providers com memória híbrida, fila, diffs inline e custo por turno/sessão. |
 | ⚔️ | **Fusion** | Vários agents disputam a mesma tarefa; um juiz avalia e o vencedor é promovido. |
 | 📋 | **SDD** | Pipeline spec-driven: PRD → SPEC → implementação → gates de verificação → PR, com custo por entrega. |
 | 🤖 | **Multi-CLI** | Claude Code, Codex e Antigravity (agy) via adapters; OpenCode em breve. |
+| 🔌 | **MCP Control Plane** | Registry sanitizado, health check, bindings por projeto/agent e configuração efêmera por run. |
 | 🌿 | **Worktrees** | Cada conversa pode rodar num git worktree isolado, sem sujar sua árvore principal. |
 | 📥 | **Inbox de decisões** | Perguntas dos agents chegam num inbox central, com notificações nativas do macOS. |
 | 🎙️ | **Ditado pt-BR** | Fala → prompt 100% local (on-device), via sidecar Swift — nada sai da máquina. |
@@ -80,7 +81,8 @@ Sem o skill, o build direto funciona também: `cd app && bun run tauri build`.
 ```mermaid
 flowchart LR
     UI["Front React 19<br/>zustand + TanStack Query"] -->|"comandos Tauri"| RS["Backend Rust<br/>(src-tauri)"]
-    RS --> AD["Adapters<br/>trait AgentAdapter"]
+    RS --> CP["MCP Control Plane<br/>registry + health + policy"]
+    CP --> AD["Adapters<br/>trait AgentAdapter"]
     AD --> CC["claude"]
     AD --> CX["codex"]
     AD --> AG["agy"]
@@ -114,4 +116,8 @@ Cada CLI é envelopada por um adapter (`app/src-tauri/src/adapters.rs`) que trad
 
 ---
 
-Docs de arquitetura e decisões em [`docs/`](./docs/) — comece por [`docs/architecture.md`](./docs/architecture.md) e [`docs/agent-runner.md`](./docs/agent-runner.md).
+Docs de arquitetura e decisões em [`docs/`](./docs/) — comece por
+[`docs/architecture.md`](./docs/architecture.md),
+[`docs/agent-runner.md`](./docs/agent-runner.md),
+[`docs/context-handoff.md`](./docs/context-handoff.md) e
+[`docs/mcp-control-plane.md`](./docs/mcp-control-plane.md).

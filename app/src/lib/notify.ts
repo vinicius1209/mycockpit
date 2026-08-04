@@ -168,6 +168,132 @@ export function notifyGate(
   )
 }
 
+/** Desfecho de UMA missão (MH2.3): fim ok, fim com ressalva do revisor (MH1.1),
+ *  falha e teto estourado. Recovery pendente é notifyMissionRecovery (a missão
+ *  NÃO terminou — está esperando você). */
+export type MissionOutcome = "concluida" | "ressalva" | "falha" | "teto"
+
+/** Dedupe por missão: UM aviso de desfecho por missionId. O launch só alcança
+ *  um terminal por execução, mas a memória de módulo é a garantia explícita
+ *  (padrão "1 aviso por episódio via Map de módulo" do watchdog). */
+const missionEndNotified = new Set<string>()
+
+/** (testes) zera o dedupe de desfecho de missão. */
+export function _resetMissionEndNotified(): void {
+  missionEndNotified.clear()
+}
+
+/** Chamado no DESFECHO de uma missão (MH2.3, canais do ADR-013): feed do sino
+ *  SEMPRE + nativa SEMPRE — missão é trabalho longo que roda com o app em
+ *  background; diferente do turno de chat, não há "você estava olhando" barato
+ *  de detectar e o desfecho é raro (1 por missão, dedupado aqui). Abort do
+ *  usuário NÃO notifica (gesto seu; o chamador não chama). Copy alinhada com
+ *  os marcos do fio (notifyGate/recordError): mesma língua, outro canal. */
+export function notifyMissionEnd(o: {
+  missionId: string
+  convId: string
+  outcome: MissionOutcome
+  costUsd: number
+  /** Motivo humano (falha/teto) ou "preset X" (fim). */
+  detail?: string
+}) {
+  if (missionEndNotified.has(o.missionId)) return
+  missionEndNotified.add(o.missionId)
+
+  const chat = useChat.getState()
+  const c = chat.byId[o.convId]
+  const meta = c
+    ? (chat.conversationsByProject[c.projectId] ?? chat.conversations).find(
+        (cv) => cv.id === o.convId,
+      )
+    : undefined
+  const title = meta?.title ?? "Missão"
+  const proj = c
+    ? useApp.getState().projects.find((p) => p.id === c.projectId)
+    : undefined
+  const cost = `US$ ${o.costUsd.toFixed(2)}`
+  const sufixoProj = proj ? ` · ${proj.name}` : ""
+
+  const feed: Record<MissionOutcome, { kind: "run_done" | "run_error"; sub: string }> = {
+    concluida: {
+      kind: "run_done",
+      sub: `Missão concluída · ${cost}${sufixoProj}`,
+    },
+    ressalva: {
+      kind: "run_done",
+      sub: `Missão concluída SEM aprovação do revisor · ${cost}${sufixoProj}`,
+    },
+    falha: {
+      kind: "run_error",
+      sub: `Missão falhou · ${o.detail ?? "falha na fase"} · ${cost}${sufixoProj}`,
+    },
+    teto: {
+      kind: "run_error",
+      sub: `Missão parou no teto de custo · ${o.detail ?? "orçamento esgotado"}${sufixoProj}`,
+    },
+  }
+  useNotifs.getState().push({
+    kind: feed[o.outcome].kind,
+    title,
+    subtitle: feed[o.outcome].sub,
+    projectId: c?.projectId ?? "",
+    convId: o.convId,
+  })
+
+  const nativo: Record<MissionOutcome, { titulo: string; corpo: string }> = {
+    concluida: {
+      titulo: "Frota · missão concluída",
+      corpo: `${clipTitle(title)}: todas as fases terminaram (${cost}).`,
+    },
+    ressalva: {
+      titulo: "Frota · missão concluída com ressalva",
+      corpo: `${clipTitle(title)}: o revisor NÃO aprovou a entrega. Revise o parecer antes de confiar (${cost}).`,
+    },
+    falha: {
+      titulo: "Frota · missão falhou",
+      corpo: `${clipTitle(title)}: ${o.detail ?? "falha na fase"} (${cost}).`,
+    },
+    teto: {
+      titulo: "Frota · missão parou no teto de custo",
+      corpo: `${clipTitle(title)}: ${o.detail ?? "orçamento esgotado"}. O trabalho feito até aqui está no worktree.`,
+    },
+  }
+  void nativeNotify(nativo[o.outcome].titulo, nativo[o.outcome].corpo)
+}
+
+/** Chamado UMA vez quando a missão PAUSA em RECOVERY (fase falhou por limite e
+ *  espera você trocar de agent ou abortar). Irmão do notifyGate: a missão
+ *  inteira está parada esperando VOCÊ, então feed + nativa SEMPRE. Sem spam:
+ *  o store só chama no ponto único que abre o recovery (1 por episódio por
+ *  construção — um re-run que re-falha é episódio novo, como no gate). */
+export function notifyMissionRecovery(
+  convId: string,
+  projectName: string,
+  phaseLabel: string,
+) {
+  const chat = useChat.getState()
+  const c = chat.byId[convId]
+  const meta = c
+    ? (chat.conversationsByProject[c.projectId] ?? chat.conversations).find(
+        (cv) => cv.id === convId,
+      )
+    : undefined
+  const title = meta?.title ?? "Missão"
+
+  useNotifs.getState().push({
+    kind: "gate",
+    title,
+    subtitle: `Recuperação pendente · ${phaseLabel}${projectName ? ` · ${projectName}` : ""}`,
+    projectId: c?.projectId ?? "",
+    convId,
+  })
+
+  void nativeNotify(
+    "Frota · missão precisa de você",
+    `${clipTitle(title)}: a fase ${phaseLabel} parou por limite; a missão está pausada. Escolha outro agent para retomar, ou aborte.`,
+  )
+}
+
 /** Chamado quando chega um pedido de PERMISSÃO. O approval é o único evento que
  *  deixa o turno literalmente parado esperando você — antes ele era o único que
  *  NÃO avisava (gate, turno mudo e card parado avisavam). Empilha no feed
@@ -297,6 +423,31 @@ export function notifyTurnStalled(
   void nativeNotify(
     "Frota · turno mudo",
     `${clipTitle(title)}: ${agentLabel(agent)} está há ${minutes} min sem produzir nada novo. O turno pode ter travado.`,
+  )
+}
+
+/** Chamado UMA vez por episódio quando uma FASE DE MISSÃO running fica MUDA
+ *  (sem nenhum item novo) além do limiar (settings.stalledAfterMin, o mesmo
+ *  knob dos turnos). A missão não seta `running` na conversa, então o vigia de
+ *  turno não a enxerga — este é o espelho pro pipeline (MH1.2). Aqui é só o
+ *  aviso de SO; o toast acionável fica com o watchdog. Sem spam: 1x/episódio. */
+export function notifyMissionStalled(
+  convId: string,
+  agent: string,
+  phaseLabel: string,
+  minutes: number,
+) {
+  const chat = useChat.getState()
+  const c = chat.byId[convId]
+  const meta = c
+    ? (chat.conversationsByProject[c.projectId] ?? chat.conversations).find(
+        (cv) => cv.id === convId,
+      )
+    : undefined
+  const title = meta?.title ?? "Missão"
+  void nativeNotify(
+    "Frota · fase de missão muda",
+    `${clipTitle(title)}: a fase "${phaseLabel}" (${agentLabel(agent)}) está há ${minutes} min sem produzir nada novo. A fase pode ter travado.`,
   )
 }
 
