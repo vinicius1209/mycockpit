@@ -1,0 +1,8 @@
+# Pasta do MyCockpit. Local por padrão: contexto exportado, missões e worktrees
+# não vão pro git. As exceções abaixo são VERSIONADAS de propósito — a doutrina
+# e as personas do projeto devem viajar no clone e ser revisáveis em PR.
+*
+!.gitignore
+!instructions.md
+!agents/
+!agents/*.md
