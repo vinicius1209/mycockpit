@@ -182,8 +182,8 @@ export function validatePresetName(
 
 /** Copy pt-BR dos erros do salvar (inline nas duas superfícies). */
 export const SAVE_PRESET_ERROR_COPY: Record<SavePresetError, string> = {
-  vazio: "Dê um nome ao time.",
-  duplicado: "Já existe um time com esse nome.",
+  vazio: "Dê um nome ao Plano de voo.",
+  duplicado: "Já existe um Plano de voo com esse nome.",
 }
 
 /** Salva o rascunho corrente como um time NOVO: valida o nome, monta o preset

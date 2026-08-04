@@ -34,7 +34,7 @@ export interface GlobalSettings {
   autoResumeMaxTries: number
   /** Missions (beta): habilita o botão de missão no composer. */
   missionEnabled: boolean
-  /** Times salvos do Mission (papel → agent/modelo). */
+  /** Planos de voo salvos do Mission (rota + time + limites). */
   missionPresets: MissionPreset[]
   /** Onboarding: false = mostra o wizard no boot. Migração seta true p/ quem já
    *  tem estado persistido (não é primeira instalação). */

@@ -659,6 +659,8 @@ export const useMission = create<MissionState>((set, get) => {
           changedFiles,
           fallbackContext,
           instructions: def.instructions,
+          entryCriteria: def.entryCriteria,
+          exitCriteria: def.exitCriteria,
           doctrineBlock,
           recallBlock: learn.recall,
           lessonsBlock: learn.lessons,

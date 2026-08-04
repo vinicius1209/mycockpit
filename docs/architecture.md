@@ -7,7 +7,7 @@
                        │  Tauri IPC / Channels
         ┌──────────────┴───────────────┐
         │                              │
-   Chat Engine                  (futuro) Workflow Engine
+   Chat Engine                  Mission / Workflow Engine
         │                              │
    Agent Registry  ──────────────► Permission System (por projeto)
         │
@@ -21,6 +21,21 @@
 
 A UI **só conhece eventos normalizados** (ver [`agent-runner.md`](./agent-runner.md)).
 Ela nunca fala o "dialeto" de um agent específico — isso é trabalho do adapter.
+
+### Fundação atual do Workflow Engine
+
+O primeiro contrato do Workflow Engine já existe dentro do Mission. Um **Plano
+de voo** é um template reutilizável (`MissionPreset`) e uma **Missão** é a
+execução concreta desse template numa conversa/worktree. Presets antigos sem
+metadado continuam sendo `linear`; planos com `mode: "graph"` carregam um
+`MissionPlanGraph` versionado, independente da biblioteca visual.
+
+Na v1 do canvas, o grafo é uma cadeia única válida por construção. Reordenar os
+nós atualiza `preset.phases`, portanto o mesmo `missionEngine.ts` executa tanto
+o editor linear quanto o canvas. Ramificações, condições diferentes de
+`success` e loops já têm lugar no schema de arestas, mas o import os rejeita
+até o executor de grafo oferecer semântica de budget, recovery e retomada para
+essas transições. Detalhes em [`mission-flight-plans.md`](./mission-flight-plans.md).
 
 ## Decisão central do v0.1: CLI subprocess + `stream-json`
 

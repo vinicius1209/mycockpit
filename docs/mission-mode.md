@@ -32,6 +32,14 @@
 >   funções PURAS em `lib/missionEngine.ts`; o `launch` do `store/mission.ts` é
 >   casca fina que executa efeitos (runPhase/persist/notices/notify/ledger) sob
 >   comando do motor. Pré-requisito do M3 (paralelismo).
+>
+> **Atualização (ago/2026) — Planos de voo.** `MissionPreset` passa a ser o
+> template reutilizável chamado **Plano de voo**; `MissionRun` continua sendo a
+> execução concreta. Presets legados seguem lineares sem migração. O canvas v1
+> persiste um `MissionPlanGraph` versionado, permite organizar e reordenar nós,
+> importar/exportar JSON e configurar critérios de entrada/saída. A topologia
+> executável ainda é uma cadeia única — o limite e a evolução estão descritos
+> em [`mission-flight-plans.md`](./mission-flight-plans.md).
 
 ## TL;DR (a recomendação)
 

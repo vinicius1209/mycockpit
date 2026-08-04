@@ -166,6 +166,22 @@ describe("phasePrompt", () => {
     expect(p).not.toContain("Diff acumulado")
   })
 
+  it("injeta critérios de entrada e saída como guardrails verificáveis", () => {
+    const p = phasePrompt({
+      persona: "executor",
+      task: "tarefa",
+      handoffPath: ".mission/1-executor.json",
+      entryCriteria: ["Plano aprovado", "  ", "Worktree limpo"],
+      exitCriteria: ["Testes passam", "Diff revisado"],
+    })
+    expect(p).toContain("## Critérios de entrada")
+    expect(p).toContain("- Plano aprovado")
+    expect(p).toContain("- Worktree limpo")
+    expect(p).toContain("## Critérios de saída")
+    expect(p).toContain("- Testes passam")
+    expect(p).toContain("- Diff revisado")
+  })
+
   it("doutrina do projeto entra ANTES do aprendizado (regra humana > destilada)", () => {
     const p = phasePrompt({
       persona: "executor",

@@ -67,6 +67,10 @@ export interface PhasePromptInput {
   fallbackContext?: string | null
   /** Instrução extra específica da fase (do preset). */
   instructions?: string
+  /** Condições que devem ser verdadeiras antes de iniciar a fase. */
+  entryCriteria?: string[]
+  /** Checklist de pronto específico desta fase. */
+  exitCriteria?: string[]
   /** Doutrina do projeto (.mycockpit/instructions.md), já em bloco. Vale em
    *  TODAS as fases: cada fase é um run novo de CLI, e a maioria delas roda em
    *  codex/agy, que não leem CLAUDE.md. null = projeto sem doutrina. */
@@ -92,6 +96,26 @@ export function phasePrompt(input: PhasePromptInput): string {
 
   if (input.instructions && input.instructions.trim()) {
     parts.push("", "## Instruções desta fase", input.instructions.trim())
+  }
+
+  const entryCriteria = (input.entryCriteria ?? []).map((c) => c.trim()).filter(Boolean)
+  if (entryCriteria.length > 0) {
+    parts.push(
+      "",
+      "## Critérios de entrada",
+      "Confirme estes pontos antes de agir; se algum não puder ser confirmado, registre a pendência no handoff:",
+      ...entryCriteria.map((criterion) => `- ${criterion}`),
+    )
+  }
+
+  const exitCriteria = (input.exitCriteria ?? []).map((c) => c.trim()).filter(Boolean)
+  if (exitCriteria.length > 0) {
+    parts.push(
+      "",
+      "## Critérios de saída",
+      "Só conclua a fase depois de verificar este checklist:",
+      ...exitCriteria.map((criterion) => `- ${criterion}`),
+    )
   }
 
   // Doutrina do projeto ANTES do aprendizado: regra escrita pelo humano vem

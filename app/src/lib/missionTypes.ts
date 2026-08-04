@@ -10,6 +10,41 @@ import type { ChatItem } from "@/store/chat"
 
 export type MissionPersona = "planner" | "executor" | "reviewer"
 
+/** Forma de autoria do plano. Ausente = "linear" para manter todos os
+ *  presets persistidos antes do canvas executáveis sem migração. */
+export type MissionPlanMode = "linear" | "graph"
+
+/** O canvas persiste somente coordenadas e topologia. A configuração do agent
+ *  continua em `MissionPhaseDef`, fonte única para lista, launcher e runtime. */
+export interface MissionPlanNode {
+  id: string
+  phaseId: string
+  position: { x: number; y: number }
+}
+
+/** Condições já fazem parte do contrato exportável. O executor v1 cria apenas
+ *  arestas `success` numa linha única; failure/always e limites de travessia
+ *  ficam reservados para ramificações e loops do motor de grafo. */
+export type MissionPlanEdgeCondition = "success" | "failure" | "always"
+
+export interface MissionPlanEdge {
+  id: string
+  source: string
+  target: string
+  condition: MissionPlanEdgeCondition
+  label?: string
+  /** Obrigatório no futuro quando uma aresta fechar um ciclo. */
+  maxTraversals?: number
+}
+
+/** Schema canônico do canvas, independente do React Flow e dos CLIs. */
+export interface MissionPlanGraph {
+  version: 1
+  entryNodeId: string | null
+  nodes: MissionPlanNode[]
+  edges: MissionPlanEdge[]
+}
+
 /** Definição de UMA fase do pipeline (parte do preset, editável). */
 export interface MissionPhaseDef {
   /** Identificador estável dentro do preset (ex.: "plan", "ui", "review"). */
@@ -26,6 +61,11 @@ export interface MissionPhaseDef {
   effort: string | null
   /** Instrução específica da fase (opcional; soma ao template da persona). */
   instructions?: string
+  /** Condições que o agent deve conferir antes de começar. No motor linear v1
+   *  são guardrails semânticos injetados no prompt; não mudam a topologia. */
+  entryCriteria?: string[]
+  /** Checklist explícito que a fase precisa satisfazer antes do handoff. */
+  exitCriteria?: string[]
   /** Tentativas máximas da fase (1 = sem retry). */
   maxRetries: number
   /** Autonomia DESTA fase (por membro do time). "auto" = roda sem pedir
@@ -71,6 +111,13 @@ export type MissionGatePolicy = "agente" | "sempre-apos-planejar" | "nunca"
 export interface MissionPreset {
   id: string
   name: string
+  /** Descrição curta exibida na biblioteca e transportada no export. */
+  description?: string
+  /** Editor preferido deste template. Ausente = linear (retrocompatível). */
+  mode?: MissionPlanMode
+  /** Representação visual/versionada. `phases` segue sendo a projeção
+   *  executável enquanto o motor aceita apenas uma rota linear. */
+  graph?: MissionPlanGraph
   phases: MissionPhaseDef[]
   /** Teto de custo da missão em US$ (null = sem teto). RISCO Nº1 do design. */
   maxCostUsd: number | null

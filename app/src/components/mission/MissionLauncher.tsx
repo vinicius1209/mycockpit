@@ -47,6 +47,7 @@ import { MissionPhaseRow } from "@/components/mission/PhaseRow"
 import { cn } from "@/lib/utils"
 import { agentCaps, agentDef } from "@/lib/agents"
 import { fmtCost } from "@/lib/format"
+import { missionPlanMode } from "@/lib/missionPlans"
 
 // Sentinela do seletor de time quando as fases foram editadas inline. Nunca
 // chega ao store — o launch monta o preset efetivo com as fases do rascunho.
@@ -149,7 +150,7 @@ export function MissionLauncher({
     const opts = presets.map((p) => ({
       value: p.id,
       label: p.name,
-      description: `${p.phases.length} fases${
+      description: `${missionPlanMode(p) === "graph" ? "Canvas" : "Linear"} · ${p.phases.length} fases${
         p.maxCostUsd != null ? ` · teto ${fmtCost(p.maxCostUsd)}` : ""
       }`,
     }))
@@ -288,7 +289,7 @@ export function MissionLauncher({
             Lançar missão
           </DialogTitle>
           <DialogDescription className="text-[12px]">
-            Um time de agents executa a tarefa em fases sequenciais, no worktree
+            Escolha um Plano de voo; o time de agents executa a rota no worktree
             desta conversa.
           </DialogDescription>
         </DialogHeader>
@@ -351,21 +352,21 @@ export function MissionLauncher({
             )}
           </div>
 
-          {/* ── Time: preset como ponto de partida, fases editáveis inline ── */}
+          {/* ── Plano: preset como ponto de partida, fases editáveis inline ── */}
           <div>
             <div className="mb-1.5 flex items-center gap-2">
-              <span className="label-mono">Time</span>
+              <span className="label-mono">Plano de voo</span>
               {preset ? (
                 <RichSelect
                   value={customized ? CUSTOM_PRESET : preset.id}
                   onValueChange={pickPreset}
-                  aria-label="Preset da missão"
+                  aria-label="Plano de voo da missão"
                   triggerClassName="h-7 gap-1.5 px-2 text-[12.5px] text-foreground data-[size=default]:h-7"
                   options={presetOptions}
                 />
               ) : (
                 <span className="text-[12px] text-st-error">
-                  Nenhum preset configurado (Settings ▸ Missions)
+                  Nenhum Plano de voo configurado (Configurações ▸ Missões)
                 </span>
               )}
               {/* MH3.1 — rascunho "Personalizado" pode virar time salvo. */}
@@ -377,10 +378,10 @@ export function MissionLauncher({
                     setSaveName("")
                     setSaveError(null)
                   }}
-                  title="Salvar este rascunho como um time novo nas Settings"
+                  title="Salvar este rascunho como um Plano de voo novo"
                   className="shrink-0 text-[11.5px] text-brass transition-colors hover:text-brass/80"
                 >
-                  Salvar como time
+                  Salvar como plano
                 </button>
               )}
               {/* Toggle de missão: liga "auto" no TIME TODO (ou desliga). Ao
@@ -446,8 +447,8 @@ export function MissionLauncher({
                         setSaveError(null)
                       }
                     }}
-                    placeholder="Nome do novo time"
-                    aria-label="Nome do novo time"
+                    placeholder="Nome do novo Plano de voo"
+                    aria-label="Nome do novo Plano de voo"
                     className="h-7 flex-1 rounded-md border bg-background px-2 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-brass/50"
                     autoFocus
                   />
