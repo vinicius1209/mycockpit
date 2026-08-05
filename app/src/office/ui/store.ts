@@ -4,7 +4,13 @@
 // A ui/ não toca stores do app diretamente — leituras/efeitos passam pelo
 // bridge/ (dockLeaveCtx, cancelDictation), mocáveis nos testes.
 import { create } from "zustand"
-import type { CameraMode, OfficeSnapshot, SimEvent } from "../engine/types"
+import {
+  MISSION_TABLE_ID,
+  type CameraMode,
+  type DeskSnapshot,
+  type OfficeSnapshot,
+  type SimEvent,
+} from "../engine/types"
 import { dockLeaveCtx } from "../bridge/hooks"
 import { cancelDictation } from "../bridge/voice"
 import {
@@ -94,6 +100,43 @@ export function dockItemsStart(total: number, showAll: boolean): number {
   return showAll ? 0 : Math.max(0, total - DOCK_ITEMS_WINDOW)
 }
 
+/** Mesa `deskId` no snapshot corrente (lookup puro, sem DOM). O snapshot é a
+ *  fonte ÚNICA do estado da mesa — quem precisa da conversa VIVA dela lê daqui,
+ *  nunca de um id decorado. */
+export function deskSnapshotById(
+  snapshot: OfficeSnapshot | null | undefined,
+  deskId: string,
+): DeskSnapshot | undefined {
+  for (const room of snapshot?.rooms ?? [])
+    for (const desk of room.desks) if (desk.id === deskId) return desk
+  return undefined
+}
+
+/** O dock precisa RESOLVER a conversa da mesa (ensureDeskConversation)? Só
+ *  quando há mesa de agent aberta e NENHUMA conversa já carimbada — abrir uma
+ *  mesa com turno vivo leva o convId junto e este caminho nem roda (o dock
+ *  nunca cria a "Mesa · <agent>" vazia por cima de um turno em andamento). */
+export function needsDeskConversation(
+  deskId: string | null,
+  convId: string | null,
+): deskId is string {
+  return !!deskId && deskId !== MISSION_TABLE_ID && !convId
+}
+
+/** Estado da mesa vem de uma conversa, o conteúdo do dock de OUTRA: devolve a
+ *  conversa VIVA (a mesma regra do menu-balão — deskLiveConvId) que o dock não
+ *  está mostrando, ou null quando não há divergência. O dock usa pra dizer a
+ *  verdade em vez de exibir vazio ou histórico velho sem aviso enquanto o
+ *  avatar pisca "trabalhando". Dock ainda resolvendo (null) não é divergência:
+ *  ali o loader já conta a história. */
+export function otherLiveConvId(
+  dockConvId: string | null,
+  liveConvId: string | null,
+): string | null {
+  if (!dockConvId || !liveConvId || liveConvId === dockConvId) return null
+  return liveConvId
+}
+
 /** Balão do boss fica ~3s na tela (fala curta ao enviar da mesa, §5.4 v2). */
 export const BOSS_SAY_MS = 3000
 /** Fala do boss truncada em 60 chars (balão curto, não transcrição). */
@@ -153,8 +196,11 @@ export interface OfficeUiState {
 
   setNearDesk: (id: string | null) => void
   /** Abre o dock da mesa (mesma mesa minimizada ⇒ restaura, preservando a
-   *  conversa; mesa diferente ⇒ troca e re-resolve a conversa). */
-  openDock: (deskId: string) => void
+   *  conversa; mesa diferente ⇒ troca e re-resolve a conversa). `convId` é a
+   *  conversa VIVA da mesa quando o chamador já a tem em mãos (menu-balão,
+   *  tecla E, rail, Central): sem ela o dock cai no ensureDeskConversation e
+   *  abriria a "Mesa · <agent>" VAZIA enquanto o turno roda em outro fio. */
+  openDock: (deskId: string, convId?: string | null) => void
   minimizeDock: () => void
   restoreDock: () => void
   closeDock: () => void
@@ -214,11 +260,19 @@ export const useOfficeUi = create<OfficeUiState>((set, get) => ({
 
   setNearDesk: (id) => set({ nearDeskId: id }),
 
-  openDock: (deskId) =>
+  // convId explícito MANDA (é o fio que está de fato rodando na mesa); sem ele
+  // a mesma mesa preserva a conversa aberta e uma mesa nova re-resolve.
+  openDock: (deskId, convId) =>
     set((s) =>
       s.dockDeskId === deskId
-        ? { dockMinimized: false }
-        : { dockDeskId: deskId, dockMinimized: false, dockConvId: null },
+        ? convId && convId !== s.dockConvId
+          ? { dockMinimized: false, dockConvId: convId }
+          : { dockMinimized: false }
+        : {
+            dockDeskId: deskId,
+            dockMinimized: false,
+            dockConvId: convId ?? null,
+          },
     ),
 
   minimizeDock: () =>

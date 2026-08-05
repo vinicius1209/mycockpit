@@ -82,11 +82,13 @@ import {
 import { DictationOverlay } from "@/components/chat/DictationOverlay"
 import { formatHotkey, registerDictationTarget } from "@/lib/dictationHotkey"
 import { useApp } from "@/store/app"
-import { ElapsedSince } from "./DeskMenu"
+import { deskLiveConvId, ElapsedSince } from "./DeskMenu"
 import {
   activeDockWidth,
   dockItemsStart,
+  needsDeskConversation,
   officeEscape,
+  otherLiveConvId,
   useOfficeUi,
 } from "./store"
 import { perfSpan } from "../engine/perf"
@@ -511,6 +513,11 @@ export function DeskDock() {
   // Run ativo nela ⇒ o corpo do dock vira o painel de missão compacto — o
   // status real aparece aqui, não só na mesa de reunião.
   const missionConvId = snap?.desk.convId ?? null
+  // Estado da mesa vem de uma conversa e o dock está noutra (mesa aberta antes
+  // do turno começar, ou restaurada do chip): em vez de vazio silencioso /
+  // histórico velho, o dock DIZ isso e leva pro fio que roda. Mesma regra do
+  // menu-balão (deskLiveConvId): missão e id sem conversa ficam de fora.
+  const otherConv = otherLiveConvId(convId, deskLiveConvId(snap?.desk))
   const missionView = useDeskMissionView(missionConvId)
   const missionGate = useDeskGate(missionConvId)
   const missionActive = showsMissionPanel(missionView)
@@ -536,10 +543,12 @@ export function DeskDock() {
     }
   }, [deskAgent])
 
-  // Ao abrir a mesa: garante a conversa (mais recente do par projeto+agent ou
-  // nova em background) e guarda o convId no store local.
+  // Ao abrir a mesa SEM conversa viva carimbada (mesa ociosa): garante a
+  // conversa da mesa (mais recente do par projeto+agent ou nova em background)
+  // e guarda o convId no store local. Com turno vivo o openDock já trouxe o fio
+  // que roda e este caminho não dispara.
   useEffect(() => {
-    if (!dockDeskId || dockDeskId === MISSION_TABLE_ID || convId) return
+    if (!needsDeskConversation(dockDeskId, convId)) return
     const d = parseDeskId(dockDeskId)
     let gone = false
     void ensureDeskConversation(d.projectId, d.agent).then((id) => {
@@ -834,6 +843,22 @@ export function DeskDock() {
           </p>
         )}
         <div className="flex flex-col gap-2.5">
+          {otherConv && (
+            <button
+              type="button"
+              onClick={() => useOfficeUi.getState().setDockConv(otherConv)}
+              aria-label="Abrir a conversa em que este agent está trabalhando"
+              className="flex items-center gap-2 rounded-md border border-st-running/40 bg-st-running/10 px-2.5 py-1.5 text-left text-[12px] text-foreground/90 transition-colors hover:bg-st-running/15"
+            >
+              <span className="size-1.5 shrink-0 rounded-full bg-st-running motion-safe:animate-pulse" />
+              <span className="min-w-0 flex-1">
+                Este agent está trabalhando em outra conversa deste projeto
+              </span>
+              <span className="shrink-0 font-medium text-st-running">
+                Abrir
+              </span>
+            </button>
+          )}
           <DockItemsList
             convId={convId}
             rev={rev}

@@ -2,8 +2,14 @@
 // vanilla + funções puras, sem DOM. Roda com:
 // bunx vitest run src/office/ui/ui.test.ts
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { BOSS_DESK_ID, NOTICE_BOARD_ID, type SimEvent } from "../engine/types"
-import { deskMenuKind, deskMenuPrimary } from "./DeskMenu"
+import {
+  BOSS_DESK_ID,
+  NOTICE_BOARD_ID,
+  type DeskSnapshot,
+  type OfficeSnapshot,
+  type SimEvent,
+} from "../engine/types"
+import { deskLiveConvId, deskMenuKind, deskMenuPrimary } from "./DeskMenu"
 import {
   applyRecovery,
   buildRecoveryChoice,
@@ -31,8 +37,11 @@ import {
   DOCK_ITEMS_WINDOW,
   decideDockLeave,
   decideEsc,
+  deskSnapshotById,
   dockItemsStart,
+  needsDeskConversation,
   officeEscape,
+  otherLiveConvId,
   useOfficeUi,
   type DockLeaveCtx,
 } from "./store"
@@ -45,10 +54,19 @@ const h = vi.hoisted(() => ({
   cancelDictation: vi.fn(async () => {}),
   cancelDeskTurn: vi.fn(async () => {}),
   openScheduledView: vi.fn(),
+  /** Conversas que estão numa missão RODANDO (deskMissionRunning do bridge). */
+  missionConvs: new Set<string>(),
+  /** Conversas que EXISTEM no store de chat (deskConvExists do bridge); null =
+   *  qualquer id existe (caso comum: snapshot real vem do próprio useChat). */
+  knownConvs: null as Set<string> | null,
 }))
 vi.mock("../bridge/hooks", () => ({
   dockLeaveCtx: () => h.ctx,
   openScheduledView: h.openScheduledView,
+  deskMissionRunning: (convId: string | null) =>
+    !!convId && h.missionConvs.has(convId),
+  deskConvExists: (convId: string | null) =>
+    !!convId && (h.knownConvs === null || h.knownConvs.has(convId)),
 }))
 vi.mock("../bridge/voice", () => ({ cancelDictation: h.cancelDictation }))
 vi.mock("../bridge/send", () => ({
@@ -77,10 +95,39 @@ function ctx(p: Partial<DockLeaveCtx> = {}): DockLeaveCtx {
   return { hasDraft: false, turnActive: false, ...p }
 }
 
+function mesaSnap(patch: Partial<DeskSnapshot> = {}): DeskSnapshot {
+  return {
+    id: DESK_A,
+    projectId: "proj-1",
+    agent: "claude-code",
+    state: "idle",
+    label: "Disponível",
+    ...patch,
+  }
+}
+
+/** Snapshot do office com as mesas dadas (o que o derive entrega ao store). */
+function officeSnap(...desks: DeskSnapshot[]): OfficeSnapshot {
+  return {
+    rooms: [
+      {
+        projectId: "proj-1",
+        name: "Projeto 1",
+        agg: "idle",
+        costUsd: 0,
+        desks,
+      },
+    ],
+    deliveries: [],
+  }
+}
+
 beforeEach(() => {
   // Reseta o store inteiro entre testes (getInitialState inclui as actions).
   useOfficeUi.setState(useOfficeUi.getInitialState(), true)
   h.ctx = ctx()
+  h.missionConvs.clear()
+  h.knownConvs = null
   h.cancelDictation.mockClear()
   h.openScheduledView.mockClear()
 })
@@ -149,6 +196,217 @@ describe("deskMenuPrimary — todas as primárias abrem o dock", () => {
     const st = useOfficeUi.getState()
     expect(st.dockDeskId).toBe(DESK_B)
     expect(st.dockConvId).toBeNull()
+  })
+})
+
+// --- estado e conteúdo do MESMO fio (mesa acesa abre a conversa que roda) ---
+
+describe("abrir a mesa leva a conversa VIVA (não a 'Mesa · <agent>' vazia)", () => {
+  it("mesa Digitando ⇒ a primária abre a conversa que RODA, sem pedir a da mesa", () => {
+    useOfficeUi.setState({
+      snapshot: officeSnap(
+        mesaSnap({ state: "typing", label: "Digitando", convId: "conv-viva" }),
+      ),
+    })
+    deskMenuPrimary(DESK_A)
+    const st = useOfficeUi.getState()
+    expect(st.dockDeskId).toBe(DESK_A)
+    expect(st.dockConvId).toBe("conv-viva")
+    // com o fio carimbado, o dock NÃO chama o ensureDeskConversation
+    expect(needsDeskConversation(st.dockDeskId, st.dockConvId)).toBe(false)
+  })
+
+  it("mesa Pensando ⇒ mesmo caminho (o estado veio dessa conversa)", () => {
+    useOfficeUi.setState({
+      snapshot: officeSnap(
+        mesaSnap({ state: "thinking", label: "Pensando", convId: "conv-viva" }),
+      ),
+    })
+    deskMenuPrimary(DESK_A)
+    expect(useOfficeUi.getState().dockConvId).toBe("conv-viva")
+  })
+
+  it("SEM turno vivo ⇒ nada é carimbado e o dock cai no fallback da mesa", () => {
+    useOfficeUi.setState({ snapshot: officeSnap(mesaSnap()) })
+    deskMenuPrimary(DESK_A)
+    const st = useOfficeUi.getState()
+    expect(st.dockConvId).toBeNull()
+    // é isto que dispara o ensureDeskConversation ("Mesa · <agent>")
+    expect(needsDeskConversation(st.dockDeskId, st.dockConvId)).toBe(true)
+  })
+
+  it("approval esperando resposta abre o fio do pedido (card no lugar certo)", () => {
+    useOfficeUi.setState({
+      snapshot: officeSnap(
+        mesaSnap({
+          state: "hand",
+          hand: "approval",
+          label: "Aguardando aprovação",
+          convId: "conv-approval",
+        }),
+      ),
+    })
+    deskMenuPrimary(DESK_A)
+    expect(useOfficeUi.getState().dockConvId).toBe("conv-approval")
+  })
+
+  it("fase de MISSÃO não vira conversa da mesa (o painel lê desk.convId)", () => {
+    h.missionConvs.add("conv-missao")
+    useOfficeUi.setState({
+      snapshot: officeSnap(
+        mesaSnap({ state: "typing", label: "Executando", convId: "conv-missao" }),
+      ),
+    })
+    deskMenuPrimary(DESK_A)
+    expect(useOfficeUi.getState().dockConvId).toBeNull()
+  })
+
+  it("mão levantada por GATE de missão também não adota a conversa da missão", () => {
+    h.missionConvs.add("conv-missao")
+    useOfficeUi.setState({
+      snapshot: officeSnap(
+        mesaSnap({
+          state: "hand",
+          hand: "gate",
+          label: "Precisa de você",
+          convId: "conv-missao",
+        }),
+      ),
+    })
+    deskMenuPrimary(DESK_A)
+    expect(useOfficeUi.getState().dockConvId).toBeNull()
+  })
+
+  it("tecla E (sem convId) resolve o MESMO fio que o botão do menu passa", () => {
+    const desk = mesaSnap({
+      state: "typing",
+      label: "Digitando",
+      convId: "conv-viva",
+    })
+    useOfficeUi.setState({ snapshot: officeSnap(desk) })
+    // botão do menu: passa o que tem em mãos (snap do próprio componente)
+    deskMenuPrimary(DESK_A, deskLiveConvId(desk))
+    const doBotao = useOfficeUi.getState().dockConvId
+    useOfficeUi.setState({ dockDeskId: null, dockConvId: null })
+    // tecla E: só o deskId — a resolução sai do snapshot do store
+    deskMenuPrimary(DESK_A)
+    expect(useOfficeUi.getState().dockConvId).toBe(doBotao)
+    expect(doBotao).toBe("conv-viva")
+  })
+
+  it("rail resolve o mesmo fio que o menu (openDeskFromBoss lê o snapshot)", () => {
+    const desk = mesaSnap({
+      state: "typing",
+      label: "Digitando",
+      convId: "conv-viva",
+    })
+    useOfficeUi.setState({ snapshot: officeSnap(desk) })
+    // o que o OfficeMode.openDeskFromBoss calcula a partir do deskId da rail
+    const snapshot = useOfficeUi.getState().snapshot
+    expect(deskLiveConvId(deskSnapshotById(snapshot, DESK_A))).toBe("conv-viva")
+    expect(deskSnapshotById(snapshot, DESK_B)).toBeUndefined()
+  })
+
+  it("mesa já aberta noutra conversa: o fio vivo assume; sem fio, preserva", () => {
+    const s = useOfficeUi.getState()
+    s.openDock(DESK_A, "conv-mesa")
+    s.openDock(DESK_A, "conv-viva") // turno começou em outro fio
+    expect(useOfficeUi.getState().dockConvId).toBe("conv-viva")
+    useOfficeUi.getState().openDock(DESK_A) // sem fio vivo ⇒ não zera
+    expect(useOfficeUi.getState().dockConvId).toBe("conv-viva")
+  })
+
+  it("deskLiveConvId: mesa apagada/ociosa ou sem convId ⇒ null", () => {
+    expect(deskLiveConvId(undefined)).toBeNull()
+    expect(deskLiveConvId(mesaSnap({ convId: "c1" }))).toBeNull() // idle
+    expect(
+      deskLiveConvId(mesaSnap({ state: "off", label: "Não detectado" })),
+    ).toBeNull()
+    expect(deskLiveConvId(mesaSnap({ state: "typing" }))).toBeNull() // sem conv
+  })
+
+  it("id sem conversa nenhuma (fixture do browser) não é adotado", () => {
+    // fora do Tauri o snapshot vem do sim-data: carimbar "sim-conv-1" deixaria
+    // o dock preso no "Abrindo a conversa da mesa…" — cai no fallback.
+    h.knownConvs = new Set(["conv-real"])
+    useOfficeUi.setState({
+      snapshot: officeSnap(
+        mesaSnap({ state: "typing", label: "Digitando", convId: "sim-conv-1" }),
+      ),
+    })
+    deskMenuPrimary(DESK_A)
+    const st = useOfficeUi.getState()
+    expect(st.dockConvId).toBeNull()
+    expect(needsDeskConversation(st.dockDeskId, st.dockConvId)).toBe(true)
+  })
+})
+
+// --- divergência honesta no dock (estado de um fio, conteúdo de outro) ------
+
+describe("otherLiveConvId — o dock diz que o trabalho está em outra conversa", () => {
+  // o 2º argumento é o fio VIVO da mesa (deskLiveConvId), a mesma régua do
+  // menu-balão: missão e id sem conversa já saíram fora antes de chegar aqui.
+  const vivo = (desk: DeskSnapshot) => deskLiveConvId(desk)
+
+  it("mesa trabalhando em conversa diferente da aberta ⇒ devolve o fio vivo", () => {
+    expect(
+      otherLiveConvId(
+        "conv-mesa",
+        vivo(mesaSnap({ state: "typing", convId: "conv-viva" })),
+      ),
+    ).toBe("conv-viva")
+    expect(
+      otherLiveConvId(
+        "conv-mesa",
+        vivo(mesaSnap({ state: "thinking", convId: "conv-viva" })),
+      ),
+    ).toBe("conv-viva")
+  })
+
+  it("mesma conversa ⇒ sem aviso (é o caso normal depois da correção)", () => {
+    expect(
+      otherLiveConvId(
+        "conv-viva",
+        vivo(mesaSnap({ state: "typing", convId: "conv-viva" })),
+      ),
+    ).toBeNull()
+  })
+
+  it("mesa parada ⇒ sem aviso (histórico velho não é trabalho em curso)", () => {
+    expect(
+      otherLiveConvId("conv-mesa", vivo(mesaSnap({ convId: "conv-outra" }))),
+    ).toBeNull()
+  })
+
+  it("fase de MISSÃO não vira aviso (o painel de missão já toma o dock)", () => {
+    h.missionConvs.add("conv-missao")
+    expect(
+      otherLiveConvId(
+        "conv-mesa",
+        vivo(mesaSnap({ state: "typing", convId: "conv-missao" })),
+      ),
+    ).toBeNull()
+  })
+
+  it("dock ainda resolvendo a conversa (null) ⇒ sem aviso, só o loader", () => {
+    expect(
+      otherLiveConvId(
+        null,
+        vivo(mesaSnap({ state: "typing", convId: "conv-viva" })),
+      ),
+    ).toBeNull()
+  })
+})
+
+describe("needsDeskConversation — quando o dock resolve a conversa da mesa", () => {
+  it("mesa de agent sem conversa ⇒ resolve; com conversa ⇒ não", () => {
+    expect(needsDeskConversation(DESK_A, null)).toBe(true)
+    expect(needsDeskConversation(DESK_A, "conv-viva")).toBe(false)
+  })
+
+  it("sem dock, ou mesa de REUNIÃO, nunca resolve conversa de mesa", () => {
+    expect(needsDeskConversation(null, null)).toBe(false)
+    expect(needsDeskConversation(MISSION_TABLE_ID, null)).toBe(false)
   })
 })
 

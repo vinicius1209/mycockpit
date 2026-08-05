@@ -51,7 +51,10 @@ function StatusDot({ color, pulse }: { color: string; pulse?: boolean }) {
 
 /** Linha de agent clicável — ENQUADRA a sala do agent e abre o dock de conversa
  *  (focusDesk → OfficeMode.openDeskFromBoss). Não abre o dock "às cegas": a
- *  câmera acompanha, corrigindo o "falar com quem você não vê". */
+ *  câmera acompanha, corrigindo o "falar com quem você não vê". A CONVERSA
+ *  aberta é a viva da mesa: o openDeskFromBoss a resolve do MESMO snapshot que
+ *  pinta esta linha (deskLiveConvId), então clicar num agent "Digitando" cai no
+ *  fio que roda, não numa conversa da mesa vazia. */
 function AgentRow({ desk }: { desk: DeskSnapshot }) {
   const focusDesk = useOfficeUi((s) => s.focusDesk)
   const off = desk.state === "off"

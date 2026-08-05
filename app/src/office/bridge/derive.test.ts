@@ -457,6 +457,27 @@ describe("deriveOfficeSnapshot — agregado e estados", () => {
     ).toBe("thinking")
   })
 
+  it("a mesa acesa carimba a conversa que RODA, não a conversa da mesa", () => {
+    // duas conversas do MESMO par projeto+agent: a da mesa (parada) e a que
+    // está rodando. Quem acende a mesa é a segunda — e é o convId dela que o
+    // snapshot leva, para o dock abrir o fio certo (estado e conteúdo juntos).
+    useChat.setState({
+      byId: {
+        "conv-mesa": conversa("p1", "claude-code", {
+          items: [textoItem("turno antigo")],
+        }),
+        "conv-viva": conversa("p1", "claude-code", {
+          running: true,
+          runId: "r-9",
+          items: [textoItem("trabalhando agora")],
+        }),
+      },
+    })
+    const desk = mesa(deriveOfficeSnapshot(), "p1", "claude-code")
+    expect(desk.state).toBe("typing")
+    expect(desk.convId).toBe("conv-viva")
+  })
+
   it("CLI não detectado ⇒ mesa off (fonte: settings.detected)", () => {
     setDetected({
       codex: {

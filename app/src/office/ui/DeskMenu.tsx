@@ -22,6 +22,8 @@ import {
 import {
   agentCssColor,
   agentLabel,
+  deskConvExists,
+  deskMissionRunning,
   fmtCost,
   openScheduledView,
   useBoardSchedules,
@@ -35,7 +37,7 @@ import { cancelDeskTurn, DESK_TITLE_PREFIX } from "../bridge/send"
 import { isRateLimitLabel, offInstruction } from "../bridge/derive"
 import { useMissionTableSig } from "../bridge/mission"
 import { MISSION_TABLE_ID, missionTableMenu, parseMissionSig } from "./missionTable"
-import { useOfficeUi } from "./store"
+import { deskSnapshotById, useOfficeUi } from "./store"
 
 // --- lógica pura (testável sem DOM) ----------------------------------------
 
@@ -65,18 +67,45 @@ export function deskMenuKind(
   }
 }
 
+/** Conversa VIVA da mesa: o fio que o derive carimbou no snapshot ao ACENDER a
+ *  mesa (turno linear rodando, ou approval esperando resposta). É esse que a
+ *  ação primária tem de abrir — o estado ("Digitando"/"Pensando") vem dele, e
+ *  abrir a "Mesa · <agent>" no lugar mostraria um painel vazio com o avatar
+ *  trabalhando. Mesa ociosa/apagada ⇒ null (o dock resolve a conversa da mesa,
+ *  política inalterada: nunca adota thread do usuário).
+ *
+ *  MISSÃO fica de fora de propósito: a conversa é da missão, o dock já mostra o
+ *  painel dela a partir de `desk.convId`, e adotá-la como conversa da mesa
+ *  mudaria o alvo do composer/Parar. Id que não corresponde a conversa nenhuma
+ *  (fixture do browser) também sai fora: o fallback é honesto, o dock preso em
+ *  "Abrindo a conversa da mesa…" não. */
+export function deskLiveConvId(snap: DeskSnapshot | undefined): string | null {
+  const convId = snap?.convId ?? null
+  if (!snap || !convId) return null
+  const live =
+    snap.state === "typing" ||
+    snap.state === "thinking" ||
+    (snap.state === "hand" && snap.hand === "approval")
+  if (!live) return null
+  if (deskMissionRunning(convId) || !deskConvExists(convId)) return null
+  return convId
+}
+
 /** AÇÃO PRIMÁRIA do menu (tecla E do OfficeMode e botão principal): abre o
- *  dock da mesa — pro estado hand, o card do gate/approval já está no fio.
+ *  dock da mesa NA CONVERSA QUE RODA — `convId` explícito quando o chamador já
+ *  o tem em mãos (o menu tem o snapshot), senão resolvido do snapshot do store
+ *  (tecla E). Pro estado hand, é isso que põe o card do gate/approval no fio.
  *  Exceções: a MESA DO BOSS (posto de comando, §8) não tem dock — a primária
  *  pede a Central via intenção no store (o OfficeMode consome); o QUADRO DE
  *  AVISOS abre a view Agendado do app (read-only nesta onda). Com um agent
  *  ESPERANDO DECISÃO em pé na mesa do Boss (gate-visit), a primária dela vira
  *  "Responder": abre o dock da MESA DELE (o gate card já está no fio). */
-export function deskMenuPrimary(deskId: string): void {
+export function deskMenuPrimary(deskId: string, convId?: string | null): void {
+  const s = useOfficeUi.getState()
   if (deskId === BOSS_DESK_ID) {
-    const s = useOfficeUi.getState()
     if (s.gateVisit) {
-      s.openDock(s.gateVisit.deskId)
+      const target = s.gateVisit.deskId
+      s.openDock(target, liveConvOf(target, convId))
       return
     }
     s.requestBossCenter()
@@ -86,7 +115,15 @@ export function deskMenuPrimary(deskId: string): void {
     openScheduledView()
     return
   }
-  useOfficeUi.getState().openDock(deskId)
+  s.openDock(deskId, liveConvOf(deskId, convId))
+}
+
+/** convId do chamador quando houver; senão, o vivo do snapshot corrente. */
+function liveConvOf(deskId: string, convId?: string | null): string | null {
+  if (convId !== undefined) return convId
+  return deskLiveConvId(
+    deskSnapshotById(useOfficeUi.getState().snapshot, deskId),
+  )
 }
 
 // --- pedaços ----------------------------------------------------------------
@@ -360,7 +397,10 @@ export function DeskMenu({
   const kind = deskMenuKind(snap?.state, missionRunning, recoveryPending)
   const name = desk.agentName ?? agentLabel(desk.agent)
   const color = agentCssColor(desk.agent)
-  const open = () => deskMenuPrimary(desk.id)
+  // O menu JÁ tem em mãos o fio que está rodando (mesmo `snap.convId` que o
+  // "Parar" usa): a primária leva ele pro dock em vez de deixar o dock abrir a
+  // conversa da mesa, vazia, enquanto o turno acontece em outra conversa.
+  const open = () => deskMenuPrimary(desk.id, deskLiveConvId(snap))
 
   const continueShort = continueTitle
     ? continueTitle.replace(DESK_TITLE_PREFIX, "").slice(0, 24)

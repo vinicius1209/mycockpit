@@ -346,6 +346,24 @@ export function useDeskMissionRunning(convId: string | null): boolean {
   )
 }
 
+/** Mesma leitura do useDeskMissionRunning FORA do render (ações da ui/: tecla
+ *  E, botão do menu-balão, rail). A ui/ não fala com os stores do app direto —
+ *  passa por aqui, que os testes mocam. */
+export function deskMissionRunning(convId: string | null): boolean {
+  return convId
+    ? useMission.getState().byConv[convId]?.status === "running"
+    : false
+}
+
+/** A conversa EXISTE no store de chat? Leitura não-hook usada antes de a ui/
+ *  adotar um convId vindo do snapshot: fora do Tauri o snapshot é fixture
+ *  (sim-data) e os ids dela não existem em conversa nenhuma — carimbar um
+ *  deles prenderia o dock no "Abrindo a conversa da mesa…". Falso ⇒ o dock
+ *  segue pro fallback (ensureDeskConversation). */
+export function deskConvExists(convId: string | null): boolean {
+  return !!convId && !!useChat.getState().byId[convId]
+}
+
 /** A conversa tem uma RECUPERAÇÃO pendente? (uma fase da missão parou num limite
  *  recuperável e o motor aguarda a troca de agent). Espelha o gate: enquanto
  *  true a mesa "levanta a mão" no menu de proximidade (mesmo tratamento). */

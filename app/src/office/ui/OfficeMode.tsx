@@ -41,6 +41,7 @@ import {
 } from "../bridge/hooks"
 import {
   activeDockWidth,
+  deskSnapshotById,
   DOCK_W,
   officeEscape,
   useOfficeUi,
@@ -49,7 +50,7 @@ import {
 import { Hud, OfficeMark } from "./Hud"
 import { DeskDock } from "./DeskDock"
 import { MissionDock } from "./MissionDock"
-import { deskMenuPrimary } from "./DeskMenu"
+import { deskLiveConvId, deskMenuPrimary } from "./DeskMenu"
 import { Prompts, type PromptsHandle } from "./Prompts"
 import {
   BossCenter,
@@ -236,7 +237,13 @@ export default function OfficeMode({ hidden = false }: { hidden?: boolean }) {
   function openDeskFromBoss(target: BossDeskTarget) {
     inspectRoom(target.projectId, DOCK_W)
     const ui = useOfficeUi.getState()
-    ui.openDock(target.id)
+    // Mesmo caminho do menu-balão/tecla E: a conversa VIVA da mesa (snapshot)
+    // vai junto — a rail chega aqui só com o deskId e, sem isso, o dock abriria
+    // a "Mesa · <agent>" vazia com o agent trabalhando em outro fio.
+    ui.openDock(
+      target.id,
+      deskLiveConvId(deskSnapshotById(ui.snapshot, target.id)),
+    )
     // No browser puro os ids do roteiro visual não existem no useChat; deixa
     // o dock resolver a conversa da mesa. No app real, preserva o id exato.
     if (target.convId && officeIsTauri()) ui.setDockConv(target.convId)

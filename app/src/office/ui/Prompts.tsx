@@ -81,10 +81,6 @@ export const Prompts = forwardRef<PromptsHandle, { plan: FloorPlan | null }>(
     // Gate-visit: agent em pé na mesa do Boss esperando decisão (pack mission
     // da cena → store). waiting=true acende o balão "✋" no ponto de espera.
     const gateVisit = useOfficeUi((s) => s.gateVisit)
-    // Streaming vira balão sobre o agent SEMPRE que a mesa do dock tem turno
-    // rodando (§5.4 v2) — dock aberto incluso (o dock mostra o texto pleno).
-    // Seletor por VALOR (string|null): só re-renderiza quando o snippet muda.
-    const streamText = useDeskStreamSnippet(dockConvId, dockDeskId !== null)
 
     const desks = useMemo(() => {
       const m = new Map<string, DeskPlacement>()
@@ -203,9 +199,18 @@ export const Prompts = forwardRef<PromptsHandle, { plan: FloorPlan | null }>(
     // Balão de streaming: turno da mesa do dock rodando. O texto vem do conv
     // (snippet); sem output ainda (pensando) ⇒ "…" animado — o sinal de "está
     // rodando" vem do SNAPSHOT (typing/thinking), que também cobre a fixture.
-    const dockSnapState = snapOf(dockDeskId)?.state
+    const dockSnap = snapOf(dockDeskId)
+    const dockSnapState = dockSnap?.state
     const dockTurnLive =
       dockSnapState === "typing" || dockSnapState === "thinking"
+    // Texto e "vivo" saem da MESMA conversa: a que acendeu a mesa (snapshot);
+    // o dockConvId só entra quando a mesa não carimbou nenhuma. Sem isso, uma
+    // divergência entre as duas deixava "…" animado eternamente sem texto.
+    // Seletor por VALOR (string|null): só re-renderiza quando o snippet muda.
+    const streamText = useDeskStreamSnippet(
+      dockSnap?.convId ?? dockConvId,
+      dockDeskId !== null,
+    )
     const streamDeskId =
       dockDeskId && (streamText !== null || dockTurnLive) ? dockDeskId : null
 
