@@ -191,7 +191,15 @@ export function SddView() {
     try {
       const slug = await createPlan(project.path, desc, track)
       // nasceu AQUI: já entra adotado (os gates dele contam desde o primeiro dia).
-      await adoptPlan(project.id, slug)
+      // Se a marca não gravar (banco travado), o plano existe no disco mas cai
+      // em "Encontrados no projeto" no Painel: diz isso em vez de deixar o
+      // usuário achar que o app perdeu a procedência do que ele acabou de criar.
+      if (!(await adoptPlan(project.id, slug))) {
+        toast.warning("Plano criado, mas não consegui marcar a adoção", {
+          description:
+            "Ele aparece em 'Encontrados no projeto' no Painel; use 'Adotar' por lá.",
+        })
+      }
       const ps = (await loadSddPlans(project.path)).filter((p) => p.hasManifest)
       setPlans(ps)
       useApp.getState().setSddFocus(slug)

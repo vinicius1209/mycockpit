@@ -5,12 +5,12 @@
 
 import {
   adoptSddPlan,
+  listDrivenPlanKeys,
   listOpenProposals,
   listPendingDecisions,
   listSddPlanMarks,
   type CardRecord,
   type LeadProposalRecord,
-  type SddPlanMark,
 } from "@/lib/db"
 import { loadSddPlans } from "@/lib/sdd"
 import type { Project } from "@/lib/types"
@@ -174,36 +174,96 @@ function markKey(projectId: string, slug: string): string {
   return `${projectId}${MARK_SEP}${slug}`
 }
 
-/** Marcas por (projeto, slug). `null` = INDISPONÍVEL (sem banco ou falha de
- *  leitura) → FAIL-OPEN no chamador: todo gate volta a contar como pendência,
- *  igual antes desta regra. Esconder pendência real por erro de leitura seria o
- *  pior dos dois mundos; contar demais é só barulho. O erro não é engolido em
- *  silêncio (ADR-017): vai pro console com o motivo. */
-async function loadPlanMarks(): Promise<Map<string, SddPlanMark> | null> {
-  let rows: SddPlanMark[] | null
-  try {
-    rows = await listSddPlanMarks()
-  } catch (e) {
+/** O que o app sabe sobre um plano do disco: se o humano já o assumiu por aqui
+ *  e se mandou sumir da lista. */
+interface PlanAdoption {
+  adopted: boolean
+  ignored: boolean
+}
+
+/** Adoção por (projeto, slug) a partir de DUAS fontes, em união:
+ *  1. `stage_runs` — só ganha linha quando o COCKPIT dirigiu a etapa. É prova
+ *     documental, não anotação: vale retroativamente (plano dirigido antes desta
+ *     regra já nasce adotado) e sobrevive a uma falha de escrita da marca.
+ *  2. `sdd_plan_marks` — a marca do gesto que NÃO deixa outro rastro (criar o
+ *     plano, aprovar o PRD, marcar/sincronizar etapa) e o `ignorado`.
+ *  A marca virou CACHE do gesto, não fonte única — era ela sozinha que fazia a
+ *  escrita ser fail-closed enquanto a leitura era fail-open.
+ *
+ *  `null` = INDISPONÍVEL (sem banco ou falha de leitura em QUALQUER das duas) →
+ *  FAIL-OPEN no chamador: todo gate volta a contar como pendência, igual antes
+ *  desta regra. Esconder pendência real por erro de leitura seria o pior dos
+ *  dois mundos; contar demais é só barulho. O erro não é engolido em silêncio
+ *  (ADR-017): vai pro console com o motivo. */
+async function loadPlanAdoptions(): Promise<Map<string, PlanAdoption> | null> {
+  // allSettled (e não all): com as duas rejeitando, o `all` deixaria a 2ª
+  // rejeição sem tratamento.
+  const [marksR, drivenR] = await Promise.allSettled([
+    listSddPlanMarks(),
+    listDrivenPlanKeys(),
+  ])
+  if (marksR.status === "rejected") {
     console.warn(
       "[inbox] falha ao ler as marcas de plano; contando todo gate como pendência",
-      e,
+      marksR.reason,
     )
     return null
   }
-  if (!rows) return null
-  return new Map(rows.map((m) => [markKey(m.projectId, m.slug), m]))
+  if (drivenR.status === "rejected") {
+    console.warn(
+      "[inbox] falha ao ler as etapas dirigidas; contando todo gate como pendência",
+      drivenR.reason,
+    )
+    return null
+  }
+  const marks = marksR.value
+  const driven = drivenR.value
+  if (!marks || !driven) return null
+  const out = new Map<string, PlanAdoption>()
+  for (const d of driven) {
+    out.set(markKey(d.projectId, d.slug), { adopted: true, ignored: false })
+  }
+  for (const m of marks) {
+    const key = markKey(m.projectId, m.slug)
+    out.set(key, {
+      // etapa dirigida pelo cockpit adota mesmo sem marca (e vice-versa)
+      adopted: m.adoptedAt != null || out.get(key)?.adopted === true,
+      ignored: m.ignoredAt != null,
+    })
+  }
+  return out
 }
+
+// Espera entre as tentativas de gravar a adoção. Curta e finita: a marca é
+// cache, o usuário não pode ficar esperando por ela.
+const ADOPT_RETRY_MS = [90, 240] as const
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Registra que o humano ENCOSTOU no plano PELO APP (criou aqui, aprovou o PRD,
  *  rodou/marcou/sincronizou etapa): daí em diante o gate conta como pendência
- *  normal, inclusive em outra sessão (persistido). Best-effort COM AVISO: a
- *  ação do usuário já aconteceu no disco, falhar em anotar não pode derrubá-la. */
-export async function adoptPlan(projectId: string, slug: string): Promise<void> {
-  try {
-    await adoptSddPlan(projectId, slug)
-  } catch (e) {
-    console.warn("[inbox] falha ao marcar a adoção do plano", projectId, slug, e)
+ *  normal, inclusive em outra sessão (persistido). Não derruba a ação do
+ *  usuário (ela já aconteceu no disco), mas também não desiste na primeira:
+ *  `database is locked` é transitório, e um plano que NASCEU aqui aparecendo em
+ *  "Encontrados no projeto" seria o app mentindo sobre a própria procedência.
+ *  Devolve `false` quando não conseguiu gravar — o chamador avisa o humano, que
+ *  tem o botão "Adotar" no item pra se recuperar. `wait` é injetável (teste). */
+export async function adoptPlan(
+  projectId: string,
+  slug: string,
+  wait: (ms: number) => Promise<unknown> = sleep,
+): Promise<boolean> {
+  let last: unknown
+  for (let i = 0; i <= ADOPT_RETRY_MS.length; i++) {
+    if (i > 0) await wait(ADOPT_RETRY_MS[i - 1])
+    try {
+      await adoptSddPlan(projectId, slug)
+      return true
+    } catch (e) {
+      last = e
+    }
   }
+  console.warn("[inbox] falha ao marcar a adoção do plano", projectId, slug, last)
+  return false
 }
 
 export async function scanDecisions(
@@ -229,18 +289,18 @@ export async function scanDecisions(
 
   // 2. gates do SDD por projeto (fs; projeto sem .claude/plans devolve []).
   //    Cada gate carrega sua PROCEDÊNCIA: descoberto no disco (não conta no
-  //    badge) × adotado por um gesto seu aqui dentro (conta). As marcas são do
-  //    app, nunca do .claude/plans do usuário.
-  const marks = await loadPlanMarks()
+  //    badge) × adotado por um gesto seu aqui dentro (conta). O registro da
+  //    adoção é do app, nunca do .claude/plans do usuário.
+  const adoptions = await loadPlanAdoptions()
   const scans = await Promise.all(
     projects.map(async (p) => ({ p, plans: await loadSddPlans(p.path) })),
   )
   for (const { p, plans } of scans) {
     for (const plan of plans) {
-      const mark = marks?.get(markKey(p.id, plan.slug))
-      // marks == null (sem banco / falha de leitura) ⇒ fail-open: tudo adotado.
-      const discovered = marks != null && mark?.adoptedAt == null
-      const ignored = marks != null && mark?.ignoredAt != null
+      const a = adoptions?.get(markKey(p.id, plan.slug))
+      // adoptions == null (sem banco / falha de leitura) ⇒ fail-open: tudo adotado.
+      const discovered = adoptions != null && !a?.adopted
+      const ignored = adoptions != null && a?.ignored === true
       if (ignored && !opts.includeIgnored) continue
       const origin: DecisionOrigin = {
         path: `.claude/plans/${plan.slug}`,

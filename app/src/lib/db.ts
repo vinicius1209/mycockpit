@@ -185,17 +185,23 @@ export async function restoreProject(id: string): Promise<void> {
 /** S1.3 — "Excluir de vez" um projeto JÁ ARQUIVADO: apaga a linha do projeto,
  *  as conversas e os agendamentos dele (um schedule apontando pra projeto morto
  *  seguiria disparando automação fantasma). Cards do projeto morrem junto (o
- *  board é por projeto; linha órfã seria lixo invisível). Métricas históricas
- *  (stage_runs, turn_costs, deliveries, lessons) FICAM — são registro do que
- *  aconteceu, não estado vivo. Blobs de anexo órfãos caem no GC (gcAttachments
- *  via listConvRefs). Irreversível — o caller SEMPRE confirma antes. */
+ *  board é por projeto; linha órfã seria lixo invisível). As marcas de plano SDD
+ *  (`sdd_plan_marks`) também morrem: são ESTADO VIVO do inbox ("este plano conta
+ *  no badge"), não registro histórico — sem isso ficariam linhas ÓRFÃS de um
+ *  project_id que não existe mais (re-adicionar a mesma pasta gera id novo, e
+ *  nada nunca mais leria nem limparia as antigas). Métricas históricas
+ *  (stage_runs, turn_costs, deliveries, lessons)
+ *  FICAM — são registro do que aconteceu. Blobs de anexo órfãos caem no GC
+ *  (gcAttachments via listConvRefs). Irreversível — o caller SEMPRE confirma. */
 export async function hardDeleteProject(id: string): Promise<void> {
   const db = await getDb()
   if (!db) return
   await ensureScheduleTables(db)
   await ensureBoardTables(db)
+  await ensureSddMarkTables(db)
   await db.execute("DELETE FROM schedules WHERE project_id = $1", [id])
   await db.execute("DELETE FROM cards WHERE project_id = $1", [id])
+  await db.execute("DELETE FROM sdd_plan_marks WHERE project_id = $1", [id])
   await db.execute("DELETE FROM conversations WHERE project_id = $1", [id])
   await db.execute("DELETE FROM projects WHERE id = $1", [id])
 }
@@ -621,6 +627,24 @@ export async function listStageRuns(
   } catch {
     return []
   }
+}
+
+/** Pares (projeto, slug) com PELO MENOS uma etapa SDD DIRIGIDA pelo cockpit.
+ *  `stage_runs` só ganha linha quando o app rodou a etapa, então isso é PROVA
+ *  DOCUMENTAL de que o humano encostou no plano por aqui, independente da marca
+ *  em `sdd_plan_marks` (que é cache do gesto, não a única fonte). Vale
+ *  retroativamente: plano dirigido antes de existir a marca já nasce adotado.
+ *  REJEITA em erro real e devolve `null` sem banco, mesmo contrato do
+ *  `listSddPlanMarks` — o inbox precisa distinguir "não achei" de "não li". */
+export async function listDrivenPlanKeys(): Promise<
+  { projectId: string; slug: string }[] | null
+> {
+  const db = await getDb()
+  if (!db) return null
+  const rows = await db.select<{ project_id: string; slug: string }[]>(
+    "SELECT DISTINCT project_id, slug FROM stage_runs",
+  )
+  return rows.map((r) => ({ projectId: r.project_id, slug: r.slug }))
 }
 
 /** Disputas pendentes de decisão em TODAS as conversas (pro inbox de decisões),
@@ -1248,15 +1272,17 @@ export async function adoptSddPlan(
   )
 }
 
-/** Liga/desliga o "ignorar este plano" (reversível pela lista de ignorados). */
+/** Liga/desliga o "ignorar este plano" (reversível pela lista de ignorados).
+ *  Devolve `false` quando NÃO houve banco pra gravar: sem isso a UI sumia com o
+ *  item na base de um no-op (estado real, nunca teatro). */
 export async function setSddPlanIgnored(
   projectId: string,
   slug: string,
   ignored: boolean,
   now = Date.now(),
-): Promise<void> {
+): Promise<boolean> {
   const db = await getDb()
-  if (!db) return
+  if (!db) return false
   await ensureSddMarkTables(db)
   await db.execute(
     `INSERT INTO sdd_plan_marks (project_id, slug, adopted_at, ignored_at)
@@ -1264,6 +1290,7 @@ export async function setSddPlanIgnored(
      ON CONFLICT(project_id, slug) DO UPDATE SET ignored_at = excluded.ignored_at`,
     [projectId, slug, ignored ? now : null],
   )
+  return true
 }
 
 // ---------------- Ledger de custo por turno (turn_costs) ----------------

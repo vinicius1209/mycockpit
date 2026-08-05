@@ -31,6 +31,7 @@ import { useSchedules } from "@/store/schedules"
 import { openCardConversation, useCards } from "@/store/cards"
 import { fmtUntilShort } from "@/lib/schedules"
 import {
+  adoptPlan,
   cardDecisions,
   foundDecisions,
   pendingDecisions,
@@ -560,9 +561,11 @@ function ProposalCard({
  *  idade explícitas — 68 dias de dívida não pode parecer urgência de hoje. */
 function FoundRow({
   d,
+  onAdopt,
   onIgnore,
 }: {
   d: Extract<Decision, { kind: "prd" | "pr" }>
+  onAdopt: () => void
   onIgnore: () => void
 }) {
   const go = () => void goTo(d)
@@ -592,6 +595,16 @@ function FoundRow({
         {d.origin.path}
         {age ? ` · criado ${age}` : ""}
       </span>
+      {/* "Adotar" é o gesto explícito de trazer o plano pra fila (e o resgate
+          de quem nasceu aqui, mas perdeu a marca da adoção). */}
+      <GhostAction
+        onClick={(e) => {
+          e.stopPropagation()
+          onAdopt()
+        }}
+      >
+        Adotar
+      </GhostAction>
       <GhostAction
         onClick={(e) => {
           e.stopPropagation()
@@ -830,10 +843,15 @@ export function MissionControl() {
   )
 
   /** "Ignorar": some da lista (marca no BANCO DO APP, nunca no .claude/plans).
-   *  Reverter é no sino, que é quem lista os ignorados. Falhou = não some. */
+   *  Reverter é no sino, que é quem lista os ignorados. Falhou = não some (nem
+   *  quando "falhar" é não ter banco: sumir na base de um no-op seria teatro). */
   function handleIgnorePlan(d: Extract<Decision, { kind: "prd" | "pr" }>) {
     void setSddPlanIgnored(d.projectId, d.slug, true)
-      .then(() =>
+      .then((saved) => {
+        if (!saved) {
+          toast.error("Sem banco: não dá pra ignorar o plano agora")
+          return
+        }
         setDecisions((prev) =>
           prev.filter(
             (x) =>
@@ -843,9 +861,28 @@ export function MissionControl() {
                 x.slug === d.slug
               ),
           ),
-        ),
-      )
-      .catch(() => toast.error("Falha ao ignorar o plano"))
+        )
+      })
+      .catch((e) => {
+        console.error("[painel] falha ao ignorar o plano", d.projectId, d.slug, e)
+        toast.error("Falha ao ignorar o plano")
+      })
+  }
+
+  /** "Adotar": o plano passa a contar como pendência de verdade (sobe pra
+   *  "Precisam de você"). É também o gesto de RECUPERAÇÃO quando o plano nasceu
+   *  aqui mas a marca da adoção não gravou (banco travado no instante da
+   *  criação) e ele apareceu, errado, como "encontrado no projeto". */
+  function handleAdoptPlan(d: Extract<Decision, { kind: "prd" | "pr" }>) {
+    void adoptPlan(d.projectId, d.slug).then((ok) => {
+      if (!ok) {
+        toast.error("Não consegui adotar o plano", {
+          description: "Nada mudou. Tente de novo em instantes.",
+        })
+        return
+      }
+      setRefreshTick((t) => t + 1) // re-varre: o item muda de seção
+    })
   }
 
   /** Dispensa a proposta do lead (persistido) e a tira da fila na hora. */
@@ -1163,6 +1200,7 @@ export function MissionControl() {
                   <FoundRow
                     key={`found:${d.projectId}:${d.slug}`}
                     d={d}
+                    onAdopt={() => handleAdoptPlan(d)}
                     onIgnore={() => handleIgnorePlan(d)}
                   />
                 ))}

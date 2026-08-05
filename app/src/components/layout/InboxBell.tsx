@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   AlertCircle,
+  BellPlus,
   Check,
   CheckCheck,
   ChevronDown,
@@ -36,6 +37,7 @@ import { useNotifs, type Notification } from "@/store/notifications"
 import { agentLabel } from "@/lib/agent"
 import { dismissProposal, setSddPlanIgnored } from "@/lib/db"
 import {
+  adoptPlan,
   cardDecisions,
   foundDecisions,
   ignoredDecisions,
@@ -164,16 +166,22 @@ function decisionMeta(d: Decision): string {
 
 /** Uma linha do inbox. `action` é o gesto discreto do hover (dispensar a
  *  proposta, ignorar o plano descoberto, restaurar o ignorado). */
+interface RowAction {
+  icon: typeof X
+  label: string
+  run: () => void
+}
+
 function DecisionRow({
   d,
-  action,
+  actions,
   muted,
 }: {
   d: Decision
-  action?: { icon: typeof X; label: string; run: () => void }
+  /** Ações da linha (aparecem no hover, sem navegar). */
+  actions?: RowAction[]
   muted?: boolean
 }) {
-  const Icon = action?.icon
   return (
     <DropdownMenuItem
       onSelect={() => void goTo(d)}
@@ -188,21 +196,22 @@ function DecisionRow({
       >
         <DecisionIcon d={d} />
         <span className="min-w-0 flex-1 truncate">{decisionTitle(d)}</span>
-        {action && Icon && (
+        {actions?.map(({ icon: Icon, label, run }) => (
           <button
+            key={label}
             onClick={(e) => {
               // age SEM navegar (o item some/volta na hora).
               e.stopPropagation()
               e.preventDefault()
-              action.run()
+              run()
             }}
-            title={action.label}
-            aria-label={action.label}
+            title={label}
+            aria-label={label}
             className="hidden shrink-0 rounded p-0.5 text-muted-foreground transition-colors group-hover/decision:block hover:text-foreground"
           >
             <Icon className="size-3" />
           </button>
-        )}
+        ))}
       </span>
       <span className="w-full truncate pl-[22px] text-[11px] text-muted-foreground">
         {decisionMeta(d)}
@@ -264,14 +273,34 @@ export function InboxBell() {
   const ignored = useMemo(() => ignoredDecisions(decisions), [decisions])
 
   /** Ignorar/restaurar um gate do SDD. Persistido na tabela do app (o
-   *  .claude/plans do usuário NUNCA é escrito). Falhou = o item NÃO some. */
+   *  .claude/plans do usuário NUNCA é escrito). Falhou (inclusive "sem banco")
+   *  = o item NÃO some. */
   const setIgnored = useCallback(
     (d: Extract<Decision, { kind: "prd" | "pr" }>, ignore: boolean) => {
       void setSddPlanIgnored(d.projectId, d.slug, ignore)
-        .then(refresh)
+        .then((saved) => {
+          if (!saved) {
+            console.warn("[inbox] sem banco: o plano não foi ignorado/restaurado")
+            return
+          }
+          refresh()
+        })
         .catch((err) => {
           console.warn("[inbox] falha ao ignorar/restaurar o plano", err)
         })
+    },
+    [refresh],
+  )
+
+  /** Adotar um gate ACHADO no disco: ele sobe pra "Precisam de você" e passa a
+   *  contar no badge. Também é o resgate do plano que nasceu no app e perdeu a
+   *  marca da adoção (banco travado na hora da criação). */
+  const adopt = useCallback(
+    (d: Extract<Decision, { kind: "prd" | "pr" }>) => {
+      void adoptPlan(d.projectId, d.slug).then((ok) => {
+        // adoptPlan já avisou no console; sem gravação, nada muda de seção.
+        if (ok) refresh()
+      })
     },
     [refresh],
   )
@@ -326,28 +355,32 @@ export function InboxBell() {
             <DecisionRow
               key={decisionKey(d)}
               d={d}
-              action={
+              actions={
                 d.kind === "proposal"
-                  ? {
-                      icon: X,
-                      label: "Dispensar a proposta",
-                      run: () =>
-                        void dismissProposal(d.proposalId)
-                          .then(refresh)
-                          .catch((err) => {
-                            // falhou = o item FICA na fila (não some mentindo).
-                            console.warn(
-                              "[inbox] falha ao dispensar a proposta",
-                              err,
-                            )
-                          }),
-                    }
+                  ? [
+                      {
+                        icon: X,
+                        label: "Dispensar a proposta",
+                        run: () =>
+                          void dismissProposal(d.proposalId)
+                            .then(refresh)
+                            .catch((err) => {
+                              // falhou = o item FICA na fila (não some mentindo).
+                              console.warn(
+                                "[inbox] falha ao dispensar a proposta",
+                                err,
+                              )
+                            }),
+                      },
+                    ]
                   : d.kind === "prd" || d.kind === "pr"
-                    ? {
-                        icon: EyeOff,
-                        label: "Ignorar este plano",
-                        run: () => setIgnored(d, true),
-                      }
+                    ? [
+                        {
+                          icon: EyeOff,
+                          label: "Ignorar este plano",
+                          run: () => setIgnored(d, true),
+                        },
+                      ]
                     : undefined
               }
             />
@@ -367,13 +400,20 @@ export function InboxBell() {
                 key={decisionKey(d)}
                 d={d}
                 muted
-                action={
+                actions={
                   d.kind === "prd" || d.kind === "pr"
-                    ? {
-                        icon: EyeOff,
-                        label: "Ignorar este plano",
-                        run: () => setIgnored(d, true),
-                      }
+                    ? [
+                        {
+                          icon: BellPlus,
+                          label: "Adotar (passa a contar como pendência)",
+                          run: () => adopt(d),
+                        },
+                        {
+                          icon: EyeOff,
+                          label: "Ignorar este plano",
+                          run: () => setIgnored(d, true),
+                        },
+                      ]
                     : undefined
                 }
               />
@@ -402,13 +442,15 @@ export function InboxBell() {
                   key={decisionKey(d)}
                   d={d}
                   muted
-                  action={
+                  actions={
                     d.kind === "prd" || d.kind === "pr"
-                      ? {
-                          icon: Undo2,
-                          label: "Trazer de volta",
-                          run: () => setIgnored(d, false),
-                        }
+                      ? [
+                          {
+                            icon: Undo2,
+                            label: "Trazer de volta",
+                            run: () => setIgnored(d, false),
+                          },
+                        ]
                       : undefined
                   }
                 />

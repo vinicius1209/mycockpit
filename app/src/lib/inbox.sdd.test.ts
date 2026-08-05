@@ -22,6 +22,13 @@ import type { Project } from "@/lib/types"
 // Estado dos mocks (resetado a cada teste).
 let marks: SddPlanMark[] | null = []
 let marksThrows = false
+/** (project_id, slug) com etapa DIRIGIDA pelo cockpit — as linhas de stage_runs,
+ *  a prova documental da adoção. */
+let driven: { projectId: string; slug: string }[] | null = []
+let drivenThrows = false
+/** Falhas que o adoptSddPlan simula antes de aceitar (retry curto). */
+let adoptFailures = 0
+let adoptCalls = 0
 let fusionPendentes: { convId: string; projectId: string; title: string | null }[] = []
 let propostas: {
   id: string
@@ -37,7 +44,16 @@ vi.mock("@/lib/db", () => ({
     marksThrows
       ? Promise.reject(new Error("database is locked"))
       : Promise.resolve(marks),
-  adoptSddPlan: () => Promise.resolve(),
+  listDrivenPlanKeys: () =>
+    drivenThrows
+      ? Promise.reject(new Error("database is locked"))
+      : Promise.resolve(driven),
+  adoptSddPlan: () => {
+    adoptCalls++
+    return adoptCalls <= adoptFailures
+      ? Promise.reject(new Error("database is locked"))
+      : Promise.resolve()
+  },
 }))
 
 // loadSddPlans é o único mock do módulo do SDD: o NORMALIZADOR real (parseSddPlan)
@@ -51,6 +67,7 @@ vi.mock("@/lib/sdd", async (orig) => {
 })
 
 import {
+  adoptPlan,
   cardDecisions,
   foundDecisions,
   ignoredDecisions,
@@ -327,6 +344,10 @@ const prime = projeto("p-prime", "prime-sales-hub", "/Users/vm/prime-sales-hub")
 beforeEach(() => {
   marks = []
   marksThrows = false
+  driven = []
+  drivenThrows = false
+  adoptFailures = 0
+  adoptCalls = 0
   fusionPendentes = []
   propostas = []
   for (const k of Object.keys(planosPorPath)) delete planosPorPath[k]
@@ -409,6 +430,82 @@ describe("scanDecisions — adoção (gesto humano PELO APP)", () => {
       },
     ]
     expect(pendingDecisions(await scanDecisions([ingresso]))).toHaveLength(0)
+  })
+})
+
+describe("scanDecisions — adoção derivada de stage_runs (prova documental)", () => {
+  it("etapa dirigida pelo cockpit adota o plano MESMO sem marca gravada", async () => {
+    // o cenário da auditoria: o gesto aconteceu, a marca não gravou.
+    marks = []
+    driven = [{ projectId: ingresso.id, slug: "sdd-auth-05-mobile-mfa" }]
+    const ds = await scanDecisions([ingresso])
+    const pend = pendingDecisions(ds)
+    expect(pend.map((d) => (d.kind === "prd" ? d.slug : ""))).toEqual([
+      "sdd-auth-05-mobile-mfa",
+    ])
+    expect(foundDecisions(ds).map((d) => (d.kind === "prd" ? d.slug : ""))).toEqual([
+      "sdd-auth-06-cleanup",
+    ])
+  })
+
+  it("retroativo: plano dirigido ANTES desta regra não é rebaixado a descoberto", async () => {
+    // banco antigo: nenhuma linha em sdd_plan_marks, só o histórico de runs.
+    marks = []
+    driven = [
+      { projectId: ingresso.id, slug: "sdd-auth-05-mobile-mfa" },
+      { projectId: ingresso.id, slug: "sdd-auth-06-cleanup" },
+    ]
+    expect(pendingDecisions(await scanDecisions([ingresso]))).toHaveLength(2)
+  })
+
+  it("etapa dirigida em OUTRO projeto com o mesmo slug não adota o plano daqui", async () => {
+    driven = [{ projectId: "outro-projeto", slug: "sdd-auth-05-mobile-mfa" }]
+    expect(pendingDecisions(await scanDecisions([ingresso]))).toHaveLength(0)
+  })
+
+  it("ignorar vence a adoção derivada (o gesto explícito manda)", async () => {
+    driven = [{ projectId: ingresso.id, slug: "sdd-auth-05-mobile-mfa" }]
+    marks = [
+      {
+        projectId: ingresso.id,
+        slug: "sdd-auth-05-mobile-mfa",
+        adoptedAt: null,
+        ignoredAt: 1_770_000_000_000,
+      },
+    ]
+    const ds = await scanDecisions([ingresso], { includeIgnored: true })
+    expect(pendingDecisions(ds)).toHaveLength(0)
+    expect(ignoredDecisions(ds)).toHaveLength(1)
+  })
+
+  it("falha ao ler as etapas dirigidas também é fail-open (conta tudo)", async () => {
+    drivenThrows = true
+    const ds = await scanDecisions([ingresso])
+    expect(pendingDecisions(ds)).toHaveLength(2)
+    expect(foundDecisions(ds)).toHaveLength(0)
+  })
+})
+
+describe("adoptPlan — a escrita não desiste na primeira", () => {
+  const semEspera = () => Promise.resolve()
+
+  it("banco travado numa tentativa: a seguinte grava e a adoção vale", async () => {
+    adoptFailures = 1
+    expect(await adoptPlan(ingresso.id, "sdd-auth-05-mobile-mfa", semEspera)).toBe(
+      true,
+    )
+    expect(adoptCalls).toBe(2)
+  })
+
+  it("travado em todas: devolve false (o chamador avisa, não finge que gravou)", async () => {
+    adoptFailures = 99
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    expect(await adoptPlan(ingresso.id, "sdd-auth-05-mobile-mfa", semEspera)).toBe(
+      false,
+    )
+    expect(adoptCalls).toBe(3) // 1 + 2 retries
+    expect(warn).toHaveBeenCalled() // ADR-017: nada de catch silencioso
+    warn.mockRestore()
   })
 })
 
