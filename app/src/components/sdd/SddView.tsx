@@ -68,6 +68,23 @@ import {
 } from "@/lib/sdd"
 import { cn } from "@/lib/utils"
 
+/** Marca a adoção do plano (ADR-032) e AVISA quando não conseguiu gravar: sem
+ *  isso o gesto do humano some em silêncio e o plano cai, errado, em
+ *  "Encontrados no projeto". Vale pros gestos que não deixam outro rastro
+ *  (criar, aprovar PRD, marcar/sincronizar etapa); etapa DIRIGIDA não precisa,
+ *  a linha em stage_runs já prova a adoção sozinha. */
+async function adoptOrWarn(
+  projectId: string,
+  slug: string,
+  titulo = "Não consegui marcar a adoção do plano",
+): Promise<void> {
+  if (await adoptPlan(projectId, slug)) return
+  toast.warning(titulo, {
+    description:
+      "Ele fica em 'Encontrados no projeto' no Painel; use 'Adotar' por lá.",
+  })
+}
+
 /** "5 gates passaram · 1 falhou · 2 não rodados" (omite zeros). */
 function gateSummary(gc: { pass: number; fail: number; notRun: number }): string {
   const parts: string[] = []
@@ -194,12 +211,7 @@ export function SddView() {
       // Se a marca não gravar (banco travado), o plano existe no disco mas cai
       // em "Encontrados no projeto" no Painel: diz isso em vez de deixar o
       // usuário achar que o app perdeu a procedência do que ele acabou de criar.
-      if (!(await adoptPlan(project.id, slug))) {
-        toast.warning("Plano criado, mas não consegui marcar a adoção", {
-          description:
-            "Ele aparece em 'Encontrados no projeto' no Painel; use 'Adotar' por lá.",
-        })
-      }
+      await adoptOrWarn(project.id, slug, "Plano criado, mas não consegui marcar a adoção")
       const ps = (await loadSddPlans(project.path)).filter((p) => p.hasManifest)
       setPlans(ps)
       useApp.getState().setSddFocus(slug)
@@ -564,7 +576,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
     setSyncing(true)
     try {
       await setPlanStage(project.path, plan.slug, effective)
-      await adoptPlan(project.id, plan.slug)
+      await adoptOrWarn(project.id, plan.slug)
       onReload()
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha ao sincronizar a etapa")
@@ -589,7 +601,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
     if (!ok) return
     try {
       await setPlanStage(project.path, plan.slug, stage)
-      await adoptPlan(project.id, plan.slug)
+      await adoptOrWarn(project.id, plan.slug)
       onReload()
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha ao marcar a etapa")
@@ -611,6 +623,8 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
     )
     if (ok) {
       // dirigiu uma etapa daqui: o plano passa a ser SEU no app (conta na fila).
+      // Sem aviso se a marca não gravar: a linha em stage_runs desta etapa já
+      // adota o plano sozinha (ADR-032), alarmar aqui seria falso positivo.
       await adoptPlan(project.id, plan.slug)
       const produced = producedStage(step.skill)
       if (produced) {
@@ -642,7 +656,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
             await approvePrd(project.path, plan.slug)
             // aprovou PELO APP: se ainda restar gate nesse plano, ele passa a
             // contar como pendência de verdade (não mais "achado no disco").
-            await adoptPlan(project.id, plan.slug)
+            await adoptOrWarn(project.id, plan.slug)
           },
     })
   }
