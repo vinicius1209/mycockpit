@@ -531,3 +531,57 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   visíveis no item (`.claude/plans/<slug> · criado há N d`) — procedência é parte do estado.
 - **Consequência:** o número do sino volta a dizer "isto te espera". A régua da tray
   (ADR-018) não muda: ela nunca contou gate de SDD, só interações e disputas.
+- **Revisão da auditoria (ago/2026) — a adoção não pode depender de UMA escrita:** o
+  gate de review aprovou com ressalvas e apontou que a regra era **fail-open na leitura
+  e fail-closed na escrita**: `adoptPlan` engolia a falha do `adoptSddPlan`, então um
+  plano criado NO APP que pegasse um `database is locked` transitório aparecia segundos
+  depois em "Encontrados no projeto · criado agora", fora do badge e sem gesto de
+  recuperação. Correção em três camadas (todas entregues):
+  1. **A adoção deriva também de `stage_runs(project_id, slug)`** (`listDrivenPlanKeys`,
+     união com as marcas). Essa tabela só ganha linha quando o **cockpit dirigiu a
+     etapa**, então é **prova documental**, não anotação: `sdd_plan_marks` virou **cache
+     do gesto, não fonte única**. Escolhi as duas fontes (e não só uma) porque nenhuma
+     cobre tudo: `stage_runs` não conhece "criei o plano" / "aprovei o PRD" / "marquei a
+     etapa" (nada disso roda agent), e a marca sozinha era o ponto único de falha do
+     achado. O fail-open continua valendo pelas duas: falha de leitura em **qualquer**
+     das fontes volta a contar tudo.
+  2. **`adoptPlan` faz retry curto** (90ms, 240ms) e **devolve se gravou**; falha final
+     vai pro console (ADR-017) e vira aviso honesto na UI ("Plano criado, mas não
+     consegui marcar a adoção").
+  3. **"Adotar" no item descoberto** (Painel e sino): o humano promove o plano à fila com
+     um clique, que é também o resgate de quem nasceu aqui e perdeu a marca.
+- **Não-retroatividade (limite conhecido):** plano que o app dirigiu antes desta versão
+  **volta adotado** de graça (o `stage_runs` é histórico e já estava lá). Plano que só
+  foi *criado* ou teve o *PRD aprovado* pelo app antes da tabela existir continua
+  rebaixado a "descoberto" — não há de onde derivar esse gesto. Recuperação: um clique em
+  "Adotar". Não vale inventar backfill por heurística de data.
+- **`sdd_plan_marks` é estado VIVO:** `hardDeleteProject` passou a apagá-la junto com
+  cards/schedules/conversas. Sem isso ficavam linhas órfãs de um `project_id` morto que
+  nada mais leria nem limparia. Atenção: re-adicionar a mesma pasta gera **id novo**,
+  então as adoções **não voltam** (o disco é o mesmo, o projeto do app não).
+- **Cobertura do SQL:** `db.sddMarks.test.ts` (fake SQLite mínimo, padrão
+  `db.cards.test.ts`) fixa o que antes só existia no comentário: idempotência
+  (`COALESCE` mantém o 1º `adopted_at`), "adotar limpa o ignorado", e a assimetria do
+  `setSddPlanIgnored` (INSERT grava `adopted_at` NULL, DO UPDATE preserva a adoção — dá
+  pra ignorar plano adotado e o desfazer devolve ele ao badge).
+- **Furo aberto: o gate `pr` é caminho MORTO contra o toolchain real.** Varredura dos 49
+  manifests em `~/projetos` (ago/2026): `links.pr_url` existe em 20 planos e **todos**
+  estão com `stage:"done"` — inclusive os 3 com `merged_at: null`. Como o gate exige
+  `pr_url && stage !== "done"`, ele nunca dispara. E o app **nunca escreve** `pr_url`:
+  `git_create_pr` (git.rs) devolve a URL do `gh pr create` pra UI e ninguém a grava em
+  manifest nenhum. Opções registradas, **nenhuma implementada** (decisão do dono):
+  (i) o cockpit passa a gravar `pr_url` + `stage:"pr"` no manifest ao abrir PR por aqui
+  (fecha o loop e faz o gate valer, ao custo de o app escrever mais uma chave no
+  `.claude/plans` do usuário); (ii) o gate `pr` sai do inbox (menos código, e o PR aberto
+  já aparece na fila do Painel por outro caminho); (iii) fica documentado como suporte a
+  um toolchain de terceiro que grave `pr_url` antes do `done` — hoje nenhum dos meus
+  grava. Enquanto não se decide, o custo é código morto com aparência de funcionalidade.
+- **Drift de CAIXA no manifest (corrigido):** `normStage` não normalizava
+  maiúsculas, então `checkout-architecture-longterm` (meuingresso3.0, `"stage":"PRD"`)
+  era **inadotável**: fora do trilho da UI e nunca listado no inbox, nem como descoberto.
+  Agora o alias é case-insensitive (`sdd.manifest.test.ts`, com o manifest real). O mesmo
+  manifest mostra que o dado é heterogêneo além do stage: `artifacts.prd` é **string**
+  (caminho) e não objeto, e `consistency_anchors` são strings. O parse tolerante
+  sobrevive aos dois; no caso do PRD o default `"PRD.md"` até acerta o arquivo (a UI já
+  prefixa `<projeto>/.claude/plans/<slug>/`, então usar a string daria caminho
+  duplicado) — mas é acerto por acidente, e vale relembrar antes de "melhorar" isso.
