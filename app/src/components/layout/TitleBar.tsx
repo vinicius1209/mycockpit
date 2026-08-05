@@ -1,51 +1,28 @@
-import { PanelLeft, PanelRight, Settings } from "lucide-react"
+import { PanelLeft, PanelRight, Search, Settings } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Kbd } from "@/components/ui/kbd"
 import { Separator } from "@/components/ui/separator"
-import { Wordmark } from "@/components/common/Wordmark"
 import { InboxBell } from "@/components/layout/InboxBell"
+import { MODES } from "@/components/layout/titleBarModes"
 import { useApp, useActiveProject } from "@/store/app"
-import { useChat } from "@/store/chat"
-import { agentLabel } from "@/lib/agent"
-import { resolutionNotice } from "@/lib/modelResolution"
+import {
+  commandMenuShortcut,
+  currentPlatform,
+  openCommandMenu,
+} from "@/lib/commandMenu"
 import { cn } from "@/lib/utils"
-
-const MODES = [
-  {
-    id: "painel",
-    label: "Painel",
-    available: true,
-    desc: "Mission control: rodando agora, decisões e entregas de todos os projetos",
-  },
-  {
-    id: "linear",
-    label: "Trabalho",
-    available: true,
-    desc: "Fluxo simples com um agente principal",
-  },
-  {
-    id: "sdd",
-    label: "Features",
-    available: true,
-    desc: "Planeje, contrate e entregue uma feature com gates de verificação",
-  },
-  {
-    id: "office",
-    label: "Escritório",
-    available: true,
-    desc: "Escritório virtual: seus agents trabalhando nas salas dos projetos",
-  },
-] as const
 
 /** Seletor de superfície (F4): Painel | Trabalho | Features. O Fusion virou o
  *  ⚔️ do composer — a disputa vive dentro da conversa, não numa superfície.
- *  Com o Agendado aberto (view própria, fora do switcher), NENHUMA aba fica
+ *  Com um workspace global aberto (fora do switcher), NENHUMA aba fica
  *  ativa — marcar "Painel" seria mentir. Clicar numa aba fecha o Agendado
  *  (setViewMode já zera scheduledOpen no store) e ativa normalmente. */
 function ModeSwitcher() {
   const viewMode = useApp((s) => s.viewMode)
   const setViewMode = useApp((s) => s.setViewMode)
   const scheduledOpen = useApp((s) => s.scheduledOpen)
+  const flightPlansOpen = useApp((s) => s.flightPlansOpen)
   return (
     <div className="pointer-events-auto hidden items-center gap-0.5 rounded-full border bg-secondary/50 p-0.5 sm:flex">
       {MODES.map((m) => (
@@ -62,7 +39,7 @@ function ModeSwitcher() {
           title={m.desc}
           className={cn(
             "flex items-center gap-1 rounded-full px-3 py-1 text-[12px] transition-colors",
-            !scheduledOpen && m.id === viewMode
+            !scheduledOpen && !flightPlansOpen && m.id === viewMode
               ? "bg-card text-foreground shadow-[var(--shadow-sm)]"
               : "text-muted-foreground enabled:hover:text-foreground disabled:opacity-50",
           )}
@@ -79,30 +56,22 @@ function ModeSwitcher() {
   )
 }
 
-function InstrumentStrip() {
-  // Seletores estreitos (não `useActiveConv()` inteiro): não re-renderiza a cada
-  // text_delta do run, só quando o model/agent da conversa ativa muda (F13).
-  const model = useChat((s) => (s.activeId ? s.byId[s.activeId]?.model : null) ?? null)
-  const agent = useChat(
-    (s) => (s.activeId ? s.byId[s.activeId]?.agent : null) ?? "claude-code",
-  )
-  const reqModel = useChat(
-    (s) => (s.activeId ? s.byId[s.activeId]?.reqModel : null) ?? null,
-  )
-  // Divergência pedido×resolvido: o mostrador segue exibindo a VERDADE (o
-  // resolvido), só ganha cor de alerta + tooltip com o porquê.
-  const diverged = resolutionNotice(agent, reqModel, model)
-  // Sem dot de status aqui, o "rodando" já aparece na sidebar (spinner por
-  // conversa + dot do projeto), no botão de stop e no "… trabalhando…".
+/** Alvo visível do ⌘K: a paleta existia só no teclado. Não é busca nova, é a
+ *  MESMA paleta (busca no histórico + comandos) por um gesto de mouse. */
+function SearchChip() {
+  const atalho = commandMenuShortcut(currentPlatform())
   return (
-    <div className="hidden items-center gap-2 md:flex">
-      <span
-        className={cn("label-mono", diverged && "text-amber-500")}
-        title={diverged ?? undefined}
-      >
-        {model ?? agentLabel(agent)}
-      </span>
-    </div>
+    <button
+      type="button"
+      onClick={openCommandMenu}
+      title={`Buscar e comandos (${atalho})`}
+      aria-label={`Buscar e comandos, atalho ${atalho}`}
+      className="pointer-events-auto hidden items-center gap-1.5 rounded-full border bg-secondary/50 py-1 pr-1.5 pl-2.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex"
+    >
+      <Search className="size-3.5" aria-hidden />
+      <span className="hidden lg:inline">Buscar</span>
+      <Kbd aria-hidden>{atalho}</Kbd>
+    </button>
   )
 }
 
@@ -124,24 +93,45 @@ export function TitleBar() {
     >
       {/* Grid de 3 zonas: o seletor central fica EM FLUXO (não mais absolute) →
           o pill fica no centro exato da janela e nunca colide com o nome do
-          projeto (que trunca na zona esquerda). pl-20 reserva os semáforos. */}
-      <div className="flex min-w-0 items-center gap-2.5 pl-20">
-        <Wordmark className="pointer-events-none" />
+          projeto (que trunca na zona esquerda). pl-20 reserva os semáforos.
+          As zonas são pointer-events-none e só os controles voltam a receber
+          clique: o vazio entre eles continua sendo área de arrastar a janela.
+          Cada controle mora do lado do que ele controla — o painel ESQUERDO
+          abre/fecha daqui, o direito lá na ponta oposta. */}
+      <div className="pointer-events-none flex min-w-0 items-center gap-1.5 pl-20">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="pointer-events-auto shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={toggleSidebar}
+          title="Alternar projetos"
+          aria-label="Alternar o painel de projetos"
+        >
+          <PanelLeft className="size-4" />
+        </Button>
         {project && (
           <>
-            <span className="pointer-events-none text-muted-foreground/35">/</span>
-            <span className="pointer-events-none truncate text-[13px] text-muted-foreground">
+            <Separator orientation="vertical" className="h-4!" />
+            {/* Nome do projeto sem prefixo do app: é o alvo de troca. Clicar
+                abre a MESMA paleta ⌘K, onde mora a lista de projetos (nenhum
+                switcher novo foi inventado aqui). */}
+            <button
+              type="button"
+              onClick={openCommandMenu}
+              title="Trocar de projeto"
+              aria-label={`Projeto ${project.name}, trocar de projeto`}
+              className="pointer-events-auto min-w-0 truncate rounded-md px-1.5 py-0.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
               {project.name}
-            </span>
+            </button>
           </>
         )}
       </div>
 
       <ModeSwitcher />
 
-      <div className="pointer-events-none flex items-center justify-end gap-2 pr-2.5">
-        <InstrumentStrip />
-        <Separator orientation="vertical" className="h-4!" />
+      <div className="pointer-events-none flex items-center justify-end gap-1.5 pr-2.5">
+        <SearchChip />
         <InboxBell />
         <Button
           variant="ghost"
@@ -153,23 +143,14 @@ export function TitleBar() {
         >
           <Settings className="size-4" />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="pointer-events-auto text-muted-foreground hover:text-foreground"
-          onClick={toggleSidebar}
-          title="Alternar projetos"
-          aria-label="Alternar projetos"
-        >
-          <PanelLeft className="size-4" />
-        </Button>
+        <Separator orientation="vertical" className="h-4!" />
         <Button
           variant="ghost"
           size="icon-sm"
           className="pointer-events-auto text-muted-foreground hover:text-foreground"
           onClick={toggleContext}
           title="Alternar contexto"
-          aria-label="Alternar contexto"
+          aria-label="Alternar o painel de contexto"
         >
           <PanelRight className="size-4" />
         </Button>

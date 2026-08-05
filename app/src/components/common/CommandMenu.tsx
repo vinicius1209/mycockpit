@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/command"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { SkillDraftDialog } from "@/components/skills/SkillDraftDialog"
+import { onOpenCommandMenu } from "@/lib/commandMenu"
 import { draftSkill, type SkillDraft } from "@/lib/skills"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
@@ -95,6 +96,10 @@ export function CommandMenu() {
     document.addEventListener("keydown", down)
     return () => document.removeEventListener("keydown", down)
   }, [])
+
+  // Mesma paleta pelo mouse: o chip de busca e o nome do projeto (barra do topo)
+  // pedem a abertura por aqui, sem duplicar estado nem criar busca nova.
+  useEffect(() => onOpenCommandMenu(() => setOpen(true)), [])
 
   // Busca full-text no histórico (≥3 chars, debounce 250ms, cross-projeto).
   const [query, setQuery] = useState("")
