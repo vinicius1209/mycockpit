@@ -92,3 +92,112 @@ tem visibilidade de primeira classe.
 - Embutir Chromium no processo Tauri (não existe caminho são).
 - Browser-use do app ChatGPT (`computer-use` MCP): binário interno do bundle,
   caminho relativo, não portável — documentado como não-suportado, não é rota.
+
+---
+
+## Estudo de viabilidade (04/08/2026) — 3 frentes, e o que elas mudam
+
+> Time de pesquisa: (a) APIs do Tauri 2 + PiP no macOS, (b) como o mercado faz,
+> (c) prontidão do repo. Gatilho: o usuário viu o navegador embutido com
+> picture-in-picture do app do ChatGPT mostrando o PRÓPRIO dev server dele
+> (`Frota — 127.0.0.1:1420`) e perguntou se dá pra ter isso aqui.
+
+### O achado que reorganiza a decisão
+
+**Todo mundo que tem "navegador embutido controlável" é Electron** — e dirige o
+próprio `WebContentsView` por CDP. Ninguém embute Chromium num app
+não-Chromium. Evidência forense do `/Applications/ChatGPT.app` da máquina:
+Electron com **Chromium 150** embutido, bundle id `com.openai.codex`,
+Developer ID da OpenAI, app group `…com.openai.sky.CUAService` e um runtime
+Node dedicado (`Resources/cua_node/`). O "computer use" dele **não** é controle
+de SO: é CDP contra conteúdo web que o app já possui — **zero permissão TCC**.
+
+E o caminho nativo difícil tem veredito: o **Atlas/OWL** (Chromium headless +
+Mojo + `CALayerHost`, que é **API privada** da Apple) **será desligado em
+09/08/2026**. A OpenAI construiu a integração nativa mais sofisticada que
+existe e migrou para Electron + extensão. Esse caminho está fora de cogitação
+aqui.
+
+**Correção de rumo do plano:** a conclusão original ("não iframe/webview
+Tauri") continua CERTA, mas por uma razão parcialmente errada. O motivo real
+não é só "WKWebView não expõe CDP" — é que **o Tauri está fora do clube do
+Electron**, e o screencast é a saída de quem não pode embutir Chromium.
+
+### Por que a webview embutida não serve como painel principal
+
+Achado técnico independente, e definitivo: no macOS a child webview do Tauri
+(`window.add_child`, feature `unstable`) é uma **`NSView` irmã**, não um nó do
+DOM — ela flutua ACIMA de tudo que o React desenha. Dropdown, modal, tooltip e
+o **lightbox de evidência (B1.2)** ficariam ocultos sobre o retângulo do
+navegador. É a mesma limitação do `BrowserView` do Electron. Somado a isso:
+sincronizar bounds em drag de splitter produz descolamento visível, e a feature
+é `unstable` (breaking change documentado em minor).
+
+O screencast CDP resolve isso **de graça**: o frame vira pixels no `<canvas>`,
+a UI volta a ser UI, e o PiP vira uma janela normal — sem child webview, sem
+`unstable`, sem sincronia de retângulo.
+
+### Permissões do macOS: o ponto que decide tudo
+
+**Dirigir web content por CDP não exige NENHUMA permissão TCC.** Mecanicamente:
+transporte é HTTP+WS em loopback (isento até do Local Network do macOS 15);
+`Input.dispatchKeyEvent` sintetiza evento DENTRO do Chrome (nunca `CGEventPost`
+→ sem Accessibility); `Page.captureScreenshot` lê o compositor da aba (não o
+framebuffer → sem Screen Recording).
+
+O caminho OS-level custaria: Screen Recording com **re-consulta mensal
+insuprimível** (Sequoia/macOS 26), Accessibility (incompatível com App
+Sandbox), e — o que morde no dia a dia — **assinatura ad-hoc não tem
+Designated Requirement estável, então TODO rebuild perde os grants** (resposta
+do DTS da Apple). Isso explica retroativamente o ADR-013: a notificação nativa
+que "nunca funcionou" é a mesma classe de problema.
+
+### Recomendação revisada (substitui a ordem original do B2)
+
+1. **B2.1 + B2.2 primeiro, e sozinhos** — o app spawna e possui um Chromium com
+   `--remote-debugging-port` (o `ProcessRegistry` do mc-work já dá process
+   group, tail, TERM/KILL e órfão honesto); o Playwright MCP conecta com
+   `--cdp-endpoint` (flag já existente; a injeção é ~10 linhas no plano
+   efêmero do run, e o fingerprint do plano só hasheia NOMES, então não dispara
+   re-anúncio espúrio). Entrega o ganho central sem depender de painel nenhum:
+   a janela headed já é visível.
+2. **B2.3 (screencast no painel/PiP) depois**, quando o uso provar rotina.
+   Referência de implementação: `vercel-labs/agent-browser`. Default sugerido:
+   qualidade 20-40 em 640×360 (~9 KB/frame), subindo sob demanda.
+3. **PiP como janela própria** reusando a receita que já existe no repo
+   (`tray.rs:477-495`: sem decoração, transparente, always-on-top, visível em
+   todos os Spaces, com posicionamento multi-monitor já resolvido). Limite
+   honesto: flutuar sobre app em **fullscreen** o Tauri não faz (issue fechada
+   como "not planned") — exigiria `NSPanel` via plugin de terceiro.
+
+### Cortado do escopo (com razão registrada)
+
+- **CEF** (Chromium embutido de verdade): +170 MB no bundle, init de até ~2s,
+  punch-out de `NSView` e override de hit-testing. Resolve um problema que não
+  é o nosso.
+- **Computer use de SO**: permissão pesada + nag mensal + dívida de assinatura,
+  para um caso que o CDP resolve com zero permissão. A própria doutrina da
+  Anthropic põe screen control como último recurso ("reserved for things
+  nothing else can reach").
+- **Descobrir/lançar o Chrome do usuário**: o Cursor tentou e REMOVEU em
+  fev/2026, recomendando `playwright/mcp` no lugar.
+
+### Dois ganhos baratos que a pesquisa achou
+
+- **Reusar o dev server já rodando** em vez de subir duplicado (padrão Cursor).
+  Pré-requisito que falta: o app sabe RODAR dev server (`process_start` do
+  mc-work) mas **não lê a porta** — a linha "Local: http://localhost:5173"
+  chega inteira no tail e é ignorada. Regex no tail ou `lsof` no process group.
+- **Verificar no INÍCIO da sessão**, não só depois de implementar: pega
+  regressão de sessão anterior que review de código não pega.
+
+### Padrões de permissão a copiar (Claude in Chrome)
+
+- Permissão **por invocação, não por nome de tool**: tool read-only com flag
+  mutante também pede aprovação; batch degrada para o membro mais estrito.
+- Grant por recurso com 3 opções (uma vez / sempre / negar), por site
+  **incluindo subdomínios**; **localhost e arquivos do projeto pré-confiados**
+  para o loop de verificação nunca perguntar.
+- Perfil de browser **separado** do pessoal (é o que o ChatGPT faz: sem herdar
+  logins), e excluir o próprio terminal/app do que o agent observa, pra o
+  contexto não se realimentar.
