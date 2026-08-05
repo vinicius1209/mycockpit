@@ -37,6 +37,11 @@ o editor linear quanto o canvas. Ramificações, condições diferentes de
 até o executor de grafo oferecer semântica de budget, recovery e retomada para
 essas transições. Detalhes em [`mission-flight-plans.md`](./mission-flight-plans.md).
 
+A autoria vive numa superfície global própria, **Planos de voo**, mas permanece
+dentro do mesmo app e sobre a mesma fonte persistida
+(`GlobalSettings.missionPresets`). Configurações apenas habilita Missions e abre
+esse workspace; não mantém um segundo editor concorrente.
+
 ## Decisão central do v0.1: CLI subprocess + `stream-json`
 
 No v0.1, o backend Rust do Tauri **executa o binário `claude`** com

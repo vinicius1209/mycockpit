@@ -20,6 +20,7 @@ import {
   ArchiveRestore,
   GitBranch,
   Rocket,
+  Route,
   Search,
   Swords,
 } from "lucide-react"
@@ -1035,13 +1036,7 @@ function ScheduledEntry() {
     return () => clearInterval(t)
   }, [nextAt])
   return (
-    <div className="px-2 pt-2">
-      {/* S3.4 — "Agendado" é outra CATEGORIA (coleção global, não conteúdo de
-          projeto): ganha o rótulo de seção e perde a barra brass lateral — a
-          barra é gramática de conteúdo; aqui o bg-accent basta pro "ativo". */}
-      <div className="px-1 pt-1 pb-1.5">
-        <span className="label-mono">Geral</span>
-      </div>
+    <div>
       <button
         onClick={() => setScheduledOpen(true)}
         aria-label="Abrir Agendado"
@@ -1075,6 +1070,58 @@ function ScheduledEntry() {
           </span>
         )}
       </button>
+    </div>
+  )
+}
+
+function FlightPlansEntry() {
+  const active = useApp((s) => s.flightPlansOpen)
+  const setFlightPlansOpen = useApp((s) => s.setFlightPlansOpen)
+  const count = useApp((s) => s.settings.missionPresets.length)
+  return (
+    <button
+      onClick={() => setFlightPlansOpen(true)}
+      aria-label="Abrir Planos de voo"
+      className={cn(
+        "group relative flex w-full items-center gap-3 rounded-md p-2 text-left transition-colors",
+        active ? "bg-accent" : "hover:bg-accent/55",
+      )}
+    >
+      <span className="grid size-5 shrink-0 place-items-center">
+        <Route
+          className={cn(
+            "size-4",
+            active ? "text-brass" : "text-muted-foreground/70",
+          )}
+        />
+      </span>
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate text-[13px]",
+          active
+            ? "font-medium text-foreground"
+            : "text-muted-foreground group-hover:text-foreground",
+        )}
+      >
+        Planos de voo
+      </span>
+      <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/65">
+        {count}
+      </span>
+    </button>
+  )
+}
+
+function GlobalEntries() {
+  return (
+    <div className="px-2 pt-2">
+      <div className="px-1 pt-1 pb-1.5">
+        <span className="label-mono">Geral</span>
+      </div>
+      <div className="space-y-0.5">
+        <ScheduledEntry />
+        <FlightPlansEntry />
+      </div>
     </div>
   )
 }
@@ -1296,7 +1343,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   return (
     <aside className="reveal-left flex h-full w-full flex-col bg-rail">
       {/* F7 — rail global (coleções cross-projeto) acima de Projetos. */}
-      <ScheduledEntry />
+      <GlobalEntries />
       {/* No Escritório, o miolo "Projetos" (pastas — conceito de Trabalho) dá
           lugar a um índice ESPACIAL da cena: Salas + Equipe. O shell da coluna
           (Agendado acima, footer usuário/tema abaixo) fica igual. */}

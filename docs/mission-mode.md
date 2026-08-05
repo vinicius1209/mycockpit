@@ -190,7 +190,9 @@ registry + cancel) atende; a orquestração é 100% TypeScript por cima de
 
 ### Configurável/ativável (o pedido explícito)
 - **Settings ▸ Missions (beta)**: toggle liga/desliga (esconde o botão do
-  composer); editor de presets (papel → agent → modelo → effort → retries).
+  composer) e oferece acesso à prancheta.
+- **Geral ▸ Planos de voo**: workspace global de autoria, com biblioteca,
+  canvas central e inspetor do nó (papel → agent → modelo → effort → retries).
 - **Preset ad-hoc no launch** (como a liga do Fusion): monta o time na hora.
 - **Presets de fábrica** (espelham as categorias do OMO, sem keyword-magic):
   - *Feature completa*: Opus planeja → executor por área → Opus revisa

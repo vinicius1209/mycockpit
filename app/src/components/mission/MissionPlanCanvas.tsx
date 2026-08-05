@@ -13,12 +13,11 @@ import {
   type NodeProps,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { ArrowLeft, ArrowRight, CheckCircle2, Route } from "lucide-react"
+import { CheckCircle2, Route } from "lucide-react"
 import { useApp } from "@/store/app"
 import type { MissionPersona, MissionPreset } from "@/lib/missionTypes"
 import {
   enableGraphMode,
-  moveMissionPhase,
   updateMissionNodePositions,
 } from "@/lib/missionPlans"
 import { cn } from "@/lib/utils"
@@ -92,7 +91,10 @@ function MissionPhaseNode({ data, selected }: NodeProps<PhaseNode>) {
 
 const NODE_TYPES = { missionPhase: MissionPhaseNode }
 
-function toFlowNodes(preset: MissionPreset): PhaseNode[] {
+function toFlowNodes(
+  preset: MissionPreset,
+  selectedPhaseId?: string | null,
+): PhaseNode[] {
   const graph = enableGraphMode(preset).graph!
   const phases = new Map(preset.phases.map((phase) => [phase.id, phase]))
   return graph.nodes.flatMap((node) => {
@@ -104,6 +106,7 @@ function toFlowNodes(preset: MissionPreset): PhaseNode[] {
         id: node.id,
         type: "missionPhase" as const,
         position: node.position,
+        selected: phase.id === selectedPhaseId,
         data: {
           phaseId: phase.id,
           order,
@@ -130,51 +133,70 @@ function toFlowEdges(preset: MissionPreset): Edge[] {
   }))
 }
 
-/** Canvas operacional do motor linear: pan/zoom/drag de layout e reordenação
- *  real da rota. Conexões são somente leitura por enquanto — assim toda edição
- *  salva continua executável pelo mesmo engine que já roda Mission hoje. */
+/** Canvas operacional do motor linear: pan/zoom/drag de layout e seleção do nó
+ *  cujo inspetor controla a ordem real. Conexões são somente leitura por
+ *  enquanto — assim toda edição continua executável pelo engine de Mission. */
 export function MissionPlanCanvas({
   preset,
   onChange,
+  selectedPhaseId: controlledSelectedPhaseId,
+  onSelectPhase,
+  interactive = true,
+  className,
 }: {
   preset: MissionPreset
   onChange: (next: MissionPreset) => void
+  selectedPhaseId?: string | null
+  onSelectPhase?: (phaseId: string) => void
+  interactive?: boolean
+  className?: string
 }) {
   const theme = useApp((state) => state.theme)
-  const [selectedPhaseId, setSelectedPhaseId] = useState(
+  const [internalSelectedPhaseId, setInternalSelectedPhaseId] = useState(
     preset.phases[0]?.id ?? null,
   )
+  const selectedPhaseId =
+    controlledSelectedPhaseId === undefined
+      ? internalSelectedPhaseId
+      : controlledSelectedPhaseId
   const graphSignature = JSON.stringify(enableGraphMode(preset).graph)
   const [nodes, setNodes, onNodesChange] = useNodesState<PhaseNode>(
-    toFlowNodes(preset),
+    toFlowNodes(preset, selectedPhaseId),
   )
   const edges = useMemo(() => toFlowEdges(preset), [preset])
 
   useEffect(() => {
-    setNodes(toFlowNodes(preset))
-  }, [graphSignature, preset, setNodes])
+    setNodes(toFlowNodes(preset, selectedPhaseId))
+  }, [graphSignature, preset, selectedPhaseId, setNodes])
 
   useEffect(() => {
     if (
       selectedPhaseId &&
       !preset.phases.some((phase) => phase.id === selectedPhaseId)
     ) {
-      setSelectedPhaseId(preset.phases[0]?.id ?? null)
+      const fallback = preset.phases[0]?.id ?? null
+      setInternalSelectedPhaseId(fallback)
+      if (fallback) onSelectPhase?.(fallback)
     }
-  }, [preset.phases, selectedPhaseId])
+  }, [onSelectPhase, preset.phases, selectedPhaseId])
 
   const selectedIndex = preset.phases.findIndex(
     (phase) => phase.id === selectedPhaseId,
   )
   const selected = selectedIndex >= 0 ? preset.phases[selectedIndex] : null
 
-  function moveSelected(delta: -1 | 1) {
-    if (selectedIndex < 0) return
-    onChange(moveMissionPhase(enableGraphMode(preset), selectedIndex, selectedIndex + delta))
+  function selectPhase(phaseId: string) {
+    setInternalSelectedPhaseId(phaseId)
+    onSelectPhase?.(phaseId)
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border/70 bg-background">
+    <div
+      className={cn(
+        "flex min-h-0 flex-col overflow-hidden rounded-lg border border-border/70 bg-background",
+        className,
+      )}
+    >
       <div className="flex items-center justify-between border-b border-border/60 bg-secondary/20 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="grid size-6 shrink-0 place-items-center rounded-md bg-brass/10 text-brass">
@@ -189,45 +211,29 @@ export function MissionPlanCanvas({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => moveSelected(-1)}
-            disabled={selectedIndex <= 0}
-            className="grid size-7 place-items-center rounded border border-border/70 text-muted-foreground transition-colors hover:border-brass/40 hover:text-brass disabled:opacity-30"
-            aria-label="Mover fase para antes"
-            title="Mover fase para antes"
-          >
-            <ArrowLeft className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => moveSelected(1)}
-            disabled={selectedIndex < 0 || selectedIndex >= preset.phases.length - 1}
-            className="grid size-7 place-items-center rounded border border-border/70 text-muted-foreground transition-colors hover:border-brass/40 hover:text-brass disabled:opacity-30"
-            aria-label="Mover fase para depois"
-            title="Mover fase para depois"
-          >
-            <ArrowRight className="size-3.5" />
-          </button>
-        </div>
+        <span className="font-mono text-[9.5px] tracking-wide text-muted-foreground uppercase">
+          {interactive ? "layout livre" : "ordem protegida"}
+        </span>
       </div>
 
-      <div className="h-64 bg-[radial-gradient(circle_at_50%_45%,var(--brass-soft),transparent_48%)]">
+      <div className="min-h-64 w-full flex-1 bg-[radial-gradient(circle_at_50%_45%,var(--brass-soft),transparent_48%)]">
         <ReactFlow<PhaseNode>
+          className="h-full w-full"
           colorMode={theme}
           nodes={nodes}
           edges={edges}
           nodeTypes={NODE_TYPES}
           onNodesChange={onNodesChange}
-          onNodeClick={(_, node) => setSelectedPhaseId(node.data.phaseId)}
-          onNodeDragStop={(_, node) =>
+          onNodeClick={(_, node) => selectPhase(node.data.phaseId)}
+          onNodeDragStop={(_, node) => {
+            if (!interactive) return
             onChange(
               updateMissionNodePositions(preset, {
                 [node.data.phaseId]: node.position,
               }),
             )
-          }
+          }}
+          nodesDraggable={interactive}
           nodesConnectable={false}
           deleteKeyCode={null}
           fitView
@@ -254,7 +260,7 @@ export function MissionPlanCanvas({
         <CheckCircle2 className="size-3.5 shrink-0 text-st-success" />
         <span className="min-w-0 truncate text-[10.5px] text-muted-foreground">
           {selected
-            ? `${selected.label || "Fase sem nome"} selecionada · arraste para organizar o mapa ou use as setas para mudar a execução.`
+            ? `${selected.label || "Fase sem nome"} selecionada · ${interactive ? "arraste para organizar o mapa; a ordem de execução fica no inspetor." : "ative Canvas para organizar livremente."}`
             : "Selecione um nó para mudar sua posição na rota."}
         </span>
       </div>

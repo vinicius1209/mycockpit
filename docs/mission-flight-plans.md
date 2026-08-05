@@ -52,6 +52,18 @@ O editor entregue habilita somente uma cadeia de arestas `success`. É possível
   como checklists verificáveis;
 - duplicar, importar e exportar o plano em JSON versionado.
 
+## Superfície de autoria
+
+“Planos de voo” é um workspace global do MyCockpit, acessível em **Geral ▸
+Planos de voo** na barra lateral. A autoria não acontece dentro do modal de
+Configurações: a biblioteca ocupa a coluna esquerda, o canvas é o instrumento
+central e o nó selecionado alimenta um único inspetor na direita.
+
+**Configurações ▸ Missões** mantém apenas o toggle do recurso e um atalho para a
+prancheta. Essa separação é visual, não arquitetural: workspace, launcher e
+runtime continuam lendo o mesmo `GlobalSettings.missionPresets`, sem duplicar
+estado e sem criar uma segunda aplicação.
+
 ## Limite honesto da v1
 
 Ramificações e loops ainda não são executados. Um JSON importado com fan-out,
@@ -75,6 +87,8 @@ canvas, precisa definir:
 - `app/src/lib/missionPlans.ts`: compatibilidade, sincronização, validação e
   import/export;
 - `app/src/components/mission/MissionPlanCanvas.tsx`: adapter visual;
-- `app/src/components/settings/MissionSettings.tsx`: biblioteca e editores;
+- `app/src/components/mission/FlightPlansView.tsx`: workspace de autoria;
+- `app/src/components/settings/MissionSettings.tsx`: toggle e acesso ao
+  workspace;
 - `app/src/lib/mission.ts`: critérios injetados no prompt;
 - `app/src/lib/missionEngine.ts`: motor linear preservado.

@@ -366,7 +366,7 @@ export function MissionLauncher({
                 />
               ) : (
                 <span className="text-[12px] text-st-error">
-                  Nenhum Plano de voo configurado (Configurações ▸ Missões)
+                  Nenhum Plano de voo configurado (Geral ▸ Planos de voo)
                 </span>
               )}
               {/* MH3.1 — rascunho "Personalizado" pode virar time salvo. */}

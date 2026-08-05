@@ -38,6 +38,9 @@ interface AppState {
    *  quando true, ela cobre o conteúdo principal; qualquer navegação (trocar
    *  superfície/projeto) fecha. Não persiste. */
   scheduledOpen: boolean
+  /** Editor global dos Planos de voo. Assim como Agendado, ocupa o centro sem
+   *  fingir ser uma superfície de projeto e não persiste entre boots. */
+  flightPlansOpen: boolean
   ready: boolean
   /** Config por projeto vinda de .mycockpit/config.toml (Fase 1). */
   mycockpit: Record<string, ProjectConfig>
@@ -85,6 +88,8 @@ interface AppState {
   setViewMode: (m: "painel" | "linear" | "sdd" | "office") => void
   /** Abre/fecha a view global "Agendado" (F7). */
   setScheduledOpen: (v: boolean) => void
+  /** Abre/fecha o workspace global de Planos de voo. */
+  setFlightPlansOpen: (v: boolean) => void
   setReady: (v: boolean) => void
   setAgentLimited: (agent: string, resetHint: string | null) => void
   clearAgentLimited: (agent: string) => void
@@ -129,6 +134,7 @@ export const useApp = create<AppState>()(
       contextOpen: true,
       viewMode: "linear",
       scheduledOpen: false,
+      flightPlansOpen: false,
       ready: false,
       mycockpit: {},
       limitedAgents: {},
@@ -148,9 +154,9 @@ export const useApp = create<AppState>()(
         })),
       addProject: (p) =>
         set((s) => ({ projects: [p, ...s.projects], activeProjectId: p.id })),
-      // trocar de projeto é navegação → fecha a view global "Agendado".
+      // trocar de projeto é navegação → fecha qualquer workspace global.
       setActiveProject: (id) =>
-        set({ activeProjectId: id, scheduledOpen: false }),
+        set({ activeProjectId: id, scheduledOpen: false, flightPlansOpen: false }),
       setProjectPermission: (id, mode) =>
         set((s) => ({
           projects: s.projects.map((p) =>
@@ -200,9 +206,19 @@ export const useApp = create<AppState>()(
           return { theme }
         }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
-      // o switcher NÃO conhece o Agendado; trocar de superfície só o fecha.
-      setViewMode: (viewMode) => set({ viewMode, scheduledOpen: false }),
-      setScheduledOpen: (scheduledOpen) => set({ scheduledOpen }),
+      // o switcher não conhece os workspaces globais; trocar de superfície os fecha.
+      setViewMode: (viewMode) =>
+        set({ viewMode, scheduledOpen: false, flightPlansOpen: false }),
+      setScheduledOpen: (scheduledOpen) =>
+        set({
+          scheduledOpen,
+          flightPlansOpen: scheduledOpen ? false : get().flightPlansOpen,
+        }),
+      setFlightPlansOpen: (flightPlansOpen) =>
+        set({
+          flightPlansOpen,
+          scheduledOpen: flightPlansOpen ? false : get().scheduledOpen,
+        }),
       toggleContext: () => set((s) => ({ contextOpen: !s.contextOpen })),
       setReady: (ready) => set({ ready }),
       setAgentLimited: (agent, resetHint) =>

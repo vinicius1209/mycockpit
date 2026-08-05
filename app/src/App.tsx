@@ -91,6 +91,11 @@ const queryClient = new QueryClient()
 // Agent Office (O1): lazy — o chunk (Pixi incluso) só baixa na 1ª visita ao
 // modo; depois fica montado com `hidden` (loop parado) como Painel/Trabalho.
 const OfficeMode = lazy(() => import("@/office/ui/OfficeMode"))
+const FlightPlansView = lazy(() =>
+  import("@/components/mission/FlightPlansView").then((module) => ({
+    default: module.FlightPlansView,
+  })),
+)
 
 // Seed do 1º run: projetos reais como exemplo. Persistem no SQLite a partir daí.
 const SEED: Project[] = [
@@ -128,6 +133,7 @@ export default function App() {
   const contextOpen = useApp((s) => s.contextOpen)
   const viewMode = useApp((s) => s.viewMode)
   const scheduledOpen = useApp((s) => s.scheduledOpen)
+  const flightPlansOpen = useApp((s) => s.flightPlansOpen)
   const setProjects = useApp((s) => s.setProjects)
   const setReady = useApp((s) => s.setReady)
   const theme = useApp((s) => s.theme)
@@ -796,7 +802,7 @@ export default function App() {
                       <div
                         className={cn(
                           "h-full",
-                          (scheduledOpen || viewMode !== "painel") && "hidden",
+                          (scheduledOpen || flightPlansOpen || viewMode !== "painel") && "hidden",
                         )}
                       >
                         <MissionControl />
@@ -804,7 +810,7 @@ export default function App() {
                       <div
                         className={cn(
                           "h-full",
-                          (scheduledOpen || viewMode !== "linear") && "hidden",
+                          (scheduledOpen || flightPlansOpen || viewMode !== "linear") && "hidden",
                         )}
                       >
                         <ChatPanel />
@@ -817,24 +823,37 @@ export default function App() {
                         <div
                           className={cn(
                             "relative h-full",
-                            (scheduledOpen || viewMode !== "office") &&
+                            (scheduledOpen || flightPlansOpen || viewMode !== "office") &&
                               "hidden",
                           )}
                         >
                           <Suspense fallback={null}>
                             <OfficeMode
-                              hidden={scheduledOpen || viewMode !== "office"}
+                              hidden={scheduledOpen || flightPlansOpen || viewMode !== "office"}
                             />
                           </Suspense>
                         </div>
                       )}
-                      {scheduledOpen ? (
+                      {flightPlansOpen ? (
+                        <Suspense
+                          fallback={
+                            <div className="grid h-full place-items-center text-[12px] text-muted-foreground">
+                              Preparando a prancheta…
+                            </div>
+                          }
+                        >
+                          <FlightPlansView />
+                        </Suspense>
+                      ) : scheduledOpen ? (
                         <ScheduledView />
                       ) : viewMode === "sdd" ? (
                         <SddView />
                       ) : null}
                     </ResizablePanel>
-                    {contextOpen && viewMode === "linear" && !scheduledOpen && (
+                    {contextOpen &&
+                      viewMode === "linear" &&
+                      !scheduledOpen &&
+                      !flightPlansOpen && (
                       <>
                         <ResizableHandle className="bg-border/40 transition-colors after:w-3 data-[resize-handle-state=hover]:bg-brass/50 data-[resize-handle-state=drag]:bg-brass/60" />
                         <ResizablePanel
