@@ -44,7 +44,13 @@ const STAGE_ALIAS: Record<string, SddStage> = {
 }
 function normStage(s: string | undefined | null): string {
   if (!s) return ""
-  return STAGE_ALIAS[s] ?? s
+  // CAIXA também é drift: o real tem `"stage":"PRD"` e
+  // `stages_completed:["investigation","PRD"]` (meuingresso3.0,
+  // checkout-architecture-longterm). Sem o lowercase, "PRD" nunca batia com o
+  // pipeline (todo comparador usa minúscula) e o plano ficava INADOTÁVEL: fora
+  // do trilho, fora do inbox, invisível.
+  const k = s.toLowerCase()
+  return STAGE_ALIAS[k] ?? k
 }
 
 // O dado real é heterogêneo: a linha da matriz pode ser uma STRING (descrição),
