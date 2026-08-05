@@ -585,3 +585,69 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   sobrevive aos dois; no caso do PRD o default `"PRD.md"` até acerta o arquivo (a UI já
   prefixa `<projeto>/.claude/plans/<slug>/`, então usar a string daria caminho
   duplicado) — mas é acerto por acidente, e vale relembrar antes de "melhorar" isso.
+
+### ADR-033 — O usage do `codex exec` é ACUMULADO DA THREAD: custo é delta, contexto é nível ✅
+- **Contexto (prova empírica, codex 0.146, 04/08/2026):** o `usage` do evento
+  `turn.completed` do `codex exec --json` não é do turno, é o total da THREAD.
+  Dois turnos triviais no MESMO thread (o 2º via `exec resume`):
+  `{"input_tokens":17494,"cached_input_tokens":9984,"output_tokens":6}` →
+  `{"input_tokens":35005,"cached_input_tokens":27136,"output_tokens":12}`. O
+  mesmo prompt, o dobro dos números. O adapter lia isso como gasto do turno,
+  estimava custo em cima e o store gravava UMA linha por turno em `turn_costs`:
+  cada linha carregava o acumulado e o app SOMAVA acumulados (explosão
+  quadrática). No banco real do usuário: `codex/estimated` = 67 linhas,
+  **US$ 4.217,63**, maior "turno" **US$ 160,02** com 195.249.694 input tokens e
+  185.871.872 de cache — impossível. As linhas da mesma conversa cresciam
+  monotonicamente (assinatura de acumulação). O `claude-code/reported` (203
+  linhas, US$ 1.090,24) é real: o `result` do Claude é por turno.
+  Painel, custo por conversa, custo por card, Escritório (US$ 4.695 numa sala) e
+  o teto de missão do Codex mentiam pra cima.
+- **Decisão 1 — onde mora o estado:** o adapter vive por RUN, a thread vive
+  entre runs (o app dá `resume` a cada turno, com processo novo). Então o
+  acumulado conhecido é PERSISTIDO pelo front (tabela `usage_baselines`, por
+  `thread_id`) e viaja nos dois sentidos: entra no `RunRequest.usage_baseline`
+  e volta no `Result.cumulative_usage` (acumulado CRU lido agora). O adapter só
+  subtrai (`delta_from`, clamp em 0). Optei por subtrair no **Rust** e não no
+  store porque o custo em USD é estimado lá (`pricing.rs`): se o front fizesse a
+  subtração, ou duplicaria a tabela de preços, ou teria que diferenciar dinheiro
+  no cliente. Assim o número que sai do runner **já é do turno**, e as três
+  superfícies que gravam ledger (chat, disputa, missão) não precisaram saber de
+  nada. O único ponto do app que conhece o baseline é o `runAgent` de
+  `lib/agent.ts`, por onde TODAS as superfícies passam.
+- **Decisão 2 — assimetria custo × contexto:** custo é SOMA de deltas; contexto
+  é NÍVEL (o prompt do turno). Com um contador acumulado, o nível só aparece na
+  DIFERENÇA — por isso o `ContextUsage` do exec passou a ser `delta.input`. Duas
+  correções num lugar só: (a) somar acumulados fazia o anel crescer pra sempre
+  (62k depois de dois turnos triviais de ~17,5k); (b) o cálculo antigo era
+  `input + cached_input`, e como o `input_tokens` da API da OpenAI **já inclui**
+  o cacheado (é o que o `pricing.rs` assume), isso contava o cache duas vezes.
+  A leitura agora bate com o outro transporte do Codex (o app-server usa
+  `tokenUsage.last`, que já é do último turno).
+- **Decisão 3 — capability, não nome:** `cumulative_usage` entrou no registry
+  (adapters.rs + espelho `cumulativeUsage` em lib/agents.ts, teste-gêmeo
+  `matriz_cumulative_usage_por_agent` ↔ `agents.usage.test.ts`), com coerência
+  cobrada no loop de contrato (`cumulative_usage` exige `session_resume`: o
+  acumulado só cresce entre turnos da MESMA thread). É o registry que diz de
+  QUAL motor o histórico está inflado — nenhum `agent === "codex"` no genérico.
+- **Decisão 4 — dado corrompido: reconstruir, nunca apagar.** As 67 linhas
+  antigas não são lixo, são acumulados: dentro de cada conversa, em ordem
+  cronológica, o gasto do turno é a diferença para a linha anterior (e a
+  primeira vale inteira, porque o acumulado dela inclui turnos anteriores ao
+  ledger — dinheiro gasto de verdade, só concentrado). Custo é LINEAR nos
+  tokens, então a diferença de custo entre duas linhas é o custo do delta: a
+  reconstrução não precisa da tabela de preços. Fica atrás de ação EXPLÍCITA
+  (Configurações ▸ Custo & histórico ▸ "Recalcular"), guarda os originais em
+  `turn_costs_usage_raw`, carimba a linha (`turn_costs.usage_basis`, migração
+  **v34** no lib.rs: `delta` = gasto do turno, `recomputed` = reconstruída,
+  NULL = base antiga) e é idempotente. No banco do usuário isso leva o total de
+  US$ 4.217,63 para ~US$ 190.
+- **Limites conhecidos (nenhum corrigido, todos honestos):** (a) a reconstrução
+  supõe que linhas seguidas da mesma conversa são da mesma thread — uma queda
+  de valor é lida como thread nova (linha volta a valer inteira), mas linhas
+  independentes que por acaso cresçam viram delta e SUBcontam; escolhi errar
+  pra baixo, nunca pra cima. (b) O primeiro turno pós-atualização de uma thread
+  antiga cobraria a thread inteira de novo; por isso o baseline é SEMEADO da
+  última linha antiga da conversa (e a reconstrução re-baseia as threads vivas
+  antes de reescrever). Se a conversa trocou de thread nesse meio-tempo, o
+  baseline sai alto e um turno é subcontado. (c) Baseline perdido = um turno
+  superestimado, não uma explosão: o próximo turno já corrige.

@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Bot,
   Check,
+  CircleDollarSign,
   Copy,
   Cpu,
   Download,
@@ -68,6 +69,7 @@ import {
 import { MissionSettings } from "@/components/settings/MissionSettings"
 import { CompanionSettings } from "@/components/settings/CompanionSettings"
 import { McpSettings } from "@/components/settings/McpSettings"
+import { CostMaintenance } from "@/components/settings/CostMaintenance"
 import { EspecialistasContent } from "@/components/settings/Especialistas"
 import {
   DEFAULT_DICTATION_HOTKEY,
@@ -87,6 +89,7 @@ type Section =
   | "missions"
   | "companion"
   | "integrations"
+  | "ledger"
   | "about"
 
 // Grupos rotulados (label-mono no rail) — o `group` marca o INÍCIO de um bloco.
@@ -113,6 +116,7 @@ const SECTIONS: {
   { id: "companion", label: "Companion", icon: Smartphone },
   { id: "integrations", label: "Integrações MCP", icon: Network, group: "Sistema" },
   { id: "tools", label: "CLIs instaladas", icon: Cpu },
+  { id: "ledger", label: "Custo & histórico", icon: CircleDollarSign },
   { id: "about", label: "Sobre", icon: Info },
 ]
 
@@ -961,6 +965,13 @@ export function SettingsDialog() {
           {section === "companion" && <CompanionSettings />}
 
           {section === "integrations" && <McpSettings />}
+
+          {section === "ledger" && (
+            <div>
+              <SectionTitle>Custo & histórico</SectionTitle>
+              <CostMaintenance />
+            </div>
+          )}
 
           {section === "about" && (
             <div>

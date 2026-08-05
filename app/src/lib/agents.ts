@@ -72,6 +72,13 @@ export interface AgentDef {
    *  fica de fora porque o read-only dele é best-effort (candidato
    *  especulativo precisa de confinamento real, ADR do FusionRo). */
   disputes: boolean
+  /** O usage do fim de turno vem ACUMULADO da thread, não do turno (espelho
+   *  de `cumulative_usage`, ADR-033). O runner já normaliza para delta antes
+   *  do evento chegar aqui; a UI consulta isto só pra saber de QUAL motor o
+   *  histórico gravado ANTES da correção está superestimado (a manutenção de
+   *  Configurações). Teste-gêmeo: agents.usage.test.ts ↔
+   *  `matriz_cumulative_usage_por_agent` no Rust. */
+  cumulativeUsage: boolean
   /** O CLI compacta a PRÓPRIA sessão em modo headless (espelho de
    *  `native_compact`, §7.1): o builtin /compactar manda um turno técnico com
    *  o texto literal "/compact" via resume. false = renovação de sessão com
@@ -220,6 +227,8 @@ export const AGENTS: AgentDef[] = [
     sessionResume: true,
     contextMcp: true,
     disputes: true,
+    // o `result` do stream-json traz usage e USD DO TURNO.
+    cumulativeUsage: false,
     // claude 2.1.220: `-p --resume <sid> "/compact"` processa o comando em
     // modo print (empírico 04/08/2026, agent-runner §7.1).
     nativeCompact: true,
@@ -246,6 +255,9 @@ export const AGENTS: AgentDef[] = [
     sessionResume: true,
     contextMcp: true,
     disputes: true,
+    // codex 0.146: o `turn.completed.usage` é o total da THREAD (17494 →
+    // 35005 em dois turnos triviais via resume, 04/08/2026) → ADR-033.
+    cumulativeUsage: true,
     // codex 0.146: `/compact` é só do TUI; `codex exec` não expõe (help
     // verificado 04/08/2026) → /compactar renova a sessão com recap.
     nativeCompact: false,
@@ -274,6 +286,7 @@ export const AGENTS: AgentDef[] = [
     sessionResume: false,
     contextMcp: false,
     disputes: false,
+    cumulativeUsage: false,
     nativeCompact: false,
   },
   {
@@ -295,6 +308,7 @@ export const AGENTS: AgentDef[] = [
     sessionResume: false,
     contextMcp: false,
     disputes: false,
+    cumulativeUsage: false,
     nativeCompact: false,
   },
   {
@@ -316,6 +330,7 @@ export const AGENTS: AgentDef[] = [
     sessionResume: false,
     contextMcp: false,
     disputes: false,
+    cumulativeUsage: false,
     nativeCompact: false,
   },
 ]
@@ -336,6 +351,13 @@ const BY_ID = new Map(AGENTS.map((a) => [a.id, a]))
 
 export function agentDef(id: string): AgentDef | undefined {
   return BY_ID.get(id)
+}
+
+/** Motores cujo usage de fim de turno vem ACUMULADO da thread (ADR-033). Quem
+ *  precisa falar desses motores na UI (a manutenção "recalcular custo
+ *  estimado") pergunta AQUI em vez de escrever "codex" no meio do código. */
+export function cumulativeUsageAgents(): AgentDef[] {
+  return AGENTS.filter((a) => a.cumulativeUsage)
 }
 
 /** "ready"=usável · "installed-not-authenticated"=instalado e DESLOGADO

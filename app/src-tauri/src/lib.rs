@@ -404,6 +404,19 @@ pub fn run() {
                   );",
             kind: MigrationKind::Up,
         },
+        // ADR-033: até aqui, TODA linha de turn_costs de um motor com usage
+        // acumulado por thread (codex) guardava o ACUMULADO como se fosse do
+        // turno. A coluna carimba a base de cada linha: 'delta' = gasto do
+        // turno (o correto, gravado da correção em diante), 'recomputed' =
+        // reconstruída pela manutenção das Configurações, NULL = linha antiga,
+        // base desconhecida. Sem ela não dá pra distinguir histórico inflado de
+        // linha sã, e a reconstrução comeria as linhas certas.
+        Migration {
+            version: 34,
+            description: "turn_costs_usage_basis",
+            sql: "ALTER TABLE turn_costs ADD COLUMN usage_basis TEXT;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

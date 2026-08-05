@@ -213,6 +213,27 @@ recap (transplante para si mesmo, `lib/compact.ts`); sem `session_resume`
 (agy) não há o que compactar — cada turno já é sessão fresca com recap, e a
 UI diz isso em vez de fingir.
 
+Re-checagem 04/08/2026 (foco TELEMETRIA, capability `cumulative_usage`),
+**codex 0.146**: o `usage` do `turn.completed` do `codex exec --json` é o
+**acumulado da THREAD**, não do turno. Medição real, dois turnos triviais no
+MESMO thread (o 2º via `exec resume`):
+
+```
+turno 1: {"input_tokens": 17494, "cached_input_tokens": 9984,  "output_tokens": 6}
+turno 2: {"input_tokens": 35005, "cached_input_tokens": 27136, "output_tokens": 12}
+```
+
+Mesmo prompt, o dobro dos números. Lido como gasto do turno, isso somava
+acumulados em `turn_costs` e inflou o ledger do usuário para US$ 4.217,63 em 67
+linhas (maior "turno": US$ 160,02 com 195M de input) ⇒ `cumulative_usage=true`
+e o adapter passou a emitir o DELTA contra o baseline do run (ADR-033). O
+**contexto** virou `delta.input` no mesmo movimento: nível, não soma (e sem
+somar `cached_input`, que a API da OpenAI já conta dentro do `input_tokens`).
+**claude 2.1.220** ❌ — o `result` traz usage e `total_cost_usd` DO TURNO;
+**agy** ❌ — não reporta usage. Assimetria interna do Codex que vale lembrar: o
+transporte **app-server** publica `thread/tokenUsage/updated` com
+`tokenUsage.last`, que **já é do último turno** — só o `exec` acumula.
+
 | | Leitura | **Padrão (PEDE)** | Liberado |
 |---|---|---|---|
 | **claude** | `--disallowedTools` de escrita | `acceptEdits` + `--permission-prompt-tool` (MCP) | `bypassPermissions` |

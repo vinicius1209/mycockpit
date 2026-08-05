@@ -1,6 +1,8 @@
 import { invoke, Channel } from "@tauri-apps/api/core"
 import type { Attachment } from "@/lib/attachments"
-import { agentDef } from "@/lib/agents"
+import { agentDef, cumulativeUsageAgents } from "@/lib/agents"
+import { loadUsageBaseline, saveUsageBaseline } from "@/lib/db"
+import { nextBaseline, type CumulativeUsage } from "@/lib/usage"
 
 /** Proveniência do custo (espelha CostSource no Rust). */
 export type CostSource = "reported" | "estimated" | "unknown"
@@ -48,6 +50,11 @@ export type AgentEvent =
     }
   | { type: "context_usage"; tokens: number }
   | { type: "limit_reached"; message: string; reset_hint: string | null }
+  /** Fim de turno com telemetria. Tokens e custo são SEMPRE do TURNO — quando
+   *  o motor só sabe reportar o acumulado da thread, o runner já subtraiu o
+   *  baseline (ADR-033). `cumulative_usage` é o acumulado cru daquela thread,
+   *  só pro app persistir e devolver no próximo run; NUNCA é o número exibido.
+   *  Ausente = motor que reporta por turno. */
   | {
       type: "result"
       ok: boolean
@@ -58,6 +65,7 @@ export type AgentEvent =
       output_tokens: number
       cache_read: number
       cache_creation: number
+      cumulative_usage?: CumulativeUsage | null
     }
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
@@ -95,8 +103,31 @@ export async function runAgent(
    *  (anuncia — fail-open pra visibilidade). */
   mcpFingerprint: string | null = null,
 ): Promise<void> {
+  // ADR-033 — usage acumulado por thread: ÚNICO ponto do app em que o baseline
+  // entra e o acumulado volta. Todas as superfícies que rodam agent (chat,
+  // disputa, missão, escritório, agenda, SDD) passam por aqui, então nenhuma
+  // delas precisa saber que existe motor que reporta acumulado.
+  // Quem reporta acumulado sai do registry (capability), nunca de nome de
+  // motor; sem resume não há thread anterior, então não há baseline.
+  const baseline =
+    resume && agentDef(agent)?.cumulativeUsage
+      ? await loadUsageBaseline(
+          resume,
+          convId,
+          cumulativeUsageAgents().map((a) => a.id),
+        )
+      : null
+  // Thread desta execução: o `resume` é a aposta; o `session` confirma (ou
+  // desmente, quando o resume falhou e o CLI abriu outra).
+  let threadId = resume
   const channel = new Channel<AgentEvent>()
-  channel.onmessage = onEvent
+  channel.onmessage = (e) => {
+    if (e.type === "session" && e.session_id) threadId = e.session_id
+    if (e.type === "result" && e.cumulative_usage && threadId) {
+      void saveUsageBaseline(threadId, convId, nextBaseline(e.cumulative_usage))
+    }
+    onEvent(e)
+  }
   await invoke("run_agent", {
     runId,
     convId,
@@ -112,6 +143,7 @@ export async function runAgent(
     memoryFallback,
     systemPrompt,
     mcpFingerprint,
+    usageBaseline: baseline,
     onEvent: channel,
   })
 }

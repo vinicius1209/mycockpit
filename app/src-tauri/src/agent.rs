@@ -87,6 +87,38 @@ pub enum CostSource {
     Unknown,
 }
 
+/// Usage ACUMULADO de uma thread do provider (não do turno). Existe porque o
+/// `codex exec` reporta, no `turn.completed`, o total da THREAD inteira: dois
+/// turnos triviais na mesma thread (resume) saíram 17494 → 35005 input tokens
+/// (codex 0.146, medido 04/08/2026). Lido como se fosse do turno, o app somava
+/// acumulados e o custo explodia em quadrado (ADR-033).
+///
+/// Viaja nos DOIS sentidos: entra no `RunRequest.usage_baseline` (o que a
+/// thread já tinha gasto antes deste run) e volta no `Result.cumulative_usage`
+/// (o total lido agora), pro front persistir e devolver no próximo turno. O
+/// adapter é por-RUN; a thread vive entre runs — por isso o estado mora onde já
+/// existe persistência (ver ADR-033).
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug, Serialize, serde::Deserialize)]
+pub struct CumulativeUsage {
+    /// Input TOTAL (inclui a parte cacheada, convenção da API da OpenAI).
+    pub input: u64,
+    pub cached_input: u64,
+    pub output: u64,
+}
+
+impl CumulativeUsage {
+    /// Quanto ESTE turno gastou: diferença campo a campo com clamp em 0. O
+    /// clamp protege de contador que anda pra trás (thread nova, reset do
+    /// provider): subcontar é honesto, supercontar é a mentira do ADR-033.
+    pub fn delta_from(&self, base: &CumulativeUsage) -> CumulativeUsage {
+        CumulativeUsage {
+            input: self.input.saturating_sub(base.input),
+            cached_input: self.cached_input.saturating_sub(base.cached_input),
+            output: self.output.saturating_sub(base.output),
+        }
+    }
+}
+
 /// Estado de um trabalho DIFERIDO do provider (background task que sobrevive ao
 /// turno): `running`/`progress` = vivo; `completed` = concluiu limpo; `stopped`
 /// = morreu/foi parado sem concluir (o front mostra "interrompido").
@@ -181,6 +213,9 @@ pub enum AgentEvent {
         message: String,
         reset_hint: Option<String>,
     },
+    /// Fim de turno com telemetria. Os tokens e o custo são SEMPRE do TURNO
+    /// (delta) — quando o provider só sabe reportar o acumulado da thread, o
+    /// adapter já subtraiu o baseline do run (ADR-033).
     Result {
         ok: bool,
         text: Option<String>,
@@ -190,6 +225,12 @@ pub enum AgentEvent {
         output_tokens: u64,
         cache_read: u64,
         cache_creation: u64,
+        /// Total ACUMULADO da thread lido neste turno, só para o front
+        /// persistir e devolver como baseline no próximo run. Ausente = o
+        /// provider reporta por turno (nada a acumular). NUNCA é o número que
+        /// a UI/ledger mostra.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cumulative_usage: Option<CumulativeUsage>,
     },
     /// Erro do processo/agent (H3): spawn, stderr ou exit code ≠ 0.
     Error {
@@ -251,6 +292,11 @@ pub async fn run_agent(
     // None = nunca anunciado/desconhecido → anuncia (fail-open pra
     // visibilidade). Option = invoke antigo → None.
     mcp_fingerprint: Option<String>,
+    // ADR-033: acumulado de tokens que a THREAD retomada já tinha (`usageBaseline`
+    // no invoke; o front persiste por thread o `cumulative_usage` devolvido no
+    // Result anterior). Option = invoke antigo/thread nova → None (o turno vale
+    // inteiro). Motor que reporta usage por turno ignora.
+    usage_baseline: Option<CumulativeUsage>,
     attachments: Vec<Attachment>,
     on_event: Channel<AgentEvent>,
     registry: tauri::State<'_, RunRegistry>,
@@ -470,6 +516,7 @@ pub async fn run_agent(
         work_gateway,
         mcp_plan,
         plan_first: plan_first.unwrap_or(false),
+        usage_baseline,
     };
     // Codex no modo Padrão: transporte `codex app-server` (JSON-RPC no stdio) —
     // o ÚNICO em que o Codex PEDE aprovação. O `codex exec` é mão única: sem
@@ -563,6 +610,9 @@ pub async fn run_agent(
         );
         let mut req2 = req;
         req2.resume = None;
+        // Thread nova: o acumulado da thread que sumiu não descreve mais nada
+        // (ADR-033). Mantê-lo faria o 1º turno da thread nova sair de graça.
+        req2.usage_baseline = None;
         // Fallback de memória: o recap do front entra ANTES do prompt original,
         // p/ o run recomeçado não esquecer a conversa. Sem fallback, prompt intacto.
         req2.prompt = restart_prompt(req2.memory_fallback.as_deref(), &req2.prompt);

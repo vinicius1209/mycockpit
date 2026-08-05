@@ -434,6 +434,12 @@ pub fn map_notification(method: &str, params: &Value, st: &mut StreamState) -> V
                 output_tokens: nu.output,
                 cache_read: nu.cached_input,
                 cache_creation: 0,
+                // Assimetria REAL entre os dois transportes do Codex (ADR-033):
+                // aqui o app-server publica `tokenUsage.last` (o ÚLTIMO turno),
+                // enquanto o `codex exec --json` só publica o acumulado da
+                // thread no `turn.completed`. Este caminho já é por turno →
+                // nada a acumular, nada a devolver como baseline.
+                cumulative_usage: None,
             }]
         }
         // Ruído de infraestrutura do app-server (subida de MCP, rate limits, hooks,
@@ -826,6 +832,7 @@ mod tests {
             work_gateway: None,
             mcp_plan: crate::mcp_control::McpRunPlan::default(),
             plan_first: false,
+            usage_baseline: None,
         }
     }
 

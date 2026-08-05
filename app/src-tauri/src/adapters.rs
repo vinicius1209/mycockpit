@@ -60,6 +60,11 @@ pub struct RunRequest {
     /// headless planeja e NÃO edita); codex força `-s read-only` (sandbox de OS);
     /// agy emula por prompt + --sandbox (melhor esforço, ver AgyAdapter).
     pub plan_first: bool,
+    /// Quanto a thread retomada JÁ tinha acumulado de tokens (ADR-033). Só faz
+    /// sentido pra motor com `cumulative_usage`: o adapter subtrai isto do
+    /// acumulado que o provider reporta e emite o gasto DO TURNO. None = thread
+    /// nova, primeira vez, ou motor que já reporta por turno.
+    pub usage_baseline: Option<crate::agent::CumulativeUsage>,
 }
 
 /// Política de permissão POR RUN, parseada UMA vez na fronteira (run_agent).
@@ -155,6 +160,15 @@ pub struct Capabilities {
     pub structured_output: bool,
     /// Reporta custo em USD (Reported). false = estimado por tokens ou nada.
     pub reports_cost: bool,
+    /// O usage do fim de turno é ACUMULADO DA THREAD (não do turno): o adapter
+    /// precisa do baseline do run pra emitir o gasto real (ADR-033). Verdade
+    /// por versão auditada (§7.1): codex 0.146 ✅ — `turn.completed.usage` de
+    /// dois turnos triviais na MESMA thread deu input 17494 → 35005 (medido
+    /// 04/08/2026); claude 2.1.220 ❌ (o `result` traz usage e USD do turno);
+    /// agy ❌ (não reporta usage). Consumido pelo espelho TS
+    /// (`lib/agents.ts`), que decide de qual motor o histórico gravado antes
+    /// da correção está inflado.
+    pub cumulative_usage: bool,
     /// O CLI compacta a PRÓPRIA sessão em modo headless: um turno com o texto
     /// literal `/compact` via resume é processado (verdade por versão auditada,
     /// §7.1 do agent-runner): claude 2.1.220 ✅ (`claude -p --resume <sid>
@@ -184,6 +198,8 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     system_channel: true,
     structured_output: true,
     reports_cost: true,
+    // o `result` do stream-json traz o usage E o USD DO TURNO.
+    cumulative_usage: false,
     // claude 2.1.220: `-p --resume <sid> "/compact"` processa o comando em
     // modo print (empírico 04/08/2026; §7.1 do agent-runner).
     native_compact: true,
@@ -207,6 +223,9 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     system_channel: false,
     structured_output: true,
     reports_cost: false,
+    // codex 0.146: o `turn.completed.usage` é o total da THREAD (17494 →
+    // 35005 em dois turnos triviais via resume, 04/08/2026) → ADR-033.
+    cumulative_usage: true,
     // codex 0.146: `/compact` é comando do TUI; `codex exec` não expõe
     // (help verificado 04/08/2026) → compactar = renovação de sessão app-side.
     native_compact: false,
@@ -228,6 +247,8 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     system_channel: false,
     structured_output: false,
     reports_cost: false,
+    // stdout de texto puro: não há usage nenhum, quanto mais acumulado.
+    cumulative_usage: false,
     native_compact: false,
 };
 
@@ -353,6 +374,9 @@ fn build_codex() -> Box<dyn AgentAdapter> {
         // o stream do codex NÃO emite o modelo → lê do config p/ estimar custo
         model: Some(codex_config_model()),
         evidence: None,
+        // baseline e thread do run chegam no build_command (RunRequest).
+        resume: None,
+        usage_seen: None,
     })
 }
 fn build_agy() -> Box<dyn AgentAdapter> {
@@ -1203,6 +1227,10 @@ impl AgentAdapter for ClaudeAdapter {
                     output_tokens: usage_u64(usage, "output_tokens"),
                     cache_read: usage_u64(usage, "cache_read_input_tokens"),
                     cache_creation: usage_u64(usage, "cache_creation_input_tokens"),
+                    // O `result` do Claude já é POR TURNO (usage do turno +
+                    // total_cost_usd daquele turno): não há acumulado a
+                    // devolver, e nada aqui muda por causa do ADR-033.
+                    cumulative_usage: None,
                 }];
                 if let Some((message, hit)) = limit {
                     out.push(AgentEvent::LimitReached {
@@ -1234,6 +1262,14 @@ pub struct CodexAdapter {
     /// Evidência visual (B1): o exec só reporta imagem se o item trouxer um
     /// `result` com content MCP; sem isso, degrada honesto (vazio).
     evidence: Option<crate::evidence::EvidenceSink>,
+    /// Thread que este run pediu pra retomar (`exec resume <id>`), copiada do
+    /// RunRequest. Serve pra saber se o `thread.started` que voltou é MESMA
+    /// thread do baseline — id diferente = thread nova, baseline não vale.
+    resume: Option<String>,
+    /// Acumulado JÁ contabilizado desta thread antes deste run (ADR-033). Vem
+    /// do front no `RunRequest.usage_baseline` (o adapter morre com o run; a
+    /// thread não). None = thread nova/desconhecida → o turno vale inteiro.
+    usage_seen: Option<crate::agent::CumulativeUsage>,
 }
 
 impl AgentAdapter for CodexAdapter {
@@ -1255,6 +1291,11 @@ impl AgentAdapter for CodexAdapter {
         if let Some(m) = &req.model {
             self.model = Some(m.clone());
         }
+        // ADR-033: o usage do `turn.completed` é o acumulado da THREAD. O que
+        // ela já gastou (baseline) e qual thread é vêm do run — o adapter só
+        // subtrai.
+        self.resume = req.resume.clone();
+        self.usage_seen = req.usage_baseline;
         let mut cmd = Command::new("codex");
         // Config por-run: o mesmo MCP `mc-context` do Claude, sem escrever no
         // config global do usuário. Precisa vir ANTES do subcomando `exec`.
@@ -1357,6 +1398,13 @@ impl AgentAdapter for CodexAdapter {
                     .and_then(|x| x.as_str())
                     .unwrap_or_default()
                     .to_string();
+                // Thread DIFERENTE da que o baseline descreve (resume que
+                // falhou e recomeçou, run sem resume): o contador do provider
+                // recomeça do zero, então o baseline antigo não vale mais — e
+                // manter o baseline zeraria o custo do 1º turno da thread nova.
+                if self.resume.as_deref() != Some(id.as_str()) {
+                    self.usage_seen = None;
+                }
                 vec![AgentEvent::Session {
                     session_id: id,
                     model: self.model.clone(),
@@ -1368,18 +1416,39 @@ impl AgentAdapter for CodexAdapter {
                 None => vec![AgentEvent::Unknown { raw: v.clone() }],
             },
             "turn.completed" => {
+                // ADR-033: este `usage` é o ACUMULADO DA THREAD, não do turno
+                // (medido no codex 0.146: dois turnos triviais no mesmo thread
+                // via resume deram input 17494 → 35005). Tudo que a UI e o
+                // ledger mostram é o DELTA contra o baseline do run.
                 let usage = v.get("usage");
-                let nu = crate::pricing::NormalizedUsage {
+                let cum = crate::agent::CumulativeUsage {
                     input: usage_u64(usage, "input_tokens"),
                     cached_input: usage_u64(usage, "cached_input_tokens"),
                     output: usage_u64(usage, "output_tokens"),
+                };
+                let delta = cum.delta_from(&self.usage_seen.unwrap_or_default());
+                // o contador do provider é a verdade pro próximo turno (vale
+                // também pra 2 turnos no mesmo run, se um dia existirem).
+                self.usage_seen = Some(cum);
+                let nu = crate::pricing::NormalizedUsage {
+                    input: delta.input,
+                    cached_input: delta.cached_input,
+                    output: delta.output,
                 };
                 // Codex NÃO dá USD → estima por tokens × tabela (default = config gpt-5.5)
                 let model = self.model.clone().unwrap_or_else(|| "gpt-5.5".to_string());
                 let (cost_usd, cost_source) = crate::pricing::estimate(&model, &nu);
                 let mut out = Vec::new();
-                // footprint do contexto do turno (prompt = novo + cacheado)
-                let ctx = nu.input + nu.cached_input;
+                // Footprint do contexto = NÍVEL, não soma: é o prompt DESTE
+                // turno (`input_tokens` já inclui a parte cacheada, convenção
+                // da API da OpenAI — por isso não somamos cached, que contaria
+                // o cache duas vezes). Com o contador acumulado, o nível só
+                // aparece na diferença; somar acumulados faria o anel crescer
+                // pra sempre (62k depois de dois turnos triviais de 17k).
+                // Mesma leitura do transporte app-server, que já usa o
+                // `tokenUsage.last`. Assimetria consciente: custo SOMA deltas,
+                // contexto é o ÚLTIMO delta.
+                let ctx = nu.input;
                 if ctx > 0 {
                     out.push(AgentEvent::ContextUsage { tokens: ctx });
                 }
@@ -1392,6 +1461,9 @@ impl AgentAdapter for CodexAdapter {
                     output_tokens: nu.output,
                     cache_read: nu.cached_input,
                     cache_creation: 0,
+                    // devolve o acumulado cru pro front persistir por thread e
+                    // mandar de volta como baseline no próximo run.
+                    cumulative_usage: Some(cum),
                 });
                 out
             }
@@ -1807,6 +1879,7 @@ mod tests {
             work_gateway: None,
             mcp_plan: crate::mcp_control::McpRunPlan::default(),
             plan_first,
+            usage_baseline: None,
         }
     }
 
@@ -2552,6 +2625,194 @@ mod tests {
         }
     }
 
+    // ---- ADR-033: usage do codex é ACUMULADO DA THREAD ----
+
+    /// Sequência REAL medida no codex 0.146 (04/08/2026): dois turnos triviais
+    /// na MESMA thread, o 2º via `exec resume`. O acumulado praticamente dobra
+    /// com o mesmo prompt — ler isso como gasto do turno é o bug que inflou o
+    /// ledger em ~20x.
+    const TURNO_1: (u64, u64, u64) = (17494, 9984, 6);
+    const TURNO_2: (u64, u64, u64) = (35005, 27136, 12);
+
+    fn turn_completed(usage: (u64, u64, u64)) -> serde_json::Value {
+        serde_json::json!({
+            "type": "turn.completed",
+            "usage": {
+                "input_tokens": usage.0,
+                "cached_input_tokens": usage.1,
+                "output_tokens": usage.2
+            }
+        })
+    }
+
+    /// Telemetria do Result (tokens, custo, acumulado devolvido).
+    fn result_of(evs: &[AgentEvent]) -> (u64, u64, u64, f64, Option<crate::agent::CumulativeUsage>) {
+        match evs.iter().find(|e| matches!(e, AgentEvent::Result { .. })) {
+            Some(AgentEvent::Result {
+                input_tokens,
+                output_tokens,
+                cache_read,
+                cost_usd,
+                cumulative_usage,
+                ..
+            }) => (
+                *input_tokens,
+                *output_tokens,
+                *cache_read,
+                cost_usd.unwrap_or(0.0),
+                *cumulative_usage,
+            ),
+            _ => panic!("esperava Result"),
+        }
+    }
+
+    fn ctx_of(evs: &[AgentEvent]) -> Option<u64> {
+        evs.iter().find_map(|e| match e {
+            AgentEvent::ContextUsage { tokens } => Some(*tokens),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn codex_segundo_turno_cobra_o_delta_e_nao_o_acumulado_da_thread() {
+        // Turno 1: thread nova, sem baseline → o acumulado É o turno.
+        let mut a1 = CodexAdapter::default();
+        a1.build_command(&req(Permission::Padrao, false)).unwrap();
+        a1.map_line(&serde_json::json!({ "type": "thread.started", "thread_id": "t-1" }));
+        let evs1 = a1.map_line(&turn_completed(TURNO_1));
+        let (i1, o1, c1, usd1, cum1) = result_of(&evs1);
+        assert_eq!((i1, c1, o1), (17494, 9984, 6));
+        assert_eq!(cum1.map(|c| c.input), Some(17494));
+
+        // Turno 2: MESMA thread via resume, com o acumulado do turno 1 como
+        // baseline (é o que o front persistiu do `cumulative_usage`).
+        let mut a2 = CodexAdapter::default();
+        let mut r = req(Permission::Padrao, false);
+        r.resume = Some("t-1".to_string());
+        r.usage_baseline = Some(crate::agent::CumulativeUsage {
+            input: TURNO_1.0,
+            cached_input: TURNO_1.1,
+            output: TURNO_1.2,
+        });
+        a2.build_command(&r).unwrap();
+        a2.map_line(&serde_json::json!({ "type": "thread.started", "thread_id": "t-1" }));
+        let evs2 = a2.map_line(&turn_completed(TURNO_2));
+        let (i2, o2, c2, usd2, cum2) = result_of(&evs2);
+        assert_eq!(
+            (i2, c2, o2),
+            (17511, 17152, 6),
+            "o 2º turno tem que reportar o DELTA (35005-17494), não o acumulado"
+        );
+        // o acumulado cru volta intacto pro front persistir.
+        assert_eq!(cum2.map(|c| (c.input, c.cached_input, c.output)), Some(TURNO_2));
+        // custo do delta ≈ US$0,0106 (gpt-5.5); pelo acumulado seriam ~US$0,053.
+        assert!(
+            usd2 < 0.02,
+            "custo do 2º turno saiu do acumulado (US$ {usd2:.4}); esperado ~US$ 0,0106"
+        );
+        assert!(usd1 > 0.0 && usd2 > 0.0);
+        // contexto é NÍVEL: o prompt do turno (input já inclui o cacheado),
+        // não a soma dos prompts da thread.
+        assert_eq!(ctx_of(&evs1), Some(17494));
+        assert_eq!(
+            ctx_of(&evs2),
+            Some(17511),
+            "o anel de contexto mostra o prompt DESTE turno, não o acumulado"
+        );
+    }
+
+    #[test]
+    fn codex_thread_nova_descarta_o_baseline_em_vez_de_zerar_o_turno() {
+        let mut a = CodexAdapter::default();
+        let mut r = req(Permission::Padrao, false);
+        r.resume = Some("t-antiga".to_string());
+        r.usage_baseline = Some(crate::agent::CumulativeUsage {
+            input: 500_000,
+            cached_input: 400_000,
+            output: 9_000,
+        });
+        a.build_command(&r).unwrap();
+        // o resume falhou lá atrás e o CLI abriu OUTRA thread: o contador
+        // recomeça do zero, o baseline antigo não descreve mais nada.
+        a.map_line(&serde_json::json!({ "type": "thread.started", "thread_id": "t-nova" }));
+        let evs = a.map_line(&turn_completed(TURNO_1));
+        let (i, o, c, usd, _) = result_of(&evs);
+        assert_eq!((i, c, o), (17494, 9984, 6), "1º turno da thread nova vale inteiro");
+        assert!(usd > 0.0);
+    }
+
+    #[test]
+    fn codex_contador_menor_que_o_baseline_nunca_vira_negativo() {
+        // Sem `thread.started` (linha perdida/CLI mudo) e com acumulado MENOR
+        // que o baseline: clamp em 0. Subcontar é honesto; supercontar é o bug.
+        let mut a = CodexAdapter::default();
+        let mut r = req(Permission::Padrao, false);
+        r.resume = Some("t-1".to_string());
+        r.usage_baseline = Some(crate::agent::CumulativeUsage {
+            input: TURNO_2.0,
+            cached_input: TURNO_2.1,
+            output: TURNO_2.2,
+        });
+        a.build_command(&r).unwrap();
+        let evs = a.map_line(&turn_completed(TURNO_1));
+        let (i, o, c, usd, cum) = result_of(&evs);
+        assert_eq!((i, c, o), (0, 0, 0));
+        assert_eq!(usd, 0.0);
+        // e o acumulado cru continua indo pro front (a verdade do provider).
+        assert_eq!(cum.map(|c| c.input), Some(TURNO_1.0));
+        assert_eq!(ctx_of(&evs), None, "sem prompt novo, sem anel novo");
+    }
+
+    /// O Claude reporta usage E custo POR TURNO: dois results idênticos
+    /// continuam idênticos (nada de delta) e nunca devolvem acumulado.
+    #[test]
+    fn claude_reported_fica_intocado_pela_correcao_do_codex() {
+        let mut a = ClaudeAdapter::default();
+        let linha = serde_json::json!({
+            "type": "result",
+            "is_error": false,
+            "result": "pronto",
+            "total_cost_usd": 0.42,
+            "usage": {
+                "input_tokens": 1200,
+                "output_tokens": 300,
+                "cache_read_input_tokens": 900,
+                "cache_creation_input_tokens": 100
+            }
+        });
+        for _ in 0..2 {
+            let evs = a.map_line(&linha);
+            match &evs[0] {
+                AgentEvent::Result {
+                    input_tokens,
+                    output_tokens,
+                    cache_read,
+                    cost_usd,
+                    cumulative_usage,
+                    ..
+                } => {
+                    assert_eq!((*input_tokens, *output_tokens, *cache_read), (1200, 300, 900));
+                    assert_eq!(*cost_usd, Some(0.42));
+                    assert!(cumulative_usage.is_none());
+                }
+                _ => panic!("esperava Result"),
+            }
+        }
+    }
+
+    /// Teste-GÊMEO do espelho TS (`agents.usage.test.ts`): quem reporta usage
+    /// ACUMULADO da thread. Mexeu aqui, mexa lá.
+    #[test]
+    fn matriz_cumulative_usage_por_agent() {
+        // codex 0.146: `turn.completed.usage` = total da thread (17494 → 35005
+        // em dois turnos triviais via resume, medido 04/08/2026).
+        assert!(capabilities_of("codex").unwrap().cumulative_usage);
+        // claude 2.1.220: o `result` traz usage e USD DO TURNO.
+        assert!(!capabilities_of("claude-code").unwrap().cumulative_usage);
+        // agy: stdout de texto puro, sem usage.
+        assert!(!capabilities_of("agy").unwrap().cumulative_usage);
+    }
+
     #[test]
     fn codex_command_failed_preserva_erro() {
         let item = serde_json::json!({
@@ -2927,6 +3188,14 @@ mod tests {
             assert!(
                 !caps.native_compact || caps.session_resume,
                 "{agent}: native_compact declarado exige session_resume (o /compact viaja via resume)"
+            );
+            // ADR-033: usage acumulado da THREAD só é problema porque os turnos
+            // seguintes retomam a mesma thread. Sem resume, todo run é thread
+            // nova e o acumulado JÁ é o do turno — declarar cumulative_usage aí
+            // prometeria um baseline que o app nunca teria como montar.
+            assert!(
+                !caps.cumulative_usage || caps.session_resume,
+                "{agent}: cumulative_usage declarado exige session_resume (o acumulado só cresce entre turnos da MESMA thread)"
             );
             assert_eq!(
                 blob.contains(crate::work_gateway::MCP_SERVER_NAME),

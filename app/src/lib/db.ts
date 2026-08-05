@@ -4,6 +4,8 @@ import type { ChatItem } from "@/store/chat"
 import type { ConvRef } from "@/lib/attachments"
 import type { FusionRun } from "@/store/fusion"
 import type { DeliveryRecord } from "@/lib/recall"
+import type { CumulativeUsage } from "@/lib/usage"
+import { planUsageRecompute, recomputeSummary } from "@/lib/usage"
 
 const DB_URL = "sqlite:mycockpit.db" // DEVE bater com add_migrations no lib.rs
 
@@ -1327,7 +1329,7 @@ export async function recordTurnCost(r: {
   if (!db) return
   try {
     await db.execute(
-      "INSERT OR REPLACE INTO turn_costs (run_id, project_id, conv_id, agent, model, cost_usd, cost_source, input_tokens, output_tokens, cache_tokens, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+      "INSERT OR REPLACE INTO turn_costs (run_id, project_id, conv_id, agent, model, cost_usd, cost_source, input_tokens, output_tokens, cache_tokens, created_at, usage_basis) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
       [
         r.runId,
         r.projectId,
@@ -1340,11 +1342,290 @@ export async function recordTurnCost(r: {
         r.output,
         r.cache,
         Date.now(),
+        // ADR-033: da correção em diante TODA linha é o gasto DO TURNO (o
+        // runner já subtraiu o acumulado da thread). O carimbo é o que separa
+        // estas linhas do histórico antigo, que guardava o acumulado.
+        USAGE_BASIS_DELTA,
       ],
     )
   } catch {
     // best-effort
   }
+}
+
+// ---- ADR-033: usage ACUMULADO por thread (baseline + reconstrução) ----
+//
+// O `codex exec` reporta no fim do turno o total da THREAD, não do turno. O
+// runner (Rust) normaliza pra delta, mas o adapter morre com o run e a thread
+// não: o acumulado conhecido precisa de PERSISTÊNCIA, e ela mora aqui — o
+// mesmo lugar que já guarda o session_id da conversa.
+
+/** Carimbo de base de uma linha de turn_costs (coluna `usage_basis`). */
+export const USAGE_BASIS_DELTA = "delta"
+export const USAGE_BASIS_RECOMPUTED = "recomputed"
+
+let usageBaselineReady: Promise<void> | null = null
+
+/** Tabelas frontend-created (idempotentes, como as de aprendizado/board):
+ *  - `usage_baselines`: acumulado já contabilizado POR THREAD;
+ *  - `turn_costs_usage_raw`: valores ORIGINAIS das linhas reconstruídas
+ *    (nada é apagado — a reconstrução é auditável e reversível). */
+async function ensureUsageTables(db: Database): Promise<void> {
+  if (!usageBaselineReady) {
+    const run = (async () => {
+      await db.execute(
+        `CREATE TABLE IF NOT EXISTS usage_baselines (
+           thread_id TEXT PRIMARY KEY,
+           conv_id TEXT,
+           input INTEGER NOT NULL DEFAULT 0,
+           cached_input INTEGER NOT NULL DEFAULT 0,
+           output INTEGER NOT NULL DEFAULT 0,
+           updated_at INTEGER NOT NULL
+         )`,
+      )
+      await db.execute(
+        `CREATE TABLE IF NOT EXISTS turn_costs_usage_raw (
+           run_id TEXT PRIMARY KEY,
+           cost_usd REAL,
+           input_tokens INTEGER NOT NULL DEFAULT 0,
+           output_tokens INTEGER NOT NULL DEFAULT 0,
+           cache_tokens INTEGER NOT NULL DEFAULT 0,
+           backed_up_at INTEGER NOT NULL
+         )`,
+      )
+    })()
+    usageBaselineReady = run.catch((e) => {
+      usageBaselineReady = null
+      throw e
+    })
+  }
+  return usageBaselineReady
+}
+
+/** Quanto a thread `threadId` JÁ acumulou (o que o próximo run manda como
+ *  baseline). null = thread nova/desconhecida → o turno vale inteiro.
+ *
+ *  SEMEADURA (uma vez por thread): sem linha de baseline, a última linha de
+ *  turn_costs da conversa gravada ANTES da correção ainda guarda o acumulado
+ *  cru — usá-la evita que o primeiro turno pós-atualização de uma thread
+ *  antiga cobre a thread inteira de novo (era US$ 160 num turno). Se a
+ *  conversa trocou de thread nesse meio-tempo, o baseline sai alto e o turno
+ *  seguinte é subcontado (uma vez): honesto na direção segura. */
+export async function loadUsageBaseline(
+  threadId: string,
+  convId: string,
+  cumulativeAgents: string[],
+): Promise<CumulativeUsage | null> {
+  const db = await getDb()
+  if (!db) return null
+  try {
+    await ensureUsageTables(db)
+    const rows = await db.select<
+      { input: number; cached_input: number; output: number }[]
+    >(
+      "SELECT input, cached_input, output FROM usage_baselines WHERE thread_id = $1",
+      [threadId],
+    )
+    if (rows.length) {
+      return {
+        input: rows[0].input,
+        cached_input: rows[0].cached_input,
+        output: rows[0].output,
+      }
+    }
+    if (!cumulativeAgents.length) return null
+    const ph = cumulativeAgents.map((_, i) => `$${i + 2}`).join(", ")
+    const legacy = await db.select<
+      {
+        usage_basis: string | null
+        i: number
+        c: number
+        o: number
+      }[]
+    >(
+      `SELECT t.usage_basis AS usage_basis,
+              COALESCE(b.input_tokens, t.input_tokens) AS i,
+              COALESCE(b.cache_tokens, t.cache_tokens) AS c,
+              COALESCE(b.output_tokens, t.output_tokens) AS o
+         FROM turn_costs t
+         LEFT JOIN turn_costs_usage_raw b ON b.run_id = t.run_id
+        WHERE t.conv_id = $1 AND t.agent IN (${ph})
+        ORDER BY t.created_at DESC LIMIT 1`,
+      [convId, ...cumulativeAgents],
+    )
+    const last = legacy[0]
+    // linha já gravada como delta = mundo pós-correção, nada a semear.
+    if (!last || last.usage_basis === USAGE_BASIS_DELTA) return null
+    const seed: CumulativeUsage = {
+      input: last.i,
+      cached_input: last.c,
+      output: last.o,
+    }
+    if (!seed.input && !seed.cached_input && !seed.output) return null
+    await saveUsageBaseline(threadId, convId, seed, "seed")
+    return seed
+  } catch {
+    // Sem baseline o turno vale inteiro (superestima uma vez) — nunca derruba
+    // o turno por causa de telemetria.
+    return null
+  }
+}
+
+/** Guarda o acumulado que o provider reportou nesta thread.
+ *
+ *  `mode: "seed"` só preenche o que está FALTANDO (`DO NOTHING`): é o que a
+ *  reconstrução usa pra re-basear threads antigas sem atropelar um baseline
+ *  mais novo, vindo de um turno já corrigido. */
+export async function saveUsageBaseline(
+  threadId: string,
+  convId: string | null,
+  usage: CumulativeUsage,
+  mode: "upsert" | "seed" = "upsert",
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  try {
+    await ensureUsageTables(db)
+    await db.execute(
+      `INSERT INTO usage_baselines (thread_id, conv_id, input, cached_input, output, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ${
+         mode === "seed"
+           ? "ON CONFLICT(thread_id) DO NOTHING"
+           : `ON CONFLICT(thread_id) DO UPDATE SET
+         conv_id = excluded.conv_id,
+         input = excluded.input,
+         cached_input = excluded.cached_input,
+         output = excluded.output,
+         updated_at = excluded.updated_at`
+       }`,
+      [
+        threadId,
+        convId,
+        usage.input,
+        usage.cached_input,
+        usage.output,
+        Date.now(),
+      ],
+    )
+  } catch {
+    // best-effort: perder o baseline superestima o PRÓXIMO turno, não quebra o run.
+  }
+}
+
+/** Quantas linhas do ledger ainda estão na base ANTIGA (acumulado lido como
+ *  turno) para estes motores, e quanto elas somam. Só leitura — é o que a tela
+ *  de manutenção mostra antes de qualquer escrita. */
+export async function countCumulativeLedgerRows(
+  agentIds: string[],
+): Promise<{ rows: number; total: number }> {
+  const db = await getDb()
+  if (!db || !agentIds.length) return { rows: 0, total: 0 }
+  const ph = agentIds.map((_, i) => `$${i + 1}`).join(", ")
+  const r = await db.select<{ n: number; total: number | null }[]>(
+    `SELECT COUNT(*) AS n, SUM(cost_usd) AS total FROM turn_costs
+      WHERE usage_basis IS NULL AND agent IN (${ph})`,
+    agentIds,
+  )
+  return { rows: r[0]?.n ?? 0, total: r[0]?.total ?? 0 }
+}
+
+/** Reconstrói o gasto POR TURNO das linhas gravadas como acumulado (ADR-033).
+ *
+ *  Ação EXPLÍCITA do usuário (Configurações), nunca automática. Não apaga
+ *  nada: os valores originais vão pra `turn_costs_usage_raw` antes do UPDATE e
+ *  a linha fica carimbada `recomputed`. Idempotente (linha carimbada sai do
+ *  filtro) e retomável (o carimbo é por linha). */
+export async function recomputeCumulativeLedger(
+  agentIds: string[],
+): Promise<{ rows: number; before: number; after: number }> {
+  const db = await getDb()
+  if (!db || !agentIds.length) return { rows: 0, before: 0, after: 0 }
+  await ensureUsageTables(db)
+  const ph = agentIds.map((_, i) => `$${i + 1}`).join(", ")
+  const raw = await db.select<
+    {
+      run_id: string
+      conv_id: string
+      cost_usd: number | null
+      input_tokens: number
+      output_tokens: number
+      cache_tokens: number
+      created_at: number
+    }[]
+  >(
+    `SELECT run_id, conv_id, cost_usd, input_tokens, output_tokens, cache_tokens, created_at
+       FROM turn_costs
+      WHERE usage_basis IS NULL AND agent IN (${ph})
+      ORDER BY conv_id, created_at`,
+    agentIds,
+  )
+  if (!raw.length) return { rows: 0, before: 0, after: 0 }
+  const plan = planUsageRecompute(
+    raw.map((r) => ({
+      runId: r.run_id,
+      convId: r.conv_id,
+      costUsd: r.cost_usd,
+      input: r.input_tokens,
+      output: r.output_tokens,
+      cache: r.cache_tokens,
+      createdAt: r.created_at,
+    })),
+  )
+  // Semeia o baseline das threads VIVAS antes de reescrever: depois do UPDATE
+  // o acumulado cru só existe no backup, e sem baseline o próximo turno dessas
+  // conversas cobraria a thread inteira outra vez.
+  const lastByConv = new Map<string, (typeof plan)[number]>()
+  for (const row of plan) lastByConv.set(row.convId, row)
+  for (const [convId, row] of lastByConv) {
+    const conv = await db.select<{ session_id: string | null }[]>(
+      "SELECT session_id FROM conversations WHERE id = $1",
+      [convId],
+    )
+    const threadId = conv[0]?.session_id
+    if (!threadId) continue
+    await saveUsageBaseline(
+      threadId,
+      convId,
+      {
+        input: row.raw.input,
+        cached_input: row.raw.cache,
+        output: row.raw.output,
+      },
+      // nunca atropela um baseline mais novo (turno já corrigido nessa thread)
+      "seed",
+    )
+  }
+  for (const row of plan) {
+    await db.execute(
+      `INSERT OR IGNORE INTO turn_costs_usage_raw
+         (run_id, cost_usd, input_tokens, output_tokens, cache_tokens, backed_up_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        row.runId,
+        row.raw.costUsd,
+        row.raw.input,
+        row.raw.output,
+        row.raw.cache,
+        Date.now(),
+      ],
+    )
+    await db.execute(
+      `UPDATE turn_costs
+          SET cost_usd = $1, input_tokens = $2, output_tokens = $3,
+              cache_tokens = $4, usage_basis = $5
+        WHERE run_id = $6`,
+      [
+        row.costUsd,
+        row.input,
+        row.output,
+        row.cache,
+        USAGE_BASIS_RECOMPUTED,
+        row.runId,
+      ],
+    )
+  }
+  return recomputeSummary(plan)
 }
 
 /** Ledger unificado desde `sinceMs`: turnos de chat + candidatos de disputa +
