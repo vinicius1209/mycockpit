@@ -1,0 +1,80 @@
+# Ditado — plano (nunca perder o fim da frase)
+
+> Status: proposto em 06/08/2026, do relato do usuário: "no modo editado, o
+> feedback em tempo real veio, mas ao soltar o botão ele COMEU boa parte da
+> frase dita no final". Referência de qualidade citada: Wispr Flow (e a
+> família superwhisper / MacWhisper / VoiceInk).
+
+## A causa (lida no código, não suposta)
+
+Arquitetura atual: sidecar Swift (`app/src-tauri/stt/main.swift`) com
+`SFSpeechRecognizer` em **streaming**; parciais vão pra UI por `stt://partial`;
+`STOP` (`stt.rs:133`) encerra e devolve o texto final.
+
+Dois defeitos somados explicam o corte:
+
+1. **A ordem do STOP descarta áudio em voo** (`main.swift:246-254`):
+   `engine.stop()` e `input.removeTap(onBus:0)` acontecem ANTES de
+   `req?.endAudio()`. O que estava no buffer do tap (dezenas a centenas de ms
+   — justamente as últimas sílabas) nunca chega ao reconhecedor.
+2. **O resultado final PODE ser mais curto que o último parcial, e vence**
+   (`main.swift:160-170`): a guarda de encolhimento só dispara quando o texto
+   novo tem **menos da metade** do tamanho (`t.count * 2 < current.count`).
+   Um final que perde só o rabo da frase (10-40% menor) passa reto, sobrescreve
+   `current` e o rabo some. É exatamente o sintoma relatado.
+
+## A lição do mercado (o que Wispr Flow e afins fazem diferente)
+
+O padrão da categoria **não é** confiar no streaming para o texto final:
+
+- **Grava o áudio inteiro** e roda uma passada de transcrição sobre o **buffer
+  completo** ao soltar o botão. O streaming existe só para o feedback ao vivo.
+  Consequência direta: é impossível "comer o fim", porque o fim está no arquivo.
+- **Pós-processamento**: pontuação, remoção de hesitação ("é…", "tipo"),
+  formatação sensível ao contexto (o app sabe que é um prompt de dev).
+- **Push-to-talk com trava de finalização**: a UI mostra "finalizando" por
+  centenas de ms em vez de fingir que acabou.
+
+## D1 — Não perder o fim (correção da causa, barata)
+
+- **D1.1** — Inverter a ordem no `STOP`: `endAudio()` PRIMEIRO, e só depois
+  parar o engine/remover o tap, com um pequeno *drain* (~300ms) antes de
+  encerrar. O áudio em voo entra no reconhecedor.
+- **D1.2** — **O final nunca encurta**: guardar o melhor texto visto
+  (`bestSoFar`) e, no `finish`, entregar o MAIS COMPLETO entre o final e o
+  último parcial (regra: se o final não contém/estende o parcial e é menor,
+  usa o parcial). Some a heurística frágil do "metade do tamanho".
+- **D1.3** — UI honesta: estado "finalizando…" entre soltar o botão e o texto
+  chegar (hoje o usuário solta e acha que acabou). O timeout de 8s
+  (`main.swift:255`) e o de 15s (`stt.rs:145`) continuam como rede.
+
+## D2 — Passada de áudio completo (o pulo de qualidade)
+
+- **D2.1** — Gravar o áudio da sessão em arquivo (WAV/CAF temporário no
+  scratch da conversa, apagado ao fim).
+- **D2.2** — No STOP, rodar transcrição sobre o **arquivo inteiro**
+  (`SFSpeechURLRecognitionRequest`, on-device, mesma stack — zero dependência
+  nova) e usar ESSE texto como final; o streaming vira só preview.
+- **D2.3** — Fallback honesto: se a passada de arquivo falhar ou estourar o
+  prazo, entrega o texto do streaming com aviso (nunca perder a fala).
+- Registrar em `agent-runner.md`/ADR o motivo: streaming é para *feedback*,
+  arquivo é para *verdade*.
+
+## D3 — Polimento de texto (opcional, opt-in)
+
+- Pós-processar o texto final com o **modelo helper** (o mesmo das sugestões):
+  pontuação, capitalização e remoção de hesitação, preservando termos técnicos
+  e nomes de arquivo. Opt-in nas Configurações, com o texto cru sempre
+  recuperável (mostrar "original" no hover) — nada de reescrever fala sem
+  o usuário pedir.
+- Vocabulário do projeto: alimentar `contextualStrings` do
+  `SFSpeechAudioBufferRecognitionRequest` com nomes de arquivo/símbolos do
+  repo (o app já inventaria isso) para o reconhecedor acertar jargão.
+
+## Guardas
+
+- On-device sempre (é a promessa do produto: nada sai da máquina).
+- Nenhuma fala perdida em NENHUM caminho de erro: todo desfecho entrega o
+  melhor texto disponível.
+- Push-to-talk continua o gesto primário; o modo "editado" não pode ter
+  comportamento diferente do direto no que diz respeito a perda.
