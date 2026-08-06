@@ -1,6 +1,7 @@
 # Status de trabalho em background — plano (um lugar só, legível)
 
-> Status: proposto em 06/08/2026, do feedback do usuário sobre os builds 181/182:
+> Status: **B1 ✅ (06/08/2026, pesquisa no fonte do Warp)** · B2 em execução.
+> Proposto em 06/08/2026, do feedback do usuário sobre os builds 181/182:
 > "o tempo decorrido quebra a linha", "rolando pra cima aparece um trabalho em
 > background solto, parece descentralizado, confuso". Pesquisa mandatória antes
 > de codar: **Warp (código-fonte clonado em `~/projetos/warp`, 902 MB)**, Claude
@@ -37,6 +38,103 @@
 - **B1.3 — Cursor/Copilot/Zed**: onde mora o "rodando em background" e o que
   acontece com o cartão quando termina.
 - Entregar um comparativo curto de REGRAS antes de qualquer código.
+
+## B1' — O que a pesquisa achou (regras, não pixels) ✅ 06/08/2026
+
+Fonte de cada coluna: **Warp** = leitura do código-fonte clonado em
+`~/projetos/warp` (Rust puro, UI no framework próprio `warpui`; paths citados);
+**Claude Code CLI** = observação de uso (não há fonte); **IDEs com agent** =
+observação de produto (não há fonte). Só o que tem path é evidência dura.
+
+### As 6 regras que importam pro nosso caso
+
+**R1 — O cronômetro não quebra porque ele MUDA POUCO, não porque é largo.**
+O Warp arredonda a duração para segundos inteiros ENQUANTO roda, com o motivo
+escrito no código (`app/src/terminal/model/block.rs:2699-2721`: "keeps the
+formatted duration string stable between one-second repaint ticks … don't cause
+the counter to flicker sub-second values"), e só troca pela duração exata com
+decimais quando termina (`block.rs:2465-2469`). O texto é monoespaçado
+(`app/src/terminal/view.rs:23516-23523`). Antes de 1s inteiro **não mostra nada**
+e o placeholder que arma o timer tem largura ZERO (`view.rs:23571-23584`).
+Busca por `tabular`/`tnum`/`font_feature`/`min_width` no repo inteiro: **zero
+ocorrências** — o Warp não reserva largura pro relógio, ele estabiliza o
+CONTEÚDO. Nosso caso é diferente: nosso rótulo divide a MESMA linha flex com o
+tempo, então a estabilização de conteúdo não basta — mantemos `tabular-nums` +
+largura mínima + `shrink-0` (B2.1), que é a tradução web da mesma intenção. O
+único slot de largura reservada que o Warp tem é pro **ícone** de status
+(`app/src/workspace/view/vertical_tabs.rs:4499-4519`).
+
+**R2 — Número que tica NÃO mora dentro do texto animado.** Regra explícita, dita
+duas vezes no código (`app/src/ai/blocklist/block/view_impl/common.rs:310-312` e
+`406-411`): o sufixo com timer/tokens é renderizado como elemento separado
+"we don't want it to shimmer since that would cause the animation to reset every
+time the tokens or time changes". Mesma coisa vale pro nosso spinner de dots: o
+tempo é irmão, nunca filho do que anima. E nunca mostrar "0s"
+(`common.rs:392-394`: esconde o sufixo antes do último tick).
+
+**R3 — O rodapé é uma faixa de UMA linha, de altura TRAVADA, que some por
+completo.** `BlocklistAIStatusBar` é irmão do editor de input, não item da lista
+de blocos (`app/src/terminal/input/universal.rs:202-210`), tem altura fixa de uma
+linha (`common.rs:647-651`, padding × 2 + font size), só renderiza pro
+**último exchange ativo** (`status_bar.rs:746`) e vira `Empty` quando nada roda
+(`status_bar.rs:1226,1236`). Ele nunca guarda histórico.
+
+**R4 — Dois lugares, tempos verbais diferentes.** Rodapé fala no gerúndio
+("Starting agent X …", `orchestration.rs:676-679`); o card no histórico troca
+para o **pretérito** quando termina ("Started agent X locally." +
+check verde, `orchestration.rs:579-586`; "Thinking" → "Thought for 12 seconds",
+`output.rs:351-355`) e **congela o tempo final**. Uma terceira superfície, o
+header do pane, diz só **quem está no controle** ("Agent is in control" /
+"User is in control", `inline_agent_view_header.rs:22-27`). É exatamente a
+hierarquia que falta pra gente: agora (rodapé) · marco/resultado (fio) · quem
+pilota (cabeçalho).
+
+**R5 — N tarefas: contagem agregada + uma superfície de detalhe; nome truncado,
+nunca empilhado.** Card agregado no momento do disparo (`"Spawning {total}
+agents…"` → `"Spawned {launched} of {total} agents"` com estado próprio pro
+sucesso parcial, `run_agents_card_view.rs:1359-1441`); pill bar com o
+orquestrador primeiro carregando um badge **agregado da árvore** e os filhos com
+status individual (`orchestration_pill_bar.rs:632-644`), com **largura máxima de
+rótulo fixa** (`PILL_LABEL_MAX_WIDTH = 83.`) — quem cede é o nome; lista lateral
+separando `ACTIVE` de `PAST` (`conversation_list/view.rs:806-810`) e overflow
+virando `"+ {n} more"` (`vertical_tabs.rs:4538-4542`). A agregação tem regra de
+precedência escrita (`orchestration_topology.rs:182-227`): filho `InProgress`
+manda, EXCETO se o pai está esperando — "Parent's own waiting state outranks
+descendant in-progress".
+
+**R6 — Sem status confiável, não inventa: some o sinal, fica o espaço.** O Warp
+só mostra status fino quando o transporte prova que sabe
+(`cli_agent_sessions/mod.rs:154-162`: `supports_rich_status` só é `true` depois
+de uma notificação OSC 777 rica; o fallback OSC 9 do Codex "does not qualify") —
+sem isso a pill não aparece, mas o slot continua reservado pra não desalinhar.
+"Não sei" cai no bucket **pessimista** (`TaskUnknown` → filtro `Failed`,
+`agent_conversations_model.rs:411`), nunca em sucesso. E estado vivo **não é
+persistido** de propósito (`specs/QUALITY-780/TECH.md:112-120`: "The honest model
+— 'the wait ends when the app dies' — has a smaller surface area and degrades
+gracefully"); card restaurado de spawn volta como `Cancelled`. É a nossa regra
+de replay-safe (D1.5) dita por outra casa.
+
+### Comparativo curto
+
+| Regra | Warp (fonte) | Claude Code CLI (uso) | IDEs com agent (produto) | MyCockpit (decisão) |
+|---|---|---|---|---|
+| Onde mora o "agora" | faixa de 1 linha colada ao input, altura travada, some sozinha | linha única no rodapé, acima do prompt | painel/lista de agents à parte | linha viva no fim do fio (junto do composer) é a ÚNICA dona (B2.2) |
+| Estabilidade do tempo | arredonda p/ segundo inteiro + monoespaçada; sem largura reservada | verbo + tempo na mesma linha, sem quebra | tempo relativo, pouco preciso | `tabular-nums` + largura mínima + `shrink-0`; quem trunca é o nome (B2.1) |
+| Número vs. animação | elementos irmãos, número fora do shimmer | idem | — | dots e cronômetro irmãos do rótulo, `shrink-0` (B2.1) |
+| Papel do item no histórico | pretérito + resultado + tempo congelado | linha estática, imutável | cartão vira link/resumo | nó = marco ("iniciado") e depois resultado (B2.2) |
+| N simultâneos | contagem agregada + pills com rótulo de largura máxima | agrega, não empilha | lista com seções ACTIVE/PAST | "N trabalhos em background · <mais recente>", detalhe no Fio Vivo (B2.5) |
+| Quem pilota | header do pane, superfície própria | cabeçalho da sessão | cabeçalho do painel | selo do motor no cabeçalho do agente (B2.3) |
+| Sem informação | não mostra sinal; desconhecido ≠ sucesso; estado vivo não persiste | linha some | chip "unknown" | linha some, nada de estado inventado; replay derruba a linha e preserva o marco |
+
+### O que isso muda no B2 (nada, confirma)
+
+As cinco correções já cravadas sobrevivem à pesquisa. Ela só acrescenta três
+detalhes de implementação: (a) o cronômetro fica FORA do elemento que anima
+(R2); (b) o tempo mostrado na linha viva é o do trabalho NOMEADO nela, não o do
+turno, porque o turno perde o `startedAt` no `result` (`chat.ts:1050`) e a linha
+ficaria sem relógio justamente no estado em que o background segura tudo; (c)
+com N trabalhos, o nome é o que trunca e a lista completa fica no `title` +
+Fio Vivo, sem empilhar (R5).
 
 ## B2 — Correções que já dá pra cravar (independem da pesquisa)
 
