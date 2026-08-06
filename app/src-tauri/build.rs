@@ -41,6 +41,13 @@ fn build_stt_sidecar() {
         .status();
     match status {
         Ok(s) if s.success() => {}
+        // falhar aqui NÃO pode quebrar o build de quem não tem swiftc, mas o
+        // aviso precisa dizer a verdade: com um binário velho em bin/, o app
+        // segue ditando com a versão ANTERIOR do sidecar (mudança fora do build).
+        _ if out.exists() => println!(
+            "cargo:warning=swiftc falhou: o sidecar de ditado ficou no binário ANTIGO \
+             (stt/main.swift mudou e NÃO entrou neste build)"
+        ),
         _ => println!("cargo:warning=swiftc indisponível/falhou: o ditado fica desabilitado"),
     }
 }

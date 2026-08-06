@@ -19,6 +19,25 @@
 // descartava tudo antes da última pausa ("só as últimas palavras"). O padrão
 // canônico: ACUMULAR utterances finalizadas em `committed` e REINICIAR um task
 // novo — a gravação segue até o STOP, nunca morre numa pausa.
+//
+// ── NÃO COMER O FIM DA FRASE (D1 do docs/dictation-plan.md) ────────────────
+//
+// 1) ORDEM DO STOP. O código antigo parava o engine e removia o tap ANTES do
+//    endAudio: o áudio em voo morria no caminho e as últimas sílabas nunca
+//    chegavam ao reconhecedor. Agora o STOP faz drain curto com o mic AINDA
+//    aberto (os últimos buffers do tap entram no request) → endAudio() →
+//    engine.stop()/removeTap. O drain vem ANTES do endAudio porque depois dele
+//    todo append é ignorado.
+//
+// 2) O FINAL NUNCA ENCURTA (`moreComplete`, pura e coberta por --selftest).
+//    O resultado final do reconhecedor PODE vir mais curto que o parcial que o
+//    usuário acabou de ver (ele reavalia e às vezes descarta o rabo da frase).
+//    Guardamos `bestCurrent` = o texto MAIS COMPLETO já visto na utterance
+//    corrente e, em todo desfecho, entregamos o mais completo entre o candidato
+//    e o melhor visto: quem ESTENDE/contém vence; quem é PEDAÇO do outro perde;
+//    se divergiram, vence quem tem mais palavras; empate normalizado (só mudou
+//    pontuação/acento/caixa) fica com o candidato, que é o mais bem formatado.
+//    Nenhuma heurística de "metade do tamanho" decide o final.
 
 import AVFoundation
 import Foundation
@@ -34,9 +53,54 @@ func emit(_ obj: [String: Any]) {
     emitLock.unlock()
 }
 
+// ---- A REGRA "o final nunca encurta", pura ─────────────────────────────────
+
+/// Normaliza pra COMPARAR (não pra exibir): sem acento, sem caixa, sem
+/// pontuação, espaços colapsados. Assim "Olá, tudo bem?" e "ola tudo bem" são
+/// a mesma fala — pontuação nova não conta como texto novo, nem como perda.
+func normalizedForCompare(_ s: String) -> String {
+    let folded = s.folding(
+        options: [.diacriticInsensitive, .caseInsensitive, .widthInsensitive],
+        locale: Locale(identifier: "pt_BR"))
+    var out = ""
+    out.reserveCapacity(folded.count)
+    for u in folded.unicodeScalars {
+        out.append(CharacterSet.alphanumerics.contains(u) ? Character(u) : " ")
+    }
+    return out.split(separator: " ").joined(separator: " ")
+}
+
+/// Palavras do texto normalizado (medida de "quanta fala tem aqui").
+func wordCount(_ normalized: String) -> Int {
+    normalized.isEmpty ? 0 : normalized.split(separator: " ").count
+}
+
+/// `a` contém `b` em fronteira de PALAVRA (ambos já normalizados).
+func containsWords(_ a: String, _ b: String) -> Bool {
+    if b.isEmpty { return true }
+    return " \(a) ".contains(" \(b) ")
+}
+
+/// A REGRA: devolve o MAIS COMPLETO entre `candidate` (texto novo/final) e
+/// `best` (o melhor já visto). Nunca devolve um pedaço quando existe o todo.
+func moreComplete(_ candidate: String, _ best: String) -> String {
+    let c = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+    let b = best.trimmingCharacters(in: .whitespacesAndNewlines)
+    if c.isEmpty { return b }
+    if b.isEmpty { return c }
+    let nc = normalizedForCompare(c)
+    let nb = normalizedForCompare(b)
+    if nc == nb { return c }              // mesma fala: fica a versão nova (melhor formatada)
+    if containsWords(nc, nb) { return c } // o novo ESTENDE/contém o melhor
+    if containsWords(nb, nc) { return b } // o novo é um PEDAÇO do melhor
+    return wordCount(nc) >= wordCount(nb) ? c : b // divergiram: quem tem mais fala
+}
+
 // ---- args: --vocab "termo1,termo2" · --selfcheck (diagnóstico sem gravar)
+//            --selftest (a regra em teste puro, sem mic nem permissão)
 var vocab: [String] = []
 var selfcheck = false
+var selftest = false
 var args = Array(CommandLine.arguments.dropFirst())
 while !args.isEmpty {
     let a = args.removeFirst()
@@ -47,7 +111,64 @@ while !args.isEmpty {
             .filter { !$0.isEmpty }
     } else if a == "--selfcheck" {
         selfcheck = true
+    } else if a == "--selftest" {
+        selftest = true
     }
+}
+
+/// Teste puro da regra, embutido no próprio binário: o projeto não tem harness
+/// Swift (o sidecar é um único arquivo compilado pelo build.rs), então a suíte
+/// vive aqui e é executada pelo `cargo test` (stt.rs) rodando
+/// `mycockpit-stt --selftest`. Sai 0 se tudo passa; imprime cada falha.
+func runSelfTest() -> Int32 {
+    // (nome, candidato, melhor visto, esperado)
+    let cases: [(String, String, String, String)] = [
+        ("final que COMEU o rabo perde pro melhor parcial",
+         "quero refatorar o watchdog",
+         "quero refatorar o watchdog e rodar os testes antes do commit",
+         "quero refatorar o watchdog e rodar os testes antes do commit"),
+        ("final que ESTENDE o parcial vence",
+         "quero refatorar o watchdog e rodar os testes",
+         "quero refatorar o watchdog",
+         "quero refatorar o watchdog e rodar os testes"),
+        ("perda de 25% (a heurística da metade deixava passar) perde",
+         "abre o painel de custo e confere",
+         "abre o painel de custo e confere o total do mês passado",
+         "abre o painel de custo e confere o total do mês passado"),
+        ("só pontuação/caixa/acento muda: fica a versão nova",
+         "Olá, tudo bem com você hoje?",
+         "ola tudo bem com voce hoje",
+         "Olá, tudo bem com você hoje?"),
+        ("textos que divergiram: vence quem tem mais palavras",
+         "um dois tres quatro cinco",
+         "um dois tres seis",
+         "um dois tres quatro cinco"),
+        ("divergiram e o melhor tem mais palavras: o melhor fica",
+         "um dois tres",
+         "um dois quatro cinco seis",
+         "um dois quatro cinco seis"),
+        ("candidato vazio devolve o melhor",
+         "   ", "o que eu disse", "o que eu disse"),
+        ("melhor vazio devolve o candidato",
+         "o que eu disse", "", "o que eu disse"),
+        ("ambos vazios devolve vazio", "", "", ""),
+        ("prefixo de palavra não conta como contido",
+         "tarefa", "tarefas do dia", "tarefas do dia"),
+    ]
+    var failures = 0
+    for (name, candidate, best, want) in cases {
+        let got = moreComplete(candidate, best)
+        if got != want {
+            failures += 1
+            emit(["selftest": name, "want": want, "got": got])
+        }
+    }
+    emit(["selftest": "moreComplete", "cases": cases.count, "failures": failures])
+    return failures == 0 ? 0 : 1
+}
+
+if selftest {
+    exit(runSelfTest())
 }
 
 guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "pt-BR")) else {
@@ -103,10 +224,11 @@ guard recognizer.isAvailable else {
 // ---- estado do ditado contínuo (protegido por lock: callbacks do Speech +
 // thread de áudio + thread do stdin tocam nele).
 let stateLock = NSLock()
-var committed = ""   // utterances já finalizadas (o que NÃO pode mais se perder)
-var current = ""     // parcial da utterance corrente
-var stopped = false  // STOP recebido: o próximo final encerra o processo
-var finished = false // resposta final já emitida (once)
+var committed = ""    // utterances já finalizadas (o que NÃO pode mais se perder)
+var current = ""      // último parcial da utterance corrente (o que a UI vê)
+var bestCurrent = ""  // o texto mais COMPLETO já visto nesta utterance
+var stopped = false   // STOP recebido: o próximo desfecho encerra o processo
+var finished = false  // resposta final já emitida (once)
 var activeRequest: SFSpeechAudioBufferRecognitionRequest?
 var activeTask: SFSpeechRecognitionTask?
 
@@ -114,6 +236,12 @@ func joined(_ a: String, _ b: String) -> String {
     if a.isEmpty { return b }
     if b.isEmpty { return a }
     return a + " " + b
+}
+
+/// O melhor texto que o reconhecimento conseguiu até agora (a regra aplicada à
+/// utterance corrente). É o que qualquer desfecho entrega.
+func streamedText() -> String { // chamar com o stateLock TRAVADO
+    joined(committed, moreComplete(current, bestCurrent))
 }
 
 func finish(_ text: String) {
@@ -159,19 +287,25 @@ func startUtterance() {
         if let r = result {
             let t = r.bestTranscription.formattedString
             // reset SILENCIOSO (sem isFinal): o parcial encolhe drasticamente →
-            // o reconhecedor recomeçou a utterance; preserva o que já tinha.
-            // (revisões legítimas nunca cortam um texto longo pela metade)
-            if !current.isEmpty && current.count > 20 && t.count * 2 < current.count
-                && !current.hasPrefix(t) {
-                committed = joined(committed, current)
+            // o reconhecedor recomeçou a utterance; commita o MELHOR visto (não
+            // o último parcial) e abre uma utterance nova. Isto NÃO é a guarda
+            // contra final curto (essa é o moreComplete): é a detecção de que o
+            // reconhecedor jogou a utterance fora.
+            if !bestCurrent.isEmpty && bestCurrent.count > 20
+                && t.count * 2 < bestCurrent.count && !bestCurrent.hasPrefix(t) {
+                committed = joined(committed, bestCurrent)
+                bestCurrent = ""
             }
             current = t
-            let full = joined(committed, current)
+            bestCurrent = moreComplete(t, bestCurrent)
             if r.isFinal {
-                // utterance fechou (pausa na fala / limite do serviço): commita
-                // e, se ainda gravando, REINICIA — o ditado continua.
-                committed = full
+                // utterance fechou (pausa na fala / limite do serviço): commita o
+                // MAIS COMPLETO entre o final e o melhor parcial e, se ainda
+                // gravando, REINICIA — o ditado continua.
+                committed = joined(committed, moreComplete(t, bestCurrent))
                 current = ""
+                bestCurrent = ""
+                let full = committed
                 let wasStopped = stopped
                 stateLock.unlock()
                 if wasStopped {
@@ -181,14 +315,16 @@ func startUtterance() {
                 }
                 return
             }
+            let full = joined(committed, current)
             stateLock.unlock()
             emit(["partial": full])
             return
         }
         if let e = err as NSError? {
-            let full = joined(committed, current)
-            committed = full
+            committed = streamedText()
             current = ""
+            bestCurrent = ""
+            let full = committed
             let wasStopped = stopped
             stateLock.unlock()
             // depois do STOP, qualquer desfecho entrega o que temos (graceful)
@@ -240,6 +376,15 @@ do {
 }
 emit(["ready": true])
 
+/// Pipeline do STOP (ver regra 1 no topo). Roda fora da thread do stdin porque
+/// bloqueia de propósito: o drain é o que salva o fim da frase.
+func stopPipeline(request: SFSpeechAudioBufferRecognitionRequest?) {
+    Thread.sleep(forTimeInterval: 0.3) // drain com o mic ainda aberto
+    request?.endAudio()                // só então o reconhecedor fecha a entrada
+    engine.stop()
+    input.removeTap(onBus: 0)
+}
+
 // ---- controle via stdin (a mesma linha de vida dos agents).
 DispatchQueue.global().async {
     while let line = readLine(strippingNewline: true) {
@@ -248,13 +393,11 @@ DispatchQueue.global().async {
             stopped = true
             let req = activeRequest
             stateLock.unlock()
-            engine.stop()
-            input.removeTap(onBus: 0)
-            req?.endAudio()
+            DispatchQueue.global().async { stopPipeline(request: req) }
             // se o isFinal demorar, devolve o acumulado (nunca trava a UI)
             DispatchQueue.global().asyncAfter(deadline: .now() + 8) {
                 stateLock.lock()
-                let full = joined(committed, current)
+                let full = streamedText()
                 stateLock.unlock()
                 finish(full)
             }

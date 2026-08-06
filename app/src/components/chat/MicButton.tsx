@@ -3,7 +3,11 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { Loader2, Mic, Square } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { DictationOverlay } from "@/components/chat/DictationOverlay"
+import {
+  DictationOverlay,
+  dictationPillView,
+  type DictationPhase,
+} from "@/components/chat/DictationOverlay"
 import { formatHotkey, registerDictationTarget } from "@/lib/dictationHotkey"
 import { sttStart, sttStop, sttCancel } from "@/lib/stt"
 import { useChat } from "@/store/chat"
@@ -36,7 +40,9 @@ function buildVocab(projectName?: string, extra: string[] = []): string[] {
   return [...base, ...extra]
 }
 
-type MicState = "idle" | "starting" | "rec" | "busy"
+/** As fases do botão SÃO as fases que o pill entende (DictationPhase): um tipo
+ *  só, pra estado e aparência nunca saírem de sincronia. */
+type MicState = DictationPhase
 
 /** Ditado pt-BR 100% local: clica-fala-clica (ou o atalho de ditado), o texto cai no
  *  rascunho da conversa pra você revisar antes do Enter. Esc cancela.
@@ -102,7 +108,9 @@ export function MicButton({
     }
   }
 
-  // gravando → para e transcreve
+  // gravando → para e transcreve. "busy" NÃO é cosmético: o sidecar ainda drena
+  // o microfone antes de fechar o áudio (D1.1), então a UI fica em "finalizando"
+  // até o texto chegar, em vez de fingir que já acabou.
   async function stop() {
     if (stateRef.current !== "rec") return
     go("busy")
@@ -156,7 +164,9 @@ export function MicButton({
   // e estes listeners nem existem.
   useEffect(() => {
     if (state !== "rec") {
-      setPartial("")
+      // o parcial SOBREVIVE ao "busy": é o que o pill de "finalizando" mostra
+      // enquanto o texto não chega. Só some quando a gravação sai de cena.
+      if (state !== "busy") setPartial("")
       return
     }
     let disposed = false
@@ -190,10 +200,15 @@ export function MicButton({
   if (!enabled) return null
 
   // Pill flutuante (timer + parcial): overlay absoluto, fora do fluxo — a
-  // fileira de controles não mexe um pixel.
+  // fileira de controles não mexe um pixel. Fica de pé de "rec" até o texto
+  // chegar ("busy" ⇒ finalizando), pela regra pura dictationPillView.
+  const view = dictationPillView(state)
   const pill = (
     <DictationOverlay
-      active={state === "rec"}
+      active={view.visible}
+      finalizing={view.finalizing}
+      placeholder={view.placeholder}
+      hint={view.hint}
       partial={partial}
       since={since}
       className={

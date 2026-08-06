@@ -5,6 +5,25 @@
 > frase dita no final". Referência de qualidade citada: Wispr Flow (e a
 > família superwhisper / MacWhisper / VoiceInk).
 
+> **D1 ENTREGUE (06/08/2026).** O que mudou de fato:
+> - **D1.1** — `stopPipeline` no `main.swift`: drain de 300ms com o mic AINDA
+>   aberto (é onde o fim da frase se salva) → `endAudio()` → `engine.stop()` +
+>   `removeTap`. O drain vem ANTES do `endAudio` de propósito: depois dele todo
+>   `append` é ignorado, então drenar depois não recuperaria nada.
+> - **D1.2** — a heurística do "metade do tamanho" NÃO decide mais o final.
+>   Entrou `moreComplete(candidate, best)` (pura): contém/estende vence, pedaço
+>   perde, divergência decide por número de palavras, empate normalizado
+>   (pontuação/acento/caixa) fica com o candidato. `bestCurrent` guarda o texto
+>   mais completo da utterance; todo desfecho passa por ela. A heurística da
+>   metade sobrevive SÓ como detector de reset silencioso do reconhecedor (e
+>   agora commita o melhor visto, não o último parcial).
+> - **D1.3** — o pill não some ao soltar o botão: fase `busy` = "Finalizando…"
+>   (`dictationPillView`, pura e testada). Os timeouts (8s Swift, 15s Rust)
+>   seguem intactos.
+> - **Prova**: sem harness Swift no projeto, a suíte da regra vive no binário
+>   (`mycockpit-stt --selftest`, 10 casos, sem mic/permissão) e o `cargo test`
+>   a executa (`stt::tests::selftest_do_sidecar_prova_que_o_final_nunca_encurta`).
+
 ## A causa (lida no código, não suposta)
 
 Arquitetura atual: sidecar Swift (`app/src-tauri/stt/main.swift`) com

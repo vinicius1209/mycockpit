@@ -9,9 +9,38 @@
 // com fade no topo. prefers-reduced-motion: sem animação (dot estático, corte
 // na entrada/saída).
 import { useEffect, useState } from "react"
+import { Loader2 } from "lucide-react"
 import { formatHotkey } from "@/lib/dictationHotkey"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
+
+/** Fases do ditado como a UI as vê (espelho do MicState do MicButton). */
+export type DictationPhase = "idle" | "starting" | "rec" | "busy"
+
+/** Regra do pill por fase (pura, testada). Soltar o botão NÃO é o fim: o
+ *  sidecar ainda drena o microfone e relê o áudio da sessão inteiro antes de
+ *  devolver o texto (D1/D2 do docs/dictation-plan.md). Por isso o pill CONTINUA
+ *  visível em "busy", agora dizendo "finalizando" — em vez de sumir e deixar o
+ *  usuário achar que acabou enquanto o texto ainda está vindo. */
+export function dictationPillView(phase: DictationPhase): {
+  visible: boolean
+  finalizing: boolean
+  placeholder: string
+  hint?: string
+} {
+  if (phase === "rec") {
+    return { visible: true, finalizing: false, placeholder: "Ouvindo…" }
+  }
+  if (phase === "busy") {
+    return {
+      visible: true,
+      finalizing: true,
+      placeholder: "Finalizando…",
+      hint: "Transcrevendo o áudio, o texto cai no rascunho",
+    }
+  }
+  return { visible: false, finalizing: false, placeholder: "Ouvindo…" }
+}
 
 /** Teto de caracteres do parcial exibido (≈2 linhas do pill). */
 export const PARTIAL_CLIP_CHARS = 160
@@ -50,15 +79,21 @@ function useClock(since: number): string {
 
 /** O pill em si (dot pulsante + mm:ss + parcial + dica). Sem posicionamento —
  *  quem posiciona é o DictationOverlay/chamador. A dica default reflete o
- *  atalho CONFIGURADO (settings.dictationHotkey; null ⇒ só o Esc). */
+ *  atalho CONFIGURADO (settings.dictationHotkey; null ⇒ só o Esc).
+ *  `finalizing`: o mic já fechou e o texto está a caminho (dot vira spinner,
+ *  vermelho sai — não está mais gravando, e a UI não pode fingir que está). */
 export function DictationPill({
   partial,
   since,
   hint,
+  finalizing = false,
+  placeholder = "Ouvindo…",
 }: {
   partial: string | null
   since: number
   hint?: string
+  finalizing?: boolean
+  placeholder?: string
 }) {
   const combo = useApp((s) => s.settings.dictationHotkey)
   const resolvedHint =
@@ -66,13 +101,25 @@ export function DictationPill({
   const clock = useClock(since)
   const text = partial?.trim() ? clipPartialStart(partial) : ""
   return (
-    <div className="pointer-events-none flex min-w-0 max-w-full items-center gap-2.5 rounded-xl border border-st-error/40 bg-card py-1.5 pr-3.5 pl-3 shadow-[var(--shadow-pop)]">
-      <span className="size-2 shrink-0 rounded-full bg-st-error motion-safe:animate-pulse" />
+    <div
+      className={cn(
+        "pointer-events-none flex min-w-0 max-w-full items-center gap-2.5 rounded-xl border bg-card py-1.5 pr-3.5 pl-3 shadow-[var(--shadow-pop)]",
+        finalizing ? "border-border" : "border-st-error/40",
+      )}
+    >
+      {finalizing ? (
+        <Loader2 className="size-2.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
+      ) : (
+        <span className="size-2 shrink-0 rounded-full bg-st-error motion-safe:animate-pulse" />
+      )}
       {/* relógio fora do live region — senão o leitor de tela anuncia a cada
           segundo; o parcial (abaixo) é quem fala. */}
       <span
         aria-hidden="true"
-        className="shrink-0 font-mono text-[11.5px] tabular-nums text-st-error"
+        className={cn(
+          "shrink-0 font-mono text-[11.5px] tabular-nums",
+          finalizing ? "text-muted-foreground" : "text-st-error",
+        )}
       >
         {clock}
       </span>
@@ -87,7 +134,7 @@ export function DictationPill({
               text ? "text-foreground/85" : "text-muted-foreground",
             )}
           >
-            {text || "Ouvindo…"}
+            {text || placeholder}
           </p>
         </div>
         <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground/70">
@@ -106,12 +153,16 @@ export function DictationOverlay({
   partial,
   since,
   hint,
+  finalizing = false,
+  placeholder,
   className,
 }: {
   active: boolean
   partial: string | null
   since: number
   hint?: string
+  finalizing?: boolean
+  placeholder?: string
   className?: string
 }) {
   const [shown, setShown] = useState(active)
@@ -135,7 +186,13 @@ export function DictationOverlay({
         className,
       )}
     >
-      <DictationPill partial={partial} since={since} hint={hint} />
+      <DictationPill
+        partial={partial}
+        since={since}
+        hint={hint}
+        finalizing={finalizing}
+        placeholder={placeholder}
+      />
     </div>
   )
 }

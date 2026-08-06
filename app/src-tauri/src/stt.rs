@@ -163,3 +163,73 @@ pub async fn stt_cancel(session: tauri::State<'_, SttSession>) -> Result<(), Str
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    /// A regra "o final nunca encurta" (moreComplete) mora no sidecar Swift, e o
+    /// projeto NÃO tem harness de teste Swift: o sidecar é um único arquivo
+    /// compilado pelo build.rs com swiftc, sem SwiftPM/XCTest. Em vez de deixar a
+    /// regra sem prova, a suíte vive DENTRO do binário (`--selftest`, que não
+    /// toca mic nem permissão) e este teste a executa de verdade.
+    ///
+    /// Se o binário não existe, ou é ANTERIOR ao `--selftest` (swiftc da máquina
+    /// falhou e sobrou o binário velho — o build.rs avisa nesse caso), o teste
+    /// pula com aviso RUIDOSO em vez de rodar um binário que ia abrir o
+    /// microfone. Nunca finge que rodou.
+    fn sidecar_bin() -> Option<PathBuf> {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("bin");
+        let entries = std::fs::read_dir(dir).ok()?;
+        entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("mycockpit-stt-"))
+            })
+    }
+
+    #[test]
+    fn selftest_do_sidecar_prova_que_o_final_nunca_encurta() {
+        if !cfg!(target_os = "macos") {
+            return;
+        }
+        let Some(bin) = sidecar_bin() else {
+            eprintln!("[stt] PULADO: sidecar não compilado (bin/mycockpit-stt-*)");
+            return;
+        };
+        let bytes = std::fs::read(&bin).expect("ler o binário do sidecar");
+        if !bytes.windows(10).any(|w| w == b"--selftest") {
+            eprintln!(
+                "[stt] PULADO: {} é anterior ao --selftest (swiftc não recompilou; \
+                 veja o cargo:warning do build.rs)",
+                bin.display()
+            );
+            return;
+        }
+        let out = Command::new(&bin)
+            .arg("--selftest")
+            .output()
+            .expect("executar o sidecar com --selftest");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success(),
+            "--selftest falhou:\n{stdout}{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        // a última linha resume: {"selftest":"moreComplete","cases":N,"failures":0}
+        let resumo: serde_json::Value = stdout
+            .lines()
+            .filter_map(|l| serde_json::from_str(l).ok())
+            .last()
+            .expect("resumo do --selftest em JSON");
+        assert_eq!(resumo["failures"], 0, "casos falharam:\n{stdout}");
+        assert!(
+            resumo["cases"].as_u64().unwrap_or(0) >= 8,
+            "a suíte da regra encolheu: {resumo}"
+        );
+    }
+}
