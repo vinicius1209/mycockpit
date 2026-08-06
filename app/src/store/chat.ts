@@ -174,7 +174,7 @@ export function markOrphanedProcesses(items: ChatItem[]): ChatItem[] {
 
 /** Trabalhos diferidos ainda VIVOS no fio (deferred-work-plan D1.3). DERIVADO
  *  de items (replay-safe, fonte única): alimenta o meta honesto do turno
- *  ("trabalho em background rodando"), o aviso do botão de parar e a contagem
+ *  (a LINHA VIVA do rodapé), o aviso do botão de parar e a contagem
  *  do diálogo de saída. Puro e testável. */
 export function pendingDeferred(items: ChatItem[]): DeferredWork[] {
   const out: DeferredWork[] = []
