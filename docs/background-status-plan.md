@@ -184,7 +184,7 @@ Tudo em TypeScript (nenhuma migração, nenhuma capability nova, nada no Rust).
   `N trabalhos em background · <mais recente>` com vários, lista completa no
   `title` e detalhe real no Fio Vivo.
 
-Testes: `src/store/chat.liveWork.test.ts` (16 casos: rótulo com N, truncamento,
+Testes: `src/store/chat.liveWork.test.ts` (13 casos: rótulo com N, truncamento,
 qual trabalho manda no relógio, vocabulário, aviso do Parar) e
 `src/components/chat/MessageList.background.test.ts` (9 casos de marcação: o que
 a linha mostra em cada estado, o nó como marco, a ação ausente no cartão).
