@@ -15,6 +15,9 @@ export interface McpAgentState {
   compatible: boolean
   enabled: boolean
   required: boolean
+  /** Binding marcado para dirigir o navegador do projeto: o plano do run
+   *  injeta `--cdp-endpoint` apontando pro Chromium que o app possui (B2.2). */
+  browser: boolean
   fallback: McpFallback
   health: McpHealthStatus
   detail: string | null
@@ -63,6 +66,7 @@ export async function setMcpBinding(input: {
   enabled: boolean
   required: boolean
   fallback: McpFallback
+  browser: boolean
 }): Promise<void> {
   if (!isTauri()) return
   await invoke("set_mcp_binding", input)
@@ -114,7 +118,13 @@ export function applyAgentPatch(
   patch: Partial<
     Pick<
       McpAgentState,
-      "enabled" | "required" | "fallback" | "health" | "detail" | "checkedAt"
+      | "enabled"
+      | "required"
+      | "browser"
+      | "fallback"
+      | "health"
+      | "detail"
+      | "checkedAt"
     >
   >,
 ): McpServer[] {

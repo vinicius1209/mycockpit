@@ -285,6 +285,8 @@ pub struct McpAgentState {
     pub compatible: bool,
     pub enabled: bool,
     pub required: bool,
+    /// Binding marcado para dirigir o navegador do projeto (B2.2).
+    pub browser: bool,
     pub fallback: String,
     pub health: String,
     pub detail: Option<String>,
@@ -409,6 +411,93 @@ struct Binding {
     server_id: String,
     required: bool,
     fallback: String,
+    /// Este MCP dirige o NAVEGADOR DO PROJETO (B2.2 do browser-plan): o plano
+    /// efêmero injeta `--cdp-endpoint` apontando pro Chromium que o app possui.
+    /// É propriedade do BINDING, nunca do nome do fornecedor: qualquer MCP que
+    /// aceite a flag pode ser marcado, e nenhum é marcado por padrão.
+    browser: bool,
+}
+
+const CDP_FLAG: &str = "--cdp-endpoint";
+
+/// Flags de origem que pedem um navegador NOVO e, portanto, contradizem o
+/// roteamento pro navegador do app. `bool` = a flag consome o argumento
+/// seguinte (`--browser chrome`) além da forma `--browser=chrome`.
+const CDP_CONFLICTS: [(&str, bool); 2] = [("--browser", true), ("--headless", false)];
+
+fn mentions_flag(args: &[String], flag: &str) -> bool {
+    args.iter()
+        .any(|arg| arg == flag || arg.starts_with(&format!("{flag}=")))
+}
+
+/// Remove uma flag conflitante (nas duas formas) dos args do plano efêmero.
+/// Devolve se removeu algo. Não toca a configuração de ORIGEM do usuário: o
+/// plano é uma cópia por run.
+fn strip_flag(args: &mut Vec<String>, flag: &str, takes_value: bool) -> bool {
+    let mut out: Vec<String> = Vec::with_capacity(args.len());
+    let mut removed = false;
+    let mut skip_value = false;
+    for arg in args.iter() {
+        if skip_value {
+            skip_value = false;
+            continue;
+        }
+        if arg == flag {
+            removed = true;
+            skip_value = takes_value;
+            continue;
+        }
+        if arg.starts_with(&format!("{flag}=")) {
+            removed = true;
+            continue;
+        }
+        out.push(arg.clone());
+    }
+    *args = out;
+    removed
+}
+
+/// Roteia um MCP marcado como "navegador do projeto" para o Chromium do app.
+/// Puro (recebe o endpoint já resolvido) e sempre honesto no `plan.notices`:
+///
+/// - args de origem já com `--cdp-endpoint`: a ORIGEM vence e nada é tocado
+///   (endpoint explícito do usuário é decisão dele, sobrescrever seria teatro);
+/// - sem endpoint vivo: NÃO injeta e avisa. Nunca bloqueia o run: o navegador
+///   do projeto é um gesto humano à parte, e um binding `ask` não pode segurar
+///   um turno por causa de um Chromium que ninguém ligou;
+/// - com endpoint vivo: o CDP manda, e `--browser`/`--headless` da origem saem
+///   deste run (pedir navegador novo + CDP é contradição silenciosa).
+fn apply_cdp_endpoint(
+    launch: &mut McpLaunchConfig,
+    endpoint: Option<&str>,
+    display_name: &str,
+) -> Vec<String> {
+    if mentions_flag(&launch.args, CDP_FLAG) {
+        return vec![format!(
+            "MCP {display_name} já traz {CDP_FLAG} na configuração de origem; mantive o endpoint do usuário e não roteei para o navegador do projeto."
+        )];
+    }
+    let Some(endpoint) = endpoint else {
+        return vec![format!(
+            "MCP {display_name} está marcado para usar o navegador do projeto, que não está ligado; este run segue com o navegador próprio do MCP."
+        )];
+    };
+    let mut dropped: Vec<&str> = Vec::new();
+    for (flag, takes_value) in CDP_CONFLICTS {
+        if strip_flag(&mut launch.args, flag, takes_value) {
+            dropped.push(flag);
+        }
+    }
+    launch.args.push(CDP_FLAG.to_string());
+    launch.args.push(endpoint.to_string());
+    if dropped.is_empty() {
+        Vec::new()
+    } else {
+        vec![format!(
+            "MCP {display_name}: {} da configuração de origem ficou fora deste run, o navegador do projeto manda via {CDP_FLAG}.",
+            dropped.join(" e ")
+        )]
+    }
 }
 
 fn now_ms() -> i64 {
@@ -959,10 +1048,16 @@ fn agent_state(
 ) -> McpAgentState {
     let binding = conn
         .query_row(
-            "SELECT required, fallback FROM mcp_bindings
+            "SELECT required, fallback, browser FROM mcp_bindings
              WHERE project_id = ?1 AND server_id = ?2 AND agent = ?3",
             params![project_id, server.id, agent],
-            |row| Ok((row.get::<_, i64>(0)? != 0, row.get::<_, String>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)? != 0,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)? != 0,
+                ))
+            },
         )
         .optional()
         .ok()
@@ -988,6 +1083,7 @@ fn agent_state(
         compatible: server.compatible(agent),
         enabled: binding.is_some(),
         required: binding.as_ref().is_some_and(|b| b.0),
+        browser: binding.as_ref().is_some_and(|b| b.2),
         fallback: binding
             .as_ref()
             .map(|b| b.1.clone())
@@ -1166,6 +1262,7 @@ fn validate_enable_from_registry(server: &RegistryServer, agent: &str) -> Result
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn upsert_binding(
     conn: &Connection,
     project_id: &str,
@@ -1173,20 +1270,22 @@ fn upsert_binding(
     agent: &str,
     required: bool,
     fallback: &str,
+    browser: bool,
 ) -> Result<(), String> {
     conn.execute(
         "INSERT INTO mcp_bindings
-           (project_id, server_id, agent, required, fallback, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+           (project_id, server_id, agent, required, fallback, browser, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
          ON CONFLICT(project_id, server_id, agent) DO UPDATE SET
            required=excluded.required, fallback=excluded.fallback,
-           updated_at=excluded.updated_at",
+           browser=excluded.browser, updated_at=excluded.updated_at",
         params![
             project_id,
             server_id,
             agent,
             required as i64,
             fallback,
+            browser as i64,
             now_ms()
         ],
     )
@@ -1204,9 +1303,13 @@ pub async fn set_mcp_binding(
     enabled: bool,
     required: bool,
     fallback: String,
+    browser: Option<bool>,
 ) -> Result<(), String> {
     validate_agent(&agent)?;
     validate_fallback(&fallback)?;
+    // `None` = chamador antigo/sem o campo: preserva o default de mecanismo
+    // desligado (o navegador do projeto nunca entra sem gesto explícito).
+    let browser = browser.unwrap_or(false);
     {
         let conn = db(&app)?;
         let project_id = project_id_for_path(&conn, &project_path)?;
@@ -1225,7 +1328,15 @@ pub async fn set_mcp_binding(
         // sabe se dá pra rotear. Nada de `codex mcp list` a cada toggle.
         if let Some(server) = registry_server(&conn, &server_id)? {
             validate_enable_from_registry(&server, &agent)?;
-            return upsert_binding(&conn, &project_id, &server_id, &agent, required, &fallback);
+            return upsert_binding(
+                &conn,
+                &project_id,
+                &server_id,
+                &agent,
+                required,
+                &fallback,
+                browser,
+            );
         }
     }
     // Caso raro: servidor nunca descoberto nesta máquina. Só aqui a descoberta
@@ -1245,7 +1356,15 @@ pub async fn set_mcp_binding(
     let conn = db(&app)?;
     let project_id = project_id_for_path(&conn, &project_path)?;
     persist_registry(&conn, &servers)?;
-    upsert_binding(&conn, &project_id, &server_id, &agent, required, &fallback)
+    upsert_binding(
+        &conn,
+        &project_id,
+        &server_id,
+        &agent,
+        required,
+        &fallback,
+        browser,
+    )
 }
 
 async fn write_rpc(stdin: &mut tokio::process::ChildStdin, value: Value) -> Result<(), String> {
@@ -1614,7 +1733,7 @@ fn bindings_for_run(
 ) -> Result<Vec<Binding>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT server_id, required, fallback FROM mcp_bindings
+            "SELECT server_id, required, fallback, browser FROM mcp_bindings
              WHERE project_id = ?1 AND agent = ?2 ORDER BY server_id",
         )
         .map_err(|e| e.to_string())?;
@@ -1624,6 +1743,7 @@ fn bindings_for_run(
                 server_id: row.get(0)?,
                 required: row.get::<_, i64>(1)? != 0,
                 fallback: row.get(2)?,
+                browser: row.get::<_, i64>(3)? != 0,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -1741,10 +1861,25 @@ pub async fn plan_for_run(
             outcome
         };
         if matches!(outcome.status.as_str(), "healthy" | "auth-delegated") {
+            let mut launch = server.launch.clone().expect("compatible exige launch");
+            // B2.2 — o roteamento pro navegador do app entra AQUI, no plano
+            // efêmero, e não no preflight: o `probe_stdio` acima rodou com os
+            // args de ORIGEM, então o health nunca depende de um Chromium
+            // ligado (um binding `ask` não trava o run por causa disso). O
+            // fingerprint do plano só hasheia NOMES, então injetar arg não
+            // dispara re-anúncio espúrio.
+            if binding.browser {
+                let endpoint = crate::browser::live_endpoint(app, &project_id).await;
+                plan.notices.extend(apply_cdp_endpoint(
+                    &mut launch,
+                    endpoint.as_deref(),
+                    &server.name,
+                ));
+            }
             plan.selected.push(McpRuntimeServer {
                 runtime_name: server.runtime_name(),
                 display_name: server.name.clone(),
-                launch: server.launch.clone().expect("compatible exige launch"),
+                launch,
             });
             continue;
         }
@@ -2221,6 +2356,7 @@ mod tests {
                 compatible: true,
                 enabled: bound,
                 required: false,
+                browser: false,
                 fallback: "ask".into(),
                 health: "unchecked".into(),
                 detail: None,
@@ -2378,7 +2514,7 @@ mod tests {
     #[test]
     fn resumo_de_bindings_conta_por_projeto_em_ordem_estavel() {
         let conn = Connection::open_in_memory().unwrap();
-        // Mesmo schema da migração 28 (mcp_bindings) em lib.rs.
+        // Mesmo schema das migrações 28 + 35 (mcp_bindings) em lib.rs.
         conn.execute_batch(
             "CREATE TABLE mcp_bindings ( \
                project_id TEXT NOT NULL, \
@@ -2387,6 +2523,7 @@ mod tests {
                required INTEGER NOT NULL DEFAULT 0, \
                fallback TEXT NOT NULL DEFAULT 'ask', \
                updated_at INTEGER NOT NULL, \
+               browser INTEGER NOT NULL DEFAULT 0, \
                PRIMARY KEY (project_id, server_id, agent) \
              );",
         )
@@ -2425,6 +2562,7 @@ mod tests {
             server_id: "server".into(),
             required,
             fallback: fallback.into(),
+            browser: false,
         };
         assert!(binding_blocks_without_server(&binding(false, "ask")));
         assert!(binding_blocks_without_server(&binding(true, "deny")));
@@ -2433,6 +2571,131 @@ mod tests {
             true,
             "allow-readonly"
         )));
+    }
+
+    // ---- B2.2: roteamento pro navegador do projeto -------------------------
+
+    /// Launch de origem REAL do Playwright MCP registrado no escopo user do
+    /// Claude (`claude mcp add --scope user playwright -- npx @playwright/mcp@latest`).
+    fn browser_mcp_launch(extra: &[&str]) -> McpLaunchConfig {
+        let mut args = vec!["@playwright/mcp@latest".to_string()];
+        args.extend(extra.iter().map(|arg| arg.to_string()));
+        McpLaunchConfig {
+            transport: "stdio".into(),
+            command: Some("npx".into()),
+            args,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn binding_de_navegador_injeta_o_cdp_endpoint_no_plano_efemero() {
+        let mut launch = browser_mcp_launch(&[]);
+        let notices = apply_cdp_endpoint(
+            &mut launch,
+            Some("http://127.0.0.1:62934"),
+            "playwright",
+        );
+        assert_eq!(
+            launch.args,
+            vec![
+                "@playwright/mcp@latest",
+                "--cdp-endpoint",
+                "http://127.0.0.1:62934"
+            ]
+        );
+        // Injeção limpa não polui o fio com aviso nenhum.
+        assert!(notices.is_empty());
+        // O fingerprint do plano só hasheia NOMES: injetar arg não re-anuncia.
+        let com_arg = McpRunPlan {
+            managed: true,
+            selected: vec![McpRuntimeServer {
+                runtime_name: "playwright".into(),
+                display_name: "playwright".into(),
+                launch,
+            }],
+            ..Default::default()
+        };
+        let sem_arg = McpRunPlan {
+            managed: true,
+            selected: vec![McpRuntimeServer {
+                runtime_name: "playwright".into(),
+                display_name: "playwright".into(),
+                launch: browser_mcp_launch(&[]),
+            }],
+            ..Default::default()
+        };
+        assert_eq!(com_arg.fingerprint(), sem_arg.fingerprint());
+    }
+
+    #[test]
+    fn cdp_endpoint_da_origem_vence_e_o_plano_avisa() {
+        let mut launch = browser_mcp_launch(&["--cdp-endpoint", "http://127.0.0.1:9222"]);
+        let notices = apply_cdp_endpoint(
+            &mut launch,
+            Some("http://127.0.0.1:62934"),
+            "playwright",
+        );
+        // Endpoint explícito do usuário fica intacto e o nosso NÃO entra.
+        assert_eq!(
+            launch.args,
+            vec![
+                "@playwright/mcp@latest",
+                "--cdp-endpoint",
+                "http://127.0.0.1:9222"
+            ]
+        );
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].contains("já traz --cdp-endpoint"));
+        // A forma `--cdp-endpoint=<url>` é reconhecida do mesmo jeito.
+        let mut colado = browser_mcp_launch(&["--cdp-endpoint=http://127.0.0.1:9222"]);
+        let notices = apply_cdp_endpoint(&mut colado, Some("http://127.0.0.1:62934"), "playwright");
+        assert_eq!(colado.args.len(), 2);
+        assert_eq!(notices.len(), 1);
+    }
+
+    #[test]
+    fn browser_e_headless_da_origem_saem_do_run_com_aviso() {
+        let mut launch = browser_mcp_launch(&["--browser", "chrome", "--headless", "--isolated"]);
+        let notices = apply_cdp_endpoint(
+            &mut launch,
+            Some("http://127.0.0.1:62934"),
+            "playwright",
+        );
+        assert_eq!(
+            launch.args,
+            vec![
+                "@playwright/mcp@latest",
+                "--isolated",
+                "--cdp-endpoint",
+                "http://127.0.0.1:62934"
+            ]
+        );
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].contains("--browser e --headless"));
+        // Forma colada (`--browser=chrome`) também sai.
+        let mut colado = browser_mcp_launch(&["--browser=chrome"]);
+        apply_cdp_endpoint(&mut colado, Some("http://127.0.0.1:62934"), "playwright");
+        assert!(!colado.args.iter().any(|arg| arg.starts_with("--browser")));
+    }
+
+    #[test]
+    fn sem_navegador_vivo_o_plano_degrada_honesto_sem_injetar() {
+        let mut launch = browser_mcp_launch(&["--browser", "chrome"]);
+        let notices = apply_cdp_endpoint(&mut launch, None, "playwright");
+        // Nada é tocado: o MCP segue com o navegador próprio dele.
+        assert_eq!(launch.args, vec!["@playwright/mcp@latest", "--browser", "chrome"]);
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].contains("não está ligado"));
+        // O flag de navegador NÃO entra na decisão de bloqueio: ela continua
+        // sendo só sobre o servidor sumir da origem/ficar indisponível. Um
+        // Chromium desligado nunca segura o turno.
+        assert!(binding_blocks_without_server(&Binding {
+            server_id: "server".into(),
+            required: false,
+            fallback: "ask".into(),
+            browser: true,
+        }));
     }
 
     #[tokio::test]

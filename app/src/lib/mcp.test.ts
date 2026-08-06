@@ -28,6 +28,7 @@ function makeServer(id: string, states: Partial<McpAgentState>[]): McpServer {
       compatible: true,
       enabled: false,
       required: false,
+      browser: false,
       fallback: "ask",
       health: "unchecked",
       detail: null,

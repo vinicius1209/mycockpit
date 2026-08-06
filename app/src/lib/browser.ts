@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core"
 import { isTauri } from "@/lib/db"
+import type { McpServer } from "@/lib/mcp"
 
 /** Sessão VIVA de navegador de um projeto (B2.1 do docs/browser-plan.md).
  *  Só existe depois do `GET /json/version` responder: "ligado" aqui é estado
@@ -58,4 +59,27 @@ export function browserStateLabel(status: BrowserStatus | null): string {
   return status.version
     ? `desligado · Chromium ${status.version} pronto`
     : "desligado · Chromium pronto"
+}
+
+/** Nomes dos MCPs que este projeto marcou para dirigir o navegador do app. */
+export function browserBoundServers(servers: McpServer[]): string[] {
+  return servers
+    .filter((server) =>
+      server.agentStates.some((state) => state.enabled && state.browser),
+    )
+    .map((server) => server.name)
+}
+
+/** Aviso honesto quando algum binding pede o navegador do projeto e ele não
+ *  está ligado: o run não trava por isso, mas o MCP vai abrir um navegador
+ *  próprio, e o usuário precisa saber ANTES de gastar o turno. `null` quando
+ *  não há o que avisar. */
+export function browserBindingWarning(
+  servers: McpServer[],
+  status: BrowserStatus | null,
+): string | null {
+  if (status?.session) return null
+  const names = browserBoundServers(servers)
+  if (names.length === 0) return null
+  return `${names.join(", ")} ${names.length > 1 ? "pedem" : "pede"} o navegador do projeto, que está desligado. Nos runs deste projeto o MCP vai abrir um navegador próprio.`
 }

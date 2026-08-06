@@ -418,6 +418,16 @@ pub fn run() {
             sql: "ALTER TABLE turn_costs ADD COLUMN usage_basis TEXT;",
             kind: MigrationKind::Up,
         },
+        // B2.2 (docs/browser-plan.md): o binding marca quais MCPs dirigem o
+        // NAVEGADOR DO PROJETO (o Chromium que o app possui). Propriedade do
+        // binding, nunca do nome do fornecedor: o plano efêmero injeta
+        // `--cdp-endpoint` só em quem foi marcado, e o default é desligado.
+        Migration {
+            version: 35,
+            description: "mcp_bindings_browser",
+            sql: "ALTER TABLE mcp_bindings ADD COLUMN browser INTEGER NOT NULL DEFAULT 0;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

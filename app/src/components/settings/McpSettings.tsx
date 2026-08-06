@@ -31,6 +31,7 @@ import {
   type McpServer,
 } from "@/lib/mcp"
 import {
+  browserBindingWarning,
   browserStateLabel,
   browserStatus,
   startProjectBrowser,
@@ -260,7 +261,7 @@ export function McpSettings() {
     server: McpServer,
     state: McpAgentState,
     patch: Partial<
-      Pick<McpAgentState, "enabled" | "required" | "fallback">
+      Pick<McpAgentState, "enabled" | "required" | "browser" | "fallback">
     >,
   ) {
     if (!project) return
@@ -281,6 +282,7 @@ export function McpSettings() {
           applyAgentPatch(prev, server.id, state.agent, {
             enabled: state.enabled,
             required: state.required,
+            browser: state.browser,
             fallback: state.fallback,
           }),
         ),
@@ -292,6 +294,7 @@ export function McpSettings() {
           enabled: next.enabled,
           required: next.required,
           fallback: next.fallback,
+          browser: next.browser,
         }),
       onError: (message) => toast.error(message),
     })
@@ -442,6 +445,12 @@ export function McpSettings() {
             {browser?.session ? "Desligar" : "Ligar"}
           </Button>
         </div>
+        {browserBindingWarning(servers, browser) && (
+          <div className="mt-2 flex items-start gap-1.5 rounded-md border border-st-warning/30 bg-st-warning/5 px-2 py-1.5 text-[10.5px] leading-snug text-st-warning">
+            <AlertTriangle className="mt-px size-3.5 shrink-0" />
+            <span>{browserBindingWarning(servers, browser)}</span>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -581,6 +590,23 @@ export function McpSettings() {
                                 className="accent-[var(--brass)]"
                               />
                               exigir
+                            </label>
+                            <label
+                              className="flex items-center gap-1 text-[10.5px] text-muted-foreground"
+                              title="Este MCP pilota o navegador do projeto (o run recebe --cdp-endpoint)"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={state.browser}
+                                onChange={(event) =>
+                                  void update(server, state, {
+                                    browser: event.target.checked,
+                                  })
+                                }
+                                disabled={writeBusy}
+                                className="accent-[var(--brass)]"
+                              />
+                              navegador
                             </label>
                             <select
                               value={state.fallback}
