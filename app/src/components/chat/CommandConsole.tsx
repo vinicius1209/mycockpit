@@ -26,6 +26,7 @@ import { useAttachments } from "@/hooks/useAttachments"
 import {
   useActiveConv,
   useChat,
+  deferredStopWarning,
   hasExecutorTurn,
   pendingDeferred,
 } from "@/store/chat"
@@ -455,11 +456,7 @@ export function CommandConsole({
         }
         footer={
           <ComposerActions
-            stopTitle={
-              pendingDeferred(conv.items).length > 0
-                ? "Parar (o trabalho em background do agent morre junto e fica marcado como interrompido)"
-                : undefined
-            }
+            stopTitle={deferredStopWarning(pendingDeferred(conv.items))}
             onFusion={() => setFusionOpen(true)}
             fusionDisabled={
               !activeId || disabled || running || finalizing || missionRunning

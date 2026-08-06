@@ -1,6 +1,6 @@
 # Status de trabalho em background — plano (um lugar só, legível)
 
-> Status: **B1 ✅ (06/08/2026, pesquisa no fonte do Warp)** · B2 em execução.
+> Status: **B1 ✅ · B2 ✅ (06/08/2026)**.
 > Proposto em 06/08/2026, do feedback do usuário sobre os builds 181/182:
 > "o tempo decorrido quebra a linha", "rolando pra cima aparece um trabalho em
 > background solto, parece descentralizado, confuso". Pesquisa mandatória antes
@@ -155,6 +155,45 @@ Fio Vivo, sem empilhar (R5).
 - **B2.5 — N trabalhos**: com mais de um, a linha viva mostra
   `N trabalhos em background · <o mais recente> · tempo`, e o detalhe abre no
   Fio Vivo (não empilha nome atrás de nome).
+
+### O que foi entregue no B2 ✅ 06/08/2026
+
+Tudo em TypeScript (nenhuma migração, nenhuma capability nova, nada no Rust).
+
+- **B2.1** — `Elapsed` ganhou `className` e a linha viva o usa com
+  `min-w-[4.5rem] shrink-0 tabular-nums`; o rótulo virou `min-w-0 truncate`.
+  O tempo é IRMÃO dos dots que animam, nunca filho (regra R2 do Warp).
+- **B2.2** — `WorkingIndicator` é a dona única do "agora"; o nó do fio passou a
+  dizer **iniciado** (marco) enquanto roda, e **concluiu / interrompido** quando
+  termina. O cronômetro da linha é o do trabalho NOMEADO (`deferredLiveLine`),
+  o que também consertou o relógio sumido no estado "finalizando com background
+  vivo" (o `result` zera o `startedAt` do turno).
+- **B2.3** — `deferredLabel` traduz `task_type` (`local_agent` → subagente,
+  `local_workflow` → workflow; tipo desconhecido segue cru, traduzir o que não
+  se conhece seria inventar); a meta do nó perdeu o `task_type` e a duplicação
+  de "em background"; o selo do motor saiu de CADA nó e foi pro cabeçalho do
+  agente (`resolveExecutorIdentity` devolve `engine`, preenchido só quando uma
+  persona pilota — sem persona o nome já É o motor).
+- **B2.4** — o cartão do trabalho não oferece mais "Interromper turno" (que era,
+  além de dono errado, no-op silencioso: o `runId` já é `null` depois do
+  `result`). A ação do turno mora no Parar do composer, com a copy do D1.4 agora
+  no plural certo (`deferredStopWarning`). Subagente comum (`Task`) mantém o
+  botão com a explicação de que só existe controle do turno inteiro
+  (work-hierarchy).
+- **B2.5** — `deferredLiveLine`: `trabalho em background · <nome>` com um,
+  `N trabalhos em background · <mais recente>` com vários, lista completa no
+  `title` e detalhe real no Fio Vivo.
+
+Testes: `src/store/chat.liveWork.test.ts` (16 casos: rótulo com N, truncamento,
+qual trabalho manda no relógio, vocabulário, aviso do Parar) e
+`src/components/chat/MessageList.background.test.ts` (9 casos de marcação: o que
+a linha mostra em cada estado, o nó como marco, a ação ausente no cartão).
+
+**Furo conhecido, NÃO corrigido:** com o turno em `finalizing` (background vivo
+segurando o CLI) não existe caminho real de interromper — o `runId` já foi
+zerado no `result`, então o Parar do composer também some. Hoje isso é honesto
+(nenhum botão mente), mas a capacidade de matar um turno preso no background
+continua faltando; o caminho é o quit avisado do D1.4.
 
 ## B3 — Coerência com o que já existe
 

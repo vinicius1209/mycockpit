@@ -347,9 +347,11 @@ export function presentTool(name: string, input: unknown): ToolView {
       }
     }
     // Nó sintético de trabalho DIFERIDO do provider (deferred-work-plan D1.2):
-    // workflow/background task que vive além do turno. O estado (rodando/
+    // workflow/background task que vive além do turno. O estado (iniciado/
     // concluiu/interrompido) mora em item.deferred e vira meta na ToolLine;
-    // aqui só o rótulo humano + o resumo no expand.
+    // aqui só o rótulo humano + o resumo no expand. Sem `meta` própria: o
+    // `task_type` cru ("local_agent") vazava termo técnico pra tela e a meta do
+    // estado já ocupa esse espaço (background-status B2.3).
     case "DeferredWork": {
       const name = str(i, "name") ?? str(i, "kind")
       return {
@@ -359,7 +361,7 @@ export function presentTool(name: string, input: unknown): ToolView {
           : "Trabalho em background",
         category: "delegate",
         emphasis: "normal",
-        meta: str(i, "kind"),
+        meta: null,
         detail: str(i, "description"),
       }
     }

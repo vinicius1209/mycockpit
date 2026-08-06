@@ -73,11 +73,12 @@ import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import { splitMentions } from "@/components/chat/mentions"
 import { usePresets } from "@/store/presets"
 import {
-  deferredLabel,
+  deferredLiveLine,
   pendingDeferred,
   useChat,
   type ChatItem,
 } from "@/store/chat"
+import type { DeferredWork } from "@/lib/work"
 import { agentLabel } from "@/lib/agent"
 
 /** Máx. de linhas mostradas num bloco de diff (Edit/Write) antes de "… +N linhas". */
@@ -152,13 +153,15 @@ function branchHasLiveDeferred(node: ToolTreeNode): boolean {
 }
 
 /** Cronômetro ao vivo enquanto o run pensa (atualiza a cada 1s). */
-function Elapsed({ since }: { since: number }) {
+function Elapsed({ since, className }: { since: number; className?: string }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
-  return <span className="tabular-nums">{fmtDuration(now - since)}</span>
+  return (
+    <span className={cn("tabular-nums", className)}>{fmtDuration(now - since)}</span>
+  )
 }
 
 /** Reúne os hunks de um tool de edição + contagem. Edit → 1 hunk; MultiEdit →
@@ -310,11 +313,13 @@ const ToolLine = memo(function ToolLine({
   const processMeta = item.managedProcess
     ? `PID ${item.managedProcess.pid} · ${item.managedProcess.status}`
     : null
-  // Estado do trabalho diferido no PRÓPRIO rótulo da linha (D1.2): rodando de
-  // verdade dentro do CLI, concluiu, ou morreu sem concluir.
+  // Estado do trabalho diferido no PRÓPRIO rótulo da linha (D1.2). Rodando, o
+  // nó é MARCO ("iniciado", onde o trabalho nasceu): quem narra o agora é a
+  // linha viva do rodapé, e dois painéis vivos competindo foi a confusão dos
+  // builds 181/182 (background-status B2.2).
   const deferredMeta = item.deferred
     ? item.deferred.status === "running"
-      ? "em background"
+      ? "iniciado"
       : item.deferred.status === "completed"
         ? "concluiu"
         : "interrompido"
@@ -333,8 +338,16 @@ const ToolLine = memo(function ToolLine({
       item.deferred?.outputFile ||
       children.length,
   )
+  // Ação no dono certo (background-status B2.4): no cartão de UM trabalho só
+  // cabe ação DAQUELE trabalho. "Interromper turno" mata o turno inteiro, então
+  // mora na superfície do turno (o Parar do composer, com a copy do D1.4). No
+  // nó de trabalho diferido ele ainda era pior: depois do `result` o runId já é
+  // null (chat.ts:1050) e o clique não parava nada — botão de teatro.
   const stopInHeader =
-    active && onStop && (p.kind === "agent" || item.managedProcess != null)
+    active &&
+    onStop &&
+    item.deferred == null &&
+    (p.kind === "agent" || item.managedProcess != null)
   const briefingLines = p.detail ? Math.max(1, p.detail.split("\n").length) : 0
 
   useEffect(() => {
@@ -413,11 +426,9 @@ const ToolLine = memo(function ToolLine({
               </span>
             )
           )}
-          {p.kind === "agent" && (
-            <span className="rounded border px-1 py-px text-[10px] text-muted-foreground">
-              {agentLabel(agent)}
-            </span>
-          )}
+          {/* Selo do motor saiu do nó (background-status B2.3): ele mora no
+              cabeçalho do agente (work-hierarchy) — repetido em cada linha
+              virava ruído ao lado do rótulo de transporte. */}
           {expandable && (
             // seta de expandir no FIM (longe do ícone `>_` → sem duplicação).
             <ChevronRight
@@ -2184,15 +2195,25 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
 /** Identidade do EXECUTOR pro gutter (compartilhada entre o cabeçalho do grupo
  *  e o indicador de "trabalhando…", pra não duplicar a resolução): a
  *  persona-piloto quando a conversa tem preset resolvido na lista; senão o logo
- *  do code agent num círculo + o rótulo do produto. Puro dada a lista de presets. */
+ *  do code agent num círculo + o rótulo do produto. Puro dada a lista de presets.
+ *
+ *  `engine` é o selo do motor pro CABEÇALHO (work-hierarchy: "o provider mora no
+ *  cabeçalho do agente"; background-status B2.3 tirou o selo repetido de cada
+ *  nó). Só vem preenchido quando o nome exibido NÃO é o do motor — com persona
+ *  pilotando, o motor ficaria invisível; sem persona, o nome já É o motor e
+ *  repetir seria ruído. */
 export function resolveExecutorIdentity(
   presets: AgentDef[],
   agent: string,
   presetId: string | null,
-): { gutter: React.ReactNode; name: string } {
+): { gutter: React.ReactNode; name: string; engine: string | null } {
   const pilot = presetId ? presets.find((p) => p.id === presetId) : undefined
   if (pilot) {
-    return { gutter: <AgentAvatar def={pilot} size={28} rounded />, name: pilot.name }
+    return {
+      gutter: <AgentAvatar def={pilot} size={28} rounded />,
+      name: pilot.name,
+      engine: agentLabel(agent),
+    }
   }
   return {
     gutter: (
@@ -2201,6 +2222,7 @@ export function resolveExecutorIdentity(
       </span>
     ),
     name: agentLogoLabel(agent),
+    engine: null,
   }
 }
 
@@ -2208,41 +2230,57 @@ export function resolveExecutorIdentity(
  *  gutter das mensagens + "está trabalhando…" com dots escalonados + cronômetro.
  *  `finalizando…` mantém o formato (só troca o verbo). Com trabalho DIFERIDO
  *  vivo (deferred-work-plan D1.3), o rótulo fica honesto: o CLI segura o turno
- *  aberto enquanto o background task roda — o spinner mudo virava mentira. */
+ *  aberto enquanto o background task roda — o spinner mudo virava mentira.
+ *
+ *  É a ÚNICA superfície do "agora" (background-status B2.2): o nó no fio é
+ *  marco/resultado, não um segundo painel vivo. Regras do layout, do estudo do
+ *  Warp (B1'): o cronômetro é irmão do que anima (nunca dentro), tem largura
+ *  reservada + `tabular-nums` + `shrink-0`, e quem trunca é o NOME (B2.1). */
 function WorkingIndicator({
   agent,
   presetId,
   finalizing,
   running,
   startedAt,
-  deferredNames = [],
+  deferred = [],
 }: {
   agent: string
   presetId: string | null
   finalizing: boolean
   running: boolean
   startedAt: number | null
-  /** Nomes dos trabalhos em background vivos (derivado de items). */
-  deferredNames?: string[]
+  /** Trabalhos em background vivos (derivado de items, replay-safe). */
+  deferred?: DeferredWork[]
 }) {
   const presets = usePresets((s) => s.list)
-  const { gutter, name } = resolveExecutorIdentity(presets, agent, presetId)
-  const label =
-    deferredNames.length > 0
-      ? `trabalho em background rodando (${deferredNames.join(", ")})`
-      : finalizing
-        ? "finalizando…"
-        : "está trabalhando…"
+  const { gutter, name, engine } = resolveExecutorIdentity(presets, agent, presetId)
+  const live = deferredLiveLine(deferred)
+  const label = live
+    ? live.text
+    : finalizing
+      ? "finalizando…"
+      : "está trabalhando…"
+  // O relógio pertence ao que está ESCRITO na linha: com background vivo é o
+  // trabalho nomeado (o turno zera o startedAt no `result`, e era justo aí que
+  // o cronômetro sumia); sem background, é o turno.
+  const since = live ? live.since : running ? startedAt : null
   return (
     <div className="flex gap-3">
       <div className="w-7 shrink-0 pt-0.5">{gutter}</div>
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-baseline gap-2">
           <span className="text-[13px] font-medium text-foreground">{name}</span>
+          {engine && (
+            <span className="rounded border px-1 py-px text-[10px] text-muted-foreground">
+              {engine}
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
-          <span>{label}</span>
-          <span className="flex items-center gap-1" aria-hidden>
+        <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted-foreground">
+          <span className="min-w-0 truncate" title={live ? live.detail : undefined}>
+            {label}
+          </span>
+          <span className="flex shrink-0 items-center gap-1" aria-hidden>
             {[0, 1, 2].map((i) => (
               <span
                 key={i}
@@ -2251,10 +2289,11 @@ function WorkingIndicator({
               />
             ))}
           </span>
-          {running && startedAt && (
-            <span className="ml-1 font-mono text-foreground/70">
-              <Elapsed since={startedAt} />
-            </span>
+          {since != null && (
+            <Elapsed
+              since={since}
+              className="ml-1 min-w-[4.5rem] shrink-0 font-mono text-foreground/70"
+            />
           )}
         </div>
       </div>
@@ -2300,6 +2339,9 @@ function GroupRow({
   let gutter: React.ReactNode
   let name: string
   let nameClass = "text-foreground"
+  // Selo do motor no CABEÇALHO (B2.3): só no grupo do executor, e só quando o
+  // nome exibido é de uma persona (senão o nome já é o motor).
+  let engine: string | null = null
   if (author.kind === "you") {
     gutter = (
       <span className="grid size-7 place-items-center rounded-full bg-secondary text-muted-foreground">
@@ -2324,6 +2366,7 @@ function GroupRow({
     const id = resolveExecutorIdentity(presets, agent, presetId)
     gutter = id.gutter
     name = id.name
+    engine = id.engine
   }
 
   return (
@@ -2332,6 +2375,11 @@ function GroupRow({
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-baseline gap-2">
           <span className={cn("text-[13px] font-medium", nameClass)}>{name}</span>
+          {engine && (
+            <span className="rounded border px-1 py-px text-[10px] text-muted-foreground">
+              {engine}
+            </span>
+          )}
           {time && (
             <span className="text-[11px] tabular-nums text-muted-foreground/60">
               {time}
@@ -2428,12 +2476,10 @@ export function MessageList({
       ? latestPlan.anchorId
       : null
   const feedbackByResult = useMemo(() => feedbackTextByResult(items), [items])
-  // Trabalho diferido VIVO (D1.3): alimenta o rótulo honesto do indicador de
-  // turno. Derivado de items — replay-safe, sem estado paralelo.
-  const deferredNames = useMemo(
-    () => pendingDeferred(items).map(deferredLabel),
-    [items],
-  )
+  // Trabalho diferido VIVO (D1.3): alimenta a LINHA VIVA, dona única do "agora"
+  // (background-status B2.2). Derivado de items — replay-safe, sem estado
+  // paralelo: no restore o diferido vira interrompido e a linha some sozinha.
+  const liveDeferred = useMemo(() => pendingDeferred(items), [items])
   // Selo "lido / não foi aberto" por anexo. Calculado UMA vez aqui (varre o fio)
   // e entregue pronto ao MessageItem: fazer dentro do item quebraria o memo dele
   // a cada delta do streaming. Só muda quando items/running mudam.
@@ -2531,7 +2577,7 @@ export function MessageList({
           finalizing={finalizing}
           running={running}
           startedAt={startedAt}
-          deferredNames={deferredNames}
+          deferred={liveDeferred}
         />
       )}
     </div>
