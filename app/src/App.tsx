@@ -89,7 +89,8 @@ const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 const queryClient = new QueryClient()
 
 // Agent Office (O1): lazy — o chunk (Pixi incluso) só baixa na 1ª visita ao
-// modo; depois fica montado com `hidden` (loop parado) como Painel/Trabalho.
+// modo; depois fica montado com `hidden` (sim, ticker do Pixi e derive parados
+// — quem cumpre isso é o OfficeMode) como Painel/Trabalho.
 const OfficeMode = lazy(() => import("@/office/ui/OfficeMode"))
 const FlightPlansView = lazy(() =>
   import("@/components/mission/FlightPlansView").then((module) => ({
@@ -143,7 +144,8 @@ export default function App() {
   const activeProjectId = useApp((s) => s.activeProjectId)
 
   // Office: monta LAZY na 1ª visita e nunca desmonta (padrão Painel/Trabalho —
-  // remontar destruiria o mundo/canvas); ao sair fica hidden + loop parado.
+  // remontar destruiria o mundo/canvas); ao sair fica hidden e o OfficeMode
+  // para simulação, desenho (ticker do Pixi) e derivação do snapshot.
   const [officeVisited, setOfficeVisited] = useState(false)
   useEffect(() => {
     if (viewMode === "office") setOfficeVisited(true)
@@ -817,8 +819,8 @@ export default function App() {
                       </div>
                       {/* Office (O1): lazy mount na 1ª visita, depois fica
                           montado com `hidden` (o próprio OfficeMode esconde a
-                          raiz e PARA o loop/ticker — §7). Wrapper relative:
-                          o OfficeMode é absolute inset-0. */}
+                          raiz e para sim + ticker do Pixi + derive — §7).
+                          Wrapper relative: o OfficeMode é absolute inset-0. */}
                       {officeVisited && (
                         <div
                           className={cn(

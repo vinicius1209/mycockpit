@@ -24,7 +24,7 @@ game feel de verdade (60fps, câmera, colisão, proximidade).
 | # | Decisão | Racional |
 |---|---|---|
 | O1 | **Modo dentro da webview principal** (`viewMode: "office"`), lazy-loaded — não segunda janela, não app separado | O stream de `AgentEvent` é `Channel` por-invoke (invisível a outras webviews) e todo o motor de conversa/missão vive nos stores zustand da janela main. Latência zero, zero ponte nova (camada fina). Porta aberta para janela própria depois (padrão `tray.html`) desde que o módulo office não importe UI do App. `viewMode: "office"` **não persiste** — rehidrata como `"linear"`. |
-| O2 | **PixiJS v8 (≥8.5), renderer WebGL forçado, uso imperativo** (sem `@pixi/react`) | WKWebView não expõe WebGPU. `Application` com `resolution = min(devicePixelRatio, 2)`, `autoDensity`, `antialias: true` (MSAA barato em GPU Apple TBDR), `ticker.maxFPS = 60`. Init async com token de cancelamento (StrictMode monta 2×) + `import.meta.hot.dispose` destruindo a Application (vazamento de contexts WebGL no HMR). |
+| O2 | **PixiJS v8 (≥8.5), renderer WebGL forçado, uso imperativo** (sem `@pixi/react`) | WKWebView não expõe WebGPU. `Application` com `resolution = min(devicePixelRatio, 2)`, `autoDensity`, `antialias: true` (MSAA barato em GPU Apple TBDR), `ticker.maxFPS = 60` e **`autoStart: false`** (o ticker do Pixi é quem emite os draw calls — com o default `true` ele varria o scene graph a 60Hz pelo resto da sessão mesmo com o office oculto; ligar/desligar é do `OfficeMode` via `stage.start(world)`/`stage.stop()`). Init async com token de cancelamento (StrictMode monta 2×) + `import.meta.hot.dispose` destruindo a Application (vazamento de contexts WebGL no HMR). |
 | O3 | **Sim em passo fixo 60Hz**; mundo mutável fora do React; zustand só recebe **transições discretas** | Clamp de 250ms no acumulador; pausa em `visibilitychange`; blur limpa teclas. **Boss renderiza sem interpolação** (snap ao estado da sim — latência de input mínima); interpolação só para NPCs e câmera. |
 | O4 | **Projeção diamond 2:1** (`TILE_W=64`, `TILE_H=32`), coordenadas contínuas em tiles (float), y-sort por escalar (`screenY` dos pés) | Fórmulas fechadas world↔screen p/ picking. Mesas fatiadas **base + tampo**; segmentos de parede lateral na camada dinâmica (ocluem o boss corretamente). Velocidade constante em **espaço de mundo**, vetor de input normalizado (mesma |v| nas 8 direções — teste de engine). |
 | O5 | **Grid global `Uint8Array`** com bitflags (`WALK\|DOOR\|INTERACT`), A* 8-direções próprio (heap binário, octile, sem corner-cutting) + string-pulling; move-and-slide com AABB nos pés | Salas pequenas; lib de pathfinding é dependência desnecessária. Clique em tile bloqueado clampa para o walkable alcançável mais próximo. |
@@ -207,7 +207,14 @@ projeta).
   com debounce fora do gesto de zoom).
 - Estados dinâmicos (mesa acesa/apagada, highlight, luz da porta, placa do
   projeto) são objetos próprios fora de qualquer cache.
-- Office oculto ⇒ `loop.stop()` + ticker parado. Blur ⇒ limpa teclas.
+- Office oculto ⇒ `loop.stop()` (simulação) **+ `stage.stop()`** (ticker do Pixi:
+  zero draw calls) **+ `derive.setActive(false)`** (senão cada tecla digitada no
+  chat escreve `drafts` no `useChat` e paga um derive completo que o dedupe
+  descarta) **+ overlays de projeção desmontados** (Prompts/Hud/BossCenter; os
+  docks ficam montados porque guardam rascunho do usuário). Voltar a ficar
+  visível religa na ordem derive → `stage.start(world)` (remede o host, pinta um
+  frame síncrono) → `loop.start()`, em `useLayoutEffect` (antes do paint).
+  Blur ⇒ limpa teclas.
 - Probe de refresh no boot (mediana de deltas de rAF) no HUD de debug.
 
 ## 8. Ondas

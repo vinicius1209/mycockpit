@@ -2,11 +2,15 @@
 // orquestra o pipeline: planta → stage → world → input → loop → derive.
 // Posições NUNCA passam pelo React (§7): a cena renderiza no rAF e os overlays
 // DOM (Prompts) são posicionados no MESMO callback; o React só vê transições
-// discretas (store local em ./store). Lazy no App (export default) — quando
-// `hidden`, o loop PARA (e volta ao reaparecer).
+// discretas (store local em ./store). Lazy no App (export default) — o
+// componente monta UMA vez e nunca desmonta, então `hidden` precisa parar TUDO
+// que custa por frame/por tecla (§7): loop de simulação, TICKER do Pixi (quem
+// desenha), derivação do snapshot e os overlays de projeção. Só o que guarda
+// rascunho do usuário (DeskDock/MissionDock) segue montado.
 import {
   Profiler,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ProfilerOnRenderCallback,
@@ -30,7 +34,7 @@ import { createOfficeStage, type OfficeStage } from "../scene/stage"
 import { perfAgg, perfDuration, perfEnabled } from "../engine/perf"
 import { fitIsometricRoom } from "../scene/logic"
 import { buildFloorPlan } from "../bridge/layout"
-import { startDeriving } from "../bridge/derive"
+import { startDeriving, type DeriveHandle } from "../bridge/derive"
 import { startSimData } from "../bridge/sim-data"
 import {
   dockLeaveCtx,
@@ -167,6 +171,7 @@ export default function OfficeMode({ hidden = false }: { hidden?: boolean }) {
   const worldRef = useRef<World | null>(null)
   const stageRef = useRef<OfficeStage | null>(null)
   const loopRef = useRef<OfficeLoop | null>(null)
+  const deriveRef = useRef<DeriveHandle | null>(null)
   const planRef = useRef<FloorPlan | null>(null)
   const promptsRef = useRef<PromptsHandle>(null)
   const roomIdxRef = useRef(-1)
@@ -402,16 +407,32 @@ export default function OfficeMode({ hidden = false }: { hidden?: boolean }) {
       })
       loopRef.current = loop
       if (!hiddenRef.current) loop.start()
-      detach.push(() => loop.stop())
+      // O ticker do Pixi (o DESENHO) é ligado pelo efeito de [hidden, ready]
+      // logo depois do setReady(true) — lá o snapshot já chegou.
+      detach.push(() => {
+        loop.stop()
+        stage.stop()
+      })
 
       // Atividade real (Tauri) ou fixture (browser puro, O8) → cena + HUD.
       const onSnapshot = (snap: OfficeSnapshot) => {
         stage.applySnapshot(snap)
         useOfficeUi.getState().setSnapshot(snap)
       }
-      detach.push(
-        officeIsTauri() ? startDeriving(onSnapshot) : startSimData(onSnapshot),
-      )
+      if (officeIsTauri()) {
+        // Oculto ⇒ nasce INATIVO (o efeito de [hidden, ready] liga quando
+        // aparece); a derivação é cara e o snapshot não muda escondido.
+        const derive = startDeriving(onSnapshot, { active: !hiddenRef.current })
+        deriveRef.current = derive
+        detach.push(() => {
+          deriveRef.current = null
+          derive.stop()
+        })
+      } else {
+        // Fixture do browser puro: roteiro de 8s, sem stores — não paga por
+        // tecla digitada, então segue como está.
+        detach.push(startSimData(onSnapshot))
+      }
 
       // Espelhos discretos store → cena/mundo (nunca por frame).
       detach.push(
@@ -531,10 +552,35 @@ export default function OfficeMode({ hidden = false }: { hidden?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectsKey])
 
-  // Oculto ⇒ para o loop (ticker parado, §7); visível de volta ⇒ religa.
-  useEffect(() => {
-    if (hidden) loopRef.current?.stop()
-    else if (ready) loopRef.current?.start()
+  // Oculto ⇒ o office custa ZERO (§7): para o loop de simulação, o TICKER do
+  // Pixi (quem emite draw calls) e a derivação do snapshot. Visível ⇒ religa na
+  // ordem que garante uma cena CORRETA no primeiro frame: derive primeiro (o
+  // snapshot volta a valer), depois a pintura síncrona do stage, por fim o loop.
+  // useLayoutEffect: a pintura e o reposicionamento dos balões acontecem ANTES
+  // do paint do commit que revelou o office — com useEffect o usuário veria um
+  // frame com a cena velha e os balões no canto (eles só ganham transform no
+  // frame(), e acabaram de montar).
+  useLayoutEffect(() => {
+    if (hidden) {
+      loopRef.current?.stop()
+      stageRef.current?.stop()
+      deriveRef.current?.setActive(false)
+      return
+    }
+    if (!ready) return
+    deriveRef.current?.setActive(true)
+    const stage = stageRef.current
+    const world = worldRef.current
+    if (stage && world) {
+      stage.start(world)
+      // mesmo gesto do render do loop: os balões DOM só existem posicionados
+      // depois de um frame() (o loop só entrega o próximo no rAF seguinte)
+      promptsRef.current?.frame(
+        (wx, wy) => stage.worldToScreen(wx, wy),
+        stage.bossScreen(),
+      )
+    }
+    loopRef.current?.start()
   }, [hidden, ready])
 
   // Rail → câmera: assina UMA vez as intenções de navegação (focusRoomId/
@@ -589,32 +635,43 @@ export default function OfficeMode({ hidden = false }: { hidden?: boolean }) {
   }, [onboard, hidden])
 
   // Overlays React (o canvas fica FORA: a cena não é filha do Profiler).
+  //
+  // Regra de montagem com o office OCULTO: quem é PROJEÇÃO do snapshot
+  // (Prompts, Hud, BossCenter, onboarding/vazio) desmonta — invisível, não há
+  // nada a projetar, e desmontado nem assina os stores. Quem guarda escolha ou
+  // rascunho do usuário (DeskDock: "ver tudo"/modelo/esforço da conversa;
+  // MissionDock: tarefa digitada e time editado, com o comentário lá dizendo
+  // que fecha retornando null pra não perder isso) FICA montado — desmontar
+  // apagaria trabalho que o usuário espera reencontrar.
   const overlays = (
     <>
-      <Prompts ref={promptsRef} plan={plan} />
-      <Hud
-        onOpenBossCenter={() =>
-          bossCenterOpen ? setBossCenterOpen(false) : openBossCenter()
-        }
-        bossCenterOpen={bossCenterOpen}
-      />
-      <BossCenter
-        open={bossCenterOpen}
-        onClose={() => setBossCenterOpen(false)}
-        onOpenDesk={openDeskFromBoss}
-        onInspectRoom={(projectId) => inspectRoom(projectId, 0)}
-        onOpenMission={openMissionFromBoss}
-      />
+      {!hidden && (
+        <>
+          <Prompts ref={promptsRef} plan={plan} />
+          <Hud
+            onOpenBossCenter={() =>
+              bossCenterOpen ? setBossCenterOpen(false) : openBossCenter()
+            }
+            bossCenterOpen={bossCenterOpen}
+          />
+          <BossCenter
+            open={bossCenterOpen}
+            onClose={() => setBossCenterOpen(false)}
+            onOpenDesk={openDeskFromBoss}
+            onInspectRoom={(projectId) => inspectRoom(projectId, 0)}
+            onOpenMission={openMissionFromBoss}
+          />
+          {projects.length === 0 ? (
+            <EmptyState />
+          ) : (
+            onboard && <OnboardingOverlay />
+          )}
+        </>
+      )}
       <DeskDock />
       {/* dock da mesa de reunião (O-2): mesmo slot/largura — os dois docks
           leem dockDeskId e só UM renderiza (DeskDock ignora o id da mesa). */}
       <MissionDock />
-
-      {projects.length === 0 ? (
-        <EmptyState />
-      ) : (
-        onboard && <OnboardingOverlay />
-      )}
     </>
   )
 

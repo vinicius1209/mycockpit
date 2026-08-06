@@ -12,6 +12,11 @@
  *  render(world, alpha): boss SEM interpolação (snap); câmera COM (lerp
  *  prev→pos por alpha). zIndex reatribuído só quando o valor quantizado muda.
  *  applySnapshot: dif por deskId — nunca recria objetos.
+ *
+ *  DESENHO ≠ render(): `render()` só MUTA o scene graph. Quem emite draw calls
+ *  é o ticker do Pixi (`app.render` registrado por ele), aqui criado com
+ *  `autoStart: false` — ligar/desligar é do OfficeMode via start(world)/stop(),
+ *  pra que o office oculto custe zero por frame (§7).
  */
 import { Application, Container, Graphics, Text } from "pixi.js"
 import {
@@ -119,6 +124,14 @@ const GATE_WALKER_HIT = { halfW: 30, up: 110, down: 22 } as const
 export type OfficeStage = {
   applySnapshot(s: OfficeSnapshot): void
   render(world: World, alpha: number): void
+  /** Religa o DESENHO. `render()` só muta o scene graph; quem emite draw calls
+   *  é o ticker do Pixi (`app.render` registrado nele) — criado com
+   *  `autoStart: false` pra que o office oculto custe ZERO por frame (§7).
+   *  Remede o host (oculto ele mede 0×0) e pinta um frame já com o mundo
+   *  atual, síncrono: o ticker só desenharia no próximo rAF. */
+  start(world: World): void
+  /** Para o ticker do Pixi: nenhum draw call até o próximo `start`. */
+  stop(): void
   setHover(deskId: string | null): void
   setHighlight(deskId: string | null): void
   setPromptTarget(targetId: string | null): void
@@ -200,6 +213,11 @@ export async function createOfficeStage(
   await app.init({
     preference: "webgl",
     antialias: true,
+    // O ticker do Pixi é QUEM desenha (o TickerPlugin registra `app.render`
+    // nele). Com o default `autoStart: true` ele varria o scene graph a 60Hz
+    // pelo resto da sessão mesmo com o office oculto (o OfficeMode só parava a
+    // SIMULAÇÃO) — o desenho passa a ser explícito: start/stop abaixo.
+    autoStart: false,
     resolution: Math.min(typeof devicePixelRatio === "number" ? devicePixelRatio : 1, 2),
     autoDensity: true,
     resizeTo: host,
@@ -731,6 +749,23 @@ export async function createOfficeStage(
   return {
     applySnapshot,
     render,
+    start(world) {
+      if (destroyed) return
+      // O host mede 0×0 escondido (display:none) e o ResizePlugin só escuta
+      // 'resize' da JANELA: se a janela mudou de tamanho com o office oculto,
+      // o renderer ficou 0×0. Remede antes de voltar a desenhar (senão a cena
+      // volta em branco). `app.resize()` já repinta, com o scene graph velho.
+      app.resize()
+      // Scene graph no estado ATUAL do mundo (transform da câmera, avatares) e
+      // uma pintura síncrona: o ticker só entregaria o 1º frame no próximo rAF.
+      render(world, 1)
+      app.render()
+      app.start()
+    },
+    stop() {
+      if (destroyed) return
+      app.stop()
+    },
     setHover(deskId) {
       if (deskId === hoverId) return
       hoverId = deskId

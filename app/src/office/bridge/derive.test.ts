@@ -827,7 +827,7 @@ describe("startDeriving", () => {
   it("coalesce ≤10Hz (trailing edge) e dedupa snapshots estruturalmente iguais", async () => {
     vi.useFakeTimers()
     const vistos: OfficeSnapshot[] = []
-    const stop = startDeriving((s) => vistos.push(s))
+    const derive = startDeriving((s) => vistos.push(s))
 
     // foto inicial imediata
     expect(vistos).toHaveLength(1)
@@ -853,10 +853,74 @@ describe("startDeriving", () => {
     ).toBe("thinking")
 
     // depois do stop, mudanças não emitem mais
-    stop()
+    derive.stop()
     useChat.setState({ byId: {} })
     await vi.advanceTimersByTimeAsync(500)
     expect(vistos).toHaveLength(2)
+  })
+
+  it("office oculto (inativo): tecla digitada no chat não paga derive nenhum", async () => {
+    vi.useFakeTimers()
+    const vistos: OfficeSnapshot[] = []
+    const derive = startDeriving((s) => vistos.push(s), { active: false })
+
+    // nem a foto inicial: oculto não há cena pra atualizar
+    expect(vistos).toHaveLength(0)
+
+    // digitação (drafts) e mudança REAL de estado: nada agenda enquanto inativo
+    useChat.setState({ drafts: { c1: "d" } })
+    useChat.setState({
+      byId: { c1: conversa("p1", "claude-code", { running: true, runId: "r-1" }) },
+    })
+    await vi.advanceTimersByTimeAsync(2000) // passa do coalescing e do tick de 1s
+    expect(vistos).toHaveLength(0)
+
+    derive.stop()
+  })
+
+  it("voltar a ficar visível emite na hora, com o estado de agora", async () => {
+    vi.useFakeTimers()
+    const vistos: OfficeSnapshot[] = []
+    const derive = startDeriving((s) => vistos.push(s), { active: false })
+
+    useChat.setState({
+      byId: { c1: conversa("p1", "claude-code", { running: true, runId: "r-1" }) },
+    })
+    expect(vistos).toHaveLength(0)
+
+    derive.setActive(true) // síncrono: a cena não pode voltar desatualizada
+    expect(vistos).toHaveLength(1)
+    expect(
+      vistos[0].rooms[0].desks.find((d) => d.agent === "claude-code")?.state,
+    ).toBe("thinking")
+
+    // religado, a derivação volta a acompanhar os stores
+    useChat.setState({ byId: {} })
+    await vi.advanceTimersByTimeAsync(150)
+    expect(vistos).toHaveLength(2)
+
+    // e desligar de novo congela sem emitir (nem o trailing edge pendente)
+    derive.setActive(false)
+    useChat.setState({
+      byId: { c1: conversa("p1", "claude-code", { running: true, runId: "r-2" }) },
+    })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(vistos).toHaveLength(2)
+
+    derive.stop()
+  })
+
+  it("religar sem nada ter mudado não reemite (dedupe segue valendo)", async () => {
+    vi.useFakeTimers()
+    const vistos: OfficeSnapshot[] = []
+    const derive = startDeriving((s) => vistos.push(s))
+    expect(vistos).toHaveLength(1)
+
+    derive.setActive(false)
+    derive.setActive(true)
+    expect(vistos).toHaveLength(1)
+
+    derive.stop()
   })
 })
 

@@ -3,7 +3,9 @@
 // fila de interações pendentes é a do store, fonte ÚNICA compartilhada com o
 // InteractionHost). Nada aqui roda por frame: startDeriving assina os stores
 // com coalescing ≤10Hz (trailing edge) e dedupe por igualdade estrutural — a
-// cena só recebe TRANSIÇÕES.
+// cena só recebe TRANSIÇÕES. E o office oculto DESLIGA a derivação
+// (handle.setActive) — senão cada tecla digitada no chat (drafts no useChat)
+// pagaria um derive completo cujo resultado o dedupe descarta.
 //
 // Camadas: bridge/ importa engine/types + stores/lib do app. NUNCA engine/sim,
 // scene/ ou ui/.
@@ -698,11 +700,28 @@ async function refreshLedger(): Promise<void> {
   }
 }
 
+export type DeriveHandle = {
+  /** Encerra de vez: unsubscribe dos stores + timers. */
+  stop(): void
+  /** Liga/desliga a derivação (office visível/oculto). INATIVO: nenhum derive
+   *  roda — nem por mudança de store, nem pelo tick de decaimento, nem pelo
+   *  ledger. Isso importa porque CADA TECLA digitada no chat escreve `drafts`
+   *  no useChat e notificaria os assinantes; o snapshot não lê drafts, então o
+   *  trabalho inteiro (projetos × mesas, missões, fusões, JSON.stringify)
+   *  morreria no dedupe. Religar emite NA HORA: a cena nunca volta atrasada. */
+  setActive(active: boolean): void
+}
+
 /** Assina os stores (incluindo a fila de interações) e entrega snapshots ao
  *  `cb` com coalescing ≤10Hz (trailing edge) e dedupe estrutural (JSON):
- *  transições discretas, nunca por frame. Retorna o unsubscribe. */
-export function startDeriving(cb: (s: OfficeSnapshot) => void): () => void {
+ *  transições discretas, nunca por frame. `opts.active` começa desligado quando
+ *  o office monta oculto (nem a primeira foto sai — ela vem no setActive). */
+export function startDeriving(
+  cb: (s: OfficeSnapshot) => void,
+  opts: { active?: boolean } = {},
+): DeriveHandle {
   let disposed = false
+  let active = opts.active !== false
   let timer: ReturnType<typeof setTimeout> | null = null
   let lastJson = ""
 
@@ -722,8 +741,9 @@ export function startDeriving(cb: (s: OfficeSnapshot) => void): () => void {
   }
 
   // Trailing edge: a 1ª mudança do burst agenda; as demais coalescem no timer.
+  // Inativo (office oculto) o agendamento nem acontece: nada a derivar.
   const schedule = () => {
-    if (disposed || timer) return
+    if (disposed || !active || timer) return
     timer = setTimeout(() => {
       timer = null
       emit()
@@ -748,19 +768,38 @@ export function startDeriving(cb: (s: OfficeSnapshot) => void): () => void {
   const ticker = setInterval(schedule, TICK_MS)
 
   // Custo: o ledger é async — carrega já e re-agrega de tempos em tempos.
+  // Inativo não consulta o banco (o custo não vai pra lugar nenhum).
   const refresh = () => {
+    if (disposed || !active) return
     void refreshLedger().then(schedule)
   }
   refresh()
   const ledgerTimer = setInterval(refresh, LEDGER_REFRESH_MS)
 
-  emit() // primeira foto imediata (o resto chega no trailing edge)
+  if (active) emit() // primeira foto imediata (o resto chega no trailing edge)
 
-  return () => {
-    disposed = true
-    if (timer) clearTimeout(timer)
-    clearInterval(ticker)
-    clearInterval(ledgerTimer)
-    for (const u of unsubs) u()
+  return {
+    stop() {
+      disposed = true
+      if (timer) clearTimeout(timer)
+      clearInterval(ticker)
+      clearInterval(ledgerTimer)
+      for (const u of unsubs) u()
+    },
+    setActive(next) {
+      if (disposed || next === active) return
+      active = next
+      if (!next) {
+        // some com o trailing edge pendente: o burst que o agendou já não
+        // interessa a ninguém.
+        if (timer) {
+          clearTimeout(timer)
+          timer = null
+        }
+        return
+      }
+      emit() // volta à cena com o estado de AGORA (dedupe engole se nada mudou)
+      refresh() // e o ledger pode ter envelhecido escondido
+    },
   }
 }
