@@ -113,7 +113,9 @@ impl ProcessRegistry {
         }
     }
 
-    fn view(&self, id: &str) -> Option<ManagedProcessView> {
+    /// pub(crate): o navegador do projeto (browser.rs) lê o tail deste mesmo
+    /// registry para achar a linha "DevTools listening on ws://…".
+    pub(crate) fn view(&self, id: &str) -> Option<ManagedProcessView> {
         self.processes
             .lock()
             .ok()
@@ -166,7 +168,9 @@ impl ProcessRegistry {
         }
     }
 
-    async fn spawn(
+    /// pub(crate): mesmo substrato para todo processo que o app POSSUI (o
+    /// navegador do projeto entra por aqui, com eixo de posse sintético).
+    pub(crate) async fn spawn(
         &self,
         app: tauri::AppHandle,
         run_id: String,
@@ -265,7 +269,11 @@ impl ProcessRegistry {
         }
     }
 
-    fn stop(&self, app: &tauri::AppHandle, id: &str) -> Result<ManagedProcessView, String> {
+    pub(crate) fn stop(
+        &self,
+        app: &tauri::AppHandle,
+        id: &str,
+    ) -> Result<ManagedProcessView, String> {
         let pid = {
             let mut map = self.processes.lock().map_err(|_| "registry indisponível")?;
             let record = map.get_mut(id).ok_or("processo não encontrado")?;
@@ -342,7 +350,9 @@ struct WorkEvent {
     data: Value,
 }
 
-fn emit_work(app: &tauri::AppHandle, kind: &str, data: Value) {
+/// pub(crate): `work://event` é o canal único de trabalho vivo da UI. O estado
+/// do navegador do projeto (`browser_state`) viaja por ele, sem inventar canal.
+pub(crate) fn emit_work(app: &tauri::AppHandle, kind: &str, data: Value) {
     let _ = app.emit(
         "work://event",
         WorkEvent {

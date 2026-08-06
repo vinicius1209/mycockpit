@@ -596,14 +596,17 @@ fn db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("sem app_data_dir: {e}"))
 }
 
-fn db(app: &tauri::AppHandle) -> Result<Connection, String> {
+pub(crate) fn db(app: &tauri::AppHandle) -> Result<Connection, String> {
     let conn = Connection::open(db_path(app)?).map_err(|e| e.to_string())?;
     conn.busy_timeout(Duration::from_secs(3))
         .map_err(|e| e.to_string())?;
     Ok(conn)
 }
 
-fn project_id_for_path(conn: &Connection, project_path: &str) -> Result<String, String> {
+pub(crate) fn project_id_for_path(
+    conn: &Connection,
+    project_path: &str,
+) -> Result<String, String> {
     conn.query_row(
         "SELECT id FROM projects WHERE path = ?1 AND deleted_at IS NULL",
         [project_path],

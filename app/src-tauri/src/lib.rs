@@ -11,6 +11,7 @@ mod adapters;
 mod agent;
 mod approval;
 mod attachments;
+mod browser;
 mod catalog;
 mod codex_appserver;
 mod companion;
@@ -516,6 +517,10 @@ pub fn run() {
         )
         .manage(agent::RunRegistry::default())
         .manage(std::sync::Arc::new(work_gateway::ProcessRegistry::default()))
+        // Navegador POR PROJETO (B2.1): só o mapa projeto → sessão viva. O
+        // processo em si mora no ProcessRegistry acima, então o kill_all do
+        // quit já o alcança.
+        .manage(std::sync::Arc::new(browser::BrowserRegistry::default()))
         .manage(tray::TrayState::default())
         .manage(attachments::ActiveConvs::default())
         .manage(stt::SttSession::default())
@@ -578,6 +583,9 @@ pub fn run() {
             mcp_control::set_mcp_binding,
             mcp_control::check_mcp_server,
             mcp_control::mcp_bindings_summary,
+            browser::browser_start,
+            browser::browser_stop,
+            browser::browser_status,
             work_gateway::managed_process_stop,
             work_gateway::managed_process_retry,
             work_gateway::managed_process_start,

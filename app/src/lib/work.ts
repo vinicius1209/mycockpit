@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
+import type { BrowserSession } from "@/lib/browser"
 
 export type ManagedProcessStatus =
   | "running"
@@ -60,10 +61,15 @@ export interface WorkEvent {
     | "process_exited"
     | "work_plan"
     | "work_update"
+    /** Navegador do projeto ligou/desligou/morreu (B2.1). Não tem `convId`:
+     *  o eixo de posse é o PROJETO, então o reducer do chat o ignora. */
+    | "browser_state"
   data: {
     process?: ManagedProcess
     runId?: string
     convId?: string
+    projectId?: string
+    session?: BrowserSession | null
     tasks?: Array<{
       id: string
       title: string

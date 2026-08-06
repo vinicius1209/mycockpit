@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertTriangle,
   CheckCircle2,
+  Globe,
   KeyRound,
   Loader2,
   RefreshCcw,
@@ -29,6 +30,14 @@ import {
   type McpHealthStatus,
   type McpServer,
 } from "@/lib/mcp"
+import {
+  browserStateLabel,
+  browserStatus,
+  startProjectBrowser,
+  stopProjectBrowser,
+  type BrowserStatus,
+} from "@/lib/browser"
+import { listenWorkEvents } from "@/lib/work"
 import { cn } from "@/lib/utils"
 
 function toggleKey(
@@ -102,6 +111,11 @@ export function McpSettings() {
     new Set(),
   )
   const [error, setError] = useState<string | null>(null)
+  // Navegador do projeto (B2.1): o app é dono do Chromium; aqui o usuário liga,
+  // desliga e vê o estado REAL (sessão só existe com o endpoint respondendo).
+  const [browser, setBrowser] = useState<BrowserStatus | null>(null)
+  const [browserBusy, setBrowserBusy] = useState(false)
+  const browserPathRef = useRef<string | null>(null)
 
   const setKeyBusy = useCallback((key: string, on: boolean) => {
     if (on) busyKeysRef.current.add(key)
@@ -159,6 +173,67 @@ export function McpSettings() {
   useEffect(() => {
     void refreshCounts()
   }, [refreshCounts])
+
+  const refreshBrowser = useCallback(async () => {
+    const path = project?.path ?? null
+    browserPathRef.current = path
+    if (!path) {
+      setBrowser(null)
+      return
+    }
+    try {
+      const status = await browserStatus(path)
+      if (browserPathRef.current === path) setBrowser(status)
+    } catch (cause) {
+      if (browserPathRef.current === path) {
+        setBrowser(null)
+        toast.error(cause instanceof Error ? cause.message : String(cause))
+      }
+    }
+  }, [project])
+
+  useEffect(() => {
+    void refreshBrowser()
+  }, [refreshBrowser])
+
+  // O navegador pode morrer sem gesto nenhum (usuário fecha a janela, crash).
+  // O backend emite `browser_state` no mesmo canal do trabalho vivo; o painel
+  // reconsulta e volta a dizer a verdade.
+  useEffect(() => {
+    let cancelled = false
+    let unlisten: (() => void) | undefined
+    void listenWorkEvents((event) => {
+      if (event.kind === "browser_state") void refreshBrowser()
+    }).then((fn) => {
+      if (cancelled) fn()
+      else unlisten = fn
+    })
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [refreshBrowser])
+
+  async function toggleBrowser(on: boolean) {
+    if (!project || browserBusy) return
+    const path = project.path
+    setBrowserBusy(true)
+    try {
+      if (on) {
+        const session = await startProjectBrowser(path)
+        toast.success(
+          `Navegador do projeto ligado · ${session.browser ?? "chromium"}`,
+        )
+      } else {
+        await stopProjectBrowser(path)
+      }
+      await refreshBrowser()
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBrowserBusy(false)
+    }
+  }
 
   /** Aplica o resultado de um health check na linha, se o painel ainda mostra
    *  o mesmo projeto (descoberta de outro projeto substitui a lista). */
@@ -333,6 +408,40 @@ export function McpSettings() {
         Valores de tokens e headers nunca são persistidos. Configurações com
         credencial literal precisam usar Keychain, wrapper ou referência de env
         antes de poderem ser roteadas.
+      </div>
+
+      <div className="mt-3 rounded-lg border border-border/60 bg-secondary/15 p-3">
+        <div className="flex items-start gap-2.5">
+          <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg border border-border/60 bg-background/60">
+            <Globe className="size-3.5 text-brass" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-medium text-foreground">
+              Navegador do projeto
+            </div>
+            <div className="mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
+              O app abre e mantém um Chromium com perfil próprio deste projeto.
+              MCPs marcados abaixo pilotam ESTE navegador, em vez de abrirem um
+              descartável a cada run.
+            </div>
+            <div
+              className="mt-1 truncate font-mono text-[10.5px] text-muted-foreground/75"
+              title={browser?.binary ?? undefined}
+            >
+              {browserStateLabel(browser)}
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={browser?.session ? "ghost" : "secondary"}
+            onClick={() => void toggleBrowser(!browser?.session)}
+            disabled={browserBusy || (!browser?.session && !browser?.binary)}
+            className="h-7 shrink-0 px-2.5 text-[11.5px]"
+          >
+            {browserBusy && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+            {browser?.session ? "Desligar" : "Ligar"}
+          </Button>
+        </div>
       </div>
 
       {error && (
