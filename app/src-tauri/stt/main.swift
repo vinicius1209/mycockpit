@@ -6,6 +6,7 @@
 //           EOF      → app morreu, sai (não vira órfão)
 //   stdout: {"ready":true} → gravando
 //           {"partial":"…"} → transcrição parcial (ao vivo, texto COMPLETO)
+//           {"warn":"…"}    → aviso honesto antes do final (ex.: caiu no streaming)
 //           {"text":"…"}    → texto final
 //           {"error":"…"}   → falha (permissão, mic, locale)
 //
@@ -20,24 +21,31 @@
 // canônico: ACUMULAR utterances finalizadas em `committed` e REINICIAR um task
 // novo — a gravação segue até o STOP, nunca morre numa pausa.
 //
-// ── NÃO COMER O FIM DA FRASE (D1 do docs/dictation-plan.md) ────────────────
+// ── AS DUAS REGRAS QUE IMPEDEM DE "COMER O FIM DA FRASE" ────────────────────
 //
-// 1) ORDEM DO STOP. O código antigo parava o engine e removia o tap ANTES do
-//    endAudio: o áudio em voo morria no caminho e as últimas sílabas nunca
-//    chegavam ao reconhecedor. Agora o STOP faz drain curto com o mic AINDA
-//    aberto (os últimos buffers do tap entram no request) → endAudio() →
-//    engine.stop()/removeTap. O drain vem ANTES do endAudio porque depois dele
-//    todo append é ignorado.
+// 1) O FINAL NUNCA ENCURTA (`moreComplete`, pura e coberta por --selftest).
+//    O resultado final do streaming PODE vir mais curto que o parcial que o
+//    usuário acabou de ver (o reconhecedor reavalia e às vezes descarta o rabo
+//    da frase). Guardamos `bestCurrent` = o texto MAIS COMPLETO já visto na
+//    utterance corrente e, em todo desfecho, entregamos o mais completo entre o
+//    candidato e o melhor visto: quem ESTENDE/contém vence; quem é PEDAÇO do
+//    outro perde; se divergiram, vence quem tem mais palavras. Empate normalizado
+//    (só pontuação/acento/caixa mudou) fica com o candidato, que é o mais bem
+//    formatado. Nenhuma heurística de "metade do tamanho" decide o final.
 //
-// 2) O FINAL NUNCA ENCURTA (`moreComplete`, pura e coberta por --selftest).
-//    O resultado final do reconhecedor PODE vir mais curto que o parcial que o
-//    usuário acabou de ver (ele reavalia e às vezes descarta o rabo da frase).
-//    Guardamos `bestCurrent` = o texto MAIS COMPLETO já visto na utterance
-//    corrente e, em todo desfecho, entregamos o mais completo entre o candidato
-//    e o melhor visto: quem ESTENDE/contém vence; quem é PEDAÇO do outro perde;
-//    se divergiram, vence quem tem mais palavras; empate normalizado (só mudou
-//    pontuação/acento/caixa) fica com o candidato, que é o mais bem formatado.
-//    Nenhuma heurística de "metade do tamanho" decide o final.
+// 2) A VERDADE VEM DO ARQUIVO, o streaming é PREVIEW.
+//    Toda a sessão é gravada num CAF temporário (mesmo tap do reconhecedor) e o
+//    STOP roda uma passada `SFSpeechURLRecognitionRequest` sobre o arquivo
+//    INTEIRO (on-device, mesma stack). É impossível o arquivo perder o fim: ele
+//    tem o áudio todo. Se essa passada falhar ou estourar o prazo, cai no texto
+//    do streaming (regra 1) com {"warn"} — nunca se perde a fala. O arquivo é
+//    apagado em TODO desfecho (sucesso, erro, cancel, atexit) e sobras antigas
+//    de um kill -9 são varridas no boot.
+//
+// Ordem do STOP (o que fazia o fim sumir): o código antigo parava o engine e
+// removia o tap ANTES do endAudio — o áudio em voo morria no caminho. Agora:
+// drain curto com o mic AINDA aberto (os últimos buffers chegam ao request) →
+// endAudio() → engine.stop()/removeTap → passada de arquivo.
 
 import AVFoundation
 import Foundation
@@ -53,7 +61,7 @@ func emit(_ obj: [String: Any]) {
     emitLock.unlock()
 }
 
-// ---- A REGRA "o final nunca encurta", pura ─────────────────────────────────
+// ---- REGRA 1, pura: "o final nunca encurta" ────────────────────────────────
 
 /// Normaliza pra COMPARAR (não pra exibir): sem acento, sem caixa, sem
 /// pontuação, espaços colapsados. Assim "Olá, tudo bem?" e "ola tudo bem" são
@@ -81,7 +89,7 @@ func containsWords(_ a: String, _ b: String) -> Bool {
     return " \(a) ".contains(" \(b) ")
 }
 
-/// A REGRA: devolve o MAIS COMPLETO entre `candidate` (texto novo/final) e
+/// REGRA 1: devolve o MAIS COMPLETO entre `candidate` (texto novo/final) e
 /// `best` (o melhor já visto). Nunca devolve um pedaço quando existe o todo.
 func moreComplete(_ candidate: String, _ best: String) -> String {
     let c = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -97,7 +105,7 @@ func moreComplete(_ candidate: String, _ best: String) -> String {
 }
 
 // ---- args: --vocab "termo1,termo2" · --selfcheck (diagnóstico sem gravar)
-//            --selftest (a regra em teste puro, sem mic nem permissão)
+//            --selftest (regra 1 em teste puro, sem mic nem permissão)
 var vocab: [String] = []
 var selfcheck = false
 var selftest = false
@@ -116,9 +124,9 @@ while !args.isEmpty {
     }
 }
 
-/// Teste puro da regra, embutido no próprio binário: o projeto não tem harness
-/// Swift (o sidecar é um único arquivo compilado pelo build.rs), então a suíte
-/// vive aqui e é executada pelo `cargo test` (stt.rs) rodando
+/// Teste puro da REGRA 1, embutido no próprio binário: o projeto não tem
+/// harness Swift (o sidecar é um único arquivo compilado pelo build.rs), então
+/// a suíte vive aqui e é executada pelo `cargo test` (stt.rs) rodando
 /// `mycockpit-stt --selftest`. Sai 0 se tudo passa; imprime cada falha.
 func runSelfTest() -> Int32 {
     // (nome, candidato, melhor visto, esperado)
@@ -185,6 +193,37 @@ if selfcheck {
     exit(0)
 }
 
+// ---- REGRA 2 (parte 1): arquivo temporário da sessão ───────────────────────
+
+/// Prefixo dos arquivos de sessão (usado também na varredura de sobras).
+let audioPrefix = "mycockpit-stt-"
+let audioURL = FileManager.default.temporaryDirectory
+    .appendingPathComponent("\(audioPrefix)\(UUID().uuidString).caf")
+
+/// Apaga o áudio da sessão. Chamada em TODO desfecho e no atexit — o áudio da
+/// fala do usuário não sobrevive à sessão que o gerou.
+func removeAudioFile() {
+    try? FileManager.default.removeItem(at: audioURL)
+}
+atexit { removeAudioFile() }
+
+/// Varre sobras de sessões mortas a `kill -9` (o Rust mata o sidecar no cancel:
+/// SIGKILL não roda atexit). Best-effort e silencioso de propósito: ninguém
+/// espera resultado daqui, e falhar a varredura não pode impedir um ditado.
+func sweepStaleAudio() {
+    let fm = FileManager.default
+    guard let items = try? fm.contentsOfDirectory(
+        at: fm.temporaryDirectory,
+        includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+    let cutoff = Date().addingTimeInterval(-3600)
+    for u in items where u.lastPathComponent.hasPrefix(audioPrefix) {
+        let d = try? u.resourceValues(forKeys: [.contentModificationDateKey])
+            .contentModificationDate
+        if let d, d < cutoff { try? fm.removeItem(at: u) }
+    }
+}
+sweepStaleAudio()
+
 // ---- permissões (fala + microfone); podem abrir diálogo na primeira vez.
 let authSem = DispatchSemaphore(value: 0)
 var speechOK = false
@@ -226,11 +265,22 @@ guard recognizer.isAvailable else {
 let stateLock = NSLock()
 var committed = ""    // utterances já finalizadas (o que NÃO pode mais se perder)
 var current = ""      // último parcial da utterance corrente (o que a UI vê)
-var bestCurrent = ""  // o texto mais COMPLETO já visto nesta utterance
-var stopped = false   // STOP recebido: o próximo desfecho encerra o processo
+var bestCurrent = ""  // REGRA 1: o texto mais COMPLETO já visto nesta utterance
+var stopped = false   // STOP recebido: quem conclui é o pipeline do STOP
 var finished = false  // resposta final já emitida (once)
 var activeRequest: SFSpeechAudioBufferRecognitionRequest?
 var activeTask: SFSpeechRecognitionTask?
+
+/// Sinaliza que o task de streaming concluiu DEPOIS do STOP (isFinal ou erro):
+/// o pipeline do STOP espera um pouco por ele antes da passada de arquivo, pra
+/// o texto de fallback já ser o melhor possível.
+let streamingDone = DispatchSemaphore(value: 0)
+var streamingSignaled = false
+func signalStreamingDone() { // chamar com o stateLock TRAVADO
+    if streamingSignaled { return }
+    streamingSignaled = true
+    streamingDone.signal()
+}
 
 func joined(_ a: String, _ b: String) -> String {
     if a.isEmpty { return b }
@@ -238,13 +288,13 @@ func joined(_ a: String, _ b: String) -> String {
     return a + " " + b
 }
 
-/// O melhor texto que o reconhecimento conseguiu até agora (a regra aplicada à
-/// utterance corrente). É o que qualquer desfecho entrega.
+/// O melhor texto que o STREAMING conseguiu até agora (regra 1 aplicada à
+/// utterance corrente). É o fallback quando a passada de arquivo não entrega.
 func streamedText() -> String { // chamar com o stateLock TRAVADO
     joined(committed, moreComplete(current, bestCurrent))
 }
 
-func finish(_ text: String) {
+func finish(_ text: String, warn: String? = nil) {
     stateLock.lock()
     if finished {
         stateLock.unlock()
@@ -252,7 +302,9 @@ func finish(_ text: String) {
     }
     finished = true
     stateLock.unlock()
+    if let warn { emit(["warn": warn]) }
     emit(["text": text])
+    removeAudioFile()
     exit(0)
 }
 
@@ -289,8 +341,8 @@ func startUtterance() {
             // reset SILENCIOSO (sem isFinal): o parcial encolhe drasticamente →
             // o reconhecedor recomeçou a utterance; commita o MELHOR visto (não
             // o último parcial) e abre uma utterance nova. Isto NÃO é a guarda
-            // contra final curto (essa é o moreComplete): é a detecção de que o
-            // reconhecedor jogou a utterance fora.
+            // contra final curto (essa é a regra 1, no moreComplete): é a
+            // detecção de que o reconhecedor jogou a utterance fora.
             if !bestCurrent.isEmpty && bestCurrent.count > 20
                 && t.count * 2 < bestCurrent.count && !bestCurrent.hasPrefix(t) {
                 committed = joined(committed, bestCurrent)
@@ -300,19 +352,17 @@ func startUtterance() {
             bestCurrent = moreComplete(t, bestCurrent)
             if r.isFinal {
                 // utterance fechou (pausa na fala / limite do serviço): commita o
-                // MAIS COMPLETO entre o final e o melhor parcial e, se ainda
-                // gravando, REINICIA — o ditado continua.
+                // MAIS COMPLETO entre o final e o melhor parcial (regra 1) e, se
+                // ainda gravando, REINICIA — o ditado continua.
                 committed = joined(committed, moreComplete(t, bestCurrent))
                 current = ""
                 bestCurrent = ""
-                let full = committed
                 let wasStopped = stopped
+                if wasStopped { signalStreamingDone() }
                 stateLock.unlock()
-                if wasStopped {
-                    finish(full)
-                } else {
-                    startUtterance()
-                }
+                // depois do STOP quem conclui é o pipeline do STOP (passada de
+                // arquivo); aqui só deixamos o fallback no melhor estado.
+                if !wasStopped { startUtterance() }
                 return
             }
             let full = joined(committed, current)
@@ -324,14 +374,13 @@ func startUtterance() {
             committed = streamedText()
             current = ""
             bestCurrent = ""
-            let full = committed
             let wasStopped = stopped
+            if wasStopped { signalStreamingDone() }
+            let full = committed
             stateLock.unlock()
-            // depois do STOP, qualquer desfecho entrega o que temos (graceful)
-            if wasStopped {
-                finish(full)
-                return
-            }
+            // depois do STOP, o desfecho é do pipeline do STOP (que já tem o
+            // texto acumulado como fallback) — nada a fazer aqui.
+            if wasStopped { return }
             // silêncio / fim de utterance NO MEIO da gravação → reinicia (o
             // usuário segue com o mic aberto; matar a sessão aqui perdia fala).
             if e.domain == "kAFAssistantErrorDomain" && (e.code == 1110 || e.code == 203) {
@@ -341,6 +390,7 @@ func startUtterance() {
             // Ditado do sistema desligado: aponta o caminho exato do Ajuste.
             if e.domain == "kLSRErrorDomain" && e.code == 201 {
                 emit(["error": "ative o Ditado do macOS: Ajustes do Sistema → Teclado → Ditado (ligar). Baixe o pacote Português (Brasil)."])
+                removeAudioFile()
                 exit(1)
             }
             // falha real: se já há texto acumulado, entrega em vez de perder.
@@ -349,6 +399,7 @@ func startUtterance() {
                 return
             }
             emit(["error": "o reconhecimento falhou: \(e.localizedDescription) [\(e.domain) \(e.code)]"])
+            removeAudioFile()
             exit(1)
         } else {
             stateLock.unlock()
@@ -356,15 +407,41 @@ func startUtterance() {
     }
 }
 
-// ---- microfone → buffers → reconhecedor CORRENTE (o request troca no restart).
+// ---- microfone → buffers → reconhecedor CORRENTE (o request troca no restart)
+// E → arquivo da sessão (regra 2: a verdade vem do arquivo).
 let engine = AVAudioEngine()
 let input = engine.inputNode
 let format = input.outputFormat(forBus: 0)
+
+let audioFileLock = NSLock()
+var audioFile: AVAudioFile?
+var audioUsable = false
+do {
+    audioFile = try AVAudioFile(forWriting: audioURL, settings: format.settings)
+    audioUsable = true
+} catch {
+    // sem arquivo o ditado continua (streaming), só perde a passada de qualidade.
+    audioUsable = false
+}
+
 input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
     stateLock.lock()
     let req = activeRequest
     stateLock.unlock()
     req?.append(buffer)
+    audioFileLock.lock()
+    if let f = audioFile {
+        do {
+            try f.write(from: buffer)
+        } catch {
+            // gravação furada = arquivo NÃO confiável: derruba a passada de
+            // arquivo (o STOP cai no streaming, com aviso) em vez de transcrever
+            // um áudio truncado achando que é a verdade.
+            audioFile = nil
+            audioUsable = false
+        }
+    }
+    audioFileLock.unlock()
 }
 engine.prepare()
 startUtterance() // task pronto ANTES do engine ligar: nenhum buffer se perde
@@ -372,17 +449,114 @@ do {
     try engine.start()
 } catch {
     emit(["error": "não consegui abrir o microfone: \(error.localizedDescription)"])
+    removeAudioFile()
     exit(1)
 }
 emit(["ready": true])
 
-/// Pipeline do STOP (ver regra 1 no topo). Roda fora da thread do stdin porque
-/// bloqueia de propósito: o drain é o que salva o fim da frase.
+// ---- REGRA 2 (parte 2): a passada sobre o ARQUIVO INTEIRO ──────────────────
+
+/// Desfecho da passada de arquivo: texto ou motivo honesto da falha.
+enum FilePass {
+    case text(String)
+    case failed(String)
+}
+
+/// Transcreve o arquivo da sessão INTEIRO (on-device, mesma stack do streaming).
+/// Bloqueia até o resultado ou até `deadline` segundos.
+func transcribeFile(_ url: URL, deadline: TimeInterval) -> FilePass {
+    let fm = FileManager.default
+    let attrs = try? fm.attributesOfItem(atPath: url.path)
+    let size = (attrs?[.size] as? NSNumber)?.intValue ?? 0
+    guard size > 0 else {
+        return .failed("o áudio da sessão não ficou gravado")
+    }
+    let request = SFSpeechURLRecognitionRequest(url: url)
+    request.shouldReportPartialResults = false
+    if recognizer.supportsOnDeviceRecognition {
+        request.requiresOnDeviceRecognition = true
+    }
+    if #available(macOS 13.0, *) {
+        request.addsPunctuation = true
+    }
+    if !vocab.isEmpty {
+        request.contextualStrings = vocab
+    }
+    let lock = NSLock()
+    var outcome: FilePass?
+    let sem = DispatchSemaphore(value: 0)
+    let task = recognizer.recognitionTask(with: request) { result, err in
+        lock.lock()
+        defer { lock.unlock() }
+        if outcome != nil { return } // já concluído (ou já estourou o prazo)
+        if let r = result, r.isFinal {
+            outcome = .text(r.bestTranscription.formattedString)
+            sem.signal()
+            return
+        }
+        if let e = err as NSError? {
+            outcome = .failed("\(e.localizedDescription) [\(e.domain) \(e.code)]")
+            sem.signal()
+        }
+    }
+    if sem.wait(timeout: .now() + deadline) == .timedOut {
+        lock.lock()
+        let already = outcome
+        if already == nil { outcome = .failed("prazo esgotado na leitura do áudio") }
+        lock.unlock()
+        if already == nil { task.cancel() }
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    return outcome ?? .failed("a passada de arquivo não respondeu")
+}
+
+/// Pipeline do STOP: drena o mic, encerra o áudio, roda a passada de arquivo e
+/// conclui. Roda fora da thread do stdin (bloqueia de propósito).
 func stopPipeline(request: SFSpeechAudioBufferRecognitionRequest?) {
-    Thread.sleep(forTimeInterval: 0.3) // drain com o mic ainda aberto
-    request?.endAudio()                // só então o reconhecedor fecha a entrada
+    // 1) DRAIN com o mic AINDA aberto: os últimos buffers do tap chegam ao
+    //    request (depois do endAudio, append é ignorado — por isso o drain vem
+    //    ANTES dele). É o fim da frase que sumia.
+    Thread.sleep(forTimeInterval: 0.3)
+    // 2) fecha a entrada de áudio do reconhecedor e SÓ ENTÃO para o engine.
+    request?.endAudio()
     engine.stop()
     input.removeTap(onBus: 0)
+    audioFileLock.lock()
+    audioFile = nil // fecha o arquivo (flush) — o ExtAudioFile solta no deinit
+    let fileOK = audioUsable
+    audioFileLock.unlock()
+    // 3) dá um tempo curto pro streaming fechar (melhora o texto de fallback).
+    _ = streamingDone.wait(timeout: .now() + 1.2)
+    stateLock.lock()
+    let streamingTask = activeTask
+    activeRequest = nil // callbacks atrasados viram stale (não mexem mais no estado)
+    let fallback = streamedText()
+    stateLock.unlock()
+    streamingTask?.cancel() // fora do lock: o cancel pode chamar o handler
+
+    // 4) a verdade: passada sobre o arquivo inteiro.
+    guard fileOK else {
+        finish(fallback, warn: fallback.isEmpty
+            ? nil
+            : "o áudio da sessão não pôde ser gravado, texto veio do reconhecimento ao vivo")
+        return
+    }
+    switch transcribeFile(audioURL, deadline: 5.0) {
+    case .text(let t):
+        let best = moreComplete(t, fallback)
+        // a passada de arquivo é a verdade, MAS nunca entrega menos fala que o
+        // streaming (regra 1 vale também aqui): se ela veio mais curta e
+        // divergente, o streaming ganha — com aviso.
+        let warn = normalizedForCompare(best) == normalizedForCompare(t)
+            ? nil
+            : "a leitura do áudio veio incompleta, texto do reconhecimento ao vivo aproveitado"
+        finish(best, warn: warn)
+    case .failed(let why):
+        finish(fallback, warn: fallback.isEmpty
+            ? nil
+            : "não deu pra reler o áudio (\(why)), texto do reconhecimento ao vivo aproveitado")
+    }
 }
 
 // ---- controle via stdin (a mesma linha de vida dos agents).
@@ -394,19 +568,24 @@ DispatchQueue.global().async {
             let req = activeRequest
             stateLock.unlock()
             DispatchQueue.global().async { stopPipeline(request: req) }
-            // se o isFinal demorar, devolve o acumulado (nunca trava a UI)
+            // rede: se a passada de arquivo travar, devolve o acumulado do
+            // streaming (a UI nunca fica pendurada).
             DispatchQueue.global().asyncAfter(deadline: .now() + 8) {
                 stateLock.lock()
                 let full = streamedText()
                 stateLock.unlock()
-                finish(full)
+                finish(full, warn: full.isEmpty
+                    ? nil
+                    : "a transcrição demorou demais, texto do reconhecimento ao vivo aproveitado")
             }
             return
         }
         if line == "CANCEL" {
+            removeAudioFile()
             exit(0)
         }
     }
+    removeAudioFile()
     exit(0) // stdin fechou: o app morreu, não fica órfão
 }
 

@@ -18,8 +18,20 @@ use tokio::sync::{mpsc, Mutex};
 /// Desfecho do sidecar, entregue pelo task leitor ao stop.
 pub enum SttMsg {
     Final(String),
+    /// Aviso honesto que ANTECEDE o final (ex.: a passada sobre o arquivo de
+    /// áudio falhou e o texto veio do reconhecimento ao vivo). Nunca substitui
+    /// o texto: só explica de onde ele veio.
+    Warn(String),
     Error(String),
     Eof,
+}
+
+/// Resultado do stop: o texto SEMPRE (nunca se perde fala) e, quando houve
+/// degradação, o aviso do porquê — a UI mostra os dois.
+#[derive(serde::Serialize)]
+pub struct SttOutcome {
+    pub text: String,
+    pub warn: Option<String>,
 }
 
 pub struct SttChild {
@@ -105,6 +117,9 @@ pub async fn stt_start(
                     };
                     if let Some(p) = v.get("partial").and_then(|x| x.as_str()) {
                         let _ = reader_app.emit("stt://partial", p.to_string());
+                    } else if let Some(w) = v.get("warn").and_then(|x| x.as_str()) {
+                        // aviso vem ANTES do final: guarda no canal e segue lendo.
+                        let _ = tx.send(SttMsg::Warn(w.to_string())).await;
                     } else if let Some(t) = v.get("text").and_then(|x| x.as_str()) {
                         let _ = tx.send(SttMsg::Final(t.to_string())).await;
                         break serde_json::json!({ "text": t });
@@ -128,9 +143,12 @@ pub async fn stt_start(
     Ok(())
 }
 
-/// Encerra a gravação e devolve o texto final.
+/// Encerra a gravação e devolve o texto final (+ aviso, quando o sidecar teve
+/// que degradar). O sidecar, no STOP, drena o mic, encerra o áudio e roda a
+/// passada sobre o ARQUIVO da sessão — por isso a resposta demora ~1s a mais
+/// que antes; os 15s aqui seguem sendo só a rede de segurança.
 #[tauri::command]
-pub async fn stt_stop(session: tauri::State<'_, SttSession>) -> Result<String, String> {
+pub async fn stt_stop(session: tauri::State<'_, SttSession>) -> Result<SttOutcome, String> {
     let mut s = {
         let mut guard = session.0.lock().await;
         let Some(s) = guard.take() else {
@@ -141,18 +159,32 @@ pub async fn stt_stop(session: tauri::State<'_, SttSession>) -> Result<String, S
     };
     let _ = s.stdin.write_all(b"STOP\n").await;
     let _ = s.stdin.flush().await;
-    let msg = tokio::time::timeout(std::time::Duration::from_secs(15), s.rx.recv())
-        .await
-        .map_err(|_| "tempo esgotado na transcrição".to_string())?;
+    // o prazo é do DESFECHO inteiro: um {"warn"} no meio não renova o relógio.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(15);
+    let mut warn: Option<String> = None;
+    let out = loop {
+        let msg = tokio::time::timeout_at(deadline, s.rx.recv())
+            .await
+            .map_err(|_| "tempo esgotado na transcrição".to_string())?;
+        match msg {
+            Some(SttMsg::Warn(w)) => warn = Some(w),
+            Some(SttMsg::Final(t)) => {
+                break Ok(SttOutcome {
+                    text: t.trim().to_string(),
+                    warn,
+                })
+            }
+            Some(SttMsg::Error(e)) => break Err(e),
+            _ => break Err("a transcrição não retornou".into()),
+        }
+    };
     let _ = s.child.wait().await;
-    match msg {
-        Some(SttMsg::Final(t)) => Ok(t.trim().to_string()),
-        Some(SttMsg::Error(e)) => Err(e),
-        _ => Err("a transcrição não retornou".into()),
-    }
+    out
 }
 
-/// Descarta a gravação (Esc) — e limpa sessão de sidecar já morto.
+/// Descarta a gravação (Esc) — e limpa sessão de sidecar já morto. O sidecar
+/// apaga o arquivo de áudio da sessão no CANCEL (e num kill, a varredura do
+/// próximo boot recolhe a sobra).
 #[tauri::command]
 pub async fn stt_cancel(session: tauri::State<'_, SttSession>) -> Result<(), String> {
     let mut guard = session.0.lock().await;

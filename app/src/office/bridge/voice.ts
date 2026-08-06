@@ -82,7 +82,9 @@ export async function stopDictation(): Promise<string> {
     return ""
   }
   try {
-    return await sttStop()
+    // o office ainda não tem onde mostrar o aviso de degradação do sidecar
+    // (`warn`); o TEXTO nunca se perde, que é a garantia que importa aqui.
+    return (await sttStop()).text
   } finally {
     recording = false
     emitEnded()

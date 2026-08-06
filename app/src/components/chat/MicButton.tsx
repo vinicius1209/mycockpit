@@ -109,14 +109,16 @@ export function MicButton({
   }
 
   // gravando → para e transcreve. "busy" NÃO é cosmético: o sidecar ainda drena
-  // o microfone antes de fechar o áudio (D1.1), então a UI fica em "finalizando"
-  // até o texto chegar, em vez de fingir que já acabou.
+  // o mic e relê o áudio da sessão (D1/D2), então a UI fica em "finalizando" até
+  // o texto chegar. `warn` avisa quando o texto veio degradado (streaming em vez
+  // da releitura do arquivo) — o texto vem do mesmo jeito, nunca se perde fala.
   async function stop() {
     if (stateRef.current !== "rec") return
     go("busy")
     try {
-      const text = await sttStop()
+      const { text, warn } = await sttStop()
       if (text) deliver(text)
+      if (warn) toast.warning(warn)
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha na transcrição")
     } finally {

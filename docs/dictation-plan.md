@@ -24,6 +24,27 @@
 >   (`mycockpit-stt --selftest`, 10 casos, sem mic/permissão) e o `cargo test`
 >   a executa (`stt::tests::selftest_do_sidecar_prova_que_o_final_nunca_encurta`).
 
+> **D2 ENTREGUE (06/08/2026).** Streaming virou preview; a verdade vem do arquivo
+> (ADR-034).
+> - **D2.1** — o mesmo tap que alimenta o reconhecedor grava um CAF temporário
+>   (`AVAudioFile(forWriting:settings: format.settings)`). Apagado em TODO
+>   desfecho (sucesso, erro, CANCEL, `atexit`), e o boot varre sobras de
+>   `kill -9` com mais de 1h. Falha de escrita derruba a passada de arquivo
+>   (áudio truncado nunca é tratado como verdade).
+> - **D2.2** — no STOP, `SFSpeechURLRecognitionRequest` sobre o arquivo inteiro
+>   (on-device, `addsPunctuation`, mesmo `--vocab`), prazo de 5s; esse texto é
+>   o final.
+> - **D2.3** — fallback honesto: falha, prazo estourado ou arquivo indisponível
+>   entregam o melhor texto do streaming com `{"warn"}`, que sobe pelo canal do
+>   sidecar (`SttMsg::Warn`) até `stt_stop` (`{ text, warn }`) e vira toast no
+>   MicButton. **A regra do D1.2 vale também aqui**: se a releitura vier mais
+>   curta e divergente do que o streaming, o streaming ganha, com aviso.
+> - **Custo**: o STOP agora leva ~1s típico (0,3s de drain + até 1,2s esperando o
+>   streaming fechar + a releitura). Por isso o D1.3 não é cosmético.
+> - **Buraco conhecido**: o office (DeskDock/MissionDock/missionPanel) consome
+>   `stopDictation()`, que devolve só o texto, então o `warn` não aparece por lá
+>   (o texto nunca se perde). Superfície de missão, não tocada nesta frente.
+
 ## A causa (lida no código, não suposta)
 
 Arquitetura atual: sidecar Swift (`app/src-tauri/stt/main.swift`) com

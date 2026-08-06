@@ -651,3 +651,39 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   antes de reescrever). Se a conversa trocou de thread nesse meio-tempo, o
   baseline sai alto e um turno é subcontado. (c) Baseline perdido = um turno
   superestimado, não uma explosão: o próximo turno já corrige.
+
+### ADR-034 — No ditado, streaming é FEEDBACK; a verdade é o arquivo ✅
+- **Contexto:** o usuário relatou que ao soltar o botão o ditado "comeu boa
+  parte da frase". Duas causas reais no sidecar (`stt/main.swift`): o STOP
+  parava o engine e removia o tap ANTES do `endAudio()` (o áudio em voo morria
+  no caminho) e o texto final do reconhecedor podia vir mais curto que o último
+  parcial, com a guarda de encolhimento disparando só a partir de "menos da
+  metade" do tamanho — perder 10-40% do fim passava reto.
+- **Decisão 1 — ordem do STOP com drain:** 300ms com o mic AINDA aberto (os
+  últimos buffers do tap entram no request), então `endAudio()`, então
+  `engine.stop()`/`removeTap`. O drain vem antes do `endAudio` porque depois
+  dele todo `append` é ignorado: drenar depois não recuperaria nada.
+- **Decisão 2 — o final nunca encurta:** `moreComplete(candidate, best)` (pura)
+  substitui a heurística de tamanho no desfecho: contém/estende vence, pedaço
+  perde, divergência decide por número de palavras, empate normalizado
+  (pontuação/acento/caixa) fica com o candidato. A heurística da metade
+  sobrevive só como detector de reset silencioso do reconhecedor (e commita o
+  melhor visto, não o último parcial).
+- **Decisão 3 — o streaming não é a fonte do texto final:** a sessão inteira é
+  gravada num CAF temporário e o STOP roda
+  `SFSpeechURLRecognitionRequest` sobre o arquivo INTEIRO (on-device, mesma
+  stack, zero dependência nova). É a lição da categoria (Wispr Flow e afins): é
+  impossível "comer o fim" quando o fim está no arquivo. O streaming continua
+  existindo para o feedback ao vivo, que é o que ele faz bem.
+- **Decisão 4 — degradação sempre com fala e com aviso:** se a releitura falhar,
+  estourar o prazo (5s) ou o arquivo não existir, entrega-se o melhor texto do
+  streaming com `{"warn"}` (canal → `stt_stop` → toast). Nenhum caminho perde
+  fala; o usuário sabe quando o texto veio do plano B. O áudio é apagado em todo
+  desfecho (inclusive `atexit`) e sobras de `kill -9` são varridas no boot: fala
+  gravada não sobrevive à sessão que a gerou.
+- **Prova, e o limite dela:** não há harness de teste Swift no repo (o sidecar é
+  UM arquivo compilado pelo `build.rs` com `swiftc`, sem SwiftPM/XCTest). A
+  suíte da regra vive dentro do binário (`--selftest`, sem mic nem permissão) e
+  o `cargo test` a executa. Com binário velho (swiftc da máquina falhando) o
+  teste PULA com aviso ruidoso, e o `build.rs` avisa que o sidecar ficou na
+  versão anterior — em vez de fingir verde.
