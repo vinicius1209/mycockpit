@@ -69,16 +69,58 @@ screenshot do Playwright volta base64 e ninguém vê (adapters.rs, tool_result �
 Espelho do mc-work: o app é dono do substrato, qualquer motor MCP usa, a UI
 tem visibilidade de primeira classe.
 
-- **B2.1** — o app spawna/possui um Chromium com `--remote-debugging-port`
-  (processo no ProcessRegistry: órfão honesto, parar, retomar).
-- **B2.2** — Playwright MCP conecta nesse browser via `--cdp-endpoint` (flag
+- [x] **B2.1** — o app spawna/possui um Chromium com `--remote-debugging-port`
+  (processo no ProcessRegistry: órfão honesto, parar, retomar). **FEITO em
+  06/08/2026** (`browser.rs`): descoberta do binário (Chromium do Playwright
+  pela maior revisão, fallback Chrome/Chromium do sistema, mensagem apontando
+  `npx playwright install chromium`), `--remote-debugging-port=0` +
+  `--user-data-dir` por projeto (perfil persistente; o Chrome 136+ recusa
+  debug no profile padrão), endpoint lido do `DevToolsActivePort` com a linha
+  `DevTools listening on ws://…` do stderr como fonte secundária, e health
+  `GET /json/version` antes de declarar vivo. Comandos `browser_start` /
+  `browser_stop` / `browser_status` + evento `browser_state` no canal
+  `work://event`.
+  **Eixo de posse = PROJETO** (não conversa/run): o `ProcessRegistry` é
+  indexado por conversa, então `conv_id` e `run_id` são sintéticos
+  (`browser:<project_id>` / `browser-<project_id>`). Efeito colateral
+  desejado: o reducer do chat ignora esses eventos de processo (nenhuma
+  conversa tem esse id), e o `kill_all` do quit mata o navegador junto.
+- [x] **B2.2** — Playwright MCP conecta nesse browser via `--cdp-endpoint` (flag
   já existente no @playwright/mcp) — o agent pilota o navegador DO APP.
+  **FEITO em 06/08/2026**. Identificação por BINDING, nunca por nome de
+  fornecedor: **migração 35** (`mcp_bindings.browser`, a máxima anterior era
+  34). A injeção acontece no plano efêmero do run, DEPOIS do health, então o
+  preflight (`probe_stdio`) roda com os args de origem e nenhum binding depende
+  de um Chromium ligado (binding `ask` nunca trava o turno por isso).
+  Dedup declarado em `plan.notices`: `--cdp-endpoint` já presente na origem
+  VENCE e nada é tocado; `--browser`/`--headless` da origem saem do run quando
+  o CDP entra. Sem navegador vivo: notice honesto, sem injeção e sem bloqueio.
+  Fingerprint do plano só hasheia nomes → sem re-anúncio espúrio (com teste).
 - **B2.3** — painel "Navegador" na UI: screencast CDP (`Page.startScreencast`
   → frames JPEG → canvas) da MESMA aba que o agent dirige, com takeover humano
   (input via CDP). Um navegador, dois pilotos, **um pilota por vez** (mesma
   filosofia dos Especialistas/ADR-026).
 - **B2.4** — política por projeto via binding normal do control plane; perfil
   de browser persistente por projeto (login de dev sobrevive entre turnos).
+  Perfil persistente já entrou junto com o B2.1.
+
+### O que fica para o B2.3 (não entrou na etapa 1)
+
+- Painel/PiP e screencast CDP (`Page.startScreencast`), takeover humano e a
+  regra "um pilota por vez". A janela headed do Chromium já é visível hoje: a
+  etapa 1 entregou posse e roteamento, não enquadramento.
+- **Reaproveitar sessão órfã entre reinícios do app**: hoje o registry de
+  sessões vive só em memória, então reiniciar o MyCockpit perde o ponteiro
+  para um Chromium que continue vivo (o perfil por projeto está no disco, mas
+  o `DevToolsActivePort` daquela instância não é reconciliado no boot). Nada
+  mente: o painel diz "desligado" e ligar de novo abre um novo. Reconciliação
+  no boot fica para quando o painel existir.
+- **Watchdog do navegador**: a morte da janela só é percebida na próxima
+  consulta (abrir o painel ou montar o plano de um run). Não há ticker vigiando
+  o endpoint; a UI não anuncia vida que não confirmou, mas também não avisa
+  sozinha no instante em que o navegador cai.
+- **`--output-dir` no scratch da conversa + `--caps vision`** (config
+  recomendada do binding no B0): continua gesto manual do usuário.
 
 ## Guardas
 
