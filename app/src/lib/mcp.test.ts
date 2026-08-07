@@ -3,6 +3,9 @@ import {
   applyAgentPatch,
   initialMcpProjectId,
   mcpAgentStatusLabel,
+  mcpAuthActionLabel,
+  mcpAuthHint,
+  mcpAuthLabel,
   mcpHealthLabel,
   mcpPortabilityNotices,
   mcpProjectOptionLabel,
@@ -291,5 +294,43 @@ describe("optimisticBindingUpdate", () => {
     expect(confirmed).toBe(false)
     expect(order).toEqual(["apply", "revert"])
     expect(onError).toHaveBeenCalledWith("agy ainda não suporta este MCP")
+  })
+})
+
+describe("login do MyCockpit no MCP (A1)", () => {
+  it("cada estado tem a sua copy, e nenhuma promete conexão que não existe", () => {
+    expect(mcpAuthLabel("sem-login")).toBe("sem login do MyCockpit")
+    expect(mcpAuthLabel("conectado")).toBe("conectado pelo MyCockpit")
+    expect(mcpAuthLabel("expirado")).toBe("sessão expirada")
+  })
+
+  it("o botão só oferece Sair quando há sessão viva", () => {
+    expect(mcpAuthActionLabel("sem-login")).toBe("Entrar")
+    // Expirado volta pra "Entrar": é isso que resolve, e não um "tentar de
+    // novo" que esconderia o motivo.
+    expect(mcpAuthActionLabel("expirado")).toBe("Entrar")
+    expect(mcpAuthActionLabel("conectado")).toBe("Sair")
+  })
+
+  it("a dica diz onde o token mora antes do login e o prazo depois dele", () => {
+    expect(mcpAuthHint({ state: "sem-login", expiresAt: null })).toContain(
+      "Keychain",
+    )
+    expect(mcpAuthHint({ state: "expirado", expiresAt: null })).toContain(
+      "Entre de novo",
+    )
+    const agora = 1_000_000_000_000
+    expect(
+      mcpAuthHint({ state: "conectado", expiresAt: agora / 1000 + 1800 }, agora),
+    ).toBe("Sessão ativa, renova em 30 min.")
+    expect(
+      mcpAuthHint({ state: "conectado", expiresAt: agora / 1000 + 7200 }, agora),
+    ).toBe("Sessão ativa, renova em 2 h.")
+  })
+
+  it("sem prazo informado, a dica não inventa validade", () => {
+    expect(mcpAuthHint({ state: "conectado", expiresAt: null })).toContain(
+      "não informou prazo",
+    )
   })
 })

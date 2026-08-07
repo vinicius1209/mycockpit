@@ -22,6 +22,7 @@ mod evidence;
 mod fsx;
 mod git;
 mod github;
+mod mcp_auth;
 mod mcp_control;
 mod mycockpit;
 mod osnotify;
@@ -593,6 +594,9 @@ pub fn run() {
             mcp_control::set_mcp_binding,
             mcp_control::check_mcp_server,
             mcp_control::mcp_bindings_summary,
+            mcp_auth::mcp_oauth_login,
+            mcp_auth::mcp_oauth_status,
+            mcp_auth::mcp_oauth_logout,
             browser::browser_start,
             browser::browser_stop,
             browser::browser_status,

@@ -254,6 +254,85 @@ export function mcpAgentStatusLabel(
   return server.nativeReason ? "sem roteamento (nativo do CLI)" : "não suportado"
 }
 
+// ---- login do app (A1) -----------------------------------------------------
+
+/** Espelho de `McpAuthState` (mcp_auth.rs). Quem autenticou é o MyCockpit, não
+ *  o CLI de origem. */
+export type McpAuthState = "sem-login" | "conectado" | "expirado"
+
+export interface McpAuthStatus {
+  serverId: string
+  state: McpAuthState
+  /** Só metadado (epoch em segundos). O token nunca chega ao frontend. */
+  expiresAt: number | null
+  scope: string | null
+  /** `false` quando o servidor de autorização não expõe revogação: "Sair"
+   *  apaga a credencial deste Mac, mas não derruba a sessão lá. */
+  revogavel: boolean
+}
+
+export async function mcpOauthStatus(
+  projectPath: string,
+  serverId: string,
+): Promise<McpAuthStatus | null> {
+  if (!isTauri()) return null
+  return invoke<McpAuthStatus>("mcp_oauth_status", { projectPath, serverId })
+}
+
+export async function mcpOauthLogin(
+  projectPath: string,
+  serverId: string,
+): Promise<McpAuthStatus> {
+  return invoke<McpAuthStatus>("mcp_oauth_login", { projectPath, serverId })
+}
+
+/** Devolve a frase do que REALMENTE aconteceu (revogou ou só apagou local). */
+export async function mcpOauthLogout(
+  projectPath: string,
+  serverId: string,
+): Promise<string> {
+  return invoke<string>("mcp_oauth_logout", { projectPath, serverId })
+}
+
+const AUTH_LABEL: Record<McpAuthState, string> = {
+  "sem-login": "sem login do MyCockpit",
+  conectado: "conectado pelo MyCockpit",
+  expirado: "sessão expirada",
+}
+
+/** Rótulo do estado do login. Nunca diz "conectado" por otimismo: o backend só
+ *  reporta `conectado` com token válido de verdade. */
+export function mcpAuthLabel(state: McpAuthState): string {
+  return AUTH_LABEL[state]
+}
+
+/** O que o botão faz em cada estado. `expirado` volta a ser "Entrar" porque é
+ *  isso que resolve, não um "tentar de novo" que esconde o motivo. */
+export function mcpAuthActionLabel(state: McpAuthState): string {
+  return state === "conectado" ? "Sair" : "Entrar"
+}
+
+/** Explicação de uma linha ao lado do botão. Em `conectado` cita o prazo
+ *  quando existe, porque "conectado até quando?" é a dúvida seguinte. */
+export function mcpAuthHint(
+  status: Pick<McpAuthStatus, "state" | "expiresAt">,
+  now: number = Date.now(),
+): string {
+  if (status.state === "sem-login") {
+    return "O MyCockpit pode fazer o login deste MCP e guardar o token no Keychain deste Mac."
+  }
+  if (status.state === "expirado") {
+    return "A sessão venceu e não foi possível renovar. Entre de novo."
+  }
+  if (status.expiresAt === null) {
+    return "Sessão ativa. O servidor não informou prazo de validade."
+  }
+  const restante = Math.round((status.expiresAt * 1000 - now) / 60000)
+  if (restante <= 0) return "Sessão ativa, renovando."
+  if (restante < 60) return `Sessão ativa, renova em ${restante} min.`
+  return `Sessão ativa, renova em ${Math.round(restante / 60)} h.`
+}
+
 export function mcpHealthLabel(status: McpHealthStatus): string {
   switch (status) {
     case "healthy":

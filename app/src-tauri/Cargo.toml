@@ -44,6 +44,11 @@ rusqlite = { version = "0.32", features = ["bundled"] } # leitura READ-ONLY do m
 rand = "0.10" # token + ids aleatórios do companion
 tauri-plugin-notification = "2"
 window-vibrancy = "0.6" # NSVisualEffectView no popover da tray (blur nativo)
+# Token OAuth dos MCPs remotos (mcp_auth.rs). O default `v1` já seleciona o
+# store `apple-native-keyring-store/keychain` no macOS — o Keychain LEGADO, que
+# é o único que funciona sem entitlement/Team ID (o `protected` devolve -34018
+# em app sem App ID). MIT OR Apache-2.0.
+keyring = "4.1"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] } # oneshot() nos testes do guard do companion

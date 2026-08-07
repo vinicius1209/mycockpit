@@ -63,6 +63,13 @@ pub struct McpLaunchConfig {
     /// motivo. `None` = não há dependência nativa.
     #[serde(default)]
     pub native_reason: Option<McpNativeReason>,
+    /// Bloco `oauth` da entrada de origem, quando existe.
+    ///
+    /// NÃO é segredo: `clientId`, porta de callback e URL de metadata são
+    /// públicos no arquivo do usuário. É o que permite o login do PRÓPRIO app
+    /// (`mcp_auth.rs`) em vez de depender do keychain do CLI que autenticou.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<crate::mcp_auth::OauthConfig>,
 }
 
 impl McpLaunchConfig {
@@ -836,6 +843,12 @@ fn parse_launch(raw: &Value) -> Option<McpLaunchConfig> {
         }
     });
 
+    // O bloco `oauth` só faz sentido com endpoint HTTP: é o endereço do MCP
+    // que vira o `resource` (RFC 8707) do login.
+    let oauth = url
+        .as_deref()
+        .and_then(|endpoint| crate::mcp_auth::parse_oauth_config(raw, endpoint));
+
     Some(McpLaunchConfig {
         transport,
         command,
@@ -848,7 +861,24 @@ fn parse_launch(raw: &Value) -> Option<McpLaunchConfig> {
         http_headers,
         env_http_headers,
         native_reason,
+        oauth,
     })
+}
+
+/// Configuração de login do app para um servidor do registry.
+///
+/// Redescobre ao vivo: o `.mcp.json` é do usuário e pode ter mudado desde a
+/// última listagem, e o registry (de propósito) não guarda esse bloco.
+pub async fn oauth_config_for_server(
+    project_path: &str,
+    server_id: &str,
+) -> Option<crate::mcp_auth::OauthConfig> {
+    discover_live(project_path)
+        .await
+        .into_iter()
+        .find(|server| server.id == server_id)
+        .and_then(|server| server.launch)
+        .and_then(|launch| launch.oauth)
 }
 
 fn string_array(v: Option<&Value>) -> Vec<String> {

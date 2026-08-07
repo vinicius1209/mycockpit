@@ -22,12 +22,19 @@ import {
   initialMcpProjectId,
   mcpBindingsSummary,
   mcpAgentStatusLabel,
+  mcpAuthActionLabel,
+  mcpAuthHint,
+  mcpAuthLabel,
   mcpHealthLabel,
+  mcpOauthLogin,
+  mcpOauthLogout,
+  mcpOauthStatus,
   mcpPortabilityNotices,
   mcpProjectOptionLabel,
   optimisticBindingUpdate,
   setMcpBinding,
   type McpAgentState,
+  type McpAuthStatus,
   type McpFallback,
   type McpHealthStatus,
   type McpServer,
@@ -119,6 +126,12 @@ export function McpSettings() {
   const [browser, setBrowser] = useState<BrowserStatus | null>(null)
   const [browserBusy, setBrowserBusy] = useState(false)
   const browserPathRef = useRef<string | null>(null)
+  // Login do PRÓPRIO app nos MCPs com OAuth (A1). Só existe para servidores
+  // cuja config declara o bloco `oauth`; os demais nem mostram a linha.
+  const [authByServer, setAuthByServer] = useState<
+    Record<string, McpAuthStatus>
+  >({})
+  const [authBusy, setAuthBusy] = useState<ReadonlySet<string>>(new Set())
 
   const setKeyBusy = useCallback((key: string, on: boolean) => {
     if (on) busyKeysRef.current.add(key)
@@ -198,6 +211,97 @@ export function McpSettings() {
   useEffect(() => {
     void refreshBrowser()
   }, [refreshBrowser])
+
+  // Estado do login por servidor OAuth. Falha aqui não vira toast: a linha
+  // simplesmente não promete nada, e o botão "Entrar" continua disponível.
+  useEffect(() => {
+    const path = project?.path
+    if (!path) {
+      setAuthByServer({})
+      return
+    }
+    let vivo = true
+    const alvos = servers.filter((server) => server.nativeReason === "oauth")
+    void Promise.all(
+      alvos.map(async (server) => {
+        try {
+          return await mcpOauthStatus(path, server.id)
+        } catch {
+          return null
+        }
+      }),
+    ).then((resultados) => {
+      if (!vivo || shownPathRef.current !== path) return
+      setAuthByServer(
+        Object.fromEntries(
+          resultados
+            .filter((status): status is McpAuthStatus => status !== null)
+            .map((status) => [status.serverId, status]),
+        ),
+      )
+    })
+    return () => {
+      vivo = false
+    }
+  }, [project, servers])
+
+  const setAuthKeyBusy = useCallback((serverId: string, on: boolean) => {
+    setAuthBusy((atual) => {
+      const proximo = new Set(atual)
+      if (on) proximo.add(serverId)
+      else proximo.delete(serverId)
+      return proximo
+    })
+  }, [])
+
+  const doLogin = useCallback(
+    async (server: McpServer) => {
+      const path = project?.path
+      if (!path) return
+      setAuthKeyBusy(server.id, true)
+      try {
+        const status = await mcpOauthLogin(path, server.id)
+        setAuthByServer((atual) => ({ ...atual, [server.id]: status }))
+        toast.success(`Login concluído em ${server.name}.`)
+      } catch (cause) {
+        // Motivo legível vindo do backend (issuer divergente, sem PKCE, porta
+        // ocupada, recusa do servidor). Nunca engolido.
+        toast.error(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        setAuthKeyBusy(server.id, false)
+      }
+    },
+    [project, setAuthKeyBusy],
+  )
+
+  const doLogout = useCallback(
+    async (server: McpServer) => {
+      const path = project?.path
+      if (!path) return
+      setAuthKeyBusy(server.id, true)
+      try {
+        // A frase diz o que REALMENTE aconteceu: revogou no servidor ou só
+        // apagou deste Mac (o AS pode não expor revogação).
+        const resultado = await mcpOauthLogout(path, server.id)
+        setAuthByServer((atual) => ({
+          ...atual,
+          [server.id]: {
+            serverId: server.id,
+            state: "sem-login",
+            expiresAt: null,
+            scope: null,
+            revogavel: atual[server.id]?.revogavel ?? false,
+          },
+        }))
+        toast.success(resultado)
+      } catch (cause) {
+        toast.error(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        setAuthKeyBusy(server.id, false)
+      }
+    },
+    [project, setAuthKeyBusy],
+  )
 
   // O navegador pode morrer sem gesto nenhum (usuário fecha a janela, crash).
   // O backend emite `browser_state` no mesmo canal do trabalho vivo; o painel
@@ -516,6 +620,45 @@ export function McpSettings() {
                   {server.envKeys.length > 0 && (
                     <div className="mt-1 text-[10.5px] text-muted-foreground">
                       env refs: {server.envKeys.join(", ")}
+                    </div>
+                  )}
+                  {server.nativeReason === "oauth" && (
+                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border/50 bg-background/40 px-2.5 py-1.5">
+                      <span className="text-[11px] text-foreground">
+                        {mcpAuthLabel(
+                          authByServer[server.id]?.state ?? "sem-login",
+                        )}
+                      </span>
+                      <span className="flex-1 text-[10.5px] leading-snug text-muted-foreground">
+                        {mcpAuthHint(
+                          authByServer[server.id] ?? {
+                            state: "sem-login",
+                            expiresAt: null,
+                          },
+                        )}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant={
+                          authByServer[server.id]?.state === "conectado"
+                            ? "ghost"
+                            : "secondary"
+                        }
+                        disabled={authBusy.has(server.id)}
+                        onClick={() =>
+                          void (authByServer[server.id]?.state === "conectado"
+                            ? doLogout(server)
+                            : doLogin(server))
+                        }
+                        className="h-7 shrink-0 px-2.5 text-[11.5px]"
+                      >
+                        {authBusy.has(server.id) && (
+                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                        )}
+                        {mcpAuthActionLabel(
+                          authByServer[server.id]?.state ?? "sem-login",
+                        )}
+                      </Button>
                     </div>
                   )}
                   {mcpPortabilityNotices(server).map((notice) => (

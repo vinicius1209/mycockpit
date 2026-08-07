@@ -1,5 +1,55 @@
 # MCP com autenticação — plano (o app faz o login, não o arquivo)
 
+> ## Correção de terreno (07/08/2026, validada contra o endpoint real)
+>
+> Verificação empírica contra o `prime-mcp`
+> (`https://tsxtyuyjmouuyzkzwdtz.supabase.co/functions/v1/mcp`) e contra a spec
+> vigente. **Estes achados mandam sobre o texto original abaixo.** Fixtures em
+> `spikes/mcp-auth/`.
+>
+> 1. **A spec vigente é a `2026-07-28`, não a `2025-06-18`.** Três mudanças que
+>    entram como obrigação, todas implementadas em A1:
+>    - **`iss` da resposta de autorização (RFC 9207) MUST ser validado** antes
+>      de trocar o code. PKCE sozinho não protege de mix-up de AS: o cliente
+>      entregaria o `code_verifier` ao token endpoint do atacante.
+>    - **`code_challenge_methods_supported` MUST ser verificado**; ausente ou
+>      sem `S256`, o cliente **recusa** o login.
+>    - **`resource` (RFC 8707) MUST ir no authorize E no token**, sempre, mesmo
+>      que o AS não declare suporte.
+> 2. **Registro dinâmico de cliente saiu do plano.** Na spec vigente o DCR está
+>    **deprecado** (o substituto é Client ID Metadata Document), e o AS do prime
+>    **não expõe `registration_endpoint`**. A ordem normativa põe credencial
+>    pré-registrada em primeiro lugar — que é exatamente o `clientId` do
+>    `.mcp.json`. A1 usa só ele; nada de registro dinâmico.
+> 3. **"Sair … que revoga" nem sempre revoga.** O AS do prime **não expõe
+>    `revocation_endpoint`**. O comando apaga do Keychain sempre e só afirma
+>    revogação quando ela de fato ocorreu; senão devolve a frase honesta
+>    ("removida deste Mac, não revogada no servidor").
+> 4. **O token endpoint real devolve DUAS formas de erro diferentes** — RFC 6749
+>    (`error`/`error_description`) na troca do code e proprietária do GoTrue
+>    (`error_code`/`msg`) no refresh. Um parser que só lesse a primeira daria
+>    mensagem VAZIA justo no caminho de refresh, que é o mais visto. Fixture
+>    real dos dois casos no teste.
+> 5. **Limite honesto do Keychain com build ad-hoc** (verificado nesta máquina,
+>    não deduzido): o app é `adhoc, linker-signed`, sem Team ID. Testado com o
+>    crate `keyring` 4.1 — gravar e ler **funciona**, sobrevive a rebuild com
+>    cdhash diferente, **sem prompt e sem entitlement**. Mas o item **não fica
+>    isolado por aplicativo**: um binário qualquer do mesmo usuário lê o
+>    segredo. Então o Keychain entrega aqui *token fora do SQLite, fora de
+>    arquivo de config, fora de argv, cifrado em repouso e apagável num gesto* —
+>    e **não** entrega isolamento entre apps. A garantia central do plano (o
+>    agent nunca recebe credencial) continua de pé; a que **não** se pode
+>    afirmar é "só o MyCockpit lê". Mesma causa raiz do **ADR-013**, mesmo
+>    conserto: Developer ID.
+> 6. **Nenhum HTTP client no grafo.** O app fala HTTP por `curl` (`catalog.rs`,
+>    `browser.rs`, `detect.rs`, `mcp_control.rs`). Como token em argv é
+>    proibido, A1 usa **`curl --config -`**: URL, headers e corpo vão pelo
+>    STDIN. Verificado que `ps` mostra apenas `curl --config -`. Sem
+>    dependência HTTP nova.
+>
+> Migrações: **nenhuma** (A1 não toca SQLite — de propósito: o registry segue
+> sem credencial).
+
 > Status: proposto em 07/08/2026. Gatilho: o `prime-mcp` (OAuth no `.mcp.json`
 > do prime-sales-hub) fica bloqueado pro roteamento, e o usuário cravou a
 > direção certa: **"se precisa de auth, nosso projeto precisa conseguir fazer
