@@ -24,6 +24,7 @@ mod git;
 mod github;
 mod mcp_auth;
 mod mcp_control;
+mod mcp_proxy;
 mod mycockpit;
 mod osnotify;
 mod path;
@@ -48,6 +49,13 @@ pub fn run_approval_server() {
 /// de aprovação, este contrato é igual para qualquer provider que fale MCP.
 pub fn run_context_server() {
     context_gateway::run_mcp_server();
+}
+
+/// Ponto de entrada do proxy MCP autenticado (A2): repassa JSON-RPC pro
+/// endpoint remoto através do socket do app, que é quem guarda o token. Este
+/// processo nunca recebe credencial.
+pub fn run_mcp_proxy_server() {
+    mcp_proxy::run_mcp_server();
 }
 
 /// Ponto de entrada do MCP de trabalho/processos, compartilhado por todo

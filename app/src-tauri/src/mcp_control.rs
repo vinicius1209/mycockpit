@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -376,6 +377,10 @@ pub struct McpHealthView {
 pub struct McpRunPlan {
     pub managed: bool,
     pub selected: Vec<McpRuntimeServer>,
+    /// Proxies MCP autenticados vivos deste run (A2). Ficam AQUI porque o plano
+    /// vive exatamente o tempo do run: quando ele cai, o `Drop` do listener
+    /// remove o socket. `Arc` porque o plano é `Clone`.
+    pub proxies: Vec<Arc<crate::mcp_proxy::ProxyListener>>,
     /// MCPs já conhecidos pelo Codex que devem ficar fora deste run. Cada
     /// entrada inclui o transporte descoberto para evitar tabelas parciais.
     pub disabled_codex_servers: Vec<McpRuntimeServer>,
@@ -434,7 +439,14 @@ impl McpRunPlan {
                 .arg(format!("mcp_servers.{}.enabled=false", toml_key(name)));
         }
         for server in &self.selected {
-            server.launch.configure_codex(&server.runtime_name, cmd);
+            // Server local do proxy autenticado tem caminho próprio: o socket
+            // vive no `env` do launch, que o configure_codex genérico (de
+            // propósito) não copia.
+            if crate::mcp_proxy::is_proxy_launch(&server.launch) {
+                crate::mcp_proxy::configure_codex_launch(&server.runtime_name, &server.launch, cmd);
+            } else {
+                server.launch.configure_codex(&server.runtime_name, cmd);
+            }
         }
     }
 }
@@ -863,6 +875,62 @@ fn parse_launch(raw: &Value) -> Option<McpLaunchConfig> {
         native_reason,
         oauth,
     })
+}
+
+/// Sobe o proxy autenticado deste servidor e devolve o que entregar ao agent.
+fn subir_proxy(
+    launch: &McpLaunchConfig,
+    server_id: &str,
+) -> Option<(crate::mcp_proxy::ProxyConfig, crate::mcp_proxy::ProxyListener)> {
+    let endpoint = launch.url.clone()?;
+    let oauth = launch.oauth.clone()?;
+    let server_bin = std::env::current_exe().ok()?;
+    let listener =
+        crate::mcp_proxy::ProxyListener::spawn(server_id.to_string(), endpoint, oauth)?;
+    let config = crate::mcp_proxy::ProxyConfig {
+        server_bin: server_bin.to_string_lossy().to_string(),
+        socket: listener.path().to_string_lossy().to_string(),
+    };
+    Some((config, listener))
+}
+
+/// O servidor deixa de ser nativo-apenas porque o MyCockpit tem login próprio?
+///
+/// É a virada da A2: com credencial nossa, o `native_reason: oauth` para de
+/// bloquear e o servidor passa a ser roteável pros DOIS motores através do
+/// proxy local. Decisão por CAPABILITY (`managed_mcp`), nunca por nome de
+/// agent. Sem login, devolve `false` e o comportamento é o de sempre.
+fn roteavel_por_proxy(server: &DiscoveredServer, agent: &str) -> bool {
+    // A existência da credencial é injetada para o teste fixar os DOIS lados da
+    // regra sem depender do Keychain da máquina.
+    roteavel_por_proxy_com(server, agent, || {
+        crate::mcp_auth::tem_credencial(&server.id)
+    })
+}
+
+fn roteavel_por_proxy_com(
+    server: &DiscoveredServer,
+    agent: &str,
+    tem_credencial: impl FnOnce() -> bool,
+) -> bool {
+    let Some(caps) = crate::adapters::capabilities_of(agent) else {
+        return false;
+    };
+    if !caps.managed_mcp || !server.managed {
+        return false;
+    }
+    let Some(launch) = server.launch.as_ref() else {
+        return false;
+    };
+    // Só HTTP: o proxy fala JSON-RPC sobre POST. SSE/WS segue fora (A3).
+    if launch.transport != "http" || launch.oauth.is_none() {
+        return false;
+    }
+    // Credencial literal no arquivo é outro problema, e continua barrando.
+    if launch.has_literal_secret() {
+        return false;
+    }
+    tem_credencial()
 }
 
 /// Configuração de login do app para um servidor do registry.
@@ -1917,7 +1985,10 @@ pub async fn plan_for_run(
             plan.notices.push(message);
             continue;
         };
-        if !server.compatible(agent) {
+        // Com login do MyCockpit, um servidor OAuth deixa de ser nativo-apenas:
+        // ele passa a ser roteável pelos dois motores através do proxy local.
+        let via_proxy = roteavel_por_proxy(server, agent);
+        if !via_proxy && !server.compatible(agent) {
             let message = format!("MCP {} não é portável/compatível com {agent}", server.name);
             if binding_blocks_without_server(&binding) {
                 plan.blocked = Some(message);
@@ -1933,7 +2004,12 @@ pub async fn plan_for_run(
             let _ = persist_health(&conn, &project_id, &server.id, agent, &outcome);
             outcome
         };
-        if matches!(outcome.status.as_str(), "healthy" | "auth-delegated") {
+        // Com proxy, `auth-required` é resultado ESPERADO do preflight: o probe
+        // bate no endpoint sem token (o registry não tem credencial) e leva 401.
+        // Quem autentica é o proxy, na hora da chamada.
+        let aceitavel = matches!(outcome.status.as_str(), "healthy" | "auth-delegated")
+            || (via_proxy && outcome.status == "auth-required");
+        if aceitavel {
             let mut launch = server.launch.clone().expect("compatible exige launch");
             // B2.2 — o roteamento pro navegador do app entra AQUI, no plano
             // efêmero, e não no preflight: o `probe_stdio` acima rodou com os
@@ -1948,6 +2024,32 @@ pub async fn plan_for_run(
                     endpoint.as_deref(),
                     &server.name,
                 ));
+            }
+            // A troca acontece AQUI, no plano efêmero: o que o agent recebe é o
+            // server local do proxy, sem URL e sem credencial. O token fica no
+            // processo do app.
+            if via_proxy {
+                match subir_proxy(&launch, &server.id) {
+                    Some((config, listener)) => {
+                        launch = config.launch();
+                        plan.proxies.push(Arc::new(listener));
+                    }
+                    None => {
+                        // Fail-closed: sem proxy não se entrega o servidor cru
+                        // (isso vazaria a exigência de auth pro agent, que
+                        // falharia no meio da tarefa).
+                        let message = format!(
+                            "MCP {} não pôde ser roteado: falha ao abrir o proxy autenticado",
+                            server.name
+                        );
+                        if binding_blocks_without_server(&binding) {
+                            plan.blocked = Some(message);
+                            break;
+                        }
+                        plan.notices.push(message);
+                        continue;
+                    }
+                }
             }
             plan.selected.push(McpRuntimeServer {
                 runtime_name: server.runtime_name(),
@@ -2061,6 +2163,95 @@ mod tests {
     /// OAuth e NENHUM valor literal. A trava é correta (o token vive no
     /// keychain do CLI que logou), mas a causa é `native_reason`, não segredo
     /// literal — a UI precisa dos dois motivos separados pra não mentir.
+    /// A1+A2: com login do MyCockpit, um MCP OAuth deixa de ser nativo-apenas e
+    /// passa a ser roteável pelos DOIS motores (pelo proxy). Sem login, nada
+    /// muda — a trava de hoje continua exatamente onde estava.
+    #[test]
+    fn servidor_oauth_so_vira_roteavel_quando_existe_login_do_app() {
+        let raw = json!({
+            "type": "http",
+            "url": "https://tsxtyuyjmouuyzkzwdtz.supabase.co/functions/v1/mcp",
+            "oauth": {
+                "clientId": "c19d2b4a-1006-4564-8925-4bfe6156d147",
+                "callbackPort": 8976,
+                "authServerMetadataUrl": "https://tsxtyuyjmouuyzkzwdtz.supabase.co/auth/v1/.well-known/oauth-authorization-server"
+            }
+        });
+        let server = DiscoveredServer {
+            id: "s1".into(),
+            name: "prime-mcp".into(),
+            source: "mcp.json".into(),
+            scope: "project".into(),
+            source_agent: None,
+            enabled: true,
+            managed: true,
+            launch: parse_launch(&raw),
+        };
+        // A regra ANTIGA continua valendo: por portabilidade ele segue barrado.
+        assert!(!server.compatible("claude-code"));
+        assert!(!server.compatible("codex"));
+        // Sem login, o proxy não entra e nada é roteado.
+        for agent in ["claude-code", "codex"] {
+            assert!(
+                !roteavel_por_proxy_com(&server, agent, || false),
+                "sem login, {agent} não pode rotear"
+            );
+        }
+        // Com login, os DOIS motores passam a poder — a decisão é por
+        // capability (`managed_mcp`), nunca por nome de agent.
+        for agent in ["claude-code", "codex"] {
+            assert!(
+                roteavel_por_proxy_com(&server, agent, || true),
+                "com login, {agent} deve rotear pelo proxy"
+            );
+        }
+    }
+
+    #[test]
+    fn sem_bloco_oauth_ou_fora_de_http_o_proxy_nao_entra() {
+        let stdio = DiscoveredServer {
+            id: "s2".into(),
+            name: "local".into(),
+            source: "claude".into(),
+            scope: "user".into(),
+            source_agent: Some("claude-code".into()),
+            enabled: true,
+            managed: true,
+            launch: parse_launch(&json!({ "command": "node", "args": ["s.js"] })),
+        };
+        assert!(!roteavel_por_proxy_com(&stdio, "claude-code", || true));
+
+        // HTTP sem bloco `oauth`: não há o que autenticar, segue o caminho
+        // normal (não passa a ser problema do proxy).
+        let http_sem_oauth = DiscoveredServer {
+            launch: parse_launch(&json!({ "type": "http", "url": "https://x/mcp" })),
+            ..stdio.clone()
+        };
+        assert!(!roteavel_por_proxy_com(&http_sem_oauth, "claude-code", || true));
+    }
+
+    #[test]
+    fn segredo_literal_continua_barrando_mesmo_com_login_do_app() {
+        // As duas travas são independentes: resolver o OAuth não perdoa um
+        // token literal no arquivo do usuário.
+        let com_literal = DiscoveredServer {
+            id: "s3".into(),
+            name: "x".into(),
+            source: "mcp.json".into(),
+            scope: "project".into(),
+            source_agent: None,
+            enabled: true,
+            managed: true,
+            launch: parse_launch(&json!({
+                "type": "http",
+                "url": "https://x/mcp",
+                "headers": { "X-Api-Key": "segredo-literal" },
+                "oauth": { "clientId": "c", "callbackPort": 1234 }
+            })),
+        };
+        assert!(!roteavel_por_proxy_com(&com_literal, "claude-code", || true));
+    }
+
     #[test]
     fn oauth_sem_valor_literal_reporta_causa_nativa_e_nao_segredo() {
         let cfg = parse_launch(&json!({

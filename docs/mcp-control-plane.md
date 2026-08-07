@@ -142,6 +142,15 @@ Um servidor sai do roteamento por duas causas independentes, e a UI diz qual é
 | `nativeReason` (`oauth`, `stream`, `headers-helper`) | Dependência do CLI de origem: o token do OAuth vive no keychain de quem autenticou, a sessão SSE/WS é mantida pelo CLI, o helper de header roda dentro dele. Cita onde já funciona nativo. | Autenticar no outro CLI, trocar por endpoint HTTP MCP ou por env ref. Nada a migrar no arquivo. |
 | `literalSecret` | "contém valor literal ou expansão específica do CLI de origem". | Migrar para wrapper/Keychain ou `${VAR}`. |
 
+**Exceção desde a A2 (`mcp-auth-plan.md`): `oauth` deixa de bloquear quando
+existe login do MyCockpit.** Com credencial nossa no Keychain, o servidor passa
+a ser roteado pelos DOIS motores através de um **proxy MCP local**
+(`mcp_proxy.rs`): o agent recebe um server stdio sem URL e sem credencial, e o
+app acrescenta o `Authorization: Bearer` na saída. A trava só cai para `oauth` e
+só com login; `stream`, `headers-helper` e `literalSecret` seguem barrando
+exatamente como antes (um servidor OAuth *com* segredo literal continua fora).
+Sem login, o comportamento é o de sempre.
+
 O motivo é **tipado** dos dois lados (`McpNativeReason` em `mcp_control.rs`,
 união espelho em `lib/mcp.ts`), nunca string livre: a copy é escolhida por
 `mcpPortabilityNotices`, função pura com teste por motivo. Antes disso, todo

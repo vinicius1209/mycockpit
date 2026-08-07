@@ -47,8 +47,21 @@
 >    STDIN. Verificado que `ps` mostra apenas `curl --config -`. Sem
 >    dependência HTTP nova.
 >
-> Migrações: **nenhuma** (A1 não toca SQLite — de propósito: o registry segue
-> sem credencial).
+> 7. **A2 — o socket do proxy quase não chegou ao Codex.** O
+>    `McpLaunchConfig::configure_codex` genérico **não** copia o mapa `env`
+>    literal (e com razão: ali moram valores de config alheia que não podem ir
+>    pra argv). Como o proxy carrega o caminho do socket justamente no `env`, o
+>    server subiria no Codex sem saber com quem falar — falha silenciosa no
+>    motor que a A2 existe pra atender. Resolvido com caminho próprio
+>    (`mcp_proxy::configure_codex_launch`), com teste cobrindo os DOIS motores.
+> 8. **A2 fala Streamable HTTP, não só JSON.** Servidor real responde
+>    `text/event-stream` mesmo para uma resposta única, e pode abrir sessão
+>    (`Mcp-Session-Id`) no `initialize` exigindo eco nas chamadas seguintes. O
+>    proxy lê as duas formas e ecoa a sessão. SSE como *stream contínuo* segue
+>    fora (é a A3).
+>
+> Migrações: **nenhuma** (A1 e A2 não tocam SQLite — de propósito: o registry
+> segue sem credencial).
 
 > Status: proposto em 07/08/2026. Gatilho: o `prime-mcp` (OAuth no `.mcp.json`
 > do prime-sales-hub) fica bloqueado pro roteamento, e o usuário cravou a

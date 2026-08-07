@@ -19,5 +19,11 @@ fn main() {
         app_lib::run_work_server();
         return;
     }
+    // Proxy MCP autenticado (A2): repassa JSON-RPC pro endpoint remoto pelo
+    // socket do app, que é quem tem o token. Este processo nunca vê credencial.
+    if std::env::args().nth(1).as_deref() == Some("mcp-proxy-server") {
+        app_lib::run_mcp_proxy_server();
+        return;
+    }
     app_lib::run();
 }

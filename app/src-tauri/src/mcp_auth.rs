@@ -612,6 +612,15 @@ pub fn load_tokens(server_id: &str) -> Result<Option<StoredTokens>, String> {
     }
 }
 
+/// Existe credencial do app para este servidor?
+///
+/// Só a EXISTÊNCIA, sem tocar no valor: é o que o roteamento (A2) precisa para
+/// decidir se o servidor deixa de ser nativo-apenas. Falha de Keychain vira
+/// `false` — fail-closed, o servidor segue barrado.
+pub fn tem_credencial(server_id: &str) -> bool {
+    matches!(load_tokens(server_id), Ok(Some(_)))
+}
+
 pub fn save_tokens(server_id: &str, tokens: &StoredTokens) -> Result<(), String> {
     let blob = serde_json::to_string(tokens)
         .map_err(|e| format!("falha ao serializar credencial: {e}"))?;
@@ -659,6 +668,30 @@ pub async fn curl_form(
     config.push_str(&format!("data = {}\n", aspas(&corpo)));
     config.push_str("silent\nshow-error\ndump-header = \"/dev/stderr\"\n");
     config.push_str("write-out = \"\\n%{http_code}\"\nmax-time = 30\n");
+    curl_config(&config).await
+}
+
+/// POST de corpo JSON com headers arbitrários, pelo MESMO caminho de STDIN.
+///
+/// É o que o proxy (A2) usa para repassar JSON-RPC com `Authorization: Bearer`:
+/// o header vai no config lido do STDIN, então o token não aparece em `ps`.
+pub async fn curl_json(
+    url: &str,
+    corpo: &str,
+    headers_extra: &[(String, String)],
+) -> Result<HttpResposta, String> {
+    let mut config = String::new();
+    config.push_str(&format!("url = {}\n", aspas(url)));
+    config.push_str(&format!(
+        "header = {}\n",
+        aspas("Content-Type: application/json")
+    ));
+    for (nome, valor) in headers_extra {
+        config.push_str(&format!("header = {}\n", aspas(&format!("{nome}: {valor}"))));
+    }
+    config.push_str(&format!("data = {}\n", aspas(corpo)));
+    config.push_str("silent\nshow-error\ndump-header = \"/dev/stderr\"\n");
+    config.push_str("write-out = \"\\n%{http_code}\"\nmax-time = 120\n");
     curl_config(&config).await
 }
 

@@ -215,11 +215,17 @@ export function mcpPortabilityNotices(
     McpServer,
     "managed" | "portable" | "nativeReason" | "literalSecret" | "sourceAgent"
   >,
+  /** Há login do MyCockpit neste servidor? Com login, o motivo `oauth` deixa
+   *  de valer: quem autentica passa a ser o app, e o proxy roteia pros dois
+   *  motores (A2). As demais causas seguem intactas. */
+  autenticadoPeloApp = false,
 ): McpPortabilityNotice[] {
   // MCP interno não é roteável por binding e nunca teve config a comentar.
   if (!server.managed || server.portable) return []
   const notices: McpPortabilityNotice[] = []
-  if (server.nativeReason) {
+  if (autenticadoPeloApp && server.nativeReason === "oauth") {
+    if (!server.literalSecret) return []
+  } else if (server.nativeReason) {
     const reason = server.nativeReason
     notices.push({
       kind: "native-only",
@@ -249,8 +255,14 @@ export function mcpPortabilityNotices(
 export function mcpAgentStatusLabel(
   server: Pick<McpServer, "nativeReason">,
   state: Pick<McpAgentState, "compatible" | "health">,
+  /** Com login do app, um servidor OAuth passa a ser roteado pelo proxy, então
+   *  dizer "sem roteamento" mentiria. */
+  autenticadoPeloApp = false,
 ): string {
   if (state.compatible) return mcpHealthLabel(state.health)
+  if (autenticadoPeloApp && server.nativeReason === "oauth") {
+    return "roteado pelo MyCockpit"
+  }
   return server.nativeReason ? "sem roteamento (nativo do CLI)" : "não suportado"
 }
 

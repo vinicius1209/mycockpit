@@ -661,7 +661,10 @@ export function McpSettings() {
                       </Button>
                     </div>
                   )}
-                  {mcpPortabilityNotices(server).map((notice) => (
+                  {mcpPortabilityNotices(
+                    server,
+                    authByServer[server.id]?.state === "conectado",
+                  ).map((notice) => (
                     <div
                       key={notice.kind}
                       className={cn(
@@ -724,7 +727,11 @@ export function McpSettings() {
                           <span className="truncate">
                             {verifying
                               ? "verificando…"
-                              : mcpAgentStatusLabel(server, state)}
+                              : mcpAgentStatusLabel(
+                                  server,
+                                  state,
+                                  authByServer[server.id]?.state === "conectado",
+                                )}
                           </span>
                         </span>
                         {state.enabled && (

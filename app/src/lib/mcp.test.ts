@@ -334,3 +334,46 @@ describe("login do MyCockpit no MCP (A1)", () => {
     )
   })
 })
+
+describe("proxy MCP autenticado (A2)", () => {
+  const oauthServer = {
+    managed: true,
+    portable: false,
+    nativeReason: "oauth" as const,
+    literalSecret: false,
+    sourceAgent: null,
+  }
+
+  it("com login do app, o servidor OAuth deixa de acusar falta de roteamento", () => {
+    // Sem login, a copy de hoje continua igual.
+    expect(mcpPortabilityNotices(oauthServer, false)).toHaveLength(1)
+    expect(mcpPortabilityNotices(oauthServer, false)[0].kind).toBe("native-only")
+    // Com login, quem autentica é o app e o proxy roteia: não há mais o que
+    // avisar.
+    expect(mcpPortabilityNotices(oauthServer, true)).toEqual([])
+  })
+
+  it("login do app não perdoa segredo literal, que é outra trava", () => {
+    const comLiteral = { ...oauthServer, literalSecret: true }
+    const notices = mcpPortabilityNotices(comLiteral, true)
+    expect(notices).toHaveLength(1)
+    expect(notices[0].kind).toBe("literal-secret")
+  })
+
+  it("login do app não afeta as outras causas de não roteamento", () => {
+    const streamServer = { ...oauthServer, nativeReason: "stream" as const }
+    // SSE/WS segue fora: o proxy ainda não fala streaming.
+    expect(mcpPortabilityNotices(streamServer, true)).toHaveLength(1)
+    expect(mcpPortabilityNotices(streamServer, true)[0].kind).toBe("native-only")
+  })
+
+  it("a linha por agent diz que o MyCockpit roteia, em vez de negar", () => {
+    const state = { compatible: false, health: "auth-required" as const }
+    expect(mcpAgentStatusLabel(oauthServer, state, false)).toBe(
+      "sem roteamento (nativo do CLI)",
+    )
+    expect(mcpAgentStatusLabel(oauthServer, state, true)).toBe(
+      "roteado pelo MyCockpit",
+    )
+  })
+})
