@@ -1465,10 +1465,11 @@ function PlanPendingCard({
     <div className="mb-2 rounded-lg border border-brass/40 bg-brass/[0.07] px-3 py-2.5">
       <div className="flex items-center gap-2">
         <ClipboardList className="size-4 shrink-0 text-brass" />
+        {/* Sem emoji aqui: o ClipboardList ao lado já é o ícone do card (havia
+            uma prancheta duplicada, componente + 📋, coladas na mesma linha). */}
         <p className="min-w-0 flex-1 text-[12.5px] text-foreground">
-          📋 <span className="font-medium">Plano proposto</span> — revise acima:
-          o agent só executa depois da{" "}
-          <span className="font-medium text-brass">sua aprovação</span>.
+          <span className="font-medium">Plano proposto</span>, aguardando sua
+          aprovação. O agent só executa o que está escrito acima.
         </p>
       </div>
       <div className="mt-2.5 flex items-center justify-end gap-2">
