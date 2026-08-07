@@ -132,6 +132,25 @@ em segundo plano e a linha mostra "verificando…" até o resultado real chegar.
 Configurações com segredo literal ficam visíveis, mas desabilitadas para
 roteamento até migrarem para wrapper/Keychain ou referência de ambiente.
 
+### Os dois motivos de não ser roteável
+
+Um servidor sai do roteamento por duas causas independentes, e a UI diz qual é
+(elas podem aparecer juntas):
+
+| Causa | O que a tela diz | Saída |
+|---|---|---|
+| `nativeReason` (`oauth`, `stream`, `headers-helper`) | Dependência do CLI de origem: o token do OAuth vive no keychain de quem autenticou, a sessão SSE/WS é mantida pelo CLI, o helper de header roda dentro dele. Cita onde já funciona nativo. | Autenticar no outro CLI, trocar por endpoint HTTP MCP ou por env ref. Nada a migrar no arquivo. |
+| `literalSecret` | "contém valor literal ou expansão específica do CLI de origem". | Migrar para wrapper/Keychain ou `${VAR}`. |
+
+O motivo é **tipado** dos dois lados (`McpNativeReason` em `mcp_control.rs`,
+união espelho em `lib/mcp.ts`), nunca string livre: a copy é escolhida por
+`mcpPortabilityNotices`, função pura com teste por motivo. Antes disso, todo
+servidor não portável recebia a frase de "valor literal", que mentia num MCP
+HTTP+OAuth sem nenhum segredo no `.mcp.json`. Na linha por agent, um servidor
+nativo-apenas mostra "sem roteamento (nativo do CLI)" em vez de "não
+suportado", que negava um MCP funcionando no CLI de origem. A regra não mudou:
+nada passou a ser roteável.
+
 ## Limites honestos desta versão
 
 - O Antigravity CLI atual não oferece uma fábrica MCP headless equivalente;
@@ -140,7 +159,9 @@ roteamento até migrarem para wrapper/Keychain ou referência de ambiente.
   definição de origem continua sendo feito no CLI nativo ou em `.mcp.json`.
 - OAuth salvo no keychain privado de um CLI não é exportado para outro. Para
   troca entre providers, use uma configuração compartilhável com env ref ou um
-  wrapper que consulte o Keychain.
+  wrapper que consulte o Keychain. O mesmo vale para SSE/WebSocket e para
+  headers gerados por helper do CLI. Nesses casos a tela mostra a causa
+  concreta e onde o MCP já funciona nativo, em vez de acusar segredo literal.
 - Campos nativos sem equivalente seguro, como `cwd` do Codex ao enviar para o
   Claude, ficam incompatíveis naquele destino em vez de serem ignorados.
 - A validação rápida do toggle usa o registry persistido, que não guarda o

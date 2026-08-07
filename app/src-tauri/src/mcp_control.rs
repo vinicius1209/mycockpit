@@ -24,6 +24,23 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(6);
 const MAX_TOOL_NAMES: usize = 80;
 const MAX_DETAIL_CHARS: usize = 800;
 
+/// Por que uma configuração só funciona dentro do CLI que a definiu.
+///
+/// Motivo TIPADO em vez de `bool` ou string livre: a UI precisa escolher a
+/// copy certa. Um `native_only: true` sozinho virava a frase genérica de
+/// "valor literal", que MENTE por imprecisão num servidor OAuth sem nenhum
+/// segredo no arquivo (caso real: `prime-mcp` no `.mcp.json`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum McpNativeReason {
+    /// Login próprio do CLI: o token fica no keychain de quem autenticou.
+    Oauth,
+    /// SSE/WebSocket: a sessão é mantida pelo CLI de origem.
+    Stream,
+    /// Header produzido por um helper que só existe dentro do CLI de origem.
+    HeadersHelper,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpLaunchConfig {
@@ -42,9 +59,10 @@ pub struct McpLaunchConfig {
     pub http_headers: BTreeMap<String, String>,
     #[serde(default)]
     pub env_http_headers: BTreeMap<String, String>,
-    /// Depende de extensão/autenticação privada do CLI de origem.
+    /// Depende de extensão/autenticação privada do CLI de origem, e por qual
+    /// motivo. `None` = não há dependência nativa.
     #[serde(default)]
-    pub native_only: bool,
+    pub native_reason: Option<McpNativeReason>,
 }
 
 impl McpLaunchConfig {
@@ -58,9 +76,11 @@ impl McpLaunchConfig {
     /// Credencial literal nunca entra em argv/config efêmero de outro agent.
     /// Wrappers que consultam Keychain e nomes de env são portáveis; valores
     /// literais de env/header precisam ser migrados pelo usuário primeiro.
-    fn portable(&self) -> bool {
-        !self.native_only
-            && self.env.is_empty()
+    ///
+    /// Motivo INDEPENDENTE de `native_reason`: um servidor pode ter os dois,
+    /// um, ou nenhum. A UI mostra cada um com a sua própria copy.
+    fn has_literal_secret(&self) -> bool {
+        !(self.env.is_empty()
             && self.http_headers.is_empty()
             && !args_look_sensitive(&self.args)
             && self
@@ -74,7 +94,13 @@ impl McpLaunchConfig {
                 .is_none_or(|value| !contains_env_template(value))
             && self.url.as_deref().is_none_or(|value| {
                 !contains_env_template(value) && sanitize_url_for_display(value) == value
-            })
+            }))
+    }
+
+    /// Roteável para outro agent: nem dependência nativa do CLI de origem, nem
+    /// credencial literal na configuração.
+    fn portable(&self) -> bool {
+        self.native_reason.is_none() && !self.has_literal_secret()
     }
 
     fn env_keys(&self) -> Vec<String> {
@@ -102,7 +128,7 @@ impl McpLaunchConfig {
             "bearerTokenEnvVar": self.bearer_token_env_var,
             "headerNames": self.http_headers.keys().collect::<Vec<_>>(),
             "envHeaderNames": self.env_http_headers.keys().collect::<Vec<_>>(),
-            "nativeOnly": self.native_only,
+            "nativeReason": self.native_reason,
         });
         blake3::hash(public.to_string().as_bytes())
             .to_hex()
@@ -307,6 +333,13 @@ pub struct McpServerView {
     pub source_enabled: bool,
     pub managed: bool,
     pub portable: bool,
+    /// Por que a config é nativa-apenas, quando for. `None` = não é.
+    /// Vai separado de `literal_secret` porque as duas travas têm causas e
+    /// saídas diferentes, e uma mensagem só descreveria a errada.
+    pub native_reason: Option<McpNativeReason>,
+    /// A config carrega valor literal de env/header/argv/URL ou expansão do
+    /// CLI de origem. Independente de `native_reason`.
+    pub literal_secret: bool,
     /// Nome que o servidor assume dentro de um run gerenciado deste projeto
     /// (o que o usuário cita no prompt). Só existe com binding ativo.
     pub runtime_name: Option<String>,
@@ -753,10 +786,18 @@ fn parse_launch(raw: &Value) -> Option<McpLaunchConfig> {
         "stdio"
     }
     .to_string();
-    let native_only = matches!(raw_type, "sse" | "ws" | "websocket")
-        || raw.get("oauth").is_some()
-        || raw.get("headersHelper").is_some()
-        || raw.get("headers_helper").is_some();
+    // Ordem por acionabilidade: OAuth é o caso que o usuário resolve
+    // autenticando no outro CLI; helper de header vem antes do transporte
+    // porque descreve a credencial, e stream é o resto.
+    let native_reason = if raw.get("oauth").is_some() {
+        Some(McpNativeReason::Oauth)
+    } else if raw.get("headersHelper").is_some() || raw.get("headers_helper").is_some() {
+        Some(McpNativeReason::HeadersHelper)
+    } else if matches!(raw_type, "sse" | "ws" | "websocket") {
+        Some(McpNativeReason::Stream)
+    } else {
+        None
+    };
     let mut env = string_map(raw.get("env"));
     let mut env_vars = string_array(raw.get("env_vars"));
     // `.mcp.json` permite `KEY=${KEY}`. No modelo canônico isso vira apenas
@@ -806,7 +847,7 @@ fn parse_launch(raw: &Value) -> Option<McpLaunchConfig> {
         bearer_token_env_var,
         http_headers,
         env_http_headers,
-        native_only,
+        native_reason,
     })
 }
 
@@ -1115,6 +1156,8 @@ fn server_view(conn: &Connection, project_id: &str, server: &DiscoveredServer) -
         source_enabled: server.enabled,
         managed: server.managed,
         portable: server.portable(),
+        native_reason: launch.and_then(|c| c.native_reason),
+        literal_secret: launch.is_some_and(McpLaunchConfig::has_literal_secret),
         runtime_name: None,
         agent_states: crate::adapters::registered_agents()
             .map(|agent| agent_state(conn, project_id, server, agent))
@@ -1984,6 +2027,73 @@ mod tests {
         assert!(cfg.portable());
     }
 
+    /// O caso real que gerou a correção: `prime-mcp` do `.mcp.json` é HTTP com
+    /// OAuth e NENHUM valor literal. A trava é correta (o token vive no
+    /// keychain do CLI que logou), mas a causa é `native_reason`, não segredo
+    /// literal — a UI precisa dos dois motivos separados pra não mentir.
+    #[test]
+    fn oauth_sem_valor_literal_reporta_causa_nativa_e_nao_segredo() {
+        let cfg = parse_launch(&json!({
+            "type": "http",
+            "url": "https://projeto.supabase.co/functions/v1/mcp",
+            "oauth": {
+                "clientId": "cliente-publico",
+                "callbackPort": 8976,
+                "authServerMetadataUrl": "https://projeto.supabase.co/.well-known/oauth-authorization-server"
+            }
+        }))
+        .unwrap();
+        assert_eq!(cfg.native_reason, Some(McpNativeReason::Oauth));
+        assert!(!cfg.has_literal_secret());
+        assert!(!cfg.portable());
+    }
+
+    #[test]
+    fn cada_dependencia_nativa_tem_motivo_tipado_proprio() {
+        let reason = |raw: Value| parse_launch(&raw).unwrap().native_reason;
+        assert_eq!(
+            reason(json!({"type": "sse", "url": "https://mcp.example.com/sse"})),
+            Some(McpNativeReason::Stream)
+        );
+        assert_eq!(
+            reason(json!({
+                "type": "http",
+                "url": "https://mcp.example.com/mcp",
+                "headersHelper": "/opt/bin/auth-header"
+            })),
+            Some(McpNativeReason::HeadersHelper)
+        );
+        assert_eq!(
+            reason(json!({"type": "http", "url": "https://mcp.example.com/mcp"})),
+            None
+        );
+        // Contrato com a união TS de lib/mcp.ts: kebab-case, sem string livre.
+        assert_eq!(
+            serde_json::to_value(McpNativeReason::HeadersHelper).unwrap(),
+            json!("headers-helper")
+        );
+    }
+
+    #[test]
+    fn segredo_literal_e_dependencia_nativa_sao_motivos_independentes() {
+        let literal = parse_launch(&json!({
+            "command": "/bin/server",
+            "env": {"TOKEN": "segredo-absoluto"}
+        }))
+        .unwrap();
+        assert_eq!(literal.native_reason, None);
+        assert!(literal.has_literal_secret());
+
+        // Os dois ao mesmo tempo continuam visíveis: nenhum motivo engole o outro.
+        let ambos = parse_launch(&json!({
+            "type": "sse",
+            "url": "https://user:senha@mcp.example.com/sse"
+        }))
+        .unwrap();
+        assert_eq!(ambos.native_reason, Some(McpNativeReason::Stream));
+        assert!(ambos.has_literal_secret());
+    }
+
     #[test]
     fn extensao_nativa_e_credencial_em_url_nao_sao_roteadas() {
         let oauth = parse_launch(&json!({
@@ -2350,6 +2460,8 @@ mod tests {
             source_enabled: true,
             managed: server.managed,
             portable: server.portable(),
+            native_reason: None,
+            literal_secret: false,
             runtime_name: None,
             agent_states: vec![McpAgentState {
                 agent: "codex".into(),

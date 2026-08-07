@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core"
 import { isTauri } from "@/lib/db"
+import { agentDef } from "@/lib/agents"
 
 export type McpHealthStatus =
   | "unchecked"
@@ -9,6 +10,10 @@ export type McpHealthStatus =
   | "unavailable"
 
 export type McpFallback = "ask" | "deny" | "allow-readonly"
+
+/** Espelho da união tipada do Rust (`McpNativeReason`, mcp_control.rs). Motivo
+ *  de a config só funcionar no CLI que a definiu. */
+export type McpNativeReason = "oauth" | "stream" | "headers-helper"
 
 export interface McpAgentState {
   agent: "claude-code" | "codex" | "agy"
@@ -36,6 +41,13 @@ export interface McpServer {
   sourceEnabled: boolean
   managed: boolean
   portable: boolean
+  /** Motivo de a config ser nativa-apenas (OAuth, SSE/WS, helper de header);
+   *  null quando não é. Separado de `literalSecret` de propósito: as duas
+   *  travas barram o roteamento por causas diferentes. */
+  nativeReason: McpNativeReason | null
+  /** A config carrega valor literal (env/header/argv/URL) ou expansão do CLI
+   *  de origem. Independente de `nativeReason`: pode haver os dois. */
+  literalSecret: boolean
   /** Nome que o servidor assume dentro de um run gerenciado (o que o usuário
    *  cita no prompt). Só vem preenchido quando há binding ativo. */
   runtimeName: string | null
@@ -157,6 +169,89 @@ export async function optimisticBindingUpdate(opts: {
     opts.onError(cause instanceof Error ? cause.message : String(cause))
     return false
   }
+}
+
+export interface McpPortabilityNotice {
+  /** `native-only` é fato estrutural (nada a corrigir no arquivo);
+   *  `literal-secret` é pendência do usuário (migrar o valor). */
+  kind: "native-only" | "literal-secret"
+  text: string
+}
+
+const NATIVE_CAUSE: Record<McpNativeReason, string> = {
+  oauth:
+    "Login próprio do CLI (OAuth): o token fica no keychain de quem autenticou, então não dá pra rotear pra outro agent.",
+  stream:
+    "Transporte SSE/WebSocket: a sessão é mantida pelo CLI de origem, o MyCockpit não a repassa pra outro agent.",
+  "headers-helper":
+    "Cabeçalho gerado por um helper do CLI de origem: o comando roda dentro dele e a credencial não viaja.",
+}
+
+const NATIVE_REMEDY: Record<McpNativeReason, string> = {
+  oauth: "nos demais, autentique por lá",
+  stream: "nos demais, use um endpoint HTTP MCP",
+  "headers-helper":
+    "nos demais, troque o helper por referência de ambiente (${VAR})",
+}
+
+/** Onde a config JÁ funciona nativa. Quando a origem não é de um agent
+ *  conhecido (ex.: `.mcp.json` do projeto, lido por quem passar), não inventa
+ *  nome: diz que segue valendo no CLI que fez o login. */
+function nativeOrigin(sourceAgent: string | null): string {
+  const label = sourceAgent ? (agentDef(sourceAgent)?.label ?? null) : null
+  return label
+    ? `No ${label} ele já funciona nativo`
+    : "Ele segue funcionando no CLI que fez o login"
+}
+
+/** Por que este servidor não é roteável, com a copy do motivo CERTO.
+ *
+ *  A trava é a mesma de sempre (nada passa a ser roteável aqui), o que muda é
+ *  parar de descrever tudo como "valor literal": um servidor OAuth sem nenhum
+ *  segredo no arquivo recebia uma mensagem falsa e sem saída. Os dois motivos
+ *  são independentes e podem aparecer juntos. */
+export function mcpPortabilityNotices(
+  server: Pick<
+    McpServer,
+    "managed" | "portable" | "nativeReason" | "literalSecret" | "sourceAgent"
+  >,
+): McpPortabilityNotice[] {
+  // MCP interno não é roteável por binding e nunca teve config a comentar.
+  if (!server.managed || server.portable) return []
+  const notices: McpPortabilityNotice[] = []
+  if (server.nativeReason) {
+    const reason = server.nativeReason
+    notices.push({
+      kind: "native-only",
+      text: `${NATIVE_CAUSE[reason]} ${nativeOrigin(server.sourceAgent)}; ${NATIVE_REMEDY[reason]}.`,
+    })
+  }
+  if (server.literalSecret) {
+    notices.push({
+      kind: "literal-secret",
+      text: "Não portável: contém valor literal ou expansão específica do CLI de origem.",
+    })
+  }
+  // Não portável por um motivo que o backend ainda não tipou: diz isso em vez
+  // de escolher uma causa qualquer.
+  if (notices.length === 0) {
+    notices.push({
+      kind: "literal-secret",
+      text: "Não portável: esta configuração não pode ser roteada para outro agent.",
+    })
+  }
+  return notices
+}
+
+/** Rótulo da linha por agent. "não suportado" sozinho mente num servidor
+ *  nativo-apenas: ele funciona no CLI que o definiu, o que não existe é o
+ *  roteamento gerenciado para os outros agents. */
+export function mcpAgentStatusLabel(
+  server: Pick<McpServer, "nativeReason">,
+  state: Pick<McpAgentState, "compatible" | "health">,
+): string {
+  if (state.compatible) return mcpHealthLabel(state.health)
+  return server.nativeReason ? "sem roteamento (nativo do CLI)" : "não suportado"
 }
 
 export function mcpHealthLabel(status: McpHealthStatus): string {

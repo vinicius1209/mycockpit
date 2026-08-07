@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest"
 import {
   applyAgentPatch,
   initialMcpProjectId,
+  mcpAgentStatusLabel,
   mcpHealthLabel,
+  mcpPortabilityNotices,
   mcpProjectOptionLabel,
   optimisticBindingUpdate,
   type McpAgentState,
@@ -22,6 +24,8 @@ function makeServer(id: string, states: Partial<McpAgentState>[]): McpServer {
     sourceEnabled: true,
     managed: true,
     portable: true,
+    nativeReason: null,
+    literalSecret: false,
     runtimeName: null,
     agentStates: states.map((partial) => ({
       agent: "claude-code",
@@ -45,6 +49,144 @@ describe("mcpHealthLabel", () => {
     expect(mcpHealthLabel("auth-required")).toBe("requer autenticação")
     expect(mcpHealthLabel("unavailable")).toBe("indisponível")
     expect(mcpHealthLabel("unchecked")).toBe("não testado")
+  })
+})
+
+describe("mcpPortabilityNotices", () => {
+  // Config REAL do prime-mcp (.mcp.json do prime-sales-hub): HTTP + OAuth, sem
+  // nenhum valor literal. A tela dizia "contém valor literal", que é falso.
+  const primeMcp: Parameters<typeof mcpPortabilityNotices>[0] = {
+    managed: true,
+    portable: false,
+    nativeReason: "oauth",
+    literalSecret: false,
+    sourceAgent: null,
+  }
+
+  it("OAuth explica o keychain e para onde ir, sem falar em valor literal", () => {
+    const [notice, ...resto] = mcpPortabilityNotices(primeMcp)
+    expect(resto).toEqual([])
+    expect(notice.kind).toBe("native-only")
+    expect(notice.text).toContain("Login próprio do CLI (OAuth)")
+    expect(notice.text).toContain("keychain")
+    expect(notice.text).toContain("autentique por lá")
+    expect(notice.text).not.toContain("valor literal")
+  })
+
+  it("origem conhecida nomeia o CLI onde o MCP já funciona nativo", () => {
+    const [notice] = mcpPortabilityNotices({
+      ...primeMcp,
+      sourceAgent: "claude-code",
+    })
+    expect(notice.text).toContain("No Claude Code ele já funciona nativo")
+  })
+
+  it("origem sem agent conhecido não inventa nome de CLI", () => {
+    const [notice] = mcpPortabilityNotices(primeMcp)
+    expect(notice.text).toContain("Ele segue funcionando no CLI que fez o login")
+  })
+
+  it("SSE/WebSocket aponta a sessão do CLI de origem e o endpoint HTTP", () => {
+    const [notice] = mcpPortabilityNotices({
+      ...primeMcp,
+      nativeReason: "stream",
+      sourceAgent: "codex",
+    })
+    expect(notice.kind).toBe("native-only")
+    expect(notice.text).toContain("Transporte SSE/WebSocket")
+    expect(notice.text).toContain("No Codex ele já funciona nativo")
+    expect(notice.text).toContain("use um endpoint HTTP MCP")
+  })
+
+  it("helper de header aponta o comando local e a saída por env ref", () => {
+    const [notice] = mcpPortabilityNotices({
+      ...primeMcp,
+      nativeReason: "headers-helper",
+    })
+    expect(notice.kind).toBe("native-only")
+    expect(notice.text).toContain("helper do CLI de origem")
+    expect(notice.text).toContain("referência de ambiente (${VAR})")
+  })
+
+  it("credencial literal mantém a copy que ali é verdadeira", () => {
+    const notices = mcpPortabilityNotices({
+      ...primeMcp,
+      nativeReason: null,
+      literalSecret: true,
+    })
+    expect(notices).toEqual([
+      {
+        kind: "literal-secret",
+        text: "Não portável: contém valor literal ou expansão específica do CLI de origem.",
+      },
+    ])
+  })
+
+  it("os dois motivos juntos aparecem juntos, um não engole o outro", () => {
+    const notices = mcpPortabilityNotices({
+      ...primeMcp,
+      nativeReason: "stream",
+      literalSecret: true,
+    })
+    expect(notices.map((n) => n.kind)).toEqual([
+      "native-only",
+      "literal-secret",
+    ])
+  })
+
+  it("servidor portável e MCP interno não recebem aviso", () => {
+    expect(
+      mcpPortabilityNotices({ ...primeMcp, portable: true, nativeReason: null }),
+    ).toEqual([])
+    expect(
+      mcpPortabilityNotices({
+        managed: false,
+        portable: false,
+        nativeReason: null,
+        literalSecret: false,
+        sourceAgent: null,
+      }),
+    ).toEqual([])
+  })
+
+  it("não portável sem motivo tipado admite o desconhecido em vez de chutar", () => {
+    const notices = mcpPortabilityNotices({
+      ...primeMcp,
+      nativeReason: null,
+      literalSecret: false,
+    })
+    expect(notices).toHaveLength(1)
+    expect(notices[0].text).not.toContain("valor literal")
+    expect(notices[0].text).toContain("não pode ser roteada para outro agent")
+  })
+})
+
+describe("mcpAgentStatusLabel", () => {
+  const state = (partial: Partial<McpAgentState>) => ({
+    compatible: false,
+    health: "unchecked" as const,
+    ...partial,
+  })
+
+  it("nativo-apenas diz que falta roteamento, não que o MCP não existe", () => {
+    expect(mcpAgentStatusLabel({ nativeReason: "oauth" }, state({}))).toBe(
+      "sem roteamento (nativo do CLI)",
+    )
+  })
+
+  it("incompatível sem causa nativa segue como não suportado", () => {
+    expect(mcpAgentStatusLabel({ nativeReason: null }, state({}))).toBe(
+      "não suportado",
+    )
+  })
+
+  it("compatível mostra o health real, mesmo com causa nativa ausente", () => {
+    expect(
+      mcpAgentStatusLabel(
+        { nativeReason: null },
+        state({ compatible: true, health: "healthy" }),
+      ),
+    ).toBe("saudável")
   })
 })
 

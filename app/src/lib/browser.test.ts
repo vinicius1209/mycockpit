@@ -38,6 +38,8 @@ function server(name: string, states: Partial<McpAgentState>[]): McpServer {
     sourceEnabled: true,
     managed: true,
     portable: true,
+    nativeReason: null,
+    literalSecret: false,
     runtimeName: name,
     agentStates: states.map((partial) => ({
       agent: "claude-code",

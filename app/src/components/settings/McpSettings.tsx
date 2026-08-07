@@ -21,7 +21,9 @@ import {
   discoverMcpServers,
   initialMcpProjectId,
   mcpBindingsSummary,
+  mcpAgentStatusLabel,
   mcpHealthLabel,
+  mcpPortabilityNotices,
   mcpProjectOptionLabel,
   optimisticBindingUpdate,
   setMcpBinding,
@@ -516,12 +518,21 @@ export function McpSettings() {
                       env refs: {server.envKeys.join(", ")}
                     </div>
                   )}
-                  {!server.portable && server.managed && (
-                    <div className="mt-1 text-[10.5px] text-st-warning">
-                      Não portável: contém valor literal ou expansão específica
-                      do CLI de origem.
+                  {mcpPortabilityNotices(server).map((notice) => (
+                    <div
+                      key={notice.kind}
+                      className={cn(
+                        "mt-1 text-[10.5px] leading-snug",
+                        // Fato estrutural em tom neutro; pendência que o
+                        // usuário resolve (segredo literal) em aviso.
+                        notice.kind === "native-only"
+                          ? "text-muted-foreground"
+                          : "text-st-warning",
+                      )}
+                    >
+                      {notice.text}
                     </div>
-                  )}
+                  ))}
                   {!server.sourceEnabled && server.managed && (
                     <div className="mt-1 text-[10.5px] text-muted-foreground">
                       Desativado na origem; um binding explícito o ativa somente
@@ -570,9 +581,7 @@ export function McpSettings() {
                           <span className="truncate">
                             {verifying
                               ? "verificando…"
-                              : !state.compatible
-                                ? "não suportado"
-                                : mcpHealthLabel(state.health)}
+                              : mcpAgentStatusLabel(server, state)}
                           </span>
                         </span>
                         {state.enabled && (
