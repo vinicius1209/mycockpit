@@ -1,7 +1,6 @@
-// Normalização PURA da escolha de recuperação de missão — fonte única dos DOIS
-// cards de recovery (office/ui/MissionDock e components/mission/MissionTimeline).
-// Morava em office/ui/recovery.ts; subiu pra lib/ porque a direção de import da
-// casa é office → components/lib, nunca o contrário (o office re-exporta).
+// Normalização PURA da escolha de recuperação de missão — fonte única do card
+// de recovery (components/mission/MissionTimeline). Nasceu no ex-Escritório
+// (removido em R2 do office-removal-plan) e subiu pra lib/ ainda naquela era.
 import type { RecoveryChoice } from "@/lib/missionTypes"
 
 /** Monta a escolha de recuperação a partir do que o usuário selecionou no card.

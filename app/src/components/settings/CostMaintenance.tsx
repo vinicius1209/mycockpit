@@ -71,8 +71,8 @@ export function CostMaintenance() {
           O {names} reporta, no fim de cada turno, o total de tokens da conversa
           inteira, não do turno. Até a correção de hoje o app lia esse número
           como gasto do turno e somava totais em cima de totais, então o
-          histórico anterior está superestimado (Painel, custo por conversa,
-          custo por card e Escritório).
+          histórico anterior está superestimado (Painel, custo por conversa e
+          custo por card).
         </p>
         <p>
           A reconstrução recalcula cada linha antiga pela diferença para a linha

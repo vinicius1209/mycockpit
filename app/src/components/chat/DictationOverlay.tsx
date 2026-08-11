@@ -1,8 +1,8 @@
 // Pill de gravação estilo Wispr Flow: OVERLAY absoluto que paira sobre a UI —
 // nunca participa do fluxo (zero reflow na fileira de controles). Agnóstico de
-// dono: o MicButton (Trabalho) e os docks do office (bridge/voice) passam o
-// parcial + o início da gravação; o posicionamento vem por className do
-// chamador (o wrapper aqui é `absolute` sem âncora própria).
+// dono: quem grava (hoje só o MicButton do Trabalho) passa o parcial + o
+// início da gravação; o posicionamento vem por className do chamador (o
+// wrapper aqui é `absolute` sem âncora própria).
 //
 // Parcial: truncamento PELO COMEÇO — as últimas palavras ditas ficam sempre
 // visíveis (clipPartialStart, pura/testada) — em até 2 linhas ancoradas no pé

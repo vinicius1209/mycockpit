@@ -65,7 +65,6 @@ import { createWorktree, removeWorktree } from "@/lib/git"
 import { LABEL_COLORS } from "@/lib/labelColors"
 import { cn } from "@/lib/utils"
 import type { AgentStatus, Project } from "@/lib/types"
-import { OfficeRailContent } from "@/office/ui/OfficeRailContent"
 
 /** Soft-remove do projeto (arquiva, conversas preservadas) com Desfazer. Disco intocado. */
 function confirmDeleteProject(project: Project) {
@@ -1344,13 +1343,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
     <aside className="reveal-left flex h-full w-full flex-col bg-rail">
       {/* F7 — rail global (coleções cross-projeto) acima de Projetos. */}
       <GlobalEntries />
-      {/* No Escritório, o miolo "Projetos" (pastas — conceito de Trabalho) dá
-          lugar a um índice ESPACIAL da cena: Salas + Equipe. O shell da coluna
-          (Agendado acima, footer usuário/tema abaixo) fica igual. */}
-      {viewMode === "office" ? (
-        <OfficeRailContent />
-      ) : (
-        <>
+      <>
           <header className="flex h-11 shrink-0 items-center justify-between px-3">
             <div className="flex items-center gap-2">
               <span className="label-mono">Projetos</span>
@@ -1417,8 +1410,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
               <ArchivedSection />
             </div>
           </ScrollArea>
-        </>
-      )}
+      </>
 
       <footer className="flex h-12 shrink-0 items-center gap-2.5 border-t px-3">
         <div className="grid size-6 place-items-center rounded-full bg-brass/15 text-[11px] font-semibold text-brass">

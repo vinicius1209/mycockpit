@@ -29,11 +29,11 @@ interface AppState {
   sidebarOpen: boolean
   contextOpen: boolean
   /** Superfície do centro (F4): Painel (home cross-projeto), Trabalho (chat
-   *  Linear), Features (SDD) ou Escritório (Agent Office). A disputa Fusion
-   *  vive dentro da conversa via ⚔️ do composer, não é um modo. Valores
-   *  antigos ("linear"/"sdd") seguem válidos → sem migração de persist.
-   *  "office" NUNCA persiste como modo de boot (partialize grava "linear"). */
-  viewMode: "painel" | "linear" | "sdd" | "office"
+   *  Linear) ou Features (SDD). A disputa Fusion vive dentro da conversa via
+   *  ⚔️ do composer, não é um modo. Valores persistidos de modos que já
+   *  saíram do produto ("fusion", "office") migram para "linear" no persist
+   *  (v3/v4) — nunca abrimos num modo que não existe. */
+  viewMode: "painel" | "linear" | "sdd"
   /** F7 — view GLOBAL "Agendado" aberta? Estado PRÓPRIO (não é um viewMode):
    *  quando true, ela cobre o conteúdo principal; qualquer navegação (trocar
    *  superfície/projeto) fecha. Não persiste. */
@@ -85,7 +85,7 @@ interface AppState {
   toggleTheme: () => void
   toggleSidebar: () => void
   toggleContext: () => void
-  setViewMode: (m: "painel" | "linear" | "sdd" | "office") => void
+  setViewMode: (m: "painel" | "linear" | "sdd") => void
   /** Abre/fecha a view global "Agendado" (F7). */
   setScheduledOpen: (v: boolean) => void
   /** Abre/fecha o workspace global de Planos de voo. */
@@ -271,18 +271,14 @@ export const useApp = create<AppState>()(
     }),
     {
       name: "mc.app",
-      version: 3,
+      version: 4,
       // SÓ preferências: nunca persistir projects/mycockpit/limitedAgents/ready/
       // activeProjectId — esses vêm do banco no boot.
       partialize: (s) => ({
         theme: s.theme,
         sidebarOpen: s.sidebarOpen,
         contextOpen: s.contextOpen,
-        // O Office não é modo de boot (§6.1): rehidrata como "linear". O cast
-        // mantém o tipo persistido na união completa (o migrate devolve AppState).
-        viewMode: (s.viewMode === "office"
-          ? "linear"
-          : s.viewMode) as AppState["viewMode"],
+        viewMode: s.viewMode,
         settings: s.settings,
       }),
       // v1→v2: quem já tinha estado persistido é usuário EXISTENTE (não 1ª
@@ -300,6 +296,17 @@ export const useApp = create<AppState>()(
           p.settings = { ...(p.settings ?? {}), onboarded: true }
         }
         if (fromVersion < 3 && p.viewMode === "fusion") {
+          p.viewMode = "linear"
+        }
+        // v3→v4: o Escritório saiu do produto (office-removal-plan R2). Quem
+        // tinha "office" persistido (estados antigos, pré-partialize v3) cai
+        // no Trabalho — e qualquer valor órfão fora da união vai junto, nunca
+        // tela branca num modo que não existe.
+        if (
+          fromVersion < 4 &&
+          p.viewMode != null &&
+          !["painel", "linear", "sdd"].includes(p.viewMode)
+        ) {
           p.viewMode = "linear"
         }
         return p as unknown as AppState

@@ -83,7 +83,7 @@ beforeEach(() => {
   useApp.setState({
     deliveryDiff: null,
     contextOpen: true,
-    viewMode: "office",
+    viewMode: "painel",
     activeProjectId: null,
   })
   useChat.setState({ byId: {}, activeId: null })

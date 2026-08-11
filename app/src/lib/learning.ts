@@ -91,11 +91,11 @@ export async function reinforceLessons(ids: string[]): Promise<void> {
   await dbReinforceLessons(ids)
 }
 
-// ── P6: feedback fora do ChatPanel (mesa do office + página do Companion) ──
+// ── P6: feedback fora do ChatPanel (página do Companion) ──
 // O ChatPanel guarda os ids injetados num ref LOCAL do componente
-// (injectedLessonsRef) — a mesa e o celular não enxergam esse ref. Este
-// registro por conversa dá o mesmo insumo pro MESMO caminho do 👍
-// (reinforceLessons): sendFromDesk grava aqui a cada envio.
+// (injectedLessonsRef) — o celular não enxerga esse ref. Este registro por
+// conversa dá o mesmo insumo pro MESMO caminho do 👍 (reinforceLessons):
+// sendFromDesk (lib/fleet/send) grava aqui a cada envio.
 
 const injectedByConv = new Map<string, string[]>()
 

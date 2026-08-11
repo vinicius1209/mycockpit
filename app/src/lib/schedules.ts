@@ -380,16 +380,3 @@ export function nextScheduled<T extends SchedulableLike>(
   }
   return best
 }
-
-/** As PRÓXIMAS automações a disparar, em ordem crescente de next_run (no máx.
- *  `max`) — mesma régua do nextScheduled (habilitadas com next_run), que é o
- *  caso max=1. Alimenta o quadro de avisos do office. */
-export function upcomingScheduled<T extends SchedulableLike>(
-  schedules: T[],
-  max: number,
-): T[] {
-  return schedules
-    .filter((s) => s.enabled && s.nextRun != null)
-    .sort((a, b) => (a.nextRun as number) - (b.nextRun as number))
-    .slice(0, Math.max(0, max))
-}

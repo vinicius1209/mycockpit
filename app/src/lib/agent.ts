@@ -105,7 +105,7 @@ export async function runAgent(
 ): Promise<void> {
   // ADR-033 — usage acumulado por thread: ÚNICO ponto do app em que o baseline
   // entra e o acumulado volta. Todas as superfícies que rodam agent (chat,
-  // disputa, missão, escritório, agenda, SDD) passam por aqui, então nenhuma
+  // disputa, missão, agenda, SDD) passam por aqui, então nenhuma
   // delas precisa saber que existe motor que reporta acumulado.
   // Quem reporta acumulado sai do registry (capability), nunca de nome de
   // motor; sem resume não há thread anterior, então não há baseline.

@@ -3,7 +3,7 @@
 // e dá para travar em teste sem montar React.
 
 export interface BarMode {
-  id: "painel" | "linear" | "sdd" | "office"
+  id: "painel" | "linear" | "sdd"
   label: string
   available: boolean
   desc: string
@@ -27,11 +27,5 @@ export const MODES: readonly BarMode[] = [
     label: "Features",
     available: true,
     desc: "Planeje, contrate e entregue uma feature com gates de verificação",
-  },
-  {
-    id: "office",
-    label: "Escritório",
-    available: true,
-    desc: "Escritório virtual: seus agents trabalhando nas salas dos projetos",
   },
 ]

@@ -1,6 +1,6 @@
-// Fila ÚNICA de interações pendentes (§6.1 item 4 do docs/agent-office.md).
-// Fonte de verdade compartilhada entre o InteractionHost (card na UI) e o
-// lib/fleet/derive (mão levantada na mesa do office). Antes cada um mantinha a
+// Fila ÚNICA de interações pendentes (§6.1 item 4 do docs/agent-office.md,
+// doc histórico). Fonte de verdade compartilhada entre o InteractionHost
+// (card na UI) e o lib/fleet/derive. Antes cada um mantinha a
 // própria cópia (useState local + Map de módulo) e elas divergiam:
 // answer_interaction NÃO emite interaction://resolved (o backend só emite no
 // Drop, e só para pendentes), então quem esperava o evento ficava com a mão
@@ -177,14 +177,14 @@ export function decideBatch(
 }
 
 // ---------------------------------------------------------------------------
-// Aprovações CONTEXTUAIS (docs/agent-office.md §8): mapeamento request→conversa
-// + split por visibilidade. O mesmo helper alimenta o office (mão levantada na
-// mesa, lib/fleet/derive) e os hosts de card (inline no fluxo vs toast global).
+// Aprovações CONTEXTUAIS (docs/agent-office.md §8, doc histórico): mapeamento
+// request→conversa + split por visibilidade. O mesmo helper alimenta o
+// lib/fleet/derive e os hosts de card (inline no fluxo vs toast global).
 // ---------------------------------------------------------------------------
 
 /** Dono de um pedido pendente: a conversa + (missão) a fase resolvida do
- *  run_id. `phase` null = fase irresolvível (sem mesa no office, mas a
- *  conversa continua dona do pedido). */
+ *  run_id. `phase` null = fase irresolvível (a conversa continua dona do
+ *  pedido). */
 export type InteractionTarget =
   | { convId: string; kind: "linear" }
   | { convId: string; kind: "mission"; phase: number | null }
@@ -206,9 +206,9 @@ export function runIdOf(req: InteractionRequest): string | null {
  *
  *  Restrito a `approval` de propósito, mas o MOTIVO não é "pergunta não tem dono"
  *  (tem: o backend anexa run_id em todo pedido — ver `ownerByRunId`). É que o
- *  ÚNICO consumidor que sobrou fala só de permissão: a mesa do office levanta a
- *  mão com o rótulo "Aguardando aprovação" (lib/fleet/derive), e levantá-la por uma
- *  pergunta seria mentir sobre o que o agente pediu.
+ *  ÚNICO consumidor que sobrou fala só de permissão: o snapshot da frota
+ *  levanta a mão com o rótulo "Aguardando aprovação" (lib/fleet/derive), e
+ *  levantá-la por uma pergunta seria mentir sobre o que o agente pediu.
  *
  *  ⚠️ Se você precisa do dono para QUALQUER kind, use `ownerByRunId`. Foi essa
  *  confusão que deixou o companion mostrando pergunta pendente sem conversa, sem
@@ -278,7 +278,7 @@ export interface ContextualSplit {
    *  componentes: só a superfície DESSA conversa renderiza os cards. */
   inlineConvId: string | null
   /** O resto — toast global no canto, como sempre (conversa dona não-ativa,
-   *  outros viewModes: office/painel/sdd/agendado, ou pedido sem dono
+   *  outros viewModes: painel/sdd/agendado, ou pedido sem dono
    *  resolvível: run órfão / sem run_id). */
   global: InteractionRequest[]
 }
@@ -286,7 +286,7 @@ export interface ContextualSplit {
 const EMPTY_SPLIT: ContextualSplit = { inline: [], inlineConvId: null, global: [] }
 
 /** Computa o split a partir dos stores (puro sobre getState; exportado p/
- *  teste). Office/painel/sdd/agendado ⇒ nenhuma conversa visível ⇒ tudo global. */
+ *  teste). Painel/sdd/agendado ⇒ nenhuma conversa visível ⇒ tudo global. */
 export function computeContextualSplit(): ContextualSplit {
   const queue = useInteractions.getState().queue
   if (queue.length === 0) return EMPTY_SPLIT
@@ -635,9 +635,8 @@ export function announceArrival(
 
 // Alimentação ÚNICA da fila: assina os eventos globais no IMPORT do módulo —
 // o App.tsx importa cedo (side-effect), então approvals disparados no boot já
-// entram na fila antes da 1ª visita ao office. Listeners vivem a vida inteira
-// do app (sem unlisten, de propósito). Fora do Tauri não há eventos (o
-// sim-data do office cobre o dev no browser).
+// entram na fila antes de qualquer superfície montar. Listeners vivem a vida
+// inteira do app (sem unlisten, de propósito). Fora do Tauri não há eventos.
 if (isTauri()) {
   void onInteractionRequest((req) => {
     const before = useInteractions.getState().queue

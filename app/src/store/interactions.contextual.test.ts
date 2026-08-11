@@ -2,8 +2,8 @@
 // - convIdForInteraction: mapeamento request→conversa (extraído do bridge/
 //   derive — turno linear por runId, missão por prefixo `missionId::phase-N`).
 //   Ele segue devolvendo null p/ question, mas agora por um motivo estreito: é o
-//   recorte APPROVAL-ONLY das superfícies que só falam de permissão (a mão da
-//   mesa no office, o item de aprovação do companion). NÃO é mais a régua do
+//   recorte APPROVAL-ONLY das superfícies que só falam de permissão (o item de
+//   aprovação do companion, via lib/fleet/derive). NÃO é mais a régua do
 //   roteamento contextual;
 // - computeContextualSplit: split por visibilidade, e desde a auditoria da
 //   pergunta ele usa a régua SEM filtro de kind (o backend anexa run_id em todo
@@ -182,8 +182,8 @@ describe("convIdForInteraction", () => {
   it("aceita o run_id no TOPO (shape do backend) e dentro de data (legado)", () => {
     const chat = { byId: { c1: { runId: "r-1" } } }
     // regressão: o backend manda o run_id irmão de `data`. Ler só `data.run_id`
-    // devolvia null p/ TODO pedido real ⇒ nada renderizava inline e a mão do
-    // escritório nunca subia.
+    // devolvia null p/ TODO pedido real ⇒ nada renderizava inline e a mão
+    // levantada (lib/fleet/derive) nunca subia.
     expect(
       convIdForInteraction(aprovacao("i1", "r-1"), chat, { byConv: {} }),
     ).toEqual({ convId: "c1", kind: "linear" })
@@ -207,8 +207,8 @@ describe("convIdForInteraction", () => {
   })
 
   it("question ⇒ null AQUI, mesmo com run_id da conversa (recorte approval-only)", () => {
-    // Este helper é o que a mesa do office e o item de aprovação do companion
-    // consomem: os dois só sabem falar de permissão ("Aguardando aprovação",
+    // Este helper é o que o item de aprovação do companion (lib/fleet/derive)
+    // consome: ele só sabe falar de permissão ("Aguardando aprovação",
     // comando + tool). A pergunta TEM dono resolvível pelo run_id, e quem precisa
     // dele (split inline + índice de espera da sidebar) usa a régua sem filtro de
     // kind — provado nos testes de computeContextualSplit logo abaixo.
@@ -262,8 +262,8 @@ describe("computeContextualSplit", () => {
     expect(split.global).toEqual([req])
   })
 
-  it("viewMode office ⇒ tudo global (o office tem os próprios beacons)", () => {
-    useApp.setState({ viewMode: "office" })
+  it("viewMode fora do linear (painel) ⇒ tudo global (nenhuma conversa na tela)", () => {
+    useApp.setState({ viewMode: "painel" })
     useChat.setState({
       activeId: "c1",
       byId: { c1: conversa("p1", { runId: "r-1", running: true }) },
@@ -341,10 +341,10 @@ describe("computeContextualSplit", () => {
     expect(split.global).toEqual([q])
   })
 
-  it("pergunta no viewMode office ⇒ global (o office tem os próprios beacons)", () => {
+  it("pergunta fora do linear (painel) ⇒ global (nenhuma conversa na tela)", () => {
     // o split por visibilidade não pode ter sido perdido junto com o filtro de
     // kind: fora do linear NENHUMA conversa está na tela, nem pra pergunta.
-    useApp.setState({ viewMode: "office" })
+    useApp.setState({ viewMode: "painel" })
     useChat.setState({
       activeId: "c1",
       byId: { c1: conversa("p1", { runId: "r-1", running: true }) },

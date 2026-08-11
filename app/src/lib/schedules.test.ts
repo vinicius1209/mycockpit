@@ -13,7 +13,6 @@ import {
   scheduleLifecycle,
   splitDueAndMissed,
   toLocalDateTimeValue,
-  upcomingScheduled,
   type Recurrence,
 } from "./schedules"
 
@@ -379,35 +378,5 @@ describe("nextScheduled + fmtUntilShort", () => {
     expect(fmtUntilShort(12 * 60_000)).toBe("12min")
     expect(fmtUntilShort(2 * 3600_000)).toBe("2h")
     expect(fmtUntilShort(3 * 24 * 3600_000)).toBe("3d")
-  })
-})
-
-describe("upcomingScheduled (quadro de avisos do office)", () => {
-  const rows = [
-    { enabled: true, nextRun: 3000 },
-    { enabled: true, nextRun: 1000 },
-    { enabled: false, nextRun: 500 }, // pausado não conta
-    { enabled: true, nextRun: null }, // sem next_run não conta
-    { enabled: true, nextRun: 2000 },
-  ]
-  it("lista em ordem crescente de next_run, só habilitados com next_run", () => {
-    expect(upcomingScheduled(rows, 4).map((s) => s.nextRun)).toEqual([
-      1000, 2000, 3000,
-    ])
-  })
-  it("respeita o teto max (o quadro mostra até 4)", () => {
-    expect(upcomingScheduled(rows, 2).map((s) => s.nextRun)).toEqual([
-      1000, 2000,
-    ])
-    expect(upcomingScheduled(rows, 0)).toEqual([])
-  })
-  it("max=1 coincide com o nextScheduled (mesma régua do badge)", () => {
-    expect(upcomingScheduled(rows, 1)[0]).toBe(nextScheduled(rows))
-    expect(upcomingScheduled([], 4)).toEqual([])
-  })
-  it("não muta a lista de entrada (sort em cópia)", () => {
-    const antes = rows.map((s) => s.nextRun)
-    upcomingScheduled(rows, 4)
-    expect(rows.map((s) => s.nextRun)).toEqual(antes)
   })
 })

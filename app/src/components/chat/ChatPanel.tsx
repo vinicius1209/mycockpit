@@ -594,11 +594,11 @@ export function ChatPanel() {
     // NÃO condicionar a `viewMode`: este handleSend É o turno linear (Fusion e
     // Mission têm dispatchers próprios e nunca passam por aqui), então o
     // viewMode era só um proxy — e um proxy ERRADO, porque é valor de TELA
-    // capturado no closure da render. Enfileirar na conversa A, ir pro
-    // Escritório e deixar o turno terminar drenava a fila no alvo certo (a
+    // capturado no closure da render. Enfileirar na conversa A, trocar de
+    // superfície e deixar o turno terminar drenava a fila no alvo certo (a
     // frente do sendTarget consertou isso) mas SEM as lições, só porque a tela
-    // tinha mudado. O `sendFromDesk` do office já injetava sem condição — agora
-    // os dois caminhos concordam.
+    // tinha mudado. O `sendFromDesk` (lib/fleet/send) já injetava sem condição
+    // — agora os dois caminhos concordam.
     // Comandos "/" honestos por fonte×motor: só conversa claude-code com
     // comando de fonte claude viaja CRU (o CLI interpreta nativamente); o
     // resto expande AQUI — em codex/agy o /nome literal era texto que o motor

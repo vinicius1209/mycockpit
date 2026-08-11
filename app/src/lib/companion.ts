@@ -1,5 +1,5 @@
-// PONTE do Companion Web no FRONT (docs/agent-office.md §8, backlog COMPANION —
-// onda 1): o cérebro vive NESTA webview (stores useChat/useMission/
+// PONTE do Companion Web no FRONT (docs/agent-office.md §8, doc histórico;
+// backlog COMPANION — onda 1): o cérebro vive NESTA webview (stores useChat/useMission/
 // useInteractions); o Rust é camada fina (servidor HTTP+WS). Este módulo escala
 // o padrão provado da tray (set_tray_snapshot / tray://action):
 //   OUT — push de estado coalescido (≤2Hz) via invoke("set_companion_snapshot")
@@ -10,7 +10,7 @@
 //         abort, cancelDeskTurn, ensureDeskConversation+sendFromDesk) — as
 //         guardas ficam intactas, nada de bypass.
 // Import sancionado do lib/fleet/send (ex-office/bridge/send, §6.1 item 5 do
-// doc). NÃO depende do office montado: tudo sai dos stores direto.
+// doc). NÃO depende de nenhuma superfície montada: tudo sai dos stores direto.
 
 import { invoke } from "@tauri-apps/api/core"
 import { getAgentDef } from "@/lib/agentDefs"
@@ -217,7 +217,7 @@ function linearDetail(convId: string): string {
 }
 
 /** Monta o snapshot completo DOS STORES (síncrono, puro sobre getState — não
- *  depende do office montado). `extras` = cache assíncrono de ledger/entregas. */
+ *  depende de superfície montada). `extras` = cache assíncrono de ledger/entregas. */
 export function buildCompanionSnapshot(
   extras: CompanionExtras = EMPTY_EXTRAS,
 ): CompanionSnapshot {
@@ -642,7 +642,7 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
         console.warn("[companion] projeto desconhecido — ignorado", projectId)
         return
       }
-      const officeAgent = agent as OfficeAgentId
+      const fleetAgent = agent as OfficeAgentId
       // P5: convId explícito ("abrir conversa" não-mesa no celular) SÓ vale se
       // a conversa pertence às metas do projeto — qualquer outro id cai na
       // conversa de MESA (nunca escreve numa conversa alheia/fantasma). As
@@ -653,7 +653,7 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
       const useWanted = !!wanted && metas.some((m) => m.id === wanted)
       const convId = useWanted
         ? wanted
-        : await ensureDeskConversation(projectId, officeAgent)
+        : await ensureDeskConversation(projectId, fleetAgent)
       // F-A (follow-up S0) — guarda de availability ANTES de despachar: CLI
       // ausente/deslogada não recebe turno. O POST /api/action já devolveu 202
       // (fire-and-forget), então a resposta honesta volta pro celular pelo
@@ -670,7 +670,7 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
       const conv = useChat.getState().byId[convId]
       // pareceres de conselheiro (advice) NÃO travam o agent do 1º turno (E1).
       const locked = conv != null && hasExecutorTurn(conv.items)
-      let effectiveAgent: string = locked ? conv.agent : officeAgent
+      let effectiveAgent: string = locked ? conv.agent : fleetAgent
       // Preset da conversa manda no agent do 1º turno (mesma resolução do
       // sendFromDesk, inclusive a re-injeção D1: travada SEM resposta).
       if (conv?.presetId && (!locked || !hasAssistantReply(conv.items))) {
@@ -705,7 +705,7 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
         convId,
         projectId,
         projectPath: proj.path,
-        agent: officeAgent,
+        agent: fleetAgent,
         text,
         attachments: uploadedAttachments(p),
       })

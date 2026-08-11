@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react"
+import { lazy, Suspense, useEffect } from "react"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { toast } from "sonner"
@@ -32,8 +32,8 @@ import { useFusion } from "@/store/fusion"
 import { useMission } from "@/store/mission"
 import { useNotifs } from "@/store/notifications"
 // Side-effect: registra os listeners globais de interação (interaction://
-// request/resolved) no BOOT — approvals disparados antes da 1ª visita ao
-// office já entram na fila única (store) que host e derive compartilham.
+// request/resolved) no BOOT — approvals disparados antes de qualquer superfície
+// montar já entram na fila única (store) que host e derive compartilham.
 import {
   awaitingDecisionCount,
   currentOriginAnyKind,
@@ -88,10 +88,6 @@ const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 const queryClient = new QueryClient()
 
-// Agent Office (O1): lazy — o chunk (Pixi incluso) só baixa na 1ª visita ao
-// modo; depois fica montado com `hidden` (sim, ticker do Pixi e derive parados
-// — quem cumpre isso é o OfficeMode) como Painel/Trabalho.
-const OfficeMode = lazy(() => import("@/office/ui/OfficeMode"))
 const FlightPlansView = lazy(() =>
   import("@/components/mission/FlightPlansView").then((module) => ({
     default: module.FlightPlansView,
@@ -143,18 +139,10 @@ export default function App() {
   const trayCloseHintShown = useApp((s) => s.settings.trayCloseHintShown)
   const activeProjectId = useApp((s) => s.activeProjectId)
 
-  // Office: monta LAZY na 1ª visita e nunca desmonta (padrão Painel/Trabalho —
-  // remontar destruiria o mundo/canvas); ao sair fica hidden e o OfficeMode
-  // para simulação, desenho (ticker do Pixi) e derivação do snapshot.
-  const [officeVisited, setOfficeVisited] = useState(false)
-  useEffect(() => {
-    if (viewMode === "office") setOfficeVisited(true)
-  }, [viewMode])
-
   // Atalho de ditado (estilo Wispr): tap alterna, hold é push-to-talk. O combo
   // vem de settings.dictationHotkey (lido por evento — trocar vale na hora;
   // null = desativado). O alvo é o registro fino de lib/dictationHotkey
-  // (MicButton/docks do office); não dispara com modal aberto (⌘K e afins:
+  // (MicButton do composer); não dispara com modal aberto (⌘K e afins:
   // dialog Radix com data-state=open) e respeita o MESMO gate do MicButton
   // (settings.dictationEnabled).
   useEffect(
@@ -817,25 +805,6 @@ export default function App() {
                       >
                         <ChatPanel />
                       </div>
-                      {/* Office (O1): lazy mount na 1ª visita, depois fica
-                          montado com `hidden` (o próprio OfficeMode esconde a
-                          raiz e para sim + ticker do Pixi + derive — §7).
-                          Wrapper relative: o OfficeMode é absolute inset-0. */}
-                      {officeVisited && (
-                        <div
-                          className={cn(
-                            "relative h-full",
-                            (scheduledOpen || flightPlansOpen || viewMode !== "office") &&
-                              "hidden",
-                          )}
-                        >
-                          <Suspense fallback={null}>
-                            <OfficeMode
-                              hidden={scheduledOpen || flightPlansOpen || viewMode !== "office"}
-                            />
-                          </Suspense>
-                        </div>
-                      )}
                       {flightPlansOpen ? (
                         <Suspense
                           fallback={
@@ -884,7 +853,7 @@ export default function App() {
             card em QUALQUER viewMode (o ChatPanel não o monta mais). */}
         <GlobalInteractionHost />
         {/* Lightbox ÚNICO do fio (evidência de tool B1 + anexos do usuário):
-            host global — MessageList existe em Linear/Painel/Office e o
+            host global — MessageList existe em Linear e Painel e o
             overlay é um só. Fechado renderiza null. */}
         <LightboxOverlay />
         <SettingsDialog />

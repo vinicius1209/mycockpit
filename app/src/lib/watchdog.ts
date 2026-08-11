@@ -2,11 +2,12 @@
 // fica minutos sem produzir NENHUM item novo costuma ser CLI travada (socket
 // pendurado, prompt engolido, processo zumbi) — e nada avisava. Este vigia
 // observa o useChat FORA do hot path (subscribe coalescido + tick lento),
-// compara a ASSINATURA leve dos itens (padrão itemsSignature do derive do
-// office) e, passado o limiar (settings.stalledAfterMin; 0 = desligado), avisa
-// UMA vez por episódio: notificação nativa (notifyTurnStalled) + toast
-// acionável ("Ver conversa" / "Cancelar turno") + flag transient stalledSince
-// na conversa (derive do office e snapshot do Companion leem). Atividade nova
+// compara a ASSINATURA leve dos itens (padrão itemsSignature do
+// lib/fleet/derive) e, passado o limiar (settings.stalledAfterMin; 0 =
+// desligado), avisa UMA vez por episódio: notificação nativa
+// (notifyTurnStalled) + toast acionável ("Ver conversa" / "Cancelar turno") +
+// flag transient stalledSince na conversa (lib/fleet/derive e snapshot do
+// Companion leem). Atividade nova
 // fecha o episódio — mudo DE NOVO por outro período completo ⇒ novo aviso.
 //
 // S2.2 generaliza o vigia pro BOARD: checkStalledCards varre cards em

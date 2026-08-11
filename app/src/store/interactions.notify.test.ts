@@ -6,8 +6,8 @@
 // mesmo cobrindo o kind o aviso morreria sem dono. Por isso a notificação usa
 // `ownerByRunId` — que hoje é a régua de todo mundo que responde "quem está
 // esperando você" (aviso, card inline, sinal da sidebar); o
-// `convIdForInteraction` ficou só com as superfícies de permissão (mesa do
-// office, item de aprovação do companion).
+// `convIdForInteraction` ficou só com as superfícies de permissão (o item de
+// aprovação do companion, via lib/fleet/derive).
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { InteractionRequest } from "@/lib/interaction"

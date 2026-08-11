@@ -9,10 +9,9 @@
 // "ctrl+alt+KeyD". e.code (posição física da tecla) dá independência de
 // layout. null ⇒ atalho desativado (handler inerte).
 //
-// O ALVO é um registro fino: cada dono de mic (MicButton no Trabalho, docks do
-// office) se registra ao montar e sai ao desmontar. O último registrado E
-// disponível vence — abrir o dock do office o coloca na frente do composer do
-// Trabalho; fechar devolve. `isAvailable` cobre superfícies que ficam MONTADAS
+// O ALVO é um registro fino: cada dono de mic (hoje só o MicButton do
+// Trabalho) se registra ao montar e sai ao desmontar. O último registrado E
+// disponível vence. `isAvailable` cobre superfícies que ficam MONTADAS
 // mas escondidas na troca de modo (ChatPanel vira `hidden`): botão sem
 // offsetParent = fora de cena, pulado.
 //

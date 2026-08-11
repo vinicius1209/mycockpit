@@ -215,7 +215,8 @@ export interface ConversationMeta {
   color: string | null
   worktreePath: string | null
   /** Agent persistido da conversa (null = nunca rodou/persistiu — livre).
-   *  Permite ao office achar "a conversa da mesa" sem carregar cada linha. */
+   *  Permite achar "a conversa da mesa" de cada agent (ensureDeskConversation,
+   *  lib/fleet/send — o Companion usa) sem carregar cada linha. */
   agent: string | null
 }
 

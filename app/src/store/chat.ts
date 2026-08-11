@@ -388,8 +388,8 @@ export interface ConvState {
    *  quebrar factories — ausente = sem preset (camada crua). */
   presetId?: string | null
   presetDigest?: string | null
-  /** Nome do preset resolvido na hidratação (rótulo da mesa no Office, S3.5).
-   *  null com presetId presente = preset apagado (o drift avisa). */
+  /** Nome do preset resolvido na hidratação (rótulo da mesa no snapshot da
+   *  frota, S3.5). null com presetId presente = preset apagado (o drift avisa). */
   presetName?: string | null
   /** Linha corrompida no banco (JSON não parseou): envio e persist BLOQUEADOS
    *  pra não sobrescrever dados ainda recuperáveis via SQLite. */
@@ -522,7 +522,7 @@ interface ChatState {
   /** F6 — cria uma conversa em BACKGROUND (automação agendada): grava no DB com
    *  título fixo e registra no store SEM roubar a seleção do usuário (não mexe
    *  em activeId/projectId ativo). O run escreve nela via start/handleEvent.
-   *  `agent` (opcional, office §5.3) carimba o agent já na criação — meta,
+   *  `agent` (opcional) carimba o agent já na criação — meta,
    *  byId E banco (a coluna nasce NOT NULL DEFAULT claude-code; sem o carimbo
    *  a mesa de outro agent adotaria a conversa recém-criada). */
   registerConversation: (
@@ -534,7 +534,7 @@ interface ChatState {
   switchConversation: (id: string) => Promise<void>
   /** Garante que a conversa está carregada em byId (do disco se preciso) SEM
    *  roubar a seleção — não toca em activeId/projectId. É a `ensureLoaded`
-   *  promovida a action p/ superfícies fora do ChatPanel (ex.: office). */
+   *  promovida a action p/ superfícies fora do ChatPanel (ex.: companion). */
   ensureConversationLoaded: (projectId: string, convId: string) => Promise<void>
   removeConversation: (id: string) => Promise<void>
   /** Renomeia manualmente (o título passa a ser fixo, não mais auto-derivado). */
@@ -1595,8 +1595,8 @@ export const useChat = create<ChatState>((set, get) => {
     /** Agent escolhido no composer de uma conversa AINDA VAZIA. Sem isto, o
      *  seletor era estado local do CommandConsole até o 1º envio, e a sidebar
      *  mostrava o logo do default (Claude Code) mesmo com Antigravity escolhido
-     *  — você via uma coisa e a linha dizia outra. Também faz a mesa certa do
-     *  Office adotar a conversa desde já (derive usa conv.agent).
+     *  — você via uma coisa e a linha dizia outra. Também faz a mesa certa
+     *  adotar a conversa desde já (lib/fleet/derive usa conv.agent).
      *
      *  NO-OP em conversa com itens: aí o agent está TRAVADO no 1º run e mexer
      *  aqui mentiria sobre quem produziu o histórico. */
@@ -1850,7 +1850,7 @@ export const useChat = create<ChatState>((set, get) => {
         const list = st.conversationsByProject[c.projectId]
         if (!list) return {}
         // espelha o agent gravado (dbSave acima escreve c.agent na linha) — a
-        // meta em memória não pode divergir do banco (office lê meta.agent).
+        // meta em memória não pode divergir do banco (derive lê meta.agent).
         const nextList = list.map((cv) =>
           cv.id === convId ? { ...cv, title, updatedAt: now, agent: c.agent } : cv,
         )

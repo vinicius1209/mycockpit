@@ -144,8 +144,8 @@ export function InteractionCard({
  *  fila mostra um card por vez (FIFO), cada um respondido pelo seu `id`.
  *
  *  A fila mora no store/interactions (fonte ÚNICA, alimentada pelos eventos
- *  globais no import do módulo) — o office (lib/fleet/derive) lê a MESMA fila,
- *  então o card daqui e a mão levantada na mesa nunca divergem. */
+ *  globais no import do módulo) — o snapshot da frota (lib/fleet/derive, que o
+ *  Companion consome) lê a MESMA fila, então os dois nunca divergem. */
 export function InteractionHost() {
   const { global } = useContextualSplit()
   if (global.length === 0) return null
