@@ -631,6 +631,9 @@ pub fn run() {
             companion::companion_stop,
             companion::companion_status,
             companion::companion_revoke_token,
+            companion::companion_list_devices,
+            companion::companion_pair_decide,
+            companion::companion_revoke_device,
             companion::set_companion_snapshot,
             companion::companion_conv_updated,
             companion::companion_action_result
