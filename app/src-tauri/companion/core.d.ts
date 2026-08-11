@@ -18,6 +18,15 @@ declare global {
     retryInMs: number | null
   }
 
+  interface CompanionWebOfflineInput {
+    mock: boolean
+    token: boolean
+    screen: string
+    conn: string
+    connStatus: CompanionWebConnState["status"]
+    snapStale: boolean
+  }
+
   var CompanionCore: {
     parseRoute(hash: string): CompanionWebRoute
     routeHash(route: Partial<CompanionWebRoute> | null | undefined): string
@@ -27,6 +36,7 @@ declare global {
       event: string,
     ): CompanionWebConnState
     connLabel(state: CompanionWebConnState | null): string
+    offlineBanner(s: CompanionWebOfflineInput | null): boolean
     seenAgo(nowMs: number, atMs: number | null | undefined): string
   }
 }

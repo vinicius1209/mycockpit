@@ -88,6 +88,52 @@ describe("visto há (carimbo honesto do snapshot)", () => {
   })
 })
 
+describe("banner de offline (dado velho carimbado desde o boot)", () => {
+  const base: CompanionWebOfflineInput = {
+    mock: false,
+    token: true,
+    screen: "brief",
+    conn: "connecting",
+    connStatus: "connecting",
+    snapStale: false,
+  }
+
+  it("boot offline com snapshot restaurado do cache carimba JÁ, antes da primeira queda", () => {
+    // Mac desligado sem RST: status ainda é connecting, mas o dado na tela é
+    // de ontem — o banner não espera o primeiro timeout de rede.
+    expect(core.offlineBanner({ ...base, snapStale: true })).toBe(true)
+  })
+
+  it("primeiro load sem dado nenhum não flasha banner durante o handshake", () => {
+    expect(core.offlineBanner(base)).toBe(false)
+  })
+
+  it("queda real (reconnecting) mostra o banner mesmo sem dado velho", () => {
+    expect(
+      core.offlineBanner({ ...base, connStatus: "reconnecting" }),
+    ).toBe(true)
+  })
+
+  it("conectado nunca mostra banner, mesmo logo após restaurar cache", () => {
+    expect(
+      core.offlineBanner({ ...base, conn: "on", snapStale: true }),
+    ).toBe(false)
+  })
+
+  it("sem token, em mock ou na tela de pareamento o banner não existe", () => {
+    expect(core.offlineBanner({ ...base, token: false, snapStale: true })).toBe(
+      false,
+    )
+    expect(core.offlineBanner({ ...base, mock: true, snapStale: true })).toBe(
+      false,
+    )
+    expect(
+      core.offlineBanner({ ...base, screen: "pair", snapStale: true }),
+    ).toBe(false)
+    expect(core.offlineBanner(null)).toBe(false)
+  })
+})
+
 describe("máquina de reconexão (backoff com teto)", () => {
   it("backoff dobra a cada tentativa e trava em 15s", () => {
     expect(core.backoffDelay(0)).toBe(1_000)

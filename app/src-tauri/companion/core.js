@@ -99,6 +99,19 @@
     return "reconectando…";
   }
 
+  // ---------------- banner de offline (decisão pura) ----------------
+  // Honestidade em DUAS pontas: dado VELHO restaurado do cache (snapStale) é
+  // carimbado JÁ no boot, sem esperar a primeira queda de rede — Mac desligado
+  // sem RST não ganha dezenas de segundos de "custos de ontem" fingindo vivos.
+  // E "nunca tive dado" com rede boa não flasha banner mentiroso: sem stale e
+  // sem queda real (reconnecting), nada aparece durante o handshake.
+
+  function offlineBanner(s) {
+    if (!s || s.mock || !s.token || s.screen === "pair") return false;
+    if (s.conn === "on") return false;
+    return s.connStatus === "reconnecting" || !!s.snapStale;
+  }
+
   // ---------------- "visto há" (carimbo honesto) ----------------
   // Dado velho nunca finge vivo: quando o Mac está fora do ar, a página mostra
   // o último snapshot CARIMBADO com a idade real. Sem timestamp → "" (nunca
@@ -119,6 +132,7 @@
     backoffDelay: backoffDelay,
     connReduce: connReduce,
     connLabel: connLabel,
+    offlineBanner: offlineBanner,
     seenAgo: seenAgo,
   };
 });

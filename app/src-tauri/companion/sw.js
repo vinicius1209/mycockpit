@@ -43,9 +43,11 @@ self.addEventListener("activate", function (e) {
 self.addEventListener("fetch", function (e) {
   var url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
-  // dados NUNCA cacheados: /api vai direto à rede; offline falha de verdade e
-  // a página mostra o estado honesto (banner + retry automático).
-  if (url.pathname === "/api" || url.pathname.indexOf("/api/") === 0) return;
+  // ALLOWLIST, não denylist: só o shell listado passa pelo cache. Qualquer
+  // rota nova (inclusive dado servido fora de /api num C2/C3 futuro) vai
+  // direto à rede — dado nunca vira snapshot velho silencioso; offline falha
+  // de verdade e a página mostra o estado honesto (banner + retry).
+  if (SHELL.indexOf(url.pathname) < 0) return;
   e.respondWith(
     fetch(e.request).then(function (res) {
       if (res && res.ok) {

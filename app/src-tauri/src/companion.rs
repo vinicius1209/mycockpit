@@ -922,14 +922,54 @@ mod tests {
     }
 
     #[test]
-    fn fundacao_c1_sw_cacheia_shell_e_nunca_dados() {
-        // guarda explícita: /api passa reto pela rede, jamais entra no cache
-        assert!(COMPANION_SW.contains("/api/"));
-        // o shell inteiro está na lista de pré-cache
-        for asset in ["/core.js", "/manifest.webmanifest", "/icon-192.png"] {
-            assert!(COMPANION_SW.contains(asset), "shell sem {asset}");
+    fn fundacao_c1_sw_cacheia_shell_por_allowlist_e_nunca_dados() {
+        // extrai a allowlist REAL (var SHELL = [ … ];) e confere a SEMÂNTICA:
+        // shell completo dentro, nenhum caminho de dado, e o fetch handler só
+        // age quando o pathname ESTÁ na lista (allowlist, não denylist — rota
+        // nova de dado fora de /api nunca vira snapshot velho silencioso).
+        let start = COMPANION_SW
+            .find("var SHELL = [")
+            .expect("sw.js sem a allowlist SHELL");
+        let block = &COMPANION_SW[start..];
+        let block = &block[..block.find("];").expect("allowlist sem fechamento")];
+        let items: Vec<&str> = block.split('"').skip(1).step_by(2).collect();
+        for asset in [
+            "/",
+            "/core.js",
+            "/manifest.webmanifest",
+            "/icon-192.png",
+            "/icon-512.png",
+            "/apple-touch-icon.png",
+        ] {
+            assert!(items.contains(&asset), "shell sem {asset} na allowlist");
         }
+        // nada dinâmico na lista: todo item é asset embutido conhecido
+        for item in &items {
+            assert!(
+                !item.starts_with("/api"),
+                "dado dinâmico na allowlist do cache: {item}"
+            );
+        }
+        // o guard do fetch é allowlist de verdade: fora da lista → passa reto
+        assert!(COMPANION_SW.contains("SHELL.indexOf(url.pathname) < 0"));
         assert!(!COMPANION_SW.contains("http://")); // auto-contido
+    }
+
+    #[test]
+    fn fundacao_c1_revogacao_401_limpa_token_e_snapshot_cacheado() {
+        // aparelho revogado não retém NADA: o handler de 401 da página apaga o
+        // token E o snapshot cacheado (board/custos/attention) do localStorage.
+        let start = COMPANION_PAGE
+            .find("function onUnauthorized()")
+            .expect("página sem handler de 401");
+        // corpo do handler = até a próxima declaração de função
+        let body = &COMPANION_PAGE[start..];
+        let body = &body[..body.find("\nfunction ").expect("handler sem fim")];
+        assert!(body.contains("removeItem(LS_TOKEN)"), "401 não apaga o token");
+        assert!(
+            body.contains("removeItem(LS_SNAP)"),
+            "401 não apaga o snapshot cacheado"
+        );
     }
 
     #[test]

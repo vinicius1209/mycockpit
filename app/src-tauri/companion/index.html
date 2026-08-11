@@ -403,6 +403,7 @@ var S = {
   pickCtx: null,            // pra onde vai o próximo anexo: {kind:"gate",id} | {kind:"chat"}
   sigs: {},                 // assinaturas por seção (evita re-render que rouba foco)
   snapAt: null,             // quando o snapshot corrente foi VISTO (carimbo honesto)
+  snapStale: false,         // true = snapshot RESTAURADO do cache (velho até chegar dado vivo)
   connSt: { status: "connecting", attempt: 0, retryInMs: null }, // máquina de reconexão (core.js)
 };
 
@@ -562,6 +563,15 @@ function initToken() {
   if (MOCK && !S.token) S.token = "mock";
 }
 function onUnauthorized() {
+  // pareamento revogado: o aparelho não retém NADA — token e snapshot cacheado
+  // (board/custos/attention) somem juntos; o retry de WS para sozinho (sem
+  // token o connectWS retorna cedo).
+  try { localStorage.removeItem(LS_TOKEN); } catch (e) {}
+  try { localStorage.removeItem(LS_SNAP); } catch (e) {}
+  S.token = null;
+  S.snap = null;
+  S.snapAt = null;
+  S.snapStale = false;
   $("#pairMsg").textContent = "Token inválido ou expirado — escaneie o QR do Companion de novo no app.";
   showScreen("pair");
   setConn("off");
@@ -656,6 +666,10 @@ function notifyNewAttention(items) {
 function applySnapshot(snap, seenAtMs) {
   if (!snap || typeof snap !== "object") return;
   S.snapAt = seenAtMs || Date.now();
+  // restaurado do cache = VELHO até prova viva: o banner/carimbo aparecem JÁ
+  // no boot (Mac desligado não ganha janela de dado de ontem fingindo vivo);
+  // o primeiro snapshot vivo limpa.
+  S.snapStale = !!seenAtMs;
   if (!seenAtMs && !MOCK) {
     lsSet(LS_SNAP, JSON.stringify({ at: S.snapAt, snap: snap }));
   }
@@ -749,10 +763,14 @@ window.addEventListener("hashchange", function () { applyRoute(currentRoute()); 
 function renderOffline() {
   var el = $("#offline");
   if (!el) return;
-  // banner só depois de uma queda REAL (status reconnecting): o "connecting"
-  // do primeiro carregamento não é falta de conexão, é aperto de mão.
-  var off = !MOCK && !!S.token && S.screen !== "pair" &&
-    S.conn !== "on" && S.connSt.status === "reconnecting";
+  // decisão pura no core (offlineBanner): queda REAL (reconnecting) OU dado
+  // velho restaurado do cache (snapStale) — o handshake do primeiro load sem
+  // dado não flasha banner mentiroso. Fallback espelha o core sem ele.
+  var inp = { mock: MOCK, token: !!S.token, screen: S.screen, conn: S.conn,
+              connStatus: S.connSt.status, snapStale: S.snapStale };
+  var off = Core ? Core.offlineBanner(inp)
+    : (!inp.mock && inp.token && inp.screen !== "pair" && inp.conn !== "on" &&
+       (inp.connStatus === "reconnecting" || inp.snapStale));
   el.hidden = !off;
   if (el.hidden) return;
   $("#offlineSeen").textContent =
