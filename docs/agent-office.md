@@ -1,3 +1,10 @@
+> **DOC HISTÓRICO (11/08/2026).** O Escritório foi removido do app (ADR-035,
+> `docs/office-removal-plan.md`): decisão de produto — perfumaria não paga o
+> custo. A ponte de dados descrita aqui sobrevive em `app/src/lib/fleet/`
+> (Companion Web depende dela); a cena Pixi, docks e a aba morreram. Este doc
+> fica como memória do desenho — não descreve mais código vivo, EXCETO as
+> seções da ponte (§6/§8), cujas regras seguem valendo no endereço novo.
+
 # Agent Office — escritório virtual interativo
 
 > Design doc v2 (revisado por painel adversarial: game feel, integração, performance).

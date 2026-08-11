@@ -1,6 +1,14 @@
 # Remoção do Escritório — plano (foco de produto)
 
-> Status: aprovado pelo usuário em 11/08/2026. Decisão de produto: o Escritório
+> Status: **CONCLUÍDO (11/08/2026)** — R1 `935d020` (aprovado em review),
+> R2 `81f0934`+`161db5f` (reprovado 1x — 3 testes vivos de `buildRecoveryChoice`
+> morreram de carona e voltaram como `lib/recoveryChoice.test.ts`; migrate v4
+> ganhou teste próprio — aprovado no re-review), R3 = ADR-035 + agent-office.md
+> marcado histórico. Restos deliberados registrados no ADR (símbolos
+> `OFFICE_*`/flag `mc.office.perf` na ponte; comentários em 5 arquivos de
+> missão aguardando aquela frente).
+>
+> Aprovado pelo usuário em 11/08/2026. Decisão de produto: o Escritório
 > é "perfumaria" — bonito, sem ganho prático (o usuário vive na aba Trabalho, e
 > a superfície chegou a degradar a digitação via ticker do Pixi). Rumo maior:
 > produto de compra única, Mac/Linux — cada superfície mantida paga seu custo.

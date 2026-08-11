@@ -687,3 +687,32 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   o `cargo test` a executa. Com binário velho (swiftc da máquina falhando) o
   teste PULA com aviso ruidoso, e o `build.rs` avisa que o sidecar ficou na
   versão anterior — em vez de fingir verde.
+
+### ADR-035 — O Escritório sai do app: superfície precisa pagar seu custo; a ponte de dados fica ✅
+
+- **Contexto (11/08/2026):** decisão de produto do usuário, nas palavras dele: o
+  Escritório estava "ali só pra bonito, perfumaria" — ele vive na aba Trabalho.
+  Rumo maior: produto de compra única, Mac/Linux, onde cada superfície mantida
+  paga seu custo de manutenção. O episódio decisivo: o ticker do Pixi seguia
+  desenhando a 60 FPS com o office ESCONDIDO e degradava a digitação — a
+  superfície de espetáculo cobrando pedágio da superfície de trabalho.
+- **Decisão 1 — a cena sai inteira, os docks não migram:** mandar tarefa, ver
+  retry e estado vivo já existem no Trabalho; segunda porta para as mesmas
+  ações é custo dobrado com metade do polimento. `app/src/office/` (65
+  arquivos), aba/viewMode, OfficeRailContent, CommandMenu e `pixi.js`
+  removidos (R2, commits `81f0934` + `161db5f`).
+- **Decisão 2 — a ponte de dados NÃO é perfumaria e fica:** `derive`/`send`/
+  `types`/`perf` migraram para `app/src/lib/fleet/` (R1, `935d020`) porque o
+  Companion Web vive delas sem o office montado. É o contrato "o que a frota
+  faz agora".
+- **Decisão 3 — viewMode órfão nunca é tela branca:** persist v4 com
+  `migratePersistedApp` (pura, testada): `"office"` e qualquer valor fora da
+  união caem em `"linear"`.
+- **Caminho de volta documentado:** se houver demanda, o Escritório renasce
+  FORA do app como visão do Companion Web lendo o mesmo feed — nunca mais
+  dentro do processo que hospeda o composer. Não investir antes da demanda.
+- **Restos deliberados:** símbolos `OFFICE_AGENTS`/`OfficeAgentId`/
+  `OfficeSnapshot` e a flag `mc.office.perf` em `lib/fleet/` mantêm o nome
+  (renomear = mudança de comportamento/localStorage, fora do escopo do corte);
+  comentários "Escritório" em 5 arquivos de missão aguardam a frente de missão
+  liberar os arquivos. `docs/agent-office.md` vira doc histórico.
