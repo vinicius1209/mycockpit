@@ -1,5 +1,58 @@
 # Companion Web profissional — plano (visão registrada, execução futura)
 
+> **Status C3 (11/08/2026): ENTREGUE — Conversa.** O fio completo de qualquer
+> conversa agora vive no celular:
+>
+> - **Janela decidida no SERVIDOR** (guarda do fio grande): `/api/conv/{id}`
+>   devolve a cauda (default 60 itens, cap 200) + `start`/`total`;
+>   `?before=<índice>` pagina pra trás ("Carregar anteriores" na página, com
+>   scroll compensado). Medido com a maior conversa REAL desta máquina:
+>   1.9MB/1476 itens no SQLite; a cauda de 60 pesa ~68KB. A emenda é pura no
+>   core.js (`mergeThreadTail`/`mergeThreadOlder`): a cauda fresca SUBSTITUI a
+>   sobreposição (item de tool muta quando o result chega — dedupe por id
+>   manteria o velho); buraco entre faixa e cauda descarta o velho; página
+>   rasgada é ignorada.
+> - **Markdown**: decisão registrada — o app usa react-markdown+rehype, mas
+>   embutir isso no cliente vanilla (CSP 'self', zero CDN) custaria um bundle
+>   inteiro no binário; ficou um SUBSET PRÓPRIO testado no core.js
+>   (`renderMarkdown`): fence com `<pre>` scrollável, headers, listas, tabelas
+>   (wrapper com scroll próprio), quote, negrito/itálico/código inline e links
+>   SÓ http(s) (path de disco e `javascript:` ficam texto). Levantado dos fios
+>   reais do DB (negrito 372×, fences 45×, tabelas 36×, listas 199×); tudo
+>   escapado, fixtures reais nos testes. Limitação aceita: lista aninhada vem
+>   achatada. Item `advice` (parecer de Especialista) agora aparece (antes era
+>   invisível no celular).
+> - **Enviar em qualquer conversa com veredito**: o `send_message` da página
+>   ganha `actionId` por gesto (infra C2) e o executor devolve action-result
+>   honesto (fecha o furo registrado na revisão C2): aceite traz o convId REAL
+>   (página sem conversa resolvida adota o fio na hora), CLI deslogada devolve
+>   o motivo direto (além do notice persistido), rejeição interna do
+>   sendFromDesk não escapa; recusa derruba o eco, devolve o rascunho e mostra
+>   o motivo (nunca mensagem fantasma "enviada" no fio). Sem actionId (página
+>   antiga) o comportamento pré-C3 fica intacto, inclusive o shape da chamada.
+> - **Estado vivo**: "trabalhando há X" com tempo real (`elapsedLabel` +
+>   ticker de 5s); conversa aberta que ENTRA em execução refetcha na hora
+>   (turno disparado do desktop aparece sem gesto) — o fim de turno e o
+>   conv-updated já refetchavam desde C1/G1.
+> - **Anexos**: rota nova `GET /api/blob/{attachments|evidence}/{conv}/{file}`
+>   (Bearer via guard, allowlist fechada: raiz, pasta hex/uuid, alfabeto de
+>   arquivo, extensões dos anexos; `blob_path_parts` puro testado com paths
+>   reais). A página busca com fetch AUTENTICADO → objectURL (token nunca em
+>   URL de `<img>`); anexo de user e captura de tool aparecem no fio; pdf vira
+>   chip com nome; blob sumido (GC) vira "imagem indisponível", nunca ícone
+>   quebrado. MANDAR foto do celular já existia (upload multipart C2 + 📷 no
+>   composer) e segue pelo mesmo canal.
+>
+> Testes: `cargo test` 294 ok (32 no módulo companion: janela/paginação/cap,
+> allowlist do blob, vocabulário C3); `bun run test` 1830 ok (167 arquivos;
+> novos: companion.c3.test.ts 7 casos do veredito, companionWeb.test.ts +23
+> casos C3 com fixtures reais do DB); `tsc -b` limpo. Prova manual: página
+> real dirigida headless (mock) — briefing → fio com tabela/fence/lista →
+> envio → eco → typing com tempo → resposta; screenshots conferidos.
+> Registrado (fora do C3): tocar numa imagem para ver em tela cheia ficou de
+> fora; o snackbar de veredito ok do send_message só aparece fora do chat
+> (dentro, o próprio fio é a confirmação).
+
 > **Status C2 (11/08/2026): ENTREGUE — Ações.** O canal `/api/action` do C1 já
 > cobria muito (send_message, answer_gate, answer_interaction, stop_turn,
 > stop_mission, dispatch_card, close_card, feedback_lesson); o C2 ESTENDEU:
