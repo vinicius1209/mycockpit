@@ -247,6 +247,43 @@ describe("id de ação idempotente (makeActionId)", () => {
   })
 })
 
+describe("janela honesta do retry de lançamento (launchRetryDisposition)", () => {
+  const now = 1_700_000_000_000
+
+  it("dentro da janela: reusa o id (retry não duplica de verdade)", () => {
+    expect(core.launchRetryDisposition(now, now - 30_000)).toEqual({
+      reuse: true,
+      warn: null,
+    })
+    // borda: exatamente no limite ainda reusa
+    expect(
+      core.launchRetryDisposition(now, now - core.ACTION_REUSE_TTL_MS).reuse,
+    ).toBe(true)
+  })
+
+  it("janela expirada: id morre e a copy avisa que relançar pode duplicar", () => {
+    const d = core.launchRetryDisposition(
+      now,
+      now - core.ACTION_REUSE_TTL_MS - 1_000,
+    )
+    expect(d.reuse).toBe(false)
+    expect(d.warn).toContain("pode duplicar")
+  })
+
+  it("sem gesto anterior: id novo sem alarde (primeiro envio não é retry)", () => {
+    expect(core.launchRetryDisposition(now, null)).toEqual({
+      reuse: false,
+      warn: null,
+    })
+    expect(core.launchRetryDisposition(now, Number.NaN).warn).toBeNull()
+  })
+
+  it("a margem do cliente fica ABAIXO do TTL do servidor (5 min): relógio nunca joga a favor", () => {
+    expect(core.ACTION_REUSE_TTL_MS).toBeLessThan(5 * 60_000)
+    expect(core.ACTION_REUSE_TTL_MS).toBeGreaterThan(0)
+  })
+})
+
 describe("resposta de pergunta com opções (buildQuestionAnswer)", () => {
   // fixture com o shape REAL do snapshot (CompanionQuestion ← AskUserQuestion)
   const choices: CompanionWebChoice[] = [

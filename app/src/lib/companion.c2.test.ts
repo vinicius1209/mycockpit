@@ -430,6 +430,38 @@ describe("launch_task — conversa nova pelo MESMO caminho do composer", () => {
     }
   })
 
+  it("sendFromDesk REJEITOU (ex.: DB falhou no load interno): o veredito de erro ainda sai — nunca só timeout", async () => {
+    // revisão C2 §1: sem o catch, a exceção escapava, o fail() nunca rodava e
+    // nenhum action-result saía — o celular ficava 25s no escuro.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    useChat.setState({
+      registerConversation: vi.fn(async () => {}),
+      ensureConversationLoaded: vi.fn(async () => {}),
+    })
+    vi.mocked(sendFromDesk).mockRejectedValue(
+      new Error("banco indisponível durante o load"),
+    )
+    await expect(
+      handleCompanionAction({
+        kind: "launch_task",
+        projectId: "p1",
+        agent: "codex",
+        text: "oi",
+        actionId: AID,
+      }),
+    ).resolves.toBeUndefined() // a exceção NÃO escapa do executor
+    expect(actionResults()).toEqual([
+      expect.objectContaining({
+        actionId: AID,
+        kind: "launch_task",
+        ok: false,
+        message:
+          "O app não conseguiu iniciar o turno. Veja o desktop para detalhes.",
+      }),
+    ])
+    warn.mockRestore()
+  })
+
   it("guarda interna do sendFromDesk abortou (onAccepted nunca veio): fracasso honesto, não silêncio", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     useChat.setState({

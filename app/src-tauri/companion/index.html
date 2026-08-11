@@ -445,7 +445,7 @@ var S = {
   agentsFor: null,          // projeto selecionado na tela de agents
   chat: null,               // {projectId, projectName, agent, convId, explicitConv, items, echo:[], atts:[], sending, waitStart, fb:{}}
   prevRunning: {},          // convId→1 do snapshot ANTERIOR (detecta fim de turno)
-  launch: null,             // C2: {projectId, pilot:{kind:"agent"|"spec",id,backend}, busy, actionId, status}
+  launch: null,             // C2: {projectId, pilot:{kind:"agent"|"spec",id,backend}, busy, actionId, actionSentAt, status}
   pendingActions: {},       // C2: actionId → {kind} aguardando action-result do Mac
   pickCtx: null,            // pra onde vai o próximo anexo: {kind:"gate",id} | {kind:"chat"}
   sigs: {},                 // assinaturas por seção (evita re-render que rouba foco)
@@ -1160,6 +1160,7 @@ function onActionResult(d) {
       L.busy = false;
       if (d.ok) {
         L.actionId = null;
+        L.actionSentAt = null;
         L.status = null;
         $("#launchText").value = "";
         showNote("✓ " + (d.message || "Tarefa lançada."));
@@ -1171,6 +1172,7 @@ function onActionResult(d) {
       } else {
         // recusado: o próximo envio é OUTRO gesto (id novo); motivo na cara
         L.actionId = null;
+        L.actionSentAt = null;
         L.status = { cls: "err", msg: d.message || "O Mac recusou a tarefa." };
         renderLaunch();
       }
@@ -1183,7 +1185,7 @@ function onActionResult(d) {
 }
 
 function openLaunch(pid) {
-  if (!S.launch) S.launch = { projectId: null, pilot: null, busy: false, actionId: null, status: null };
+  if (!S.launch) S.launch = { projectId: null, pilot: null, busy: false, actionId: null, actionSentAt: null, status: null };
   if (pid) S.launch.projectId = pid;
   showScreen("launch");
   renderLaunch();
@@ -1233,9 +1235,25 @@ function submitLaunch() {
   var text = $("#launchText").value.trim();
   if (!L.projectId || !L.pilot || !text) return;
   // idempotência: UM id por gesto — retry manual reusa o id, o servidor
-  // dedupe, e duas batidas nunca viram duas tarefas.
+  // dedupe, e duas batidas nunca viram duas tarefas. HONESTIDADE da janela
+  // (revisão C2 §2): o dedupe do servidor expira em 5 min; fora da janela o
+  // id morre, a copy avisa que relançar PODE duplicar e este toque só arma —
+  // o próximo confirma (padrão 2 toques da casa).
+  if (L.actionId && Core) {
+    var disp = Core.launchRetryDisposition(Date.now(), L.actionSentAt || null);
+    if (!disp.reuse) {
+      L.actionId = null;
+      L.actionSentAt = null;
+      if (disp.warn) {
+        L.status = { cls: "err", msg: disp.warn };
+        renderLaunch();
+        return;
+      }
+    }
+  }
   if (!L.actionId) {
     L.actionId = Core ? Core.makeActionId() : (Date.now().toString(16) + Math.random().toString(16).slice(2, 18));
+    L.actionSentAt = Date.now();
   }
   var body = { kind: "launch_task", projectId: L.projectId, agent: L.pilot.backend, text: text, actionId: L.actionId };
   if (L.pilot.kind === "spec") body.presetId = L.pilot.id;
@@ -1253,7 +1271,7 @@ function submitLaunch() {
     setTimeout(function () {
       if (S.launch === L && L.busy && L.actionId === aid) {
         L.busy = false;
-        L.status = { cls: "err", msg: "Sem resposta do Mac ainda. Tentar de novo não duplica a tarefa." };
+        L.status = { cls: "err", msg: "Sem resposta do Mac ainda. Tentar de novo agora não duplica a tarefa." };
         renderLaunch();
       }
     }, 25000);

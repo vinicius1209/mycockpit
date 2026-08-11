@@ -60,6 +60,11 @@ declare global {
       item: { finalizing?: boolean } | null | undefined,
     ): CompanionWebStopDisposition
     makeActionId(rand?: () => number): string
+    ACTION_REUSE_TTL_MS: number
+    launchRetryDisposition(
+      nowMs: number,
+      sentAtMs: number | null | undefined,
+    ): { reuse: boolean; warn: string | null }
     buildQuestionAnswer(
       choices: CompanionWebChoice[] | null | undefined,
       picks: (CompanionWebPick | null | undefined)[] | null | undefined,

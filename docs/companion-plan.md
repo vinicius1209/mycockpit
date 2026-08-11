@@ -47,6 +47,23 @@
 > seguro + cifrar o tráfego LAN) não paga a fricção numa rede doméstica; quem
 > precisar pode terminar TLS por conta própria na frente do :14200.
 >
+> **Revisão C2 (ressalvas do revisor, 11/08/2026)**: (1) CORRIGIDO —
+> `sendFromDesk` do launch_task agora em try/catch: rejeição interna (DB no
+> load) devolve action-result de erro em vez de só o timeout de 25s no
+> celular. (2) CORRIGIDO — a copy "não duplica" agora respeita a janela do
+> dedupe: o cliente reusa o actionId só por 4 min (margem sob os 5 do
+> servidor, `launchRetryDisposition` puro no core.js); expirada, o id morre e
+> o toque vira confirmação em 2 tempos com aviso "pode duplicar". (3)
+> CORRIGIDO — dedupe movido pra ANTES do sanitize (retry com anexos já
+> consumidos é 202 idempotente, não 400), com rollback do id no 400
+> (`forget_action`). (4) REGISTRADO — teto de 256 ids pode ser inundado por
+> aparelho autenticado (despeja id pendente); aceito no modelo token-único de
+> LAN, proteção real no pareamento v2 (C4). REGISTRADO também: o
+> `send_message` mantém o padrão pré-existente sem try/catch próprio no
+> `sendFromDesk` — a rejeição cai no catch do listener (aviso nativo no
+> desktop), sem canal de resultado pro celular porque a ação não carrega
+> actionId na UI; fechar isso é trabalho do C3 (conversa) se doer.
+>
 > Testes: `cargo test` 288 ok (launch_task/actionId/dedupe/página);
 > `bun run test` 1797 ok (166 arquivos; novos: `companion.c2.test.ts` com 15
 > casos, `companionWeb.test.ts` +14 casos de rotas/stopDisposition/

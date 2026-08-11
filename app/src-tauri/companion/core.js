@@ -168,6 +168,30 @@
     return out;
   }
 
+  // ---------------- retry de lançamento (C2, janela honesta) ----------------
+  // O dedupe do servidor guarda o actionId por 5 min (ACTION_DEDUPE_TTL no
+  // companion.rs — gêmeo consciente). "Tentar de novo não duplica" só é
+  // VERDADE dentro dessa janela: passado o TTL, o mesmo id volta a valer e um
+  // retry viraria SEGUNDA tarefa paga. A decisão é pura: dentro da janela
+  // (com margem de segurança sob o TTL do servidor, relógio nunca joga a
+  // favor) reusa o id e a copy tranquiliza; fora, o id morre e a copy avisa
+  // que relançar pode duplicar — honesto, não cômodo.
+
+  var ACTION_REUSE_TTL_MS = 4 * 60 * 1000; // margem sob os 5 min do servidor
+
+  function launchRetryDisposition(nowMs, sentAtMs) {
+    if (typeof sentAtMs !== "number" || !isFinite(sentAtMs) || sentAtMs <= 0) {
+      return { reuse: false, warn: null }; // sem gesto anterior: id novo, sem aviso
+    }
+    if (nowMs - sentAtMs <= ACTION_REUSE_TTL_MS) {
+      return { reuse: true, warn: null };
+    }
+    return {
+      reuse: false,
+      warn: "A proteção contra duplicar expirou. Confira no briefing se a tarefa apareceu; lançar de novo pode duplicar. Toque em Lançar para confirmar.",
+    };
+  }
+
   // ---------------- resposta de pergunta com opções (C2) ----------------
   // Monta o payload do answer_interaction a partir das perguntas estruturadas
   // (choices do snapshot) + o que o usuário marcou/digitou. Regras:
@@ -209,5 +233,7 @@
     stopDisposition: stopDisposition,
     makeActionId: makeActionId,
     buildQuestionAnswer: buildQuestionAnswer,
+    ACTION_REUSE_TTL_MS: ACTION_REUSE_TTL_MS,
+    launchRetryDisposition: launchRetryDisposition,
   };
 });

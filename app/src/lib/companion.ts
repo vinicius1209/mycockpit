@@ -936,30 +936,38 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
       // O aceite (start/queued) responde o celular NA HORA; o await segura o
       // turno inteiro (mesmo padrão do send_message). Se o sendFromDesk
       // abortar numa guarda interna (preset quebrado, corrida), o onAccepted
-      // nunca dispara e o fracasso volta honesto.
+      // nunca dispara e o fracasso volta honesto. Rejeição (ex.: DB falhou no
+      // ensureConversationLoaded interno) NÃO pode escapar: sem o catch, o
+      // fail() nunca rodaria e o celular só veria o timeout — revisão C2 §1.
       let accepted = false
-      await sendFromDesk({
-        convId,
-        projectId,
-        projectPath: proj.path,
-        agent: agent as OfficeAgentId,
-        text,
-        attachments: uploadedAttachments(p),
-        onAccepted: () => {
-          accepted = true
-          if (actionId) {
-            pushActionResult({
-              actionId,
-              kind: "launch_task",
-              ok: true,
-              message: "Tarefa lançada.",
-              convId,
-              projectId,
-              agent: effectiveAgent,
-            })
-          }
-        },
-      })
+      try {
+        await sendFromDesk({
+          convId,
+          projectId,
+          projectPath: proj.path,
+          agent: agent as OfficeAgentId,
+          text,
+          attachments: uploadedAttachments(p),
+          onAccepted: () => {
+            accepted = true
+            if (actionId) {
+              pushActionResult({
+                actionId,
+                kind: "launch_task",
+                ok: true,
+                message: "Tarefa lançada.",
+                convId,
+                projectId,
+                agent: effectiveAgent,
+              })
+            }
+          },
+        })
+      } catch (e) {
+        // aceito ⇒ o ok já saiu e o erro do TURNO aparece na própria conversa
+        // (refetch do celular); não-aceito ⇒ o fail() abaixo devolve o veredito.
+        console.warn("[companion] launch_task: envio rejeitou:", e)
+      }
       if (!accepted) {
         fail("O app não conseguiu iniciar o turno. Veja o desktop para detalhes.")
       }

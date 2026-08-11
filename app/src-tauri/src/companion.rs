@@ -645,6 +645,30 @@ async fn ws_loop(ctx: Ctx, sock: WebSocket) {
 /// do celular nunca chegam ao front) e ganha `attachments` (id→Attachment
 /// resolvido do cache de uploads) pro front não precisar de roundtrip.
 async fn post_action(AxState(ctx): AxState<Ctx>, Json(body): Json<Value>) -> Response {
+    // C2 — idempotência por actionId ANTES da sanitização completa (revisão C2
+    // §3): o 1º aceite CONSOME os uploads do cache, então um retry com anexos
+    // repassado ao sanitize viraria 400 ("attachmentId desconhecido") em vez
+    // do 202 idempotente. check-and-set atômico (duas batidas concorrentes
+    // nunca emitem duas); se a sanitização REPROVAR, o id é esquecido — um
+    // 400 não pode envenenar o retry legítimo seguinte. Falha de lock nunca
+    // bloqueia ação legítima (fail-open só na PROTEÇÃO de duplicata).
+    let action_id = match sanitize_action_id(&body) {
+        Ok(a) => a,
+        Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+    };
+    if let Some(id) = &action_id {
+        let fresh = ctx
+            .app
+            .state::<CompanionState>()
+            .recent_actions
+            .lock()
+            .map(|mut g| remember_action(&mut g, id, Instant::now()))
+            .unwrap_or(true);
+        if !fresh {
+            log::info!("companion: ação duplicada (actionId repetido) — 202 sem re-emitir");
+            return StatusCode::ACCEPTED.into_response();
+        }
+    }
     let uploads = ctx
         .app
         .state::<CompanionState>()
@@ -654,23 +678,6 @@ async fn post_action(AxState(ctx): AxState<Ctx>, Json(body): Json<Value>) -> Res
         .unwrap_or_default();
     match sanitize_action(&uploads, &body) {
         Ok(payload) => {
-            // C2 — idempotência por actionId: retry/duplo-toque com o MESMO id
-            // é 202 SEM re-emitir (a primeira aceitação já está em execução; o
-            // action-result dela responde as duas batidas). Falha de lock nunca
-            // bloqueia ação legítima (fail-open só na PROTEÇÃO de duplicata).
-            if let Some(id) = payload["actionId"].as_str() {
-                let fresh = ctx
-                    .app
-                    .state::<CompanionState>()
-                    .recent_actions
-                    .lock()
-                    .map(|mut g| remember_action(&mut g, id, Instant::now()))
-                    .unwrap_or(true);
-                if !fresh {
-                    log::info!("companion: ação duplicada (actionId repetido) — 202 sem re-emitir");
-                    return StatusCode::ACCEPTED.into_response();
-                }
-            }
             // uploads consumidos pela ação saem do cache (metadados não crescem
             // sem limite em runtime; os blobs órfãos seguem no GC do boot)
             if let Some(ids) = payload["attachmentIds"].as_array() {
@@ -685,7 +692,16 @@ async fn post_action(AxState(ctx): AxState<Ctx>, Json(body): Json<Value>) -> Res
             log::info!("companion: ação {kind} aceita");
             StatusCode::ACCEPTED.into_response()
         }
-        Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+        Err(e) => {
+            // 400 esquece o id registrado acima: a ação NÃO foi aceita, o
+            // retry corrigido com o mesmo id precisa passar.
+            if let Some(id) = &action_id {
+                if let Ok(mut g) = ctx.app.state::<CompanionState>().recent_actions.lock() {
+                    forget_action(&mut g, id);
+                }
+            }
+            (StatusCode::BAD_REQUEST, e).into_response()
+        }
     }
 }
 
@@ -715,6 +731,10 @@ fn sanitize_action_id(v: &Value) -> Result<Option<String>, String> {
 
 /// C2 — dedupe puro: true = primeira vez (registra); false = repetição dentro
 /// da janela. Poda expirados a cada chamada; cheio ⇒ derruba o mais antigo.
+/// Limitação ACEITA (revisão C2 §4, registrada junto do pareamento v2 no
+/// plano): um aparelho AUTENTICADO pode inundar o teto de 256 e despejar um
+/// id pendente (retry re-lançaria). No modelo token-único de LAN o atacante
+/// já teria o token — proteção real vem com o pareamento v2 (C4).
 fn remember_action(seen: &mut Vec<(String, Instant)>, id: &str, now: Instant) -> bool {
     seen.retain(|(_, t)| now.duration_since(*t) <= ACTION_DEDUPE_TTL);
     if seen.iter().any(|(s, _)| s == id) {
@@ -725,6 +745,12 @@ fn remember_action(seen: &mut Vec<(String, Instant)>, id: &str, now: Instant) ->
     }
     seen.push((id.to_string(), now));
     true
+}
+
+/// C2 — rollback do dedupe: uma ação 400 NÃO foi aceita, então o id dela sai
+/// do registro (o retry corrigido com o mesmo id volta a passar).
+fn forget_action(seen: &mut Vec<(String, Instant)>, id: &str) {
+    seen.retain(|(s, _)| s != id);
 }
 
 /// Whitelist FECHADA + reconstrução do payload. Puro sobre (uploads, corpo) —
@@ -1510,6 +1536,21 @@ mod tests {
             assert!(remember_action(&mut cheio, &format!("id-{i}"), t0));
         }
         assert!(cheio.len() <= ACTION_DEDUPE_CAP);
+    }
+
+    #[test]
+    fn c2_forget_action_devolve_o_retry_apos_400() {
+        // revisão C2 §3: 400 não pode envenenar o id — esquecido, o retry
+        // corrigido com o MESMO actionId volta a ser aceito.
+        let mut seen = Vec::new();
+        let t0 = Instant::now();
+        assert!(remember_action(&mut seen, "a1", t0));
+        assert!(!remember_action(&mut seen, "a1", t0));
+        forget_action(&mut seen, "a1");
+        assert!(remember_action(&mut seen, "a1", t0));
+        // esquecer id desconhecido é inócuo
+        forget_action(&mut seen, "fantasma");
+        assert!(!remember_action(&mut seen, "a1", t0));
     }
 
     #[test]
