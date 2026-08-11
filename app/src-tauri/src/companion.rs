@@ -1752,6 +1752,24 @@ mod tests {
         assert!(blob_path_parts("attachments", "abc", "semext").is_none());
     }
 
+    #[test]
+    fn c3_pagina_e_core_falam_o_vocabulario_do_fio() {
+        // a página pagina o fio ("carregar anteriores"), pinta markdown pelo
+        // núcleo puro e busca blobs autenticados (data-blob → fetch → objectURL)
+        assert!(COMPANION_PAGE.contains("Carregar anteriores"));
+        assert!(COMPANION_PAGE.contains("renderMarkdown"));
+        assert!(COMPANION_PAGE.contains("data-blob"));
+        for f in [
+            "renderMarkdown",
+            "mergeThreadTail",
+            "mergeThreadOlder",
+            "elapsedLabel",
+            "blobUrlPath",
+        ] {
+            assert!(COMPANION_CORE.contains(f), "core.js sem {f}");
+        }
+    }
+
     // ── leitura READ-ONLY do histórico (fixture SQLite) ──
 
     #[test]

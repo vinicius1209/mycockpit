@@ -257,6 +257,39 @@ footer#costbar[hidden] { display: none !important; }
 .sug { border: 1px solid var(--border); background: var(--card); border-radius: 999px; padding: 7px 13px; font-size: 12.5px; color: color-mix(in srgb, var(--foreground) 82%, transparent); }
 .sug:active { border-color: color-mix(in srgb, var(--brass) 60%, transparent); color: var(--foreground); transform: translateY(1px); }
 .ci-text { align-self: stretch; max-width: 100%; font-size: 14px; overflow-wrap: anywhere; }
+/* ---------- markdown do fio (C3: subset do core.js, mesmo tom do app) ------ */
+.md .mdp { margin: 0 0 8px; }
+.md .mdp:last-child { margin-bottom: 0; }
+.md .mdh { font-weight: 650; margin: 12px 0 6px; }
+.md .mdh1 { font-size: 16.5px; }
+.md .mdh2 { font-size: 15.5px; }
+.md .mdh3, .md .mdh4 { font-size: 14.5px; }
+.md ul.mdl, .md ol.mdl { margin: 0 0 8px; padding-left: 22px; }
+.md .mdl li { margin: 3px 0; }
+.md pre.mdcode {
+  font-family: var(--font-mono); font-variant-ligatures: none; font-size: 12px;
+  line-height: 1.5; background: var(--rail); border: 1px solid var(--border);
+  border-radius: 7px; padding: 10px 12px; margin: 8px 0;
+  overflow-x: auto; white-space: pre; -webkit-overflow-scrolling: touch;
+}
+.md pre.mdcode code { background: none; padding: 0; font-size: inherit; }
+.md blockquote.mdq {
+  margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--brass);
+  color: var(--muted-foreground); background: color-mix(in srgb, var(--brass) 6%, transparent);
+  border-radius: 0 7px 7px 0;
+}
+.md .mdtablewrap { overflow-x: auto; margin: 8px 0; -webkit-overflow-scrolling: touch; }
+.md table.mdtable { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.md .mdtable th, .md .mdtable td { border: 1px solid var(--border-strong); padding: 5px 9px; text-align: left; white-space: nowrap; }
+.md .mdtable th { background: var(--accent); font-weight: 600; }
+.md hr.mdhr { border: 0; height: 1px; background: var(--border); margin: 12px 0; }
+.md a { color: var(--brass); text-decoration: underline; text-underline-offset: 2px; }
+/* imagens do fio (anexos do usuário + capturas de tool), buscadas autenticadas */
+.ci-imgs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.ci-imgs img { max-width: 100%; max-height: 260px; border-radius: 8px; border: 1px solid var(--border); background: var(--rail); }
+/* carregar anteriores (janela do fio decidida no servidor) */
+#loadOlderWrap { text-align: center; margin-bottom: 4px; }
+#loadOlder { font-size: 12.5px; color: var(--muted-foreground); padding: 7px 12px; }
 .ci-tool { font-family: var(--font-mono); font-variant-ligatures: none; font-size: 11.5px; color: var(--muted-foreground); background: var(--rail); border-left: 2px solid var(--st-running); border-radius: 0 6px 6px 0; padding: 5px 8px; overflow-x: auto; white-space: nowrap; }
 .ci-tool .tn { color: var(--st-running); }
 .ci-result { font-size: 12px; color: var(--muted-foreground); text-align: center; padding: 4px 0; font-family: var(--font-mono); }
@@ -515,9 +548,11 @@ var MOCK_SNAP = {
 var MOCK_CONV = {
   id: "conv-t1", title: "Ajustar formulário de contato", agent: "codex",
   items: [
-    { kind: "user", id: "i1", text: "O formulário de contato não envia no Safari. Investiga?" },
-    { kind: "text", id: "i2", text: "Vou investigar. Primeiro olho o handler do **submit** e o `fetch` usado." },
-    { kind: "tool", id: "i3", name: "Grep", input: { pattern: "onSubmit", path: "src/" }, result: { ok: true, text: "3 matches", lines: 3 } },
+    { kind: "user", id: "i1", text: "O formulário de contato não envia no Safari. Investiga?",
+      attachments: [{ path: "attachments/conv-t1/aabbccdd11223344.png", name: "print-safari.png", kind: "image", mime: "image/png", bytes: 12345 }] },
+    { kind: "text", id: "i2", text: "Vou investigar. Primeiro olho o handler do **submit** e o `fetch` usado.\n\n## Plano\n\n1. Reproduzir no Safari\n2. Ler o handler\n\n```js\nform.addEventListener(\"submit\", onSubmit)\n```\n\n| Browser | Envia? |\n|---|---|\n| Chrome | sim |\n| Safari | **não** |" },
+    { kind: "tool", id: "i3", name: "Grep", input: { pattern: "onSubmit", path: "src/" }, result: { ok: true, text: "3 matches", lines: 3 },
+      images: ["evidence/conv-t1/toolu_mock-0.png"] },
     { kind: "tool", id: "i4", name: "Bash", input: { command: "bun test contact-form" }, result: { ok: true, text: "5 pass", lines: 12 } },
     { kind: "notice", id: "i5", message: "Contexto compactado (78% do limite)." },
     { kind: "text", id: "i6", text: "Achei: o Safari bloqueia `FormData` com input file vazio.\nCorrigindo com um guard antes do append. <script>alert(1)<\/script> não executa aqui." },
@@ -537,12 +572,34 @@ function apiState() {
     return r.json();
   });
 }
-function apiConv(id) {
-  if (MOCK) return Promise.resolve(JSON.parse(JSON.stringify(MOCK_CONV)));
-  return fetch("/api/conv/" + encodeURIComponent(id), { headers: authHeaders() }).then(function (r) {
+/* C3 — janela decidida no SERVIDOR: sem `before`, a cauda (últimos N itens);
+   com `before`, a página que termina naquele índice ("carregar anteriores"). */
+function apiConv(id, before) {
+  if (MOCK) {
+    var mc = JSON.parse(JSON.stringify(MOCK_CONV));
+    mc.start = 0;
+    mc.total = mc.items.length;
+    return Promise.resolve(mc);
+  }
+  var qs = typeof before === "number" ? "?before=" + before : "";
+  return fetch("/api/conv/" + encodeURIComponent(id) + qs, { headers: authHeaders() }).then(function (r) {
     if (r.status === 401) { onUnauthorized(); throw new Error("401"); }
     if (!r.ok) throw new Error("conv " + r.status);
     return r.json();
+  });
+}
+/* blob do fio (imagem de anexo/captura): fetch AUTENTICADO → objectURL — o
+   token nunca vai parar em URL de <img>. Cache por sessão (path → objectURL). */
+var blobCache = {};
+function fetchBlob(path) {
+  if (blobCache[path]) return Promise.resolve(blobCache[path]);
+  return fetch(path, { headers: authHeaders() }).then(function (r) {
+    if (r.status === 401) { onUnauthorized(); throw new Error("401"); }
+    if (!r.ok) throw new Error("blob " + r.status);
+    return r.blob();
+  }).then(function (b) {
+    blobCache[path] = URL.createObjectURL(b);
+    return blobCache[path];
   });
 }
 function apiAction(body) {
@@ -594,6 +651,13 @@ function apiAction(body) {
     }
     if (body.kind === "send_message") {
       // fluxo G1 completo no mock: user gravado → running com detail → resposta
+      // (+ C3: veredito honesto com o convId real, como o executor devolve)
+      if (body.actionId) {
+        setTimeout(function () {
+          onActionResult({ actionId: body.actionId, kind: "send_message", ok: true,
+            message: "Mensagem enviada.", convId: MOCK_CONV.id, projectId: body.projectId, agent: body.agent });
+        }, 700);
+      }
       MOCK_CONV.items.push({ kind: "user", id: "mu" + (++mockSeq), text: body.text });
       MOCK_SNAP.running.push({ convId: MOCK_CONV.id, projectId: body.projectId, projectName: "mock",
         kind: "turno", agent: body.agent, label: "Mesa · " + agentName(body.agent),
@@ -780,6 +844,12 @@ function applySnapshot(snap, seenAtMs) {
     fetchConv();
     notifyChatDone();
   }
+  // C3 — a conversa aberta ENTROU em execução (turno disparado do desktop ou
+  // de outro aparelho): refetch já traz a mensagem que o iniciou, sem esperar
+  // o primeiro conv-updated.
+  if (cid && !S.prevRunning[cid] && nowRunning[cid] && S.screen === "chat") {
+    fetchConv();
+  }
   S.prevRunning = nowRunning;
   renderBrief();
   if (S.screen === "agents") renderAgents();
@@ -871,6 +941,10 @@ setInterval(function () {
   var el = $("#offline");
   if (el && !el.hidden) renderOffline(); // mantém o "visto há…" honesto
 }, 10000);
+// C3 — o "trabalhando há…" do chat anda sozinho enquanto o turno vive
+setInterval(function () {
+  if (S.screen === "chat" && S.chat && !S.chat.sending && chatRunning()) renderChatItems();
+}, 5000);
 
 // re-render de seção só quando a assinatura muda (não rouba foco de textarea)
 function sigChanged(key, sig) {
@@ -1181,6 +1255,33 @@ function onActionResult(d) {
     showNote((d.ok ? "✓ " : "✕ ") + (d.message || "Resultado da tarefa"));
     return;
   }
+  // C3 — veredito do send_message: aceite adota o convId REAL (mesa que ainda
+  // não existia no snapshot) em silêncio; recusa derruba o eco, devolve o
+  // rascunho e mostra o motivo — mensagem "enviada" que não foi nunca fica no
+  // fio fingindo.
+  if (d.kind === "send_message") {
+    if (d.ok) {
+      if (S.chat && !S.chat.convId && d.convId && d.projectId === S.chat.projectId) {
+        S.chat.convId = String(d.convId);
+        if (!S.chat.explicitConv) lsSet(convKey(S.chat.projectId, S.chat.agent), S.chat.convId);
+        fetchConv();
+      }
+      if (S.screen !== "chat") showNote("✓ " + (d.message || "Mensagem enviada."));
+      return;
+    }
+    // só mexe no fio/rascunho se o eco pendente ainda é DESTE chat (navegar
+    // pra outra conversa não pode receber o rascunho alheio)
+    if (S.chat && pend && pend.echoId &&
+        S.chat.echo.some(function (e) { return e.id === pend.echoId; })) {
+      S.chat.echo = S.chat.echo.filter(function (e) { return e.id !== pend.echoId; });
+      S.chat.waitStart = null;
+      var ct = $("#chatText");
+      if (ct && !ct.value && pend.text) { ct.value = pend.text; autoGrow(ct); }
+      renderChatItems();
+    }
+    showNote("✕ " + (d.message || "O Mac recusou a mensagem."));
+    return;
+  }
   if (pend || d.message) showNote((d.ok ? "✓ " : "") + (d.message || ""));
 }
 
@@ -1318,7 +1419,7 @@ function openChat(projectId, agent, convId) {
   var explicit = !!(convId && convId !== desk);
   S.chat = { projectId: projectId, projectName: name, agent: agent, convId: cid || null,
              explicitConv: explicit, items: [], echo: [], atts: [], sending: false,
-             waitStart: null, fb: {} };
+             waitStart: null, fb: {}, winStart: 0, total: null, olderBusy: false };
   // persiste SÓ a conversa de MESA: um convId explícito de "Abrir conversa"
   // pode ser um turno do desktop — gravá-lo envenenaria o fallback da mesa.
   if (cid && (!convId || convId === desk)) lsSet(convKey(projectId, agent), cid);
@@ -1381,7 +1482,17 @@ function fetchConv() {
   var id = S.chat.convId;
   apiConv(id).then(function (conv) {
     if (!S.chat || S.chat.convId !== id) return;
-    S.chat.items = Array.isArray(conv.items) ? conv.items : [];
+    // C3 — cauda vinda do servidor emenda na faixa carregada ("carregar
+    // anteriores" sobrevive ao refetch); a cauda FRESCA substitui a
+    // sobreposição (item de tool muta quando o result chega).
+    var tail = { items: Array.isArray(conv.items) ? conv.items : [],
+                 start: typeof conv.start === "number" ? conv.start : 0 };
+    var merged = Core
+      ? Core.mergeThreadTail({ items: S.chat.items, start: S.chat.winStart || 0 }, tail)
+      : tail;
+    S.chat.items = merged.items;
+    S.chat.winStart = merged.start;
+    S.chat.total = typeof conv.total === "number" ? conv.total : tail.items.length;
     // eco local: derruba o que o servidor já conhece (dedupe por texto)
     S.chat.echo = S.chat.echo.filter(function (e) {
       return !S.chat.items.some(function (it) { return it.kind === "user" && it.text === e.text; });
@@ -1396,6 +1507,31 @@ function fetchConv() {
     if (convFetchQueued) { convFetchQueued = false; setTimeout(fetchConv, 400); }
   });
 }
+/* C3 — imagem do fio: <img> hidratada por fetch autenticado (data-blob →
+   objectURL); path fora da allowlist ou tipo não-imagem (pdf) vira chip com o
+   nome — nunca imagem quebrada, nunca token em URL. */
+function blobImgHtml(path, name) {
+  var p = Core ? Core.blobUrlPath(path) : null;
+  if (p) {
+    if (blobCache[p]) return '<img src="' + esc(blobCache[p]) + '" alt="' + esc(name || "") + '">';
+    return '<img data-blob="' + esc(p) + '" alt="' + esc(name || "") + '">';
+  }
+  return '<span class="chip"><span class="file">📄</span><span class="nm">' + esc(name || "anexo") + '</span></span>';
+}
+function hydrateBlobs(scope) {
+  var imgs = (scope || document).querySelectorAll("img[data-blob]");
+  Array.prototype.forEach.call(imgs, function (img) {
+    var p = img.getAttribute("data-blob");
+    img.removeAttribute("data-blob");
+    fetchBlob(p).then(function (url) { img.src = url; }).catch(function () {
+      // honesto: sem blob (apagado pelo GC / offline) vira aviso, não ícone quebrado
+      var ph = document.createElement("span");
+      ph.className = "chip";
+      ph.innerHTML = '<span class="file">🖼</span><span class="nm">imagem indisponível</span>';
+      if (img.parentNode) img.parentNode.replaceChild(ph, img);
+    });
+  });
+}
 function toolLine(it) {
   var inp = it.input;
   var summary = "";
@@ -1405,17 +1541,31 @@ function toolLine(it) {
   else if (inp != null) { try { summary = JSON.stringify(inp); } catch (e) { summary = ""; } }
   if (summary.length > 140) summary = summary.slice(0, 140) + "…";
   var res = it.result ? "  → " + (it.result.ok ? "" : "✗ ") + it.result.lines + " linha" + (it.result.lines === 1 ? "" : "s") : "";
-  // G3.3 — evidência de imagem vira TEXTO no celular ("2 capturas"): a página
-  // não renderiza os blobs, mas não esconde que a tool produziu imagem.
-  var caps = Array.isArray(it.images) && it.images.length
-    ? "  · " + it.images.length + (it.images.length === 1 ? " captura" : " capturas")
-    : "";
-  return '<div class="ci-tool"><span class="tn">▸ ' + esc(it.name) + '</span>  ' + esc(summary) + esc(res) + esc(caps) + '</div>';
+  var h = '<div class="ci-tool"><span class="tn">▸ ' + esc(it.name) + '</span>  ' + esc(summary) + esc(res) + '</div>';
+  // C3 — evidência VISUAL da tool agora aparece de verdade no celular (antes
+  // era só o texto "2 capturas"); path fora da allowlist vira chip.
+  if (Array.isArray(it.images) && it.images.length) {
+    h += '<div class="ci-imgs">' + it.images.map(function (p) {
+      return blobImgHtml(p, "captura");
+    }).join("") + '</div>';
+  }
+  return h;
 }
 function chatItemHtml(it) {
   switch (it.kind) {
-    case "user": return '<div class="ci-user">' + esc(it.text) + '</div>';
-    case "text": return '<div class="ci-text">' + fmt(it.text) + '</div>';
+    case "user": {
+      // anexos do usuário (fotos mandadas do desktop OU do celular) aparecem
+      // na bolha; pdf vira chip com nome
+      var uatts = Array.isArray(it.attachments) ? it.attachments : [];
+      var uimgs = uatts.map(function (a) {
+        return blobImgHtml(a && a.path, a && a.name);
+      }).join("");
+      return '<div class="ci-user">' + esc(it.text) +
+        (uimgs ? '<div class="ci-imgs">' + uimgs + '</div>' : "") + '</div>';
+    }
+    // C3 — markdown de verdade no fio (subset seguro do core.js); sem o core,
+    // degrada pro fmt() mínimo de sempre
+    case "text": return '<div class="ci-text md">' + (Core ? Core.renderMarkdown(it.text) : fmt(it.text)) + '</div>';
     case "tool": return toolLine(it);
     case "result": {
       var bits = [it.ok ? "✓ turno concluído" : "✗ turno falhou"];
@@ -1434,6 +1584,8 @@ function chatItemHtml(it) {
     }
     case "notice": return '<div class="ci-notice">' + esc(it.message) + '</div>';
     case "error": return '<div class="ci-error">' + esc(it.message) + '</div>';
+    // parecer de Especialista (advice): antes era invisível no celular
+    case "advice": return '<div class="ci-text md"><div class="lm" style="margin-bottom:4px">parecer · ' + esc(it.personaName || "Especialista") + '</div>' + (Core ? Core.renderMarkdown(it.text) : fmt(it.text)) + '</div>';
     case "cancelled": return '<div class="ci-notice">— interrompido —</div>';
     case "limit": return '<div class="ci-limit">' + esc(it.message) + (it.resetHint ? '<div class="meta">' + esc(it.resetHint) + '</div>' : "") + '</div>';
     default: return "";
@@ -1448,14 +1600,21 @@ function renderChatItems() {
   var atBottom = innerHeight + scrollY >= document.body.scrollHeight - 80;
   var all = S.chat.items.concat(S.chat.echo);
   var h = all.map(chatItemHtml).join("");
+  // C3 — janela do fio: há itens ANTES da faixa carregada → botão de paginar
+  if (S.chat.winStart > 0) {
+    h = '<div id="loadOlderWrap"><button class="btn" id="loadOlder"' + (S.chat.olderBusy ? " disabled" : "") + '>' +
+      (S.chat.olderBusy ? "Carregando…" : "↑ Carregar anteriores (" + Number(S.chat.winStart) + ")") + '</button></div>' + h;
+  }
   var run = chatRunning();
   if (S.chat.sending) {
     // tempo 1: bolha já está no eco; linha "enviando…" até o 202
     h += '<div class="ci-sending"><span class="dots"><i></i><i></i><i></i></span>enviando…</div>';
   } else if (run || (S.chat.waitStart && Date.now() - S.chat.waitStart < 20000)) {
-    // tempo 2: turno vivo — dots + a tool corrente do running[] quando houver
+    // tempo 2: turno vivo — dots + tempo REAL de trabalho (startedAt do
+    // running[]) + a tool corrente quando houver
+    var elapsed = run && Core ? Core.elapsedLabel(Date.now(), run.startedAt) : "";
     h += '<div class="typing"><span class="dots"><i></i><i></i><i></i></span>' +
-      '<span>' + esc(agentName(S.chat.agent)) + ' trabalhando…</span>' +
+      '<span>' + esc(agentName(S.chat.agent)) + ' trabalhando' + (elapsed ? " " + esc(elapsed) : "") + '…</span>' +
       (run && run.detail ? '<span class="tool">⚙ ' + esc(run.detail) + '</span>' : '') + '</div>';
   }
   if (!h) {
@@ -1466,10 +1625,40 @@ function renderChatItems() {
           '</div>') + '</div>';
   }
   host.innerHTML = h;
+  hydrateBlobs(host); // imagens do fio: fetch autenticado → objectURL
   $("#chatHint").textContent = S.chat.convId || S.chat.sending || S.chat.waitStart ? "" : "O turno roda de verdade no projeto, direto do seu Mac.";
   var dot = $("#chatDot");
   if (dot) dot.className = "dot" + (run || S.chat.sending || S.chat.waitStart ? " busy" : "");
   if (atBottom) window.scrollTo(0, document.body.scrollHeight);
+}
+/* C3 — "carregar anteriores": pede ao servidor a página que termina onde a
+   faixa carregada começa e emenda na frente, mantendo a leitura no lugar. */
+function loadOlderPage() {
+  if (!S.chat || !S.chat.convId || S.chat.olderBusy || !S.chat.winStart) return;
+  S.chat.olderBusy = true;
+  var id = S.chat.convId;
+  renderChatItems();
+  var heightBefore = document.body.scrollHeight;
+  apiConv(id, S.chat.winStart).then(function (conv) {
+    if (!S.chat || S.chat.convId !== id) return;
+    S.chat.olderBusy = false;
+    var older = { items: Array.isArray(conv.items) ? conv.items : [],
+                  start: typeof conv.start === "number" ? conv.start : 0 };
+    var merged = Core
+      ? Core.mergeThreadOlder({ items: S.chat.items, start: S.chat.winStart }, older)
+      : { items: older.items.concat(S.chat.items), start: older.start };
+    S.chat.items = merged.items;
+    S.chat.winStart = merged.start;
+    if (typeof conv.total === "number") S.chat.total = conv.total;
+    renderChatItems();
+    // compensa a altura injetada acima: a leitura fica onde estava
+    window.scrollTo(0, scrollY + (document.body.scrollHeight - heightBefore));
+  }).catch(function () {
+    if (!S.chat || S.chat.convId !== id) return;
+    S.chat.olderBusy = false;
+    renderChatItems();
+    showNote("Não consegui carregar as mensagens anteriores. Tente de novo.");
+  });
 }
 function renderChatChips() {
   if (!S.chat) return;
@@ -1483,7 +1672,8 @@ function sendChat() {
   var ids = atts.map(function (t) { return t.id; });
   var btn = $("#chatSend");
   // feedback IMEDIATO (tempo 1): bolha do usuário + "enviando…" antes do 202
-  S.chat.echo.push({ kind: "user", id: "echo-" + Date.now(), text: text });
+  var echoId = "echo-" + Date.now();
+  S.chat.echo.push({ kind: "user", id: echoId, text: text });
   S.chat.sending = true;
   S.chat.atts = [];
   btn.disabled = true;
@@ -1492,7 +1682,12 @@ function sendChat() {
   renderChatChips();
   renderChatItems();
   window.scrollTo(0, document.body.scrollHeight);
-  var body = { kind: "send_message", projectId: S.chat.projectId, agent: S.chat.agent, text: text, attachmentIds: ids };
+  // C3 — actionId POR GESTO (mesma infra de idempotência do C2): o veredito
+  // honesto do Mac volta pelo action-result — recusa derruba o eco e devolve
+  // o rascunho, aceite traz o convId real (conversa de mesa recém-criada).
+  var aid = Core ? Core.makeActionId() : (Date.now().toString(16) + Math.random().toString(16).slice(2, 18));
+  S.pendingActions[aid] = { kind: "send_message", echoId: echoId, text: text };
+  var body = { kind: "send_message", projectId: S.chat.projectId, agent: S.chat.agent, text: text, attachmentIds: ids, actionId: aid };
   // P5: chat aberto numa conversa não-mesa manda o alvo explícito; o executor
   // valida o pertencimento ao projeto (id estranho cai na mesa).
   if (S.chat.explicitConv && S.chat.convId) body.convId = S.chat.convId;
@@ -1515,7 +1710,8 @@ function sendChat() {
       }, 20500);
     })
     .catch(function (e) {
-      // falhou: NADA se perde — remove o eco e devolve rascunho + anexos
+      // falhou ANTES do 202: NADA se perde — remove o eco e devolve rascunho
+      delete S.pendingActions[aid];
       S.chat.sending = false;
       S.chat.echo.pop();
       S.chat.atts = atts;
@@ -1574,6 +1770,8 @@ document.addEventListener("input", function (ev) {
 });
 
 document.addEventListener("click", function (ev) {
+  // C3 — paginação do fio (o botão renasce a cada render: delegação)
+  if (ev.target.closest && ev.target.closest("#loadOlder")) { loadOlderPage(); return; }
   var el = ev.target.closest ? ev.target.closest("[data-nav],[data-proj],[data-pickagent],[data-answer],[data-approve],[data-deny],[data-stop],[data-openchat],[data-cam],[data-rmatt],[data-sug],[data-fb],[data-cardgo],[data-cardclose],[data-lproj],[data-lpilot],[data-opt],[data-answerq]") : null;
   if (!el) return;
 
