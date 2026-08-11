@@ -422,6 +422,72 @@
     return "/api/blob/" + m[1] + "/" + m[2] + "/" + m[3];
   }
 
+  // ---------------- pareamento v2 (C4) ----------------
+  // O QR carrega um token de PAREAMENTO de uso único (#pair=…), nunca mais a
+  // credencial definitiva (#token= v1 morreu — guarda anti-downgrade: página
+  // v2 NUNCA instala credencial vinda de fragment). O token definitivo só
+  // chega pelo poll de /pair/status DEPOIS do aceite humano no Mac.
+
+  function pairTokenFromHash(hash) {
+    var m = String(hash == null ? "" : hash).match(/[#&]pair=([0-9a-fA-F]{16,})/);
+    return m ? m[1] : null;
+  }
+
+  // Nome honesto do aparelho pro aceite no desktop ("iPhone · Safari"): sai do
+  // user-agent REAL, resumido — nunca inventado. UA irreconhecível → rótulo
+  // neutro (o desktop ainda sanitiza do lado dele).
+  function deviceLabel(ua) {
+    var s = String(ua == null ? "" : ua);
+    var dev = /iPhone/.test(s) ? "iPhone"
+      : /iPad/.test(s) ? "iPad"
+      : /Android/.test(s) ? "Android"
+      : /Macintosh|Mac OS X/.test(s) ? "Mac"
+      : /Windows/.test(s) ? "Windows"
+      : /Linux/.test(s) ? "Linux"
+      : "";
+    // ordem importa: todo Chrome tem "Safari" no UA e todo Edge tem "Chrome"
+    var br = /EdgiOS|Edg\//.test(s) ? "Edge"
+      : /CriOS|Chrome\//.test(s) ? "Chrome"
+      : /FxiOS|Firefox\//.test(s) ? "Firefox"
+      : /Safari\//.test(s) ? "Safari"
+      : "";
+    if (!dev && !br) return "Aparelho";
+    if (!dev) return br;
+    return br ? dev + " · " + br : dev;
+  }
+
+  // ---------------- tema (C4, dark/light honesto com o sistema) ----------------
+  // Sem escolha guardada, o tema segue o sistema (prefers-color-scheme);
+  // escolha explícita ("light"/"dark") vence e persiste. Valor estranho no
+  // storage nunca crasha: cai no sistema.
+
+  function effectiveTheme(stored, systemDark) {
+    if (stored === "light" || stored === "dark") return stored;
+    return systemDark ? "dark" : "light";
+  }
+
+  // ---------------- teto do snapshot cacheado (C4, nit C1) ----------------
+  // O snapshot restaurado do localStorage já nasce carimbado ("visto há…"),
+  // mas dado de mais de 7 dias não ajuda ninguém: não restaura (a página
+  // mostra o estado de conexão em vez de um briefing arqueológico).
+
+  var SNAP_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+
+  function snapshotRestorable(nowMs, atMs) {
+    if (typeof atMs !== "number" || !isFinite(atMs) || atMs <= 0) return false;
+    return nowMs - atMs <= SNAP_MAX_AGE_MS;
+  }
+
+  // ---------------- aviso sem Notification (C4, degradação honesta) ----------
+  // Em http de LAN o browser nega Notification (contexto inseguro); o canal
+  // honesto é vibração + título da aba piscando. Puro: só o texto do título.
+
+  function titleBadge(base, n) {
+    var b = String(base == null ? "" : base);
+    var k = typeof n === "number" && isFinite(n) && n > 0 ? Math.floor(n) : 0;
+    return k > 0 ? "(" + k + ") " + b : b;
+  }
+
   return {
     parseRoute: parseRoute,
     routeHash: routeHash,
@@ -441,5 +507,11 @@
     mergeThreadOlder: mergeThreadOlder,
     adoptConvOnVerdict: adoptConvOnVerdict,
     blobUrlPath: blobUrlPath,
+    pairTokenFromHash: pairTokenFromHash,
+    deviceLabel: deviceLabel,
+    effectiveTheme: effectiveTheme,
+    SNAP_MAX_AGE_MS: SNAP_MAX_AGE_MS,
+    snapshotRestorable: snapshotRestorable,
+    titleBadge: titleBadge,
   };
 });

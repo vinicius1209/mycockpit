@@ -601,3 +601,113 @@ describe("blob do fio (blobUrlPath, espelho do blob_path_parts do Rust)", () => 
     expect(core.blobUrlPath(42)).toBeNull()
   })
 })
+
+// ── C4 — pareamento v2, tema e degradações honestas (núcleo puro) ──
+
+describe("pareamento v2 (pairTokenFromHash, anti-downgrade)", () => {
+  it("extrai o token de PAREAMENTO do fragment #pair=", () => {
+    expect(core.pairTokenFromHash("#pair=aabbccddeeff0011")).toBe(
+      "aabbccddeeff0011",
+    )
+    expect(core.pairTokenFromHash("#/rota&pair=AABBCCDDEEFF0011")).toBe(
+      "AABBCCDDEEFF0011",
+    )
+  })
+
+  it("fragment #token= do v1 NUNCA é lido como pareamento (downgrade fechado)", () => {
+    expect(core.pairTokenFromHash("#token=aabbccddeeff0011")).toBeNull()
+  })
+
+  it("token curto, não-hex ou hash vazio nunca passam", () => {
+    expect(core.pairTokenFromHash("#pair=abc")).toBeNull()
+    expect(core.pairTokenFromHash("#pair=zzzzzzzzzzzzzzzz")).toBeNull()
+    expect(core.pairTokenFromHash("")).toBeNull()
+    expect(core.pairTokenFromHash(null)).toBeNull()
+  })
+})
+
+describe("nome do aparelho (deviceLabel, user-agents REAIS)", () => {
+  it("iPhone com Safari real vira iPhone · Safari", () => {
+    // UA real de iPhone (iOS 17, Safari)
+    expect(
+      core.deviceLabel(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+      ),
+    ).toBe("iPhone · Safari")
+  })
+
+  it("Android com Chrome real vira Android · Chrome", () => {
+    // UA real de Pixel (Chrome mobile)
+    expect(
+      core.deviceLabel(
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.113 Mobile Safari/537.36",
+      ),
+    ).toBe("Android · Chrome")
+  })
+
+  it("Chrome de iOS (CriOS) não vira Safari; Edge não vira Chrome", () => {
+    expect(
+      core.deviceLabel(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/125.0.6422.80 Mobile/15E148 Safari/604.1",
+      ),
+    ).toBe("iPhone · Chrome")
+    expect(
+      core.deviceLabel(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
+      ),
+    ).toBe("Windows · Edge")
+  })
+
+  it("UA irreconhecível ou ausente vira rótulo neutro, nunca inventa", () => {
+    expect(core.deviceLabel("curl/8.6.0")).toBe("Aparelho")
+    expect(core.deviceLabel("")).toBe("Aparelho")
+    expect(core.deviceLabel(null)).toBe("Aparelho")
+  })
+})
+
+describe("tema (effectiveTheme: sistema por padrão, escolha explícita vence)", () => {
+  it("sem escolha guardada segue o sistema", () => {
+    expect(core.effectiveTheme(null, true)).toBe("dark")
+    expect(core.effectiveTheme(null, false)).toBe("light")
+    expect(core.effectiveTheme(undefined, true)).toBe("dark")
+  })
+
+  it("escolha explícita vence o sistema", () => {
+    expect(core.effectiveTheme("light", true)).toBe("light")
+    expect(core.effectiveTheme("dark", false)).toBe("dark")
+  })
+
+  it("valor estranho no storage cai no sistema (nunca crasha)", () => {
+    expect(core.effectiveTheme("auto?", true)).toBe("dark")
+    expect(core.effectiveTheme("", false)).toBe("light")
+  })
+})
+
+describe("teto do snapshot cacheado (snapshotRestorable, nit C1)", () => {
+  const now = 1_700_000_000_000
+  it("snapshot recente restaura; mais velho que 7 dias não", () => {
+    expect(core.snapshotRestorable(now, now - 3_600_000)).toBe(true)
+    expect(core.snapshotRestorable(now, now - core.SNAP_MAX_AGE_MS)).toBe(true)
+    expect(
+      core.snapshotRestorable(now, now - core.SNAP_MAX_AGE_MS - 1),
+    ).toBe(false)
+  })
+
+  it("carimbo ausente ou torto nunca restaura", () => {
+    expect(core.snapshotRestorable(now, null)).toBe(false)
+    expect(core.snapshotRestorable(now, 0)).toBe(false)
+    expect(core.snapshotRestorable(now, Number.NaN)).toBe(false)
+  })
+})
+
+describe("aviso degradado sem Notification (titleBadge)", () => {
+  it("contagem positiva entra no título; zero ou lixo deixam o título limpo", () => {
+    expect(core.titleBadge("FROTA · Companion", 3)).toBe("(3) FROTA · Companion")
+    expect(core.titleBadge("FROTA · Companion", 0)).toBe("FROTA · Companion")
+    expect(core.titleBadge("FROTA · Companion", -2)).toBe("FROTA · Companion")
+    expect(core.titleBadge("FROTA · Companion", Number.NaN)).toBe(
+      "FROTA · Companion",
+    )
+    expect(core.titleBadge(null, 2)).toBe("(2) ")
+  })
+})

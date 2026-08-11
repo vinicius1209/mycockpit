@@ -1270,9 +1270,35 @@ export function stopCompanionBridge(): void {
 export interface CompanionInfo {
   running: boolean
   urlLan: string | null
-  token: string | null
+  /** C4 — token de PAREAMENTO do QR (uso único, vida curta; rotaciona
+   *  sozinho). A credencial definitiva de cada aparelho nunca sai por aqui. */
+  pairingToken: string | null
   /** Nº de dispositivos (sockets WS) conectados agora. */
   connectedCount: number
+}
+
+/** C4 — aparelho pareado (a credencial NUNCA viaja; só metadados). */
+export interface CompanionDeviceInfo {
+  id: string
+  name: string
+  /** Epoch ms do aceite. */
+  pairedAt: number
+  /** Epoch ms da última requisição autenticada; null = nunca visto pós-boot. */
+  lastSeenAt: number | null
+}
+
+/** C4 — pedido de pareamento aguardando o gesto humano. */
+export interface CompanionPendingPair {
+  id: string
+  name: string
+  requestedAt: number
+}
+
+export interface CompanionDevicesInfo {
+  devices: CompanionDeviceInfo[]
+  pending: CompanionPendingPair[]
+  /** true = o token único pré-v2 ainda existe (aparelhos antigos com acesso). */
+  legacyActive: boolean
 }
 
 function sleep(ms: number): Promise<void> {
@@ -1313,12 +1339,34 @@ export async function stopCompanionServer(): Promise<void> {
   }
 }
 
-/** Revoga o token antigo e sobe com um novo: stop → apaga token (Rust) →
- *  start. Celulares pareados perdem o acesso na hora (o QR muda). */
-export async function regenerateCompanionToken(): Promise<CompanionInfo> {
-  await stopCompanionServer()
+/** C4 — aparelhos pareados + pedidos aguardando aceite (null fora do Tauri). */
+export async function companionDevices(): Promise<CompanionDevicesInfo | null> {
+  if (!isTauri()) return null
+  try {
+    return await invoke<CompanionDevicesInfo>("companion_list_devices")
+  } catch {
+    return null
+  }
+}
+
+/** C4 — GESTO HUMANO do pareamento v2: aceitar cunha o token definitivo do
+ *  aparelho (até aqui ele não existe); recusar mata o pedido. */
+export async function decideCompanionPairing(
+  id: string,
+  accept: boolean,
+): Promise<void> {
+  await invoke("companion_pair_decide", { id, accept })
+}
+
+/** C4 — revogação INDIVIDUAL: o aparelho cai no 401 e limpa o storage (C1). */
+export async function revokeCompanionDevice(id: string): Promise<void> {
+  await invoke("companion_revoke_device", { id })
+}
+
+/** C4 — revoga o token ÚNICO legado (pré-v2), valendo na hora: os aparelhos
+ *  pareados antes do v2 perdem o acesso; os v2 seguem intactos. */
+export async function revokeLegacyCompanionToken(): Promise<void> {
   await invoke("companion_revoke_token")
-  return startCompanionServer()
 }
 
 /** Aplica o setting: ligado ⇒ ponte + servidor; desligado ⇒ para os dois.

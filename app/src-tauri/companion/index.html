@@ -13,6 +13,23 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FROTA">
 <title>FROTA · Companion</title>
+<script>
+"use strict";
+/* Tema ANTES do primeiro paint (C4): escolha guardada vence; sem escolha, o
+   sistema (prefers-color-scheme). Roda no head de propósito — sem flash. */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem("frota-companion-theme"); } catch (e) {}
+  var sysDark = true;
+  try {
+    if (window.matchMedia) sysDark = matchMedia("(prefers-color-scheme: dark)").matches;
+  } catch (e) {}
+  document.documentElement.setAttribute(
+    "data-theme",
+    t === "light" || t === "dark" ? t : (sysDark ? "dark" : "light")
+  );
+})();
+</script>
 <style>
 /* ============================================================
    FROTA · Companion — página mobile auto-contida (onda 3).
@@ -41,9 +58,34 @@
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
   --radius: 9px;
+  --lift: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+/* C4 — tema claro: MESMA paleta light do app (src/index.css :root). O tema
+   segue o sistema por padrão; o toggle do header persiste a escolha. */
+:root[data-theme="light"] {
+  --background: #fbfbfa;
+  --rail: #f6f6f4;
+  --foreground: #16181b;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --muted-foreground: #5c6166;
+  --accent: #f1f1ef;
+  --border: rgba(0, 0, 0, 0.09);
+  --border-strong: rgba(0, 0, 0, 0.14);
+  --input: rgba(0, 0, 0, 0.13);
+  --brass: #a9742b;
+  --brass-soft: rgba(169, 116, 43, 0.12);
+  --brass-fg: #fbf6ee;
+  --st-idle: #8a9099;
+  --st-running: #2f8fbf;
+  --st-queued: #c1861f;
+  --st-success: #1f9d6b;
+  --st-error: #cf4a3e;
+  --lift: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 * { box-sizing: border-box; border-color: var(--border); }
 html { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
 body {
   margin: 0;
   background: var(--background);
@@ -91,6 +133,7 @@ header {
 #connLabel { font-size: 11px; color: var(--muted-foreground); }
 #btnBell { font-size: 16px; opacity: .55; padding: 4px; }
 #btnBell.on { opacity: 1; }
+#btnTheme { font-size: 16px; opacity: .55; padding: 4px; }
 
 /* banner de offline honesto (C1): Mac fora do ar nunca é tela branca nem dado
    velho fingindo vivo — aviso + carimbo "visto há…" + retry automático */
@@ -118,7 +161,7 @@ h2.sec .amber { color: var(--st-queued); }
 
 .card {
   background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 12px; margin-bottom: 10px; box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+  padding: 12px; margin-bottom: 10px; box-shadow: var(--lift);
 }
 .card.attn { border-color: color-mix(in srgb, var(--st-queued) 45%, transparent); }
 .badge {
@@ -305,7 +348,7 @@ footer#costbar[hidden] { display: none !important; }
 #composer .pill {
   display: flex; align-items: flex-end; gap: 4px;
   background: var(--card); border: 1px solid var(--border-strong); border-radius: 24px;
-  padding: 5px 5px 5px 6px; box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+  padding: 5px 5px 5px 6px; box-shadow: var(--lift);
   transition: border-color .15s ease;
 }
 #composer .pill:focus-within { border-color: color-mix(in srgb, var(--brass) 55%, transparent); }
@@ -326,6 +369,7 @@ footer#costbar[hidden] { display: none !important; }
 
 <header>
   <div class="wordmark">FROTA <small>· Companion</small></div>
+  <button id="btnTheme" title="Tema" aria-label="Alternar tema claro ou escuro">◐</button>
   <button id="btnBell" title="Notificações" aria-label="Ativar notificações">🔔</button>
   <div class="conn"><span id="dot" class="dot off"></span><span id="connLabel">—</span></div>
 </header>
@@ -428,6 +472,7 @@ footer#costbar[hidden] { display: none !important; }
 var LS_TOKEN = "frota-companion-token";
 var LS_NOTIF = "frota-companion-notif";
 var LS_SNAP = "frota-companion-snap";
+var LS_THEME = "frota-companion-theme";
 var MOCK = new URLSearchParams(location.search).get("mock") === "1";
 /* Núcleo puro (core.js, servido pelo mesmo binário e coberto por vitest).
    Se não carregar, a página segue viva com fallback mínimo (navegação sem
@@ -589,8 +634,16 @@ function apiConv(id, before) {
   });
 }
 /* blob do fio (imagem de anexo/captura): fetch AUTENTICADO → objectURL — o
-   token nunca vai parar em URL de <img>. Cache por sessão (path → objectURL). */
+   token nunca vai parar em URL de <img>. Cache por conversa aberta: trocar de
+   conversa REVOGA os objectURLs antigos (nit C3 — senão os blobs vivem até o
+   reload da página). */
 var blobCache = {};
+function clearBlobCache() {
+  Object.keys(blobCache).forEach(function (p) {
+    try { URL.revokeObjectURL(blobCache[p]); } catch (e) {}
+    delete blobCache[p];
+  });
+}
 function fetchBlob(path) {
   if (blobCache[path]) return Promise.resolve(blobCache[path]);
   return fetch(path, { headers: authHeaders() }).then(function (r) {
@@ -701,15 +754,59 @@ function apiUpload(file) {
 }
 
 // ---------------- token / pareamento ----------------
+/* Pareamento v2 (C4): o fragment NUNCA instala credencial (anti-downgrade —
+   o #token= do v1 morreu). O QR carrega só um token de PAREAMENTO de uso
+   único (#pair=…); startPairing o troca por um pairingId e o token
+   DEFINITIVO só chega pelo poll DEPOIS do aceite humano no Mac. */
 function initToken() {
-  var m = location.hash.match(/token=([0-9a-fA-F]{16,})/);
-  if (m) {
-    try { localStorage.setItem(LS_TOKEN, m[1]); } catch (e) {}
-    // o token NUNCA fica na URL depois de guardado
-    history.replaceState(null, "", location.pathname + location.search);
-  }
   try { S.token = localStorage.getItem(LS_TOKEN); } catch (e) { S.token = null; }
   if (MOCK && !S.token) S.token = "mock";
+}
+function setPairMsg(msg) { $("#pairMsg").textContent = msg; }
+var pairPollTimer = null;
+function startPairing(pairTok) {
+  showScreen("pair");
+  setConn("off");
+  setPairMsg("Pareando este aparelho…");
+  var name = Core ? Core.deviceLabel(navigator.userAgent) : "Aparelho";
+  fetch("/pair/claim", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pairToken: pairTok, deviceName: name }),
+  }).then(function (r) {
+    if (!r.ok) return r.text().then(function (t) { throw new Error(t || ("pareamento " + r.status)); });
+    return r.json();
+  }).then(function (d) {
+    if (!d || !d.pairingId) throw new Error("resposta inesperada do Mac");
+    setPairMsg('Confirme no Mac: aceite o aparelho "' + name + '" em Configurações → Companion.');
+    pollPairing(String(d.pairingId));
+  }).catch(function (e) {
+    setPairMsg("Não deu para parear: " + (e && e.message ? e.message : e) + ". Escaneie o QR de novo no app.");
+  });
+}
+function pollPairing(id) {
+  if (pairPollTimer) clearTimeout(pairPollTimer);
+  fetch("/pair/status/" + encodeURIComponent(id)).then(function (r) {
+    if (!r.ok) throw new Error("status " + r.status);
+    return r.json();
+  }).then(function (d) {
+    var st = d && d.status;
+    if (st === "approved" && d.token) {
+      lsSet(LS_TOKEN, String(d.token));
+      S.token = String(d.token);
+      setPairMsg("Aparelho aceito, conectando…");
+      applyRoute(currentRoute());
+      apiState().then(function (snap) { applySnapshot(snap); }).catch(function () {});
+      connectWS();
+      return;
+    }
+    if (st === "denied") { setPairMsg("O Mac recusou este aparelho."); return; }
+    if (st === "expired") { setPairMsg("O pareamento expirou sem aceite no Mac. Escaneie o QR de novo."); return; }
+    pairPollTimer = setTimeout(function () { pollPairing(id); }, 2000);
+  }).catch(function () {
+    // rede piscou no meio do poll: insiste (o registro vive por uns minutos)
+    pairPollTimer = setTimeout(function () { pollPairing(id); }, 3000);
+  });
 }
 function onUnauthorized() {
   // pareamento revogado: o aparelho não retém NADA — token e snapshot cacheado
@@ -774,7 +871,16 @@ function connectWS() {
     else if (msg && msg.type === "action-result") onActionResult(msg.data);
   };
   // caiu: honesto na cara ("reconectando…" + banner) e retry automático
-  ws.onclose = function () { connEvent("down"); setConn("connecting"); scheduleReconnect(); };
+  ws.onclose = function () {
+    connEvent("down");
+    setConn("connecting");
+    scheduleReconnect();
+    // C4 — aparelho revogado com o WS aberto: o servidor derruba os sockets,
+    // mas o upgrade recusado não expõe status pro JS. Um probe HTTP barato
+    // faz o 401 aparecer (onUnauthorized limpa token + snapshot na hora, em
+    // vez de "reconectando…" eterno); fora da revogação, o probe só refresca.
+    if (!MOCK && S.token) apiState().then(function (snap) { applySnapshot(snap); }).catch(function () {});
+  };
   ws.onerror = function () { try { ws.close(); } catch (e) {} };
 }
 function scheduleReconnect() {
@@ -783,26 +889,65 @@ function scheduleReconnect() {
   wsTimer = setTimeout(function () { wsTimer = null; connectWS(); }, wait);
 }
 
-// ---------------- notificações (opt-in) ----------------
+// ---------------- notificações (opt-in, degradação honesta em http) ----------
+/* C4 — avaliado e registrado no plano: Web Push exige service worker + https,
+   que aceitamos NÃO ter na LAN; e em http o browser NEGA a Notification API
+   (Chrome/Android tratam contexto inseguro como permission "denied"; iOS só
+   tem Notification em PWA instalada via https). O canal honesto que SEMPRE
+   funciona com a página aberta: vibração (Android) + título da aba piscando.
+   Quando Notification real existe e foi concedida (ex.: localhost), ela segue
+   sendo usada. O 🔔 é o opt-in dos DOIS canais. */
 function notifOn() { try { return localStorage.getItem(LS_NOTIF) === "1"; } catch (e) { return false; } }
+function canNativeNotify() {
+  return typeof Notification !== "undefined" && Notification.permission === "granted";
+}
 function renderBell() {
-  var on = notifOn() && typeof Notification !== "undefined" && Notification.permission === "granted";
-  $("#btnBell").classList.toggle("on", on);
+  $("#btnBell").classList.toggle("on", notifOn());
+}
+function noteDegradedNotif() {
+  showNote("Notificações do navegador não funcionam neste endereço (http na rede local). Vou avisar vibrando e piscando o título da aba.");
 }
 $("#btnBell").addEventListener("click", function () {
-  if (typeof Notification === "undefined") return;
   if (notifOn()) {
-    try { localStorage.setItem(LS_NOTIF, "0"); } catch (e) {}
+    lsSet(LS_NOTIF, "0");
+    stopTitleFlash();
     renderBell();
     return;
   }
-  Notification.requestPermission().then(function (p) {
-    try { localStorage.setItem(LS_NOTIF, p === "granted" ? "1" : "0"); } catch (e) {}
-    renderBell();
-  });
+  if (typeof Notification !== "undefined" && Notification.permission === "default") {
+    Notification.requestPermission().then(function (p) {
+      lsSet(LS_NOTIF, "1");
+      renderBell();
+      if (p !== "granted") noteDegradedNotif();
+    });
+    return;
+  }
+  lsSet(LS_NOTIF, "1");
+  renderBell();
+  if (!canNativeNotify()) noteDegradedNotif();
 });
+/* título piscando enquanto a aba está em background (para ao voltar) */
+var baseTitle = document.title, titleFlashTimer = null, titleFlashOn = false;
+function startTitleFlash(count) {
+  if (!Core) return;
+  stopTitleFlash();
+  document.title = Core.titleBadge(baseTitle, count);
+  titleFlashTimer = setInterval(function () {
+    titleFlashOn = !titleFlashOn;
+    document.title = titleFlashOn ? baseTitle : Core.titleBadge(baseTitle, count);
+  }, 1200);
+}
+function stopTitleFlash() {
+  if (titleFlashTimer) { clearInterval(titleFlashTimer); titleFlashTimer = null; }
+  document.title = baseTitle;
+}
+function fallbackAlert(count) {
+  try { if (navigator.vibrate) navigator.vibrate([120, 60, 120]); } catch (e) {}
+  if (document.hidden) startTitleFlash(count);
+}
 function notifyNewAttention(items) {
-  if (!notifOn() || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  if (!notifOn() || !items.length) return;
+  if (!canNativeNotify()) { fallbackAlert(items.length); return; }
   items.forEach(function (a) {
     var kind = a.kind === "gate" ? "Gate de missão" : a.kind === "approval" ? "Aprovação pendente" : a.kind === "stalled" ? "Turno mudo" : a.kind === "card" ? "Card parado" : "Pergunta do agente";
     var body = (a.projectName ? a.projectName + " · " : "") + agentName(a.agent);
@@ -821,7 +966,10 @@ function applySnapshot(snap, seenAtMs) {
   // o primeiro snapshot vivo limpa.
   S.snapStale = !!seenAtMs;
   if (!seenAtMs && !MOCK) {
-    lsSet(LS_SNAP, JSON.stringify({ at: S.snapAt, snap: snap }));
+    // teto do cache (nit C1): snapshot anômalo de centenas de KB não entope o
+    // localStorage — segue vivo em memória, só não persiste.
+    var snapBody = JSON.stringify({ at: S.snapAt, snap: snap });
+    if (snapBody.length <= 400000) lsSet(LS_SNAP, snapBody);
   }
   renderOffline();
   var first = S.knownAttn === null;
@@ -915,7 +1063,18 @@ function applyRoute(r) {
   }
   showScreen("brief");
 }
-window.addEventListener("hashchange", function () { applyRoute(currentRoute()); });
+window.addEventListener("hashchange", function () {
+  // C4 — re-escanear o QR com a página JÁ aberta (mesma aba): o #pair= chega
+  // por hashchange, não por load — o pareamento dispara do mesmo jeito e o
+  // fragment some da URL na hora.
+  var pt = Core ? Core.pairTokenFromHash(location.hash) : null;
+  if (pt && !MOCK) {
+    history.replaceState(null, "", location.pathname + location.search);
+    startPairing(pt);
+    return;
+  }
+  applyRoute(currentRoute());
+});
 
 // ---------------- offline honesto (C1) ----------------
 /* Banner sempre que a conexão com o Mac não está viva: avisa, mostra o carimbo
@@ -1414,6 +1573,8 @@ function openChat(projectId, agent, convId) {
     if (S.chat.convId) fetchConv();
     return;
   }
+  // conversa DIFERENTE assume: os objectURLs da anterior morrem aqui (nit C3)
+  clearBlobCache();
   var ps = (S.snap && S.snap.projects) || [];
   var name = projectId;
   for (var i = 0; i < ps.length; i++) if (ps[i].id === projectId) name = ps[i].name;
@@ -1470,7 +1631,8 @@ function chatRunning() {
 function notifyChatDone() {
   if (!S.chat) return;
   if (!document.hidden && S.screen === "chat") return;
-  if (!notifOn() || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  if (!notifOn()) return;
+  if (!canNativeNotify()) { fallbackAlert(1); return; }
   try {
     new Notification("FROTA — resposta chegou", {
       body: S.chat.projectName + " · " + agentName(S.chat.agent),
@@ -1973,11 +2135,40 @@ $("#launchGo").addEventListener("click", submitLaunch);
 
 // refresh do estado quando a página volta do background (celular dorme muito)
 document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "visible") stopTitleFlash();
   if (document.visibilityState !== "visible" || MOCK || !S.token) return;
   apiState().then(applySnapshot).catch(function () {});
   if (S.screen === "chat" && S.chat && S.chat.convId) fetchConv(); // voltou pro chat: histórico fresco
   if (!ws || ws.readyState === WebSocket.CLOSED) connectWS();
 });
+
+// ---------------- tema (C4) ----------------
+/* O head já aplicou o data-theme antes do paint; aqui vive o runtime: toggle
+   persistido, meta theme-color e o acompanhamento do sistema (sem escolha
+   explícita guardada). Decisão pura no core (effectiveTheme). */
+function systemDark() {
+  try {
+    if (window.matchMedia) return matchMedia("(prefers-color-scheme: dark)").matches;
+  } catch (e) {}
+  return true;
+}
+function applyTheme() {
+  var eff = Core ? Core.effectiveTheme(lsGet(LS_THEME), systemDark()) : "dark";
+  document.documentElement.setAttribute("data-theme", eff);
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", eff === "light" ? "#fbfbfa" : "#0a0b0d");
+}
+$("#btnTheme").addEventListener("click", function () {
+  var eff = Core ? Core.effectiveTheme(lsGet(LS_THEME), systemDark()) : "dark";
+  lsSet(LS_THEME, eff === "dark" ? "light" : "dark");
+  applyTheme();
+});
+try {
+  if (window.matchMedia) {
+    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+  }
+} catch (e) {}
+applyTheme();
 
 // ---------------- boot ----------------
 initToken();
@@ -1988,17 +2179,25 @@ renderBell();
 if (!MOCK && "serviceWorker" in navigator) {
   try { navigator.serviceWorker.register("sw.js"); } catch (e) {}
 }
-if (!S.token) {
+/* C4 — pareamento v2: #pair=<token de uso único> na URL dispara a troca pelo
+   token definitivo (com aceite humano no Mac). O fragment some da URL já. */
+var bootPairTok = Core ? Core.pairTokenFromHash(location.hash) : null;
+if (bootPairTok) history.replaceState(null, "", location.pathname + location.search);
+if (!MOCK && bootPairTok) {
+  startPairing(bootPairTok);
+} else if (!S.token) {
   showScreen("pair");
   setConn("off");
 } else {
   // último snapshot conhecido ANTES da rede: a tela nasce preenchida e
   // CARIMBADA ("visto há…") até o dado vivo chegar — refresh/offline nunca é
-  // tela branca nem dado velho fingindo vivo.
+  // tela branca nem dado velho fingindo vivo. Snapshot de mais de 7 dias não
+  // restaura (teto do nit C1): briefing arqueológico não ajuda ninguém.
   if (!MOCK) {
     var cachedSnap = null;
     try { cachedSnap = JSON.parse(lsGet(LS_SNAP) || "null"); } catch (e) {}
-    if (cachedSnap && cachedSnap.snap && cachedSnap.at) {
+    if (cachedSnap && cachedSnap.snap && cachedSnap.at &&
+        (!Core || Core.snapshotRestorable(Date.now(), cachedSnap.at))) {
       applySnapshot(cachedSnap.snap, cachedSnap.at);
     }
   }

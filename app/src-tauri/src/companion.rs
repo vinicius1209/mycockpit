@@ -2571,7 +2571,6 @@ mod tests {
         assert!(m.get("a").unwrap().len() <= ACTION_DEDUPE_CAP);
     }
 
-    #[cfg(any())] // re-armado no commit do cliente (a página ainda não fala v2)
     #[test]
     fn c4_pagina_fala_o_vocabulario_do_pareamento_v2() {
         // a página troca o token de uso único pelo definitivo via /pair e NUNCA

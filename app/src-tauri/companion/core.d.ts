@@ -90,5 +90,14 @@ declare global {
       verdict: { ok?: boolean; convId?: unknown; projectId?: string; agent?: string } | null | undefined,
     ): boolean
     blobUrlPath(path: unknown): string | null
+    pairTokenFromHash(hash: string | null | undefined): string | null
+    deviceLabel(ua: string | null | undefined): string
+    effectiveTheme(
+      stored: string | null | undefined,
+      systemDark: boolean,
+    ): "light" | "dark"
+    SNAP_MAX_AGE_MS: number
+    snapshotRestorable(nowMs: number, atMs: number | null | undefined): boolean
+    titleBadge(base: string | null | undefined, n: number | null | undefined): string
   }
 }
