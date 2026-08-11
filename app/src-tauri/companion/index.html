@@ -194,6 +194,34 @@ pre.cmd {
 .empty { color: var(--muted-foreground); font-size: 13px; padding: 10px 2px; }
 .back { color: var(--muted-foreground); font-size: 14px; padding: 6px 8px 6px 0; }
 
+/* ---------- lançar tarefa (C2) ---------- */
+.launchbtn { width: 100%; justify-content: center; margin: 4px 0 2px; }
+.pickrow { display: flex; flex-wrap: wrap; gap: 7px; margin: 6px 0 12px; }
+.pick { border: 1px solid var(--border); background: var(--card); border-radius: 999px; padding: 8px 14px; font-size: 13px; color: color-mix(in srgb, var(--foreground) 85%, transparent); }
+.pick.on { border-color: var(--brass); background: var(--brass-soft); color: var(--brass); }
+.pick small { color: var(--muted-foreground); font-size: 11px; margin-left: 4px; }
+#launchStatus { font-size: 13px; margin-top: 10px; min-height: 18px; }
+#launchStatus.err { color: var(--st-error); }
+#launchStatus.ok { color: var(--st-success); }
+
+/* snackbar honesto: veredito de ação vindo do Mac (action-result) */
+#note {
+  position: fixed; left: 12px; right: 12px; bottom: calc(64px + env(safe-area-inset-bottom));
+  z-index: 30; background: var(--popover); border: 1px solid var(--border-strong);
+  border-radius: 9px; padding: 10px 12px; font-size: 13px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.45);
+}
+#note[hidden] { display: none !important; }
+
+/* opções de pergunta estruturada (C2: escolhas respondíveis do celular) */
+.optbtn {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left;
+  border: 1px solid var(--border); background: var(--rail); border-radius: 7px;
+  padding: 8px 10px; margin-top: 6px; font-size: 13.5px;
+}
+.optbtn.on { border-color: var(--brass); background: var(--brass-soft); }
+.optbtn .od { color: var(--muted-foreground); font-size: 12px; }
+
 /* rodapé de custo */
 footer#costbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
@@ -288,6 +316,7 @@ footer#costbar[hidden] { display: none !important; }
 
   <!-- briefing (home) -->
   <section class="screen" id="scr-brief" hidden>
+    <button class="btn primary launchbtn" id="btnLaunch">＋ Lançar tarefa</button>
     <h2 class="sec"><span class="amber">Precisa de você</span></h2>
     <div id="attention"></div>
     <h2 class="sec">Em execução</h2>
@@ -298,6 +327,20 @@ footer#costbar[hidden] { display: none !important; }
     <div id="board"></div>
     <h2 class="sec">Conversar</h2>
     <div id="projects"></div>
+  </section>
+
+  <!-- lançar tarefa (C2) -->
+  <section class="screen" id="scr-launch" hidden>
+    <button class="back" data-nav="brief">‹ Briefing</button>
+    <h2 class="sec">Lançar tarefa</h2>
+    <div class="lm" style="margin:10px 2px 2px">Projeto</div>
+    <div class="pickrow" id="launchProjects"></div>
+    <div class="lm" style="margin:10px 2px 2px">Quem pilota</div>
+    <div class="pickrow" id="launchPilots"></div>
+    <textarea id="launchText" rows="3" placeholder="O que precisa ser feito?"></textarea>
+    <div class="actions"><button class="btn primary" id="launchGo">Lançar</button></div>
+    <div id="launchStatus"></div>
+    <div class="meta">A tarefa vira uma conversa nova no app, rodando de verdade no seu Mac.</div>
   </section>
 
   <!-- escolha de agent -->
@@ -326,6 +369,8 @@ footer#costbar[hidden] { display: none !important; }
     </div>
   </section>
 </main>
+
+<div id="note" hidden></div>
 
 <footer id="costbar" hidden>
   <span class="lm">custo hoje</span>
@@ -400,6 +445,8 @@ var S = {
   agentsFor: null,          // projeto selecionado na tela de agents
   chat: null,               // {projectId, projectName, agent, convId, explicitConv, items, echo:[], atts:[], sending, waitStart, fb:{}}
   prevRunning: {},          // convId→1 do snapshot ANTERIOR (detecta fim de turno)
+  launch: null,             // C2: {projectId, pilot:{kind:"agent"|"spec",id,backend}, busy, actionId, status}
+  pendingActions: {},       // C2: actionId → {kind} aguardando action-result do Mac
   pickCtx: null,            // pra onde vai o próximo anexo: {kind:"gate",id} | {kind:"chat"}
   sigs: {},                 // assinaturas por seção (evita re-render que rouba foco)
   snapAt: null,             // quando o snapshot corrente foi VISTO (carimbo honesto)
@@ -419,14 +466,20 @@ var MOCK_SNAP = {
       command: "rm -rf node_modules && bun install", toolName: "Bash" },
     { id: "q-12", kind: "question", convId: "conv-t2", projectId: "p1", projectName: "mycockpit",
       agent: "claude-code", phase: null, phaseLabel: null,
-      questions: ["Qual estratégia de cache prefere?"] }
+      questions: ["Qual estratégia de cache prefere?"],
+      choices: [{ header: "Cache", question: "Qual estratégia de cache prefere?", multiSelect: false,
+        options: [
+          { label: "TTL curto", description: "30s, simples e honesto" },
+          { label: "Invalidação por evento", description: "mais preciso, mais código" } ] }] }
   ],
   running: [
     { convId: "conv-t1", projectId: "p2", projectName: "site-maclan", kind: "turno", agent: "codex",
       label: "Ajustar formulário de contato", detail: "Executando comando…", startedAt: Date.now() - 4 * 60000 },
     { convId: "conv-m1", projectId: "p1", projectName: "mycockpit", kind: "missão", agent: "claude-code",
       label: "Migrar settings pro SQLite", detail: "Planejar…", startedAt: Date.now() - 11 * 60000,
-      missionPhases: [ { label: "Explorar", status: "done" }, { label: "Planejar", status: "running" }, { label: "Executar", status: "queued" }, { label: "Revisar", status: "queued" } ] }
+      missionPhases: [ { label: "Explorar", status: "done" }, { label: "Planejar", status: "running" }, { label: "Executar", status: "queued" }, { label: "Revisar", status: "queued" } ] },
+    { convId: "conv-t9", projectId: "p1", projectName: "mycockpit", kind: "turno", agent: "claude-code",
+      label: "Atualizar dependências", detail: "finalizando…", startedAt: null, finalizing: true }
   ],
   missions: [
     { convId: "conv-m1", projectId: "p1", projectName: "mycockpit", task: "Migrar settings pro SQLite",
@@ -453,6 +506,10 @@ var MOCK_SNAP = {
     { id: "p1", name: "mycockpit", agents: [{ agent: "claude-code" }, { agent: "codex" }] },
     { id: "p2", name: "site-maclan", agents: [
       { agent: "claude-code" }, { agent: "codex", deskConvId: "conv-t1", deskTitle: "Mesa · Codex" }, { agent: "agy" } ] }
+  ],
+  specialists: [
+    { id: "revisor", name: "Revisor", backend: "claude-code", category: "Qualidade" },
+    { id: "arquiteto", name: "Arquiteto", backend: "codex", category: "Engenharia" }
   ]
 };
 var MOCK_CONV = {
@@ -499,7 +556,35 @@ function apiAction(body) {
       MOCK_SNAP.attention = MOCK_SNAP.attention.filter(function (a) { return a.id !== body.id; });
     }
     if (body.kind === "stop_mission" || body.kind === "stop_turn") {
-      MOCK_SNAP.running = MOCK_SNAP.running.filter(function (r) { return r.convId !== body.convId; });
+      // fixture com semântica honesta: turno FINALIZANDO não é interrompível
+      var alvo = null;
+      MOCK_SNAP.running.forEach(function (r) { if (r.convId === body.convId) alvo = r; });
+      var interrompivel = !(alvo && alvo.finalizing);
+      if (interrompivel) {
+        MOCK_SNAP.running = MOCK_SNAP.running.filter(function (r) { return r.convId !== body.convId; });
+      }
+      if (body.actionId) {
+        setTimeout(function () {
+          onActionResult({ actionId: body.actionId, kind: body.kind, ok: interrompivel,
+            message: interrompivel
+              ? (body.kind === "stop_mission" ? "Missão interrompida." : "Turno interrompido.")
+              : "O turno já está finalizando, não dá mais para interromper.",
+            convId: body.convId });
+        }, 500);
+      }
+    }
+    if (body.kind === "launch_task") {
+      // fluxo C2 completo no mock: 202 → action-result ok → navega pro fio
+      MOCK_CONV.items = [{ kind: "user", id: "lt" + (++mockSeq), text: body.text }];
+      setTimeout(function () {
+        MOCK_SNAP.running.push({ convId: MOCK_CONV.id, projectId: body.projectId, projectName: "mock",
+          kind: "turno", agent: body.agent, label: body.text.slice(0, 44),
+          detail: "Analisando a tarefa…", startedAt: Date.now() });
+        applySnapshot(JSON.parse(JSON.stringify(MOCK_SNAP)));
+        onActionResult({ actionId: body.actionId, kind: "launch_task", ok: true,
+          message: "Tarefa lançada.", convId: MOCK_CONV.id, projectId: body.projectId, agent: body.agent });
+      }, 900);
+      return new Promise(function (res) { setTimeout(res, 350); });
     }
     if (body.kind === "dispatch_card") {
       MOCK_SNAP.cards.forEach(function (c) { if (c.id === body.cardId && c.state === "backlog") c.state = "working"; });
@@ -622,6 +707,7 @@ function connectWS() {
     try { msg = JSON.parse(ev.data); } catch (e) { return; }
     if (msg && msg.type === "snapshot") applySnapshot(msg.data);
     else if (msg && msg.type === "conv-updated") onConvUpdated(String(msg.convId || ""));
+    else if (msg && msg.type === "action-result") onActionResult(msg.data);
   };
   // caiu: honesto na cara ("reconectando…" + banner) e retry automático
   ws.onclose = function () { connEvent("down"); setConn("connecting"); scheduleReconnect(); };
@@ -698,6 +784,7 @@ function applySnapshot(snap, seenAtMs) {
   renderBrief();
   if (S.screen === "agents") renderAgents();
   if (S.screen === "chat") { refreshChatTitle(); bindChatConv(); renderChatItems(); }
+  if (S.screen === "launch") renderLaunch();
 }
 
 /* chat restaurado por URL (F5) nasce com o id do projeto no título; quando o
@@ -715,7 +802,7 @@ function refreshChatTitle() {
 
 function showScreen(name) {
   S.screen = name;
-  ["pair", "brief", "agents", "chat"].forEach(function (n) {
+  ["pair", "brief", "agents", "chat", "launch"].forEach(function (n) {
     $("#scr-" + n).hidden = n !== name;
   });
   $("#costbar").hidden = name !== "brief";
@@ -750,6 +837,10 @@ function applyRoute(r) {
   }
   if (r.screen === "chat" && r.projectId && r.agent) {
     openChat(r.projectId, r.agent, r.convId || null);
+    return;
+  }
+  if (r.screen === "launch") {
+    openLaunch(r.projectId || null);
     return;
   }
   showScreen("brief");
@@ -816,6 +907,25 @@ function renderAttention() {
         '<span class="ctx">' + ctxLine(a) + '</span></div><div class="sent">✓ Resposta enviada — aguardando o app…</div></div>';
     }
     var d = S.drafts[a.id];
+    if (a.kind === "question" && a.choices && a.choices.some(function (q) { return q.options && q.options.length; })) {
+      // C2 — ESCOLHA estruturada respondível do celular: radio/checkbox +
+      // "Outro" livre; a resposta viaja pelo MESMO answer_interaction (o
+      // payload sai da decisão pura buildQuestionAnswer no core.js).
+      if (!d || !d.picks) { d = S.drafts[a.id] = { picks: a.choices.map(function () { return { selected: [], other: "" }; }), atts: [] }; }
+      var qblocks = a.choices.map(function (q, qi) {
+        var opts = (q.options || []).map(function (o) {
+          var on = d.picks[qi].selected.indexOf(o.label) >= 0;
+          return '<button class="optbtn' + (on ? " on" : "") + '" data-opt="' + esc(a.id) + '" data-q="' + qi + '" data-label="' + esc(o.label) + '">' +
+            '<span>' + esc(o.label) + '</span>' + (o.description ? '<span class="od">' + esc(o.description) + '</span>' : "") + '</button>';
+        }).join("");
+        return '<div class="qblock"><p>' + fmt(q.question) + (q.multiSelect ? ' <span class="lm">múltipla</span>' : "") + '</p>' + opts +
+          '<textarea rows="1" data-qother="' + esc(a.id) + '" data-q="' + qi + '" placeholder="Outro (texto livre)…">' + esc(d.picks[qi].other || "") + '</textarea></div>';
+      }).join("");
+      var ready = Core ? !!Core.buildQuestionAnswer(a.choices, d.picks) : true;
+      return '<div class="card attn"><div class="cardhead"><span class="badge question">pergunta</span>' +
+        '<span class="ctx">' + ctxLine(a) + '</span></div>' + qblocks +
+        '<div class="actions"><button class="btn primary" data-answerq="' + esc(a.id) + '"' + (ready ? "" : " disabled") + '>Responder</button></div></div>';
+    }
     if (a.kind === "gate" || a.kind === "question") {
       var qs = a.questions || [];
       if (!d) { d = S.drafts[a.id] = { texts: qs.map(function () { return ""; }), atts: [] }; }
@@ -888,7 +998,16 @@ function renderRunning() {
     if (r.kind === "turno" && r.projectId) {
       h += '<button class="btn" data-openchat="' + esc(r.convId) + '" data-pid="' + esc(r.projectId) + '" data-agent="' + esc(r.agent) + '">Abrir conversa</button>';
     }
-    h += '<button class="btn danger" data-stop="' + esc(r.convId) + '" data-stopkind="' + (r.kind === "missão" ? "stop_mission" : "stop_turn") + '">Parar</button>';
+    // C2 — semântica honesta do Parar (mesma do app): turno FINALIZANDO não é
+    // interrompível — em vez do botão, o motivo (decisão pura no core.js).
+    var disp = Core ? Core.stopDisposition(r)
+      : (r.finalizing ? { can: false, label: "Finalizando…", reason: "Turno finalizando, não dá mais para interromper." }
+                      : { can: true, label: "Parar", reason: null });
+    if (disp.can) {
+      h += '<button class="btn danger" data-stop="' + esc(r.convId) + '" data-stopkind="' + (r.kind === "missão" ? "stop_mission" : "stop_turn") + '">Parar</button>';
+    } else {
+      h += '<span class="meta">' + esc(disp.reason || disp.label) + '</span>';
+    }
     h += '</div></div>';
     return h;
   }).join("");
@@ -1013,6 +1132,137 @@ function renderAgents() {
       '<span style="flex:1; text-align:left">' + esc(agentName(id)) + '</span>' +
       (conv ? '<span class="lm">histórico</span>' : '') + '</button>';
   }).join("") || '<div class="empty">Nenhum agent disponível nesta máquina.</div>';
+}
+
+// ---------------- lançar tarefa (C2) ----------------
+/* Snackbar honesto: o veredito das ações (action-result) aparece aqui quando a
+   tela que o esperava já não está aberta — nada de sucesso/fracasso mudo. */
+var noteTimer = null;
+function showNote(msg) {
+  var el = $("#note");
+  if (!el) return;
+  el.textContent = msg;
+  el.hidden = false;
+  if (noteTimer) clearTimeout(noteTimer);
+  noteTimer = setTimeout(function () { el.hidden = true; }, 6000);
+}
+
+/* Veredito de ação vindo do Mac (WS action-result). launch_task com a tela
+   aberta atualiza a tela (sucesso navega direto pro fio novo); o resto vira
+   snackbar com o motivo legível. */
+function onActionResult(d) {
+  if (!d || typeof d !== "object") return;
+  var pend = d.actionId ? S.pendingActions[d.actionId] : null;
+  if (d.actionId) delete S.pendingActions[d.actionId];
+  if (d.kind === "launch_task") {
+    var L = S.launch;
+    if (L && L.actionId === d.actionId) {
+      L.busy = false;
+      if (d.ok) {
+        L.actionId = null;
+        L.status = null;
+        $("#launchText").value = "";
+        showNote("✓ " + (d.message || "Tarefa lançada."));
+        if (d.projectId && d.agent && d.convId) {
+          nav({ screen: "chat", projectId: d.projectId, agent: d.agent, convId: d.convId });
+        } else {
+          nav({ screen: "brief" });
+        }
+      } else {
+        // recusado: o próximo envio é OUTRO gesto (id novo); motivo na cara
+        L.actionId = null;
+        L.status = { cls: "err", msg: d.message || "O Mac recusou a tarefa." };
+        renderLaunch();
+      }
+      return;
+    }
+    showNote((d.ok ? "✓ " : "✕ ") + (d.message || "Resultado da tarefa"));
+    return;
+  }
+  if (pend || d.message) showNote((d.ok ? "✓ " : "") + (d.message || ""));
+}
+
+function openLaunch(pid) {
+  if (!S.launch) S.launch = { projectId: null, pilot: null, busy: false, actionId: null, status: null };
+  if (pid) S.launch.projectId = pid;
+  showScreen("launch");
+  renderLaunch();
+}
+
+function pilotKey(p) { return p ? p.kind + ":" + p.id : ""; }
+
+function renderLaunch() {
+  var L = S.launch;
+  if (!L) return;
+  var ps = (S.snap && S.snap.projects) || [];
+  // projeto escolhido que sumiu do app: desmarca (fail-closed na UI também)
+  if (L.projectId && ps.length && !ps.some(function (p) { return p.id === L.projectId; })) L.projectId = null;
+  $("#launchProjects").innerHTML = ps.length ? ps.map(function (p) {
+    return '<button class="pick' + (L.projectId === p.id ? " on" : "") + '" data-lproj="' + esc(p.id) + '">' + esc(p.name) + '</button>';
+  }).join("") : '<div class="empty">' + (S.snap ? "Nenhum projeto no app." : "Conectando ao Mac…") + '</div>';
+  // pilotos: Especialistas globais + agents utilizáveis do projeto escolhido
+  var pilots = [];
+  ((S.snap && S.snap.specialists) || []).forEach(function (s) {
+    pilots.push({ kind: "spec", id: s.id, backend: s.backend, name: s.name });
+  });
+  if (L.projectId) {
+    ps.forEach(function (p) {
+      if (p.id !== L.projectId) return;
+      (p.agents || []).forEach(function (a) {
+        var id = typeof a === "string" ? a : a.agent;
+        pilots.push({ kind: "agent", id: id, backend: id, name: agentName(id) });
+      });
+    });
+  }
+  if (L.pilot && !pilots.some(function (p) { return pilotKey(p) === pilotKey(L.pilot); })) L.pilot = null;
+  $("#launchPilots").innerHTML = pilots.length ? pilots.map(function (p) {
+    var extra = p.kind === "spec" ? "<small>" + esc(agentName(p.backend)) + "</small>" : "";
+    return '<button class="pick' + (pilotKey(L.pilot) === pilotKey(p) ? " on" : "") + '" data-lpilot="' + esc(pilotKey(p)) + '" data-backend="' + esc(p.backend) + '">' + esc(p.name) + extra + '</button>';
+  }).join("") : '<div class="empty">' + (L.projectId ? "Nenhum agent disponível." : "Escolha um projeto primeiro.") + '</div>';
+  var st = $("#launchStatus");
+  st.className = L.status ? L.status.cls : "";
+  st.textContent = L.status ? L.status.msg : "";
+  var text = $("#launchText").value.trim();
+  $("#launchGo").disabled = !!L.busy || !L.projectId || !L.pilot || !text;
+  $("#launchGo").textContent = L.busy ? "Lançando…" : "Lançar";
+}
+
+function submitLaunch() {
+  var L = S.launch;
+  if (!L || L.busy) return;
+  var text = $("#launchText").value.trim();
+  if (!L.projectId || !L.pilot || !text) return;
+  // idempotência: UM id por gesto — retry manual reusa o id, o servidor
+  // dedupe, e duas batidas nunca viram duas tarefas.
+  if (!L.actionId) {
+    L.actionId = Core ? Core.makeActionId() : (Date.now().toString(16) + Math.random().toString(16).slice(2, 18));
+  }
+  var body = { kind: "launch_task", projectId: L.projectId, agent: L.pilot.backend, text: text, actionId: L.actionId };
+  if (L.pilot.kind === "spec") body.presetId = L.pilot.id;
+  L.busy = true;
+  L.status = { cls: "", msg: "Enviando…" };
+  S.pendingActions[L.actionId] = { kind: "launch_task" };
+  renderLaunch();
+  apiAction(body).then(function () {
+    if (S.launch !== L || !L.busy) return;
+    L.status = { cls: "", msg: "Aceito. Aguardando o Mac confirmar…" };
+    renderLaunch();
+    // honestidade: sem veredito em 25s, destrava — reenvio usa o MESMO id
+    // (não duplica) e a ausência de resposta fica dita, não escondida.
+    var aid = L.actionId;
+    setTimeout(function () {
+      if (S.launch === L && L.busy && L.actionId === aid) {
+        L.busy = false;
+        L.status = { cls: "err", msg: "Sem resposta do Mac ainda. Tentar de novo não duplica a tarefa." };
+        renderLaunch();
+      }
+    }, 25000);
+  }).catch(function (e) {
+    if (S.launch !== L) return;
+    L.busy = false;
+    L.status = { cls: "err", msg: "Falha ao enviar: " + (e && e.message ? e.message : e) };
+    renderLaunch();
+  });
 }
 
 // ---------------- chat ----------------
@@ -1290,11 +1540,73 @@ document.addEventListener("input", function (ev) {
   autoGrow(t);
   var gid = t.getAttribute("data-gate");
   if (gid && S.drafts[gid]) S.drafts[gid].texts[Number(t.getAttribute("data-q"))] = t.value;
+  // C2 — "Outro" da pergunta estruturada: guarda no rascunho e re-arma o
+  // botão Responder (sem re-render, o foco fica onde está)
+  var qid = t.getAttribute("data-qother");
+  if (qid && S.drafts[qid] && S.drafts[qid].picks) {
+    S.drafts[qid].picks[Number(t.getAttribute("data-q"))].other = t.value;
+    var a = ((S.snap && S.snap.attention) || []).find(function (x) { return x.id === qid; });
+    var btn = document.querySelector('[data-answerq="' + CSS.escape(qid) + '"]');
+    if (a && btn && Core) btn.disabled = !Core.buildQuestionAnswer(a.choices, S.drafts[qid].picks);
+  }
+  // C2 — prompt do lançamento: só re-arma o botão
+  if (t.id === "launchText" && S.launch) {
+    $("#launchGo").disabled = !!S.launch.busy || !S.launch.projectId || !S.launch.pilot || !t.value.trim();
+  }
 });
 
 document.addEventListener("click", function (ev) {
-  var el = ev.target.closest ? ev.target.closest("[data-nav],[data-proj],[data-pickagent],[data-answer],[data-approve],[data-deny],[data-stop],[data-openchat],[data-cam],[data-rmatt],[data-sug],[data-fb],[data-cardgo],[data-cardclose]") : null;
+  var el = ev.target.closest ? ev.target.closest("[data-nav],[data-proj],[data-pickagent],[data-answer],[data-approve],[data-deny],[data-stop],[data-openchat],[data-cam],[data-rmatt],[data-sug],[data-fb],[data-cardgo],[data-cardclose],[data-lproj],[data-lpilot],[data-opt],[data-answerq]") : null;
   if (!el) return;
+
+  // C2 — lançamento: escolher projeto/piloto (re-render mantém a seleção)
+  if (el.hasAttribute("data-lproj")) {
+    if (S.launch) { S.launch.projectId = el.getAttribute("data-lproj"); S.launch.status = null; renderLaunch(); }
+    return;
+  }
+  if (el.hasAttribute("data-lpilot")) {
+    if (S.launch) {
+      var pk = el.getAttribute("data-lpilot").split(":");
+      S.launch.pilot = { kind: pk[0], id: pk.slice(1).join(":"), backend: el.getAttribute("data-backend") };
+      S.launch.status = null;
+      renderLaunch();
+    }
+    return;
+  }
+
+  // C2 — opção de pergunta estruturada: single substitui, múltipla alterna
+  if (el.hasAttribute("data-opt")) {
+    var oid = el.getAttribute("data-opt"), oq = Number(el.getAttribute("data-q"));
+    var olabel = el.getAttribute("data-label");
+    var oa = ((S.snap && S.snap.attention) || []).find(function (x) { return x.id === oid; });
+    var od = S.drafts[oid];
+    if (!oa || !oa.choices || !od || !od.picks) return;
+    var pick = od.picks[oq];
+    var idx = pick.selected.indexOf(olabel);
+    if (oa.choices[oq].multiSelect) {
+      if (idx >= 0) pick.selected.splice(idx, 1); else pick.selected.push(olabel);
+    } else {
+      pick.selected = idx >= 0 ? [] : [olabel];
+    }
+    S.sigs.attention = null;
+    renderAttention();
+    return;
+  }
+
+  // C2 — responder pergunta estruturada (payload da decisão pura do core)
+  if (el.hasAttribute("data-answerq")) {
+    var qaid = el.getAttribute("data-answerq");
+    var qa = ((S.snap && S.snap.attention) || []).find(function (x) { return x.id === qaid; });
+    var qd = S.drafts[qaid];
+    if (!qa || !qd || !qd.picks || !Core) return;
+    var payload = Core.buildQuestionAnswer(qa.choices, qd.picks);
+    if (!payload) return; // incompleta: nunca viaja resposta vazia
+    el.disabled = true;
+    apiAction({ kind: "answer_interaction", id: qaid, answer: payload })
+      .then(function () { S.answered[qaid] = true; S.sigs.attention = null; renderAttention(); })
+      .catch(function (e) { el.disabled = false; alert("Falha ao responder: " + (e && e.message ? e.message : e)); });
+    return;
+  }
 
   // navegação = rota (C1): o hash muda, o histórico ganha a entrada e o
   // hashchange aplica a tela — botão voltar do browser/gesto funciona.
@@ -1416,8 +1728,12 @@ document.addEventListener("click", function (ev) {
       return;
     }
     el.disabled = true;
-    apiAction({ kind: el.getAttribute("data-stopkind"), convId: el.getAttribute("data-stop") })
-      .catch(function () {})
+    // C2 — actionId: o veredito honesto ("interrompido" / "já tinha acabado" /
+    // "finalizando, não interrompível") volta do Mac pelo action-result.
+    var stopId = Core ? Core.makeActionId() : (Date.now().toString(16) + Math.random().toString(16).slice(2, 18));
+    S.pendingActions[stopId] = { kind: el.getAttribute("data-stopkind") };
+    apiAction({ kind: el.getAttribute("data-stopkind"), convId: el.getAttribute("data-stop"), actionId: stopId })
+      .catch(function () { delete S.pendingActions[stopId]; })
       .then(function () { if (el.isConnected) { el.disabled = false; el.removeAttribute("data-armed"); el.textContent = "Parar"; } });
     return;
   }
@@ -1425,6 +1741,8 @@ document.addEventListener("click", function (ev) {
 
 $("#chatSend").addEventListener("click", sendChat);
 $("#chatCam").addEventListener("click", function () { pickAttachment({ kind: "chat" }); });
+$("#btnLaunch").addEventListener("click", function () { nav({ screen: "launch" }); });
+$("#launchGo").addEventListener("click", submitLaunch);
 
 // refresh do estado quando a página volta do background (celular dorme muito)
 document.addEventListener("visibilitychange", function () {

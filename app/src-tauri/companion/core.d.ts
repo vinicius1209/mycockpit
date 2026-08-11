@@ -6,10 +6,28 @@ export {}
 
 declare global {
   interface CompanionWebRoute {
-    screen: "brief" | "agents" | "chat"
+    screen: "brief" | "agents" | "chat" | "launch"
     projectId?: string
     agent?: string
     convId?: string
+  }
+
+  interface CompanionWebStopDisposition {
+    can: boolean
+    label: string
+    reason: string | null
+  }
+
+  interface CompanionWebChoice {
+    header: string
+    question: string
+    multiSelect: boolean
+    options: { label: string; description: string }[]
+  }
+
+  interface CompanionWebPick {
+    selected?: string[]
+    other?: string
   }
 
   interface CompanionWebConnState {
@@ -38,5 +56,13 @@ declare global {
     connLabel(state: CompanionWebConnState | null): string
     offlineBanner(s: CompanionWebOfflineInput | null): boolean
     seenAgo(nowMs: number, atMs: number | null | undefined): string
+    stopDisposition(
+      item: { finalizing?: boolean } | null | undefined,
+    ): CompanionWebStopDisposition
+    makeActionId(rand?: () => number): string
+    buildQuestionAnswer(
+      choices: CompanionWebChoice[] | null | undefined,
+      picks: (CompanionWebPick | null | undefined)[] | null | undefined,
+    ): { answers: { header: string; selected: string[] }[] } | null
   }
 }

@@ -192,3 +192,123 @@ describe("máquina de reconexão (backoff com teto)", () => {
     ).toBe("reconectando…")
   })
 })
+
+// ───────────────────────────────────────────────────────────── C2 — Ações
+
+describe("rota de lançar tarefa (C2)", () => {
+  it("ida e volta preserva a tela e o projeto pré-escolhido", () => {
+    const semProjeto: CompanionWebRoute = { screen: "launch" }
+    expect(core.routeHash(semProjeto)).toBe("#/launch")
+    expect(core.parseRoute("#/launch")).toEqual(semProjeto)
+
+    const comProjeto: CompanionWebRoute = { screen: "launch", projectId: "p1" }
+    expect(core.parseRoute(core.routeHash(comProjeto))).toEqual(comProjeto)
+  })
+
+  it("projeto com caracteres especiais sobrevive ao encode/decode", () => {
+    const r: CompanionWebRoute = { screen: "launch", projectId: "meu proj#2" }
+    expect(core.parseRoute(core.routeHash(r))).toEqual(r)
+  })
+})
+
+describe("parar turno com semântica honesta (stopDisposition)", () => {
+  it("turno rodando pode parar", () => {
+    expect(core.stopDisposition({ finalizing: false })).toEqual({
+      can: true,
+      label: "Parar",
+      reason: null,
+    })
+  })
+
+  it("turno FINALIZANDO não é interrompível, com o motivo na cara", () => {
+    const d = core.stopDisposition({ finalizing: true })
+    expect(d.can).toBe(false)
+    expect(d.reason).toContain("não dá mais para interromper")
+  })
+
+  it("item torto ou ausente é fail-open: deixa parar (o Mac é a verdade final)", () => {
+    expect(core.stopDisposition(null).can).toBe(true)
+    expect(core.stopDisposition(undefined).can).toBe(true)
+  })
+})
+
+describe("id de ação idempotente (makeActionId)", () => {
+  it("gera 32 hex e é determinístico dado o rand injetado", () => {
+    const a = core.makeActionId(() => 0.5)
+    expect(a).toMatch(/^[0-9a-f]{32}$/)
+    expect(core.makeActionId(() => 0.5)).toBe(a)
+    // rand diferente → id diferente (um id POR gesto)
+    expect(core.makeActionId(() => 0.1)).not.toBe(a)
+  })
+
+  it("rand torto nunca produz char inválido", () => {
+    expect(core.makeActionId(() => Number.NaN)).toMatch(/^[0-9a-f]{32}$/)
+    expect(core.makeActionId(() => 99)).toMatch(/^[0-9a-f]{32}$/)
+  })
+})
+
+describe("resposta de pergunta com opções (buildQuestionAnswer)", () => {
+  // fixture com o shape REAL do snapshot (CompanionQuestion ← AskUserQuestion)
+  const choices: CompanionWebChoice[] = [
+    {
+      header: "Cache",
+      question: "Qual estratégia de cache prefere?",
+      multiSelect: false,
+      options: [
+        { label: "TTL curto", description: "30s" },
+        { label: "Invalidação por evento", description: "mais código" },
+      ],
+    },
+    {
+      header: "Escopo",
+      question: "Onde aplicar?",
+      multiSelect: true,
+      options: [
+        { label: "API", description: "" },
+        { label: "Front", description: "" },
+      ],
+    },
+  ]
+
+  it("monta answers com header + labels marcados, no shape do desktop", () => {
+    const out = core.buildQuestionAnswer(choices, [
+      { selected: ["TTL curto"] },
+      { selected: ["API", "Front"] },
+    ])
+    expect(out).toEqual({
+      answers: [
+        { header: "Cache", selected: ["TTL curto"] },
+        { header: "Escopo", selected: ["API", "Front"] },
+      ],
+    })
+  })
+
+  it("texto livre (Outro) entra como seleção, depois dos labels", () => {
+    const out = core.buildQuestionAnswer(choices, [
+      { selected: [], other: "  redis com TTL de 5 min  " },
+      { selected: ["API"], other: "e o worker também" },
+    ])
+    expect(out?.answers[0].selected).toEqual(["redis com TTL de 5 min"])
+    expect(out?.answers[1].selected).toEqual(["API", "e o worker também"])
+  })
+
+  it("single-select nunca viaja com mais de um label (o excedente cai)", () => {
+    const out = core.buildQuestionAnswer(choices, [
+      { selected: ["TTL curto", "Invalidação por evento"] },
+      { selected: ["API"] },
+    ])
+    expect(out?.answers[0].selected).toEqual(["TTL curto"])
+  })
+
+  it("pergunta sem NADA marcado nem digitado = incompleta: null (nunca resposta muda)", () => {
+    expect(
+      core.buildQuestionAnswer(choices, [{ selected: ["TTL curto"] }, {}]),
+    ).toBeNull()
+    expect(core.buildQuestionAnswer(choices, null)).toBeNull()
+  })
+
+  it("entrada torta é fail-closed: sem perguntas não há payload", () => {
+    expect(core.buildQuestionAnswer([], [])).toBeNull()
+    expect(core.buildQuestionAnswer(null, [])).toBeNull()
+  })
+})

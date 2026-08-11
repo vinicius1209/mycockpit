@@ -24,6 +24,7 @@
   //   #/agents/<projectId>        → escolha de agent do projeto
   //   #/chat/<pid>/<agent>        → chat de mesa (conversa resolvida no app)
   //   #/chat/<pid>/<agent>/<conv> → chat de conversa explícita (não-mesa)
+  //   #/launch[/<projectId>]      → lançar tarefa (C2; projeto pré-escolhido)
   // Fail-open: hash malformado, desconhecido ou de token (#token=…) cai no
   // briefing — rota estranha nunca crasha nem tranca o usuário.
 
@@ -48,6 +49,11 @@
       if (parts[3]) r.convId = parts[3];
       return r;
     }
+    if (parts[0] === "launch") {
+      var l = { screen: "launch" };
+      if (parts[1]) l.projectId = parts[1];
+      return l;
+    }
     return { screen: "brief" };
   }
 
@@ -59,6 +65,9 @@
     if (r.screen === "chat" && r.projectId && r.agent) {
       return "#/chat/" + encodeURIComponent(r.projectId) + "/" + encodeURIComponent(r.agent)
         + (r.convId ? "/" + encodeURIComponent(r.convId) : "");
+    }
+    if (r.screen === "launch") {
+      return "#/launch" + (r.projectId ? "/" + encodeURIComponent(r.projectId) : "");
     }
     return "#/";
   }
@@ -126,6 +135,69 @@
     return "visto há " + Math.round(s / 86400) + " d";
   }
 
+  // ---------------- parar turno (C2, semântica honesta) ----------------
+  // Espelha o Stop do app: turno FINALIZANDO não é interrompível (o runId já
+  // foi embora; o CLI está fechando) — o botão não finge que para. Item torto
+  // ou desconhecido é fail-open: deixa parar (o executor no Mac é a verdade
+  // final e devolve o veredito pelo action-result).
+
+  function stopDisposition(item) {
+    if (item && item.finalizing) {
+      return {
+        can: false,
+        label: "Finalizando…",
+        reason: "Turno finalizando, não dá mais para interromper.",
+      };
+    }
+    return { can: true, label: "Parar", reason: null };
+  }
+
+  // ---------------- id de ação (C2, idempotência) ----------------
+  // Um id POR GESTO: o retry da MESMA batida reusa o id (o servidor dedupe e
+  // duas batidas nunca viram duas tarefas). `rand` injetado (puro/testável);
+  // sem rand, Math.random. 32 hex.
+
+  function makeActionId(rand) {
+    var r = typeof rand === "function" ? rand : Math.random;
+    var out = "";
+    for (var i = 0; i < 32; i++) {
+      var n = Math.floor(r() * 16);
+      if (!(n >= 0 && n < 16)) n = 0; // rand torto nunca gera char inválido
+      out += n.toString(16);
+    }
+    return out;
+  }
+
+  // ---------------- resposta de pergunta com opções (C2) ----------------
+  // Monta o payload do answer_interaction a partir das perguntas estruturadas
+  // (choices do snapshot) + o que o usuário marcou/digitou. Regras:
+  //   - selected = labels marcados + texto livre (se houver), nessa ordem —
+  //     mesmo shape do desktop (QuestionAnswer.answers[].selected).
+  //   - single-select: no máx. 1 label marcado (o excedente é descartado).
+  //   - pergunta sem NADA (nem opção nem texto) ⇒ resposta incompleta: null
+  //     (a UI desabilita o enviar — nunca viaja resposta vazia muda).
+
+  function buildQuestionAnswer(choices, picks) {
+    if (!Array.isArray(choices) || !choices.length) return null;
+    var answers = [];
+    for (var i = 0; i < choices.length; i++) {
+      var q = choices[i] || {};
+      var p = (picks && picks[i]) || {};
+      var sel = Array.isArray(p.selected) ? p.selected.filter(function (s) {
+        return typeof s === "string" && s !== "";
+      }) : [];
+      if (!q.multiSelect && sel.length > 1) sel = sel.slice(0, 1);
+      var free = typeof p.other === "string" ? p.other.trim() : "";
+      if (free) sel = sel.concat([free]);
+      if (!sel.length) return null; // incompleta: não viaja resposta muda
+      answers.push({
+        header: typeof q.header === "string" ? q.header : "",
+        selected: sel,
+      });
+    }
+    return { answers: answers };
+  }
+
   return {
     parseRoute: parseRoute,
     routeHash: routeHash,
@@ -134,5 +206,8 @@
     connLabel: connLabel,
     offlineBanner: offlineBanner,
     seenAgo: seenAgo,
+    stopDisposition: stopDisposition,
+    makeActionId: makeActionId,
+    buildQuestionAnswer: buildQuestionAnswer,
   };
 });
