@@ -1261,7 +1261,13 @@ function onActionResult(d) {
   // fio fingindo.
   if (d.kind === "send_message") {
     if (d.ok) {
-      if (S.chat && !S.chat.convId && d.convId && d.projectId === S.chat.projectId) {
+      // adoção do convId: decisão PURA no core (revisão C3) — casa projeto E
+      // agent, senão o ok atrasado do codex envenenaria a mesa do claude
+      // aberta no mesmo projeto (e o convKey dela no localStorage).
+      var adopt = Core ? Core.adoptConvOnVerdict(S.chat, d)
+        : (S.chat && !S.chat.convId && d.convId &&
+           d.projectId === S.chat.projectId && d.agent === S.chat.agent);
+      if (adopt) {
         S.chat.convId = String(d.convId);
         if (!S.chat.explicitConv) lsSet(convKey(S.chat.projectId, S.chat.agent), S.chat.convId);
         fetchConv();
@@ -1524,7 +1530,12 @@ function hydrateBlobs(scope) {
     var p = img.getAttribute("data-blob");
     img.removeAttribute("data-blob");
     fetchBlob(p).then(function (url) { img.src = url; }).catch(function () {
-      // honesto: sem blob (apagado pelo GC / offline) vira aviso, não ícone quebrado
+      // honesto: sem blob (apagado pelo GC / offline / 429 do rate-limit) vira
+      // aviso, não ícone quebrado. RETRY natural: falha NÃO entra no cache e
+      // todo renderChatItems reconstrói o <img data-blob> do item — o próximo
+      // render (snapshot/ticker) re-tenta sozinho. Registrado no plano: janela
+      // com MUITAS imagens pode esbarrar no rate-limit 30/10s e hidratar em
+      // levas ao longo dos renders seguintes.
       var ph = document.createElement("span");
       ph.className = "chip";
       ph.innerHTML = '<span class="file">🖼</span><span class="nm">imagem indisponível</span>';

@@ -85,6 +85,10 @@ declare global {
       cur: CompanionWebThread | null | undefined,
       older: CompanionWebThread | null | undefined,
     ): CompanionWebThread | null
+    adoptConvOnVerdict(
+      chat: { convId?: string | null; projectId?: string; agent?: string } | null | undefined,
+      verdict: { ok?: boolean; convId?: unknown; projectId?: string; agent?: string } | null | undefined,
+    ): boolean
     blobUrlPath(path: unknown): string | null
   }
 }

@@ -52,6 +52,24 @@
 > Registrado (fora do C3): tocar numa imagem para ver em tela cheia ficou de
 > fora; o snackbar de veredito ok do send_message só aparece fora do chat
 > (dentro, o próprio fio é a confirmação).
+>
+> **Revisão C3 (11/08/2026)**: (1) CORRIGIDO (bloqueio) — `renderMarkdown`
+> entrava em loop infinito com linha que "parece bloco" mas o handler rejeita
+> (tabela `| a |` sem separador, fence inválida com conteúdo na linha):
+> correção ESTRUTURAL — todo caminho do loop consome ≥1 linha (linha rejeitada
+> vira parágrafo), com guarda em teste ("entrada torta nunca trava") + fuzz
+> determinístico de 300 documentos de pedaços de sintaxe com teto de tempo.
+> (2) CORRIGIDO — o ok atrasado do send_message só adota o convId no chat
+> aberto se o veredito casa projeto E AGENT (`adoptConvOnVerdict` puro no
+> core.js): antes, enviar na mesa do codex e abrir a mesa do claude no mesmo
+> projeto antes do veredito envenenava o fallback (convKey) do claude. (3)
+> REGISTRADO — janela com muitas imagens pode esbarrar no rate-limit 30/10s
+> do /api: a falha NÃO entra no cache e cada render reconstrói o
+> `<img data-blob>`, então a hidratação re-tenta sozinha nos renders
+> seguintes (levas). (4) APLICADO — `Content-Disposition: attachment` no
+> /api/blob (defesa em profundidade: navegar direto pra URL nunca renderiza
+> PDF inline no contexto da origem; o fetch→objectURL da página não é
+> afetado).
 
 > **Status C2 (11/08/2026): ENTREGUE — Ações.** O canal `/api/action` do C1 já
 > cobria muito (send_message, answer_gate, answer_interaction, stop_turn,

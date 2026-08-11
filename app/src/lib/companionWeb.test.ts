@@ -431,6 +431,77 @@ describe("markdown seguro do fio (renderMarkdown, subset próprio)", () => {
     expect(core.renderMarkdown(null)).toBe("")
     expect(core.renderMarkdown(undefined)).toBe("")
   })
+
+  // Revisão C3 (bloqueio reproduzido): linha que PARECE bloco mas o handler
+  // rejeita (tabela sem separador, fence inválida) girava o loop pra sempre —
+  // turno interrompido com texto parcial travava a thread do celular. A
+  // correção é estrutural (todo caminho consome ≥1 linha); estes casos são a
+  // guarda de que "entrada torta nunca trava".
+  it("tabela sem linha separadora não trava: vira texto", () => {
+    expect(core.renderMarkdown("| a |")).toBe('<p class="mdp">| a |</p>')
+    const noMeio = core.renderMarkdown("texto antes\n| Sessão | Badge |\ntexto depois")
+    expect(noMeio).toContain("| Sessão | Badge |")
+    expect(noMeio).not.toContain("<table")
+  })
+
+  it("fence inválida (conteúdo na mesma linha) não trava: vira texto", () => {
+    expect(core.renderMarkdown("``` js const x = 1```")).toContain("js const x = 1")
+    const parcial = core.renderMarkdown("normal\n``` foo bar\nmais texto")
+    expect(parcial).toContain("``` foo bar")
+    expect(parcial).toContain("mais texto")
+  })
+
+  it("fuzz: pedaços de sintaxe embaralhados sempre terminam rápido (proteção estrutural)", () => {
+    // PRNG determinístico (reprodutível): mulberry32
+    let seed = 0xc3c3c3
+    const rand = (): number => {
+      seed |= 0
+      seed = (seed + 0x6d2b79f5) | 0
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+    const pieces = [
+      "| a |", "|---|", "| a | b |", "```", "``` js x", "```yaml", "# T", "#### ",
+      "- item", "* item", "1. um", "12) doze", "> quote", "---", "***",
+      "**b**", "*i*", "`c`", "texto normal", "", "  ", "[l](https://a.b)",
+      "[l](javascript:x)", " ", "|", "``", "#", ">",
+    ]
+    for (let n = 0; n < 300; n++) {
+      const len = 1 + Math.floor(rand() * 12)
+      const doc = Array.from({ length: len }, () =>
+        pieces[Math.floor(rand() * pieces.length)],
+      ).join("\n")
+      const t0 = performance.now()
+      core.renderMarkdown(doc)
+      expect(performance.now() - t0, `travou/demorou com: ${JSON.stringify(doc)}`).toBeLessThan(50)
+    }
+  })
+})
+
+describe("adoção de conversa pelo veredito (adoptConvOnVerdict, revisão C3)", () => {
+  const chat = { convId: null, projectId: "p1", agent: "claude-code" }
+  const ok = { ok: true, convId: "c-novo", projectId: "p1", agent: "claude-code" }
+
+  it("adota quando o veredito ok casa projeto E agent e o chat não tem conversa", () => {
+    expect(core.adoptConvOnVerdict(chat, ok)).toBe(true)
+  })
+
+  it("agent diferente NUNCA adota: ok atrasado do codex não envenena a mesa do claude", () => {
+    // cenário do revisor: enviei na mesa do codex, abri a mesa do claude no
+    // MESMO projeto antes do veredito — o convId do codex não pode entrar aqui
+    expect(core.adoptConvOnVerdict(chat, { ...ok, agent: "codex" })).toBe(false)
+  })
+
+  it("projeto diferente, fracasso, convId ausente ou chat já resolvido não adotam", () => {
+    expect(core.adoptConvOnVerdict(chat, { ...ok, projectId: "p2" })).toBe(false)
+    expect(core.adoptConvOnVerdict(chat, { ...ok, ok: false })).toBe(false)
+    expect(core.adoptConvOnVerdict(chat, { ...ok, convId: "" })).toBe(false)
+    expect(core.adoptConvOnVerdict(chat, { ...ok, convId: 42 })).toBe(false)
+    expect(core.adoptConvOnVerdict({ ...chat, convId: "c-velho" }, ok)).toBe(false)
+    expect(core.adoptConvOnVerdict(null, ok)).toBe(false)
+    expect(core.adoptConvOnVerdict(chat, null)).toBe(false)
+  })
 })
 
 describe("trabalhando há… (elapsedLabel, carimbo do turno vivo)", () => {

@@ -681,6 +681,11 @@ async fn get_blob(
                 (header::CONTENT_TYPE, mime),
                 (header::CACHE_CONTROL, "private, max-age=3600"),
                 (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+                // defesa em profundidade (revisão C3): a página consome via
+                // fetch→objectURL (header irrelevante ali), mas navegar DIRETO
+                // pra URL nunca renderiza o blob inline (PDF no contexto da
+                // origem seria superfície à toa).
+                (header::CONTENT_DISPOSITION, "attachment"),
             ],
             bytes,
         )

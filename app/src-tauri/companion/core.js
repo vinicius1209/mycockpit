@@ -337,8 +337,13 @@
         continue;
       }
       if (ln.trim() === "") { i++; continue; }
-      // parágrafo: linhas simples consecutivas viram um bloco com <br>
-      var pb = [];
+      // parágrafo: PROGRESSO POR CONSTRUÇÃO — a linha corrente é consumida
+      // SEMPRE, mesmo quando "parece bloco" mas o handler acima a rejeitou
+      // (tabela sem linha separadora, fence inválida): vira texto. Sem isso o
+      // while externo girava pra sempre (revisão C3). As linhas SEGUINTES só
+      // entram no mesmo parágrafo enquanto forem simples.
+      var pb = [mdInline(ln)];
+      i++;
       while (i < lines.length && lines[i].trim() !== "" &&
              !/^(```|#{1,4}\s|>\s?|\s*[-*]\s+|\s*\d+[.)]\s+|\s*\|.*\|\s*$)/.test(lines[i])) {
         pb.push(mdInline(lines[i]));
@@ -390,6 +395,19 @@
     return { items: older.items.concat(cur.items), start: older.start };
   }
 
+  // ---------------- adoção de conversa pelo veredito (C3) ----------------
+  // O ok atrasado do send_message só pode ADOTAR o convId no chat aberto se o
+  // veredito casa projeto E agent (revisão C3): envio na mesa do codex + mesa
+  // do claude aberta no MESMO projeto antes do veredito não pode envenenar o
+  // fallback de mesa do claude com a conversa do codex. Chat já resolvido ou
+  // veredito de fracasso nunca adotam.
+
+  function adoptConvOnVerdict(chat, verdict) {
+    if (!chat || chat.convId || !verdict || !verdict.ok) return false;
+    if (typeof verdict.convId !== "string" || !verdict.convId) return false;
+    return verdict.projectId === chat.projectId && verdict.agent === chat.agent;
+  }
+
   // ---------------- blob do fio (C3, path validado no cliente também) --------
   // Espelho consciente do blob_path_parts do companion.rs (defesa nas duas
   // pontas): só attachments/ e evidence/, pasta hex/uuid, arquivo no alfabeto
@@ -421,6 +439,7 @@
     elapsedLabel: elapsedLabel,
     mergeThreadTail: mergeThreadTail,
     mergeThreadOlder: mergeThreadOlder,
+    adoptConvOnVerdict: adoptConvOnVerdict,
     blobUrlPath: blobUrlPath,
   };
 });
