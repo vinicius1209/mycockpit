@@ -222,6 +222,188 @@
     return { answers: answers };
   }
 
+  // ---------------- markdown seguro (C3, subset próprio) ----------------
+  // Decisão registrada no plano: o app usa react-markdown+rehype, mas o
+  // cliente é vanilla offline-first com CSP 'self' — embutir o renderer do
+  // app custaria um bundle inteiro no binário. Este subset cobre o que os
+  // fios REAIS desta máquina usam (levantado do SQLite: negrito 372×, fences
+  // 45×, tabelas 36×, listas 199×, headers 113×, links 16×, quotes 16×).
+  // Regra de ouro: TODO texto escapa antes de virar HTML (conteúdo de LLM é
+  // hostil); só links http(s) viram <a>; javascript:/data: ficam texto puro.
+
+  function mdEsc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function mdInline(raw) {
+    var codes = [];
+    // \u0000 e o sentinela dos spans de codigo: some da ENTRADA antes (texto
+    // hostil com NUL nunca injeta placeholder falso).
+    var s = String(raw == null ? "" : raw).replace(/\u0000/g, "");
+    // `code` sai ANTES do resto (negrito/link nunca mexem dentro de codigo)
+    s = s.replace(/`([^`\n]+)`/g, function (_, c) {
+      codes.push(c);
+      return "\u0000" + (codes.length - 1) + "\u0000";
+    });
+    var h = mdEsc(s);
+    h = h.replace(/\[([^\]\n]+)\]\((https?:[^\s()<>"']+)\)/g, function (_, t, u) {
+      return '<a href="' + u + '" rel="noopener noreferrer" target="_blank">' + t + "</a>";
+    });
+    h = h.replace(/\*\*([^*\n]+?)\*\*/g, "<strong>$1</strong>");
+    h = h.replace(/(^|[\s(])\*([^*\s][^*\n]*?)\*(?=$|[\s).,;:!?])/g, "$1<em>$2</em>");
+    return h.replace(/\u0000(\d+)\u0000/g, function (_, i) {
+      return "<code>" + mdEsc(codes[Number(i)]) + "</code>";
+    });
+  }
+
+  function mdRow(ln) {
+    return ln.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(function (c) {
+      return c.trim();
+    });
+  }
+
+  function renderMarkdown(text) {
+    var lines = String(text == null ? "" : text).replace(/\r\n/g, "\n").split("\n");
+    var out = [];
+    var i = 0;
+    while (i < lines.length) {
+      var ln = lines[i];
+      var fence = ln.match(/^```(\S*)\s*$/);
+      if (fence) {
+        // bloco de código: <pre> legível no celular (scroll horizontal, nunca
+        // quebra no meio do token); fence sem fechamento rende até o fim.
+        var buf = [];
+        i++;
+        while (i < lines.length && !/^```\s*$/.test(lines[i])) { buf.push(lines[i]); i++; }
+        i++;
+        out.push('<pre class="mdcode"><code>' + mdEsc(buf.join("\n")) + "</code></pre>");
+        continue;
+      }
+      var hm = ln.match(/^(#{1,4})\s+(.*)$/);
+      if (hm) {
+        out.push('<div class="mdh mdh' + hm[1].length + '">' + mdInline(hm[2]) + "</div>");
+        i++;
+        continue;
+      }
+      if (/^>\s?/.test(ln)) {
+        var qb = [];
+        while (i < lines.length && /^>\s?/.test(lines[i])) {
+          qb.push(lines[i].replace(/^>\s?/, ""));
+          i++;
+        }
+        out.push('<blockquote class="mdq">' + qb.map(mdInline).join("<br>") + "</blockquote>");
+        continue;
+      }
+      if (/^\s*\|.*\|\s*$/.test(ln) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+        var head = mdRow(ln);
+        i += 2;
+        var rows = [];
+        while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(mdRow(lines[i])); i++; }
+        out.push('<div class="mdtablewrap"><table class="mdtable"><thead><tr>' +
+          head.map(function (c) { return "<th>" + mdInline(c) + "</th>"; }).join("") +
+          "</tr></thead><tbody>" +
+          rows.map(function (r) {
+            return "<tr>" + r.map(function (c) { return "<td>" + mdInline(c) + "</td>"; }).join("") + "</tr>";
+          }).join("") + "</tbody></table></div>");
+        continue;
+      }
+      if (/^\s*[-*]\s+/.test(ln)) {
+        var ul = [];
+        // sub-itens indentados entram achatados na mesma lista (limitação
+        // aceita: aninhamento real fica pro desktop)
+        while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+          ul.push("<li>" + mdInline(lines[i].replace(/^\s*[-*]\s+/, "")) + "</li>");
+          i++;
+        }
+        out.push('<ul class="mdl">' + ul.join("") + "</ul>");
+        continue;
+      }
+      var om = ln.match(/^\s*(\d+)[.)]\s+/);
+      if (om) {
+        var ol = [];
+        var startN = Number(om[1]) || 1;
+        while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) {
+          ol.push("<li>" + mdInline(lines[i].replace(/^\s*\d+[.)]\s+/, "")) + "</li>");
+          i++;
+        }
+        out.push('<ol class="mdl"' + (startN !== 1 ? ' start="' + startN + '"' : "") + ">" + ol.join("") + "</ol>");
+        continue;
+      }
+      if (/^\s*(---+|\*\*\*+)\s*$/.test(ln)) {
+        out.push('<hr class="mdhr">');
+        i++;
+        continue;
+      }
+      if (ln.trim() === "") { i++; continue; }
+      // parágrafo: linhas simples consecutivas viram um bloco com <br>
+      var pb = [];
+      while (i < lines.length && lines[i].trim() !== "" &&
+             !/^(```|#{1,4}\s|>\s?|\s*[-*]\s+|\s*\d+[.)]\s+|\s*\|.*\|\s*$)/.test(lines[i])) {
+        pb.push(mdInline(lines[i]));
+        i++;
+      }
+      out.push('<p class="mdp">' + pb.join("<br>") + "</p>");
+    }
+    return out.join("");
+  }
+
+  // ---------------- tempo de trabalho (C3, "trabalhando há…") ----------------
+  // Carimbo honesto do turno vivo: startedAt inválido → "" (nunca inventa).
+
+  function elapsedLabel(nowMs, atMs) {
+    if (typeof atMs !== "number" || !isFinite(atMs) || atMs <= 0) return "";
+    var s = Math.max(0, (nowMs - atMs) / 1000);
+    if (s < 60) return "há " + Math.floor(s) + " s";
+    if (s < 3600) return "há " + Math.round(s / 60) + " min";
+    return "há " + Math.round(s / 3600) + " h";
+  }
+
+  // ---------------- emenda da janela do fio (C3) ----------------
+  // O servidor manda janelas ({items, start} sobre o fio completo); o cliente
+  // guarda UMA faixa contígua. Regras:
+  //   tail (refetch da cauda): a cauda FRESCA substitui a sobreposição — itens
+  //   de tool MUTAM quando o result chega, dedupe por id manteria o velho.
+  //   Buraco entre o que temos e a cauda (fio cresceu muito) descarta o velho:
+  //   faixa com lacuna mentiria a cronologia.
+  //   older (carregar anteriores): só emenda se a página termina EXATAMENTE
+  //   onde a faixa atual começa; página rasgada é ignorada (retry re-pede).
+
+  function mergeThreadTail(cur, tail) {
+    if (!tail || !Array.isArray(tail.items) || typeof tail.start !== "number" || tail.start < 0) {
+      return cur || null;
+    }
+    if (!cur || !Array.isArray(cur.items) || typeof cur.start !== "number" || tail.start <= cur.start) {
+      return { items: tail.items, start: tail.start };
+    }
+    if (tail.start > cur.start + cur.items.length) {
+      return { items: tail.items, start: tail.start };
+    }
+    return { items: cur.items.slice(0, tail.start - cur.start).concat(tail.items), start: cur.start };
+  }
+
+  function mergeThreadOlder(cur, older) {
+    if (!cur || !Array.isArray(cur.items) || typeof cur.start !== "number") return cur || null;
+    if (!older || !Array.isArray(older.items) || typeof older.start !== "number") return cur;
+    if (older.start + older.items.length !== cur.start) return cur;
+    return { items: older.items.concat(cur.items), start: older.start };
+  }
+
+  // ---------------- blob do fio (C3, path validado no cliente também) --------
+  // Espelho consciente do blob_path_parts do companion.rs (defesa nas duas
+  // pontas): só attachments/ e evidence/, pasta hex/uuid, arquivo no alfabeto
+  // seguro, e SÓ imagem vira <img> (pdf continua chip com nome).
+
+  function blobUrlPath(path) {
+    if (typeof path !== "string") return null;
+    var m = path.match(/^(attachments|evidence)\/([0-9a-fA-F-]+)\/([A-Za-z0-9._-]+)$/);
+    if (!m || m[3].indexOf("..") >= 0) return null;
+    var ext = m[3].toLowerCase().split(".").pop();
+    if (["png", "jpg", "jpeg", "webp", "gif"].indexOf(ext) < 0) return null;
+    return "/api/blob/" + m[1] + "/" + m[2] + "/" + m[3];
+  }
+
   return {
     parseRoute: parseRoute,
     routeHash: routeHash,
@@ -235,5 +417,10 @@
     buildQuestionAnswer: buildQuestionAnswer,
     ACTION_REUSE_TTL_MS: ACTION_REUSE_TTL_MS,
     launchRetryDisposition: launchRetryDisposition,
+    renderMarkdown: renderMarkdown,
+    elapsedLabel: elapsedLabel,
+    mergeThreadTail: mergeThreadTail,
+    mergeThreadOlder: mergeThreadOlder,
+    blobUrlPath: blobUrlPath,
   };
 });

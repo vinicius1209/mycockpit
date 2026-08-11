@@ -14,8 +14,8 @@ use crate::attachments::{self, Attachment};
 use axum::{
     extract::{
         ws::{Message, WebSocket},
-        ConnectInfo, DefaultBodyLimit, Multipart, Path as AxPath, Request, State as AxState,
-        WebSocketUpgrade,
+        ConnectInfo, DefaultBodyLimit, Multipart, Path as AxPath, Query, Request,
+        State as AxState, WebSocketUpgrade,
     },
     http::{header, HeaderMap, StatusCode},
     middleware::{self, Next},
@@ -376,6 +376,7 @@ fn build_router(ctx: Ctx, guard_state: Guard) -> Router {
     let api = Router::new()
         .route("/state", get(get_state))
         .route("/conv/{id}", get(get_conv))
+        .route("/blob/{root}/{conv}/{file}", get(get_blob))
         .route("/ws", get(ws_upgrade))
         .route("/action", post(post_action))
         .route("/attachment", post(post_attachment))
@@ -527,21 +528,61 @@ async fn get_state(AxState(ctx): AxState<Ctx>) -> Response {
     Json(snap).into_response()
 }
 
+/// C3 — janela do fio no SERVIDOR: a maior conversa real desta máquina tem
+/// 1.9MB (1476 itens); a cauda de 60 itens pesa ~68KB — é isso que o celular
+/// baixa por padrão, com "carregar anteriores" paginando via `?before=`.
+const CONV_WINDOW_DEFAULT: usize = 60;
+const CONV_WINDOW_MAX: usize = 200;
+
+/// C3 — recorte puro da janela: devolve (itens, start, total) onde `start` é o
+/// índice do PRIMEIRO item devolvido no fio completo. `before` = fim exclusivo
+/// (paginação: a página anterior termina onde a atual começa).
+fn window_items(items: &[Value], limit: usize, before: Option<usize>) -> (Vec<Value>, usize, usize) {
+    let total = items.len();
+    let end = before.unwrap_or(total).min(total);
+    let start = end.saturating_sub(limit.clamp(1, CONV_WINDOW_MAX));
+    (items[start..end].to_vec(), start, total)
+}
+
 /// GET /api/conv/{id} — histórico da conversa direto do SQLite (READ-ONLY).
-/// Devolve SÓ id/title/items/agent — nada de paths de disco.
-async fn get_conv(AxState(ctx): AxState<Ctx>, AxPath(id): AxPath<String>) -> Response {
+/// Devolve SÓ id/title/items/agent (+ start/total da janela C3) — nada de
+/// paths de disco. Fio grande NUNCA viaja inteiro: o servidor decide a janela
+/// (últimos N itens; `?before=<índice>` pagina pra trás, `?limit=` até o cap).
+async fn get_conv(
+    AxState(ctx): AxState<Ctx>,
+    AxPath(id): AxPath<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
     // mesmo saneamento dos anexos: id de conversa só pode ser hex/uuid.
     let id: String = id
         .chars()
         .filter(|c| c.is_ascii_hexdigit() || *c == '-')
         .collect();
+    // parâmetros de janela malformados são 400 com motivo, não silêncio.
+    let limit = match q.get("limit").map(|s| s.parse::<usize>()) {
+        None => CONV_WINDOW_DEFAULT,
+        Some(Ok(n)) if n >= 1 => n,
+        _ => return (StatusCode::BAD_REQUEST, "limit inválido").into_response(),
+    };
+    let before = match q.get("before").map(|s| s.parse::<usize>()) {
+        None => None,
+        Some(Ok(n)) => Some(n),
+        Some(Err(_)) => return (StatusCode::BAD_REQUEST, "before inválido").into_response(),
+    };
     let db = match ctx.app.path().app_data_dir() {
         Ok(d) => d.join("mycockpit.db"),
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
     // rusqlite é sync → spawn_blocking pra não segurar o executor do axum.
     match tokio::task::spawn_blocking(move || read_conv(&db, &id)).await {
-        Ok(Ok(Some(v))) => Json(v).into_response(),
+        Ok(Ok(Some(mut v))) => {
+            let full: Vec<Value> = v["items"].as_array().cloned().unwrap_or_default();
+            let (win, start, total) = window_items(&full, limit, before);
+            v["items"] = Value::Array(win);
+            v["start"] = json!(start);
+            v["total"] = json!(total);
+            Json(v).into_response()
+        }
         Ok(Ok(None)) => StatusCode::NOT_FOUND.into_response(),
         Ok(Err(e)) => {
             log::warn!("companion: leitura de conversa falhou: {e}");
@@ -579,6 +620,73 @@ fn read_conv(db: &Path, id: &str) -> Result<Option<Value>, String> {
         }
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
         Err(e) => Err(e.to_string()),
+    }
+}
+
+/// C3 — validação PURA do path de blob do fio: só as duas raízes conhecidas
+/// (`attachments/` dos anexos, `evidence/` das capturas de tool), pasta de
+/// conversa hex/uuid, nome de arquivo no alfabeto seguro e extensão da MESMA
+/// allowlist dos anexos. Qualquer coisa fora disso é None (vira 404) — path
+/// traversal nunca chega ao filesystem. Devolve (root, conv, file, mime).
+fn blob_path_parts(
+    root: &str,
+    conv: &str,
+    file: &str,
+) -> Option<(String, String, String, &'static str)> {
+    if root != "attachments" && root != "evidence" {
+        return None;
+    }
+    if conv.is_empty() || !conv.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return None;
+    }
+    let file_ok = !file.is_empty()
+        && !file.contains("..")
+        && file
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-');
+    if !file_ok {
+        return None;
+    }
+    let mime = match file.rsplit('.').next()?.to_ascii_lowercase().as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "pdf" => "application/pdf",
+        _ => return None,
+    };
+    Some((root.to_string(), conv.to_string(), file.to_string(), mime))
+}
+
+/// GET /api/blob/{root}/{conv}/{file} — serve um blob do fio (anexo do usuário
+/// ou evidência visual de tool) pro celular. Token exigido pelo guard (Bearer);
+/// a página busca com fetch autenticado e pinta via objectURL — o token nunca
+/// vai parar em URL de <img>. READ-ONLY, allowlist fechada, nunca path do disco
+/// na resposta.
+async fn get_blob(
+    AxState(ctx): AxState<Ctx>,
+    AxPath((root, conv, file)): AxPath<(String, String, String)>,
+) -> Response {
+    let Some((root, conv, file, mime)) = blob_path_parts(&root, &conv, &file) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let base = match ctx.app.path().app_data_dir() {
+        Ok(d) => d,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let abs = base.join(&root).join(&conv).join(&file);
+    match tokio::task::spawn_blocking(move || std::fs::read(&abs)).await {
+        Ok(Ok(bytes)) => (
+            [
+                (header::CONTENT_TYPE, mime),
+                (header::CACHE_CONTROL, "private, max-age=3600"),
+                (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Ok(Err(_)) => StatusCode::NOT_FOUND.into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
@@ -1561,6 +1669,87 @@ mod tests {
         assert!(COMPANION_PAGE.contains("action-result"));
         // parar turno respeita o caso não-interrompível (copy honesta)
         assert!(COMPANION_PAGE.contains("stopDisposition") || COMPANION_PAGE.contains("finalizando"));
+    }
+
+    // ── C3: janela do fio no servidor + blob de imagem do fio ──
+
+    #[test]
+    fn c3_window_items_devolve_a_cauda_por_padrao() {
+        // fio grande NUNCA viaja inteiro: default = últimos CONV_WINDOW_DEFAULT
+        let items: Vec<Value> = (0..150).map(|i| json!({"i": i})).collect();
+        let (win, start, total) = window_items(&items, CONV_WINDOW_DEFAULT, None);
+        assert_eq!(total, 150);
+        assert_eq!(win.len(), CONV_WINDOW_DEFAULT);
+        assert_eq!(start, 150 - CONV_WINDOW_DEFAULT);
+        assert_eq!(win[0]["i"], json!(start));
+        assert_eq!(win.last().unwrap()["i"], json!(149));
+        // fio menor que a janela: vem inteiro, start 0
+        let poucos: Vec<Value> = (0..5).map(|i| json!({"i": i})).collect();
+        let (win, start, total) = window_items(&poucos, CONV_WINDOW_DEFAULT, None);
+        assert_eq!((win.len(), start, total), (5, 0, 5));
+    }
+
+    #[test]
+    fn c3_window_items_pagina_pra_tras_com_before() {
+        let items: Vec<Value> = (0..150).map(|i| json!({"i": i})).collect();
+        // primeira página: cauda [90..150); anterior: before=90 → [30..90)
+        let (win, start, _) = window_items(&items, 60, Some(90));
+        assert_eq!(start, 30);
+        assert_eq!(win[0]["i"], json!(30));
+        assert_eq!(win.last().unwrap()["i"], json!(89));
+        // chegando no começo: before=30 → [0..30), janela parcial
+        let (win, start, _) = window_items(&items, 60, Some(30));
+        assert_eq!((win.len(), start), (30, 0));
+        // before=0 → vazio (não há nada antes do início)
+        let (win, start, _) = window_items(&items, 60, Some(0));
+        assert!(win.is_empty());
+        assert_eq!(start, 0);
+        // before além do fim: clampa no total (nunca panica)
+        let (win, _, _) = window_items(&items, 60, Some(9999));
+        assert_eq!(win.last().unwrap()["i"], json!(149));
+    }
+
+    #[test]
+    fn c3_window_items_respeita_o_cap_de_limit() {
+        let items: Vec<Value> = (0..500).map(|i| json!({"i": i})).collect();
+        // limit acima do cap é clampado (celular nunca pede o fio inteiro)
+        let (win, _, _) = window_items(&items, 10_000, None);
+        assert_eq!(win.len(), CONV_WINDOW_MAX);
+        // limit 0 não devolve janela vazia por acidente (clamp mínimo 1)
+        let (win, _, _) = window_items(&items, 0, None);
+        assert_eq!(win.len(), 1);
+    }
+
+    #[test]
+    fn c3_blob_path_parts_allowlist_fechada() {
+        // caminhos REAIS do fio desta máquina (anexo + evidência de tool)
+        let ok = blob_path_parts(
+            "attachments",
+            "16b3735b-0552-4162-96d2-71bc034944eb",
+            "d82ead1887fb803b.png",
+        );
+        assert_eq!(ok.unwrap().3, "image/png");
+        let ok = blob_path_parts(
+            "evidence",
+            "d5fea167-493d-4c77-a93f-6e7df5a256fb",
+            "toolu_01Wwmz5Hn1KbU1wrm35LrjvT-0.jpg",
+        );
+        assert_eq!(ok.unwrap().3, "image/jpeg");
+        assert_eq!(blob_path_parts("attachments", "abc", "x.pdf").unwrap().3, "application/pdf");
+        // raiz fora das duas conhecidas nunca passa
+        assert!(blob_path_parts("secrets", "abc", "x.png").is_none());
+        assert!(blob_path_parts("", "abc", "x.png").is_none());
+        // conversa só hex/uuid; arquivo só alfabeto seguro, sem traversal
+        assert!(blob_path_parts("attachments", "../etc", "x.png").is_none());
+        assert!(blob_path_parts("attachments", "abc", "../../db.sqlite").is_none());
+        assert!(blob_path_parts("attachments", "abc", "a..b.png").is_none());
+        assert!(blob_path_parts("attachments", "abc", "a/b.png").is_none());
+        assert!(blob_path_parts("attachments", "", "x.png").is_none());
+        assert!(blob_path_parts("attachments", "abc", "").is_none());
+        // extensão fora da allowlist (executável, svg com script) não serve
+        assert!(blob_path_parts("attachments", "abc", "x.sh").is_none());
+        assert!(blob_path_parts("attachments", "abc", "x.svg").is_none());
+        assert!(blob_path_parts("attachments", "abc", "semext").is_none());
     }
 
     // ── leitura READ-ONLY do histórico (fixture SQLite) ──

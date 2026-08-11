@@ -45,6 +45,12 @@ declare global {
     snapStale: boolean
   }
 
+  /** Faixa contígua do fio (C3): itens + índice do primeiro no fio completo. */
+  interface CompanionWebThread {
+    items: unknown[]
+    start: number
+  }
+
   var CompanionCore: {
     parseRoute(hash: string): CompanionWebRoute
     routeHash(route: Partial<CompanionWebRoute> | null | undefined): string
@@ -69,5 +75,16 @@ declare global {
       choices: CompanionWebChoice[] | null | undefined,
       picks: (CompanionWebPick | null | undefined)[] | null | undefined,
     ): { answers: { header: string; selected: string[] }[] } | null
+    renderMarkdown(text: string | null | undefined): string
+    elapsedLabel(nowMs: number, atMs: number | null | undefined): string
+    mergeThreadTail(
+      cur: CompanionWebThread | null | undefined,
+      tail: CompanionWebThread | null | undefined,
+    ): CompanionWebThread | null
+    mergeThreadOlder(
+      cur: CompanionWebThread | null | undefined,
+      older: CompanionWebThread | null | undefined,
+    ): CompanionWebThread | null
+    blobUrlPath(path: unknown): string | null
   }
 }
