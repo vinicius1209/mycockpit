@@ -776,16 +776,29 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
       return
     }
     case "send_message": {
+      // C3 — veredito honesto de volta pro celular (fecha o furo registrado na
+      // revisão C2): com actionId, TODO desfecho vira action-result — recusa
+      // com motivo legível, aceite com o convId REAL (a página sem conversa
+      // resolvida adota o fio na hora). Sem actionId (página antiga), o
+      // comportamento pré-existente segue intacto (rejeição sobe pro catch do
+      // listener → aviso nativo no desktop).
+      const actionId = str(p.actionId)
+      const fail = (message: string): void => {
+        console.warn("[companion] send_message recusado:", message)
+        if (actionId) {
+          pushActionResult({ actionId, kind: "send_message", ok: false, message })
+        }
+      }
       const projectId = str(p.projectId)
       const agent = str(p.agent)
       const text = str(p.text).trim()
       if (!projectId || !text || !OFFICE_AGENTS.includes(agent as OfficeAgentId)) {
-        console.warn("[companion] send_message malformado — ignorado", p)
+        fail("Pedido malformado. Atualize a página do Companion e tente de novo.")
         return
       }
       const proj = useApp.getState().projects.find((pr) => pr.id === projectId)
       if (!proj) {
-        console.warn("[companion] projeto desconhecido — ignorado", projectId)
+        fail("O projeto não existe mais no app.")
         return
       }
       const fleetAgent = agent as OfficeAgentId
@@ -845,16 +858,52 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
         // lê o SQLite, e conversa idle não gera ping novo depois deste.
         await useChat.getState().persist(convId)
         pingConvUpdated(convId)
+        // C3 — além do notice no fio, o motivo volta como veredito direto
+        // (a página mostra na hora, sem depender do refetch acertar a conversa).
+        fail(dispatchBlock)
         return
       }
-      await sendFromDesk({
-        convId,
-        projectId,
-        projectPath: proj.path,
-        agent: fleetAgent,
-        text,
-        attachments: uploadedAttachments(p),
-      })
+      // C3 — mesmo padrão do launch_task: o aceite (start/queued) responde o
+      // celular na hora; rejeição interna do sendFromDesk NÃO pode escapar
+      // quando há actionId (o celular está esperando o veredito). Sem
+      // actionId, a exceção sobe como sempre (aviso nativo no desktop).
+      let accepted = false
+      try {
+        await sendFromDesk({
+          convId,
+          projectId,
+          projectPath: proj.path,
+          agent: fleetAgent,
+          text,
+          attachments: uploadedAttachments(p),
+          // onAccepted só viaja COM actionId: sem id não há veredito a devolver
+          // e o shape da chamada fica idêntico ao pré-C3 (compat).
+          ...(actionId
+            ? {
+                onAccepted: () => {
+                  accepted = true
+                  pushActionResult({
+                    actionId,
+                    kind: "send_message",
+                    ok: true,
+                    message: "Mensagem enviada.",
+                    convId,
+                    projectId,
+                    agent: effectiveAgent,
+                  })
+                },
+              }
+            : {}),
+        })
+      } catch (e) {
+        if (!actionId) throw e
+        // aceito ⇒ o ok já saiu e o erro do TURNO aparece no próprio fio
+        // (refetch do celular); não-aceito ⇒ o fail() abaixo devolve o motivo.
+        console.warn("[companion] send_message: envio rejeitou:", e)
+      }
+      if (actionId && !accepted) {
+        fail("O app não conseguiu iniciar o turno. Veja o desktop para detalhes.")
+      }
       return
     }
     case "launch_task": {
