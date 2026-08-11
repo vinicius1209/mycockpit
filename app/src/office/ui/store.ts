@@ -10,7 +10,7 @@ import {
   type DeskSnapshot,
   type OfficeSnapshot,
   type SimEvent,
-} from "../engine/types"
+} from "@/lib/fleet/types"
 import { dockLeaveCtx } from "../bridge/hooks"
 import { cancelDictation } from "../bridge/voice"
 import {

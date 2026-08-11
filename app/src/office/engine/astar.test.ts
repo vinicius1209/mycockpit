@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { findPath, segmentFree, stringPull } from "./astar"
 import { aabbFree } from "./grid"
-import { BODY_HALF, T_WALK } from "./types"
-import type { FloorPlan, Vec2 } from "./types"
+import { BODY_HALF, T_WALK } from "@/lib/fleet/types"
+import type { FloorPlan, Vec2 } from "@/lib/fleet/types"
 
 /** Planta de teste: tudo caminhável, menos os tiles em `blocked`. */
 function makePlan(w: number, h: number, blocked: Vec2[] = []): FloorPlan {

@@ -27,7 +27,7 @@ import {
   type OfficeSnapshot,
   type Vec2,
   type World,
-} from "../engine/types"
+} from "@/lib/fleet/types"
 import { toScreen } from "../engine/iso"
 import {
   agentColor,
@@ -43,7 +43,7 @@ import {
   zIndexChanged,
   type CameraTransform,
 } from "./logic"
-import { perfSpan } from "../engine/perf"
+import { perfSpan } from "@/lib/fleet/perf"
 import {
   createDeskBase,
   createDeskTop,

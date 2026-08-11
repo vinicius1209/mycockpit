@@ -1,6 +1,6 @@
 // Fila ÚNICA de interações pendentes (§6.1 item 4 do docs/agent-office.md).
 // Fonte de verdade compartilhada entre o InteractionHost (card na UI) e o
-// bridge/derive do office (mão levantada na mesa). Antes cada um mantinha a
+// lib/fleet/derive (mão levantada na mesa do office). Antes cada um mantinha a
 // própria cópia (useState local + Map de módulo) e elas divergiam:
 // answer_interaction NÃO emite interaction://resolved (o backend só emite no
 // Drop, e só para pendentes), então quem esperava o evento ficava com a mão
@@ -179,7 +179,7 @@ export function decideBatch(
 // ---------------------------------------------------------------------------
 // Aprovações CONTEXTUAIS (docs/agent-office.md §8): mapeamento request→conversa
 // + split por visibilidade. O mesmo helper alimenta o office (mão levantada na
-// mesa, bridge/derive) e os hosts de card (inline no fluxo vs toast global).
+// mesa, lib/fleet/derive) e os hosts de card (inline no fluxo vs toast global).
 // ---------------------------------------------------------------------------
 
 /** Dono de um pedido pendente: a conversa + (missão) a fase resolvida do
@@ -199,7 +199,7 @@ export function runIdOf(req: InteractionRequest): string | null {
   return typeof data?.run_id === "string" && data.run_id ? data.run_id : null
 }
 
-/** Conversa DONA de um pedido de APROVAÇÃO (extraído do bridge/derive):
+/** Conversa DONA de um pedido de APROVAÇÃO (extraído do lib/fleet/derive):
  *  - linear: run_id === runId corrente da conversa (turno pausado);
  *  - missão: run_id tem prefixo `missionId::` e casa com byConv; a fase vem do
  *    sufixo `phase-N` (fallback: fase corrente).
@@ -207,7 +207,7 @@ export function runIdOf(req: InteractionRequest): string | null {
  *  Restrito a `approval` de propósito, mas o MOTIVO não é "pergunta não tem dono"
  *  (tem: o backend anexa run_id em todo pedido — ver `ownerByRunId`). É que o
  *  ÚNICO consumidor que sobrou fala só de permissão: a mesa do office levanta a
- *  mão com o rótulo "Aguardando aprovação" (bridge/derive), e levantá-la por uma
+ *  mão com o rótulo "Aguardando aprovação" (lib/fleet/derive), e levantá-la por uma
  *  pergunta seria mentir sobre o que o agente pediu.
  *
  *  ⚠️ Se você precisa do dono para QUALQUER kind, use `ownerByRunId`. Foi essa

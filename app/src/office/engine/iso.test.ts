@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { inputDirToWorld, tileAt, toScreen, toWorld } from "./iso"
-import { TILE_H, TILE_W } from "./types"
+import { TILE_H, TILE_W } from "@/lib/fleet/types"
 
 describe("projeção diamond 2:1", () => {
   it("round-trip toScreen → toWorld devolve o ponto original", () => {

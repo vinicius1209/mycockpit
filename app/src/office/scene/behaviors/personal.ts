@@ -29,7 +29,7 @@ import type {
   DeskVisualState,
   FloorPlan,
   Vec2,
-} from "../../engine/types"
+} from "@/lib/fleet/types"
 import { createThoughtDots, type ThoughtDots } from "../effects"
 import type { Walker } from "../walkers"
 import {

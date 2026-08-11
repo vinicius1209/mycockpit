@@ -15,7 +15,7 @@
 //   fresca e o recap do fio já viaja a cada envio (buildMemoryPrompt). Renovar
 //   seria teatro pago; a resposta é honesta.
 //
-// As duas superfícies de envio (ChatPanel.handleSend e office/bridge/send)
+// As duas superfícies de envio (ChatPanel.handleSend e lib/fleet/send)
 // interceptam o /compactar ANTES da expansão de .md e chamam runCompactTurn —
 // a coreografia de store/fila/persist fica aqui, uma vez só.
 

@@ -18,7 +18,7 @@ import {
   type DeskSnapshot,
   type FloorPlan,
   type Vec2,
-} from "../engine/types"
+} from "@/lib/fleet/types"
 import { deskAnchorWorld } from "../scene/logic"
 import { GATE_WAIT_OFFSET } from "../scene/behaviors/mission"
 import { useDeskStreamSnippet } from "../bridge/hooks"

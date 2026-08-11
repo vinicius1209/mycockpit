@@ -26,7 +26,7 @@ import {
   type FloorPlan,
   type OfficeSnapshot,
   type Vec2,
-} from "../../engine/types"
+} from "@/lib/fleet/types"
 import { mulberry32 } from "../ambient"
 import { quantizeZIndex, zIndexChanged } from "../logic"
 import { stepAlongPath } from "../walkers"

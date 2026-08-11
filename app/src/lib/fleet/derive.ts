@@ -7,8 +7,9 @@
 // (handle.setActive) — senão cada tecla digitada no chat (drafts no useChat)
 // pagaria um derive completo cujo resultado o dedupe descarta.
 //
-// Camadas: bridge/ importa engine/types + stores/lib do app. NUNCA engine/sim,
-// scene/ ou ui/.
+// Camadas: lib/fleet/ importa types/perf daqui + stores/lib do app. NUNCA
+// engine/sim, scene/ ou ui/ do office. (Ex-office/bridge/derive.ts, movido no
+// R1 do office-removal-plan.)
 
 import {
   OFFICE_AGENTS,
@@ -19,8 +20,8 @@ import {
   type OfficeSnapshot,
   type RoomMission,
   type RoomSnapshot,
-} from "@/office/engine/types"
-import { perfSpan } from "@/office/engine/perf"
+} from "@/lib/fleet/types"
+import { perfSpan } from "@/lib/fleet/perf"
 import { availability, type Availability } from "@/lib/agents"
 import { loadLedger } from "@/lib/db"
 import type { ApprovalData } from "@/lib/interaction"

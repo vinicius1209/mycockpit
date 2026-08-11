@@ -2,8 +2,8 @@
  *  (stepAlongPath) + ciclo de vida do sistema. Pixi instancia headless
  *  (Graphics/GraphicsContext sem renderer — mesmo padrão de props.test.ts). */
 import { describe, expect, it } from "vitest"
-import { T_WALK } from "../engine/types"
-import type { FloorPlan, Vec2 } from "../engine/types"
+import { T_WALK } from "@/lib/fleet/types"
+import type { FloorPlan, Vec2 } from "@/lib/fleet/types"
 import { findPath } from "../engine/astar"
 import { createWalkerSystem, stepAlongPath, WALKER_SPEED } from "./walkers"
 

@@ -34,7 +34,7 @@ import {
   type RoomDecorItem,
   type RoomPlacement,
   type Vec2,
-} from "@/office/engine/types"
+} from "@/lib/fleet/types"
 
 /** Referência mínima de projeto que a planta precisa (ordem = listProjects). */
 export type OfficeProjectRef = {

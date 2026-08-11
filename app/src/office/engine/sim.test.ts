@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { setInspect } from "./camera"
 import { createWorld, simTick } from "./sim"
-import { BOSS_SPEED, SIM_DT, T_INTERACT, T_WALK } from "./types"
-import type { DeskPlacement, FloorPlan, RoomPlacement, SimEvent, Vec2, World } from "./types"
+import { BOSS_SPEED, SIM_DT, T_INTERACT, T_WALK } from "@/lib/fleet/types"
+import type { DeskPlacement, FloorPlan, RoomPlacement, SimEvent, Vec2, World } from "@/lib/fleet/types"
 
 function makeDesk(id: string, interact: Vec2): DeskPlacement {
   return {

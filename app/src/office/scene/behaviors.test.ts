@@ -3,13 +3,13 @@
  *  (handoff/café) migrado do stage. Puro: WalkerSystem real headless (mesmo
  *  padrão de walkers.test.ts) + ctx fake em Maps — nenhum renderer. */
 import { describe, expect, it } from "vitest"
-import { T_WALK } from "../engine/types"
+import { T_WALK } from "@/lib/fleet/types"
 import type {
   DeskVisualState,
   FloorPlan,
   OfficeSnapshot,
   Vec2,
-} from "../engine/types"
+} from "@/lib/fleet/types"
 import { createWalkerSystem } from "./walkers"
 import {
   BEHAVIOR_PRIORITY,

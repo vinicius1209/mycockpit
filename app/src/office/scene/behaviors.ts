@@ -31,8 +31,8 @@ import type {
   OfficeAgentId,
   OfficeSnapshot,
   Vec2,
-} from "../engine/types"
-import { perfSpan } from "../engine/perf"
+} from "@/lib/fleet/types"
+import { perfSpan } from "@/lib/fleet/perf"
 
 /** Cap GLOBAL de walkers de comportamento simultâneos no escritório. */
 export const MAX_BEHAVIOR_WALKERS = 3

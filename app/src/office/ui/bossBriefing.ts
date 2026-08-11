@@ -3,7 +3,7 @@ import type {
   DeskVisualState,
   OfficeAgentId,
   OfficeSnapshot,
-} from "../engine/types"
+} from "@/lib/fleet/types"
 
 export type BossDeskItem = {
   id: string

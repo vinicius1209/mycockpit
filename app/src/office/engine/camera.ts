@@ -8,7 +8,7 @@
  *  Coordenadas de tela passadas a zoomAt são RELATIVAS ao centro do viewport.
  */
 import { toScreen, toWorld } from "./iso"
-import type { Vec2, World } from "./types"
+import type { Vec2, World } from "@/lib/fleet/types"
 
 export const ZOOM_MIN = 0.5
 export const ZOOM_MAX = 2.5

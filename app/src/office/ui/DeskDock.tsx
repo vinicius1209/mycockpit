@@ -35,7 +35,7 @@ import {
   type DeskSnapshot,
   type OfficeAgentId,
   type RoomSnapshot,
-} from "../engine/types"
+} from "@/lib/fleet/types"
 import {
   agentCssColor,
   agentLabel,
@@ -70,7 +70,7 @@ import {
   sendFromDesk,
   cancelDeskTurn,
   type DeskSendArgs,
-} from "../bridge/send"
+} from "@/lib/fleet/send"
 import { pickRevezamento, revezamentoTargets } from "./recovery"
 import {
   cancelDictation,
@@ -91,7 +91,7 @@ import {
   otherLiveConvId,
   useOfficeUi,
 } from "./store"
-import { perfSpan } from "../engine/perf"
+import { perfSpan } from "@/lib/fleet/perf"
 
 // Larguras do painel (DOCK_W/DOCK_W_WIDE) moram no ./store (módulo puro) —
 // o OfficeMode usa o mesmo valor pro screenOffset.

@@ -14,7 +14,7 @@ import {
   type FloorPlan,
   type RoomDecorItem,
   type RoomPlacement,
-} from "@/office/engine/types"
+} from "@/lib/fleet/types"
 import {
   buildFloorPlan,
   BOSS_ROOM_H,

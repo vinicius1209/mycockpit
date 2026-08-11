@@ -4,8 +4,8 @@
  *  WASD cancela caminho · movimento (move-and-slide por eixo) · proximidade
  *  com histerese · relógio · câmera. Eventos discretos saem por `emit`.
  */
-import { BODY_HALF, BOSS_SPEED, REACH_ENTER, REACH_EXIT } from "./types"
-import type { BossFacing, BossState, DeskPlacement, FloorPlan, SimEvent, Vec2, World } from "./types"
+import { BODY_HALF, BOSS_SPEED, REACH_ENTER, REACH_EXIT } from "@/lib/fleet/types"
+import type { BossFacing, BossState, DeskPlacement, FloorPlan, SimEvent, Vec2, World } from "@/lib/fleet/types"
 import { inputDirToWorld } from "./iso"
 import { aabbFree } from "./grid"
 import { findPath } from "./astar"

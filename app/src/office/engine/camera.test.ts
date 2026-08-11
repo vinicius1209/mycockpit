@@ -11,8 +11,8 @@ import {
 } from "./camera"
 import { toScreen, toWorld } from "./iso"
 import { createWorld } from "./sim"
-import { SIM_DT, T_WALK } from "./types"
-import type { FloorPlan, Vec2, World } from "./types"
+import { SIM_DT, T_WALK } from "@/lib/fleet/types"
+import type { FloorPlan, Vec2, World } from "@/lib/fleet/types"
 
 function makePlan(w: number, h: number): FloorPlan {
   return { w, h, grid: new Uint8Array(w * h).fill(T_WALK), rooms: [], spawn: { x: w / 2, y: h / 2 } }

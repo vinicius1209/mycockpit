@@ -14,7 +14,7 @@ import { ChevronRight, Hand, Building2, Coffee, Crown } from "lucide-react"
 import { agentLabel } from "@/lib/agent"
 import { fmtCost } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import type { DeskSnapshot, DeskVisualState, RoomSnapshot } from "../engine/types"
+import type { DeskSnapshot, DeskVisualState, RoomSnapshot } from "@/lib/fleet/types"
 import { useOfficeUi } from "./store"
 
 /** Cor do dot por estado da mesa (mesma linguagem de semáforo do HUD/dock). */

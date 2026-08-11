@@ -19,7 +19,7 @@ import {
   type OfficeSnapshot,
   type RoomMission,
   type RoomSnapshot,
-} from "@/office/engine/types"
+} from "@/lib/fleet/types"
 
 /** Projetos fake — passe direto pro buildFloorPlan no dev de browser. */
 export const simProjects: { id: string; name: string; color: string }[] = [

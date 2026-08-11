@@ -9,12 +9,12 @@ import {
   MISSION_TABLE_ID,
   type DeskSnapshot,
   type RoomSnapshot,
-} from "../engine/types"
+} from "@/lib/fleet/types"
 import { Crown, Volume2, VolumeX } from "lucide-react"
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { agentLabel, fmtCost } from "../bridge/hooks"
-import { getPerfReport, perfEnabled, type PerfReport } from "../engine/perf"
+import { getPerfReport, perfEnabled, type PerfReport } from "@/lib/fleet/perf"
 import { BOSS_CENTER_ID, BOSS_CENTER_TRIGGER_ID } from "./BossCenter"
 import { setSoundEnabled, soundEnabled } from "./sound"
 import { useOfficeUi } from "./store"

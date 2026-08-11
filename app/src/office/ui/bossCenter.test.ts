@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { OfficeSnapshot } from "../engine/types"
+import type { OfficeSnapshot } from "@/lib/fleet/types"
 import {
   bossStandupLine,
   buildBossBriefing,

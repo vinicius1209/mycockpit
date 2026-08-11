@@ -16,7 +16,7 @@ import { readProjectCommands, type SlashCommand } from "@/lib/sources"
 // Comandos BUILTIN do app (source "app") — comandos de PRIMEIRA CLASSE do
 // MyCockpit, definidos em código, visíveis no popover "/" de TODA conversa
 // (chip "app"). Eles NÃO são texto: são AÇÃO — as duas superfícies de envio
-// (ChatPanel.handleSend e office/bridge/send.sendFromDesk) interceptam ANTES
+// (ChatPanel.handleSend e lib/fleet/send.sendFromDesk) interceptam ANTES
 // da expansão de .md e nunca deixam o /nome viajar cru pro motor. O primeiro
 // é o /compactar (fluxo em lib/compact.ts); próximos builtins entram na lista.
 // ---------------------------------------------------------------------------

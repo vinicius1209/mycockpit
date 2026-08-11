@@ -9,7 +9,7 @@ import type {
   DeskVisualState,
   OfficeAgentId,
   RoomAggregate,
-} from "../engine/types"
+} from "@/lib/fleet/types"
 
 // ---------------------------------------------------------------------------
 // Transform da câmera (aplicado no container raiz a cada render)

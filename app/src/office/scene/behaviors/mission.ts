@@ -58,7 +58,7 @@ import {
   type OfficeSnapshot,
   type DeskVisualState,
   type Vec2,
-} from "../../engine/types"
+} from "@/lib/fleet/types"
 
 /** Pausa da reunião de kickoff na mesa da sala comum (s). */
 export const KICKOFF_PAUSE_S = 5

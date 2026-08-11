@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest"
 import { attachInput } from "./input"
 import type { InputHandlers } from "./input"
 import { createWorld, simTick } from "./sim"
-import { SIM_DT, T_WALK } from "./types"
-import type { FloorPlan, World } from "./types"
+import { SIM_DT, T_WALK } from "@/lib/fleet/types"
+import type { FloorPlan, World } from "@/lib/fleet/types"
 
 /** Janela falsa: só o event target que o attachInput precisa (vitest roda em node). */
 function makeTarget() {

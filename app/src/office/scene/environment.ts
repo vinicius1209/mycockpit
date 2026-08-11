@@ -6,7 +6,7 @@
  *  Regra de ouro (§ princípios): tudo aqui REFLETE estado real — hora do
  *  relógio, snapshot do runtime — nunca teatro aleatório. */
 
-import type { OfficeMissionPhaseStatus } from "../engine/types"
+import type { OfficeMissionPhaseStatus } from "@/lib/fleet/types"
 
 // ---------------------------------------------------------------------------
 // Dia/noite REAL — fase do dia pela hora local

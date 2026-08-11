@@ -3,8 +3,8 @@
  *  StrictMode-safe: start() idempotente; stop() cancela o rAF; retomada
  *  re-zera `last` (sem delta gigante ao voltar de pausa/oclusão).
  */
-import { MAX_FRAME_MS, SIM_DT } from "./types"
-import { perfFrame } from "./perf"
+import { MAX_FRAME_MS, SIM_DT } from "@/lib/fleet/types"
+import { perfFrame } from "@/lib/fleet/perf"
 
 export type OfficeLoop = {
   start(): void

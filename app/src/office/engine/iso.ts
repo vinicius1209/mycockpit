@@ -7,8 +7,8 @@
  *    wx = sx/TILE_W + sy/TILE_H
  *    wy = sy/TILE_H - sx/TILE_W
  */
-import { TILE_H, TILE_W } from "./types"
-import type { Vec2 } from "./types"
+import { TILE_H, TILE_W } from "@/lib/fleet/types"
+import type { Vec2 } from "@/lib/fleet/types"
 
 /** Mundo (tiles contínuos) → tela (px, origem no tile 0,0). */
 export function toScreen(wx: number, wy: number): Vec2 {

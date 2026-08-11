@@ -42,7 +42,7 @@ import {
 import { moveByDelta, reorderByIds } from "@/lib/reorder"
 import { unseenBoundary } from "@/lib/unseen"
 import { clearPresetDriftWarning, warnPresetDrift } from "@/lib/presets"
-import { perfSpan } from "@/office/engine/perf"
+import { perfSpan } from "@/lib/fleet/perf"
 import type { DeferredWork, WorkEvent, ManagedProcess } from "@/lib/work"
 
 type ChatItemBody =
@@ -1880,7 +1880,7 @@ export const useChat = create<ChatState>((set, get) => {
       if (cur.corrupt) return // linha corrompida: persist bloqueado, nada a anexar
       // metas do projeto carregadas ANTES do persist: sem elas o persist não acha
       // meta.title e re-derivaria o título do 1º prompt (clobraria o título fixo
-      // "Missão · …") — mesmo padrão do ensureDeskConversation (bridge/send.ts).
+      // "Missão · …") — mesmo padrão do ensureDeskConversation (lib/fleet/send.ts).
       await get().loadProjectConversations(cur.projectId)
       const endSpan = perfSpan("appendItems") // S1 (no-op sem mc.office.perf)
       set((s) => {

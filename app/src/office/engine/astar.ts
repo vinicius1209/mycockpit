@@ -7,8 +7,8 @@
  *  - Entrada/saída em coordenadas CONTÍNUAS (tiles float); o A* roda em tiles
  *    inteiros por dentro. Clique em tile bloqueado clampa via nearestWalkable.
  */
-import { BODY_HALF } from "./types"
-import type { FloorPlan, Vec2 } from "./types"
+import { BODY_HALF } from "@/lib/fleet/types"
+import type { FloorPlan, Vec2 } from "@/lib/fleet/types"
 import { aabbFree, nearestWalkable, walkable } from "./grid"
 
 /** Raio máximo (tiles) do clamp de clique em tile bloqueado. */

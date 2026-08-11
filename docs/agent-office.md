@@ -29,7 +29,7 @@ game feel de verdade (60fps, câmera, colisão, proximidade).
 | O4 | **Projeção diamond 2:1** (`TILE_W=64`, `TILE_H=32`), coordenadas contínuas em tiles (float), y-sort por escalar (`screenY` dos pés) | Fórmulas fechadas world↔screen p/ picking. Mesas fatiadas **base + tampo**; segmentos de parede lateral na camada dinâmica (ocluem o boss corretamente). Velocidade constante em **espaço de mundo**, vetor de input normalizado (mesma |v| nas 8 direções — teste de engine). |
 | O5 | **Grid global `Uint8Array`** com bitflags (`WALK\|DOOR\|INTERACT`), A* 8-direções próprio (heap binário, octile, sem corner-cutting) + string-pulling; move-and-slide com AABB nos pés | Salas pequenas; lib de pathfinding é dependência desnecessária. Clique em tile bloqueado clampa para o walkable alcançável mais próximo. |
 | O6 | **Visual = spec do spike** (arquivado em `docs/archive/office-web-spike.zip`), portado como `Graphics`/`GraphicsContext` programáticos | Paths do spike não têm arcos (só M/L/h/v/c/Z) — portam direto. Sombras = elipses alpha (sem filtros); glow de lâmpada = elipses alpha empilhadas (sem radial gradient obrigatório). Avatar decomposto em **partes com pivot** (corpo/braços/cabeça/props de estado); partes monocromáticas em geometria branca + `tint` por instância. Animação só transform/alpha, **fase aleatória por instância** (nada de uníssono), 2–3 variações de idle. Boss: bob vertical ao andar + flip por direção + squash ao parar. `prefers-reduced-motion` ⇒ poses estáticas. |
-| O7 | **Envio de mensagem via `office/bridge/send.ts`** compondo APIs exportadas — ChatPanel intocado. Pré-requisitos fora de `office/` (§6.1) | A coreografia completa está em §5.6 — inclui as guardas e as peças de continuidade que o `handleSend` real tem. Testes de paridade com lista fechada (§9). |
+| O7 | **Envio de mensagem via `lib/fleet/send.ts`** (ex-`office/bridge/send.ts`, movido no R1 do office-removal-plan) compondo APIs exportadas — ChatPanel intocado. Pré-requisitos fora de `office/` (§6.1) | A coreografia completa está em §5.6 — inclui as guardas e as peças de continuidade que o `handleSend` real tem. Testes de paridade com lista fechada (§9). |
 | O8 | **Funciona no browser puro (vite dev) com dados simulados** — tudo que toca Tauri passa por `isTauri()` e tem fixture (`bridge/sim-data.ts`) | Desenvolvimento e verificação visual sem subir o Tauri; o spike já era "simulação". |
 
 ## 3. O mundo
@@ -61,7 +61,7 @@ game feel de verdade (60fps, câmera, colisão, proximidade).
 
 ## 4. Estados ao vivo (fonte → cena)
 
-Derivação **discreta** em `office/bridge/derive.ts`, assinando os stores:
+Derivação **discreta** em `lib/fleet/derive.ts` (ex-`office/bridge/derive.ts`), assinando os stores:
 
 | Fonte real | Na cena |
 |---|---|
@@ -148,14 +148,19 @@ nunca vira movimento.
 ```
 office/
   engine/    # TS puro, zero deps de Pixi/React — 100% testável
-    iso.ts grid.ts astar.ts camera.ts sim.ts loop.ts input.ts types.ts
+    iso.ts grid.ts astar.ts camera.ts sim.ts loop.ts input.ts
   scene/     # Pixi: camadas chão / dinâmica y-sorted / labels (escala de tela) / anchors
     stage.ts props.ts avatars.ts rooms.ts labels.ts effects.ts
   bridge/    # integração (ÚNICO lugar que importa stores/lib do app)
-    derive.ts layout.ts send.ts voice.ts sim-data.ts
+    layout.ts voice.ts sim-data.ts
   ui/        # React overlay (DOM absoluto sobre o canvas)
     OfficeMode.tsx Hud.tsx DeskDock.tsx Prompts.tsx
 ```
+
+> Desde o R1 do `office-removal-plan`, a ponte de dados saiu do `office/`:
+> `types.ts`, `perf.ts` (ex-`engine/`) e `derive.ts`, `send.ts`
+> (ex-`bridge/`) moram em `src/lib/fleet/` — o Companion Web depende deles
+> sem o office montado. As regras abaixo seguem valendo com o endereço novo.
 
 Regras de dependência: `engine` não importa nada; `scene` importa `engine`;
 `bridge` é o **único** lugar que importa stores do app (importa também lib +
@@ -189,7 +194,7 @@ projeta).
    funciona em qualquer modo; office adiciona só o beacon na mesa quando o
    request é mapeável). Sem segunda fila de interações.
 5. **Companion Web** (§8): `src/lib/companion.ts` é importador SANCIONADO do
-   `office/bridge/send` (`ensureDeskConversation`/`sendFromDesk`/
+   `lib/fleet/send` (ex-`office/bridge/send`; `ensureDeskConversation`/`sendFromDesk`/
    `cancelDeskTurn`) — o celular envia turnos às mesas pelos MESMOS fluxos e
    guardas da mesa (nenhum caminho novo de envio). `App.tsx` importa
    `@/lib/companion` por efeito (liga o push de estado + executor de

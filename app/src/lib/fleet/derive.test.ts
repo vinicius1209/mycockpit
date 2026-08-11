@@ -5,7 +5,7 @@
 // do useInteractions (fonte única): os testes alimentam por push/resolve.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { OfficeSnapshot } from "@/office/engine/types"
+import type { OfficeSnapshot } from "@/lib/fleet/types"
 import type { AgentProbe } from "@/lib/detect"
 import type {
   MissionPersona,

@@ -5,13 +5,13 @@
  *  comportamento observável do gato (spawna 1, anda, dorme, reducedMotion). */
 import { Container } from "pixi.js"
 import { describe, expect, it } from "vitest"
-import { T_INTERACT, T_WALK } from "../../engine/types"
+import { T_INTERACT, T_WALK } from "@/lib/fleet/types"
 import type {
   DeskVisualState,
   FloorPlan,
   OfficeSnapshot,
   Vec2,
-} from "../../engine/types"
+} from "@/lib/fleet/types"
 import { createWalkerSystem } from "../walkers"
 import { createBehaviors, type BehaviorCtx } from "../behaviors"
 import { catActivityRoom, catSleepSpot, createAmbientPack } from "./ambient"

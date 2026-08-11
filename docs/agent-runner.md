@@ -335,7 +335,7 @@ cadência são por capability, nunca por nome:
 
 | ponto de spawn | quando injeta |
 |---|---|
-| chat (`ChatPanel`) e mesa (`office/bridge/send`) | régua por capability acima (canal system a cada spawn · corpo 1º turno + frescor · todo turno) |
+| chat (`ChatPanel`) e mesa (`lib/fleet/send`) | régua por capability acima (canal system a cada spawn · corpo 1º turno + frescor · todo turno) |
 | revezamento entre agents (transplante, nas duas superfícies) | **sempre** — é sessão fresca, quase sempre em outra CLI (destino com canal system recebe pelo canal) |
 | missão (`store/mission`) | **toda fase** (cada fase é um run novo) |
 | disputa (`store/fusion`) | **todo candidato** (senão metade dos concorrentes disputa cega) |

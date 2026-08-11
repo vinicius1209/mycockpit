@@ -9,7 +9,7 @@ import type { Attachment } from "@/lib/attachments"
 import type { MissionRun } from "@/lib/missionTypes"
 import { feedbackLesson } from "@/lib/learning"
 import { nativeNotify } from "@/lib/notify"
-import { cancelDeskTurn, ensureDeskConversation, sendFromDesk } from "@/office/bridge/send"
+import { cancelDeskTurn, ensureDeskConversation, sendFromDesk } from "@/lib/fleet/send"
 import { useApp } from "@/store/app"
 import { useCards, type CardRow } from "@/store/cards"
 import { useChat, type ConvState } from "@/store/chat"
@@ -43,7 +43,7 @@ vi.mock("@/lib/db", async (importOriginal) => {
 // Aviso nativo (caminho de erro de ação de card SEM conversa) mocado.
 vi.mock("@/lib/notify", () => ({ nativeNotify: vi.fn(async () => {}) }))
 // O envio da mesa é testado em send.test.ts — aqui só o ROTEAMENTO.
-vi.mock("@/office/bridge/send", () => ({
+vi.mock("@/lib/fleet/send", () => ({
   DESK_TITLE_PREFIX: "Mesa · ",
   ensureDeskConversation: vi.fn(async () => "conv-mesa"),
   sendFromDesk: vi.fn(async () => {}),

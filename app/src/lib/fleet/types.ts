@@ -1,9 +1,11 @@
-/** Contrato central do Agent Office (ver docs/agent-office.md).
+/** Contrato central da ponte da frota (ver docs/agent-office.md; ex
+ *  office/engine/types.ts, movido pra lib/fleet/ no R1 do office-removal-plan
+ *  junto com perf/derive/send).
  *
- *  Camadas e dependências (regra dura):
+ *  Camadas e dependências (regra dura, enquanto o office existir):
  *    engine/  — TS puro, zero imports de Pixi/React/app. 100% testável.
  *    scene/   — Pixi; importa engine/.
- *    bridge/  — único lugar que importa stores/lib do app; importa engine/types.
+ *    bridge/  — único lugar que importa stores/lib do app; importa lib/fleet/types.
  *    ui/      — React overlay; importa bridge/ + scene/.
  *
  *  Coordenadas: "mundo" em unidades de TILE (float, contínuo); "tela" em px.
@@ -172,7 +174,7 @@ export type FloorPlan = {
 }
 
 // ---------------------------------------------------------------------------
-// Snapshot de atividade (bridge/derive.ts → cena/HUD). Transições DISCRETAS —
+// Snapshot de atividade (lib/fleet/derive.ts → cena/HUD). Transições DISCRETAS —
 // nunca por frame.
 // ---------------------------------------------------------------------------
 

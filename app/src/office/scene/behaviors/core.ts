@@ -25,7 +25,7 @@ import {
   type BehaviorPack,
   type BehaviorTrip,
 } from "../behaviors"
-import type { Vec2 } from "../../engine/types"
+import type { Vec2 } from "@/lib/fleet/types"
 
 /** Pausa do courier na mesa destino antes de voltar (s). */
 export const HANDOFF_PAUSE_S = 0.9

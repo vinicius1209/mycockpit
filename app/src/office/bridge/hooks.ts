@@ -31,8 +31,8 @@ import {
 } from "@/lib/agents"
 import { isTauri, type ConversationMeta } from "@/lib/db"
 import { buildExecutionPrompt } from "@/lib/planMode"
-import type { OfficeAgentId } from "../engine/types"
-import { DESK_TITLE_PREFIX } from "./send"
+import type { OfficeAgentId } from "@/lib/fleet/types"
+import { DESK_TITLE_PREFIX } from "@/lib/fleet/send"
 import { simProjects, simSchedules } from "./sim-data"
 
 // Re-exports utilitários pra ui/ não importar lib do app diretamente.

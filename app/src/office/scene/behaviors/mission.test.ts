@@ -4,7 +4,7 @@
  *  ids de mesa no formato REAL `${projectId}::${agent}` (a visita do reviewer
  *  deriva a mesa do executor por esse contrato). */
 import { beforeEach, describe, expect, it } from "vitest"
-import { BOSS_DESK_ID, T_WALK } from "../../engine/types"
+import { BOSS_DESK_ID, T_WALK } from "@/lib/fleet/types"
 import type {
   DeskVisualState,
   FloorPlan,
@@ -12,7 +12,7 @@ import type {
   OfficeSnapshot,
   RoomSnapshot,
   Vec2,
-} from "../../engine/types"
+} from "@/lib/fleet/types"
 import { createWalkerSystem } from "../walkers"
 import {
   BEHAVIOR_PRIORITY,

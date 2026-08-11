@@ -25,16 +25,16 @@ import {
   type OfficeSnapshot,
   type SimEvent,
   type World,
-} from "../engine/types"
+} from "@/lib/fleet/types"
 import { createWorld, simTick } from "../engine/sim"
 import { createLoop, type OfficeLoop } from "../engine/loop"
 import { attachInput } from "../engine/input"
 import { setInspect, snapInspect, zoomAt } from "../engine/camera"
 import { createOfficeStage, type OfficeStage } from "../scene/stage"
-import { perfAgg, perfDuration, perfEnabled } from "../engine/perf"
+import { perfAgg, perfDuration, perfEnabled } from "@/lib/fleet/perf"
 import { fitIsometricRoom } from "../scene/logic"
 import { buildFloorPlan } from "../bridge/layout"
-import { startDeriving, type DeriveHandle } from "../bridge/derive"
+import { startDeriving, type DeriveHandle } from "@/lib/fleet/derive"
 import { startSimData } from "../bridge/sim-data"
 import {
   dockLeaveCtx,

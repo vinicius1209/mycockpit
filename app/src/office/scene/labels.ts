@@ -13,7 +13,7 @@
  *  após fonts.ready.
  */
 import { Container, Graphics, Text } from "pixi.js"
-import type { DeskVisualState, RoomAggregate } from "../engine/types"
+import type { DeskVisualState, RoomAggregate } from "@/lib/fleet/types"
 import {
   beaconColorForState,
   doorLightColor,

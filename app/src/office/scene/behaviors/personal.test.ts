@@ -4,14 +4,14 @@
  *  (restUntil + wake), cumprimento (proximidade + cooldown) e chegada
  *  (walk-in porta→mesa com dedupe). reducedMotion ⇒ nada acontece. */
 import { describe, expect, it, vi } from "vitest"
-import { T_WALK } from "../../engine/types"
+import { T_WALK } from "@/lib/fleet/types"
 import type {
   DeskSnapshot,
   DeskVisualState,
   FloorPlan,
   OfficeSnapshot,
   Vec2,
-} from "../../engine/types"
+} from "@/lib/fleet/types"
 import { createWalkerSystem } from "../walkers"
 import {
   BEHAVIOR_PRIORITY,

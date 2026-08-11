@@ -9,7 +9,7 @@
  *  - Este módulo só ESCREVE em world.input.keys e chama handlers; cliques
  *    ficam com a cena (hit-test) e zoom por wheel fica com a cena/ui.
  */
-import type { World } from "./types"
+import type { World } from "@/lib/fleet/types"
 
 export type InputHandlers = {
   isTextTarget(e: KeyboardEvent): boolean

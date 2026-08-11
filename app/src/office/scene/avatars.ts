@@ -15,7 +15,7 @@
  *  uníssono). prefers-reduced-motion ⇒ poses estáticas.
  */
 import { Container, Graphics, GraphicsContext, GraphicsPath } from "pixi.js"
-import type { BossFacing, DeskVisualState, OfficeAgentId } from "../engine/types"
+import type { BossFacing, DeskVisualState, OfficeAgentId } from "@/lib/fleet/types"
 import { partsForState } from "./logic"
 import { SPIKE_SCALE, createChairBack, createChairSeat, createMug } from "./props"
 import { createSteam, createThoughtDots } from "./effects"

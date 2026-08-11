@@ -1,7 +1,7 @@
 /** Testes da lógica pura da cena (sem WebGL/Pixi — só ./logic).
  *  A projeção diamond 2:1 é do engine/iso e testada lá (iso.test.ts). */
 import { describe, expect, it } from "vitest"
-import type { DeskVisualState } from "../engine/types"
+import type { DeskVisualState } from "@/lib/fleet/types"
 import {
   agentColor,
   beaconColorForState,

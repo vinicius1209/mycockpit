@@ -18,7 +18,7 @@ import {
   type DeskPlacement,
   type DeskSnapshot,
   type DeskVisualState,
-} from "../engine/types"
+} from "@/lib/fleet/types"
 import {
   agentCssColor,
   agentLabel,
@@ -33,8 +33,8 @@ import {
   useDeskMissionRunning,
   useDeskTurnStartedAt,
 } from "../bridge/hooks"
-import { cancelDeskTurn, DESK_TITLE_PREFIX } from "../bridge/send"
-import { isRateLimitLabel, offInstruction } from "../bridge/derive"
+import { cancelDeskTurn, DESK_TITLE_PREFIX } from "@/lib/fleet/send"
+import { isRateLimitLabel, offInstruction } from "@/lib/fleet/derive"
 import { useMissionTableSig } from "../bridge/mission"
 import { MISSION_TABLE_ID, missionTableMenu, parseMissionSig } from "./missionTable"
 import { deskSnapshotById, useOfficeUi } from "./store"

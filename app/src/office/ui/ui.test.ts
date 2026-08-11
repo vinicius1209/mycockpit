@@ -8,7 +8,7 @@ import {
   type DeskSnapshot,
   type OfficeSnapshot,
   type SimEvent,
-} from "../engine/types"
+} from "@/lib/fleet/types"
 import { deskLiveConvId, deskMenuKind, deskMenuPrimary } from "./DeskMenu"
 import {
   applyRecovery,
@@ -69,7 +69,7 @@ vi.mock("../bridge/hooks", () => ({
     !!convId && (h.knownConvs === null || h.knownConvs.has(convId)),
 }))
 vi.mock("../bridge/voice", () => ({ cancelDictation: h.cancelDictation }))
-vi.mock("../bridge/send", () => ({
+vi.mock("@/lib/fleet/send", () => ({
   cancelDeskTurn: h.cancelDeskTurn,
   DESK_TITLE_PREFIX: "Mesa · ",
 }))

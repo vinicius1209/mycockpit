@@ -1,8 +1,8 @@
 /** Helpers sobre a grid global do FloorPlan (Uint8Array com bitflags — O5).
  *  Índice do tile: idx = y * plan.w + x. Fora dos limites = bloqueado.
  */
-import { T_DOOR, T_WALK } from "./types"
-import type { FloorPlan, Vec2 } from "./types"
+import { T_DOOR, T_WALK } from "@/lib/fleet/types"
+import type { FloorPlan, Vec2 } from "@/lib/fleet/types"
 
 /** Folga numérica: AABB encostada exatamente na borda de um tile NÃO o ocupa
  *  (permite deslizar rente à parede sem colidir). */

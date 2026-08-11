@@ -9,8 +9,8 @@
 //         executando pelos stores/bridges existentes (answerGate, answer,
 //         abort, cancelDeskTurn, ensureDeskConversation+sendFromDesk) — as
 //         guardas ficam intactas, nada de bypass.
-// Import sancionado do office/bridge/send (§6.1 item 5 do doc). NÃO depende do
-// office montado: tudo sai dos stores direto.
+// Import sancionado do lib/fleet/send (ex-office/bridge/send, §6.1 item 5 do
+// doc). NÃO depende do office montado: tudo sai dos stores direto.
 
 import { invoke } from "@tauri-apps/api/core"
 import { getAgentDef } from "@/lib/agentDefs"
@@ -41,9 +41,9 @@ import {
   DESK_TITLE_PREFIX,
   ensureDeskConversation,
   sendFromDesk,
-} from "@/office/bridge/send"
-import { OFFICE_AGENTS, type OfficeAgentId } from "@/office/engine/types"
-import { perfSpan } from "@/office/engine/perf"
+} from "@/lib/fleet/send"
+import { OFFICE_AGENTS, type OfficeAgentId } from "@/lib/fleet/types"
+import { perfSpan } from "@/lib/fleet/perf"
 
 // ─────────────────────────────────────────────────────────── shape do snapshot
 // A onda 2 (página do celular) constrói EM CIMA deste shape — mudar é breaking.

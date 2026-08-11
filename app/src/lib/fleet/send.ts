@@ -1,4 +1,5 @@
-// office/bridge/send.ts — coreografia COMPLETA de envio da mesa (§5.6 e §9 do
+// lib/fleet/send.ts (ex-office/bridge/send.ts, movido no R1 do
+// office-removal-plan) — coreografia COMPLETA de envio da mesa (§5.6 e §9 do
 // docs/agent-office.md, decisão O7). Compõe as APIs exportadas do app —
 // ChatPanel intocado — replicando a paridade do handleSend: guardas, lições
 // injetadas, peças de continuidade por agent e o finally (finish + persist +
@@ -58,7 +59,7 @@ import {
 } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { useMission } from "@/store/mission"
-import type { OfficeAgentId } from "@/office/engine/types"
+import type { OfficeAgentId } from "@/lib/fleet/types"
 
 /** Argumentos do envio da mesa. `attachments` é interno à drenagem da fila
  *  (mensagens enfileiradas pela OUTRA superfície podem carregar anexos — não

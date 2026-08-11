@@ -14,7 +14,7 @@ import type {
   MissionPhaseDef,
   MissionPreset,
 } from "@/lib/missionTypes"
-import { MISSION_TABLE_ID } from "../engine/types"
+import { MISSION_TABLE_ID } from "@/lib/fleet/types"
 
 export { MISSION_TABLE_ID }
 

@@ -25,7 +25,7 @@ import {
   type RoomMission,
   type RoomPlacement,
   type Vec2,
-} from "../engine/types"
+} from "@/lib/fleet/types"
 import { toScreen } from "../engine/iso"
 import {
   deskAnchorWorld,
