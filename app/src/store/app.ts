@@ -124,6 +124,38 @@ function applyTheme(theme: Theme) {
   if (isTauri()) void emit("app://theme", theme).catch(() => {})
 }
 
+/** Migração PURA do estado persistido (mc.app) — exportada p/ teste porque o
+ *  risco dela é o pior tipo: viewMode órfão persistido = boot num modo que não
+ *  existe (tela branca) pra TODO usuário existente.
+ *  - v<2: estado persistido = usuário existente → onboarded=true (instalação
+ *    nova não passa por migrate → wizard aparece).
+ *  - v<3: modo Fusion dissolvido (F3) → "fusion" vira "linear".
+ *  - v<4: Escritório removido (office-removal-plan R2) → "office" e QUALQUER
+ *    valor fora da união atual caem em "linear" (Trabalho), nunca tela branca. */
+export function migratePersistedApp(
+  persisted: unknown,
+  fromVersion: number,
+): AppState {
+  const p = (persisted ?? {}) as {
+    settings?: Record<string, unknown>
+    viewMode?: string
+  }
+  if (fromVersion < 2) {
+    p.settings = { ...(p.settings ?? {}), onboarded: true }
+  }
+  if (fromVersion < 3 && p.viewMode === "fusion") {
+    p.viewMode = "linear"
+  }
+  if (
+    fromVersion < 4 &&
+    p.viewMode != null &&
+    !["painel", "linear", "sdd"].includes(p.viewMode)
+  ) {
+    p.viewMode = "linear"
+  }
+  return p as unknown as AppState
+}
+
 export const useApp = create<AppState>()(
   persist(
     (set, get) => ({
@@ -281,36 +313,9 @@ export const useApp = create<AppState>()(
         viewMode: s.viewMode,
         settings: s.settings,
       }),
-      // v1→v2: quem já tinha estado persistido é usuário EXISTENTE (não 1ª
-      // instalação) → não deve ver o wizard de onboarding. Marca onboarded=true.
-      // Instalação nova (sem estado persistido) NÃO chama migrate → onboarded
-      // fica no default false → wizard aparece.
-      // v2→v3: o modo Fusion se dissolveu (F3) — quem tinha viewMode="fusion"
-      // persistido volta pro Linear (não pode abrir num modo que não existe).
-      migrate: (persisted, fromVersion) => {
-        const p = (persisted ?? {}) as {
-          settings?: Record<string, unknown>
-          viewMode?: string
-        }
-        if (fromVersion < 2) {
-          p.settings = { ...(p.settings ?? {}), onboarded: true }
-        }
-        if (fromVersion < 3 && p.viewMode === "fusion") {
-          p.viewMode = "linear"
-        }
-        // v3→v4: o Escritório saiu do produto (office-removal-plan R2). Quem
-        // tinha "office" persistido (estados antigos, pré-partialize v3) cai
-        // no Trabalho — e qualquer valor órfão fora da união vai junto, nunca
-        // tela branca num modo que não existe.
-        if (
-          fromVersion < 4 &&
-          p.viewMode != null &&
-          !["painel", "linear", "sdd"].includes(p.viewMode)
-        ) {
-          p.viewMode = "linear"
-        }
-        return p as unknown as AppState
-      },
+      // Regras versão a versão documentadas na própria migratePersistedApp
+      // (pura, exportada, coberta em app.migrate.test.ts).
+      migrate: migratePersistedApp,
       // deep-merge de settings p/ campos novos ganharem o default (evita undefined
       // quando o schema cresce entre versões).
       merge: (persisted, current) => {
