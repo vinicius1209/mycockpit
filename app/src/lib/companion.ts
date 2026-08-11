@@ -34,8 +34,10 @@ import { hasAssistantReply } from "@/lib/presets"
 import { useApp } from "@/store/app"
 import { useCards } from "@/store/cards"
 import { useChat, hasExecutorTurn } from "@/store/chat"
+import { useFusion } from "@/store/fusion"
 import { ownerByRunId, useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
+import { usePresets } from "@/store/presets"
 import {
   cancelDeskTurn,
   DESK_TITLE_PREFIX,
@@ -71,6 +73,10 @@ export interface CompanionAttention {
   phaseLabel: string | null
   /** gate: perguntas abertas · question: enunciados das perguntas. */
   questions?: string[]
+  /** question COM opções estruturadas (C2): a página renderiza a ESCOLHA de
+   *  verdade (radio/checkbox + texto livre), não só textarea. Omitido quando
+   *  nenhuma pergunta tem opções (o fluxo de texto livre segue). */
+  choices?: CompanionQuestion[]
   /** approval: comando extraído (Bash) e a tool pedida. */
   command?: string
   toolName?: string
@@ -78,6 +84,15 @@ export interface CompanionAttention {
   minutes?: number
   /** card: título do card estagnado (a página mostra O QUE está parado). */
   title?: string
+}
+
+/** Pergunta estruturada com opções (espelho compacto do Question do
+ *  lib/interaction — o snapshot nunca carrega o input cru do agente). */
+export interface CompanionQuestion {
+  header: string
+  question: string
+  multiSelect: boolean
+  options: { label: string; description: string }[]
 }
 
 /** Atividade em execução agora (turno linear OU missão). */
@@ -95,6 +110,9 @@ export interface CompanionRunning {
   startedAt: number | null
   /** Só p/ kind "missão": resumo compacto das fases. */
   missionPhases?: { label: string; status: MissionPhaseStatus }[]
+  /** C2 — turno FINALIZANDO (o CLI está fechando; runId já foi embora): a
+   *  página mostra o estado honesto e o Parar não finge que interrompe. */
+  finalizing?: boolean
 }
 
 export interface CompanionMissionPhase {
@@ -174,6 +192,17 @@ export interface CompanionCard {
   costUsd?: number
 }
 
+/** Especialista GLOBAL utilizável em qualquer projeto (C2 · lançar tarefa).
+ *  Só os globais viajam: um preset de escopo-projeto só existe no projeto do
+ *  desktop carregado e confundiria o celular ("por que sumiu?"). */
+export interface CompanionSpecialist {
+  id: string
+  name: string
+  /** Agent (CLI) que encarna a persona — a página mostra e o executor valida. */
+  backend: string
+  category: string
+}
+
 export interface CompanionSnapshot {
   attention: CompanionAttention[]
   running: CompanionRunning[]
@@ -184,6 +213,8 @@ export interface CompanionSnapshot {
   /** Board (S4.5): opcional no shape (página antiga segue funcionando), mas o
    *  builder sempre emite. */
   cards?: CompanionCard[]
+  /** Especialistas globais (C2): opcional no shape, o builder sempre emite. */
+  specialists?: CompanionSpecialist[]
 }
 
 /** Dados assíncronos (DB) que temperam o snapshot; cacheados pelo bridge. */
@@ -290,6 +321,18 @@ export function buildCompanionSnapshot(
       })
     } else {
       const d = req.data as Partial<QuestionData> | null | undefined
+      const rawQs = d?.questions ?? []
+      // C2 — opções estruturadas viajam quando existem: a ESCOLHA vira
+      // botões no celular e a resposta entra pelo mesmo answer_interaction.
+      const choices: CompanionQuestion[] = rawQs.map((q) => ({
+        header: typeof q.header === "string" ? q.header : "",
+        question: typeof q.question === "string" ? q.question : "",
+        multiSelect: !!q.multiSelect,
+        options: (Array.isArray(q.options) ? q.options : []).map((o) => ({
+          label: typeof o.label === "string" ? o.label : "",
+          description: typeof o.description === "string" ? o.description : "",
+        })),
+      }))
       attention.push({
         id: req.id,
         kind: "question",
@@ -299,7 +342,8 @@ export function buildCompanionSnapshot(
         agent: convId ? (chat.byId[convId]?.agent ?? "") : "",
         phase: null,
         phaseLabel: null,
-        questions: (d?.questions ?? []).map((q) => q.question),
+        questions: rawQs.map((q) => q.question),
+        ...(choices.some((q) => q.options.length > 0) ? { choices } : {}),
       })
     }
   }
@@ -361,10 +405,13 @@ export function buildCompanionSnapshot(
     }
   }
 
-  // ── execução: turnos lineares rodando + missões running ──
+  // ── execução: turnos lineares rodando OU finalizando + missões running ──
+  // C2 — finalizando ENTRA no running[] com a marca honesta: o turno ainda
+  // não acabou (o CLI está fechando), mas já não é interrompível (runId foi
+  // embora no result). Antes ele simplesmente SUMIA do celular.
   const running: CompanionRunning[] = []
   for (const [convId, c] of Object.entries(chat.byId)) {
-    if (!c.running) continue
+    if (!c.running && !c.finalizing) continue
     running.push({
       convId,
       projectId: c.projectId || null,
@@ -372,8 +419,9 @@ export function buildCompanionSnapshot(
       kind: "turno",
       agent: c.agent,
       label: titleOf(convId),
-      detail: linearDetail(convId),
+      detail: c.finalizing ? "finalizando…" : linearDetail(convId),
       startedAt: c.startedAt,
+      ...(c.finalizing ? { finalizing: true } : {}),
     })
   }
   for (const [convId, m] of Object.entries(missions.byConv)) {
@@ -470,6 +518,19 @@ export function buildCompanionSnapshot(
     agents: usableAgents.map((a) => deskOf(p.id, a)),
   }))
 
+  // ── Especialistas GLOBAIS (C2 · lançar tarefa): valem em qualquer projeto.
+  // Escopo-projeto fica FORA (só existe no projeto carregado no desktop; num
+  // outro projeto o getAgentDef não o acharia e o lançamento falharia). ──
+  const specialists: CompanionSpecialist[] = usePresets
+    .getState()
+    .list.filter((s) => s.scope === "global")
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      backend: s.backend,
+      category: s.category,
+    }))
+
   return {
     attention,
     running,
@@ -485,6 +546,7 @@ export function buildCompanionSnapshot(
     costs: { totalUsd, byProject },
     projects,
     cards,
+    specialists,
   }
 }
 
@@ -536,6 +598,65 @@ function isInteractionAnswer(v: unknown): v is InteractionAnswer {
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : ""
+}
+
+// ─────────────────────────────────────────── resultado de ação (C2, fail-closed)
+
+/** Veredito de uma ação do celular: o 202 do POST é só "aceitei"; ISTO é a
+ *  resposta de verdade (lançou / já tinha acabado / projeto sumiu), devolvida
+ *  ao aparelho via WS (companion_action_result → {type:"action-result"}). */
+export interface CompanionActionResult {
+  actionId: string
+  kind: string
+  ok: boolean
+  /** Motivo LEGÍVEL (pt-BR) — obrigatório no fracasso, útil no sucesso. */
+  message: string
+  /** launch_task ok: a conversa criada (a página navega direto pro fio). */
+  convId?: string
+  projectId?: string
+  agent?: string
+}
+
+/** Empurra o veredito pro(s) celular(es). NUNCA silencioso no erro (ADR-017:
+ *  o aparelho está esperando a resposta) — sem comando disponível, loga. */
+function pushActionResult(result: CompanionActionResult): void {
+  invoke("companion_action_result", { result }).catch((e) => {
+    console.warn("[companion] não consegui devolver o resultado da ação:", e)
+  })
+}
+
+/** Veredito HONESTO do stop_turn, computado ANTES do cancelamento: espelha a
+ *  semântica do Stop do app (ChatPanel/tray) — disputa Fusion aborta; turno
+ *  FINALIZANDO não é interrompível (runId já foi embora); turno morto idem. */
+function stopTurnVerdict(convId: string): { ok: boolean; message: string } {
+  const fusion = useFusion.getState().byConv[convId]
+  if (fusion && (fusion.phase === "running" || fusion.phase === "judging")) {
+    return { ok: true, message: "Disputa interrompida." }
+  }
+  if (fusion?.phase === "promoting") {
+    // promoção é one-shot (abort no-opa): não finge que parou — mesma copy do
+    // stop da tray.
+    return {
+      ok: false,
+      message: "Disputa promovendo o vencedor, aguarde concluir.",
+    }
+  }
+  const c = useChat.getState().byId[convId]
+  if (c?.finalizing) {
+    return {
+      ok: false,
+      message: "O turno já está finalizando, não dá mais para interromper.",
+    }
+  }
+  if (c?.running && c.runId) return { ok: true, message: "Turno interrompido." }
+  if (c?.running) {
+    return {
+      ok: false,
+      message:
+        "Não consegui interromper este turno pelo celular. Veja o app no Mac.",
+    }
+  }
+  return { ok: false, message: "O turno já não estava em execução." }
 }
 
 /** Erro de ação de card vinda do celular (S4.6): o 202 já saiu, então a
@@ -620,13 +741,38 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
     case "stop_mission": {
       const convId = str(p.convId)
       if (!convId) return
+      // veredito ANTES do abort (depois o status já mudou); o abort continua
+      // incondicional — parar é sempre gesto seguro (no-op se nada roda).
+      const wasRunning =
+        useMission.getState().byConv[convId]?.status === "running"
       useMission.getState().abort(convId)
+      const actionId = str(p.actionId)
+      if (actionId) {
+        pushActionResult({
+          actionId,
+          kind: "stop_mission",
+          ok: wasRunning,
+          message: wasRunning
+            ? "Missão interrompida."
+            : "A missão já não estava em execução.",
+          convId,
+        })
+      }
       return
     }
     case "stop_turn": {
       const convId = str(p.convId)
       if (!convId) return
+      // C2 — mesma semântica/copy do Stop do app, inclusive "finalizando não
+      // é interrompível". O veredito sai ANTES (cancelDeskTurn muda o estado);
+      // o cancel continua incondicional (comportamento de sempre, é no-op
+      // seguro quando não há o que parar).
+      const verdict = stopTurnVerdict(convId)
       await cancelDeskTurn(convId)
+      const actionId = str(p.actionId)
+      if (actionId) {
+        pushActionResult({ actionId, kind: "stop_turn", ...verdict, convId })
+      }
       return
     }
     case "send_message": {
@@ -709,6 +855,114 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
         text,
         attachments: uploadedAttachments(p),
       })
+      return
+    }
+    case "launch_task": {
+      // C2 — lançar tarefa do celular: conversa NOVA pelos MESMOS stores do
+      // composer (registerConversation → preset opcional → sendFromDesk; a
+      // persona do Especialista entra pelo resolveFirstTurnPersona de sempre).
+      // Fail-closed com motivo legível: o veredito volta pro aparelho pelo
+      // action-result — o 202 do POST nunca vira sucesso fingido.
+      const actionId = str(p.actionId)
+      const fail = (message: string): void => {
+        console.warn("[companion] launch_task recusado:", message)
+        if (actionId) {
+          pushActionResult({ actionId, kind: "launch_task", ok: false, message })
+        }
+      }
+      const projectId = str(p.projectId)
+      const agent = str(p.agent)
+      const text = str(p.text).trim()
+      if (
+        !projectId ||
+        !text ||
+        !OFFICE_AGENTS.includes(agent as OfficeAgentId)
+      ) {
+        fail("Pedido malformado. Atualize a página do Companion e tente de novo.")
+        return
+      }
+      const proj = useApp.getState().projects.find((pr) => pr.id === projectId)
+      if (!proj) {
+        fail("O projeto não existe mais no app.")
+        return
+      }
+      // Especialista opcional: valida JÁ (arquivo legível no projeto) — o
+      // preflight fail-closed do sendFromDesk revalida skills/policy depois.
+      const presetId = str(p.presetId)
+      let preset: { id: string; name: string; backend: string } | null = null
+      if (presetId) {
+        try {
+          const def = await getAgentDef(proj.path, presetId)
+          if (!def) {
+            fail("O Especialista escolhido não está disponível neste projeto.")
+            return
+          }
+          preset = { id: def.id, name: def.name, backend: def.backend }
+        } catch {
+          fail("Não consegui carregar o Especialista escolhido.")
+          return
+        }
+      }
+      // F-A — guarda de availability ANTES de criar qualquer coisa: o agent
+      // EFETIVO é o backend do Especialista quando há um.
+      const effectiveAgent = preset?.backend ?? agent
+      const block = dispatchBlockReason(
+        effectiveAgent,
+        useApp.getState().settings.detected ?? {},
+      )
+      if (block) {
+        fail(block)
+        return
+      }
+      // Conversa nova SEM roubar a seleção do desktop (registerConversation é
+      // a action feita p/ superfícies fora do ChatPanel). Título derivado do
+      // prompt com a MESMA régua do deriveTitle do persist (44 chars).
+      const flat = text.replace(/\s+/g, " ")
+      const title = flat.length > 44 ? `${flat.slice(0, 44)}…` : flat
+      const convId = crypto.randomUUID()
+      try {
+        await useChat
+          .getState()
+          .registerConversation(projectId, convId, title, effectiveAgent)
+        await useChat.getState().ensureConversationLoaded(projectId, convId)
+        if (preset) {
+          await useChat.getState().setConversationPreset(convId, preset)
+        }
+      } catch (e) {
+        console.warn("[companion] launch_task: criação da conversa falhou:", e)
+        fail("Não consegui criar a conversa no app.")
+        return
+      }
+      // O aceite (start/queued) responde o celular NA HORA; o await segura o
+      // turno inteiro (mesmo padrão do send_message). Se o sendFromDesk
+      // abortar numa guarda interna (preset quebrado, corrida), o onAccepted
+      // nunca dispara e o fracasso volta honesto.
+      let accepted = false
+      await sendFromDesk({
+        convId,
+        projectId,
+        projectPath: proj.path,
+        agent: agent as OfficeAgentId,
+        text,
+        attachments: uploadedAttachments(p),
+        onAccepted: () => {
+          accepted = true
+          if (actionId) {
+            pushActionResult({
+              actionId,
+              kind: "launch_task",
+              ok: true,
+              message: "Tarefa lançada.",
+              convId,
+              projectId,
+              agent: effectiveAgent,
+            })
+          }
+        },
+      })
+      if (!accepted) {
+        fail("O app não conseguiu iniciar o turno. Veja o desktop para detalhes.")
+      }
       return
     }
     case "dispatch_card": {
@@ -801,6 +1055,23 @@ function maybeLoadDeskMetas(): void {
   }
 }
 
+/** Especialistas no snapshot (C2): garante os presets GLOBAIS carregados no
+ *  store — headless, o CommandConsole (que faz o load no desktop) pode nunca
+ *  montar. Só dispara quando o store ainda não carregou NADA (loaded false):
+ *  nunca sobrescreve um load por-projeto já feito pela UI. Falhou → tenta de
+ *  novo no próximo push. */
+let specialistsRequested = false
+function maybeLoadSpecialists(): void {
+  if (specialistsRequested || usePresets.getState().loaded) return
+  specialistsRequested = true
+  void usePresets
+    .getState()
+    .load(null)
+    .catch(() => {
+      specialistsRequested = false
+    })
+}
+
 function maybeRefreshExtras(): void {
   if (Date.now() - extrasAt < EXTRAS_TTL_MS) return
   extrasAt = Date.now()
@@ -820,6 +1091,7 @@ function pushNow(): void {
     lastPushAt = Date.now()
     maybeRefreshExtras()
     maybeLoadDeskMetas()
+    maybeLoadSpecialists()
     const snapshot = buildCompanionSnapshot(extrasCache)
     // dedupe ESTRUTURAL antes do invoke (mesmo padrão do updateTray): o subscribe
     // dispara a cada set dos stores, mas só atravessamos a ponte quando o payload
@@ -885,6 +1157,8 @@ export function startCompanionBridge(): () => void {
     useApp.subscribe(() => schedulePush()),
     // S4.5 — board no snapshot: mutação de card (estado/estagnação) re-empurra.
     useCards.subscribe(() => schedulePush()),
+    // C2 — Especialistas no snapshot: load/CRUD de persona re-empurra.
+    usePresets.subscribe(() => schedulePush()),
   )
 
   let disposed = false
@@ -926,6 +1200,7 @@ export function stopCompanionBridge(): void {
   pingTimers.clear()
   lastPingAt.clear()
   metasRequested.clear()
+  specialistsRequested = false
   lastPushAt = 0
   lastSentKey = null
   extrasCache = EMPTY_EXTRAS
