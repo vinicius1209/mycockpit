@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a0b0d">
+<!-- PWA (C1): instalável na home screen, standalone. hrefs RELATIVOS de
+     propósito: servidos pelo mesmo binário e inofensivos no mock via file://. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FROTA">
 <title>FROTA · Companion</title>
 <style>
 /* ============================================================
@@ -83,6 +91,18 @@ header {
 #connLabel { font-size: 11px; color: var(--muted-foreground); }
 #btnBell { font-size: 16px; opacity: .55; padding: 4px; }
 #btnBell.on { opacity: 1; }
+
+/* banner de offline honesto (C1): Mac fora do ar nunca é tela branca nem dado
+   velho fingindo vivo — aviso + carimbo "visto há…" + retry automático */
+#offline {
+  position: sticky; top: calc(50px + env(safe-area-inset-top)); z-index: 18;
+  display: flex; gap: 6px; align-items: center; justify-content: center;
+  padding: 7px 12px; font-size: 12.5px; color: var(--st-queued);
+  background: color-mix(in srgb, var(--st-queued) 13%, var(--background));
+  border-bottom: 1px solid color-mix(in srgb, var(--st-queued) 35%, transparent);
+}
+#offline[hidden] { display: none !important; }
+#offline .seen { color: var(--muted-foreground); }
 
 /* ---------- layout ---------- */
 main { max-width: 640px; margin: 0 auto; padding: 12px 14px 90px; }
@@ -249,6 +269,11 @@ footer#costbar[hidden] { display: none !important; }
   <div class="conn"><span id="dot" class="dot off"></span><span id="connLabel">—</span></div>
 </header>
 
+<div id="offline" hidden>
+  <span>Sem conexão com o Mac · reconectando…</span>
+  <span class="seen" id="offlineSeen"></span>
+</div>
+
 <main>
   <!-- pareamento -->
   <section class="screen" id="scr-pair" hidden>
@@ -309,6 +334,9 @@ footer#costbar[hidden] { display: none !important; }
 
 <input type="file" id="filePick" accept="image/*,application/pdf" capture="environment" hidden>
 
+<!-- núcleo puro compartilhado (rotas, reconexão, "visto há") — o MESMO arquivo
+     roda no vitest; script clássico p/ o mock via file:// continuar abrindo -->
+<script src="core.js"></script>
 <script>
 "use strict";
 /* ============================================================
@@ -321,7 +349,12 @@ footer#costbar[hidden] { display: none !important; }
 
 var LS_TOKEN = "frota-companion-token";
 var LS_NOTIF = "frota-companion-notif";
+var LS_SNAP = "frota-companion-snap";
 var MOCK = new URLSearchParams(location.search).get("mock") === "1";
+/* Núcleo puro (core.js, servido pelo mesmo binário e coberto por vitest).
+   Se não carregar, a página segue viva com fallback mínimo (navegação sem
+   histórico + backoff fixo) — degradação, nunca tela branca. */
+var Core = (typeof CompanionCore !== "undefined") ? CompanionCore : null;
 
 // ---------------- helpers ----------------
 function $(sel) { return document.querySelector(sel); }
@@ -369,6 +402,8 @@ var S = {
   prevRunning: {},          // convId→1 do snapshot ANTERIOR (detecta fim de turno)
   pickCtx: null,            // pra onde vai o próximo anexo: {kind:"gate",id} | {kind:"chat"}
   sigs: {},                 // assinaturas por seção (evita re-render que rouba foco)
+  snapAt: null,             // quando o snapshot corrente foi VISTO (carimbo honesto)
+  connSt: { status: "connecting", attempt: 0, retryInMs: null }, // máquina de reconexão (core.js)
 };
 
 // ---------------- mock (?mock=1) ----------------
@@ -533,34 +568,58 @@ function onUnauthorized() {
 }
 
 // ---------------- conexão (WS honesto + backoff) ----------------
-var ws = null, wsRetry = 0, wsTimer = null;
+/* A VERDADE da reconexão vive na máquina de estados do core.js (connReduce:
+   connecting → on → reconnecting com backoff exponencial e teto); a página só
+   agenda o timer e pinta. Fallback mínimo se o core não carregou. */
+var ws = null, wsTimer = null;
+function connEvent(ev) {
+  S.connSt = Core
+    ? Core.connReduce(S.connSt, ev)
+    : (ev === "open"
+        ? { status: "on", attempt: 0, retryInMs: null }
+        : ev === "down"
+          ? { status: "reconnecting", attempt: (S.connSt.attempt || 0) + 1, retryInMs: 3000 }
+          : S.connSt);
+}
 function setConn(st) {
   S.conn = st;
   var d = $("#dot");
   d.className = "dot " + (st === "on" ? "on" : st === "connecting" ? "connecting" : "off");
-  $("#connLabel").textContent = MOCK ? "mock" : st === "on" ? "conectado" : st === "connecting" ? "reconectando…" : "desconectado";
+  $("#connLabel").textContent = MOCK ? "mock"
+    : st === "on" ? "conectado"
+    : st === "connecting" ? (Core ? Core.connLabel(S.connSt) : "reconectando…")
+    : "desconectado";
+  renderOffline();
 }
 function connectWS() {
   if (MOCK) { setConn("on"); return; }
   if (!S.token) return;
+  connEvent("connect");
   setConn("connecting");
   try {
     var proto = location.protocol === "https:" ? "wss" : "ws";
     ws = new WebSocket(proto + "://" + location.host + "/api/ws?token=" + encodeURIComponent(S.token));
-  } catch (e) { scheduleReconnect(); return; }
-  ws.onopen = function () { wsRetry = 0; setConn("on"); };
+  } catch (e) { connEvent("down"); scheduleReconnect(); return; }
+  ws.onopen = function () {
+    connEvent("open");
+    setConn("on");
+    // reconectou: o servidor manda o snapshot de boas-vindas sozinho; o
+    // histórico da conversa aberta refetcha aqui (pode ter mudado no vácuo).
+    if (S.screen === "chat" && S.chat && S.chat.convId) fetchConv();
+  };
   ws.onmessage = function (ev) {
     var msg;
     try { msg = JSON.parse(ev.data); } catch (e) { return; }
     if (msg && msg.type === "snapshot") applySnapshot(msg.data);
     else if (msg && msg.type === "conv-updated") onConvUpdated(String(msg.convId || ""));
   };
-  ws.onclose = function () { setConn("off"); scheduleReconnect(); };
+  // caiu: honesto na cara ("reconectando…" + banner) e retry automático
+  ws.onclose = function () { connEvent("down"); setConn("connecting"); scheduleReconnect(); };
   ws.onerror = function () { try { ws.close(); } catch (e) {} };
 }
 function scheduleReconnect() {
   if (wsTimer) return;
-  var wait = Math.min(15000, 1000 * Math.pow(2, wsRetry++));
+  var wait = (S.connSt && S.connSt.retryInMs) || 1000;
   wsTimer = setTimeout(function () { wsTimer = null; connectWS(); }, wait);
 }
 
@@ -592,8 +651,15 @@ function notifyNewAttention(items) {
 }
 
 // ---------------- snapshot → telas ----------------
-function applySnapshot(snap) {
+/* `seenAtMs` presente = snapshot RESTAURADO do cache local (boot offline):
+   aplica carimbado com a idade real; ausente = snapshot vivo (agora). */
+function applySnapshot(snap, seenAtMs) {
   if (!snap || typeof snap !== "object") return;
+  S.snapAt = seenAtMs || Date.now();
+  if (!seenAtMs && !MOCK) {
+    lsSet(LS_SNAP, JSON.stringify({ at: S.snapAt, snap: snap }));
+  }
+  renderOffline();
   var first = S.knownAttn === null;
   var att = Array.isArray(snap.attention) ? snap.attention : [];
   if (!first) {
@@ -617,7 +683,20 @@ function applySnapshot(snap) {
   S.prevRunning = nowRunning;
   renderBrief();
   if (S.screen === "agents") renderAgents();
-  if (S.screen === "chat") { bindChatConv(); renderChatItems(); }
+  if (S.screen === "chat") { refreshChatTitle(); bindChatConv(); renderChatItems(); }
+}
+
+/* chat restaurado por URL (F5) nasce com o id do projeto no título; quando o
+   snapshot chega, o nome real assume. */
+function refreshChatTitle() {
+  if (!S.chat) return;
+  var ps = (S.snap && S.snap.projects) || [];
+  for (var i = 0; i < ps.length; i++) {
+    if (ps[i].id === S.chat.projectId && ps[i].name !== S.chat.projectName) {
+      S.chat.projectName = ps[i].name;
+      $("#chatTitle").textContent = ps[i].name + " · " + agentName(S.chat.agent);
+    }
+  }
 }
 
 function showScreen(name) {
@@ -626,8 +705,63 @@ function showScreen(name) {
     $("#scr-" + n).hidden = n !== name;
   });
   $("#costbar").hidden = name !== "brief";
+  renderOffline();
   window.scrollTo(0, 0);
 }
+
+// ---------------- rotas (C1): history API real via hash ----------------
+/* A URL codifica a tela (#/ · #/agents/<pid> · #/chat/<pid>/<agent>[/<conv>]):
+   voltar no browser/gesto do celular volta UMA tela e F5 restaura onde você
+   estava. Gestos de navegação chamam nav() (escreve o hash, empurra entrada no
+   histórico); o hashchange aplica a tela — inclusive no back/forward. */
+function currentRoute() {
+  return Core ? Core.parseRoute(location.hash) : { screen: "brief" };
+}
+function nav(route) {
+  if (!Core) { applyRoute(route); return; }
+  var h = Core.routeHash(route);
+  if (location.hash === h || (h === "#/" && location.hash === "")) {
+    applyRoute(route); // já estamos nessa rota: só re-aplica, sem entrada nova
+    return;
+  }
+  location.hash = h; // dispara hashchange → applyRoute
+}
+function applyRoute(r) {
+  if (!S.token && !MOCK) { showScreen("pair"); return; }
+  if (r.screen === "agents" && r.projectId) {
+    S.agentsFor = r.projectId;
+    showScreen("agents");
+    renderAgents(); // projeto inexistente (com snapshot em mãos) redireciona
+    return;
+  }
+  if (r.screen === "chat" && r.projectId && r.agent) {
+    openChat(r.projectId, r.agent, r.convId || null);
+    return;
+  }
+  showScreen("brief");
+}
+window.addEventListener("hashchange", function () { applyRoute(currentRoute()); });
+
+// ---------------- offline honesto (C1) ----------------
+/* Banner sempre que a conexão com o Mac não está viva: avisa, mostra o carimbo
+   "visto há…" do último snapshot (dado velho NUNCA finge vivo) e o retry
+   automático segue rodando por trás (máquina de reconexão + backoff). */
+function renderOffline() {
+  var el = $("#offline");
+  if (!el) return;
+  // banner só depois de uma queda REAL (status reconnecting): o "connecting"
+  // do primeiro carregamento não é falta de conexão, é aperto de mão.
+  var off = !MOCK && !!S.token && S.screen !== "pair" &&
+    S.conn !== "on" && S.connSt.status === "reconnecting";
+  el.hidden = !off;
+  if (el.hidden) return;
+  $("#offlineSeen").textContent =
+    Core && S.snapAt ? "· " + Core.seenAgo(Date.now(), S.snapAt) : "";
+}
+setInterval(function () {
+  var el = $("#offline");
+  if (el && !el.hidden) renderOffline(); // mantém o "visto há…" honesto
+}, 10000);
 
 // re-render de seção só quando a assinatura muda (não rouba foco de textarea)
 function sigChanged(key, sig) {
@@ -838,7 +972,20 @@ function renderAgents() {
   var ps = (S.snap && S.snap.projects) || [];
   var p = null;
   for (var i = 0; i < ps.length; i++) if (ps[i].id === S.agentsFor) p = ps[i];
-  if (!p) { showScreen("brief"); return; }
+  if (!p) {
+    if (!S.snap) {
+      // F5 direto em #/agents/…: snapshot ainda não chegou — segura a tela
+      // com estado de carga (refresh não perde onde você estava).
+      $("#agentsTitle").textContent = "Carregando…";
+      $("#agentList").innerHTML = '<div class="empty">Conectando ao Mac…</div>';
+      return;
+    }
+    // projeto saiu do app: rota morta volta pro briefing (replace: sem
+    // entrada fantasma no histórico)
+    history.replaceState(null, "", location.pathname + location.search + "#/");
+    showScreen("brief");
+    return;
+  }
   $("#agentsTitle").textContent = p.name + " — escolher agent";
   $("#agentList").innerHTML = (p.agents.length ? p.agents : []).map(function (a) {
     var id = typeof a === "string" ? a : a.agent; // compat com snapshot antigo
@@ -865,6 +1012,15 @@ function deskConvFromSnap(pid, agent) {
   return null;
 }
 function openChat(projectId, agent, convId) {
+  // voltar/avançar pro MESMO chat (history API): preserva rascunho, anexos e
+  // itens em vez de recriar do zero — só refetcha a verdade persistida.
+  if (S.chat && S.chat.projectId === projectId && S.chat.agent === agent &&
+      (!convId || S.chat.convId === convId)) {
+    showScreen("chat");
+    renderChatItems();
+    if (S.chat.convId) fetchConv();
+    return;
+  }
   var ps = (S.snap && S.snap.projects) || [];
   var name = projectId;
   for (var i = 0; i < ps.length; i++) if (ps[i].id === projectId) name = ps[i].name;
@@ -1122,9 +1278,16 @@ document.addEventListener("click", function (ev) {
   var el = ev.target.closest ? ev.target.closest("[data-nav],[data-proj],[data-pickagent],[data-answer],[data-approve],[data-deny],[data-stop],[data-openchat],[data-cam],[data-rmatt],[data-sug],[data-fb],[data-cardgo],[data-cardclose]") : null;
   if (!el) return;
 
-  if (el.hasAttribute("data-nav")) { showScreen(el.getAttribute("data-nav")); return; }
-  if (el.hasAttribute("data-proj")) { S.agentsFor = el.getAttribute("data-proj"); renderAgents(); showScreen("agents"); return; }
-  if (el.hasAttribute("data-pickagent")) { openChat(el.getAttribute("data-pid"), el.getAttribute("data-pickagent"), el.getAttribute("data-conv") || null); return; }
+  // navegação = rota (C1): o hash muda, o histórico ganha a entrada e o
+  // hashchange aplica a tela — botão voltar do browser/gesto funciona.
+  if (el.hasAttribute("data-nav")) { nav({ screen: el.getAttribute("data-nav") }); return; }
+  if (el.hasAttribute("data-proj")) { nav({ screen: "agents", projectId: el.getAttribute("data-proj") }); return; }
+  if (el.hasAttribute("data-pickagent")) {
+    // mesa: a rota NÃO carrega convId (o openChat resolve a conversa de mesa
+    // pelo snapshot/localStorage) — o data-conv é só o atalho visual
+    nav({ screen: "chat", projectId: el.getAttribute("data-pid"), agent: el.getAttribute("data-pickagent") });
+    return;
+  }
   if (el.hasAttribute("data-sug")) {
     var t = $("#chatText");
     t.value = el.getAttribute("data-sug");
@@ -1132,7 +1295,11 @@ document.addEventListener("click", function (ev) {
     t.focus();
     return;
   }
-  if (el.hasAttribute("data-openchat")) { openChat(el.getAttribute("data-pid"), el.getAttribute("data-agent"), el.getAttribute("data-openchat")); return; }
+  if (el.hasAttribute("data-openchat")) {
+    nav({ screen: "chat", projectId: el.getAttribute("data-pid"),
+          agent: el.getAttribute("data-agent"), convId: el.getAttribute("data-openchat") });
+    return;
+  }
   if (el.hasAttribute("data-cam")) { pickAttachment({ kind: "gate", id: el.getAttribute("data-cam") }); return; }
 
   if (el.hasAttribute("data-rmatt")) {
@@ -1252,12 +1419,29 @@ document.addEventListener("visibilitychange", function () {
 // ---------------- boot ----------------
 initToken();
 renderBell();
+/* PWA (C1): service worker mínimo — cacheia SÓ o shell (dados nunca). Em
+   contexto inseguro (http na LAN) navigator.serviceWorker nem existe: degrada
+   sem drama, o banner de offline continua cobrindo a honestidade. */
+if (!MOCK && "serviceWorker" in navigator) {
+  try { navigator.serviceWorker.register("sw.js"); } catch (e) {}
+}
 if (!S.token) {
   showScreen("pair");
   setConn("off");
 } else {
-  showScreen("brief");
-  apiState().then(applySnapshot).catch(function () {});
+  // último snapshot conhecido ANTES da rede: a tela nasce preenchida e
+  // CARIMBADA ("visto há…") até o dado vivo chegar — refresh/offline nunca é
+  // tela branca nem dado velho fingindo vivo.
+  if (!MOCK) {
+    var cachedSnap = null;
+    try { cachedSnap = JSON.parse(lsGet(LS_SNAP) || "null"); } catch (e) {}
+    if (cachedSnap && cachedSnap.snap && cachedSnap.at) {
+      applySnapshot(cachedSnap.snap, cachedSnap.at);
+    }
+  }
+  // F5/reabrir restaura a tela da URL (rota no hash), não o briefing fixo
+  applyRoute(currentRoute());
+  apiState().then(function (snap) { applySnapshot(snap); }).catch(function () { renderOffline(); });
   connectWS();
 }
 </script>

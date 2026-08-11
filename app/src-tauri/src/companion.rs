@@ -362,6 +362,15 @@ fn build_router(ctx: Ctx, guard_state: Guard) -> Router {
         .layer(DefaultBodyLimit::max(BODY_CAP));
     Router::new()
         .route("/", get(index_page))
+        // fundação C1: shell do PWA — tudo embutido no binário, nada de disco.
+        // Fora do /api de propósito (o browser busca manifest/ícones/SW sem
+        // header de auth); nenhum desses assets carrega dado do usuário.
+        .route("/core.js", get(core_js))
+        .route("/sw.js", get(sw_js))
+        .route("/manifest.webmanifest", get(manifest_webmanifest))
+        .route("/icon-192.png", get(icon_192))
+        .route("/icon-512.png", get(icon_512))
+        .route("/apple-touch-icon.png", get(icon_touch))
         .nest("/api", api)
         .with_state(ctx)
 }
@@ -369,6 +378,16 @@ fn build_router(ctx: Ctx, guard_state: Guard) -> Router {
 /// Página do Companion embutida no binário (onda 3): única, auto-contida
 /// (vanilla JS + CSS inline com os tokens do app) — zero build, zero CDN.
 const COMPANION_PAGE: &str = include_str!("../companion/index.html");
+/// Núcleo puro do cliente (C1): rotas/reconexão/"visto há" — o MESMO arquivo
+/// roda no vitest (src/lib/companionWeb.test.ts), sem implementação gêmea.
+const COMPANION_CORE: &str = include_str!("../companion/core.js");
+/// Service worker mínimo (C1): cache do shell; /api NUNCA entra no cache.
+const COMPANION_SW: &str = include_str!("../companion/sw.js");
+/// Manifest do PWA (nome, ícones, standalone, tema).
+const COMPANION_MANIFEST: &str = include_str!("../companion/manifest.webmanifest");
+const COMPANION_ICON_192: &[u8] = include_bytes!("../companion/icon-192.png");
+const COMPANION_ICON_512: &[u8] = include_bytes!("../companion/icon-512.png");
+const COMPANION_ICON_TOUCH: &[u8] = include_bytes!("../companion/apple-touch-icon.png");
 
 /// Guardião de TODA rota /api: rate-limit por IP + token. Bearer vale em
 /// qualquer rota; `?token=` SÓ no /api/ws (o WebSocket do browser não manda
@@ -407,10 +426,13 @@ async fn guard(
 /// nenhum host externo; script/style só inline (a página é auto-contida);
 /// connect só same-origin + WS (o `ws:` explícito cobre browsers móveis que
 /// ainda não casam WebSocket com 'self'); img blob:/data: p/ thumbs de anexo.
-const PAGE_CSP: &str = "default-src 'none'; script-src 'unsafe-inline'; \
+/// C1: `script-src` ganha 'self' (o core.js sai do próprio binário),
+/// `manifest-src`/`worker-src` 'self' liberam manifest e service worker —
+/// continua ZERO host externo.
+const PAGE_CSP: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; \
     style-src 'unsafe-inline'; img-src 'self' blob: data:; \
-    connect-src 'self' ws: wss:; base-uri 'none'; form-action 'none'; \
-    frame-ancestors 'none'";
+    connect-src 'self' ws: wss:; manifest-src 'self'; worker-src 'self'; \
+    base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 /// GET / — serve a página do Companion (embutida via `COMPANION_PAGE`) com
 /// CSP + nosniff + no-referrer (o token do pareamento vive no fragment).
@@ -424,6 +446,52 @@ async fn index_page() -> Response {
         Html(COMPANION_PAGE),
     )
         .into_response()
+}
+
+/// Asset textual do shell com content-type explícito + nosniff. `no-cache` de
+/// propósito: o cache de LONGO prazo é papel do service worker (versionado);
+/// o HTTP sempre revalida — atualização do app nunca fica presa num proxy.
+fn text_asset(content_type: &'static str, body: &'static str) -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, content_type),
+            (header::CACHE_CONTROL, "no-cache"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+fn png_asset(body: &'static [u8]) -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+async fn core_js() -> Response {
+    text_asset("application/javascript; charset=utf-8", COMPANION_CORE)
+}
+async fn sw_js() -> Response {
+    text_asset("application/javascript; charset=utf-8", COMPANION_SW)
+}
+async fn manifest_webmanifest() -> Response {
+    text_asset("application/manifest+json", COMPANION_MANIFEST)
+}
+async fn icon_192() -> Response {
+    png_asset(COMPANION_ICON_192)
+}
+async fn icon_512() -> Response {
+    png_asset(COMPANION_ICON_512)
+}
+async fn icon_touch() -> Response {
+    png_asset(COMPANION_ICON_TOUCH)
 }
 
 /// GET /api/state — snapshot corrente (o front define o shape).
@@ -814,6 +882,105 @@ mod tests {
             resp.headers().get(header::REFERRER_POLICY).unwrap(),
             "no-referrer"
         );
+    }
+
+    // ── fundação C1: PWA + router + offline honesto ──
+
+    #[test]
+    fn fundacao_c1_pagina_declara_pwa_router_e_offline() {
+        // manifest + ícone + SW: instalável de verdade, não só uma página
+        assert!(COMPANION_PAGE.contains("rel=\"manifest\""));
+        assert!(COMPANION_PAGE.contains("apple-touch-icon"));
+        assert!(COMPANION_PAGE.contains("serviceWorker"));
+        // núcleo compartilhado carregado como script clássico (mock file:// vive)
+        assert!(COMPANION_PAGE.contains("src=\"core.js\""));
+        // history API real: navegar escreve hash, voltar aplica via hashchange
+        assert!(COMPANION_PAGE.contains("hashchange"));
+        // offline honesto: banner com carimbo, nunca dado velho fingindo vivo
+        assert!(COMPANION_PAGE.contains("Sem conexão com o Mac"));
+        assert!(COMPANION_PAGE.contains("offlineSeen"));
+    }
+
+    #[test]
+    fn fundacao_c1_manifest_instalavel_e_autocontido() {
+        let m: Value = serde_json::from_str(COMPANION_MANIFEST)
+            .expect("manifest do PWA precisa ser JSON válido");
+        assert_eq!(m["display"], "standalone");
+        assert_eq!(m["start_url"], "/");
+        assert!(m["name"].as_str().unwrap().contains("FROTA"));
+        let icons = m["icons"].as_array().expect("icons ausentes");
+        assert!(icons.len() >= 2);
+        for icon in icons {
+            let src = icon["src"].as_str().unwrap();
+            // todo ícone declarado tem rota embutida de verdade no binário
+            assert!(
+                ["/icon-192.png", "/icon-512.png"].contains(&src),
+                "ícone declarado sem rota embutida: {src}"
+            );
+        }
+        assert!(!COMPANION_MANIFEST.contains("http")); // zero host externo
+    }
+
+    #[test]
+    fn fundacao_c1_sw_cacheia_shell_e_nunca_dados() {
+        // guarda explícita: /api passa reto pela rede, jamais entra no cache
+        assert!(COMPANION_SW.contains("/api/"));
+        // o shell inteiro está na lista de pré-cache
+        for asset in ["/core.js", "/manifest.webmanifest", "/icon-192.png"] {
+            assert!(COMPANION_SW.contains(asset), "shell sem {asset}");
+        }
+        assert!(!COMPANION_SW.contains("http://")); // auto-contido
+    }
+
+    #[test]
+    fn fundacao_c1_core_e_autocontido_e_expoe_o_global() {
+        // UMD: o browser ganha o global; o vitest importa o MESMO arquivo
+        assert!(COMPANION_CORE.contains("CompanionCore"));
+        for f in ["parseRoute", "routeHash", "connReduce", "seenAgo"] {
+            assert!(COMPANION_CORE.contains(f), "core.js sem {f}");
+        }
+        assert!(!COMPANION_CORE.contains("http://"));
+        assert!(!COMPANION_CORE.contains("fetch(")); // puro: zero rede/DOM
+    }
+
+    #[tokio::test]
+    async fn fundacao_c1_assets_servidos_com_content_type_certo() {
+        async fn body_of(resp: Response) -> Vec<u8> {
+            axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .to_vec()
+        }
+        let r = core_js().await;
+        assert!(r
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("application/javascript"));
+        let r = sw_js().await;
+        // SW revalida sempre (no-cache): atualização do shell não fica presa
+        assert_eq!(r.headers().get(header::CACHE_CONTROL).unwrap(), "no-cache");
+        let r = manifest_webmanifest().await;
+        assert_eq!(
+            r.headers().get(header::CONTENT_TYPE).unwrap(),
+            "application/manifest+json"
+        );
+        for resp in [icon_192().await, icon_512().await, icon_touch().await] {
+            assert_eq!(resp.headers().get(header::CONTENT_TYPE).unwrap(), "image/png");
+            let b = body_of(resp).await;
+            assert_eq!(&b[..4], b"\x89PNG", "bytes embutidos não são PNG");
+        }
+    }
+
+    #[test]
+    fn fundacao_c1_csp_libera_sw_e_manifest_sem_host_externo() {
+        assert!(PAGE_CSP.contains("script-src 'self' 'unsafe-inline'"));
+        assert!(PAGE_CSP.contains("worker-src 'self'"));
+        assert!(PAGE_CSP.contains("manifest-src 'self'"));
+        assert!(PAGE_CSP.contains("default-src 'none'"));
+        assert!(!PAGE_CSP.contains("http://"));
     }
 
     #[test]

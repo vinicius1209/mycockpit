@@ -1,5 +1,20 @@
 # Companion Web profissional — plano (visão registrada, execução futura)
 
+> **Status C1 (11/08/2026): ENTREGUE.** Fundação de app no cliente existente
+> (página única vanilla, sem framework novo): rotas com history real via hash
+> (`#/`, `#/agents/<pid>`, `#/chat/<pid>/<agent>[/<conv>]` — voltar/avançar/F5
+> funcionam), PWA (manifest + ícones + service worker que cacheia SÓ o shell,
+> `/api` nunca), offline honesto (banner "Sem conexão com o Mac" + carimbo
+> "visto há…" do último snapshot restaurado do localStorage, nunca tela branca)
+> e reconexão automática com backoff (máquina de estados em
+> `app/src-tauri/companion/core.js`, o MESMO arquivo servido ao celular e
+> coberto por vitest em `app/src/lib/companionWeb.test.ts`). Canal de dados,
+> bind e pareamento intactos. **Limitação registrada**: em `http://` de LAN
+> (contexto inseguro) o browser não dá service worker nem install prompt do
+> Android — o SW/instalação plena valem em contexto seguro; no iOS o
+> Adicionar à Tela de Início + standalone (metas apple) funcionam mesmo em
+> http. HTTPS local é conversa do C2 junto com o modelo de pareamento.
+
 > Status: visão registrada em 11/08/2026, palavras do usuário: o companion
 > "devia ser muito mais profissional… lançar tarefa, falar com os agentes, ter
 > comportamento de um aplicativo mesmo — botão de voltar que volta. Tem que ser
