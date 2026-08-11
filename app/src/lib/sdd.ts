@@ -110,7 +110,10 @@ export type SddTrack = "quick" | "full"
 export interface SddEvidence {
   prdFile: boolean
   specFile: boolean
-  branchCommits: boolean
+  /** true/false = o git foi olhado de verdade; null = NÃO VERIFICADO (o backend
+   *  pula o git quando o stage declarado já alcança implementação — o teto da
+   *  evidência de branch). null nunca pode virar "sem commits" na UI. */
+  branchCommits: boolean | null
 }
 export interface SddPlan {
   slug: string
@@ -157,6 +160,9 @@ interface SddPlanRaw {
     prd_file: boolean
     spec_file: boolean
     branch_commits: boolean
+    /** false = verificação de branch PULADA de propósito (stage declarado já
+     *  alcança implementação). Ausente = backend antigo, que sempre verificava. */
+    branch_checked?: boolean
     evidence_stage: string | null
   } | null
 }
@@ -199,7 +205,10 @@ function normalize(raw: SddPlanRaw): SddPlan {
       ? {
           prdFile: !!ev.prd_file,
           specFile: !!ev.spec_file,
-          branchCommits: !!ev.branch_commits,
+          // branch_checked=false → o git não foi olhado: tri-state honesto
+          // (null), nunca um "sem commits" inventado. Ausente = backend antigo,
+          // que sempre verificava → o booleano vale.
+          branchCommits: ev.branch_checked === false ? null : !!ev.branch_commits,
         }
       : null,
     track: m.track === "quick" ? "quick" : "full",
@@ -242,15 +251,31 @@ function normalize(raw: SddPlanRaw): SddPlan {
 /** Normaliza UM plano cru (slug + conteúdo do manifest.json) → SddPlan. Exposto
  *  para os testes montarem fixtures com manifests REAIS do disco em vez de
  *  objetos inventados (lição do ADR-016): o parse tolerante daqui é justamente
- *  o que precisa ser exercitado pelo dado de verdade. */
-export function parseSddPlan(slug: string, manifest: string | null): SddPlan {
-  return normalize({ slug, manifest, log_tail: null, log_events: [] })
+ *  o que precisa ser exercitado pelo dado de verdade. `evidence` opcional =
+ *  o payload cru do backend, pro tri-state do branch também ser exercitável. */
+export function parseSddPlan(
+  slug: string,
+  manifest: string | null,
+  evidence?: SddPlanRaw["evidence"],
+): SddPlan {
+  return normalize({ slug, manifest, log_tail: null, log_events: [], evidence })
 }
 
-export async function loadSddPlans(projectPath: string): Promise<SddPlan[]> {
+export async function loadSddPlans(
+  projectPath: string,
+  opts: {
+    /** false = forma BARATA: o backend não computa evidência nenhuma (nenhum
+     *  spawn de git, nenhum stat de artifact). Para chamadores que só leem o
+     *  manifest declarado (inbox) — não compute o que ninguém lê. */
+    evidence?: boolean
+  } = {},
+): Promise<SddPlan[]> {
   if (!isTauri()) return []
   try {
-    const raw = await invoke<SddPlanRaw[]>("read_sdd_plans", { projectPath })
+    const raw = await invoke<SddPlanRaw[]>("read_sdd_plans", {
+      projectPath,
+      withEvidence: opts.evidence ?? true,
+    })
     return raw.map(normalize)
   } catch {
     return []

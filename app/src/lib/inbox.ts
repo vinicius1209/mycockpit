@@ -292,8 +292,15 @@ export async function scanDecisions(
   //    badge) × adotado por um gesto seu aqui dentro (conta). O registro da
   //    adoção é do app, nunca do .claude/plans do usuário.
   const adoptions = await loadPlanAdoptions()
+  // Forma BARATA: os gates daqui leem só o declarado (stage, prd.approved,
+  // pr_url, merged_at) — evidência de branch não muda decisão nenhuma no inbox,
+  // e computá-la custava uma tempestade de git por projeto a cada abertura do
+  // sino (N projetos × dezenas de planos).
   const scans = await Promise.all(
-    projects.map(async (p) => ({ p, plans: await loadSddPlans(p.path) })),
+    projects.map(async (p) => ({
+      p,
+      plans: await loadSddPlans(p.path, { evidence: false }),
+    })),
   )
   for (const { p, plans } of scans) {
     for (const plan of plans) {

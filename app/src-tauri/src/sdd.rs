@@ -36,6 +36,11 @@ pub struct EvidenceRaw {
     pub spec_file: bool,
     /// o branch do manifest existe NO REPO e tem >=1 commit à frente do default.
     pub branch_commits: bool,
+    /// false = a verificação de branch foi PULADA de propósito (o stage declarado
+    /// já alcança "implementation", o teto da evidência de branch — git não muda
+    /// decisão nenhuma). Nesse caso `branch_commits` é false por default e o
+    /// frontend NÃO pode ler como "sem commits": lê como "não verificado".
+    pub branch_checked: bool,
     /// estágio máximo suportado pela evidência LOCAL: "prd" | "spec" | "implementation" | null.
     pub evidence_stage: Option<String>,
 }
@@ -51,6 +56,26 @@ fn evidence_stage(prd: bool, spec: bool, branch: bool) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+/// A evidência de branch pode mudar alguma decisão para este stage DECLARADO?
+/// O teto dela é "implementation" (evidence_stage nunca passa disso) e o stage
+/// efetivo no TS é um max MONOTÔNICO: se o declarado já alcança implementation
+/// (inclusive pelos aliases reais de drift: developer, test-suite, code-review,
+/// release — e a CAIXA drifta, "PRD"/"DONE"), o git não puxa nada pra frente.
+/// Pular aí é otimização pura, sem mudança de semântica (concluído incluso: com
+/// 30+ features "done" eram ~100 spawns de git síncronos por abertura da lista).
+/// Conservador: stage ausente/desconhecido → true (verifica).
+fn branch_evidence_decides(declared_stage: Option<&str>) -> bool {
+    let Some(s) = declared_stage else { return true };
+    !matches!(
+        s.trim().to_lowercase().as_str(),
+        "implementation" | "developer"      // aliases reais (drift, ver TS STAGE_ALIAS)
+            | "test" | "test-suite"
+            | "review" | "code-review"
+            | "pr" | "release"
+            | "done"
+    )
 }
 
 /// O branch vem do manifest (escrito por LLM) e vira argv do git: rejeita tudo
@@ -159,14 +184,19 @@ fn compute_evidence(
     let project = Path::new(project_path);
     let prd_file = artifact_exists(plan_dir, project, &art_path("prd", "PRD.md"));
     let spec_file = artifact_exists(plan_dir, project, &art_path("spec", "SPEC.md"));
-    let branch_commits = match (v.get("branch").and_then(|b| b.as_str()), default_branch) {
-        (Some(b), Some(d)) => branch_ahead_of_default(project_path, b, d),
-        _ => false,
-    };
+    // subprocessos git SÓ quando o resultado pode mudar decisão (stage declarado
+    // ainda atrás de implementation); o stat de PRD/SPEC acima é barato e fica.
+    let branch_checked = branch_evidence_decides(v.get("stage").and_then(|s| s.as_str()));
+    let branch_commits = branch_checked
+        && match (v.get("branch").and_then(|b| b.as_str()), default_branch) {
+            (Some(b), Some(d)) => branch_ahead_of_default(project_path, b, d),
+            _ => false,
+        };
     EvidenceRaw {
         prd_file,
         spec_file,
         branch_commits,
+        branch_checked,
         evidence_stage: evidence_stage(prd_file, spec_file, branch_commits).map(String::from),
     }
 }
@@ -194,14 +224,18 @@ fn extract_events(log: &str) -> Vec<String> {
 
 /// Enumera os planos SDD de um projeto. Nunca falha por plano individual ruim:
 /// pasta sem manifest entra com `manifest: None` (o TS decide o que mostrar).
-#[tauri::command]
-pub fn read_sdd_plans(project_path: String) -> Result<Vec<SddPlanRaw>, String> {
-    let plans_dir = Path::new(&project_path).join(".claude").join("plans");
+/// `with_evidence=false` é a forma BARATA (inbox): só manifest + LOG, nenhum
+/// stat de artifact e nenhum git — o chamador que não lê evidência não paga por
+/// ela. `evidence` sai None e o TS já trata como "sem dado".
+fn read_sdd_plans_sync(project_path: &str, with_evidence: bool) -> Result<Vec<SddPlanRaw>, String> {
+    let plans_dir = Path::new(project_path).join(".claude").join("plans");
     if !plans_dir.is_dir() {
         return Ok(vec![]);
     }
     let mut out = Vec::new();
-    // default branch descoberto UMA vez por chamada (lazy: só se algum plano tem manifest).
+    // default branch descoberto UMA vez por chamada (lazy: só se algum plano com
+    // manifest realmente PRECISA da evidência de branch — projeto com todas as
+    // features concluídas não spawna git nenhum).
     let mut default_branch: Option<Option<String>> = None;
     for entry in fs::read_dir(&plans_dir).map_err(|e| e.to_string())?.flatten() {
         let path = entry.path();
@@ -217,11 +251,20 @@ pub fn read_sdd_plans(project_path: String) -> Result<Vec<SddPlanRaw>, String> {
             let start = lines.len().saturating_sub(25);
             lines[start..].join("\n")
         });
-        let evidence = manifest.as_deref().map(|raw| {
-            let db = default_branch
-                .get_or_insert_with(|| detect_default_branch(&project_path))
-                .clone();
-            compute_evidence(&path, &project_path, raw, &db)
+        let evidence = manifest.as_deref().filter(|_| with_evidence).map(|raw| {
+            // espia o stage antes de resolver o default branch: se nenhum plano
+            // precisa de git, nem o detect_default_branch (1-3 spawns) roda.
+            let needs_git = serde_json::from_str::<serde_json::Value>(raw)
+                .map(|v| branch_evidence_decides(v.get("stage").and_then(|s| s.as_str())))
+                .unwrap_or(true); // manifest quebrado: conservador, verifica
+            let db = if needs_git {
+                default_branch
+                    .get_or_insert_with(|| detect_default_branch(project_path))
+                    .clone()
+            } else {
+                None
+            };
+            compute_evidence(&path, project_path, raw, &db)
         });
         out.push(SddPlanRaw {
             slug,
@@ -233,6 +276,21 @@ pub fn read_sdd_plans(project_path: String) -> Result<Vec<SddPlanRaw>, String> {
     }
     out.sort_by(|a, b| a.slug.cmp(&b.slug));
     Ok(out)
+}
+
+/// Async (spawn_blocking): a enumeração spawna git para features ATIVAS; como
+/// command síncrono ela rodava na main thread e congelava a UI inteira
+/// (mesma lição do pr_info/seed_sdd). `with_evidence` ausente = true (a forma
+/// completa continua sendo o default; o inbox pede false, não lê evidência).
+#[tauri::command]
+pub async fn read_sdd_plans(
+    project_path: String,
+    with_evidence: Option<bool>,
+) -> Result<Vec<SddPlanRaw>, String> {
+    let ev = with_evidence.unwrap_or(true);
+    tauri::async_runtime::spawn_blocking(move || read_sdd_plans_sync(&project_path, ev))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[derive(Serialize, Default)]
@@ -714,6 +772,75 @@ pub fn set_plan_stage(project_path: String, slug: String, stage: String) -> Resu
 mod tests {
     use super::*;
 
+    /// Medição real (não roda no CI): tempo de read_sdd_plans em projetos de
+    /// verdade, nas três formas — "antes" (git para TODO plano, simulado
+    /// forçando o stage pra trás), "depois" (skip por stage) e "inbox" (sem
+    /// evidência). `SDD_BENCH_PROJECT=path1:path2 cargo test mede_read_sdd_plans
+    /// -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn mede_read_sdd_plans() {
+        let Some(paths) = std::env::var("SDD_BENCH_PROJECT").ok() else {
+            eprintln!("defina SDD_BENCH_PROJECT com paths separados por ':'");
+            return;
+        };
+        for pp in paths.split(':').filter(|p| !p.is_empty()) {
+            // "antes": o custo antigo, git por plano independente do stage —
+            // reproduzido chamando compute_evidence com o stage rebaixado.
+            let t0 = std::time::Instant::now();
+            let plans = read_sdd_plans_sync(pp, true).unwrap();
+            let db = detect_default_branch(pp);
+            let mut spawns_forcados = 0;
+            for p in plans.iter().filter(|p| p.manifest.is_some()) {
+                let mut v: serde_json::Value =
+                    serde_json::from_str(p.manifest.as_deref().unwrap())
+                        .unwrap_or(serde_json::Value::Null);
+                v["stage"] = serde_json::Value::String("spec".into());
+                let raw = v.to_string();
+                let dir = Path::new(pp).join(".claude").join("plans").join(&p.slug);
+                let _ = compute_evidence(&dir, pp, &raw, &db);
+                spawns_forcados += 1;
+            }
+            let antes = t0.elapsed();
+            // "depois": a forma completa como está no código (skip por stage).
+            let t0 = std::time::Instant::now();
+            let plans = read_sdd_plans_sync(pp, true).unwrap();
+            let depois = t0.elapsed();
+            // "inbox": a forma barata (sem evidência nenhuma).
+            let t0 = std::time::Instant::now();
+            let _ = read_sdd_plans_sync(pp, false).unwrap();
+            let inbox = t0.elapsed();
+            let with_manifest = plans.iter().filter(|p| p.manifest.is_some()).count();
+            eprintln!(
+                "{pp}: {} planos ({with_manifest} com manifest, {spawns_forcados} checks forçados no 'antes')\n  antes≈{antes:?} · depois={depois:?} · inbox={inbox:?}",
+                plans.len(),
+            );
+        }
+    }
+
+    /// Inbox pede a forma barata: sem evidência não há stat de artifact nem git,
+    /// e o manifest/log continuam íntegros (os gates só leem o declarado).
+    #[test]
+    fn forma_barata_nao_computa_evidencia() {
+        let tmp = std::env::temp_dir().join(format!("mycockpit-sdd-cheap-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let plan = tmp.join(".claude").join("plans").join("bi-vendedor");
+        fs::create_dir_all(&plan).unwrap();
+        fs::write(plan.join("manifest.json"), MANIFEST_DONE_REAL).unwrap();
+        fs::write(plan.join("PRD.md"), "# prd").unwrap();
+        let pp = tmp.to_string_lossy().to_string();
+
+        let plans = read_sdd_plans_sync(&pp, false).unwrap();
+        assert_eq!(plans.len(), 1);
+        assert!(plans[0].manifest.is_some(), "o manifest cru continua vindo");
+        assert!(plans[0].evidence.is_none(), "sem evidência computada");
+
+        // a forma completa no MESMO disco continua entregando a evidência.
+        let plans = read_sdd_plans_sync(&pp, true).unwrap();
+        assert!(plans[0].evidence.is_some());
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
     #[test]
     fn sha_guard() {
         assert!(is_sha("be8acf85"));
@@ -845,6 +972,115 @@ mod tests {
         assert!(!artifact_exists(&plan, &tmp, "../p/PRD.md"));
         assert!(!artifact_exists(&plan, &tmp, "  "));
 
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn stage_terminal_nao_dispara_verificacao_de_branch() {
+        // declarado já alcança implementation (teto da evidência de branch):
+        // git não muda decisão nenhuma → pula. Inclui os aliases REAIS de drift
+        // e a caixa driftada ("DONE"), como aparecem nos manifests do disco.
+        for s in [
+            "done", "DONE", "pr", "release", "review", "code-review", "test",
+            "test-suite", "implementation", "developer",
+        ] {
+            assert!(!branch_evidence_decides(Some(s)), "{s} devia pular o git");
+        }
+        // atrás de implementation a evidência ainda decide → verifica. "PRD" em
+        // caixa alta é drift real (meuingresso3.0). Ausente/desconhecido =
+        // conservador: verifica.
+        for s in ["discovery", "prd", "PRD", "spec", "", "banana"] {
+            assert!(branch_evidence_decides(Some(s)), "{s} devia verificar");
+        }
+        assert!(branch_evidence_decides(None));
+    }
+
+    /// Manifest REAL (prime-sales-hub, bi-vendedor, stage done — o fixture que
+    /// motivou a correção: 25 features concluídas ≈ ~100 spawns de git por
+    /// abertura da lista). Aparado aos campos que a evidência lê.
+    const MANIFEST_DONE_REAL: &str = r#"{
+        "$schema": "../../schemas/plan-manifest.schema.json",
+        "slug": "bi-vendedor",
+        "title": "BI do Vendedor (2º de 6 BIs)",
+        "sponsor": "Allan Campos",
+        "branch": "feature/bi-vendedor",
+        "created_at": "2026-07-03T00:00:00Z",
+        "stage": "done",
+        "stages_completed": ["prd", "spec", "implementation", "test", "review", "pr"],
+        "artifacts": {
+            "prd": { "path": "PRD.md", "approved": true, "approved_at": "2026-07-03T00:00:00Z" },
+            "spec": { "path": "SPEC.md", "approved_at": null },
+            "migrations": [], "frontend_files": [], "edge_functions": [], "tests": []
+        },
+        "links": { "pr_url": null, "issue_url": null, "discussion_url": null }
+    }"#;
+
+    /// Plano concluído NÃO paga git: evidência de arquivo (PRD/SPEC) continua,
+    /// branch fica honesto como "não verificado" (branch_checked=false), nunca
+    /// como "sem commits". E o read_sdd_plans de um projeto só com features
+    /// concluídas não precisa nem do default branch.
+    #[test]
+    fn stage_terminal_mantem_evidencia_de_arquivo_sem_git() {
+        let tmp = std::env::temp_dir().join(format!("mycockpit-sdd-done-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let plan = tmp.join(".claude").join("plans").join("bi-vendedor");
+        fs::create_dir_all(&plan).unwrap();
+        fs::write(plan.join("manifest.json"), MANIFEST_DONE_REAL).unwrap();
+        fs::write(plan.join("PRD.md"), "# prd").unwrap();
+        fs::write(plan.join("SPEC.md"), "# spec").unwrap();
+        let pp = tmp.to_string_lossy().to_string();
+
+        // compute_evidence puro: mesmo com default branch "resolvido", done pula
+        // o git (nem tem repo aqui — se tentasse, seria false por falha; o ponto
+        // é o branch_checked=false dizer que NÃO FOI OLHADO).
+        let ev = compute_evidence(&plan, &pp, MANIFEST_DONE_REAL, &Some("main".into()));
+        assert!(ev.prd_file && ev.spec_file);
+        assert!(!ev.branch_checked, "done não dispara verificação de branch");
+        assert!(!ev.branch_commits);
+        assert_eq!(ev.evidence_stage.as_deref(), Some("spec"), "evidência de arquivo fica");
+
+        // fim-a-fim: pasta sem repo git NENHUM — se algum spawn de git decidisse
+        // algo, o resultado mudaria; a lista sai íntegra e sem branch checado.
+        let plans = read_sdd_plans_sync(&pp, true).unwrap();
+        assert_eq!(plans.len(), 1);
+        let ev = plans[0].evidence.as_ref().unwrap();
+        assert!(!ev.branch_checked && ev.prd_file && ev.spec_file);
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// Feature ATIVA (declarado atrás de implementation) continua pagando o git:
+    /// a evidência de branch ainda decide (puxa o efetivo pra frente no TS).
+    #[test]
+    fn stage_ativo_ainda_verifica_o_branch() {
+        let tmp = std::env::temp_dir().join(format!("mycockpit-sdd-ativo-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let pp = tmp.to_string_lossy().to_string();
+        let git = |args: &[&str]| {
+            let mut full = vec![
+                "-C", &pp, "-c", "user.email=t@t", "-c", "user.name=T",
+                "-c", "commit.gpgsign=false",
+            ];
+            full.extend_from_slice(args);
+            crate::proc::run("git", &full, None).unwrap();
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "base"]);
+        git(&["checkout", "-q", "-b", "feature/bi-vendedor"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "work"]);
+
+        let plan = tmp.join(".claude").join("plans").join("bi-vendedor");
+        fs::create_dir_all(&plan).unwrap();
+        // o MESMO payload real, só com o stage de quando a feature estava ativa.
+        let raw = MANIFEST_DONE_REAL.replace(r#""stage": "done""#, r#""stage": "spec""#);
+        fs::write(plan.join("manifest.json"), &raw).unwrap();
+        fs::write(plan.join("PRD.md"), "# prd").unwrap();
+
+        let plans = read_sdd_plans_sync(&pp, true).unwrap();
+        let ev = plans[0].evidence.as_ref().unwrap();
+        assert!(ev.branch_checked, "spec ainda dispara a verificação");
+        assert!(ev.branch_commits, "branch com commit à frente do main");
+        assert_eq!(ev.evidence_stage.as_deref(), Some("implementation"));
         let _ = fs::remove_dir_all(&tmp);
     }
 

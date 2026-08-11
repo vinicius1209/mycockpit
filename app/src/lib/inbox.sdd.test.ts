@@ -58,11 +58,16 @@ vi.mock("@/lib/db", () => ({
 
 // loadSddPlans é o único mock do módulo do SDD: o NORMALIZADOR real (parseSddPlan)
 // continua valendo, então o manifest cru do disco passa pelo mesmo parse do app.
+// `loadSddCalls` registra os argumentos (o inbox precisa pedir a forma barata).
+const loadSddCalls: { path: string; evidence?: boolean }[] = []
 vi.mock("@/lib/sdd", async (orig) => {
   const actual = await orig<typeof import("@/lib/sdd")>()
   return {
     ...actual,
-    loadSddPlans: (path: string) => Promise.resolve(planosPorPath[path] ?? []),
+    loadSddPlans: (path: string, opts?: { evidence?: boolean }) => {
+      loadSddCalls.push({ path, evidence: opts?.evidence })
+      return Promise.resolve(planosPorPath[path] ?? [])
+    },
   }
 })
 
@@ -617,5 +622,25 @@ describe("scanDecisions — o que NASCEU no app não muda", () => {
     )
     expect(pendingDecisions(ds)).toHaveLength(1)
     expect(foundDecisions(ds)).toHaveLength(0)
+  })
+})
+
+describe("scanDecisions — forma barata do SDD (sino sem tempestade de git)", () => {
+  it("pede loadSddPlans SEM evidência para todos os projetos (ninguém lê branch aqui)", async () => {
+    loadSddCalls.length = 0
+    planosPorPath[prime.path] = [parseSddPlan("prospector-crm-import", MANIFEST_PR)]
+    await scanDecisions([ingresso, prime])
+    expect(loadSddCalls).toHaveLength(2)
+    for (const c of loadSddCalls) expect(c.evidence).toBe(false)
+    expect(loadSddCalls.map((c) => c.path).sort()).toEqual(
+      [ingresso.path, prime.path].sort(),
+    )
+  })
+
+  it("os gates continuam idênticos sem a evidência (só o declarado decide)", async () => {
+    // mesma varredura dos testes acima: 2 PRDs + 1 PR, tudo do stage declarado.
+    planosPorPath[prime.path] = [parseSddPlan("prospector-crm-import", MANIFEST_PR)]
+    const ds = await scanDecisions([ingresso, prime])
+    expect(ds.map((d) => d.kind).sort()).toEqual(["pr", "prd", "prd"])
   })
 })
