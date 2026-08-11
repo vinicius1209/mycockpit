@@ -1,5 +1,84 @@
 # Companion Web profissional — plano (visão registrada, execução futura)
 
+> **Status C4 (11/08/2026): ENTREGUE — Polimento de casa.** Pareamento v2 +
+> dark mode + avisos honestos; a frente do Companion fecha aqui.
+>
+> - **Pareamento v2 (token por aparelho)**: o QR não carrega mais credencial
+>   de longa vida — emite um token de PAREAMENTO de uso único (TTL 10 min,
+>   rotaciona sozinho; consumido no 1º claim). O celular abre `#pair=<token>`,
+>   faz `POST /pair/claim` (com o nome real do aparelho, ex. "iPhone ·
+>   Safari", resumido do user-agent) e recebe um `pairingId` de poll. O token
+>   DEFINITIVO só é CUNHADO no gesto humano do desktop ("Aceitar aparelho" em
+>   Configurações → Companion) — antes do aceite ele não existe em lugar
+>   nenhum; sem aceite em 2 min o pareamento morre (fail-closed). Máquina de
+>   estados PURA no companion.rs (claim uso-único, expiração, aceite, recusa,
+>   poll), toda testada.
+> - **Revogação individual, valendo NA HORA**: o guard valida contra um
+>   AuthSet vivo (Arc compartilhado com o estado) — parear/revogar não exige
+>   restart. Configurações lista os aparelhos (nome, pareado quando, visto por
+>   último) com Revogar em 2 toques; revogar derruba os WS abertos (todos —
+>   os legítimos reconectam em ~1s) e o revogado cai no 401, que limpa token e
+>   snapshot no aparelho (C1). A página ganhou um probe de 401 no fechamento
+>   do WS: revogado com socket aberto vê a tela de parear na hora, não
+>   "reconectando…" eterno.
+> - **Compat honesta com o v1**: o token único legado NUNCA mais é criado, mas
+>   se o arquivo existe ele segue valendo até o usuário revogar (linha própria
+>   "Acesso antigo (token único)" nas Configurações). Anti-downgrade nas duas
+>   pontas: QR v1 não existe mais e a página v2 NUNCA instala credencial vinda
+>   de fragment (`#token=` virou inerte; teste no Rust garante que a regex v1
+>   não volta). O dedupe de actionId virou POR APARELHO (fecha o registro §4
+>   da revisão C2: inundar o teto de 256 só despeja os próprios ids).
+> - **Onde as credenciais moram (decisão registrada)**: arquivo
+>   `companion-devices.json` 0600 no app_data_dir, como o token legado — NÃO
+>   Keychain. Diferente do mcp_auth (credencial de serviço EXTERNO que não
+>   pode vazar pra outros apps), estes tokens são emitidos pelo próprio app
+>   pra autenticar entrada na LAN; quem lê o app_data_dir já lê o SQLite com
+>   as conversas que o token protege, e o arquivo é reescrito com frequência
+>   (parear/revogar/visto por último) — Keychain via subprocess só adicionaria
+>   latência e risco de prompt sem elevar o modelo de ameaça.
+> - **Dark mode**: a página segue o sistema (prefers-color-scheme) com toggle
+>   persistido no header; paleta light copiada do app (src/index.css),
+>   aplicada ANTES do primeiro paint (script no head) e com meta theme-color
+>   acompanhando. Decisão pura `effectiveTheme` no core.js.
+> - **Notificação: avaliado e degradado honesto.** Web Push de verdade exige
+>   service worker + https — que aceitamos NÃO ter na LAN (revisão do
+>   pareamento, C2). Verificado: em http o Chrome/Android NEGAM a Notification
+>   API (contexto inseguro = permission "denied") e o iOS só a tem em PWA
+>   instalada via https. O que funciona DE VERDADE com a página aberta:
+>   vibração (Android) + título da aba piscando "(N) FROTA · Companion"
+>   (`titleBadge` puro), com aviso honesto no opt-in do 🔔 dizendo exatamente
+>   isso; quando Notification real existe e foi concedida, ela segue sendo
+>   usada. Notificação com a página FECHADA continua impossível em http —
+>   limitação aceita e dita.
+> - **Nits das revisões**: snapshot cacheado ganhou teto (não persiste acima
+>   de 400KB) e expiração (mais velho que 7 dias não restaura,
+>   `snapshotRestorable`); objectURLs do fio são revogados ao trocar de
+>   conversa (antes viviam até o reload); re-escanear o QR com a página já
+>   aberta funciona (o `#pair=` também dispara por hashchange).
+>
+> Testes: `cargo test` 304 ok (42 no módulo companion; +10 C4: máquina do
+> pareamento, AuthSet, guard com revogação viva, dedupe por aparelho,
+> vocabulário v2 da página); `bun run test` 1849 ok (167 arquivos; +19 casos
+> C4 no companionWeb.test.ts: pairTokenFromHash/anti-downgrade, deviceLabel
+> com user-agents reais, tema, teto do snapshot, titleBadge); `tsc -b` limpo.
+> Prova manual: página REAL dirigida headless (playwright) contra mock do
+> backend de pareamento — `#token=` v1 inerte → `#pair=` → "Confirme no Mac"
+> com o nome do aparelho → aceite instala o token e abre o briefing; toggle de
+> tema persiste no reload com a paleta light do app; `#pair=` malformado é
+> inerte; screenshots conferidos.
+>
+> **Ficou de fora (com o porquê)**: (1) Especialistas de escopo-projeto no
+> snapshot (limitação C2) — não coube barato: presets por-projeto só existem
+> carregados no projeto corrente do desktop; viajar todos exigiria IO em cada
+> projeto a cada push do snapshot. (2) Atalhos de tela inicial por projeto
+> (rascunho original do C4) — o manifest é estático no binário e o install do
+> PWA no Android exige https, que aceitamos não ter; atalho estático agregaria
+> quase nada. (3) O "visto por último" persiste com throttle (1 min, no poll
+> das Configurações e no stop) — após um crash o carimbo em disco pode ficar
+> até esse intervalo defasado; em memória está sempre certo. (4) Revogar
+> derruba os WS de TODOS os aparelhos (o socket não sabe qual token o abriu);
+> aceito: os legítimos reconectam sozinhos em ~1s.
+
 > **Status C3 (11/08/2026): ENTREGUE — Conversa.** O fio completo de qualquer
 > conversa agora vive no celular:
 >
