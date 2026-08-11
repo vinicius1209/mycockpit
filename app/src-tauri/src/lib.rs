@@ -632,7 +632,8 @@ pub fn run() {
             companion::companion_status,
             companion::companion_revoke_token,
             companion::set_companion_snapshot,
-            companion::companion_conv_updated
+            companion::companion_conv_updated,
+            companion::companion_action_result
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -65,6 +65,10 @@ pub struct CompanionState {
     /// attachmentId → Attachment dos uploads do celular. O id viaja nas ações
     /// (send_message/answer_gate); o emit resolve id→Attachment pro front.
     uploads: Mutex<HashMap<String, Attachment>>,
+    /// C2 — idempotência de ação: actionIds já aceitos (janela curta). Duplo
+    /// toque/retry do celular com o MESMO id vira 202 sem re-emitir (duas
+    /// batidas nunca disparam duas tarefas).
+    recent_actions: Mutex<Vec<(String, Instant)>>,
     tx: broadcast::Sender<String>,
     shutdown: Mutex<Option<oneshot::Sender<()>>>,
 }
@@ -76,6 +80,7 @@ impl Default for CompanionState {
             token: Mutex::new(None),
             snapshot: Mutex::new(Value::Null),
             uploads: Mutex::new(HashMap::new()),
+            recent_actions: Mutex::new(Vec::new()),
             tx: broadcast::channel(64).0,
             shutdown: Mutex::new(None),
         }
@@ -346,6 +351,22 @@ pub async fn companion_conv_updated(
     let _ = state
         .tx
         .send(json!({"type": "conv-updated", "convId": conv_id}).to_string());
+    Ok(())
+}
+
+/// C2 — Front → Rust: RESULTADO de uma ação do celular (fail-closed com motivo
+/// legível: o 202 do POST /api/action é só "aceitei"; o veredito real — turno
+/// lançado, "já estava finalizando", projeto sumiu — sai do executor JS e volta
+/// pro aparelho por aqui. `result` é opaco (o front define o shape, como o
+/// snapshot); o transporte não interpreta.
+#[tauri::command]
+pub async fn companion_action_result(
+    result: Value,
+    state: State<'_, CompanionState>,
+) -> Result<(), String> {
+    let _ = state
+        .tx
+        .send(json!({"type": "action-result", "data": result}).to_string());
     Ok(())
 }
 
@@ -633,6 +654,23 @@ async fn post_action(AxState(ctx): AxState<Ctx>, Json(body): Json<Value>) -> Res
         .unwrap_or_default();
     match sanitize_action(&uploads, &body) {
         Ok(payload) => {
+            // C2 — idempotência por actionId: retry/duplo-toque com o MESMO id
+            // é 202 SEM re-emitir (a primeira aceitação já está em execução; o
+            // action-result dela responde as duas batidas). Falha de lock nunca
+            // bloqueia ação legítima (fail-open só na PROTEÇÃO de duplicata).
+            if let Some(id) = payload["actionId"].as_str() {
+                let fresh = ctx
+                    .app
+                    .state::<CompanionState>()
+                    .recent_actions
+                    .lock()
+                    .map(|mut g| remember_action(&mut g, id, Instant::now()))
+                    .unwrap_or(true);
+                if !fresh {
+                    log::info!("companion: ação duplicada (actionId repetido) — 202 sem re-emitir");
+                    return StatusCode::ACCEPTED.into_response();
+                }
+            }
             // uploads consumidos pela ação saem do cache (metadados não crescem
             // sem limite em runtime; os blobs órfãos seguem no GC do boot)
             if let Some(ids) = payload["attachmentIds"].as_array() {
@@ -651,6 +689,44 @@ async fn post_action(AxState(ctx): AxState<Ctx>, Json(body): Json<Value>) -> Res
     }
 }
 
+/// C2 — janela de idempotência dos actionIds e teto de memória do registro.
+const ACTION_DEDUPE_TTL: Duration = Duration::from_secs(300);
+const ACTION_DEDUPE_CAP: usize = 256;
+
+/// C2 — `actionId` opcional do corpo: id gerado pelo CELULAR por gesto (retry
+/// reusa o mesmo). Presente ⇒ 8..=64 chars [A-Za-z0-9-]; malformado é 400
+/// (payload adversarial nunca vira silêncio). Ausente ⇒ ação segue sem
+/// idempotência (compat com a página antiga).
+fn sanitize_action_id(v: &Value) -> Result<Option<String>, String> {
+    match v.get("actionId") {
+        None => Ok(None),
+        Some(x) => {
+            let s = x.as_str().ok_or("actionId inválido")?;
+            let ok = (8..=64).contains(&s.len())
+                && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+            if ok {
+                Ok(Some(s.to_string()))
+            } else {
+                Err("actionId inválido".into())
+            }
+        }
+    }
+}
+
+/// C2 — dedupe puro: true = primeira vez (registra); false = repetição dentro
+/// da janela. Poda expirados a cada chamada; cheio ⇒ derruba o mais antigo.
+fn remember_action(seen: &mut Vec<(String, Instant)>, id: &str, now: Instant) -> bool {
+    seen.retain(|(_, t)| now.duration_since(*t) <= ACTION_DEDUPE_TTL);
+    if seen.iter().any(|(s, _)| s == id) {
+        return false;
+    }
+    if seen.len() >= ACTION_DEDUPE_CAP {
+        seen.remove(0);
+    }
+    seen.push((id.to_string(), now));
+    true
+}
+
 /// Whitelist FECHADA + reconstrução do payload. Puro sobre (uploads, corpo) —
 /// sem AppHandle de propósito, p/ os unit tests baterem direto aqui.
 fn sanitize_action(uploads: &HashMap<String, Attachment>, v: &Value) -> Result<Value, String> {
@@ -658,6 +734,7 @@ fn sanitize_action(uploads: &HashMap<String, Attachment>, v: &Value) -> Result<V
         .get("kind")
         .and_then(Value::as_str)
         .ok_or("kind ausente")?;
+    let action_id = sanitize_action_id(v)?;
     let req_str = |k: &str| -> Result<String, String> {
         v.get(k)
             .and_then(Value::as_str)
@@ -729,6 +806,37 @@ fn sanitize_action(uploads: &HashMap<String, Attachment>, v: &Value) -> Result<V
             }
             out
         }
+        // C2 — lançar tarefa: projeto + prompt (+ Especialista opcional). O
+        // executor JS cria a CONVERSA NOVA pelos stores (registerConversation
+        // + sendFromDesk — mesmo caminho do composer, nunca atalho próprio).
+        // actionId OBRIGATÓRIO: lançar tarefa é a ação mais cara de duplicar
+        // (toque fantasma = dois turnos queimando dinheiro).
+        "launch_task" => {
+            if action_id.is_none() {
+                return Err("actionId obrigatório em launch_task".into());
+            }
+            let project = req_str("projectId")?;
+            let agent = req_str("agent")?;
+            let text = req_str("text")?;
+            if text.len() > 64 * 1024 {
+                return Err("text longo demais".into());
+            }
+            let ids = attachment_ids()?;
+            let atts = resolve_uploads(uploads, &ids)?;
+            let mut out = json!({"kind": "launch_task", "projectId": project, "agent": agent,
+                   "text": text, "attachmentIds": ids, "attachments": atts});
+            // presetId OPCIONAL (Especialista): presente ⇒ string não-vazia;
+            // a validação de EXISTÊNCIA (arquivo legível no projeto) fica no
+            // executor JS, que devolve o motivo pelo action-result.
+            if let Some(pv) = v.get("presetId") {
+                let preset = pv
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .ok_or("presetId inválido")?;
+                out["presetId"] = json!(preset);
+            }
+            out
+        }
         // S4.6 — board remoto: o celular É o humano (o gate humano-only do
         // board proíbe sistema/agente despachando/fechando sozinho, não o
         // dono no sofá). O executor JS revalida e roteia pelo useCards, com
@@ -757,6 +865,12 @@ fn sanitize_action(uploads: &HashMap<String, Attachment>, v: &Value) -> Result<V
         }
         other => return Err(format!("ação desconhecida: {other}")),
     };
+    // C2 — actionId validado viaja no payload reconstruído (qualquer kind):
+    // é a chave do dedupe no post_action e do action-result do executor JS.
+    let mut out = out;
+    if let Some(id) = action_id {
+        out["actionId"] = json!(id);
+    }
     Ok(out)
 }
 
@@ -1289,6 +1403,123 @@ mod tests {
             &json!({"kind": "answer_gate", "convId": "c1", "answers": [], "attachmentIds": ids}),
         )
         .is_err());
+    }
+
+    // ── C2: launch_task + actionId (idempotência) + action-result ──
+
+    #[test]
+    fn c2_sanitize_launch_task_reconstroi_e_valida() {
+        let up = HashMap::new();
+        let aid = "f00dfeedf00dfeed";
+        // completo (com Especialista): só os campos conhecidos viajam
+        let out = sanitize_action(
+            &up,
+            &json!({"kind": "launch_task", "projectId": "p1", "agent": "codex",
+                    "text": "cobrir o parser com testes", "presetId": "revisor",
+                    "actionId": aid, "hack": "sudo rm -rf /"}),
+        )
+        .unwrap();
+        assert_eq!(out["kind"], "launch_task");
+        assert_eq!(out["projectId"], "p1");
+        assert_eq!(out["agent"], "codex");
+        assert_eq!(out["presetId"], "revisor");
+        assert_eq!(out["actionId"], aid);
+        assert!(out.get("hack").is_none());
+        // sem preset: o campo NÃO viaja (executor lança sem persona)
+        let out = sanitize_action(
+            &up,
+            &json!({"kind": "launch_task", "projectId": "p1", "agent": "codex",
+                    "text": "oi", "actionId": aid}),
+        )
+        .unwrap();
+        assert!(out.get("presetId").is_none());
+        // campos faltando / inválidos → 400
+        assert!(sanitize_action(
+            &up,
+            &json!({"kind": "launch_task", "agent": "codex", "text": "oi", "actionId": aid}),
+        )
+        .is_err()); // sem projectId
+        assert!(sanitize_action(
+            &up,
+            &json!({"kind": "launch_task", "projectId": "p1", "agent": "codex", "actionId": aid}),
+        )
+        .is_err()); // sem text
+        assert!(sanitize_action(
+            &up,
+            &json!({"kind": "launch_task", "projectId": "p1", "agent": "codex",
+                    "text": "oi", "presetId": "", "actionId": aid}),
+        )
+        .is_err()); // presetId presente mas vazio
+        let longo = "x".repeat(64 * 1024 + 1);
+        assert!(sanitize_action(
+            &up,
+            &json!({"kind": "launch_task", "projectId": "p1", "agent": "codex",
+                    "text": longo, "actionId": aid}),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn c2_launch_task_exige_action_id() {
+        // lançar tarefa SEM id de idempotência é 400: toque fantasma no sofá
+        // não pode virar dois turnos pagos.
+        let up = HashMap::new();
+        assert!(sanitize_action(
+            &up,
+            &json!({"kind": "launch_task", "projectId": "p1", "agent": "codex", "text": "oi"}),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn c2_action_id_valida_forma_e_e_opcional_nas_demais() {
+        let up = HashMap::new();
+        // ausente nas demais ações: payload sai SEM o campo (compat)
+        let out = sanitize_action(&up, &json!({"kind": "stop_turn", "convId": "c1"})).unwrap();
+        assert!(out.get("actionId").is_none());
+        // presente e válido: viaja reconstruído (stop honesto usa no result)
+        let out = sanitize_action(
+            &up,
+            &json!({"kind": "stop_turn", "convId": "c1", "actionId": "abc-123-def"}),
+        )
+        .unwrap();
+        assert_eq!(out["actionId"], "abc-123-def");
+        // malformado (curto, tipo errado, char fora do alfabeto) → 400
+        for bad in [json!("curto"), json!(42), json!("a b c d e f g h"), json!("x".repeat(65))] {
+            assert!(
+                sanitize_action(&up, &json!({"kind": "stop_turn", "convId": "c1", "actionId": bad}))
+                    .is_err(),
+                "actionId inválido aceito: {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn c2_remember_action_dedupe_com_janela_e_teto() {
+        let mut seen = Vec::new();
+        let t0 = Instant::now();
+        assert!(remember_action(&mut seen, "a1", t0)); // primeira vez
+        assert!(!remember_action(&mut seen, "a1", t0)); // repetição: dedupe
+        assert!(remember_action(&mut seen, "a2", t0)); // id diferente passa
+        // fora da janela: o mesmo id volta a valer (retry legítimo tardio)
+        let depois = t0 + ACTION_DEDUPE_TTL + Duration::from_secs(1);
+        assert!(remember_action(&mut seen, "a1", depois));
+        // teto: nunca cresce sem limite (o mais antigo cai)
+        let mut cheio = Vec::new();
+        for i in 0..(ACTION_DEDUPE_CAP + 10) {
+            assert!(remember_action(&mut cheio, &format!("id-{i}"), t0));
+        }
+        assert!(cheio.len() <= ACTION_DEDUPE_CAP);
+    }
+
+    #[test]
+    fn c2_pagina_fala_o_vocabulario_de_lancamento_e_resultado() {
+        // a página lança tarefa pelo vocabulário whitelisted e escuta o
+        // veredito honesto (action-result) — nada de sucesso fingido no 202.
+        assert!(COMPANION_PAGE.contains("launch_task"));
+        assert!(COMPANION_PAGE.contains("action-result"));
+        // parar turno respeita o caso não-interrompível (copy honesta)
+        assert!(COMPANION_PAGE.contains("stopDisposition") || COMPANION_PAGE.contains("finalizando"));
     }
 
     // ── leitura READ-ONLY do histórico (fixture SQLite) ──
