@@ -27,7 +27,9 @@
 >   pontas: QR v1 não existe mais e a página v2 NUNCA instala credencial vinda
 >   de fragment (`#token=` virou inerte; teste no Rust garante que a regex v1
 >   não volta). O dedupe de actionId virou POR APARELHO (fecha o registro §4
->   da revisão C2: inundar o teto de 256 só despeja os próprios ids).
+>   da revisão C2: inundar o teto de 256 só despeja os próprios ids) — com a
+>   ressalva de que aparelhos ainda no token legado compartilham o principal
+>   "legacy": entre ELES o teto segue comum até re-parearem pelo v2.
 > - **Onde as credenciais moram (decisão registrada)**: arquivo
 >   `companion-devices.json` 0600 no app_data_dir, como o token legado — NÃO
 >   Keychain. Diferente do mcp_auth (credencial de serviço EXTERNO que não
@@ -73,11 +75,28 @@
 > projeto a cada push do snapshot. (2) Atalhos de tela inicial por projeto
 > (rascunho original do C4) — o manifest é estático no binário e o install do
 > PWA no Android exige https, que aceitamos não ter; atalho estático agregaria
-> quase nada. (3) O "visto por último" persiste com throttle (1 min, no poll
-> das Configurações e no stop) — após um crash o carimbo em disco pode ficar
-> até esse intervalo defasado; em memória está sempre certo. (4) Revogar
-> derruba os WS de TODOS os aparelhos (o socket não sabe qual token o abriu);
-> aceito: os legítimos reconectam sozinhos em ~1s.
+> quase nada. (3) O "visto por último" persiste com throttle (1 min no poll
+> das Configurações), no stop e no QUIT do app (flush no ExitRequested,
+> revisão C4 F2); um CRASH perde o carimbo desde o último flush — em memória
+> ele está sempre certo enquanto o app vive. (4) Revogar derruba os WS de
+> TODOS os aparelhos (o socket não sabe qual token o abriu); aceito: os
+> legítimos reconectam sozinhos em ~1s.
+>
+> **Revisão C4 (aprovada com ressalvas, 11/08/2026)**: (F1) CORRIGIDO —
+> fragment `#token=` v1 seguia INERTE mas ficava visível na URL/histórico do
+> aparelho (re-escanear um QR v1 antigo com o legado ainda válido expunha a
+> credencial a quem pegasse o celular); a página volta a apagá-lo no boot E no
+> hashchange, sem usá-lo. (F2) CORRIGIDO — o registro dizia "até 1 min
+> defasado após crash", mas o quit normal sem abrir Configurações perdia o
+> visto-por-último da sessão inteira: agora o ExitRequested flusha (só com o
+> servidor RODANDO — sem start na sessão o AuthSet vazio apagaria o arquivo
+> real). (N1) CORRIGIDO — `companion_start` idempotente recarregava os devices
+> do disco por cima do last_seen vivo da memória; a carga agora roda só no
+> start real. (N2) registrado no código: `save_devices` falhando no aceite
+> deixa o aparelho funcional até o restart (poll ainda entrega o token, Err na
+> UI); pós-restart cai no 401 e a autolimpeza C1 recupera. (N3) ressalva do
+> dedupe legado adicionada acima. (N4) decisão arquivo-0600-vs-Keychain
+> registrada em `docs/decisions.md` (ADR-036).
 
 > **Status C3 (11/08/2026): ENTREGUE — Conversa.** O fio completo de qualquer
 > conversa agora vive no celular:

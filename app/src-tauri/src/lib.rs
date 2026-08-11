@@ -648,6 +648,10 @@ pub fn run() {
                 app_handle
                     .state::<std::sync::Arc<work_gateway::ProcessRegistry>>()
                     .kill_all();
+                // Revisão C4 (F2): o "visto por último" dos aparelhos do
+                // companion persiste no quit (senão só o poll das
+                // Configurações e o stop flushavam).
+                companion::flush_devices_on_exit(app_handle);
             }
         });
 }

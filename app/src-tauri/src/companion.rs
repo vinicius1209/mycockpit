@@ -509,12 +509,6 @@ pub async fn companion_start(
     app: AppHandle,
     state: State<'_, CompanionState>,
 ) -> Result<CompanionInfo, String> {
-    // C4 — credenciais vivas: legado (se existir; nunca mais criamos um) +
-    // aparelhos pareados do disco. O guard compartilha o MESMO Arc.
-    if let Ok(mut a) = state.auth.lock() {
-        a.legacy = load_legacy_token(&app);
-        a.devices = load_devices(&app);
-    }
     // swap = check-and-set atômico: segunda chamada concorrente vê true e sai.
     if state.running.swap(true, Ordering::SeqCst) {
         return Ok(CompanionInfo {
@@ -523,6 +517,15 @@ pub async fn companion_start(
             pairing_token: fresh_pairing_token(&state),
             connected_count: state.tx.receiver_count(),
         });
+    }
+    // C4 — credenciais vivas: legado (se existir; nunca mais criamos um) +
+    // aparelhos pareados do disco. O guard compartilha o MESMO Arc. Revisão
+    // C4 (N1): a carga roda SÓ no start real (depois do check-and-set) — o
+    // start idempotente não pode sobrescrever o last_seen vivo da memória
+    // com o carimbo mais velho do disco.
+    if let Ok(mut a) = state.auth.lock() {
+        a.legacy = load_legacy_token(&app);
+        a.devices = load_devices(&app);
     }
 
     let listener = match tokio::net::TcpListener::bind(("0.0.0.0", PORT)).await {
@@ -765,9 +768,34 @@ pub async fn companion_pair_decide(
             a.devices.clone()
         })
         .map_err(|_| "estado de credenciais indisponível".to_string())?;
+    // Revisão C4 (N2) — degradação registrada: se a escrita do arquivo falhar
+    // aqui, o aparelho já vive no AuthSet (funciona até o restart) e o poll do
+    // celular ainda entrega o token, mas o Err abaixo mostra o problema na UI.
+    // Pós-restart o token some do disco → o aparelho cai no 401 e a
+    // autolimpeza do C1 recupera (re-parear resolve). Nunca é acesso fantasma.
     save_devices(&app, &devices)?;
     log::info!("companion: aparelho pareado (aceite humano)");
     Ok(())
+}
+
+/// Revisão C4 (F2) — flush do "visto por último" no QUIT do app (o throttle do
+/// poll das Configurações não cobre sair do app sem abri-las). Só grava com o
+/// servidor RODANDO: sem start nesta sessão o AuthSet está vazio e a escrita
+/// apagaria o arquivo real. Chamado do RunEvent::ExitRequested no lib.rs.
+pub fn flush_devices_on_exit(app: &AppHandle) {
+    let state = app.state::<CompanionState>();
+    if !state.running.load(Ordering::SeqCst) {
+        return;
+    }
+    // snapshot clonado fora do lock (o guard como expressão de cauda tropeça
+    // no E0597 com o borrow de `state`).
+    let devices = match state.auth.lock() {
+        Ok(a) => a.devices.clone(),
+        Err(_) => return,
+    };
+    if let Err(e) = save_devices(app, &devices) {
+        log::warn!("companion: flush de saída falhou: {e}");
+    }
 }
 
 /// Revogação INDIVIDUAL (C4): tira o aparelho do AuthSet vivo + do arquivo e

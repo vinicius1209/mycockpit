@@ -1063,7 +1063,17 @@ function applyRoute(r) {
   }
   showScreen("brief");
 }
+/* Revisão C4 (F1) — fragment #token= do v1 é INERTE (anti-downgrade), mas a
+   credencial legada não pode ficar visível na URL/histórico do aparelho (QR
+   v1 antigo re-escaneado com o token ainda válido): apaga o fragment mesmo
+   sem usá-lo, como o v1 fazia. */
+function scrubLegacyTokenFragment() {
+  if (/[#&]token=[0-9a-fA-F]{16,}/.test(location.hash)) {
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+}
 window.addEventListener("hashchange", function () {
+  scrubLegacyTokenFragment();
   // C4 — re-escanear o QR com a página JÁ aberta (mesma aba): o #pair= chega
   // por hashchange, não por load — o pareamento dispara do mesmo jeito e o
   // fragment some da URL na hora.
@@ -2183,6 +2193,7 @@ if (!MOCK && "serviceWorker" in navigator) {
    token definitivo (com aceite humano no Mac). O fragment some da URL já. */
 var bootPairTok = Core ? Core.pairTokenFromHash(location.hash) : null;
 if (bootPairTok) history.replaceState(null, "", location.pathname + location.search);
+scrubLegacyTokenFragment(); // F1: QR v1 re-escaneado nunca deixa credencial na URL
 if (!MOCK && bootPairTok) {
   startPairing(bootPairTok);
 } else if (!S.token) {

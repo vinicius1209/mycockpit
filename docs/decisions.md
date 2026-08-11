@@ -716,3 +716,21 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   (renomear = mudança de comportamento/localStorage, fora do escopo do corte);
   comentários "Escritório" em 5 arquivos de missão aguardam a frente de missão
   liberar os arquivos. `docs/agent-office.md` vira doc histórico.
+
+### ADR-036 — Tokens de aparelho do Companion: arquivo 0600, não Keychain ✅
+
+- **Contexto (11/08/2026, C4 do companion-plan):** o pareamento v2 dá a cada
+  celular uma credencial própria; era preciso decidir onde guardá-las. O
+  mcp_auth usa Keychain — a dúvida era consistência.
+- **Decisão:** `companion-devices.json` com permissão 0600 no app_data_dir,
+  como o token único legado. Keychain fica pro mcp_auth.
+- **Por quê:** o mcp_auth guarda credencial de serviço EXTERNO (vazar =
+  acesso fora da máquina); os tokens do companion são emitidos pelo PRÓPRIO
+  app para autenticar entrada na LAN — o valor deles é limitado ao que o
+  companion serve, e quem lê o app_data_dir já lê o `mycockpit.db` com as
+  conversas que o token protege (mesmo perímetro). O arquivo ainda é
+  reescrito com frequência (parear, revogar, visto-por-último): Keychain via
+  subprocess adicionaria latência e risco de prompt sem elevar o modelo de
+  ameaça.
+- **Limite honesto:** proteção = permissão de arquivo + conta do usuário.
+  Quem quiser mais cifra o disco (FileVault) — o app não finge camada extra.
