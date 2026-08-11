@@ -1,5 +1,57 @@
 # Companion Web profissional — plano (visão registrada, execução futura)
 
+> **Status C2 (11/08/2026): ENTREGUE — Ações.** O canal `/api/action` do C1 já
+> cobria muito (send_message, answer_gate, answer_interaction, stop_turn,
+> stop_mission, dispatch_card, close_card, feedback_lesson); o C2 ESTENDEU:
+>
+> - **Lançar tarefa** (`launch_task`): tela própria (`#/launch[/<pid>]`) com
+>   projeto + piloto (Especialista GLOBAL ou agent) + prompt. O executor cria
+>   conversa NOVA pelo MESMO caminho do composer (`registerConversation` →
+>   `setConversationPreset` → `sendFromDesk`, persona via
+>   `resolveFirstTurnPersona` de sempre) sem roubar a seleção do desktop;
+>   título derivado do prompt (régua do deriveTitle). Especialistas de escopo
+>   projeto NÃO viajam no snapshot (só existem no projeto carregado; num outro
+>   o lançamento falharia) — limitação registrada.
+> - **Responder pendências**: perguntas estruturadas agora viajam com
+>   `choices` (header/multiSelect/options do AskUserQuestion) e a página
+>   renderiza a ESCOLHA de verdade (radio/checkbox + "Outro" livre); o payload
+>   sai da decisão pura `buildQuestionAnswer` (core.js) pelo mesmo
+>   `answer_interaction`. Aprovar/negar/gate já existiam e seguem.
+> - **Parar turno honesto**: turno FINALIZANDO agora aparece em `running[]`
+>   com `finalizing: true` (antes sumia) e o Parar vira o motivo
+>   ("não dá mais para interromper" — `stopDisposition` no core.js); o
+>   executor devolve o veredito real (interrompido / finalizando / já tinha
+>   acabado / disputa) — copy espelhada do Stop do app.
+> - **Resultado de ação (fail-closed visível)**: novo comando
+>   `companion_action_result` → WS `{type:"action-result"}`. O 202 é só
+>   "aceitei"; o veredito legível volta pro celular (launch navega direto pro
+>   fio criado; fracasso mostra o motivo; snackbar quando a tela já mudou).
+> - **Idempotência**: `actionId` (8..64 [A-Za-z0-9-], obrigatório no
+>   launch_task, opcional no resto) com dedupe por janela de 5 min no Rust —
+>   duplo-toque/retry com o mesmo id vira 202 sem re-emitir; a UI gera UM id
+>   por gesto e o reusa no retry.
+>
+> **Revisão do pareamento (guarda pré-C2)** — modelo atual: token único
+> 256-bit (64 hex) gerado no desktop, arquivo 0600 em app_data_dir, viaja só
+> no QR (fragment, apagado da URL após guardar no localStorage); Bearer em
+> toda /api (`?token=` só no WS), comparação em tempo constante, rate-limit
+> 30 req/10s por IP, 401 limpa token+snapshot do aparelho, revogação global
+> (revoke + restart do servidor muda o QR). CSRF de site malicioso é bloqueado
+> (sem CORS, header Authorization inatingível cross-origin). **Veredito:
+> suficiente para as ações em rede local** — o pareamento já exige gesto
+> humano no desktop (abrir Settings e mostrar o QR). Registrado como **C4**:
+> token POR APARELHO com revogação individual e expiração/rotação; confirmação
+> explícita "aceitar aparelho" no desktop. **HTTPS local: limitação ACEITA** —
+> certificado self-signed em LAN = aviso agressivo de browser em todo aparelho
+> (fricção maior que o ganho); o ganho real (SW/install do Android em contexto
+> seguro + cifrar o tráfego LAN) não paga a fricção numa rede doméstica; quem
+> precisar pode terminar TLS por conta própria na frente do :14200.
+>
+> Testes: `cargo test` 288 ok (launch_task/actionId/dedupe/página);
+> `bun run test` 1797 ok (166 arquivos; novos: `companion.c2.test.ts` com 15
+> casos, `companionWeb.test.ts` +14 casos de rotas/stopDisposition/
+> makeActionId/buildQuestionAnswer); `tsc -b` limpo.
+
 > **Status C1 (11/08/2026): ENTREGUE.** Fundação de app no cliente existente
 > (página única vanilla, sem framework novo): rotas com history real via hash
 > (`#/`, `#/agents/<pid>`, `#/chat/<pid>/<agent>[/<conv>]` — voltar/avançar/F5
@@ -56,7 +108,9 @@
   "falar com os agentes" completo), com o mesmo render de markdown do app
   onde couber.
 - **C4 — Polimento de casa**: dark mode, notificações web push (se o canal
-  local permitir), atalhos de tela inicial por projeto.
+  local permitir), atalhos de tela inicial por projeto. Pareamento v2
+  (registrado na revisão do C2): token por aparelho com revogação individual,
+  expiração/rotação, confirmação "aceitar aparelho" no desktop.
 
 ## Guardas
 
