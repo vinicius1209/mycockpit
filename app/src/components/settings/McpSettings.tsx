@@ -462,7 +462,7 @@ export function McpSettings() {
 
   if (!project) {
     return (
-      <div className="rounded-lg border border-border/60 bg-secondary/20 p-4 text-[12.5px] text-muted-foreground">
+      <div className="rounded-lg border border-border/60 bg-secondary/20 p-4 text-[13px] text-muted-foreground">
         Selecione um projeto para gerenciar seus MCPs.
       </div>
     )
@@ -472,10 +472,10 @@ export function McpSettings() {
     <div>
       <div className="mb-1 flex items-start justify-between gap-3 pr-9">
         <div>
-          <h2 className="text-[15px] font-semibold text-foreground">
+          <h2 className="text-[14px] font-semibold text-foreground">
             Integrações MCP
           </h2>
-          <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">
+          <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
             Cada projeto decide quais MCPs seus agents enxergam; sem binding, o
             CLI mantém o comportamento nativo.
           </p>
@@ -485,7 +485,7 @@ export function McpSettings() {
           variant="ghost"
           onClick={() => void load()}
           disabled={loading}
-          className="h-7 gap-1.5 px-2 text-[11.5px]"
+          className="h-7 gap-1.5 px-2 text-[12px]"
         >
           <RefreshCcw className={cn("size-3.5", loading && "animate-spin")} />
           Redescobrir
@@ -493,7 +493,7 @@ export function McpSettings() {
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="text-[11.5px] font-medium text-foreground">
+        <span className="text-[12px] font-medium text-foreground">
           Bindings do projeto:
         </span>
         <PillSelect
@@ -512,7 +512,7 @@ export function McpSettings() {
         />
       </div>
 
-      <div className="mt-3 rounded-lg border border-brass/20 bg-brass/5 px-3 py-2 text-[11.5px] leading-snug text-muted-foreground">
+      <div className="mt-3 rounded-lg border border-brass/20 bg-brass/5 px-3 py-2 text-[12px] leading-snug text-muted-foreground">
         <ShieldCheck className="mr-1 inline size-3.5 text-brass" />
         Valores de tokens e headers nunca são persistidos. Configurações com
         credencial literal precisam usar Keychain, wrapper ou referência de env
@@ -528,13 +528,13 @@ export function McpSettings() {
             <div className="text-[13px] font-medium text-foreground">
               Navegador do projeto
             </div>
-            <div className="mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
+            <div className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
               O app abre e mantém um Chromium com perfil próprio deste projeto.
               MCPs marcados abaixo pilotam ESTE navegador, em vez de abrirem um
               descartável a cada run.
             </div>
             <div
-              className="mt-1 truncate font-mono text-[10.5px] text-muted-foreground/75"
+              className="mt-1 truncate font-mono text-[11px] text-muted-foreground/75"
               title={browser?.binary ?? undefined}
             >
               {browserStateLabel(browser)}
@@ -545,14 +545,14 @@ export function McpSettings() {
             variant={browser?.session ? "ghost" : "secondary"}
             onClick={() => void toggleBrowser(!browser?.session)}
             disabled={browserBusy || (!browser?.session && !browser?.binary)}
-            className="h-7 shrink-0 px-2.5 text-[11.5px]"
+            className="h-7 shrink-0 px-2.5 text-[12px]"
           >
             {browserBusy && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
             {browser?.session ? "Desligar" : "Ligar"}
           </Button>
         </div>
         {browserBindingWarning(servers, browser) && (
-          <div className="mt-2 flex items-start gap-1.5 rounded-md border border-st-warning/30 bg-st-warning/5 px-2 py-1.5 text-[10.5px] leading-snug text-st-warning">
+          <div className="mt-2 flex items-start gap-1.5 rounded-md border border-st-warning/30 bg-st-warning/5 px-2 py-1.5 text-[11px] leading-snug text-st-warning">
             <AlertTriangle className="mt-px size-3.5 shrink-0" />
             <span>{browserBindingWarning(servers, browser)}</span>
           </div>
@@ -595,30 +595,30 @@ export function McpSettings() {
                     <span className="text-[13px] font-medium text-foreground">
                       {server.name}
                     </span>
-                    <span className="rounded border border-border/60 bg-background/50 px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
+                    <span className="rounded border border-border/60 bg-background/50 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
                       {sourceLabel(server)}
                     </span>
-                    <span className="rounded border border-border/60 px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
+                    <span className="rounded border border-border/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
                       {server.transport}
                     </span>
                   </div>
                   <div
-                    className="mt-0.5 truncate font-mono text-[10.5px] text-muted-foreground/75"
+                    className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground/75"
                     title={server.locator}
                   >
                     {server.locator}
                   </div>
                   {server.runtimeName && (
-                    <div className="mt-1 text-[10.5px] text-muted-foreground">
+                    <div className="mt-1 text-[11px] text-muted-foreground">
                       nome na sessão:{" "}
-                      <span className="rounded border border-border/60 bg-background/50 px-1 py-0.5 font-mono text-[9.5px] text-foreground/80">
+                      <span className="rounded border border-border/60 bg-background/50 px-1 py-0.5 font-mono text-[11px] text-foreground/80">
                         {server.runtimeName}
                       </span>{" "}
                       (cite este nome no prompt)
                     </div>
                   )}
                   {server.envKeys.length > 0 && (
-                    <div className="mt-1 text-[10.5px] text-muted-foreground">
+                    <div className="mt-1 text-[11px] text-muted-foreground">
                       env refs: {server.envKeys.join(", ")}
                     </div>
                   )}
@@ -629,7 +629,7 @@ export function McpSettings() {
                           authByServer[server.id]?.state ?? "sem-login",
                         )}
                       </span>
-                      <span className="flex-1 text-[10.5px] leading-snug text-muted-foreground">
+                      <span className="flex-1 text-[11px] leading-snug text-muted-foreground">
                         {mcpAuthHint(
                           authByServer[server.id] ?? {
                             state: "sem-login",
@@ -650,7 +650,7 @@ export function McpSettings() {
                             ? doLogout(server)
                             : doLogin(server))
                         }
-                        className="h-7 shrink-0 px-2.5 text-[11.5px]"
+                        className="h-7 shrink-0 px-2.5 text-[12px]"
                       >
                         {authBusy.has(server.id) && (
                           <Loader2 className="mr-1.5 size-3.5 animate-spin" />
@@ -668,7 +668,7 @@ export function McpSettings() {
                     <div
                       key={notice.kind}
                       className={cn(
-                        "mt-1 text-[10.5px] leading-snug",
+                        "mt-1 text-[11px] leading-snug",
                         // Fato estrutural em tom neutro; pendência que o
                         // usuário resolve (segredo literal) em aviso.
                         notice.kind === "native-only"
@@ -680,7 +680,7 @@ export function McpSettings() {
                     </div>
                   ))}
                   {!server.sourceEnabled && server.managed && (
-                    <div className="mt-1 text-[10.5px] text-muted-foreground">
+                    <div className="mt-1 text-[11px] text-muted-foreground">
                       Desativado na origem; um binding explícito o ativa somente
                       no run gerenciado.
                     </div>
@@ -712,11 +712,11 @@ export function McpSettings() {
                           disabled={!state.compatible || writeBusy}
                           aria-label={`Usar ${server.name} no ${agent.label}`}
                         />
-                        <span className="w-12 text-[11.5px] text-foreground">
+                        <span className="w-12 text-[12px] text-foreground">
                           {agent.label}
                         </span>
                         <span
-                          className="flex min-w-0 flex-1 items-center gap-1 text-[10.5px] text-muted-foreground"
+                          className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-muted-foreground"
                           title={state.detail ?? undefined}
                         >
                           {verifying ? (
@@ -736,7 +736,7 @@ export function McpSettings() {
                         </span>
                         {state.enabled && (
                           <>
-                            <label className="flex items-center gap-1 text-[10.5px] text-muted-foreground">
+                            <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
                               <input
                                 type="checkbox"
                                 checked={state.required}
@@ -751,7 +751,7 @@ export function McpSettings() {
                               exigir
                             </label>
                             <label
-                              className="flex items-center gap-1 text-[10.5px] text-muted-foreground"
+                              className="flex items-center gap-1 text-[11px] text-muted-foreground"
                               title="Este MCP pilota o navegador do projeto (o run recebe --cdp-endpoint)"
                             >
                               <input
@@ -775,7 +775,7 @@ export function McpSettings() {
                                 })
                               }
                               disabled={writeBusy}
-                              className="h-6 rounded border border-border/60 bg-background px-1 text-[10.5px] text-foreground"
+                              className="h-6 rounded border border-border/60 bg-background px-1 text-[11px] text-foreground"
                               aria-label={`Fallback de ${server.name} no ${agent.label}`}
                             >
                               {FALLBACKS.map((item) => (
@@ -806,7 +806,7 @@ export function McpSettings() {
                   })}
                 </div>
               ) : (
-                <div className="mt-2 text-[10.5px] text-muted-foreground">
+                <div className="mt-2 text-[11px] text-muted-foreground">
                   MCP interno, criado e limitado por run pelo MyCockpit.
                 </div>
               )}

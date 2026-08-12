@@ -102,14 +102,14 @@ export function SkillDraftDialog({
       }
     >
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+          <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-muted-foreground">
             <Loader2 className="size-4 animate-spin" aria-hidden />
             Rascunhando a skill…
           </div>
         ) : (
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="skill-name" className="text-sm font-medium">
+              <label htmlFor="skill-name" className="text-[13px] font-medium">
                 Nome (slug)
               </label>
               <Input
@@ -121,7 +121,7 @@ export function SkillDraftDialog({
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="skill-desc" className="text-sm font-medium">
+              <label htmlFor="skill-desc" className="text-[13px] font-medium">
                 Descrição
               </label>
               <Input
@@ -133,14 +133,14 @@ export function SkillDraftDialog({
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="skill-body" className="text-sm font-medium">
+              <label htmlFor="skill-body" className="text-[13px] font-medium">
                 Corpo (markdown)
               </label>
               <Textarea
                 id="skill-body"
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
-                className="min-h-48 font-mono text-xs"
+                className="min-h-48 font-mono text-[12px]"
                 disabled={saving}
               />
             </div>

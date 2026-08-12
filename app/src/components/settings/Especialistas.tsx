@@ -63,7 +63,7 @@ function Tag({ children, brass }: { children: React.ReactNode; brass?: boolean }
   return (
     <span
       className={cn(
-        "rounded-full border px-2 py-px text-[10.5px]",
+        "rounded-full border px-2 py-px text-[11px]",
         brass
           ? "border-brass/30 text-brass"
           : "border-border text-muted-foreground",
@@ -97,7 +97,7 @@ function EspecialistaCard({
           <div className="truncate text-[14px] font-semibold text-foreground">
             {def.name}
           </div>
-          <div className="truncate text-[11.5px] text-muted-foreground">
+          <div className="truncate text-[12px] text-muted-foreground">
             {categoriaDe(def)}
           </div>
         </div>
@@ -114,7 +114,7 @@ function EspecialistaCard({
         <span className="font-mono text-[11px] text-muted-foreground">
           @{def.slug}
         </span>
-        <span className="font-mono text-[10.5px] text-muted-foreground/70">
+        <span className="font-mono text-[11px] text-muted-foreground/70">
           v{def.version} · {shortDigest(def.digest)}
         </span>
       </div>
@@ -139,7 +139,7 @@ function DetailView({
       <div className="flex items-center gap-3 border-b border-border/60 px-6 py-4">
         <AgentAvatar def={def} size={48} />
         <div className="min-w-0">
-          <div className="truncate text-[16px] font-semibold text-foreground">
+          <div className="truncate text-[14px] font-semibold text-foreground">
             {def.name}
           </div>
           <div className="truncate text-[12px] text-muted-foreground">
@@ -156,7 +156,7 @@ function DetailView({
         {def.rubric.length > 0 && (
           <>
             <SectionLabel>Rubrica, o que ele checa</SectionLabel>
-            <ul className="list-disc pl-5 text-[12.5px] text-foreground/90">
+            <ul className="list-disc pl-5 text-[13px] text-foreground/90">
               {def.rubric.map((r, i) => (
                 <li key={i} className="mb-1">
                   {r}
@@ -167,7 +167,7 @@ function DetailView({
         )}
 
         <SectionLabel>Configuração</SectionLabel>
-        <div className="text-[12.5px]">
+        <div className="text-[13px]">
           <KV k="Categoria" v={categoriaDe(def)} />
           <KV k="Agent" v={def.backend} />
           <KV k="Modelo" v={def.model ?? "padrão"} />
@@ -184,7 +184,7 @@ function DetailView({
         </div>
 
         <SectionLabel>Como invocar</SectionLabel>
-        <p className="text-[12.5px] text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           No composer, mencione{" "}
           <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[12px] text-foreground">
             @{def.name.toLowerCase()}
@@ -218,7 +218,7 @@ function DetailView({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-4 mb-2 text-[10.5px] font-medium tracking-wide text-muted-foreground/70 uppercase first:mt-0">
+    <div className="mt-4 mb-2 text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase first:mt-0">
       {children}
     </div>
   )
@@ -320,7 +320,7 @@ function CreateView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border/60 px-6 py-4">
-        <div className="text-[16px] font-semibold text-foreground">
+        <div className="text-[14px] font-semibold text-foreground">
           {editing ? "Editar especialista" : "Novo especialista"}
         </div>
         <div className="text-[12px] text-muted-foreground">
@@ -425,7 +425,7 @@ function CreateView({
                 {form.rubric.map((r, i) => (
                   <li
                     key={i}
-                    className="flex items-center gap-2 text-[12.5px] text-foreground"
+                    className="flex items-center gap-2 text-[13px] text-foreground"
                   >
                     <span className="text-muted-foreground">•</span>
                     <span className="min-w-0 flex-1 truncate">{r}</span>
@@ -476,7 +476,7 @@ function CreateView({
               value={form.skillsText}
               onChange={(e) => set("skillsText", e.target.value)}
               placeholder="revisar-pr, testes"
-              className="h-8 font-mono text-[12.5px]"
+              className="h-8 font-mono text-[13px]"
               aria-label="Skills do especialista"
             />
           </Fld>
@@ -543,7 +543,7 @@ function CreateView({
 
         {/* Preview ao vivo */}
         <div className="flex min-h-0 flex-col gap-2.5 overflow-y-auto border-l border-border/60 bg-rail px-4 py-4">
-          <div className="text-[10.5px] font-medium tracking-wide text-muted-foreground/70 uppercase">
+          <div className="text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
             Prévia do card
           </div>
           <div className="flex flex-col gap-2.5 rounded-xl border border-border bg-card/60 p-3.5">
@@ -558,7 +558,7 @@ function CreateView({
                 <div className="truncate text-[14px] font-semibold text-foreground">
                   {form.name || "Sem nome"}
                 </div>
-                <div className="truncate text-[11.5px] text-muted-foreground">
+                <div className="truncate text-[12px] text-muted-foreground">
                   {form.category.trim() || "Geral"}
                 </div>
               </div>
@@ -611,7 +611,7 @@ function CreateView({
 function Fld({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[11.5px] text-muted-foreground">{label}</span>
+      <span className="text-[12px] text-muted-foreground">{label}</span>
       {children}
     </div>
   )
@@ -662,7 +662,7 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
       {view.kind === "list" && (
         <>
           <div className="px-6 pt-5 pb-3">
-            <h2 className="text-[17px] font-semibold text-foreground">
+            <h2 className="text-[14px] font-semibold text-foreground">
               Especialistas
             </h2>
             <p className="mt-1 text-[13px] text-muted-foreground">
@@ -707,7 +707,7 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
                   <div className="text-[14px] font-semibold text-foreground">
                     Comece com uma equipe pronta
                   </div>
-                  <p className="mx-auto mt-1 max-w-[380px] text-[12.5px] leading-snug text-muted-foreground">
+                  <p className="mx-auto mt-1 max-w-[380px] text-[13px] leading-snug text-muted-foreground">
                     Seis especialistas (arquitetura, segurança, produto, custo,
                     design e testes) prontos pra mencionar com @ na conversa.
                     Edite ou remova quando quiser.

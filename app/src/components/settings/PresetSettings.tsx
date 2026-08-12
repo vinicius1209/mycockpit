@@ -104,7 +104,7 @@ function toInput(d: Draft): AgentPresetInput {
 function FieldRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[11.5px] text-muted-foreground">{label}</span>
+      <span className="text-[12px] text-muted-foreground">{label}</span>
       {children}
     </div>
   )
@@ -178,7 +178,7 @@ export function PresetSettings() {
       </div>
 
       {list.length === 0 && !draft && (
-        <p className="text-[12.5px] leading-snug text-muted-foreground">
+        <p className="text-[13px] leading-snug text-muted-foreground">
           Nenhum preset ainda. Um preset dá nome, personalidade, skills e
           política a um agent; a conversa iniciada com ele fica carimbada com a
           versão exata (digest) da persona.
@@ -195,14 +195,14 @@ export function PresetSettings() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-[13px] text-foreground">
                   <span className="truncate">{p.name}</span>
-                  <span className="shrink-0 rounded border px-1 py-px text-[10px] tracking-wide text-muted-foreground uppercase">
+                  <span className="shrink-0 rounded border px-1 py-px text-[11px] tracking-wide text-muted-foreground uppercase">
                     v{p.version}
                   </span>
                   {/* Escopo: persona de projeto some ao trocar de projeto — o
                       selo evita a impressão de que ela "sumiu". */}
                   <span
                     className={cn(
-                      "shrink-0 rounded px-1 py-px text-[10px] font-medium tracking-wide uppercase",
+                      "shrink-0 rounded px-1 py-px text-[11px] font-medium tracking-wide uppercase",
                       p.scope === "projeto"
                         ? "bg-brass/15 text-brass"
                         : "bg-secondary text-muted-foreground/70",
@@ -216,7 +216,7 @@ export function PresetSettings() {
                     {p.scope}
                   </span>
                 </div>
-                <div className="truncate text-[11.5px] text-muted-foreground">
+                <div className="truncate text-[12px] text-muted-foreground">
                   {p.backend}
                   {p.model ? ` · ${p.model}` : ""}
                   {p.skills.length > 0
@@ -311,7 +311,7 @@ export function PresetSettings() {
                 setDraft({ ...draft, skillsText: e.target.value })
               }
               placeholder={"revisar-pr\ntestes"}
-              className="min-h-[60px] font-mono text-[12.5px]"
+              className="min-h-[60px] font-mono text-[13px]"
               aria-label="Skills do preset"
             />
           </FieldRow>
@@ -387,7 +387,7 @@ export function PresetSettings() {
         </div>
       )}
 
-      <p className="mt-3 text-[11.5px] leading-snug text-muted-foreground">
+      <p className="mt-3 text-[12px] leading-snug text-muted-foreground">
         O preset entra no 1º turno da conversa (bloco de persona no prompt) e
         trava agent, modelo e esforço de uma vez. Skill referenciada que não
         existe no projeto aborta o envio antes de gastar turno.
