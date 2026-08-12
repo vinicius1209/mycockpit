@@ -3,13 +3,21 @@
 //!
 //! PIPELINE SEPARADO do custo em $: turn_costs/ledger não se toca aqui. Custo
 //! é quanto o turno gastou; janela é quanto do PLANO já queimou e quando
-//! reseta. As duas fontes auditadas (12/08/2026, nesta máquina):
+//! reseta. As fontes auditadas (12/08/2026, nesta máquina):
 //!
+//!   • claude (conta OAuth) — `GET /api/oauth/usage` com o bearer que o
+//!     próprio CLI guarda: é a fonte PRINCIPAL do claude e mora em
+//!     claude_usage.rs (com a fixture real do corpo e o registro do que NÃO
+//!     se faz: PTY oculto e refresh de token). POLL, independente de sessão,
+//!     nenhuma quota consumida.
 //!   • claude 2.1.220 — a statusline recebe `rate_limits` no stdin A CADA
 //!     TURNO (payload real na fixture abaixo). PUSH de carona: o script
 //!     instalado (statusline_install.rs) POSTa pro receptor local
 //!     (hook_gateway.rs), que chama `ingest_statusline` daqui. Nenhuma quota
-//!     consumida.
+//!     consumida — mas só dispara em sessão INTERATIVA: em `-p`/headless o
+//!     comando de statusline nunca roda (provado empiricamente), e o app roda
+//!     todas as conversas em headless. Por isso ela é ingest OPORTUNISTA
+//!     (carona quando o usuário usa o terminal), nunca a fonte principal.
 //!   • codex 0.146 — `codex -s read-only -a untrusted app-server` responde
 //!     `account/rateLimits/read` (fixture real abaixo; diferente do estudo do
 //!     Orca, hoje só vem `primary` com a janela de 7d — `secondary: null`;
@@ -62,7 +70,8 @@ pub struct UsageWindow {
 #[serde(rename_all = "camelCase")]
 pub struct UsageSnapshot {
     pub agent: String,
-    /// "statusline" (push de carona) | "rpc" (poll read-only local).
+    /// "oauth" (leitura da conta) | "statusline" (push de carona) | "rpc"
+    /// (poll read-only local). A UI mostra ISTO como procedência.
     pub source: String,
     pub windows: Vec<UsageWindow>,
     /// Plano reportado pelo motor ("plus"…), quando existe.
@@ -77,13 +86,15 @@ pub struct UsageSnapshot {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageFetchError {
-    /// "unsupported" | "spawn" | "timeout" | "protocol" | "rate-limited"
+    /// "unsupported" | "spawn" | "timeout" | "protocol" | "rate-limited" |
+    /// "auth" (sem credencial ou credencial recusada: a UI diz "reautentique",
+    /// nunca erro cru, e a política de poll não martela).
     pub kind: String,
     pub message: String,
 }
 
 impl UsageFetchError {
-    fn new(kind: &str, message: impl Into<String>) -> Self {
+    pub(crate) fn new(kind: &str, message: impl Into<String>) -> Self {
         Self {
             kind: kind.into(),
             message: message.into(),
@@ -277,7 +288,7 @@ pub fn ingest_statusline(app: &AppHandle, engine: &str, payload: &Value) -> bool
     true
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -296,13 +307,17 @@ pub fn usage_snapshots(state: State<'_, UsageState>) -> Vec<UsageSnapshot> {
 
 /// Busca a janela de uso de `agent` AGORA (a política de QUANDO chamar mora
 /// no lado TS — lib/usageWindow, passada do watchdog). Só motor que declara
-/// fonte de POLL no registry; os demais respondem "unsupported" honesto.
+/// dialeto de POLL no registry (`usage_window_poll`); os demais respondem
+/// "unsupported" honesto.
 #[tauri::command]
 pub async fn usage_fetch(app: AppHandle, agent: String) -> Result<UsageSnapshot, UsageFetchError> {
-    let source = capabilities_of(&agent).and_then(|c| c.usage_window);
+    let source = capabilities_of(&agent).and_then(|c| c.usage_window_poll);
     let snapshot = match source {
+        Some(UsageWindowSource::ClaudeOauth) => crate::claude_usage::fetch(&agent).await?,
         Some(UsageWindowSource::CodexAppServer) => fetch_codex_app_server(&agent).await?,
         Some(UsageWindowSource::ClaudeStatusline) => {
+            // o contrato do registry proíbe (statusline é push), mas o match
+            // fica exaustivo e honesto em vez de entrar num `_ =>` mudo.
             return Err(UsageFetchError::new(
                 "unsupported",
                 "este motor reporta por statusline (push), não por poll",

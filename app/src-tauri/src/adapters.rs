@@ -126,6 +126,16 @@ pub enum UsageWindowSource {
     /// dado de carona, nenhuma quota consumida. Payload real capturado
     /// 12/08/2026 (fixture em usage_window.rs).
     ClaudeStatusline,
+    /// claude (conta OAuth): `GET api.anthropic.com/api/oauth/usage` com o
+    /// bearer que o próprio CLI guarda (Keychain ou `.credentials.json`) —
+    /// o mesmo endereço que o `/usage` do CLI consulta. POLL, independente de
+    /// sessão, NENHUMA quota consumida (a resposta não traz header de rate
+    /// limit e duas chamadas seguidas devolvem os mesmos percentuais).
+    /// Existe porque a statusline NÃO dispara em `-p`/headless (provado
+    /// 12/08/2026) e o app roda tudo em headless: sem esta fonte, o Claude
+    /// nunca aparecia no medidor. Corpo real capturado 12/08/2026 (fixture em
+    /// claude_usage.rs, junto do que NÃO se faz: PTY oculto e refresh).
+    ClaudeOauth,
     /// codex 0.146: JSON-RPC `account/rateLimits/read` via
     /// `codex -s read-only -a untrusted app-server` (probe local, read-only,
     /// sem quota). POLL: resposta real capturada 12/08/2026 (fixture em
@@ -236,6 +246,17 @@ pub struct Capabilities {
     /// lib/agents.ts (teste-gêmeo agents.usageWindow.test.ts ↔
     /// `matriz_usage_window_por_agent`).
     pub usage_window: Option<UsageWindowSource>,
+    /// Dialeto que o POLL do vigia usa pra PERGUNTAR a janela agora
+    /// (`usage_fetch`), quando `usage_window` já disse que o motor tem
+    /// medidor. Separado porque as duas coisas divergiram no claude: o que o
+    /// usuário INSTALA lá é a statusline (push de carona, `usage_window`), mas
+    /// ela só dispara em sessão INTERATIVA — em `-p`/headless o script nunca
+    /// roda (empírico 12/08/2026), e o app roda tudo em headless. Quem
+    /// realmente alimenta o medidor do claude é o `ClaudeOauth`. `None` = o
+    /// motor só recebe push (nada a perguntar); nunca `ClaudeStatusline`
+    /// (push não se pergunta — cobrado no contrato). Espelho TS: `usagePoll`
+    /// em lib/agents.ts (mesmo teste-gêmeo).
+    pub usage_window_poll: Option<UsageWindowSource>,
     /// Emite eventos de CICLO DE VIDA a scripts externos (fire-and-forget,
     /// hooks-plan H1): é o que dá visibilidade de sessões EXTERNAS (abertas no
     /// terminal, fora do app) e status push sem polling. Instalação SEMPRE por
@@ -279,6 +300,10 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     // claude 2.1.220: a statusline recebe `rate_limits` no stdin por turno
     // (payload real capturado 12/08/2026 — fixture em usage_window.rs).
     usage_window: Some(UsageWindowSource::ClaudeStatusline),
+    // …MAS a statusline não roda em `-p` (o app roda tudo headless), então
+    // quem sustenta o medidor é a conta: GET /api/oauth/usage com o bearer do
+    // próprio CLI (200 real capturado 12/08/2026, fixture em claude_usage.rs).
+    usage_window_poll: Some(UsageWindowSource::ClaudeOauth),
     // claude 2.1.220: hooks maduros — SessionStart/UserPromptSubmit/
     // PreToolUse/PostToolUse/Stop/SessionEnd capturados de verdade nesta
     // máquina em 12/08/2026 (fixtures em hook_sessions.rs); Notification
@@ -322,6 +347,8 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     // usedPercent + resetsAt (provado na mão 12/08/2026, fixture em
     // usage_window.rs).
     usage_window: Some(UsageWindowSource::CodexAppServer),
+    // o mesmo dialeto responde ao poll (não há push nenhum no codex).
+    usage_window_poll: Some(UsageWindowSource::CodexAppServer),
     // codex 0.146: `codex features list` → hooks stable/true; hooks.json com
     // schema idêntico ao do claude, trusted e VIVO nesta máquina (Xirp/Orca,
     // auditado 12/08/2026). Trust por hook: o comando referencia só o path
@@ -356,6 +383,7 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // agy 1.1.12: só `/credits` (saldo, sem % de janela nem reset —
     // verificado 12/08/2026). Saldo de créditos NÃO é janela de uso: None.
     usage_window: None,
+    usage_window_poll: None,
     // agy 1.1.12: hooks documentados pelo próprio produto (doc embarcada
     // agy-customizations/docs/hooks.md) e vivos nesta máquina (grupo
     // "orca-status" em ~/.gemini/config/hooks.json, listado por `agy -p
@@ -2949,6 +2977,19 @@ mod tests {
         );
         // agy 1.1.12: só /credits (saldo, sem janela/reset) → sem fonte.
         assert_eq!(capabilities_of("agy").unwrap().usage_window, None);
+
+        // …e QUEM O VIGIA PERGUNTA (o poll). O claude diverge de propósito: a
+        // statusline é push e só existe em sessão interativa (em `-p` o script
+        // nunca roda, empírico 12/08/2026), então o poll fala com a CONTA.
+        assert_eq!(
+            capabilities_of("claude-code").unwrap().usage_window_poll,
+            Some(UsageWindowSource::ClaudeOauth)
+        );
+        assert_eq!(
+            capabilities_of("codex").unwrap().usage_window_poll,
+            Some(UsageWindowSource::CodexAppServer)
+        );
+        assert_eq!(capabilities_of("agy").unwrap().usage_window_poll, None);
     }
 
     /// Teste-GÊMEO do espelho TS (`agents.hooks.test.ts`): quem emite hooks de
@@ -3376,6 +3417,17 @@ mod tests {
             assert!(
                 !caps.cumulative_usage || caps.session_resume,
                 "{agent}: cumulative_usage declarado exige session_resume (o acumulado só cresce entre turnos da MESMA thread)"
+            );
+            // Medidor de janela de uso: perguntar só faz sentido pra quem tem
+            // medidor, e PUSH não se pergunta (a statusline chega sozinha; o
+            // `usage_fetch` com ela viraria um probe que não existe).
+            assert!(
+                caps.usage_window_poll.is_none() || caps.usage_window.is_some(),
+                "{agent}: usage_window_poll declarado sem usage_window (poll de um medidor que não existe)"
+            );
+            assert!(
+                caps.usage_window_poll != Some(UsageWindowSource::ClaudeStatusline),
+                "{agent}: statusline é PUSH, não pode ser o dialeto do poll"
             );
             assert_eq!(
                 blob.contains(crate::work_gateway::MCP_SERVER_NAME),

@@ -13,6 +13,7 @@ mod approval;
 mod attachments;
 mod browser;
 mod catalog;
+mod claude_usage;
 mod codex_appserver;
 mod companion;
 mod context;
