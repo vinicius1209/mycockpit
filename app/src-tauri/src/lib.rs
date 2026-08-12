@@ -34,6 +34,7 @@ mod proc;
 mod sdd;
 mod skills;
 mod sources;
+mod statusline_install;
 mod stt;
 mod tray;
 mod update;
@@ -576,6 +577,9 @@ pub fn run() {
             update::update_jobs,
             usage_window::usage_snapshots,
             usage_window::usage_fetch,
+            statusline_install::usage_statusline_status,
+            statusline_install::usage_statusline_install,
+            statusline_install::usage_statusline_uninstall,
             catalog::refresh_models_catalog,
             catalog::get_models_catalog,
             mycockpit::read_mycockpit_config,

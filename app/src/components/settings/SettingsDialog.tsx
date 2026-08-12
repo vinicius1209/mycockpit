@@ -70,6 +70,7 @@ import { MissionSettings } from "@/components/settings/MissionSettings"
 import { CompanionSettings } from "@/components/settings/CompanionSettings"
 import { McpSettings } from "@/components/settings/McpSettings"
 import { CostMaintenance } from "@/components/settings/CostMaintenance"
+import { UsageMeterSettings } from "@/components/settings/UsageMeterSettings"
 import { EspecialistasContent } from "@/components/settings/Especialistas"
 import {
   DEFAULT_DICTATION_HOTKEY,
@@ -426,6 +427,10 @@ function AgentsToolsSection() {
           </p>
         </div>
       )}
+
+      {/* Medidor de janela de uso (rate limits do plano): instalação é gesto
+          daqui, nunca do boot — ver UsageMeterSettings. */}
+      <UsageMeterSettings />
     </div>
   )
 }

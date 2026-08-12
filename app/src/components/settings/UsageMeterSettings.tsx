@@ -1,0 +1,217 @@
+// Configurações do MEDIDOR DE JANELA DE USO (rate limits por provider) —
+// bloco da seção "CLIs instaladas". A instalação da statusline é GESTO do
+// usuário (nunca no boot), com transparência total: mostra O QUE será escrito
+// no settings.json dele, qual comando será encadeado (o slot pode estar
+// ocupado, ex. wrapper do Xirp — preservamos, nunca substituímos), backup
+// automático e desinstalação que restaura como estava. Motor de fonte "rpc"
+// não instala nada (probe read-only local) e o bloco diz isso. Motor sem
+// capability nem aparece (usageWindowAgents).
+
+import { useEffect, useState } from "react"
+import { invoke } from "@tauri-apps/api/core"
+import { Check, ChevronDown, Loader2 } from "lucide-react"
+import { toast } from "sonner"
+import { Switch } from "@/components/ui/switch"
+import { usageWindowAgents, type AgentDef } from "@/lib/agents"
+import { isTauri } from "@/lib/db"
+import { useApp } from "@/store/app"
+import { cn } from "@/lib/utils"
+
+/** Espelho de statusline_install::StatuslineStatus (serde camelCase). */
+interface StatuslineStatus {
+  installed: boolean
+  settingsPath: string
+  scriptPath: string
+  currentCommand: string | null
+  chainedCommand: string | null
+  preview: string
+}
+
+function StatuslineRow({ def }: { def: AgentDef }) {
+  const [status, setStatus] = useState<StatuslineStatus | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
+
+  async function refresh() {
+    try {
+      setStatus(
+        await invoke<StatuslineStatus>("usage_statusline_status", {
+          agent: def.id,
+        }),
+      )
+      setError(null)
+    } catch (e) {
+      // erro visível (settings.json que não parseia, HOME ausente…): a linha
+      // mostra o motivo em vez de sumir com o botão.
+      setError(typeof e === "string" ? e : String(e))
+    }
+  }
+  useEffect(() => {
+    if (isTauri()) void refresh()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function act(cmd: "usage_statusline_install" | "usage_statusline_uninstall") {
+    setBusy(true)
+    try {
+      setStatus(await invoke<StatuslineStatus>(cmd, { agent: def.id }))
+      setError(null)
+      toast.success(
+        cmd === "usage_statusline_install"
+          ? `Medidor ativado. O ${def.label} passa a reportar a janela a cada turno.`
+          : "Medidor desativado, statusline restaurada como estava.",
+      )
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha na operação")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <li className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] text-foreground">
+            {def.label}{" "}
+            <span className="text-muted-foreground">· via statusline</span>
+          </div>
+          <div className="truncate text-[11.5px] text-muted-foreground">
+            {error
+              ? error
+              : status == null
+                ? "verificando…"
+                : status.installed
+                  ? status.chainedCommand
+                    ? "ativo, encadeando a sua statusline atual"
+                    : "ativo (não havia statusline antes)"
+                  : status.currentCommand
+                    ? "inativo · sua statusline atual será preservada e encadeada"
+                    : "inativo · você não tem statusline configurada"}
+          </div>
+        </div>
+        {status?.installed && (
+          <Check className="size-4 shrink-0 text-st-success" aria-hidden />
+        )}
+        {status && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              onClick={() =>
+                void act(
+                  status.installed
+                    ? "usage_statusline_uninstall"
+                    : "usage_statusline_install",
+                )
+              }
+              disabled={busy}
+              className={cn(
+                "flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-opacity hover:opacity-90 disabled:opacity-40",
+                status.installed
+                  ? "bg-background/60 text-muted-foreground hover:text-foreground"
+                  : "bg-brass text-background",
+              )}
+            >
+              {busy && <Loader2 className="size-3 animate-spin" />}
+              {status.installed ? "Desativar" : "Ativar medidor"}
+            </button>
+          </div>
+        )}
+      </div>
+      {status && (
+        <div className="mt-1.5">
+          <button
+            onClick={() => setShowPreview((v) => !v)}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronDown
+              className={cn("size-3 transition-transform", showPreview && "rotate-180")}
+            />
+            {status.installed
+              ? "ver o que está escrito no seu settings.json"
+              : "ver o que será escrito no seu settings.json"}
+          </button>
+          {showPreview && (
+            <div className="mt-1.5 flex flex-col gap-1.5">
+              <p className="text-[11px] text-muted-foreground">
+                Em <span className="font-mono">{status.settingsPath}</span>, a
+                chave <span className="font-mono">statusLine</span> fica assim
+                (backup automático em .bak-mycockpit, reversível no botão
+                Desativar):
+              </p>
+              <pre className="overflow-x-auto rounded bg-background/60 px-2 py-1.5 font-mono text-[10.5px] leading-snug text-muted-foreground">
+                {status.preview}
+              </pre>
+              {status.chainedCommand && (
+                <p className="text-[11px] text-muted-foreground">
+                  O script encadeia (preserva) a statusline que ocupa o slot:{" "}
+                  <span className="font-mono break-all">
+                    {status.chainedCommand}
+                  </span>
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </li>
+  )
+}
+
+export function UsageMeterSettings() {
+  const enabled = useApp((s) => s.settings.usageMeterEnabled)
+  const setSettings = useApp((s) => s.setSettings)
+  const providers = usageWindowAgents()
+  // nenhum motor com fonte (build sem claude/codex integrados): o bloco some
+  // inteiro, toggle incluído (1ª camada de esconder do Orca).
+  if (providers.length === 0) return null
+
+  return (
+    <div className="mt-6">
+      <h3 className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
+        Medidor de janela de uso
+      </h3>
+      <p className="mb-2 text-[11.5px] leading-snug text-muted-foreground">
+        Quanto da janela do seu plano já foi usada (percentual e reset), por
+        provider, na barra superior. Não é custo em US$: é medição de carona,
+        nenhuma quota é consumida.
+      </p>
+      <div className="mb-2 flex items-center justify-between rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">
+        <div>
+          <div className="text-[13px] text-foreground">Mostrar na barra</div>
+          <div className="text-[11.5px] text-muted-foreground">
+            Desligar esconde a pill e pausa as medições.
+          </div>
+        </div>
+        <Switch
+          checked={enabled}
+          onCheckedChange={(v) => setSettings({ usageMeterEnabled: v })}
+          aria-label="Mostrar o medidor de janela de uso na barra"
+        />
+      </div>
+      <ul className="flex flex-col gap-1.5">
+        {providers.map((def) =>
+          def.usageWindow === "statusline" ? (
+            <StatuslineRow key={def.id} def={def} />
+          ) : (
+            <li
+              key={def.id}
+              className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2"
+            >
+              <div className="truncate text-[13px] text-foreground">
+                {def.label}{" "}
+                <span className="text-muted-foreground">
+                  · leitura local automática
+                </span>
+              </div>
+              <div className="text-[11.5px] text-muted-foreground">
+                Consulta read-only ao próprio CLI a cada 15 min, nada é
+                instalado nem configurado.
+              </div>
+            </li>
+          ),
+        )}
+      </ul>
+    </div>
+  )
+}
