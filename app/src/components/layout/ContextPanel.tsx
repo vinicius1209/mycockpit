@@ -91,17 +91,17 @@ function FileRow({
           !file.exists && "opacity-45",
         )}
       >
-        <span className="flex items-center gap-2 font-mono text-[12.5px] text-foreground/90">
+        <span className="flex items-center gap-2 font-mono text-[13px] text-foreground/90">
           <FileText className="size-3.5 text-muted-foreground" />
           {file.name}
         </span>
         <span className="flex items-center gap-1.5">
           {file.exists ? (
-            <span className="font-mono text-[10.5px] tabular-nums text-muted-foreground/70">
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
               {fmtBytes(file.bytes)}
             </span>
           ) : (
-            <span className="text-[10.5px] text-muted-foreground/45">ausente</span>
+            <span className="text-[11px] text-muted-foreground/45">ausente</span>
           )}
           {canExpand && (
             <ChevronDown
@@ -132,11 +132,11 @@ function ClaudeNode({ cd }: { cd: ClaudeDir }) {
   if (!cd.exists) {
     return (
       <div className="flex items-center justify-between rounded-md px-2 py-1.5 opacity-45">
-        <span className="flex items-center gap-2 font-mono text-[12.5px]">
+        <span className="flex items-center gap-2 font-mono text-[13px]">
           <FolderGit2 className="size-3.5 text-muted-foreground" />
           .claude/
         </span>
-        <span className="text-[10.5px] text-muted-foreground/45">ausente</span>
+        <span className="text-[11px] text-muted-foreground/45">ausente</span>
       </div>
     )
   }
@@ -157,12 +157,12 @@ function ClaudeNode({ cd }: { cd: ClaudeDir }) {
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-accent/45"
       >
-        <span className="flex items-center gap-2 font-mono text-[12.5px] text-foreground/90">
+        <span className="flex items-center gap-2 font-mono text-[13px] text-foreground/90">
           <FolderGit2 className="size-3.5 text-muted-foreground" />
           .claude/
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="text-[10.5px] text-muted-foreground/70">
+          <span className="text-[11px] text-muted-foreground/70">
             {kinds} {kinds === 1 ? "tipo" : "tipos"}
           </span>
           <ChevronDown
@@ -249,7 +249,7 @@ function DetailDialog({
             {target?.title}
           </DialogTitle>
           {target && (
-            <DialogDescription className="truncate font-mono text-[10.5px]">
+            <DialogDescription className="truncate font-mono text-[11px]">
               {shortPath(target.path)}
             </DialogDescription>
           )}
@@ -272,7 +272,7 @@ function StageBadge({ stage }: { stage: string }) {
   return (
     <span
       className={cn(
-        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase",
+        "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium tracking-wide uppercase",
         // "done" fica na tela pra sempre: é ambiente, logo cinza (§2).
         done ? "bg-muted text-muted-foreground" : "bg-brass/15 text-brass",
       )}
@@ -314,7 +314,7 @@ function TabBtn({
       {badge != null && badge > 0 && (
         <span
           className={cn(
-            "grid min-w-4 place-items-center rounded-full px-1 text-[9.5px] font-semibold tabular-nums",
+            "grid min-w-4 place-items-center rounded-full px-1 text-[11px] font-semibold tabular-nums",
             active
               ? "bg-brass text-background"
               : "bg-muted-foreground/25 text-foreground/80",
@@ -578,7 +578,7 @@ export function ContextPanel() {
           {planTasks.length > 0 ? (
             <TaskChecklist tasks={planTasks} />
           ) : (
-            <p className="px-2 py-10 text-center text-[12.5px] text-muted-foreground">
+            <p className="px-2 py-10 text-center text-[13px] text-muted-foreground">
               Sem plano nesta conversa. Quando o agent criar tarefas, a checklist
               aparece aqui.
             </p>
@@ -600,7 +600,7 @@ export function ContextPanel() {
                   PRÓXIMO turno — o gate de diretório do CLI é fixo no spawn. */}
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[12.5px] text-muted-foreground">
+                  <span className="text-[13px] text-muted-foreground">
                     Pastas permitidas
                   </span>
                   <button
@@ -650,7 +650,7 @@ export function ContextPanel() {
               </div>
 
               {cfg?.exists && (
-                <p className="text-[10.5px] text-muted-foreground/55">
+                <p className="text-[11px] text-muted-foreground/55">
                   salvo em <span className="font-mono">.mycockpit/config.toml</span>
                 </p>
               )}
@@ -706,11 +706,11 @@ export function ContextPanel() {
               )}
             />
             <div className="min-w-0 flex-1">
-              <div className="text-[10.5px] font-medium tracking-wide text-muted-foreground/70 uppercase">
+              <div className="text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
                 Arquivos das CLIs
               </div>
               {!showAgentCtx && (
-                <div className="truncate text-[11.5px] text-muted-foreground/60">
+                <div className="truncate text-[12px] text-muted-foreground/60">
                   {agentCtxSummary}
                 </div>
               )}
@@ -733,7 +733,7 @@ export function ContextPanel() {
             {status === "loading" && <SkeletonRows />}
 
             {status === "browser" && (
-              <p className="text-[12.5px] leading-relaxed text-muted-foreground/70">
+              <p className="text-[13px] leading-relaxed text-muted-foreground/70">
                 Inventário disponível no app (tauri dev).
               </p>
             )}
@@ -756,7 +756,7 @@ export function ContextPanel() {
                     {sources.drift.map((d) => (
                       <div
                         key={d.copy}
-                        className="flex items-start gap-2 rounded-md border border-st-queued/40 bg-st-queued/10 px-2.5 py-1.5 text-[11.5px] leading-snug text-foreground/85"
+                        className="flex items-start gap-2 rounded-md border border-st-queued/40 bg-st-queued/10 px-2.5 py-1.5 text-[12px] leading-snug text-foreground/85"
                       >
                         <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-st-queued" />
                         <span>
@@ -770,7 +770,7 @@ export function ContextPanel() {
                   </div>
                 )}
                 <div className="flex flex-col gap-0.5">
-                  <div className="mb-0.5 text-[10.5px] text-muted-foreground/55">
+                  <div className="mb-0.5 text-[11px] text-muted-foreground/55">
                     Instruções
                   </div>
                   {ctx.files.map((f) => (
@@ -786,7 +786,7 @@ export function ContextPanel() {
                 </div>
 
                 <div className="flex flex-col gap-0.5">
-                  <div className="mb-0.5 text-[10.5px] text-muted-foreground/55">
+                  <div className="mb-0.5 text-[11px] text-muted-foreground/55">
                     Extensões
                   </div>
                   <ClaudeNode cd={ctx.claude_dir} />
@@ -794,11 +794,11 @@ export function ContextPanel() {
                       qualquer motor via expansão app-side */}
                   {ctx.mycockpit_commands > 0 && (
                     <div className="flex items-center justify-between rounded-md px-2 py-1.5">
-                      <span className="flex items-center gap-2 font-mono text-[12.5px] text-foreground/90">
+                      <span className="flex items-center gap-2 font-mono text-[13px] text-foreground/90">
                         <FolderGit2 className="size-3.5 text-muted-foreground" />
                         .mycockpit/commands
                       </span>
-                      <span className="text-[10.5px] text-muted-foreground/70">
+                      <span className="text-[11px] text-muted-foreground/70">
                         {ctx.mycockpit_commands}{" "}
                         {ctx.mycockpit_commands === 1 ? "comando" : "comandos"}
                       </span>
@@ -808,15 +808,15 @@ export function ContextPanel() {
 
                 {ctx.mcp_servers != null && (
                   <div className="flex flex-col gap-0.5">
-                    <div className="mb-0.5 text-[10.5px] text-muted-foreground/55">
+                    <div className="mb-0.5 text-[11px] text-muted-foreground/55">
                       MCP
                     </div>
                     <div className="flex items-center justify-between rounded-md px-2 py-1.5">
-                      <span className="flex items-center gap-2 font-mono text-[12.5px] text-foreground/90">
+                      <span className="flex items-center gap-2 font-mono text-[13px] text-foreground/90">
                         <Plug className="size-3.5 text-muted-foreground" />
                         .mcp.json
                       </span>
-                      <span className="text-[10.5px] text-muted-foreground/70">
+                      <span className="text-[11px] text-muted-foreground/70">
                         {ctx.mcp_servers}{" "}
                         {ctx.mcp_servers === 1 ? "servidor" : "servidores"}
                       </span>
@@ -844,17 +844,17 @@ export function ContextPanel() {
                       className="w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate font-mono text-[12.5px] text-foreground/90">
+                        <span className="truncate font-mono text-[13px] text-foreground/90">
                           {p.name}
                         </span>
                         {p.model && p.model !== "inherit" && (
-                          <span className="shrink-0 rounded border px-1 py-px text-[10px] tracking-wide text-muted-foreground uppercase">
+                          <span className="shrink-0 rounded border px-1 py-px text-[11px] tracking-wide text-muted-foreground uppercase">
                             {p.model}
                           </span>
                         )}
                       </div>
                       {p.description && (
-                        <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-muted-foreground/80">
+                        <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-muted-foreground/80">
                           {p.description}
                         </p>
                       )}
@@ -901,11 +901,11 @@ export function ContextPanel() {
                   disabled={!sources.memory.path}
                   className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40 disabled:cursor-default disabled:hover:bg-transparent"
                 >
-                  <span className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+                  <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
                     <Brain className="size-3.5" />
                     memória do projeto
                   </span>
-                  <span className="text-[10.5px] text-muted-foreground/70">
+                  <span className="text-[11px] text-muted-foreground/70">
                     {sources.memory.count}{" "}
                     {sources.memory.count === 1 ? "nota" : "notas"}
                   </span>

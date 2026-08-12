@@ -96,7 +96,7 @@ export function LearningSection({ projectId }: { projectId: string }) {
   if (!loaded) return null
   if (deliveries === 0 && lessons.length === 0) {
     return (
-      <p className="text-[11.5px] leading-snug text-muted-foreground/70">
+      <p className="text-[12px] leading-snug text-muted-foreground/70">
         Nada aprendido ainda. Quando uma missão termina com sucesso, a entrega
         entra no recall; correções do reviewer viram lições reusáveis.
       </p>
@@ -117,7 +117,7 @@ export function LearningSection({ projectId }: { projectId: string }) {
 
       {active.length > 0 && (
         <div className="flex flex-col gap-1">
-          <div className="text-[10.5px] text-muted-foreground/55">
+          <div className="text-[11px] text-muted-foreground/55">
             Lições ativas ({active.length})
           </div>
           <ul className="flex flex-col gap-1">
@@ -135,7 +135,7 @@ export function LearningSection({ projectId }: { projectId: string }) {
 
       {dormant.length > 0 && (
         <div className="flex flex-col gap-1 opacity-70">
-          <div className="text-[10.5px] text-muted-foreground/45">
+          <div className="text-[11px] text-muted-foreground/45">
             Não injetadas ({dormant.length}) · candidatas/arquivadas
           </div>
           <ul className="flex flex-col gap-1">
@@ -181,12 +181,12 @@ function LessonRow({
       ) : (
         <GraduationCap className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
       )}
-      <span className="min-w-0 flex-1 text-[11.5px] leading-snug text-foreground/90">
+      <span className="min-w-0 flex-1 text-[12px] leading-snug text-foreground/90">
         {l.rule}
         <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
           <span
             className={cn(
-              "rounded px-1 py-px text-[9.5px] font-medium uppercase tracking-wide",
+              "rounded px-1 py-px text-[11px] font-medium uppercase tracking-wide",
               l.status === "active"
                 ? "bg-st-success/15 text-st-success"
                 : l.status === "candidate"
@@ -198,7 +198,7 @@ function LessonRow({
           </span>
           <span
             className={cn(
-              "rounded px-1 py-px text-[9.5px] font-medium uppercase tracking-wide",
+              "rounded px-1 py-px text-[11px] font-medium uppercase tracking-wide",
               l.scope === "global"
                 ? "bg-brass/15 text-brass"
                 : "bg-secondary text-muted-foreground/70",
@@ -207,12 +207,12 @@ function LessonRow({
             {l.scope === "global" ? "global" : "projeto"}
           </span>
           {l.source && (
-            <span className="text-[10px] text-muted-foreground/55">
+            <span className="text-[11px] text-muted-foreground/55">
               {SOURCE_LABEL[l.source] ?? l.source}
             </span>
           )}
           {l.uses > 0 && (
-            <span className="text-[10px] tabular-nums text-muted-foreground/55">
+            <span className="text-[11px] tabular-nums text-muted-foreground/55">
               · usada {l.uses}×
             </span>
           )}

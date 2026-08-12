@@ -951,7 +951,7 @@ function SddFeatureList({ project }: { project: Project }) {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar feature…"
           aria-label="Buscar feature"
-          className="min-w-0 flex-1 bg-transparent text-[11.5px] text-foreground outline-none placeholder:text-muted-foreground/60"
+          className="min-w-0 flex-1 bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground/60"
         />
         {query && (
           <button
@@ -1000,7 +1000,7 @@ function SddFeatureList({ project }: { project: Project }) {
                     §2: verde é marco, não decoração que fica na tela). */}
                 <span
                   className={cn(
-                    "shrink-0 rounded-sm px-1 py-px text-[9.5px] leading-4 tracking-wide uppercase",
+                    "shrink-0 rounded-sm px-1 py-px text-[11px] leading-4 tracking-wide uppercase",
                     stage === "done"
                       ? "bg-muted text-muted-foreground"
                       : "bg-brass/10 text-brass/80",
@@ -1066,7 +1066,7 @@ function ScheduledEntry() {
           Agendado
         </span>
         {nextAt != null && (
-          <span className="shrink-0 rounded bg-brass/10 px-1.5 py-px text-[10px] tabular-nums text-brass/80">
+          <span className="shrink-0 rounded bg-brass/10 px-1.5 py-px text-[11px] tabular-nums text-brass/80">
             {fmtUntilShort(nextAt - Date.now())}
           </span>
         )}
@@ -1106,7 +1106,7 @@ function FlightPlansEntry() {
       >
         Planos de voo
       </span>
-      <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/65">
+      <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">
         {count}
       </span>
     </button>
@@ -1218,7 +1218,7 @@ function ArchivedSection() {
                   <span className="grid size-5 shrink-0 place-items-center">
                     <Archive className="size-[15px] text-muted-foreground/50" />
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
                     {p.name}
                   </span>
                 </span>
@@ -1266,7 +1266,7 @@ function AppVersion() {
   return (
     <div
       title={version ? `v${version}` : undefined}
-      className="label-mono whitespace-nowrap text-[10.5px] normal-case tracking-normal text-muted-foreground/80"
+      className="label-mono whitespace-nowrap normal-case tracking-normal text-muted-foreground/80"
     >
       local{version ? ` · ${shortVersion(version)}` : ""}
     </div>

@@ -139,7 +139,7 @@ export function DiffPanel({
           <div className="min-h-0 flex-1 overflow-y-auto">
           {bar}
           {files.length === 0 ? (
-            <div className="px-6 py-16 text-center text-[12.5px] text-muted-foreground">
+            <div className="px-6 py-16 text-center text-[13px] text-muted-foreground">
               Nenhuma alteração não-commitada. Working tree limpa.
             </div>
           ) : (
@@ -245,10 +245,10 @@ function ShipBar({
             }}
             rows={2}
             placeholder="Mensagem do commit…"
-            className="w-full resize-none rounded-md border bg-secondary/30 p-2 text-[12.5px] text-foreground outline-none focus:border-brass/40"
+            className="w-full resize-none rounded-md border bg-secondary/30 p-2 text-[13px] text-foreground outline-none focus:border-brass/40"
           />
           <div className="mt-2 flex items-center justify-between">
-            <span className="text-[10.5px] text-muted-foreground">add -A + commit</span>
+            <span className="text-[11px] text-muted-foreground">add -A + commit</span>
             <div className="flex gap-2">
               <button
                 onClick={() => {
@@ -370,11 +370,11 @@ function PrComposer({
             <Loader2 className="size-4 animate-spin" />
           </div>
         ) : !ctx.isRepo ? (
-          <div className="px-5 py-10 text-center text-[12.5px] text-muted-foreground">
+          <div className="px-5 py-10 text-center text-[13px] text-muted-foreground">
             Este diretório não é um repositório git.
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-5 py-4 text-[12.5px]">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-5 py-4 text-[13px]">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-muted-foreground">De</span>
               <span className="rounded-md border bg-secondary/40 px-2 py-1 font-mono text-[12px] text-foreground">
@@ -453,7 +453,7 @@ function PrComposer({
                 onChange={(e) => setBody(e.target.value)}
                 rows={8}
                 placeholder="Descrição (do template do projeto, se houver)…"
-                className="w-full resize-none rounded-md border bg-secondary/30 p-2 font-mono text-[11.5px] text-foreground outline-none focus:border-brass/40"
+                className="w-full resize-none rounded-md border bg-secondary/30 p-2 font-mono text-[12px] text-foreground outline-none focus:border-brass/40"
               />
             </div>
 
@@ -467,7 +467,7 @@ function PrComposer({
           </div>
         )}
         <div className="flex shrink-0 items-center justify-between border-t px-5 py-3">
-          <span className="text-[10.5px] text-muted-foreground">
+          <span className="text-[11px] text-muted-foreground">
             push + gh pr create{account ? ` (${account})` : ""}
           </span>
           <div className="flex gap-2">
@@ -498,7 +498,7 @@ function PrComposer({
 
 function Empty({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-1 items-center justify-center px-6 text-center text-[12.5px] text-muted-foreground">
+    <div className="flex flex-1 items-center justify-center px-6 text-center text-[13px] text-muted-foreground">
       {children}
     </div>
   )
@@ -530,7 +530,7 @@ function FileBlock({
           )}
         />
         <span
-          className={cn("shrink-0 font-mono text-[10px] font-bold", st.cls)}
+          className={cn("shrink-0 font-mono text-[11px] font-bold", st.cls)}
           title={st.title}
         >
           {st.label}
@@ -542,7 +542,7 @@ function FileBlock({
           <span className="truncate text-muted-foreground/55">{dir}</span>
           <span className="shrink-0 text-foreground/90">{base}</span>
         </span>
-        <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10.5px] tabular-nums">
+        <span className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] tabular-nums">
           {file.additions > 0 && (
             <span className="text-st-success">+{file.additions}</span>
           )}
@@ -553,14 +553,14 @@ function FileBlock({
       </button>
       {open &&
         (file.binary ? (
-          <p className="border-t border-border/60 bg-background/40 px-4 py-2 text-[11.5px] text-muted-foreground">
+          <p className="border-t border-border/60 bg-background/40 px-4 py-2 text-[12px] text-muted-foreground">
             Arquivo binário — sem diff de texto.
           </p>
         ) : (
-          <div className="overflow-x-auto border-t border-border/60 bg-background/40 font-mono text-[11.5px] leading-[1.55]">
+          <div className="overflow-x-auto border-t border-border/60 bg-background/40 font-mono text-[12px] leading-[1.55]">
             {file.hunks.map((h, hi) => (
               <div key={hi}>
-                <div className="bg-brass/[0.06] px-2 py-0.5 text-[10.5px] whitespace-pre text-muted-foreground/70">
+                <div className="bg-brass/[0.06] px-2 py-0.5 text-[11px] whitespace-pre text-muted-foreground/70">
                   {h.header}
                 </div>
                 {h.lines.map((ln, li) => (

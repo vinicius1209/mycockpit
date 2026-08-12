@@ -55,7 +55,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
       />
       <pre
         ref={ref}
-        className="overflow-auto rounded-md border bg-background/50 p-3 text-[12.5px] leading-relaxed"
+        className="overflow-auto rounded-md border bg-background/50 p-3 text-[13px] leading-relaxed"
       >
         {children}
       </pre>
@@ -131,7 +131,7 @@ const mdComponents: Components = {
   ),
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
   h1: ({ children }) => (
-    <h3 className="mt-2 mb-1 text-[15px] font-semibold">{children}</h3>
+    <h3 className="mt-2 mb-1 text-[14px] font-semibold">{children}</h3>
   ),
   h2: ({ children }) => (
     <h3 className="mt-2 mb-1 text-[14px] font-semibold">{children}</h3>
@@ -147,7 +147,7 @@ const mdComponents: Components = {
     // âncora .hljs do tema não aplica e o bloco fica sem cor.
     if (block) return <code className={cn("font-mono", className)}>{children}</code>
     return (
-      <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[12.5px]">
+      <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[13px]">
         {children}
       </code>
     )

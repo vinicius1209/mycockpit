@@ -96,7 +96,7 @@ export function DoctrineSection({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted-foreground">
           <BookText className="size-3.5 shrink-0" />
           <span className="truncate">Regras do projeto</span>
         </span>
@@ -120,7 +120,7 @@ export function DoctrineSection({
         </p>
       )}
 
-      <p className="text-[10.5px] text-muted-foreground/55">
+      <p className="text-[11px] text-muted-foreground/55">
         {exists ? (
           <>
             <span className="font-mono">{DOCTRINE_PATH}</span> ·{" "}
@@ -137,7 +137,7 @@ export function DoctrineSection({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="border-b px-5 py-3 text-left">
-            <DialogTitle className="text-[15px]">Regras do projeto</DialogTitle>
+            <DialogTitle className="text-[14px]">Regras do projeto</DialogTitle>
             <DialogDescription className="text-[12px]">
               Injetado no primeiro turno de qualquer agent (e em toda fase de
               missão e disputa). Markdown; escreva no imperativo.
@@ -150,7 +150,7 @@ export function DoctrineSection({
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder={"- Testes em pt-BR, no mesmo arquivo do módulo.\n- Não use `any`.\n- Rode `bun run lint` antes de dizer que terminou."}
-              className="min-h-[280px] flex-1 resize-none font-mono text-[12.5px] leading-relaxed"
+              className="min-h-[280px] flex-1 resize-none font-mono text-[13px] leading-relaxed"
               spellCheck={false}
             />
             {/* Semear: quase todo projeto já tem a regra escrita em algum lugar.

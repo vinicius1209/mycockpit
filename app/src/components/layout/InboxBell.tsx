@@ -327,7 +327,7 @@ export function InboxBell() {
               disco (sem gesto seu por aqui) vive na seção de baixo e não acende
               alarme, senão dívida de 68 dias vira "precisa de você agora". */}
           {pending.length > 0 ? (
-            <span className="absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-brass text-[10px] font-semibold text-background">
+            <span className="absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-brass text-[11px] font-semibold text-background">
               {pending.length > 9 ? "9+" : pending.length}
             </span>
           ) : unread > 0 ? (
@@ -347,7 +347,7 @@ export function InboxBell() {
         className="z-[120] max-h-[75vh] w-96 overflow-y-auto"
       >
         {/* Decisões — o que espera ação sua */}
-        <DropdownMenuLabel className="text-[10px] tracking-wide text-muted-foreground uppercase">
+        <DropdownMenuLabel className="text-[11px] tracking-wide text-muted-foreground uppercase">
           Precisam de você
         </DropdownMenuLabel>
         {pending.length === 0 ? (
@@ -396,7 +396,7 @@ export function InboxBell() {
         {found.length > 0 && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[10px] tracking-wide text-muted-foreground uppercase">
+            <DropdownMenuLabel className="text-[11px] tracking-wide text-muted-foreground uppercase">
               Encontrados no projeto ({found.length})
             </DropdownMenuLabel>
             {found.map((d) => (
@@ -468,7 +468,7 @@ export function InboxBell() {
             {limitedIds.map((id) => (
               <div
                 key={id}
-                className="flex items-center gap-2 px-2 py-1.5 text-[11.5px] text-st-warning/80"
+                className="flex items-center gap-2 px-2 py-1.5 text-[12px] text-st-warning/80"
               >
                 <Gauge className="size-3.5 shrink-0" />
                 <span className="truncate">
@@ -485,14 +485,14 @@ export function InboxBell() {
           <>
             <DropdownMenuSeparator />
             <div className="flex items-center justify-between gap-2 px-2 py-1">
-              <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
+              <span className="text-[11px] tracking-wide text-muted-foreground uppercase">
                 Atividade
               </span>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setFilter("all")}
                   className={cn(
-                    "rounded px-1.5 py-0.5 text-[10.5px] transition-colors",
+                    "rounded px-1.5 py-0.5 text-[11px] transition-colors",
                     filter === "all"
                       ? "bg-accent text-foreground"
                       : "text-muted-foreground hover:text-foreground",
@@ -503,7 +503,7 @@ export function InboxBell() {
                 <button
                   onClick={() => setFilter("unread")}
                   className={cn(
-                    "rounded px-1.5 py-0.5 text-[10.5px] transition-colors",
+                    "rounded px-1.5 py-0.5 text-[11px] transition-colors",
                     filter === "unread"
                       ? "bg-accent text-foreground"
                       : "text-muted-foreground hover:text-foreground",
@@ -547,7 +547,7 @@ export function InboxBell() {
                   <span className="group/notif flex w-full items-center gap-2 text-[13px] text-foreground">
                     <NotifIcon kind={n.kind} />
                     <span className="min-w-0 flex-1 truncate">{n.title}</span>
-                    <span className="shrink-0 text-[10.5px] text-muted-foreground/60">
+                    <span className="shrink-0 text-[11px] text-muted-foreground/60">
                       {fmtRelative(n.ts)}
                     </span>
                     {!n.read && (
@@ -585,7 +585,7 @@ export function InboxBell() {
         )}
 
         {decisions.length === 0 && notifs.length === 0 && (
-          <div className="px-2 py-3 text-center text-[12.5px] text-muted-foreground">
+          <div className="px-2 py-3 text-center text-[13px] text-muted-foreground">
             Tudo em dia. Nada por aqui.
           </div>
         )}

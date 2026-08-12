@@ -79,7 +79,7 @@ export function MissionsSection({
   if (!loaded) return null
   if (missions.length === 0) {
     return (
-      <p className="text-[11.5px] leading-snug text-muted-foreground/70">
+      <p className="text-[12px] leading-snug text-muted-foreground/70">
         Nenhuma missão neste projeto ainda. O histórico de cada pipeline
         (desfecho, custo e artefatos) aparece aqui.
       </p>
@@ -103,7 +103,7 @@ export function MissionsSection({
               <Rocket className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
               <span className="min-w-0 flex-1">
                 <span
-                  className="line-clamp-1 text-[11.5px] leading-snug text-foreground/90"
+                  className="line-clamp-1 text-[12px] leading-snug text-foreground/90"
                   title={m.task}
                 >
                   {m.task}
@@ -111,20 +111,20 @@ export function MissionsSection({
                 <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
                   <span
                     className={cn(
-                      "rounded px-1 py-px text-[9.5px] font-medium tracking-wide uppercase",
+                      "rounded px-1 py-px text-[11px] font-medium tracking-wide uppercase",
                       o.cls,
                     )}
                   >
                     {o.label}
                   </span>
-                  <span className="text-[10px] tabular-nums text-muted-foreground/55">
+                  <span className="text-[11px] tabular-nums text-muted-foreground/55">
                     {fmtDay(m.createdAt)}
                   </span>
-                  <span className="text-[10px] tabular-nums text-muted-foreground/55">
+                  <span className="text-[11px] tabular-nums text-muted-foreground/55">
                     · {fmtCost(m.costTotal)}
                   </span>
                   {m.presetName && (
-                    <span className="text-[10px] text-muted-foreground/55">
+                    <span className="text-[11px] text-muted-foreground/55">
                       · {m.presetName}
                     </span>
                   )}

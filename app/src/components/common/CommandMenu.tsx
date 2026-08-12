@@ -174,7 +174,7 @@ export function CommandMenu() {
               value={query}
               onValueChange={setQuery}
               placeholder="O que você quer fazer?  (3+ letras busca no histórico)"
-              className="h-10 text-[15px]"
+              className="h-10 text-[14px]"
             />
             <button
               type="button"

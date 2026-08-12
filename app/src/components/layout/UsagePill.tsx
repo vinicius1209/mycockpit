@@ -90,7 +90,7 @@ function ProviderRows({
           ) : null}
         </span>
         {snap && (
-          <span className="ml-auto shrink-0 text-[10.5px] text-muted-foreground/70">
+          <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/70">
             {sourceLabel(snap.source)} · {fmtAge(snap.fetchedAt, now)}
           </span>
         )}
@@ -112,7 +112,7 @@ function ProviderRows({
               >
                 {fmtPct(w.usedPercent)}
               </span>
-              <span className="min-w-0 truncate text-[10.5px] text-muted-foreground/70">
+              <span className="min-w-0 truncate text-[11px] text-muted-foreground/70">
                 {reset ?? ""}
               </span>
             </div>
@@ -221,7 +221,7 @@ export function UsagePill() {
           dropdowns a borda de cima do popover sumia ATRÁS da faixa de
           título. Acima do header + folga do trigger, nada é cortado. */}
       <DropdownMenuContent align="end" sideOffset={8} className="z-[120] w-80 p-1.5">
-        <p className="px-2 pt-1 pb-0.5 text-[10.5px] tracking-wide text-muted-foreground/70 uppercase">
+        <p className="px-2 pt-1 pb-0.5 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
           Janela de uso do plano
         </p>
         {measurable.map((d) => (
@@ -261,7 +261,7 @@ export function UsagePill() {
             </button>
           </div>
         ))}
-        <p className="px-2 pt-1.5 pb-1 text-[10.5px] leading-snug text-muted-foreground/60">
+        <p className="px-2 pt-1.5 pb-1 text-[11px] leading-snug text-muted-foreground/60">
           Quanto da janela do seu plano já foi usada, por provider. Não é
           custo em US$ nem o contexto da conversa (esse é o anel do composer):
           medição de carona, nenhuma quota é consumida.
