@@ -1,5 +1,7 @@
-// Configurações dos HOOKS DE STATUS (hooks-plan H1) — bloco da seção "CLIs
-// instaladas". A instalação é GESTO do usuário (nunca no boot), com
+// Configurações dos HOOKS DE STATUS (hooks-plan H1) — seção própria "Sessões
+// no terminal" (saiu de dentro de "CLIs instaladas": observar sessões abertas
+// fora do app é uma capacidade, não um detalhe do binário instalado).
+// A instalação é GESTO do usuário (nunca no boot), com
 // transparência total: mostra O QUE será escrito no config de hooks de cada
 // CLI (as entradas entram AO LADO das existentes, nunca substituem), backup
 // automático e desinstalação que remove só o que é nosso. Motor sem a
@@ -10,6 +12,8 @@ import { invoke } from "@tauri-apps/api/core"
 import { Check, ChevronDown, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { Switch } from "@/components/ui/switch"
+import { SectionHeader } from "@/components/settings/parts"
+import { sectionDef } from "@/components/settings/sections"
 import { hooksAgents, type AgentDef } from "@/lib/agents"
 import { isTauri } from "@/lib/db"
 import { cn } from "@/lib/utils"
@@ -137,7 +141,9 @@ function HooksRow({ def }: { def: AgentDef }) {
           Aprovação continua sendo gesto humano: aqui você ganha o controle
           FINO de decidir do app/celular, nunca um pulo de permissão. */}
       {def.hooksPermission && status && (
-        <div className="mt-1.5 flex items-center justify-between gap-3 rounded-md border border-border/40 bg-background/40 px-2.5 py-1.5">
+        // hairline, não cartão: detalhe de uma linha de lista não vira outro
+        // cartão dentro do cartão (STYLEGUIDE §4).
+        <div className="mt-2 flex items-center justify-between gap-3 border-t border-border/40 pt-2">
           <div className="min-w-0">
             <div className="text-[12px] text-foreground">
               Responder permissões pelo app
@@ -222,10 +228,11 @@ export function HooksSettings() {
   if (providers.length === 0) return null
 
   return (
-    <div className="mt-6">
-      <h3 className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
-        Sessões no terminal (hooks)
-      </h3>
+    <div>
+      <SectionHeader
+        title={sectionDef("hooks").title}
+        description={sectionDef("hooks").question}
+      />
       <p className="mb-2 text-[12px] leading-snug text-muted-foreground">
         Sessões abertas direto no terminal aparecem no Painel e no tray com
         status honesto (trabalhando, esperando você, ociosa). O app só

@@ -1,6 +1,8 @@
 import { ListTree, Route } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
+import { SectionHeader } from "@/components/settings/parts"
+import { sectionDef } from "@/components/settings/sections"
 import { useApp } from "@/store/app"
 import { missionPlanMode } from "@/lib/missionPlans"
 
@@ -20,22 +22,22 @@ export function MissionSettings() {
 
   return (
     <div>
-      <h3 className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
-        Missions (beta)
-      </h3>
+      <SectionHeader
+        title={sectionDef("missions").title}
+        description={sectionDef("missions").question}
+      />
       <div className="divide-y divide-border/50">
         <div className="flex items-center justify-between gap-4 py-2.5">
           <div className="min-w-0">
-            <div className="text-[13px] text-foreground">Ativar Missions</div>
-            <div className="text-[11.5px] leading-snug text-muted-foreground">
-              Exibe o lançamento de missões no composer. Cada missão executa um
-              Plano de voo salvo.
+            <div className="text-[13px] text-foreground">Ativar missões</div>
+            <div className="text-[12px] leading-snug text-muted-foreground">
+              Exibe o lançamento de missões no composer.
             </div>
           </div>
           <Switch
             checked={settings.missionEnabled}
             onCheckedChange={(missionEnabled) => setSettings({ missionEnabled })}
-            aria-label="Ativar Missions"
+            aria-label="Ativar missões"
           />
         </div>
 
@@ -52,9 +54,9 @@ export function MissionSettings() {
                 <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                   Edite a biblioteca, o canvas e as propriedades dos nós numa
                   área ampla. As alterações continuam salvas globalmente e
-                  aparecem no launcher de Missions.
+                  aparecem no launcher de missões.
                 </p>
-                <div className="mt-3 flex items-center gap-3 font-mono text-[9.5px] text-muted-foreground">
+                <div className="mt-3 flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <ListTree className="size-3" />
                     {settings.missionPresets.length} planos
@@ -76,7 +78,7 @@ export function MissionSettings() {
               Abrir Planos de voo
             </Button>
           </div>
-          <p className="mt-2 text-[10.5px] leading-relaxed text-muted-foreground">
+          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
             Você também pode abrir pela seção Geral, na barra lateral.
           </p>
         </div>

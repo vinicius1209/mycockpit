@@ -255,7 +255,7 @@ export default function App() {
           title: `Atualização disponível: ${label} ${t.latest}`,
           subtitle:
             cmd ??
-            `instalado ${t.version ?? "?"} → ${t.latest}, atualize pelo painel CLIs instaladas`,
+            `instalado ${t.version ?? "?"} → ${t.latest}, atualize em Configurações ▸ Agentes na máquina`,
           projectId: useApp.getState().activeProjectId ?? "",
         })
         notified[t.id] = t.latest

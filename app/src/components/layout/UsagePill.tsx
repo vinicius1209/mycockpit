@@ -245,11 +245,12 @@ export function UsagePill() {
           >
             <span className="min-w-0 flex-1 text-[11px] text-muted-foreground">
               Meça a janela do {d.label}: ative o medidor em Configurações
-              (CLIs instaladas).
+              (Uso e custo).
             </span>
             <button
               type="button"
-              onClick={() => setSettingsOpen(true)}
+              // deep link: cai direto na seção do medidor, não na primeira.
+              onClick={() => setSettingsOpen(true, "ledger")}
               className="shrink-0 rounded bg-brass px-2 py-0.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90"
             >
               Abrir

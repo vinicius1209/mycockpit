@@ -66,6 +66,11 @@ interface AppState {
   settings: GlobalSettings
   /** Modal de configurações aberto? */
   settingsOpen: boolean
+  /** Seção pedida por quem abriu as Configurações (deep link do tray, da pill
+   *  de uso, da paleta). String CRUA de propósito: quem resolve é o dialog,
+   *  via resolveSection (id órfão cai numa seção válida). Efêmera: o dialog
+   *  consome e limpa, senão a próxima abertura pularia pra cá de novo. */
+  settingsSection: string | null
 
   setProjects: (p: Project[]) => void
   addProject: (p: Project) => void
@@ -106,7 +111,10 @@ interface AppState {
   clearDeliveryDiff: () => void
   /** Patch parcial das preferências globais. */
   setSettings: (patch: Partial<GlobalSettings>) => void
-  setSettingsOpen: (v: boolean) => void
+  /** Abre/fecha as Configurações. `section` (opcional) pede uma seção. */
+  setSettingsOpen: (v: boolean, section?: string) => void
+  /** Marca o pedido de seção como consumido. */
+  clearSettingsSection: () => void
   /** Grava no ledger a resolução de modelo observada num evento `session` e
    *  devolve o `resolved` ANTERIOR do mesmo pedido (null = primeira vez).
    *  Dedup: a mesma resolução não regrava (o `at` marca a 1ª observação). */
@@ -178,6 +186,7 @@ export const useApp = create<AppState>()(
       deliveryDiff: null,
       settings: DEFAULT_SETTINGS,
       settingsOpen: false,
+      settingsSection: null,
 
       setProjects: (projects) =>
         set((s) => ({
@@ -278,7 +287,9 @@ export const useApp = create<AppState>()(
       clearDeliveryDiff: () => set({ deliveryDiff: null }),
       setSettings: (patch) =>
         set((s) => ({ settings: { ...s.settings, ...patch } })),
-      setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+      setSettingsOpen: (settingsOpen, section) =>
+        set(section ? { settingsOpen, settingsSection: section } : { settingsOpen }),
+      clearSettingsSection: () => set({ settingsSection: null }),
       recordResolution: (agent, reqModel, resolved) => {
         if (!resolved) return null
         const req = reqModel ?? "default"

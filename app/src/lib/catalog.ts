@@ -42,11 +42,13 @@ export async function getModelsCatalog(): Promise<CatalogModel[]> {
 }
 
 /** Refresh + registro em GlobalSettings (lastCatalogRefresh + catalogCount).
- *  Falha = silêncio (não zera o que já foi registrado). */
-export async function refreshCatalogIntoSettings(): Promise<void> {
+ *  Falha NÃO zera o que já foi registrado; devolve `false` pra quem pediu por
+ *  gesto poder dizer que não deu (o boot chama em void, best-effort). */
+export async function refreshCatalogIntoSettings(): Promise<boolean> {
   const n = await refreshModelsCatalog()
-  if (n !== null)
-    useApp
-      .getState()
-      .setSettings({ lastCatalogRefresh: Date.now(), catalogCount: n })
+  if (n === null) return false
+  useApp
+    .getState()
+    .setSettings({ lastCatalogRefresh: Date.now(), catalogCount: n })
+  return true
 }

@@ -1,5 +1,7 @@
 // Configurações do MEDIDOR DE JANELA DE USO (rate limits por provider) —
-// bloco da seção "CLIs instaladas". A instalação da statusline é GESTO do
+// bloco da seção "Uso e custo" (mudou de casa: "quanto da janela queimei" é a
+// mesma pergunta de "quanto gastei", não um detalhe das CLIs instaladas, e o
+// bloco de custo em US$ mora ao lado). A instalação da statusline é GESTO do
 // usuário (nunca no boot), com transparência total: mostra O QUE será escrito
 // no settings.json dele, qual comando será encadeado (o slot pode estar
 // ocupado, ex. wrapper do Xirp — preservamos, nunca substituímos), backup
@@ -12,6 +14,7 @@ import { invoke } from "@tauri-apps/api/core"
 import { Check, ChevronDown, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { Switch } from "@/components/ui/switch"
+import { BlockTitle } from "@/components/settings/parts"
 import { usageWindowAgents, type AgentDef } from "@/lib/agents"
 import { isTauri } from "@/lib/db"
 import { useApp } from "@/store/app"
@@ -80,7 +83,7 @@ function StatuslineRow({ def }: { def: AgentDef }) {
             {def.label}{" "}
             <span className="text-muted-foreground">· via statusline</span>
           </div>
-          <div className="truncate text-[11.5px] text-muted-foreground">
+          <div className="truncate text-[12px] text-muted-foreground">
             {error
               ? error
               : status == null
@@ -149,7 +152,7 @@ function StatuslineRow({ def }: { def: AgentDef }) {
                 (backup automático em .bak-mycockpit, reversível no botão
                 Desativar):
               </p>
-              <pre className="overflow-x-auto rounded bg-background/60 px-2 py-1.5 font-mono text-[10.5px] leading-snug text-muted-foreground">
+              <pre className="overflow-x-auto rounded bg-background/60 px-2 py-1.5 font-mono text-[11px] leading-snug text-muted-foreground">
                 {status.preview}
               </pre>
               {status.chainedCommand && (
@@ -177,19 +180,14 @@ export function UsageMeterSettings() {
   if (providers.length === 0) return null
 
   return (
-    <div className="mt-6">
-      <h3 className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
-        Medidor de janela de uso
-      </h3>
-      <p className="mb-2 text-[11.5px] leading-snug text-muted-foreground">
-        Quanto da janela do seu plano já foi usada (percentual e reset), por
-        provider, na barra superior. Não é custo em US$: é medição de carona,
-        nenhuma quota é consumida.
-      </p>
+    <div>
+      <BlockTitle hint="Quanto da janela do seu plano já foi usada (percentual e reset), por provider, na barra superior. Não é custo em US$: é medição de carona, nenhuma quota é consumida.">
+        Janela do plano
+      </BlockTitle>
       <div className="mb-2 flex items-center justify-between rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">
         <div>
           <div className="text-[13px] text-foreground">Mostrar na barra</div>
-          <div className="text-[11.5px] text-muted-foreground">
+          <div className="text-[12px] text-muted-foreground">
             Desligar esconde a pill e pausa as medições.
           </div>
         </div>
@@ -214,7 +212,7 @@ export function UsageMeterSettings() {
                   · leitura local automática
                 </span>
               </div>
-              <div className="text-[11.5px] text-muted-foreground">
+              <div className="text-[12px] text-muted-foreground">
                 Consulta read-only ao próprio CLI a cada 15 min, nada é
                 instalado nem configurado.
               </div>

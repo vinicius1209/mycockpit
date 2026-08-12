@@ -9,6 +9,8 @@ import { useEffect, useRef, useState } from "react"
 import { Check, Copy } from "lucide-react"
 import { listen } from "@tauri-apps/api/event"
 import { Switch } from "@/components/ui/switch"
+import { SectionHeader } from "@/components/settings/parts"
+import { sectionDef } from "@/components/settings/sections"
 import { Button } from "@/components/ui/button"
 import { useApp } from "@/store/app"
 import { isTauri } from "@/lib/db"
@@ -173,14 +175,15 @@ export function CompanionSettings() {
 
   return (
     <div>
-      <h3 className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
-        Companion (celular na rede local)
-      </h3>
+      <SectionHeader
+        title={sectionDef("companion").title}
+        description={sectionDef("companion").question}
+      />
       <div className="divide-y divide-border/50">
         <div className="flex items-center justify-between gap-4 py-2.5">
           <div className="min-w-0">
             <div className="text-[13px] text-foreground">Ativar companion</div>
-            <div className="text-[11.5px] leading-snug text-muted-foreground">
+            <div className="text-[12px] leading-snug text-muted-foreground">
               Sobe um servidor local (porta 14200) pra acompanhar e responder
               seus agents pelo celular, na mesma rede Wi-Fi.
             </div>
@@ -214,7 +217,7 @@ export function CompanionSettings() {
                           ? "dispositivo conectado"
                           : "dispositivos conectados"
                       }`
-                    : "Servidor fora do ar — a porta 14200 pode estar ocupada. Desligue e ligue o toggle pra tentar de novo."}
+                    : "Servidor fora do ar. A porta 14200 pode estar ocupada; desligue e ligue o toggle pra tentar de novo."}
               </span>
             </div>
 
@@ -227,7 +230,7 @@ export function CompanionSettings() {
                     className="flex items-center justify-between gap-3 rounded-md border border-st-queued/40 bg-st-queued/10 px-3 py-2"
                   >
                     <div className="min-w-0">
-                      <div className="text-[12.5px] text-foreground">
+                      <div className="text-[13px] text-foreground">
                         <span className="font-medium">{p.name}</span> quer
                         parear com este Mac
                       </div>
@@ -301,11 +304,11 @@ export function CompanionSettings() {
                       Aparelhos pareados
                     </div>
                     {devices == null ? (
-                      <p className="mt-1 text-[11.5px] text-muted-foreground">
+                      <p className="mt-1 text-[12px] text-muted-foreground">
                         Carregando aparelhos…
                       </p>
                     ) : devices.devices.length === 0 && !devices.legacyActive ? (
-                      <p className="mt-1 text-[11.5px] text-muted-foreground">
+                      <p className="mt-1 text-[12px] text-muted-foreground">
                         Nenhum aparelho pareado ainda.
                       </p>
                     ) : (
@@ -316,7 +319,7 @@ export function CompanionSettings() {
                             className="flex items-center justify-between gap-3 py-1.5"
                           >
                             <div className="min-w-0">
-                              <div className="truncate text-[12.5px] text-foreground">
+                              <div className="truncate text-[13px] text-foreground">
                                 {d.name}
                               </div>
                               <div className="text-[11px] text-muted-foreground">
@@ -336,7 +339,7 @@ export function CompanionSettings() {
                         {devices.legacyActive && (
                           <div className="flex items-center justify-between gap-3 py-1.5">
                             <div className="min-w-0">
-                              <div className="text-[12.5px] text-foreground">
+                              <div className="text-[13px] text-foreground">
                                 Acesso antigo (token único)
                               </div>
                               <div className="text-[11px] leading-snug text-muted-foreground">
@@ -371,9 +374,9 @@ export function CompanionSettings() {
         )}
       </div>
 
-      <p className="mt-3 text-[11.5px] leading-snug text-muted-foreground">
+      <p className="mt-3 text-[12px] leading-snug text-muted-foreground">
         Primeira ativação: o macOS vai pedir permissão pra aceitar conexões da
-        rede local — aceite, senão o celular não enxerga o app. Cada aparelho
+        rede local; aceite, senão o celular não enxerga o app. Cada aparelho
         tem credencial própria e só entra com o seu aceite; o acesso vale só
         dentro da sua rede.
       </p>
