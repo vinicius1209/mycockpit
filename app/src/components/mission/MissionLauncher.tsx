@@ -314,7 +314,7 @@ export function MissionLauncher({
                 onPaste={onPaste}
                 placeholder="Descreva a tarefa da missão… (cole imagens/PDF; 🎤 dita)"
                 aria-label="Tarefa da missão"
-                className="max-h-72 min-h-40 resize-none border-0 bg-transparent! px-3 pt-3 text-[13.5px] leading-relaxed shadow-none focus-visible:ring-0"
+                className="max-h-72 min-h-40 resize-none border-0 bg-transparent! px-3 pt-3 text-[14px] leading-relaxed shadow-none focus-visible:ring-0"
                 autoFocus
               />
               <div className="flex items-center gap-0.5 px-2 pb-2">
@@ -337,7 +337,7 @@ export function MissionLauncher({
                   }
                 />
                 <span
-                  className="ml-auto font-mono text-[10.5px] tabular-nums text-muted-foreground/60"
+                  className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground/60"
                   aria-label="Contador de caracteres"
                 >
                   {task.length > 0 ? task.length.toLocaleString("pt-BR") : ""}
@@ -345,7 +345,7 @@ export function MissionLauncher({
               </div>
             </div>
             {!allSupported && (
-              <p className="mt-1.5 text-[11.5px] text-st-error">
+              <p className="mt-1.5 text-[12px] text-st-error">
                 Há anexo não suportado por {firstAgentLabel} (fase 1) — remova o
                 anexo ou troque o agent da fase 1.
               </p>
@@ -361,7 +361,7 @@ export function MissionLauncher({
                   value={customized ? CUSTOM_PRESET : preset.id}
                   onValueChange={pickPreset}
                   aria-label="Plano de voo da missão"
-                  triggerClassName="h-7 gap-1.5 px-2 text-[12.5px] text-foreground data-[size=default]:h-7"
+                  triggerClassName="h-7 gap-1.5 px-2 text-[13px] text-foreground data-[size=default]:h-7"
                   options={presetOptions}
                 />
               ) : (
@@ -379,7 +379,7 @@ export function MissionLauncher({
                     setSaveError(null)
                   }}
                   title="Salvar este rascunho como um Plano de voo novo"
-                  className="shrink-0 text-[11.5px] text-brass transition-colors hover:text-brass/80"
+                  className="shrink-0 text-[12px] text-brass transition-colors hover:text-brass/80"
                 >
                   Salvar como plano
                 </button>
@@ -409,7 +409,7 @@ export function MissionLauncher({
                       : "Autonomia total: liga Auto no time todo, sem pausas de gate e permissão auto (cada CLI com seu freio de segurança). Você ainda pode ajustar membro a membro."
                   }
                   className={cn(
-                    "ml-auto flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[11.5px] font-medium transition-colors",
+                    "ml-auto flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[12px] font-medium transition-colors",
                     teamAutonomy(phases) === "auto"
                       ? "border-brass/50 bg-brass/15 text-brass"
                       : "border-border/60 text-muted-foreground hover:text-foreground",
@@ -449,7 +449,7 @@ export function MissionLauncher({
                     }}
                     placeholder="Nome do novo Plano de voo"
                     aria-label="Nome do novo Plano de voo"
-                    className="h-7 flex-1 rounded-md border bg-background px-2 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-brass/50"
+                    className="h-7 flex-1 rounded-md border bg-background px-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-brass/50"
                     autoFocus
                   />
                   <Button size="sm" className="h-7" onClick={saveAsTeam}>
@@ -468,7 +468,7 @@ export function MissionLauncher({
                   </Button>
                 </div>
                 {saveError && (
-                  <p className="mt-1 text-[11.5px] text-st-error">{saveError}</p>
+                  <p className="mt-1 text-[12px] text-st-error">{saveError}</p>
                 )}
               </div>
             )}

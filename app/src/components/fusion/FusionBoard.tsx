@@ -70,7 +70,7 @@ export function CandidateLane({
     <Check className="size-3.5 shrink-0 text-st-success" />
   )
   const suggestedBadge = suggested && (
-    <span className="shrink-0 rounded border border-brass/40 px-1 py-px text-[10px] tracking-wide text-brass uppercase">
+    <span className="shrink-0 rounded border border-brass/40 px-1 py-px text-[11px] tracking-wide text-brass uppercase">
       sugerido
     </span>
   )
@@ -274,11 +274,11 @@ export function FusionVerdict({
       <div className="flex items-start gap-2">
         <Swords className="mt-px size-4 shrink-0 text-brass" />
         {unavailable ? (
-          <p className="text-[12.5px] leading-relaxed text-st-error">
+          <p className="text-[13px] leading-relaxed text-st-error">
             {fusion.judge.rationale}
           </p>
         ) : (
-          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
             <span className="font-medium text-foreground/85">
               Juiz sugere {labelOf(fusion.judge.suggestedId)}.
             </span>{" "}

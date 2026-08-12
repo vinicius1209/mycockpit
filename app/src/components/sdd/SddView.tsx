@@ -376,7 +376,7 @@ function CenteredEmpty({
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 text-center text-muted-foreground">
       <div className="mb-3">{icon}</div>
-      <p className="text-[15px] text-foreground/80">{title}</p>
+      <p className="text-[14px] text-foreground/80">{title}</p>
       {desc && <p className="mt-1 max-w-md text-[13px] leading-relaxed">{desc}</p>}
       {children && <div className="mt-4">{children}</div>}
     </div>
@@ -422,10 +422,10 @@ function NewFeatureDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[560px] gap-0 rounded-xl bg-card p-5 shadow-[var(--shadow-pop)] sm:max-w-[560px]">
         <DialogHeader className="gap-1 text-left">
-          <DialogTitle className="flex items-center gap-2 text-[15px] leading-normal font-medium text-foreground">
+          <DialogTitle className="flex items-center gap-2 text-[14px] leading-normal font-medium text-foreground">
             <Sprout className="size-4 text-brass" /> Nova feature SDD
           </DialogTitle>
-          <DialogDescription className="mb-3 text-[12.5px] leading-relaxed text-muted-foreground">
+          <DialogDescription className="mb-3 text-[13px] leading-relaxed text-muted-foreground">
             Descreva a ideia, vaga ou já clara. Os dois caminhos partem do mesmo
             texto.
           </DialogDescription>
@@ -443,7 +443,7 @@ function NewFeatureDialog({
         />
 
         {/* trilha do plano (vale pro "Criar plano"): proporcional ao tamanho da mudança */}
-        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11.5px]">
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[12px]">
           <span className="mr-0.5 text-muted-foreground">Trilha:</span>
           <button
             onClick={() => onTrack("full")}
@@ -528,7 +528,7 @@ function PathRow({
     <div className="flex items-center gap-3 rounded-lg border bg-secondary/20 p-3">
       <div className="min-w-0 flex-1">
         <p className="text-[12px] font-medium text-foreground">{badge}</p>
-        <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+        <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
           {desc}
         </p>
       </div>
@@ -721,7 +721,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
       <Pipeline plan={plan} pr={pr} onMarkStage={(s) => void markStage(s)} />
 
       {step?.blockedBy === "prd" ? (
-        <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+        <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
           <span>PRD aguardando sua aprovação:</span>
           <button
             onClick={reviewPrd}
@@ -732,7 +732,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
         </div>
       ) : (
         (step || drift) && (
-          <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
             {step && (
               <>
                 <span>Próxima etapa:</span>
@@ -774,7 +774,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
       {/* artefatos + links */}
       <div className="grid gap-4 sm:grid-cols-2">
         <Section title="Artefatos">
-          <div className="flex flex-col gap-2 text-[12.5px]">
+          <div className="flex flex-col gap-2 text-[13px]">
             {plan.artifacts.prd && (
               <Artifact
                 label={plan.artifacts.prd.path}
@@ -795,7 +795,7 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
         </Section>
 
         <Section title="Entrega">
-          <div className="flex flex-col gap-2 text-[12.5px]">
+          <div className="flex flex-col gap-2 text-[13px]">
             {plan.links.pr_url ? (
               <button
                 onClick={() => void openUrl(plan.links.pr_url!)}
@@ -1145,14 +1145,14 @@ function ActivitySection({ plan }: { plan: SddPlan }) {
       {plan.logEvents.length > 0 ? (
         <ol className="flex flex-col gap-1.5">
           {plan.logEvents.map((e, i) => (
-            <li key={i} className="flex items-start gap-2 text-[12.5px]">
+            <li key={i} className="flex items-start gap-2 text-[13px]">
               <Check className="mt-0.5 size-3.5 shrink-0 text-st-success" />
               <span className="text-foreground/80">{e}</span>
             </li>
           ))}
         </ol>
       ) : (
-        <p className="text-[12.5px] text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           Sem etapas registradas no LOG.
         </p>
       )}
@@ -1168,7 +1168,7 @@ function ActivitySection({ plan }: { plan: SddPlan }) {
             {showRaw ? "Ocultar trecho do LOG" : "Ver trecho do LOG"}
           </button>
           {showRaw && (
-            <pre className="mt-2 max-h-48 overflow-auto rounded-lg border bg-secondary/30 p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-foreground/75">
+            <pre className="mt-2 max-h-48 overflow-auto rounded-lg border bg-secondary/30 p-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-foreground/75">
               {plan.logTail}
             </pre>
           )}
@@ -1259,7 +1259,7 @@ function Pipeline({
         <div className="mb-3 flex justify-end">
           <span
             title={evidenceSignals(plan, pr)}
-            className="cursor-help rounded-full border border-brass/30 bg-brass/5 px-2 py-0.5 text-[10.5px] text-brass/80"
+            className="cursor-help rounded-full border border-brass/30 bg-brass/5 px-2 py-0.5 text-[11px] text-brass/80"
           >
             {stageLabel(effective)} · detectado pela evidência
           </span>
@@ -1307,7 +1307,7 @@ function Pipeline({
                 )}
                 <span
                   className={cn(
-                    "text-[10.5px] whitespace-nowrap",
+                    "text-[11px] whitespace-nowrap",
                     isCurrent
                       ? "font-medium text-brass"
                       : isDone
@@ -1371,7 +1371,7 @@ function StagePopover({ stage, plan }: { stage: string; plan: SddPlan }) {
         {stageLabel(stage)}
       </p>
       {lines.map((l, i) => (
-        <p key={i} className="text-[11.5px] leading-relaxed text-muted-foreground">
+        <p key={i} className="text-[12px] leading-relaxed text-muted-foreground">
           {l}
         </p>
       ))}
@@ -1472,7 +1472,7 @@ function ScenarioMatrix({
 }) {
   if (rows.length === 0) {
     return (
-      <p className="text-[12.5px] text-muted-foreground">
+      <p className="text-[13px] text-muted-foreground">
         Sem matriz de cenários (o SPEC deveria ter ≥3).
       </p>
     )
@@ -1484,7 +1484,7 @@ function ScenarioMatrix({
       <ol className="flex flex-col gap-1.5">
         {shown.map((r, i) =>
           r.text ? (
-            <li key={i} className="flex gap-2.5 text-[12.5px] leading-relaxed">
+            <li key={i} className="flex gap-2.5 text-[13px] leading-relaxed">
               <span className="shrink-0 font-mono tabular-nums text-muted-foreground/45">
                 {String(i + 1).padStart(2, "0")}
               </span>
@@ -1522,7 +1522,7 @@ function MatrixTable({
 }) {
   return (
     <div className="overflow-x-auto rounded-xl border">
-      <table className="w-full text-left text-[12.5px]">
+      <table className="w-full text-left text-[13px]">
         <thead className="border-b bg-secondary/30 text-[11px] tracking-wide text-muted-foreground uppercase">
           <tr>
             {cols.map((c) => (
@@ -1558,7 +1558,7 @@ function Cell({ v }: { v: string | null }) {
 function Gates({ verification }: { verification: Record<string, boolean | null> }) {
   const keys = Object.keys(verification)
   if (keys.length === 0) {
-    return <p className="text-[12.5px] text-muted-foreground">Sem gates registrados.</p>
+    return <p className="text-[13px] text-muted-foreground">Sem gates registrados.</p>
   }
   const pass = keys.filter((k) => verification[k] === true)
   const fail = keys.filter((k) => verification[k] === false)
@@ -1566,7 +1566,7 @@ function Gates({ verification }: { verification: Record<string, boolean | null> 
   // planos antigos têm tudo null → 1 linha em vez de um muro de chips cinza.
   if (pass.length === 0 && fail.length === 0) {
     return (
-      <p className="text-[12.5px] text-muted-foreground">
+      <p className="text-[13px] text-muted-foreground">
         Verificação não registrada neste plano ({notRun.length} gates).
       </p>
     )

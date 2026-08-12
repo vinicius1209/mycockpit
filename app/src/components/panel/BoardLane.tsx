@@ -68,11 +68,11 @@ function BoardCard({
       )}
     >
       <div className="flex items-start gap-2">
-        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
           {card.title}
         </span>
         {archivedProject && (
-          <span className="shrink-0 rounded border border-border px-1.5 py-px text-[9.5px] tracking-wide text-muted-foreground uppercase">
+          <span className="shrink-0 rounded border border-border px-1.5 py-px text-[11px] tracking-wide text-muted-foreground uppercase">
             projeto arquivado
           </span>
         )}
@@ -127,7 +127,7 @@ function Lane({
     <div className="min-w-0">
       {/* sub-cabeçalho de coluna: menor e mais apagado que o SectionTitle
           BOARD — dois label-mono iguais e colados viravam um bloco só. */}
-      <div className="label-mono mb-1.5 px-1 text-[9px] opacity-70">
+      <div className="label-mono mb-1.5 px-1 opacity-70">
         {label} ({cards.length})
       </div>
       <div className="flex flex-col gap-1.5">
@@ -145,7 +145,7 @@ function Lane({
           />
         ))}
         {hiddenOlder > 0 && (
-          <div className="px-1 py-0.5 text-[10.5px] text-muted-foreground/70">
+          <div className="px-1 py-0.5 text-[11px] text-muted-foreground/70">
             e mais {hiddenOlder} {hiddenOlder === 1 ? "antigo" : "antigos"}
           </div>
         )}
@@ -296,7 +296,7 @@ export function BoardLane({
             onClick={() => setCreating((v) => !v)}
             aria-expanded={creating}
             title="Criar um card no backlog"
-            className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11.5px] font-medium text-foreground transition-colors hover:bg-accent/60"
+            className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[12px] font-medium text-foreground transition-colors hover:bg-accent/60"
           >
             <Plus className="size-3" />
             Novo
@@ -310,7 +310,7 @@ export function BoardLane({
                 ? "O lead lê os cards abertos e escreve uma proposta de triagem (nada é despachado)"
                 : "Sem cards abertos, o lead não tem o que triar"
             }
-            className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11.5px] font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[12px] font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-40"
           >
             {asking ? (
               <Loader2 className="size-3 animate-spin" />
@@ -337,7 +337,7 @@ export function BoardLane({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Novo card no backlog"
-            className="h-8 min-w-0 flex-1 rounded-md border border-border/70 bg-secondary/20 px-2.5 text-[12.5px] text-foreground placeholder:text-muted-foreground/60 focus:border-brass/50 focus:outline-none"
+            className="h-8 min-w-0 flex-1 rounded-md border border-border/70 bg-secondary/20 px-2.5 text-[13px] text-foreground placeholder:text-muted-foreground/60 focus:border-brass/50 focus:outline-none"
           />
           <select
             value={targetProject}
@@ -369,7 +369,7 @@ export function BoardLane({
       )}
 
       {cards.length === 0 ? (
-        <p className="px-1 py-1 text-[12.5px] text-muted-foreground/80">
+        <p className="px-1 py-1 text-[13px] text-muted-foreground/80">
           Nenhum card ainda. Crie a primeira intenção no botão{" "}
           <span className="text-foreground">+ Novo</span>.
         </p>

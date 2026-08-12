@@ -119,7 +119,7 @@ export function MissionFilesDialog({
         </DialogHeader>
 
         {files.length === 0 ? (
-          <div className="grid flex-1 place-items-center text-[12.5px] text-muted-foreground">
+          <div className="grid flex-1 place-items-center text-[13px] text-muted-foreground">
             Nenhum artefato nesta missão ainda.
           </div>
         ) : (
@@ -153,7 +153,7 @@ export function MissionFilesDialog({
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 gap-1.5 text-[11.5px]"
+                    className="h-7 gap-1.5 text-[12px]"
                     onClick={() => void promote(selected)}
                     title="Copia este relatório pra docs/<slug>/ (versionado no git)"
                   >
@@ -164,15 +164,15 @@ export function MissionFilesDialog({
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
                 {loading ? (
-                  <p className="text-[12.5px] text-muted-foreground">Lendo…</p>
+                  <p className="text-[13px] text-muted-foreground">Lendo…</p>
                 ) : content == null ? (
-                  <p className="text-[12.5px] text-muted-foreground">
+                  <p className="text-[13px] text-muted-foreground">
                     Não consegui ler o arquivo.
                   </p>
                 ) : isMd ? (
                   <Markdown text={content} />
                 ) : (
-                  <pre className="overflow-x-auto rounded-md bg-secondary/40 p-3 font-mono text-[11.5px] leading-relaxed">
+                  <pre className="overflow-x-auto rounded-md bg-secondary/40 p-3 font-mono text-[12px] leading-relaxed">
                     {content}
                   </pre>
                 )}

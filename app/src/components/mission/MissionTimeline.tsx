@@ -131,7 +131,7 @@ function LiveActivity({
     <div className="mt-2.5 overflow-hidden rounded-[11px] border border-st-running/25 bg-st-running/[0.04]">
       <div className="flex items-center gap-2 px-3.5 py-2.5">
         <span className="animate-cockpit-pulse size-2 shrink-0 rounded-full bg-st-running" />
-        <span className="text-[12.5px] font-medium">
+        <span className="text-[13px] font-medium">
           {agentDef(phase.def.agent)?.shortLabel ?? phase.def.agent}
           <span className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground">
             {phaseAgentModel(phase.def)}
@@ -218,7 +218,7 @@ function GateCard({
               ? "O agente tem 1 pergunta"
               : `O agente tem ${questions.length} perguntas`}
           </div>
-          <div className="text-[11.5px] text-muted-foreground">
+          <div className="text-[12px] text-muted-foreground">
             A missão está pausada — responda pra continuar (em branco = o
             agente decide)
           </div>
@@ -296,7 +296,7 @@ function RecoveryCard({
           <div className="text-[13px] font-semibold">
             A fase parou por limite, precisa de você
           </div>
-          <div className="text-[11.5px] text-muted-foreground">
+          <div className="text-[12px] text-muted-foreground">
             {recovery.message}
           </div>
         </div>
@@ -375,7 +375,7 @@ function RecoveryCard({
         <button
           type="button"
           onClick={() => onAbort(convId)}
-          className="rounded-lg border border-border-strong px-3 py-1.5 text-[11.5px] text-muted-foreground transition-colors hover:border-st-error/50 hover:text-st-error"
+          className="rounded-lg border border-border-strong px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-st-error/50 hover:text-st-error"
         >
           Desistir
         </button>
@@ -425,7 +425,7 @@ function PhaseNode({
           {PERSONA_LABEL[p.def.persona]} · {phaseAgentModel(p.def)}
         </span>
         {p.attempt > 1 && (
-          <span className="rounded border border-brass/40 px-1 py-px text-[10px] tracking-wide text-brass uppercase">
+          <span className="rounded border border-brass/40 px-1 py-px text-[11px] tracking-wide text-brass uppercase">
             tentativa {p.attempt}/{p.def.maxRetries}
           </span>
         )}
@@ -495,7 +495,7 @@ function DoneSummary({ mission }: { mission: MissionRun }) {
               ? "Missão concluída"
               : "Missão interrompida"}
         </span>
-        <span className="ml-auto font-mono text-[11.5px] tabular-nums text-muted-foreground">
+        <span className="ml-auto font-mono text-[12px] tabular-nums text-muted-foreground">
           {mission.phases.length} fases · {fmtCost(mission.costTotal)}
         </span>
       </div>
@@ -510,20 +510,20 @@ function DoneSummary({ mission }: { mission: MissionRun }) {
       )}
       {verdict ? (
         <div className="px-4 py-3">
-          <div className="label-mono mb-1.5 text-[9.5px]">Resumo do revisor</div>
+          <div className="label-mono mb-1.5">Resumo do revisor</div>
           <div className="max-h-72 overflow-y-auto text-[13px] leading-relaxed">
             <Markdown text={verdict} />
           </div>
         </div>
       ) : mission.doneSummary?.intent ? (
         <div className="px-4 py-3">
-          <div className="label-mono mb-1.5 text-[9.5px]">O que foi feito</div>
+          <div className="label-mono mb-1.5">O que foi feito</div>
           <p className="text-[13px] leading-relaxed">
             {mission.doneSummary.intent}
           </p>
         </div>
       ) : (
-        <p className="px-4 py-3 text-[12.5px] text-muted-foreground">
+        <p className="px-4 py-3 text-[13px] text-muted-foreground">
           As mudanças estão no projeto. Continue a conversa abaixo pra pedir o
           resumo, testar ou seguir de onde parou.
         </p>
@@ -531,18 +531,18 @@ function DoneSummary({ mission }: { mission: MissionRun }) {
       {mission.doneSummary?.filesTouched &&
         mission.doneSummary.filesTouched.length > 0 && (
           <div className="border-t px-4 py-3">
-            <div className="label-mono mb-1.5 text-[9.5px]">Arquivos</div>
+            <div className="label-mono mb-1.5">Arquivos</div>
             <div className="flex flex-wrap gap-1.5">
               {mission.doneSummary.filesTouched.slice(0, 8).map((f) => (
                 <code
                   key={f}
-                  className="rounded bg-accent px-1.5 py-0.5 font-mono text-[10.5px]"
+                  className="rounded bg-accent px-1.5 py-0.5 font-mono text-[11px]"
                 >
                   {f}
                 </code>
               ))}
               {mission.doneSummary.filesTouched.length > 8 && (
-                <code className="rounded bg-accent px-1.5 py-0.5 font-mono text-[10.5px] text-muted-foreground">
+                <code className="rounded bg-accent px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
                   +{mission.doneSummary.filesTouched.length - 8}
                 </code>
               )}
@@ -552,11 +552,11 @@ function DoneSummary({ mission }: { mission: MissionRun }) {
       {mission.doneSummary?.openQuestions &&
         mission.doneSummary.openQuestions.length > 0 && (
           <div className="border-t px-4 py-3">
-            <div className="label-mono mb-1.5 text-[9.5px]">
+            <div className="label-mono mb-1.5">
               Pendências pra próxima etapa
             </div>
             {mission.doneSummary.openQuestions.slice(0, 5).map((q, i) => (
-              <div key={i} className="flex items-start gap-2 py-1 text-[12.5px]">
+              <div key={i} className="flex items-start gap-2 py-1 text-[13px]">
                 <span className="shrink-0 font-mono text-[11px] font-semibold text-brass">
                   {i + 1}
                 </span>
@@ -594,14 +594,14 @@ export function MissionResumeCard({ convId }: { convId: string }) {
             <div className="text-[13px] font-semibold">
               Missão interrompida na fase {cur + 1}/{n} · {phaseLabel}
             </div>
-            <div className="text-[11.5px] text-muted-foreground">
+            <div className="text-[12px] text-muted-foreground">
               O app fechou com a missão em voo — o worktree e os handoffs
               continuam no disco ({fmtCost(st.costTotal)} já gastos)
             </div>
           </div>
         </div>
         {st.task && (
-          <p className="line-clamp-2 px-4 pt-3 text-[12.5px] leading-relaxed text-muted-foreground">
+          <p className="line-clamp-2 px-4 pt-3 text-[13px] leading-relaxed text-muted-foreground">
             {st.task}
           </p>
         )}
@@ -621,7 +621,7 @@ export function MissionResumeCard({ convId }: { convId: string }) {
           </button>
           <button
             onClick={() => void discardInterrupted(convId)}
-            className="rounded-lg border border-border-strong px-3 py-1.5 text-[11.5px] text-muted-foreground transition-colors hover:border-st-error/50 hover:text-st-error"
+            className="rounded-lg border border-border-strong px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-st-error/50 hover:text-st-error"
           >
             Descartar
           </button>
@@ -683,7 +683,7 @@ export function MissionTimeline({ convId }: { convId: string }) {
         <div className="min-w-0 flex-1">
           <span
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[9.5px] tracking-wide uppercase",
+              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[11px] tracking-wide uppercase",
               gated
                 ? "bg-brass-soft text-brass"
                 : inRecovery
@@ -718,12 +718,12 @@ export function MissionTimeline({ convId }: { convId: string }) {
               mission.status === "error" ? "falhou" : "abortada"
             )}
           </span>
-          <h2 className="mt-1.5 flex items-center gap-2 text-[17px] font-semibold tracking-[-0.01em]">
+          <h2 className="mt-1.5 flex items-center gap-2 text-[14px] font-semibold tracking-[-0.01em]">
             <Rocket className="size-4 shrink-0 text-brass" />
             Missão · {mission.presetName}
           </h2>
           {mission.task && (
-            <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground">
+            <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
               {mission.task}
             </p>
           )}
@@ -732,7 +732,7 @@ export function MissionTimeline({ convId }: { convId: string }) {
           {cwd && (
             <button
               onClick={() => setFilesOpen(true)}
-              className="mt-2 flex items-center gap-1.5 rounded-md border border-border/60 px-2 py-1 text-[11.5px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              className="mt-2 flex items-center gap-1.5 rounded-md border border-border/60 px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
               title="Ver plano, relatórios e handoffs desta missão"
             >
               <FolderOpen className="size-3 text-brass" />
@@ -741,11 +741,11 @@ export function MissionTimeline({ convId }: { convId: string }) {
           )}
         </div>
         <div className="w-[220px] shrink-0">
-          <div className="label-mono text-[9px]">
+          <div className="label-mono">
             {pct != null ? "Combustível · teto" : "Custo"}
           </div>
           <div className="mt-1 flex items-baseline justify-between">
-            <span className="font-mono text-[19px] font-semibold tabular-nums">
+            <span className="font-mono text-[20px] font-semibold tabular-nums">
               {fmtCost(mission.costTotal)}
             </span>
             {mission.maxCostUsd != null && (
@@ -766,7 +766,7 @@ export function MissionTimeline({ convId }: { convId: string }) {
         {running ? (
           <button
             onClick={() => abort(convId)}
-            className="shrink-0 rounded-lg border border-border-strong px-3 py-1.5 text-[11.5px] text-muted-foreground transition-colors hover:border-st-error/50 hover:text-st-error"
+            className="shrink-0 rounded-lg border border-border-strong px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-st-error/50 hover:text-st-error"
           >
             ■ Parar
           </button>

@@ -101,7 +101,7 @@ export function CostAudit({
                 onClick={() => setWin(w.id)}
                 aria-selected={win === w.id}
                 className={cn(
-                  "rounded-md px-3 py-1 text-[11.5px] font-medium transition-colors",
+                  "rounded-md px-3 py-1 text-[12px] font-medium transition-colors",
                   win === w.id
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:text-foreground",
@@ -118,14 +118,14 @@ export function CostAudit({
             <span className="font-mono text-[30px] font-semibold tracking-[-0.02em] tabular-nums">
               {fmtCost(view.total)}
             </span>
-            <span className="ml-auto font-mono text-[11.5px] text-muted-foreground tabular-nums">
+            <span className="ml-auto font-mono text-[12px] text-muted-foreground tabular-nums">
               {fmtTokens(view.tokens)} tokens
             </span>
           </div>
 
           <div className="mt-4">
             <Bars data={view.daily} />
-            <div className="mt-1 flex justify-between font-mono text-[10px] text-muted-foreground">
+            <div className="mt-1 flex justify-between font-mono text-[11px] text-muted-foreground">
               <span>{win === "30d" ? "30 d" : "14 d"} atrás</span>
               <span>hoje</span>
             </div>
@@ -133,7 +133,7 @@ export function CostAudit({
 
           {view.byAgent.length > 0 && (
             <>
-              <div className="label-mono mt-5 mb-1 text-[9px]">Por agente</div>
+              <div className="label-mono mt-5 mb-1">Por agente</div>
               {view.byAgent.map((a) => (
                 <div
                   key={a.agent}
@@ -143,15 +143,15 @@ export function CostAudit({
                     className="size-2.5 shrink-0 rounded-full"
                     style={{ background: agentColor(a.agent) }}
                   />
-                  <span className="min-w-0 flex-1 text-[12.5px] font-medium">
+                  <span className="min-w-0 flex-1 text-[13px] font-medium">
                     {agentShort(a.agent)}
-                    <span className="ml-2 font-mono text-[10.5px] font-normal text-muted-foreground">
+                    <span className="ml-2 font-mono text-[11px] font-normal text-muted-foreground">
                       {fmtTokens(a.tokens)} tok
                     </span>
                   </span>
-                  <span className="text-right font-mono text-[12.5px] tabular-nums">
+                  <span className="text-right font-mono text-[13px] tabular-nums">
                     <b className="font-semibold">{fmtCost(a.costUsd)}</b>
-                    <span className="block text-[10.5px] text-muted-foreground">
+                    <span className="block text-[11px] text-muted-foreground">
                       {Math.round(a.share * 100)}%
                     </span>
                   </span>
@@ -162,7 +162,7 @@ export function CostAudit({
 
           {view.byProject.length > 0 && (
             <>
-              <div className="label-mono mt-5 mb-2 text-[9px]">Por projeto</div>
+              <div className="label-mono mt-5 mb-2">Por projeto</div>
               {view.byProject.map((p) => (
                 <div key={p.projectId} className="flex items-center gap-3 py-1.5">
                   <span className="w-28 shrink-0 truncate text-[12px]">
@@ -174,7 +174,7 @@ export function CostAudit({
                       style={{ width: `${Math.round(p.share * 100)}%` }}
                     />
                   </span>
-                  <span className="w-16 shrink-0 text-right font-mono text-[11.5px] text-muted-foreground tabular-nums">
+                  <span className="w-16 shrink-0 text-right font-mono text-[12px] text-muted-foreground tabular-nums">
                     {fmtCost(p.costUsd)}
                   </span>
                 </div>
@@ -183,7 +183,7 @@ export function CostAudit({
           )}
 
           {view.byAgent.length === 0 && (
-            <p className="py-8 text-center text-[12.5px] text-muted-foreground">
+            <p className="py-8 text-center text-[13px] text-muted-foreground">
               Nenhum gasto nesta janela ainda.
             </p>
           )}

@@ -304,7 +304,7 @@ export function FlightPlansView() {
           <div className="flex items-center gap-2">
             <Route className="size-4 text-brass" />
             <h1 className="label-mono text-foreground">Planos de voo</h1>
-            <span className="rounded border border-brass/30 bg-brass/10 px-1.5 py-px font-mono text-[9px] text-brass">
+            <span className="rounded border border-brass/30 bg-brass/10 px-1.5 py-px font-mono text-[11px] text-brass">
               BETA
             </span>
           </div>
@@ -343,7 +343,7 @@ export function FlightPlansView() {
         <aside className="flex w-56 shrink-0 flex-col border-r bg-secondary/10">
           <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
             <span className="label-mono">Biblioteca</span>
-            <span className="font-mono text-[10px] text-muted-foreground">{presets.length}</span>
+            <span className="font-mono text-[11px] text-muted-foreground">{presets.length}</span>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             <div className="space-y-1">
@@ -379,7 +379,7 @@ export function FlightPlansView() {
                         <span className="block truncate text-[12px] font-medium text-foreground">
                           {plan.name || "Plano sem nome"}
                         </span>
-                        <span className="mt-1 block truncate font-mono text-[9.5px] text-muted-foreground">
+                        <span className="mt-1 block truncate font-mono text-[11px] text-muted-foreground">
                           {plan.phases.length} trechos · {planMode === "graph" ? "canvas" : "linear"}
                         </span>
                       </span>
@@ -414,7 +414,7 @@ export function FlightPlansView() {
                   <Input
                     value={selectedPlan.name}
                     onChange={(event) => patchPlan({ ...selectedPlan, name: event.target.value })}
-                    className="h-8 border-transparent bg-transparent px-1 text-[15px] font-medium shadow-none hover:border-border/60 focus-visible:border-brass/50"
+                    className="h-8 border-transparent bg-transparent px-1 text-[14px] font-medium shadow-none hover:border-border/60 focus-visible:border-brass/50"
                     aria-label="Nome do Plano de voo"
                   />
                   <Input
@@ -473,11 +473,11 @@ export function FlightPlansView() {
                   ) : (
                     <AlertTriangle className="size-3.5 shrink-0 text-st-warning" />
                   )}
-                  <span className="truncate text-[10.5px] text-muted-foreground">
+                  <span className="truncate text-[11px] text-muted-foreground">
                     {errors[0] ?? "Rota válida para o motor linear de Mission."}
                   </span>
                 </div>
-                <span className={cn("font-mono text-[9.5px] uppercase", missionEnabled ? "text-st-success" : "text-muted-foreground")}>
+                <span className={cn("font-mono text-[11px] uppercase", missionEnabled ? "text-st-success" : "text-muted-foreground")}>
                   Missions {missionEnabled ? "ativas" : "desativadas"}
                 </span>
               </div>
@@ -512,7 +512,7 @@ export function FlightPlansView() {
                   <div className="divide-y divide-border/60">
                     <section className="space-y-2.5 p-3">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono text-[9.5px] tracking-wide text-brass uppercase">
+                        <span className="font-mono text-[11px] tracking-wide text-brass uppercase">
                           Trecho {String(selectedPhaseIndex + 1).padStart(2, "0")}
                         </span>
                         <button
@@ -525,16 +525,16 @@ export function FlightPlansView() {
                           <Trash2 className="size-3.5" />
                         </button>
                       </div>
-                      <label className="grid gap-1 text-[10.5px] text-muted-foreground">
+                      <label className="grid gap-1 text-[11px] text-muted-foreground">
                         Nome do nó
                         <Input value={selectedPhase.label} onChange={(event) => patchPhase({ label: event.target.value })} className="h-8 text-[12px]" />
                       </label>
                       <div className="grid grid-cols-2 gap-2">
-                        <label className="grid gap-1 text-[10.5px] text-muted-foreground">
+                        <label className="grid gap-1 text-[11px] text-muted-foreground">
                           Papel
                           <RichSelect value={selectedPhase.persona} onValueChange={(value) => patchPhase({ persona: value as MissionPersona })} options={PERSONA_OPTIONS} triggerClassName={SELECT_TRIGGER} />
                         </label>
-                        <label className="grid gap-1 text-[10.5px] text-muted-foreground">
+                        <label className="grid gap-1 text-[11px] text-muted-foreground">
                           Code agent
                           <RichSelect
                             value={selectedPhase.agent}
@@ -543,11 +543,11 @@ export function FlightPlansView() {
                             triggerClassName={SELECT_TRIGGER}
                           />
                         </label>
-                        <label className="grid gap-1 text-[10.5px] text-muted-foreground">
+                        <label className="grid gap-1 text-[11px] text-muted-foreground">
                           Modelo
                           <RichSelect value={selectedPhase.model ?? "default"} onValueChange={(value) => patchPhase({ model: value === "default" ? null : value })} options={agentModels(selectedPhase.agent)} triggerClassName={SELECT_TRIGGER} />
                         </label>
-                        <label className="grid gap-1 text-[10.5px] text-muted-foreground">
+                        <label className="grid gap-1 text-[11px] text-muted-foreground">
                           Effort
                           {selectedEfforts.length > 0 ? (
                             <RichSelect
@@ -561,18 +561,18 @@ export function FlightPlansView() {
                               triggerClassName={SELECT_TRIGGER}
                             />
                           ) : (
-                            <div className="flex h-8 items-center rounded-md border bg-secondary/20 px-2.5 text-[10.5px] text-muted-foreground/70">
+                            <div className="flex h-8 items-center rounded-md border bg-secondary/20 px-2.5 text-[11px] text-muted-foreground/70">
                               no modelo
                             </div>
                           )}
                         </label>
                       </div>
                       <div className="grid grid-cols-[1fr_5rem] gap-2">
-                        <label className="grid gap-1 text-[10.5px] text-muted-foreground">
+                        <label className="grid gap-1 text-[11px] text-muted-foreground">
                           Autonomia
                           <RichSelect value={selectedPhase.autonomy ?? "inherit"} onValueChange={(value) => patchPhase({ autonomy: value as "auto" | "inherit" })} options={AUTONOMY_OPTIONS} triggerClassName={SELECT_TRIGGER} />
                         </label>
-                        <label className="grid gap-1 text-[10.5px] text-muted-foreground">
+                        <label className="grid gap-1 text-[11px] text-muted-foreground">
                           Tentativas
                           <Input type="number" min={1} value={selectedPhase.maxRetries} onChange={(event) => patchPhase({ maxRetries: Math.max(1, Number(event.target.value) || 1) })} className="h-8 text-[12px]" />
                         </label>
@@ -581,15 +581,15 @@ export function FlightPlansView() {
 
                     <section className="space-y-2.5 p-3">
                       <h2 className="label-mono">Critérios</h2>
-                      <label className="grid gap-1 text-[10.5px] text-muted-foreground">
+                      <label className="grid gap-1 text-[11px] text-muted-foreground">
                         Entrada · um por linha
                         <Textarea value={criteriaText(selectedPhase.entryCriteria)} onChange={(event) => patchPhase({ entryCriteria: event.target.value.split("\n") })} placeholder="Ex.: plano aprovado" className="min-h-20 resize-y text-[11px]" />
                       </label>
-                      <label className="grid gap-1 text-[10.5px] text-muted-foreground">
+                      <label className="grid gap-1 text-[11px] text-muted-foreground">
                         Saída · um por linha
                         <Textarea value={criteriaText(selectedPhase.exitCriteria)} onChange={(event) => patchPhase({ exitCriteria: event.target.value.split("\n") })} placeholder="Ex.: testes passam" className="min-h-20 resize-y text-[11px]" />
                       </label>
-                      <label className="grid gap-1 text-[10.5px] text-muted-foreground">
+                      <label className="grid gap-1 text-[11px] text-muted-foreground">
                         Instrução específica
                         <Textarea value={selectedPhase.instructions ?? ""} onChange={(event) => patchPhase({ instructions: event.target.value })} placeholder="Contexto adicional para este agent" className="min-h-24 resize-y text-[11px]" />
                       </label>
@@ -603,7 +603,7 @@ export function FlightPlansView() {
 
                 <section className="space-y-2.5 border-t border-border/60 p-3">
                   <h2 className="label-mono">Plano</h2>
-                  <label className="grid gap-1 text-[10.5px] text-muted-foreground">
+                  <label className="grid gap-1 text-[11px] text-muted-foreground">
                     Gate humano
                     <RichSelect
                       value={normalizeGatePolicy(selectedPlan.gatePolicy)}
@@ -612,7 +612,7 @@ export function FlightPlansView() {
                       triggerClassName={SELECT_TRIGGER}
                     />
                   </label>
-                  <label className="grid gap-1 text-[10.5px] text-muted-foreground">
+                  <label className="grid gap-1 text-[11px] text-muted-foreground">
                     Teto de custo em US$ · vazio = sem teto
                     <Input
                       type="number"
@@ -646,7 +646,7 @@ export function FlightPlansView() {
           <div className="grid min-w-0 flex-1 place-items-center p-8 text-center">
             <div className="max-w-sm">
               <Route className="mx-auto size-8 text-brass/60" />
-              <h2 className="mt-4 text-[15px] font-medium">Desenhe sua primeira rota</h2>
+              <h2 className="mt-4 text-[14px] font-medium">Desenhe sua primeira rota</h2>
               <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
                 Comece no canvas para montar um time visual ou use o modo linear para uma sequência simples.
               </p>

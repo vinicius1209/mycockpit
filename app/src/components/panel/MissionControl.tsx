@@ -121,8 +121,8 @@ function Readout({
 }) {
   return (
     <div className="rounded-lg border border-border/60 bg-card/30 px-3.5 py-2.5">
-      <div className="label-mono text-[9px]">{label}</div>
-      <div className="mt-1.5 font-mono text-[19px] font-semibold tabular-nums tracking-[-0.01em]">
+      <div className="label-mono">{label}</div>
+      <div className="mt-1.5 font-mono text-[20px] font-semibold tabular-nums tracking-[-0.01em]">
         {children}
       </div>
     </div>
@@ -208,7 +208,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 function EmptyLine({ children }: { children: React.ReactNode }) {
   return (
-    <p className="px-1 py-2 text-[12.5px] text-muted-foreground/80">
+    <p className="px-1 py-2 text-[13px] text-muted-foreground/80">
       {children}
     </p>
   )
@@ -241,7 +241,7 @@ function QuickAction({
   return (
     <button
       onClick={onClick}
-      className="flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-secondary/20 px-3 text-[12.5px] font-medium text-foreground transition-colors hover:border-brass/50 hover:bg-accent/40"
+      className="flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-secondary/20 px-3 text-[13px] font-medium text-foreground transition-colors hover:border-brass/50 hover:bg-accent/40"
     >
       <Icon className="size-3.5 text-brass" />
       {label}
@@ -278,7 +278,7 @@ function BrassButton({
     <button
       disabled={disabled}
       onClick={onClick}
-      className="shrink-0 rounded-md bg-brass px-2.5 py-1 text-[11.5px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+      className="shrink-0 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
     >
       {children}
     </button>
@@ -296,7 +296,7 @@ function GhostAction({
   return (
     <button
       onClick={onClick}
-      className="shrink-0 rounded-md px-2 py-1 text-[11.5px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+      className="shrink-0 rounded-md px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
     >
       {children}
     </button>
@@ -362,7 +362,7 @@ function PrCard({
             <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
               {d.planTitle}
             </span>
-            <span className="shrink-0 text-[11.5px] text-muted-foreground">
+            <span className="shrink-0 text-[12px] text-muted-foreground">
               {d.projectName}
             </span>
             {enrich?.updatedAt != null && (
@@ -374,7 +374,7 @@ function PrCard({
           {enrich && (
             <p
               className={cn(
-                "mt-1 pl-[26px] text-[11.5px] tabular-nums",
+                "mt-1 pl-[26px] text-[12px] tabular-nums",
                 failing ? "text-st-error" : "text-muted-foreground",
               )}
             >
@@ -401,7 +401,7 @@ function PrCard({
               open()
             }}
             className={cn(
-              "shrink-0 rounded-md border px-2.5 py-1 text-[11.5px] font-medium transition-colors",
+              "shrink-0 rounded-md border px-2.5 py-1 text-[12px] font-medium transition-colors",
               failing
                 ? "border-st-error/50 text-st-error hover:bg-st-error/10"
                 : "border-border text-foreground hover:bg-accent/60",
@@ -444,7 +444,7 @@ function FusionCard({ d }: { d: Extract<Decision, { kind: "fusion" }> }) {
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
           {d.title}
         </span>
-        <span className="shrink-0 text-[11.5px] text-muted-foreground">
+        <span className="shrink-0 text-[12px] text-muted-foreground">
           {d.projectName}
         </span>
         <BrassButton
@@ -484,17 +484,17 @@ function BoardQueueCard({ d }: { d: Extract<Decision, { kind: "card" }> }) {
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
           {d.title}
         </span>
-        <span className="shrink-0 text-[11.5px] text-muted-foreground">
+        <span className="shrink-0 text-[12px] text-muted-foreground">
           {d.projectName}
         </span>
         {stalledMin != null && (
-          <span className="shrink-0 rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning">
+          <span className="shrink-0 rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[11px] tracking-wide text-st-warning">
             parado há {stalledMin} min
           </span>
         )}
         <span
           className={cn(
-            "shrink-0 rounded border px-1.5 py-px text-[10px] tracking-wide uppercase",
+            "shrink-0 rounded border px-1.5 py-px text-[11px] tracking-wide uppercase",
             d.state === "blocked"
               ? "border-st-error/50 bg-st-error/10 text-st-error"
               : "border-st-warning/50 bg-st-warning/10 text-st-warning",
@@ -534,7 +534,7 @@ function ProposalCard({
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
           Proposta do lead: {d.excerpt}
         </span>
-        <span className="shrink-0 text-[11.5px] text-muted-foreground">
+        <span className="shrink-0 text-[12px] text-muted-foreground">
           {d.projectName ?? "board inteiro"}
         </span>
         <span className="shrink-0 text-[11px] text-muted-foreground/60">
@@ -558,7 +558,7 @@ function ProposalCard({
         </BrassButton>
       </div>
       {open && (
-        <p className="mt-2 pl-[26px] text-[12.5px] leading-relaxed whitespace-pre-wrap text-foreground/90">
+        <p className="mt-2 pl-[26px] text-[13px] leading-relaxed whitespace-pre-wrap text-foreground/90">
           {d.body}
         </p>
       )}
@@ -595,10 +595,10 @@ function FoundRow({
       ) : (
         <GitPullRequest className="size-3.5 shrink-0 text-muted-foreground" />
       )}
-      <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">
+      <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
         {d.kind === "prd" ? "PRD por aprovar" : "PR aberto"}: {d.planTitle}
       </span>
-      <span className="shrink-0 text-[11.5px] text-muted-foreground/80">
+      <span className="shrink-0 text-[12px] text-muted-foreground/80">
         {d.projectName}
       </span>
       <span className="shrink-0 font-mono text-[11px] text-muted-foreground/60">
@@ -638,7 +638,7 @@ function PrdCard({ d }: { d: Extract<Decision, { kind: "prd" }> }) {
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
           {d.planTitle}
         </span>
-        <span className="shrink-0 text-[11.5px] text-muted-foreground">
+        <span className="shrink-0 text-[12px] text-muted-foreground">
           {d.projectName}
         </span>
         {age && (
@@ -1011,9 +1011,9 @@ export function MissionControl() {
           <div className="rounded-xl border border-border/60 bg-card/30 p-4">
             <div className="flex items-start justify-between gap-6">
               <div className="min-w-0">
-                <div className="label-mono text-[9px]">Gasto hoje</div>
+                <div className="label-mono">Gasto hoje</div>
                 <div className="mt-1.5 flex items-baseline gap-2.5">
-                  <span className="font-mono text-[34px] leading-none font-semibold tracking-[-0.02em] tabular-nums">
+                  <span className="font-mono text-[30px] leading-none font-semibold tracking-[-0.02em] tabular-nums">
                     {fmtCost(windows.today)}
                   </span>
                   {fleet.delta != null && (
@@ -1025,7 +1025,7 @@ export function MissionControl() {
                 </div>
                 <div className="mt-3">
                   {liveRows.length === 0 ? (
-                    <span className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+                    <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
                       <span
                         aria-hidden
                         className="size-2 shrink-0 rounded-full border border-muted-foreground/50"
@@ -1035,7 +1035,7 @@ export function MissionControl() {
                   ) : (
                     <button
                       onClick={() => setExpand(expand === "all" ? null : "all")}
-                      className="flex items-center gap-2 text-[12.5px] text-foreground transition-colors hover:text-brass"
+                      className="flex items-center gap-2 text-[13px] text-foreground transition-colors hover:text-brass"
                     >
                       <Dot tone="live" />
                       {liveRows.length} em voo
@@ -1051,8 +1051,8 @@ export function MissionControl() {
               </div>
               <div className="w-[42%] max-w-[280px] shrink-0">
                 <div className="flex items-baseline justify-between">
-                  <span className="label-mono text-[9px]">Gasto diário</span>
-                  <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
+                  <span className="label-mono">Gasto diário</span>
+                  <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
                     14 d
                   </span>
                 </div>
@@ -1072,7 +1072,7 @@ export function MissionControl() {
             {fleet.byAgent.length > 0 && (
               <div className="mt-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="label-mono text-[9px]">
+                  <span className="label-mono">
                     Custo por agente · 30 dias
                   </span>
                   <button
@@ -1105,7 +1105,7 @@ export function MissionControl() {
                         style={{ background: agentColor(a.agent) }}
                       />
                       {agentShort(a.agent)}
-                      <span className="font-mono text-[11.5px] text-muted-foreground tabular-nums">
+                      <span className="font-mono text-[12px] text-muted-foreground tabular-nums">
                         {fmtCost(a.costUsd)} · {Math.round(a.share * 100)}%
                       </span>
                     </span>
@@ -1123,13 +1123,13 @@ export function MissionControl() {
                   className="group flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/50"
                 >
                   <Dot tone="live" />
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground">
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
                     {r.title}
                   </span>
-                  <span className="shrink-0 text-[11.5px] text-muted-foreground">
+                  <span className="shrink-0 text-[12px] text-muted-foreground">
                     {r.projectName}
                   </span>
-                  <span className="label-mono shrink-0 text-[9.5px] text-muted-foreground/70">
+                  <span className="label-mono shrink-0 text-muted-foreground/70">
                     {r.kind}
                   </span>
                 </button>
@@ -1244,10 +1244,10 @@ export function MissionControl() {
                   <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
                     {d.task}
                   </span>
-                  <span className="shrink-0 text-[11.5px] text-muted-foreground">
+                  <span className="shrink-0 text-[12px] text-muted-foreground">
                     {projectNames.get(d.projectId) ?? "projeto"}
                   </span>
-                  <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
+                  <span className="shrink-0 text-[12px] text-muted-foreground tabular-nums">
                     {fmtCost(d.costUsd ?? undefined)}
                   </span>
                   <span className="shrink-0 text-[11px] text-muted-foreground/60">
@@ -1281,7 +1281,7 @@ export function MissionControl() {
               return (
                 <li
                   key={t.id}
-                  className="flex items-center gap-2.5 text-[12.5px]"
+                  className="flex items-center gap-2.5 text-[13px]"
                   title={p.detail ?? undefined}
                 >
                   {/* Motor saudável é ESTADO AMBIENTE: cinza (STYLEGUIDE §2).
@@ -1310,12 +1310,12 @@ export function MissionControl() {
                     <span className="text-st-warning">auth desconhecida</span>
                   )}
                   {isLimited && (
-                    <span className="rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning uppercase">
+                    <span className="rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[11px] tracking-wide text-st-warning uppercase">
                       em rate limit{resetHint ? `, volta ${resetHint}` : ""}
                     </span>
                   )}
                   {hasUpdate && (
-                    <span className="rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning uppercase">
+                    <span className="rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[11px] tracking-wide text-st-warning uppercase">
                       update v{p.latest}
                     </span>
                   )}
@@ -1323,7 +1323,7 @@ export function MissionControl() {
               )
             })}
             {CLI_TOOLS.every((t) => !detected[t.id]?.installed) && (
-              <li className="text-[12.5px] text-muted-foreground">
+              <li className="text-[13px] text-muted-foreground">
                 Nenhuma CLI detectada ainda. Verifique em Configurações ▸
                 Agents.
               </li>
@@ -1341,7 +1341,7 @@ export function MissionControl() {
                   return (
                     <li
                       key={`${s.agent}:${s.sessionId}`}
-                      className="flex items-center gap-2.5 px-1 text-[12.5px]"
+                      className="flex items-center gap-2.5 px-1 text-[13px]"
                       title={s.cwd}
                     >
                       <span
@@ -1387,13 +1387,13 @@ export function MissionControl() {
                   <li key={s.id}>
                     <button
                       onClick={() => useApp.getState().setScheduledOpen(true)}
-                      className="flex w-full items-center gap-2.5 rounded px-1 py-0.5 text-left text-[12.5px] transition-colors hover:bg-accent/50"
+                      className="flex w-full items-center gap-2.5 rounded px-1 py-0.5 text-left text-[13px] transition-colors hover:bg-accent/50"
                     >
                       <Clock className="size-3.5 shrink-0 text-brass/80" />
                       <span className="min-w-0 flex-1 truncate text-foreground">
                         {s.name}
                       </span>
-                      <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
+                      <span className="shrink-0 text-[12px] text-muted-foreground tabular-nums">
                         em {fmtUntilShort((s.nextRun ?? 0) - Date.now())}
                       </span>
                     </button>

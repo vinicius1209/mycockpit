@@ -199,7 +199,7 @@ export function GateAnswerForm({
               rows={2}
               placeholder="Em branco = o agente decide… (cole imagem/PDF; arraste arquivos)"
               aria-labelledby={`gate-q-${convId}-${i}`}
-              className="max-h-[200px] w-full resize-none bg-transparent px-3 pt-2 text-[12.5px] leading-relaxed outline-none placeholder:text-muted-foreground/60"
+              className="max-h-[200px] w-full resize-none bg-transparent px-3 pt-2 text-[13px] leading-relaxed outline-none placeholder:text-muted-foreground/60"
             />
             <div className="flex items-center gap-0.5 px-1.5 pb-1.5">
               <button
@@ -230,7 +230,7 @@ export function GateAnswerForm({
         <button
           type="button"
           onClick={() => onSubmit(draftsToAnswers(drafts))}
-          className="ml-auto rounded-lg bg-brass px-4 py-2 text-[12.5px] font-semibold text-brass-foreground transition-opacity hover:opacity-90"
+          className="ml-auto rounded-lg bg-brass px-4 py-2 text-[13px] font-semibold text-brass-foreground transition-opacity hover:opacity-90"
         >
           {submitLabel}
         </button>

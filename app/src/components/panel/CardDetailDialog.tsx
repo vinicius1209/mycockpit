@@ -42,7 +42,7 @@ function fmtRelative(ts: number): string {
 function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 text-[12px]">
-      <span className="label-mono w-24 shrink-0 text-[9px]">{label}</span>
+      <span className="label-mono w-24 shrink-0">{label}</span>
       <span className="flex min-w-0 items-center gap-2 text-foreground">
         {children}
       </span>
@@ -176,12 +176,12 @@ function DetailBody({
           <span className="text-muted-foreground/40">·</span>
           <CardStateBadge state={card.state} />
           {isArchived && (
-            <span className="shrink-0 rounded border border-border px-1.5 py-px text-[9.5px] tracking-wide text-muted-foreground uppercase">
+            <span className="shrink-0 rounded border border-border px-1.5 py-px text-[11px] tracking-wide text-muted-foreground uppercase">
               arquivado
             </span>
           )}
           {stalledMin != null && (
-            <span className="shrink-0 rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[10px] tracking-wide text-st-warning">
+            <span className="shrink-0 rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[11px] tracking-wide text-st-warning">
               parado há {stalledMin} min
             </span>
           )}

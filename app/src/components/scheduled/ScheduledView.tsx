@@ -193,7 +193,7 @@ function ScheduleRow({
             </span>
             {/* S4.3: schedule do lead — proposta de triagem, nunca despacho */}
             {s.kind === "lead" && (
-              <span className="shrink-0 rounded border border-brass/50 bg-brass/10 px-1.5 py-px text-[10px] tracking-wide text-brass">
+              <span className="shrink-0 rounded border border-brass/50 bg-brass/10 px-1.5 py-px text-[11px] tracking-wide text-brass">
                 lead
               </span>
             )}
@@ -206,32 +206,32 @@ function ScheduleRow({
                     ? `Rodou e se encerrou em ${fmtWhen(s.completedAt)} (automação de uma vez).`
                     : "Rodou e se encerrou (automação de uma vez)."
                 }
-                className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground"
+                className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-1.5 py-px text-[11px] font-medium text-muted-foreground"
               >
                 <Check className="size-2.5" />
                 concluída
               </span>
             )}
             {life === "pausada" && (
-              <span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground">
+              <span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[11px] font-medium text-muted-foreground">
                 pausada
               </span>
             )}
             {life === "sem_proxima" && (
               <span
                 title="Ligada, mas sem próxima execução (o horário passou com o app fechado, ou a recorrência nunca casa)."
-                className="shrink-0 rounded-full border border-st-queued/40 px-1.5 py-px text-[10px] font-medium text-st-queued"
+                className="shrink-0 rounded-full border border-st-queued/40 px-1.5 py-px text-[11px] font-medium text-st-queued"
               >
                 não vai rodar
               </span>
             )}
-            <span className="shrink-0 text-[11.5px] text-muted-foreground">
+            <span className="shrink-0 text-[12px] text-muted-foreground">
               {projectName}
             </span>
           </div>
           {/* metadados discretos: recorrência + custo médio (a leitura forte é a
               próxima execução, à direita) */}
-          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-muted-foreground/80">
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-muted-foreground/80">
             <span>{recurrenceToText(rec)}</span>
             {avgCost != null && (
               <>
@@ -246,8 +246,8 @@ function ScheduleRow({
         {/* leitura de instrumento: PRÓXIMA execução (o número operacional) */}
         {s.enabled && s.nextRun != null && (
           <div className="shrink-0 text-right">
-            <div className="label-mono text-[9px]">Próxima</div>
-            <div className="font-mono text-[12.5px] tabular-nums text-foreground">
+            <div className="label-mono">Próxima</div>
+            <div className="font-mono text-[13px] tabular-nums text-foreground">
               {fmtUntilShort(s.nextRun - now)}
             </div>
           </div>
@@ -259,7 +259,7 @@ function ScheduleRow({
           <button
             onClick={() => setReschedOpen(true)}
             title="Escolher uma nova data e hora"
-            className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11.5px] font-medium text-foreground transition-colors hover:bg-accent/60"
+            className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[12px] font-medium text-foreground transition-colors hover:bg-accent/60"
           >
             <CalendarClock className="size-3" />
             Reagendar
@@ -275,7 +275,7 @@ function ScheduleRow({
               : "Rodar agora (não altera o calendário)"
           }
           className={cn(
-            "flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11.5px] font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-40",
+            "flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[12px] font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-40",
             !running && "opacity-0 group-hover:opacity-100 focus:opacity-100",
           )}
         >
@@ -326,7 +326,7 @@ function ScheduleRow({
       {open && (
         <div className="border-t border-border/60 px-4 py-2">
           {runs.length === 0 ? (
-            <p className="py-1.5 text-[11.5px] text-muted-foreground/80">
+            <p className="py-1.5 text-[12px] text-muted-foreground/80">
               Nunca rodou.
             </p>
           ) : (
@@ -339,7 +339,7 @@ function ScheduleRow({
                     r.convId && void openRunConv(s.projectId, r.convId)
                   }
                   title={r.convId ? "Abrir a conversa desta execução" : undefined}
-                  className="flex items-center gap-2.5 rounded px-1 py-1.5 text-left text-[11.5px] transition-colors enabled:hover:bg-accent/50 disabled:cursor-default"
+                  className="flex items-center gap-2.5 rounded px-1 py-1.5 text-left text-[12px] transition-colors enabled:hover:bg-accent/50 disabled:cursor-default"
                 >
                   <StatusDot status={scheduleStatus(r.status, false)} />
                   <span className="tabular-nums text-foreground/85">
@@ -867,7 +867,7 @@ function NewScheduleDialog({
                   value={cron}
                   onChange={(e) => setCron(e.target.value)}
                   placeholder="0 8 * * 1  (min hora dia mês dia-da-semana)"
-                  className="font-mono text-[12.5px]"
+                  className="font-mono text-[13px]"
                   aria-invalid={!cronValid}
                 />
               </div>
@@ -1008,7 +1008,7 @@ export function ScheduledView() {
           <Clock className="size-3.5 text-brass" />
           <h1 className="label-mono">Agendado</h1>
           {schedules.length > 0 && (
-            <span className="text-[11.5px] text-muted-foreground/70 tabular-nums">
+            <span className="text-[12px] text-muted-foreground/70 tabular-nums">
               {schedules.length}
             </span>
           )}
@@ -1040,7 +1040,7 @@ export function ScheduledView() {
         </header>
 
         {!loaded ? (
-          <div className="flex items-center gap-2 py-6 text-[12.5px] text-muted-foreground">
+          <div className="flex items-center gap-2 py-6 text-[13px] text-muted-foreground">
             <Loader2 className="size-3.5 animate-spin" /> Carregando…
           </div>
         ) : ordered.length === 0 ? (
@@ -1062,7 +1062,7 @@ export function ScheduledView() {
                   className="flex flex-col items-start gap-1.5 rounded-lg border border-border/70 bg-card/50 px-3 py-2.5 text-left transition-colors hover:border-brass/50 hover:bg-accent/40"
                 >
                   <t.icon className="size-3.5 text-brass" />
-                  <span className="text-[12.5px] font-medium text-foreground">
+                  <span className="text-[13px] font-medium text-foreground">
                     {t.name}
                   </span>
                   <span className="text-[11px] text-muted-foreground">
@@ -1074,7 +1074,7 @@ export function ScheduledView() {
             <button
               type="button"
               onClick={() => openDialog(null)}
-              className="text-[11.5px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+              className="text-[12px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
             >
               ou comece do zero
             </button>

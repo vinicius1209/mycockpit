@@ -53,7 +53,7 @@ export function CardStateBadge({ state }: { state: CardState }) {
   return (
     <span
       className={cn(
-        "shrink-0 rounded border px-1.5 py-px text-[9.5px] tracking-wide uppercase",
+        "shrink-0 rounded border px-1.5 py-px text-[11px] tracking-wide uppercase",
         state === "blocked"
           ? "border-st-error/50 bg-st-error/10 text-st-error"
           : state === "review"
@@ -83,7 +83,7 @@ export function LaneAction({
       onClick={onClick}
       className={cn(
         "disabled:opacity-40",
-        "shrink-0 rounded px-1.5 py-0.5 text-[10.5px] font-medium transition-colors",
+        "shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors",
         tone === "brass"
           ? "bg-brass text-background hover:opacity-90"
           : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",

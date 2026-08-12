@@ -57,10 +57,10 @@ function MissionPhaseNode({ data, selected }: NodeProps<PhaseNode>) {
         className="!size-2.5 !border-2 !border-card !bg-brass"
       />
       <div className="flex items-center justify-between border-b border-border/60 px-2.5 py-1.5">
-        <span className="font-mono text-[9px] tracking-[0.14em] text-brass">
+        <span className="font-mono text-[11px] tracking-[0.14em] text-brass">
           TRECHO {String(data.order + 1).padStart(2, "0")}
         </span>
-        <span className="text-[9px] tracking-wide text-muted-foreground">
+        <span className="text-[11px] tracking-wide text-muted-foreground">
           {PERSONA_LABEL[data.persona]}
         </span>
       </div>
@@ -68,12 +68,12 @@ function MissionPhaseNode({ data, selected }: NodeProps<PhaseNode>) {
         <div className="truncate text-[13px] font-medium text-foreground">
           {data.label || "Fase sem nome"}
         </div>
-        <div className="mt-1 truncate font-mono text-[10.5px] text-muted-foreground">
+        <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
           {data.agent}
           {data.model ? ` / ${data.model}` : " / default"}
         </div>
         {(data.entryCount > 0 || data.exitCount > 0) && (
-          <div className="mt-2 flex items-center gap-2 border-t border-border/50 pt-1.5 text-[9.5px] text-muted-foreground">
+          <div className="mt-2 flex items-center gap-2 border-t border-border/50 pt-1.5 text-[11px] text-muted-foreground">
             <span>ENT {data.entryCount}</span>
             <span className="text-border-strong">/</span>
             <span>SAÍ {data.exitCount}</span>
@@ -203,15 +203,15 @@ export function MissionPlanCanvas({
             <Route className="size-3.5" />
           </span>
           <div className="min-w-0">
-            <div className="text-[11.5px] font-medium text-foreground">
+            <div className="text-[12px] font-medium text-foreground">
               Rota linear executável
             </div>
-            <div className="text-[10px] text-muted-foreground">
+            <div className="text-[11px] text-muted-foreground">
               {preset.phases.length} nós · {Math.max(0, preset.phases.length - 1)} conexões
             </div>
           </div>
         </div>
-        <span className="font-mono text-[9.5px] tracking-wide text-muted-foreground uppercase">
+        <span className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
           {interactive ? "layout livre" : "ordem protegida"}
         </span>
       </div>
@@ -258,7 +258,7 @@ export function MissionPlanCanvas({
 
       <div className="flex min-h-10 items-center gap-2 border-t border-border/60 bg-secondary/15 px-3 py-2">
         <CheckCircle2 className="size-3.5 shrink-0 text-st-success" />
-        <span className="min-w-0 truncate text-[10.5px] text-muted-foreground">
+        <span className="min-w-0 truncate text-[11px] text-muted-foreground">
           {selected
             ? `${selected.label || "Fase sem nome"} selecionada · ${interactive ? "arraste para organizar o mapa; a ordem de execução fica no inspetor." : "ative Canvas para organizar livremente."}`
             : "Selecione um nó para mudar sua posição na rota."}

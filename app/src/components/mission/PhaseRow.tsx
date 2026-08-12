@@ -39,7 +39,7 @@ export function AutonomyPill({
       }
       aria-label={label}
       className={cn(
-        "flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[10.5px] font-medium transition-colors",
+        "flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium transition-colors",
         on
           ? "border-brass/50 bg-brass/15 text-brass"
           : "border-border/60 text-muted-foreground hover:text-foreground",
@@ -77,10 +77,10 @@ export function MissionPhaseRow({
   const efforts = agentEfforts(phase.agent)
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1">
-      <span className="w-4 shrink-0 text-center font-mono text-[10px] tabular-nums text-muted-foreground/70">
+      <span className="w-4 shrink-0 text-center font-mono text-[11px] tabular-nums text-muted-foreground/70">
         {index + 1}
       </span>
-      <span className="min-w-0 truncate text-[12.5px] text-foreground/85">
+      <span className="min-w-0 truncate text-[13px] text-foreground/85">
         {phase.label}
       </span>
       <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-0.5">
