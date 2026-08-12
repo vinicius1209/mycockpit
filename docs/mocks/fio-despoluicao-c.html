@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Despoluição do fio · C · Trilho</title>
+<style>
+  :root{
+    color-scheme: light dark;
+    --bg:#f2f0eb; --panel:#faf9f6; --card:#ffffff; --dock:#f5f3ee;
+    --text:#232019; --body:#3a362d; --muted:#726c60; --faint:#a49d8f;
+    --border:rgba(38,32,20,.11); --border-strong:rgba(38,32,20,.19);
+    --brass:#96682c; --brass-soft:rgba(150,104,44,.1);
+    --red:#bb4038; --red-soft:rgba(187,64,56,.07);
+    --green:#3f7d54; --blue:#31708f; --blue-soft:rgba(49,112,143,.08);
+    --amber:#9a6a1f;
+    --hover:rgba(38,32,20,.045);
+    --sans:-apple-system,"SF Pro Text",system-ui,"Segoe UI",sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d0e10; --panel:#131418; --card:#181a1f; --dock:#101115;
+    --text:#eae8e3; --body:#cfccc4; --muted:#98948a; --faint:#635f57;
+    --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.17);
+    --brass:#dfa763; --brass-soft:rgba(223,167,99,.12);
+    --red:#ee7a6e; --red-soft:rgba(238,122,110,.09);
+    --green:#63b988; --blue:#64aed2; --blue-soft:rgba(100,174,210,.09);
+    --amber:#d9a04f;
+    --hover:rgba(255,255,255,.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0d0e10; --panel:#131418; --card:#181a1f; --dock:#101115;
+      --text:#eae8e3; --body:#cfccc4; --muted:#98948a; --faint:#635f57;
+      --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.17);
+      --brass:#dfa763; --brass-soft:rgba(223,167,99,.12);
+      --red:#ee7a6e; --red-soft:rgba(238,122,110,.09);
+      --green:#63b988; --blue:#64aed2; --blue-soft:rgba(100,174,210,.09);
+      --amber:#d9a04f;
+      --hover:rgba(255,255,255,.05);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+
+  /* ===== chrome do mock ===== */
+  .mockbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:10px 18px;
+    background:color-mix(in srgb, var(--bg) 90%, transparent);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--border);font-size:12px;color:var(--muted)}
+  .mockbar .tag{font:600 9.5px var(--mono);letter-spacing:.16em;color:var(--brass);border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:2px 7px}
+  .mockbar .dir{font-weight:600;color:var(--text)}
+  .mockbar nav{display:flex;gap:3px;margin-left:auto}
+  .mockbar nav a{color:var(--muted);text-decoration:none;padding:3px 10px;border-radius:6px;font-weight:500}
+  .mockbar nav a:hover{background:var(--hover)}
+  .mockbar nav a.on{background:var(--brass-soft);color:var(--brass)}
+  .tseg{display:flex;gap:2px;border:1px solid var(--border);border-radius:7px;padding:2px}
+  .tseg button{font-size:10.5px;padding:2px 8px;border-radius:5px;color:var(--muted)}
+  .tseg button.on{background:var(--hover);color:var(--text)}
+
+  .stage{max-width:840px;margin:0 auto;padding:26px 20px 64px}
+  .thesis{font-size:12.5px;color:var(--muted);margin:0 2px 18px;max-width:640px}
+  .thesis b{color:var(--text);font-weight:600}
+
+  .frame{background:var(--panel);border:1px solid var(--border);border-radius:15px;overflow:hidden;
+    box-shadow:0 1px 2px rgba(0,0,0,.04),0 12px 32px -18px rgba(0,0,0,.18)}
+  .thread{padding:28px 32px 4px}
+
+  /* ===== mensagens ===== */
+  .msg{display:flex;gap:12px;margin-bottom:20px}
+  .gutter{width:28px;flex:0 0 auto;padding-top:1px}
+  .av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:600}
+  .av.user{background:var(--hover);color:var(--muted);border:1px solid var(--border)}
+  .av.agent{background:var(--card);border:1px solid var(--border-strong);color:var(--muted);font-size:13px}
+  .body{min-width:0;flex:1}
+  .hd{font-size:13px;font-weight:600;margin-bottom:2px}
+  .hd .time{font-weight:400;color:var(--faint);font-size:11px;margin-left:7px}
+  .body p{margin:2px 0 10px;font-size:13.5px;color:var(--body)}
+
+  /* ===== marcos: o fio é prosa + uma linha por acontecimento ===== */
+  .mark{display:flex;align-items:center;gap:8px;margin:6px 0 10px;padding:4px 8px;border-radius:7px;font-size:12.5px;color:var(--muted);min-width:0}
+  .mark:hover{background:var(--hover)}
+  .mmark{width:14px;flex:0 0 auto;display:grid;place-items:center;font-size:11px;line-height:1}
+  .mmark.ok{color:var(--green)}
+  .mmark.err{color:var(--red);font-weight:700}
+  .mmark.bg{color:var(--blue);font-size:9px}
+  .mlabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mlabel .who{color:var(--text)}
+  .mlabel.err .who{color:var(--red)}
+  .mwhisper{margin-left:auto;flex:0 0 auto;font:10.5px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .mclock{flex:0 0 auto;min-width:4.6rem;text-align:right;font:11px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+  .mgo{flex:0 0 auto;font-size:11px;color:var(--blue);text-decoration:none}
+  .mgo:hover{text-decoration:underline;text-underline-offset:3px}
+  .mlink{flex:0 0 auto;font-size:11px;color:var(--muted);text-decoration:underline;text-decoration-color:var(--border-strong);text-underline-offset:3px}
+  .mlink:hover{color:var(--text)}
+
+  /* ===== linha viva (dentro do trilho nesta direção) ===== */
+  .dots{display:flex;gap:3px;flex:0 0 auto}
+  .dots i{width:4.5px;height:4.5px;border-radius:50%;background:var(--blue);animation:blink 1.25s ease-in-out infinite}
+  .dots i:nth-child(2){animation-delay:.18s}.dots i:nth-child(3){animation-delay:.36s}
+  @keyframes blink{0%,80%,100%{opacity:.25}35%{opacity:1}}
+  .spin{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--blue);border-top-color:transparent;animation:rot .9s linear infinite;flex:0 0 auto}
+  @keyframes rot{to{transform:rotate(360deg)}}
+
+  /* ===== TRILHO: dock de 1 linha entre fio e composer ===== */
+  .dock{border-top:1px solid var(--border);background:var(--dock)}
+  .dockpanel{border-bottom:1px solid var(--border);padding:10px 32px 12px;display:none}
+  .dock.open .dockpanel{display:block}
+  .prow{display:flex;align-items:center;gap:9px;padding:4px 4px;border-radius:7px;font-size:12.5px;min-width:0}
+  .prow:hover{background:var(--hover)}
+  .pmark{width:13px;flex:0 0 auto;display:grid;place-items:center}
+  .pdot{width:6px;height:6px;border-radius:50%;background:var(--faint)}
+  .plabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:11.5px;color:var(--body)}
+  .pmeta{margin-left:auto;flex:0 0 auto;font:10.5px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .pact{flex:0 0 auto;font-size:11px;color:var(--muted);text-decoration:underline;text-decoration-color:var(--border-strong);text-underline-offset:3px}
+  .pact:hover{color:var(--text)}
+  .pstop{flex:0 0 auto;font-size:10.5px;color:var(--red);border:1px solid color-mix(in srgb,var(--red) 32%,transparent);border-radius:6px;padding:1px 8px}
+  .pstop:hover{background:var(--red-soft)}
+
+  .dockbar{display:flex;align-items:center;gap:10px;padding:8px 32px;min-height:38px}
+  .dockbar .wlabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;color:var(--muted)}
+  .dockbar .wlabel b{color:var(--text);font-weight:600}
+  .pill{display:flex;align-items:center;gap:7px;border:1px solid var(--border-strong);background:var(--card);border-radius:999px;padding:3px 11px;font-size:11.5px;color:var(--muted);flex:0 0 auto;max-width:230px}
+  .pill:hover{border-color:color-mix(in srgb,var(--blue) 45%,transparent)}
+  .pill .pname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pill .pcount{font:10.5px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .dclock{margin-left:auto;flex:0 0 auto;min-width:4.6rem;text-align:right;font:11px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+  .dchev{flex:0 0 auto;color:var(--faint);font-size:9px;transition:transform .15s;padding:4px}
+  .dock.open .dchev{transform:rotate(-90deg)}
+
+  /* ===== composer ===== */
+  .composerwrap{padding:12px 32px 26px;background:var(--dock)}
+  .composer{border:1px solid var(--border-strong);background:var(--card);border-radius:14px;padding:13px 14px 10px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .ph{color:var(--faint);font-size:13.5px}
+  .cbar{display:flex;align-items:center;gap:8px;margin-top:14px}
+  .chip{font-size:11px;border:1px solid color-mix(in srgb,var(--amber) 38%,transparent);border-radius:999px;padding:2.5px 10px;color:var(--amber)}
+  .cico{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;color:var(--faint);font-size:13px}
+  .cico:hover{background:var(--hover);color:var(--muted)}
+  .stop{margin-left:auto;width:29px;height:29px;border-radius:50%;background:var(--text);display:grid;place-items:center}
+  .stop::before{content:"";width:9px;height:9px;border-radius:2px;background:var(--panel)}
+
+  /* ===== anotações ===== */
+  .nt{color:var(--brass);font:600 11px var(--mono);vertical-align:super;margin-left:3px;line-height:0;cursor:default;user-select:none}
+  .notes{margin-top:24px;padding:0 6px;font-size:12.5px;color:var(--muted)}
+  .notes h2{font:600 10px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin:0 0 10px}
+  .notes ol{list-style:none;margin:0;padding:0;display:grid;gap:7px;max-width:660px}
+  .notes li{padding-left:24px;position:relative;line-height:1.5}
+  .notes li .nt{position:absolute;left:0;top:5px;vertical-align:baseline}
+  .notes b{color:var(--text);font-weight:600}
+</style>
+</head>
+<body>
+
+<header class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">Despoluição do fio · C · Trilho</span>
+  <nav>
+    <a href="fio-despoluicao-a.html">A</a>
+    <a href="fio-despoluicao-b.html">B</a>
+    <a class="on" href="fio-despoluicao-c.html">C</a>
+  </nav>
+  <div class="tseg">
+    <button data-v="auto" class="on" onclick="setTheme('auto')">auto</button>
+    <button data-v="light" onclick="setTheme('light')">claro</button>
+    <button data-v="dark" onclick="setTheme('dark')">escuro</button>
+  </div>
+</header>
+
+<main class="stage">
+  <p class="thesis"><b>Tese:</b> o fio conta a história (prosa, marcos, decisões); tudo que respira mora num trilho de uma linha colado no composer. O trilho é o único dono do "agora": expande pra detalhe e ação, e esvazia sozinho quando nada roda. Clique na barra do trilho.</p>
+
+  <section class="frame">
+    <div class="thread">
+
+      <!-- usuário -->
+      <div class="msg">
+        <div class="gutter"><span class="av user">V</span></div>
+        <div class="body">
+          <div class="hd">Você <span class="time">14:24</span></div>
+          <p>Sobe o vite e roda o estudo de print de PDF no mobile. Quero ver onde a tabela quebra em viewport pequeno.</p>
+        </div>
+      </div>
+
+      <!-- agente -->
+      <div class="msg">
+        <div class="gutter"><span class="av agent">◈</span></div>
+        <div class="body">
+          <div class="hd">Claude Code <span class="time">14:25</span></div>
+          <p>Vou conferir as pré-condições e subir o ambiente do estudo.</p>
+
+          <!-- marco: verificações (pretérito, uma linha, sem filhos no fio) -->
+          <div class="mark">
+            <span class="mmark ok">✓</span>
+            <span class="mlabel">2 verificações concluídas<span class="nt">①</span></span>
+            <span class="mwhisper">2 shells</span>
+            <span class="mclock">3s</span>
+          </div>
+
+          <p>Porta livre e o CSS de print está no lugar. Subindo o servidor e disparando o probe em dois viewports.</p>
+
+          <!-- marco: nasceu trabalho em background; o vivo mora no trilho -->
+          <div class="mark">
+            <span class="mmark bg">●</span>
+            <span class="mlabel">Iniciado em background: <span class="who">vite dev (print pdf mobile study)</span></span>
+            <a class="mgo" href="#trilho" onclick="openDock()">no trilho ↓<span class="nt">②</span></a>
+          </div>
+
+          <!-- marco: a falha é decisão, fica no fio (o trilho não guarda histórico) -->
+          <div class="mark">
+            <span class="mmark err">✕</span>
+            <span class="mlabel err"><span class="who">Uma ação falhou</span> · Gerar PDF (iPhone SE) · saiu 1 · timeout após 30s<span class="nt">③</span></span>
+            <span class="mwhisper">7 ações · +101</span>
+            <button class="mlink">ver saída</button>
+          </div>
+
+          <p>O viewport de 375px corta a tabela na página 2. Ajustei o media query de print e estou gerando o PDF de novo pra confirmar.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== TRILHO ===== -->
+    <div class="dock open" id="trilho">
+      <div class="dockpanel">
+        <div class="prow">
+          <span class="pmark"><span class="spin"></span></span>
+          <span class="plabel">vite dev · :5173 · vivo</span>
+          <span class="pmeta">12min 40s</span>
+          <button class="pact">abrir ↗</button>
+          <button class="pstop">Parar<span class="nt">⑤</span></button>
+        </div>
+        <div class="prow"><span class="pmark"><span class="spin"></span></span><span class="plabel">probe-print-mobile.mjs iphone-13</span><span class="pmeta">44s</span></div>
+        <div class="prow"><span class="pmark"><span class="spin"></span></span><span class="plabel">probe-print-mobile.mjs pixel-7</span><span class="pmeta">41s</span></div>
+        <div class="prow"><span class="pmark"><span class="pdot"></span></span><span class="plabel">tail -f vite.log</span><span class="pmeta">silencioso há 12s</span></div>
+      </div>
+      <button class="dockbar" onclick="togDock()" aria-expanded="true" aria-label="Trilho de trabalho vivo">
+        <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="wlabel"><b>Claude Code</b> está trabalhando…<span class="nt">④</span></span>
+        <span class="pill">
+          <span class="spin" style="width:9px;height:9px"></span>
+          <span class="pname">vite dev (print pdf mobile study)</span>
+          <span class="pcount">4 shells<span class="nt">⑥</span></span>
+        </span>
+        <span class="dclock">1min 07s</span>
+        <span class="dchev">▶</span>
+      </button>
+    </div>
+
+    <!-- composer -->
+    <div class="composerwrap">
+      <div class="composer">
+        <div class="ph">Enfileirar próxima mensagem…</div>
+        <div class="cbar">
+          <span class="chip">⚠ Liberado</span>
+          <button class="cico">/</button>
+          <button class="cico">◎</button>
+          <button class="stop" title="Parar o turno"></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="notes">
+    <h2>Decisões desta direção</h2>
+    <ol>
+      <li><span class="nt">①</span><b>O fio é só história.</b> Cada acontecimento vira um marco de uma linha, no pretérito, com o tempo congelado. Nenhuma árvore de filhos, nenhum terminal inline: quem quer o detalhe segue pro trilho ou pro "ver saída".</li>
+      <li><span class="nt">②</span><b>Marco referencia, não duplica.</b> Quando nasce trabalho em background, o fio registra o nascimento e aponta pro trilho. A mesma string nunca aparece em duas superfícies dizendo a mesma coisa.</li>
+      <li><span class="nt">③</span><b>Falha é decisão, então mora no fio.</b> O trilho não guarda histórico (regra do Warp: estado vivo não persiste). O que falhou vira marco vermelho com motivo e saída; o que roda fica no trilho até morrer.</li>
+      <li><span class="nt">④</span><b>Um dono só pro "agora".</b> A linha "está trabalhando…" foi absorvida pela barra do trilho: gerúndio, dots animados e cronômetro tabular numa faixa de altura travada que some por completo quando nada roda.</li>
+      <li><span class="nt">⑤</span><b>Ação mora onde o estado mora.</b> Parar, abrir e ver saída ficam no trilho, ao lado do processo. O fio nunca oferece botão sobre coisa que já não está mais lá.</li>
+      <li><span class="nt">⑥</span><b>Pill com contagem agregada.</b> Nome com largura máxima (trunca antes do número), "4 shells" como agregado, cronômetro fora do texto animado. Com N trabalhos: "N trabalhos · o mais recente", nunca nome empilhado.</li>
+    </ol>
+  </footer>
+</main>
+
+<script>
+  const saved = localStorage.getItem("fio-theme")
+  if (saved) document.documentElement.dataset.theme = saved
+  function setTheme(v){
+    if (v === "auto") { delete document.documentElement.dataset.theme; localStorage.removeItem("fio-theme") }
+    else { document.documentElement.dataset.theme = v; localStorage.setItem("fio-theme", v) }
+    document.querySelectorAll(".tseg button").forEach(b => b.classList.toggle("on", b.dataset.v === v))
+  }
+  setTheme(saved ?? "auto")
+  function togDock(){
+    const d = document.getElementById("trilho")
+    d.classList.toggle("open")
+    d.querySelector(".dockbar").setAttribute("aria-expanded", d.classList.contains("open"))
+  }
+  function openDock(){ document.getElementById("trilho").classList.add("open") }
+</script>
+</body>
+</html>

@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Despoluição do fio · A · Tinta mínima</title>
+<style>
+  :root{
+    color-scheme: light dark;
+    --bg:#f2f0eb; --panel:#faf9f6; --card:#ffffff;
+    --text:#232019; --body:#3a362d; --muted:#726c60; --faint:#a49d8f;
+    --border:rgba(38,32,20,.11); --border-strong:rgba(38,32,20,.19);
+    --brass:#96682c; --brass-soft:rgba(150,104,44,.1);
+    --red:#bb4038; --red-soft:rgba(187,64,56,.08);
+    --hover:rgba(38,32,20,.045);
+    --sans:-apple-system,"SF Pro Text",system-ui,"Segoe UI",sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d0e10; --panel:#131418; --card:#181a1f;
+    --text:#eae8e3; --body:#cfccc4; --muted:#98948a; --faint:#635f57;
+    --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.17);
+    --brass:#dfa763; --brass-soft:rgba(223,167,99,.12);
+    --red:#ee7a6e; --red-soft:rgba(238,122,110,.1);
+    --hover:rgba(255,255,255,.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0d0e10; --panel:#131418; --card:#181a1f;
+      --text:#eae8e3; --body:#cfccc4; --muted:#98948a; --faint:#635f57;
+      --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.17);
+      --brass:#dfa763; --brass-soft:rgba(223,167,99,.12);
+      --red:#ee7a6e; --red-soft:rgba(238,122,110,.1);
+      --hover:rgba(255,255,255,.05);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+
+  /* ===== chrome do mock (não é o app) ===== */
+  .mockbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:10px 18px;
+    background:color-mix(in srgb, var(--bg) 90%, transparent);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--border);font-size:12px;color:var(--muted)}
+  .mockbar .tag{font:600 9.5px var(--mono);letter-spacing:.16em;color:var(--brass);border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:2px 7px}
+  .mockbar .dir{font-weight:600;color:var(--text)}
+  .mockbar nav{display:flex;gap:3px;margin-left:auto}
+  .mockbar nav a{color:var(--muted);text-decoration:none;padding:3px 10px;border-radius:6px;font-weight:500}
+  .mockbar nav a:hover{background:var(--hover)}
+  .mockbar nav a.on{background:var(--brass-soft);color:var(--brass)}
+  .tseg{display:flex;gap:2px;border:1px solid var(--border);border-radius:7px;padding:2px}
+  .tseg button{font-size:10.5px;padding:2px 8px;border-radius:5px;color:var(--muted)}
+  .tseg button.on{background:var(--hover);color:var(--text)}
+
+  .stage{max-width:840px;margin:0 auto;padding:26px 20px 64px}
+  .thesis{font-size:12.5px;color:var(--muted);margin:0 2px 18px;max-width:640px}
+  .thesis b{color:var(--text);font-weight:600}
+
+  .frame{background:var(--panel);border:1px solid var(--border);border-radius:15px;overflow:hidden;
+    box-shadow:0 1px 2px rgba(0,0,0,.04),0 12px 32px -18px rgba(0,0,0,.18)}
+  .thread{padding:28px 32px 4px}
+
+  /* ===== mensagens ===== */
+  .msg{display:flex;gap:12px;margin-bottom:20px}
+  .gutter{width:28px;flex:0 0 auto;padding-top:1px}
+  .av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:600}
+  .av.user{background:var(--hover);color:var(--muted);border:1px solid var(--border)}
+  .av.agent{background:var(--card);border:1px solid var(--border-strong);color:var(--muted);font-size:13px}
+  .body{min-width:0;flex:1}
+  .hd{font-size:13px;font-weight:600;margin-bottom:2px}
+  .hd .time{font-weight:400;color:var(--faint);font-size:11px;margin-left:7px}
+  .body p{margin:2px 0 10px;font-size:13.5px;color:var(--body)}
+
+  /* ===== grupos de atividade ===== */
+  .grp{margin:2px 0 12px;font-size:12.5px}
+  .ghead{display:flex;align-items:center;gap:8px;width:100%;padding:5px 8px;border-radius:8px;text-align:left;color:var(--muted)}
+  .ghead:hover{background:var(--hover)}
+  .glabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .glabel.err{color:var(--red)}
+  .whisper{margin-left:auto;flex:0 0 auto;font:10.5px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;letter-spacing:.01em}
+  .clock{flex:0 0 auto;min-width:4.6rem;text-align:right;font:11px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+  .chev{flex:0 0 auto;color:var(--faint);font-size:9px;transition:transform .15s}
+  .open .chev{transform:rotate(90deg)}
+
+  .gkids{padding:1px 0 2px}
+  .krow{display:flex;align-items:center;gap:9px;padding:3.5px 8px 3.5px 27px;border-radius:7px;min-width:0}
+  .krow:hover{background:var(--hover)}
+  .kmark{width:13px;flex:0 0 auto;display:grid;place-items:center}
+  .kdot{width:6px;height:6px;border-radius:50%;background:var(--faint)}
+  .kx{color:var(--red);font-size:11px;font-weight:700;line-height:1}
+  .klabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+  .klabel.delta{font-family:var(--mono);font-size:11.5px}
+  .krow.failed .klabel{color:var(--text)}
+  .kmeta{margin-left:auto;flex:0 0 auto;font:10.5px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kmeta.err{color:color-mix(in srgb,var(--red) 78%,var(--muted))}
+  .klink{flex:0 0 auto;font-size:11px;color:var(--muted);text-decoration:underline;text-decoration-color:var(--border-strong);text-underline-offset:3px}
+  .klink:hover{color:var(--text)}
+  .kstop{flex:0 0 auto;font-size:10.5px;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:1px 8px}
+  .kstop:hover{color:var(--red);border-color:color-mix(in srgb,var(--red) 40%,transparent)}
+
+  .spin{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--faint);border-top-color:transparent;animation:rot .9s linear infinite;flex:0 0 auto}
+  @keyframes rot{to{transform:rotate(360deg)}}
+
+  /* ===== linha viva do rodapé ===== */
+  .working{display:flex;gap:12px;margin:22px 0 4px}
+  .working .lbl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12.5px}
+  .wrow{display:flex;align-items:center;gap:8px;min-width:0}
+  .dots{display:flex;gap:3px;flex:0 0 auto}
+  .dots i{width:4.5px;height:4.5px;border-radius:50%;background:var(--faint);animation:blink 1.25s ease-in-out infinite}
+  .dots i:nth-child(2){animation-delay:.18s}.dots i:nth-child(3){animation-delay:.36s}
+  @keyframes blink{0%,80%,100%{opacity:.25}35%{opacity:1}}
+
+  /* ===== composer ===== */
+  .composerwrap{padding:12px 32px 26px}
+  .composer{border:1px solid var(--border-strong);background:var(--card);border-radius:14px;padding:13px 14px 10px;
+    box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .ph{color:var(--faint);font-size:13.5px}
+  .cbar{display:flex;align-items:center;gap:8px;margin-top:14px}
+  .chip{font-size:11px;border:1px solid var(--border);border-radius:999px;padding:2.5px 10px;color:var(--muted)}
+  .cico{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;color:var(--faint);font-size:13px}
+  .cico:hover{background:var(--hover);color:var(--muted)}
+  .stop{margin-left:auto;width:29px;height:29px;border-radius:50%;background:var(--brass);display:grid;place-items:center}
+  .stop::before{content:"";width:9px;height:9px;border-radius:2px;background:var(--panel)}
+
+  /* ===== anotações ===== */
+  .nt{color:var(--brass);font:600 11px var(--mono);vertical-align:super;margin-left:3px;line-height:0;cursor:default;user-select:none}
+  .notes{margin-top:24px;padding:0 6px;font-size:12.5px;color:var(--muted)}
+  .notes h2{font:600 10px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin:0 0 10px}
+  .notes ol{list-style:none;margin:0;padding:0;display:grid;gap:7px;max-width:660px}
+  .notes li{padding-left:24px;position:relative;line-height:1.5}
+  .notes li .nt{position:absolute;left:0;top:5px;vertical-align:baseline}
+  .notes b{color:var(--text);font-weight:600}
+</style>
+</head>
+<body>
+
+<header class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">Despoluição do fio · A · Tinta mínima</span>
+  <nav>
+    <a class="on" href="fio-despoluicao-a.html">A</a>
+    <a href="fio-despoluicao-b.html">B</a>
+    <a href="fio-despoluicao-c.html">C</a>
+  </nav>
+  <div class="tseg">
+    <button data-v="auto" class="on" onclick="setTheme('auto')">auto</button>
+    <button data-v="light" onclick="setTheme('light')">claro</button>
+    <button data-v="dark" onclick="setTheme('dark')">escuro</button>
+  </div>
+</header>
+
+<main class="stage">
+  <p class="thesis"><b>Tese:</b> a poluição é de tinta, não de informação. Tudo continua no fio, mas quase tudo em cinza: cor só onde carrega decisão (falha em vermelho, ação primária em latão). Rótulo e estado aparecem uma vez cada; o filho mostra só o delta.</p>
+
+  <section class="frame">
+    <div class="thread">
+
+      <!-- usuário -->
+      <div class="msg">
+        <div class="gutter"><span class="av user">V</span></div>
+        <div class="body">
+          <div class="hd">Você <span class="time">14:24</span></div>
+          <p>Sobe o vite e roda o estudo de print de PDF no mobile. Quero ver onde a tabela quebra em viewport pequeno.</p>
+        </div>
+      </div>
+
+      <!-- agente -->
+      <div class="msg">
+        <div class="gutter"><span class="av agent">◈</span></div>
+        <div class="body">
+          <div class="hd">Claude Code <span class="time">14:25</span></div>
+          <p>Vou conferir as pré-condições e subir o ambiente do estudo.</p>
+
+          <!-- grupo 1: verificações concluídas (cinza, pretérito) -->
+          <div class="grp open">
+            <button class="ghead" aria-expanded="true">
+              <span class="kmark"><span class="kdot"></span></span>
+              <span class="glabel">2 verificações concluídas<span class="nt">③</span></span>
+              <span class="whisper">2 shells · 3s<span class="nt">④</span></span>
+              <span class="chev">▶</span>
+            </button>
+            <div class="gkids">
+              <div class="krow"><span class="kmark"><span class="kdot"></span></span><span class="klabel">Checar porta 5173 livre</span><span class="kmeta">0.3s</span></div>
+              <div class="krow"><span class="kmark"><span class="kdot"></span></span><span class="klabel">Ler print-pdf.css</span><span class="kmeta">…/src/styles · 82 linhas</span></div>
+            </div>
+          </div>
+
+          <p>Porta livre e o CSS de print está no lugar. Subindo o servidor e disparando o probe em dois viewports.</p>
+
+          <!-- trabalho em background RODANDO -->
+          <div class="grp open">
+            <button class="ghead" aria-expanded="true">
+              <span class="kmark"><span class="spin"></span></span>
+              <span class="glabel" style="color:var(--text)">vite dev (print pdf mobile study)<span class="nt">①</span></span>
+              <span class="whisper">4 shells · atividade há 12s</span>
+              <span class="clock">12min 40s<span class="nt">⑤</span></span>
+              <span class="chev">▶</span>
+            </button>
+            <div class="gkids">
+              <div class="krow">
+                <span class="kmark"><span class="spin"></span></span>
+                <span class="klabel delta">:5173 · vivo<span class="nt">①</span></span>
+                <span class="kmeta">12min 40s</span>
+                <button class="kstop">Parar<span class="nt">⑥</span></button>
+              </div>
+              <div class="krow"><span class="kmark"><span class="spin"></span></span><span class="klabel delta">probe-print-mobile.mjs iphone-13</span><span class="kmeta">44s</span></div>
+              <div class="krow"><span class="kmark"><span class="spin"></span></span><span class="klabel delta">probe-print-mobile.mjs pixel-7</span><span class="kmeta">41s</span></div>
+              <div class="krow"><span class="kmark"><span class="kdot"></span></span><span class="klabel delta">tail -f vite.log</span><span class="kmeta">silencioso há 12s</span></div>
+            </div>
+          </div>
+
+          <!-- grupo com UMA falha entre 6 ok -->
+          <div class="grp open">
+            <button class="ghead" aria-expanded="true">
+              <span class="kmark"><span class="kx">✕</span></span>
+              <span class="glabel err">Uma ação falhou<span class="nt">②</span></span>
+              <span class="whisper">7 ações · +101 · 42s</span>
+              <span class="chev">▶</span>
+            </button>
+            <div class="gkids">
+              <div class="krow"><span class="kmark"><span class="kdot"></span></span><span class="klabel">Gerar PDF (iPhone 13)</span><span class="kmeta">8.2s</span></div>
+              <div class="krow"><span class="kmark"><span class="kdot"></span></span><span class="klabel">Gerar PDF (Pixel 7)</span><span class="kmeta">7.9s</span></div>
+              <div class="krow failed">
+                <span class="kmark"><span class="kx">✕</span></span>
+                <span class="klabel">Gerar PDF (iPhone SE)</span>
+                <span class="kmeta err">saiu 1 · timeout após 30s</span>
+                <button class="klink">ver saída</button>
+              </div>
+              <div class="krow"><span class="kmark"><span class="kdot"></span></span><span class="klabel">Ler probe-print-mobile.mjs</span><span class="kmeta">…/scripts · 96 linhas</span></div>
+              <div class="krow"><span class="kmark"><span class="kdot"></span></span><span class="klabel">Comparar screenshots das 3 páginas</span><span class="kmeta">3 imagens</span></div>
+              <div class="krow"><span class="kmark"><span class="kdot"></span></span><span class="klabel">Editar print-pdf.css</span><span class="kmeta">+101</span></div>
+              <div class="krow"><span class="kmark"><span class="kdot"></span></span><span class="klabel">Rodar lint nos estilos</span><span class="kmeta">1.1s</span></div>
+            </div>
+          </div>
+
+          <p>O viewport de 375px corta a tabela na página 2. Ajustei o media query de print e estou gerando o PDF de novo pra confirmar.</p>
+        </div>
+      </div>
+
+      <!-- linha viva -->
+      <div class="working">
+        <div class="gutter"><span class="av agent">◈</span></div>
+        <div class="body">
+          <div class="hd">Claude Code</div>
+          <div class="wrow">
+            <span class="lbl">está trabalhando…</span>
+            <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="clock">1min 07s<span class="nt">⑤</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- composer -->
+    <div class="composerwrap">
+      <div class="composer">
+        <div class="ph">Enfileirar próxima mensagem…</div>
+        <div class="cbar">
+          <span class="chip">⚠ Liberado<span class="nt">⑥</span></span>
+          <button class="cico">/</button>
+          <button class="cico">◎</button>
+          <button class="stop" title="Parar o turno"></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="notes">
+    <h2>Decisões desta direção</h2>
+    <ol>
+      <li><span class="nt">①</span><b>Rótulo uma vez só.</b> O cabeçalho do grupo é o dono do nome ("vite dev (print pdf mobile study)"); o filho que hoje repetia a mesma string mostra só o delta dele (porta, estado, tempo). Filhos com identidade própria (probes) mantêm o nome.</li>
+      <li><span class="nt">②</span><b>Estado uma vez só.</b> "Uma ação falhou" mora no cabeçalho; a linha falhada não repete a frase, mostra o motivo (saiu 1 · timeout após 30s). O vermelho aparece exatamente duas vezes: no estado e na linha culpada.</li>
+      <li><span class="nt">③</span><b>Concluído é cinza.</b> Check verde vira ponto neutro: sucesso é o caso comum, não precisa de tinta. O olho sobra pra falha e pro que gira.</li>
+      <li><span class="nt">④</span><b>Metadados em sussurro.</b> Contagens, caminhos truncados e durações vão pra direita, em mono 10.5px, cor apagada. Informam sem competir com o conteúdo.</li>
+      <li><span class="nt">⑤</span><b>Cronômetro estável (regra do Warp).</b> Tabular, largura mínima reservada, irmão do texto animado, nunca dentro dele. Quem trunca é o nome. Rodando fala no gerúndio, terminado congela no pretérito.</li>
+      <li><span class="nt">⑥</span><b>Trade-off assumido.</b> "Liberado" e "Parar" perdem a cor de alerta (âmbar/vermelho) e só reagem no hover. É o preço do quase monocromático: estados de risco ficam mais discretos do que talvez devessem.</li>
+    </ol>
+  </footer>
+</main>
+
+<script>
+  const saved = localStorage.getItem("fio-theme")
+  if (saved) document.documentElement.dataset.theme = saved
+  function setTheme(v){
+    if (v === "auto") { delete document.documentElement.dataset.theme; localStorage.removeItem("fio-theme") }
+    else { document.documentElement.dataset.theme = v; localStorage.setItem("fio-theme", v) }
+    document.querySelectorAll(".tseg button").forEach(b => b.classList.toggle("on", b.dataset.v === v))
+  }
+  setTheme(saved ?? "auto")
+</script>
+</body>
+</html>
