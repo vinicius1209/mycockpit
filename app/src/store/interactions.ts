@@ -22,7 +22,16 @@ import {
   type QuestionData,
 } from "@/lib/interaction"
 import { summarizeApproval } from "@/lib/approvalSummary"
-import { notifyApproval, notifyQuestion } from "@/lib/notify"
+import {
+  engineLabel,
+  projectForCwd,
+  sessionPlace,
+} from "@/lib/externalSessions"
+import {
+  notifyApproval,
+  notifyHookPermission,
+  notifyQuestion,
+} from "@/lib/notify"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useMission } from "@/store/mission"
@@ -591,7 +600,25 @@ export function announceArrival(
   // superfícies de permissão); aqui precisamos do dono de QUALQUER pedido
   // bloqueante — mesma régua do split contextual e do índice de espera.
   const origin = currentOriginAnyKind(req)
-  if (!origin) return // run órfão: sem conversa dona, não há onde mandar você
+  if (!origin) {
+    // Permissão de HOOK (H2 do hooks-plan): sessão EXTERNA no terminal, sem
+    // conversa dona POR DESENHO (não somos donos dela). Ainda assim avisa:
+    // a janela de resposta é de 30s e o pedido nasceu fora do app.
+    const hook = (req.data as Partial<ApprovalData> | null | undefined)?.hook
+    if (req.kind === "approval" && hook) {
+      const projects = useApp.getState().projects
+      const project = projectForCwd(hook.cwd ?? "", projects)
+      const data = req.data as ApprovalData
+      notifyHookPermission({
+        engine: engineLabel(hook.engine),
+        place: sessionPlace({ cwd: hook.cwd ?? "" }, projects),
+        projectId: project?.id ?? null,
+        toolName: (data?.tool_name ?? "").trim() || "uma tool",
+        headline: summarizeApproval(data ?? ({} as ApprovalData)).headline,
+      })
+    }
+    return // run órfão sem origem de hook: não há onde mandar você
+  }
 
   const chat = useChat.getState()
   const missions = useMission.getState()

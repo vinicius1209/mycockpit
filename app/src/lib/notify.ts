@@ -328,6 +328,34 @@ export function notifyApproval(o: {
   )
 }
 
+/** Permissão vinda de HOOK (H2 do hooks-plan): sessão EXTERNA no terminal
+ *  pediu permissão e a pendência é respondível no app/Companion por até 30s.
+ *  Não tem conversa dona (não somos donos da sessão) — o feed aponta pro
+ *  projeto quando o cwd é de projeto conhecido ("" = desconhecido, o clique
+ *  não navega). A nativa avisa sempre: o pedido nasceu FORA do app, então
+ *  nunca há card "na sua frente" garantido. */
+export function notifyHookPermission(o: {
+  /** Rótulo do motor ("Claude", "Codex", "agy"). */
+  engine: string
+  /** Projeto conhecido ou basename do cwd. */
+  place: string
+  projectId: string | null
+  toolName: string
+  /** Resumo de uma linha (summarizeApproval().headline). */
+  headline: string
+}) {
+  useNotifs.getState().push({
+    kind: "approval",
+    title: `${o.engine} no terminal`,
+    subtitle: `Permissão pendente · ${o.headline}${o.place ? ` · ${o.place}` : ""}`,
+    projectId: o.projectId ?? "",
+  })
+  void nativeNotify(
+    "Frota · permissão no terminal",
+    `${o.engine} (${o.place}) pediu ${o.toolName}: ${o.headline}. Responda no app em até 30s ou decida no terminal.`,
+  )
+}
+
 /** Chamado quando chega uma PERGUNTA (`ask_user`). Irmão do notifyApproval: o
  *  turno também fica literalmente parado, mas esperando CONTEÚDO em vez de
  *  autorização — então a cópia é outra ("perguntou", não "pediu permissão").

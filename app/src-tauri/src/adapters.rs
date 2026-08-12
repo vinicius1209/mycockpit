@@ -244,6 +244,13 @@ pub struct Capabilities {
     /// `hooksStatus` em lib/agents.ts (teste-gêmeo agents.hooks.test.ts ↔
     /// `matriz_de_hooks_por_agent`).
     pub hooks_status: bool,
+    /// O prompt de permissão do CLI pode ser decidido por um hook SÍNCRONO
+    /// (hooks-plan H2): o script segura a resposta e devolve allow/deny/ask
+    /// pelo stdout no formato do dialeto. Timeout sem humano ⇒ `ask` (o
+    /// prompt nativo aparece no terminal — nunca allow fantasma nem deny que
+    /// trava trabalho legítimo). Espelho TS: `hooksPermission` em
+    /// lib/agents.ts (mesmo teste-gêmeo `matriz_de_hooks_por_agent`).
+    pub hooks_permission: bool,
     /// Como instalar/falar com os hooks deste motor. None = sem hooks: o card
     /// de Configurações nem mostra a opção (degradação honesta).
     pub hook_dialect: Option<HookDialect>,
@@ -277,6 +284,13 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     // máquina em 12/08/2026 (fixtures em hook_sessions.rs); Notification
     // documentado e vivo no settings do usuário (Xirp).
     hooks_status: true,
+    // claude 2.1.220: evento `PermissionRequest` com resposta síncrona por
+    // stdout `hookSpecificOutput.decision.behavior: allow|deny|ask` (docs
+    // oficiais verificadas 12/08/2026 + script síncrono de 30s do Xirp vivo
+    // nesta máquina [E2]). Só dispara em sessão INTERATIVA (em `-p` a tool é
+    // auto-negada sem prompt — verificado empiricamente 12/08/2026), que é
+    // exatamente o alvo do H2: sessões externas do terminal.
+    hooks_permission: true,
     hook_dialect: Some(HookDialect::ClaudeSettings),
 };
 
@@ -313,6 +327,10 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     // auditado 12/08/2026). Trust por hook: o comando referencia só o path
     // estável do script (token rotaciona DENTRO do arquivo apontado).
     hooks_status: true,
+    // codex 0.146: MESMO protocolo do claude — o binário embute
+    // `PermissionRequestHookSpecificOutputWire` e o Xirp instalou o MESMO
+    // script síncrono de 30s, trusted-hasheado [E4][E6].
+    hooks_permission: true,
     hook_dialect: Some(HookDialect::CodexHooksJson),
 };
 
@@ -344,6 +362,11 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // "/hooks"` em 12/08/2026). Stop hooks só rodam ≥1.1.10 → o instalador
     // confere a versão e aborta com motivo abaixo disso (gate honesto).
     hooks_status: true,
+    // agy 1.1.12: NÃO há evento de permissão separado — o gate é o próprio
+    // PreToolUse (stdout `decision: allow|deny|ask|force_ask`, doc embarcada
+    // [E9]). O instalador escopa o matcher a `run_command` (a tool que pede
+    // a permissão "command") pra não segurar tool call inofensiva.
+    hooks_permission: true,
     hook_dialect: Some(HookDialect::AgyConfigHooks),
 };
 
@@ -2936,25 +2959,36 @@ mod tests {
         // 12/08/2026 — fixtures em hook_sessions.rs).
         let claude = capabilities_of("claude-code").unwrap();
         assert!(claude.hooks_status);
+        // H2: PermissionRequest síncrono (docs 12/08/2026 + Xirp vivo [E2]).
+        assert!(claude.hooks_permission);
         assert_eq!(claude.hook_dialect, Some(HookDialect::ClaudeSettings));
         // codex 0.146: hooks.json dedicado, schema idêntico, feature stable.
         let codex = capabilities_of("codex").unwrap();
         assert!(codex.hooks_status);
+        // H2: mesmo protocolo (wire schema no binário [E6]).
+        assert!(codex.hooks_permission);
         assert_eq!(codex.hook_dialect, Some(HookDialect::CodexHooksJson));
         // agy 1.1.12: grupos nomeados em ~/.gemini/config/hooks.json (Stop só
         // roda ≥1.1.10 — gate de versão fica no instalador).
         let agy = capabilities_of("agy").unwrap();
         assert!(agy.hooks_status);
+        // H2: permissão via PreToolUse.decision (doc embarcada [E9]).
+        assert!(agy.hooks_permission);
         assert_eq!(agy.hook_dialect, Some(HookDialect::AgyConfigHooks));
         // Coerência estrutural pra TODO agent registrado (em loop, nunca
         // copiado): declarar hooks sem dialeto seria prometer uma instalação
-        // que hooks_install.rs não sabe fazer — e vice-versa.
+        // que hooks_install.rs não sabe fazer — e vice-versa; e o hook de
+        // permissão viaja no MESMO script/instalador dos de status.
         for agent in registered_agents() {
             let caps = capabilities_of(agent).unwrap();
             assert_eq!(
                 caps.hooks_status,
                 caps.hook_dialect.is_some(),
                 "{agent}: hooks_status declarado exige hook_dialect (e vice-versa)"
+            );
+            assert!(
+                !caps.hooks_permission || caps.hooks_status,
+                "{agent}: hooks_permission exige hooks_status (mesmo script/instalador)"
             );
         }
     }

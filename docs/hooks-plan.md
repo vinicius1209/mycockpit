@@ -194,6 +194,23 @@ app fechado — não acha endpoint, sai 0). Nada de UI ainda.
 > (`hook_event`) continua pendente e entra com H1/H2, plugando NESTA rota sem
 > mudar o contrato do script.
 
+> **H1 + H2 ENTREGUES (12/08/2026).** Capabilities `hooks_status`/
+> `hooks_permission` + `HookDialect` no registry (adapters.rs ↔ lib/agents.ts,
+> matriz-gêmea `matriz_de_hooks_por_agent` ↔ agents.hooks.test.ts). Instalador
+> respeitoso por dialeto em `hooks_install.rs` (entrada AO LADO das
+> existentes, backup .bak-mycockpit, script fail-open com evento em $1 e
+> comando estável pro trusted_hash do codex, gate agy ≥1.1.10, permissão como
+> opt-in separado — agy escopado a `run_command`). Presença de sessões
+> externas em `hook_sessions.rs` (memória, replay-safe, correlação
+> `MYCOCKPIT_RUN_ID` via header) → Painel ("No terminal, observando") + tray/
+> popover + Configurações. Permissão síncrona: round-trip no hook_gateway
+> segura a resposta HTTP até a decisão humana (fila única de interações →
+> card global/Companion/sino), timeout 30s ⇒ `ask` (fail-safe: prompt nativo
+> no terminal; card resolvido — sem teatro), sessão fica `blocked` sticky até
+> o evento correlacionado. Fixtures REAIS do claude 2.1.220 capturadas nesta
+> máquina; PermissionRequest não dispara em `-p` (auto-deny, verificado) — a
+> fixture dele vem do contrato documentado + script vivo do Xirp.
+
 **H1 — Status de sessões EXTERNAS no Painel/tray.** O usuário abre `claude`/
 `codex`/`agy` no terminal e o MyCockpit mostra a sessão (projeto, estado
 working/waiting/blocked/idle, último evento) no Painel e no tray — coisa que o

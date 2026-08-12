@@ -32,6 +32,9 @@ describe("hooks de ciclo de vida por agent (espelho do registry Rust)", () => {
     it(`${id}: hookDialect=${dialeto}`, () => {
       expect(agentDef(id)?.hooksStatus).toBe(dialeto != null)
       expect(agentDef(id)?.hookDialect).toBe(dialeto)
+      // H2: os três motores auditados têm permissão síncrona (claude/codex
+      // PermissionRequest; agy PreToolUse.decision).
+      expect(agentDef(id)?.hooksPermission).toBe(dialeto != null)
     })
   }
 
@@ -55,6 +58,10 @@ describe("hooks de ciclo de vida por agent (espelho do registry Rust)", () => {
       expect(a.hooksStatus, `${a.id}: status ≠ dialeto`).toBe(
         a.hookDialect != null,
       )
+      // permissão exige status (mesmo script/instalador) — loop, não cópia.
+      if (a.hooksPermission) {
+        expect(a.hooksStatus, `${a.id}: permissão sem status`).toBe(true)
+      }
     }
   })
 

@@ -9,6 +9,7 @@ import { useEffect, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { Check, ChevronDown, Loader2 } from "lucide-react"
 import { toast } from "sonner"
+import { Switch } from "@/components/ui/switch"
 import { hooksAgents, type AgentDef } from "@/lib/agents"
 import { isTauri } from "@/lib/db"
 import { cn } from "@/lib/utils"
@@ -16,9 +17,13 @@ import { cn } from "@/lib/utils"
 /** Espelho de hooks_install::HooksStatus (serde camelCase). */
 interface HooksStatus {
   installed: boolean
+  /** As entradas de PERMISSÃO (H2) também estão instaladas? */
+  permissionInstalled: boolean
   configPath: string
   scriptPath: string
   preview: string
+  /** Fragmento ADICIONAL escrito quando a permissão está ligada. */
+  previewPermission: string
   events: string[]
   /** Estado inconsistente (entradas presentes com script sumido etc.). */
   warning: string | null
@@ -30,10 +35,15 @@ function HooksRow({ def }: { def: AgentDef }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
+  // O que a PRÓXIMA instalação inclui (antes de instalar); depois de
+  // instalado, a verdade é status.permissionInstalled.
+  const [wantPermission, setWantPermission] = useState(false)
 
   async function refresh() {
     try {
-      setStatus(await invoke<HooksStatus>("hooks_status", { agent: def.id }))
+      const s = await invoke<HooksStatus>("hooks_status", { agent: def.id })
+      setStatus(s)
+      setWantPermission(s.permissionInstalled)
       setError(null)
     } catch (e) {
       // erro visível (config que não parseia, HOME ausente…): a linha mostra
@@ -46,10 +56,17 @@ function HooksRow({ def }: { def: AgentDef }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function act(cmd: "hooks_install" | "hooks_uninstall") {
+  async function act(cmd: "hooks_install" | "hooks_uninstall", permission?: boolean) {
     setBusy(true)
     try {
-      setStatus(await invoke<HooksStatus>(cmd, { agent: def.id }))
+      const s = await invoke<HooksStatus>(
+        cmd,
+        cmd === "hooks_install"
+          ? { agent: def.id, permission: permission ?? wantPermission }
+          : { agent: def.id },
+      )
+      setStatus(s)
+      setWantPermission(s.permissionInstalled)
       setError(null)
       toast.success(
         cmd === "hooks_install"
@@ -115,6 +132,36 @@ function HooksRow({ def }: { def: AgentDef }) {
           </div>
         )}
       </div>
+      {/* H2 — permissões respondíveis: opt-in SEPARADO (o hook é síncrono e
+          segura o prompt por até 30s; ligar é uma decisão, não um default).
+          Aprovação continua sendo gesto humano: aqui você ganha o controle
+          FINO de decidir do app/celular, nunca um pulo de permissão. */}
+      {def.hooksPermission && status && (
+        <div className="mt-1.5 flex items-center justify-between gap-3 rounded-md border border-border/40 bg-background/40 px-2.5 py-1.5">
+          <div className="min-w-0">
+            <div className="text-[12px] text-foreground">
+              Responder permissões pelo app
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              O pedido aparece aqui e no Companion por até 30s; sem resposta,
+              o prompt normal aparece no terminal.
+            </div>
+          </div>
+          <Switch
+            checked={status.installed ? status.permissionInstalled : wantPermission}
+            disabled={busy}
+            onCheckedChange={(v) => {
+              if (status.installed) {
+                // reinstala com/sem as entradas de permissão (idempotente).
+                void act("hooks_install", v)
+              } else {
+                setWantPermission(v)
+              }
+            }}
+            aria-label={`Responder permissões do ${def.label} pelo app`}
+          />
+        </div>
+      )}
       {status && (
         <div className="mt-1.5">
           <button
@@ -141,6 +188,18 @@ function HooksRow({ def }: { def: AgentDef }) {
               <pre className="max-h-48 overflow-auto rounded bg-background/60 px-2 py-1.5 font-mono text-[11px] leading-snug text-muted-foreground">
                 {status.preview}
               </pre>
+              {(status.installed
+                ? status.permissionInstalled
+                : wantPermission) && (
+                <>
+                  <p className="text-[11px] text-muted-foreground">
+                    Com "responder permissões" ligado, entra também:
+                  </p>
+                  <pre className="max-h-32 overflow-auto rounded bg-background/60 px-2 py-1.5 font-mono text-[11px] leading-snug text-muted-foreground">
+                    {status.previewPermission}
+                  </pre>
+                </>
+              )}
               {status.dialect === "codex-hooks-json" && (
                 <p className="text-[11px] text-muted-foreground">
                   O Codex confirma hooks novos na próxima sessão (trust por

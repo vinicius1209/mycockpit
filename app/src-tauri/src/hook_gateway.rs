@@ -110,26 +110,47 @@ fn header_str(headers: &HeaderMap, name: &str) -> Option<String> {
 }
 
 /// POST /hook/{engine} — a única rota. Token errado = 401 (o único erro que o
-/// script pode ver; ele engole). Qualquer payload autenticado = 204: os
-/// consumidores atuais são a statusline (rate_limits → snapshot de janela) e
-/// os hooks de status (H1 → hook_sessions); o resto é aceito-e-ignorado de
-/// propósito (substrato das próximas fases).
+/// script pode ver; ele engole). Pedido de PERMISSÃO (H2) é o único caminho
+/// SÍNCRONO: a resposta HTTP fica presa até a decisão humana (ou o teto de
+/// 30s ⇒ `ask`) e o corpo é o stdout que o script pipa pro CLI. Qualquer
+/// outro payload autenticado = 204: os consumidores são a statusline
+/// (rate_limits → snapshot de janela) e os hooks de status (H1 →
+/// hook_sessions); o resto é aceito-e-ignorado de propósito.
 async fn hook_post(
     State(ctx): State<Ctx>,
     AxumPath(engine): AxumPath<String>,
     headers: HeaderMap,
     body: Bytes,
-) -> StatusCode {
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
     match bearer(&headers) {
         Some(t) if token_eq(&t, &ctx.token) => {}
-        _ => return StatusCode::UNAUTHORIZED,
+        _ => return StatusCode::UNAUTHORIZED.into_response(),
     }
     let Ok(payload) = serde_json::from_slice::<Value>(&body) else {
         // corpo não-JSON: aceito-e-ignorado (fail-open do lado do script).
-        return StatusCode::NO_CONTENT;
+        return StatusCode::NO_CONTENT.into_response();
     };
     let run = header_str(&headers, RUN_HEADER);
     let event = header_str(&headers, EVENT_HEADER);
+    // H2 — permissão síncrona: se ESTE payload é o evento de permissão do
+    // dialeto, o round-trip segura a resposta até a decisão humana.
+    if let Some(decision) = crate::hook_sessions::permission_roundtrip(
+        &ctx.app,
+        &engine,
+        run.as_deref(),
+        event.as_deref(),
+        &payload,
+    )
+    .await
+    {
+        return (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "application/json")],
+            decision,
+        )
+            .into_response();
+    }
     let ingested = usage_window::ingest_statusline(&ctx.app, &engine, &payload)
         || crate::hook_sessions::ingest(
             &ctx.app,
@@ -141,7 +162,7 @@ async fn hook_post(
     if !ingested {
         log::debug!("hook_gateway: payload de {engine} sem consumidor (ok)");
     }
-    StatusCode::NO_CONTENT
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// Sobe o receptor no boot: loopback + porta efêmera + token novo por boot.

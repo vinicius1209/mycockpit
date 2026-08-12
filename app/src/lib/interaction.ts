@@ -39,6 +39,15 @@ export interface ApprovalData {
   command: string
   /** input cru da tool (a UI mostra o detalhe). */
   input: unknown
+  /** Origem de HOOK (H2 do hooks-plan): pedido de permissão de uma sessão
+   *  EXTERNA (terminal), não de um run do app — sem run_id/conversa dona.
+   *  O card, o sino e o Companion usam isto pra dizer DE ONDE veio. */
+  hook?: {
+    /** id do agent no registry ("claude-code" | "codex" | "agy"). */
+    engine: string
+    sessionId: string
+    cwd: string
+  }
 }
 
 /** Resposta de uma aprovação (kind="approval"). `updated_input` sanitiza o input

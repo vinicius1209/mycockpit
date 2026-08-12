@@ -27,6 +27,7 @@ import {
   type InteractionOrigin,
 } from "@/store/interactions"
 import { summarizeApproval, type ApprovalSummary } from "@/lib/approvalSummary"
+import { engineLabel, sessionPlace } from "@/lib/externalSessions"
 import { AppDialog } from "@/components/ui/app-dialog"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
@@ -223,6 +224,8 @@ function ApprovalCard({
   // Fluxo de confirmação do lote: estado local + decisão PURA (decideBatch) —
   // clicar em "todas" NUNCA executa direto. key={req.id} no pai reseta por card.
   const [confirming, setConfirming] = useState<BatchConfirm | null>(null)
+  // Projetos: só pra dizer a PASTA de um pedido de hook (sessão externa).
+  const projects = useApp((s) => s.projects)
   // "Ver tudo": o integral abre em dialog, nunca estica o card (era isso que
   // fazia um heredoc de 40 linhas ocupar a janela inteira).
   const [showAll, setShowAll] = useState(false)
@@ -241,6 +244,18 @@ function ApprovalCard({
           {origin.projectName}
           <span className="mx-1 opacity-50">·</span>
           {origin.convTitle}
+        </p>
+      )}
+      {/* Permissão de HOOK (H2): sessão EXTERNA do terminal — sem conversa
+          dona por desenho. Diz o motor e a pasta, e que a janela é curta. */}
+      {!origin && data.hook && (
+        <p className="mb-1.5 truncate text-[11px] text-muted-foreground">
+          Sessão no terminal
+          <span className="mx-1 opacity-50">·</span>
+          {engineLabel(data.hook.engine)} em{" "}
+          {sessionPlace({ cwd: data.hook.cwd ?? "" }, projects)}
+          <span className="mx-1 opacity-50">·</span>
+          sem resposta em 30s, o prompt aparece lá
         </p>
       )}
       <div className="flex items-center gap-2">

@@ -42,15 +42,21 @@ const SCRIPT_NAME: &str = "mycockpit-hook.sh";
 /// de desinstalação — nunca renomear sem migração.
 pub const AGY_GROUP: &str = "mycockpit";
 
-/// UM evento a instalar: nome + se leva matcher de tool ("*") + timeout (s).
+/// UM evento a instalar: nome + matcher de tool (None = sem matcher) +
+/// timeout (s).
+#[derive(Clone)]
 struct EventSpec {
     name: &'static str,
-    matcher: bool,
+    matcher: Option<&'static str>,
     timeout: u64,
 }
 
 const fn ev(name: &'static str, matcher: bool, timeout: u64) -> EventSpec {
-    EventSpec { name, matcher, timeout }
+    EventSpec {
+        name,
+        matcher: if matcher { Some("*") } else { None },
+        timeout,
+    }
 }
 
 /// Eventos de STATUS por dialeto — só o que foi PROVADO no motor (fixtures
@@ -94,6 +100,47 @@ fn status_events(dialect: HookDialect) -> &'static [EventSpec] {
     }
 }
 
+/// Eventos de PERMISSÃO por dialeto (H2, opt-in separado). Timeout 35s no
+/// config: maior que o teto de 30s do round-trip humano do gateway — o CLI
+/// nunca mata o hook antes de o app responder `ask`.
+const CLAUDE_PERMISSION_EVENTS: &[EventSpec] = &[ev("PermissionRequest", true, 35)];
+const CODEX_PERMISSION_EVENTS: &[EventSpec] = &[ev("PermissionRequest", true, 35)];
+/// agy: o gate É o PreToolUse (não há evento separado). Matcher ESCOPADO a
+/// `run_command` de propósito — o hook é síncrono e segura o loop; escopar à
+/// tool que exige a permissão "command" evita atrasar tool call inofensiva
+/// (view_file etc.). Nome de tool é domínio do dialeto (confinado aqui).
+const AGY_PERMISSION_EVENTS: &[EventSpec] = &[EventSpec {
+    name: "PreToolUse",
+    matcher: Some("run_command"),
+    timeout: 35,
+}];
+
+fn permission_events(dialect: HookDialect) -> &'static [EventSpec] {
+    match dialect {
+        HookDialect::ClaudeSettings => CLAUDE_PERMISSION_EVENTS,
+        HookDialect::CodexHooksJson => CODEX_PERMISSION_EVENTS,
+        HookDialect::AgyConfigHooks => AGY_PERMISSION_EVENTS,
+    }
+}
+
+/// Nome do evento de permissão de um dialeto (o gateway consulta pra decidir
+/// o round-trip síncrono; o resto dos eventos é fire-and-forget).
+pub fn permission_event_name(dialect: HookDialect) -> &'static str {
+    match dialect {
+        HookDialect::ClaudeSettings | HookDialect::CodexHooksJson => "PermissionRequest",
+        HookDialect::AgyConfigHooks => "PreToolUse",
+    }
+}
+
+/// Conjunto de eventos de uma instalação: status sempre; permissão opt-in.
+fn events_for(dialect: HookDialect, permission: bool) -> Vec<EventSpec> {
+    let mut evs: Vec<EventSpec> = status_events(dialect).to_vec();
+    if permission {
+        evs.extend(permission_events(dialect).iter().cloned());
+    }
+    evs
+}
+
 /// Estado da instalação por agent — o que a UI de Configurações mostra,
 /// incluindo o PREVIEW exato do que será escrito (transparência antes do
 /// gesto).
@@ -102,10 +149,14 @@ fn status_events(dialect: HookDialect) -> &'static [EventSpec] {
 pub struct HooksStatus {
     /// As entradas de status estão no config apontando pro nosso script?
     pub installed: bool,
+    /// As entradas de PERMISSÃO (H2) também estão instaladas?
+    pub permission_installed: bool,
     pub config_path: String,
     pub script_path: String,
-    /// Fragmento JSON exato que a instalação escreve no config.
+    /// Fragmento JSON exato que a instalação de STATUS escreve no config.
     pub preview: String,
+    /// Fragmento ADICIONAL escrito quando a permissão está ligada (H2).
+    pub preview_permission: String,
     /// Eventos NOSSOS presentes no config hoje.
     pub events: Vec<String>,
     /// Estado inconsistente detectado (ex.: entradas presentes mas script
@@ -121,40 +172,77 @@ pub struct HooksStatus {
 
 /// Script único por engine; o EVENTO chega como $1 (a entrada instalada no
 /// config o passa) e vai num header — o comando fica ESTÁVEL (importante pro
-/// trusted_hash do codex). Fail-open: qualquer falha = exit 0 sem stdout.
+/// trusted_hash do codex). Dois perfis no MESMO script:
+///   • status: fire-and-forget em background (timeout ~1s, erro engolido);
+///   • permissão (H2): SÍNCRONO — segura até 32s e pipa a resposta do app
+///     pro stdout (o formato é do dialeto; o gateway monta). App fechado/sem
+///     resposta = fail-open pro CLI: claude/codex recebem stdout VAZIO (sem
+///     opinião → prompt nativo); agy recebe `{"decision":"ask"}` (o output
+///     dele exige um campo decision — "ask" preserva o fluxo nativo).
 pub fn render_script(engine: &str, dialect: HookDialect, endpoint_file: &str) -> String {
-    // agy exige stdout JSON (contrato síncrono): resposta neutra IMEDIATA por
-    // evento, ANTES de qualquer IO nosso — o loop do agy nunca espera por nós.
-    let agy_reply = "case \"$ev\" in\n\
-         \x20 Stop) printf '{\"decision\":\"\"}\\n' ;;\n\
-         \x20 *) printf '{}\\n' ;;\n\
-         esac\n";
-    let reply = match dialect {
-        HookDialect::AgyConfigHooks => agy_reply,
-        _ => "",
-    };
-    format!(
+    let header = format!(
         "#!/bin/sh\n\
          # Generated by MyCockpit — DO NOT EDIT (regenerado a cada instalação)\n\
-         # mycockpit-hook-schema: 1\n\
-         # Hooks de status do MyCockpit: postam o evento de ciclo de vida ($1)\n\
-         # pro app em loopback. Fail-open: app fechado = curl falha em <1s em\n\
-         # background e o CLI segue como se o hook não existisse. Desinstalação\n\
-         # limpa em Configurações do MyCockpit.\n\
+         # mycockpit-hook-schema: 2\n\
+         # Hooks do MyCockpit: postam o evento de ciclo de vida ($1) pro app\n\
+         # em loopback; o evento de permissão espera a SUA decisão no app (até\n\
+         # 32s) e devolve pro CLI. Fail-open: app fechado = a CLI segue como\n\
+         # se o hook não existisse (o prompt nativo aparece no terminal).\n\
+         # Desinstalação limpa em Configurações do MyCockpit.\n\
          ev=\"$1\"\n\
-         {reply}\
          input=$(cat)\n\
+         port=\"\"; token=\"\"\n\
          ep=\"{endpoint_file}\"\n\
-         [ -r \"$ep\" ] || exit 0\n\
-         port=$(sed -n 's/.*\"port\":[[:space:]]*\\([0-9]*\\).*/\\1/p' \"$ep\" | head -1)\n\
-         token=$(sed -n 's/.*\"token\":[[:space:]]*\"\\([a-f0-9]*\\)\".*/\\1/p' \"$ep\" | head -1)\n\
-         [ -n \"$port\" ] && [ -n \"$token\" ] || exit 0\n\
-         printf '%s' \"$input\" | curl -s -X POST \"http://127.0.0.1:${{port}}/hook/{engine}\" \\\n\
-         \x20 -H \"Authorization: Bearer ${{token}}\" -H \"Content-Type: application/json\" \\\n\
-         \x20 -H \"X-Mycockpit-Event: ${{ev}}\" -H \"X-Mycockpit-Run: ${{MYCOCKPIT_RUN_ID}}\" \\\n\
-         \x20 --connect-timeout 1 --max-time 2 --data-binary @- >/dev/null 2>&1 &\n\
-         exit 0\n"
-    )
+         if [ -r \"$ep\" ]; then\n\
+         \x20 port=$(sed -n 's/.*\"port\":[[:space:]]*\\([0-9]*\\).*/\\1/p' \"$ep\" | head -1)\n\
+         \x20 token=$(sed -n 's/.*\"token\":[[:space:]]*\"\\([a-f0-9]*\\)\".*/\\1/p' \"$ep\" | head -1)\n\
+         fi\n"
+    );
+    let curl_common = format!(
+        "curl -s -X POST \"http://127.0.0.1:${{port}}/hook/{engine}\" \\\n\
+         \x20   -H \"Authorization: Bearer ${{token}}\" -H \"Content-Type: application/json\" \\\n\
+         \x20   -H \"X-Mycockpit-Event: ${{ev}}\" -H \"X-Mycockpit-Run: ${{MYCOCKPIT_RUN_ID}}\""
+    );
+    let body = match dialect {
+        // claude/codex: PermissionRequest síncrono (stdout vazio = sem
+        // opinião = fluxo nativo); o resto fire-and-forget.
+        HookDialect::ClaudeSettings | HookDialect::CodexHooksJson => format!(
+            "if [ \"$ev\" = \"PermissionRequest\" ]; then\n\
+             \x20 if [ -n \"$port\" ] && [ -n \"$token\" ]; then\n\
+             \x20   printf '%s' \"$input\" | {curl_common} \\\n\
+             \x20     --connect-timeout 1 --max-time 32 --data-binary @- 2>/dev/null\n\
+             \x20 fi\n\
+             \x20 exit 0\n\
+             fi\n\
+             [ -n \"$port\" ] && [ -n \"$token\" ] || exit 0\n\
+             printf '%s' \"$input\" | {curl_common} \\\n\
+             \x20 --connect-timeout 1 --max-time 2 --data-binary @- >/dev/null 2>&1 &\n\
+             exit 0\n"
+        ),
+        // agy: o contrato é síncrono pra TODO evento (stdout JSON exigido).
+        // PreToolUse é o gate de permissão; os demais respondem neutro na
+        // hora e postam em background.
+        HookDialect::AgyConfigHooks => format!(
+            "if [ \"$ev\" = \"PreToolUse\" ]; then\n\
+             \x20 body=\"\"\n\
+             \x20 if [ -n \"$port\" ] && [ -n \"$token\" ]; then\n\
+             \x20   body=$(printf '%s' \"$input\" | {curl_common} \\\n\
+             \x20     --connect-timeout 1 --max-time 32 --data-binary @- 2>/dev/null)\n\
+             \x20 fi\n\
+             \x20 if [ -n \"$body\" ]; then printf '%s\\n' \"$body\"; else printf '{{\"decision\":\"ask\"}}\\n'; fi\n\
+             \x20 exit 0\n\
+             fi\n\
+             case \"$ev\" in\n\
+             \x20 Stop) printf '{{\"decision\":\"\"}}\\n' ;;\n\
+             \x20 *) printf '{{}}\\n' ;;\n\
+             esac\n\
+             [ -n \"$port\" ] && [ -n \"$token\" ] || exit 0\n\
+             printf '%s' \"$input\" | {curl_common} \\\n\
+             \x20 --connect-timeout 1 --max-time 2 --data-binary @- >/dev/null 2>&1 &\n\
+             exit 0\n"
+        ),
+    };
+    format!("{header}{body}")
 }
 
 /// Comando instalado no config: path do script entre aspas simples (blinda o
@@ -188,8 +276,8 @@ fn our_entry(script: &str, spec: &EventSpec) -> Value {
             "timeout": spec.timeout,
         }]
     });
-    if spec.matcher {
-        e["matcher"] = json!("*");
+    if let Some(m) = spec.matcher {
+        e["matcher"] = json!(m);
     }
     e
 }
@@ -274,8 +362,8 @@ fn agy_group_value(script: &str, events: &[EventSpec]) -> Value {
             "command": hook_command(script, spec.name),
             "timeout": spec.timeout,
         });
-        let entry = if spec.matcher {
-            json!([{ "matcher": "*", "hooks": [handler] }])
+        let entry = if let Some(m) = spec.matcher {
+            json!([{ "matcher": m, "hooks": [handler] }])
         } else {
             json!([handler])
         };
@@ -489,8 +577,11 @@ fn dialect_id(dialect: HookDialect) -> &'static str {
 }
 
 /// Fragmento de preview (o que a instalação escreve), por dialeto.
-fn preview_fragment(dialect: HookDialect, script: &str) -> Result<String, String> {
-    let events = status_events(dialect);
+fn preview_fragment(
+    dialect: HookDialect,
+    script: &str,
+    events: &[EventSpec],
+) -> Result<String, String> {
     let v = match dialect {
         HookDialect::AgyConfigHooks => json!({ AGY_GROUP: agy_group_value(script, events) }),
         _ => {
@@ -515,6 +606,9 @@ fn status_of(app: &AppHandle, agent: &str) -> Result<HooksStatus, String> {
         _ => installed_events_claude_family(&cfg, &script_str),
     };
     let installed = !events.is_empty();
+    let permission_installed = events
+        .iter()
+        .any(|e| e == permission_event_name(dialect));
     let script_exists = script.exists();
     let mut warning = None;
     if installed && !script_exists {
@@ -525,9 +619,15 @@ fn status_of(app: &AppHandle, agent: &str) -> Result<HooksStatus, String> {
     }
     Ok(HooksStatus {
         installed,
+        permission_installed,
         config_path: cpath.to_string_lossy().to_string(),
         script_path: script_str.clone(),
-        preview: preview_fragment(dialect, &script_str)?,
+        preview: preview_fragment(dialect, &script_str, status_events(dialect))?,
+        preview_permission: preview_fragment(
+            dialect,
+            &script_str,
+            permission_events(dialect),
+        )?,
         events,
         warning,
         dialect: dialect_id(dialect).to_string(),
@@ -544,10 +644,21 @@ pub fn hooks_status(app: AppHandle, agent: String) -> Result<HooksStatus, String
 }
 
 /// Instala (ou reinstala, idempotente): gera o script e escreve as entradas
-/// de STATUS ao lado das existentes, com backup.
+/// de STATUS ao lado das existentes (+ as de PERMISSÃO quando `permission`,
+/// H2 — gate de capability próprio), com backup.
 #[tauri::command]
-pub fn hooks_install(app: AppHandle, agent: String) -> Result<HooksStatus, String> {
+pub fn hooks_install(
+    app: AppHandle,
+    agent: String,
+    permission: Option<bool>,
+) -> Result<HooksStatus, String> {
     let dialect = require_hooks(&agent)?;
+    let permission = permission.unwrap_or(false);
+    if permission && !capabilities_of(&agent).is_some_and(|c| c.hooks_permission) {
+        return Err(format!(
+            "{agent} não tem hook de permissão síncrono (capability ausente)"
+        ));
+    }
     dialect_install_gate(dialect)?;
     let cpath = config_path(dialect)?;
     let script = script_path(&app, &agent)?;
@@ -559,14 +670,18 @@ pub fn hooks_install(app: AppHandle, agent: String) -> Result<HooksStatus, Strin
         &render_script(&agent, dialect, &endpoint.to_string_lossy()),
     )?;
     backup_config(&cpath)?;
+    let events = events_for(dialect, permission);
     let next = match dialect {
         HookDialect::AgyConfigHooks => {
-            with_agy_group(&cfg, agy_group_value(&script_str, status_events(dialect)))
+            with_agy_group(&cfg, agy_group_value(&script_str, &events))
         }
-        _ => with_hooks_claude_family(&cfg, &script_str, status_events(dialect)),
+        _ => with_hooks_claude_family(&cfg, &script_str, &events),
     };
     write_config(&cpath, &next)?;
-    log::info!("hooks: status instalado pra {agent} em {}", cpath.display());
+    log::info!(
+        "hooks: instalado pra {agent} em {} (permissão: {permission})",
+        cpath.display()
+    );
     status_of(&app, &agent)
 }
 
@@ -819,6 +934,88 @@ mod tests {
         assert!(s.trim_end().ends_with("exit 0"));
     }
 
+    // ---- H2: hooks de permissão (opt-in separado) ----
+
+    #[test]
+    fn permissao_do_claude_family_e_o_permission_request_com_folga_de_timeout() {
+        for d in [HookDialect::ClaudeSettings, HookDialect::CodexHooksJson] {
+            let evs = permission_events(d);
+            assert_eq!(evs.len(), 1);
+            assert_eq!(evs[0].name, "PermissionRequest");
+            assert_eq!(evs[0].matcher, Some("*"));
+            // timeout do config (35s) > teto do round-trip humano (30s do
+            // gateway) + folga do curl (32s): o CLI nunca mata o hook antes
+            // de o app devolver `ask`.
+            assert!(evs[0].timeout > 32);
+            assert_eq!(permission_event_name(d), "PermissionRequest");
+        }
+    }
+
+    #[test]
+    fn permissao_do_agy_e_o_pre_tool_use_escopado_a_run_command() {
+        let evs = permission_events(HookDialect::AgyConfigHooks);
+        assert_eq!(evs.len(), 1);
+        assert_eq!(evs[0].name, "PreToolUse");
+        // escopo deliberado: segurar TODA tool call do agy por até 30s seria
+        // punir tool inofensiva; run_command é a que exige permissão.
+        assert_eq!(evs[0].matcher, Some("run_command"));
+        assert_eq!(permission_event_name(HookDialect::AgyConfigHooks), "PreToolUse");
+    }
+
+    #[test]
+    fn instalar_com_permissao_soma_o_evento_e_sem_ela_nao() {
+        let sem = with_hooks_claude_family(
+            &json!({}),
+            SCRIPT,
+            &events_for(HookDialect::ClaudeSettings, false),
+        );
+        assert!(sem["hooks"].get("PermissionRequest").is_none());
+        let com = with_hooks_claude_family(
+            &json!({}),
+            SCRIPT,
+            &events_for(HookDialect::ClaudeSettings, true),
+        );
+        assert!(entry_is_ours(&com["hooks"]["PermissionRequest"][0], SCRIPT));
+        // reinstalar SEM permissão remove a entrada de permissão (opt-out
+        // limpo — a reinstalação primeiro tira tudo que é nosso).
+        let de_volta = with_hooks_claude_family(
+            &com,
+            SCRIPT,
+            &events_for(HookDialect::ClaudeSettings, false),
+        );
+        assert!(de_volta["hooks"].get("PermissionRequest").is_none());
+        // agy: o grupo ganha/perde o PreToolUse do mesmo jeito.
+        let agy = with_agy_group(
+            &json!({}),
+            agy_group_value(SCRIPT, &events_for(HookDialect::AgyConfigHooks, true)),
+        );
+        assert_eq!(agy[AGY_GROUP]["PreToolUse"][0]["matcher"], "run_command");
+    }
+
+    #[test]
+    fn script_do_claude_family_segura_a_permissao_e_cala_no_timeout() {
+        let s = render_script("codex", HookDialect::CodexHooksJson, ENDPOINT);
+        // ramo síncrono: espera até 32s e pipa a resposta do app pro stdout.
+        assert!(s.contains("if [ \"$ev\" = \"PermissionRequest\" ]; then"));
+        assert!(s.contains("--max-time 32"));
+        // fail-open: sem app/sem resposta = stdout VAZIO (sem opinião → o
+        // prompt nativo aparece no terminal). Nunca um deny fabricado.
+        assert!(!s.contains("deny"));
+        // status segue fire-and-forget em background.
+        assert!(s.contains("--max-time 2"));
+        assert!(s.contains(">/dev/null 2>&1 &"));
+    }
+
+    #[test]
+    fn script_do_agy_devolve_ask_quando_o_app_nao_responde() {
+        let s = render_script("agy", HookDialect::AgyConfigHooks, ENDPOINT);
+        assert!(s.contains("if [ \"$ev\" = \"PreToolUse\" ]; then"));
+        // o output do PreToolUse EXIGE decision: sem resposta do app, `ask`
+        // preserva o comportamento nativo (inclusive o cache de Always Allow).
+        assert!(s.contains(r#"printf '{"decision":"ask"}\n'"#));
+        assert!(s.contains("--max-time 32"));
+    }
+
     #[test]
     fn gate_de_versao_do_agy() {
         assert!(agy_version_ok("1.1.12"));
@@ -910,6 +1107,36 @@ mod tests_shell {
                 "{dialect:?}"
             );
         }
+        // H2 — agy PreToolUse com o app MORTO (porta 1): o script devolve
+        // `ask` no stdout (fail-open do gate: o prompt nativo do agy decide).
+        let script = dir.join(SCRIPT_NAME);
+        std::fs::write(
+            &script,
+            render_script("agy", HookDialect::AgyConfigHooks, &ep.to_string_lossy()),
+        )
+        .unwrap();
+        let out = std::process::Command::new("sh")
+            .arg(&script)
+            .arg("PreToolUse")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut c| {
+                use std::io::Write;
+                c.stdin
+                    .take()
+                    .unwrap()
+                    .write_all(b"{\"toolCall\":{\"name\":\"run_command\"}}")
+                    .unwrap();
+                c.wait_with_output()
+            })
+            .unwrap();
+        assert!(out.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            r#"{"decision":"ask"}"#
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

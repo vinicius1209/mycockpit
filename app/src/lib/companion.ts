@@ -17,6 +17,7 @@ import { getAgentDef } from "@/lib/agentDefs"
 import { listen } from "@tauri-apps/api/event"
 import type { Attachment, AttachmentKind } from "@/lib/attachments"
 import { AGENTS, availability, dispatchBlockReason } from "@/lib/agents"
+import { projectForCwd, sessionPlace } from "@/lib/externalSessions"
 import type { InteractionAnswer, ApprovalData, QuestionData } from "@/lib/interaction"
 import type { MissionPhaseStatus, MissionStatus } from "@/lib/missionTypes"
 import {
@@ -305,15 +306,29 @@ export function buildCompanionSnapshot(
         convId && phase != null
           ? missions.byConv[convId]?.phases[phase]
           : undefined
+      // Permissão de HOOK (H2): sessão EXTERNA do terminal — sem conversa
+      // dona por desenho. O celular ainda precisa saber DE ONDE veio: motor
+      // e projeto/pasta saem da origem do hook (nunca inventa conversa).
+      const hook = d?.hook
+      const hookPlace = hook
+        ? sessionPlace({ cwd: hook.cwd ?? "" }, app.projects)
+        : null
       attention.push({
         id: req.id,
         kind: "approval",
         convId,
-        projectId: pid,
-        projectName: nameOf(pid),
+        projectId:
+          pid ??
+          (hook
+            ? (projectForCwd(hook.cwd ?? "", app.projects)?.id ?? null)
+            : null),
+        projectName:
+          nameOf(pid) ?? (hookPlace ? `${hookPlace} (terminal)` : null),
         agent:
           phaseRun?.def.agent ??
-          (convId ? (chat.byId[convId]?.agent ?? "") : ""),
+          (convId
+            ? (chat.byId[convId]?.agent ?? "")
+            : (hook?.engine ?? "")),
         phase,
         phaseLabel: phaseRun?.def.label ?? null,
         command: typeof d?.command === "string" ? d.command : "",

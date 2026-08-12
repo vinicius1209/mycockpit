@@ -270,6 +270,325 @@ pub fn hook_sessions(state: State<'_, ExternalSessions>) -> Vec<ExternalSession>
 }
 
 // ---------------------------------------------------------------------------
+// H2 — permissão SÍNCRONA respondível na UI/Companion (hooks-plan §3).
+//
+// O script segura a resposta HTTP; aqui o pedido vira uma pendência na MESMA
+// fila de interações do app (PendingApprovals + `interaction://request`), que
+// já alimenta o card da UI, o sino e o Companion. A resposta humana volta
+// pelo `answer_interaction` de sempre e vira o corpo que o script pipa pro
+// stdout no formato do dialeto.
+//
+// Fail-SAFE de permissão: timeout sem humano ⇒ `ask` — o CLI cai no PRÓPRIO
+// prompt no terminal. Nunca um allow fantasma, nunca um deny fabricado.
+// ---------------------------------------------------------------------------
+
+/// Teto do round-trip humano. MENOR que o `--max-time 32` do script e que o
+/// timeout 35s do config (camadas: gateway responde antes de alguém desistir).
+pub const PERMISSION_TIMEOUT_MS: u64 = 30_000;
+
+/// Decisão de permissão normalizada (o dialeto só entra na SERIALIZAÇÃO).
+#[derive(Debug, PartialEq)]
+pub enum HookDecision {
+    Allow,
+    Deny(String),
+    /// Sem opinião: o CLI segue o fluxo nativo (prompt no terminal).
+    Ask,
+}
+
+/// Pedido de permissão normalizado de um payload de hook.
+#[derive(Debug, PartialEq)]
+pub struct HookPermission {
+    pub session_id: String,
+    pub cwd: String,
+    pub tool_name: String,
+    pub tool_input: Value,
+    /// Conveniência pro card da UI (input.command quando existe).
+    pub command: String,
+    /// true = PERGUNTA do modelo (AskUserQuestion), não permissão real: não
+    /// vira pendência de aprovação (a resposta certa é no terminal) — a
+    /// sessão marca "esperando você" e o CLI recebe `ask` na hora. Distinção
+    /// por nome de tool é domínio do dialeto (confinada aqui).
+    pub is_question: bool,
+}
+
+/// Parse do pedido de permissão. None = o payload não é deste formato
+/// (fail-open: o gateway devolve `ask` sem segurar nada). PURO.
+pub fn parse_permission(dialect: HookDialect, payload: &Value) -> Option<HookPermission> {
+    match dialect {
+        HookDialect::ClaudeSettings | HookDialect::CodexHooksJson => {
+            let session_id = str_of(payload, "session_id").filter(|s| !s.is_empty())?;
+            let tool_name = str_of(payload, "tool_name")?;
+            let tool_input = payload.get("tool_input").cloned().unwrap_or(Value::Null);
+            let command = tool_input
+                .get("command")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string();
+            Some(HookPermission {
+                session_id,
+                cwd: str_of(payload, "cwd").unwrap_or_default(),
+                is_question: tool_name == "AskUserQuestion",
+                tool_name,
+                tool_input,
+                command,
+            })
+        }
+        HookDialect::AgyConfigHooks => {
+            let session_id = str_of(payload, "conversationId").filter(|s| !s.is_empty())?;
+            let tool_name = payload
+                .pointer("/toolCall/name")
+                .and_then(|x| x.as_str())?
+                .to_string();
+            let tool_input = payload
+                .pointer("/toolCall/args")
+                .cloned()
+                .unwrap_or(Value::Null);
+            // args do run_command carregam CommandLine (doc embarcada [E9]).
+            let command = tool_input
+                .get("CommandLine")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let cwd = payload
+                .pointer("/workspacePaths/0")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string();
+            Some(HookPermission {
+                session_id,
+                cwd,
+                tool_name,
+                tool_input,
+                command,
+                is_question: false,
+            })
+        }
+    }
+}
+
+/// Serializa a decisão no stdout que o DIALETO espera. PURO.
+/// claude/codex: `hookSpecificOutput.decision.behavior` (docs 12/08/2026 +
+/// script vivo do Xirp [E2]); agy: `decision` de topo (doc embarcada [E9]).
+pub fn decision_body(dialect: HookDialect, decision: &HookDecision) -> String {
+    match dialect {
+        HookDialect::ClaudeSettings | HookDialect::CodexHooksJson => {
+            let d = match decision {
+                HookDecision::Allow => serde_json::json!({ "behavior": "allow" }),
+                HookDecision::Deny(reason) => {
+                    serde_json::json!({ "behavior": "deny", "decisionReason": reason })
+                }
+                HookDecision::Ask => serde_json::json!({ "behavior": "ask" }),
+            };
+            serde_json::json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PermissionRequest",
+                    "decision": d,
+                }
+            })
+            .to_string()
+        }
+        HookDialect::AgyConfigHooks => match decision {
+            HookDecision::Allow => serde_json::json!({ "decision": "allow" }).to_string(),
+            HookDecision::Deny(reason) => {
+                serde_json::json!({ "decision": "deny", "reason": reason }).to_string()
+            }
+            HookDecision::Ask => serde_json::json!({ "decision": "ask" }).to_string(),
+        },
+    }
+}
+
+/// Resposta humana ({allow, message?} do answer_interaction) → decisão.
+/// Resposta que não parseia = Ask (nunca deny fabricado por bug de shape).
+pub fn decision_from_answer(answer: &Value) -> HookDecision {
+    match answer.get("allow").and_then(|x| x.as_bool()) {
+        Some(true) => HookDecision::Allow,
+        Some(false) => HookDecision::Deny(
+            answer
+                .get("message")
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("negado pelo usuário no MyCockpit")
+                .to_string(),
+        ),
+        None => HookDecision::Ask,
+    }
+}
+
+/// Registra a pendência no MESMO registro das interações inline (o
+/// answer_interaction destrava). Devolve o receiver.
+fn register_pending(
+    pending: &std::sync::Arc<crate::approval::PendingApprovals>,
+    id: &str,
+) -> Option<tokio::sync::oneshot::Receiver<Value>> {
+    let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
+    let mut map = pending.0.lock().ok()?;
+    map.insert(
+        id.to_string(),
+        crate::approval::Pending {
+            kind: "approval".to_string(),
+            tx,
+        },
+    );
+    Some(rx)
+}
+
+/// Espera a decisão humana com teto. Timeout/cancelamento ⇒ Ask (fail-SAFE:
+/// o prompt nativo decide no terminal). Remove a pendência em qualquer saída.
+pub async fn await_decision(
+    pending: &std::sync::Arc<crate::approval::PendingApprovals>,
+    id: &str,
+    rx: tokio::sync::oneshot::Receiver<Value>,
+    timeout: std::time::Duration,
+) -> HookDecision {
+    let decision = match tokio::time::timeout(timeout, rx).await {
+        Ok(Ok(answer)) => decision_from_answer(&answer),
+        // timeout OU canal dropado: sem humano, sem opinião.
+        _ => HookDecision::Ask,
+    };
+    if let Ok(mut map) = pending.0.lock() {
+        map.remove(id);
+    }
+    decision
+}
+
+/// Atualiza a presença da sessão dona de um pedido de permissão (blocked
+/// enquanto pende/timeout — sticky até o PreToolUse/PostToolUse/Stop
+/// correlacionado chegar; working quando o humano decidiu e o CLI segue).
+fn mark_permission_state(app: &AppHandle, agent: &str, perm: &HookPermission, kind: SignalKind) {
+    let state: State<'_, ExternalSessions> = app.state();
+    let changed = {
+        let Ok(mut map) = state.0.lock() else { return };
+        let sig = HookSignal {
+            session_id: perm.session_id.clone(),
+            cwd: perm.cwd.clone(),
+            kind,
+            event: "PermissionRequest".to_string(),
+            tool: Some(perm.tool_name.clone()),
+        };
+        let changed = apply_signal(&mut map, agent, sig, now_ms());
+        if changed {
+            Some(snapshot(&map))
+        } else {
+            None
+        }
+    };
+    if let Some(list) = changed {
+        let _ = app.emit(SESSIONS_EVENT, &list);
+    }
+}
+
+/// Round-trip completo de UM pedido de permissão vindo do gateway. `None` =
+/// o payload NÃO é um pedido de permissão deste motor (o gateway segue o
+/// fluxo fire-and-forget normal). `Some(body)` = corpo pro stdout do script.
+pub async fn permission_roundtrip(
+    app: &AppHandle,
+    agent: &str,
+    run_header: Option<&str>,
+    event_hint: Option<&str>,
+    payload: &Value,
+) -> Option<String> {
+    let caps = capabilities_of(agent)?;
+    let dialect = caps.hook_dialect?;
+    if !caps.hooks_permission {
+        return None;
+    }
+    // é o evento de permissão deste dialeto? (claude/codex: nome no payload;
+    // agy: só no header — o payload não carrega o evento.)
+    let event = str_of(payload, "hook_event_name")
+        .or_else(|| event_hint.map(str::to_string))?;
+    if event != crate::hooks_install::permission_event_name(dialect) {
+        return None;
+    }
+    // run do PRÓPRIO app: o gate inline (mc-approval / app-server) já cobre —
+    // devolve `ask` na hora, sem segurar nem duplicar card.
+    if run_header.is_some_and(|r| !r.trim().is_empty()) {
+        return Some(decision_body(dialect, &HookDecision::Ask));
+    }
+    let Some(perm) = parse_permission(dialect, payload) else {
+        // payload sem os campos esperados: fail-open, sem segurar nada.
+        return Some(decision_body(dialect, &HookDecision::Ask));
+    };
+    if perm.is_question {
+        // AskUserQuestion: pergunta de CONTEÚDO — a resposta certa é no
+        // terminal. Sessão marca "esperando você" (limpa quando o próximo
+        // evento chegar = respondeu) e o CLI segue o fluxo nativo.
+        let sig = HookSignal {
+            session_id: perm.session_id.clone(),
+            cwd: perm.cwd.clone(),
+            kind: SignalKind::Waiting,
+            event: "AskUserQuestion".to_string(),
+            tool: Some(perm.tool_name.clone()),
+        };
+        let state: State<'_, ExternalSessions> = app.state();
+        let changed = {
+            let Ok(mut map) = state.0.lock() else {
+                return Some(decision_body(dialect, &HookDecision::Ask));
+            };
+            let changed = apply_signal(&mut map, agent, sig, now_ms());
+            if changed { Some(snapshot(&map)) } else { None }
+        };
+        if let Some(list) = changed {
+            let _ = app.emit(SESSIONS_EVENT, &list);
+        }
+        return Some(decision_body(dialect, &HookDecision::Ask));
+    }
+    // pendência na fila ÚNICA de interações (UI + sino + Companion).
+    mark_permission_state(app, agent, &perm, SignalKind::Blocked);
+    let pending: State<'_, std::sync::Arc<crate::approval::PendingApprovals>> = app.state();
+    let pending = pending.inner().clone();
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let id = format!(
+        "hookperm-{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let Some(rx) = register_pending(&pending, &id) else {
+        return Some(decision_body(dialect, &HookDecision::Ask));
+    };
+    let _ = app.emit(
+        "interaction://request",
+        serde_json::json!({
+            "id": id,
+            // sessão externa não tem run do app: run_id vazio ⇒ card global.
+            "run_id": "",
+            "kind": "approval",
+            "data": {
+                "tool_name": perm.tool_name,
+                "command": perm.command,
+                "input": perm.tool_input,
+                // origem pro card/notificação/Companion dizerem DE ONDE veio.
+                "hook": {
+                    "engine": agent,
+                    "sessionId": perm.session_id,
+                    "cwd": perm.cwd,
+                },
+            },
+        }),
+    );
+    let decision = await_decision(
+        &pending,
+        &id,
+        rx,
+        std::time::Duration::from_millis(PERMISSION_TIMEOUT_MS),
+    )
+    .await;
+    match decision {
+        // humano decidiu: o CLI segue (allow roda a tool; deny devolve o
+        // motivo ao modelo, que continua o turno) — sessão volta a trabalhar.
+        HookDecision::Allow | HookDecision::Deny(_) => {
+            mark_permission_state(app, agent, &perm, SignalKind::Working);
+        }
+        // timeout: o card sai da fila (não dá mais pra responder — teatro é
+        // proibido) e a SESSÃO fica blocked (sticky) até o evento
+        // correlacionado chegar (o usuário respondeu no terminal).
+        HookDecision::Ask => {
+            let _ = app.emit("interaction://resolved", serde_json::json!({ "id": id }));
+        }
+    }
+    Some(decision_body(dialect, &decision))
+}
+
+// ---------------------------------------------------------------------------
 // Testes — payloads REAIS capturados nesta máquina em 12/08/2026 (claude
 // 2.1.220 com hooks de captura em escopo de projeto; ver hooks-plan §1) e o
 // contrato camelCase da doc embarcada do agy [E9] (o escopo workspace do agy
@@ -457,6 +776,158 @@ mod tests {
         let list = snapshot(&map);
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].session_id, "sessao-nova");
+    }
+
+    // ---- H2: permissão síncrona ----
+
+    /// PermissionRequest do claude — shape das docs oficiais (verificadas
+    /// 12/08/2026). Só dispara em sessão INTERATIVA (em `-p` a tool é
+    /// auto-negada sem o evento — verificado empiricamente nesta máquina),
+    /// por isso a fixture vem do contrato documentado + o script vivo do
+    /// Xirp que o consome [E2], não de uma captura headless.
+    fn claude_permission_request() -> Value {
+        json!({
+            "session_id": "26f8cfe6-f107-46c5-834c-ab8b2832cf11",
+            "prompt_id": "2a11c663-ffed-4e36-a45d-5746b838cbe8",
+            "transcript_path": "/Users/x/.claude/projects/y/26f8cfe6.jsonl",
+            "cwd": "/Users/viniciusmachado/projetos/mycockpit",
+            "permission_mode": "default",
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": "rm -rf /tmp/build",
+                "description": "Clean build directory"
+            },
+            "tool_use_id": "toolu_01Q3avbS4mjEZrbrrCxWm7XT"
+        })
+    }
+
+    #[test]
+    fn parse_do_pedido_de_permissao_do_claude_family() {
+        for d in [HookDialect::ClaudeSettings, HookDialect::CodexHooksJson] {
+            let p = parse_permission(d, &claude_permission_request()).unwrap();
+            assert_eq!(p.tool_name, "Bash");
+            assert_eq!(p.command, "rm -rf /tmp/build");
+            assert_eq!(p.session_id, "26f8cfe6-f107-46c5-834c-ab8b2832cf11");
+            assert_eq!(p.cwd, "/Users/viniciusmachado/projetos/mycockpit");
+            assert!(!p.is_question);
+        }
+        // payload sem session_id: None (o gateway devolve ask sem segurar).
+        assert!(parse_permission(
+            HookDialect::ClaudeSettings,
+            &json!({ "hook_event_name": "PermissionRequest", "tool_name": "Bash" })
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn ask_user_question_e_pergunta_nao_permissao() {
+        // distinção por nome de tool, como o Orca faz — confinada ao dialeto.
+        let mut v = claude_permission_request();
+        v["tool_name"] = json!("AskUserQuestion");
+        v["tool_input"] = json!({ "questions": [] });
+        let p = parse_permission(HookDialect::ClaudeSettings, &v).unwrap();
+        assert!(p.is_question);
+    }
+
+    #[test]
+    fn parse_do_pedido_de_permissao_do_agy() {
+        let p = parse_permission(HookDialect::AgyConfigHooks, &agy_pre_tool_use()).unwrap();
+        assert_eq!(p.tool_name, "run_command");
+        assert_eq!(p.command, "npm test");
+        assert_eq!(p.session_id, "ec33ebf9-0cba-4100-8142-c61503f6c587");
+        assert!(!p.is_question);
+    }
+
+    #[test]
+    fn decisao_vira_o_stdout_do_dialeto() {
+        // claude/codex: hookSpecificOutput.decision.behavior (docs + Xirp).
+        let allow = decision_body(HookDialect::ClaudeSettings, &HookDecision::Allow);
+        let v: Value = serde_json::from_str(&allow).unwrap();
+        assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PermissionRequest");
+        assert_eq!(v["hookSpecificOutput"]["decision"]["behavior"], "allow");
+        let deny = decision_body(
+            HookDialect::CodexHooksJson,
+            &HookDecision::Deny("motivo".into()),
+        );
+        let v: Value = serde_json::from_str(&deny).unwrap();
+        assert_eq!(v["hookSpecificOutput"]["decision"]["behavior"], "deny");
+        assert_eq!(v["hookSpecificOutput"]["decision"]["decisionReason"], "motivo");
+        let ask = decision_body(HookDialect::ClaudeSettings, &HookDecision::Ask);
+        let v: Value = serde_json::from_str(&ask).unwrap();
+        assert_eq!(v["hookSpecificOutput"]["decision"]["behavior"], "ask");
+        // agy: decision de topo (doc embarcada [E9]).
+        assert_eq!(
+            decision_body(HookDialect::AgyConfigHooks, &HookDecision::Allow),
+            r#"{"decision":"allow"}"#
+        );
+        assert_eq!(
+            decision_body(HookDialect::AgyConfigHooks, &HookDecision::Ask),
+            r#"{"decision":"ask"}"#
+        );
+        let deny = decision_body(
+            HookDialect::AgyConfigHooks,
+            &HookDecision::Deny("não".into()),
+        );
+        let v: Value = serde_json::from_str(&deny).unwrap();
+        assert_eq!(v["decision"], "deny");
+        assert_eq!(v["reason"], "não");
+    }
+
+    #[test]
+    fn resposta_humana_vira_decisao_e_lixo_vira_ask() {
+        assert_eq!(
+            decision_from_answer(&json!({ "allow": true })),
+            HookDecision::Allow
+        );
+        assert_eq!(
+            decision_from_answer(&json!({ "allow": false, "message": "perigoso" })),
+            HookDecision::Deny("perigoso".into())
+        );
+        assert_eq!(
+            decision_from_answer(&json!({ "allow": false })),
+            HookDecision::Deny("negado pelo usuário no MyCockpit".into())
+        );
+        // shape inesperado NUNCA vira deny fabricado: ask (fluxo nativo).
+        assert_eq!(decision_from_answer(&json!({})), HookDecision::Ask);
+        assert_eq!(decision_from_answer(&json!("allow")), HookDecision::Ask);
+    }
+
+    /// A máquina da pendência: chega → humano responde → resolve com a
+    /// decisão; sem resposta → timeout → ask; e o registro fica limpo nos
+    /// dois caminhos (nada vaza).
+    #[tokio::test]
+    async fn pendencia_respondida_resolve_e_timeout_vira_ask() {
+        let pending = std::sync::Arc::new(crate::approval::PendingApprovals::default());
+        // caminho 1: humano permite (o answer_interaction destrava o tx).
+        let rx = register_pending(&pending, "hookperm-t-1").unwrap();
+        {
+            let mut map = pending.0.lock().unwrap();
+            let p = map.remove("hookperm-t-1").unwrap();
+            let _ = p.tx.send(json!({ "allow": true }));
+        }
+        let d = await_decision(
+            &pending,
+            "hookperm-t-1",
+            rx,
+            std::time::Duration::from_millis(1_000),
+        )
+        .await;
+        assert_eq!(d, HookDecision::Allow);
+        // caminho 2: ninguém responde → ask no teto, sem pendurar.
+        let rx = register_pending(&pending, "hookperm-t-2").unwrap();
+        let d = await_decision(
+            &pending,
+            "hookperm-t-2",
+            rx,
+            std::time::Duration::from_millis(20),
+        )
+        .await;
+        assert_eq!(d, HookDecision::Ask);
+        assert!(
+            pending.0.lock().unwrap().is_empty(),
+            "o registro tem que ficar limpo nos dois caminhos"
+        );
     }
 
     #[test]

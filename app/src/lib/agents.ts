@@ -99,6 +99,11 @@ export interface AgentDef {
    *  o card nem mostra a opção; o watchdog segue existindo pra todos.
    *  Teste-gêmeo: agents.hooks.test.ts ↔ `matriz_de_hooks_por_agent`. */
   hooksStatus: boolean
+  /** O prompt de permissão do CLI pode ser decidido por hook SÍNCRONO
+   *  (espelho de `hooks_permission`, hooks-plan H2): a pendência aparece na
+   *  UI/Companion e a decisão volta pro terminal. Timeout ⇒ ask (o prompt
+   *  nativo aparece lá — nunca allow fantasma nem deny fabricado). */
+  hooksPermission: boolean
   /** Dialeto de instalação/protocolo dos hooks (espelho de `hook_dialect`,
    *  adapters.rs). Consumido só como identidade informativa na UI (o merge
    *  real é do Rust). null = motor sem hooks. */
@@ -256,6 +261,8 @@ export const AGENTS: AgentDef[] = [
     // claude 2.1.220: hooks maduros, payloads reais capturados 12/08/2026
     // (fixtures em hook_sessions.rs).
     hooksStatus: true,
+    // claude 2.1.220: PermissionRequest síncrono (docs 12/08/2026 + Xirp).
+    hooksPermission: true,
     hookDialect: "claude-settings",
   },
   {
@@ -292,6 +299,8 @@ export const AGENTS: AgentDef[] = [
     // codex 0.146: hooks.json com schema idêntico ao do claude, feature
     // stable, vivo nesta máquina (Xirp/Orca — auditado 12/08/2026).
     hooksStatus: true,
+    // codex 0.146: mesmo protocolo (wire schema no binário).
+    hooksPermission: true,
     hookDialect: "codex-hooks-json",
   },
   {
@@ -325,6 +334,8 @@ export const AGENTS: AgentDef[] = [
     // embarcada + grupo vivo do Orca, 12/08/2026); Stop só roda ≥1.1.10 e o
     // instalador Rust confere a versão.
     hooksStatus: true,
+    // agy 1.1.12: permissão via PreToolUse.decision (doc embarcada).
+    hooksPermission: true,
     hookDialect: "agy-config-hooks",
   },
   {
@@ -350,6 +361,7 @@ export const AGENTS: AgentDef[] = [
     nativeCompact: false,
     usageWindow: null,
     hooksStatus: false,
+    hooksPermission: false,
     hookDialect: null,
   },
   {
@@ -375,6 +387,7 @@ export const AGENTS: AgentDef[] = [
     nativeCompact: false,
     usageWindow: null,
     hooksStatus: false,
+    hooksPermission: false,
     hookDialect: null,
   },
 ]
