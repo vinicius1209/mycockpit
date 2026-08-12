@@ -22,6 +22,7 @@ mod evidence;
 mod fsx;
 mod git;
 mod github;
+mod hook_gateway;
 mod mcp_auth;
 mod mcp_control;
 mod mcp_proxy;
@@ -36,6 +37,7 @@ mod sources;
 mod stt;
 mod tray;
 mod update;
+mod usage_window;
 mod work_gateway;
 
 /// Ponto de entrada do subcomando `approval-server`: ESTE binário rodando como
@@ -479,6 +481,11 @@ pub fn run() {
             // automações agendadas continuam); só "Sair" encerra de verdade.
             tray::create(app.handle())?;
 
+            // H0 — receptor local de hooks/statusline (loopback, porta
+            // efêmera, token por boot). Falha degrada com log, nunca derruba
+            // o boot: o medidor de janela ainda funciona por poll (codex).
+            hook_gateway::start(app.handle());
+
             Ok(())
         })
         // Fechar a janela = esconder (app segue vivo no tray). Cmd+Q / "Sair"
@@ -541,6 +548,9 @@ pub fn run() {
         // quit já o alcança.
         .manage(std::sync::Arc::new(browser::BrowserRegistry::default()))
         .manage(tray::TrayState::default())
+        // Medidor de janela de uso: snapshots vivos por agent (fonte única
+        // que o front hidrata no boot; ingest da statusline + poll gravam aqui).
+        .manage(usage_window::UsageState::default())
         .manage(attachments::ActiveConvs::default())
         .manage(stt::SttSession::default())
         .manage(companion::CompanionState::default())
@@ -564,6 +574,8 @@ pub fn run() {
             detect::list_agy_models,
             update::update_agent,
             update::update_jobs,
+            usage_window::usage_snapshots,
+            usage_window::usage_fetch,
             catalog::refresh_models_catalog,
             catalog::get_models_catalog,
             mycockpit::read_mycockpit_config,
