@@ -28,6 +28,12 @@
 //!   5. Fail-open do lado do script: curl com timeout de 1s em background,
 //!      erro engolido, `exit 0` sempre — a statusline do usuário NUNCA quebra
 //!      nem atrasa porque o app morreu.
+//!   6. Só posta o tick que TRAZ `rate_limits` (guarda de substring em shell
+//!      puro, padrão do Orca): a statusline tica várias vezes por segundo
+//!      durante streaming, mas o rate_limits muda 1x por turno — sem a guarda
+//!      o custo do spawn do curl era pago em todo tick. A statusline original
+//!      encadeada roda SEMPRE, fora da guarda (ela não pode sumir quando o
+//!      payload não tem rate_limits).
 
 use crate::adapters::{capabilities_of, UsageWindowSource};
 use serde::Serialize;
@@ -83,16 +89,20 @@ pub fn render_script(engine: &str, original: Option<&str>, endpoint_file: &str) 
          # Fail-open: app fechado = curl falha em <1s em background e NADA muda\n\
          # na sua statusline. Desinstalação limpa em Configurações do MyCockpit.\n\
          input=$(cat)\n\
-         ep=\"{endpoint_file}\"\n\
-         if [ -r \"$ep\" ]; then\n\
-         \x20 port=$(sed -n 's/.*\"port\":[[:space:]]*\\([0-9]*\\).*/\\1/p' \"$ep\" | head -1)\n\
-         \x20 token=$(sed -n 's/.*\"token\":[[:space:]]*\"\\([a-f0-9]*\\)\".*/\\1/p' \"$ep\" | head -1)\n\
-         \x20 if [ -n \"$port\" ] && [ -n \"$token\" ]; then\n\
-         \x20   printf '%s' \"$input\" | curl -s -X POST \"http://127.0.0.1:${{port}}/hook/{engine}\" \\\n\
-         \x20     -H \"Authorization: Bearer ${{token}}\" -H \"Content-Type: application/json\" \\\n\
-         \x20     --connect-timeout 1 --max-time 1 --data-binary @- >/dev/null 2>&1 &\n\
+         # Só o tick que traz rate_limits interessa (muda 1x por turno); os demais\n\
+         # ticks (vários por segundo durante streaming) nem spawnam o curl.\n\
+         case \"$input\" in *'\"rate_limits\"'*)\n\
+         \x20 ep=\"{endpoint_file}\"\n\
+         \x20 if [ -r \"$ep\" ]; then\n\
+         \x20   port=$(sed -n 's/.*\"port\":[[:space:]]*\\([0-9]*\\).*/\\1/p' \"$ep\" | head -1)\n\
+         \x20   token=$(sed -n 's/.*\"token\":[[:space:]]*\"\\([a-f0-9]*\\)\".*/\\1/p' \"$ep\" | head -1)\n\
+         \x20   if [ -n \"$port\" ] && [ -n \"$token\" ]; then\n\
+         \x20     printf '%s' \"$input\" | curl -s -X POST \"http://127.0.0.1:${{port}}/hook/{engine}\" \\\n\
+         \x20       -H \"Authorization: Bearer ${{token}}\" -H \"Content-Type: application/json\" \\\n\
+         \x20       --connect-timeout 1 --max-time 1 --data-binary @- >/dev/null 2>&1 &\n\
+         \x20   fi\n\
          \x20 fi\n\
-         fi\n\
+         ;; esac\n\
          {chain}\
          exit 0\n",
         original = original.unwrap_or(""),
@@ -459,6 +469,15 @@ mod tests {
         assert!(s.trim_end().ends_with("exit 0"));
         // rota do motor certo no receptor
         assert!(s.contains("/hook/claude-code"));
+        // guarda de substring: o bloco do curl só entra em tick com rate_limits
+        assert!(s.contains("case \"$input\" in *'\"rate_limits\"'*)"));
+        // e o chain fica FORA da guarda (depois do esac): a statusline do
+        // usuário roda em todo tick, com ou sem rate_limits.
+        let esac = s.find("esac").expect("guarda case/esac no script");
+        let chain = s
+            .find(&format!("printf '%s' \"$input\" | {XIRP_WRAPPER}"))
+            .expect("chain presente");
+        assert!(chain > esac, "chain tem que vir depois do esac");
     }
 
     #[test]
@@ -600,22 +619,33 @@ mod tests_shell {
     use super::*;
 
     /// Prova de shell REAL: o script gerado passa no bash -n e, com um
-    /// endpoint fake + statusline original fake, imprime o output do original
-    /// (encadeamento vivo) sem vazar erro. Roda só em unix (bash presente).
+    /// endpoint fake + statusline original fake + um `curl` FAKE na frente do
+    /// PATH (que registra a invocação num log), prova as duas pontas da
+    /// guarda de rate_limits: (a) tick SEM rate_limits não spawna curl MAS a
+    /// statusline original roda; (b) tick COM rate_limits posta. Roda só em
+    /// unix (bash presente).
     #[test]
     #[cfg(unix)]
     fn script_gerado_roda_de_verdade() {
+        use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("mc-statusline-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let ep = dir.join("hook-endpoint.json");
         std::fs::write(&ep, r#"{"port":1,"token":"abc123","startedAt":0}"#).unwrap();
         let original = dir.join("original.sh");
         std::fs::write(&original, "#!/bin/bash\ncat >/dev/null\necho 'statusline original'\n").unwrap();
-        #[allow(clippy::permissions_set_readonly_false)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&original, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
+        std::fs::set_permissions(&original, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // curl fake: anota args + corpo (stdin) no log e sai 0 — é a evidência
+        // de que o script decidiu postar.
+        let curl_log = dir.join("curl-log");
+        let fake_curl = dir.join("curl");
+        std::fs::write(
+            &fake_curl,
+            format!("#!/bin/bash\nprintf '%s ' \"$@\" >> \"{log}\"\ncat >> \"{log}\"\nexit 0\n", log = curl_log.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake_curl, std::fs::Permissions::from_mode(0o755)).unwrap();
         let script = dir.join("mycockpit-statusline.sh");
         std::fs::write(
             &script,
@@ -633,21 +663,64 @@ mod tests_shell {
             .output()
             .unwrap();
         assert!(syn.status.success(), "bash -n falhou: {}", String::from_utf8_lossy(&syn.stderr));
-        // execução real: porta 1 morta (curl falha engolido) + original roda
-        let out = std::process::Command::new("bash")
-            .arg(&script)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .and_then(|mut c| {
-                use std::io::Write;
-                c.stdin.take().unwrap().write_all(b"{\"rate_limits\":{}}").unwrap();
-                c.wait_with_output()
-            })
-            .unwrap();
+
+        let path_env = format!(
+            "{}:{}",
+            dir.display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        let run = |input: &[u8]| {
+            std::process::Command::new("bash")
+                .arg(&script)
+                .env("PATH", &path_env)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .and_then(|mut c| {
+                    use std::io::Write;
+                    c.stdin.take().unwrap().write_all(input).unwrap();
+                    c.wait_with_output()
+                })
+                .unwrap()
+        };
+
+        // (a) tick de streaming SEM rate_limits: nenhum curl spawnado, mas a
+        // statusline original roda com o mesmo stdin (o chain fica FORA da
+        // guarda — a statusline do usuário nunca some).
+        let out = run(b"{\"model\":{\"id\":\"claude-opus-5\"},\"cost\":{\"total_lines_added\":3}}");
         assert!(out.status.success(), "script saiu com erro");
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "statusline original");
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(
+            !curl_log.exists(),
+            "tick sem rate_limits não pode spawnar curl: {}",
+            std::fs::read_to_string(&curl_log).unwrap_or_default()
+        );
+
+        // (b) tick COM rate_limits: posta (curl fake registra a invocação em
+        // background — espera com timeout, sem flake).
+        let out = run(b"{\"rate_limits\":{\"primary_used_pct\":23}}");
+        assert!(out.status.success(), "script saiu com erro");
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "statusline original");
+        let mut logged = String::new();
+        for _ in 0..40 {
+            if let Ok(s) = std::fs::read_to_string(&curl_log) {
+                if !s.is_empty() {
+                    logged = s;
+                    break;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(
+            logged.contains("/hook/claude-code"),
+            "tick com rate_limits tinha que postar pro receptor: {logged:?}"
+        );
+        assert!(
+            logged.contains("rate_limits"),
+            "o corpo postado leva o payload da statusline: {logged:?}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

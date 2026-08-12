@@ -15,7 +15,7 @@
 
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
-import { usageWindowAgents } from "@/lib/agents"
+import { agentDef, usageWindowAgents } from "@/lib/agents"
 import type { AgentProbe } from "@/lib/detect"
 import { isTauri } from "@/lib/db"
 import { useApp } from "@/store/app"
@@ -130,6 +130,36 @@ export function worstWindow(
     }
   }
   return out
+}
+
+/** Provider mostrado na pill FECHADA: prioriza o agent da CONVERSA ATIVA
+ *  quando ele tem janela medida (o número acompanha o contexto do usuário,
+ *  nunca o "pior global" de outro motor); agent ativo sem medição (ex.:
+ *  statusline não instalada) cai pro pior global — que a pill sempre NOMEIA
+ *  (um "30%" nu do Codex numa conversa Claude foi o bug de honestidade). */
+export function pillWindow(
+  activeAgent: string | null,
+  snapshots: Record<string, UsageSnapshot>,
+  failures: Record<string, UsageFailure>,
+  now: number,
+): { agent: string; window: UsageWindowInfo } | null {
+  if (activeAgent) {
+    const snap = snapshots[activeAgent]
+    if (snap != null && snapshotUsable(snap, failures[activeAgent], now)) {
+      let worst: UsageWindowInfo | null = null
+      for (const w of snap.windows) {
+        if (!worst || w.usedPercent > worst.usedPercent) worst = w
+      }
+      if (worst) return { agent: activeAgent, window: worst }
+    }
+  }
+  return worstWindow(snapshots, failures, now)
+}
+
+/** Nome curto do provider na pill (shortLabel do registry; id desconhecido
+ *  degrada pro próprio id — fail-open no render, nunca crasha nem esconde). */
+export function usagePillLabel(agent: string): string {
+  return agentDef(agent)?.shortLabel ?? agent
 }
 
 /** Percentual pra exibição: inteiro (o CLI manda float sujo tipo

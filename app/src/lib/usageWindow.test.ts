@@ -22,8 +22,10 @@ import {
   markPollAttempt,
   nextPollDelayMs,
   parseFetchError,
+  pillWindow,
   recordPollResult,
   snapshotUsable,
+  usagePillLabel,
   usageTone,
   worstWindow,
   type UsageFailure,
@@ -134,6 +136,63 @@ describe("agregação da pill", () => {
     expect(
       worstWindow({ "claude-code": SNAP_CLAUDE }, {}, depois),
     ).toBeNull() // ninguém vivo = pill some, nunca inventa
+  })
+})
+
+describe("seleção do provider da pill (conversa ativa)", () => {
+  it("agent da conversa ativa com janela medida ganha do pior global", () => {
+    const sel = pillWindow(
+      "claude-code",
+      { "claude-code": SNAP_CLAUDE, codex: SNAP_CODEX },
+      {},
+      AGORA,
+    )
+    // numa conversa Claude a pill mostra o Claude (29%), não os 30% do Codex
+    expect(sel?.agent).toBe("claude-code")
+    expect(sel?.window.id).toBe("7d") // a janela MAIS queimada DELE (29 > 23)
+  })
+
+  it("agent ativo sem medição cai pro pior global (que a pill nomeia)", () => {
+    const sel = pillWindow("claude-code", { codex: SNAP_CODEX }, {}, AGORA)
+    expect(sel?.agent).toBe("codex")
+    expect(sel?.window.usedPercent).toBe(30)
+  })
+
+  it("sem conversa ativa: pior global (comportamento anterior preservado)", () => {
+    const sel = pillWindow(
+      null,
+      { "claude-code": SNAP_CLAUDE, codex: SNAP_CODEX },
+      {},
+      AGORA,
+    )
+    expect(sel?.agent).toBe("codex")
+  })
+
+  it("snapshot stale do agent ativo não conta: cai pro global vivo", () => {
+    const depois = SNAP_CLAUDE.fetchedAt + STALE_MS + 1
+    const codexFresco = { ...SNAP_CODEX, fetchedAt: depois }
+    const sel = pillWindow(
+      "claude-code",
+      { "claude-code": SNAP_CLAUDE, codex: codexFresco },
+      {},
+      depois,
+    )
+    expect(sel?.agent).toBe("codex")
+  })
+
+  it("ninguém medido: null (a pill some ou mostra a falha, nunca inventa)", () => {
+    expect(pillWindow("claude-code", {}, {}, AGORA)).toBeNull()
+  })
+})
+
+describe("nomeação do provider na pill fechada", () => {
+  it("usa o shortLabel do registry (nunca um percentual anônimo)", () => {
+    expect(usagePillLabel("claude-code")).toBe("Claude")
+    expect(usagePillLabel("codex")).toBe("Codex")
+  })
+
+  it("id desconhecido degrada pro próprio id (fail-open no render)", () => {
+    expect(usagePillLabel("motor-inventado")).toBe("motor-inventado")
   })
 })
 

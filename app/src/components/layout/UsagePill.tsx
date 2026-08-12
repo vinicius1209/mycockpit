@@ -1,7 +1,11 @@
-// <UsagePill> — pill ÚNICA agregada do medidor de janela de uso na barra
-// superior (a feature "9% used · 4h 22m" do estudo do Orca), com popover de
-// detalhe por provider. Fonte única: useUsage (snapshots com procedência) +
-// a política de lib/usageWindow. Camadas de esconder (Orca):
+// <UsagePill> — pill do medidor de janela de uso na barra superior (a feature
+// "9% used · 4h 22m" do estudo do Orca), com popover de detalhe por provider.
+// Fonte única: useUsage (snapshots com procedência) + a política de
+// lib/usageWindow. A pill fechada é CONTEXTUAL e NOMEADA: mostra o provider do
+// agent da CONVERSA ATIVA quando ele tem janela medida; sem medição do ativo,
+// cai pro pior global — e sempre com o nome do provider na frente do número
+// (um "30%" nu do Codex numa conversa Claude lia como se fosse o Claude).
+// Camadas de esconder (Orca):
 //   1. motor sem capability nem aparece (usageWindowAgents);
 //   2. provider não-configurado/não-logado/sem dado: some;
 //   3. provider configurado FALHANDO: VISÍVEL com estado honesto ("falhando
@@ -18,19 +22,21 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { usageWindowAgents } from "@/lib/agents"
+import { agentDef, usageWindowAgents } from "@/lib/agents"
 import { fmtTime } from "@/lib/format"
 import {
   fmtAge,
   fmtPct,
   fmtResetIn,
+  pillWindow,
   snapshotUsable,
+  usagePillLabel,
   usageTone,
-  worstWindow,
   type UsageFailure,
   type UsageSnapshot,
 } from "@/lib/usageWindow"
 import { useApp } from "@/store/app"
+import { useChat } from "@/store/chat"
 import { useUsage } from "@/store/usage"
 import { cn } from "@/lib/utils"
 
@@ -141,6 +147,11 @@ export function UsagePill() {
   const setSettingsOpen = useApp((s) => s.setSettingsOpen)
   const byAgent = useUsage((s) => s.byAgent)
   const failures = useUsage((s) => s.failures)
+  // agent da conversa ativa (o mesmo que o composer mostra como identidade):
+  // é ele que decide QUAL provider a pill fechada prioriza.
+  const activeAgent = useChat((s) =>
+    s.activeId ? (s.byId[s.activeId]?.agent ?? null) : null,
+  )
 
   // idade/staleness passam sem evento de store: relógio local de 30s (mesma
   // granularidade do tick do vigia), só pra re-render.
@@ -151,11 +162,11 @@ export function UsagePill() {
   }, [])
 
   if (!enabled) return null
-  const worst = worstWindow(byAgent, failures, now)
+  const sel = pillWindow(activeAgent, byAgent, failures, now)
   const failing = Object.keys(failures).length > 0
   // nada medido e nada falhando: a pill SOME (não-configurado se esconde;
   // configurado-com-erro fica visível no ramo abaixo).
-  if (!worst && !failing) return null
+  if (!sel && !failing) return null
 
   const providers = usageWindowAgents()
   const measurable = providers.filter(
@@ -170,20 +181,27 @@ export function UsagePill() {
         (d) => d.usageWindow === "statusline" && byAgent[d.id] == null,
       )
 
-  const tone = worst ? usageTone(worst.window.usedPercent) : "ok"
+  const tone = sel ? usageTone(sel.window.usedPercent) : "ok"
+  const pillTitle = sel
+    ? `Janela de uso do plano · ${agentDef(sel.agent)?.label ?? sel.agent}`
+    : "Janela de uso do plano"
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          title="Janela de uso do plano"
-          aria-label="Janela de uso do plano"
+          title={pillTitle}
+          aria-label={pillTitle}
           className="pointer-events-auto hidden items-center gap-1.5 rounded-full border bg-secondary/50 px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex"
         >
           <Gauge className="size-3.5" aria-hidden />
-          {worst ? (
+          {sel ? (
             <>
-              <UsageBar pct={worst.window.usedPercent} />
+              {/* o DONO do número, sempre: percentual nu induzia a ler o
+                  número como sendo do agent da conversa. Trunca ANTES do
+                  número (largura do percentual é reservada). */}
+              <span className="max-w-20 truncate">{usagePillLabel(sel.agent)}</span>
+              <UsageBar pct={sel.window.usedPercent} />
               {/* largura reservada: "100%" não desloca os vizinhos */}
               <span
                 className={cn(
@@ -191,7 +209,7 @@ export function UsagePill() {
                   TONE_TEXT[tone],
                 )}
               >
-                {fmtPct(worst.window.usedPercent)}
+                {fmtPct(sel.window.usedPercent)}
               </span>
             </>
           ) : (
@@ -199,7 +217,11 @@ export function UsagePill() {
           )}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80 p-1.5">
+      {/* sideOffset + z-[120]: o header da TitleBar é z-[110] (acima do
+          overlay de drag do decorum, ver TitleBar.tsx) — no z-50 padrão dos
+          dropdowns a borda de cima do popover sumia ATRÁS da faixa de
+          título. Acima do header + folga do trigger, nada é cortado. */}
+      <DropdownMenuContent align="end" sideOffset={8} className="z-[120] w-80 p-1.5">
         <p className="px-2 pt-1 pb-0.5 text-[10.5px] tracking-wide text-muted-foreground/70 uppercase">
           Janela de uso do plano
         </p>
@@ -241,7 +263,8 @@ export function UsagePill() {
         ))}
         <p className="px-2 pt-1.5 pb-1 text-[10.5px] leading-snug text-muted-foreground/60">
           Quanto da janela do seu plano já foi usada, por provider. Não é
-          custo em US$: medição de carona, nenhuma quota é consumida.
+          custo em US$ nem o contexto da conversa (esse é o anel do composer):
+          medição de carona, nenhuma quota é consumida.
         </p>
       </DropdownMenuContent>
     </DropdownMenu>
