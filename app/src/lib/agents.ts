@@ -85,6 +85,14 @@ export interface AgentDef {
    *  recap (transplante para si, lib/compact). Teste-gêmeo:
    *  agents.compact.test.ts ↔ `matriz_native_compact_por_agent` no Rust. */
   nativeCompact: boolean
+  /** Fonte da JANELA DE USO do plano (% usado + reset — espelho de
+   *  `usage_window`, adapters.rs): "statusline" = PUSH (o script instalado
+   *  posta pro receptor local a cada turno), "rpc" = POLL (o app pergunta via
+   *  probe read-only, política em lib/usageWindow). null = motor sem fonte
+   *  auditada → a UI some com pill/toggle (4 camadas do Orca), nunca inventa
+   *  percentual. Teste-gêmeo: agents.usageWindow.test.ts ↔
+   *  `matriz_usage_window_por_agent` no Rust. */
+  usageWindow: "statusline" | "rpc" | null
 }
 
 // Aliases do Claude Code ("opus", "sonnet"…) resolvem NO SERVIDOR e mudam com
@@ -232,6 +240,9 @@ export const AGENTS: AgentDef[] = [
     // claude 2.1.220: `-p --resume <sid> "/compact"` processa o comando em
     // modo print (empírico 04/08/2026, agent-runner §7.1).
     nativeCompact: true,
+    // claude 2.1.220: rate_limits no stdin da statusline por turno (payload
+    // real capturado 12/08/2026).
+    usageWindow: "statusline",
   },
   {
     id: "codex",
@@ -261,6 +272,9 @@ export const AGENTS: AgentDef[] = [
     // codex 0.146: `/compact` é só do TUI; `codex exec` não expõe (help
     // verificado 04/08/2026) → /compactar renova a sessão com recap.
     nativeCompact: false,
+    // codex 0.146: account/rateLimits/read no app-server read-only (provado
+    // na mão 12/08/2026).
+    usageWindow: "rpc",
   },
   {
     id: "agy",
@@ -288,6 +302,7 @@ export const AGENTS: AgentDef[] = [
     disputes: false,
     cumulativeUsage: false,
     nativeCompact: false,
+    usageWindow: null,
   },
   {
     id: "opencode",
@@ -310,6 +325,7 @@ export const AGENTS: AgentDef[] = [
     disputes: false,
     cumulativeUsage: false,
     nativeCompact: false,
+    usageWindow: null,
   },
   {
     id: "model",
@@ -332,6 +348,7 @@ export const AGENTS: AgentDef[] = [
     disputes: false,
     cumulativeUsage: false,
     nativeCompact: false,
+    usageWindow: null,
   },
 ]
 
@@ -358,6 +375,13 @@ export function agentDef(id: string): AgentDef | undefined {
  *  estimado") pergunta AQUI em vez de escrever "codex" no meio do código. */
 export function cumulativeUsageAgents(): AgentDef[] {
   return AGENTS.filter((a) => a.cumulativeUsage)
+}
+
+/** Motores com fonte de JANELA DE USO (medidor de rate limit). Quem monta a
+ *  pill/popover/Configurações do medidor pergunta AQUI, nunca por nome — motor
+ *  sem fonte nem aparece (1ª camada de esconder do Orca). */
+export function usageWindowAgents(): AgentDef[] {
+  return AGENTS.filter((a) => a.usageWindow != null)
 }
 
 /** "ready"=usável · "installed-not-authenticated"=instalado e DESLOGADO

@@ -112,6 +112,27 @@ pub enum CommandSource {
     CodexPrompts,
 }
 
+/// Fonte da JANELA DE USO do plano (rate limit: % usado + quando reseta) de um
+/// motor. Mesmo padrão do `CommandSource`: o enum confina o "como" (dialeto,
+/// consumido SÓ pelo fetcher/receptor/instalador em usage_window.rs e
+/// hook_gateway.rs), a capability decide o "se". Nomes carregam o fornecedor de
+/// propósito — dialeto É domínio do fornecedor (precedente HookDialect do
+/// hooks-plan). Motor sem fonte: `None` e a UI esconde (4 camadas do Orca).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum UsageWindowSource {
+    /// claude ≥2.1.80: o comando de statusline recebe `rate_limits` (janela
+    /// 5h/7d, % usado, reset) no stdin A CADA TURNO — instala-se um script
+    /// encadeado no settings.json que POSTa pro receptor local (H0). PUSH:
+    /// dado de carona, nenhuma quota consumida. Payload real capturado
+    /// 12/08/2026 (fixture em usage_window.rs).
+    ClaudeStatusline,
+    /// codex 0.146: JSON-RPC `account/rateLimits/read` via
+    /// `codex -s read-only -a untrusted app-server` (probe local, read-only,
+    /// sem quota). POLL: resposta real capturada 12/08/2026 (fixture em
+    /// usage_window.rs) — só `primary` (janela 7d), `secondary: null`.
+    CodexAppServer,
+}
+
 /// Capabilities do agent-runner.md §2, materializada (G1.1 do
 /// capability-registry-plan). Campos derivados dos achados REAIS da auditoria,
 /// não de especulação. Regra de ouro (§7.1): capability declarada tem que ser
@@ -181,6 +202,15 @@ pub struct Capabilities {
     /// `native_compact` exige `session_resume` (o caminho nativo É "resume +
     /// /compact").
     pub native_compact: bool,
+    /// Expõe a JANELA DE USO do plano (% usado + reset, feature "9% used ·
+    /// 4h 22m" do estudo do Orca — pipeline SEPARADO do custo em $). `None` =
+    /// motor sem fonte auditada: a UI some com pill/toggle (degradação
+    /// honesta), nunca inventa percentual. agy 1.1.12: só existe `/credits`
+    /// (saldo de créditos, sem % de janela nem reset — verificado 12/08/2026)
+    /// → não é janela de uso, `None`. Espelho TS: `usageWindow` em
+    /// lib/agents.ts (teste-gêmeo agents.usageWindow.test.ts ↔
+    /// `matriz_usage_window_por_agent`).
+    pub usage_window: Option<UsageWindowSource>,
 }
 
 /// claude 2.1.219 (auditado 2026-07): o mais rico — MCP completo, background
@@ -203,6 +233,9 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     // claude 2.1.220: `-p --resume <sid> "/compact"` processa o comando em
     // modo print (empírico 04/08/2026; §7.1 do agent-runner).
     native_compact: true,
+    // claude 2.1.220: a statusline recebe `rate_limits` no stdin por turno
+    // (payload real capturado 12/08/2026 — fixture em usage_window.rs).
+    usage_window: Some(UsageWindowSource::ClaudeStatusline),
 };
 
 /// codex-cli 0.144.6 (auditado 2026-07): MCP completo (config efêmero via -c),
@@ -229,6 +262,10 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     // codex 0.146: `/compact` é comando do TUI; `codex exec` não expõe
     // (help verificado 04/08/2026) → compactar = renovação de sessão app-side.
     native_compact: false,
+    // codex 0.146: `account/rateLimits/read` no app-server read-only devolve
+    // usedPercent + resetsAt (provado na mão 12/08/2026, fixture em
+    // usage_window.rs).
+    usage_window: Some(UsageWindowSource::CodexAppServer),
 };
 
 /// agy 1.1.9 (re-checado 31/07/2026): sem canal MCP, sem resume exposto no
@@ -250,6 +287,9 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // stdout de texto puro: não há usage nenhum, quanto mais acumulado.
     cumulative_usage: false,
     native_compact: false,
+    // agy 1.1.12: só `/credits` (saldo, sem % de janela nem reset —
+    // verificado 12/08/2026). Saldo de créditos NÃO é janela de uso: None.
+    usage_window: None,
 };
 
 pub trait AgentAdapter: Send {
@@ -2811,6 +2851,26 @@ mod tests {
         assert!(!capabilities_of("claude-code").unwrap().cumulative_usage);
         // agy: stdout de texto puro, sem usage.
         assert!(!capabilities_of("agy").unwrap().cumulative_usage);
+    }
+
+    /// Teste-GÊMEO do espelho TS (`agents.usageWindow.test.ts`): quem expõe a
+    /// JANELA DE USO do plano e por qual dialeto. Mexeu aqui, mexa lá.
+    #[test]
+    fn matriz_usage_window_por_agent() {
+        // claude 2.1.220: statusline pipeia rate_limits por turno (payload
+        // real capturado 12/08/2026).
+        assert_eq!(
+            capabilities_of("claude-code").unwrap().usage_window,
+            Some(UsageWindowSource::ClaudeStatusline)
+        );
+        // codex 0.146: account/rateLimits/read no app-server (provado na mão
+        // 12/08/2026).
+        assert_eq!(
+            capabilities_of("codex").unwrap().usage_window,
+            Some(UsageWindowSource::CodexAppServer)
+        );
+        // agy 1.1.12: só /credits (saldo, sem janela/reset) → sem fonte.
+        assert_eq!(capabilities_of("agy").unwrap().usage_window, None);
     }
 
     #[test]
