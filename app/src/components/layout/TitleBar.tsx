@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { Separator } from "@/components/ui/separator"
 import { InboxBell } from "@/components/layout/InboxBell"
+import { UsagePill } from "@/components/layout/UsagePill"
 import { MODES } from "@/components/layout/titleBarModes"
 import { useApp, useActiveProject } from "@/store/app"
 import {
@@ -131,6 +132,9 @@ export function TitleBar() {
       <ModeSwitcher />
 
       <div className="pointer-events-none flex items-center justify-end gap-1.5 pr-2.5">
+        {/* Medidor de janela de uso (rate limit do plano): pill agregada,
+            some sozinha sem dado (4 camadas de esconder, ver UsagePill). */}
+        <UsagePill />
         <SearchChip />
         <InboxBell />
         <Button
