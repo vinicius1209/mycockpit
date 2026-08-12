@@ -137,6 +137,27 @@ export function createCloseLatch(): CloseLatch {
   }
 }
 
+/** Desfecho de uma tentativa de fechar. */
+export type CloseOutcome =
+  | "closed" // fechou agora: o chamador pode rodar os efeitos
+  | "already" // alguém já fechou (2º clique, Cmd+Enter junto do clique)
+  | "retry" // a gravação falhou: latch destravado, dá pra tentar de novo
+
+/** A sequência inteira do fechamento num lugar só, pra que "fecha exatamente
+ *  uma vez" e "persist falho destrava" sejam a MESMA regra testável. Efeito
+ *  colateral nenhum roda em "already" nem em "retry". */
+export function attemptClose(
+  latch: CloseLatch,
+  persist: () => boolean,
+): CloseOutcome {
+  if (!latch.attempt()) return "already"
+  if (!persist()) {
+    latch.release()
+    return "retry"
+  }
+  return "closed"
+}
+
 // ------------------------------------------------------------------- tema
 
 export type Theme = "dark" | "light"

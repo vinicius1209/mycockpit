@@ -38,6 +38,7 @@ import { HooksSettings } from "@/components/settings/HooksSettings"
 import { MachineAgents } from "@/components/settings/MachineAgents"
 import { ModelsSettings } from "@/components/settings/ModelsSettings"
 import { EspecialistasContent } from "@/components/settings/Especialistas"
+import { restartOnboarding } from "@/components/onboarding/OnboardingWizard"
 import {
   Block,
   BlockTitle,
@@ -640,7 +641,9 @@ export function SettingsDialog() {
               <div className="mt-4 border-t border-border/50 pt-3">
                 <button
                   onClick={() => {
-                    setSettings({ onboarded: false })
+                    // limpa o progresso ANTES de reabrir, senão o wizard
+                    // retomaria no último passo concluído.
+                    restartOnboarding()
                     setOpen(false)
                   }}
                   className="flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-brass"

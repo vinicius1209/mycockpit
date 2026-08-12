@@ -44,6 +44,16 @@ export const UPDATE_COMMANDS: Record<string, string | null> = {
   agy: null,
 }
 
+/** Como INSTALAR cada CLI, pra quem ainda não tem nenhuma (passo 1 do
+ *  onboarding). Mesma natureza do UPDATE_COMMANDS acima: conhecimento de
+ *  pacote é por-provider e mora neste módulo, nunca em código genérico.
+ *  Ausente do mapa = sem receita conhecida (a UI diz isso em vez de chutar). */
+export const INSTALL_COMMANDS: Record<string, string> = {
+  "claude-code": "npm i -g @anthropic-ai/claude-code",
+  codex: "brew install codex",
+  agy: "https://antigravity.google/cli",
+}
+
 /** Comandos por agent×CANAL — espelho do plano por canal do update.rs (o
  *  módulo por-provider legítimo): a notificação de update sugere o comando do
  *  canal DETECTADO do binário, não o npm estático (incidente do "npm i" pra

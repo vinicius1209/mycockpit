@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   FLOW_VERSION,
+  attemptClose,
   createCloseLatch,
   isLastStep,
   notifyMessage,
@@ -129,6 +130,39 @@ describe("latch de fechamento", () => {
     latch.release()
     expect(latch.isClosed()).toBe(false)
     expect(latch.attempt()).toBe(true)
+  })
+
+  it("fechamento grava uma vez só, mesmo com dois gestos", () => {
+    const latch = createCloseLatch()
+    let gravou = 0
+    const persist = () => {
+      gravou++
+      return true
+    }
+    expect(attemptClose(latch, persist)).toBe("closed")
+    expect(attemptClose(latch, persist)).toBe("already")
+    expect(gravou).toBe(1)
+  })
+
+  it("persist falho destrava o latch e pede nova tentativa", () => {
+    const latch = createCloseLatch()
+    expect(attemptClose(latch, () => false)).toBe("retry")
+    expect(latch.isClosed()).toBe(false)
+    // e a tentativa seguinte, com o disco de volta, fecha de verdade
+    expect(attemptClose(latch, () => true)).toBe("closed")
+  })
+
+  it("tentativa recusada não roda efeito nenhum", () => {
+    const latch = createCloseLatch()
+    attemptClose(latch, () => true)
+    let gravou = false
+    expect(
+      attemptClose(latch, () => {
+        gravou = true
+        return true
+      }),
+    ).toBe("already")
+    expect(gravou).toBe(false)
   })
 })
 
