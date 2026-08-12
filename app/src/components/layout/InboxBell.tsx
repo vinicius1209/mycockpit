@@ -338,9 +338,13 @@ export function InboxBell() {
           ) : null}
         </Button>
       </DropdownMenuTrigger>
+      {/* sideOffset + z-[120]: mesmo clipping que a UsagePill tinha. O header
+          da TitleBar é z-[110], então no z-50 padrão do dropdown a borda de
+          cima do popover ficava ATRÁS da faixa de título. */}
       <DropdownMenuContent
         align="end"
-        className="max-h-[75vh] w-96 overflow-y-auto"
+        sideOffset={8}
+        className="z-[120] max-h-[75vh] w-96 overflow-y-auto"
       >
         {/* Decisões — o que espera ação sua */}
         <DropdownMenuLabel className="text-[10px] tracking-wide text-muted-foreground uppercase">

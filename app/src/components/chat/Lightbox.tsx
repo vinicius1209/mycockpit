@@ -146,7 +146,7 @@ export function LightboxOverlay() {
             src={url}
             alt={img.name}
             onClick={(e) => e.stopPropagation()}
-            className="max-h-full max-w-full rounded-md object-contain shadow-2xl"
+            className="max-h-full max-w-full rounded-md object-contain shadow-[var(--shadow-pop)]"
           />
         ) : (
           <span className="size-40 animate-pulse rounded-lg bg-white/10" />
