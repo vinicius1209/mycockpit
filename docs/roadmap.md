@@ -19,7 +19,14 @@ ambiente em 26 arquivos (ADR-037 só cobriu o fio); escala tipográfica
 estilhaçada (24 tamanhos → 4). Bônus achado depois: **clipping do popover do
 InboxBell** (mesmo z-index que consertamos na pill).
 
-### R2 — Onboarding (não temos nenhum)
+### R2 — Onboarding ✅ ENTREGUE (12/08/2026)
+
+Wizard de 3 passos + guia de setup na sidebar, nos termos abaixo. Revisão e
+arquivos em `docs/onboarding.md` (bloco no topo). Pendência registrada: item
+opcional do guia (medidor/hooks/companion) só some quando instalado; quem não
+quer nenhum usa o botão direito. O texto original segue como referência:
+
+
 Xirp e Orca convergiram na receita: passos que INSTALAM CAPACIDADES, não tour.
 3 passos visíveis (condicionais somem do contador, sem bolinha morta):
 (1) detectar agentes + escolher padrão; (2) escolher tema (salva na seleção,

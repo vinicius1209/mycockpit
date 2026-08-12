@@ -1,5 +1,50 @@
 # Onboarding de primeira instalação
 
+> ## REVISÃO 2026-08-12 — R2 do roadmap (esta seção manda sobre o texto abaixo)
+>
+> O wizard de 6 passos descrito adiante era um TOUR (boas-vindas → checklist →
+> default → tema → projeto → "tudo pronto"). Foi substituído pela receita
+> Orca/Xirp: **onboarding instala capacidades**. O que mudou, e por quê:
+>
+> | Antes (6 passos) | Agora (3 passos) |
+> |---|---|
+> | Boas-vindas e "tudo pronto" (2 telas sem mecanismo) | removidas: tela que não desbloqueia nada não é passo |
+> | Detecção e escolha do default em passos separados | **um passo só**: detectados em destaque, o resto atrás de "mostrar as outras", pré-seleção do primeiro detectado |
+> | Tema | Tema, agora com a regra do Orca: salva NA SELEÇÃO, **reverte se o usuário pular esse passo** |
+> | — | **Notificações**: "Enviar notificação de teste" É a sonda de permissão do macOS; o estado sai do RESULTADO (`NotifyPath` do `lib/notify`), não de "vá conferir nas Preferências" |
+> | Passo de projeto no meio + "Abrir o cockpit" no fim | termina em AÇÃO: o botão final é "Adicionar seu primeiro projeto" (ou "Voltar ao cockpit" quando já existe projeto, senão a copy mentiria) |
+> | Contador implícito de 6 | **passo condicional SOME do contador** ("1 de 2" numa máquina sem notificação nativa), nunca bolinha morta |
+> | Fechar no meio não gravava nada | `{flowVersion, lastCompletedStep}` em chave PRÓPRIA (`mc.onboarding`), separada das settings; **latch** fecha exatamente uma vez e **destrava se a gravação falhar** |
+> | Escape fechava seco | Escape/clique-fora → diálogo pequeno com **"Continuar" como default** e "Pular" em ghost (caminho de saída nunca é destrutivo) |
+> | — | **Cmd/Ctrl+Enter avança**, com a guarda do Orca: campo editável em foco fica com o atalho inteiro |
+>
+> **Versão de fluxo só decide ONDE retomar, nunca SE reabrir.** Quem já concluiu
+> (`settings.onboarded`) segue concluído em qualquer versão; a migração v1→v2 do
+> `mc.app` continua sendo o que impede o usuário existente de ver o wizard.
+> Divergência declarada do Orca: eles remapeiam índice a índice por versão, nós
+> voltamos ao começo (3 passos não pagam a tabela de migração).
+>
+> **Fase 2 — Guia de setup na sidebar** (novo): linha discreta com anel de
+> progresso cinza (progresso de configuração não é medidor de quota; os
+> limiares âmbar/vermelho do §2 do STYLEGUIDE não se aplicam), visível só
+> enquanto `pronto && !completo && !dispensado`, some sozinha ao completar,
+> botão direito esconde. Cada item vem de PROBE do estado real com teto de 15s
+> (leitura travada mantém o guia VISÍVEL em vez de escondê-lo pra sempre) e
+> capacidade que a máquina não tem some da lista inteira (§5.1).
+>
+> Arquivos (todos em `app/src/components/onboarding/`): `flow.ts` (decisões
+> puras) · `persistence.ts` (chave própria + `restartOnboarding`) ·
+> `OnboardingWizard.tsx` · `AgentStep/ThemeStep/NotificationStep.tsx` ·
+> `setupItems.ts` (regras do guia) · `setupProbes.ts` (I/O com timeout) ·
+> `SetupGuide.tsx`. Fora da pasta: `lib/detect.ts` (`INSTALL_COMMANDS`),
+> `lib/settings.ts` (`setupGuideDismissed`), `Sidebar.tsx` (1 import + 1 linha),
+> `SettingsDialog.tsx` ("Refazer onboarding" passa por `restartOnboarding`,
+> que limpa o progresso antes de reabrir).
+>
+> Trade-off registrado, não corrigido: itens opcionais do guia (medidor, hooks,
+> companion) só somem quando instalados. Quem não quer nenhum deles usa o botão
+> direito. Um "não quero este item" por linha seria mais fino.
+
 Status: ✅ IMPLEMENTADO (2026-07-13) · Escopo: macOS, Tauri 2 + React
 
 Arquivos: `src-tauri/src/detect.rs` (`detect_agents`), `src/lib/detect.ts`,
