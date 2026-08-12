@@ -998,10 +998,17 @@ function SddFeatureList({ project }: { project: Project }) {
                 <span className="min-w-0 flex-1 truncate">{plan.title}</span>
                 {/* Badge compacto do estágio EFETIVO. "done" é estado
                     ambiente permanente na sidebar, então é CINZA (STYLEGUIDE
-                    §2: verde é marco, não decoração que fica na tela). */}
+                    §2: verde é marco, não decoração que fica na tela).
+                    Sem uppercase+tracking à mão (§3 proíbe etiqueta de
+                    instrumento improvisada): além de virar regra, o caixa-alta
+                    espremia o título ao lado. "IMPLEMENTAÇÃO" com tracking
+                    custava ~92px dos 142px úteis da sidebar no mínimo (190px);
+                    "Implementação" custa ~74px, menos do que o badge gastava
+                    ANTES da migração pra 11px. O rótulo canônico fica inteiro
+                    (§7: não inventar sinônimo curto pra caber). */}
                 <span
                   className={cn(
-                    "shrink-0 rounded-sm px-1 py-px text-[11px] leading-4 tracking-wide uppercase",
+                    "shrink-0 rounded-sm px-1 py-px text-[11px] leading-4",
                     stage === "done"
                       ? "bg-muted text-muted-foreground"
                       : "bg-brass/10 text-brass/80",

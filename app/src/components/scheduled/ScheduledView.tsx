@@ -92,8 +92,11 @@ async function openRunConv(projectId: string, convId: string) {
   app.setViewMode("linear")
 }
 
-/** Estado da automação → AgentStatus do StatusDot canônico (pulsa azul quando
- *  rodando, verde ok, vermelho falhou, cinza nunca rodou). */
+/** Estado da automação → AgentStatus do StatusDot canônico: pulsa azul quando
+ *  roda, vermelho quando a última falhou, CINZA nos dois casos saudáveis
+ *  ("nunca rodou" e "última deu certo"), porque estado ambiente é cinza
+ *  (STYLEGUIDE §2). Quem desempata esses dois é o texto, não a cor: ver
+ *  `lastRunLabel` abaixo. */
 function scheduleStatus(
   lastRunStatus: string | null,
   running: boolean,
@@ -102,6 +105,14 @@ function scheduleStatus(
   if (lastRunStatus === "ok") return "success"
   if (lastRunStatus === "failed") return "error"
   return "idle"
+}
+
+/** O desempate que o dot não faz mais: "nunca rodou" vs "rodou em X".
+ *  Sem `lastRunAt` não inventa horário (§6): diz que nunca rodou, que é a
+ *  informação melhor que a cor dava. */
+export function lastRunLabel(lastRunAt: number | null | undefined): string {
+  if (lastRunAt == null) return "nunca rodou"
+  return `última ${fmtWhen(lastRunAt)}`
 }
 
 function ScheduleRow({
@@ -229,10 +240,14 @@ function ScheduleRow({
               {projectName}
             </span>
           </div>
-          {/* metadados discretos: recorrência + custo médio (a leitura forte é a
-              próxima execução, à direita) */}
+          {/* metadados discretos: recorrência + última execução + custo médio
+              (a leitura forte é a próxima execução, à direita). A "última" NÃO
+              é enfeite: desde que o dot ambiente virou cinza, ela é o único
+              desempate entre "nunca rodou" e "a última deu certo". */}
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-muted-foreground/80">
             <span>{recurrenceToText(rec)}</span>
+            <span className="text-muted-foreground/40">·</span>
+            <span className="tabular-nums">{lastRunLabel(s.lastRunAt)}</span>
             {avgCost != null && (
               <>
                 <span className="text-muted-foreground/40">·</span>

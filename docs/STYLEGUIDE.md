@@ -268,6 +268,13 @@ Status abaixo, com o que sobrou de propósito.
    sobrevive dentro de `components/ui/`, como o §3 permite. Onde o override
    caía sobre `.label-mono` (que já é 11px), a classe saiu em vez de repetir
    o valor.
+   **Efeito colateral tratado**: o badge de estágio da `Sidebar.tsx` deu o
+   maior salto (9.5 → 11px) num `shrink-0` ao lado de um título `truncate`, e
+   na sidebar no mínimo (190px) "IMPLEMENTAÇÃO" comia o título. A saída NÃO foi
+   voltar o tamanho (a escala é lei) nem inventar um rótulo curto (§7): caiu o
+   `uppercase`+`tracking-wide` feito à mão, que o §3 já proibia. Sentence case
+   custa ~74px contra ~92px em caixa-alta, menos do que o badge ocupava antes
+   da migração.
 2. ✅ **Anel de contexto fora da regra de medidor** — a régua virou decisão
    pura e compartilhada em `app/src/lib/meter.ts` (`meterTone`, `meterIsLoud`,
    `METER_TEXT`, `METER_FILL`, com teste em `meter.test.ts`). O `ContextRing`
@@ -275,6 +282,12 @@ Status abaixo, com o que sobrou de propósito.
    90 pra 80) e o `usageTone` do medidor de plano delega pro mesmo módulo. O
    limiar de OFERECER compactar (`offersCompactAction`, 70%) é comportamento e
    NÃO foi tocado.
+   ⚠️ **Aqui a passada NÃO foi neutra, de propósito**: o anel passou a gritar
+   com número em 80% (era 90) e a ficar âmbar em 60% (era 70). É o item 2 da
+   auditoria sendo cumprido — a régua de medidor do §2 é a régua, e o incidente
+   que a motivou foi justamente o contexto bater 100% sem ninguém avisar. Quem
+   olhar o diff e achar "mudou comportamento numa passada de estilo": mudou,
+   e este parágrafo é o registro.
 3. ✅ **"Parar" com duas tintas** — o stop do composer virou
    `variant="destructive"` (`ComposerParts.tsx`), igualando o do fio.
 4. ✅ **Verde como estado ambiente** — viraram cinza: `StatusDot.success`,
@@ -288,6 +301,15 @@ Status abaixo, com o que sobrou de propósito.
    ferramenta (`TaskChecklist`, `Markdown`, `FusionBoard`) e do badge
    "ativa/arquivada" do `LearningSection` ficou de fora — lá o cinza colapsaria
    uma distinção que a tela precisa manter.
+   **Consequência registrada**: no `StatusDot` (mapa de 5 estados, não ternário
+   binário) `idle` e `success` viraram o MESMO pixel. Onde isso importava —
+   a linha colapsada do Agendado — o desempate saiu da cor e virou texto:
+   `lastRunLabel` em `ScheduledView.tsx` diz "nunca rodou" ou "última
+   dd/mm, hh:mm" na linha de metadados (com teste, porque se o rótulo sumir a
+   lista volta a ter dois estados indistinguíveis). Regra geral que fica: **dot
+   ambiente cinza é a lei; quem precisa distinguir dois estados saudáveis usa
+   texto, não tinta.** `StatusDot` novo em superfície nova precisa checar se a
+   linha tem esse desempate.
 5. ✅ **Verde como identidade de agent** — Antigravity saiu do `--st-success`
    e ganhou `--id-violet` (par claro/escuro em `index.css`), nos dois mapas de
    cor categórica (`MissionControl`, `CostAudit`). Linha nova na tabela do §2.
