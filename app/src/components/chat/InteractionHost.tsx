@@ -434,7 +434,7 @@ function DetailDialog({
       description={
         <>
           {summary.headline}
-          {summary.lines > 1 ? ` — ${summary.lines} linhas` : ""}
+          {summary.lines > 1 ? ` · ${summary.lines} linhas` : ""}
         </>
       }
     >

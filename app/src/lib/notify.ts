@@ -93,7 +93,7 @@ function warnNativeBlocked(reason: string) {
   if (nativeBlockedWarned) return
   nativeBlockedWarned = true
   console.warn(`[notify] nenhuma notificação de SO disponível: ${reason}`)
-  toast("Avisos do sistema indisponíveis — use o sino e o ícone da bandeja.", {
+  toast("Avisos do sistema indisponíveis; use o sino e o ícone da bandeja.", {
     description:
       "Nem o plugin nativo nem o osascript entregaram. O feed no app continua funcionando.",
     duration: 8000,
@@ -324,7 +324,7 @@ export function notifyApproval(o: {
   if (o.seen) return
   void nativeNotify(
     "Frota · permissão pendente",
-    `${clipTitle(o.convTitle)} (${o.projectName}): o turno parou pedindo ${o.toolName} — ${o.headline}`,
+    `${clipTitle(o.convTitle)} (${o.projectName}): o turno parou pedindo ${o.toolName} · ${o.headline}`,
   )
 }
 
@@ -391,7 +391,7 @@ export function notifyQuestion(o: {
   if (o.seen) return
   void nativeNotify(
     "Frota · pergunta pendente",
-    `${clipTitle(o.convTitle)} (${o.projectName}): o turno parou esperando sua resposta — ${o.headline}${extra}`,
+    `${clipTitle(o.convTitle)} (${o.projectName}): o turno parou esperando sua resposta · ${o.headline}${extra}`,
   )
 }
 

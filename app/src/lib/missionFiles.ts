@@ -92,5 +92,5 @@ export async function promoteToDocs(
     }
     // existe e DIFERE → tenta o próximo número (não sobrescreve).
   }
-  throw new Error("Muitas versões deste relatório em docs/ — renomeie manualmente")
+  throw new Error("Muitas versões deste relatório em docs/, renomeie manualmente")
 }

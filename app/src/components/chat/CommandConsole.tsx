@@ -305,7 +305,7 @@ export function CommandConsole({
   // Placeholder por estado. A dica de "/" sai só quando o projeto tem comandos
   // de fato (senão seria teatro).
   const placeholder = missionRunning
-    ? "Missão em andamento — pare a missão para enviar manualmente…"
+    ? "Missão em andamento; pare a missão para enviar manualmente…"
     : running || finalizing
       ? "Enfileirar próxima mensagem…"
       : commands.length > 0
@@ -463,8 +463,8 @@ export function CommandConsole({
             }
             fusionTitle={
               activeId
-                ? "Disputar entre agents — candidatos read-only; o vencedor continua nesta conversa"
-                : "Sem conversa ativa — a disputa precisa de uma conversa de destino"
+                ? "Disputar entre agents (candidatos read-only); o vencedor continua nesta conversa"
+                : "Sem conversa ativa; a disputa precisa de uma conversa de destino"
             }
             onMission={() => setMissionOpen(true)}
             missionDisabled={disabled || running || finalizing || missionRunning}

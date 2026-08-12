@@ -158,7 +158,7 @@ export function MissionLauncher({
       opts.push({
         value: CUSTOM_PRESET,
         label: "Personalizado",
-        description: `baseado em ${preset.name} — editado aqui`,
+        description: `baseado em ${preset.name} (editado aqui)`,
       })
     }
     return opts
@@ -560,7 +560,7 @@ export function MissionLauncher({
               projectPermission !== "padrao" && (
                 <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
                   {projectPermission === "leitura"
-                    ? "Projeto em Leitura: Auto não concede escrita — as fases seguem só-leitura. O teto do projeto manda."
+                    ? "Projeto em Leitura: Auto não concede escrita, as fases seguem só-leitura. O teto do projeto manda."
                     : "Projeto em Liberado: já roda sem pedir e sem freio; Auto não altera (seria mais restrito). O teto do projeto manda."}
                 </p>
               )}

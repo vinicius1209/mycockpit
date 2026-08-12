@@ -8,7 +8,7 @@ import type { ChatItem } from "@/store/chat"
 
 /** Tooltip do toggle no composer (fonte única p/ o botão). */
 export const PLAN_FIRST_TOOLTIP =
-  "Planejar primeiro — o agent propõe um plano e só executa depois da sua aprovação"
+  "Planejar primeiro: o agent propõe um plano e só executa depois da sua aprovação"
 
 /** true se o agent não tem resume (o plano vai embutido no prompt de execução,
  *  senão o agent não sabe o que aprovamos). H5: derivado da capability

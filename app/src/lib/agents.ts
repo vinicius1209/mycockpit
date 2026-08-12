@@ -129,12 +129,12 @@ export interface AgentDef {
 // isso os pins abaixo carregam o sufixo.
 const CLAUDE_MODELS: AgentModelOption[] = [
   { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Claude Code escolher" },
-  { value: "claude-opus-5[1m]", label: "Opus 5", description: "Pin exato — o Opus mais novo, 1M nativo ($5/$25)" },
-  { value: "claude-sonnet-5[1m]", label: "Sonnet 5", description: "Pin exato — 1M nativo, rápido e equilibrado" },
+  { value: "claude-opus-5[1m]", label: "Opus 5", description: "Pin exato · o Opus mais novo, 1M nativo ($5/$25)" },
+  { value: "claude-sonnet-5[1m]", label: "Sonnet 5", description: "Pin exato · 1M nativo, rápido e equilibrado" },
   { value: "fable", label: "Fable", description: "Topo de linha (Fable 5, ~2x o preço do Opus)" },
   { value: "claude-opus-4-8[1m]", label: "Opus 4.8", description: "Pin da geração anterior (1M nativo)" },
-  { value: "opus", label: "Opus (alias)", description: "O CLI decide a versão (hoje → Opus 5) — pode divergir" },
-  { value: "sonnet", label: "Sonnet (alias)", description: "O CLI decide a versão — pode divergir" },
+  { value: "opus", label: "Opus (alias)", description: "O CLI decide a versão (hoje → Opus 5), pode divergir" },
+  { value: "sonnet", label: "Sonnet (alias)", description: "O CLI decide a versão, pode divergir" },
   { value: "haiku", label: "Haiku", description: "Mais rápido e barato (200k)" },
 ]
 // Codex: sem família "-codex" desde o 5.4 (gpt-5.5-codex/5.6-codex NÃO existem);
@@ -144,7 +144,7 @@ const CLAUDE_MODELS: AgentModelOption[] = [
 // saíram do catálogo (400 com auth ChatGPT) — removidos do picker.
 const CODEX_MODELS: AgentModelOption[] = [
   { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Codex escolher (hoje Sol)" },
-  { value: "gpt-5.6-sol", label: "Sol (5.6)", description: "Frontier da família 5.6 — o mais capaz" },
+  { value: "gpt-5.6-sol", label: "Sol (5.6)", description: "Frontier da família 5.6 · o mais capaz" },
   { value: "gpt-5.6-terra", label: "Terra (5.6)", description: "Equilíbrio qualidade/custo da 5.6" },
   { value: "gpt-5.6-luna", label: "Luna (5.6)", description: "Leve e rápido, alto volume" },
   { value: "gpt-5.5", label: "gpt-5.5", description: "Geração anterior, ainda forte" },

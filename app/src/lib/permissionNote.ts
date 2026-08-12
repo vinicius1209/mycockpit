@@ -26,7 +26,7 @@ export function permissionNote(
     }
     if (mode === "leitura") {
       return {
-        text: "Codex confina em sandbox de SO (read-only) — não pergunta, bloqueia.",
+        text: "Codex confina em sandbox de SO (read-only): não pergunta, bloqueia.",
         tone: "info",
       }
     }
@@ -41,7 +41,7 @@ export function permissionNote(
     }
     if (mode === "leitura") {
       return {
-        text: "Antigravity só tem sandbox best-effort — não é read-only de verdade.",
+        text: "Antigravity só tem sandbox best-effort, não é read-only de verdade.",
         tone: "warn",
       }
     }

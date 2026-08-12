@@ -377,7 +377,7 @@ export const useMission = create<MissionState>((set, get) => {
       })
       await recordHistory(convId, [
         noticeItem(
-          "Missão interrompida descartada — o pipeline não será retomado (o worktree segue intacto).",
+          "Missão interrompida descartada; o pipeline não será retomado (o worktree segue intacto).",
         ),
       ])
     },
@@ -905,7 +905,7 @@ export const useMission = create<MissionState>((set, get) => {
             get().byConv[convId]?.phases[i]?.costUsd ?? result.costUsd
           const marks: ChatItem[] = [
             noticeItem(
-              `Fase ${i + 1}/${engine.phases.length} · ${engine.phases[i].label} (${engine.phases[i].agent}) — concluída · US$ ${phCost.toFixed(2)}`,
+              `Fase ${i + 1}/${engine.phases.length} · ${engine.phases[i].label} (${engine.phases[i].agent}) · concluída · US$ ${phCost.toFixed(2)}`,
             ),
           ]
           const summary = phaseText(result.items)
@@ -993,7 +993,7 @@ export const useMission = create<MissionState>((set, get) => {
           // marco: perguntas do gate no fio.
           await recordHistory(convId, [
             noticeItem(
-              `⏸️ Gate humano — a fase ${i + 1} deixou perguntas:\n${questions.map((q, k) => `${k + 1}. ${q}`).join("\n")}`,
+              `⏸️ Gate humano · a fase ${i + 1} deixou perguntas:\n${questions.map((q, k) => `${k + 1}. ${q}`).join("\n")}`,
             ),
           ])
           const answers = await waiter
@@ -1014,7 +1014,7 @@ export const useMission = create<MissionState>((set, get) => {
           const answered = questions.map((_q, k) => {
             const a = answers[k]
             const text =
-              (a?.text ?? "").trim() || "(sem resposta — o agente decide)"
+              (a?.text ?? "").trim() || "(sem resposta, o agente decide)"
             const n = a?.attachments?.length ?? 0
             return `${k + 1}. ${text}${n > 0 ? ` (+ ${n} ${n === 1 ? "anexo" : "anexos"})` : ""}`
           })
@@ -1024,7 +1024,7 @@ export const useMission = create<MissionState>((set, get) => {
           if (split.dropped.length > 0) {
             marks.push(
               noticeItem(
-                `⚠️ ${split.dropped.length} ${split.dropped.length === 1 ? "anexo descartado" : "anexos descartados"} — ${nextAgent} não suporta: ${split.dropped.map((d) => d.name).join(", ")}`,
+                `⚠️ ${split.dropped.length} ${split.dropped.length === 1 ? "anexo descartado" : "anexos descartados"} · ${nextAgent} não suporta: ${split.dropped.map((d) => d.name).join(", ")}`,
               ),
             )
           }

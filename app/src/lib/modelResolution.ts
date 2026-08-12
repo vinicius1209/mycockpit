@@ -78,7 +78,7 @@ export function resolutionNotice(
   if (!expected || expected.test(resolved)) return null
   return (
     `Modelo divergente: pedi "${reqModel}" e a sessão iniciou com ` +
-    `"${resolved}". A verdade do CLI manda — o turno segue nesse modelo. ` +
+    `"${resolved}". A verdade do CLI manda: o turno segue nesse modelo. ` +
     `Pra travar a versão, use um pin por ID completo no seletor.`
   )
 }

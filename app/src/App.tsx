@@ -636,7 +636,7 @@ export default function App() {
           void feedback("Disputa interrompida")
         } else if (fusion?.phase === "promoting") {
           // Promoção é one-shot (abort no-opa): não finge que parou.
-          void feedback("Disputa promovendo o vencedor — aguarde concluir")
+          void feedback("Disputa promovendo o vencedor, aguarde concluir")
         } else {
           const chat = useChat.getState()
           chat.cancelAutoResume(convId)
@@ -710,9 +710,9 @@ export default function App() {
         chat.handleEvent(conv_id, {
           type: "notice",
           message:
-            "Sessão nativa expirou — conversa retomada pela memória do Frota",
+            "Sessão nativa expirou; conversa retomada pela memória do Frota",
         })
-        toast("Sessão nativa expirou — conversa retomada pela memória do Frota")
+        toast("Sessão nativa expirou; conversa retomada pela memória do Frota")
       },
     )
       .then((u) => {

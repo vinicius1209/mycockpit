@@ -1273,7 +1273,7 @@ function ReadBadge({ read }: { read: { text: string; warn: boolean } | null }) {
     <span
       title={
         read.warn
-          ? "O agent respondeu sem abrir este anexo — a resposta pode não considerá-lo."
+          ? "O agent respondeu sem abrir este anexo; a resposta pode não considerá-lo."
           : "O agent abriu este anexo durante o turno."
       }
       className={cn(
@@ -1567,7 +1567,7 @@ function TurnFeedback({
 
 /** Aviso leve de duplicata: dedup preferível a ruído (nunca grava 2 regras iguais). */
 function toastDuplicate() {
-  toast("Já existe uma regra parecida — não salvei de novo.")
+  toast("Já existe uma regra parecida, não salvei de novo.")
 }
 
 /** Telemetria de fim de turno como INSTRUMENTO (não linha cinza corrida): o dado

@@ -82,7 +82,7 @@ export function DoctrineSection({
       setContent(draft)
       setExists(draft.trim().length > 0)
       setOpen(false)
-      toast.success("Doutrina salva — vale a partir do próximo envio.")
+      toast.success("Doutrina salva, vale a partir do próximo envio.")
     } catch (e) {
       // erro de escrita NÃO pode passar batido: o usuário acharia que escreveu
       // regra que não existe (mesma lição do saveLesson).

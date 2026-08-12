@@ -98,7 +98,7 @@ export const useInteractions = create<InteractionsState>()((set, get) => ({
       // que é melhor que um turno parado sem sintoma.
       if (req) get().push(req)
       toast.error("Não consegui entregar sua resposta ao agent.", {
-        description: "O pedido voltou para a fila — tente responder de novo.",
+        description: "O pedido voltou para a fila, tente responder de novo.",
       })
     })
   },

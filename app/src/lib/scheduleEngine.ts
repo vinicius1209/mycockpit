@@ -287,7 +287,7 @@ export async function dispatchSchedule(
       useNotifs.getState().push({
         kind: "run_error",
         title: `Automação falhou: ${s.name}`,
-        subtitle: 'Sem retry automático na v1 — use "Rodar agora" em Agendado.',
+        subtitle: 'Sem retry automático na v1; use "Rodar agora" em Agendado.',
         projectId: s.projectId,
         convId,
       })

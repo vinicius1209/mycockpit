@@ -84,7 +84,7 @@ export function LearningSection({ projectId }: { projectId: string }) {
       const fresh = await listLessons(projectId)
       setLessons(fresh)
       if (deduped === 0 && demoted === 0) {
-        toast("Memória revisada — nada a mudar.")
+        toast("Memória revisada, nada a mudar.")
       } else {
         toast(`${deduped} deduplicada(s), ${demoted} rebaixada(s).`)
       }

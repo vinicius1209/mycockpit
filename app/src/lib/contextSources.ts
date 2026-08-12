@@ -79,7 +79,7 @@ export function vendorReadingNote(
   if (!agent) return null
   const meus = readableBy(agent, f)
   if (meus.length === 0) {
-    return `O ${label} não tem arquivo de instrução próprio conhecido — nesta conversa, do disco só chega a doutrina que o app injeta.`
+    return `O ${label} não tem arquivo de instrução próprio conhecido; nesta conversa, do disco só chega a doutrina que o app injeta.`
   }
   const presentes = meus.filter((s) => s.present)
   if (presentes.length === 0) {
@@ -88,7 +88,7 @@ export function vendorReadingNote(
     // justamente nomear o arquivo que falta (foi o caso do AGENTS.md aqui).
     const falta =
       meus.length === 1 ? "e o arquivo não existe" : "mas nada disso existe"
-    return `O ${label} leria ${nomes}, ${falta} aqui — só a doutrina do app chega.`
+    return `O ${label} leria ${nomes}, ${falta} aqui, só a doutrina do app chega.`
   }
   return `Nesta conversa o ${label} também lê: ${presentes.map(sourceLabel).join(", ")}.`
 }

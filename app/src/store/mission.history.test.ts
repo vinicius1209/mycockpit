@@ -255,7 +255,7 @@ describe("histórico da missão persiste na conversa (marcos via appendItems)", 
 
     const answered = notices().find((m) => m.includes("Gate respondido"))
     expect(answered).toContain("5175")
-    expect(answered).toContain("(sem resposta — o agente decide)")
+    expect(answered).toContain("(sem resposta, o agente decide)")
   })
 
   it("RECOVERY grava o notice de retomada com o agent novo", async () => {

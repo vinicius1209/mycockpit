@@ -187,7 +187,7 @@ export function MicButton({
         const t = e.payload?.text?.trim()
         if (t) deliver(t)
         if (e.payload?.error) toast.error(e.payload.error)
-        else toast("O ditado encerrou sozinho — texto aproveitado no rascunho")
+        else toast("O ditado encerrou sozinho, texto aproveitado no rascunho")
         go("idle")
       }),
     )
