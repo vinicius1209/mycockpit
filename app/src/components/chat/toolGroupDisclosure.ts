@@ -20,6 +20,12 @@
 //      (ele rolou até ali pra ler), mantém aberto;
 //    - caso contrário (grupo fora da viewport, ou leitor seguindo o fundo do
 //      fio — o stick-to-bottom preserva a posição de leitura), recolhe.
+//    Ao recolher um grupo ACIMA da viewport, o MessageList compensa o
+//    scrollTop pela altura perdida no mesmo frame (layout effect): sem isso o
+//    conteúdo que o leitor desancorado está lendo abaixo saltaria (WKWebView
+//    não tem overflow-anchor e o autoscroll do ChatPanel só cobre quem está
+//    no fundo). Limite conhecido: grupo PARCIALMENTE visível no topo conta
+//    como "na viewport" e não recolhe — não há salto a compensar nesse caso.
 
 /** O grupo nasce aberto? Vivo abre; falha assentada abre (mostrando só a
  *  culpada); todo o resto do passado nasce recolhido numa linha. */

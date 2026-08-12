@@ -2,6 +2,7 @@ import {
   Fragment,
   memo,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -172,9 +173,10 @@ function branchSize(node: ToolTreeNode): number {
   return 1 + node.children.reduce((acc, child) => acc + branchSize(child), 0)
 }
 
-/** Ancestral rolável do fio (o ChatPanel usa um div overflow-y-auto). null em
- *  testes/SSR: sem scroll não há leitor pra perder o tapete, o recolhimento
- *  segue o default. */
+/** Ancestral rolável do fio (o ChatPanel usa um div `overflow-x-hidden
+ *  overflow-y-auto`; por isso a checagem olha SÓ o overflowY computado — o
+ *  hidden do eixo X não interfere). null em testes/SSR: sem scroll não há
+ *  leitor pra perder o tapete, o recolhimento segue o default. */
 function scrollContainerOf(el: HTMLElement): HTMLElement | null {
   for (let p = el.parentElement; p; p = p.parentElement) {
     if (p.scrollHeight > p.clientHeight + 1) {
@@ -736,6 +738,9 @@ function ToolNodeList({
     : []
   const settledNodes = nodes.filter((node) => !activeNodes.includes(node))
   // Ramo com falha fica EXPOSTO; só as concluídas se recolhem atrás do stub.
+  // A culpada rende ANTES do stub mesmo quando cronologicamente veio depois
+  // das ok (decisão do mock B ③: quem expandiu quer a falha, não a linha do
+  // tempo — a cronologia completa volta ao abrir o stub).
   const failedNodes = settledNodes.filter(branchHasFailure)
   const okNodes = settledNodes.filter((node) => !failedNodes.includes(node))
   // Em voo, o histórico ok recolhe a partir de 2 (comportamento existente);
@@ -882,6 +887,14 @@ function ToolGroup({
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const manuallyToggled = useRef(false)
+  // Compensação anti-salto: quando o auto-recolhimento atinge um grupo ACIMA
+  // da viewport, o conteúdo de cima encolhe e o texto que o leitor está lendo
+  // pularia (WKWebView não tem overflow-anchor; o autoscroll do ChatPanel só
+  // compensa quem está no fundo). Guarda o container + a altura pré-colapso e
+  // o layout effect abaixo desconta a diferença do scrollTop ANTES do paint.
+  const scrollComp = useRef<{ container: HTMLElement; height: number } | null>(
+    null,
+  )
   const processLive = tools.some(
     (tool) =>
       tool.managedProcess?.status === "running" ||
@@ -969,11 +982,29 @@ function ToolGroup({
           groupInViewport,
           followingBottom,
         })
-      )
+      ) {
+        // Grupo inteiramente ACIMA da viewport: arma a compensação de scroll
+        // (o leitor está lendo abaixo dele; sem isso o texto salta).
+        if (el && container && rect != null && crect != null && rect.bottom <= crect.top) {
+          scrollComp.current = { container, height: rect.height }
+        }
         setOpen(false)
+      }
     }
     wasActive.current = live
   }, [live, failedInGroup])
+
+  // Aplica a compensação no MESMO frame do colapso (antes do paint): desconta
+  // do scrollTop exatamente o quanto o grupo encolheu, e o que o leitor vê não
+  // se move. Só roda quando o auto-recolhimento acima da viewport a armou.
+  useLayoutEffect(() => {
+    if (open || !scrollComp.current) return
+    const { container, height } = scrollComp.current
+    scrollComp.current = null
+    const newHeight = rootRef.current?.getBoundingClientRect().height ?? 0
+    const delta = height - newHeight
+    if (delta > 0) container.scrollTop = Math.max(0, container.scrollTop - delta)
+  }, [open])
 
   function onTreeKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     const target = (e.target as HTMLElement).closest<HTMLElement>(

@@ -105,19 +105,34 @@ Entregue em `MessageList.tsx` + `toolview.ts` (`describeToolGroup`) +
   aberto; (3) na transição vivo→assentado recolhe SÓ se ninguém togglou
   manualmente, não houve falha, e o leitor não está desancorado do fundo com o
   grupo visível na viewport (fora da viewport, ou seguindo o fundo com
-  stick-to-bottom, recolhe).
+  stick-to-bottom, recolhe). Ao recolher um grupo ACIMA da viewport, o
+  scrollTop é compensado pela altura perdida no mesmo frame (layout effect) —
+  sem isso o texto de quem lê abaixo saltaria (WKWebView não tem
+  overflow-anchor e o autoscroll do ChatPanel só cobre quem está no fundo).
+  Limite conhecido: grupo parcialmente visível no topo conta como "na
+  viewport" e não recolhe (não há salto a compensar).
 - **Stub das concluídas**: no grupo falhado, as ok viram "N concluídas ·
   mostrar" (contagem plana, inclui descendentes); em voo, o histórico ok segue
   recolhendo a partir de 2 como antes — e a falha assentada fica FORA do stub
   em todos os níveis, o que elimina o "Uma ação falhou" duplicado dos prints.
+  A culpada rende ANTES do stub mesmo quando cronologicamente veio depois das
+  ok (como no mock ③): quem expandiu quer a falha; a linha do tempo completa
+  volta ao abrir o stub.
 - **Rótulo uma vez**: filho de nível 1 cuja string repetiria o cabeçalho mostra
   só o delta (no diferido, "iniciado/concluiu/interrompido"; nos demais, o
   estado). Linha falhada NUNCA dedupa — ela é a evidência e mantém o nome.
 - **Paleta A**: check de sucesso e dots concluídos em cinza; contagens de diff
   (+N −N) em sussurro mono; cor restante só em falha (vermelho), vivo
   (st-running) e ação sensível (brass). Exceções deliberadas mantidas:
-  "Liberado" âmbar e "Parar" vermelho (fora do escopo desta passada), e as
-  cores DENTRO do diff aberto (evidência) intactas.
+  "Liberado" âmbar e "Parar" vermelho (decisão de produto), e as cores DENTRO
+  do diff aberto (evidência) intactas.
+- **Fronteira da paleta (explícita)**: três verdes `st-success` continuam no
+  MessageList de propósito — a caption "concluído" do fim de turno
+  (TurnTelemetry), o "Regra salva" do feedback e o check de "Plano concluído"
+  (PlanMilestone). São marcos de TURNO/PLANO/gesto do usuário: no máximo um
+  por turno, fora do alvo do diagnóstico (a repetição de tinta era por linha
+  de ferramenta, N vezes por burst). Se uma próxima passada da paleta for
+  além dos grupos de atividade, começa por esses três.
 - **Não implementado de propósito**: relógio vivo no cabeçalho do grupo (o
   mock ② mostra "12min 40s" ticando) — o "agora" continua com dono único, a
   linha viva do rodapé (B2.2); o grupo vivo mantém só o "atividade há Xs" que

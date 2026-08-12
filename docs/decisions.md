@@ -734,3 +734,36 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   ameaça.
 - **Limite honesto:** proteção = permissão de arquivo + conta do usuário.
   Quem quiser mais cifra o disco (FileVault) — o app não finge camada extra.
+
+### ADR-037 — Despoluição do fio: recolhido por padrão (B) com tinta mínima (A) ✅
+
+- **Contexto (12/08/2026):** prints dos builds 186/187 mostraram o fio poluído:
+  rótulo e estado repetidos (cabeçalho do grupo + filho), explosão de cor num
+  recorte só e altura crescendo com o passado. Três POCs visuais em
+  `docs/mocks/fio-despoluicao-{a,b,c}.html` (trade-offs no README ao lado).
+- **Decisão:** direção **B por padrão** — grupo concluído recolhe pra UMA
+  linha ("2 verificações concluídas · 3s"); só o vivo fica aberto; falha não
+  recolhe quieta (o resumo nomeia a culpada, "1 de 7 falhou · X", e expande
+  mostrando só a linha falhada com stub "N concluídas · mostrar") — com a
+  **paleta de A**: sucesso em cinza, metadados em sussurro mono, cor só em
+  falha (vermelho), vivo (st-running) e ação sensível (brass).
+- **Exceções deliberadas:** "Liberado" continua âmbar e "Parar" vermelho
+  (estados de risco num app que executa comando na máquina não ficam
+  discretos); as cores DENTRO do diff aberto ficam (é evidência); e os três
+  `st-success` de marco de turno/plano/gesto (caption "concluído", "Regra
+  salva", "Plano concluído") ficam verdes — fronteira explícita no README dos
+  mocks, são no máximo um por turno e fora do diagnóstico.
+- **Contra o mock, de propósito:** SEM relógio vivo no cabeçalho do grupo
+  (anotação ⑤ do mock B mostra "12min 40s" ticando). Dois relógios vivos
+  narrando o mesmo agora foi exatamente a confusão dos builds 181/182 que o
+  B2.2 do background-status-plan matou: a linha viva do rodapé segue dona
+  ÚNICA do presente; o grupo vivo mantém só o "atividade há Xs" que já tinha.
+- **Não puxar o tapete:** regra exata do auto-recolhimento (toggle manual
+  vence; falha nunca recolhe; leitor desancorado com o grupo visível segura o
+  grupo aberto; recolhimento acima da viewport compensa o scrollTop no mesmo
+  frame) documentada e testada em
+  `app/src/components/chat/toolGroupDisclosure.ts`.
+- **Onde:** `describeToolGroup` (lib/toolview), `toolGroupDisclosure.ts` e
+  `MessageList.tsx`; espec visual e detalhes de implementação em
+  `docs/mocks/fio-despoluicao-README.md`. Direção C (trilho) fica registrada
+  como evolução futura de "mission control".
