@@ -46,12 +46,18 @@ import { attachmentRead, attachmentReadLabel } from "@/lib/attachmentRead"
 import type { SaveLessonOutcome } from "@/lib/learning"
 import {
   cleanResultText,
+  describeToolGroup,
   evidenceMeta,
   presentTool,
   resultMeta,
   summarizeToolGroup,
   type ToolKind,
 } from "@/lib/toolview"
+import {
+  bornOpen,
+  settledOkStubLabel,
+  shouldAutoCollapseOnSettle,
+} from "@/components/chat/toolGroupDisclosure"
 import { EVIDENCE_MISSING, evidenceName, evidenceUrl } from "@/lib/evidence"
 import { useLightbox, type LightboxImage } from "@/store/lightbox"
 import { lineDiff, trimOuterContext, type DiffRow } from "@/lib/linediff"
@@ -150,6 +156,33 @@ function branchHasLiveDeferred(node: ToolTreeNode): boolean {
     node.item.deferred?.status === "running" ||
     node.children.some(branchHasLiveDeferred)
   )
+}
+
+/** O ramo carrega alguma FALHA? Ramo falhado nunca entra no stub de concluídas
+ *  (a falha não se esconde — despoluição do fio, mock B ③). */
+function branchHasFailure(node: ToolTreeNode): boolean {
+  return (
+    node.item.result?.ok === false || node.children.some(branchHasFailure)
+  )
+}
+
+/** Ações no ramo (plano, inclui descendentes) — alimenta a contagem honesta do
+ *  stub "N concluídas · mostrar". */
+function branchSize(node: ToolTreeNode): number {
+  return 1 + node.children.reduce((acc, child) => acc + branchSize(child), 0)
+}
+
+/** Ancestral rolável do fio (o ChatPanel usa um div overflow-y-auto). null em
+ *  testes/SSR: sem scroll não há leitor pra perder o tapete, o recolhimento
+ *  segue o default. */
+function scrollContainerOf(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    if (p.scrollHeight > p.clientHeight + 1) {
+      const overflowY = getComputedStyle(p).overflowY
+      if (overflowY === "auto" || overflowY === "scroll") return p
+    }
+  }
+  return null
 }
 
 /** Cronômetro ao vivo enquanto o run pensa (atualiza a cada 1s). */
@@ -252,8 +285,11 @@ function UnifiedDiff({ rows }: { rows: DiffRow[] }) {
 type StepStatus = "ok" | "error" | "running" | "recorded"
 
 function StepDot({ status }: { status: StepStatus }) {
+  // Sucesso é o caso comum: ponto NEUTRO (paleta A da despoluição — a tinta
+  // sobra pra falha e pro que gira). Um tom acima do `recorded` pra distinguir
+  // "concluiu bem" de "sem resultado registrado".
   if (status === "ok")
-    return <span className="size-[7px] shrink-0 rounded-full bg-st-success" />
+    return <span className="size-[7px] shrink-0 rounded-full bg-muted-foreground/45" />
   if (status === "error")
     return <span className="size-[7px] shrink-0 rounded-full bg-st-error" />
   // Passo em execução GIRA (mesmo vocabulário do ToolGroupStatus): "girando =
@@ -274,6 +310,7 @@ const ToolLine = memo(function ToolLine({
   agent,
   depth = 1,
   deferredPending = false,
+  headerLabel,
   onStop,
   onRetry,
 }: {
@@ -284,6 +321,10 @@ const ToolLine = memo(function ToolLine({
   /** Há trabalho em background do provider vivo neste fio (D1.4): o botão de
    *  interromper avisa que ele morre junto com o turno. */
   deferredPending?: boolean
+  /** Rótulo que o CABEÇALHO do grupo já mostra (despoluição, paleta A ①): se
+   *  esta linha repetiria a mesma string, ela mostra só o delta (estado). Só
+   *  vem preenchido no nível 1; falha nunca dedupa (a linha é a evidência). */
+  headerLabel?: string
   onStop?: (tool: ToolItem) => void
   onRetry?: (tool: ToolItem) => void
 }) {
@@ -324,7 +365,26 @@ const ToolLine = memo(function ToolLine({
         ? "concluiu"
         : "interrompido"
     : null
-  const meta = [p.meta, processMeta, deferredMeta, res, evidenceMeta(item.images)]
+  // Rótulo UMA vez (despoluição, paleta A ①): quando o cabeçalho do grupo já é
+  // o dono desta MESMA string, o filho mostra só o delta dele — o estado (que
+  // no diferido já é a meta "iniciado/concluiu/interrompido"). Falha não
+  // dedupa: a linha falhada é a evidência e mantém o nome.
+  const echoesHeader =
+    headerLabel != null && status !== "error" && p.label === headerLabel
+  const stateWord =
+    status === "running"
+      ? "em execução"
+      : status === "ok"
+        ? "concluído"
+        : "registrado"
+  const label = echoesHeader ? (deferredMeta ?? stateWord) : p.label
+  const meta = [
+    p.meta,
+    processMeta,
+    echoesHeader ? null : deferredMeta,
+    res,
+    evidenceMeta(item.images),
+  ]
     .filter(Boolean)
     .join(" · ")
   // Suprime o boilerplate de sucesso do write/edit ("File created…") — vira ""
@@ -406,18 +466,16 @@ const ToolLine = memo(function ToolLine({
                     : "text-foreground/75",
           )}
         >
-          {p.label}
+          {label}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
           {diff ? (
-            <span className="font-mono text-[10.5px] tabular-nums">
-              {diff.added > 0 && (
-                <span className="text-st-success">+{diff.added}</span>
-              )}
+            // contagem de diff em SUSSURRO (paleta A: metadado, não semáforo);
+            // as cores continuam dentro do diff aberto, onde são evidência.
+            <span className="font-mono text-[10.5px] tabular-nums text-muted-foreground/70">
+              {diff.added > 0 && `+${diff.added}`}
               {diff.added > 0 && diff.removed > 0 && " "}
-              {diff.removed > 0 && (
-                <span className="text-st-error">−{diff.removed}</span>
-              )}
+              {diff.removed > 0 && `−${diff.removed}`}
             </span>
           ) : (
             meta && (
@@ -638,8 +696,10 @@ const ToolLine = memo(function ToolLine({
 })
 
 /** Durante o voo, ações já resolvidas viram um único registro recolhido e só o
- * ramo ativo permanece exposto. Ao abrir o histórico, cada shell/arquivo volta
- * a ser navegável individualmente pelas setas. */
+ * ramo ativo permanece exposto. Num grupo ASSENTADO com falha, a linha falhada
+ * fica exposta (a falha não se esconde) e as concluídas viram o stub
+ * "N concluídas · mostrar" (mock B ③/④). Aberto, cada shell/arquivo volta a
+ * ser navegável individualmente pelas setas. */
 function ToolNodeList({
   nodes,
   activeToolId,
@@ -648,6 +708,7 @@ function ToolNodeList({
   parentId,
   live,
   deferredPending,
+  headerLabel,
   onStop,
   onRetry,
 }: {
@@ -658,23 +719,35 @@ function ToolNodeList({
   parentId?: string
   live: boolean
   deferredPending?: boolean
+  /** Rótulo do cabeçalho do grupo (só no nível 1) — vai pro dedup da ToolLine. */
+  headerLabel?: string
   onStop?: (tool: ToolItem) => void
   onRetry?: (tool: ToolItem) => void
 }) {
   const [historyOpen, setHistoryOpen] = useState(false)
-  const activeNodes = nodes.filter(
-    (node) =>
-      branchContains(node, activeToolId) ||
-      node.item.managedProcess?.status === "running" ||
-      node.item.managedProcess?.status === "stopping" ||
-      branchHasLiveDeferred(node),
-  )
+  const activeNodes = live
+    ? nodes.filter(
+        (node) =>
+          branchContains(node, activeToolId) ||
+          node.item.managedProcess?.status === "running" ||
+          node.item.managedProcess?.status === "stopping" ||
+          branchHasLiveDeferred(node),
+      )
+    : []
   const settledNodes = nodes.filter((node) => !activeNodes.includes(node))
-  const groupSettled = live && settledNodes.length >= 2
+  // Ramo com falha fica EXPOSTO; só as concluídas se recolhem atrás do stub.
+  const failedNodes = settledNodes.filter(branchHasFailure)
+  const okNodes = settledNodes.filter((node) => !failedNodes.includes(node))
+  // Em voo, o histórico ok recolhe a partir de 2 (comportamento existente);
+  // assentado com falha, TODA concluída vira stub — quem expandiu quer a culpada.
+  const foldOk = live
+    ? okNodes.length >= 2
+    : failedNodes.length > 0 && okNodes.length >= 1
   const summary = summarizeToolGroup(
-    settledNodes.map((node) => node.item),
+    okNodes.map((node) => node.item),
     false,
   )
+  const okCount = okNodes.reduce((acc, node) => acc + branchSize(node), 0)
   const historyId = `history:${parentId ?? "root"}:${depth}`
 
   const renderNode = (node: ToolTreeNode) => (
@@ -685,12 +758,13 @@ function ToolNodeList({
       agent={agent}
       depth={depth}
       deferredPending={deferredPending}
+      headerLabel={headerLabel}
       onStop={onStop}
       onRetry={onRetry}
     />
   )
 
-  if (!groupSettled) {
+  if (!foldOk) {
     return (
       <div role="group" className="flex flex-col gap-px">
         {nodes.map(renderNode)}
@@ -700,6 +774,7 @@ function ToolNodeList({
 
   return (
     <div role="group" className="flex flex-col gap-px">
+      {failedNodes.map(renderNode)}
       <button
         type="button"
         onClick={() => setHistoryOpen((value) => !value)}
@@ -712,20 +787,30 @@ function ToolNodeList({
         tabIndex={-1}
         className="group/history flex w-full items-center gap-2.5 rounded-md px-2 py-[5px] text-left text-[12px] text-muted-foreground/75 transition-colors hover:bg-accent/35 hover:text-foreground"
       >
-        <span className="grid size-3.5 shrink-0 place-items-center">
-          <ToolGroupStatus state={summary.state} />
-        </span>
-        <span className="truncate">{summary.label}</span>
-        <ChevronRight
-          className={cn(
-            "ml-auto size-3 text-muted-foreground/40 transition-transform group-hover/history:text-muted-foreground/70",
-            historyOpen && "rotate-90",
-          )}
-        />
+        {live ? (
+          <>
+            <span className="grid size-3.5 shrink-0 place-items-center">
+              <ToolGroupStatus state={summary.state} />
+            </span>
+            <span className="truncate">{summary.label}</span>
+            <ChevronRight
+              className={cn(
+                "ml-auto size-3 text-muted-foreground/40 transition-transform group-hover/history:text-muted-foreground/70",
+                historyOpen && "rotate-90",
+              )}
+            />
+          </>
+        ) : (
+          // stub quieto do grupo falhado: as ok existiram, mas não pagam o
+          // pato — visíveis só a pedido (o verbo é o affordance, sem chevron).
+          <span className="truncate underline-offset-4 group-hover/history:underline">
+            {settledOkStubLabel(okCount, historyOpen)}
+          </span>
+        )}
       </button>
       {historyOpen && (
         <div className="ml-[7px] border-l border-border/40 pl-2">
-          {settledNodes.map(renderNode)}
+          {okNodes.map(renderNode)}
         </div>
       )}
       {activeNodes.map(renderNode)}
@@ -742,8 +827,15 @@ function ToolGroupStatus({
     return <Loader2 className="size-3.5 shrink-0 animate-spin text-st-running" />
   if (state === "error")
     return <X className="size-3.5 shrink-0 text-st-error" aria-hidden="true" />
+  // Check CINZA (paleta A): a forma segue dizendo "concluiu", sem competir com
+  // a falha (vermelha) e com o vivo (st-running) pela atenção.
   if (state === "ok")
-    return <Check className="size-3.5 shrink-0 text-st-success" aria-hidden="true" />
+    return (
+      <Check
+        className="size-3.5 shrink-0 text-muted-foreground/60"
+        aria-hidden="true"
+      />
+    )
   return <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
 }
 
@@ -769,11 +861,11 @@ function ActivityAge({ at, stalled }: { at?: number; stalled?: boolean }) {
   )
 }
 
-/** Registro de voo: UMA caption por burst. O primeiro clique revela ações
- * humanas; cada ação guarda seu próprio nível técnico (comando/input/output). */
+/** Registro de voo: UMA caption por burst — e, assentado, UMA linha por grupo
+ * (despoluição do fio, direção B): o resumo é a informação (contagem, duração
+ * congelada, culpada nomeada na falha); o detalhe fica a um clique. */
 function ToolGroup({
   tools,
-  defaultOpen,
   active = false,
   agent,
   stalledSince,
@@ -781,7 +873,6 @@ function ToolGroup({
   onRetry,
 }: {
   tools: ToolItem[]
-  defaultOpen: boolean
   /** turno rodando E este é o grupo corrente → o passo sem result "roda". */
   active?: boolean
   agent: string
@@ -789,9 +880,8 @@ function ToolGroup({
   onStop?: (tool: ToolItem) => void
   onRetry?: (tool: ToolItem) => void
 }) {
-  const [open, setOpen] = useState(defaultOpen)
+  const rootRef = useRef<HTMLDivElement>(null)
   const manuallyToggled = useRef(false)
-  const wasActive = useRef(active)
   const processLive = tools.some(
     (tool) =>
       tool.managedProcess?.status === "running" ||
@@ -803,6 +893,7 @@ function ToolGroup({
     (tool) => tool.deferred?.status === "running",
   )
   const live = active || processLive || deferredLive
+  const wasActive = useRef(live)
   const forest = useMemo(() => buildToolForest(tools), [tools])
   const activeToolId = live
     ? [...tools]
@@ -815,13 +906,18 @@ function ToolGroup({
             tool.deferred?.status === "running",
         )?.id ?? null
     : null
-  const summary = summarizeToolGroup(tools, live && activeToolId != null)
-  const agentCount = tools.filter((tool) =>
-    ["Task", "Agent"].includes(tool.name),
-  ).length
-  const shellCount = tools.filter(
-    (tool) => presentTool(tool.name, tool.input).kind === "bash",
-  ).length
+  // Digest do cabeçalho numa passada só, memoizado por grupo: este é o
+  // componente mais quente do app — nada de varredura extra por render.
+  const digest = useMemo(
+    () => describeToolGroup(tools, live && activeToolId != null),
+    [tools, live, activeToolId],
+  )
+  const failedInGroup = digest.failed > 0
+  // Concluído NASCE recolhido; só o vivo nasce aberto; falha nasce aberta
+  // mostrando a culpada (regra em toolGroupDisclosure.ts).
+  const [open, setOpen] = useState(() =>
+    bornOpen({ live, failed: failedInGroup }),
+  )
   const lastActivity = tools.reduce(
     (latest, tool) =>
       Math.max(
@@ -830,25 +926,54 @@ function ToolGroup({
       ),
     0,
   )
-  const diffTotal = tools.reduce(
-    (acc, t) => {
-      const d = editHunks(t.name, (t.input ?? {}) as Record<string, unknown>)
-      if (d) {
-        acc.added += d.added
-        acc.removed += d.removed
-      }
-      return acc
-    },
-    { added: 0, removed: 0 },
+  const diffTotal = useMemo(
+    () =>
+      tools.reduce(
+        (acc, t) => {
+          const d = editHunks(t.name, (t.input ?? {}) as Record<string, unknown>)
+          if (d) {
+            acc.added += d.added
+            acc.removed += d.removed
+          }
+          return acc
+        },
+        { added: 0, removed: 0 },
+      ),
+    [tools],
   )
 
-  // A atividade corrente pode abrir pra dar feedback ao vivo. Quando termina,
-  // recolhe sozinha — exceto se o usuário assumiu o controle do disclosure.
+  // A atividade corrente abre pra dar feedback ao vivo. Quando termina,
+  // recolhe sozinha SÓ quando não puxa o tapete de ninguém: nunca sobre toggle
+  // manual, nunca sobre falha, e nunca se o leitor desancorou do fundo com o
+  // grupo visível (regra exata documentada em toolGroupDisclosure.ts).
   useEffect(() => {
     if (live && !manuallyToggled.current) setOpen(true)
-    if (wasActive.current && !live && !manuallyToggled.current) setOpen(false)
+    if (wasActive.current && !live) {
+      const el = rootRef.current
+      const container = el ? scrollContainerOf(el) : null
+      const rect = el?.getBoundingClientRect()
+      const crect = container?.getBoundingClientRect()
+      const groupInViewport =
+        rect != null &&
+        crect != null &&
+        rect.bottom > crect.top &&
+        rect.top < crect.bottom
+      const followingBottom = container
+        ? container.scrollHeight - container.scrollTop - container.clientHeight <
+          80
+        : true
+      if (
+        shouldAutoCollapseOnSettle({
+          manuallyToggled: manuallyToggled.current,
+          failed: failedInGroup,
+          groupInViewport,
+          followingBottom,
+        })
+      )
+        setOpen(false)
+    }
     wasActive.current = live
-  }, [live])
+  }, [live, failedInGroup])
 
   function onTreeKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     const target = (e.target as HTMLElement).closest<HTMLElement>(
@@ -886,7 +1011,7 @@ function ToolGroup({
   }
 
   return (
-    <div className="min-w-0" onKeyDown={onTreeKeyDown}>
+    <div ref={rootRef} className="min-w-0" onKeyDown={onTreeKeyDown}>
       <button
         onClick={() => {
           manuallyToggled.current = true
@@ -897,36 +1022,38 @@ function ToolGroup({
         className={cn(
           "group/activity flex w-full items-center gap-2 rounded-md border-l-2 border-l-transparent px-1.5 py-1.5 text-left text-[12px] transition-colors hover:bg-accent/35 focus-visible:border-l-brass focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
           live && "border-l-st-running bg-st-running/[0.045]",
-          summary.state === "error"
+          digest.state === "error"
             ? "text-st-error"
-            : summary.state === "running"
+            : digest.state === "running"
               ? "text-foreground"
-              : summary.emphasis === "warning"
+              : digest.emphasis === "warning"
                 ? "text-brass"
-                : summary.emphasis === "quiet"
+                : digest.emphasis === "quiet"
                   ? "text-muted-foreground/75"
                   : "text-muted-foreground",
         )}
       >
         <span className="grid size-4 shrink-0 place-items-center" aria-hidden="true">
-          <ToolGroupStatus state={summary.state} />
+          <ToolGroupStatus state={digest.state} />
         </span>
-        <span className="min-w-0 flex-1 truncate">{summary.label}</span>
+        <span className="min-w-0 flex-1 truncate">{digest.label}</span>
         <span className="hidden shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground sm:flex">
-          {agentCount > 0 && (
+          {digest.agents > 0 && (
             <span>
-              {agentCount} agente{agentCount === 1 ? "" : "s"}
+              {digest.agents} agente{digest.agents === 1 ? "" : "s"}
             </span>
           )}
-          {agentCount > 0 && shellCount > 0 && <span aria-hidden="true">·</span>}
-          {shellCount > 0 && (
+          {digest.agents > 0 && digest.shells > 0 && (
+            <span aria-hidden="true">·</span>
+          )}
+          {digest.shells > 0 && (
             <span>
-              {shellCount} shell{shellCount === 1 ? "" : "s"}
+              {digest.shells} shell{digest.shells === 1 ? "" : "s"}
             </span>
           )}
           {live && (
             <>
-              {(agentCount > 0 || shellCount > 0) && (
+              {(digest.agents > 0 || digest.shells > 0) && (
                 <span aria-hidden="true">·</span>
               )}
               <ActivityAge
@@ -937,14 +1064,19 @@ function ToolGroup({
           )}
         </span>
         {(diffTotal.added > 0 || diffTotal.removed > 0) && (
-          <span className="shrink-0 font-mono text-[10.5px] tabular-nums">
-            {diffTotal.added > 0 && (
-              <span className="text-st-success">+{diffTotal.added}</span>
-            )}
+          // sussurro (paleta A): o total de diff informa sem virar semáforo.
+          <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground/70">
+            {diffTotal.added > 0 && `+${diffTotal.added}`}
             {diffTotal.added > 0 && diffTotal.removed > 0 && " "}
-            {diffTotal.removed > 0 && (
-              <span className="text-st-error">−{diffTotal.removed}</span>
-            )}
+            {diffTotal.removed > 0 && `−${diffTotal.removed}`}
+          </span>
+        )}
+        {/* Duração TOTAL congelada do grupo assentado (pretérito, regra do
+            Warp: tabular, coluna fixa à direita, quem trunca é o nome). O vivo
+            não ganha relógio aqui — o "agora" é da linha viva do rodapé. */}
+        {!live && digest.durationMs != null && (
+          <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground/70">
+            {fmtDuration(digest.durationMs)}
           </span>
         )}
         <ChevronRight
@@ -968,6 +1100,7 @@ function ToolGroup({
             depth={1}
             live={live}
             deferredPending={deferredLive}
+            headerLabel={digest.label}
             onStop={onStop}
             onRetry={onRetry}
           />
@@ -2131,7 +2264,6 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
         {n.tools.length > 0 && (
           <ToolGroup
             tools={n.tools}
-            defaultOpen={active}
             active={active}
             agent={ctx.agent}
             stalledSince={ctx.stalledSince}
@@ -2147,7 +2279,6 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
     return (
       <ToolGroup
         tools={n.tools}
-        defaultOpen={active}
         active={active}
         agent={ctx.agent}
         stalledSince={ctx.stalledSince}

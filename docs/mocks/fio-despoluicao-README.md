@@ -89,3 +89,36 @@ SUBSTITUIR a linha viva, nunca coexistir com ela.
 C fica registrado como evolução futura se a demanda por "mission control"
 crescer (muitos trabalhos longos simultâneos); a pill bar dele conversa com o
 que o tray popover já faz.
+
+## Implementado (12/08/2026) — B com a paleta de A
+
+Entregue em `MessageList.tsx` + `toolview.ts` (`describeToolGroup`) +
+`toolGroupDisclosure.ts` (decisões puras, testadas). O que virou código:
+
+- **Resumo é a informação**: cabeçalho do grupo com contagem, duração TOTAL
+  congelada (1º nascimento → última atividade; nunca "0s", regra do Warp) e,
+  na falha, a culpada nomeada ("1 de 7 falhou · Gerar PDF (iPhone SE)"; com
+  várias, "3 de 7 falharam"; grupo de uma ação, "Executar testes falhou").
+- **Regra EXATA do recolhimento** (guarda "não puxar o tapete"), em
+  `toolGroupDisclosure.ts`: (1) grupo que nasce assentado nasce recolhido —
+  falha assentada nasce ABERTA mostrando só a linha falhada; (2) vivo fica
+  aberto; (3) na transição vivo→assentado recolhe SÓ se ninguém togglou
+  manualmente, não houve falha, e o leitor não está desancorado do fundo com o
+  grupo visível na viewport (fora da viewport, ou seguindo o fundo com
+  stick-to-bottom, recolhe).
+- **Stub das concluídas**: no grupo falhado, as ok viram "N concluídas ·
+  mostrar" (contagem plana, inclui descendentes); em voo, o histórico ok segue
+  recolhendo a partir de 2 como antes — e a falha assentada fica FORA do stub
+  em todos os níveis, o que elimina o "Uma ação falhou" duplicado dos prints.
+- **Rótulo uma vez**: filho de nível 1 cuja string repetiria o cabeçalho mostra
+  só o delta (no diferido, "iniciado/concluiu/interrompido"; nos demais, o
+  estado). Linha falhada NUNCA dedupa — ela é a evidência e mantém o nome.
+- **Paleta A**: check de sucesso e dots concluídos em cinza; contagens de diff
+  (+N −N) em sussurro mono; cor restante só em falha (vermelho), vivo
+  (st-running) e ação sensível (brass). Exceções deliberadas mantidas:
+  "Liberado" âmbar e "Parar" vermelho (fora do escopo desta passada), e as
+  cores DENTRO do diff aberto (evidência) intactas.
+- **Não implementado de propósito**: relógio vivo no cabeçalho do grupo (o
+  mock ② mostra "12min 40s" ticando) — o "agora" continua com dono único, a
+  linha viva do rodapé (B2.2); o grupo vivo mantém só o "atividade há Xs" que
+  já existia.

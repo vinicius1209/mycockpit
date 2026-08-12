@@ -108,7 +108,11 @@ describe("linha viva do rodapé (B2.1/B2.2/B2.5)", () => {
     // o "agora" some com o turno; o marco continua no fio, com estado de sucesso
     expect(html).not.toContain("trabalho em background · spike-ping")
     expect(html).toContain("Trabalho em background: spike-ping")
-    expect(html).toContain("text-st-success")
+    // despoluição do fio (direção B + paleta A): concluído recolhe pra UMA
+    // linha e o estado de sucesso é o check neutro do cabeçalho, sem tinta.
+    expect(html).toContain("lucide-check")
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).not.toContain("text-st-success")
   })
 })
 
