@@ -53,7 +53,15 @@ export function statusLabel(status: ExternalSession["status"]): string {
 }
 
 /** Papel de cor do status (STYLEGUIDE §2): azul = vivo agora; âmbar =
- *  precisa de você; cinza = simplesmente ok. */
+ *  precisa de você; cinza = simplesmente ok.
+ *
+ *  DECISÃO de cor (revisão H1, registrada no hooks-plan): o brief dizia
+ *  "cinza/neutra", mas cinza só cabe em `idle` — uma sessão VIVA pintada de
+ *  cinza pareceria morta, e "está trabalhando" é informação verdadeira, não
+ *  teatro. `working` herda o azul de vivo; `waiting`/`blocked` o âmbar de
+ *  "precisa de você". O que distingue a sessão externa da do app NÃO é o tom,
+ *  é o RÓTULO ("No terminal · observando") + a ausência de qualquer controle
+ *  (o app observa, não dirige). */
 export function statusTone(
   status: ExternalSession["status"],
 ): "running" | "attention" | "neutral" {

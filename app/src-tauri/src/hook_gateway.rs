@@ -116,6 +116,13 @@ fn header_str(headers: &HeaderMap, name: &str) -> Option<String> {
 /// outro payload autenticado = 204: os consumidores são a statusline
 /// (rate_limits → snapshot de janela) e os hooks de status (H1 →
 /// hook_sessions); o resto é aceito-e-ignorado de propósito.
+///
+/// Superfície LOCAL, mesmo modelo de ameaça do H0: loopback + token 0600 no
+/// hook-endpoint.json. O caminho de permissão segura uma conexão por até 30s —
+/// um processo do MESMO usuário que já leu o token poderia abrir várias e
+/// prender tasks, mas nesse ponto ele já executa código como o usuário (a
+/// fronteira real é o usuário do SO, não este socket, como no `approval.rs`).
+/// Não bloqueia: DoS local por quem já é local não muda o modelo de ameaça.
 async fn hook_post(
     State(ctx): State<Ctx>,
     AxumPath(engine): AxumPath<String>,

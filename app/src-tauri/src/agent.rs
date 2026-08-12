@@ -834,7 +834,7 @@ async fn run_once(
     // Correlação dos hooks de status (hooks-plan §4.7): o hook global herda
     // esta env e a manda num header — run NOSSO nunca vira "sessão externa"
     // no Painel. Inofensiva sem hooks instalados (ninguém a lê).
-    cmd.env(crate::hook_sessions::RUN_ENV, run_id);
+    crate::hook_sessions::correlate_run(&mut cmd, run_id);
 
     let bin = adapter.id();
     let mut child = cmd.spawn().map_err(|e| {
@@ -972,6 +972,13 @@ fn claude_oneshot(model: &str, cwd: &str, prompt: &str, format: &str, no_mcp: bo
         .arg("--no-session-persistence")
         .current_dir(cwd)
         .stdin(Stdio::null());
+    // Correlação dos hooks de status (hooks-plan §4.7): meta-tarefa do app
+    // (juiz do Fusion, sugestões). Se o usuário instalou os hooks globais do
+    // claude, este `claude -p` também os dispara — sem a env herdada, o
+    // gateway trataria o POST como sessão EXTERNA e o Painel/tray mostraria um
+    // fantasma "No terminal · trabalhando" na pasta do projeto. "oneshot" é a
+    // sentinela (o gateway só exige NÃO-VAZIO).
+    crate::hook_sessions::correlate_run(&mut cmd, "oneshot");
     if no_mcp {
         cmd.arg("--strict-mcp-config")
             .arg("--mcp-config")
@@ -1065,6 +1072,29 @@ mod tests {
         // e segue sem tools nativas também
         let tools = args.iter().position(|a| a == "--tools").unwrap();
         assert_eq!(args[tools + 1], "");
+    }
+
+    /// Regressão do fantasma (hooks-plan §4.7): TODA meta-tarefa `claude -p`
+    /// (juiz do Fusion, sugestões) tem que carregar MYCOCKPIT_RUN_ID — senão,
+    /// com hooks de status instalados, o POST chega ao gateway sem o header e
+    /// o Painel/tray mostram uma sessão EXTERNA fantasma na pasta do projeto
+    /// (dupla contagem da própria meta-tarefa do app). Vale pros dois formatos.
+    #[test]
+    fn oneshot_carrega_run_env_pra_nao_virar_sessao_fantasma() {
+        for format in ["json", "text"] {
+            let cmd = claude_oneshot("haiku", "/tmp", "oi", format, true);
+            let env = cmd
+                .as_std()
+                .get_envs()
+                .find(|(k, _)| *k == std::ffi::OsStr::new(crate::hook_sessions::RUN_ENV))
+                .and_then(|(_, v)| v)
+                .map(|v| v.to_string_lossy().into_owned());
+            assert_eq!(
+                env.as_deref(),
+                Some("oneshot"),
+                "meta-tarefa {format} sem RUN_ENV vira fantasma no Painel"
+            );
+        }
     }
 
     /// Caps de um motor 1º-turno-só (corpo do prompt, com resume): o codex.

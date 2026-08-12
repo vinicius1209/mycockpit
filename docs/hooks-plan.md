@@ -210,6 +210,19 @@ app fechado — não acha endpoint, sai 0). Nada de UI ainda.
 > o evento correlacionado. Fixtures REAIS do claude 2.1.220 capturadas nesta
 > máquina; PermissionRequest não dispara em `-p` (auto-deny, verificado) — a
 > fixture dele vem do contrato documentado + script vivo do Xirp.
+>
+> **Decisão de cor (revisão):** o brief pedia sessão externa "cinza/neutra",
+> mas cinza ficou SÓ pra `idle` — sessão viva pintada de cinza pareceria
+> morta, e "está trabalhando" é informação verdadeira. `working` herda o azul
+> de vivo (`st-running`) e `waiting`/`blocked` o âmbar de "precisa de você"
+> (`st-warning`); o que distingue a sessão externa da do app é o RÓTULO ("No
+> terminal · observando") + a ausência de controles, não o tom. Registrado em
+> `statusTone` (externalSessions.ts) e no `external_status_pt` do tray.
+>
+> **Correlação (ressalva fechada):** todo spawn de CLI passa por
+> `hook_sessions::correlate_run` (run_once, codex app-server e as meta-tarefas
+> `claude -p` do juiz/sugestões, com a sentinela `"oneshot"`), o ponto único
+> que impede a meta-tarefa do app de virar sessão externa fantasma no Painel.
 
 **H1 — Status de sessões EXTERNAS no Painel/tray.** O usuário abre `claude`/
 `codex`/`agy` no terminal e o MyCockpit mostra a sessão (projeto, estado

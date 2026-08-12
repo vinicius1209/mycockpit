@@ -29,6 +29,17 @@ pub const SESSIONS_EVENT: &str = "hooks://sessions";
 /// Env que o app seta nos runs que ELE spawna (correlação, hooks-plan §4.7).
 pub const RUN_ENV: &str = "MYCOCKPIT_RUN_ID";
 
+/// Marca um spawn como NOSSO: a env é herdada pelos hooks globais do CLI, que
+/// a mandam no header `X-Mycockpit-Run` — e o `ingest`/`permission_roundtrip`
+/// tratam header não-vazio como sessão do APP (nunca externa). TODO caminho
+/// que sobe um CLI passa por aqui (run_once, codex app-server e as
+/// meta-tarefas `claude -p` do juiz/sugestões) — ponto único pra não regredir
+/// a dupla contagem. `run_id` real nos runs; sentinela `"oneshot"` nas
+/// meta-tarefas (o gateway só exige NÃO-VAZIO).
+pub fn correlate_run(cmd: &mut tokio::process::Command, run_id: &str) {
+    cmd.env(RUN_ENV, run_id);
+}
+
 /// Sessão externa sem sinal há mais que isto é podada (o CLI pode ter morrido
 /// sem Stop — crash, kill -9). 4h cobre qualquer pausa de almoço realista.
 const STALE_MS: i64 = 4 * 60 * 60 * 1000;
@@ -928,6 +939,21 @@ mod tests {
             pending.0.lock().unwrap().is_empty(),
             "o registro tem que ficar limpo nos dois caminhos"
         );
+    }
+
+    #[test]
+    fn correlate_run_marca_o_spawn_como_nosso() {
+        // o ponto ÚNICO por onde run_once/app-server/meta-tarefa passam: sem
+        // isto o POST do hook chegaria sem X-Mycockpit-Run e viraria fantasma.
+        let mut cmd = tokio::process::Command::new("claude");
+        correlate_run(&mut cmd, "run-abc");
+        let env = cmd
+            .as_std()
+            .get_envs()
+            .find(|(k, _)| *k == std::ffi::OsStr::new(RUN_ENV))
+            .and_then(|(_, v)| v)
+            .map(|v| v.to_string_lossy().into_owned());
+        assert_eq!(env.as_deref(), Some("run-abc"));
     }
 
     #[test]

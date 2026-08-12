@@ -549,7 +549,7 @@ pub async fn run(
     // Correlação dos hooks de status (mesma env do exec, ver agent.rs): o
     // app-server também herda os hooks globais do codex — sem isto, cada
     // turno nosso apareceria como "sessão externa" no Painel.
-    cmd.env(crate::hook_sessions::RUN_ENV, run_id);
+    crate::hook_sessions::correlate_run(&mut cmd, run_id);
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
