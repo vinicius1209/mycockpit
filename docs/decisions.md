@@ -817,3 +817,31 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   esta frente (`hook_gateway.rs`) como substrato reusável — H1/H2 plugam na
   mesma rota `/hook/<engine>` sem mudar o contrato do script. Re-checagem por
   versão registrada no agent-runner §7.1 (12/08/2026).
+
+### ADR-039 — Onboarding: versão de fluxo volta ao começo, e "Pular" reverte o tema em qualquer saída ✅
+- **Contexto (12/08/2026, R2 do roadmap):** o onboarding foi reescrito a partir
+  da receita Orca/Xirp (`competitors-orca.md` §7, `competitors-xirp.md`). Duas
+  regras nossas divergem do código do Orca de propósito; ficam aqui porque a
+  casa exige ADR pra divergência deliberada.
+- **Decisão 1 — versão de fluxo VOLTA AO COMEÇO, não remapeia.** O Orca mantém
+  uma tabela de migração índice a índice por versão de fluxo (um `lastStep` de
+  v1 é traduzido pro passo equivalente em v2). Com 3 passos visíveis, a tabela
+  custa mais manutenção do que resolve, e um remapeamento errado pula
+  capacidade NOVA em silêncio (que é exatamente o motivo de bumpar a versão).
+  `resolveStartIndex` devolve 0 quando `record.flowVersion !== FLOW_VERSION`
+  (`app/src/components/onboarding/flow.ts`). **O que NÃO divergimos:** versão
+  de fluxo decide só ONDE retomar, nunca SE reabrir — quem já concluiu
+  (`settings.onboarded`) segue concluído em qualquer versão, e a migração v1→v2
+  do `mc.app` continua sendo o que impede o usuário existente de ver o wizard.
+  Custo aceito: quem abandonou no passo 3 e atualiza o app refaz os 3 passos.
+- **Decisão 2 — "Pular" reverte o tema em QUALQUER saída.** No Orca só o botão
+  de rodapé reverte o tema; Escape/clique-fora sai sem reverter (assimetria
+  deles). Aqui Escape e clique-fora não saem sozinhos: passam por um diálogo de
+  confirmação com "Continuar" como default e "Pular" em ghost (§7 — caminho de
+  saída nunca é destrutivo). Como o "Pular" desse diálogo é um gesto explícito,
+  ele É o mesmo gesto do botão de rodapé, e tratá-los diferente seria
+  arbitrário: os dois revertem. Regra pura em `themeAfterExit` (`skip` devolve
+  o tema de entrada; `advance` e `back` confirmam o que o preview mostrou).
+- **Consequência:** o passo de tema segue salvando NA SELEÇÃO (o preview ao
+  vivo é o app inteiro virando junto), que é o ponto do passo; a reversão mora
+  no wizard, único lugar que sabe COMO o passo foi deixado.

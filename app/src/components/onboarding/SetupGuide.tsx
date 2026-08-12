@@ -9,7 +9,7 @@
 //     leitura travada mantém o guia visível em vez de escondê-lo pra sempre;
 //   • clicar abre no primeiro item incompleto.
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -20,13 +20,9 @@ import { addProjectViaDialog } from "@/lib/projects"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 import {
-  buildItems,
   firstIncomplete,
-  guideProgress,
-  isComplete,
+  guideView,
   ringDash,
-  shouldShowGuide,
-  type GuideItem,
   type ProbeMap,
 } from "./setupItems"
 import { capabilitiesOf, runProbes } from "./setupProbes"
@@ -105,31 +101,15 @@ export function SetupGuide() {
     return () => window.removeEventListener("focus", onFocus)
   }, [ready, refresh])
 
-  const items = probes ? buildItems(caps, probes) : []
-  const progress = guideProgress(items)
+  // Toda a decisão de exibição é pura e testada (guideView). Não há cache de
+  // "última contagem visível" aqui de propósito: `refresh()` troca os probes
+  // só depois do await, então a contagem antiga já fica na tela durante a
+  // releitura sem ajuda nenhuma. O cache não protegia de tremida e ainda
+  // segurava a linha na tela quando o guia completava.
+  const view = guideView({ probes, caps, ready, dismissed, onboarded })
+  if (!view) return null
 
-  // Anti-tremida: enquanto uma releitura não voltou, a linha continua com a
-  // última contagem visível em vez de sumir e reaparecer.
-  const lastVisible = useRef<{ items: GuideItem[]; done: number; total: number } | null>(
-    null,
-  )
-  const settled = probes !== null
-  const visible = shouldShowGuide({
-    ready: ready && settled,
-    complete: settled && isComplete(items),
-    dismissed,
-  })
-  useEffect(() => {
-    if (visible) lastVisible.current = { items, ...progress }
-  })
-
-  // Durante o onboarding o guia não existe: o wizard está fazendo esse
-  // trabalho, e dois lugares cobrando setup ao mesmo tempo é ruído.
-  if (!onboarded) return null
-  const shown = visible ? { items, ...progress } : dismissed ? null : lastVisible.current
-  if (!shown) return null
-
-  const next = firstIncomplete(shown.items)
+  const next = firstIncomplete(view.items)
 
   function open() {
     if (!next) return
@@ -152,12 +132,12 @@ export function SetupGuide() {
             "transition-colors hover:bg-accent",
           )}
         >
-          <ProgressRing done={shown.done} total={shown.total} />
+          <ProgressRing done={view.done} total={view.total} />
           <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
             Configuração
           </span>
           <span className="shrink-0 font-mono text-[11px] tabular-nums text-faint">
-            {shown.done}/{shown.total}
+            {view.done}/{view.total}
           </span>
         </button>
       </ContextMenuTrigger>

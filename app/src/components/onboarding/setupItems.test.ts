@@ -3,6 +3,7 @@ import {
   buildItems,
   firstIncomplete,
   guideProgress,
+  guideView,
   isComplete,
   ringDash,
   shouldShowGuide,
@@ -133,6 +134,77 @@ describe("visibilidade do guia", () => {
         dismissed: false,
       }),
     ).toBe(true)
+  })
+})
+
+describe("decisão de exibição (guideView)", () => {
+  const base = {
+    caps: TUDO,
+    ready: true,
+    dismissed: false,
+    onboarded: true,
+  }
+  const TUDO_FEITO = {
+    agent: true,
+    project: true,
+    meter: true,
+    hooks: true,
+    companion: true,
+  }
+
+  it("pronto e incompleto devolve a contagem", () => {
+    const view = guideView({ ...base, probes: { ...TUDO_FEITO, hooks: false } })
+    expect(view).not.toBeNull()
+    expect(view).toMatchObject({ done: 4, total: 5 })
+  })
+
+  it("COMPLETOU ⇒ null (a linha some sozinha, não congela na contagem velha)", () => {
+    expect(guideView({ ...base, probes: TUDO_FEITO })).toBeNull()
+  })
+
+  it("o item que faltava sendo marcado tira a linha da tela", () => {
+    // exatamente o roteiro do incidente: 4/5 na tela, usuário completa o 5º.
+    const antes = guideView({ ...base, probes: { ...TUDO_FEITO, hooks: false } })
+    expect(antes).toMatchObject({ done: 4, total: 5 })
+    const depois = guideView({ ...base, probes: TUDO_FEITO })
+    expect(depois).toBeNull()
+  })
+
+  it("nenhuma leitura assentou ⇒ null (nada de contagem piscando no boot)", () => {
+    expect(guideView({ ...base, probes: null })).toBeNull()
+  })
+
+  it("app ainda não pronto ⇒ null", () => {
+    expect(
+      guideView({ ...base, ready: false, probes: { agent: false, project: false } }),
+    ).toBeNull()
+  })
+
+  it("dispensado ⇒ null mesmo incompleto", () => {
+    expect(
+      guideView({ ...base, dismissed: true, probes: { ...TUDO_FEITO, hooks: false } }),
+    ).toBeNull()
+  })
+
+  it("durante o onboarding ⇒ null (o wizard já faz esse trabalho)", () => {
+    expect(
+      guideView({ ...base, onboarded: false, probes: { ...TUDO_FEITO, hooks: false } }),
+    ).toBeNull()
+  })
+
+  it("leitura travada mantém a linha (não sei nunca completa o guia)", () => {
+    const view = guideView({ ...base, probes: { ...TUDO_FEITO, hooks: null } })
+    expect(view).toMatchObject({ done: 4, total: 5 })
+  })
+
+  it("máquina sem capacidade opcional completa com 2 itens e some", () => {
+    expect(
+      guideView({
+        ...base,
+        caps: NADA,
+        probes: { agent: true, project: true },
+      }),
+    ).toBeNull()
   })
 })
 

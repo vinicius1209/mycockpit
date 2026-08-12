@@ -174,9 +174,9 @@ export function AgentStep() {
         <>
           {nothingFound && (
             <p className="text-[12px] leading-snug text-st-warning">
-              Nenhuma CLI de agent encontrada no seu PATH. Instale uma com o
-              comando ao lado do nome e clique "Procurar de novo". Você pode
-              seguir sem isso, mas nenhuma conversa vai rodar até ter uma.
+              Nenhuma CLI de agent encontrada no seu PATH. Instale uma e clique
+              "Procurar de novo". Você pode seguir sem isso, mas nenhuma
+              conversa vai rodar até ter uma.
             </p>
           )}
           <div role="radiogroup" className="flex flex-col gap-1.5">

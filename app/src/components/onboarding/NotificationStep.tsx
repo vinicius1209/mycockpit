@@ -42,7 +42,9 @@ export function NotificationStep() {
         </p>
       </div>
 
-      <div className="rounded-lg border border-border/60 px-3 py-3">
+      {/* Achatado em E0: cartão com raio dentro do cartão do wizard seria
+          card-em-card (§8). A separação é hairline. */}
+      <div className="border-t border-border/60 pt-3">
         <div className="flex items-center gap-3">
           <Bell className="size-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1 text-[12px] leading-snug text-muted-foreground">

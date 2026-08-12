@@ -147,6 +147,42 @@ export function shouldShowGuide(p: {
   return p.ready && !p.complete && !p.dismissed
 }
 
+/** O que a linha deve renderizar, ou null pra não renderizar nada. */
+export interface GuideView {
+  items: GuideItem[]
+  done: number
+  total: number
+}
+
+/** A decisão de EXIBIÇÃO inteira, pura. Existe porque a versão anterior morava
+ *  no componente e desfazia a própria regra: um fallback de "última contagem
+ *  visível" segurava a linha na tela justamente quando o guia completava, e
+ *  ela renderizava a contagem velha (4/5) pra sempre, com o clique levando a
+ *  uma seção já resolvida. Aqui a ordem das saídas é explícita e testável.
+ *
+ *  `probes: null` = nenhuma leitura assentou ainda (nada de contagem piscando
+ *  no boot). */
+export function guideView(p: {
+  probes: ProbeMap | null
+  caps: GuideCapabilities
+  ready: boolean
+  dismissed: boolean
+  /** Durante o onboarding o wizard já faz esse trabalho; dois lugares cobrando
+   *  setup ao mesmo tempo é ruído. */
+  onboarded: boolean
+}): GuideView | null {
+  if (!p.onboarded) return null
+  if (p.probes === null) return null
+  const items = buildItems(p.caps, p.probes)
+  const visible = shouldShowGuide({
+    ready: p.ready,
+    complete: isComplete(items),
+    dismissed: p.dismissed,
+  })
+  if (!visible) return null
+  return { items, ...guideProgress(items) }
+}
+
 /** Anel de progresso: o traço a desenhar, com clamps defensivos (total 0 não
  *  divide por zero; done fora da faixa não vaza do anel). */
 export function ringDash(
