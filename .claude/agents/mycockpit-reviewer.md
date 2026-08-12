@@ -32,7 +32,8 @@ revise SOMENTE o escopo indicado.
    pré-existente afrouxado (confira via diff dos *.test.* e #[test]); suítes
    completas rodadas por VOCÊ (cargo test + bun run test + tsc de app/), não
    aceite "devem passar".
-8. **Copy de UI**: pt-BR e sem travessão "—".
+8. **Copy de UI**: pt-BR e sem travessão "—". Mudança visível bate
+   `docs/STYLEGUIDE.md` (rubrica do §8: cores por papel, escala, elevação).
 9. **Sem regressão**: grep dos call sites do que mudou; paths que mudam estado
    listados; nenhum catch silencioso em caminho com alguém esperando
    (ADR-017); argv de spawn byte-comparável quando o diff diz "refactor

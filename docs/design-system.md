@@ -2,6 +2,8 @@
 
 > Direção visual do app. Os tokens abaixo são a fonte de verdade para `globals.css`.
 > Princípio: **refinamento por precisão**, não por intensidade.
+> Regras de USO (papéis de cor, escala fechada, elevação, movimento, copy)
+> moram em `docs/STYLEGUIDE.md` — em conflito, o STYLEGUIDE manda.
 
 ## Conceito
 

@@ -37,6 +37,8 @@ contra o código real e mandam sobre o texto original.
   esconde bug, lição do ADR-016; colete do stream/incidente/spike real).
 - **Copy de UI**: pt-BR, SEM travessão "—" (vírgula, ponto ou parênteses; "·"
   e "→" ok).
+- **UI/visual**: toda mudança visível segue `docs/STYLEGUIDE.md` (papéis de
+  cor com "não use para", escala 11/12/13/14, 3 elevações, movimento, copy).
 - **Fail-open no render, fail-closed no efeito**: evento desconhecido nunca
   crasha (vira Unknown); montagem/estado com pré-condição faltante aborta.
 - **Estado real, nunca teatro**: nada de atividade inventada; "rodando" falso
