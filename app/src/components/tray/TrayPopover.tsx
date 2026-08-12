@@ -28,6 +28,15 @@ const EMPTY: TraySnapshot = {
   lastRun: null,
   enabledSchedules: 0,
   deferred: 0,
+  external: [],
+}
+
+/** Copy do status de sessão externa (espelho de external_status_pt no Rust e
+ *  statusLabel em lib/externalSessions — este webview não importa stores). */
+function externalStatusLabel(status: string): string {
+  if (status === "working") return "trabalhando"
+  if (status === "waiting" || status === "blocked") return "esperando você"
+  return "ociosa"
 }
 
 function elapsed(startedAt: number | null, now: number): string {
@@ -278,6 +287,47 @@ export function TrayPopover() {
           </div>
         )}
       </section>
+
+      {(snapshot.external ?? []).length > 0 && (
+        <section
+          aria-label="Sessões no terminal"
+          className="border-t border-border px-3 py-2"
+        >
+          <p className="label-mono mb-1.5 text-muted-foreground/70">
+            No terminal (observando)
+          </p>
+          <ul className="space-y-1">
+            {(snapshot.external ?? []).slice(0, 3).map((s, i) => (
+              <li
+                key={`${s.agent}-${i}`}
+                className="flex items-center gap-2 px-1 text-[11px]"
+              >
+                <span
+                  className={
+                    s.status === "working"
+                      ? "size-1.5 shrink-0 rounded-full bg-st-running"
+                      : s.status === "waiting" || s.status === "blocked"
+                        ? "size-1.5 shrink-0 rounded-full bg-st-warning"
+                        : "size-1.5 shrink-0 rounded-full bg-st-idle"
+                  }
+                />
+                <span className="min-w-0 flex-1 truncate text-foreground/80">
+                  {s.agent} em {s.place}
+                </span>
+                <span
+                  className={
+                    s.status === "waiting" || s.status === "blocked"
+                      ? "shrink-0 text-st-warning"
+                      : "shrink-0 text-muted-foreground"
+                  }
+                >
+                  {externalStatusLabel(s.status)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="border-t border-border px-3 py-2.5">
         <button

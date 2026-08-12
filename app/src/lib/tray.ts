@@ -13,6 +13,17 @@ export interface TrayActivity {
   detail: string
 }
 
+/** Sessão EXTERNA de CLI (hooks-plan H1): aberta no terminal, fora do app.
+ *  O tray só OBSERVA — sem ação de abrir/parar (não somos donos dela). */
+export interface TrayExternalSession {
+  agent: string
+  /** Projeto conhecido pelo cwd, ou o basename da pasta. */
+  place: string
+  /** "working" | "waiting" | "blocked" | "idle" (vocabulário do Rust). */
+  status: string
+  lastSeen: number
+}
+
 export interface TraySnapshot {
   running: number
   decisions: number
@@ -25,6 +36,8 @@ export interface TraySnapshot {
   /** Trabalhos DIFERIDOS do provider vivos (Workflow/background task): o
    *  diálogo nativo de saída avisa que eles morrem junto (D1.4). */
   deferred: number
+  /** Sessões externas observadas pelos hooks (H1). */
+  external: TrayExternalSession[]
 }
 
 export interface TrayAction {

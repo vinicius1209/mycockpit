@@ -52,6 +52,19 @@ pub struct TrayLastRun {
     pub at: i64,
 }
 
+/// Sessão EXTERNA de CLI (hooks-plan H1): o tray só OBSERVA — linha
+/// informativa, sem ação (não somos donos da sessão).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TrayExternalSession {
+    pub agent: String,
+    /// Projeto conhecido pelo cwd, ou o basename da pasta (resolvido no TS).
+    pub place: String,
+    /// "working" | "waiting" | "blocked" | "idle".
+    pub status: String,
+    pub last_seen: i64,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TraySnapshot {
@@ -68,6 +81,10 @@ pub struct TraySnapshot {
     /// avisa. `default` p/ snapshots antigos (campo ausente = 0).
     #[serde(default)]
     pub deferred: u32,
+    /// Sessões externas observadas pelos hooks (H1). `default` p/ snapshots
+    /// antigos (campo ausente = vazio).
+    #[serde(default)]
+    pub external: Vec<TrayExternalSession>,
 }
 
 pub struct TrayState {
@@ -174,6 +191,17 @@ fn fleet_status(s: &TraySnapshot) -> String {
     }
 }
 
+/// Copy pt-BR do status de sessão externa (vocabulário fechado do
+/// hook_sessions; desconhecido degrada pra "ociosa" — fail-open no render).
+/// Espelha `statusLabel` em lib/externalSessions.ts.
+fn external_status_pt(status: &str) -> &'static str {
+    match status {
+        "working" => "trabalhando",
+        "waiting" | "blocked" => "esperando você",
+        _ => "ociosa",
+    }
+}
+
 /// Mensagem do diálogo de saída (deferred-work-plan, D1.4): morte CONSCIENTE.
 /// Com trabalho em background do provider vivo, o aviso diz explicitamente que
 /// ele morre junto e fica marcado como interrompido — nunca silêncio.
@@ -240,6 +268,34 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>, s: &TraySnapshot) -> tauri::Result
             true,
             None::<&str>,
         )?));
+    }
+    // Sessões EXTERNAS (hooks-plan H1): linhas INFORMATIVAS, desabilitadas de
+    // propósito — o app observa, não dirige (nenhum controle que não temos).
+    if !s.external.is_empty() {
+        items.push(Box::new(PredefinedMenuItem::separator(app)?));
+        for (i, ext) in s.external.iter().take(4).enumerate() {
+            items.push(Box::new(MenuItem::with_id(
+                app,
+                format!("tray-external-{i}"),
+                format!(
+                    "Terminal · {} em {} · {}",
+                    ext.agent,
+                    ext.place,
+                    external_status_pt(&ext.status)
+                ),
+                false,
+                None::<&str>,
+            )?));
+        }
+        if s.external.len() > 4 {
+            items.push(Box::new(MenuItem::with_id(
+                app,
+                "tray-external-more",
+                format!("e mais {} sessões no terminal", s.external.len() - 4),
+                false,
+                None::<&str>,
+            )?));
+        }
     }
     items.push(Box::new(MenuItem::with_id(
         app,
@@ -544,12 +600,15 @@ pub fn set_tray_snapshot(
         let mut guard = state.snapshot.lock().map_err(|e| e.to_string())?;
         std::mem::replace(&mut *guard, snapshot.clone())
     };
-    // Menu e tooltip só dependem de running/decisions/next_schedule. Os deltas
-    // de atividade (a cada tool step de um run) NÃO podem reconstruir o NSMenu
-    // na main thread várias vezes por minuto — pula quando nada visível mudou.
+    // Menu e tooltip só dependem de running/decisions/next_schedule/external.
+    // Os deltas de atividade (a cada tool step de um run) NÃO podem
+    // reconstruir o NSMenu na main thread várias vezes por minuto — pula
+    // quando nada visível mudou. (`external` já chega coalescido do App.tsx
+    // por chave semântica agent:sessão:status — não tica por evento.)
     let menu_changed = prev.running != snapshot.running
         || prev.decisions != snapshot.decisions
-        || prev.next_schedule != snapshot.next_schedule;
+        || prev.next_schedule != snapshot.next_schedule
+        || prev.external != snapshot.external;
     let handle = app.clone();
     app.run_on_main_thread(move || {
         if menu_changed {
@@ -650,6 +709,18 @@ mod tests {
             ..Default::default()
         });
         assert!(dois.contains("2 trabalhos em background"));
+    }
+
+    /// H1 (hooks-plan): sessão externa no tray com copy honesta — espelho do
+    /// `statusLabel` de lib/externalSessions.ts (mexeu num, mexa no outro).
+    #[test]
+    fn status_de_sessao_externa_vira_copy_honesta() {
+        assert_eq!(external_status_pt("working"), "trabalhando");
+        assert_eq!(external_status_pt("waiting"), "esperando você");
+        assert_eq!(external_status_pt("blocked"), "esperando você");
+        assert_eq!(external_status_pt("idle"), "ociosa");
+        // desconhecido degrada, nunca crasha (fail-open no render).
+        assert_eq!(external_status_pt("estado-novo"), "ociosa");
     }
 
     #[test]

@@ -23,6 +23,8 @@ mod fsx;
 mod git;
 mod github;
 mod hook_gateway;
+mod hook_sessions;
+mod hooks_install;
 mod mcp_auth;
 mod mcp_control;
 mod mcp_proxy;
@@ -552,6 +554,7 @@ pub fn run() {
         // Medidor de janela de uso: snapshots vivos por agent (fonte única
         // que o front hidrata no boot; ingest da statusline + poll gravam aqui).
         .manage(usage_window::UsageState::default())
+        .manage(hook_sessions::ExternalSessions::default())
         .manage(attachments::ActiveConvs::default())
         .manage(stt::SttSession::default())
         .manage(companion::CompanionState::default())
@@ -580,6 +583,10 @@ pub fn run() {
             statusline_install::usage_statusline_status,
             statusline_install::usage_statusline_install,
             statusline_install::usage_statusline_uninstall,
+            hooks_install::hooks_status,
+            hooks_install::hooks_install,
+            hooks_install::hooks_uninstall,
+            hook_sessions::hook_sessions,
             catalog::refresh_models_catalog,
             catalog::get_models_catalog,
             mycockpit::read_mycockpit_config,

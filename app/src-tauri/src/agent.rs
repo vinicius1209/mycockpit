@@ -831,6 +831,10 @@ async fn run_once(
         // filho morre se o future for dropado (não cobre process::exit; o
         // kill_all no hook de saída do app cobre esse caso).
         .kill_on_drop(true);
+    // Correlação dos hooks de status (hooks-plan §4.7): o hook global herda
+    // esta env e a manda num header — run NOSSO nunca vira "sessão externa"
+    // no Painel. Inofensiva sem hooks instalados (ninguém a lê).
+    cmd.env(crate::hook_sessions::RUN_ENV, run_id);
 
     let bin = adapter.id();
     let mut child = cmd.spawn().map_err(|e| {

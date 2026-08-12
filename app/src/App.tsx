@@ -62,6 +62,14 @@ import { nativeNotify } from "@/lib/notify"
 import { focusConsoleComposer } from "@/lib/focusComposer"
 import { startTurnWatchdog } from "@/lib/watchdog"
 import { startUsageWindow } from "@/lib/usageWindow"
+import {
+  engineLabel,
+  externalSessionsKey,
+  sessionPlace,
+  startExternalSessions,
+  useExternalSessions,
+  visibleSessions,
+} from "@/lib/externalSessions"
 import { agentLabel, cancelAgent } from "@/lib/agent"
 import {
   isTauri,
@@ -266,6 +274,10 @@ export default function App() {
   // do vigia acima — nenhum ticker novo.
   useEffect(() => startUsageWindow(), [])
 
+  // H1 (hooks-plan) — sessões EXTERNAS: hidrata do backend e assina o push
+  // dos hooks (hooks://sessions). Presença em memória, nada persistido.
+  useEffect(() => startExternalSessions(), [])
+
   // F6 — motor das automações agendadas: tick IMEDIATO no boot (que também faz
   // o catch-up explícito dos perdidos >5min) + a cada 60s. O reload após cada
   // tick mantém o espelho (badge da sidebar / view / tray) fresco. Só no Tauri.
@@ -359,6 +371,11 @@ export default function App() {
       .join("|"),
   )
   const schedules = useSchedules((s) => s.schedules)
+  // Sessões EXTERNAS (H1): chave semântica estável — o efeito só re-envia
+  // quando o conjunto/estado muda, não a cada evento de hook.
+  const externalKey = useExternalSessions((s) =>
+    externalSessionsKey(visibleSessions(s.sessions)),
+  )
   useEffect(() => {
     if (!isTauri()) return
     const send = () => {
@@ -491,10 +508,23 @@ export default function App() {
         0,
       )
 
+      // Sessões EXTERNAS observadas pelos hooks (H1): linhas informativas no
+      // tray — o app observa, não dirige. Rótulo/projeto resolvidos AQUI (o
+      // Rust só exibe o que chega pronto).
+      const external = visibleSessions(
+        useExternalSessions.getState().sessions,
+      ).map((s) => ({
+        agent: engineLabel(s.agent),
+        place: sessionPlace(s, app.projects),
+        status: s.status,
+        lastSeen: s.lastSeen,
+      }))
+
       updateTray({
         running: activities.size,
         decisions: decisionsPending + pendingInteractions,
         deferred: deferredCount,
+        external,
         activities: [...activities.values()].slice(0, 3),
         decisionConvId,
         decisionProjectId,
@@ -533,6 +563,7 @@ export default function App() {
     missionTrayKey,
     fusionTrayKey,
     schedules,
+    externalKey,
   ])
 
   // Preferências persistidas do ciclo de vida → backend (que recebe o evento

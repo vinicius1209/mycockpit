@@ -93,6 +93,16 @@ export interface AgentDef {
    *  percentual. Teste-gêmeo: agents.usageWindow.test.ts ↔
    *  `matriz_usage_window_por_agent` no Rust. */
   usageWindow: "statusline" | "rpc" | null
+  /** Emite eventos de ciclo de vida a scripts externos (espelho de
+   *  `hooks_status`, hooks-plan H1): habilita a instalação de hooks em
+   *  Configurações e a presença de sessões EXTERNAS no Painel/tray. false =
+   *  o card nem mostra a opção; o watchdog segue existindo pra todos.
+   *  Teste-gêmeo: agents.hooks.test.ts ↔ `matriz_de_hooks_por_agent`. */
+  hooksStatus: boolean
+  /** Dialeto de instalação/protocolo dos hooks (espelho de `hook_dialect`,
+   *  adapters.rs). Consumido só como identidade informativa na UI (o merge
+   *  real é do Rust). null = motor sem hooks. */
+  hookDialect: "claude-settings" | "codex-hooks-json" | "agy-config-hooks" | null
 }
 
 // Aliases do Claude Code ("opus", "sonnet"…) resolvem NO SERVIDOR e mudam com
@@ -243,6 +253,10 @@ export const AGENTS: AgentDef[] = [
     // claude 2.1.220: rate_limits no stdin da statusline por turno (payload
     // real capturado 12/08/2026).
     usageWindow: "statusline",
+    // claude 2.1.220: hooks maduros, payloads reais capturados 12/08/2026
+    // (fixtures em hook_sessions.rs).
+    hooksStatus: true,
+    hookDialect: "claude-settings",
   },
   {
     id: "codex",
@@ -275,6 +289,10 @@ export const AGENTS: AgentDef[] = [
     // codex 0.146: account/rateLimits/read no app-server read-only (provado
     // na mão 12/08/2026).
     usageWindow: "rpc",
+    // codex 0.146: hooks.json com schema idêntico ao do claude, feature
+    // stable, vivo nesta máquina (Xirp/Orca — auditado 12/08/2026).
+    hooksStatus: true,
+    hookDialect: "codex-hooks-json",
   },
   {
     id: "agy",
@@ -303,6 +321,11 @@ export const AGENTS: AgentDef[] = [
     cumulativeUsage: false,
     nativeCompact: false,
     usageWindow: null,
+    // agy 1.1.12: grupos nomeados em ~/.gemini/config/hooks.json (doc
+    // embarcada + grupo vivo do Orca, 12/08/2026); Stop só roda ≥1.1.10 e o
+    // instalador Rust confere a versão.
+    hooksStatus: true,
+    hookDialect: "agy-config-hooks",
   },
   {
     id: "opencode",
@@ -326,6 +349,8 @@ export const AGENTS: AgentDef[] = [
     cumulativeUsage: false,
     nativeCompact: false,
     usageWindow: null,
+    hooksStatus: false,
+    hookDialect: null,
   },
   {
     id: "model",
@@ -349,6 +374,8 @@ export const AGENTS: AgentDef[] = [
     cumulativeUsage: false,
     nativeCompact: false,
     usageWindow: null,
+    hooksStatus: false,
+    hookDialect: null,
   },
 ]
 
@@ -382,6 +409,14 @@ export function cumulativeUsageAgents(): AgentDef[] {
  *  sem fonte nem aparece (1ª camada de esconder do Orca). */
 export function usageWindowAgents(): AgentDef[] {
   return AGENTS.filter((a) => a.usageWindow != null)
+}
+
+/** Motores com hooks de ciclo de vida instaláveis (hooks-plan H1). Quem monta
+ *  o bloco de Configurações e as superfícies de sessão externa pergunta AQUI,
+ *  nunca por nome — motor sem hooks nem aparece (degradação honesta pro
+ *  watchdog, que continua existindo pra todos). */
+export function hooksAgents(): AgentDef[] {
+  return AGENTS.filter((a) => a.hooksStatus)
 }
 
 /** "ready"=usável · "installed-not-authenticated"=instalado e DESLOGADO

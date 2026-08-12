@@ -71,6 +71,7 @@ import { CompanionSettings } from "@/components/settings/CompanionSettings"
 import { McpSettings } from "@/components/settings/McpSettings"
 import { CostMaintenance } from "@/components/settings/CostMaintenance"
 import { UsageMeterSettings } from "@/components/settings/UsageMeterSettings"
+import { HooksSettings } from "@/components/settings/HooksSettings"
 import { EspecialistasContent } from "@/components/settings/Especialistas"
 import {
   DEFAULT_DICTATION_HOTKEY,
@@ -431,6 +432,10 @@ function AgentsToolsSection() {
       {/* Medidor de janela de uso (rate limits do plano): instalação é gesto
           daqui, nunca do boot — ver UsageMeterSettings. */}
       <UsageMeterSettings />
+
+      {/* Hooks de status (hooks-plan H1): sessões do terminal no Painel/tray.
+          Instalação é gesto daqui, nunca do boot — ver HooksSettings. */}
+      <HooksSettings />
     </div>
   )
 }

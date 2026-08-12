@@ -92,10 +92,28 @@ fn write_endpoint_file(app: &AppHandle, port: u16, token: &str) -> Result<(), St
     crate::fsx::write_atomic_private(&path, &body)
 }
 
+/// Header com o EVENTO do hook (setado pelo script gerado; necessário pro
+/// dialeto do agy, cujo payload não carrega o nome do evento).
+const EVENT_HEADER: &str = "x-mycockpit-event";
+/// Header com o run id do app (env `MYCOCKPIT_RUN_ID` herdada pelo hook):
+/// presente = run spawnado pelo PRÓPRIO app → não é sessão externa.
+const RUN_HEADER: &str = "x-mycockpit-run";
+
+fn header_str(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(name)?
+        .to_str()
+        .ok()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
 /// POST /hook/{engine} — a única rota. Token errado = 401 (o único erro que o
-/// script pode ver; ele engole). Qualquer payload autenticado = 204: hoje só
-/// o dialeto statusline é consumido (rate_limits → snapshot de janela), o
-/// resto é aceito-e-ignorado de propósito (substrato do H1/H2).
+/// script pode ver; ele engole). Qualquer payload autenticado = 204: os
+/// consumidores atuais são a statusline (rate_limits → snapshot de janela) e
+/// os hooks de status (H1 → hook_sessions); o resto é aceito-e-ignorado de
+/// propósito (substrato das próximas fases).
 async fn hook_post(
     State(ctx): State<Ctx>,
     AxumPath(engine): AxumPath<String>,
@@ -110,7 +128,16 @@ async fn hook_post(
         // corpo não-JSON: aceito-e-ignorado (fail-open do lado do script).
         return StatusCode::NO_CONTENT;
     };
-    let ingested = usage_window::ingest_statusline(&ctx.app, &engine, &payload);
+    let run = header_str(&headers, RUN_HEADER);
+    let event = header_str(&headers, EVENT_HEADER);
+    let ingested = usage_window::ingest_statusline(&ctx.app, &engine, &payload)
+        || crate::hook_sessions::ingest(
+            &ctx.app,
+            &engine,
+            run.as_deref(),
+            event.as_deref(),
+            &payload,
+        );
     if !ingested {
         log::debug!("hook_gateway: payload de {engine} sem consumidor (ok)");
     }

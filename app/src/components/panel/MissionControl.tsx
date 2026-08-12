@@ -31,6 +31,15 @@ import { useSchedules } from "@/store/schedules"
 import { openCardConversation, useCards } from "@/store/cards"
 import { fmtUntilShort } from "@/lib/schedules"
 import {
+  engineLabel,
+  seenAgo,
+  sessionPlace,
+  statusLabel,
+  statusTone,
+  useExternalSessions,
+  visibleSessions,
+} from "@/lib/externalSessions"
+import {
   adoptPlan,
   cardDecisions,
   foundDecisions,
@@ -652,6 +661,10 @@ function PrdCard({ d }: { d: Extract<Decision, { kind: "prd" }> }) {
 export function MissionControl() {
   const projects = useApp((s) => s.projects)
   const detected = useApp((s) => s.settings.detected)
+  // H1 — sessões externas vivas (hooks): seleciona a REF crua (selector com
+  // array novo a cada chamada loopa o useSyncExternalStore) e filtra fora.
+  const externalSessionsRaw = useExternalSessions((s) => s.sessions)
+  const externalSessions = visibleSessions(externalSessionsRaw)
   // Agents com rate limit atingido (cross-conversa, efêmero: marcado por
   // limit_reached, curado por result ok) — a FROTA mostra o posto bloqueado.
   const limitedAgents = useApp((s) => s.limitedAgents)
@@ -1312,6 +1325,55 @@ export function MissionControl() {
               </li>
             )}
           </ul>
+          {/* H1 (hooks-plan) — sessões EXTERNAS: abertas no terminal, vistas
+              pelos hooks. O app OBSERVA, não dirige: sem botão de controle
+              (não somos donos delas), nada persistido (some no restart). */}
+          {externalSessions.length > 0 && (
+            <div className="mt-3" aria-label="Sessões no terminal">
+              <h3 className="label-mono mb-1">No terminal (observando)</h3>
+              <ul className="flex flex-col gap-0.5">
+                {externalSessions.map((s) => {
+                  const tone = statusTone(s.status)
+                  return (
+                    <li
+                      key={`${s.agent}:${s.sessionId}`}
+                      className="flex items-center gap-2.5 px-1 text-[12.5px]"
+                      title={s.cwd}
+                    >
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "size-1.5 shrink-0 rounded-full",
+                          tone === "running" && "bg-st-running",
+                          tone === "attention" && "bg-st-warning",
+                          tone === "neutral" && "bg-st-idle",
+                        )}
+                      />
+                      <span className="text-foreground">
+                        {engineLabel(s.agent)}
+                      </span>
+                      <span className="min-w-0 truncate text-muted-foreground">
+                        {sessionPlace(s, projects)}
+                      </span>
+                      <span
+                        className={cn(
+                          "shrink-0",
+                          tone === "attention"
+                            ? "text-st-warning"
+                            : "text-muted-foreground/70",
+                        )}
+                      >
+                        {statusLabel(s.status)}
+                      </span>
+                      <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground/70 tabular-nums">
+                        {seenAgo(s.lastSeen)}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
           {/* F6 — Próximas agendadas (2): clicar abre a view Agendado. */}
           {upcoming.length > 0 && (
             <div className="mt-3">

@@ -133,6 +133,31 @@ pub enum UsageWindowSource {
     CodexAppServer,
 }
 
+/// Dialeto de instalação/protocolo de HOOKS de um motor (hooks-plan §2).
+/// Mesmo padrão do `CommandSource`/`UsageWindowSource`: o enum confina o
+/// "como" (formato do config, shape do payload, forma da resposta síncrona —
+/// consumido SÓ pelo instalador em hooks_install.rs e pelo receptor em
+/// hook_sessions.rs/hook_gateway.rs); a capability decide o "se". Nomes
+/// carregam o fornecedor de propósito — dialeto É domínio do fornecedor.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HookDialect {
+    /// claude 2.1.220: `~/.claude/settings.json` chave `hooks`, eventos
+    /// PascalCase, stdin snake_case (`hook_event_name`, `session_id`, `cwd`),
+    /// resposta síncrona por stdout `hookSpecificOutput`. Payloads reais
+    /// capturados 12/08/2026 (fixtures em hook_sessions.rs).
+    ClaudeSettings,
+    /// codex 0.146: `~/.codex/hooks.json`, MESMO schema/protocolo do
+    /// ClaudeSettings (provado nos hooks vivos do Xirp/Orca desta máquina),
+    /// mas arquivo dedicado + trust por hook (`trusted_hash` no config.toml —
+    /// comando novo/alterado exige re-trust na próxima sessão).
+    CodexHooksJson,
+    /// agy 1.1.12: `~/.gemini/config/hooks.json`, GRUPOS NOMEADOS, payload
+    /// camelCase (`conversationId`, `workspacePaths`), só `type: "command"`,
+    /// síncrono (stdout JSON obrigatório). Stop hooks só rodam ≥1.1.10
+    /// (changelog) — o instalador confere a versão antes de escrever.
+    AgyConfigHooks,
+}
+
 /// Capabilities do agent-runner.md §2, materializada (G1.1 do
 /// capability-registry-plan). Campos derivados dos achados REAIS da auditoria,
 /// não de especulação. Regra de ouro (§7.1): capability declarada tem que ser
@@ -211,6 +236,17 @@ pub struct Capabilities {
     /// lib/agents.ts (teste-gêmeo agents.usageWindow.test.ts ↔
     /// `matriz_usage_window_por_agent`).
     pub usage_window: Option<UsageWindowSource>,
+    /// Emite eventos de CICLO DE VIDA a scripts externos (fire-and-forget,
+    /// hooks-plan H1): é o que dá visibilidade de sessões EXTERNAS (abertas no
+    /// terminal, fora do app) e status push sem polling. Instalação SEMPRE por
+    /// gesto do usuário (hooks_install.rs); quem não tem/não instalou degrada
+    /// pro watchdog, que continua existindo pra todos. Espelho TS:
+    /// `hooksStatus` em lib/agents.ts (teste-gêmeo agents.hooks.test.ts ↔
+    /// `matriz_de_hooks_por_agent`).
+    pub hooks_status: bool,
+    /// Como instalar/falar com os hooks deste motor. None = sem hooks: o card
+    /// de Configurações nem mostra a opção (degradação honesta).
+    pub hook_dialect: Option<HookDialect>,
 }
 
 /// claude 2.1.219 (auditado 2026-07): o mais rico — MCP completo, background
@@ -236,6 +272,12 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     // claude 2.1.220: a statusline recebe `rate_limits` no stdin por turno
     // (payload real capturado 12/08/2026 — fixture em usage_window.rs).
     usage_window: Some(UsageWindowSource::ClaudeStatusline),
+    // claude 2.1.220: hooks maduros — SessionStart/UserPromptSubmit/
+    // PreToolUse/PostToolUse/Stop/SessionEnd capturados de verdade nesta
+    // máquina em 12/08/2026 (fixtures em hook_sessions.rs); Notification
+    // documentado e vivo no settings do usuário (Xirp).
+    hooks_status: true,
+    hook_dialect: Some(HookDialect::ClaudeSettings),
 };
 
 /// codex-cli 0.144.6 (auditado 2026-07): MCP completo (config efêmero via -c),
@@ -266,6 +308,12 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     // usedPercent + resetsAt (provado na mão 12/08/2026, fixture em
     // usage_window.rs).
     usage_window: Some(UsageWindowSource::CodexAppServer),
+    // codex 0.146: `codex features list` → hooks stable/true; hooks.json com
+    // schema idêntico ao do claude, trusted e VIVO nesta máquina (Xirp/Orca,
+    // auditado 12/08/2026). Trust por hook: o comando referencia só o path
+    // estável do script (token rotaciona DENTRO do arquivo apontado).
+    hooks_status: true,
+    hook_dialect: Some(HookDialect::CodexHooksJson),
 };
 
 /// agy 1.1.9 (re-checado 31/07/2026): sem canal MCP, sem resume exposto no
@@ -290,6 +338,13 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // agy 1.1.12: só `/credits` (saldo, sem % de janela nem reset —
     // verificado 12/08/2026). Saldo de créditos NÃO é janela de uso: None.
     usage_window: None,
+    // agy 1.1.12: hooks documentados pelo próprio produto (doc embarcada
+    // agy-customizations/docs/hooks.md) e vivos nesta máquina (grupo
+    // "orca-status" em ~/.gemini/config/hooks.json, listado por `agy -p
+    // "/hooks"` em 12/08/2026). Stop hooks só rodam ≥1.1.10 → o instalador
+    // confere a versão e aborta com motivo abaixo disso (gate honesto).
+    hooks_status: true,
+    hook_dialect: Some(HookDialect::AgyConfigHooks),
 };
 
 pub trait AgentAdapter: Send {
@@ -2871,6 +2926,37 @@ mod tests {
         );
         // agy 1.1.12: só /credits (saldo, sem janela/reset) → sem fonte.
         assert_eq!(capabilities_of("agy").unwrap().usage_window, None);
+    }
+
+    /// Teste-GÊMEO do espelho TS (`agents.hooks.test.ts`): quem emite hooks de
+    /// ciclo de vida e por qual dialeto (hooks-plan §2). Mexeu aqui, mexa lá.
+    #[test]
+    fn matriz_de_hooks_por_agent() {
+        // claude 2.1.220: settings.json chave hooks (payloads reais capturados
+        // 12/08/2026 — fixtures em hook_sessions.rs).
+        let claude = capabilities_of("claude-code").unwrap();
+        assert!(claude.hooks_status);
+        assert_eq!(claude.hook_dialect, Some(HookDialect::ClaudeSettings));
+        // codex 0.146: hooks.json dedicado, schema idêntico, feature stable.
+        let codex = capabilities_of("codex").unwrap();
+        assert!(codex.hooks_status);
+        assert_eq!(codex.hook_dialect, Some(HookDialect::CodexHooksJson));
+        // agy 1.1.12: grupos nomeados em ~/.gemini/config/hooks.json (Stop só
+        // roda ≥1.1.10 — gate de versão fica no instalador).
+        let agy = capabilities_of("agy").unwrap();
+        assert!(agy.hooks_status);
+        assert_eq!(agy.hook_dialect, Some(HookDialect::AgyConfigHooks));
+        // Coerência estrutural pra TODO agent registrado (em loop, nunca
+        // copiado): declarar hooks sem dialeto seria prometer uma instalação
+        // que hooks_install.rs não sabe fazer — e vice-versa.
+        for agent in registered_agents() {
+            let caps = capabilities_of(agent).unwrap();
+            assert_eq!(
+                caps.hooks_status,
+                caps.hook_dialect.is_some(),
+                "{agent}: hooks_status declarado exige hook_dialect (e vice-versa)"
+            );
+        }
     }
 
     #[test]
