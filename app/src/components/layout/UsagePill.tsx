@@ -25,11 +25,13 @@ import {
 import { agentDef, usageWindowAgents } from "@/lib/agents"
 import { fmtTime } from "@/lib/format"
 import {
+  failureLabel,
   fmtAge,
   fmtPct,
   fmtResetIn,
   pillWindow,
   snapshotUsable,
+  sourceLabel,
   usagePillLabel,
   usageTone,
   type UsageFailure,
@@ -68,11 +70,6 @@ function UsageBar({ pct, wide = false }: { pct: number; wide?: boolean }) {
       />
     </span>
   )
-}
-
-/** Rótulo humano da fonte (procedência na cara, sem jargão de RPC). */
-function sourceLabel(source: string): string {
-  return source === "rpc" ? "leitura local" : "statusline"
 }
 
 /** Detalhe de UM provider no popover. */
@@ -133,7 +130,8 @@ function ProviderRows({
       )}
       {failure && (
         <p className="text-[11px] text-st-error">
-          Falhando desde {fmtTime(failure.since)} ({failure.kind}).
+          Falhando desde {fmtTime(failure.since)} ({failureLabel(failure.kind)}
+          ).
         </p>
       )}
     </div>
@@ -174,11 +172,17 @@ export function UsagePill() {
   )
   // CTA: provider de statusline ainda sem NENHUM snapshot (medidor não
   // instalado ou sem turno desde o boot) — só aparece com a pill já viva
-  // (snapshots assentados) e some pra sempre se dispensado.
+  // (snapshots assentados) e some pra sempre se dispensado. Provider que está
+  // FALHANDO fica de fora: quem tem falha registrada já aparece com o motivo
+  // ("reautentique o CLI"), e mandar instalar statusline em cima disso seria
+  // apontar pro lugar errado (camada 3 do Orca vence a 4).
   const ctaAgents = ctaDismissed
     ? []
     : providers.filter(
-        (d) => d.usageWindow === "statusline" && byAgent[d.id] == null,
+        (d) =>
+          d.usageWindow === "statusline" &&
+          byAgent[d.id] == null &&
+          failures[d.id] == null,
       )
 
   const tone = sel ? usageTone(sel.window.usedPercent) : "ok"

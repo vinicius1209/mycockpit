@@ -93,6 +93,16 @@ export interface AgentDef {
    *  percentual. Teste-gêmeo: agents.usageWindow.test.ts ↔
    *  `matriz_usage_window_por_agent` no Rust. */
   usageWindow: "statusline" | "rpc" | null
+  /** Dialeto que o POLL do vigia usa pra PERGUNTAR a janela agora (espelho de
+   *  `usage_window_poll`, adapters.rs): "oauth" = leitura da conta do
+   *  provider, "rpc" = probe read-only do próprio CLI. null = o motor só
+   *  recebe push (nada a perguntar). Separado de `usageWindow` porque os dois
+   *  divergiram no claude: o que se INSTALA lá é a statusline, mas ela só
+   *  dispara em sessão interativa (em `-p` o script nunca roda) e o app roda
+   *  tudo em headless, então quem alimenta o medidor é a conta. Quem lê:
+   *  duePollAgents em lib/usageWindow. Teste-gêmeo: agents.usageWindow.test.ts
+   *  ↔ `matriz_usage_window_por_agent` no Rust. */
+  usagePoll: "oauth" | "rpc" | null
   /** Emite eventos de ciclo de vida a scripts externos (espelho de
    *  `hooks_status`, hooks-plan H1): habilita a instalação de hooks em
    *  Configurações e a presença de sessões EXTERNAS no Painel/tray. false =
@@ -258,6 +268,10 @@ export const AGENTS: AgentDef[] = [
     // claude 2.1.220: rate_limits no stdin da statusline por turno (payload
     // real capturado 12/08/2026).
     usageWindow: "statusline",
+    // …mas a statusline NÃO roda em `-p` (empírico 12/08/2026) e o app roda
+    // tudo headless: quem sustenta o medidor do claude é a conta
+    // (GET /api/oauth/usage com o bearer do próprio CLI).
+    usagePoll: "oauth",
     // claude 2.1.220: hooks maduros, payloads reais capturados 12/08/2026
     // (fixtures em hook_sessions.rs).
     hooksStatus: true,
@@ -296,6 +310,7 @@ export const AGENTS: AgentDef[] = [
     // codex 0.146: account/rateLimits/read no app-server read-only (provado
     // na mão 12/08/2026).
     usageWindow: "rpc",
+    usagePoll: "rpc",
     // codex 0.146: hooks.json com schema idêntico ao do claude, feature
     // stable, vivo nesta máquina (Xirp/Orca — auditado 12/08/2026).
     hooksStatus: true,
@@ -330,6 +345,7 @@ export const AGENTS: AgentDef[] = [
     cumulativeUsage: false,
     nativeCompact: false,
     usageWindow: null,
+    usagePoll: null,
     // agy 1.1.12: grupos nomeados em ~/.gemini/config/hooks.json (doc
     // embarcada + grupo vivo do Orca, 12/08/2026); Stop só roda ≥1.1.10 e o
     // instalador Rust confere a versão.
@@ -360,6 +376,7 @@ export const AGENTS: AgentDef[] = [
     cumulativeUsage: false,
     nativeCompact: false,
     usageWindow: null,
+    usagePoll: null,
     hooksStatus: false,
     hooksPermission: false,
     hookDialect: null,
@@ -386,6 +403,7 @@ export const AGENTS: AgentDef[] = [
     cumulativeUsage: false,
     nativeCompact: false,
     usageWindow: null,
+    usagePoll: null,
     hooksStatus: false,
     hooksPermission: false,
     hookDialect: null,

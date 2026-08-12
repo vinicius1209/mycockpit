@@ -7,11 +7,17 @@
 // PIPELINE SEPARADO do custo em $ (turn_costs/ledger não se toca): custo é o
 // que o turno gastou; janela é quanto do PLANO queimou e quando reseta.
 //
-// Duas fontes (capability `usageWindow` do registry, nunca nome de agent):
+// Três fontes (capabilities `usageWindow`/`usagePoll` do registry, nunca nome
+// de agent):
+//   • "oauth" (POLL): leitura da CONTA do provider com a credencial do próprio
+//     CLI (claude_usage.rs). É a fonte principal do claude, porque a
+//     statusline dele não roda em headless e o app roda tudo headless.
+//   • "rpc" (POLL): probe read-only local do próprio CLI (codex app-server).
 //   • "statusline" (PUSH): o script instalado posta pro receptor local a cada
-//     turno; aqui só chega o snapshot via evento `usage://snapshot`.
-//   • "rpc" (POLL): a passada do vigia decide QUANDO chamar `usage_fetch`
-//     (a política abaixo); o Rust faz o probe read-only.
+//     turno; aqui só chega o snapshot via evento `usage://snapshot`. Ingest
+//     OPORTUNISTA (carona quando o usuário usa o terminal), nunca a fonte.
+// Quem é POLL a passada do vigia decide QUANDO chamar (a política abaixo);
+// quem é PUSH chega sozinho.
 
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
@@ -38,7 +44,8 @@ export interface UsageWindowInfo {
 
 export interface UsageSnapshot {
   agent: string
-  /** "statusline" (push de carona) | "rpc" (poll read-only local). */
+  /** "oauth" (leitura da conta) | "statusline" (push de carona) | "rpc"
+   *  (poll read-only local) — a procedência que a UI mostra. */
   source: string
   windows: UsageWindowInfo[]
   planType: string | null
@@ -48,7 +55,8 @@ export interface UsageSnapshot {
 
 /** Falha de poll registrada no store (a UI mostra "falhando desde X"). */
 export interface UsageFailure {
-  /** "spawn" | "timeout" | "protocol" | "rate-limited" | "unsupported" */
+  /** "spawn" | "timeout" | "protocol" | "rate-limited" | "unsupported" |
+   *  "auth" (sem credencial ou credencial recusada). */
   kind: string
   message: string
   /** Desde quando ESTE episódio de falha começou (1ª falha da streak). */
@@ -81,13 +89,16 @@ export const STALE_RATE_LIMITED_MS = 24 * 60 * 60_000
 export const USAGE_WARN_PCT = 60
 export const USAGE_DANGER_PCT = 80
 
+/** Falhas que NÃO são transientes: retry rápido não resolve nenhuma delas e
+ *  martelar só piora (429 é limite; sem login, quem resolve é o usuário). */
+const KINDS_SEM_PRESSA = new Set(["rate-limited", "auth"])
+
 /** Delay até a PRÓXIMA tentativa dado o histórico de falha. Sucesso (streak
  *  0) = cadência cheia. Falha transiente = retry rápido crescendo (30s, 60s,
- *  2min…) até a cadência cheia. 429 = NUNCA acelera (martelar um limite só
- *  piora o limite). */
+ *  2min…) até a cadência cheia. 429/auth = NUNCA acelera. */
 export function nextPollDelayMs(streak: number, lastKind: string | null): number {
   if (streak <= 0) return POLL_MS
-  if (lastKind === "rate-limited") return POLL_MS
+  if (lastKind != null && KINDS_SEM_PRESSA.has(lastKind)) return POLL_MS
   const exp = Math.min(streak - 1, POLL_BACKOFF_CAP)
   return Math.min(POLL_MS, POLL_FLOOR_MS * 2 ** exp)
 }
@@ -160,6 +171,43 @@ export function pillWindow(
  *  degrada pro próprio id — fail-open no render, nunca crasha nem esconde). */
 export function usagePillLabel(agent: string): string {
   return agentDef(agent)?.shortLabel ?? agent
+}
+
+/** Procedência do snapshot em pt-BR (sem jargão de protocolo): de onde veio o
+ *  número que está na tela. Fonte nova degrada pro próprio id, nunca some. */
+export function sourceLabel(source: string): string {
+  switch (source) {
+    case "oauth":
+      return "leitura da conta"
+    case "rpc":
+      return "leitura local"
+    case "statusline":
+      return "statusline"
+    default:
+      return source
+  }
+}
+
+/** Motivo da falha em pt-BR, legível por quem não conhece o pipeline. O
+ *  "auth" é o caso que importa: sem login não há erro pra caçar, há um gesto
+ *  a fazer no terminal. Kind novo degrada pro próprio kind (nunca vazio). */
+export function failureLabel(kind: string): string {
+  switch (kind) {
+    case "auth":
+      return "reautentique o CLI"
+    case "rate-limited":
+      return "consultas limitadas, tentando mais tarde"
+    case "timeout":
+      return "sem resposta a tempo"
+    case "spawn":
+      return "não consegui consultar"
+    case "protocol":
+      return "resposta inesperada"
+    case "unsupported":
+      return "sem fonte de medição"
+    default:
+      return kind
+  }
 }
 
 /** Percentual pra exibição: inteiro (o CLI manda float sujo tipo
@@ -244,10 +292,11 @@ export function recordPollResult(
 }
 
 /** Agents de POLL devidos AGORA (pura dado settings + memória + relógio):
- *  fonte "rpc" no registry, CLI presente e não deslogada (deslogado = sem
- *  quota pra mostrar: some, camada 2 do Orca; sem probe = nunca detectado:
- *  não spawnamos binário que não sabemos existir), fora do delay da política
- *  e sem probe em voo. */
+ *  dialeto de poll declarado no registry (`usagePoll`, nunca nome de agent),
+ *  CLI presente e não deslogada (deslogado = sem quota pra mostrar: some,
+ *  camada 2 do Orca; e é a credencial DELE que a fonte "oauth" lê, então sem
+ *  login não há o que perguntar), fora do delay da política e sem probe em
+ *  voo. */
 export function duePollAgents(
   enabled: boolean,
   detected: Record<string, AgentProbe>,
@@ -256,7 +305,7 @@ export function duePollAgents(
   if (!enabled) return []
   const out: string[] = []
   for (const def of usageWindowAgents()) {
-    if (def.usageWindow !== "rpc") continue
+    if (def.usagePoll == null) continue
     const probe = detected[def.id]
     if (!probe?.installed || probe.auth === "missing") continue
     const mark = pollMarks.get(def.id)

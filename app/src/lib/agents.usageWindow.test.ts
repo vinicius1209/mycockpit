@@ -8,7 +8,8 @@ import { describe, expect, it } from "vitest"
 import { AGENTS, agentDef, usageWindowAgents } from "./agents"
 
 /** A matriz, escrita UMA vez. O teste Rust repete estes mesmos valores
- *  (statusline ↔ ClaudeStatusline, rpc ↔ CodexAppServer). */
+ *  (statusline ↔ ClaudeStatusline, rpc ↔ CodexAppServer, oauth ↔
+ *  ClaudeOauth). */
 const MATRIZ: Record<string, "statusline" | "rpc" | null> = {
   // claude 2.1.220: rate_limits no stdin da statusline a cada turno (payload
   // real capturado 12/08/2026).
@@ -21,6 +22,15 @@ const MATRIZ: Record<string, "statusline" | "rpc" | null> = {
   agy: null,
 }
 
+/** E quem o VIGIA pergunta. O claude diverge de propósito: a statusline é
+ *  push e só existe em sessão interativa (em `-p` o script nunca roda,
+ *  provado 12/08/2026), então o poll fala com a CONTA. */
+const MATRIZ_POLL: Record<string, "oauth" | "rpc" | null> = {
+  "claude-code": "oauth",
+  codex: "rpc",
+  agy: null,
+}
+
 describe("janela de uso por agent (espelho do registry Rust)", () => {
   for (const [id, esperado] of Object.entries(MATRIZ)) {
     it(`${id}: usageWindow=${esperado}`, () => {
@@ -28,13 +38,32 @@ describe("janela de uso por agent (espelho do registry Rust)", () => {
     })
   }
 
+  for (const [id, esperado] of Object.entries(MATRIZ_POLL)) {
+    it(`${id}: usagePoll=${esperado}`, () => {
+      expect(agentDef(id)?.usagePoll).toBe(esperado)
+    })
+  }
+
   it("agent desconhecido não promete nada (fail-closed)", () => {
     expect(agentDef("gemini-inexistente")?.usageWindow).toBeUndefined()
+    expect(agentDef("gemini-inexistente")?.usagePoll).toBeUndefined()
   })
 
   it("motor não integrado nunca declara fonte de janela", () => {
     for (const a of AGENTS.filter((x) => !x.available)) {
       expect(a.usageWindow, `${a.id}: fonte declarada sem integração`).toBeNull()
+      expect(a.usagePoll, `${a.id}: poll declarado sem integração`).toBeNull()
+    }
+  })
+
+  it("perguntar exige ter medidor, e push nunca é dialeto de poll", () => {
+    for (const a of AGENTS) {
+      if (a.usagePoll != null) {
+        expect(a.usageWindow, `${a.id}: poll de um medidor que não existe`).not.toBeNull()
+      }
+      expect(a.usagePoll, `${a.id}: statusline é push, não se pergunta`).not.toBe(
+        "statusline",
+      )
     }
   })
 

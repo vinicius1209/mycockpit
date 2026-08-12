@@ -3,7 +3,8 @@
 // o ESPELHO exato do que o Rust emite a partir dos payloads REAIS capturados
 // em 12/08/2026 (ADR-016: os valores 23/29/30%, resets e janelas vêm da
 // statusline do claude 2.1.220 e do account/rateLimits/read do codex 0.146
-// desta máquina — ver usage_window.rs).
+// desta máquina — ver usage_window.rs; os 4/37/58% da conta vêm do
+// GET /api/oauth/usage real — ver claude_usage.rs).
 
 import { beforeEach, describe, expect, it } from "vitest"
 import type { AgentProbe } from "@/lib/detect"
@@ -21,10 +22,12 @@ import {
   fmtResetIn,
   markPollAttempt,
   nextPollDelayMs,
+  failureLabel,
   parseFetchError,
   pillWindow,
   recordPollResult,
   snapshotUsable,
+  sourceLabel,
   usagePillLabel,
   usageTone,
   worstWindow,
@@ -55,6 +58,22 @@ const SNAP_CODEX: UsageSnapshot = {
   ],
   planType: "plus",
   fetchedAt: 1_786_543_100_000,
+}
+
+/** Snapshot como o Rust emite pra resposta REAL da CONTA do claude (a fonte
+ *  que fez o medidor existir pro claude: a statusline não roda em headless).
+ *  Valores/resets são os do capture de 12/08/2026, incluindo o teto POR
+ *  MODELO, que só a conta reporta. */
+const SNAP_CLAUDE_OAUTH: UsageSnapshot = {
+  agent: "claude-code",
+  source: "oauth",
+  windows: [
+    { id: "5h", label: "5 h", usedPercent: 4, resetsAt: 1_786_575_000, windowMinutes: 300 },
+    { id: "7d", label: "7 dias", usedPercent: 37, resetsAt: 1_786_996_800, windowMinutes: 10_080 },
+    { id: "7d:fable", label: "7 dias · Fable", usedPercent: 58, resetsAt: 1_786_996_800, windowMinutes: 10_080 },
+  ],
+  planType: "max",
+  fetchedAt: 1_786_543_150_000,
 }
 
 const AGORA = 1_786_543_200_000 // ~3min depois do snapshot do claude
@@ -94,6 +113,11 @@ describe("política de poll (regra do Orca)", () => {
 
   it("429 nunca acelera: falha rate-limited espera a cadência cheia", () => {
     expect(nextPollDelayMs(1, "rate-limited")).toBe(POLL_MS)
+  })
+
+  it("sem login também não acelera (quem resolve é o usuário, não o retry)", () => {
+    expect(nextPollDelayMs(1, "auth")).toBe(POLL_MS)
+    expect(nextPollDelayMs(5, "auth")).toBe(POLL_MS)
   })
 })
 
@@ -229,13 +253,15 @@ describe("paleta e formatação", () => {
 })
 
 describe("quem entra no poll (duePollAgents)", () => {
-  it("só motor de fonte rpc, instalado e logado", () => {
+  it("todo motor com dialeto de poll, instalado e logado", () => {
     const detected = {
-      "claude-code": probe(), // statusline (push): nunca entra no poll
-      codex: probe(),
+      "claude-code": probe(), // usagePoll "oauth": a conta responde sempre
+      codex: probe(), // usagePoll "rpc": app-server read-only
       agy: probe(), // sem fonte no registry
     }
-    expect(duePollAgents(true, detected, AGORA)).toEqual(["codex"])
+    // o claude ENTRA: era exatamente ele que nunca reportava, porque a
+    // statusline (push) não dispara nas conversas do app, que são headless.
+    expect(duePollAgents(true, detected, AGORA)).toEqual(["claude-code", "codex"])
   })
 
   it("medidor desligado = ninguém (o toggle esconde o mecanismo inteiro)", () => {
@@ -271,6 +297,58 @@ describe("quem entra no poll (duePollAgents)", () => {
     expect(duePollAgents(true, detected, AGORA + POLL_FLOOR_MS)).toEqual([
       "codex",
     ])
+  })
+})
+
+describe("procedência e falha legíveis", () => {
+  it("cada fonte se apresenta em pt-BR, sem jargão de protocolo", () => {
+    expect(sourceLabel("oauth")).toBe("leitura da conta")
+    expect(sourceLabel("rpc")).toBe("leitura local")
+    expect(sourceLabel("statusline")).toBe("statusline")
+    // fonte nova degrada pra ela mesma (fail-open no render)
+    expect(sourceLabel("telepatia")).toBe("telepatia")
+  })
+
+  it("falha de credencial vira gesto ('reautentique'), nunca erro cru", () => {
+    expect(failureLabel("auth")).toBe("reautentique o CLI")
+    expect(failureLabel("rate-limited")).toBe(
+      "consultas limitadas, tentando mais tarde",
+    )
+    expect(failureLabel("timeout")).toBe("sem resposta a tempo")
+    expect(failureLabel("kind-que-ainda-nao-existe")).toBe(
+      "kind-que-ainda-nao-existe",
+    )
+  })
+
+  it("o snapshot da conta carrega procedência e plano do próprio provider", () => {
+    expect(sourceLabel(SNAP_CLAUDE_OAUTH.source)).toBe("leitura da conta")
+    expect(SNAP_CLAUDE_OAUTH.planType).toBe("max")
+  })
+})
+
+describe("teto por modelo (só a conta reporta)", () => {
+  it("a janela mais queimada do claude é a do modelo, não a do plano", () => {
+    const sel = pillWindow(
+      "claude-code",
+      { "claude-code": SNAP_CLAUDE_OAUTH, codex: SNAP_CODEX },
+      {},
+      AGORA,
+    )
+    // 58% do Fable > 37% da semana > 30% do codex: some essa janela e o
+    // medidor erraria por 21 pontos.
+    expect(sel?.agent).toBe("claude-code")
+    expect(sel?.window.id).toBe("7d:fable")
+    expect(sel?.window.usedPercent).toBe(58)
+  })
+
+  it("com o claude medido, o pior global deixa de ser o codex", () => {
+    const worst = worstWindow(
+      { "claude-code": SNAP_CLAUDE_OAUTH, codex: SNAP_CODEX },
+      {},
+      AGORA,
+    )
+    expect(worst?.agent).toBe("claude-code")
+    expect(worst?.window.label).toBe("7 dias · Fable")
   })
 })
 
