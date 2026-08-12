@@ -6,6 +6,7 @@
 // chamador precisa saber que falhou pra destravar o latch de fechamento
 // (ADR-017: nada de catch silencioso onde alguém espera resultado).
 
+import { useApp } from "@/store/app"
 import { parseRecord, type OnboardingRecord } from "./flow"
 
 export const STORAGE_KEY = "mc.onboarding"
@@ -42,4 +43,12 @@ export function clearRecord(): boolean {
   } catch {
     return false
   }
+}
+
+/** "Refazer onboarding" (Configurações ▸ Sobre). Limpa o progresso ANTES de
+ *  reabrir: sem isso o wizard retomaria no último passo concluído e o botão
+ *  entregaria a tela final em vez do fluxo inteiro. */
+export function restartOnboarding(): void {
+  clearRecord()
+  useApp.getState().setSettings({ onboarded: false })
 }

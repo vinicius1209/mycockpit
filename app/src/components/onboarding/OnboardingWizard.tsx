@@ -34,15 +34,7 @@ import {
   type StepId,
   type Theme,
 } from "./flow"
-import { clearRecord, readRecord, writeRecord } from "./persistence"
-
-/** "Refazer onboarding" (Configurações ▸ Sobre). Limpa o progresso ANTES de
- *  reabrir: sem isso o wizard retomaria no último passo concluído e o botão
- *  entregaria uma tela final em vez do fluxo inteiro. */
-export function restartOnboarding(): void {
-  clearRecord()
-  useApp.getState().setSettings({ onboarded: false })
-}
+import { readRecord, writeRecord } from "./persistence"
 
 /** Diálogo de saída. O caminho de saída NUNCA é destrutivo (§7): "Continuar" é
  *  o botão default (primário, com foco), "Pular" é ghost. Escape aqui dentro

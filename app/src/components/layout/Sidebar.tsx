@@ -60,6 +60,7 @@ import {
   listProjects,
   type ConversationMeta,
 } from "@/lib/db"
+import { SetupGuide } from "@/components/onboarding/SetupGuide"
 import { shortVersion } from "@/lib/version"
 import { createWorktree, removeWorktree } from "@/lib/git"
 import { LABEL_COLORS } from "@/lib/labelColors"
@@ -1413,6 +1414,9 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
             </div>
           </ScrollArea>
       </>
+
+      {/* Guia de setup: some sozinho ao completar (renderiza null). */}
+      <SetupGuide />
 
       <footer className="flex h-12 shrink-0 items-center gap-2.5 border-t px-3">
         <div className="grid size-6 place-items-center rounded-full bg-brass/15 text-[11px] font-semibold text-brass">

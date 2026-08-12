@@ -38,7 +38,7 @@ import { HooksSettings } from "@/components/settings/HooksSettings"
 import { MachineAgents } from "@/components/settings/MachineAgents"
 import { ModelsSettings } from "@/components/settings/ModelsSettings"
 import { EspecialistasContent } from "@/components/settings/Especialistas"
-import { restartOnboarding } from "@/components/onboarding/OnboardingWizard"
+import { restartOnboarding } from "@/components/onboarding/persistence"
 import {
   Block,
   BlockTitle,

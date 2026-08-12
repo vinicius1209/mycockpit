@@ -39,6 +39,10 @@ export interface GlobalSettings {
   /** Onboarding: false = mostra o wizard no boot. Migração seta true p/ quem já
    *  tem estado persistido (não é primeira instalação). */
   onboarded: boolean
+  /** Guia de setup da sidebar escondido pelo usuário (menu de contexto). O guia
+   *  já some sozinho ao completar; isto é pra quem não quer os itens opcionais
+   *  (dismissal persistido, §5.4 do STYLEGUIDE). */
+  setupGuideDismissed: boolean
   /** Fechar a janela mantém o motor vivo e acessível pela barra de menus. */
   keepInTrayOnClose: boolean
   /** Dedupe persistido do aviso educativo exibido no primeiro hide. */
@@ -101,6 +105,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   missionEnabled: false,
   missionPresets: DEFAULT_MISSION_PRESETS,
   onboarded: false,
+  setupGuideDismissed: false,
   keepInTrayOnClose: true,
   trayCloseHintShown: false,
   detected: {},
