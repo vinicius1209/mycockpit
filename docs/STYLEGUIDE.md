@@ -41,7 +41,8 @@ claro+escuro) e por linha nesta tabela — nunca hex cru em componente.
 | **Vermelho** (falha + destruição) | `st-error`, `destructive` | Falha consumada (marco vermelho, linha culpada) e ação destrutiva ("Parar", excluir, revogar) | Caminho de saída (Cancelar/fechar/voltar é ghost, sem cor); ênfase; aviso não-fatal (âmbar) |
 | **Azul** (vivo) | `st-running` | O que roda AGORA: pulse do dot, esteira de telemetria, linha viva | Qualquer coisa parada; link; decoração |
 | **Brass** (gesto) | `brass`, `brass-soft`, `ring` | Ação primária/sensível, foco (`--ring`), item ativo, marca | Texto pequeno sobre superfície de hover no tema claro (3.56:1 < AA, regra S3.6 em `Sidebar.tsx:990`); ícone ilustrativo/empty state; medidor saudável; tinta de "importância" genérica |
-| **Cores de diff/git** | `hljs-addition/deletion`, verdes/roxos de PR | SÓ dentro do domínio git: `+N −N`, linhas de diff abertas (evidência), estado de PR do GitHub | Qualquer semântica fora de git; sucesso/erro geral |
+| **Cores de diff/git** | `hljs-addition/deletion`, `git-open`, `git-merged` | SÓ dentro do domínio git: `+N −N`, linhas de diff abertas (evidência), estado de PR do GitHub | Qualquer semântica fora de git; sucesso/erro geral |
+| **Identidade de agent** (categórica) | `brass` (Claude), `st-running` (Codex), `id-violet` (Antigravity) | Cor de série em gráfico/legenda de custo por agente | Verde e vermelho (colidem com status); pintar estado com a cor da identidade |
 
 Regras de aplicação:
 
@@ -50,8 +51,10 @@ Regras de aplicação:
   pede 3, algo que devia ser cinza está pintado (o diagnóstico do ADR-037).
 - **Medidores** (anel de contexto, barras de uso, quota): **cinza < 60% ·
   âmbar 60–80% · vermelho ≥ 80%**. A partir de 80% o medidor deixa de ser
-  mudo: o número entra como texto ao lado (padrão do anel que grita,
-  `ContextRing.tsx:49`). Medidor saudável NUNCA é brass nem verde.
+  mudo: o número entra como texto ao lado (padrão do anel que grita).
+  Medidor saudável NUNCA é brass nem verde. A régua é UMA e é código:
+  `meterTone`/`METER_TEXT`/`METER_FILL` em `lib/meter.ts` (o `usageTone` do
+  medidor de plano delega pra lá). Medidor novo importa, não recalcula.
 - **Estado ambiente é cinza.** Dot/badge que fica na tela representando "a
   última vez deu certo" é cinza; verde é transição (marco), não decoração
   permanente.
@@ -80,8 +83,8 @@ etiqueta técnica, número). O display serif do design-system nunca embarcou
 
 | px | Papel | Hoje |
 |---|---|---|
-| **20** | Título de view / métrica de seção | `SddView.tsx:679` |
-| **30** | Métrica de painel (custo, frota) | `CostAudit.tsx:115` |
+| **20** | Título de view / métrica de seção | `SddView.tsx:679`, `MissionControl.tsx:125` |
+| **30** | Métrica de painel (custo, frota) | `CostAudit.tsx:118`, `MissionControl.tsx:1016` |
 | **38** | Saudação do estado vazio | `ChatPanel.tsx:1296` |
 
 Regras decidíveis:
@@ -252,58 +255,65 @@ tempo o usuário passa olhando aquilo), cada um com file:line e a regra deste
 guia que viola. Achou mais de três? Os demais viram lista curta abaixo do
 veredito. Achou menos? Diga "sem desvio" no slot, não invente.
 
-## 9. Apêndice — auditoria (12/08/2026)
+## 9. Apêndice — auditoria (12/08/2026) e a passada que a fechou
 
 Os 10 maiores desvios do app REAL contra este guia, ranqueados por
-visibilidade. É o backlog da próxima passada de despoluição; nada disto foi
-corrigido nesta entrega.
+visibilidade. **A passada de correção rodou em 12/08/2026 e fechou os 10.**
+Status abaixo, com o que sobrou de propósito.
 
-1. **Escala tipográfica estilhaçada** — 24 tamanhos distintos em uso, com os
-   meio-pixel dominando (161× `text-[12px]`, 138× `[11px]`, 123× `[11.5px]`,
-   103× `[13px]`, 102× `[12.5px]`, 93× `[10.5px]`, 47× `[10px]`, 29×
-   `[9.5px]`, 17× `[9px]`). Toda superfície viola o §3; migrar pelo mapa, por
-   superfície tocada.
-2. **Anel de contexto fora da regra de medidor** — saudável em brass e
-   limiares 70/90 (`app/src/components/chat/ContextRing.tsx:41-42`) vs §2:
-   cinza <60, âmbar 60–80, vermelho ≥80 (o "grita com número" desce de 90
-   pra 80). Visível em toda conversa com contexto medido.
-3. **"Parar" com duas tintas** — o stop do composer é `bg-primary` neutro
-   (`app/src/components/chat/ComposerParts.tsx:538`) enquanto o do fio é
-   vermelho (`app/src/components/chat/MessageList.tsx:514`). Mesma família de
-   ação, hierarquias diferentes; §2 fixa vermelho pra parar/destruir.
-4. **Verde como estado ambiente** — badge "done" permanente na sidebar
-   (`app/src/components/layout/Sidebar.tsx:1003`), dot de última execução no
-   tray (`app/src/components/tray/TrayPopover.tsx:300`), probes ok em verde no
-   Mission Control (`app/src/components/panel/MissionControl.tsx:1277`) e
-   status dot genérico (`app/src/components/common/StatusDot.tsx:8`). §2:
-   ambiente saudável é cinza; a despoluição do ADR-037 parou no MessageList
-   (44 usos de `text-st-success` em 26 arquivos).
-5. **Verde como identidade de agent** — Antigravity pintado com
-   `--st-success` (`app/src/components/panel/MissionControl.tsx:71-75`);
-   identidade colide com vocabulário de status (§2).
-6. **Elevação fora dos 3 níveis** — `shadow-2xl` em
-   `app/src/components/chat/Lightbox.tsx:149` e
-   `app/src/components/onboarding/OnboardingWizard.tsx:141`; `shadow-md/lg`
-   nos primitives shadcn crus (`app/src/components/ui/dialog.tsx:64`,
-   `ui/dropdown-menu.tsx:45,233`, `ui/select.tsx:63`,
-   `ui/context-menu.tsx:38,141`) em vez de `--shadow-pop`.
-7. **Travessão em copy de UI** — strings de produto com "—" em prosa:
-   `app/src/App.tsx:602,676,678`,
-   `app/src/components/settings/CompanionSettings.tsx:217`,
-   `app/src/components/settings/SettingsDialog.tsx:774` (contra a regra da
-   casa, §7).
-8. **Hero divergente pro mesmo papel** — métrica de painel em 30px
-   (`app/src/components/panel/CostAudit.tsx:115`) e 34px
-   (`app/src/components/panel/MissionControl.tsx:1002`); métrica de seção em
-   19px (`MissionControl.tsx:115`,
-   `app/src/components/mission/MissionTimeline.tsx:748`) vs 20px
-   (`app/src/components/sdd/SddView.tsx:679`). §3 fecha em 20/30/38.
-9. **Hex cru fora de token** — verdes/roxos do GitHub direto no className
-   (`app/src/components/layout/DiffPanel.tsx:221`,
-   `app/src/components/sdd/SddView.tsx:807-810`). Domínio git é permitido
-   (§2), mas sem token não há par claro/escuro auditado (#3fb950 sobre fundo
-   claro não foi medido).
-10. **Brass decorativo** — ícones ilustrativos e spinners de empty state
-    tingidos de brass (`app/src/components/sdd/SddView.tsx:267,303,326,351`);
-    §2 reserva brass pra gesto/foco/ativo/marca (133 usos de `text-brass` no
-    app pedem essa triagem, SddView com 20 é o pior caso).
+1. ✅ **Escala tipográfica estilhaçada** — eram 19 tamanhos distintos em uso,
+   com os meio-pixel dominando (`11.5`, `12.5`, `10.5`, `9.5`). Migrados pelo
+   mapa do §3, por área (chat · laterais · Configurações · painel/missões).
+   Hoje o app usa **só 11/12/13/14 + 20/30/38**, e `text-xs`/`text-sm` só
+   sobrevive dentro de `components/ui/`, como o §3 permite. Onde o override
+   caía sobre `.label-mono` (que já é 11px), a classe saiu em vez de repetir
+   o valor.
+2. ✅ **Anel de contexto fora da regra de medidor** — a régua virou decisão
+   pura e compartilhada em `app/src/lib/meter.ts` (`meterTone`, `meterIsLoud`,
+   `METER_TEXT`, `METER_FILL`, com teste em `meter.test.ts`). O `ContextRing`
+   consome de lá (saudável deixou de ser brass; o "grita com número" desceu de
+   90 pra 80) e o `usageTone` do medidor de plano delega pro mesmo módulo. O
+   limiar de OFERECER compactar (`offersCompactAction`, 70%) é comportamento e
+   NÃO foi tocado.
+3. ✅ **"Parar" com duas tintas** — o stop do composer virou
+   `variant="destructive"` (`ComposerParts.tsx`), igualando o do fio.
+4. ✅ **Verde como estado ambiente** — viraram cinza: `StatusDot.success`,
+   badge de estágio "done" da sidebar, dot da última execução no tray, dot de
+   motor saudável no Mission Control, "ok" do histórico do Agendado, badge
+   "concluída" das missões e o `StageBadge` do ContextPanel. **Sobrou verde de
+   propósito** (e deve continuar): probe real em Configurações/Onboarding
+   (doutrina "verde exige probe"), marco de turno/plano no fio (ADR-037),
+   `+N` e linhas de adição do domínio git. Restam ~49 usos de `st-success`,
+   quase todos nessas três famílias; a triagem fina de check por linha de
+   ferramenta (`TaskChecklist`, `Markdown`, `FusionBoard`) e do badge
+   "ativa/arquivada" do `LearningSection` ficou de fora — lá o cinza colapsaria
+   uma distinção que a tela precisa manter.
+5. ✅ **Verde como identidade de agent** — Antigravity saiu do `--st-success`
+   e ganhou `--id-violet` (par claro/escuro em `index.css`), nos dois mapas de
+   cor categórica (`MissionControl`, `CostAudit`). Linha nova na tabela do §2.
+6. ✅ **Elevação fora dos 3 níveis** — `shadow-lg/md` dos primitives shadcn
+   (dialog, select, dropdown-menu, context-menu) e o `shadow-2xl` do Lightbox
+   migraram pro `--shadow-pop`. Zero `shadow-md/lg/xl/2xl` no app.
+7. ✅ **Travessão em copy de UI** — toasts, tooltips, títulos, descrições de
+   modelo, notificações do sistema e os marcos que a missão escreve no fio.
+   **Escopo deliberado**: só copy que o usuário LÊ; texto de PROMPT
+   (`lib/mission`, `lib/handoff`, `lib/skills`, `lib/trust`, `lib/transcript`,
+   `lib/doctrine`) ficou como está, porque ali o "—" é entrada do agent, não
+   prosa de UI. (Os `file:line` citados na auditoria original tinham drift:
+   `CompanionSettings.tsx:217` e `SettingsDialog.tsx:774` não tinham travessão
+   nenhum.)
+8. ✅ **Hero divergente pro mesmo papel** — 34px → 30px (métrica de painel do
+   Mission Control) e 19px → 20px (Readout do Mission Control e da
+   MissionTimeline). As três paradas hero são as do §3.
+9. ✅ **Hex cru fora de token** — `#3fb950`/`#a371f7` viraram `--git-open` e
+   `--git-merged`, com par claro/escuro (o verde nativo do GitHub não é
+   legível sobre fundo claro). Sobra um hex no app: o `#D97757` dentro do SVG
+   da marca do Claude Code (`AgentLogo.tsx`), que é logotipo de terceiro.
+10. ✅ **Brass decorativo** — ícones ilustrativos e spinners de empty state do
+    `SddView` viraram cinza; o brass ficou nos gestos (Inicializar SDD, Nova
+    feature, etapa ativa). A triagem dos ~130 `text-brass` do resto do app
+    segue aberta como higiene contínua, não como desvio de topo.
+
+**Bônus fechado junto**: o popover do `InboxBell` tinha o mesmo clipping que a
+UsagePill (`DropdownMenuContent` z-50 sob o header z-[110]) → `z-[120]` +
+`sideOffset={8}`, sem tocar no `dropdown-menu` global.
