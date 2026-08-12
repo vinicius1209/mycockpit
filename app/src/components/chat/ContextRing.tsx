@@ -3,6 +3,7 @@ import { useActiveConv, useChat } from "@/store/chat"
 import { contextWindowFor } from "@/lib/agents"
 import { compactActionHint, offersCompactAction } from "@/lib/compact"
 import { fmtTokens } from "@/lib/format"
+import { METER_TEXT, meterIsLoud, meterTone } from "@/lib/meter"
 import { cn } from "@/lib/utils"
 
 /** Anel minimalista de uso do contexto (padrão Cursor): preenche conforme o
@@ -38,15 +39,16 @@ export function ContextRing() {
 
   const pct = Math.min(1, tokens / win)
   const C = 2 * Math.PI * 8
-  const color =
-    pct > 0.9 ? "text-st-error" : pct > 0.7 ? "text-st-warning" : "text-brass"
+  // Paleta única de medidor (lib/meter, STYLEGUIDE §2): cinza < 60, âmbar
+  // 60 a 80, vermelho 80+. Anel saudável NÃO é brass (brass é gesto).
+  const color = METER_TEXT[meterTone(pct * 100)]
   const is1m = win >= 1_000_000
   const free = Math.max(0, win - tokens)
 
-  // Acima de 90% o anel PARA de ser mudo: um arco de 16px em vermelho passa
-  // batido (foi o que aconteceu — o contexto bateu 100% e nada avisou). Aqui o
-  // número entra como texto ao lado, junto do que vai acontecer.
-  const loud = pct >= 0.9
+  // No vermelho o anel PARA de ser mudo: um arco de 16px passa batido (foi o
+  // que aconteceu, o contexto bateu 100% e nada avisou). Aqui o número entra
+  // como texto ao lado, junto do que vai acontecer.
+  const loud = meterIsLoud(pct * 100)
   return (
     <div ref={wrapRef} className="relative flex items-center gap-1">
       {loud && (
@@ -59,7 +61,7 @@ export function ContextRing() {
       )}
       <button
         onClick={() => setOpen((v) => !v)}
-        title={`contexto: ~${fmtTokens(tokens)} de ${fmtTokens(win)} (${Math.round(pct * 100)}%) — clique p/ detalhes`}
+        title={`contexto: ~${fmtTokens(tokens)} de ${fmtTokens(win)} (${Math.round(pct * 100)}%) · clique p/ detalhes`}
         aria-label="Detalhes do contexto"
         className="grid size-6 place-items-center rounded-full hover:bg-accent"
       >

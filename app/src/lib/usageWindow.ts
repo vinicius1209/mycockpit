@@ -24,6 +24,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { agentDef, usageWindowAgents } from "@/lib/agents"
 import type { AgentProbe } from "@/lib/detect"
 import { isTauri } from "@/lib/db"
+import { METER_DANGER_PCT, METER_WARN_PCT, meterTone } from "@/lib/meter"
 import { useApp } from "@/store/app"
 import { useUsage } from "@/store/usage"
 
@@ -84,10 +85,11 @@ export const STALE_MS = 30 * 60_000
  *  última leitura conhecida é mais útil que "Limited" (regra do Orca). */
 export const STALE_RATE_LIMITED_MS = 24 * 60 * 60_000
 
-/** Paleta da barra (regra do Orca/STYLEGUIDE): CINZA até 60% (uso normal não
- *  pede atenção), âmbar 60 a 80 (aquecendo), vermelho 80+ (perto do teto). */
-export const USAGE_WARN_PCT = 60
-export const USAGE_DANGER_PCT = 80
+/** Paleta da barra: a MESMA de todo medidor do app (STYLEGUIDE §2, lib/meter).
+ *  CINZA até 60% (uso normal não pede atenção), âmbar 60 a 80 (aquecendo),
+ *  vermelho 80+ (perto do teto). Aliases pra não quebrar quem já importava. */
+export const USAGE_WARN_PCT = METER_WARN_PCT
+export const USAGE_DANGER_PCT = METER_DANGER_PCT
 
 /** Falhas que NÃO são transientes: retry rápido não resolve nenhuma delas e
  *  martelar só piora (429 é limite; sem login, quem resolve é o usuário). */
@@ -117,12 +119,8 @@ export function snapshotUsable(
   return now - snap.fetchedAt <= staleLimitMs(failure)
 }
 
-/** Tom visual do percentual (constantes comentadas acima). */
-export function usageTone(pct: number): "ok" | "warn" | "danger" {
-  if (pct >= USAGE_DANGER_PCT) return "danger"
-  if (pct >= USAGE_WARN_PCT) return "warn"
-  return "ok"
-}
+/** Tom visual do percentual: delega pro medidor único do app (lib/meter). */
+export const usageTone = meterTone
 
 /** A janela MAIS queimada entre os snapshots mostráveis — é o número da pill
  *  agregada (o pior caso é o que interessa pra "vou bater no teto?"). */

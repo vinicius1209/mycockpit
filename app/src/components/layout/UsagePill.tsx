@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { agentDef, usageWindowAgents } from "@/lib/agents"
 import { fmtTime } from "@/lib/format"
+import { METER_FILL, METER_TEXT } from "@/lib/meter"
 import {
   failureLabel,
   fmtAge,
@@ -42,16 +43,10 @@ import { useChat } from "@/store/chat"
 import { useUsage } from "@/store/usage"
 import { cn } from "@/lib/utils"
 
-const TONE_BAR: Record<string, string> = {
-  ok: "bg-muted-foreground/45",
-  warn: "bg-st-warning",
-  danger: "bg-st-error",
-}
-const TONE_TEXT: Record<string, string> = {
-  ok: "text-muted-foreground",
-  warn: "text-st-warning",
-  danger: "text-st-error",
-}
+// Tabelas do medidor único do app (lib/meter): a pill e o anel de contexto
+// falam a mesma língua, não duas paletas parecidas.
+const TONE_BAR = METER_FILL
+const TONE_TEXT = METER_TEXT
 
 /** Barra fina de percentual (cinza até 60, âmbar 60 a 80, vermelha 80+). */
 function UsageBar({ pct, wide = false }: { pct: number; wide?: boolean }) {

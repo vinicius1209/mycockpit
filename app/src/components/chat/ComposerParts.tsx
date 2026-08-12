@@ -533,9 +533,13 @@ function SendSplit({
   onMission?: () => void
   missionDisabled?: boolean
 }) {
+  // Parar é VERMELHO (STYLEGUIDE §2: parar/destruir tem tinta própria). Antes
+  // era o `default` bg-primary, o que dava duas tintas pra mesma família de
+  // ação: o stop do fio já era vermelho.
   if (running) {
     return (
       <Button
+        variant="destructive"
         size="icon-sm"
         onClick={onStop}
         className="rounded-full"
