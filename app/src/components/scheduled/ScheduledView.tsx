@@ -345,9 +345,13 @@ function ScheduleRow({
                   <span className="tabular-nums text-foreground/85">
                     {fmtWhen(r.startedAt)}
                   </span>
+                  {/* Histórico assentado: "ok" é o caso comum e não ganha
+                      tinta (STYLEGUIDE §2); só a falha grita. */}
                   <span
                     className={cn(
-                      r.status === "ok" ? "text-st-success" : "text-st-error",
+                      r.status === "ok"
+                        ? "text-muted-foreground"
+                        : "text-st-error",
                     )}
                   >
                     {r.status === "ok" ? "ok" : "falhou"}
@@ -925,7 +929,7 @@ function NewScheduleDialog({
             <p className="text-[11px] leading-snug text-muted-foreground/70">
               Automação nunca roda com <strong className="font-medium">Liberado</strong>:
               bypass total sem ninguém na frente não tem quem segure um erro.
-              O <strong className="font-medium">Auto</strong> é o meio-termo — roda sem
+              O <strong className="font-medium">Auto</strong> é o meio-termo, roda sem
               pedir, mas com o freio da CLI (Claude barra o destrutivo por
               classificador; Codex confina em sandbox de SO; Antigravity só tem
               sandbox best-effort, então lá o freio é o mais fraco dos três).

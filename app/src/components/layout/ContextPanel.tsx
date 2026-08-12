@@ -273,7 +273,8 @@ function StageBadge({ stage }: { stage: string }) {
     <span
       className={cn(
         "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase",
-        done ? "bg-st-success/15 text-st-success" : "bg-brass/15 text-brass",
+        // "done" fica na tela pra sempre: é ambiente, logo cinza (§2).
+        done ? "bg-muted text-muted-foreground" : "bg-brass/15 text-brass",
       )}
     >
       {stage}

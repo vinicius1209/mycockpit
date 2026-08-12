@@ -518,7 +518,7 @@ function ConversationList({ projectId }: { projectId: string }) {
   async function askDeleteConv(id: string, title: string | null) {
     const ok = await confirm({
       title: "Excluir conversa?",
-      description: `"${title ?? "Nova conversa"}" — o histórico e os anexos são apagados. Não dá pra desfazer.`,
+      description: `"${title ?? "Nova conversa"}": o histórico e os anexos são apagados. Não dá pra desfazer.`,
       confirmLabel: "Excluir",
       danger: true,
     })
@@ -538,7 +538,7 @@ function ConversationList({ projectId }: { projectId: string }) {
         toast.error(
           typeof e === "string" && e
             ? e
-            : "Não removi — há mudanças não-commitadas no worktree?",
+            : "Não removi; há mudanças não-commitadas no worktree?",
         )
       }
     } else {
@@ -598,9 +598,9 @@ function ConversationList({ projectId }: { projectId: string }) {
             : turnStatus === "running"
               ? "Turno rodando"
               : turnStatus === "error"
-                ? "O turno terminou com erro — abra para ver"
+                ? "O turno terminou com erro, abra para ver"
                 : turnStatus === "done"
-                  ? "Turno concluído — abra para ver"
+                  ? "Turno concluído, abra para ver"
                   : undefined
         // À DIREITA sobram só missão e disputa: são TIPOS de execução, não
         // estado do turno. Estado mora na marca do agent, à esquerda.
@@ -995,12 +995,14 @@ function SddFeatureList({ project }: { project: Project }) {
                 )}
               >
                 <span className="min-w-0 flex-1 truncate">{plan.title}</span>
-                {/* Badge compacto do estágio EFETIVO: done=verde; resto=brass. */}
+                {/* Badge compacto do estágio EFETIVO. "done" é estado
+                    ambiente permanente na sidebar, então é CINZA (STYLEGUIDE
+                    §2: verde é marco, não decoração que fica na tela). */}
                 <span
                   className={cn(
                     "shrink-0 rounded-sm px-1 py-px text-[9.5px] leading-4 tracking-wide uppercase",
                     stage === "done"
-                      ? "bg-st-success/15 text-st-success"
+                      ? "bg-muted text-muted-foreground"
                       : "bg-brass/10 text-brass/80",
                   )}
                 >

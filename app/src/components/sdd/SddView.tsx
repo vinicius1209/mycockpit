@@ -264,7 +264,7 @@ export function SddView() {
     if (seeding) {
       return (
         <CenteredEmpty
-          icon={<Loader2 className="size-7 animate-spin text-brass" />}
+          icon={<Loader2 className="size-7 animate-spin text-muted-foreground" />}
           title="Instalando o fluxo SDD…"
           desc="Clonando o seed e copiando o scaffold pro .claude/. Leva uns segundos."
         />
@@ -300,7 +300,7 @@ export function SddView() {
     if (ready === false) {
       return (
         <CenteredEmpty
-          icon={<Sprout className="size-8 text-brass/60" />}
+          icon={<Sprout className="size-8 text-muted-foreground/60" />}
           title="Este projeto ainda não tem o fluxo SDD"
           desc={
             <>
@@ -323,7 +323,7 @@ export function SddView() {
     return (
       <>
         <CenteredEmpty
-          icon={<FileText className="size-8 text-brass/50" />}
+          icon={<FileText className="size-8 text-muted-foreground/50" />}
           title="Nenhuma feature SDD ainda"
           desc={
             <>
@@ -348,9 +348,9 @@ export function SddView() {
         <PlanDetail plan={plan} onReload={reload} />
       ) : (
         <CenteredEmpty
-          icon={<FileText className="size-8 text-brass/50" />}
+          icon={<FileText className="size-8 text-muted-foreground/50" />}
           title="Selecione uma feature na barra lateral"
-          desc="As features SDD deste projeto agora vivem na sidebar. Escolha uma pra ver o pipeline, os gates e a entrega — ou comece uma nova."
+          desc="As features SDD deste projeto agora vivem na sidebar. Escolha uma pra ver o pipeline, os gates e a entrega, ou comece uma nova."
         >
           <NewFeatureButton
             onClick={() => useApp.getState().requestSddCreate()}
@@ -802,12 +802,14 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
                 title={`Abrir no GitHub · ${plan.links.pr_url}`}
                 className={cn(
                   "flex w-fit items-center gap-1.5 transition-colors hover:underline",
-                  // cores do GitHub: mergeada=roxo, fechada=vermelho, aberta=verde
+                  // Cores do GitHub por TOKEN (--git-merged/--git-open), com
+                  // par claro/escuro: o #3fb950 nativo é ilegível sobre fundo
+                  // claro. Domínio git é a exceção declarada do STYLEGUIDE §2.
                   prState === "MERGED"
-                    ? "text-[#a371f7] hover:text-[#b892ff]"
+                    ? "text-git-merged hover:text-git-merged/80"
                     : prState === "CLOSED"
                       ? "text-st-error hover:text-st-error/80"
-                      : "text-[#3fb950] hover:text-[#56d364]",
+                      : "text-git-open hover:text-git-open/80",
                 )}
               >
                 {prState === "MERGED" ? (
@@ -982,7 +984,7 @@ function StageRunOverlay({ run, onClose }: { run: StageRun; onClose: () => void 
       <div className="flex max-h-[80vh] w-full max-w-[760px] flex-col rounded-xl border bg-card shadow-[var(--shadow-pop)]">
         <div className="flex shrink-0 items-center gap-2 border-b px-5 py-3">
           {run.running ? (
-            <Loader2 className="size-4 animate-spin text-brass" />
+            <Loader2 className="size-4 animate-spin text-muted-foreground" />
           ) : (
             <Check className="size-4 text-st-success" />
           )}
@@ -1074,7 +1076,7 @@ function DocViewer({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center gap-2 border-b px-5 py-3">
-          <FileText className="size-4 text-brass" />
+          <FileText className="size-4 text-muted-foreground" />
           <span className="text-[13px] font-medium text-foreground">{doc.title}</span>
           {doc.status && (
             <span

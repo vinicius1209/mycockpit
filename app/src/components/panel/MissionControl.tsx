@@ -76,12 +76,13 @@ import { fmtCost, fmtTokens } from "@/lib/format"
 import { CostAudit } from "@/components/panel/CostAudit"
 import { cn } from "@/lib/utils"
 
-/** Cor categórica por agente (mesma linguagem dos mocks): Claude=brass,
- *  Codex=azul (st-running), Antigravity=verde (st-success). */
+/** Cor categórica por agente: Claude=brass, Codex=azul (st-running),
+ *  Antigravity=violeta de identidade. O verde saiu daqui porque cor de
+ *  identidade não pode colidir com o vocabulário de status (STYLEGUIDE §2). */
 const AGENT_COLOR: Record<string, string> = {
   "claude-code": "var(--brass)",
   codex: "var(--st-running)",
-  agy: "var(--st-success)",
+  agy: "var(--id-violet)",
 }
 function agentColor(id: string): string {
   return AGENT_COLOR[id] ?? "var(--st-idle)"
@@ -1283,11 +1284,14 @@ export function MissionControl() {
                   className="flex items-center gap-2.5 text-[12.5px]"
                   title={p.detail ?? undefined}
                 >
+                  {/* Motor saudável é ESTADO AMBIENTE: cinza (STYLEGUIDE §2).
+                      Só o que pede decisão (sem login, limitado, update) puxa
+                      o âmbar. */}
                   <span
                     aria-hidden
                     className={cn(
                       "size-1.5 shrink-0 rounded-full",
-                      ok ? "bg-st-success" : "bg-st-warning",
+                      ok ? "bg-st-idle" : "bg-st-warning",
                     )}
                   />
                   <span className="text-foreground">{t.label}</span>

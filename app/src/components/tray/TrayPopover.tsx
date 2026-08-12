@@ -340,6 +340,9 @@ export function TrayPopover() {
               ? `${snapshot.nextSchedule.name} · ${snapshot.nextSchedule.relative}`
               : "Nenhuma automação agendada"}
           </span>
+          {/* "A última execução deu certo" é ESTADO AMBIENTE: fica cinza
+              (STYLEGUIDE §2). Só a falha ganha tinta, porque falha nunca se
+              esconde. */}
           {snapshot.lastRun && (
             <span
               className="size-1.5 rounded-full"
@@ -347,7 +350,7 @@ export function TrayPopover() {
                 background:
                   snapshot.lastRun.status === "success" ||
                   snapshot.lastRun.status === "ok"
-                    ? "var(--st-success)"
+                    ? "var(--st-idle)"
                     : "var(--st-error)",
               }}
               title={`Última execução: ${snapshot.lastRun.name}`}

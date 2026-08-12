@@ -21,10 +21,13 @@ import {
 import { fmtCost, fmtTokens } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
+// Cor categórica por agente. Antigravity era verde (--st-success) e colidia
+// com o vocabulário de status (STYLEGUIDE §2: verde não identifica agent);
+// virou o violeta de identidade, que não significa nada em estado.
 const AGENT_COLOR: Record<string, string> = {
   "claude-code": "var(--brass)",
   codex: "var(--st-running)",
-  agy: "var(--st-success)",
+  agy: "var(--id-violet)",
 }
 const agentColor = (id: string) => AGENT_COLOR[id] ?? "var(--st-idle)"
 const agentShort = (id: string) =>

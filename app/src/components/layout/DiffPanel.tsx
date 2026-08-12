@@ -104,7 +104,7 @@ export function DiffPanel({
             <p className="min-w-0 flex-1 text-[12px] leading-snug text-foreground/90">
               <span className="font-medium">Entrega</span>
               {delivery.text && (
-                <span className="text-muted-foreground"> — </span>
+                <span className="text-muted-foreground"> · </span>
               )}
               <span className="line-clamp-2 inline text-muted-foreground">
                 {delivery.text}
@@ -218,7 +218,7 @@ function ShipBar({
         <div className="flex shrink-0 items-center gap-2 border-t px-3 py-2.5 text-[12px]">
           <button
             onClick={() => void openUrl(prUrl)}
-            className="flex items-center gap-1.5 text-[#3fb950] transition-colors hover:underline"
+            className="flex items-center gap-1.5 text-git-open transition-colors hover:underline"
           >
             <GitPullRequest className="size-3.5" /> PR aberto, abrir no GitHub
           </button>

@@ -28,7 +28,9 @@ function outcome(m: MissionIndexRow): { label: string; cls: string } {
     return { label: "ressalva", cls: "bg-st-queued/15 text-st-queued" }
   }
   if (m.status === "done") {
-    return { label: "concluída", cls: "bg-st-success/15 text-st-success" }
+    // Missão concluída é estado ambiente permanente na lateral: cinza
+    // (STYLEGUIDE §2). O marco verde já foi dado no fio, na hora.
+    return { label: "concluída", cls: "bg-muted text-muted-foreground" }
   }
   if (m.status === "aborted") {
     return { label: "interrompida", cls: "bg-secondary text-muted-foreground/70" }

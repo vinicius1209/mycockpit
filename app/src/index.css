@@ -43,6 +43,15 @@
   --st-success: #1f9d6b;
   --st-error: #cf4a3e;
 
+  /* identidade de agent (categórica, NÃO status): o verde saiu daqui porque
+     cor de identidade não pode colidir com o vocabulário de estado. */
+  --id-violet: #6d47b8;
+
+  /* domínio git (STYLEGUIDE §2): a paleta do GitHub, mas com par claro/escuro
+     auditado — o #3fb950 nativo é ilegível sobre fundo claro. */
+  --git-open: #1a7f37;
+  --git-merged: #8250df;
+
   /* tipografia */
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", monospace;
@@ -88,6 +97,11 @@
   --st-success: #5bd6a0;
   --st-error: #f2766b;
 
+  --id-violet: #a48af0;
+
+  --git-open: #3fb950;
+  --git-merged: #a371f7;
+
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-pop: 0 12px 40px -8px rgba(0, 0, 0, 0.55);
   --lift: inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -125,6 +139,10 @@
   --color-st-success: var(--st-success);
   --color-st-warning: var(--st-queued); /* "precisa de você" (âmbar da fila) */
   --color-st-error: var(--st-error);
+
+  --color-id-violet: var(--id-violet);
+  --color-git-open: var(--git-open);
+  --color-git-merged: var(--git-merged);
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
