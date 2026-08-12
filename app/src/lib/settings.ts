@@ -69,6 +69,14 @@ export interface GlobalSettings {
    *  fail-closed sozinho. Só vale pra run desassistido — conversa que você
    *  digitou espera você pra sempre. 0 = desligado (volta a congelar). */
   unattendedAnswerAfterMin: number
+  /** Medidor de janela de uso (rate limits por provider) na barra superior.
+   *  Desligar esconde a pill inteira; provider sem capability/fonte nem
+   *  aparece com o medidor ligado (4 camadas de esconder do Orca). */
+  usageMeterEnabled: boolean
+  /** CTA "Ativar medidor" (instalação da statusline) dispensado pelo usuário:
+   *  persistido pra não voltar a cutucar (dismissal do Orca). A seção de
+   *  Configurações continua oferecendo a instalação. */
+  usageMeterCtaDismissed: boolean
   /** Ledger de resoluções de modelo OBSERVADAS (P2 da auditoria de modelos):
    *  a cada evento `session` o app grava o que o CLI resolveu pro pedido —
    *  resposta prática à falta de enumeração headless (aprende de graça a cada
@@ -104,5 +112,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   companionEnabled: false,
   stalledAfterMin: 10,
   unattendedAnswerAfterMin: 10,
+  usageMeterEnabled: true,
+  usageMeterCtaDismissed: false,
   observedResolutions: {},
 }

@@ -53,6 +53,7 @@ import {
   unattendedRunIds,
   type PendingMark,
 } from "@/lib/unattendedRuns"
+import { checkUsageWindowPoll } from "@/lib/usageWindow"
 import { useApp } from "@/store/app"
 import { openCardConversation, useCards } from "@/store/cards"
 import { useChat, type ChatItem } from "@/store/chat"
@@ -570,6 +571,9 @@ export function startTurnWatchdog(): () => void {
     checkStalledMissions(now)
     checkStalledCards(now)
     checkUnattendedInteractions(now)
+    // Poll do medidor de janela de uso (lib/usageWindow): MESMO ticker — o
+    // tick de 30s é exatamente o piso da política de poll (POLL_FLOOR_MS).
+    checkUsageWindowPoll(now)
   }
   const schedule = () => {
     if (timer) return // já agendado neste burst → coalesce

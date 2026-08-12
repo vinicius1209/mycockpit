@@ -61,6 +61,7 @@ import {
 import { nativeNotify } from "@/lib/notify"
 import { focusConsoleComposer } from "@/lib/focusComposer"
 import { startTurnWatchdog } from "@/lib/watchdog"
+import { startUsageWindow } from "@/lib/usageWindow"
 import { agentLabel, cancelAgent } from "@/lib/agent"
 import {
   isTauri,
@@ -259,6 +260,11 @@ export default function App() {
 
   // P2 — vigia de turno mudo: avisa quando um turno running fica sem produzir.
   useEffect(() => startTurnWatchdog(), [])
+
+  // Medidor de janela de uso: hidrata os snapshots vivos do backend e assina
+  // o push da statusline (usage://snapshot). O poll (codex) roda na passada
+  // do vigia acima — nenhum ticker novo.
+  useEffect(() => startUsageWindow(), [])
 
   // F6 — motor das automações agendadas: tick IMEDIATO no boot (que também faz
   // o catch-up explícito dos perdidos >5min) + a cada 60s. O reload após cada
