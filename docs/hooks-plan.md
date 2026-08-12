@@ -183,6 +183,17 @@ localhost no app (porta efêmera + token bearer), rota por dialeto
 `hook-endpoint` que os scripts leem (padrão Orca: script funciona mesmo com o
 app fechado — não acha endpoint, sai 0). Nada de UI ainda.
 
+> **H0 ENTREGUE (12/08/2026)** pela frente do medidor de janela de uso:
+> `app/src-tauri/src/hook_gateway.rs` — loopback + porta efêmera, token
+> rotacionado por boot em `hook-endpoint.json` (0600 desde a criação, variante
+> privada do fsx), rota `POST /hook/{engine}` com bearer em tempo constante,
+> limite de corpo explícito (64 KB) e payload desconhecido = **204
+> aceito-e-ignorado** (fail-open do lado do script). Consumidor atual: a
+> statusline do claude (`rate_limits` → `usage_window.rs`, capability
+> `usage_window` — ADR-038). A normalização de eventos de status/permissão
+> (`hook_event`) continua pendente e entra com H1/H2, plugando NESTA rota sem
+> mudar o contrato do script.
+
 **H1 — Status de sessões EXTERNAS no Painel/tray.** O usuário abre `claude`/
 `codex`/`agy` no terminal e o MyCockpit mostra a sessão (projeto, estado
 working/waiting/blocked/idle, último evento) no Painel e no tray — coisa que o

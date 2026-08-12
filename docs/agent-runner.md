@@ -234,6 +234,25 @@ somar `cached_input`, que a API da OpenAI já conta dentro do `input_tokens`).
 transporte **app-server** publica `thread/tokenUsage/updated` com
 `tokenUsage.last`, que **já é do último turno** — só o `exec` acumula.
 
+Re-checagem 12/08/2026 (foco JANELA DE USO, capability `usage_window` do
+medidor de rate limits — ADR-038, pipeline SEPARADO do custo em $):
+**claude 2.1.220** ✅ `Some(ClaudeStatusline)` — o comando de statusline
+recebe `rate_limits` no stdin a cada turno; payload real capturado num turno
+de teste (o 1º tick da sessão vem SEM o campo): `{"five_hour":
+{"used_percentage":23,"resets_at":1786557000},"seven_day":
+{"used_percentage":28.999999999999996,"resets_at":1786996800}}` (fixture em
+`usage_window.rs`). **codex 0.146** ✅ `Some(CodexAppServer)` —
+`codex -s read-only -a untrusted app-server` responde
+`account/rateLimits/read`; resposta real trouxe SÓ `primary` (7d:
+`usedPercent:30, windowDurationMins:10080, resetsAt`) com `secondary: null` e
+`planType:"plus"` — diverge do estudo do Orca (que via 5h no secondary); o
+parse lê os dois slots genericamente, se o 5h voltar entra sem código novo.
+**agy 1.1.12** ❌ `None` — só existe `/credits` (`remaining_credits`, saldo de
+créditos SEM percentual de janela nem reset; verificado com `--output-format
+json`): saldo não é janela, capability ausente e a UI some com pill/toggle.
+Re-checar a cada bump: se o agy ganhar fonte de janela (ou o codex mudar o
+shape), a fixture nova manda.
+
 | | Leitura | **Padrão (PEDE)** | Liberado |
 |---|---|---|---|
 | **claude** | `--disallowedTools` de escrita | `acceptEdits` + `--permission-prompt-tool` (MCP) | `bypassPermissions` |

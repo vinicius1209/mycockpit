@@ -767,3 +767,53 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   `MessageList.tsx`; espec visual e detalhes de implementação em
   `docs/mocks/fio-despoluicao-README.md`. Direção C (trilho) fica registrada
   como evolução futura de "mission control".
+
+### ADR-038 — Medidor de janela de uso: capability + poll do Orca como regra, statusline encadeada por gesto ✅
+- **Contexto (12/08/2026):** "quanto da janela do meu plano já queimei" (a
+  feature "9% used · 4h 22m" do Orca, `competitors-orca.md` achado 1) não
+  existia no app. Verificação empírica ANTES de codar: claude 2.1.220 pipeia
+  `rate_limits` no stdin da statusline a cada turno (payload real capturado);
+  codex 0.146 responde `account/rateLimits/read` no app-server read-only (hoje
+  SÓ `primary`/7d, `secondary: null` — a realidade venceu o estudo); agy
+  1.1.12 só tem `/credits` (saldo, sem janela/reset).
+- **Decisão 1 — capability, nunca nome:** `usage_window:
+  Option<UsageWindowSource>` no registry (adapters.rs) com o dialeto no enum
+  (`ClaudeStatusline` push / `CodexAppServer` poll), espelho TS `usageWindow:
+  "statusline"|"rpc"|null` e testes-gêmeos
+  (`matriz_usage_window_por_agent` ↔ `agents.usageWindow.test.ts`). agy =
+  `None` honesto: saldo de créditos NÃO vira medidor — sem barra, sem toggle
+  (4 camadas de esconder do Orca).
+- **Decisão 2 — pipeline SEPARADO do custo:** janela de uso não toca
+  `turn_costs`/ledger. Custo é o que o turno gastou; janela é % do PLANO +
+  reset. Nenhuma quota é consumida pela medição (statusline é carona; RPC é
+  probe local read-only).
+- **Decisão 3 — política de poll do Orca copiada como REGRA (números):**
+  cadência 15 min; piso 30 s (= o tick do vigia, que é o ticker ÚNICO da
+  casa — a passada mora em `checkUsageWindowPoll`); backoff exponencial por
+  streak de falha com expoente cap 8, teto na própria cadência; **stale-drop
+  30 min, MAS 24 h se a última falha foi 429** ("quota é informativa;
+  snapshot velho > 'Limited'"); dedupe de ingest 30 s no receptor (a
+  statusline tica ~3×/s durante streaming). Metadados honestos em todo
+  snapshot: `source` + `fetchedAt` ("de 2 min atrás"), falha classificada
+  (spawn/timeout/protocol/rate-limited) com "falhando desde X" — provider
+  configurado FALHANDO fica VISÍVEL; sem dado e sem falha, a pill some.
+  Snapshots NÃO persistem entre boots: com stale-drop de 30 min, ressuscitar
+  dado do disco seria teatro; o poll repõe em segundos e a statusline no
+  próximo turno.
+- **Decisão 4 — encadear, NUNCA substituir, e só por gesto:** o slot de
+  statusline do usuário pode estar ocupado (nesta máquina: wrapper do Xirp,
+  que preserva o do Troco). A instalação (botão em Configurações, nunca no
+  boot) gera script com o comando anterior preservado no header E re-executado
+  com o mesmo stdin; settings.json por parse→merge→write atômico com backup
+  `.bak-mycockpit-<ts>`; desinstalação restaura o VALOR do comando (a
+  re-serialização pode mudar formatação/ordem — `preserve_order` foi rejeitado
+  porque é feature global do serde_json e invalidaria os fingerprints
+  persistidos do mcp_control). Fail-closed onde o efeito é destrutivo: slot
+  nosso com script sumido/sem header ⇒ instalar/desinstalar ABORTAM apontando
+  o backup mais recente (perder o encadeado em silêncio era o bug). Fail-open
+  do lado do script: curl 1 s em background, erro engolido, exit 0 — a
+  statusline do usuário nunca quebra porque o app morreu.
+- **Consequência:** o H0 do hooks-plan (receptor local) foi materializado por
+  esta frente (`hook_gateway.rs`) como substrato reusável — H1/H2 plugam na
+  mesma rota `/hook/<engine>` sem mudar o contrato do script. Re-checagem por
+  versão registrada no agent-runner §7.1 (12/08/2026).

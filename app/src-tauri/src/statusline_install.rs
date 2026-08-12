@@ -13,8 +13,18 @@
 //!      lê a cada tick.
 //!   3. Backup antes de mexer (`settings.json.bak-mycockpit-<ts>`), JSON por
 //!      parse→merge→write atômico, nunca regex.
-//!   4. Desinstalação limpa: restaura o comando anterior byte-a-byte (ou
-//!      remove o statusLine se não havia), apaga o script.
+//!   4. Desinstalação limpa: restaura o VALOR do comando anterior (ou remove
+//!      o statusLine se não havia) e apaga o script. Honestidade do claim: a
+//!      re-serialização pode mudar formatação e ordem de chaves do arquivo —
+//!      `preserve_order` do serde_json foi avaliado e REJEITADO de propósito
+//!      (é feature global: mudaria a ordem de todo Map do app e invalidaria
+//!      os fingerprints já persistidos do mcp_control, que hasheiam JSON
+//!      serializado). O que é garantido é o CONTEÚDO, não os bytes.
+//!   4b. Fail-closed onde o efeito é destrutivo: se o slot aponta pro nosso
+//!      script mas o script sumiu/perdeu o header (limpador de caches, reset),
+//!      instalar/desinstalar ABORTA com erro apontando o backup mais recente —
+//!      seguir adiante perderia em silêncio a statusline encadeada (o wrapper
+//!      do Xirp, nesta máquina).
 //!   5. Fail-open do lado do script: curl com timeout de 1s em background,
 //!      erro engolido, `exit 0` sempre — a statusline do usuário NUNCA quebra
 //!      nem atrasa porque o app morreu.
@@ -44,6 +54,10 @@ pub struct StatuslineStatus {
     pub chained_command: Option<String>,
     /// JSON exato do objeto `statusLine` que a instalação escreverá.
     pub preview: String,
+    /// Estado inconsistente detectado (ex.: slot aponta pro nosso script mas
+    /// ele sumiu do disco) — a UI mostra; instalar/desinstalar aborta com o
+    /// mesmo motivo.
+    pub warning: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -183,14 +197,53 @@ fn script_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// Lê e parseia o settings.json. Ausente → objeto vazio (instalação cria);
-/// INVÁLIDO → erro honesto: nunca sobrescrevemos um arquivo que não
-/// conseguimos parsear (podia ser um settings quebrado de propósito).
+/// INVÁLIDO ou JSON válido que NÃO é objeto (`[]`, `null`, string) → erro
+/// honesto: nunca sobrescrevemos um arquivo que não entendemos (podia ser um
+/// settings quebrado de propósito) — trocar por `{}` apagaria o que quer que
+/// aquilo fosse.
 fn read_settings(path: &PathBuf) -> Result<Value, String> {
     match std::fs::read_to_string(path) {
-        Ok(s) => serde_json::from_str(&s)
-            .map_err(|e| format!("{} não parseia como JSON ({e}); nada foi alterado", path.display())),
+        Ok(s) => {
+            let v: Value = serde_json::from_str(&s).map_err(|e| {
+                format!("{} não parseia como JSON ({e}); nada foi alterado", path.display())
+            })?;
+            if !v.is_object() {
+                return Err(format!(
+                    "{} é JSON válido mas não é um objeto; nada foi alterado",
+                    path.display()
+                ));
+            }
+            Ok(v)
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!({})),
         Err(e) => Err(format!("não consegui ler {}: {e}", path.display())),
+    }
+}
+
+/// Backup `.bak-mycockpit-<ts>` mais recente ao lado do settings (pra
+/// mensagem de erro do fail-closed apontar a saída de recuperação).
+fn latest_backup(settings: &PathBuf) -> Option<PathBuf> {
+    let dir = settings.parent()?;
+    let mut best: Option<(u64, PathBuf)> = None;
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let Some(ts) = name.strip_prefix("settings.json.bak-mycockpit-") else {
+            continue;
+        };
+        let Ok(ts) = ts.parse::<u64>() else { continue };
+        if best.as_ref().is_none_or(|(b, _)| ts > *b) {
+            best = Some((ts, entry.path()));
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
+/// Anexa a dica do backup mais recente a um erro de estado inconsistente.
+fn with_backup_hint(err: String, settings: &PathBuf) -> String {
+    match latest_backup(settings) {
+        Some(bak) => format!("{err}. Backup mais recente: {}", bak.display()),
+        None => err,
     }
 }
 
@@ -230,17 +283,34 @@ fn write_script(path: &PathBuf, content: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Comando que a instalação deve ENCADEAR: o que ocupa o slot hoje — exceto
-/// quando o slot já é NOSSO (reinstalação): aí o original preservado no
-/// script existente é quem segue valendo (nunca encadear a nós mesmos).
+/// Comando que instalação/desinstalação devem tratar como "o anterior": o que
+/// ocupa o slot hoje — exceto quando o slot já é NOSSO (reinstalação): aí o
+/// anterior mora no header do script existente (nunca encadear a nós mesmos).
+/// FAIL-CLOSED onde o efeito é destrutivo: slot nosso com script
+/// sumido/ilegível ou sem o header = Err — seguir adiante perderia em
+/// silêncio a statusline encadeada (ex.: o wrapper do Xirp desta máquina).
+/// Header presente mas VAZIO segue sendo Ok(None): é o estado legítimo de
+/// quem instalou sem statusline anterior.
 fn resolve_original(
     current: Option<String>,
     script: &str,
     existing_script: Option<&str>,
-) -> Option<String> {
+) -> Result<Option<String>, String> {
     match current {
-        Some(cmd) if cmd == script => existing_script.and_then(original_from_script),
-        other => other,
+        Some(cmd) if cmd == script => match existing_script {
+            None => Err(
+                "o slot de statusline aponta pro script do MyCockpit, mas o script sumiu do disco \
+                 (limpador de caches?); não dá pra saber qual statusline estava encadeada"
+                    .to_string(),
+            ),
+            Some(content) if !content.lines().any(|l| l.starts_with(ORIGINAL_MARKER)) => Err(
+                "o script no lugar do MyCockpit não tem o header esperado; não dá pra saber qual \
+                 statusline estava encadeada"
+                    .to_string(),
+            ),
+            Some(content) => Ok(original_from_script(content)),
+        },
+        other => Ok(other),
     }
 }
 
@@ -253,7 +323,13 @@ fn status_of(app: &AppHandle, engine: &str) -> Result<StatuslineStatus, String> 
     let current = current_command(&settings);
     let existing_script = std::fs::read_to_string(&script).ok();
     let installed = current.as_deref() == Some(script_str.as_str());
-    let chained = resolve_original(current.clone(), &script_str, existing_script.as_deref());
+    // status é LEITURA: o estado inconsistente não derruba a consulta, vira
+    // `warning` visível (instalar/desinstalar é que abortam com este motivo).
+    let (chained, warning) =
+        match resolve_original(current.clone(), &script_str, existing_script.as_deref()) {
+            Ok(c) => (c, None),
+            Err(e) => (None, Some(with_backup_hint(e, &spath))),
+        };
     let preview = serde_json::to_string_pretty(
         with_script(&settings, &script_str)
             .get("statusLine")
@@ -267,6 +343,7 @@ fn status_of(app: &AppHandle, engine: &str) -> Result<StatuslineStatus, String> 
         current_command: current,
         chained_command: chained,
         preview,
+        warning,
     })
 }
 
@@ -289,11 +366,15 @@ pub fn usage_statusline_install(app: AppHandle, agent: String) -> Result<Statusl
     let script_str = script.to_string_lossy().to_string();
     let settings = read_settings(&spath)?;
     let existing_script = std::fs::read_to_string(&script).ok();
+    // Fail-closed: slot nosso sem script legível aborta ANTES de escrever
+    // qualquer coisa — reinstalar por cima geraria um script SEM o chain e a
+    // statusline do usuário (Xirp/Troco) sumiria em silêncio.
     let original = resolve_original(
         current_command(&settings),
         &script_str,
         existing_script.as_deref(),
-    );
+    )
+    .map_err(|e| with_backup_hint(e, &spath))?;
     let endpoint = crate::hook_gateway::endpoint_file(&app)?;
     write_script(
         &script,
@@ -317,12 +398,16 @@ pub fn usage_statusline_uninstall(
     let script = script_path(&app)?;
     let script_str = script.to_string_lossy().to_string();
     let settings = read_settings(&spath)?;
-    let original = std::fs::read_to_string(&script)
-        .ok()
-        .and_then(|s| original_from_script(&s));
     // só mexe no slot se ele ainda é NOSSO — o usuário pode ter trocado a
     // statusline depois; aí restaurar o "original" antigo seria regressão.
     if current_command(&settings).as_deref() == Some(script_str.as_str()) {
+        // Fail-closed: script sumido/sem header = não dá pra saber o que
+        // restaurar; remover o statusLine inteiro apagaria a statusline
+        // encadeada (Xirp) em silêncio. Aborta apontando o backup.
+        let content = std::fs::read_to_string(&script).ok();
+        let original =
+            resolve_original(Some(script_str.clone()), &script_str, content.as_deref())
+                .map_err(|e| with_backup_hint(e, &spath))?;
         backup_settings(&spath)?;
         write_settings(&spath, &without_script(&settings, original.as_deref()))?;
     }
@@ -410,7 +495,10 @@ mod tests {
     }
 
     #[test]
-    fn desinstalar_restaura_o_comando_anterior_byte_a_byte() {
+    fn desinstalar_restaura_o_valor_do_comando_anterior() {
+        // Garantia HONESTA: o CONTEÚDO volta ao que era (igualdade de Value);
+        // formatação/ordem de chaves do arquivo podem mudar na re-serialização
+        // (preserve_order rejeitado de propósito — ver header do módulo).
         let instalado = with_script(&settings_reais(), SCRIPT);
         let restaurado = without_script(&instalado, Some(XIRP_WRAPPER));
         assert_eq!(restaurado, settings_reais());
@@ -431,12 +519,71 @@ mod tests {
         // não do slot (senão o script chamaria a si próprio em loop).
         let existente = render_script("claude-code", Some(XIRP_WRAPPER), ENDPOINT);
         let original = resolve_original(Some(SCRIPT.to_string()), SCRIPT, Some(&existente));
-        assert_eq!(original.as_deref(), Some(XIRP_WRAPPER));
+        assert_eq!(original.unwrap().as_deref(), Some(XIRP_WRAPPER));
         // slot de outra pessoa: encadeia o que está lá
         let outro = resolve_original(Some(XIRP_WRAPPER.to_string()), SCRIPT, None);
-        assert_eq!(outro.as_deref(), Some(XIRP_WRAPPER));
+        assert_eq!(outro.unwrap().as_deref(), Some(XIRP_WRAPPER));
         // slot vazio: nada a encadear
-        assert_eq!(resolve_original(None, SCRIPT, None), None);
+        assert_eq!(resolve_original(None, SCRIPT, None), Ok(None));
+    }
+
+    #[test]
+    fn slot_nosso_com_script_sumido_aborta_em_vez_de_perder_o_encadeado() {
+        // Cenário do revisor: limpador de caches apagou o script do
+        // app_data_dir, mas o settings ainda aponta pra ele. Seguir adiante
+        // desinstalaria o statusLine INTEIRO (o wrapper do Xirp sumiria) ou
+        // reinstalaria sem chain — os dois em silêncio. Tem que abortar.
+        let r = resolve_original(Some(SCRIPT.to_string()), SCRIPT, None);
+        let err = r.unwrap_err();
+        assert!(err.contains("sumiu do disco"), "mensagem honesta: {err}");
+    }
+
+    #[test]
+    fn slot_nosso_com_script_sem_header_aborta() {
+        // Arquivo no lugar do nosso script mas sem o header (editado/trocado):
+        // não dá pra afirmar qual statusline estava encadeada — aborta.
+        let r = resolve_original(
+            Some(SCRIPT.to_string()),
+            SCRIPT,
+            Some("#!/bin/bash\necho outra coisa\n"),
+        );
+        let err = r.unwrap_err();
+        assert!(err.contains("header"), "mensagem honesta: {err}");
+        // header presente mas VAZIO segue válido: instalado sem statusline
+        // anterior é estado legítimo, não corrupção.
+        let vazio = render_script("claude-code", None, ENDPOINT);
+        assert_eq!(
+            resolve_original(Some(SCRIPT.to_string()), SCRIPT, Some(&vazio)),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn settings_json_valido_mas_nao_objeto_aborta() {
+        // `[]`/`null` parseiam como JSON: trocar por {} apagaria o que quer
+        // que aquilo fosse — erro honesto, nada alterado.
+        let dir = std::env::temp_dir().join(format!("mc-sl-settings-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("settings.json");
+        for corpo in ["[]", "null", "\"texto\""] {
+            std::fs::write(&p, corpo).unwrap();
+            let err = read_settings(&p).unwrap_err();
+            assert!(err.contains("não é um objeto"), "{corpo}: {err}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn backup_mais_recente_por_timestamp() {
+        let dir = std::env::temp_dir().join(format!("mc-sl-bak-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let settings = dir.join("settings.json");
+        std::fs::write(dir.join("settings.json.bak-mycockpit-100"), "{}").unwrap();
+        std::fs::write(dir.join("settings.json.bak-mycockpit-200"), "{}").unwrap();
+        std::fs::write(dir.join("settings.json.bak-outro-999"), "{}").unwrap(); // de outra ferramenta: ignora
+        let bak = latest_backup(&settings).unwrap();
+        assert!(bak.to_string_lossy().ends_with("bak-mycockpit-200"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

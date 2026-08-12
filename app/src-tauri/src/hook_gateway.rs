@@ -73,8 +73,8 @@ fn bearer(headers: &HeaderMap) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
-/// Grava o arquivo de estado com 0600 (token local: mesmo padrão da casa —
-/// attachments/companion). Escrita atômica via fsx + chmod em seguida.
+/// Grava o arquivo de estado com 0600 DESDE A CRIAÇÃO (token local: variante
+/// privada do fsx — o tmp já nasce com o modo certo, sem janela de chmod).
 fn write_endpoint_file(app: &AppHandle, port: u16, token: &str) -> Result<(), String> {
     let path = endpoint_file(app)?;
     if let Some(dir) = path.parent() {
@@ -89,14 +89,7 @@ fn write_endpoint_file(app: &AppHandle, port: u16, token: &str) -> Result<(), St
             .unwrap_or(0),
     })
     .to_string();
-    crate::fsx::write_atomic(&path, &body)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    crate::fsx::write_atomic_private(&path, &body)
 }
 
 /// POST /hook/{engine} — a única rota. Token errado = 401 (o único erro que o
@@ -151,6 +144,11 @@ pub fn start(app: &AppHandle) {
         }
         let router = Router::new()
             .route("/hook/{engine}", post(hook_post))
+            // Limite de corpo EXPLÍCITO: o payload real da statusline tem
+            // ~1,3 KB; 64 KB dá folga pros hooks do H1/H2 (transcript nunca
+            // viaja por aqui) sem aceitar upload arbitrário nem depender do
+            // default implícito do axum (2 MB hoje, sujeito a mudar).
+            .layer(axum::extract::DefaultBodyLimit::max(64 * 1024))
             .with_state(Ctx {
                 app: app.clone(),
                 token,

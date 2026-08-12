@@ -25,6 +25,9 @@ interface StatuslineStatus {
   currentCommand: string | null
   chainedCommand: string | null
   preview: string
+  /** Estado inconsistente (script sumido com o slot ainda nosso etc.): a
+   *  linha mostra o motivo; ativar/desativar aborta com ele (fail-closed). */
+  warning: string | null
 }
 
 function StatuslineRow({ def }: { def: AgentDef }) {
@@ -85,11 +88,18 @@ function StatuslineRow({ def }: { def: AgentDef }) {
                 : status.installed
                   ? status.chainedCommand
                     ? "ativo, encadeando a sua statusline atual"
-                    : "ativo (não havia statusline antes)"
+                    : status.warning
+                      ? "ativo, em estado inconsistente"
+                      : "ativo (não havia statusline antes)"
                   : status.currentCommand
                     ? "inativo · sua statusline atual será preservada e encadeada"
                     : "inativo · você não tem statusline configurada"}
           </div>
+          {status?.warning && (
+            <div className="text-[11px] text-st-error" title={status.warning}>
+              {status.warning}
+            </div>
+          )}
         </div>
         {status?.installed && (
           <Check className="size-4 shrink-0 text-st-success" aria-hidden />
