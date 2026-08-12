@@ -53,7 +53,7 @@ export function ContextRing() {
     <div ref={wrapRef} className="relative flex items-center gap-1">
       {loud && (
         <span
-          className={cn("font-mono text-[10.5px] tabular-nums", color)}
+          className={cn("font-mono text-[11px] tabular-nums", color)}
           title="Quando enche, o CLI compacta a conversa sozinho (o detalhe antigo vira resumo)."
         >
           contexto {Math.round(pct * 100)}%

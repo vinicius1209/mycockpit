@@ -242,7 +242,7 @@ function UnifiedDiff({ rows }: { rows: DiffRow[] }) {
   const shown = trimmed.slice(0, DIFF_MAX_LINES)
   const hidden = trimmed.length - shown.length
   return (
-    <div className="overflow-x-auto py-1 font-mono text-[11.5px] leading-relaxed">
+    <div className="overflow-x-auto py-1 font-mono text-[12px] leading-relaxed">
       {shown.map((r, idx) => (
         <div
           key={idx}
@@ -429,7 +429,7 @@ const ToolLine = memo(function ToolLine({
           aria-expanded={expandable ? open : undefined}
           tabIndex={-1}
           className={cn(
-            "group/step flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-[5px] text-left text-[12.5px] transition-colors",
+            "group/step flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-[5px] text-left text-[13px] transition-colors",
             expandable && "hover:bg-accent/40",
             p.emphasis === "warning" && status !== "error" && "text-brass",
             // passo em execução PULA da sequência: leve tinta st-running.
@@ -474,7 +474,7 @@ const ToolLine = memo(function ToolLine({
           {diff ? (
             // contagem de diff em SUSSURRO (paleta A: metadado, não semáforo);
             // as cores continuam dentro do diff aberto, onde são evidência.
-            <span className="font-mono text-[10.5px] tabular-nums text-muted-foreground/70">
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
               {diff.added > 0 && `+${diff.added}`}
               {diff.added > 0 && diff.removed > 0 && " "}
               {diff.removed > 0 && `−${diff.removed}`}
@@ -511,7 +511,7 @@ const ToolLine = memo(function ToolLine({
                   ? "O provider não expõe cancelamento individual deste subagente; interrompe o turno completo e o trabalho em background morre junto"
                   : "O provider não expõe cancelamento individual deste subagente; interrompe o turno completo"
             }
-            className="mr-1 inline-flex shrink-0 items-center gap-1 rounded border border-st-error/30 px-1.5 py-0.5 text-[10px] text-st-error transition-colors hover:bg-st-error/10"
+            className="mr-1 inline-flex shrink-0 items-center gap-1 rounded border border-st-error/30 px-1.5 py-0.5 text-[11px] text-st-error transition-colors hover:bg-st-error/10"
           >
             <Square className="size-2.5" />
             <span className="hidden lg:inline">
@@ -548,7 +548,7 @@ const ToolLine = memo(function ToolLine({
               >
                 <MessageSquareQuote className="size-3.5 shrink-0" />
                 <span>Briefing do agente</span>
-                <span className="font-mono text-[10.5px] text-muted-foreground/70">
+                <span className="font-mono text-[11px] text-muted-foreground/70">
                   · {briefingLines} linha{briefingLines === 1 ? "" : "s"}
                 </span>
                 <ChevronRight
@@ -576,7 +576,7 @@ const ToolLine = memo(function ToolLine({
             <div className="mt-1 mb-1.5 overflow-hidden rounded-md border border-border/60 bg-secondary/20">
               {p.kind !== "agent" && p.detail && (
                 <div className="p-2">
-                  <p className="mb-1 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
+                  <p className="mb-1 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
                     {p.kind === "bash" ? "Comando" : "Entrada"}
                   </p>
                   <div
@@ -595,7 +595,7 @@ const ToolLine = memo(function ToolLine({
                       "border-t border-border/50",
                   )}
                 >
-                  <p className="px-2 pt-2 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
+                  <p className="px-2 pt-2 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
                     Alterações
                   </p>
                   {diff.hunks.map((rows, idx) => (
@@ -610,7 +610,7 @@ const ToolLine = memo(function ToolLine({
               )}
               {resultText && (
                 <div className="border-t border-border/50 p-2">
-                  <p className="mb-1 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
+                  <p className="mb-1 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
                     {failed ? "Erro" : "Saída"}
                   </p>
                   <div
@@ -626,12 +626,12 @@ const ToolLine = memo(function ToolLine({
               )}
               {item.agentSummary && (
                 <div className="border-t border-border/50 p-2">
-                  <p className="mb-1 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
+                  <p className="mb-1 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
                     Retorno do agente
                   </p>
                   <div
                     data-selectable
-                    className="text-[11.5px] leading-relaxed whitespace-pre-wrap text-foreground/75"
+                    className="text-[12px] leading-relaxed whitespace-pre-wrap text-foreground/75"
                   >
                     {item.agentSummary}
                   </div>
@@ -639,7 +639,7 @@ const ToolLine = memo(function ToolLine({
               )}
               {item.deferred?.outputFile && item.deferred.status !== "running" && (
                 <div className="border-t border-border/50 p-2">
-                  <p className="mb-1 text-[9.5px] tracking-wide text-muted-foreground/70 uppercase">
+                  <p className="mb-1 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
                     Resultado em disco
                   </p>
                   <div
@@ -669,7 +669,7 @@ const ToolLine = memo(function ToolLine({
                           ? "Retoma o trabalho em background de onde parou, reaproveitando o cache do workflow (não relança do zero)"
                           : undefined
                       }
-                      className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[10.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                      className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
                     >
                       <RotateCcw className="size-3" />{" "}
                       {item.deferred ? "Retomar" : "Repetir etapa"}
@@ -859,7 +859,7 @@ function ActivityAge({ at, stalled }: { at?: number; stalled?: boolean }) {
         ? `há ${seconds}s`
         : `há ${Math.floor(seconds / 60)}min`
   return (
-    <span className={cn("font-mono text-[10px]", stalled && "text-st-warning")}>
+    <span className={cn("font-mono text-[11px]", stalled && "text-st-warning")}>
       {stalled ? "sem eventos " : "atividade "}
       {label}
     </span>
@@ -1068,7 +1068,7 @@ function ToolGroup({
           <ToolGroupStatus state={digest.state} />
         </span>
         <span className="min-w-0 flex-1 truncate">{digest.label}</span>
-        <span className="hidden shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground sm:flex">
+        <span className="hidden shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground sm:flex">
           {digest.agents > 0 && (
             <span>
               {digest.agents} agente{digest.agents === 1 ? "" : "s"}
@@ -1096,7 +1096,7 @@ function ToolGroup({
         </span>
         {(diffTotal.added > 0 || diffTotal.removed > 0) && (
           // sussurro (paleta A): o total de diff informa sem virar semáforo.
-          <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground/70">
+          <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/70">
             {diffTotal.added > 0 && `+${diffTotal.added}`}
             {diffTotal.added > 0 && diffTotal.removed > 0 && " "}
             {diffTotal.removed > 0 && `−${diffTotal.removed}`}
@@ -1106,7 +1106,7 @@ function ToolGroup({
             Warp: tabular, coluna fixa à direita, quem trunca é o nome). O vivo
             não ganha relógio aqui — o "agora" é da linha viva do rodapé. */}
         {!live && digest.durationMs != null && (
-          <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground/70">
+          <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/70">
             {fmtDuration(digest.durationMs)}
           </span>
         )}
@@ -1166,7 +1166,7 @@ function EvidenceThumb({ path, onOpen }: { path: string; onOpen: () => void }) {
   }, [path])
   if (failed) {
     return (
-      <span className="rounded-md border bg-card px-2.5 py-1.5 text-[11.5px] text-muted-foreground">
+      <span className="rounded-md border bg-card px-2.5 py-1.5 text-[12px] text-muted-foreground">
         {EVIDENCE_MISSING}
       </span>
     )
@@ -1225,7 +1225,7 @@ function AttachmentThumb({
   }
   if (failed) {
     return (
-      <span className="rounded-md border bg-card px-2.5 py-1.5 text-[11.5px] text-muted-foreground">
+      <span className="rounded-md border bg-card px-2.5 py-1.5 text-[12px] text-muted-foreground">
         anexo expirado
       </span>
     )
@@ -1277,7 +1277,7 @@ function ReadBadge({ read }: { read: { text: string; warn: boolean } | null }) {
           : "O agent abriu este anexo durante o turno."
       }
       className={cn(
-        "rounded px-1.5 py-0.5 text-[10px] font-medium backdrop-blur-sm",
+        "rounded px-1.5 py-0.5 text-[11px] font-medium backdrop-blur-sm",
         read.warn
           ? "bg-st-warning/20 text-st-warning ring-1 ring-st-warning/40"
           : "bg-card/85 text-muted-foreground ring-1 ring-border",
@@ -1460,12 +1460,12 @@ function TurnFeedback({
         <button
           type="button"
           onClick={openAsk}
-          className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-brass"
+          className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-brass"
         >
           <GraduationCap className="size-3.5" /> Transformar em aprendizado
         </button>
         {mode === "done" && (
-          <span className="ml-auto inline-flex items-center gap-1 text-[10.5px] text-st-success">
+          <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-st-success">
             <Check className="size-3" /> Regra salva
           </span>
         )}
@@ -1491,7 +1491,7 @@ function TurnFeedback({
         <button
           onClick={() => void propose()}
           disabled={busy || !note.trim()}
-          className="shrink-0 rounded-md bg-brass px-2 py-1 text-[11.5px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="shrink-0 rounded-md bg-brass px-2 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {busy ? (
             <Loader2 className="size-3.5 animate-spin" />
@@ -1534,26 +1534,26 @@ function TurnFeedback({
           value={rule}
           onChange={(e) => setRule(e.target.value)}
           rows={2}
-          className="w-full resize-none rounded-md border bg-background/60 px-2 py-1.5 text-[12.5px] leading-snug outline-none focus:border-brass/60"
+          className="w-full resize-none rounded-md border bg-background/60 px-2 py-1.5 text-[13px] leading-snug outline-none focus:border-brass/60"
         />
         <div className="flex flex-wrap items-center gap-1.5">
           <button
             onClick={() => void commit("project")}
             disabled={busy || !rule.trim()}
-            className="rounded-md bg-brass px-2.5 py-1 text-[11.5px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             Salvar regra
           </button>
           <button
             onClick={() => void commit("global")}
             disabled={busy || !rule.trim()}
-            className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11.5px] transition-colors hover:bg-accent disabled:opacity-40"
+            className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-[12px] transition-colors hover:bg-accent disabled:opacity-40"
           >
             <Globe2 className="size-3.5" /> Salvar como global
           </button>
           <button
             onClick={() => setMode("idle")}
-            className="rounded-md px-2 py-1 text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
+            className="rounded-md px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
           >
             Descartar
           </button>
@@ -1748,7 +1748,7 @@ function AdviceArrivalRow({
             {persona?.name ?? advising.name}
           </span>
         </div>
-        <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+        <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
           <span>está lendo o contexto</span>
           <span className="flex items-center gap-1" aria-hidden>
             {[0, 1, 2].map((i) => (
@@ -1794,11 +1794,11 @@ function AdviceCard({ item }: { item: Extract<ChatItem, { kind: "advice" }> }) {
         {/* avatar + nome da persona vivem no cabeçalho do grupo (gutter Slack);
             aqui fica só a natureza do bloco (selo) + o carimbo de versão. */}
         <MessageSquareQuote className="size-4 shrink-0 text-brass" />
-        <span className="rounded-full border border-brass/40 bg-brass/10 px-2 py-0.5 text-[10.5px] font-medium text-brass">
+        <span className="rounded-full border border-brass/40 bg-brass/10 px-2 py-0.5 text-[11px] font-medium text-brass">
           parecer · só leitura
         </span>
         <span
-          className="ml-auto font-mono text-[10.5px] text-muted-foreground/70"
+          className="ml-auto font-mono text-[11px] text-muted-foreground/70"
           title="Persona e versão que opinaram (carimbo de auditoria/drift)"
         >
           v{item.personaVersion} · {shortDigest(item.digest)}
@@ -1916,7 +1916,7 @@ function IncidentCard({
             >
               {title}
             </p>
-            <p className="mt-0.5 text-[12.5px] leading-relaxed text-foreground/75">
+            <p className="mt-0.5 text-[13px] leading-relaxed text-foreground/75">
               {description}
             </p>
           </div>
@@ -2095,7 +2095,7 @@ const MessageItem = memo(function MessageItem({
 
   if (it.kind === "notice") {
     return (
-      <div className="flex items-center gap-2 px-1 text-[11.5px] text-muted-foreground/80">
+      <div className="flex items-center gap-2 px-1 text-[12px] text-muted-foreground/80">
         <AlertCircle className="size-3 shrink-0" />
         <span>{it.message}</span>
       </div>
@@ -2433,12 +2433,12 @@ function WorkingIndicator({
         <div className="mb-1 flex items-baseline gap-2">
           <span className="text-[13px] font-medium text-foreground">{name}</span>
           {engine && (
-            <span className="rounded border px-1 py-px text-[10px] text-muted-foreground">
+            <span className="rounded border px-1 py-px text-[11px] text-muted-foreground">
               {engine}
             </span>
           )}
         </div>
-        <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted-foreground">
+        <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted-foreground">
           <span className="min-w-0 truncate" title={live ? live.detail : undefined}>
             {label}
           </span>
@@ -2538,7 +2538,7 @@ function GroupRow({
         <div className="mb-1 flex items-baseline gap-2">
           <span className={cn("text-[13px] font-medium", nameClass)}>{name}</span>
           {engine && (
-            <span className="rounded border px-1 py-px text-[10px] text-muted-foreground">
+            <span className="rounded border px-1 py-px text-[11px] text-muted-foreground">
               {engine}
             </span>
           )}
@@ -2713,7 +2713,7 @@ export function MessageList({
               className="flex items-center gap-3"
             >
               <span className="h-px flex-1 bg-st-warning/40" />
-              <span className="text-[10.5px] font-medium tracking-wide text-st-warning/90 uppercase">
+              <span className="text-[11px] font-medium tracking-wide text-st-warning/90 uppercase">
                 novas mensagens
               </span>
               <span className="h-px flex-1 bg-st-warning/40" />

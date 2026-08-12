@@ -89,7 +89,7 @@ export function ExecutionRow({
       className="flex flex-col gap-1.5 px-3 pt-2.5"
     >
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-        <span className="font-mono text-[9.5px] tracking-[0.12em] text-muted-foreground uppercase">
+        <span className="font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase">
           Execução
         </span>
 
@@ -118,7 +118,7 @@ export function ExecutionRow({
                       : "O agente pede confirmação antes de agir"
                 }
                 className={cn(
-                  "flex h-6 items-center gap-1 rounded-md px-2 text-[11.5px] transition-colors",
+                  "flex h-6 items-center gap-1 rounded-md px-2 text-[12px] transition-colors",
                   !on && "text-muted-foreground hover:text-foreground",
                   on && m === "liberado" && "bg-st-warning/15 text-st-warning",
                   on && m === "leitura" && "bg-card text-st-success shadow-[var(--shadow-sm)]",
@@ -138,7 +138,7 @@ export function ExecutionRow({
           aria-pressed={!!planFirst}
           title={PLAN_FIRST_TOOLTIP}
           className={cn(
-            "flex h-6 items-center rounded-md px-2 text-[11.5px] transition-colors",
+            "flex h-6 items-center rounded-md px-2 text-[12px] transition-colors",
             planFirst
               ? "bg-brass/15 text-brass ring-1 ring-brass/40"
               : "text-muted-foreground hover:text-foreground",
@@ -158,7 +158,7 @@ export function ExecutionRow({
                 ? "Agent e modelo ficam fixos a partir do 1º envio desta conversa"
                 : "Escolher agent, modelo e esforço"
             }
-            className="flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             {/* Expandido, os seletores logo abaixo já dizem tudo — repetir o
                 rótulo aqui era a mesma informação duas vezes na mesma caixa. */}
@@ -179,7 +179,7 @@ export function ExecutionRow({
       {/* Aviso honesto: o gate é fixo no spawn. Trocar com turno em voo vale só
           no próximo — sem esta linha o segmented pareceria agir agora. */}
       {running && (
-        <p className="text-[10.5px] leading-snug text-muted-foreground">
+        <p className="text-[11px] leading-snug text-muted-foreground">
           Turno em andamento: a permissão vale a partir do próximo envio.
         </p>
       )}
@@ -188,7 +188,7 @@ export function ExecutionRow({
       {note && (
         <p
           className={cn(
-            "text-[10.5px] leading-snug",
+            "text-[11px] leading-snug",
             note.tone === "warn" ? "text-st-warning/90" : "text-muted-foreground",
           )}
         >

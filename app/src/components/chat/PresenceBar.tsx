@@ -125,7 +125,7 @@ export function PresenceBar() {
                       aria-label={`Tirar ${p.name} da conversa`}
                       title="Tirar da conversa"
                       onClick={() => void onRemoveGuest(p.id, p.name)}
-                      className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background text-[9px] leading-none text-muted-foreground opacity-0 ring-1 ring-border transition hover:text-foreground group-hover/participant:opacity-100"
+                      className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background text-[11px] leading-none text-muted-foreground opacity-0 ring-1 ring-border transition hover:text-foreground group-hover/participant:opacity-100"
                     >
                       ✕
                     </button>
@@ -160,7 +160,7 @@ export function PresenceBar() {
           className="ml-auto flex items-center gap-1.5"
           title="Custo acumulado desta sessão (soma dos turnos)"
         >
-          <span className="label-mono text-[9px]">Sessão</span>
+          <span className="label-mono">Sessão</span>
           <span className="font-mono text-[11px] font-semibold tabular-nums text-brass">
             {fmtCost(cost.total, cost.estimated ? "estimated" : "reported")}
           </span>

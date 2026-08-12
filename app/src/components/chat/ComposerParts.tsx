@@ -52,7 +52,7 @@ export function SlashPopover({
 }) {
   return (
     <div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-xl border bg-popover shadow-[var(--shadow-pop)]">
-      <div className="border-b px-3 py-1.5 text-[10px] tracking-wide text-muted-foreground uppercase">
+      <div className="border-b px-3 py-1.5 text-[11px] tracking-wide text-muted-foreground uppercase">
         Comandos{project ? ` · ${project.name}` : ""}
       </div>
       <div className="max-h-64 overflow-auto p-1">
@@ -76,7 +76,7 @@ export function SlashPopover({
                 {commandBadges(c).map((chip) => (
                   <span
                     key={chip}
-                    className="rounded border px-1 py-px text-[10px] tracking-wide text-muted-foreground uppercase"
+                    className="rounded border px-1 py-px text-[11px] tracking-wide text-muted-foreground uppercase"
                   >
                     {chip}
                   </span>
@@ -84,7 +84,7 @@ export function SlashPopover({
               </span>
             </span>
             {c.description && (
-              <span className="line-clamp-1 text-[11.5px] text-muted-foreground">
+              <span className="line-clamp-1 text-[12px] text-muted-foreground">
                 {c.description}
               </span>
             )}
@@ -123,7 +123,7 @@ export function AttachmentChips({
             key={a.path}
             title={ok ? a.name : `${a.name} não é suportado por ${destLabel}`}
             className={cn(
-              "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px]",
+              "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[12px]",
               ok
                 ? "bg-secondary/50 text-foreground/80"
                 : "border-st-error/50 bg-st-error/10 text-st-error",
@@ -160,7 +160,7 @@ export function QueuedChips({
   if (queued.length === 0) return null
   return (
     <div className="flex flex-col gap-1 px-1 pb-1">
-      <span className="px-1 text-[10px] tracking-wide text-muted-foreground/70 uppercase">
+      <span className="px-1 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
         Na fila · enviam juntas ao terminar
       </span>
       {queued.map((msg, i) => (
@@ -178,7 +178,7 @@ export function QueuedChips({
               <span
                 key={a.path}
                 title={a.name}
-                className="flex shrink-0 items-center gap-1 rounded border bg-secondary/50 px-1.5 py-0.5 text-[10.5px] text-muted-foreground"
+                className="flex shrink-0 items-center gap-1 rounded border bg-secondary/50 px-1.5 py-0.5 text-[11px] text-muted-foreground"
               >
                 <Icon className="size-2.5 shrink-0" />
                 <span className="max-w-[90px] truncate">{a.name}</span>
@@ -453,7 +453,7 @@ export function ComposerActions({
   const missionEnabled = useApp((s) => s.settings.missionEnabled)
   return (
     <>
-      <span className="flex items-center gap-1.5 pl-1 font-mono text-[10.5px] text-muted-foreground/70">
+      <span className="flex items-center gap-1.5 pl-1 font-mono text-[11px] text-muted-foreground/70">
         <kbd className="rounded border border-border bg-secondary/50 px-1 py-px">/</kbd>
         comandos
       </span>
@@ -573,7 +573,7 @@ function SendSplit({
           <DropdownMenuItem onClick={onSubmit} disabled={!canSend}>
             <ArrowUp className="size-4 text-muted-foreground" />
             <span className="flex-1">Enviar</span>
-            <span className="font-mono text-[10.5px] text-muted-foreground">⏎</span>
+            <span className="font-mono text-[11px] text-muted-foreground">⏎</span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

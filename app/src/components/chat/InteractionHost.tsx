@@ -260,7 +260,7 @@ function ApprovalCard({
       )}
       <div className="flex items-center gap-2">
         <ShieldQuestion className="size-4 shrink-0 text-brass" />
-        <p className="min-w-0 flex-1 text-[12.5px] text-foreground">
+        <p className="min-w-0 flex-1 text-[13px] text-foreground">
           Permissão para{" "}
           <span className="font-medium">{data.tool_name}</span>. O turno está{" "}
           <span className="font-medium text-brass">pausado</span> aguardando você.
@@ -290,7 +290,7 @@ function ApprovalCard({
           {summary.truncated && (
             <button
               onClick={() => setShowAll(true)}
-              className="mt-1 text-[11.5px] font-medium text-brass underline-offset-2 transition-colors hover:underline"
+              className="mt-1 text-[12px] font-medium text-brass underline-offset-2 transition-colors hover:underline"
             >
               Ver tudo ({summary.lines} linhas)
             </button>
@@ -307,7 +307,7 @@ function ApprovalCard({
 
       {/* Lote: hint das idênticas + atalho "todas" (abre confirmação). */}
       {batch && !confirming && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-muted-foreground">
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
           <span>+{batch.count - 1} idênticas na fila</span>
           <span aria-hidden>·</span>
           <button
@@ -380,7 +380,7 @@ function ApprovalCard({
         {compact && (
           <button
             onClick={() => setShowAll(true)}
-            className="mr-auto text-[11.5px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+            className="mr-auto text-[12px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
           >
             Ver detalhe
           </button>
@@ -438,7 +438,7 @@ function DetailDialog({
         </>
       }
     >
-      <pre className="max-h-[60vh] overflow-auto rounded-md border bg-card/70 px-3 py-2 font-mono text-[11.5px] break-all whitespace-pre-wrap text-foreground/90">
+      <pre className="max-h-[60vh] overflow-auto rounded-md border bg-card/70 px-3 py-2 font-mono text-[12px] break-all whitespace-pre-wrap text-foreground/90">
         {summary.detail}
       </pre>
     </AppDialog>
@@ -482,7 +482,7 @@ function QuestionTeaser({
       )}
       <div className="flex items-center gap-2">
         <MessageCircleQuestion className="size-4 shrink-0 text-brass" />
-        <p className="min-w-0 flex-1 truncate text-[12.5px] text-foreground">
+        <p className="min-w-0 flex-1 truncate text-[13px] text-foreground">
           O agente perguntou: <span className="font-medium">{headline}</span>
           {questions.length > 1 && (
             <span className="text-muted-foreground"> (+{questions.length - 1})</span>
@@ -580,7 +580,7 @@ function QuestionCard({
     <div className="mb-2 rounded-lg border border-brass/40 bg-brass/[0.07] px-3 py-2.5">
       <div className="flex items-center gap-2">
         <MessageCircleQuestion className="size-4 shrink-0 text-brass" />
-        <p className="min-w-0 flex-1 text-[12.5px] text-foreground">
+        <p className="min-w-0 flex-1 text-[13px] text-foreground">
           O agente fez uma pergunta. O turno está{" "}
           <span className="font-medium text-brass">pausado</span> aguardando você.
           <QueueHint extra={extra} />
@@ -595,7 +595,7 @@ function QuestionCard({
 
       {q && (
         <div className="mt-2 max-h-[52vh] overflow-y-auto rounded-md border bg-card/70 px-2.5 py-2">
-          <p className="text-[12.5px] font-medium text-foreground">{q.question}</p>
+          <p className="text-[13px] font-medium text-foreground">{q.question}</p>
           <div className="mt-1.5 flex flex-col gap-1">
             {q.options.map((o) => {
               const on = state[qi].selected.has(o.label)
@@ -619,9 +619,9 @@ function QuestionCard({
                     {on && <Check className="size-3" />}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[12.5px] text-foreground">{o.label}</span>
+                    <span className="block text-[13px] text-foreground">{o.label}</span>
                     {o.description && (
-                      <span className="block text-[11.5px] leading-snug text-muted-foreground">
+                      <span className="block text-[12px] leading-snug text-muted-foreground">
                         {o.description}
                       </span>
                     )}

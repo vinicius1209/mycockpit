@@ -117,7 +117,7 @@ export function DictationPill({
       <span
         aria-hidden="true"
         className={cn(
-          "shrink-0 font-mono text-[11.5px] tabular-nums",
+          "shrink-0 font-mono text-[12px] tabular-nums",
           finalizing ? "text-muted-foreground" : "text-st-error",
         )}
       >
@@ -137,7 +137,7 @@ export function DictationPill({
             {text || placeholder}
           </p>
         </div>
-        <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground/70">
+        <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground/70">
           {resolvedHint}
         </p>
       </div>

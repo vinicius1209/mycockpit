@@ -139,7 +139,7 @@ function ComposerMentionComponent({
     <span {...props}>
       <span className="font-mono">{`/${value}`}</span>
       {source ? (
-        <span className="rounded border border-brass/30 px-1 py-px font-sans text-[9px] tracking-wide text-muted-foreground uppercase">
+        <span className="rounded border border-brass/30 px-1 py-px font-sans text-[11px] tracking-wide text-muted-foreground uppercase">
           {source}
         </span>
       ) : null}
@@ -846,7 +846,7 @@ function MentionsMenu({
               <li
                 key={`h:${kind}`}
                 aria-hidden
-                className="px-2 pt-1 pb-1 text-[10px] tracking-wide text-muted-foreground/80 uppercase"
+                className="px-2 pt-1 pb-1 text-[11px] tracking-wide text-muted-foreground/80 uppercase"
               >
                 {kind === "file" ? "Arquivos" : "Especialistas"}
               </li>

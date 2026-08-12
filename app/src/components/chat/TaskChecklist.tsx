@@ -13,7 +13,7 @@ function TaskRow({ task, first }: { task: AgentTask; first: boolean }) {
         aria-expanded={task.description ? open : undefined}
         tabIndex={first ? 0 : -1}
         className={cn(
-          "flex w-full items-start gap-2 rounded px-1 py-[3px] text-left text-[12.5px]",
+          "flex w-full items-start gap-2 rounded px-1 py-[3px] text-left text-[13px]",
           task.description && "hover:bg-accent/40",
         )}
         title={task.description ?? undefined}
@@ -41,7 +41,7 @@ function TaskRow({ task, first }: { task: AgentTask; first: boolean }) {
         </span>
       </button>
       {open && task.description && (
-        <p className="mt-0.5 mb-1 ml-[22px] text-[11.5px] leading-relaxed break-words text-muted-foreground">
+        <p className="mt-0.5 mb-1 ml-[22px] text-[12px] leading-relaxed break-words text-muted-foreground">
           {task.description}
         </p>
       )}

@@ -1296,7 +1296,7 @@ export function ChatPanel() {
               <h1 className="text-[38px] font-medium leading-[1.1] tracking-[-0.025em] text-foreground">
                 {greeting}, Vinícius.
               </h1>
-              <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-muted-foreground">
+              <p className="mx-auto mt-3 max-w-md text-[14px] leading-relaxed text-muted-foreground">
                 {project
                   ? `Descreva uma tarefa para seu time de agents em ${project.name}.`
                   : "Selecione ou adicione um projeto na barra lateral para começar."}
@@ -1370,7 +1370,7 @@ export function ChatPanel() {
               {planOpen && (
                 <div className="max-h-56 overflow-y-auto border-t px-3 py-2">
                   {!currentTask && nextTask && (
-                    <p className="mb-1.5 px-1 text-[10.5px] text-muted-foreground/70">
+                    <p className="mb-1.5 px-1 text-[11px] text-muted-foreground/70">
                       O agente ainda não informou qual etapa está em andamento.
                     </p>
                   )}
@@ -1467,7 +1467,7 @@ function PlanPendingCard({
         <ClipboardList className="size-4 shrink-0 text-brass" />
         {/* Sem emoji aqui: o ClipboardList ao lado já é o ícone do card (havia
             uma prancheta duplicada, componente + 📋, coladas na mesma linha). */}
-        <p className="min-w-0 flex-1 text-[12.5px] text-foreground">
+        <p className="min-w-0 flex-1 text-[13px] text-foreground">
           <span className="font-medium">Plano proposto</span>, aguardando sua
           aprovação. O agent só executa o que está escrito acima.
         </p>
@@ -1518,7 +1518,7 @@ function AutoResumeBanner({
     <div className="mb-2 flex items-center gap-2.5 rounded-lg border border-st-warning/40 bg-st-warning/10 px-3 py-2">
       <Timer className="size-4 shrink-0 animate-pulse text-st-warning" />
       <div className="min-w-0 flex-1">
-        <p className="text-[12.5px] text-foreground">
+        <p className="text-[13px] text-foreground">
           Aguardando reset do limite — retomando automaticamente em{" "}
           <span className="font-mono tabular-nums">{secs}s</span>{" "}
           <span className="text-muted-foreground">
@@ -1560,7 +1560,7 @@ function BlockedDirBanner({
     <div className="mb-2 flex items-center gap-2.5 rounded-lg border border-st-warning/40 bg-st-warning/10 px-3 py-2">
       <FolderGit2 className="size-4 shrink-0 text-st-warning" />
       <div className="min-w-0 flex-1">
-        <p className="text-[12.5px] text-foreground">
+        <p className="text-[13px] text-foreground">
           O agente parece ter sido barrado ao acessar uma pasta fora do projeto.
         </p>
         <p className="truncate font-mono text-[11px] text-muted-foreground" title={dir}>

@@ -58,7 +58,7 @@ const LexicalComposer = lazy(() =>
 // Box do input do console (dimensões/tipografia herdadas do antigo textarea —
 // o cartão não mudou de pele no cutover).
 const CONSOLE_INPUT_CLASS =
-  "max-h-[240px] min-h-[56px] resize-none border-0 bg-transparent! px-4 pt-3.5 text-[15px] leading-relaxed text-foreground shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+  "max-h-[240px] min-h-[56px] resize-none border-0 bg-transparent! px-4 pt-3.5 text-[14px] leading-relaxed text-foreground shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
 
 export function CommandConsole({
   onSend,
