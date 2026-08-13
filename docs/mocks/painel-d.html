@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Painel · D · O Painel não existe</title>
+<style>
+  /* Tokens: cópia fiel de app/src/index.css (light :root · dark .dark).
+     Nenhum hex fora daqui. */
+  :root{
+    color-scheme: light dark;
+    --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
+    --secondary:#f4f4f2; --muted-foreground:#5c6166; --accent:#f1f1ef; --faint:#8a9099;
+    --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.14);
+    --brass:#a9742b; --brass-soft:rgba(169,116,43,.12); --brass-fg:#fbf6ee;
+    --st-idle:#8a9099; --st-running:#2f8fbf; --st-queued:#c1861f;
+    --st-success:#1f9d6b; --st-error:#cf4a3e; --id-violet:#6d47b8;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18);
+    --lift:inset 0 1px 0 rgba(255,255,255,.6);
+    --radius:9px;
+    --sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --background:#0a0b0d; --rail:#0c0d10; --foreground:#e7e8ea; --card:#141619;
+    --secondary:#191c20; --muted-foreground:#9aa0a7; --accent:#1e2126; --faint:#687078;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13);
+    --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#1a1306;
+    --st-idle:#687078; --st-running:#5bb8e8; --st-queued:#d99138;
+    --st-success:#5bd6a0; --st-error:#f2766b; --id-violet:#a48af0;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+    --shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);
+    --lift:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--background);color:var(--foreground);
+    font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"liga" 0,"calt" 0}
+  .label-mono{font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+    font-size:11px;line-height:1;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+
+  /* ── chrome do mock (não é o app) ── */
+  .mockbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;
+    padding:10px 18px;background:color-mix(in srgb,var(--background) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+  .mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);
+    border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:1px 7px}
+  .mockbar .dir{font-weight:600;color:var(--foreground);font-size:13px}
+  .mockbar nav{display:flex;gap:3px;margin-left:auto}
+  .mockbar nav a{color:var(--muted-foreground);text-decoration:none;padding:3px 10px;border-radius:6px;font-weight:500}
+  .mockbar nav a:hover{background:var(--accent)}
+  .mockbar nav a.on{background:var(--brass-soft);color:var(--brass)}
+  .seg{display:flex;gap:2px;border:1px solid var(--border);border-radius:7px;padding:2px}
+  .seg button{font-size:11px;padding:2px 9px;border-radius:5px;color:var(--muted-foreground)}
+  .seg button.on{background:var(--accent);color:var(--foreground)}
+
+  .stage{max-width:1060px;margin:0 auto;padding:24px 20px 64px}
+  .thesis{font-size:13px;color:var(--muted-foreground);margin:0 2px 18px;max-width:760px}
+  .thesis b{color:var(--foreground);font-weight:600}
+  .caption{display:flex;align-items:baseline;gap:10px;margin:0 2px 10px}
+  .caption h3{margin:0;font-size:13px;font-weight:600}
+  .caption span{font-size:12px;color:var(--muted-foreground)}
+  .gap{height:34px}
+
+  /* ── moldura da janela do app inteiro ── */
+  .frame{background:var(--rail);border:1px solid var(--border);border-radius:14px;
+    overflow:hidden;box-shadow:var(--shadow-pop)}
+  .winbar{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--rail);
+    border-bottom:1px solid var(--border)}
+  .winbar i{width:10px;height:10px;border-radius:50%;background:var(--border-strong);display:block}
+
+  /* barra do topo do app (TitleBar real: projeto · switcher · pill/sino) */
+  .titlebar{display:flex;align-items:center;gap:10px;padding:7px 12px;background:var(--rail)}
+  .titlebar .proj{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground)}
+  .switcher{margin:0 auto;display:flex;align-items:center;gap:2px;border:1px solid var(--border);
+    background:color-mix(in srgb,var(--secondary) 60%,transparent);border-radius:999px;padding:2px}
+  .switcher button{font-size:12px;padding:3px 12px;border-radius:999px;color:var(--muted-foreground)}
+  .switcher button.on{background:var(--card);color:var(--foreground);box-shadow:var(--shadow-sm)}
+  .tbright{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted-foreground)}
+  .pill{display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:999px;
+    padding:2px 9px;font:11px var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+  .pill .bar{width:32px;height:4px;border-radius:2px;background:var(--secondary);position:relative;overflow:hidden}
+  .pill .bar b{position:absolute;inset:0 auto 0 0;border-radius:2px;
+    background:color-mix(in srgb,var(--muted-foreground) 45%,transparent)}
+  .bell{position:relative;display:grid;place-items:center;width:24px;height:24px;border-radius:6px;color:var(--muted-foreground)}
+  .bell:hover{background:var(--accent)}
+  .bell .n{position:absolute;top:-2px;right:-3px;min-width:14px;height:14px;padding:0 3px;border-radius:7px;
+    background:var(--st-queued);color:var(--background);font:600 11px/14px var(--mono);text-align:center}
+
+  /* corpo: sidebar + main */
+  .body{display:flex;min-height:452px;background:var(--rail)}
+  .side{width:214px;flex:0 0 auto;padding:8px 8px 10px;display:flex;flex-direction:column;gap:2px}
+  .main{flex:1;min-width:0;margin:2px 8px 8px 2px;background:var(--background);
+    border:1px solid var(--border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+
+  .sitem{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:7px;
+    font-size:13px;color:var(--muted-foreground);width:100%;text-align:left}
+  .sitem:hover{background:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--foreground)}
+  .sitem.on{background:var(--accent);color:var(--foreground);font-weight:500}
+  .sitem .ic{width:16px;flex:0 0 auto;text-align:center;font-size:12px;color:var(--faint)}
+  .sitem.on .ic{color:var(--brass)}
+  .sitem .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sitem .kbd{font:11px var(--mono);color:var(--faint)}
+  .sitem .cnt{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .sitem .amber{font:600 11px/14px var(--mono);color:var(--st-queued);
+    background:color-mix(in srgb,var(--st-queued) 14%,transparent);
+    border:1px solid color-mix(in srgb,var(--st-queued) 40%,transparent);
+    border-radius:7px;padding:0 5px;font-variant-numeric:tabular-nums}
+  .shead{margin:12px 4px 4px;display:flex;align-items:center;gap:6px}
+  .conv{display:flex;align-items:center;gap:8px;padding:5px 8px 5px 22px;border-radius:7px;
+    font-size:12px;color:var(--muted-foreground)}
+  .conv:hover{background:color-mix(in srgb,var(--accent) 60%,transparent)}
+  .conv.on{background:var(--accent);color:var(--foreground)}
+  .conv .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .conv .tag{font:11px var(--mono);color:var(--faint)}
+
+  .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--st-idle)}
+  .dot.live{background:var(--st-running);animation:pulse 1.6s cubic-bezier(.4,0,.6,1) infinite}
+  .dot.warn{background:var(--st-queued)}
+  .dot.sm{width:6px;height:6px}
+  .dot.ring{background:transparent;border:1px solid color-mix(in srgb,var(--muted-foreground) 55%,transparent)}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.78)}}
+
+  /* ── o resumo dentro do main ── */
+  .resumo{padding:24px 28px 18px;display:flex;flex-direction:column;gap:20px;flex:1}
+  .decis h1{margin:0;font:600 30px/1.1 var(--sans);letter-spacing:-.02em}
+  .decis .head{display:flex;align-items:baseline;gap:12px}
+  .decis .head .since{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .qlist{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+  .qcard{display:flex;align-items:center;gap:10px;padding:11px 13px;border:1px solid var(--border);
+    border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow-sm)}
+  .qcard .ico{width:16px;flex:0 0 auto;text-align:center;color:var(--muted-foreground);font-size:12px}
+  .qcard .ttl{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+  .qcard .why{flex:0 0 auto;font:12px var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+  .qcard .proj{flex:0 0 auto;font-size:12px;color:var(--muted-foreground)}
+  .qcard .meta{flex:0 0 auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .badge{flex:0 0 auto;font-size:11px;line-height:1.4;padding:1px 7px;border-radius:5px;
+    border:1px solid color-mix(in srgb,var(--st-queued) 50%,transparent);
+    background:color-mix(in srgb,var(--st-queued) 12%,transparent);color:var(--st-queued)}
+  .btn{flex:0 0 auto;font-size:12px;font-weight:500;padding:3px 10px;border-radius:6px;
+    border:1px solid var(--border-strong);color:var(--foreground)}
+  .btn:hover{background:var(--accent)}
+  .btn.primary{background:var(--brass);color:var(--brass-fg);border-color:transparent}
+  .btn.primary:hover{opacity:.9;background:var(--brass)}
+  .btn.ghost{border-color:transparent;color:var(--muted-foreground)}
+  .btn.ghost:hover{background:var(--accent);color:var(--foreground)}
+
+  .sec > h2{margin:0 0 8px;padding:0 2px}
+  .rows{display:flex;flex-direction:column}
+  .row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:7px;min-width:0}
+  .row:hover{background:var(--accent)}
+  .row .nm{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .proj{flex:0 0 auto;font-size:12px;color:var(--muted-foreground)}
+  .row .age{flex:0 0 auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;
+    min-width:52px;text-align:right}
+
+  .amberline{display:flex;align-items:center;gap:9px;padding:7px 11px;border-radius:var(--radius);
+    border:1px solid color-mix(in srgb,var(--st-queued) 38%,transparent);
+    background:color-mix(in srgb,var(--st-queued) 8%,transparent);font-size:13px}
+  .amberline .t{flex:1;min-width:0;color:var(--st-queued)}
+
+  .foot{margin-top:auto;border-top:1px solid var(--border);padding-top:11px;
+    display:flex;flex-direction:column;gap:6px}
+  .costline{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap;font-size:13px;color:var(--muted-foreground)}
+  .costline .ci{display:inline-flex;align-items:baseline;gap:6px;white-space:nowrap}
+  .costline b{font:600 13px var(--mono);font-variant-numeric:tabular-nums;color:var(--foreground)}
+  .costline .k{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
+  .costline a{margin-left:auto;font-size:12px;color:var(--muted-foreground);text-decoration:none;white-space:nowrap}
+  .costline a:hover{color:var(--foreground)}
+  .spark{display:flex;align-items:flex-end;gap:2px;height:16px}
+  .spark i{width:4px;border-radius:1px;background:color-mix(in srgb,var(--muted-foreground) 25%,transparent);display:block}
+  .spark i.now{background:var(--brass)}
+  .dline{display:flex;align-items:center;gap:9px;padding:4px 4px;border-radius:6px;
+    font-size:13px;color:var(--muted-foreground);width:100%;text-align:left}
+  .dline:hover{background:var(--accent);color:var(--foreground)}
+  .dline .chev{color:var(--faint);font-size:10px;width:10px}
+  .dline .n{margin-left:auto;font:12px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+
+  /* ── o fio esquemático ── */
+  .thread{display:flex;flex-direction:column;flex:1;min-height:0}
+  .thead{display:flex;align-items:center;gap:9px;padding:11px 18px;border-bottom:1px solid var(--border)}
+  .thead .t{font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .thead .m{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .fio{flex:1;padding:16px 18px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+  .msg{max-width:78%}
+  .msg.me{margin-left:auto;background:var(--secondary);border-radius:12px;padding:8px 12px;font-size:14px}
+  .msg .who{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin-bottom:5px}
+  .msg .ln{height:9px;border-radius:4px;background:color-mix(in srgb,var(--muted-foreground) 15%,transparent);margin-bottom:6px}
+  .toolline{display:flex;align-items:center;gap:8px;font:12px var(--mono);color:var(--muted-foreground);
+    font-variant-numeric:tabular-nums}
+  .marco{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted-foreground)}
+  .marco .rule{flex:1;height:1px;background:var(--border)}
+  .liveline{display:flex;align-items:center;gap:9px;padding:7px 18px;border-top:1px solid var(--border);
+    font-size:12px;color:var(--muted-foreground)}
+  .liveline .clock{margin-left:auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .composer{margin:10px 14px 14px;border:1px solid var(--border-strong);border-radius:12px;
+    background:var(--card);box-shadow:var(--shadow-sm);padding:10px 12px;display:flex;align-items:center;gap:10px}
+  .composer .ph{flex:1;color:var(--faint);font-size:14px}
+
+  /* ── anotações ── */
+  .nt{color:var(--brass);font:600 11px var(--mono);vertical-align:super;margin-left:4px;line-height:0;user-select:none}
+  .notes{margin-top:26px;padding:0 6px;font-size:13px;color:var(--muted-foreground)}
+  .notes h2{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 12px}
+  .notes ol{list-style:none;margin:0;padding:0;display:grid;gap:9px;max-width:780px}
+  .notes li{padding-left:26px;position:relative;line-height:1.55}
+  .notes li .nt{position:absolute;left:0;top:6px;vertical-align:baseline;margin:0}
+  .notes b{color:var(--foreground);font-weight:600}
+  @media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</head>
+<body>
+
+<header class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">Painel · D · O Painel não existe</span>
+  <nav>
+    <a href="painel-a.html">A</a>
+    <a href="painel-b.html">B</a>
+    <a href="painel-c.html">C</a>
+    <a class="on" href="painel-d.html">D</a>
+    <a href="painel-e.html">E</a>
+  </nav>
+  <div class="seg" id="theme">
+    <button data-t="light">claro</button>
+    <button data-t="dark">escuro</button>
+  </div>
+</header>
+
+<div class="stage">
+  <p class="thesis"><b>Tese:</b> decisão e trabalho são o mesmo gesto, e separá-los em duas
+    abas cobra um clique que não produz nada. A aba <b>Painel sai do switcher</b>. O Trabalho
+    ganha um destino fixo na sidebar, <b>Resumo</b>, que ocupa a área do fio quando nenhuma
+    conversa está aberta: o que precisa de você, o que está rodando e uma faixa fina de custo.
+    Escolher uma conversa troca o resumo pelo fio, no mesmo lugar, sem trocar de aba.
+    O Board sai da tela inicial (zero card em uso, e a intenção já nasce em conversa, entrega
+    e plano de voo).</p>
+
+  <!-- ════════ ESTADO 1 — O RESUMO ════════ -->
+  <div class="caption">
+    <h3>Trabalho, sem conversa aberta</h3>
+    <span>o resumo ocupa a área do fio. É a tela que o app abre.</span>
+  </div>
+
+  <div class="frame">
+    <div class="winbar"><i></i><i></i><i></i></div>
+    <div class="titlebar">
+      <span class="proj">▦ mycockpit ⌄</span>
+      <div class="switcher">
+        <button class="on">Trabalho<span class="nt">①</span></button>
+        <button>Features</button>
+      </div>
+      <div class="tbright">
+        <span class="pill">Codex <span class="bar"><b style="width:30%"></b></span> 30% · 4 h 22 min</span>
+        <button class="bell">◈</button>
+        <span>⚙</span>
+      </div>
+    </div>
+
+    <div class="body">
+      <aside class="side">
+        <button class="sitem on"><span class="ic">◍</span><span class="nm">Resumo</span>
+          <span class="kbd">⌘1</span><span class="nt">②</span></button>
+        <button class="sitem"><span class="ic">✈</span><span class="nm">Planos de voo</span>
+          <span class="cnt">4</span><span class="nt">③</span></button>
+        <button class="sitem"><span class="ic">◔</span><span class="nm">Agendado</span></button>
+
+        <div class="shead"><span class="label-mono">Projetos</span></div>
+        <button class="sitem"><span class="ic">▾</span><span class="nm">mycockpit</span><span class="cnt">9</span></button>
+        <button class="conv"><span class="dot live"></span><span class="nm">Ajustar o watchdog do tray</span></button>
+        <button class="conv"><span class="dot ring"></span><span class="nm">Fio Vivo, painel de background</span></button>
+        <button class="conv"><span class="dot ring"></span><span class="nm">Composer Lexical, cutover</span>
+          <span class="tag">última<span class="nt">④</span></span></button>
+        <button class="sitem"><span class="ic">▸</span><span class="nm">maclan</span><span class="cnt">4</span></button>
+        <button class="sitem"><span class="ic">▸</span><span class="nm">mypeople</span><span class="cnt">3</span></button>
+      </aside>
+
+      <main class="main">
+        <div class="resumo">
+
+          <section class="sec decis">
+            <div class="head">
+              <h1>3 esperando você<span class="nt">⑤</span></h1>
+              <span class="since">a mais antiga há 4 h</span>
+            </div>
+            <div class="qlist">
+              <div class="qcard">
+                <span class="ico">⑂</span>
+                <span class="ttl">Fio Vivo, painel de trabalho em background</span>
+                <span class="why">12/12 checks · +842 −196</span>
+                <span class="proj">mycockpit</span>
+                <button class="btn primary">Merge</button>
+                <button class="btn">Abrir a conversa<span class="nt">⑥</span></button>
+              </div>
+              <div class="qcard">
+                <span class="ico">⚔</span>
+                <span class="ttl">Cache do índice de arquivos, rg vs walk incremental</span>
+                <span class="proj">mypeople</span>
+                <span class="meta">há 1 h</span>
+                <button class="btn">Julgar</button>
+              </div>
+              <div class="qcard">
+                <span class="ico">▤</span>
+                <span class="ttl">Migrar upload de anexos pro S3</span>
+                <span class="proj">maclan</span>
+                <span class="badge">bloqueado, parado há 47 min</span>
+                <button class="btn">Abrir a conversa</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="sec">
+            <h2 class="label-mono">Em voo (2)</h2>
+            <div class="rows">
+              <div class="row"><span class="dot live"></span>
+                <span class="nm">Ajustar o watchdog do tray</span>
+                <span class="proj">mycockpit</span><span class="label-mono">turno</span>
+                <span class="age">há 3 min</span></div>
+              <div class="row"><span class="dot live"></span>
+                <span class="nm">Publicar build de teste 188</span>
+                <span class="proj">frota</span><span class="label-mono">missão</span>
+                <span class="age">há 12 min</span></div>
+            </div>
+          </section>
+
+          <div class="amberline">
+            <span class="dot warn"></span>
+            <span class="t">Codex em rate limit, volta 16:40. Antigravity tem update v1.1.0.</span>
+            <button class="btn">Ver frota</button>
+          </div>
+
+          <div class="foot">
+            <div class="costline">
+              <span class="ci"><span class="k">hoje</span><b>US$ 20,13</b><span class="mono">▼ 88% vs ontem</span></span>
+              <span class="ci"><span class="k">7 d</span><b>US$ 673,92</b></span>
+              <span class="ci mono">Codex 68% · Claude 32%</span>
+              <span class="spark" aria-hidden="true">
+                <i style="height:34%"></i><i style="height:52%"></i><i style="height:28%"></i><i style="height:61%"></i>
+                <i style="height:45%"></i><i style="height:70%"></i><i style="height:38%"></i><i style="height:55%"></i>
+                <i style="height:92%"></i><i style="height:66%"></i><i style="height:48%"></i><i style="height:80%"></i>
+                <i style="height:100%"></i><i class="now" style="height:12%"></i>
+              </span>
+              <a href="#">uso e custo →<span class="nt">⑦</span></a>
+            </div>
+            <button class="dline"><span class="chev">›</span>Entregas<span class="nt">⑧</span><span class="n">3 esta semana · última há 2 h</span></button>
+            <button class="dline"><span class="chev">›</span>Encontrados no projeto<span class="n">2, o mais velho há 68 d</span></button>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="gap"></div>
+
+  <!-- ════════ ESTADO 2 — O FIO ════════ -->
+  <div class="caption">
+    <h3>Trabalho, com a conversa aberta</h3>
+    <span>o mesmo lugar, agora com o fio. A sidebar não muda; a contagem sobe pro item Resumo.</span>
+  </div>
+
+  <div class="frame">
+    <div class="winbar"><i></i><i></i><i></i></div>
+    <div class="titlebar">
+      <span class="proj">▦ mycockpit ⌄</span>
+      <div class="switcher">
+        <button class="on">Trabalho</button>
+        <button>Features</button>
+      </div>
+      <div class="tbright">
+        <span class="pill">Codex <span class="bar"><b style="width:30%"></b></span> 30% · 4 h 22 min</span>
+        <button class="bell">◈<span class="n">3</span></button>
+        <span>⚙</span>
+      </div>
+    </div>
+
+    <div class="body">
+      <aside class="side">
+        <button class="sitem"><span class="ic">◍</span><span class="nm">Resumo</span>
+          <span class="amber">3</span><span class="nt">⑨</span></button>
+        <button class="sitem"><span class="ic">✈</span><span class="nm">Planos de voo</span><span class="cnt">4</span></button>
+        <button class="sitem"><span class="ic">◔</span><span class="nm">Agendado</span></button>
+
+        <div class="shead"><span class="label-mono">Projetos</span></div>
+        <button class="sitem"><span class="ic">▾</span><span class="nm">mycockpit</span><span class="cnt">9</span></button>
+        <button class="conv on"><span class="dot live"></span><span class="nm">Ajustar o watchdog do tray</span></button>
+        <button class="conv"><span class="dot ring"></span><span class="nm">Fio Vivo, painel de background</span></button>
+        <button class="conv"><span class="dot ring"></span><span class="nm">Composer Lexical, cutover</span></button>
+        <button class="sitem"><span class="ic">▸</span><span class="nm">maclan</span><span class="cnt">4</span></button>
+        <button class="sitem"><span class="ic">▸</span><span class="nm">mypeople</span><span class="cnt">3</span></button>
+      </aside>
+
+      <main class="main">
+        <div class="thread">
+          <div class="thead">
+            <span class="dot live"></span>
+            <span class="t">Ajustar o watchdog do tray</span>
+            <span class="m">claude code · main · há 3 min</span>
+          </div>
+          <div class="fio">
+            <div class="msg me">Consolida o ticker do watchdog, um só, e avisa uma vez por episódio.</div>
+            <div class="msg">
+              <div class="who">claude code</div>
+              <div class="ln" style="width:92%"></div>
+              <div class="ln" style="width:78%"></div>
+              <div class="ln" style="width:44%"></div>
+            </div>
+            <div class="toolline"><span class="dot sm"></span>ler watchdog.ts · 214 linhas · 1,2 s</div>
+            <div class="toolline"><span class="dot sm"></span>editar watchdog.ts · +38 −12 · 0,8 s</div>
+            <div class="marco"><span class="rule"></span>turno concluído · 2 min 14 s · US$ 1,08<span class="rule"></span></div>
+            <div class="msg">
+              <div class="who">claude code</div>
+              <div class="ln" style="width:86%"></div>
+              <div class="ln" style="width:58%"></div>
+            </div>
+          </div>
+          <div class="liveline">
+            <span class="dot live"></span>rodando os testes do watchdog…
+            <span class="clock">3 s</span>
+          </div>
+          <div class="composer">
+            <span class="ph">Escreva pra frota</span>
+            <button class="btn ghost">⚔</button>
+            <button class="btn ghost">@</button>
+            <button class="btn primary">Enviar</button>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>Anotações</h2>
+    <ol>
+      <li><span class="nt">①</span> O switcher do topo perde uma aba: era
+        <b>Painel · Trabalho · Features</b> (<span class="mono">titleBarModes.ts</span>), vira
+        <b>Trabalho · Features</b>. Essa é a mudança inteira de D em uma linha: uma superfície a
+        menos pra manter, um estado a menos pra sincronizar (hoje o `viewMode` mantém Painel e
+        Trabalho montados ao mesmo tempo por causa do custo de remontar o chat).</li>
+      <li><span class="nt">②</span> <b>O resumo é um destino fixo, não a ausência de seleção.</b>
+        "Deselecionar" não é um gesto que exista em app de conversa: clicar de novo no item ativo
+        não desmarca, e sem um alvo permanente o resumo morreria no primeiro clique da sessão.
+        Ele entra como terceiro item global da sidebar, ao lado de <b>Planos de voo</b> e
+        <b>Agendado</b>, que já são exatamente isso hoje (`Sidebar.tsx`, `ScheduledEntry` e
+        `FlightPlansEntry`). Atalho ⌘1, do lado de fora do teclado também: o item está sempre
+        visível.</li>
+      <li><span class="nt">③</span> <b>Planos de voo continua.</b> Zero missão no banco não é
+        prova de feature morta: a superfície está em reconstrução por outra frente. D remove o
+        Painel, não Missões.</li>
+      <li><span class="nt">④</span> No boot, D <b>abre no Resumo</b>, sempre. Se o app restaurasse
+        a última conversa (o comportamento natural de um app de chat), o resumo nunca apareceria
+        e a direção inteira viraria letra morta. O preço é uma etiqueta: a última conversa fica
+        marcada <span class="mono">última</span> no topo da lista, a um clique.</li>
+      <li><span class="nt">⑤</span> A hierarquia é a de A: o hero de 30px (STYLEGUIDE §3, parada
+        "métrica de painel") é a contagem de decisões, não o dinheiro. Com fila vazia ele vira
+        "Nada esperando você." em peso 500 e cinza, com as âncoras temporais reais, igual em A e C.
+        O que D muda não é o conteúdo do resumo, é <b>onde ele mora</b>.</li>
+      <li><span class="nt">⑥</span> O botão neutro diz <b>"Abrir a conversa"</b>, não "Abrir".
+        Em D o destino do clique é literalmente o painel de trás: o card vira o fio no mesmo
+        retângulo. Isso é a tese funcionando, e também o risco (⑨).</li>
+      <li><span class="nt">⑦</span> A faixa de custo é a de A. Mas atenção ao que D <b>perde</b>:
+        fora do Resumo, o custo do dia deixa de existir na tela. A pill do topo mede
+        <b>janela do plano</b> (%, `UsagePill.tsx`), não dinheiro. Quem vigia gasto o dia inteiro
+        passa a depender de ⌘1 ou de Configurações ▸ Uso e custo. Mesma coisa vale pro estado da
+        frota: rate limit e update só aparecem aqui.</li>
+      <li><span class="nt">⑧</span> O <b>Board saiu</b>. Zero card criado no banco em uso real, e
+        as três formas de registrar intenção que o usuário de fato usa (abrir conversa, marcar
+        entrega, escrever plano de voo) continuam inteiras. E o que existe mas não pede nada
+        (entregas, planos encontrados) vira <b>linha de gaveta com contagem real</b>, no padrão
+        de C: o resumo É a informação, o detalhe fica a um clique.</li>
+      <li><span class="nt">⑨</span> <b>O furo de D, e o remendo.</b> Com o fio aberto, as outras
+        duas decisões somem da tela. O contador âmbar no item Resumo é o único lugar onde elas
+        continuam existindo, junto com o sino que já existe hoje na barra
+        (`InboxBell.tsx`). Regra: o badge só aparece quando o Resumo <b>não</b> está na tela
+        (contar duas vezes a mesma fila é ruído). Isso resolve a lembrança, não a comparação: pra
+        julgar uma disputa olhando o PR ao lado, D obriga a voltar. É o custo real da direção.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  const root = document.documentElement;
+  function setTheme(t){
+    root.dataset.theme = t;
+    document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  }
+  setTheme(matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.getElementById('theme').addEventListener('click', e => {
+    if (e.target.dataset.t) setTheme(e.target.dataset.t);
+  });
+</script>
+</body>
+</html>

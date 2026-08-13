@@ -1,4 +1,12 @@
-# Redesenho do Painel — 3 POCs visuais
+# Redesenho do Painel — 5 POCs visuais
+
+> **Atualização de 13/08/2026**: chegaram `painel-d.html` (o Painel deixa de
+> existir) e `painel-e.html` (o Painel vira retrospectiva), depois de o banco
+> REAL do usuário ser consultado. A evidência de uso, a comparação das cinco
+> direções e a recomendação final estão na seção
+> [Depois da evidência de uso](#depois-da-evidência-de-uso-13082026) no fim
+> deste arquivo. **Tudo que vem antes dela foi escrito sem esse dado** e segue
+> valendo como descrição de A, B e C.
 
 > Mocks estáticos (12/08/2026), **não** código do app. Abrir no browser:
 > `painel-a.html` · `painel-b.html` · `painel-c.html`. Os três renderizam a
@@ -241,3 +249,292 @@ O que **não** recomendo levar adiante: cartões de igual peso (B) como
 organização geral do Painel, porque delegam a hierarquia inteira pra uma única
 linha e encarecem a tela; e apagar seção vazia (C) sem antes acertar o gate do
 `loaded`, senão a tela passa a mentir por omissão durante a varredura.
+
+---
+
+# Depois da evidência de uso (13/08/2026)
+
+A, B e C foram desenhados olhando pro **código** do Painel: que blocos existem,
+o que cada um calcula. Depois disso o banco real do único usuário foi
+consultado, e ele conta uma história diferente da do código.
+
+## A evidência
+
+| Superfície | Uso real |
+|---|---|
+| Conversas | **16** |
+| Entregas | **5** |
+| Disputas | **2** |
+| Aprendizados | **1** |
+| Board (cards) | **0** |
+| Agendado | **0** |
+| Missões | **0** (a superfície está em **reconstrução** por outra frente) |
+| Custo | **US$ 6.260 em 30 dias** |
+
+Lido de frente: **a tela inicial de hoje é, em uso real, um Board vazio, um
+botão "Nova missão" nunca clicado, um "Nova disputa" clicado duas vezes e um
+"próxima agendada" que nunca teve o que dizer.** O produto mora na aba
+Trabalho, onde estão as 16 conversas e quase todo o dinheiro.
+
+Duas leituras importantes, e a segunda é desconfortável:
+
+1. **O Board sai.** Zero card em 16 conversas não é "feature nova esperando
+   descoberta", é uma resposta. E a intenção de trabalho já existe em três
+   formatos que ele usa: abrir conversa, marcar entrega, escrever plano de voo.
+   Decisão tomada; os mocks D e E já não têm Board.
+2. **A fila de decisões, o herói de A, também não tem lastro medido.** Os tipos
+   da fila (`inbox.ts`) são `pr` · `fusion` · `card` · `prd` · `proposal`.
+   Cards: 0. Disputas: 2 em toda a vida do app. Ou seja: a cena de "3 esperando
+   você" dos cinco mocks é **cenário**, não medição, e o estado normal da fila
+   é o vazio. Isso não invalida A, mas muda o que A é: A não é "a tela que
+   mostra 3 decisões", é "a tela que quase sempre diz *nada esperando você* em
+   30px". Que é, literalmente, C.
+
+**Ressalva registrada**: zero missão **não** é prova de feature morta. Missões
+está em obras por outra frente; D mantém "Planos de voo" na sidebar e E não
+toca nela. Nenhuma das duas direções corta Missões.
+
+**Sobre os números dos mocks**: A, B, C e D usam a MESMA cena (US$ 20,13 hoje,
+US$ 673,92 na semana, 3 pendências, 2 em voo), pra comparação justa. **E é a
+exceção deliberada**: uma retrospectiva desenhada com número de cenário é
+vaidade por definição, então ela usa só o banco medido (16 conversas, 5
+entregas, 1 aprendizado, US$ 6.260 em 30 dias). Onde A e C dizem "ver as 12 da
+semana", era cena.
+
+## D — "O Painel não existe"
+
+**Tese.** Decisão e trabalho são o mesmo gesto, e separá-los em duas abas cobra
+um clique que não produz nada. A aba Painel **sai do switcher** (que hoje é
+`Painel · Trabalho · Features` em `titleBarModes.ts` e passa a
+`Trabalho · Features`). O Trabalho ganha um destino fixo na sidebar,
+**Resumo**, que ocupa a área do fio quando nenhuma conversa está aberta: o que
+precisa de você, o que está rodando, uma faixa fina de custo. Escolher uma
+conversa troca o resumo pelo fio, no mesmo retângulo, sem trocar de aba.
+
+O arquivo mostra os dois estados empilhados, porque a transição entre eles É a
+tese.
+
+**Por que o slot existe**: a sidebar já tem entradas globais no topo
+(`ScheduledEntry` e `FlightPlansEntry` em `Sidebar.tsx`, "Agendado" e "Planos
+de voo"). "Resumo" entra como irmão delas. D não inventa um padrão de
+navegação, usa um que está no código.
+
+**Resolve:** o problema que a evidência levanta, que é *manter uma aba inteira
+cujo estado normal é o vazio*. Resolve 1, 2, 3 e 4 do diagnóstico original por
+herança de A e C, e resolve o clique morto entre decidir e trabalhar.
+
+**Sacrifica**, e a lista é longa de propósito:
+
+- **Custo do dia e estado da frota perdem superfície permanente.** Fora do
+  Resumo, o gasto de hoje deixa de existir na tela: a pill do topo mede
+  **janela do plano** em porcentagem (`UsagePill.tsx`), não dinheiro. Quem
+  vigia US$ 6.260/mês o dia inteiro passa a depender de ⌘1.
+- **A fila some quando você abre uma conversa.** Com o fio na tela, as outras
+  decisões só existem como contador âmbar no item Resumo e no sino que já
+  existe (`InboxBell.tsx`). Lembrar, sim; comparar duas decisões lado a lado,
+  não.
+- **Depende de uma regra de boot.** D só funciona se o app **abrir no Resumo**,
+  sempre. Se algum dia ele voltar a restaurar a última conversa (o
+  comportamento natural de todo app de chat), o Resumo deixa de aparecer e a
+  direção inteira vira letra morta, em silêncio.
+- **É a única das cinco que é porta de mão única.** Reordenar blocos (A, B, C)
+  se desfaz num commit. Remover uma aba desfaz memória muscular, e memória
+  muscular não tem rollback.
+
+## E — "Retrospectiva"
+
+**Tese.** O Painel para de disputar urgência e vira **auditoria**: poucos
+números, muito ar, e um mapa de onde o dinheiro queimou. A urgência sai da tela
+e vira uma **faixa persistente** no topo do app, visível em qualquer aba.
+
+O conteúdo, tudo derivado do que já existe no ledger: gasto de 30 dias como
+hero, três derivados em 20px (US$ 208,67 por dia · US$ 1.252 por entrega
+registrada · US$ 47,20 no lado descartado das disputas), o mapa de calor de 14
+dias × hora pintando **US$ por hora**, custo por agente cruzado com entregas
+por agente, e as 5 entregas listadas inteiras.
+
+**A crítica embutida, e onde ela foi resolvida.** Uma tela que responde "o que
+eu já fiz" não responde "o que precisa de mim". Em E isso vira uma faixa âmbar
+de 30px logo abaixo da barra do topo, com contagem, idade da mais antiga e
+estado da frota, mais um botão que leva pra fila no Trabalho. **O preço está
+declarado no mock**: 30px cobrados em toda tela do app, inclusive nas 16
+conversas, onde área vertical é o produto. Sem a faixa, E não é uma direção,
+é uma tela de estatística com um inbox perdido.
+
+**Resolve:** a pergunta que nenhuma das outras quatro responde bem. Nenhum
+mock de A a D diz onde foram os US$ 6.260, e US$ 6.260/mês é o maior fato deste
+produto. E também é a única que mostra o **denominador**: US$ 76,30 dos
+US$ 6.260 (1,2%) estão atribuídos a uma entrega registrada, o que diagnostica o
+registro de entregas, não o trabalho.
+
+**Sacrifica:**
+
+- **A tela inicial deixa de pedir decisão**, que é a tese do produto (§1). Como
+  home, E é o defeito original com uma janela maior: hoje a tela lidera com o
+  dinheiro de hoje, em E ela lidera com o dinheiro de 30 dias.
+- **Cobra 30px de toda superfície do app**, pra sempre, pra devolver o inbox
+  que ela mesma expulsou.
+- **Precisa de dado que o app ainda não tem em quantidade.** Com 5 entregas em
+  30 dias, "entregas por semana" não é gráfico, é ruído amostral com cara de
+  tendência. O mock troca o gráfico pela lista das 5 e escreve a régua: gráfico
+  só acima de ~20 pontos no período.
+- **Convida vaidade.** Todo tile a mais nessa tela é um convite pra medir
+  esforço em vez de resultado. O mock recusa tokens absolutos, contagem de
+  conversas, contagem de projetos e "1 aprendizado" como tiles, e não inventa
+  sequência de dias (o app não mede isso).
+
+## As cinco, contra a evidência
+
+| | Manchete da tela | Com o uso REAL medido | Sacrifica | Tamanho da cirurgia |
+|---|---|---|---|---|
+| **A** | Fila de decisões em 30px | Quase sempre "Nada esperando você" em 30px | Custo periférico; fila sem teto | Pequena (reordenar + faixa de custo) |
+| **B** | Linha de estado + 6 cartões iguais | Metade dos cartões nasce vazia (Board 0, Agendado 0) | O ranqueamento inteiro | Grande (6 containers + dismissal persistido) |
+| **C** | O vazio calmo | É o retrato mais fiel do estado normal | Estabilidade espacial | Média (gate do `loaded` em toda seção) |
+| **D** | Não existe tela; existe destino | Elimina a aba cujo estado normal é o vazio | Vigilância de custo e frota; regra de boot; porta de mão única | Média (remover modo + item de sidebar) |
+| **E** | US$ 6.260 em 30 dias | Responde o maior fato do produto | A tese do app na home; 30px em todas as abas | Grande (view nova + faixa global + derivados) |
+
+## Recomendação final entre as cinco
+
+**D, com a faixa de E como acessório condicional, e o conteúdo de E como
+destino, nunca como home.** Concretamente:
+
+1. **Remover a aba Painel do switcher.** Ela fica `Trabalho · Features`.
+2. **"Resumo" como destino fixo na sidebar** (⌘1), irmão de "Planos de voo" e
+   "Agendado", com a hierarquia de A (decisão no topo, no maior tipo) e a regra
+   de C (seção sem item não renderiza título nem moldura). Sem Board.
+3. **Boot abre no Resumo**, com a última conversa marcada `última` no topo da
+   lista. Essa regra é parte da direção, não detalhe de implementação.
+4. **A faixa âmbar de E entra**, mas seguindo a regra de C: **só existe quando
+   tem conteúdo**. Com a fila vazia (o estado normal, pela evidência) ela não
+   ocupa pixel nenhum, e o custo de 30px só é cobrado quando 30px foram
+   ganhos.
+5. **O conteúdo de E vira um destino de consulta** (Configurações ▸ Uso e
+   custo, alcançável também pelo "uso e custo →" da faixa do Resumo), com o
+   mapa de calor e os três derivados. Retrospectiva é consulta, não sessão.
+
+O argumento decisivo não é "um clique a menos". É este: **o problema de "ver o
+estado da frota enquanto trabalho" não é resolvido nem por A nem por D.** Hoje
+o Painel some no instante em que você troca pra Trabalho, exatamente como o
+Resumo de D some quando você abre uma conversa. A visibilidade permanente só
+existe em elemento de chrome (faixa, sino, tray), nunca em aba. Se a aba não
+compra visibilidade e o estado normal do conteúdo dela é o vazio, **a aba não
+está se pagando**. É por isso que D é a direção certa e A é o meio-termo caro:
+A arruma a hierarquia de uma tela que a evidência diz que quase não tem
+conteúdo.
+
+E é a melhor **tela** das cinco e a pior **home** das cinco. O conteúdo dela é
+o único que responde a pergunta de US$ 6.260, e por isso ele tem que existir.
+Mas colocá-lo na abertura é reescrever a tese do produto: um cockpit que abre
+mostrando o mês passado não pede a próxima decisão, ele explica a anterior.
+
+### O argumento mais forte CONTRA a minha recomendação
+
+**Missões está em reconstrução, e D remove o chão embaixo dela.** Quando o modo
+missão voltar, ele vai querer uma superfície cross-projeto pra planos de voo em
+execução, gates esperando aprovação e rotas paradas. Hoje esse lugar é o
+Painel. Se o Painel for removido agora, essa superfície vai ter que renascer
+dentro do Trabalho, e a frente que está reconstruindo Missões vai encontrar a
+arquitetura de navegação diferente no meio do caminho. Somando com o fato de D
+ser a única porta de mão única das cinco, existe uma leitura defensável de
+sequência: **fazer A agora** (que é reversível, pequena, e já resolve
+hierarquia, vazio e excesso de métrica), **esperar Missões assentar**, e só
+então avaliar se a aba ainda se paga. Se essa leitura vencer, ela vence por
+argumento de **timing**, não por argumento de desenho: nada nela contradiz que
+a aba não compra visibilidade.
+
+Um segundo contra, menor mas real: a regra de boot de D ("abre sempre no
+Resumo") é frágil por natureza social. É o tipo de regra que uma frente futura
+relaxa em nome de conveniência ("restaurar a última conversa é mais rápido"), e
+quando relaxar, o Resumo some sem que ninguém perceba, porque nada quebra.
+Se D for adiante, essa regra precisa de teste, não de comentário.
+
+## Segunda opinião do agy (Gemini 3.6 Flash High) sobre D e E
+
+Consulta rodada com `agy -p "<prompt>" --model gemini-3.6-flash-high`, pedindo
+pra ESTRESSAR as duas direções em sete frentes (o que se perde ao dissolver o
+Painel; o desenho que salva D; onde vai parar o "precisa de mim" em E; se
+retrospectiva é honesta ou vaidade; quais métricas são vaidade; se heatmap é
+teatro; veredito entre as cinco).
+
+**Aproveitado, e o que mudou por causa disso:**
+
+- **"O estado zero não pode ser a ausência de seleção."** O argumento é que
+  "deselecionar" não é um gesto que exista em app de conversa: clicar de novo
+  no item ativo não desmarca, então depois do primeiro clique da sessão o
+  resumo morreria pra sempre. **Isso reescreveu D**: em vez de um estado vazio
+  do Trabalho, o resumo virou um **destino fixo** na sidebar (anotação ② do
+  mock). É a contribuição mais valiosa da consulta.
+- **A armadilha da restauração de estado**: app de produtividade restaura a
+  última conversa ao abrir, e nesse caso o resumo nunca apareceria. Virou a
+  regra de boot explícita (anotação ④) e o segundo contra da recomendação.
+- **A cegueira multithread**: resolvida a decisão 1, as outras duas somem da
+  tela. Virou a anotação ⑨ e o contador âmbar no item Resumo, com a regra de
+  não contar duas vezes.
+- **"Tray sozinho é inviável"** (tela cheia e segundo monitor engolem o menu
+  bar do macOS). Fechou a opção (a) do brief e empurrou E pra faixa persistente
+  (anotação ① de E).
+- **"Retrospectiva é honesta como auditoria financeira, desonesta como
+  produtividade."** É o enquadramento inteiro de E: sem placar, sem esforço,
+  com dinheiro e denominador.
+- **Custo por entrega e custo do lado descartado das disputas** como os dois
+  recortes que valem a tela. Viraram dois dos três derivados de 20px.
+- **"Heatmap de atividade é teatro; pintando US$ por hora vira detector de
+  vazamento."** Adotado inteiro, com a frase dele sobre a célula quente às 23h
+  ser um alerta, não uma medalha. No mock isso virou o episódio das 01h às 04h
+  de ontem, que de quebra **explica** o pico que o sparkline de A, B e C
+  desenha sem explicação.
+- **Tokens absolutos, contagem de projetos e contagem de conversas como
+  vaidade.** Saíram dos tiles (anotação ⑨ de E).
+
+**Descartado, com motivo:**
+
+- **O nome "Cockpit"** pro destino fixo. Cockpit é a metáfora do produto
+  inteiro (§1), não o nome de uma tela; usar como rótulo de item de sidebar
+  gasta a palavra. Ficou **Resumo**, que diz o que é.
+- **"Kill switch" no rodapé do resumo.** O app tem duas ações distintas e
+  não intercambiáveis, **Parar** (mata processo gerenciado) e **Interromper
+  turno** (§7), e nenhuma delas é botão de lista de leitura. A ação mora na
+  conversa.
+- **Proporções fixas de viewport** (fila 70%, frota 30%). Proporção fixa é o
+  oposto da regra de C: com fila vazia, 70% da tela viraria vazio decorado. As
+  seções crescem com o conteúdo.
+- **"Badge de contagem é ruído inútil."** Discordo em parte, e a parte que ele
+  acerta já está no mock: badge sem destino obriga a caçar em 16 conversas.
+  Mas o badge no item Resumo **tem** destino, e é o único lugar onde a fila
+  continua existindo com o fio aberto. Ficou, com a regra de só aparecer quando
+  o Resumo não está na tela.
+- **A conta "US$ 134,78 por entrega" (673,92 ÷ 5).** Mistura janela de 7 dias
+  com o total de entregas de sempre. Refeita com denominador coerente
+  (6.260 ÷ 5 = US$ 1.252 em 30 dias) e com a ressalva de método impressa em
+  11px ao lado do número.
+- **"Aprendizados é métrica morta, deletar."** Deletei o **tile**, não o dado:
+  virou linha de gaveta com o número real. Contagem baixa não é feature morta,
+  e o app deixar de contar é como ele esquecer que a feature existe.
+- **"Taxa de desperdício" incluindo "conversas sem entrega".** Chamar de
+  desperdício toda conversa que não virou entrega registrada é um julgamento
+  falso: 98,8% do gasto está aí, e boa parte virou código. Ficou só a metade
+  demonstrável (o lado descartado da disputa), e o resto virou a linha do 1,2%,
+  que acusa o **denominador** e não o trabalho.
+- **"Detalhe de CLI não é conteúdo de estado zero de chat"** (crítica dele a
+  D). No Frota o estado da frota É conteúdo de primeira classe (§1), então a
+  premissa não vale aqui. O que a crítica acerta é outra coisa, e está
+  registrada: em D esse estado passa a existir só no Resumo.
+- **"Retrospectiva pra Configurações ▸ Custos e Auditoria"**, no veredito dele.
+  Adotado no espírito (não é home), recusado como enterro: US$ 6.260/mês não é
+  item de configuração, e o destino precisa ser alcançável pela navegação, não
+  só por um modal.
+
+**Onde ele não tinha como acertar**, e o mock corrigiu com o código na mão: o
+switcher tem exatamente três modos (`titleBarModes.ts`), então "remover o
+Painel" é uma linha de dado, não uma refatoração de navegação; a sidebar já tem
+entradas globais (`ScheduledEntry`, `FlightPlansEntry`), então o slot do
+"Resumo" já existe; a `UsagePill` mede **janela do plano**, não dinheiro, então
+D realmente perde a vigilância de custo (ele supôs que o custo do dia já morava
+na barra do topo); e o `InboxBell` já existe, então a faixa de E é um reforço
+de um sinal que o app tem, não a criação de um inbox.
+
+**A convergência dele com a minha recomendação** (remover o Painel, destino
+fixo na sidebar, retrospectiva rebaixada) tirou a direção do campo do gosto,
+mas não é prova: ele e eu compartilhamos o mesmo viés de gostar de arquitetura
+enxuta, e nenhum dos dois vai ter memória muscular quebrada quando a aba
+sumir.
