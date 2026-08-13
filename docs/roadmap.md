@@ -67,6 +67,45 @@ bypass NOVO, baseline só encolhe. `reliability-gates`: cada invariante com
 `coveredPlatforms` (**lacuna é campo obrigatório**), links da issue. Root
 guard: job que rejeita arquivo novo na raiz. Comece com 5 gates.
 
+### R7 — Automations maduras (Orca) · o "Agendado" com dentes
+Cada automação ganha: **precheck** (comando que decide se vale rodar),
+**política de execução perdida** (Mac desligado na hora ⇒ roda uma vez dentro
+da tolerância), **modo de workspace** (worktree existente × novo por execução),
+e **estados de resultado que explicam** — o Orca tem 9, sendo 6 variações de
+"pulei, e por quê" (precheck, perdida, indisponível, exige auth interativa).
+Onboarding por **templates** prontos: ninguém escreve cron do zero.
+
+### R8 — Tasks: caixa de entrada de trabalho EXTERNO (Orca)
+Agregar issues/PRs de GitHub/GitLab/Linear/Jira numa tela de onde se dispara um
+agente em um clique. Hoje nosso inbox só enxerga o que nasce dentro do app.
+Provider desconectado desaparece da lista (4 camadas de esconder).
+
+### R9 — Retomar sessão + trocar modelo/esforço no meio (Orca)
+Catálogo por agente de modelos e flags de esforço, aplicável no lançamento E
+durante a sessão (`/effort high`); argv de resume por agente (o Orca tem 12
+resumíveis). Encaixa no nosso registry por capability.
+
+### R10 — Jornadas em Playwright + benchmarks como portão
+NÃO instalar jsdom (não é navegador; não pegaria nossos bugs reais: popover
+cortado, scroll que puxa o tapete, badge que come título). Em vez disso:
+expandir o e2e real (hoje só boot + rename) para jornadas — despachar tarefa,
+aprovar plano, guia de setup sumindo ao completar, onboarding ponta a ponta.
+Mais benchmarks com orçamento numérico falhando o CI (o Orca usa tecla ≤75ms
+mediana, restore ≤1s). Regra do Orca a adotar: *o que o spec finalmente espera
+tem que ser observável pelo usuário* — teste que escreve no store e lê de volta
+afirma que o setter funciona, não que o app funciona.
+
+### R11 — Painel: o inbox não pode ser sussurro
+Feedback do usuário no build 193: o Painel lidera com "GASTO HOJE" no maior
+tipo da tela e "Nada esperando você" fica perdido entre board vazio e entregas.
+Contraria a tese do STYLEGUIDE (mostra estado, PEDE a decisão). Mocks A/B/C em
+`docs/mocks/painel-*.html` (com segunda opinião de UI do agy 3.6).
+
+### R12 — Skills que não podem desalinhar (Orca)
+O que se instala no agente é um STUB que manda buscar o guia do binário
+("mantido fora deste arquivo de propósito, pra nunca poder divergir"), com
+manifesto de hashes por arquivo.
+
 ## Fila longa / condicional
 
 - **Barra de status inferior (24px, largura total)**: só quando houver ≥3
