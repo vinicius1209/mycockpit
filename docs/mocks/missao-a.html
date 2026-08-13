@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Missão · A · Missão é um fio</title>
+<style>
+  /* Tokens: cópia fiel de app/src/index.css (light :root · dark .dark).
+     Nenhum hex fora daqui. */
+  :root{
+    color-scheme: light dark;
+    --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
+    --secondary:#f4f4f2; --muted-foreground:#5c6166; --accent:#f1f1ef; --faint:#8a9099;
+    --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.14);
+    --brass:#a9742b; --brass-soft:rgba(169,116,43,.12); --brass-fg:#fbf6ee;
+    --st-idle:#8a9099; --st-running:#2f8fbf; --st-queued:#c1861f;
+    --st-success:#1f9d6b; --st-error:#cf4a3e; --id-violet:#6d47b8;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18);
+    --lift:inset 0 1px 0 rgba(255,255,255,.6);
+    --radius:9px;
+    --sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --background:#0a0b0d; --rail:#0c0d10; --foreground:#e7e8ea; --card:#141619;
+    --secondary:#191c20; --muted-foreground:#9aa0a7; --accent:#1e2126; --faint:#687078;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13);
+    --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#1a1306;
+    --st-idle:#687078; --st-running:#5bb8e8; --st-queued:#d99138;
+    --st-success:#5bd6a0; --st-error:#f2766b; --id-violet:#a48af0;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+    --shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);
+    --lift:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--background);color:var(--foreground);
+    font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"liga" 0,"calt" 0}
+  .label-mono{font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+    font-size:11px;line-height:1;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+
+  /* ── chrome do mock (não é o app) ── */
+  .mockbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:10px 18px;background:color-mix(in srgb,var(--background) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+  .mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);
+    border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:1px 7px}
+  .mockbar .dir{font-weight:600;color:var(--foreground);font-size:13px}
+  .mockbar nav{display:flex;gap:3px;margin-left:auto}
+  .mockbar nav a{color:var(--muted-foreground);text-decoration:none;padding:3px 10px;border-radius:6px;font-weight:500}
+  .mockbar nav a:hover{background:var(--accent)}
+  .mockbar nav a.on{background:var(--brass-soft);color:var(--brass)}
+  .seg{display:flex;gap:2px;border:1px solid var(--border);border-radius:7px;padding:2px}
+  .seg button{font-size:11px;padding:2px 9px;border-radius:5px;color:var(--muted-foreground);white-space:nowrap}
+  .seg button.on{background:var(--accent);color:var(--foreground)}
+
+  .stage{max-width:1000px;margin:0 auto;padding:24px 20px 64px}
+  .thesis{font-size:13px;color:var(--muted-foreground);margin:0 2px 18px;max-width:780px}
+  .thesis b{color:var(--foreground);font-weight:600}
+
+  /* ── moldura da janela ── */
+  .frame{background:var(--background);border:1px solid var(--border);border-radius:14px;
+    overflow:hidden;box-shadow:var(--shadow-pop)}
+  .winbar{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--rail);
+    border-bottom:1px solid var(--border)}
+  .winbar i{width:10px;height:10px;border-radius:50%;background:var(--border-strong);display:block}
+  .winbar span{font-size:12px;color:var(--muted-foreground);margin-left:6px}
+  .panel{max-width:860px;margin:0 auto;padding:24px 30px 26px;display:flex;flex-direction:column;gap:18px}
+
+  /* ── cabeçalho da missão ── */
+  .mhead .top{display:flex;align-items:baseline;gap:10px;min-width:0}
+  .mhead h1{margin:0;font:600 20px/1.25 var(--sans);letter-spacing:-.01em;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mhead .meta{margin-top:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    font-size:12px;color:var(--muted-foreground)}
+  .mhead .meta .sep{color:var(--border-strong)}
+  .mhead .age{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .prompt{margin-top:10px;display:flex;align-items:baseline;gap:8px;min-width:0;
+    font-size:12px;color:var(--muted-foreground);border-left:2px solid var(--border);padding-left:10px}
+  .prompt .txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  .link{font-size:11px;color:var(--faint);text-decoration:underline;flex:0 0 auto;
+    text-underline-offset:2px;text-decoration-color:var(--border-strong);white-space:nowrap}
+  .link:hover{color:var(--foreground)}
+
+  .badge{flex:0 0 auto;font-size:11px;line-height:1.5;padding:1px 8px;border-radius:5px;
+    border:1px solid var(--border-strong);color:var(--muted-foreground);white-space:nowrap}
+  .badge.live{border-color:color-mix(in srgb,var(--st-running) 45%,transparent);
+    background:color-mix(in srgb,var(--st-running) 10%,transparent);color:var(--st-running)}
+  .badge.wait{border-color:color-mix(in srgb,var(--st-queued) 50%,transparent);
+    background:color-mix(in srgb,var(--st-queued) 12%,transparent);color:var(--st-queued)}
+
+  .btn{flex:0 0 auto;font-size:12px;font-weight:500;padding:3px 10px;border-radius:6px;
+    border:1px solid var(--border-strong);color:var(--foreground);white-space:nowrap}
+  .btn:hover{background:var(--accent)}
+  .btn.primary{background:var(--brass);color:var(--brass-fg);border-color:transparent}
+  .btn.primary:hover{opacity:.9}
+  .btn.ghost{border-color:transparent;color:var(--muted-foreground)}
+  .btn.ghost:hover{background:var(--accent);color:var(--foreground)}
+  .btn.danger{border-color:color-mix(in srgb,var(--st-error) 45%,transparent);color:var(--st-error)}
+  .btn.danger:hover{background:color-mix(in srgb,var(--st-error) 10%,transparent)}
+  .btn.sm{font-size:11px;padding:2px 8px}
+  .spacer{margin-left:auto}
+
+  /* ── faixa de instrumento ── */
+  .strip{display:flex;align-items:center;gap:22px;flex-wrap:wrap;padding:9px 12px;
+    border:1px solid var(--border);border-radius:var(--radius);
+    background:color-mix(in srgb,var(--card) 55%,transparent)}
+  .strip .item{--dsp:flex;display:flex;align-items:baseline;gap:7px;min-width:0}
+  .strip .k{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);white-space:nowrap}
+  .strip .v{font:600 13px var(--mono);font-variant-numeric:tabular-nums}
+  .strip .v.pend{font-weight:500;color:var(--muted-foreground)}
+  .strip .hint{font-size:11px;color:var(--faint)}
+
+  /* ── o fio ── */
+  .thread{display:flex;flex-direction:column}
+  .phase{border-top:1px solid var(--border);padding:11px 2px}
+  .phase:first-child{border-top:none}
+  .ph{display:flex;align-items:center;gap:9px;min-width:0}
+  .ph .idx{font:11px var(--mono);color:var(--faint);flex:0 0 auto;width:12px;text-align:right}
+  .ph .nm{font-size:13px;font-weight:600;flex:0 0 auto}
+  .ph .role{font-size:12px;color:var(--muted-foreground);flex:0 0 auto}
+  .ph .engine{font:11px var(--mono);color:var(--faint);flex:1 1 auto;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ph .clock{font:12px var(--mono);font-variant-numeric:tabular-nums;color:var(--muted-foreground);
+    flex:0 0 auto;min-width:64px;text-align:right}
+  .ph .state{font-size:11px;color:var(--faint);flex:0 0 auto}
+  .phase.queued{opacity:.7}
+  .phase.queued .nm{font-weight:500;color:var(--muted-foreground)}
+  .phase.past .nm{font-weight:500}
+
+  .sub{margin:5px 0 0 21px;font-size:12px;color:var(--muted-foreground);
+    display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .sub .path{font-family:var(--mono);font-size:12px;color:var(--foreground)}
+  .sub .cnt{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+
+  .acts{margin:9px 0 0 21px;display:flex;flex-direction:column;border-left:1px solid var(--border);padding-left:13px}
+  .act{display:flex;align-items:center;gap:8px;padding:3px 0;min-width:0;font-size:13px}
+  .act .ck{flex:0 0 auto;width:12px;color:var(--muted-foreground);font-size:11px;text-align:center}
+  .act .t{min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    color:var(--muted-foreground)}
+  .act.live .t{color:var(--foreground)}
+  .act .d{flex:0 0 auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;
+    min-width:40px;text-align:right}
+  .act .path{font-family:var(--mono);font-size:12px;color:var(--foreground)}
+  .act.stub .t{color:var(--faint)}
+
+  .kv{margin:9px 0 0 21px;padding-left:13px;border-left:1px solid var(--border);
+    display:grid;grid-template-columns:88px 1fr;gap:4px 10px;font-size:12px}
+  .kv dt{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);padding-top:2px}
+  .kv dd{margin:0;color:var(--muted-foreground)}
+  .kv dd b{color:var(--foreground);font-weight:500}
+  .kv dd .path{font-family:var(--mono);color:var(--foreground)}
+  .kv dd .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--st-idle)}
+  .dot.sm{width:6px;height:6px}
+  .dot.ring{background:transparent;border:1px solid color-mix(in srgb,var(--muted-foreground) 55%,transparent)}
+  .dot.live{background:var(--st-running);animation:pulse 1.6s cubic-bezier(.4,0,.6,1) infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.78)}}
+  .shim{background:linear-gradient(90deg,var(--muted-foreground) 20%,var(--faint) 45%,var(--muted-foreground) 70%);
+    background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:shim 2.4s linear infinite}
+  @keyframes shim{0%{background-position:120% 0}100%{background-position:-120% 0}}
+
+  /* ── bloco do motor calado ── */
+  .mute{margin:9px 0 0 21px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius);
+    background:color-mix(in srgb,var(--card) 55%,transparent)}
+  .mute .l1{display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}
+  .mute .l1 .t{min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mute .l2{margin-top:4px;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .mute .say{margin-top:8px;padding-top:8px;border-top:1px solid var(--border);
+    font-size:12px;color:var(--muted-foreground);font-family:var(--mono);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mute .sayk{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
+    display:block;margin-bottom:3px}
+
+  /* ── gate ── */
+  .gate{padding:12px 14px;border:1px solid color-mix(in srgb,var(--st-queued) 45%,transparent);
+    border-radius:var(--radius);background:color-mix(in srgb,var(--st-queued) 7%,transparent)}
+  .gate .q{font-size:13px;font-weight:600}
+  .gate .why{margin-top:3px;font-size:12px;color:var(--muted-foreground)}
+  .gate .acts2{--dsp:flex;margin-top:10px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .queuedmsg{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px dashed var(--border-strong);
+    border-radius:7px;min-width:0;flex:1 1 320px}
+  .queuedmsg .k{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);flex:0 0 auto}
+  .queuedmsg .t{min-width:0;flex:1 1 auto;font-size:12px;color:var(--muted-foreground);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* ── composer ── */
+  .composer{border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--card);
+    box-shadow:var(--shadow-pop);padding:10px 12px}
+  .composer .row{display:flex;align-items:center;gap:9px}
+  .composer .phh{flex:1 1 auto;font-size:13px;color:var(--faint);min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .composer .foot{--dsp:flex;margin-top:7px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    font-size:11px;color:var(--faint)}
+  .composer .foot .to{font-family:var(--mono);color:var(--muted-foreground)}
+
+  /* ── anotações ── */
+  .nt{color:var(--brass);font:600 11px var(--mono);vertical-align:super;margin-left:4px;line-height:0;user-select:none}
+  .notes{margin-top:26px;padding:0 6px;font-size:13px;color:var(--muted-foreground)}
+  .notes h2{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:22px 0 12px}
+  .notes h2:first-child{margin-top:0}
+  .notes ol{list-style:none;margin:0;padding:0;display:grid;gap:9px;max-width:800px}
+  .notes li{padding-left:26px;position:relative;line-height:1.55}
+  .notes li .nt{position:absolute;left:0;top:6px;vertical-align:baseline;margin:0}
+  .notes b{color:var(--foreground);font-weight:600}
+  .notes code{font-family:var(--mono);font-size:12px;color:var(--foreground)}
+
+  .ph .engine .nt,.ph .state .nt,.ph .role .nt{vertical-align:baseline}
+  /* alternância de estado do mock: hide/show sem quebrar o display real */
+  [data-st]{display:none !important}
+  body[data-s="f1"] [data-st~="f1"],
+  body[data-s="f2"] [data-st~="f2"],
+  body[data-s="gate"] [data-st~="gate"]{display:var(--dsp,block) !important}
+  span[data-st]{--dsp:inline}
+  button[data-st]{--dsp:inline-block}
+  @media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</head>
+<body data-s="f2">
+
+<header class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">Missão · A · Missão é um fio</span>
+  <nav>
+    <a class="on" href="missao-a.html">A</a>
+    <a href="missao-b.html">B</a>
+    <a href="missao-c.html">C</a>
+  </nav>
+  <div class="seg" id="state">
+    <button data-s="f1">fase 1 · motor falante</button>
+    <button class="on" data-s="f2">fase 2 · motor calado</button>
+    <button data-s="gate">esperando você</button>
+  </div>
+  <div class="seg" id="theme">
+    <button data-t="light">claro</button>
+    <button data-t="dark">escuro</button>
+  </div>
+</header>
+
+<div class="stage">
+  <p class="thesis"><b>Tese:</b> missão não é uma superfície nova, é o fio com plano de voo.
+    Vale aqui tudo que a despoluição do chat já ensinou: o passado recolhe pra uma linha que
+    JÁ é a informação, só o vivo fica aberto, o filho mostra o delta e nunca repete o cabeçalho,
+    o cronômetro é irmão do que anima, o marco vai pro pretérito. Duas coisas entram novas:
+    a fase declara <b>o que o motor dela consegue reportar</b> (o agy não é o Claude, e a tela
+    diz isso em vez de inventar verbo), e o humano volta a falar por um composer, só que a
+    mensagem aterrissa no gate da próxima fase.</p>
+
+  <div class="frame">
+    <div class="winbar"><i></i><i></i><i></i><span>Frota · Missão</span></div>
+
+    <div class="panel">
+
+      <!-- ══ CABEÇALHO ══ -->
+      <section class="mhead">
+        <div class="top">
+          <h1>UI-first · personalizado</h1>
+          <span class="badge live" data-st="f1 f2">em voo</span>
+          <span class="badge wait" data-st="gate">esperando você</span>
+          <span class="spacer"></span>
+          <button class="btn danger">Parar missão</button>
+        </div>
+        <div class="meta">
+          <span>frota-site</span><span class="sep">·</span>
+          <span data-st="f1">fase 1 de 3</span>
+          <span data-st="f2 gate">fase 2 de 3</span><span class="sep">·</span>
+          <span class="age" data-st="f1">começou há 18 min<span class="nt">①</span></span>
+          <span class="age" data-st="f2 gate">começou há 24 min<span class="nt">①</span></span>
+        </div>
+        <div class="prompt">
+          <span class="txt">Refazer a landing do Frota com foco em UI: hero mostrando o cockpit real, uma seção de preço só, nada de depoimento inventado, e um bloco de FAQ curto que responda…</span>
+          <button class="link">ver prompt</button>
+        </div>
+      </section>
+
+      <!-- ══ INSTRUMENTO ══ -->
+      <section class="strip">
+        <div class="item"><span class="k">Fase</span>
+          <span class="v" data-st="f1">1 / 3</span>
+          <span class="v" data-st="f2 gate">2 / 3</span>
+        </div>
+        <div class="item" data-st="f1">
+          <span class="k">Custo</span><span class="v pend">—</span>
+          <span class="hint">fecha ao fim de cada fase<span class="nt">②</span></span>
+        </div>
+        <div class="item" data-st="f2 gate">
+          <span class="k">Custo</span><span class="v">US$ 2,07</span>
+          <span class="hint">medido em 1 de 3 fases<span class="nt">②</span></span>
+        </div>
+        <div class="item" data-st="f2 gate">
+          <span class="k">Fase 2</span><span class="v pend">não mede</span>
+          <span class="hint">o agy não reporta custo<span class="nt">③</span></span>
+        </div>
+      </section>
+
+      <!-- ══ FIO ══ -->
+      <div class="thread">
+
+        <!-- ── fase 1 VIVA (estado f1): motor falante ── -->
+        <section class="phase" data-st="f1">
+          <div class="ph">
+            <span class="dot live"></span>
+            <span class="idx">1</span>
+            <span class="nm">Planejar</span>
+            <span class="role">planejador</span>
+            <span class="engine">Claude · Opus 5<span class="nt">④</span></span>
+            <span class="clock">16min 19s<span class="nt">⑤</span></span>
+          </div>
+          <div class="acts">
+            <div class="act"><span class="ck">✓</span>
+              <span class="t">leu <span class="path">docs/STYLEGUIDE.md</span></span><span class="d">2s</span></div>
+            <div class="act"><span class="ck">✓</span>
+              <span class="t">buscou <span class="path">"hero"</span> em <span class="path">src/components</span> · 41 achados</span><span class="d">1s</span></div>
+            <div class="act"><span class="ck">✓</span>
+              <span class="t">rodou <span class="path">rg -n "landing" docs/</span> · 12 linhas<span class="nt">⑥</span></span><span class="d">1s</span></div>
+            <div class="act"><span class="ck">✓</span>
+              <span class="t">2 ações sem rótulo (o motor não mandou o nome)<span class="nt">⑦</span></span>
+              <button class="link">ver payload</button><span class="d">3s</span></div>
+            <div class="act"><span class="ck">✓</span>
+              <span class="t">criou <span class="path">landing-plan.md</span> · +148 linhas</span><span class="d">4s</span></div>
+            <div class="act live"><span class="ck"><span class="dot live sm"></span></span>
+              <span class="t"><span class="shim">redigindo a fase 2 do plano…</span><span class="nt">⑧</span></span>
+              <span class="d">1min 04s</span></div>
+          </div>
+        </section>
+
+        <!-- ── fase 1 PASSADA, aberta (estado f2): o que ela FEZ ── -->
+        <section class="phase past" data-st="f2">
+          <div class="ph">
+            <span class="dot"></span>
+            <span class="idx">1</span>
+            <span class="nm">Planejar concluída</span>
+            <span class="role">planejador</span>
+            <span class="engine">Claude · Opus 5</span>
+            <span class="clock">16min 42s</span>
+            <button class="link">recolher</button>
+          </div>
+          <div class="sub">
+            <span>entregou <span class="path">landing-plan.md</span></span>
+            <span class="cnt">+148 linhas · 7 ações · US$ 2,07 · 412k tokens<span class="nt">⑨</span></span>
+          </div>
+          <div class="acts">
+            <div class="act stub"><span class="ck">✓</span>
+              <span class="t">2 leituras (STYLEGUIDE.md, design-system.md)<span class="nt">⑩</span></span>
+              <button class="link">mostrar</button><span class="d">4s</span></div>
+            <div class="act"><span class="ck">✓</span>
+              <span class="t">buscou <span class="path">"hero"</span> em <span class="path">src/components</span> · 41 achados</span><span class="d">1s</span></div>
+            <div class="act"><span class="ck">✓</span>
+              <span class="t">rodou <span class="path">rg -n "landing" docs/</span> · 12 linhas</span><span class="d">1s</span></div>
+            <div class="act"><span class="ck">✓</span>
+              <span class="t">2 ações sem rótulo (o motor não mandou o nome)</span>
+              <button class="link">ver payload</button><span class="d">3s</span></div>
+            <div class="act"><span class="ck">✓</span>
+              <span class="t">criou <span class="path">landing-plan.md</span> · +148 linhas</span><span class="d">4s</span></div>
+          </div>
+          <dl class="kv">
+            <dt>Decidiu</dt>
+            <dd><b>hero com captura real do cockpit</b><span class="nt">⑪</span>, no lugar de ilustração
+              (motivo: nada de imagem inventada)</dd>
+            <dt>Deixou</dt>
+            <dd>1 pendência: <span>"confirmar se o preço único cabe no plano Team"</span></dd>
+            <dt>Arquivos</dt>
+            <dd><span class="path">landing-plan.md</span> <button class="link">ver no projeto</button></dd>
+          </dl>
+        </section>
+
+        <!-- ── fases 1 e 2 RECOLHIDAS (estado gate) ── -->
+        <section class="phase past" data-st="gate">
+          <div class="ph">
+            <span class="dot"></span>
+            <span class="idx">1</span>
+            <span class="nm">Planejar concluída<span class="nt">⑨</span></span>
+            <span class="engine">landing-plan.md · 7 ações · 16min 42s · US$ 2,07 · Claude Opus 5</span>
+            <button class="link">mostrar</button>
+          </div>
+        </section>
+
+        <section class="phase past" data-st="gate">
+          <div class="ph">
+            <span class="dot"></span>
+            <span class="idx">2</span>
+            <span class="nm">Executar UI concluída</span>
+            <span class="engine">7 arquivos (+412 −96) · sem ações relatadas · 8min 03s · não mede · agy Flash 3.6</span>
+            <button class="link">mostrar</button>
+          </div>
+        </section>
+
+        <!-- ── fase 2 VIVA (estado f2): motor calado ── -->
+        <section class="phase" data-st="f2">
+          <div class="ph">
+            <span class="dot live"></span>
+            <span class="idx">2</span>
+            <span class="nm">Executar UI</span>
+            <span class="role">executor</span>
+            <span class="engine">agy · Flash 3.6</span>
+            <span class="clock">5min 42s</span>
+          </div>
+          <div class="mute">
+            <div class="l1">
+              <span class="t">o agy não reporta ação por ação<span class="nt">⑫</span></span>
+              <button class="btn sm">ver saída bruta</button>
+            </div>
+            <div class="l2">rodando há 5min 42s · última saída há 38s · 14 KB no stdout<span class="nt">⑬</span></div>
+            <div class="l2">nenhuma ação reportada nesta fase<span class="nt">⑭</span> · 4 arquivos mudaram no worktree (contados no disco)</div>
+            <div class="say">
+              <span class="sayk">última linha que ele escreveu, há 38s</span>
+              vou começar pelo hero reaproveitando o grid de 12 colunas do painel, depois a seção de preço…
+            </div>
+          </div>
+        </section>
+
+        <!-- ── fase 2 SEGURADA no gate (estado gate) ── -->
+        <section class="phase" data-st="gate">
+          <div class="gate">
+            <div class="q">Executar UI terminou. Seguir para Revisar?</div>
+            <div class="why">O agy escreveu 7 arquivos no worktree <span class="mono">missao/ui-first</span>
+              e não reportou custo (o motor não expõe uso). Revisar vai rodar em Codex.</div>
+            <div class="acts2">
+              <button class="btn primary">Aprovar e seguir</button>
+              <button class="btn">Ver os 7 arquivos</button>
+              <button class="btn ghost">Rodar Executar UI de novo</button>
+              <button class="btn ghost">Pular Revisar<span class="nt">⑮</span></button>
+            </div>
+            <div class="acts2">
+              <div class="queuedmsg">
+                <span class="k">vai junto</span>
+                <span class="t">"o hero precisa caber em 1 tela no MacBook Air, não inventa screenshot"</span>
+                <button class="btn ghost sm">editar</button>
+                <button class="btn ghost sm">remover</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── fase 2 na fila (estado f1) ── -->
+        <section class="phase queued" data-st="f1">
+          <div class="ph">
+            <span class="dot ring"></span><span class="idx">2</span>
+            <span class="nm">Executar UI</span><span class="role">executor</span>
+            <span class="engine">agy · Flash 3.6 · não reporta ações nem custo</span>
+            <span class="state">na fila<span class="nt">⑫</span></span>
+          </div>
+        </section>
+
+        <!-- ── fase 3 na fila ── -->
+        <section class="phase queued" data-st="f1 f2 gate">
+          <div class="ph">
+            <span class="dot ring"></span><span class="idx">3</span>
+            <span class="nm">Revisar</span><span class="role">revisor<span class="nt">⑯</span></span>
+            <span class="engine">Codex</span>
+            <span class="state">na fila</span>
+          </div>
+        </section>
+      </div>
+
+      <!-- ══ COMPOSER ══ -->
+      <section class="composer" data-st="f1 f2">
+        <div class="row">
+          <span class="phh">Mensagem para a próxima fase…<span class="nt">⑰</span></span>
+          <button class="btn">Segurar no fim desta fase<span class="nt">⑱</span></button>
+          <button class="btn primary">Enfileirar</button>
+        </div>
+        <div class="foot" data-st="f1">
+          <span>entra no gate entre Planejar e <span class="to">Executar UI</span>, não interrompe a fase em curso</span>
+        </div>
+        <div class="foot" data-st="f2">
+          <span>entra no gate entre Executar UI e <span class="to">Revisar</span>, não interrompe a fase em curso</span>
+          <span>·</span>
+          <button class="link">Interromper esta fase</button>
+        </div>
+      </section>
+
+      <section class="composer" data-st="gate">
+        <div class="row">
+          <span class="phh">Uma nota para o revisor antes de aprovar…</span>
+          <button class="btn primary">Anexar ao gate</button>
+        </div>
+        <div class="foot">
+          <span>1 mensagem já enfileirada para <span class="to">Revisar</span></span>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>Anotações</h2>
+    <ol>
+      <li><span class="nt">①</span> <b>Um relógio vivo só.</b> O feedback pede o tempo da missão, e a
+        tentação é somar um segundo cronômetro. Dois relógios narrando o mesmo agora foi o bug dos
+        builds 181/182 (dono único do agora, B2.2). Saída: o cronômetro que tica pertence à
+        <b>fase corrente</b>; a missão carrega uma <b>idade</b> de granularidade de minuto
+        ("começou há 24 min"), que não tica e não compete. <code>MissionRun.startedAt</code> já
+        existe e nunca foi renderizado.</li>
+      <li><span class="nt">②</span> <b>Custo honesto diz quando aterrissa.</b> Enquanto o valor não
+        chegou: "—", com a legenda dizendo o momento ("fecha ao fim de cada fase"). "medindo…" seria
+        pior: implica medidor vivo, e o código só soma no evento <code>result</code> de cada fase
+        (<code>store/mission.ts:764</code>). Duas casas decimais, não três
+        (<code>fmtCost</code> hoje usa 3 abaixo de US$ 1, <code>lib/format.ts:13</code>). E o total
+        diz a <b>cobertura</b>: "medido em 1 de 3 fases". <code>US$ 0,000</code> some.</li>
+      <li><span class="nt">③</span> <b>O caso que quebra o zero de vez.</b> O agy tem
+        <code>reports_cost: false</code> e <code>cumulative_usage: false</code>
+        (<code>adapters.rs:379-382</code>): ele não reporta custo nem tokens. O custo da fase 2 não é
+        zero, é <b>inexistente</b>, e nem estimativa dá. A tela diz "não mede · o agy não reporta
+        custo". O único zero legítimo no app seria motor local, onde zero é o custo real.</li>
+      <li><span class="nt">④</span> <b>Identidade uma vez por contexto.</b> "Claude · Claude · Opus 5"
+        vira <code>Claude · Opus 5</code>, escrito no cabeçalho da fase e em lugar nenhum abaixo.
+        Nenhuma linha filha repete motor ou modelo (ADR-037: o cabeçalho diz o quê, o filho mostra o
+        delta).</li>
+      <li><span class="nt">⑤</span> <b>Cronômetro irmão, nunca filho</b> (Warp R2): fora do elemento
+        com shimmer, <code>tabular-nums</code>, largura mínima, <code>shrink-0</code>. Quem trunca é
+        o nome (R5). Segundos inteiros enquanto roda, congela no fim.</li>
+      <li><span class="nt">⑥</span> <b>A escada do rótulo</b> (a resposta ao "Executar ferramenta" ×3),
+        em ordem, primeira que casar vence: (1) verbo + alvo, "criou landing-plan.md"; (2) sem verbo
+        mapeado mas com payload, o comando ou o caminho cru em mono, "rodou rg -n …"; (3) só o
+        identificador da tool, mostra ele em mono (<code>mcp__figma__get_file</code>: id feio é
+        identidade, "Executar ferramenta" não é); (4) nada além do evento, vai pra ⑦. Hoje o
+        <code>default:</code> de <code>toolview.ts:381-390</code> pula direto do degrau 1 pro rótulo
+        genérico, e é por isso que tool MCP e tool própria do Codex/agy caem todas na mesma string.
+        Caso citável do degrau 2: o Codex manda <code>file_change</code> com
+        <code>input = item.changes</code>, sem <code>file_path</code>
+        (<code>adapters.rs:1786-1797</code>) → hoje sai "Editar arquivo" sem arquivo; o payload tem o
+        caminho.</li>
+      <li><span class="nt">⑦</span> <b>Degrau 4, a forma honesta.</b> Ações sem nenhuma identidade
+        <b>agregam numa linha só</b> e dizem de quem é a culpa: "2 ações sem rótulo (o motor não
+        mandou o nome)", com "ver payload" pra auditar. Nunca N linhas iguais: linha sem identidade
+        repetida N vezes é pior que ausência, porque finge conteúdo. A agregação também deixa o
+        buraco <b>mensurável</b>: se aparecer "9 ações sem rótulo", o adapter tem bug e o usuário vê.</li>
+      <li><span class="nt">⑧</span> <b>Uma linha viva por vez, no gerúndio</b>, e ela é a última do
+        bloco. O "Agora: Criar landing-plan.md" do build repetia a linha acima porque a linha viva era
+        um eco do marco; aqui o marco já está no pretérito ("criou landing-plan.md") e a linha viva
+        fala do que ainda não terminou. Impossível duplicar por construção.</li>
+      <li><span class="nt">⑨</span> <b>O resumo colapsado É a informação</b> (R7). Ordem fixa:
+        <b>entregável</b> ("landing-plan.md"), <b>impacto</b> ("7 ações"), <b>duração congelada</b>,
+        <b>custo</b>, e por último, em sussurro, <b>quem fez</b>. Hoje a fase concluída mostra só o
+        custo e nem duração tem: <code>MissionPhaseRun</code> não guarda fim
+        (<code>missionTypes.ts:137-149</code>), só <code>startedAt</code>. Este mock exige um campo
+        novo, <code>endedAt</code>, e a contagem derivada de <code>items</code>. Sem isso o resumo
+        não fecha.</li>
+      <li><span class="nt">⑩</span> <b>Regra decidível do detalhe</b> (quando ferramenta vira ruído):
+        até 5 ações, mostra todas. Acima de 5, as <b>leituras/buscas</b> agregam num stub
+        ("3 leituras · mostrar") e ficam visíveis só as <b>mutações</b> (escrita, comando, commit),
+        a <b>falha</b> e a <b>ação corrente</b>. Falha nunca agrega. É a regra do fio (ADR-037)
+        recortada pelo eixo que importa numa missão: o que mudou o disco.</li>
+      <li><span class="nt">⑪</span> <b>O porquê existe no disco e a UI joga fora.</b>
+        <code>HandoffDoc.decisions[]</code> (choice/rejected/reason) é parseado e injetado no prompt
+        da fase seguinte (<code>missionHandoff.ts:26-32</code>), mas o resumo final descarta
+        (<code>store/mission.ts:1074-1083</code>). Numa fase concluída, "o que ela decidiu e o que
+        rejeitou" vale mais que a lista de ferramentas. Zero dado novo, só parar de descartar.</li>
+      <li><span class="nt">⑫</span> <b>Ignorância declarada, por capability.</b> A tela não fala do
+        agy, fala do registry: <code>structured_output: false</code> (<code>adapters.rs:378</code>)
+        diz que aquele stdout é texto puro, não fluxo de eventos. Com a capability em false, a fase
+        troca o feed de ações pelo <b>bloco de motor calado</b>, e a linha na fila já avisa antes de
+        rodar ("não reporta ações nem custo") pra a quietude não ser surpresa. Nenhum
+        <code>agent === "agy"</code> em lugar nenhum. Se um dia um motor tiver JSON estruturado mas
+        não emitir eventos de ferramenta, aí sim nasce uma capability própria
+        (<code>tool_events</code>); enquanto o proxy segura, não se inventa registro.</li>
+      <li><span class="nt">⑬</span> <b>Duas idades, não uma.</b> "rodando há 5min 42s" (a fase) e
+        "última saída há 38s" (o motor). O que decide alarme é a <b>segunda</b>: silêncio só assusta
+        em relação à última vez que se ouviu algo. Regra: acima de <b>10 min sem byte</b>, esta linha
+        vira âmbar, o texto passa a "sem sinal do agy há 11min 20s" e "Interromper esta fase" sobe pra
+        botão. Antes disso é cinza, porque calado não é quebrado. Os bytes do stdout são dado real (o
+        Rust é dono do pipe), não estimativa. Fora: PID na tela, que é encanamento sem decisão junto.</li>
+      <li><span class="nt">⑭</span> <b>A frase proibida.</b> "preparando…", "trabalhando…",
+        "redigindo resposta…" (<code>MissionTimeline.tsx:70-74</code>) são verbos inventados pra
+        preencher silêncio: anunciam ignorância como se fosse fato. Some tudo. Fica "nenhuma ação
+        reportada nesta fase", que é verificável, e o slot continua reservado pra quando (e se) um
+        evento chegar.</li>
+      <li><span class="nt">⑮</span> <b>Pular fase tem dois preços diferentes.</b> Pular uma fase
+        <b>na fila</b> é reversível (dá pra reativar antes de chegar nela). Pular a fase
+        <b>corrente</b> mata o processo e é irreversível. Rótulos e confirmações diferentes: o
+        primeiro é um toggle, o segundo passa por <code>confirm({ danger })</code> dizendo o que se
+        perde.</li>
+      <li><span class="nt">⑯</span> <b>Sem inventar o que não foi decidido.</b> Revisar mostra só
+        "Codex" porque <code>def.model === null</code>. O slot fica reservado (o layout não pula
+        quando o modelo chegar), sem palpite. Warp R6: sem dado confiável, some o sinal e fica o
+        espaço.</li>
+      <li><span class="nt">⑰</span> <b>O humano volta a falar.</b> O composer não está travado, ele
+        mudou de <b>destino</b>: a mensagem é entregue no gate entre fases, o ponto de junção onde
+        não atropela execução em curso, e a legenda diz isso na cara. Substitui a copy de hoje,
+        "Missão em andamento; pare a missão para enviar manualmente…"
+        (<code>CommandConsole.tsx:307-309</code>), que é honesta e inútil.</li>
+      <li><span class="nt">⑱</span> <b>"Pausar" não existe, e por isso não aparece.</b> Não há pausa
+        real de um processo de agent: dá pra matar, dá pra não começar o próximo. Então o
+        vocabulário é: <b>Segurar no fim desta fase</b> (reversível, a fase termina normal, a próxima
+        não começa sem você), <b>Interromper esta fase</b> (irreversível, mata o processo; o que já
+        foi escrito no worktree continua escrito, e a fase fica incompleta), <b>Pular</b> (⑮),
+        <b>Parar missão</b> (mata tudo, vermelho). "Retomar" só aparece onde o motor tem
+        <code>session_resume</code> (Claude e Codex sim, agy não): interromper a fase 2 significa
+        rodar a fase 2 <b>do zero</b>, e o aviso pré-clique precisa dizer isso.</li>
+    </ol>
+
+    <h2>Orçamento de tinta</h2>
+    <ol>
+      <li><span class="nt">·</span> <b>Em voo</b>: azul (o que roda) + vermelho (Parar, que destrói).
+        Duas cores de status. Tudo que deu certo é cinza, inclusive os checks.</li>
+      <li><span class="nt">·</span> <b>Esperando você</b>: âmbar (gate) + vermelho (Parar). O azul sai
+        porque nada roda. Brass fica na única primária.</li>
+      <li><span class="nt">·</span> <b>Silêncio longo</b> (10 min sem byte): âmbar entra no bloco do
+        motor calado, e o azul do pulse sai junto com ele. Nunca as duas ao mesmo tempo.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  const root = document.documentElement;
+  function setTheme(t){
+    root.dataset.theme = t;
+    document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  }
+  setTheme(matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.getElementById('theme').addEventListener('click', e => {
+    if (e.target.dataset.t) setTheme(e.target.dataset.t);
+  });
+  document.getElementById('state').addEventListener('click', e => {
+    const s = e.target.dataset.s; if (!s) return;
+    document.body.dataset.s = s;
+    document.querySelectorAll('#state button').forEach(b => b.classList.toggle('on', b.dataset.s === s));
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Missão · C · Sala de controle</title>
+<style>
+  /* Tokens: cópia fiel de app/src/index.css (light :root · dark .dark). */
+  :root{
+    color-scheme: light dark;
+    --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
+    --secondary:#f4f4f2; --muted-foreground:#5c6166; --accent:#f1f1ef; --faint:#8a9099;
+    --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.14);
+    --brass:#a9742b; --brass-soft:rgba(169,116,43,.12); --brass-fg:#fbf6ee;
+    --st-idle:#8a9099; --st-running:#2f8fbf; --st-queued:#c1861f;
+    --st-success:#1f9d6b; --st-error:#cf4a3e; --id-violet:#6d47b8;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18);
+    --lift:inset 0 1px 0 rgba(255,255,255,.6);
+    --radius:9px;
+    --sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --background:#0a0b0d; --rail:#0c0d10; --foreground:#e7e8ea; --card:#141619;
+    --secondary:#191c20; --muted-foreground:#9aa0a7; --accent:#1e2126; --faint:#687078;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13);
+    --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#1a1306;
+    --st-idle:#687078; --st-running:#5bb8e8; --st-queued:#d99138;
+    --st-success:#5bd6a0; --st-error:#f2766b; --id-violet:#a48af0;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+    --shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);
+    --lift:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--background);color:var(--foreground);
+    font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"liga" 0,"calt" 0}
+
+  .mockbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:10px 18px;background:color-mix(in srgb,var(--background) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+  .mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);
+    border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:1px 7px}
+  .mockbar .dir{font-weight:600;color:var(--foreground);font-size:13px}
+  .mockbar nav{display:flex;gap:3px;margin-left:auto}
+  .mockbar nav a{color:var(--muted-foreground);text-decoration:none;padding:3px 10px;border-radius:6px;font-weight:500}
+  .mockbar nav a:hover{background:var(--accent)}
+  .mockbar nav a.on{background:var(--brass-soft);color:var(--brass)}
+  .seg{display:flex;gap:2px;border:1px solid var(--border);border-radius:7px;padding:2px}
+  .seg button{font-size:11px;padding:2px 9px;border-radius:5px;color:var(--muted-foreground);white-space:nowrap}
+  .seg button.on{background:var(--accent);color:var(--foreground)}
+
+  .stage{max-width:1000px;margin:0 auto;padding:24px 20px 64px}
+  .thesis{font-size:13px;color:var(--muted-foreground);margin:0 2px 18px;max-width:780px}
+  .thesis b{color:var(--foreground);font-weight:600}
+
+  .frame{background:var(--background);border:1px solid var(--border);border-radius:14px;
+    overflow:hidden;box-shadow:var(--shadow-pop)}
+  .winbar{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--rail);
+    border-bottom:1px solid var(--border)}
+  .winbar i{width:10px;height:10px;border-radius:50%;background:var(--border-strong);display:block}
+  .winbar span{font-size:12px;color:var(--muted-foreground);margin-left:6px}
+  .panel{max-width:860px;margin:0 auto;padding:22px 30px 26px;display:flex;flex-direction:column;gap:16px}
+
+  .mhead .top{display:flex;align-items:baseline;gap:10px;min-width:0}
+  .mhead h1{margin:0;font:600 20px/1.25 var(--sans);letter-spacing:-.01em;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mhead .meta{margin-top:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    font-size:12px;color:var(--muted-foreground)}
+  .mhead .meta .sep{color:var(--border-strong)}
+  .mhead .age{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .prompt{margin-top:9px;display:flex;align-items:baseline;gap:8px;min-width:0;
+    font-size:12px;color:var(--muted-foreground);border-left:2px solid var(--border);padding-left:10px}
+  .prompt .txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  .link{font-size:11px;color:var(--faint);text-decoration:underline;flex:0 0 auto;
+    text-underline-offset:2px;text-decoration-color:var(--border-strong);white-space:nowrap}
+  .link:hover{color:var(--foreground)}
+  .badge{flex:0 0 auto;font-size:11px;line-height:1.5;padding:1px 8px;border-radius:5px;
+    border:1px solid var(--border-strong);color:var(--muted-foreground);white-space:nowrap}
+  .badge.live{border-color:color-mix(in srgb,var(--st-running) 45%,transparent);
+    background:color-mix(in srgb,var(--st-running) 10%,transparent);color:var(--st-running)}
+  .badge.wait{border-color:color-mix(in srgb,var(--st-queued) 50%,transparent);
+    background:color-mix(in srgb,var(--st-queued) 12%,transparent);color:var(--st-queued)}
+  .btn{flex:0 0 auto;font-size:12px;font-weight:500;padding:3px 10px;border-radius:6px;
+    border:1px solid var(--border-strong);color:var(--foreground);white-space:nowrap}
+  .btn:hover{background:var(--accent)}
+  .btn.primary{background:var(--brass);color:var(--brass-fg);border-color:transparent}
+  .btn.primary:hover{opacity:.9}
+  .btn.ghost{border-color:transparent;color:var(--muted-foreground)}
+  .btn.ghost:hover{background:var(--accent);color:var(--foreground)}
+  .btn.danger{border-color:color-mix(in srgb,var(--st-error) 45%,transparent);color:var(--st-error)}
+  .btn.danger:hover{background:color-mix(in srgb,var(--st-error) 10%,transparent)}
+  .btn.sm{font-size:11px;padding:2px 8px}
+  .spacer{margin-left:auto}
+  .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--st-idle)}
+  .dot.sm{width:6px;height:6px}
+  .dot.ring{background:transparent;border:1px solid color-mix(in srgb,var(--muted-foreground) 55%,transparent)}
+  .dot.live{background:var(--st-running);animation:pulse 1.6s cubic-bezier(.4,0,.6,1) infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.78)}}
+
+  /* ── trilha fina (secundária) ── */
+  .rail{display:flex;align-items:stretch;border:1px solid var(--border);border-radius:var(--radius);
+    overflow:hidden;background:color-mix(in srgb,var(--card) 55%,transparent)}
+  .rl{--dsp:block;flex:1 1 0;min-width:0;padding:8px 12px;border-left:1px solid var(--border);text-align:left}
+  .rl:first-child{border-left:none}
+  .rl:hover{background:var(--accent)}
+  .rl .a{display:flex;align-items:center;gap:7px;min-width:0}
+  .rl .a .n{font:11px var(--mono);color:var(--faint)}
+  .rl .a .nm{font-size:13px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rl .b{margin-top:2px;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rl.q{opacity:.66}.rl.q .nm{font-weight:500;color:var(--muted-foreground)}
+  .rl.cur{background:color-mix(in srgb,var(--st-running) 7%,transparent);box-shadow:inset 2px 0 0 var(--st-running)}
+  .rl.held{background:color-mix(in srgb,var(--st-queued) 8%,transparent);box-shadow:inset 2px 0 0 var(--st-queued);opacity:1}
+  .rl.held .nm{color:var(--foreground);font-weight:600}
+
+  /* ── estado da fase corrente (compacto) ── */
+  .now{border:1px solid var(--border);border-radius:var(--radius);padding:11px 13px;
+    background:color-mix(in srgb,var(--card) 55%,transparent)}
+  .now .l1{--dsp:flex;display:flex;align-items:center;gap:9px;min-width:0;font-size:13px}
+  .now .l1 .t{min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .now .l1 .clk{font:12px var(--mono);font-variant-numeric:tabular-nums;color:var(--muted-foreground);
+    flex:0 0 auto;min-width:64px;text-align:right}
+  .now .l2{margin-top:4px;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .now .say{margin-top:8px;padding-top:8px;border-top:1px solid var(--border);
+    font-size:12px;color:var(--muted-foreground);font-family:var(--mono);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .now .sayk{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
+    display:block;margin-bottom:3px}
+  .shim{background:linear-gradient(90deg,var(--muted-foreground) 20%,var(--faint) 45%,var(--muted-foreground) 70%);
+    background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:shim 2.4s linear infinite}
+  @keyframes shim{0%{background-position:120% 0}100%{background-position:-120% 0}}
+  .now .more{margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+
+  /* ── CAIXA DE INTERVENÇÃO (a peça central) ── */
+  .ctrl{border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--card);
+    box-shadow:var(--shadow-pop);overflow:hidden}
+  .ctrl > header{padding:11px 15px 0}
+  .ctrl h2{margin:0;font-size:14px;font-weight:600}
+  .ctrl .lead{margin:2px 0 0;font-size:12px;color:var(--muted-foreground)}
+  .box{padding:12px 15px}
+  .box + .box{border-top:1px solid var(--border)}
+  .ta{border:1px solid var(--border);border-radius:7px;padding:9px 11px;min-height:56px;
+    font-size:13px;color:var(--faint);background:color-mix(in srgb,var(--background) 55%,transparent)}
+  .chips{--dsp:flex;margin-top:9px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .chip{--dsp:inline-block;font-size:12px;padding:3px 10px;border-radius:6px;border:1px solid var(--border-strong);
+    color:var(--muted-foreground);white-space:nowrap}
+  .chip.on{border-color:var(--brass);background:var(--brass-soft);color:var(--brass);font-weight:500}
+  .chip.off{opacity:.5;cursor:not-allowed;border-style:dashed}
+  .chipwhy{width:100%;font-size:11px;color:var(--faint);margin-top:1px}
+  .send{margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+  .qlist{margin-top:11px;padding-top:10px;border-top:1px solid var(--border);display:flex;
+    flex-direction:column;gap:6px}
+  .qi{--dsp:flex;display:flex;align-items:center;gap:8px;min-width:0}
+  .qi .k{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);flex:0 0 auto;
+    min-width:56px}
+  .qi .t{min-width:0;flex:1 1 auto;font-size:12px;color:var(--muted-foreground);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* gestos */
+  .gest{display:flex;flex-direction:column}
+  .ge{--dsp:flex;display:flex;align-items:flex-start;gap:12px;padding:9px 0;border-top:1px solid var(--border);min-width:0}
+  .ge:first-child{border-top:none;padding-top:2px}
+  .ge .act{flex:0 0 176px}
+  .ge .act .nm{font-size:13px;font-weight:500}
+  .ge .price{min-width:0;flex:1 1 auto;font-size:12px;color:var(--muted-foreground);line-height:1.45}
+  .ge .rev{flex:0 0 auto;font:11px var(--mono);color:var(--faint);letter-spacing:.02em;padding-top:2px}
+  .ge .rev.no{color:var(--st-error)}
+  .sw{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+  .sw i{width:26px;height:15px;border-radius:8px;background:var(--border-strong);position:relative;display:block}
+  .sw i::after{content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;
+    background:var(--card);transition:left var(--dur,.2s)}
+  .sw.on i{background:var(--st-queued)}
+  .sw.on i::after{left:13px}
+
+  /* gate */
+  .gatebox{padding:12px 15px;border-bottom:1px solid var(--border);
+    background:color-mix(in srgb,var(--st-queued) 7%,transparent)}
+  .gatebox .q{font-size:13px;font-weight:600}
+  .gatebox .why{margin-top:3px;font-size:12px;color:var(--muted-foreground)}
+  .gatebox .acts2{--dsp:flex;margin-top:10px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+
+  /* faixa de custo */
+  .strip{display:flex;align-items:center;gap:22px;flex-wrap:wrap;padding:9px 12px;
+    border:1px solid var(--border);border-radius:var(--radius);
+    background:color-mix(in srgb,var(--card) 55%,transparent)}
+  .strip .item{--dsp:flex;display:flex;align-items:baseline;gap:7px;min-width:0}
+  .strip .k{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);white-space:nowrap}
+  .strip .v{font:600 13px var(--mono);font-variant-numeric:tabular-nums}
+  .strip .v.pend{font-weight:500;color:var(--muted-foreground)}
+  .strip .hint{font-size:11px;color:var(--faint)}
+
+  .nt{color:var(--brass);font:600 11px var(--mono);vertical-align:super;margin-left:4px;line-height:0;user-select:none}
+  .notes{margin-top:26px;padding:0 6px;font-size:13px;color:var(--muted-foreground)}
+  .notes h2{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:22px 0 12px}
+  .notes h2:first-child{margin-top:0}
+  .notes ol{list-style:none;margin:0;padding:0;display:grid;gap:9px;max-width:800px}
+  .notes li{padding-left:26px;position:relative;line-height:1.55}
+  .notes li .nt{position:absolute;left:0;top:6px;vertical-align:baseline;margin:0}
+  .notes b{color:var(--foreground);font-weight:600}
+  .notes code{font-family:var(--mono);font-size:12px;color:var(--foreground)}
+
+  .rl .b .nt,.now .l2 .nt,.strip .hint .nt{vertical-align:baseline}
+  /* alternância de estado do mock: hide/show sem quebrar o display real */
+  [data-st]{display:none !important}
+  body[data-s="f1"] [data-st~="f1"],
+  body[data-s="f2"] [data-st~="f2"],
+  body[data-s="gate"] [data-st~="gate"]{display:var(--dsp,block) !important}
+  span[data-st]{--dsp:inline}
+  button[data-st]{--dsp:inline-block}
+  @media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</head>
+<body data-s="f2">
+
+<header class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">Missão · C · Sala de controle</span>
+  <nav>
+    <a href="missao-a.html">A</a>
+    <a href="missao-b.html">B</a>
+    <a class="on" href="missao-c.html">C</a>
+  </nav>
+  <div class="seg" id="state">
+    <button data-s="f1">fase 1 · motor falante</button>
+    <button class="on" data-s="f2">fase 2 · motor calado</button>
+    <button data-s="gate">esperando você</button>
+  </div>
+  <div class="seg" id="theme">
+    <button data-t="light">claro</button>
+    <button data-t="dark">escuro</button>
+  </div>
+</header>
+
+<div class="stage">
+  <p class="thesis"><b>Tese:</b> se o humano não pode agir, a tela é TV. A trilha e o detalhe existem,
+    mas a peça central é a <b>caixa de comando</b>: o que dá pra fazer AGORA, com o preço de cada
+    gesto escrito ao lado antes do clique, e o que <b>não</b> dá pra fazer aparecendo desligado
+    com o motivo (o agy não aceita mensagem no meio da fase; o Claude aceita). Nada de botão bonito
+    que promete capacidade que o motor não tem.</p>
+
+  <div class="frame">
+    <div class="winbar"><i></i><i></i><i></i><span>Frota · Missão</span></div>
+
+    <div class="panel">
+
+      <section class="mhead">
+        <div class="top">
+          <h1>UI-first · personalizado</h1>
+          <span class="badge live" data-st="f1 f2">em voo</span>
+          <span class="badge wait" data-st="gate">esperando você</span>
+        </div>
+        <div class="meta">
+          <span>frota-site</span><span class="sep">·</span>
+          <span class="mono">missao/ui-first</span><span class="sep">·</span>
+          <span class="age" data-st="f1">começou há 18 min<span class="nt">①</span></span>
+          <span class="age" data-st="f2 gate">começou há 24 min<span class="nt">①</span></span>
+        </div>
+        <div class="prompt">
+          <span class="txt">Refazer a landing do Frota com foco em UI: hero mostrando o cockpit real, uma seção de preço só, nada de depoimento inventado, e um bloco de FAQ curto que responda…</span>
+          <button class="link">ver prompt</button>
+        </div>
+      </section>
+
+      <!-- ── trilha fina ── -->
+      <section class="rail">
+        <button class="rl cur" data-st="f1">
+          <div class="a"><span class="dot live"></span><span class="n">1</span><span class="nm">Planejar</span></div>
+          <div class="b">Claude · Opus 5 · 16min 19s<span class="nt">②</span></div>
+        </button>
+        <button class="rl" data-st="f2 gate">
+          <div class="a"><span class="dot"></span><span class="n">1</span><span class="nm">Planejar</span></div>
+          <div class="b">16min 42s · 7 ações · US$ 2,07<span class="nt">③</span></div>
+        </button>
+
+        <button class="rl q" data-st="f1">
+          <div class="a"><span class="dot ring"></span><span class="n">2</span><span class="nm">Executar UI</span></div>
+          <div class="b">agy · Flash 3.6 · na fila</div>
+        </button>
+        <button class="rl cur" data-st="f2">
+          <div class="a"><span class="dot live"></span><span class="n">2</span><span class="nm">Executar UI</span></div>
+          <div class="b">agy · Flash 3.6 · 5min 42s</div>
+        </button>
+        <button class="rl" data-st="gate">
+          <div class="a"><span class="dot"></span><span class="n">2</span><span class="nm">Executar UI</span></div>
+          <div class="b">8min 03s · 7 arquivos · não mede<span class="nt">④</span></div>
+        </button>
+
+        <button class="rl q" data-st="f1 f2">
+          <div class="a"><span class="dot ring"></span><span class="n">3</span><span class="nm">Revisar</span></div>
+          <div class="b">Codex · na fila<span class="nt">⑤</span></div>
+        </button>
+        <button class="rl held" data-st="gate">
+          <div class="a"><span class="dot"></span><span class="n">3</span><span class="nm">Revisar</span></div>
+          <div class="b">segurada por você<span class="nt">⑥</span></div>
+        </button>
+      </section>
+
+      <!-- ── estado da fase corrente ── -->
+      <section class="now" data-st="f1">
+        <div class="l1">
+          <span class="dot live sm"></span>
+          <span class="t"><span class="shim">redigindo a fase 2 do plano…</span><span class="nt">⑦</span></span>
+          <span class="clk">1min 04s</span>
+        </div>
+        <div class="l2">7 ações nesta fase · última há 12s · criou landing-plan.md (+148)</div>
+        <div class="more">
+          <span>2 leituras · 1 busca · 1 comando · 1 escrita · 2 sem rótulo<span class="nt">⑧</span></span>
+          <button class="link">abrir as ações</button>
+          <button class="link">ver payload das sem rótulo</button>
+        </div>
+      </section>
+
+      <section class="now" data-st="f2">
+        <div class="l1">
+          <span class="dot live sm"></span>
+          <span class="t">o agy não reporta ação por ação<span class="nt">⑨</span></span>
+          <span class="clk">5min 42s</span>
+        </div>
+        <div class="l2">rodando há 5min 42s · última saída há 38s · 14 KB no stdout<span class="nt">⑩</span></div>
+        <div class="say">
+          <span class="sayk">última linha que ele escreveu, há 38s</span>
+          vou começar pelo hero reaproveitando o grid de 12 colunas do painel, depois a seção de preço…
+        </div>
+        <div class="more">
+          <span>4 arquivos mudaram no worktree (contados no disco, não relatados)<span class="nt">⑪</span></span>
+          <button class="link">ver diff</button>
+          <button class="link">ver saída bruta</button>
+        </div>
+      </section>
+
+      <!-- ══ CAIXA DE COMANDO ══ -->
+      <section class="ctrl">
+
+        <div class="gatebox" data-st="gate">
+          <div class="q">Executar UI terminou. Revisar está segurada por você.</div>
+          <div class="why">Nada roda agora. Os 7 arquivos estão no worktree
+            <span class="mono">missao/ui-first</span> e continuam lá qualquer que seja a decisão.</div>
+          <div class="acts2" data-st="gate">
+            <button class="btn primary">Soltar e rodar Revisar</button>
+            <button class="btn">Ver os 7 arquivos</button>
+            <button class="btn ghost">Rodar Executar UI de novo<span class="nt">⑫</span></button>
+            <button class="btn ghost">Pular Revisar e encerrar</button>
+          </div>
+        </div>
+
+        <header>
+          <h2 data-st="f1 f2">Falar com a missão<span class="nt">⑬</span></h2>
+          <h2 data-st="gate">Falar com o revisor</h2>
+          <p class="lead" data-st="f1">A fase corrente roda em Claude, que aceita mensagem no meio do caminho.</p>
+          <p class="lead" data-st="f2">A fase corrente roda em agy, que só lê o que chega no começo de uma fase.</p>
+          <p class="lead" data-st="gate">A missão está parada esperando você. O que escrever aqui entra
+            no prompt de Revisar.</p>
+        </header>
+
+        <div class="box">
+          <div class="ta" data-st="f1">o hero precisa caber em 1 tela no MacBook Air, não inventa screenshot…</div>
+          <div class="ta" data-st="f2">o hero precisa caber em 1 tela no MacBook Air, não inventa screenshot…</div>
+          <div class="ta" data-st="gate">confere se o FAQ responde as 3 dúvidas de preço antes de aprovar…</div>
+
+          <div class="chips" data-st="f1">
+            <span class="chip on">agora, no próximo turno do planejador</span>
+            <span class="chip">no gate, antes de Executar UI</span>
+            <span class="chipwhy">"agora" entra no meio de um raciocínio em andamento e pode desviar o
+              plano; "no gate" chega limpo, no ponto de junção.<span class="nt">⑭</span></span>
+          </div>
+          <div class="chips" data-st="f2">
+            <span class="chip off">agora, no meio da fase</span>
+            <span class="chip on">no gate, antes de Revisar</span>
+            <span class="chipwhy">o agy não tem canal de interação no meio do turno
+              (<code>inline_interaction: false</code>), então "agora" fica desligado com o motivo, não
+              escondido.<span class="nt">⑭</span></span>
+          </div>
+
+          <div class="send">
+            <button class="btn primary" data-st="f1 f2">Enfileirar</button>
+            <button class="btn" data-st="gate">Anexar e soltar Revisar</button>
+            <span style="font-size:11px;color:var(--faint)" data-st="f1 f2">Enter envia · Shift+Enter quebra linha</span>
+          </div>
+
+          <div class="qlist">
+            <div class="qi" data-st="f1 f2 gate">
+              <span class="k">Na fila</span>
+              <span class="t">"não mexe no header, ele acabou de ser aprovado"</span>
+              <span class="badge" data-st="f1">para Executar UI</span>
+              <span class="badge" data-st="f2 gate">para Revisar</span>
+              <button class="btn ghost sm">editar</button>
+              <button class="btn ghost sm">remover</button>
+            </div>
+            <div class="qi" data-st="f2">
+              <span class="k"></span>
+              <span class="t" style="color:var(--faint);font-size:11px;font-family:var(--mono)">
+                2 mensagens acumuladas chegam juntas na próxima fase; acima de 3 a caixa avisa que o
+                prompt está virando outra coisa.<span class="nt">⑮</span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── GESTOS ── -->
+        <div class="box">
+          <div class="gest">
+            <div class="ge" data-st="f1 f2">
+              <span class="act"><span class="sw"><i></i></span> <span class="nm">Segurar no fim desta fase</span></span>
+              <span class="price">A fase corrente termina normalmente. A próxima <b>não começa</b> sem
+                você. Nada é interrompido agora.<span class="nt">⑯</span></span>
+              <span class="rev">reversível</span>
+            </div>
+            <div class="ge" data-st="gate">
+              <span class="act"><span class="sw on"><i></i></span> <span class="nm">Segurar no fim desta fase</span></span>
+              <span class="price">Ligado. Foi por isso que Revisar não começou sozinha.</span>
+              <span class="rev">reversível</span>
+            </div>
+
+            <div class="ge" data-st="f1">
+              <span class="act"><button class="btn">Interromper esta fase</button></span>
+              <span class="price">Mata o turno do Claude agora. <b>landing-plan.md continua no
+                worktree</b>, e a fase fica incompleta. Dá pra retomar a sessão de onde parou
+                (<code>session_resume</code>).<span class="nt">⑰</span></span>
+              <span class="rev no">não desfaz</span>
+            </div>
+            <div class="ge" data-st="f2">
+              <span class="act"><button class="btn">Interromper esta fase</button></span>
+              <span class="price">Mata o processo do agy agora. <b>Os 4 arquivos já escritos continuam
+                no worktree</b>, e a fase fica incompleta. O agy não retoma sessão: retomar significa
+                <b>rodar Executar UI do zero</b>.<span class="nt">⑰</span></span>
+              <span class="rev no">não desfaz</span>
+            </div>
+
+            <div class="ge" data-st="f1 f2 gate">
+              <span class="act"><button class="btn">Pular a próxima fase</button></span>
+              <span class="price" data-st="f1">Executar UI não roda. A missão vai de Planejar direto
+                pra Revisar, que vai revisar um plano sem implementação.</span>
+              <span class="price" data-st="f2 gate">Revisar não roda. A missão encerra sem parecer de
+                revisão, e o rótulo final diz "concluída sem revisão".</span>
+              <span class="rev">reversível até ela começar<span class="nt">⑱</span></span>
+            </div>
+
+            <div class="ge" data-st="f1 f2">
+              <span class="act"><button class="btn">Trocar o motor da próxima fase</button></span>
+              <span class="price">Executar UI passaria a rodar em Claude ou Codex. Motor com
+                <code>reports_cost</code> devolve o custo que o agy não mede; motor mais caro muda o
+                teto.<span class="nt">⑲</span></span>
+              <span class="rev">reversível até ela começar</span>
+            </div>
+
+            <div class="ge" data-st="f1 f2 gate">
+              <span class="act"><button class="btn danger">Parar missão</button></span>
+              <span class="price">Mata a fase corrente e cancela as que faltam. O worktree e os
+                handoffs ficam no disco; a missão vira "interrompida" no histórico, com o custo já
+                gasto registrado.</span>
+              <span class="rev no">não desfaz</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- custo -->
+      <section class="strip">
+        <div class="item"><span class="k">Fase</span>
+          <span class="v" data-st="f1">1 / 3</span>
+          <span class="v" data-st="f2 gate">2 / 3</span></div>
+        <div class="item" data-st="f1"><span class="k">Custo</span><span class="v pend">—</span>
+          <span class="hint">fecha ao fim de cada fase<span class="nt">⑳</span></span></div>
+        <div class="item" data-st="f2 gate"><span class="k">Custo</span><span class="v">US$ 2,07</span>
+          <span class="hint">medido em 1 de 3 fases<span class="nt">⑳</span></span></div>
+        <div class="item" data-st="f2 gate"><span class="k">Fase 2</span><span class="v pend">não mede</span>
+          <span class="hint">o agy não reporta custo</span></div>
+        <div class="item"><span class="k">Teto</span><span class="v">US$ 8,00</span></div>
+      </section>
+
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>Anotações</h2>
+    <ol>
+      <li><span class="nt">①</span> <b>Um relógio vivo só.</b> Tica o da fase corrente; a missão
+        carrega uma idade de granularidade de minuto, que não compete (dois relógios narrando o mesmo
+        agora foi o bug dos builds 181/182). <code>MissionRun.startedAt</code> já existe e nunca foi
+        renderizado.</li>
+      <li><span class="nt">②</span> <b>Identidade uma vez por contexto.</b> "Claude · Claude · Opus 5"
+        vira <code>Claude · Opus 5</code>, e só na trilha. O bloco de estado e a caixa de comando
+        falam do motor por <b>consequência</b> ("aceita mensagem no meio do caminho"), nunca
+        repetindo o nome como enfeite.</li>
+      <li><span class="nt">③</span> <b>O resumo da fase concluída É a informação</b> (duração
+        congelada, ações, custo), e a trilha inteira é clicável pra abrir o detalhe do que ela fez.
+        Hoje a fase concluída não guarda nem duração: <code>MissionPhaseRun</code> não tem
+        <code>endedAt</code> (<code>missionTypes.ts:137-149</code>). Campo novo necessário.</li>
+      <li><span class="nt">④</span> <b>"não mede" não é zero.</b> O agy tem
+        <code>reports_cost: false</code> e <code>cumulative_usage: false</code>
+        (<code>adapters.rs:379-382</code>): o custo dessa fase não existe, nem como estimativa.
+        <code>US$ 0,000</code> some da tela.</li>
+      <li><span class="nt">⑤</span> <b>Sem inventar o que não foi decidido:</b> Revisar mostra só
+        "Codex" porque <code>def.model === null</code>. Slot reservado, sem palpite (Warp R6).</li>
+      <li><span class="nt">⑥</span> <b>Estado que o usuário criou fica visível onde ele lê o plano.</b>
+        "segurada por você" em âmbar, não "na fila": a diferença entre a missão esperando e a missão
+        esperando <b>por sua causa</b> é a diferença entre um bug e uma decisão.</li>
+      <li><span class="nt">⑦</span> <b>Uma linha viva por vez, no gerúndio</b>, e nunca eco do marco
+        acima (o "Agora: Criar landing-plan.md" do build repetia a linha anterior). O cronômetro é
+        irmão do que anima, nunca filho (Warp R2).</li>
+      <li><span class="nt">⑧</span> <b>Em C o detalhe de ferramenta é resumo + gaveta.</b> A linha
+        agrega por tipo ("3 leituras · 1 busca · 1 escrita · 2 sem rótulo") e o detalhe abre a um
+        clique. Regra decidível: até 5 ações, a gaveta já vem aberta; acima de 5, leituras e buscas
+        agregam e ficam visíveis só mutações, falha e a ação corrente. Falha nunca agrega.</li>
+      <li><span class="nt">⑨</span> <b>Ignorância declarada, por capability.</b> A frase não fala do
+        agy por nome mágico: vem de <code>structured_output: false</code>
+        (<code>adapters.rs:378</code>), que já existe no registry e diz que aquele stdout é texto
+        puro, não fluxo de eventos. Some o verbo inventado ("preparando…",
+        <code>MissionTimeline.tsx:70-74</code>), que anuncia ignorância como se fosse fato.</li>
+      <li><span class="nt">⑩</span> <b>Duas idades, não uma.</b> "rodando há 5min 42s" (a fase) e
+        "última saída há 38s" (o motor). Quem decide alarme é a segunda: acima de <b>10 min sem
+        byte</b> esta linha vira âmbar, o texto passa a "sem sinal do agy há 11min 20s" e
+        "Interromper esta fase" sobe pra botão primário da caixa. Antes disso é cinza, porque calado
+        não é quebrado.</li>
+      <li><span class="nt">⑪</span> <b>Fonte de cada número, dita na tela.</b> Quando o motor cala, o
+        disco do worktree ainda é fonte honesta. Mas o texto diz que aquilo é <b>efeito observado</b>,
+        não relato do agente, senão vira promessa que a próxima fase não cumpre.</li>
+      <li><span class="nt">⑫</span> <b>Refazer é um gesto de primeira classe.</b> Ao ver 7 arquivos
+        ruins, a alternativa hoje é parar a missão inteira. "Rodar Executar UI de novo" reaproveita
+        o handoff da fase 1 e a mensagem que você acabou de escrever.</li>
+      <li><span class="nt">⑬</span> <b>O composer travado é o problema de produto, e aqui ele é o
+        assunto.</b> A copy de hoje ("Missão em andamento; pare a missão para enviar manualmente…",
+        <code>CommandConsole.tsx:307-309</code>) é honesta e inútil: numa missão de 24 minutos o
+        humano só pode abortar tudo. Aqui ele escreve sempre; o que muda é <b>quando a mensagem é
+        entregue</b>.</li>
+      <li><span class="nt">⑭</span> <b>O que não dá aparece desligado com o motivo, não escondido.</b>
+        A régua das 4 camadas (§5 do STYLEGUIDE) manda esconder capability ausente pra não deixar
+        toggle morto. Aqui a exceção é deliberada e vale a linha de ADR: o par "agora / no gate"
+        <b>ensina a diferença entre os motores</b>, e essa diferença é a decisão do usuário, não
+        encanamento. Numa fase de Claude (<code>inline_interaction: true</code>) o "agora" liga
+        sozinho; numa de agy, fica cinza dizendo por quê.</li>
+      <li><span class="nt">⑮</span> <b>Guarda contra a própria feature.</b> Deixar o humano falar cria
+        um risco novo: N mensagens acumuladas viram um segundo prompt que compete com o plano. A
+        caixa mostra a fila, deixa editar e remover, e a partir de 3 avisa. Enfileirar sem ver a fila
+        seria trocar o mudo pelo entulho.</li>
+      <li><span class="nt">⑯</span> <b>"Pausar" não existe, e por isso não aparece.</b> Não há pausa
+        real de um turno de agent: dá pra matar o processo, dá pra não começar o próximo. O rótulo
+        honesto do que É viável é <b>"Segurar no fim desta fase"</b>, um interruptor reversível que
+        não toca no que está rodando. Chamar isso de "Pausar" seria mentir sobre o que acontece com
+        o processo.</li>
+      <li><span class="nt">⑰</span> <b>O preço vem antes do clique, e ele é por motor.</b> A mesma
+        ação custa coisas diferentes: interromper uma fase do Claude ou do Codex permite retomar a
+        sessão (<code>session_resume: true</code>); do agy, não
+        (<code>adapters.rs:376</code>), então retomar é rodar a fase inteira de novo. E os dois textos
+        dizem o que acontece com o disco, que é a dúvida real de quem clica.</li>
+      <li><span class="nt">⑱</span> <b>Reversibilidade é uma coluna, não uma nota de rodapé.</b> Cada
+        gesto declara "reversível" ou "não desfaz". Pular uma fase <b>na fila</b> é reversível até ela
+        começar; pular a <b>corrente</b> mata o processo e não é. Rótulos e confirmações diferentes
+        pra gestos com preços diferentes.</li>
+      <li><span class="nt">⑲</span> <b>Trocar motor já é gesto conhecido do app:</b> o
+        <code>RecoveryCard</code> ("A fase parou por limite, precisa de você",
+        <code>MissionTimeline.tsx:297</code>) já oferece selects de agent/modelo/effort quando a
+        fase morre. C só o promove de socorro a gesto normal, disponível antes da fase começar.</li>
+      <li><span class="nt">⑳</span> <b>Custo honesto em três estados, nenhum deles zero:</b> "—" com
+        o momento dito ("fecha ao fim de cada fase"), "não mede" com o motivo, e o número medido em
+        <b>2 casas</b> (hoje <code>fmtCost</code> usa 3 abaixo de US$ 1,
+        <code>lib/format.ts:13</code>). O total diz a cobertura ("medido em 1 de 3 fases") em vez de
+        fingir que soma tudo. O teto continua ao lado, porque é ele que dá sentido ao número.</li>
+    </ol>
+
+    <h2>Orçamento de tinta</h2>
+    <ol>
+      <li><span class="nt">·</span> <b>Em voo</b>: azul (o que roda) + vermelho (Parar e as etiquetas
+        "não desfaz"). Duas cores de status. O âmbar só entra quando o interruptor de segurar está
+        ligado ou o silêncio passa de 10 min, e nesses casos o azul sai junto.</li>
+      <li><span class="nt">·</span> <b>Esperando você</b>: âmbar (a fase retida) + vermelho. Uma
+        primária brass por tela: aqui é "Soltar e rodar Revisar".</li>
+      <li><span class="nt">·</span> <b>"Parar missão" sai do cabeçalho.</b> Em A e B ele fica lá em
+        cima porque é o único gesto; em C ele é <b>um dos gestos</b>, e mora na caixa junto com o
+        preço dele. Um botão vermelho por tela, ao lado da frase que diz o que se perde.</li>
+      <li><span class="nt">·</span> <b>Risco de C</b>: a caixa tem 5 gestos e o orçamento de tinta
+        aperta. A régua aplicada foi: só a <b>ação primária</b> e a <b>destrutiva</b> ganham cor;
+        todo o resto é botão neutro com texto explicando, e a "cor" da coluna de reversibilidade é
+        tipográfica (mono cinza), não pintada, exceto o "não desfaz".</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  const root = document.documentElement;
+  function setTheme(t){
+    root.dataset.theme = t;
+    document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  }
+  setTheme(matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.getElementById('theme').addEventListener('click', e => {
+    if (e.target.dataset.t) setTheme(e.target.dataset.t);
+  });
+  document.getElementById('state').addEventListener('click', e => {
+    const s = e.target.dataset.s; if (!s) return;
+    document.body.dataset.s = s;
+    document.querySelectorAll('#state button').forEach(b => b.classList.toggle('on', b.dataset.s === s));
+  });
+</script>
+</body>
+</html>
