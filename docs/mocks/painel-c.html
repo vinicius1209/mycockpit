@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Painel · C · Zero estado</title>
+<style>
+  /* Tokens: cópia fiel de app/src/index.css (light :root · dark .dark). */
+  :root{
+    color-scheme: light dark;
+    --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
+    --secondary:#f4f4f2; --muted-foreground:#5c6166; --accent:#f1f1ef; --faint:#8a9099;
+    --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.14);
+    --brass:#a9742b; --brass-soft:rgba(169,116,43,.12); --brass-fg:#fbf6ee;
+    --st-idle:#8a9099; --st-running:#2f8fbf; --st-queued:#c1861f;
+    --st-success:#1f9d6b; --st-error:#cf4a3e; --id-violet:#6d47b8;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18);
+    --radius:9px;
+    --sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --background:#0a0b0d; --rail:#0c0d10; --foreground:#e7e8ea; --card:#141619;
+    --secondary:#191c20; --muted-foreground:#9aa0a7; --accent:#1e2126; --faint:#687078;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13);
+    --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#1a1306;
+    --st-idle:#687078; --st-running:#5bb8e8; --st-queued:#d99138;
+    --st-success:#5bd6a0; --st-error:#f2766b; --id-violet:#a48af0;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+    --shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--background);color:var(--foreground);
+    font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"liga" 0,"calt" 0}
+  .label-mono{font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+    font-size:11px;line-height:1;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+
+  /* ── chrome do mock ── */
+  .mockbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;
+    padding:10px 18px;background:color-mix(in srgb,var(--background) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+  .mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);
+    border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:1px 7px}
+  .mockbar .dir{font-weight:600;color:var(--foreground);font-size:13px}
+  .mockbar nav{display:flex;gap:3px;margin-left:auto}
+  .mockbar nav a{color:var(--muted-foreground);text-decoration:none;padding:3px 10px;border-radius:6px;font-weight:500}
+  .mockbar nav a:hover{background:var(--accent)}
+  .mockbar nav a.on{background:var(--brass-soft);color:var(--brass)}
+  .seg{display:flex;gap:2px;border:1px solid var(--border);border-radius:7px;padding:2px}
+  .seg button{font-size:11px;padding:2px 9px;border-radius:5px;color:var(--muted-foreground)}
+  .seg button.on{background:var(--accent);color:var(--foreground)}
+
+  .stage{max-width:1000px;margin:0 auto;padding:24px 20px 64px}
+  .thesis{font-size:13px;color:var(--muted-foreground);margin:0 2px 18px;max-width:720px}
+  .thesis b{color:var(--foreground);font-weight:600}
+  .caption{display:flex;align-items:baseline;gap:10px;margin:0 2px 10px}
+  .caption h3{margin:0;font-size:13px;font-weight:600}
+  .caption span{font-size:12px;color:var(--muted-foreground)}
+  .gap{height:34px}
+
+  .frame{background:var(--background);border:1px solid var(--border);border-radius:14px;
+    overflow:hidden;box-shadow:var(--shadow-pop)}
+  .winbar{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--rail);
+    border-bottom:1px solid var(--border)}
+  .winbar i{width:10px;height:10px;border-radius:50%;background:var(--border-strong);display:block}
+  .winbar span{font-size:12px;color:var(--muted-foreground);margin-left:6px}
+  .panel{max-width:900px;margin:0 auto;padding:26px 32px 30px;display:flex;flex-direction:column;gap:22px}
+  .panel.calm{min-height:430px}
+
+  .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--st-idle)}
+  .dot.live{background:var(--st-running);animation:pulse 1.6s cubic-bezier(.4,0,.6,1) infinite}
+  .dot.warn{background:var(--st-queued)}
+  .dot.sm{width:6px;height:6px}
+  .dot.ring{background:transparent;border:1px solid color-mix(in srgb,var(--muted-foreground) 55%,transparent)}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.78)}}
+
+  .topline{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted-foreground)}
+  .hero{margin:6px 0 0}
+  .hero h1{margin:0;font:500 30px/1.15 var(--sans);letter-spacing:-.02em;color:var(--muted-foreground)}
+  .hero h1.loud{font-weight:600;color:var(--foreground)}
+  .hero p{margin:9px 0 0;font-size:13px;color:var(--muted-foreground)}
+
+  .btn{font-size:13px;font-weight:500;padding:5px 11px;border-radius:7px;
+    border:1px solid var(--border-strong);color:var(--foreground)}
+  .btn:hover{background:var(--accent)}
+  .btn.sm{font-size:12px;padding:3px 10px;border-radius:6px}
+  .btn.primary{background:var(--brass);color:var(--brass-fg);border-color:transparent}
+  .btn.primary:hover{opacity:.9;background:var(--brass)}
+  .btn.ghost{border-color:transparent;color:var(--muted-foreground)}
+  .btn.ghost:hover{background:var(--accent);color:var(--foreground)}
+  .actions{display:flex;gap:8px}
+
+  .amberline{display:flex;align-items:center;gap:9px;padding:8px 12px;border-radius:var(--radius);
+    border:1px solid color-mix(in srgb,var(--st-queued) 38%,transparent);
+    background:color-mix(in srgb,var(--st-queued) 8%,transparent);font-size:13px}
+  .amberline .t{flex:1;min-width:0;color:var(--st-queued)}
+
+  .qcard{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--border);
+    border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow-sm);margin-bottom:8px}
+  .qcard .ico{width:16px;flex:0 0 auto;text-align:center;color:var(--muted-foreground);font-size:12px}
+  .qcard .ttl{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+  .qcard .proj{flex:0 0 auto;font-size:12px;color:var(--muted-foreground)}
+  .qcard .meta{flex:0 0 auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .qcard .badge{flex:0 0 auto;font-size:11px;line-height:1.4;padding:1px 7px;border-radius:5px;
+    border:1px solid color-mix(in srgb,var(--st-queued) 50%,transparent);
+    background:color-mix(in srgb,var(--st-queued) 12%,transparent);color:var(--st-queued)}
+  .why{flex:0 0 auto;font:12px var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+
+  .rows{display:flex;flex-direction:column}
+  .row{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:7px;min-width:0}
+  .row:hover{background:var(--accent)}
+  .row .nm{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .proj{flex:0 0 auto;font-size:12px;color:var(--muted-foreground)}
+  .row .num{flex:0 0 auto;font:12px var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums;
+    min-width:64px;text-align:right}
+  .row .age{flex:0 0 auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;
+    min-width:52px;text-align:right}
+  .sec > h2{margin:0 0 8px;padding:0 2px}
+  .more{padding:4px 10px;font-size:12px;color:var(--muted-foreground);text-align:left}
+  .more:hover{color:var(--foreground)}
+
+  /* gaveta silenciosa do estado calmo */
+  .drawer{border-top:1px solid var(--border);margin-top:auto;padding-top:12px;
+    display:flex;flex-direction:column;gap:2px}
+  .dline{display:flex;align-items:center;gap:9px;padding:5px 4px;border-radius:6px;
+    font-size:13px;color:var(--muted-foreground)}
+  .dline:hover{background:var(--accent);color:var(--foreground)}
+  .dline .chev{color:var(--faint);font-size:10px;width:10px}
+  .dline .n{margin-left:auto;font:12px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+
+  .costline{display:flex;align-items:center;gap:16px;font-size:13px;color:var(--muted-foreground)}
+  .costline b{font:600 13px var(--mono);font-variant-numeric:tabular-nums;color:var(--foreground)}
+  .costline .k{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
+  .costline a{margin-left:auto;font-size:12px;color:var(--muted-foreground);text-decoration:none}
+  .costline a:hover{color:var(--foreground)}
+  .spark{display:flex;align-items:flex-end;gap:2px;height:16px}
+  .spark i{width:4px;border-radius:1px;background:color-mix(in srgb,var(--muted-foreground) 25%,transparent);display:block}
+  .spark i.now{background:var(--brass)}
+
+  /* ── anotações ── */
+  .nt{color:var(--brass);font:600 11px var(--mono);vertical-align:super;margin-left:4px;line-height:0;user-select:none}
+  .notes{margin-top:26px;padding:0 6px;font-size:13px;color:var(--muted-foreground)}
+  .notes h2{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 12px}
+  .notes ol{list-style:none;margin:0;padding:0;display:grid;gap:9px;max-width:760px}
+  .notes li{padding-left:26px;position:relative;line-height:1.55}
+  .notes li .nt{position:absolute;left:0;top:6px;vertical-align:baseline;margin:0}
+  .notes b{color:var(--foreground);font-weight:600}
+  @media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</head>
+<body>
+
+<header class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">Painel · C · Zero estado</span>
+  <nav>
+    <a href="painel-a.html">A</a>
+    <a href="painel-b.html">B</a>
+    <a class="on" href="painel-c.html">C</a>
+  </nav>
+  <div class="seg" id="theme">
+    <button data-t="light">claro</button>
+    <button data-t="dark">escuro</button>
+  </div>
+</header>
+
+<div class="stage">
+  <p class="thesis"><b>Tese:</b> o estado saudável é o comum, e a tela devia parecer com isso.
+    O Painel nasce quase vazio e calmo; cada bloco só existe quando tem conteúdo. Seção sem item
+    não renderiza título nem moldura (nada de "0" e nada de esqueleto vazio). Conforme surgem
+    decisões e trabalho, a tela <b>cresce</b>. Os dois estados abaixo são a mesma tela, com os
+    mesmos dados de fundo.</p>
+
+  <!-- ════════ ESTADO CALMO ════════ -->
+  <div class="caption">
+    <h3>Estado calmo</h3>
+    <span>o comum: nada pendente, frota parada. Uma tela, sem rolagem.</span>
+  </div>
+
+  <div class="frame">
+    <div class="winbar"><i></i><i></i><i></i><span>Frota · Painel</span></div>
+    <div class="panel calm">
+
+      <div class="topline"><span class="dot ring"></span>Frota parada · nada em execução<span class="nt">①</span></div>
+
+      <div class="hero">
+        <h1>Nada esperando você.<span class="nt">②</span></h1>
+        <p>Última entrega há 2 h (Composer Lexical, cutover).
+          Próxima agendada em 2 h 48 min (Digest de leads MacLan).</p>
+      </div>
+
+      <div class="actions">
+        <button class="btn">Nova missão</button>
+        <button class="btn">Nova disputa</button>
+        <button class="btn">Nova feature</button>
+        <button class="btn ghost">+ Card no board</button>
+      </div>
+
+      <div class="amberline">
+        <span class="dot warn"></span>
+        <span class="t">Codex em rate limit, volta 16:40. Antigravity tem update v1.1.0.</span>
+        <button class="btn sm">Ver frota<span class="nt">③</span></button>
+      </div>
+
+      <div class="drawer">
+        <div class="costline">
+          <span class="k">hoje</span><b>US$ 20,13</b>
+          <span class="mono">▼ 88% vs ontem</span>
+          <span class="k">7 d</span><b>US$ 673,92</b>
+          <span class="spark" aria-hidden="true">
+            <i style="height:34%"></i><i style="height:52%"></i><i style="height:28%"></i><i style="height:61%"></i>
+            <i style="height:45%"></i><i style="height:70%"></i><i style="height:38%"></i><i style="height:55%"></i>
+            <i style="height:92%"></i><i style="height:66%"></i><i style="height:48%"></i><i style="height:80%"></i>
+            <i style="height:100%"></i><i class="now" style="height:12%"></i>
+          </span>
+          <a href="#">uso e custo →<span class="nt">④</span></a>
+        </div>
+        <button class="dline"><span class="chev">›</span>Board<span class="nt">⑧</span><span class="n">2 backlog · 1 em andamento</span></button>
+        <button class="dline"><span class="chev">›</span>Entregas<span class="n">12 esta semana · US$ 673,92</span></button>
+        <button class="dline"><span class="chev">›</span>Encontrados no projeto<span class="n">2, o mais velho há 68 d</span></button>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="gap"></div>
+
+  <!-- ════════ ESTADO CHEIO ════════ -->
+  <div class="caption">
+    <h3>Estado cheio</h3>
+    <span>a mesma tela quando a frota trabalha e três decisões chegaram. Os blocos aparecem, na ordem em que pedem você.</span>
+  </div>
+
+  <div class="frame">
+    <div class="winbar"><i></i><i></i><i></i><span>Frota · Painel</span></div>
+    <div class="panel">
+
+      <div class="topline"><span class="dot live"></span>2 em voo · 3 esperando você<span class="nt">⑤</span></div>
+
+      <section class="sec">
+        <h2 class="label-mono">Precisam de você (3)</h2>
+        <div class="qcard">
+          <span class="ico">⑂</span>
+          <span class="ttl">Fio Vivo, painel de trabalho em background</span>
+          <span class="why">12/12 checks · +842 −196</span>
+          <span class="proj">mycockpit</span>
+          <button class="btn sm primary">Merge<span class="nt">⑥</span></button>
+          <button class="btn sm">Abrir PR ↗</button>
+        </div>
+        <div class="qcard">
+          <span class="ico">⚔</span>
+          <span class="ttl">Cache do índice de arquivos, rg vs walk incremental</span>
+          <span class="proj">mypeople</span>
+          <span class="meta">há 1 h</span>
+          <button class="btn sm">Julgar</button>
+        </div>
+        <div class="qcard">
+          <span class="ico">▦</span>
+          <span class="ttl">Migrar upload de anexos pro S3</span>
+          <span class="proj">maclan</span>
+          <span class="badge">bloqueado, parado há 47 min</span>
+          <button class="btn sm">Abrir</button>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2 class="label-mono">Em voo (2)</h2>
+        <div class="rows">
+          <div class="row"><span class="dot live"></span><span class="nm">Ajustar o watchdog do tray</span>
+            <span class="proj">mycockpit</span><span class="label-mono">turno</span><span class="age">há 3 min</span></div>
+          <div class="row"><span class="dot live"></span><span class="nm">Publicar build de teste 188</span>
+            <span class="proj">frota</span><span class="label-mono">missão</span><span class="age">há 12 min</span></div>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2 class="label-mono">Board · em andamento (1)<span class="nt">⑦</span></h2>
+        <div class="rows">
+          <div class="row"><span class="dot warn sm"></span><span class="nm">Migrar upload de anexos pro S3</span>
+            <span class="proj">maclan · codex</span><span class="num">US$ 9,40</span></div>
+          <button class="more">backlog (2) · feito (8) →</button>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2 class="label-mono">Entregas recentes</h2>
+        <div class="rows">
+          <div class="row"><span class="dot sm"></span><span class="nm">Composer Lexical, cutover</span>
+            <span class="proj">mycockpit</span><span class="num">US$ 18,42</span><span class="age">há 2 h</span></div>
+          <div class="row"><span class="dot sm"></span><span class="nm">Rename inline na sidebar</span>
+            <span class="proj">mycockpit</span><span class="num">US$ 4,90</span><span class="age">há 5 h</span></div>
+          <button class="more">ver as 12 da semana →</button>
+        </div>
+      </section>
+
+      <div class="amberline">
+        <span class="dot warn"></span>
+        <span class="t">Codex em rate limit, volta 16:40. Antigravity tem update v1.1.0.</span>
+        <button class="btn sm">Ver frota</button>
+      </div>
+
+      <div class="costline" style="border-top:1px solid var(--border);padding-top:12px">
+        <span class="k">hoje</span><b>US$ 20,13</b>
+        <span class="mono">▼ 88% vs ontem</span>
+        <span class="k">7 d</span><b>US$ 673,92</b>
+        <span class="mono">Codex 68% · Claude 32%</span>
+        <a href="#">uso e custo →</a>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>Anotações</h2>
+    <ol>
+      <li><span class="nt">①</span> Uma linha de estado, sempre no mesmo lugar, nos dois estados.
+        <b>Parada é um estado legítimo</b>, não um vazio: o dot vira anel vazado em vez de sumir,
+        então o olho aprende a posição e a página não pula quando a frota liga.</li>
+      <li><span class="nt">②</span> O hero de 30px <b>é o vazio</b>. Não tem ilustração, não tem
+        "tudo certo!": tem a frase e duas âncoras temporais verificáveis (última entrega, próxima
+        agendada). O que prova o estado é o dado, não o adjetivo.</li>
+      <li><span class="nt">③</span> Zero estado <b>não pode esconder falha</b> (§5 camada 2 e ADR-037):
+        CLI em rate limit e update pendente continuam visíveis mesmo na tela calma, porque são
+        exatamente decisões. Some o que está OK, nunca o que está quebrado.</li>
+      <li><span class="nt">④</span> O custo do dia vive na base, em 13px mono tabular, com o sparkline
+        de 14 dias. Está sempre lá, sem rolagem, e nunca é o maior tipo da tela. As 4 métricas e a
+        auditoria por agente moram em Configurações ▸ Uso e custo.</li>
+      <li><span class="nt">⑤</span> A mesma linha, agora falando: "2 em voo · 3 esperando você".
+        Ela é o índice do que a tela contém abaixo, e o que decide a ORDEM dos blocos.</li>
+      <li><span class="nt">⑥</span> Uma única primária brass na tela, no item mais pronto. Os outros
+        dois itens abrem com botão neutro.</li>
+      <li><span class="nt">⑦</span> No estado cheio o Board mostra <b>só a coluna que tem trabalho</b>;
+        backlog e feito viram uma linha de link. Um kanban de 3 colunas com duas vazias é o que faz
+        a tela parecer incompleta.</li>
+      <li><span class="nt">⑧</span> O que existe mas não pede nada vira <b>uma linha de gaveta</b>
+        com a contagem real (o resumo É a informação; o detalhe fica a um clique). E nada de
+        esqueleto pulsando para seção que vai nascer vazia: enquanto a varredura roda a tela
+        mostra o estado calmo e os blocos <b>entram</b> quando têm conteúdo. O preço disso está
+        no README (é o trade-off central desta direção).</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  const root = document.documentElement;
+  function setTheme(t){
+    root.dataset.theme = t;
+    document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  }
+  setTheme(matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.getElementById('theme').addEventListener('click', e => {
+    if (e.target.dataset.t) setTheme(e.target.dataset.t);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Painel · B · Painel de voo</title>
+<style>
+  /* Tokens: cópia fiel de app/src/index.css (light :root · dark .dark). */
+  :root{
+    color-scheme: light dark;
+    --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
+    --secondary:#f4f4f2; --muted-foreground:#5c6166; --accent:#f1f1ef; --faint:#8a9099;
+    --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.14);
+    --brass:#a9742b; --brass-soft:rgba(169,116,43,.12); --brass-fg:#fbf6ee;
+    --st-idle:#8a9099; --st-running:#2f8fbf; --st-queued:#c1861f;
+    --st-success:#1f9d6b; --st-error:#cf4a3e; --id-violet:#6d47b8;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18);
+    --radius:9px;
+    --sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --background:#0a0b0d; --rail:#0c0d10; --foreground:#e7e8ea; --card:#141619;
+    --secondary:#191c20; --muted-foreground:#9aa0a7; --accent:#1e2126; --faint:#687078;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13);
+    --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#1a1306;
+    --st-idle:#687078; --st-running:#5bb8e8; --st-queued:#d99138;
+    --st-success:#5bd6a0; --st-error:#f2766b; --id-violet:#a48af0;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+    --shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--background);color:var(--foreground);
+    font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"liga" 0,"calt" 0}
+  .label-mono{font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+    font-size:11px;line-height:1;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+
+  /* ── chrome do mock ── */
+  .mockbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;
+    padding:10px 18px;background:color-mix(in srgb,var(--background) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+  .mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);
+    border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:1px 7px}
+  .mockbar .dir{font-weight:600;color:var(--foreground);font-size:13px}
+  .mockbar nav{display:flex;gap:3px;margin-left:auto}
+  .mockbar nav a{color:var(--muted-foreground);text-decoration:none;padding:3px 10px;border-radius:6px;font-weight:500}
+  .mockbar nav a:hover{background:var(--accent)}
+  .mockbar nav a.on{background:var(--brass-soft);color:var(--brass)}
+  .seg{display:flex;gap:2px;border:1px solid var(--border);border-radius:7px;padding:2px}
+  .seg button{font-size:11px;padding:2px 9px;border-radius:5px;color:var(--muted-foreground)}
+  .seg button.on{background:var(--accent);color:var(--foreground)}
+
+  .stage{max-width:1000px;margin:0 auto;padding:24px 20px 64px}
+  .thesis{font-size:13px;color:var(--muted-foreground);margin:0 2px 18px;max-width:720px}
+  .thesis b{color:var(--foreground);font-weight:600}
+
+  .frame{background:var(--background);border:1px solid var(--border);border-radius:14px;
+    overflow:hidden;box-shadow:var(--shadow-pop)}
+  .winbar{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--rail);
+    border-bottom:1px solid var(--border)}
+  .winbar i{width:10px;height:10px;border-radius:50%;background:var(--border-strong);display:block}
+  .winbar span{font-size:12px;color:var(--muted-foreground);margin-left:6px}
+  .panel{max-width:900px;margin:0 auto;padding:0 32px 40px}
+
+  /* ── 1: linha de estado da frota (status bar) ── */
+  .statusbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:14px;height:38px;
+    padding:0 2px;border-bottom:1px solid var(--border);
+    background:color-mix(in srgb,var(--background) 92%,transparent);backdrop-filter:blur(6px)}
+  .statusbar .grp{display:flex;align-items:center;gap:7px;font-size:13px}
+  .statusbar .sep{width:1px;height:14px;background:var(--border)}
+  .statusbar .cost{margin-left:auto;display:flex;align-items:baseline;gap:7px}
+  .statusbar .cost b{font:600 13px var(--mono);font-variant-numeric:tabular-nums;font-weight:600}
+  .statusbar .cost span{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .statusbar .amber{color:var(--st-queued)}
+  .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--st-idle)}
+  .dot.live{background:var(--st-running);animation:pulse 1.6s cubic-bezier(.4,0,.6,1) infinite}
+  .dot.warn{background:var(--st-queued)}
+  .dot.sm{width:6px;height:6px}
+  .dot.ring{background:transparent;border:1px solid color-mix(in srgb,var(--muted-foreground) 55%,transparent)}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.78)}}
+
+  .actions{display:flex;gap:8px;padding:14px 2px 16px}
+  .btn{font-size:13px;font-weight:500;padding:5px 11px;border-radius:7px;
+    border:1px solid var(--border-strong);color:var(--foreground)}
+  .btn:hover{background:var(--accent)}
+  .btn.sm{font-size:12px;padding:3px 10px;border-radius:6px}
+  .btn.primary{background:var(--brass);color:var(--brass-fg);border-color:transparent}
+  .btn.primary:hover{opacity:.9;background:var(--brass)}
+  .btn.ghost{border-color:transparent;color:var(--muted-foreground)}
+  .btn.ghost:hover{background:var(--accent);color:var(--foreground)}
+
+  /* ── 2: grade de cartões de igual peso ── */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .cardq{border:1px solid var(--border);border-radius:var(--radius);background:var(--card);
+    box-shadow:var(--shadow-sm);padding:12px 14px 10px;display:flex;flex-direction:column;min-height:172px}
+  .cardq > header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .cardq > header .q{font-size:12px;color:var(--faint);margin-left:auto}
+  .cardq > header .hide{color:var(--faint);font-size:12px;padding:0 4px;border-radius:4px}
+  .cardq > header .hide:hover{background:var(--accent);color:var(--muted-foreground)}
+  .cardq .body{flex:1;display:flex;flex-direction:column;gap:2px}
+  .cardq footer{margin-top:9px;padding-top:8px;border-top:1px solid var(--border);
+    display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted-foreground)}
+  .cardq footer a{color:var(--muted-foreground);text-decoration:none}
+  .cardq footer a:hover{color:var(--foreground)}
+
+  .line{display:flex;align-items:center;gap:8px;padding:5px 4px;border-radius:6px;min-width:0}
+  .line:hover{background:var(--accent)}
+  .line .nm{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .line .proj{flex:0 0 auto;font-size:12px;color:var(--muted-foreground)}
+  .line .num{flex:0 0 auto;font:12px var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+  .line .age{flex:0 0 auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .line .warn{flex:0 0 auto;font-size:12px;color:var(--st-queued)}
+  .empty{padding:14px 4px;font-size:13px;color:var(--muted-foreground)}
+  .empty b{display:block;color:var(--foreground);font-weight:500;margin-bottom:3px}
+
+  /* custo dentro do cartão */
+  .bigcost{display:flex;align-items:baseline;gap:9px;padding:2px 4px 6px}
+  .bigcost b{font:600 20px var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .bigcost span{font:11px var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+  .spark{display:flex;align-items:flex-end;gap:2px;height:24px;padding:0 4px}
+  .spark i{flex:1;border-radius:1px;background:color-mix(in srgb,var(--muted-foreground) 25%,transparent);display:block}
+  .spark i.now{background:var(--brass)}
+  .splitbar{display:flex;height:6px;border-radius:3px;overflow:hidden;gap:2px;margin:10px 4px 6px}
+  .splitbar b{display:block;height:100%;border-radius:2px}
+  .legend{display:flex;gap:14px;padding:0 4px;font-size:12px;color:var(--muted-foreground)}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .legend i{width:8px;height:8px;border-radius:50%;display:block}
+
+  .miniLanes{display:flex;gap:10px;padding:2px 2px 0}
+  .miniLanes div{flex:1;min-width:0}
+  .miniLanes .n{font:600 20px var(--mono);font-variant-numeric:tabular-nums;line-height:1.2}
+  .miniLanes .k{font-size:12px;color:var(--muted-foreground)}
+
+  /* ── anotações ── */
+  .nt{color:var(--brass);font:600 11px var(--mono);vertical-align:super;margin-left:4px;line-height:0;user-select:none}
+  .notes{margin-top:26px;padding:0 6px;font-size:13px;color:var(--muted-foreground)}
+  .notes h2{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 12px}
+  .notes ol{list-style:none;margin:0;padding:0;display:grid;gap:9px;max-width:760px}
+  .notes li{padding-left:26px;position:relative;line-height:1.55}
+  .notes li .nt{position:absolute;left:0;top:6px;vertical-align:baseline;margin:0}
+  .notes b{color:var(--foreground);font-weight:600}
+
+  body:not(.calm) [data-state="calm"]{display:none}
+  body.calm [data-state="full"]{display:none}
+  @media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</head>
+<body>
+
+<header class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">Painel · B · Painel de voo</span>
+  <nav>
+    <a href="painel-a.html">A</a>
+    <a class="on" href="painel-b.html">B</a>
+    <a href="painel-c.html">C</a>
+  </nav>
+  <div class="seg" id="state">
+    <button class="on" data-s="full">cheio</button>
+    <button data-s="calm">calmo</button>
+  </div>
+  <div class="seg" id="theme">
+    <button data-t="light">claro</button>
+    <button data-t="dark">escuro</button>
+  </div>
+</header>
+
+<div class="stage">
+  <p class="thesis"><b>Tese:</b> uma linha de estado da frota no topo responde
+    "o que está acontecendo" em 38px de altura (a status bar do Orca, §6), e o resto da tela
+    são cartões de <b>igual peso</b>, um por pergunta. Nenhum bloco tem tipo maior que outro;
+    a prioridade vem da linha de estado e da ordem de leitura, não do tamanho. Custo é UM cartão
+    entre seis, não a manchete.</p>
+
+  <div class="frame">
+    <div class="winbar"><i></i><i></i><i></i><span>Frota · Painel</span></div>
+
+    <div class="panel">
+
+      <!-- 1 ─ LINHA DE ESTADO -->
+      <div class="statusbar">
+        <span data-state="full" class="grp"><span class="dot live"></span>2 em voo</span>
+        <span data-state="calm" class="grp"><span class="dot ring"></span>Frota parada</span>
+        <span class="sep"></span>
+        <span data-state="full" class="grp amber"><span class="dot warn"></span>3 esperando você<span class="nt">①</span></span>
+        <span data-state="calm" class="grp">Nada esperando você<span class="nt">①</span></span>
+        <span class="sep"></span>
+        <span class="grp" style="color:var(--st-queued)">1 CLI em rate limit<span class="nt">②</span></span>
+        <span class="cost">
+          <span class="label-mono">hoje</span><b>US$ 20,13</b><span>▼ 88%</span>
+        </span>
+      </div>
+
+      <div class="actions">
+        <button class="btn">Nova missão</button>
+        <button class="btn">Nova disputa</button>
+        <button class="btn">Nova feature</button>
+        <button class="btn ghost">+ Card no board</button>
+      </div>
+
+      <!-- 2 ─ CARTÕES DE IGUAL PESO -->
+      <div class="grid">
+
+        <!-- Precisam de você -->
+        <section class="cardq">
+          <header>
+            <span class="label-mono">Precisam de você</span>
+            <span class="q">o que decido agora?<span class="nt">③</span></span>
+            <button class="hide" title="Esconder este cartão">⌄<span class="nt">⑦</span></button>
+          </header>
+          <div class="body" data-state="full">
+            <div class="line"><span class="dot warn sm"></span>
+              <span class="nm">Fio Vivo, painel em background</span>
+              <span class="proj">mycockpit</span>
+              <button class="btn sm primary">Merge<span class="nt">④</span></button></div>
+            <div class="line"><span class="dot warn sm"></span>
+              <span class="nm">Cache do índice de arquivos</span>
+              <span class="proj">mypeople</span>
+              <button class="btn sm">Julgar</button></div>
+            <div class="line"><span class="dot warn sm"></span>
+              <span class="nm">Migrar upload pro S3</span>
+              <span class="proj">maclan</span>
+              <button class="btn sm">Abrir</button></div>
+          </div>
+          <div class="body empty" data-state="calm">
+            <b>Nada esperando você.</b>
+            A última decisão foi há 2 h (merge do composer Lexical).
+          </div>
+          <footer><a href="#">2 encontrados no projeto →</a></footer>
+        </section>
+
+        <!-- Em voo -->
+        <section class="cardq">
+          <header>
+            <span class="label-mono">Em voo</span>
+            <span class="q">o que roda agora?</span>
+            <button class="hide" title="Esconder este cartão">⌄</button>
+          </header>
+          <div class="body" data-state="full">
+            <div class="line"><span class="dot live sm"></span>
+              <span class="nm">Ajustar o watchdog do tray</span>
+              <span class="proj">mycockpit</span><span class="age">há 3 min</span></div>
+            <div class="line"><span class="dot live sm"></span>
+              <span class="nm">Publicar build de teste 188</span>
+              <span class="proj">frota</span><span class="age">há 12 min</span></div>
+            <div class="line"><span class="dot sm"></span>
+              <span class="nm">Claude Code no terminal · mypeople</span>
+              <span class="warn">esperando você</span><span class="age">há 3 min</span></div>
+          </div>
+          <div class="body empty" data-state="calm">
+            <b>Frota parada.</b>
+            Nenhum turno, missão ou disputa em execução. Último turno terminou há 2 h.
+          </div>
+          <footer><a href="#">abrir Trabalho →</a></footer>
+        </section>
+
+        <!-- Board -->
+        <section class="cardq">
+          <header>
+            <span class="label-mono">Board</span>
+            <span class="q">o que eu quero que aconteça?</span>
+            <button class="hide" title="Esconder este cartão">⌄</button>
+          </header>
+          <div class="body">
+            <div class="miniLanes">
+              <div><div class="n">2</div><div class="k">Backlog</div></div>
+              <div><div class="n">1</div><div class="k">Em andamento</div></div>
+              <div><div class="n">8</div><div class="k">Feito</div></div>
+            </div>
+            <div class="line" style="margin-top:8px"><span class="dot warn sm"></span>
+              <span class="nm">Migrar upload de anexos pro S3</span>
+              <span class="proj">maclan</span><span class="num">US$ 9,40</span></div>
+          </div>
+          <footer><a href="#">abrir o board →</a><a href="#">pedir proposta ao lead</a></footer>
+        </section>
+
+        <!-- Custo e uso -->
+        <section class="cardq">
+          <header>
+            <span class="label-mono">Custo e uso</span>
+            <span class="q">quanto isso queimou?<span class="nt">⑤</span></span>
+            <button class="hide" title="Esconder este cartão">⌄</button>
+          </header>
+          <div class="body">
+            <div class="bigcost"><b>US$ 20,13</b><span>hoje · ▼ 88% vs ontem</span></div>
+            <div class="spark" aria-hidden="true">
+              <i style="height:34%"></i><i style="height:52%"></i><i style="height:28%"></i><i style="height:61%"></i>
+              <i style="height:45%"></i><i style="height:70%"></i><i style="height:38%"></i><i style="height:55%"></i>
+              <i style="height:92%"></i><i style="height:66%"></i><i style="height:48%"></i><i style="height:80%"></i>
+              <i style="height:100%"></i><i class="now" style="height:12%"></i>
+            </div>
+            <div class="splitbar">
+              <b style="width:68%;background:var(--st-running)"></b>
+              <b style="width:32%;background:var(--brass)"></b>
+            </div>
+            <div class="legend">
+              <span><i style="background:var(--st-running)"></i>Codex <span class="mono">US$ 1.644,65 · 68%</span></span>
+              <span><i style="background:var(--brass)"></i>Claude <span class="mono">US$ 773,95 · 32%</span><span class="nt">⑧</span></span>
+            </div>
+          </div>
+          <footer><span class="mono">7 d US$ 673,92</span><a href="#">uso e custo →<span class="nt">⑥</span></a></footer>
+        </section>
+
+        <!-- Entregas -->
+        <section class="cardq">
+          <header>
+            <span class="label-mono">Entregas</span>
+            <span class="q">o que a frota terminou?</span>
+            <button class="hide" title="Esconder este cartão">⌄</button>
+          </header>
+          <div class="body">
+            <div class="line"><span class="dot sm"></span><span class="nm">Composer Lexical, cutover</span>
+              <span class="num">US$ 18,42</span><span class="age">há 2 h</span></div>
+            <div class="line"><span class="dot sm"></span><span class="nm">Rename inline na sidebar</span>
+              <span class="num">US$ 4,90</span><span class="age">há 5 h</span></div>
+            <div class="line"><span class="dot sm"></span><span class="nm">Digest semanal de leads</span>
+              <span class="num">US$ 31,08</span><span class="age">há 1 d</span></div>
+          </div>
+          <footer><span>12 esta semana</span><a href="#">ver todas →</a></footer>
+        </section>
+
+        <!-- Frota e agenda -->
+        <section class="cardq">
+          <header>
+            <span class="label-mono">Frota e agenda</span>
+            <span class="q">com o que eu conto?</span>
+            <button class="hide" title="Esconder este cartão">⌄</button>
+          </header>
+          <div class="body">
+            <div class="line"><span class="dot warn sm"></span><span class="nm">Codex <span class="mono">v0.48.3</span></span>
+              <span class="warn">rate limit, volta 16:40</span></div>
+            <div class="line"><span class="dot warn sm"></span><span class="nm">Antigravity <span class="mono">v1.0.16</span></span>
+              <span class="warn">update v1.1.0</span></div>
+            <div class="line"><span class="dot sm"></span><span class="nm">Claude Code <span class="mono">v2.4.11</span></span>
+              <span class="proj">logado (Max)</span></div>
+            <div class="line"><span class="dot sm"></span><span class="nm">Digest de leads MacLan</span>
+              <span class="age">em 2 h 48 min</span></div>
+          </div>
+          <footer><a href="#">agendadas (2) →</a></footer>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>Anotações</h2>
+    <ol>
+      <li><span class="nt">①</span> A <b>linha de estado</b> é a única hierarquia forte da tela:
+        rodando, esperando você, quebrado. Ela some do caminho (38px, 13px de tipo) mas responde
+        a pergunta da sessão curta antes de qualquer cartão. No estado calmo ela troca o conteúdo,
+        nunca a altura, então o layout não pula.</li>
+      <li><span class="nt">②</span> Degradação em 3 níveis por largura (Orca §6): abaixo de ~760px
+        cai "1 CLI em rate limit" (mora no cartão Frota), abaixo de ~560px cai o custo. <b>O conteúdo
+        degrada, o layout nunca quebra.</b></li>
+      <li><span class="nt">③</span> Cada cartão declara <b>a pergunta que responde</b>. É o
+        agrupamento por pergunta que substitui a ordenação por importância: o usuário aprende
+        onde procurar em vez de ler a tela inteira toda vez.</li>
+      <li><span class="nt">④</span> Peso igual entre cartões não significa peso igual entre ações:
+        <b>uma única primária brass</b> na tela inteira, no item mais pronto. O resto é botão neutro.</li>
+      <li><span class="nt">⑤</span> Custo é <b>um cartão entre seis</b>, do mesmo tamanho que Entregas.
+        O valor do dia usa 20px (parada hero "métrica de seção"), não 30px, então nunca volta a ser
+        o maior tipo da tela.</li>
+      <li><span class="nt">⑥</span> As 4 caixas de métrica (7 d, 30 d, tokens, média/dia) saem do
+        Painel; sobram o valor de hoje, o sparkline de 14 dias e a divisão por agente. O resto
+        vive em Configurações ▸ Uso e custo, atrás de "uso e custo →".</li>
+      <li><span class="nt">⑦</span> O <b>⌄</b> em cada cabeçalho esconde o cartão (dismissal persistido,
+        §5 camada 4). É o que dá o "reordenar/esconder mentalmente" de verdade: quem nunca usa
+        disputa esconde o cartão e não paga mais por ele.</li>
+      <li><span class="nt">⑧</span> Cores no recorte: <b>âmbar</b> (pede decisão) e <b>azul</b> (vivo).
+        Nada de verde ambiente nas entregas nem no ícone do PR, e o Codex azul da barra de custo é
+        cor de identidade, não de status, por isso a barra fica longe dos dots.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  const root = document.documentElement;
+  function setTheme(t){
+    root.dataset.theme = t;
+    document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  }
+  setTheme(matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.getElementById('theme').addEventListener('click', e => {
+    if (e.target.dataset.t) setTheme(e.target.dataset.t);
+  });
+  document.getElementById('state').addEventListener('click', e => {
+    const s = e.target.dataset.s; if (!s) return;
+    document.body.classList.toggle('calm', s === 'calm');
+    document.querySelectorAll('#state button').forEach(b => b.classList.toggle('on', b.dataset.s === s));
+  });
+</script>
+</body>
+</html>
