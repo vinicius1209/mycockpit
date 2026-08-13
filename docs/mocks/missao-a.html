@@ -146,6 +146,8 @@
     min-width:40px;text-align:right}
   .act .path{font-family:var(--mono);font-size:12px;color:var(--foreground)}
   .act.stub .t{color:var(--faint)}
+  .act .ck.bad{color:var(--st-error)}
+  .act .ck .dot{margin:0 auto}
 
   .kv{margin:9px 0 0 21px;padding-left:13px;border-left:1px solid var(--border);
     display:grid;grid-template-columns:88px 1fr;gap:4px 10px;font-size:12px}
@@ -210,14 +212,56 @@
   .notes b{color:var(--foreground);font-weight:600}
   .notes code{font-family:var(--mono);font-size:12px;color:var(--foreground)}
 
+  /* ── régua do plano: posição fixa sem trilha (peça nova, plano grande) ── */
+  .rule{--dsp:flex;position:sticky;top:43px;z-index:5;display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+    margin:-24px -30px 2px;padding:9px 30px;border-bottom:1px solid var(--border);
+    background:color-mix(in srgb,var(--background) 92%,transparent);backdrop-filter:blur(8px);
+    font-size:12px;color:var(--muted-foreground)}
+  .rule .pos{font:600 13px var(--mono);font-variant-numeric:tabular-nums;color:var(--foreground)}
+  .rule .was{font:11px var(--mono);color:var(--faint)}
+  .rule .nx{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rule .sep{color:var(--border-strong)}
+  .rule .stall{margin-left:auto;flex:0 0 auto;font:11px var(--mono);font-variant-numeric:tabular-nums;
+    color:var(--st-queued);border:1px solid color-mix(in srgb,var(--st-queued) 45%,transparent);
+    background:color-mix(in srgb,var(--st-queued) 10%,transparent);border-radius:5px;padding:1px 8px}
+
+  /* ── marca de procedência: não é status nem gesto, é tipografia ── */
+  .mark{flex:0 0 auto;font:11px var(--mono);letter-spacing:.02em;padding:0 6px;border-radius:4px;
+    border:1px dashed var(--border-strong);color:var(--faint);white-space:nowrap}
+
+  /* ── log de alterações do plano ── */
+  .changelog{margin:9px 0 0 21px;padding:9px 12px;border:1px dashed var(--border-strong);
+    border-radius:var(--radius);font-size:12px;color:var(--muted-foreground)}
+  .changelog .k{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
+    display:block;margin-bottom:5px}
+  .changelog ul{margin:0;padding:0;list-style:none;display:grid;gap:4px}
+  .changelog li{display:flex;gap:8px;min-width:0}
+  .changelog li .h{flex:0 0 46px;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .changelog li .w{min-width:0}
+  .changelog li .w b{color:var(--foreground);font-weight:500}
+
+  /* ── alerta de repetição (travamento macro sem silêncio) ── */
+  .warnrow{margin:9px 0 0 21px;padding:9px 12px;border-radius:var(--radius);
+    border:1px solid color-mix(in srgb,var(--st-queued) 45%,transparent);
+    background:color-mix(in srgb,var(--st-queued) 8%,transparent);font-size:13px}
+  .warnrow .k{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;
+    color:var(--st-queued);display:block;margin-bottom:3px}
+  .warnrow .sub{margin-top:4px;font:11px var(--mono);color:var(--muted-foreground);
+    font-variant-numeric:tabular-nums}
+  .warnrow .acts3{margin-top:8px;display:flex;gap:7px;flex-wrap:wrap}
+  .dot.stall{background:var(--st-queued);animation:none}
+
   .ph .engine .nt,.ph .state .nt,.ph .role .nt{vertical-align:baseline}
   /* alternância de estado do mock: hide/show sem quebrar o display real */
   [data-st]{display:none !important}
   body[data-s="f1"] [data-st~="f1"],
   body[data-s="f2"] [data-st~="f2"],
+  body[data-s="big"] [data-st~="big"],
   body[data-s="gate"] [data-st~="gate"]{display:var(--dsp,block) !important}
   span[data-st]{--dsp:inline}
   button[data-st]{--dsp:inline-block}
+  /* spans que truncam precisam continuar sendo caixa, não inline */
+  span.txt[data-st],span.engine[data-st]{--dsp:block}
   @media (prefers-reduced-motion: reduce){*{animation:none !important}}
 </style>
 </head>
@@ -235,6 +279,7 @@
     <button data-s="f1">fase 1 · motor falante</button>
     <button class="on" data-s="f2">fase 2 · motor calado</button>
     <button data-s="gate">esperando você</button>
+    <button data-s="big">plano grande · 7 de 12</button>
   </div>
   <div class="seg" id="theme">
     <button data-t="light">claro</button>
@@ -250,37 +295,56 @@
     a fase declara <b>o que o motor dela consegue reportar</b> (o agy não é o Claude, e a tela
     diz isso em vez de inventar verbo), e o humano volta a falar por um composer, só que a
     mensagem aterrissa no gate da próxima fase.</p>
+  <p class="thesis"><b>O teste do plano grande</b> (4º estado): a MESMA missão com 12 fases, a viva
+    sendo a 7. É aqui que se descobre se a direção escala. No fio, o recolhimento deixa de ser
+    estética e vira <b>estrutura</b>: sem ele a fase viva sai da tela. Duas peças novas entram,
+    e só por causa do N: a <b>régua fixa</b> (uma linha que não rola, com a posição, o denominador
+    declarado e o tempo sem progresso) e a <b>marca de procedência</b> nas fases que o plano não
+    tinha quando decolou.</p>
 
   <div class="frame">
     <div class="winbar"><i></i><i></i><i></i><span>Frota · Missão</span></div>
 
     <div class="panel">
 
+      <!-- ══ RÉGUA DO PLANO (só no plano grande) ══ -->
+      <div class="rule" data-st="big">
+        <span class="pos">fase 7 de 12<span class="nt">⑲</span></span>
+        <span class="was">lançou com 10 · <button class="link">o que mudou</button></span>
+        <span class="sep">·</span>
+        <span class="nx">próxima: Portar o histórico de faturas · +4 na fila</span>
+        <span class="stall">nada escrito há 22 min<span class="nt">⑳</span></span>
+      </div>
+
       <!-- ══ CABEÇALHO ══ -->
       <section class="mhead">
         <div class="top">
-          <h1>UI-first · personalizado</h1>
-          <span class="badge live" data-st="f1 f2">em voo</span>
+          <h1><span data-st="f1 f2 gate">UI-first · personalizado</span><span data-st="big">Migrar cobrança pro novo provedor</span></h1>
+          <span class="badge live" data-st="f1 f2 big">em voo</span>
           <span class="badge wait" data-st="gate">esperando você</span>
           <span class="spacer"></span>
           <button class="btn danger">Parar missão</button>
         </div>
         <div class="meta">
-          <span>frota-site</span><span class="sep">·</span>
+          <span data-st="f1 f2 gate">frota-site</span>
+          <span data-st="big">frota-api</span><span class="sep">·</span>
           <span data-st="f1">fase 1 de 3</span>
-          <span data-st="f2 gate">fase 2 de 3</span><span class="sep">·</span>
+          <span data-st="f2 gate">fase 2 de 3</span>
+          <span data-st="big">Assinaturas v2 · personalizado</span><span class="sep">·</span>
           <span class="age" data-st="f1">começou há 18 min<span class="nt">①</span></span>
           <span class="age" data-st="f2 gate">começou há 24 min<span class="nt">①</span></span>
+          <span class="age" data-st="big">começou há 1h 47min<span class="nt">①</span></span>
         </div>
         <div class="prompt">
-          <span class="txt">Refazer a landing do Frota com foco em UI: hero mostrando o cockpit real, uma seção de preço só, nada de depoimento inventado, e um bloco de FAQ curto que responda…</span>
+          <span class="txt" data-st="f1 f2 gate">Refazer a landing do Frota com foco em UI: hero mostrando o cockpit real, uma seção de preço só, nada de depoimento inventado, e um bloco de FAQ curto que responda…</span>
+          <span class="txt" data-st="big">Trocar o provedor de cobrança mantendo os contratos vigentes: schema novo de assinaturas, migração sem downtime, webhook adaptado, checkout e histórico de faturas portados, com teste de integração antes de…</span>
           <button class="link">ver prompt</button>
         </div>
       </section>
 
       <!-- ══ INSTRUMENTO ══ -->
       <section class="strip">
-        <div class="item"><span class="k">Fase</span>
+        <div class="item" data-st="f1 f2 gate"><span class="k">Fase</span>
           <span class="v" data-st="f1">1 / 3</span>
           <span class="v" data-st="f2 gate">2 / 3</span>
         </div>
@@ -295,6 +359,17 @@
         <div class="item" data-st="f2 gate">
           <span class="k">Fase 2</span><span class="v pend">não mede</span>
           <span class="hint">o agy não reporta custo<span class="nt">③</span></span>
+        </div>
+        <div class="item" data-st="big"><span class="k">Fase</span>
+          <span class="v">7 / 12</span>
+          <span class="hint">2 apendadas no voo<span class="nt">㉑</span></span>
+        </div>
+        <div class="item" data-st="big">
+          <span class="k">Custo</span><span class="v">US$ 13,28</span>
+          <span class="hint">medido em 5 das 6 fases fechadas<span class="nt">②</span></span>
+        </div>
+        <div class="item" data-st="big">
+          <span class="k">Teto</span><span class="v">US$ 40,00</span>
         </div>
       </section>
 
@@ -456,14 +531,125 @@
             <span class="state">na fila</span>
           </div>
         </section>
+
+        <!-- ══════════ PLANO GRANDE · 12 fases, a viva é a 7 ══════════ -->
+
+        <!-- passado agregado: tudo que não é a fase anterior nem exceção -->
+        <section class="phase past" data-st="big">
+          <div class="ph">
+            <span class="dot"></span>
+            <span class="idx"></span>
+            <span class="nm">4 fases concluídas<span class="nt">㉒</span></span>
+            <span class="engine">51min 21s · US$ 11,40 · 22 ações · 1 com motor trocado no voo</span>
+            <button class="link">mostrar</button>
+          </div>
+        </section>
+
+        <!-- exceção 1: fase reprovada nunca entra no stub -->
+        <section class="phase past" data-st="big">
+          <div class="ph">
+            <span class="dot"></span>
+            <span class="idx">5</span>
+            <span class="nm">Revisar schema</span>
+            <span class="mark">reprovada<span class="nt">㉓</span></span>
+            <span class="engine">a correção roda só na fase 11 · 6min 12s · US$ 1,88 · Claude Opus 5</span>
+            <button class="link">mostrar</button>
+          </div>
+        </section>
+
+        <!-- a fase imediatamente anterior fica visível, recolhida -->
+        <section class="phase past" data-st="big">
+          <div class="ph">
+            <span class="dot"></span>
+            <span class="idx">6</span>
+            <span class="nm">Adaptar o webhook</span>
+            <span class="engine">4 arquivos (+180 −22) · sem ações relatadas · 9min 41s · não mede · agy Flash 3.6</span>
+            <button class="link">mostrar</button>
+          </div>
+        </section>
+
+        <!-- ── fase 7 VIVA, com repetição suspeita ── -->
+        <section class="phase" data-st="big">
+          <div class="ph">
+            <span class="dot stall"></span>
+            <span class="idx">7</span>
+            <span class="nm">Portar o checkout</span>
+            <span class="role">executor</span>
+            <span class="engine">Codex</span>
+            <span class="clock">22min 08s</span>
+          </div>
+          <div class="warnrow">
+            <span class="k">o mesmo comando, quatro vezes</span>
+            <div>Rodou <span class="mono">bun run test src/billing</span> 4 vezes nos últimos 6 min, e
+              nenhum arquivo mudou no worktree desde a primeira.<span class="nt">⑳</span></div>
+            <div class="sub">última saída há 9s · a fase não está calada, está repetindo</div>
+            <div class="acts3">
+              <button class="btn">Interromper esta fase</button>
+              <button class="btn ghost">Ver as 4 saídas lado a lado</button>
+              <button class="btn ghost">Dispensar o aviso nesta fase</button>
+            </div>
+          </div>
+          <div class="acts">
+            <div class="act stub"><span class="ck">✓</span>
+              <span class="t">6 leituras (checkout.ts, cart.ts e mais 4)</span>
+              <button class="link">mostrar</button><span class="d">11s</span></div>
+            <div class="act"><span class="ck">✓</span>
+              <span class="t">editou <span class="path">src/billing/checkout.ts</span> · +64 −18</span><span class="d">7s</span></div>
+            <div class="act"><span class="ck bad">✗</span>
+              <span class="t">rodou <span class="path">bun run test src/billing</span> · 3 falhas<span class="nt">㉔</span></span><span class="d">1min 12s</span></div>
+            <div class="act"><span class="ck bad">✗</span>
+              <span class="t">rodou <span class="path">bun run test src/billing</span> · 3 falhas</span><span class="d">1min 09s</span></div>
+            <div class="act"><span class="ck bad">✗</span>
+              <span class="t">rodou <span class="path">bun run test src/billing</span> · 3 falhas</span><span class="d">1min 14s</span></div>
+            <div class="act live"><span class="ck"><span class="dot stall sm"></span></span>
+              <span class="t">rodou <span class="path">bun run test src/billing</span> pela 4ª vez</span>
+              <span class="d">51s</span></div>
+          </div>
+        </section>
+
+        <!-- a próxima fase fica visível, com a granularidade declarada -->
+        <section class="phase queued" data-st="big">
+          <div class="ph">
+            <span class="dot ring"></span><span class="idx">8</span>
+            <span class="nm">Portar o histórico de faturas</span><span class="role">executor</span>
+            <span class="engine">Codex</span>
+            <span class="state">na fila</span>
+          </div>
+        </section>
+
+        <!-- futuro agregado, com o que a agregação NÃO pode esconder -->
+        <section class="phase queued" data-st="big">
+          <div class="ph">
+            <span class="dot ring"></span>
+            <span class="idx"></span>
+            <span class="nm">+4 fases na fila<span class="nt">㉒</span></span>
+            <span class="engine">Testes de integração · Revisar a migração · 2 apendadas no voo · 1 delas não mede custo</span>
+            <button class="link">mostrar</button>
+          </div>
+          <div class="changelog">
+            <span class="k">o que mudou no plano depois da decolagem<span class="nt">㉑</span></span>
+            <ul>
+              <li><span class="h">18:41</span><span class="w"><b>o motor</b> apendou <b>Corrigir (rodada 1)</b> e
+                <b>Revisar (rodada 1)</b> no fim, porque a fase 5 reprovou. O plano foi de 10 para 12 fases.</span></li>
+              <li><span class="h">17:58</span><span class="w"><b>você</b> trocou o motor da fase 3 de
+                <b>Codex</b> para <b>Claude Opus 5</b> depois que ela parou por limite. Ela re-rodou do começo.</span></li>
+            </ul>
+          </div>
+        </section>
       </div>
 
       <!-- ══ COMPOSER ══ -->
-      <section class="composer" data-st="f1 f2">
+      <section class="composer" data-st="f1 f2 big">
         <div class="row">
           <span class="phh">Mensagem para a próxima fase…<span class="nt">⑰</span></span>
           <button class="btn">Segurar no fim desta fase<span class="nt">⑱</span></button>
           <button class="btn primary">Enfileirar</button>
+        </div>
+        <div class="foot" data-st="big">
+          <span>entra no gate entre Portar o checkout e <span class="to">Portar o histórico de faturas</span>,
+            não interrompe a fase em curso</span>
+          <span>·</span>
+          <button class="link">escolher outra fase de destino</button>
         </div>
         <div class="foot" data-st="f1">
           <span>entra no gate entre Planejar e <span class="to">Executar UI</span>, não interrompe a fase em curso</span>
@@ -593,6 +779,58 @@
         <b>Parar missão</b> (mata tudo, vermelho). "Retomar" só aparece onde o motor tem
         <code>session_resume</code> (Claude e Codex sim, agy não): interromper a fase 2 significa
         rodar a fase 2 <b>do zero</b>, e o aviso pré-clique precisa dizer isso.</li>
+      <li><span class="nt">⑲</span> <b>O denominador não troca em silêncio, e a régua não rola.</b>
+        Hoje a tela renderiza <code>fase {current+1}/{n}</code> com <code>n = phases.length</code> lido
+        a cada render (<code>MissionTimeline.tsx:713</code>), e <code>phases</code> <b>cresce em voo</b>:
+        quando o revisor reprova, o motor apenda a corretiva e a re-revisão
+        (<code>missionEngine.ts:274-292</code>, aplicadas em <code>store/mission.ts:937-948</code>).
+        Uma tela que dizia "3 de 3" passa a dizer "3 de 5" sem uma palavra, e o número vai assim pro
+        banco e pro tray (<code>store/mission.ts:278-279</code>). A régua diz os <b>dois</b> números
+        ("fase 7 de 12 · lançou com 10") e "o que mudou" abre o log. Descartado o "Plano v2" que o agy
+        propôs: número de versão é encanamento; o que decide é o que mudou, quando e por quem. A régua
+        é a única concessão à tese de B, e é uma linha: posição, denominador e o tempo sem escrita.
+        Não é trilha de estações, não é inspetor, não tem seleção.</li>
+      <li><span class="nt">⑳</span> <b>Travamento macro que não é silêncio.</b> O paliativo do
+        "última saída há Xs" (⑬) detecta <b>quietude</b>; um agent rodando o mesmo teste oito vezes
+        nunca fica quieto e mesmo assim não anda. A heurística decidível, com dado que o app já tem:
+        <b>mesmo comando ≥ 4 vezes seguidas</b> (o fio guarda os comandos) <b>e nenhum arquivo alterado
+        no worktree desde a primeira</b> (o worktree é do app, <code>missionWorktree.ts</code>). As duas
+        juntas, nunca uma. O texto diz o <b>que se observou</b>, não o diagnóstico: "rodou X 4 vezes em
+        6 min, sem arquivo alterado". Quem conclui "travou" é o humano. O app nunca aborta sozinho.
+        Descartado o terceiro fator que o agy propôs ("150% do tempo estimado da fase"):
+        <code>MissionPhaseDef</code> não tem estimativa nenhuma e inventar uma seria teatro com casa
+        decimal. E "nada escrito há 22 min" tem definição única: tempo desde a última escrita no
+        worktree, não desde o último byte de stdout.</li>
+      <li><span class="nt">㉑</span> <b>Fase apendada no voo nunca parece nativa do plano.</b> Duas
+        fontes reais de mudança, e as duas ficam sem rastro hoje: (1) o loop de revisão apenda
+        <b>Corrigir (rodada N)</b> + <b>Revisar (rodada N)</b>, até
+        <code>MAX_REVIEW_LOOPS = 2</code> (<code>missionEngine.ts:42</code>), ou seja um plano de 10
+        vira legitimamente um de 14; (2) a recuperação <b>sobrescreve</b> agent/modelo/effort da fase
+        corrente (<code>applyRecoveryChoice</code>, <code>missionEngine.ts:189-200</code>) e o motor
+        original some do objeto. A marca é <b>tipográfica</b> (mono, borda tracejada), não colorida:
+        procedência não é status nem gesto, e o orçamento de tinta já está em dois.</li>
+      <li><span class="nt">㉒</span> <b>A janela viva</b> (recolhimento como estrutura, não estética).
+        Sempre na tela, em qualquer N: a <b>fase viva</b> aberta, a <b>fase anterior</b> em uma linha,
+        a <b>próxima</b> em uma linha. O resto agrega em <b>dois</b> stubs, um de cada lado
+        ("4 fases concluídas · 51min · US$ 11,40" · "+4 fases na fila"). Não há limiar de N: com 3 ou 4
+        fases a janela já cobre o plano e nenhum stub aparece, então a regra não fica boba em missão
+        curta. (O agy propôs ligar o recolhimento em N &gt; 5; o limiar vira número mágico, e a janela
+        faz o mesmo trabalho sem ele.) <b>Quatro exceções que nunca agregam</b>: fase que falhou ou foi
+        interrompida, fase segurada por você, fase com marca de procedência, e fase que você abriu à
+        mão (<code>manuallyToggled</code>, que o <code>MessageList</code> já implementa). Quando a
+        exceção some dentro do stub, o stub declara o que engoliu ("1 com motor trocado no voo") em vez
+        de esconder.</li>
+      <li><span class="nt">㉓</span> <b>"Concluída" não pode cobrir "reprovada", e o mock expõe um furo
+        do motor.</b> A fase 5 terminou <code>done</code> com o revisor reprovando, e a correção foi
+        apendada no <b>fim da fila</b>, não logo depois dela: as fases 6 a 10 rodam em cima de um schema
+        que já foi reprovado, e a correção só chega na 11. Num preset de 3 fases isso nunca aparece
+        (o revisor é o último), mas num plano de 12 com revisor no meio é caro. A tela não conserta o
+        motor; ela para de esconder: "reprovada · a correção roda só na fase 11". Se isso for bug do
+        motor (provavelmente é), a UI honesta é o que o torna visível.</li>
+      <li><span class="nt">㉔</span> <b>Falha nunca agrega.</b> As três execuções vermelhas do mesmo
+        teste ficam linha a linha de propósito, mesmo passando de 5 ações: é a repetição visível que
+        sustenta o aviso de ⑳. Agregar aqui ("3 comandos") apagaria a única evidência de que o agente
+        está andando em círculo.</li>
     </ol>
 
     <h2>Orçamento de tinta</h2>
@@ -603,6 +841,15 @@
         porque nada roda. Brass fica na única primária.</li>
       <li><span class="nt">·</span> <b>Silêncio longo</b> (10 min sem byte): âmbar entra no bloco do
         motor calado, e o azul do pulse sai junto com ele. Nunca as duas ao mesmo tempo.</li>
+      <li><span class="nt">·</span> <b>Plano grande com repetição suspeita</b>: âmbar (a régua, o dot da
+        fase viva, o aviso) + vermelho (os ✗ das falhas e o Parar). Duas. <b>O azul sai e o pulse
+        para</b>, pela mesma regra do silêncio: quando "está repetindo" vira a informação, "está
+        rodando" deixa de ser. O relógio continua ticando, e é ele que sustenta que a fase não morreu,
+        sem gastar uma terceira cor.</li>
+      <li><span class="nt">·</span> <b>Procedência é tipografia, não tinta.</b> "reprovada",
+        "apendada no voo" e "motor trocado no voo" são mono com borda tracejada, cinza. Se cada
+        qualificador de fase pedisse uma cor, um plano de 12 fases teria seis, e o orçamento morre no
+        primeiro plano longo.</li>
     </ol>
   </div>
 </div>

@@ -102,7 +102,7 @@
   @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.78)}}
 
   /* ── trilha fina (secundária) ── */
-  .rail{display:flex;align-items:stretch;border:1px solid var(--border);border-radius:var(--radius);
+  .rail{--dsp:flex;display:flex;align-items:stretch;border:1px solid var(--border);border-radius:var(--radius);
     overflow:hidden;background:color-mix(in srgb,var(--card) 55%,transparent)}
   .rl{--dsp:block;flex:1 1 0;min-width:0;padding:8px 12px;border-left:1px solid var(--border);text-align:left}
   .rl:first-child{border-left:none}
@@ -116,6 +116,45 @@
   .rl.cur{background:color-mix(in srgb,var(--st-running) 7%,transparent);box-shadow:inset 2px 0 0 var(--st-running)}
   .rl.held{background:color-mix(in srgb,var(--st-queued) 8%,transparent);box-shadow:inset 2px 0 0 var(--st-queued);opacity:1}
   .rl.held .nm{color:var(--foreground);font-weight:600}
+
+  /* ── plano grande: a trilha fina sob 12 fases ── */
+  .rail.n12 .rl{padding:8px 5px}
+  .rail.win .rl{flex:1 1 0}
+  .cap{--dsp:flex;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:1px;padding:0 11px;border-left:1px solid var(--border);
+    font:11px var(--mono);color:var(--faint);white-space:nowrap;text-align:center}
+  .cap:first-child{border-left:none}
+  .cap:hover{background:var(--accent);color:var(--foreground)}
+  .cap b{font-weight:600;color:var(--muted-foreground)}
+  .caption{--dsp:flex;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
+    font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin:0 2px -8px}
+  .caption .verdict{text-transform:none;letter-spacing:0;font-family:var(--sans);font-size:12px;
+    color:var(--st-error)}
+  .caption .verdict.ok{color:var(--muted-foreground)}
+  .mark{flex:0 0 auto;font:11px var(--mono);letter-spacing:.02em;padding:0 5px;border-radius:4px;
+    border:1px dashed var(--border-strong);color:var(--faint);white-space:nowrap}
+  .rl.stall{background:color-mix(in srgb,var(--st-queued) 8%,transparent);
+    box-shadow:inset 2px 0 0 var(--st-queued)}
+  .dot.stall{background:var(--st-queued);animation:none}
+  .warnrow{margin-top:9px;padding:9px 12px;border-radius:var(--radius);
+    border:1px solid color-mix(in srgb,var(--st-queued) 45%,transparent);
+    background:color-mix(in srgb,var(--st-queued) 8%,transparent);font-size:13px}
+  .warnrow .k{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;
+    color:var(--st-queued);display:block;margin-bottom:3px}
+  .warnrow .sub{margin-top:4px;font:11px var(--mono);color:var(--muted-foreground);
+    font-variant-numeric:tabular-nums}
+  .changelog{margin-top:9px;padding:9px 12px;border:1px dashed var(--border-strong);
+    border-radius:var(--radius);font-size:12px;color:var(--muted-foreground)}
+  .changelog .k{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
+    display:block;margin-bottom:5px}
+  .changelog ul{margin:0;padding:0;list-style:none;display:grid;gap:4px}
+  .changelog li{display:flex;gap:8px;min-width:0}
+  .changelog li .h{flex:0 0 46px;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .changelog li .w b{color:var(--foreground);font-weight:500}
+  .pick{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border-strong);
+    border-radius:6px;padding:2px 8px;font-size:12px;color:var(--foreground);white-space:nowrap}
+  .pick .arrow{color:var(--faint);font-size:11px}
+  .ge .act .pick{margin-top:4px}
 
   /* ── estado da fase corrente (compacto) ── */
   .now{border:1px solid var(--border);border-radius:var(--radius);padding:11px 13px;
@@ -211,9 +250,12 @@
   [data-st]{display:none !important}
   body[data-s="f1"] [data-st~="f1"],
   body[data-s="f2"] [data-st~="f2"],
+  body[data-s="big"] [data-st~="big"],
   body[data-s="gate"] [data-st~="gate"]{display:var(--dsp,block) !important}
   span[data-st]{--dsp:inline}
   button[data-st]{--dsp:inline-block}
+  button.rl[data-st]{--dsp:block}
+  span.txt[data-st]{--dsp:block}
   @media (prefers-reduced-motion: reduce){*{animation:none !important}}
 </style>
 </head>
@@ -231,6 +273,7 @@
     <button data-s="f1">fase 1 · motor falante</button>
     <button class="on" data-s="f2">fase 2 · motor calado</button>
     <button data-s="gate">esperando você</button>
+    <button data-s="big">plano grande · 7 de 12</button>
   </div>
   <div class="seg" id="theme">
     <button data-t="light">claro</button>
@@ -244,6 +287,12 @@
     gesto escrito ao lado antes do clique, e o que <b>não</b> dá pra fazer aparecendo desligado
     com o motivo (o agy não aceita mensagem no meio da fase; o Claude aceita). Nada de botão bonito
     que promete capacidade que o motor não tem.</p>
+  <p class="thesis"><b>O teste do plano grande</b> (4º estado): a MESMA missão com 12 fases. Em C
+    quebram <b>duas</b> coisas ao mesmo tempo: a trilha fina (pelo mesmo motivo de B, 66px por fase)
+    e a <b>caixa de comando</b>, cujo vocabulário inteiro é escrito em cima de "a próxima fase".
+    Com 5 fases futuras, "pular a próxima" e "trocar o motor da próxima" deixam de ser os gestos que
+    o usuário quer. O mock mostra o que acontece quando o alvo do gesto vira um seletor, e o que
+    isso custa em altura.</p>
 
   <div class="frame">
     <div class="winbar"><i></i><i></i><i></i><span>Frota · Missão</span></div>
@@ -252,24 +301,28 @@
 
       <section class="mhead">
         <div class="top">
-          <h1>UI-first · personalizado</h1>
-          <span class="badge live" data-st="f1 f2">em voo</span>
+          <h1><span data-st="f1 f2 gate">UI-first · personalizado</span><span data-st="big">Migrar cobrança pro novo provedor</span></h1>
+          <span class="badge live" data-st="f1 f2 big">em voo</span>
           <span class="badge wait" data-st="gate">esperando você</span>
         </div>
         <div class="meta">
-          <span>frota-site</span><span class="sep">·</span>
-          <span class="mono">missao/ui-first</span><span class="sep">·</span>
+          <span data-st="f1 f2 gate">frota-site</span>
+          <span data-st="big">frota-api</span><span class="sep">·</span>
+          <span class="mono" data-st="f1 f2 gate">missao/ui-first</span>
+          <span class="mono" data-st="big">missao/assinaturas-v2</span><span class="sep">·</span>
           <span class="age" data-st="f1">começou há 18 min<span class="nt">①</span></span>
           <span class="age" data-st="f2 gate">começou há 24 min<span class="nt">①</span></span>
+          <span class="age" data-st="big">começou há 1h 47min<span class="nt">①</span></span>
         </div>
         <div class="prompt">
-          <span class="txt">Refazer a landing do Frota com foco em UI: hero mostrando o cockpit real, uma seção de preço só, nada de depoimento inventado, e um bloco de FAQ curto que responda…</span>
+          <span class="txt" data-st="f1 f2 gate">Refazer a landing do Frota com foco em UI: hero mostrando o cockpit real, uma seção de preço só, nada de depoimento inventado, e um bloco de FAQ curto que responda…</span>
+          <span class="txt" data-st="big">Trocar o provedor de cobrança mantendo os contratos vigentes: schema novo de assinaturas, migração sem downtime, webhook adaptado, checkout e histórico de faturas portados, com teste de integração antes de…</span>
           <button class="link">ver prompt</button>
         </div>
       </section>
 
       <!-- ── trilha fina ── -->
-      <section class="rail">
+      <section class="rail" data-st="f1 f2 gate">
         <button class="rl cur" data-st="f1">
           <div class="a"><span class="dot live"></span><span class="n">1</span><span class="nm">Planejar</span></div>
           <div class="b">Claude · Opus 5 · 16min 19s<span class="nt">②</span></div>
@@ -300,6 +353,121 @@
           <div class="a"><span class="dot"></span><span class="n">3</span><span class="nm">Revisar</span></div>
           <div class="b">segurada por você<span class="nt">⑥</span></div>
         </button>
+      </section>
+
+      <!-- ══════════ PLANO GRANDE · a trilha fina sob 12 fases ══════════ -->
+
+      <div class="caption" data-st="big">
+        <span>1 · a trilha de C, hoje, com 12 fases</span>
+        <span class="verdict">quebra igual à de B: 66px por fase, sobra o número e três letras<span class="nt">㉑</span></span>
+      </div>
+      <section class="rail n12" data-st="big">
+        <button class="rl ">
+          <div class="a"><span class="dot"></span><span class="n">1</span><span class="nm">Levantar contratos</span></div>
+          <div class="b">Claude · Opus 5 · US$ 3,10</div>
+        </button>
+        <button class="rl ">
+          <div class="a"><span class="dot"></span><span class="n">2</span><span class="nm">Mapear endpoints</span></div>
+          <div class="b">Claude · Sonnet 5 · US$ 1,24</div>
+        </button>
+        <button class="rl ">
+          <div class="a"><span class="dot"></span><span class="n">3</span><span class="nm">Desenhar schema de assinaturas</span></div>
+          <div class="b">Claude · Opus 5 · US$ 5,42</div>
+        </button>
+        <button class="rl ">
+          <div class="a"><span class="dot"></span><span class="n">4</span><span class="nm">Migração SQL</span></div>
+          <div class="b">Codex · US$ 1,64</div>
+        </button>
+        <button class="rl ">
+          <div class="a"><span class="dot"></span><span class="n">5</span><span class="nm">Revisar schema</span></div>
+          <div class="b">Claude · Opus 5 · US$ 1,88</div>
+        </button>
+        <button class="rl ">
+          <div class="a"><span class="dot"></span><span class="n">6</span><span class="nm">Adaptar o webhook</span></div>
+          <div class="b">agy · Flash 3.6 · não mede</div>
+        </button>
+        <button class="rl cur">
+          <div class="a"><span class="dot live"></span><span class="n">7</span><span class="nm">Portar o checkout</span></div>
+          <div class="b">Codex · 22min 08s</div>
+        </button>
+        <button class="rl q">
+          <div class="a"><span class="dot ring"></span><span class="n">8</span><span class="nm">Portar o histórico de faturas</span></div>
+          <div class="b">Codex · na fila</div>
+        </button>
+        <button class="rl q">
+          <div class="a"><span class="dot ring"></span><span class="n">9</span><span class="nm">Testes de integração</span></div>
+          <div class="b">Claude · Sonnet 5 · na fila</div>
+        </button>
+        <button class="rl q">
+          <div class="a"><span class="dot ring"></span><span class="n">10</span><span class="nm">Revisar a migração</span></div>
+          <div class="b">Claude · Opus 5 · na fila</div>
+        </button>
+        <button class="rl q">
+          <div class="a"><span class="dot ring"></span><span class="n">11</span><span class="nm">Corrigir (rodada 1)</span></div>
+          <div class="b">Codex · apendada</div>
+        </button>
+        <button class="rl q">
+          <div class="a"><span class="dot ring"></span><span class="n">12</span><span class="nm">Revisar (rodada 1)</span></div>
+          <div class="b">Claude · Opus 5 · apendada</div>
+        </button>
+      </section>
+
+      <div class="caption" data-st="big">
+        <span>2 · a saída: janela de 5 com corte anunciado</span>
+        <span class="verdict ok">cabe, e em C dói menos, porque a trilha de C já era secundária<span class="nt">㉑</span></span>
+      </div>
+      <section class="rail win" data-st="big">
+        <button class="cap"><span>‹</span><b>4 fases</b><span>US$ 11,40</span></button>
+        <button class="rl">
+          <div class="a"><span class="dot"></span><span class="n">5</span><span class="nm">Revisar schema</span></div>
+          <div class="b">6min 12s · US$ 1,88 · reprovada<span class="nt">㉒</span></div>
+        </button>
+        <button class="rl">
+          <div class="a"><span class="dot"></span><span class="n">6</span><span class="nm">Adaptar o webhook</span></div>
+          <div class="b">9min 41s · não mede · 4 arquivos</div>
+        </button>
+        <button class="rl cur stall">
+          <div class="a"><span class="dot stall"></span><span class="n">7</span><span class="nm">Portar o checkout</span></div>
+          <div class="b">Codex · 22min 08s · nada escrito há 22 min<span class="nt">㉓</span></div>
+        </button>
+        <button class="rl q">
+          <div class="a"><span class="dot ring"></span><span class="n">8</span><span class="nm">Portar o histórico</span></div>
+          <div class="b">Codex · na fila</div>
+        </button>
+        <button class="rl q">
+          <div class="a"><span class="dot ring"></span><span class="n">9</span><span class="nm">Testes de integração</span></div>
+          <div class="b">Claude · Sonnet 5 · na fila</div>
+        </button>
+        <button class="cap"><span>›</span><b>3 fases</b><span>2 apendadas</span></button>
+      </section>
+
+      <!-- ── estado da fase 7, com repetição suspeita ── -->
+      <section class="now" data-st="big">
+        <div class="l1">
+          <span class="dot stall sm"></span>
+          <span class="t">fase 7 de 12 · <b>lançou com 10</b> · <button class="link">o que mudou</button></span>
+          <span class="clk">22min 08s</span>
+        </div>
+        <div class="warnrow">
+          <span class="k">o mesmo comando, quatro vezes</span>
+          <div>Rodou <span class="mono">bun run test src/billing</span> 4 vezes nos últimos 6 min, e
+            nenhum arquivo mudou no worktree desde a primeira.<span class="nt">㉓</span></div>
+          <div class="sub">última saída há 9s · a fase não está calada, está repetindo</div>
+        </div>
+        <div class="more">
+          <span>11 ações · 6 leituras · 1 escrita · 4 comandos, o mesmo 4 vezes</span>
+          <button class="link">abrir as ações</button>
+          <button class="link">ver as 4 saídas lado a lado</button>
+        </div>
+        <div class="changelog">
+          <span class="k">o que mudou no plano depois da decolagem<span class="nt">㉒</span></span>
+          <ul>
+            <li><span class="h">18:41</span><span class="w"><b>o motor</b> apendou <b>Corrigir (rodada 1)</b>
+              e <b>Revisar (rodada 1)</b> no fim, porque a fase 5 reprovou. O plano foi de 10 para 12 fases.</span></li>
+            <li><span class="h">17:58</span><span class="w"><b>você</b> trocou o motor da fase 3 de
+              <b>Codex</b> para <b>Claude Opus 5</b> depois que ela parou por limite. Ela re-rodou do começo.</span></li>
+          </ul>
+        </div>
       </section>
 
       <!-- ── estado da fase corrente ── -->
@@ -351,18 +519,31 @@
         </div>
 
         <header>
-          <h2 data-st="f1 f2">Falar com a missão<span class="nt">⑬</span></h2>
+          <h2 data-st="f1 f2 big">Falar com a missão<span class="nt">⑬</span></h2>
           <h2 data-st="gate">Falar com o revisor</h2>
           <p class="lead" data-st="f1">A fase corrente roda em Claude, que aceita mensagem no meio do caminho.</p>
           <p class="lead" data-st="f2">A fase corrente roda em agy, que só lê o que chega no começo de uma fase.</p>
           <p class="lead" data-st="gate">A missão está parada esperando você. O que escrever aqui entra
             no prompt de Revisar.</p>
+          <p class="lead" data-st="big">A fase corrente roda em Codex, que só lê o que chega no começo
+            de uma fase. Restam 5 fases depois desta, então o destino da mensagem virou uma escolha.</p>
         </header>
 
         <div class="box">
           <div class="ta" data-st="f1">o hero precisa caber em 1 tela no MacBook Air, não inventa screenshot…</div>
           <div class="ta" data-st="f2">o hero precisa caber em 1 tela no MacBook Air, não inventa screenshot…</div>
           <div class="ta" data-st="gate">confere se o FAQ responde as 3 dúvidas de preço antes de aprovar…</div>
+          <div class="ta" data-st="big">o checkout tem que aceitar o cupom legado, o teste que falha é justamente esse…</div>
+
+          <div class="chips" data-st="big">
+            <span class="chip off">agora, no meio da fase</span>
+            <span class="chip on">no gate, antes de Portar o histórico</span>
+            <span class="chip">escolher outra fase…</span>
+            <span class="chipwhy">o Codex não tem canal de interação no meio do turno
+              (<code>inline_interaction: false</code>), então "agora" fica desligado com o motivo. O
+              terceiro chip é novo e só existe por causa do N: com 5 fases futuras, "a próxima" deixou
+              de ser a única resposta óbvia.<span class="nt">㉔</span></span>
+          </div>
 
           <div class="chips" data-st="f1">
             <span class="chip on">agora, no próximo turno do planejador</span>
@@ -379,9 +560,9 @@
           </div>
 
           <div class="send">
-            <button class="btn primary" data-st="f1 f2">Enfileirar</button>
+            <button class="btn primary" data-st="f1 f2 big">Enfileirar</button>
             <button class="btn" data-st="gate">Anexar e soltar Revisar</button>
-            <span style="font-size:11px;color:var(--faint)" data-st="f1 f2">Enter envia · Shift+Enter quebra linha</span>
+            <span style="font-size:11px;color:var(--faint)" data-st="f1 f2 big">Enter envia · Shift+Enter quebra linha</span>
           </div>
 
           <div class="qlist">
@@ -392,6 +573,27 @@
               <span class="badge" data-st="f2 gate">para Revisar</span>
               <button class="btn ghost sm">editar</button>
               <button class="btn ghost sm">remover</button>
+            </div>
+            <div class="qi" data-st="big">
+              <span class="k">Na fila</span>
+              <span class="t">"não mexe no schema de novo, a fase 5 já reprovou uma vez"</span>
+              <span class="badge">para Portar o histórico</span>
+              <button class="btn ghost sm">editar</button>
+              <button class="btn ghost sm">remover</button>
+            </div>
+            <div class="qi" data-st="big">
+              <span class="k"></span>
+              <span class="t">"conferir o cupom legado no relatório final"</span>
+              <span class="badge">para Revisar a migração · fase 10</span>
+              <button class="btn ghost sm">editar</button>
+              <button class="btn ghost sm">remover</button>
+            </div>
+            <div class="qi" data-st="big">
+              <span class="k"></span>
+              <span class="t" style="color:var(--faint);font-size:11px;font-family:var(--mono)">
+                cada mensagem tem destino próprio, então a fila deixa de ser "o que vai junto na
+                próxima" e vira "o que está agendado no plano". O aviso de 3 passa a contar por fase
+                de destino, não no total.<span class="nt">㉔</span></span>
             </div>
             <div class="qi" data-st="f2">
               <span class="k"></span>
@@ -432,6 +634,46 @@
               <span class="rev no">não desfaz</span>
             </div>
 
+            <div class="ge" data-st="big">
+              <span class="act"><span class="sw"><i></i></span> <span class="nm">Segurar no fim desta fase</span></span>
+              <span class="price">Portar o checkout termina normalmente. <b>Portar o histórico não
+                começa</b> sem você. Nada é interrompido agora.</span>
+              <span class="rev">reversível</span>
+            </div>
+            <div class="ge" data-st="big">
+              <span class="act"><button class="btn">Interromper esta fase</button></span>
+              <span class="price">Mata o turno do Codex agora. <b>src/billing/checkout.ts continua no
+                worktree</b> com as 64 linhas já escritas, e a fase fica incompleta. Dá pra retomar a
+                sessão de onde parou (<code>session_resume</code>). Restam 5 fases que dependem desta.</span>
+              <span class="rev no">não desfaz</span>
+            </div>
+            <div class="ge" data-st="big">
+              <span class="act"><button class="btn">Pular uma fase</button>
+                <span class="pick">8 · Portar o histórico <span class="arrow">▾</span></span></span>
+              <span class="price">Com 5 fases na fila, o gesto deixou de ter alvo único: qual delas?
+                A escolhida não roda. Portar o histórico fora significa que <b>Testes de integração vai
+                rodar contra um histórico não portado</b>, e o texto do preço muda com a
+                escolha.<span class="nt">㉕</span></span>
+              <span class="rev">reversível até ela começar</span>
+            </div>
+            <div class="ge" data-st="big">
+              <span class="act"><button class="btn">Trocar o motor de uma fase</button>
+                <span class="pick">11 · Corrigir (rodada 1) <span class="arrow">▾</span></span></span>
+              <span class="price">Corrigir (rodada 1) passaria a rodar em outro agent. Ela foi
+                <b>apendada pelo motor</b>, não planejada por você, e herdou o agent do executor
+                anterior: é a fase que mais merece revisão de escolha, e a única que nenhuma versão
+                anterior desta caixa alcançava.<span class="nt">㉕</span></span>
+              <span class="rev">reversível até ela começar</span>
+            </div>
+            <div class="ge" data-st="big">
+              <span class="act"><button class="btn danger">Parar missão</button></span>
+              <span class="price">Mata a fase corrente e cancela <b>as 5 que faltam</b>. O worktree e
+                os handoffs ficam no disco; a missão vira "interrompida" no histórico, com os
+                US$ 13,28 já gastos registrados. Numa missão de 12 fases este botão custa muito mais
+                que numa de 3, e o texto tem que dizer quanto.<span class="nt">㉖</span></span>
+              <span class="rev no">não desfaz</span>
+            </div>
+
             <div class="ge" data-st="f1 f2 gate">
               <span class="act"><button class="btn">Pular a próxima fase</button></span>
               <span class="price" data-st="f1">Executar UI não roda. A missão vai de Planejar direto
@@ -462,7 +704,7 @@
 
       <!-- custo -->
       <section class="strip">
-        <div class="item"><span class="k">Fase</span>
+        <div class="item" data-st="f1 f2 gate"><span class="k">Fase</span>
           <span class="v" data-st="f1">1 / 3</span>
           <span class="v" data-st="f2 gate">2 / 3</span></div>
         <div class="item" data-st="f1"><span class="k">Custo</span><span class="v pend">—</span>
@@ -471,7 +713,12 @@
           <span class="hint">medido em 1 de 3 fases<span class="nt">⑳</span></span></div>
         <div class="item" data-st="f2 gate"><span class="k">Fase 2</span><span class="v pend">não mede</span>
           <span class="hint">o agy não reporta custo</span></div>
-        <div class="item"><span class="k">Teto</span><span class="v">US$ 8,00</span></div>
+        <div class="item" data-st="f1 f2 gate"><span class="k">Teto</span><span class="v">US$ 8,00</span></div>
+        <div class="item" data-st="big"><span class="k">Fase</span><span class="v">7 / 12</span>
+          <span class="hint">lançou com 10 · 2 apendadas no voo<span class="nt">㉒</span></span></div>
+        <div class="item" data-st="big"><span class="k">Custo</span><span class="v">US$ 13,28</span>
+          <span class="hint">medido em 5 das 6 fases fechadas</span></div>
+        <div class="item" data-st="big"><span class="k">Teto</span><span class="v">US$ 40,00</span></div>
       </section>
 
     </div>
@@ -562,6 +809,53 @@
         <b>2 casas</b> (hoje <code>fmtCost</code> usa 3 abaixo de US$ 1,
         <code>lib/format.ts:13</code>). O total diz a cobertura ("medido em 1 de 3 fases") em vez de
         fingir que soma tudo. O teto continua ao lado, porque é ele que dá sentido ao número.</li>
+      <li><span class="nt">㉑</span> <b>A trilha fina de C quebra pelo mesmo motivo de B</b>, e o mock
+        mostra a quebra em vez de descrever: 12 itens em ~800px dão 66px cada, e sobra o número da
+        fase com três letras. A saída é a mesma (janela de 5 com tampas que declaram o corte:
+        "‹ 4 fases · US$ 11,40"), mas em C ela <b>dói menos</b>, porque a trilha de C nunca foi a
+        peça principal, e sim um índice. É a única coisa que C ganha de B sob N grande: quando a
+        trilha é secundária por desenho, mutilá-la custa pouco. Nada no código limita N:
+        <code>addPhase</code> (<code>FlightPlansView.tsx:271</code>) não tem teto e
+        <code>validateMissionPlan</code> só exige uma fase (<code>missionPlans.ts:136</code>).</li>
+      <li><span class="nt">㉒</span> <b>O denominador não troca em silêncio, e a procedência é
+        tipografia.</b> A tela renderiza hoje <code>fase {current+1}/{n}</code> com
+        <code>n = phases.length</code> lido a cada render (<code>MissionTimeline.tsx:713</code>), e
+        <code>phases</code> <b>cresce em voo</b>: o loop de revisão apenda Corrigir + Revisar quando o
+        revisor reprova (<code>missionEngine.ts:274-292</code>, aplicado em
+        <code>store/mission.ts:937-948</code>), até <code>MAX_REVIEW_LOOPS = 2</code>. "3 de 3" vira
+        "3 de 5" sem uma palavra. Aqui aparecem os dois números ("7 de 12 · lançou com 10") e o log diz
+        o que mudou, quando e por quem. A outra fonte de mudança é a recuperação, que
+        <b>sobrescreve</b> agent/modelo da fase corrente (<code>applyRecoveryChoice</code>,
+        <code>missionEngine.ts:189-200</code>) e apaga o motor original. As marcas são mono cinza com
+        borda tracejada: procedência não é status nem gesto, e colorir cada qualificador estouraria o
+        orçamento no primeiro plano longo.</li>
+      <li><span class="nt">㉓</span> <b>Travamento macro que não é silêncio.</b> ⑩ detecta
+        <b>quietude</b>; um agent rodando o mesmo teste quatro vezes nunca fica quieto e mesmo assim
+        não anda, e com 5 fases dependentes o custo de descobrir tarde é muito maior que numa missão
+        de 3. Heurística decidível com dado que o app já tem: <b>mesmo comando ≥ 4 vezes seguidas</b>
+        E <b>nenhum arquivo alterado no worktree desde a primeira</b>. As duas juntas, nunca uma. O
+        texto relata o observado, não o diagnóstico, e o app não aborta sozinho. Descartado o terceiro
+        fator do agy (150% do tempo estimado): <code>MissionPhaseDef</code> não tem estimativa
+        nenhuma, e inventar uma seria teatro com casa decimal.</li>
+      <li><span class="nt">㉔</span> <b>"A próxima fase" deixa de ser resposta quando existem cinco.</b>
+        Todo o vocabulário de C foi escrito em cima de um destino único, e com N grande ele racha em
+        dois lugares: o par de chips ganha um terceiro ("escolher outra fase…") e a fila deixa de ser
+        "o que vai junto na próxima" para virar <b>uma agenda</b>, com destino por mensagem. Isso
+        muda a guarda de ⑮: o aviso de acúmulo passa a contar <b>por fase de destino</b>, porque 3
+        mensagens espalhadas em 3 fases não são o mesmo risco que 3 empilhadas numa só.</li>
+      <li><span class="nt">㉕</span> <b>O gesto ganha alvo, e o preço passa a depender do alvo.</b>
+        "Pular a próxima" e "Trocar o motor da próxima" viram "Pular uma fase" e "Trocar o motor de
+        uma fase", com um seletor ao lado. A coluna de preço deixa de ser texto fixo e passa a ser
+        <b>calculada a partir da escolha</b> ("Portar o histórico fora significa que Testes de
+        integração vai rodar contra um histórico não portado"), que é mais trabalho e é o único jeito
+        de não mentir. Caso que só existe com N grande: a fase 11 foi <b>apendada pelo motor</b> e
+        herdou o agent do executor anterior sem ninguém escolher; é a fase que mais merece revisão de
+        motor, e nenhuma versão de 3 fases desta caixa a alcançava.</li>
+      <li><span class="nt">㉖</span> <b>O botão vermelho fica mais caro e o texto tem que dizer
+        quanto.</b> "Parar missão" numa missão de 3 fases cancela uma ou duas; aqui cancela <b>cinco</b>
+        e joga fora US$ 13,28 já gastos mais o trabalho de 1h47. A régua da casa (preço antes do
+        clique) já estava certa; o que muda com N é que o preço <b>escala</b>, então ele tem que ser
+        lido do estado, nunca escrito à mão no componente.</li>
     </ol>
 
     <h2>Orçamento de tinta</h2>
@@ -578,6 +872,16 @@
         aperta. A régua aplicada foi: só a <b>ação primária</b> e a <b>destrutiva</b> ganham cor;
         todo o resto é botão neutro com texto explicando, e a "cor" da coluna de reversibilidade é
         tipográfica (mono cinza), não pintada, exceto o "não desfaz".</li>
+      <li><span class="nt">·</span> <b>Plano grande com repetição suspeita</b>: âmbar (a fase viva na
+        trilha, o aviso) + vermelho (o "não desfaz" e o Parar). Duas. <b>O azul sai e o pulse para</b>,
+        pela mesma regra do silêncio longo: quando "está repetindo" vira a informação, "está rodando"
+        deixa de ser. O cronômetro continua ticando e sustenta sozinho que a fase não morreu.</li>
+      <li><span class="nt">·</span> <b>O risco de C, medido no plano grande.</b> Com 3 fases a caixa
+        já era maior que a missão; com 12 ela cresce de novo (um chip a mais, dois seletores, uma fila
+        com destino por item) enquanto a fase viva continua com o mesmo espaço. C fica <b>mais</b>
+        justificada (há mais o que decidir) e <b>mais</b> desequilibrada (a caixa come ainda mais
+        tela). As duas coisas ao mesmo tempo, e é honesto dizer que este mock não resolve a
+        segunda.</li>
     </ol>
   </div>
 </div>

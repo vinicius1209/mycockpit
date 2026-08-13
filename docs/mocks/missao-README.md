@@ -5,7 +5,7 @@
 > frente de Missões, que está reconstruindo essa área. Nada aqui foi
 > implementado, e nenhum arquivo de missão foi tocado.
 
-Os três renderizam a MESMA cena, com os mesmos números, e cada um tem **três
+Os três renderizam a MESMA cena, com os mesmos números, e cada um tem **quatro
 estados** no seletor do topo (mais tema claro/escuro):
 
 | Estado | O que mostra |
@@ -13,10 +13,21 @@ estados** no seletor do topo (mais tema claro/escuro):
 | **fase 1 · motor falante** | Planejar em voo no Claude · Opus 5 (16min 19s), ação a ação |
 | **fase 2 · motor calado** | Planejar concluída + Executar UI em voo no agy · Flash 3.6 (5min 42s), **sem nenhuma ação reportada** |
 | **esperando você** | gate entre fases, com decisão humana pendente |
+| **plano grande · 7 de 12** | OUTRA missão, de 12 fases, a viva é a 7, parada há 22 min repetindo o mesmo comando |
 
 O estado do meio é o cenário do segundo print do build 193, e é ele que
 justifica metade das decisões abaixo: **os dois casos aparecem lado a lado
 porque a missão real tem os dois**.
+
+O quarto estado foi acrescentado na revisão de 13/08 e é o mais importante dos
+quatro. A primeira rodada dos mocks assumiu **3 fases** porque era o que o print
+mostrava, e 3 é um número gentil: cabe em qualquer layout, e o custo de
+descobrir tarde que uma fase travou é baixo, porque só há três. Nada no código
+garante 3 (ver a seção seguinte), e **"fase 7 de 12 parada há 20 min" é um
+problema de outra ordem que "fase 2 de 3"**: há mais coisa para caber, há mais
+coisa dependendo da fase viva, e o dinheiro já gasto quando o humano descobre é
+muito maior. O estado grande é o teste que separa as três direções, e ele
+inverteu a recomendação deste documento.
 
 ## O diagnóstico que os três atacam
 
@@ -35,6 +46,82 @@ De `docs/mission-ui-feedback.md` (1 a 5) mais o que o segundo print acrescentou
 7. **Sem detalhe por etapa**: a fase concluída colapsa mostrando só o custo, e
    "o que ela FEZ" não existe em lugar nenhum.
 8. **Sem pausar a etapa**: o único controle é Parar, que mata a missão inteira.
+
+## Quantas fases tem um plano de voo (o que o código diz, 13/08)
+
+Leitura direta de `lib/missionPlans.ts`, `lib/missionTypes.ts`,
+`lib/missionDraft.ts`, `store/mission.ts`, `lib/missionEngine.ts` e
+`components/mission/{MissionPlanCanvas,FlightPlansView,MissionTimeline}.tsx`.
+Nenhum arquivo foi tocado; isto é o que eles dizem hoje.
+
+### Mínimo 1, máximo nenhum, típico 3 (e o típico é de fábrica, não do motor)
+
+- **Mínimo: 1.** `validateMissionPlan` rejeita plano vazio
+  (`missionPlans.ts:136`) e `removePhase` trava quando sobra uma
+  (`FlightPlansView.tsx:284`).
+- **Máximo: não existe.** `addPhase` (`FlightPlansView.tsx:271`) não tem teto,
+  o import validado não tem teto, o store não tem teto. Um plano de 12 fases é
+  montável hoje, no editor, sem tocar em código.
+- **Típico: 3**, e vale saber por quê: os **três** presets de fábrica
+  (`DEFAULT_MISSION_PRESETS`, `missionTypes.ts:243`) são o mesmo trio
+  planejador → executor → revisor. Ou seja, 3 é o número que a fábrica entrega,
+  não uma propriedade do motor. Desenhar para 3 é desenhar para o preset que
+  veio na caixa.
+- O único crescimento **automático** tem teto: cada reprovação do revisor
+  apenda duas fases (Corrigir + Revisar) e o clamp é `MAX_REVIEW_LOOPS = 2`
+  (`missionEngine.ts:42`), ou seja **+4 no máximo**. Um plano lançado com 8 que
+  reprova duas vezes vira 12 sozinho, sem ninguém editar nada.
+
+### Editável antes do voo: sim, inteiro. Durante, pelo humano: não
+
+- **Antes.** A biblioteca (`FlightPlansView`) adiciona, remove, reordena
+  (`moveMissionPhase`) e edita fase a fase. O launcher (`missionDraft.ts`)
+  edita agent/modelo/effort/autonomia por fase no momento do lançamento, sem
+  adicionar nem remover, e marca o preset como "Personalizado".
+- **Durante, pelo humano: não existe.** Nenhuma superfície adiciona, remove ou
+  reordena fase de missão em voo. Os gestos humanos em voo são exatamente três:
+  responder o gate (`answerGate`), resolver a recuperação
+  (`resolveRecovery`/`abortRecovery`) e `abort` (parar a missão).
+- **Durante, pelo motor: sim**, e é a única fonte de mudança em voo: a
+  reprovação apenda Corrigir + Revisar no fim (`missionEngine.ts:274-292`,
+  aplicado em `store/mission.ts:937-948` e persistido no marco seguinte).
+- **Furo pequeno e real:** o motor copia as fases no lançamento
+  (`phases: [...preset.phases]`, `missionEngine.ts:84`), então editar o plano
+  na biblioteca **não afeta a missão em curso**. Isso é a decisão certa e a UI
+  não diz isso em lugar nenhum: quem editar o plano com uma missão voando vai
+  supor que mudou alguma coisa.
+
+### Se o plano muda, a fase em execução não é tocada. O denominador é
+
+As fases novas entram **no fim** da lista; `current` não se move; a fase viva
+não sofre nada. O que muda é o **denominador**, e é aí que está o problema de
+UI: `MissionTimeline.tsx:713` renderiza `fase {current+1}/{n}` com
+`n = mission.phases.length` (linha 665) lido a cada render. Uma tela que dizia
+"3 de 3" passa a dizer "3 de 5" **sem uma palavra**, e o número novo vai assim
+para o banco e para o tray (`phaseCount`, `store/mission.ts:279`).
+
+A recuperação é o outro caso, e é mais bruto: `applyRecoveryChoice`
+(`missionEngine.ts:189-200`) **sobrescreve** agent/modelo/effort da def da fase
+corrente e ela re-roda do começo (o índice não avança, o prompt não muda). O
+motor original some do objeto: não sobra registro de que aquela fase começou no
+Codex e terminou no Claude.
+
+### Linear, e o código é explícito
+
+`MissionPlanGraph` já tem o vocabulário de ramificação (`condition:
+"success" | "failure" | "always"`, `maxTraversals` reservado,
+`missionTypes.ts:27-37`), mas `validateMissionPlan` recusa tudo que não seja
+uma cadeia única: "O motor atual aceita somente conexões de sucesso"
+(`missionPlans.ts:169`), "O motor atual aceita uma única rota, sem
+ramificações" (`:172`), "Loops ainda não são executáveis neste motor" (`:180`).
+O canvas é **layout, não topologia**: `nodesConnectable={false}`
+(`MissionPlanCanvas.tsx:237`) e o próprio rodapé dele diz "Rota linear
+executável". `preset.phases` é a projeção executável; o grafo guarda
+coordenadas.
+
+**Consequência para os mocks:** numerar 1..N e desenhar uma sequência não é
+simplificação, é o modelo real. As três direções estão certas sobre a
+topologia. O que o estado grande testa não é o modelo, é o **espaço**.
 
 ## O que os três compartilham (o diagnóstico virando regra)
 
@@ -170,6 +257,72 @@ copy de hoje ("Missão em andamento; pare a missão para enviar manualmente…",
 a legenda diz isso na cara. Em C existe também o destino "agora", habilitado só
 onde `inline_interaction` é `true` (Claude sim, Codex e agy não).
 
+As três regras seguintes nasceram do estado grande. Elas não são de direção
+tampouco: aparecem iguais em A, B e C, e nenhuma delas é opcional quando N
+passa de meia dúzia.
+
+### R9 · A janela viva (recolhimento vira estrutura, não estética)
+Com 3 fases, recolher o passado é economia de tela. Com 12, é a diferença entre
+ver e não ver: sem recolhimento **a fase viva sai da tela**, e o único assunto
+da tela sai da tela. A regra desenhada nos três mocks:
+
+Sempre visíveis, em qualquer N: a **fase viva** aberta, a **fase imediatamente
+anterior** em uma linha, a **próxima** em uma linha. Todo o resto agrega em
+**dois** stubs, um de cada lado ("4 fases concluídas · 51min · US$ 11,40" e
+"+4 fases na fila"), e cada stub **declara o que engoliu** em vez de esconder
+("1 com motor trocado no voo", "2 apendadas no voo · 1 delas não mede custo").
+
+Não há limiar de N. Com 3 ou 4 fases a janela já cobre o plano inteiro e nenhum
+stub aparece, então a regra não fica boba em missão curta e não precisa de um
+número mágico. (O agy propôs ligar o recolhimento em N > 5; o limiar é um
+parâmetro a mais para fazer o mesmo trabalho.)
+
+**Quatro exceções que nunca agregam:** fase que falhou ou foi interrompida,
+fase segurada por você, fase com marca de procedência (abaixo), e fase que você
+abriu à mão. A última já é código rodando: `manuallyToggled` no `MessageList`.
+
+### R10 · Fase que entrou no meio do voo não pode parecer nativa
+O plano muda em voo (seção acima), e hoje a mudança **não deixa rastro nenhum**.
+Duas marcas, e as duas são **tipografia, não tinta** (mono, borda tracejada,
+cinza):
+
+- na fase: "apendada no voo às 18:41", "motor trocado no voo", "reprovada";
+- no cabeçalho: os **dois** números, "fase 7 de 12 · lançou com 10", com "o que
+  mudou" abrindo um **log curto** com hora, autor e efeito ("18:41 · o motor
+  apendou Corrigir e Revisar porque a fase 5 reprovou; o plano foi de 10 para
+  12" / "17:58 · você trocou o motor da fase 3 depois que ela parou por limite;
+  ela re-rodou do começo").
+
+Autor explícito, porque as duas fontes existem e são diferentes: o motor apenda,
+o humano troca. Descartado o "Plano v2" que o agy propôs: número de versão é
+encanamento, o que decide é o que mudou, quando e por quem. E procedência não
+ganha cor: se cada qualificador de fase pedisse uma, um plano de 12 fases teria
+seis, e o orçamento de tinta morre no primeiro plano longo.
+
+### R11 · Travamento macro não é silêncio, e precisa de heurística própria
+O paliativo do R5 ("última saída há Xs", âmbar aos 10 min) detecta **quietude**.
+Um agent rodando o mesmo teste oito vezes **nunca fica quieto** e mesmo assim
+não anda, e num plano de 12 com cinco fases dependentes o custo de descobrir
+tarde é outra ordem de grandeza. A heurística proposta, decidível e com dado que
+o app já tem:
+
+> **mesmo comando ≥ 4 vezes seguidas** E **nenhum arquivo alterado no worktree
+> desde a primeira**.
+
+As duas juntas, nunca uma sozinha. O texto relata **o que se observou**, não o
+diagnóstico: "rodou `bun run test src/billing` 4 vezes nos últimos 6 min, e
+nenhum arquivo mudou no worktree desde a primeira". Quem conclui "travou" é o
+humano; o app não aborta sozinho, e o gesto oferecido é o de sempre
+("Interromper esta fase", com o preço por motor). No estado grande dos três
+mocks, as quatro execuções vermelhas ficam **linha a linha**, furando a régua de
+5 ações do R6 de propósito: a repetição visível é a evidência que sustenta o
+aviso, e agregá-la em "4 comandos" apagaria justamente o que importa.
+
+Descartado o terceiro fator que o agy propôs ("acima de 150% do tempo estimado
+da fase"): `MissionPhaseDef` não tem estimativa nenhuma, e inventar uma seria
+teatro com casa decimal. E "nada escrito há 22 min" tem definição única: tempo
+desde a última **escrita no worktree**, nunca desde o último byte de stdout.
+
 ---
 
 ## A — Missão é um fio
@@ -191,6 +344,27 @@ trilha não existe como objeto. É o menor delta sobre o código real (o
 `MessageList` já faz recolhimento, stub e `manuallyToggled`), e o maior risco de
 a missão longa virar rolagem infinita onde nada localiza.
 
+**No plano grande (12 fases): escala, e melhora.** É a única direção que não
+precisou de saída de emergência, porque a lista vertical não tem denominador de
+largura: 12 fases custam altura, e altura é exatamente o que a janela viva (R9)
+resolve. Duas peças novas entraram, e só por causa do N:
+
+- a **régua fixa** no topo do painel, que não rola: "fase 7 de 12 · lançou com
+  10 · próxima: Portar o histórico de faturas · +4 na fila" mais o tempo sem
+  escrita. É uma linha, e é a única concessão de A à tese de B. Não é trilha de
+  estações, não é inspetor, não tem seleção. Resolve o "nada localiza" do
+  parágrafo acima sem importar a estrutura que quebra em B;
+- a **marca de procedência** (R10) nas fases que o plano não tinha quando
+  decolou.
+
+O mock também expôs um **furo do motor** que só aparece com plano longo: a fase
+5 termina `done` com o revisor reprovando, e a correção é apendada no **fim da
+fila**, então as fases 6 a 10 rodam em cima de um schema já reprovado e a
+correção só chega na 11. Num preset de 3 fases isso nunca aparece, porque o
+revisor é o último. A tela não conserta o motor; ela para de esconder
+("reprovada · a correção roda só na fase 11"). Se isso for bug do motor
+(provavelmente é), a UI honesta é o que o torna visível.
+
 ## B — Painel de voo
 
 **Tese:** numa missão o valor é saber **onde ela está no plano**, não cada
@@ -209,6 +383,36 @@ vez; a história da missão inteira nunca está numa tela só. E é a única das
 que precisa de um conceito novo de navegação (seleção de estação), com o risco
 clássico: o usuário não descobre que a estação é clicável.
 
+**No plano grande (12 fases): quebra**, e o mock mostra a quebra em vez de
+descrever, com as duas saídas empilhadas abaixo dela. Abra `missao-b.html` no
+estado "plano grande" e as três estão lá, uma sob a outra.
+
+A conta: o painel tem 880px com 30px de padding de cada lado, 820px divididos
+por 12 estações dão **68px por estação**. Em 68px não cabe "Portar o histórico
+de faturas", não cabe "planejador · Claude · Opus 5", e não cabe a declaração
+de granularidade, que era a melhor ideia de B ("reporta ação a ação" ocupa
+sozinha mais que a estação inteira). Sobra o número da fase e três letras.
+
+| Saída | Cabe? | O preço |
+|---|---|---|
+| **janela de 5 com corte anunciado** (duas antes, a viva, duas depois, uma tampa clicável de cada lado dizendo o que ficou de fora: "‹ 4 fases · US$ 11,40") | sim | a trilha **deixa de ser mapa**. A tese de B era "o todo sempre na tela"; uma janela de 5 numa missão de 12 é um carrossel com dois botões, e o usuário volta a montar o todo de cabeça |
+| **trilha vertical, as 12 sem corte** (foi a saída que o agy recomendou) | sim | **dissolve a direção**. Cada fase passa a ter a largura inteira, as 12 linhas consomem uns 370px antes do readout, e o objeto resultante **é a lista de fases de A com o detalhe embaixo**. Some a barra horizontal, some a leitura lado a lado, e some a única coisa que distinguia B de A. Aplicar a janela viva (R9) nessa lista resolve os 370px e completa a conversão |
+
+Descartados: scroll horizontal cru (esconde sem dizer o que escondeu) e
+minimapa (dois pontos de foco para uma informação que cabe numa linha de texto).
+
+**B não sobrevive ao próprio remédio**, e essa é a informação mais útil que
+esta revisão produziu. O que B mantém sob N grande é uma vantagem só, e ela é
+real: a estação viva é **um lugar fixo na tela**, então o aviso de repetição
+(R11) tem onde morar sem empurrar nada. Foi daí que saiu a régua de A.
+
+Um efeito colateral que também só aparece com N variável: **a barra de
+progresso piora**. Ela dizia 33% com 1 de 3; aqui diz 50% com 6 de 12, e o
+denominador mudou depois da decolagem. Uma barra que **recua sozinha** (de 60%
+para 50% quando duas fases foram apendadas) é pior que não ter barra. Se a
+trilha sobreviver, a barra ou congela o denominador de lançamento e declara
+isso, ou sai.
+
 ## C — Sala de controle
 
 **Tese:** se o humano não pode agir, a tela é TV. A trilha e o detalhe existem,
@@ -225,12 +429,49 @@ missões, o usuário não vai clicar em nenhum. Em missão curta de 2 minutos a
 infraestrutura de controle é maior que a missão. E o detalhe da fase corrente é
 o mais pobre das três, porque a caixa comeu o espaço.
 
+**No plano grande (12 fases): quebram duas coisas ao mesmo tempo.** A trilha
+fina quebra pelo mesmo motivo de B (66px por fase), e essa dói menos, porque a
+trilha de C nunca foi a peça principal, e sim um índice: quando a trilha é
+secundária por desenho, mutilá-la com a janela de 5 custa pouco. É a única
+coisa que C ganha de B sob N grande.
+
+O que quebra de verdade é o **vocabulário da caixa de comando**, que foi
+escrito inteiro em cima de um destino único, "a próxima fase". Com 5 fases
+futuras isso racha em três lugares:
+
+- **os gestos ganham alvo.** "Pular a próxima" e "Trocar o motor da próxima"
+  viram "Pular uma fase" e "Trocar o motor de uma fase", com um seletor ao
+  lado. E a coluna de preço deixa de ser texto fixo: ela passa a ser
+  **calculada a partir da escolha** ("Portar o histórico fora significa que
+  Testes de integração vai rodar contra um histórico não portado"). É mais
+  trabalho, e é o único jeito de não mentir;
+- **a fila de mensagens vira agenda.** Cada mensagem ganha destino próprio, e a
+  guarda de acúmulo passa a contar **por fase de destino**: 3 mensagens
+  espalhadas em 3 fases não são o mesmo risco que 3 empilhadas numa só;
+- **o botão vermelho fica mais caro.** "Parar missão" numa missão de 3 cancela
+  uma ou duas; aqui cancela cinco e joga fora US$ 13,28 e 1h47. A régua da casa
+  (preço antes do clique) já estava certa; o que muda é que o preço **escala**,
+  então tem que ser lido do estado, nunca escrito à mão no componente.
+
+Um caso que **só existe com N grande** e que nenhuma versão de 3 fases desta
+caixa alcançava: a fase 11 foi apendada pelo motor e herdou o agent do executor
+anterior, sem ninguém escolher. É a fase que mais merece revisão de motor, e
+até agora era inalcançável.
+
+Saldo: com 12 fases C fica **mais** justificada (há muito mais o que decidir) e
+**mais** desequilibrada (a caixa cresce de novo, um chip a mais e dois
+seletores, enquanto a fase viva continua com o mesmo espaço). As duas ao mesmo
+tempo, e é honesto dizer que o mock não resolve a segunda.
+
 ---
 
 ## Segunda opinião: o agy (Gemini 3.6 Flash, effort alto)
 
-Duas rodadas, `gemini-3.6-flash-high`. Pedi que estressasse as três direções, e
-depois que respondesse ao caso do motor calado.
+Três rodadas, `gemini-3.6-flash-high` (a terceira na revisão de 13/08). Pedi que
+estressasse as três direções, depois que respondesse ao caso do motor calado, e
+por último a pergunta do plano grande: *"como mostrar progresso de um plano de
+12 etapas onde só uma está viva, sem perder nem a etapa viva nem a noção de onde
+ela está no todo?"*.
 
 ### O que veio e foi ADOTADO
 
@@ -292,6 +533,52 @@ depois que respondesse ao caso do motor calado.
   arrependido: separamos "pular na fila" (reversível, interruptor) de "pular a
   corrente" (irreversível, confirmação).
 
+### Rodada 3 · o plano de 12 etapas (13/08)
+
+Ele respondeu em três partes: layout, recolhimento e o modo de falha da própria
+recomendação.
+
+**ADOTADO:**
+
+- *"Layouts horizontais quebram quando o denominador muda (N de 10 para 12). A
+  linha do tempo vertical acomoda crescimento para baixo sem mover a área de
+  trabalho."* Ele disse isso **antes** de eu desenhar a quebra de B, e é o
+  mesmo veredito: a trilha vertical é a saída que funciona, e é justamente ela
+  que dissolve B em A.
+- O **recibo de entrega** da fase concluída (o que ficou pronto, o custo final,
+  a métrica real: "3 arquivos alterados, 14 testes passaram"), em vez do log
+  bruto. Já era o R6, e agora vira também o texto dos stubs agregados do R9: o
+  stub tem que ser um recibo, não uma contagem.
+- O **contador de inatividade explícito**, com o console congelado no último
+  evento real em vez de spinner. Adotado com correção de fonte: ele mede "sem
+  resposta do agente"; nós medimos **escrita no worktree**, que é o que decide.
+
+**ADOTADO como confissão:** o modo de falha que ele apontou na própria
+recomendação é o melhor parágrafo das três rodadas. *"Se o agente travar de
+verdade, o contador `[Aguardando resposta há 22m]` é indistinguível de um agente
+que está apenas demorando. O design falha em dar um diagnóstico definitivo de
+'travou' versus 'está pensando'."* É exatamente o furo que o R11 fecha, e a
+única razão de o R11 existir. Ele nomeou o buraco em duas rodadas seguidas sem
+propor a saída; a saída (comando repetido + worktree parado) é deste documento.
+
+**DESCARTADO:**
+
+- **As duas colunas (320px de timeline + 560px de console).** O painel tem
+  880px **no total** e vive dentro do app, não é tela cheia: 320 + 560 não deixa
+  padding, e o console fica com menos que os 560px que ele mesmo declarou
+  mínimo para caber um diff. Pior, a coluna esquerda vira um **segundo eixo de
+  rolagem** competindo com o fio, e com 30 fases ela rola sozinha e a fase viva
+  sai da tela do mesmo jeito. A janela viva (R9) resolve o mesmo problema sem
+  gastar uma coluna.
+- **Projetar para N > 25.** É o cenário de falha que ele levantou, e ele não
+  existe por acidente: o clamp `MAX_REVIEW_LOOPS = 2` limita o crescimento
+  automático a +4 fases. Passar de 25 exige um humano montando 25 à mão, e aí é
+  escolha dele. Fica registrado, não desenhado.
+- **"Fases futuras com 50% de opacidade."** Opacidade uniforme apaga a
+  declaração de granularidade da próxima fase ("não reporta ações nem custo"),
+  que é a melhor informação que uma fase na fila tem para dar. Futuro é
+  hierarquia tipográfica, não transparência.
+
 ### Onde ele e eu discordamos
 
 Ele recomendou um **híbrido B+C com o filtro de ruído de A**, e o argumento
@@ -302,51 +589,104 @@ que ele não precisava"*. Minha recomendação abaixo é o mesmo híbrido com o
 
 ---
 
-## Recomendação
+## Recomendação (revisada em 13/08, depois do teste do plano grande)
 
-**A como esqueleto, com a caixa de gestos de C e a declaração de granularidade
-de B.** Nesta ordem, e por estas razões:
+**A como esqueleto, com a caixa de gestos de C, a declaração de granularidade
+de B e duas peças que o plano grande tornou obrigatórias: a régua fixa (R9) e o
+aviso de repetição (R11).**
 
-1. **A já existe.** O recolhimento por padrão, o stub, o `manuallyToggled`, a
+O esqueleto não mudou. **A confiança mudou, e a ordem das razões também.** Na
+primeira rodada, A ganhava por ser o menor delta sobre o código real, e o
+contra-argumento (o fio esconde travamento macro) ficava em aberto no fim do
+documento. Depois do teste de 12 fases, A ganha por um motivo mais forte e o
+contra-argumento foi resolvido em vez de adiado:
+
+1. **A é a única que escala, e as outras duas disseram isso sozinhas.** A trilha
+   de B quebra em 68px por estação; a saída que funciona (vertical) converte B
+   em A; a trilha de C quebra igual, e só dói menos porque em C ela já era
+   secundária. Não é preferência, é aritmética de largura, e vale para qualquer
+   plano acima de meia dúzia de fases, que o app aceita montar hoje sem tocar em
+   código. Esta razão é nova, e é a que passou a mandar: se o mock de 3 fases
+   fosse o único teste, a escolha teria sido feita por gosto.
+2. **A já existe.** O recolhimento por padrão, o stub, o `manuallyToggled`, a
    compensação de scroll e a regra de "falha nunca recolhe" são código rodando
    em `MessageList.tsx` + `toolGroupDisclosure.ts`, testados. A missão herdar
    isso é a diferença entre uma passada e uma reconstrução. B e C exigem
    superfície nova (inspetor com seleção; caixa de gestos) sobre uma área que
    já está sendo reconstruída.
-2. **O problema mais caro do build 193 não é layout, é honestidade.** Nenhum
+3. **O problema mais caro do build 193 não é layout, é honestidade.** Nenhum
    dos cinco itens do feedback original, nem os três novos, é resolvido por
    "onde as fases aparecem na tela". São resolvidos pela escada do rótulo, pelos
    três estados de custo, pela ignorância declarada por capability e pelo
    vocabulário de pausa. Tudo isso é comum às três, e cabe em qualquer
    esqueleto: **escolha o esqueleto mais barato e gaste o orçamento nas regras.**
-3. **A caixa de gestos de C não é opcional.** As queixas do usuário ("não sei o
+4. **A caixa de gestos de C não é opcional.** As queixas do usuário ("não sei o
    que está acontecendo em cada etapa" e "não consigo pausar a etapa em si") são
    as duas de intervenção e visibilidade, e o mínimo de A não fecha a segunda.
    Proposta concreta: os gestos de C entram no fio como um **bloco colado na
    fase corrente** (não um painel próprio), aparecendo só enquanto uma fase
    roda, com a coluna de reversibilidade e o preço por motor intactos. Isso
    preserva a densidade de A nas missões curtas, porque o bloco some quando nada
-   roda.
-4. **A declaração de granularidade de B é barata e vale muito.** Uma linha na
+   roda. **Emenda do plano grande:** os gestos que apontam para "a próxima fase"
+   precisam nascer com **alvo selecionável** (pular qual, trocar o motor de
+   qual), e o texto do preço precisa ser **lido do estado**, porque ele muda com
+   a escolha e com quantas fases dependem dela. Nascer sem isso é escrever a
+   caixa duas vezes.
+5. **A declaração de granularidade de B é barata e vale muito.** Uma linha na
    fase **na fila** ("agy · Flash 3.6 · não reporta ações nem custo") converte o
    silêncio futuro de bug em contrato. Custa um `structured_output` lido no
    render e resolve metade da percepção de "o app travou".
+6. **A régua fixa e o aviso de repetição entram junto, não depois.** São as duas
+   peças que o plano grande obrigou, e nenhuma é enfeite: sem a régua (R9), "onde
+   estou no plano" some assim que o plano passa da altura da tela; sem o aviso
+   (R11), o custo de descobrir tarde escala com N e o app fica bonito enquanto
+   queima orçamento em círculo. Prioridade entre as duas, se for preciso
+   escolher: **o aviso primeiro**, porque a régua melhora a leitura e o aviso
+   evita prejuízo.
 
-O que **não** trago: a trilha permanente e o inspetor por seleção (B). Numa
-missão linear de 3 fases, o fio já mostra as três; a trilha só ganha valor
-quando o `MissionPlanGraph` (que existe em `missionTypes.ts:19-46` e a timeline
-ignora) virar plano ramificado de verdade. Fica registrado como evolução: **se
-a missão virar grafo, B deixa de ser alternativa e passa a ser necessidade.**
+O que **não** trago: a trilha permanente de estações e o inspetor por seleção
+(B). Numa missão de 3 fases o fio já mostra as três; numa de 12 a trilha não
+cabe (é o resultado desta revisão); e o inspetor por seleção é a única
+navegação nova das três direções. A régua fixa de A é a parte de B que
+sobrevive, reduzida a uma linha que não rola: posição, denominador declarado e
+tempo sem escrita. Sem estações, sem seleção, sem barra de percentual.
 
-### O argumento mais forte CONTRA esta recomendação
+Fica registrado como evolução, com uma correção sobre a versão anterior deste
+parágrafo: eu havia escrito que a trilha só ganharia valor quando o
+`MissionPlanGraph` virasse plano ramificado de verdade. **Isso estava errado
+pelo motivo oposto ao que eu supunha.** O motor recusa ramificação explicitamente
+hoje (`missionPlans.ts:169-180`), e mesmo assim a trilha já tinha valor: o valor
+é "onde estou no todo", que existe em plano linear e cresce com N. O que a
+revisão mostrou é que esse valor **não precisa de trilha** para ser entregue.
+Se a missão virar grafo, B volta à mesa, mas não como trilha horizontal de
+estações, que é a peça que já sabemos que não cabe.
 
-O agy o nomeou primeiro, e ele é bom: **o fio esconde travamento macro.** Numa
+### O argumento mais forte CONTRA esta recomendação, e o que sobrou dele
+
+Era este, e o agy o nomeou primeiro: **o fio esconde travamento macro.** Numa
 missão de 40 minutos com a fase 2 em loop tentando consertar o mesmo teste, A
 continua rolando deltas de ação e transmitindo sensação de avanço enquanto o
 objetivo não anda; B mostraria "fase 2 de 3" parada há 20 minutos, que é a
-informação certa. Minha mitigação (o "última saída há Xs" e o âmbar aos 10 min
-de silêncio) é um paliativo: ela detecta **silêncio**, não **loop**. Um agent
-falante rodando o mesmo comando oito vezes seguidas não fica em silêncio um
-segundo, e nenhuma das três direções, como estão desenhadas, percebe isso.
-Detectar repetição de ação idêntica é trabalho que nenhum dos mocks propõe e
-que provavelmente precisa existir.
+informação certa. A mitigação da primeira rodada ("última saída há Xs" e âmbar
+aos 10 min) era um paliativo confesso: detecta **silêncio**, não **loop**.
+
+O R11 fecha esse buraco, e fecha nos três mocks, não só em A: comando repetido
+≥ 4 vezes **e** worktree parado desde a primeira, relatando o observado sem
+diagnosticar, sem abortar nada sozinho. Um agent falante andando em círculo
+passa a ser visível, e passa a sê-lo no fio, que era exatamente onde o
+argumento dizia que não daria.
+
+**O que continua em aberto, e agora é o argumento mais forte:** o R11 depende
+de dois dados que a UI hoje não tem à mão de forma confiável. O histórico de
+comandos por fase existe no fio, mas "nenhum arquivo alterado no worktree desde
+a primeira execução" exige uma leitura do worktree que ninguém faz hoje
+(`missionWorktree.ts` cria e gerencia o worktree; não há amostragem periódica de
+`git status`). Sem esse segundo fator, sobra "rodou o mesmo comando 4 vezes",
+que é ruidoso e vira alarme falso em teste que legitimamente re-roda. **O R11
+não é uma decisão de UI, é um pedido de dado**, e se ele não for barato, a
+recomendação volta a ter o furo que tinha antes.
+
+Segundo em aberto, menor: nenhum dos três mocks resolve o desequilíbrio de C
+com N grande (a caixa de comando cresce enquanto a fase viva não), e a proposta
+de colar os gestos na fase corrente ameniza sem medir. Isso é assunto do
+protótipo real, não de mais um mock estático.
