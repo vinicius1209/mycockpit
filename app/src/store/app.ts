@@ -41,6 +41,10 @@ interface AppState {
   /** Editor global dos Planos de voo. Assim como Agendado, ocupa o centro sem
    *  fingir ser uma superfície de projeto e não persiste entre boots. */
   flightPlansOpen: boolean
+  /** A fila "Precisam de você" está expandida abaixo da faixa do chrome?
+   *  (ADR-040) Não persiste: decisão pendente não se dispensa entre boots, e a
+   *  faixa some sozinha quando a fila esvazia. */
+  decisionsOpen: boolean
   ready: boolean
   /** Config por projeto vinda de .mycockpit/config.toml (Fase 1). */
   mycockpit: Record<string, ProjectConfig>
@@ -95,6 +99,8 @@ interface AppState {
   setScheduledOpen: (v: boolean) => void
   /** Abre/fecha o workspace global de Planos de voo. */
   setFlightPlansOpen: (v: boolean) => void
+  /** Abre/fecha a fila de decisões pendentes da faixa do chrome. */
+  setDecisionsOpen: (v: boolean) => void
   setReady: (v: boolean) => void
   setAgentLimited: (agent: string, resetHint: string | null) => void
   clearAgentLimited: (agent: string) => void
@@ -175,6 +181,7 @@ export const useApp = create<AppState>()(
       viewMode: "linear",
       scheduledOpen: false,
       flightPlansOpen: false,
+      decisionsOpen: false,
       ready: false,
       mycockpit: {},
       limitedAgents: {},
@@ -260,6 +267,9 @@ export const useApp = create<AppState>()(
           flightPlansOpen,
           scheduledOpen: flightPlansOpen ? false : get().scheduledOpen,
         }),
+      // a faixa é chrome: expandir a fila NÃO troca de superfície nem fecha
+      // workspace nenhum (ela existe por cima do que você já estava fazendo).
+      setDecisionsOpen: (decisionsOpen) => set({ decisionsOpen }),
       toggleContext: () => set((s) => ({ contextOpen: !s.contextOpen })),
       setReady: (ready) => set({ ready }),
       setAgentLimited: (agent, resetHint) =>

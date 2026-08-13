@@ -46,6 +46,19 @@ export function fmtTime(ts: number | null | undefined): string {
   return `${hh}:${mm}`
 }
 
+/** Idade em ms → "agora", "há 5 min", "há 4 h", "há 3 d". Recebe DURAÇÃO (não
+ *  timestamp) pra continuar pura: quem chama subtrai do seu próprio `now`, que
+ *  é injetável em teste. Duração negativa (relógio do futuro) vira "agora". */
+export function fmtAgo(ms: number): string {
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return "agora"
+  const m = Math.floor(s / 60)
+  if (m < 60) return `há ${m} min`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `há ${h} h`
+  return `há ${Math.floor(h / 24)} d`
+}
+
 /** Contagem de tokens → "950", "1.2k", "12k", "3.1M". */
 export function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`

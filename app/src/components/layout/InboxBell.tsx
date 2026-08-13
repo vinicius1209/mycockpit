@@ -51,11 +51,12 @@ import { cn } from "@/lib/utils"
  *  board (E1) ou o plano (SDD). */
 async function goTo(d: Decision) {
   const app = useApp.getState()
-  // "Ver proposta" do sino: o card completo (expansível) mora na fila do
-  // Painel — navegar até lá é o gesto (projectId opcional: board inteiro).
+  // "Ver proposta" do sino: o card completo (expansível) mora na fila da FAIXA
+  // do chrome (ADR-040 — antes morava no Painel). Abrir a fila é o gesto; ela
+  // está visível de qualquer superfície (projectId opcional: board inteiro).
   if (d.kind === "proposal") {
     if (d.projectId) app.setActiveProject(d.projectId)
-    app.setViewMode("painel")
+    app.setDecisionsOpen(true)
     return
   }
   app.setActiveProject(d.projectId)
@@ -137,7 +138,7 @@ function decisionHint(d: Decision): string {
   return d.kind === "fusion" || d.kind === "card"
     ? d.title
     : d.kind === "proposal"
-      ? "Ver a proposta do lead no Painel"
+      ? "Abrir a proposta do lead na fila"
       : decisionTitle(d)
 }
 

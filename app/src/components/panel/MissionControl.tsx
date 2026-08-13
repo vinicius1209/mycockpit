@@ -1,26 +1,18 @@
 // F4 — Painel (mission control): o centro de controle cross-projeto.
-// Anatomia FIXA (a ordem dos blocos nunca muda): (1) strip de frota no topo
-// (contadores + custo hoje/7d, sempre visível); (2) AÇÕES — atalhos Nova
-// missão/disputa/feature, sempre visíveis; (3) PRECISAM DE VOCÊ — a fila
-// dominante, em cards com ação primária (PR mergeia daqui); fila vazia vira
-// uma linha discreta, não um bloco; (4) ENTREGAS — ledger discreto com o
-// custo da semana; (5) FROTA (detalhe) — CLIs + versões + agendadas, seção
-// compacta fixa no rodapé. No primeiro load, fila e entregas mostram
-// skeleton; refreshes seguintes (30s) atualizam em silêncio. Enriquecimento
-// de PR via gh é lazy por card, com cache de 60s e degrade silencioso.
+// Anatomia: (1) instrumento de frota (gasto hoje/7d/30d, sparkline, custo por
+// agente); (2) AÇÕES — atalhos Nova missão/disputa/feature; (3) Board de
+// intenção; (4) ENTREGAS — ledger discreto com o custo da semana; (5) FROTA
+// (detalhe) — CLIs + versões + agendadas, seção compacta fixa no rodapé. No
+// primeiro load, as entregas mostram skeleton; refreshes seguintes (30s)
+// atualizam em silêncio.
+//
+// A fila "Precisam de você" SAIU daqui (ADR-040): ela virou a faixa do chrome
+// (components/decisions/DecisionStrip), visível de qualquer superfície. Uma
+// aba não compra visibilidade — no instante em que você troca pro Trabalho, a
+// fila que mora numa aba deixa de existir.
 
 import { useEffect, useMemo, useState } from "react"
-import {
-  Clock,
-  FileText,
-  GitPullRequest,
-  Lightbulb,
-  Rocket,
-  SquareKanban,
-  Swords,
-} from "lucide-react"
-import { openUrl } from "@tauri-apps/plugin-opener"
-import { toast } from "sonner"
+import { Clock, FileText, Rocket, Swords } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useApp } from "@/store/app"
@@ -28,7 +20,6 @@ import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { useMission } from "@/store/mission"
 import { useSchedules } from "@/store/schedules"
-import { openCardConversation, useCards } from "@/store/cards"
 import { fmtUntilShort } from "@/lib/schedules"
 import {
   engineLabel,
@@ -40,39 +31,20 @@ import {
   visibleSessions,
 } from "@/lib/externalSessions"
 import {
-  adoptPlan,
-  cardDecisions,
-  foundDecisions,
-  pendingDecisions,
-  scanDecisions,
-  type Decision,
-} from "@/lib/inbox"
-import {
-  dismissProposal,
   listRecentDeliveries,
   loadLedger,
-  setSddPlanIgnored,
   type LedgerEntry,
   type RecentDelivery,
 } from "@/lib/db"
 import {
-  cachedPrEnrichment,
   costByAgent,
   dailySpend,
-  fetchPrEnrichment,
   ledgerTokens,
   ledgerWindows,
-  mergeEligible,
-  mergePr,
-  orderQueue,
-  prHealth,
-  prResolved,
-  type PrEnrichment,
 } from "@/lib/panel"
 import { updateAvailable } from "@/lib/detect"
 import { BoardLane } from "@/components/panel/BoardLane"
-import { confirm } from "@/lib/confirm"
-import { fmtCost, fmtTokens } from "@/lib/format"
+import { fmtAgo, fmtCost, fmtTokens } from "@/lib/format"
 import { CostAudit } from "@/components/panel/CostAudit"
 import { cn } from "@/lib/utils"
 
@@ -129,24 +101,6 @@ function Readout({
   )
 }
 
-/** Mesmo formato do InboxBell (duplicado local de propósito — sem tocar lá). */
-function fmtRelative(ts: number): string {
-  const s = Math.floor((Date.now() - ts) / 1000)
-  if (s < 60) return "agora"
-  const m = Math.floor(s / 60)
-  if (m < 60) return `há ${m} min`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `há ${h} h`
-  return `há ${Math.floor(h / 24)} d`
-}
-
-/** Idade a partir de um ISO (manifest do SDD). null/inválido = sem idade. */
-function fmtRelativeIso(iso: string | null): string | null {
-  if (!iso) return null
-  const ts = Date.parse(iso)
-  return Number.isFinite(ts) ? fmtRelative(ts) : null
-}
-
 /** Abre a conversa dona do objeto vivo (turno/missão/disputa) no Trabalho. */
 async function openConv(projectId: string, convId: string) {
   const app = useApp.getState()
@@ -154,31 +108,6 @@ async function openConv(projectId: string, convId: string) {
   await useChat.getState().openProject(projectId)
   await useChat.getState().switchConversation(convId)
   app.setViewMode("linear")
-}
-
-/** Navega pra ONDE a decisão mora (mesmo padrão do InboxBell.goTo): a conversa
- *  (Fusion), o card do board (E1) ou o plano (SDD). */
-async function goTo(d: Decision) {
-  const app = useApp.getState()
-  // proposta do lead mora NA PRÓPRIA fila (expande inline): navegar é só
-  // garantir o Painel na frente (o projectId é opcional — board inteiro).
-  if (d.kind === "proposal") {
-    if (d.projectId) app.setActiveProject(d.projectId)
-    app.setViewMode("painel")
-    return
-  }
-  app.setActiveProject(d.projectId)
-  if (d.kind === "fusion") {
-    await useChat.getState().openProject(d.projectId)
-    await useChat.getState().switchConversation(d.convId)
-    app.setViewMode("linear")
-  } else if (d.kind === "card") {
-    // com conversa ligada abre a conversa; sem, seleciona o card no board.
-    await openCardConversation(d.cardId)
-  } else {
-    app.setSddFocus(d.slug)
-    app.setViewMode("sdd")
-  }
 }
 
 const SEP = ","
@@ -264,401 +193,6 @@ function Dot({ tone }: { tone: "live" | "need" | "done" }) {
   )
 }
 
-/** Botão brass (padrão do app: MessageList/aprovações). */
-function BrassButton({
-  children,
-  disabled,
-  onClick,
-}: {
-  children: React.ReactNode
-  disabled?: boolean
-  onClick: (e: React.MouseEvent) => void
-}) {
-  return (
-    <button
-      disabled={disabled}
-      onClick={onClick}
-      className="shrink-0 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
-    >
-      {children}
-    </button>
-  )
-}
-
-/** Ação secundária discreta dos cards. */
-function GhostAction({
-  children,
-  onClick,
-}: {
-  children: React.ReactNode
-  onClick: (e: React.MouseEvent) => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="shrink-0 rounded-md px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-    >
-      {children}
-    </button>
-  )
-}
-
-/** Moldura comum dos cards da fila. */
-function QueueCard({
-  onClick,
-  children,
-  className,
-}: {
-  onClick: () => void
-  children: React.ReactNode
-  className?: string
-}) {
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onClick()
-      }}
-      className={cn(
-        "cursor-pointer rounded-lg border border-border/70 bg-card/40 px-4 py-3 transition-colors hover:border-border hover:bg-accent/40",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  )
-}
-
-/** Card de PR: corpo e primária abrem a PR no browser; Merge (brass) só com
- *  tudo verde; "Ver no SDD" é a navegação antiga, agora secundária. */
-function PrCard({
-  d,
-  enrich,
-  merging,
-  onMerge,
-}: {
-  d: Extract<Decision, { kind: "pr" }>
-  enrich: PrEnrichment | null
-  merging: boolean
-  onMerge: () => void
-}) {
-  const health = prHealth(enrich)
-  const failing = health === "failing"
-  const canMerge = mergeEligible(enrich)
-  const open = () => void openUrl(d.prUrl).catch(() => {})
-  return (
-    <QueueCard onClick={open}>
-      <div className="flex items-start gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2.5">
-            <GitPullRequest
-              className={cn(
-                "size-4 shrink-0",
-                failing ? "text-st-error" : "text-st-success",
-              )}
-            />
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
-              {d.planTitle}
-            </span>
-            <span className="shrink-0 text-[12px] text-muted-foreground">
-              {d.projectName}
-            </span>
-            {enrich?.updatedAt != null && (
-              <span className="shrink-0 text-[11px] text-muted-foreground/60">
-                {fmtRelative(enrich.updatedAt)}
-              </span>
-            )}
-          </div>
-          {enrich && (
-            <p
-              className={cn(
-                "mt-1 pl-[26px] text-[12px] tabular-nums",
-                failing ? "text-st-error" : "text-muted-foreground",
-              )}
-            >
-              {enrich.checksTotal > 0 && (
-                <>
-                  {failing ? "✗" : health === "green" ? "✓" : ""}{" "}
-                  {enrich.checksPassed}/{enrich.checksTotal} checks ·{" "}
-                </>
-              )}
-              +{enrich.additions} −{enrich.deletions}
-              {enrich.mergeable === "MERGEABLE"
-                ? " · mergeable"
-                : enrich.mergeable === "CONFLICTING"
-                  ? " · conflito"
-                  : ""}
-              {enrich.isDraft ? " · draft" : ""}
-            </p>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5 pt-px">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              open()
-            }}
-            className={cn(
-              "shrink-0 rounded-md border px-2.5 py-1 text-[12px] font-medium transition-colors",
-              failing
-                ? "border-st-error/50 text-st-error hover:bg-st-error/10"
-                : "border-border text-foreground hover:bg-accent/60",
-            )}
-          >
-            {failing ? "Ver falha ↗" : "Abrir PR ↗"}
-          </button>
-          {canMerge && (
-            <BrassButton
-              disabled={merging}
-              onClick={(e) => {
-                e.stopPropagation()
-                onMerge()
-              }}
-            >
-              {merging ? "Mergeando…" : "Merge"}
-            </BrassButton>
-          )}
-          <GhostAction
-            onClick={(e) => {
-              e.stopPropagation()
-              void goTo(d)
-            }}
-          >
-            Ver no SDD
-          </GhostAction>
-        </div>
-      </div>
-    </QueueCard>
-  )
-}
-
-/** Card de disputa: julgar é a única ação — corpo e primária navegam. */
-function FusionCard({ d }: { d: Extract<Decision, { kind: "fusion" }> }) {
-  const go = () => void goTo(d)
-  return (
-    <QueueCard onClick={go}>
-      <div className="flex items-center gap-2.5">
-        <Swords className="size-4 shrink-0 text-brass" />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
-          {d.title}
-        </span>
-        <span className="shrink-0 text-[12px] text-muted-foreground">
-          {d.projectName}
-        </span>
-        <BrassButton
-          onClick={(e) => {
-            e.stopPropagation()
-            go()
-          }}
-        >
-          Julgar
-        </BrassButton>
-      </div>
-    </QueueCard>
-  )
-}
-
-/** Card do board esperando você (E1: review/blocked): abrir leva à conversa
- *  ligada, ou seleciona o card no board quando não há conversa. Quando o vigia
- *  marcou o card como estagnado (S2.3), o destaque "parado há X min" entra
- *  aqui mesmo, sem layout novo. */
-function BoardQueueCard({ d }: { d: Extract<Decision, { kind: "card" }> }) {
-  const go = () => void goTo(d)
-  // minutos calculados no render: a fila re-escaneia periodicamente, o valor
-  // acompanha; precisão de relógio vivo não vale um timer por card.
-  const stalledMin =
-    d.stalledSince != null
-      ? Math.max(1, Math.round((Date.now() - d.stalledSince) / 60_000))
-      : null
-  return (
-    <QueueCard onClick={go}>
-      <div className="flex items-center gap-2.5">
-        <SquareKanban
-          className={cn(
-            "size-4 shrink-0",
-            d.state === "blocked" ? "text-st-error" : "text-st-warning",
-          )}
-        />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
-          {d.title}
-        </span>
-        <span className="shrink-0 text-[12px] text-muted-foreground">
-          {d.projectName}
-        </span>
-        {stalledMin != null && (
-          <span className="shrink-0 rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[11px] tracking-wide text-st-warning">
-            parado há {stalledMin} min
-          </span>
-        )}
-        <span
-          className={cn(
-            "shrink-0 rounded border px-1.5 py-px text-[11px] tracking-wide uppercase",
-            d.state === "blocked"
-              ? "border-st-error/50 bg-st-error/10 text-st-error"
-              : "border-st-warning/50 bg-st-warning/10 text-st-warning",
-          )}
-        >
-          {d.state === "blocked" ? "bloqueado" : "em revisão"}
-        </span>
-        <BrassButton
-          onClick={(e) => {
-            e.stopPropagation()
-            go()
-          }}
-        >
-          Abrir
-        </BrassButton>
-      </div>
-    </QueueCard>
-  )
-}
-
-/** Card de proposta do lead (S4.2): "Ver proposta" expande o texto INLINE no
- *  próprio card (sem modal novo); "Dispensar" marca dismissed e some da fila.
- *  O lead NUNCA despacha: não existe botão de dispatch aqui — aprovar um item
- *  é o gesto humano normal no board. */
-function ProposalCard({
-  d,
-  onDismiss,
-}: {
-  d: Extract<Decision, { kind: "proposal" }>
-  onDismiss: () => void
-}) {
-  const [open, setOpen] = useState(false)
-  return (
-    <QueueCard onClick={() => setOpen((o) => !o)}>
-      <div className="flex items-center gap-2.5">
-        <Lightbulb className="size-4 shrink-0 text-brass" />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
-          Proposta do lead: {d.excerpt}
-        </span>
-        <span className="shrink-0 text-[12px] text-muted-foreground">
-          {d.projectName ?? "board inteiro"}
-        </span>
-        <span className="shrink-0 text-[11px] text-muted-foreground/60">
-          {fmtRelative(d.createdAt)}
-        </span>
-        <GhostAction
-          onClick={(e) => {
-            e.stopPropagation()
-            onDismiss()
-          }}
-        >
-          Dispensar
-        </GhostAction>
-        <BrassButton
-          onClick={(e) => {
-            e.stopPropagation()
-            setOpen((o) => !o)
-          }}
-        >
-          {open ? "Fechar" : "Ver proposta"}
-        </BrassButton>
-      </div>
-      {open && (
-        <p className="mt-2 pl-[26px] text-[13px] leading-relaxed whitespace-pre-wrap text-foreground/90">
-          {d.body}
-        </p>
-      )}
-    </QueueCard>
-  )
-}
-
-/** Linha de gate ENCONTRADO no disco (o app leu o .claude/plans do projeto e
- *  ninguém te chamou). Discreta de propósito: não é fila, é achado. Origem e
- *  idade explícitas — 68 dias de dívida não pode parecer urgência de hoje. */
-function FoundRow({
-  d,
-  onAdopt,
-  onIgnore,
-}: {
-  d: Extract<Decision, { kind: "prd" | "pr" }>
-  onAdopt: () => void
-  onIgnore: () => void
-}) {
-  const go = () => void goTo(d)
-  const age = fmtRelativeIso(d.createdAt)
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={go}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") go()
-      }}
-      className="group flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/50"
-    >
-      {d.kind === "prd" ? (
-        <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-      ) : (
-        <GitPullRequest className="size-3.5 shrink-0 text-muted-foreground" />
-      )}
-      <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
-        {d.kind === "prd" ? "PRD por aprovar" : "PR aberto"}: {d.planTitle}
-      </span>
-      <span className="shrink-0 text-[12px] text-muted-foreground/80">
-        {d.projectName}
-      </span>
-      <span className="shrink-0 font-mono text-[11px] text-muted-foreground/60">
-        {d.origin.path}
-        {age ? ` · criado ${age}` : ""}
-      </span>
-      {/* "Adotar" é o gesto explícito de trazer o plano pra fila (e o resgate
-          de quem nasceu aqui, mas perdeu a marca da adoção). */}
-      <GhostAction
-        onClick={(e) => {
-          e.stopPropagation()
-          onAdopt()
-        }}
-      >
-        Adotar
-      </GhostAction>
-      <GhostAction
-        onClick={(e) => {
-          e.stopPropagation()
-          onIgnore()
-        }}
-      >
-        Ignorar
-      </GhostAction>
-    </div>
-  )
-}
-
-/** Card de PRD: revisar no SDD (aqui o SDD É o destino certo). */
-function PrdCard({ d }: { d: Extract<Decision, { kind: "prd" }> }) {
-  const go = () => void goTo(d)
-  const age = fmtRelativeIso(d.createdAt)
-  return (
-    <QueueCard onClick={go}>
-      <div className="flex items-center gap-2.5">
-        <FileText className="size-4 shrink-0 text-brass" />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
-          {d.planTitle}
-        </span>
-        <span className="shrink-0 text-[12px] text-muted-foreground">
-          {d.projectName}
-        </span>
-        {age && (
-          <span className="shrink-0 text-[11px] text-muted-foreground/60">
-            {age}
-          </span>
-        )}
-        <BrassButton
-          onClick={(e) => {
-            e.stopPropagation()
-            go()
-          }}
-        >
-          Revisar PRD
-        </BrassButton>
-      </div>
-    </QueueCard>
-  )
-}
-
 export function MissionControl() {
   const projects = useApp((s) => s.projects)
   const detected = useApp((s) => s.settings.detected)
@@ -700,13 +234,6 @@ export function MissionControl() {
       .sort()
       .join(SEP),
   )
-  const decidingKey = useFusion((s) =>
-    Object.entries(s.byConv)
-      .filter(([, f]) => f.phase === "deciding")
-      .map(([id]) => id)
-      .sort()
-      .join(SEP),
-  )
 
   // Strip de frota — turnos + missões + disputas vivas, cross-projeto.
   // Detalhes (projectId/task/prompt) lidos via getState() DENTRO do memo: são
@@ -741,7 +268,6 @@ export function MissionControl() {
   // ao montar e num refresh leve a cada 30s (interval limpo no unmount).
   // `loaded` vira true quando a 1ª varredura completa (skeleton → conteúdo);
   // nunca volta a false — refreshes seguintes atualizam em silêncio.
-  const [decisions, setDecisions] = useState<Decision[]>([])
   const [deliveries, setDeliveries] = useState<RecentDelivery[]>([])
   // Ledger de custo dos últimos 30d (turn_costs: chat + disputa + fases de
   // missão desde o MH2.1; + etapas SDD) — alimenta o instrumento de frota
@@ -754,12 +280,6 @@ export function MissionControl() {
   useEffect(() => {
     let cancelled = false
     const refresh = () => {
-      const scanP =
-        projects.length > 0
-          ? scanDecisions(projects).then((d) => {
-              if (!cancelled) setDecisions(d)
-            })
-          : Promise.resolve(setDecisions([]))
       // entregas = a LISTA de entregas recentes (custo vem do ledger acima;
       // desde o MH2.1 deliveries é registro de entrega, não fonte de custo).
       const deliveriesP = listRecentDeliveries(60).then((d) => {
@@ -768,7 +288,7 @@ export function MissionControl() {
       const ledgerP = loadLedger(Date.now() - 30 * 24 * 60 * 60 * 1000).then((l) => {
         if (!cancelled) setLedger(l)
       })
-      void Promise.allSettled([scanP, deliveriesP, ledgerP]).then(() => {
+      void Promise.allSettled([deliveriesP, ledgerP]).then(() => {
         if (!cancelled) setLoaded(true)
       })
     }
@@ -779,162 +299,6 @@ export function MissionControl() {
       clearInterval(timer)
     }
   }, [projects, refreshTick])
-
-  // Enriquecimento gh por PR: lazy (não bloqueia o render), cache de 60s no
-  // lib/panel, fail-soft (null → card sem 2ª linha). Estado inicial vem do
-  // cache síncrono pra não piscar ao remontar o painel.
-  const [prData, setPrData] = useState<Record<string, PrEnrichment | null>>({})
-  useEffect(() => {
-    let cancelled = false
-    for (const d of decisions) {
-      if (d.kind !== "pr") continue
-      const url = d.prUrl
-      const hit = cachedPrEnrichment(url)
-      if (hit) setPrData((m) => (m[url] === hit ? m : { ...m, [url]: hit }))
-      void fetchPrEnrichment(url)
-        .then((e) => {
-          if (cancelled) return
-          setPrData((m) => (m[url] === e ? m : { ...m, [url]: e }))
-        })
-        .catch(() => {})
-    }
-    return () => {
-      cancelled = true
-    }
-  }, [decisions])
-
-  // Fila "Precisam de você" — scanDecisions (persistido) + disputas 'deciding'
-  // ao vivo que a varredura ainda não viu (dedupe por convId), menos os PRs já
-  // mergeados nesta sessão, ordenada por rank (lib/panel.orderQueue).
-  const [merged, setMerged] = useState<ReadonlySet<string>>(() => new Set())
-  const [mergingUrl, setMergingUrl] = useState<string | null>(null)
-  // E1 (S1.6): cards em review/blocked entram na MESMA fila. Ref estável do
-  // array do store (só muda em mutação real, nunca por delta de stream); a
-  // saída da fila é derivação pura — card mudou de estado, some do memo.
-  const allCards = useCards((s) => s.all)
-  const queue = useMemo<Decision[]>(() => {
-    const seen = new Set(
-      decisions.filter((d) => d.kind === "fusion").map((d) => d.convId),
-    )
-    const projName = new Map(projects.map((p) => [p.id, p.name]))
-    const byId = useChat.getState().byId
-    const extra: Decision[] = []
-    for (const convId of split(decidingKey)) {
-      if (seen.has(convId)) continue
-      const projectId = byId[convId]?.projectId
-      if (!projectId) continue
-      extra.push({
-        kind: "fusion",
-        convId,
-        projectId,
-        projectName: projName.get(projectId) ?? "projeto",
-        title:
-          useFusion.getState().byConv[convId]?.prompt ??
-          "Disputa aguardando decisão",
-      })
-    }
-    // PR sai da fila se: mergeada nesta sessão OU o GitHub diz que já foi
-    // resolvida (merge feito fora do app — o manifest SDD local fica velho).
-    const all = [
-      ...extra,
-      ...decisions,
-      ...cardDecisions(allCards, projects),
-    ].filter(
-      (d) =>
-        d.kind !== "pr" ||
-        (!merged.has(d.prUrl) && !prResolved(prData[d.prUrl])),
-    )
-    return orderQueue(all, prData)
-  }, [decisions, decidingKey, projects, prData, merged, allCards])
-
-  // "Precisam de você" = só PENDÊNCIA. Gate do SDD que o app apenas ACHOU no
-  // disco (nenhum gesto seu por aqui) desce pra "Encontrados no projeto": a
-  // fila é sinal de agora, não arqueologia do .claude/plans.
-  const pending = useMemo(() => pendingDecisions(queue), [queue])
-  const found = useMemo(
-    () => foundDecisions(queue) as Extract<Decision, { kind: "prd" | "pr" }>[],
-    [queue],
-  )
-
-  /** "Ignorar": some da lista (marca no BANCO DO APP, nunca no .claude/plans).
-   *  Reverter é no sino, que é quem lista os ignorados. Falhou = não some (nem
-   *  quando "falhar" é não ter banco: sumir na base de um no-op seria teatro). */
-  function handleIgnorePlan(d: Extract<Decision, { kind: "prd" | "pr" }>) {
-    void setSddPlanIgnored(d.projectId, d.slug, true)
-      .then((saved) => {
-        if (!saved) {
-          toast.error("Sem banco: não dá pra ignorar o plano agora")
-          return
-        }
-        setDecisions((prev) =>
-          prev.filter(
-            (x) =>
-              !(
-                (x.kind === "prd" || x.kind === "pr") &&
-                x.projectId === d.projectId &&
-                x.slug === d.slug
-              ),
-          ),
-        )
-      })
-      .catch((e) => {
-        console.error("[painel] falha ao ignorar o plano", d.projectId, d.slug, e)
-        toast.error("Falha ao ignorar o plano")
-      })
-  }
-
-  /** "Adotar": o plano passa a contar como pendência de verdade (sobe pra
-   *  "Precisam de você"). É também o gesto de RECUPERAÇÃO quando o plano nasceu
-   *  aqui mas a marca da adoção não gravou (banco travado no instante da
-   *  criação) e ele apareceu, errado, como "encontrado no projeto". */
-  function handleAdoptPlan(d: Extract<Decision, { kind: "prd" | "pr" }>) {
-    void adoptPlan(d.projectId, d.slug).then((ok) => {
-      if (!ok) {
-        toast.error("Não consegui adotar o plano", {
-          description: "Nada mudou. Tente de novo em instantes.",
-        })
-        return
-      }
-      setRefreshTick((t) => t + 1) // re-varre: o item muda de seção
-    })
-  }
-
-  /** Dispensa a proposta do lead (persistido) e a tira da fila na hora. */
-  async function handleDismissProposal(
-    d: Extract<Decision, { kind: "proposal" }>,
-  ) {
-    try {
-      await dismissProposal(d.proposalId)
-      setDecisions((prev) =>
-        prev.filter(
-          (x) => !(x.kind === "proposal" && x.proposalId === d.proposalId),
-        ),
-      )
-    } catch {
-      toast.error("Falha ao dispensar a proposta")
-    }
-  }
-
-  async function handleMerge(d: Extract<Decision, { kind: "pr" }>) {
-    const ok = await confirm({
-      title: `Fazer merge de "${d.planTitle}"?`,
-      description:
-        `Squash merge do PR em ${d.projectName}. ` +
-        "O GitHub ainda valida as proteções da branch.",
-      confirmLabel: "Merge",
-    })
-    if (!ok) return
-    setMergingUrl(d.prUrl)
-    try {
-      await mergePr(d.prUrl)
-      toast.success(`PR mergeado: ${d.planTitle}`)
-      setMerged((prev) => new Set(prev).add(d.prUrl))
-    } catch (e) {
-      toast.error(typeof e === "string" ? e : "Falha no merge")
-    } finally {
-      setMergingUrl(null)
-    }
-  }
 
   // Custo por janela (hoje / 7d) — alimenta o strip, o Launchpad e o título
   // das Entregas.
@@ -1164,65 +528,6 @@ export function MissionControl() {
             S4.3: proposta nova do lead re-escaneia a fila na hora. */}
         <BoardLane onProposal={() => setRefreshTick((t) => t + 1)} />
 
-        {/* 3. Precisam de você — a fila dominante; vazia vira linha discreta */}
-        <section aria-label="Precisam de você">
-          {!loaded ? (
-            <>
-              <SectionTitle>Precisam de você</SectionTitle>
-              <SkeletonRows rows={2} />
-            </>
-          ) : pending.length === 0 ? (
-            <EmptyLine>Nada esperando você. Bom voo.</EmptyLine>
-          ) : (
-            <>
-              <SectionTitle>Precisam de você ({pending.length})</SectionTitle>
-              <div className="flex flex-col gap-2">
-                {pending.map((d) =>
-                  d.kind === "pr" ? (
-                    <PrCard
-                      key={`pr:${d.prUrl}`}
-                      d={d}
-                      enrich={prData[d.prUrl] ?? null}
-                      merging={mergingUrl === d.prUrl}
-                      onMerge={() => void handleMerge(d)}
-                    />
-                  ) : d.kind === "fusion" ? (
-                    <FusionCard key={`fusion:${d.convId}`} d={d} />
-                  ) : d.kind === "card" ? (
-                    <BoardQueueCard key={`card:${d.cardId}`} d={d} />
-                  ) : d.kind === "proposal" ? (
-                    <ProposalCard
-                      key={`proposal:${d.proposalId}`}
-                      d={d}
-                      onDismiss={() => void handleDismissProposal(d)}
-                    />
-                  ) : (
-                    <PrdCard key={`prd:${d.projectId}:${d.slug}`} d={d} />
-                  ),
-                )}
-              </div>
-            </>
-          )}
-
-          {/* Encontrados no projeto — gates que o app LEU do .claude/plans e
-              você ainda não tocou por aqui. Abaixo da fila, sem alarme. */}
-          {loaded && found.length > 0 && (
-            <div className="mt-4">
-              <SectionTitle>Encontrados no projeto ({found.length})</SectionTitle>
-              <div className="flex flex-col gap-px">
-                {found.map((d) => (
-                  <FoundRow
-                    key={`found:${d.projectId}:${d.slug}`}
-                    d={d}
-                    onAdopt={() => handleAdoptPlan(d)}
-                    onIgnore={() => handleIgnorePlan(d)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </section>
-
         {/* 4. Entregas — ledger discreto, custo da semana no título */}
         <section aria-label="Entregas">
           <SectionTitle>
@@ -1251,7 +556,7 @@ export function MissionControl() {
                     {fmtCost(d.costUsd ?? undefined)}
                   </span>
                   <span className="shrink-0 text-[11px] text-muted-foreground/60">
-                    {fmtRelative(d.createdAt)}
+                    {fmtAgo(Date.now() - d.createdAt)}
                   </span>
                 </div>
               ))}

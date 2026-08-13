@@ -39,6 +39,10 @@ export type Decision =
       projectId: string
       projectName: string
       title: string
+      /** created_at da disputa (epoch ms), quando a varredura tem a linha do
+       *  banco. Ausente na disputa montada AO VIVO pelo store (a decisão
+       *  acabou de nascer): a faixa só envelhece o que tem carimbo real. */
+      createdAt?: number
     }
   | {
       kind: "card"
@@ -284,6 +288,7 @@ export async function scanDecisions(
       projectId: f.projectId,
       projectName: p.name,
       title: f.title ?? "Disputa aguardando decisão",
+      createdAt: f.createdAt,
     })
   }
 

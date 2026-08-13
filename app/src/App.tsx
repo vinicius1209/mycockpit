@@ -11,6 +11,7 @@ import { ContextPanel } from "@/components/layout/ContextPanel"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { SddView } from "@/components/sdd/SddView"
 import { MissionControl } from "@/components/panel/MissionControl"
+import { DecisionStrip } from "@/components/decisions/DecisionStrip"
 import { ScheduledView } from "@/components/scheduled/ScheduledView"
 import { CommandMenu } from "@/components/common/CommandMenu"
 import { GlobalInteractionHost } from "@/components/common/GlobalInteractionHost"
@@ -792,6 +793,11 @@ export default function App() {
       <TooltipProvider delayDuration={300}>
         <div className="grain flex h-screen w-screen flex-col overflow-hidden bg-rail text-foreground">
           <TitleBar />
+          {/* A faixa "precisa de você" (ADR-040): CHROME, entre a barra do topo
+              e o conteúdo, pra ser visível de dentro do Trabalho e não só do
+              Painel. Sem decisão pendente ela renderiza null e não ocupa
+              pixel nenhum. */}
+          <DecisionStrip />
           <ResizablePanelGroup
             orientation="horizontal"
             className="min-h-0 flex-1"
