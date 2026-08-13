@@ -1,5 +1,13 @@
 # Companion Web profissional — plano (visão registrada, execução futura)
 
+> **Correção de escopo (13/08/2026) — o Board SAIU do Companion (ADR-041).**
+> Tudo que este plano descreve como "board no celular" (seção de cards do
+> snapshot, card estagnado em `attention`, e as ações `dispatch_card` /
+> `close_card` do S4.5/S4.6) foi REMOVIDO: o ADR-040 já tinha tirado o Board
+> do desktop por uso zero, e manter só no celular fazia dele o único lugar do
+> produto capaz de registrar uma entrega. A tabela `cards` e o `store/cards`
+> continuam intocados. Leia o resto deste doc com esse desconto.
+
 > **Status C4 (11/08/2026): ENTREGUE — Polimento de casa.** Pareamento v2 +
 > dark mode + avisos honestos; a frente do Companion fecha aqui.
 >

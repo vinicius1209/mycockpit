@@ -1579,22 +1579,9 @@ fn sanitize_action(uploads: &HashMap<String, Attachment>, v: &Value) -> Result<V
             }
             out
         }
-        // S4.6 — board remoto: o celular É o humano (o gate humano-only do
-        // board proíbe sistema/agente despachando/fechando sozinho, não o
-        // dono no sofá). O executor JS revalida e roteia pelo useCards, com
-        // as guardas do store intactas (backlog-only, anti-duplo, máquina de
-        // estados do card).
-        "dispatch_card" => json!({"kind": "dispatch_card", "cardId": req_str("cardId")?}),
-        "close_card" => {
-            let card = req_str("cardId")?;
-            let state = req_str("state")?;
-            // enum FECHADO: card só fecha como done|cancelled — mesma regra
-            // do closeCard do front (defesa em profundidade nas duas pontas)
-            if state != "done" && state != "cancelled" {
-                return Err("state inválido (done|cancelled)".into());
-            }
-            json!({"kind": "close_card", "cardId": card, "state": state})
-        }
+        // dispatch_card/close_card SAÍRAM da whitelist (ADR-041): o Board não
+        // existe mais no celular, então card não é mais vocabulário do
+        // Companion. Cliente velho pedindo uma delas cai no _ => 400 abaixo.
         "feedback_lesson" => {
             // P6: 👍/👎 de turno concluído → reforço de lições no front. Verdict
             // é enum fechado (up|down) — qualquer outro valor é 400.
@@ -1714,9 +1701,10 @@ mod tests {
         assert!(!COMPANION_PAGE.contains("href=\"http"));
         // P6: a página fala o vocabulário whitelisted do 👍/👎
         assert!(COMPANION_PAGE.contains("feedback_lesson"));
-        // S4.6: a página fala o vocabulário whitelisted do board
-        assert!(COMPANION_PAGE.contains("dispatch_card"));
-        assert!(COMPANION_PAGE.contains("close_card"));
+        // ADR-041: a página NÃO pede mais ação de card (o Board saiu do
+        // celular) — a whitelist e o cliente versionam juntos no binário.
+        assert!(!COMPANION_PAGE.contains("data-cardgo"));
+        assert!(!COMPANION_PAGE.contains("data-cardclose"));
     }
 
     #[tokio::test]
@@ -1814,7 +1802,7 @@ mod tests {
     #[test]
     fn fundacao_c1_revogacao_401_limpa_token_e_snapshot_cacheado() {
         // aparelho revogado não retém NADA: o handler de 401 da página apaga o
-        // token E o snapshot cacheado (board/custos/attention) do localStorage.
+        // token E o snapshot cacheado (custos/attention/entregas) do localStorage.
         let start = COMPANION_PAGE
             .find("function onUnauthorized()")
             .expect("página sem handler de 401");
@@ -2091,43 +2079,19 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_card_actions_reconstroi_e_valida_enum() {
+    fn acoes_de_card_saem_da_whitelist_e_viram_400() {
+        // ADR-041: o Board saiu do Companion. Card deixou de ser vocabulário
+        // do celular, então as duas ações caem no default da whitelist — nada
+        // atravessa pro executor, nem de um cliente velho ainda aberto.
         let up = HashMap::new();
-        // dispatch_card: só o cardId viaja — campo extra morre na reconstrução
-        let out = sanitize_action(
-            &up,
-            &json!({"kind": "dispatch_card", "cardId": "k1", "hack": "sudo"}),
-        )
-        .unwrap();
-        assert_eq!(out, json!({"kind": "dispatch_card", "cardId": "k1"}));
-        assert!(sanitize_action(&up, &json!({"kind": "dispatch_card"})).is_err());
-        assert!(sanitize_action(&up, &json!({"kind": "dispatch_card", "cardId": ""})).is_err());
-        // close_card: state é enum FECHADO (done|cancelled)
-        let out = sanitize_action(
-            &up,
-            &json!({"kind": "close_card", "cardId": "k1", "state": "done", "hack": "x"}),
-        )
-        .unwrap();
-        assert_eq!(
-            out,
-            json!({"kind": "close_card", "cardId": "k1", "state": "done"})
+        assert!(
+            sanitize_action(&up, &json!({"kind": "dispatch_card", "cardId": "k1"})).is_err()
         );
-        let out = sanitize_action(
-            &up,
-            &json!({"kind": "close_card", "cardId": "k1", "state": "cancelled"}),
-        )
-        .unwrap();
-        assert_eq!(out["state"], "cancelled");
-        // fora do enum / campos faltando → 400, nunca viaja
         assert!(sanitize_action(
             &up,
-            &json!({"kind": "close_card", "cardId": "k1", "state": "working"}),
+            &json!({"kind": "close_card", "cardId": "k1", "state": "done"}),
         )
         .is_err());
-        assert!(sanitize_action(&up, &json!({"kind": "close_card", "cardId": "k1"})).is_err());
-        assert!(
-            sanitize_action(&up, &json!({"kind": "close_card", "state": "done"})).is_err()
-        );
     }
 
     #[test]

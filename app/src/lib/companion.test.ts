@@ -814,31 +814,22 @@ describe("handleCompanionAction — switch fechado", () => {
   })
 })
 
-// ------------------------------------------------------- board (S4.5 + S4.6)
+// ------------------------------------------- board FORA do celular (ADR-041)
 
-describe("board no companion — snapshot e ações remotas", () => {
-  it("snapshot expõe os cards ABERTOS do board (terminal fora) e nunca inventa custo", () => {
+describe("o Board não existe mais no Companion", () => {
+  it("snapshot não carrega seção de card, nem com o board cheio", () => {
     useCards.setState({
       all: [
         makeCard({ id: "k1", state: "backlog" }),
         makeCard({ id: "k2", state: "working", projectId: "p2" }),
         makeCard({ id: "k3", state: "review" }),
-        makeCard({ id: "k4", state: "done" }),
-        makeCard({ id: "k5", state: "cancelled" }),
       ],
     })
     const snap = buildCompanionSnapshot()
-    expect(snap.cards).toEqual([
-      { id: "k1", projectId: "p1", projectName: "alpha", title: "Card k1", state: "backlog" },
-      { id: "k2", projectId: "p2", projectName: "beta", title: "Card k2", state: "working" },
-      { id: "k3", projectId: "p1", projectName: "alpha", title: "Card k3", state: "review" },
-    ])
-    // custo por card mora em turn_costs (query do Painel), não no store:
-    // o snapshot OMITE o campo em vez de inventar zero.
-    expect(snap.cards?.every((c) => !("costUsd" in c))).toBe(true)
+    expect("cards" in snap).toBe(false)
   })
 
-  it("card estagnado entra TAMBÉM em attention com kind card, título e minutes", () => {
+  it("card estagnado não vira mais item de atenção no celular", () => {
     useCards.setState({
       all: [
         makeCard({
@@ -848,143 +839,29 @@ describe("board no companion — snapshot e ações remotas", () => {
           assigneeAgent: "codex",
           stalledSince: Date.now() - 5 * 60_000,
         }),
-        makeCard({ id: "k1", state: "backlog" }), // sem estagnação: só no board
       ],
     })
     const snap = buildCompanionSnapshot()
-    const cardsAttn = snap.attention.filter((a) => a.kind === "card")
-    expect(cardsAttn).toHaveLength(1)
-    expect(cardsAttn[0]).toMatchObject({
-      id: "card:k9",
-      convId: "c-k9",
-      projectId: "p1",
-      projectName: "alpha",
-      agent: "codex",
-      title: "Card k9",
-      minutes: 5,
-    })
-    // o card segue na seção Board com o stalledSince cru (a página rotula)
-    expect(snap.cards?.find((c) => c.id === "k9")).toMatchObject({
-      stalledSince: expect.any(Number),
-    })
+    // a atenção do celular só fala de gate, aprovação, pergunta e turno mudo;
+    // card estagnado segue vivo na fila do desktop (lib/inbox), não aqui.
+    expect(snap.attention).toHaveLength(0)
   })
 
-  it("dispatch_card roteia pro useCards.dispatch (o celular é o humano; guardas do store intactas)", async () => {
+  it("ações de card viraram vocabulário desconhecido: inócuas e só com aviso", async () => {
     const dispatch = vi.fn(async () => "conv-nova")
-    useCards.setState({ dispatch })
-    await handleCompanionAction({ kind: "dispatch_card", cardId: "k1" })
-    expect(dispatch).toHaveBeenCalledWith("k1")
-  })
-
-  it("B1: dispatch_card de card em projeto ARQUIVADO bate na guarda do store e é reportado", async () => {
-    // dispatch REAL do store: a guarda de projeto arquivado mora lá, não na UI
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-    useCards.setState({
-      all: [makeCard({ id: "k1", state: "backlog", projectId: "p-arquivado" })],
-    })
-    await handleCompanionAction({ kind: "dispatch_card", cardId: "k1" })
-    // nada despachou e o motivo chegou ao caminho de erro (card sem conversa
-    // → aviso nativo no desktop, gap documentado)
-    expect(useCards.getState().all[0].state).toBe("backlog")
-    expect(nativeNotify).toHaveBeenCalledWith(
-      "Companion",
-      expect.stringContaining("Projeto arquivado"),
-    )
-    warn.mockRestore()
-  })
-
-  it("D1: dispatch_card de card INEXISTENTE (snapshot stale) lança no store e é reportado", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-    await handleCompanionAction({ kind: "dispatch_card", cardId: "k-stale" })
-    expect(nativeNotify).toHaveBeenCalledWith(
-      "Companion",
-      expect.stringContaining("Card não encontrado no board"),
-    )
-    warn.mockRestore()
-  })
-
-  it("D2: card de projeto arquivado viaja com archived: true (a página rotula e esconde Iniciar)", () => {
-    useCards.setState({
-      all: [
-        makeCard({ id: "k1", state: "backlog", projectId: "p-arquivado" }),
-        makeCard({ id: "k2", state: "backlog" }),
-      ],
-    })
-    const snap = buildCompanionSnapshot()
-    expect(snap.cards?.find((c) => c.id === "k1")).toMatchObject({
-      projectName: null,
-      archived: true,
-    })
-    // projeto vivo NÃO carrega a marca
-    expect("archived" in (snap.cards?.find((c) => c.id === "k2") ?? {})).toBe(false)
-  })
-
-  it("close_card valida o enum done|cancelled também no front; malformado é inócuo", async () => {
     const closeCard = vi.fn(async () => {})
-    const dispatch = vi.fn(async () => null)
-    useCards.setState({ closeCard, dispatch })
+    useCards.setState({ dispatch, closeCard })
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    await handleCompanionAction({ kind: "dispatch_card", cardId: "k1" })
     await handleCompanionAction({ kind: "close_card", cardId: "k1", state: "done" })
-    expect(closeCard).toHaveBeenCalledWith("k1", "done")
-    await handleCompanionAction({ kind: "close_card", cardId: "k1", state: "cancelled" })
-    expect(closeCard).toHaveBeenCalledWith("k1", "cancelled")
-    // fora do enum / sem cardId: nada roda, só aviso
-    await handleCompanionAction({ kind: "close_card", cardId: "k1", state: "working" })
-    await handleCompanionAction({ kind: "close_card", state: "done" })
-    await handleCompanionAction({ kind: "dispatch_card" })
-    expect(closeCard).toHaveBeenCalledTimes(2)
     expect(dispatch).not.toHaveBeenCalled()
-    expect(warn).toHaveBeenCalledTimes(3)
+    expect(closeCard).not.toHaveBeenCalled()
+    expect(nativeNotify).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledTimes(2)
     warn.mockRestore()
   })
 
-  it("erro de guarda num card COM conversa volta como notice persistido (envelope do send_message)", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-    const dispatch = vi.fn(async () => {
-      throw new Error("Só um card no backlog pode ser iniciado")
-    })
-    useCards.setState({
-      all: [makeCard({ id: "k1", state: "working", conversationId: "c-card" })],
-      dispatch,
-    })
-    const persistOriginal = useChat.getState().persist
-    const persist = vi.fn(async () => {})
-    useChat.setState({ byId: { "c-card": makeConv() }, persist })
-    try {
-      await handleCompanionAction({ kind: "dispatch_card", cardId: "k1" })
-      const items = useChat.getState().byId["c-card"].items
-      const notice = items.find((it) => it.kind === "notice")
-      expect(
-        notice && notice.kind === "notice" ? notice.message : "",
-      ).toContain("backlog")
-      // persistido: o refetch do celular lê o SQLite e vê o motivo
-      expect(persist).toHaveBeenCalledWith("c-card")
-      expect(nativeNotify).not.toHaveBeenCalled()
-    } finally {
-      useChat.setState({ persist: persistOriginal })
-      warn.mockRestore()
-    }
-  })
-
-  it("erro num card SEM conversa: gap honesto — console.warn + aviso nativo no desktop", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-    const closeCard = vi.fn(async () => {
-      throw new Error("transição de card inválida: working → done")
-    })
-    useCards.setState({
-      all: [makeCard({ id: "k1", state: "working" })],
-      closeCard,
-    })
-    await handleCompanionAction({ kind: "close_card", cardId: "k1", state: "done" })
-    expect(warn).toHaveBeenCalled()
-    expect(nativeNotify).toHaveBeenCalledWith(
-      "Companion",
-      expect.stringContaining("transição de card inválida"),
-    )
-    warn.mockRestore()
-  })
-
-  it("mutação no useCards re-empurra o snapshot (a ponte assina o store de cards)", async () => {
+  it("mutação no useCards não re-empurra o snapshot (a ponte não assina mais o board)", async () => {
     vi.useFakeTimers()
     startCompanionBridge()
     await vi.advanceTimersByTimeAsync(600)
@@ -995,7 +872,7 @@ describe("board no companion — snapshot e ações remotas", () => {
     const base = pushes()
     useCards.setState({ all: [makeCard({ id: "k1" })], byProject: {} })
     await vi.advanceTimersByTimeAsync(600)
-    expect(pushes()).toBe(base + 1)
+    expect(pushes()).toBe(base)
   })
 })
 

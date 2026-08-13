@@ -153,17 +153,15 @@ export function perDelivery(total: number, deliveries: number): number | null {
 
 /** Existe, NESTA instalação, algum gesto capaz de registrar uma entrega?
  *
- *  `deliveries` tem exatamente dois writers: missão concluída
- *  (`store/mission.ts`) e card indo pra Feito (`store/cards.ts`). Missão vem
- *  DESLIGADA por padrão, e o Board saiu do desktop no ADR-040, então numa
- *  instalação default o card só muda de estado pelo Companion. Sem writer, o
- *  denominador de "US$ por entrega" está CONGELADO enquanto o numerador cresce
- *  todo dia: o número vira ficção com cara de instrumento. */
-export function hasDeliveryWriter(s: {
-  missionEnabled: boolean
-  companionEnabled: boolean
-}): boolean {
-  return s.missionEnabled || s.companionEnabled
+ *  Sobrou UM writer de `deliveries`: missão concluída (`store/mission.ts`), e
+ *  `missionEnabled` vem DESLIGADO por padrão. O outro writer era card indo pra
+ *  Feito (`store/cards.ts`): o Board saiu do desktop no ADR-040 e do Companion
+ *  no ADR-041, então nenhuma superfície fecha card hoje — o Companion ligado
+ *  deixou de ser resposta pra esta pergunta. Sem writer, o denominador de
+ *  "US$ por entrega" está CONGELADO enquanto o numerador cresce todo dia: o
+ *  número vira ficção com cara de instrumento. */
+export function hasDeliveryWriter(s: { missionEnabled: boolean }): boolean {
+  return s.missionEnabled
 }
 
 /** O derivado "por entrega registrada" aparece? Só com um writer ligado (o

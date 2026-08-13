@@ -977,6 +977,10 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   2, "não-configurado esconde". Quando aparece, a ressalva de 11px diz na cara
   de onde nasce uma entrega e avisa que número alto pode ser falta de registro,
   não ineficiência. O parágrafo do "N% atribuídos" segue a mesma regra.
+  **Atualizado pelo ADR-041 (13/08/2026):** o Board saiu também do Companion,
+  então "Companion ligado" deixou de ser writer e `hasDeliveryWriter` passou a
+  olhar SÓ `missionEnabled`. A regra desta consequência não mudou; mudou quem
+  a satisfaz, e numa instalação default o derivado agora fica escondido.
 - **Consequência 5 — três bugs de tinta fechados junto** (auditoria dos mocks
   contra o STYLEGUIDE §2): o ícone de PR saudável era `st-success` e o dot de
   entrega era verde (verde é marco de turno, nunca estado ambiente que fica na
@@ -992,3 +996,42 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   `EmptyLine` compartilhado entre o vazio da fila e o das entregas, com o mesmo
   peso — a causa literal do "inbox solto na tela inicial": a fila saiu do
   Painel e o vazio das entregas passou a dizer o que falta e por quê.
+
+### ADR-041 — O Board sai também do Companion; entrega passa a nascer só de missão ✅
+- **Contexto (13/08/2026):** o ADR-040 tirou o Board do Painel por uso zero (0
+  card no banco real), mas deixou a seção de cards viva no **Companion Web**.
+  A revisão apontou que a sobra não era só incoerência estética: **fechar um
+  card é um dos dois writers de `deliveries`**, e o outro (missão concluída)
+  vem desligado por padrão. Ou seja, o celular tinha virado o ÚNICO lugar do
+  produto capaz de registrar uma entrega, alimentando um número que só o
+  desktop mostra. Uma superfície de escrita que existe em um aparelho e não
+  existe no app principal é um caminho que ninguém audita.
+- **Decisão — o Board sai do celular; o dado FICA.** Saíram: a seção `cards`
+  do snapshot (`lib/companion.ts`), o `CompanionCard`, o item de atenção
+  `kind: "card"` (card estagnado), as ações `dispatch_card`/`close_card` no
+  executor e na whitelist do Rust (`companion.rs`), a assinatura do `useCards`
+  na ponte, e a seção Board inteira do cliente (`companion/index.html`:
+  markup, `renderBoard`, `boardCardHtml`, os botões Iniciar/Concluir/Cancelar
+  e o mock). **A tabela `cards`, o `store/cards` e as funções de banco seguem
+  intocados**, mesma disciplina do ADR-040: remover DADO é outra decisão. O
+  store continua alimentando o vigia e a fila da faixa no desktop, onde card
+  em revisão/bloqueado ainda vira decisão pendente.
+- **Consequência 1 — a métrica "por entrega" fica escondida numa instalação
+  default.** `hasDeliveryWriter` perdeu o argumento `companionEnabled`: com o
+  Board fora dos dois lados, ligar o Companion não engorda mais o denominador.
+  Sobrou `missionEnabled`, que é `false` por padrão. Efeito prático no Painel:
+  sem missão ligada e sem entrega real na janela, o trio de derivados vira duo
+  e "US$ por entrega registrada" não aparece (`showsPerDelivery`, com teste).
+  Quando aparece, a ressalva de 11px agora diz a verdade nova: entrega nasce
+  só de missão concluída. Isso é a regra do ADR-040 continuando correta, não
+  uma exceção: o derivado só existe enquanto alguém pode registrar.
+- **Consequência 2 — o gesto canônico de entrega volta com Missões.** Até lá o
+  app assume, na cara, que não registra entrega. A alternativa seria manter um
+  botão escondido no celular só para o número do desktop não sumir, que é
+  exatamente o "estado real, nunca teatro" ao contrário.
+- **Consequência 3 — protocolo: nada quebra em aparelho pareado.** O cliente é
+  servido pelo próprio binário (`include_str!` do `index.html`), então página
+  e whitelist versionam JUNTAS: não existe cliente velho contra binário novo a
+  não ser uma aba já aberta, e essa cai no fail-closed correto (a whitelist
+  devolve 400 e o executor ignora com aviso, sem efeito). O campo `cards` era
+  opcional no shape e sumiu sem tocar em mais nada do envelope.

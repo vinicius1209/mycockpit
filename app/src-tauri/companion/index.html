@@ -400,8 +400,6 @@ footer#costbar[hidden] { display: none !important; }
     <div id="running"></div>
     <h2 class="sec">Entregas recentes</h2>
     <div id="deliveries"></div>
-    <h2 class="sec">Board</h2>
-    <div id="board"></div>
     <h2 class="sec">Conversar</h2>
     <div id="projects"></div>
   </section>
@@ -574,12 +572,6 @@ var MOCK_SNAP = {
     { projectId: "p2", projectName: "site-maclan", task: "Deploy da landing nova", agent: "codex", costUsd: 0.44, createdAt: Date.now() - 5 * 3600000 }
   ],
   costs: { totalUsd: 4.21, byProject: { p1: 3.1, p2: 1.11 } },
-  cards: [
-    { id: "k1", projectId: "p1", projectName: "mycockpit", title: "Cobrir o parser com testes", state: "backlog" },
-    { id: "k2", projectId: "p1", projectName: "mycockpit", title: "Migrar settings pro SQLite", state: "working", stalledSince: Date.now() - 22 * 60000 },
-    { id: "k3", projectId: "p2", projectName: "site-maclan", title: "Revisar a landing nova", state: "review" },
-    { id: "k4", projectId: "p2", projectName: "site-maclan", title: "Definir copy do hero", state: "blocked" }
-  ],
   projects: [
     { id: "p1", name: "mycockpit", agents: [{ agent: "claude-code" }, { agent: "codex" }] },
     { id: "p2", name: "site-maclan", agents: [
@@ -696,12 +688,6 @@ function apiAction(body) {
       }, 900);
       return new Promise(function (res) { setTimeout(res, 350); });
     }
-    if (body.kind === "dispatch_card") {
-      MOCK_SNAP.cards.forEach(function (c) { if (c.id === body.cardId && c.state === "backlog") c.state = "working"; });
-    }
-    if (body.kind === "close_card") {
-      MOCK_SNAP.cards = MOCK_SNAP.cards.filter(function (c) { return c.id !== body.cardId; });
-    }
     if (body.kind === "send_message") {
       // fluxo G1 completo no mock: user gravado → running com detail → resposta
       // (+ C3: veredito honesto com o convId real, como o executor devolve)
@@ -810,7 +796,7 @@ function pollPairing(id) {
 }
 function onUnauthorized() {
   // pareamento revogado: o aparelho não retém NADA — token e snapshot cacheado
-  // (board/custos/attention) somem juntos; o retry de WS para sozinho (sem
+  // (custos/attention/entregas) somem juntos; o retry de WS para sozinho (sem
   // token o connectWS retorna cedo).
   try { localStorage.removeItem(LS_TOKEN); } catch (e) {}
   try { localStorage.removeItem(LS_SNAP); } catch (e) {}
@@ -949,7 +935,7 @@ function notifyNewAttention(items) {
   if (!notifOn() || !items.length) return;
   if (!canNativeNotify()) { fallbackAlert(items.length); return; }
   items.forEach(function (a) {
-    var kind = a.kind === "gate" ? "Gate de missão" : a.kind === "approval" ? "Aprovação pendente" : a.kind === "stalled" ? "Turno mudo" : a.kind === "card" ? "Card parado" : "Pergunta do agente";
+    var kind = a.kind === "gate" ? "Gate de missão" : a.kind === "approval" ? "Aprovação pendente" : a.kind === "stalled" ? "Turno mudo" : "Pergunta do agente";
     var body = (a.projectName ? a.projectName + " · " : "") + agentName(a.agent);
     try { new Notification("FROTA — " + kind, { body: body, tag: a.id }); } catch (e) {}
   });
@@ -1191,13 +1177,6 @@ function renderAttention() {
         '<div class="meta">Turno sem sinal de vida há ' + (a.minutes != null ? Number(a.minutes) : "?") + ' min — pode ter travado.</div>' +
         '<div class="actions"><button class="btn danger" data-stop="' + esc(a.convId || "") + '" data-stopkind="stop_turn">Parar</button></div></div>';
     }
-    if (a.kind === "card") {
-      // card estagnado do board (vigia S4.5): informativo, as ações remotas
-      // (Iniciar/Concluir/Cancelar) moram na seção Board logo abaixo
-      return '<div class="card attn"><div class="cardhead"><span class="badge approval">card parado</span>' +
-        '<span class="ctx">' + esc(a.projectName || "") + '</span></div>' +
-        '<div class="meta">' + esc(a.title || "Card") + ' sem andamento há ' + (a.minutes != null ? Number(a.minutes) : "?") + ' min. Veja a seção Board.</div></div>';
-    }
     // approval
     return '<div class="card attn"><div class="cardhead"><span class="badge approval">aprovação</span>' +
       '<span class="ctx">' + ctxLine(a) + (a.toolName ? ' · <span class="mono">' + esc(a.toolName) + "</span>" : "") + '</span></div>' +
@@ -1269,55 +1248,9 @@ function renderDeliveries() {
   }).join("");
 }
 
-// ---------------- board (S4.5 leitura + S4.6 ações) ----------------
-/* Rótulo pt-BR do estado do card (terminal nunca chega: o snapshot só manda
-   cards abertos). */
-var CARD_STATE_LABEL = { backlog: "backlog", working: "em andamento", review: "em revisão", blocked: "bloqueado" };
-function boardCardHtml(c, waiting) {
-  // D2: projeto arquivado é rotulado EXPLÍCITO (o app manda archived: true)
-  var meta = [c.archived ? "projeto arquivado" : (c.projectName ? esc(c.projectName) : null),
-    esc(CARD_STATE_LABEL[c.state] || c.state),
-    c.stalledSince ? esc("parado " + ago(c.stalledSince)) : null].filter(Boolean).join(" · ");
-  // "esperando você" ganha o MESMO destaque visual da seção de atenção (.attn)
-  var h = '<div class="card' + (waiting ? " attn" : "") + '">' +
-    '<div class="dl"><span class="task">' + esc(c.title) + '<div class="meta">' + meta + '</div></span>' +
-    (c.costUsd != null ? '<span class="cost">' + esc(usd(c.costUsd)) + '</span>' : "") + '</div>';
-  var acts = "";
-  if (c.state === "backlog" && !c.archived) {
-    // Iniciar = dispatch_card: gesto humano remoto (o celular é o humano);
-    // as guardas moram no app (backlog-only, anti-duplo, projeto arquivado
-    // LANÇA no store — esconder aqui é só defesa de UX). Concluir/Cancelar
-    // seguem em card arquivado: encerrar intenção órfã é gesto legítimo (F-E).
-    acts += '<button class="btn primary" data-cardgo="' + esc(c.id) + '">Iniciar</button>';
-  }
-  if (c.state === "review" || c.state === "blocked") {
-    // fechar = close_card com confirmação de DOIS TOQUES (nada de confirm():
-    // ele bloquearia o event loop e derrubaria o WS)
-    acts += '<button class="btn" data-cardclose="' + esc(c.id) + '" data-cardstate="cancelled">Cancelar</button>' +
-      '<button class="btn ok" data-cardclose="' + esc(c.id) + '" data-cardstate="done">Concluir</button>';
-  }
-  if (acts) h += '<div class="actions">' + acts + '</div>';
-  return h + '</div>';
-}
-function renderBoard() {
-  var cards = (S.snap && S.snap.cards) || [];
-  var sig = JSON.stringify(cards);
-  if (!sigChanged("board", sig)) return;
-  var host = $("#board");
-  if (!cards.length) { host.innerHTML = '<div class="empty">Nenhum card aberto no board.</div>'; return; }
-  // agrupado por estado, ordem backlog → em andamento → esperando você
-  var groups = [
-    { label: "Backlog", waiting: false, match: function (c) { return c.state === "backlog"; } },
-    { label: "Em andamento", waiting: false, match: function (c) { return c.state === "working"; } },
-    { label: "Esperando você", waiting: true, match: function (c) { return c.state === "review" || c.state === "blocked"; } }
-  ];
-  host.innerHTML = groups.map(function (g) {
-    var list = cards.filter(g.match);
-    if (!list.length) return "";
-    return '<div class="lm" style="margin:8px 2px 6px">' + esc(g.label) + ' (' + list.length + ')</div>' +
-      list.map(function (c) { return boardCardHtml(c, g.waiting); }).join("");
-  }).join("");
-}
+/* O Board saiu do celular (ADR-041): sem seção de card, sem Iniciar/Concluir/
+   Cancelar remotos. O snapshot não manda mais `cards` e a whitelist do Rust
+   não conhece mais dispatch_card/close_card. */
 
 function renderProjects() {
   var ps = (S.snap && S.snap.projects) || [];
@@ -1342,7 +1275,6 @@ function renderBrief() {
   renderAttention();
   renderRunning();
   renderDeliveries();
-  renderBoard();
   renderProjects();
   renderCost();
 }
@@ -1955,7 +1887,7 @@ document.addEventListener("input", function (ev) {
 document.addEventListener("click", function (ev) {
   // C3 — paginação do fio (o botão renasce a cada render: delegação)
   if (ev.target.closest && ev.target.closest("#loadOlder")) { loadOlderPage(); return; }
-  var el = ev.target.closest ? ev.target.closest("[data-nav],[data-proj],[data-pickagent],[data-answer],[data-approve],[data-deny],[data-stop],[data-openchat],[data-cam],[data-rmatt],[data-sug],[data-fb],[data-cardgo],[data-cardclose],[data-lproj],[data-lpilot],[data-opt],[data-answerq]") : null;
+  var el = ev.target.closest ? ev.target.closest("[data-nav],[data-proj],[data-pickagent],[data-answer],[data-approve],[data-deny],[data-stop],[data-openchat],[data-cam],[data-rmatt],[data-sug],[data-fb],[data-lproj],[data-lpilot],[data-opt],[data-answerq]") : null;
   if (!el) return;
 
   // C2 — lançamento: escolher projeto/piloto (re-render mantém a seleção)
@@ -2083,36 +2015,6 @@ document.addEventListener("click", function (ev) {
     apiAction({ kind: "answer_interaction", id: aid, answer: { allow: allow, message: allow ? undefined : "Negado pelo celular (Companion)." } })
       .then(function () { S.answered[aid] = true; S.sigs.attention = null; renderAttention(); })
       .catch(function (e) { el.disabled = false; alert("Falha: " + (e && e.message ? e.message : e)); });
-    return;
-  }
-
-  if (el.hasAttribute("data-cardgo")) {
-    // S4.6 — Iniciar (dispatch_card): 1 toque; o app aplica as guardas
-    // (backlog-only, anti-duplo) e o snapshot confirma o efeito no board.
-    el.disabled = true;
-    el.textContent = "Iniciando…";
-    apiAction({ kind: "dispatch_card", cardId: el.getAttribute("data-cardgo") })
-      .catch(function (e) { alert("Falha ao iniciar: " + (e && e.message ? e.message : e)); })
-      .then(function () { if (el.isConnected) { el.disabled = false; el.textContent = "Iniciar"; } });
-    return;
-  }
-
-  if (el.hasAttribute("data-cardclose")) {
-    // S4.6 — Concluir/Cancelar (close_card): confirmação de DOIS TOQUES
-    // (padrão do "Parar") — arma o botão e confirma em até 3,5s.
-    var clabel = el.getAttribute("data-cardstate") === "done" ? "Concluir" : "Cancelar";
-    if (el.getAttribute("data-armed") !== "1") {
-      el.setAttribute("data-armed", "1");
-      el.textContent = "Confirmar?";
-      setTimeout(function () {
-        if (el.isConnected) { el.removeAttribute("data-armed"); el.textContent = clabel; }
-      }, 3500);
-      return;
-    }
-    el.disabled = true;
-    apiAction({ kind: "close_card", cardId: el.getAttribute("data-cardclose"), state: el.getAttribute("data-cardstate") })
-      .catch(function (e) { alert("Falha ao fechar: " + (e && e.message ? e.message : e)); })
-      .then(function () { if (el.isConnected) { el.disabled = false; el.removeAttribute("data-armed"); el.textContent = clabel; } });
     return;
   }
 

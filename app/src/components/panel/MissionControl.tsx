@@ -186,12 +186,11 @@ export function MissionControl() {
   // Agents com rate limit atingido (cross-conversa, efêmero: marcado por
   // limit_reached, curado por result ok) — a FROTA mostra o posto bloqueado.
   const limitedAgents = useApp((s) => s.limitedAgents)
-  // Quem ainda pode ENGORDAR o denominador de "por entrega registrada": missão
-  // (desligada por padrão) e card indo pra Feito (hoje só pelo Companion, o
-  // Board saiu do desktop). Sem nenhum dos dois, o derivado some em vez de
-  // envelhecer sozinho.
+  // Quem ainda pode ENGORDAR o denominador de "por entrega registrada": só a
+  // missão concluída, e ela vem desligada por padrão (o Board fechava card,
+  // mas saiu do desktop no ADR-040 e do Companion no ADR-041). Sem writer, o
+  // derivado some em vez de envelhecer sozinho.
   const missionEnabled = useApp((s) => s.settings.missionEnabled)
-  const companionEnabled = useApp((s) => s.settings.companionEnabled)
 
   /** Janela da retrospectiva. O dado é carregado SEMPRE em 30 dias (a maior);
    *  trocar pra 7 d é recorte em memória, nunca uma ida nova ao banco. */
@@ -311,7 +310,7 @@ export function MissionControl() {
 
   const convCount = win === 7 ? convCounts.d7 : convCounts.d30
   const showsDelivery = showsPerDelivery(
-    hasDeliveryWriter({ missionEnabled, companionEnabled }),
+    hasDeliveryWriter({ missionEnabled }),
     view.deliveries.length,
   )
   // corte ANUNCIADO: lista cortada em silêncio é o começo de um número que
@@ -395,7 +394,7 @@ export function MissionControl() {
                   label="por entrega registrada"
                   caveat={
                     view.perDelivery != null
-                      ? `${fmtCost(view.total)} ÷ ${view.deliveries.length}. Entrega só nasce de missão concluída ou de card indo pra Feito (hoje, só pelo Companion): nenhum gesto do desktop registra uma. Número alto pode ser falta de registro, não ineficiência.`
+                      ? `${fmtCost(view.total)} ÷ ${view.deliveries.length}. Entrega só nasce de missão concluída, e a missão vem desligada: numa instalação default nada registra entrega. Número alto pode ser falta de registro, não ineficiência.`
                       : "Nenhuma entrega registrada nesta janela, então não existe denominador. O app não divide por zero pra ter um número."
                   }
                 />
@@ -559,10 +558,10 @@ export function MissionControl() {
               {view.deliveries.length === 0 ? (
                 <p className="px-1 text-[13px] leading-relaxed text-muted-foreground">
                   Nenhuma entrega registrada nesta janela. Entrega nasce de
-                  missão concluída ou de card indo pra Feito
+                  missão concluída
                   {showsDelivery
                     ? "."
-                    : ", e com missão desligada e sem Companion nenhum gesto do desktop registra uma."}
+                    : ", e com a missão desligada nenhum gesto do app registra uma."}
                 </p>
               ) : (
                 <>

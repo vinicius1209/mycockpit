@@ -142,19 +142,20 @@ describe("derivados — o denominador sempre à vista", () => {
 })
 
 describe("quem ainda REGISTRA entrega (o denominador pode crescer?)", () => {
-  it("instalação default (missão desligada, sem Companion) não tem writer", () => {
-    expect(hasDeliveryWriter({ missionEnabled: false, companionEnabled: false })).toBe(
-      false,
-    )
+  it("instalação default (missão desligada) não tem writer", () => {
+    expect(hasDeliveryWriter({ missionEnabled: false })).toBe(false)
   })
 
-  it("missão ligada OU Companion ligado bastam", () => {
-    expect(hasDeliveryWriter({ missionEnabled: true, companionEnabled: false })).toBe(
-      true,
-    )
-    expect(hasDeliveryWriter({ missionEnabled: false, companionEnabled: true })).toBe(
-      true,
-    )
+  it("missão ligada é o ÚNICO writer que sobrou", () => {
+    expect(hasDeliveryWriter({ missionEnabled: true })).toBe(true)
+  })
+
+  it("Companion ligado não conta mais: o Board saiu do celular (ADR-041)", () => {
+    // o aparelho pareado fechava card e era o único gesto que registrava
+    // entrega numa instalação default; com o Board fora, ligar o Companion
+    // não engorda mais o denominador.
+    const comCompanion = { missionEnabled: false, companionEnabled: true }
+    expect(hasDeliveryWriter(comCompanion)).toBe(false)
   })
 
   it("sem writer e sem entrega na janela, o derivado SOME (não vira 0 nem —)", () => {
