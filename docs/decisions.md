@@ -845,3 +845,91 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **Consequência:** o passo de tema segue salvando NA SELEÇÃO (o preview ao
   vivo é o app inteiro virando junto), que é o ponto do passo; a reversão mora
   no wizard, único lugar que sabe COMO o passo foi deixado.
+
+### ADR-040 — O Painel vira retrospectiva; a decisão pendente vira chrome; o Board sai ✅
+- **Contexto (13/08/2026):** cinco POCs de redesenho do Painel
+  (`docs/mocks/painel-a…e.html`, com o raciocínio em `painel-README.md`) foram
+  desenhadas olhando pro CÓDIGO da tela. Depois disso o banco REAL do único
+  usuário foi consultado, e ele conta outra história: **16 conversas, 5
+  entregas, 2 disputas, 1 aprendizado, 0 card no Board, 0 agendado, e
+  US$ 6.260 em 30 dias.** Lido de frente, a tela inicial de hoje é um Board
+  vazio, um botão "Nova missão" nunca clicado e um "próxima agendada" que
+  nunca teve o que dizer. O produto mora no Trabalho, onde estão as conversas
+  e quase todo o dinheiro. A direção escolhida foi a **E (retrospectiva)**,
+  com duas condições adicionadas na coordenação (decisões 3 e 4 abaixo).
+- **Decisão 1 — o Painel vira AUDITORIA, não fila.** Hero do gasto da janela,
+  três derivados em 20px, mapa de calor de **US$ por hora** (14 dias × hora),
+  custo por agente cruzado com as entregas do mesmo agente, e as entregas
+  listadas. Duas regras duras: (a) **só número medido** (nenhum tile de token
+  absoluto, contagem de projetos ou streak; o app não mede sequência de dias e
+  não vamos inventar uma); (b) **todo derivado imprime o denominador em 11px**
+  ao lado, porque "US$ 1.252 por entrega" parece um veredito sobre os agents e
+  é sobretudo um veredito sobre o REGISTRO de entregas. Onde o denominador é
+  zero a função devolve `null` e a UI diz o que falta (`lib/retro.ts`).
+  O mapa pinta dinheiro e não atividade de propósito: heatmap de atividade num
+  app de uma pessoa é teatro (não há streak pra manter nem público pra
+  impressionar); pintando US$/hora ele vira detector de vazamento, e segue a
+  régua ÚNICA de medidor do STYLEGUIDE §2 (`lib/meter.ts`).
+- **Decisão 2 — o Board de intenção SAI da tela, o dado FICA.** Zero card em 16
+  conversas não é "feature nova esperando descoberta", é uma resposta; e a
+  intenção de trabalho já existe em três formatos que o usuário usa (abrir
+  conversa, marcar entrega, escrever plano de voo). Saíram as superfícies
+  órfãs (`BoardLane`, `CardDetailDialog`, `cardActions`). **A tabela `cards`,
+  o `store/cards` e as funções de banco continuam intocados**: remover DADO é
+  outra decisão, e o store ainda alimenta o vigia, o Companion e a fila (um
+  card em review/blocked continua virando decisão pendente se existir).
+- **Decisão 3 (condição 1) — o app abre no Trabalho.** O default do store já
+  era `linear`; o que faltava era a regra ser INTENCIONAL e ter teste
+  (`store/app.boot.test.ts`), porque é o tipo de coisa que uma frente futura
+  relaxa sem nada quebrar. Usuário existente **mantém a última aba que usou**,
+  inclusive o Painel: a preferência persistida é dele, e a v4 do `mc.app` não a
+  reescreve. Nada no app força `viewMode: "painel"` no boot (as duas navegações
+  que faziam isso, no sino e no Painel, apontavam pra fila e sumiram com ela).
+- **Decisão 4 (condição 2) — a faixa "precisa de você" é CHROME, não aba.**
+  O argumento que decide: **visibilidade permanente só existe em elemento de
+  moldura (faixa, sino, tray), nunca em aba.** Uma aba some no instante em que
+  você troca de superfície, então uma fila que mora numa aba só é vista por
+  quem já foi olhar; e a evidência diz que o usuário está no Trabalho. A faixa
+  nasce entre a barra do topo e o conteúdo (`components/decisions/`), com
+  quatro regras: (a) **só existe com conteúdo** — fila vazia renderiza `null`,
+  sem placeholder e sem altura reservada (§5), que é o estado NORMAL pela
+  evidência; (b) **âmbar**, nunca vermelho (nada falhou, alguém espera); (c)
+  **não narra o agora** — "N em voo" ficou deliberadamente de fora, porque a
+  linha viva do turno é a dona única do que roda (B2.2/ADR-037), e duas
+  superfícies vivas narrando o mesmo agora foi o bug dos builds 181/182; (d)
+  abrir a fila é sobreposição E2, nunca reflow do fio que você estava lendo.
+  **O que NÃO entrou na faixa, e por quê:** rate limit de CLI, "sem login" e
+  update disponível. São impedimentos reais, mas duram horas ou dias, e uma
+  faixa permanentemente acesa cobra os 30px pra sempre — exatamente o preço que
+  a direção E declara como seu maior custo. Eles seguem no sino e na seção
+  Frota do Painel.
+- **Consequência 1 — o que a retrospectiva NÃO herdou.** As 4 caixas de
+  métrica se dissolveram (30 dias virou o hero, média/dia virou o derivado
+  "por dia", 7 dias virou a janela; "Tokens 30d" desceu pra gaveta, porque
+  token absoluto é incomparável entre motores com preços diferentes). A
+  auditoria por turno **ficou no Painel** em vez de migrar pra Configurações ▸
+  Uso e custo: ela consome o MESMO ledger que a tela já carregou, e mandá-la
+  pra um modal de configuração custaria uma segunda leitura e o contexto.
+  Configurações ▸ Uso e custo segue dona da janela do plano e da reconstrução
+  do ledger.
+- **Consequência 2 — desvios deliberados do mock E.** (a) A seção **Frota
+  (detalhe)** ficou no Painel, fora do mock: é o único lugar onde o estado real
+  das CLIs, das sessões observadas pelos hooks (H1) e das próximas agendadas
+  (F6) aparece, e §1 diz que a UI mostra o estado real da frota; tirá-la seria
+  apagar a superfície de outra frente. (b) O episódio destacado abaixo do mapa
+  é **cinza, não um callout âmbar**: âmbar é "precisa de você", e um gasto do
+  mês passado não é decisão pendente. (c) Os atalhos "Nova missão / Nova
+  disputa / Nova feature" saíram da tela (evidência: nunca ou quase nunca
+  clicados); os gestos seguem no composer (⚔️ e missão) e na sidebar. Isso
+  deixa `requestMissionLaunch`/`requestFusionLaunch` sem chamador no app — o
+  mecanismo foi mantido de propósito, porque quem decide o destino dele é a
+  frente que está reconstruindo Missões.
+- **Consequência 3 — três bugs de tinta fechados junto** (auditoria dos mocks
+  contra o STYLEGUIDE §2): o ícone de PR saudável era `st-success` e o dot de
+  entrega era verde (verde é marco de turno, nunca estado ambiente que fica na
+  tela — os dois viraram cinza); e o card `blocked` era `st-error` (vermelho é
+  falha consumada; bloqueado é âmbar, e quem separa "bloqueado" de "em
+  revisão" é o texto do badge, não a tinta). O quarto item da auditoria era o
+  `EmptyLine` compartilhado entre o vazio da fila e o das entregas, com o mesmo
+  peso — a causa literal do "inbox solto na tela inicial": a fila saiu do
+  Painel e o vazio das entregas passou a dizer o que falta e por quê.

@@ -1,5 +1,18 @@
 # Redesenho do Painel — 5 POCs visuais
 
+> **IMPLEMENTADO em 13/08/2026 — a direção escolhida foi a E, não a
+> recomendação final deste arquivo (D).** O registro da decisão, com as duas
+> condições que a coordenação adicionou (o app abre no **Trabalho**; a faixa
+> "precisa de você" vira **chrome**, visível de dentro do Trabalho) e os
+> desvios deliberados do mock, está no **ADR-040** de `docs/decisions.md`.
+> O que a implementação mudou em relação ao mock E: a faixa NÃO carrega
+> "N em voo" nem rate limit de CLI (ela é sobre decisão pendente, não sobre
+> trabalho em execução nem sobre impedimento de longa duração); o episódio do
+> mapa de calor é cinza, não um callout âmbar; e a seção **Frota (detalhe)**
+> continua no Painel, porque é a única superfície do estado real das CLIs e das
+> sessões observadas pelos hooks. Todo resto do arquivo é o raciocínio de
+> ANTES da escolha e fica como está.
+
 > **Atualização de 13/08/2026**: chegaram `painel-d.html` (o Painel deixa de
 > existir) e `painel-e.html` (o Painel vira retrospectiva), depois de o banco
 > REAL do usuário ser consultado. A evidência de uso, a comparação das cinco

@@ -14,7 +14,7 @@ export const MODES: readonly BarMode[] = [
     id: "painel",
     label: "Painel",
     available: true,
-    desc: "Mission control: rodando agora, decisões e entregas de todos os projetos",
+    desc: "Retrospectiva: onde o dinheiro queimou, por agente e por entrega (consulta, não sessão)",
   },
   {
     id: "linear",

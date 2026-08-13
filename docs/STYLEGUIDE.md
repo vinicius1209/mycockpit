@@ -83,8 +83,8 @@ etiqueta técnica, número). O display serif do design-system nunca embarcou
 
 | px | Papel | Hoje |
 |---|---|---|
-| **20** | Título de view / métrica de seção | `SddView.tsx:679`, `MissionControl.tsx:125` |
-| **30** | Métrica de painel (custo, frota) | `CostAudit.tsx:118`, `MissionControl.tsx:1016` |
+| **20** | Título de view / métrica de seção | `SddView.tsx:679`, `MissionControl.tsx:123` (derivado) e `:327` (título da view) |
+| **30** | Métrica de painel (custo, frota) | `CostAudit.tsx:118`, `MissionControl.tsx:355` |
 | **38** | Saudação do estado vazio | `ChatPanel.tsx:1296` |
 
 Regras decidíveis:
