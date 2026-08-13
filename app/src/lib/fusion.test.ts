@@ -76,6 +76,42 @@ describe("serializeContext (enriquecido)", () => {
     expect(out.indexOf("ÚLTIMA")).toBeGreaterThan(cut)
   })
 
+  it("parecer de conselheiro entra ATRIBUÍDO à persona (não some do contexto)", () => {
+    const out = serializeContext([
+      user("@aline o que achas?"),
+      {
+        kind: "advice",
+        id: "a1",
+        personaId: "projeto:aline",
+        personaName: "Aline",
+        personaVersion: 2,
+        digest: "d779ba8c",
+        question: "o que achas?",
+        text: "O DELETE direto é o problema, não o botão.",
+      },
+    ])
+    expect(out).toContain(
+      "Parecer de Aline (conselheiro, só leitura): O DELETE direto é o problema",
+    )
+    // a voz do conselheiro NÃO se disfarça de executor
+    expect(out).not.toContain("Assistente: O DELETE direto")
+  })
+
+  it("fala endereçada a um conselheiro sai marcada com o destinatário", () => {
+    const out = serializeContext([
+      {
+        kind: "user",
+        id: "u1",
+        text: "@aline revisa isso",
+        advisorTo: { id: "projeto:aline", name: "Aline" },
+      },
+      user("agora aplica", "u2"),
+    ])
+    expect(out).toContain("Usuário (para Aline): @aline revisa isso")
+    // pedido normal (pro piloto) continua sem destinatário
+    expect(out).toContain("Usuário: agora aplica")
+  })
+
   it("abaixo do orçamento: devolve tudo, sem marcador", () => {
     const out = serializeContext([user("oi"), text("olá")])
     expect(out).not.toContain("itens omitidos")

@@ -6,9 +6,17 @@
 // Sinais:
 //  - FORTE: evento `limit_reached` durante o turno (limite da CLI). Traz um
 //    reset_hint (quando o limite reseta) → usamos pra cronometrar o próximo
-//    resume em vez de chutar backoff.
+//    resume em vez de chutar backoff. Os TRÊS motores têm `classify_limit`
+//    próprio (adapters.rs), então este caminho cobre todo mundo.
 //  - HEURÍSTICO: o texto FINAL do turno casa padrões de rate-limit / espera /
 //    retry ("rate limit", "vou aguardar", "will retry", "wakeup", "60s"…).
+//    Rede SECUNDÁRIA, e por isso SUBORDINADA ao desfecho do turno: um turno que
+//    fechou com `result.ok` não é retomado por texto nenhum (ver
+//    `turnClosedOk`). Sem essa subordinação, o vocabulário técnico de um agente
+//    de código vira gatilho de gasto: um turno perfeito que RECOMENDAVA
+//    "outbox/retry" casou `\bretry\b` e reenviou sozinho, pago (bug real do
+//    usuário, 13/08/2026 — a palavra estava numa lista de arquitetura, não numa
+//    promessa de tentar de novo).
 
 import type { ChatItem } from "@/store/chat"
 
@@ -39,6 +47,14 @@ export function matchesResumePattern(text: string): boolean {
   return RESUME_PATTERNS.some((re) => re.test(text))
 }
 
+/** Os dois gatilhos, como VALOR — o `reason` deixa de ser rótulo solto e passa
+ *  a mandar no que a UI diz e no que o reenvio afirma. Eram frases fixas de
+ *  "limite de uso" nos dois casos: o banner jurava "aguardando reset do limite"
+ *  e o prompt dizia ao agente que ele "parou num limite" mesmo quando o gatilho
+ *  tinha sido texto. Mentira barata de manter, cara de depurar. */
+export const RESUME_REASON_LIMIT = "limite da CLI atingido"
+export const RESUME_REASON_TEXT = "texto do turno pede retry"
+
 export interface AutoResumeVerdict {
   /** true = o turno pede um resume automático. */
   resume: boolean
@@ -46,6 +62,21 @@ export interface AutoResumeVerdict {
   delayMs: number
   /** Por que decidimos resumir (rótulo curto, entra no aviso/log). */
   reason: string
+}
+
+/** O que o reenvio automático diz ao agente. Fonte ÚNICA das duas superfícies
+ *  de envio (ChatPanel e fleet/send) — o texto tem que caber no gatilho. */
+export function resumePrompt(reason: string): string {
+  return reason === RESUME_REASON_LIMIT
+    ? "O turno anterior parou num limite de uso/espera. O limite já deve ter resetado: continue a tarefa pendente de onde parou (não repita o que já foi feito)."
+    : "O turno anterior indicou que continuaria depois. Se ficou alguma tarefa pendente, continue de onde parou (não repita o que já foi feito); se não ficou nada pendente, diga isso em uma linha."
+}
+
+/** O que o banner mostra enquanto o resume está agendado. */
+export function resumeBannerLabel(reason: string): string {
+  return reason === RESUME_REASON_LIMIT
+    ? "Aguardando reset do limite"
+    : "O turno disse que continuaria depois"
 }
 
 /** Backoff exponencial pela tentativa (0-based): 0→60s, 1→120s… cap 15min. */
@@ -93,7 +124,11 @@ export function parseResetHint(hint: string | undefined, now = Date.now()): numb
   return null
 }
 
-/** Texto final do turno = último item de assistant (text) OU cartão de limite. */
+/** Texto final do turno = último item de assistant (text) OU cartão de limite.
+ *  A varredura para na fronteira do TURNO (o `user` que o abriu): sem isso, um
+ *  turno que só rodou ferramentas — sem produzir texto — herdava a fala de um
+ *  turno ANTERIOR e decidia por ela. O que aconteceu há dois turnos não pede
+ *  resume agora. Sem texto NESTE turno = sem sinal heurístico, e tudo bem. */
 function finalText(items: ChatItem[]): string {
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i]
@@ -101,8 +136,25 @@ function finalText(items: ChatItem[]): string {
     if (it.kind === "limit") return it.message
     // se o turno terminou num erro/cancelamento, não vasculha atrás dele.
     if (it.kind === "error" || it.kind === "cancelled") return ""
+    // início do turno: o que vem antes é história de outro turno.
+    if (it.kind === "user") return ""
   }
   return ""
+}
+
+/** O turno recém-encerrado fechou com SUCESSO? Varre de trás pra frente até o
+ *  desfecho: `result` manda (é o veredito do próprio CLI); erro/cancelamento/
+ *  limite são fracasso explícito; chegar no `user` que abriu o turno sem achar
+ *  desfecho nenhum = turno que morreu no meio (não fechou bem). PURO. */
+export function turnClosedOk(items: ChatItem[]): boolean {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]
+    if (it.kind === "result") return it.ok
+    if (it.kind === "error" || it.kind === "cancelled" || it.kind === "limit")
+      return false
+    if (it.kind === "user") return false
+  }
+  return false
 }
 
 /** Decide se o turno recém-encerrado pede resume automático.
@@ -122,18 +174,22 @@ export function wantsAutoResume(
     const fromHint = parseResetHint(limit.resetHint ?? undefined, now)
     // hint costuma marcar o instante EXATO do reset; +2s de folga pra não cair cedo.
     const delayMs = fromHint != null ? Math.min(fromHint + 2000, BACKOFF_CAP_MS) : backoff
-    return { resume: true, delayMs, reason: "limite da CLI atingido" }
+    return { resume: true, delayMs, reason: RESUME_REASON_LIMIT }
   }
 
-  // Sinal HEURÍSTICO: o texto final combina padrões de espera/retry.
-  const text = finalText(items)
+  // Sinal HEURÍSTICO — só para turno que NÃO fechou bem. Turno com `result.ok`
+  // entregou o que tinha a entregar: se o agente ainda menciona retry/espera, é
+  // assunto do texto (recomendação de arquitetura, descrição de um teste,
+  // relatório), não um pedido de socorro. Reenviar aí é gastar um run pago em
+  // cima de trabalho concluído — e foi exatamente o que aconteceu.
+  const text = turnClosedOk(items) ? "" : finalText(items)
   if (text) {
     const matched = RESUME_PATTERNS.find((re) => re.test(text))
     if (matched) {
       // se o texto cita uma duração ("60s", "2 min"), usa; senão backoff.
       const fromText = parseResetHint(text, now)
       const delayMs = fromText != null ? Math.min(fromText + 2000, BACKOFF_CAP_MS) : backoff
-      return { resume: true, delayMs, reason: "texto do turno pede retry" }
+      return { resume: true, delayMs, reason: RESUME_REASON_TEXT }
     }
   }
 

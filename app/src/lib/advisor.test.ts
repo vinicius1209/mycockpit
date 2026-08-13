@@ -168,6 +168,32 @@ describe("buildAdvisorPrompt (montagem)", () => {
     })
     expect(prompt).not.toContain("Sua rubrica")
   })
+
+  it("anexos do envio entram como caminhos (o parecer sabe que existem)", () => {
+    const prompt = buildAdvisorPrompt({
+      def: agent(),
+      context: "ctx",
+      question: "revisa",
+      attachments: ["/proj/src/a.ts", "/proj/docs/erro.png"],
+    })
+    expect(prompt).toContain("Arquivos anexados a este pedido")
+    expect(prompt).toContain("- /proj/src/a.ts")
+    expect(prompt).toContain("- /proj/docs/erro.png")
+  })
+
+  it("sem anexos (ou só vazios) não inventa a seção de arquivos", () => {
+    expect(
+      buildAdvisorPrompt({ def: agent(), context: "ctx", question: "revisa" }),
+    ).not.toContain("Arquivos anexados")
+    expect(
+      buildAdvisorPrompt({
+        def: agent(),
+        context: "ctx",
+        question: "revisa",
+        attachments: ["  "],
+      }),
+    ).not.toContain("Arquivos anexados")
+  })
 })
 
 describe("runAdvisor (read-only, sem escrita)", () => {

@@ -51,7 +51,11 @@ import {
   buildResumeFallback,
   shouldAttachResumeFallback,
 } from "@/lib/transcript"
-import { wantsAutoResume } from "@/lib/autoResume"
+import {
+  resumeBannerLabel,
+  resumePrompt,
+  wantsAutoResume,
+} from "@/lib/autoResume"
 import { resolveSendTarget } from "@/lib/sendTarget"
 import { notifyTurnEnd } from "@/lib/notify"
 import type { Attachment } from "@/lib/attachments"
@@ -422,7 +426,10 @@ export function ChatPanel() {
           toast.error(`A persona "${mention.def.name}" não existe mais.`)
           return
         }
-        await handleConsult(convId, resolved.def, mention.question, project)
+        await handleConsult(convId, resolved.def, mention.question, project, {
+          text,
+          attachments,
+        })
         return
       }
     }
@@ -860,24 +867,56 @@ export function ChatPanel() {
     return true
   }
 
-  // Especialistas E1 — consulta de conselheiro: monta o prompt (persona +
-  // contexto serializado da conversa ATUAL + pergunta), dispara pelo runAgent no
-  // modo LEITURA (read-only, nada tocado no disco) e anexa UM item de parecer,
-  // carimbado com persona id+version+digest. NÃO passa pelo reducer do executor.
+  // Especialistas E1 — consulta de conselheiro: grava SEU pedido no fio
+  // (endereçado à persona), monta o prompt (persona + contexto serializado da
+  // conversa ATUAL + pergunta + anexos), dispara pelo runAgent no modo LEITURA
+  // (read-only, nada tocado no disco) e anexa UM item de parecer, carimbado com
+  // persona id+version+digest. NÃO passa pelo reducer do executor — a consulta
+  // inteira (pergunta + parecer) é lateral ao turno.
   async function handleConsult(
     convId: string,
     def: AgentDef,
     question: string,
     proj: { path: string },
+    /** O envio COMO FOI DIGITADO (com a `@menção` e os anexos). A consulta é um
+     *  pedido humano no fio, não só um parecer que aparece do nada. */
+    sent: { text: string; attachments: Attachment[] },
   ) {
+    const conv = useChat.getState().byId[convId]
+    const cwd = conv?.worktreePath ?? proj.path
+    // contexto serializado da conversa ATÉ AQUI (reusa o serializeContext do
+    // Fusion — o mesmo preâmbulo enriquecido, não reimplementa). Tirado ANTES do
+    // append do pedido: o preâmbulo diz "conversa até aqui" e a pergunta viaja
+    // no campo próprio do prompt — serializar depois a duplicaria.
+    const context = serializeContext(conv?.items ?? [])
+    // O pedido entra no fio como turno de PRIMEIRA CLASSE, igual ao do executor
+    // (store.start grava o `user` no mesmo gesto). Sem isto a conversa abria
+    // direto no parecer — "cadê minha pergunta?" — e o título nunca derivava
+    // (deriveTitle procura um item `user`; o persist do appendItems deriva
+    // sozinho a partir dele). Anexado ANTES de disparar: se o parecer falhar ou
+    // o app fechar no meio, o que você pediu não se perde.
+    await useChat.getState().appendItems(convId, [
+      {
+        kind: "user",
+        id: crypto.randomUUID(),
+        text: sent.text,
+        attachments: sent.attachments.length ? sent.attachments : undefined,
+        // endereçado à conselheira, NÃO ao executor: o fio mostra a fala como
+        // sua, mas ela não conta como turno de executor (executorItems) — a
+        // conversa segue "crua" pro 1º envio de verdade, com a injeção de
+        // persona/doutrina intacta.
+        advisorTo: { id: def.id, name: def.name },
+        ts: Date.now(),
+      },
+    ])
     useChat.getState().setAdvising(convId, { id: def.id, name: def.name })
     try {
-      const conv = useChat.getState().byId[convId]
-      const cwd = conv?.worktreePath ?? proj.path
-      // contexto serializado da conversa atual (reusa o serializeContext do
-      // Fusion — o mesmo preâmbulo enriquecido, não reimplementa).
-      const context = serializeContext(conv?.items ?? [])
-      const prompt = buildAdvisorPrompt({ def, context, question })
+      const prompt = buildAdvisorPrompt({
+        def,
+        context,
+        question,
+        attachments: sent.attachments.map((a) => a.path),
+      })
       const res = await runAdvisor({ def, prompt, cwd })
       if (!res.text) {
         toast.error(
@@ -933,8 +972,9 @@ export function ChatPanel() {
       // corrida: usuário pode ter cancelado/enviado algo antes do disparo.
       if (!c?.autoResume) return
       if (c.running || c.finalizing) return
-      const prompt =
-        "O turno anterior parou num limite de uso/espera. O limite já deve ter resetado: continue a tarefa pendente de onde parou (não repita o que já foi feito)."
+      // o reenvio conta o gatilho REAL: afirmar "limite de uso" num resume
+      // heurístico manda o agente caçar um limite que nunca existiu.
+      const prompt = resumePrompt(verdict.reason)
       useChat.getState().handleEvent(convId, {
         type: "notice",
         message: `auto-resume: retomando (tentativa ${tries}/${settings.autoResumeMaxTries})`,
@@ -1396,6 +1436,7 @@ export function ChatPanel() {
               nextAt={conv.autoResume.nextAt}
               tries={conv.autoResume.tries}
               maxTries={conv.autoResume.maxTries}
+              reason={conv.autoResume.reason}
               onCancel={() =>
                 activeId && useChat.getState().cancelAutoResume(activeId)
               }
@@ -1492,12 +1533,16 @@ function AutoResumeBanner({
   nextAt,
   tries,
   maxTries,
+  reason,
   onCancel,
   onResumeNow,
 }: {
   nextAt: number
   tries: number
   maxTries: number
+  /** Gatilho REAL do agendamento — o banner dizia sempre "aguardando reset do
+   *  limite", inclusive quando ninguém bateu limite nenhum. */
+  reason: string
   onCancel: () => void
   onResumeNow: () => void
 }) {
@@ -1513,7 +1558,7 @@ function AutoResumeBanner({
       <Timer className="size-4 shrink-0 animate-pulse text-st-warning" />
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-foreground">
-          Aguardando reset do limite — retomando automaticamente em{" "}
+          {resumeBannerLabel(reason)} — retomando automaticamente em{" "}
           <span className="font-mono tabular-nums">{secs}s</span>{" "}
           <span className="text-muted-foreground">
             (tentativa {tries}/{maxTries}

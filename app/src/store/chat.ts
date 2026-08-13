@@ -46,7 +46,18 @@ import { perfSpan } from "@/lib/fleet/perf"
 import type { DeferredWork, WorkEvent, ManagedProcess } from "@/lib/work"
 
 type ChatItemBody =
-  | { kind: "user"; id: string; text: string; attachments?: Attachment[] }
+  | {
+      kind: "user"
+      id: string
+      text: string
+      attachments?: Attachment[]
+      /** Fala ENDEREÇADA a um conselheiro (`@aline …`, Especialistas E1), não ao
+       *  executor. O pedido é seu e aparece no fio como seu — mas não é turno de
+       *  executor: não trava agent/preset e não rouba a injeção de
+       *  persona/doutrina do turno-1 (ver `executorItems`). Ausente = fala com
+       *  quem pilota, o caso normal. */
+      advisorTo?: { id: string; name: string }
+    }
   | { kind: "text"; id: string; text: string }
   | {
       kind: "tool"
@@ -286,19 +297,23 @@ export function progressTokens(progress: unknown): number | null {
   return typeof t === "number" ? t : null
 }
 
-/** Itens de EXECUTOR de uma conversa: exclui os pareceres de conselheiro (kind
- *  "advice"), que são laterais e NÃO contam como turno do executor
- *  (Especialistas E1). FONTE ÚNICA do "1º turno / já iniciada / travar
- *  identidade": sem isto, um parecer trazido ANTES do 1º envio travaria a
- *  escolha de agent/preset e roubaria a injeção de persona/doutrina do turno
- *  inicial. Usar em TODO lugar que hoje deriva "locked" de items.length. */
+/** Itens de EXECUTOR de uma conversa: exclui a CONSULTA a um conselheiro — o
+ *  parecer (kind "advice") E a fala que o pediu (`user` com `advisorTo`) —, que
+ *  são laterais e NÃO contam como turno do executor (Especialistas E1). FONTE
+ *  ÚNICA do "1º turno / já iniciada / travar identidade": sem isto, uma consulta
+ *  ANTES do 1º envio travaria a escolha de agent/preset e roubaria a injeção de
+ *  persona/doutrina do turno inicial. Usar em TODO lugar que hoje deriva
+ *  "locked" de items.length. */
 export function executorItems(items: ChatItem[]): ChatItem[] {
-  return items.filter((it) => it.kind !== "advice")
+  return items.filter(
+    (it) => it.kind !== "advice" && !(it.kind === "user" && it.advisorTo),
+  )
 }
 
-/** A conversa já teve algum turno de EXECUTOR? (ignora pareceres de conselheiro) */
+/** A conversa já teve algum turno de EXECUTOR? (ignora a consulta ao conselheiro
+ *  inteira: o parecer e a fala endereçada a ele) */
 export function hasExecutorTurn(items: ChatItem[]): boolean {
-  return items.some((it) => it.kind !== "advice")
+  return executorItems(items).length > 0
 }
 
 /** Presença de uma conversa (Especialistas E3, S3.1). DERIVADA, sem estado novo:

@@ -255,10 +255,27 @@ function contextEntries(items: ChatItem[]): string[] {
   while (i < items.length) {
     const it = items[i]
     if (it.kind === "user") {
-      out.push(`\nUsuário: ${it.text}`)
+      // fala ENDEREÇADA a um conselheiro sai marcada: quem lê o preâmbulo depois
+      // (o executor, outro especialista) precisa saber que o pedido não era pra
+      // ele — senão o histórico parece uma ordem sua ignorada.
+      const to = it.advisorTo ? ` (para ${it.advisorTo.name})` : ""
+      out.push(`\nUsuário${to}: ${it.text}`)
       i++
     } else if (it.kind === "text") {
       out.push(`\nAssistente: ${it.text}`)
+      i++
+    } else if (it.kind === "advice") {
+      // Parecer de conselheiro (Especialistas E1) ATRIBUÍDO à persona — mesmo
+      // rótulo do renderTranscript (lib/transcript), fonte única do vocabulário.
+      // Sem esta entrada o parecer era invisível para TUDO que serializa a
+      // conversa: a próxima consulta (sessão fresca, sem resume) não via o que a
+      // própria persona já dissera, outro especialista não via o colega, e a
+      // renovação de sessão/recap do revezamento perdia o parecer no caminho —
+      // cada menção recomeçava do zero. Voz distinta da do executor de
+      // propósito: quem lê precisa saber que é conselho, não ação feita.
+      out.push(
+        `\nParecer de ${it.personaName} (conselheiro, só leitura): ${it.text}`,
+      )
       i++
     } else if (it.kind === "tool") {
       let j = i

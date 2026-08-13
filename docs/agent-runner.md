@@ -253,6 +253,26 @@ json`): saldo não é janela, capability ausente e a UI some com pill/toggle.
 Re-checar a cada bump: se o agy ganhar fonte de janela (ou o codex mudar o
 shape), a fixture nova manda.
 
+Re-checagem 13/08/2026 (foco POSIÇÃO DOS OVERRIDES `-c`), **codex 0.147.0** —
+regressão silenciosa que custou dois MCPs: **`-c` passado DEPOIS do subcomando
+`exec` SUBSTITUI os overrides globais em vez de somar**, e a tabela
+`mcp_servers` inteira vai junto. O `-c model_reasoning_effort=<e>` (e o
+`-c approval_policy=never` do Auto) viviam depois do `exec` desde sempre —
+funcionou até 0.146. No 0.147 o resultado é um turno **sem `mc-work` e sem
+`mc-context`**, com o agente respondendo *"o MCP `mc-work` não está exposto
+nesta sessão"* (bug real do usuário, 13/08). Isolado na mão: mesma config, o
+`-c` do effort DEPOIS de `exec` ⇒ **zero** MCP server sobe (`ps` não mostra
+nenhum filho `work-server`/`context-server`); o MESMO `-c` ANTES de `exec` ⇒ os
+dois sobem em <1s **e o effort continua aplicado** (`reasoning_effort: high` no
+rollout do codex nos dois casos). Não é sandbox (`-s read-only` sobe MCP
+normalmente), não é o modelo, não é sintaxe (`codex mcp list` com os mesmos
+`-c` lista o `mc-work` como `enabled`, e o server responde `tools/list` na
+mão). **Regra da casa: todo `-c` do codex vai ANTES do subcomando**, com teste
+de regressão que cobra por argv (`codex_nenhum_override_de_config_depois_do_subcomando_exec`).
+Falha silenciosa dos dois lados — o codex não avisa que descartou a config, e o
+app só descobre pela boca do agente. Re-checar a cada bump: se voltar a fazer
+merge, a regra continua válida (antes do subcomando funciona nas duas).
+
 | | Leitura | **Padrão (PEDE)** | Liberado |
 |---|---|---|---|
 | **claude** | `--disallowedTools` de escrita | `acceptEdits` + `--permission-prompt-tool` (MCP) | `bypassPermissions` |

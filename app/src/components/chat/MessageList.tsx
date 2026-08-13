@@ -2020,6 +2020,14 @@ const MessageItem = memo(function MessageItem({
       }))
     return (
       <div className="flex flex-col items-start gap-1.5">
+        {/* Endereçamento (Especialistas E1): esta fala foi PARA um conselheiro,
+            não pro piloto — quem responde é outra pessoa. Metadado em sussurro
+            cinza (STYLEGUIDE §2: brass é gesto, não ênfase genérica). */}
+        {it.advisorTo && (
+          <span className="text-[11px] text-muted-foreground">
+            para {it.advisorTo.name}
+          </span>
+        )}
         {it.attachments && it.attachments.length > 0 && (
           <div className="flex max-w-full flex-wrap gap-1.5">
             {it.attachments.map((a) => (

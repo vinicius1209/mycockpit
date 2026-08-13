@@ -4,7 +4,12 @@ import {
   wantsAutoResume,
   parseResetHint,
   backoffMs,
+  resumeBannerLabel,
+  resumePrompt,
+  turnClosedOk,
   BACKOFF_CAP_MS,
+  RESUME_REASON_LIMIT,
+  RESUME_REASON_TEXT,
 } from "./autoResume"
 
 let n = 0
@@ -13,6 +18,9 @@ function uid() {
 }
 const text = (t: string): ChatItem => ({ kind: "text", id: uid(), text: t })
 const limitItem = (m: string): ChatItem => ({ kind: "limit", id: uid(), message: m })
+const user = (t: string): ChatItem => ({ kind: "user", id: uid(), text: t })
+/** Desfecho do turno: o veredito do CLI (é o que o gate lê, não o texto). */
+const ok = (v: boolean): ChatItem => ({ kind: "result", id: uid(), ok: v })
 
 describe("backoffMs", () => {
   it("dobra por tentativa e capa em 15min", () => {
@@ -113,5 +121,91 @@ describe("wantsAutoResume", () => {
   it("capa o delay em 15min mesmo com hint gigante", () => {
     const v = wantsAutoResume([text("ok")], { hit: true, resetHint: "1h" }, 0, NOW)
     expect(v.delayMs).toBe(BACKOFF_CAP_MS)
+  })
+})
+
+describe("turno que fechou bem não é retomado por texto (REGRESSÃO 13/08/2026)", () => {
+  const NOW = 1_700_000_000_000
+  /** O texto REAL que custou um run pago: uma recomendação de arquitetura em
+   *  que a palavra "retry" é vocabulário técnico, não promessa de tentar de
+   *  novo. Casava `\bretry\b` e reenviava sozinho. */
+  const ARQUITETURA = text(
+    "4. **ERP:** adicionar solicitação, aprovação, outbox/retry e confirmação externa.\n\nNão alterei o código neste turno.",
+  )
+
+  it("result ok + 'outbox/retry' no texto: NÃO retoma", () => {
+    const items: ChatItem[] = [user("veja a troca com o Allan"), ARQUITETURA, ok(true)]
+    const v = wantsAutoResume(items, undefined, 0, NOW)
+    expect(v.resume).toBe(false)
+    expect(v.delayMs).toBe(0)
+  })
+
+  it("outras palavras técnicas do dia a dia também deixam de disparar", () => {
+    for (const t of [
+      "Implementei rate limit no endpoint de login.",
+      "O cliente já faz backoff exponencial entre as tentativas.",
+      "O teste tem retry automático quando o CI está lento.",
+    ]) {
+      const items: ChatItem[] = [user("faça isso"), text(t), ok(true)]
+      expect(wantsAutoResume(items, undefined, 0, NOW).resume).toBe(false)
+    }
+  })
+
+  it("MAS turno que falhou com o mesmo sinal continua retomando", () => {
+    const items: ChatItem[] = [user("faça isso"), text("Bati no rate limit, vou tentar de novo."), ok(false)]
+    const v = wantsAutoResume(items, undefined, 0, NOW)
+    expect(v.resume).toBe(true)
+    expect(v.reason).toBe(RESUME_REASON_TEXT)
+  })
+
+  it("e turno que morreu sem desfecho (sem result) segue coberto pela heurística", () => {
+    const items: ChatItem[] = [user("faça isso"), text("Vou aguardar o reset e continuar.")]
+    expect(wantsAutoResume(items, undefined, 0, NOW).resume).toBe(true)
+  })
+
+  it("o sinal FORTE do CLI vence o desfecho: limite bateu, retoma mesmo com result ok", () => {
+    const items: ChatItem[] = [user("faça isso"), text("tudo certo"), ok(true)]
+    const v = wantsAutoResume(items, { hit: true, resetHint: "60s" }, 0, NOW)
+    expect(v.resume).toBe(true)
+    expect(v.reason).toBe(RESUME_REASON_LIMIT)
+  })
+
+  it("turnClosedOk lê o desfecho, não o texto", () => {
+    expect(turnClosedOk([user("x"), text("oi"), ok(true)])).toBe(true)
+    expect(turnClosedOk([user("x"), text("oi"), ok(false)])).toBe(false)
+    // sem desfecho nenhum dentro do turno = não fechou bem
+    expect(turnClosedOk([user("x"), text("oi")])).toBe(false)
+    // desfecho de OUTRO turno não conta como o deste
+    expect(turnClosedOk([text("oi"), ok(true), user("novo pedido"), text("trabalhando")])).toBe(false)
+  })
+})
+
+describe("a heurística não atravessa a fronteira do turno", () => {
+  const NOW = 1_700_000_000_000
+
+  it("turno só de ferramentas não herda o 'vou tentar de novo' do turno anterior", () => {
+    const items: ChatItem[] = [
+      user("primeiro pedido"),
+      text("Bati no limite, vou tentar de novo."),
+      user("agora faz outra coisa"),
+      { kind: "tool", id: uid(), name: "Bash", input: { command: "ls" } },
+    ]
+    expect(wantsAutoResume(items, undefined, 0, NOW).resume).toBe(false)
+  })
+})
+
+describe("o app conta o gatilho real (nada de limite inventado)", () => {
+  it("prompt do reenvio muda com o motivo", () => {
+    expect(resumePrompt(RESUME_REASON_LIMIT)).toContain("limite de uso")
+    const heuristico = resumePrompt(RESUME_REASON_TEXT)
+    expect(heuristico).not.toContain("limite de uso")
+    expect(heuristico).toContain("indicou que continuaria depois")
+    // e admite a possibilidade de não haver nada pendente
+    expect(heuristico).toContain("se não ficou nada pendente")
+  })
+
+  it("banner não jura reset de limite quando ninguém bateu limite", () => {
+    expect(resumeBannerLabel(RESUME_REASON_LIMIT)).toBe("Aguardando reset do limite")
+    expect(resumeBannerLabel(RESUME_REASON_TEXT)).not.toMatch(/limite/i)
   })
 })

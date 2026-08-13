@@ -10,7 +10,7 @@ import { toast } from "sonner"
 import { agentLabel, cancelAgent, runAgent } from "@/lib/agent"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
 import type { Attachment } from "@/lib/attachments"
-import { wantsAutoResume } from "@/lib/autoResume"
+import { resumePrompt, wantsAutoResume } from "@/lib/autoResume"
 import { isTauri, listConversations, type ConversationMeta } from "@/lib/db"
 import { prepareHybridHandoff } from "@/lib/handoff"
 import {
@@ -814,8 +814,8 @@ function maybeScheduleDeskAutoResume(args: DeskSendArgs, agent: string): boolean
     if (c.running || c.finalizing) return
     // Prompt mínimo: resume nativo leva a memória; se expirou, o fallback do
     // motor usa recap + ponteiro. Não duplica dezenas de milhares de chars.
-    const prompt =
-      "O turno anterior parou num limite de uso/espera. O limite já deve ter resetado: continue a tarefa pendente de onde parou (não repita o que já foi feito)."
+    // mesma fonte única do ChatPanel: o texto do reenvio segue o gatilho real.
+    const prompt = resumePrompt(verdict.reason)
     useChat.getState().handleEvent(convId, {
       type: "notice",
       message: `auto-resume: retomando (tentativa ${tries}/${settings.autoResumeMaxTries})`,

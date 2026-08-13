@@ -52,7 +52,10 @@ vi.mock("@/lib/agent", () => ({
       id as "claude-code"
     ] ?? id,
 }))
-vi.mock("@/lib/autoResume", () => ({
+// só a DECISÃO é dublada (o teste controla o verdict); o texto do reenvio segue
+// o real — é ele que precisa contar o gatilho certo ao agente.
+vi.mock("@/lib/autoResume", async (io) => ({
+  ...(await io<typeof import("@/lib/autoResume")>()),
   wantsAutoResume: vi.fn(() => ({ resume: false, delayMs: 0, reason: "" })),
 }))
 vi.mock("@/lib/db", () => ({

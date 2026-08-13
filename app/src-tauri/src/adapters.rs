@@ -1454,6 +1454,30 @@ impl AgentAdapter for CodexAdapter {
                 gateway.configure_codex(&mut cmd);
             }
         }
+        // TODO `-c` VAI ANTES DO SUBCOMANDO (codex 0.147, empírico 13/08/2026).
+        // Os overrides passados DEPOIS de `exec` não fazem merge: eles
+        // SUBSTITUEM os globais, e a tabela `mcp_servers` inteira evapora — o
+        // turno roda sem mc-work e sem mc-context, e o agente responde "o MCP
+        // mc-work não está exposto nesta sessão". Provado isolando a variável:
+        // com `-c model_reasoning_effort=high` DEPOIS de `exec`, zero MCP
+        // server sobe; a MESMA flag antes de `exec`, os dois sobem — e o
+        // effort continua aplicado nos dois casos (rollout do codex com
+        // `reasoning_effort: high`). Vale pro `approval_policy` também.
+        // Qualquer `-c` novo entra AQUI, nunca depois do subcomando.
+        if matches!(req.permission, Permission::Auto) && !req.plan_first {
+            // Auto (validado codex 0.144.6): `approval_policy=never` = nunca
+            // pausa, mas o sandbox workspace-write abaixo segue confinando
+            // (escrita só no workspace, rede off). exec já não pausa por não
+            // ter TTY — explicitar blinda contra um default futuro e deixa a
+            // intenção auditável. `--full-auto` foi REMOVIDO e `on-failure` é
+            // inválido nesta versão: não usar.
+            cmd.arg("-c").arg("approval_policy=never");
+        }
+        // effort via override de config (o exec não tem flag dedicada).
+        // Valores: minimal|low|medium|high|xhigh.
+        if let Some(e) = &req.effort {
+            cmd.arg("-c").arg(format!("model_reasoning_effort={e}"));
+        }
         cmd.arg("exec")
             .arg("--json")
             .arg("--skip-git-repo-check")
@@ -1474,22 +1498,10 @@ impl AgentAdapter for CodexAdapter {
             }
         };
         cmd.arg("-s").arg(sandbox);
-        // Auto (validado codex 0.144.6): `approval_policy=never` = nunca pausa,
-        // mas o sandbox workspace-write acima segue confinando (escrita só no
-        // workspace, rede off). exec já não pausa por não ter TTY — explicitar
-        // blinda contra um default futuro e deixa a intenção auditável. Vai como
-        // OPTION (antes de -m/resume). `--full-auto` foi REMOVIDO e `on-failure`
-        // é inválido nesta versão: não usar.
-        if matches!(req.permission, Permission::Auto) && !req.plan_first {
-            cmd.arg("-c").arg("approval_policy=never");
-        }
-        // Codex: -m <model> · effort via override de config (não tem flag dedicada
-        // no exec). Valores: minimal|low|medium|high|xhigh. ANTES de `resume`.
+        // Codex: -m <model> é flag do próprio `exec` (não é `-c`, então não
+        // atropela os overrides globais). ANTES de `resume`.
         if let Some(m) = &req.model {
             cmd.arg("-m").arg(m);
-        }
-        if let Some(e) = &req.effort {
-            cmd.arg("-c").arg(format!("model_reasoning_effort={e}"));
         }
         // pastas extras (fora do cwd): --add-dir <DIR> (writable alongside
         // workspace). ANTES do subcomando `resume`: no codex 0.146 o `exec
@@ -2723,6 +2735,53 @@ mod tests {
         assert!(args
             .iter()
             .any(|arg| arg.contains("/opt/mcp/hostinger-wrapper")));
+    }
+
+    /// REGRESSÃO (codex 0.147, 13/08/2026): `-c` depois do subcomando `exec`
+    /// SUBSTITUI os overrides globais em vez de somar — e leva junto a tabela
+    /// `mcp_servers`. O turno rodava sem mc-work e sem mc-context, e o agente
+    /// respondia "o MCP mc-work não está exposto nesta sessão" (bug real do
+    /// usuário, conversa do prime-sales-hub). Provado isolando a variável: com
+    /// `-c model_reasoning_effort` DEPOIS de `exec`, zero MCP server sobe;
+    /// antes, os dois sobem e o effort segue aplicado. Este teste vale por
+    /// TODO `-c`, inclusive os que ainda não existem.
+    #[test]
+    fn codex_nenhum_override_de_config_depois_do_subcomando_exec() {
+        let mut r = req(Permission::Auto, false);
+        r.effort = Some("high".into());
+        r.model = Some("gpt-5.6-sol".into());
+        r.context_gateway = Some(crate::context_gateway::GatewayConfig {
+            server_bin: "/app/mycockpit".into(),
+            root: "/repo".into(),
+            conv_id: "c1".into(),
+            db_path: None,
+        });
+        r.work_gateway = Some(crate::work_gateway::GatewayConfig {
+            server_bin: "/app/mycockpit".into(),
+            socket: "/tmp/mc-work-regressao.sock".into(),
+        });
+        let mut a = CodexAdapter::default();
+        let args = argv(&a.build_command(&r).unwrap());
+        let exec = args.iter().position(|x| x == "exec").unwrap();
+        let depois: Vec<&String> = args
+            .iter()
+            .skip(exec)
+            .enumerate()
+            .filter(|(i, arg)| *arg == "-c" || (*i > 0 && arg.starts_with("mcp_servers.")))
+            .map(|(_, arg)| arg)
+            .collect();
+        assert!(
+            depois.is_empty(),
+            "nenhum -c pode vir depois de `exec` (os MCPs evaporam): {depois:?}"
+        );
+        // e os dois overrides continuam existindo — ANTES do subcomando.
+        assert!(has_pair(&args, "-c", "model_reasoning_effort=high"));
+        assert!(has_pair(&args, "-c", "approval_policy=never"));
+        let effort = args
+            .iter()
+            .position(|x| x == "model_reasoning_effort=high")
+            .unwrap();
+        assert!(effort < exec, "o effort tem que vir antes do subcomando");
     }
 
     #[test]

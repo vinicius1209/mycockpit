@@ -31,7 +31,15 @@ export function renderTranscript(
   for (const it of items) {
     switch (it.kind) {
       case "user":
-        lines.push("", "## Usuário", "", it.text)
+        // consulta a conselheiro sai atribuída no cabeçalho (mesmo rótulo do
+        // serializeContext/handoff): na memória plena, pedido pra Aline não pode
+        // parecer pedido pro executor.
+        lines.push(
+          "",
+          it.advisorTo ? `## Usuário (para ${it.advisorTo.name})` : "## Usuário",
+          "",
+          it.text,
+        )
         break
       case "text":
         lines.push("", "## Assistente", "", it.text)

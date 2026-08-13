@@ -106,6 +106,11 @@ export function buildAdvisorPrompt(opts: {
   /** Contexto da conversa/diff já serializado (lib/fusion.serializeContext). */
   context: string
   question: string
+  /** Caminhos anexados ao envio. Só os CAMINHOS: o conselheiro roda no cwd do
+   *  projeto e lê por conta própria (fusion-ro permite leitura), então listar
+   *  basta. Vinham sendo descartados em silêncio — o fio mostrava o clipe e o
+   *  parecer opinava sem nunca ter visto o arquivo. */
+  attachments?: string[]
 }): string {
   const { def, context, question } = opts
   const lines = [
@@ -130,7 +135,13 @@ export function buildAdvisorPrompt(opts: {
   }
   lines.push("</conselheiro>")
   const q = question.trim() || "Dê seu parecer sobre o estado atual da conversa."
-  return `${lines.join("\n")}\n\n${context}\n\n---\n\nPergunta para o parecer:\n${q}`
+  const attached = (opts.attachments ?? []).filter((p) => p.trim())
+  const files = attached.length
+    ? `\n\nArquivos anexados a este pedido (leia se forem relevantes):\n${attached
+        .map((p) => `- ${p}`)
+        .join("\n")}`
+    : ""
+  return `${lines.join("\n")}\n\n${context}\n\n---\n\nPergunta para o parecer:\n${q}${files}`
 }
 
 export interface RunAdvisorResult {

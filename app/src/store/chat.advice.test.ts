@@ -118,6 +118,23 @@ describe("executorItems / hasExecutorTurn (fonte única do 1º turno)", () => {
     expect(hasExecutorTurn([advice("a1"), user])).toBe(true)
     expect(executorItems([advice("a1"), user])).toEqual([user])
   })
+
+  it("a fala que PEDIU o parecer também não é turno de executor", () => {
+    // a consulta inteira é lateral: a pergunta endereçada à persona + o parecer.
+    // Se a pergunta contasse, o 1º envio de verdade nasceria "travado" e perderia
+    // a injeção de persona/doutrina do turno-1.
+    const pergunta: ChatItem = {
+      kind: "user",
+      id: "u0",
+      text: "@aline revisa isso",
+      advisorTo: { id: "projeto:aline", name: "Aline" },
+    }
+    expect(hasExecutorTurn([pergunta, advice("a1")])).toBe(false)
+    expect(executorItems([pergunta, advice("a1")])).toHaveLength(0)
+    // e o envio seguinte, esse sim pro piloto, abre o turno de executor
+    expect(hasExecutorTurn([pergunta, advice("a1"), user])).toBe(true)
+    expect(executorItems([pergunta, advice("a1"), user])).toEqual([user])
+  })
 })
 
 describe("advice antes do 1º turno NÃO trava a identidade (setConversationAgent)", () => {
@@ -137,6 +154,22 @@ describe("advice antes do 1º turno NÃO trava a identidade (setConversationAgen
     })
     useChat.getState().setConversationAgent("c1", "codex")
     expect(useChat.getState().byId.c1.agent).toBe("claude-code")
+  })
+
+  it("a consulta COMPLETA (pergunta + parecer) também não trava a identidade", () => {
+    const pergunta: ChatItem = {
+      kind: "user",
+      id: "u0",
+      text: "@aline revisa isso",
+      advisorTo: { id: "projeto:aline", name: "Aline" },
+    }
+    useChat.setState({
+      byId: {
+        c1: conv({ agent: "claude-code", items: [pergunta, advice("a1")] }),
+      },
+    })
+    useChat.getState().setConversationAgent("c1", "codex")
+    expect(useChat.getState().byId.c1.agent).toBe("codex")
   })
 })
 

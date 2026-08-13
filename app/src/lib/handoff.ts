@@ -93,7 +93,13 @@ function cap(s: string, max: number): string {
 }
 
 function itemLine(it: ChatItem): string | null {
-  if (it.kind === "user") return `Usuário: ${it.text}`
+  if (it.kind === "user") {
+    // pedido endereçado a um conselheiro viaja marcado (mesmo rótulo do
+    // serializeContext): o motor que recebe o bastão não pode ler a consulta
+    // como uma ordem pendente pra ele.
+    const to = it.advisorTo ? ` (para ${it.advisorTo.name})` : ""
+    return `Usuário${to}: ${it.text}`
+  }
   if (it.kind === "text") return `Assistente: ${it.text}`
   if (it.kind === "advice") {
     return `Parecer de ${it.personaName}: ${it.text}`
