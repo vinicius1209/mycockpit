@@ -560,11 +560,10 @@ pub async fn update_agent(
     jobs: tauri::State<'_, Arc<UpdateJobs>>,
     agent: String,
 ) -> Result<UpdateJob, String> {
-    let bin = match agent.as_str() {
-        "claude-code" => "claude",
-        "codex" => "codex",
-        "agy" => "agy",
-        other => return Err(format!("agent desconhecido: {other}")),
+    // tabela ÚNICA de agent→binário (detect.rs, a mesma que a detecção
+    // canônica usa) — nada de segunda cópia que possa divergir.
+    let Some(bin) = crate::detect::agent_bin(&agent) else {
+        return Err(format!("agent desconhecido: {agent}"));
     };
 
     match jobs.begin(&agent, now_ms()) {

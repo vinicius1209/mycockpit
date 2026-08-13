@@ -28,8 +28,17 @@
 //!      spawna) viaja num header; sessão sem a env = EXTERNA (o H1 existe pra
 //!      elas). Env vazia = header omitido pelo curl, inofensivo fora do app.
 //!   7. Gate de versão honesto: agy <1.1.10 não roda Stop hooks (changelog) →
-//!      o instalador confere `~/.gemini/antigravity-cli/version` e aborta com
-//!      o motivo em vez de instalar algo que não funciona.
+//!      o instalador confere a versão e aborta com o motivo em vez de instalar
+//!      algo que não funciona. **Regra da casa**: gate de capability por
+//!      versão SEMPRE consulta a detecção CANÔNICA do app
+//!      (`detect::detected_version`, o mesmo `<bin> --version` que preenche
+//!      "Agentes na máquina"); NUNCA um artefato interno do diretório do
+//!      fornecedor. Bug do build 193: o gate lia
+//!      `~/.gemini/antigravity-cli/version`, arquivo que o agy 1.1.12 não
+//!      escreve — o app recusava "não consegui confirmar a versão do agy"
+//!      enquanto a seção ao lado, no MESMO dialog, mostrava "instalado
+//!      v1.1.12". Artefato interno de fornecedor não é contrato: some sem
+//!      aviso.
 
 use crate::adapters::{capabilities_of, HookDialect};
 use serde::Serialize;
@@ -406,6 +415,10 @@ fn installed_events_agy(cfg: &Value) -> Vec<String> {
     out
 }
 
+/// Versão mínima do agy pros hooks (changelog 1.1.10: "lets Stop hooks run at
+/// all"). Aparece nas mensagens do gate, então mora num lugar só.
+const AGY_MIN: &str = "1.1.10";
+
 /// Gate de versão do agy: Stop hooks só rodam ≥1.1.10 (changelog 1.1.10 —
 /// "lets Stop hooks run at all"). Abaixo disso, instalar daria uma presença
 /// que nunca vira "ociosa" — mentira de estado. PURO (recebe a string lida).
@@ -543,29 +556,41 @@ fn write_script(path: &PathBuf, content: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Versão do agy instalada (arquivo `version` do layout da CLI). None = não
-/// deu pra ler — o instalador aborta com motivo (fail-closed honesto: melhor
-/// que instalar hooks que talvez nunca disparem Stop).
-fn agy_installed_version() -> Option<String> {
-    let p = home_dir().ok()?.join(".gemini").join("antigravity-cli").join("version");
-    std::fs::read_to_string(p).ok().map(|s| s.trim().to_string())
+/// Decisão PURA do gate de versão do agy a partir da versão DETECTADA.
+/// `detected` = o que a detecção canônica do app respondeu (None = ela não
+/// soube dizer). As duas recusas são mensagens DIFERENTES de propósito: uma
+/// diz qual é a versão instalada e por que ela não serve; a outra admite que
+/// não deu pra perguntar. O build 193 mostrava a segunda sabendo a primeira.
+fn agy_version_gate(agent: &str, detected: Option<String>) -> Result<(), String> {
+    match detected {
+        Some(v) if agy_version_ok(&v) => Ok(()),
+        Some(v) => Err(format!(
+            "o {agent} instalado nesta máquina é a v{v}, e os hooks exigem ≥{AGY_MIN} (abaixo disso o Stop hook não roda e a sessão nunca ficaria ociosa); atualize a CLI e tente de novo. Nada foi alterado"
+        )),
+        None => Err(format!(
+            "não consegui perguntar a versão ao binário do {agent} ({} --version não respondeu); os hooks exigem ≥{AGY_MIN}, então nada foi alterado. Confira a seção Agentes na máquina e tente de novo",
+            crate::detect::agent_bin(agent).unwrap_or(agent)
+        )),
+    }
 }
 
 /// Gate específico do dialeto (chamado SÓ na instalação; status não bloqueia).
-fn dialect_install_gate(dialect: HookDialect) -> Result<(), String> {
+/// A versão vem da detecção CANÔNICA (`detect::detected_version`) — a MESMA
+/// fonte que a UI mostra em "Agentes na máquina". Nunca de arquivo interno do
+/// fornecedor: ver a regra 7 do topo do módulo.
+///
+/// Por que perguntar ao binário AQUI e não reusar um cache: o snapshot da
+/// detecção é do FRONTEND (`GlobalSettings.detected`, gravado no boot e no
+/// "Verificar agora"), não do Rust. Entre aquele boot e este clique a CLI pode
+/// ter sido atualizada, e o gesto é raro — então o caminho honesto é o probe
+/// na hora (mesmo `<bin> --version`, mesmo timeout de 6s do detect). Se um dia
+/// existir cache no Rust, ele entra dentro de `detected_version`, e este gate
+/// não muda.
+async fn dialect_install_gate(agent: &str, dialect: HookDialect) -> Result<(), String> {
     if dialect != HookDialect::AgyConfigHooks {
         return Ok(());
     }
-    match agy_installed_version() {
-        Some(v) if agy_version_ok(&v) => Ok(()),
-        Some(v) => Err(format!(
-            "o agy {v} não roda Stop hooks (exige ≥1.1.10); atualize a CLI antes de instalar"
-        )),
-        None => Err(
-            "não consegui confirmar a versão do agy (hooks exigem ≥1.1.10); nada foi alterado"
-                .to_string(),
-        ),
-    }
+    agy_version_gate(agent, crate::detect::detected_version(agent).await)
 }
 
 fn dialect_id(dialect: HookDialect) -> &'static str {
@@ -647,7 +672,7 @@ pub fn hooks_status(app: AppHandle, agent: String) -> Result<HooksStatus, String
 /// de STATUS ao lado das existentes (+ as de PERMISSÃO quando `permission`,
 /// H2 — gate de capability próprio), com backup.
 #[tauri::command]
-pub fn hooks_install(
+pub async fn hooks_install(
     app: AppHandle,
     agent: String,
     permission: Option<bool>,
@@ -659,30 +684,64 @@ pub fn hooks_install(
             "{agent} não tem hook de permissão síncrono (capability ausente)"
         ));
     }
-    dialect_install_gate(dialect)?;
+    dialect_install_gate(&agent, dialect).await?;
     let cpath = config_path(dialect)?;
     let script = script_path(&app, &agent)?;
-    let script_str = script.to_string_lossy().to_string();
-    let cfg = read_config(&cpath)?;
     let endpoint = crate::hook_gateway::endpoint_file(&app)?;
-    write_script(
+    install_files(
+        &agent,
+        dialect,
+        &cpath,
         &script,
-        &render_script(&agent, dialect, &endpoint.to_string_lossy()),
+        &endpoint.to_string_lossy(),
+        permission,
     )?;
-    backup_config(&cpath)?;
-    let events = events_for(dialect, permission);
-    let next = match dialect {
-        HookDialect::AgyConfigHooks => {
-            with_agy_group(&cfg, agy_group_value(&script_str, &events))
-        }
-        _ => with_hooks_claude_family(&cfg, &script_str, &events),
-    };
-    write_config(&cpath, &next)?;
     log::info!(
         "hooks: instalado pra {agent} em {} (permissão: {permission})",
         cpath.display()
     );
     status_of(&app, &agent)
+}
+
+/// A ESCRITA da instalação (script + merge no config, com backup), separada da
+/// resolução de caminhos: é este corpo que roda no gesto do usuário e o mesmo
+/// que a prova empírica exercita contra os arquivos reais.
+fn install_files(
+    agent: &str,
+    dialect: HookDialect,
+    cpath: &PathBuf,
+    script: &PathBuf,
+    endpoint: &str,
+    permission: bool,
+) -> Result<(), String> {
+    let script_str = script.to_string_lossy().to_string();
+    let cfg = read_config(cpath)?;
+    write_script(script, &render_script(agent, dialect, endpoint))?;
+    backup_config(cpath)?;
+    let events = events_for(dialect, permission);
+    let next = match dialect {
+        HookDialect::AgyConfigHooks => with_agy_group(&cfg, agy_group_value(&script_str, &events)),
+        _ => with_hooks_claude_family(&cfg, &script_str, &events),
+    };
+    write_config(cpath, &next)
+}
+
+/// A REMOÇÃO (só o que é nosso + o script), mesma separação do `install_files`.
+fn uninstall_files(dialect: HookDialect, cpath: &PathBuf, script: &PathBuf) -> Result<(), String> {
+    let script_str = script.to_string_lossy().to_string();
+    let cfg = read_config(cpath)?;
+    let next = match dialect {
+        HookDialect::AgyConfigHooks => without_agy_group(&cfg),
+        _ => without_hooks_claude_family(&cfg, &script_str),
+    };
+    if next != cfg {
+        backup_config(cpath)?;
+        write_config(cpath, &next)?;
+    }
+    if script.exists() {
+        std::fs::remove_file(script).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Desinstala limpo: remove SÓ as nossas entradas + o script. O backup da
@@ -692,19 +751,7 @@ pub fn hooks_uninstall(app: AppHandle, agent: String) -> Result<HooksStatus, Str
     let dialect = require_hooks(&agent)?;
     let cpath = config_path(dialect)?;
     let script = script_path(&app, &agent)?;
-    let script_str = script.to_string_lossy().to_string();
-    let cfg = read_config(&cpath)?;
-    let next = match dialect {
-        HookDialect::AgyConfigHooks => without_agy_group(&cfg),
-        _ => without_hooks_claude_family(&cfg, &script_str),
-    };
-    if next != cfg {
-        backup_config(&cpath)?;
-        write_config(&cpath, &next)?;
-    }
-    if script.exists() {
-        std::fs::remove_file(&script).map_err(|e| e.to_string())?;
-    }
+    uninstall_files(dialect, &cpath, &script)?;
     log::info!("hooks: desinstalado pra {agent}");
     status_of(&app, &agent)
 }
@@ -1028,6 +1075,50 @@ mod tests {
     }
 
     #[test]
+    fn gate_instala_quando_a_versao_detectada_atinge_o_minimo() {
+        // a versão vem da detecção canônica do app (a MESMA que a UI mostra em
+        // "Agentes na máquina"): 1.1.12 ≥ 1.1.10 ⇒ instala.
+        assert!(agy_version_gate("agy", Some("1.1.12".to_string())).is_ok());
+        assert!(agy_version_gate("agy", Some("1.1.10".to_string())).is_ok());
+    }
+
+    #[test]
+    fn gate_recusa_versao_abaixo_do_minimo_dizendo_qual_e() {
+        let err = agy_version_gate("agy", Some("1.1.9".to_string())).unwrap_err();
+        // a mensagem carrega a versão detectada E o mínimo: quem lê sabe o que
+        // fazer (atualizar), em vez de achar que o app não enxerga a CLI.
+        assert!(err.contains("v1.1.9"), "{err}");
+        assert!(err.contains("1.1.10"), "{err}");
+        assert!(err.contains("Nada foi alterado"), "{err}");
+    }
+
+    #[test]
+    fn gate_recusa_fail_closed_quando_a_versao_e_desconhecida() {
+        let err = agy_version_gate("agy", None).unwrap_err();
+        // recusa continua (fail-closed), mas com a mensagem PRÓPRIA de "não
+        // deu pra perguntar ao binário" — nunca a de versão baixa.
+        assert!(err.contains("agy --version"), "{err}");
+        assert!(err.contains("nada foi alterado"), "{err}");
+        assert_ne!(
+            err,
+            agy_version_gate("agy", Some("1.0.16".to_string())).unwrap_err(),
+            "não achar a versão e a versão ser baixa são coisas diferentes"
+        );
+    }
+
+    #[tokio::test]
+    async fn gate_so_existe_no_dialeto_do_agy() {
+        // claude/codex não têm mínimo declarado: o gate passa reto (e nem
+        // chega a perguntar versão a binário nenhum).
+        assert!(dialect_install_gate("claude-code", HookDialect::ClaudeSettings)
+            .await
+            .is_ok());
+        assert!(dialect_install_gate("codex", HookDialect::CodexHooksJson)
+            .await
+            .is_ok());
+    }
+
+    #[test]
     fn gate_por_capability_nunca_por_nome() {
         assert!(require_hooks("claude-code").is_ok());
         assert!(require_hooks("codex").is_ok());
@@ -1046,6 +1137,99 @@ mod tests {
             assert!(err.contains("não é um objeto"), "{corpo}: {err}");
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// PROVA EMPÍRICA do gate de versão (bug do build 193), FORA da suíte por
+/// default porque toca os arquivos REAIS desta máquina. Rodar à mão:
+///
+/// ```text
+/// cargo test prova_real -- --ignored --nocapture
+/// ```
+///
+/// Ativa os hooks do agy pelo MESMO corpo do comando (gate canônico +
+/// `install_files`), imprime o antes/depois do `~/.gemini/config/hooks.json` e
+/// desativa no fim (`uninstall_files`), conferindo que o arquivo voltou ao
+/// conteúdo anterior e que os grupos dos outros (orca-status) nunca foram
+/// tocados. Os backups `.bak-mycockpit-<ts>` ficam no disco: é o
+/// comportamento do produto, não sujeira do teste.
+#[cfg(test)]
+mod prova_real {
+    use super::*;
+
+    /// app_data_dir do macOS sem AppHandle: ~/Library/Application Support/
+    /// <identifier do tauri.conf.json> (lido do arquivo, nunca decorado).
+    fn app_data_dir_real() -> PathBuf {
+        let conf = std::fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json"),
+        )
+        .expect("tauri.conf.json");
+        let v: Value = serde_json::from_str(&conf).expect("tauri.conf.json parseia");
+        let id = v["identifier"].as_str().expect("identifier").to_string();
+        PathBuf::from(std::env::var("HOME").expect("HOME"))
+            .join("Library")
+            .join("Application Support")
+            .join(id)
+    }
+
+    #[tokio::test]
+    #[ignore = "toca os arquivos reais desta máquina; prova manual do gate"]
+    async fn ativar_e_desativar_hooks_do_agy_nesta_maquina() {
+        let agent = "agy";
+        let dialect = require_hooks(agent).expect("agy declara hooks no registry");
+        let cpath = config_path(dialect).expect("path do hooks.json do agy");
+        let antes = read_config(&cpath).expect("hooks.json do agy");
+        println!("--- ANTES ({}) ---", cpath.display());
+        println!("{}", serde_json::to_string_pretty(&antes).unwrap());
+
+        // 1) o gate roda pela detecção canônica (agy --version), não por
+        //    arquivo do fornecedor.
+        let detectada = crate::detect::detected_version(agent).await;
+        println!("versão detectada (agy --version): {detectada:?}");
+        dialect_install_gate(agent, dialect)
+            .await
+            .expect("o gate tem que PASSAR com o agy ≥1.1.10 instalado");
+
+        // 2) instalar de verdade.
+        let data = app_data_dir_real();
+        let script = data.join("hook-scripts").join(agent).join(SCRIPT_NAME);
+        let endpoint = data.join("hook-endpoint.json");
+        install_files(
+            agent,
+            dialect,
+            &cpath,
+            &script,
+            &endpoint.to_string_lossy(),
+            false,
+        )
+        .expect("instalação");
+        let depois = read_config(&cpath).expect("hooks.json depois");
+        println!("--- DEPOIS ---");
+        println!("{}", serde_json::to_string_pretty(&depois).unwrap());
+        assert_eq!(
+            depois["orca-status"], antes["orca-status"],
+            "o grupo do Orca não pode ser tocado"
+        );
+        assert_eq!(
+            installed_events_agy(&depois),
+            vec!["PostInvocation", "PostToolUse", "PreInvocation", "Stop"]
+        );
+        assert!(script.exists(), "o script tem que estar no disco");
+        let backups: Vec<String> = std::fs::read_dir(cpath.parent().unwrap())
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+            .filter(|n| n.starts_with("hooks.json.bak-mycockpit-"))
+            .collect();
+        println!("backups: {backups:?}");
+        assert!(!backups.is_empty(), "backup antes de mexer");
+
+        // 3) desativar devolve o arquivo ao estado anterior.
+        uninstall_files(dialect, &cpath, &script).expect("desinstalação");
+        let restaurado = read_config(&cpath).expect("hooks.json restaurado");
+        println!("--- DEPOIS DE DESATIVAR ---");
+        println!("{}", serde_json::to_string_pretty(&restaurado).unwrap());
+        assert_eq!(restaurado, antes, "desativar devolve o conteúdo anterior");
+        assert!(!script.exists(), "o script sai junto");
     }
 }
 

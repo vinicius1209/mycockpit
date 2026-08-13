@@ -87,6 +87,44 @@ pub(crate) fn extract_version(s: &str) -> Option<String> {
     })
 }
 
+/// `<bin> --version` pelo caminho ÚNICO: mesma invocação, mesmo timeout e
+/// mesmo parse pra todo mundo que pergunta "que versão está instalada".
+/// None = binário ausente (ENOENT) ou timeout; `Some((exit_ok, versão))`, com
+/// versão None quando a saída não tem número legível.
+async fn version_probe(bin: &str) -> Option<(bool, Option<String>)> {
+    let (ok, out) = run(bin, &["--version"]).await?;
+    Some((ok, extract_version(&out)))
+}
+
+/// Binário de cada agent do registry. Conhecimento POR-PROVIDER, e este módulo
+/// é a camada onde ele mora (os probes abaixo já são um por fornecedor);
+/// código genérico pergunta `detected_version`, nunca esta tabela. None =
+/// agent sem CLI conhecida.
+pub(crate) fn agent_bin(agent: &str) -> Option<&'static str> {
+    match agent {
+        "claude-code" => Some("claude"),
+        "codex" => Some("codex"),
+        "agy" => Some("agy"),
+        _ => None,
+    }
+}
+
+/// Versão instalada de um agent pela detecção CANÔNICA do app: o MESMO
+/// `<bin> --version` + `extract_version` que preenche "Agentes na máquina"
+/// (`detect_agents`). É a fonte ÚNICA de versão pra qualquer decisão do app,
+/// inclusive gate de capability por versão (hooks_install.rs) — nunca ler
+/// arquivo do diretório do fornecedor pra responder isso (não é contrato: o
+/// `~/.gemini/antigravity-cli/version` que o gate de hooks lia no build 193
+/// simplesmente não existe no agy 1.1.12). None = binário fora do PATH, exit
+/// != 0, timeout ou saída sem versão legível: o chamador decide fail-closed
+/// com mensagem honesta.
+pub async fn detected_version(agent: &str) -> Option<String> {
+    match version_probe(agent_bin(agent)?).await {
+        Some((true, v)) => v,
+        _ => None,
+    }
+}
+
 /// Busca um JSON via `curl` subprocess (o app já orquestra CLIs; zero
 /// dependência de HTTP client). Best-effort: qualquer falha (sem curl,
 /// offline, timeout, JSON inesperado) devolve None em silêncio.
@@ -210,13 +248,9 @@ async fn fill_latest(t: &mut DetectedTool, bin: &str) {
 }
 
 async fn probe_claude() -> DetectedTool {
-    let Some((ok, out)) = run("claude", &["--version"]).await else {
+    let Some((true, version)) = version_probe("claude").await else {
         return tool("claude-code", false, None, "missing", None);
     };
-    if !ok {
-        return tool("claude-code", false, None, "missing", None);
-    }
-    let version = extract_version(&out);
     // auth: `claude auth status` → JSON {"loggedIn": bool, "email"|"authMethod"…}
     let (auth, detail) = match run("claude", &["auth", "status"]).await {
         Some((_, json)) => match serde_json::from_str::<serde_json::Value>(&json) {
@@ -237,13 +271,9 @@ async fn probe_claude() -> DetectedTool {
 }
 
 async fn probe_codex() -> DetectedTool {
-    let Some((ok, out)) = run("codex", &["--version"]).await else {
+    let Some((true, version)) = version_probe("codex").await else {
         return tool("codex", false, None, "missing", None);
     };
-    if !ok {
-        return tool("codex", false, None, "missing", None);
-    }
-    let version = extract_version(&out);
     // auth: `codex login status` → exit 0 + "Logged in using ChatGPT"; sem JSON,
     // decide pelo exit code.
     let (auth, detail) = match run("codex", &["login", "status"]).await {
@@ -258,13 +288,9 @@ async fn probe_codex() -> DetectedTool {
 }
 
 async fn probe_agy() -> DetectedTool {
-    let Some((ok, out)) = run("agy", &["--version"]).await else {
+    let Some((true, version)) = version_probe("agy").await else {
         return tool("agy", false, None, "missing", None);
     };
-    if !ok {
-        return tool("agy", false, None, "missing", None);
-    }
-    let version = extract_version(&out);
     // agy NÃO tem subcomando de auth (1.1.1). Degradação: `agy models` — lista
     // não-vazia → provavelmente logado; erro/vazio/timeout → unknown (honesto).
     let auth = match run("agy", &["models"]).await {
@@ -275,8 +301,8 @@ async fn probe_agy() -> DetectedTool {
 }
 
 async fn probe_simple(id: &str, bin: &str) -> DetectedTool {
-    match run(bin, &["--version"]).await {
-        Some((true, out)) => tool(id, true, extract_version(&out), "na", None),
+    match version_probe(bin).await {
+        Some((true, version)) => tool(id, true, version, "na", None),
         _ => tool(id, false, None, "na", None),
     }
 }
@@ -396,6 +422,24 @@ mod tests {
         assert_eq!(channel_sources("codex"), Some(("@openai/codex", "codex")));
         // agy: sem canal conhecido → sem latest (honesto).
         assert_eq!(channel_sources("agy"), None);
+    }
+
+    #[test]
+    fn binario_canonico_por_agent_do_registry() {
+        // a tabela que `detected_version` usa pra perguntar a versão: os
+        // agents do registry têm binário, o resto não tem (e o gate que
+        // depende dela recusa em vez de chutar).
+        assert_eq!(agent_bin("claude-code"), Some("claude"));
+        assert_eq!(agent_bin("codex"), Some("codex"));
+        assert_eq!(agent_bin("agy"), Some("agy"));
+        assert_eq!(agent_bin("motor-inventado"), None);
+    }
+
+    #[tokio::test]
+    async fn versao_detectada_de_agent_sem_binario_conhecido_e_desconhecida() {
+        // sem entrada na tabela não há o que perguntar: None (o chamador
+        // fail-closed com mensagem honesta, nunca um palpite).
+        assert_eq!(detected_version("motor-inventado").await, None);
     }
 
     #[test]

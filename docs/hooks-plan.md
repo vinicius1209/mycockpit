@@ -1,5 +1,30 @@
 # Hooks de status/permissão nos três motores — pesquisa + plano
 
+> **CORREÇÃO (build 193, 12/08/2026) — fonte única de versão no gate.**
+> "Ativar hooks" do Antigravity recusava com "não consegui confirmar a versão
+> do agy (hooks exigem ≥1.1.10)" enquanto "Agentes na máquina", no MESMO
+> dialog, mostrava "Antigravity · instalado v1.1.12 · logado". Causa: o gate
+> lia `~/.gemini/antigravity-cli/version`, arquivo que **não existe** no agy
+> 1.1.12 (o diretório tem bin/brain/builtin/cache/…, nenhum `version`),
+> enquanto a detecção do app já sabia a versão por `agy --version`. Dois
+> caminhos para a mesma pergunta, e o do gate dependia de artefato interno do
+> fornecedor.
+>
+> **Regra da casa que fica**: gate de capability por VERSÃO consulta SEMPRE a
+> detecção canônica do app (`detect::detected_version` → `<bin> --version` +
+> `extract_version`, a mesma que preenche "Agentes na máquina"); **nunca** um
+> arquivo do diretório do fornecedor. Artefato interno não é contrato: some
+> sem aviso, e o app passa a mentir. A tabela agent→binário mora só em
+> `detect.rs` (`agent_bin`, consumida também pelo `update.rs`).
+>
+> Fail-closed segue: sem versão confiável, nada é alterado — mas agora as duas
+> recusas são mensagens DIFERENTES ("a v1.1.9 instalada é menor que o mínimo"
+> × "não deu pra perguntar ao binário"), porque dizer "não sei a versão"
+> quando o app sabe é bug, não honestidade. Prova empírica desta máquina:
+> `hooks_install::prova_real` (ignorada na suíte, roda com `--ignored`) ativa
+> e desativa os hooks do agy no `~/.gemini/config/hooks.json` real, ao lado do
+> grupo `orca-status` intocado, com backup.
+
 > Status: **pesquisa concluída (12/08/2026), nada implementado.**
 > Pergunta que originou: "sem pensar exclusivamente no Claude Code — como hooks
 > funcionam no Codex e no Antigravity?". Método: empírico > docs > blog, nesta
@@ -306,7 +331,10 @@ mesmo resultado com fail-open sob NOSSO controle).
   automações desassistidas, no watchdog, como já é.
 - **Gate de versão honesto**: capability declarada por versão auditada (§7.1);
   agy <1.1.10 ⇒ `hooks_status:false` (Stop não roda) e a UI explica o porquê
-  em vez de instalar algo que não funciona.
+  em vez de instalar algo que não funciona. A versão vem da **detecção
+  canônica** (`detect::detected_version`), nunca de arquivo do diretório do
+  fornecedor (ver o bloco de correção do build 193 no topo); sem versão
+  confiável o gate recusa, dizendo qual dos dois casos aconteceu.
 - **Nunca responder permissão automaticamente por default**: H2 responde o que
   o HUMANO tocou na UI/Companion; timeout ⇒ `ask` (prompt nativo no terminal).
   Auto-regras, se um dia existirem, são outro plano e outra guarda.
