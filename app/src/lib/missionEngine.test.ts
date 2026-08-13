@@ -18,6 +18,7 @@ import {
   advance,
   afterPhaseDone,
   applyRecoveryChoice,
+  correctionIndex,
   failureTransition,
   finalCaveat,
   initEngine,
@@ -123,6 +124,97 @@ describe("loop de correção · rodada N abre fix + rereview", () => {
   })
 })
 
+describe("loop de correção · ONDE a correção entra na fila", () => {
+  /** Plano com o revisor NO MEIO (o caso que os presets de fábrica escondem:
+   *  neles o revisor é a última fase). */
+  function buildRevisorNoMeio(): MissionPreset {
+    return preset([
+      phaseDef({ id: "build", label: "Migrar o schema" }),
+      phaseDef({ id: "review", label: "Revisar o schema", persona: "reviewer" }),
+      phaseDef({ id: "port", label: "Portar o checkout" }),
+      phaseDef({ id: "hist", label: "Portar o histórico" }),
+    ])
+  }
+
+  it("revisor NO MEIO reprova: as corretivas entram logo depois dele, e as fases seguintes continuam DEPOIS da correção (nunca rodam sobre o reprovado)", () => {
+    let eng = initEngine(buildRevisorNoMeio())
+    eng = advance(stepDone(eng, []).state) // fase 0 (executor)
+    const done = stepDone(eng, [
+      textItem("NÃO APROVADO: a migração perde os contratos vigentes."),
+    ])
+
+    expect(done.state.phases.map((p) => p.label)).toEqual([
+      "Migrar o schema",
+      "Revisar o schema",
+      "Corrigir (rodada 1)",
+      "Revisar (rodada 1)",
+      "Portar o checkout",
+      "Portar o histórico",
+    ])
+    // a fase corrente é a revisora e NÃO se move: a inserção é toda adiante
+    // dela (índice, handoffs e runId das fases já pagas seguem válidos).
+    expect(done.state.current).toBe(1)
+    expect(done.correction?.at).toBe(2)
+    expect(done.correction?.before).toBe(4)
+    expect(done.correction?.after).toBe(6)
+    // e o próximo passo do pipeline é a correção, não a fase 3 do plano
+    const next = nextTransition(advance(done.state), 0, null)
+    expect(next.kind).toBe("run")
+    if (next.kind === "run") expect(next.def.label).toBe("Corrigir (rodada 1)")
+  })
+
+  it("revisor NA ÚLTIMA fase: a posição é o fim do plano (o comportamento dos presets de fábrica não muda)", () => {
+    let eng = initEngine(buildReview())
+    eng = advance(stepDone(eng, []).state)
+    const done = stepDone(eng, [textItem("NÃO APROVADO: engole a exceção.")])
+    expect(done.correction?.at).toBe(2)
+    expect(done.correction?.at).toBe(done.correction?.before)
+    expect(done.state.phases.map((p) => p.label)).toEqual([
+      "Executar",
+      "Revisar",
+      "Corrigir (rodada 1)",
+      "Revisar (rodada 1)",
+    ])
+  })
+
+  it("rodada 2 com revisor no meio: a segunda correção entra depois da re-review da rodada 1, e a cauda do plano continua por último", () => {
+    let eng = initEngine(buildRevisorNoMeio())
+    eng = advance(stepDone(eng, []).state) // 0 Migrar
+    eng = advance(
+      stepDone(eng, [textItem("NÃO APROVADO: perde os contratos vigentes.")])
+        .state,
+    ) // 1 Revisar
+    eng = advance(stepDone(eng, []).state) // 2 Corrigir (rodada 1)
+    const done = stepDone(eng, [
+      textItem("Ainda não está aprovado: o rollback segue sem teste."),
+    ]) // 3 Revisar (rodada 1)
+
+    expect(done.correction?.round).toBe(2)
+    expect(done.correction?.at).toBe(4)
+    expect(done.state.phases.map((p) => p.label)).toEqual([
+      "Migrar o schema",
+      "Revisar o schema",
+      "Corrigir (rodada 1)",
+      "Revisar (rodada 1)",
+      "Corrigir (rodada 2)",
+      "Revisar (rodada 2)",
+      "Portar o checkout",
+      "Portar o histórico",
+    ])
+    // a corretiva da rodada 2 herda o ÚLTIMO executor antes do revisor, que é
+    // a corretiva da rodada 1 (o trabalho mais recente), não o executor do
+    // lançamento.
+    expect(done.correction?.corrective.instructions).toContain(
+      "o rollback segue sem teste",
+    )
+  })
+
+  it("correctionIndex é a posição logo após a fase revisora (regra pura, sem estado)", () => {
+    expect(correctionIndex(0)).toBe(1)
+    expect(correctionIndex(4)).toBe(5)
+  })
+})
+
 describe("loop de correção · clamp de MAX_REVIEW_LOOPS", () => {
   it("rodadas esgotadas: reprovação na re-review final NÃO abre rodada 3 (nenhuma fase nova), só registra o veredito", () => {
     let eng = initEngine(buildReview())
@@ -148,6 +240,43 @@ describe("loop de correção · clamp de MAX_REVIEW_LOOPS", () => {
     expect(done.state.reviewLoops).toBe(MAX_REVIEW_LOOPS)
     // o veredito reprovado fica registrado (é ele que vira a ressalva no fim)
     expect(done.state.lastReview).toEqual({ approved: false, feedback: parecer })
+  })
+
+  it("teto vale igual com o revisor NO MEIO: 2 rodadas inseridas no meio e a 3ª reprovação não insere nada (a cauda do plano segue intacta)", () => {
+    let eng = initEngine(
+      preset([
+        phaseDef({ id: "build", label: "Migrar o schema" }),
+        phaseDef({ id: "review", label: "Revisar o schema", persona: "reviewer" }),
+        phaseDef({ id: "port", label: "Portar o checkout" }),
+      ]),
+    )
+    eng = advance(stepDone(eng, []).state) // 0 Migrar
+    eng = advance(
+      stepDone(eng, [textItem("NÃO APROVADO: perde os contratos.")]).state,
+    ) // 1 Revisar
+    eng = advance(stepDone(eng, []).state) // 2 Corrigir (rodada 1)
+    eng = advance(
+      stepDone(eng, [textItem("Ainda não está aprovado: falta o rollback.")])
+        .state,
+    ) // 3 Revisar (rodada 1)
+    eng = advance(stepDone(eng, []).state) // 4 Corrigir (rodada 2)
+    expect(eng.reviewLoops).toBe(MAX_REVIEW_LOOPS)
+
+    // 5 Revisar (rodada 2) reprova DE NOVO: rodadas esgotadas
+    const done = stepDone(eng, [
+      textItem("NÃO APROVADO: o caso de erro de rede segue sem cobertura."),
+    ])
+    expect(done.correction).toBeNull()
+    expect(done.state.phases.map((p) => p.label)).toEqual([
+      "Migrar o schema",
+      "Revisar o schema",
+      "Corrigir (rodada 1)",
+      "Revisar (rodada 1)",
+      "Corrigir (rodada 2)",
+      "Revisar (rodada 2)",
+      "Portar o checkout",
+    ])
+    expect(done.state.reviewLoops).toBe(MAX_REVIEW_LOOPS)
   })
 
   it("clamp re-hidratado da retomada: reviewLoops do run-state esgotado impede rodada extra já na primeira reprovação pós-crash", () => {

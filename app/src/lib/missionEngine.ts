@@ -8,7 +8,8 @@
 //   fase falhou ──failureTransition──▶ teto-fase | falha | recovery
 //   recovery    ──applyRecoveryChoice/rerunBudget──▶ re-run da MESMA fase
 //   fase ok     ──afterPhaseDone──▶ veredito do reviewer + rodada de correção
-//                                   (fix-N + rereview-N, clamp MAX_REVIEW_LOOPS)
+//                                   (fix-N + rereview-N LOGO APÓS o revisor que
+//                                   reprovou, clamp MAX_REVIEW_LOOPS)
 //   pós-fase    ──gateTransition──▶ gate | notice | none (política do preset)
 //   fim         ──finalCaveat──▶ done limpo | done com ressalva (MH1.1)
 //
@@ -45,8 +46,9 @@ export const MAX_REVIEW_LOOPS = 2
  *  (preset efetivo, fase corrente, memória do loop de revisão, matéria-prima da
  *  entrega). O store guarda UMA instância por launch e aplica as transições. */
 export interface MissionEngineState {
-  /** Preset EFETIVO: fases do launch + corretivas apendadas pelo loop de
-   *  revisão + defs trocadas pela recuperação. */
+  /** Preset EFETIVO: fases do launch + corretivas INSERIDAS pelo loop de
+   *  revisão logo depois do revisor que reprovou + defs trocadas pela
+   *  recuperação. */
   phases: MissionPhaseDef[]
   /** Índice da fase corrente (aponta além do fim quando acabou). */
   current: number
@@ -203,12 +205,40 @@ export function applyRecoveryChoice(
 // ── Transição de fase concluída: veredito do reviewer + loop de correção ──
 
 /** Rodada de correção aberta pela reprovação: executor corretivo (feedback
- *  como instrução) + re-review, apendados ao preset efetivo. */
+ *  como instrução) + re-review, inseridos LOGO DEPOIS da fase revisora que
+ *  reprovou (nunca no fim da fila — ver `correctionIndex`). */
 export interface CorrectionRound {
   round: number
   feedback: string
   corrective: MissionPhaseDef
   rereview: MissionPhaseDef
+  /** Índice onde as duas fases ENTRARAM no plano. O store aplica a MESMA
+   *  posição no run (as duas listas andam paralelas). */
+  at: number
+  /** Tamanho do plano ANTES e DEPOIS da rodada: o denominador cresceu, e quem
+   *  mostra "fase X de N" precisa poder dizer de quanto pra quanto. */
+  before: number
+  after: number
+}
+
+/** ONDE a rodada de correção entra: imediatamente APÓS a fase revisora que
+ *  reprovou (`i`), nunca no fim da fila.
+ *
+ *  Por que depois do REVISOR e não depois do executor que originou o defeito:
+ *  o executor já rodou e está no passado (índice < i), e o motor é linear com
+ *  `current` avançando um a um — reinserir atrás de `current` exigiria mover a
+ *  fase corrente pra trás (re-rodar o revisor) e reescrever a numeração de
+ *  handoff/runId de fases já pagas. Depois do revisor é o primeiro ponto do
+ *  plano onde a correção pode existir: a reprovação acabou de nascer ali, e
+ *  tudo que vem depois passa a rodar sobre o trabalho JÁ corrigido.
+ *
+ *  Consequência (o defeito que isto conserta): com o revisor no MEIO do plano,
+ *  apendar no fim fazia as fases seguintes rodarem em cima de algo reprovado e
+ *  a correção chegar só no fim. Com o revisor na ÚLTIMA fase (todos os presets
+ *  de fábrica) `i + 1 === phases.length` e a posição é a mesma de antes, por
+ *  isso o defeito passou despercebido. */
+export function correctionIndex(reviewerIndex: number): number {
+  return reviewerIndex + 1
 }
 
 export interface PhaseDoneTransition {
@@ -284,16 +314,35 @@ export function afterPhaseDone(
     id: `rereview-${round}-${missionId.slice(0, 6)}`,
     label: `Revisar (rodada ${round})`,
   }
+  // POSIÇÃO: logo depois do revisor que reprovou (não no fim). `current` é `i`
+  // e a inserção é toda ADIANTE dele, então o índice da fase corrente, os
+  // handoffs já gravados (nomeados pelo índice) e os runId de cancelamento das
+  // fases passadas continuam válidos — nada atrás de `current` se move.
+  const at = correctionIndex(i)
+  const before = next.phases.length
   next = {
     ...next,
     reviewLoops: round,
     corrections: [...next.corrections, feedback],
-    phases: [...next.phases, corrective, rereview],
+    phases: [
+      ...next.phases.slice(0, at),
+      corrective,
+      rereview,
+      ...next.phases.slice(at),
+    ],
   }
   return {
     state: next,
     review,
-    correction: { round, feedback, corrective, rereview },
+    correction: {
+      round,
+      feedback,
+      corrective,
+      rereview,
+      at,
+      before,
+      after: next.phases.length,
+    },
   }
 }
 

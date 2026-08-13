@@ -936,14 +936,21 @@ export const useMission = create<MissionState>((set, get) => {
         }
         if (doneStep.correction) {
           const corr = doneStep.correction
+          // POSIÇÃO (corr.at): as corretivas entram LOGO DEPOIS do revisor que
+          // reprovou, não no fim da fila — senão as fases seguintes rodariam em
+          // cima de um trabalho já reprovado. A inserção é toda ADIANTE de
+          // `current` (= i), então o índice da fase corrente, os handoffs já
+          // gravados (nomeados pelo índice) e os runId das fases passadas
+          // seguem válidos; o run e o preset efetivo andam paralelos.
           patchConv(convId, (cur) => ({
             phases: [
-              ...cur.phases,
+              ...cur.phases.slice(0, corr.at),
               queuedRun(corr.corrective),
               queuedRun(corr.rereview),
+              ...cur.phases.slice(corr.at),
             ],
           }))
-          // marco em disco: preset efetivo mudou (fases corretivas apendadas).
+          // marco em disco: preset efetivo mudou (fases corretivas inseridas).
           persist(convId)
         }
 
