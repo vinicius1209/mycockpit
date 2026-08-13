@@ -1,6 +1,7 @@
 import {
   Fragment,
   memo,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -43,7 +44,7 @@ import type { AgentDef } from "@/lib/agentDefs"
 import { fmtCost, fmtDuration, fmtTime, fmtTokens } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
-import { attachmentRead, attachmentReadLabel } from "@/lib/attachmentRead"
+import { attachmentReadsByItem, type ReadLabels } from "@/lib/attachmentRead"
 import type { SaveLessonOutcome } from "@/lib/learning"
 import {
   cleanResultText,
@@ -69,6 +70,7 @@ import { AgentLogo, agentLogoLabel } from "@/components/common/AgentLogo"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import {
   buildNodes,
+  reuseNodes,
   type IncidentNode,
   type Node,
   type ToolItem,
@@ -868,8 +870,13 @@ function ActivityAge({ at, stalled }: { at?: number; stalled?: boolean }) {
 
 /** Registro de voo: UMA caption por burst — e, assentado, UMA linha por grupo
  * (despoluição do fio, direção B): o resumo é a informação (contagem, duração
- * congelada, culpada nomeada na falha); o detalhe fica a um clique. */
-function ToolGroup({
+ * congelada, culpada nomeada na falha); o detalhe fica a um clique.
+ *
+ * `memo`: o grupo assentado não muda quando um token cai na bolha viva de outro
+ * turno. Só vale porque `tools` chega com identidade preservada (`reuseNodes`) e
+ * `onStop`/`onRetry` chegam estáveis (`useStableHandler`) — sem os dois, este
+ * `memo` seria decoração, que foi exatamente o defeito diagnosticado. */
+const ToolGroup = memo(function ToolGroup({
   tools,
   active = false,
   agent,
@@ -1139,7 +1146,7 @@ function ToolGroup({
       )}
     </div>
   )
-}
+})
 
 /** Galeria de lightbox a partir dos paths de evidência de UMA tool. */
 function evidenceGallery(paths: string[]): LightboxImage[] {
@@ -1992,10 +1999,12 @@ const MessageItem = memo(function MessageItem({
   item: ChatItem
   feedback?: FeedbackApi | null
   feedbackText?: string
-  /** Selo de leitura por PATH de anexo (só itens do usuário usam). Vem pronto
-   *  do MessageList: calcular aqui exigiria o fio inteiro dentro de um `memo`
-   *  por item, o que mataria a memoização a cada delta do streaming. */
-  reads?: Record<string, { text: string; warn: boolean } | null>
+  /** Selo de leitura por PATH de anexo, SÓ os deste item (só itens do usuário
+   *  usam). Vem pronto do MessageList: calcular aqui exigiria o fio inteiro
+   *  dentro de um `memo` por item, o que mataria a memoização a cada delta do
+   *  streaming. A referência é estável enquanto os rótulos deste item não
+   *  mudam — é o que faz o `memo` acima valer alguma coisa. */
+  reads?: ReadLabels
 }) {
   if (it.kind === "user") {
     // Slack-style: alinhado à esquerda sob o gutter "Você" (o autor está no
@@ -2178,7 +2187,10 @@ interface NodeCtx {
   taskPlans: AgentPlan[]
   activePlanAnchor: string | null
   feedback?: FeedbackApi | null
-  attReads: Record<string, { text: string; warn: boolean } | null>
+  /** Selos de leitura POR ITEM (id do item → rótulos por path). Por item, e não
+   *  um mapa global, porque a prop do `MessageItem` (que é `memo`) não pode
+   *  trocar de identidade quando o conteúdo daquele item não mudou. */
+  attReads: Map<string, ReadLabels>
   agent: string
   stalledSince?: number
   feedbackByResult: Map<string, string>
@@ -2334,7 +2346,7 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
             ctx.feedbackByResult.has(n.item.id) ? ctx.feedback : null
           }
           feedbackText={ctx.feedbackByResult.get(n.item.id)}
-          reads={ctx.attReads}
+          reads={ctx.attReads.get(n.item.id)}
         />
         <ContinueRow
           current={ctx.agent}
@@ -2349,7 +2361,7 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
       item={n.item}
       feedback={ctx.feedbackByResult.has(n.item.id) ? ctx.feedback : null}
       feedbackText={ctx.feedbackByResult.get(n.item.id)}
-      reads={ctx.attReads}
+      reads={ctx.attReads.get(n.item.id)}
     />
   )
 }
@@ -2554,6 +2566,51 @@ function GroupRow({
   )
 }
 
+/** Nós de render com a IDENTIDADE preservada entre frames (ver `reuseNodes`).
+ *  O `useMemo` sozinho não bastava: sua dependência é `items`, e o reducer de
+ *  `text_delta` devolve um array novo a cada token — o memo recalculava sempre e
+ *  toda a árvore abaixo recebia props inéditas. */
+function useStableNodes(items: ChatItem[]): Node[] {
+  const prev = useRef<Node[]>([])
+  return useMemo(() => {
+    const next = reuseNodes(prev.current, buildNodes(items))
+    prev.current = next
+    return next
+  }, [items])
+}
+
+/** Selos de leitura por item, com identidade preservada (ver
+ *  `attachmentReadsByItem`). */
+function useStableAttReads(
+  items: ChatItem[],
+  agent: string,
+  running: boolean,
+): Map<string, ReadLabels> {
+  const prev = useRef<Map<string, ReadLabels>>(new Map())
+  return useMemo(() => {
+    const next = attachmentReadsByItem(items, agent, running, prev.current)
+    prev.current = next
+    return next
+  }, [items, agent, running])
+}
+
+/** Callback com IDENTIDADE fixa que sempre chama a versão mais recente.
+ *
+ *  Os handlers chegam do ChatPanel como literais inline: identidade nova a cada
+ *  render do pai, que re-renderiza a cada token. Passados assim, atravessam o
+ *  `memo` do `ToolLine`/`ToolGroup` e o anulam. Como só são invocados por gesto
+ *  do usuário (parar, repetir), ler a versão corrente de um ref é idêntico em
+ *  comportamento. `undefined` continua `undefined`: a ausência do handler é o
+ *  que esconde o botão, e isso não pode virar uma função de mentira. */
+function useStableHandler<T>(
+  fn: ((arg: T) => void) | undefined,
+): ((arg: T) => void) | undefined {
+  const ref = useRef(fn)
+  ref.current = fn
+  const stable = useCallback((arg: T) => ref.current?.(arg), [])
+  return fn ? stable : undefined
+}
+
 /** Contexto consolidado do executor para o feedback do resultado. Recomeça em
  * cada item do usuário; tools/subagentes não vazam como se fossem a resposta
  * principal. */
@@ -2626,7 +2683,7 @@ export function MessageList({
   /** Loop de feedback do Linear (M2). null/undefined fora do Linear. */
   feedback?: FeedbackApi | null
 }) {
-  const nodes = useMemo(() => buildNodes(items), [items])
+  const nodes = useStableNodes(items)
   const taskPlans = useMemo(() => deriveTaskPlans(items), [items])
   const latestUserId = items.findLast((item) => item.kind === "user")?.id
   const latestPlan = taskPlans.at(-1)
@@ -2644,19 +2701,10 @@ export function MessageList({
   const liveDeferred = useMemo(() => pendingDeferred(items), [items])
   // Selo "lido / não foi aberto" por anexo. Calculado UMA vez aqui (varre o fio)
   // e entregue pronto ao MessageItem: fazer dentro do item quebraria o memo dele
-  // a cada delta do streaming. Só muda quando items/running mudam.
-  const attReads = useMemo(() => {
-    const out: Record<string, { text: string; warn: boolean } | null> = {}
-    items.forEach((it, i) => {
-      if (it.kind !== "user" || !it.attachments?.length) return
-      for (const a of it.attachments) {
-        out[a.path] = attachmentReadLabel(
-          attachmentRead(items, i, a, agent, running),
-        )
-      }
-    })
-    return out
-  }, [items, agent, running])
+  // a cada delta do streaming. Indexado POR ITEM e com a referência preservada
+  // enquanto os rótulos daquele item não mudam — sem isso o `memo` do
+  // MessageItem recebia um objeto novo por token e não memoizava nada.
+  const attReads = useStableAttReads(items, agent, running)
 
   // Janela de renderização: conversa longa (já vimos 665KB de items) renderizava
   // TUDO — com diffs abertos por padrão o DOM explodia. Mostra os últimos
@@ -2677,6 +2725,9 @@ export function MessageList({
     () => new Map(items.map((it) => [it.id, it.ts] as const)),
     [items],
   )
+  // Identidade fixa: estes cruzam o `memo` do ToolGroup/ToolLine.
+  const stableStop = useStableHandler(onStop)
+  const stableRetry = useStableHandler(onRetry)
   const ctxBase: Omit<NodeCtx, "isLast"> = {
     running,
     taskPlans,
@@ -2686,8 +2737,8 @@ export function MessageList({
     agent,
     stalledSince,
     feedbackByResult,
-    onStop,
-    onRetry,
+    onStop: stableStop,
+    onRetry: stableRetry,
     onContinueWith,
   }
   return (

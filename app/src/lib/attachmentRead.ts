@@ -74,6 +74,63 @@ function mencionaPath(input: unknown, path: string): boolean {
   return false
 }
 
+/** Selo de leitura por PATH de anexo, do jeito que o `MessageItem` consome. */
+export type ReadLabels = Record<string, { text: string; warn: boolean } | null>
+
+function sameLabels(a: ReadLabels, b: ReadLabels): boolean {
+  const ka = Object.keys(a)
+  const kb = Object.keys(b)
+  if (ka.length !== kb.length) return false
+  for (const k of ka) {
+    if (!(k in b)) return false
+    const x = a[k]
+    const y = b[k]
+    if (x === y) continue
+    if (!x || !y) return false
+    if (x.text !== y.text || x.warn !== y.warn) return false
+  }
+  return true
+}
+
+/** Selos de leitura AGRUPADOS POR ITEM, reaproveitando a identidade do frame
+ *  anterior quando os rótulos daquele item não mudaram.
+ *
+ *  Por que existe: o `MessageItem` é `memo`, e recebia o mapa GLOBAL de selos —
+ *  um objeto novo a cada token do streaming. `memo` compara raso, então TODA
+ *  mensagem do fio re-renderizava a cada delta, exatamente o oposto do que o
+ *  comentário dele prometia. Entregando um objeto POR ITEM, e mantendo a
+ *  referência quando o conteúdo é o mesmo, a prop só muda quando o selo daquele
+ *  item muda de verdade.
+ *
+ *  Semântica preservada: os selos continuam resolvidos num mapa por PATH (o
+ *  último item com aquele path vence, como sempre foi) e só depois fatiados por
+ *  item — nenhuma mensagem passa a mostrar rótulo diferente do de hoje. */
+export function attachmentReadsByItem(
+  items: ChatItem[],
+  agent: string,
+  running: boolean,
+  prev?: Map<string, ReadLabels>,
+): Map<string, ReadLabels> {
+  const byPath: ReadLabels = {}
+  items.forEach((it, i) => {
+    if (it.kind !== "user" || !it.attachments?.length) return
+    for (const a of it.attachments) {
+      byPath[a.path] = attachmentReadLabel(
+        attachmentRead(items, i, a, agent, running),
+      )
+    }
+  })
+  const out = new Map<string, ReadLabels>()
+  for (const it of items) {
+    if (it.kind !== "user" || !it.attachments?.length) continue
+    const fresh: ReadLabels = {}
+    for (const a of it.attachments) fresh[a.path] = byPath[a.path]
+    const old = prev?.get(it.id)
+    out.set(it.id, old && sameLabels(old, fresh) ? old : fresh)
+  }
+  return out
+}
+
 /** Rótulo curto + se merece destaque de alerta. null = nada a dizer na UI
  *  (inlinado e sem-rastro não viram selo: um é garantido, o outro é ignorância
  *  nossa e anunciá-la como aviso seria alarme falso). */

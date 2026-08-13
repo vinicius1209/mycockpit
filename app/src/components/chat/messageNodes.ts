@@ -277,3 +277,88 @@ export function buildNodes(items: ChatItem[]): Node[] {
   flush()
   return nodes
 }
+
+/** Duas listas de tools são a MESMA coisa? Compara por identidade de item: o
+ *  reducer do store preserva a referência de todo item que não mudou, então
+ *  identidade igual = conteúdo igual (e mais barato que comparar campo a campo). */
+function sameTools(a: ToolItem[], b: ToolItem[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
+function sameStrings(a: string[], b: string[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
+/** O nó `next` diz exatamente o mesmo que `prev` (mesmo tipo, mesma chave, mesmo
+ *  conteúdo)? */
+function sameNode(prev: Node, next: Node): boolean {
+  if (prev.type !== next.type || prev.key !== next.key) return false
+  switch (next.type) {
+    case "item":
+      return prev.type === "item" && prev.item === next.item
+    case "plan":
+      return prev.type === "plan" && prev.anchorId === next.anchorId
+    case "prose":
+      return (
+        prev.type === "prose" &&
+        prev.text === next.text &&
+        sameTools(prev.tools, next.tools)
+      )
+    case "tools":
+      return prev.type === "tools" && sameTools(prev.tools, next.tools)
+    case "incident":
+      return (
+        prev.type === "incident" &&
+        prev.severity === next.severity &&
+        prev.message === next.message &&
+        prev.resetHint === next.resetHint &&
+        prev.result === next.result &&
+        sameStrings(prev.details, next.details)
+      )
+  }
+}
+
+/** Reaproveita a IDENTIDADE dos nós que NÃO mudaram entre dois `buildNodes`.
+ *
+ *  `buildNodes` é puro e reconstrói tudo; sem isto, um único `text_delta` (que
+ *  altera UMA bolha) devolve 394 nós inéditos e a árvore inteira perde a
+ *  memoização por identidade de prop — o `memo` de `ToolLine` e o `useMemo` de
+ *  `buildToolForest` viravam decoração. Aqui o nó assentado volta com a MESMA
+ *  referência do frame anterior, e mesmo o nó que mudou (a bolha viva, cujo
+ *  texto cresceu) reaproveita o ARRAY de tools quando as tools não mudaram — é
+ *  esse array que alimenta o `ToolGroup`.
+ *
+ *  Puro em relação a `next`: só troca membros do array por objetos de `prev`
+ *  idênticos em conteúdo. `next` é recém-construído por `buildNodes`, então
+ *  ajustar `tools` nele não vaza para ninguém. */
+export function reuseNodes(prev: Node[], next: Node[]): Node[] {
+  if (!prev.length) return next
+  const byKey = new Map<string, Node>()
+  for (const node of prev) byKey.set(node.key, node)
+  for (let i = 0; i < next.length; i++) {
+    const n = next[i]
+    const p = byKey.get(n.key)
+    if (!p || p.type !== n.type) continue
+    if (sameNode(p, n)) {
+      next[i] = p
+      continue
+    }
+    // Mudou (tipicamente a bolha viva, cujo texto cresceu por um token): ainda
+    // assim as TOOLS costuradas nela costumam ser as mesmas — devolver o array
+    // antigo mantém o `ToolGroup` daquele turno inteiramente memoizado.
+    if (
+      (n.type === "prose" || n.type === "tools") &&
+      (p.type === "prose" || p.type === "tools") &&
+      sameTools(p.tools, n.tools)
+    ) {
+      n.tools = p.tools
+    }
+  }
+  return next
+}
