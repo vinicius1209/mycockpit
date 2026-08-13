@@ -872,12 +872,29 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   régua ÚNICA de medidor do STYLEGUIDE §2 (`lib/meter.ts`).
 - **Decisão 2 — o Board de intenção SAI da tela, o dado FICA.** Zero card em 16
   conversas não é "feature nova esperando descoberta", é uma resposta; e a
-  intenção de trabalho já existe em três formatos que o usuário usa (abrir
-  conversa, marcar entrega, escrever plano de voo). Saíram as superfícies
+  intenção de trabalho já existe em dois formatos que o usuário usa (abrir uma
+  conversa e escrever um plano de voo).
+  **Correção de 13/08/2026 (revisão):** a primeira redação desta decisão citava
+  "marcar entrega" como um terceiro formato em uso. **Esse gesto não existe no
+  desktop.** `deliveries` tem exatamente dois writers no código: missão
+  concluída (`store/mission.ts`, e `missionEnabled` vem **false** por padrão em
+  `lib/settings.ts`) e card indo pra Feito (`store/cards.ts`), cuja superfície
+  de desktop é justamente a que esta decisão removeu. Ou seja: numa instalação
+  default, **nada no desktop registra uma entrega** (sobra o Companion Web, que
+  também vem desligado). A consequência prática está tratada na Consequência 4.
+  Saíram as superfícies
   órfãs (`BoardLane`, `CardDetailDialog`, `cardActions`). **A tabela `cards`,
   o `store/cards` e as funções de banco continuam intocados**: remover DADO é
   outra decisão, e o store ainda alimenta o vigia, o Companion e a fila (um
   card em review/blocked continua virando decisão pendente se existir).
+  Efeito colateral tratado na revisão: `openCardConversation` mandava o card
+  SEM conversa ligada pro Painel (selecionando-o no board). Com o board fora
+  dali isso virou **clique morto** — o usuário saía do Trabalho pra uma tela
+  onde o card não existe, e a faixa seguia acesa cobrando a mesma decisão.
+  Agora a função devolve `false` quando não há destino, e quem chamou decide:
+  na própria fila, um toast explica que não há pra onde abrir; no sino e no
+  toast do vigia, abre-se a **fila da faixa**, que é onde o card existe hoje.
+  Navegar pra tela onde o alvo não existe é pior do que não navegar.
 - **Decisão 3 (condição 1) — o app abre no Trabalho.** O default do store já
   era `linear`; o que faltava era a regra ser INTENCIONAL e ter teste
   (`store/app.boot.test.ts`), porque é o tipo de coisa que uma frente futura
@@ -897,12 +914,23 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   **não narra o agora** — "N em voo" ficou deliberadamente de fora, porque a
   linha viva do turno é a dona única do que roda (B2.2/ADR-037), e duas
   superfícies vivas narrando o mesmo agora foi o bug dos builds 181/182; (d)
-  abrir a fila é sobreposição E2, nunca reflow do fio que você estava lendo.
+  abrir a fila é sobreposição E2, nunca reflow do fio que você estava lendo, e
+  ela vive em **z-30**: acima do conteúdo (que é `z-auto`) e ABAIXO dos portais
+  de dialog (`z-50`) — o `.grain` da raiz não cria contexto de empilhamento (o
+  `z-50` dele mora no `::after`), então a faixa compete na raiz e um `z-[105]`
+  fazia o `confirm()` do Merge renderizar atrás da própria gaveta. Pelo mesmo
+  motivo o Escape da fila cede quando há dialog Radix aberto.
   **O que NÃO entrou na faixa, e por quê:** rate limit de CLI, "sem login" e
   update disponível. São impedimentos reais, mas duram horas ou dias, e uma
   faixa permanentemente acesa cobra os 30px pra sempre — exatamente o preço que
-  a direção E declara como seu maior custo. Eles seguem no sino e na seção
-  Frota do Painel.
+  a direção E declara como seu maior custo. Onde eles ficam, com precisão
+  (correção da revisão, a redação anterior dizia "no sino" pros três): **rate
+  limit** aparece no sino E na Frota do Painel; **"sem login"** e **update
+  disponível** aparecem SÓ na Frota do Painel. Nenhum dos três é regressão
+  desta frente (era assim antes), mas fica registrado o furo que a revisão
+  apontou: CLI deslogada é hoje uma coisa que se descobre quando um turno
+  falha, a menos que você visite o Painel. Levar os dois pro sino é candidato a
+  frente própria, não a remendo desta.
 - **Consequência 1 — o que a retrospectiva NÃO herdou.** As 4 caixas de
   métrica se dissolveram (30 dias virou o hero, média/dia virou o derivado
   "por dia", 7 dias virou a janela; "Tokens 30d" desceu pra gaveta, porque
@@ -924,12 +952,43 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   deixa `requestMissionLaunch`/`requestFusionLaunch` sem chamador no app — o
   mecanismo foi mantido de propósito, porque quem decide o destino dele é a
   frente que está reconstruindo Missões.
-- **Consequência 3 — três bugs de tinta fechados junto** (auditoria dos mocks
+- **Consequência 3 — o que mais saiu do Painel, dito com todas as letras.**
+  (a) O bloco **"Em voo" cross-projeto** (turnos, missões e disputas rodando,
+  com o expansor) saiu junto: o passado e o agora não dividem a mesma tela, e a
+  linha viva do turno é a dona única do agora (B2.2). O que sobra pra saber "o
+  que está rodando" sem entrar na conversa é o **dot de presença na sidebar**,
+  que é presença, não identidade: ele diz que ALGO roda naquele projeto, não o
+  quê. É uma perda real e está registrada como tal; a superfície que a repõe é
+  a de trabalho em background, não a retrospectiva. (b) A varredura de
+  decisões (SQL + `.claude/plans` de N projetos, a cada 30s) **deixou de ser
+  montada com o Painel e virou ticker do chrome**, porque a faixa existe em
+  toda superfície. Ganhou gate de `document.hidden` (janela escondida não
+  varre, e voltar a ficar visível dispara um refresh na hora); ela ainda é um
+  segundo intervalo além do vigia de `lib/watchdog.ts`, e unificar os dois
+  tickers fica anotado como dívida.
+- **Consequência 4 — o derivado "por entrega registrada" some quando não há
+  quem registre.** Com o denominador congelado (Decisão 2) e o numerador
+  crescendo todo dia, "US$ X por entrega" viraria ficção com cara de
+  instrumento em poucas semanas, que é o oposto da tese desta tela. Regra
+  (`showsPerDelivery` em `lib/retro.ts`, com teste): o derivado existe se
+  **algum writer estiver ligado** (missão ou Companion, o denominador ainda
+  pode crescer) **ou** se houver **entrega real na janela** (o número descreve
+  algo que aconteceu). Fora isso ele não aparece, e o trio vira duo — §5 camada
+  2, "não-configurado esconde". Quando aparece, a ressalva de 11px diz na cara
+  de onde nasce uma entrega e avisa que número alto pode ser falta de registro,
+  não ineficiência. O parágrafo do "N% atribuídos" segue a mesma regra.
+- **Consequência 5 — três bugs de tinta fechados junto** (auditoria dos mocks
   contra o STYLEGUIDE §2): o ícone de PR saudável era `st-success` e o dot de
   entrega era verde (verde é marco de turno, nunca estado ambiente que fica na
   tela — os dois viraram cinza); e o card `blocked` era `st-error` (vermelho é
   falha consumada; bloqueado é âmbar, e quem separa "bloqueado" de "em
-  revisão" é o texto do badge, não a tinta). O quarto item da auditoria era o
+  revisão" é o texto do badge, não a tinta). Na revisão entraram mais dois, do
+  mesmo tipo: o TEXTO da faixa era âmbar sobre fundo âmbar (~2,9:1 no tema
+  claro, abaixo de AA) e virou `foreground`, com o âmbar ficando no dot, na
+  borda e no fundo (o padrão da Frota); e a fila empilhava um botão brass por
+  card, quando a regra é **uma primária brass por superfície** — agora só o
+  primeiro item da fila (o mais pronto, pelo `orderQueue`) é brass, e o resto
+  usa o botão neutro com o mesmo rótulo. O quarto item da auditoria era o
   `EmptyLine` compartilhado entre o vazio da fila e o das entregas, com o mesmo
   peso — a causa literal do "inbox solto na tela inicial": a fila saiu do
   Painel e o vazio das entregas passou a dizer o que falta e por quê.

@@ -373,21 +373,24 @@ export const useCards = create<CardsState>((set, get) => {
 })
 
 /** Abre um card a partir da fila "Precisam de você" (S1.6): com conversa
- *  ligada, navega até ela (espelha openStalledConv do watchdog); sem conversa,
- *  seleciona o card no board do Painel. */
-export async function openCardConversation(cardId: string): Promise<void> {
+ *  ligada, navega até ela (espelha openStalledConv do watchdog).
+ *
+ *  Devolve **false quando não havia pra onde ir** (card sem conversa ligada, ou
+ *  card que sumiu do store): quem chamou decide o que fazer com isso. Antes,
+ *  este caminho selecionava o card e trocava pro Painel — desde o ADR-040 o
+ *  Board não mora mais lá, então isso virou clique morto: o usuário era
+ *  arrancado do Trabalho pra uma tela onde o card não existe, e a fila
+ *  continuava acesa cobrando a mesma decisão. Navegar pra onde o alvo não
+ *  existe é pior do que não navegar. */
+export async function openCardConversation(cardId: string): Promise<boolean> {
   const card = useCards.getState().all.find((c) => c.id === cardId)
-  if (!card) return
+  if (!card?.conversationId) return false
   const app = useApp.getState()
-  if (card.conversationId) {
-    app.setActiveProject(card.projectId)
-    await useChat.getState().openProject(card.projectId)
-    await useChat.getState().switchConversation(card.conversationId)
-    app.setViewMode("linear")
-  } else {
-    useCards.getState().select(card.id)
-    app.setViewMode("painel")
-  }
+  app.setActiveProject(card.projectId)
+  await useChat.getState().openProject(card.projectId)
+  await useChat.getState().switchConversation(card.conversationId)
+  app.setViewMode("linear")
+  return true
 }
 
 // Hidratação no BOOT (padrão interactions.ts): o App.tsx importa este módulo

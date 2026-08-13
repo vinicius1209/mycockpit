@@ -65,7 +65,10 @@ async function goTo(d: Decision) {
     await useChat.getState().switchConversation(d.convId)
     app.setViewMode("linear")
   } else if (d.kind === "card") {
-    await openCardConversation(d.cardId)
+    // Sem conversa ligada o card não tem tela própria (o Board saiu do Painel,
+    // ADR-040): o lugar onde ele EXISTE é a fila da faixa. Abrir a fila é o
+    // destino honesto; trocar de superfície pra nada seria clique morto.
+    if (!(await openCardConversation(d.cardId))) app.setDecisionsOpen(true)
   } else {
     app.setSddFocus(d.slug)
     app.setViewMode("sdd")

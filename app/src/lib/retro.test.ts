@@ -3,12 +3,14 @@ import {
   agentCross,
   attributedShare,
   discardedSpend,
+  hasDeliveryWriter,
   heatFillPct,
   heatTone,
   hourlyHeatmap,
   peakHour,
   perDay,
   perDelivery,
+  showsPerDelivery,
 } from "@/lib/retro"
 import type { LedgerRow } from "@/lib/panel"
 
@@ -136,6 +138,35 @@ describe("derivados — o denominador sempre à vista", () => {
     expect(a?.costUsd).toBeCloseTo(76.3)
     expect(a?.share).toBeCloseTo(0.0122, 4)
     expect(attributedShare(0, [{ costUsd: 5 }])).toBeNull()
+  })
+})
+
+describe("quem ainda REGISTRA entrega (o denominador pode crescer?)", () => {
+  it("instalação default (missão desligada, sem Companion) não tem writer", () => {
+    expect(hasDeliveryWriter({ missionEnabled: false, companionEnabled: false })).toBe(
+      false,
+    )
+  })
+
+  it("missão ligada OU Companion ligado bastam", () => {
+    expect(hasDeliveryWriter({ missionEnabled: true, companionEnabled: false })).toBe(
+      true,
+    )
+    expect(hasDeliveryWriter({ missionEnabled: false, companionEnabled: true })).toBe(
+      true,
+    )
+  })
+
+  it("sem writer e sem entrega na janela, o derivado SOME (não vira 0 nem —)", () => {
+    expect(showsPerDelivery(false, 0)).toBe(false)
+  })
+
+  it("entrega real na janela mantém o derivado, mesmo sem writer ligado hoje", () => {
+    expect(showsPerDelivery(false, 3)).toBe(true)
+  })
+
+  it("writer ligado mantém o derivado mesmo com a janela vazia (ele pode crescer)", () => {
+    expect(showsPerDelivery(true, 0)).toBe(true)
   })
 })
 

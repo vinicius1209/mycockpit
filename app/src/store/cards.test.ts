@@ -426,11 +426,20 @@ describe("cards (E1): abrir da fila (S1.6)", () => {
     expect(h.app.setViewMode).toHaveBeenCalledWith("linear")
   })
 
-  it("sem conversa seleciona o card no board do Painel", async () => {
+  // ADR-040: o Board saiu do Painel, então "selecionar o card no board" deixou
+  // de existir como destino. Card sem conversa não navega pra lugar nenhum —
+  // devolve false e quem chamou explica (ou leva pra fila, onde ele existe).
+  it("sem conversa não navega e devolve false (nada de tela sem o alvo)", async () => {
     seedStore([card({ state: "blocked", conversationId: null })])
-    await openCardConversation("c1")
-    expect(useCards.getState().selectedId).toBe("c1")
-    expect(h.app.setViewMode).toHaveBeenCalledWith("painel")
+    expect(await openCardConversation("c1")).toBe(false)
+    expect(h.app.setViewMode).not.toHaveBeenCalled()
+    expect(h.app.setActiveProject).not.toHaveBeenCalled()
     expect(h.chat.switchConversation).not.toHaveBeenCalled()
+  })
+
+  it("card que sumiu do store devolve false em vez de navegar no vazio", async () => {
+    seedStore([card({ state: "blocked", conversationId: "conv-9" })])
+    expect(await openCardConversation("fantasma")).toBe(false)
+    expect(h.app.setViewMode).not.toHaveBeenCalled()
   })
 })

@@ -354,10 +354,14 @@ function showStalledCardToast(
         : "O card segue em revisão, esperando um gesto seu.",
     duration: 15_000,
     action: {
-      // com conversa ligada abre a conversa; sem, seleciona o card no board
-      // (openCardConversation já bifurca — mesmo destino da fila do Painel).
+      // com conversa ligada abre a conversa; sem conversa não há tela do card
+      // (o Board saiu do Painel, ADR-040), então o destino é a fila da faixa,
+      // que é onde ele existe como decisão pendente.
       label: "Abrir card",
-      onClick: () => void openCardConversation(cardId),
+      onClick: () =>
+        void openCardConversation(cardId).then((ok) => {
+          if (!ok) useApp.getState().setDecisionsOpen(true)
+        }),
     },
     cancel: {
       label: "Dispensar",

@@ -50,12 +50,14 @@ import {
   agentCross,
   attributedShare,
   discardedSpend,
+  hasDeliveryWriter,
   heatFillPct,
   heatTone,
   hourlyHeatmap,
   peakHour,
   perDay,
   perDelivery,
+  showsPerDelivery,
   type FusionOutcome,
 } from "@/lib/retro"
 import { updateAvailable } from "@/lib/detect"
@@ -184,6 +186,12 @@ export function MissionControl() {
   // Agents com rate limit atingido (cross-conversa, efêmero: marcado por
   // limit_reached, curado por result ok) — a FROTA mostra o posto bloqueado.
   const limitedAgents = useApp((s) => s.limitedAgents)
+  // Quem ainda pode ENGORDAR o denominador de "por entrega registrada": missão
+  // (desligada por padrão) e card indo pra Feito (hoje só pelo Companion, o
+  // Board saiu do desktop). Sem nenhum dos dois, o derivado some em vez de
+  // envelhecer sozinho.
+  const missionEnabled = useApp((s) => s.settings.missionEnabled)
+  const companionEnabled = useApp((s) => s.settings.companionEnabled)
 
   /** Janela da retrospectiva. O dado é carregado SEMPRE em 30 dias (a maior);
    *  trocar pra 7 d é recorte em memória, nunca uma ida nova ao banco. */
@@ -302,6 +310,10 @@ export function MissionControl() {
   )
 
   const convCount = win === 7 ? convCounts.d7 : convCounts.d30
+  const showsDelivery = showsPerDelivery(
+    hasDeliveryWriter({ missionEnabled, companionEnabled }),
+    view.deliveries.length,
+  )
   // corte ANUNCIADO: lista cortada em silêncio é o começo de um número que
   // ninguém confere.
   const shownDeliveries = view.deliveries.slice(0, 12)
@@ -360,24 +372,34 @@ export function MissionControl() {
               <p className="mt-2 text-[13px] text-muted-foreground">{subline}</p>
             </section>
 
-            {/* 2. TRIO DERIVADO — cada um com o denominador à vista. */}
-            <section aria-label="Derivados" className="grid gap-3 sm:grid-cols-3">
+            {/* 2. TRIO DERIVADO — cada um com o denominador à vista. O do meio
+                só existe se o denominador ainda puder crescer (§5 camada 2):
+                sem writer de entrega, ele viraria um número que só envelhece. */}
+            <section
+              aria-label="Derivados"
+              className={cn(
+                "grid gap-3",
+                showsDelivery ? "sm:grid-cols-3" : "sm:grid-cols-2",
+              )}
+            >
               <Derived
                 value={view.perDay != null ? fmtCost(view.perDay) : "—"}
                 label="por dia"
                 caveat={`${fmtCost(view.total)} ÷ ${win}. O número de orçamento, o único que não depende de nada além do ledger.`}
               />
-              <Derived
-                value={
-                  view.perDelivery != null ? fmtCost(view.perDelivery) : "—"
-                }
-                label="por entrega registrada"
-                caveat={
-                  view.perDelivery != null
-                    ? `${fmtCost(view.total)} ÷ ${view.deliveries.length}. Mede eficiência e disciplina de registro juntas: conversa que virou código sem virar entrega não entra no denominador.`
-                    : "Nenhuma entrega registrada nesta janela, então não existe denominador. O app não divide por zero pra ter um número."
-                }
-              />
+              {showsDelivery && (
+                <Derived
+                  value={
+                    view.perDelivery != null ? fmtCost(view.perDelivery) : "—"
+                  }
+                  label="por entrega registrada"
+                  caveat={
+                    view.perDelivery != null
+                      ? `${fmtCost(view.total)} ÷ ${view.deliveries.length}. Entrega só nasce de missão concluída ou de card indo pra Feito (hoje, só pelo Companion): nenhum gesto do desktop registra uma. Número alto pode ser falta de registro, não ineficiência.`
+                      : "Nenhuma entrega registrada nesta janela, então não existe denominador. O app não divide por zero pra ter um número."
+                  }
+                />
+              )}
               <Derived
                 value={
                   view.discarded.disputes > 0
@@ -535,9 +557,12 @@ export function MissionControl() {
                   : `Entregas · ${win} dias`}
               </SectionTitle>
               {view.deliveries.length === 0 ? (
-                <p className="px-1 text-[13px] text-muted-foreground">
-                  Nenhuma entrega registrada nesta janela. Sem elas, o custo por
-                  entrega acima fica sem denominador.
+                <p className="px-1 text-[13px] leading-relaxed text-muted-foreground">
+                  Nenhuma entrega registrada nesta janela. Entrega nasce de
+                  missão concluída ou de card indo pra Feito
+                  {showsDelivery
+                    ? "."
+                    : ", e com missão desligada e sem Companion nenhum gesto do desktop registra uma."}
                 </p>
               ) : (
                 <>
@@ -582,8 +607,8 @@ export function MissionControl() {
                         %)
                       </span>{" "}
                       estão atribuídos a uma entrega registrada. O resto está em
-                      conversa que ninguém fechou. Isso não é um julgamento do
-                      trabalho, é um diagnóstico do denominador.
+                      conversa que ninguém registrou como entrega. Isso não é um
+                      julgamento do trabalho, é um diagnóstico do denominador.
                     </p>
                   )}
                 </>

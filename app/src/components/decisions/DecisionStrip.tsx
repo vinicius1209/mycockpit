@@ -73,6 +73,10 @@ export function DecisionStrip() {
         setDecisions([])
         return
       }
+      // janela escondida não varre: isto virou ticker global (antes só existia
+      // com o Painel montado), e a varredura lê o .claude/plans de N projetos.
+      // Voltar a ficar visível dispara um refresh na hora (efeito abaixo).
+      if (typeof document !== "undefined" && document.hidden) return
       void scanDecisions(projects)
         .then((d) => {
           if (!cancelled) setDecisions(d)
@@ -84,9 +88,14 @@ export function DecisionStrip() {
     }
     refresh()
     const timer = setInterval(refresh, 30_000)
+    const onVisible = () => {
+      if (!document.hidden) refresh()
+    }
+    document.addEventListener("visibilitychange", onVisible)
     return () => {
       cancelled = true
       clearInterval(timer)
+      document.removeEventListener("visibilitychange", onVisible)
     }
   }, [projects, refreshTick])
 
@@ -157,11 +166,16 @@ export function DecisionStrip() {
     if (open && pending.length === 0) setOpen(false)
   }, [open, pending.length, setOpen])
 
-  // Escape fecha a fila (é sobreposição, e toda sobreposição do app sai por aí).
+  // Escape fecha a fila (é sobreposição, e toda sobreposição do app sai por
+  // aí), MENOS com um dialog aberto por cima: o Escape é dele, e fechar os dois
+  // de uma vez tiraria a fila do usuário que só quis cancelar o merge. Mesmo
+  // gate do atalho de ditado (App.tsx): dialog Radix com data-state=open.
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false)
+      if (e.key !== "Escape") return
+      if (document.querySelector('[role="dialog"][data-state="open"]')) return
+      setOpen(false)
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
@@ -209,14 +223,21 @@ export function DecisionStrip() {
   if (!summary) return null
 
   return (
-    <div className="relative z-[105] shrink-0 border-y border-st-warning/30 bg-st-warning/8">
+    // z-30, não z-[105]: o `.grain` da raiz NÃO cria contexto de empilhamento
+    // (o z-50 dele mora no ::after), então esta faixa compete na raiz com os
+    // PORTAIS de dialog (z-50). Acima do conteúdo (que é z-auto), abaixo de
+    // qualquer dialog — senão o confirm do Merge renderiza atrás da gaveta.
+    <div className="relative z-30 shrink-0 border-y border-st-warning/30 bg-st-warning/8">
       <div className="flex h-[30px] items-center gap-2.5 px-3">
+        {/* Âmbar mora no dot, na borda e no fundo; o TEXTO é foreground. Âmbar
+            13px sobre fundo âmbar dá ~2,9:1 no tema claro (AA pede 4,5), e o
+            padrão da casa é o da Frota: sinal colorido, texto legível. */}
         <span aria-hidden className="size-2 shrink-0 rounded-full bg-st-warning" />
-        <span className="min-w-0 flex-1 truncate text-[13px] text-st-warning">
+        <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
           {summary.text}
         </span>
         {summary.ageText && (
-          <span className="shrink-0 font-mono text-[11px] text-st-warning/80 tabular-nums">
+          <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">
             {summary.ageText}
           </span>
         )}

@@ -12,6 +12,7 @@
 import { useState } from "react"
 import { FileText, GitPullRequest, Lightbulb, SquareKanban, Swords } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
+import { toast } from "sonner"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { openCardConversation } from "@/store/cards"
@@ -32,7 +33,14 @@ export async function goToDecision(d: Decision) {
     await useChat.getState().switchConversation(d.convId)
     app.setViewMode("linear")
   } else if (d.kind === "card") {
-    await openCardConversation(d.cardId)
+    // Sem conversa ligada não existe destino: o card JÁ está na sua frente, na
+    // fila. Explicar é honesto; trocar de tela pra nada não é.
+    if (!(await openCardConversation(d.cardId))) {
+      toast(`"${d.title}" não tem conversa ligada`, {
+        description:
+          "Não há pra onde abrir. Ele fica na fila até mudar de estado.",
+      })
+    }
   } else {
     app.setSddFocus(d.slug)
     app.setViewMode("sdd")
@@ -46,21 +54,31 @@ function fmtRelativeIso(iso: string | null): string | null {
   return Number.isFinite(ts) ? fmtAgo(Date.now() - ts) : null
 }
 
-/** Botão brass (padrão do app: MessageList/aprovações). */
-function BrassButton({
+/** A ação principal de um card. Brass SÓ no primeiro item da fila (o mais
+ *  pronto, pelo `orderQueue`): uma primária brass por superfície (§8) — três
+ *  brass empilhados anulam a hierarquia que a fila acabou de criar. Os outros
+ *  usam o botão neutro, com o mesmo rótulo e a mesma ação. */
+function PrimaryButton({
   children,
   disabled,
+  primary,
   onClick,
 }: {
   children: React.ReactNode
   disabled?: boolean
+  primary?: boolean
   onClick: (e: React.MouseEvent) => void
 }) {
   return (
     <button
       disabled={disabled}
       onClick={onClick}
-      className="shrink-0 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+      className={cn(
+        "shrink-0 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors disabled:opacity-40",
+        primary
+          ? "bg-brass text-background transition-opacity hover:opacity-90"
+          : "border border-border text-foreground hover:bg-accent/60",
+      )}
     >
       {children}
     </button>
@@ -119,11 +137,13 @@ function PrCard({
   d,
   enrich,
   merging,
+  primary,
   onMerge,
 }: {
   d: Extract<Decision, { kind: "pr" }>
   enrich: PrEnrichment | null
   merging: boolean
+  primary: boolean
   onMerge: () => void
 }) {
   const health = prHealth(enrich)
@@ -192,7 +212,8 @@ function PrCard({
             {failing ? "Ver falha ↗" : "Abrir PR ↗"}
           </button>
           {canMerge && (
-            <BrassButton
+            <PrimaryButton
+              primary={primary}
               disabled={merging}
               onClick={(e) => {
                 e.stopPropagation()
@@ -200,7 +221,7 @@ function PrCard({
               }}
             >
               {merging ? "Mergeando…" : "Merge"}
-            </BrassButton>
+            </PrimaryButton>
           )}
           <GhostAction
             onClick={(e) => {
@@ -217,7 +238,13 @@ function PrCard({
 }
 
 /** Card de disputa: julgar é a única ação — corpo e primária navegam. */
-function FusionCard({ d }: { d: Extract<Decision, { kind: "fusion" }> }) {
+function FusionCard({
+  d,
+  primary,
+}: {
+  d: Extract<Decision, { kind: "fusion" }>
+  primary: boolean
+}) {
   const go = () => void goToDecision(d)
   return (
     <QueueCard onClick={go}>
@@ -229,14 +256,15 @@ function FusionCard({ d }: { d: Extract<Decision, { kind: "fusion" }> }) {
         <span className="shrink-0 text-[12px] text-muted-foreground">
           {d.projectName}
         </span>
-        <BrassButton
+        <PrimaryButton
+          primary={primary}
           onClick={(e) => {
             e.stopPropagation()
             go()
           }}
         >
           Julgar
-        </BrassButton>
+        </PrimaryButton>
       </div>
     </QueueCard>
   )
@@ -246,7 +274,13 @@ function FusionCard({ d }: { d: Extract<Decision, { kind: "fusion" }> }) {
  *  ligada, ou seleciona o card no board quando não há conversa. Quando o vigia
  *  marcou o card como estagnado (S2.3), o destaque "parado há X min" entra
  *  aqui mesmo, sem layout novo. */
-function BoardQueueCard({ d }: { d: Extract<Decision, { kind: "card" }> }) {
+function BoardQueueCard({
+  d,
+  primary,
+}: {
+  d: Extract<Decision, { kind: "card" }>
+  primary: boolean
+}) {
   const go = () => void goToDecision(d)
   // minutos calculados no render: a fila re-escaneia periodicamente, o valor
   // acompanha; precisão de relógio vivo não vale um timer por card.
@@ -272,14 +306,15 @@ function BoardQueueCard({ d }: { d: Extract<Decision, { kind: "card" }> }) {
         <span className="shrink-0 rounded border border-st-warning/50 bg-st-warning/10 px-1.5 py-px text-[11px] tracking-wide text-st-warning uppercase">
           {d.state === "blocked" ? "bloqueado" : "em revisão"}
         </span>
-        <BrassButton
+        <PrimaryButton
+          primary={primary}
           onClick={(e) => {
             e.stopPropagation()
             go()
           }}
         >
           Abrir
-        </BrassButton>
+        </PrimaryButton>
       </div>
     </QueueCard>
   )
@@ -290,9 +325,11 @@ function BoardQueueCard({ d }: { d: Extract<Decision, { kind: "card" }> }) {
  *  O lead NUNCA despacha: não existe botão de dispatch aqui. */
 function ProposalCard({
   d,
+  primary,
   onDismiss,
 }: {
   d: Extract<Decision, { kind: "proposal" }>
+  primary: boolean
   onDismiss: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -317,14 +354,15 @@ function ProposalCard({
         >
           Dispensar
         </GhostAction>
-        <BrassButton
+        <PrimaryButton
+          primary={primary}
           onClick={(e) => {
             e.stopPropagation()
             setOpen((o) => !o)
           }}
         >
           {open ? "Fechar" : "Ver proposta"}
-        </BrassButton>
+        </PrimaryButton>
       </div>
       {open && (
         <p className="mt-2 pl-[26px] text-[13px] leading-relaxed whitespace-pre-wrap text-foreground/90">
@@ -336,7 +374,13 @@ function ProposalCard({
 }
 
 /** Card de PRD: revisar no SDD (aqui o SDD É o destino certo). */
-function PrdCard({ d }: { d: Extract<Decision, { kind: "prd" }> }) {
+function PrdCard({
+  d,
+  primary,
+}: {
+  d: Extract<Decision, { kind: "prd" }>
+  primary: boolean
+}) {
   const go = () => void goToDecision(d)
   const age = fmtRelativeIso(d.createdAt)
   return (
@@ -354,14 +398,15 @@ function PrdCard({ d }: { d: Extract<Decision, { kind: "prd" }> }) {
             {age}
           </span>
         )}
-        <BrassButton
+        <PrimaryButton
+          primary={primary}
           onClick={(e) => {
             e.stopPropagation()
             go()
           }}
         >
           Revisar PRD
-        </BrassButton>
+        </PrimaryButton>
       </div>
     </QueueCard>
   )
@@ -383,27 +428,29 @@ export function DecisionList({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      {pending.map((d) =>
+      {pending.map((d, i) =>
         d.kind === "pr" ? (
           <PrCard
             key={`pr:${d.prUrl}`}
             d={d}
             enrich={prData[d.prUrl] ?? null}
             merging={mergingUrl === d.prUrl}
+            primary={i === 0}
             onMerge={() => onMerge(d)}
           />
         ) : d.kind === "fusion" ? (
-          <FusionCard key={`fusion:${d.convId}`} d={d} />
+          <FusionCard key={`fusion:${d.convId}`} d={d} primary={i === 0} />
         ) : d.kind === "card" ? (
-          <BoardQueueCard key={`card:${d.cardId}`} d={d} />
+          <BoardQueueCard key={`card:${d.cardId}`} d={d} primary={i === 0} />
         ) : d.kind === "proposal" ? (
           <ProposalCard
             key={`proposal:${d.proposalId}`}
             d={d}
+            primary={i === 0}
             onDismiss={() => onDismissProposal(d)}
           />
         ) : (
-          <PrdCard key={`prd:${d.projectId}:${d.slug}`} d={d} />
+          <PrdCard key={`prd:${d.projectId}:${d.slug}`} d={d} primary={i === 0} />
         ),
       )}
     </div>
