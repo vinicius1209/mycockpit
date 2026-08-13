@@ -150,8 +150,54 @@ export function deriveTaskPlans(items: ChatItem[]): AgentPlan[] {
   return plans
 }
 
+/** Leitura completa do plano de um fio: os planos, o turno corrente e o plano
+ *  VIVO desse turno. Os três consumidores precisavam exatamente disto e cada um
+ *  recalculava por conta própria. */
+export interface TaskPlansView {
+  plans: AgentPlan[]
+  /** id do último item `user` = o turno corrente ("conversation-start" em fio
+   *  legado sem `user` vira `undefined` aqui, e nenhum plano casa: correto). */
+  latestUserId: string | undefined
+  /** Plano do turno corrente ainda em aberto. null = o último plano é de um
+   *  turno anterior ou já fechou (terminal). */
+  live: AgentPlan | null
+}
+
+/** Memo por IDENTIDADE do array de items. A derivação é O(N) sobre o fio
+ *  inteiro e três lugares a pediam para o MESMO array no MESMO frame — o
+ *  ChatPanel (plano vivo acima do composer), o MessageList (marcos no
+ *  transcript) e o ContextPanel (aba Plano). Rodava 2 a 3 vezes por token do
+ *  streaming; agora o primeiro que chegar calcula e os outros consomem.
+ *
+ *  WeakMap e não cache de 1 entrada: a chave é o próprio array, então duas
+ *  conversas na tela não brigam pelo slot, e a entrada morre junto com o array
+ *  que o reducer descartou (sem despejo manual, sem vazamento).
+ *
+ *  Pré-condição do compartilhamento: a view é IMUTÁVEL para quem lê. Ninguém
+ *  pode mutar `plans`/`tasks` depois (hoje todos só leem); mutar passaria a
+ *  contaminar os outros consumidores em vez de a própria cópia. */
+const planViewCache = new WeakMap<ChatItem[], TaskPlansView>()
+
+export function taskPlansOf(items: ChatItem[]): TaskPlansView {
+  const cached = planViewCache.get(items)
+  if (cached) return cached
+  const plans = deriveTaskPlans(items)
+  const latestUserId = items.findLast((it) => it.kind === "user")?.id
+  const latest = plans.at(-1)
+  const view: TaskPlansView = {
+    plans,
+    latestUserId,
+    live:
+      latest && latest.turnId === latestUserId && latest.terminal == null
+        ? latest
+        : null,
+  }
+  planViewCache.set(items, view)
+  return view
+}
+
 /** Checklist viva = somente o plano mais recente. Mantém a API histórica dos
  * consumidores que não precisam dos marcos de turnos anteriores. */
 export function deriveTasks(items: ChatItem[]): AgentTask[] {
-  return deriveTaskPlans(items).at(-1)?.tasks ?? []
+  return taskPlansOf(items).plans.at(-1)?.tasks ?? []
 }

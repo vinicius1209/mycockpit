@@ -12,7 +12,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import { deriveTaskPlans } from "@/lib/tasks"
+import { taskPlansOf } from "@/lib/tasks"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { Especialistas } from "@/components/settings/Especialistas"
@@ -207,15 +207,9 @@ export function ChatPanel() {
 
   // Plano vivo canônico: somente o plano do pedido corrente aparece junto ao
   // composer. Planos anteriores viram marcos compactos no transcript.
-  const taskPlans = useMemo(() => deriveTaskPlans(items), [items])
-  const latestUserId = items.findLast((item) => item.kind === "user")?.id
-  const latestPlan = taskPlans.at(-1)
-  const livePlan =
-    latestPlan &&
-    latestPlan.turnId === latestUserId &&
-    latestPlan.terminal == null
-      ? latestPlan
-      : null
+  // A derivação é a MESMA que o MessageList consome (taskPlansOf memoiza por
+  // identidade do array): quem chegar primeiro no frame calcula, o outro lê.
+  const livePlan = useMemo(() => taskPlansOf(items).live, [items])
   const tasks = livePlan?.tasks ?? []
   const doneTasks = tasks.filter((t) => t.status === "completed").length
   const currentTask = tasks.find((t) => t.status === "in_progress")

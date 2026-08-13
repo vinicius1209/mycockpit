@@ -63,7 +63,7 @@ import {
 import { EVIDENCE_MISSING, evidenceName, evidenceUrl } from "@/lib/evidence"
 import { useLightbox, type LightboxImage } from "@/store/lightbox"
 import { lineDiff, trimOuterContext, type DiffRow } from "@/lib/linediff"
-import { deriveTaskPlans, type AgentPlan } from "@/lib/tasks"
+import { taskPlansOf, type AgentPlan } from "@/lib/tasks"
 import { openDeliveryDiff } from "@/lib/deliveryDiff"
 import { Markdown } from "@/components/common/Markdown"
 import { AgentLogo, agentLogoLabel } from "@/components/common/AgentLogo"
@@ -2684,16 +2684,11 @@ export function MessageList({
   feedback?: FeedbackApi | null
 }) {
   const nodes = useStableNodes(items)
-  const taskPlans = useMemo(() => deriveTaskPlans(items), [items])
-  const latestUserId = items.findLast((item) => item.kind === "user")?.id
-  const latestPlan = taskPlans.at(-1)
-  const activePlanAnchor =
-    running &&
-    latestPlan &&
-    latestPlan.turnId === latestUserId &&
-    latestPlan.terminal == null
-      ? latestPlan.anchorId
-      : null
+  // MESMA derivação que o ChatPanel consome (memo por identidade do array em
+  // taskPlansOf): antes pai e filho varriam o fio inteiro cada um, por token.
+  const planView = useMemo(() => taskPlansOf(items), [items])
+  const taskPlans = planView.plans
+  const activePlanAnchor = running ? (planView.live?.anchorId ?? null) : null
   const feedbackByResult = useMemo(() => feedbackTextByResult(items), [items])
   // Trabalho diferido VIVO (D1.3): alimenta a LINHA VIVA, dona única do "agora"
   // (background-status B2.2). Derivado de items — replay-safe, sem estado
