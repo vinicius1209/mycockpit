@@ -3,6 +3,7 @@ import type { Project } from "@/lib/types"
 import type { ChatItem } from "@/store/chat"
 import type { ConvRef } from "@/lib/attachments"
 import type { FusionRun } from "@/store/fusion"
+import type { FusionOutcome } from "@/lib/retro"
 import type { DeliveryRecord } from "@/lib/recall"
 import type { CumulativeUsage } from "@/lib/usage"
 import { planUsageRecompute, recomputeSummary } from "@/lib/usage"
@@ -505,6 +506,53 @@ export async function loadFusionRuns(convId: string): Promise<unknown[]> {
     )
     return rows.map((r) => JSON.parse(r.data))
   } catch {
+    return []
+  }
+}
+
+/** Disputas arquivadas desde `sinceMs`, reduzidas ao que a retrospectiva
+ *  precisa (quem venceu e o custo de cada candidato). O `created_at` da linha é
+ *  o instante em que a disputa foi ARQUIVADA, não o do lançamento: pra uma
+ *  janela de 30 dias a diferença é irrelevante, e é o único carimbo que a
+ *  tabela tem. JSON com shape inesperado é descartado (fail-open na leitura:
+ *  uma linha ilegível não pode derrubar a tela inteira). */
+export async function listFusionOutcomes(
+  sinceMs: number,
+): Promise<FusionOutcome[]> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    const rows = await db.select<{ data: string; created_at: number }[]>(
+      "SELECT data, created_at FROM fusion_runs WHERE created_at >= $1 ORDER BY created_at ASC",
+      [sinceMs],
+    )
+    const out: FusionOutcome[] = []
+    for (const r of rows) {
+      try {
+        const raw = JSON.parse(r.data) as {
+          chosenId?: unknown
+          candidates?: unknown
+        }
+        if (!Array.isArray(raw.candidates)) continue
+        out.push({
+          createdAt: r.created_at,
+          chosenId: typeof raw.chosenId === "string" ? raw.chosenId : null,
+          candidates: raw.candidates.map((c) => {
+            const cand = (c ?? {}) as Record<string, unknown>
+            return {
+              id: typeof cand.id === "string" ? cand.id : "",
+              agent: typeof cand.agent === "string" ? cand.agent : "",
+              costUsd: typeof cand.costUsd === "number" ? cand.costUsd : null,
+            }
+          }),
+        })
+      } catch (e) {
+        console.warn("[retro] disputa arquivada ilegível, ignorada", e)
+      }
+    }
+    return out
+  } catch (e) {
+    console.warn("[retro] falha ao ler as disputas arquivadas", e)
     return []
   }
 }
@@ -1050,6 +1098,63 @@ export async function listDeliveries(
 /** Entrega com o projeto dono — o Painel (F4) lista cross-projeto. */
 export interface RecentDelivery extends DeliveryRecord {
   projectId: string
+}
+
+/** Entregas de TODOS os projetos desde `sinceMs` (a retrospectiva do Painel).
+ *  Sem LIMIT de propósito: aqui o número é DENOMINADOR ("US$ X por entrega"),
+ *  e denominador cortado em silêncio é uma métrica que ninguém confere. */
+export async function listDeliveriesSince(
+  sinceMs: number,
+): Promise<RecentDelivery[]> {
+  const db = await getDb()
+  if (!db) return []
+  try {
+    await ensureLearningTables(db)
+    const rows = await db.select<(DeliveryRow & { project_id: string })[]>(
+      "SELECT id, project_id, task, plan_summary, files_touched, cost_usd, agent, model, created_at FROM deliveries WHERE created_at >= $1 ORDER BY created_at DESC",
+      [sinceMs],
+    )
+    return rows.map((r) => ({ ...toDelivery(r), projectId: r.project_id }))
+  } catch {
+    return []
+  }
+}
+
+/** Quantas conversas NASCERAM desde `sinceMs` (a contagem da retrospectiva).
+ *  null = sem banco ou falha de leitura: a UI omite a contagem em vez de
+ *  mostrar "0 conversas", que seria mentira com cara de dado. */
+export async function countConversationsSince(
+  sinceMs: number,
+): Promise<number | null> {
+  const db = await getDb()
+  if (!db) return null
+  try {
+    const rows = await db.select<{ n: number }[]>(
+      "SELECT COUNT(*) AS n FROM conversations WHERE created_at >= $1",
+      [sinceMs],
+    )
+    return rows[0]?.n ?? 0
+  } catch (e) {
+    console.warn("[retro] falha ao contar conversas", e)
+    return null
+  }
+}
+
+/** Quantas regras de aprendizado estão ATIVAS (cross-projeto). Contagem baixa
+ *  não é feature morta; o app deixar de contar é que seria esquecê-la. */
+export async function countActiveLessons(): Promise<number | null> {
+  const db = await getDb()
+  if (!db) return null
+  try {
+    await ensureLearningTables(db)
+    const rows = await db.select<{ n: number }[]>(
+      "SELECT COUNT(*) AS n FROM lessons WHERE status = 'active'",
+    )
+    return rows[0]?.n ?? 0
+  } catch (e) {
+    console.warn("[retro] falha ao contar aprendizados", e)
+    return null
+  }
 }
 
 /** Entregas mais recentes de TODOS os projetos (Painel, bloco "Entregas

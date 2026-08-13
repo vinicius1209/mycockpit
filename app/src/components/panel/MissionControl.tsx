@@ -1,24 +1,30 @@
-// F4 — Painel (mission control): o centro de controle cross-projeto.
-// Anatomia: (1) instrumento de frota (gasto hoje/7d/30d, sparkline, custo por
-// agente); (2) AÇÕES — atalhos Nova missão/disputa/feature; (3) Board de
-// intenção; (4) ENTREGAS — ledger discreto com o custo da semana; (5) FROTA
-// (detalhe) — CLIs + versões + agendadas, seção compacta fixa no rodapé. No
-// primeiro load, as entregas mostram skeleton; refreshes seguintes (30s)
-// atualizam em silêncio.
+// Painel — a RETROSPECTIVA (ADR-040, direção E dos mocks).
 //
-// A fila "Precisam de você" SAIU daqui (ADR-040): ela virou a faixa do chrome
-// (components/decisions/DecisionStrip), visível de qualquer superfície. Uma
-// aba não compra visibilidade — no instante em que você troca pro Trabalho, a
-// fila que mora numa aba deixa de existir.
+// O que esta tela é: auditoria. Poucos números, muito ar, e um mapa de onde o
+// dinheiro queimou. O que ela NÃO é mais: a fila de decisões (foi pro chrome,
+// em components/decisions/DecisionStrip — uma aba não compra visibilidade) e o
+// Board de intenção (zero card em uso real; a intenção de trabalho já existe
+// como conversa, entrega e plano de voo).
+//
+// Anatomia, de cima pra baixo:
+//  1. hero do gasto da janela (o 30px volta a ser o dinheiro, e aqui está
+//     certo: numa tela de auditoria o gasto É a manchete);
+//  2. três derivados em 20px, cada um com a RESSALVA DE MÉTODO em 11px;
+//  3. mapa de calor de US$ por hora (14 dias × hora) — medidor, régua do §2;
+//  4. custo por agente cruzado com as entregas do mesmo agente;
+//  5. as entregas da janela + o diagnóstico do denominador;
+//  6. gaveta (aprendizados, auditoria por turno, projetos);
+//  7. Frota (detalhe) — CLIs, sessões observadas no terminal e agendadas.
+//
+// Regras que a tela obedece: só número MEDIDO (nada de gráfico de tendência
+// com n=5, nada de streak — o app não mede isso); seção sem conteúdo não
+// renderiza título nem moldura; e todo derivado imprime o denominador.
 
 import { useEffect, useMemo, useState } from "react"
-import { Clock, FileText, Rocket, Swords } from "lucide-react"
+import { Clock } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useApp } from "@/store/app"
-import { useChat } from "@/store/chat"
-import { useFusion } from "@/store/fusion"
-import { useMission } from "@/store/mission"
 import { useSchedules } from "@/store/schedules"
 import { fmtUntilShort } from "@/lib/schedules"
 import {
@@ -31,22 +37,36 @@ import {
   visibleSessions,
 } from "@/lib/externalSessions"
 import {
-  listRecentDeliveries,
+  countActiveLessons,
+  countConversationsSince,
+  listDeliveriesSince,
+  listFusionOutcomes,
   loadLedger,
   type LedgerEntry,
   type RecentDelivery,
 } from "@/lib/db"
+import { ledgerTokens, windowRows } from "@/lib/panel"
 import {
-  costByAgent,
-  dailySpend,
-  ledgerTokens,
-  ledgerWindows,
-} from "@/lib/panel"
+  agentCross,
+  attributedShare,
+  discardedSpend,
+  heatFillPct,
+  heatTone,
+  hourlyHeatmap,
+  peakHour,
+  perDay,
+  perDelivery,
+  type FusionOutcome,
+} from "@/lib/retro"
 import { updateAvailable } from "@/lib/detect"
-import { BoardLane } from "@/components/panel/BoardLane"
 import { fmtAgo, fmtCost, fmtTokens } from "@/lib/format"
 import { CostAudit } from "@/components/panel/CostAudit"
 import { cn } from "@/lib/utils"
+
+const DAY_MS = 24 * 60 * 60 * 1000
+/** A janela do mapa de calor é fixa em 14 dias: é o recorte em que uma célula
+ *  de hora ainda é legível, e ele não muda com o seletor da tela. */
+const HEATMAP_DAYS = 14
 
 /** Cor categórica por agente: Claude=brass, Codex=azul (st-running),
  *  Antigravity=violeta de identidade. O verde saiu daqui porque cor de
@@ -63,66 +83,6 @@ function agentShort(id: string): string {
   return { "claude-code": "Claude Code", codex: "Codex", agy: "Antigravity" }[id] ?? id
 }
 
-/** Sparkline de barras do gasto diário (últimos N dias, hoje em brass). Não
- *  inventa porcentagem — é o gasto real por dia, escala pelo pico. */
-function Sparkline({ data }: { data: number[] }) {
-  const max = Math.max(...data, 0.000001)
-  return (
-    <div className="flex h-11 items-end gap-[3px]" aria-hidden>
-      {data.map((v, i) => (
-        <span
-          key={i}
-          className={cn(
-            "min-w-[3px] flex-1 rounded-t-[2px]",
-            i === data.length - 1 ? "bg-brass" : "bg-muted-foreground/25",
-          )}
-          style={{ height: `${Math.max(6, (v / max) * 100)}%` }}
-        />
-      ))}
-    </div>
-  )
-}
-
-/** Leitura de instrumento: micro-label mono + valor grande tabular. */
-function Readout({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="rounded-lg border border-border/60 bg-card/30 px-3.5 py-2.5">
-      <div className="label-mono">{label}</div>
-      <div className="mt-1.5 font-mono text-[20px] font-semibold tabular-nums tracking-[-0.01em]">
-        {children}
-      </div>
-    </div>
-  )
-}
-
-/** Abre a conversa dona do objeto vivo (turno/missão/disputa) no Trabalho. */
-async function openConv(projectId: string, convId: string) {
-  const app = useApp.getState()
-  app.setActiveProject(projectId)
-  await useChat.getState().openProject(projectId)
-  await useChat.getState().switchConversation(convId)
-  app.setViewMode("linear")
-}
-
-const SEP = ","
-const split = (key: string) => (key ? key.split(SEP) : [])
-
-type LiveKind = "turno" | "missão" | "disputa"
-
-interface LiveRow {
-  convId: string
-  projectId: string
-  projectName: string
-  title: string
-  kind: LiveKind
-}
-
 /** CLIs da seção Frota (detalhe) — mesmos rótulos das Configurações ▸ Agents. */
 const CLI_TOOLS: { id: string; label: string }[] = [
   { id: "claude-code", label: "Claude Code" },
@@ -130,22 +90,12 @@ const CLI_TOOLS: { id: string; label: string }[] = [
   { id: "agy", label: "Antigravity" },
 ]
 
-/** Título de uma seção do painel — mesmo label-mono das Sections do app. */
+/** Título de seção — mesmo label-mono das Sections do app. */
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="label-mono mb-1.5 px-1">{children}</h2>
+  return <h2 className="label-mono mb-2 px-1">{children}</h2>
 }
 
-function EmptyLine({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="px-1 py-2 text-[13px] text-muted-foreground/80">
-      {children}
-    </p>
-  )
-}
-
-/** Skeleton do primeiro load — linhas com pulse suave no lugar do conteúdo,
- *  pra fila/entregas não "pularem" na tela. Refreshes seguintes não passam
- *  por aqui (atualizam em silêncio). */
+/** Skeleton do primeiro load (refreshes seguintes atualizam em silêncio). */
 function SkeletonRows({ rows }: { rows: number }) {
   return (
     <div aria-hidden className="flex flex-col gap-2">
@@ -156,41 +106,72 @@ function SkeletonRows({ rows }: { rows: number }) {
   )
 }
 
-/** Atalho compacto e SEMPRE visível (ícone + label, ~36px) — os launchers
- *  do painel não somem mais quando a fila enche. */
-function QuickAction({
-  icon: Icon,
+/** Um derivado: valor em 20px (métrica de seção), rótulo em 13px e a RESSALVA
+ *  DE MÉTODO em 11px. A ressalva não é rodapé opcional: é o que separa um
+ *  número auditável de um veredito. */
+function Derived({
+  value,
   label,
-  onClick,
+  caveat,
 }: {
-  icon: React.ComponentType<{ className?: string }>
+  value: string
   label: string
-  onClick: () => void
+  caveat: string
 }) {
   return (
-    <button
-      onClick={onClick}
-      className="flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-secondary/20 px-3 text-[13px] font-medium text-foreground transition-colors hover:border-brass/50 hover:bg-accent/40"
-    >
-      <Icon className="size-3.5 text-brass" />
-      {label}
-    </button>
+    <div className="border-l border-border py-0.5 pl-3.5">
+      <div className="font-mono text-[20px] leading-tight font-semibold tabular-nums">
+        {value}
+      </div>
+      <div className="mt-1 text-[13px] text-muted-foreground">{label}</div>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-faint">{caveat}</p>
+    </div>
   )
 }
 
-/** Dot de estado: o sinal do painel. */
-function Dot({ tone }: { tone: "live" | "need" | "done" }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "size-2 shrink-0 rounded-full",
-        tone === "live" && "animate-cockpit-pulse bg-st-running",
-        tone === "need" && "bg-st-warning",
-        tone === "done" && "bg-st-success",
-      )}
-    />
+/** Uma linha da gaveta: o que NÃO virou tile de propósito (um "1" em 20px é
+ *  vaidade com cara de instrumento), mas continua contado. */
+function DrawerLine({
+  label,
+  value,
+  onClick,
+}: {
+  label: string
+  value: string
+  onClick?: () => void
+}) {
+  const content = (
+    <>
+      <span className="text-faint">›</span>
+      <span>{label}</span>
+      <span className="ml-auto font-mono text-[12px] text-faint tabular-nums">
+        {value}
+      </span>
+    </>
   )
+  const base =
+    "flex w-full items-center gap-2.5 rounded-md px-1.5 py-1.5 text-left text-[13px] text-muted-foreground"
+  return onClick ? (
+    <button
+      onClick={onClick}
+      className={cn(base, "transition-colors hover:bg-accent/50 hover:text-foreground")}
+    >
+      {content}
+    </button>
+  ) : (
+    <div className={base}>{content}</div>
+  )
+}
+
+/** O fundo de uma célula do mapa: cinza-rampa até 60% do pico, âmbar de 60 a
+ *  80, vermelho acima (a régua ÚNICA de medidor, lib/meter.ts). */
+function cellBackground(value: number, peak: number): string {
+  const tone = heatTone(value, peak)
+  if (tone === "none")
+    return "color-mix(in srgb, var(--muted-foreground) 8%, transparent)"
+  if (tone === "warn") return "var(--st-queued)"
+  if (tone === "danger") return "var(--st-error)"
+  return `color-mix(in srgb, var(--muted-foreground) ${heatFillPct(value, peak)}%, transparent)`
 }
 
 export function MissionControl() {
@@ -203,92 +184,56 @@ export function MissionControl() {
   // Agents com rate limit atingido (cross-conversa, efêmero: marcado por
   // limit_reached, curado por result ok) — a FROTA mostra o posto bloqueado.
   const limitedAgents = useApp((s) => s.limitedAgents)
-  // Ref do MAPA inteiro (estável entre updates) — nunca um objeto derivado novo.
-  const convsByProject = useChat((s) => s.conversationsByProject)
 
-  // Regras duras: selectors devolvem STRINGS estáveis (padrão useRunningConvIds
-  // do Sidebar) — só mudam em transição de estado, não a cada delta de stream.
-  const runningKey = useChat((s) =>
-    Object.entries(s.byId)
-      .filter(([, c]) => c.running)
-      .map(([id]) => id)
-      .sort()
-      .join(SEP),
-  )
-  const missionKey = useMission((s) =>
-    Object.entries(s.byConv)
-      .filter(([, m]) => m.status === "running")
-      .map(([id]) => id)
-      .sort()
-      .join(SEP),
-  )
-  const fusionLiveKey = useFusion((s) =>
-    Object.entries(s.byConv)
-      .filter(
-        ([, f]) =>
-          f.phase === "running" ||
-          f.phase === "judging" ||
-          f.phase === "promoting",
-      )
-      .map(([id]) => id)
-      .sort()
-      .join(SEP),
-  )
+  /** Janela da retrospectiva. O dado é carregado SEMPRE em 30 dias (a maior);
+   *  trocar pra 7 d é recorte em memória, nunca uma ida nova ao banco. */
+  const [win, setWin] = useState<7 | 30>(30)
 
-  // Strip de frota — turnos + missões + disputas vivas, cross-projeto.
-  // Detalhes (projectId/task/prompt) lidos via getState() DENTRO do memo: são
-  // imutáveis por run, e as keys acima disparam o recompute nas transições.
-  const liveRows = useMemo<LiveRow[]>(() => {
-    const projName = new Map(projects.map((p) => [p.id, p.name]))
-    const byId = useChat.getState().byId
-    const titleOf = (convId: string, projectId: string) =>
-      convsByProject[projectId]?.find((c) => c.id === convId)?.title ??
-      "Conversa"
-    const rows: LiveRow[] = []
-    const push = (convId: string, kind: LiveKind, title?: string | null) => {
-      const projectId = byId[convId]?.projectId
-      if (!projectId) return
-      rows.push({
-        convId,
-        projectId,
-        projectName: projName.get(projectId) ?? "projeto",
-        title: title || titleOf(convId, projectId),
-        kind,
-      })
-    }
-    for (const id of split(runningKey)) push(id, "turno")
-    for (const id of split(missionKey))
-      push(id, "missão", useMission.getState().byConv[id]?.task)
-    for (const id of split(fusionLiveKey))
-      push(id, "disputa", useFusion.getState().byConv[id]?.prompt)
-    return rows
-  }, [runningKey, missionKey, fusionLiveKey, projects, convsByProject])
-
-  // Varreduras assíncronas (SQL + fs) — só em useEffect com cancelamento,
-  // ao montar e num refresh leve a cada 30s (interval limpo no unmount).
-  // `loaded` vira true quando a 1ª varredura completa (skeleton → conteúdo);
-  // nunca volta a false — refreshes seguintes atualizam em silêncio.
-  const [deliveries, setDeliveries] = useState<RecentDelivery[]>([])
-  // Ledger de custo dos últimos 30d (turn_costs: chat + disputa + fases de
-  // missão desde o MH2.1; + etapas SDD) — alimenta o instrumento de frota
-  // (gasto hoje/7d/30d, sparkline, custo por agente).
+  // Varreduras assíncronas (SQL) — em useEffect com cancelamento, ao montar e
+  // num refresh leve a cada 30s. `loaded` vira true quando a 1ª varredura
+  // completa (skeleton → conteúdo) e nunca volta a false.
   const [ledger, setLedger] = useState<LedgerEntry[]>([])
+  const [deliveries, setDeliveries] = useState<RecentDelivery[]>([])
+  const [fusions, setFusions] = useState<FusionOutcome[]>([])
+  const [convCounts, setConvCounts] = useState<{
+    d7: number | null
+    d30: number | null
+  }>({ d7: null, d30: null })
+  const [lessons, setLessons] = useState<number | null>(null)
   const [loaded, setLoaded] = useState(false)
-  // S4.3: "Pedir proposta ao lead" (BoardLane) bumpa o tick pra proposta nova
-  // aparecer na fila JÁ, sem esperar o refresh de 30s.
-  const [refreshTick, setRefreshTick] = useState(0)
+
   useEffect(() => {
     let cancelled = false
     const refresh = () => {
-      // entregas = a LISTA de entregas recentes (custo vem do ledger acima;
-      // desde o MH2.1 deliveries é registro de entrega, não fonte de custo).
-      const deliveriesP = listRecentDeliveries(60).then((d) => {
-        if (!cancelled) setDeliveries(d)
-      })
-      const ledgerP = loadLedger(Date.now() - 30 * 24 * 60 * 60 * 1000).then((l) => {
+      const now = Date.now()
+      const since30 = now - 30 * DAY_MS
+      const ledgerP = loadLedger(since30).then((l) => {
         if (!cancelled) setLedger(l)
       })
-      void Promise.allSettled([deliveriesP, ledgerP]).then(() => {
+      // entregas = registro de ENTREGA (o custo vem do ledger; desde o MH2.1
+      // deliveries deixou de ser fonte de custo pra não contar em dobro).
+      const deliveriesP = listDeliveriesSince(since30).then((d) => {
+        if (!cancelled) setDeliveries(d)
+      })
+      const fusionsP = listFusionOutcomes(since30).then((f) => {
+        if (!cancelled) setFusions(f)
+      })
+      const convP = Promise.all([
+        countConversationsSince(since30),
+        countConversationsSince(now - 7 * DAY_MS),
+      ]).then(([d30, d7]) => {
+        if (!cancelled) setConvCounts({ d7, d30 })
+      })
+      const lessonsP = countActiveLessons().then((n) => {
+        if (!cancelled) setLessons(n)
+      })
+      void Promise.allSettled([
+        ledgerP,
+        deliveriesP,
+        fusionsP,
+        convP,
+        lessonsP,
+      ]).then(() => {
         if (!cancelled) setLoaded(true)
       })
     }
@@ -298,43 +243,54 @@ export function MissionControl() {
       cancelled = true
       clearInterval(timer)
     }
-  }, [projects, refreshTick])
+  }, [])
 
-  // Custo por janela (hoje / 7d) — alimenta o strip, o Launchpad e o título
-  // das Entregas.
-  // Métricas do instrumento de frota (ledger unificado). now no deps p/ o memo
-  // recomputar no refresh de 30s; o ledger muda de referência a cada load.
-  const fleet = useMemo(() => {
+  // Todo o recorte da janela num memo só: as agregações varrem o ledger UMA
+  // vez por carga (e por troca de janela), nunca por render.
+  const view = useMemo(() => {
     const now = Date.now()
-    const daily = dailySpend(ledger, 14, now)
-    const today = daily[daily.length - 1] ?? 0
-    const yesterday = daily[daily.length - 2] ?? 0
+    const start = now - win * DAY_MS
+    const rows = windowRows(ledger, win === 7 ? "7d" : "30d", now)
+    const total = rows.reduce((s, r) => s + (r.costUsd ?? 0), 0)
+    const dels = deliveries.filter((d) => d.createdAt >= start && d.createdAt <= now)
+    const runs = fusions.filter((f) => f.createdAt >= start && f.createdAt <= now)
     return {
-      win: ledgerWindows(ledger, now),
-      byAgent: costByAgent(ledger),
-      daily,
-      tokens: ledgerTokens(ledger),
-      delta: yesterday > 0 ? (today - yesterday) / yesterday : null,
+      total,
+      rows,
+      deliveries: dels,
+      discarded: discardedSpend(runs),
+      disputes: runs.length,
+      projects: new Set(rows.map((r) => r.projectId)),
+      byAgent: agentCross(rows, dels),
+      attributed: attributedShare(total, dels),
+      tokens: ledgerTokens(rows),
+      perDay: perDay(total, win),
+      perDelivery: perDelivery(total, dels.length),
     }
-  }, [ledger])
-  const windows = fleet.win
-  const hasDeliveries = deliveries.length > 0
-  const shownDeliveries = useMemo(() => deliveries.slice(0, 8), [deliveries])
+  }, [ledger, deliveries, fusions, win])
+
+  // O mapa de calor é sempre de 14 dias, independente do seletor.
+  const heat = useMemo(
+    () => hourlyHeatmap(ledger, HEATMAP_DAYS, Date.now()),
+    [ledger],
+  )
+  const hottest = useMemo(() => peakHour(heat), [heat])
+
   const projectNames = useMemo(
     () => new Map(projects.map((p) => [p.id, p.name])),
     [projects],
   )
+  const spentProjects = useMemo(
+    () =>
+      [...view.projects]
+        .map((id) => projectNames.get(id) ?? "projeto")
+        .sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [view.projects, projectNames],
+  )
 
-  const missionCount = liveRows.filter((r) => r.kind === "missão").length
-  const [expand, setExpand] = useState<"all" | "missão" | null>(null)
   const [auditOpen, setAuditOpen] = useState(false)
-  const expandedRows =
-    expand === "missão"
-      ? liveRows.filter((r) => r.kind === "missão")
-      : liveRows
 
-  // F6 — as 2 PRÓXIMAS agendadas (habilitadas, com next_run) pro Launchpad.
-  // O array do store é ref estável; a derivação fica no memo (não no selector).
+  // F6 — as 2 PRÓXIMAS agendadas (habilitadas, com next_run).
   const allSchedules = useSchedules((s) => s.schedules)
   const upcoming = useMemo(
     () =>
@@ -345,109 +301,192 @@ export function MissionControl() {
     [allSchedules],
   )
 
-  // "Nova missão"/"Nova disputa": cria uma CONVERSA NOVA no projeto ativo (os
-  // launchers moram no composer de uma conversa) e pede a abertura do dialog
-  // via contador. Antes só trocava pro Trabalho — caía na conversa ativa
-  // antiga, que era exatamente o bug reportado.
-  async function goNewWork(kind: "mission" | "fusion") {
-    const app = useApp.getState()
-    const projectId = app.activeProjectId ?? app.projects[0]?.id
-    if (!projectId) return
-    await useChat.getState().newConversation(projectId)
-    app.setViewMode("linear")
-    if (kind === "mission") app.requestMissionLaunch()
-    else app.requestFusionLaunch()
-  }
-  function goNewFeature() {
-    const app = useApp.getState()
-    app.setViewMode("sdd")
-    app.requestSddCreate()
-  }
+  const convCount = win === 7 ? convCounts.d7 : convCounts.d30
+  // corte ANUNCIADO: lista cortada em silêncio é o começo de um número que
+  // ninguém confere.
+  const shownDeliveries = view.deliveries.slice(0, 12)
+  const hiddenDeliveries = view.deliveries.length - shownDeliveries.length
+
+  const subline = [
+    convCount != null ? `${convCount} conversa${convCount === 1 ? "" : "s"}` : null,
+    `${view.deliveries.length} entrega${view.deliveries.length === 1 ? "" : "s"} registrada${view.deliveries.length === 1 ? "" : "s"}`,
+    view.disputes > 0
+      ? `${view.disputes} disputa${view.disputes === 1 ? "" : "s"}`
+      : null,
+    view.projects.size > 0
+      ? `${view.projects.size} projeto${view.projects.size === 1 ? "" : "s"}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
 
   return (
     <ScrollArea className="h-full w-full bg-background">
-      <div className="mx-auto flex w-full max-w-[900px] flex-col gap-8 px-8 pt-8 pb-14">
-        <div className="flex flex-col gap-2">
-          {/* 1. Instrumento de frota — gasto hoje + sparkline + readouts +
-              custo por agente. O gasto agora é o REAL (turnos de chat +
-              missões), não só missões. */}
-          <section aria-label="Frota">
-          <div className="rounded-xl border border-border/60 bg-card/30 p-4">
-            <div className="flex items-start justify-between gap-6">
-              <div className="min-w-0">
-                <div className="label-mono">Gasto hoje</div>
-                <div className="mt-1.5 flex items-baseline gap-2.5">
-                  <span className="font-mono text-[30px] leading-none font-semibold tracking-[-0.02em] tabular-nums">
-                    {fmtCost(windows.today)}
-                  </span>
-                  {fleet.delta != null && (
-                    <span className="font-mono text-[12px] text-muted-foreground">
-                      {fleet.delta >= 0 ? "▲" : "▼"}{" "}
-                      {Math.abs(Math.round(fleet.delta * 100))}% vs ontem
-                    </span>
-                  )}
-                </div>
-                <div className="mt-3">
-                  {liveRows.length === 0 ? (
-                    <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
+      <div className="mx-auto flex w-full max-w-[940px] flex-col gap-7 px-8 pt-7 pb-14">
+        <div className="flex items-center gap-3">
+          <h1 className="text-[20px] leading-tight font-semibold tracking-[-0.01em]">
+            Retrospectiva
+          </h1>
+          <div className="ml-auto flex items-center gap-0.5 rounded-lg border p-0.5">
+            {([7, 30] as const).map((d) => (
+              <button
+                key={d}
+                onClick={() => setWin(d)}
+                className={cn(
+                  "rounded-md px-2.5 py-0.5 text-[11px] transition-colors",
+                  win === d
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {d} d
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {!loaded ? (
+          <SkeletonRows rows={4} />
+        ) : (
+          <>
+            {/* 1. HERO — numa tela de auditoria, o gasto É a manchete. */}
+            <section aria-label="Gasto na janela">
+              <div className="flex flex-wrap items-end gap-3">
+                <span className="font-mono text-[30px] leading-none font-semibold tracking-[-0.02em] tabular-nums">
+                  {fmtCost(view.total)}
+                </span>
+                <span className="label-mono pb-1">em {win} dias</span>
+              </div>
+              <p className="mt-2 text-[13px] text-muted-foreground">{subline}</p>
+            </section>
+
+            {/* 2. TRIO DERIVADO — cada um com o denominador à vista. */}
+            <section aria-label="Derivados" className="grid gap-3 sm:grid-cols-3">
+              <Derived
+                value={view.perDay != null ? fmtCost(view.perDay) : "—"}
+                label="por dia"
+                caveat={`${fmtCost(view.total)} ÷ ${win}. O número de orçamento, o único que não depende de nada além do ledger.`}
+              />
+              <Derived
+                value={
+                  view.perDelivery != null ? fmtCost(view.perDelivery) : "—"
+                }
+                label="por entrega registrada"
+                caveat={
+                  view.perDelivery != null
+                    ? `${fmtCost(view.total)} ÷ ${view.deliveries.length}. Mede eficiência e disciplina de registro juntas: conversa que virou código sem virar entrega não entra no denominador.`
+                    : "Nenhuma entrega registrada nesta janela, então não existe denominador. O app não divide por zero pra ter um número."
+                }
+              />
+              <Derived
+                value={
+                  view.discarded.disputes > 0
+                    ? fmtCost(view.discarded.costUsd)
+                    : "—"
+                }
+                label="no lado descartado"
+                caveat={
+                  view.discarded.disputes > 0
+                    ? `Soma dos turnos do agent que você não escolheu em ${view.discarded.disputes} disputa${view.discarded.disputes === 1 ? "" : "s"} julgada${view.discarded.disputes === 1 ? "" : "s"}. É o único desperdício que o app consegue provar.`
+                    : "Nenhuma disputa julgada nesta janela. Desperdício provável não vira número: só o lado descartado de uma disputa é demonstrável."
+                }
+              />
+            </section>
+
+            {/* 3. MAPA DE CALOR — só existe se alguém gastou algo. */}
+            {heat.total > 0 && (
+              <section aria-label="Mapa de calor de custo por hora">
+                <SectionTitle>
+                  Onde o dinheiro queimou · {HEATMAP_DAYS} dias × hora
+                </SectionTitle>
+                <div className="flex flex-col gap-[3px]">
+                  {heat.days.map((day) => (
+                    <div key={day.dayStart} className="flex items-center gap-[3px]">
+                      <span className="w-[46px] shrink-0 font-mono text-[11px] text-faint tabular-nums">
+                        {day.label}
+                      </span>
+                      {day.hours.map((v, h) => (
+                        <span
+                          key={h}
+                          title={`${day.label}, ${String(h).padStart(2, "0")}h · ${v > 0 ? fmtCost(v) : "sem gasto"}`}
+                          className="h-4 min-w-[6px] flex-1 rounded-[3px]"
+                          style={{ background: cellBackground(v, heat.peak) }}
+                        />
+                      ))}
+                      <span className="w-[56px] shrink-0 pl-1.5 text-right font-mono text-[11px] text-faint tabular-nums">
+                        {day.total > 0 ? fmtCost(day.total) : ""}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-[3px]">
+                    <span className="w-[46px] shrink-0" />
+                    {Array.from({ length: 24 }, (_, h) => (
                       <span
-                        aria-hidden
-                        className="size-2 shrink-0 rounded-full border border-muted-foreground/50"
-                      />
-                      Frota parada
+                        key={h}
+                        className="min-w-[6px] flex-1 text-center font-mono text-[11px] text-faint tabular-nums"
+                      >
+                        {h % 6 === 0 ? String(h).padStart(2, "0") : ""}
+                      </span>
+                    ))}
+                    <span className="w-[56px] shrink-0" />
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-[12px] text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      className="inline-block h-2.5 w-3.5 rounded-[2px]"
+                      style={{ background: cellBackground(0, heat.peak) }}
+                    />
+                    sem gasto
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      className="inline-block h-2.5 w-3.5 rounded-[2px]"
+                      style={{ background: cellBackground(heat.peak * 0.3, heat.peak) }}
+                    />
+                    até {fmtCost(heat.peak * 0.6)}/h
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      className="inline-block h-2.5 w-3.5 rounded-[2px]"
+                      style={{ background: "var(--st-queued)" }}
+                    />
+                    {fmtCost(heat.peak * 0.6)} a {fmtCost(heat.peak * 0.8)}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      className="inline-block h-2.5 w-3.5 rounded-[2px]"
+                      style={{ background: "var(--st-error)" }}
+                    />
+                    daí pra cima
+                  </span>
+                  <span className="font-mono text-[11px] text-faint tabular-nums">
+                    pico {fmtCost(heat.peak)}/h · 60% e 80% do pico, a régua de
+                    medidor do §2
+                  </span>
+                </div>
+                {hottest && (
+                  <p className="mt-2.5 px-1 text-[13px] text-muted-foreground">
+                    Hora mais cara:{" "}
+                    <span className="text-foreground">
+                      {hottest.dayLabel}, {String(hottest.hour).padStart(2, "0")}h
+                    </span>{" "}
+                    <span className="font-mono tabular-nums">
+                      {fmtCost(hottest.costUsd)}
                     </span>
-                  ) : (
-                    <button
-                      onClick={() => setExpand(expand === "all" ? null : "all")}
-                      className="flex items-center gap-2 text-[13px] text-foreground transition-colors hover:text-brass"
-                    >
-                      <Dot tone="live" />
-                      {liveRows.length} em voo
-                      {missionCount > 0 && (
-                        <span className="text-muted-foreground">
-                          · {missionCount}{" "}
-                          {missionCount === 1 ? "missão" : "missões"}
-                        </span>
-                      )}
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="w-[42%] max-w-[280px] shrink-0">
-                <div className="flex items-baseline justify-between">
-                  <span className="label-mono">Gasto diário</span>
-                  <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
-                    14 d
-                  </span>
-                </div>
-                <div className="mt-2">
-                  <Sparkline data={fleet.daily} />
-                </div>
-              </div>
-            </div>
+                    , {Math.round(hottest.shareOfDay * 100)}% do dia inteiro.
+                  </p>
+                )}
+              </section>
+            )}
 
-            <div className="mt-4 grid grid-cols-4 gap-2">
-              <Readout label="7 dias">{fmtCost(windows.week)}</Readout>
-              <Readout label="30 dias">{fmtCost(windows.month)}</Readout>
-              <Readout label="Tokens 30d">{fmtTokens(fleet.tokens)}</Readout>
-              <Readout label="Média/dia">{fmtCost(windows.week / 7)}</Readout>
-            </div>
-
-            {fleet.byAgent.length > 0 && (
-              <div className="mt-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="label-mono">
-                    Custo por agente · 30 dias
-                  </span>
-                  <button
-                    onClick={() => setAuditOpen(true)}
-                    className="text-[11px] font-medium text-brass transition-opacity hover:opacity-80"
-                  >
-                    auditoria →
-                  </button>
-                </div>
-                <div className="flex h-2.5 gap-[3px]">
-                  {fleet.byAgent.map((a) => (
+            {/* 4. POR AGENTE — custo sozinho não decide nada; ao lado das
+                entregas do mesmo agent, vira pergunta respondível. */}
+            {view.byAgent.length > 0 && (
+              <section aria-label="Custo por agente">
+                <SectionTitle>Por agente · {win} dias</SectionTitle>
+                <div className="flex h-2 gap-[3px]">
+                  {view.byAgent.map((a) => (
                     <span
                       key={a.agent}
                       className="rounded-[3px]"
@@ -458,113 +497,126 @@ export function MissionControl() {
                     />
                   ))}
                 </div>
-                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
-                  {fleet.byAgent.map((a) => (
-                    <span
+                <div className="mt-3 flex flex-col gap-1.5">
+                  {view.byAgent.map((a) => (
+                    <div
                       key={a.agent}
-                      className="flex items-center gap-2 text-[12px]"
+                      className="flex items-center gap-2.5 px-1 text-[13px]"
                     >
                       <span
-                        className="size-2 shrink-0 rounded-full"
+                        aria-hidden
+                        className="size-2 shrink-0 rounded-[2px]"
                         style={{ background: agentColor(a.agent) }}
                       />
-                      {agentShort(a.agent)}
-                      <span className="font-mono text-[12px] text-muted-foreground tabular-nums">
-                        {fmtCost(a.costUsd)} · {Math.round(a.share * 100)}%
+                      <span className="min-w-0 flex-1 truncate">
+                        {agentShort(a.agent)}
                       </span>
-                    </span>
+                      <span className="shrink-0 font-mono text-[12px] text-muted-foreground tabular-nums">
+                        {fmtCost(a.costUsd)}
+                      </span>
+                      <span className="w-[210px] shrink-0 text-right font-mono text-[12px] text-faint tabular-nums">
+                        {a.perDelivery != null
+                          ? `${a.deliveries} entrega${a.deliveries === 1 ? "" : "s"} · ${fmtCost(a.perDelivery)} cada`
+                          : "sem entrega registrada"}
+                      </span>
+                    </div>
                   ))}
                 </div>
-              </div>
+              </section>
             )}
-          </div>
-          {expand && expandedRows.length > 0 && (
-            <div className="mt-1 flex flex-col gap-px">
-              {expandedRows.map((r) => (
-                <button
-                  key={`${r.kind}:${r.convId}`}
-                  onClick={() => void openConv(r.projectId, r.convId)}
-                  className="group flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/50"
-                >
-                  <Dot tone="live" />
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
-                    {r.title}
-                  </span>
-                  <span className="shrink-0 text-[12px] text-muted-foreground">
-                    {r.projectName}
-                  </span>
-                  <span className="label-mono shrink-0 text-muted-foreground/70">
-                    {r.kind}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-          </section>
 
-          {/* 2. Ações — atalhos compactos, SEMPRE visíveis */}
-          <section aria-label="Ações">
-            <div className="flex flex-wrap items-center gap-2">
-              <QuickAction
-                icon={Rocket}
-                label="Nova missão"
-                onClick={() => void goNewWork("mission")}
+            {/* 5. ENTREGAS — a lista É o gráfico enquanto o dado não sustentar
+                um: barras de n=5 desenham ruído amostral com cara de
+                tendência. A régua fica escrita, não implícita. */}
+            <section aria-label="Entregas">
+              <SectionTitle>
+                {view.deliveries.length > 0
+                  ? `As ${view.deliveries.length} entregas · ${win} dias`
+                  : `Entregas · ${win} dias`}
+              </SectionTitle>
+              {view.deliveries.length === 0 ? (
+                <p className="px-1 text-[13px] text-muted-foreground">
+                  Nenhuma entrega registrada nesta janela. Sem elas, o custo por
+                  entrega acima fica sem denominador.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-px">
+                    {shownDeliveries.map((d) => (
+                      <div
+                        key={d.id}
+                        className="flex w-full items-center gap-3 rounded-md px-2.5 py-2"
+                      >
+                        {/* Entrega concluída é ESTADO AMBIENTE: cinza. Verde é
+                            marco de turno no fio, nunca dot permanente (§2). */}
+                        <span
+                          aria-hidden
+                          className="size-1.5 shrink-0 rounded-full bg-st-idle"
+                        />
+                        <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+                          {d.task}
+                        </span>
+                        <span className="shrink-0 text-[12px] text-muted-foreground">
+                          {projectNames.get(d.projectId) ?? "projeto"}
+                        </span>
+                        <span className="w-[76px] shrink-0 text-right font-mono text-[12px] text-muted-foreground tabular-nums">
+                          {fmtCost(d.costUsd ?? undefined)}
+                        </span>
+                        <span className="w-[56px] shrink-0 text-right font-mono text-[11px] text-faint tabular-nums">
+                          {fmtAgo(Date.now() - d.createdAt)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {hiddenDeliveries > 0 && (
+                    <p className="mt-1.5 px-2.5 text-[12px] text-muted-foreground">
+                      e mais {hiddenDeliveries} nesta janela
+                    </p>
+                  )}
+                  {view.attributed && (
+                    <p className="mt-3 px-1 text-[13px] leading-relaxed text-muted-foreground">
+                      <span className="font-medium text-foreground">
+                        {fmtCost(view.attributed.costUsd)} dos{" "}
+                        {fmtCost(view.total)} (
+                        {(view.attributed.share * 100).toFixed(1).replace(".", ",")}
+                        %)
+                      </span>{" "}
+                      estão atribuídos a uma entrega registrada. O resto está em
+                      conversa que ninguém fechou. Isso não é um julgamento do
+                      trabalho, é um diagnóstico do denominador.
+                    </p>
+                  )}
+                </>
+              )}
+            </section>
+
+            {/* 6. GAVETA — o que não virou tile de propósito. */}
+            <div className="flex flex-col gap-0.5 border-t pt-3">
+              {lessons != null && (
+                <DrawerLine
+                  label="Aprendizados"
+                  value={`${lessons} regra${lessons === 1 ? "" : "s"} ativa${lessons === 1 ? "" : "s"}`}
+                />
+              )}
+              <DrawerLine
+                label="Tokens e auditoria por turno"
+                value={`${fmtTokens(view.tokens)} tokens · abrir`}
+                onClick={() => setAuditOpen(true)}
               />
-              <QuickAction
-                icon={Swords}
-                label="Nova disputa"
-                onClick={() => void goNewWork("fusion")}
-              />
-              <QuickAction
-                icon={FileText}
-                label="Nova feature"
-                onClick={goNewFeature}
-              />
+              {spentProjects.length > 0 && (
+                <DrawerLine
+                  label="Projetos com gasto na janela"
+                  value={spentProjects.join(" · ")}
+                />
+              )}
             </div>
-          </section>
-        </div>
+          </>
+        )}
 
-        {/* E1 (S1.5) — Board de intenção: entre AÇÕES e PRECISAM DE VOCÊ.
-            S4.3: proposta nova do lead re-escaneia a fila na hora. */}
-        <BoardLane onProposal={() => setRefreshTick((t) => t + 1)} />
-
-        {/* 4. Entregas — ledger discreto, custo da semana no título */}
-        <section aria-label="Entregas">
-          <SectionTitle>
-            Entregas
-            {hasDeliveries && ` · ${fmtCost(windows.week)} esta semana`}
-          </SectionTitle>
-          {!loaded ? (
-            <SkeletonRows rows={3} />
-          ) : shownDeliveries.length === 0 ? (
-            <EmptyLine>Nenhuma entrega registrada ainda.</EmptyLine>
-          ) : (
-            <div className="flex flex-col gap-px">
-              {shownDeliveries.map((d) => (
-                <div
-                  key={d.id}
-                  className="flex w-full items-center gap-3 rounded-md px-3 py-2.5"
-                >
-                  <Dot tone="done" />
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
-                    {d.task}
-                  </span>
-                  <span className="shrink-0 text-[12px] text-muted-foreground">
-                    {projectNames.get(d.projectId) ?? "projeto"}
-                  </span>
-                  <span className="shrink-0 text-[12px] text-muted-foreground tabular-nums">
-                    {fmtCost(d.costUsd ?? undefined)}
-                  </span>
-                  <span className="shrink-0 text-[11px] text-muted-foreground/60">
-                    {fmtAgo(Date.now() - d.createdAt)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* 5. Frota (detalhe) — CLIs + versões + agendadas, fixo no rodapé */}
+        {/* 7. Frota (detalhe) — CLIs + sessões observadas + agendadas. Fica no
+            Painel de propósito, mesmo fora do mock: é o único lugar onde o
+            estado real das CLIs e das sessões vistas pelos hooks aparece, e
+            §1 diz que a UI mostra o estado real da frota. */}
         <section
           aria-label="Frota (detalhe)"
           className="rounded-lg border border-border/60 bg-card/30 px-4 py-3"
@@ -608,9 +660,7 @@ export function MissionControl() {
                       logado{p.detail ? ` (${p.detail})` : ""}
                     </span>
                   )}
-                  {noAuth && (
-                    <span className="text-st-warning">sem login</span>
-                  )}
+                  {noAuth && <span className="text-st-warning">sem login</span>}
                   {authUnknown && (
                     <span className="text-st-warning">auth desconhecida</span>
                   )}
@@ -629,8 +679,7 @@ export function MissionControl() {
             })}
             {CLI_TOOLS.every((t) => !detected[t.id]?.installed) && (
               <li className="text-[13px] text-muted-foreground">
-                Nenhuma CLI detectada ainda. Verifique em Configurações ▸
-                Agents.
+                Nenhuma CLI detectada ainda. Verifique em Configurações ▸ Agents.
               </li>
             )}
           </ul>
@@ -694,11 +743,11 @@ export function MissionControl() {
                       onClick={() => useApp.getState().setScheduledOpen(true)}
                       className="flex w-full items-center gap-2.5 rounded px-1 py-0.5 text-left text-[13px] transition-colors hover:bg-accent/50"
                     >
-                      <Clock className="size-3.5 shrink-0 text-brass/80" />
+                      <Clock className="size-3.5 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 truncate text-foreground">
                         {s.name}
                       </span>
-                      <span className="shrink-0 text-[12px] text-muted-foreground tabular-nums">
+                      <span className="shrink-0 font-mono text-[12px] text-muted-foreground tabular-nums">
                         em {fmtUntilShort((s.nextRun ?? 0) - Date.now())}
                       </span>
                     </button>
