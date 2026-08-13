@@ -863,13 +863,32 @@ export function reduceItems(
     // H2, delta em streaming: acumula na bolha corrente (cria se não houver).
     case "text_delta": {
       if (c.streamingTextId) {
-        return {
-          items: c.items.map((it) =>
-            it.id === c.streamingTextId && it.kind === "text"
-              ? { ...it, text: it.text + e.text }
-              : it,
-          ),
+        // A bolha viva é o item mais RECENTE do fio, e este é o reducer mais
+        // quente do app (roda por token). O `items.map` de antes pagava uma
+        // varredura do fio inteiro — closure, comparação de id e teste de kind
+        // em cada um dos milhares de itens — para trocar UM. Busca de trás pra
+        // frente (acha na 1ª iteração no caso normal) e troca só o índice alvo.
+        //
+        // A imutabilidade que o React precisa continua a mesma: array novo,
+        // item novo. O que NÃO muda é a identidade dos outros itens, que já era
+        // preservada pelo `map` (ele devolvia `it`) e vários memos a jusante
+        // dependem disso. Shape de `items` intocado.
+        let alvo = -1
+        for (let i = c.items.length - 1; i >= 0; i--) {
+          if (c.items[i].id === c.streamingTextId) {
+            alvo = i
+            break
+          }
         }
+        const it = alvo >= 0 ? c.items[alvo] : null
+        // Bolha apontada mas ausente (ou de outro kind): nada a atualizar, e
+        // devolver o fio intocado é exatamente o que o `map` já fazia — ele
+        // reconstruía um array de conteúdo idêntico. Sem array novo, ninguém a
+        // jusante recalcula à toa.
+        if (!it || it.kind !== "text") return {}
+        const items = c.items.slice()
+        items[alvo] = { ...it, text: it.text + e.text }
+        return { items }
       }
       const id = uid()
       return {
