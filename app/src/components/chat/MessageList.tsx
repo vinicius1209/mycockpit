@@ -2626,8 +2626,6 @@ function useStableHandler<T>(
   return fn ? stable : undefined
 }
 
-export { feedbackTextByResult } from "./threadWindow"
-
 export function MessageList({
   items,
   running,
@@ -2687,12 +2685,14 @@ export function MessageList({
   // CHAT_WINDOW nós (agrupamento preservado) + botão pra revelar o histórico.
   const [showAll, setShowAll] = useState(false)
   const hiddenCount = showAll ? 0 : Math.max(0, nodes.length - CHAT_WINDOW)
-  const visible = hiddenCount > 0 ? nodes.slice(hiddenCount) : nodes
-
+  const visible = useMemo(
+    () => (hiddenCount > 0 ? nodes.slice(hiddenCount) : nodes),
+    [nodes, hiddenCount],
+  )
   // Agrupamento estilo Slack: nós contíguos do mesmo autor viram um grupo
-  // (avatar/cabeçalho uma vez). `lastKey` mantém o "último nó do run roda" —
-  // agora comparado por key, não por índice, porque o nó vive dentro do grupo.
-  const groups = groupByAuthor(visible)
+  // (avatar/cabeçalho uma vez), casado por key e não por índice. Memoizado:
+  // `groups` é dependência de `tsById`, e array novo por RENDER refazia a busca.
+  const groups = useMemo(() => groupByAuthor(visible), [visible])
   const lastKey = visible.length ? visible[visible.length - 1].key : null
 
   // A janela corta NÓS; as derivações abaixo consomem ITENS. `windowStart` é a

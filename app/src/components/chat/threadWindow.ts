@@ -18,7 +18,14 @@ import type { ChatItem } from "@/store/chat"
  *  - `firstVisibleKey` nula (nada visível) → `items.length`, fatia vazia.
  *  - chave desconhecida (nó sem item correspondente, histórico curado) → `0`,
  *    ou seja, o comportamento de hoje. Degradar pro fio inteiro custa tempo;
- *    degradar pra fatia curta esconderia informação. */
+ *    degradar pra fatia curta esconderia informação.
+ *
+ *  **Pré-condição: `id` de item é ÚNICO no fio.** Vale hoje por construção (o
+ *  reducer carimba `uid()`, um uuid, em todo item), e a busca de trás pra frente
+ *  devolve a ocorrência MAIS RECENTE. Com id repetido, a fatia começaria DEPOIS
+ *  do nó que a pediu, que é justamente a direção proibida (informação sumindo da
+ *  tela em vez de lentidão). Se um dia ids puderem repetir, esta função vira
+ *  busca da PRIMEIRA ocorrência, não uma otimização a mais. */
 export function windowStartIndex(
   items: ChatItem[],
   firstVisibleKey: string | null | undefined,
@@ -66,7 +73,14 @@ export function tsForGroups(
  *
  *  Acumuladores por turno (`feedbackTextByResult`) zeram em cada item do
  *  usuário: começar a varredura no início do turno dá EXATAMENTE o mesmo
- *  resultado para tudo que vem de `from` em diante, sem varrer o que veio antes. */
+ *  resultado para tudo que vem de `from` em diante, sem varrer o que veio antes.
+ *
+ *  **Acoplamento declarado:** o predicado daqui (`kind === "user"`) é o MESMO
+ *  que zera o acumulador em `feedbackTextByResult`, e as duas funções só podem
+ *  mudar juntas. Reduzir o reset de lá (zerar em mais um tipo de item, por
+ *  exemplo) sem mexer aqui faria este ponto de partida cair no meio de um estado
+ *  que ele não reconstrói. O teste
+ *  "o ponto de partida zera o acumulador" trava o par. */
 export function turnStartIndex(items: ChatItem[], from: number): number {
   for (let i = Math.min(from, items.length - 1); i >= 0; i--) {
     if (items[i].kind === "user") return i
@@ -79,7 +93,11 @@ export function turnStartIndex(items: ChatItem[], from: number): number {
  * principal.
  *
  * `from` é o início do TURNO que contém a janela (ver `turnStartIndex`): o mapa
- * sai idêntico para todo resultado dali em diante, que é tudo que a tela lê. */
+ * sai idêntico para todo resultado dali em diante, que é tudo que a tela lê.
+ *
+ * O item que ZERA o acumulador aqui (`kind === "user"`) é o mesmo que
+ * `turnStartIndex` procura. Mexer neste predicado sem mexer no de lá quebra a
+ * equivalência silenciosamente: o mapa continua saindo, com o texto errado. */
 export function feedbackTextByResult(
   items: ChatItem[],
   from = 0,

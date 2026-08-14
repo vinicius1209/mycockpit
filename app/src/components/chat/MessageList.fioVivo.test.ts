@@ -1,12 +1,8 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
-import {
-  MessageList,
-  buildToolForest,
-  feedbackTextByResult,
-  type FeedbackApi,
-} from "./MessageList"
+import { MessageList, buildToolForest, type FeedbackApi } from "./MessageList"
+import { feedbackTextByResult } from "./threadWindow"
 import type { ChatItem } from "@/store/chat"
 
 function tool(

@@ -83,6 +83,18 @@ describe("windowStartIndex — onde a fatia começa", () => {
     const items = fio(2)
     expect(windowStartIndex(items, null)).toBe(items.length)
   })
+
+  it("pré-condição: id de item é único (com repetido, a fatia começaria tarde)", () => {
+    // O reducer carimba `uid()` em todo item, então isto vale por construção.
+    const items = fio(4)
+    expect(new Set(items.map((i) => i.id)).size).toBe(items.length)
+    // E é por isso que a pré-condição importa: a busca é de trás pra frente,
+    // então um id repetido devolveria a ocorrência MAIS RECENTE e a fatia
+    // começaria DEPOIS do nó que a pediu — a direção proibida (dado sumindo da
+    // tela). Fixado aqui pra ninguém descobrir isso em produção.
+    const repetido: ChatItem[] = [...items, { ...items[0] }]
+    expect(windowStartIndex(repetido, items[0].id)).toBe(repetido.length - 1)
+  })
 })
 
 describe("a fatia cobre o que a janela mostra", () => {
@@ -176,6 +188,37 @@ describe("turnStartIndex", () => {
       { kind: "result", id: "r0", ok: true, text: "" },
     ]
     expect(turnStartIndex(items, 1)).toBe(0)
+  })
+
+  // ACOPLAMENTO NÃO DECLARADO até 14/08/2026: `turnStartIndex` e
+  // `feedbackTextByResult` compartilham o predicado de reset (`kind === "user"`)
+  // e só podem mudar juntas. Enfraquecer o reset de lá (zerar em menos casos)
+  // faz este ponto de partida cair no meio de um estado que ele não reconstrói,
+  // e o sintoma é texto de feedback ERRADO, não erro. Este caso é exaustivo em
+  // `from`, de propósito: é a amarra, não um exemplo.
+  it("o ponto de partida zera o acumulador para TODO índice do fio", () => {
+    const items = [
+      ...fio(5),
+      // um turno com prosa em vários pedaços e dois results, pra que o
+      // acumulador tenha o que perder se o reset mudar.
+      { kind: "user", id: "ux", text: "de novo" } as ChatItem,
+      { kind: "text", id: "tx1", text: "primeiro" } as ChatItem,
+      { kind: "text", id: "tx2", text: "segundo" } as ChatItem,
+      { kind: "result", id: "rx", ok: true, text: "" } as ChatItem,
+    ]
+    const inteiro = feedbackTextByResult(items)
+    const indice = new Map(items.map((it, i) => [it.id, i] as const))
+    for (let from = 0; from < items.length; from++) {
+      const inicio = turnStartIndex(items, from)
+      expect(inicio).toBeLessThanOrEqual(from)
+      // o índice devolvido É um ponto de reset (ou o começo do fio).
+      expect(inicio === 0 || items[inicio].kind === "user").toBe(true)
+      const escopado = feedbackTextByResult(items, inicio)
+      for (const [id, texto] of inteiro) {
+        if (indice.get(id)! < from) continue
+        expect(escopado.get(id), `result ${id} a partir de ${from}`).toBe(texto)
+      }
+    }
   })
 })
 
