@@ -31,8 +31,11 @@ const MATRIZ: Record<
   // documentado) e funciona em sessão NOVA, mas no `exec resume` a instrução
   // original venceu a nova (empírico 03/08/2026) → sem canal são por spawn.
   codex: { systemChannel: false, sessionResume: true, contextMcp: true },
-  // agy 1.1.9: sem canal, sem resume no print mode, sem MCP.
-  agy: { systemChannel: false, sessionResume: false, contextMcp: false },
+  // agy 1.1.13: sem canal system (o `--help` não expõe outro além do `-p`) e
+  // sem MCP por-run (só config global). Resume SIM: `--conversation <ID>`
+  // continuou a conversa (step_index 6→8 e o modelo lembrou o turno anterior,
+  // medido 14/08/2026).
+  agy: { systemChannel: false, sessionResume: true, contextMcp: false },
 }
 
 describe("canais e continuidade por agent (espelho das capabilities do Rust)", () => {

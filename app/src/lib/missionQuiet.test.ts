@@ -39,10 +39,15 @@ function fase(agent: string, over: Partial<MissionPhaseRun> = {}): MissionPhaseR
 }
 
 describe("quem narra ação por ação (capability, nunca nome)", () => {
-  it("claude e codex narram; agy não", () => {
+  // O agy ERA o exemplo vivo de motor calado. Desde a 1.1.13 ele narra
+  // (`--output-format stream-json`, medido 14/08/2026), então quem sustenta o
+  // ramo "não narra" é o motor ainda não integrado — que é exatamente o que o
+  // registry diz dele. A decisão continua saindo da capability, nunca do nome.
+  it("claude, codex e agy narram; motor não integrado, não", () => {
     expect(narratesActions("claude-code")).toBe(true)
     expect(narratesActions("codex")).toBe(true)
-    expect(narratesActions("agy")).toBe(false)
+    expect(narratesActions("agy")).toBe(true)
+    expect(narratesActions("opencode")).toBe(false)
   })
 
   it("motor fora do registry não promete narração", () => {
@@ -52,7 +57,15 @@ describe("quem narra ação por ação (capability, nunca nome)", () => {
 
 describe("declaração da fase NA FILA (a quietude vira contrato)", () => {
   it("motor que não reporta nada avisa antes de rodar", () => {
-    expect(queuedGranularityNote("agy")).toBe("não reporta ações nem custo")
+    expect(queuedGranularityNote("opencode")).toBe("não reporta ações nem custo")
+  })
+
+  // O agy saiu deste ramo e entrou no do codex: narra ação a ação, mas não
+  // entrega dólar (o custo dele sai estimado por tokens, agy 1.1.13).
+  it("o agy passou a declarar só o custo, como o codex", () => {
+    expect(queuedGranularityNote("agy")).toBe(
+      "não reporta custo (o valor sai estimado)",
+    )
   })
 
   it("motor que narra mas não dá dólar declara só o custo", () => {

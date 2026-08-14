@@ -115,8 +115,16 @@ describe("shouldAttachResumeFallback (MyCockpit resume)", () => {
     expect(shouldAttachResumeFallback("claude-code", items, null)).toBe(false)
   })
 
-  it("agy nunca anexa (já tem a memória própria em todo turno)", () => {
-    expect(shouldAttachResumeFallback("agy", items, "sess-1")).toBe(false)
+  // O agy ERA o caso "nunca anexa": sem resume, ele já levava memória própria
+  // em todo turno. Com o `--conversation <ID>` da 1.1.13 ele entrou na regra
+  // geral — e o fallback importa MAIS nele que nos outros, porque o agy ignora
+  // id inexistente e abre conversa nova em silêncio (ver AGY_CAPS).
+  it("agy anexa como claude/codex desde que ganhou resume", () => {
+    expect(shouldAttachResumeFallback("agy", items, "sess-1")).toBe(true)
+  })
+
+  it("motor sem resume nunca anexa (não há resume que possa falhar)", () => {
+    expect(shouldAttachResumeFallback("opencode", items, "sess-1")).toBe(false)
   })
 })
 

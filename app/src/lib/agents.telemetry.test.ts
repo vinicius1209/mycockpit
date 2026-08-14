@@ -15,8 +15,10 @@ const MATRIZ: Record<string, { structuredOutput: boolean; reportsCost: boolean }
     // codex 0.147: `exec --json` é JSONL de eventos, mas sem dólar (o custo
     // sai estimado por tokens).
     codex: { structuredOutput: true, reportsCost: false },
-    // agy 1.1.13: o `-p` que o app roda devolve TEXTO puro, e nada de usage.
-    agy: { structuredOutput: false, reportsCost: false },
+    // agy 1.1.13: o `-p` que o app roda é `--output-format stream-json`, um
+    // step por ação (14/08/2026). Dólar segue sem existir em evento nenhum: o
+    // custo do agy sai estimado por tokens, como o do codex.
+    agy: { structuredOutput: true, reportsCost: false },
   }
 
 describe("telemetria e custo por motor (espelho do registry Rust)", () => {

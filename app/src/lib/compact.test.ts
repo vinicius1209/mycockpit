@@ -41,8 +41,8 @@ describe("planCompact — decisão por capability", () => {
     ).toEqual({ mode: "renew" })
   })
 
-  it("motor sem sessionResume (agy) → nada a compactar, com motivo honesto (renovar seria teatro pago)", () => {
-    const plan = planCompact("agy", {
+  it("motor sem sessionResume → nada a compactar, com motivo honesto (renovar seria teatro pago)", () => {
+    const plan = planCompact("opencode", {
       hasExecutorTurn: true,
       sessionId: null,
     })
@@ -131,8 +131,11 @@ describe("copy honesta (pt-BR, sem travessão)", () => {
   it("compactActionHint explica o que VAI acontecer conforme o motor", () => {
     expect(compactActionHint("claude-code")).toContain("compacta a própria sessão")
     expect(compactActionHint("codex")).toContain("renova a sessão com um resumo")
-    expect(compactActionHint("agy")).toContain("sessão fresca")
-    for (const agent of ["claude-code", "codex", "agy"]) {
+    // agy 1.1.13 retoma sessão, então caiu no mesmo caminho do codex:
+    // renovação com resumo, não "sessão fresca" (medido 14/08/2026).
+    expect(compactActionHint("agy")).toContain("renova a sessão com um resumo")
+    expect(compactActionHint("opencode")).toContain("sessão fresca")
+    for (const agent of ["claude-code", "codex", "agy", "opencode"]) {
       expect(compactActionHint(agent)).not.toContain("—")
     }
   })

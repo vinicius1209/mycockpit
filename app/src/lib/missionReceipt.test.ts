@@ -84,13 +84,18 @@ describe("recibo colapsado · a ordem é fixa e o resumo É a informação", () 
 })
 
 describe("recibo de motor que não narra", () => {
+  // Era o agy até a 1.1.9. Desde a 1.1.13 ele narra e mede (stream-json,
+  // medido 14/08/2026), então quem sustenta este ramo é o motor ainda não
+  // integrado — a decisão sai da capability, nunca do nome.
   it("diz 'sem ações relatadas' em vez de fingir zero ações", () => {
     const r = phaseReceipt(
-      fase({ startedAt: 0, endedAt: 483_000, items: [] }, "agy"),
+      fase({ startedAt: 0, endedAt: 483_000, items: [] }, "opencode"),
     )
     expect(r.impact).toBe("sem ações relatadas")
     expect(r.cost).toBe("não mede")
-    expect(receiptLine(r)).toBe("sem ações relatadas · 8min 03s · não mede · agy")
+    expect(receiptLine(r)).toBe(
+      "sem ações relatadas · 8min 03s · não mede · OpenCode",
+    )
   })
 })
 

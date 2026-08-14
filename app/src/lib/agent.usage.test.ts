@@ -118,8 +118,10 @@ describe("baseline de usage acumulado (ADR-033)", () => {
       cached_input: 9984,
       output: 6,
     })
-    // a consulta é por capability, nunca por nome fixo de motor.
-    expect(h.loads[0].agents).toEqual(["codex"])
+    // A consulta é por capability, nunca por nome fixo de motor — e a prova é
+    // que a lista CRESCEU sozinha quando o agy 1.1.13 passou a reportar
+    // acumulado da conversa (medido 14/08/2026), sem tocar neste caminho.
+    expect(h.loads[0].agents).toEqual(["codex", "agy"])
     expect(h.baselines.get("t-1")?.input).toBe(35005)
   })
 

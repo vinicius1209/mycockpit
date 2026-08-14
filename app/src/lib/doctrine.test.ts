@@ -66,9 +66,16 @@ describe("shouldInjectDoctrine (decisão por capability, H1/H5)", () => {
     expect(shouldInjectDoctrine("codex", true, false)).toBe(true)
   })
 
-  it("agy recebe em TODO turno (não tem resume; o recap não carrega o prefixo)", () => {
-    expect(shouldInjectDoctrine("agy", true, true)).toBe(true)
-    expect(shouldInjectDoctrine("agy", false, false)).toBe(true)
+  // O agy ERA o exemplo de "todo turno". Com o resume da 1.1.13 ele passou a
+  // seguir a cadência do codex: uma vez por sessão, e o resume carrega. Quem
+  // sustenta o ramo "todo turno" é motor sem resume declarado ou desconhecido.
+  it("agy segue a cadência do codex desde que ganhou resume", () => {
+    expect(shouldInjectDoctrine("agy", true, true)).toBe(false)
+  })
+
+  it("motor sem resume recebe em TODO turno (o recap não carrega o prefixo)", () => {
+    expect(shouldInjectDoctrine("opencode", true, true)).toBe(true)
+    expect(shouldInjectDoctrine("opencode", false, false)).toBe(true)
   })
 
   it("motor desconhecido: todo turno (fail-open da doutrina, sem prometer resume)", () => {

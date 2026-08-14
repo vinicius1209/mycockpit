@@ -13,9 +13,18 @@ describe("buildExecutionPrompt", () => {
     expect(buildExecutionPrompt("claude-code", "1. fazer X")).toBe(p)
     expect(buildExecutionPrompt("codex", "1. fazer X")).toBe(p)
   })
-  it("agy (sem resume): embute o texto do plano no prompt", () => {
+  // O agy ERA o exemplo de motor sem resume. Desde a 1.1.13 ele retoma
+  // (`--conversation <ID>`, medido 14/08/2026), então o plano viaja no resume
+  // e o embed vira redundância — quem sustenta o ramo do embed é o motor sem
+  // resume declarado, logo abaixo.
+  it("agy: o resume preserva o plano, como claude/codex", () => {
+    expect(buildExecutionPrompt("agy", "1. fazer X")).toBe(
+      "Plano aprovado. Execute todas as etapas agora.",
+    )
+  })
+  it("motor sem resume: embute o texto do plano no prompt", () => {
     const plan = "1. criar arquivo\n2. rodar testes"
-    expect(buildExecutionPrompt("agy", plan)).toBe(
+    expect(buildExecutionPrompt("opencode", plan)).toBe(
       `Plano aprovado — execute-o agora:\n\n${plan}`,
     )
   })
@@ -31,11 +40,12 @@ describe("buildExecutionPrompt", () => {
 })
 
 describe("needsPlanEmbedded (capability sessionResume, H5)", () => {
-  it("motor sem resume (agy) e desconhecido embutem; claude/codex não", () => {
-    expect(needsPlanEmbedded("agy")).toBe(true)
+  it("motor sem resume e desconhecido embutem; quem retoma, não", () => {
+    expect(needsPlanEmbedded("opencode")).toBe(true)
     expect(needsPlanEmbedded("motor-novo")).toBe(true)
     expect(needsPlanEmbedded("claude-code")).toBe(false)
     expect(needsPlanEmbedded("codex")).toBe(false)
+    expect(needsPlanEmbedded("agy")).toBe(false)
   })
 })
 

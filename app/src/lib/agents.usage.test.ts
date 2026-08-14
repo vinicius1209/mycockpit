@@ -15,8 +15,10 @@ const MATRIZ: Record<string, boolean> = {
   // codex 0.146: `turn.completed.usage` é o total da THREAD — dois turnos
   // triviais no mesmo thread via resume deram input 17494 → 35005 (04/08/2026).
   codex: true,
-  // agy: stdout de texto puro, sem usage nenhum.
-  agy: false,
+  // agy 1.1.13: `result.usage` também é o total da CONVERSA — dois turnos na
+  // mesma conversa deram input 33000 → 50586, e o step novo custou 17586, a
+  // diferença exata (medido nos dois caminhos de resume em 14/08/2026).
+  agy: true,
 }
 
 describe("usage acumulado por thread (espelho do registry Rust)", () => {
@@ -42,6 +44,6 @@ describe("usage acumulado por thread (espelho do registry Rust)", () => {
   })
 
   it("a lista de motores afetados sai do registry, nunca de nome fixo", () => {
-    expect(cumulativeUsageAgents().map((a) => a.id)).toEqual(["codex"])
+    expect(cumulativeUsageAgents().map((a) => a.id)).toEqual(["codex", "agy"])
   })
 })

@@ -14,6 +14,7 @@ import {
   resolveFirstTurnPersona,
   warnPresetDrift,
 } from "@/lib/presets"
+import { agentDef } from "@/lib/agents"
 import { exportConvContext } from "@/lib/transcript"
 import type { ChatItem, ConvState, QueuedMsg } from "@/store/chat"
 import {
@@ -128,10 +129,16 @@ vi.mock("@/lib/transcript", () => ({
     (_items: unknown, pointer: string | null, prompt: string) =>
       `[memória-agy|${pointer ?? "sem-ponteiro"}] ${prompt}`,
   ),
-  // mesma regra da função real (pura): claude/codex com histórico + sessão
+  // mesma regra da função real (pura): motor com a capability `sessionResume`,
+  // conversa com histórico e sessionId. O dublê consulta o REGISTRY, nunca o
+  // nome — era `agent !== "agy"` e virou mentira no dia em que o agy 1.1.13
+  // ganhou `--conversation <ID>` (14/08/2026), que é justamente o motivo de a
+  // casa proibir comparar nome de motor.
   shouldAttachResumeFallback: vi.fn(
     (agent: string, items: unknown[], sessionId: string | null) =>
-      agent !== "agy" && items.length > 0 && sessionId != null,
+      (agentDef(agent)?.sessionResume ?? false) &&
+      items.length > 0 &&
+      sessionId != null,
   ),
   buildResumeFallback: vi.fn(() => "[fallback-resume]"),
 }))
@@ -409,14 +416,28 @@ describe("sendFromDesk — coreografia do run", () => {
     expect(call[6]).toBe("/proj")
   })
 
-  it("memória do agy injetada no prompt (recap + ponteiro exportado)", async () => {
-    arm(makeConv({ agent: "agy", items: [user("antes")] }))
+  // A memória SINTÉTICA do H5 (recap + ponteiro embutidos no prompt) existe
+  // para motor SEM resume nativo, decidida pela capability `sessionResume`.
+  // O agy era o único caso vivo até a 1.1.13 ganhar `--conversation <ID>`
+  // (medido 14/08/2026) — e hoje NENHUM motor despachável cai nesse ramo (o
+  // único registrado sem resume é o não integrado, que o dispatchBlockReason
+  // barra antes). O ramo segue no send.ts porque é o default fail-closed do
+  // próximo motor, e a COMPOSIÇÃO dele segue testada em transcript.test.ts
+  // (`buildMemoryPrompt`) e trust.test.ts. O que se afirma aqui é o outro
+  // lado: motor COM resume não recebe memória sintética nenhuma.
+  it("agy passou a usar o resume nativo: prompt limpo, sem memória sintética", async () => {
+    arm(makeConv({ agent: "agy", sessionId: "conv-agy-1", items: [user("antes")] }))
     await sendFromDesk({ ...args, agent: "agy" })
-    expect(exportConvContext).toHaveBeenCalledWith("/proj", "c1", "# transcript")
     const call = vi.mocked(runAgent).mock.calls[0]
-    expect(call[5]).toBe("[memória-agy|.mycockpit/context/conv.md] olá")
-    // agy não leva fallback de resume (não tem resume nativo)
-    expect(call[12]).toBeNull()
+    expect(call[5]).toBe("olá")
+    expect(call[7]).toBe("conv-agy-1")
+    // o transcript pleno continua sendo exportado (agora pelo caminho do
+    // fallback de resume, não pelo da memória sintética).
+    expect(exportConvContext).toHaveBeenCalledWith("/proj", "c1", "# transcript")
+    // …e o fallback de resume passa a valer pra ele: o agy ignora id que não
+    // existe e abre conversa nova em silêncio, então o recap tem que estar
+    // pronto pro restart (ver AGY_CAPS em adapters.rs).
+    expect(call[12]).toBeTruthy()
   })
 
   // ── Doutrina do projeto (.mycockpit/instructions.md) ──
@@ -566,7 +587,7 @@ describe("sendFromDesk — lições (M2)", () => {
     expect(vi.mocked(runAgent).mock.calls[0][5]).toBe("olá")
   })
 
-  it("memória do agy envolve o prompt JÁ com as lições (mesma ordem do app)", async () => {
+  it("no agy as lições entram no prompt sem envelope de memória sintética", async () => {
     vi.mocked(buildLearningBlocks).mockResolvedValueOnce({
       recall: null,
       lessons: "## Lições",
@@ -574,9 +595,7 @@ describe("sendFromDesk — lições (M2)", () => {
     })
     arm(makeConv({ agent: "agy", items: [user("antes")] }))
     await sendFromDesk({ ...args, agent: "agy" })
-    expect(vi.mocked(runAgent).mock.calls[0][5]).toBe(
-      "[memória-agy|.mycockpit/context/conv.md] ## Lições\n\n---\n\nolá",
-    )
+    expect(vi.mocked(runAgent).mock.calls[0][5]).toBe("## Lições\n\n---\n\nolá")
   })
 })
 

@@ -32,10 +32,12 @@ describe("preço de interromper (por motor, do registry)", () => {
   it("motor que retoma sessão perde só o resto do turno", () => {
     expect(interruptPrice("claude-code")).toContain("retoma a sessão")
     expect(interruptPrice("codex")).toContain("retoma a sessão")
+    // agy 1.1.13: `--conversation <ID>` retoma de verdade (medido 14/08/2026).
+    expect(interruptPrice("agy")).toContain("retoma a sessão")
   })
 
   it("motor que NÃO retoma perde a fase inteira, e o texto diz isso", () => {
-    const p = interruptPrice("agy")
+    const p = interruptPrice("opencode")
     expect(p).toContain("não retoma sessão")
     expect(p).toContain("fase inteira do zero")
   })
