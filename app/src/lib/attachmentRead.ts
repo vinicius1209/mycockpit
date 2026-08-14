@@ -104,24 +104,33 @@ function sameLabels(a: ReadLabels, b: ReadLabels): boolean {
  *
  *  Semântica preservada: os selos continuam resolvidos num mapa por PATH (o
  *  último item com aquele path vence, como sempre foi) e só depois fatiados por
- *  item — nenhuma mensagem passa a mostrar rótulo diferente do de hoje. */
+ *  item — nenhuma mensagem passa a mostrar rótulo diferente do de hoje.
+ *
+ *  `from` escopa a varredura à FATIA que a janela de render pode mostrar. É
+ *  equivalente porque a fatia é um SUFIXO: o selo de um item dela é decidido
+ *  pelo ÚLTIMO item com aquele path, que nunca é anterior a ele. Itens fora da
+ *  fatia somem do mapa — são exatamente os que a tela não desenha. */
 export function attachmentReadsByItem(
   items: ChatItem[],
   agent: string,
   running: boolean,
   prev?: Map<string, ReadLabels>,
+  from = 0,
 ): Map<string, ReadLabels> {
+  const inicio = Math.max(0, from)
   const byPath: ReadLabels = {}
-  items.forEach((it, i) => {
-    if (it.kind !== "user" || !it.attachments?.length) return
+  for (let i = inicio; i < items.length; i++) {
+    const it = items[i]
+    if (it.kind !== "user" || !it.attachments?.length) continue
     for (const a of it.attachments) {
       byPath[a.path] = attachmentReadLabel(
         attachmentRead(items, i, a, agent, running),
       )
     }
-  })
+  }
   const out = new Map<string, ReadLabels>()
-  for (const it of items) {
+  for (let i = inicio; i < items.length; i++) {
+    const it = items[i]
     if (it.kind !== "user" || !it.attachments?.length) continue
     const fresh: ReadLabels = {}
     for (const a of it.attachments) fresh[a.path] = byPath[a.path]

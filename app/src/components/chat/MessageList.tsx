@@ -76,6 +76,12 @@ import {
   type ToolItem,
 } from "@/components/chat/messageNodes"
 import { groupByAuthor, groupTs, type MessageGroup } from "@/components/chat/messageGroups"
+import {
+  feedbackTextByResult,
+  turnStartIndex,
+  tsForGroups,
+  windowStartIndex,
+} from "@/components/chat/threadWindow"
 import { buildAdviceHandoffBlock } from "@/lib/advisor"
 import { shortDigest } from "@/lib/presets"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
@@ -2588,18 +2594,19 @@ function useStableNodes(items: ChatItem[]): Node[] {
 }
 
 /** Selos de leitura por item, com identidade preservada (ver
- *  `attachmentReadsByItem`). */
+ *  `attachmentReadsByItem`) e escopados à fatia que a janela mostra. */
 function useStableAttReads(
   items: ChatItem[],
   agent: string,
   running: boolean,
+  from: number,
 ): Map<string, ReadLabels> {
   const prev = useRef<Map<string, ReadLabels>>(new Map())
   return useMemo(() => {
-    const next = attachmentReadsByItem(items, agent, running, prev.current)
+    const next = attachmentReadsByItem(items, agent, running, prev.current, from)
     prev.current = next
     return next
-  }, [items, agent, running])
+  }, [items, agent, running, from])
 }
 
 /** Callback com IDENTIDADE fixa que sempre chama a versão mais recente.
@@ -2619,34 +2626,7 @@ function useStableHandler<T>(
   return fn ? stable : undefined
 }
 
-/** Contexto consolidado do executor para o feedback do resultado. Recomeça em
- * cada item do usuário; tools/subagentes não vazam como se fossem a resposta
- * principal. */
-export function feedbackTextByResult(items: ChatItem[]): Map<string, string> {
-  const out = new Map<string, string>()
-  let parts: string[] = []
-  let previousResult: string | null = null
-  for (const item of items) {
-    if (item.kind === "user") {
-      parts = []
-      previousResult = null
-      continue
-    }
-    if (item.kind === "text" && item.text.trim()) {
-      parts.push(item.text)
-      continue
-    }
-    if (item.kind === "result") {
-      // Alguns providers publicam envelopes parciais. Dentro do mesmo pedido,
-      // só o resultado mais recente é um alvo de feedback.
-      if (previousResult) out.delete(previousResult)
-      const joined = parts.join("\n\n").trim()
-      out.set(item.id, joined || item.text?.trim() || "")
-      previousResult = item.id
-    }
-  }
-  return out
-}
+export { feedbackTextByResult } from "./threadWindow"
 
 export function MessageList({
   items,
@@ -2697,17 +2677,10 @@ export function MessageList({
   const planView = useMemo(() => taskPlansOf(items), [items])
   const taskPlans = planView.plans
   const activePlanAnchor = running ? (planView.live?.anchorId ?? null) : null
-  const feedbackByResult = useMemo(() => feedbackTextByResult(items), [items])
   // Trabalho diferido VIVO (D1.3): alimenta a LINHA VIVA, dona única do "agora"
   // (background-status B2.2). Derivado de items — replay-safe, sem estado
   // paralelo: no restore o diferido vira interrompido e a linha some sozinha.
   const liveDeferred = useMemo(() => pendingDeferred(items), [items])
-  // Selo "lido / não foi aberto" por anexo. Calculado UMA vez aqui (varre o fio)
-  // e entregue pronto ao MessageItem: fazer dentro do item quebraria o memo dele
-  // a cada delta do streaming. Indexado POR ITEM e com a referência preservada
-  // enquanto os rótulos daquele item não mudam — sem isso o `memo` do
-  // MessageItem recebia um objeto novo por token e não memoizava nada.
-  const attReads = useStableAttReads(items, agent, running)
 
   // Janela de renderização: conversa longa (já vimos 665KB de items) renderizava
   // TUDO — com diffs abertos por padrão o DOM explodia. Mostra os últimos
@@ -2721,13 +2694,31 @@ export function MessageList({
   // agora comparado por key, não por índice, porque o nó vive dentro do grupo.
   const groups = groupByAuthor(visible)
   const lastKey = visible.length ? visible[visible.length - 1].key : null
-  // id → ts do item (o cabeçalho do grupo lê o ts do 1º item via a key do 1º nó,
-  // que buildNodes deriva do id desse item). Itens antigos sem `ts` → undefined,
-  // e o grupo omite a hora. Recalcula só quando o fio muda.
-  const tsById = useMemo(
-    () => new Map(items.map((it) => [it.id, it.ts] as const)),
-    [items],
+
+  // A janela corta NÓS; as derivações abaixo consomem ITENS. `windowStart` é a
+  // ponte: o índice do 1º item que um nó visível pode citar (ver threadWindow).
+  // Sem isso elas varriam os 1.885 itens do fio por token pra servir 150 nós.
+  const firstVisibleKey = visible.length ? visible[0].key : null
+  const windowStart = useMemo(
+    // Nada escondido (fio curto ou "mostrar anteriores" clicado) = a janela
+    // começa no 1º item; não há o que procurar.
+    () => (hiddenCount > 0 ? windowStartIndex(items, firstVisibleKey) : 0),
+    [items, firstVisibleKey, hiddenCount],
   )
+  const feedbackByResult = useMemo(
+    () => feedbackTextByResult(items, turnStartIndex(items, windowStart)),
+    [items, windowStart],
+  )
+  // Selo "lido / não foi aberto" por anexo. Calculado UMA vez aqui e entregue
+  // pronto ao MessageItem: fazer dentro do item quebraria o memo dele a cada
+  // delta do streaming. Indexado POR ITEM e com a referência preservada enquanto
+  // os rótulos daquele item não mudam — sem isso o `memo` do MessageItem
+  // recebia um objeto novo por token e não memoizava nada.
+  const attReads = useStableAttReads(items, agent, running, windowStart)
+  // id → ts APENAS dos itens que abrem grupo visível (o cabeçalho lê o ts do 1º
+  // item via a key do 1º nó, que buildNodes deriva do id desse item). Itens
+  // antigos sem `ts` → undefined, e o grupo omite a hora.
+  const tsById = useMemo(() => tsForGroups(items, groups), [items, groups])
   // Identidade fixa: estes cruzam o `memo` do ToolGroup/ToolLine.
   const stableStop = useStableHandler(onStop)
   const stableRetry = useStableHandler(onRetry)
