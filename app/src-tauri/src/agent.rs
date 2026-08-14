@@ -1289,12 +1289,24 @@ mod tests {
         }
     }
 
-    /// H2 — motor sem resume (agy): toda sessão é nova, o preâmbulo volta em
-    /// todo turno (custo honesto; não há alternativa sem canal nem resume).
+    /// H2 — motor sem canal E sem resume: toda sessão é nova, o preâmbulo
+    /// volta em todo turno (custo honesto; não há alternativa).
+    ///
+    /// As capabilities aqui são SINTÉTICAS de propósito. O agy era o exemplo
+    /// vivo desta terceira cadência até a 1.1.13 destravar
+    /// `--conversation <ID>` (medido 14/08/2026, ver AGY_CAPS) — e hoje nenhum
+    /// motor registrado cai neste ramo. O ramo continua no código porque o
+    /// próximo motor pode cair nele, então continua testado: amarrar o teste a
+    /// um agent registrado foi o que fez ele quebrar quando a VERDADE do CLI
+    /// mudou, sendo que o comportamento sob teste não mudou nada.
     #[test]
     fn preambulo_sem_resume_volta_em_todo_turno() {
-        let caps = crate::adapters::capabilities_of("agy").unwrap();
-        assert!(!caps.system_channel && !caps.session_resume);
+        let sem_canal_nem_resume = crate::adapters::Capabilities {
+            system_channel: false,
+            session_resume: false,
+            ..crate::adapters::AGY_CAPS
+        };
+        let caps = &sem_canal_nem_resume;
         let plan = plano_playwright();
         let last = plan.fingerprint();
         let (out, _) = compose_mcp_preamble(

@@ -457,24 +457,71 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     model_smoke: Some(ModelSmokeDialect::CodexExecJson),
 };
 
-/// agy 1.1.9 (re-checado 31/07/2026): sem canal MCP, sem resume exposto no
-/// print mode, stdout de texto puro, sem custo. Quase tudo false — e é isso
-/// que faz a UI degradar honesta em vez de fingir contrato uniforme (§7.1).
+/// agy 1.1.13 (auditado NESTA máquina em 14/08/2026, sondas cruas em
+/// `agy_stream` nos testes). A declaração de antes descrevia a 1.1.9 e ficou
+/// para trás: o `--output-format json|stream-json` da 1.1.12 destravou canal
+/// estruturado, usage e resume — três campos que estavam `false` por versão
+/// velha, não por medição. Cada campo abaixo cita a evidência e a data.
 pub const AGY_CAPS: Capabilities = Capabilities {
+    // agy 1.1.13: FALA MCP por dentro (a tool `call_mcp_tool` está na lista de
+    // 56 tools do evento `init`, capturado 14/08/2026), mas a configuração é
+    // GLOBAL e só por arquivo (`~/.gemini/config/mcp_config.json`) — o
+    // `--help` da 1.1.13 não tem nenhuma flag de config MCP por-run. Injetar
+    // servidor nosso exigiria reescrever o config do usuário, o oposto de
+    // "por-run". Fica false: o mc-work/mc-context nunca são prometidos, e o
+    // control plane de MCPs externos não roteia este motor.
     work_mcp: false,
     context_mcp: false,
     managed_mcp: false,
     mcp_launch_cwd: false,
     inline_interaction: false,
+    // agy 1.1.13: o stream tem `step_type: "tool"`, mas nada que sobreviva ao
+    // turno (nenhum evento de task/workflow em background nas sondas de
+    // 14/08/2026). `schedule` e `manage_task` existem como TOOLS, e enquanto
+    // não houver evento de ciclo de vida delas no stream, inventar nó diferido
+    // aqui seria teatro.
     deferred_work: false,
+    // agy 1.1.13: o CLI EXPANDE `/comando` em print mode — `agy -p "/credits"`
+    // devolveu `{"event":"command_result","command":{"name":"credits",…}}`
+    // (14/08/2026), e o `--help` tem `--disable-slash-commands` justamente
+    // para desligar isso. Segue `false` MESMO ASSIM, e por um motivo medido:
+    // não auditamos NENHUMA fonte de comando custom do agy (por isso
+    // `command_sources` vazio), e `native_slash` só muda comportamento para
+    // comando vindo da fonte NATIVA declarada. Declarar `true` com fonte
+    // nenhuma prometeria um caminho que não existe; a casa
+    // (`.mycockpit/commands`) o agy não conhece e segue expandindo app-side.
     native_slash: false,
     command_sources: &[],
-    session_resume: false,
+    // agy 1.1.13: `--conversation <ID>` retoma de verdade — o `conversation_id`
+    // sai no `init` de TODO run e, no resume, o `step_index` CONTINUA de onde
+    // parou (6→8 em vez de recomeçar em 0) e o modelo lembra o turno anterior
+    // (medido 14/08/2026). ⚠️ id inexistente NÃO falha: o agy escreve
+    // `warning: conversation "…" not found` no stderr e começa uma conversa
+    // NOVA em silêncio — por isso o adapter compara o id pedido com o id do
+    // `init` e emite SessionNotFound (senão o app acharia que tem contexto).
+    session_resume: true,
     system_channel: false,
-    structured_output: false,
+    // agy 1.1.13: `--output-format stream-json` é NDJSON, um objeto por linha,
+    // envelope `{"event": <nome>, <nome>: {…}}` (init | step_update | result |
+    // command_result). Capturado 14/08/2026; fixtures em `agy_stream`.
+    structured_output: true,
+    // agy 1.1.13: NENHUM campo de USD em nenhum evento (init/step_update/
+    // result) — só tokens. O custo do turno é ESTIMADO por tokens × tabela,
+    // igual ao codex; `reports_cost` é sobre USD REPORTADO, e não há.
     reports_cost: false,
-    // stdout de texto puro: não há usage nenhum, quanto mais acumulado.
-    cumulative_usage: false,
+    // agy 1.1.13: `result.usage` é o ACUMULADO DA CONVERSA, não do turno.
+    // Medido nos DOIS caminhos de resume em 14/08/2026 (a lição do ADR-033,
+    // cobrada antes de declarar): turno 1 input 43296 → turno 2 (`--continue`)
+    // 45684, e o step do turno 2 sozinho custou 2388 = a diferença EXATA;
+    // repetido com `--conversation` (33000 → 50586, step de 17586). O
+    // `num_turns` também acumula (1 → 2). Já o `step_update.usage` é
+    // INCREMENTAL, por step.
+    cumulative_usage: true,
+    // agy 1.1.13: `/compact` NÃO é comando nativo — `agy -p "/compact"` não
+    // devolveu `command_result` nenhum (o `/credits` devolve), o texto caiu no
+    // modelo como prompt qualquer e ele respondeu "It looks like you entered
+    // `/compact`… No manual command is required" (medido 14/08/2026). Sem
+    // compactação nativa, o `/compactar` do app segue na renovação com recap.
     native_compact: false,
     // agy 1.1.12: só `/credits` (saldo, sem % de janela nem reset —
     // verificado 12/08/2026). Saldo de créditos NÃO é janela de uso: None.
@@ -1930,40 +1977,262 @@ fn map_codex_item(
     }
 }
 
-// ---------------- Antigravity CLI (`agy -p`, print mode, NÃO-estruturado) ----------------
+// ---------------- Antigravity CLI (`agy -p --output-format stream-json`) ----------------
 //
-// O `agy` (sucessor do Gemini CLI) na v1.0.16 NÃO expõe `--output-format json`:
-// o print mode (`-p`) roda o loop de agente (edita arquivos, roda comandos) e
-// devolve só o TEXTO final no stdout. Então é o caso "agent sem JSON" que o
-// agent-runner.md previu (estratégia não-estruturada, gêmea do Aider): a UI
-// degrada graciosa (sem stream de tools, sem custo — reports_usage=false); a
-// observabilidade do que mudou vem do `git diff` na aba Alterações.
+// O `agy` (sucessor do Gemini CLI) ERA o caso "agent sem JSON" do
+// agent-runner.md: até a 1.1.9 o print mode devolvia texto puro e o adapter
+// tratava cada linha de stdout como fala do assistente. A 1.1.12 ganhou
+// `--output-format json|stream-json` e este adapter passou a ser ESTRUTURADO
+// (auditado na 1.1.13 em 14/08/2026; fixtures cruas em `agy_stream`).
 //
-// Achados verificados na máquina (agy 1.0.16):
-//   • `-p` SEM --add-dir edita um scratch isolado, NÃO o cwd → --add-dir <cwd> é
-//     OBRIGATÓRIO p/ ele mexer no repo real.
-//   • print mode + stdin null TRAVA esperando aprovação → --dangerously-skip-
-//     permissions é obrigatório p/ não pendurar.
-//   • stdout é texto puro (exit 0, sem stderr no caminho feliz).
-// Achado de 2026-07 (agy 1.1.7) que corrigiu uma premissa errada nossa:
-//   • ele LÊ imagem e PDF, pela ferramenta interna `view_file` (renderiza a
-//     página e faz OCR/visão). O anexo ficava desligado porque não há flag de
-//     imagem — e `-i` é `--prompt-interactive`, não `--image` (armadilha: quem
-//     assume paridade com o `-i` do Codex abre sessão interativa e trava sem
-//     TTY). Mas "sem flag" ≠ "não vê": o mecanismo é o do Claude — path
-//     absoluto no prompt + `--add-dir`. Provado de cwd VAZIO, arquivo fora do
-//     cwd, alcançável só pelo --add-dir.
-//   • ⚠️ alucina: 1 rodada em 4 leu errado uma página de PDF sem sinalizar.
-//     Melhor esforço, igual ao --sandbox e ao plan_first emulado.
-// Roadmap: quando o agy ganhar `--output-format json`, migra p/ StructuredAdapter
-// (tool-view ao vivo + custo). Resume (--continue/--conversation) fica p/ depois:
-// o print mode não expõe o id da conversa no stdout.
+// ── O sintoma que a troca conserta ────────────────────────────────────────
+// Em texto puro, o stdout é a CONCATENAÇÃO de toda fala do modelo — inclusive
+// a narração que ele escreve antes de cada ferramenta, que sai em inglês por
+// padrão. Incidente real do usuário (conversa `b770e13f`, 2026-07): a resposta
+// abria com quatro linhas "I am analyzing the repository…", "I will read…" e
+// só depois virava o português pedido, tudo colado numa bolha só, porque não
+// havia NADA no transporte que separasse narração-de-ação de resposta.
+//
+// O stream-json separa por STEP, e é só isso que precisava: a narração vem no
+// `text_delta` do `agent_response` que ANTECEDE o `step_type: "tool"`, então
+// ela é renderizada como preâmbulo do cartão da ferramenta, no lugar dela, em
+// vez de virar cabeçalho da resposta. Nenhum filtro de idioma, nenhuma
+// instrução de tradução: o inglês para de vazar porque o transporte passou a
+// dizer o que cada pedaço é. Medido em 14/08/2026: step 2 `agent_response`
+// text_delta "Eu vou listar o conteúdo do diretório…" → step 3 `tool` list_dir
+// → step 5 `agent_response` com a resposta.
+// ⚠️ `result.response` NÃO serve como resposta: ele é a mesma concatenação do
+// texto puro (narração + resposta), o blob do incidente. Só usamos os steps.
+//
+// ── O que o stream traz (agy 1.1.13, 14/08/2026) ──────────────────────────
+// NDJSON, um objeto por linha, envelope `{"event": <nome>, <nome>: {…}}`:
+//   • `init` — `conversation_id`, `init.cwd`, `init.tools` (56 nomes),
+//     `init.permission_mode`.
+//   • `step_update` — `step_index`, `state` (ACTIVE|DONE|ERROR), `step_type`
+//     (user_input | unknown | system_message | agent_response | tool |
+//     checkpoint), `text_delta?`, `tool_name?`, `tool_info` (`parameters`,
+//     `output?`, `error?`), `usage?` (INCREMENTAL, por step).
+//   • `result` — `status` (SUCCESS|ERROR), `response`, `num_turns`, `usage`
+//     (ACUMULADO da conversa, ver ADR-033 abaixo).
+//   • `command_result` — resposta de `/comando` nativo (ex. `/credits`); não
+//     é turno de modelo e vira Unknown (a UI ignora, nada se perde).
+// `--output-format json` devolve SÓ o objeto `result` — inútil para o fio.
+//
+// ── Custo e contexto ──────────────────────────────────────────────────────
+// NENHUM evento traz USD (`reports_cost: false` medido, não presumido), mas
+// traz tokens: `input_tokens`, `output_tokens`, `thinking_tokens`,
+// `cache_read_tokens`. Duas convenções DIFERENTES da do codex, medidas:
+//   • `input_tokens` EXCLUI o cache (step com cache_read 16278 tinha input
+//     2320; a soma é que é o prompt). O `CumulativeUsage.input` do app é
+//     "input TOTAL incluindo cache" → somamos os dois na conversão.
+//   • `output_tokens` INCLUI o thinking (295 output com 246 thinking para uma
+//     frase). Somar thinking à parte cobraria em dobro.
+// `result.usage` é o ACUMULADO DA CONVERSA — a mesma armadilha do ADR-033,
+// conferida ANTES de declarar: dois turnos, nos dois caminhos de resume, e a
+// diferença bateu ao token com o usage do step novo. O que a UI e o ledger
+// veem é o DELTA contra o baseline do run.
+// O anel de CONTEXTO é NÍVEL, não soma: o footprint do último `agent_response`
+// (`input_tokens + cache_read_tokens`). Os steps `checkpoint` são uma chamada
+// auxiliar minúscula (118 tokens) e mediriam o anel errado — ficam de fora.
+//
+// ── Achados que continuam valendo ─────────────────────────────────────────
+//   • `-p` SEM --add-dir opera num scratch isolado, NÃO o cwd → --add-dir
+//     <cwd> é OBRIGATÓRIO (re-visto em 14/08/2026: mesmo com `init.cwd`
+//     correto, o modelo foi trabalhar em ~/.gemini/antigravity-cli/scratch
+//     quando o cwd não era workspace confiável).
+//   • print mode + stdin null TRAVA esperando aprovação →
+//     --dangerously-skip-permissions é obrigatório p/ não pendurar.
+//   • ele LÊ imagem e PDF pela ferramenta interna `view_file` (2026-07, agy
+//     1.1.7): sem flag de imagem, o mecanismo é o do Claude — path absoluto no
+//     prompt + `--add-dir`. `-i` é `--prompt-interactive`, não `--image`.
+//     ⚠️ alucina: 1 rodada em 4 leu errado uma página de PDF sem sinalizar.
+//   • `--mode plan` é CONSULTIVO e furou o gate em 2026-07 → seguimos com
+//     emulação por prompt + `--sandbox`.
 #[derive(Default)]
 pub struct AgyAdapter {
-    /// Session já emitido? (a 1ª linha de stdout dispara o Session uma vez).
-    started: bool,
-    /// Modelo requisitado (p/ o rótulo no Session). None = default do agy (Flash).
+    /// Modelo requisitado (p/ o rótulo no Session e p/ estimar o custo).
+    /// None = default do agy, e aí o custo sai sem estimativa (honesto).
     model: Option<String>,
+    /// Conversa que o run PEDIU pra retomar (`--conversation <ID>`). Guardado
+    /// pra comparar com o `conversation_id` do `init`: o agy começa conversa
+    /// NOVA em silêncio quando o id não existe, e sem essa comparação o app
+    /// acharia que tem contexto que não tem.
+    resume: Option<String>,
+    /// Acumulado da conversa já contabilizado (ADR-033): entra como baseline do
+    /// run e vira o total lido no fim. None = conversa nova.
+    usage_seen: Option<crate::agent::CumulativeUsage>,
+    /// Footprint do último `agent_response` (input + cache lido) = o NÍVEL do
+    /// contexto. Só o agent_response conta; checkpoint é chamada auxiliar.
+    context_tokens: u64,
+    /// Resume que o agy IGNOROU: o turno ainda vai rodar inteiro no processo
+    /// filho, mas nada dele pode chegar ao fio (seria resposta sem o contexto
+    /// que o usuário pediu). O run_agent recomeça com o recap.
+    abandoned: bool,
+    /// Um step de texto está aberto? Fecha com TextStop quando o step encerra,
+    /// pro próximo bloco não colar no anterior.
+    text_open: bool,
+    /// Sink de evidência visual de tool_result (browser-plan B1).
+    evidence: Option<crate::evidence::EvidenceSink>,
+}
+
+impl AgyAdapter {
+    /// Um `step_update` → eventos. É AQUI que a narração deixa de virar
+    /// resposta: o texto sai amarrado ao SEU step, e o step de ferramenta que
+    /// vem logo depois entra como cartão entre um texto e outro.
+    fn map_step(&mut self, step: &serde_json::Value) -> Vec<AgentEvent> {
+        let state = step.get("state").and_then(|x| x.as_str()).unwrap_or("");
+        let kind = step.get("step_type").and_then(|x| x.as_str()).unwrap_or("");
+        // O step_index é o ÚNICO id estável do agy (não há id de tool call): é
+        // ele que casa o `tool` ACTIVE com o `DONE`/`ERROR` do mesmo step.
+        let id = step
+            .get("step_index")
+            .and_then(|x| x.as_u64())
+            .map(|i| format!("agy-step-{i}"))
+            .unwrap_or_else(|| "agy-step".to_string());
+        let mut out = Vec::new();
+        match kind {
+            "agent_response" => {
+                // Contexto é NÍVEL (prompt da última chamada de modelo), e só o
+                // agent_response é chamada de modelo — checkpoint é auxiliar.
+                if let Some(u) = step.get("usage") {
+                    let level = usage_u64(Some(u), "input_tokens")
+                        + usage_u64(Some(u), "cache_read_tokens");
+                    if level > 0 {
+                        self.context_tokens = level;
+                    }
+                }
+                if let Some(t) = step.get("text_delta").and_then(|x| x.as_str()) {
+                    if !t.is_empty() {
+                        self.text_open = true;
+                        out.push(AgentEvent::TextDelta {
+                            text: t.to_string(),
+                        });
+                    }
+                }
+                // Fim do step = fim DESTE bloco de fala. Sem o TextStop a
+                // narração do próximo passo colaria no texto anterior — que é
+                // exatamente o blob que estamos desfazendo.
+                if state != "ACTIVE" && self.text_open {
+                    self.text_open = false;
+                    out.push(AgentEvent::TextStop);
+                }
+            }
+            "tool" => {
+                let info = step.get("tool_info");
+                let name = step
+                    .get("tool_name")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("tool")
+                    .to_string();
+                if state == "ACTIVE" {
+                    out.push(AgentEvent::Tool {
+                        id,
+                        name,
+                        input: info
+                            .and_then(|i| i.get("parameters"))
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
+                        parent_tool_id: None,
+                    });
+                } else {
+                    let erro = info
+                        .and_then(|i| i.get("error"))
+                        .filter(|e| !e.is_null());
+                    let full = erro
+                        .and_then(|e| e.get("message").and_then(|x| x.as_str()))
+                        .or_else(|| {
+                            info.and_then(|i| i.get("output").and_then(|x| x.as_str()))
+                        })
+                        .unwrap_or_default()
+                        .to_string();
+                    let lines = if full.trim().is_empty() {
+                        0
+                    } else {
+                        full.lines().count() as u64
+                    };
+                    let mut text: String = full.chars().take(600).collect();
+                    if full.chars().count() > 600 {
+                        text.push('…');
+                    }
+                    out.push(AgentEvent::ToolResult {
+                        id: id.clone(),
+                        ok: state == "DONE" && erro.is_none(),
+                        text,
+                        lines,
+                        // B1: o agy não devolve CallToolResult com blocos
+                        // `image` no step (só string em `output`) — sem sink de
+                        // evidência visual, degradação honesta.
+                        images: crate::evidence::collect_images(
+                            self.evidence.as_ref(),
+                            &id,
+                            info.and_then(|i| i.pointer("/result/content"))
+                                .unwrap_or(&serde_json::Value::Null),
+                        ),
+                    });
+                }
+            }
+            // user_input / system_message / checkpoint / unknown: nenhum cartão.
+            // (O `unknown` aqui é step_type do PRÓPRIO agy, não linha
+            // desconhecida — a linha foi entendida, o step é que não pinta nada.)
+            _ => {}
+        }
+        out
+    }
+
+    /// O `result` fecha o turno. Duas armadilhas medidas em 14/08/2026:
+    /// `response` é a concatenação narração+resposta (não usamos), e `usage` é
+    /// o ACUMULADO DA CONVERSA (ADR-033) — o que sai daqui é o DELTA.
+    fn map_result(&mut self, result: &serde_json::Value) -> Vec<AgentEvent> {
+        let usage = result.get("usage");
+        // `input_tokens` do agy EXCLUI o cache; o `CumulativeUsage` do app é
+        // input TOTAL (convenção da API da OpenAI) → soma os dois. E
+        // `output_tokens` JÁ inclui o thinking: somar seria cobrar em dobro.
+        let cum = crate::agent::CumulativeUsage {
+            input: usage_u64(usage, "input_tokens") + usage_u64(usage, "cache_read_tokens"),
+            cached_input: usage_u64(usage, "cache_read_tokens"),
+            output: usage_u64(usage, "output_tokens"),
+        };
+        let delta = cum.delta_from(&self.usage_seen.unwrap_or_default());
+        self.usage_seen = Some(cum);
+        let nu = crate::pricing::NormalizedUsage {
+            input: delta.input,
+            cached_input: delta.cached_input,
+            output: delta.output,
+        };
+        // O agy não reporta USD em lugar nenhum → estimativa por tokens, igual
+        // ao codex. SEM modelo requisitado não há tabela pra consultar, e aí
+        // sai `Unknown` (a UI mostra só tokens) em vez de um número inventado.
+        let (cost_usd, cost_source) = match self.model.as_deref() {
+            Some(m) => crate::pricing::estimate(m, &nu),
+            None => (None, CostSource::Unknown),
+        };
+        let ok = result.get("status").and_then(|x| x.as_str()) != Some("ERROR");
+        let mut out = Vec::new();
+        if self.text_open {
+            self.text_open = false;
+            out.push(AgentEvent::TextStop);
+        }
+        if self.context_tokens > 0 {
+            out.push(AgentEvent::ContextUsage {
+                tokens: self.context_tokens,
+            });
+        }
+        out.push(AgentEvent::Result {
+            ok,
+            // text: None de propósito. O `result.response` é o blob do
+            // incidente (narração colada na resposta); o fio já recebeu o
+            // texto pelos steps, separado.
+            text: None,
+            cost_usd,
+            cost_source,
+            input_tokens: nu.input,
+            output_tokens: nu.output,
+            cache_read: nu.cached_input,
+            cache_creation: 0,
+            cumulative_usage: Some(cum),
+        });
+        out
+    }
 }
 
 impl AgentAdapter for AgyAdapter {
@@ -1997,10 +2266,26 @@ impl AgentAdapter for AgyAdapter {
         self.render_attachments(&req.attachments, &mut cmd, &mut prompt);
         cmd.arg("-p")
             .arg(&prompt)
+            // O canal estruturado (agy ≥1.1.12). Sem ele o stdout é a
+            // concatenação de toda fala do modelo — narração de ação colada na
+            // resposta, que é o bug do inglês misturado descrito no topo.
+            .arg("--output-format")
+            .arg("stream-json")
             // amarra o cwd real (senão o print mode edita o scratch, não o repo).
             .arg("--add-dir")
             .arg(&req.cwd)
             .current_dir(&req.cwd);
+        // resume: `--conversation <ID>`, o id que saiu do `init` do run anterior.
+        // (`--continue` também existe, mas retoma "a mais recente" do CLI, que
+        // não é necessariamente a conversa DESTA aba — id explícito é o único
+        // que não erra de alvo com duas conversas abertas.)
+        if let Some(r) = &req.resume {
+            self.resume = Some(r.clone());
+            cmd.arg("--conversation").arg(r);
+        }
+        // ADR-033: quanto a conversa já tinha gasto antes deste run. Só vale se
+        // o run REALMENTE retomar — o `init` confirma (ou desmente) o alvo.
+        self.usage_seen = req.usage_baseline;
         // pastas extras (fora do cwd): mais um --add-dir por pasta.
         for d in &req.extra_dirs {
             cmd.arg("--add-dir").arg(d);
@@ -2034,29 +2319,65 @@ impl AgentAdapter for AgyAdapter {
         Ok(cmd)
     }
 
-    /// agy print mode não emite JSON → `map_line` não é chamado (o on_stdout_line
-    /// sobrescrito trata texto). Defensivo: se um dia emitir JSON, não perde a linha.
-    fn map_line(&mut self, v: &serde_json::Value) -> Vec<AgentEvent> {
-        vec![AgentEvent::Unknown { raw: v.clone() }]
+    fn set_evidence_sink(&mut self, sink: crate::evidence::EvidenceSink) {
+        self.evidence = Some(sink);
     }
 
-    /// NÃO-ESTRUTURADO: cada linha de stdout é TEXTO do assistente (não JSON). A 1ª
-    /// linha emite também o Session (rótulo do modelo). Blank lines são preservadas
-    /// (parágrafos do markdown). O turno fecha no Done (sem Result → sem custo).
-    fn on_stdout_line(&mut self, line: &str) -> Vec<AgentEvent> {
-        let mut out = Vec::new();
-        if !self.started {
-            self.started = true;
-            out.push(AgentEvent::Session {
-                session_id: String::new(),
-                model: self.model.clone(),
-                tools: 0,
-            });
+    /// Uma linha do NDJSON do `--output-format stream-json` → eventos.
+    /// O envelope é `{"event": <nome>, <nome>: {…}}`, então o payload mora numa
+    /// chave com o MESMO nome do evento.
+    fn map_line(&mut self, v: &serde_json::Value) -> Vec<AgentEvent> {
+        // Resume que o agy ignorou: o processo segue rodando o turno inteiro,
+        // mas nada dele pode chegar ao fio (seria resposta sem o contexto que o
+        // usuário pediu — teatro). O run_agent já recomeça com o recap.
+        if self.abandoned {
+            return vec![];
         }
-        out.push(AgentEvent::TextDelta {
-            text: format!("{line}\n"),
-        });
-        out
+        let name = v.get("event").and_then(|x| x.as_str()).unwrap_or("");
+        let body = v.get(name);
+        match (name, body) {
+            ("init", Some(init)) => {
+                let cid = v
+                    .get("conversation_id")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                // O agy NÃO falha em resume de id inexistente: escreve
+                // `warning: conversation "…" not found` no stderr e abre
+                // conversa NOVA (medido 14/08/2026). O único jeito de saber é
+                // comparar o alvo pedido com o id que voltou.
+                if let Some(pedido) = self.resume.clone() {
+                    if !cid.is_empty() && cid != pedido {
+                        self.abandoned = true;
+                        return vec![AgentEvent::SessionNotFound {
+                            message: format!(
+                                "a conversa {pedido} não existe mais no agy (ele abriu uma nova em silêncio)"
+                            ),
+                        }];
+                    }
+                }
+                // Conversa DIFERENTE da que o baseline descreve → o contador do
+                // provider recomeça do zero e o baseline antigo não vale mais
+                // (mesma regra do codex, ADR-033).
+                if self.resume.as_deref() != Some(cid.as_str()) {
+                    self.usage_seen = None;
+                }
+                vec![AgentEvent::Session {
+                    session_id: cid,
+                    model: self.model.clone(),
+                    tools: init
+                        .get("tools")
+                        .and_then(|x| x.as_array())
+                        .map(|a| a.len())
+                        .unwrap_or(0),
+                }]
+            }
+            ("step_update", Some(step)) => self.map_step(step),
+            ("result", Some(result)) => self.map_result(result),
+            // `command_result` (resposta de `/comando` nativo, ex. `/credits`)
+            // e qualquer evento novo: surfaça em vez de descartar.
+            _ => vec![AgentEvent::Unknown { raw: v.clone() }],
+        }
     }
 
     /// O agy LÊ imagem e PDF — provado na máquina (2026-07): rodando de um
@@ -2093,6 +2414,26 @@ impl AgentAdapter for AgyAdapter {
         for a in atts {
             prompt.push_str(&format!("- `{}` ({})\n", a.path, a.mime));
         }
+    }
+
+    /// EOF sem `result` (processo morto, timeout do `--print-timeout`): fecha o
+    /// bloco de texto aberto pra bolha não ficar pendurada.
+    fn on_close(&mut self) -> Vec<AgentEvent> {
+        if self.text_open {
+            self.text_open = false;
+            return vec![AgentEvent::TextStop];
+        }
+        Vec::new()
+    }
+
+    /// Frase LITERAL do stderr do agy 1.1.13 quando o `--conversation <ID>`
+    /// aponta pra conversa que não existe (capturada 14/08/2026):
+    /// `warning: conversation "…" not found`. É rede de segurança — o alvo
+    /// primário é a comparação de id no `init`, que pega o caso ANTES de
+    /// qualquer evento chegar ao fio (o stderr só é lido no fim do processo).
+    fn is_session_not_found(&self, msg: &str) -> bool {
+        let l = msg.to_ascii_lowercase();
+        l.contains("conversation") && l.contains("not found")
     }
 
     /// Frases extraídas do binário do agy 1.1.1 (strings do bundle Go/Codeium):
@@ -3144,8 +3485,12 @@ mod tests {
         assert!(capabilities_of("codex").unwrap().cumulative_usage);
         // claude 2.1.220: o `result` traz usage e USD DO TURNO.
         assert!(!capabilities_of("claude-code").unwrap().cumulative_usage);
-        // agy: stdout de texto puro, sem usage.
-        assert!(!capabilities_of("agy").unwrap().cumulative_usage);
+        // agy 1.1.13: `result.usage` também é o total da CONVERSA — medido nos
+        // dois caminhos de resume em 14/08/2026 (43296 → 45684 com
+        // `--continue`, 33000 → 50586 com `--conversation`, e o step novo
+        // fechando a diferença ao token). Antes era `false` porque a 1.1.9 não
+        // reportava usage nenhum, não porque o número fosse por turno.
+        assert!(capabilities_of("agy").unwrap().cumulative_usage);
     }
 
     /// Teste-GÊMEO do espelho TS (`agents.telemetry.test.ts`): quem narra o
@@ -3163,9 +3508,12 @@ mod tests {
         // custo do codex sai ESTIMADO por tokens.
         assert!(capabilities_of("codex").unwrap().structured_output);
         assert!(!capabilities_of("codex").unwrap().reports_cost);
-        // agy 1.1.13: o `-p` que o app roda devolve texto puro, e nada de
-        // usage: não há ação relatada nem custo, nem como estimativa.
-        assert!(!capabilities_of("agy").unwrap().structured_output);
+        // agy 1.1.13: o `-p` que o app roda agora é
+        // `--output-format stream-json` — NDJSON com um step por ação, então
+        // existe feed de ações. Dólar segue sem existir em nenhum evento
+        // (medido 14/08/2026): o custo do agy sai ESTIMADO por tokens, igual
+        // ao codex.
+        assert!(capabilities_of("agy").unwrap().structured_output);
         assert!(!capabilities_of("agy").unwrap().reports_cost);
         // COERÊNCIA (a mesma cobrada no espelho TS): dólar por turno chega
         // dentro do evento final do stream; motor que só cospe texto não tem
@@ -3373,6 +3721,372 @@ mod tests {
         assert!(a.supports_attachment(&AttachmentKind::Pdf));
     }
 
+    // ---- agy: canal estruturado (`--output-format stream-json`) ----
+    //
+    // TODAS as fixtures abaixo são linhas CRUAS, byte a byte, de runs REAIS do
+    // agy 1.1.13 nesta máquina em 14/08/2026 (ADR-016: fixture inventada
+    // esconde bug). O run que virou `AGY_*` de um turno é o mesmo do começo ao
+    // fim — narração, ferramenta, resposta partida no meio da palavra e o
+    // `result` com o blob concatenado.
+
+    /// `init` — id da conversa, cwd e as 56 tools que o agy expõe.
+    const AGY_INIT: &str = r#"{"event":"init","conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","init":{"cwd":"/private/tmp/agyprobe","tools":["ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","command_status","define_subagent","delete_knowledge","execute_browser_javascript","find_by_name","finish","generate_image","grep_search","invoke_subagent","list_browser_pages","list_dir","list_permissions","list_resources","manage_inbox","manage_subagents","manage_task","multi_replace_file_content","notebook_edit","notebook_execution","open_browser_url","read_browser_page","read_resource","read_url_content","replace_file_content","run_command","schedule","search_web","sed_file","send_command_input","send_message","view_file","wait","wait_5_seconds","write_to_file"],"permission_mode":"request-review"}}"#;
+    /// Steps de infra do começo do turno: não pintam nada na UI.
+    const AGY_STEP_USER_INPUT: &str = r#"{"event":"step_update","step_update":{"conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","step_index":0,"state":"DONE","step_type":"user_input"}}"#;
+    const AGY_STEP_INFRA: &str = r#"{"event":"step_update","step_update":{"conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","step_index":1,"state":"DONE","step_type":"unknown","duration_seconds":0.001105}}"#;
+    /// A NARRAÇÃO: fala que ANTECEDE a ferramenta. Em texto puro era isto que
+    /// colava no topo da resposta (o "I am analyzing the repository…" do
+    /// incidente); aqui ela vem no step 2, e o step 3 é a ferramenta.
+    const AGY_STEP_NARRACAO: &str = r#"{"event":"step_update","step_update":{"conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","step_index":2,"state":"DONE","step_type":"agent_response","text_delta":"Vou listar o conteúdo do diretório `/Users/viniciusmachado/.gemini/antigravity-cli/scratch` para verificar a quantidade de arquivos nele.\n","duration_seconds":2.85021,"usage":{"input_tokens":15897,"output_tokens":965,"thinking_tokens":878,"cache_read_tokens":0,"total_tokens":16862}}}"#;
+    const AGY_STEP_TOOL_ACTIVE: &str = r#"{"event":"step_update","step_update":{"conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","step_index":3,"state":"ACTIVE","step_type":"tool","tool_name":"list_dir","tool_info":{"name":"list_dir","parameters":{"DirectoryPath":"/Users/viniciusmachado/.gemini/antigravity-cli/scratch"}}}}"#;
+    const AGY_STEP_TOOL_DONE: &str = r#"{"event":"step_update","step_update":{"conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","step_index":3,"state":"DONE","step_type":"tool","tool_name":"list_dir","duration_seconds":0.006099,"tool_info":{"name":"list_dir","parameters":{"DirectoryPath":"/Users/viniciusmachado/.gemini/antigravity-cli/scratch"},"output":"doc.pdf\nshape.png\nsmall-circle.png"}}}"#;
+    /// `checkpoint` é uma chamada AUXILIAR minúscula (121 tokens) — se ela
+    /// medisse o anel de contexto, o anel despencaria no fim de todo turno.
+    const AGY_STEP_CHECKPOINT: &str = r#"{"event":"step_update","step_update":{"conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","step_index":4,"state":"DONE","step_type":"checkpoint","duration_seconds":0.57305,"usage":{"input_tokens":121,"output_tokens":7,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":128}}}"#;
+    /// A RESPOSTA, partida no meio da palavra "scratc|h" entre ACTIVE e DONE.
+    const AGY_STEP_RESP_ACTIVE: &str = r#"{"event":"step_update","step_update":{"conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","step_index":5,"state":"ACTIVE","step_type":"agent_response","text_delta":"Existem exatamente 3 arquivos no diretório de trabalho padrão ([`/Users/viniciusmachado/.gemini/antigravity-cli/scratc"}}"#;
+    const AGY_STEP_RESP_DONE: &str = r#"{"event":"step_update","step_update":{"conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","step_index":5,"state":"DONE","step_type":"agent_response","text_delta":"h`](file:///Users/viniciusmachado/.gemini/antigravity-cli/scratch)):\n\n1. doc.pdf\n2. shape.png\n3. small-circle.png\n","duration_seconds":1.788865,"usage":{"input_tokens":4793,"output_tokens":619,"thinking_tokens":467,"cache_read_tokens":12209,"total_tokens":5412}}}"#;
+    /// O `result` do MESMO run: repare no `response` — narração + resposta
+    /// concatenadas, que é EXATAMENTE o blob do modo texto puro.
+    const AGY_RESULT: &str = r#"{"event":"result","result":{"conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","status":"SUCCESS","response":"Vou listar o conteúdo do diretório `/Users/viniciusmachado/.gemini/antigravity-cli/scratch` para verificar a quantidade de arquivos nele.\nExistem exatamente 3 arquivos no diretório de trabalho padrão ([`/Users/viniciusmachado/.gemini/antigravity-cli/scratch`](file:///Users/viniciusmachado/.gemini/antigravity-cli/scratch)):\n\n1. doc.pdf\n2. shape.png\n3. small-circle.png\n","duration_seconds":4.87077,"num_turns":1,"usage":{"input_tokens":20811,"output_tokens":1591,"thinking_tokens":1345,"cache_read_tokens":12209,"total_tokens":22402}}}"#;
+    /// Ferramenta que FALHOU (outro run real, mesmo dia): o motivo está em
+    /// `tool_info.error.message`, não em `output`.
+    const AGY_STEP_TOOL_ERROR: &str = r#"{"event":"step_update","step_update":{"conversation_id":"4f102d41-414f-4def-a5d2-362c33b61ed5","step_index":3,"state":"ERROR","step_type":"tool","tool_name":"list_dir","duration_seconds":0.061392,"tool_info":{"name":"list_dir","parameters":{"DirectoryPath":"/Users/viniciusmachado/.gemini/antigravity-cli"},"error":{"type":"TOOL_ERROR","message":"Permission denied for read_file(/Users/viniciusmachado/.gemini/antigravity-cli). Matches hardcoded system protection boundary rule."}}}}"#;
+    /// `/comando` nativo (o `agy -p "/credits"`): não é turno de modelo.
+    const AGY_COMMAND_RESULT: &str = r#"{"event":"command_result","command":{"name":"credits","data":{"remaining_credits":0,"upgrade_uri":"https://antigravity.google/g1-upgrade"}}}"#;
+
+    /// Roda uma linha CRUA pelo mesmo caminho do runner (`on_stdout_line`).
+    fn agy_linha(a: &mut AgyAdapter, raw: &str) -> Vec<AgentEvent> {
+        a.on_stdout_line(raw)
+    }
+
+    /// O BUG que motivou a troca de transporte (conversa `b770e13f` do usuário,
+    /// 2026-07): em texto puro a resposta chegava assim, numa bolha só —
+    /// "I am analyzing the repository directory to locate files… I will read
+    /// the conversation context memory file… I will read the
+    /// `docs/STYLEGUIDE.md`… Se eu pudesse suspender temporariamente o viés…"
+    /// Quatro linhas de narração em inglês coladas no português pedido, porque
+    /// o stdout era a CONCATENAÇÃO de tudo que o modelo falou.
+    ///
+    /// Com o stream-json a narração continua existindo (o modelo é o mesmo, e
+    /// não há filtro de idioma nenhum aqui) — mas ela sai amarrada ao SEU
+    /// step, fechada por TextStop, e o cartão da ferramenta entra entre ela e a
+    /// resposta. Deixa de ser cabeçalho da resposta e vira o que sempre foi:
+    /// o que o agent disse antes de agir.
+    #[test]
+    fn narracao_de_acao_nao_cola_na_resposta() {
+        let mut a = AgyAdapter::default();
+        let mut evs = Vec::new();
+        for linha in [
+            AGY_INIT,
+            AGY_STEP_USER_INPUT,
+            AGY_STEP_INFRA,
+            AGY_STEP_NARRACAO,
+            AGY_STEP_TOOL_ACTIVE,
+            AGY_STEP_TOOL_DONE,
+            AGY_STEP_CHECKPOINT,
+            AGY_STEP_RESP_ACTIVE,
+            AGY_STEP_RESP_DONE,
+        ] {
+            evs.extend(agy_linha(&mut a, linha));
+        }
+        let forma: Vec<&str> = evs
+            .iter()
+            .map(|e| match e {
+                AgentEvent::Session { .. } => "session",
+                AgentEvent::TextDelta { .. } => "texto",
+                AgentEvent::TextStop => "fim-do-bloco",
+                AgentEvent::Tool { .. } => "ferramenta",
+                AgentEvent::ToolResult { .. } => "resultado",
+                _ => "outro",
+            })
+            .collect();
+        assert_eq!(
+            forma,
+            vec![
+                "session",
+                "texto",         // a narração
+                "fim-do-bloco",  // …fecha ANTES da ferramenta
+                "ferramenta",
+                "resultado",
+                "texto",         // a resposta, em bloco PRÓPRIO
+                "texto",
+                "fim-do-bloco",
+            ],
+            "a narração tem que ficar do lado da ferramenta, não do lado da resposta"
+        );
+        // steps de infra (user_input, unknown, checkpoint) não pintam cartão.
+        assert!(!forma.contains(&"outro"));
+    }
+
+    /// A resposta vem PARTIDA NO MEIO DA PALAVRA entre o ACTIVE e o DONE do
+    /// mesmo step ("…scratc" + "h`]…"): a emenda tem que ser exata, e o
+    /// TextStop só pode fechar quando o step encerra. Se o adapter fechasse o
+    /// bloco a cada delta, a UI mostraria a palavra rachada.
+    #[test]
+    fn texto_partido_no_meio_da_palavra_emenda_sem_costura() {
+        let mut a = AgyAdapter::default();
+        agy_linha(&mut a, AGY_INIT);
+        let mut texto = String::new();
+        let mut fechamentos = 0;
+        for linha in [AGY_STEP_RESP_ACTIVE, AGY_STEP_RESP_DONE] {
+            for e in agy_linha(&mut a, linha) {
+                match e {
+                    AgentEvent::TextDelta { text } => texto.push_str(&text),
+                    AgentEvent::TextStop => fechamentos += 1,
+                    _ => panic!("só texto neste trecho"),
+                }
+            }
+        }
+        assert!(
+            texto.contains("antigravity-cli/scratch)):"),
+            "a palavra rachada tem que voltar inteira: {texto}"
+        );
+        assert_eq!(fechamentos, 1, "um TextStop por step, no fim dele");
+    }
+
+    /// `result.response` É o blob do incidente (narração + resposta grudadas) —
+    /// a fixture prova. Por isso o `Result` sai com `text: None`: o fio já
+    /// recebeu o texto pelos steps, separado, e reenviar o blob desfaria a
+    /// separação toda.
+    #[test]
+    fn blob_do_result_nunca_vira_resposta() {
+        let cru: serde_json::Value = serde_json::from_str(AGY_RESULT).unwrap();
+        let blob = cru.pointer("/result/response").unwrap().as_str().unwrap();
+        assert!(
+            blob.starts_with("Vou listar o conteúdo") && blob.contains("Existem exatamente 3"),
+            "a fixture só serve se o `response` do agy for mesmo a concatenação"
+        );
+        let mut a = AgyAdapter::default();
+        agy_linha(&mut a, AGY_INIT);
+        let evs = agy_linha(&mut a, AGY_RESULT);
+        let text = evs.iter().find_map(|e| match e {
+            AgentEvent::Result { text, .. } => Some(text.clone()),
+            _ => None,
+        });
+        assert_eq!(text, Some(None), "o Result do agy não carrega o blob");
+    }
+
+    /// Ferramenta = cartão com nome, parâmetros e desfecho. É o conserto do
+    /// "motor calado" — antes o turno inteiro do agy era uma bolha de texto e
+    /// a missão não tinha ação nenhuma pra listar.
+    #[test]
+    fn ferramenta_vira_cartao_com_parametros_e_saida() {
+        let mut a = AgyAdapter::default();
+        agy_linha(&mut a, AGY_INIT);
+        let abre = agy_linha(&mut a, AGY_STEP_TOOL_ACTIVE);
+        match &abre[0] {
+            AgentEvent::Tool { id, name, input, .. } => {
+                assert_eq!(name, "list_dir");
+                assert_eq!(id, "agy-step-3");
+                assert_eq!(
+                    input.get("DirectoryPath").and_then(|x| x.as_str()),
+                    Some("/Users/viniciusmachado/.gemini/antigravity-cli/scratch")
+                );
+            }
+            _ => panic!("esperava Tool no ACTIVE"),
+        }
+        let fecha = agy_linha(&mut a, AGY_STEP_TOOL_DONE);
+        match &fecha[0] {
+            AgentEvent::ToolResult { id, ok, text, lines, .. } => {
+                // MESMO id do abre: é o step_index que casa os dois (o agy não
+                // dá id de tool call nenhum).
+                assert_eq!(id, "agy-step-3");
+                assert!(ok);
+                assert_eq!(text, "doc.pdf\nshape.png\nsmall-circle.png");
+                assert_eq!(*lines, 3);
+            }
+            _ => panic!("esperava ToolResult no fechamento"),
+        }
+    }
+
+    /// Ferramenta que falhou: `state: ERROR` + o motivo em `error.message`.
+    /// Falha de ferramenta é INFORMAÇÃO (o usuário precisa ver por que o agent
+    /// não conseguiu), então vira ToolResult com ok=false, nunca cartão vazio.
+    #[test]
+    fn ferramenta_com_erro_carrega_o_motivo() {
+        let mut a = AgyAdapter::default();
+        agy_linha(&mut a, AGY_INIT);
+        let evs = agy_linha(&mut a, AGY_STEP_TOOL_ERROR);
+        match &evs[0] {
+            AgentEvent::ToolResult { ok, text, .. } => {
+                assert!(!ok);
+                assert!(text.contains("Permission denied for read_file"), "{text}");
+            }
+            _ => panic!("esperava ToolResult no fechamento"),
+        }
+    }
+
+    /// ADR-033 no agy: `result.usage` é o ACUMULADO DA CONVERSA. As duas
+    /// fixtures são os `result` dos DOIS turnos da MESMA conversa
+    /// (a8d1cd15…, medidos 14/08/2026): 33000 → 50586 de input, e o step novo
+    /// do 2º turno custou 17586 — a diferença EXATA. Lido como se fosse do
+    /// turno, o 2º turno cobraria 50586 e o custo cresceria em quadrado.
+    #[test]
+    fn usage_acumulado_da_conversa_vira_gasto_do_turno() {
+        const RESULT_T1: &str = r#"{"event":"result","result":{"conversation_id":"a8d1cd15-ea3f-4bf2-ad4b-1dbc311559fc","status":"SUCCESS","response":"…","duration_seconds":3.751145,"num_turns":1,"usage":{"input_tokens":33000,"output_tokens":1335,"thinking_tokens":1158,"cache_read_tokens":0,"total_tokens":34335}}}"#;
+        const RESULT_T2: &str = r#"{"event":"result","result":{"conversation_id":"a8d1cd15-ea3f-4bf2-ad4b-1dbc311559fc","status":"SUCCESS","response":"…","duration_seconds":104.625251,"num_turns":2,"usage":{"input_tokens":50586,"output_tokens":1647,"thinking_tokens":1455,"cache_read_tokens":0,"total_tokens":52233}}}"#;
+
+        fn tokens(evs: &[AgentEvent]) -> (u64, u64, Option<crate::agent::CumulativeUsage>) {
+            evs.iter()
+                .find_map(|e| match e {
+                    AgentEvent::Result {
+                        input_tokens,
+                        output_tokens,
+                        cumulative_usage,
+                        ..
+                    } => Some((*input_tokens, *output_tokens, *cumulative_usage)),
+                    _ => None,
+                })
+                .expect("todo turno fecha com Result")
+        }
+
+        // 1º turno: conversa nova, sem baseline → o acumulado JÁ é o do turno.
+        let mut t1 = AgyAdapter::default();
+        agy_linha(&mut t1, AGY_INIT);
+        let (inp1, out1, cum1) = tokens(&agy_linha(&mut t1, RESULT_T1));
+        assert_eq!((inp1, out1), (33000, 1335));
+        let cum1 = cum1.expect("o acumulado cru volta pro front persistir");
+
+        // 2º turno: MESMA conversa, com o baseline do turno anterior.
+        let mut t2 = AgyAdapter::default();
+        let mut r = req(Permission::Padrao, false);
+        r.resume = Some("a8d1cd15-ea3f-4bf2-ad4b-1dbc311559fc".to_string());
+        r.usage_baseline = Some(cum1);
+        t2.build_command(&r).unwrap();
+        agy_linha(
+            &mut t2,
+            &AGY_INIT.replace(
+                "a165239c-dde9-493c-a60c-ccf5ac0ccffb",
+                "a8d1cd15-ea3f-4bf2-ad4b-1dbc311559fc",
+            ),
+        );
+        let (inp2, out2, _) = tokens(&agy_linha(&mut t2, RESULT_T2));
+        assert_eq!(
+            (inp2, out2),
+            (50586 - 33000, 1647 - 1335),
+            "o turno paga o DELTA, nunca o acumulado (ADR-033)"
+        );
+    }
+
+    /// O anel de contexto é NÍVEL: o footprint do ÚLTIMO `agent_response`
+    /// (input + cache lido = 4793 + 12209), não a soma dos steps e não o
+    /// `checkpoint` (121 tokens, chamada auxiliar que derrubaria o anel).
+    #[test]
+    fn contexto_e_o_nivel_do_ultimo_agent_response() {
+        let mut a = AgyAdapter::default();
+        for linha in [
+            AGY_INIT,
+            AGY_STEP_NARRACAO,
+            AGY_STEP_RESP_DONE,
+            AGY_STEP_CHECKPOINT,
+        ] {
+            agy_linha(&mut a, linha);
+        }
+        let ctx = agy_linha(&mut a, AGY_RESULT)
+            .iter()
+            .find_map(|e| match e {
+                AgentEvent::ContextUsage { tokens } => Some(*tokens),
+                _ => None,
+            })
+            .expect("o anel de contexto tem número");
+        assert_eq!(ctx, 4793 + 12209);
+    }
+
+    /// O agy NÃO reporta USD em evento nenhum (medido 14/08/2026), então o
+    /// custo é ESTIMADO por tokens — e SEM modelo escolhido não há tabela pra
+    /// consultar: sai `Unknown` e a UI mostra só tokens, em vez de um número
+    /// inventado.
+    #[test]
+    fn custo_sem_modelo_escolhido_e_desconhecido_em_vez_de_chutado() {
+        assert!(!AGY_CAPS.reports_cost, "nenhum evento do agy traz dólar");
+        let mut a = AgyAdapter::default();
+        agy_linha(&mut a, AGY_INIT);
+        let evs = agy_linha(&mut a, AGY_RESULT);
+        match evs.iter().find(|e| matches!(e, AgentEvent::Result { .. })) {
+            Some(AgentEvent::Result { cost_usd, cost_source, .. }) => {
+                assert_eq!(*cost_usd, None);
+                assert!(matches!(cost_source, CostSource::Unknown));
+            }
+            _ => panic!("esperava Result"),
+        }
+    }
+
+    /// O agy IGNORA `--conversation <ID>` inexistente: escreve
+    /// `warning: conversation "…" not found` no stderr e abre conversa NOVA em
+    /// silêncio (exit 0, medido 14/08/2026). Sem comparar o id pedido com o do
+    /// `init`, o app entregaria uma resposta SEM o contexto que o usuário
+    /// pediu e ainda acharia que retomou. Aqui o run é abandonado na primeira
+    /// linha e o run_agent recomeça com o recap.
+    #[test]
+    fn resume_ignorado_pelo_agy_vira_sessao_nao_encontrada() {
+        let mut a = AgyAdapter::default();
+        let mut r = req(Permission::Padrao, false);
+        r.resume = Some("00000000-0000-0000-0000-000000000000".to_string());
+        let args = argv(&a.build_command(&r).unwrap());
+        assert!(has_pair(&args, "--conversation", "00000000-0000-0000-0000-000000000000"));
+
+        // o `init` volta com OUTRO id: o agy trocou de conversa por conta.
+        let evs = agy_linha(&mut a, AGY_INIT);
+        match &evs[..] {
+            [AgentEvent::SessionNotFound { message }] => {
+                assert!(message.contains("00000000-0000-0000-0000-000000000000"), "{message}");
+            }
+            _ => panic!("esperava SÓ SessionNotFound"),
+        }
+        // …e NADA do turno abandonado chega ao fio (seria resposta sem o
+        // contexto pedido, o oposto de estado real).
+        for linha in [AGY_STEP_NARRACAO, AGY_STEP_RESP_DONE, AGY_RESULT] {
+            assert!(agy_linha(&mut a, linha).is_empty(), "run abandonado é silencioso");
+        }
+        // rede de segurança: a frase literal do stderr também classifica.
+        assert!(a.is_session_not_found(
+            r#"warning: conversation "00000000-0000-0000-0000-000000000000" not found"#
+        ));
+    }
+
+    /// Resume que DEU certo: o `init` devolve o MESMO id, nada é abandonado.
+    #[test]
+    fn resume_bem_sucedido_segue_o_turno_normalmente() {
+        let mut a = AgyAdapter::default();
+        let mut r = req(Permission::Padrao, false);
+        r.resume = Some("a165239c-dde9-493c-a60c-ccf5ac0ccffb".to_string());
+        a.build_command(&r).unwrap();
+        match &agy_linha(&mut a, AGY_INIT)[..] {
+            [AgentEvent::Session { session_id, tools, .. }] => {
+                assert_eq!(session_id, "a165239c-dde9-493c-a60c-ccf5ac0ccffb");
+                assert_eq!(*tools, 56, "as 56 tools do init");
+            }
+            _ => panic!("esperava Session"),
+        }
+        assert!(!agy_linha(&mut a, AGY_STEP_RESP_DONE).is_empty());
+    }
+
+    /// Evento que o adapter não conhece (o `command_result` do `/credits`, e o
+    /// que o agy inventar amanhã) é SURFAÇADO como Unknown, nunca descartado —
+    /// regra de ouro do agent-runner.
+    #[test]
+    fn evento_desconhecido_vira_unknown_em_vez_de_sumir() {
+        let mut a = AgyAdapter::default();
+        for linha in [AGY_COMMAND_RESULT, r#"{"event":"invencao_futura","x":1}"#] {
+            let evs = agy_linha(&mut a, linha);
+            assert!(
+                evs.iter().any(|e| matches!(e, AgentEvent::Unknown { .. })),
+                "{linha} tinha que virar Unknown"
+            );
+        }
+    }
+
+    /// O comando montado pede o canal estruturado. Sem esta flag o agy volta ao
+    /// texto puro e o bug do inglês colado volta junto — por isso é teste, não
+    /// confiança.
+    #[test]
+    fn agy_pede_o_canal_estruturado_no_comando() {
+        let mut a = AgyAdapter::default();
+        let args = argv(&a.build_command(&req(Permission::Padrao, false)).unwrap());
+        assert!(has_pair(&args, "--output-format", "stream-json"));
+    }
+
     /// Matriz de anexo dos TRÊS adapters, num lugar só. GÊMEO do teste TS
     /// `agents.caps.test.ts` — a capacidade mora em dois lugares (aqui é o gate
     /// REAL; lá é o espelho que a UI usa pra validar antes do envio) e ligar só
@@ -3441,8 +4155,13 @@ mod tests {
         assert!(codex.context_mcp);
 
         let agy = capabilities_of("agy").unwrap();
+        // agy 1.1.13: nenhum canal system além do `-p` (o `--help` não expõe
+        // outro), e MCP só por config GLOBAL — nada por-run pra registrar o
+        // mc-context. Resume, esse SIM existe: `--conversation <ID>` retomou a
+        // conversa (step_index continuou 6→8 e o modelo lembrou o turno
+        // anterior, medido 14/08/2026).
         assert!(!agy.system_channel);
-        assert!(!agy.session_resume);
+        assert!(agy.session_resume);
         assert!(!agy.context_mcp);
     }
 
@@ -3460,7 +4179,9 @@ mod tests {
         assert!(capabilities_of("claude-code").unwrap().native_compact);
         // codex 0.146: `/compact` só no TUI; `codex exec` não expõe.
         assert!(!capabilities_of("codex").unwrap().native_compact);
-        // agy: nada.
+        // agy 1.1.13: `/compact` não é comando nativo — `agy -p "/compact"`
+        // não devolveu `command_result` (o `/credits` devolve), o texto caiu no
+        // modelo como prompt qualquer (medido 14/08/2026).
         assert!(!capabilities_of("agy").unwrap().native_compact);
     }
 
