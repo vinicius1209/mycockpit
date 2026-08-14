@@ -1,0 +1,39 @@
+{
+  "_leia": "Baseline do ratchet de tamanho (scripts/check-file-size-ratchet.mjs). Gerada, não editada à mão. Cada número é o teto CONGELADO daquele arquivo: ele não pode crescer, e quando encolher o número desce junto. Se a guarda disparar, divida o arquivo.",
+  "_tetos": {
+    "teste": 900,
+    "tsx": 700,
+    "ts": 500
+  },
+  "arquivos": {
+    "App.tsx": 910,
+    "components/chat/ChatPanel.tsx": 1625,
+    "components/chat/LexicalComposer.tsx": 907,
+    "components/chat/MessageList.tsx": 2801,
+    "components/layout/ContextPanel.tsx": 928,
+    "components/layout/InboxBell.tsx": 750,
+    "components/layout/Sidebar.tsx": 1455,
+    "components/mission/MissionTimeline.tsx": 906,
+    "components/panel/MissionControl.tsx": 801,
+    "components/scheduled/ScheduledView.tsx": 1118,
+    "components/sdd/SddView.tsx": 1649,
+    "components/settings/Especialistas.tsx": 830,
+    "components/settings/McpSettings.tsx": 819,
+    "lib/agents.ts": 620,
+    "lib/companion.test.ts": 944,
+    "lib/companion.ts": 1288,
+    "lib/db.ts": 2995,
+    "lib/fleet/derive.test.ts": 1042,
+    "lib/fleet/derive.ts": 806,
+    "lib/fleet/send.test.ts": 995,
+    "lib/fleet/send.ts": 857,
+    "lib/mission.ts": 546,
+    "lib/sdd.ts": 510,
+    "lib/toolview.ts": 611,
+    "lib/watchdog.ts": 607,
+    "store/chat.ts": 2648,
+    "store/fusion.ts": 518,
+    "store/interactions.ts": 705,
+    "store/mission.ts": 1285
+  }
+}
