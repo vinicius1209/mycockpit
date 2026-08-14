@@ -41,17 +41,37 @@ export type GuardaOpts = {
    * É a vez do menu do app. Opcional: a janela da tray só suprime.
    */
   aoAssumir?: (e: MouseEvent) => void
+  /**
+   * "Este alvo é NOSSO mesmo que um ancestral tenha menu próprio."
+   *
+   * Existe por um buraco real: o campo de renomear da sidebar mora DENTRO da
+   * linha da conversa, que é um trigger de menu do Radix. Sem isto, o botão
+   * direito no campo de texto abre "Renomear · Duplicar · Excluir" em vez de
+   * Cortar/Copiar/Colar. Campo de texto ganha de menu de container, sempre:
+   * ali o botão direito tem função de sistema a cumprir e é memória muscular.
+   */
+  prioritario?: (e: MouseEvent) => boolean
 }
 
 /** Instala a guarda. Devolve o desfazedor (pro cleanup do efeito). */
 export function instalarGuardaDoMenuNativo(opts: GuardaOpts): () => void {
-  const { dev, aoAssumir } = opts
+  const { dev, aoAssumir, prioritario } = opts
 
-  // Saída de dev: parar a propagação na CAPTURA é o único jeito de garantir
-  // que ninguém (nem o Radix da sidebar) chame `preventDefault` depois. Sem
-  // isso, o Shift abriria o nosso menu por cima do que se queria inspecionar.
   const naCaptura = (e: MouseEvent) => {
-    if (e.shiftKey) e.stopPropagation()
+    // Saída de dev: parar a propagação aqui é o único jeito de garantir que
+    // ninguém (nem o Radix da sidebar) chame `preventDefault` depois. Sem
+    // isso, o Shift abriria o nosso menu por cima do que se queria inspecionar.
+    if (dev && e.shiftKey) {
+      e.stopPropagation()
+      return
+    }
+    // Alvo prioritário (campo de texto): assume ANTES de qualquer trigger de
+    // superfície ver o evento, senão o menu do container sequestra o clique.
+    if (prioritario?.(e)) {
+      e.stopPropagation()
+      e.preventDefault()
+      aoAssumir?.(e)
+    }
   }
 
   const naBolha = (e: MouseEvent) => {
@@ -63,11 +83,11 @@ export function instalarGuardaDoMenuNativo(opts: GuardaOpts): () => void {
     aoAssumir?.(e)
   }
 
-  if (dev) document.addEventListener("contextmenu", naCaptura, true)
+  document.addEventListener("contextmenu", naCaptura, true)
   document.addEventListener("contextmenu", naBolha)
 
   return () => {
-    if (dev) document.removeEventListener("contextmenu", naCaptura, true)
+    document.removeEventListener("contextmenu", naCaptura, true)
     document.removeEventListener("contextmenu", naBolha)
   }
 }

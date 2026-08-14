@@ -247,6 +247,8 @@ Checklist:
   [ ] Movimento/tempo: regras do §6 (cronômetro, gerúndio/pretérito, dono
       único do agora, sem status inventado)
   [ ] Copy: §7 (honestidade, vocabulário canônico, sem travessão em prosa)
+  [ ] Botão direito: §11 (nenhum menu do motor; menu do app pela primitiva
+      única; nenhum item que não faz; campo de texto ganha do container)
 Veredito: aprovado | aprovado com ressalvas | reprovado
 ```
 
@@ -382,3 +384,45 @@ UI: fica fora por regra, não por exceção.
 Os núcleos puros dos três scripts vivem em `scripts/lints/` com teste vitest
 ao lado (o `bun run test` do app já os coleta). Padrão novo entra como mais um
 objeto em `DEAD_TOKEN_RULES`.
+
+## 11. Superfícies do sistema
+
+**O app não expõe menu do motor. Todo botão direito é nosso** (ADR-042).
+
+O menu que o WKWebView (macOS) e o WebKitGTK (Linux) abrem sozinhos é artefato
+do MOTOR, não feature do produto: ele oferece "Reload" (que recarrega o app no
+meio de um turno), "AutoFill", "Search with Google", "Show Writing Tools". Ver
+menu de navegador dentro do Frota é o mesmo tipo de vazamento que scrollbar de
+navegador ou cursor de link: denuncia a casca e quebra a ilusão de app.
+
+Regras decidíveis:
+
+- **Uma primitiva só.** Todo menu de contexto sai de
+  `components/ui/context-menu.tsx`. Item, rótulo e divisor são constante
+  compartilhada ali dentro: menu ancorado em elemento (`ContextMenu*`) e menu
+  ancorado no cursor (`PointMenu*`) têm a MESMA aparência. Elevação E2
+  (`--shadow-pop`), item em 13px, rótulo de grupo em 11px.
+- **Item que não FAZ não existe.** Nada de item desabilitado "pra manter o
+  formato", e nada de ação que abre um toast de erro previsível. Sem a
+  capability (ex.: leitura de área de transferência fora do Tauri), o item
+  **some** (§5 camada 1). "Salvar como…" não existe enquanto não houver
+  implementação real.
+- **Menu vazio é pior que menu ausente.** Alvo sem item honesto não abre menu
+  nenhum; o menu do motor continua suprimido do mesmo jeito.
+- **Campo de texto ganha de menu de container.** Onde há `input`, `textarea`
+  ou `contenteditable`, o menu é o de edição (Cortar · Copiar · Colar ·
+  Selecionar tudo), mesmo que a superfície em volta tenha menu próprio: ali o
+  botão direito tem função de sistema a cumprir. Campo de senha só oferece
+  **Colar**; campo somente-leitura não oferece Colar nem Cortar.
+- **Teclado é obrigatório.** Menu de contexto é alcançável por teclado (a tecla
+  de menu / Shift+F10 emitem `contextmenu` como o mouse), navega por setas e
+  sai no Esc. A primitiva Radix já entrega isso; quem adicionar menu novo não
+  pode quebrar.
+- **Saída de dev, e só em dev.** Em build de desenvolvimento, **Shift + botão
+  direito** devolve o menu do motor (é por lá que se chega em "Inspecionar
+  elemento"). Em build de release não existe escape.
+- **Copy:** os rótulos seguem o §7 (pt-BR, sem travessão) e descrevem o
+  RESULTADO pro usuário, não o alvo interno. "Mostrar na pasta", nunca
+  "Mostrar no Finder": o produto também é Linux.
+
+Superfície nova com menu de contexto entra por este caminho ou não entra.

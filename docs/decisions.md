@@ -1078,3 +1078,72 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   não ser uma aba já aberta, e essa cai no fail-closed correto (a whitelist
   devolve 400 e o executor ignora com aviso, sem efeito). O campo `cards` era
   opcional no shape e sumiu sem tocar em mais nada do envelope.
+
+### ADR-042 — O botão direito é do produto, nunca do motor ✅
+- **Contexto (14/08/2026):** em boa parte do app o botão direito abria o menu
+  do **WKWebView**, com "Reload" e "AutoFill". Isso é vazamento do motor por
+  duas vias: denuncia que o Frota é um webview, e oferece ação perigosa
+  ("Reload" recarrega o app inteiro no meio de um turno) ou sem sentido
+  ("AutoFill"). A primitiva Radix (`ui/context-menu.tsx`) existia e servia
+  só a sidebar e ao onboarding; no resto caía tudo no nativo. Medido nesta
+  máquina com uma sonda em Swift que sobe um WKWebView real e loga
+  `willOpenMenu` (só dispara quando o WebKit decidiu abrir menu nativo): sobre
+  `body{user-select:none}` o menu vem com "Reload"; dentro de `textarea`
+  focado vem com **28 itens**, incluindo "Search with Google", "Show Writing
+  Tools", "Translate", "Paragraph Direction" e "Share…". O menu do sistema em
+  campo de texto vaza MAIS do que o da área comum, não menos.
+- **Decisão — o menu do motor é suprimido no app inteiro, e o nosso entra no
+  lugar.** `preventDefault()` no evento `contextmenu` é suficiente e é o único
+  caminho portátil: o wry só expõe interruptor nativo pro WebView2 do Windows
+  (`with_default_context_menus`), e macOS e Linux rodam WebKit, onde o mesmo
+  `ContextMenuController` do WebCore desiste quando o evento do DOM foi
+  cancelado. Uma técnica só nas duas plataformas do produto.
+- **Consequência 1 — a guarda ouve na BOLHA, não na captura.** Na captura ela
+  rodaria antes do Radix, e o `composeEventHandlers` do Radix pula o próprio
+  handler quando o evento já chega com `defaultPrevented`: capturar mataria os
+  menus de contexto que já existem. Na bolha a precedência cai sozinha (quem é
+  nosso assume primeiro; o que sobrou sem dono é o que o motor ia sequestrar).
+  A exceção é o alvo **prioritário**: campo de texto assume na captura, com
+  `stopPropagation`, porque senão o menu do container o sequestra. Isso não é
+  teoria: o campo de renomear da sidebar mora dentro da linha da conversa, que
+  é um trigger do Radix, e sem a prioridade o botão direito ali abria
+  "Renomear · Duplicar · Excluir" em vez de Cortar/Copiar/Colar.
+- **Consequência 2 — tirar o nativo obriga a devolver o que ele fazia.** Em
+  campo de texto o botão direito tem função de sistema a cumprir, e é memória
+  muscular. Daí o mapa alvo → itens, com a regra pura e testada em
+  `lib/contextMenu.ts`. Campo de senha só oferece **Colar**: não se tira
+  segredo do campo por um menu aberto sem querer.
+- **Consequência 3 — "Colar" custou um plugin, e o custo estava certo.**
+  Medido: no WKWebView, `navigator.clipboard.readText()` devolve
+  `NotAllowedError` para conteúdo que a própria página não escreveu, e
+  `document.execCommand("paste")` devolve `false`. Sem o
+  `tauri-plugin-clipboard-manager` (que lê o NSPasteboard pelo Rust), "Colar"
+  seria item morto, e item que não faz não existe (§7.1). A capability libera
+  só `allow-read-text`; escrita continua pelo `navigator.clipboard`, que
+  funciona. Onde a leitura não existe (fora do Tauri) o item **some**, não
+  falha.
+- **Consequência 4 — devtools continuam a um gesto de distância, só em dev.**
+  Suprimir tudo tiraria o "Inspecionar elemento", que é como se abre o
+  inspetor no WKWebView. Em build de desenvolvimento, **Shift + botão direito**
+  devolve o menu do motor: medido que o `shiftKey` chega ao evento do DOM no
+  WKWebView, e que sem `preventDefault` o menu nativo volta. Shift (e não
+  Alt/Option) porque no Linux o Alt+clique costuma ser gesto do gerenciador de
+  janelas. Fora de dev não existe escape: o usuário final nunca vê o motor.
+- **Consequência 5 — o marcador do bloco de texto é o `data-selectable` que já
+  existia.** "O usuário pode selecionar" e "o usuário pode copiar" são a mesma
+  pergunta, então não entrou um segundo marcador dizendo o mesmo. Por isso o
+  rótulo é "Copiar texto", e não "Copiar mensagem": o mesmo marcador serve o
+  painel de contexto, onde não há mensagem nenhuma e o rótulo mentiria.
+- **Consequência 6 — o que ficou de fora, e por quê.** "Salvar como…" não
+  existe: não há implementação real (o app não tem `plugin-fs` nem diálogo de
+  salvar), e item que não faz não entra. "Copiar como markdown" também não: o
+  render não carrega a fonte markdown até o host. "Mostrar na pasta" ficou,
+  mas como comando Rust contido (`reveal_conv_image`, espelho do
+  `open_conv_image`) em vez de liberar `opener:allow-reveal-item-in-dir` pro
+  JS, para o front seguir sem poder mandar path absoluto ao SO.
+- **Prova:** a supressão só é demonstrável num navegador de verdade (teste
+  unitário não tem evento `contextmenu` nativo pra cancelar), então ela é
+  coberta por e2e (`e2e/menu-contexto.spec.ts`): um ouvinte de bolha na
+  `window` (que no caminho de propagação vem depois do `document`) confirma
+  `defaultPrevented` em toda superfície. A regra pura tem 27 casos em
+  `lib/contextMenu.test.ts`.

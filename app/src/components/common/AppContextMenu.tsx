@@ -57,7 +57,15 @@ export function AppContextMenu() {
   }, [])
 
   useEffect(
-    () => instalarGuardaDoMenuNativo({ dev: import.meta.env.DEV, aoAssumir }),
+    () =>
+      instalarGuardaDoMenuNativo({
+        dev: import.meta.env.DEV,
+        aoAssumir,
+        // Campo de texto ganha de menu de container (ex.: o campo de renomear
+        // que mora dentro da linha da conversa, na sidebar).
+        prioritario: (e) =>
+          sondarEditavel(e.target instanceof Element ? e.target : null) !== null,
+      }),
     [aoAssumir],
   )
 
