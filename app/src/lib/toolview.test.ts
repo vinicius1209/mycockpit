@@ -3,9 +3,9 @@ import {
   cleanResultText,
   evidenceMeta,
   presentTool,
-  summarizeToolGroup,
   unwrapShellCommand,
 } from "./toolview"
+import { summarizeToolGroup } from "./toolGroup"
 
 const ok = (text: string) => ({ ok: true, text, lines: text.split("\n").length })
 

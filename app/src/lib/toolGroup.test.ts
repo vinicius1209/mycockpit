@@ -3,7 +3,7 @@
 // a CULPADA nomeada. Strings dos casos vêm do mock docs/mocks/fio-despoluicao-b.html
 // e dos builds 186/187 (prints do usuário).
 import { describe, expect, it } from "vitest"
-import { describeToolGroup, type ToolActivityInput } from "./toolview"
+import { describeToolGroup, type ToolActivityInput } from "./toolGroup"
 
 const T0 = 1_754_400_000_000
 

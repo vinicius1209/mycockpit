@@ -49,14 +49,16 @@ import { attachmentReadsByItem, type ReadLabels } from "@/lib/attachmentRead"
 import type { SaveLessonOutcome } from "@/lib/learning"
 import {
   cleanResultText,
-  describeToolGroup,
   evidenceMeta,
   presentTool,
   resultMeta,
-  summarizeToolGroup,
-  workKey,
   type ToolKind,
 } from "@/lib/toolview"
+import {
+  describeToolGroup,
+  summarizeToolGroup,
+  workKey,
+} from "@/lib/toolGroup"
 import {
   bornOpen,
   detailBornOpen,
@@ -71,12 +73,23 @@ import { openDeliveryDiff } from "@/lib/deliveryDiff"
 import { Markdown } from "@/components/common/Markdown"
 import { AgentLogo, agentLogoLabel } from "@/components/common/AgentLogo"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
+import { ActivityAge, Elapsed } from "@/components/chat/LiveTime"
 import {
   reuseNodes,
   type IncidentNode,
   type Node,
   type ToolItem,
 } from "@/components/chat/messageNodes"
+import {
+  branchContains,
+  branchHasFailure,
+  branchHasLiveDeferred,
+  branchSize,
+  buildToolForest,
+  hasRunningDescendant,
+  NO_NAMED_WORK,
+  type ToolTreeNode,
+} from "@/components/chat/toolTree"
 import { buildNodesMemo, type NodesMemo } from "@/components/chat/nodesMemo"
 import { groupByAuthor, groupTs, type MessageGroup } from "@/components/chat/messageGroups"
 import {
@@ -115,110 +128,6 @@ const KIND_ICON: Record<ToolKind, LucideIcon> = {
   generic: Wrench,
 }
 
-export interface ToolTreeNode {
-  item: ToolItem
-  children: ToolTreeNode[]
-}
-
-/** Reconstrói a topologia reportada pelo provider. Pai ausente/desconhecido
- * vira raiz (fail-open para históricos e adapters sem hierarquia). */
-export function buildToolForest(tools: ToolItem[]): ToolTreeNode[] {
-  const byToolId = new Map(
-    tools.filter((t) => t.toolId).map((t) => [t.toolId!, t] as const),
-  )
-  const children = new Map<string, ToolItem[]>()
-  const roots: ToolItem[] = []
-  for (const tool of tools) {
-    if (tool.parentToolId && byToolId.has(tool.parentToolId)) {
-      const list = children.get(tool.parentToolId) ?? []
-      list.push(tool)
-      children.set(tool.parentToolId, list)
-    } else {
-      roots.push(tool)
-    }
-  }
-  const building = new Set<string>()
-  const node = (item: ToolItem): ToolTreeNode => {
-    const key = item.toolId ?? item.id
-    if (building.has(key)) return { item, children: [] }
-    building.add(key)
-    const out = {
-      item,
-      children: (item.toolId ? children.get(item.toolId) : undefined)?.map(node) ?? [],
-    }
-    building.delete(key)
-    return out
-  }
-  return roots.map(node)
-}
-
-function branchContains(node: ToolTreeNode, itemId: string | null | undefined): boolean {
-  if (!itemId) return false
-  return (
-    node.item.id === itemId ||
-    node.children.some((child) => branchContains(child, itemId))
-  )
-}
-
-/** O ramo carrega trabalho diferido do provider ainda VIVO (D1.2)? Mantém o nó
- *  do Workflow exposto (fora do histórico recolhido) enquanto o background
- *  task roda de verdade dentro do CLI. */
-function branchHasLiveDeferred(node: ToolTreeNode): boolean {
-  return (
-    node.item.deferred?.status === "running" ||
-    node.children.some(branchHasLiveDeferred)
-  )
-}
-
-/** O ramo carrega alguma FALHA? Ramo falhado nunca entra no stub de concluídas
- *  (a falha não se esconde — despoluição do fio, mock B ③). */
-function branchHasFailure(node: ToolTreeNode): boolean {
-  return (
-    node.item.result?.ok === false || node.children.some(branchHasFailure)
-  )
-}
-
-/** Ações no ramo (plano, inclui descendentes) — alimenta a contagem honesta do
- *  stub "N concluídas · mostrar". */
-function branchSize(node: ToolTreeNode): number {
-  return 1 + node.children.reduce((acc, child) => acc + branchSize(child), 0)
-}
-
-/** Este nó está EM EXECUÇÃO (mesma conta que a `ToolLine` faz pra si)? */
-function nodeIsRunning(
-  node: ToolTreeNode,
-  activeToolId?: string | null,
-): boolean {
-  if (node.item.result) return false
-  return (
-    branchContains(node, activeToolId) ||
-    node.item.managedProcess?.status === "running" ||
-    node.item.managedProcess?.status === "stopping" ||
-    node.item.deferred?.status === "running"
-  )
-}
-
-/** Algum DESCENDENTE em execução? Então o indicador animado é dele: um único
- *  ponto vivo por linhagem (§2/§6). Um trabalho em background acendia três
- *  spinners na mesma linhagem (cabeçalho + tool_use + nó do trabalho). */
-function hasRunningDescendant(
-  node: ToolTreeNode,
-  activeToolId?: string | null,
-): boolean {
-  return node.children.some(
-    (child) =>
-      nodeIsRunning(child, activeToolId) ||
-      hasRunningDescendant(child, activeToolId),
-  )
-}
-
-/** Trabalhos cujo NOME um ancestral visível já mostrou. Posse é da ENTIDADE
- *  (`workKey`), não da string, e desce por toda a subárvore: o nó sintético
- *  `DeferredWork` mora no nível 2 (pendurado no `tool_use` de origem), então
- *  uma prop que parava no nível 1 nunca o alcançava (docs/fio-poluicao-2.md,
- *  B1 furo B). Set vazio compartilhado pra não quebrar o `memo` da ToolLine. */
-const NO_NAMED_WORK: ReadonlySet<string> = new Set<string>()
-
 /** Ancestral rolável do fio (o ChatPanel usa um div `overflow-x-hidden
  *  overflow-y-auto`; por isso a checagem olha SÓ o overflowY computado — o
  *  hidden do eixo X não interfere). null em testes/SSR: sem scroll não há
@@ -231,18 +140,6 @@ function scrollContainerOf(el: HTMLElement): HTMLElement | null {
     }
   }
   return null
-}
-
-/** Cronômetro ao vivo enquanto o run pensa (atualiza a cada 1s). */
-function Elapsed({ since, className }: { since: number; className?: string }) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [])
-  return (
-    <span className={cn("tabular-nums", className)}>{fmtDuration(now - since)}</span>
-  )
 }
 
 /** Reúne os hunks de um tool de edição + contagem. Edit → 1 hunk; MultiEdit →
@@ -957,43 +854,6 @@ function ToolGroupStatus({
       />
     )
   return <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
-}
-
-/** Idade do último evento do grupo vivo, na MESMA régua do `fmtDuration` que
- *  aparece ao lado (h/min/s, unidade explícita). Um trabalho em background de
- *  3h escrevia "há 180min" enquanto o vizinho escrevia "3h 00min": duas
- *  gramáticas de tempo em elementos adjacentes.
- *
- *  Acima de um minuto NÃO mostra segundos de propósito, ao contrário do
- *  `fmtDuration`: aqui o número tica sozinho a cada segundo, e um dígito
- *  correndo ao lado de um relógio congelado é ruído, não informação (§6 R1,
- *  cronômetro estável). Abaixo de 60s os segundos são o detector de travamento
- *  e continuam inteiros. */
-export function activityAgeLabel(ms: number): string {
-  const seconds = Math.max(0, Math.floor(ms / 1000))
-  if (seconds < 5) return "agora"
-  if (seconds < 60) return `há ${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `há ${minutes}min`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `há ${hours}h ${String(minutes % 60).padStart(2, "0")}min`
-  return `há ${Math.floor(hours / 24)}d ${String(hours % 24).padStart(2, "0")}h`
-}
-
-function ActivityAge({ at, stalled }: { at?: number; stalled?: boolean }) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [])
-  if (!at) return null
-  const label = activityAgeLabel(now - at)
-  return (
-    <span className={cn("font-mono text-[11px]", stalled && "text-st-warning")}>
-      {stalled ? "sem eventos " : "atividade "}
-      {label}
-    </span>
-  )
 }
 
 /** Registro de voo: UMA caption por burst — e, assentado, UMA linha por grupo
