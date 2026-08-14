@@ -582,6 +582,10 @@ mod tests {
         // `[]`/`null` parseiam como JSON: trocar por {} apagaria o que quer
         // que aquilo fosse — erro honesto, nada alterado.
         let dir = std::env::temp_dir().join(format!("mc-sl-settings-{}", std::process::id()));
+        // parte de dir LIMPO: a limpeza do fim não roda se o teste entrar em
+        // pânico, e o pid é reciclado pelo SO — sobra de rodada antiga entrava
+        // aqui dentro.
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("settings.json");
         for corpo in ["[]", "null", "\"texto\""] {
@@ -595,6 +599,11 @@ mod tests {
     #[test]
     fn backup_mais_recente_por_timestamp() {
         let dir = std::env::temp_dir().join(format!("mc-sl-bak-{}", std::process::id()));
+        // este é o mais exposto do arquivo: ENUMERA o diretório e afirma qual
+        // backup é o mais novo. Um `bak-mycockpit-<n>` órfão com n > 200,
+        // deixado por rodada que morreu antes da limpeza (pid reciclado),
+        // inverteria a asserção. Parte de dir limpo.
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let settings = dir.join("settings.json");
         std::fs::write(dir.join("settings.json.bak-mycockpit-100"), "{}").unwrap();
