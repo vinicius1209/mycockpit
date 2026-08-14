@@ -4,12 +4,7 @@
 // com `input = item.changes` e sem `file_path`.
 
 import { describe, expect, it } from "vitest"
-import {
-  actionLabel,
-  buildPhaseFeed,
-  liveActionLine,
-  toolIdentity,
-} from "./missionAction"
+import { actionLabel, buildPhaseFeed, toolIdentity } from "./missionAction"
 import type { ChatItem } from "@/store/chat"
 
 function tool(
@@ -161,24 +156,37 @@ describe("feed da fase · quando detalhe vira ruído (R6)", () => {
 })
 
 describe("linha viva · o filho mostra o delta, nunca o eco do marco", () => {
-  it("sem ação em aberto, não há linha viva (nem verbo inventado)", () => {
-    const l = liveActionLine([
-      tool({ name: "Write", input: { file_path: "/p/x.md" }, result: { ok: true, text: "", lines: 1 } }),
-    ])
-    expect(l).toBeNull()
+  // O "Agora: Criar landing-plan.md" do build 193 repetia a linha logo acima
+  // porque a linha viva era um ECO do marco. Aqui não existe linha separada: a
+  // ação SEM desfecho é a última do próprio feed, viva, e as de cima já estão
+  // no pretérito. Duplicar virou impossível por construção.
+  it("com tudo concluído, nenhuma linha fica viva", () => {
+    const feed = buildPhaseFeed(
+      [tool({ name: "Write", input: { file_path: "/p/x.md" }, result: { ok: true, text: "", lines: 1 } })],
+      { live: true },
+    )
+    expect(feed.some((r) => r.kind === "acao" && r.state === "viva")).toBe(false)
   })
 
-  it("a linha viva é a ação SEM desfecho, e ela é a última do bloco", () => {
-    const l = liveActionLine([
-      tool({ name: "Write", input: { file_path: "/p/a.md" }, result: { ok: true, text: "", lines: 1 } }),
-      tool({ name: "Bash", input: { command: "bun run test" } }),
-    ])
-    // o degrau 1 ganha: o fio já sabe ler "bun run test" semanticamente.
-    expect(l).toBe("Executar testes")
+  it("a ação sem desfecho é a ÚLTIMA do feed, e é a única viva", () => {
+    const feed = buildPhaseFeed(
+      [
+        tool({ name: "Write", input: { file_path: "/p/a.md" }, id: "1", result: { ok: true, text: "", lines: 1 } }),
+        tool({ name: "Bash", input: { command: "bun run test" }, id: "2" }),
+      ],
+      { live: true },
+    )
+    const vivas = feed.filter((r) => r.kind === "acao" && r.state === "viva")
+    expect(vivas).toHaveLength(1)
+    expect(feed[feed.length - 1]).toMatchObject({ id: "2", state: "viva" })
+    // e o rótulo dela NUNCA é igual ao do marco imediatamente acima
+    expect(feed[0]).not.toMatchObject({ label: "Executar testes" })
   })
 
   it("fase sem ação nenhuma não recebe 'preparando…'", () => {
-    expect(liveActionLine([])).toBeNull()
-    expect(liveActionLine([{ kind: "text", id: "t", text: "oi" }])).toBeNull()
+    expect(buildPhaseFeed([], { live: true })).toHaveLength(0)
+    expect(
+      buildPhaseFeed([{ kind: "text", id: "t", text: "oi" }], { live: true }),
+    ).toHaveLength(0)
   })
 })

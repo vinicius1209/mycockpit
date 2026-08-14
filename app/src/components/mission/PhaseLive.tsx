@@ -19,10 +19,8 @@ import {
 } from "@/lib/missionAction"
 import { narratesActions, quietPhaseView } from "@/lib/missionQuiet"
 import { interruptPrice, MISSION_GESTURES } from "@/lib/missionGestures"
-import {
-  RepeatWarningCard,
-  useRepeatWarning,
-} from "@/components/mission/RepeatWarning"
+import { RepeatWarningCard } from "@/components/mission/RepeatWarning"
+import { useRepeatWarning } from "@/hooks/useRepeatWarning"
 import type { MissionPhaseRun } from "@/lib/missionTypes"
 import { cn } from "@/lib/utils"
 

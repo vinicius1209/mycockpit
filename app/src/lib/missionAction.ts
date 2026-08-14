@@ -262,26 +262,3 @@ function stubOf(rows: ActionRow[]): StubRow {
     label: `${n} ${n === 1 ? "leitura" : "leituras"}`,
   }
 }
-
-/**
- * A LINHA VIVA da fase: o que ainda não terminou, no gerúndio.
- *
- * É a correção do defeito 1 (ADR-037 vivo na missão): o "Agora: Criar
- * landing-plan.md" do build 193 repetia a linha imediatamente acima porque a
- * linha viva era um ECO do marco. Aqui o marco fica no pretérito e a linha viva
- * só existe quando há uma ação SEM desfecho — e ela é, por construção, a última
- * do bloco. Nada a mostrar ⇒ null, e o slot fica vazio em vez de receber
- * "preparando…"/"trabalhando…"/"redigindo resposta…", que eram verbos
- * inventados pra preencher silêncio.
- */
-export function liveActionLine(items: ChatItem[] | undefined): string | null {
-  const list = items ?? []
-  for (let i = list.length - 1; i >= 0; i--) {
-    const it = list[i]
-    if (it.kind !== "tool") continue
-    if (it.result) return null // a última ação já tem desfecho: nada vivo
-    const lab = actionLabel(it.name, it.input)
-    return lab ? lab.label : "1 ação sem rótulo (o motor não mandou o nome)"
-  }
-  return null
-}

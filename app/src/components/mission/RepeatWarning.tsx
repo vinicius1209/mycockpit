@@ -1,60 +1,14 @@
 // O aviso de REPETIÇÃO da fase viva (R11). Mora colado na fase, não num painel
 // próprio, e só existe quando os DOIS fatores estão de pé (lib/missionRepeat).
 //
-// A amostragem do worktree é ligada AQUI e só aqui: o efeito só roda quando o
-// primeiro fator já disparou, então em missão saudável nenhum git é executado.
-// Enquanto a primeira amostra não volta, o aviso não aparece — "ainda não sei"
-// não é "não mudou".
+// A amostragem do worktree vive no hook irmão (hooks/useRepeatWarning): o
+// efeito só roda quando o primeiro fator já disparou, então em missão saudável
+// nenhum git é executado.
 //
 // O app nunca aborta sozinho: o gesto oferecido é o de sempre, e o preço dele
 // é dito antes do clique (lib/missionGestures).
 
-import { useEffect, useState } from "react"
-import {
-  repeatCandidate,
-  repeatWarning,
-  type RepeatWarning as RepeatWarningData,
-} from "@/lib/missionRepeat"
-import {
-  PULSE_INTERVAL_MS,
-  sampleWorktreeChangedAt,
-} from "@/lib/missionWorktreePulse"
-import type { MissionPhaseRun } from "@/lib/missionTypes"
-
-/**
- * Calcula o aviso da fase, ligando a amostragem do worktree só quando vale.
- * Devolve null quando não há suspeita OU quando o worktree não pôde ser lido.
- */
-export function useRepeatWarning(
-  phase: MissionPhaseRun,
-  cwd: string,
-  now: number,
-): RepeatWarningData | null {
-  const candidate = repeatCandidate(phase.items)
-  const suspeita = candidate != null
-  const [changedAt, setChangedAt] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (!suspeita || !cwd) {
-      setChangedAt(null)
-      return
-    }
-    let vivo = true
-    const amostra = () => {
-      void sampleWorktreeChangedAt(cwd).then((at) => {
-        if (vivo) setChangedAt(at)
-      })
-    }
-    amostra()
-    const id = setInterval(amostra, PULSE_INTERVAL_MS)
-    return () => {
-      vivo = false
-      clearInterval(id)
-    }
-  }, [suspeita, cwd])
-
-  return repeatWarning(candidate, changedAt, now)
-}
+import type { RepeatWarning as RepeatWarningData } from "@/lib/missionRepeat"
 
 export function RepeatWarningCard({
   warning,
