@@ -141,3 +141,4 @@ describe("describeToolGroup · contagens e paridade com o resumo existente", () 
     expect(digest.total).toBe(0)
   })
 })
+

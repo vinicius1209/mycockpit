@@ -98,38 +98,116 @@ describe("MessageList · concluído recolhe pra UMA linha com tempo congelado", 
   })
 })
 
-describe("MessageList · o filho mostra só o delta (rótulo uma vez)", () => {
-  it("trabalho em background vivo: o cabeçalho é o dono do nome, o filho mostra o estado", () => {
-    const deferred: DeferredWork = {
-      id: "w1",
-      toolUseId: "toolu_01",
-      kind: "local_workflow",
-      name: "spike-ping",
-      status: "running",
-      summary: null,
-      outputFile: null,
-      tokens: null,
-      startedAt: T0,
-      updatedAt: T0,
-    }
+// Cena MEDIDA da auditoria (docs/fio-poluicao-2.md §0), remontada com a forma
+// que o reducer REALMENTE produz: o `tool_use` de origem carrega o
+// `tool_use_id` do provider e o nó sintético `DeferredWork` pendura nele por
+// `parentToolId` (store/chat.ts, case "deferred_work"). Ids reais do spike D0
+// (adapters.rs, `claude_task_started_vira_deferred_running_com_vinculo…`).
+// A fixture ANTERIOR montava o DeferredWork sem `parentToolId` — forma que o
+// reducer nunca emite — e por isso ficava verde enquanto o app repetia o nome
+// 4× na mesma tela (ADR-016).
+const TOOL_USE_ID = "toolu_01MmPxeoK9vhakStdhGbVywn"
+const WORK_NAME = "Check address edit history in prod"
+
+function backgroundScene(
+  over: Partial<DeferredWork> = {},
+): [ChatItem, ChatItem] {
+  const deferred: DeferredWork = {
+    id: "wnz619fti",
+    toolUseId: TOOL_USE_ID,
+    kind: "local_workflow",
+    name: WORK_NAME,
+    status: "running",
+    summary: null,
+    outputFile: null,
+    tokens: null,
+    startedAt: T0,
+    updatedAt: T0,
+    ...over,
+  }
+  return [
+    {
+      kind: "tool",
+      id: "item-agent",
+      name: "Agent",
+      input: { description: WORK_NAME, subagent_type: "general-purpose" },
+      toolId: TOOL_USE_ID,
+      ts: T0,
+      activityAt: T0,
+    },
+    {
+      kind: "tool",
+      id: `deferred-${deferred.id}`,
+      name: "DeferredWork",
+      input: { name: deferred.name, kind: deferred.kind, description: null },
+      toolId: `deferred:${deferred.id}`,
+      parentToolId: TOOL_USE_ID,
+      deferred,
+      ts: T0,
+      activityAt: T0,
+    },
+  ]
+}
+
+describe("MessageList · posse do nome é da ENTIDADE, e desce pela subárvore", () => {
+  it("trabalho em background vivo: o nome sai UMA vez do grupo, os dois níveis mostram só o delta", () => {
+    const html = render(
+      [{ kind: "user", id: "u1", text: "confere o histórico" }, ...backgroundScene()],
+      true,
+    )
+    // a linha viva do rodapé (dona única do agora) leva o nome no `title` e
+    // trunca o texto: tudo que vem ANTES dela é o fio do grupo.
+    const [inThread] = html.split(`title="${WORK_NAME}"`)
+    // no grupo o nome sai UMA vez só — antes eram 3 ocorrências aqui dentro
+    // (cabeçalho + nível 1 + nível 2), porque a comparação era de string e a
+    // prop `headerLabel` parava no nível 1.
+    expect(inThread.match(new RegExp(WORK_NAME, "g"))).toHaveLength(1)
+    // e o total da tela cai de 4 pra 2 (grupo + linha viva do rodapé)
+    expect(html.match(new RegExp(WORK_NAME, "g"))).toHaveLength(2)
+  })
+
+  it("o delta de cada nível é o que o ADR-037 pede: estado no nível 1, marco no nível 2", () => {
+    const html = render(
+      [{ kind: "user", id: "u1", text: "confere o histórico" }, ...backgroundScene()],
+      true,
+    )
+    // nível 1 (o tool_use que delegou): o que sobra é o estado + o tipo de agente
+    expect(html).toContain(">em execução<")
+    expect(html).toContain("general-purpose")
+    // nível 2 (o nó sintético do trabalho diferido): o marco de nascimento
+    expect(html).toContain(">iniciado<")
+  })
+
+  it("a posse é por identidade, não por prefixo: rótulos DIFERENTES da mesma entidade dedupam", () => {
+    const html = render(
+      [{ kind: "user", id: "u1", text: "confere o histórico" }, ...backgroundScene()],
+      true,
+    )
+    // o cabeçalho carrega o rótulo com prefixo; o nível 1 carregaria o sem
+    // prefixo. Igualdade de string nunca casaria os dois (era o furo A).
+    expect(html).toContain(`Trabalho em background: ${WORK_NAME}`)
+    expect(html.match(/Trabalho em background: /g)).toHaveLength(1)
+  })
+
+  it("filho sem identidade (histórico sem tool_use_id) não herda posse: mantém o nome", () => {
+    const [agent, deferredNode] = backgroundScene()
     const html = render(
       [
-        { kind: "user", id: "u1", text: "Pesquise" },
+        { kind: "user", id: "u1", text: "confere o histórico" },
+        agent,
         {
           kind: "tool",
-          id: "deferred-w1",
-          name: "DeferredWork",
-          input: { name: "spike-ping", kind: "local_workflow" },
-          toolId: "deferred:w1",
-          deferred,
+          id: "item-bash",
+          name: "Bash",
+          input: { description: "Consultar o banco", command: "sqlite3 app.db .tables" },
+          parentToolId: TOOL_USE_ID,
           ts: T0,
         },
+        deferredNode,
       ],
       true,
     )
-    // o rótulo aparece UMA vez no fio do grupo (cabeçalho); o filho vira delta
-    const inThread = html.split("trabalho em background · spike-ping").join("")
-    expect(inThread.match(/Trabalho em background: spike-ping/g)).toHaveLength(1)
-    expect(html).toContain(">iniciado<")
+    // fail-open: sem chave de trabalho não há o que dedupar, o nome fica
+    expect(html).toContain("Consultar o banco")
   })
 })

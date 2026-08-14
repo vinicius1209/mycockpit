@@ -53,6 +53,7 @@ import {
   presentTool,
   resultMeta,
   summarizeToolGroup,
+  workKey,
   type ToolKind,
 } from "@/lib/toolview"
 import {
@@ -180,6 +181,13 @@ function branchHasFailure(node: ToolTreeNode): boolean {
 function branchSize(node: ToolTreeNode): number {
   return 1 + node.children.reduce((acc, child) => acc + branchSize(child), 0)
 }
+
+/** Trabalhos cujo NOME um ancestral visível já mostrou. Posse é da ENTIDADE
+ *  (`workKey`), não da string, e desce por toda a subárvore: o nó sintético
+ *  `DeferredWork` mora no nível 2 (pendurado no `tool_use` de origem), então
+ *  uma prop que parava no nível 1 nunca o alcançava (docs/fio-poluicao-2.md,
+ *  B1 furo B). Set vazio compartilhado pra não quebrar o `memo` da ToolLine. */
+const NO_NAMED_WORK: ReadonlySet<string> = new Set<string>()
 
 /** Ancestral rolável do fio (o ChatPanel usa um div `overflow-x-hidden
  *  overflow-y-auto`; por isso a checagem olha SÓ o overflowY computado — o
@@ -320,7 +328,7 @@ const ToolLine = memo(function ToolLine({
   agent,
   depth = 1,
   deferredPending = false,
-  headerLabel,
+  namedWork = NO_NAMED_WORK,
   onStop,
   onRetry,
 }: {
@@ -331,10 +339,10 @@ const ToolLine = memo(function ToolLine({
   /** Há trabalho em background do provider vivo neste fio (D1.4): o botão de
    *  interromper avisa que ele morre junto com o turno. */
   deferredPending?: boolean
-  /** Rótulo que o CABEÇALHO do grupo já mostra (despoluição, paleta A ①): se
-   *  esta linha repetiria a mesma string, ela mostra só o delta (estado). Só
-   *  vem preenchido no nível 1; falha nunca dedupa (a linha é a evidência). */
-  headerLabel?: string
+  /** Trabalhos (`workKey`) cujo nome um ancestral visível já mostrou: se ESTA
+   *  linha apresenta um deles, ela mostra só o delta (o estado). Falha nunca
+   *  dedupa — a linha falhada é a evidência e mantém o nome. */
+  namedWork?: ReadonlySet<string>
   onStop?: (tool: ToolItem) => void
   onRetry?: (tool: ToolItem) => void
 }) {
@@ -375,23 +383,33 @@ const ToolLine = memo(function ToolLine({
         ? "concluiu"
         : "interrompido"
     : null
-  // Rótulo UMA vez (despoluição, paleta A ①): quando o cabeçalho do grupo já é
-  // o dono desta MESMA string, o filho mostra só o delta dele — o estado (que
-  // no diferido já é a meta "iniciado/concluiu/interrompido"). Falha não
-  // dedupa: a linha falhada é a evidência e mantém o nome.
-  const echoesHeader =
-    headerLabel != null && status !== "error" && p.label === headerLabel
+  // Rótulo UMA vez (despoluição, paleta A ①): o nome pertence ao TRABALHO, e
+  // quem já mostrou é dono. Se um ancestral visível (cabeçalho do grupo ou uma
+  // linha acima) já apresentou ESTA entidade, o nó mostra só o delta dele — o
+  // estado (que no diferido já é a meta "iniciado/concluiu/interrompido").
+  // Falha não dedupa: a linha falhada é a evidência e mantém o nome.
+  const work = workKey(item)
+  const echoesOwner =
+    work != null && status !== "error" && namedWork.has(work)
+  // A posse desce inteira: quem apresentou a entidade (ou herdou a posse dela)
+  // repassa aos descendentes, então o mesmo nome não reaparece 2 níveis abaixo.
+  const namedForChildren = useMemo(() => {
+    if (work == null || namedWork.has(work)) return namedWork
+    const next = new Set(namedWork)
+    next.add(work)
+    return next as ReadonlySet<string>
+  }, [namedWork, work])
   const stateWord =
     status === "running"
       ? "em execução"
       : status === "ok"
         ? "concluído"
         : "registrado"
-  const label = echoesHeader ? (deferredMeta ?? stateWord) : p.label
+  const label = echoesOwner ? (deferredMeta ?? stateWord) : p.label
   const meta = [
     p.meta,
     processMeta,
-    echoesHeader ? null : deferredMeta,
+    echoesOwner ? null : deferredMeta,
     res,
     evidenceMeta(item.images),
   ]
@@ -695,6 +713,7 @@ const ToolLine = memo(function ToolLine({
               parentId={item.toolId ?? item.id}
               live={active}
               deferredPending={deferredPending}
+              namedWork={namedForChildren}
               onStop={onStop}
               onRetry={onRetry}
             />
@@ -718,7 +737,7 @@ function ToolNodeList({
   parentId,
   live,
   deferredPending,
-  headerLabel,
+  namedWork,
   onStop,
   onRetry,
 }: {
@@ -729,8 +748,9 @@ function ToolNodeList({
   parentId?: string
   live: boolean
   deferredPending?: boolean
-  /** Rótulo do cabeçalho do grupo (só no nível 1) — vai pro dedup da ToolLine. */
-  headerLabel?: string
+  /** Trabalhos cujo nome já foi mostrado acima — repassado INTEGRALMENTE a cada
+   *  filho (e daí pra baixo pela ToolLine): a posse não para num nível. */
+  namedWork?: ReadonlySet<string>
   onStop?: (tool: ToolItem) => void
   onRetry?: (tool: ToolItem) => void
 }) {
@@ -771,7 +791,7 @@ function ToolNodeList({
       agent={agent}
       depth={depth}
       deferredPending={deferredPending}
-      headerLabel={headerLabel}
+      namedWork={namedWork}
       onStop={onStop}
       onRetry={onRetry}
     />
@@ -937,6 +957,15 @@ const ToolGroup = memo(function ToolGroup({
   const digest = useMemo(
     () => describeToolGroup(tools, live && activeToolId != null),
     [tools, live, activeToolId],
+  )
+  // O cabeçalho é o primeiro dono do nome: a entidade que o `digest.label`
+  // apresenta já está nomeada quando a árvore abre (e a posse desce daí).
+  const namedWork = useMemo(
+    () =>
+      digest.labelWorkId
+        ? (new Set([digest.labelWorkId]) as ReadonlySet<string>)
+        : NO_NAMED_WORK,
+    [digest.labelWorkId],
   )
   const failedInGroup = digest.failed > 0
   // Concluído NASCE recolhido; só o vivo nasce aberto; falha nasce aberta
@@ -1144,7 +1173,7 @@ const ToolGroup = memo(function ToolGroup({
             depth={1}
             live={live}
             deferredPending={deferredLive}
-            headerLabel={digest.label}
+            namedWork={namedWork}
             onStop={onStop}
             onRetry={onRetry}
           />

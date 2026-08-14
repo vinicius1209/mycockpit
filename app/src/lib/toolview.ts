@@ -399,6 +399,30 @@ export interface ToolActivityInput {
   ts?: number
   /** Último evento observável da ação. Ausente em histórico antigo. */
   activityAt?: number
+  /** `tool_use_id` do provider: a âncora da correlação com nós sintéticos. */
+  toolId?: string | null
+  /** Trabalho diferido que ESTE nó apresenta (o nó sintético do reducer):
+   *  `toolUseId` aponta pro `toolId` do `tool_use` que o pariu. */
+  deferred?: { id: string; toolUseId?: string | null } | null
+}
+
+/** Identidade da ENTIDADE de trabalho que um nó apresenta.
+ *
+ *  Um `tool_use` (Agent/Workflow) e o nó sintético `DeferredWork` que ele pariu
+ *  são O MESMO trabalho: `deferred.toolUseId` é o `toolId` da origem, então os
+ *  dois devolvem a mesma chave. É essa chave que decide posse de nome e
+ *  contagem — nome é propriedade da ENTIDADE, não da string, e comparar rótulo
+ *  foi justamente o remendo que vazou (docs/fio-poluicao-2.md, B1/B2).
+ *
+ *  `null` = nó sem correlação conhecida (histórico antigo, adapter que não
+ *  reporta `tool_use_id`): conta como entidade própria e NUNCA herda posse
+ *  (fail-open, o nome continua aparecendo). */
+export function workKey(
+  t: Pick<ToolActivityInput, "toolId" | "deferred">,
+): string | null {
+  const d = t.deferred
+  if (d) return `work:${d.toolUseId ?? d.id}`
+  return t.toolId ? `work:${t.toolId}` : null
 }
 
 export interface ToolGroupView {
@@ -483,6 +507,11 @@ export interface ToolGroupDigest extends ToolGroupView {
    * null enquanto roda (o "agora" pertence à linha viva do rodapé), quando o
    * histórico não tem carimbos, ou abaixo de 1s (regra do Warp: nunca "0s"). */
   durationMs: number | null
+  /** Entidade de trabalho cujo NOME o `label` está carregando (`workKey`), ou
+   * null quando o rótulo é genérico ("3 verificações concluídas") ou nomeia uma
+   * culpada (falha nunca dedupa). Quem recebe isso é dono do nome, e a posse
+   * desce por toda a subárvore — não só um nível (B1, furo B). */
+  labelWorkId: string | null
 }
 
 export function describeToolGroup(
@@ -499,6 +528,7 @@ export function describeToolGroup(
       agents: 0,
       shells: 0,
       durationMs: null,
+      labelWorkId: null,
     }
   const views = tools.map((t) => presentTool(t.name, t.input))
   const agents = tools.filter(
@@ -527,7 +557,14 @@ export function describeToolGroup(
     const span = max - min
     if (Number.isFinite(span) && span >= 1000) durationMs = span
   }
-  const base = { total, failed: failedIdx.length, agents, shells, durationMs }
+  const base = {
+    total,
+    failed: failedIdx.length,
+    agents,
+    shells,
+    durationMs,
+    labelWorkId: null as string | null,
+  }
   if (failedIdx.length > 0) {
     // A falha não se esconde nem vira frase genérica: nomeia a culpada quando
     // ela é uma só; com várias, a contagem manda e o detalhe fica nas linhas.
@@ -548,11 +585,18 @@ export function describeToolGroup(
         break
       }
     }
-    return { ...base, label: views[currentIdx].label, emphasis, state: "running" }
+    return {
+      ...base,
+      label: views[currentIdx].label,
+      labelWorkId: workKey(tools[currentIdx]),
+      emphasis,
+      state: "running",
+    }
   }
   return {
     ...base,
     label: settledLabel(views, allFinished),
+    labelWorkId: total === 1 ? workKey(tools[0]) : null,
     emphasis,
     state: allFinished ? "ok" : "recorded",
   }
