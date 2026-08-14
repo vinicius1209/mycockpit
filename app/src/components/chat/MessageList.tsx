@@ -69,12 +69,12 @@ import { Markdown } from "@/components/common/Markdown"
 import { AgentLogo, agentLogoLabel } from "@/components/common/AgentLogo"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import {
-  buildNodes,
   reuseNodes,
   type IncidentNode,
   type Node,
   type ToolItem,
 } from "@/components/chat/messageNodes"
+import { buildNodesMemo, type NodesMemo } from "@/components/chat/nodesMemo"
 import { groupByAuthor, groupTs, type MessageGroup } from "@/components/chat/messageGroups"
 import {
   feedbackTextByResult,
@@ -2580,16 +2580,16 @@ function GroupRow({
   )
 }
 
-/** Nós de render com a IDENTIDADE preservada entre frames (ver `reuseNodes`).
- *  O `useMemo` sozinho não bastava: sua dependência é `items`, e o reducer de
- *  `text_delta` devolve um array novo a cada token — o memo recalculava sempre e
- *  toda a árvore abaixo recebia props inéditas. */
+/** Nós de render com a IDENTIDADE preservada entre frames (`reuseNodes`) e
+ *  reconstruídos só na FAIXA que o token mexeu (`nodesMemo`) — abaixo de
+ *  `rebuiltFrom` os nós já SÃO os do frame anterior, e a dobra nem passa lá. */
 function useStableNodes(items: ChatItem[]): Node[] {
-  const prev = useRef<Node[]>([])
+  const memo = useRef<NodesMemo | null>(null)
   return useMemo(() => {
-    const next = reuseNodes(prev.current, buildNodes(items))
-    prev.current = next
-    return next
+    const prev = memo.current
+    const next = buildNodesMemo(prev, items)
+    memo.current = next
+    return prev ? reuseNodes(prev.nodes, next.nodes, next.rebuiltFrom) : next.nodes
   }, [items])
 }
 

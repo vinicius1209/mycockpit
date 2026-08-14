@@ -180,23 +180,59 @@ export function continuesProse(prev: string, next: string): boolean {
   return true
 }
 
-/** Agrupa um TURNO: a narração do agente (costurando fragmentos cortados no meio
- *  por tool use interleaved) vira UMA bolha; as tools que ela disparou viram um
- *  grupo compacto logo depois. Frases completas separadas por tools continuam
- *  passos distintos. Task tools somem do fluxo e viram UMA checklist. */
-export function buildNodes(items: ChatItem[]): Node[] {
-  const nodes: Node[] = []
-  let planShownInTurn = false
-  // O stream do Claude entrega tools dos subagentes separadas, mas com
-  // `parentToolId`. Reúne os descendentes antecipadamente: o nó raiz viaja com
-  // todo o galho e os filhos não reaparecem como bursts soltos.
-  const childrenByParent = new Map<string, ToolItem[]>()
+/** Ponto onde a dobra pode RECOMEÇAR sem olhar pra trás.
+ *
+ *  A dobra carrega dois estados entre iterações: o segmento aberto (`seg`) e
+ *  `planShownInTurn`. Num índice em que `seg` está FECHADO, tudo que já foi
+ *  emitido é definitivo e o único estado que atravessa é o booleano — então
+ *  retomar dali produz exatamente os mesmos nós que uma passada inteira. É o
+ *  que permite reconstruir só a FAIXA afetada (ver `nodesMemo.ts`). */
+export interface Restart {
+  /** índice do item no topo do loop */
+  readonly item: number
+  /** quantos nós já haviam sido emitidos */
+  readonly node: number
+  readonly planShownInTurn: boolean
+}
+
+/** Tools filhos indexados por `parentToolId`.
+ *
+ *  O stream do Claude entrega tools dos subagentes separadas, mas com
+ *  `parentToolId`. Reunir os descendentes antes da dobra faz o nó raiz viajar
+ *  com todo o galho, sem os filhos reaparecerem como bursts soltos.
+ *
+ *  Fica FORA do fold porque é a única dependência dele que olha para FRENTE no
+ *  fio (um filho nasce depois do pai, e envelhece o nó do pai): a reconstrução
+ *  incremental precisa tratá-la à parte.
+ *  @internal */
+export function childrenByParentOf(items: ChatItem[]): Map<string, ToolItem[]> {
+  const out = new Map<string, ToolItem[]>()
   for (const item of items) {
     if (item.kind !== "tool" || !item.parentToolId) continue
-    const children = childrenByParent.get(item.parentToolId) ?? []
+    const children = out.get(item.parentToolId) ?? []
     children.push(item)
-    childrenByParent.set(item.parentToolId, children)
+    out.set(item.parentToolId, children)
   }
+  return out
+}
+
+/** O motor da dobra: percorre `items` a partir de `from` e ANEXA os nós em
+ *  `nodes`. Fora dos descendentes (ver `childrenByParentOf`), toda leitura é
+ *  daqui pra frente — `terminalIncidentAt`, o colapso de results consecutivos e
+ *  a costura de prosa só olham `items[i]` e adiante.
+ *
+ *  `restarts`, quando presente, recebe um ponto por índice em que o segmento
+ *  estava fechado no topo do loop. Passar `null` desliga o registro.
+ *  @internal */
+export function foldNodes(
+  items: ChatItem[],
+  from: number,
+  planShown: boolean,
+  childrenByParent: Map<string, ToolItem[]>,
+  nodes: Node[],
+  restarts: Restart[] | null,
+): void {
+  let planShownInTurn = planShown
   const withDescendants = (root: ToolItem): ToolItem[] => {
     const out: ToolItem[] = [root]
     const seen = new Set<string>()
@@ -229,7 +265,9 @@ export function buildNodes(items: ChatItem[]): Node[] {
     }
     seg = null
   }
-  for (let i = 0; i < items.length; i++) {
+  for (let i = from; i < items.length; i++) {
+    // Segmento fechado no topo do loop = ponto de retomada exato.
+    if (!seg) restarts?.push({ item: i, node: nodes.length, planShownInTurn })
     const it = items[i]
     // results consecutivos = parciais da MESMA invocação (histórico antigo,
     // persistido antes do colapso no reducer): só o último vale.
@@ -275,6 +313,15 @@ export function buildNodes(items: ChatItem[]): Node[] {
     nodes.push({ type: "item", key: it.id, item: it })
   }
   flush()
+}
+
+/** Agrupa um TURNO: a narração do agente (costurando fragmentos cortados no meio
+ *  por tool use interleaved) vira UMA bolha; as tools que ela disparou viram um
+ *  grupo compacto logo depois. Frases completas separadas por tools continuam
+ *  passos distintos. Task tools somem do fluxo e viram UMA checklist. */
+export function buildNodes(items: ChatItem[]): Node[] {
+  const nodes: Node[] = []
+  foldNodes(items, 0, false, childrenByParentOf(items), nodes, null)
   return nodes
 }
 
@@ -336,12 +383,20 @@ function sameNode(prev: Node, next: Node): boolean {
  *
  *  Puro em relação a `next`: só troca membros do array por objetos de `prev`
  *  idênticos em conteúdo. `next` é recém-construído por `buildNodes`, então
- *  ajustar `tools` nele não vaza para ninguém. */
-export function reuseNodes(prev: Node[], next: Node[]): Node[] {
-  if (!prev.length) return next
+ *  ajustar `tools` nele não vaza para ninguém.
+ *
+ *  `from` é o 1º nó que a reconstrução incremental REFEZ (ver `nodesMemo.ts`):
+ *  abaixo dele `next[i]` já É o objeto de `prev[i]`, não há o que reaproveitar.
+ *  Restringir também o índice por chave é seguro porque as keys são monótonas
+ *  no índice do item (invariante do fold): um nó refeito nasce de um item em
+ *  `restart.item` ou depois, e os nós de `prev` abaixo de `from` cobrem só
+ *  itens ANTES desse ponto — que é justamente o prefixo idêntico dos dois fios.
+ *  Logo a contraparte de um nó refeito, se existir, está em `prev[from..]`. */
+export function reuseNodes(prev: Node[], next: Node[], from = 0): Node[] {
+  if (!prev.length || from >= next.length) return next
   const byKey = new Map<string, Node>()
-  for (const node of prev) byKey.set(node.key, node)
-  for (let i = 0; i < next.length; i++) {
+  for (let i = from; i < prev.length; i++) byKey.set(prev[i].key, prev[i])
+  for (let i = from; i < next.length; i++) {
     const n = next[i]
     const p = byKey.get(n.key)
     if (!p || p.type !== n.type) continue
