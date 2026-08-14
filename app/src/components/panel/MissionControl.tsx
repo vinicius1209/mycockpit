@@ -11,6 +11,7 @@
 //     certo: numa tela de auditoria o gasto É a manchete);
 //  2. três derivados em 20px, cada um com a RESSALVA DE MÉTODO em 11px;
 //  3. mapa de calor de US$ por hora (14 dias × hora) — medidor, régua do §2;
+//     mora em CostHeatmap.tsx desde que esta tela passou do teto de tamanho;
 //  4. custo por agente cruzado com as entregas do mesmo agente;
 //  5. as entregas da janela + o diagnóstico do denominador;
 //  6. gaveta (aprendizados, auditoria por turno, projetos);
@@ -51,10 +52,6 @@ import {
   attributedShare,
   discardedSpend,
   hasDeliveryWriter,
-  heatFillPct,
-  heatTone,
-  hourlyHeatmap,
-  peakHour,
   perDay,
   perDelivery,
   showsPerDelivery,
@@ -63,12 +60,11 @@ import {
 import { updateAvailable } from "@/lib/detect"
 import { fmtAgo, fmtCost, fmtTokens } from "@/lib/format"
 import { CostAudit } from "@/components/panel/CostAudit"
+import { CostHeatmap } from "@/components/panel/CostHeatmap"
+import { SectionTitle } from "@/components/panel/SectionTitle"
 import { cn } from "@/lib/utils"
 
 const DAY_MS = 24 * 60 * 60 * 1000
-/** A janela do mapa de calor é fixa em 14 dias: é o recorte em que uma célula
- *  de hora ainda é legível, e ele não muda com o seletor da tela. */
-const HEATMAP_DAYS = 14
 
 /** Cor categórica por agente: Claude=brass, Codex=azul (st-running),
  *  Antigravity=violeta de identidade. O verde saiu daqui porque cor de
@@ -91,11 +87,6 @@ const CLI_TOOLS: { id: string; label: string }[] = [
   { id: "codex", label: "Codex" },
   { id: "agy", label: "Antigravity" },
 ]
-
-/** Título de seção — mesmo label-mono das Sections do app. */
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="label-mono mb-2 px-1">{children}</h2>
-}
 
 /** Skeleton do primeiro load (refreshes seguintes atualizam em silêncio). */
 function SkeletonRows({ rows }: { rows: number }) {
@@ -163,17 +154,6 @@ function DrawerLine({
   ) : (
     <div className={base}>{content}</div>
   )
-}
-
-/** O fundo de uma célula do mapa: cinza-rampa até 60% do pico, âmbar de 60 a
- *  80, vermelho acima (a régua ÚNICA de medidor, lib/meter.ts). */
-function cellBackground(value: number, peak: number): string {
-  const tone = heatTone(value, peak)
-  if (tone === "none")
-    return "color-mix(in srgb, var(--muted-foreground) 8%, transparent)"
-  if (tone === "warn") return "var(--st-queued)"
-  if (tone === "danger") return "var(--st-error)"
-  return `color-mix(in srgb, var(--muted-foreground) ${heatFillPct(value, peak)}%, transparent)`
 }
 
 export function MissionControl() {
@@ -275,13 +255,6 @@ export function MissionControl() {
       perDelivery: perDelivery(total, dels.length),
     }
   }, [ledger, deliveries, fusions, win])
-
-  // O mapa de calor é sempre de 14 dias, independente do seletor.
-  const heat = useMemo(
-    () => hourlyHeatmap(ledger, HEATMAP_DAYS, Date.now()),
-    [ledger],
-  )
-  const hottest = useMemo(() => peakHour(heat), [heat])
 
   const projectNames = useMemo(
     () => new Map(projects.map((p) => [p.id, p.name])),
@@ -414,92 +387,9 @@ export function MissionControl() {
               />
             </section>
 
-            {/* 3. MAPA DE CALOR — só existe se alguém gastou algo. */}
-            {heat.total > 0 && (
-              <section aria-label="Mapa de calor de custo por hora">
-                <SectionTitle>
-                  Onde o dinheiro queimou · {HEATMAP_DAYS} dias × hora
-                </SectionTitle>
-                <div className="flex flex-col gap-[3px]">
-                  {heat.days.map((day) => (
-                    <div key={day.dayStart} className="flex items-center gap-[3px]">
-                      <span className="w-[46px] shrink-0 font-mono text-[11px] text-faint tabular-nums">
-                        {day.label}
-                      </span>
-                      {day.hours.map((v, h) => (
-                        <span
-                          key={h}
-                          title={`${day.label}, ${String(h).padStart(2, "0")}h · ${v > 0 ? fmtCost(v) : "sem gasto"}`}
-                          className="h-4 min-w-[6px] flex-1 rounded-[3px]"
-                          style={{ background: cellBackground(v, heat.peak) }}
-                        />
-                      ))}
-                      <span className="w-[56px] shrink-0 pl-1.5 text-right font-mono text-[11px] text-faint tabular-nums">
-                        {day.total > 0 ? fmtCost(day.total) : ""}
-                      </span>
-                    </div>
-                  ))}
-                  <div className="flex items-center gap-[3px]">
-                    <span className="w-[46px] shrink-0" />
-                    {Array.from({ length: 24 }, (_, h) => (
-                      <span
-                        key={h}
-                        className="min-w-[6px] flex-1 text-center font-mono text-[11px] text-faint tabular-nums"
-                      >
-                        {h % 6 === 0 ? String(h).padStart(2, "0") : ""}
-                      </span>
-                    ))}
-                    <span className="w-[56px] shrink-0" />
-                  </div>
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-[12px] text-muted-foreground">
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className="inline-block h-2.5 w-3.5 rounded-[2px]"
-                      style={{ background: cellBackground(0, heat.peak) }}
-                    />
-                    sem gasto
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className="inline-block h-2.5 w-3.5 rounded-[2px]"
-                      style={{ background: cellBackground(heat.peak * 0.3, heat.peak) }}
-                    />
-                    até {fmtCost(heat.peak * 0.6)}/h
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className="inline-block h-2.5 w-3.5 rounded-[2px]"
-                      style={{ background: "var(--st-queued)" }}
-                    />
-                    {fmtCost(heat.peak * 0.6)} a {fmtCost(heat.peak * 0.8)}
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className="inline-block h-2.5 w-3.5 rounded-[2px]"
-                      style={{ background: "var(--st-error)" }}
-                    />
-                    daí pra cima
-                  </span>
-                  <span className="font-mono text-[11px] text-faint tabular-nums">
-                    pico {fmtCost(heat.peak)}/h · 60% e 80% do pico, a régua de
-                    medidor do §2
-                  </span>
-                </div>
-                {hottest && (
-                  <p className="mt-2.5 px-1 text-[13px] text-muted-foreground">
-                    Hora mais cara:{" "}
-                    <span className="text-foreground">
-                      {hottest.dayLabel}, {String(hottest.hour).padStart(2, "0")}h
-                    </span>{" "}
-                    <span className="font-mono tabular-nums">
-                      {fmtCost(hottest.costUsd)}
-                    </span>
-                    , {Math.round(hottest.shareOfDay * 100)}% do dia inteiro.
-                  </p>
-                )}
-              </section>
-            )}
+            {/* 3. MAPA DE CALOR — o componente se esconde sozinho quando não
+                houve gasto na janela. */}
+            <CostHeatmap ledger={ledger} />
 
             {/* 4. POR AGENTE — custo sozinho não decide nada; ao lado das
                 entregas do mesmo agent, vira pergunta respondível. */}
