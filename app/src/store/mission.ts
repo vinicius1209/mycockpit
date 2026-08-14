@@ -952,6 +952,16 @@ export const useMission = create<MissionState>((set, get) => {
           }))
           // marco em disco: preset efetivo mudou (fases corretivas inseridas).
           persist(convId)
+          // O DENOMINADOR NÃO CRESCE CALADO: "fase 3 de 4" vira "fase 3 de 6"
+          // no mesmo render, e o número novo vai pro banco. O crescimento é
+          // correto (missão que acha problema tem que corrigir); o silêncio
+          // não era. O marco diz quem mudou, por quê, o que entrou, onde e de
+          // quanto pra quanto. A fase acrescentada leva a procedência no def.
+          await recordHistory(convId, [
+            noticeItem(
+              `O plano de voo cresceu · o revisor reprovou a fase ${i + 1} (${engine.phases[i].label}), e o motor acrescentou ${corr.corrective.label} e ${corr.rereview.label} logo depois dela. O plano foi de ${corr.before} para ${corr.after} fases.`,
+            ),
+          ])
         }
 
         // ── GATE HUMANO: a fase deixou perguntas em aberto e HÁ próxima fase →

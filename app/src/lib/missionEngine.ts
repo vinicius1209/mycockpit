@@ -271,6 +271,9 @@ export function afterPhaseDone(
   state: MissionEngineState,
   items: ChatItem[],
   missionId: string,
+  /** Instante do carimbo de procedência das fases acrescentadas (injetável
+   *  em teste; o motor segue puro em relação ao resto). */
+  now: number = Date.now(),
 ): PhaseDoneTransition {
   const i = state.current
   const def = state.phases[i]
@@ -301,6 +304,10 @@ export function afterPhaseDone(
   }
   const round = next.reviewLoops + 1
   const feedback = review.feedback
+  // PROCEDÊNCIA: as duas nascem no meio do voo e carregam isso no def (viaja no
+  // run-state e na retomada). Fase que entrou depois da decolagem não pode
+  // parecer nativa do plano — nem na tela, nem na contagem.
+  const stamp = { round, at: now }
   const corrective: MissionPhaseDef = {
     ...execDef,
     id: `fix-${round}-${missionId.slice(0, 6)}`,
@@ -308,11 +315,13 @@ export function afterPhaseDone(
     instructions:
       "O reviewer NÃO aprovou. Corrija exatamente estes pontos e nada " +
       `além do necessário:\n\n${feedback}`,
+    appendedInFlight: stamp,
   }
   const rereview: MissionPhaseDef = {
     ...next.phases[i],
     id: `rereview-${round}-${missionId.slice(0, 6)}`,
     label: `Revisar (rodada ${round})`,
+    appendedInFlight: stamp,
   }
   // POSIÇÃO: logo depois do revisor que reprovou (não no fim). `current` é `i`
   // e a inserção é toda ADIANTE dele, então o índice da fase corrente, os

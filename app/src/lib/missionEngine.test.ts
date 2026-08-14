@@ -213,6 +213,44 @@ describe("loop de correção · ONDE a correção entra na fila", () => {
     expect(correctionIndex(0)).toBe(1)
     expect(correctionIndex(4)).toBe(5)
   })
+
+  it("as duas fases nascem com PROCEDÊNCIA (rodada + instante injetado): fase que entrou no meio do voo não pode parecer nativa", () => {
+    let eng = initEngine(buildRevisorNoMeio())
+    eng = advance(stepDone(eng, []).state)
+    const AGORA = 1_700_000_000_000
+    const done = afterPhaseDone(
+      eng,
+      [textItem("NÃO APROVADO: perde os contratos vigentes.")],
+      MISSION_ID,
+      AGORA,
+    )
+    expect(done.correction?.corrective.appendedInFlight).toEqual({
+      round: 1,
+      at: AGORA,
+    })
+    expect(done.correction?.rereview.appendedInFlight).toEqual({
+      round: 1,
+      at: AGORA,
+    })
+    // e SÓ elas: as fases do lançamento seguem sem carimbo
+    expect(
+      done.state.phases
+        .filter((p) => p.appendedInFlight)
+        .map((p) => p.label),
+    ).toEqual(["Corrigir (rodada 1)", "Revisar (rodada 1)"])
+    // a re-review herda a def do revisor, e o carimbo da rodada NOVA vence o
+    // da rodada anterior (nada de procedência velha viajando de carona)
+    const round2 = afterPhaseDone(
+      advance(advance(done.state)),
+      [textItem("Ainda não está aprovado: falta o rollback.")],
+      MISSION_ID,
+      AGORA + 60_000,
+    )
+    expect(round2.correction?.rereview.appendedInFlight).toEqual({
+      round: 2,
+      at: AGORA + 60_000,
+    })
+  })
 })
 
 describe("loop de correção · clamp de MAX_REVIEW_LOOPS", () => {

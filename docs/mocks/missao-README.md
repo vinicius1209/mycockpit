@@ -1,5 +1,29 @@
 # Missão em voo — 3 POCs visuais
 
+> **Status (13/08/2026, depois dos mocks): os dois defeitos de motor que este
+> documento levantou foram CORRIGIDOS no código.** Vale sobre o texto original
+> onde eles se contradisserem.
+>
+> 1. **A correção deixou de entrar no fim da fila** (era o furo da nota ㉓ e do
+>    parágrafo "No plano grande" da direção A). O par Corrigir + Revisar agora é
+>    inserido **logo depois da fase revisora que reprovou**
+>    (`missionEngine.correctionIndex`, aplicado em `store/mission.ts`), então as
+>    fases seguintes já rodam sobre o trabalho corrigido. Com o revisor na
+>    última fase (os três presets de fábrica) a posição é a mesma de antes, que
+>    é por que o defeito passou despercebido. A copy proposta pra tela
+>    ("reprovada · a correção roda só na fase 11") **não deve ser implementada**:
+>    ela descreve um comportamento que não existe mais.
+> 2. **O denominador parou de mudar calado** (R10 / nota ⑲, parte de motor). O
+>    plano cresce igual (o crescimento é correto), mas agora: o fio ganha um
+>    marco dizendo quem mudou, por quê, o que entrou, onde e de quanto pra
+>    quanto; a fase acrescentada carrega procedência na própria def
+>    (`MissionPhaseDef.appendedInFlight`, com fallback pelo id pra missão em voo
+>    persistida antes do campo); e o contador declara os dois números
+>    (`planCounts` / `planGrowthNote`, na timeline, no resumo final e no card de
+>    retomada). O que **continua não implementado** do R10 é a régua fixa que não
+>    rola, o log "o que mudou" abrível e a marca "motor trocado no voo" da
+>    recuperação.
+
 > Mocks estáticos (13/08/2026), NÃO código do app. Abrir no browser:
 > `missao-a.html` · `missao-b.html` · `missao-c.html`. Insumo visual para a
 > frente de Missões, que está reconstruindo essa área. Nada aqui foi

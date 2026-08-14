@@ -68,6 +68,11 @@ export interface MissionPhaseDef {
   exitCriteria?: string[]
   /** Tentativas máximas da fase (1 = sem retry). */
   maxRetries: number
+  /** PROCEDÊNCIA: esta fase NÃO estava no plano que decolou — o motor a
+   *  acrescentou durante o voo (rodada de correção do revisor, `round`, no
+   *  instante `at`). Ausente = fase do plano lançado. Viaja no def → sobrevive
+   *  ao run-state e à retomada sem migração (mesma regra do `autonomy`). */
+  appendedInFlight?: { round: number; at: number }
   /** Autonomia DESTA fase (por membro do time). "auto" = roda sem pedir
    *  permissão, com o freio de segurança do CLI (claude classificador, codex
    *  sandbox+approval=never, agy --sandbox). Ausente/"inherit" = usa a permissão
@@ -94,6 +99,55 @@ export function phasePermission(
   return projectPermission === "padrao" || projectPermission === ""
     ? "auto"
     : projectPermission
+}
+
+/** Ids que o loop de correção gera (`fix-<n>-<missionId>`,
+ *  `rereview-<n>-<missionId>`, ver missionEngine.afterPhaseDone). */
+const APPENDED_PHASE_ID = /^(?:fix|rereview)-(\d+)-/
+
+/** Procedência de UMA fase: null = veio no plano do lançamento; objeto = foi
+ *  acrescentada em voo (rodada + instante, `at` null quando desconhecido).
+ *
+ *  O fallback pelo ID cobre missão em voo persistida ANTES do campo existir: a
+ *  rodada já viajava no id da fase corretiva (é a mesma leitura que
+ *  missionState.derivedReviewLoops faz pro clamp). Sem ele, uma missão retomada
+ *  mostraria fase acrescentada no meio do voo como se sempre tivesse estado
+ *  lá. */
+export function phaseProvenance(
+  def: Pick<MissionPhaseDef, "id" | "appendedInFlight">,
+): { round: number; at: number | null } | null {
+  if (def.appendedInFlight) {
+    return { round: def.appendedInFlight.round, at: def.appendedInFlight.at }
+  }
+  const m = APPENDED_PHASE_ID.exec(def.id)
+  return m ? { round: Number(m[1]), at: null } : null
+}
+
+/** Contagem HONESTA do plano: quantas fases ele tem agora, com quantas decolou
+ *  e quantas entraram durante o voo. O denominador de "fase X de N" cresce
+ *  sozinho quando o revisor reprova (o crescimento é correto), e quem mostra o
+ *  N precisa poder dizer que ele mudou em vez de trocar calado. */
+export function planCounts(
+  phases: Pick<MissionPhaseDef, "id" | "appendedInFlight">[],
+): { total: number; launched: number; appended: number } {
+  const appended = phases.filter((p) => phaseProvenance(p) !== null).length
+  return {
+    total: phases.length,
+    launched: phases.length - appended,
+    appended,
+  }
+}
+
+/** Declaração que acompanha o contador quando o plano cresceu depois da
+ *  decolagem ("fase 3 de 6" + "lançou com 4 · 2 fases acrescentadas no voo").
+ *  null = o plano é o mesmo que decolou, e não há nada a declarar. */
+export function planGrowthNote(counts: {
+  launched: number
+  appended: number
+}): string | null {
+  if (counts.appended <= 0) return null
+  const n = counts.appended
+  return `lançou com ${counts.launched} · ${n} ${n === 1 ? "fase acrescentada" : "fases acrescentadas"} no voo`
 }
 
 /** Política de GATE humano do time (MH3.3):

@@ -3,18 +3,21 @@
 // 3 estados: rodando (fase corrente expande com atividade AO VIVO), concluída
 // (resumo + custos, card recolhível), erro/abortada. O gate humano
 // ("precisa de você") entra na onda 2 (precisa pausar o runner).
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { AlertTriangle, Check, FolderOpen, RefreshCw, Rocket, X } from "lucide-react"
 import { useMission } from "@/store/mission"
 import { useActiveProject, useApp } from "@/store/app"
 import { useChat, type ChatItem } from "@/store/chat"
 import { MissionFilesDialog } from "@/components/mission/MissionFilesDialog"
-import type {
-  GateAnswer,
-  MissionPhaseRun,
-  MissionRecovery,
-  MissionRun,
-  RecoveryChoice,
+import {
+  phaseProvenance,
+  planCounts,
+  planGrowthNote,
+  type GateAnswer,
+  type MissionPhaseRun,
+  type MissionRecovery,
+  type MissionRun,
+  type RecoveryChoice,
 } from "@/lib/missionTypes"
 import type { InteractionRequest } from "@/lib/interaction"
 import { useContextualSplit } from "@/store/interactions"
@@ -30,7 +33,7 @@ import { buildRecoveryChoice } from "@/lib/recoveryChoice"
 import { GateAnswerForm } from "@/components/mission/GateAnswerForm"
 import { InteractionCard } from "@/components/chat/InteractionHost"
 import { MicButton } from "@/components/chat/MicButton"
-import { fmtCost, fmtDuration } from "@/lib/format"
+import { fmtCost, fmtDuration, fmtTime } from "@/lib/format"
 import { presentTool } from "@/lib/toolview"
 import { Markdown } from "@/components/common/Markdown"
 import { cn } from "@/lib/utils"
@@ -85,6 +88,18 @@ function lastText(phase: MissionPhaseRun | undefined): string | null {
     }
   }
   return null
+}
+
+/** Marca de PROCEDÊNCIA: tipografia, não tinta (mono 11, borda tracejada,
+ *  cinza). Cor é para estado e decisão; procedência não é nem uma nem outra, e
+ *  um plano longo gastaria o orçamento de tinta inteiro se cada qualificador de
+ *  fase pedisse a sua. */
+function ProvenanceMark({ children }: { children: ReactNode }) {
+  return (
+    <span className="rounded border border-dashed border-border-strong px-1.5 py-px font-mono text-[11px] whitespace-nowrap text-muted-foreground">
+      {children}
+    </span>
+  )
 }
 
 function StepDot({ status }: { status: "ok" | "run" | "pending" }) {
@@ -406,6 +421,9 @@ function PhaseNode({
         : active && p.status === "running"
           ? "run"
           : "pending"
+  // procedência: esta fase entrou DEPOIS da decolagem (o revisor reprovou e o
+  // motor acrescentou a correção). Sem a marca ela pareceria nativa do plano.
+  const born = phaseProvenance(p.def)
   return (
     <div className="relative mb-4 last:mb-0">
       {/* nó */}
@@ -424,6 +442,13 @@ function PhaseNode({
         <span className="font-mono text-[11px] text-muted-foreground">
           {PERSONA_LABEL[p.def.persona]} · {phaseAgentModel(p.def)}
         </span>
+        {born && (
+          <ProvenanceMark>
+            {born.at
+              ? `acrescentada no voo às ${fmtTime(born.at)}`
+              : "acrescentada no voo"}
+          </ProvenanceMark>
+        )}
         {p.attempt > 1 && (
           <span className="rounded border border-brass/40 px-1 py-px text-[11px] tracking-wide text-brass uppercase">
             tentativa {p.attempt}/{p.def.maxRetries}
@@ -464,6 +489,9 @@ function DoneSummary({ mission }: { mission: MissionRun }) {
   // MH1.1 — done com ressalva: o revisor não aprovou; dizer "concluída" seco
   // aqui seria a mentira que o plano fecha.
   const caveat = ok ? (mission.reviewCaveat ?? null) : null
+  // "6 fases" no fim de uma missão que decolou com 4 esconde metade da
+  // história: o resumo declara com quantas ela lançou.
+  const counts = planCounts(mission.phases.map((p) => p.def))
   return (
     <div className="mt-4 overflow-hidden rounded-xl border bg-card">
       <div
@@ -496,7 +524,10 @@ function DoneSummary({ mission }: { mission: MissionRun }) {
               : "Missão interrompida"}
         </span>
         <span className="ml-auto font-mono text-[12px] tabular-nums text-muted-foreground">
-          {mission.phases.length} fases · {fmtCost(mission.costTotal)}
+          {counts.appended > 0
+            ? `${counts.total} fases (${counts.launched} no lançamento, ${counts.appended} no voo)`
+            : `${counts.total} fases`}{" "}
+          · {fmtCost(mission.costTotal)}
         </span>
       </div>
       {caveat && (
@@ -585,14 +616,21 @@ export function MissionResumeCard({ convId }: { convId: string }) {
   const n = st.preset.phases.length
   const cur = Math.min(Math.max(0, st.current), n - 1)
   const phaseLabel = st.preset.phases[cur]?.label ?? "?"
+  // o plano persistido pode ter crescido antes do crash: o card diz "3/6" de
+  // uma missão que decolou com 4, e quem for retomar precisa saber disso aqui,
+  // não depois de relançar.
+  const growth = planGrowthNote(planCounts(st.preset.phases))
   return (
     <div className="mx-auto w-full max-w-[760px] px-8 pt-6">
       <div className="overflow-hidden rounded-xl border-[1.5px] border-brass/45 bg-brass/[0.04] shadow-[0_0_0_3px_var(--brass-soft)]">
         <div className="flex items-center gap-2.5 border-b border-brass/20 px-4 py-3">
           <Rocket className="size-4 shrink-0 text-brass" />
           <div className="min-w-0">
-            <div className="text-[13px] font-semibold">
-              Missão interrompida na fase {cur + 1}/{n} · {phaseLabel}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[13px] font-semibold">
+                Missão interrompida na fase {cur + 1}/{n} · {phaseLabel}
+              </span>
+              {growth && <ProvenanceMark>{growth}</ProvenanceMark>}
             </div>
             <div className="text-[12px] text-muted-foreground">
               O app fechou com a missão em voo — o worktree e os handoffs
@@ -664,6 +702,10 @@ export function MissionTimeline({ convId }: { convId: string }) {
   const inRecovery = running && mission.recovery != null
   const n = mission.phases.length
   const cur = Math.min(mission.current, n - 1)
+  // O denominador CRESCE em voo (o revisor reprova, o motor acrescenta a
+  // correção), e o crescimento é correto. O que não pode é trocar calado: o
+  // contador passa a carregar os dois números, com o de lançamento ao lado.
+  const growth = planGrowthNote(planCounts(mission.phases.map((p) => p.def)))
   const pct =
     mission.maxCostUsd && mission.maxCostUsd > 0
       ? Math.min(100, (mission.costTotal / mission.maxCostUsd) * 100)
@@ -681,43 +723,48 @@ export function MissionTimeline({ convId }: { convId: string }) {
       {/* cabeçalho: estado + tarefa + medidor de combustível */}
       <div className="flex flex-wrap items-start gap-x-5 gap-y-3">
         <div className="min-w-0 flex-1">
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[11px] tracking-wide uppercase",
-              gated
-                ? "bg-brass-soft text-brass"
-                : inRecovery
-                  ? "bg-st-warning/15 text-st-warning"
-                  : running
-                    ? "bg-st-running/15 text-st-running"
-                    : mission.status === "done"
-                      ? mission.reviewCaveat
-                        ? "bg-st-warning/15 text-st-warning"
-                        : "bg-st-success/15 text-st-success"
-                      : "bg-st-error/15 text-st-error",
-            )}
-          >
-            {gated ? (
-              <>
-                <span className="animate-cockpit-pulse size-1.5 rounded-full bg-brass" />
-                pausada · precisa de você
-              </>
-            ) : inRecovery ? (
-              <>
-                <span className="animate-cockpit-pulse size-1.5 rounded-full bg-st-warning" />
-                pausada · limite na fase {Math.min(mission.current + 1, n)}/{n}
-              </>
-            ) : running ? (
-              <>
-                <span className="animate-cockpit-pulse size-1.5 rounded-full bg-st-running" />
-                em voo · fase {Math.min(mission.current + 1, n)}/{n}
-              </>
-            ) : mission.status === "done" ? (
-              mission.reviewCaveat ? "✓ concluída com ressalva" : "✓ concluída"
-            ) : (
-              mission.status === "error" ? "falhou" : "abortada"
-            )}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[11px] tracking-wide uppercase",
+                gated
+                  ? "bg-brass-soft text-brass"
+                  : inRecovery
+                    ? "bg-st-warning/15 text-st-warning"
+                    : running
+                      ? "bg-st-running/15 text-st-running"
+                      : mission.status === "done"
+                        ? mission.reviewCaveat
+                          ? "bg-st-warning/15 text-st-warning"
+                          : "bg-st-success/15 text-st-success"
+                        : "bg-st-error/15 text-st-error",
+              )}
+            >
+              {gated ? (
+                <>
+                  <span className="animate-cockpit-pulse size-1.5 rounded-full bg-brass" />
+                  pausada · precisa de você
+                </>
+              ) : inRecovery ? (
+                <>
+                  <span className="animate-cockpit-pulse size-1.5 rounded-full bg-st-warning" />
+                  pausada · limite na fase {Math.min(mission.current + 1, n)}/{n}
+                </>
+              ) : running ? (
+                <>
+                  <span className="animate-cockpit-pulse size-1.5 rounded-full bg-st-running" />
+                  em voo · fase {Math.min(mission.current + 1, n)}/{n}
+                </>
+              ) : mission.status === "done" ? (
+                mission.reviewCaveat ? "✓ concluída com ressalva" : "✓ concluída"
+              ) : (
+                mission.status === "error" ? "falhou" : "abortada"
+              )}
+            </span>
+            {/* o denominador não muda calado: quando o plano cresceu no voo, o
+                número de lançamento fica ao lado do de agora */}
+            {growth && <ProvenanceMark>{growth}</ProvenanceMark>}
+          </div>
           <h2 className="mt-1.5 flex items-center gap-2 text-[14px] font-semibold tracking-[-0.01em]">
             <Rocket className="size-4 shrink-0 text-brass" />
             Missão · {mission.presetName}
