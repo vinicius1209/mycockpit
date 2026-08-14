@@ -35,13 +35,15 @@ use crate::adapters::{capabilities_of, UsageWindowSource};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::process::Stdio;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 /// Evento emitido pro webview a cada snapshot novo (ingest OU poll).
 pub const SNAPSHOT_EVENT: &str = "usage://snapshot";
+
+/// Teto do probe do app-server (o mesmo de sempre): um servidor pendurado não
+/// pode segurar a passada do vigia.
+const APP_SERVER_TIMEOUT_SECS: u64 = 20;
 
 /// Dedupe de ingest da statusline: ela tica ~3×/s durante streaming e o dado
 /// (janela do PLANO) não muda nessa granularidade — 1 snapshot a cada 30s
@@ -334,99 +336,34 @@ pub async fn usage_fetch(app: AppHandle, agent: String) -> Result<UsageSnapshot,
     Ok(snapshot)
 }
 
-/// Probe do dialeto CodexAppServer: spawna o app-server em read-only,
-/// initialize → initialized → account/rateLimits/read, mata o processo e
-/// devolve o snapshot. Read-only local: NENHUMA quota consumida. O binário é
-/// o do dialeto (o enum confina o fornecedor; ver adapters.rs).
+/// Probe do dialeto CodexAppServer: uma sonda one-shot no MESMO canal
+/// app-server que o transporte de turno já conhece (codex_appserver::probe_once
+/// — handshake único no app, nada de segundo canal), pedindo
+/// `account/rateLimits/read`. Read-only local: NENHUMA quota consumida. O
+/// método é do dialeto (o enum confina o fornecedor; ver adapters.rs).
 async fn fetch_codex_app_server(agent: &str) -> Result<UsageSnapshot, UsageFetchError> {
-    let mut cmd = tokio::process::Command::new("codex");
-    cmd.args(["-s", "read-only", "-a", "untrusted", "app-server"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| UsageFetchError::new("spawn", format!("não consegui subir o codex app-server: {e}")))?;
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| UsageFetchError::new("spawn", "app-server sem stdin"))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| UsageFetchError::new("spawn", "app-server sem stdout"))?;
-
-    // Mesmo handshake provado na mão (12/08/2026): a resposta do servidor nem
-    // repete "jsonrpc" — classifica por forma (id=2 + result/error).
-    let run = async {
-        for msg in [
-            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
-                "clientInfo":{"name":"mycockpit","title":"MyCockpit","version":env!("CARGO_PKG_VERSION")}
-            }}),
-            json!({"jsonrpc":"2.0","method":"initialized"}),
-            json!({"jsonrpc":"2.0","id":2,"method":"account/rateLimits/read","params":{}}),
-        ] {
-            let mut line = msg.to_string();
-            line.push('\n');
-            stdin
-                .write_all(line.as_bytes())
-                .await
-                .map_err(|e| UsageFetchError::new("protocol", format!("stdin fechou: {e}")))?;
-        }
-        let _ = stdin.flush().await;
-        let mut lines = BufReader::new(stdout).lines();
-        loop {
-            let line = lines
-                .next_line()
-                .await
-                .map_err(|e| UsageFetchError::new("protocol", format!("stdout falhou: {e}")))?
-                .ok_or_else(|| {
-                    UsageFetchError::new("protocol", "app-server encerrou antes de responder")
-                })?;
-            let Ok(v) = serde_json::from_str::<Value>(line.trim()) else {
-                continue; // log no stdout: ignora (mesma postura do transporte)
-            };
-            if v.get("id").and_then(|x| x.as_i64()) != Some(2) {
-                continue;
-            }
-            if let Some(err) = v.get("error") {
-                let msg = err
-                    .get("message")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("erro sem mensagem")
-                    .to_string();
-                return Err(UsageFetchError::new(classify_failure(&msg), msg));
-            }
-            let result = v.get("result").cloned().unwrap_or(Value::Null);
-            let (windows, plan_type) = parse_codex_rate_limits(&result);
-            if windows.is_empty() {
-                return Err(UsageFetchError::new(
-                    "protocol",
-                    "resposta sem janelas de uso",
-                ));
-            }
-            return Ok(UsageSnapshot {
-                agent: agent.to_string(),
-                source: "rpc".into(),
-                windows,
-                plan_type,
-                fetched_at: now_ms(),
-            });
-        }
-    };
-    // Teto de 20s no probe inteiro: um app-server pendurado não pode segurar
-    // a passada do vigia (o kill_on_drop derruba o processo junto).
-    let out = tokio::time::timeout(std::time::Duration::from_secs(20), run)
-        .await
-        .unwrap_or_else(|_| {
-            Err(UsageFetchError::new(
-                "timeout",
-                "o app-server não respondeu em 20s",
-            ))
-        });
-    let _ = child.kill().await;
-    out
+    let result = crate::codex_appserver::probe_once(
+        "account/rateLimits/read",
+        json!({}),
+        APP_SERVER_TIMEOUT_SECS,
+    )
+    .await
+    .map_err(|e| match e.kind {
+        // erro DO SERVIDOR: a frase dele é que diz se foi limite ou protocolo.
+        "rpc" => UsageFetchError::new(classify_failure(&e.message), e.message),
+        kind => UsageFetchError::new(kind, e.message),
+    })?;
+    let (windows, plan_type) = parse_codex_rate_limits(&result);
+    if windows.is_empty() {
+        return Err(UsageFetchError::new("protocol", "resposta sem janelas de uso"));
+    }
+    Ok(UsageSnapshot {
+        agent: agent.to_string(),
+        source: "rpc".into(),
+        windows,
+        plan_type,
+        fetched_at: now_ms(),
+    })
 }
 
 // ---------------------------------------------------------------------------

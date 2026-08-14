@@ -168,6 +168,29 @@ pub enum HookDialect {
     AgyConfigHooks,
 }
 
+/// Como PERGUNTAR ao CLI quais modelos ele conhece HOJE (M1 do
+/// model-autonomy-plan). Mesmo padrão do `UsageWindowSource`/`HookDialect`: o
+/// enum confina o "como" (comando, framing, shape da resposta — consumido SÓ
+/// por model_list.rs), a capability decide o "se". `None` = motor sem fonte
+/// viva auditada; a lista curada de `lib/agents.ts` + o catálogo models.dev
+/// seguem sendo a fonte (degradação honesta, nunca inventar sonda).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ModelListSource {
+    /// agy 1.1.13: `agy models` imprime TSV `slug<TAB>Rótulo` no stdout (o
+    /// "Fetching available models..." vai pro stderr). Sem `--json` (o flag
+    /// não existe: "flags provided but not defined"). Saída real capturada
+    /// nesta máquina em 14/08/2026 — fixture em model_list.rs.
+    AgyModelsSubcommand,
+    /// codex 0.147: JSON-RPC `model/list` no MESMO canal app-server que o
+    /// medidor de uso já abre (`codex -s read-only -a untrusted app-server` →
+    /// initialize → initialized → método; sonda local, NENHUMA quota). A
+    /// resposta traz `id`, `displayName`, `description`, `hidden`, `isDefault`
+    /// e — o achado que M1 precisava — `upgrade`/`upgradeInfo.migrationMarkdown`
+    /// quando o slug está sendo APOSENTADO. Resposta real capturada nesta
+    /// máquina em 14/08/2026 — fixture em model_list.rs.
+    CodexAppServer,
+}
+
 /// Capabilities do agent-runner.md §2, materializada (G1.1 do
 /// capability-registry-plan). Campos derivados dos achados REAIS da auditoria,
 /// não de especulação. Regra de ouro (§7.1): capability declarada tem que ser
@@ -275,6 +298,19 @@ pub struct Capabilities {
     /// Como instalar/falar com os hooks deste motor. None = sem hooks: o card
     /// de Configurações nem mostra a opção (degradação honesta).
     pub hook_dialect: Option<HookDialect>,
+    /// O CLI sabe dizer, AGORA, quais modelos ele conhece (M1 do
+    /// model-autonomy-plan): é a verificação que hoje só existe na cabeça de
+    /// quem testou à mão. Verdade por versão auditada nesta máquina
+    /// (14/08/2026): agy 1.1.13 ✅ `agy models` (TSV no stdout); codex 0.147 ✅
+    /// `model/list` no app-server (o MESMO canal do medidor de uso — reusado,
+    /// não duplicado); claude 2.1.220 ❌ — NÃO há subcomando de modelos
+    /// (`claude --help` só tem agents/auth/auto-mode/doctor/gateway/install/
+    /// mcp/plugin/project/setup-token/ultrareview/update), e o que existe em
+    /// `~/.claude/*.json` é cache de tooling do usuário, não lista oficial →
+    /// `None`, e o catálogo (models.dev) segue sendo a fonte, exatamente como
+    /// o §M1 do plano previu. Espelho TS: `listsModels` em lib/agents.ts
+    /// (teste-gêmeo agents.modelList.test.ts ↔ `matriz_lista_de_modelos_por_agent`).
+    pub lists_models: Option<ModelListSource>,
 }
 
 /// claude 2.1.219 (auditado 2026-07): o mais rico — MCP completo, background
@@ -317,6 +353,11 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     // exatamente o alvo do H2: sessões externas do terminal.
     hooks_permission: true,
     hook_dialect: Some(HookDialect::ClaudeSettings),
+    // claude 2.1.220: não existe fonte viva de lista de modelos — nenhum
+    // subcomando (`--help` verificado 14/08/2026) e nada oficial em disco.
+    // Fonte confiável ausente ⇒ None, e o comportamento de hoje (lista curada
+    // + catálogo models.dev) fica intacto.
+    lists_models: None,
 };
 
 /// codex-cli 0.144.6 (auditado 2026-07): MCP completo (config efêmero via -c),
@@ -359,6 +400,11 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     // script síncrono de 30s, trusted-hasheado [E4][E6].
     hooks_permission: true,
     hook_dialect: Some(HookDialect::CodexHooksJson),
+    // codex 0.147: `model/list` no app-server read-only devolveu 6 modelos
+    // visíveis (+2 hidden com `includeHidden`) e marcou `gpt-5.4`/`gpt-5.4-mini`
+    // com `upgrade` — aposentadoria ANUNCIADA pelo próprio CLI (capturado na
+    // mão 14/08/2026, fixture em model_list.rs).
+    lists_models: Some(ModelListSource::CodexAppServer),
 };
 
 /// agy 1.1.9 (re-checado 31/07/2026): sem canal MCP, sem resume exposto no
@@ -396,6 +442,9 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // a permissão "command") pra não segurar tool call inofensiva.
     hooks_permission: true,
     hook_dialect: Some(HookDialect::AgyConfigHooks),
+    // agy 1.1.13: `agy models` lista 14 slugs em TSV (capturado 14/08/2026).
+    // É a MESMA fonte que a detecção já usava — agora com contrato declarado.
+    lists_models: Some(ModelListSource::AgyModelsSubcommand),
 };
 
 pub trait AgentAdapter: Send {
@@ -3051,6 +3100,30 @@ mod tests {
         assert_eq!(capabilities_of("agy").unwrap().usage_window_poll, None);
     }
 
+    /// Teste-GÊMEO do espelho TS (`agents.modelList.test.ts`): quem sabe dizer
+    /// AGORA quais modelos conhece, e por qual dialeto (M1 do
+    /// model-autonomy-plan). Mexeu aqui, mexa lá.
+    #[test]
+    fn matriz_lista_de_modelos_por_agent() {
+        // agy 1.1.13: `agy models` → TSV `slug<TAB>Rótulo` (capturado nesta
+        // máquina em 14/08/2026; fixture em model_list.rs).
+        assert_eq!(
+            capabilities_of("agy").unwrap().lists_models,
+            Some(ModelListSource::AgyModelsSubcommand)
+        );
+        // codex 0.147: `model/list` no app-server read-only, com `hidden` e
+        // `upgrade` (aposentadoria anunciada) — capturado 14/08/2026.
+        assert_eq!(
+            capabilities_of("codex").unwrap().lists_models,
+            Some(ModelListSource::CodexAppServer)
+        );
+        // claude 2.1.220: NÃO existe subcomando de modelos nem lista oficial em
+        // disco (help verificado 14/08/2026). Sem fonte confiável ⇒ None, e o
+        // catálogo models.dev segue sendo a fonte — degradação honesta, o
+        // comportamento de hoje fica intacto.
+        assert_eq!(capabilities_of("claude-code").unwrap().lists_models, None);
+    }
+
     /// Teste-GÊMEO do espelho TS (`agents.hooks.test.ts`): quem emite hooks de
     /// ciclo de vida e por qual dialeto (hooks-plan §2). Mexeu aqui, mexa lá.
     #[test]
@@ -3409,6 +3482,7 @@ mod tests {
             // RunRequest "cheio": tudo oferecido; o adapter só monta o que declara.
             let mut r = req(Permission::Padrao, false);
             r.resume = Some("sessao-do-contrato".to_string());
+            r.model = Some("modelo-do-contrato".to_string());
             r.system_prompt = Some("DOUTRINA-DO-CONTRATO".to_string());
             r.context_gateway = Some(crate::context_gateway::GatewayConfig {
                 server_bin: "/app/mycockpit".into(),
@@ -3487,6 +3561,16 @@ mod tests {
             assert!(
                 caps.usage_window_poll != Some(UsageWindowSource::ClaudeStatusline),
                 "{agent}: statusline é PUSH, não pode ser o dialeto do poll"
+            );
+            // M1 do model-autonomy-plan: perguntar ao CLI quais modelos ele
+            // conhece só serve pra motor que ACEITA a escolha de modelo no
+            // comando — sonda alimentando um seletor que não chega ao spawn
+            // seria lista decorativa. É IMPLICAÇÃO, não igualdade: o claude
+            // aceita `--model` e mesmo assim declara `lists_models: None`
+            // (nenhuma fonte viva existe lá), que é a degradação honesta.
+            assert!(
+                caps.lists_models.is_none() || blob.contains("modelo-do-contrato"),
+                "{agent}: lists_models declarado, mas o modelo escolhido não chega ao comando montado"
             );
             assert_eq!(
                 blob.contains(crate::work_gateway::MCP_SERVER_NAME),

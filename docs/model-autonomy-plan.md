@@ -5,6 +5,39 @@
 > para automatizar quase tudo, **mas só se a automação virar empírica** — e uma
 > parte NÃO deve ser automatizada (ver §5).
 
+## Verificação empírica (14/08/2026, nesta máquina) — a realidade manda
+
+Antes de M1 os três CLIs foram sondados na mão. Versões: **agy 1.1.13**,
+**codex-cli 0.147.0**, **claude 2.1.220**.
+
+| CLI | fonte de lista | como | achado |
+|---|---|---|---|
+| agy | ✅ `agy models` | TSV `slug<TAB>Rótulo` no **stdout** ("Fetching available models..." vai pro stderr); **não** há `--json` (o flag é recusado) | 14 slugs, de 3 fornecedores diferentes |
+| codex | ✅ `model/list` | JSON-RPC no **mesmo** canal app-server do medidor de uso (`codex -s read-only -a untrusted app-server` → initialize → initialized → método) | 6 visíveis, +2 com `includeHidden: true`; **traz `upgrade`/`upgradeInfo.migrationMarkdown`** |
+| claude | ❌ nenhuma | `claude --help` só tem agents/auth/auto-mode/doctor/gateway/install/mcp/plugin/project/setup-token/ultrareview/update; o que casa com "claude-…" em `~/.claude/*.json` é cache de tooling do usuário | capability `None`, catálogo segue sendo a fonte |
+
+Divergências do texto original, registradas:
+
+- O plano dizia "canal RPC local do app-server" sem nome de método. O método
+  **existe e se chama `model/list`** (confirmado por
+  `codex app-server generate-json-schema`, que emite `ModelListParams`/
+  `ModelListResponse`). Params são todos opcionais: `cursor`, `limit`,
+  `includeHidden`.
+- **Achado que o plano não previa e que M1 ganhou de graça**: o codex **anuncia
+  a aposentadoria**. `gpt-5.4` volta com `upgrade: "gpt-5.6-terra"` e
+  `migrationMarkdown: "GPT-5.4 will be deprecated soon…"`. A guarda "slug
+  aposentado vira estado explicado, não desaparecimento silencioso" não precisa
+  de heurística: o motivo vem escrito pelo fornecedor.
+- `codex exec` **não** aceita `-a untrusted` (só o `app-server` aceita) — a
+  fumaça de M2 usa `-s read-only` sozinho.
+- O conhecimento escrito à mão *"`gpt-5.6` puro é ID de API"* virou **derivável**:
+  ele não está no `model/list` e a fumaça devolve `unknown-slug`.
+
+Números de referência da sonda (14/08/2026): agy 14 slugs; codex 6 visíveis
+(`gpt-5.6-sol` default, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`
+com sucessor, `gpt-5.4-mini` com sucessor) + `gpt-5.6-sol-wm` e
+`codex-auto-review` escondidos; `nextCursor: null`.
+
 ## O diagnóstico
 
 Hoje são três camadas com autonomias diferentes:
@@ -37,6 +70,27 @@ Capability nova no registry (`adapters.rs` + espelho TS + teste-gêmeo):
 
 Efeito: modelo que o CLI não conhece **nunca é proposto**, e slug aposentado
 **some sozinho** da lista em vez de virar erro no meio de um turno.
+
+### M1 entregue (14/08/2026)
+
+- `Capabilities.lists_models: Option<ModelListSource>` em `adapters.rs`
+  (`AgyModelsSubcommand` / `CodexAppServer`; claude `None`), espelho
+  `listsModels` em `lib/agents.ts`, teste-gêmeo
+  `matriz_lista_de_modelos_por_agent` ↔ `agents.modelList.test.ts`, e coerência
+  no loop `contrato_capabilities_x_comportamento_por_agent` (declarar fonte de
+  lista exige que o modelo escolhido CHEGUE ao comando montado — implicação,
+  não igualdade: o claude tem seletor e mesmo assim não tem fonte).
+- Sonda em `model_list.rs` + comando `model_list(agent)`; falha classificada em
+  `unsupported | spawn | timeout | protocol | rpc | empty`. **Lista vazia nunca
+  é sucesso** (`empty`), e paginação que estoure o teto vira erro em vez de meia
+  lista — truncar seria sumiço silencioso com outro nome.
+- O canal app-server virou **um só**: `codex_appserver::probe_once` faz o
+  handshake de sonda, e `usage_window.rs` passou a chamá-lo em vez de manter a
+  cópia privada dele (o plano pedia "reusar, não abrir outro").
+- Régua pura no front: `slugStanding()` em `lib/modelList.ts` devolve
+  `listed | hidden | retired | unknown | **unverified**`. Sem lista viva o
+  veredito é `unverified` ("não sei"), nunca `unknown` — motor sem fonte não
+  perde nada.
 
 ## M2 — Fumaça de um token (a peça que substitui o humano)
 

@@ -511,6 +511,120 @@ fn request(id: i64, method: &str, params: Value) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params })
 }
 
+// ----------------------------------------------------------------------------
+// Sonda ONE-SHOT (sem turno): o canal read-only que as capabilities de leitura
+// compartilham. Existe UM handshake no app inteiro — o medidor de janela de uso
+// (usage_window.rs) e a lista de modelos (model_list.rs) chamam daqui em vez de
+// cada um subir o seu app-server com a sua cópia do initialize.
+// ----------------------------------------------------------------------------
+
+/// Falha de uma sonda one-shot. `kind` é estável porque o caller ramifica nele
+/// (o `rpc` carrega a frase do SERVIDOR e é o único que o caller reclassifica).
+pub struct ProbeError {
+    pub kind: &'static str,
+    pub message: String,
+}
+
+impl ProbeError {
+    fn new(kind: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+        }
+    }
+}
+
+/// Sobe `codex -s read-only -a untrusted app-server`, faz
+/// initialize → initialized → `method`, devolve o `result` e mata o processo.
+///
+/// READ-ONLY e SEM TURNO: nenhuma quota é consumida (foi assim que o
+/// `account/rateLimits/read` foi provado na mão em 12/08/2026 e o `model/list`
+/// em 14/08/2026). O framing é NDJSON e a resposta do servidor nem repete
+/// `"jsonrpc"` — a classificação é por FORMA (`id` da requisição + result/error),
+/// igual ao driver de turno acima. Linha de stdout que não é JSON é log do
+/// próprio CLI e é ignorada (mesma postura do transporte).
+pub async fn probe_once(
+    method: &str,
+    params: Value,
+    timeout_secs: u64,
+) -> Result<Value, ProbeError> {
+    const ID_PROBE: i64 = 2;
+    let mut cmd = Command::new("codex");
+    cmd.args(["-s", "read-only", "-a", "untrusted", "app-server"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    let mut child = cmd.spawn().map_err(|e| {
+        ProbeError::new("spawn", format!("não consegui subir o codex app-server: {e}"))
+    })?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| ProbeError::new("spawn", "app-server sem stdin"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| ProbeError::new("spawn", "app-server sem stdout"))?;
+
+    let run = async {
+        for msg in [
+            request(
+                ID_INITIALIZE,
+                "initialize",
+                json!({"clientInfo":{"name":"mycockpit","title":"MyCockpit","version":env!("CARGO_PKG_VERSION")}}),
+            ),
+            json!({"jsonrpc":"2.0","method":"initialized"}),
+            request(ID_PROBE, method, params),
+        ] {
+            let mut line = msg.to_string();
+            line.push('\n');
+            stdin
+                .write_all(line.as_bytes())
+                .await
+                .map_err(|e| ProbeError::new("protocol", format!("stdin fechou: {e}")))?;
+        }
+        let _ = stdin.flush().await;
+        let mut lines = BufReader::new(stdout).lines();
+        loop {
+            let line = lines
+                .next_line()
+                .await
+                .map_err(|e| ProbeError::new("protocol", format!("stdout falhou: {e}")))?
+                .ok_or_else(|| {
+                    ProbeError::new("protocol", "app-server encerrou antes de responder")
+                })?;
+            let Ok(v) = serde_json::from_str::<Value>(line.trim()) else {
+                continue; // log no stdout: ignora (mesma postura do transporte)
+            };
+            if v.get("id").and_then(|x| x.as_i64()) != Some(ID_PROBE) {
+                continue;
+            }
+            if let Some(err) = v.get("error") {
+                let msg = err
+                    .get("message")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("erro sem mensagem")
+                    .to_string();
+                return Err(ProbeError::new("rpc", msg));
+            }
+            return Ok(v.get("result").cloned().unwrap_or(Value::Null));
+        }
+    };
+    // Teto no probe inteiro: um app-server pendurado não pode segurar quem
+    // chamou (o kill_on_drop derruba o processo junto).
+    let out = tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), run)
+        .await
+        .unwrap_or_else(|_| {
+            Err(ProbeError::new(
+                "timeout",
+                format!("o app-server não respondeu em {timeout_secs}s"),
+            ))
+        });
+    let _ = child.kill().await;
+    out
+}
+
 fn app_server_command(req: &RunRequest) -> Command {
     let mut cmd = Command::new("codex");
     // Mesmo MCP read-only do `codex exec`, por override efêmero. As opções

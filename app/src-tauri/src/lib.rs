@@ -29,6 +29,7 @@ mod hooks_install;
 mod mcp_auth;
 mod mcp_control;
 mod mcp_proxy;
+mod model_list;
 mod mycockpit;
 mod osnotify;
 mod path;
@@ -581,6 +582,7 @@ pub fn run() {
             update::update_jobs,
             usage_window::usage_snapshots,
             usage_window::usage_fetch,
+            model_list::model_list,
             statusline_install::usage_statusline_status,
             statusline_install::usage_statusline_install,
             statusline_install::usage_statusline_uninstall,

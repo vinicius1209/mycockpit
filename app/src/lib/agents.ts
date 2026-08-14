@@ -118,6 +118,16 @@ export interface AgentDef {
    *  adapters.rs). Consumido só como identidade informativa na UI (o merge
    *  real é do Rust). null = motor sem hooks. */
   hookDialect: "claude-settings" | "codex-hooks-json" | "agy-config-hooks" | null
+  /** Fonte VIVA de lista de modelos do próprio CLI (espelho de `lists_models`,
+   *  M1 do model-autonomy-plan): "agy-models" = subcomando `agy models`,
+   *  "codex-app-server" = `model/list` no canal RPC read-only. null = o CLI
+   *  não sabe se listar, e a lista curada daqui + o catálogo (models.dev)
+   *  seguem sendo a fonte — degradação honesta, nunca sonda inventada.
+   *  Quem lê decide o COMPORTAMENTO: slug que a fonte viva não conhece não é
+   *  proposto, e slug aposentado vira estado explicado (o codex entrega a
+   *  aposentadoria por escrito), nunca sumiço silencioso. Teste-gêmeo:
+   *  agents.modelList.test.ts ↔ `matriz_lista_de_modelos_por_agent` no Rust. */
+  listsModels: "agy-models" | "codex-app-server" | null
 }
 
 // Aliases do Claude Code ("opus", "sonnet"…) resolvem NO SERVIDOR e mudam com
@@ -278,6 +288,10 @@ export const AGENTS: AgentDef[] = [
     // claude 2.1.220: PermissionRequest síncrono (docs 12/08/2026 + Xirp).
     hooksPermission: true,
     hookDialect: "claude-settings",
+    // claude 2.1.220: não há subcomando de modelos nem lista oficial em disco
+    // (`claude --help` verificado 14/08/2026). Sem fonte viva ⇒ null, e o
+    // catálogo models.dev segue mandando (§M1 do plano previu exatamente isso).
+    listsModels: null,
   },
   {
     id: "codex",
@@ -317,6 +331,10 @@ export const AGENTS: AgentDef[] = [
     // codex 0.146: mesmo protocolo (wire schema no binário).
     hooksPermission: true,
     hookDialect: "codex-hooks-json",
+    // codex 0.147: `model/list` no app-server read-only devolveu os 6 visíveis
+    // (+2 hidden) e marcou gpt-5.4/gpt-5.4-mini com `upgrade` — aposentadoria
+    // anunciada pelo próprio CLI (capturado 14/08/2026).
+    listsModels: "codex-app-server",
   },
   {
     id: "agy",
@@ -353,6 +371,8 @@ export const AGENTS: AgentDef[] = [
     // agy 1.1.12: permissão via PreToolUse.decision (doc embarcada).
     hooksPermission: true,
     hookDialect: "agy-config-hooks",
+    // agy 1.1.13: `agy models` lista 14 slugs em TSV (capturado 14/08/2026).
+    listsModels: "agy-models",
   },
   {
     id: "opencode",
@@ -380,6 +400,7 @@ export const AGENTS: AgentDef[] = [
     hooksStatus: false,
     hooksPermission: false,
     hookDialect: null,
+    listsModels: null,
   },
   {
     id: "model",
@@ -407,6 +428,7 @@ export const AGENTS: AgentDef[] = [
     hooksStatus: false,
     hooksPermission: false,
     hookDialect: null,
+    listsModels: null,
   },
 ]
 
@@ -448,6 +470,14 @@ export function usageWindowAgents(): AgentDef[] {
  *  watchdog, que continua existindo pra todos). */
 export function hooksAgents(): AgentDef[] {
   return AGENTS.filter((a) => a.hooksStatus)
+}
+
+/** Motores que sabem dizer AGORA quais modelos conhecem (M1 do
+ *  model-autonomy-plan). Quem quiser conferir um slug contra o CLI pergunta
+ *  AQUI, nunca por nome — motor sem fonte não ganha sonda inventada, continua
+ *  no catálogo. */
+export function modelListingAgents(): AgentDef[] {
+  return AGENTS.filter((a) => a.listsModels != null)
 }
 
 /** Motores que são CLI NA MÁQUINA do usuário: os que o app integra de verdade
