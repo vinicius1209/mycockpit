@@ -5,7 +5,8 @@
 // saber se oferece o gesto "testar este modelo". Mexeu aqui, mexa lá.
 
 import { describe, expect, it } from "vitest"
-import { AGENTS, agentDef, modelSmokeAgents } from "./agents"
+import { AGENTS, agentDef } from "./agents"
+import { modelSmokeAgents } from "./agentRoster"
 
 /** A matriz, escrita UMA vez. O teste Rust repete estes mesmos valores
  *  (claude-print-json ↔ ClaudePrintJson, e assim por diante). */

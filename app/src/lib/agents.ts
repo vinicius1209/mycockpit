@@ -78,6 +78,21 @@ export interface AgentDef {
    *  fica de fora porque o read-only dele é best-effort (candidato
    *  especulativo precisa de confinamento real, ADR do FusionRo). */
   disputes: boolean
+  /** O stdout do CLI é um STREAM ESTRUTURADO de eventos, não texto corrido
+   *  (espelho de `structured_output`, adapters.rs). false = a linha crua é fala
+   *  do assistente e NÃO existe evento por ferramenta: a superfície que
+   *  narraria "ação a ação" troca de componente e declara a ignorância em vez
+   *  de inventar verbo ("preparando…"). Quem lê decide COMPORTAMENTO
+   *  (lib/missionQuiet), nunca `id === "agy"`. Teste-gêmeo:
+   *  agents.telemetry.test.ts ↔ `matriz_telemetria_por_agent` no Rust. */
+  structuredOutput: boolean
+  /** O motor entrega o custo do turno em DÓLAR (espelho de `reports_cost`,
+   *  adapters.rs → CostSource::Reported). false = o número, quando existe, é
+   *  ESTIMADO por tokens; e quando o motor também não reporta tokens
+   *  (`cumulativeUsage` false + `structuredOutput` false) não existe custo
+   *  nenhum, nem como estimativa: a tela diz "não mede", nunca zero.
+   *  Teste-gêmeo: agents.telemetry.test.ts ↔ `matriz_telemetria_por_agent`. */
+  reportsCost: boolean
   /** O usage do fim de turno vem ACUMULADO da thread, não do turno (espelho
    *  de `cumulative_usage`, ADR-033). O runner já normaliza para delta antes
    *  do evento chegar aqui; a UI consulta isto só pra saber de QUAL motor o
@@ -167,6 +182,10 @@ export const AGENTS: AgentDef[] = [
     sessionResume: true,
     contextMcp: true,
     disputes: true,
+    // claude 2.1.220: `--output-format stream-json` emite evento por ação.
+    structuredOutput: true,
+    // o `result` traz `total_cost_usd` pronto ⇒ CostSource::Reported.
+    reportsCost: true,
     // o `result` do stream-json traz usage e USD DO TURNO.
     cumulativeUsage: false,
     // claude 2.1.220: `-p --resume <sid> "/compact"` processa o comando em
@@ -215,6 +234,11 @@ export const AGENTS: AgentDef[] = [
     sessionResume: true,
     contextMcp: true,
     disputes: true,
+    // codex 0.146: `exec --json` é JSONL de eventos (item por ferramenta).
+    structuredOutput: true,
+    // …mas não vem dólar: o custo do codex é ESTIMADO por tokens (o `~` do
+    // fmtCost), nunca reportado pelo CLI.
+    reportsCost: false,
     // codex 0.146: o `turn.completed.usage` é o total da THREAD (17494 →
     // 35005 em dois turnos triviais via resume, 04/08/2026) → ADR-033.
     cumulativeUsage: true,
@@ -263,6 +287,11 @@ export const AGENTS: AgentDef[] = [
     sessionResume: false,
     contextMcp: false,
     disputes: false,
+    // agy 1.1.13: mesmo com `--output-format json` o app roda o `-p` de texto
+    // puro (adapters.rs AGY_CAPS) ⇒ nenhum evento de ferramenta chega.
+    structuredOutput: false,
+    // sem custo e sem usage: não há número, nem estimativa por token.
+    reportsCost: false,
     cumulativeUsage: false,
     nativeCompact: false,
     usageWindow: null,
@@ -298,6 +327,8 @@ export const AGENTS: AgentDef[] = [
     sessionResume: false,
     contextMcp: false,
     disputes: false,
+    structuredOutput: false,
+    reportsCost: false,
     cumulativeUsage: false,
     nativeCompact: false,
     usageWindow: null,
@@ -327,6 +358,8 @@ export const AGENTS: AgentDef[] = [
     sessionResume: false,
     contextMcp: false,
     disputes: false,
+    structuredOutput: false,
+    reportsCost: false,
     cumulativeUsage: false,
     nativeCompact: false,
     usageWindow: null,
@@ -357,52 +390,8 @@ export function agentDef(id: string): AgentDef | undefined {
   return BY_ID.get(id)
 }
 
-/** Motores cujo usage de fim de turno vem ACUMULADO da thread (ADR-033). Quem
- *  precisa falar desses motores na UI (a manutenção "recalcular custo
- *  estimado") pergunta AQUI em vez de escrever "codex" no meio do código. */
-export function cumulativeUsageAgents(): AgentDef[] {
-  return AGENTS.filter((a) => a.cumulativeUsage)
-}
-
-/** Motores com fonte de JANELA DE USO (medidor de rate limit). Quem monta a
- *  pill/popover/Configurações do medidor pergunta AQUI, nunca por nome — motor
- *  sem fonte nem aparece (1ª camada de esconder do Orca). */
-export function usageWindowAgents(): AgentDef[] {
-  return AGENTS.filter((a) => a.usageWindow != null)
-}
-
-/** Motores com hooks de ciclo de vida instaláveis (hooks-plan H1). Quem monta
- *  o bloco de Configurações e as superfícies de sessão externa pergunta AQUI,
- *  nunca por nome — motor sem hooks nem aparece (degradação honesta pro
- *  watchdog, que continua existindo pra todos). */
-export function hooksAgents(): AgentDef[] {
-  return AGENTS.filter((a) => a.hooksStatus)
-}
-
-/** Motores que sabem dizer AGORA quais modelos conhecem (M1 do
- *  model-autonomy-plan). Quem quiser conferir um slug contra o CLI pergunta
- *  AQUI, nunca por nome — motor sem fonte não ganha sonda inventada, continua
- *  no catálogo. */
-export function modelListingAgents(): AgentDef[] {
-  return AGENTS.filter((a) => a.listsModels != null)
-}
-
-/** Motores em que dá pra rodar a FUMAÇA de um candidato (M2). Quem oferecer o
- *  gesto "testar este modelo" pergunta AQUI, nunca por nome — e motor sem
- *  dialeto não ganha botão que não faz nada. */
-export function modelSmokeAgents(): AgentDef[] {
-  return AGENTS.filter((a) => a.modelSmoke != null)
-}
-
-/** Motores que são CLI NA MÁQUINA do usuário: os que o app integra de verdade
- *  (`available`) e que executam como processo local (`kind === "agent"`). Quem
- *  precisa varrer "o estado das ferramentas desta máquina" (a saúde no sino, a
- *  Frota do Painel) pergunta AQUI, nunca escrevendo ["claude-code", "codex", …]
- *  no meio do código: motor novo entra no registry e aparece sozinho, e motor
- *  `available: false` não gera item de saúde pra uma CLI que o app não dirige. */
-export function machineAgents(): AgentDef[] {
-  return AGENTS.filter((a) => a.kind === "agent" && a.available)
-}
+// Os seletores por capability ("quais motores têm X") moram em
+// `lib/agentRoster.ts` — mesma regra, arquivo separado por causa da catraca.
 
 /** "ready"=usável · "installed-not-authenticated"=instalado e DESLOGADO
  *  (probe.auth "missing" — NÃO usável até logar) · "installed-auth-unknown"=

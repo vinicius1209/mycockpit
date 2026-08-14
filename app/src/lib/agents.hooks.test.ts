@@ -7,7 +7,8 @@
 // mexa lá.
 
 import { describe, expect, it } from "vitest"
-import { AGENTS, agentDef, hooksAgents } from "./agents"
+import { AGENTS, agentDef } from "./agents"
+import { hooksAgents } from "./agentRoster"
 
 /** A matriz, escrita UMA vez. O teste Rust repete estes mesmos valores
  *  (claude-settings ↔ ClaudeSettings, codex-hooks-json ↔ CodexHooksJson,

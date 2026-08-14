@@ -19,7 +19,8 @@
 // ACRESCENTA opção ao seletor, e o gesto de tirar segue existindo. Trocar o
 // motor das suas tarefas continua sendo decisão sua.
 
-import { agentModels, modelListingAgents, modelSmokeAgents } from "@/lib/agents"
+import { agentModels } from "@/lib/agents"
+import { modelListingAgents, modelSmokeAgents } from "@/lib/agentRoster"
 import {
   getModelsCatalog,
   modelPrice,

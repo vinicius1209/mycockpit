@@ -22,7 +22,8 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { agentDef, usageWindowAgents } from "@/lib/agents"
+import { agentDef } from "@/lib/agents"
+import { usageWindowAgents } from "@/lib/agentRoster"
 import { fmtTime } from "@/lib/format"
 import { METER_FILL, METER_TEXT } from "@/lib/meter"
 import {

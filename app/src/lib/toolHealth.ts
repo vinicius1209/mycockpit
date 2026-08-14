@@ -1,4 +1,5 @@
-import { agentDef, availability, machineAgents } from "@/lib/agents"
+import { agentDef, availability } from "@/lib/agents"
+import { machineAgents } from "@/lib/agentRoster"
 import { updateAvailable, type AgentProbe } from "@/lib/detect"
 import type { ModelNewsItem, ModelNewsTone } from "@/lib/modelPromotion"
 

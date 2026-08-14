@@ -3120,6 +3120,37 @@ mod tests {
         assert!(!capabilities_of("agy").unwrap().cumulative_usage);
     }
 
+    /// Teste-GÊMEO do espelho TS (`agents.telemetry.test.ts`): quem narra o
+    /// turno em EVENTOS (e portanto pode listar ação a ação) e de quem existe
+    /// custo em DÓLAR. É o par que a superfície de missão consulta pra trocar
+    /// de componente (feed de ações ↔ bloco de motor calado) e pra decidir
+    /// entre "—", "não mede" e o número — nunca por nome de agent. Mexeu aqui,
+    /// mexa lá.
+    #[test]
+    fn matriz_telemetria_por_agent() {
+        // claude 2.1.220: stream-json com evento por ação + `total_cost_usd`.
+        assert!(capabilities_of("claude-code").unwrap().structured_output);
+        assert!(capabilities_of("claude-code").unwrap().reports_cost);
+        // codex 0.147: `exec --json` é JSONL de eventos, mas sem dólar — o
+        // custo do codex sai ESTIMADO por tokens.
+        assert!(capabilities_of("codex").unwrap().structured_output);
+        assert!(!capabilities_of("codex").unwrap().reports_cost);
+        // agy 1.1.13: o `-p` que o app roda devolve texto puro, e nada de
+        // usage: não há ação relatada nem custo, nem como estimativa.
+        assert!(!capabilities_of("agy").unwrap().structured_output);
+        assert!(!capabilities_of("agy").unwrap().reports_cost);
+        // COERÊNCIA (a mesma cobrada no espelho TS): dólar por turno chega
+        // dentro do evento final do stream; motor que só cospe texto não tem
+        // onde entregar número, e prometê-lo seria inventar.
+        for agent in registered_agents() {
+            let caps = capabilities_of(agent).unwrap();
+            assert!(
+                !caps.reports_cost || caps.structured_output,
+                "{agent}: reports_cost sem structured_output"
+            );
+        }
+    }
+
     /// Teste-GÊMEO do espelho TS (`agents.usageWindow.test.ts`): quem expõe a
     /// JANELA DE USO do plano e por qual dialeto. Mexeu aqui, mexa lá.
     #[test]

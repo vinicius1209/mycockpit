@@ -7,7 +7,7 @@
 // em vez de deixar a sidebar esperando pra sempre. O número é o do Orca.
 
 import { invoke } from "@tauri-apps/api/core"
-import { hooksAgents, usageWindowAgents } from "@/lib/agents"
+import { hooksAgents, usageWindowAgents } from "@/lib/agentRoster"
 import type { AgentProbe } from "@/lib/detect"
 import { isTauri } from "@/lib/db"
 import type { GuideCapabilities, ProbeMap, ProbeResult } from "./setupItems"

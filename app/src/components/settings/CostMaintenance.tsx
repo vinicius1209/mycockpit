@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Calculator, ChevronDown, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { cumulativeUsageAgents } from "@/lib/agents"
+import { cumulativeUsageAgents } from "@/lib/agentRoster"
 import { fmtCost } from "@/lib/format"
 import {
   countCumulativeLedgerRows,

@@ -5,7 +5,8 @@
 // pill/popover/Configurações do medidor consultam. Mexeu aqui, mexa lá.
 
 import { describe, expect, it } from "vitest"
-import { AGENTS, agentDef, usageWindowAgents } from "./agents"
+import { AGENTS, agentDef } from "./agents"
+import { usageWindowAgents } from "./agentRoster"
 
 /** A matriz, escrita UMA vez. O teste Rust repete estes mesmos valores
  *  (statusline ↔ ClaudeStatusline, rpc ↔ CodexAppServer, oauth ↔

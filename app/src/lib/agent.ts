@@ -1,6 +1,7 @@
 import { invoke, Channel } from "@tauri-apps/api/core"
 import type { Attachment } from "@/lib/attachments"
-import { agentDef, cumulativeUsageAgents } from "@/lib/agents"
+import { agentDef } from "@/lib/agents"
+import { cumulativeUsageAgents } from "@/lib/agentRoster"
 import { loadUsageBaseline, saveUsageBaseline } from "@/lib/db"
 import { nextBaseline, type CumulativeUsage } from "@/lib/usage"
 

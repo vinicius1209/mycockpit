@@ -21,14 +21,8 @@ import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useApp } from "@/store/app"
-import {
-  DESTINATIONS,
-  agentModels,
-  agentEfforts,
-  hooksAgents,
-  normalizeModelValue,
-  usageWindowAgents,
-} from "@/lib/agents"
+import { DESTINATIONS, agentModels, agentEfforts, normalizeModelValue } from "@/lib/agents"
+import { hooksAgents, usageWindowAgents } from "@/lib/agentRoster"
 import { MissionSettings } from "@/components/settings/MissionSettings"
 import { CompanionSettings } from "@/components/settings/CompanionSettings"
 import { McpSettings } from "@/components/settings/McpSettings"

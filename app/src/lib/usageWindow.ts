@@ -21,7 +21,8 @@
 
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
-import { agentDef, usageWindowAgents } from "@/lib/agents"
+import { agentDef } from "@/lib/agents"
+import { usageWindowAgents } from "@/lib/agentRoster"
 import type { AgentProbe } from "@/lib/detect"
 import { isTauri } from "@/lib/db"
 import { METER_DANGER_PCT, METER_WARN_PCT, meterTone } from "@/lib/meter"
