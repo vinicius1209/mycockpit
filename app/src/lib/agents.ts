@@ -284,20 +284,14 @@ export const AGENTS: AgentDef[] = [
     nativeCommandSource: null,
     slashEmptyExtra: null,
     systemChannel: false,
-    // agy 1.1.13: `--conversation <ID>` retoma de verdade (o id sai no `init`
-    // do stream; medido 14/08/2026, ver AGY_CAPS em adapters.rs).
+    // agy 1.1.13 (medido 14/08/2026, evidência campo a campo em AGY_CAPS):
+    // `--conversation <ID>` retoma, o `-p` é `--output-format stream-json` com
+    // um step por ação, e o `result.usage` é o acumulado da CONVERSA (ADR-033).
     sessionResume: true,
     contextMcp: false,
     disputes: false,
-    // agy 1.1.13: o app passou a rodar `-p --output-format stream-json`, que é
-    // NDJSON com um step por ação (adapters.rs AGY_CAPS) ⇒ o fio recebe
-    // ferramenta a ferramenta, e a missão tem o que listar.
     structuredOutput: true,
-    // usage existe (tokens), dólar NÃO existe em evento nenhum: o custo do agy
-    // sai ESTIMADO por tokens, igual ao codex.
     reportsCost: false,
-    // agy 1.1.13: `result.usage` é o acumulado da CONVERSA, não do turno — a
-    // mesma armadilha do ADR-033, medida nos dois caminhos de resume.
     cumulativeUsage: true,
     nativeCompact: false,
     usageWindow: null,

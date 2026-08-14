@@ -129,17 +129,9 @@ vi.mock("@/lib/transcript", () => ({
     (_items: unknown, pointer: string | null, prompt: string) =>
       `[memória-agy|${pointer ?? "sem-ponteiro"}] ${prompt}`,
   ),
-  // mesma regra da função real (pura): motor com a capability `sessionResume`,
-  // conversa com histórico e sessionId. O dublê consulta o REGISTRY, nunca o
-  // nome — era `agent !== "agy"` e virou mentira no dia em que o agy 1.1.13
-  // ganhou `--conversation <ID>` (14/08/2026), que é justamente o motivo de a
-  // casa proibir comparar nome de motor.
-  shouldAttachResumeFallback: vi.fn(
-    (agent: string, items: unknown[], sessionId: string | null) =>
-      (agentDef(agent)?.sessionResume ?? false) &&
-      items.length > 0 &&
-      sessionId != null,
-  ),
+  // regra da real (pura), do REGISTRY e nunca do nome (era `agent !== "agy"`):
+  shouldAttachResumeFallback: vi.fn((a: string, i: unknown[], sid: string | null) =>
+    Boolean(agentDef(a)?.sessionResume && i.length > 0 && sid != null)),
   buildResumeFallback: vi.fn(() => "[fallback-resume]"),
 }))
 vi.mock("@/store/chat", () => ({
@@ -416,27 +408,16 @@ describe("sendFromDesk — coreografia do run", () => {
     expect(call[6]).toBe("/proj")
   })
 
-  // A memória SINTÉTICA do H5 (recap + ponteiro embutidos no prompt) existe
-  // para motor SEM resume nativo, decidida pela capability `sessionResume`.
-  // O agy era o único caso vivo até a 1.1.13 ganhar `--conversation <ID>`
-  // (medido 14/08/2026) — e hoje NENHUM motor despachável cai nesse ramo (o
-  // único registrado sem resume é o não integrado, que o dispatchBlockReason
-  // barra antes). O ramo segue no send.ts porque é o default fail-closed do
-  // próximo motor, e a COMPOSIÇÃO dele segue testada em transcript.test.ts
-  // (`buildMemoryPrompt`) e trust.test.ts. O que se afirma aqui é o outro
-  // lado: motor COM resume não recebe memória sintética nenhuma.
+  // Memória SINTÉTICA (H5) é pra motor SEM resume: ramo sem motor despachável
+  // desde que o agy 1.1.13 ganhou resume (transcript.test cobre a composição).
   it("agy passou a usar o resume nativo: prompt limpo, sem memória sintética", async () => {
     arm(makeConv({ agent: "agy", sessionId: "conv-agy-1", items: [user("antes")] }))
     await sendFromDesk({ ...args, agent: "agy" })
     const call = vi.mocked(runAgent).mock.calls[0]
     expect(call[5]).toBe("olá")
     expect(call[7]).toBe("conv-agy-1")
-    // o transcript pleno continua sendo exportado (agora pelo caminho do
-    // fallback de resume, não pelo da memória sintética).
     expect(exportConvContext).toHaveBeenCalledWith("/proj", "c1", "# transcript")
-    // …e o fallback de resume passa a valer pra ele: o agy ignora id que não
-    // existe e abre conversa nova em silêncio, então o recap tem que estar
-    // pronto pro restart (ver AGY_CAPS em adapters.rs).
+    // e o fallback vale: o agy abre conversa NOVA quando o id não existe.
     expect(call[12]).toBeTruthy()
   })
 
