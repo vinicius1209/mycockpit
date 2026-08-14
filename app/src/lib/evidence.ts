@@ -47,3 +47,10 @@ export async function evidenceUrl(path: string): Promise<string> {
 export async function openConvImage(path: string): Promise<void> {
   await invoke("open_conv_image", { path })
 }
+
+/** Mostra a imagem do fio na pasta dela (Finder / gerenciador de arquivos).
+ *  Mesma contenção do openConvImage: o path segue relativo e quem resolve é
+ *  o Rust. */
+export async function revealConvImage(path: string): Promise<void> {
+  await invoke("reveal_conv_image", { path })
+}

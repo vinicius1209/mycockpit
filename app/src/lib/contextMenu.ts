@@ -26,10 +26,21 @@ export type Alvo =
       temSelecao: boolean
       temConteudo: boolean
     }
-  /** Mensagem do fio (não editável). */
-  | { tipo: "mensagem"; texto: string; selecao: string }
-  /** Anexo/evidência com imagem, dentro do fio ou do lightbox. */
-  | { tipo: "imagem"; path: string; nome: string }
+  /**
+   * Bloco de texto do produto (não editável): mensagem do fio, markdown do
+   * agent, detalhe do painel de contexto. O marcador é o `data-selectable`
+   * que o app já usa pra liberar seleção — "o usuário pode selecionar" e "o
+   * usuário pode copiar" são a mesma pergunta, então não inventamos um
+   * segundo marcador pra ela.
+   */
+  | { tipo: "bloco"; texto: string; selecao: string }
+  /**
+   * Imagem: anexo, evidência de tool ou o lightbox. `path` só existe onde o
+   * app conhece o arquivo de verdade (path relativo contido, resolvido no
+   * Rust); num `<img>` solto ele é null e sobra o que dá pra fazer com os
+   * pixels que estão na tela.
+   */
+  | { tipo: "imagem"; path: string | null; nome: string }
   /** Texto selecionado em superfície não editável, fora de mensagem. */
   | { tipo: "selecao"; texto: string }
 
@@ -38,7 +49,7 @@ export type ItemId =
   | "copiar"
   | "colar"
   | "selecionar-tudo"
-  | "copiar-mensagem"
+  | "copiar-bloco"
   | "copiar-imagem"
   | "abrir-imagem"
   | "revelar-imagem"
@@ -71,7 +82,10 @@ export const ROTULOS: Record<ItemId, string> = {
   copiar: "Copiar",
   colar: "Colar",
   "selecionar-tudo": "Selecionar tudo",
-  "copiar-mensagem": "Copiar mensagem",
+  // O id fala do ALVO (o bloco), o rótulo fala do resultado pro usuário (o
+  // texto). "Copiar mensagem" mentiria no painel de contexto, que usa o mesmo
+  // marcador e não tem mensagem nenhuma.
+  "copiar-bloco": "Copiar texto",
   "copiar-imagem": "Copiar imagem",
   "abrir-imagem": "Abrir no app padrão",
   // Neutro de propósito: o produto é Mac E Linux, e "Finder" mentiria no
@@ -116,20 +130,23 @@ export function itensPara(alvo: Alvo | null, rec: Recursos): LinhaMenu[] {
     ])
   }
 
-  if (alvo.tipo === "mensagem") {
+  if (alvo.tipo === "bloco") {
     return limpaDivisores([
       ...(alvo.selecao ? (["copiar"] as LinhaMenu[]) : []),
       DIVISOR,
-      ...(alvo.texto ? (["copiar-mensagem"] as LinhaMenu[]) : []),
+      ...(alvo.texto ? (["copiar-bloco"] as LinhaMenu[]) : []),
     ])
   }
 
   if (alvo.tipo === "imagem") {
+    // Sem path, o app não conhece o arquivo: abrir/mostrar não teriam o que
+    // apontar, e some quem não funciona. Copiar continua, porque os pixels
+    // estão na tela.
     return limpaDivisores([
       "copiar-imagem",
       DIVISOR,
-      "abrir-imagem",
-      ...(rec.revelar ? (["revelar-imagem"] as LinhaMenu[]) : []),
+      ...(alvo.path ? (["abrir-imagem"] as LinhaMenu[]) : []),
+      ...(alvo.path && rec.revelar ? (["revelar-imagem"] as LinhaMenu[]) : []),
     ])
   }
 
@@ -147,23 +164,21 @@ export type Sonda = {
     temSelecao: boolean
     temConteudo: boolean
   } | null
-  imagem: { path: string; nome: string } | null
-  mensagem: { texto: string } | null
+  imagem: { path: string | null; nome: string } | null
+  bloco: { texto: string } | null
   /** Seleção de texto vigente na janela, já aparada. */
   selecao: string
 }
 
 /**
- * Precedência do mais específico pro mais genérico. Imagem antes de mensagem
+ * Precedência do mais específico pro mais genérico. Imagem antes de bloco
  * porque o anexo mora DENTRO da mensagem; editável na frente de tudo porque
  * lá o botão direito tem função de sistema a cumprir.
  */
 export function alvoDe(s: Sonda): Alvo | null {
   if (s.editavel) return { tipo: "editavel", ...s.editavel }
   if (s.imagem) return { tipo: "imagem", ...s.imagem }
-  if (s.mensagem) {
-    return { tipo: "mensagem", texto: s.mensagem.texto, selecao: s.selecao }
-  }
+  if (s.bloco) return { tipo: "bloco", texto: s.bloco.texto, selecao: s.selecao }
   if (s.selecao) return { tipo: "selecao", texto: s.selecao }
   return null
 }

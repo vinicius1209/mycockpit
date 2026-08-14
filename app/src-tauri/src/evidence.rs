@@ -228,6 +228,25 @@ pub async fn open_conv_image(app: tauri::AppHandle, path: String) -> Result<(), 
         .map_err(|e| format!("não consegui abrir no app padrão: {e}"))
 }
 
+/// Mostra a imagem do fio na pasta dela (Finder no macOS, gerenciador de
+/// arquivos no Linux) — item "Mostrar na pasta" do menu de contexto
+/// (ADR-042). Passa pela MESMA contenção do open_conv_image em vez de usar o
+/// `opener:allow-reveal-item-in-dir` direto do JS: assim o front continua sem
+/// poder mandar path absoluto/arbitrário pro SO.
+#[tauri::command]
+pub async fn reveal_conv_image(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let root = if path.starts_with("evidence/") {
+        "evidence"
+    } else {
+        "attachments"
+    };
+    let abs = contained(&app, root, &path)?;
+    app.opener()
+        .reveal_item_in_dir(abs)
+        .map_err(|e| format!("não consegui mostrar na pasta: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

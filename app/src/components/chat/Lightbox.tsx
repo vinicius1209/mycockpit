@@ -145,6 +145,10 @@ export function LightboxOverlay() {
           <img
             src={url}
             alt={img.name}
+            // Path RELATIVO contido (o mesmo que o Rust resolve): é ele que
+            // habilita "Abrir no app padrão" e "Mostrar na pasta" no menu de
+            // contexto (ADR-042). Sem o marcador, o menu só copia os pixels.
+            data-ctx-imagem={img.path}
             onClick={(e) => e.stopPropagation()}
             className="max-h-full max-w-full rounded-md object-contain shadow-[var(--shadow-pop)]"
           />

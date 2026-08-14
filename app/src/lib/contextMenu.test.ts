@@ -15,7 +15,7 @@ const NADA: Recursos = { colar: false, revelar: false }
 const sondaVazia: Sonda = {
   editavel: null,
   imagem: null,
-  mensagem: null,
+  bloco: null,
   selecao: "",
 }
 
@@ -81,21 +81,21 @@ describe("itensPara · campo editável", () => {
   })
 })
 
-describe("itensPara · mensagem do fio", () => {
-  it("sem seleção oferece só copiar a mensagem inteira", () => {
+describe("itensPara · bloco de texto do produto", () => {
+  it("sem seleção oferece só copiar o bloco inteiro", () => {
     expect(
-      itensPara({ tipo: "mensagem", texto: "oi", selecao: "" }, TUDO),
-    ).toEqual(["copiar-mensagem"])
+      itensPara({ tipo: "bloco", texto: "oi", selecao: "" }, TUDO),
+    ).toEqual(["copiar-bloco"])
   })
 
-  it("com seleção oferece copiar a seleção E a mensagem inteira", () => {
+  it("com seleção oferece copiar a seleção E o bloco inteiro", () => {
     expect(
-      itensPara({ tipo: "mensagem", texto: "oi tudo bem", selecao: "tudo" }, TUDO),
-    ).toEqual(["copiar", DIVISOR, "copiar-mensagem"])
+      itensPara({ tipo: "bloco", texto: "oi tudo bem", selecao: "tudo" }, TUDO),
+    ).toEqual(["copiar", DIVISOR, "copiar-bloco"])
   })
 
-  it("mensagem sem texto renderizado não abre menu", () => {
-    expect(itensPara({ tipo: "mensagem", texto: "", selecao: "" }, TUDO)).toEqual([])
+  it("bloco sem texto renderizado não abre menu", () => {
+    expect(itensPara({ tipo: "bloco", texto: "", selecao: "" }, TUDO)).toEqual([])
   })
 })
 
@@ -115,13 +115,18 @@ describe("itensPara · imagem", () => {
     expect(itensPara(img, NADA)).toEqual(["copiar-imagem", DIVISOR, "abrir-imagem"])
   })
 
+  it("imagem que o app não conhece por arquivo só deixa copiar os pixels", () => {
+    const solta: Alvo = { tipo: "imagem", path: null, nome: "avatar" }
+    expect(itensPara(solta, TUDO)).toEqual(["copiar-imagem"])
+  })
+
   it("não oferece 'Salvar como', que não tem implementação real", () => {
     expect(JSON.stringify(itensPara(img, TUDO))).not.toContain("salvar")
   })
 })
 
 describe("itensPara · seleção solta e área vazia", () => {
-  it("texto selecionado fora de mensagem oferece só copiar", () => {
+  it("texto selecionado fora de bloco oferece só copiar", () => {
     expect(itensPara({ tipo: "selecao", texto: "abc" }, TUDO)).toEqual(["copiar"])
   })
 
@@ -140,7 +145,7 @@ describe("itensPara · higiene do divisor", () => {
       { tipo: "editavel", senha: false, somenteLeitura: false, temSelecao: false, temConteudo: false },
       { tipo: "editavel", senha: false, somenteLeitura: true, temSelecao: true, temConteudo: true },
       { tipo: "editavel", senha: false, somenteLeitura: false, temSelecao: true, temConteudo: true },
-      { tipo: "mensagem", texto: "a", selecao: "" },
+      { tipo: "bloco", texto: "a", selecao: "" },
       { tipo: "imagem", path: "/a", nome: "a" },
       { tipo: "selecao", texto: "a" },
     ]
@@ -162,7 +167,7 @@ describe("rótulos", () => {
     const vistos = new Set<string>()
     const alvos: Alvo[] = [
       { tipo: "editavel", senha: false, somenteLeitura: false, temSelecao: true, temConteudo: true },
-      { tipo: "mensagem", texto: "a", selecao: "b" },
+      { tipo: "bloco", texto: "a", selecao: "b" },
       { tipo: "imagem", path: "/a", nome: "a" },
       { tipo: "selecao", texto: "a" },
     ]
@@ -190,27 +195,27 @@ describe("alvoDe · precedência", () => {
       ...sondaVazia,
       editavel: { senha: false, somenteLeitura: false, temSelecao: false, temConteudo: true },
       imagem: { path: "/a", nome: "a" },
-      mensagem: { texto: "m" },
+      bloco: { texto: "m" },
       selecao: "s",
     })
     expect(alvo?.tipo).toBe("editavel")
   })
 
-  it("imagem ganha da mensagem, porque o anexo mora dentro dela", () => {
+  it("imagem ganha do bloco, porque o anexo mora dentro da mensagem", () => {
     const alvo = alvoDe({
       ...sondaVazia,
       imagem: { path: "/a", nome: "a" },
-      mensagem: { texto: "m" },
+      bloco: { texto: "m" },
     })
     expect(alvo?.tipo).toBe("imagem")
   })
 
-  it("mensagem carrega a seleção junto, pra oferecer as duas cópias", () => {
-    const alvo = alvoDe({ ...sondaVazia, mensagem: { texto: "m" }, selecao: "s" })
-    expect(alvo).toEqual({ tipo: "mensagem", texto: "m", selecao: "s" })
+  it("bloco carrega a seleção junto, pra oferecer as duas cópias", () => {
+    const alvo = alvoDe({ ...sondaVazia, bloco: { texto: "m" }, selecao: "s" })
+    expect(alvo).toEqual({ tipo: "bloco", texto: "m", selecao: "s" })
   })
 
-  it("seleção solta fora de mensagem vira alvo de seleção", () => {
+  it("seleção solta fora de bloco vira alvo de seleção", () => {
     expect(alvoDe({ ...sondaVazia, selecao: "abc" })).toEqual({
       tipo: "selecao",
       texto: "abc",

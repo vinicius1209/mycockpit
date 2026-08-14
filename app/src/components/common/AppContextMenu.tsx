@@ -19,6 +19,7 @@ import {
 } from "@/lib/contextMenu"
 import { instalarGuardaDoMenuNativo } from "@/lib/nativeMenu"
 import { copyText } from "@/lib/clipboard"
+import { openConvImage, revealConvImage } from "@/lib/evidence"
 import { isTauri } from "@/lib/db"
 
 /**
@@ -36,9 +37,13 @@ export function AppContextMenu() {
     linhas: LinhaMenu[]
   } | null>(null)
   const focoRef = useRef<FocoSalvo | null>(null)
+  // O elemento da imagem clicada: "Copiar imagem" copia o bitmap que está na
+  // tela, então precisa do <img>, não só da descrição dele.
+  const imgRef = useRef<HTMLImageElement | null>(null)
 
   const aoAssumir = useCallback((e: MouseEvent) => {
-    const alvo = alvoDe(sondar(e))
+    const { sonda, img } = sondar(e)
+    const alvo = alvoDe(sonda)
     // Fora do Tauri (preview do e2e, browser puro) não há leitura de área de
     // transferência nem como revelar arquivo: o item some em vez de mentir.
     const noApp = isTauri()
@@ -47,6 +52,7 @@ export function AppContextMenu() {
     // que menu ausente.
     if (!alvo || linhas.length === 0) return
     focoRef.current = salvarFoco()
+    imgRef.current = img
     setEstado({ x: e.clientX, y: e.clientY, alvo, linhas })
   }, [])
 
@@ -78,12 +84,13 @@ export function AppContextMenu() {
             key={linha}
             onSelect={() => {
               const foco = focoRef.current
+              const img = imgRef.current
               // Depois do fechamento: o Radix ainda está desfazendo o próprio
               // gerenciamento de foco durante o `onSelect`, e a ação precisa
               // do cursor de volta no campo. O gesto do usuário sobrevive ao
               // salto (medido: `execCommand` de copy/cut/insertText continua
               // valendo dentro de `setTimeout(0)` no WKWebView).
-              setTimeout(() => void executar(linha, alvo, foco), 0)
+              setTimeout(() => void executar(linha, alvo, foco, img), 0)
             }}
           >
             {ROTULOS[linha]}
@@ -109,14 +116,48 @@ const TIPOS_SEM_TEXTO = new Set([
   "image",
 ])
 
-function sondar(e: MouseEvent): Sonda {
+function sondar(e: MouseEvent): { sonda: Sonda; img: HTMLImageElement | null } {
   const el = e.target instanceof Element ? e.target : null
+  const img = acharImagem(el)
   return {
-    editavel: sondarEditavel(el),
-    imagem: null,
-    mensagem: null,
-    selecao: (window.getSelection()?.toString() ?? "").trim(),
+    img,
+    sonda: {
+      editavel: sondarEditavel(el),
+      imagem: img ? descreverImagem(img) : null,
+      bloco: sondarBloco(el),
+      selecao: (window.getSelection()?.toString() ?? "").trim(),
+    },
   }
+}
+
+/**
+ * O marcador do bloco de texto é o `data-selectable` que o app já usa pra
+ * liberar seleção (index.html deixa o resto da UI não-selecionável). Reusar
+ * evita um segundo marcador dizendo a mesma coisa, e pega de graça a bolha do
+ * usuário, o markdown do agent e o detalhe do painel de contexto.
+ */
+function sondarBloco(el: Element | null): Sonda["bloco"] {
+  const bloco = el?.closest<HTMLElement>("[data-selectable]")
+  if (!bloco) return null
+  const texto = (bloco.innerText ?? bloco.textContent ?? "").trim()
+  return texto ? { texto } : null
+}
+
+function acharImagem(el: Element | null): HTMLImageElement | null {
+  if (el instanceof HTMLImageElement) return el
+  // Clique na moldura (o botão que abre o lightbox) também vale como clique
+  // na imagem.
+  const caixa = el?.closest<HTMLElement>("[data-ctx-imagem]")
+  return caixa?.querySelector("img") ?? null
+}
+
+function descreverImagem(img: HTMLImageElement): Sonda["imagem"] {
+  // Sem bitmap decodificado não há o que copiar (SVG sem tamanho intrínseco,
+  // imagem quebrada): melhor não oferecer alvo nenhum.
+  if (!img.naturalWidth || !img.naturalHeight) return null
+  const caixa = img.closest<HTMLElement>("[data-ctx-imagem]")
+  const path = caixa?.dataset.ctxImagem
+  return { path: path || null, nome: img.alt || "imagem" }
 }
 
 function sondarEditavel(el: Element | null): Sonda["editavel"] {
@@ -193,7 +234,12 @@ function restaurarFoco(foco: FocoSalvo | null) {
 
 // ── Execução ────────────────────────────────────────────────────────────────
 
-async function executar(id: ItemId, alvo: Alvo, foco: FocoSalvo | null) {
+async function executar(
+  id: ItemId,
+  alvo: Alvo,
+  foco: FocoSalvo | null,
+  img: HTMLImageElement | null,
+) {
   switch (id) {
     case "cortar":
       restaurarFoco(foco)
@@ -208,8 +254,32 @@ async function executar(id: ItemId, alvo: Alvo, foco: FocoSalvo | null) {
         document.execCommand("copy")
         return
       }
-      if (alvo.tipo === "mensagem") await copyText(alvo.selecao)
+      if (alvo.tipo === "bloco") await copyText(alvo.selecao)
       else if (alvo.tipo === "selecao") await copyText(alvo.texto)
+      return
+
+    case "copiar-bloco":
+      if (alvo.tipo === "bloco") await copyText(alvo.texto)
+      return
+
+    case "copiar-imagem":
+      await copiarImagem(img)
+      return
+
+    case "abrir-imagem":
+      if (alvo.tipo !== "imagem" || !alvo.path) return
+      await openConvImage(alvo.path).catch((err) => {
+        console.error("[menu] não consegui abrir a imagem", err)
+        toast.error("Não consegui abrir no app padrão (o arquivo ainda existe?)")
+      })
+      return
+
+    case "revelar-imagem":
+      if (alvo.tipo !== "imagem" || !alvo.path) return
+      await revealConvImage(alvo.path).catch((err) => {
+        console.error("[menu] não consegui mostrar a imagem na pasta", err)
+        toast.error("Não consegui mostrar na pasta (o arquivo ainda existe?)")
+      })
       return
 
     case "selecionar-tudo":
@@ -236,5 +306,34 @@ async function executar(id: ItemId, alvo: Alvo, foco: FocoSalvo | null) {
 
     default:
       return
+  }
+}
+
+/**
+ * Copia o bitmap que está na tela. Passa por canvas porque a área de
+ * transferência do WebKit só aceita `image/png` (medido: com o blob direto o
+ * write resolve; com jpeg/webp ele recusaria), e porque assim a cópia sai na
+ * resolução natural do arquivo, não no tamanho do thumbnail.
+ */
+async function copiarImagem(img: HTMLImageElement | null) {
+  if (!img?.naturalWidth) return
+  try {
+    const canvas = document.createElement("canvas")
+    canvas.width = img.naturalWidth
+    canvas.height = img.naturalHeight
+    const ctx = canvas.getContext("2d")
+    if (!ctx) throw new Error("sem contexto 2d")
+    ctx.drawImage(img, 0, 0)
+    const png = await new Promise<Blob | null>((ok) =>
+      canvas.toBlob(ok, "image/png"),
+    )
+    if (!png) throw new Error("canvas não devolveu PNG")
+    // O blob vai DIRETO: no WebKit, ClipboardItem com Promise é recusado com
+    // NotAllowedError (medido em 14/08/2026).
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": png })])
+    toast.success("Imagem copiada")
+  } catch (err) {
+    console.error("[menu] não consegui copiar a imagem", err)
+    toast.error("Não consegui copiar a imagem")
   }
 }

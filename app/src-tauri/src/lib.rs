@@ -664,6 +664,7 @@ pub fn run() {
             attachments::wipe_conv_attachments,
             evidence::read_evidence,
             evidence::open_conv_image,
+            evidence::reveal_conv_image,
             companion::companion_start,
             companion::companion_stop,
             companion::companion_status,
