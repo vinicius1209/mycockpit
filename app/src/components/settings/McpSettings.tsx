@@ -1,17 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Globe,
-  KeyRound,
-  Loader2,
-  RefreshCcw,
-  Server,
-  ShieldCheck,
-  XCircle,
-} from "lucide-react"
+import { Loader2, RefreshCcw, Server, ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
-import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { PillSelect } from "@/components/ui/PillSelect"
 import { useApp } from "@/store/app"
@@ -21,7 +10,6 @@ import {
   discoverMcpServers,
   initialMcpProjectId,
   mcpBindingsSummary,
-  mcpAgentStatusLabel,
   mcpAuthActionLabel,
   mcpAuthHint,
   mcpAuthLabel,
@@ -35,19 +23,15 @@ import {
   setMcpBinding,
   type McpAgentState,
   type McpAuthStatus,
-  type McpFallback,
   type McpHealthStatus,
   type McpServer,
 } from "@/lib/mcp"
+import { browserBoundServers, shouldShowBrowserCard } from "@/lib/browser"
 import {
-  browserBindingWarning,
-  browserStateLabel,
-  browserStatus,
-  startProjectBrowser,
-  stopProjectBrowser,
-  type BrowserStatus,
-} from "@/lib/browser"
-import { listenWorkEvents } from "@/lib/work"
+  ProjectBrowserCard,
+  useProjectBrowser,
+} from "@/components/settings/ProjectBrowserCard"
+import { McpAgentRows } from "@/components/settings/McpAgentRows"
 import { cn } from "@/lib/utils"
 
 function toggleKey(
@@ -59,28 +43,6 @@ function toggleKey(
   if (on) next.add(key)
   else next.delete(key)
   return next
-}
-
-const AGENTS = [
-  { id: "claude-code", label: "Claude" },
-  { id: "codex", label: "Codex" },
-  { id: "agy", label: "Agy" },
-] as const
-
-const FALLBACKS: { value: McpFallback; label: string }[] = [
-  { value: "ask", label: "Pausar e avisar" },
-  { value: "deny", label: "Sem fallback" },
-  { value: "allow-readonly", label: "Fallback leitura" },
-]
-
-function statusIcon(status: McpHealthStatus) {
-  if (status === "healthy" || status === "auth-delegated")
-    return <CheckCircle2 className="size-3.5 text-st-success" />
-  if (status === "auth-required")
-    return <KeyRound className="size-3.5 text-st-warning" />
-  if (status === "unavailable")
-    return <XCircle className="size-3.5 text-st-error" />
-  return <AlertTriangle className="size-3.5 text-muted-foreground/60" />
 }
 
 function sourceLabel(server: McpServer): string {
@@ -121,11 +83,6 @@ export function McpSettings() {
     new Set(),
   )
   const [error, setError] = useState<string | null>(null)
-  // Navegador do projeto (B2.1): o app é dono do Chromium; aqui o usuário liga,
-  // desliga e vê o estado REAL (sessão só existe com o endpoint respondendo).
-  const [browser, setBrowser] = useState<BrowserStatus | null>(null)
-  const [browserBusy, setBrowserBusy] = useState(false)
-  const browserPathRef = useRef<string | null>(null)
   // Login do PRÓPRIO app nos MCPs com OAuth (A1). Só existe para servidores
   // cuja config declara o bloco `oauth`; os demais nem mostram a linha.
   const [authByServer, setAuthByServer] = useState<
@@ -190,27 +147,9 @@ export function McpSettings() {
     void refreshCounts()
   }, [refreshCounts])
 
-  const refreshBrowser = useCallback(async () => {
-    const path = project?.path ?? null
-    browserPathRef.current = path
-    if (!path) {
-      setBrowser(null)
-      return
-    }
-    try {
-      const status = await browserStatus(path)
-      if (browserPathRef.current === path) setBrowser(status)
-    } catch (cause) {
-      if (browserPathRef.current === path) {
-        setBrowser(null)
-        toast.error(cause instanceof Error ? cause.message : String(cause))
-      }
-    }
-  }, [project])
-
-  useEffect(() => {
-    void refreshBrowser()
-  }, [refreshBrowser])
+  // Navegador do projeto (B2.1): o app é dono do Chromium. O estado vem do hook
+  // porque a linha de cada agent também precisa dele para dizer o que falta.
+  const browser = useProjectBrowser(project?.path ?? null)
 
   // Estado do login por servidor OAuth. Falha aqui não vira toast: a linha
   // simplesmente não promete nada, e o botão "Entrar" continua disponível.
@@ -302,45 +241,6 @@ export function McpSettings() {
     },
     [project, setAuthKeyBusy],
   )
-
-  // O navegador pode morrer sem gesto nenhum (usuário fecha a janela, crash).
-  // O backend emite `browser_state` no mesmo canal do trabalho vivo; o painel
-  // reconsulta e volta a dizer a verdade.
-  useEffect(() => {
-    let cancelled = false
-    let unlisten: (() => void) | undefined
-    void listenWorkEvents((event) => {
-      if (event.kind === "browser_state") void refreshBrowser()
-    }).then((fn) => {
-      if (cancelled) fn()
-      else unlisten = fn
-    })
-    return () => {
-      cancelled = true
-      unlisten?.()
-    }
-  }, [refreshBrowser])
-
-  async function toggleBrowser(on: boolean) {
-    if (!project || browserBusy) return
-    const path = project.path
-    setBrowserBusy(true)
-    try {
-      if (on) {
-        const session = await startProjectBrowser(path)
-        toast.success(
-          `Navegador do projeto ligado · ${session.browser ?? "chromium"}`,
-        )
-      } else {
-        await stopProjectBrowser(path)
-      }
-      await refreshBrowser()
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setBrowserBusy(false)
-    }
-  }
 
   /** Aplica o resultado de um health check na linha, se o painel ainda mostra
    *  o mesmo projeto (descoberta de outro projeto substitui a lista). */
@@ -519,45 +419,10 @@ export function McpSettings() {
         antes de poderem ser roteadas.
       </div>
 
-      <div className="mt-3 rounded-lg border border-border/60 bg-secondary/15 p-3">
-        <div className="flex items-start gap-2.5">
-          <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg border border-border/60 bg-background/60">
-            <Globe className="size-3.5 text-brass" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-medium text-foreground">
-              Navegador do projeto
-            </div>
-            <div className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
-              O app abre e mantém um Chromium com perfil próprio deste projeto.
-              MCPs marcados abaixo pilotam ESTE navegador, em vez de abrirem um
-              descartável a cada run.
-            </div>
-            <div
-              className="mt-1 truncate font-mono text-[11px] text-muted-foreground/75"
-              title={browser?.binary ?? undefined}
-            >
-              {browserStateLabel(browser)}
-            </div>
-          </div>
-          <Button
-            size="sm"
-            variant={browser?.session ? "ghost" : "secondary"}
-            onClick={() => void toggleBrowser(!browser?.session)}
-            disabled={browserBusy || (!browser?.session && !browser?.binary)}
-            className="h-7 shrink-0 px-2.5 text-[12px]"
-          >
-            {browserBusy && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-            {browser?.session ? "Desligar" : "Ligar"}
-          </Button>
-        </div>
-        {browserBindingWarning(servers, browser) && (
-          <div className="mt-2 flex items-start gap-1.5 rounded-md border border-st-warning/30 bg-st-warning/5 px-2 py-1.5 text-[11px] leading-snug text-st-warning">
-            <AlertTriangle className="mt-px size-3.5 shrink-0" />
-            <span>{browserBindingWarning(servers, browser)}</span>
-          </div>
-        )}
-      </div>
+      {shouldShowBrowserCard(
+        browser.status,
+        browserBoundServers(servers).length > 0,
+      ) && <ProjectBrowserCard browser={browser} servers={servers} />}
 
       {error && (
         <div className="mt-3 rounded-lg border border-st-error/30 bg-st-error/5 p-3 text-[12px] text-st-error">
@@ -689,122 +554,17 @@ export function McpSettings() {
               </div>
 
               {server.managed ? (
-                <div className="mt-3 divide-y divide-border/40 rounded-lg border border-border/50 bg-background/30">
-                  {AGENTS.map((agent) => {
-                    const state = server.agentStates.find(
-                      (item) => item.agent === agent.id,
-                    )
-                    if (!state) return null
-                    const key = `${server.id}:${state.agent}`
-                    const writeBusy = busyKeys.has(key)
-                    const checkBusy = busyKeys.has(`check:${key}`)
-                    const verifying = checkingKeys.has(key)
-                    return (
-                      <div
-                        key={agent.id}
-                        className="flex min-h-10 items-center gap-2 px-2.5 py-1.5"
-                      >
-                        <Switch
-                          checked={state.enabled}
-                          onCheckedChange={(enabled) =>
-                            void update(server, state, { enabled })
-                          }
-                          disabled={!state.compatible || writeBusy}
-                          aria-label={`Usar ${server.name} no ${agent.label}`}
-                        />
-                        <span className="w-12 text-[12px] text-foreground">
-                          {agent.label}
-                        </span>
-                        <span
-                          className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-muted-foreground"
-                          title={state.detail ?? undefined}
-                        >
-                          {verifying ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            statusIcon(state.health)
-                          )}
-                          <span className="truncate">
-                            {verifying
-                              ? "verificando…"
-                              : mcpAgentStatusLabel(
-                                  server,
-                                  state,
-                                  authByServer[server.id]?.state === "conectado",
-                                )}
-                          </span>
-                        </span>
-                        {state.enabled && (
-                          <>
-                            <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                              <input
-                                type="checkbox"
-                                checked={state.required}
-                                onChange={(event) =>
-                                  void update(server, state, {
-                                    required: event.target.checked,
-                                  })
-                                }
-                                disabled={writeBusy}
-                                className="accent-[var(--brass)]"
-                              />
-                              exigir
-                            </label>
-                            <label
-                              className="flex items-center gap-1 text-[11px] text-muted-foreground"
-                              title="Este MCP pilota o navegador do projeto (o run recebe --cdp-endpoint)"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={state.browser}
-                                onChange={(event) =>
-                                  void update(server, state, {
-                                    browser: event.target.checked,
-                                  })
-                                }
-                                disabled={writeBusy}
-                                className="accent-[var(--brass)]"
-                              />
-                              navegador
-                            </label>
-                            <select
-                              value={state.fallback}
-                              onChange={(event) =>
-                                void update(server, state, {
-                                  fallback: event.target.value as McpFallback,
-                                })
-                              }
-                              disabled={writeBusy}
-                              className="h-6 rounded border border-border/60 bg-background px-1 text-[11px] text-foreground"
-                              aria-label={`Fallback de ${server.name} no ${agent.label}`}
-                            >
-                              {FALLBACKS.map((item) => (
-                                <option key={item.value} value={item.value}>
-                                  {item.label}
-                                </option>
-                              ))}
-                            </select>
-                          </>
-                        )}
-                        {state.compatible && (
-                          <button
-                            onClick={() => void check(server, state)}
-                            disabled={writeBusy || checkBusy || verifying}
-                            className="grid size-6 place-items-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
-                            title={`Testar a conexão antes de usar no ${agent.label}`}
-                            aria-label={`Testar ${server.name} no ${agent.label}`}
-                          >
-                            {checkBusy ? (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            ) : (
-                              <RefreshCcw className="size-3.5" />
-                            )}
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
+                <McpAgentRows
+                  server={server}
+                  browser={browser.status}
+                  busyKeys={busyKeys}
+                  checkingKeys={checkingKeys}
+                  autenticadoPeloApp={
+                    authByServer[server.id]?.state === "conectado"
+                  }
+                  onUpdate={(s, st, patch) => void update(s, st, patch)}
+                  onCheck={(s, st) => void check(s, st)}
+                />
               ) : (
                 <div className="mt-2 text-[11px] text-muted-foreground">
                   MCP interno, criado e limitado por run pelo MyCockpit.

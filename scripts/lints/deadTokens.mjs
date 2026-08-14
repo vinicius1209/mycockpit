@@ -180,7 +180,9 @@ export const DEAD_TOKEN_RULES = [
       "components/settings/CompanionSettings.tsx": { max: 1, motivo: "probe do companion passou (doutrina 'verde exige probe')" },
       "components/settings/HooksSettings.tsx": { max: 1, motivo: "probe de hook passou" },
       "components/settings/MachineAgents.tsx": { max: 2, motivo: "probe de agent na máquina passou" },
-      "components/settings/McpSettings.tsx": { max: 1, motivo: "probe de servidor MCP passou" },
+      // A linha por agent saiu de McpSettings.tsx para McpAgentRows.tsx (a
+      // catraca de tamanho); o verde é o MESMO e continua sendo probe real.
+      "components/settings/McpAgentRows.tsx": { max: 1, motivo: "probe de servidor MCP passou" },
       "components/settings/UsageMeterSettings.tsx": { max: 1, motivo: "probe do medidor de uso passou" },
       "components/onboarding/NotificationStep.tsx": { max: 1, motivo: "permissão de notificação concedida de verdade" },
       // Família "marco de turno/plano no fio" (ADR-037): máx. 1 por turno.
