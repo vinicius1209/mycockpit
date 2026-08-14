@@ -431,12 +431,47 @@ export interface ToolGroupView {
   state: "running" | "ok" | "error" | "recorded"
 }
 
+/** Quantos TRABALHOS distintos o conjunto contém (não quantos nós). Um
+ * `tool_use` e o `DeferredWork` que ele pariu são UM: contar nó dava
+ * "2 delegações concluídas" para um trabalho só, e contagem sem fonte única é
+ * proibida (STYLEGUIDE §7). Nó sem chave conta como trabalho próprio. */
+function countWorks(tools: readonly ToolActivityInput[]): number {
+  const seen = new Set<string>()
+  let works = 0
+  for (const t of tools) {
+    const key = workKey(t)
+    if (key == null) {
+      works++
+      continue
+    }
+    if (seen.has(key)) continue
+    seen.add(key)
+    works++
+  }
+  return works
+}
+
+/** Nome do trabalho quando o grupo inteiro é UM só: o primeiro nó que sabe
+ * nomeá-lo. A tool de origem nem sempre sabe (o `Workflow` do provider cai no
+ * balde genérico "Executar ferramenta"); quem carrega o nome humano nesse caso
+ * é o nó sintético. Sem isso o marco recolhido esqueceria O QUE rodou, que é a
+ * "amnésia do histórico" da auditoria. */
+function soleWorkLabel(views: readonly ToolView[]): string {
+  return (views.find((v) => v.kind !== "generic") ?? views[0]).label
+}
+
 /** Rótulo de um conjunto ASSENTADO de ações (todas com desfecho conhecido ou
  * todas apenas registradas). Extraído do summarizeToolGroup pra que o digest
- * do cabeçalho (describeToolGroup) use a mesma gramática sem recalcular. */
-function settledLabel(views: readonly ToolView[], finished: boolean): string {
-  const n = views.length
-  if (n === 1) return views[0].label
+ * do cabeçalho (describeToolGroup) use a mesma gramática sem recalcular.
+ * `works` é a contagem de TRABALHOS (não de nós): é ela que aparece na copy. */
+function settledLabel(
+  views: readonly ToolView[],
+  finished: boolean,
+  works: number,
+): string {
+  const n = works
+  // Um trabalho só NUNCA vira contagem: o fio tem que dizer o que rodou.
+  if (n === 1) return soleWorkLabel(views)
   const categories = new Set(views.map((v) => v.category))
   if ([...categories].every((c) => c === "inspect" || c === "web"))
     return finished
@@ -483,7 +518,7 @@ export function summarizeToolGroup(
   }
   const allFinished = tools.every((t) => t.result != null)
   return {
-    label: settledLabel(views, allFinished),
+    label: settledLabel(views, allFinished, countWorks(tools)),
     emphasis,
     state: allFinished ? "ok" : "recorded",
   }
@@ -503,6 +538,9 @@ export interface ToolGroupDigest extends ToolGroupView {
   agents: number
   /** Ações de shell — sussurro do cabeçalho. */
   shells: number
+  /** TRABALHOS distintos (entidades), não nós: um `tool_use` e o `DeferredWork`
+   * que ele pariu são UM. É esta a contagem que a copy recolhida usa. */
+  works: number
   /** Duração TOTAL congelada (1º nascimento → última atividade observada).
    * null enquanto roda (o "agora" pertence à linha viva do rodapé), quando o
    * histórico não tem carimbos, ou abaixo de 1s (regra do Warp: nunca "0s"). */
@@ -527,6 +565,7 @@ export function describeToolGroup(
       failed: 0,
       agents: 0,
       shells: 0,
+      works: 0,
       durationMs: null,
       labelWorkId: null,
     }
@@ -557,11 +596,13 @@ export function describeToolGroup(
     const span = max - min
     if (Number.isFinite(span) && span >= 1000) durationMs = span
   }
+  const works = countWorks(tools)
   const base = {
     total,
     failed: failedIdx.length,
     agents,
     shells,
+    works,
     durationMs,
     labelWorkId: null as string | null,
   }
@@ -595,8 +636,9 @@ export function describeToolGroup(
   }
   return {
     ...base,
-    label: settledLabel(views, allFinished),
-    labelWorkId: total === 1 ? workKey(tools[0]) : null,
+    label: settledLabel(views, allFinished, works),
+    // Grupo de UM trabalho: o rótulo é o nome dele, então o cabeçalho é o dono.
+    labelWorkId: works === 1 ? workKey(tools[0]) : null,
     emphasis,
     state: allFinished ? "ok" : "recorded",
   }

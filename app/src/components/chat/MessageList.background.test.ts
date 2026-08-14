@@ -26,7 +26,11 @@ function deferred(over: Partial<DeferredWork> = {}): DeferredWork {
   }
 }
 
-/** Nó sintético igual ao que o reducer cria no `deferred_work` (chat.ts). */
+/** Nó sintético igual ao que o reducer cria no `deferred_work` (chat.ts) — o
+ *  `parentToolId` sai do MESMO `tool_use_id` que o `deferred`, porque é assim
+ *  que o reducer o monta. Sem a origem no fio ele cai como raiz (fail-open do
+ *  buildToolForest), que é o caso do provider que não reporta `tool_use_id`;
+ *  a cena COMPLETA (com a origem) mora no último describe deste arquivo. */
 function node(d: DeferredWork): ChatItem {
   return {
     kind: "tool",
@@ -34,9 +38,23 @@ function node(d: DeferredWork): ChatItem {
     name: "DeferredWork",
     input: { name: d.name, kind: d.kind, description: d.summary },
     toolId: `deferred:${d.id}`,
+    parentToolId: d.toolUseId ?? undefined,
     deferred: d,
     ts: T0,
   }
+}
+
+/** `tool_use` de origem, o nó em que o reducer pendura o trabalho diferido. */
+function origin(d: DeferredWork, over: Partial<ChatItem> = {}): ChatItem {
+  return {
+    kind: "tool",
+    id: `origin-${d.id}`,
+    name: "Workflow",
+    input: { prompt: "<script do workflow>" },
+    toolId: d.toolUseId!,
+    ts: T0,
+    ...over,
+  } as ChatItem
 }
 
 function render(items: ChatItem[], over: Record<string, unknown> = {}): string {
@@ -69,8 +87,15 @@ describe("linha viva do rodapé (B2.1/B2.2/B2.5)", () => {
   it("N trabalhos: conta e mostra o mais recente, com a lista inteira no title", () => {
     const html = render([
       { kind: "user", id: "u1", text: "Pesquise" },
-      node(deferred({ id: "a", name: "spike-ping", startedAt: T0 })),
-      node(deferred({ id: "b", name: "deep-research", startedAt: T0 + 5_000 })),
+      node(deferred({ id: "a", toolUseId: "toolu_a", name: "spike-ping", startedAt: T0 })),
+      node(
+        deferred({
+          id: "b",
+          toolUseId: "toolu_b",
+          name: "deep-research",
+          startedAt: T0 + 5_000,
+        }),
+      ),
     ])
     expect(html).toContain("2 trabalhos em background · deep-research")
     expect(html).toContain('title="spike-ping, deep-research"')
@@ -123,7 +148,12 @@ describe("nó no fio é marco, não segundo painel vivo (B2.2/B2.3/B2.4)", () =>
       node(deferred()),
       {
         ...(node(
-          deferred({ id: "b", name: "auditoria", status: "completed" }),
+          deferred({
+            id: "b",
+            toolUseId: "toolu_b",
+            name: "auditoria",
+            status: "completed",
+          }),
         ) as Extract<ChatItem, { kind: "tool" }>),
         result: { ok: true, text: "pronto", lines: 1 },
       },
@@ -166,5 +196,43 @@ describe("nó no fio é marco, não segundo painel vivo (B2.2/B2.3/B2.4)", () =>
       { onStop: () => {} },
     )
     expect(html).toContain("Interromper turno")
+  })
+})
+
+// A cena COMPLETA que o reducer monta: o `tool_use` de origem está no fio e o
+// nó sintético pendura NELE (`parentToolId` = `tool_use_id`). Os describes
+// acima cobrem o provider que não reporta `tool_use_id` (nó vira raiz); este
+// cobre o que reporta, que é o caso do Claude Code (adapters.rs, task_started).
+describe("cena completa: o trabalho nasce de um tool_use e mora no nível 2", () => {
+  it("o marco recolhido diz O QUE rodou, não 'N delegações concluídas'", () => {
+    const done = deferred({ status: "completed" })
+    const html = render(
+      [
+        { kind: "user", id: "u1", text: "Pesquise" },
+        origin(done, { result: { ok: true, text: "", lines: 0 } }),
+        {
+          ...(node(done) as Extract<ChatItem, { kind: "tool" }>),
+          result: { ok: true, text: "pronto", lines: 1 },
+        },
+      ],
+      { running: false, finalizing: false, startedAt: null },
+    )
+    // dois NÓS, um TRABALHO: a contagem por nó escrevia "2 ações concluídas" e
+    // o nome sumia do fio (a "amnésia do histórico" da auditoria)
+    expect(html).not.toContain("2 ações concluídas")
+    expect(html).not.toContain("2 delegações concluídas")
+    expect(html).toContain("Trabalho em background: spike-ping")
+  })
+
+  it("vivo: o nome sai uma vez do grupo, e cada nível mostra só o delta", () => {
+    const html = render([
+      { kind: "user", id: "u1", text: "Pesquise" },
+      origin(deferred()),
+      node(deferred()),
+    ])
+    const [inThread] = html.split('title="spike-ping"')
+    expect(inThread.match(/spike-ping/g)).toHaveLength(1)
+    // nível 2 (o nó do trabalho) segue sendo o marco de nascimento
+    expect(html).toContain(">iniciado<")
   })
 })

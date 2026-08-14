@@ -142,3 +142,82 @@ describe("describeToolGroup · contagens e paridade com o resumo existente", () 
   })
 })
 
+// Contagem por TRABALHO, não por nó (docs/fio-poluicao-2.md, B2). Ids reais do
+// spike D0 (adapters.rs, `claude_task_started_vira_deferred_running…`): o
+// `tool_use` de origem e o nó sintético `DeferredWork` que o reducer pendura
+// nele são a MESMA entidade — `deferred.toolUseId` é o `toolId` da origem.
+const TOOL_USE_ID = "toolu_01MmPxeoK9vhakStdhGbVywn"
+
+function origin(
+  toolId: string,
+  name: string,
+  input: unknown,
+  over: Partial<ToolActivityInput> = {},
+): ToolActivityInput {
+  return { name, input, toolId, result: { ok: true }, ...over }
+}
+
+function deferredNode(
+  taskId: string,
+  toolUseId: string,
+  workName: string,
+  over: Partial<ToolActivityInput> = {},
+): ToolActivityInput {
+  return {
+    name: "DeferredWork",
+    input: { name: workName, kind: "local_workflow", description: null },
+    toolId: `deferred:${taskId}`,
+    deferred: { id: taskId, toolUseId },
+    result: { ok: true },
+    ...over,
+  }
+}
+
+describe("describeToolGroup · contagem por TRABALHO (a entidade é a fonte única)", () => {
+  it("um trabalho em background é UM, mesmo chegando em dois nós", () => {
+    const digest = describeToolGroup([
+      origin(TOOL_USE_ID, "Agent", {
+        description: "Check address edit history in prod",
+        subagent_type: "general-purpose",
+      }),
+      deferredNode("wnz619fti", TOOL_USE_ID, "Check address edit history in prod"),
+    ])
+    expect(digest.works).toBe(1)
+    expect(digest.total).toBe(2)
+    // e o recolhido continua dizendo O QUE rodou (nada de "2 delegações
+    // concluídas", que era recibo sem nome)
+    expect(digest.label).toBe("Check address edit history in prod")
+    expect(digest.labelWorkId).toBe(`work:${TOOL_USE_ID}`)
+  })
+
+  it("origem genérica (a tool Workflow do provider) cede o nome ao nó que o tem", () => {
+    const digest = describeToolGroup([
+      origin("toolu_wf", "Workflow", { prompt: "<script do workflow>" }),
+      deferredNode("wnz619fti", "toolu_wf", "spike-ping"),
+    ])
+    expect(digest.works).toBe(1)
+    expect(digest.label).toBe("Trabalho em background: spike-ping")
+  })
+
+  it("dois trabalhos contam dois, e aí sim a contagem manda", () => {
+    const digest = describeToolGroup([
+      origin("toolu_a", "Agent", { description: "Auditar o fio" }),
+      deferredNode("task-a", "toolu_a", "Auditar o fio"),
+      origin("toolu_b", "Agent", { description: "Medir a cena" }),
+      deferredNode("task-b", "toolu_b", "Medir a cena"),
+    ])
+    expect(digest.works).toBe(2)
+    expect(digest.total).toBe(4)
+    expect(digest.label).toBe("2 delegações concluídas")
+  })
+
+  it("ações sem correlação seguem contando uma a uma (nada muda pro comum)", () => {
+    const digest = describeToolGroup([
+      bash("git status", { toolId: "toolu_1" }),
+      bash("rg foo src", { toolId: "toolu_2" }),
+      bash("cat a.txt"),
+    ])
+    expect(digest.works).toBe(3)
+    expect(digest.label).toBe("3 verificações concluídas")
+  })
+})
