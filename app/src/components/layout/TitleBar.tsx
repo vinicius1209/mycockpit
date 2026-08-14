@@ -26,7 +26,9 @@ function ModeSwitcher() {
   const scheduledOpen = useApp((s) => s.scheduledOpen)
   const flightPlansOpen = useApp((s) => s.flightPlansOpen)
   return (
-    <div className="pointer-events-auto hidden items-center gap-0.5 rounded-full border bg-secondary/50 p-0.5 sm:flex">
+    // `shrink-0`: o comutador é a largura RESERVADA da barra (ver o header).
+    // Quem cede espaço é o nome do projeto, nunca a navegação.
+    <div className="pointer-events-auto hidden shrink-0 items-center gap-0.5 rounded-full border bg-secondary/50 p-0.5 sm:flex">
       {MODES.map((m) => (
         <button
           key={m.id}
@@ -40,7 +42,10 @@ function ModeSwitcher() {
           }}
           title={m.desc}
           className={cn(
-            "flex items-center gap-1 rounded-full px-3 py-1 text-[12px] transition-colors",
+            // `whitespace-nowrap`: sem isso a largura MÍNIMA do comutador é a
+            // do rótulo quebrado em duas linhas, e a reserva do header (que sai
+            // do min-content) mediria menos do que ele ocupa de verdade.
+            "flex items-center gap-1 rounded-full px-3 py-1 text-[12px] whitespace-nowrap transition-colors",
             !scheduledOpen && !flightPlansOpen && m.id === viewMode
               ? "bg-card text-foreground shadow-[var(--shadow-sm)]"
               : "text-muted-foreground enabled:hover:text-foreground disabled:opacity-50",
@@ -77,6 +82,16 @@ function SearchChip() {
   )
 }
 
+/** Divisor da barra — UM componente para as duas ocorrências (marca ▸ projeto e
+ *  ícones globais ▸ painel direito). Existia duas vezes o mesmo JSX solto e o
+ *  par lia com pesos diferentes: à direita o traço fica entre botões de ícone,
+ *  que carregam 8px de respiro por dentro, e à esquerda encostava no texto (6px
+ *  do gap e nada mais). O `mx-1` dá esse respiro ao traço, não ao vizinho — daí
+ *  os dois passam a respirar por igual sem depender de quem está do lado. */
+function BarDivider() {
+  return <Separator orientation="vertical" className="mx-1 h-4!" />
+}
+
 export function TitleBar() {
   const project = useActiveProject()
   const toggleSidebar = useApp((s) => s.toggleSidebar)
@@ -91,11 +106,20 @@ export function TitleBar() {
   return (
     <header
       data-tauri-drag-region
-      className="relative z-[110] grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center bg-rail"
+      className="relative z-[110] flex h-14 shrink-0 items-center bg-rail"
     >
-      {/* Grid de 3 zonas: o seletor central fica EM FLUXO (não mais absolute) →
-          o pill fica no centro exato da janela e nunca colide com o nome do
-          projeto (que trunca na zona esquerda). pl-20 reserva os semáforos.
+      {/* Três zonas em FLUXO (nada absolute) e o comutador centrado no VÃO,
+          não na janela. Era `grid-cols-[1fr_auto_1fr]`, que centra na janela: o
+          bloco da direita (medidor + Buscar + 3 ícones) é ~2x o da esquerda, e
+          com o mesmo 1fr dos dois lados sobrava ar à esquerda enquanto o
+          comutador quase encostava na direita. Agora a zona do meio é o vão:
+          `flex-1` sem `min-w-0`, então o min-content dela É a largura do
+          comutador (+ px-3 de folga), e a folga é RESERVADA — o comutador nunca
+          é empurrado nem espremido.
+          Ordem de quem cede, sob pressão de largura: 1) o nome do projeto
+          (único item com `min-w-0 truncate` na esquerda); 2) o rótulo do
+          medidor, que já trunca em `max-w-20` dentro da própria pill; e nunca a
+          navegação. `pl-20` reserva os semáforos.
           As zonas são pointer-events-none e só os controles voltam a receber
           clique: o vazio entre eles continua sendo área de arrastar a janela.
           Cada controle mora do lado do que ele controla — o painel ESQUERDO
@@ -127,7 +151,7 @@ export function TitleBar() {
         </div>
         {project && (
           <>
-            <Separator orientation="vertical" className="h-4!" />
+            <BarDivider />
             {/* Nome do projeto sem prefixo do app: é o alvo de troca. Clicar
                 abre a MESMA paleta ⌘K, onde mora a lista de projetos (nenhum
                 switcher novo foi inventado aqui). */}
@@ -144,9 +168,11 @@ export function TitleBar() {
         )}
       </div>
 
-      <ModeSwitcher />
+      <div className="pointer-events-none flex flex-1 justify-center px-3">
+        <ModeSwitcher />
+      </div>
 
-      <div className="pointer-events-none flex items-center justify-end gap-1.5 pr-2.5">
+      <div className="pointer-events-none flex shrink-0 items-center justify-end gap-1.5 pr-2.5">
         {/* Medidor de janela de uso (rate limit do plano): pill agregada,
             some sozinha sem dado (4 camadas de esconder, ver UsagePill). */}
         <UsagePill />
@@ -162,7 +188,7 @@ export function TitleBar() {
         >
           <Settings className="size-4" />
         </Button>
-        <Separator orientation="vertical" className="h-4!" />
+        <BarDivider />
         <Button
           variant="ghost"
           size="icon-sm"

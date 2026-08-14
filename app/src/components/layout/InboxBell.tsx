@@ -7,14 +7,12 @@ import {
   ChevronDown,
   ChevronRight,
   CircleHelp,
-  Download,
   EyeOff,
   FileText,
   Gauge,
   GitPullRequest,
   Inbox,
   Lightbulb,
-  LogIn,
   MessageCircleQuestion,
   ShieldQuestion,
   SquareKanban,
@@ -32,6 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { ToolHealthRow } from "@/components/layout/ToolHealthRow"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { openCardConversation, useCards } from "@/store/cards"
@@ -231,75 +230,6 @@ function DecisionRow({
   )
 }
 
-/** Uma linha de SAÚDE DE FERRAMENTA (CLI sem login / com update).
- *
- *  Tom, pela tabela do STYLEGUIDE §2: "sem login" é âmbar (precisa de você,
- *  bloqueia o envio); "atualização disponível" é CINZA (informação, nada
- *  quebrou). É a hierarquia da lista virando pixel, não só ordem.
- *
- *  Ação: as duas abrem Configurações ▸ Agentes na máquina, que é onde os gestos
- *  JÁ existem ("Verificar agora" depois de logar pelo terminal da CLI, e o
- *  "Atualizar" que dispara o job). O botão de update não foi duplicado aqui de
- *  propósito: ele carrega estado que esta linha não tem como mostrar (spinner
- *  do job vivo, travar enquanto outro job roda, o aviso de N instalações no
- *  PATH), e o dropdown fecha no clique. Um dono só pro gesto. */
-function ToolHealthRow({
-  item,
-  onOpen,
-  onDismiss,
-}: {
-  item: ToolHealthItem
-  onOpen: () => void
-  /** Só o update é dispensável (impedimento não se dispensa). */
-  onDismiss?: () => void
-}) {
-  const isAuth = item.kind === "auth"
-  return (
-    <DropdownMenuItem
-      onSelect={onOpen}
-      className="flex-col items-start gap-0.5 py-2"
-    >
-      <span
-        className={cn(
-          "group/tool flex w-full items-center gap-2 text-[13px]",
-          isAuth ? "text-foreground" : "text-muted-foreground",
-        )}
-      >
-        {isAuth ? (
-          <LogIn className="size-3.5 shrink-0 text-st-warning" />
-        ) : (
-          <Download className="size-3.5 shrink-0 text-muted-foreground" />
-        )}
-        <span className="min-w-0 flex-1 truncate">
-          {isAuth
-            ? `${item.label} sem login`
-            : `Atualização do ${item.label} disponível`}
-        </span>
-        {onDismiss && (
-          <button
-            onClick={(e) => {
-              // dispensa SEM navegar (a linha some na hora).
-              e.stopPropagation()
-              e.preventDefault()
-              onDismiss()
-            }}
-            title="Dispensar esta versão"
-            aria-label="Dispensar esta versão"
-            className="hidden shrink-0 rounded p-0.5 text-muted-foreground transition-colors group-hover/tool:block hover:text-foreground"
-          >
-            <X className="size-3" />
-          </button>
-        )}
-      </span>
-      <span className="w-full truncate pl-[22px] text-[11px] text-muted-foreground">
-        {isAuth
-          ? "Bloqueia o envio. Entre pela CLI no terminal, depois Verificar agora."
-          : `v${item.current ?? "?"} → v${item.latest ?? "?"} · Atualizar em Configurações ▸ Agentes na máquina`}
-      </span>
-    </DropdownMenuItem>
-  )
-}
-
 function NotifIcon({ kind }: { kind: Notification["kind"] }) {
   if (kind === "run_error")
     return <AlertCircle className="size-3.5 shrink-0 text-st-error" />
@@ -423,31 +353,43 @@ export function InboxBell() {
         <Button
           variant="ghost"
           size="icon-sm"
-          className="pointer-events-auto relative text-muted-foreground hover:text-foreground"
+          className="pointer-events-auto text-muted-foreground hover:text-foreground"
           title="Notificações"
           aria-label="Notificações"
         >
-          <Inbox className="size-4" />
-          {/* Decisões BLOQUEIAM você → contador brass (alarme). Só não-lidas →
-              ponto discreto (informativo). Não somar os dois: "3" seria ambíguo
-              entre "3 decisões esperando" e "3 turnos terminaram".
-              O badge conta só o PENDENTE: gate do SDD que o app apenas achou no
-              disco (sem gesto seu por aqui) vive na seção de baixo e não acende
-              alarme, senão dívida de 68 dias vira "precisa de você agora".
-              CLI sem login soma AQUI porque passa no mesmo teste das decisões:
-              bloqueia trabalho e some com um gesto seu. Update disponível NÃO
-              soma (fica na lista, sem gritar): dura dias e não impede nada, e
-              sino permanentemente aceso é o custo que o ADR-040 recusou. */}
-          {blocked > 0 ? (
-            <span className="absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-brass text-[11px] font-semibold text-background">
-              {blocked > 9 ? "9+" : blocked}
-            </span>
-          ) : unread > 0 ? (
-            <span
-              className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-muted-foreground ring-2 ring-rail"
-              title={`${unread} não lidas`}
-            />
-          ) : null}
+          {/* O selo ancora no GLIFO, não no botão. `icon-sm` é 32px e o ícone
+              tem 16px: ancorado ao canto do BOTÃO, o selo caía a ~8px de
+              qualquer desenho, flutuando no vazio entre a caixa de entrada e a
+              engrenagem — ninguém sabia de quem ele era. Este wrapper tem
+              exatamente o tamanho do ícone, e a regra dos dois estados é uma
+              só: o CENTRO do selo fica no canto superior direito do glifo
+              (metade dentro, metade fora), então o offset é sempre metade do
+              tamanho do selo (size-2 → -1; size-4 → -2). O `ring-2 ring-rail`
+              recorta o selo do desenho por baixo, nos dois estados. */}
+          <span className="relative flex size-4 items-center justify-center">
+            <Inbox className="size-4" />
+            {/* Decisões BLOQUEIAM você → contador brass (alarme). Só não-lidas
+                → ponto discreto (informativo). Não somar os dois: "3" seria
+                ambíguo entre "3 decisões esperando" e "3 turnos terminaram".
+                O badge conta só o PENDENTE: gate do SDD que o app apenas achou
+                no disco (sem gesto seu por aqui) vive na seção de baixo e não
+                acende alarme, senão dívida de 68 dias vira "precisa de você
+                agora". CLI sem login soma AQUI porque passa no mesmo teste das
+                decisões: bloqueia trabalho e some com um gesto seu. Update
+                disponível NÃO soma (fica na lista, sem gritar): dura dias e não
+                impede nada, e sino permanentemente aceso é o custo que o
+                ADR-040 recusou. */}
+            {blocked > 0 ? (
+              <span className="absolute -top-2 -right-2 grid size-4 place-items-center rounded-full bg-brass text-[11px] font-semibold text-background ring-2 ring-rail">
+                {blocked > 9 ? "9+" : blocked}
+              </span>
+            ) : unread > 0 ? (
+              <span
+                className="absolute -top-1 -right-1 size-2 rounded-full bg-muted-foreground ring-2 ring-rail"
+                title={`${unread} não lidas`}
+              />
+            ) : null}
+          </span>
         </Button>
       </DropdownMenuTrigger>
       {/* sideOffset + z-[120]: mesmo clipping que a UsagePill tinha. O header

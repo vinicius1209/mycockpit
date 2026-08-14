@@ -6,15 +6,13 @@
     "ts": 500
   },
   "arquivos": {
-    "App.tsx": 910,
+    "App.tsx": 908,
     "components/chat/ChatPanel.tsx": 1625,
     "components/chat/LexicalComposer.tsx": 907,
     "components/chat/MessageList.tsx": 2792,
     "components/layout/ContextPanel.tsx": 928,
-    "components/layout/InboxBell.tsx": 750,
     "components/layout/Sidebar.tsx": 1455,
     "components/mission/MissionTimeline.tsx": 906,
-    "components/panel/MissionControl.tsx": 794,
     "components/scheduled/ScheduledView.tsx": 1118,
     "components/sdd/SddView.tsx": 1649,
     "components/settings/Especialistas.tsx": 830,
