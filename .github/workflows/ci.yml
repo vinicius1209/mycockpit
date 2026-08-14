@@ -1,6 +1,7 @@
 # CI mínima do MyCockpit: o projeto que cobra gates de verificação passa a ter
 # os próprios. Front (tsc + lint + testes) em ubuntu; Rust em macOS (plataforma
-# real do app, com swiftc pro sidecar de ditado).
+# real do app, com swiftc pro sidecar de ditado); guardas de estilo num job
+# separado, pra falha de lint nunca ser confundida com falha de teste.
 name: ci
 
 on:
@@ -9,6 +10,22 @@ on:
   pull_request:
 
 jobs:
+  # As guardas do STYLEGUIDE (§10). Sem dependência: node puro, segundos. Job
+  # próprio de propósito — quem vê "guardas de estilo" vermelho sabe na hora
+  # que é regra de design violada, não teste quebrado.
+  guardas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: escala tipográfica (§3)
+        run: node scripts/check-type-scale.mjs
+      - name: ratchet de tamanho de arquivo
+        run: node scripts/check-file-size-ratchet.mjs
+      - name: tokens mortos (§2 · §4 · §7)
+        run: node scripts/check-dead-tokens.mjs
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

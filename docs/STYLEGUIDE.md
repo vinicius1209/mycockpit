@@ -339,3 +339,46 @@ Status abaixo, com o que sobrou de propósito.
 **Bônus fechado junto**: o popover do `InboxBell` tinha o mesmo clipping que a
 UsagePill (`DropdownMenuContent` z-50 sob o header z-[110]) → `z-[120]` +
 `sideOffset={8}`, sem tocar no `dropdown-menu` global.
+
+## 10. Guarda automática (ratchet de lints)
+
+Este guia deixou de depender de memória: três scripts rodam na CI (job
+`guardas` do `.github/workflows/ci.yml`, separado dos testes) e localmente por
+`cd app && bun run check`. A ideia é a do Buzz (`docs/study-buzz.md`, item B1):
+**passada de despoluição sem guarda re-fragmenta em poucos sprints**. Código
+nosso; só as regras vieram de lá.
+
+| Script | Protege | Falha quando |
+|---|---|---|
+| `scripts/check-type-scale.mjs` | §3, a escala fechada | aparece tamanho de fonte fora de {11, 12, 13, 14, 20, 30, 38}px em `app/src/**`, seja `text-[15px]`, seja rem arbitrário (`text-[0.9rem]`), seja `font-size:` em CSS. Também acusa classe nomeada do Tailwind (`text-sm`) fora de `components/ui/` |
+| `scripts/check-file-size-ratchet.mjs` | legibilidade (arquivo grande esconde bug) | um arquivo passa do teto do tipo (500 linhas `.ts` · 700 `.tsx` · 900 teste) ou cresce acima do congelado em `scripts/lints/file-size-baseline.json` |
+| `scripts/check-dead-tokens.mjs` | §2, §4 e §7 | volta `shadow-md/lg/xl/2xl`; aparece `text-st-success` além do declarado por arquivo; entra travessão "—" em prosa de UI |
+
+Regras de convívio (as três valem mais que a conveniência do momento):
+
+- **Se a guarda de tamanho disparar, DIVIDA o arquivo.** Nunca suba o teto,
+  nunca edite a baseline à mão, nunca adicione exceção. A baseline **só
+  encolhe**: quando um arquivo baixa, `bun run check:file-size -- --update`
+  desce o número dele (e a guarda cobra isso, senão a catraca afrouxa
+  sozinha). O contexto é real: `MessageList.tsx` chegou a 2.8k linhas, e foi
+  exatamente ali que 11 varreduras O(N) se esconderam.
+- **Tamanho novo na escala exige ADR + linha no §3**, não exceção no script. O
+  erro já diz o arquivo:linha, o valor achado e a parada de destino (o script
+  repete o mapa de migração do §3 em vez de inventar régua própria).
+- **Exceção de token morto é por arquivo, com contagem e motivo escrito** no
+  mapa da regra (`scripts/lints/deadTokens.mjs`). O número congela: o verde de
+  marco/probe que já existe continua, verde novo não entra. Exceção que sobrou
+  folgada aparece como nota no fim da varredura, pra ser apertada.
+
+O que ficou registrado como exceção hoje: o verde declarado do §2 (probe real
+em Configurações/Onboarding, marco de turno/plano no fio, `+N` do domínio git)
+mais a triagem que o §9 item 4 adiou de propósito (`TaskChecklist`,
+`Markdown`, `FusionBoard`, badge do `LearningSection`); e o travessão de
+**texto de prompt** (`lib/mission`, `handoff`, `missionHandoff`, `skills`,
+`learning`, `planMode`, `doctrine`, `transcript`, `trust`), que é entrada do
+agent e não prosa de UI (§9 item 7). Saída de `console.*` também não é copy de
+UI: fica fora por regra, não por exceção.
+
+Os núcleos puros dos três scripts vivem em `scripts/lints/` com teste vitest
+ao lado (o `bun run test` do app já os coleta). Padrão novo entra como mais um
+objeto em `DEAD_TOKEN_RULES`.
