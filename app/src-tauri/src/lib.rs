@@ -542,6 +542,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        // Só pra LER a área de transferência no "Colar" do nosso menu de
+        // contexto (ADR-042). No WKWebView, `navigator.clipboard.readText()`
+        // devolve NotAllowedError pra conteúdo que a página não escreveu, e
+        // `execCommand("paste")` devolve false — sem isto aqui, "Colar" seria
+        // item morto. Escrita continua pelo `navigator.clipboard`, que
+        // funciona: a capability libera SÓ `allow-read-text`.
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(
             SqlBuilder::default()
                 .add_migrations("sqlite:mycockpit.db", migrations)

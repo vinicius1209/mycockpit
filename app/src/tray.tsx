@@ -10,6 +10,13 @@ import "@fontsource-variable/geist-mono"
 
 import "./index.css"
 import { TrayPopover } from "@/components/tray/TrayPopover"
+import { instalarGuardaDoMenuNativo } from "@/lib/nativeMenu"
+
+// O popover da tray é OUTRO webview: a guarda do menu do motor é por janela, e
+// a da janela principal não alcança aqui (ADR-042). Este painel não tem campo
+// de texto nem fio, então ele só CALA o nativo, sem menu próprio: menu vazio é
+// pior que menu ausente.
+instalarGuardaDoMenuNativo({ dev: import.meta.env.DEV })
 
 // Tema persistido (mc.app via zustand persist) aplicado antes do React.
 const dark = (() => {
