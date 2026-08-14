@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "vitest"
 import {
+  agyModelOptions,
   canListModels,
   slugStanding,
   standingNote,
@@ -97,5 +98,51 @@ describe("estado de um slug segundo a lista viva do CLI", () => {
       kind: "protocol",
       message: "estourou feio",
     })
+  })
+})
+
+// ── lista viva do agy → opções do picker (regressão de 14/08/2026) ──────────
+//
+// O `agy models` é TSV `slug<TAB>Rótulo`. Um parser velho (o extinto
+// `detect::parse_model_lines`) devolvia a LINHA INTEIRA como slug, o valor foi
+// parar no seletor e o agy recusou LOCALMENTE todo envio:
+//   invalid model selection (--model "gemini-3.7-flash-high\tGemini 3.7 Flash
+//   (High)" --effort ""): model … is not recognized as a known model
+
+describe("agyModelOptions", () => {
+  it("usa o slug como value e o rótulo do CLI como label, nunca a linha toda", () => {
+    // Slugs REAIS do `agy models` (agy 1.1.13). O 3.7 ainda não está no
+    // catálogo curado, então é aqui que se vê o rótulo do CLI estreando.
+    const options = agyModelOptions([
+      { id: "gemini-3.7-flash-high", label: "Gemini 3.7 Flash (High)" },
+      { id: "gpt-oss-120b-medium", label: "GPT-OSS 120B (Medium)" },
+    ])
+    expect(options[0].value).toBe("default") // "Padrão" segue na frente
+    expect(options[1]).toEqual({
+      value: "gemini-3.7-flash-high",
+      label: "Gemini 3.7 Flash (High)",
+    })
+    expect(options.every((o) => !/\s/.test(o.value))).toBe(true)
+  })
+
+  it("slug do catálogo curado mantém o rótulo de casa", () => {
+    const options = agyModelOptions([
+      { id: "gemini-3.6-flash-low", label: "Gemini 3.6 Flash (Low)" },
+    ])
+    expect(options[1].label).toBe("Flash 3.6 (Low)")
+    expect(options[1].description).toContain("Rápido")
+  })
+
+  it("slug sujo (rótulo colado) não vira opção do seletor", () => {
+    // Opção que só produz "model … is not recognized" no CLI não é oferta.
+    const options = agyModelOptions([
+      { id: "gemini-3.7-flash-high\tGemini 3.7 Flash (High)", label: "" },
+      { id: "  ", label: "vazio" },
+      { id: "gemini-3.7-flash-low", label: "Gemini 3.7 Flash (Low)" },
+    ])
+    expect(options.map((o) => o.value)).toEqual([
+      "default",
+      "gemini-3.7-flash-low",
+    ])
   })
 })

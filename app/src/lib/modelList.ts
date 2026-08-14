@@ -10,7 +10,8 @@
 // hoje (lista curada + catálogo) fica intacto.
 
 import { invoke } from "@tauri-apps/api/core"
-import { agentDef } from "@/lib/agents"
+import { agentDef, dedupeModelOptions } from "@/lib/agents"
+import { AGY_MODELS, type AgentModelOption } from "@/lib/curatedModels"
 
 /** Um modelo que o CLI declara conhecer (espelho de `ModelListEntry`). */
 export interface ModelListEntry {
@@ -89,6 +90,30 @@ export function standingNote(
     case "unverified":
       return "Não deu para conferir com o CLI, então nada mudou."
   }
+}
+
+/** Lista viva do agy → opções do picker. O `value` é o SLUG exato que vai em
+ *  `agy --model`, NUNCA a linha da listagem: o `agy models` é TSV
+ *  `slug<TAB>Rótulo`, e em 14/08/2026 um parser velho devolveu a linha inteira
+ *  como slug — o CLI recusou todo envio ("model … is not recognized as a known
+ *  model") e a conversa ficou sem saída. Slug do catálogo curado mantém o
+ *  rótulo/descrição de casa; slug novo estreia com o rótulo do PRÓPRIO CLI.
+ *
+ *  Slug com espaço em branco é DESCARTADO: opção que só produz erro não é
+ *  oferta (a fronteira no Rust recusa também, mas o seletor não deve exibir o
+ *  que já se sabe quebrado). Preserva "Padrão" na frente (sentinela do
+ *  composer). */
+export function agyModelOptions(
+  entries: ReadonlyArray<{ id: string; label?: string | null }>,
+): AgentModelOption[] {
+  const curado = new Map(AGY_MODELS.map((o) => [o.value, o]))
+  const vivos: AgentModelOption[] = []
+  for (const { id, label } of entries) {
+    const value = (id ?? "").trim()
+    if (!value || /\s/.test(value)) continue
+    vivos.push(curado.get(value) ?? { value, label: (label ?? "").trim() || value })
+  }
+  return dedupeModelOptions([AGY_MODELS[0], ...vivos])
 }
 
 /** Este motor sabe se listar? (espelho puro do registry, sem tocar no backend) */

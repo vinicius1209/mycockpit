@@ -500,6 +500,16 @@ pub async fn run_agent(
     // canal, dobra no corpo AQUI, antes de qualquer transporte — cobre também
     // o app-server do codex, que não passa pelo build_command).
     let (system_prompt, prompt) = adapters::route_system_prompt(caps, system_prompt, prompt);
+    // Fronteira do slug de modelo: a partir daqui o valor vira `--model <slug>`
+    // (claude/agy), `-c model=` (codex exec) ou campo JSON (app-server) — três
+    // transportes, uma regra só. Slug com espaço/TAB/quebra de linha é resto de
+    // parse mal feito e o CLI recusa com erro cru; recusamos ANTES, com a frase
+    // que diz o que fazer. Fail-closed no efeito (nada é spawnado).
+    if let Err(message) = adapters::validate_model_slug(model.as_deref()) {
+        let _ = on_event.send(AgentEvent::Error { message });
+        let _ = on_event.send(AgentEvent::Done { code: None });
+        return Ok(());
+    }
     let req = RunRequest {
         prompt,
         system_prompt,

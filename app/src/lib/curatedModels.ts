@@ -112,6 +112,29 @@ const LEGACY_CLAUDE_MODELS: Record<string, string> = {
   "opus[1m]": "claude-opus-5[1m]",
 }
 
+/** Slug de modelo é o VALOR de uma flag (`--model <slug>`), nunca uma linha de
+ *  listagem. Em 14/08/2026 um parser velho de `agy models` (TSV `slug<TAB>
+ *  Rótulo`) devolveu a linha inteira como slug, e o valor sujo foi PERSISTIDO
+ *  (conversa, agenda, `defaultModel`, frontmatter de especialista). O CLI
+ *  recusava tudo com "model … is not recognized as a known model".
+ *
+ *  Saneia na LEITURA, mesma disciplina do LEGACY_*: nada de migração de
+ *  schema, e todo valor guardado antes do conserto volta executável na
+ *  primeira vez que alguém o lê. Fica DEPOIS do remap legado de propósito —
+ *  há chave legada com espaço ("Gemini 3.5 Flash (Low)"), e cortar antes
+ *  destruiria o remap dela.
+ *
+ *  Corta SÓ em TAB/quebra de linha, que são o separador da listagem: ali o
+ *  pedaço da frente é o slug POR CONSTRUÇÃO, não um palpite. Valor com só
+ *  espaços (um rótulo puro, ex. "Gemini 3.6 Flash (High)") NÃO é chutado —
+ *  adivinhar ali produziria um slug limpo e errado; ele segue inteiro e a
+ *  fronteira no Rust recusa dizendo o que houve. Genérico: a regra é do
+ *  transporte, não de um fornecedor. */
+function limparSlug(model: string): string | null {
+  const primeiro = model.split(/[\t\r\n]/, 1)[0]?.trim() ?? ""
+  return primeiro || null
+}
+
 /** Normalização de valor persistido de modelo, POR agent.
  *  Ponto único pra UI (display honesto) e pros despachos (schedule/hydrate)
  *  não reenviarem um id morto pra sempre. */
@@ -120,10 +143,16 @@ export function normalizeModelValue(
   model: string | null,
 ): string | null {
   if (!model || model === "default") return model
-  if (agent === "agy") return normalizeAgyModel(model)
-  if (agent === "codex") return LEGACY_CODEX_MODELS[model] ?? model
-  if (agent === "claude-code") return LEGACY_CLAUDE_MODELS[model] ?? model
-  return model
+  const remapeado =
+    agent === "agy"
+      ? normalizeAgyModel(model)
+      : agent === "codex"
+        ? (LEGACY_CODEX_MODELS[model] ?? model)
+        : agent === "claude-code"
+          ? (LEGACY_CLAUDE_MODELS[model] ?? model)
+          : model
+  if (!remapeado || remapeado === "default") return remapeado
+  return limparSlug(remapeado)
 }
 // max/ultra são exclusivos da família 5.6 (ultra só Sol/Terra: dispara
 // subagentes e consome quota agressivamente); 5.5/5.4 param em xhigh — o

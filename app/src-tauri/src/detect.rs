@@ -325,25 +325,14 @@ pub async fn detect_agents() -> Vec<DetectedTool> {
     vec![claude, codex, agy, git, swiftc]
 }
 
-/// Parseia o stdout de `agy models` em nomes de modelo: linhas não-vazias,
-/// trimadas. Separado do subprocess p/ ser testável em unit.
-fn parse_model_lines(out: &str) -> Vec<String> {
-    out.lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(str::to_string)
-        .collect()
-}
-
-/// Lista os modelos disponíveis no Antigravity (`agy models`). Erro, timeout ou
-/// saída vazia → Vec vazio (o frontend cai na lista estática).
-#[tauri::command]
-pub async fn list_agy_models() -> Vec<String> {
-    match run("agy", &["models"]).await {
-        Some((true, out)) => parse_model_lines(&out),
-        _ => Vec::new(),
-    }
-}
+// A lista de modelos do agy NÃO mora mais aqui. Havia dois leitores de
+// `agy models` no app: este (que devolvia a LINHA INTEIRA como slug) e o de
+// `model_list.rs` (que faz `split_once('\t')`). O `agy models` virou TSV
+// `slug<TAB>Rótulo`, e o leitor que ninguém olhava apodreceu: o seletor passou
+// a gravar `"gemini-3.7-flash-high\tGemini 3.7 Flash (High)"` como slug e todo
+// envio morria em "model … is not recognized as a known model". Fonte única
+// agora: `model_list::model_list("agy")` (mesmo dialeto, mesma sonda, fixture
+// da saída real). Não recrie um segundo parser aqui.
 
 #[cfg(test)]
 mod tests {
@@ -442,18 +431,4 @@ mod tests {
         assert_eq!(detected_version("motor-inventado").await, None);
     }
 
-    #[test]
-    fn parse_model_lines_trims_and_drops_empty() {
-        let out = "  gemini-3-pro  \n\n gemini-3-flash\n   \n";
-        assert_eq!(
-            parse_model_lines(out),
-            vec!["gemini-3-pro".to_string(), "gemini-3-flash".to_string()]
-        );
-    }
-
-    #[test]
-    fn parse_model_lines_empty_output() {
-        assert!(parse_model_lines("").is_empty());
-        assert!(parse_model_lines("   \n  \n").is_empty());
-    }
 }

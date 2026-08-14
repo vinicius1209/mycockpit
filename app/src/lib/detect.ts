@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core"
 import { isTauri } from "@/lib/db"
-import { setDynamicModels, agyModelOptions } from "@/lib/agents"
+import { setDynamicModels } from "@/lib/agents"
+import {
+  agyModelOptions,
+  fetchModelList,
+  toListFailure,
+  type ModelListFailure,
+} from "@/lib/modelList"
 
 /** Espelha DetectedTool do Rust (detect.rs). auth: "ok"=logado · "missing"=
  *  instalado+deslogado · "unknown"=instalado+auth indeterminada · "na"=n/a.
@@ -171,22 +177,28 @@ export function toProbeMap(
   return out
 }
 
-/** Linhas do `agy models` via Rust. Vazio = falha/indisponível (o chamador
- *  mantém a lista estática). */
-export async function listAgyModels(): Promise<string[]> {
-  if (!isTauri()) return []
-  try {
-    const lines = await invoke<string[]>("list_agy_models")
-    if (!Array.isArray(lines)) return []
-    return lines.map((l) => String(l).trim()).filter(Boolean)
-  } catch {
-    return []
-  }
-}
-
 /** Busca os modelos reais do agy e alimenta o cache dinâmico consultado por
- *  agentModels("agy"). Falha → não mexe (o estático continua valendo). */
-export async function refreshAgyModels(): Promise<void> {
-  const lines = await listAgyModels()
-  if (lines.length > 0) setDynamicModels("agy", agyModelOptions(lines))
+ *  agentModels("agy"). Falha → não mexe (o estático continua valendo).
+ *
+ *  Usa a MESMA sonda do resto do app (`fetchModelList`, dialeto confinado em
+ *  model_list.rs). Havia aqui um segundo caminho (`list_agy_models`) com parse
+ *  próprio, que devolvia a LINHA INTEIRA do TSV como slug: o seletor passou a
+ *  guardar `"gemini-3.7-flash-high\tGemini 3.7 Flash (High)"` e todo envio
+ *  morria em "model … is not recognized". Duas leituras da mesma pergunta, e a
+ *  que ninguém olhava apodreceu — por isso agora há uma só.
+ *
+ *  Devolve a falha em vez de engoli-la (ADR-017): quem chama decide se mostra.
+ *  `null` = deu certo (ou não há Tauri, onde não há o que perguntar). */
+export async function refreshAgyModels(): Promise<ModelListFailure | null> {
+  if (!isTauri()) return null
+  try {
+    const listing = await fetchModelList("agy")
+    if (listing.models.length > 0)
+      setDynamicModels("agy", agyModelOptions(listing.models))
+    return null
+  } catch (e) {
+    const falha = toListFailure(e)
+    console.warn(`agy models: lista viva indisponível (${falha.kind}) — ${falha.message}`)
+    return falha
+  }
 }

@@ -687,6 +687,34 @@ pub fn route_system_prompt(
     }
 }
 
+/// Um slug de modelo é o VALOR de uma flag (`--model <slug>`) ou de um campo
+/// JSON — nunca uma linha de listagem. Espaço em branco dentro dele só aparece
+/// quando um parser deixou rótulo colado no id: foi exatamente isso que quebrou
+/// o agy (o `agy models` é TSV `slug<TAB>Rótulo` e um parser velho devolvia a
+/// linha inteira), e o CLI respondeu com "model … is not recognized".
+///
+/// Guarda GENÉRICA (nenhum nome de fornecedor aqui): o formato de slug não é o
+/// dialeto de ninguém, é a regra do transporte. Fail-closed com mensagem
+/// honesta — o turno é recusado ANTES de gastar quota, dizendo o que está
+/// errado, em vez de virar erro do CLI sem explicação.
+pub fn validate_model_slug(model: Option<&str>) -> Result<(), String> {
+    let Some(m) = model else { return Ok(()) };
+    if m.trim().is_empty() {
+        return Err(
+            "o modelo selecionado está vazio. Escolha um modelo no seletor e tente de novo."
+                .to_string(),
+        );
+    }
+    if m.chars().any(char::is_whitespace) {
+        let limpo = m.split_whitespace().next().unwrap_or("");
+        return Err(format!(
+            "o modelo selecionado veio com texto colado no id ({m:?}), então o CLI não reconhece. \
+             Escolha o modelo de novo no seletor (o id correto parece ser {limpo:?})."
+        ));
+    }
+    Ok(())
+}
+
 /// Ids de TODOS os agents registrados, na ordem do registry. É a lista que o
 /// mcp_control usa em vez de repetir nomes — e a que o teste de contrato varre.
 pub fn registered_agents() -> impl Iterator<Item = &'static str> {
@@ -3569,6 +3597,41 @@ mod tests {
         request.model = Some("gemini-3.6-flash-high".to_string());
         let args = argv(&a.build_command(&request).unwrap());
         assert!(has_pair(&args, "--model", "gemini-3.6-flash-high"));
+    }
+
+    // ---- fronteira do slug de modelo (regressão de 14/08/2026) ----
+
+    /// O erro REAL que o usuário viu, com o slug exatamente como saiu do
+    /// parser podre: `--model "gemini-3.7-flash-high\tGemini 3.7 Flash (High)"`
+    /// → "model … is not recognized as a known model". A fronteira recusa
+    /// ANTES do spawn e a mensagem diz qual é o id certo.
+    #[test]
+    fn slug_com_rotulo_colado_e_recusado_na_fronteira() {
+        let sujo = "gemini-3.7-flash-high\tGemini 3.7 Flash (High)";
+        let erro = validate_model_slug(Some(sujo)).expect_err("slug com TAB não pode passar");
+        assert!(
+            erro.contains("gemini-3.7-flash-high"),
+            "a mensagem aponta o id limpo: {erro}"
+        );
+        assert!(erro.contains("seletor"), "a mensagem diz o que fazer: {erro}");
+    }
+
+    #[test]
+    fn slug_com_espaco_ou_quebra_de_linha_tambem_e_recusado() {
+        // rótulo colado por espaço (outra listagem, mesmo estrago) e sobra de
+        // linha inteira: nenhum dos dois é o VALOR de uma flag.
+        assert!(validate_model_slug(Some("Gemini 3.7 Flash (High)")).is_err());
+        assert!(validate_model_slug(Some("gemini-3.7-flash-low\n")).is_err());
+        assert!(validate_model_slug(Some("   ")).is_err());
+    }
+
+    #[test]
+    fn slug_limpo_e_ausencia_de_modelo_passam() {
+        // sem modelo = default do CLI, que é um estado legítimo (não é erro).
+        assert!(validate_model_slug(None).is_ok());
+        for limpo in ["gemini-3.7-flash-high", "claude-opus-5[1m]", "gpt-5.6-sol", "default"] {
+            assert!(validate_model_slug(Some(limpo)).is_ok(), "{limpo} é slug válido");
+        }
     }
 
     // ---- registry de capabilities (G1, capability-registry-plan) ----

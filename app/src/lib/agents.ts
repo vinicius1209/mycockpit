@@ -480,16 +480,8 @@ export function setDynamicModels(id: string, options: AgentModelOption[]) {
   else DYNAMIC_MODELS.set(id, options)
 }
 
-/** Converte as linhas do `agy models` em opções de modelo. O `value` é a linha
- *  EXATA que o adapter passa em `agy --model` (mesmo contrato do AGY_MODELS
- *  estático). Preserva a opção "Padrão" na frente (sentinela do composer). */
-export function agyModelOptions(lines: string[]): AgentModelOption[] {
-  const known = new Map(AGY_MODELS.map((option) => [option.value, option]))
-  return dedupeModelOptions([
-    AGY_MODELS[0],
-    ...lines.map((value) => known.get(value) ?? { value, label: value }),
-  ])
-}
+// (`agyModelOptions` mora em `lib/modelList.ts`: converter a lista VIVA de um
+// CLI em opções do picker é trabalho do módulo da lista viva, não do registry.)
 
 // Cache module-level de modelos PROPOSTOS pelo curador e APROVADOS pelo humano
 // (model_proposals status='active'). Entram DEPOIS das opções estáticas/
@@ -521,7 +513,7 @@ export function mergeModelOptions(
 }
 
 /** Remove valores repetidos sem mudar a prioridade: a primeira opção vence. */
-function dedupeModelOptions(options: AgentModelOption[]): AgentModelOption[] {
+export function dedupeModelOptions(options: AgentModelOption[]): AgentModelOption[] {
   const seen = new Set<string>()
   for (const option of options) {
     if (seen.has(option.value)) {

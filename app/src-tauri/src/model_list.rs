@@ -396,6 +396,26 @@ gpt-oss-120b-medium\tGPT-OSS 120B (Medium)
         assert!(models.iter().any(|m| m.id == "gpt-oss-120b-medium"));
     }
 
+    /// Regressão do incidente de 14/08/2026: um segundo leitor de `agy models`
+    /// (o extinto `detect::parse_model_lines`) devolvia a LINHA INTEIRA como
+    /// slug, e o app mandava `--model "gemini-3.7-flash-high\tGemini 3.7 Flash
+    /// (High)"`. O agy recusava LOCALMENTE ("is not recognized as a known
+    /// model") e o turno morria antes de nascer. Nenhum id pode carregar
+    /// espaço em branco — é isso que separa slug de linha de listagem.
+    #[test]
+    fn nenhum_slug_carrega_rotulo_colado() {
+        for m in parse_agy_models(FIXTURE_AGY) {
+            assert!(
+                !m.id.chars().any(char::is_whitespace),
+                "slug com espaço/TAB vazaria pro --model: {:?}",
+                m.id
+            );
+            assert!(!m.label.is_empty(), "rótulo do CLI não se perde: {:?}", m.id);
+            // o rótulo saiu do id, não ficou colado nele.
+            assert!(!m.id.contains(&m.label));
+        }
+    }
+
     #[test]
     fn linha_fora_do_formato_nao_vira_modelo_inventado() {
         let models = parse_agy_models("Fetching available models...\n\nok-slug\tOk\n\tsem-slug\n");

@@ -578,7 +578,6 @@ pub fn run() {
             agent::judge,
             context::read_project_context,
             detect::detect_agents,
-            detect::list_agy_models,
             update::update_agent,
             update::update_jobs,
             usage_window::usage_snapshots,

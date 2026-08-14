@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest"
 import {
   agentModels,
-  agyModelOptions,
   availability,
   dispatchBlockReason,
   normalizeAgyModel,
   normalizeModelValue,
   setDynamicModels,
 } from "@/lib/agents"
+import { agyModelOptions } from "@/lib/modelList"
 import type { AgentProbe } from "@/lib/detect"
 
 afterEach(() => setDynamicModels("agy", []))
@@ -43,15 +43,33 @@ describe("modelos do agy", () => {
 
   it("preserva Padrão e não duplica ids da lista dinâmica", () => {
     const dynamic = agyModelOptions([
-      "gemini-3.6-flash-low",
-      "gemini-3.6-flash-low",
-      "default",
+      { id: "gemini-3.6-flash-low", label: "Gemini 3.6 Flash (Low)" },
+      { id: "gemini-3.6-flash-low", label: "Gemini 3.6 Flash (Low)" },
+      { id: "default", label: "Padrão" },
     ])
     setDynamicModels("agy", [...dynamic, dynamic[1]])
     expect(agentModels("agy").map((option) => option.value)).toEqual([
       "default",
       "gemini-3.6-flash-low",
     ])
+  })
+
+  it("saneia slug já persistido com rótulo colado, sem chutar rótulo puro", () => {
+    // Conversa/agenda gravada durante o bug volta executável na leitura.
+    expect(
+      normalizeModelValue("agy", "gemini-3.7-flash-high\tGemini 3.7 Flash (High)"),
+    ).toBe("gemini-3.7-flash-high")
+    // Vale pra qualquer motor: a regra é do transporte, não do fornecedor.
+    expect(normalizeModelValue("codex", "gpt-5.6-sol\tSol")).toBe("gpt-5.6-sol")
+    // Rótulo PURO desconhecido não é adivinhado (viraria um slug limpo e
+    // errado); segue inteiro e a fronteira no Rust recusa com motivo.
+    expect(normalizeModelValue("agy", "Gemini 3.6 Flash (High)")).toBe(
+      "Gemini 3.6 Flash (High)",
+    )
+    // Rótulo legado MAPEADO continua convergindo (o remap vem antes do corte).
+    expect(normalizeModelValue("agy", "Gemini 3.5 Flash (Low)")).toBe(
+      "gemini-3.5-flash-low",
+    )
   })
 })
 
