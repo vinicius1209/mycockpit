@@ -43,3 +43,6 @@ builds/
 
 # Evidências transientes de agents (screenshots de spikes)
 app/artifacts/
+
+# Cache do gerador de ícones (scripts/brand)
+__pycache__/

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44" fill="none"
+  stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+  stroke-width="2.4">
+  <!-- Frota · horizonte artificial. Gerado por scripts/brand/gen_icons.py -->
+  <circle cx="22" cy="22" r="20" />
+  <path d="M6.5 24.5 L18 22 L22 23 L26 22 L37.5 24.5" />
+  <path d="M22 16 L22 26" />
+  <path d="M13 29 L31 29" />
+</svg>
