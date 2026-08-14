@@ -27,6 +27,7 @@ import { fmtCost, fmtDuration, fmtTime } from "@/lib/format"
 import { fmtMissionCost, missionCostState, phaseCostState } from "@/lib/missionCost"
 import { queuedGranularityNote } from "@/lib/missionQuiet"
 import { stopPrice } from "@/lib/missionGestures"
+import { missionRuler, missionWindow } from "@/lib/missionWindow"
 import { cn } from "@/lib/utils"
 
 const PERSONA_LABEL: Record<string, string> = {
@@ -287,6 +288,11 @@ export function MissionTimeline({ convId }: { convId: string }) {
   const conv = useChat((s) => s.byId[convId])
   const projects = useApp((s) => s.projects)
   const [filesOpen, setFilesOpen] = useState(false)
+  // R9 — fases que VOCÊ abriu à mão são a quarta exceção que nunca recolhe.
+  // Vive na UI (é preferência de leitura), não no run.
+  const [manuallyOpen, setManuallyOpen] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  )
   // Interações contextuais: pedidos pendentes DESTA conversa (a visível), de
   // permissão ou de pergunta — renderizam dentro do bloco da fase corrente (o
   // toast global os suprime).
@@ -320,6 +326,13 @@ export function MissionTimeline({ convId }: { convId: string }) {
   // contador passa a carregar os dois números, com o de lançamento ao lado.
   const growth = planGrowthNote(planCounts(mission.phases.map((p) => p.def)))
   const total = missionCostState(mission.costTotal, mission.phases)
+  const ruler = missionRuler(mission)
+  // A JANELA VIVA: com 3 fases ela cobre o plano inteiro e nenhum stub aparece;
+  // com 12, é ela que impede a fase viva de sair da tela.
+  const rows = missionWindow(mission.phases, cur, {
+    holdPhase: mission.hold?.phase ?? null,
+    manuallyOpen,
+  })
   const pct =
     mission.maxCostUsd && mission.maxCostUsd > 0
       ? Math.min(100, (mission.costTotal / mission.maxCostUsd) * 100)
@@ -331,6 +344,119 @@ export function MissionTimeline({ convId }: { convId: string }) {
       : pct < 90
         ? "var(--st-queued)"
         : "var(--st-error)"
+
+  /** Uma fase da janela + os cartões que pertencem a ELA (segurando, gate,
+   *  recuperação). Extraído do map porque agora quem decide QUEM aparece é a
+   *  janela viva (lib/missionWindow), não a lista inteira. */
+  const renderFase = (p: MissionPhaseRun, i: number) => (
+          <div key={p.def.id}>
+            <PhaseNode
+              p={p}
+              active={running && !gated && i === cur}
+              last={i === n - 1}
+              now={now}
+              cwd={cwd}
+              holdRequested={
+                running && !gated && i === cur
+                  ? mission.hold?.reason === "pedido"
+                  : undefined
+              }
+              onToggleHold={
+                running && !gated && i === cur
+                  ? (on) => holdAfterPhase(convId, on)
+                  : undefined
+              }
+              onInterrupt={
+                running && !gated && i === cur && !mission.hold
+                  ? () => interruptPhase(convId)
+                  : undefined
+              }
+              interactions={
+                running && !gated && i === cur ? inlineReqs : undefined
+              }
+            />
+            {inRecovery && mission.recovery!.phase === i && (
+              <div className="relative mb-4">
+                <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 animate-cockpit-pulse rounded-full border-2 border-st-warning bg-st-warning shadow-[0_0_0_4px_color-mix(in_srgb,var(--st-warning)_20%,transparent)]" />
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[14px] font-semibold text-st-warning">
+                    Precisa de você
+                  </span>
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    a fase {i + 1} parou por limite
+                  </span>
+                </div>
+                <RecoveryCard
+                  convId={convId}
+                  recovery={mission.recovery!}
+                  failedAgent={p.def.agent}
+                  onResolve={resolveRecovery}
+                  onAbort={abortRecovery}
+                />
+              </div>
+            )}
+            {/* R7 — a missão SEGURANDO: ou você pediu, ou você interrompeu a
+                fase. Nos dois casos nada roda agora e a próxima só começa por
+                gesto seu. Âmbar (pede decisão), como o gate. */}
+            {running && mission.hold?.phase === i && (
+              <div className="relative mb-4">
+                <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 rounded-full border-2 border-st-warning bg-st-warning" />
+                <div className="rounded-[9px] border border-st-warning/45 bg-st-warning/[0.06] px-3 py-2.5">
+                  <div className="text-[13px] font-semibold text-st-warning">
+                    {mission.hold.reason === "interrompida"
+                      ? `Fase ${i + 1} interrompida por você`
+                      : `Segurando no fim da fase ${i + 1}`}
+                  </div>
+                  <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
+                    {mission.hold.reason === "interrompida"
+                      ? "O processo morreu. O que ela escreveu continua no worktree, e a fase ficou incompleta."
+                      : "A fase terminou normal. A próxima não começa sem você."}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => releaseHold(convId)}
+                      className="rounded-md bg-brass px-3 py-1 text-[12px] font-semibold text-background transition-opacity hover:opacity-90"
+                    >
+                      Continuar para {mission.phases[i + 1]?.def.label ?? "o fim"}
+                    </button>
+                    <span className="text-[11px] text-faint">
+                      {stopPrice({
+                        current: i,
+                        total: n,
+                        costLabel: total.value,
+                      })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+            {gated && mission.gate!.phase === i && (
+              <div className="relative mb-4">
+                <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 animate-cockpit-pulse rounded-full border-2 border-brass bg-brass shadow-[0_0_0_4px_var(--brass-soft)]" />
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[14px] font-semibold text-brass">
+                    Precisa de você
+                  </span>
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {mission.gate!.questions.length}{" "}
+                    {mission.gate!.questions.length === 1
+                      ? "decisão pendente"
+                      : "decisões pendentes"}
+                  </span>
+                </div>
+                <GateCard
+                  convId={convId}
+                  questions={mission.gate!.questions}
+                  nextAgent={
+                    mission.phases[mission.gate!.phase + 1]?.def.agent ?? null
+                  }
+                  onContinue={(answers) => answerGate(convId, answers)}
+                />
+              </div>
+            )}
+          </div>
+  )
 
   return (
     <div className="mx-auto w-full max-w-[760px] px-8 pt-6 pb-4">
@@ -462,118 +588,68 @@ export function MissionTimeline({ convId }: { convId: string }) {
         )}
       </div>
 
+      {/* R8 — A RÉGUA: uma linha que NÃO rola, com a posição, o denominador
+          declarado e o que vem a seguir. É a única concessão à tese do painel
+          de voo, e é uma linha: sem estações, sem seleção e SEM barra de
+          percentual (uma barra que recua sozinha, de 60% pra 50% quando duas
+          fases foram apendadas, é pior que não ter barra). Só aparece em voo,
+          que é quando "onde estou" é pergunta. */}
+      {running && (
+        <div className="sticky top-0 z-[5] -mx-8 mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-border bg-background/90 px-8 py-2 text-[12px] text-muted-foreground backdrop-blur">
+          <span className="font-mono text-[13px] font-semibold tabular-nums text-foreground">
+            {ruler.position}
+          </span>
+          {ruler.launched && (
+            <ProvenanceMark>{ruler.launched}</ProvenanceMark>
+          )}
+          {ruler.next && (
+            <span className="min-w-0 truncate">{ruler.next}</span>
+          )}
+          {ruler.queued && (
+            <span className="shrink-0 font-mono text-[11px] tabular-nums text-faint">
+              {ruler.queued}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* plano de voo (espinha vertical); o GATE entra como estação logo após
           a fase que deixou as perguntas */}
       <div className="relative mt-6 pl-[34px] before:absolute before:top-3.5 before:bottom-5 before:left-3 before:w-0.5 before:bg-border">
-        {mission.phases.map((p, i) => (
-          <div key={p.def.id}>
-            <PhaseNode
-              p={p}
-              active={running && !gated && i === cur}
-              last={i === n - 1}
-              now={now}
-              cwd={cwd}
-              holdRequested={
-                running && !gated && i === cur
-                  ? mission.hold?.reason === "pedido"
-                  : undefined
-              }
-              onToggleHold={
-                running && !gated && i === cur
-                  ? (on) => holdAfterPhase(convId, on)
-                  : undefined
-              }
-              onInterrupt={
-                running && !gated && i === cur && !mission.hold
-                  ? () => interruptPhase(convId)
-                  : undefined
-              }
-              interactions={
-                running && !gated && i === cur ? inlineReqs : undefined
-              }
-            />
-            {inRecovery && mission.recovery!.phase === i && (
-              <div className="relative mb-4">
-                <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 animate-cockpit-pulse rounded-full border-2 border-st-warning bg-st-warning shadow-[0_0_0_4px_color-mix(in_srgb,var(--st-warning)_20%,transparent)]" />
-                <div className="flex items-center gap-2.5">
-                  <span className="text-[14px] font-semibold text-st-warning">
-                    Precisa de você
+        {rows.map((row) =>
+          row.kind === "stub" ? (
+            // R9 — o stub É um recibo, não uma contagem, e declara o que
+            // engoliu. Clicar abre as fases que ele cobre (nenhuma some).
+            <div key={`stub-${row.side}-${row.indexes[0]}`} className="relative mb-4">
+              <span className="absolute top-[9px] -left-[26px] z-[1] size-2.5 rounded-full border border-border-strong bg-background" />
+              <button
+                type="button"
+                onClick={() =>
+                  setManuallyOpen((prev) => {
+                    const next = new Set(prev)
+                    for (const i of row.indexes) next.add(i)
+                    return next
+                  })
+                }
+                className="flex w-full min-w-0 items-center gap-2.5 text-left"
+              >
+                <span className="shrink-0 text-[13px] font-medium text-muted-foreground">
+                  {row.label}
+                </span>
+                {row.declares && (
+                  <span className="min-w-0 truncate font-mono text-[11px] tabular-nums text-faint">
+                    {row.declares}
                   </span>
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    a fase {i + 1} parou por limite
-                  </span>
-                </div>
-                <RecoveryCard
-                  convId={convId}
-                  recovery={mission.recovery!}
-                  failedAgent={p.def.agent}
-                  onResolve={resolveRecovery}
-                  onAbort={abortRecovery}
-                />
-              </div>
-            )}
-            {/* R7 — a missão SEGURANDO: ou você pediu, ou você interrompeu a
-                fase. Nos dois casos nada roda agora e a próxima só começa por
-                gesto seu. Âmbar (pede decisão), como o gate. */}
-            {running && mission.hold?.phase === i && (
-              <div className="relative mb-4">
-                <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 rounded-full border-2 border-st-warning bg-st-warning" />
-                <div className="rounded-[9px] border border-st-warning/45 bg-st-warning/[0.06] px-3 py-2.5">
-                  <div className="text-[13px] font-semibold text-st-warning">
-                    {mission.hold.reason === "interrompida"
-                      ? `Fase ${i + 1} interrompida por você`
-                      : `Segurando no fim da fase ${i + 1}`}
-                  </div>
-                  <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
-                    {mission.hold.reason === "interrompida"
-                      ? "O processo morreu. O que ela escreveu continua no worktree, e a fase ficou incompleta."
-                      : "A fase terminou normal. A próxima não começa sem você."}
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => releaseHold(convId)}
-                      className="rounded-md bg-brass px-3 py-1 text-[12px] font-semibold text-background transition-opacity hover:opacity-90"
-                    >
-                      Continuar para {mission.phases[i + 1]?.def.label ?? "o fim"}
-                    </button>
-                    <span className="text-[11px] text-faint">
-                      {stopPrice({
-                        current: i,
-                        total: n,
-                        costLabel: total.value,
-                      })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-            {gated && mission.gate!.phase === i && (
-              <div className="relative mb-4">
-                <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 animate-cockpit-pulse rounded-full border-2 border-brass bg-brass shadow-[0_0_0_4px_var(--brass-soft)]" />
-                <div className="flex items-center gap-2.5">
-                  <span className="text-[14px] font-semibold text-brass">
-                    Precisa de você
-                  </span>
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    {mission.gate!.questions.length}{" "}
-                    {mission.gate!.questions.length === 1
-                      ? "decisão pendente"
-                      : "decisões pendentes"}
-                  </span>
-                </div>
-                <GateCard
-                  convId={convId}
-                  questions={mission.gate!.questions}
-                  nextAgent={
-                    mission.phases[mission.gate!.phase + 1]?.def.agent ?? null
-                  }
-                  onContinue={(answers) => answerGate(convId, answers)}
-                />
-              </div>
-            )}
-          </div>
-        ))}
+                )}
+                <span className="ml-auto shrink-0 text-[11px] text-faint underline decoration-border-strong underline-offset-2">
+                  mostrar
+                </span>
+              </button>
+            </div>
+          ) : (
+            renderFase(mission.phases[row.index], row.index)
+          ),
+        )}
       </div>
 
       {!running && <DoneSummary mission={mission} />}
