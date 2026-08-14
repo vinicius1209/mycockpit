@@ -189,7 +189,11 @@ export const DEAD_TOKEN_RULES = [
       "components/chat/MessageList.tsx": { max: 4, motivo: "marcos do fio (turno/plano concluído), ADR-037" },
       "components/chat/ChatPanel.tsx": { max: 1, motivo: "marco de plano concluído" },
       "components/chat/ExecutionRow.tsx": { max: 1, motivo: "marco de execução concluída" },
-      "components/mission/MissionTimeline.tsx": { max: 3, motivo: "marcos de fase/gate da missão" },
+      "components/mission/MissionTimeline.tsx": { max: 1, motivo: "marco de fase da missão" },
+      // o verde do DESFECHO da missão veio inteiro da MissionTimeline quando o
+      // resumo virou arquivo próprio: marco de plano concluído (ADR-037), não
+      // verde novo.
+      "components/mission/DoneSummary.tsx": { max: 2, motivo: "marco de missão concluída" },
       "components/mission/FlightPlansView.tsx": { max: 2, motivo: "marco de plano de voo concluído" },
       "components/mission/MissionPlanCanvas.tsx": { max: 1, motivo: "marco de fase concluída no canvas" },
       "components/sdd/SddView.tsx": { max: 7, motivo: "marcos de etapa do SDD (spec/plan/tasks concluídos)" },

@@ -18,6 +18,7 @@
 //   detecção só oferece retomada para `running`).
 
 import { invoke } from "@tauri-apps/api/core"
+import type { CostSource } from "@/lib/agent"
 import { activePointerPath, runStatePath } from "@/lib/missionPaths"
 import type {
   MissionPhaseStatus,
@@ -36,6 +37,12 @@ export type RunStateStatus = MissionStatus | "abandoned"
 export interface RunStatePhase {
   status: MissionPhaseStatus
   costUsd: number
+  /** Procedência do custo (ver MissionPhaseRun.costSource). Ausente em
+   *  arquivo gravado antes do campo: a retomada mostra "—", nunca zero. */
+  costSource?: CostSource
+  /** Fim congelado da fase. Ausente em arquivo legado ⇒ a retomada não exibe
+   *  duração daquela fase (Warp R6: some o sinal, fica o espaço). */
+  endedAt?: number
   error?: string
 }
 
@@ -121,6 +128,8 @@ export function runToState(
     phases: run.phases.map((p) => ({
       status: p.status,
       costUsd: p.costUsd,
+      ...(p.costSource ? { costSource: p.costSource } : {}),
+      ...(p.endedAt ? { endedAt: p.endedAt } : {}),
       ...(p.error ? { error: p.error } : {}),
     })),
     costTotal: run.costTotal,
@@ -133,6 +142,10 @@ export function runToState(
     updatedAt: Date.now(),
   }
 }
+
+/** Fontes de custo aceitas no parse (lixo/ausente ⇒ campo some, e a tela cai
+ *  em "—" em vez de tratar um número sem procedência como medido). */
+const COST_SOURCES: CostSource[] = ["reported", "estimated", "unknown"]
 
 const STATUSES: RunStateStatus[] = [
   "running",
@@ -212,6 +225,12 @@ export function parseRunState(raw: string): MissionRunState | null {
     ? (o.phases as RunStatePhase[]).map((p) => ({
         status: p?.status ?? "queued",
         costUsd: typeof p?.costUsd === "number" ? p.costUsd : 0,
+        ...(COST_SOURCES.includes(p?.costSource as CostSource)
+          ? { costSource: p.costSource }
+          : {}),
+        ...(typeof p?.endedAt === "number" && p.endedAt > 0
+          ? { endedAt: p.endedAt }
+          : {}),
         ...(typeof p?.error === "string" && p.error ? { error: p.error } : {}),
       }))
     : []

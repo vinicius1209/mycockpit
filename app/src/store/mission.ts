@@ -32,6 +32,9 @@ import {
 } from "@/lib/learning"
 import { useApp } from "@/store/app"
 import { useChat, type ChatItem } from "@/store/chat"
+// Os marcos que a missão grava no fio moram em lib/missionMarks (a catraca de
+// tamanho cobrou a divisão deste arquivo).
+import { noticeItem, recordHistory, summarize } from "@/lib/missionMarks"
 import {
   buildGateDecisionsBlock,
   normalizeGateAnswers,
@@ -155,37 +158,6 @@ function queuedRun(def: MissionPhaseDef): MissionPhaseRun {
 /** runId estável por fase p/ cancelamento (index-based, uma missão por conv). */
 function phaseRunId(missionId: string, phaseIdx: number): string {
   return `${missionId}::phase-${phaseIdx}`
-}
-
-// ── Histórico persistente da missão (pendência M2 do docs/mission-mode.md):
-// a missão roda em memória (byConv), então sem gravar nada a conversa reabria
-// VAZIA após restart. Gravamos nos MARCOS (launch/fase/gate/recovery/fim) via
-// useChat.appendItems — barato e legível, não é o transcript pleno das fases.
-
-/** Tamanho máx. do resumo de fase gravado na conversa (o transcript inteiro
- *  não cabe e não é o objetivo dos marcos). */
-const PHASE_SUMMARY_MAX = 2000
-
-/** Trunca o resumo de fase no teto (com reticências). */
-function summarize(text: string): string {
-  return text.length > PHASE_SUMMARY_MAX
-    ? `${text.slice(0, PHASE_SUMMARY_MAX)}…`
-    : text
-}
-
-function noticeItem(message: string): ChatItem {
-  return { kind: "notice", id: crypto.randomUUID(), message }
-}
-
-/** Grava itens de MARCO no fio da conversa. BEST-EFFORT: falha de persistência
- *  NUNCA derruba a missão (o run em memória segue sendo a fonte da timeline);
- *  o appendItems já no-opa se a conversa não está carregada (launcher garante). */
-async function recordHistory(convId: string, items: ChatItem[]): Promise<void> {
-  try {
-    await useChat.getState().appendItems(convId, items)
-  } catch (err) {
-    console.warn("[missão] falha ao gravar histórico na conversa:", err)
-  }
 }
 
 /** Gate humano: resolvedores das missões pausadas (por missionId). O loop do
@@ -433,7 +405,18 @@ export const useMission = create<MissionState>((set, get) => {
           attempt: 1,
           costUsd:
             resume && idx < startPhase ? (resume.phases[idx]?.costUsd ?? 0) : 0,
+          // procedência/fim vêm do arquivo: sem eles a fase retomada mostraria
+          // um custo sem fonte (que a UI trata como não-medido) e nenhuma
+          // duração — honesto nos dois casos, e melhor que inventar.
+          costSource:
+            resume && idx < startPhase
+              ? resume.phases[idx]?.costSource
+              : undefined,
           startedAt: null,
+          endedAt:
+            resume && idx < startPhase
+              ? (resume.phases[idx]?.endedAt ?? null)
+              : null,
         })),
         current: startPhase,
         // costTotal retomado soma ao teto corretamente (checkBudget usa ele).
@@ -768,6 +751,8 @@ export const useMission = create<MissionState>((set, get) => {
               ...ph,
               status: "done",
               costUsd: ph.costUsd + result.costUsd,
+              costSource: result.costSource,
+              endedAt: Date.now(),
               error: undefined,
             }))
             break
@@ -784,6 +769,8 @@ export const useMission = create<MissionState>((set, get) => {
               ...ph,
               status: "error",
               costUsd: ph.costUsd + result.costUsd,
+              costSource: result.costSource,
+              endedAt: Date.now(),
               error: fail.reason,
             }))
             patchConv(convId, { status: "error", current: i })
@@ -799,6 +786,8 @@ export const useMission = create<MissionState>((set, get) => {
               ...ph,
               status: "error",
               costUsd: ph.costUsd + result.costUsd,
+              costSource: result.costSource,
+              endedAt: Date.now(),
               error: fail.error,
             }))
             patchConv(convId, { status: "error", current: i })
@@ -812,6 +801,10 @@ export const useMission = create<MissionState>((set, get) => {
             ...ph,
             status: "error",
             costUsd: ph.costUsd + result.costUsd,
+            costSource: result.costSource,
+            // sem endedAt: a fase pausou pra troca de motor e vai RE-RODAR do
+            // começo; congelar o fim aqui daria duração de uma corrida que
+            // ainda não acabou.
             error: result.error,
           }))
           patchConv(convId, {
@@ -888,6 +881,7 @@ export const useMission = create<MissionState>((set, get) => {
             status: "running",
             attempt: 1,
             startedAt: Date.now(),
+            endedAt: null,
             error: undefined,
           }))
           // marco em disco: recovery resolvido (def da fase trocada, re-rodando).
@@ -1224,7 +1218,11 @@ export const useMission = create<MissionState>((set, get) => {
         gate: null,
         recovery: null,
         phases: cur.phases.map((ph, i) =>
-          i === idx && ph.status === "running" ? { ...ph, status: "aborted" } : ph,
+          i === idx && ph.status === "running"
+            ? // o fim congela AQUI: o processo morreu neste instante, e sem o
+              // carimbo a fase interrompida ficaria sem duração nenhuma.
+              { ...ph, status: "aborted", endedAt: Date.now() }
+            : ph,
         ),
       }))
       // libera o loop se estava pausado num gate OU numa recuperação (resolve

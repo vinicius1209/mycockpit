@@ -5,6 +5,7 @@
 // importam daqui; NÃO importar componentes/stores aqui (sem ciclos).
 // (só `import type` — apagados na compilação, sem ciclo em runtime.)
 
+import type { CostSource } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import type { ChatItem } from "@/store/chat"
 
@@ -194,7 +195,19 @@ export interface MissionPhaseRun {
   /** Tentativa corrente (1-based; > 1 = houve retry). */
   attempt: number
   costUsd: number
+  /** PROCEDÊNCIA do custo desta fase (o `cost_source` do result, agent.ts):
+   *  "reported" = dólar do motor · "estimated" = conta por tokens · "unknown"
+   *  = veio número sem fonte. Ausente = a fase ainda não fechou NENHUM result.
+   *  Sem isto, `costUsd: 0` de um motor que não mede é indistinguível de um
+   *  turno que custou zero de verdade, e a tela pintava `US$ 0,000` (R3). */
+  costSource?: CostSource
   startedAt: number | null
+  /** Fim da fase (epoch ms), congelado no primeiro desfecho terminal
+   *  (done/error/aborted). null/ausente = a fase não terminou, ou terminou
+   *  antes deste campo existir — e aí a duração não é exibida em vez de ser
+   *  inventada a partir do "agora". Fica no run-state (JSON tolerante), não no
+   *  SQLite: nenhuma migração. */
+  endedAt?: number | null
   /** Itens ao vivo da fase (stream reduzido pelo runPhase/onProgress) — a
    *  matéria-prima da atividade em tempo real e do resumo final. */
   items?: ChatItem[]
