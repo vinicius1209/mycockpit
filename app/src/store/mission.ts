@@ -34,7 +34,12 @@ import { useApp } from "@/store/app"
 import { useChat, type ChatItem } from "@/store/chat"
 // Os marcos que a missão grava no fio moram em lib/missionMarks (a catraca de
 // tamanho cobrou a divisão deste arquivo).
-import { noticeItem, recordHistory, summarize } from "@/lib/missionMarks"
+import {
+  missionIndexRow,
+  noticeItem,
+  recordHistory,
+  summarize,
+} from "@/lib/missionMarks"
 import {
   buildGateDecisionsBlock,
   normalizeGateAnswers,
@@ -230,31 +235,14 @@ export const useMission = create<MissionState>((set, get) => {
   }
 
   /** Espelha a missão no índice `missions` do banco (upsert). projectId vem da
-   *  conversa (useChat), slug do dir. Best-effort e fire-and-forget. */
+   *  conversa (useChat). Best-effort e fire-and-forget. */
   const indexMission = (convId: string) => {
     const run = get().byConv[convId]
-    if (!run) return
     const projectId = useChat.getState().byId[convId]?.projectId
-    if (!projectId) return
-    const slug = run.dir.slice(run.dir.lastIndexOf("/") + 1)
-    void upsertMission({
-      id: run.id,
-      slug,
-      dir: run.dir,
-      convId,
-      projectId,
-      task: run.task,
-      presetName: run.presetName,
-      status: run.status,
-      costTotal: run.costTotal,
-      phaseCurrent: run.current,
-      phaseCount: run.phases.length,
-      // audit trail: "done" com ressalva fica visível no histórico, não só na
-      // memória do run (MH1.1).
-      reviewCaveat: run.reviewCaveat ?? null,
-      createdAt: run.startedAt,
-      updatedAt: Date.now(),
-    }).catch((e) => console.warn("[missão] falha ao indexar no banco:", e))
+    if (!run || !projectId) return
+    void upsertMission(missionIndexRow(run, convId, projectId)).catch((e) =>
+      console.warn("[missão] falha ao indexar no banco:", e),
+    )
   }
 
   /** Marco terminal de ERRO no fio: result !ok com o custo total + motivo.
@@ -712,8 +700,18 @@ export const useMission = create<MissionState>((set, get) => {
               // original; fase seguinte a um GATE = os das respostas ricas
               // (phaseGateAtts). As demais herdam o contexto pelo handoff/worktree.
               attachments: i === 0 ? attachments : phaseGateAtts,
+              // o carimbo da ÚLTIMA SAÍDA sai daqui porque aqui é o único
+              // lugar que vê TODO evento (o runPhase chama por evento, não por
+              // item novo): um motor calado que só cospe texto continua sendo
+              // medido, e um bloco de texto crescendo por deltas não passa por
+              // silêncio (R5, duas idades).
               onProgress: (attempt, items) =>
-                patchPhase(convId, i, (ph) => ({ ...ph, attempt, items } as MissionPhaseRun)),
+                patchPhase(convId, i, (ph) => ({
+                  ...ph,
+                  attempt,
+                  items,
+                  lastOutputAt: Date.now(),
+                } as MissionPhaseRun)),
               // MH2.1 — CADA fase grava turn_costs no result (fonte única do
               // Painel/cards), INCLUSIVE quando a missão vai abortar/estourar
               // depois: grava aqui, no ponto em que o custo é conhecido.

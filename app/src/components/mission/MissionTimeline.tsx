@@ -7,8 +7,9 @@ import { useEffect, useState, type ReactNode } from "react"
 import { FolderOpen, Rocket, X } from "lucide-react"
 import { useMission } from "@/store/mission"
 import { useActiveProject, useApp } from "@/store/app"
-import { useChat, type ChatItem } from "@/store/chat"
+import { useChat } from "@/store/chat"
 import { MissionFilesDialog } from "@/components/mission/MissionFilesDialog"
+import { PhaseLive } from "@/components/mission/PhaseLive"
 import { DoneSummary } from "@/components/mission/DoneSummary"
 import { GateCard } from "@/components/mission/GateCard"
 import { RecoveryCard } from "@/components/mission/RecoveryCard"
@@ -22,10 +23,9 @@ import {
 import type { InteractionRequest } from "@/lib/interaction"
 import { useContextualSplit } from "@/store/interactions"
 import { agentDef } from "@/lib/agents"
-import { InteractionCard } from "@/components/chat/InteractionHost"
 import { fmtCost, fmtDuration, fmtTime } from "@/lib/format"
 import { fmtMissionCost, missionCostState, phaseCostState } from "@/lib/missionCost"
-import { presentTool } from "@/lib/toolview"
+import { queuedGranularityNote } from "@/lib/missionQuiet"
 import { cn } from "@/lib/utils"
 
 const PERSONA_LABEL: Record<string, string> = {
@@ -54,20 +54,6 @@ function useNow(active: boolean): number {
   return now
 }
 
-/** Deriva a atividade AO VIVO de uma fase a partir dos itens (stream reduzido):
- *  os últimos tool steps + uma linha "Agora:…" do que está acontecendo. */
-function phaseActivity(items: ChatItem[] | undefined) {
-  const tools = (items ?? []).filter(
-    (i): i is Extract<ChatItem, { kind: "tool" }> => i.kind === "tool",
-  )
-  const last = items?.[items.length - 1]
-  let now = "preparando…"
-  if (last?.kind === "tool") now = presentTool(last.name, last.input).label
-  else if (last?.kind === "text") now = "redigindo resposta…"
-  else if (tools.length > 0) now = "trabalhando…"
-  return { tools, now }
-}
-
 /** Marca de PROCEDÊNCIA: tipografia, não tinta (mono 11, borda tracejada,
  *  cinza). Cor é para estado e decisão; procedência não é nem uma nem outra, e
  *  um plano longo gastaria o orçamento de tinta inteiro se cada qualificador de
@@ -77,20 +63,6 @@ function ProvenanceMark({ children }: { children: ReactNode }) {
     <span className="rounded border border-dashed border-border-strong px-1.5 py-px font-mono text-[11px] whitespace-nowrap text-muted-foreground">
       {children}
     </span>
-  )
-}
-
-function StepDot({ status }: { status: "ok" | "run" | "pending" }) {
-  return (
-    <span
-      className={cn(
-        "size-2.5 shrink-0 rounded-full",
-        status === "ok" && "bg-st-success",
-        status === "run" &&
-          "animate-cockpit-pulse bg-st-running shadow-[0_0_0_3px_color-mix(in_srgb,var(--st-running)_22%,transparent)]",
-        status === "pending" && "border-[1.5px] border-muted-foreground/40",
-      )}
-    />
   )
 }
 
@@ -104,96 +76,19 @@ export function missionHostsInline(m: MissionRun | undefined | null): boolean {
   return cur?.status === "running"
 }
 
-/** Atividade ao vivo da fase corrente: header (agent + cronômetro), scan e os
- *  últimos passos + "Agora:…". O dado JÁ existe no store (onProgress).
- *  `interactions` = pedidos pendentes DESTA conversa, permissão OU pergunta (o
- *  split contextual roteia os dois): o card entra AQUI, junto da cena que ele
- *  interrompeu — acima do "Agora:". */
-function LiveActivity({
-  phase,
-  interactions,
-}: {
-  phase: MissionPhaseRun
-  interactions?: InteractionRequest[]
-}) {
-  const now = useNow(true)
-  const { tools, now: nowLabel } = phaseActivity(phase.items)
-  const elapsed = phase.startedAt ? now - phase.startedAt : 0
-  const shown = tools.slice(-4)
-  return (
-    <div className="mt-2.5 overflow-hidden rounded-[11px] border border-st-running/25 bg-st-running/[0.04]">
-      <div className="flex items-center gap-2 px-3.5 py-2.5">
-        <span className="animate-cockpit-pulse size-2 shrink-0 rounded-full bg-st-running" />
-        <span className="text-[13px] font-medium">
-          {agentDef(phase.def.agent)?.shortLabel ?? phase.def.agent}
-          <span className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground">
-            {phaseAgentModel(phase.def)}
-          </span>
-        </span>
-        <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">
-          {fmtDuration(elapsed)}
-        </span>
-      </div>
-      <div className="tray-telemetry mx-3.5">
-        <span />
-      </div>
-      {shown.length > 0 && (
-        <div className="px-3.5 py-2">
-          {shown.map((t) => {
-            const p = presentTool(t.name, t.input)
-            const done = t.result != null
-            return (
-              <div
-                key={t.id}
-                className="grid grid-cols-[14px_1fr] items-center gap-2.5 py-[3px]"
-              >
-                <span className="grid place-items-center">
-                  <StepDot status={done ? "ok" : "run"} />
-                </span>
-                <span
-                  className={cn(
-                    "truncate font-mono text-[11px]",
-                    done ? "text-foreground/60" : "text-foreground",
-                  )}
-                >
-                  {p.label}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      )}
-      {/* Aprovação contextual: o pedido pausou ESTA fase — o card mora na cena
-          (FIFO, um por vez), não num toast desconectado no canto. */}
-      {interactions && interactions.length > 0 && (
-        <div className="px-3.5 pt-2">
-          <InteractionCard
-            key={interactions[0].id}
-            req={interactions[0]}
-            extra={interactions.length - 1}
-          />
-        </div>
-      )}
-      <div className="flex items-center gap-2 border-t border-border px-3.5 py-2 text-[12px] text-muted-foreground">
-        <span className="animate-cockpit-pulse size-1.5 shrink-0 rounded-full bg-st-running" />
-        <span className="min-w-0 truncate">
-          Agora: <span className="text-foreground">{nowLabel}</span>
-        </span>
-      </div>
-    </div>
-  )
-}
-
 /** Uma fase como estação no plano de voo (nó na espinha + linha). */
 function PhaseNode({
   p,
   active,
   last,
+  now,
   interactions,
 }: {
   p: MissionPhaseRun
   active: boolean
   last: boolean
+  /** O agora, injetado: um relógio vivo só na tela (B2.2). */
+  now: number
   /** Interações contextuais desta conversa, permissão ou pergunta (só a fase
    *  corrente recebe). */
   interactions?: InteractionRequest[]
@@ -210,6 +105,17 @@ function PhaseNode({
   // motor acrescentou a correção). Sem a marca ela pareceria nativa do plano.
   const born = phaseProvenance(p.def)
   const cost = phaseCostState(p)
+  // R4/Warp R1 — o cronômetro pertence à fase CORRENTE e congela no fim; ele é
+  // IRMÃO do que anima (fora do elemento com pulse), `tabular-nums` e largura
+  // reservada, e quem cede na disputa por espaço é o NOME.
+  const elapsed =
+    p.startedAt != null
+      ? Math.max(0, (p.endedAt ?? (active ? now : p.startedAt)) - p.startedAt)
+      : null
+  // a fase NA FILA declara o que o motor dela consegue reportar, antes de
+  // rodar: assim a quietude vira contrato em vez de virar bug.
+  const granularity =
+    p.status === "queued" ? queuedGranularityNote(p.def.agent) : null
   return (
     <div className="relative mb-4 last:mb-0">
       {/* nó */}
@@ -224,9 +130,14 @@ function PhaseNode({
         )}
       />
       <div className={cn("flex items-center gap-2.5", nodeState === "pending" && "opacity-50")}>
-        <span className="text-[14px] font-semibold">{p.def.label}</span>
-        <span className="font-mono text-[11px] text-muted-foreground">
+        {/* IDENTIDADE UMA VEZ POR CONTEXTO (ADR-037): motor e modelo são
+            escritos AQUI e em lugar nenhum abaixo. O "Claude · Claude · Opus 5"
+            do build 193 saía do bloco vivo, que repetia o shortLabel antes do
+            phaseAgentModel; agora nenhuma linha filha fala de motor. */}
+        <span className="shrink-0 text-[14px] font-semibold">{p.def.label}</span>
+        <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
           {PERSONA_LABEL[p.def.persona]} · {phaseAgentModel(p.def)}
+          {granularity ? ` · ${granularity}` : ""}
         </span>
         {born && (
           <ProvenanceMark>
@@ -253,6 +164,11 @@ function PhaseNode({
             <span className="text-muted-foreground">{cost.value}</span>
           )}
         </span>
+        {elapsed != null && elapsed >= 1000 && (
+          <span className="w-16 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">
+            {fmtDuration(elapsed)}
+          </span>
+        )}
         {p.status === "queued" && (
           <span className="shrink-0 text-[11px] text-faint">na fila</span>
         )}
@@ -261,7 +177,7 @@ function PhaseNode({
         <p className="mt-1 text-[12px] leading-snug text-st-error">{p.error}</p>
       )}
       {nodeState === "run" && (
-        <LiveActivity phase={p} interactions={interactions} />
+        <PhaseLive phase={p} now={now} interactions={interactions} />
       )}
       {!last && <span className="sr-only">↓</span>}
     </div>
@@ -353,6 +269,12 @@ export function MissionTimeline({ convId }: { convId: string }) {
   // Interações contextuais: pedidos pendentes DESTA conversa (a visível), de
   // permissão ou de pergunta — renderizam dentro do bloco da fase corrente (o
   // toast global os suprime).
+  // UM relógio vivo na tela (B2.2): ele nasce aqui e desce por prop pra fase
+  // corrente. Nenhum filho monta interval próprio, e o interval só existe
+  // enquanto a missão roda (missão fechada não tica nada).
+  const now = useNow(
+    useMission((s) => s.byConv[convId]?.status === "running") ?? false,
+  )
   const split = useContextualSplit()
   const inlineReqs = split.inlineConvId === convId ? split.inline : []
   if (!mission) return null
@@ -519,6 +441,7 @@ export function MissionTimeline({ convId }: { convId: string }) {
               p={p}
               active={running && !gated && i === cur}
               last={i === n - 1}
+              now={now}
               interactions={
                 running && !gated && i === cur ? inlineReqs : undefined
               }

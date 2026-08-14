@@ -211,6 +211,15 @@ export interface MissionPhaseRun {
   /** Itens ao vivo da fase (stream reduzido pelo runPhase/onProgress) — a
    *  matéria-prima da atividade em tempo real e do resumo final. */
   items?: ChatItem[]
+  /** ÚLTIMA VEZ que este motor disse alguma coisa (epoch ms), carimbada a cada
+   *  evento do stream. É o "último byte" do R5: o que decide alarme é o tempo
+   *  desde a última saída, não o tempo da fase — silêncio só assusta em relação
+   *  à última vez que se ouviu algo. Não vem do `ts` dos itens de propósito: um
+   *  bloco de texto que recebe deltas por 5 min mantém o `ts` do primeiro byte,
+   *  e a conta acusaria silêncio com o motor falando.
+   *  NÃO PERSISTE (não está no run-state): estado vivo restaurado seria um
+   *  relógio de um processo que já morreu. */
+  lastOutputAt?: number
   /** Mensagem de erro da última tentativa (se status error/aborted). */
   error?: string
 }
