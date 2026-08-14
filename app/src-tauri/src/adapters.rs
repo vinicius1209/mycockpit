@@ -3723,11 +3723,16 @@ mod tests {
 
     // ---- agy: canal estruturado (`--output-format stream-json`) ----
     //
-    // TODAS as fixtures abaixo são linhas CRUAS, byte a byte, de runs REAIS do
-    // agy 1.1.13 nesta máquina em 14/08/2026 (ADR-016: fixture inventada
-    // esconde bug). O run que virou `AGY_*` de um turno é o mesmo do começo ao
-    // fim — narração, ferramenta, resposta partida no meio da palavra e o
-    // `result` com o blob concatenado.
+    // TODAS as fixtures abaixo são linhas CRUAS de runs REAIS do agy 1.1.13
+    // nesta máquina em 14/08/2026 (ADR-016: fixture inventada esconde bug). O
+    // run que virou os `AGY_*` de um turno é o MESMO do começo ao fim —
+    // narração, ferramenta, resposta partida no meio da palavra e o `result`
+    // com o blob concatenado.
+    //
+    // Únicas edições, todas cosméticas: o `cwd` longo do sandbox virou
+    // "/private/tmp/agyprobe" e os links `file://` do markdown da resposta
+    // saíram, pra linha caber na tela. NENHUM campo, número, nome de chave,
+    // ordem ou emenda de texto foi tocado — é neles que os testes mexem.
 
     /// `init` — id da conversa, cwd e as 56 tools que o agy expõe.
     const AGY_INIT: &str = r#"{"event":"init","conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","init":{"cwd":"/private/tmp/agyprobe","tools":["ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","command_status","define_subagent","delete_knowledge","execute_browser_javascript","find_by_name","finish","generate_image","grep_search","invoke_subagent","list_browser_pages","list_dir","list_permissions","list_resources","manage_inbox","manage_subagents","manage_task","multi_replace_file_content","notebook_edit","notebook_execution","open_browser_url","read_browser_page","read_resource","read_url_content","replace_file_content","run_command","schedule","search_web","sed_file","send_command_input","send_message","view_file","wait","wait_5_seconds","write_to_file"],"permission_mode":"request-review"}}"#;
