@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Trabalho vivo · B · O radar</title>
+<style>
+  :root{
+    color-scheme: light dark;
+    --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
+    --secondary:#f4f4f2; --muted-foreground:#5c6166; --accent:#f1f1ef; --faint:#8a9099;
+    --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.14);
+    --brass:#a9742b; --brass-soft:rgba(169,116,43,.12); --brass-fg:#fbf6ee;
+    --st-idle:#8a9099; --st-running:#2f8fbf; --st-queued:#c1861f;
+    --st-success:#1f9d6b; --st-error:#cf4a3e; --id-violet:#6d47b8;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18);
+    --lift:inset 0 1px 0 rgba(255,255,255,.6);
+    --radius:9px;
+    --sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --background:#0a0b0d; --rail:#0c0d10; --foreground:#e7e8ea; --card:#141619;
+    --secondary:#191c20; --muted-foreground:#9aa0a7; --accent:#1e2126; --faint:#687078;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13);
+    --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#1a1306;
+    --st-idle:#687078; --st-running:#5bb8e8; --st-queued:#d99138;
+    --st-success:#5bd6a0; --st-error:#f2766b; --id-violet:#a48af0;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+    --shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);
+    --lift:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--background);color:var(--foreground);
+    font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"liga" 0,"calt" 0}
+  .label-mono{font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+    font-size:11px;line-height:1;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+
+  .mockbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:10px 18px;background:color-mix(in srgb,var(--background) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+  .mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);
+    border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:1px 7px}
+  .mockbar .dir{font-weight:600;color:var(--foreground);font-size:13px}
+  .mockbar nav{display:flex;gap:3px;margin-left:auto}
+  .mockbar nav a{color:var(--muted-foreground);text-decoration:none;padding:3px 10px;border-radius:6px;font-weight:500}
+  .mockbar nav a:hover{background:var(--accent)}
+  .mockbar nav a.on{background:var(--brass-soft);color:var(--brass)}
+  .seg{display:flex;gap:2px;border:1px solid var(--border);border-radius:7px;padding:2px}
+  .seg button{font-size:11px;padding:2px 9px;border-radius:5px;color:var(--muted-foreground);white-space:nowrap}
+  .seg button.on{background:var(--accent);color:var(--foreground)}
+
+  .stage{max-width:1120px;margin:0 auto;padding:24px 20px 64px}
+  .thesis{font-size:13px;color:var(--muted-foreground);margin:0 2px 18px;max-width:820px}
+  .thesis b{color:var(--foreground);font-weight:600}
+
+  .frame{position:relative;background:var(--background);border:1px solid var(--border);border-radius:14px;
+    overflow:hidden;box-shadow:var(--shadow-pop)}
+  .winbar{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--rail);
+    border-bottom:1px solid var(--border)}
+  .winbar i{width:10px;height:10px;border-radius:50%;background:var(--border-strong);display:block}
+  .winbar span{font-size:12px;color:var(--muted-foreground);margin-left:6px}
+
+  .app{display:grid;grid-template-columns:190px 1fr;min-height:600px}
+  .rail{background:var(--rail);border-right:1px solid var(--border);padding:12px 10px;display:flex;flex-direction:column;gap:2px}
+  .rail .grp{margin:10px 4px 4px}
+  .rail .it{font-size:12px;color:var(--muted-foreground);padding:5px 8px;border-radius:6px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rail .it.on{background:var(--accent);color:var(--foreground)}
+  .rail .it .d{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--st-running);
+    margin-right:7px;vertical-align:middle}
+  .col{display:flex;flex-direction:column;min-width:0}
+  .thread{flex:1;padding:18px 22px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
+  .msg{max-width:640px}
+  .msg .who{font-size:11px;color:var(--faint);margin-bottom:4px}
+  .msg p{margin:0;font-size:14px;line-height:1.62}
+  .msg.dim p{color:var(--muted-foreground)}
+  .toolrow{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted-foreground);padding:3px 0}
+  .toolrow .tk{color:var(--faint);font-size:11px;font-family:var(--mono)}
+  .liveline{display:flex;align-items:center;gap:9px;padding:7px 22px;font-size:13px;color:var(--muted-foreground)}
+  .liveline .el{margin-left:auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .composer{border-top:1px solid var(--border);padding:10px 14px 12px}
+  .cbox{border:1px solid var(--border-strong);border-radius:11px;background:var(--card);
+    box-shadow:var(--shadow-sm);padding:9px 12px;color:var(--faint);font-size:13px}
+
+  .dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:var(--st-idle)}
+  .dot.run{background:var(--st-running);animation:pulse 1.6s ease-in-out infinite}
+  .dot.wait{background:var(--st-queued)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){.dot.run{animation:none}}
+  kbd{font:10px/1.6 var(--mono);border:1px solid var(--border-strong);border-bottom-width:2px;
+    border-radius:4px;padding:0 4px;color:var(--muted-foreground);background:var(--background);
+    display:inline-block;min-width:15px;text-align:center}
+
+  /* ═══════════════ O RADAR (direção B) ═══════════════ */
+  .scrim{position:absolute;inset:0;background:color-mix(in srgb,var(--foreground) 22%,transparent);
+    display:grid;place-items:start center;padding-top:66px;z-index:10}
+  .radar{width:min(980px,calc(100% - 48px));background:var(--card);border:1px solid var(--border-strong);
+    border-radius:13px;box-shadow:var(--shadow-pop);overflow:hidden;display:flex;flex-direction:column;
+    max-height:566px}
+
+  .r-head{display:flex;align-items:center;gap:10px;padding:9px 13px;border-bottom:1px solid var(--border)}
+  .r-head .q{flex:1;font-size:13px;color:var(--faint);min-width:0}
+  .r-head .n{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  .r-main{display:grid;grid-template-columns:minmax(0,1fr) 320px;min-height:0;flex:1}
+  .r-list{overflow:auto;border-right:1px solid var(--border);padding-bottom:4px}
+  .r-pane{overflow:auto;background:color-mix(in srgb,var(--secondary) 45%,transparent);
+    padding:13px;display:flex;flex-direction:column;gap:11px}
+
+  .grp-h{display:flex;align-items:baseline;gap:8px;padding:10px 13px 4px}
+  .grp-h .n{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
+  .grp-h .c{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;margin-left:auto}
+
+  .row{display:flex;align-items:center;gap:10px;padding:0 13px;height:34px;min-width:0;
+    border-left:2px solid transparent;cursor:pointer}
+  .row:hover{background:var(--accent)}
+  .row.on{background:var(--brass-soft);border-left-color:var(--brass)}
+  .row .nm{font-size:13px;flex:1 1 auto;min-width:2.5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .selo{font:11px var(--mono);color:var(--faint);flex:0 0 auto;white-space:nowrap}
+  .row .ev{font-size:13px;color:var(--muted-foreground);flex:1 3 auto;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+  .row .age{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;
+    flex:0 0 auto;min-width:4.6rem;text-align:right}
+  .row .pos{font:11px var(--mono);color:var(--faint);flex:0 0 auto;min-width:3.2rem;text-align:right}
+  .row.on .pos{color:var(--muted-foreground)}
+
+  /* painel de foco */
+  .p-hd h3{margin:0 0 3px;font:600 13px var(--sans)}
+  .p-hd .ctr{font:11px var(--mono);color:var(--faint);display:block;line-height:1.45}
+  .agora{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--border);
+    border-radius:var(--radius);background:var(--card)}
+  .agora .dot{margin-top:5px}
+  .agora .t{font-size:13px;min-width:0;line-height:1.45}
+  .agora .cl{margin-left:auto;font:600 13px var(--mono);font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .sec{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin:3px 0 0}
+  .ev-list{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted-foreground)}
+  .ev-list div{display:flex;gap:8px;min-width:0}
+  .ev-list time{font:11px var(--mono);color:var(--faint);flex:0 0 auto;font-variant-numeric:tabular-nums}
+  .ev-list span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:12px;margin:0}
+  .kv dt{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);white-space:nowrap}
+  .kv dd{margin:0;color:var(--muted-foreground);min-width:0;overflow-wrap:anywhere}
+  .kv dd.mn{font-family:var(--mono);font-size:11px}
+  .say{font-size:12px;color:var(--muted-foreground);border-left:2px solid var(--border);padding-left:9px;
+    line-height:1.5}
+  .say b{color:var(--foreground);font-weight:600}
+
+  .r-foot{display:flex;align-items:center;gap:13px;padding:8px 13px;border-top:1px solid var(--border);
+    background:var(--secondary);font-size:11px;color:var(--faint);flex-wrap:nowrap;overflow:hidden}
+  .r-foot .k{display:flex;align-items:center;gap:5px;white-space:nowrap;min-width:0}
+  .r-foot .k b{font-weight:500;color:var(--muted-foreground)}
+  .r-foot .sp{flex:1 1 auto;min-width:6px}
+  .r-foot .stop{color:var(--st-error)}
+  .r-foot .stop kbd{border-color:color-mix(in srgb,var(--st-error) 45%,transparent);color:var(--st-error)}
+
+  .empty{padding:34px 20px 30px;display:flex;flex-direction:column;gap:9px;align-items:center;text-align:center}
+  .empty h3{margin:0;font:500 13px var(--sans);color:var(--foreground)}
+  .empty p{margin:0;font-size:12px;color:var(--muted-foreground);max-width:460px}
+  .empty .blind{margin-top:8px;font-size:11px;color:var(--faint);border-top:1px dashed var(--border-strong);
+    padding-top:10px;max-width:470px}
+
+  .nt{display:inline-block;font:600 10px/1.35 var(--mono);color:var(--brass);
+    background:var(--brass-soft);border-radius:4px;padding:0 3px;margin-left:5px;vertical-align:super}
+
+  .notes{margin-top:26px;padding:0 6px;font-size:13px;color:var(--muted-foreground)}
+  .notes h2{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:22px 0 12px}
+  .notes h2:first-child{margin-top:0}
+  .notes ol{list-style:none;margin:0;padding:0;display:grid;gap:9px;max-width:820px}
+  .notes li{padding-left:30px;position:relative;line-height:1.55}
+  .notes li .nt{position:absolute;left:0;top:2px;margin:0}
+  .notes b{color:var(--foreground);font-weight:600}
+  .notes code{font-family:var(--mono);font-size:12px;color:var(--foreground)}
+
+  /* Estados: esconde só o que NÃO casa (nunca redefine `display`, senão
+     contêiner flex vira block). */
+  .st-lista [data-st]:not([data-st~="lista"]),
+  .st-fino  [data-st]:not([data-st~="fino"]),
+  .st-grosso [data-st]:not([data-st~="grosso"]),
+  .st-vazio [data-st]:not([data-st~="vazio"]){display:none}
+</style>
+</head>
+<body class="st-fino">
+
+<div class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">B · O radar</span>
+  <div class="seg" id="states">
+    <button data-go="lista">lista</button>
+    <button data-go="fino" class="on">foco fino</button>
+    <button data-go="grosso">foco grosso</button>
+    <button data-go="vazio">vazio</button>
+  </div>
+  <div class="seg"><button id="theme">tema</button></div>
+  <nav>
+    <a href="trabalho-vivo-a.html">A</a>
+    <a class="on" href="trabalho-vivo-b.html">B</a>
+    <a href="trabalho-vivo-c.html">C</a>
+  </nav>
+</div>
+
+<div class="stage">
+  <p class="thesis"><b>Tese:</b> o navegador é irmão do <kbd>⌘</kbd><kbd>K</kbd>, não parente do
+  painel. É <b>convocado</b> por <kbd>⌘</kbd><kbd>J</kbd>, cobre o app, se navega inteiro pelo teclado
+  e some. Uma superfície que não dá pra deixar aberta <b>não compete pelo agora</b>: enquanto ela está
+  na tela, o fio está atrás do véu e o único relógio que tica é o da linha em foco. E ela pode ser da
+  frota inteira sem mentir, porque não mora dentro de nenhuma conversa.</p>
+
+  <div class="frame">
+    <div class="winbar"><i></i><i></i><i></i><span>Frota</span></div>
+    <div class="app">
+      <aside class="rail">
+        <div class="grp label-mono">frota</div>
+        <div class="it on"><span class="d"></span>Despoluição do fio</div>
+        <div class="it">Escala tipográfica</div>
+        <div class="grp label-mono">atlas-commerce</div>
+        <div class="it"><span class="d"></span>Portar o checkout</div>
+        <div class="it"><span class="d"></span>Histórico de faturas</div>
+        <div class="grp label-mono">lumen-mobile</div>
+        <div class="it"><span class="d"></span>Regressão visual</div>
+      </aside>
+      <div class="col">
+        <div class="thread">
+          <div class="msg"><div class="who">Você</div>
+            <p>Audita quem importa <code>toolGroup</code> e <code>toolTree</code> antes de eu dividir o MessageList.</p></div>
+          <div class="msg dim"><div class="who">Claude Code · Opus 5</div>
+            <p>Vou delegar a varredura e comparar com os testes que já cobrem esses módulos.</p></div>
+          <div class="toolrow"><span class="dot run"></span>Auditar importadores de toolGroup <span class="tk">general-purpose</span></div>
+        </div>
+        <div class="liveline" data-st="lista fino grosso"><span class="dot run"></span>
+          <span>6 trabalhos vivos · Auditar importadores de toolGroup</span>
+          <span class="el">12min 04s</span></div>
+        <div class="composer"><div class="cbox">Pergunte, peça, cole um erro…</div></div>
+      </div>
+    </div>
+
+    <!-- ═══ RADAR ═══ -->
+    <div class="scrim">
+      <div class="radar">
+        <div class="r-head">
+          <span class="dot run"></span>
+          <span class="q" data-st="lista fino grosso">filtrar trabalho vivo…</span>
+          <span class="q" data-st="vazio">filtrar trabalho vivo…</span>
+          <span class="n" data-st="lista fino grosso">6 vivos · 4 projetos<span class="nt">1</span></span>
+          <span class="n" data-st="vazio">0 vivos</span>
+        </div>
+
+        <div class="r-main" data-st="lista fino grosso">
+          <div class="r-list">
+            <div class="grp-h"><span class="n">frota</span><span class="c">2</span></div>
+            <div class="row" data-st="grosso">
+              <span class="dot run"></span><span class="nm">Auditar importadores de toolGroup</span>
+              <span class="selo">subagente</span>
+              <span class="ev">Grep em messageNodes.ts</span>
+              <span class="age">12min</span><span class="pos">turno</span>
+            </div>
+            <div class="row on" data-st="fino">
+              <span class="dot run"></span><span class="nm">Auditar importadores de toolGroup</span>
+              <span class="selo">subagente</span>
+              <span class="ev">Grep em messageNodes.ts</span>
+              <span class="age">12min 04s</span><span class="pos">turno</span>
+            </div>
+            <div class="row" data-st="fino grosso">
+              <span class="dot run"></span><span class="nm">bun run dev</span>
+              <span class="selo">shell</span>
+              <span class="ev">hmr update /src/App.tsx · PID 48312<span class="nt">6</span></span>
+              <span class="age">3h 12min</span><span class="pos">nosso</span>
+            </div>
+            <div class="row on" data-st="lista">
+              <span class="dot run"></span><span class="nm">bun run dev</span>
+              <span class="selo">shell</span>
+              <span class="ev">hmr update /src/App.tsx · PID 48312<span class="nt">6</span></span>
+              <span class="age">3h 12min</span><span class="pos">nosso</span>
+            </div>
+
+            <div class="grp-h"><span class="n">atlas-commerce</span><span class="c">2</span></div>
+            <div class="row" data-st="lista fino grosso">
+              <span class="dot run"></span><span class="nm">deep-research: histórico de faturas</span>
+              <span class="selo">background</span>
+              <span class="ev">verificando 3 fontes · ↓ 82,7k<span class="nt">5</span></span>
+              <span class="age">47min</span><span class="pos">turno</span>
+            </div>
+            <div class="row" data-st="lista fino grosso">
+              <span class="dot run"></span><span class="nm">Portar o checkout · fase 7/12</span>
+              <span class="selo">fase · codex</span>
+              <span class="ev">cargo test --lib</span>
+              <span class="age">22min</span><span class="pos">nosso</span>
+            </div>
+
+            <div class="grp-h"><span class="n">lumen-mobile</span><span class="c">1</span></div>
+            <div class="row" data-st="lista fino">
+              <span class="dot run"></span><span class="nm">Revisar regressão visual</span>
+              <span class="selo">turno · agy</span>
+              <span class="ev">sem ação reportada · saída há 38s<span class="nt">3</span></span>
+              <span class="age">5min</span><span class="pos">turno</span>
+            </div>
+            <div class="row on" data-st="grosso">
+              <span class="dot run"></span><span class="nm">Revisar regressão visual</span>
+              <span class="selo">turno · agy</span>
+              <span class="ev">sem ação reportada · saída há 38s</span>
+              <span class="age">5min 42s</span><span class="pos">turno</span>
+            </div>
+
+            <div class="grp-h"><span class="n">fora do app</span><span class="c">1</span></div>
+            <div class="row" data-st="lista fino grosso">
+              <span class="dot wait"></span><span class="nm">northstar-docs</span>
+              <span class="selo">terminal · claude</span>
+              <span class="ev">esperando permissão · Bash<span class="nt">4</span></span>
+              <span class="age">visto há 8s</span><span class="pos">só ver</span>
+            </div>
+          </div>
+
+          <!-- PAINEL DE FOCO · POSSE NOSSA (o único que tem botão de parar) -->
+          <aside class="r-pane" data-st="lista">
+            <div class="p-hd">
+              <h3>bun run dev</h3>
+              <span class="ctr">shell<br>processo do app, com PID e saída<span class="nt">6</span></span>
+            </div>
+            <div class="agora">
+              <span class="dot run"></span>
+              <span class="t">hmr update <code>/src/App.tsx</code></span>
+              <span class="cl">3h 12min</span>
+            </div>
+            <div class="sec">saída recente</div>
+            <div class="ev-list">
+              <div><time>10:44:12</time><span>hmr update /src/App.tsx</span></div>
+              <div><time>10:44:09</time><span>hmr update /src/index.css</span></div>
+              <div><time>07:32:18</time><span>Local: http://localhost:1420/</span></div>
+            </div>
+            <div class="sec">contexto</div>
+            <dl class="kv">
+              <dt>comando</dt><dd class="mn">bun run dev</dd>
+              <dt>pasta</dt><dd class="mn">~/projetos/frota/app</dd>
+              <dt>pid</dt><dd class="mn">48312</dd>
+              <dt>saída</dt><dd>240 últimas linhas guardadas</dd>
+            </dl>
+            <p class="say"><b>Este para de verdade.</b> O Frota é dono do processo: o gesto manda
+              SIGTERM no grupo inteiro, então os filhos morrem junto. É a única posse da cena
+              com botão, e por isso a única com vermelho.<span class="nt">7</span></p>
+          </aside>
+
+          <!-- PAINEL DE FOCO · FINO -->
+          <aside class="r-pane" data-st="fino">
+            <div class="p-hd">
+              <h3>Auditar importadores de toolGroup</h3>
+              <span class="ctr">subagente<br>reporta ferramenta a ferramenta<span class="nt">2</span></span>
+            </div>
+            <div class="agora">
+              <span class="dot run"></span>
+              <span class="t">Grep em <code>components/chat/messageNodes.ts</code></span>
+              <span class="cl">12min 04s</span>
+            </div>
+            <div class="sec">evidência recente</div>
+            <div class="ev-list">
+              <div><time>10:42:18</time><span>Grep <code>toolGroup</code> em chat/</span></div>
+              <div><time>10:41:55</time><span>Read chat/toolTree.ts</span></div>
+              <div><time>10:41:02</time><span>Read lib/toolview.ts</span></div>
+            </div>
+            <div class="sec">contexto</div>
+            <dl class="kv">
+              <dt>tipo</dt><dd class="mn">general-purpose</dd>
+              <dt>onde</dt><dd>frota · Despoluição do fio</dd>
+              <dt>dentro de</dt><dd>turno de Claude Code · Opus 5</dd>
+              <dt>sem sinal</dt><dd>última ferramenta há 6s</dd>
+            </dl>
+            <p class="say"><b>Sem tokens, e não é lacuna de UI.</b> O Claude não separa o consumo do
+              subagente do turno; o app suprime a leitura de contexto do filho de propósito. O número
+              que a CLI mostra ao lado de um subagente é o do turno inteiro.<span class="nt">5</span></p>
+            <p class="say"><b>Parar só este subagente não existe hoje.</b> O gesto real é interromper
+              o turno completo, e o trabalho em background da mesma conversa morre junto.<span class="nt">7</span></p>
+          </aside>
+
+          <!-- PAINEL DE FOCO · GROSSO -->
+          <aside class="r-pane" data-st="grosso">
+            <div class="p-hd">
+              <h3>Revisar regressão visual</h3>
+              <span class="ctr">agy · Flash 3.6<br>não reporta ação, só pulso<span class="nt">8</span></span>
+            </div>
+            <div class="agora">
+              <span class="dot run"></span>
+              <span class="t">vivo, sem ação reportada</span>
+              <span class="cl">5min 42s</span>
+            </div>
+            <div class="sec">evidência recente</div>
+            <div class="ev-list">
+              <div><time>10:41:08</time><span>“O breakpoint de 768px muda o grid antes…”</span></div>
+              <div><time>10:40:51</time><span>“Vou comparar os estados responsivos…”</span></div>
+            </div>
+            <div class="sec">contexto</div>
+            <dl class="kv">
+              <dt>onde</dt><dd>lumen-mobile · Regressão visual</dd>
+              <dt>última saída</dt><dd>há 38s · 14 KB no stdout</dd>
+              <dt>custo</dt><dd>não mede (o motor não reporta)</dd>
+            </dl>
+            <p class="say">É <b>tudo</b> que existe, e duas linhas de texto real valem mais que uma
+              árvore inventada. Quando o agy passar a emitir passos, eles entram nesta mesma lista e
+              o resto da tela não muda.<span class="nt">9</span></p>
+          </aside>
+        </div>
+
+        <!-- VAZIO -->
+        <div class="empty" data-st="vazio">
+          <h3>Nada vivo agora</h3>
+          <p>Nenhum turno, subagente, processo ou fase de missão em andamento em nenhum projeto.</p>
+          <p class="blind">O Frota não enxerga sessões abertas direto no terminal enquanto os hooks
+            não estiverem instalados. <b>Instalar em Configurações → Hooks.</b><span class="nt">10</span></p>
+        </div>
+
+        <!-- RODAPÉ SENSÍVEL AO FOCO -->
+        <div class="r-foot" data-st="lista">
+          <span class="k"><kbd>↑</kbd><kbd>↓</kbd> <b>percorrer</b></span>
+          <span class="k"><kbd>↵</kbd> <b>ir pro fio</b></span>
+          <span class="k"><kbd>esc</kbd> <b>fechar</b></span>
+          <span class="k stop"><kbd>⌫</kbd> <b>parar</b></span>
+          <span class="sp"></span>
+          <span class="k">mata o processo e os filhos dele<span class="nt">7</span></span>
+        </div>
+        <div class="r-foot" data-st="fino">
+          <span class="k"><kbd>↑</kbd><kbd>↓</kbd> <b>percorrer</b></span>
+          <span class="k"><kbd>↵</kbd> <b>ir pro fio</b><span class="nt">11</span></span>
+          <span class="k"><kbd>esc</kbd> <b>fechar</b></span>
+          <span class="sp"></span>
+          <span class="k">não para sozinho · <kbd>⇧</kbd><kbd>⌫</kbd> interrompe o turno inteiro<span class="nt">7</span></span>
+        </div>
+        <div class="r-foot" data-st="grosso">
+          <span class="k"><kbd>↑</kbd><kbd>↓</kbd> <b>percorrer</b></span>
+          <span class="k"><kbd>↵</kbd> <b>ir pro fio</b></span>
+          <span class="k"><kbd>esc</kbd> <b>fechar</b></span>
+          <span class="sp"></span>
+          <span class="k">não para sozinho · <kbd>⇧</kbd><kbd>⌫</kbd> interrompe o turno inteiro</span>
+        </div>
+        <div class="r-foot" data-st="vazio">
+          <span class="k"><kbd>esc</kbd> <b>fechar</b></span>
+          <span class="sp"></span>
+          <span class="k">a lista volta sozinha quando algo começar</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>Anotações</h2>
+    <ol>
+      <li><span class="nt">1</span> <b>O cabeçalho é a linha de busca, e a contagem é a régua.</b>
+        “6 vivos · 4 projetos” é a única informação agregada da tela, e ela existe porque com doze
+        unidades a lista rola e o denominador some. Nenhum percentual, nenhuma barra: o denominador
+        de trabalho vivo muda o tempo todo, e barra que recua sozinha é pior que barra nenhuma.</li>
+      <li><span class="nt">2</span> <b>O contrato de observação, escrito em duas linhas no painel e
+        num selo na lista.</b> Cinco contratos e nada mais: <code>subagente</code> (ferramenta a
+        ferramenta), <code>background</code> (passo a passo, com tokens), <code>fase</code> (comando a
+        comando), <code>shell</code> (processo, com PID e saída), <code>terminal</code> (só
+        sinais). Eles explicam a diferença entre as linhas <b>antes</b> de ela incomodar.</li>
+      <li><span class="nt">3</span> <b>Onde não há ação, a faixa diz o contrato.</b> Mesmo lugar da
+        linha do Claude, conteúdo diferente. Vazio leria “nada acontecendo”; “preparando…” seria a
+        frase inventada que o §7 proíbe. “sem ação reportada · saída há 38s” é o que se sabe.</li>
+      <li><span class="nt">4</span> <b>Duas cores de status no recorte, e as duas carregam decisão:</b>
+        azul do vivo e âmbar de “esperando você”. A sessão do terminal está travada num prompt de
+        permissão; é o único item que pede alguma coisa de você. Vermelho aparece só no rodapé,
+        preso ao gesto que destrói.</li>
+      <li><span class="nt">5</span> <b>Duas linhas do mesmo motor com quantidades diferentes de
+        informação, e está certo.</b> O trabalho em background tem tokens
+        (<code>task_progress.usage</code>); o subagente não tem, porque o app suprime a leitura de
+        contexto do filho (<code>adapters.rs:1420</code>). Preencher o subagente com um traço seria
+        inventar simetria entre coisas que o provedor mede de forma diferente.</li>
+      <li><span class="nt">6</span> <b>PID aparece porque sustenta uma decisão, e só onde sustenta.</b>
+        No shell do app o PID é a prova de posse: é o que o botão de parar vai matar (o grupo inteiro,
+        via SIGTERM). Na fase de missão e no subagente ele não aparece, porque ali não há decisão
+        pendurada nele. E se o app reiniciar e perder o controle do processo, o PID é a única coisa
+        que sobra de útil: dá pra matar do terminal.</li>
+      <li><span class="nt">7</span> <b>O rodapé é o único lugar com gesto, e ele muda com o foco.</b>
+        Linha com posse <code>nosso</code> mostra <kbd>⌫</kbd> em vermelho; linha com posse
+        <code>turno</code> mostra a frase do que existe de verdade; linha com posse <code>só ver</code>
+        não mostra gesto nenhum. Nada de botão desabilitado: ele ocupa o lugar do comando e não é comando.
+        <b>Compare os três estados do seletor acima</b>: em <i>lista</i> o foco está no shell
+        (posse <code>nosso</code>, e o vermelho aparece); em <i>foco fino</i> e <i>foco grosso</i> a
+        posse é <code>turno</code> e o mesmo canto do rodapé vira frase, não botão. É a mesma
+        posição da tela dizendo coisas diferentes porque a verdade é diferente.</li>
+      <li><span class="nt">8</span> <b>Entrar numa unidade grossa não pune.</b> A casca é a mesma
+        (agora · evidência recente · contexto), o conteúdo é o que existe. Nenhuma seção fica vazia
+        esperando dado que não vem; a seção some.</li>
+      <li><span class="nt">9</span> <b>O slot que espera o motor crescer.</b> “Evidência recente” é
+        uma lista de linhas com hora. Hoje o agy põe texto ali; amanhã põe passos; o Claude põe
+        ferramentas; o shell põe stdout. Motor que fica mais fino troca o conteúdo do mesmo slot e
+        muda a frase do contrato. Nenhum layout novo.</li>
+      <li><span class="nt">10</span> <b>O vazio confessa a cegueira.</b> “Nada vivo” e “nada que eu
+        consiga ver” são coisas diferentes, e sem os hooks instalados o app é cego para terminal.</li>
+      <li><span class="nt">11</span> <b>“Entrar” é ir, não é abrir uma cópia.</b> <kbd>↵</kbd> troca de
+        projeto e conversa, fecha o radar e abre a subárvore daquela unidade no Fio Vivo que já existe.
+        O fio filtrado que a gente construiria aqui <b>já está construído lá</b> (é o agrupamento por
+        <code>parentToolId</code>). Renderizar de novo seria a quinta superfície de trabalho vivo.</li>
+    </ol>
+
+    <h2>O que esta direção ganha</h2>
+    <ol>
+      <li><span class="nt">+</span> <b>Não compete pelo agora por construção.</b> Enquanto o radar está
+        aberto, o fio está atrás do véu; um viewport, um relógio.</li>
+      <li><span class="nt">+</span> <b>É honestamente de frota.</b> Não mora dentro de conversa nenhuma,
+        então listar coisa de outro projeto (e coisa de nenhum projeto, como a sessão de terminal) não
+        é invasão de escopo.</li>
+      <li><span class="nt">+</span> <b>Largura para o painel de foco.</b> 860px comportam lista e detalhe
+        lado a lado; o foco muda com a seta, sem clique e sem navegar.</li>
+      <li><span class="nt">+</span> <b>Filtrar por digitação resolve N grande</b> sem inventar
+        agrupamento novo, e o modelo já é o do <kbd>⌘</kbd><kbd>K</kbd>.</li>
+    </ol>
+
+    <h2>O que esta direção paga</h2>
+    <ol>
+      <li><span class="nt">−</span> <b>Não dá pra ficar de olho.</b> É navegador, não monitor: some
+        quando você sai. Consciência periférica continua sendo trabalho da linha viva e do tray.</li>
+      <li><span class="nt">−</span> <b>Precisa ser descoberto.</b> Sem a linha viva clicável no rodapé
+        levando aqui, o atalho é folclore.</li>
+      <li><span class="nt">−</span> <b>Superfície nova de verdade</b> (a única das três), com foco,
+        rolagem e teclado próprios.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  const body = document.body
+  document.getElementById("states").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-go]"); if (!b) return
+    document.querySelectorAll("#states button").forEach((x) => x.classList.remove("on"))
+    b.classList.add("on")
+    body.className = "st-" + b.dataset.go
+  })
+  document.getElementById("theme").addEventListener("click", () => {
+    const r = document.documentElement
+    r.dataset.theme = r.dataset.theme === "dark" ? "light" : "dark"
+  })
+  document.querySelectorAll(".row").forEach((r) => r.addEventListener("click", () => {
+    document.querySelectorAll(".row").forEach((x) => x.classList.remove("on")); r.classList.add("on")
+  }))
+</script>
+</body>
+</html>

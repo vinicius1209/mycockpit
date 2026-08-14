@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Trabalho vivo · C · A coluna do agora</title>
+<style>
+  :root{
+    color-scheme: light dark;
+    --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
+    --secondary:#f4f4f2; --muted-foreground:#5c6166; --accent:#f1f1ef; --faint:#8a9099;
+    --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.14);
+    --brass:#a9742b; --brass-soft:rgba(169,116,43,.12); --brass-fg:#fbf6ee;
+    --st-idle:#8a9099; --st-running:#2f8fbf; --st-queued:#c1861f;
+    --st-success:#1f9d6b; --st-error:#cf4a3e; --id-violet:#6d47b8;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18);
+    --lift:inset 0 1px 0 rgba(255,255,255,.6);
+    --radius:9px;
+    --sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --background:#0a0b0d; --rail:#0c0d10; --foreground:#e7e8ea; --card:#141619;
+    --secondary:#191c20; --muted-foreground:#9aa0a7; --accent:#1e2126; --faint:#687078;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13);
+    --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#1a1306;
+    --st-idle:#687078; --st-running:#5bb8e8; --st-queued:#d99138;
+    --st-success:#5bd6a0; --st-error:#f2766b; --id-violet:#a48af0;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+    --shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);
+    --lift:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--background);color:var(--foreground);
+    font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+  .label-mono{font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+    font-size:11px;line-height:1;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+
+  .mockbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:10px 18px;background:color-mix(in srgb,var(--background) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+  .mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);
+    border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:1px 7px}
+  .mockbar .dir{font-weight:600;color:var(--foreground);font-size:13px}
+  .mockbar nav{display:flex;gap:3px;margin-left:auto}
+  .mockbar nav a{color:var(--muted-foreground);text-decoration:none;padding:3px 10px;border-radius:6px;font-weight:500}
+  .mockbar nav a:hover{background:var(--accent)}
+  .mockbar nav a.on{background:var(--brass-soft);color:var(--brass)}
+  .seg{display:flex;gap:2px;border:1px solid var(--border);border-radius:7px;padding:2px}
+  .seg button{font-size:11px;padding:2px 9px;border-radius:5px;color:var(--muted-foreground);white-space:nowrap}
+  .seg button.on{background:var(--accent);color:var(--foreground)}
+
+  .stage{max-width:1180px;margin:0 auto;padding:24px 20px 64px}
+  .thesis{font-size:13px;color:var(--muted-foreground);margin:0 2px 18px;max-width:820px}
+  .thesis b{color:var(--foreground);font-weight:600}
+
+  .frame{background:var(--background);border:1px solid var(--border);border-radius:14px;
+    overflow:hidden;box-shadow:var(--shadow-pop)}
+  .winbar{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--rail);
+    border-bottom:1px solid var(--border)}
+  .winbar i{width:10px;height:10px;border-radius:50%;background:var(--border-strong);display:block}
+  .winbar span{font-size:12px;color:var(--muted-foreground);margin-left:6px}
+
+  .app{display:grid;grid-template-columns:170px 1fr 300px;min-height:600px}
+  .rail{background:var(--rail);border-right:1px solid var(--border);padding:12px 10px;display:flex;flex-direction:column;gap:2px}
+  .rail .grp{margin:10px 4px 4px}
+  .rail .it{font-size:12px;color:var(--muted-foreground);padding:5px 8px;border-radius:6px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rail .it.on{background:var(--accent);color:var(--foreground)}
+  .rail .it .d{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--st-running);
+    margin-right:7px;vertical-align:middle}
+  .col{display:flex;flex-direction:column;min-width:0}
+  .thread{flex:1;padding:18px 20px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
+  .msg{max-width:560px}
+  .msg .who{font-size:11px;color:var(--faint);margin-bottom:4px}
+  .msg p{margin:0;font-size:14px;line-height:1.62}
+  .msg.dim p{color:var(--muted-foreground)}
+  .toolrow{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted-foreground);padding:3px 0}
+  .toolrow .tk{color:var(--faint);font-size:11px;font-family:var(--mono)}
+  .liveline{display:flex;align-items:center;gap:9px;padding:7px 20px;font-size:13px;color:var(--muted-foreground)}
+  .liveline .el{margin-left:auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .composer{border-top:1px solid var(--border);padding:10px 14px 12px}
+  .cbox{border:1px solid var(--border-strong);border-radius:11px;background:var(--card);
+    box-shadow:var(--shadow-sm);padding:9px 12px;color:var(--faint);font-size:13px}
+
+  .dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:var(--st-idle)}
+  .dot.run{background:var(--st-running);animation:pulse 1.6s ease-in-out infinite}
+  .dot.wait{background:var(--st-queued)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){.dot.run{animation:none}}
+  kbd{font:10px/1.6 var(--mono);border:1px solid var(--border-strong);border-bottom-width:2px;
+    border-radius:4px;padding:0 4px;color:var(--muted-foreground);background:var(--background);
+    display:inline-block;min-width:15px;text-align:center}
+
+  /* ═══════════════ A COLUNA (direção C) ═══════════════ */
+  .now{background:var(--rail);border-left:1px solid var(--border);display:flex;flex-direction:column;min-width:0}
+  .now-h{display:flex;align-items:center;gap:8px;padding:11px 12px 9px;border-bottom:1px solid var(--border)}
+  .now-h .t{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground)}
+  .now-h .c{margin-left:auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .now-b{flex:1;overflow:auto;padding-bottom:6px}
+
+  .grp-h{display:flex;align-items:baseline;gap:8px;padding:10px 12px 3px}
+  .grp-h .n{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
+
+  /* na coluna estreita a linha VIRA DUAS: o mesmo conteúdo, empilhado */
+  .row{display:block;padding:6px 12px;border-left:2px solid transparent;cursor:pointer;min-width:0}
+  .row:hover{background:var(--accent)}
+  .row.on{background:var(--brass-soft);border-left-color:var(--brass)}
+  .row .l1{display:flex;align-items:center;gap:7px;min-width:0}
+  .row .nm{font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .age{margin-left:auto;font:11px var(--mono);color:var(--faint);
+    font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .row .l2{display:flex;align-items:baseline;gap:7px;padding-left:14px;min-width:0;margin-top:1px}
+  .row .ev{font-size:12px;color:var(--muted-foreground);min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .pos{margin-left:auto;font:11px var(--mono);color:var(--faint);flex:0 0 auto}
+  .row .selo{font:11px var(--mono);color:var(--faint);flex:0 0 auto}
+
+  .now-f{border-top:1px solid var(--border);padding:8px 12px;background:var(--secondary);
+    font-size:11px;color:var(--faint);display:flex;gap:10px;flex-wrap:wrap}
+  .now-f .k{display:flex;align-items:center;gap:5px}
+  .now-f .k b{font-weight:500;color:var(--muted-foreground)}
+
+  /* foco: a gaveta empurra a lista pra cima, dentro da mesma coluna */
+  .focus{border-top:1px solid var(--border);background:var(--card);padding:12px;
+    display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow-sm)}
+  .focus .hd h3{margin:0 0 3px;font:600 13px var(--sans);min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .focus .hd .ctr{font:11px var(--mono);color:var(--faint);display:block;line-height:1.45}
+  .agora{display:flex;align-items:flex-start;gap:8px;padding:7px 9px;border:1px solid var(--border);
+    border-radius:var(--radius);background:var(--background)}
+  .agora .dot{margin-top:5px}
+  .agora .t{font-size:12px;min-width:0;line-height:1.45}
+  .agora .cl{margin-left:auto;font:600 12px var(--mono);font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .sec{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin:4px 0 0}
+  .ev-list{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted-foreground)}
+  .ev-list div{display:flex;gap:7px;min-width:0}
+  .ev-list time{font:11px var(--mono);color:var(--faint);flex:0 0 auto;font-variant-numeric:tabular-nums}
+  .ev-list span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12px;margin:0}
+  .kv dt{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);white-space:nowrap}
+  .kv dd{margin:0;color:var(--muted-foreground);min-width:0;overflow-wrap:anywhere}
+  .say{font-size:12px;color:var(--muted-foreground);border-left:2px solid var(--border);padding-left:9px;line-height:1.5}
+  .say b{color:var(--foreground);font-weight:600}
+  .acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .btn{font-size:12px;font-weight:500;padding:3px 10px;border-radius:6px;
+    border:1px solid var(--border-strong);color:var(--foreground);white-space:nowrap}
+  .btn.primary{background:var(--brass);color:var(--brass-fg);border-color:transparent}
+
+  .empty{padding:26px 14px;display:flex;flex-direction:column;gap:8px;align-items:center;text-align:center}
+  .empty h3{margin:0;font:500 13px var(--sans);color:var(--foreground)}
+  .empty p{margin:0;font-size:12px;color:var(--muted-foreground)}
+  .empty .blind{margin-top:6px;font-size:11px;color:var(--faint);border-top:1px dashed var(--border-strong);padding-top:9px}
+
+  .nt{display:inline-block;font:600 10px/1.35 var(--mono);color:var(--brass);
+    background:var(--brass-soft);border-radius:4px;padding:0 3px;margin-left:5px;vertical-align:super}
+
+  .notes{margin-top:26px;padding:0 6px;font-size:13px;color:var(--muted-foreground)}
+  .notes h2{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:22px 0 12px}
+  .notes h2:first-child{margin-top:0}
+  .notes ol{list-style:none;margin:0;padding:0;display:grid;gap:9px;max-width:820px}
+  .notes li{padding-left:30px;position:relative;line-height:1.55}
+  .notes li .nt{position:absolute;left:0;top:2px;margin:0}
+  .notes b{color:var(--foreground);font-weight:600}
+  .notes code{font-family:var(--mono);font-size:12px;color:var(--foreground)}
+
+  /* Estados: esconde só o que NÃO casa (nunca redefine `display`, senão
+     contêiner flex vira block). */
+  .st-lista [data-st]:not([data-st~="lista"]),
+  .st-fino  [data-st]:not([data-st~="fino"]),
+  .st-grosso [data-st]:not([data-st~="grosso"]),
+  .st-vazio [data-st]:not([data-st~="vazio"]){display:none}
+</style>
+</head>
+<body class="st-lista">
+
+<div class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">C · A coluna do agora</span>
+  <div class="seg" id="states">
+    <button data-go="lista" class="on">lista</button>
+    <button data-go="fino">foco fino</button>
+    <button data-go="grosso">foco grosso</button>
+    <button data-go="vazio">vazio</button>
+  </div>
+  <div class="seg"><button id="theme">tema</button></div>
+  <nav>
+    <a href="trabalho-vivo-a.html">A</a>
+    <a href="trabalho-vivo-b.html">B</a>
+    <a class="on" href="trabalho-vivo-c.html">C</a>
+  </nav>
+</div>
+
+<div class="stage">
+  <p class="thesis"><b>Tese:</b> quem tem seis coisas rodando quer <b>olhar de canto de olho</b>, não
+  convocar uma tela. A coluna da direita fica; o fio continua ao lado; a fase presa, o shell que
+  morreu e a permissão esperando aparecem sem você pedir. É a direção que resolve consciência
+  periférica, e é a que <b>colide de frente com a regra do dono único do agora</b> (B2.2). Está aqui
+  para a colisão ser vista, não escondida.</p>
+
+  <div class="frame">
+    <div class="winbar"><i></i><i></i><i></i><span>Frota</span></div>
+    <div class="app">
+      <aside class="rail">
+        <div class="grp label-mono">frota</div>
+        <div class="it on"><span class="d"></span>Despoluição do fio</div>
+        <div class="it">Escala tipográfica</div>
+        <div class="grp label-mono">atlas-commerce</div>
+        <div class="it"><span class="d"></span>Portar o checkout</div>
+        <div class="it"><span class="d"></span>Faturas</div>
+        <div class="grp label-mono">lumen-mobile</div>
+        <div class="it"><span class="d"></span>Regressão visual</div>
+      </aside>
+
+      <div class="col">
+        <div class="thread">
+          <div class="msg"><div class="who">Você</div>
+            <p>Audita quem importa <code>toolGroup</code> e <code>toolTree</code>.</p></div>
+          <div class="msg dim"><div class="who">Claude Code · Opus 5</div>
+            <p>Vou delegar a varredura e comparar com os testes que já cobrem esses módulos.</p></div>
+          <div class="toolrow"><span class="dot run"></span>Auditar importadores de toolGroup <span class="tk">general-purpose</span></div>
+        </div>
+        <div class="liveline"><span class="dot run"></span>
+          <span>trabalho em background · deep-research<span class="nt">1</span></span>
+          <span class="el">47min 21s</span></div>
+        <div class="composer"><div class="cbox">Pergunte, peça, cole um erro…</div></div>
+      </div>
+
+      <!-- ═══ COLUNA DO AGORA ═══ -->
+      <aside class="now">
+        <div class="now-h">
+          <span class="dot run"></span>
+          <span class="t">agora</span>
+          <span class="c" data-st="lista fino grosso">6 vivos<span class="nt">2</span></span>
+          <span class="c" data-st="vazio">0 vivos</span>
+        </div>
+
+        <div class="now-b">
+          <div data-st="lista fino grosso">
+            <div class="grp-h"><span class="n">frota</span></div>
+            <div class="row" data-st="lista grosso">
+              <div class="l1"><span class="dot run"></span><span class="nm">Auditar importadores</span><span class="age">12min</span></div>
+              <div class="l2"><span class="ev">Grep em messageNodes.ts</span><span class="pos">turno</span></div>
+            </div>
+            <div class="row on" data-st="fino">
+              <div class="l1"><span class="dot run"></span><span class="nm">Auditar importadores</span><span class="age">12min 04s</span></div>
+              <div class="l2"><span class="ev">Grep em messageNodes.ts</span><span class="pos">turno</span></div>
+            </div>
+            <div class="row" data-st="lista fino grosso">
+              <div class="l1"><span class="dot run"></span><span class="nm">bun run dev</span><span class="age">3h 12min</span></div>
+              <div class="l2"><span class="ev">hmr update /src/App.tsx</span><span class="pos">nosso</span></div>
+            </div>
+
+            <div class="grp-h"><span class="n">atlas-commerce</span></div>
+            <div class="row" data-st="lista fino grosso">
+              <div class="l1"><span class="dot run"></span><span class="nm">deep-research: faturas</span><span class="age">47min</span></div>
+              <div class="l2"><span class="ev">verificando 3 fontes · ↓ 82,7k</span><span class="pos">turno</span></div>
+            </div>
+            <div class="row" data-st="lista fino grosso">
+              <div class="l1"><span class="dot run"></span><span class="nm">Checkout · fase 7/12</span><span class="age">22min</span></div>
+              <div class="l2"><span class="ev">cargo test --lib</span><span class="pos">nosso</span></div>
+            </div>
+
+            <div class="grp-h"><span class="n">lumen-mobile</span></div>
+            <div class="row" data-st="lista fino">
+              <div class="l1"><span class="dot run"></span><span class="nm">Regressão visual</span><span class="age">5min</span></div>
+              <div class="l2"><span class="ev">sem ação reportada · 38s<span class="nt">4</span></span><span class="pos">turno</span></div>
+            </div>
+            <div class="row on" data-st="grosso">
+              <div class="l1"><span class="dot run"></span><span class="nm">Regressão visual</span><span class="age">5min 42s</span></div>
+              <div class="l2"><span class="ev">sem ação reportada · 38s</span><span class="pos">turno</span></div>
+            </div>
+
+            <div class="grp-h"><span class="n">fora do app</span></div>
+            <div class="row" data-st="lista fino grosso">
+              <div class="l1"><span class="dot wait"></span><span class="nm">northstar-docs</span><span class="age">há 8s</span></div>
+              <div class="l2"><span class="ev">esperando permissão · Bash</span><span class="pos">só ver</span></div>
+            </div>
+          </div>
+
+          <div class="empty" data-st="vazio">
+            <h3>Nada vivo</h3>
+            <p>A coluna continua aqui, ocupando 300px, esperando.<span class="nt">7</span></p>
+            <p class="blind">Sem os hooks instalados o app não enxerga terminal nenhum.
+              <b>Configurações → Hooks.</b></p>
+          </div>
+        </div>
+
+        <!-- FOCO FINO -->
+        <div class="focus" data-st="fino">
+          <div class="hd"><h3>Auditar importadores</h3>
+            <span class="ctr">claude · subagente<br>reporta ferramenta a ferramenta</span></div>
+          <div class="agora"><span class="dot run"></span>
+            <span class="t">Grep em <code>messageNodes.ts</code></span>
+            <span class="cl">12min 04s</span></div>
+          <div class="sec">evidência recente</div>
+          <div class="ev-list">
+            <div><time>10:42:18</time><span>Grep toolGroup em chat/</span></div>
+            <div><time>10:41:55</time><span>Read chat/toolTree.ts</span></div>
+          </div>
+          <dl class="kv">
+            <dt>tipo</dt><dd>general-purpose</dd>
+            <dt>onde</dt><dd>frota · Despoluição do fio</dd>
+          </dl>
+          <p class="say"><b>Sem tokens</b>, e não é lacuna de UI: o Claude não separa o consumo do
+            subagente do turno.<span class="nt">5</span></p>
+          <div class="acts"><button class="btn primary">Ir pro fio</button></div>
+          <p class="say">Não para sozinho. O gesto real interrompe o turno inteiro, e o
+            trabalho em background da conversa morre junto.</p>
+        </div>
+
+        <!-- FOCO GROSSO -->
+        <div class="focus" data-st="grosso">
+          <div class="hd"><h3>Revisar regressão visual</h3>
+            <span class="ctr">agy · Flash 3.6<br>não reporta ação, só pulso</span></div>
+          <div class="agora"><span class="dot run"></span>
+            <span class="t">vivo, sem ação reportada</span>
+            <span class="cl">5min 42s</span></div>
+          <div class="sec">evidência recente</div>
+          <div class="ev-list">
+            <div><time>10:41:08</time><span>“O breakpoint de 768px muda…”</span></div>
+            <div><time>10:40:51</time><span>“Vou comparar os estados…”</span></div>
+          </div>
+          <dl class="kv">
+            <dt>saída</dt><dd>há 38s · 14 KB no stdout</dd>
+            <dt>custo</dt><dd>não mede</dd>
+          </dl>
+          <p class="say">É tudo que existe. Quando o agy emitir passos, eles entram nesta mesma lista.</p>
+          <div class="acts"><button class="btn primary">Ir pro fio</button></div>
+        </div>
+
+        <div class="now-f" data-st="lista fino grosso">
+          <span class="k"><kbd>↑</kbd><kbd>↓</kbd> <b>percorrer</b></span>
+          <span class="k"><kbd>↵</kbd> <b>ir</b></span>
+          <span class="k" data-st="fino grosso">não para sozinho</span>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>Anotações</h2>
+    <ol>
+      <li><span class="nt">1</span> <b>Aqui estão os dois relógios do bug dos builds 181/182, de volta.</b>
+        A linha viva do rodapé tica “47min 21s” para o deep-research; a coluna tica “12min 04s” para o
+        subagente em foco. Os dois na mesma tela, os dois narrando o presente, e o usuário tem que
+        decidir sozinho qual é o agora que importa. Nenhuma redação conserta isso: é o layout que cria
+        a competição. É o argumento central contra esta direção, e ele é estrutural.</li>
+      <li><span class="nt">2</span> <b>A contagem no cabeçalho é a única coisa que C ganha de graça.</b>
+        Ela está sempre visível, sem gesto nenhum. Em A e B você precisa abrir para saber que são seis.</li>
+      <li><span class="nt">3</span> <b>300px obrigam a linha a virar duas.</b> Com seis posições numa
+        largura de coluna lateral, nome e evidência não cabem lado a lado. Empilhar funciona, e custa:
+        cada unidade passa a ocupar ~42px em vez de 34px, o ritmo da seta fica irregular quando um
+        grupo entra no meio, e a lista de doze unidades já não cabe sem rolar.</li>
+      <li><span class="nt">4</span> <b>A evidência trunca cedo.</b> “sem ação reportada · saída há 38s”
+        vira “sem ação reportada · 38s”; <code>hmr update /src/App.tsx · PID 48312</code> perde o PID.
+        Quanto mais estreita a coluna, mais a diferença entre os motores fica invisível, que é
+        exatamente o contrário do que esta superfície existe para fazer.</li>
+      <li><span class="nt">5</span> <b>O painel de foco tem que caber embaixo da lista.</b> Ou ele
+        empurra a lista para fora da tela, ou ele fica raso. O mock mostra a versão rasa; a versão
+        completa (com o contexto inteiro e as duas frases de honestidade) já não cabe em 600px de altura
+        junto de seis linhas.</li>
+      <li><span class="nt">6</span> <b>O fio perde 300px permanentes.</b> Numa janela de 1180px a coluna
+        de conversa cai para ~560px, e ela já divide espaço com a sidebar de projetos e, quando aberto,
+        com o painel de contexto. Trabalho vivo é um assunto intermitente ocupando largura constante.</li>
+      <li><span class="nt">7</span> <b>O estado vazio é o pior das três direções.</b> Em A e B, vazio
+        significa que a superfície não aparece. Aqui vazio é 300px de nada, e a tentação seguinte
+        (preencher com “últimos trabalhos”, “custo do dia”, um gráfico) é exatamente como um navegador
+        vira dashboard.</li>
+    </ol>
+
+    <h2>O que esta direção ganha</h2>
+    <ol>
+      <li><span class="nt">+</span> <b>Consciência periférica de verdade.</b> Fase presa há 20 minutos,
+        permissão esperando no terminal e shell que morreu aparecem sem gesto nenhum. É a única das três
+        que avisa sem ser chamada.</li>
+      <li><span class="nt">+</span> <b>Descoberta zero.</b> Não existe atalho para aprender.</li>
+      <li><span class="nt">+</span> <b>Comparar duas unidades é natural</b>, porque as duas ficam na tela
+        enquanto você olha o fio.</li>
+    </ol>
+
+    <h2>O que esta direção paga</h2>
+    <ol>
+      <li><span class="nt">−</span> <b>Dois relógios narrando o mesmo agora</b> (nota 1). Reabre o bug
+        que o B2.2 fechou e que o STYLEGUIDE §6 escreveu como lei.</li>
+      <li><span class="nt">−</span> <b>Já foi descartada uma vez.</b> O <code>work-hierarchy-plan.md</code>
+        comparou inline (A), dock persistente (B) e painel lateral (C) e ficou com inline, registrando
+        “dock global cross-projeto e painel lateral: descartados”. Ressuscitar exige um argumento novo,
+        e “agora tem mais fonte de trabalho vivo” é um argumento, mas não vence o relógio duplo.</li>
+      <li><span class="nt">−</span> <b>Custo de largura permanente</b> para um assunto intermitente, com o
+        estado vazio empurrando a superfície para virar dashboard.</li>
+      <li><span class="nt">−</span> <b>É a mais cara de construir</b>, porque precisa sobreviver a
+        redimensionamento, a modos de tela (missão, painel, SDD) e a convivência com o painel de contexto.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  const body = document.body
+  document.getElementById("states").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-go]"); if (!b) return
+    document.querySelectorAll("#states button").forEach((x) => x.classList.remove("on"))
+    b.classList.add("on")
+    body.className = "st-" + b.dataset.go
+  })
+  document.getElementById("theme").addEventListener("click", () => {
+    const r = document.documentElement
+    r.dataset.theme = r.dataset.theme === "dark" ? "light" : "dark"
+  })
+  document.querySelectorAll(".row").forEach((r) => r.addEventListener("click", () => {
+    document.querySelectorAll(".row").forEach((x) => x.classList.remove("on")); r.classList.add("on")
+  }))
+</script>
+</body>
+</html>

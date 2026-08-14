@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Trabalho vivo · A · A linha viva cresce</title>
+<style>
+  /* Tokens: cópia fiel de app/src/index.css (light :root · dark [data-theme=dark]).
+     Nenhum hex fora daqui. */
+  :root{
+    color-scheme: light dark;
+    --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
+    --secondary:#f4f4f2; --muted-foreground:#5c6166; --accent:#f1f1ef; --faint:#8a9099;
+    --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.14);
+    --brass:#a9742b; --brass-soft:rgba(169,116,43,.12); --brass-fg:#fbf6ee;
+    --st-idle:#8a9099; --st-running:#2f8fbf; --st-queued:#c1861f;
+    --st-success:#1f9d6b; --st-error:#cf4a3e; --id-violet:#6d47b8;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18);
+    --lift:inset 0 1px 0 rgba(255,255,255,.6);
+    --radius:9px;
+    --sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --background:#0a0b0d; --rail:#0c0d10; --foreground:#e7e8ea; --card:#141619;
+    --secondary:#191c20; --muted-foreground:#9aa0a7; --accent:#1e2126; --faint:#687078;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13);
+    --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#1a1306;
+    --st-idle:#687078; --st-running:#5bb8e8; --st-queued:#d99138;
+    --st-success:#5bd6a0; --st-error:#f2766b; --id-violet:#a48af0;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+    --shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);
+    --lift:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--background);color:var(--foreground);
+    font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"liga" 0,"calt" 0}
+  .label-mono{font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+    font-size:11px;line-height:1;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+
+  /* ── chrome do mock (não é o app) ── */
+  .mockbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:10px 18px;background:color-mix(in srgb,var(--background) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+  .mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);
+    border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:1px 7px}
+  .mockbar .dir{font-weight:600;color:var(--foreground);font-size:13px}
+  .mockbar nav{display:flex;gap:3px;margin-left:auto}
+  .mockbar nav a{color:var(--muted-foreground);text-decoration:none;padding:3px 10px;border-radius:6px;font-weight:500}
+  .mockbar nav a:hover{background:var(--accent)}
+  .mockbar nav a.on{background:var(--brass-soft);color:var(--brass)}
+  .seg{display:flex;gap:2px;border:1px solid var(--border);border-radius:7px;padding:2px}
+  .seg button{font-size:11px;padding:2px 9px;border-radius:5px;color:var(--muted-foreground);white-space:nowrap}
+  .seg button.on{background:var(--accent);color:var(--foreground)}
+
+  .stage{max-width:1040px;margin:0 auto;padding:24px 20px 64px}
+  .thesis{font-size:13px;color:var(--muted-foreground);margin:0 2px 18px;max-width:800px}
+  .thesis b{color:var(--foreground);font-weight:600}
+
+  /* ── moldura da janela ── */
+  .frame{background:var(--background);border:1px solid var(--border);border-radius:14px;
+    overflow:hidden;box-shadow:var(--shadow-pop)}
+  .winbar{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--rail);
+    border-bottom:1px solid var(--border)}
+  .winbar i{width:10px;height:10px;border-radius:50%;background:var(--border-strong);display:block}
+  .winbar span{font-size:12px;color:var(--muted-foreground);margin-left:6px}
+
+  /* ── o app por trás (fio) ── */
+  .app{display:grid;grid-template-columns:190px 1fr;min-height:560px}
+  .rail{background:var(--rail);border-right:1px solid var(--border);padding:12px 10px;display:flex;flex-direction:column;gap:2px}
+  .rail .grp{margin:10px 4px 4px}
+  .rail .it{font-size:12px;color:var(--muted-foreground);padding:5px 8px;border-radius:6px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rail .it.on{background:var(--accent);color:var(--foreground)}
+  .rail .it .d{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--st-running);
+    margin-right:7px;vertical-align:middle}
+
+  .col{display:flex;flex-direction:column;min-width:0;position:relative}
+  .thread{flex:1;padding:18px 22px;display:flex;flex-direction:column;gap:14px;min-height:0;overflow:hidden}
+  .msg{max-width:640px}
+  .msg .who{font-size:11px;color:var(--faint);margin-bottom:4px}
+  .msg p{margin:0;font-size:14px;line-height:1.62}
+  .msg.dim p{color:var(--muted-foreground)}
+  .toolrow{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted-foreground);
+    padding:3px 0;max-width:640px}
+  .toolrow .tk{color:var(--faint);font-size:11px;font-family:var(--mono)}
+
+  /* véu: quando o navegador está aberto, o fio recua */
+  .veil{position:absolute;inset:0;background:color-mix(in srgb,var(--background) 62%,transparent);
+    pointer-events:none;opacity:0;transition:opacity .2s}
+  .st-open .veil{opacity:1}
+
+  /* ── composer ── */
+  .composer{border-top:1px solid var(--border);padding:10px 14px 12px;background:var(--background)}
+  .cbox{border:1px solid var(--border-strong);border-radius:11px;background:var(--card);
+    box-shadow:var(--shadow-sm);padding:9px 12px;color:var(--faint);font-size:13px}
+
+  /* ═══════════════ O NAVEGADOR (direção A) ═══════════════ */
+  .lw{border-top:1px solid var(--border);background:var(--card);box-shadow:var(--shadow-pop);
+    position:relative;z-index:5}
+
+  /* âncora: a linha viva colapsada, que é o cabeçalho quando abre */
+  .lw-anchor{display:flex;align-items:center;gap:9px;padding:8px 14px;min-width:0;cursor:pointer}
+  .lw-anchor:hover{background:var(--accent)}
+  .lw-anchor .lbl{font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lw-anchor .kb{margin-left:auto;flex:0 0 auto}
+  .lw-anchor .el{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;
+    min-width:4.5rem;text-align:right;flex:0 0 auto}
+
+  .dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:var(--st-idle)}
+  .dot.run{background:var(--st-running);animation:pulse 1.6s ease-in-out infinite}
+  .dot.wait{background:var(--st-queued)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){.dot.run{animation:none}}
+
+  kbd{font:10px/1.6 var(--mono);border:1px solid var(--border-strong);border-bottom-width:2px;
+    border-radius:4px;padding:0 4px;color:var(--muted-foreground);background:var(--background);
+    display:inline-block;min-width:15px;text-align:center}
+
+  .lw-body{display:none;border-top:1px solid var(--border)}
+  .st-open .lw-body{display:block}
+  .st-open .lw-anchor{background:var(--secondary)}
+
+  /* grupo por lugar */
+  .grp-h{display:flex;align-items:baseline;gap:8px;padding:9px 14px 4px}
+  .grp-h .n{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
+  .grp-h .c{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;margin-left:auto}
+
+  /* A LINHA — uma só, altura fixa, 6 posições estáveis */
+  .row{display:flex;align-items:center;gap:10px;padding:0 14px;height:34px;min-width:0;
+    border-left:2px solid transparent;cursor:pointer}
+  .row:hover{background:var(--accent)}
+  .row.on{background:var(--brass-soft);border-left-color:var(--brass)}
+  .row .nm{font-size:13px;flex:1 1 auto;min-width:2.5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .selo{font:11px var(--mono);color:var(--faint);flex:0 0 auto;white-space:nowrap}
+  .row .ev{font-size:13px;color:var(--muted-foreground);flex:1 3 auto;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+  .row .age{font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;
+    flex:0 0 auto;min-width:4.6rem;text-align:right}
+  .row .pos{font:11px var(--mono);color:var(--faint);flex:0 0 auto;min-width:3.2rem;text-align:right}
+  .row.on .pos{color:var(--muted-foreground)}
+
+  /* rodapé de atalhos, sensível ao foco */
+  .lw-foot{display:flex;align-items:center;gap:14px;padding:8px 14px;border-top:1px solid var(--border);
+    background:var(--secondary);font-size:11px;color:var(--faint);flex-wrap:nowrap;overflow:hidden}
+  .lw-foot .k{display:flex;align-items:center;gap:5px;white-space:nowrap;min-width:0}
+  .lw-foot .k b{font-weight:500;color:var(--muted-foreground)}
+  .lw-foot .no{color:var(--faint);font-style:normal}
+  .lw-foot .sp{flex:1 1 auto;min-width:6px}
+
+  /* ── unidade focada (o painel que a seta abre) ── */
+  .focus{border-top:1px solid var(--border);padding:12px 14px 14px;display:flex;flex-direction:column;gap:11px}
+  .focus .hd{display:flex;align-items:baseline;gap:9px;min-width:0}
+  .focus .hd h3{margin:0;font:600 13px var(--sans);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .focus .hd .ctr{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+  .agora{display:flex;align-items:center;gap:9px;padding:8px 11px;border:1px solid var(--border);
+    border-radius:var(--radius);background:color-mix(in srgb,var(--secondary) 60%,transparent)}
+  .agora .t{font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .agora .cl{margin-left:auto;font:600 13px var(--mono);font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12px}
+  .kv dt{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);white-space:nowrap}
+  .kv dd{margin:0;color:var(--muted-foreground);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kv dd.mn{font-family:var(--mono);font-size:11px}
+  .ev-list{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted-foreground)}
+  .ev-list div{display:flex;gap:9px;min-width:0}
+  .ev-list time{font:11px var(--mono);color:var(--faint);flex:0 0 auto;font-variant-numeric:tabular-nums}
+  .ev-list span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .say{font-size:12px;color:var(--muted-foreground);border-left:2px solid var(--border);padding-left:10px}
+  .say b{color:var(--foreground);font-weight:600}
+  .acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .btn{font-size:12px;font-weight:500;padding:3px 10px;border-radius:6px;
+    border:1px solid var(--border-strong);color:var(--foreground);white-space:nowrap}
+  .btn:hover{background:var(--accent)}
+  .btn.primary{background:var(--brass);color:var(--brass-fg);border-color:transparent}
+  .btn.danger{border-color:color-mix(in srgb,var(--st-error) 45%,transparent);color:var(--st-error)}
+  .btn.danger:hover{background:color-mix(in srgb,var(--st-error) 10%,transparent)}
+  .price{font-size:11px;color:var(--faint)}
+
+  /* estado vazio */
+  .empty{padding:26px 14px 22px;text-align:center;display:flex;flex-direction:column;gap:8px;align-items:center}
+  .empty h3{margin:0;font:500 13px var(--sans);color:var(--foreground)}
+  .empty p{margin:0;font-size:12px;color:var(--muted-foreground);max-width:440px}
+  .empty .blind{margin-top:6px;font-size:11px;color:var(--faint);border-top:1px dashed var(--border-strong);
+    padding-top:9px;max-width:460px}
+
+  .nt{display:inline-block;font:600 10px/1.35 var(--mono);color:var(--brass);
+    background:var(--brass-soft);border-radius:4px;padding:0 3px;margin-left:5px;vertical-align:super}
+
+  /* notas */
+  .notes{margin-top:26px;padding:0 6px;font-size:13px;color:var(--muted-foreground)}
+  .notes h2{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:22px 0 12px}
+  .notes h2:first-child{margin-top:0}
+  .notes ol{list-style:none;margin:0;padding:0;display:grid;gap:9px;max-width:820px}
+  .notes li{padding-left:30px;position:relative;line-height:1.55}
+  .notes li .nt{position:absolute;left:0;top:2px;margin:0}
+  .notes b{color:var(--foreground);font-weight:600}
+  .notes code{font-family:var(--mono);font-size:12px;color:var(--foreground)}
+
+  /* Estados: esconde só o que NÃO casa (nunca redefine `display`, senão
+     contêiner flex vira block). */
+  .st-lista [data-st]:not([data-st~="lista"]),
+  .st-fino  [data-st]:not([data-st~="fino"]),
+  .st-grosso [data-st]:not([data-st~="grosso"]),
+  .st-vazio [data-st]:not([data-st~="vazio"]){display:none}
+</style>
+</head>
+<body class="st-lista st-open">
+
+<div class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">A · A linha viva cresce</span>
+  <div class="seg" id="states">
+    <button data-go="lista" class="on">lista</button>
+    <button data-go="fino">foco fino</button>
+    <button data-go="grosso">foco grosso</button>
+    <button data-go="vazio">vazio</button>
+  </div>
+  <div class="seg">
+    <button id="theme">tema</button>
+  </div>
+  <nav>
+    <a class="on" href="trabalho-vivo-a.html">A</a>
+    <a href="trabalho-vivo-b.html">B</a>
+    <a href="trabalho-vivo-c.html">C</a>
+  </nav>
+</div>
+
+<div class="stage">
+  <p class="thesis"><b>Tese:</b> o navegador não é superfície nova, é a <b>linha viva do rodapé
+  com outro zoom</b>. A linha colapsada continua sendo a dona única do agora (B2.2); apertar
+  <kbd>⌘</kbd><kbd>J</kbd> faz ela crescer para cima, listando a frota inteira, e <kbd>esc</kbd>
+  devolve ela ao tamanho de uma linha. Um dono, duas densidades, nenhum relógio novo.</p>
+
+  <div class="frame">
+    <div class="winbar"><i></i><i></i><i></i><span>Frota</span></div>
+    <div class="app">
+      <aside class="rail">
+        <div class="grp label-mono">frota</div>
+        <div class="it on"><span class="d"></span>Despoluição do fio</div>
+        <div class="it">Escala tipográfica</div>
+        <div class="grp label-mono">atlas-commerce</div>
+        <div class="it"><span class="d"></span>Portar o checkout</div>
+        <div class="it"><span class="d"></span>Histórico de faturas</div>
+        <div class="grp label-mono">lumen-mobile</div>
+        <div class="it"><span class="d"></span>Regressão visual</div>
+      </aside>
+
+      <div class="col">
+        <div class="thread">
+          <div class="msg"><div class="who">Você</div>
+            <p>Audita quem importa <code>toolGroup</code> e <code>toolTree</code> antes de eu dividir o MessageList.</p></div>
+          <div class="msg dim"><div class="who">Claude Code · Opus 5</div>
+            <p>Vou delegar a varredura e comparar com os testes que já cobrem esses módulos.</p></div>
+          <div class="toolrow"><span class="dot run"></span>Auditar importadores de toolGroup <span class="tk">general-purpose</span></div>
+          <div class="toolrow"><span class="tk">✓</span>2 leituras concluídas <span class="tk">4s</span></div>
+        </div>
+        <div class="veil"></div>
+
+        <!-- ═══ NAVEGADOR ═══ -->
+        <div class="lw">
+          <div class="lw-anchor" id="anchor">
+            <span class="dot run"></span>
+            <span class="lbl" data-st="lista fino grosso"><b>6 trabalhos vivos</b> · 2 aqui, 4 em outros lugares<span class="nt">1</span></span>
+            <span class="lbl" data-st="vazio">nada vivo agora</span>
+            <span class="el" data-st="lista fino grosso">12min 04s</span>
+            <span class="kb"><kbd>⌘</kbd><kbd>J</kbd></span>
+          </div>
+
+          <div class="lw-body">
+            <!-- LISTA -->
+            <div data-st="lista fino grosso">
+              <div class="grp-h"><span class="n">frota</span><span class="c">2 vivos</span></div>
+              <div class="row" data-st="lista grosso">
+                <span class="dot run"></span>
+                <span class="nm">Auditar importadores de toolGroup</span>
+                <span class="selo">subagente</span>
+                <span class="ev">Grep em messageNodes.ts</span>
+                <span class="age">12min</span><span class="pos">turno</span>
+              </div>
+              <div class="row on" data-st="fino">
+                <span class="dot run"></span>
+                <span class="nm">Auditar importadores de toolGroup</span>
+                <span class="selo">subagente</span>
+                <span class="ev">Grep em messageNodes.ts</span>
+                <span class="age">12min 04s</span><span class="pos">turno</span>
+              </div>
+              <div class="row" data-st="lista fino grosso">
+                <span class="dot run"></span>
+                <span class="nm">bun run dev</span>
+                <span class="selo">shell</span>
+                <span class="ev">hmr update /src/App.tsx · PID 48312</span>
+                <span class="age">3h 12min</span><span class="pos">nosso</span>
+              </div>
+
+              <div class="grp-h"><span class="n">atlas-commerce</span><span class="c">2 vivos</span></div>
+              <div class="row" data-st="lista fino grosso">
+                <span class="dot run"></span>
+                <span class="nm">deep-research: histórico de faturas</span>
+                <span class="selo">background</span>
+                <span class="ev">verificando 3 fontes · ↓ 82,7k</span>
+                <span class="age">47min</span><span class="pos">turno</span>
+              </div>
+              <div class="row" data-st="lista fino grosso">
+                <span class="dot run"></span>
+                <span class="nm">Portar o checkout · fase 7/12</span>
+                <span class="selo">fase · codex</span>
+                <span class="ev">cargo test --lib</span>
+                <span class="age">22min</span><span class="pos">nosso</span>
+              </div>
+
+              <div class="grp-h"><span class="n">lumen-mobile</span><span class="c">1 vivo</span></div>
+              <div class="row" data-st="lista fino">
+                <span class="dot run"></span>
+                <span class="nm">Revisar regressão visual</span>
+                <span class="selo">turno · agy</span>
+                <span class="ev">sem ação reportada · saída há 38s<span class="nt">3</span></span>
+                <span class="age">5min</span><span class="pos">turno</span>
+              </div>
+              <div class="row on" data-st="grosso">
+                <span class="dot run"></span>
+                <span class="nm">Revisar regressão visual</span>
+                <span class="selo">turno · agy</span>
+                <span class="ev">sem ação reportada · saída há 38s</span>
+                <span class="age">5min 42s</span><span class="pos">turno</span>
+              </div>
+
+              <div class="grp-h"><span class="n">fora do app</span><span class="c">1 observado</span></div>
+              <div class="row" data-st="lista fino grosso">
+                <span class="dot wait"></span>
+                <span class="nm">northstar-docs</span>
+                <span class="selo">terminal · claude</span>
+                <span class="ev">esperando permissão · Bash<span class="nt">4</span></span>
+                <span class="age">visto há 8s</span><span class="pos">só ver</span>
+              </div>
+            </div>
+
+            <!-- FOCO FINO -->
+            <div class="focus" data-st="fino">
+              <div class="hd">
+                <h3>Auditar importadores de toolGroup</h3>
+                <span class="ctr">claude · subagente · reporta ferramenta a ferramenta<span class="nt">2</span></span>
+              </div>
+              <div class="agora">
+                <span class="dot run"></span>
+                <span class="t">Grep em <code>app/src/components/chat/messageNodes.ts</code></span>
+                <span class="cl">12min 04s</span>
+              </div>
+              <div class="ev-list">
+                <div><time>10:42:18</time><span>Grep <code>toolGroup</code> em app/src/components/chat</span></div>
+                <div><time>10:41:55</time><span>Read app/src/components/chat/toolTree.ts</span></div>
+                <div><time>10:41:02</time><span>Read app/src/lib/toolview.ts</span></div>
+              </div>
+              <dl class="kv">
+                <dt>tipo</dt><dd class="mn">general-purpose</dd>
+                <dt>onde</dt><dd>frota · Despoluição do fio · dentro do turno de Claude Code</dd>
+                <dt>sem sinal</dt><dd>última ferramenta há 6s</dd>
+              </dl>
+              <p class="say"><b>Tokens não aparecem aqui porque não existem.</b> O Claude não separa
+                o consumo do subagente do consumo do turno, e o app suprime a leitura de contexto
+                do filho de propósito. O que a CLI mostra na coluna de tokens é o turno inteiro.<span class="nt">5</span></p>
+              <div class="acts">
+                <button class="btn primary">Ir pro fio</button>
+                <span class="price">abre a conversa e a subárvore dele no Fio Vivo</span>
+              </div>
+              <p class="say">Parar só este subagente não existe hoje: o único gesto real é
+                <b>interromper o turno inteiro</b>, e o trabalho em background da mesma conversa
+                morre junto. O gesto mora na conversa, não aqui.<span class="nt">6</span></p>
+            </div>
+
+            <!-- FOCO GROSSO -->
+            <div class="focus" data-st="grosso">
+              <div class="hd">
+                <h3>Revisar regressão visual</h3>
+                <span class="ctr">agy · turno · não reporta ação, só pulso<span class="nt">7</span></span>
+              </div>
+              <div class="agora">
+                <span class="dot run"></span>
+                <span class="t">vivo, sem ação reportada</span>
+                <span class="cl">5min 42s</span>
+              </div>
+              <div class="ev-list">
+                <div><time>10:40:51</time><span>“Vou comparar os estados responsivos do carrinho…”</span></div>
+                <div><time>10:41:08</time><span>“O breakpoint de 768px muda o grid antes do esperado.”</span></div>
+              </div>
+              <dl class="kv">
+                <dt>onde</dt><dd>lumen-mobile · Regressão visual</dd>
+                <dt>modelo</dt><dd class="mn">Flash 3.6</dd>
+                <dt>última saída</dt><dd>há 38s · 14 KB no stdout</dd>
+              </dl>
+              <p class="say">O que você está vendo <b>é tudo que existe</b>: o agy escreve texto
+                corrido, sem evento por ferramenta. Duas linhas de texto real valem mais que uma
+                árvore inventada. Se ele passar a reportar passo a passo, o passo entra nesta
+                mesma lista de evidência e nada mais muda.<span class="nt">8</span></p>
+              <div class="acts">
+                <button class="btn primary">Ir pro fio</button>
+                <span class="price">interromper aqui significa rodar o turno inteiro de novo (o agy não retoma sessão)</span>
+              </div>
+            </div>
+
+            <!-- VAZIO -->
+            <div class="empty" data-st="vazio">
+              <h3>Nada vivo agora</h3>
+              <p>Nenhum turno, processo ou fase de missão em andamento. Esta faixa volta a crescer
+                sozinha quando alguma coisa começar.</p>
+              <p class="blind">O Frota não enxerga sessões abertas direto no terminal enquanto os
+                hooks não estiverem instalados. <b>Instalar em Configurações → Hooks.</b><span class="nt">9</span></p>
+            </div>
+
+            <!-- RODAPÉ DE ATALHOS -->
+            <div class="lw-foot" data-st="lista">
+              <span class="k"><kbd>↑</kbd><kbd>↓</kbd> <b>percorrer</b></span>
+              <span class="k"><kbd>↵</kbd> <b>ir</b></span>
+              <span class="k"><kbd>a-z</kbd> <b>filtrar</b></span>
+              <span class="k"><kbd>esc</kbd> <b>fechar</b></span>
+              <span class="sp"></span>
+              <span class="k no">selecione uma linha para ver o que dá pra parar</span>
+            </div>
+            <div class="lw-foot" data-st="fino">
+              <span class="k"><kbd>↑</kbd><kbd>↓</kbd> <b>percorrer</b></span>
+              <span class="k"><kbd>↵</kbd> <b>ir pro fio</b></span>
+              <span class="k"><kbd>esc</kbd> <b>fechar</b></span>
+              <span class="sp"></span>
+              <span class="k no">este subagente não para sozinho · <kbd>⇧</kbd><kbd>⌫</kbd> interrompe o turno inteiro<span class="nt">6</span></span>
+            </div>
+            <div class="lw-foot" data-st="grosso">
+              <span class="k"><kbd>↑</kbd><kbd>↓</kbd> <b>percorrer</b></span>
+              <span class="k"><kbd>↵</kbd> <b>ir pro fio</b></span>
+              <span class="k"><kbd>esc</kbd> <b>fechar</b></span>
+              <span class="sp"></span>
+              <span class="k no">este turno não para sozinho · <kbd>⇧</kbd><kbd>⌫</kbd> interrompe o turno inteiro</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="composer"><div class="cbox">Pergunte, peça, cole um erro…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>Anotações</h2>
+    <ol>
+      <li><span class="nt">1</span> <b>A âncora é a linha viva de hoje, com o denominador declarado.</b>
+        Hoje ela diz “N trabalhos em background · &lt;mais recente&gt;” e o escopo é a conversa aberta
+        (<code>deferredLiveLine</code>, <code>store/chat.ts:244</code>). Aqui ela passa a contar a
+        <b>frota</b>, e diz na cara quantos são daqui e quantos são de outro lugar. Sem isso, o número
+        cresceria calado quando você troca de conversa, que é exatamente o tipo de contagem sem fonte
+        única que o §7 proíbe.</li>
+      <li><span class="nt">2</span> <b>O contrato de observação é uma frase, não uma nota de qualidade.</b>
+        “reporta ferramenta a ferramenta”, “reporta comando a comando”, “não reporta ação, só pulso”,
+        “processo do app”, “sinais do terminal”. Cinco contratos, e é isso que explica por que as
+        linhas têm quantidades diferentes de informação. Nenhum deles diz que um motor é pior.</li>
+      <li><span class="nt">3</span> <b>Onde não há ação, a faixa de evidência diz o contrato.</b>
+        A posição é a mesma da linha do Claude; o conteúdo é “sem ação reportada · saída há 38s”.
+        A alternativa (deixar vazio) leria como “nada acontecendo”; a alternativa pior (“preparando…”)
+        é a frase inventada que o build 193 mostrava e que o STYLEGUIDE §7 proíbe.</li>
+      <li><span class="nt">4</span> <b>Âmbar aqui é decisão pendente, não decoração.</b> A sessão externa
+        está bloqueada num prompt de permissão do terminal. É o único item da cena que pede alguma
+        coisa de você, e por isso é a única cor além do azul do vivo (orçamento de tinta do §2: duas
+        cores de status no recorte).</li>
+      <li><span class="nt">5</span> <b>A coluna mais sedutora do print da CLI é a que não podemos
+        preencher.</b> O “↓ 253.1k tokens” do painel do Claude Code é do turno; para um subagente
+        o app suprime a leitura de contexto de propósito (<code>adapters.rs:1420</code>, “contexto próprio
+        e não conta”). Então o número não aparece, e o painel diz por quê em vez de deixar um traço.
+        A mesma linha do trabalho em background <b>tem</b> tokens (<code>task_progress.usage</code>) e
+        mostra: a diferença é real e é visível.</li>
+      <li><span class="nt">6</span> <b>O gesto destrutivo só aparece onde destrói.</b> Nenhuma linha tem
+        botão de parar. O rodapé, sensível ao foco, ou oferece <kbd>⌫</kbd> (quando a posse é
+        <code>nosso</code>) ou <b>nomeia o que existe</b>: interromper o turno inteiro, com o preço dito.
+        Botão desabilitado cinza foi descartado: ele ocupa o lugar do gesto e não é gesto.</li>
+      <li><span class="nt">7</span> <b>Entrar numa unidade grossa não pune.</b> A casca é a mesma das
+        finas (agora · evidência recente · contexto · o que dá pra fazer), e o que ela mostra é o texto
+        real que o motor escreveu. Nada de painel vazio chamado “Ferramentas”, nada de esqueleto pulsando.</li>
+      <li><span class="nt">8</span> <b>O slot que espera o motor crescer.</b> Quando o agy passar a emitir
+        <code>step_update</code>, os passos entram na lista de evidência e o contrato do cabeçalho muda de
+        frase. A linha, a navegação, o relógio e a coluna de posse não mudam. É por isso que o desenho
+        não tem lugar reservado para “árvore de subagentes”: quem tem árvore mostra árvore no lugar
+        onde os outros mostram texto.</li>
+      <li><span class="nt">9</span> <b>O vazio também é honesto sobre a própria cegueira.</b> “Nada vivo”
+        e “nada que eu consiga ver” são coisas diferentes. Sem os hooks instalados o app não enxerga
+        terminal nenhum, e o único lugar onde cabe dizer isso sem virar ruído permanente é aqui
+        (§5, camada 2: não-configurado esconde, mas o vazio pode explicar o que falta).</li>
+    </ol>
+
+    <h2>O que esta direção ganha</h2>
+    <ol>
+      <li><span class="nt">+</span> <b>Resolve o dono único do agora por construção.</b> Não existe segunda
+        superfície viva: existe a mesma, aberta. O relógio que tica é um só e pertence à linha em foco.</li>
+      <li><span class="nt">+</span> <b>Descoberta grátis.</b> A âncora está na tela o tempo todo com o
+        atalho desenhado do lado; ninguém precisa aprender que o navegador existe.</li>
+      <li><span class="nt">+</span> <b>Menor delta de código.</b> A linha viva, o cronômetro e o
+        truncamento já existem; o que entra é a lista e o índice de frota.</li>
+    </ol>
+
+    <h2>O que esta direção paga</h2>
+    <ol>
+      <li><span class="nt">−</span> <b>Escopo misturado.</b> A faixa mora dentro da coluna de UMA conversa
+        e lista a frota inteira. Ir para uma unidade de outro projeto troca o conteúdo debaixo do painel
+        que você está usando.</li>
+      <li><span class="nt">−</span> <b>Largura curta.</b> A coluna do chat tem ~700px; com seis posições na
+        linha, o nome e a evidência brigam. Numa conversa com a sidebar de contexto aberta, aperta mais.</li>
+      <li><span class="nt">−</span> <b>Empurra o fio.</b> Abrir come metade da altura de leitura, e a
+        mensagem que você estava lendo sai da vista.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  const body = document.body
+  document.getElementById("states").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-go]"); if (!b) return
+    document.querySelectorAll("#states button").forEach((x) => x.classList.remove("on"))
+    b.classList.add("on")
+    body.className = body.className.replace(/st-(lista|fino|grosso|vazio)/, "st-" + b.dataset.go)
+  })
+  document.getElementById("theme").addEventListener("click", () => {
+    const r = document.documentElement
+    r.dataset.theme = r.dataset.theme === "dark" ? "light" : "dark"
+  })
+  document.getElementById("anchor").addEventListener("click", () => body.classList.toggle("st-open"))
+  document.querySelectorAll(".row").forEach((r) => r.addEventListener("click", () => {
+    document.querySelectorAll(".row").forEach((x) => x.classList.remove("on")); r.classList.add("on")
+  }))
+</script>
+</body>
+</html>
