@@ -40,6 +40,26 @@ describe("Fio Vivo", () => {
     expect(forest[0].children[1].children[0].item.toolId).toBe("bash-2")
   })
 
+  it("filho órfão (pai fora do fio) vira raiz e continua na tela", () => {
+    // `buildToolForest` já promovia o órfão a raiz, mas a dobra do fio o pulava
+    // antes ("o pai desenha") e a ação sumia da tela. Fail-open no render: nada
+    // que aconteceu pode desaparecer porque a origem não veio no histórico.
+    const html = renderToStaticMarkup(
+      createElement(MessageList, {
+        items: [
+          { kind: "user", id: "u1", text: "Faça" },
+          tool("bash-1", "Bash", "task-que-nao-veio"),
+        ],
+        running: true,
+        finalizing: false,
+        startedAt: Date.now(),
+        agent: "claude-code",
+      }),
+    )
+    expect(html).toContain('aria-label="Fio Vivo da execução"')
+    expect(html).toContain('aria-level="1"')
+  })
+
   it("desenha a árvore viva com semântica e níveis de teclado", () => {
     const html = renderToStaticMarkup(
       createElement(MessageList, {

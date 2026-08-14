@@ -204,11 +204,23 @@ export interface Restart {
  *  Fica FORA do fold porque é a única dependência dele que olha para FRENTE no
  *  fio (um filho nasce depois do pai, e envelhece o nó do pai): a reconstrução
  *  incremental precisa tratá-la à parte.
+ *
+ *  Filho ÓRFÃO (aponta pra um `toolId` que não está no fio: histórico cortado,
+ *  provider que reporta `tool_use_id` de um bloco que o adapter não emitiu)
+ *  fica FORA do mapa de propósito. O fold pula o filho porque o pai vai
+ *  desenhá-lo; sem pai, pular significaria sumir com uma ação que aconteceu.
+ *  Fora do mapa ele vira raiz, na mesma regra do `buildToolForest`
+ *  (fail-open no render).
  *  @internal */
 export function childrenByParentOf(items: ChatItem[]): Map<string, ToolItem[]> {
+  const known = new Set<string>()
+  for (const item of items) {
+    if (item.kind === "tool" && item.toolId) known.add(item.toolId)
+  }
   const out = new Map<string, ToolItem[]>()
   for (const item of items) {
     if (item.kind !== "tool" || !item.parentToolId) continue
+    if (!known.has(item.parentToolId)) continue
     const children = out.get(item.parentToolId) ?? []
     children.push(item)
     out.set(item.parentToolId, children)
@@ -279,8 +291,15 @@ export function foldNodes(
       i = incident.end
       continue
     }
-    // Filho já será desenhado sob a tool `Task`/agent que o originou.
-    if (it.kind === "tool" && it.parentToolId) continue
+    // Filho já será desenhado sob a tool `Task`/agent que o originou — mas só
+    // quando esse pai EXISTE no fio (o mapa deixa órfão de fora): senão pular
+    // aqui apagaria a ação da tela.
+    if (
+      it.kind === "tool" &&
+      it.parentToolId &&
+      childrenByParent.has(it.parentToolId)
+    )
+      continue
     if (it.kind === "tool" && isTaskTool(it.name)) {
       flush()
       if (it.name === "TaskCreate" && !planShownInTurn) {

@@ -60,12 +60,19 @@ function firstDiff(a: ChatItem[], b: ChatItem[]): number {
   return i
 }
 
-const ehFilho = (it: ChatItem): boolean => it.kind === "tool" && !!it.parentToolId
+/** Entra na comparação do mapa de filhos quem pode MUDÁ-LO: o filho (a aresta)
+ *  e o candidato a pai (o `toolId` que decide se a aresta é válida ou ÓRFÃ).
+ *  Comparar só a aresta não basta desde que o órfão ficou fora do mapa: um pai
+ *  que chega adota um filho que já estava no fio, e o mapa do frame anterior
+ *  ficaria velho sem que nenhuma aresta tivesse mudado. */
+const ehAresta = (it: ChatItem): boolean =>
+  it.kind === "tool" && (!!it.parentToolId || !!it.toolId)
 
 /** Os dois fios têm a MESMA sequência de tools filhos de `from` em diante?
  *
  *  O mapa de filhos depende só da sequência ordenada de tools com
- *  `parentToolId`; o prefixo até `from` já é idêntico por identidade. Se a
+ *  `parentToolId` (e dos `toolId` que dão pai a elas); o prefixo até `from` já é
+ *  idêntico por identidade. Se a
  *  sequência que sobra também for idêntica, o mapa do frame anterior serve
  *  inteiro E nenhum galho de subagente envelheceu — a faixa não precisa recuar
  *  até raiz nenhuma.
@@ -77,8 +84,8 @@ function mesmosFilhos(a: ChatItem[], b: ChatItem[], from: number): boolean {
   let i = from
   let j = from
   for (;;) {
-    while (i < a.length && !ehFilho(a[i])) i++
-    while (j < b.length && !ehFilho(b[j])) j++
+    while (i < a.length && !ehAresta(a[i])) i++
+    while (j < b.length && !ehAresta(b[j])) j++
     if (i >= a.length || j >= b.length) return i >= a.length && j >= b.length
     if (a[i] !== b[j]) return false
     i++
