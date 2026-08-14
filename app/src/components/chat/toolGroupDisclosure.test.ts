@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest"
 import {
   bornOpen,
+  detailBornOpen,
   settledOkStubLabel,
   shouldAutoCollapseOnSettle,
 } from "./toolGroupDisclosure"
@@ -19,6 +20,20 @@ describe("bornOpen · o que nasce aberto no fio", () => {
 
   it("falha assentada nasce aberta (a falha não recolhe quieta)", () => {
     expect(bornOpen({ live: false, failed: true })).toBe(true)
+  })
+})
+
+describe("detailBornOpen · teto no bloco de comando (a régua do briefing)", () => {
+  it("comando de uma linha continua aberto (o caso comum, sem clique extra)", () => {
+    expect(detailBornOpen(1)).toBe(true)
+  })
+
+  it("de duas linhas pra cima nasce recolhido", () => {
+    expect(detailBornOpen(2)).toBe(false)
+  })
+
+  it("heredoc longo não empurra o estado vivo pra fora da viewport", () => {
+    expect(detailBornOpen(34)).toBe(false)
   })
 })
 

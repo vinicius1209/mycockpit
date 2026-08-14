@@ -51,6 +51,21 @@ export function shouldAutoCollapseOnSettle(input: {
   return input.followingBottom
 }
 
+/** O bloco de comando/entrada de uma ação nasce aberto?
+ *
+ *  Mesma régua da caixa irmã (o briefing do agente, que já nascia recolhida,
+ *  dizia o tamanho e tinha teto de altura), com UMA diferença deliberada:
+ *  comando de 1 linha continua aberto. É o caso comum, e recolher custaria mais
+ *  clique do que a altura que economiza. De 2 linhas pra cima recolhe, porque
+ *  um heredoc longo empurra o estado vivo pra fora da viewport dentro do grupo
+ *  que deveria estar mostrando o agora.
+ *
+ *  Contenção VISUAL, nunca truncagem de evidência: o texto armazenado não muda,
+ *  e recolhido ele continua revelável e copiável por inteiro. */
+export function detailBornOpen(lines: number): boolean {
+  return lines <= 1
+}
+
 /** Rótulo do stub que esconde as concluídas num grupo assentado COM falha
  *  ("as 6 ok não pagam o pato"): visível que existiram, invisível até pedir. */
 export function settledOkStubLabel(count: number, open: boolean): string {

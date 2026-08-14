@@ -149,6 +149,54 @@ function backgroundScene(
   ]
 }
 
+describe("MessageList · o bloco de entrada/comando tem teto (a régua do briefing)", () => {
+  // Ação com filho ativo é o único caminho em que o segundo nível de disclosure
+  // nasce aberto sem clique, que é o que o render estático alcança.
+  function scene(payload: unknown): ChatItem[] {
+    return [
+      { kind: "user", id: "u1", text: "Sobe a VPS" },
+      {
+        kind: "tool",
+        id: "item-mcp",
+        name: "mcp__hostinger__VPS_setup",
+        input: payload,
+        toolId: "toolu_mcp",
+        ts: T0,
+      },
+      {
+        kind: "tool",
+        id: "item-child",
+        name: "Bash",
+        input: { command: "ssh vps 'uptime'" },
+        toolId: "toolu_child",
+        parentToolId: "toolu_mcp",
+        ts: T0,
+      },
+    ]
+  }
+
+  it("payload de várias linhas nasce recolhido, dizendo o tamanho", () => {
+    const html = render(scene({ script: "linha 1\nlinha 2\nlinha 3" }), true)
+    expect(html).toContain("linhas")
+    expect(html).toContain('aria-expanded="false"')
+    // recolhido: o conteúdo não ocupa altura até ser pedido
+    expect(html).not.toContain("linha 2")
+  })
+
+  it("aberto, o conteúdo tem teto de altura com scroll próprio", () => {
+    // payload de UMA linha (o adapter entrega o input cru; aqui um escalar)
+    // continua aberto, e mesmo aberto o bloco não passa do teto.
+    const html = render(scene("uptime"), true)
+    expect(html).toContain("uptime")
+    expect(html).toContain("max-h-52 overflow-y-auto")
+  })
+
+  it("truncar a VISUALIZAÇÃO não trunca a evidência: dá pra copiar inteiro", () => {
+    const html = render(scene({ script: "linha 1\nlinha 2\nlinha 3" }), true)
+    expect(html).toContain("Copia a entrada inteira")
+  })
+})
+
 describe("MessageList · posse do nome é da ENTIDADE, e desce pela subárvore", () => {
   it("trabalho em background vivo: o nome sai UMA vez do grupo, os dois níveis mostram só o delta", () => {
     const html = render(

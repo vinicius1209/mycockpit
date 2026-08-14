@@ -17,6 +17,7 @@ import {
   Bot,
   Check,
   ChevronRight,
+  Copy,
   CornerDownRight,
   FileDiff,
   FilePen,
@@ -58,6 +59,7 @@ import {
 } from "@/lib/toolview"
 import {
   bornOpen,
+  detailBornOpen,
   settledOkStubLabel,
   shouldAutoCollapseOnSettle,
 } from "@/components/chat/toolGroupDisclosure"
@@ -478,6 +480,14 @@ const ToolLine = memo(function ToolLine({
     item.deferred == null &&
     (p.kind === "agent" || item.managedProcess != null)
   const briefingLines = p.detail ? Math.max(1, p.detail.split("\n").length) : 0
+  // Régua do briefing aplicada ao bloco de comando/entrada: a caixa irmã já
+  // nascia recolhida, dizia o tamanho e tinha teto de altura; esta não tinha
+  // nenhuma das três, e um heredoc de 34 linhas empurrava o estado vivo pra
+  // fora da viewport. Comando de UMA linha (o caso comum) segue aberto: o
+  // recolhimento custaria mais clique do que economiza altura.
+  const isCommand = p.kind === "bash"
+  const detailTitle = isCommand ? "Comando" : "Entrada"
+  const [detailOpen, setDetailOpen] = useState(() => detailBornOpen(briefingLines))
 
   useEffect(() => {
     if (active && children.length) setOpen(true)
@@ -645,16 +655,49 @@ const ToolLine = memo(function ToolLine({
             (item.result && onRetry)) && (
             <div className="mt-1 mb-1.5 overflow-hidden rounded-md border border-border/60 bg-secondary/20">
               {p.kind !== "agent" && p.detail && (
-                <div className="p-2">
-                  <p className="mb-1 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
-                    {p.kind === "bash" ? "Comando" : "Entrada"}
-                  </p>
-                  <div
-                    data-selectable
-                    className="font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/70"
-                  >
-                    {p.detail}
+                <div>
+                  <div className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => setDetailOpen((value) => !value)}
+                      aria-expanded={detailOpen}
+                      className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-[11px] tracking-wide text-muted-foreground/70 uppercase transition-colors hover:text-foreground"
+                    >
+                      <span>{detailTitle}</span>
+                      <span className="font-mono text-[11px] normal-case">
+                        · {briefingLines} linha{briefingLines === 1 ? "" : "s"}
+                      </span>
+                      <ChevronRight
+                        className={cn(
+                          "ml-auto size-3 shrink-0 text-muted-foreground/45 transition-transform",
+                          detailOpen && "rotate-90",
+                        )}
+                      />
+                    </button>
+                    {/* Contenção visual nunca vira truncagem de evidência: o
+                        texto armazenado não muda e sai INTEIRO daqui, recolhido
+                        ou não (cláusula do Codex na auditoria). */}
+                    <button
+                      type="button"
+                      title={isCommand ? "Copia o comando inteiro" : "Copia a entrada inteira"}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void navigator.clipboard?.writeText(p.detail!)
+                        toast.success(isCommand ? "Comando copiado" : "Entrada copiada")
+                      }}
+                      className="mr-1.5 shrink-0 rounded p-1 text-muted-foreground/60 transition-colors hover:bg-accent/40 hover:text-foreground"
+                    >
+                      <Copy className="size-3" />
+                    </button>
                   </div>
+                  {detailOpen && (
+                    <div
+                      data-selectable
+                      className="max-h-52 overflow-y-auto px-2 pb-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/70"
+                    >
+                      {p.detail}
+                    </div>
+                  )}
                 </div>
               )}
               {diff && (
