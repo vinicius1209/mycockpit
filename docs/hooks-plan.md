@@ -338,3 +338,83 @@ mesmo resultado com fail-open sob NOSSO controle).
 - **Nunca responder permissão automaticamente por default**: H2 responde o que
   o HUMANO tocou na UI/Companion; timeout ⇒ `ask` (prompt nativo no terminal).
   Auto-regras, se um dia existirem, são outro plano e outra guarda.
+
+## 6. Soberania do agente: fail-open de ENTREGA × de AUTORIDADE/CUSTO
+
+> **ENTREGUE (14/08/2026)** — B2 do `study-buzz.md`, adaptado: a lição do Buzz
+> nasceu em hooks-como-tools-MCP; aqui os hooks são nativos de CLI, então o
+> disjuntor mora no SCRIPT (o único lugar que sabe que o app não respondeu) e
+> o teto mora no gateway.
+
+A distinção que faltava, e que este plano confundia até aqui:
+
+| | fail-open de **ENTREGA** (§4.6, tínhamos) | fail-open de **AUTORIDADE/CUSTO** (§6, novo) |
+|---|---|---|
+| Pergunta | o CLI **quebra** se o app morrer? | o CLI **paga** por um app que não vai responder? |
+| Resposta | não: erro engolido, `exit 0`, desfecho neutro | não: depois de 2 timeouts seguidos, o script para de perguntar |
+| Sintoma sem ela | terminal com stack trace | 10 pedidos × ~32s = **5 min de espera** numa sessão |
+
+O H2 sempre degradou bem (`ask`, prompt nativo, nunca deny fabricado), mas
+degradava **caro**: o teto era pago inteiro em CADA pedido. Custo medido nesta
+máquina (14/08/2026, gateway que aceita a conexão e nunca responde — o app
+travado): **32.039 ms · 32.060 ms · 28 ms** — os dois primeiros pedidos pagam o
+teto, o terceiro já degrada na hora. É a mesma prova, com o teto reduzido a 2s,
+que roda na suíte (`hooks_install::tests_shell::terceiro_pedido_de_permissao_
+degrada_na_hora_em_vez_de_pagar_o_teto`).
+
+### 6.1 Disjuntor no script gerado
+
+Estado em `<app_data_dir>/hook-scripts/<engine>/breaker.state` (diretório
+NOSSO, nunca o config do usuário; um por motor), duas palavras: `<timeouts
+consecutivos> <epoch do último>`. Shell puro, sem dependência.
+
+- **2 timeouts CONSECUTIVOS abrem**, nunca 1: lentidão pontual se tolera, app
+  morto não. É a parte da lição do Buzz que não dava pra simplificar.
+- **Só conta timeout de verdade** (curl exit 28 = o app não respondeu no
+  prazo). Conexão recusada (app fechado) já custa milissegundos e não abre
+  nada — o disjuntor existe pro app que está VIVO e mudo.
+- **Aberto por 5 min**, e enquanto aberto o caminho síncrono nem chama o
+  gateway. Vencida a janela, UMA sonda passa; se ela também estourar, reabre na
+  hora (meia-abertura clássica: uma sonda por janela, não duas).
+- **Uma resposta boa zera** (apaga o arquivo). Reinstalar em Configurações
+  também zera: é o gesto de "tenta de novo".
+- **Janela dupla**: dois timeouts separados por mais de 5 min não são
+  consecutivos, e o contador recomeça em 1.
+- **Estado ilegível = disjuntor FECHADO.** Na dúvida a gente pergunta ao app; o
+  custo do erro aqui é esperar, e esperar é melhor que deixar de perguntar.
+- **Nunca um `allow` fantasma.** O disjuntor só produz o desfecho NEUTRO do
+  dialeto: stdout vazio (claude/codex) ou `{"decision":"ask"}` (agy) — o mesmo
+  do timeout. Ele encurta a espera, não decide nada. Fixado em teste nos dois
+  dialetos, e o script inteiro é grepado por "allow".
+- Só o perfil síncrono usa o disjuntor: o de status já vai pro background e não
+  custa nada ao CLI.
+
+### 6.2 Teto de pendências no gateway
+
+Acima de **8** pedidos de permissão pendentes AO MESMO TEMPO, o pedido novo não
+entra na fila: vira `ask` na hora, com `log::warn` dizendo quantos estavam em
+voo, e a sessão fica marcada `blocked` ("esperando você") — que é a verdade,
+porque o prompt nativo está lá no terminal esperando.
+
+Por que 8: a fila é HUMANA e serial (um card por vez), e cada CLI pede
+permissão serialmente dentro de uma sessão. 8 pendentes = 8 sessões
+simultâneas travadas na mesma pessoa, mais do que qualquer uso plausível numa
+máquina e mais do que alguém decide antes do teto de 30s de cada uma expirar.
+Acima disso o que existe é laço de retry, sessão esquecida ou payload forjado
+local: enfileirar seria segurar N conexões e N tasks pra produzir `ask` no fim
+de qualquer jeito. A vaga é reservada por RAII (`PermissionGate`), então toda
+saída do round-trip (decisão, timeout, erro) devolve o lugar.
+
+### 6.3 O que isto deliberadamente NÃO cobre
+
+- **Ninguém em casa não é timeout.** App vivo que devolve `ask` depois de 30s
+  porque o humano não respondeu é uma RESPOSTA, e zera o disjuntor. Custa os
+  mesmos 30s, mas quem decide isso é a fila humana (e o Companion), não um
+  disjuntor — encurtar essa espera seria decidir pelo usuário que ele não vem.
+- **Teto global, não por motor.** O recurso escasso é a atenção da pessoa, que
+  é uma só. O disjuntor, esse sim, é por motor: o app pode estar surdo pro
+  codex e vivo pro claude.
+- **Orçamento de rejeições por prompt** (a outra metade do achado 3 do Buzz)
+  não entra: lá o hook é uma tool MCP que o próprio agente chama em laço; aqui
+  quem chama é o CLI, uma vez por pedido de permissão, e a única rejeição que
+  existe é a do humano — limitar o humano seria decidir por ele.

@@ -291,11 +291,78 @@ pub fn hook_sessions(state: State<'_, ExternalSessions>) -> Vec<ExternalSession>
 //
 // Fail-SAFE de permissão: timeout sem humano ⇒ `ask` — o CLI cai no PRÓPRIO
 // prompt no terminal. Nunca um allow fantasma, nunca um deny fabricado.
+//
+// E fail-open de AUTORIDADE (hooks-plan §6.2): a fila tem TETO. Acima dele o
+// pedido novo degrada na hora em vez de segurar mais uma conexão por 30s pra
+// produzir `ask` no fim de qualquer jeito. O disjuntor do lado do script
+// (hooks_install, §6.1) é a outra metade: aqui a gente para de ENFILEIRAR, lá
+// o script para de PERGUNTAR.
 // ---------------------------------------------------------------------------
 
 /// Teto do round-trip humano. MENOR que o `--max-time 32` do script e que o
 /// timeout 35s do config (camadas: gateway responde antes de alguém desistir).
 pub const PERMISSION_TIMEOUT_MS: u64 = 30_000;
+
+/// Teto de pedidos de permissão pendentes AO MESMO TEMPO (fail-open de
+/// AUTORIDADE, hooks-plan §6.2). Acima disto o pedido NOVO degrada na hora
+/// (`ask`) em vez de entrar na fila.
+///
+/// Por que 8: a fila é HUMANA e serial (um card por vez), e cada CLI pede
+/// permissão de forma serial dentro de uma sessão (uma tool call por vez).
+/// 8 pendentes = 8 sessões simultâneas travadas esperando a mesma pessoa —
+/// mais do que qualquer uso plausível numa máquina, e mais do que alguém
+/// decide antes do teto de 30s de cada uma expirar. Acima disso o que existe
+/// é laço de retry, sessão esquecida ou payload forjado local: enfileirar
+/// seria segurar N conexões e N tasks pra produzir `ask` no fim de qualquer
+/// jeito. Degradar na hora é a resposta honesta — o prompt nativo do terminal
+/// continua lá.
+pub const MAX_PENDING_PERMISSIONS: usize = 8;
+
+/// Contador de pendências em voo. Vaga reservada por RAII: qualquer saída do
+/// round-trip (decisão, timeout, erro) devolve a vaga — sem `finally` esquecido.
+pub struct PermissionGate(std::sync::atomic::AtomicUsize);
+
+/// Vaga viva. Enquanto existe, ocupa um lugar do teto.
+pub struct PermissionSlot<'a>(&'a PermissionGate);
+
+impl Drop for PermissionSlot<'_> {
+    fn drop(&mut self) {
+        self.0 .0.fetch_sub(1, std::sync::atomic::Ordering::Release);
+    }
+}
+
+impl PermissionGate {
+    pub const fn new() -> Self {
+        Self(std::sync::atomic::AtomicUsize::new(0))
+    }
+    /// Reserva uma vaga. `None` = teto batido (o chamador degrada na hora).
+    /// CAS em laço: nunca passa do teto nem com pedidos concorrentes.
+    pub fn reserve(&self) -> Option<PermissionSlot<'_>> {
+        use std::sync::atomic::Ordering::{Acquire, Release};
+        let mut cur = self.0.load(Acquire);
+        loop {
+            if cur >= MAX_PENDING_PERMISSIONS {
+                return None;
+            }
+            match self.0.compare_exchange_weak(cur, cur + 1, Release, Acquire) {
+                Ok(_) => return Some(PermissionSlot(self)),
+                Err(c) => cur = c,
+            }
+        }
+    }
+    pub fn pending(&self) -> usize {
+        self.0.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
+impl Default for PermissionGate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// O teto do processo (o gateway é único; a fila humana é única).
+static PERMISSION_GATE: PermissionGate = PermissionGate::new();
 
 /// Decisão de permissão normalizada (o dialeto só entra na SERIALIZAÇÃO).
 #[derive(Debug, PartialEq)]
@@ -545,6 +612,18 @@ pub async fn permission_roundtrip(
     }
     // pendência na fila ÚNICA de interações (UI + sino + Companion).
     mark_permission_state(app, agent, &perm, SignalKind::Blocked);
+    // teto de pendências: acima dele o pedido NOVO não entra na fila — vira
+    // `ask` na hora (o prompt nativo decide no terminal). A sessão já está
+    // marcada `blocked` acima: a UI mostra "esperando você" de verdade, que é
+    // o que está acontecendo — nada de card que ninguém vai olhar.
+    let Some(_slot) = PERMISSION_GATE.reserve() else {
+        log::warn!(
+            "hooks: teto de permissões pendentes batido ({} de {MAX_PENDING_PERMISSIONS} em voo); pedido de {agent} ({}) degradado pra `ask`, responda no terminal",
+            PERMISSION_GATE.pending(),
+            perm.tool_name
+        );
+        return Some(decision_body(dialect, &HookDecision::Ask));
+    };
     let pending: State<'_, std::sync::Arc<crate::approval::PendingApprovals>> = app.state();
     let pending = pending.inner().clone();
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -938,6 +1017,54 @@ mod tests {
         assert!(
             pending.0.lock().unwrap().is_empty(),
             "o registro tem que ficar limpo nos dois caminhos"
+        );
+    }
+
+    #[test]
+    fn teto_de_pendencias_degrada_o_pedido_novo_em_vez_de_enfileirar() {
+        // gate PRÓPRIO do teste (o de produção é do processo): 8 pedidos
+        // ocupam a fila; o 9º não entra.
+        let gate = PermissionGate::new();
+        let vagas: Vec<_> = (0..MAX_PENDING_PERMISSIONS)
+            .map(|i| gate.reserve().unwrap_or_else(|| panic!("vaga {i}")))
+            .collect();
+        assert_eq!(vagas.len(), MAX_PENDING_PERMISSIONS);
+        assert_eq!(gate.pending(), MAX_PENDING_PERMISSIONS);
+        assert!(
+            gate.reserve().is_none(),
+            "acima do teto o pedido novo NÃO entra na fila"
+        );
+        // e o que ele devolve é o desfecho neutro, nunca um allow fantasma.
+        for d in [
+            HookDialect::ClaudeSettings,
+            HookDialect::CodexHooksJson,
+            HookDialect::AgyConfigHooks,
+        ] {
+            let body = decision_body(d, &HookDecision::Ask);
+            assert!(!body.contains("allow"), "{d:?}: {body}");
+            assert!(!body.contains("deny"), "{d:?}: {body}");
+            assert!(body.contains("ask"), "{d:?}: {body}");
+        }
+    }
+
+    #[test]
+    fn vaga_volta_pro_teto_quando_o_pedido_termina() {
+        // RAII: qualquer saída do round-trip (decisão, timeout, erro) devolve
+        // a vaga — senão o teto viraria um travamento permanente.
+        let gate = PermissionGate::new();
+        {
+            let _v = gate.reserve().unwrap();
+            assert_eq!(gate.pending(), 1);
+        }
+        assert_eq!(gate.pending(), 0);
+        let mut vagas: Vec<_> = (0..MAX_PENDING_PERMISSIONS)
+            .filter_map(|_| gate.reserve())
+            .collect();
+        assert!(gate.reserve().is_none());
+        vagas.pop();
+        assert!(
+            gate.reserve().is_some(),
+            "uma pendência resolvida abre lugar pra próxima"
         );
     }
 

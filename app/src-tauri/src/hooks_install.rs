@@ -21,9 +21,15 @@
 //!      que ficarem vazios saem, o resto do arquivo fica com o MESMO conteúdo
 //!      (a re-serialização pode mudar formatação/ordem — mesma honestidade de
 //!      claim do statusline_install; preserve_order rejeitado lá, vale aqui).
-//!   5. Fail-open por construção no script: fire-and-forget com timeout ~1s em
+//!   5. Fail-open de ENTREGA no script: fire-and-forget com timeout ~1s em
 //!      background, erro engolido, exit 0 — o CLI do usuário nunca quebra nem
 //!      atrasa porque o app morreu.
+//!      E fail-open de AUTORIDADE/CUSTO (hooks-plan §6.1): o perfil SÍNCRONO
+//!      tem disjuntor — 2 timeouts consecutivos do app e o script para de
+//!      perguntar por 5 min, degradando NA HORA no desfecho neutro do dialeto.
+//!      A primeira metade diz que o CLI não QUEBRA; esta diz que ele não PAGA
+//!      (eram ~32s por pedido de permissão, cada um, com o app mudo). O
+//!      disjuntor nunca produz `allow`: ele encurta a espera, não decide.
 //!   6. Correlação por env: `MYCOCKPIT_RUN_ID` (setada só nos runs que o app
 //!      spawna) viaja num header; sessão sem a env = EXTERNA (o H1 existe pra
 //!      elas). Env vazia = header omitido pelo curl, inofensivo fora do app.
@@ -50,6 +56,25 @@ const SCRIPT_NAME: &str = "mycockpit-hook.sh";
 /// Nome do grupo do agy (chave de topo do hooks.json dele). É o identificador
 /// de desinstalação — nunca renomear sem migração.
 pub const AGY_GROUP: &str = "mycockpit";
+
+/// Teto do curl no caminho SÍNCRONO (s): maior que o teto humano do gateway
+/// (30s) e menor que o timeout do config (35s) — as três camadas em ordem.
+const SYNC_MAX_TIME: u64 = 32;
+/// As três camadas em ordem, checadas em compilação: teto humano do gateway
+/// (30s) < teto do curl (32s) < timeout do config do CLI (35s). Inverter
+/// qualquer par faria o CLI matar o hook antes de o app responder `ask`.
+const _: () = assert!(SYNC_MAX_TIME * 1_000 > crate::hook_sessions::PERMISSION_TIMEOUT_MS);
+/// Timeouts CONSECUTIVOS que abrem o disjuntor. **2, nunca 1** — é a parte que
+/// importa da lição do Buzz (study-buzz achado 3): app lento uma vez é
+/// lentidão pontual (tolerar); duas vezes seguidas é app que não vai
+/// responder (parar de insistir).
+const BREAKER_TRIPS: u64 = 2;
+/// Janela do disjuntor, em segundos. Serve às DUAS pontas: dois timeouts
+/// separados por mais que isto não são "consecutivos" (o contador recomeça),
+/// e o disjuntor aberto volta a deixar UMA sonda passar depois deste tempo.
+/// 5 min = ordem de grandeza de "reiniciei o app / ele destravou", sem punir
+/// uma sessão inteira por um episódio.
+const BREAKER_WINDOW_S: u64 = 300;
 
 /// UM evento a instalar: nome + matcher de tool (None = sem matcher) +
 /// timeout (s).
@@ -179,6 +204,57 @@ pub struct HooksStatus {
 // Peças PURAS (render do script + merge por dialeto).
 // ---------------------------------------------------------------------------
 
+/// As funções de shell do DISJUNTOR (soberania do agente), embutidas no script
+/// gerado. Estado num arquivo NOSSO (app_data_dir), duas palavras:
+/// `<timeouts consecutivos> <epoch do último>`. Shell puro, sem dependência.
+///
+///   • `brk_open` — o disjuntor está aberto? (≥2 timeouts e o último há menos
+///     que a janela). Aberto ⇒ o caminho síncrono NEM CHAMA o gateway e
+///     degrada na hora no desfecho neutro do dialeto.
+///   • `brk_hit` — registra UM timeout. Fora da janela, o contador recomeça em
+///     1 (timeout isolado não abre nada); já aberto, o timeout da sonda mantém
+///     aberto (meia-abertura clássica: uma sonda a cada janela, não duas).
+///   • `brk_ok` — resposta do app: zera (apaga o arquivo).
+///
+/// Estado ILEGÍVEL (arquivo corrompido, editado à mão, relógio pro futuro)
+/// conta como disjuntor FECHADO: na dúvida a gente chama o app — o custo do
+/// erro aqui é esperar, e esperar é melhor que deixar de perguntar.
+fn render_breaker(state_file: &str) -> String {
+    format!(
+        "# Disjuntor (soberania do agente, hooks-plan §6.1): {BREAKER_TRIPS} timeouts\n\
+         # CONSECUTIVOS do app abrem o disjuntor por {BREAKER_WINDOW_S}s — enquanto aberto, o\n\
+         # pedido síncrono degrada NA HORA (desfecho neutro), sem pagar o teto\n\
+         # de novo. Uma resposta boa zera. Um timeout isolado NÃO abre.\n\
+         brk=\"{state_file}\"\n\
+         brk_open() {{\n\
+         \x20 [ -r \"$brk\" ] || return 1\n\
+         \x20 brk_c=0; brk_t=0\n\
+         \x20 read -r brk_c brk_t < \"$brk\"\n\
+         \x20 case \"$brk_c\" in ''|*[!0-9]*) return 1 ;; esac\n\
+         \x20 case \"$brk_t\" in ''|*[!0-9]*) return 1 ;; esac\n\
+         \x20 [ \"$brk_c\" -ge {BREAKER_TRIPS} ] || return 1\n\
+         \x20 brk_d=$(( $(date +%s) - brk_t ))\n\
+         \x20 [ \"$brk_d\" -ge 0 ] && [ \"$brk_d\" -lt {BREAKER_WINDOW_S} ]\n\
+         }}\n\
+         brk_hit() {{\n\
+         \x20 brk_c=0; brk_t=0\n\
+         \x20 if [ -r \"$brk\" ]; then read -r brk_c brk_t < \"$brk\"; fi\n\
+         \x20 case \"$brk_c\" in ''|*[!0-9]*) brk_c=0 ;; esac\n\
+         \x20 case \"$brk_t\" in ''|*[!0-9]*) brk_t=0 ;; esac\n\
+         \x20 brk_n=$(date +%s)\n\
+         \x20 if [ \"$brk_c\" -ge {BREAKER_TRIPS} ]; then\n\
+         \x20   : # já aberto: a sonda também falhou, segue aberto\n\
+         \x20 elif [ $((brk_n - brk_t)) -gt {BREAKER_WINDOW_S} ]; then\n\
+         \x20   brk_c=1 # fora da janela: não é consecutivo, recomeça\n\
+         \x20 else\n\
+         \x20   brk_c=$((brk_c + 1))\n\
+         \x20 fi\n\
+         \x20 printf '%s %s\\n' \"$brk_c\" \"$brk_n\" 2>/dev/null > \"$brk\"\n\
+         }}\n\
+         brk_ok() {{ rm -f \"$brk\" 2>/dev/null; }}\n"
+    )
+}
+
 /// Script único por engine; o EVENTO chega como $1 (a entrada instalada no
 /// config o passa) e vai num header — o comando fica ESTÁVEL (importante pro
 /// trusted_hash do codex). Dois perfis no MESMO script:
@@ -188,14 +264,39 @@ pub struct HooksStatus {
 ///     resposta = fail-open pro CLI: claude/codex recebem stdout VAZIO (sem
 ///     opinião → prompt nativo); agy recebe `{"decision":"ask"}` (o output
 ///     dele exige um campo decision — "ask" preserva o fluxo nativo).
-pub fn render_script(engine: &str, dialect: HookDialect, endpoint_file: &str) -> String {
+///
+/// E o disjuntor (`render_breaker`) protege o CUSTO do perfil síncrono: sem
+/// ele, um app travado cobra o teto inteiro em CADA pedido de permissão da
+/// sessão. Só o perfil síncrono usa o disjuntor — o fire-and-forget já vai pro
+/// background e não custa nada ao CLI.
+pub fn render_script(
+    engine: &str,
+    dialect: HookDialect,
+    endpoint_file: &str,
+    breaker_file: &str,
+) -> String {
+    render_script_with(engine, dialect, endpoint_file, breaker_file, SYNC_MAX_TIME)
+}
+
+/// Idem, com o teto do curl injetável: a prova de shell do disjuntor precisa
+/// pagar o timeout DE VERDADE duas vezes, e 32s × 2 não cabe numa suíte. O
+/// único parâmetro que muda entre o script do teste e o da instalação é este
+/// número (a lógica é a MESMA string).
+fn render_script_with(
+    engine: &str,
+    dialect: HookDialect,
+    endpoint_file: &str,
+    breaker_file: &str,
+    sync_max_time: u64,
+) -> String {
+    let breaker = render_breaker(breaker_file);
     let header = format!(
         "#!/bin/sh\n\
          # Generated by MyCockpit — DO NOT EDIT (regenerado a cada instalação)\n\
-         # mycockpit-hook-schema: 2\n\
+         # mycockpit-hook-schema: 3\n\
          # Hooks do MyCockpit: postam o evento de ciclo de vida ($1) pro app\n\
          # em loopback; o evento de permissão espera a SUA decisão no app (até\n\
-         # 32s) e devolve pro CLI. Fail-open: app fechado = a CLI segue como\n\
+         # {sync_max_time}s) e devolve pro CLI. Fail-open: app fechado = a CLI segue como\n\
          # se o hook não existisse (o prompt nativo aparece no terminal).\n\
          # Desinstalação limpa em Configurações do MyCockpit.\n\
          ev=\"$1\"\n\
@@ -205,7 +306,8 @@ pub fn render_script(engine: &str, dialect: HookDialect, endpoint_file: &str) ->
          if [ -r \"$ep\" ]; then\n\
          \x20 port=$(sed -n 's/.*\"port\":[[:space:]]*\\([0-9]*\\).*/\\1/p' \"$ep\" | head -1)\n\
          \x20 token=$(sed -n 's/.*\"token\":[[:space:]]*\"\\([a-f0-9]*\\)\".*/\\1/p' \"$ep\" | head -1)\n\
-         fi\n"
+         fi\n\
+         {breaker}"
     );
     let curl_common = format!(
         "curl -s -X POST \"http://127.0.0.1:${{port}}/hook/{engine}\" \\\n\
@@ -217,9 +319,16 @@ pub fn render_script(engine: &str, dialect: HookDialect, endpoint_file: &str) ->
         // opinião = fluxo nativo); o resto fire-and-forget.
         HookDialect::ClaudeSettings | HookDialect::CodexHooksJson => format!(
             "if [ \"$ev\" = \"PermissionRequest\" ]; then\n\
-             \x20 if [ -n \"$port\" ] && [ -n \"$token\" ]; then\n\
-             \x20   printf '%s' \"$input\" | {curl_common} \\\n\
-             \x20     --connect-timeout 1 --max-time 32 --data-binary @- 2>/dev/null\n\
+             \x20 if [ -n \"$port\" ] && [ -n \"$token\" ] && ! brk_open; then\n\
+             \x20   out=$(printf '%s' \"$input\" | {curl_common} \\\n\
+             \x20     --connect-timeout 1 --max-time {sync_max_time} --data-binary @- 2>/dev/null)\n\
+             \x20   rc=$?\n\
+             \x20   if [ \"$rc\" = 0 ]; then\n\
+             \x20     brk_ok\n\
+             \x20     [ -n \"$out\" ] && printf '%s' \"$out\"\n\
+             \x20   elif [ \"$rc\" = 28 ]; then\n\
+             \x20     brk_hit # o app não respondeu no prazo\n\
+             \x20   fi\n\
              \x20 fi\n\
              \x20 exit 0\n\
              fi\n\
@@ -234,9 +343,16 @@ pub fn render_script(engine: &str, dialect: HookDialect, endpoint_file: &str) ->
         HookDialect::AgyConfigHooks => format!(
             "if [ \"$ev\" = \"PreToolUse\" ]; then\n\
              \x20 body=\"\"\n\
-             \x20 if [ -n \"$port\" ] && [ -n \"$token\" ]; then\n\
+             \x20 if [ -n \"$port\" ] && [ -n \"$token\" ] && ! brk_open; then\n\
              \x20   body=$(printf '%s' \"$input\" | {curl_common} \\\n\
-             \x20     --connect-timeout 1 --max-time 32 --data-binary @- 2>/dev/null)\n\
+             \x20     --connect-timeout 1 --max-time {sync_max_time} --data-binary @- 2>/dev/null)\n\
+             \x20   rc=$?\n\
+             \x20   if [ \"$rc\" = 0 ]; then\n\
+             \x20     brk_ok\n\
+             \x20   else\n\
+             \x20     body=\"\"\n\
+             \x20     [ \"$rc\" = 28 ] && brk_hit\n\
+             \x20   fi\n\
              \x20 fi\n\
              \x20 if [ -n \"$body\" ]; then printf '%s\\n' \"$body\"; else printf '{{\"decision\":\"ask\"}}\\n'; fi\n\
              \x20 exit 0\n\
@@ -491,6 +607,13 @@ fn script_path(app: &AppHandle, agent: &str) -> Result<PathBuf, String> {
         .join(SCRIPT_NAME))
 }
 
+/// Estado do disjuntor, AO LADO do script (dir NOSSO, nunca o config do
+/// usuário — o arquivo dele é dele). Um por motor: o app pode estar surdo pro
+/// codex e vivo pro claude.
+fn breaker_path(app: &AppHandle, agent: &str) -> Result<PathBuf, String> {
+    Ok(script_path(app, agent)?.with_file_name("breaker.state"))
+}
+
 /// Lê e parseia o config. Ausente → objeto vazio (instalação cria); inválido
 /// ou não-objeto → erro honesto, nada é alterado (mesma regra do statusline:
 /// nunca sobrescrevemos um arquivo que não entendemos).
@@ -688,12 +811,14 @@ pub async fn hooks_install(
     let cpath = config_path(dialect)?;
     let script = script_path(&app, &agent)?;
     let endpoint = crate::hook_gateway::endpoint_file(&app)?;
+    let breaker = breaker_path(&app, &agent)?;
     install_files(
         &agent,
         dialect,
         &cpath,
         &script,
         &endpoint.to_string_lossy(),
+        &breaker.to_string_lossy(),
         permission,
     )?;
     log::info!(
@@ -712,11 +837,15 @@ fn install_files(
     cpath: &PathBuf,
     script: &PathBuf,
     endpoint: &str,
+    breaker: &str,
     permission: bool,
 ) -> Result<(), String> {
     let script_str = script.to_string_lossy().to_string();
     let cfg = read_config(cpath)?;
-    write_script(script, &render_script(agent, dialect, endpoint))?;
+    write_script(script, &render_script(agent, dialect, endpoint, breaker))?;
+    // reinstalar é o gesto de "tenta de novo": o disjuntor de uma instalação
+    // anterior não pode sobreviver ao clique do usuário.
+    let _ = std::fs::remove_file(breaker);
     backup_config(cpath)?;
     let events = events_for(dialect, permission);
     let next = match dialect {
@@ -727,7 +856,12 @@ fn install_files(
 }
 
 /// A REMOÇÃO (só o que é nosso + o script), mesma separação do `install_files`.
-fn uninstall_files(dialect: HookDialect, cpath: &PathBuf, script: &PathBuf) -> Result<(), String> {
+fn uninstall_files(
+    dialect: HookDialect,
+    cpath: &PathBuf,
+    script: &PathBuf,
+    breaker: &PathBuf,
+) -> Result<(), String> {
     let script_str = script.to_string_lossy().to_string();
     let cfg = read_config(cpath)?;
     let next = match dialect {
@@ -741,6 +875,8 @@ fn uninstall_files(dialect: HookDialect, cpath: &PathBuf, script: &PathBuf) -> R
     if script.exists() {
         std::fs::remove_file(script).map_err(|e| e.to_string())?;
     }
+    // o estado do disjuntor é NOSSO: sai junto (desinstalar não deixa rastro).
+    let _ = std::fs::remove_file(breaker);
     Ok(())
 }
 
@@ -751,7 +887,8 @@ pub fn hooks_uninstall(app: AppHandle, agent: String) -> Result<HooksStatus, Str
     let dialect = require_hooks(&agent)?;
     let cpath = config_path(dialect)?;
     let script = script_path(&app, &agent)?;
-    uninstall_files(dialect, &cpath, &script)?;
+    let breaker = breaker_path(&app, &agent)?;
+    uninstall_files(dialect, &cpath, &script, &breaker)?;
     log::info!("hooks: desinstalado pra {agent}");
     status_of(&app, &agent)
 }
@@ -771,6 +908,8 @@ mod tests {
     const SCRIPT: &str =
         "/Users/x/Library/Application Support/mycockpit/hook-scripts/claude-code/mycockpit-hook.sh";
     const ENDPOINT: &str = "/Users/x/Library/Application Support/mycockpit/hook-endpoint.json";
+    const BREAKER: &str =
+        "/Users/x/Library/Application Support/mycockpit/hook-scripts/claude-code/breaker.state";
 
     /// Recorte REAL do ~/.claude/settings.json desta máquina: 3 origens
     /// convivendo no mesmo evento (afplay do usuário, thaytool, Xirp com
@@ -957,7 +1096,7 @@ mod tests {
 
     #[test]
     fn script_fail_open_por_construcao() {
-        let s = render_script("claude-code", HookDialect::ClaudeSettings, ENDPOINT);
+        let s = render_script("claude-code", HookDialect::ClaudeSettings, ENDPOINT, BREAKER);
         // fire-and-forget: timeout de 1s, background, erro engolido, exit 0.
         assert!(s.contains("--connect-timeout 1"));
         assert!(s.contains(">/dev/null 2>&1 &"));
@@ -972,7 +1111,7 @@ mod tests {
 
     #[test]
     fn script_do_agy_responde_o_contrato_sincrono_antes_de_postar() {
-        let s = render_script("agy", HookDialect::AgyConfigHooks, ENDPOINT);
+        let s = render_script("agy", HookDialect::AgyConfigHooks, ENDPOINT, BREAKER);
         // resposta neutra IMEDIATA (Stop = decision vazia, resto = {}) — o
         // mesmo contrato que o hook vivo do Orca respeita [E11].
         assert!(s.contains(r#"Stop) printf '{"decision":""}\n' ;;"#));
@@ -1041,7 +1180,7 @@ mod tests {
 
     #[test]
     fn script_do_claude_family_segura_a_permissao_e_cala_no_timeout() {
-        let s = render_script("codex", HookDialect::CodexHooksJson, ENDPOINT);
+        let s = render_script("codex", HookDialect::CodexHooksJson, ENDPOINT, BREAKER);
         // ramo síncrono: espera até 32s e pipa a resposta do app pro stdout.
         assert!(s.contains("if [ \"$ev\" = \"PermissionRequest\" ]; then"));
         assert!(s.contains("--max-time 32"));
@@ -1055,12 +1194,47 @@ mod tests {
 
     #[test]
     fn script_do_agy_devolve_ask_quando_o_app_nao_responde() {
-        let s = render_script("agy", HookDialect::AgyConfigHooks, ENDPOINT);
+        let s = render_script("agy", HookDialect::AgyConfigHooks, ENDPOINT, BREAKER);
         assert!(s.contains("if [ \"$ev\" = \"PreToolUse\" ]; then"));
         // o output do PreToolUse EXIGE decision: sem resposta do app, `ask`
         // preserva o comportamento nativo (inclusive o cache de Always Allow).
         assert!(s.contains(r#"printf '{"decision":"ask"}\n'"#));
         assert!(s.contains("--max-time 32"));
+    }
+
+    #[test]
+    fn o_disjuntor_guarda_so_o_caminho_sincrono() {
+        for (engine, dialect, gate) in [
+            (
+                "claude-code",
+                HookDialect::ClaudeSettings,
+                "if [ \"$ev\" = \"PermissionRequest\" ]; then",
+            ),
+            (
+                "agy",
+                HookDialect::AgyConfigHooks,
+                "if [ \"$ev\" = \"PreToolUse\" ]; then",
+            ),
+        ] {
+            let s = render_script(engine, dialect, ENDPOINT, BREAKER);
+            // o estado mora no NOSSO diretório, nunca no config do usuário.
+            assert!(s.contains(BREAKER), "{engine}");
+            // a guarda está na condição do ramo síncrono (e só nele): o
+            // fire-and-forget já vai pro background, não custa nada ao CLI.
+            let sync = s.split(gate).nth(1).expect("ramo síncrono");
+            let (sync, resto) = sync.split_once("\nfi\n").expect("fim do ramo");
+            assert!(sync.contains("! brk_open"), "{engine}: sem guarda");
+            assert!(sync.contains("brk_hit"), "{engine}: não conta timeout");
+            assert!(sync.contains("brk_ok"), "{engine}: não zera na resposta");
+            assert!(!resto.contains("brk_"), "{engine}: disjuntor fora do síncrono");
+            // só o timeout do curl (28) conta; conexão recusada não.
+            assert!(s.contains("elif [ \"$rc\" = 28 ]") || s.contains("[ \"$rc\" = 28 ] && brk_hit"));
+        }
+        // e o disjuntor NUNCA fabrica autoridade: nada de allow no script.
+        assert!(!render_script("claude-code", HookDialect::ClaudeSettings, ENDPOINT, BREAKER)
+            .contains("allow"));
+        assert!(!render_script("agy", HookDialect::AgyConfigHooks, ENDPOINT, BREAKER)
+            .contains("allow"));
     }
 
     #[test]
@@ -1193,6 +1367,7 @@ mod prova_real {
         // 2) instalar de verdade.
         let data = app_data_dir_real();
         let script = data.join("hook-scripts").join(agent).join(SCRIPT_NAME);
+        let breaker = script.with_file_name("breaker.state");
         let endpoint = data.join("hook-endpoint.json");
         install_files(
             agent,
@@ -1200,6 +1375,7 @@ mod prova_real {
             &cpath,
             &script,
             &endpoint.to_string_lossy(),
+            &breaker.to_string_lossy(),
             false,
         )
         .expect("instalação");
@@ -1224,7 +1400,7 @@ mod prova_real {
         assert!(!backups.is_empty(), "backup antes de mexer");
 
         // 3) desativar devolve o arquivo ao estado anterior.
-        uninstall_files(dialect, &cpath, &script).expect("desinstalação");
+        uninstall_files(dialect, &cpath, &script, &breaker).expect("desinstalação");
         let restaurado = read_config(&cpath).expect("hooks.json restaurado");
         println!("--- DEPOIS DE DESATIVAR ---");
         println!("{}", serde_json::to_string_pretty(&restaurado).unwrap());
@@ -1246,6 +1422,7 @@ mod tests_shell {
         let dir = std::env::temp_dir().join(format!("mc-hooks-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let ep = dir.join("hook-endpoint.json");
+        let brk = dir.join("breaker.state");
         std::fs::write(&ep, r#"{"port":1,"token":"abc123","startedAt":0}"#).unwrap();
         for (dialect, expected_stdout) in [
             (HookDialect::ClaudeSettings, ""),
@@ -1254,19 +1431,26 @@ mod tests_shell {
             let script = dir.join(SCRIPT_NAME);
             std::fs::write(
                 &script,
-                render_script("claude-code", dialect, &ep.to_string_lossy()),
+                render_script(
+                    "claude-code",
+                    dialect,
+                    &ep.to_string_lossy(),
+                    &brk.to_string_lossy(),
+                ),
             )
             .unwrap();
-            let syn = std::process::Command::new("sh")
-                .arg("-n")
-                .arg(&script)
-                .output()
-                .unwrap();
-            assert!(
-                syn.status.success(),
-                "sh -n falhou: {}",
-                String::from_utf8_lossy(&syn.stderr)
-            );
+            for sh in shells() {
+                let syn = std::process::Command::new(sh)
+                    .arg("-n")
+                    .arg(&script)
+                    .output()
+                    .unwrap();
+                assert!(
+                    syn.status.success(),
+                    "{sh} -n falhou: {}",
+                    String::from_utf8_lossy(&syn.stderr)
+                );
+            }
             let out = std::process::Command::new("sh")
                 .arg(&script)
                 .arg("PreInvocation")
@@ -1296,7 +1480,12 @@ mod tests_shell {
         let script = dir.join(SCRIPT_NAME);
         std::fs::write(
             &script,
-            render_script("agy", HookDialect::AgyConfigHooks, &ep.to_string_lossy()),
+            render_script(
+                "agy",
+                HookDialect::AgyConfigHooks,
+                &ep.to_string_lossy(),
+                &brk.to_string_lossy(),
+            ),
         )
         .unwrap();
         let out = std::process::Command::new("sh")
@@ -1321,6 +1510,207 @@ mod tests_shell {
             String::from_utf8_lossy(&out.stdout).trim(),
             r#"{"decision":"ask"}"#
         );
+        // porta MORTA (recusa a conexão em ms) NÃO é timeout: o disjuntor não
+        // abre por app fechado, que já degrada rápido por construção.
+        assert!(
+            !brk.exists(),
+            "conexão recusada não conta timeout: {}",
+            std::fs::read_to_string(&brk).unwrap_or_default()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Os `/bin/sh` desta máquina. O shebang do script é `#!/bin/sh`, que no
+    /// macOS é bash-em-modo-POSIX e no Linux costuma ser dash: o disjuntor tem
+    /// que se comportar IGUAL nos dois (o app é Mac e Linux).
+    #[cfg(unix)]
+    fn shells() -> Vec<&'static str> {
+        ["/bin/sh", "/bin/dash", "/bin/ash"]
+            .into_iter()
+            .filter(|p| std::path::Path::new(p).exists())
+            .collect()
+    }
+
+    /// Roda um trecho de shell com as funções do disjuntor carregadas (a MESMA
+    /// string que vai pro script instalado) e devolve o stdout, exigindo que
+    /// todos os shells da máquina concordem.
+    #[cfg(unix)]
+    fn com_disjuntor(state: &std::path::Path, snippet: &str) -> String {
+        let lib = state.with_extension("lib.sh");
+        let estado = std::fs::read(state).ok();
+        let mut acordo: Option<String> = None;
+        for sh in shells() {
+            // cada shell parte do MESMO estado (o snippet pode escrever nele).
+            match &estado {
+                Some(b) => std::fs::write(state, b).unwrap(),
+                None => {
+                    let _ = std::fs::remove_file(state);
+                }
+            }
+            std::fs::write(&lib, render_breaker(&state.to_string_lossy())).unwrap();
+            let out = std::process::Command::new(sh)
+                .arg("-c")
+                .arg(format!(". '{}'\n{snippet}", lib.display()))
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{sh}: disjuntor falhou: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            match &acordo {
+                None => acordo = Some(s),
+                Some(a) => assert_eq!(a, &s, "{sh} discorda dos outros shells"),
+            }
+        }
+        acordo.expect("nenhum /bin/sh nesta máquina?")
+    }
+
+    /// A regra que importa da lição do Buzz: UM timeout é lentidão pontual
+    /// (não abre nada); DOIS seguidos são um app que não vai responder.
+    #[test]
+    #[cfg(unix)]
+    fn um_timeout_nao_abre_o_disjuntor_e_dois_abrem() {
+        let dir = std::env::temp_dir().join(format!("mc-brk-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let st = dir.join("breaker.state");
+        let estado = "brk_open && echo ABERTO || echo FECHADO";
+        // sem estado nenhum: fechado (o caminho normal chama o app).
+        assert_eq!(com_disjuntor(&st, estado), "FECHADO");
+        // 1 timeout: contador em 1, ainda FECHADO.
+        assert_eq!(com_disjuntor(&st, &format!("brk_hit\n{estado}")), "FECHADO");
+        assert!(std::fs::read_to_string(&st).unwrap().starts_with("1 "));
+        // 2º timeout consecutivo: ABRE.
+        assert_eq!(com_disjuntor(&st, &format!("brk_hit\n{estado}")), "ABERTO");
+        assert!(std::fs::read_to_string(&st).unwrap().starts_with("2 "));
+        // resposta boa do app zera (some o arquivo) e fecha na hora.
+        assert_eq!(com_disjuntor(&st, &format!("brk_ok\n{estado}")), "FECHADO");
+        assert!(!st.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Janela: dois timeouts LONGE um do outro não são consecutivos, e o
+    /// disjuntor aberto deixa UMA sonda passar quando a janela vence.
+    #[test]
+    #[cfg(unix)]
+    fn janela_reseta_o_contador_e_a_sonda_reabre_no_fracasso() {
+        let dir = std::env::temp_dir().join(format!("mc-brk-janela-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let st = dir.join("breaker.state");
+        let estado = "brk_open && echo ABERTO || echo FECHADO";
+        let agora = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let velho = agora - BREAKER_WINDOW_S - 60;
+        // um timeout de 6 min atrás + um agora NÃO são consecutivos: volta a 1.
+        std::fs::write(&st, format!("1 {velho}\n")).unwrap();
+        assert_eq!(com_disjuntor(&st, &format!("brk_hit\n{estado}")), "FECHADO");
+        assert!(std::fs::read_to_string(&st).unwrap().starts_with("1 "));
+        // disjuntor aberto com a janela VENCIDA: deixa uma sonda passar.
+        std::fs::write(&st, format!("2 {velho}\n")).unwrap();
+        assert_eq!(com_disjuntor(&st, estado), "FECHADO");
+        // e se a sonda também estourar, reabre na hora (nunca volta a pagar 2).
+        assert_eq!(com_disjuntor(&st, &format!("brk_hit\n{estado}")), "ABERTO");
+        assert!(std::fs::read_to_string(&st).unwrap().starts_with("2 "));
+        // estado ilegível (editado à mão, disco corrompido) = FECHADO: na
+        // dúvida a gente pergunta ao app, nunca deixa de perguntar.
+        std::fs::write(&st, "lixo aqui\n").unwrap();
+        assert_eq!(com_disjuntor(&st, estado), "FECHADO");
+        assert_eq!(com_disjuntor(&st, &format!("brk_hit\n{estado}")), "FECHADO");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A PROVA DE TEMPO. Um app que aceita a conexão e nunca responde (o app
+    /// travado: porta viva, gateway mudo) custava o teto do curl em CADA
+    /// pedido de permissão. Aqui: 1º e 2º pagam o teto; do 3º em diante o
+    /// disjuntor devolve o desfecho neutro na hora.
+    ///
+    /// Teto de 2s no lugar dos 32s de produção (é o único parâmetro que muda —
+    /// `render_script_with`), senão a prova levaria mais de um minuto. Medido
+    /// nesta máquina (14/08/2026): com o teto de 2s, 2030ms · 2039ms · 22ms;
+    /// rodando a MESMA prova com o teto real de 32s, **32039ms · 32060ms ·
+    /// 28ms** — é esse o custo que o disjuntor tira do usuário a partir do 3º
+    /// pedido, e o número que justifica a frente inteira.
+    #[test]
+    #[cfg(unix)]
+    fn terceiro_pedido_de_permissao_degrada_na_hora_em_vez_de_pagar_o_teto() {
+        use std::time::Instant;
+        let dir = std::env::temp_dir().join(format!("mc-brk-tempo-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // buraco negro: aceita a conexão (backlog do kernel) e nunca responde.
+        let mudo = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = mudo.local_addr().unwrap().port();
+        let ep = dir.join("hook-endpoint.json");
+        std::fs::write(&ep, format!(r#"{{"port":{porta},"token":"abc123"}}"#)).unwrap();
+        let st = dir.join("breaker.state");
+        let script = dir.join(SCRIPT_NAME);
+        std::fs::write(
+            &script,
+            render_script_with(
+                "claude-code",
+                HookDialect::ClaudeSettings,
+                &ep.to_string_lossy(),
+                &st.to_string_lossy(),
+                2,
+            ),
+        )
+        .unwrap();
+        let pedir = |evento: &str, payload: &'static [u8]| -> (u128, String) {
+            let t = Instant::now();
+            let out = std::process::Command::new("sh")
+                .arg(&script)
+                .arg(evento)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .and_then(|mut c| {
+                    use std::io::Write;
+                    c.stdin.take().unwrap().write_all(payload).unwrap();
+                    c.wait_with_output()
+                })
+                .unwrap();
+            assert!(out.status.success(), "o script sempre sai 0");
+            (
+                t.elapsed().as_millis(),
+                String::from_utf8_lossy(&out.stdout).to_string(),
+            )
+        };
+        const PERM: &[u8] = br#"{"hook_event_name":"PermissionRequest","tool_name":"Bash"}"#;
+        let (t1, s1) = pedir("PermissionRequest", PERM);
+        assert!(t1 >= 1_500, "o 1º pedido paga o teto (t={t1}ms)");
+        assert_eq!(s1, "", "sem resposta = stdout vazio (prompt nativo decide)");
+        let (t2, _) = pedir("PermissionRequest", PERM);
+        assert!(
+            t2 >= 1_500,
+            "o 2º TAMBÉM paga: um timeout isolado não abre o disjuntor (t={t2}ms)"
+        );
+        let (t3, s3) = pedir("PermissionRequest", PERM);
+        assert!(
+            t3 < 800,
+            "com o disjuntor aberto o 3º pedido degrada na hora (t={t3}ms, antes {t1}ms)"
+        );
+        assert_eq!(s3, "", "degradação NUNCA imprime allow: stdout vazio");
+        // e o desfecho do agy com o disjuntor aberto é `ask`, nunca allow.
+        std::fs::write(
+            &script,
+            render_script_with(
+                "agy",
+                HookDialect::AgyConfigHooks,
+                &ep.to_string_lossy(),
+                &st.to_string_lossy(),
+                2,
+            ),
+        )
+        .unwrap();
+        println!("disjuntor (teto de 2s): 1º={t1}ms · 2º={t2}ms · 3º={t3}ms");
+        let (t4, s4) = pedir("PreToolUse", br#"{"toolCall":{"name":"run_command"}}"#);
+        assert!(t4 < 800, "agy também degrada na hora (t={t4}ms)");
+        assert_eq!(s4.trim(), r#"{"decision":"ask"}"#);
+        assert!(!s4.contains("allow"), "nunca um allow fantasma");
+        drop(mudo);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

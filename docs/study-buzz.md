@@ -64,6 +64,12 @@ exceção**".
 prompt; matar servidor só no segundo timeout consecutivo; saída de hook em
 JSON-encode (anti prompt-injection); resposta injetada como tool-result
 (confiança menor que system). ~40 linhas no nosso hooks.
+> **ENTREGUE (14/08/2026), adaptado** — `hooks-plan.md §6`: disjuntor no script
+> gerado (2 timeouts consecutivos ⇒ 5 min degradando na hora, só no desfecho
+> neutro do dialeto) + teto de 8 permissões pendentes no gateway. O custo real
+> que isso tira: 32s por pedido → 28 ms a partir do terceiro. Fora do escopo,
+> com motivo escrito lá: orçamento de rejeições por prompt (não temos hook
+> como tool MCP em laço; a única rejeição aqui é a do humano).
 
 **B3 — Descritor efetivo único + requisito com superfície (alto / médio).**
 Um lugar só onde command/args/env são resolvidos (`EffectiveHarnessDescriptor`,
