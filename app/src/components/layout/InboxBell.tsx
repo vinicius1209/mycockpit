@@ -7,12 +7,14 @@ import {
   ChevronDown,
   ChevronRight,
   CircleHelp,
+  Download,
   EyeOff,
   FileText,
   Gauge,
   GitPullRequest,
   Inbox,
   Lightbulb,
+  LogIn,
   MessageCircleQuestion,
   ShieldQuestion,
   SquareKanban,
@@ -45,6 +47,11 @@ import {
   scanDecisions,
   type Decision,
 } from "@/lib/inbox"
+import {
+  blockingToolCount,
+  toolHealthItems,
+  type ToolHealthItem,
+} from "@/lib/toolHealth"
 import { cn } from "@/lib/utils"
 
 /** Navega direto pra ONDE a decisão mora: a conversa (Fusion), o card do
@@ -224,6 +231,75 @@ function DecisionRow({
   )
 }
 
+/** Uma linha de SAÚDE DE FERRAMENTA (CLI sem login / com update).
+ *
+ *  Tom, pela tabela do STYLEGUIDE §2: "sem login" é âmbar (precisa de você,
+ *  bloqueia o envio); "atualização disponível" é CINZA (informação, nada
+ *  quebrou). É a hierarquia da lista virando pixel, não só ordem.
+ *
+ *  Ação: as duas abrem Configurações ▸ Agentes na máquina, que é onde os gestos
+ *  JÁ existem ("Verificar agora" depois de logar pelo terminal da CLI, e o
+ *  "Atualizar" que dispara o job). O botão de update não foi duplicado aqui de
+ *  propósito: ele carrega estado que esta linha não tem como mostrar (spinner
+ *  do job vivo, travar enquanto outro job roda, o aviso de N instalações no
+ *  PATH), e o dropdown fecha no clique. Um dono só pro gesto. */
+function ToolHealthRow({
+  item,
+  onOpen,
+  onDismiss,
+}: {
+  item: ToolHealthItem
+  onOpen: () => void
+  /** Só o update é dispensável (impedimento não se dispensa). */
+  onDismiss?: () => void
+}) {
+  const isAuth = item.kind === "auth"
+  return (
+    <DropdownMenuItem
+      onSelect={onOpen}
+      className="flex-col items-start gap-0.5 py-2"
+    >
+      <span
+        className={cn(
+          "group/tool flex w-full items-center gap-2 text-[13px]",
+          isAuth ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        {isAuth ? (
+          <LogIn className="size-3.5 shrink-0 text-st-warning" />
+        ) : (
+          <Download className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
+        <span className="min-w-0 flex-1 truncate">
+          {isAuth
+            ? `${item.label} sem login`
+            : `Atualização do ${item.label} disponível`}
+        </span>
+        {onDismiss && (
+          <button
+            onClick={(e) => {
+              // dispensa SEM navegar (a linha some na hora).
+              e.stopPropagation()
+              e.preventDefault()
+              onDismiss()
+            }}
+            title="Dispensar esta versão"
+            aria-label="Dispensar esta versão"
+            className="hidden shrink-0 rounded p-0.5 text-muted-foreground transition-colors group-hover/tool:block hover:text-foreground"
+          >
+            <X className="size-3" />
+          </button>
+        )}
+      </span>
+      <span className="w-full truncate pl-[22px] text-[11px] text-muted-foreground">
+        {isAuth
+          ? "Bloqueia o envio. Entre pela CLI no terminal, depois Verificar agora."
+          : `v${item.current ?? "?"} → v${item.latest ?? "?"} · Atualizar em Configurações ▸ Agentes na máquina`}
+      </span>
+    </DropdownMenuItem>
+  )
+}
+
 function NotifIcon({ kind }: { kind: Notification["kind"] }) {
   if (kind === "run_error")
     return <AlertCircle className="size-3.5 shrink-0 text-st-error" />
@@ -245,6 +321,12 @@ function NotifIcon({ kind }: { kind: Notification["kind"] }) {
 export function InboxBell() {
   const projects = useApp((s) => s.projects)
   const limited = useApp((s) => s.limitedAgents)
+  // Saúde das CLIs: MESMA fonte que a Frota do Painel lê (o snapshot da
+  // detecção em settings.detected). Nada é re-detectado aqui.
+  const detected = useApp((s) => s.settings.detected)
+  const updateDismissed = useApp((s) => s.settings.updateDismissed)
+  const setSettings = useApp((s) => s.setSettings)
+  const setSettingsOpen = useApp((s) => s.setSettingsOpen)
   const [decisions, setDecisions] = useState<Decision[]>([])
   const notifs = useNotifs((s) => s.items)
   const markRead = useNotifs((s) => s.markRead)
@@ -313,6 +395,28 @@ export function InboxBell() {
   const limitedIds = Object.keys(limited)
   const feed = filter === "unread" ? notifs.filter((n) => !n.read) : notifs
 
+  // Saúde de ferramenta (regras puras em lib/toolHealth): já vem ordenada por
+  // impedimento antes de conveniência.
+  const toolItems = useMemo(
+    () => toolHealthItems(detected, updateDismissed),
+    [detected, updateDismissed],
+  )
+  const blockedTools = blockingToolCount(toolItems)
+  const hasToolSection = toolItems.length > 0 || limitedIds.length > 0
+  /** O que o badge conta: decisão pendente + ferramenta que bloqueia. */
+  const blocked = pending.length + blockedTools
+
+  /** Dispensa persistida por VERSÃO (§5.4): a próxima versão volta a aparecer. */
+  const dismissUpdate = useCallback(
+    (item: ToolHealthItem) => {
+      if (!item.latest) return
+      setSettings({
+        updateDismissed: { ...updateDismissed, [item.agent]: item.latest },
+      })
+    },
+    [setSettings, updateDismissed],
+  )
+
   return (
     <DropdownMenu onOpenChange={(o) => o && refresh()}>
       <DropdownMenuTrigger asChild>
@@ -329,10 +433,14 @@ export function InboxBell() {
               entre "3 decisões esperando" e "3 turnos terminaram".
               O badge conta só o PENDENTE: gate do SDD que o app apenas achou no
               disco (sem gesto seu por aqui) vive na seção de baixo e não acende
-              alarme, senão dívida de 68 dias vira "precisa de você agora". */}
-          {pending.length > 0 ? (
+              alarme, senão dívida de 68 dias vira "precisa de você agora".
+              CLI sem login soma AQUI porque passa no mesmo teste das decisões:
+              bloqueia trabalho e some com um gesto seu. Update disponível NÃO
+              soma (fica na lista, sem gritar): dura dias e não impede nada, e
+              sino permanentemente aceso é o custo que o ADR-040 recusou. */}
+          {blocked > 0 ? (
             <span className="absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-brass text-[11px] font-semibold text-background">
-              {pending.length > 9 ? "9+" : pending.length}
+              {blocked > 9 ? "9+" : blocked}
             </span>
           ) : unread > 0 ? (
             <span
@@ -350,49 +458,106 @@ export function InboxBell() {
         sideOffset={8}
         className="z-[120] max-h-[75vh] w-96 overflow-y-auto"
       >
-        {/* Decisões — o que espera ação sua */}
-        <DropdownMenuLabel className="text-[11px] tracking-wide text-muted-foreground uppercase">
-          Precisam de você
-        </DropdownMenuLabel>
-        {pending.length === 0 ? (
-          <div className="px-2 py-2 text-center text-[12px] text-muted-foreground">
-            Nada esperando você.
-          </div>
-        ) : (
-          pending.map((d) => (
-            <DecisionRow
-              key={decisionKey(d)}
-              d={d}
-              actions={
-                d.kind === "proposal"
-                  ? [
-                      {
-                        icon: X,
-                        label: "Dispensar a proposta",
-                        run: () =>
-                          void dismissProposal(d.proposalId)
-                            .then(refresh)
-                            .catch((err) => {
-                              // falhou = o item FICA na fila (não some mentindo).
-                              console.warn(
-                                "[inbox] falha ao dispensar a proposta",
-                                err,
-                              )
-                            }),
-                      },
-                    ]
-                  : d.kind === "prd" || d.kind === "pr"
-                    ? [
-                        {
-                          icon: EyeOff,
-                          label: "Ignorar este plano",
-                          run: () => setIgnored(d, true),
-                        },
-                      ]
-                    : undefined
-              }
-            />
-          ))
+        {/* Decisões — o que espera ação sua.
+            A seção inteira sai quando não há decisão E há ferramenta
+            bloqueando: com o badge aceso por causa de uma CLI deslogada, abrir
+            o sino e ler "Nada esperando você" seria mentira. Nesse caso a seção
+            Ferramentas lidera a lista, que é onde está a verdade. */}
+        {(pending.length > 0 || blockedTools === 0) && (
+          <>
+            <DropdownMenuLabel className="text-[11px] tracking-wide text-muted-foreground uppercase">
+              Precisam de você
+            </DropdownMenuLabel>
+            {pending.length === 0 ? (
+              <div className="px-2 py-2 text-center text-[12px] text-muted-foreground">
+                Nada esperando você.
+              </div>
+            ) : (
+              pending.map((d) => (
+                <DecisionRow
+                  key={decisionKey(d)}
+                  d={d}
+                  actions={
+                    d.kind === "proposal"
+                      ? [
+                          {
+                            icon: X,
+                            label: "Dispensar a proposta",
+                            run: () =>
+                              void dismissProposal(d.proposalId)
+                                .then(refresh)
+                                .catch((err) => {
+                                  // falhou = o item FICA na fila (não some mentindo).
+                                  console.warn(
+                                    "[inbox] falha ao dispensar a proposta",
+                                    err,
+                                  )
+                                }),
+                          },
+                        ]
+                      : d.kind === "prd" || d.kind === "pr"
+                        ? [
+                            {
+                              icon: EyeOff,
+                              label: "Ignorar este plano",
+                              run: () => setIgnored(d, true),
+                            },
+                          ]
+                        : undefined
+                  }
+                />
+              ))
+            )}
+          </>
+        )}
+
+        {/* Ferramentas — SAÚDE das CLIs desta máquina, não decisão de trabalho.
+            A distinção que separa esta seção da faixa "precisa de você": lá o
+            app pergunta O QUE FAZER (adotar a proposta, escolher o vencedor) e
+            o item some quando VOCÊ decide; aqui não há trabalho pra escolher,
+            há uma ferramenta que não está pronta, e o item some quando o ESTADO
+            DA MÁQUINA muda. Por isso nada daqui entra na fila de decisões.
+            Ordem = severidade: sem login (bloqueia, conta no badge) · rate
+            limit (bloqueia, mas volta sozinho, nenhum gesto seu resolve) ·
+            update (conveniência, cinza). */}
+        {hasToolSection && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[11px] tracking-wide text-muted-foreground uppercase">
+              Ferramentas
+            </DropdownMenuLabel>
+            {toolItems
+              .filter((i) => i.kind === "auth")
+              .map((item) => (
+                <ToolHealthRow
+                  key={`${item.agent}:auth`}
+                  item={item}
+                  onOpen={() => setSettingsOpen(true, "machine")}
+                />
+              ))}
+            {limitedIds.map((id) => (
+              <div
+                key={id}
+                className="flex items-center gap-2 px-2 py-1.5 text-[12px] text-st-warning/80"
+              >
+                <Gauge className="size-3.5 shrink-0" />
+                <span className="truncate">
+                  {agentLabel(id)} limitado
+                  {limited[id] ? `, volta ${limited[id]}` : ""}
+                </span>
+              </div>
+            ))}
+            {toolItems
+              .filter((i) => i.kind === "update")
+              .map((item) => (
+                <ToolHealthRow
+                  key={`${item.agent}:update`}
+                  item={item}
+                  onOpen={() => setSettingsOpen(true, "machine")}
+                  onDismiss={() => dismissUpdate(item)}
+                />
+              ))}
+          </>
         )}
 
         {/* Encontrados no projeto — o app LEU do disco, ninguém te chamou. Não
@@ -463,24 +628,6 @@ export function InboxBell() {
                   }
                 />
               ))}
-          </>
-        )}
-
-        {limitedIds.length > 0 && (
-          <>
-            <DropdownMenuSeparator />
-            {limitedIds.map((id) => (
-              <div
-                key={id}
-                className="flex items-center gap-2 px-2 py-1.5 text-[12px] text-st-warning/80"
-              >
-                <Gauge className="size-3.5 shrink-0" />
-                <span className="truncate">
-                  {agentLabel(id)} limitado
-                  {limited[id] ? `, volta ${limited[id]}` : ""}
-                </span>
-              </div>
-            ))}
           </>
         )}
 
@@ -588,7 +735,11 @@ export function InboxBell() {
           </>
         )}
 
-        {decisions.length === 0 && notifs.length === 0 && (
+        {/* "Tudo em dia" só quando NADA está listado. A seção Ferramentas entra
+            na conta: o sino já mostrava rate limit e agora mostra sem login e
+            update, e dizer "tudo em dia" logo abaixo de uma CLI deslogada seria
+            o mesmo teatro que esta frente veio corrigir. */}
+        {decisions.length === 0 && notifs.length === 0 && !hasToolSection && (
           <div className="px-2 py-3 text-center text-[13px] text-muted-foreground">
             Tudo em dia. Nada por aqui.
           </div>

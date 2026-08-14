@@ -55,6 +55,11 @@ export interface GlobalSettings {
   /** Última versão `latest` já NOTIFICADA por agent (dedupe: nunca repete a
    *  notificação da mesma versão). */
   lastNotifiedVersions: Record<string, string>
+  /** Update de CLI dispensado no sino: agent → versão `latest` dispensada
+   *  (dismissal persistido, STYLEGUIDE §5.4). A chave é a VERSÃO, não o agent:
+   *  dispensar a v2.1.220 não silencia a v2.1.230. Só "atualização disponível"
+   *  é dispensável; "sem login" é impedimento e não sai da lista. */
+  updateDismissed: Record<string, string>
   /** Epoch ms do último refresh do catálogo de modelos (models.dev via Rust).
    *  0 = nunca. Alimenta a linha "Tabela de preços" em Configurações ▸ Agents. */
   lastCatalogRefresh: number
@@ -111,6 +116,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   detected: {},
   lastUpdateCheck: 0,
   lastNotifiedVersions: {},
+  updateDismissed: {},
   lastCatalogRefresh: 0,
   catalogCount: 0,
   lastCuratorRun: 0,

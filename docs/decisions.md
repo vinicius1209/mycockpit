@@ -931,6 +931,49 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   apontou: CLI deslogada é hoje uma coisa que se descobre quando um turno
   falha, a menos que você visite o Painel. Levar os dois pro sino é candidato a
   frente própria, não a remendo desta.
+  **Fechamento (13/08/2026) — a frente própria rodou, e a frase acima virou
+  histórica.** Hoje os TRÊS aparecem no sino, numa seção nova **"Ferramentas"**,
+  e a Frota do Painel segue como o detalhe (nada foi movido de lá). A faixa
+  continua sem os três, pelo motivo original: os 30px permanentes. O que ficou
+  decidido, com as regras puras em `lib/toolHealth.ts` (`toolHealthItems`,
+  `blockingToolCount`) e teste em `toolHealth.test.ts`:
+  - **Hierarquia**: "sem login" é IMPEDIMENTO (bloqueia trabalho, é o mesmo
+    veredito de `availability()` que já aborta o despacho em
+    `dispatchBlockReason`) e vem sempre antes de "update disponível", que é
+    CONVENIÊNCIA. Vira pixel além de ordem: o primeiro é âmbar (§2, "precisa de
+    você"), o segundo é cinza (§2, "cinza é informação").
+  - **Badge**: só "sem login" soma no contador (junto das decisões pendentes).
+    Update **aparece na lista e não incrementa** — dura dias, não impede nada, e
+    contá-lo deixaria o sino aceso pra sempre, que é exatamente o custo que esta
+    ADR recusou pra faixa. Rate limit segue fora do badge pelo mesmo teste:
+    nenhum gesto seu resolve, ele volta sozinho na hora que a linha já diz.
+  - **Ação sem inventar capacidade**: as duas linhas abrem Configurações ▸
+    Agentes na máquina, onde os gestos JÁ existem ("Verificar agora" depois de
+    logar pelo terminal da CLI; o botão "Atualizar" que dispara o job). O botão
+    de update NÃO foi duplicado no sino de propósito: ele carrega estado que a
+    linha do dropdown não mostra (spinner do job vivo, trava enquanto outro job
+    roda, aviso de N instalações no PATH). Um dono só pro gesto.
+  - **4 camadas de esconder (§5)**: CLI não instalada não gera item (guarda
+    real, não decorativa: o `detect.rs` reporta `auth: "missing"` também pra
+    ferramenta AUSENTE); probe que não assentou não gera item, e `auth:
+    "unknown"` entra no mesmo balde (o agy não tem subcomando de auth e degrada
+    pra "unknown" sempre que `agy models` falha — promovê-lo a "sem login"
+    acenderia o sino pra sempre por algo que o app não mediu; a Frota segue
+    dizendo "auth desconhecida", que é o painel onde você foi olhar); e o update
+    é dispensável com persistência (`settings.updateDismissed`), **por versão**,
+    então dispensar a v2.1.220 não silencia a v2.1.230. "Sem login" NÃO é
+    dispensável: dispensar impedimento é esconder falha (§5.2).
+  - **Como se distingue da faixa**: a faixa decide TRABALHO (qual proposta
+    adotar, qual disputa vence) e o item some quando VOCÊ decide; a seção
+    Ferramentas é SAÚDE DE FERRAMENTA, não há trabalho pra escolher, e o item
+    some quando o ESTADO DA MÁQUINA muda. Nada da seção entra na fila de
+    decisões.
+  - **Efeito colateral tratado**: com o badge podendo acender só por causa de
+    uma CLI deslogada, o "Nada esperando você" do topo virava mentira. A seção
+    "Precisam de você" agora some inteira quando não há decisão E há ferramenta
+    bloqueando (Ferramentas lidera a lista), e o "Tudo em dia. Nada por aqui."
+    passou a considerar a seção nova — antes ele já podia aparecer embaixo de um
+    rate limit listado, que era o mesmo teatro em menor escala.
 - **Consequência 1 — o que a retrospectiva NÃO herdou.** As 4 caixas de
   métrica se dissolveram (30 dias virou o hero, média/dia virou o derivado
   "por dia", 7 dias virou a janela; "Tokens 30d" desceu pra gaveta, porque

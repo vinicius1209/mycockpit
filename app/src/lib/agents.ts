@@ -450,6 +450,16 @@ export function hooksAgents(): AgentDef[] {
   return AGENTS.filter((a) => a.hooksStatus)
 }
 
+/** Motores que são CLI NA MÁQUINA do usuário: os que o app integra de verdade
+ *  (`available`) e que executam como processo local (`kind === "agent"`). Quem
+ *  precisa varrer "o estado das ferramentas desta máquina" (a saúde no sino, a
+ *  Frota do Painel) pergunta AQUI, nunca escrevendo ["claude-code", "codex", …]
+ *  no meio do código: motor novo entra no registry e aparece sozinho, e motor
+ *  `available: false` não gera item de saúde pra uma CLI que o app não dirige. */
+export function machineAgents(): AgentDef[] {
+  return AGENTS.filter((a) => a.kind === "agent" && a.available)
+}
+
 /** "ready"=usável · "installed-not-authenticated"=instalado e DESLOGADO
  *  (probe.auth "missing" — NÃO usável até logar) · "installed-auth-unknown"=
  *  instalado, auth incerta (usável com aviso; cobre "unknown" e "na" — o agy
