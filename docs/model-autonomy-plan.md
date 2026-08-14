@@ -165,6 +165,10 @@ lista), `verdictFor()` + `isVerdict()` (a fumaça deu `ok` e "não sei" não con
 e `catalog::lookup` (o preço existe). O que falta em M3 é só a decisão de
 produto: quem promove, quando, e a redação do aviso no sino.
 
+> Correção do M3: a perna do preço NÃO é o `catalog::lookup` sozinho. A régua
+> certa é a que estima o custo do turno (`pricing.rs`, catálogo → SEED); usar só
+> o catálogo reprovaria por "sem preço" modelo cujo custo o app mostra na tela.
+
 ## M3 — O portão vira AVISO
 
 Regra: candidato que passa nos três (o CLI lista **e** a fumaça deu `ok`
@@ -178,6 +182,84 @@ slug com a sua autenticação"* — que é infinitamente mais útil que
 Reuso: o aviso usa o sino (`toolHealth`, já entregue). Nada de superfície
 nova. E o item **não conta no badge** (é conveniência, não impedimento —
 mesma régua do "atualização disponível").
+
+### M3 entregue (14/08/2026)
+
+**A regra, pura e testada** (`lib/modelPromotion.ts` + 27 casos em
+`modelPromotion.test.ts`): `promotionCall()` lê as três pernas e devolve
+`promote | pending | reject` COM a frase do motivo e a evidência do próprio CLI.
+
+| perna | passa | reprova | "não sei" |
+|---|---|---|---|
+| o CLI lista (`slugStanding`) | `listed` | `hidden`, `retired`, `unknown` | `unverified` |
+| a fumaça (`verdictFor`/`isVerdict`) | `ok` | `auth-rejected`, `unknown-slug`, `context-mismatch` | `unreachable` e nunca testado |
+| o preço (`pricing::model_price`) | tem preço | catálogo e SEED não conhecem | a consulta falhou |
+
+Ordem de decisão: **qualquer reprova → `reject`**; senão **qualquer "não sei" →
+`pending`**; senão **`promote`**. Ou seja: o que reprova é sempre um VEREDITO,
+nunca a ignorância — e nenhum "não sei" descarta candidato (ele fica pendente).
+Consequência honesta: o **claude-code não tem fonte de lista** (M1), então os
+candidatos dele nunca promovem sozinhos e seguem no gate humano de sempre,
+exatamente o comportamento de hoje.
+
+- **O preço vem de `pricing.rs`, não do catálogo cru**: comando novo
+  `model_price(model)` devolve `{input, cached, output, fromCatalog}` pela MESMA
+  régua que estima o custo do turno (catálogo dinâmico → SEED). Perguntar só ao
+  models.dev criaria uma segunda verdade: o seletor recusando "sem preço" um
+  modelo cujo custo o medidor mostra na tela. Alias do Claude Code (`sonnet`)
+  cai no `catalogEntryFor` que já existia.
+- **A rodada** (`lib/modelRound.ts`): lista viva → aposentadorias → candidatos →
+  fumaça → regra → ledger → recarrega o picker. Candidatos vêm de duas fontes,
+  nenhuma por nome de motor: o que o CLI LISTA e o seu seletor não tem, e o que
+  o curador propôs e segue pendente (ou foi reprovado num mundo que mudou).
+  Ficam de fora o que **você** dispensou, o que já está no seletor e o que o
+  fornecedor **esconde ou já aposentou** (oferecer o que o motor não oferece
+  seria inventar oferta).
+- **Quando roda**: gesto ("Verificar agora" em Configurações ▸ Modelos) e agenda
+  diária no mesmo portão de 24h do catálogo, com freio próprio
+  (`settings.lastModelRound`). Quatro freios em série: portão de 24h; só
+  candidato NOVO vai pra fumaça (`pickSmokeCandidates` — veredito carimbado só
+  volta à fila se a VERSÃO DO CLI mudou); teto de 3 por motor; e o
+  `ROUND_COOLDOWN_MS` de 60s do M2. **Em regime normal a rodada não gasta nada**:
+  sem slug novo, não há candidato a testar.
+- **O aviso no sino** (`toolHealth.modelHealthItems` + a seção Ferramentas, que
+  saiu do `InboxBell` pro `ToolsSection.tsx`): "N modelos novos validados e
+  disponíveis" (uma linha por motor), os reprovados um a um COM o motivo, e a
+  aposentadoria anunciada. **Nada disso conta no badge** (`blocking: false`,
+  testado): novidade e recusa são conveniência, e aposentadoria anunciada não
+  impede nada hoje. Notícia envelhece em 7 dias e sai do sino; o ESTADO fica em
+  Configurações. Dispensa por conteúdo (`modelNewsDismissed`): a chave carrega
+  quais modelos o aviso anuncia, então dispensar o de hoje não silencia o de
+  amanhã.
+- **Aposentadoria explicada**, com o achado do M2: `retirementNotices()` junta o
+  sucessor e o `migrationMarkdown` DO FORNECEDOR com o que só o app sabe (você
+  está com esse modelo escolhido na conversa X e na persona Y, e a troca é sua).
+  Mora em tabela PRÓPRIA (`model_retirements`), e isso é a guarda: se fosse
+  status do ledger, o anúncio tiraria o slug do picker e quebraria a conversa de
+  quem está usando ele. Nada some; ganha uma frase.
+- **O ledger** (`lib/modelLedger.ts`, extraído do `db.ts`): a `model_proposals`
+  virou o registro de decisões, com `origin` (lista viva × curador), `decided_by`
+  (a REGRA × você), `reason`, `evidence` e `decided_at`. Statuses: `proposed`
+  (falta perna), `active` (no seletor), `rejected` (com motivo), `dismissed`
+  (gesto seu, que a rodada NUNCA desfaz). **Sem migração no lib.rs**: as duas
+  tabelas são de frontend (`ensure*` + `addColumn`), no padrão da casa.
+- **Configurações ▸ Modelos** mostra a procedência em grupos: Entraram sozinhos ·
+  Esperando você · Não entraram · Você aprovou, cada linha com o motivo e a
+  frase crua do CLI. "Tirar do seletor" existe em todas as que estão no picker.
+- **A guarda do §5 é mecânica**: promover chama `setApprovedModels`, que
+  ACRESCENTA opção no fim do picker; nada na frente escreve `defaultModel` de
+  agent, projeto ou conversa. Há teste disso (`§5 do plano: modelo novo NUNCA
+  vira o seu padrão sozinho`), inclusive da reversibilidade.
+- Efeito colateral bom: `reloadActiveProposals` deixou de varrer a dupla
+  `["claude-code","codex"]` escrita à mão e passou a varrer o registry — com a
+  lista viva promovendo, um par de ids fixo faria a promoção de um terceiro
+  motor sumir sem ninguém perceber.
+
+**O que M3 NÃO fez** (e por quê): o seletor ainda não mostra o aviso de
+aposentadoria NA opção (hoje ele mora no sino e em Configurações); e um slug que
+some da lista viva do CLI não gera aviso próprio (`slugStanding` já sabe dizer
+`unknown`, mas ninguém pergunta na hora de montar o picker). Os dois são
+naturais no M4, que é quem mexe no texto de cada opção.
 
 ## M4 — A descrição deixa de ser editorial
 

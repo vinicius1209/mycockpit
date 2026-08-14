@@ -88,6 +88,36 @@ fn price_for(model: &str) -> Option<Price> {
     Some(p)
 }
 
+/// Preço de um modelo, $/1M tokens, com a procedência na cara.
+///
+/// Existe pro M3 do `model-autonomy-plan`: a perna "o preço existe" da promoção
+/// automática pergunta AQUI. Sem isto o front teria que reimplementar a régua
+/// de preço e nasceria uma SEGUNDA verdade — o seletor recusando um modelo por
+/// "sem preço" enquanto o medidor de custo do turno estima o preço dele.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelPrice {
+    pub input: f64,
+    pub cached: f64,
+    pub output: f64,
+    /// Veio do catálogo dinâmico (models.dev)? `false` = tabela SEED embutida,
+    /// que é preço de verdade e datado, só não é o catálogo vivo.
+    pub from_catalog: bool,
+}
+
+/// O app sabe o preço deste modelo? `None` = não sabe, e turno com ele sairia
+/// sem estimativa de custo (é o que a promoção usa pra segurar o candidato).
+#[tauri::command]
+pub fn model_price(model: String) -> Option<ModelPrice> {
+    let from_catalog = catalog::lookup(&model).and_then(catalog_price).is_some();
+    price_for(&model).map(|p| ModelPrice {
+        input: p.input,
+        cached: p.cached,
+        output: p.output,
+        from_catalog,
+    })
+}
+
 /// Estima o custo em USD a partir do usage + modelo. Unknown se o modelo não está
 /// na tabela (a UI mostra só tokens nesse caso).
 pub fn estimate(model: &str, u: &NormalizedUsage) -> (Option<f64>, CostSource) {
@@ -164,6 +194,23 @@ mod tests {
     fn zero_priced_catalog_model_falls_back_to_seed() {
         assert!(catalog_price(cm(0.0, 0.0, None)).is_none());
         assert_eq!(out_rate("claude-fable-5"), 50.0); // SEED responde
+    }
+
+    /// A perna "o preço existe" do M3 pergunta pela MESMA régua do custo do
+    /// turno: o que o app sabe cobrar, ele sabe promover; o que ele não sabe
+    /// cobrar segura o candidato (e o motivo vira frase pro humano).
+    #[test]
+    fn model_price_responde_pela_mesma_regua_do_custo_do_turno() {
+        let p = model_price("gpt-5.6-luna".into()).expect("SEED conhece");
+        assert_eq!(p.output, 6.0);
+        assert!(!p.from_catalog); // catálogo global vazio no teste → SEED
+        assert!(model_price("modelo-que-nunca-existiu-9-9".into()).is_none());
+        // O que o estimador cobra é o que a promoção enxerga (uma verdade só).
+        let (usd, _) = estimate(
+            "modelo-que-nunca-existiu-9-9",
+            &NormalizedUsage { input: 1000, cached_input: 0, output: 1000 },
+        );
+        assert!(usd.is_none());
     }
 
     /// cache_read ausente no catálogo = cache cobrado como input cheio.

@@ -87,8 +87,8 @@ import {
   UPDATE_COMMANDS,
 } from "@/lib/detect"
 import { agentDef } from "@/lib/agents"
-import { refreshCatalogIntoSettings } from "@/lib/catalog"
-import { runModelCurator, reloadActiveProposals } from "@/lib/modelCurator"
+import { reloadActiveProposals } from "@/lib/modelCurator"
+import { runDailyModelMaintenance } from "@/lib/modelRound"
 import type { PermissionMode, Project } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -201,8 +201,8 @@ export default function App() {
   // locais + latest, tudo paralelo e best-effort — o snapshot persistido nunca
   // fica mentindo depois de um `npm i -g`/`brew upgrade` feito fora do app; foi
   // um bug real: badges de update pra versões já instaladas). O que fica no
-  // gate diário é só o trabalho de rede não-essencial (catálogo de preços +
-  // curador semanal); a NOTIFICAÇÃO continua com dedupe por versão.
+  // gate diário é só o trabalho de rede não-essencial (catálogo de preços,
+  // curador semanal, rodada de modelos); a NOTIFICAÇÃO segue com dedupe.
   useEffect(() => {
     if (!isTauri()) return
     // modelos reais do `agy models` → cache dinâmico (barato, todo boot).
@@ -210,15 +210,10 @@ export default function App() {
     // modelos aprovados do curador → cache do picker (barato, todo boot).
     void reloadActiveProposals()
     const last = useApp.getState().settings.lastUpdateCheck ?? 0
-    if (Date.now() - last >= UPDATE_CHECK_INTERVAL_MS) {
-      // Camada A: refresh do catálogo de preços (models.dev) — best-effort
-      // (rede falhou = silêncio). Depois, o curador semanal (self-gated em
-      // lastCuratorRun; nunca roda com o helper global desligado).
-      void (async () => {
-        await refreshCatalogIntoSettings()
-        await runModelCurator()
-      })()
-    }
+    // Catálogo de preços, curador semanal e rodada de modelos (M3): a
+    // sequência inteira, com os freios dela, mora em lib/modelRound.
+    if (Date.now() - last >= UPDATE_CHECK_INTERVAL_MS)
+      void runDailyModelMaintenance()
     void (async () => {
       const tools = await detectAgents()
       const now = Date.now()

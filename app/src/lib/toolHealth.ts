@@ -1,5 +1,6 @@
-import { availability, machineAgents } from "@/lib/agents"
+import { agentDef, availability, machineAgents } from "@/lib/agents"
 import { updateAvailable, type AgentProbe } from "@/lib/detect"
+import type { ModelNewsItem, ModelNewsTone } from "@/lib/modelPromotion"
 
 /** SAÚDE DE FERRAMENTA — regras puras do que o sino mostra sobre as CLIs da
  *  máquina (sem login, atualização disponível).
@@ -22,21 +23,59 @@ import { updateAvailable, type AgentProbe } from "@/lib/detect"
  *  mesmo `settings.detected` que a Frota lê. Se um dia a Frota e o sino
  *  discordarem, é bug de um consumidor, não de duas verdades. */
 
-export type ToolHealthKind = "auth" | "update"
+export type ToolHealthKind = "auth" | "update" | "models"
 
-export interface ToolHealthItem {
+interface ToolHealthBase {
   /** id da CLI no registry. */
   agent: string
   /** Rótulo longo do registry ("Claude Code"). */
   label: string
-  kind: ToolHealthKind
-  /** Versão instalada, como o probe leu; null em "auth". */
-  current: string | null
-  /** Versão alvo do update; null em "auth". É a CHAVE da dispensa: dispensar a
-   *  v2.1.220 não silencia a v2.1.230. */
-  latest: string | null
   /** Conta no badge do sino. Ver `blockingToolCount` pro porquê. */
   blocking: boolean
+}
+
+/** CLI que você ligou e que perdeu o login. Impedimento: conta no badge. */
+export interface ToolAuthItem extends ToolHealthBase {
+  kind: "auth"
+  current: null
+  latest: null
+}
+
+/** CLI com versão nova disponível. Conveniência: não conta no badge. */
+export interface ToolUpdateItem extends ToolHealthBase {
+  kind: "update"
+  /** Versão instalada, como o probe leu. */
+  current: string | null
+  /** Versão alvo do update. É a CHAVE da dispensa: dispensar a v2.1.220 não
+   *  silencia a v2.1.230. */
+  latest: string | null
+}
+
+/** Notícia sobre MODELOS daquele motor (M3 do model-autonomy-plan): o que
+ *  entrou sozinho, o que foi reprovado e com que motivo, o que o fornecedor
+ *  anunciou que vai aposentar. O texto inteiro vem pronto da regra pura
+ *  (`lib/modelPromotion`); aqui é só o encaixe no sino. */
+export interface ToolModelNewsItem extends ToolHealthBase {
+  kind: "models"
+  /** id do aviso, com a assinatura do conteúdo (chave de lista e de dispensa). */
+  id: string
+  tone: ModelNewsTone
+  title: string
+  detail: string
+}
+
+export type ToolHealthItem = ToolAuthItem | ToolUpdateItem | ToolModelNewsItem
+
+/** Guardas de tipo pra quem separa a lista por seção (o `filter` sozinho não
+ *  estreita a união, e estreitar é o que deixa `latest` legível no update). */
+export function isAuthItem(i: ToolHealthItem): i is ToolAuthItem {
+  return i.kind === "auth"
+}
+export function isUpdateItem(i: ToolHealthItem): i is ToolUpdateItem {
+  return i.kind === "update"
+}
+export function isModelNewsItem(i: ToolHealthItem): i is ToolModelNewsItem {
+  return i.kind === "models"
 }
 
 /** Itens de saúde das CLIs, já na ordem de HIERARQUIA: impedimento antes de
@@ -67,9 +106,9 @@ export function toolHealthItems(
    *  `latest` EXATA: versão nova volta a aparecer (mesmo dedupe por versão do
    *  `lastNotifiedVersions`). */
   dismissedUpdates: Record<string, string> = {},
-): ToolHealthItem[] {
-  const auth: ToolHealthItem[] = []
-  const updates: ToolHealthItem[] = []
+): (ToolAuthItem | ToolUpdateItem)[] {
+  const auth: ToolAuthItem[] = []
+  const updates: ToolUpdateItem[] = []
 
   for (const def of machineAgents()) {
     const probe = detected[def.id]
@@ -100,6 +139,32 @@ export function toolHealthItems(
   return [...auth, ...updates]
 }
 
+/** As notícias de MODELO no formato do sino. A regra de o QUE é notícia (e por
+ *  quanto tempo) é pura e mora em `lib/modelPromotion.modelNews`; aqui só se
+ *  decide o encaixe: seção de Ferramentas, e `blocking: false` SEMPRE.
+ *
+ *  Por que nenhuma delas conta no badge: modelo novo é conveniência pura (o
+ *  seletor ganhou uma opção, nada quebrou); candidato reprovado também (ele
+ *  nunca esteve disponível, e continua não estando); e aposentadoria anunciada
+ *  não impede nada HOJE, o modelo segue funcionando enquanto o fornecedor não
+ *  desliga. Mesma régua do "atualização disponível": sino permanentemente aceso
+ *  não informa mais nada, que é o custo que o ADR-040 recusou. Tudo continua NA
+ *  LISTA, e o estado durável mora em Configurações ▸ Modelos. */
+export function modelHealthItems(
+  news: readonly ModelNewsItem[],
+): ToolModelNewsItem[] {
+  return news.map((n) => ({
+    agent: n.agent,
+    label: agentDef(n.agent)?.label ?? n.agent,
+    kind: "models",
+    id: n.id,
+    tone: n.tone,
+    title: n.title,
+    detail: n.detail,
+    blocking: false,
+  }))
+}
+
 /** Quanto a saúde das ferramentas soma no badge do sino.
  *
  *  Só impedimento conta. "Sem login" BLOQUEIA trabalho (é o mesmo veredito que
@@ -111,6 +176,6 @@ export function toolHealthItems(
  *
  *  (Rate limit segue fora do badge pelo mesmo teste: nenhum gesto seu resolve,
  *  ele volta sozinho na hora que a própria linha já diz.) */
-export function blockingToolCount(items: ToolHealthItem[]): number {
+export function blockingToolCount(items: readonly ToolHealthItem[]): number {
   return items.filter((i) => i.blocking).length
 }

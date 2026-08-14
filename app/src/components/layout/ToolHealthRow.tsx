@@ -1,24 +1,32 @@
-import { Download, LogIn, X } from "lucide-react"
+import {
+  CalendarClock,
+  CircleSlash,
+  Download,
+  LogIn,
+  Sparkles,
+  X,
+} from "lucide-react"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import type { ToolHealthItem } from "@/lib/toolHealth"
 import { cn } from "@/lib/utils"
 
-/** Uma linha de SAÚDE DE FERRAMENTA (CLI sem login / com update) do sino.
+/** Uma linha de SAÚDE DE FERRAMENTA do sino: CLI sem login, CLI com update, e
+ *  (desde o M3 do model-autonomy-plan) notícia de MODELO daquele motor.
  *
  *  Mora fora do `InboxBell.tsx` porque aquele arquivo passou do teto de
  *  tamanho e esta linha é folha: só recebe o item já decidido por
- *  `lib/toolHealth` e dois callbacks.
+ *  `lib/toolHealth` e dois callbacks. Nenhum texto é escrito aqui — as frases
+ *  das notícias de modelo vêm da regra pura, com o motivo do fornecedor junto.
  *
  *  Tom, pela tabela do STYLEGUIDE §2: "sem login" é âmbar (precisa de você,
- *  bloqueia o envio); "atualização disponível" é CINZA (informação, nada
- *  quebrou). É a hierarquia da lista virando pixel, não só ordem.
+ *  bloqueia o envio) e aposentadoria anunciada também (é decisão sua trocar);
+ *  "atualização disponível", "modelo novo" e "candidato reprovado" são CINZA
+ *  (informação, nada quebrou). Duas cores de status no recorte, dentro do
+ *  orçamento de tinta.
  *
- *  Ação: as duas abrem Configurações ▸ Agentes na máquina, que é onde os gestos
- *  JÁ existem ("Verificar agora" depois de logar pelo terminal da CLI, e o
- *  "Atualizar" que dispara o job). O botão de update não foi duplicado aqui de
- *  propósito: ele carrega estado que esta linha não tem como mostrar (spinner
- *  do job vivo, travar enquanto outro job roda, o aviso de N instalações no
- *  PATH), e o dropdown fecha no clique. Um dono só pro gesto. */
+ *  Ação: todas abrem a seção de Configurações onde o gesto JÁ existe (Agentes
+ *  na máquina pro update/login; Modelos pra procedência e pro "Tirar do
+ *  seletor"). O dropdown fecha no clique, então nenhum botão é duplicado aqui. */
 export function ToolHealthRow({
   item,
   onOpen,
@@ -26,10 +34,10 @@ export function ToolHealthRow({
 }: {
   item: ToolHealthItem
   onOpen: () => void
-  /** Só o update é dispensável (impedimento não se dispensa). */
+  /** Só o que é conveniência se dispensa (impedimento não se dispensa). */
   onDismiss?: () => void
 }) {
-  const isAuth = item.kind === "auth"
+  const { icon, alarme, title, detail } = linha(item)
   return (
     <DropdownMenuItem
       onSelect={onOpen}
@@ -38,19 +46,11 @@ export function ToolHealthRow({
       <span
         className={cn(
           "group/tool flex w-full items-center gap-2 text-[13px]",
-          isAuth ? "text-foreground" : "text-muted-foreground",
+          alarme ? "text-foreground" : "text-muted-foreground",
         )}
       >
-        {isAuth ? (
-          <LogIn className="size-3.5 shrink-0 text-st-warning" />
-        ) : (
-          <Download className="size-3.5 shrink-0 text-muted-foreground" />
-        )}
-        <span className="min-w-0 flex-1 truncate">
-          {isAuth
-            ? `${item.label} sem login`
-            : `Atualização do ${item.label} disponível`}
-        </span>
+        {icon}
+        <span className="min-w-0 flex-1 truncate">{title}</span>
         {onDismiss && (
           <button
             onClick={(e) => {
@@ -59,8 +59,8 @@ export function ToolHealthRow({
               e.preventDefault()
               onDismiss()
             }}
-            title="Dispensar esta versão"
-            aria-label="Dispensar esta versão"
+            title="Dispensar este aviso"
+            aria-label="Dispensar este aviso"
             className="hidden shrink-0 rounded p-0.5 text-muted-foreground transition-colors group-hover/tool:block hover:text-foreground"
           >
             <X className="size-3" />
@@ -68,10 +68,45 @@ export function ToolHealthRow({
         )}
       </span>
       <span className="w-full truncate pl-[22px] text-[11px] text-muted-foreground">
-        {isAuth
-          ? "Bloqueia o envio. Entre pela CLI no terminal, depois Verificar agora."
-          : `v${item.current ?? "?"} → v${item.latest ?? "?"} · Atualizar em Configurações ▸ Agentes na máquina`}
+        {detail}
       </span>
     </DropdownMenuItem>
   )
+}
+
+/** O desenho de cada tipo, num lugar só. `alarme` = o título vem em tinta
+ *  cheia (o que pede decisão), não em sussurro. */
+function linha(item: ToolHealthItem): {
+  icon: React.ReactNode
+  alarme: boolean
+  title: string
+  detail: string
+} {
+  if (item.kind === "auth")
+    return {
+      icon: <LogIn className="size-3.5 shrink-0 text-st-warning" />,
+      alarme: true,
+      title: `${item.label} sem login`,
+      detail: "Bloqueia o envio. Entre pela CLI no terminal, depois Verificar agora.",
+    }
+  if (item.kind === "update")
+    return {
+      icon: <Download className="size-3.5 shrink-0 text-muted-foreground" />,
+      alarme: false,
+      title: `Atualização do ${item.label} disponível`,
+      detail: `v${item.current ?? "?"} → v${item.latest ?? "?"} · Atualizar em Configurações ▸ Agentes na máquina`,
+    }
+  return {
+    icon:
+      item.tone === "retired" ? (
+        <CalendarClock className="size-3.5 shrink-0 text-st-warning" />
+      ) : item.tone === "blocked" ? (
+        <CircleSlash className="size-3.5 shrink-0 text-muted-foreground" />
+      ) : (
+        <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
+      ),
+    alarme: item.tone === "retired",
+    title: item.title,
+    detail: item.detail,
+  }
 }

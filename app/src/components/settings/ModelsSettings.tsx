@@ -1,11 +1,17 @@
 // Configurações ▸ Modelos. A pergunta: "quais modelos entram no seletor dos
-// agents e quanto custam". Morava dentro de "CLIs instaladas", onde o assunto
-// era outro (binário na máquina × catálogo de modelos).
+// agents e quanto custam".
 //
-// Duas coisas, nessa ordem: a DECISÃO pendente (propostas do curador, gate
-// humano) e o ESTADO do catálogo de preços que alimenta o custo.
+// Desde o M3 (docs/model-autonomy-plan.md) esta seção deixou de ser um par
+// aprovar/dispensar às cegas e passou a mostrar PROCEDÊNCIA: o que entrou
+// sozinho e por quê, o que está esperando e o que falta, o que foi reprovado e
+// com que motivo, e o que o fornecedor anunciou que vai aposentar. A ordem é a
+// da hierarquia: o que mexe no que você já usa primeiro, novidade por último.
+//
+// O gesto "Verificar agora" é o mesmo trabalho da agenda diária, sem freio de
+// tempo: perguntar a lista viva de cada CLI, testar os candidatos NOVOS e
+// conferir o preço. É a única coisa aqui que gasta quota, e o rodapé diz isso.
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Loader2, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -16,67 +22,151 @@ import {
   type CatalogModel,
 } from "@/lib/catalog"
 import { catalogEntryFor, reloadActiveProposals } from "@/lib/modelCurator"
+import { roundGaps, roundSummary, runModelRound } from "@/lib/modelRound"
 import {
   listModelProposals,
+  listModelRetirements,
   setModelProposalStatus,
   type ModelProposal,
-} from "@/lib/db"
+  type ModelRetirement,
+} from "@/lib/modelLedger"
 import { useApp } from "@/store/app"
 import { Block, BlockTitle, Note, SectionHeader } from "@/components/settings/parts"
 import { fmtCheckedAt } from "@/components/settings/format"
 import { sectionDef } from "@/components/settings/sections"
 import { cn } from "@/lib/utils"
 
-/** "$3 in · $15 out por 1M tokens" (preço do catálogo p/ uma proposta). */
+/** "$3 in · $15 out por 1M tokens" (preço do catálogo p/ uma linha). */
 function fmtCatalogPrice(m: CatalogModel | undefined): string | null {
   if (!m || (m.input == null && m.output == null)) return null
   const f = (v: number | null) => (v == null ? "?" : `$${v}`)
   return `${f(m.input)} in · ${f(m.output)} out por 1M tokens`
 }
 
+function rotulo(agent: string): string {
+  return agentDef(agent)?.label ?? agent
+}
+
+/** Uma linha do ledger: o modelo, de quem é, e o MOTIVO por extenso. As ações
+ *  entram como filhos (cada grupo tem as suas). */
+function ModelRow({
+  p,
+  price,
+  children,
+}: {
+  p: ModelProposal
+  price: string | null
+  children?: React.ReactNode
+}) {
+  return (
+    <li className="flex items-start gap-3 rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] text-foreground">
+          {p.label}{" "}
+          <span className="text-muted-foreground">
+            · {rotulo(p.agent)} · {p.value}
+          </span>
+        </div>
+        <div className="text-[12px] leading-snug text-muted-foreground">
+          {p.reason || p.description}
+          {price ? ` · ${price}` : ""}
+        </div>
+        {p.evidence && (
+          <div className="mt-0.5 truncate font-mono text-[11px] text-faint">
+            {p.evidence.split("\n")[0]}
+          </div>
+        )}
+      </div>
+      {children && <div className="flex shrink-0 items-center gap-1">{children}</div>}
+    </li>
+  )
+}
+
 export function ModelsSettings() {
   const catalogCount = useApp((s) => s.settings.catalogCount)
   const lastCatalogRefresh = useApp((s) => s.settings.lastCatalogRefresh)
-  // Gate humano do curador: propostas pendentes + catálogo (pro preço).
-  const [proposals, setProposals] = useState<ModelProposal[]>([])
+  const lastModelRound = useApp((s) => s.settings.lastModelRound)
+  const [rows, setRows] = useState<ModelProposal[]>([])
+  const [retirements, setRetirements] = useState<ModelRetirement[]>([])
   const [catalog, setCatalog] = useState<CatalogModel[]>([])
-  // Nada de vazio prematuro: "nenhuma proposta" só aparece depois da leitura.
+  // Nada de vazio prematuro: "nenhum modelo" só aparece depois da leitura.
   const [loaded, setLoaded] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
+  const [checking, setChecking] = useState(false)
 
-  useEffect(() => {
-    let cancelled = false
-    void Promise.all([listModelProposals("proposed"), getModelsCatalog()]).then(
-      ([p, c]) => {
-        if (cancelled) return
-        setProposals(p)
-        setCatalog(c)
-        setLoaded(true)
-      },
-    )
-    return () => {
-      cancelled = true
-    }
+  const load = useCallback(async () => {
+    const [p, r, c] = await Promise.all([
+      listModelProposals(),
+      listModelRetirements(),
+      getModelsCatalog(),
+    ])
+    setRows(p)
+    setRetirements(r)
+    setCatalog(c)
+    setLoaded(true)
   }, [])
 
-  async function decideProposal(
-    p: ModelProposal,
-    status: "active" | "dismissed",
-  ) {
-    await setModelProposalStatus(p.id, status)
-    // aprovado → recarrega o cache que o agentModels() mescla no picker.
-    if (status === "active") await reloadActiveProposals()
-    setProposals((prev) => prev.filter((x) => x.id !== p.id))
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  /** Decisão do gate humano. Gesto que não gravou NÃO some da tela (ADR-017). */
+  async function decide(p: ModelProposal, status: "active" | "dismissed") {
+    const ok = await setModelProposalStatus(p.id, status)
+    if (!ok) {
+      toast.error("Não deu pra gravar a decisão. O modelo continua como estava.")
+      return
+    }
+    // O picker é montado do BANCO, sempre: aprovar e tirar passam pelo mesmo
+    // recarregamento, então a lista da tela e o seletor não podem discordar.
+    await reloadActiveProposals()
+    await load()
   }
 
-  async function refreshCatalog() {
-    setRefreshing(true)
-    // gesto humano espera resultado: rede caída não vira silêncio (ADR-017).
-    const ok = await refreshCatalogIntoSettings()
-    if (!ok) toast.error("Não deu pra baixar o catálogo agora. O snapshot anterior segue valendo.")
-    setCatalog(await getModelsCatalog())
-    setRefreshing(false)
+  /** O gesto: a rodada inteira, sem freio de tempo. Gasta quota (um token por
+   *  candidato novo), então o resultado é contado de volta, nunca engolido. */
+  async function checkNow() {
+    setChecking(true)
+    try {
+      // O preço é uma das três pernas: catálogo velho reprovaria candidato por
+      // desatualização nossa. Rede caída não impede a rodada (o SEED responde).
+      if (!(await refreshCatalogIntoSettings()))
+        toast.warning(
+          "Não deu pra baixar o catálogo agora. O snapshot anterior segue valendo.",
+        )
+      const report = await runModelRound({ trigger: "gesture" })
+      if (!report) {
+        toast.error("A rodada não rodou (o app precisa estar no desktop).")
+        return
+      }
+      toast.success(roundSummary(report))
+      for (const gap of roundGaps(report, rotulo)) toast.warning(gap)
+    } catch (e) {
+      // Gesto espera resultado: falha vira frase, não silêncio.
+      toast.error(
+        `A rodada de modelos falhou: ${e instanceof Error ? e.message : String(e)}`,
+      )
+    } finally {
+      await load()
+      setChecking(false)
+    }
   }
+
+  const precoDe = (p: ModelProposal) =>
+    fmtCatalogPrice(catalogEntryFor(catalog, p.agent, p.value))
+
+  const sozinhos = rows.filter(
+    (r) => r.status === "active" && r.decidedBy === "app",
+  )
+  const aprovados = rows.filter(
+    (r) => r.status === "active" && r.decidedBy === "human",
+  )
+  const pendentes = rows.filter((r) => r.status === "proposed")
+  const reprovados = rows.filter((r) => r.status === "rejected")
+  const vazio =
+    sozinhos.length === 0 &&
+    aprovados.length === 0 &&
+    pendentes.length === 0 &&
+    reprovados.length === 0
 
   return (
     <div>
@@ -85,72 +175,156 @@ export function ModelsSettings() {
         description={sectionDef("models").question}
         action={
           <button
-            onClick={() => void refreshCatalog()}
-            disabled={refreshing}
+            onClick={() => void checkNow()}
+            disabled={checking}
             className="flex items-center gap-1.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
           >
-            <RotateCcw
-              className={cn("size-3.5", refreshing && "animate-spin")}
-            />
-            Atualizar catálogo
+            <RotateCcw className={cn("size-3.5", checking && "animate-spin")} />
+            {checking ? "Verificando..." : "Verificar agora"}
           </button>
         }
       />
 
-      <BlockTitle hint="Modelos novos que o curador achou no catálogo. Aprovar adiciona ao seletor do agent; nada entra sem a sua revisão.">
-        Propostas do curador
+      {retirements.length > 0 && (
+        <Block>
+          <BlockTitle hint="O fornecedor anunciou o fim destes modelos. Eles continuam funcionando e ninguém os tira do seu seletor; a troca é sua.">
+            Aposentadoria anunciada
+          </BlockTitle>
+          <ul className="flex flex-col gap-1.5">
+            {retirements.map((r) => (
+              <li
+                key={`${r.agent}:${r.value}`}
+                className="rounded-lg border border-st-warning/30 bg-secondary/20 px-3 py-2"
+              >
+                <div className="text-[13px] text-foreground">
+                  {r.value}{" "}
+                  <span className="text-muted-foreground">
+                    · {rotulo(r.agent)} · sucessor {r.successor}
+                  </span>
+                </div>
+                <div className="text-[12px] leading-snug text-muted-foreground">
+                  {r.reason}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Block>
+      )}
+
+      <BlockTitle hint="De onde cada modelo do seletor veio, o que ainda espera você e o que não passou. Nada some daqui sem motivo escrito.">
+        Modelos novos
       </BlockTitle>
       {!loaded ? (
         <div className="flex items-center gap-2 py-2 text-[12px] text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" />
-          Conferindo as propostas...
+          Conferindo o que já foi decidido...
         </div>
-      ) : proposals.length === 0 ? (
+      ) : vazio ? (
         <div className="rounded-lg border border-dashed border-border/60 px-3 py-4 text-center text-[12px] text-muted-foreground">
-          Nenhuma proposta esperando você.
+          Nenhum modelo novo por aqui. Última verificação{" "}
+          {fmtCheckedAt(lastModelRound)}.
         </div>
       ) : (
-        <ul className="flex flex-col gap-1.5">
-          {proposals.map((p) => {
-            const price = fmtCatalogPrice(
-              catalogEntryFor(catalog, p.agent, p.value),
-            )
-            return (
-              <li
-                key={p.id}
-                className="flex items-center gap-3 rounded-lg border border-border/50 bg-secondary/20 px-3 py-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] text-foreground">
-                    {p.label}{" "}
-                    <span className="text-muted-foreground">
-                      · {agentDef(p.agent)?.label ?? p.agent}
-                    </span>
-                  </div>
-                  <div className="truncate text-[12px] text-muted-foreground">
-                    {p.description}
-                    {price ? ` · ${price}` : ""}
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => void decideProposal(p, "active")}
-                >
-                  Aprovar
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => void decideProposal(p, "dismissed")}
-                >
-                  Dispensar
-                </Button>
-              </li>
-            )
-          })}
-        </ul>
+        <div className="flex flex-col gap-3">
+          {sozinhos.length > 0 && (
+            <div>
+              <div className="mb-1 text-[11px] text-muted-foreground">
+                Entraram sozinhos
+              </div>
+              <ul className="flex flex-col gap-1.5">
+                {sozinhos.map((p) => (
+                  <ModelRow key={p.id} p={p} price={precoDe(p)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void decide(p, "dismissed")}
+                    >
+                      Tirar do seletor
+                    </Button>
+                  </ModelRow>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {pendentes.length > 0 && (
+            <div>
+              <div className="mb-1 text-[11px] text-muted-foreground">
+                Esperando você
+              </div>
+              <ul className="flex flex-col gap-1.5">
+                {pendentes.map((p) => (
+                  <ModelRow key={p.id} p={p} price={precoDe(p)}>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void decide(p, "active")}
+                    >
+                      Aprovar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void decide(p, "dismissed")}
+                    >
+                      Dispensar
+                    </Button>
+                  </ModelRow>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {reprovados.length > 0 && (
+            <div>
+              <div className="mb-1 text-[11px] text-muted-foreground">
+                Não entraram
+              </div>
+              <ul className="flex flex-col gap-1.5">
+                {reprovados.map((p) => (
+                  <ModelRow key={p.id} p={p} price={precoDe(p)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void decide(p, "dismissed")}
+                    >
+                      Dispensar
+                    </Button>
+                  </ModelRow>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {aprovados.length > 0 && (
+            <div>
+              <div className="mb-1 text-[11px] text-muted-foreground">
+                Você aprovou
+              </div>
+              <ul className="flex flex-col gap-1.5">
+                {aprovados.map((p) => (
+                  <ModelRow key={p.id} p={p} price={precoDe(p)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void decide(p, "dismissed")}
+                    >
+                      Tirar do seletor
+                    </Button>
+                  </ModelRow>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       )}
+      <Note>
+        Verificar agora pergunta a lista viva de cada CLI, testa até 3
+        candidatos NOVOS por motor (um token cada, centavos) e confere o preço.
+        Quem passa nos três entra sozinho como OPÇÃO do seletor. O seu modelo
+        padrão nunca muda sozinho, e tirar do seletor é um clique. Sem gesto, a
+        mesma rodada acontece no máximo 1×/dia.
+      </Note>
 
       <Block>
         <BlockTitle hint="A tabela de preços que o app usa pra estimar o custo de cada turno.">
@@ -169,7 +343,8 @@ export function ModelsSettings() {
         <Note>
           Sem catálogo o app cai numa tabela embutida (conferida em jul/2026).
           Modelo que não está em nenhuma das duas fica sem estimativa de custo,
-          nunca com um número inventado.
+          nunca com um número inventado, e é por isso que ele não entra sozinho
+          no seletor.
         </Note>
       </Block>
     </div>

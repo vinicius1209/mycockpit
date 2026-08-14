@@ -10,16 +10,14 @@
 import { appDataDir } from "@tauri-apps/api/path"
 import { suggest } from "@/lib/agent"
 import {
+  AGENTS,
   agentModels,
   setApprovedModels,
   type AgentModelOption,
 } from "@/lib/agents"
 import { getModelsCatalog, type CatalogModel } from "@/lib/catalog"
-import {
-  isTauri,
-  listModelProposals,
-  insertModelProposals,
-} from "@/lib/db"
+import { isTauri } from "@/lib/db"
+import { listModelProposals, insertModelProposals } from "@/lib/modelLedger"
 import { extractJson } from "@/lib/format"
 import { useApp } from "@/store/app"
 import { useNotifs } from "@/store/notifications"
@@ -149,16 +147,23 @@ export function catalogEntryFor(
   return catalog.find((m) => m.provider === "openai" && m.id === value)
 }
 
-/** Carrega as propostas APROVADAS (status='active') pro cache module-level que
- *  o agentModels() mescla no picker. Chamado no boot e após Aprovar. */
+/** Carrega os modelos ATIVOS (status='active') pro cache module-level que o
+ *  agentModels() mescla no picker. Chamado no boot, após Aprovar e ao fim de
+ *  uma rodada que promoveu.
+ *
+ *  Varre TODOS os agents do registry, não a dupla curada: desde o M3 quem entra
+ *  no seletor também pode ter vindo da lista viva do próprio CLI, e um par de
+ *  ids escrito à mão aqui faria a promoção de um terceiro motor sumir sem
+ *  ninguém perceber. Agent sem linha ativa recebe [] (limpa o cache), que é o
+ *  que faz "Tirar do seletor" ter efeito imediato. */
 export async function reloadActiveProposals(): Promise<void> {
   if (!isTauri()) return
   const active = await listModelProposals("active")
-  for (const agent of CURATED_AGENTS) {
+  for (const def of AGENTS) {
     setApprovedModels(
-      agent,
+      def.id,
       active
-        .filter((p) => p.agent === agent)
+        .filter((p) => p.agent === def.id)
         .map(
           (p): AgentModelOption => ({
             value: p.value,

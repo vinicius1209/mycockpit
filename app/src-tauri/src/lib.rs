@@ -595,6 +595,7 @@ pub fn run() {
             hook_sessions::hook_sessions,
             catalog::refresh_models_catalog,
             catalog::get_models_catalog,
+            pricing::model_price,
             mycockpit::read_mycockpit_config,
             mycockpit::write_mycockpit_config,
             mycockpit::read_project_doctrine,

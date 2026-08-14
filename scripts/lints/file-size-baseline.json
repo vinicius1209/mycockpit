@@ -6,7 +6,7 @@
     "ts": 500
   },
   "arquivos": {
-    "App.tsx": 903,
+    "App.tsx": 898,
     "components/chat/ChatPanel.tsx": 1625,
     "components/chat/LexicalComposer.tsx": 907,
     "components/chat/MessageList.tsx": 2792,
@@ -19,7 +19,7 @@
     "lib/agents.ts": 564,
     "lib/companion.test.ts": 944,
     "lib/companion.ts": 1288,
-    "lib/db.ts": 2995,
+    "lib/db.ts": 2869,
     "lib/fleet/derive.test.ts": 1042,
     "lib/fleet/derive.ts": 806,
     "lib/fleet/send.test.ts": 995,

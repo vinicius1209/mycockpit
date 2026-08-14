@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { blockingToolCount, toolHealthItems } from "@/lib/toolHealth"
+import {
+  blockingToolCount,
+  modelHealthItems,
+  toolHealthItems,
+} from "@/lib/toolHealth"
 import type { AgentProbe } from "@/lib/detect"
 
 /** Probe no shape REAL: é o que `toProbeMap` grava a partir do DetectedTool do
@@ -184,5 +188,28 @@ describe("blockingToolCount, o que conta no badge do sino", () => {
     })
     expect(items).toHaveLength(3)
     expect(blockingToolCount(items)).toBe(0)
+  })
+
+  it("notícia de modelo aparece na lista e NÃO conta, seja qual for o tom", () => {
+    // M3: modelo novo é conveniência; reprovado nunca esteve disponível; e
+    // aposentadoria anunciada não impede nada hoje. Mesma régua do update.
+    const items = modelHealthItems([
+      { id: "a", agent: "codex", tone: "new", title: "2 modelos novos validados e disponíveis", detail: "Codex" },
+      { id: "b", agent: "codex", tone: "blocked", title: "gpt-5.6 não entrou no seletor", detail: "Codex" },
+      { id: "c", agent: "codex", tone: "retired", title: "gpt-5.4 vai ser aposentado", detail: "Codex" },
+    ])
+    expect(items).toHaveLength(3)
+    expect(items.every((i) => i.blocking === false)).toBe(true)
+    expect(blockingToolCount(items)).toBe(0)
+    // E o rótulo do motor sai do registry, nunca de nome escrito à mão.
+    expect(items[0].label).toBe("Codex")
+  })
+
+  it("notícia de modelo não apaga o impedimento que já estava aceso", () => {
+    const tools = toolHealthItems({ "claude-code": probe({ auth: "missing" }) })
+    const news = modelHealthItems([
+      { id: "a", agent: "codex", tone: "new", title: "1 modelo novo validado e disponível", detail: "Codex" },
+    ])
+    expect(blockingToolCount([...tools, ...news])).toBe(1)
   })
 })

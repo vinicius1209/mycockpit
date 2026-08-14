@@ -67,6 +67,16 @@ export interface GlobalSettings {
   catalogCount: number
   /** Epoch ms da última rodada do curador de modelos (máx. 1x/semana). */
   lastCuratorRun: number
+  /** Epoch ms da última RODADA DE PROMOÇÃO de modelos (M3 do
+   *  model-autonomy-plan: lista viva + fumaça + preço). 0 = nunca. É o freio da
+   *  agenda diária; o gesto ("Verificar agora" em Configurações ▸ Modelos)
+   *  passa por cima dele, e o freio de 60s por motor no Rust segue valendo. */
+  lastModelRound: number
+  /** Aviso de modelo já dispensado no sino: id do aviso → epoch ms da dispensa.
+   *  A chave carrega a ASSINATURA do conteúdo (quais slugs, qual decisão),
+   *  mesmo padrão do `updateDismissed`: dispensar o aviso de hoje não silencia
+   *  o de amanhã, que fala de outros modelos. */
+  modelNewsDismissed: Record<string, number>
   /** Companion Web (celular na LAN): liga o servidor local + a ponte de push.
    *  OPT-IN (default false) — abre uma porta na rede local. */
   companionEnabled: boolean
@@ -120,6 +130,8 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   lastCatalogRefresh: 0,
   catalogCount: 0,
   lastCuratorRun: 0,
+  lastModelRound: 0,
+  modelNewsDismissed: {},
   companionEnabled: false,
   stalledAfterMin: 10,
   unattendedAnswerAfterMin: 10,

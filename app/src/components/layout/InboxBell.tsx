@@ -30,12 +30,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ToolHealthRow } from "@/components/layout/ToolHealthRow"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { openCardConversation, useCards } from "@/store/cards"
 import { useNotifs, type Notification } from "@/store/notifications"
-import { agentLabel } from "@/lib/agent"
 import { dismissProposal, setSddPlanIgnored } from "@/lib/db"
 import {
   adoptPlan,
@@ -47,10 +45,9 @@ import {
   type Decision,
 } from "@/lib/inbox"
 import {
-  blockingToolCount,
-  toolHealthItems,
-  type ToolHealthItem,
-} from "@/lib/toolHealth"
+  ToolsSection,
+  useToolsSection,
+} from "@/components/layout/ToolsSection"
 import { cn } from "@/lib/utils"
 
 /** Navega direto pra ONDE a decisão mora: a conversa (Fusion), o card do
@@ -250,12 +247,6 @@ function NotifIcon({ kind }: { kind: Notification["kind"] }) {
  *  concluídos, erros, limites), com lido/não-lido. */
 export function InboxBell() {
   const projects = useApp((s) => s.projects)
-  const limited = useApp((s) => s.limitedAgents)
-  // Saúde das CLIs: MESMA fonte que a Frota do Painel lê (o snapshot da
-  // detecção em settings.detected). Nada é re-detectado aqui.
-  const detected = useApp((s) => s.settings.detected)
-  const updateDismissed = useApp((s) => s.settings.updateDismissed)
-  const setSettings = useApp((s) => s.setSettings)
   const setSettingsOpen = useApp((s) => s.setSettingsOpen)
   const [decisions, setDecisions] = useState<Decision[]>([])
   const notifs = useNotifs((s) => s.items)
@@ -265,8 +256,11 @@ export function InboxBell() {
   const clearNotifs = useNotifs((s) => s.clear)
   const [filter, setFilter] = useState<"all" | "unread">("all")
   const [showIgnored, setShowIgnored] = useState(false)
+  const tools = useToolsSection()
+  const { reloadModels } = tools
 
   const refresh = useCallback(() => {
+    reloadModels()
     if (projects.length === 0) return
     // E1 (S1.6): cards em review/blocked entram no sino também (D4) — o store
     // é hidratado no boot, então getState() dentro do refresh basta (mesmo
@@ -276,7 +270,7 @@ export function InboxBell() {
     void scanDecisions(projects, { includeIgnored: true }).then((d) =>
       setDecisions([...d, ...cardDecisions(useCards.getState().all, projects)]),
     )
-  }, [projects])
+  }, [projects, reloadModels])
 
   useEffect(() => {
     refresh()
@@ -322,30 +316,14 @@ export function InboxBell() {
   )
 
   const unread = notifs.filter((n) => !n.read).length
-  const limitedIds = Object.keys(limited)
   const feed = filter === "unread" ? notifs.filter((n) => !n.read) : notifs
 
-  // Saúde de ferramenta (regras puras em lib/toolHealth): já vem ordenada por
-  // impedimento antes de conveniência.
-  const toolItems = useMemo(
-    () => toolHealthItems(detected, updateDismissed),
-    [detected, updateDismissed],
-  )
-  const blockedTools = blockingToolCount(toolItems)
-  const hasToolSection = toolItems.length > 0 || limitedIds.length > 0
+  // Ferramentas: saúde das CLIs + notícias de modelo (estado e regras em
+  // ToolsSection). O sino segue dono do badge e do "tudo em dia".
+  const blockedTools = tools.blockedTools
+  const hasToolSection = tools.hasSection
   /** O que o badge conta: decisão pendente + ferramenta que bloqueia. */
   const blocked = pending.length + blockedTools
-
-  /** Dispensa persistida por VERSÃO (§5.4): a próxima versão volta a aparecer. */
-  const dismissUpdate = useCallback(
-    (item: ToolHealthItem) => {
-      if (!item.latest) return
-      setSettings({
-        updateDismissed: { ...updateDismissed, [item.agent]: item.latest },
-      })
-    },
-    [setSettings, updateDismissed],
-  )
 
   return (
     <DropdownMenu onOpenChange={(o) => o && refresh()}>
@@ -453,54 +431,12 @@ export function InboxBell() {
           </>
         )}
 
-        {/* Ferramentas — SAÚDE das CLIs desta máquina, não decisão de trabalho.
-            A distinção que separa esta seção da faixa "precisa de você": lá o
-            app pergunta O QUE FAZER (adotar a proposta, escolher o vencedor) e
-            o item some quando VOCÊ decide; aqui não há trabalho pra escolher,
-            há uma ferramenta que não está pronta, e o item some quando o ESTADO
-            DA MÁQUINA muda. Por isso nada daqui entra na fila de decisões.
-            Ordem = severidade: sem login (bloqueia, conta no badge) · rate
-            limit (bloqueia, mas volta sozinho, nenhum gesto seu resolve) ·
-            update (conveniência, cinza). */}
-        {hasToolSection && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[11px] tracking-wide text-muted-foreground uppercase">
-              Ferramentas
-            </DropdownMenuLabel>
-            {toolItems
-              .filter((i) => i.kind === "auth")
-              .map((item) => (
-                <ToolHealthRow
-                  key={`${item.agent}:auth`}
-                  item={item}
-                  onOpen={() => setSettingsOpen(true, "machine")}
-                />
-              ))}
-            {limitedIds.map((id) => (
-              <div
-                key={id}
-                className="flex items-center gap-2 px-2 py-1.5 text-[12px] text-st-warning/80"
-              >
-                <Gauge className="size-3.5 shrink-0" />
-                <span className="truncate">
-                  {agentLabel(id)} limitado
-                  {limited[id] ? `, volta ${limited[id]}` : ""}
-                </span>
-              </div>
-            ))}
-            {toolItems
-              .filter((i) => i.kind === "update")
-              .map((item) => (
-                <ToolHealthRow
-                  key={`${item.agent}:update`}
-                  item={item}
-                  onOpen={() => setSettingsOpen(true, "machine")}
-                  onDismiss={() => dismissUpdate(item)}
-                />
-              ))}
-          </>
-        )}
+        {/* Ferramentas — SAÚDE das CLIs desta máquina e o cardápio de modelos
+            delas. Não é decisão de trabalho: nada daqui entra na fila. */}
+        <ToolsSection
+          state={tools}
+          openSettings={(secao) => setSettingsOpen(true, secao)}
+        />
 
         {/* Encontrados no projeto — o app LEU do disco, ninguém te chamou. Não
             conta no badge; conta a partir do 1º gesto seu pelo app no plano. */}
