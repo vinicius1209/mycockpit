@@ -30,6 +30,7 @@ import {
   hasExecutorTurn,
   pendingDeferred,
 } from "@/store/chat"
+import { lastExecutorTurnFailed } from "@/lib/turnOutcome"
 import { useApp, useActiveProject } from "@/store/app"
 import type { Attachment } from "@/lib/attachments"
 import {
@@ -149,8 +150,20 @@ export function CommandConsole({
   // Pareceres de conselheiro (advice) NÃO travam a identidade (Especialistas E1).
   // (Computado ANTES dos hooks: o popover "/" descobre comandos POR AGENT.)
   const locked = hasExecutorTurn(conv.items)
+  // SAÍDA DE EMERGÊNCIA (lib/turnOutcome.ts): depois de um turno que FALHOU o
+  // modelo, e só ele, destrava. Turno em andamento não conta — não se troca o
+  // motor no meio do voo.
+  const modelUnlocked =
+    lastExecutorTurnFailed(conv.items) && !conv.running && !conv.finalizing
+  // A escolha de emergência tem estado PRÓPRIO (o `model` cru sobra de outra
+  // conversa). Zera ao trocar de conversa ou de agent: modelo de um motor não
+  // vale no outro.
+  const [retryModel, setRetryModel] = useState<string | null>(null)
+  useEffect(() => setRetryModel(null), [activeId, conv.agent])
   const effectiveDest = locked ? conv.agent : destination
-  const effectiveModel = locked ? (conv.reqModel ?? "default") : model
+  const effectiveModel = locked
+    ? (modelUnlocked ? retryModel : null) ?? conv.reqModel ?? "default"
+    : model
   const effectiveEffort = locked ? (conv.effort ?? "default") : effort
 
   // Carimbo do agent numa conversa que ainda NÃO tem um. O destino é estado
@@ -288,6 +301,10 @@ export function CommandConsole({
     model: effectiveModel === "default" ? null : effectiveModel,
     effort: effectiveEffort === "default" ? null : effectiveEffort,
     planFirst,
+    // Só é true quando o humano ESCOLHEU outro modelo numa conversa travada
+    // cuja última tentativa falhou. Sem a flag o despacho segue usando o modelo
+    // do 1º run, como sempre (ver AgentRunConfig).
+    modelSwitched: modelUnlocked && retryModel !== null,
   }
 
   /** Foca o editor do console (FocusBridgePlugin do Lexical). */
@@ -459,8 +476,10 @@ export function CommandConsole({
                   if (activeId) useChat.getState().setConversationAgent(activeId, v)
                 }}
                 effectiveModel={effectiveModel}
+                modelLocked={locked && !modelUnlocked}
                 onModelChange={(v) => {
-                  setModel(v)
+                  if (locked) setRetryModel(v)
+                  else setModel(v)
                   clearPresetOnManualChange()
                 }}
                 effectiveEffort={effectiveEffort}

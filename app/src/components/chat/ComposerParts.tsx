@@ -265,6 +265,7 @@ export function IdentityControls({
   locked,
   onDestChange,
   effectiveModel,
+  modelLocked,
   onModelChange,
   effectiveEffort,
   onEffortChange,
@@ -279,6 +280,10 @@ export function IdentityControls({
   locked: boolean
   onDestChange: (v: string) => void
   effectiveModel: string
+  /** O MODELO especificamente está travado. Normalmente acompanha `locked`,
+   *  mas depois de um turno que FALHOU ele destrava sozinho (saída de
+   *  emergência): o agent segue fixo e dá pra trocar de modelo e reenviar. */
+  modelLocked: boolean
   onModelChange: (v: string) => void
   effectiveEffort: string
   onEffortChange: (v: string) => void
@@ -286,6 +291,11 @@ export function IdentityControls({
   const lockTitle = locked
     ? "Agent e modelo ficam fixos a partir do 1º envio desta conversa"
     : undefined
+  const modelTitle = modelLocked
+    ? lockTitle
+    : locked
+      ? "O turno anterior falhou, então dá para trocar o modelo e enviar de novo"
+      : undefined
 
   // "Modelo custom…" (claude-code/codex): id exato digitado num input inline.
   // O select só muda quando o valor é confirmado (Enter); Esc/vazio cancela.
@@ -385,8 +395,8 @@ export function IdentityControls({
         <RichSelect
           value={effectiveModel}
           onValueChange={handleModelChange}
-          disabled={locked}
-          title={lockTitle}
+          disabled={modelLocked}
+          title={modelTitle}
           options={modelOptions}
           triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
           aria-label="Modelo"

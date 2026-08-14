@@ -470,7 +470,7 @@ export function ChatPanel() {
     const execItems = executorItems(conv.items)
     const locked = execItems.length > 0
     let agent = locked ? conv.agent : (cfg?.agent ?? "claude-code")
-    let model = locked ? conv.reqModel : (cfg?.model ?? null)
+    let model = locked && !cfg?.modelSwitched ? conv.reqModel : (cfg?.model ?? null)
     let effort = locked ? conv.effort : (cfg?.effort ?? null)
     // S3.3 — persona do preset SÓ no 1º turno (!locked). FAIL-CLOSED: preset
     // quebrado (apagado, sem personality, skill fora do inventário do projeto)
