@@ -234,7 +234,7 @@ function GateCard({
               : `O agente tem ${questions.length} perguntas`}
           </div>
           <div className="text-[12px] text-muted-foreground">
-            A missão está pausada — responda pra continuar (em branco = o
+            A missão está pausada, responda pra continuar (em branco = o
             agente decide)
           </div>
         </div>
@@ -633,7 +633,7 @@ export function MissionResumeCard({ convId }: { convId: string }) {
               {growth && <ProvenanceMark>{growth}</ProvenanceMark>}
             </div>
             <div className="text-[12px] text-muted-foreground">
-              O app fechou com a missão em voo — o worktree e os handoffs
+              O app fechou com a missão em voo, e o worktree e os handoffs
               continuam no disco ({fmtCost(st.costTotal)} já gastos)
             </div>
           </div>

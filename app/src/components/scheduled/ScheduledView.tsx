@@ -891,7 +891,7 @@ function NewScheduleDialog({
                 NO LUGAR do preview (mesma linha, sem pular layout). */}
             {mode === "cron" && !cronValid ? (
               <p className="text-[11px] text-st-error" data-testid="recurrence-preview">
-                Expressão inválida — 5 campos: números, *, */n e listas a,b
+                Expressão inválida. São 5 campos: números, *, */n e listas a,b
                 (sem ranges na v1).
               </p>
             ) : mode === "once" && !onceFuture ? (
@@ -949,7 +949,7 @@ function NewScheduleDialog({
               classificador; Codex confina em sandbox de SO; Antigravity só tem
               sandbox best-effort, então lá o freio é o mais fraco dos três).
               Em <strong className="font-medium">Padrão</strong>, o que pedir permissão
-              expira sozinho e o turno morre — não há quem aprove às 3h.
+              expira sozinho e o turno morre, não há quem aprove às 3h.
             </p>
           </div>
           )}

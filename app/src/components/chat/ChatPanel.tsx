@@ -1558,7 +1558,7 @@ function AutoResumeBanner({
       <Timer className="size-4 shrink-0 animate-pulse text-st-warning" />
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-foreground">
-          {resumeBannerLabel(reason)} — retomando automaticamente em{" "}
+          {resumeBannerLabel(reason)}, retomando automaticamente em{" "}
           <span className="font-mono tabular-nums">{secs}s</span>{" "}
           <span className="text-muted-foreground">
             (tentativa {tries}/{maxTries}

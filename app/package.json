@@ -10,9 +10,10 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "check": "bun run check:type-scale && bun run check:file-size",
+    "check": "bun run check:type-scale && bun run check:file-size && bun run check:dead-tokens",
     "check:type-scale": "node ../scripts/check-type-scale.mjs",
-    "check:file-size": "node ../scripts/check-file-size-ratchet.mjs"
+    "check:file-size": "node ../scripts/check-file-size-ratchet.mjs",
+    "check:dead-tokens": "node ../scripts/check-dead-tokens.mjs"
   },
   "dependencies": {
     "@dicebear/collection": "9",

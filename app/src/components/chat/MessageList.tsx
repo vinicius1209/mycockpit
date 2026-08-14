@@ -1528,13 +1528,13 @@ function TurnFeedback({
         {learnable === false ? (
           <div className="flex items-start gap-1.5 text-[11px] text-st-warning">
             <AlertTriangle className="mt-px size-3.5 shrink-0" /> Isso parece
-            pouco generalizável — nada óbvio pra virar regra. Salve só se for
+            pouco generalizável, nada óbvio pra virar regra. Salve só se for
             mesmo uma preferência durável.
           </div>
         ) : (
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <GraduationCap className="size-3.5 text-brass" /> Aprendizado
-            proposto — confirme antes de tornar permanente
+            proposto, confirme antes de tornar permanente
           </div>
         )}
         <textarea

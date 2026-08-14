@@ -114,8 +114,8 @@ export function DoctrineSection({
         </p>
       ) : (
         <p className="text-[11px] leading-snug text-muted-foreground/70">
-          O único texto de instrução que chega em <b>todos</b> os agents — o app
-          injeta no prompt. Sem ele, cada CLI depende do arquivo do próprio
+          O único texto de instrução que chega em <b>todos</b> os agents, e o
+          app injeta no prompt. Sem ele, cada CLI depende do arquivo do próprio
           fornecedor.
         </p>
       )}

@@ -554,7 +554,7 @@ function FileBlock({
       {open &&
         (file.binary ? (
           <p className="border-t border-border/60 bg-background/40 px-4 py-2 text-[12px] text-muted-foreground">
-            Arquivo binário — sem diff de texto.
+            Arquivo binário, sem diff de texto.
           </p>
         ) : (
           <div className="overflow-x-auto border-t border-border/60 bg-background/40 font-mono text-[12px] leading-[1.55]">

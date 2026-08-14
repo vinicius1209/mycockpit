@@ -346,7 +346,7 @@ export function MissionLauncher({
             </div>
             {!allSupported && (
               <p className="mt-1.5 text-[12px] text-st-error">
-                Há anexo não suportado por {firstAgentLabel} (fase 1) — remova o
+                Há anexo não suportado por {firstAgentLabel} (fase 1). Remova o
                 anexo ou troque o agent da fase 1.
               </p>
             )}
