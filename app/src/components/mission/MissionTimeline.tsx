@@ -26,6 +26,7 @@ import { agentDef } from "@/lib/agents"
 import { fmtCost, fmtDuration, fmtTime } from "@/lib/format"
 import { fmtMissionCost, missionCostState, phaseCostState } from "@/lib/missionCost"
 import { queuedGranularityNote } from "@/lib/missionQuiet"
+import { stopPrice } from "@/lib/missionGestures"
 import { cn } from "@/lib/utils"
 
 const PERSONA_LABEL: Record<string, string> = {
@@ -82,16 +83,25 @@ function PhaseNode({
   active,
   last,
   now,
+  cwd,
   interactions,
+  holdRequested,
+  onToggleHold,
+  onInterrupt,
 }: {
   p: MissionPhaseRun
   active: boolean
   last: boolean
   /** O agora, injetado: um relógio vivo só na tela (B2.2). */
   now: number
+  /** Worktree da missão (o aviso de repetição pergunta a ele). */
+  cwd: string
   /** Interações contextuais desta conversa, permissão ou pergunta (só a fase
    *  corrente recebe). */
   interactions?: InteractionRequest[]
+  holdRequested?: boolean
+  onToggleHold?: (on: boolean) => void
+  onInterrupt?: () => void
 }) {
   const nodeState =
     p.status === "done"
@@ -177,7 +187,15 @@ function PhaseNode({
         <p className="mt-1 text-[12px] leading-snug text-st-error">{p.error}</p>
       )}
       {nodeState === "run" && (
-        <PhaseLive phase={p} now={now} interactions={interactions} />
+        <PhaseLive
+          phase={p}
+          now={now}
+          cwd={cwd}
+          interactions={interactions}
+          holdRequested={holdRequested}
+          onToggleHold={onToggleHold}
+          onInterrupt={onInterrupt}
+        />
       )}
       {!last && <span className="sr-only">↓</span>}
     </div>
@@ -262,6 +280,9 @@ export function MissionTimeline({ convId }: { convId: string }) {
   const answerGate = useMission((s) => s.answerGate)
   const resolveRecovery = useMission((s) => s.resolveRecovery)
   const abortRecovery = useMission((s) => s.abortRecovery)
+  const holdAfterPhase = useMission((s) => s.holdAfterPhase)
+  const interruptPhase = useMission((s) => s.interruptPhase)
+  const releaseHold = useMission((s) => s.releaseHold)
   // cwd pro viewer de arquivos: worktree da conversa, senão a pasta do projeto.
   const conv = useChat((s) => s.byId[convId])
   const projects = useApp((s) => s.projects)
@@ -290,6 +311,8 @@ export function MissionTimeline({ convId }: { convId: string }) {
   // MH1.3 — a pausa por limite recuperável agora tem cara no Trabalho (antes
   // só o Escritório mostrava; aqui a missão parecia rodando pra sempre).
   const inRecovery = running && mission.recovery != null
+  // segurando: nada roda agora, e "em voo" mentiria (estado real, nunca teatro).
+  const held = running && mission.hold != null
   const n = mission.phases.length
   const cur = Math.min(mission.current, n - 1)
   // O denominador CRESCE em voo (o revisor reprova, o motor acrescenta a
@@ -318,7 +341,9 @@ export function MissionTimeline({ convId }: { convId: string }) {
             <span
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[11px] tracking-wide uppercase",
-                gated
+                held
+                  ? "bg-st-warning/15 text-st-warning"
+                  : gated
                   ? "bg-brass-soft text-brass"
                   : inRecovery
                     ? "bg-st-warning/15 text-st-warning"
@@ -331,7 +356,12 @@ export function MissionTimeline({ convId }: { convId: string }) {
                         : "bg-st-error/15 text-st-error",
               )}
             >
-              {gated ? (
+              {held ? (
+                <>
+                  <span className="size-1.5 rounded-full bg-st-warning" />
+                  segurando · fase {Math.min(mission.current + 1, n)}/{n}
+                </>
+              ) : gated ? (
                 <>
                   <span className="animate-cockpit-pulse size-1.5 rounded-full bg-brass" />
                   pausada · precisa de você
@@ -442,6 +472,22 @@ export function MissionTimeline({ convId }: { convId: string }) {
               active={running && !gated && i === cur}
               last={i === n - 1}
               now={now}
+              cwd={cwd}
+              holdRequested={
+                running && !gated && i === cur
+                  ? mission.hold?.reason === "pedido"
+                  : undefined
+              }
+              onToggleHold={
+                running && !gated && i === cur
+                  ? (on) => holdAfterPhase(convId, on)
+                  : undefined
+              }
+              onInterrupt={
+                running && !gated && i === cur && !mission.hold
+                  ? () => interruptPhase(convId)
+                  : undefined
+              }
               interactions={
                 running && !gated && i === cur ? inlineReqs : undefined
               }
@@ -464,6 +510,42 @@ export function MissionTimeline({ convId }: { convId: string }) {
                   onResolve={resolveRecovery}
                   onAbort={abortRecovery}
                 />
+              </div>
+            )}
+            {/* R7 — a missão SEGURANDO: ou você pediu, ou você interrompeu a
+                fase. Nos dois casos nada roda agora e a próxima só começa por
+                gesto seu. Âmbar (pede decisão), como o gate. */}
+            {running && mission.hold?.phase === i && (
+              <div className="relative mb-4">
+                <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 rounded-full border-2 border-st-warning bg-st-warning" />
+                <div className="rounded-[9px] border border-st-warning/45 bg-st-warning/[0.06] px-3 py-2.5">
+                  <div className="text-[13px] font-semibold text-st-warning">
+                    {mission.hold.reason === "interrompida"
+                      ? `Fase ${i + 1} interrompida por você`
+                      : `Segurando no fim da fase ${i + 1}`}
+                  </div>
+                  <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
+                    {mission.hold.reason === "interrompida"
+                      ? "O processo morreu. O que ela escreveu continua no worktree, e a fase ficou incompleta."
+                      : "A fase terminou normal. A próxima não começa sem você."}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => releaseHold(convId)}
+                      className="rounded-md bg-brass px-3 py-1 text-[12px] font-semibold text-background transition-opacity hover:opacity-90"
+                    >
+                      Continuar para {mission.phases[i + 1]?.def.label ?? "o fim"}
+                    </button>
+                    <span className="text-[11px] text-faint">
+                      {stopPrice({
+                        current: i,
+                        total: n,
+                        costLabel: total.value,
+                      })}
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
             {gated && mission.gate!.phase === i && (

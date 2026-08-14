@@ -620,6 +620,7 @@ pub fn run() {
             sdd::set_plan_stage,
             skills::write_skill,
             git::git_diff,
+            git::git_worktree_pulse,
             git::create_worktree,
             git::remove_worktree,
             git::git_commit,

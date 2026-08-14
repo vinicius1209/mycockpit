@@ -301,6 +301,12 @@ export interface MissionRun {
   startedAt: number
   /** Gate pendente (precisa de você). null/undefined = nada pendente. */
   gate?: MissionGate | null
+  /** R7 — a missão está SEGURANDO: ou você pediu ("pedido", e a fase corrente
+   *  ainda termina normal), ou você interrompeu a fase ("interrompida", e ela
+   *  ficou incompleta). Em ambos os casos a PRÓXIMA fase não começa sem você.
+   *  null/undefined = nada segurando. Não persiste no run-state: pausa é estado
+   *  vivo, e retomar re-roda a fase corrente do zero (mesma régua do gate). */
+  hold?: { phase: number; reason: "pedido" | "interrompida" } | null
   /** Recuperação pendente: uma fase falhou de forma recuperável e a missão
    *  aguarda a escolha de agent (resolveRecovery) ou a desistência
    *  (abortRecovery). null/undefined = nada pendente. */

@@ -148,6 +148,22 @@ export interface MissionState {
   /** Recuperação: o usuário desistiu → a missão vai a error (resolve com null,
    *  mesmo efeito de não escolher agent). No-op se não há recovery pendente. */
   abortRecovery: (convId: string) => void
+
+  /** R7 — SEGURAR NO FIM DESTA FASE (reversível): a fase corrente termina
+   *  normal e a PRÓXIMA não começa sem você. Nada é interrompido agora. Ligar/
+   *  desligar é livre enquanto a fase roda; depois que ela terminou e o loop
+   *  parou, desligar deixa de ser o gesto (aí é `releaseHold`). */
+  holdAfterPhase: (convId: string, on: boolean) => void
+
+  /** R7 — INTERROMPER ESTA FASE (irreversível): mata o processo da fase
+   *  corrente AGORA. O que já foi escrito continua no worktree, a fase fica
+   *  `aborted` e a missão SEGURA (não morre — matar tudo é o Parar). O preço
+   *  difere por motor e é dito antes do clique (lib/missionGestures). */
+  interruptPhase: (convId: string) => void
+
+  /** Solta a missão que estava segurando (por pedido ou por interrupção) e
+   *  deixa a próxima fase começar. No-op se nada segura. */
+  releaseHold: (convId: string) => void
 }
 
 /** MissionRun em execução ainda tem fase corrente rodando/na fila. */
@@ -175,6 +191,21 @@ const gateWaiters = new Map<string, (answers: GateAnswer[] | null) => void>()
  *  resolve com a escolha (re-roda), abortRecovery/abort resolvem com null
  *  (desiste). */
 const recoveryWaiters = new Map<string, (choice: RecoveryChoice | null) => void>()
+
+/** SEGURAR NO FIM DESTA FASE (R7): resolvedores das missões que pararam ANTES
+ *  de começar a próxima. MESMO padrão do gate — o loop aguarda aqui; `release`
+ *  resolve com true (segue), abort/clear com null (desiste). É o único ponto de
+ *  espera fora do gate/recovery, e por isso a régua é a mesma: a pausa NÃO
+ *  sobrevive a restart (retomar re-roda a fase corrente do zero). */
+const holdWaiters = new Map<string, (go: boolean | null) => void>()
+
+/** INTERROMPER ESTA FASE (R7): missões em que o humano pediu a morte do
+ *  processo da fase corrente. O cancelamento chega ao loop como falha; esta
+ *  marca é o que distingue "o motor quebrou" (missão vai a error, como sempre)
+ *  de "você mandou parar esta fase" (a fase fica incompleta e a missão SEGURA).
+ *  Sem ela, interromper uma fase mataria a missão inteira — que é exatamente o
+ *  gesto que já existe e se chama Parar. */
+const interruptIntents = new Set<string>()
 
 /** cwd da missão de cada conversa (worktree ou pasta do projeto) — alvo do
  *  run-state.json. Fora do MissionRun de propósito: é plumbing de persistência,
@@ -559,7 +590,7 @@ export const useMission = create<MissionState>((set, get) => {
       let costInvocation = 0
       const costNonce = Date.now().toString(36)
 
-      while (engine.current < engine.phases.length) {
+      fases: while (engine.current < engine.phases.length) {
         const i = engine.current
         // abortada por fora (byConv sumiu ou marcada aborted) → para o loop.
         const now = get().byConv[convId]
@@ -775,6 +806,43 @@ export const useMission = create<MissionState>((set, get) => {
             await recordError(convId, fail.reason, "teto")
             persist(convId)
             return
+          }
+
+          // VOCÊ mandou interromper ESTA fase: o cancelamento é o gesto, não um
+          // defeito. A fase fica `aborted` (incompleta, com o que já escreveu
+          // no worktree) e a missão SEGURA em vez de morrer.
+          if (interruptIntents.has(missionId)) {
+            interruptIntents.delete(missionId)
+            patchPhase(convId, i, (ph) => ({
+              ...ph,
+              status: "aborted",
+              costUsd: ph.costUsd + result.costUsd,
+              costSource: result.costSource,
+              endedAt: Date.now(),
+              error: "interrompida por você",
+            }))
+            patchConv(convId, {
+              hold: { phase: i, reason: "interrompida" },
+            })
+            persist(convId)
+            await recordHistory(convId, [
+              noticeItem(
+                `Fase ${i + 1} · ${engine.phases[i].label} interrompida por você. O que ela escreveu continua no worktree; a missão está segurando.`,
+              ),
+            ])
+            const segue = await new Promise<boolean | null>((resolve) => {
+              holdWaiters.set(missionId, resolve)
+            })
+            holdWaiters.delete(missionId)
+            const depois = get().byConv[convId]
+            if (!depois || depois.status !== "running" || segue !== true) return
+            patchConv(convId, { hold: null })
+            engine = advance(engine)
+            persist(convId)
+            // `continue fases`, não `break`: o resto da iteração (handoff,
+            // marcos, gate, advance) é sobre uma fase que TERMINOU, e esta não
+            // terminou — foi morta. Sair pelo break pularia uma fase inteira.
+            continue fases
           }
 
           // falha NÃO-recuperável (bug, timeout, cancel) → kill atual: a fase e a
@@ -1043,6 +1111,26 @@ export const useMission = create<MissionState>((set, get) => {
           persist(convId, gateDecisions)
         }
 
+        // ── SEGURAR NO FIM DESTA FASE: você pediu antes de a fase acabar, e
+        // ela acabou normal. Nada foi interrompido; a PRÓXIMA é que não começa
+        // sem você. Reversível até aqui (o interruptor desliga o pedido).
+        if (get().byConv[convId]?.hold?.reason === "pedido") {
+          patchConv(convId, { hold: { phase: i, reason: "pedido" } })
+          persist(convId)
+          await recordHistory(convId, [
+            noticeItem(
+              `Missão segurando no fim da fase ${i + 1} · ${engine.phases[i].label}, a seu pedido. A próxima só começa quando você mandar.`,
+            ),
+          ])
+          const segue = await new Promise<boolean | null>((resolve) => {
+            holdWaiters.set(missionId, resolve)
+          })
+          holdWaiters.delete(missionId)
+          const depois = get().byConv[convId]
+          if (!depois || depois.status !== "running" || segue !== true) return
+          patchConv(convId, { hold: null })
+        }
+
         engine = advance(engine)
       }
 
@@ -1227,6 +1315,8 @@ export const useMission = create<MissionState>((set, get) => {
       // null; o while checa status !== "running" e sai sem forçar error).
       gateWaiters.get(run.id)?.(null)
       recoveryWaiters.get(run.id)?.(null)
+      holdWaiters.get(run.id)?.(null)
+      interruptIntents.delete(run.id)
       // marco em disco: aborted é terminal — o boot não oferece retomada.
       persist(convId)
       // marco terminal no fio (fire-and-forget: nunca segura o Stop; o
@@ -1249,6 +1339,8 @@ export const useMission = create<MissionState>((set, get) => {
         if (run) {
           gateWaiters.get(run.id)?.(null)
           recoveryWaiters.get(run.id)?.(null)
+          holdWaiters.get(run.id)?.(null)
+          interruptIntents.delete(run.id)
         }
         // plumbing por conversa sai junto do run (sem entrada órfã): um launch
         // futuro re-semeia os dois antes do primeiro persist.
@@ -1270,6 +1362,42 @@ export const useMission = create<MissionState>((set, get) => {
       const run = get().byConv[convId]
       if (!run?.recovery) return
       recoveryWaiters.get(run.id)?.(choice)
+    },
+
+    holdAfterPhase: (convId, on) => {
+      const run = get().byConv[convId]
+      if (!run || !isActive(run.status)) return
+      // já segurando de verdade (a fase acabou e o loop está esperando) não é
+      // mais um pedido reversível: desligar aqui seria "continuar", e continuar
+      // tem gesto próprio.
+      if (run.hold && holdWaiters.has(run.id)) return
+      patchConv(convId, {
+        hold: on ? { phase: run.current, reason: "pedido" } : null,
+      })
+    },
+
+    interruptPhase: (convId) => {
+      const run = get().byConv[convId]
+      if (!run || !isActive(run.status)) return
+      const idx = run.current
+      const ph = run.phases[idx]
+      if (!ph || ph.status !== "running") return
+      // a INTENÇÃO entra antes do cancel: o evento de cancelamento chega pelo
+      // stream e o loop precisa achar a marca já lá (fail-closed na ordem).
+      interruptIntents.add(run.id)
+      void cancelAgent(phaseRunId(run.id, idx))
+    },
+
+    releaseHold: (convId) => {
+      const run = get().byConv[convId]
+      if (!run) return
+      const waiter = holdWaiters.get(run.id)
+      if (!waiter) {
+        // ainda é só um PEDIDO (a fase não terminou): desligar é reversível.
+        if (run.hold?.reason === "pedido") patchConv(convId, { hold: null })
+        return
+      }
+      waiter(true)
     },
 
     abortRecovery: (convId) => {

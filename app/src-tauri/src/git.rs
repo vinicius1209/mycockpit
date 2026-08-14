@@ -478,3 +478,86 @@ pub async fn git_create_pr(
         .await
         .map_err(|e| e.to_string())?
 }
+
+// ---------------- Pulso do worktree (R11 do docs/mocks/missao-README.md) ----
+//
+// O aviso de REPETIÇÃO da missão precisa de dois fatores, e nunca de um só:
+// "o mesmo comando ≥ 4 vezes seguidas" (o fio já guarda) E "nenhum arquivo
+// alterado no worktree desde a primeira" (ninguém media). Este comando entrega
+// o segundo, e ele é deliberadamente BARATO: nada de patch, só o formato
+// numérico do diff + a lista de arquivos novos com tamanho. Serve pra responder
+// "mudou alguma coisa desde a última vez que eu perguntei?", que é a única
+// pergunta que o R11 faz.
+//
+// Não é polling de fundo: quem chama só chama DEPOIS que o primeiro fator já
+// disparou (ver lib/missionRepeat.ts). Read-only, e falha vira string vazia —
+// sem impressão digital, o aviso NÃO aparece (fail-closed: alarme com um fator
+// só é alarme falso, e o README já tinha nomeado esse risco).
+
+/// Hash estável e curto de um blob de texto (FNV-1a 64). Não é criptográfico:
+/// serve pra comparar "igual ao de 30s atrás?", nada além disso.
+fn fnv1a(s: &str) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in s.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x1000_0000_01b3);
+    }
+    h
+}
+
+/// Impressão digital do estado da working tree. String vazia = não é repo, git
+/// ausente ou leitura falhou — o chamador trata como "não sei", nunca como
+/// "não mudou".
+fn worktree_pulse_sync(cwd: &str) -> String {
+    let is_repo = git(cwd, &["rev-parse", "--is-inside-work-tree"])
+        .map(|s| s.trim() == "true")
+        .unwrap_or(false);
+    if !is_repo {
+        return String::new();
+    }
+    // rastreados: `--numstat` muda quando o CONTEÚDO muda (o `--porcelain`
+    // sozinho não: um arquivo já modificado continua " M path" na 2ª edição).
+    let Some(numstat) = git(cwd, &["diff", "HEAD", "--numstat"]) else {
+        return String::new();
+    };
+    let mut blob = numstat;
+    // novos (untracked, não-ignorados): nome + tamanho, sem ler o conteúdo.
+    if let Some(list) = git(cwd, &["ls-files", "--others", "--exclude-standard", "-z"]) {
+        for rel in list.split('\0').filter(|s| !s.is_empty()) {
+            let len = fs::metadata(Path::new(cwd).join(rel))
+                .map(|m| m.len())
+                .unwrap_or(0);
+            blob.push_str(&format!("\n?{rel}\t{len}"));
+        }
+    }
+    format!("{:016x}", fnv1a(&blob))
+}
+
+/// Async (spawn_blocking): dois `git` síncronos na main thread congelariam a UI,
+/// mesma regra do git_diff.
+#[tauri::command]
+pub async fn git_worktree_pulse(cwd: String) -> String {
+    tauri::async_runtime::spawn_blocking(move || worktree_pulse_sync(&cwd))
+        .await
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod pulse_tests {
+    use super::*;
+
+    #[test]
+    fn pulso_muda_quando_o_blob_muda_e_repete_quando_nao_muda() {
+        // O contrato do R11 depende disto e de nada mais: pulso igual = nada
+        // escrito desde a última pergunta.
+        assert_eq!(fnv1a("a\tb\tsrc/x.ts"), fnv1a("a\tb\tsrc/x.ts"));
+        assert_ne!(fnv1a("1\t0\tsrc/x.ts"), fnv1a("2\t0\tsrc/x.ts"));
+    }
+
+    #[test]
+    fn fora_de_repo_o_pulso_e_vazio_em_vez_de_mentir_estabilidade() {
+        // "não sei" NUNCA pode ser lido como "não mudou": string vazia é o
+        // sinal de ignorância, e o TS não liga o aviso sem impressão digital.
+        assert_eq!(worktree_pulse_sync("/caminho/que/nao/existe/mycockpit"), "");
+    }
+}

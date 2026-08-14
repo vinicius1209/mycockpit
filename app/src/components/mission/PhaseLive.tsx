@@ -18,6 +18,11 @@ import {
   type FeedRow,
 } from "@/lib/missionAction"
 import { narratesActions, quietPhaseView } from "@/lib/missionQuiet"
+import { interruptPrice, MISSION_GESTURES } from "@/lib/missionGestures"
+import {
+  RepeatWarningCard,
+  useRepeatWarning,
+} from "@/components/mission/RepeatWarning"
 import type { MissionPhaseRun } from "@/lib/missionTypes"
 import { cn } from "@/lib/utils"
 
@@ -145,21 +150,40 @@ function QuietEngine({ phase, now }: { phase: MissionPhaseRun; now: number }) {
 export function PhaseLive({
   phase,
   now,
+  cwd,
   interactions,
-  stalled,
+  holdRequested,
+  onToggleHold,
+  onInterrupt,
 }: {
   phase: MissionPhaseRun
   /** Injetado pelo cronômetro do pai: um relógio vivo só na tela (B2.2). */
   now: number
+  /** Raiz do worktree da missão: é o que o aviso de repetição precisa pra
+   *  perguntar "mudou alguma coisa desde a primeira?" (R11). */
+  cwd: string
   interactions?: InteractionRequest[]
-  /** A fase está sob aviso de repetição: o azul sai e o pulse para (quando
-   *  "está repetindo" vira a informação, "está rodando" deixa de ser). */
-  stalled?: boolean
+  /** Você já pediu pra segurar no fim desta fase (reversível enquanto roda). */
+  holdRequested?: boolean
+  onToggleHold?: (on: boolean) => void
+  onInterrupt?: () => void
 }) {
   const narrates = narratesActions(phase.def.agent)
   const feed = narrates ? buildPhaseFeed(phase.items, { live: true }) : []
+  // R11 — o aviso só nasce com os DOIS fatores, e a amostragem do worktree só
+  // liga depois que o primeiro disparou (em missão saudável, nenhum git roda).
+  const repeticao = useRepeatWarning(phase, cwd, now)
+  const stalled = repeticao != null
+  const preco = interruptPrice(phase.def.agent)
   return (
     <div className="mt-2 pl-1">
+      {repeticao && (
+        <RepeatWarningCard
+          warning={repeticao}
+          onInterrupt={onInterrupt}
+          interruptPrice={preco}
+        />
+      )}
       {narrates ? (
         feed.length > 0 ? (
           <div className="flex flex-col border-l border-border pl-3">
@@ -184,6 +208,40 @@ export function PhaseLive({
             req={interactions[0]}
             extra={interactions.length - 1}
           />
+        </div>
+      )}
+      {/* Os gestos ficam COLADOS na fase corrente, não num painel próprio: em
+          missão curta a infraestrutura de controle some junto com a fase.
+          "Pausar" não aparece porque não existe (R7); o preço de interromper é
+          por motor e está escrito ao lado, antes do clique. */}
+      {(onToggleHold || onInterrupt) && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-l border-border pl-3">
+          {onToggleHold && (
+            <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={Boolean(holdRequested)}
+                onChange={(e) => onToggleHold(e.target.checked)}
+                className="size-3.5 accent-[var(--brass)]"
+              />
+              {MISSION_GESTURES.segurar.label}
+            </label>
+          )}
+          {onInterrupt && !repeticao && (
+            <button
+              type="button"
+              onClick={onInterrupt}
+              className="text-[12px] text-muted-foreground underline decoration-border-strong underline-offset-2 transition-colors hover:text-foreground"
+              title={`${MISSION_GESTURES.interromper.effect}. ${preco}`}
+            >
+              {MISSION_GESTURES.interromper.label}
+            </button>
+          )}
+          {holdRequested && (
+            <span className="text-[11px] text-faint">
+              {MISSION_GESTURES.segurar.effect}
+            </span>
+          )}
         </div>
       )}
     </div>
