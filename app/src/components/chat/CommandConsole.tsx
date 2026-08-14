@@ -153,6 +153,24 @@ export function CommandConsole({
   const effectiveModel = locked ? (conv.reqModel ?? "default") : model
   const effectiveEffort = locked ? (conv.effort ?? "default") : effort
 
+  // Carimbo do agent numa conversa que ainda NÃO tem um. O destino é estado
+  // deste componente e SOBREVIVE à troca de conversa: escolher Antigravity e
+  // depois criar uma conversa nova deixava a linha sem carimbo, e a sidebar
+  // caía no default GLOBAL (ícone do Claude Code numa conversa que ia rodar,
+  // e rodava, Antigravity). O `onDestChange` só cobria a troca explícita.
+  // Preenche o VAZIO e nada além: conversa já carimbada (escolha anterior,
+  // mesa de um agent, linha vinda do banco) e conversa com turno de executor
+  // ficam intocadas — o carimbo diz quem VAI rodar, não um padrão.
+  const convStamp = useChat((s) =>
+    s.activeId
+      ? (s.conversations.find((c) => c.id === s.activeId)?.agent ?? null)
+      : null,
+  )
+  useEffect(() => {
+    if (!activeId || locked || convStamp !== null) return
+    useChat.getState().setConversationAgent(activeId, destination)
+  }, [activeId, locked, convStamp, destination])
+
   // Popover "/" (comandos), arquivos do "@", histórico ↑/↓ e anexos, cada
   // feature num hook. O teclado chega pelos plugins do editor (slashBridge/
   // historyBridge/PASTE_COMMAND); a lógica mora aqui fora.

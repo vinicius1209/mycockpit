@@ -1626,10 +1626,17 @@ export const useChat = create<ChatState>((set, get) => {
      *  NO-OP em conversa com itens: aí o agent está TRAVADO no 1º run e mexer
      *  aqui mentiria sobre quem produziu o histórico. */
     setConversationAgent: (convId, agent) => {
-      const cur = get().byId[convId]
+      const s0 = get()
+      const cur = s0.byId[convId]
       // pareceres de conselheiro (advice) são laterais e NÃO travam o agent — o
       // executor ainda não rodou se só há pareceres no fio (Especialistas E1).
-      if (!cur || hasExecutorTurn(cur.items) || cur.agent === agent) return
+      if (!cur || hasExecutorTurn(cur.items)) return
+      // "já é esse agent" olha os DOIS lados: o `byId` nasce no PADRÃO histórico
+      // (claude-code) e engolia o carimbo na META, que é a que a sidebar lê — sem
+      // ela a linha cai no default GLOBAL, que pode ser outro agent.
+      const pid = projectOfConv(s0.conversationsByProject, convId)
+      const meta = s0.conversationsByProject[pid ?? ""]?.find((c) => c.id === convId)
+      if (cur.agent === agent && (!meta || meta.agent === agent)) return
       set((s) => ({
         ...patchConvMeta(s, convId, (c) => ({ ...c, agent })),
         byId: { ...s.byId, [convId]: { ...s.byId[convId], agent } },
@@ -1941,10 +1948,10 @@ export const useChat = create<ChatState>((set, get) => {
             ts: Date.now(),
           },
         ]
-        // deriva o título na lista do projeto DONO (via id único), espelha no ativo
-        const titled = patchConvMeta(s, convId, (c) =>
-          c.title ? c : { ...c, title: deriveTitle(items) },
-        )
+        // título + carimbo do agent na lista do projeto DONO (id único), espelhados
+        // no ativo. O agent vai JUNTO: o ícone da linha é de quem ESTÁ rodando, e
+        // antes só o persist (FIM do turno) espelhava.
+        const titled = patchConvMeta(s, convId, (c) => ({ ...c, agent, title: c.title || deriveTitle(items) }))
         return {
           ...titled,
           byId: {
