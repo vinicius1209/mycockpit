@@ -60,10 +60,18 @@ pub const AGY_GROUP: &str = "mycockpit";
 /// Teto do curl no caminho SÍNCRONO (s): maior que o teto humano do gateway
 /// (30s) e menor que o timeout do config (35s) — as três camadas em ordem.
 const SYNC_MAX_TIME: u64 = 32;
+/// Timeout que vai NO CONFIG do CLI para o evento de permissão (s): a camada de
+/// FORA, a única que o motor do fornecedor controla. É o único lugar onde este
+/// número existe — os `EventSpec` de permissão dos três dialetos o consomem,
+/// justamente pra não haver literal solto que alguém baixe sem cruzar com o
+/// resto (o do agy era anônimo e sem guarda nenhuma até 14/08/2026).
+const CONFIG_TIMEOUT_S: u64 = 35;
 /// As três camadas em ordem, checadas em compilação: teto humano do gateway
 /// (30s) < teto do curl (32s) < timeout do config do CLI (35s). Inverter
-/// qualquer par faria o CLI matar o hook antes de o app responder `ask`.
+/// qualquer par faria o CLI matar o hook antes de o app responder `ask` — e
+/// silenciosamente: nada falha em runtime, o usuário é que paga a corrida.
 const _: () = assert!(SYNC_MAX_TIME * 1_000 > crate::hook_sessions::PERMISSION_TIMEOUT_MS);
+const _: () = assert!(CONFIG_TIMEOUT_S > SYNC_MAX_TIME);
 /// Timeouts CONSECUTIVOS que abrem o disjuntor. **2, nunca 1** — é a parte que
 /// importa da lição do Buzz (study-buzz achado 3): app lento uma vez é
 /// lentidão pontual (tolerar); duas vezes seguidas é app que não vai
@@ -75,6 +83,17 @@ const BREAKER_TRIPS: u64 = 2;
 /// 5 min = ordem de grandeza de "reiniciei o app / ele destravou", sem punir
 /// uma sessão inteira por um episódio.
 const BREAKER_WINDOW_S: u64 = 300;
+
+/// Versão do SCRIPT gerado. Sobe quando o comportamento do script muda de um
+/// jeito que o usuário sente (v3 = disjuntor do §6.1). O script instalado só é
+/// reescrito por gesto em Configurações, então quem instalou antes fica com a
+/// versão antiga PARA SEMPRE se ninguém contar: por isso o número é lido de
+/// volta em `status_of` (`script_schema`) e a UI oferece **Reinstalar** quando
+/// está atrás. Comentário que ninguém lê é decoração; este é contrato.
+const HOOK_SCHEMA: u64 = 3;
+/// Prefixo da linha de schema no script gerado. Contrato de leitura: mudar
+/// aqui quebra a detecção de desatualizado dos scripts JÁ instalados.
+const SCHEMA_MARK: &str = "# mycockpit-hook-schema:";
 
 /// UM evento a instalar: nome + matcher de tool (None = sem matcher) +
 /// timeout (s).
@@ -134,11 +153,14 @@ fn status_events(dialect: HookDialect) -> &'static [EventSpec] {
     }
 }
 
-/// Eventos de PERMISSÃO por dialeto (H2, opt-in separado). Timeout 35s no
-/// config: maior que o teto de 30s do round-trip humano do gateway — o CLI
-/// nunca mata o hook antes de o app responder `ask`.
-const CLAUDE_PERMISSION_EVENTS: &[EventSpec] = &[ev("PermissionRequest", true, 35)];
-const CODEX_PERMISSION_EVENTS: &[EventSpec] = &[ev("PermissionRequest", true, 35)];
+/// Eventos de PERMISSÃO por dialeto (H2, opt-in separado). O timeout é sempre
+/// `CONFIG_TIMEOUT_S` (35s), a camada de fora das três: maior que o teto do
+/// curl (32s), que por sua vez é maior que o teto humano do gateway (30s) — o
+/// CLI nunca mata o hook antes de o app responder `ask`.
+const CLAUDE_PERMISSION_EVENTS: &[EventSpec] =
+    &[ev("PermissionRequest", true, CONFIG_TIMEOUT_S)];
+const CODEX_PERMISSION_EVENTS: &[EventSpec] =
+    &[ev("PermissionRequest", true, CONFIG_TIMEOUT_S)];
 /// agy: o gate É o PreToolUse (não há evento separado). Matcher ESCOPADO a
 /// `run_command` de propósito — o hook é síncrono e segura o loop; escopar à
 /// tool que exige a permissão "command" evita atrasar tool call inofensiva
@@ -146,7 +168,9 @@ const CODEX_PERMISSION_EVENTS: &[EventSpec] = &[ev("PermissionRequest", true, 35
 const AGY_PERMISSION_EVENTS: &[EventSpec] = &[EventSpec {
     name: "PreToolUse",
     matcher: Some("run_command"),
-    timeout: 35,
+    // MESMA camada de fora dos outros dialetos: o gate do agy segura o loop
+    // dele exatamente como o PermissionRequest segura o do claude/codex.
+    timeout: CONFIG_TIMEOUT_S,
 }];
 
 fn permission_events(dialect: HookDialect) -> &'static [EventSpec] {
@@ -196,6 +220,16 @@ pub struct HooksStatus {
     /// Estado inconsistente detectado (ex.: entradas presentes mas script
     /// sumido) — a UI mostra; reinstalar conserta.
     pub warning: Option<String>,
+    /// O script INSTALADO está atrás do `HOOK_SCHEMA` atual? Estado próprio,
+    /// separado de `warning`: aqui nada está quebrado (os hooks funcionam), o
+    /// que falta é o comportamento novo — a afordância é REINSTALAR, nunca
+    /// "reparar desinstalando".
+    pub outdated: bool,
+    /// Schema lido do script instalado (`None` = script ausente, ilegível ou
+    /// sem a linha). Sai no status pra UI poder dizer a verdade inteira.
+    pub script_schema: Option<u64>,
+    /// Schema que esta versão do app escreve.
+    pub current_schema: u64,
     /// "claude-settings" | "codex-hooks-json" | "agy-config-hooks".
     pub dialect: String,
 }
@@ -293,7 +327,7 @@ fn render_script_with(
     let header = format!(
         "#!/bin/sh\n\
          # Generated by MyCockpit — DO NOT EDIT (regenerado a cada instalação)\n\
-         # mycockpit-hook-schema: 3\n\
+         {SCHEMA_MARK} {HOOK_SCHEMA}\n\
          # Hooks do MyCockpit: postam o evento de ciclo de vida ($1) pro app\n\
          # em loopback; o evento de permissão espera a SUA decisão no app (até\n\
          # {sync_max_time}s) e devolve pro CLI. Fail-open: app fechado = a CLI segue como\n\
@@ -368,6 +402,26 @@ fn render_script_with(
         ),
     };
     format!("{header}{body}")
+}
+
+/// Schema declarado por um script JÁ instalado no disco. Lê a linha marcada e
+/// só ela: o resto do arquivo é gerado, não é contrato de leitura.
+fn schema_of_script(text: &str) -> Option<u64> {
+    text.lines()
+        .find_map(|l| l.trim_start().strip_prefix(SCHEMA_MARK))
+        .and_then(|v| v.trim().parse::<u64>().ok())
+}
+
+/// O script instalado ficou para trás do que este app escreve?
+///
+/// `None` (sem a linha, ilegível, editado à mão) conta como ATRÁS de propósito:
+/// todo script nosso declara a linha, então a ausência dela é script antigo ou
+/// adulterado, e nos dois casos a resposta certa é reinstalar. Errar para este
+/// lado custa um clique; errar para o outro custa o teto do curl em CADA pedido
+/// de permissão, para sempre e sem aviso (era o furo do bump 2→3: o número
+/// subia na string gerada e ninguém do lado de cá lia).
+fn schema_is_outdated(schema: Option<u64>) -> bool {
+    schema.is_none_or(|v| v < HOOK_SCHEMA)
 }
 
 /// Comando instalado no config: path do script entre aspas simples (blinda o
@@ -614,6 +668,53 @@ fn breaker_path(app: &AppHandle, agent: &str) -> Result<PathBuf, String> {
     Ok(script_path(app, agent)?.with_file_name("breaker.state"))
 }
 
+const BREAKER_FILE: &str = "breaker.state";
+
+/// Apaga o disjuntor de TODOS os motores em `root` (um subdiretório por motor)
+/// e devolve quantos foram apagados. Puro em relação ao app: recebe o
+/// diretório, para poder ser provado sem AppHandle.
+fn clear_breakers_in(root: &std::path::Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return 0; // sem diretório = nunca instalou; nada a limpar
+    };
+    let mut n = 0;
+    for entry in entries.flatten() {
+        let f = entry.path().join(BREAKER_FILE);
+        // `exists()` antes pra não logar "não existe" como falha: o normal é
+        // não haver disjuntor nenhum aberto.
+        if f.exists() {
+            match std::fs::remove_file(&f) {
+                Ok(()) => n += 1,
+                Err(e) => log::warn!("hooks: não consegui limpar {} ({e})", f.display()),
+            }
+        }
+    }
+    n
+}
+
+/// Zera os disjuntores quando o gateway SOBE A PORTA (hooks-plan §6.1).
+///
+/// O disjuntor mede "o app está vivo e mudo". Um listener novo em loopback é a
+/// prova mais forte que existe do contrário: este processo acabou de nascer e
+/// está aceitando conexão AGORA. Sem isto, reiniciar o app (o gesto natural de
+/// quem viu o app travar) não destravava nada: a janela de 5 min continuava
+/// correndo e os pedidos de permissão seguiam caindo no prompt nativo, com o
+/// app novo em folha esperando por eles.
+///
+/// O risco do outro lado é conhecido e barato: se o app novo também ficar mudo,
+/// o próximo pedido paga o teto do curl uma vez e o disjuntor reabre na segunda
+/// falha, exatamente como no primeiro boot.
+pub fn clear_breakers(app: &AppHandle) {
+    let Ok(dir) = app.path().app_data_dir() else {
+        log::warn!("hooks: sem app_data_dir; disjuntores não foram limpos no boot");
+        return;
+    };
+    let n = clear_breakers_in(&dir.join("hook-scripts"));
+    if n > 0 {
+        log::info!("hooks: {n} disjuntor(es) limpo(s) — o gateway subiu a porta");
+    }
+}
+
 /// Lê e parseia o config. Ausente → objeto vazio (instalação cria); inválido
 /// ou não-objeto → erro honesto, nada é alterado (mesma regra do statusline:
 /// nunca sobrescrevemos um arquivo que não entendemos).
@@ -765,6 +866,26 @@ fn status_of(app: &AppHandle, agent: &str) -> Result<HooksStatus, String> {
                 .to_string(),
         );
     }
+    // Versão do script que está NO DISCO (não a que este app escreveria): é o
+    // único jeito de contar pra quem instalou antes do bump que existe algo
+    // melhor esperando um clique. Falha de leitura não é engolida.
+    let script_schema = if script_exists {
+        match std::fs::read_to_string(&script) {
+            Ok(text) => schema_of_script(&text),
+            Err(e) => {
+                log::warn!(
+                    "hooks_status: script instalado em {} não pôde ser lido ({e}); versão desconhecida",
+                    script.display()
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+    // Só faz sentido com as entradas no config E o script no lugar: sem isso a
+    // verdade que a UI conta é a outra (`warning`).
+    let outdated = installed && script_exists && schema_is_outdated(script_schema);
     Ok(HooksStatus {
         installed,
         permission_installed,
@@ -778,6 +899,9 @@ fn status_of(app: &AppHandle, agent: &str) -> Result<HooksStatus, String> {
         )?,
         events,
         warning,
+        outdated,
+        script_schema,
+        current_schema: HOOK_SCHEMA,
         dialect: dialect_id(dialect).to_string(),
     })
 }
@@ -1109,6 +1233,66 @@ mod tests {
         assert!(!s.contains("printf '{}"));
     }
 
+    /// O bump de schema tem que CHEGAR em quem já instalou: o número sai na
+    /// string gerada e volta pela leitura do script no disco. Antes disto o
+    /// `3` era comentário decorativo (1 hit no grep: o próprio render), e quem
+    /// instalou no schema 2 seguia pagando o teto do curl por pedido para
+    /// sempre, sem nunca ser avisado.
+    #[test]
+    fn o_schema_do_script_e_lido_de_volta_e_o_atrasado_e_reconhecido() {
+        for (engine, d) in [
+            ("claude-code", HookDialect::ClaudeSettings),
+            ("codex", HookDialect::CodexHooksJson),
+            ("agy", HookDialect::AgyConfigHooks),
+        ] {
+            let s = render_script(engine, d, ENDPOINT, BREAKER);
+            assert_eq!(schema_of_script(&s), Some(HOOK_SCHEMA), "{engine}");
+            assert!(!schema_is_outdated(schema_of_script(&s)), "{engine}");
+        }
+        // script de uma instalação anterior (schema 2, sem disjuntor).
+        let velho = "#!/bin/sh\n# Generated by MyCockpit\n# mycockpit-hook-schema: 2\nexit 0\n";
+        assert_eq!(schema_of_script(velho), Some(2));
+        assert!(schema_is_outdated(schema_of_script(velho)));
+        // sem a linha (script muito antigo ou editado à mão) = atrasado, na
+        // dúvida oferecemos reinstalar: errar aqui custa um clique.
+        assert_eq!(schema_of_script("#!/bin/sh\nexit 0\n"), None);
+        assert!(schema_is_outdated(None));
+        // linha ilegível não vira número torto.
+        assert_eq!(schema_of_script("# mycockpit-hook-schema: três\n"), None);
+        // e um schema FUTURO (usuário voltou pra uma versão antiga do app) não
+        // é "atrasado": reinstalar rebaixaria o script dele sem motivo.
+        assert!(!schema_is_outdated(Some(HOOK_SCHEMA + 1)));
+    }
+
+    /// Reiniciar o app é o gesto natural de quem viu o app travar. Sem esta
+    /// limpeza, ele não destravava nada: a janela de 5 min seguia correndo e o
+    /// app novo em folha ficava sem receber os pedidos de permissão.
+    #[test]
+    fn subir_a_porta_limpa_o_disjuntor_de_todos_os_motores() {
+        // prefixo PRÓPRIO: os testes de shell usam `mc-brk-<pid>` e rodam em
+        // paralelo neste mesmo processo.
+        let root = std::env::temp_dir().join(format!("mc-brk-limpeza-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for engine in ["claude-code", "codex"] {
+            let dir = root.join(engine);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("mycockpit-hook.sh"), "#!/bin/sh\n").unwrap();
+            std::fs::write(dir.join("breaker.state"), "2 1755000000\n").unwrap();
+        }
+        // motor que nunca teve timeout: sem arquivo, e isso não é erro.
+        std::fs::create_dir_all(root.join("agy")).unwrap();
+        assert_eq!(clear_breakers_in(&root), 2);
+        for engine in ["claude-code", "codex"] {
+            assert!(!root.join(engine).join("breaker.state").exists());
+            // o script NÃO é tocado: quem some é o estado, não a instalação.
+            assert!(root.join(engine).join("mycockpit-hook.sh").exists());
+        }
+        // idempotente e silencioso quando não há nada a limpar.
+        assert_eq!(clear_breakers_in(&root), 0);
+        assert_eq!(clear_breakers_in(&root.join("nao-existe")), 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn script_do_agy_responde_o_contrato_sincrono_antes_de_postar() {
         let s = render_script("agy", HookDialect::AgyConfigHooks, ENDPOINT, BREAKER);
@@ -1145,7 +1329,48 @@ mod tests {
         // escopo deliberado: segurar TODA tool call do agy por até 30s seria
         // punir tool inofensiva; run_command é a que exige permissão.
         assert_eq!(evs[0].matcher, Some("run_command"));
+        // O timeout do agy era um literal anônimo sem guarda NENHUMA: o teste
+        // afirmava nome/matcher/evento e nunca o número. Baixá-lo pra 30 "pra
+        // ficar mais responsivo" não quebrava compilação nem teste, e em
+        // produção o agy mataria o hook aos 30s enquanto o curl segura até 32
+        // e o gateway ia responder aos 30 — a corrida exata que as três
+        // camadas existem pra impedir.
+        assert_eq!(evs[0].timeout, CONFIG_TIMEOUT_S);
         assert_eq!(permission_event_name(HookDialect::AgyConfigHooks), "PreToolUse");
+    }
+
+    /// As TRÊS camadas, nos TRÊS dialetos, no mesmo lugar: gateway (30s) <
+    /// curl (32s) < config do CLI (35s). A ordem já é checada em compilação
+    /// (`const _: () = assert!(...)` no topo); o que este teste trava é que
+    /// nenhum dialeto tenha um número PRÓPRIO fora dessa conta.
+    #[test]
+    fn contrato_das_tres_camadas_de_timeout_em_todos_os_dialetos() {
+        assert!(
+            crate::hook_sessions::PERMISSION_TIMEOUT_MS < SYNC_MAX_TIME * 1_000,
+            "o teto humano do gateway tem que caber dentro do teto do curl"
+        );
+        assert!(SYNC_MAX_TIME < CONFIG_TIMEOUT_S);
+        for d in [
+            HookDialect::ClaudeSettings,
+            HookDialect::CodexHooksJson,
+            HookDialect::AgyConfigHooks,
+        ] {
+            for spec in permission_events(d) {
+                assert_eq!(
+                    spec.timeout, CONFIG_TIMEOUT_S,
+                    "{} usa um timeout próprio em vez da camada de fora",
+                    spec.name
+                );
+            }
+            // e o script gerado do dialeto pára o curl ANTES disso.
+            let engine = match d {
+                HookDialect::ClaudeSettings => "claude-code",
+                HookDialect::CodexHooksJson => "codex",
+                HookDialect::AgyConfigHooks => "agy",
+            };
+            let s = render_script(engine, d, ENDPOINT, BREAKER);
+            assert!(s.contains(&format!("--max-time {SYNC_MAX_TIME}")), "{engine}");
+        }
     }
 
     #[test]

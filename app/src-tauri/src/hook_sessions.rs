@@ -338,13 +338,16 @@ impl PermissionGate {
     /// Reserva uma vaga. `None` = teto batido (o chamador degrada na hora).
     /// CAS em laço: nunca passa do teto nem com pedidos concorrentes.
     pub fn reserve(&self) -> Option<PermissionSlot<'_>> {
-        use std::sync::atomic::Ordering::{Acquire, Release};
+        use std::sync::atomic::Ordering::{AcqRel, Acquire};
         let mut cur = self.0.load(Acquire);
         loop {
             if cur >= MAX_PENDING_PERMISSIONS {
                 return None;
             }
-            match self.0.compare_exchange_weak(cur, cur + 1, Release, Acquire) {
+            // `AcqRel` no sucesso: este RMW ADQUIRE um recurso, então precisa
+            // das duas metades (o `Release` sozinho era inofensivo aqui, porque
+            // a vaga é só um contador, mas o idiomático diz o que se quer).
+            match self.0.compare_exchange_weak(cur, cur + 1, AcqRel, Acquire) {
                 Ok(_) => return Some(PermissionSlot(self)),
                 Err(c) => cur = c,
             }

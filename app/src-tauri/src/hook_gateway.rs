@@ -197,6 +197,11 @@ pub fn start(app: &AppHandle) {
             log::warn!("hook_gateway: falha ao gravar {ENDPOINT_FILE} ({e}); receptor desligado");
             return;
         }
+        // Porta no ar = app vivo, provado. O disjuntor dos scripts (hooks-plan
+        // §6.1) mede justamente "app vivo e MUDO", então um listener novo é a
+        // refutação dele: sem isto, reiniciar o app não destravava as
+        // permissões antes da janela de 5 min vencer sozinha.
+        crate::hooks_install::clear_breakers(&app);
         let router = Router::new()
             .route("/hook/{engine}", post(hook_post))
             // Limite de corpo EXPLÍCITO: o payload real da statusline tem

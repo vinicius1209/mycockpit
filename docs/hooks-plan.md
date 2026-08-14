@@ -362,6 +362,23 @@ teto, o terceiro já degrada na hora. É a mesma prova, com o teto reduzido a 2s
 que roda na suíte (`hooks_install::tests_shell::terceiro_pedido_de_permissao_
 degrada_na_hora_em_vez_de_pagar_o_teto`).
 
+**As três camadas de timeout, e onde elas moram.** O caminho síncrono tem três
+tetos aninhados, e invertê-los faz o CLI matar o hook antes de o app responder
+(o usuário perde a decisão pelo app e nada falha em lugar nenhum):
+
+| camada | quem controla | valor | constante |
+|---|---|---|---|
+| round-trip humano | gateway (nosso) | 30s | `hook_sessions::PERMISSION_TIMEOUT_MS` |
+| teto do curl | script gerado (nosso) | 32s | `hooks_install::SYNC_MAX_TIME` |
+| timeout do hook | config do CLI (do fornecedor) | 35s | `hooks_install::CONFIG_TIMEOUT_S` |
+
+Os dois pares são checados **em compilação** (`const _: () = assert!(…)`), e o
+`35` é uma constante ÚNICA consumida pelos três dialetos. Até 14/08/2026 o
+comentário prometia as três camadas mas só uma tinha guarda: o `35` do agy era
+um literal anônimo (o teste dele afirmava nome, matcher e evento, nunca o
+timeout), então baixá-lo para 30 "para ficar mais responsivo" passava por
+compilação e por teste e só aparecia em produção, como corrida.
+
 ### 6.1 Disjuntor no script gerado
 
 Estado em `<app_data_dir>/hook-scripts/<engine>/breaker.state` (diretório
@@ -382,12 +399,50 @@ consecutivos> <epoch do último>`. Shell puro, sem dependência.
   consecutivos, e o contador recomeça em 1.
 - **Estado ilegível = disjuntor FECHADO.** Na dúvida a gente pergunta ao app; o
   custo do erro aqui é esperar, e esperar é melhor que deixar de perguntar.
-- **Nunca um `allow` fantasma.** O disjuntor só produz o desfecho NEUTRO do
-  dialeto: stdout vazio (claude/codex) ou `{"decision":"ask"}` (agy) — o mesmo
-  do timeout. Ele encurta a espera, não decide nada. Fixado em teste nos dois
-  dialetos, e o script inteiro é grepado por "allow".
+- **Nunca um `allow` fantasma — no DISJUNTOR.** O que o disjuntor produz é
+  sempre o desfecho NEUTRO do dialeto: stdout vazio (claude/codex) ou
+  `{"decision":"ask"}` (agy), o mesmo do timeout. Ele encurta a espera, não
+  decide nada. Fixado em teste nos dois dialetos, e o script inteiro é grepado
+  por "allow". **A qualificação que faltava:** no caminho FELIZ o script faz
+  *pass-through* do que o gateway devolveu (sem `curl -f`, sem validar o
+  corpo), então quem decide `allow` é o app, e um gateway comprometido no
+  loopback (ou um 4xx com corpo) chega ao CLI como veio. É pré-existente ao
+  §6 e continua valendo: a promessa "nunca allow fantasma" é sobre o
+  DISJUNTOR, não sobre o transporte.
+- **Reiniciar o app zera os disjuntores** (14/08/2026). Quando o
+  `hook_gateway` sobe a porta, ele apaga `breaker.state` de TODOS os motores
+  (`hooks_install::clear_breakers`): um listener novo em loopback é a prova
+  mais forte de app vivo, e reiniciar é exatamente o gesto de quem viu o app
+  travar. Sem isso, o reinício não destravava nada — a janela de 5 min seguia
+  correndo com o app novo em folha esperando pedidos que não chegavam. O risco
+  do outro lado é barato e conhecido: app novo também mudo paga o teto do curl
+  uma vez e o disjuntor reabre na segunda falha, como no primeiro boot.
 - Só o perfil síncrono usa o disjuntor: o de status já vai pro background e não
   custa nada ao CLI.
+
+### 6.1.1 O disjuntor por dentro: o que ele NÃO garante
+
+Nenhum destes é bug aberto; são as bordas do mecanismo, registradas para quem
+mexer nele depois não descobrir sozinho. Todas degradam para PAGAR (esperar e
+perguntar), nunca para deixar de perguntar.
+
+- **Sem lock no `breaker.state`.** Dois hits concorrentes (duas sessões do
+  mesmo motor pedindo permissão ao mesmo tempo) fazem read-modify-write sem
+  exclusão mútua: um update pode se perder e atrasar a abertura em um episódio.
+  O erro é sempre para o lado de perguntar de novo, então a correção (lockfile,
+  `mkdir` atômico) não paga o custo em shell puro hoje.
+- **Diretório não-gravável desliga o disjuntor em silêncio.** `brk_hit` grava
+  com `2>/dev/null`; se o `printf` falhar, o contador nunca sobe e o
+  comportamento volta a ser o de antes do §6 (pagar o teto por pedido). É o
+  mesmo dilema do fail-open de entrega: barulho no terminal do usuário por um
+  problema do NOSSO diretório seria pior que a lentidão.
+- **"Uma sonda por janela" não vale sob concorrência.** Com a janela vencida,
+  N pedidos simultâneos passam todos (cada um lê o estado antes de qualquer um
+  gravar). O teto do estrago é N pedidos pagando o teto do curl uma vez, e a
+  primeira gravação já reabre para os seguintes.
+- **O disjuntor é do SCRIPT, não da sessão.** Ele é por motor e vive em
+  arquivo: sessões diferentes do mesmo motor compartilham o mesmo estado, de
+  propósito (o app mudo é mudo para todas).
 
 ### 6.2 Teto de pendências no gateway
 
@@ -418,3 +473,31 @@ saída do round-trip (decisão, timeout, erro) devolve o lugar.
   não entra: lá o hook é uma tool MCP que o próprio agente chama em laço; aqui
   quem chama é o CLI, uma vez por pedido de permissão, e a única rejeição que
   existe é a do humano — limitar o humano seria decidir por ele.
+
+### 6.4 O bump de schema tem que CHEGAR em quem já instalou
+
+O script instalado só é reescrito por GESTO em Configurações (é o preço do
+respeito: a gente não mexe no que é do usuário sem ele pedir). Consequência
+que quase passou batido: quem instalou os hooks antes do §6 continuaria com o
+script schema 2, **sem disjuntor**, pagando o teto do curl em cada pedido de
+permissão para sempre — porque `# mycockpit-hook-schema: 3` era um comentário
+na string gerada que NINGUÉM lia (1 hit no grep: o próprio render).
+
+Fechado em 14/08/2026:
+
+- `HOOK_SCHEMA` é uma constante única, escrita no header pelo render e **lida
+  de volta** do script no disco por `status_of` (`schema_of_script`).
+- Script atrás do número atual (ou sem a linha, ou ilegível) → `outdated` no
+  `HooksStatus`, com `scriptSchema`/`currentSchema` para a UI dizer a verdade
+  inteira em vez de um "atualize" genérico. Schema FUTURO (usuário rodando uma
+  build antiga) não é atrasado: reinstalar rebaixaria o script dele.
+- **A afordância é REINSTALAR.** `outdated` é um estado PRÓPRIO, separado de
+  `warning`: com o script desatualizado nada está quebrado, os hooks funcionam,
+  falta o comportamento novo — enquanto `warning` (script sumido do disco) vira
+  "Reparar (desinstalar)". Confundir os dois ofereceria desinstalar para quem
+  só precisa de um clique de reinstalação.
+- A reinstalação preserva o opt-in de permissão (o botão reusa o mesmo caminho
+  idempotente, com `permissionInstalled` como estado).
+
+Regra que fica: **número de versão que ninguém lê é decoração.** Todo bump de
+`HOOK_SCHEMA` já nasce com o caminho de leitura funcionando.

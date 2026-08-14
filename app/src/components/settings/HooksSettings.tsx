@@ -31,7 +31,26 @@ interface HooksStatus {
   events: string[]
   /** Estado inconsistente (entradas presentes com script sumido etc.). */
   warning: string | null
+  /** O script instalado é de uma versão anterior do app. Nada está quebrado,
+   *  falta o comportamento novo, então a afordância é REINSTALAR (nunca
+   *  "reparar desinstalando", que é a de `warning`). */
+  outdated: boolean
+  /** Versão lida do script instalado (null = não deu pra confirmar). */
+  scriptSchema: number | null
+  /** Versão que esta build do app escreve. */
+  currentSchema: number
   dialect: string
+}
+
+/** O que o usuário ganha reinstalando, dita sem rodeio: o script só é reescrito
+ *  por gesto em Configurações, então quem instalou antes do bump continuaria
+ *  pagando a espera velha para sempre se a linha não aparecesse. */
+function textoDesatualizado(status: HooksStatus): string {
+  const versao =
+    status.scriptSchema == null
+      ? "não deu pra confirmar a versão do script instalado"
+      : `o script instalado é da versão ${status.scriptSchema} e esta do app escreve a ${status.currentSchema}`
+  return `Script desatualizado: ${versao}. Reinstale para aplicar as melhorias, entre elas parar de esperar o tempo cheio a cada pedido quando o app não responde.`
 }
 
 function HooksRow({ def }: { def: AgentDef }) {
@@ -62,6 +81,9 @@ function HooksRow({ def }: { def: AgentDef }) {
 
   async function act(cmd: "hooks_install" | "hooks_uninstall", permission?: boolean) {
     setBusy(true)
+    // Antes do invoke: depois dele o status já é o novo, e o aviso mentiria
+    // ("ativados" numa reinstalação).
+    const jaEstava = status?.installed === true
     try {
       const s = await invoke<HooksStatus>(
         cmd,
@@ -73,9 +95,11 @@ function HooksRow({ def }: { def: AgentDef }) {
       setWantPermission(s.permissionInstalled)
       setError(null)
       toast.success(
-        cmd === "hooks_install"
-          ? `Hooks ativados. Sessões do ${def.label} abertas no terminal passam a aparecer no Painel e no tray.`
-          : "Hooks desativados, as entradas do MyCockpit foram removidas do config.",
+        cmd === "hooks_uninstall"
+          ? "Hooks desativados, as entradas do MyCockpit foram removidas do config."
+          : jaEstava
+            ? `Hooks do ${def.label} reescritos na versão atual do script.`
+            : `Hooks ativados. Sessões do ${def.label} abertas no terminal passam a aparecer no Painel e no tray.`,
       )
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha na operação")
@@ -100,7 +124,9 @@ function HooksRow({ def }: { def: AgentDef }) {
                 : status.installed
                   ? status.warning
                     ? "ativo, em estado inconsistente"
-                    : `ativo (${status.events.length} eventos de ciclo de vida)`
+                    : status.outdated
+                      ? "ativo, com o script de uma versão anterior"
+                      : `ativo (${status.events.length} eventos de ciclo de vida)`
                   : "inativo · suas entradas de hook atuais serão preservadas"}
           </div>
           {status?.warning && (
@@ -108,12 +134,30 @@ function HooksRow({ def }: { def: AgentDef }) {
               {status.warning}
             </div>
           )}
+          {status?.outdated && !status.warning && (
+            <div className="text-[11px] text-st-warning">
+              {textoDesatualizado(status)}
+            </div>
+          )}
         </div>
-        {status?.installed && !status.warning && (
+        {status?.installed && !status.warning && !status.outdated && (
           <Check className="size-4 shrink-0 text-st-success" aria-hidden />
         )}
         {status && (
           <div className="flex shrink-0 items-center gap-1.5">
+            {status.installed && status.outdated && !status.warning && (
+              // Reinstalar é a ação CERTA aqui: reescreve o script na versão
+              // atual mantendo as mesmas entradas (inclusive o opt-in de
+              // permissão). Desinstalar continua ao lado, em segundo plano.
+              <button
+                onClick={() => void act("hooks_install")}
+                disabled={busy}
+                className="flex items-center gap-1 rounded bg-brass px-2 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                {busy && <Loader2 className="size-3 animate-spin" />}
+                Reinstalar
+              </button>
+            )}
             <button
               onClick={() =>
                 void act(status.installed ? "hooks_uninstall" : "hooks_install")
