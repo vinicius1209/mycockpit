@@ -83,6 +83,15 @@ export function acharTravessaoEmCopy(source) {
         anterior = span;
         continue;
       }
+      // …e o mesmo vale quando o argumento é um TEMPLATE com interpolação: o
+      // `${…}` parte o literal em vários spans, e o span do travessão passa a
+      // vir depois de um `)` em vez do `console.warn(`. Sem isto o carve-out
+      // valia só pra string simples, e a mesma frase de dev passava ou não
+      // dependendo de ter uma variável no meio.
+      if (linhaDeConsole(source, span.start)) {
+        anterior = span;
+        continue;
+      }
       for (const offset of ocorrencias(span.text)) {
         hits.push({
           linha: lineAt(source, span.start + offset),
@@ -107,6 +116,16 @@ export function acharTravessaoEmCopy(source) {
 }
 
 const ARGUMENTO_DE_CONSOLE_RE = /\bconsole\.\w+\(\s*$/;
+const CHAMADA_DE_CONSOLE_RE = /\bconsole\.\w+\(/;
+
+/** A linha física em que o span começa contém uma chamada de `console.*`?
+ *  Cobre o template com interpolação (chamada de uma linha só); a chamada
+ *  quebrada em várias linhas continua coberta pelo span anterior. */
+function linhaDeConsole(source, offset) {
+  const ini = source.lastIndexOf("\n", offset) + 1;
+  const fim = source.indexOf("\n", offset);
+  return CHAMADA_DE_CONSOLE_RE.test(source.slice(ini, fim === -1 ? undefined : fim));
+}
 
 function ocorrencias(text) {
   const out = [];

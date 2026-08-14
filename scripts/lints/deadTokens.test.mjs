@@ -79,6 +79,13 @@ describe("regra: travessão em copy de UI", () => {
   it("ignora argumento de console, que é saída de dev e não copy", () => {
     expect(linhas('console.warn("[chat] payload malformado — ignorado", p)')).toEqual([]);
     expect(linhas('console.error(\n  "[chat] payload malformado — ignorado",\n)')).toEqual([]);
+    // template com interpolação: o `${…}` parte o literal em vários spans, e o
+    // span do travessão passa a vir depois de um `)`, não do `console.warn(`.
+    // Sem o carve-out por linha, a MESMA frase de dev passava ou não dependendo
+    // de ter uma variável no meio (caso real: detect.ts, agy models).
+    expect(
+      linhas('console.warn(`agy models: indisponível (${f.kind}) — ${f.message}`)'),
+    ).toEqual([]);
   });
 
   it("não deixa o console cobrir a copy da linha seguinte", () => {
