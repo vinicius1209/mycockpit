@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator"
 import { InboxBell } from "@/components/layout/InboxBell"
 import { UsagePill } from "@/components/layout/UsagePill"
 import { MODES } from "@/components/layout/titleBarModes"
+import { FrotaMark } from "@/components/brand/FrotaMark"
 import { useApp, useActiveProject } from "@/store/app"
 import {
   commandMenuShortcut,
@@ -110,6 +111,20 @@ export function TitleBar() {
         >
           <PanelLeft className="size-4" />
         </Button>
+        {/* role="img": sem papel declarado, o aria-label num <div> genérico é
+            ignorado pelo leitor de tela (e abaixo de lg o wordmark some, então
+            não sobraria nome nenhum). Com role="img" o grupo tem UM nome e os
+            filhos viram apresentação — nada de ler "Frota" duas vezes. */}
+        <div
+          role="img"
+          aria-label="Frota"
+          className="flex shrink-0 items-center gap-2 px-1 text-foreground"
+        >
+          <FrotaMark className="size-6 stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.8]" />
+          <span className="hidden text-[13px] font-semibold tracking-[-0.035em] lg:inline">
+            Frota
+          </span>
+        </div>
         {project && (
           <>
             <Separator orientation="vertical" className="h-4!" />

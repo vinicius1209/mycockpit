@@ -75,7 +75,6 @@ import { agentLabel, cancelAgent } from "@/lib/agent"
 import {
   isTauri,
   listProjects,
-  insertProject,
   updateProjectPermission,
 } from "@/lib/db"
 import { readMycockpitConfig } from "@/lib/mycockpit"
@@ -104,30 +103,32 @@ const FlightPlansView = lazy(() =>
   })),
 )
 
-// Seed do 1º run: projetos reais como exemplo. Persistem no SQLite a partir daí.
-const SEED: Project[] = [
+// Ambiente de navegador/demo: dados deliberadamente fictícios. Este caminho é
+// usado por smoke tests, capturas de marketing e desenvolvimento sem Tauri —
+// nunca deve carregar nomes, caminhos ou métricas do computador do autor.
+const BROWSER_DEMO_PROJECTS: Project[] = [
   {
-    id: "seed-prime",
-    name: "prime-sales-hub",
-    path: "/Users/viniciusmachado/projetos/prime/prime-sales-hub",
+    id: "demo-atlas",
+    name: "atlas-commerce",
+    path: "/demo/atlas-commerce",
     createdAt: 3,
     hasClaudeMd: true,
     hasAgentsMd: true,
     status: "idle",
   },
   {
-    id: "seed-warp",
-    name: "warp",
-    path: "/Users/viniciusmachado/projetos/warp",
+    id: "demo-lumen",
+    name: "lumen-mobile",
+    path: "/demo/lumen-mobile",
     createdAt: 2,
     hasClaudeMd: false,
     hasAgentsMd: false,
     status: "idle",
   },
   {
-    id: "seed-studio",
-    name: "vinimachado-studio",
-    path: "/Users/viniciusmachado/projetos/pessoais/vinimachado-studio",
+    id: "demo-northstar",
+    name: "northstar-docs",
+    path: "/demo/northstar-docs",
     createdAt: 1,
     hasClaudeMd: false,
     hasAgentsMd: true,
@@ -172,29 +173,21 @@ export default function App() {
     async function load() {
       // Em `vite dev` (browser) não há Tauri → seed em memória.
       if (!isTauri()) {
-        if (!cancelled) setProjects(SEED)
+        if (!cancelled) setProjects(BROWSER_DEMO_PROJECTS)
         return
       }
       const existing = await listProjects()
       if (cancelled) return
-      if (existing && existing.length > 0) {
-        setProjects(existing)
-      } else if (import.meta.env.DEV) {
-        // DEV only: semeia projetos de exemplo por conveniência local. NUNCA no
-        // build distribuído — install novo do amigo começa VAZIO (nada fixo do
-        // ambiente de quem desenvolveu). O onboarding (docs/onboarding.md) guia
-        // a adição do 1º projeto real.
-        for (const p of SEED) await insertProject(p)
-        const seeded = await listProjects()
-        if (!cancelled) setProjects(seeded ?? [])
-      } else {
-        if (!cancelled) setProjects([])
-      }
+      // Banco vazio → tela vazia, INCLUSIVE em dev. Antes o dev semeava
+      // projetos de exemplo, e eles eram os projetos reais de uma máquina
+      // específica: isso não pertence ao código-fonte nem a uma captura de
+      // marketing. O onboarding (docs/onboarding.md) guia a adição do primeiro.
+      setProjects(existing ?? [])
     }
     load()
       .catch((e) => {
         console.error("Falha ao carregar projetos:", e)
-        if (!cancelled) setProjects(import.meta.env.DEV ? SEED : [])
+        if (!cancelled) setProjects([])
       })
       .finally(() => {
         if (!cancelled) setReady(true)
