@@ -112,6 +112,59 @@ Guardas: só roda por gesto/agenda (nunca em laço), com teto de N candidatos
 por rodada; resultado gravado com carimbo; falha de rede = `unreachable`, que
 **não** rebaixa nem promove nada.
 
+### M2 entregue (14/08/2026)
+
+- Capability `model_smoke: Option<ModelSmokeDialect>` (`ClaudePrintJson` /
+  `CodexExecJson` / `AgyPrintJson` — os três motores integrados), espelho
+  `modelSmoke` em `lib/agents.ts`, teste-gêmeo
+  `matriz_fumaca_de_modelo_por_agent` ↔ `agents.modelSmoke.test.ts`, e coerência
+  no contrato (fumaça exige que o modelo chegue ao comando; **quem lista precisa
+  saber testar** — a recíproca é falsa de propósito: o claude testa e não lista).
+- `model_smoke.rs`: comandos `model_smoke(agent, models)` e
+  `model_smoke_history()`. Registro carimbado (agent, slug, desfecho, **a frase
+  do próprio CLI**, versão do CLI, contexto vivo × contexto do catálogo, data)
+  em `model-smoke.json` no app_data_dir, escrita atômica no padrão do
+  `catalog.rs` — sem migração.
+- **Guardas duras, mecânicas**: teto de 3 candidatos por rodada (pedir mais é
+  erro, não truncar); `ROUND_COOLDOWN_MS` de 60s por motor faz um laço acidental
+  FALHAR em vez de gastar quota; nenhum chamador automático existe (nem boot,
+  nem ticker); `unreachable` **não sobrescreve um veredito gravado**
+  (`record_result`, com teste).
+- Custo mínimo medido: o turno do claude caiu de **$0,036 para $0,00055** só
+  derrubando as definições de ferramenta (`--tools ""`), junto com
+  `--no-session-persistence --strict-mcp-config --safe-mode --max-turns 1`.
+  O codex usa `--ephemeral --ignore-user-config -s read-only`. No agy a recusa
+  de slug é **local** (custo zero).
+
+**Prova nesta máquina** (`cargo test -- --ignored --nocapture fumaca_real`,
+14/08/2026), pelo caminho de código implementado:
+
+| motor | slug | desfecho | evidência |
+|---|---|---|---|
+| claude | `haiku` | `ok` | contexto 200000, canônico `claude-haiku-4-5` |
+| claude | `claude-naoexiste-9-9` | `unknown-slug` | 404: "It may not exist or you may not have access to it" |
+| codex | `gpt-5.6-luna` | `ok` | `turn.completed` |
+| codex | `gpt-9.9-naoexiste` | `unknown-slug` | "Model metadata for \`gpt-9.9-naoexiste\` not found" |
+| agy | `gemini-3.7-flash-low` | `ok` | `status: SUCCESS` |
+| agy | `gemini-9.9-naoexiste` | `unknown-slug` | "is not recognized as a known model" |
+
+Limites honestos registrados:
+
+- `context-mismatch` hoje só é alcançável no **claude**: é o único CLI que
+  reporta `contextWindow`. O `codex exec --json` não reporta, então o caso
+  "272k dentro do Codex × 1M na API" ainda não é detectável pela fumaça.
+- `auth-rejected` do **agy** nunca dispara: a frase real de recusa de auth não
+  foi capturada nesta máquina. Sem fixture, cai em `unreachable` ("não sei") —
+  inventar a frase é que esconderia bug (ADR-016).
+- `auth-rejected` do **claude** mapeia 401/403 pela semântica HTTP
+  (NEEDS-VERIFY); só o 404 é capturado de verdade.
+
+**M3 fica quase trivial**: as três pernas da regra já existem e são consultáveis
+sem escrever nome de motor — `modelListingAgents()`/`slugStanding()` (o CLI
+lista), `verdictFor()` + `isVerdict()` (a fumaça deu `ok` e "não sei" não conta)
+e `catalog::lookup` (o preço existe). O que falta em M3 é só a decisão de
+produto: quem promove, quando, e a redação do aviso no sino.
+
 ## M3 — O portão vira AVISO
 
 Regra: candidato que passa nos três (o CLI lista **e** a fumaça deu `ok`

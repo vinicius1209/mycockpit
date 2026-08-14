@@ -30,6 +30,7 @@ mod mcp_auth;
 mod mcp_control;
 mod mcp_proxy;
 mod model_list;
+mod model_smoke;
 mod mycockpit;
 mod osnotify;
 mod path;
@@ -583,6 +584,8 @@ pub fn run() {
             usage_window::usage_snapshots,
             usage_window::usage_fetch,
             model_list::model_list,
+            model_smoke::model_smoke,
+            model_smoke::model_smoke_history,
             statusline_install::usage_statusline_status,
             statusline_install::usage_statusline_install,
             statusline_install::usage_statusline_uninstall,

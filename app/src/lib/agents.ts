@@ -4,18 +4,24 @@
 // CommandConsole DESTINATIONS/MODELS/EFFORTS/DEFAULT_MODEL, attachments.ts AGENT_CAPS)
 // e divergia em silêncio. Os limites de tamanho/contagem de anexo continuam em
 // lib/attachments.ts (espelham o backend), aqui é só a IDENTIDADE do agent.
+//
+// As LISTAS CURADAS de modelo/effort e os remaps de valor legado moraram aqui
+// até o arquivo estourar a guarda de tamanho; hoje vivem em lib/curatedModels.ts
+// e são RE-EXPORTADAS daqui (quem já importava de "@/lib/agents" não mudou).
 
 import type { Destination } from "@/lib/types"
 import type { AgentProbe } from "@/lib/detect"
+import {
+  AGY_MODELS,
+  CLAUDE_EFFORTS,
+  CLAUDE_MODELS,
+  CODEX_EFFORTS,
+  CODEX_MODELS,
+  type AgentModelOption,
+} from "@/lib/curatedModels"
 
-export interface AgentModelOption {
-  value: string
-  label: string
-  /** Rótulo compacto exibido só no trigger (ver RichOption.pill). */
-  pill?: string
-  /** Linha secundária no seletor rico (padrão blocks.so ai-02). */
-  description?: string
-}
+export type { AgentModelOption } from "@/lib/curatedModels"
+export { normalizeAgyModel, normalizeModelValue } from "@/lib/curatedModels"
 
 export interface AgentDef {
   id: string
@@ -128,126 +134,17 @@ export interface AgentDef {
    *  aposentadoria por escrito), nunca sumiço silencioso. Teste-gêmeo:
    *  agents.modelList.test.ts ↔ `matriz_lista_de_modelos_por_agent` no Rust. */
   listsModels: "agy-models" | "codex-app-server" | null
+  /** Dialeto da FUMAÇA DE UM TOKEN (espelho de `model_smoke`, M2 do
+   *  model-autonomy-plan): dá pra testar um slug neste motor com uma chamada
+   *  mínima e ler o desfecho (ok · auth-rejected · unknown-slug ·
+   *  context-mismatch · unreachable). null = motor sem forma de testar, e o
+   *  candidato continua indo pro humano decidir. A fumaça é a ÚNICA coisa que
+   *  gasta quota de propósito: só roda por gesto ou agenda, nunca em laço nem
+   *  no boot (o freio vive no Rust, model_smoke.rs). Teste-gêmeo:
+   *  agents.modelSmoke.test.ts ↔ `matriz_fumaca_de_modelo_por_agent`. */
+  modelSmoke: "claude-print-json" | "codex-exec-json" | "agy-print-json" | null
 }
 
-// Aliases do Claude Code ("opus", "sonnet"…) resolvem NO SERVIDOR e mudam com
-// versão do CLI/provider/entitlements — `opus` já resolveu p/ 4.7, depois 4.8,
-// e desde o claude 2.1.219 (24/jul/2026) → **Opus 5** (novo default Opus). Pin
-// confiável = ID COMPLETO. 1M de contexto é DEFAULT no Opus 5/4.8, Sonnet 5 e
-// Fable 5 (sem beta header, preço padrão); o sufixo "[1m]" segue aceito e faz o
-// init reportar "…[1m]", que o contextWindowFor usa pro anel mostrar 1M — por
-// isso os pins abaixo carregam o sufixo.
-const CLAUDE_MODELS: AgentModelOption[] = [
-  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Claude Code escolher" },
-  { value: "claude-opus-5[1m]", label: "Opus 5", description: "Pin exato · o Opus mais novo, 1M nativo ($5/$25)" },
-  { value: "claude-sonnet-5[1m]", label: "Sonnet 5", description: "Pin exato · 1M nativo, rápido e equilibrado" },
-  { value: "fable", label: "Fable", description: "Topo de linha (Fable 5, ~2x o preço do Opus)" },
-  { value: "claude-opus-4-8[1m]", label: "Opus 4.8", description: "Pin da geração anterior (1M nativo)" },
-  { value: "opus", label: "Opus (alias)", description: "O CLI decide a versão (hoje → Opus 5), pode divergir" },
-  { value: "sonnet", label: "Sonnet (alias)", description: "O CLI decide a versão, pode divergir" },
-  { value: "haiku", label: "Haiku", description: "Mais rápido e barato (200k)" },
-]
-// Codex: sem família "-codex" desde o 5.4 (gpt-5.5-codex/5.6-codex NÃO existem);
-// `gpt-5.6` puro é ID de API (rejeitado com auth ChatGPT) — os slugs do CLI são
-// sol/terra/luna. Catálogo enumerável via `codex debug models` (JSON). Contexto
-// DENTRO do Codex = 272k (na API os mesmos modelos têm 1M). gpt-5.3-codex e o3
-// saíram do catálogo (400 com auth ChatGPT) — removidos do picker.
-const CODEX_MODELS: AgentModelOption[] = [
-  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Codex escolher (hoje Sol)" },
-  { value: "gpt-5.6-sol", label: "Sol (5.6)", description: "Frontier da família 5.6 · o mais capaz" },
-  { value: "gpt-5.6-terra", label: "Terra (5.6)", description: "Equilíbrio qualidade/custo da 5.6" },
-  { value: "gpt-5.6-luna", label: "Luna (5.6)", description: "Leve e rápido, alto volume" },
-  { value: "gpt-5.5", label: "gpt-5.5", description: "Geração anterior, ainda forte" },
-  { value: "gpt-5.4", label: "gpt-5.4", description: "Equilibrado, metade do preço do 5.5" },
-  { value: "gpt-5.4-mini", label: "gpt-5.4-mini", description: "Pequeno e rápido, alto volume" },
-]
-const CLAUDE_EFFORTS: AgentModelOption[] = [
-  { value: "default", label: "Padrão", pill: "effort", description: "Padrão do modelo" },
-  { value: "low", label: "low", description: "Rápido, mais raso" },
-  { value: "medium", label: "medium", description: "Equilíbrio" },
-  { value: "high", label: "high", description: "Raciocina mais fundo" },
-  { value: "xhigh", label: "xhigh", description: "Bem mais fundo" },
-  { value: "max", label: "max", description: "Esforço máximo" },
-]
-// agy: o `value` É a string EXATA que o `agy --model` espera. Slugs só ficaram
-// ESTÁVEIS na CLI 1.1.5 (release de 21/07/2026) — antes disso pinagem por nome
-// era frágil por design. Lista completa espelha `agy models` 1.1.5 (11 slugs);
-// o effort vem embutido no sufixo -high/-medium/-low, sem seletor separado. O
-// default de fábrica não é contratual (o agy persiste o último modelo do picker
-// no settings dele), então a descrição do "Padrão" não afirma qual modelo é.
-const AGY_MODELS: AgentModelOption[] = [
-  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o agy escolher" },
-  { value: "gemini-3.6-flash-high", label: "Flash 3.6 (High)", description: "Mais capaz (Google)" },
-  { value: "gemini-3.6-flash-medium", label: "Flash 3.6 (Med)", description: "Equilíbrio (Google)" },
-  { value: "gemini-3.6-flash-low", label: "Flash 3.6 (Low)", description: "Rápido e barato (Google)" },
-  { value: "gemini-3.5-flash-high", label: "Flash 3.5 (High)", description: "Geração anterior, fundo (Google)" },
-  { value: "gemini-3.5-flash-medium", label: "Flash 3.5 (Med)", description: "Geração anterior (Google)" },
-  { value: "gemini-3.5-flash-low", label: "Flash 3.5 (Low)", description: "Geração anterior, leve (Google)" },
-  { value: "gemini-3.1-pro-high", label: "Gemini Pro (High)", description: "Mais capaz (Google)" },
-  { value: "gemini-3.1-pro-low", label: "Gemini Pro (Low)", description: "Pro raso, mais rápido (Google)" },
-  { value: "claude-sonnet-4-6", label: "Sonnet", description: "Claude via cota Google" },
-  { value: "claude-opus-4-6-thinking", label: "Opus", description: "Claude mais capaz, via Google" },
-  { value: "gpt-oss-120b-medium", label: "GPT-OSS 120B", description: "Modelo aberto da OpenAI via Google" },
-]
-
-/** Valores gravados por versões anteriores do app, antes de `agy models`
- * padronizar seus ids em kebab-case. Mantém conversas antigas executáveis. */
-const LEGACY_AGY_MODELS: Record<string, string> = {
-  "Gemini 3.5 Flash (Low)": "gemini-3.5-flash-low",
-  "Gemini 3.1 Pro (High)": "gemini-3.1-pro-high",
-  "Claude Sonnet 4.6 (Thinking)": "claude-sonnet-4-6",
-  "Claude Opus 4.6 (Thinking)": "claude-opus-4-6-thinking",
-}
-
-/** Normaliza valores persistidos de uma conversa antes que cheguem ao adapter. */
-export function normalizeAgyModel(model: string | null): string | null {
-  if (!model || model === "default") return model
-  return LEGACY_AGY_MODELS[model] ?? model
-}
-
-/** Modelos do codex que SAÍRAM do catálogo do CLI (400 com auth ChatGPT desde
- *  jul/2026). Remapeia pro vizinho vivo mais próximo — mesma disciplina do
- *  LEGACY_AGY_MODELS: valor persistido (settings/schedule/conversa) não pode
- *  virar erro fixo em todo envio. */
-const LEGACY_CODEX_MODELS: Record<string, string> = {
-  "gpt-5.3-codex": "gpt-5.5",
-  o3: "gpt-5.5",
-}
-
-/** "opus[1m]" saiu do picker: o alias resolvia server-side pra versão da vez
- *  (4.7, depois 4.8, hoje Opus 5) e o pin exato é o conserto. Segue VÁLIDO no
- *  CLI, então o remap é escolha de produto: valor legado converge pro pin que o
- *  picker oferece HOJE como topo (Opus 5). */
-const LEGACY_CLAUDE_MODELS: Record<string, string> = {
-  "opus[1m]": "claude-opus-5[1m]",
-}
-
-/** Normalização de valor persistido de modelo, POR agent.
- *  Ponto único pra UI (display honesto) e pros despachos (schedule/hydrate)
- *  não reenviarem um id morto pra sempre. */
-export function normalizeModelValue(
-  agent: string,
-  model: string | null,
-): string | null {
-  if (!model || model === "default") return model
-  if (agent === "agy") return normalizeAgyModel(model)
-  if (agent === "codex") return LEGACY_CODEX_MODELS[model] ?? model
-  if (agent === "claude-code") return LEGACY_CLAUDE_MODELS[model] ?? model
-  return model
-}
-// max/ultra são exclusivos da família 5.6 (ultra só Sol/Terra: dispara
-// subagentes e consome quota agressivamente); 5.5/5.4 param em xhigh — o
-// backend rejeita acima disso, o erro aparece no fio (honesto, sem mascarar).
-const CODEX_EFFORTS: AgentModelOption[] = [
-  { value: "default", label: "Padrão", pill: "effort", description: "Padrão do modelo" },
-  { value: "minimal", label: "minimal", description: "Mínimo" },
-  { value: "low", label: "low", description: "Rápido, mais raso" },
-  { value: "medium", label: "medium", description: "Equilíbrio" },
-  { value: "high", label: "high", description: "Raciocina mais fundo" },
-  { value: "xhigh", label: "xhigh", description: "Bem mais fundo" },
-  { value: "max", label: "max", description: "Fundo máximo (só família 5.6)" },
-  { value: "ultra", label: "ultra", description: "Máximo + subagentes (Sol/Terra; pesa na cota)" },
-]
 
 /** A liga de agents. Ordem = ordem de exibição no seletor de destino. */
 export const AGENTS: AgentDef[] = [
@@ -292,6 +189,9 @@ export const AGENTS: AgentDef[] = [
     // (`claude --help` verificado 14/08/2026). Sem fonte viva ⇒ null, e o
     // catálogo models.dev segue mandando (§M1 do plano previu exatamente isso).
     listsModels: null,
+    // claude 2.1.220: `-p --output-format json` classifica sozinho (404 real
+    // no slug inválido, contextWindow no sucesso — capturado 14/08/2026).
+    modelSmoke: "claude-print-json",
   },
   {
     id: "codex",
@@ -335,6 +235,9 @@ export const AGENTS: AgentDef[] = [
     // (+2 hidden) e marcou gpt-5.4/gpt-5.4-mini com `upgrade` — aposentadoria
     // anunciada pelo próprio CLI (capturado 14/08/2026).
     listsModels: "codex-app-server",
+    // codex 0.147: `exec --json` distingue "o CLI não conhece o slug" (aviso
+    // de metadata) de recusa do servidor (capturado 14/08/2026).
+    modelSmoke: "codex-exec-json",
   },
   {
     id: "agy",
@@ -373,6 +276,8 @@ export const AGENTS: AgentDef[] = [
     hookDialect: "agy-config-hooks",
     // agy 1.1.13: `agy models` lista 14 slugs em TSV (capturado 14/08/2026).
     listsModels: "agy-models",
+    // agy 1.1.13: recusa slug desconhecido LOCALMENTE, sem chamada e sem custo.
+    modelSmoke: "agy-print-json",
   },
   {
     id: "opencode",
@@ -401,6 +306,7 @@ export const AGENTS: AgentDef[] = [
     hooksPermission: false,
     hookDialect: null,
     listsModels: null,
+    modelSmoke: null,
   },
   {
     id: "model",
@@ -429,6 +335,7 @@ export const AGENTS: AgentDef[] = [
     hooksPermission: false,
     hookDialect: null,
     listsModels: null,
+    modelSmoke: null,
   },
 ]
 
@@ -478,6 +385,13 @@ export function hooksAgents(): AgentDef[] {
  *  no catálogo. */
 export function modelListingAgents(): AgentDef[] {
   return AGENTS.filter((a) => a.listsModels != null)
+}
+
+/** Motores em que dá pra rodar a FUMAÇA de um candidato (M2). Quem oferecer o
+ *  gesto "testar este modelo" pergunta AQUI, nunca por nome — e motor sem
+ *  dialeto não ganha botão que não faz nada. */
+export function modelSmokeAgents(): AgentDef[] {
+  return AGENTS.filter((a) => a.modelSmoke != null)
 }
 
 /** Motores que são CLI NA MÁQUINA do usuário: os que o app integra de verdade

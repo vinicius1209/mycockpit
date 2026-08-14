@@ -191,6 +191,40 @@ pub enum ModelListSource {
     CodexAppServer,
 }
 
+/// Como fazer a FUMAÇA DE UM TOKEN num candidato (M2 do model-autonomy-plan):
+/// a chamada mínima que descobre, na prática, se um slug funciona com ESTA
+/// autenticação. Mesmo padrão dos outros dialetos: o enum confina o "como"
+/// (flags de custo mínimo + as frases que cada CLI usa pra recusar — consumido
+/// SÓ por model_smoke.rs), a capability decide o "se".
+///
+/// A fumaça é a ÚNICA peça do app que gasta quota de propósito. Por isso ela
+/// nunca roda em laço nem no boot: só por gesto/agenda, com teto de candidatos
+/// por rodada e janela mínima entre rodadas (guardas em model_smoke.rs).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ModelSmokeDialect {
+    /// claude 2.1.220: `claude -p --model <slug> --output-format json` com
+    /// `--tools ""` (derruba as definições de ferramenta: o mesmo turno caiu de
+    /// $0,036 pra $0,00055), `--no-session-persistence`, `--strict-mcp-config`,
+    /// `--safe-mode` e `--max-turns 1`. O JSON final classifica sozinho:
+    /// `is_error` + `api_error_status` (404 real capturado 14/08/2026) e, no
+    /// sucesso, `modelUsage[*].contextWindow` + `canonicalModel` — é o ÚNICO
+    /// motor que devolve o teto de contexto, e por isso o único que hoje
+    /// consegue apontar `context-mismatch`.
+    ClaudePrintJson,
+    /// codex 0.147: `codex exec -m <slug> -s read-only --skip-git-repo-check
+    /// --ephemeral --ignore-user-config --json`. ATENÇÃO: o `exec` NÃO aceita
+    /// `-a untrusted` (só o `app-server` aceita — erro real na tentativa). O
+    /// JSONL separa os dois desfechos que o plano precisava distinguir: o CLI
+    /// avisa "Model metadata for `X` not found" quando é ELE que não conhece o
+    /// slug; sem esse aviso, uma recusa do servidor é a SUA auth não alcançando.
+    CodexExecJson,
+    /// agy 1.1.13: `agy -p <prompt> --model <slug> --output-format json`. A
+    /// recusa de slug é LOCAL (nem sai chamada: "model X is not recognized as
+    /// a known model or custom model in settings", capturado 14/08/2026) — a
+    /// fumaça de slug inválido no agy custa zero.
+    AgyPrintJson,
+}
+
 /// Capabilities do agent-runner.md §2, materializada (G1.1 do
 /// capability-registry-plan). Campos derivados dos achados REAIS da auditoria,
 /// não de especulação. Regra de ouro (§7.1): capability declarada tem que ser
@@ -311,6 +345,16 @@ pub struct Capabilities {
     /// o §M1 do plano previu. Espelho TS: `listsModels` em lib/agents.ts
     /// (teste-gêmeo agents.modelList.test.ts ↔ `matriz_lista_de_modelos_por_agent`).
     pub lists_models: Option<ModelListSource>,
+    /// Dá pra TESTAR um slug neste motor com uma chamada mínima e ler o
+    /// desfecho (M2 do model-autonomy-plan): é a peça que substitui o humano
+    /// no portão das propostas. Verdade por versão auditada nesta máquina
+    /// (14/08/2026): claude 2.1.220 ✅, codex 0.147 ✅ e agy 1.1.13 ✅ — os três
+    /// têm modo print com saída legível o bastante pra separar "o CLI não
+    /// conhece" de "a sua auth não alcança". `None` = motor sem forma de testar:
+    /// o candidato continua indo pro humano decidir, como sempre foi.
+    /// Espelho TS: `modelSmoke` em lib/agents.ts (teste-gêmeo
+    /// agents.modelSmoke.test.ts ↔ `matriz_fumaca_de_modelo_por_agent`).
+    pub model_smoke: Option<ModelSmokeDialect>,
 }
 
 /// claude 2.1.219 (auditado 2026-07): o mais rico — MCP completo, background
@@ -358,6 +402,9 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     // Fonte confiável ausente ⇒ None, e o comportamento de hoje (lista curada
     // + catálogo models.dev) fica intacto.
     lists_models: None,
+    // claude 2.1.220: `-p --output-format json` classifica sozinho — 404 real
+    // no slug inválido e `modelUsage.contextWindow` no sucesso (14/08/2026).
+    model_smoke: Some(ModelSmokeDialect::ClaudePrintJson),
 };
 
 /// codex-cli 0.144.6 (auditado 2026-07): MCP completo (config efêmero via -c),
@@ -405,6 +452,9 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     // com `upgrade` — aposentadoria ANUNCIADA pelo próprio CLI (capturado na
     // mão 14/08/2026, fixture em model_list.rs).
     lists_models: Some(ModelListSource::CodexAppServer),
+    // codex 0.147: `exec --json` distingue "o CLI não conhece o slug" (aviso
+    // de metadata) de recusa do servidor (14/08/2026).
+    model_smoke: Some(ModelSmokeDialect::CodexExecJson),
 };
 
 /// agy 1.1.9 (re-checado 31/07/2026): sem canal MCP, sem resume exposto no
@@ -445,6 +495,9 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // agy 1.1.13: `agy models` lista 14 slugs em TSV (capturado 14/08/2026).
     // É a MESMA fonte que a detecção já usava — agora com contrato declarado.
     lists_models: Some(ModelListSource::AgyModelsSubcommand),
+    // agy 1.1.13: `-p --output-format json` recusa slug desconhecido LOCALMENTE
+    // (sem chamada, sem custo) e devolve status SUCCESS quando aceita.
+    model_smoke: Some(ModelSmokeDialect::AgyPrintJson),
 };
 
 pub trait AgentAdapter: Send {
@@ -3124,6 +3177,28 @@ mod tests {
         assert_eq!(capabilities_of("claude-code").unwrap().lists_models, None);
     }
 
+    /// Teste-GÊMEO do espelho TS (`agents.modelSmoke.test.ts`): quem dá pra
+    /// TESTAR com uma chamada mínima, e por qual dialeto (M2 do
+    /// model-autonomy-plan). Mexeu aqui, mexa lá.
+    #[test]
+    fn matriz_fumaca_de_modelo_por_agent() {
+        // Os três motores integrados têm modo print com saída classificável —
+        // provado rodando a fumaça de verdade contra um slug válido e um
+        // inválido de cada um em 14/08/2026 (fixtures em model_smoke.rs).
+        assert_eq!(
+            capabilities_of("claude-code").unwrap().model_smoke,
+            Some(ModelSmokeDialect::ClaudePrintJson)
+        );
+        assert_eq!(
+            capabilities_of("codex").unwrap().model_smoke,
+            Some(ModelSmokeDialect::CodexExecJson)
+        );
+        assert_eq!(
+            capabilities_of("agy").unwrap().model_smoke,
+            Some(ModelSmokeDialect::AgyPrintJson)
+        );
+    }
+
     /// Teste-GÊMEO do espelho TS (`agents.hooks.test.ts`): quem emite hooks de
     /// ciclo de vida e por qual dialeto (hooks-plan §2). Mexeu aqui, mexa lá.
     #[test]
@@ -3571,6 +3646,20 @@ mod tests {
             assert!(
                 caps.lists_models.is_none() || blob.contains("modelo-do-contrato"),
                 "{agent}: lists_models declarado, mas o modelo escolhido não chega ao comando montado"
+            );
+            // M2: a fumaça testa UM slug — ela só existe pra motor que aceita
+            // a escolha de modelo no comando. Mesmo racional do lists_models.
+            assert!(
+                caps.model_smoke.is_none() || blob.contains("modelo-do-contrato"),
+                "{agent}: model_smoke declarado, mas o modelo escolhido não chega ao comando montado"
+            );
+            // …e listar sem saber testar deixaria o candidato listado sem
+            // veredito possível: a fonte viva (M1) responde "existe?", a
+            // fumaça (M2) responde "funciona com a SUA auth?". A recíproca é
+            // falsa de propósito — o claude testa e não lista.
+            assert!(
+                caps.lists_models.is_none() || caps.model_smoke.is_some(),
+                "{agent}: lists_models declarado sem model_smoke (lista sem como verificar)"
             );
             assert_eq!(
                 blob.contains(crate::work_gateway::MCP_SERVER_NAME),
