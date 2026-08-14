@@ -959,6 +959,27 @@ function ToolGroupStatus({
   return <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
 }
 
+/** Idade do último evento do grupo vivo, na MESMA régua do `fmtDuration` que
+ *  aparece ao lado (h/min/s, unidade explícita). Um trabalho em background de
+ *  3h escrevia "há 180min" enquanto o vizinho escrevia "3h 00min": duas
+ *  gramáticas de tempo em elementos adjacentes.
+ *
+ *  Acima de um minuto NÃO mostra segundos de propósito, ao contrário do
+ *  `fmtDuration`: aqui o número tica sozinho a cada segundo, e um dígito
+ *  correndo ao lado de um relógio congelado é ruído, não informação (§6 R1,
+ *  cronômetro estável). Abaixo de 60s os segundos são o detector de travamento
+ *  e continuam inteiros. */
+export function activityAgeLabel(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000))
+  if (seconds < 5) return "agora"
+  if (seconds < 60) return `há ${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `há ${minutes}min`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `há ${hours}h ${String(minutes % 60).padStart(2, "0")}min`
+  return `há ${Math.floor(hours / 24)}d ${String(hours % 24).padStart(2, "0")}h`
+}
+
 function ActivityAge({ at, stalled }: { at?: number; stalled?: boolean }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -966,13 +987,7 @@ function ActivityAge({ at, stalled }: { at?: number; stalled?: boolean }) {
     return () => clearInterval(id)
   }, [])
   if (!at) return null
-  const seconds = Math.max(0, Math.floor((now - at) / 1000))
-  const label =
-    seconds < 5
-      ? "agora"
-      : seconds < 60
-        ? `há ${seconds}s`
-        : `há ${Math.floor(seconds / 60)}min`
+  const label = activityAgeLabel(now - at)
   return (
     <span className={cn("font-mono text-[11px]", stalled && "text-st-warning")}>
       {stalled ? "sem eventos " : "atividade "}

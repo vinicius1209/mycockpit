@@ -5,7 +5,8 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-import { MessageList } from "./MessageList"
+import { MessageList, activityAgeLabel } from "./MessageList"
+import { fmtDuration } from "@/lib/format"
 import type { ChatItem } from "@/store/chat"
 import type { DeferredWork } from "@/lib/work"
 
@@ -148,6 +149,29 @@ function backgroundScene(
     },
   ]
 }
+
+describe("activityAgeLabel · mesma régua de tempo do vizinho", () => {
+  it("mantém o detector de travamento: 'agora' e os segundos inteiros", () => {
+    expect(activityAgeLabel(2_000)).toBe("agora")
+    expect(activityAgeLabel(42_000)).toBe("há 42s")
+  })
+
+  it("minutos continuam sem segundos (o dígito correndo não informa nada)", () => {
+    expect(activityAgeLabel(3 * 60_000)).toBe("há 3min")
+    expect(activityAgeLabel(59 * 60_000 + 30_000)).toBe("há 59min")
+  })
+
+  it("três horas param de virar 'há 180min' ao lado de um '3h 00min'", () => {
+    const tresHoras = 3 * 60 * 60_000
+    expect(activityAgeLabel(tresHoras)).toBe("há 3h 00min")
+    // o vizinho na mesma tela escreve a MESMA gramática
+    expect(fmtDuration(tresHoras)).toBe("3h 00min")
+  })
+
+  it("acima de um dia ganha dia, sem virar contagem de minutos", () => {
+    expect(activityAgeLabel(26 * 60 * 60_000)).toBe("há 1d 02h")
+  })
+})
 
 describe("MessageList · o bloco de entrada/comando tem teto (a régua do briefing)", () => {
   // Ação com filho ativo é o único caminho em que o segundo nível de disclosure
