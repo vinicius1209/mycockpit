@@ -182,6 +182,34 @@ function branchSize(node: ToolTreeNode): number {
   return 1 + node.children.reduce((acc, child) => acc + branchSize(child), 0)
 }
 
+/** Este nó está EM EXECUÇÃO (mesma conta que a `ToolLine` faz pra si)? */
+function nodeIsRunning(
+  node: ToolTreeNode,
+  activeToolId?: string | null,
+): boolean {
+  if (node.item.result) return false
+  return (
+    branchContains(node, activeToolId) ||
+    node.item.managedProcess?.status === "running" ||
+    node.item.managedProcess?.status === "stopping" ||
+    node.item.deferred?.status === "running"
+  )
+}
+
+/** Algum DESCENDENTE em execução? Então o indicador animado é dele: um único
+ *  ponto vivo por linhagem (§2/§6). Um trabalho em background acendia três
+ *  spinners na mesma linhagem (cabeçalho + tool_use + nó do trabalho). */
+function hasRunningDescendant(
+  node: ToolTreeNode,
+  activeToolId?: string | null,
+): boolean {
+  return node.children.some(
+    (child) =>
+      nodeIsRunning(child, activeToolId) ||
+      hasRunningDescendant(child, activeToolId),
+  )
+}
+
 /** Trabalhos cujo NOME um ancestral visível já mostrou. Posse é da ENTIDADE
  *  (`workKey`), não da string, e desce por toda a subárvore: o nó sintético
  *  `DeferredWork` mora no nível 2 (pendurado no `tool_use` de origem), então
@@ -302,7 +330,14 @@ function UnifiedDiff({ rows }: { rows: DiffRow[] }) {
  * resultado: neutro, nunca finge que ainda está pendente. */
 type StepStatus = "ok" | "error" | "running" | "recorded"
 
-function StepDot({ status }: { status: StepStatus }) {
+function StepDot({
+  status,
+  ancestor = false,
+}: {
+  status: StepStatus
+  /** Este passo em execução tem OUTRO passo em execução abaixo dele. */
+  ancestor?: boolean
+}) {
   // Sucesso é o caso comum: ponto NEUTRO (paleta A da despoluição — a tinta
   // sobra pra falha e pro que gira). Um tom acima do `recorded` pra distinguir
   // "concluiu bem" de "sem resultado registrado".
@@ -310,6 +345,12 @@ function StepDot({ status }: { status: StepStatus }) {
     return <span className="size-[7px] shrink-0 rounded-full bg-muted-foreground/45" />
   if (status === "error")
     return <span className="size-[7px] shrink-0 rounded-full bg-st-error" />
+  // UM indicador vivo por linhagem (§2, orçamento de tinta): quem gira é o
+  // passo MAIS PROFUNDO em execução, porque é ele o "agora". O ancestral
+  // continua dizendo que o ramo está vivo, com o mesmo tom e sem movimento —
+  // três spinners empilhados narravam o mesmo trabalho três vezes.
+  if (status === "running" && ancestor)
+    return <span className="size-[7px] shrink-0 rounded-full bg-st-running/60" />
   // Passo em execução GIRA (mesmo vocabulário do ToolGroupStatus): "girando =
   // este passo executando". O dot pulsante fica reservado ao rodapé
   // "trabalhando" (batimento do turno + cronômetro) — os dois sinais deixam de
@@ -466,7 +507,10 @@ const ToolLine = memo(function ToolLine({
           className="grid size-3.5 shrink-0 place-items-center"
           title={status === "recorded" ? "sem resultado registrado" : undefined}
         >
-          <StepDot status={status} />
+          <StepDot
+            status={status}
+            ancestor={hasRunningDescendant(node, activeToolId)}
+          />
         </span>
         <Icon
           className={cn(

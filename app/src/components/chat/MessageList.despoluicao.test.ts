@@ -189,6 +189,20 @@ describe("MessageList · posse do nome é da ENTIDADE, e desce pela subárvore",
     expect(html.match(/Trabalho em background: /g)).toHaveLength(1)
   })
 
+  it("um indicador ANIMADO por linhagem: gira o passo mais profundo, o ancestral fica quieto", () => {
+    const html = render(
+      [{ kind: "user", id: "u1", text: "confere o histórico" }, ...backgroundScene()],
+      true,
+    )
+    // eram 3 na mesma linhagem (cabeçalho + tool_use + nó do trabalho); agora
+    // o cabeçalho representa o grupo (recolhido é o único sinal) e, dentro da
+    // árvore, só o passo mais profundo em execução gira.
+    const spinners = html.match(/animate-spin text-st-running/g) ?? []
+    expect(spinners).toHaveLength(2)
+    // o ancestral vivo não some: continua dizendo que o ramo está aceso
+    expect(html).toContain("rounded-full bg-st-running/60")
+  })
+
   it("filho sem identidade (histórico sem tool_use_id) não herda posse: mantém o nome", () => {
     const [agent, deferredNode] = backgroundScene()
     const html = render(
