@@ -8,6 +8,7 @@ import {
   revokeAttachmentUrl,
   wipeAttachments,
 } from "@/lib/attachments"
+import { deriveTitle } from "@/lib/convTitle"
 import { detectBlockedDir } from "@/lib/blockedDir"
 import {
   SUGGEST_PROMPT,
@@ -755,16 +756,6 @@ function patchConvMeta(
     conversationsByProject,
     conversations: pid === s.projectId ? nextList : s.conversations,
   }
-}
-
-/** Título derivado do 1º prompt do usuário (S4). */
-function deriveTitle(items: ChatItem[]): string | null {
-  const first = items.find((it) => it.kind === "user")
-  if (first && first.kind === "user") {
-    const t = first.text.trim().replace(/\s+/g, " ")
-    return t.length > 44 ? `${t.slice(0, 44)}…` : t
-  }
-  return null
 }
 
 function emptyConv(projectId: string): ConvState {

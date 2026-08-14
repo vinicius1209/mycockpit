@@ -83,6 +83,47 @@ export async function wipeAttachments(convId: string): Promise<void> {
   }
 }
 
+/** Referência CRUA de recurso: o endereço de um blob/arquivo, não um texto que
+ *  alguém escreveu. `blob:tauri://localhost/<uuid>` é o que o webview põe no
+ *  `text/plain` quando você copia uma <img> do próprio app (o mesmo recurso que
+ *  vem como File no clipboard); `file:` e `data:` são as outras formas do mesmo
+ *  endereço. Um token só, sem espaço — por isso o teste é por token. */
+function isResourceRef(token: string): boolean {
+  return /^(?:blob|file|data):\S*$/i.test(token)
+}
+
+/** Texto que é SÓ referência de recurso (uma ou mais, nada além delas). String
+ *  vazia não conta: "vazio" é outro caso, e quem chama trata. */
+export function isResourceRefOnly(text: string): boolean {
+  const tokens = text.trim().split(/\s+/).filter(Boolean)
+  return tokens.length > 0 && tokens.every(isResourceRef)
+}
+
+/** Texto do paste que deve entrar no composer, dado quantos anexos o MESMO
+ *  paste produziu.
+ *
+ *  Copiar uma imagem de outra conversa do app põe DOIS itens na área de
+ *  transferência: o File (que vira anexo) e, no `text/plain`, a URL do MESMO
+ *  recurso. Sem filtro a URL entrava no prompt e, como o título deriva do 1º
+ *  texto do usuário, batizava a conversa de "blob:tauri://localhost/d7dd…".
+ *
+ *  Regra: com anexo(s), um texto que é APENAS referência de recurso é
+ *  descartado inteiro; qualquer texto real vai junto INTACTO (colar imagem +
+ *  texto continua colando o texto, e nada é recortado do meio dele). Sem
+ *  anexo, o texto passa como está — uma URL colada sozinha é escolha sua. */
+export function pastedTextToInsert(text: string, attachedCount: number): string {
+  if (attachedCount <= 0) return text
+  return isResourceRefOnly(text) ? "" : text
+}
+
+/** Nome honesto para uma mensagem que não tem texto próprio, só anexo(s). */
+export function attachmentsTitle(atts: readonly Attachment[]): string | null {
+  if (atts.length === 0) return null
+  if (atts.length > 1) return `${atts.length} anexos`
+  const kind = atts[0].kind
+  return kind === "image" ? "Imagem" : kind === "pdf" ? "PDF" : "Anexo"
+}
+
 // URL de object cacheada por path (F6: não re-lê bytes a cada render).
 const urlCache = new Map<string, string>()
 

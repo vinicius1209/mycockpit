@@ -79,7 +79,7 @@ import {
   type SlashPillCommand,
 } from "@/components/chat/slashPill"
 import { historyRecallIntent } from "@/hooks/usePromptHistory"
-import { collectPastedFiles } from "@/hooks/useAttachments"
+import { collectPaste } from "@/hooks/useAttachments"
 import { buildLexicalAtItems } from "@/hooks/useAtMentions"
 import { MAX_POPOVER_ITEMS } from "@/hooks/useSlashCommands"
 import { usePresets } from "@/store/presets"
@@ -480,7 +480,7 @@ function HistoryRecallPlugin({ history }: { history?: HistoryBridge }) {
  *     cursor (todo texto novo sairia negrito). Colamos só o `text/plain` e
  *     zeramos o formato da seleção antes, então nada de formatação entra.
  *  2. Anexo — clipboard com File anexável (imagem/PDF, filtro compartilhado
- *     `collectPastedFiles`) roteia pro fluxo de anexos do console (addFiles →
+ *     `collectPaste`) roteia pro fluxo de anexos do console (addFiles →
  *     chip); o texto que veio JUNTO entra no caret. Sem handler de arquivo
  *     (fora do Tauri / sem conversa), o texto ainda cola puro. */
 function PasteAttachmentsPlugin({
@@ -497,9 +497,9 @@ function PasteAttachmentsPlugin({
       (event) => {
         if (!(event instanceof ClipboardEvent) || !event.clipboardData)
           return false
-        // captura SÍNCRONA antes de qualquer await (F21).
-        const files = collectPastedFiles(event.clipboardData)
-        const text = event.clipboardData.getData("text/plain")
+        // captura SÍNCRONA antes de qualquer await (F21). O texto já vem
+        // filtrado: o endereço `blob:` do recurso que virou anexo não é prompt.
+        const { files, text } = collectPaste(event.clipboardData)
         // nada aproveitável (nem texto, nem arquivo) → deixa o pipeline seguir.
         if (files.length === 0 && !text) return false
         event.preventDefault()

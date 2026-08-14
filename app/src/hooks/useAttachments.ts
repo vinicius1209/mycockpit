@@ -7,16 +7,27 @@ import {
   MAX_ATTACH_BYTES,
   MAX_ATTACH_MB,
   MAX_ATTACH_COUNT,
+  pastedTextToInsert,
   saveAttachment,
   deleteAttachment,
   revokeAttachmentUrl,
 } from "@/lib/attachments"
 
+/** O que um paste rende: os anexos E o texto que deve entrar no composer.
+ *  Entrada ÚNICA (os dois donos chamam esta, não as peças) — a regra do texto
+ *  que acompanha anexo (`pastedTextToInsert`: o endereço `blob:` do recurso
+ *  anexado não é prompt) não pode ficar a cargo de cada superfície lembrar.
+ *  A leitura é SÍNCRONA, antes de qualquer await — depois o clipboard esvazia
+ *  (F21). */
+export function collectPaste(data: DataTransfer): { files: File[]; text: string } {
+  const files = collectPastedFiles(data)
+  return { files, text: pastedTextToInsert(data.getData("text/plain"), files.length) }
+}
+
 /** Filtra do clipboard os File anexáveis: imagem, PDF ou sem mime declarado.
  *  Compartilhado pelos dois donos (PASTE_COMMAND do Lexical no console e
- *  onPaste do textarea do MissionLauncher). A captura precisa ser SÍNCRONA,
- *  antes de qualquer await — depois o clipboard esvazia (F21). */
-export function collectPastedFiles(data: DataTransfer): File[] {
+ *  onPaste do textarea do MissionLauncher). */
+function collectPastedFiles(data: DataTransfer): File[] {
   return [...data.items]
     .filter((it) => it.kind === "file")
     .map((it) => it.getAsFile())
@@ -112,9 +123,8 @@ export function useAttachments({
     if (!isTauri() || !activeId) return
     const data = e.clipboardData
     if (!data) return
-    const files = collectPastedFiles(data)
+    const { files, text } = collectPaste(data)
     if (!files.length) return // paste de texto puro → comportamento default
-    const text = data.getData("text/plain")
     e.preventDefault()
     if (text) insertAtCursor(text)
     await addFiles(files)
