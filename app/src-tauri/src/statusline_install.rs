@@ -624,11 +624,31 @@ mod tests_shell {
     /// guarda de rate_limits: (a) tick SEM rate_limits não spawna curl MAS a
     /// statusline original roda; (b) tick COM rate_limits posta. Roda só em
     /// unix (bash presente).
+    ///
+    /// FLAKE JÁ CORRIGIDO (não regrida) — o teste falhava sob `cargo test`
+    /// paralelo e passava com `--test-threads=1`. A causa NÃO era PATH global
+    /// nem tmp compartilhado: era LEITURA DE REGISTRO PELA METADE. O curl fake
+    /// gravava em DOIS passos (`printf` dos args, depois `cat` do corpo) e a
+    /// espera parava no primeiro instante em que o log ficava NÃO-VAZIO. Com a
+    /// máquina carregada, o `cat` era desagendado entre os dois appends e o
+    /// teste lia só os args: a asserção da URL passava e a do CORPO estourava
+    /// (o panic em `logged.contains("rate_limits")`). Paralelismo só alargava
+    /// a janela. Correções: (1) o curl fake publica o registro INTEIRO com um
+    /// único `mv` (rename é atômico no POSIX — meio registro nunca é visível);
+    /// (2) a espera exige o TERMINADOR do registro, não "arquivo não vazio";
+    /// (3) diretório e PATH do filho são fixos e exclusivos deste teste.
     #[test]
     #[cfg(unix)]
     fn script_gerado_roda_de_verdade() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("mc-statusline-test-{}", std::process::id()));
+        // Diretório exclusivo deste teste: pid + nanos (dois binários de teste
+        // rodando junto, ou um rerun por cima de um tmp órfão, nunca colidem).
+        let unico = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir =
+            std::env::temp_dir().join(format!("mc-statusline-test-{}-{unico}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let ep = dir.join("hook-endpoint.json");
@@ -637,12 +657,22 @@ mod tests_shell {
         std::fs::write(&original, "#!/bin/bash\ncat >/dev/null\necho 'statusline original'\n").unwrap();
         std::fs::set_permissions(&original, std::fs::Permissions::from_mode(0o755)).unwrap();
         // curl fake: anota args + corpo (stdin) no log e sai 0 — é a evidência
-        // de que o script decidiu postar.
+        // de que o script decidiu postar. Monta o registro INTEIRO num arquivo
+        // parcial e publica com `mv`: o rename é atômico, então o log ou não
+        // existe ou já tem args E corpo — nunca metade (era essa a fonte do
+        // flake). `FIM-DO-REGISTRO` é o terminador que a espera exige.
         let curl_log = dir.join("curl-log");
         let fake_curl = dir.join("curl");
         std::fs::write(
             &fake_curl,
-            format!("#!/bin/bash\nprintf '%s ' \"$@\" >> \"{log}\"\ncat >> \"{log}\"\nexit 0\n", log = curl_log.display()),
+            format!(
+                "#!/bin/bash\n\
+                 corpo=$(cat)\n\
+                 printf '%s | %s | FIM-DO-REGISTRO' \"$*\" \"$corpo\" > \"{log}.parcial\"\n\
+                 mv \"{log}.parcial\" \"{log}\"\n\
+                 exit 0\n",
+                log = curl_log.display()
+            ),
         )
         .unwrap();
         std::fs::set_permissions(&fake_curl, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -664,11 +694,12 @@ mod tests_shell {
             .unwrap();
         assert!(syn.status.success(), "bash -n falhou: {}", String::from_utf8_lossy(&syn.stderr));
 
-        let path_env = format!(
-            "{}:{}",
-            dir.display(),
-            std::env::var("PATH").unwrap_or_default()
-        );
+        // PATH do FILHO (nunca `set_var`: variável de ambiente é global do
+        // processo e vazaria pras outras threads de teste). Fixo e mínimo — o
+        // dir do curl fake na frente, mais os dirs de sistema do que o script
+        // usa (sed/head/cat). Não herda o PATH do processo justamente pra não
+        // depender de estado global que outro teste possa mexer.
+        let path_env = format!("{}:/usr/bin:/bin", dir.display());
         let run = |input: &[u8]| {
             std::process::Command::new("bash")
                 .arg(&script)
@@ -692,8 +723,10 @@ mod tests_shell {
         assert!(out.status.success(), "script saiu com erro");
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "statusline original");
         std::thread::sleep(std::time::Duration::from_millis(300));
+        // nem o log publicado nem o parcial: o curl fake toca os dois, então
+        // pegamos o spawn indevido mesmo se ele não tiver chegado no `mv`.
         assert!(
-            !curl_log.exists(),
+            !curl_log.exists() && !curl_log.with_extension("parcial").exists(),
             "tick sem rate_limits não pode spawnar curl: {}",
             std::fs::read_to_string(&curl_log).unwrap_or_default()
         );
@@ -703,10 +736,13 @@ mod tests_shell {
         let out = run(b"{\"rate_limits\":{\"primary_used_pct\":23}}");
         assert!(out.status.success(), "script saiu com erro");
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "statusline original");
+        // Espera o registro COMPLETO (terminador presente), não "log não
+        // vazio": ler no meio da gravação era o flake. Orçamento generoso
+        // porque a máquina pode estar carregada; sai no primeiro sucesso.
         let mut logged = String::new();
-        for _ in 0..40 {
+        for _ in 0..200 {
             if let Ok(s) = std::fs::read_to_string(&curl_log) {
-                if !s.is_empty() {
+                if s.contains("FIM-DO-REGISTRO") {
                     logged = s;
                     break;
                 }
