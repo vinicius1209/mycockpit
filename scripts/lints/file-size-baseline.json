@@ -14,7 +14,7 @@
     "components/layout/InboxBell.tsx": 750,
     "components/layout/Sidebar.tsx": 1455,
     "components/mission/MissionTimeline.tsx": 906,
-    "components/panel/MissionControl.tsx": 801,
+    "components/panel/MissionControl.tsx": 794,
     "components/scheduled/ScheduledView.tsx": 1118,
     "components/sdd/SddView.tsx": 1649,
     "components/settings/Especialistas.tsx": 830,
