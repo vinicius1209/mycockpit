@@ -10,6 +10,8 @@ import { useActiveProject, useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { MissionFilesDialog } from "@/components/mission/MissionFilesDialog"
 import { PhaseLive } from "@/components/mission/PhaseLive"
+import { PhaseReceiptBlock } from "@/components/mission/PhaseReceipt"
+import { HoldCard } from "@/components/mission/HoldCard"
 import { DoneSummary } from "@/components/mission/DoneSummary"
 import { GateCard } from "@/components/mission/GateCard"
 import { RecoveryCard } from "@/components/mission/RecoveryCard"
@@ -84,7 +86,11 @@ function PhaseNode({
   active,
   last,
   now,
+  index,
   cwd,
+  dir,
+  receiptOpen,
+  onToggleReceipt,
   interactions,
   holdRequested,
   onToggleHold,
@@ -95,8 +101,14 @@ function PhaseNode({
   last: boolean
   /** O agora, injetado: um relógio vivo só na tela (B2.2). */
   now: number
+  /** Índice da fase no plano (o handoff dela é nomeado por ele). */
+  index: number
   /** Worktree da missão (o aviso de repetição pergunta a ele). */
   cwd: string
+  /** Pasta da missão sob o cwd (onde moram os handoffs). */
+  dir: string
+  receiptOpen?: boolean
+  onToggleReceipt?: () => void
   /** Interações contextuais desta conversa, permissão ou pergunta (só a fase
    *  corrente recebe). */
   interactions?: InteractionRequest[]
@@ -116,6 +128,8 @@ function PhaseNode({
   // motor acrescentou a correção). Sem a marca ela pareceria nativa do plano.
   const born = phaseProvenance(p.def)
   const cost = phaseCostState(p)
+  const fechada =
+    p.status === "done" || p.status === "error" || p.status === "aborted"
   // R4/Warp R1 — o cronômetro pertence à fase CORRENTE e congela no fim; ele é
   // IRMÃO do que anima (fora do elemento com pulse), `tabular-nums` e largura
   // reservada, e quem cede na disputa por espaço é o NOME.
@@ -186,6 +200,18 @@ function PhaseNode({
       </div>
       {p.error && (p.status === "error" || p.status === "aborted") && (
         <p className="mt-1 text-[12px] leading-snug text-st-error">{p.error}</p>
+      )}
+      {/* R6 — a fase concluída ABRE e mostra o que fez (ações, arquivos,
+          duração, custo) e o que DECIDIU. Antes daqui saía só o custo. */}
+      {fechada && (
+        <PhaseReceiptBlock
+          phase={p}
+          index={index}
+          cwd={cwd}
+          dir={dir}
+          open={Boolean(receiptOpen)}
+          onToggle={onToggleReceipt ?? (() => {})}
+        />
       )}
       {nodeState === "run" && (
         <PhaseLive
@@ -355,7 +381,18 @@ export function MissionTimeline({ convId }: { convId: string }) {
               active={running && !gated && i === cur}
               last={i === n - 1}
               now={now}
+              index={i}
               cwd={cwd}
+              dir={mission.dir}
+              receiptOpen={manuallyOpen.has(i)}
+              onToggleReceipt={() =>
+                setManuallyOpen((prev) => {
+                  const next = new Set(prev)
+                  if (next.has(i)) next.delete(i)
+                  else next.add(i)
+                  return next
+                })
+              }
               holdRequested={
                 running && !gated && i === cur
                   ? mission.hold?.reason === "pedido"
@@ -395,41 +432,14 @@ export function MissionTimeline({ convId }: { convId: string }) {
                 />
               </div>
             )}
-            {/* R7 — a missão SEGURANDO: ou você pediu, ou você interrompeu a
-                fase. Nos dois casos nada roda agora e a próxima só começa por
-                gesto seu. Âmbar (pede decisão), como o gate. */}
             {running && mission.hold?.phase === i && (
-              <div className="relative mb-4">
-                <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 rounded-full border-2 border-st-warning bg-st-warning" />
-                <div className="rounded-[9px] border border-st-warning/45 bg-st-warning/[0.06] px-3 py-2.5">
-                  <div className="text-[13px] font-semibold text-st-warning">
-                    {mission.hold.reason === "interrompida"
-                      ? `Fase ${i + 1} interrompida por você`
-                      : `Segurando no fim da fase ${i + 1}`}
-                  </div>
-                  <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
-                    {mission.hold.reason === "interrompida"
-                      ? "O processo morreu. O que ela escreveu continua no worktree, e a fase ficou incompleta."
-                      : "A fase terminou normal. A próxima não começa sem você."}
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => releaseHold(convId)}
-                      className="rounded-md bg-brass px-3 py-1 text-[12px] font-semibold text-background transition-opacity hover:opacity-90"
-                    >
-                      Continuar para {mission.phases[i + 1]?.def.label ?? "o fim"}
-                    </button>
-                    <span className="text-[11px] text-faint">
-                      {stopPrice({
-                        current: i,
-                        total: n,
-                        costLabel: total.value,
-                      })}
-                    </span>
-                  </div>
-                </div>
-              </div>
+              <HoldCard
+                reason={mission.hold.reason}
+                phaseNumber={i + 1}
+                nextLabel={mission.phases[i + 1]?.def.label ?? null}
+                price={stopPrice({ current: i, total: n, costLabel: total.value })}
+                onRelease={() => releaseHold(convId)}
+              />
             )}
             {gated && mission.gate!.phase === i && (
               <div className="relative mb-4">
