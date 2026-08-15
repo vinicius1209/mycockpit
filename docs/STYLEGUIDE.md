@@ -70,17 +70,55 @@ claro+escuro) e por linha nesta tabela — nunca hex cru em componente.
 
 | Papel | Tokens | Use para | **NÃO use para** |
 |---|---|---|---|
-| **Cinza** (saudável/neutro) | `foreground`, `muted-foreground`, `faint`, `border` | Texto, sucesso comum (check de ferramenta, dot concluído), metadado em sussurro mono, tudo que está simplesmente OK | Suavizar erro ou atenção ("cinza escuro" não é vermelho educado); esconder falha |
+| **Cinza** (saudável/neutro) | `foreground`, `muted-foreground`, `faint`, `border`, `sel`, `sel-hover` | Texto, sucesso comum (check de ferramenta, dot concluído), metadado em sussurro mono, **item selecionado em lista/árvore (`sel`)**, tudo que está simplesmente OK | Suavizar erro ou atenção ("cinza escuro" não é vermelho educado); esconder falha |
 | **Verde** (marco raro) | `st-success` | No fio: marco de TURNO/PLANO/gesto — máx. **1 por turno** (caption "concluído", "Plano concluído", "Regra salva", ADR-037). Fora do fio: check "probe passou" em Configurações/Onboarding (verde exige probe, `SettingsDialog.tsx:249`) | Sucesso por linha de ferramenta; estado ambiente permanente (badge/dot "ok" que fica na tela); identidade visual de agent; texto corrido |
-| **Âmbar** (precisa de você / risco autorizado) | `st-warning` (= `st-queued`) | Fila, gate, aviso que pede decisão, e o modo "Liberado" (risco autorizado fica visível) | Seleção ou item ativo (isso é brass); progresso normal; substituir vermelho em falha real |
+| **Âmbar** (precisa de você / risco autorizado) | `st-warning` (= `st-queued`) | Fila, gate, aviso que pede decisão, e o modo "Liberado" (risco autorizado fica visível) | Qualquer coisa que não seja decisão pendente, fila, gate ou risco autorizado. Seleção não é âmbar **nem brass**: seleção não é cor (ADR-043). Também não é progresso normal nem substituto do vermelho em falha real |
 | **Vermelho** (falha + destruição) | `st-error`, `destructive` | Falha consumada (marco vermelho, linha culpada) e ação destrutiva ("Parar", excluir, revogar) | Caminho de saída (Cancelar/fechar/voltar é ghost, sem cor); ênfase; aviso não-fatal (âmbar) |
 | **Azul** (vivo) | `st-running` | O que roda AGORA: pulse do dot, esteira de telemetria, linha viva | Qualquer coisa parada; link; decoração |
-| **Brass** (gesto) | `brass`, `brass-soft`, `ring` | Ação primária/sensível, foco (`--ring`), item ativo, marca | Texto pequeno sobre superfície de hover no tema claro (3.56:1 < AA, regra S3.6 em `Sidebar.tsx:990`); ícone ilustrativo/empty state; medidor saudável; tinta de "importância" genérica |
+| **Brass** (gesto) | `brass`, `brass-soft`, `ring` (= `brass`) | Ação primária/sensível, foco (`--ring`), marca | **Marcar item selecionado em lista, árvore ou aba** (isso é preenchimento neutro + peso + pip, sem tinta — ADR-043); texto pequeno sobre a superfície de seleção no tema claro (3.56:1 < AA, regra S3.6); ícone ilustrativo/empty state; medidor saudável; tinta de "importância" genérica |
 | **Cores de diff/git** | `hljs-addition/deletion`, `git-open`, `git-merged` | SÓ dentro do domínio git: `+N −N`, linhas de diff abertas (evidência), estado de PR do GitHub | Qualquer semântica fora de git; sucesso/erro geral |
 | **Identidade de agent** (categórica) | `brass` (Claude), `st-running` (Codex), `id-violet` (Antigravity) | Cor de série em gráfico/legenda de custo por agente | Verde e vermelho (colidem com status); pintar estado com a cor da identidade |
 
 Regras de aplicação:
 
+- **SELEÇÃO NÃO É COR. Uma receita só, no app inteiro** (ADR-043):
+  **preenchimento neutro `--sel` + peso 500 + pip neutro de 3px no gutter**
+  (x=5px da superfície). Nenhuma tinta de status, nenhuma barra de acento,
+  nenhum sublinhado colorido, nenhum ícone tingido por estar ativo. Hover é
+  `--sel-hover` (~metade da opacidade: hover é convite, seleção é fato) e o
+  texto do item selecionado é `foreground` (S3.6).
+  - **Por que a regra existe, medido**: o âmbar fazia dois trabalhos, marcar
+    seleção e significar perigo. Em OKLCH no tema escuro, `--brass` `#e4a862`
+    (seleção) e `--st-queued` `#d99138` (perigo) estão a **1,2° de matiz**
+    (H 69,1 × 67,9), separados só por **6,0 de luminosidade** (L 77,4 × 71,4),
+    num traço de 2,5px. No tema claro (`#a9742b` × `#c1861f`) são **4,1°** e a
+    relação **INVERTE**: lá o perigo é o mais CLARO (ΔL +6,3), aqui é o mais
+    escuro. Não havia nem regra consistente a aprender. Num app cuja doutrina é
+    aprovação humana, a tinta de "isto executa sem pedir" não pode ser prima da
+    tinta de "esta linha está selecionada".
+  - **Exceção fechada: controle segmentado** (o comutador da barra superior e a
+    linha de Execução) não é lista; segue em E1 (`bg-card` + `--shadow-sm`),
+    como já é. E o "Liberado" âmbar do segmentado de Execução continua onde
+    está, porque é risco, não seleção.
+  - **Divergência datada, não acidental** (§0): a receita vale hoje na árvore da
+    sidebar (projeto, conversa, feature SDD, entradas globais). O painel direito
+    (aba com sublinhado brass) e os demais sítios de brass-como-ativo
+    (`FlightPlansView`, `SddView`, `ScheduledView`, `LearningSection`,
+    `FusionBoard`, `MissionPlanCanvas`, `InteractionHost`, `RichSelect`…) ainda
+    usam a gramática velha e migram por superfície tocada. Quem tocar numa
+    dessas telas migra ela; ninguém adiciona brass-como-ativo novo.
+- **Identidade de motor não carrega estado.** A marca do agent na árvore
+  (`AgentMark`) é permanente e responde só "qual motor é este". Estado do turno
+  mora no slot direito (§6), nunca grudado na marca: numa linha de lista,
+  identidade e estado disputando o mesmo pixel fazem perder de vista se aquilo
+  é QUEM ou COMO ESTÁ. A marca distingue por **logo/silhueta**; cor categórica
+  por agent (`brass`/`st-running`/`id-violet`) segue restrita a série de
+  gráfico e legenda, como a tabela acima manda.
+- **Alias de token é explícito ou não existe.** `--ring` **é** `--brass` e
+  `--st-idle` **é** `--faint`; os dois estão escritos como `var(...)` em
+  `index.css`, não como o hex repetido. Repetir o valor era duplicata por
+  acidente: os dois pares divergiriam em silêncio na primeira passada de cor, e
+  o app passaria a ter dois cinzas de "ocioso" sem ninguém decidir isso.
 - **Orçamento de tinta por recorte**: num viewport de uma superfície, fora de
   cinza + brass, no máximo **2** cores de status simultâneas. Se um layout
   pede 3, algo que devia ser cinza está pintado (o diagnóstico do ADR-037).
@@ -241,6 +279,30 @@ proporcionalidade do Orca:
   espaço reservado (layout não desalinha); "não sei" degrada pro bucket
   pessimista, nunca pra sucesso; estado vivo não é persistido (replay/restart
   marca interrompido/órfão).
+- **Slot da linha de conversa** (ADR-043): a linha da sidebar tem um **slot
+  direito de 36px com dono único**, que responde uma pergunta só ("quando?"),
+  em ordem fechada: **`pede > rodando > falhou > tempo relativo`**. A decisão é
+  `slotEstado`/`fmtQuando` em `components/layout/conversationWhen.ts`; quem
+  precisar do slot importa, não reimplementa.
+  - **Tempo relativo por um ticker ÚNICO de 60s** para a lista inteira
+    (`lib/minuteTick.ts`, padrão do `lib/watchdog.ts`), nunca um por linha:
+    40 conversas não viram 40 assinaturas de relógio pra responder a mesma
+    pergunta.
+  - **Precisão que degrada**: `agora · 9m · 1h · 3d`, e data (`12/08`) a partir
+    de 7 dias, porque "34d" é ruído fingindo precisão. **Nunca segundos**: a
+    linha viva do composer segue dona do agora.
+  - **Sem carimbo, o slot cala** e o espaço fica reservado (a coluna não dança).
+- **Movimento é pra VIVO, e só pro que termina sozinho.** "Rodando" na sidebar é
+  uma esteira azul de 22×2px porque é evento em curso e o único estado da lista
+  que acaba por conta própria; ponto azul parado ali seria indistinguível de
+  ponto azul esquecido. Pela mesma régua, a moldura do modo Liberado NÃO pulsa
+  (condição permanente) e a falha NÃO pulsa (já aconteceu). Duas condições
+  inegociáveis pra qualquer movimento assim: `prefers-reduced-motion` degrada
+  pra indicador **estático e visível** (não pra ausência de sinal), e a animação
+  vive presa à PRESENÇA do elemento (CSS), nunca a um timer — assim ela morre
+  junto com o estado, inclusive quando o turno morre por erro, cancelamento ou
+  fechamento do app. Esteira que sobrevive ao fim do turno é número parado
+  vestido de vivo.
 - **Feedback proporcional à duração**: 0–100ms → nada; até 1s → só `disabled`
   (pré-reservando a largura do controle, sem trocar o rótulo); 1–3s →
   spinner; 3s+ → estágios nomeados (o que está acontecendo agora).

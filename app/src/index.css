@@ -31,15 +31,28 @@
   --border: rgba(0, 0, 0, 0.09);
   --border-strong: rgba(0, 0, 0, 0.14);
   --input: rgba(0, 0, 0, 0.13);
-  --ring: #a9742b;
+
+  /* SELEÇÃO NÃO É COR (STYLEGUIDE §2). Item selecionado em lista/árvore usa
+     preenchimento neutro + peso + pip; nenhuma tinta de status, nenhuma barra
+     de acento. `--sel-hover` é ~metade da opacidade: hover é convite, seleção
+     é fato. */
+  --sel: rgba(0, 0, 0, 0.055);
+  --sel-hover: rgba(0, 0, 0, 0.028);
 
   /* marca brass + status (custom) */
   --brass: #a9742b;
   --brass-soft: rgba(169, 116, 43, 0.12);
   --brass-fg: #fbf6ee;
-  --st-idle: #8a9099;
+  /* ALIAS EXPLÍCITO, não token próprio: o anel de foco É o brass (§2, brass =
+     gesto/foco). Repetir o hex era duplicata por acidente e deixava os dois
+     divergirem em silêncio numa passada de cor. */
+  --ring: var(--brass);
+  /* ALIAS EXPLÍCITO: "ocioso" não tem tinta de status própria (§2: estado
+     ambiente é cinza; §9 item 4). Existe só como nome do bucket no mapa de 5
+     estados do StatusDot, e por definição não pode divergir do --faint. */
+  --st-idle: var(--faint);
   --st-running: #2f8fbf;
-  --st-queued: #c1861f; /* âmbar da fila/atenção — distinto do brass (seleção) */
+  --st-queued: #c1861f;
   --st-success: #1f9d6b;
   --st-error: #cf4a3e;
 
@@ -86,14 +99,25 @@
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.13);
   --input: rgba(255, 255, 255, 0.12);
-  --ring: #e4a862;
+
+  /* ver :root — seleção é preenchimento neutro, nunca tinta. */
+  --sel: rgba(255, 255, 255, 0.065);
+  --sel-hover: rgba(255, 255, 255, 0.032);
 
   --brass: #e4a862;
   --brass-soft: rgba(228, 168, 98, 0.14);
   --brass-fg: #1a1306;
-  --st-idle: #687078;
+  --ring: var(--brass);
+  --st-idle: var(--faint);
   --st-running: #5bb8e8;
-  --st-queued: #d99138; /* âmbar da fila/atenção — NÃO é o brass (#e4a862=seleção) */
+  /* Âmbar da fila/atenção. O comentário antigo aqui dizia "NÃO é o brass
+     (#e4a862=seleção)" e era mentira medida: em OKLCH no escuro os dois estão
+     a 1,2° de matiz (brass L 77,4 H 69,1 · queued L 71,4 H 67,9), separados só
+     por 6,0 de luminosidade; no claro (#a9742b × #c1861f) são 4,1° e a relação
+     INVERTE (lá o perigo é o mais claro, aqui é o mais escuro), então não havia
+     nem regra a aprender. A saída não foi escurecer o âmbar, foi tirar a cor da
+     seleção (`--sel`, ADR-043): o âmbar ficou com um dono só. */
+  --st-queued: #d99138;
   --st-success: #5bd6a0;
   --st-error: #f2766b;
 
@@ -129,6 +153,8 @@
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-sel: var(--sel);
+  --color-sel-hover: var(--sel-hover);
 
   --color-brass: var(--brass);
   --color-brass-soft: var(--brass-soft);
@@ -303,6 +329,43 @@
 }
 .animate-cockpit-pulse {
   animation: cockpit-pulse 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ESTEIRA DO SLOT DA SIDEBAR — "rodando" na linha de conversa (ADR-043).
+   Movimento é pra vivo (STYLEGUIDE §6): a moldura do modo Liberado não pulsa
+   porque é condição permanente; "rodando" é o oposto, é evento em curso e o
+   único estado da lista que TERMINA SOZINHO. Ponto azul parado ali seria
+   indistinguível de ponto azul esquecido.
+   A esteira não tem timer nem estado próprio: ela é uma animação de CSS presa
+   à PRESENÇA do elemento, e o elemento só existe enquanto o store diz
+   `running`. Turno que morre por erro, cancelamento ou fechamento do app leva
+   o elemento embora junto — não há caminho feliz de desmonte pra depender. */
+@keyframes conv-wire {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -130% 0;
+  }
+}
+.conv-wire {
+  width: 22px;
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, transparent, var(--st-running), transparent);
+  background-size: 220% 100%;
+  animation: conv-wire 1.9s ease-in-out infinite;
+}
+/* Degradação obrigatória: sem movimento, a esteira vira um traço azul ESTÁTICO
+   (não some, senão "rodando" ficaria mudo pra quem desliga animação). O bloco
+   global de reduced-motion lá embaixo só encurta a duração, o que deixaria a
+   esteira congelada num quadro transparente — daí a regra própria aqui. */
+@media (prefers-reduced-motion: reduce) {
+  .conv-wire {
+    animation: none !important;
+    background: var(--st-running);
+    opacity: 0.75;
+  }
 }
 
 /* reveal escalonado no load */

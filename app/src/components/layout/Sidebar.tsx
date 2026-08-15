@@ -14,14 +14,10 @@ import {
   Trash2,
   Pencil,
   Copy,
-  Ban,
   Archive,
   ArchiveRestore,
-  GitBranch,
-  Rocket,
   Route,
   Search,
-  Swords,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -33,16 +29,12 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-  ContextMenuSub,
-  ContextMenuSubTrigger,
-  ContextMenuSubContent,
 } from "@/components/ui/context-menu"
-import { AgentMark } from "@/components/common/AgentMark"
+import { ColorSubmenu } from "@/components/layout/ColorSubmenu"
+import { ConversationList } from "@/components/layout/ConversationList"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
-import { useFusion } from "@/store/fusion"
 import { useAwaiting } from "@/store/interactions"
-import { useMission } from "@/store/mission"
 import { useSchedules } from "@/store/schedules"
 import { fmtUntilShort, nextScheduled } from "@/lib/schedules"
 import {
@@ -57,11 +49,8 @@ import {
   listArchivedProjects,
   hardDeleteProject,
   listProjects,
-  type ConversationMeta,
 } from "@/lib/db"
 import { SetupGuide } from "@/components/onboarding/SetupGuide"
-import { createWorktree, removeWorktree } from "@/lib/git"
-import { LABEL_COLORS } from "@/lib/labelColors"
 import { cn } from "@/lib/utils"
 import type { AgentStatus, Project } from "@/lib/types"
 
@@ -105,52 +94,6 @@ function confirmDeleteProject(project: Project) {
       toast.error("Falha ao remover o projeto")
     }
   })()
-}
-
-/** Submenu de cor reusado (conversa + projeto): swatches + remover. */
-function ColorSubmenu({
-  current,
-  onPick,
-}: {
-  current?: string | null
-  onPick: (color: string | null) => void
-}) {
-  return (
-    <ContextMenuSub>
-      <ContextMenuSubTrigger>
-        <span
-          className="size-3.5 rounded-full border"
-          style={current ? { background: current } : undefined}
-        />
-        Cor
-      </ContextMenuSubTrigger>
-      <ContextMenuSubContent>
-        <div className="grid grid-cols-3 gap-1 p-1">
-          {LABEL_COLORS.map((c) => (
-            <ContextMenuItem
-              key={c.id}
-              title={c.name}
-              onSelect={() => onPick(c.hex)}
-              className="justify-center p-1.5"
-            >
-              <span
-                className={cn(
-                  "size-4 rounded-full",
-                  current === c.hex &&
-                    "ring-2 ring-foreground/40 ring-offset-1 ring-offset-popover",
-                )}
-                style={{ background: c.hex }}
-              />
-            </ContextMenuItem>
-          ))}
-        </div>
-        <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => onPick(null)}>
-          <Ban /> Remover cor
-        </ContextMenuItem>
-      </ContextMenuSubContent>
-    </ContextMenuSub>
-  )
 }
 
 /** Ícone do projeto: pasta TINGIDA da cor-rótulo (cinza se sem cor), com um
@@ -238,8 +181,8 @@ function ProjectRow({
     else setVal(project.name)
   }
 
-  // Cor-rótulo = DOT ao lado do nome (a tinta de linha inteira competia com o
-  // bg-accent/barra de seleção — 3 sinais no mesmo canal). Seleção é dona do bg.
+  // Cor-rótulo = pasta TINGIDA (a tinta de linha inteira competia com o
+  // preenchimento de seleção — 3 sinais no mesmo canal). Seleção é dona do bg.
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -263,14 +206,18 @@ function ProjectRow({
           }}
           className={cn(
             "group relative flex w-full items-center rounded-md transition-colors",
-            active ? "bg-accent" : "hover:bg-accent/55",
+            // SELEÇÃO NÃO É COR (§2, ADR-043): preenchimento neutro + pip.
+            active ? "bg-sel" : "hover:bg-sel-hover",
           )}
         >
+          {/* Gutter (x=5px): dono único da seleção, a MESMA receita da conversa
+              e da feature. Era uma barra brass de 2,5px, a 1,2° de matiz do
+              âmbar que significa "isto executa sem pedir". */}
           {active && (
-            <span className="absolute top-1/2 left-0 h-5 w-[2.5px] -translate-y-1/2 rounded-full bg-brass" />
+            <span className="absolute top-1/2 left-[5px] size-[3px] -translate-y-1/2 rounded-full bg-foreground/80" />
           )}
           {editing ? (
-            <div className="flex min-w-0 flex-1 items-center gap-3 p-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-2 pl-3">
               <ProjectFolder color={project.color} status={status} awaiting={awaiting} />
               <input
                 autoFocus
@@ -291,7 +238,10 @@ function ProjectRow({
           ) : (
             <button
               onClick={onSelect}
-              className="flex min-w-0 flex-1 items-center gap-3 py-2.5 pr-1 pl-2 text-left"
+              // pl-3 (12px) + pasta (20px) + gap-2.5 (10px) = 42px, que é
+              // exatamente onde o título da conversa começa (pl-[18px] + marca
+              // 16px + gap-2). O recuo de 12px é o que abre o gutter do pip.
+              className="flex min-w-0 flex-1 items-center gap-2.5 py-2.5 pr-1 pl-3 text-left"
             >
               {/* Pasta TINGIDA da cor do projeto (Codex-like): é o marcador do
                   container. Path saiu da linha → vira tooltip (menos ruído). */}
@@ -316,7 +266,7 @@ function ProjectRow({
             title={expanded ? "Retrair" : "Expandir"}
             aria-label={expanded ? "Retrair projeto" : "Expandir projeto"}
             aria-expanded={expanded}
-            className="mr-1 shrink-0 rounded p-1.5 text-muted-foreground/50 transition-colors hover:bg-accent hover:text-muted-foreground"
+            className="mr-1 shrink-0 rounded p-1.5 text-muted-foreground/50 transition-colors hover:bg-sel hover:text-muted-foreground"
           >
             <ChevronRight
               className={cn(
@@ -368,484 +318,6 @@ function ProjectRow({
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
-  )
-}
-
-/** Ids das conversas rodando, como string estável (só muda em transição de run
- * , não a cada delta de streaming, evitando re-render da sidebar inteira). */
-function useRunningConvIds(): Set<string> {
-  const key = useChat((s) =>
-    Object.entries(s.byId)
-      .filter(([, c]) => c.running)
-      .map(([id]) => id)
-      .sort()
-      .join(","),
-  )
-  return new Set(key ? key.split(",") : [])
-}
-
-/** Conversas que TERMINARAM sem você ver → selo de concluído/falhou na linha.
- *  O spinner some quando o turno acaba e, sem isto, o fim não deixava sinal
- *  NENHUM na navegação: você só descobria abrindo. Chave estável (só muda na
- *  transição), pelo mesmo motivo do useRunningConvIds. */
-function useFinishedUnseen(): Map<string, "ok" | "error"> {
-  const key = useChat((s) =>
-    Object.entries(s.byId)
-      .filter(([, c]) => c.finishedUnseen)
-      .map(([id, c]) => `${id}:${c.finishedUnseen}`)
-      .sort()
-      .join(","),
-  )
-  const m = new Map<string, "ok" | "error">()
-  for (const par of key ? key.split(",") : []) {
-    const [id, st] = par.split(":")
-    m.set(id, st === "error" ? "error" : "ok")
-  }
-  return m
-}
-
-/** Ids das conversas com disputa de Fusion esperando DECISÃO (string estável). */
-function useDecidingConvIds(): Set<string> {
-  const key = useFusion((s) =>
-    Object.entries(s.byConv)
-      .filter(([, f]) => f.phase === "deciding")
-      .map(([id]) => id)
-      .sort()
-      .join(","),
-  )
-  return new Set(key ? key.split(",") : [])
-}
-
-/** Ids das conversas com QUALQUER disputa de Fusion viva (string estável). */
-function useFusionConvIds(): Set<string> {
-  const key = useFusion((s) => Object.keys(s.byConv).sort().join(","))
-  return new Set(key ? key.split(",") : [])
-}
-
-/** Ids das conversas com MISSÃO rodando (string estável, mesmo padrão acima). */
-function useMissionRunningConvIds(): Set<string> {
-  const key = useMission((s) =>
-    Object.entries(s.byConv)
-      .filter(([, m]) => m.status === "running")
-      .map(([id]) => id)
-      .sort()
-      .join(","),
-  )
-  return new Set(key ? key.split(",") : [])
-}
-
-/** Lista de conversas (tarefas) de UM projeto (árvore independente: pode haver
- *  várias montadas ao mesmo tempo, cada uma lendo a lista do seu projectId). */
-// Array vazio ESTÁVEL (module-level): o selector abaixo NÃO pode retornar um `[]`
-// novo a cada chamada — o useSyncExternalStore do React 18 detecta referência
-// nova a cada snapshot e entra em loop infinito ("getSnapshot should be cached"),
-// que dava TELA PRETA quando o projeto ainda não tinha as conversas carregadas.
-const EMPTY_CONVS: ConversationMeta[] = []
-
-function ConversationList({ projectId }: { projectId: string }) {
-  // default FORA do selector (?? numa constante estável): selector devolve o
-  // array do store (ref estável) ou undefined (estável) — nunca um `[]` novo.
-  const conversations =
-    useChat((s) => s.conversationsByProject[projectId]) ?? EMPTY_CONVS
-  const activeId = useChat((s) => s.activeId)
-  const newConversation = useChat((s) => s.newConversation)
-  const switchConversation = useChat((s) => s.switchConversation)
-  const removeConversation = useChat((s) => s.removeConversation)
-  const renameConversation = useChat((s) => s.renameConversation)
-  const setConversationColor = useChat((s) => s.setConversationColor)
-  const duplicateConversation = useChat((s) => s.duplicateConversation)
-  const setWorktree = useChat((s) => s.setWorktree)
-  const reorderConversations = useChat((s) => s.reorderConversations)
-  const moveConversation = useChat((s) => s.moveConversation)
-  // S1.2 — payload de drag de CONVERSA, escopado pelo projeto: o dragover de
-  // uma lista só aceita conversa DA MESMA lista (mover entre projetos está
-  // fora de escopo). O tipo é lowercased pelo browser — ids uuid já são.
-  const convDnd = `application/x-mycockpit-conv-${projectId.toLowerCase()}`
-  // Projeto DESTA lista (não o ativo): worktree/isolamento usam o path certo,
-  // mesmo numa árvore de projeto não-ativo.
-  const project = useApp((s) => s.projects.find((p) => p.id === projectId) ?? null)
-  const setActiveProject = useApp((s) => s.setActiveProject)
-  // F1 — a seleção só DIRIGE o detalhe no modo linear; nos demais, o item ativo
-  // renderiza dimmed (memória preservada, ênfase removida). String estável.
-  const viewMode = useApp((s) => s.viewMode)
-  const running = useRunningConvIds()
-  const finished = useFinishedUnseen()
-  const defaultAgent = useApp((s) => s.settings.defaultAgent)
-  const deciding = useDecidingConvIds()
-  const fusionAlive = useFusionConvIds()
-  const missionRunning = useMissionRunningConvIds()
-  // Pedido pendente (permissão ou pergunta do ask_user): o turno DESTA conversa
-  // está parado esperando você.
-  const awaiting = useAwaiting()
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editValue, setEditValue] = useState("")
-  const editInputRef = useRef<HTMLInputElement>(null)
-
-  // O ContextMenu desmonta e restaura foco depois do onSelect. `autoFocus` no
-  // input acontece cedo demais e pode perder essa disputa. Focamos no próximo
-  // frame, já com o menu fechado, e selecionamos o título para renomear direto.
-  useEffect(() => {
-    if (!editingId) return
-    const frame = requestAnimationFrame(() => {
-      editInputRef.current?.focus()
-      editInputRef.current?.select()
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [editingId])
-
-  // Clicar numa conversa: torna o projeto DELA o ativo (abre no painel) e troca
-  // a conversa. Funciona pra projeto não-ativo (setActive + switch pelo id único).
-  function openConv(id: string) {
-    if (projectId !== useApp.getState().activeProjectId) setActiveProject(projectId)
-    // navegar pra uma conversa fecha a view global "Agendado" (se aberta) —
-    // mesmo quando o projeto já é o ativo (setActiveProject não roda).
-    useApp.getState().setScheduledOpen(false)
-    // Clicar numa conversa NAVEGA até ela: estando no Painel/Features, troca pro
-    // Trabalho (senão o clique só muda o store e a tela não reage = cara de bug).
-    // Mesmo contrato dos outros caminhos (MissionControl, InboxBell, Agendado).
-    useApp.getState().setViewMode("linear")
-    void switchConversation(id)
-  }
-
-  function commitRename(id: string) {
-    const v = editValue.trim()
-    setEditingId(null)
-    if (v) void renameConversation(id, v)
-  }
-
-  // conversa é HARD-DELETE (sem desfazer) → sempre confirma antes.
-  async function askDeleteConv(id: string, title: string | null) {
-    const ok = await confirm({
-      title: "Excluir conversa?",
-      description: `"${title ?? "Nova conversa"}": o histórico e os anexos são apagados. Não dá pra desfazer.`,
-      confirmLabel: "Excluir",
-      danger: true,
-    })
-    if (ok) void removeConversation(id)
-  }
-
-  // v2.5 — isola a conversa num worktree (o cockpit cria) ou volta pra o projeto.
-  async function toggleWorktree(id: string, wt: string | null) {
-    if (!project) return
-    if (wt) {
-      try {
-        await removeWorktree(project.path, wt)
-        setWorktree(id, null)
-        toast.success("Isolamento removido")
-      } catch (e) {
-        // git recusa sem --force se houver mudança não-commitada (preserva o trabalho)
-        toast.error(
-          typeof e === "string" && e
-            ? e
-            : "Não removi; há mudanças não-commitadas no worktree?",
-        )
-      }
-    } else {
-      try {
-        const info = await createWorktree(project.path, id)
-        setWorktree(id, info.path)
-        toast.success(`Isolado em ${info.branch}`)
-      } catch (e) {
-        toast.error(typeof e === "string" ? e : "Falha ao isolar")
-      }
-    }
-  }
-
-  return (
-    // Sem border-l nem indentação de container: a hierarquia é só alinhamento.
-    // Cada filho recebe ~40px de recuo → texto sob o texto do projeto. Na linha
-    // de conversa, parte desse recuo é a marca do agent (esquerda), então o
-    // padding cai para 18px e a soma continua batendo.
-    <div className="animate-reveal-down mt-0.5 mb-1 flex flex-col gap-px">
-      {conversations.map((c, idx) => {
-        const isActive = c.id === activeId
-        // F1 — destaque PLENO (bg-accent + barra brass) só quando o Linear é a
-        // superfície ativa; no SDD a ativa fica DIM (bg sutil, texto
-        // muted): memória preservada, sem mentir que ela dirige o detalhe.
-        const isFull = isActive && viewMode === "linear"
-        const isDimmed = isActive && viewMode !== "linear"
-        const isRunning = running.has(c.id)
-        const doneUnseen = finished.get(c.id)
-        const isDeciding = deciding.has(c.id)
-        const hasFusion = fusionAlive.has(c.id)
-        const hasMission = missionRunning.has(c.id)
-        const isAwaiting = awaiting.convIds.has(c.id)
-        const isEditing = editingId === c.id
-        // Sinais discretos à direita (F2): escudo = pedido pendente, permissão
-        // ou pergunta (turno PARADO, vem primeiro: é o único que te cobra ação);
-        // spinner = run; foguete = missão; espadas = disputa (âmbar quando
-        // espera decisão).
-        // Estado do TURNO num slot fixo, sobre a marca do agent (padrão do
-        // Warp): a posição não muda quando o estado muda, e o slot nunca fica
-        // vazio porque a identidade do agent está sempre lá. Antes o ícone
-        // aparecia/desaparecia à direita do título e empurrava o layout — e o
-        // bloco inteiro virava null quando o turno acabava, que é por que o selo
-        // de concluído nunca chegava a renderizar.
-        const turnStatus = isAwaiting
-          ? ("awaiting" as const)
-          : isRunning
-            ? ("running" as const)
-            : doneUnseen === "error"
-              ? ("error" as const)
-              : doneUnseen === "ok"
-                ? ("done" as const)
-                : null
-        // Título do estado, compartilhado pela marca (à esquerda).
-        const statusTitle =
-          turnStatus === "awaiting"
-            ? "O turno parou esperando você (permissão ou pergunta)"
-            : turnStatus === "running"
-              ? "Turno rodando"
-              : turnStatus === "error"
-                ? "O turno terminou com erro, abra para ver"
-                : turnStatus === "done"
-                  ? "Turno concluído, abra para ver"
-                  : undefined
-        // À DIREITA sobram só missão e disputa: são TIPOS de execução, não
-        // estado do turno. Estado mora na marca do agent, à esquerda.
-        const statusEl =
-          hasMission || hasFusion ? (
-            <>
-              {hasMission && (
-                <span
-                  className="grid size-3 shrink-0 place-items-center"
-                  title="Missão rodando"
-                >
-                  {/* S3.2 — pulso só no "esperando você"; missão rodando é
-                      presença calma. Brass sai (fica pra ativo + marca). */}
-                  <Rocket
-                    className="size-3 text-muted-foreground"
-                    aria-label="missão rodando"
-                  />
-                </span>
-              )}
-              {hasFusion && (
-                <span
-                  className="grid size-3 shrink-0 place-items-center"
-                  title={
-                    isDeciding
-                      ? "Disputa esperando sua decisão"
-                      : "Disputa em andamento nesta conversa"
-                  }
-                >
-                  <Swords
-                    className={cn(
-                      "size-3",
-                      isDeciding
-                        ? "text-st-warning"
-                        : "text-muted-foreground/70",
-                    )}
-                    aria-label={
-                      isDeciding ? "decisão pendente" : "disputa em curso"
-                    }
-                  />
-                </span>
-              )}
-            </>
-          ) : null
-        // Cor-rótulo = DOT à direita do título (tinta de linha competia com a
-        // seleção). Seleção é dona do background.
-        return (
-          <ContextMenu key={c.id}>
-            <ContextMenuTrigger asChild>
-              <div
-                // S1.2 — drag reordena DENTRO do projeto (tipo escopado acima).
-                draggable={!isEditing}
-                onDragStart={(e) => {
-                  e.dataTransfer.setData(convDnd, c.id)
-                  e.dataTransfer.effectAllowed = "move"
-                }}
-                onDragOver={(e) => {
-                  if (e.dataTransfer.types.includes(convDnd)) e.preventDefault()
-                }}
-                onDrop={(e) => {
-                  const dragId = e.dataTransfer.getData(convDnd)
-                  if (!dragId || dragId === c.id) return
-                  e.preventDefault()
-                  reorderConversations(projectId, dragId, c.id)
-                }}
-                className={cn(
-                  "group/c relative flex items-center rounded-md",
-                  isFull
-                    ? "bg-accent"
-                    : isDimmed
-                      ? "bg-accent/30"
-                      : "hover:bg-accent/50",
-                )}
-                // Cor-rótulo tinge a LINHA INTEIRA, SEMPRE (pedido do usuário,
-                // 04/08: a versão anterior degradava pra bolinha na linha ativa
-                // e a cor "sumia" justo na conversa aberta, duplicando sinal).
-                // Na ativa/dim a cor MISTURA com o fundo de seleção (a barra
-                // brass segue sendo o sinal de seleção); fora delas, lavagem
-                // sobre transparente. Sem bolinha em lugar nenhum.
-                style={
-                  c.color
-                    ? {
-                        background: `color-mix(in srgb, ${c.color} 12%, ${
-                          isFull
-                            ? "var(--accent)"
-                            : isDimmed
-                              ? "color-mix(in srgb, var(--accent) 30%, transparent)"
-                              : "transparent"
-                        })`,
-                      }
-                    : undefined
-                }
-              >
-                {isFull && (
-                  <span className="absolute top-1/2 left-0 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-brass" />
-                )}
-                {isEditing ? (
-                  <div className="flex min-w-0 flex-1 items-center py-2 pr-2 pl-10">
-                    <input
-                      ref={editInputRef}
-                      aria-label="Renomear conversa"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onBlur={() => commitRename(c.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitRename(c.id)
-                        if (e.key === "Escape") setEditingId(null)
-                      }}
-                      className="min-w-0 flex-1 rounded border border-brass/40 bg-background px-1 py-0.5 text-[12px] text-foreground outline-none"
-                    />
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => openConv(c.id)}
-                    title={isDimmed ? "ativa no Linear" : undefined}
-                    className={cn(
-                      // pl-[18px] + marca (16px) + gap-2 (8px) = 42px ≈ o pl-10
-                      // (40px) de antes: o TEXTO cai praticamente no mesmo x, então
-                      // a hierarquia "texto sob o texto do projeto" se mantém. O
-                      // modo edição segue em pl-10 (input não tem marca).
-                      "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-[18px] text-left text-[12px] font-normal",
-                      // S3.6 — texto ativo em foreground: brass 12px sobre
-                      // bg-accent no tema claro media 3.56:1 (< 4.5:1, reprova
-                      // AA). Barra brass + bg-accent seguem donos do "ativo".
-                      // dim = ativa noutra superfície (muted, sem destaque);
-                      // inativo = cinza médio, clareia no hover.
-                      isFull
-                        ? "text-foreground"
-                        : isDimmed
-                          ? "text-muted-foreground"
-                          : "text-muted-foreground group-hover/c:text-foreground",
-                    )}
-                  >
-                    {/* Marca do agent + selo de estado À ESQUERDA, dentro da
-                        indentação (pl-10 vira pl-4 + o slot): é a borda que você
-                        varre descendo a lista, e é a mesma gramática das linhas
-                        de projeto, que também têm ícone à esquerda. O texto NÃO
-                        se desloca — o slot ocupa espaço que a indentação já
-                        reservava e estava vazio.
-                        Direita fica só com o que é SEU: a cor-rótulo e o
-                        worktree. Cada borda com um dono. */}
-                    <AgentMark
-                      // sem carimbo ainda (conversa nova, nada enviado) → mostra
-                      // o SEU default, não "claude-code" fixo: a linha não pode
-                      // afirmar um agent que você não escolheu.
-                      agent={c.agent ?? defaultAgent}
-                      status={turnStatus}
-                      title={statusTitle}
-                    />
-                    <span className="min-w-0 flex-1 truncate">
-                      {c.title ?? "Nova conversa"}
-                    </span>
-                    {/* Cor-rótulo é SÓ a lavagem da linha (inclusive na ativa,
-                        misturada à seleção) — bolinha nenhuma: duplicava sinal
-                        com o dot de status da marca (pedido do usuário, 04/08). */}
-                    {/* S3.2 — worktree é CONTEXTO, não seleção nem marca: sai
-                        do brass (que fica pra ativo + marca) e vira muted. */}
-                    {c.worktreePath && (
-                      <GitBranch
-                        className="size-3 shrink-0 text-muted-foreground"
-                        aria-label="isolado em worktree"
-                      />
-                    )}
-                    {/* à direita sobram só os sinais de OUTRO tipo de execução
-                        (missão/disputa), que não são estado de turno. */}
-                    {statusEl && (
-                      <span className="flex shrink-0 items-center gap-1">
-                        {statusEl}
-                      </span>
-                    )}
-                  </button>
-                )}
-                {/* S1.4 — o excluir saiu da linha (mora SÓ no context menu):
-                    o X no hover ficava no caminho do cursor e um clique
-                    impreciso abria um confirm destrutivo. */}
-              </div>
-            </ContextMenuTrigger>
-            <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
-              <ContextMenuItem
-                onSelect={() => {
-                  setEditValue(c.title ?? "")
-                  setEditingId(c.id)
-                }}
-              >
-                <Pencil /> Renomear
-              </ContextMenuItem>
-              <ColorSubmenu
-                current={c.color}
-                onPick={(col) => void setConversationColor(c.id, col)}
-              />
-              <ContextMenuItem onSelect={() => void duplicateConversation(c.id)}>
-                <Copy /> Duplicar
-              </ContextMenuItem>
-              <ContextMenuItem
-                onSelect={() => void toggleWorktree(c.id, c.worktreePath)}
-              >
-                <GitBranch />{" "}
-                {c.worktreePath ? "Remover isolamento" : "Isolar em worktree"}
-              </ContextMenuItem>
-              {/* S1.2 — reordenação por teclado (o drag não cobre a11y). */}
-              <ContextMenuSeparator />
-              <ContextMenuItem
-                disabled={idx === 0}
-                onSelect={() => moveConversation(projectId, c.id, -1)}
-              >
-                <ArrowUp /> Mover para cima
-              </ContextMenuItem>
-              <ContextMenuItem
-                disabled={idx === conversations.length - 1}
-                onSelect={() => moveConversation(projectId, c.id, 1)}
-              >
-                <ArrowDown /> Mover para baixo
-              </ContextMenuItem>
-              <ContextMenuSeparator />
-              {/* S1.4 — ícone honesto: excluir é LIXEIRA (o X dizia "fechar"). */}
-              <ContextMenuItem
-                variant="destructive"
-                disabled={isRunning}
-                onSelect={() => void askDeleteConv(c.id, c.title)}
-              >
-                <Trash2 /> Excluir
-              </ContextMenuItem>
-            </ContextMenuContent>
-          </ContextMenu>
-        )
-      })}
-      <button
-        onClick={() => {
-          // Nova tarefa neste projeto → ativa o projeto, cria a conversa e ABRE
-          // o Trabalho (criar e continuar olhando o Painel deixava o clique mudo).
-          if (projectId !== useApp.getState().activeProjectId)
-            setActiveProject(projectId)
-          useApp.getState().setScheduledOpen(false)
-          useApp.getState().setViewMode("linear")
-          void newConversation(projectId)
-        }}
-        className="flex items-center gap-3 rounded-md p-2 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-      >
-        {/* Plus ocupa a mesma coluna de ícone (20px) do projeto → "nova tarefa"
-            alinha com as conversas, mantendo a leitura da coluna. */}
-        <span className="grid size-5 shrink-0 place-items-center">
-          <Plus className="size-3.5" />
-        </span>
-        Nova tarefa
-      </button>
-    </div>
   )
 }
 
@@ -910,7 +382,7 @@ function SddFeatureList({ project }: { project: Project }) {
   const newFeatureBtn = (
     <button
       onClick={() => requestSddCreate()}
-      className="flex items-center gap-3 rounded-md p-2 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+      className="flex items-center gap-3 rounded-md p-2 text-left text-[12px] text-muted-foreground transition-colors hover:bg-sel-hover hover:text-foreground"
     >
       {/* Mesmo padrão visual do "+ Nova tarefa": ação primária da superfície. */}
       <span className="grid size-5 shrink-0 place-items-center">
@@ -974,23 +446,25 @@ function SddFeatureList({ project }: { project: Project }) {
             <div
               key={plan.slug}
               className={cn(
-                "group/f relative flex items-center rounded-md",
-                selected ? "bg-accent" : "hover:bg-accent/50",
+                "group/f relative flex items-center rounded-md transition-colors",
+                // Mesma receita única de "selecionado" (§2, ADR-043).
+                selected ? "bg-sel" : "hover:bg-sel-hover",
               )}
             >
               {selected && (
-                <span className="absolute top-1/2 left-0 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-brass" />
+                <span className="absolute top-1/2 left-[5px] size-[3px] -translate-y-1/2 rounded-full bg-foreground/80" />
               )}
               <button
                 onClick={() => setSddFocus(plan.slug)}
                 title={plan.slug}
                 className={cn(
-                  "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-10 text-left text-[12px] font-normal",
+                  "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-10 text-left text-[12px]",
                   // S3.6 — mesmo motivo da lista de conversas: brass 12px sobre
-                  // bg-accent reprova AA no claro (3.56:1); ativo = foreground.
+                  // a superfície de seleção reprova AA no claro (3.56:1). Ativo
+                  // = foreground + peso 500 (o segundo canal da receita).
                   selected
-                    ? "text-foreground"
-                    : "text-muted-foreground group-hover/f:text-foreground",
+                    ? "font-medium text-foreground"
+                    : "font-normal text-muted-foreground group-hover/f:text-foreground",
                 )}
               >
                 <span className="min-w-0 flex-1 truncate">{plan.title}</span>
@@ -1048,22 +522,29 @@ function ScheduledEntry() {
         onClick={() => setScheduledOpen(true)}
         aria-label="Abrir Agendado"
         className={cn(
-          "group relative flex w-full items-center gap-3 rounded-md p-2 text-left transition-colors",
-          active ? "bg-accent" : "hover:bg-accent/55",
+          "group relative flex w-full items-center gap-2.5 rounded-md py-2 pr-2 pl-3 text-left transition-colors",
+          // Mesma receita única de "selecionado" das linhas da árvore (§2).
+          active ? "bg-sel" : "hover:bg-sel-hover",
         )}
       >
+        {active && (
+          <span className="absolute top-1/2 left-[5px] size-[3px] -translate-y-1/2 rounded-full bg-foreground/80" />
+        )}
         <span className="grid size-5 shrink-0 place-items-center">
+          {/* Ícone ativo NÃO é brass: brass é gesto, e "selecionado" perdeu o
+              canal cromático inteiro (ADR-043). */}
           <Clock
             className={cn(
               "size-4",
-              active ? "text-brass" : "text-muted-foreground/70",
+              active ? "text-foreground" : "text-muted-foreground/70",
             )}
           />
         </span>
         <span
           className={cn(
             "min-w-0 flex-1 truncate text-[13px]",
-            // S3.6 — ativo em foreground (brass sobre accent reprova AA no claro)
+            // S3.6 — ativo em foreground (brass 13px sobre a superfície de
+            // seleção reprova AA no claro)
             active
               ? "font-medium text-foreground"
               : "text-muted-foreground group-hover:text-foreground",
@@ -1090,15 +571,18 @@ function FlightPlansEntry() {
       onClick={() => setFlightPlansOpen(true)}
       aria-label="Abrir Planos de voo"
       className={cn(
-        "group relative flex w-full items-center gap-3 rounded-md p-2 text-left transition-colors",
-        active ? "bg-accent" : "hover:bg-accent/55",
+        "group relative flex w-full items-center gap-2.5 rounded-md py-2 pr-2 pl-3 text-left transition-colors",
+        active ? "bg-sel" : "hover:bg-sel-hover",
       )}
     >
+      {active && (
+        <span className="absolute top-1/2 left-[5px] size-[3px] -translate-y-1/2 rounded-full bg-foreground/80" />
+      )}
       <span className="grid size-5 shrink-0 place-items-center">
         <Route
           className={cn(
             "size-4",
-            active ? "text-brass" : "text-muted-foreground/70",
+            active ? "text-foreground" : "text-muted-foreground/70",
           )}
         />
       </span>
@@ -1202,7 +686,7 @@ function ArchivedSection() {
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] text-muted-foreground/70 transition-colors hover:bg-accent/40 hover:text-muted-foreground"
+        className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] text-muted-foreground/70 transition-colors hover:bg-sel-hover hover:text-muted-foreground"
       >
         <ChevronRight
           className={cn(
@@ -1216,7 +700,7 @@ function ArchivedSection() {
         archived.map((p) => (
           <ContextMenu key={p.id}>
             <ContextMenuTrigger asChild>
-              <div className="group/a flex items-center rounded-md hover:bg-accent/40">
+              <div className="group/a flex items-center rounded-md hover:bg-sel-hover">
                 <span
                   className="flex min-w-0 flex-1 items-center gap-3 py-1.5 pl-2"
                   title={p.path}

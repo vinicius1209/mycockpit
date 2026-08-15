@@ -1147,3 +1147,80 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   `window` (que no caminho de propagação vem depois do `document`) confirma
   `defaultPrevented` em toda superfície. A regra pura tem 27 casos em
   `lib/contextMenu.test.ts`.
+
+### ADR-043 — Seleção não é cor: o âmbar volta a ter um dono só ✅
+- **Contexto (15/08/2026):** o âmbar fazia dois trabalhos na mesma tela. Marcava
+  **item selecionado** na sidebar (a barra de 2,5px, `Sidebar.tsx` em três
+  sítios) e significava **perigo** (moldura do modo Liberado, badge de decisão
+  pendente). O `index.css` tentava salvar a distinção num comentário
+  ("âmbar da fila/atenção, NÃO é o brass"), e a medição derruba o comentário: em
+  OKLCH, tema escuro, `--brass` `#e4a862` (seleção) está em L 77,4 · C 0,112 ·
+  H 69,1 e `--st-queued` `#d99138` (perigo) em L 71,4 · C 0,134 · H 67,9, ou
+  seja **1,2° de matiz** e 6,0 de luminosidade. No tema claro (`#a9742b` ×
+  `#c1861f`) são **4,1°** e a relação **INVERTE** (no claro o perigo é o mais
+  CLARO, ΔL +6,3; no escuro é o mais escuro): não existia nem uma regra
+  consistente pro usuário aprender. Num app cuja doutrina inteira é aprovação
+  humana, a tinta de "isto pode executar comando na sua máquina sem pedir" era
+  prima da tinta de "esta linha está selecionada". Levantamento completo em
+  `docs/mocks/linguagem-silenciosa-README.md` (proposta e mock).
+- **Decisão 1 — a saída não é escurecer o âmbar, é TIRAR A COR DA SELEÇÃO.**
+  Selecionado passa a ter uma receita única: preenchimento neutro `--sel`
+  (`rgba(255,255,255,.065)` escuro / `rgba(0,0,0,.055)` claro) + peso 500 + pip
+  neutro de 3px no gutter. As três barras brass saíram. A regra está escrita no
+  §2 do STYLEGUIDE, com a medição e com a exceção fechada (controle segmentado
+  não é lista).
+- **Decisão 2 — a linha de conversa vira três zonas com três donos:**
+  **gutter = seleção** (só muda quando você clica) · **marca do motor =
+  identidade** (nunca muda sozinha) · **slot direito de 36px = estado e tempo**
+  (muda sozinho, o tempo todo), em ordem fechada `pede > rodando > falhou >
+  tempo relativo`. O ícone de motor FICA nos quatro estados: é o único lugar da
+  árvore onde a identidade do motor aparece, e num app agnóstico de propósito,
+  com conversas de motores diferentes lado a lado, é o que deixa varrer a frota
+  sem abrir nada. O que saiu foi o **badge de estado grudado nele**.
+- **Decisão 3 — "rodando" é ESTEIRA, não ponto azul. Aqui a decisão contraria a
+  recomendação de quem escreveu a proposta, e a discordância dele fica
+  registrada.** O autor recomendava a Opção 2 (ponto azul, mesmo desenho do
+  ponto âmbar), com dois argumentos legítimos: o slot passa a ter dois idiomas
+  (uma barra onde todo o resto é ponto ou texto), e 2px de movimento na
+  periferia do olho passa perto de artefato de scrollbar. A escolha foi a
+  esteira, pelo §6: **movimento é pra vivo**. A moldura do Liberado não pulsa
+  porque é condição permanente; "rodando" é o oposto, é evento em curso e o
+  **único estado da lista que termina sozinho**. Movimento ali é honesto, e
+  ponto azul parado é indistinguível de ponto azul esquecido. As duas condições
+  que endereçam a objeção do autor são inegociáveis e estão testadas:
+  (1) `prefers-reduced-motion` degrada pra um traço azul **estático e visível**,
+  com regra própria em `index.css` (o bloco global só encurta a duração, o que
+  deixaria a esteira congelada num quadro transparente, ou seja, "rodando"
+  mudo); (2) a esteira **para quando o turno acaba, sem exceção** — ela é
+  animação de CSS presa à PRESENÇA do elemento, e o elemento só existe enquanto
+  o store diz `running`, que nunca é persistido. Erro, cancelamento, `finish()`
+  e app fechado-e-reaberto têm caso de teste em
+  `ConversationSlot.test.tsx`, porque provar só o caminho feliz não prova nada.
+- **Consequência 1 — uma perda real, aceita de olhos abertos.** Some o "o último
+  turno terminou bem" de relance na sidebar: o badge verde `done` era estado
+  ambiente permanente, que o §9 item 4 já tinha condenado em todo o resto do
+  app. Quem responde a pergunta prática ("isto andou recentemente?") passa a ser
+  o **tempo relativo**, que é a régua que ficou daquele item: dot ambiente cinza
+  é a lei, e quem precisa distinguir dois estados saudáveis usa texto.
+- **Consequência 2 — tempo relativo custou zero de dado e um ticker.**
+  `conversations.updated_at` já existia, já era selecionado e já chegava ao
+  front como `updatedAt` (nenhuma migração). O custo é `lib/minuteTick.ts`: um
+  ticker de 60s pro módulo inteiro (padrão do `watchdog.ts`), nunca um por
+  linha. Precisão degrada (`agora · 9m · 1h · 3d`, data a partir de 7d) e nunca
+  mostra segundos, porque a linha viva do rodapé é a dona única do agora.
+- **Consequência 3 — divergência DATADA, não acidental.** A receita nova vale na
+  árvore da sidebar. O painel direito e os ~16 sítios restantes de
+  brass-como-ativo seguem na gramática velha até serem migrados por superfície
+  tocada. Isso contraria o §0 (divergência é o que ele combate), e a defesa é
+  que divergência escrita e datada não é a mesma coisa que divergência que
+  ninguém sabe que existe: está registrada no §2, com a lista dos arquivos.
+- **Consequência 4 — dois aliases viraram explícitos.** `--ring` era o hex do
+  `--brass` repetido e `--st-idle` era o hex do `--faint` repetido. Os dois
+  passaram a `var(...)`: alias documentado é aceitável (o foco É o gesto; o
+  "ocioso" É o cinza de metadado), token duplicado por acidente não é, porque
+  divergiria em silêncio na primeira passada de cor.
+- **Consequência 5 — o `Sidebar.tsx` foi dividido.** Ele estava em 1437 linhas
+  (baseline congelada em 1433) e a catraca do §10 não aceita crescer. A lista de
+  conversas saiu para `ConversationList.tsx` e o submenu de cor para
+  `ColorSubmenu.tsx`; o arquivo caiu para 924 linhas e a baseline desceu junto.
+  Dividir, nunca subir o teto.
