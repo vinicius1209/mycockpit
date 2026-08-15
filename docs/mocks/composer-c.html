@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Composer colapsado · B · Progressivo</title>
+<title>Composer colapsado · C · Colapso por frequência</title>
 <style>
   /* Tokens: cópia fiel de app/src/index.css (light :root · dark [data-theme=dark]). */
   :root{
@@ -37,11 +37,9 @@
     font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
   button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
   svg{display:block}
-  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"liga" 0,"calt" 0}
   .label-mono{font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
     font-size:11px;line-height:1;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
 
-  /* ── chrome do mock ── */
   .mockbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
     padding:10px 18px;background:color-mix(in srgb,var(--background) 88%,transparent);
     backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
@@ -96,7 +94,7 @@
   .marco .tk{color:var(--faint);font:11px var(--mono);margin-left:auto}
   code{font-family:var(--mono);font-size:12px;font-feature-settings:"liga" 0,"calt" 0}
 
-  /* ═══════════ COMPOSER · direção B ═══════════ */
+  /* ═══════════ COMPOSER · direção C ═══════════ */
   .cw{border-top:1px solid var(--border);padding:11px 22px 13px;background:var(--background);position:relative;z-index:22}
   .card{border:1px solid var(--border-strong);border-radius:16px;background:var(--card);
     box-shadow:var(--shadow-pop);position:relative}
@@ -110,36 +108,26 @@
   @keyframes blink{50%{opacity:0}}
   @media (prefers-reduced-motion:reduce){.caret{animation:none}}
 
-  /* A LINHA · mesma altura dormindo e acordada. Só o conteúdo troca. */
-  .bar{display:flex;align-items:center;gap:5px;padding:5px 9px 9px;min-height:42px}
+  /* A LINHA · quatro alvos permanentes, e só. */
+  .bar{display:flex;align-items:center;gap:5px;padding:5px 9px 9px}
   .ic{width:28px;height:28px;border-radius:999px;display:grid;place-items:center;
     color:var(--muted-foreground);flex:0 0 auto}
   .ic:hover{background:var(--accent);color:var(--foreground)}
   .gap{flex:1 1 auto;min-width:8px}
 
-  /* DORMINDO: leitura. Sem caixa, sem chevron, sem hover. */
-  .readout{display:flex;align-items:center;gap:7px;height:28px;padding:0 4px;font-size:13px;
-    color:var(--faint);min-width:0;cursor:default}
-  .readout .sep{color:color-mix(in srgb,var(--faint) 55%,transparent)}
-  .readout .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .readout .amber{color:var(--st-queued);display:flex;align-items:center;gap:5px}
-
-  /* ACORDADA: controles de verdade. */
-  .ctrl{display:flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:8px;
-    font-size:13px;color:var(--muted-foreground);white-space:nowrap;min-width:0;
-    box-shadow:inset 0 0 0 1px var(--border)}
-  .ctrl:hover{background:var(--accent);color:var(--foreground)}
-  .ctrl .nm{min-width:0;overflow:hidden;text-overflow:ellipsis}
-  .ctrl.warn{color:var(--st-queued);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--st-queued) 40%,transparent);
-    background:color-mix(in srgb,var(--st-queued) 12%,transparent)}
-  .ctrl.warn:hover{background:color-mix(in srgb,var(--st-queued) 20%,transparent);color:var(--st-queued)}
-  .ctrl.lock{color:var(--faint);box-shadow:none}
-  .ctrl.hot{color:var(--brass);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--brass) 45%,transparent);
-    background:var(--brass-soft)}
-  .ctrl.tog{color:var(--muted-foreground)}
+  .state{display:flex;align-items:center;gap:6px;height:28px;padding:0 9px;border-radius:8px;
+    font-size:13px;color:var(--muted-foreground);white-space:nowrap;min-width:0}
+  .state:hover{background:var(--accent);color:var(--foreground)}
+  .state .kb{font:10px/1.6 var(--mono);border:1px solid var(--border);border-radius:4px;
+    padding:0 4px;color:var(--faint);margin-left:2px}
+  .state .sub{font:11px var(--mono);color:var(--faint)}
+  .state.warn{background:color-mix(in srgb,var(--st-queued) 15%,transparent);color:var(--st-queued)}
+  .state.warn:hover{background:color-mix(in srgb,var(--st-queued) 22%,transparent);color:var(--st-queued)}
+  .state.hot{color:var(--brass);background:var(--brass-soft);
+    box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--brass) 45%,transparent)}
   .chev{opacity:.55;flex:0 0 auto}
 
-  .ring{display:flex;align-items:center;gap:5px;flex:0 0 auto;padding-right:2px}
+  .ring{display:flex;align-items:center;gap:5px;flex:0 0 auto}
   .ring .pc{font:11px var(--mono);font-variant-numeric:tabular-nums}
   .send{width:28px;height:28px;border-radius:999px;display:grid;place-items:center;flex:0 0 auto;
     background:var(--foreground);color:var(--background)}
@@ -162,40 +150,10 @@
     border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-pop);padding:5px;z-index:40}
   .menu .hd{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);padding:6px 8px 4px}
   .menu .row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;font-size:13px;text-align:left;width:100%}
-  .menu .row:hover{background:var(--accent)}
-  .menu .row.sel{background:var(--accent)}
+  .menu .row:hover,.menu .row.sel{background:var(--accent)}
   .menu .row .d{font-size:11px;color:var(--faint);margin-left:auto;font-family:var(--mono)}
   .menu .sp{height:1px;background:var(--border);margin:4px 0}
   .menu p{margin:0;padding:4px 8px 6px;font-size:11px;line-height:1.45;color:var(--muted-foreground)}
-
-  /* faixa de status (frente irmã) */
-  /* ── figura solta: o menu que o controle de permissão abre ──
-     Uma coluna de leitura só: título e descrição começam no MESMO x, alinhados à
-     esquerda (menu se varre pela borda esquerda; centralizar faz o olho perder a
-     linha e deixa margem irregular dos dois lados). A coluna da direita é o
-     INDICADOR DE ESTADO, e a FORMA dele diz a semântica: ✓ = escolha exclusiva ·
-     interruptor = modificador on/off. Fundo é HOVER e só hover, nunca seleção. */
-  .fig{margin:22px 0 0;display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
-  .fig .cap{font-size:12px;color:var(--muted-foreground);max-width:420px;line-height:1.55}
-  .fig .cap h3{margin:0 0 6px;font:600 13px var(--sans);color:var(--foreground)}
-  .pmenu{width:268px;background:var(--popover);flex:0 0 auto;
-    border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-pop);padding:5px}
-  .pmenu .row{display:flex;align-items:flex-start;gap:10px;padding:7px 9px;border-radius:8px;
-    width:100%;text-align:left}
-  .pmenu .row:hover{background:var(--accent)}
-  .pmenu .tx{min-width:0;flex:1 1 auto;text-align:left}
-  .pmenu .tx b{display:flex;align-items:center;gap:5px;font:500 13px var(--sans);color:var(--foreground)}
-  .pmenu .tx i{display:block;font-style:normal;font-size:11px;color:var(--muted-foreground);
-    line-height:1.45;margin-top:2px}
-  .pmenu .row.dang .tx b{color:var(--st-queued)}
-  .pmenu .mk{width:14px;height:14px;flex:0 0 auto;margin-top:3px;color:var(--brass)}
-  .pmenu .mk.off{visibility:hidden}
-  .pmenu .sw{width:22px;height:13px;border-radius:999px;flex:0 0 auto;margin-top:3px;
-    background:var(--border-strong);position:relative}
-  .pmenu .sw::after{content:"";position:absolute;top:2px;left:2px;width:9px;height:9px;
-    border-radius:50%;background:var(--card)}
-  .pmenu .sep{height:1px;background:var(--border);margin:4px 0}
-  .pmenu .foot{padding:4px 9px 5px;font-size:11px;line-height:1.45;color:var(--muted-foreground);margin:0}
 
   .statusbar{display:flex;align-items:center;gap:12px;height:24px;padding:0 12px;background:var(--rail);
     border-top:1px solid var(--border);font:11px var(--mono);color:var(--muted-foreground);
@@ -203,6 +161,43 @@
   .statusbar .lb{color:color-mix(in srgb,var(--muted-foreground) 70%,transparent)}
   .statusbar .r{margin-left:auto;display:flex;align-items:center;gap:12px}
   .statusbar b{font-weight:500;color:var(--muted-foreground)}
+  .statusbar .hi{color:var(--brass)}
+
+  /* ── figura solta: o painel que o gesto abre ── */
+  .fig{margin:22px 0 0;display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+  .fig .cap{font-size:12px;color:var(--muted-foreground);max-width:400px;line-height:1.55}
+  .fig .cap h3{margin:0 0 6px;font:600 13px var(--sans);color:var(--foreground)}
+  /* Uma coluna de leitura só: título e descrição começam no MESMO x, alinhados à
+     esquerda (menu se varre pela borda esquerda; centralizar faz o olho perder a
+     linha e deixa margem irregular dos dois lados). A coluna da direita é o
+     INDICADOR DE ESTADO, e a FORMA dele diz a semântica: ✓ = escolha exclusiva ·
+     interruptor = modificador on/off. Fundo é HOVER e só hover, nunca seleção. */
+  .panel{width:286px;background:var(--popover);border:1px solid var(--border);border-radius:14px;
+    box-shadow:var(--shadow-pop);padding:5px;flex:0 0 auto}
+  .panel .sec{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
+    padding:8px 9px 5px}
+  .panel .row{display:flex;align-items:flex-start;gap:10px;padding:7px 9px;border-radius:8px;
+    width:100%;text-align:left}
+  .panel .row:hover{background:var(--accent)}
+  .panel .tx{min-width:0;flex:1 1 auto;text-align:left}
+  .panel .tx b{display:flex;align-items:center;gap:5px;font:500 13px var(--sans);color:var(--foreground)}
+  .panel .tx i{display:block;font-style:normal;font-size:11px;color:var(--muted-foreground);
+    line-height:1.45;margin-top:2px}
+  .panel .row.dang .tx b{color:var(--st-queued)}
+  .panel .mk{width:14px;height:14px;flex:0 0 auto;margin-top:3px;color:var(--brass)}
+  .panel .mk.off{visibility:hidden}
+  .panel .sw{width:22px;height:13px;border-radius:999px;flex:0 0 auto;margin-top:3px;
+    background:var(--border-strong);position:relative}
+  .panel .sw::after{content:"";position:absolute;top:2px;left:2px;width:9px;height:9px;
+    border-radius:50%;background:var(--card)}
+  .panel .sp{height:1px;background:var(--border);margin:5px 0}
+  .panel .pick{display:flex;align-items:center;gap:9px;padding:6px 9px;border-radius:8px;
+    font-size:13px;width:100%;text-align:left}
+  .panel .pick:hover{background:var(--accent)}
+  .panel .pick .k{color:var(--faint);font-size:12px;width:56px;flex:0 0 auto}
+  .panel .pick .v{color:var(--foreground);min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .panel .pick .c{margin-left:auto;opacity:.5;flex:0 0 auto}
+  .panel .foot{padding:5px 9px 6px;font-size:11px;line-height:1.45;color:var(--muted-foreground);margin:0}
 
   kbd{font:10px/1.6 var(--mono);border:1px solid var(--border-strong);border-bottom-width:2px;
     border-radius:4px;padding:0 4px;color:var(--muted-foreground);background:var(--background);
@@ -216,6 +211,12 @@
   .notes li{padding-left:30px;position:relative;line-height:1.55}
   .notes li .nt{position:absolute;left:0;top:2px;margin:0}
   .notes b{color:var(--foreground);font-weight:600}
+  table.med{border-collapse:collapse;font-size:12px;width:100%;max-width:840px;margin-top:6px}
+  table.med th,table.med td{text-align:left;padding:6px 12px 6px 0;border-bottom:1px solid var(--border);vertical-align:top}
+  table.med th{font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
+  table.med td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  table.med td b{color:var(--foreground)}
+  table.med tr.fica td:last-child{color:var(--foreground)}
 
   .st-repouso   [data-st]:not([data-st~="repouso"]),
   .st-digitando [data-st]:not([data-st~="digitando"]),
@@ -240,13 +241,20 @@
     <rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
   <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
     <path d="M10.3 3.9 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-hand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 11V6a1.7 1.7 0 0 0-3.4 0M14.6 10V4.2a1.7 1.7 0 0 0-3.4 0V10M11.2 10V5.4a1.7 1.7 0 0 0-3.4 0V13"/>
+    <path d="M7.8 13v-2a1.7 1.7 0 0 0-3.4 0v3.4c0 3.7 3 6.6 6.6 6.6h1.4c3.1 0 5.6-2.5 5.6-5.6V11"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m4 12.5 5.5 5.5L20 6"/></symbol>
   <symbol id="i-gauge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 3a9 9 0 0 1 9 9M12 3a9 9 0 0 0-9 9M14.1 9.9 18 6"/></symbol>
 </svg>
 
 <div class="mockbar">
   <span class="tag">MOCK</span>
-  <span class="dir">B · Progressivo</span>
+  <span class="dir">C · Colapso por frequência</span>
   <div class="seg" id="states">
     <button data-go="repouso" class="on">repouso</button>
     <button data-go="digitando">digitando</button>
@@ -257,19 +265,19 @@
   <div class="seg"><button id="theme">tema</button></div>
   <nav>
     <a href="composer-a.html">A</a>
-    <a class="on" href="composer-b.html">B</a>
-    <a href="composer-c.html">C</a>
+    <a href="composer-b.html">B</a>
+    <a class="on" href="composer-c.html">C</a>
   </nav>
 </div>
 
 <div class="stage">
-  <p class="thesis"><b>Tese:</b> <b>visibilidade não é editabilidade.</b> Nada some do composer, nunca.
-  O que muda é se aquilo é um <i>controle</i> ou um <i>letreiro</i>. Em repouso a linha é uma frase
-  cinza que você lê de canto de olho, sem caixa, sem chevron, sem convite. Quando o cursor entra no
-  campo (você está prestes a mandar alguma coisa) a mesma linha <b>acorda</b>: cada pedaço da frase
-  vira o seletor que sempre foi, e o esforço e o "plano antes" entram no fim. Mesma altura, mesmas
-  posições, zero pulo de layout. E há uma exceção declarada: <b>quando existe decisão pendente, o
-  repouso acorda sozinho</b>.</p>
+  <p class="thesis"><b>Tese:</b> a régua não é opinião, é o banco. Foram medidos 403 turnos, 181
+  mensagens e 19 conversas do uso real (a tabela está nas anotações). O que sobrevive no composer é
+  o que se toca em <b>quase todo turno</b>: escrever, anexar, ditar, enviar. Tudo que se escolhe uma
+  vez por conversa (agent, modelo, esforço) ou uma vez por projeto (permissão) sai da linha e passa
+  a viver atrás de <b>um gesto só</b> (<kbd>⌘</kbd><kbd>.</kbd> ou clique no letreiro de estado).
+  O anel de contexto desce pra faixa de status junto com o custo, e só volta ao composer quando
+  passa de 80%, que é quando ele deixa de ser leitura e vira decisão.</p>
 
   <div class="frame">
     <div class="winbar"><i></i><i></i><i></i><span>Frota</span></div>
@@ -322,84 +330,44 @@
             <div class="field" data-st="turno">Enfileirar próxima mensagem…</div>
             <div class="field on" data-st="erro">Tenta de novo, agora no Opus 5 normal<span class="caret"></span></div>
 
-            <!-- ── A LINHA, DORMINDO (repouso · liberado · turno) ── -->
-            <div class="bar" data-st="repouso liberado turno">
+            <!-- QUATRO ALVOS. E o letreiro de estado, que é o quinto só quando você quer. -->
+            <div class="bar">
               <button class="ic" title="Anexar arquivo"><svg width="16" height="16"><use href="#i-clip"/></svg></button>
               <button class="ic" title="Ditar"><svg width="16" height="16"><use href="#i-mic"/></svg></button>
 
-              <span class="readout" data-st="repouso">
-                <span class="nm">Pede antes de mudar</span>
-                <span class="sep">·</span>
-                <span class="nm">Claude Code · Opus 5 · xhigh</span><span class="nt">2</span>
-              </span>
-              <span class="readout" data-st="liberado">
-                <span class="amber"><svg width="12" height="12"><use href="#i-warn"/></svg>Muda sem pedir</span>
-                <span class="sep">·</span>
-                <span class="nm">Claude Code · Opus 5 · xhigh</span><span class="nt">5</span>
-              </span>
-              <span class="readout" data-st="turno">
-                <span class="nm">Pede antes de mudar</span>
-                <span class="sep">·</span>
+              <span class="gap"></span>
+
+              <button class="state" data-st="repouso digitando" title="Ajustes do próximo turno (⌘.)">
+                <span>Pede antes de mudar</span><span class="kb">⌘.</span><span class="nt">2</span></button>
+              <button class="state" data-st="turno" title="A permissão é fixa no spawn: a troca vale no próximo envio">
                 <svg width="12" height="12" style="opacity:.7"><use href="#i-lock"/></svg>
-                <span class="nm">Claude Code · Opus 5 · xhigh</span>
-              </span>
+                <span>Pede antes de mudar</span><span class="sub">→ muda sem pedir</span></button>
+              <button class="state warn" data-st="liberado" title="O agente executa e escreve sem pedir confirmação">
+                <svg width="13" height="13"><use href="#i-warn"/></svg>
+                <span>Muda sem pedir</span><span class="kb">⌘.</span><span class="nt">4</span></button>
 
-              <span class="gap"></span>
-
-              <span class="ring" data-st="repouso liberado turno" title="contexto: ~86,0k de 200k (43%)">
-                <svg width="17" height="17" viewBox="0 0 20 20" style="transform:rotate(-90deg)">
-                  <circle cx="10" cy="10" r="8" fill="none" stroke-width="2.5" stroke="var(--border)"/>
-                  <circle cx="10" cy="10" r="8" fill="none" stroke-width="2.5" stroke-linecap="round"
-                    stroke-dasharray="21.6 50.3" stroke="var(--muted-foreground)"/></svg>
-              </span>
-
-              <button class="send off" data-st="repouso liberado"><svg width="15" height="15"><use href="#i-up"/></svg></button>
-              <button class="send stop" data-st="turno" title="Interromper turno"><svg width="13" height="13"><use href="#i-stop"/></svg></button>
-            </div>
-
-            <!-- ── A LINHA, ACORDADA (digitando) ── -->
-            <div class="bar" data-st="digitando">
-              <button class="ic" title="Anexar arquivo"><svg width="16" height="16"><use href="#i-clip"/></svg></button>
-              <button class="ic" title="Ditar"><svg width="16" height="16"><use href="#i-mic"/></svg></button>
-              <button class="ctrl" title="O que o agente pode fazer sem perguntar">
-                <span class="nm">Pede antes de mudar</span><svg class="chev" width="13" height="13"><use href="#i-chev"/></svg></button>
-              <button class="ctrl"><span class="nm">Claude Code</span><svg class="chev" width="13" height="13"><use href="#i-chev"/></svg></button>
-              <button class="ctrl"><span class="nm">Opus 5</span><svg class="chev" width="13" height="13"><use href="#i-chev"/></svg></button>
-              <button class="ctrl"><span class="nm">xhigh</span><svg class="chev" width="13" height="13"><use href="#i-chev"/></svg></button>
-              <button class="ctrl tog" title="O agente propõe um plano e só executa depois da sua aprovação">
-                <span class="nm">Plano antes</span></button>
-              <span class="gap"></span>
-              <span class="ring" title="contexto: ~86,0k de 200k (43%)">
-                <svg width="17" height="17" viewBox="0 0 20 20" style="transform:rotate(-90deg)">
-                  <circle cx="10" cy="10" r="8" fill="none" stroke-width="2.5" stroke="var(--border)"/>
-                  <circle cx="10" cy="10" r="8" fill="none" stroke-width="2.5" stroke-linecap="round"
-                    stroke-dasharray="21.6 50.3" stroke="var(--muted-foreground)"/></svg>
-              </span>
-              <button class="ic" title="Outras formas de enviar"><svg width="15" height="15"><use href="#i-chev"/></svg></button>
-              <button class="send" title="Enviar (⏎)"><svg width="15" height="15"><use href="#i-up"/></svg></button>
-            </div>
-
-            <!-- ── A LINHA, ACORDADA SOZINHA (erro: existe decisão) ── -->
-            <div class="bar" data-st="erro">
-              <button class="ic"><svg width="16" height="16"><use href="#i-clip"/></svg></button>
-              <button class="ic"><svg width="16" height="16"><use href="#i-mic"/></svg></button>
-              <span class="readout"><span class="nm">Pede antes de mudar</span></span>
-              <span class="readout"><svg width="12" height="12" style="opacity:.7"><use href="#i-lock"/></svg><span class="nm">Claude Code</span></span>
-              <button class="ctrl hot" title="O turno anterior falhou, então dá para trocar o modelo">
-                <span class="nm">Opus 5</span><svg class="chev" width="13" height="13"><use href="#i-chev"/></svg></button>
-              <span class="gap"></span>
-              <span class="ring" title="contexto: ~172,4k de 200k (86%)">
+              <!-- ERRO: as duas coisas que viraram decisão sobem de volta pro composer -->
+              <span class="ring" data-st="erro" title="contexto: ~172,4k de 200k (86%)">
                 <span class="pc" style="color:var(--st-error)">contexto 86%</span>
                 <svg width="17" height="17" viewBox="0 0 20 20" style="transform:rotate(-90deg)">
                   <circle cx="10" cy="10" r="8" fill="none" stroke-width="2.5" stroke="var(--border)"/>
                   <circle cx="10" cy="10" r="8" fill="none" stroke-width="2.5" stroke-linecap="round"
                     stroke-dasharray="43.2 50.3" stroke="var(--st-error)"/></svg>
               </span>
-              <button class="send"><svg width="15" height="15"><use href="#i-up"/></svg></button>
+              <button class="state hot" data-st="erro" title="O turno anterior falhou, então dá para trocar o modelo">
+                <svg width="12" height="12"><use href="#i-lock"/></svg>
+                <span>Claude Code ·</span><span style="font-weight:500">Opus 5</span>
+                <svg class="chev" width="13" height="13"><use href="#i-chev"/></svg><span class="nt">6</span></button>
+
+              <button class="ic" data-st="repouso digitando liberado erro" title="Outras formas de enviar (especialista, disputa, missão)">
+                <svg width="15" height="15"><use href="#i-chev"/></svg></button>
+              <button class="send off" data-st="repouso liberado"><svg width="15" height="15"><use href="#i-up"/></svg></button>
+              <button class="send" data-st="digitando erro" title="Enviar (⏎)"><svg width="15" height="15"><use href="#i-up"/></svg></button>
+              <button class="send stop" data-st="turno" title="Interromper turno"><svg width="13" height="13"><use href="#i-stop"/></svg></button>
             </div>
 
-            <p class="note" data-st="turno">A permissão é fixa no spawn deste turno. Trocar agora vale a partir do próximo envio.<span class="nt">4</span></p>
-            <p class="note warnt" data-st="erro">O turno falhou por causa do modelo, então só ele acordou. O agent segue fixo: trocar de motor é handoff, com sessão nova.<span class="nt">6</span></p>
+            <p class="note" data-st="turno">A permissão é fixa no spawn deste turno. A troca vale a partir do próximo envio.<span class="nt">5</span></p>
+            <p class="note warnt" data-st="erro">O turno falhou por causa do modelo. Trocar e reenviar reusa a sessão; o agent segue fixo.<span class="nt">6</span></p>
 
             <div class="menu" data-st="erro">
               <div class="hd">Modelo · saída de emergência</div>
@@ -407,7 +375,7 @@
               <button class="row sel"><span>Opus 5 (1M)</span><span class="d">falhou</span></button>
               <button class="row"><span>Fable 5</span><span class="d">200k</span></button>
               <div class="sp"></div>
-              <p>Enviar com outro modelo reusa a sessão; o agent continua Claude Code.</p>
+              <p>Trocar de agent é handoff, com sessão nova, e mora no card do incidente.</p>
             </div>
 
           </div>
@@ -415,16 +383,20 @@
       </div>
     </div>
 
+    <!-- FAIXA DE STATUS: o anel desceu pra cá, ao lado do custo e da janela do plano -->
     <div class="statusbar">
       <span style="display:flex;align-items:center;gap:5px"><svg width="12" height="12" style="opacity:.8"><use href="#i-gauge"/></svg>Claude <b>34%</b></span>
+      <span data-st="repouso digitando turno liberado"><span class="lb">contexto</span> <b>43%</b></span>
+      <span data-st="erro"><span class="lb">contexto</span> <b style="color:var(--st-error)">86%</b></span>
       <span><span class="lb">sessão</span> <b>US$&nbsp;2,84</b></span>
       <span class="r"><span>local · 0.9.4</span></span>
     </div>
   </div>
 
-  <!-- ── o menu que o controle de permissão abre (o mesmo nas três direções) ── -->
+  <!-- ── o painel que o gesto abre ── -->
   <div class="fig">
-    <div class="pmenu">
+    <div class="panel">
+      <div class="sec">O próximo turno</div>
       <button class="row"><span class="tx"><b>Só lê</b>
         <i>Lê arquivos e relata. Não escreve nem executa.</i></span>
         <svg class="mk off" viewBox="0 0 24 24"><use href="#i-check"/></svg></button>
@@ -435,94 +407,115 @@
         <b><svg width="13" height="13"><use href="#i-warn"/></svg>Muda sem pedir</b>
         <i>Escreve e executa direto. A tela inteira ganha moldura âmbar.</i></span>
         <svg class="mk off" viewBox="0 0 24 24"><use href="#i-check"/></svg></button>
-      <div class="sep"></div>
+      <div class="sp"></div>
       <button class="row"><span class="tx"><b>Plano antes de executar</b>
         <i>Só no próximo envio: ele propõe, você aprova, aí ele age.</i></span>
         <span class="sw"></span></button>
-      <div class="sep"></div>
       <p class="foot">Os três modos valem para o projeto
-        <b style="color:var(--foreground);font-weight:500">frota</b> inteiro, em todas as conversas dele.</p>
+        <b style="color:var(--foreground);font-weight:500">frota</b> inteiro.</p>
+      <div class="sp"></div>
+      <div class="sec">Quem roda</div>
+      <button class="pick"><span class="k">agent</span><span class="v">Claude Code</span><svg class="c" width="13" height="13"><use href="#i-chev"/></svg></button>
+      <button class="pick"><span class="k">modelo</span><span class="v">Opus 5</span><svg class="c" width="13" height="13"><use href="#i-chev"/></svg></button>
+      <button class="pick"><span class="k">esforço</span><span class="v">xhigh</span><svg class="c" width="13" height="13"><use href="#i-chev"/></svg></button>
+      <p class="foot">Trava no 1º envio desta conversa. Depois disso o painel mostra, não deixa mudar.</p>
     </div>
     <div class="cap">
-      <h3>O menu do controle de permissão<span class="nt">8</span></h3>
-      <p>Em B ele abre a partir do controle acordado (com o campo em foco) ou do letreiro dormindo,
-      que também clica. O conteúdo é o mesmo das três direções: uma coluna de leitura só, título e
-      descrição no mesmo x, e o indicador de estado na direita com a <b>forma dizendo a
-      semântica</b>. ✓ é escolha exclusiva (um dos três modos); o interruptor é o modificador, que
-      liga junto com qualquer modo. Fundo é hover, e só hover, então "onde está meu ponteiro" e
-      "qual está valendo" nunca disputam o mesmo pixel.</p>
-      <p>As três opções ganham uma linha de efeito cada; o "Plano antes de executar" desce pra baixo
-      do divisor porque é modificador do próximo turno, não um quarto modo; e o rodapé diz o escopo
-      real: <b>a permissão é do projeto</b>, não da conversa. Isso hoje não está escrito em lugar
-      nenhum do composer, e as quatro abas sugerem o contrário.</p>
+      <h3>O gesto único<span class="nt">3</span></h3>
+      <p><kbd>⌘</kbd><kbd>.</kbd> (ou clique no letreiro) abre este painel sobre o composer. Ele
+      junta os dois assuntos que hoje ocupam duas linhas e sete alvos, com a hierarquia explícita: em
+      cima o que muda por turno e por projeto, embaixo o que trava no 1º envio.</p>
+      <p>O painel é a única superfície nova, e substitui: as 4 abas, o cadeado, a seta de expandir, o
+      seletor de preset, o de agent, o de modelo e o de esforço. Sete controles viram um gesto.</p>
+      <p>Numa conversa já travada, a seção de baixo vira leitura pura com o cadeado, e a de cima
+      continua ativa (a permissão nunca trava).</p>
+      <p><b>A gramática da lista:</b> título e descrição começam no mesmo x, alinhados à esquerda,
+      porque menu se varre pela borda esquerda. O indicador fica na direita e a <b>forma</b> dele diz
+      a semântica: ✓ é escolha exclusiva (um dos três modos), o interruptor é o modificador, que
+      liga junto com qualquer modo. Fundo é hover, e só hover: "onde está meu ponteiro" e "qual está
+      valendo" nunca disputam o mesmo pixel.</p>
     </div>
   </div>
 
   <div class="notes">
+    <h2>A medição (banco real, 14/08/2026)</h2>
+    <p style="font-size:12px;margin:0 0 2px">Origem: <code>mycockpit.db</code> do autor, tabelas
+    <code>conversations</code>, <code>turn_costs</code>, <code>projects</code>, <code>agent_presets</code>
+    e os itens de conversa em JSON. É <b>um usuário</b>, e o README diz o que isso limita.</p>
+    <table class="med">
+      <tr><th>Controle</th><th>O que dá pra medir</th><th>Toques por turno</th><th>Veredito</th></tr>
+      <tr class="fica"><td><b>enviar / parar</b></td><td class="n">403 turnos</td><td class="n">1,00</td><td><b>fica</b></td></tr>
+      <tr class="fica"><td><b>campo de texto</b></td><td class="n">181 mensagens</td><td class="n">1,00</td><td><b>fica</b></td></tr>
+      <tr class="fica"><td><b>anexar</b></td><td class="n">32 de 181 mensagens</td><td class="n">0,18</td><td><b>fica</b></td></tr>
+      <tr><td>agent</td><td class="n">33 conversas com custo</td><td class="n">≤ 0,08</td><td>colapsa</td></tr>
+      <tr><td>modelo</td><td class="n">10 de 19 conversas ≠ padrão</td><td class="n">≤ 0,08</td><td>colapsa</td></tr>
+      <tr><td>esforço</td><td class="n">10 de 19 conversas ≠ padrão</td><td class="n">≤ 0,08</td><td>colapsa</td></tr>
+      <tr><td>permissão</td><td class="n">5 de 5 projetos no MESMO modo</td><td class="n">~0</td><td>colapsa (letreiro fica)</td></tr>
+      <tr><td>preset / persona</td><td class="n">0 cadastrados, 0 usados</td><td class="n">0,00</td><td>sai do composer</td></tr>
+      <tr><td><code>/</code> comandos (a dica)</td><td class="n">1 de 181 mensagens</td><td class="n">0,006</td><td>sai (o gesto fica)</td></tr>
+      <tr><td>microfone</td><td class="n">sem telemetria</td><td class="n">?</td><td>fica, por julgamento</td></tr>
+      <tr><td>sugestões</td><td class="n">sem telemetria</td><td class="n">?</td><td>só no fio vazio</td></tr>
+    </table>
+
     <h2>Anotações</h2>
     <ol>
-      <li><span class="nt">1</span> <b>Uma linha, dois trajes.</b> A <code>min-height</code> da faixa é
-        a mesma dormindo e acordada (42px), e as posições não se movem: anexar e ditar ficam na
-        esquerda nos dois trajes, o anel e o enviar na direita nos dois. O que troca é o miolo. Como
-        a revelação é opacidade e traje, não altura, o fio acima <b>não pula</b> quando você clica no
-        campo, que é o defeito clássico dessa família de solução.</li>
-      <li><span class="nt">2</span> <b>Dormindo, a frase é a informação.</b> "Pede antes de mudar ·
-        Claude Code · Opus 5 · xhigh" se lê inteira num movimento de olho, e não pede nada: sem
-        caixa, sem chevron, cinza <code>--faint</code>. É o mesmo texto que o chip de A mostra, mas
-        despido do convite a clicar, porque em repouso a chance de você querer mexer ali é baixa (a
-        medição está no README).</li>
-      <li><span class="nt">3</span> <b>Acordada, os seletores voltam a ser QUATRO.</b> Aqui está a
-        diferença de fundo pra direção A: quando você resolve mexer, colapsar agent/modelo/esforço
-        num menu só atrapalha, porque quem abre normalmente quer comparar dois eixos ("Opus com
-        xhigh ou Fable com high?"). O colapso serve ao repouso, não ao trabalho. Então o repouso
-        colapsa muito e o foco expande tudo.</li>
-      <li><span class="nt">4</span> <b>Rodando, nada acorda.</b> A permissão é fixa no spawn e o
-        agent/modelo estão travados desde o 1º envio: mostrar quatro seletores clicáveis ali seria a
-        UI oferecendo uma escolha que o despacho ignora. O cadeado aparece na frase e a nota de 11px
-        diz quando a troca passa a valer.</li>
-      <li><span class="nt">5</span> <b>O âmbar sobrevive ao sono.</b> Dormir tira a caixa e o
-        chevron, nunca a cor: em "Muda sem pedir" a frase fica âmbar com o triângulo, e a moldura do
-        clima está acesa em volta do conteúdo. Estado de risco não é um controle que descansa.</li>
-      <li><span class="nt">6</span> <b>A exceção que dá liga a tudo: decisão pendente acorda o
-        repouso.</b> Com o último turno falhado, o modelo (e só ele) já está acordado, brass, com o
-        menu ao alcance, mesmo sem o cursor no campo. É a mesma doutrina do §5 camada 2 do
-        STYLEGUIDE: o que quebrou não se esconde. Sem essa exceção, a saída de emergência exigiria
-        descobrir que existe um estado de foco.</li>
-      <li><span class="nt">7</span> <b>Teclado é caminho de primeira classe.</b> Como o traje
-        acordado depende de foco no composer, ele é exatamente o estado em que você já está quando
-        usa o teclado. <kbd>Tab</kbd> a partir do campo entra nos controles na ordem em que eles
-        aparecem; nada fica atrás de hover, que é o modo mais fácil de tornar um controle
-        inalcançável.</li>
-      <li><span class="nt">8</span> <b>O menu é o mesmo das três direções.</b> O que muda entre A, B
-        e C é COMO se chega nele (chip · controle acordado · letreiro), nunca o que ele oferece: a
-        honestidade sobre efeito e escopo é do menu, e ela não depende de qual direção vencer.</li>
+      <li><span class="nt">1</span> <b>Quatro alvos permanentes.</b> Anexar, ditar, outras formas de
+        enviar, enviar. Mais o letreiro de estado, que é leitura no repouso e vira porta quando você
+        aponta pra ele. Eram 13.</li>
+      <li><span class="nt">2</span> <b>O letreiro diz o estado E é o gesto.</b> Um chip cinza que não
+        clica seria uma armadilha (todo mundo vai clicar), então ele clica, e o atalho vem desenhado
+        do lado pra ninguém precisar descobrir. Ele nunca trunca: é a peça que carrega a segurança
+        e, sob pressão de largura, quem cede é qualquer outra coisa.</li>
+      <li><span class="nt">3</span> <b>Sete controles viram um gesto.</b> Este é o preço e o prêmio
+        da direção: mexer em permissão ou identidade custa <b>um clique a mais que hoje</b>. A
+        medição diz que isso acontece no máximo 8% dos turnos, e que a permissão está parada há
+        semanas. Se a medição estiver errada, esta é a direção que erra mais caro.</li>
+      <li><span class="nt">4</span> <b>O clima é o que segura a barra.</b> Colapsar a permissão a um
+        letreiro só é aceitável porque o modo perigoso agora acende a tela inteira
+        (<code>lib/climate.ts</code>, commit <code>4ba7f9d</code>). Sem o clima, esta direção seria
+        irresponsável: um app que executa comando na sua máquina não pode esconder que está
+        autorizado a fazer isso.</li>
+      <li><span class="nt">5</span> <b>Rodando, o letreiro carrega a mudança pendente</b>
+        (<code>Pede antes de mudar → muda sem pedir</code>) e a nota de 11px explica por quê. O
+        cadeado entra no mesmo letreiro: rodando, ele mostra e não deixa mexer.</li>
+      <li><span class="nt">6</span> <b>Decisão sobe de volta pro composer.</b> Duas coisas quebram o
+        colapso, e só elas: o modelo quando o turno falhou (<code>lib/turnOutcome.ts</code>) e o
+        contexto quando passa de 80% (<code>meterIsLoud</code>). As duas têm a mesma justificativa:
+        deixaram de ser leitura e viraram uma escolha que precisa acontecer agora. Fora desses dois
+        casos, o composer não cresce.</li>
+      <li><span class="nt">7</span> <b>O anel de contexto desce, o custo já desceu.</b> Na faixa de
+        status ele fica ao lado da janela do plano e do custo da sessão, que é a companhia certa: os
+        três são números que você consulta, não controles. A entrada custa uma linha em
+        <code>STATUS_BAR_KINDS</code> (a lista é fechada de propósito) e é a decisão mais discutível
+        das três direções, porque o contexto fala do PRÓXIMO turno, não do ambiente.</li>
+      <li><span class="nt">8</span> <b>O preset sai do composer e vira Especialista.</b> Zero
+        cadastrados, zero usados, e o seletor já não renderiza hoje (guarda de lista vazia). Manter
+        um slot reservado pra um controle que nunca apareceu é desenhar pra um usuário que não
+        existe.</li>
     </ol>
 
     <h2>O que esta direção ganha</h2>
     <ol>
-      <li><span class="nt">+</span> <b>Zero perda de informação.</b> Nenhum estado fica escondido em
-        momento nenhum: só muda o peso visual. É a única das três que não paga nada em consciência
-        situacional.</li>
-      <li><span class="nt">+</span> <b>Nenhum clique a mais.</b> Trocar de modelo continua sendo um
-        clique, porque quando você vai clicar o controle já está acordado (você tocou no campo).</li>
-      <li><span class="nt">+</span> <b>O repouso fica calmo sem apostar tudo no clima.</b> Se o clima
-        ambiente for revisto amanhã, esta direção continua de pé: o modo nunca sai da tela.</li>
+      <li><span class="nt">+</span> <b>É a única que fica mais enxuta que o zcode.</b> Quatro alvos
+        contra os seis deles, com o letreiro dizendo mais do que o "Ask before changes" diz.</li>
+      <li><span class="nt">+</span> <b>Uma superfície pra ajustar, e uma só.</b> Hoje agent e modelo
+        moram no composer, permissão mora no composer E no painel de contexto, e preset mora nos
+        dois. O painel único acaba com a divergência.</li>
+      <li><span class="nt">+</span> <b>A largura para de ser problema.</b> A linha é imune a janela
+        estreita e a sidebar aberta, porque não tem texto competindo com texto.</li>
     </ol>
 
     <h2>O que esta direção paga</h2>
     <ol>
-      <li><span class="nt">−</span> <b>Dois trajes é mais código e mais teste que um.</b> São dois
-        conjuntos de nós pra mesma faixa, com regra de qual vale e quando, mais a exceção da decisão
-        pendente. Na prática é uma máquina de estados pequena, mas é uma máquina de estados nova
-        (ver custo no README).</li>
-      <li><span class="nt">−</span> <b>Troca de traje é movimento perto do texto.</b> Aparecer caixa
-        em quatro controles no exato instante em que você vai digitar é a coisa mais fácil de achar
-        irritante nesta proposta, e não dá pra saber sem usar. A mitigação (mesma altura, mesmas
-        posições, transição de 120ms) reduz, não elimina.</li>
-      <li><span class="nt">−</span> <b>A linha acordada continua comprida.</b> Quatro seletores mais
-        o "Plano antes" ocupam quase a largura toda; em janela estreita com sidebar de contexto
-        aberta, o esforço e o "Plano antes" precisam quebrar pra uma segunda fileira, e aí a
-        promessa de "uma linha" só vale no repouso.</li>
+      <li><span class="nt">−</span> <b>A medição é de um usuário só.</b> Um usuário que troca de
+        modelo a cada turno vive uma UI pior. A defesa honesta é que a mudança é reversível e
+        barata: se a telemetria (ou uma segunda pessoa) desmentir, o controle volta pra linha.</li>
+      <li><span class="nt">−</span> <b>Perde-se a leitura periférica do modo.</b> Ler "Pede antes de
+        mudar" exige ler; o segmented de três posições você lia pela posição. Nos modos não
+        perigosos ninguém avisa nada.</li>
+      <li><span class="nt">−</span> <b>Atalho novo pra manter.</b> <kbd>⌘</kbd><kbd>.</kbd> precisa
+        não colidir com nada e precisa existir de verdade, senão a única porta é o clique, e a
+        promessa do "um gesto" fica pela metade.</li>
     </ol>
   </div>
 </div>

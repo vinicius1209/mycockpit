@@ -107,7 +107,7 @@
   .st-digitando .card{border-color:color-mix(in srgb,var(--brass) 70%,transparent);
     box-shadow:0 0 0 3px var(--brass-soft),var(--shadow-pop)}
 
-  /* linha 1 — o texto */
+  /* linha 1 · o texto */
   .field{padding:13px 16px 4px;font-size:14px;line-height:1.6;min-height:52px;color:var(--faint)}
   .field.on{color:var(--foreground)}
   .caret{display:inline-block;width:1.5px;height:16px;background:var(--brass);
@@ -115,7 +115,7 @@
   @keyframes blink{50%{opacity:0}}
   @media (prefers-reduced-motion:reduce){.caret{animation:none}}
 
-  /* linha 2 — TODOS os controles */
+  /* linha 2 · TODOS os controles */
   .bar{display:flex;align-items:center;gap:5px;padding:5px 9px 9px}
   .ic{width:28px;height:28px;border-radius:999px;display:grid;place-items:center;
     color:var(--muted-foreground);flex:0 0 auto}
@@ -140,7 +140,7 @@
   .send.off{background:var(--secondary);color:var(--faint);cursor:default}
   .send.stop{background:var(--st-error);color:#fff}
 
-  /* linha viva (dona do agora) — só existe rodando, ACIMA do campo */
+  /* linha viva (dona do agora) · só existe rodando, ACIMA do campo */
   .live{display:flex;align-items:center;gap:9px;padding:8px 14px;border-bottom:1px solid var(--border);
     font-size:13px;color:var(--muted-foreground);min-width:0}
   .live .t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -159,7 +159,7 @@
     border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-pop);padding:5px;z-index:40}
   .menu .hd{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
     padding:6px 8px 4px}
-  .menu .row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;font-size:13px}
+  .menu .row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;font-size:13px;text-align:left;width:100%}
   .menu .row:hover{background:var(--accent)}
   .menu .row.sel{background:var(--accent)}
   .menu .row .d{font-size:11px;color:var(--faint);margin-left:auto;font-family:var(--mono)}
@@ -167,23 +167,36 @@
   .menu p{margin:0;padding:4px 8px 6px;font-size:11px;line-height:1.45;color:var(--muted-foreground)}
 
   /* menu de permissão aberto (cena de repouso, pra mostrar o conteúdo) */
-  .pmenu{position:absolute;bottom:calc(100% + 8px);left:78px;width:278px;background:var(--popover);
-    border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-pop);padding:5px;z-index:40}
-  .pmenu .row{display:flex;align-items:flex-start;gap:9px;padding:7px 8px;border-radius:7px}
+  /* ── figura solta: o menu que o controle de permissão abre ── */
+  .fig{margin:22px 0 0;display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+  .fig .cap{font-size:12px;color:var(--muted-foreground);max-width:420px;line-height:1.55}
+  .fig .cap h3{margin:0 0 6px;font:600 13px var(--sans);color:var(--foreground)}
+  .fig .cap p{margin:0 0 8px}
+
+  /* MENU DE PERMISSÃO · uma coluna de leitura só.
+     Texto (título + descrição) começa todo no MESMO x, alinhado à esquerda; a
+     coluna da direita é o INDICADOR DE ESTADO, e a FORMA dele diz a semântica:
+     ✓ = escolha exclusiva (um dos três modos) · interruptor = modificador on/off.
+     Fundo é HOVER e só hover (ponteiro está aqui), nunca seleção: as duas coisas
+     precisavam de lugares diferentes pra não se confundirem. */
+  .pmenu{width:268px;background:var(--popover);flex:0 0 auto;
+    border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-pop);padding:5px}
+  .pmenu .row{display:flex;align-items:flex-start;gap:10px;padding:7px 9px;border-radius:8px;
+    width:100%;text-align:left}
   .pmenu .row:hover{background:var(--accent)}
-  .pmenu .row .tx{min-width:0}
-  .pmenu .row .tx b{display:block;font:500 13px var(--sans)}
-  .pmenu .row .tx span{display:block;font-size:11px;color:var(--muted-foreground);line-height:1.4;margin-top:1px}
-  .pmenu .row .mk{width:14px;flex:0 0 auto;margin-top:2px;color:var(--brass)}
-  .pmenu .row.dang b{color:var(--st-queued)}
+  .pmenu .tx{min-width:0;flex:1 1 auto;text-align:left}
+  .pmenu .tx b{display:flex;align-items:center;gap:5px;font:500 13px var(--sans);color:var(--foreground)}
+  .pmenu .tx i{display:block;font-style:normal;font-size:11px;color:var(--muted-foreground);
+    line-height:1.45;margin-top:2px}
+  .pmenu .row.dang .tx b{color:var(--st-queued)}
+  .pmenu .mk{width:14px;height:14px;flex:0 0 auto;margin-top:3px;color:var(--brass)}
+  .pmenu .mk.off{visibility:hidden}
+  .pmenu .sw{width:22px;height:13px;border-radius:999px;flex:0 0 auto;margin-top:3px;
+    background:var(--border-strong);position:relative}
+  .pmenu .sw::after{content:"";position:absolute;top:2px;left:2px;width:9px;height:9px;
+    border-radius:50%;background:var(--card)}
   .pmenu .sep{height:1px;background:var(--border);margin:4px 0}
-  .pmenu .tog{display:flex;align-items:flex-start;gap:9px;padding:7px 8px;border-radius:7px}
-  .pmenu .tog:hover{background:var(--accent)}
-  .pmenu .tog .box{width:13px;height:13px;border-radius:4px;border:1px solid var(--border-strong);
-    flex:0 0 auto;margin-top:3px}
-  .pmenu .tog .tx b{display:block;font:500 13px var(--sans)}
-  .pmenu .tog .tx span{display:block;font-size:11px;color:var(--muted-foreground);line-height:1.4;margin-top:1px}
-  .pmenu .foot{padding:5px 8px 4px;font-size:11px;line-height:1.45;color:var(--muted-foreground)}
+  .pmenu .foot{padding:4px 9px 5px;font-size:11px;line-height:1.45;color:var(--muted-foreground);margin:0}
 
   /* ═══════════ FAIXA DE STATUS (a frente irmã, já na árvore) ═══════════ */
   .statusbar{display:flex;align-items:center;gap:12px;height:24px;padding:0 12px;background:var(--rail);
@@ -194,6 +207,9 @@
   .statusbar b{font-weight:500;color:var(--muted-foreground)}
 
   /* anotações */
+  kbd{font:10px/1.6 var(--mono);border:1px solid var(--border-strong);border-bottom-width:2px;
+    border-radius:4px;padding:0 4px;color:var(--muted-foreground);background:var(--background);
+    display:inline-block;min-width:15px;text-align:center;vertical-align:1px}
   .nt{display:inline-block;font:600 10px/1.35 var(--mono);color:var(--brass);
     background:var(--brass-soft);border-radius:4px;padding:0 3px;margin-left:5px;vertical-align:super}
   .notes{margin-top:26px;padding:0 6px;font-size:13px;color:var(--muted-foreground)}
@@ -382,24 +398,6 @@
             <p class="note" data-st="turno">A permissão é fixa no spawn deste turno. A troca vale a partir do próximo envio.<span class="nt">4</span></p>
             <p class="note warnt" data-st="erro">O turno falhou por causa do modelo, então dá para trocar o modelo e enviar de novo. O agent segue fixo.<span class="nt">7</span></p>
 
-            <!-- menu de permissão aberto (só no repouso, pra mostrar o conteúdo) -->
-            <div class="pmenu" data-st="repouso">
-              <button class="pmenu-row row"><svg class="mk" width="14" height="14" style="opacity:0"><use href="#i-check"/></svg>
-                <svg width="15" height="15" style="margin-top:2px;flex:0 0 auto;color:var(--muted-foreground)"><use href="#i-eye"/></svg>
-                <span class="tx"><b>Só lê</b><span>Lê arquivos e relata. Não escreve nem executa.</span></span></button>
-              <button class="row sel"><svg class="mk" width="14" height="14"><use href="#i-check"/></svg>
-                <svg width="15" height="15" style="margin-top:2px;flex:0 0 auto;color:var(--muted-foreground)"><use href="#i-hand"/></svg>
-                <span class="tx"><b>Pede antes de mudar</b><span>Para e pergunta antes de escrever arquivo ou rodar comando.</span></span></button>
-              <button class="row dang"><svg class="mk" width="14" height="14" style="opacity:0"><use href="#i-check"/></svg>
-                <svg width="15" height="15" style="margin-top:2px;flex:0 0 auto;color:var(--st-queued)"><use href="#i-warn"/></svg>
-                <span class="tx"><b>Muda sem pedir</b><span>Escreve e executa direto. A tela inteira ganha moldura âmbar.</span></span></button>
-              <div class="sep"></div>
-              <button class="tog"><span class="box"></span>
-                <span class="tx"><b>Plano antes de executar</b><span>Vale só no próximo envio: o agente propõe, você aprova, aí ele age.</span></span></button>
-              <div class="sep"></div>
-              <p class="foot">Vale para o projeto <b style="color:var(--foreground);font-weight:500">frota</b> inteiro, em todas as conversas dele.<span class="nt">3</span></p>
-            </div>
-
             <!-- menu de modelo aberto (cena de erro: a saída de emergência) -->
             <div class="menu" data-st="erro">
               <div class="hd">Modelo · saída de emergência</div>
@@ -423,6 +421,43 @@
     </div>
   </div>
 
+  <!-- ── o menu que o chip de permissão abre ── -->
+  <div class="fig">
+    <div class="pmenu">
+      <button class="row"><span class="tx"><b>Só lê</b>
+        <i>Lê arquivos e relata. Não escreve nem executa.</i></span>
+        <svg class="mk off" viewBox="0 0 24 24"><use href="#i-check"/></svg></button>
+      <button class="row"><span class="tx"><b>Pede antes de mudar</b>
+        <i>Pergunta antes de escrever arquivo ou rodar comando.</i></span>
+        <svg class="mk" viewBox="0 0 24 24"><use href="#i-check"/></svg></button>
+      <button class="row dang"><span class="tx">
+        <b><svg width="13" height="13"><use href="#i-warn"/></svg>Muda sem pedir</b>
+        <i>Escreve e executa direto. A tela inteira ganha moldura âmbar.</i></span>
+        <svg class="mk off" viewBox="0 0 24 24"><use href="#i-check"/></svg></button>
+      <div class="sep"></div>
+      <button class="row"><span class="tx"><b>Plano antes de executar</b>
+        <i>Só no próximo envio: ele propõe, você aprova, aí ele age.</i></span>
+        <span class="sw"></span></button>
+      <div class="sep"></div>
+      <p class="foot">Os três modos valem para o projeto
+        <b style="color:var(--foreground);font-weight:500">frota</b> inteiro, em todas as conversas dele.</p>
+    </div>
+    <div class="cap">
+      <h3>O menu do controle de permissão<span class="nt">3</span></h3>
+      <p>Uma coluna de leitura só: título e descrição começam no mesmo x, e o indicador de estado
+      fica na direita, com a <b>forma dizendo a semântica</b>. ✓ é escolha exclusiva (um dos três
+      modos); o interruptor é o modificador, que liga junto com qualquer modo. O fundo é hover, e só
+      hover, então "onde está meu ponteiro" e "qual está valendo" nunca disputam o mesmo pixel.</p>
+      <p>É aqui que a honestidade cabe. As três opções ganham uma linha de efeito cada; o "Plano
+      antes de executar" desce pra baixo do divisor porque é modificador do próximo turno, não um
+      quarto modo (tratá-lo como aba irmã era parte da confusão); e o rodapé diz o escopo real:
+      <b>a permissão é do projeto</b>, não da conversa. Isso hoje não está escrito em lugar nenhum
+      do composer, e as quatro abas sugerem o contrário.</p>
+      <p>A nota honesta por agent (o Antigravity ignora o modo "Pede") entra como linha do menu, no
+      lugar de ocupar texto permanente sob o composer, que é onde ela mora hoje.</p>
+    </div>
+  </div>
+
   <div class="notes">
     <h2>Anotações</h2>
     <ol>
@@ -433,7 +468,8 @@
         olho entra na linha.</li>
       <li><span class="nt">2</span> <b>A dica <code>/ comandos</code> saiu, e é a remoção mais barata
         de todas.</b> Nas 181 mensagens que o banco guarda, <b>1</b> começa com <code>/</code>
-        (0,6%). Um <kbd>kbd</kbd> permanente para 0,6% dos envios é o oposto de hierarquia. O gesto
+        (0,6%). Uma tecla desenhada em permanência na barra para 0,6% dos envios é o oposto de
+        hierarquia. O gesto
         continua idêntico: digitar <code>/</code> no campo abre o popover, e o placeholder já diz
         isso quando o projeto tem comandos.</li>
       <li><span class="nt">3</span> <b>O menu de permissão é onde a honestidade cabe.</b> As três
