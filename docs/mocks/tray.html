@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tray · hoje × proposto</title>
+<style>
+/* ───────────────────────────────────────────────────────────────────────────
+   TOKENS do app (index.css, tema escuro). Nada muda aqui: a proposta da tray
+   não cria token nenhum, só para de usar os errados.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root{
+  --background:#0a0b0d;
+  --popover:#191c20;
+  --card:#141619;
+  --foreground:#e7e8ea;
+  --muted-foreground:#9aa0a7;
+  --faint:#687078;
+  --border:rgba(255,255,255,.08);
+  --border-strong:rgba(255,255,255,.13);
+  --accent:#1e2126;
+  --sel:rgba(255,255,255,.065);
+
+  --brass:#e4a862;
+  --brass-soft:rgba(228,168,98,.14);
+  --brass-fg:#1a1306;
+  --st-warning:#d99138;
+  --st-warning-fg:#1a1306;   /* nasceu na Fase 6 (ADR-043), usado aqui no selo */
+  --st-running:#5bb8e8;
+  --st-error:#f2766b;
+  --st-idle:#687078;
+
+  --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+  --shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);
+
+  --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:#07080a;color:var(--foreground);
+  font-family:var(--ui);font-size:14px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+  padding:48px 32px 120px;
+}
+.page{max-width:1180px;margin:0 auto}
+
+h1{font-size:30px;font-weight:600;letter-spacing:-.02em;line-height:1.15}
+h2{font-size:20px;font-weight:600;letter-spacing:-.015em;margin-bottom:8px}
+h3{font-size:14px;font-weight:600;margin-bottom:6px}
+.kicker{font:500 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.lede{font-size:14px;color:var(--muted-foreground);max-width:80ch}
+p+p{margin-top:10px}
+section{margin-top:64px}
+.rule{height:1px;background:var(--border);margin:40px 0}
+code{font-family:var(--mono);font-size:12px;background:rgba(255,255,255,.05);
+     padding:1px 5px;border-radius:4px;color:#cdd2d8}
+strong{font-weight:600;color:var(--foreground)}
+ul{margin:10px 0 0 18px;color:var(--muted-foreground);font-size:13px}
+li{margin-bottom:7px}
+li strong{color:var(--foreground)}
+
+/* ── o palco: o popover flutua sobre um "desktop", como na vida real ─────── */
+.stage{
+  background:
+    radial-gradient(120% 90% at 20% 0%, #1d2733 0%, #0e1116 55%, #090b0e 100%);
+  border-radius:14px;padding:28px 24px 24px;
+  border:1px solid var(--border);
+}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}
+.col>.kicker{display:block;margin-bottom:4px}
+.col>.note{font-size:12px;color:var(--faint);margin-bottom:14px;min-height:32px}
+.measure{font:500 11px/1 var(--mono);color:var(--faint);margin-top:10px;letter-spacing:.04em}
+.measure b{color:var(--st-warning);font-weight:500}
+
+/* ── o popover ──────────────────────────────────────────────────────────── */
+.tray{
+  width:360px;border-radius:13px;border:1px solid var(--border-strong);
+  background:color-mix(in srgb, var(--popover) 78%, transparent);
+  backdrop-filter:blur(30px) saturate(1.4);
+  box-shadow:var(--shadow-pop);
+  overflow:hidden;display:flex;flex-direction:column;
+  font-size:13px;
+}
+.tray.fixed{height:430px}     /* hoje: inner_size(360, 430), resizable(false) */
+.tray-hd{padding:16px 16px 14px;position:relative;overflow:hidden}
+.tray.hoje .tray-hd{border-bottom:1px solid var(--border)}
+.tray-ft{display:flex;align-items:center;gap:6px;padding:8px;
+         border-top:1px solid var(--border)}
+.tray.hoje .tray-ft{background:color-mix(in srgb, var(--card) 35%, transparent)}
+.body{flex:1;min-height:0;overflow:hidden;padding:8px 6px}
+
+/* a assinatura decorativa de hoje: arco + risco azuis, sempre acesos */
+.horizon{position:absolute;inset:0;pointer-events:none;opacity:.55;overflow:hidden}
+.horizon::before{content:"";position:absolute;width:170px;height:170px;
+  right:-42px;top:-92px;border-radius:999px;
+  border:1px solid color-mix(in srgb, var(--st-running) 18%, transparent)}
+.horizon span{position:absolute;width:105px;right:-3px;top:40px;height:1px;
+  background:linear-gradient(90deg,transparent,var(--st-running),transparent);
+  transform:rotate(-4deg);opacity:.28}
+
+.label-mono{font:500 11px/1 var(--mono);letter-spacing:.12em;
+            text-transform:uppercase;color:var(--faint)}
+.hl{font-size:14px;font-weight:600;letter-spacing:-.01em}
+.dot{width:6px;height:6px;border-radius:999px;flex:0 0 auto}
+.dot.run{background:var(--st-running)}
+.dot.warn{background:var(--st-warning)}
+.dot.idle{background:var(--st-idle)}
+.row{display:flex;align-items:center;gap:8px}
+.mut{color:var(--muted-foreground)}
+.faint{color:var(--faint)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.t11{font-size:11px}
+.t12{font-size:12px}
+.t13{font-size:13px}
+.t14{font-size:14px}
+.trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.grow{flex:1;min-width:0}
+.btn{border:1px solid var(--border);background:color-mix(in srgb,var(--card) 50%,transparent);
+     border-radius:6px;padding:5px 10px;font-size:12px;font-weight:500;color:var(--foreground)}
+.btn.prim{background:#ecedee;color:#0a0b0d;border-color:transparent;font-weight:600;
+          display:flex;align-items:center;gap:6px;padding:0 12px;height:32px;border-radius:6px}
+.icobtn{width:32px;height:32px;border-radius:6px;display:grid;place-items:center;color:var(--muted-foreground)}
+
+/* o círculo de "rodando", o mesmo glifo do app (.conv-spin) */
+.spin{width:11px;height:11px;border-radius:999px;flex:0 0 auto;
+  border:1.5px solid color-mix(in srgb,var(--st-running) 25%,transparent);
+  border-top-color:var(--st-running);animation:spin 900ms linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* a esteira de telemetria de hoje */
+.telemetry{height:2px;overflow:hidden;
+  background:color-mix(in srgb,var(--st-running) 10%,transparent)}
+.telemetry span{display:block;width:28%;height:100%;
+  background:linear-gradient(90deg,transparent,
+    color-mix(in srgb,var(--st-running) 75%, white 8%),transparent);
+  animation:scan 2.2s ease-in-out infinite}
+@keyframes scan{from{transform:translateX(-100%)}to{transform:translateX(360%)}}
+
+/* cartões */
+.card-run-hoje{margin:0 6px;border-radius:10px;overflow:hidden;
+  border:1px solid color-mix(in srgb,var(--st-running) 20%,transparent);
+  background:color-mix(in srgb,var(--card) 55%,transparent);box-shadow:var(--shadow-sm)}
+.chip{border:1px solid var(--border);border-radius:4px;padding:1px 6px;
+      font-family:var(--mono);font-size:11px;color:rgba(231,232,234,.8);
+      background:rgba(10,11,13,.5)}
+.stoprow{display:flex;justify-content:flex-end;padding:6px 8px;
+         border-top:1px solid rgba(255,255,255,.07)}
+.stopbtn{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:500;
+         color:var(--muted-foreground);padding:4px 8px;border-radius:6px}
+
+/* decisão: hoje brass, proposto âmbar */
+.dec{display:flex;align-items:center;gap:12px;margin:12px 12px 0;padding:10px 12px;
+     border-radius:8px;text-align:left}
+.dec.hoje{border:1px solid color-mix(in srgb,var(--brass) 25%,transparent);
+          background:var(--brass-soft)}
+.dec.novo{border:1px solid color-mix(in srgb,var(--st-warning) 40%,transparent);
+          background:color-mix(in srgb,var(--st-warning) 10%,transparent)}
+.dec .glyph{width:28px;height:28px;border-radius:999px;display:grid;place-items:center;flex:0 0 auto}
+.dec.hoje .glyph{background:var(--brass);color:var(--brass-fg)}
+.emptybox{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100%;min-height:96px;text-align:center;padding:0 20px}
+.emptyglyph{width:32px;height:32px;border-radius:999px;display:grid;place-items:center;
+  border:1px solid var(--border);background:color-mix(in srgb,var(--card) 50%,transparent);
+  margin-bottom:8px}
+
+.sec-hoje{border-top:1px solid var(--border);padding:8px 12px}
+.sec-novo{padding:2px 12px 8px}
+.schedule{display:flex;align-items:center;gap:10px;padding:8px 12px}
+.tray.hoje .schedule{border-top:1px solid var(--border)}
+
+/* ── contadores de repetição ─────────────────────────────────────────────── */
+.tally{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px}
+.tally div{border:1px solid var(--border);border-radius:10px;padding:14px 16px;
+           background:rgba(255,255,255,.02)}
+.tally b{display:block;font-size:30px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+.tally span{display:block;font-size:12px;color:var(--muted-foreground);margin-top:4px}
+
+/* ── decisões ────────────────────────────────────────────────────────────── */
+.dl{margin-top:24px;border-top:1px solid var(--border)}
+.dl>div{padding:20px 0;border-bottom:1px solid var(--border)}
+.dl h3{display:flex;align-items:baseline;gap:10px}
+.dl h3 em{font:500 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;
+          color:var(--faint);font-style:normal}
+.dl p{font-size:13px;color:var(--muted-foreground);max-width:88ch}
+.tag{display:inline-block;font:500 11px/1 var(--mono);letter-spacing:.06em;
+     padding:3px 7px;border-radius:4px;text-transform:uppercase}
+.tag.dec-{background:color-mix(in srgb,var(--st-warning) 15%,transparent);color:var(--st-warning)}
+.tag.rec{background:var(--sel);color:var(--muted-foreground)}
+svg{display:block}
+</style>
+</head>
+<body>
+<div class="page">
+
+<span class="kicker">Proposta · 16/08/2026</span>
+<h1 style="margin-top:10px">A tray tem a mesma doença que as Fases 1 a 5
+curaram no app</h1>
+<p class="lede" style="margin-top:14px">
+Repetição e etiqueta demais. No estado ocioso, a tray afirma que
+<strong>nada está acontecendo</strong> quatro vezes, escreve <strong>"Frota"
+duas vezes em linhas adjacentes</strong>, e reserva 430px de altura fixa para
+mostrar um miolo vazio. Esta página põe hoje e a proposta lado a lado, nos três
+estados que importam. As medidas são do código no HEAD
+(<code>TrayPopover.tsx</code>, <code>src-tauri/src/tray.rs:540</code>), não de
+memória.
+</p>
+
+<div class="tally">
+  <div><b>4×</b><span>afirmações de "nada acontecendo" no estado ocioso</span></div>
+  <div><b>4</b><span>divisores de parede a parede numa janela de 360px</span></div>
+  <div><b>430px</b><span>de altura fixa, ociosa ou cheia (<code>resizable(false)</code>)</span></div>
+  <div><b>2×</b><span>"Frota" em linhas adjacentes, no topo</span></div>
+</div>
+
+<div class="rule"></div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section style="margin-top:0">
+<span class="kicker">Estado 1</span>
+<h2 style="margin-top:8px">Ocioso, que é como você mais vai encontrá-la</h2>
+<p class="lede">
+Você clicou no ícone da Frota. Saber que é a Frota não é informação, é a mesma
+redundância que a marca na barra de título tinha e que já removemos
+(<code>af57bfc</code>). Abaixo, as quatro afirmações de vazio estão marcadas.
+</p>
+
+<div class="stage" style="margin-top:24px">
+<div class="pair">
+
+  <!-- ───────── HOJE ───────── -->
+  <div class="col">
+    <span class="kicker">Hoje</span>
+    <p class="note">430px fixos. O miolo é um vazio reservado, e a linha do
+       Claude fecha dizendo "ociosa" mais uma vez.</p>
+
+    <div class="tray hoje fixed">
+      <div class="tray-hd">
+        <div class="horizon"><span></span></div>
+        <div class="row" style="align-items:flex-start;justify-content:space-between;gap:12px;position:relative">
+          <div>
+            <p class="label-mono" style="margin-bottom:8px">Frota</p>
+            <div class="row">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--st-idle)" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>
+              <span class="hl">Frota parada</span>
+            </div>
+          </div>
+          <button class="btn">Abrir</button>
+        </div>
+      </div>
+
+      <div class="body">
+        <div class="emptybox">
+          <span class="emptyglyph">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--st-idle)" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>
+          </span>
+          <p class="t12" style="font-weight:500">Nenhuma tarefa em voo</p>
+          <p class="t11 mut" style="margin-top:4px">Inicie uma tarefa ou aguarde a próxima automação.</p>
+        </div>
+      </div>
+
+      <div class="sec-hoje">
+        <p class="label-mono" style="margin-bottom:6px;color:rgba(154,160,167,.7)">No terminal (observando)</p>
+        <div class="row" style="padding:0 4px">
+          <span class="dot idle"></span>
+          <span class="grow trunc t11" style="color:rgba(231,232,234,.8)">claude em mycockpit</span>
+          <span class="t11 mut">ociosa</span>
+        </div>
+      </div>
+
+      <div class="schedule">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span class="grow trunc t12 mut">Nenhuma automação agendada</span>
+      </div>
+
+      <div class="tray-ft">
+        <button class="btn prim grow">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+          Nova tarefa
+        </button>
+        <span class="icobtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10.6 3V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+      </div>
+    </div>
+
+    <p class="measure">360 × 430 px · <b>4 afirmações de vazio</b> · 4 divisores</p>
+  </div>
+
+  <!-- ───────── PROPOSTO ───────── -->
+  <div class="col">
+    <span class="kicker">Proposto</span>
+    <p class="note">A janela é do tamanho do que ela tem a dizer. Uma afirmação
+       de vazio, e ela é o cabeçalho.</p>
+
+    <div class="tray">
+      <div class="tray-hd" style="padding:14px 16px">
+        <div class="row" style="justify-content:space-between;gap:12px">
+          <span class="hl">Nada em voo</span>
+          <button class="btn">Abrir</button>
+        </div>
+      </div>
+
+      <div class="tray-ft">
+        <button class="btn prim grow">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+          Nova tarefa
+        </button>
+        <span class="icobtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10.6 3V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+      </div>
+    </div>
+
+    <p class="measure">360 × <b>~106 px</b> · 1 afirmação de vazio · 1 divisor</p>
+
+    <p class="t12 mut" style="margin-top:18px">
+      Se houver automação agendada, a linha dela volta (é dado, não moldura), e
+      a janela cresce com ela:
+    </p>
+
+    <div class="tray" style="margin-top:10px">
+      <div class="tray-hd" style="padding:14px 16px">
+        <div class="row" style="justify-content:space-between;gap:12px">
+          <span class="hl">Nada em voo</span>
+          <button class="btn">Abrir</button>
+        </div>
+      </div>
+      <div class="sec-novo">
+        <div class="row">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          <span class="grow trunc t12 mut">Varredura noturna</span>
+          <span class="t11 mono faint">em 3h</span>
+        </div>
+      </div>
+      <div class="tray-ft">
+        <button class="btn prim grow">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+          Nova tarefa
+        </button>
+        <span class="icobtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></span>
+        <span class="icobtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10.6 3V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+      </div>
+    </div>
+    <p class="measure">360 × ~<b>150 px</b></p>
+  </div>
+
+</div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section>
+<span class="kicker">Estado 2</span>
+<h2 style="margin-top:8px">Com tarefa rodando</h2>
+<p class="lede">
+Hoje o cartão em voo diz "está rodando" <strong>quatro vezes</strong>: o rótulo
+<code>EM VOO</code>, o ponto azul ao lado dele, um segundo ponto azul na linha
+de detalhe, e a esteira de telemetria embaixo. A esteira é a MESMA que o
+ADR-043 já removeu da sidebar no build 205, pelo motivo que o uso decidiu:
+<em>"2px se movendo na periferia não lê como trabalhando, lê como artefato"</em>.
+A tray não recebeu esse recado.
+</p>
+
+<div class="stage" style="margin-top:24px">
+<div class="pair">
+
+  <div class="col">
+    <span class="kicker">Hoje</span>
+    <p class="note">Rótulo + ponto + ponto + esteira. E um chip contornado
+       dentro de um cartão, que a Fase 2 já tinha proibido.</p>
+
+    <div class="tray hoje fixed">
+      <div class="tray-hd">
+        <div class="horizon"><span></span></div>
+        <div class="row" style="align-items:flex-start;justify-content:space-between;gap:12px;position:relative">
+          <div>
+            <p class="label-mono" style="margin-bottom:8px">Frota</p>
+            <div class="row">
+              <span class="dot run" style="width:8px;height:8px"></span>
+              <span class="hl">2 tarefas em voo</span>
+            </div>
+          </div>
+          <button class="btn">Abrir</button>
+        </div>
+      </div>
+
+      <div class="body" style="padding:8px 0">
+        <div class="card-run-hoje">
+          <div style="padding:12px 14px 10px">
+            <div class="row" style="margin-bottom:8px">
+              <span class="label-mono" style="color:var(--st-running);display:flex;align-items:center;gap:6px">
+                <span class="dot run"></span>Em voo
+              </span>
+              <span class="grow"></span>
+              <span class="t11 mono mut">14 min</span>
+            </div>
+            <div class="t14 trunc" style="font-weight:600;letter-spacing:-.01em">Migrar o composer pro Lexical</div>
+            <div class="t11 mut trunc" style="margin-top:2px">mycockpit</div>
+            <div class="row" style="margin-top:12px">
+              <span class="chip">claude</span>
+              <span class="t11 mono mut trunc">claude-opus-5</span>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <span class="dot run" style="opacity:.7"></span>
+              <span class="t11 trunc" style="color:rgba(231,232,234,.8)">editando ComposerParts.tsx</span>
+            </div>
+          </div>
+          <div class="telemetry"><span></span></div>
+          <div class="stoprow">
+            <span class="stopbtn">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+              Parar
+            </span>
+          </div>
+        </div>
+
+        <div style="padding:0 8px;margin-top:6px">
+          <div class="row" style="padding:6px 8px">
+            <span class="dot run"></span>
+            <span class="grow">
+              <span class="t12 trunc" style="display:block;font-weight:500">Auditoria de custo</span>
+              <span class="t11 mut trunc" style="display:block">rodando testes · 3 min</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="schedule">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span class="grow trunc t12 mut">Varredura noturna · em 3h</span>
+        <span class="dot idle"></span>
+      </div>
+
+      <div class="tray-ft">
+        <button class="btn prim grow">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+          Nova tarefa
+        </button>
+        <span class="icobtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10.6 3V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+      </div>
+    </div>
+    <p class="measure">360 × 430 px · <b>4 sinais</b> para um fato só</p>
+  </div>
+
+  <div class="col">
+    <span class="kicker">Proposto</span>
+    <p class="note">Um glifo de "rodando": o círculo que o app já usa
+       (<code>.conv-spin</code>). O tempo no slot direito, como na sidebar.</p>
+
+    <div class="tray">
+      <div class="tray-hd" style="padding:14px 16px">
+        <div class="row" style="justify-content:space-between;gap:12px">
+          <span class="hl">2 tarefas em voo</span>
+          <button class="btn">Abrir</button>
+        </div>
+      </div>
+
+      <div class="body" style="padding:2px 6px 8px">
+        <!-- sem preenchimento: `--sel` significa SELECIONADO (ADR-043), e aqui
+             não há nada selecionado. Hover é `--sel-hover`. -->
+        <div style="padding:8px 10px;border-radius:8px">
+          <div class="row">
+            <span class="spin"></span>
+            <span class="grow trunc t13" style="font-weight:500">Migrar o composer pro Lexical</span>
+            <span class="t11 mono faint">14 min</span>
+          </div>
+          <div class="t11 mut trunc" style="margin-top:3px;padding-left:19px">
+            editando ComposerParts.tsx
+          </div>
+          <div class="t11 faint trunc mono" style="margin-top:2px;padding-left:19px">
+            mycockpit · claude · opus 5
+          </div>
+        </div>
+
+        <div style="padding:8px 10px;border-radius:8px">
+          <div class="row">
+            <span class="spin"></span>
+            <span class="grow trunc t13" style="font-weight:500">Auditoria de custo</span>
+            <span class="t11 mono faint">3 min</span>
+          </div>
+          <div class="t11 mut trunc" style="margin-top:3px;padding-left:19px">
+            rodando testes
+          </div>
+          <div class="t11 faint trunc mono" style="margin-top:2px;padding-left:19px">
+            mycockpit · codex · gpt-5
+          </div>
+        </div>
+      </div>
+
+      <div class="sec-novo">
+        <div class="row">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          <span class="grow trunc t12 mut">Varredura noturna</span>
+          <span class="t11 mono faint">em 3h</span>
+        </div>
+      </div>
+
+      <div class="tray-ft">
+        <button class="btn prim grow">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+          Nova tarefa
+        </button>
+        <span class="icobtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10.6 3V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+      </div>
+    </div>
+    <p class="measure">360 × <b>~272 px</b> · 1 sinal por tarefa · 1 divisor</p>
+
+    <p class="t12 mut" style="margin-top:16px">
+      <strong>"Parar" aparece no hover da linha</strong> (e no foco de teclado),
+      como já é na segunda tarefa hoje. A linha de ação com borda própria some:
+      não é uma zona de propriedade diferente, é a mesma tarefa.
+    </p>
+  </div>
+
+</div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section>
+<span class="kicker">Estado 3</span>
+<h2 style="margin-top:8px">Com algo esperando decisão</h2>
+<p class="lede">
+Este é o estado que justifica a tray existir, e é onde ela erra mais. O cartão
+usa <strong>brass</strong>, que a Fase 6 acabou de tirar de "decisão pendente"
+em todo o resto do app. Pior: o subtítulo é
+<code>"Revisar resultado da disputa"</code> <strong>fixo no código</strong>,
+mas o contador soma <code>decisionsPending + pendingInteractions</code>
+(<code>App.tsx:457</code>). Um pedido de permissão de <code>Bash</code>
+aparece na tray dizendo que é o resultado de uma disputa. Isso é estado
+inventado, e o §7 proíbe.
+</p>
+
+<div class="stage" style="margin-top:24px">
+<div class="pair">
+
+  <div class="col">
+    <span class="kicker">Hoje</span>
+    <p class="note">Brass (a tinta do gesto) para o que está esperando, e uma
+       copy que mente sobre o tipo do pedido.</p>
+
+    <div class="tray hoje fixed">
+      <div class="tray-hd">
+        <div class="horizon"><span></span></div>
+        <div class="row" style="align-items:flex-start;justify-content:space-between;gap:12px;position:relative">
+          <div>
+            <p class="label-mono" style="margin-bottom:8px">Frota</p>
+            <div class="row">
+              <span class="dot run" style="width:8px;height:8px"></span>
+              <span class="hl">1 tarefa em voo</span>
+            </div>
+          </div>
+          <button class="btn">Abrir</button>
+        </div>
+      </div>
+
+      <div class="dec hoje">
+        <span class="glyph">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+        </span>
+        <span class="grow">
+          <span class="t13" style="display:block;font-weight:600">2 decisões aguardando você</span>
+          <span class="t11 mut">Revisar resultado da disputa</span>
+        </span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17 17 7M9 7h8v8"/></svg>
+      </div>
+
+      <div class="body" style="padding:8px 0">
+        <div class="card-run-hoje">
+          <div style="padding:12px 14px 10px">
+            <div class="row" style="margin-bottom:8px">
+              <span class="label-mono" style="color:var(--st-running);display:flex;align-items:center;gap:6px">
+                <span class="dot run"></span>Em voo
+              </span>
+              <span class="grow"></span>
+              <span class="t11 mono mut">6 min</span>
+            </div>
+            <div class="t14 trunc" style="font-weight:600;letter-spacing:-.01em">Auditoria de custo</div>
+            <div class="t11 mut trunc" style="margin-top:2px">mycockpit</div>
+            <div class="row" style="margin-top:12px">
+              <span class="chip">codex</span>
+              <span class="t11 mono mut trunc">gpt-5</span>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <span class="dot run" style="opacity:.7"></span>
+              <span class="t11 trunc" style="color:rgba(231,232,234,.8)">lendo CostAudit.tsx</span>
+            </div>
+          </div>
+          <div class="telemetry"><span></span></div>
+          <div class="stoprow">
+            <span class="stopbtn">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+              Parar
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec-hoje">
+        <p class="label-mono" style="margin-bottom:6px;color:rgba(154,160,167,.7)">No terminal (observando)</p>
+        <div class="row" style="padding:0 4px">
+          <span class="dot warn"></span>
+          <span class="grow trunc t11" style="color:rgba(231,232,234,.8)">claude em landing</span>
+          <span class="t11" style="color:var(--st-warning)">esperando você</span>
+        </div>
+      </div>
+
+      <div class="schedule">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span class="grow trunc t12 mut">Varredura noturna · em 3h</span>
+        <span class="dot idle"></span>
+      </div>
+
+      <div class="tray-ft">
+        <button class="btn prim grow">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+          Nova tarefa
+        </button>
+        <span class="icobtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10.6 3V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+      </div>
+    </div>
+    <p class="measure">360 × 430 px · brass onde devia ser âmbar</p>
+    <p class="t12 mut" style="margin-top:12px">
+      O corte no "Parar" não é erro do mock: com decisão + cartão em voo +
+      terminal + agendado, os 430px fixos <strong>não cabem</strong> e o miolo
+      passa a rolar. A janela é grande demais no estado ocioso e pequena demais
+      no estado cheio, que é o que altura fixa entrega.
+    </p>
+  </div>
+
+  <div class="col">
+    <span class="kicker">Proposto</span>
+    <p class="note">Âmbar, a receita <code>PENDING_DECISION</code> que a Fase 6
+       fixou. A copy diz o que o pedido É.</p>
+
+    <div class="tray">
+      <div class="tray-hd" style="padding:14px 16px 12px">
+        <div class="row" style="justify-content:space-between;gap:12px">
+          <span class="hl">1 tarefa em voo</span>
+          <button class="btn">Abrir</button>
+        </div>
+      </div>
+
+      <div style="padding:0 10px">
+        <div class="dec novo" style="margin:0;padding:10px 12px">
+          <span class="dot warn" style="width:7px;height:7px"></span>
+          <span class="grow">
+            <span class="t13" style="display:block;font-weight:600">2 pedidos esperando você</span>
+            <span class="t11 mut">permissão para Bash · e mais 1</span>
+          </span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" stroke-width="2"><path d="M7 17 17 7M9 7h8v8"/></svg>
+        </div>
+      </div>
+
+      <div class="body" style="padding:8px 6px">
+        <div style="padding:8px 10px;border-radius:8px">
+          <div class="row">
+            <span class="spin"></span>
+            <span class="grow trunc t13" style="font-weight:500">Auditoria de custo</span>
+            <span class="t11 mono faint">6 min</span>
+          </div>
+          <div class="t11 mut trunc" style="margin-top:3px;padding-left:19px">
+            lendo CostAudit.tsx
+          </div>
+          <div class="t11 faint trunc mono" style="margin-top:2px;padding-left:19px">
+            mycockpit · codex · gpt-5
+          </div>
+        </div>
+
+        <div style="padding:6px 10px 2px">
+          <div class="row">
+            <span class="dot warn"></span>
+            <span class="grow trunc t12 mut">claude em landing, no terminal</span>
+            <span class="t11" style="color:var(--st-warning)">esperando você</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tray-ft">
+        <button class="btn prim grow">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+          Nova tarefa
+        </button>
+        <span class="icobtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10.6 3V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+      </div>
+    </div>
+    <p class="measure">360 × <b>~262 px</b> · âmbar tem um dono só</p>
+
+    <p class="t12 mut" style="margin-top:16px">
+      A sessão do terminal que <strong>espera você</strong> deixa de morar numa
+      seção própria com rótulo em caixa-alta e vira <strong>mais uma linha do
+      que precisa de você</strong>, no mesmo idioma âmbar. É o que ela é.
+    </p>
+  </div>
+
+</div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section>
+<span class="kicker">O que muda, item a item</span>
+<h2 style="margin-top:8px">Nove decisões, cada uma com o argumento</h2>
+<p class="lede">
+Marcadas com <span class="tag dec-">decide</span> as que eu não decidiria
+sozinho: são preferência sua, não regra do guia.
+</p>
+
+<div class="dl">
+
+<div>
+  <h3>1. O rótulo <code>FROTA</code> sai <em>· cabeçalho</em></h3>
+  <p>Você clicou no ícone da Frota para abrir esta janela, e o título dela já é
+  "Frota". O rótulo repete a palavra na linha imediatamente acima de "Frota
+  parada". É a mesma redundância que a marca na barra de título tinha
+  (<code>af57bfc</code>), pelo mesmo motivo.</p>
+</div>
+
+<div>
+  <h3>2. O estado ocioso é UMA frase, e ela é o cabeçalho <em>· miolo</em></h3>
+  <p>Hoje: "Frota parada" + o círculo vazio + "Nenhuma tarefa em voo" + "Inicie
+  uma tarefa ou aguarde a próxima automação". Quatro maneiras de dizer nada.
+  Proposto: <strong>"Nada em voo"</strong>, e o empty state inteiro deixa de
+  existir. O convite ("inicie uma tarefa") já é o botão primário do rodapé, que
+  está logo abaixo, sempre.</p>
+</div>
+
+<div>
+  <h3>3. A janela ENCOLHE <em>· <code>tray.rs:540</code></em></h3>
+  <p>Hoje ela é <code>inner_size(360, 430)</code> com
+  <code>resizable(false)</code>: 430px ociosa e 430px cheia. Popover de bandeja
+  deve ter o tamanho do que tem a dizer. Proposto: o webview mede o conteúdo
+  depois de renderizar e pede <code>setSize</code>, com teto (o corpo rola
+  acima dele) e piso. <strong>É a única parte desta proposta que toca o
+  Rust</strong>, e o cuidado é duplo: o reposicionamento do popover sob o ícone
+  usa a altura da janela (<code>tray.rs:490-495</code>) e precisa recalcular; e
+  o resize tem que acontecer com a janela ainda escondida, senão pisca.</p>
+</div>
+
+<div>
+  <h3>4. Três dos quatro divisores saem <em>· §4</em></h3>
+  <p>Numa janela de 360px havia quatro hairlines de parede a parede. Ficam as
+  seções separadas por espaço, como o painel direito aprendeu na Fase 2.
+  <strong>Sobra um</strong>, o do rodapé: ali muda a PROPRIEDADE do conteúdo
+  (lista de estado → zona de ação), que é a exceção que o §4 preserva. E como
+  ele fica, o preenchimento <code>bg-card/35</code> do rodapé sai: linha e
+  fundo eram dois sinais para uma fronteira só.</p>
+</div>
+
+<div>
+  <h3>5. A esteira de telemetria sai, e entra o círculo <em>· ADR-043, build 205</em></h3>
+  <p>A <code>.tray-telemetry</code> é a mesma esteira que a sidebar teve por um
+  build e perdeu, com a razão registrada em ADR: <em>"a esteira azul ficou
+  excessiva, e o círculo rodando como era antes era melhor"</em>. A doutrina não
+  mudou (movimento é para o vivo); mudou o glifo, para um que o app já sabe ler.
+  A tray ficou para trás. Junto com ela saem o rótulo <code>EM VOO</code> e o
+  segundo ponto azul: um fato, um sinal.</p>
+</div>
+
+<div>
+  <h3>6. O cartão de decisão vira âmbar <em>· §2, Fase 6</em></h3>
+  <p>Hoje é <code>border-brass/25 bg-brass-soft</code> com um disco
+  <code>bg-brass</code>. Brass é gesto; "esperando você" é âmbar, e isso acabou
+  de ser fechado no app inteiro (<code>lib/attention.ts</code>). O disco de 28px
+  também some: um ponto de 7px basta, e o disco competia com o botão primário do
+  rodapé pela leitura de "clique aqui".</p>
+</div>
+
+<div>
+  <h3>7. A copy do cartão de decisão para de mentir <em>· §7</em></h3>
+  <p>O subtítulo é <code>"Revisar resultado da disputa"</code> fixo, mas o
+  contador soma <code>decisionsPending + pendingInteractions</code>
+  (<code>App.tsx:457</code>): um pedido de permissão de <code>Bash</code> chega
+  na tray anunciado como resultado de disputa. Proposto: o snapshot passa a
+  carregar o <strong>tipo do primeiro pedido</strong> e a linha diz o que ele é
+  ("permissão para Bash", "pergunta do agent", "resultado da disputa"), com "e
+  mais N" quando houver fila. <strong>Isto é um bug de honestidade, não
+  estética</strong>, e vale sozinho.</p>
+</div>
+
+<div>
+  <h3>8. <code>NO TERMINAL (OBSERVANDO)</code> sai <span class="tag dec-">decide</span></h3>
+  <p>Parêntese explicativo dentro de rótulo em caixa-alta, para uma linha só de
+  conteúdo: o rótulo pesa mais que o dado. Proposto: a sessão externa que
+  <strong>espera você</strong> sobe para junto do resto do que precisa de você,
+  em âmbar, com o lugar dito na própria linha ("claude em landing, no
+  terminal"). A que está <strong>trabalhando</strong> entra na lista de tarefas
+  com o mesmo círculo, marcada como não-nossa (sem "Parar", porque não somos
+  donos dela). E a que está <strong>ociosa não renderiza</strong>: é a quarta
+  afirmação de "nada acontecendo".</p>
+  <p><strong>O contra-argumento, que é seu para decidir:</strong> esconder a
+  sessão ociosa esconde o fato de que ela existe. Se isso incomodar, a saída sem
+  repetição é a regra de agregação do §6: uma linha só, cinza,
+  <em>"2 sessões no terminal, ociosas"</em>, em vez de uma linha por sessão
+  dizendo nada. As duas me parecem defensáveis; a primeira é mais fiel ao "se
+  não serve às três perguntas, não fica".</p>
+</div>
+
+<div>
+  <h3>9. O horizonte artificial sai <span class="tag dec-">decide</span></h3>
+  <p>A <code>.tray-horizon</code> (um arco e um risco em <code>--st-running</code>,
+  no cabeçalho) está acesa <strong>sempre</strong>, inclusive com a frota parada.
+  O §2 dá ao azul um trabalho só: "o que roda AGORA". Azul aceso com nada
+  rodando é decoração usando a tinta de um estado, e o §1 manda tudo que não é
+  estado nem decisão recuar. <strong>Sei que ela é a "assinatura do
+  instrumento"</strong>, e é por isso que está marcada para você decidir: a
+  regra diz que sai, mas quem paga o preço da tela sem personalidade é você.</p>
+</div>
+
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<section>
+<span class="kicker">O que NÃO muda</span>
+<h2 style="margin-top:8px">Para ficar claro o tamanho da proposta</h2>
+<ul style="max-width:88ch">
+  <li><strong>O ícone da bandeja.</strong> No macOS é template: cor é
+  descartada, só a silhueta sobrevive. Nada aqui encosta nele.</li>
+  <li><strong>O menu de contexto do ícone e o <code>fleet_status</code> do
+  Rust.</strong> A string do menu/tooltip é montada no Rust, com teste próprio,
+  e continua sendo a fonte única daquele texto.</li>
+  <li><strong>O vibrancy nativo</strong> e o véu do <code>.tray-popover-shell</code>:
+  o fosco translúcido é o que faz a tray parecer um popover do sistema, e ele
+  fica.</li>
+  <li><strong>As ações.</strong> Nova tarefa, pausar automações, configurações,
+  abrir, parar tarefa, revisar decisão: todas continuam, nos mesmos lugares.
+  Nenhuma ação nova, nenhum despacho sem gesto seu.</li>
+  <li><strong>Barra de acento e brass-como-seleção:</strong> conferido, a tray
+  está limpa. A guarda <code>check-barra-de-acento</code> varre
+  <code>app/src</code> inteiro e passa; o único brass fora de lugar é o do
+  cartão de decisão (item 6), que é brass-como-atenção, não como seleção.</li>
+</ul>
+</section>
+
+<section>
+<span class="kicker">Se aprovado</span>
+<h2 style="margin-top:8px">Ordem de implementação</h2>
+<p class="lede">
+Os itens 1, 2, 4, 5, 6 e 8 são <code>TrayPopover.tsx</code> e o CSS da tray, um
+commit. O item 7 mexe no <code>TraySnapshot</code> (campo novo com o tipo do
+pedido) e portanto no Rust e no <code>App.tsx</code>, com teste, e vai
+separado. O item 3 é o resize, que é o de maior risco (posicionamento do
+popover, flicker) e fecha por último, sozinho, para ser reversível.
+</p>
+</section>
+
+</div>
+</body>
+</html>
