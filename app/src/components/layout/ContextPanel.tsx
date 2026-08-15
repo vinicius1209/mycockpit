@@ -470,29 +470,28 @@ export function ContextPanel() {
     // como cartão-dentro-de-cartão. Em troca, a proibição fica mais forte —
     // nada aqui dentro pode ter hairline de largura total (ADR-043, Fase 2).
     <aside className="reveal-right flex h-full w-full flex-col overflow-hidden rounded-xl bg-card shadow-[var(--shadow-sm),var(--lift)]">
-      <header className="flex h-11 shrink-0 items-center gap-1 px-2.5">
+      {/* `@container`: a tira decide rótulo × ícone pela largura REAL do painel
+          (redimensionável), não por breakpoint de janela — ver `TabBtn`. */}
+      <header className="@container flex h-11 shrink-0 items-center gap-1 px-2.5">
         <TabBtn
           active={tab === "contexto"}
           onClick={() => setTab("contexto")}
           icon={PanelRight}
-        >
-          Contexto
-        </TabBtn>
+          label="Contexto"
+        />
         <TabBtn
           active={tab === "alteracoes"}
           onClick={() => setTab("alteracoes")}
           icon={FileDiff}
           badge={changedCount}
-        >
-          Alterações
-        </TabBtn>
+          label="Alterações"
+        />
         <TabBtn
           active={tab === "plano"}
           onClick={() => setTab("plano")}
           icon={ListChecks}
-        >
-          Plano
-        </TabBtn>
+          label="Plano"
+        />
       </header>
 
       {!project ? (

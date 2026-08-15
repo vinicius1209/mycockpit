@@ -10,7 +10,7 @@
     "components/chat/ChatPanel.tsx": 1526,
     "components/chat/LexicalComposer.tsx": 907,
     "components/chat/MessageList.tsx": 2783,
-    "components/layout/ContextPanel.tsx": 858,
+    "components/layout/ContextPanel.tsx": 857,
     "components/layout/Sidebar.tsx": 921,
     "components/scheduled/ScheduledView.tsx": 1118,
     "components/sdd/SddView.tsx": 1649,

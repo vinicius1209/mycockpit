@@ -208,6 +208,20 @@ Regras decidíveis:
   contadores, percentuais) — e número métrico é `font-mono`.
 - Etiqueta de instrumento é a classe `.label-mono` (`index.css:253`), não
   mono+uppercase+tracking à mão.
+- **Caixa-alta com tracking é roupa de RÓTULO, nunca de CONTROLE.** Título de
+  seção (`AJUSTES`, `DOUTRINA`, `MISSÕES`) se LÊ e usa `.label-mono`; aba,
+  botão e chip se CLICAM e vão em caixa normal. Vestir os dois igual achata a
+  hierarquia da tela (não se distingue navegação de conteúdo), e o custo é
+  medido, não estético: a tira de abas do painel direito mede **353,6px** em
+  caixa-alta com `tracking-[0.08em]` e **298,9px** sem (−15%) — era isso que
+  cortava "PLANO" em "PL" no painel padrão (build 206).
+- **Rótulo de controle degrada por LARGURA, nunca por decreto.** Quando a tira
+  não cabe, o rótulo cede pro ícone por **container query** medida contra a
+  largura real do contêiner (`TabBtn` em `contextPanelChrome.tsx`, `@min-[…]`),
+  com `title`/`aria-label` no botão — nunca ícone-só fixo, que transforma um
+  rótulo lido em um enigma decorado. Número que muda sozinho (contador) fica
+  visível nos dois modos: esconder rótulo é economia de espaço, esconder dado
+  é perda de informação.
 - Mono nunca tem ligadura (`index.css:449` — regra global, não repita local).
 
 **Mapa de migração** (o que existe → o alvo; aplicar por superfície tocada,

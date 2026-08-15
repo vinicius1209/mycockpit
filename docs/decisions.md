@@ -1316,3 +1316,29 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   brass-como-ativo) só começa com dono e prazo, senão vira a divergência
   acidental que o §0 combate. Até lá vale a regra do §2: quem tocar numa
   daquelas telas migra ela, e ninguém adiciona brass-como-ativo novo.
+- **CORREÇÃO no build 206 — a tira de abas estava vestida de rótulo, e cortava
+  "PLANO" em "PL".** As três abas nasceram na Fase 2 com `uppercase` +
+  `tracking-[0.08em]`, que é **o mesmo tratamento dos títulos de seção do
+  próprio painel** (`.label-mono`: AJUSTES, DOUTRINA, APRENDIZADO, MISSÕES,
+  ARQUIVOS DAS CLIS). Duas naturezas opostas com a mesma roupa: aba é
+  **controle** (clica), título de seção é **rótulo** (lê) — a hierarquia do
+  painel achatava e o corte era só o sintoma. Medido no browser, com a Geist
+  real: a tira pede **353,6px** em caixa-alta e **298,9px** sem (−15%), e o
+  painel na largura padrão tem **329,5px**. Saiu a caixa-alta das ABAS; o
+  título de seção MANTÉM o tratamento, que ali é correto.
+  - **Degradação por LARGURA, não por decreto.** Sem caixa-alta a tira cabe na
+    largura padrão, mas o painel é redimensionável (`minSize` 240px), e no
+    mínimo nem rótulo curto cabe. Então o rótulo cede pro ícone por container
+    query (`@min-[274px]`, medido: 273,5px de content-box no pior caso, com
+    contador de 3 dígitos), com `title`/`aria-label` no botão. O **contador
+    continua visível nos dois modos**: esconder rótulo é economia de espaço,
+    esconder dado é perda de informação.
+  - **Considerado e recusado:** ícone-só sempre (o painel é de uso ocasional e
+    "Contexto"/"Plano" não têm glifo universal, viram dois enigmas a decorar) e
+    abas verticais (trocam espaço horizontal por uma coluna permanente e mantêm
+    o mesmo problema de legibilidade).
+  - **Guarda:** `e2e/painel-abas.spec.ts` mede no `dist/` buildado, em três
+    larguras de janela (940 · 1280 · 1600), que nenhuma aba é cortada, que o
+    rótulo aparece na largura padrão e que ele degrada pra ícone no painel
+    mínimo com o contador de pé. Conferido que ele FALHA no markup anterior.
+    A regra virou linha no §3 do STYLEGUIDE.
