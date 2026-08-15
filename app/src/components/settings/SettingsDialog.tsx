@@ -27,6 +27,7 @@ import { MissionSettings } from "@/components/settings/MissionSettings"
 import { CompanionSettings } from "@/components/settings/CompanionSettings"
 import { McpSettings } from "@/components/settings/McpSettings"
 import { CostMaintenance } from "@/components/settings/CostMaintenance"
+import { SessionCostLimit } from "@/components/settings/SessionCostLimit"
 import { UsageMeterSettings } from "@/components/settings/UsageMeterSettings"
 import { HooksSettings } from "@/components/settings/HooksSettings"
 import { MachineAgents } from "@/components/settings/MachineAgents"
@@ -611,6 +612,9 @@ export function SettingsDialog() {
                   sem buraco de margem no lugar dele). */}
               <UsageMeterSettings />
               <div className={hasUsageMeter ? "mt-6" : undefined}>
+                <SessionCostLimit />
+              </div>
+              <div className="mt-6">
                 <BlockTitle hint="O ledger de custo em US$ por turno, e a reconstrução das linhas gravadas antes da correção do acumulado.">
                   Histórico de custo
                 </BlockTitle>

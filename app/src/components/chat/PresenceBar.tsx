@@ -19,8 +19,11 @@ import {
   useChat,
 } from "@/store/chat"
 import { usePresets } from "@/store/presets"
+import { useApp } from "@/store/app"
 import { confirm } from "@/lib/confirm"
 import { fmtCost } from "@/lib/format"
+import { METER_TEXT, absoluteTone } from "@/lib/meter"
+import { cn } from "@/lib/utils"
 import type { AgentDef } from "@/lib/agentDefs"
 
 export function PresenceBar() {
@@ -62,6 +65,11 @@ export function PresenceBar() {
   // aparece mesmo sem especialista na conversa.
   const cost = useMemo(() => sessionCost(conv.items), [conv.items])
   const showCost = cost.turns >= 2 && cost.total > 0
+  // Custo é MEDIDOR, não gesto: nada de brass (STYLEGUIDE §2). Cinza sempre,
+  // até o usuário definir um teto de sessão em Configurações ▸ Uso e custo —
+  // aí o valor vira percentual DAQUELE teto e usa a régua única do §2.
+  const costLimit = useApp((s) => s.settings.sessionCostLimit)
+  const costTone = absoluteTone(cost.total, costLimit)
 
   // conversa crua (sem piloto, sem convidados) E sem custo a mostrar não desenha
   // barra nenhuma. Com um dos dois, a faixa existe (presença à esquerda quando há,
@@ -158,10 +166,19 @@ export function PresenceBar() {
       {showCost && (
         <span
           className="ml-auto flex items-center gap-1.5"
-          title="Custo acumulado desta sessão (soma dos turnos)"
+          title={
+            costLimit
+              ? `Custo acumulado desta sessão (soma dos turnos), contra o seu teto de ${fmtCost(costLimit)}`
+              : "Custo acumulado desta sessão (soma dos turnos). Defina um teto em Configurações ▸ Uso e custo pra ele avisar."
+          }
         >
           <span className="label-mono">Sessão</span>
-          <span className="font-mono text-[11px] font-semibold tabular-nums text-brass">
+          <span
+            className={cn(
+              "font-mono text-[11px] font-semibold tabular-nums",
+              METER_TEXT[costTone],
+            )}
+          >
             {fmtCost(cost.total, cost.estimated ? "estimated" : "reported")}
           </span>
         </span>

@@ -41,3 +41,29 @@ export const METER_FILL: Record<MeterTone, string> = {
   warn: "bg-st-warning",
   danger: "bg-st-error",
 }
+
+// ---------------------------------------------------------------------------
+// Valor ABSOLUTO (US$ gasto na sessão, MB baixados, o que não tem teto).
+//
+// Percentual tem teto natural: 100% é 100% pra todo mundo. Dólar não. Pintar
+// "US$ 5,00" de vermelho exigiria que NÓS escolhêssemos o valor em que gastar
+// vira problema, e esse número é do usuário, não nosso: pra quem roda um
+// refactor de 12h, US$ 5 é troco; pra quem testa um prompt, é caro. Número que
+// fica vermelho a partir de um limiar que inventamos é opinião disfarçada de
+// medição, e o §1 do STYLEGUIDE proíbe (a UI mostra estado real, não opina).
+//
+// Então: cinza sempre, até o usuário dar um teto. Com teto definido por ELE, o
+// absoluto vira percentual DAQUELE teto e cai na régua única acima. Uma régua
+// só, nenhum limiar inventado.
+// ---------------------------------------------------------------------------
+
+/**
+ * Tom de um valor absoluto contra um teto que o USUÁRIO definiu.
+ * Sem teto (null/0/negativo/não-finito) → sempre "ok" (cinza): a medição
+ * segue honesta, só não opina.
+ */
+export function absoluteTone(value: number, limit: number | null | undefined): MeterTone {
+  if (limit == null || !Number.isFinite(limit) || limit <= 0) return "ok"
+  if (!Number.isFinite(value) || value <= 0) return "ok"
+  return meterTone((value / limit) * 100)
+}

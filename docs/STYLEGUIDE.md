@@ -55,6 +55,15 @@ Regras de aplicação:
   Medidor saudável NUNCA é brass nem verde. A régua é UMA e é código:
   `meterTone`/`METER_TEXT`/`METER_FILL` em `lib/meter.ts` (o `usageTone` do
   medidor de plano delega pra lá). Medidor novo importa, não recalcula.
+- **Valor absoluto (sem teto natural) é CINZA até o usuário dar um teto.**
+  Percentual tem 100% pra todo mundo; US$, MB e contagem não têm. Escolher o
+  valor em que o número vira âmbar/vermelho seria opinião nossa disfarçada de
+  medição (US$ 5 é troco num refactor de 12h e é caro num teste de prompt).
+  Então: cinza sempre; com teto definido pelo USUÁRIO, o absoluto vira
+  percentual daquele teto e cai na régua acima. É `absoluteTone` em
+  `lib/meter.ts`; o custo da sessão (`PresenceBar.tsx`) é o primeiro caso, com
+  o teto em Configurações ▸ Uso e custo (`sessionCostLimit`). **Custo não é
+  gesto: nunca brass** (era, até 14/08/2026).
 - **Estado ambiente é cinza.** Dot/badge que fica na tela representando "a
   última vez deu certo" é cinza; verde é transição (marco), não decoração
   permanente.

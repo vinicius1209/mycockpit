@@ -92,6 +92,12 @@ export interface GlobalSettings {
    *  Desligar esconde a pill inteira; provider sem capability/fonte nem
    *  aparece com o medidor ligado (4 camadas de esconder do Orca). */
   usageMeterEnabled: boolean
+  /** Teto de gasto POR SESSÃO em US$ que o usuário definiu (null = sem teto).
+   *  Só existe pra dar régua ao custo da sessão: sem teto o número fica cinza
+   *  (medição muda); com teto ele entra na régua de medidor do §2 como
+   *  percentual DESSE valor. Não é um freio: nada é bloqueado, o app não
+   *  escolhe o número por ninguém. */
+  sessionCostLimit: number | null
   /** CTA "Ativar medidor" (instalação da statusline) dispensado pelo usuário:
    *  persistido pra não voltar a cutucar (dismissal do Orca). A seção de
    *  Configurações continua oferecendo a instalação. */
@@ -136,6 +142,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   stalledAfterMin: 10,
   unattendedAnswerAfterMin: 10,
   usageMeterEnabled: true,
+  sessionCostLimit: null,
   usageMeterCtaDismissed: false,
   observedResolutions: {},
 }
