@@ -10,6 +10,41 @@
 > para". Um agent aplica sem julgamento estético. Exceção não listada não
 > existe; exceção nova exige ADR em `docs/decisions.md` + linha aqui.
 
+## 0. Por que este guia é rígido
+
+Uma crítica externa disse que este guia "sacrifica expressividade em prol do
+controle rígido de ruído". Está certa na descrição, e é exatamente a escolha
+que fizemos, não um efeito colateral.
+
+O motivo é a condição de produção desta UI: ela é editada por MUITOS agentes em
+PARALELO, em sessões que não se falam, que não viram as telas umas das outras e
+que não vão herdar o gosto de ninguém. Nesse regime, regra que exige julgamento
+estético ("use a cor com parcimônia", "prefira hierarquia sutil") não produz uma
+interpretação: produz vinte, todas defensáveis, todas divergentes, e a
+divergência só aparece semanas depois, junta, como incoerência que ninguém
+consegue atribuir a um autor. Foi assim que a escala tipográfica chegou a 19
+tamanhos em uso e o verde virou decoração ambiente em 26 arquivos (§9). Nenhum
+desses desvios foi mau gosto de alguém, foram vinte leituras razoáveis da mesma
+frase vaga.
+
+Então o guia troca expressividade por decidibilidade de propósito: **número
+fechado, lista fechada, coluna "não use para"**. É uma perda real, e a perda é
+o preço. O que ela compra: qualquer agente, sem contexto de conversa nenhuma,
+aplica a mesma regra e chega no mesmo pixel; e uma guarda automática (§10) pode
+cobrar a regra, o que julgamento estético jamais permitiria.
+
+Duas consequências que valem mais que a preferência de quem estiver editando:
+
+- **A saída pra uma regra apertada demais é ADR, nunca exceção local.** Se a
+  regra impede algo que a tela precisa, isso é um bug do guia e se conserta no
+  guia (`docs/decisions.md` + linha aqui), pra que a próxima sessão herde a
+  decisão. Contornar em silêncio devolve o problema pro modo antigo.
+- **Este guia não é gosto, é contrato.** Quem discordar dele está fazendo uma
+  crítica potencialmente boa, e o lugar dela é o ADR. Sem este parágrafo, a
+  próxima crítica boa parece teimosia nossa, e a resposta a ela vira uma
+  discussão de estética em vez do que ela deveria ser: uma proposta de mudar o
+  contrato.
+
 ## 1. A tese
 
 **O Frota é um cockpit de decisão: a UI mostra o estado real da frota e pede a
