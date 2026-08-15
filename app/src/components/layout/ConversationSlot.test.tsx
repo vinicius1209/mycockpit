@@ -10,8 +10,6 @@
 // tem: sem jsdom, sem testing-library. Serve exatamente pro que importa aqui —
 // a marcação é função pura das props, e é isso que prova que o componente não
 // tem onde esconder um estado de "ainda rodando".
-import { readFileSync } from "node:fs"
-import { fileURLToPath } from "node:url"
 import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { ConversationSlot } from "@/components/layout/ConversationSlot"
@@ -100,12 +98,25 @@ describe("a esteira só existe enquanto o turno existe", () => {
 
   it("turno concluído tira a esteira e cai no tempo relativo", () => {
     useChat.setState({ byId: { [CONV]: rodando() } })
-    useChat.getState().handleEvent(CONV, { type: "done" })
+    // `code` é OBRIGATÓRIO no AgentEvent. Sem ele isto era fixture falsa: um
+    // evento que o app não consegue emitir, provando um caminho que não existe
+    // (o vitest não checa tipo, então passava; o build reprovou).
+    useChat.getState().handleEvent(CONV, { type: "done", code: 0 })
     const c = useChat.getState().byId[CONV]
     expect(c.running).toBe(false)
     const html = render(c)
     expect(temEsteira(html)).toBe(false)
     expect(html).toContain("5m")
+  })
+
+  it("turno que termina com código de FALHA também tira a esteira", () => {
+    // O caminho que mais importa: processo morreu mal (code != 0). Se a esteira
+    // sobrevivesse aqui, a conversa ficaria "rodando" pra sempre na sidebar.
+    useChat.setState({ byId: { [CONV]: rodando() } })
+    useChat.getState().handleEvent(CONV, { type: "done", code: 1 })
+    const c = useChat.getState().byId[CONV]
+    expect(c.running).toBe(false)
+    expect(temEsteira(render(c))).toBe(false)
   })
 
   it("finish() (o fim normal do turno) tira a esteira", () => {
@@ -149,31 +160,7 @@ describe("o slot reserva o espaço mesmo calado", () => {
   })
 })
 
-describe("degradação sem movimento (prefers-reduced-motion)", () => {
-  const css = readFileSync(
-    fileURLToPath(new URL("../../index.css", import.meta.url)),
-    "utf8",
-  )
-
-  it("a esteira tem regra PRÓPRIA de reduced-motion", () => {
-    // O bloco global só encurta a duração (`animation-duration: 0.001ms`), o
-    // que deixaria a esteira congelada num quadro transparente: "rodando"
-    // ficaria mudo. A regra própria é o que troca movimento por um traço
-    // estático, e por isso ela é obrigatória.
-    const bloco = css.match(
-      /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.conv-wire\s*\{([^}]*)\}/,
-    )
-    expect(bloco, "faltou o bloco reduced-motion da .conv-wire").toBeTruthy()
-    const regra = bloco![1]
-    expect(regra).toMatch(/animation:\s*none\s*!important/)
-    // Estático mas VISÍVEL: um traço azul sólido, não o gradiente parado.
-    expect(regra).toMatch(/background:\s*var\(--st-running\)/)
-  })
-
-  it("a esteira animada existe e é presa à presença do elemento, sem timer", () => {
-    expect(css).toMatch(/@keyframes conv-wire/)
-    expect(css).toMatch(/animation:\s*conv-wire\s+[\d.]+s[^;]*infinite/)
-    // Se alguém trocar a esteira por um timer de JS, este teste continua
-    // passando — por isso o componente não tem estado: ver os casos acima.
-  })
-})
+// A degradação sem movimento (prefers-reduced-motion) e a existência da
+// animação em CSS são invariantes do ARQUIVO de estilo, não do componente:
+// vivem em `scripts/lints/esteiraMotion.mjs`, que roda em Node e pode ler o
+// index.css de verdade. Aqui elas passavam lendo string vazia.
