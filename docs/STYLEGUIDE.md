@@ -96,17 +96,24 @@ Regras de aplicação:
     escuro. Não havia nem regra consistente a aprender. Num app cuja doutrina é
     aprovação humana, a tinta de "isto executa sem pedir" não pode ser prima da
     tinta de "esta linha está selecionada".
+  - **Sem gutter, sem pip.** O pip é o marcador do GUTTER de lista/árvore. Numa
+    tira horizontal de abas não existe gutter, então o que sobra da receita é
+    **preenchimento + peso** (`ContextPanel`/`contextPanelChrome.tsx`: aba ativa
+    é `bg-sel` + `foreground`). Pip em aba seria um marcador sem coluna pra
+    morar; sublinhado colorido continua proibido.
   - **Exceção fechada: controle segmentado** (o comutador da barra superior e a
     linha de Execução) não é lista; segue em E1 (`bg-card` + `--shadow-sm`),
     como já é. E o "Liberado" âmbar do segmentado de Execução continua onde
-    está, porque é risco, não seleção.
+    está, porque é risco, não seleção. (Aba DENTRO de cartão não pode usar essa
+    receita: cartão sobre cartão é elevação aninhada, daí ela usar `--sel`.)
   - **Divergência datada, não acidental** (§0): a receita vale hoje na árvore da
-    sidebar (projeto, conversa, feature SDD, entradas globais). O painel direito
-    (aba com sublinhado brass) e os demais sítios de brass-como-ativo
-    (`FlightPlansView`, `SddView`, `ScheduledView`, `LearningSection`,
-    `FusionBoard`, `MissionPlanCanvas`, `InteractionHost`, `RichSelect`…) ainda
-    usam a gramática velha e migram por superfície tocada. Quem tocar numa
-    dessas telas migra ela; ninguém adiciona brass-como-ativo novo.
+    sidebar (projeto, conversa, feature SDD, entradas globais) **e no painel
+    direito** (abas Contexto/Alterações/Plano, migradas na Fase 2 do ADR-043).
+    Os demais sítios de brass-como-ativo (`FlightPlansView`, `SddView`,
+    `ScheduledView`, `LearningSection`, `FusionBoard`, `MissionPlanCanvas`,
+    `InteractionHost`, `RichSelect`…) ainda usam a gramática velha e migram por
+    superfície tocada. Quem tocar numa dessas telas migra ela; ninguém adiciona
+    brass-como-ativo novo.
 - **Identidade de motor não carrega estado.** A marca do agent na árvore
   (`AgentMark`) é permanente e responde só "qual motor é este". Estado do turno
   mora no slot direito (§6), nunca grudado na marca: numa linha de lista,
@@ -223,7 +230,7 @@ nunca em big-bang):
 | Nível | Receita | Onde |
 |---|---|---|
 | **E0 — plano** | fundo + hairline `--border` | listas, linhas do fio, painéis laterais (`--rail`) |
-| **E1 — cartão** | `bg-card` + `--shadow-sm` (+ `--lift` opcional) | segmented ativo, cards de painel, pills |
+| **E1 — cartão** | `bg-card` + `--shadow-sm` (+ `--lift` opcional) | segmented ativo, cards de painel, pills, **painel direito** (`ContextPanel`) |
 | **E2 — flutuante** | `--shadow-pop` | popover, dialog, dropdown, composer, tray, lightbox |
 
 - Focus ring (`--ring` brass) e halos de estado
@@ -232,8 +239,22 @@ nunca em big-bang):
 - `shadow-md`, `shadow-lg`, `shadow-xl`, `shadow-2xl` são proibidos em
   componente do app; primitives em `components/ui/` que ainda os carregam
   (shadcn cru) migram pra `--shadow-pop` quando tocados.
-- Profundidade vem de hairline + véu, não de sombra pesada: cartão dentro de
-  cartão com borda própria e raio próprio é proibido (ver rubrica §8).
+- Profundidade vem de hairline + véu, não de sombra pesada.
+- **A proibição de cartão-em-cartão é de BORDA aninhada, não de raio**
+  (ADR-043): superfície que se separa por **cor + raio, sem hairline**, não
+  conta como cartão para esta regra. É o que deixa o painel direito ser E1 com
+  o composer em E2 lá dentro. E ela fica **mais** forte, não menos: como o
+  painel virou superfície, nada lá dentro tem borda própria (nem divisor, nem
+  chip contornado, nem a barra sticky do `DiffPanel`, que ocluí com `bg-card`).
+- **Divisor é último recurso.** Seções de um mesmo painel se separam por
+  **proximidade assimétrica: 24px acima do título, 8px abaixo** (razão 3:1) —
+  `Section` em `components/layout/contextPanelChrome.tsx` é a implementação, e
+  painel novo importa em vez de reinventar. Hairline entre seções só sobrevive
+  onde muda a **propriedade** do conteúdo (lista de dados → zona de ação, como
+  a barra sticky do `DiffPanel`), nunca onde muda só o assunto. `<Separator />`
+  como irmão direto de seção de painel é o padrão que isto proíbe: eram 7 no
+  `ContextPanel`, todos correndo de parede a parede enquanto o conteúdo
+  respirava 20px.
 
 ## 5. As quatro camadas de esconder
 
@@ -367,8 +388,9 @@ Checklist:
       ghost; destrutiva em vermelho SÓ se destrói
   [ ] Densidade: linhas nas réguas (projeto ~40px, conversa ~34px, grid 4px);
       denso nas laterais, respirável no centro
-  [ ] Cards-em-cards: PROIBIDO (borda com raio dentro de borda com raio;
-      achatar em E0 com divisores hairline)
+  [ ] Cards-em-cards: BORDA aninhada é proibida (borda com raio dentro de
+      borda com raio). Separar por cor + raio, sem hairline, é permitido (§4);
+      dentro de uma superfície assim, divisor só por mudança de propriedade
   [ ] Alinhamento: números de coluna à direita e alinhados; nada fora do
       grid de 4px; largura pré-reservada pro que muda
   [ ] Movimento/tempo: regras do §6 (cronômetro, gerúndio/pretérito, dono

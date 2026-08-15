@@ -742,15 +742,14 @@ export default function App() {
                 <ResizableHandle className="bg-transparent transition-colors after:w-4 data-[resize-handle-state=hover]:bg-border/50 data-[resize-handle-state=drag]:bg-border/70" />
               </>
             )}
-            {/* Conteúdo principal como "card inset" flutuando no rail. */}
+            {/* Conteúdo: dois cartões IRMÃOS flutuando no rail, com um vão de
+                8px entre eles (o da direita mora no ContextPanel, E1) — antes
+                era um cartão só com um hairline no meio. */}
             <ResizablePanel id="main" defaultSize="81%" minSize="40%">
               <div className="relative h-full py-2 pr-2 pl-1">
-                <div className="flex h-full overflow-hidden rounded-xl border bg-background shadow-[var(--shadow-pop)]">
-                  <ResizablePanelGroup
-                    orientation="horizontal"
-                    className="h-full"
-                  >
-                    <ResizablePanel id="chat" defaultSize="70%" minSize="42%">
+                <ResizablePanelGroup orientation="horizontal" className="h-full">
+                  <ResizablePanel id="chat" defaultSize="70%" minSize="42%">
+                    <div className="h-full overflow-hidden rounded-xl border bg-background shadow-[var(--shadow-pop)]">
                       {/* F7: a view global "Agendado" cobre o conteúdo via
                           estado próprio — o switcher de superfícies fica como está.
                           Painel e Trabalho ficam SEMPRE MONTADOS (toggle por CSS):
@@ -790,25 +789,26 @@ export default function App() {
                       ) : viewMode === "sdd" ? (
                         <SddView />
                       ) : null}
-                    </ResizablePanel>
-                    {contextOpen &&
-                      viewMode === "linear" &&
-                      !scheduledOpen &&
-                      !flightPlansOpen && (
-                      <>
-                        <ResizableHandle className="bg-border/40 transition-colors after:w-3 data-[resize-handle-state=hover]:bg-brass/50 data-[resize-handle-state=drag]:bg-brass/60" />
-                        <ResizablePanel
-                          id="context"
-                          defaultSize="30%"
-                          minSize="240px"
-                          maxSize="42%"
-                        >
-                          <ContextPanel />
-                        </ResizablePanel>
-                      </>
-                    )}
-                  </ResizablePanelGroup>
-                </div>
+                    </div>
+                  </ResizablePanel>
+                  {contextOpen && viewMode === "linear" &&
+                    !scheduledOpen && !flightPlansOpen && (
+                    <>
+                      {/* O vão de 8px É o divisor: a alça perdeu o hairline e
+                          o brass do hover (brass é gesto, não borda de
+                          arrastar), como a alça da sidebar. */}
+                      <ResizableHandle className="w-2 bg-transparent transition-colors after:w-4 data-[resize-handle-state=hover]:bg-border/50 data-[resize-handle-state=drag]:bg-border/70" />
+                      <ResizablePanel
+                        id="context"
+                        defaultSize="30%"
+                        minSize="240px"
+                        maxSize="42%"
+                      >
+                        <ContextPanel />
+                      </ResizablePanel>
+                    </>
+                  )}
+                </ResizablePanelGroup>
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>

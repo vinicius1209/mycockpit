@@ -102,7 +102,9 @@ export function DoctrineSection({
         </span>
         <button
           onClick={abrir}
-          className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border/60 px-2.5 text-[12px] text-muted-foreground transition-colors hover:border-brass/60 hover:text-brass"
+          // Mesmo chip do "Adicionar" do ContextPanel: sem hairline (o painel
+          // é cartão, §4) e sem brass (ação secundária, §2).
+          className="flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-secondary/60 px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
         >
           {exists ? "Editar" : "Escrever"}
         </button>

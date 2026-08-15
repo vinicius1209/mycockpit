@@ -1243,3 +1243,35 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   conversas saiu para `ConversationList.tsx` e o submenu de cor para
   `ColorSubmenu.tsx`; o arquivo caiu para 924 linhas e a baseline desceu junto.
   Dividir, nunca subir o teto.
+- **FASE 2 (build 206) — o painel direito virou CARTÃO, e os 7 divisores
+  saíram.** O que entrou, e só isto:
+  - **Cartão flutuante (E1).** O `ContextPanel` deixou de ser uma coluna dentro
+    do cartão de conteúdo e virou superfície própria (`bg-card` + raio +
+    `--shadow-sm`, **sem borda**), irmã do cartão do chat, com um vão de 8px
+    entre as duas. A alça de resize perdeu o hairline e o brass do hover (brass
+    é gesto, não borda de arrastar): o vão É o divisor, como na sidebar.
+  - **A destravadora escrita no §4:** a proibição de cartão-em-cartão é de
+    **borda** aninhada, não de raio. Sem essa distinção o painel não podia ser
+    cartão. Em troca a regra ficou mais forte: nada dentro do painel tem borda
+    própria, e é isso que mata os divisores. Foram junto os dois chips
+    contornados ("Adicionar" pasta e "Escrever" doutrina), que viraram
+    preenchimento e saíram do brass no hover (§2: brass é ação primária, e
+    nenhum dos dois é).
+  - **Seções por proximidade assimétrica 24/8**, não por traço. Efeito
+    colateral que o divisor escondia: o cabeçalho "Arquivos das CLIs" estava
+    fora do compasso (`px-1`, rótulo à mão) e, sem o traço acima, lia como
+    continuação de "Missões". Entrou no `px-5` + `.label-mono` das seções, com
+    o chevron à direita, que é onde `FileRow` e `ClaudeNode` já o põem.
+  - **Aba ativa perdeu o sublinhado brass** (a terceira linguagem de "ativo" do
+    app) e passou à receita da árvore: `bg-sel` + peso. O contador de arquivos
+    alterados saiu do `bg-brass` e virou número mono, porque é metadado.
+    **Aqui a receita do §2 anda com uma perna a menos, de propósito:** não há
+    pip. Pip é marcador de GUTTER, e tira horizontal de abas não tem gutter.
+  - **A barra sticky do `DiffPanel` passou a ocluir com `bg-card`.** Ela usava
+    `bg-background`, que sobre a nova superfície seria uma faixa de outra cor
+    deslizando por cima do conteúdo. O `border-b` dela FICA: separa zona de ação
+    de lista de dados, que é a exceção que a regra do divisor preserva.
+  - **Consequência de catraca:** o `ContextPanel.tsx` estava colado no teto
+    congelado (928). A gramática visual dele (`Section`, `TabBtn`, `StageBadge`)
+    saiu para `contextPanelChrome.tsx` — são as três peças que a Fase 2 mudou, e
+    mudam juntas. O arquivo caiu para 858 e a baseline desceu junto.

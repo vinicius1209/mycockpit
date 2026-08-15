@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { ReactNode } from "react"
 import {
   AlertCircle,
   AlertTriangle,
@@ -14,13 +13,16 @@ import {
   Plug,
   RefreshCw,
   X,
-  type LucideIcon,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Section,
+  StageBadge,
+  TabBtn,
+} from "@/components/layout/contextPanelChrome"
 import { DiffPanel } from "@/components/layout/DiffPanel"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { deriveTasks } from "@/lib/tasks"
-import { Separator } from "@/components/ui/separator"
 import {
   Dialog,
   DialogContent,
@@ -57,17 +59,6 @@ import { writeMycockpitConfig } from "@/lib/mycockpit"
 import { fmtBytes } from "@/lib/format"
 import { isTauri } from "@/lib/db"
 import { cn, shortPath } from "@/lib/utils"
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="px-5 py-3">
-      <div className="mb-2">
-        <span className="label-mono">{title}</span>
-      </div>
-      {children}
-    </section>
-  )
-}
 
 /** Linha de arquivo de instrução, 3 estados (presente/ausente), sem cheque. */
 function FileRow({
@@ -266,69 +257,7 @@ function DetailDialog({
   )
 }
 
-/** Estágio do manifest SDD (discovery→…→done). */
-function StageBadge({ stage }: { stage: string }) {
-  const done = stage === "done"
-  return (
-    <span
-      className={cn(
-        "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium tracking-wide uppercase",
-        // "done" fica na tela pra sempre: é ambiente, logo cinza (§2).
-        done ? "bg-muted text-muted-foreground" : "bg-brass/15 text-brass",
-      )}
-    >
-      {stage}
-    </span>
-  )
-}
-
 type Status = "loading" | "ready" | "error" | "browser"
-
-/** Tab do painel direito (Contexto | Alterações) com sublinhado brass no ativo. */
-function TabBtn({
-  active,
-  onClick,
-  icon: Icon,
-  children,
-  badge,
-}: {
-  active: boolean
-  onClick: () => void
-  icon: LucideIcon
-  children: ReactNode
-  /** Contador opcional (ex.: nº de arquivos alterados). 0 = sem badge. */
-  badge?: number
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "relative flex h-full items-center gap-1.5 text-[11px] font-medium tracking-[0.08em] uppercase transition-colors",
-        active
-          ? "text-foreground"
-          : "text-muted-foreground/50 hover:text-muted-foreground",
-      )}
-    >
-      <Icon className="size-3.5" />
-      {children}
-      {badge != null && badge > 0 && (
-        <span
-          className={cn(
-            "grid min-w-4 place-items-center rounded-full px-1 text-[11px] font-semibold tabular-nums",
-            active
-              ? "bg-brass text-background"
-              : "bg-muted-foreground/25 text-foreground/80",
-          )}
-        >
-          {badge}
-        </span>
-      )}
-      {active && (
-        <span className="absolute inset-x-0 -bottom-px h-[2px] rounded-full bg-brass" />
-      )}
-    </button>
-  )
-}
 
 export function ContextPanel() {
   const project = useActiveProject()
@@ -534,8 +463,14 @@ export function ContextPanel() {
   })()
 
   return (
-    <aside className="reveal-right flex h-full w-full flex-col bg-transparent">
-      <header className="flex h-11 shrink-0 items-center gap-4 px-5">
+    // CARTÃO FLUTUANTE (E1): o painel deixou de ser uma coluna colada na
+    // parede do cartão de conteúdo e virou superfície própria — `bg-card` +
+    // raio + `--shadow-sm`, e NENHUMA borda. A proibição do §4 é de borda
+    // aninhada, não de raio: superfície que se separa por cor + raio não conta
+    // como cartão-dentro-de-cartão. Em troca, a proibição fica mais forte —
+    // nada aqui dentro pode ter hairline de largura total (ADR-043, Fase 2).
+    <aside className="reveal-right flex h-full w-full flex-col overflow-hidden rounded-xl bg-card shadow-[var(--shadow-sm),var(--lift)]">
+      <header className="flex h-11 shrink-0 items-center gap-1 px-2.5">
         <TabBtn
           active={tab === "contexto"}
           onClick={() => setTab("contexto")}
@@ -605,7 +540,11 @@ export function ContextPanel() {
                   </span>
                   <button
                     onClick={() => void onAddExtraDir()}
-                    className="flex h-7 items-center gap-1.5 rounded-md border border-border/60 px-2.5 text-[12px] text-muted-foreground transition-colors hover:border-brass/60 hover:text-brass"
+                    // Sem hairline: o painel é cartão, e a proibição de borda
+                    // aninhada vale pros controles dele também (§4). O chip se
+                    // separa por preenchimento, e sai do brass no hover porque
+                    // brass é ação PRIMÁRIA e esta é secundária (§2).
+                    className="flex h-7 items-center gap-1.5 rounded-md bg-secondary/60 px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                     aria-label="Adicionar pasta permitida"
                   >
                     <FolderPlus className="size-3.5" />
@@ -657,7 +596,6 @@ export function ContextPanel() {
             </div>
           </Section>
 
-          <Separator />
 
           {/* DOUTRINA: a instrução do próprio app, a única que alcança os três
               agents (nós injetamos). Vem antes do aprendizado porque é a regra
@@ -666,7 +604,6 @@ export function ContextPanel() {
             <DoctrineSection projectPath={project.path} seeds={doctrineSeeds} />
           </Section>
 
-          <Separator />
 
           {/* Auto-aprendizado (M1/M2): entregas no recall + lições podáveis.
               Auditável — o app propõe, você revisa/remove (princípio do doc). */}
@@ -674,7 +611,6 @@ export function ContextPanel() {
             <LearningSection key={reload} projectId={project.id} />
           </Section>
 
-          <Separator />
 
           {/* MH4.3 — histórico das missões do projeto (o índice `missions` do
               banco deixou de ser órfão): desfecho honesto (ressalva incluída),
@@ -687,34 +623,34 @@ export function ContextPanel() {
             />
           </Section>
 
-          <Separator />
-
           {/* Arquivos DAS CLIs, colapsado. O título era "o que o agente
               enxerga" e prometia demais: isto é mobília de fornecedor, cada
               linha com um dono, e o agent da conversa pode não ler nada disso —
               é o que a nota cruzada abaixo diz na cara. O conteúdo só monta
-              quando aberto (deixa o painel enxuto no dia a dia). */}
+              quando aberto (deixa o painel enxuto no dia a dia). Entra no mesmo
+              compasso das seções (24px acima, `px-5`, `.label-mono`): sem o
+              divisor que existia aqui, título fora do compasso lia como
+              continuação da seção anterior. O chevron foi pra DIREITA, onde ele
+              já está no `FileRow` e no `ClaudeNode`. */}
           <button
             onClick={() => setShowAgentCtx((v) => !v)}
-            className="flex w-full items-center gap-2 px-1 py-1 text-left"
+            className="mt-6 flex w-full items-center gap-2 px-5 text-left"
             aria-expanded={showAgentCtx}
           >
+            <div className="min-w-0 flex-1">
+              <span className="label-mono">Arquivos das CLIs</span>
+              {!showAgentCtx && (
+                <div className="mt-1 truncate text-[12px] text-muted-foreground/60">
+                  {agentCtxSummary}
+                </div>
+              )}
+            </div>
             <ChevronDown
               className={cn(
                 "size-3.5 shrink-0 text-muted-foreground transition-transform",
                 showAgentCtx && "rotate-180",
               )}
             />
-            <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
-                Arquivos das CLIs
-              </div>
-              {!showAgentCtx && (
-                <div className="truncate text-[12px] text-muted-foreground/60">
-                  {agentCtxSummary}
-                </div>
-              )}
-            </div>
           </button>
 
           {showAgentCtx && (
@@ -723,7 +659,7 @@ export function ContextPanel() {
               isto o painel listava 3 personas e 9 memórias do Claude Code numa
               conversa Codex, como se fossem contexto dela. */}
           {vendorNote && (
-            <p className="px-1 pb-1 text-[11px] leading-snug text-muted-foreground/75">
+            <p className="px-5 pt-2 text-[11px] leading-snug text-muted-foreground/75">
               {vendorNote}
             </p>
           )}
@@ -833,88 +769,82 @@ export function ContextPanel() {
               CONTEXTO EXTERNO lido por code agents (.claude/agents, AGENTS.md),
               não os especialistas do app, que é o que o "@" do composer menciona. */}
           {status === "ready" && sources && sources.personas.length > 0 && (
-            <>
-              <Separator />
-              <Section title="Subagents do Claude Code">
-                <div className="flex flex-col gap-1.5">
-                  {sources.personas.map((p) => (
-                    <button
-                      key={p.name}
-                      onClick={() => setDetail({ title: p.name, path: p.path })}
-                      className="w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate font-mono text-[13px] text-foreground/90">
-                          {p.name}
+            <Section title="Subagents do Claude Code">
+              <div className="flex flex-col gap-1.5">
+                {sources.personas.map((p) => (
+                  <button
+                    key={p.name}
+                    onClick={() => setDetail({ title: p.name, path: p.path })}
+                    className="w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate font-mono text-[13px] text-foreground/90">
+                        {p.name}
+                      </span>
+                      {p.model && p.model !== "inherit" && (
+                        <span className="shrink-0 rounded border px-1 py-px text-[11px] tracking-wide text-muted-foreground uppercase">
+                          {p.model}
                         </span>
-                        {p.model && p.model !== "inherit" && (
-                          <span className="shrink-0 rounded border px-1 py-px text-[11px] tracking-wide text-muted-foreground uppercase">
-                            {p.model}
-                          </span>
-                        )}
-                      </div>
-                      {p.description && (
-                        <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-muted-foreground/80">
-                          {p.description}
-                        </p>
                       )}
-                    </button>
-                  ))}
-                </div>
-              </Section>
-            </>
+                    </div>
+                    {p.description && (
+                      <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-muted-foreground/80">
+                        {p.description}
+                      </p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </Section>
           )}
 
           {status === "ready" && sources && sources.specs.length > 0 && (
-            <>
-              <Separator />
-              <Section title="Specs">
-                <div className="flex flex-col gap-1">
-                  {sources.specs.map((s) => (
-                    <button
-                      key={s.slug}
-                      onClick={() =>
-                        setDetail({ title: s.title ?? s.slug, path: s.path })
-                      }
-                      className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40"
-                    >
-                      <span className="truncate text-[12px] text-foreground/90">
-                        {s.title ?? s.slug}
-                      </span>
-                      {s.stage && <StageBadge stage={s.stage} />}
-                    </button>
-                  ))}
-                </div>
-              </Section>
-            </>
+            <Section title="Specs">
+              <div className="flex flex-col gap-1">
+                {sources.specs.map((s) => (
+                  <button
+                    key={s.slug}
+                    onClick={() =>
+                      setDetail({ title: s.title ?? s.slug, path: s.path })
+                    }
+                    className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40"
+                  >
+                    <span className="truncate text-[12px] text-foreground/90">
+                      {s.title ?? s.slug}
+                    </span>
+                    {s.stage && <StageBadge stage={s.stage} />}
+                  </button>
+                ))}
+              </div>
+            </Section>
           )}
 
           {status === "ready" && sources?.memory.exists && (
-            <>
-              <Separator />
-              <Section title="Memórias">
-                <button
-                  onClick={() =>
-                    sources.memory.path &&
-                    setDetail({ title: "MEMORY.md", path: sources.memory.path })
-                  }
-                  disabled={!sources.memory.path}
-                  className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40 disabled:cursor-default disabled:hover:bg-transparent"
-                >
-                  <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
-                    <Brain className="size-3.5" />
-                    memória do projeto
-                  </span>
-                  <span className="text-[11px] text-muted-foreground/70">
-                    {sources.memory.count}{" "}
-                    {sources.memory.count === 1 ? "nota" : "notas"}
-                  </span>
-                </button>
-              </Section>
-            </>
+            <Section title="Memórias">
+              <button
+                onClick={() =>
+                  sources.memory.path &&
+                  setDetail({ title: "MEMORY.md", path: sources.memory.path })
+                }
+                disabled={!sources.memory.path}
+                className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40 disabled:cursor-default disabled:hover:bg-transparent"
+              >
+                <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                  <Brain className="size-3.5" />
+                  memória do projeto
+                </span>
+                <span className="text-[11px] text-muted-foreground/70">
+                  {sources.memory.count}{" "}
+                  {sources.memory.count === 1 ? "nota" : "notas"}
+                </span>
+              </button>
+            </Section>
           )}
             </>
           )}
+          {/* Piso do rolamento: sem os divisores, a última seção terminava
+              encostada na borda do cartão. 16px é o mesmo respiro do mock. */}
+          <div className="h-4" aria-hidden />
         </ScrollArea>
       )}
 
