@@ -106,14 +106,38 @@ Regras de aplicação:
     como já é. E o "Liberado" âmbar do segmentado de Execução continua onde
     está, porque é risco, não seleção. (Aba DENTRO de cartão não pode usar essa
     receita: cartão sobre cartão é elevação aninhada, daí ela usar `--sel`.)
-  - **Divergência datada, não acidental** (§0): a receita vale hoje na árvore da
-    sidebar (projeto, conversa, feature SDD, entradas globais) **e no painel
-    direito** (abas Contexto/Alterações/Plano, migradas na Fase 2 do ADR-043).
-    Os demais sítios de brass-como-ativo (`FlightPlansView`, `SddView`,
-    `ScheduledView`, `LearningSection`, `FusionBoard`, `MissionPlanCanvas`,
-    `InteractionHost`, `RichSelect`…) ainda usam a gramática velha e migram por
-    superfície tocada. Quem tocar numa dessas telas migra ela; ninguém adiciona
-    brass-como-ativo novo.
+  - **A divergência ACABOU (Fase 5, build 206).** A receita vale no app inteiro:
+    árvore da sidebar, painel direito e os dezesseis sítios que faltavam
+    (`FlightPlansView`, `SddView`, `ScheduledView`, `Especialistas`,
+    `FusionBoard`, `MissionPlanCanvas`, `InteractionHost`, `RichSelect`,
+    `MessageList`, `ThemeStep`, `AgentStep`, `OnboardingWizard`,
+    `GateAnswerForm`). Não existe mais "gramática velha" a tolerar.
+  - **A receita é CÓDIGO, não convenção**: `SELECTED_FILL`, `UNSELECTED` e
+    `SELECTED_ON_SURFACE` em `lib/selection.ts`. Superfície nova IMPORTA (o
+    padrão do `lib/meter.ts`); três receitas de chip que só divergiam na
+    opacidade da borda foi o que a Fase 5 encontrou.
+  - **Fronteira decidida, não esquecida** — o que NÃO é seleção e por isso
+    segue brass: **interruptor binário de ajuste** (`Switch`, checkbox nativo
+    com `accent-color`), porque ligar/desligar UM comportamento não é escolher
+    entre itens e o preenchimento do trilho É a afordância; e o **controle
+    segmentado**, exceção já fechada acima. O que também não é seleção e por
+    isso é **âmbar**: "Auto" de autonomia (`PhaseRow`, `MissionLauncher`), que
+    é risco autorizado igual ao "Liberado" — neutralizar ali seria esconder o
+    que o §2 manda deixar visível.
+  - **Guarda automática** (§10): `scripts/check-barra-de-acento.mjs` reprova
+    filete tingido (≤ 3px, `bg-brass`/`bg-st-*`) colado numa aresta com
+    `absolute`. Pega as duas formas do vício, a barra vertical da sidebar e o
+    sublinhado horizontal da aba.
+- **Brass também não pinta METADADO** (Fase 5). Etiqueta que só informa
+  (estágio de feature, escopo de aprendizado, tipo de agendamento, modelo do
+  especialista, badge de opção, contagem, numeração) é **cinza**: brass tem um
+  trabalho só, e "importância genérica" não é um deles. Se o metadado precisa
+  de você, ele não é metadado — é decisão pendente, e aí é âmbar (foi o que
+  aconteceu com a lição "candidata" do `LearningSection`). E quando os dois
+  estados são saudáveis, quem distingue é o **texto**, não a tinta: o
+  `StageBadge` imprime "done" × "discovery" e ficou cinza nos dois (§9 item 4).
+  Corolário já cobrado no §2: custo nunca é brass, e o sparkline do `CostAudit`
+  destaca a janela corrente por **luminância**.
 - **Identidade de motor não carrega estado.** A marca do agent na árvore
   (`AgentMark`) é permanente e responde só "qual motor é este". Estado do turno
   mora no slot direito (§6), nunca grudado na marca: numa linha de lista,
@@ -513,7 +537,7 @@ UsagePill (`DropdownMenuContent` z-50 sob o header z-[110]) → `z-[120]` +
 
 ## 10. Guarda automática (ratchet de lints)
 
-Este guia deixou de depender de memória: três scripts rodam na CI (job
+Este guia deixou de depender de memória: cinco scripts rodam na CI (job
 `guardas` do `.github/workflows/ci.yml`, separado dos testes) e localmente por
 `cd app && bun run check`. A ideia é a do Buzz (`docs/study-buzz.md`, item B1):
 **passada de despoluição sem guarda re-fragmenta em poucos sprints**. Código
@@ -524,6 +548,8 @@ nosso; só as regras vieram de lá.
 | `scripts/check-type-scale.mjs` | §3, a escala fechada | aparece tamanho de fonte fora de {11, 12, 13, 14, 20, 30, 38}px em `app/src/**`, seja `text-[15px]`, seja rem arbitrário (`text-[0.9rem]`), seja `font-size:` em CSS. Também acusa classe nomeada do Tailwind (`text-sm`) fora de `components/ui/` |
 | `scripts/check-file-size-ratchet.mjs` | legibilidade (arquivo grande esconde bug) | um arquivo passa do teto do tipo (500 linhas `.ts` · 700 `.tsx` · 900 teste) ou cresce acima do congelado em `scripts/lints/file-size-baseline.json` |
 | `scripts/check-dead-tokens.mjs` | §2, §4 e §7 | volta `shadow-md/lg/xl/2xl`; aparece `text-st-success` além do declarado por arquivo; entra travessão "—" em prosa de UI |
+| `scripts/lints/rodandoMotion.mjs` | §6, o único estado que se move | a `.conv-spin` perde a animação de CSS ou o bloco `prefers-reduced-motion` que a degrada num ponto sólido visível |
+| `scripts/check-barra-de-acento.mjs` | §2, seleção não é cor | volta o filete tingido de seleção: elemento `absolute` de dimensão ≤ 3px, colado numa aresta (`left-0`, `inset-x-0`, `-bottom-px`…), com `bg-brass` ou `bg-st-*`. Pega as duas formas, a barra vertical da sidebar (Fase 1) e o sublinhado da aba (Fase 2) |
 
 Regras de convívio (as três valem mais que a conveniência do momento):
 
@@ -550,9 +576,17 @@ mais a triagem que o §9 item 4 adiou de propósito (`TaskChecklist`,
 agent e não prosa de UI (§9 item 7). Saída de `console.*` também não é copy de
 UI: fica fora por regra, não por exceção.
 
-Os núcleos puros dos três scripts vivem em `scripts/lints/` com teste vitest
-ao lado (o `bun run test` do app já os coleta). Padrão novo entra como mais um
-objeto em `DEAD_TOKEN_RULES`.
+Os núcleos puros vivem em `scripts/lints/` com teste vitest ao lado (o
+`bun run test` do app já os coleta), e o da barra de acento é testado com o
+markup REAL que as Fases 1 e 2 removeram, não com exemplo inventado. Padrão
+novo de token morto entra como mais um objeto em `DEAD_TOKEN_RULES`; regra de
+FORMA (como a barra) vira script próprio, porque ela não é um literal a
+procurar, é uma combinação de classes no mesmo elemento.
+
+Uma nota sobre exceção: a guarda da barra de acento **não tem** mapa de
+exceção, de propósito. Orçamento por arquivo faz sentido pra token que já
+existe espalhado (o verde); não faz pra uma forma que o app decidiu que não
+volta.
 
 ## 11. Superfícies do sistema
 

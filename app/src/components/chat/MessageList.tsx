@@ -40,6 +40,7 @@ import {
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { SELECTED_FILL } from "@/lib/selection"
 import { DESTINATIONS } from "@/lib/agents"
 import type { AgentDef } from "@/lib/agentDefs"
 import { fmtCost, fmtDuration, fmtTime, fmtTokens } from "@/lib/format"
@@ -1415,9 +1416,7 @@ function TurnFeedback({
               title={label}
               className={cn(
                 "rounded-full border px-1.5 py-0.5 text-[13px] leading-none transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                active
-                  ? "border-brass/45 bg-brass/10"
-                  : "border-transparent bg-secondary/50",
+                active ? SELECTED_FILL : "border-transparent bg-secondary/50",
               )}
             >
               <span aria-hidden>{emoji}</span>
@@ -1452,7 +1451,7 @@ function TurnFeedback({
                   aria-label={`Reagir com ${emoji}`}
                   className={cn(
                     "rounded-full px-1 py-0.5 text-[13px] leading-none hover:bg-accent",
-                    active && "bg-brass/10",
+                    active && "bg-sel",
                   )}
                 >
                   {emoji}

@@ -478,14 +478,10 @@ function SddFeatureList({ project }: { project: Project }) {
                     "Implementação" custa ~74px, menos do que o badge gastava
                     ANTES da migração pra 11px. O rótulo canônico fica inteiro
                     (§7: não inventar sinônimo curto pra caber). */}
-                <span
-                  className={cn(
-                    "shrink-0 rounded-sm px-1 py-px text-[11px] leading-4",
-                    stage === "done"
-                      ? "bg-muted text-muted-foreground"
-                      : "bg-brass/10 text-brass/80",
-                  )}
-                >
+                {/* Cinza nos dois estados, igual ao `StageBadge` do painel:
+                    estágio não é gesto nem status, e quem distingue "done" de
+                    "discovery" é o TEXTO (§9 item 4). */}
+                <span className="shrink-0 rounded-sm bg-muted px-1 py-px text-[11px] leading-4 text-muted-foreground">
                   {stageLabel(stage)}
                 </span>
               </button>
@@ -553,7 +549,10 @@ function ScheduledEntry() {
           Agendado
         </span>
         {nextAt != null && (
-          <span className="shrink-0 rounded bg-brass/10 px-1.5 py-px text-[11px] tabular-nums text-brass/80">
+          // "Quando?" tem UM idioma nesta árvore, e ele é neutro: a Fase 1 pôs
+          // o tempo relativo da conversa em mono cinza no slot direito, e a
+          // próxima execução responde a mesma pergunta na mesma coluna.
+          <span className="shrink-0 font-mono text-[11px] tabular-nums text-faint">
             {fmtUntilShort(nextAt - Date.now())}
           </span>
         )}

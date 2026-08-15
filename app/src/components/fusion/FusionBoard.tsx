@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { SELECTED_FILL, SELECTED_ON_SURFACE } from "@/lib/selection"
 
 /** Trunca com reticências (títulos de conversa em botões/chips). */
 export function truncateTitle(s: string, max = 24): string {
@@ -70,7 +71,7 @@ export function CandidateLane({
     <Check className="size-3.5 shrink-0 text-st-success" />
   )
   const suggestedBadge = suggested && (
-    <span className="shrink-0 rounded border border-brass/40 px-1 py-px text-[11px] tracking-wide text-brass uppercase">
+    <span className="shrink-0 rounded bg-secondary px-1 py-px text-[11px] tracking-wide text-muted-foreground uppercase">
       sugerido
     </span>
   )
@@ -86,10 +87,12 @@ export function CandidateLane({
       onClick={onChoose}
       className={cn(
         "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+        // Escolhida pelo HUMANO e pré-selecionada pela fusão são dois graus
+        // da mesma coisa: preenchimento neutro pro fato, contorno pro palpite.
         userPicked
-          ? "border-brass bg-brass/10 text-brass"
+          ? SELECTED_FILL
           : selected
-            ? "border-brass/35 text-brass/80"
+            ? "border-border text-foreground"
             : "text-muted-foreground hover:text-foreground",
       )}
     >
@@ -102,7 +105,7 @@ export function CandidateLane({
       className={cn(
         "rounded-xl border bg-card transition-[box-shadow,border-color]",
         fill && "flex h-full min-h-0 flex-col",
-        selected && "border-brass/70 shadow-[0_0_0_2px_var(--brass-soft)]",
+        selected && SELECTED_ON_SURFACE,
         failed && "opacity-60",
       )}
     >

@@ -40,8 +40,10 @@ export function AutonomyPill({
       aria-label={label}
       className={cn(
         "flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium transition-colors",
+        // "Auto" = esta fase roda sem pedir: risco autorizado é âmbar (§2),
+        // o mesmo dono do "Liberado". Neutralizar aqui esconderia o risco.
         on
-          ? "border-brass/50 bg-brass/15 text-brass"
+          ? "border-st-warning/50 bg-st-warning/15 text-st-warning"
           : "border-border/60 text-muted-foreground hover:text-foreground",
       )}
     >

@@ -32,6 +32,7 @@ import {
   normalizeModelValue,
 } from "@/lib/agents"
 import { shortDigest } from "@/lib/presets"
+import { SELECTED_FILL, UNSELECTED } from "@/lib/selection"
 import {
   ALL_CATEGORY,
   buildCreateInput,
@@ -59,14 +60,13 @@ type View =
   | { kind: "create"; editId: string | null }
 
 /** Tag pequena (categoria/modelo/escopo) do card e do detalhe. */
-function Tag({ children, brass }: { children: React.ReactNode; brass?: boolean }) {
+function Tag({ children, forte }: { children: React.ReactNode; forte?: boolean }) {
   return (
     <span
       className={cn(
+        // Metadado não tem tinta (§2): `brass` virou `forte`, por CONTRASTE.
         "rounded-full border px-2 py-px text-[11px]",
-        brass
-          ? "border-brass/30 text-brass"
-          : "border-border text-muted-foreground",
+        forte ? "border-border-strong text-foreground" : "border-border text-muted-foreground",
       )}
     >
       {children}
@@ -107,7 +107,7 @@ function EspecialistaCard({
       </p>
       <div className="flex flex-wrap gap-1.5">
         <Tag>{categoriaDe(def)}</Tag>
-        <Tag brass>{modelTag(def)}</Tag>
+        <Tag forte>{modelTag(def)}</Tag>
         <Tag>{def.scope}</Tag>
       </div>
       <div className="mt-0.5 flex items-center justify-between border-t border-border/60 pt-2.5">
@@ -569,7 +569,7 @@ function CreateView({
             </p>
             <div className="flex flex-wrap gap-1.5">
               <Tag>{form.category.trim() || "Geral"}</Tag>
-              <Tag brass>
+              <Tag forte>
                 {form.model === "default"
                   ? form.backend
                   : `${form.backend} · ${form.model}`}
@@ -687,9 +687,7 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
                 onClick={() => setCategory(c)}
                 className={cn(
                   "rounded-full border px-2.5 py-1 text-[12px] transition-colors",
-                  category === c
-                    ? "border-brass/40 bg-brass/10 text-brass"
-                    : "border-border text-muted-foreground hover:text-foreground",
+                  category === c ? SELECTED_FILL : UNSELECTED,
                 )}
               >
                 {c}
@@ -700,7 +698,8 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
             {list.length === 0 ? (
               // cold start → AÇÃO, não beco: instala a equipe inicial ou cria do zero.
               <div className="col-span-full flex flex-col items-center gap-3.5 py-12 text-center">
-                <div className="grid size-11 place-items-center rounded-full border border-brass/30 bg-brass/10 text-brass">
+                {/* §2: ícone de empty state não é brass. */}
+                <div className="grid size-11 place-items-center rounded-full bg-secondary text-muted-foreground">
                   <Users className="size-5" />
                 </div>
                 <div>

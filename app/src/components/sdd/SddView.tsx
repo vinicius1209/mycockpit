@@ -33,6 +33,7 @@ import { reduceItems, useChat, type ChatItem } from "@/store/chat"
 import { Markdown } from "@/components/common/Markdown"
 import { readTextFile } from "@/lib/sources"
 import { fmtCost } from "@/lib/format"
+import { SELECTED_FILL, UNSELECTED } from "@/lib/selection"
 import {
   Dialog,
   DialogContent,
@@ -450,9 +451,7 @@ function NewFeatureDialog({
             title="Pipeline inteiro: PRD e SPEC formais antes do código"
             className={cn(
               "rounded-full border px-2.5 py-0.5 transition-colors",
-              track === "full"
-                ? "border-brass/50 bg-brass/10 text-brass"
-                : "border-border text-muted-foreground hover:text-foreground",
+              track === "full" ? SELECTED_FILL : UNSELECTED,
             )}
           >
             Completa · PRD + SPEC
@@ -462,9 +461,7 @@ function NewFeatureDialog({
             title="Sem PRD/SPEC formais: Descoberta → Implementação → Testes → Review → PR"
             className={cn(
               "rounded-full border px-2.5 py-0.5 transition-colors",
-              track === "quick"
-                ? "border-brass/50 bg-brass/10 text-brass"
-                : "border-border text-muted-foreground hover:text-foreground",
+              track === "quick" ? SELECTED_FILL : UNSELECTED,
             )}
           >
             Rápida · direto pra implementação
@@ -1279,7 +1276,7 @@ function Pipeline({
                 <div
                   className={cn(
                     "mt-[5px] h-px flex-1",
-                    isDone || isCurrent ? "bg-brass/40" : "bg-border",
+                    isDone || isCurrent ? "bg-foreground/30" : "bg-border",
                   )}
                 />
               )}
@@ -1291,14 +1288,14 @@ function Pipeline({
                     onClick={() => onMarkStage(s)}
                     title={`Marcar "${stageLabel(s)}" como etapa atual`}
                     aria-label={`Marcar ${stageLabel(s)} como etapa atual`}
-                    className="size-2.5 cursor-pointer rounded-full bg-muted-foreground/25 transition-all hover:scale-125 hover:bg-brass/60 hover:ring-[3px] hover:ring-brass/20"
+                    className="size-2.5 cursor-pointer rounded-full bg-muted-foreground/25 transition-all hover:scale-125 hover:bg-foreground/60 hover:ring-[3px] hover:ring-sel"
                   />
                 ) : (
                   <span
                     className={cn(
                       "size-2.5 rounded-full transition-colors",
                       isCurrent
-                        ? "bg-brass ring-[3px] ring-brass/20"
+                        ? "bg-foreground ring-[3px] ring-sel"
                         : isDone
                           ? "bg-st-success"
                           : "bg-muted-foreground/25",
@@ -1309,7 +1306,7 @@ function Pipeline({
                   className={cn(
                     "text-[11px] whitespace-nowrap",
                     isCurrent
-                      ? "font-medium text-brass"
+                      ? "font-medium text-foreground"
                       : isDone
                         ? "text-foreground/65"
                         : "text-muted-foreground/45",

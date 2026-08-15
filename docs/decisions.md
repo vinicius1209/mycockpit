@@ -1342,3 +1342,75 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
     rótulo aparece na largura padrão e que ele degrada pra ícone no painel
     mínimo com o contador de pé. Conferido que ele FALHA no markup anterior.
     A regra virou linha no §3 do STYLEGUIDE.
+- **FASE 5 (build 206) — os dezesseis sítios restantes migraram, e a
+  divergência datada ACABOU.** Era a fase que fechava o serviço: enquanto ela
+  não rodava, o app falava duas línguas, sidebar e painel na gramática nova e
+  dezesseis outros lugares na velha. O que entrou:
+  - **A receita virou CÓDIGO** (`lib/selection.ts`: `SELECTED_FILL`,
+    `UNSELECTED`, `SELECTED_ON_SURFACE`), pelo padrão do `lib/meter.ts` — "a
+    régua é UMA e é código". A varredura achou **três** receitas de chip ativo
+    que só divergiam na opacidade da borda (`border-brass/40`, `/50`, `/60`):
+    divergência que ninguém decidiu, exatamente o que o §0 descreve, e que
+    reapareceria de novo se a regra continuasse morando só no guia.
+  - **Migraram** (seleção): chips de `Especialistas`, `SddView` (trilha),
+    `ScheduledView` (tipo, recorrência, permissão), item da biblioteca do
+    `FlightPlansView`, stepper de estágio do `SddView`, cartão e botão do
+    `FusionBoard`, nó do `MissionPlanCanvas`, opção de pergunta do
+    `InteractionHost` (linha E a marca, que é o pip), reações do `MessageList`,
+    cartões do `ThemeStep`/`AgentStep` (com o miolo do radio virando pip
+    neutro), pontinho de passo do `OnboardingWizard`, alvo de drop do
+    `GateAnswerForm`. O segmento "Canvas" do `FlightPlansView` era o caso mais
+    gritante: **o mesmo controle segmentado** tinha o irmão "Linear" em
+    `text-foreground` e ele em `text-brass`.
+  - **Não migrou porque não é seleção, e isso ficou escrito** (§2): o
+    **interruptor binário de ajuste** (`Switch`, checkbox nativo com
+    `accent-color`) segue brass — ligar/desligar UM comportamento não é
+    escolher entre itens, e o preenchimento do trilho É a afordância; neutro
+    ali deixaria ligado e desligado com o mesmo pixel. O **controle
+    segmentado** segue na exceção já fechada, e o `planFirst` da linha de
+    Execução mora nessa mesma superfície.
+  - **Duas coisas viraram ÂMBAR, não neutro.** "Auto" de autonomia
+    (`PhaseRow`, `MissionLauncher`) significa "esta fase roda sem pedir": é
+    risco autorizado, o mesmo dono do "Liberado", e neutralizar ali seria
+    esconder o que o §2 manda deixar visível. A lição "candidata" do
+    `LearningSection` é decisão pendente (promover ou descartar), que também
+    tem dono no §2.
+  - **DECISÃO PEDIDA 1 — `StageBadge`: brass sai, e vira cinza nos DOIS
+    estados.** Era brass-como-ESTADO, e o §2 dá ao brass um trabalho só
+    (gesto). Estágio também não é nenhuma cor de status: não é decisão
+    pendente, não roda agora, não falhou, e não é marco raro (verde, que o §9
+    item 4 condenou como badge permanente). Sobra a regra do ambiente: cinza.
+    E a distinção não se perde, porque ela nunca esteve na tinta — o badge
+    IMPRIME o nome do estágio ("done" × "discovery"), que é a régua do §9 item
+    4: quem precisa distinguir dois estados saudáveis usa TEXTO. A mesma
+    decisão foi aplicada ao gêmeo do badge na `Sidebar`, senão a resposta
+    dependeria de onde você estava olhando.
+  - **DECISÃO PEDIDA 2 — próxima execução do Agendado.** A do painel já era
+    neutra (`label-mono` + mono `foreground`); a que continuava tingida era a
+    da **sidebar** (`bg-brass/10 text-brass/80`). Virou mono cinza, e o
+    argumento é da Fase 1: "quando?" tem UM idioma na árvore da sidebar, o
+    tempo relativo em mono no slot direito. Uma pílula tingida ali era a única
+    resposta de "quando" que gritava.
+  - **A regra geral que saiu dessas duas** (§2): **brass não pinta metadado**.
+    Etiqueta que só informa é cinza; se ela precisa de você, não é metadado, é
+    decisão pendente (âmbar). Foram junto o badge "lead" do `ScheduledView`, o
+    escopo do `LearningSection`, o `OptBadge` do `RichSelect`, o badge de motor
+    do `FusionBoard`, a `Tag` de modelo dos `Especialistas` (a prop `brass`
+    virou `forte`, que distingue por contraste), a numeração do
+    `GateAnswerForm` e o ícone de empty state dos `Especialistas` (que o §2 já
+    listava na coluna "NÃO use para"). A barra corrente do sparkline do
+    `CostAudit` também: o §2 já tinha fechado que **custo nunca é brass**, e
+    ela passou a destacar por luminância.
+  - **GUARDA (§10) — `scripts/check-barra-de-acento.mjs`, a quinta.** Reprova
+    filete tingido de seleção: elemento `absolute` com dimensão ≤ 3px, colado
+    numa aresta, com `bg-brass` ou `bg-st-*`. Pega as duas formas do vício, a
+    barra vertical da sidebar (Fase 1) e o sublinhado horizontal da aba (Fase
+    2), e lê as classes **por elemento** (inclusive as que vêm de ternário
+    dentro do `cn`), senão a barra montada em pedaços passaria batida. Os casos
+    de teste usam o markup REAL removido nas Fases 1 e 2
+    (`git show d827fe9^` e `7f5475e^`), não fixture inventada. Sem mapa de
+    exceção, de propósito: orçamento por arquivo faz sentido pra token já
+    espalhado, não pra uma forma que o app decidiu que não volta.
+    Aproveitando: a guarda do `rodandoMotion` **não estava na CI** (só no
+    `bun run check` local). Entrou junto — guarda que não roda na CI é
+    comentário.

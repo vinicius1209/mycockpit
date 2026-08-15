@@ -50,7 +50,9 @@ function Bars({ data }: { data: number[] }) {
           key={i}
           className={cn(
             "min-w-[2px] flex-1 rounded-t-[2px]",
-            i === data.length - 1 ? "bg-brass" : "bg-muted-foreground/25",
+            // Janela corrente destacada por LUMINÂNCIA, não por tinta: o §2
+            // fechou que custo não é gesto (nunca brass).
+            i === data.length - 1 ? "bg-foreground" : "bg-muted-foreground/25",
           )}
           style={{ height: `${Math.max(5, (v / max) * 100)}%` }}
         />

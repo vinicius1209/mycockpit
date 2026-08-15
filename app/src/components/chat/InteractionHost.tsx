@@ -32,6 +32,7 @@ import { AppDialog } from "@/components/ui/app-dialog"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { cn } from "@/lib/utils"
+import { SELECTED_FILL } from "@/lib/selection"
 
 /** Leva você até a conversa dona do pedido (mesmo gesto do sino/tray): projeto
  *  ativo + conversa aberta + modo linear. Lá o card renderiza inline, com o
@@ -606,14 +607,18 @@ function QuestionCard({
                   onClick={() => toggle(qi, o.label, q.multiSelect)}
                   className={cn(
                     "flex items-start gap-2 rounded-md border px-2 py-1.5 text-left transition-colors hover:bg-accent",
-                    on ? "border-brass/60 bg-brass/[0.08]" : "border-border/60",
+                    on ? SELECTED_FILL : "border-border/60",
                   )}
                 >
                   <span
                     className={cn(
                       "mt-0.5 flex size-4 shrink-0 items-center justify-center border",
                       q.multiSelect ? "rounded-[4px]" : "rounded-full",
-                      on ? "border-brass bg-brass text-background" : "border-muted-foreground/50",
+                      // A marca do escolhido é PIP NEUTRO (§2): tinta aqui
+                      // era seleção pintada de gesto.
+                      on
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-muted-foreground/50",
                     )}
                   >
                     {on && <Check className="size-3" />}

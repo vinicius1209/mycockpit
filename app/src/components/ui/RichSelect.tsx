@@ -26,7 +26,7 @@ const BASE_TRIGGER =
 
 function OptBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded border border-brass/40 px-1 py-px text-[11px] font-medium tracking-wide text-brass uppercase">
+    <span className="rounded bg-secondary px-1 py-px text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
       {children}
     </span>
   )
@@ -69,7 +69,9 @@ export function RichSelect({
           <span
             className={cn(
               "size-1.5 shrink-0 rounded-full",
-              selected?.disabled ? "bg-st-idle" : "bg-brass",
+              // Disponibilidade do agent escolhido: dois cinzas, um apagado
+              // (ocioso) e um vivo. Brass ali era gesto pintando metadado.
+              selected?.disabled ? "bg-st-idle" : "bg-muted-foreground",
             )}
           />
         )}

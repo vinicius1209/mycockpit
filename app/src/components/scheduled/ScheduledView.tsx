@@ -37,6 +37,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { StatusDot } from "@/components/common/StatusDot"
 import type { AgentStatus } from "@/lib/types"
 import { confirm } from "@/lib/confirm"
+import { SELECTED_FILL, UNSELECTED } from "@/lib/selection"
 import { agentModels, defaultModelFor, LEAGUE_AGENTS } from "@/lib/agents"
 import type {
   ScheduleKind,
@@ -204,7 +205,7 @@ function ScheduleRow({
             </span>
             {/* S4.3: schedule do lead — proposta de triagem, nunca despacho */}
             {s.kind === "lead" && (
-              <span className="shrink-0 rounded border border-brass/50 bg-brass/10 px-1.5 py-px text-[11px] tracking-wide text-brass">
+              <span className="shrink-0 rounded bg-secondary px-1.5 py-px text-[11px] tracking-wide text-muted-foreground">
                 lead
               </span>
             )}
@@ -726,9 +727,7 @@ function NewScheduleDialog({
                   title={hint}
                   className={cn(
                     "rounded-md border px-2.5 py-1 text-[12px] transition-colors",
-                    kind === k
-                      ? "border-brass/60 bg-brass/10 font-medium text-brass"
-                      : "border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                    kind === k ? SELECTED_FILL : UNSELECTED,
                   )}
                 >
                   {label}
@@ -834,9 +833,7 @@ function NewScheduleDialog({
                   onClick={() => setMode(m)}
                   className={cn(
                     "rounded-md border px-2.5 py-1 text-[12px] transition-colors",
-                    mode === m
-                      ? "border-brass/60 bg-brass/10 font-medium text-brass"
-                      : "border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                    mode === m ? SELECTED_FILL : UNSELECTED,
                   )}
                 >
                   {label}
@@ -932,9 +929,7 @@ function NewScheduleDialog({
                   title={hint}
                   className={cn(
                     "rounded-md border px-2.5 py-1 text-[12px] transition-colors",
-                    permission === p
-                      ? "border-brass/60 bg-brass/10 font-medium text-brass"
-                      : "border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                    permission === p ? SELECTED_FILL : UNSELECTED,
                   )}
                 >
                   {label}

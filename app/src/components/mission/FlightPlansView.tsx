@@ -46,6 +46,7 @@ import {
   type MissionPreset,
 } from "@/lib/missionTypes"
 import { cn } from "@/lib/utils"
+import { SELECTED_FILL } from "@/lib/selection"
 
 const SELECT_TRIGGER =
   "h-8 w-full gap-1.5 rounded-md border bg-secondary/40 px-2.5 text-[12px] text-foreground data-[size=default]:h-8"
@@ -358,15 +359,18 @@ export function FlightPlansView() {
                     className={cn(
                       "w-full rounded-lg border px-3 py-2.5 text-left transition-colors",
                       active
-                        ? "border-brass/40 bg-brass/10"
-                        : "border-transparent hover:border-border/70 hover:bg-accent/45",
+                        ? SELECTED_FILL
+                        : "border-transparent hover:bg-sel-hover",
                     )}
                   >
                     <div className="flex items-start gap-2">
                       <span
                         className={cn(
                           "mt-0.5 grid size-5 shrink-0 place-items-center rounded",
-                          active ? "bg-brass/15 text-brass" : "bg-secondary text-muted-foreground",
+                          // Identidade do plano (linear × grafo), nunca "ativo":
+                          // a silhueta do ícone já distingue, e tingi-la por
+                          // seleção era a terceira linguagem de ativo (§2).
+                          "bg-secondary text-muted-foreground",
                         )}
                       >
                         {planMode === "graph" ? (
@@ -442,7 +446,10 @@ export function FlightPlansView() {
                     onClick={() => patchPlan(enableGraphMode(selectedPlan))}
                     className={cn(
                       "flex h-7 items-center gap-1.5 rounded px-2.5 text-[11px] transition-colors",
-                      mode === "graph" ? "bg-card text-brass shadow-sm" : "text-muted-foreground hover:text-foreground",
+                      // Segmentado é a exceção fechada do §2 (E1: bg-card +
+                      // sombra). O irmão "Linear" já era assim; este estava em
+                      // brass, o mesmo widget com duas linguagens de "ativo".
+                      mode === "graph" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     <Route className="size-3.5" />

@@ -21,6 +21,7 @@ import {
   updateMissionNodePositions,
 } from "@/lib/missionPlans"
 import { cn } from "@/lib/utils"
+import { SELECTED_ON_SURFACE } from "@/lib/selection"
 
 interface PhaseNodeData extends Record<string, unknown> {
   phaseId: string
@@ -46,9 +47,7 @@ function MissionPhaseNode({ data, selected }: NodeProps<PhaseNode>) {
     <div
       className={cn(
         "w-48 rounded-lg border bg-card shadow-sm transition-[border-color,box-shadow]",
-        selected
-          ? "border-brass/70 shadow-[0_0_0_3px_var(--brass-soft)]"
-          : "border-border-strong",
+        selected ? SELECTED_ON_SURFACE : "border-border",
       )}
     >
       <Handle

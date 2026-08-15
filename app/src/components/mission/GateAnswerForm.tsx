@@ -167,14 +167,14 @@ export function GateAnswerForm({
           className={cn(
             "border-t border-border py-3 transition-colors first:border-t-0",
             padX,
-            dragOver === i && "bg-brass/[0.06]",
+            dragOver === i && "bg-sel",
           )}
         >
           <p
             id={`gate-q-${convId}-${i}`}
             className="text-[13px] leading-relaxed"
           >
-            <span className="mr-1.5 font-mono text-[11px] text-brass">
+            <span className="mr-1.5 font-mono text-[11px] text-muted-foreground">
               {i + 1}.
             </span>
             {q}

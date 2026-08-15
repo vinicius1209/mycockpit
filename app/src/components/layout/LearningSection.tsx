@@ -177,7 +177,7 @@ function LessonRow({
   return (
     <li className="group/lesson flex items-start gap-1.5 rounded-md bg-secondary/40 px-2 py-1.5">
       {l.scope === "global" ? (
-        <Globe2 className="mt-0.5 size-3.5 shrink-0 text-brass/80" />
+        <Globe2 className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
       ) : (
         <GraduationCap className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
       )}
@@ -190,7 +190,10 @@ function LessonRow({
               l.status === "active"
                 ? "bg-st-success/15 text-st-success"
                 : l.status === "candidate"
-                  ? "bg-brass/15 text-brass"
+                  ? // Candidata = regra proposta esperando você promover ou
+                    // descartar. Isso é decisão pendente, e decisão pendente é
+                    // âmbar (§2) — não brass, que é gesto.
+                    "bg-st-warning/15 text-st-warning"
                   : "bg-secondary text-muted-foreground/60",
             )}
           >
@@ -199,9 +202,10 @@ function LessonRow({
           <span
             className={cn(
               "rounded px-1 py-px text-[11px] font-medium uppercase tracking-wide",
-              l.scope === "global"
-                ? "bg-brass/15 text-brass"
-                : "bg-secondary text-muted-foreground/70",
+              // Escopo é METADADO puro: a palavra ("global" × "projeto") e a
+              // silhueta do ícone já distinguem. Tinta ali era importância
+              // genérica, que o §2 proíbe.
+              "bg-secondary text-muted-foreground/70",
             )}
           >
             {l.scope === "global" ? "global" : "projeto"}

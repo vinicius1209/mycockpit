@@ -410,8 +410,11 @@ export function MissionLauncher({
                   }
                   className={cn(
                     "ml-auto flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[12px] font-medium transition-colors",
+                    // Ligado = o time inteiro roda sem pedir. Isso é RISCO
+                    // AUTORIZADO, e o §2 dá âmbar pra ele — não é seleção
+                    // (neutro esconderia o risco) nem gesto (brass).
                     teamAutonomy(phases) === "auto"
-                      ? "border-brass/50 bg-brass/15 text-brass"
+                      ? "border-st-warning/50 bg-st-warning/15 text-st-warning"
                       : "border-border/60 text-muted-foreground hover:text-foreground",
                   )}
                 >

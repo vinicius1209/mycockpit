@@ -85,7 +85,8 @@ function StepDots({ total, index }: { total: number; index: number }) {
           key={i}
           className={cn(
             "h-1 rounded-full transition-all",
-            i === index ? "w-4 bg-brass" : "w-1 bg-border",
+            // "Onde eu estou" é largura + peso, não tinta (§2).
+            i === index ? "w-4 bg-foreground" : "w-1 bg-border",
           )}
         />
       ))}

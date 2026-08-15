@@ -15,6 +15,7 @@ import {
 } from "@/lib/detect"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
+import { SELECTED_FILL } from "@/lib/selection"
 import { partitionAgents, preselectAgent } from "./flow"
 
 /** Uma linha do probe, em cinza: instalado é o caso comum e caso comum não
@@ -56,18 +57,17 @@ function AgentRow({
       onClick={onSelect}
       className={cn(
         "flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
-        selected
-          ? "border-brass/70 bg-brass/10"
-          : "border-border/60 hover:border-border",
+        selected ? SELECTED_FILL : "border-border/60 hover:bg-sel-hover",
       )}
     >
       <span
         className={cn(
           "grid size-4 shrink-0 place-items-center rounded-full border",
-          selected ? "border-brass" : "border-muted-foreground/50",
+          selected ? "border-foreground" : "border-muted-foreground/50",
         )}
       >
-        {selected && <span className="size-2 rounded-full bg-brass" />}
+        {/* O miolo do radio é o PIP da receita (§2): neutro, nunca tinta. */}
+        {selected && <span className="size-2 rounded-full bg-foreground" />}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[13px] text-foreground">{def.label}</span>

@@ -6,6 +6,7 @@
 import { Moon, Sun } from "lucide-react"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
+import { SELECTED_FILL } from "@/lib/selection"
 import type { Theme } from "./flow"
 
 const TILES: { id: Theme; label: string; hint: string }[] = [
@@ -45,24 +46,14 @@ export function ThemeStep() {
               className={cn(
                 "flex flex-col items-center gap-2 rounded-xl border px-4 py-6 transition-colors",
                 selected
-                  ? "border-brass/70 bg-brass/10"
-                  : "border-border/60 hover:border-border",
+                  ? SELECTED_FILL
+                  : "border-border/60 hover:bg-sel-hover",
               )}
             >
               {t.id === "dark" ? (
-                <Moon
-                  className={cn(
-                    "size-5",
-                    selected ? "text-brass" : "text-muted-foreground",
-                  )}
-                />
+                <Moon className="size-5 text-muted-foreground" />
               ) : (
-                <Sun
-                  className={cn(
-                    "size-5",
-                    selected ? "text-brass" : "text-muted-foreground",
-                  )}
-                />
+                <Sun className="size-5 text-muted-foreground" />
               )}
               <span className="text-[13px] text-foreground">{t.label}</span>
               <span className="text-[11px] text-muted-foreground">{t.hint}</span>
