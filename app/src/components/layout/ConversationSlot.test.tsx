@@ -65,7 +65,7 @@ function render(c: ConvState | undefined, pede = false) {
   )
 }
 
-const temEsteira = (html: string) => html.includes("conv-wire")
+const temEsteira = (html: string) => html.includes("conv-spin")
 
 describe("a esteira só existe enquanto o turno existe", () => {
   it("turno rodando: a esteira está na linha", () => {
@@ -154,7 +154,7 @@ describe("o slot reserva o espaço mesmo calado", () => {
       <ConversationSlot pede={false} rodando={false} falhou={false} updatedAt={null} />,
     )
     expect(html).toContain("w-9")
-    expect(html).not.toContain("conv-wire")
+    expect(html).not.toContain("conv-spin")
     // Nada de "undefined" fantasma nem de rótulo inventado.
     expect(html).not.toMatch(/undefined|NaN/)
   })

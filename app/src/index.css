@@ -340,31 +340,38 @@
    à PRESENÇA do elemento, e o elemento só existe enquanto o store diz
    `running`. Turno que morre por erro, cancelamento ou fechamento do app leva
    o elemento embora junto — não há caminho feliz de desmonte pra depender. */
-@keyframes conv-wire {
-  from {
-    background-position: 130% 0;
-  }
+/* O "rodando" da árvore. Foi uma esteira de 22×2px até o build 204, e ela não
+   sobreviveu ao uso: no mock parecia elegante, na tela 2px se movendo na
+   periferia não lê como "trabalhando", lê como artefato de scrollbar — que era
+   exatamente a objeção registrada no ADR-043 como alternativa considerada.
+   Círculo é o glifo que já se sabe ler, e o app já fala essa língua no
+   composer. A regra do §6 não mudou: movimento é pra vivo, e o círculo é
+   movimento. Mudou o glifo, não a doutrina. */
+@keyframes conv-spin {
   to {
-    background-position: -130% 0;
+    transform: rotate(360deg);
   }
 }
-.conv-wire {
-  width: 22px;
-  height: 2px;
-  border-radius: 1px;
-  background: linear-gradient(90deg, transparent, var(--st-running), transparent);
-  background-size: 220% 100%;
-  animation: conv-wire 1.9s ease-in-out infinite;
+.conv-spin {
+  width: 11px;
+  height: 11px;
+  border-radius: 9999px;
+  border: 1.5px solid color-mix(in oklab, var(--st-running) 26%, transparent);
+  border-top-color: var(--st-running);
+  animation: conv-spin 0.9s linear infinite;
 }
-/* Degradação obrigatória: sem movimento, a esteira vira um traço azul ESTÁTICO
-   (não some, senão "rodando" ficaria mudo pra quem desliga animação). O bloco
-   global de reduced-motion lá embaixo só encurta a duração, o que deixaria a
-   esteira congelada num quadro transparente — daí a regra própria aqui. */
+/* Degradação obrigatória: sem movimento, o círculo vira o MESMO ponto sólido
+   dos outros estados do slot (pede/falhou) — vocabulário único na coluna. Não
+   basta deixar o bloco global agir: ele só encurta a duração, o que congelaria
+   o anel num arco quebrado, que lê como falha de renderização. */
 @media (prefers-reduced-motion: reduce) {
-  .conv-wire {
+  .conv-spin {
     animation: none !important;
+    width: 6px;
+    height: 6px;
+    border-color: transparent;
     background: var(--st-running);
-    opacity: 0.75;
+    opacity: 0.85;
   }
 }
 

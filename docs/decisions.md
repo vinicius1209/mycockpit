@@ -1196,6 +1196,25 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   o store diz `running`, que nunca é persistido. Erro, cancelamento, `finish()`
   e app fechado-e-reaberto têm caso de teste em
   `ConversationSlot.test.tsx`, porque provar só o caminho feliz não prova nada.
+- **REVISTO no build 205 — o autor estava certo, e o uso decidiu.** A esteira
+  durou um build. Vendo na tela, o Vinícius: *"a esteira azul + um pontinho no
+  lado esquerdo ficou excessivo, e o círculo rodando como era antes era
+  melhor"*. É **exatamente** a objeção que o autor registrou e que a escolha
+  original descartou: 2px se movendo na periferia não lê como "trabalhando", lê
+  como artefato. Num mock estático a esteira parecia elegante; em uso, não se
+  explicava. Fica a lição de método: mock estático não decide questão de
+  MOVIMENTO — só o uso decide, e a decisão custou um build porque nós julgamos
+  animação por uma imagem parada.
+  A doutrina **não mudou**: §6 segue valendo, movimento é pra vivo, e círculo é
+  movimento. Mudou o glifo, pra um que já se sabe ler e que o app já usa no
+  composer. `.conv-wire` (22×2px, gradiente varrendo) → `.conv-spin` (anel de
+  11px em CSS puro). As duas condições continuam de pé e testadas, e a
+  degradação ficou **melhor**: sem movimento o anel vira o MESMO ponto sólido
+  dos estados `pede` e `falhou` — vocabulário único na coluna — em vez de um
+  traço de idioma próprio. Regra própria continua obrigatória porque o bloco
+  global só encurta a duração, o que congelaria o anel num arco quebrado, que
+  lê como falha de renderização. Guarda em `scripts/lints/rodandoMotion.mjs`,
+  ligada no `bun run check`.
 - **Consequência 1 — uma perda real, aceita de olhos abertos.** Some o "o último
   turno terminou bem" de relance na sidebar: o badge verde `done` era estado
   ambiente permanente, que o §9 item 4 já tinha condenado em todo o resto do

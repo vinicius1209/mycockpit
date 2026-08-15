@@ -24,7 +24,7 @@ const TITULO: Record<SlotEstado, string> = {
  *
  * Não há timer aqui dentro: o tempo vem do ticker único de minuto e o
  * "rodando" é uma animação de CSS presa à presença do elemento. Isso é o que
- * garante que a esteira PARA quando o turno acaba, inclusive quando ele morre
+ * garante que o círculo PARA quando o turno acaba, inclusive quando ele morre
  * por erro, por cancelamento ou porque o app foi fechado: `rodando` é derivado
  * do store, que nunca persiste turno vivo, e sem `rodando` o elemento
  * simplesmente não existe. Não existe caminho de desmonte pra alguém esquecer.
@@ -46,7 +46,7 @@ export function ConversationSlot({
   if (estado === "rodando") {
     return (
       <span className={SLOT} title={TITULO.rodando}>
-        <span className="conv-wire" aria-label="turno rodando" role="img" />
+        <span className="conv-spin" aria-label="turno rodando" role="img" />
       </span>
     )
   }

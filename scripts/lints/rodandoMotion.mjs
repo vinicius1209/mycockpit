@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// GUARDA: a esteira do "rodando" tem que degradar sem movimento.
+// GUARDA: o círculo do "rodando" tem que degradar sem movimento.
 //
 // POR QUE É GUARDA E NÃO TESTE UNITÁRIO
 // ------------------------------------
@@ -19,9 +19,10 @@
 // "Rodando" é o único estado da árvore que se move, e o movimento só é honesto
 // porque o turno termina sozinho. Quem pede `prefers-reduced-motion` não pode
 // ficar sem o sinal: o bloco global do app só encurta a duração
-// (`animation-duration: 0.001ms`), o que congelaria a esteira num quadro
-// transparente e deixaria "rodando" MUDO. Por isso a `.conv-wire` precisa de
-// regra PRÓPRIA que troque movimento por um traço estático e visível.
+// (`animation-duration: 0.001ms`), o que congelaria o anel num arco quebrado —
+// que lê como falha de renderização, não como estado. Por isso a `.conv-spin`
+// precisa de regra PRÓPRIA que troque movimento pelo mesmo ponto sólido dos
+// outros estados do slot (pede/falhou): vocabulário único na coluna.
 
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
@@ -34,39 +35,39 @@ const css = readFileSync(
 const falhas = []
 
 const bloco = css.match(
-  /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.conv-wire\s*\{([^}]*)\}/,
+  /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.conv-spin\s*\{([^}]*)\}/,
 )
 if (!bloco) {
   falhas.push(
-    "falta o bloco `@media (prefers-reduced-motion: reduce) { .conv-wire { … } }`",
+    "falta o bloco `@media (prefers-reduced-motion: reduce) { .conv-spin { … } }`",
   )
 } else {
   const regra = bloco[1]
   if (!/animation:\s*none\s*!important/.test(regra)) {
     falhas.push(
-      "o bloco reduced-motion da .conv-wire não desliga a animação (`animation: none !important`)",
+      "o bloco reduced-motion da .conv-spin não desliga a animação (`animation: none !important`)",
     )
   }
-  // Estático mas VISÍVEL: traço azul sólido, não o gradiente parado (que é
-  // transparente na maior parte do ciclo).
+  // Estático mas VISÍVEL: o mesmo ponto azul sólido dos outros estados — um
+  // anel de borda transparente parado não desenharia nada.
   if (!/background:\s*var\(--st-running\)/.test(regra)) {
     falhas.push(
-      "o bloco reduced-motion da .conv-wire não deixa um traço visível (`background: var(--st-running)`)",
+      "o bloco reduced-motion da .conv-spin não deixa um ponto visível (`background: var(--st-running)`)",
     )
   }
 }
 
-if (!/@keyframes conv-wire/.test(css)) {
-  falhas.push("sumiu o `@keyframes conv-wire`")
+if (!/@keyframes conv-spin/.test(css)) {
+  falhas.push("sumiu o `@keyframes conv-spin`")
 }
-if (!/animation:\s*conv-wire\s+[\d.]+s[^;]*infinite/.test(css)) {
+if (!/animation:\s*conv-spin\s+[\d.]+s[^;]*infinite/.test(css)) {
   falhas.push(
-    "a .conv-wire não está presa a uma animação CSS infinita — se o movimento virou timer de JS, a esteira pode sobreviver ao fim do turno",
+    "a .conv-spin não está presa a uma animação CSS infinita — se o movimento virou timer de JS, o círculo pode sobreviver ao fim do turno",
   )
 }
 
 if (falhas.length) {
-  console.error("esteira do 'rodando': regra de movimento violada")
+  console.error("círculo do 'rodando': regra de movimento violada")
   for (const f of falhas) console.error(`- ${f}`)
   console.error(
     "\nADR-043: movimento é pra vivo, e quem pede reduced-motion não pode ficar sem o sinal.",
@@ -74,4 +75,4 @@ if (falhas.length) {
   process.exit(1)
 }
 
-console.log("esteira do 'rodando' ok · reduced-motion com traço estático · animação em CSS")
+console.log("círculo do 'rodando' ok · reduced-motion com ponto estático · animação em CSS")
