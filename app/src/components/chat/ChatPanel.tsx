@@ -4,11 +4,8 @@ import {
   Check,
   ChevronDown,
   ClipboardList,
-  FolderGit2,
   ListChecks,
   Loader2,
-  Timer,
-  X,
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -18,6 +15,11 @@ import { CommandConsole } from "@/components/chat/CommandConsole"
 import { Especialistas } from "@/components/settings/Especialistas"
 import { MessageList } from "@/components/chat/MessageList"
 import { PresenceBar } from "@/components/chat/PresenceBar"
+import {
+  AutoResumeBanner,
+  BlockedDirBanner,
+} from "@/components/chat/ComposerBanners"
+import { RiskClimate } from "@/components/chat/RiskClimate"
 import { Reticle } from "@/components/common/Wordmark"
 import { useActiveProject, useApp } from "@/store/app"
 import {
@@ -51,11 +53,7 @@ import {
   buildResumeFallback,
   shouldAttachResumeFallback,
 } from "@/lib/transcript"
-import {
-  resumeBannerLabel,
-  resumePrompt,
-  wantsAutoResume,
-} from "@/lib/autoResume"
+import { resumePrompt, wantsAutoResume } from "@/lib/autoResume"
 import { resolveSendTarget } from "@/lib/sendTarget"
 import { notifyTurnEnd } from "@/lib/notify"
 import type { Attachment } from "@/lib/attachments"
@@ -1226,6 +1224,10 @@ export function ChatPanel() {
 
   return (
     <section className="relative flex h-full w-full min-w-0 flex-col bg-background">
+      {/* Clima do modo Liberado: moldura ambiente enquanto o próximo turno
+          executa sem pedir. Regra pura em lib/climate (some sozinha nos outros
+          modos e cede pro âmbar de decisão). */}
+      <RiskClimate />
       {!hasConversation && !missionActive && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-96 bg-[radial-gradient(62%_80%_at_50%_100%,var(--brass-soft),transparent_72%)] opacity-70" />
       )}
@@ -1521,105 +1523,6 @@ function PlanPendingCard({
           Aprovar e executar
         </button>
       </div>
-    </div>
-  )
-}
-
-/** Banner (acima do composer) quando um auto-resume está agendado: countdown ao
- *  vivo até o próximo reenvio, quantas tentativas restam, e as saídas (Cancelar /
- *  Retomar agora). Reusa o estilo st-warning do BlockedDirBanner. Um envio manual
- *  (ou o Stop) cancela o agendamento por fora deste componente. */
-function AutoResumeBanner({
-  nextAt,
-  tries,
-  maxTries,
-  reason,
-  onCancel,
-  onResumeNow,
-}: {
-  nextAt: number
-  tries: number
-  maxTries: number
-  /** Gatilho REAL do agendamento — o banner dizia sempre "aguardando reset do
-   *  limite", inclusive quando ninguém bateu limite nenhum. */
-  reason: string
-  onCancel: () => void
-  onResumeNow: () => void
-}) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [])
-  const secs = Math.max(0, Math.ceil((nextAt - now) / 1000))
-  const remaining = Math.max(0, maxTries - tries)
-  return (
-    <div className="mb-2 flex items-center gap-2.5 rounded-lg border border-st-warning/40 bg-st-warning/10 px-3 py-2">
-      <Timer className="size-4 shrink-0 animate-pulse text-st-warning" />
-      <div className="min-w-0 flex-1">
-        <p className="text-[13px] text-foreground">
-          {resumeBannerLabel(reason)}, retomando automaticamente em{" "}
-          <span className="font-mono tabular-nums">{secs}s</span>{" "}
-          <span className="text-muted-foreground">
-            (tentativa {tries}/{maxTries}
-            {remaining > 0 ? `, ${remaining} restante${remaining > 1 ? "s" : ""}` : ""})
-          </span>
-        </p>
-      </div>
-      <button
-        onClick={onResumeNow}
-        className="shrink-0 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
-      >
-        Retomar agora
-      </button>
-      <button
-        onClick={onCancel}
-        title="Cancelar auto-resume"
-        aria-label="Cancelar auto-resume"
-        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <X className="size-3.5" />
-      </button>
-    </div>
-  )
-}
-
-/** Banner (acima do composer) quando o agent bateu no gate de diretório: um
- *  clique libera a pasta (--add-dir) e reenvia o pedido. Heurístico → dispensável. */
-function BlockedDirBanner({
-  dir,
-  onAllow,
-  onDismiss,
-}: {
-  dir: string
-  onAllow: () => void
-  onDismiss: () => void
-}) {
-  return (
-    <div className="mb-2 flex items-center gap-2.5 rounded-lg border border-st-warning/40 bg-st-warning/10 px-3 py-2">
-      <FolderGit2 className="size-4 shrink-0 text-st-warning" />
-      <div className="min-w-0 flex-1">
-        <p className="text-[13px] text-foreground">
-          O agente parece ter sido barrado ao acessar uma pasta fora do projeto.
-        </p>
-        <p className="truncate font-mono text-[11px] text-muted-foreground" title={dir}>
-          {dir}
-        </p>
-      </div>
-      <button
-        onClick={onAllow}
-        className="shrink-0 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
-      >
-        Liberar e reenviar
-      </button>
-      <button
-        onClick={onDismiss}
-        title="Dispensar"
-        aria-label="Dispensar aviso"
-        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <X className="size-3.5" />
-      </button>
     </div>
   )
 }

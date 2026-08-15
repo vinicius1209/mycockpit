@@ -102,6 +102,27 @@ Regras de aplicação:
 - **Estado ambiente é cinza.** Dot/badge que fica na tela representando "a
   última vez deu certo" é cinza; verde é transição (marco), não decoração
   permanente.
+- **Modo de RISCO tem sinal ambiente; STATUS não.** Rótulo estático vira papel
+  de parede: você para de ver o que está sempre ali. Então o modo que executa
+  sem pedir ("Liberado") acende uma MOLDURA na área de conteúdo (ring âmbar de
+  1px, `ring-inset`, sem animação, `pointer-events-none` — `CLIMATE_FRAME_CLASS`
+  em `lib/climate.ts`). Rodando/concluído/falhou NÃO ganham moldura: já têm
+  lugar no fio e na linha viva, e moldura que qualquer estado acende deixa de
+  significar. A moldura tem **um dono só**, e o dono é o risco autorizado.
+  - **Autolimitado**: só o modo perigoso acende. Não existe clima de "Só lê"
+    nem de "Pede" — sinal que acende sempre não é sinal.
+  - **Colisão com o âmbar de DECISÃO**: decisão ganha. Com pedido pendente na
+    conversa ativa, o clima recolhe (`riskClimateOn`) — o âmbar da tela precisa
+    ser lido como "responde aqui". O modo segue DITO na linha de Execução
+    (segmented âmbar + triângulo), que é a fonte autoritativa; o clima é
+    lembrete, não é a verdade.
+  - **Colisão com o vermelho de FALHA**: falha não apaga o clima. Falha é
+    conteúdo (matiz próprio, dentro do fio) e o modo continua perigoso depois
+    dela; apagar a moldura ali mentiria sobre o próximo turno. Planos diferentes
+    (moldura × conteúdo), e o orçamento de tinta segue em 2 cores.
+  - **Escopo**: é da CONVERSA ATIVA, por herança do projeto dela (a permissão é
+    do projeto; ver `ExecutionRow.tsx`). Conversa de outro projeto na mesma
+    janela não contamina a moldura.
 - **Verde não identifica agent.** Cor de identidade não pode colidir com o
   vocabulário de status.
 - Diferença deliberada vs Orca: lá `--primary` é cinza e nada grita; aqui
