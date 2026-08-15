@@ -5,25 +5,20 @@
 // opinaram (itens `advice`). Sem estado persistente novo. Referência visual:
 // docs/mocks/marketplace.html (.presence).
 //
-// Também carrega o CUSTO da sessão à direita (derivado de sessionCost) — antes
-// vivia colado no composer, no fim do fio. É sobre o EXECUTOR, então a faixa
-// existe mesmo sem especialista (só custo à direita, sem avatares à esquerda).
+// O CUSTO da sessão passou por aqui e DESCEU pra faixa de status (StatusBar):
+// gasto acumulado é telemetria ambiente, não presença. Sem participantes, esta
+// faixa volta a não existir.
 
 import { useMemo } from "react"
 import { toast } from "sonner"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import {
   conversationPresence,
-  sessionCost,
   useActiveConv,
   useChat,
 } from "@/store/chat"
 import { usePresets } from "@/store/presets"
-import { useApp } from "@/store/app"
 import { confirm } from "@/lib/confirm"
-import { fmtCost } from "@/lib/format"
-import { METER_TEXT, absoluteTone } from "@/lib/meter"
-import { cn } from "@/lib/utils"
 import type { AgentDef } from "@/lib/agentDefs"
 
 export function PresenceBar() {
@@ -59,22 +54,8 @@ export function PresenceBar() {
     participants.push({ id: g.id, name: g.name, def: byId.get(g.id) })
   }
 
-  // Custo da sessão vive no TOPO agora (consciência de gasto perto de quem
-  // pilota), não colado no composer. Derivado dos items (fonte única sessionCost);
-  // a UI só o mostra com ≥2 turnos e gasto real — é sobre o EXECUTOR, então
-  // aparece mesmo sem especialista na conversa.
-  const cost = useMemo(() => sessionCost(conv.items), [conv.items])
-  const showCost = cost.turns >= 2 && cost.total > 0
-  // Custo é MEDIDOR, não gesto: nada de brass (STYLEGUIDE §2). Cinza sempre,
-  // até o usuário definir um teto de sessão em Configurações ▸ Uso e custo —
-  // aí o valor vira percentual DAQUELE teto e usa a régua única do §2.
-  const costLimit = useApp((s) => s.settings.sessionCostLimit)
-  const costTone = absoluteTone(cost.total, costLimit)
-
-  // conversa crua (sem piloto, sem convidados) E sem custo a mostrar não desenha
-  // barra nenhuma. Com um dos dois, a faixa existe (presença à esquerda quando há,
-  // custo à direita quando há).
-  if (participants.length === 0 && !showCost) return null
+  // conversa crua (sem piloto, sem convidados) não desenha barra nenhuma.
+  if (participants.length === 0) return null
 
   const pilotName = presence.pilotId
     ? (byId.get(presence.pilotId)?.name ?? conv.presetName ?? null)
@@ -109,79 +90,55 @@ export function PresenceBar() {
 
   return (
     <div className="group flex items-center gap-2 border-b border-border/60 bg-background/80 px-4 py-1.5 backdrop-blur">
-      {participants.length > 0 && (
-        <>
-          <div className="flex items-center">
-            {participants.map((p, i) => {
-              const isPilot = presence.pilotId === p.id
-              return (
-                <span
-                  key={p.id}
-                  className="group/participant relative rounded-full ring-2 ring-background"
-                  style={{ marginLeft: i === 0 ? 0 : -6 }}
-                  title={isPilot ? `${p.name} · pilota` : `${p.name} · convidado`}
-                >
-                  <AgentAvatar
-                    def={p.def}
-                    seed={p.def ? undefined : p.id || p.name}
-                    size={22}
-                    rounded
-                  />
-                  {!isPilot && (
-                    <button
-                      type="button"
-                      aria-label={`Tirar ${p.name} da conversa`}
-                      title="Tirar da conversa"
-                      onClick={() => void onRemoveGuest(p.id, p.name)}
-                      className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background text-[11px] leading-none text-muted-foreground opacity-0 ring-1 ring-border transition hover:text-foreground group-hover/participant:opacity-100"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </span>
-              )
-            })}
-          </div>
-          <span className="text-[11px] text-muted-foreground">
-            {participants.length} na conversa
-            {pilotName && (
-              <>
-                {" · "}
-                <b className="font-medium text-brass">{pilotName}</b> pilota
-              </>
-            )}
-          </span>
-          {presence.pilotId && (
-            <button
-              type="button"
-              onClick={() => void onReturnWheel()}
-              title="Voltar ao executor base (o code agent)"
-              className="text-[11px] text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100"
+      <div className="flex items-center">
+        {participants.map((p, i) => {
+          const isPilot = presence.pilotId === p.id
+          return (
+            <span
+              key={p.id}
+              className="group/participant relative rounded-full ring-2 ring-background"
+              style={{ marginLeft: i === 0 ? 0 : -6 }}
+              title={isPilot ? `${p.name} · pilota` : `${p.name} · convidado`}
             >
-              ↩ Retomar volante
-            </button>
-          )}
-        </>
-      )}
-      {showCost && (
-        <span
-          className="ml-auto flex items-center gap-1.5"
-          title={
-            costLimit
-              ? `Custo acumulado desta sessão (soma dos turnos), contra o seu teto de ${fmtCost(costLimit)}`
-              : "Custo acumulado desta sessão (soma dos turnos). Defina um teto em Configurações ▸ Uso e custo pra ele avisar."
-          }
+              <AgentAvatar
+                def={p.def}
+                seed={p.def ? undefined : p.id || p.name}
+                size={22}
+                rounded
+              />
+              {!isPilot && (
+                <button
+                  type="button"
+                  aria-label={`Tirar ${p.name} da conversa`}
+                  title="Tirar da conversa"
+                  onClick={() => void onRemoveGuest(p.id, p.name)}
+                  className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background text-[11px] leading-none text-muted-foreground opacity-0 ring-1 ring-border transition hover:text-foreground group-hover/participant:opacity-100"
+                >
+                  ✕
+                </button>
+              )}
+            </span>
+          )
+        })}
+      </div>
+      <span className="text-[11px] text-muted-foreground">
+        {participants.length} na conversa
+        {pilotName && (
+          <>
+            {" · "}
+            <b className="font-medium text-brass">{pilotName}</b> pilota
+          </>
+        )}
+      </span>
+      {presence.pilotId && (
+        <button
+          type="button"
+          onClick={() => void onReturnWheel()}
+          title="Voltar ao executor base (o code agent)"
+          className="text-[11px] text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100"
         >
-          <span className="label-mono">Sessão</span>
-          <span
-            className={cn(
-              "font-mono text-[11px] font-semibold tabular-nums",
-              METER_TEXT[costTone],
-            )}
-          >
-            {fmtCost(cost.total, cost.estimated ? "estimated" : "reported")}
-          </span>
-        </span>
+          ↩ Retomar volante
+        </button>
       )}
     </div>
   )

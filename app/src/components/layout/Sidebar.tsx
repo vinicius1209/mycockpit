@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { getVersion } from "@tauri-apps/api/app"
 import {
   Plus,
   Moon,
@@ -61,7 +60,6 @@ import {
   type ConversationMeta,
 } from "@/lib/db"
 import { SetupGuide } from "@/components/onboarding/SetupGuide"
-import { shortVersion } from "@/lib/version"
 import { createWorktree, removeWorktree } from "@/lib/git"
 import { LABEL_COLORS } from "@/lib/labelColors"
 import { cn } from "@/lib/utils"
@@ -1260,27 +1258,6 @@ function ArchivedSection() {
   )
 }
 
-/** Rodapé: "local · vX.Y.Z". Nos builds de teste a versão vira 0.1.0-test.N,
- *  então você SEMPRE sabe qual build está rodando. S3.1 — a versão NUNCA
- *  trunca: formato curto ("v0.1.0-t177") na linha, string completa no tooltip
- *  (o truncate comia justamente o número que identifica o build). */
-function AppVersion() {
-  const [version, setVersion] = useState("")
-  useEffect(() => {
-    getVersion()
-      .then(setVersion)
-      .catch(() => {}) // browser (vite dev): sem versão, só "local"
-  }, [])
-  return (
-    <div
-      title={version ? `v${version}` : undefined}
-      className="label-mono whitespace-nowrap normal-case tracking-normal text-muted-foreground/80"
-    >
-      local{version ? ` · ${shortVersion(version)}` : ""}
-    </div>
-  )
-}
-
 export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   const projects = useApp((s) => s.projects)
   const activeId = useApp((s) => s.activeProjectId)
@@ -1429,11 +1406,12 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
         <div className="grid size-6 place-items-center rounded-full bg-brass/15 text-[11px] font-semibold text-brass">
           V
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[12px] font-medium text-foreground">
-            Vinícius
-          </div>
-          <AppVersion />
+        {/* A VERSÃO saiu daqui pra faixa de status (StatusBar): saber qual
+            build está rodando é ambiente e permanente, e no rodapé da sidebar
+            sumia junto com a sidebar fechada. O que fica é o que NÃO é
+            ambiente: quem está usando, e o gesto de trocar o tema. */}
+        <div className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground">
+          Vinícius
         </div>
         <Button
           variant="ghost"

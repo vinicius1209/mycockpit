@@ -134,7 +134,7 @@ function ProviderRows({
   )
 }
 
-export function UsagePill() {
+export function UsagePill({ compact = false }: { compact?: boolean }) {
   const enabled = useApp((s) => s.settings.usageMeterEnabled)
   const ctaDismissed = useApp((s) => s.settings.usageMeterCtaDismissed)
   const setSettings = useApp((s) => s.setSettings)
@@ -192,9 +192,17 @@ export function UsagePill() {
           type="button"
           title={pillTitle}
           aria-label={pillTitle}
-          className="pointer-events-auto hidden items-center gap-1.5 rounded-full border bg-secondary/50 px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex"
+          className={cn(
+            "pointer-events-auto hidden items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex",
+            // `compact` = dentro da faixa de 24px: sem cápsula, sem fundo, sem
+            // borda. Ali a pill é telemetria de fundo (11px mono, cinza), não
+            // um controle que pede clique — o detalhe continua a um clique.
+            compact
+              ? "-mx-1 h-5 rounded px-1 font-mono text-[11px] hover:bg-accent/50"
+              : "rounded-full border bg-secondary/50 px-2.5 py-1 text-[12px]",
+          )}
         >
-          <Gauge className="size-3.5" aria-hidden />
+          <Gauge className={compact ? "size-3" : "size-3.5"} aria-hidden />
           {sel ? (
             <>
               {/* o DONO do número, sempre: percentual nu induzia a ler o
@@ -220,8 +228,15 @@ export function UsagePill() {
       {/* sideOffset + z-[120]: o header da TitleBar é z-[110] (acima do
           overlay de drag do decorum, ver TitleBar.tsx) — no z-50 padrão dos
           dropdowns a borda de cima do popover sumia ATRÁS da faixa de
-          título. Acima do header + folga do trigger, nada é cortado. */}
-      <DropdownMenuContent align="end" sideOffset={8} className="z-[120] w-80 p-1.5">
+          título. Acima do header + folga do trigger, nada é cortado.
+          Na faixa inferior o popover abre pra CIMA e alinhado à esquerda:
+          ancorado no canto de baixo, ele é a única direção com espaço. */}
+      <DropdownMenuContent
+        side={compact ? "top" : "bottom"}
+        align={compact ? "start" : "end"}
+        sideOffset={8}
+        className="z-[120] w-80 p-1.5"
+      >
         <p className="px-2 pt-1 pb-0.5 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
           Janela de uso do plano
         </p>

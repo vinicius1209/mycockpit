@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
 import { TitleBar } from "@/components/layout/TitleBar"
+import { StatusBar } from "@/components/layout/StatusBar"
 import { Sidebar } from "@/components/layout/Sidebar"
 import { ContextPanel } from "@/components/layout/ContextPanel"
 import { ChatPanel } from "@/components/chat/ChatPanel"
@@ -89,7 +90,8 @@ import {
 import { agentDef } from "@/lib/agents"
 import { reloadActiveProposals } from "@/lib/modelCurator"
 import { runDailyModelMaintenance } from "@/lib/modelRound"
-import type { PermissionMode, Project } from "@/lib/types"
+import type { PermissionMode } from "@/lib/types"
+import { BROWSER_DEMO_PROJECTS } from "@/lib/demoProjects"
 import { cn } from "@/lib/utils"
 
 /** Intervalo mínimo entre checagens de update dos agents (1x/dia). */
@@ -103,38 +105,6 @@ const FlightPlansView = lazy(() =>
   })),
 )
 
-// Ambiente de navegador/demo: dados deliberadamente fictícios. Este caminho é
-// usado por smoke tests, capturas de marketing e desenvolvimento sem Tauri —
-// nunca deve carregar nomes, caminhos ou métricas do computador do autor.
-const BROWSER_DEMO_PROJECTS: Project[] = [
-  {
-    id: "demo-atlas",
-    name: "atlas-commerce",
-    path: "/demo/atlas-commerce",
-    createdAt: 3,
-    hasClaudeMd: true,
-    hasAgentsMd: true,
-    status: "idle",
-  },
-  {
-    id: "demo-lumen",
-    name: "lumen-mobile",
-    path: "/demo/lumen-mobile",
-    createdAt: 2,
-    hasClaudeMd: false,
-    hasAgentsMd: false,
-    status: "idle",
-  },
-  {
-    id: "demo-northstar",
-    name: "northstar-docs",
-    path: "/demo/northstar-docs",
-    createdAt: 1,
-    hasClaudeMd: false,
-    hasAgentsMd: true,
-    status: "idle",
-  },
-]
 
 export default function App() {
   const sidebarOpen = useApp((s) => s.sidebarOpen)
@@ -873,6 +843,10 @@ export default function App() {
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>
+          {/* Faixa de status: AMBIENTE (janela do plano, custo da sessão, build).
+              A linha viva do turno NÃO desce pra cá — ela é dona do agora e mora
+              no composer (lib/statusBar guarda essa fronteira). */}
+          <StatusBar />
         </div>
         {/* Toaster na RAIZ da janela (sem ancestral com transform) → position
             fixed = viewport, bottom-center REAL da janela. Antes vivia dentro do

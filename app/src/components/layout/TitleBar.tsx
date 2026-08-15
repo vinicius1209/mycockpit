@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { Separator } from "@/components/ui/separator"
 import { InboxBell } from "@/components/layout/InboxBell"
-import { UsagePill } from "@/components/layout/UsagePill"
 import { MODES } from "@/components/layout/titleBarModes"
 import { FrotaMark } from "@/components/brand/FrotaMark"
 import { useApp, useActiveProject } from "@/store/app"
@@ -110,16 +109,15 @@ export function TitleBar() {
     >
       {/* Três zonas em FLUXO (nada absolute) e o comutador centrado no VÃO,
           não na janela. Era `grid-cols-[1fr_auto_1fr]`, que centra na janela: o
-          bloco da direita (medidor + Buscar + 3 ícones) é ~2x o da esquerda, e
+          bloco da direita (Buscar + 3 ícones) é ~2x o da esquerda, e
           com o mesmo 1fr dos dois lados sobrava ar à esquerda enquanto o
           comutador quase encostava na direita. Agora a zona do meio é o vão:
           `flex-1` sem `min-w-0`, então o min-content dela É a largura do
           comutador (+ px-3 de folga), e a folga é RESERVADA — o comutador nunca
           é empurrado nem espremido.
-          Ordem de quem cede, sob pressão de largura: 1) o nome do projeto
-          (único item com `min-w-0 truncate` na esquerda); 2) o rótulo do
-          medidor, que já trunca em `max-w-20` dentro da própria pill; e nunca a
-          navegação. `pl-20` reserva os semáforos.
+          Ordem de quem cede, sob pressão de largura: o nome do projeto (único
+          item com `min-w-0 truncate` na esquerda), e nunca a navegação.
+          `pl-20` reserva os semáforos.
           As zonas são pointer-events-none e só os controles voltam a receber
           clique: o vazio entre eles continua sendo área de arrastar a janela.
           Cada controle mora do lado do que ele controla — o painel ESQUERDO
@@ -173,9 +171,9 @@ export function TitleBar() {
       </div>
 
       <div className="pointer-events-none flex shrink-0 items-center justify-end gap-1.5 pr-2.5">
-        {/* Medidor de janela de uso (rate limit do plano): pill agregada,
-            some sozinha sem dado (4 camadas de esconder, ver UsagePill). */}
-        <UsagePill />
+        {/* O medidor de janela de uso DESCEU pra faixa de status (StatusBar):
+            telemetria ambiente tem uma casa só, e a barra do topo fica com
+            navegação e gesto. */}
         <SearchChip />
         <InboxBell />
         <Button

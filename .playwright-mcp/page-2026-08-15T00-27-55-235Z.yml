@@ -1,0 +1,581 @@
+- generic [active] [ref=f3e1]:
+  - generic [ref=f3e2]:
+    - generic [ref=f3e3]: mock
+    - generic [ref=f3e4]: Tipografia da prosa
+    - generic [ref=f3e5]: A 14 · B 15 · C 16
+    - generic [ref=f3e6]:
+      - button "lado a lado" [ref=f3e7] [cursor=pointer]
+      - button "alternado" [ref=f3e8] [cursor=pointer]
+    - generic [ref=f3e9]:
+      - button "A 14" [ref=f3e10] [cursor=pointer]
+      - button "B 15" [ref=f3e11] [cursor=pointer]
+      - button "C 16" [ref=f3e12] [cursor=pointer]
+    - generic [ref=f3e13]:
+      - button "entrelinha por tamanho" [ref=f3e14] [cursor=pointer]
+      - button "travada 1,625" [ref=f3e15] [cursor=pointer]
+    - generic [ref=f3e16]:
+      - button "mono 13" [ref=f3e17] [cursor=pointer]
+      - button "mono segue" [ref=f3e18] [cursor=pointer]
+      - button "mono junto" [ref=f3e19] [cursor=pointer]
+    - generic [ref=f3e20]:
+      - button "dobra" [ref=f3e21] [cursor=pointer]
+      - button "sem dobra" [ref=f3e22] [cursor=pointer]
+    - generic [ref=f3e23]:
+      - button "claro" [ref=f3e24] [cursor=pointer]
+      - button "escuro" [ref=f3e25] [cursor=pointer]
+  - generic [ref=f3e26]:
+    - paragraph [ref=f3e27]:
+      - text: "A pergunta: a prosa das mensagens do agente é 14px ("
+      - code [ref=f3e28]: Markdown.tsx:178
+      - text: ), dentro da escala fechada 11/12/13/14 do
+      - code [ref=f3e29]: STYLEGUIDE §3
+      - text: . Um quinto degrau (15 ou 16) só pro corpo de markdown resolve leitura longa ou embaralha a hierarquia? Isso se decide vendo.
+    - paragraph [ref=f3e30]:
+      - text: "A regra do mock: mesma resposta real, mesma largura real do app ("
+      - code [ref=f3e31]: max-w-[760px] px-8
+      - text: ", 696px úteis), mesmos vizinhos (metadado 11, rótulo 12, controle 13), mesmos tokens do"
+      - code [ref=f3e32]: index.css
+      - text: ", mesma família (Geist embutida). Só o tamanho da prosa muda, e o que cada tamanho exige junto."
+    - heading "01A régua usada" [level=2] [ref=f3e33]
+    - paragraph [ref=f3e34]: "Comparar 14 e 16 com a mesma entrelinha e a mesma largura é comparação viciada: o tamanho maior pede razão de entrelinha MENOR (a linha já é alta em px) e medida maior em px. Aqui cada coluna recebe o que o tamanho pede. O botão travada 1,625 mostra de propósito a comparação viciada, pra ver a diferença entre \"16px é grande demais\" e \"16px com entrelinha errada é grande demais\"."
+    - table [ref=f3e35]:
+      - rowgroup [ref=f3e36]:
+        - row [ref=f3e37]:
+          - columnheader "estado" [ref=f3e38]
+          - columnheader "corpo" [ref=f3e39]
+          - columnheader "razão" [ref=f3e40]
+          - columnheader "linha" [ref=f3e41]
+          - columnheader "medida em 696px" [ref=f3e42]
+          - columnheader "ideal 66 a 75ch" [ref=f3e43]
+          - columnheader "mono" [ref=f3e44]
+      - rowgroup [ref=f3e45]:
+        - row [ref=f3e46]:
+          - cell "A hoje" [ref=f3e47]:
+            - generic [ref=f3e48]: A
+            - text: hoje
+          - cell "14px" [ref=f3e49]
+          - cell "1,625" [ref=f3e50]
+          - cell "22,8px" [ref=f3e51]
+          - cell "74ch" [ref=f3e52]
+          - cell "dentro" [ref=f3e53]
+          - cell "13px" [ref=f3e54]
+        - row [ref=f3e55]:
+          - cell "B proposta" [ref=f3e56]:
+            - generic [ref=f3e57]: B
+            - text: proposta
+          - cell "15px" [ref=f3e58]
+          - cell "1,550" [ref=f3e59]
+          - cell "23,3px" [ref=f3e60]
+          - cell "69ch" [ref=f3e61]
+          - cell "dentro" [ref=f3e62]
+          - cell "13px" [ref=f3e63]
+        - row [ref=f3e64]:
+          - cell "C proposta" [ref=f3e65]:
+            - generic [ref=f3e66]: C
+            - text: proposta
+          - cell "16px" [ref=f3e67]
+          - cell "1,500" [ref=f3e68]
+          - cell "24,0px" [ref=f3e69]
+          - cell "65ch" [ref=f3e70]
+          - cell "1ch abaixo" [ref=f3e71]
+          - cell "13px" [ref=f3e72]
+    - paragraph [ref=f3e73]:
+      - text: A medida em
+      - code [ref=f3e74]: ch
+      - text: é medida no navegador, com a Geist real, não estimada. O achado que ela entrega está na anotação ③.
+    - heading "02A cena, com os vizinhos" [level=2] [ref=f3e75]
+    - paragraph [ref=f3e76]: "A prosa nunca aparece sozinha. Acima dela: nome do agent (13), modelo e custo em mono (11), linha de ferramenta (rótulo 12, caminho 11, duração 11). Abaixo: controles da mensagem (13) e chip de plano (12). O risco do 15/16 não é a prosa ficar feia, é a prosa descolar da vizinhança e a hierarquia embaralhar. A linha tracejada é a dobra de um viewport de 900px de altura."
+    - generic [ref=f3e77]:
+      - generic [ref=f3e78]:
+        - generic [ref=f3e79]:
+          - generic [ref=f3e80]: A · 14px
+          - generic [ref=f3e81]: 14/22.8px · razão 1,625 · mono 13
+          - generic [ref=f3e82]: hoje
+        - generic [ref=f3e83]:
+          - generic: dobra
+          - generic [ref=f3e84]:
+            - generic [ref=f3e85]:
+              - generic [ref=f3e86]: CC
+              - generic [ref=f3e87]: Claude Code
+              - generic [ref=f3e88]: opus-5
+              - generic [ref=f3e89]:
+                - generic [ref=f3e90]: 14:32
+                - generic [ref=f3e91]: 8,4k tokens
+                - generic [ref=f3e92]: US$ 0,12
+            - generic [ref=f3e93]:
+              - generic [ref=f3e95]: Ler arquivo
+              - generic [ref=f3e96]: scripts/lints/typeScale.mjs
+              - generic [ref=f3e97]: 0,4s
+            - generic [ref=f3e98]:
+              - paragraph [ref=f3e99]:
+                - text: A guarda de escala tipográfica não nasceu de preciosismo. Antes da passada de 12/08/2026 o app usava
+                - strong [ref=f3e100]: 19 tamanhos distintos
+                - text: ", e os meio-pixel dominavam:"
+                - code [ref=f3e101]: "11.5"
+                - text: ","
+                - code [ref=f3e102]: "12.5"
+                - text: ","
+                - code [ref=f3e103]: "10.5"
+                - text: ","
+                - code [ref=f3e104]: "9.5"
+                - text: . Ninguém decidiu isso; foi o acúmulo de dezenas de decisões locais, cada uma razoável sozinha. A passada trouxe tudo para sete paradas, e a lição que veio junto é a que importa aqui.
+              - heading "Por que a guarda existe" [level=3] [ref=f3e105]
+              - paragraph [ref=f3e106]:
+                - text: O padrão veio do Buzz (
+                - code [ref=f3e107]: block/buzz
+                - text: ), estudado em
+                - link "docs/study-buzz.md" [ref=f3e108] [cursor=pointer]:
+                  - /url: "#"
+                - text: ", item B1:"
+                - emphasis [ref=f3e109]: passada de despoluição sem guarda re-fragmenta em poucos sprints
+                - text: ". A regra deles é literal e vale repetir: \"se a guarda disparar,"
+                - strong [ref=f3e110]: divida o arquivo, nunca suba o limite nem adicione exceção
+                - text: "\". Três scripts rodam na CI e localmente por"
+                - code [ref=f3e111]: cd app && bun run check
+                - text: ":"
+              - table [ref=f3e112]:
+                - rowgroup [ref=f3e113]:
+                  - row [ref=f3e114]:
+                    - columnheader "Script" [ref=f3e115]
+                    - columnheader "Protege" [ref=f3e116]
+                    - columnheader "Falha quando" [ref=f3e117]
+                - rowgroup [ref=f3e118]:
+                  - row [ref=f3e119]:
+                    - cell [ref=f3e120]:
+                      - code [ref=f3e121]: check-type-scale.mjs
+                    - cell "§3, a escala fechada" [ref=f3e122]
+                    - cell [ref=f3e123]:
+                      - text: "aparece tamanho fora de {11, 12, 13, 14, 20, 30, 38}px em"
+                      - code [ref=f3e124]: app/src/**
+                  - row [ref=f3e125]:
+                    - cell [ref=f3e126]:
+                      - code [ref=f3e127]: check-file-size-ratchet.mjs
+                    - cell "legibilidade" [ref=f3e128]
+                    - cell "um arquivo passa do teto do tipo ou cresce acima do congelado" [ref=f3e129]
+                  - row [ref=f3e130]:
+                    - cell [ref=f3e131]:
+                      - code [ref=f3e132]: check-dead-tokens.mjs
+                    - cell "§2, §4 e §7" [ref=f3e133]
+                    - cell [ref=f3e134]:
+                      - text: volta
+                      - code [ref=f3e135]: shadow-md/lg/xl/2xl
+                      - text: ", ou entra travessão em prosa de UI"
+              - paragraph [ref=f3e136]:
+                - text: A parte interessante do
+                - code [ref=f3e137]: check-type-scale
+                - text: "é que ele não inventa régua própria: ele repete o mapa de migração do guia. Quando dispara, já diz o arquivo:linha, o valor achado"
+                - emphasis [ref=f3e138]: e
+                - text: a parada de destino, então o conserto não depende de julgamento estético de quem está com o teclado na mão.
+              - code [ref=f3e140]: "/** * A parada de destino de um valor em px: o que o §3 mandar, e fora do * mapa a parada mais próxima (empate desce, porque ênfase acima de 14 * se faz com peso e não com tamanho). */ export function paradaMaisProxima(px) { const doMapa = MAPA_DE_MIGRACAO.get(px); if (doMapa != null) return doMapa; return maisProximaPorDistancia(px); }"
+              - paragraph [ref=f3e141]:
+                - text: "Repare no que o mapa faz com os valores em discussão:"
+                - code [ref=f3e142]: "15"
+                - text: e
+                - code [ref=f3e143]: "16"
+                - text: estão explicitamente listados como "vira
+                - code [ref=f3e144]: "14"
+                - text: "\". Não é omissão nem lacuna a preencher: é uma decisão escrita, e mexer nela é mexer na decisão, não no script."
+              - heading "As três regras de convívio" [level=3] [ref=f3e145]
+              - list [ref=f3e146]:
+                - listitem [ref=f3e147]:
+                  - strong [ref=f3e148]: Se a guarda de tamanho disparar, divida o arquivo.
+                  - text: "Nunca suba o teto, nunca edite a baseline à mão, nunca adicione exceção. A baseline só encolhe: quando um arquivo baixa,"
+                  - code [ref=f3e149]: bun run check:file-size -- --update
+                  - text: desce o número dele, e a guarda cobra isso, senão a catraca afrouxa sozinha.
+                - listitem [ref=f3e150]:
+                  - strong [ref=f3e151]: Tamanho novo na escala exige ADR mais linha no §3
+                  - text: ", não exceção no script. O erro já diz o arquivo:linha, o valor achado e a parada de destino."
+                - listitem [ref=f3e152]:
+                  - strong [ref=f3e153]: Exceção de token morto é por arquivo, com contagem e motivo escrito
+                  - text: "no mapa da regra. O número congela: o verde de marco que já existe continua, verde novo não entra. Exceção que sobrou folgada aparece como nota no fim da varredura, pra ser apertada."
+              - blockquote [ref=f3e154]:
+                - text: "O contexto é real:"
+                - code [ref=f3e155]: MessageList.tsx
+                - text: chegou a 2,8 mil linhas, e foi exatamente ali que 11 varreduras O(N) se esconderam. A guarda de tamanho de arquivo não protege estética, protege a chance de alguém achar o bug.
+              - paragraph [ref=f3e156]:
+                - text: O efeito colateral mais instrutivo da passada apareceu na sidebar. O badge de estágio deu o maior salto (9,5 para 11px) num
+                - code [ref=f3e157]: shrink-0
+                - text: ao lado de um título
+                - code [ref=f3e158]: truncate
+                - text: ", e na largura mínima de 190px a palavra \"IMPLEMENTAÇÃO\" comia o título inteiro. A saída não foi voltar o tamanho, porque a escala é lei, nem inventar um rótulo curto, porque o §7 fecha o vocabulário: caiu o"
+                - code [ref=f3e159]: uppercase
+                - text: com
+                - code [ref=f3e160]: tracking-wide
+                - text: feito à mão, que o §3 já proibia. Sentence case custa cerca de 74px contra 92px em caixa-alta, menos do que o badge ocupava antes da migração.
+              - paragraph [ref=f3e161]: "É o tipo de conserto que só aparece quando a regra é decidível: com \"use o bom senso\" no lugar do número, o caminho óbvio teria sido abrir uma exceção de 9,5px para a sidebar, e daí a dois sprints teríamos 19 tamanhos de novo."
+            - generic [ref=f3e162]:
+              - button "Copiar resposta" [ref=f3e163] [cursor=pointer]
+              - button "Ver diff" [ref=f3e164] [cursor=pointer]
+              - generic [ref=f3e165]: Plano · 3 de 7
+        - generic [ref=f3e167]:
+          - generic [ref=f3e168]: "acima da dobra: 23 de 53 linhas renderizadas (43% da resposta)"
+          - generic [ref=f3e169]: "rolagem até o fim: 816px"
+          - generic [ref=f3e170]: 3 de 6 parágrafos · 5 de 12 blocos
+          - generic [ref=f3e171]: altura total 1524px
+      - generic [ref=f3e172]:
+        - generic [ref=f3e173]:
+          - generic [ref=f3e174]: C · 16px
+          - generic [ref=f3e175]: 16/24.0px · razão 1,500 · mono 13
+          - generic [ref=f3e176]: proposta
+        - generic [ref=f3e177]:
+          - generic: dobra
+          - generic [ref=f3e178]:
+            - generic [ref=f3e179]:
+              - generic [ref=f3e180]: CC
+              - generic [ref=f3e181]: Claude Code
+              - generic [ref=f3e182]: opus-5
+              - generic [ref=f3e183]:
+                - generic [ref=f3e184]: 14:32
+                - generic [ref=f3e185]: 8,4k tokens
+                - generic [ref=f3e186]: US$ 0,12
+            - generic [ref=f3e187]:
+              - generic [ref=f3e189]: Ler arquivo
+              - generic [ref=f3e190]: scripts/lints/typeScale.mjs
+              - generic [ref=f3e191]: 0,4s
+            - generic [ref=f3e192]:
+              - paragraph [ref=f3e193]:
+                - text: A guarda de escala tipográfica não nasceu de preciosismo. Antes da passada de 12/08/2026 o app usava
+                - strong [ref=f3e194]: 19 tamanhos distintos
+                - text: ", e os meio-pixel dominavam:"
+                - code [ref=f3e195]: "11.5"
+                - text: ","
+                - code [ref=f3e196]: "12.5"
+                - text: ","
+                - code [ref=f3e197]: "10.5"
+                - text: ","
+                - code [ref=f3e198]: "9.5"
+                - text: . Ninguém decidiu isso; foi o acúmulo de dezenas de decisões locais, cada uma razoável sozinha. A passada trouxe tudo para sete paradas, e a lição que veio junto é a que importa aqui.
+              - heading "Por que a guarda existe" [level=3] [ref=f3e199]
+              - paragraph [ref=f3e200]:
+                - text: O padrão veio do Buzz (
+                - code [ref=f3e201]: block/buzz
+                - text: ), estudado em
+                - link "docs/study-buzz.md" [ref=f3e202] [cursor=pointer]:
+                  - /url: "#"
+                - text: ", item B1:"
+                - emphasis [ref=f3e203]: passada de despoluição sem guarda re-fragmenta em poucos sprints
+                - text: ". A regra deles é literal e vale repetir: \"se a guarda disparar,"
+                - strong [ref=f3e204]: divida o arquivo, nunca suba o limite nem adicione exceção
+                - text: "\". Três scripts rodam na CI e localmente por"
+                - code [ref=f3e205]: cd app && bun run check
+                - text: ":"
+              - table [ref=f3e206]:
+                - rowgroup [ref=f3e207]:
+                  - row [ref=f3e208]:
+                    - columnheader "Script" [ref=f3e209]
+                    - columnheader "Protege" [ref=f3e210]
+                    - columnheader "Falha quando" [ref=f3e211]
+                - rowgroup [ref=f3e212]:
+                  - row [ref=f3e213]:
+                    - cell [ref=f3e214]:
+                      - code [ref=f3e215]: check-type-scale.mjs
+                    - cell "§3, a escala fechada" [ref=f3e216]
+                    - cell [ref=f3e217]:
+                      - text: "aparece tamanho fora de {11, 12, 13, 14, 20, 30, 38}px em"
+                      - code [ref=f3e218]: app/src/**
+                  - row [ref=f3e219]:
+                    - cell [ref=f3e220]:
+                      - code [ref=f3e221]: check-file-size-ratchet.mjs
+                    - cell "legibilidade" [ref=f3e222]
+                    - cell "um arquivo passa do teto do tipo ou cresce acima do congelado" [ref=f3e223]
+                  - row [ref=f3e224]:
+                    - cell [ref=f3e225]:
+                      - code [ref=f3e226]: check-dead-tokens.mjs
+                    - cell "§2, §4 e §7" [ref=f3e227]
+                    - cell [ref=f3e228]:
+                      - text: volta
+                      - code [ref=f3e229]: shadow-md/lg/xl/2xl
+                      - text: ", ou entra travessão em prosa de UI"
+              - paragraph [ref=f3e230]:
+                - text: A parte interessante do
+                - code [ref=f3e231]: check-type-scale
+                - text: "é que ele não inventa régua própria: ele repete o mapa de migração do guia. Quando dispara, já diz o arquivo:linha, o valor achado"
+                - emphasis [ref=f3e232]: e
+                - text: a parada de destino, então o conserto não depende de julgamento estético de quem está com o teclado na mão.
+              - code [ref=f3e234]: "/** * A parada de destino de um valor em px: o que o §3 mandar, e fora do * mapa a parada mais próxima (empate desce, porque ênfase acima de 14 * se faz com peso e não com tamanho). */ export function paradaMaisProxima(px) { const doMapa = MAPA_DE_MIGRACAO.get(px); if (doMapa != null) return doMapa; return maisProximaPorDistancia(px); }"
+              - paragraph [ref=f3e235]:
+                - text: "Repare no que o mapa faz com os valores em discussão:"
+                - code [ref=f3e236]: "15"
+                - text: e
+                - code [ref=f3e237]: "16"
+                - text: estão explicitamente listados como "vira
+                - code [ref=f3e238]: "14"
+                - text: "\". Não é omissão nem lacuna a preencher: é uma decisão escrita, e mexer nela é mexer na decisão, não no script."
+              - heading "As três regras de convívio" [level=3] [ref=f3e239]
+              - list [ref=f3e240]:
+                - listitem [ref=f3e241]:
+                  - strong [ref=f3e242]: Se a guarda de tamanho disparar, divida o arquivo.
+                  - text: "Nunca suba o teto, nunca edite a baseline à mão, nunca adicione exceção. A baseline só encolhe: quando um arquivo baixa,"
+                  - code [ref=f3e243]: bun run check:file-size -- --update
+                  - text: desce o número dele, e a guarda cobra isso, senão a catraca afrouxa sozinha.
+                - listitem [ref=f3e244]:
+                  - strong [ref=f3e245]: Tamanho novo na escala exige ADR mais linha no §3
+                  - text: ", não exceção no script. O erro já diz o arquivo:linha, o valor achado e a parada de destino."
+                - listitem [ref=f3e246]:
+                  - strong [ref=f3e247]: Exceção de token morto é por arquivo, com contagem e motivo escrito
+                  - text: "no mapa da regra. O número congela: o verde de marco que já existe continua, verde novo não entra. Exceção que sobrou folgada aparece como nota no fim da varredura, pra ser apertada."
+              - blockquote [ref=f3e248]:
+                - text: "O contexto é real:"
+                - code [ref=f3e249]: MessageList.tsx
+                - text: chegou a 2,8 mil linhas, e foi exatamente ali que 11 varreduras O(N) se esconderam. A guarda de tamanho de arquivo não protege estética, protege a chance de alguém achar o bug.
+              - paragraph [ref=f3e250]:
+                - text: O efeito colateral mais instrutivo da passada apareceu na sidebar. O badge de estágio deu o maior salto (9,5 para 11px) num
+                - code [ref=f3e251]: shrink-0
+                - text: ao lado de um título
+                - code [ref=f3e252]: truncate
+                - text: ", e na largura mínima de 190px a palavra \"IMPLEMENTAÇÃO\" comia o título inteiro. A saída não foi voltar o tamanho, porque a escala é lei, nem inventar um rótulo curto, porque o §7 fecha o vocabulário: caiu o"
+                - code [ref=f3e253]: uppercase
+                - text: com
+                - code [ref=f3e254]: tracking-wide
+                - text: feito à mão, que o §3 já proibia. Sentence case custa cerca de 74px contra 92px em caixa-alta, menos do que o badge ocupava antes da migração.
+              - paragraph [ref=f3e255]: "É o tipo de conserto que só aparece quando a regra é decidível: com \"use o bom senso\" no lugar do número, o caminho óbvio teria sido abrir uma exceção de 9,5px para a sidebar, e daí a dois sprints teríamos 19 tamanhos de novo."
+            - generic [ref=f3e256]:
+              - button "Copiar resposta" [ref=f3e257] [cursor=pointer]
+              - button "Ver diff" [ref=f3e258] [cursor=pointer]
+              - generic [ref=f3e259]: Plano · 3 de 7
+        - generic [ref=f3e261]:
+          - generic [ref=f3e262]: "acima da dobra: 22 de 56 linhas renderizadas (39% da resposta)"
+          - generic [ref=f3e263]: "rolagem até o fim: 934px"
+          - generic [ref=f3e264]: 3 de 6 parágrafos · 5 de 12 blocos
+          - generic [ref=f3e265]: altura total 1642px
+    - heading "03A escada, em close" [level=2] [ref=f3e266]
+    - paragraph [ref=f3e267]: "Os degraus lado a lado, na mesma superfície. O que se olha aqui: a distância entre \"controle\" (13) e \"prosa\" continua legível como distância de PAPEL, ou vira só \"o texto grande e o texto pequeno\"?"
+    - generic [ref=f3e268]:
+      - generic [ref=f3e269]:
+        - heading "A escada com prosa em 14 (hoje)" [level=3] [ref=f3e270]
+        - paragraph [ref=f3e271]: 11 · 12 · 13 · 14
+        - generic [ref=f3e272]:
+          - generic [ref=f3e273]:
+            - generic [ref=f3e274]: 11 metadado
+            - generic [ref=f3e275]: 14:32 · 8,4k tokens · US$ 0,12
+          - generic [ref=f3e276]:
+            - generic [ref=f3e277]: 12 rótulo
+            - generic [ref=f3e278]: Editar arquivo · plano 3 de 7
+          - generic [ref=f3e279]:
+            - generic [ref=f3e280]: 13 controle
+            - generic [ref=f3e281]: Copiar resposta
+          - generic [ref=f3e282]:
+            - generic [ref=f3e283]: 14 prosa
+            - generic [ref=f3e284]: A guarda existe porque memória não segura escala.
+        - paragraph [ref=f3e285]: "Degraus de 1px entre 11 e 14. O salto controle → prosa é de 1px: a prosa quase não se declara como prosa."
+      - generic [ref=f3e286]:
+        - heading "Com prosa em 15 (B)" [level=3] [ref=f3e287]
+        - paragraph [ref=f3e288]: 11 · 12 · 13 · 15
+        - generic [ref=f3e289]:
+          - generic [ref=f3e290]:
+            - generic [ref=f3e291]: 11 metadado
+            - generic [ref=f3e292]: 14:32 · 8,4k tokens · US$ 0,12
+          - generic [ref=f3e293]:
+            - generic [ref=f3e294]: 12 rótulo
+            - generic [ref=f3e295]: Editar arquivo · plano 3 de 7
+          - generic [ref=f3e296]:
+            - generic [ref=f3e297]: 13 controle
+            - generic [ref=f3e298]: Copiar resposta
+          - generic [ref=f3e299]:
+            - generic [ref=f3e300]: 15 prosa
+            - generic [ref=f3e301]: A guarda existe porque memória não segura escala.
+        - paragraph [ref=f3e302]: Salto de 2px no último degrau. A prosa passa a ter papel próprio sem sair da família dos outros três.
+      - generic [ref=f3e303]:
+        - heading "Com prosa em 16 (C)" [level=3] [ref=f3e304]
+        - paragraph [ref=f3e305]: 11 · 12 · 13 · 16
+        - generic [ref=f3e306]:
+          - generic [ref=f3e307]:
+            - generic [ref=f3e308]: 11 metadado
+            - generic [ref=f3e309]: 14:32 · 8,4k tokens · US$ 0,12
+          - generic [ref=f3e310]:
+            - generic [ref=f3e311]: 12 rótulo
+            - generic [ref=f3e312]: Editar arquivo · plano 3 de 7
+          - generic [ref=f3e313]:
+            - generic [ref=f3e314]: 13 controle
+            - generic [ref=f3e315]: Copiar resposta
+          - generic [ref=f3e316]:
+            - generic [ref=f3e317]: 16 prosa
+            - generic [ref=f3e318]: A guarda existe porque memória não segura escala.
+        - paragraph [ref=f3e319]: Salto de 3px, e 16 é o corpo de um site de leitura. Os vizinhos passam a parecer encolhidos, não densos. Ver anotação ⑤.
+    - heading "04O mono dentro da prosa" [level=2] [ref=f3e320]
+    - paragraph [ref=f3e321]:
+      - text: "Código inline e bloco são mono 13px hoje. Se a prosa sobe e o mono fica, a linha \"pula\": a caixinha de"
+      - code [ref=f3e322]: código inline
+      - text: fica visivelmente menor que a palavra ao lado. Três réguas possíveis, na mesma frase real. O seletor mono lá em cima aplica a régua escolhida também nas cenas do §02.
+    - generic [ref=f3e323]:
+      - generic [ref=f3e324]:
+        - heading "Mono fica em 13" [level=3] [ref=f3e325]
+        - paragraph [ref=f3e326]: prosa 15 · mono 13 · delta 2
+        - generic [ref=f3e327]:
+          - generic [ref=f3e328]: prosa 15 · mono 13
+          - generic [ref=f3e329]:
+            - text: "Repare no que o mapa faz:"
+            - code [ref=f3e330]: "15"
+            - text: e
+            - code [ref=f3e331]: "16"
+            - text: estão listados como "vira
+            - code [ref=f3e332]: "14"
+            - text: "\", e"
+            - code [ref=f3e333]: paradaMaisProxima()
+            - text: devolve o destino junto com o erro.
+        - generic [ref=f3e334]:
+          - generic [ref=f3e335]: prosa 16 · mono 13
+          - generic [ref=f3e336]:
+            - text: "Repare no que o mapa faz:"
+            - code [ref=f3e337]: "15"
+            - text: e
+            - code [ref=f3e338]: "16"
+            - text: estão listados como "vira
+            - code [ref=f3e339]: "14"
+            - text: "\", e"
+            - code [ref=f3e340]: paradaMaisProxima()
+            - text: devolve o destino junto com o erro.
+        - paragraph [ref=f3e341]: Recomendada. Geist Mono parece maior no mesmo corpo; 2px abaixo é onde o par empata oticamente. Bloco e tabela não engordam.
+      - generic [ref=f3e342]:
+        - heading "Mono segue (corpo menos 2)" [level=3] [ref=f3e343]
+        - paragraph [ref=f3e344]: prosa 15 · mono 13 · prosa 16 · mono 14
+        - generic [ref=f3e345]:
+          - generic [ref=f3e346]: prosa 15 · mono 13
+          - generic [ref=f3e347]:
+            - text: "Repare no que o mapa faz:"
+            - code [ref=f3e348]: "15"
+            - text: e
+            - code [ref=f3e349]: "16"
+            - text: estão listados como "vira
+            - code [ref=f3e350]: "14"
+            - text: "\", e"
+            - code [ref=f3e351]: paradaMaisProxima()
+            - text: devolve o destino junto com o erro.
+        - generic [ref=f3e352]:
+          - generic [ref=f3e353]: prosa 16 · mono 14
+          - generic [ref=f3e354]:
+            - text: "Repare no que o mapa faz:"
+            - code [ref=f3e355]: "15"
+            - text: e
+            - code [ref=f3e356]: "16"
+            - text: estão listados como "vira
+            - code [ref=f3e357]: "14"
+            - text: "\", e"
+            - code [ref=f3e358]: paradaMaisProxima()
+            - text: devolve o destino junto com o erro.
+        - paragraph [ref=f3e359]: "Idêntica à de cima em B, e vira mono 14 em C. Amarra duas decisões numa: mexer na prosa mexe no código."
+      - generic [ref=f3e360]:
+        - heading "Mono sobe junto" [level=3] [ref=f3e361]
+        - paragraph [ref=f3e362]: prosa 15 · mono 15
+        - generic [ref=f3e363]:
+          - generic [ref=f3e364]: prosa 15 · mono 15
+          - generic [ref=f3e365]:
+            - text: "Repare no que o mapa faz:"
+            - code [ref=f3e366]: "15"
+            - text: e
+            - code [ref=f3e367]: "16"
+            - text: estão listados como "vira
+            - code [ref=f3e368]: "14"
+            - text: "\", e"
+            - code [ref=f3e369]: paradaMaisProxima()
+            - text: devolve o destino junto com o erro.
+        - generic [ref=f3e370]:
+          - generic [ref=f3e371]: prosa 16 · mono 16
+          - generic [ref=f3e372]:
+            - text: "Repare no que o mapa faz:"
+            - code [ref=f3e373]: "15"
+            - text: e
+            - code [ref=f3e374]: "16"
+            - text: estão listados como "vira
+            - code [ref=f3e375]: "14"
+            - text: "\", e"
+            - code [ref=f3e376]: paradaMaisProxima()
+            - text: devolve o destino junto com o erro.
+        - paragraph [ref=f3e377]: A caixinha inline fica gorda e rouba a linha; bloco de código e tabela crescem no eixo que já é o mais caro. Descartada.
+    - heading "05Anotações" [level=2] [ref=f3e378]
+    - generic [ref=f3e379]:
+      - generic [ref=f3e380]:
+        - generic [ref=f3e381]: "1"
+        - generic [ref=f3e382]:
+          - text: Entrelinha não é constante. 14 pede 1,625 (o
+          - code [ref=f3e383]: leading-relaxed
+          - text: "de hoje); 15 pede 1,55; 16 pede 1,50. Em px a linha vai de 22,8 para 23,3 e 24,0: o crescimento da altura é bem menor que o crescimento do corpo, porque a razão desce junto. Sem esse ajuste, 16px vira 26px de linha e o custo de rolagem dispara sem necessidade (veja travada 1,625)."
+      - generic [ref=f3e384]:
+        - generic [ref=f3e385]: "2"
+        - generic [ref=f3e386]:
+          - text: A largura é fixa, então a medida é consequência. No app a coluna é
+          - code [ref=f3e387]: max-w-[760px] px-8
+          - text: ", ou seja 696px de texto, independente do tamanho da fonte. Isso inverte a regra dos sites: aqui não é o tamanho que puxa a largura, é a largura que decide quantos caracteres cabem por linha."
+      - generic [ref=f3e388]:
+        - generic [ref=f3e389]: "3"
+        - generic [ref=f3e390]: "O achado que a régua entrega: em 696px, o 14px de hoje dá 74ch por linha, muito acima da faixa confortável de 66 a 75ch. Ou seja, parte do desconforto que o designer sentiu não é o tamanho, é a medida: linha longa demais cansa o retorno de linha. Subir o corpo encurta a medida (15px dá 69ch, 16px dá 65ch) e conserta o sintoma por um caminho caro. O caminho barato está na recomendação."
+      - generic [ref=f3e391]:
+        - generic [ref=f3e392]: "4"
+        - generic [ref=f3e393]: "O custo é rolagem, e ele é medido. Os contadores abaixo de cada coluna são calculados no DOM real com a dobra em 900px de janela (708px de área de conversa, depois de tirar header 44, linha viva 28 e composer 120). Nada de estimativa: se a coluna mudar, o número muda junto."
+      - generic [ref=f3e394]:
+        - generic [ref=f3e395]: "5"
+        - generic [ref=f3e396]: "Vizinhança é o risco de verdade. Com prosa em 16, o metadado 11px fica a 5px de distância do corpo: a mesma linha que hoje lê como \"sussurro técnico\" passa a ler como \"letra miúda\". Em 15 a distância é 4px, e a escada 11/12/13/15 continua sendo uma escada. Este é o argumento decisivo contra o 16 num app denso, e ele só aparece com os vizinhos na tela."
+      - generic [ref=f3e397]:
+        - generic [ref=f3e398]: "6"
+        - generic [ref=f3e399]:
+          - text: Títulos de markdown viram dano colateral. Hoje
+          - code [ref=f3e400]: h1
+          - text: /
+          - code [ref=f3e401]: h2
+          - text: do markdown são 14px semibold e
+          - code [ref=f3e402]: h3
+          - text: é 13px (
+          - code [ref=f3e403]: Markdown.tsx:134,137,140
+          - text: "): iguais ou menores que o corpo. Se o corpo sobe pra 15 e os títulos ficam, o título fica menor que o parágrafo. Qualquer degrau novo obriga a mover os títulos junto (título = corpo da prosa + peso;"
+          - code [ref=f3e404]: h3
+          - text: = corpo com peso e cor muted), senão a hierarquia inverte.
+      - generic [ref=f3e405]:
+        - generic [ref=f3e406]: "7"
+        - generic [ref=f3e407]: "Mono não acompanha. Geist Mono tem altura-x maior e avanço fixo: no mesmo corpo ela parece maior que a Geist. Mono em 13 dentro de prosa em 15 é o par que fica mais próximo do equilíbrio ótico (§04). Mono subindo junto engorda bloco de código e tabela, que são justamente o conteúdo que mais ocupa altura."
+      - generic [ref=f3e408]:
+        - generic [ref=f3e409]: "8"
+        - generic [ref=f3e410]:
+          - text: A tabela e o bloco de código não mudam. No
+          - code [ref=f3e411]: Markdown.tsx
+          - text: "tabela é 13px e bloco é 13px. Eles seguem em 13 nas três colunas, de propósito: a decisão em jogo é só o corpo de prosa. Se um dia forem junto, o custo de rolagem medido no §02 muda, e a medida tem que ser refeita."
+    - heading "06Recomendação" [level=2] [ref=f3e412]
+    - generic [ref=f3e413]:
+      - generic [ref=f3e414]: B · 15px, com dono declarado
+      - paragraph [ref=f3e415]: "O que os números dizem. Com a entrelinha ajustada por tamanho, esta mesma resposta ocupa 1524px em 14, 1565px em 15 (+3%) e 1642px em 16 (+8%). O 15 compra legibilidade a um custo de rolagem que se paga; o 16 cobra quase o dobro pelo mesmo tipo de ganho, e cobra também na vizinhança: metadado 11px a 5px do corpo deixa de ler como sussurro técnico e passa a ler como letra miúda (anotação ⑤)."
+      - paragraph [ref=f3e416]:
+        - text: Mas o 15 não vem sozinho. A medida em 696px é o problema mais barato de consertar (anotação ③). Se a decisão for só uma, capar a medida rende mais que subir o corpo. Se forem as duas, subir para 15
+        - emphasis [ref=f3e417]: e
+        - text: capar a medida é a combinação que resolve leitura longa sem virar página editorial.
+      - paragraph [ref=f3e418]:
+        - text: O custo da mudança. A prosa de markdown tem um renderizador só (
+        - code [ref=f3e419]: app/src/components/common/Markdown.tsx
+        - text: ), com o tamanho declarado numa linha (
+        - code [ref=f3e420]: :178
+        - text: ). Os títulos de markdown (
+        - code [ref=f3e421]: :134,137,140
+        - text: ) têm que mover junto, senão o título fica menor que o parágrafo (anotação ⑥). Fora o renderizador, cada superfície que hoje escreve
+        - code [ref=f3e422]: text-[14px]
+        - text: em texto corrido de mensagem continua em 14 e passa a estar
+        - emphasis [ref=f3e423]: fora
+        - text: "do degrau de prosa: ou migra pra classe, ou a tela fica com duas prosas de tamanhos diferentes. Essa é a parte cara, e é ela que o levantamento de call sites tem que fechar antes do ADR."
+      - paragraph [ref=f3e424]:
+        - text: "Como o degrau entra sem fragmentar. Não como quinta parada da escala: isso liberaria"
+        - code [ref=f3e425]: text-[15px]
+        - text: em qualquer lugar, que é exatamente o que a guarda existe pra impedir. Entra como token com dono único, declarado em
+        - code [ref=f3e426]: index.css
+        - text: ", consumido por classe, e liberado no lint por uma exceção nomeada e estreita:"
+      - generic [ref=f3e427]: "/* index.css, dono único do quinto degrau */ .prose-body { font-size: 0.9375rem; line-height: 1.55; } /* 15px */ // scripts/check-type-scale.mjs const EXCECOES = new Map([ [\"index.css:font-size: 0.9375rem\", \"degrau de prosa (ADR-0XX). Dono único: .prose-body, consumida \" + \"só por Markdown.tsx. Qualquer outro arquivo com 15px falha.\"], ]);"
+      - paragraph [ref=f3e428]:
+        - text: A chave de
+        - code [ref=f3e429]: EXCECOES
+        - text: já é
+        - code [ref=f3e430]: arquivo:trecho
+        - text: ", então o mecanismo existe e é estreito por construção: qualquer outro arquivo que escreva 15px quebra a CI sem ninguém precisar lembrar da regra. Falta travar o segundo vazamento, que a guarda de px não enxerga: alguém aplicar"
+        - code [ref=f3e431]: class="prose-body"
+        - text: numa superfície que não é prosa. Isso é uma regra nova em
+        - code [ref=f3e432]: scripts/lints/deadTokens.mjs
+        - text: ", no mesmo formato por arquivo e com contagem que já protege o verde:"
+        - code [ref=f3e433]: prose-body
+        - text: pode aparecer em 1 arquivo, e é o
+        - code [ref=f3e434]: Markdown.tsx
+        - text: . Subiu pra 2, a CI falha e pede ADR.
+      - list [ref=f3e435]:
+        - listitem [ref=f3e436]:
+          - text: 15 e 16 saem do
+          - code [ref=f3e437]: MAPA_DE_MIGRACAO
+          - text: "como \"vira 14\"? Só o 15, e só pra classe dona. O 16 continua migrando pra 14: um degrau novo, não dois."
+        - listitem [ref=f3e438]:
+          - text: O §3 do
+          - code [ref=f3e439]: STYLEGUIDE.md
+          - text: "ganha uma quarta linha na tabela de corpo com a coluna \"não use para\" preenchida: não use para UI, rótulo, botão, título de card, tooltip, nem prosa curta de painel."
+        - listitem [ref=f3e440]: "Regra de bolso pro futuro: degrau novo precisa de dono nominal. Sem um arquivo responsável escrito no ADR, é fragmentação com justificativa."
