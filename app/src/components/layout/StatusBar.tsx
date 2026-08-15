@@ -7,7 +7,15 @@
 // o mesmo agora foi o bug dos builds 181/182).
 //
 // Anatomia decidida:
-//   E0 — hairline no topo, fundo do rail, nenhuma sombra.
+//   SEM hairline e SEM fundo próprio: a faixa É o piso da janela (ADR-043,
+//   Fase 3). Hairline de largura total só termina em aresta reta, e a janela
+//   do macOS é arredondada (raio real 10px, o mesmo que a moldura de risco
+//   teve que aprender em lib/climate.ts) — a borda morria no meio do arco, o
+//   retângulo de fundo era decepado, e o olho lia "recorte", não "moldura".
+//   Quem separa agora é o inset de 8px do conteúdo, que deixa 8px de rail
+//   visível acima da faixa.
+//   `px-4` (16px ≥ raio 10px): o conteúdo começa DEPOIS do arco. Era px-3, e
+//   a UsagePill entrava em cima da curva.
 //   altura FIXA de 24px (h-6), nunca cresce com o conteúdo.
 //   `select-none` — é instrumento, não texto pra copiar.
 //   zona vazia não desenha NADA: sem divisor órfão, sem placeholder. Cada item
@@ -66,7 +74,7 @@ export function StatusBar() {
       // metralhadora. É região complementar, alcançável, nunca anunciada.
       role="complementary"
       aria-label="Telemetria do app"
-      className="flex h-6 shrink-0 items-center gap-3 border-t border-border/60 bg-rail px-3 font-mono text-[11px] text-muted-foreground select-none"
+      className="flex h-6 shrink-0 items-center gap-3 px-4 font-mono text-[11px] text-muted-foreground select-none"
     >
       {/* ESQUERDA — telemetria. Cada peça some sozinha sem dado (a pill já tem
           as 4 camadas de esconder; o custo exige ≥2 turnos e gasto real). */}

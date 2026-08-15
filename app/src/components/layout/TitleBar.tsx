@@ -143,13 +143,18 @@ export function TitleBar() {
           <>
             {/* Nome do projeto sem prefixo do app: é o alvo de troca. Clicar
                 abre a MESMA paleta ⌘K, onde mora a lista de projetos (nenhum
-                switcher novo foi inventado aqui). */}
+                switcher novo foi inventado aqui).
+                Em `foreground` + peso 500 (ADR-043, Fase 3): com a marca fora
+                da barra, ele é a única identidade da janela, e a faixa
+                horizontal mais cara abria com um cinza secundário. O hover
+                deixou de ser a única mudança de cor e virou preenchimento, o
+                mesmo dos botões-ícone vizinhos. */}
             <button
               type="button"
               onClick={openCommandMenu}
               title="Trocar de projeto"
               aria-label={`Projeto ${project.name}, trocar de projeto`}
-              className="pointer-events-auto min-w-0 truncate rounded-md px-1.5 py-0.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="pointer-events-auto min-w-0 truncate rounded-md px-1.5 py-0.5 text-[13px] font-medium text-foreground transition-colors hover:bg-accent outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
               {project.name}
             </button>

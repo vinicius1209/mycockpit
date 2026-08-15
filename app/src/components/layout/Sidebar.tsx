@@ -886,12 +886,12 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
       {/* Guia de setup: some sozinho ao completar (renderiza null). */}
       <SetupGuide />
 
-      {/* Sem `border-t` (build 202): a separação aqui já vem do espaço e da
-          mudança de peso — o divisor era hairline gratuito, e a faixa de status
-          logo abaixo já tem o dela. Duas linhas horizontais empilhadas a 24px
-          de distância foi o que o usuário leu como "cortado". */}
+      {/* Sem `border-t` (build 202) e sem borda na faixa de status abaixo
+          (ADR-043, Fase 3): o que separa é o espaço (o inset de 8px) e o peso.
+          Duas linhas empilhadas a 24px foi o que o usuário leu como "cortado".
+          O avatar saiu do brass junto: brass é gesto, avatar é identidade. */}
       <footer className="flex h-12 shrink-0 items-center gap-2.5 px-3">
-        <div className="grid size-6 place-items-center rounded-full bg-brass/15 text-[11px] font-semibold text-brass">
+        <div className="grid size-6 place-items-center rounded-full bg-foreground/10 text-[11px] font-semibold text-muted-foreground">
           V
         </div>
         {/* A VERSÃO saiu daqui pra faixa de status (StatusBar): saber qual

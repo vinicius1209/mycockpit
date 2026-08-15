@@ -229,7 +229,7 @@ nunca em big-bang):
 
 | Nível | Receita | Onde |
 |---|---|---|
-| **E0 — plano** | fundo + hairline `--border` | listas, linhas do fio, painéis laterais (`--rail`) |
+| **E0 — plano** | fundo + hairline `--border` | listas, linhas do fio, painéis laterais (`--rail`) — a faixa de status é E0 **sem** hairline e **sem** fundo próprio: ela é o piso da janela |
 | **E1 — cartão** | `bg-card` + `--shadow-sm` (+ `--lift` opcional) | segmented ativo, cards de painel, pills, **painel direito** (`ContextPanel`) |
 | **E2 — flutuante** | `--shadow-pop` | popover, dialog, dropdown, composer, tray, lightbox |
 
@@ -246,6 +246,12 @@ nunca em big-bang):
   o composer em E2 lá dentro. E ela fica **mais** forte, não menos: como o
   painel virou superfície, nada lá dentro tem borda própria (nem divisor, nem
   chip contornado, nem a barra sticky do `DiffPanel`, que ocluí com `bg-card`).
+- **Hairline de largura total só termina em ARESTA RETA** (ADR-043). Superfície
+  com raio R tem `padding-inline ≥ R`. Numa janela de canto arredondado (o raio
+  real do macOS é **10px**, `lib/climate.ts`), faixa full-bleed com `border-t` e
+  fundo próprio é proibida: a reta morre no meio do arco, o retângulo de fundo é
+  decepado, e o olho lê "recorte". Quem separa é o **inset do conteúdo** (8px na
+  faixa de status, `AppShell.tsx`), e a faixa passa a ser o piso da janela.
 - **Divisor é último recurso.** Seções de um mesmo painel se separam por
   **proximidade assimétrica: 24px acima do título, 8px abaixo** (razão 3:1) —
   `Section` em `components/layout/contextPanelChrome.tsx` é a implementação, e

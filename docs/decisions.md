@@ -1275,3 +1275,44 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
     congelado (928). A gramática visual dele (`Section`, `TabBtn`, `StageBadge`)
     saiu para `contextPanelChrome.tsx` — são as três peças que a Fase 2 mudou, e
     mudam juntas. O arquivo caiu para 858 e a baseline desceu junto.
+- **FASE 3 (build 206) — a faixa de status virou o PISO da janela, e a
+  identidade parou de ser cinza.** O que entrou:
+  - **A faixa perdeu `border-t` e fundo próprio**, e o `px-3` virou `px-4`. A
+    regra é mensurável, não estética: hairline de largura total só termina em
+    aresta reta, e a janela do macOS tem raio **10px** (o mesmo que a moldura de
+    risco já tinha aprendido na marra em `lib/climate.ts`, no `af57bfc`). Três
+    coisas entravam na curva: o hairline, o retângulo de fundo e a `UsagePill`
+    começando a 12px. Agora o conteúdo começa a 16px, e o arco só encontra fundo
+    liso.
+  - **Inset de 8px do conteúdo**, que é o que passou a separar a faixa do resto.
+    Ele vale pras DUAS colunas: a sidebar encostava na faixa (o cartão já tinha
+    o dele), e o vão entre sidebar e conteúdo, que eram 5px (1px de alça + 4px
+    de padding), virou 8px, igual ao vão entre os dois cartões.
+  - **Avatar do rodapé e nome do projeto saíram do cinza/brass.** O avatar era
+    `bg-brass/15 text-brass`: brass é gesto, e avatar é identidade parada. O
+    nome do projeto era `text-muted-foreground`: com a marca fora da barra
+    (`af57bfc`), ele é a única identidade da janela, e a faixa horizontal mais
+    cara abria com um cinza secundário. Virou `foreground` + peso 500, com
+    hover por preenchimento, igual aos botões-ícone vizinhos.
+  - **Furo do tema claro fechado onde ele apareceu.** O avatar neutro tinha ido
+    pra `bg-secondary`, que no claro é `#f4f4f2` sobre um rail `#f6f6f4`: 1,02:1
+    de contraste, ou seja, um disco invisível. Virou `bg-foreground/10`, que é
+    simétrico por construção (≈1,21:1 nos dois temas). Token translúcido
+    derivado do `foreground`, e não `--sel`, porque `--sel` significa SELEÇÃO e
+    um avatar não está selecionado.
+  - **O véu de rolagem do mock NÃO entrou.** O próprio autor da proposta
+    recomendou cortá-lo (§7 item 2): troca um hairline de custo zero por
+    listener de scroll, estado e um elemento que aparece e some, para um
+    problema que os 48px de rodapé já resolvem. Se incomodar na tela real,
+    entra depois.
+  - **Consequência de catraca:** o `App.tsx` estava congelado em 841 e o inset
+    não cabia. O ESQUELETO da janela (sidebar · conteúdo · painel, e as alças)
+    saiu para `components/layout/AppShell.tsx`, que é exatamente o que esta fase
+    mexeu; o `App.tsx` ficou com boot, efeitos globais e hosts, e caiu para 729.
+    Sem prop drilling: o shell lê o próprio estado do store.
+- **As Fases 4 e 5 continuam FORA, por decisão do dono.** A 4 (`--rail` medido
+  nos dois temas) é a única mudança de token global da proposta, e o autor pediu
+  que fosse isolada e reversível. A 5 (os ~16 sítios restantes de
+  brass-como-ativo) só começa com dono e prazo, senão vira a divergência
+  acidental que o §0 combate. Até lá vale a regra do §2: quem tocar numa
+  daquelas telas migra ela, e ninguém adiciona brass-como-ativo novo.

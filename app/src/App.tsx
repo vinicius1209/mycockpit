@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react"
+import { useEffect } from "react"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { toast } from "sonner"
@@ -7,28 +7,17 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
 import { TitleBar } from "@/components/layout/TitleBar"
 import { StatusBar } from "@/components/layout/StatusBar"
-import { Sidebar } from "@/components/layout/Sidebar"
-import { ContextPanel } from "@/components/layout/ContextPanel"
-import { ChatPanel } from "@/components/chat/ChatPanel"
 import { useProjectConfig } from "@/hooks/useProjectConfig"
 import { RiskClimate } from "@/components/chat/RiskClimate"
-import { SddView } from "@/components/sdd/SddView"
-import { MissionControl } from "@/components/panel/MissionControl"
 import { DecisionStrip } from "@/components/decisions/DecisionStrip"
-import { ScheduledView } from "@/components/scheduled/ScheduledView"
 import { CommandMenu } from "@/components/common/CommandMenu"
 import { GlobalInteractionHost } from "@/components/common/GlobalInteractionHost"
 import { LightboxOverlay } from "@/components/chat/Lightbox"
 import { SettingsDialog } from "@/components/settings/SettingsDialog"
 import { ConfirmHost } from "@/components/common/confirm"
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard"
-import { addProjectViaDialog } from "@/lib/projects"
 import { startDictationHotkey } from "@/lib/dictationHotkey"
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable"
+import { AppShell } from "@/components/layout/AppShell"
 import { useApp } from "@/store/app"
 import { pendingDeferred, useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
@@ -87,26 +76,15 @@ import { agentDef } from "@/lib/agents"
 import { reloadActiveProposals } from "@/lib/modelCurator"
 import { runDailyModelMaintenance } from "@/lib/modelRound"
 import { BROWSER_DEMO_PROJECTS } from "@/lib/demoProjects"
-import { cn } from "@/lib/utils"
 
 /** Intervalo mínimo entre checagens de update dos agents (1x/dia). */
 const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 const queryClient = new QueryClient()
 
-const FlightPlansView = lazy(() =>
-  import("@/components/mission/FlightPlansView").then((module) => ({
-    default: module.FlightPlansView,
-  })),
-)
 
 
 export default function App() {
-  const sidebarOpen = useApp((s) => s.sidebarOpen)
-  const contextOpen = useApp((s) => s.contextOpen)
-  const viewMode = useApp((s) => s.viewMode)
-  const scheduledOpen = useApp((s) => s.scheduledOpen)
-  const flightPlansOpen = useApp((s) => s.flightPlansOpen)
   const setProjects = useApp((s) => s.setProjects)
   const setReady = useApp((s) => s.setReady)
   const theme = useApp((s) => s.theme)
@@ -708,10 +686,6 @@ export default function App() {
   // Config do projeto ativo (.mycockpit/config.toml vence o cache do SQLite).
   useProjectConfig(activeProjectId)
 
-  async function handleAddProject() {
-    await addProjectViaDialog()
-  }
-
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={300}>
@@ -725,93 +699,7 @@ export default function App() {
               Painel. Sem decisão pendente ela renderiza null e não ocupa
               pixel nenhum. */}
           <DecisionStrip />
-          <ResizablePanelGroup
-            orientation="horizontal"
-            className="min-h-0 flex-1"
-          >
-            {sidebarOpen && (
-              <>
-                <ResizablePanel
-                  id="sidebar"
-                  defaultSize="19%"
-                  minSize="190px"
-                  maxSize="32%"
-                >
-                  <Sidebar onAddProject={handleAddProject} />
-                </ResizablePanel>
-                <ResizableHandle className="bg-transparent transition-colors after:w-4 data-[resize-handle-state=hover]:bg-border/50 data-[resize-handle-state=drag]:bg-border/70" />
-              </>
-            )}
-            {/* Conteúdo: dois cartões IRMÃOS flutuando no rail, com um vão de
-                8px entre eles (o da direita mora no ContextPanel, E1) — antes
-                era um cartão só com um hairline no meio. */}
-            <ResizablePanel id="main" defaultSize="81%" minSize="40%">
-              <div className="relative h-full py-2 pr-2 pl-1">
-                <ResizablePanelGroup orientation="horizontal" className="h-full">
-                  <ResizablePanel id="chat" defaultSize="70%" minSize="42%">
-                    <div className="h-full overflow-hidden rounded-xl border bg-background shadow-[var(--shadow-pop)]">
-                      {/* F7: a view global "Agendado" cobre o conteúdo via
-                          estado próprio — o switcher de superfícies fica como está.
-                          Painel e Trabalho ficam SEMPRE MONTADOS (toggle por CSS):
-                          desmontar/remontar a árvore do chat (markdown gigante) a
-                          cada troca de aba travava o main thread — o memo dos
-                          itens não sobrevive a remount. SDD/Agendado seguem
-                          condicionais (menos frequentes, e o SddView recarrega
-                          planos ao montar de propósito). */}
-                      <div
-                        className={cn(
-                          "h-full",
-                          (scheduledOpen || flightPlansOpen || viewMode !== "painel") && "hidden",
-                        )}
-                      >
-                        <MissionControl />
-                      </div>
-                      <div
-                        className={cn(
-                          "h-full",
-                          (scheduledOpen || flightPlansOpen || viewMode !== "linear") && "hidden",
-                        )}
-                      >
-                        <ChatPanel />
-                      </div>
-                      {flightPlansOpen ? (
-                        <Suspense
-                          fallback={
-                            <div className="grid h-full place-items-center text-[12px] text-muted-foreground">
-                              Preparando a prancheta…
-                            </div>
-                          }
-                        >
-                          <FlightPlansView />
-                        </Suspense>
-                      ) : scheduledOpen ? (
-                        <ScheduledView />
-                      ) : viewMode === "sdd" ? (
-                        <SddView />
-                      ) : null}
-                    </div>
-                  </ResizablePanel>
-                  {contextOpen && viewMode === "linear" &&
-                    !scheduledOpen && !flightPlansOpen && (
-                    <>
-                      {/* O vão de 8px É o divisor: a alça perdeu o hairline e
-                          o brass do hover (brass é gesto, não borda de
-                          arrastar), como a alça da sidebar. */}
-                      <ResizableHandle className="w-2 bg-transparent transition-colors after:w-4 data-[resize-handle-state=hover]:bg-border/50 data-[resize-handle-state=drag]:bg-border/70" />
-                      <ResizablePanel
-                        id="context"
-                        defaultSize="30%"
-                        minSize="240px"
-                        maxSize="42%"
-                      >
-                        <ContextPanel />
-                      </ResizablePanel>
-                    </>
-                  )}
-                </ResizablePanelGroup>
-              </div>
-            </ResizablePanel>
-          </ResizablePanelGroup>
+          <AppShell />
           {/* Faixa de status: AMBIENTE (janela do plano, custo da sessão, build).
               A linha viva do turno NÃO desce pra cá — ela é dona do agora e mora
               no composer (lib/statusBar guarda essa fronteira). */}
