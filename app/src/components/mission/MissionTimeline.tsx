@@ -31,6 +31,7 @@ import { queuedGranularityNote } from "@/lib/missionQuiet"
 import { stopPrice } from "@/lib/missionGestures"
 import { missionRuler, missionWindow } from "@/lib/missionWindow"
 import { cn } from "@/lib/utils"
+import { PENDING_DECISION } from "@/lib/attention"
 
 const PERSONA_LABEL: Record<string, string> = {
   planner: "planejador",
@@ -251,9 +252,15 @@ export function MissionResumeCard({ convId }: { convId: string }) {
   const growth = planGrowthNote(planCounts(st.preset.phases))
   return (
     <div className="mx-auto w-full max-w-[760px] px-8 pt-6">
-      <div className="overflow-hidden rounded-xl border-[1.5px] border-brass/45 bg-brass/[0.04] shadow-[0_0_0_3px_var(--brass-soft)]">
-        <div className="flex items-center gap-2.5 border-b border-brass/20 px-4 py-3">
-          <Rocket className="size-4 shrink-0 text-brass" />
+      {/* A missão está PARADA até você escolher retomar ou descartar, com
+          worktree e handoffs no disco e custo já gasto: é decisão pendente
+          (âmbar, §2), não "importância" (brass). Foram junto a borda de 1,5px
+          (fora da receita), o halo `brass-soft` (que o §4 reserva pro FOCO) e
+          o divisor tingido do cabeçalho (§4: divisor é último recurso, e aqui
+          não muda a propriedade do conteúdo). */}
+      <div className={cn("overflow-hidden rounded-xl border", PENDING_DECISION)}>
+        <div className="flex items-center gap-2.5 px-4 py-3">
+          <Rocket className="size-4 shrink-0 text-st-warning" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[13px] font-semibold">

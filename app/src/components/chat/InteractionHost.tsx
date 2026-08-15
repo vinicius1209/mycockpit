@@ -33,6 +33,7 @@ import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { cn } from "@/lib/utils"
 import { SELECTED_FILL } from "@/lib/selection"
+import { PENDING_DECISION } from "@/lib/attention"
 
 /** Leva você até a conversa dona do pedido (mesmo gesto do sino/tray): projeto
  *  ativo + conversa aberta + modo linear. Lá o card renderiza inline, com o
@@ -237,7 +238,9 @@ function ApprovalCard({
   }
 
   return (
-    <div className="mb-2 rounded-lg border border-brass/40 bg-brass/[0.07] px-3 py-2.5">
+    // O turno está PARADO esperando você: a superfície é a de decisão pendente
+    // (âmbar, §2), não a do gesto. Ver `lib/attention.ts`.
+    <div className={cn("mb-2 rounded-lg border px-3 py-2.5", PENDING_DECISION)}>
       {/* De ONDE veio: sem isto, um pedido de outro projeto interrompe você sem
           dizer de onde — e o toast global é justamente o caso "não é daqui". */}
       {origin && (
@@ -260,11 +263,16 @@ function ApprovalCard({
         </p>
       )}
       <div className="flex items-center gap-2">
-        <ShieldQuestion className="size-4 shrink-0 text-brass" />
+        {/* Mesmo glifo e mesma tinta do inbox (`InboxBell`, kind "approval"): a
+            trilha até aqui é âmbar do começo ao fim. */}
+        <ShieldQuestion className="size-4 shrink-0 text-st-warning" />
         <p className="min-w-0 flex-1 text-[13px] text-foreground">
           Permissão para{" "}
           <span className="font-medium">{data.tool_name}</span>. O turno está{" "}
-          <span className="font-medium text-brass">pausado</span> aguardando você.
+          {/* "pausado" destaca por PESO, não por tinta: a superfície e o ícone
+              já são o âmbar do recorte, e no tema claro âmbar sobre o fundo dá
+              3,03:1 (abaixo de AA) contra 5,67:1 do foreground. */}
+          <span className="font-medium">pausado</span> aguardando você.
           <QueueHint extra={extra} />
         </p>
         <DismissBtn onDismiss={onDismiss} />
@@ -338,8 +346,11 @@ function ApprovalCard({
       )}
 
       {/* Confirmação OBRIGATÓRIA do lote: comando exato + contagem, sem atalho. */}
+      {/* Sub-caixa DENTRO de um cartão que já é âmbar: quem a destaca é o peso
+          do hairline, não uma segunda tinta (§4, hierarquia por peso). Brass
+          aqui era "importância genérica", que o §2 tirou do brass. */}
       {batch && confirming && (
-        <div className="mt-2 rounded-md border border-brass/50 bg-card/70 px-2.5 py-2">
+        <div className="mt-2 rounded-md border border-border-strong bg-card/70 px-2.5 py-2">
           <p className="text-[12px] text-foreground">
             {confirming.allow ? "Aprovar" : "Negar"}{" "}
             <span className="font-medium">{batch.count} pedidos idênticos</span> de{" "}
@@ -473,7 +484,7 @@ function QuestionTeaser({
   const headline =
     (first?.header ?? "").trim() || (first?.question ?? "").trim() || "uma decisão"
   return (
-    <div className="mb-2 rounded-lg border border-brass/40 bg-brass/[0.07] px-3 py-2.5">
+    <div className={cn("mb-2 rounded-lg border px-3 py-2.5", PENDING_DECISION)}>
       {origin && (
         <p className="mb-1.5 truncate text-[11px] text-muted-foreground">
           {origin.projectName}
@@ -482,7 +493,7 @@ function QuestionTeaser({
         </p>
       )}
       <div className="flex items-center gap-2">
-        <MessageCircleQuestion className="size-4 shrink-0 text-brass" />
+        <MessageCircleQuestion className="size-4 shrink-0 text-st-warning" />
         <p className="min-w-0 flex-1 truncate text-[13px] text-foreground">
           O agente perguntou: <span className="font-medium">{headline}</span>
           {questions.length > 1 && (
@@ -578,12 +589,12 @@ function QuestionCard({
   const q = questions[qi]
 
   return (
-    <div className="mb-2 rounded-lg border border-brass/40 bg-brass/[0.07] px-3 py-2.5">
+    <div className={cn("mb-2 rounded-lg border px-3 py-2.5", PENDING_DECISION)}>
       <div className="flex items-center gap-2">
-        <MessageCircleQuestion className="size-4 shrink-0 text-brass" />
+        <MessageCircleQuestion className="size-4 shrink-0 text-st-warning" />
         <p className="min-w-0 flex-1 text-[13px] text-foreground">
           O agente fez uma pergunta. O turno está{" "}
-          <span className="font-medium text-brass">pausado</span> aguardando você.
+          <span className="font-medium">pausado</span> aguardando você.
           <QueueHint extra={extra} />
         </p>
         {total > 1 && (

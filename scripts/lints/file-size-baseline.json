@@ -13,7 +13,7 @@
     "components/layout/ContextPanel.tsx": 857,
     "components/layout/Sidebar.tsx": 920,
     "components/scheduled/ScheduledView.tsx": 1113,
-    "components/sdd/SddView.tsx": 1646,
+    "components/sdd/SddView.tsx": 1462,
     "components/settings/Especialistas.tsx": 829,
     "lib/agents.ts": 545,
     "lib/companion.test.ts": 944,

@@ -72,7 +72,7 @@ claro+escuro) e por linha nesta tabela — nunca hex cru em componente.
 |---|---|---|---|
 | **Cinza** (saudável/neutro) | `foreground`, `muted-foreground`, `faint`, `border`, `sel`, `sel-hover` | Texto, sucesso comum (check de ferramenta, dot concluído), metadado em sussurro mono, **item selecionado em lista/árvore (`sel`)**, tudo que está simplesmente OK | Suavizar erro ou atenção ("cinza escuro" não é vermelho educado); esconder falha |
 | **Verde** (marco raro) | `st-success` | No fio: marco de TURNO/PLANO/gesto — máx. **1 por turno** (caption "concluído", "Plano concluído", "Regra salva", ADR-037). Fora do fio: check "probe passou" em Configurações/Onboarding (verde exige probe, `SettingsDialog.tsx:249`) | Sucesso por linha de ferramenta; estado ambiente permanente (badge/dot "ok" que fica na tela); identidade visual de agent; texto corrido |
-| **Âmbar** (precisa de você / risco autorizado) | `st-warning` (= `st-queued`) | Fila, gate, aviso que pede decisão, e o modo "Liberado" (risco autorizado fica visível) | Qualquer coisa que não seja decisão pendente, fila, gate ou risco autorizado. Seleção não é âmbar **nem brass**: seleção não é cor (ADR-043). Também não é progresso normal nem substituto do vermelho em falha real |
+| **Âmbar** (precisa de você / risco autorizado) | `st-warning` (= `st-queued`), `st-warning-foreground` | Fila, gate, aviso que pede decisão, o **cartão do fluxo de aprovação** e o contador de pendências do sino, e o modo "Liberado" (risco autorizado fica visível) | Qualquer coisa que não seja decisão pendente, fila, gate ou risco autorizado. Seleção não é âmbar **nem brass**: seleção não é cor (ADR-043). Também não é progresso normal nem substituto do vermelho em falha real |
 | **Vermelho** (falha + destruição) | `st-error`, `destructive` | Falha consumada (marco vermelho, linha culpada) e ação destrutiva ("Parar", excluir, revogar) | Caminho de saída (Cancelar/fechar/voltar é ghost, sem cor); ênfase; aviso não-fatal (âmbar) |
 | **Azul** (vivo) | `st-running` | O que roda AGORA: pulse do dot, esteira de telemetria, linha viva | Qualquer coisa parada; link; decoração |
 | **Brass** (gesto) | `brass`, `brass-soft`, `ring` (= `brass`) | Ação primária/sensível, foco (`--ring`), marca | **Marcar item selecionado em lista, árvore ou aba** (isso é preenchimento neutro + peso + pip, sem tinta — ADR-043); texto pequeno sobre a superfície de seleção no tema claro (3.56:1 < AA, regra S3.6); ícone ilustrativo/empty state; medidor saudável; tinta de "importância" genérica |
@@ -128,6 +128,35 @@ Regras de aplicação:
     filete tingido (≤ 3px, `bg-brass`/`bg-st-*`) colado numa aresta com
     `absolute`. Pega as duas formas do vício, a barra vertical da sidebar e o
     sublinhado horizontal da aba.
+- **DECISÃO PENDENTE É ÂMBAR, INCLUSIVE O CARTÃO ONDE SE DECIDE** (ADR-043,
+  16/08/2026). Cartão que SEGURA o trabalho até você responder (pedido de
+  permissão, pergunta do agent, missão interrompida esperando retomar ou
+  descartar) usa **`PENDING_DECISION` em `lib/attention.ts`**
+  (`border-st-warning/40 bg-st-warning/10`), e o botão primário lá dentro
+  **continua brass**: é isso que separa "o que está esperando" de "o que você
+  clica". Era o contrário até aqui, e o furo era semântico, não cosmético: o
+  ponto do slot da conversa (`ConversationSlot`) e os ícones do sino
+  (`InboxBell`) já eram âmbar pros MESMOS pedidos, e a trilha trocava de cor no
+  último passo, bem onde se decide. Pela mesma régua o **contador de pendências
+  do sino** saiu do `bg-brass`: um contador de "precisa de você" não é gesto.
+  - **A receita é CÓDIGO** (`lib/attention.ts`), pelo padrão do `selection.ts` e
+    do `meter.ts`. O levantamento achou **quatro** superfícies de atenção que só
+    divergiam no número (`/40+/10`, `/45+/[0.07]`, `/30+/5`, e o brass do fluxo
+    de aprovação, que nem âmbar era); o valor congelado é o `/40+/10`, o que já
+    tinha mais sítios.
+  - **O que NÃO vira âmbar dentro do cartão**: o paredão de comando, o preview e
+    a caixa de confirmação do lote são CONTEXTO do pedido, não o pedido. Ficam
+    neutros (`bg-card`), e quem destaca a confirmação é o **peso do hairline**
+    (`border-border-strong`), não uma segunda tinta.
+  - **Tinta sobre âmbar sólido é `--st-warning-fg`**, e ele é o único par de
+    token que **não inverte** entre os temas, de propósito: o âmbar é claro nos
+    DOIS (L 71–77 em OKLCH), então a tinta legível é escura nos dois. Medido no
+    selo de 11px do sino: `--background` sobre o âmbar claro dá **3,03:1**
+    (reprova AA, e é pior que os 3,89:1 do brass que estava lá), e o
+    `--st-warning-fg` dá **6,28:1** (claro) / **7,55:1** (escuro).
+  - **Prosa não precisa da tinta**: dentro de um cartão que já é âmbar, a
+    palavra de estado ("pausado") destaca por **peso**. Âmbar sobre o fundo, no
+    tema claro, é 3,03:1 contra 5,67:1 do `foreground`.
 - **Brass também não pinta METADADO** (Fase 5). Etiqueta que só informa
   (estágio de feature, escopo de aprendizado, tipo de agendamento, modelo do
   especialista, badge de opção, contagem, numeração) é **cinza**: brass tem um
@@ -547,7 +576,7 @@ nosso; só as regras vieram de lá.
 |---|---|---|
 | `scripts/check-type-scale.mjs` | §3, a escala fechada | aparece tamanho de fonte fora de {11, 12, 13, 14, 20, 30, 38}px em `app/src/**`, seja `text-[15px]`, seja rem arbitrário (`text-[0.9rem]`), seja `font-size:` em CSS. Também acusa classe nomeada do Tailwind (`text-sm`) fora de `components/ui/` |
 | `scripts/check-file-size-ratchet.mjs` | legibilidade (arquivo grande esconde bug) | um arquivo passa do teto do tipo (500 linhas `.ts` · 700 `.tsx` · 900 teste) ou cresce acima do congelado em `scripts/lints/file-size-baseline.json` |
-| `scripts/check-dead-tokens.mjs` | §2, §4 e §7 | volta `shadow-md/lg/xl/2xl`; aparece `text-st-success` além do declarado por arquivo; entra travessão "—" em prosa de UI |
+| `scripts/check-dead-tokens.mjs` | §2, §4 e §7 | volta `shadow-md/lg/xl/2xl`; aparece `st-success` em **qualquer** propriedade (`text-`, `bg-`, `border-`, `ring-`… e `var(--st-success)` cru) além do declarado por arquivo; entra travessão "—" em prosa de UI |
 | `scripts/lints/rodandoMotion.mjs` | §6, o único estado que se move | a `.conv-spin` perde a animação de CSS ou o bloco `prefers-reduced-motion` que a degrada num ponto sólido visível |
 | `scripts/check-barra-de-acento.mjs` | §2, seleção não é cor | volta o filete tingido de seleção: elemento `absolute` de dimensão ≤ 3px, colado numa aresta (`left-0`, `inset-x-0`, `-bottom-px`…), com `bg-brass` ou `bg-st-*`. Pega as duas formas, a barra vertical da sidebar (Fase 1) e o sublinhado da aba (Fase 2) |
 
@@ -566,6 +595,14 @@ Regras de convívio (as três valem mais que a conveniência do momento):
   mapa da regra (`scripts/lints/deadTokens.mjs`). O número congela: o verde de
   marco/probe que já existe continua, verde novo não entra. Exceção que sobrou
   folgada aparece como nota no fim da varredura, pra ser apertada.
+- **Guarda que olha uma PROPRIEDADE só olha o lugar errado.** A regra do verde
+  nasceu vendo `text-st-success`, e o buraco apareceu na primeira auditoria
+  depois dela: o stepper do `SddView` pintava a etapa concluída com
+  `bg-st-success`, verde ambiente permanente numa lista (§9 item 4), e passava
+  batido. Em 16/08/2026 ela passou a olhar todas as utilidades de cor mais o
+  `var(--st-success)` cru, e as contagens foram **recontadas** contra o uso
+  real, com o acréscimo nomeado em cada motivo. Recontar é apertar a régua;
+  subir um número sem dizer o que entrou nele é afrouxá-la.
 
 O que ficou registrado como exceção hoje: o verde declarado do §2 (probe real
 em Configurações/Onboarding, marco de turno/plano no fio, `+N` do domínio git)

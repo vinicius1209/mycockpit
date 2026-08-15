@@ -1414,3 +1414,82 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
     Aproveitando: a guarda do `rodandoMotion` **não estava na CI** (só no
     `bun run check` local). Entrou junto — guarda que não roda na CI é
     comentário.
+- **FASE 6 (16/08/2026) — o brass estava fazendo o trabalho do âmbar no fluxo
+  de aprovação, que é a alma do produto.** A Fase 5 varreu seleção e metadado e
+  parou antes do caso mais caro: os três cartões do `InteractionHost` (pedido
+  de permissão, teaser de pergunta, formulário de pergunta) e o cartão de
+  missão interrompida da `MissionTimeline` desenhavam **"o turno está pausado
+  aguardando você"** em `border-brass/40 bg-brass/[0.07]`. Pelo §2 isso é
+  decisão pendente, que tem dono, e o dono é o âmbar.
+  - **O argumento não é estético, é de TRILHA.** O ponto do slot da conversa
+    (`ConversationSlot`, `bg-st-warning`) e os ícones do sino (`InboxBell`,
+    kinds `approval`/`question`/`gate`, `text-st-warning`) já eram âmbar pros
+    MESMOS pedidos. A cor trocava no último passo, bem onde se decide. E o
+    cartão brass punha a tinta do BOTÃO no que estava ESPERANDO: num app cuja
+    doutrina é aprovação humana, "isto vai executar na sua máquina" pedindo
+    decisão na cor de quem a resolve.
+  - **O botão primário DENTRO do cartão continua brass**, e é isso que fecha a
+    separação: o cartão é o que espera, o botão é o gesto. Em tela os dois se
+    separam por forma e luminância (sólido sobre véu de 10%), não por matiz —
+    que é o que a medição do ADR-043 já dizia ser impossível.
+  - **Receita ÚNICA e em código**: `PENDING_DECISION` em `lib/attention.ts`,
+    pelo padrão do `selection.ts`/`meter.ts`. A varredura achou **quatro**
+    superfícies de atenção divergindo só no número (`/40+/10`, `/45+/[0.07]`,
+    `/30+/5`, e o brass do fluxo). Congelou no `/40+/10`, que já era o mais
+    comum (`ComposerBanners` ×2, `CompanionSettings`, `ContextPanel`).
+  - **DECISÃO CASO A CASO, e uma delas contra a leitura do brief.** O
+    `MissionTimeline.tsx:254` não era o cartão de "pausado aguardando você" que
+    o pedido descrevia: no HEAD é o **cartão de missão interrompida**, com
+    receita própria (`border-[1.5px]` + halo `brass-soft`). Migrou mesmo assim,
+    e o argumento é o §2 ("aviso que pede decisão"): a missão fica em limbo,
+    com worktree e handoffs no disco e custo já gasto, até você retomar ou
+    descartar. Foram junto a borda de 1,5px (fora da receita) e o halo
+    `brass-soft`, que o §4 reserva pro FOCO e ali era decoração.
+  - **O que NÃO migrou, e isso é a metade que importa**: o paredão de comando,
+    o preview e a caixa de confirmação do lote são **contexto do pedido, não o
+    pedido**. Continuam neutros. A confirmação do lote (que era
+    `border-brass/50`) passou a destacar pelo **peso do hairline**
+    (`border-border-strong`), não por uma segunda tinta: dentro de um cartão
+    âmbar, âmbar sobre âmbar não é hierarquia.
+  - **DECISÃO PEDIDA — o contador do sino (`InboxBell`) vira âmbar.** Ele conta
+    o que BLOQUEIA você, e "precisa de você" é âmbar; um contador também não é
+    gesto, e o §2 já tinha tirado do brass a "importância genérica". O comentário
+    no código dizia `contador brass (alarme)`, o que era a regra certa com a
+    tinta errada.
+  - **Custo escondido que a migração cobrou: um token novo.** Trocar o
+    preenchimento sem trocar a tinta teria BAIXADO o contraste do selo de 11px
+    no tema claro, de 3,89:1 (branco sobre brass) para **3,03:1** (branco sobre
+    âmbar, que no claro é o mais CLARO dos dois — a inversão que o ADR-043
+    mediu). Entrou `--st-warning-fg`, o **único par de token que não inverte**
+    entre os temas, de propósito: o âmbar é claro nos dois, então a tinta é
+    escura nos dois (**6,28:1** claro / **7,55:1** escuro). Pela mesma medição a
+    palavra "pausado" saiu do `text-brass` para **peso**, sem tinta: âmbar sobre
+    o fundo claro é 3,03:1 contra 5,67:1 do `foreground`, e o cartão e o ícone
+    já são o âmbar do recorte.
+  - **BURACO DA GUARDA FECHADO.** O stepper do `SddView` pintava a etapa
+    concluída com `bg-st-success` — verde ambiente permanente numa lista,
+    exatamente o padrão que o §9 item 4 matou no resto do app — e **escapava**
+    porque a regra `verde-ambiente` só olhava `text-st-success`. Duas coisas
+    entraram: o dot virou `bg-foreground/40` (a distinção já estava no texto e
+    no peso, que é a régua daquele item), e a regra passou a olhar **todas** as
+    utilidades de cor mais o `var(--st-success)` cru. As contagens foram
+    RECONTADAS contra o uso real, com o que entrou nomeado em cada motivo; a
+    varredura larga não achou nenhum outro verde indefensável. Prova ao
+    contrário rodada nas duas pontas: com o `bg-st-success` de volta a guarda
+    reprova, e com a regra antiga os casos novos falham.
+  - **Um teste pré-existente foi SUBSTITUÍDO, e o registro é este.** Havia um
+    caso afirmando o buraco: *"não pega bg-st-success (a regra é sobre TEXTO
+    verde)"*. Ele documentava o limite antigo, não um comportamento a preservar;
+    saiu no lugar de casos com o markup REAL do stepper removido nesta passada.
+  - **TRIAGEM PENDENTE, escrita pra não virar folclore**: o nó de fase concluída
+    da `MissionTimeline` (`border-st-success bg-st-success`) tem a MESMA forma
+    do stepper que esta passada despintou, e a defesa dele (é marco no fio, não
+    badge ambiente) merece decisão escrita; e o `hover:text-st-success` do botão
+    Promover do `LearningSection` não é marco nem probe, é verde de afordância.
+    Os dois ficaram congelados na exceção, com o motivo dizendo isso.
+  - **Consequência de catraca:** o `SddView.tsx` estava colado no teto congelado
+    (1646) e o comentário da correção não cabia. O trilho de etapas saiu para
+    `StagePipeline.tsx` (é a peça que a passada mexeu, e `Pipeline` só tinha um
+    call site) com os três formatadores compartilhados em `sddFormat.ts`; o
+    arquivo caiu para 1462 e a baseline desceu junto. Dividir, nunca subir o
+    teto.

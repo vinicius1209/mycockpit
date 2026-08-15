@@ -1,5 +1,4 @@
 import {
-  Fragment,
   useCallback,
   useEffect,
   useRef,
@@ -57,7 +56,6 @@ import {
   producedStage,
   nextStep,
   effectiveStage,
-  stagesForTrack,
   stageLabel,
   stageIndex,
   gateText,
@@ -67,6 +65,8 @@ import {
   type PrInfo,
   type SeedSummary,
 } from "@/lib/sdd"
+import { fmtDateTime, gateSummary, prLabel } from "@/components/sdd/sddFormat"
+import { Pipeline } from "@/components/sdd/StagePipeline"
 import { cn } from "@/lib/utils"
 
 /** Marca a adoção do plano (ADR-032) e AVISA quando não conseguiu gravar: sem
@@ -84,35 +84,6 @@ async function adoptOrWarn(
     description:
       "Ele fica em 'Encontrados no projeto' no Painel; use 'Adotar' por lá.",
   })
-}
-
-/** "5 gates passaram · 1 falhou · 2 não rodados" (omite zeros). */
-function gateSummary(gc: { pass: number; fail: number; notRun: number }): string {
-  const parts: string[] = []
-  if (gc.pass)
-    parts.push(`${gc.pass} ${gc.pass === 1 ? "gate passou" : "gates passaram"}`)
-  if (gc.fail) parts.push(`${gc.fail} ${gc.fail === 1 ? "falhou" : "falharam"}`)
-  if (gc.notRun)
-    parts.push(`${gc.notRun} não ${gc.notRun === 1 ? "rodado" : "rodados"}`)
-  return parts.join(" · ")
-}
-
-/** "PR #476" a partir da URL do GitHub (…/pull/476); fallback "Pull request". */
-function prLabel(url: string): string {
-  const m = url.match(/\/pull\/(\d+)/)
-  return m ? `PR #${m[1]}` : "Pull request"
-}
-
-/** ISO → "dd/mm/aaaa hh:mm" (local). Fallback p/ só a data, se inválido. */
-function fmtDateTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("pt-BR", {
-      dateStyle: "short",
-      timeStyle: "short",
-    })
-  } catch {
-    return iso.slice(0, 10)
-  }
 }
 
 /** Modo SDD: o DETALHE de uma feature, em largura total. A lista de features
@@ -1221,161 +1192,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 /** Sinais que puxaram o stage efetivo à frente do declarado (tooltip do badge). */
-function evidenceSignals(plan: SddPlan, pr: PrInfo | null): string {
-  const sig: string[] = []
-  if (plan.evidence?.prdFile) sig.push("PRD.md no disco")
-  if (plan.evidence?.specFile) sig.push("SPEC.md no disco")
-  if (plan.evidence?.branchCommits) sig.push("branch com commits")
-  if (pr) sig.push(pr.state === "MERGED" ? "PR mergeada" : "PR existente")
-  return sig.length
-    ? `Sinais (fs + git + gh): ${sig.join(" · ")}. O manifest declara "${stageLabel(plan.stage)}".`
-    : `Detectado além do declarado ("${stageLabel(plan.stage)}").`
-}
-
-function Pipeline({
-  plan,
-  pr,
-  onMarkStage,
-}: {
-  plan: SddPlan
-  pr: PrInfo | null
-  /** Escape manual: clicar numa etapa FUTURA a marca como atual (com confirm). */
-  onMarkStage?: (stage: string) => void
-}) {
-  // trilha do plano (quick pula PRD/SPEC) + stage EFETIVO por evidência: o trilho
-  // mostra a realidade, não o cache declarado do manifest.
-  const stages = stagesForTrack(plan.track)
-  const effective = effectiveStage(plan, pr)
-  const drift = stageIndex(effective) > stageIndex(plan.stage)
-  const cur = stageIndex(effective)
-  const completed = new Set(plan.stagesCompleted)
-  const allDone = effective === "done"
-  return (
-    <div className="rounded-xl border bg-card px-5 py-4">
-      {drift && (
-        <div className="mb-3 flex justify-end">
-          <span
-            title={evidenceSignals(plan, pr)}
-            className="cursor-help rounded-full border border-brass/30 bg-brass/5 px-2 py-0.5 text-[11px] text-brass/80"
-          >
-            {stageLabel(effective)} · detectado pela evidência
-          </span>
-        </div>
-      )}
-      {/* trilho: pontos espalhados pela largura (conectores flex), sem scroll */}
-      <div className="flex items-start">
-        {stages.map((s, i) => {
-          const isCurrent = s === effective
-          const isDone =
-            allDone ||
-            completed.has(s) ||
-            (cur >= 0 && stageIndex(s) < cur && s !== "done")
-          return (
-            <Fragment key={s}>
-              {i > 0 && (
-                <div
-                  className={cn(
-                    "mt-[5px] h-px flex-1",
-                    isDone || isCurrent ? "bg-foreground/30" : "bg-border",
-                  )}
-                />
-              )}
-              <div className="group relative flex shrink-0 flex-col items-center gap-2">
-                {/* etapa FUTURA + handler → clicável (escape manual p/ quando a
-                    evidência não alcança: trabalho em branch diferente etc.) */}
-                {!isCurrent && !isDone && onMarkStage ? (
-                  <button
-                    onClick={() => onMarkStage(s)}
-                    title={`Marcar "${stageLabel(s)}" como etapa atual`}
-                    aria-label={`Marcar ${stageLabel(s)} como etapa atual`}
-                    className="size-2.5 cursor-pointer rounded-full bg-muted-foreground/25 transition-all hover:scale-125 hover:bg-foreground/60 hover:ring-[3px] hover:ring-sel"
-                  />
-                ) : (
-                  <span
-                    className={cn(
-                      "size-2.5 rounded-full transition-colors",
-                      isCurrent
-                        ? "bg-foreground ring-[3px] ring-sel"
-                        : isDone
-                          ? "bg-st-success"
-                          : "bg-muted-foreground/25",
-                    )}
-                  />
-                )}
-                <span
-                  className={cn(
-                    "text-[11px] whitespace-nowrap",
-                    isCurrent
-                      ? "font-medium text-foreground"
-                      : isDone
-                        ? "text-foreground/65"
-                        : "text-muted-foreground/45",
-                  )}
-                >
-                  {stageLabel(s)}
-                </span>
-                <StagePopover stage={s} plan={plan} />
-              </div>
-            </Fragment>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-/** Resumo de um estágio (hover na pipeline), só dado do manifest, sem dirigir. */
-function stageSummary(stage: string, plan: SddPlan): string[] {
-  const a = plan.artifacts
-  switch (stage) {
-    case "discovery":
-      return ["Refinamento do escopo"]
-    case "prd":
-      return a.prd
-        ? [`${a.prd.path} · ${a.prd.approved ? "aprovado" : "não aprovado"}`]
-        : ["sem PRD"]
-    case "spec":
-      return [
-        a.spec?.path ?? "SPEC.md",
-        `${plan.scenarioMatrix.length} cenários · ${plan.navSurfaces.length} superfícies`,
-      ]
-    case "implementation":
-      return [`${a.sourceFiles.length} arquivos · ${a.migrations.length} migrações`]
-    case "test":
-      return [`${a.tests.length} testes`]
-    case "review": {
-      const c = gateCounts(plan.verification)
-      return [gateSummary(c) || "sem gates registrados"]
-    }
-    case "pr":
-      return [
-        plan.links.pr_url ? prLabel(plan.links.pr_url) : "sem PR",
-        plan.mergedAt ? `mergeado ${fmtDateTime(plan.mergedAt)}` : "",
-      ].filter(Boolean)
-    case "done":
-      return [plan.mergedAt ? `concluído ${fmtDateTime(plan.mergedAt)}` : "concluído"]
-    default:
-      return []
-  }
-}
-
-function StagePopover({ stage, plan }: { stage: string; plan: SddPlan }) {
-  const lines = stageSummary(stage, plan)
-  if (lines.length === 0) return null
-  return (
-    <div className="pointer-events-none invisible absolute top-full left-1/2 z-20 mt-2 w-max max-w-[220px] -translate-x-1/2 rounded-lg border bg-popover p-2.5 text-left opacity-0 shadow-[var(--shadow-pop)] transition-opacity group-hover:visible group-hover:opacity-100">
-      <p className="mb-0.5 text-[11px] font-medium text-foreground">
-        {stageLabel(stage)}
-      </p>
-      {lines.map((l, i) => (
-        <p key={i} className="text-[12px] leading-relaxed text-muted-foreground">
-          {l}
-        </p>
-      ))}
-    </div>
-  )
-}
-
 /** Contrato da SPEC (#7): resumo + matriz colapsável + superfícies + âncoras. */
 function ContractSection({ plan }: { plan: SddPlan }) {
   const [expanded, setExpanded] = useState(false)

@@ -43,6 +43,25 @@ export function matchLiteral(source, pattern, dica) {
   return hits;
 }
 
+/**
+ * Verde em QUALQUER propriedade, não só na cor do texto.
+ *
+ * A regra nasceu olhando só `text-st-success`, e o buraco apareceu na primeira
+ * auditoria depois dela: o stepper do `SddView` pintava a etapa concluída com
+ * `bg-st-success` — verde ambiente permanente numa lista, exatamente o padrão
+ * que o §9 item 4 matou — e passava batido pela guarda. Verde é verde: o §2 não
+ * fala de `color`, fala de quando a tinta pode aparecer.
+ *
+ * Cobre as utilidades de cor do Tailwind, os arbitrários (`bg-st-success/15`,
+ * `bg-st-success/[0.10]`) e o `var(--st-success)` cru dentro de TS/TSX (style
+ * inline, `color-mix`). CSS não entra: `index.css` é onde o token é DEFINIDO.
+ */
+// O `(?![\w-])` no fim é o que o `\b` não fazia: hífen é fronteira de palavra,
+// então `\b` deixava um hipotético `bg-st-success-foo` casar como se fosse o
+// token. Fim de classe do Tailwind é `"`, espaço ou `/` (opacidade).
+const VERDE_UTILIDADES =
+  /\b(?:text|bg|border|ring|fill|stroke|outline|decoration|divide|accent|caret|shadow|from|via|to)-st-success(?![\w-])|var\(--st-success\)/g;
+
 const TRAVESSAO = "—";
 
 /**
@@ -185,18 +204,25 @@ export const DEAD_TOKEN_RULES = [
   },
   {
     id: "verde-ambiente",
-    descricao: "`text-st-success` fora das famílias que o §2 declara (marco de turno/plano, probe real, domínio git)",
+    descricao: "`st-success` em QUALQUER propriedade (texto, fundo, borda, anel…) fora das famílias que o §2 declara (marco de turno/plano, probe real, domínio git)",
     regra: "STYLEGUIDE §2 (linha do Verde) + §9 item 4",
     extensoes: TS_EXT,
     ignorar: isTest,
     detectar: (source) =>
-      matchLiteral(source, /\btext-st-success\b/g, () => "verde é marco raro ou probe real; estado ambiente saudável é cinza"),
-    // Ratchet por arquivo: o número é o uso REAL em 13/08/2026, congelado. Não
-    // pode crescer. Quem precisar de verde novo abre ADR (§2 diz que exceção
-    // não listada não existe) ou, o mais provável, usa cinza.
+      matchLiteral(source, VERDE_UTILIDADES, () => "verde é marco raro ou probe real; estado ambiente saudável é cinza"),
+    // Ratchet por arquivo: o número é o uso REAL, congelado. Não pode crescer.
+    // Quem precisar de verde novo abre ADR (§2 diz que exceção não listada não
+    // existe) ou, o mais provável, usa cinza.
+    //
+    // RECONTADO em 15/08/2026, quando a regra passou a olhar TODAS as
+    // propriedades e não só `text-`. Os números subiram porque a varredura
+    // enxerga mais, não porque entrou verde novo: cada acréscimo está nomeado
+    // no motivo. O único verde que a varredura larga achou e que NÃO era
+    // declarável foi o `bg-st-success` do stepper do `SddView`, que virou
+    // cinza na mesma passada.
     excecoes: {
       // Família "probe real": verde só depois que a checagem rodou de verdade.
-      "components/settings/CompanionSettings.tsx": { max: 1, motivo: "probe do companion passou (doutrina 'verde exige probe')" },
+      "components/settings/CompanionSettings.tsx": { max: 2, motivo: "probe do companion passou (doutrina 'verde exige probe'): o dot 'servidor no ar' + o check da lista" },
       "components/settings/HooksSettings.tsx": { max: 1, motivo: "probe de hook passou" },
       "components/settings/MachineAgents.tsx": { max: 2, motivo: "probe de agent na máquina passou" },
       // A linha por agent saiu de McpSettings.tsx para McpAgentRows.tsx (a
@@ -205,26 +231,26 @@ export const DEAD_TOKEN_RULES = [
       "components/settings/UsageMeterSettings.tsx": { max: 1, motivo: "probe do medidor de uso passou" },
       "components/onboarding/NotificationStep.tsx": { max: 1, motivo: "permissão de notificação concedida de verdade" },
       // Família "marco de turno/plano no fio" (ADR-037): máx. 1 por turno.
-      "components/chat/MessageList.tsx": { max: 4, motivo: "marcos do fio (turno/plano concluído), ADR-037" },
+      "components/chat/MessageList.tsx": { max: 5, motivo: "marcos do fio (turno/plano concluído), ADR-037; +1 pelo `bg-st-success/10` da linha de ADIÇÃO do diff, que é domínio git" },
       "components/chat/ChatPanel.tsx": { max: 1, motivo: "marco de plano concluído" },
       "components/chat/ExecutionRow.tsx": { max: 1, motivo: "marco de execução concluída" },
-      "components/mission/MissionTimeline.tsx": { max: 1, motivo: "marco de fase da missão" },
+      "components/mission/MissionTimeline.tsx": { max: 4, motivo: "marco de fase da missão; +3 pelo nó `border/bg-st-success` da fase concluída e pelo `bg-st-success/15` do selo. TRIAGEM PENDENTE: o nó tem a MESMA forma do stepper do SddView que esta passada despintou, e a defesa dele (é marco no fio, não badge ambiente) merece decisão escrita antes de virar folclore" },
       // o verde do DESFECHO da missão veio inteiro da MissionTimeline quando o
       // resumo virou arquivo próprio: marco de plano concluído (ADR-037), não
       // verde novo.
-      "components/mission/DoneSummary.tsx": { max: 2, motivo: "marco de missão concluída" },
+      "components/mission/DoneSummary.tsx": { max: 3, motivo: "marco de missão concluída; +1 pelo `bg-st-success/[0.05]` do fundo do mesmo marco" },
       "components/mission/FlightPlansView.tsx": { max: 2, motivo: "marco de plano de voo concluído" },
       "components/mission/MissionPlanCanvas.tsx": { max: 1, motivo: "marco de fase concluída no canvas" },
-      "components/sdd/SddView.tsx": { max: 7, motivo: "marcos de etapa do SDD (spec/plan/tasks concluídos)" },
+      "components/sdd/SddView.tsx": { max: 8, motivo: "marcos de etapa do SDD (spec/plan/tasks concluídos); +1 pelo `border-st-success/40` do mesmo marco. O `bg-st-success` do stepper NÃO está aqui: virou cinza em 15/08/2026 (§9 item 4)" },
       "components/layout/InboxBell.tsx": { max: 2, motivo: "marco de item do inbox resolvido" },
       // Família "domínio git": `+N` e linha de adição têm cor própria (§2).
-      "components/layout/DiffPanel.tsx": { max: 5, motivo: "adições do diff (domínio git tem cor própria)" },
+      "components/layout/DiffPanel.tsx": { max: 6, motivo: "adições do diff (domínio git tem cor própria); +1 pelo `bg-st-success/[0.10]` da linha adicionada" },
       // Triagem fina deixada de fora da passada de 12/08/2026, de propósito
       // (§9 item 4): aqui o cinza colapsaria uma distinção que a tela precisa.
       "components/chat/TaskChecklist.tsx": { max: 1, motivo: "§9 item 4: triagem de check por linha adiada de propósito" },
       "components/common/Markdown.tsx": { max: 1, motivo: "§9 item 4: triagem de check por linha adiada de propósito" },
       "components/fusion/FusionBoard.tsx": { max: 1, motivo: "§9 item 4: triagem de check por linha adiada de propósito" },
-      "components/layout/LearningSection.tsx": { max: 2, motivo: "§9 item 4: badge ativa/arquivada, cinza colapsaria a distinção" },
+      "components/layout/LearningSection.tsx": { max: 3, motivo: "§9 item 4: badge ativa/arquivada, cinza colapsaria a distinção; +1 pelo fundo do mesmo badge. TRIAGEM PENDENTE: o `hover:text-st-success` do botão Promover não é marco nem probe, é verde de afordância" },
     },
   },
   {

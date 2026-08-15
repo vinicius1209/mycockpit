@@ -43,6 +43,12 @@
   --brass: #a9742b;
   --brass-soft: rgba(169, 116, 43, 0.12);
   --brass-fg: #fbf6ee;
+  /* Tinta SOBRE preenchimento âmbar sólido (selo do inbox). O único token de
+     par que NÃO inverte entre os temas, e de propósito: o âmbar é claro nos
+     DOIS (L 71–77 em OKLCH), então a tinta legível é escura nos dois. Medido:
+     #fbfbfa sobre o âmbar claro dá 3,03:1 (reprova AA), e este dá 6,28:1
+     (claro) / 7,55:1 (escuro). */
+  --st-warning-fg: #1a1306;
   /* ALIAS EXPLÍCITO, não token próprio: o anel de foco É o brass (§2, brass =
      gesto/foco). Repetir o hex era duplicata por acidente e deixava os dois
      divergirem em silêncio numa passada de cor. */
@@ -107,6 +113,8 @@
   --brass: #e4a862;
   --brass-soft: rgba(228, 168, 98, 0.14);
   --brass-fg: #1a1306;
+  /* ver :root — a tinta sobre âmbar sólido é escura nos dois temas. */
+  --st-warning-fg: #1a1306;
   --ring: var(--brass);
   --st-idle: var(--faint);
   --st-running: #5bb8e8;
@@ -164,6 +172,7 @@
   --color-st-queued: var(--st-queued);
   --color-st-success: var(--st-success);
   --color-st-warning: var(--st-queued); /* "precisa de você" (âmbar da fila) */
+  --color-st-warning-foreground: var(--st-warning-fg);
   --color-st-error: var(--st-error);
 
   --color-id-violet: var(--id-violet);

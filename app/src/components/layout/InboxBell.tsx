@@ -346,7 +346,14 @@ export function InboxBell() {
               recorta o selo do desenho por baixo, nos dois estados. */}
           <span className="relative flex size-4 items-center justify-center">
             <Inbox className="size-4" />
-            {/* Decisões BLOQUEIAM você → contador brass (alarme). Só não-lidas
+            {/* Decisões BLOQUEIAM você → contador ÂMBAR (§2: âmbar é "precisa
+                de você"; brass é gesto, e um contador não é um gesto). Era
+                brass, e isso partia a trilha no primeiro passo: o ponto do slot
+                da conversa e os ícones desta mesma lista logo abaixo já são
+                âmbar para os MESMOS pedidos. A tinta do texto é
+                `st-warning-foreground` porque no tema claro o âmbar é mais
+                claro que o brass, e o branco de antes cairia de 3,89:1 pra
+                3,03:1 num dígito de 11px. Só não-lidas
                 → ponto discreto (informativo). Não somar os dois: "3" seria
                 ambíguo entre "3 decisões esperando" e "3 turnos terminaram".
                 O badge conta só o PENDENTE: gate do SDD que o app apenas achou
@@ -358,7 +365,7 @@ export function InboxBell() {
                 impede nada, e sino permanentemente aceso é o custo que o
                 ADR-040 recusou. */}
             {blocked > 0 ? (
-              <span className="absolute -top-2 -right-2 grid size-4 place-items-center rounded-full bg-brass text-[11px] font-semibold text-background ring-2 ring-rail">
+              <span className="absolute -top-2 -right-2 grid size-4 place-items-center rounded-full bg-st-warning text-[11px] font-semibold text-st-warning-foreground ring-2 ring-rail">
                 {blocked > 9 ? "9+" : blocked}
               </span>
             ) : unread > 0 ? (

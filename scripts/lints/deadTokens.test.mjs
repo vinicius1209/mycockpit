@@ -43,8 +43,37 @@ describe("regra: verde como estado ambiente", () => {
     expect(detectar('className="text-st-success"')).toHaveLength(1);
   });
 
-  it("não pega bg-st-success (a regra é sobre TEXTO verde)", () => {
-    expect(detectar('className="bg-st-success/10"')).toEqual([]);
+  // O caso que a regra deixava passar até 15/08/2026, com o markup REAL do
+  // stepper do SddView (`git show <esta passada>^ -- app/src/components/sdd/
+  // SddView.tsx`): verde ambiente permanente numa lista, o padrão que o §9
+  // item 4 matou, invisível pra guarda porque ela só olhava `text-`. Este
+  // teste é a prova de que o buraco fechou; se ele voltar a passar vazio, a
+  // guarda voltou a ser comentário.
+  it("pega o bg-st-success do stepper que escapava quando a regra só olhava texto", () => {
+    const stepper = `
+                      isCurrent
+                        ? "bg-foreground ring-[3px] ring-sel"
+                        : isDone
+                          ? "bg-st-success"
+                          : "bg-muted-foreground/25",`;
+    expect(detectar(stepper).map((h) => h.trecho)).toEqual(["bg-st-success"]);
+  });
+
+  it("pega verde em qualquer propriedade, inclusive com opacidade arbitrária", () => {
+    const fontes = [
+      'className="bg-st-success/10"',
+      'className="border-st-success/40"',
+      'className="ring-st-success"',
+      'className="bg-st-success/[0.05]"',
+      'className={cn("border-st-success bg-st-success")}',
+      'style={{ background: "var(--st-success)" }}',
+    ];
+    expect(fontes.map((f) => detectar(f).length)).toEqual([1, 1, 1, 1, 2, 1]);
+  });
+
+  it("não confunde token vizinho nem prefixo parcial", () => {
+    expect(detectar('className="bg-st-success-foo text-st-successful"')).toEqual([]);
+    expect(detectar('className="bg-st-warning text-st-error"')).toEqual([]);
   });
 });
 
