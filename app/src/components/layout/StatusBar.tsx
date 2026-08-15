@@ -74,7 +74,15 @@ export function StatusBar() {
       // metralhadora. É região complementar, alcançável, nunca anunciada.
       role="complementary"
       aria-label="Telemetria do app"
-      className="flex h-6 shrink-0 items-center gap-3 px-4 font-mono text-[11px] text-muted-foreground select-none"
+      // `pb-2` + `px-4` = a faixa também respeita o inset de 8px da janela.
+      // Ela era o ÚNICO elemento encostado na borda (medido no build 207: folga
+      // zero embaixo, enquanto todo o resto flutuava 8px pra dentro), e os 10px
+      // de baixo dela caíam dentro do arco do canto do macOS. Daí o "parece
+      // cortada" que sobreviveu à Fase 3: não era impressão, era a faixa
+      // ocupando justamente a parte que o sistema recorta.
+      // O `px-4` (16px) alinha o texto com o CONTEÚDO dos cartões, não com a
+      // borda deles (8px): o que tem que bater é texto com texto.
+      className="mb-2 flex h-6 shrink-0 items-center gap-3 px-4 font-mono text-[11px] text-muted-foreground select-none"
     >
       {/* ESQUERDA — telemetria. Cada peça some sozinha sem dado (a pill já tem
           as 4 camadas de esconder; o custo exige ≥2 turnos e gasto real). */}
