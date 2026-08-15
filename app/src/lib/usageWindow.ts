@@ -142,11 +142,21 @@ export function worstWindow(
   return out
 }
 
-/** Provider mostrado na pill FECHADA: prioriza o agent da CONVERSA ATIVA
- *  quando ele tem janela medida (o número acompanha o contexto do usuário,
- *  nunca o "pior global" de outro motor); agent ativo sem medição (ex.:
- *  statusline não instalada) cai pro pior global — que a pill sempre NOMEIA
- *  (um "30%" nu do Codex numa conversa Claude foi o bug de honestidade). */
+/** Provider mostrado na pill FECHADA: o agent da CONVERSA ATIVA, e SÓ ele.
+ *
+ *  Com conversa aberta, o número de outro motor NÃO substitui o dela. Isso já
+ *  foi um fallback ("cai pro pior global, mas nomeado") e virou o bug relatado
+ *  no build 201: conversa do Antigravity exibindo `Claude 59%` na faixa. Nomear
+ *  o dono não bastou — a faixa é lida como estado DESTA janela.
+ *
+ *  O argumento que fecha: a janela do Claude não se mexe enquanto o turno é do
+ *  Antigravity. Ali ela não é telemetria ambiente viva, é número parado vestido
+ *  de vivo — a mesma doutrina do Painel ("número cujo denominador não pode
+ *  crescer não é instrumento, é ficção com atraso", ADR-040). O medidor dos
+ *  outros providers continua a UM CLIQUE, no popover, que lista todos.
+ *
+ *  Sem conversa aberta não há dono a respeitar: aí o pior global é honesto,
+ *  porque a pergunta que sobra é mesmo "como está minha frota". */
 export function pillWindow(
   activeAgent: string | null,
   snapshots: Record<string, UsageSnapshot>,
@@ -154,14 +164,23 @@ export function pillWindow(
   now: number,
 ): { agent: string; window: UsageWindowInfo } | null {
   if (activeAgent) {
+    // Motor sem fonte de janela no registry (camada 1 de esconder) não tem o
+    // que medir — e o vizinho não empresta número. Pergunta por CAPABILITY,
+    // nunca por nome do motor.
+    if (agentDef(activeAgent)?.usageWindow == null) return null
     const snap = snapshots[activeAgent]
-    if (snap != null && snapshotUsable(snap, failures[activeAgent], now)) {
-      let worst: UsageWindowInfo | null = null
-      for (const w of snap.windows) {
-        if (!worst || w.usedPercent > worst.usedPercent) worst = w
-      }
-      if (worst) return { agent: activeAgent, window: worst }
+    if (snap == null || !snapshotUsable(snap, failures[activeAgent], now)) {
+      // Tem fonte e não tem leitura fresca: a pill não inventa e não pega
+      // emprestado. Se houver falha REGISTRADA, o componente ainda a mostra
+      // com o motivo (camada 3: configurado-falhando fica visível).
+      return null
     }
+    let worst: UsageWindowInfo | null = null
+    for (const w of snap.windows) {
+      if (!worst || w.usedPercent > worst.usedPercent) worst = w
+    }
+    if (worst) return { agent: activeAgent, window: worst }
+    return null
   }
   return worstWindow(snapshots, failures, now)
 }

@@ -7,6 +7,7 @@
 // GET /api/oauth/usage real — ver claude_usage.rs).
 
 import { beforeEach, describe, expect, it } from "vitest"
+import { agentDef } from "@/lib/agents"
 import type { AgentProbe } from "@/lib/detect"
 import {
   POLL_FLOOR_MS,
@@ -176,13 +177,27 @@ describe("seleção do provider da pill (conversa ativa)", () => {
     expect(sel?.window.id).toBe("7d") // a janela MAIS queimada DELE (29 > 23)
   })
 
-  it("agent ativo sem medição cai pro pior global (que a pill nomeia)", () => {
-    const sel = pillWindow("claude-code", { codex: SNAP_CODEX }, {}, AGORA)
-    expect(sel?.agent).toBe("codex")
-    expect(sel?.window.usedPercent).toBe(30)
+  it("agent ativo sem medição NÃO pega o número do vizinho emprestado", () => {
+    // Era fallback pro pior global; virou null no build 201. Nomear o dono não
+    // bastava: a faixa é lida como estado DESTA janela.
+    expect(pillWindow("claude-code", { codex: SNAP_CODEX }, {}, AGORA)).toBeNull()
   })
 
-  it("sem conversa ativa: pior global (comportamento anterior preservado)", () => {
+  it("motor SEM fonte de janela no registry não exibe a janela de outro", () => {
+    // O bug relatado: conversa do Antigravity mostrando `Claude 59%` na faixa.
+    // `agy` tem usageWindow: null — nada a medir, e vizinho não empresta.
+    // Pergunta por CAPABILITY (usageWindow), nunca pelo nome do motor.
+    expect(agentDef("agy")?.usageWindow).toBeNull() // trava a premissa do caso
+    const sel = pillWindow(
+      "agy",
+      { "claude-code": SNAP_CLAUDE, codex: SNAP_CODEX },
+      {},
+      AGORA,
+    )
+    expect(sel).toBeNull()
+  })
+
+  it("sem conversa ativa: pior global (aí não há dono a respeitar)", () => {
     const sel = pillWindow(
       null,
       { "claude-code": SNAP_CLAUDE, codex: SNAP_CODEX },
@@ -192,7 +207,7 @@ describe("seleção do provider da pill (conversa ativa)", () => {
     expect(sel?.agent).toBe("codex")
   })
 
-  it("snapshot stale do agent ativo não conta: cai pro global vivo", () => {
+  it("snapshot stale do agent ativo some, não vira o global vivo", () => {
     const depois = SNAP_CLAUDE.fetchedAt + STALE_MS + 1
     const codexFresco = { ...SNAP_CODEX, fetchedAt: depois }
     const sel = pillWindow(
@@ -201,7 +216,7 @@ describe("seleção do provider da pill (conversa ativa)", () => {
       {},
       depois,
     )
-    expect(sel?.agent).toBe("codex")
+    expect(sel).toBeNull()
   })
 
   it("ninguém medido: null (a pill some ou mostra a falha, nunca inventa)", () => {
