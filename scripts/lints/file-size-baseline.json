@@ -6,12 +6,12 @@
     "ts": 500
   },
   "arquivos": {
-    "App.tsx": 872,
-    "components/chat/ChatPanel.tsx": 1528,
+    "App.tsx": 841,
+    "components/chat/ChatPanel.tsx": 1526,
     "components/chat/LexicalComposer.tsx": 907,
     "components/chat/MessageList.tsx": 2783,
     "components/layout/ContextPanel.tsx": 928,
-    "components/layout/Sidebar.tsx": 1433,
+    "components/layout/Sidebar.tsx": 921,
     "components/scheduled/ScheduledView.tsx": 1118,
     "components/sdd/SddView.tsx": 1649,
     "components/settings/Especialistas.tsx": 830,

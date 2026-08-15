@@ -10,6 +10,7 @@ import { StatusBar } from "@/components/layout/StatusBar"
 import { Sidebar } from "@/components/layout/Sidebar"
 import { ContextPanel } from "@/components/layout/ContextPanel"
 import { ChatPanel } from "@/components/chat/ChatPanel"
+import { useProjectConfig } from "@/hooks/useProjectConfig"
 import { RiskClimate } from "@/components/chat/RiskClimate"
 import { SddView } from "@/components/sdd/SddView"
 import { MissionControl } from "@/components/panel/MissionControl"
@@ -29,7 +30,6 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable"
 import { useApp } from "@/store/app"
-import type { ProjectConfig } from "@/store/app"
 import { pendingDeferred, useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { useMission } from "@/store/mission"
@@ -74,12 +74,7 @@ import {
   visibleSessions,
 } from "@/lib/externalSessions"
 import { agentLabel, cancelAgent } from "@/lib/agent"
-import {
-  isTauri,
-  listProjects,
-  updateProjectPermission,
-} from "@/lib/db"
-import { readMycockpitConfig } from "@/lib/mycockpit"
+import { isTauri, listProjects } from "@/lib/db"
 import {
   commandForChannel,
   detectAgents,
@@ -91,7 +86,6 @@ import {
 import { agentDef } from "@/lib/agents"
 import { reloadActiveProposals } from "@/lib/modelCurator"
 import { runDailyModelMaintenance } from "@/lib/modelRound"
-import type { PermissionMode } from "@/lib/types"
 import { BROWSER_DEMO_PROJECTS } from "@/lib/demoProjects"
 import { cn } from "@/lib/utils"
 
@@ -711,37 +705,8 @@ export default function App() {
     }
   }, [])
 
-  // Fase 1, carrega a config do projeto ativo de .mycockpit/config.toml (truth)
-  // e sincroniza o cache de permissão que o run_claude lê.
-  useEffect(() => {
-    if (!activeProjectId || !isTauri()) return
-    const proj = useApp.getState().projects.find((p) => p.id === activeProjectId)
-    if (!proj) return
-    void readMycockpitConfig(proj.path)
-      .then((raw) => {
-        const resolved: ProjectConfig = {
-          exists: raw.exists,
-          permission:
-            (raw.permission as PermissionMode) ??
-            proj.permissionMode ??
-            "padrao",
-          helper:
-            raw.helper === "off"
-              ? null
-              : (raw.helper ?? useApp.getState().settings.helperModel),
-          mode: raw.mode ?? "linear",
-          extraDirs: raw.extra_dirs ?? [],
-        }
-        useApp.getState().setMycockpit(proj.id, resolved)
-        if (raw.exists && resolved.permission !== proj.permissionMode) {
-          useApp.getState().setProjectPermission(proj.id, resolved.permission)
-          void updateProjectPermission(proj.id, resolved.permission)
-        }
-      })
-      .catch((e) =>
-        console.warn("[mycockpit] falha ao ler config.toml:", e),
-      )
-  }, [activeProjectId])
+  // Config do projeto ativo (.mycockpit/config.toml vence o cache do SQLite).
+  useProjectConfig(activeProjectId)
 
   async function handleAddProject() {
     await addProjectViaDialog()
@@ -751,12 +716,8 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={300}>
         <div className="grain relative flex h-screen w-screen flex-col overflow-hidden bg-rail text-foreground">
-          {/* Clima do modo Liberado: moldura ambiente da JANELA INTEIRA
-              enquanto o próximo turno executa sem pedir. Mora aqui, e não no
-              ChatPanel, porque a sidebar e a faixa de status são parte da tela
-              que o modo governa — emoldurar só o painel de conversa lia como
-              moldura cortada. Regra pura e testada em lib/climate; some sozinha
-              nos outros modos e cede a vez pro âmbar de decisão pendente. */}
+          {/* Moldura ambiente do modo Liberado: JANELA inteira, não o painel.
+              Regra, alcance e o porquê da subida: lib/climate. */}
           <RiskClimate />
           <TitleBar />
           {/* A faixa "precisa de você" (ADR-040): CHROME, entre a barra do topo
