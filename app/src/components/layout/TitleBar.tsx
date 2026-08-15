@@ -5,7 +5,6 @@ import { Kbd } from "@/components/ui/kbd"
 import { Separator } from "@/components/ui/separator"
 import { InboxBell } from "@/components/layout/InboxBell"
 import { MODES } from "@/components/layout/titleBarModes"
-import { FrotaMark } from "@/components/brand/FrotaMark"
 import { useApp, useActiveProject } from "@/store/app"
 import {
   commandMenuShortcut,
@@ -133,23 +132,15 @@ export function TitleBar() {
         >
           <PanelLeft className="size-4" />
         </Button>
-        {/* role="img": sem papel declarado, o aria-label num <div> genérico é
-            ignorado pelo leitor de tela (e abaixo de lg o wordmark some, então
-            não sobraria nome nenhum). Com role="img" o grupo tem UM nome e os
-            filhos viram apresentação — nada de ler "Frota" duas vezes. */}
-        <div
-          role="img"
-          aria-label="Frota"
-          className="flex shrink-0 items-center gap-2 px-1 text-foreground"
-        >
-          <FrotaMark className="size-6 stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.8]" />
-          <span className="hidden text-[13px] font-semibold tracking-[-0.035em] lg:inline">
-            Frota
-          </span>
-        </div>
+        {/* A MARCA SAIU DAQUI (build 202). O nome do app dentro da própria
+            janela do app não é estado nem decisão — você sabe onde está, foi
+            você que abriu — e ocupava a faixa horizontal mais cara da janela
+            pra dizer o óbvio (§1 do STYLEGUIDE: o que não é estado nem decisão
+            recua). O que fica é o nome do PROJETO, que é estado de verdade.
+            A identidade da marca continua onde ela trabalha: ícone do app no
+            Dock, na Tray e no About. */}
         {project && (
           <>
-            <BarDivider />
             {/* Nome do projeto sem prefixo do app: é o alvo de troca. Clicar
                 abre a MESMA paleta ⌘K, onde mora a lista de projetos (nenhum
                 switcher novo foi inventado aqui). */}

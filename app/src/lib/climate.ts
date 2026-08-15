@@ -54,10 +54,22 @@ export function riskClimateOn(input: ClimateInput): boolean {
 /**
  * A moldura do clima, em classe única (exportada pra ser TESTÁVEL).
  *
- * `ring-inset` de 1px na área de conteúdo: não desloca layout nenhum, não rouba
- * clique (`pointer-events-none`) e não anima — logo `prefers-reduced-motion`
- * não tem o que desligar (§6: pulse é pra vivo, e o modo não é um evento, é uma
- * condição permanente; algo pulsando ali seria ruído infinito).
+ * `ring-inset` de 1px, não desloca layout nenhum, não rouba clique
+ * (`pointer-events-none`) e não anima — logo `prefers-reduced-motion` não tem o
+ * que desligar (§6: pulse é pra vivo, e o modo não é um evento, é uma condição
+ * permanente; algo pulsando ali seria ruído infinito).
+ *
+ * ELA EMOLDURA A JANELA, NÃO O PAINEL (corrigido no build 202). Até o 201 isto
+ * morava dentro do <section> do ChatPanel, então a moldura parava onde o painel
+ * parava — a sidebar e a faixa de status ficavam de fora e o olho lia "moldura
+ * cortada por outra camada" (relato do usuário). Não era camada nenhuma: ela
+ * nunca tinha coberto a janela. E a promessa que o próprio app faz, na descrição
+ * do modo, é "a tela inteira ganha moldura âmbar" — o alcance agora cumpre a
+ * frase.
+ *
+ * `rounded-[10px]`: a janela do macOS é arredondada (titleBarStyle Overlay, com
+ * decoração nativa). Um anel de cantos retos tem os cantos comidos pelo raio do
+ * sistema — que era a OUTRA metade do "parece cortado".
  */
 export const CLIMATE_FRAME_CLASS =
-  "pointer-events-none absolute inset-0 z-20 ring-1 ring-st-warning/30 ring-inset"
+  "pointer-events-none absolute inset-0 z-[130] rounded-[10px] ring-1 ring-st-warning/30 ring-inset"

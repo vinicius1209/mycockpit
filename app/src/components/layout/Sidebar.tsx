@@ -1402,7 +1402,11 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
       {/* Guia de setup: some sozinho ao completar (renderiza null). */}
       <SetupGuide />
 
-      <footer className="flex h-12 shrink-0 items-center gap-2.5 border-t px-3">
+      {/* Sem `border-t` (build 202): a separação aqui já vem do espaço e da
+          mudança de peso — o divisor era hairline gratuito, e a faixa de status
+          logo abaixo já tem o dela. Duas linhas horizontais empilhadas a 24px
+          de distância foi o que o usuário leu como "cortado". */}
+      <footer className="flex h-12 shrink-0 items-center gap-2.5 px-3">
         <div className="grid size-6 place-items-center rounded-full bg-brass/15 text-[11px] font-semibold text-brass">
           V
         </div>

@@ -10,6 +10,7 @@ import { StatusBar } from "@/components/layout/StatusBar"
 import { Sidebar } from "@/components/layout/Sidebar"
 import { ContextPanel } from "@/components/layout/ContextPanel"
 import { ChatPanel } from "@/components/chat/ChatPanel"
+import { RiskClimate } from "@/components/chat/RiskClimate"
 import { SddView } from "@/components/sdd/SddView"
 import { MissionControl } from "@/components/panel/MissionControl"
 import { DecisionStrip } from "@/components/decisions/DecisionStrip"
@@ -749,7 +750,14 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={300}>
-        <div className="grain flex h-screen w-screen flex-col overflow-hidden bg-rail text-foreground">
+        <div className="grain relative flex h-screen w-screen flex-col overflow-hidden bg-rail text-foreground">
+          {/* Clima do modo Liberado: moldura ambiente da JANELA INTEIRA
+              enquanto o próximo turno executa sem pedir. Mora aqui, e não no
+              ChatPanel, porque a sidebar e a faixa de status são parte da tela
+              que o modo governa — emoldurar só o painel de conversa lia como
+              moldura cortada. Regra pura e testada em lib/climate; some sozinha
+              nos outros modos e cede a vez pro âmbar de decisão pendente. */}
+          <RiskClimate />
           <TitleBar />
           {/* A faixa "precisa de você" (ADR-040): CHROME, entre a barra do topo
               e o conteúdo, pra ser visível de dentro do Trabalho e não só do
