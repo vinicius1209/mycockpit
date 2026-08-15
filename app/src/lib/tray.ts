@@ -26,7 +26,18 @@ export interface TrayExternalSession {
 
 export interface TraySnapshot {
   running: number
+  /** Total do que espera VOCÊ: disputas para escolher + pedidos bloqueantes
+   *  (permissão/pergunta). É a soma que o selo mostra. */
   decisions: number
+  /** Quantas das `decisions` são PEDIDOS bloqueantes (permissão/pergunta), e
+   *  não disputas.
+   *
+   *  Existe porque o subtítulo da tray era a string fixa "Revisar resultado da
+   *  disputa" enquanto o número já somava as duas coisas: um pedido de `Bash`
+   *  — o caso comum — chegava anunciado como resultado de uma disputa que não
+   *  existia, e a tray é justamente a superfície que alcança você com a janela
+   *  fechada. Rótulo tem que responder pelo que o número conta. */
+  blocking: number
   activities: TrayActivity[]
   decisionConvId: string | null
   decisionProjectId: string | null
@@ -87,4 +98,29 @@ export function runTrayAction(
     convId: convId ?? null,
     projectId: projectId ?? null,
   })
+}
+
+/**
+ * O subtítulo do cartão de decisão da tray.
+ *
+ * Era a string FIXA "Revisar resultado da disputa" enquanto o número acima dela
+ * já somava disputas + pedidos bloqueantes. No caso comum (uma permissão de
+ * `Bash`) a tray mandava você revisar uma disputa que não existia — e a tray é
+ * a superfície que alcança você com a janela fechada, então o custo do rótulo
+ * errado é sair procurando.
+ *
+ * Puro de propósito: a regra é de CONTEÚDO (o rótulo responde pelo que o número
+ * conta), não de componente, e por isso é testável sem renderizar nada.
+ */
+export function decisionSubtitle(decisions: number, blocking: number): string {
+  const disputas = Math.max(0, decisions - blocking)
+  if (blocking > 0 && disputas > 0) return "Pedidos e disputas esperando"
+  if (blocking > 0) {
+    return blocking === 1
+      ? "Um pedido parou o turno"
+      : "Pedidos pararam os turnos"
+  }
+  return disputas === 1
+    ? "Revisar resultado da disputa"
+    : "Revisar resultados das disputas"
 }

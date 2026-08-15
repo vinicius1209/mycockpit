@@ -55,14 +55,13 @@ import { focusConsoleComposer } from "@/lib/focusComposer"
 import { startTurnWatchdog } from "@/lib/watchdog"
 import { startUsageWindow } from "@/lib/usageWindow"
 import {
-  engineLabel,
   externalSessionsKey,
-  sessionPlace,
   startExternalSessions,
   useExternalSessions,
   visibleSessions,
 } from "@/lib/externalSessions"
 import { agentLabel, cancelAgent } from "@/lib/agent"
+import { trayExternalSessions } from "@/lib/traySessions"
 import { isTauri, listProjects } from "@/lib/db"
 import {
   commandForChannel,
@@ -440,21 +439,12 @@ export default function App() {
         0,
       )
 
-      // Sessões EXTERNAS observadas pelos hooks (H1): linhas informativas no
-      // tray — o app observa, não dirige. Rótulo/projeto resolvidos AQUI (o
-      // Rust só exibe o que chega pronto).
-      const external = visibleSessions(
-        useExternalSessions.getState().sessions,
-      ).map((s) => ({
-        agent: engineLabel(s.agent),
-        place: sessionPlace(s, app.projects),
-        status: s.status,
-        lastSeen: s.lastSeen,
-      }))
+      const external = trayExternalSessions(app.projects)
 
       updateTray({
         running: activities.size,
         decisions: decisionsPending + pendingInteractions,
+        blocking: pendingInteractions,
         deferred: deferredCount,
         external,
         activities: [...activities.values()].slice(0, 3),

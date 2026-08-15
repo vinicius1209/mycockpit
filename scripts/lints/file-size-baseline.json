@@ -6,7 +6,7 @@
     "ts": 500
   },
   "arquivos": {
-    "App.tsx": 729,
+    "App.tsx": 719,
     "components/chat/ChatPanel.tsx": 1526,
     "components/chat/LexicalComposer.tsx": 907,
     "components/chat/MessageList.tsx": 2782,

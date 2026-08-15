@@ -13,6 +13,7 @@ import {
   Square,
 } from "lucide-react"
 import {
+  decisionSubtitle,
   runTrayAction,
   type TrayActivity,
   type TraySnapshot,
@@ -21,6 +22,7 @@ import {
 const EMPTY: TraySnapshot = {
   running: 0,
   decisions: 0,
+  blocking: 0,
   activities: [],
   decisionConvId: null,
   decisionProjectId: null,
@@ -256,7 +258,7 @@ export function TrayPopover() {
                 : `${snapshot.decisions} decisões aguardando você`}
             </span>
             <span className="text-[11px] text-muted-foreground">
-              Revisar resultado da disputa
+              {decisionSubtitle(snapshot.decisions, snapshot.blocking)}
             </span>
           </span>
           <ArrowUpRight className="size-3.5" />
