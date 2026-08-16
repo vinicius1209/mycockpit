@@ -88,11 +88,16 @@ export function ExecutionRow({
       onClick={(e) => e.stopPropagation()}
       className="flex flex-col gap-1.5 px-3 pt-2.5"
     >
+      {/* A etiqueta "EXECUÇÃO" saiu daqui (build 210). Ela nomeava o grupo sem
+          acrescentar significado: cada botão já explica o efeito inteiro no
+          próprio `title` ("O agente só lê e relata", "…pede confirmação antes
+          de agir", "…executa e escreve sem pedir confirmação"), e o
+          `aria-label` do radiogroup já dá o nome ao grupo para quem lê por
+          leitor de tela. Pior, os dois nomes DIVERGIAM: o rótulo visível dizia
+          "Execução" e o acessível diz "Permissões do projeto" — dois nomes para
+          um controle só. Ficou o acessível, que é o mais exato.
+          §1 do STYLEGUIDE: o que não é estado nem decisão recua. */}
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-        <span className="font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase">
-          Execução
-        </span>
-
         <div
           role="radiogroup"
           aria-label="Permissões do projeto"

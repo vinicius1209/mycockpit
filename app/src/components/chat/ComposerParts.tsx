@@ -463,10 +463,11 @@ export function ComposerActions({
   const missionEnabled = useApp((s) => s.settings.missionEnabled)
   return (
     <>
-      <span className="flex items-center gap-1.5 pl-1 font-mono text-[11px] text-muted-foreground/70">
-        <kbd className="rounded border border-border bg-secondary/50 px-1 py-px">/</kbd>
-        comandos
-      </span>
+      {/* A dica "/ comandos" saiu daqui (build 210): era a MESMA frase do
+          placeholder uma linha acima ("Peça algo… ou / para comandos"), dita
+          duas vezes em 11px. E o rastro de uso não a sustentava — nos 406
+          turnos do banco não há um envio começando com "/". A barra continua
+          funcionando; o que saiu foi o lembrete redundante. */}
       <div className="ml-auto flex items-center gap-1.5">
         {/* overlay="composer": o pill de gravação ancora na raiz relative do
             CommandConsole e paira ACIMA do composer — a fileira não mexe. */}
