@@ -39,7 +39,9 @@ fn catalog_price(c: CatalogModel) -> Option<Price> {
 /// $/1M tokens. Catálogo dinâmico (models.dev, exato > prefixo-mais-longo)
 /// primeiro; SEED estático como fallback (offline/primeira execução/modelo
 /// fora do catálogo). SEED conferido contra developers.openai.com/api/docs/
-/// pricing e anthropic.com em 2026-07-14. O "~" na UI comunica estimativa.
+/// pricing e anthropic.com em 2026-07-14, e as linhas google contra
+/// models.dev/api.json em 2026-08-16 (a MESMA fonte do catálogo dinâmico).
+/// O "~" na UI comunica estimativa.
 fn price_for(model: &str) -> Option<Price> {
     if let Some(p) = catalog::lookup(model).and_then(catalog_price) {
         return Some(p);
@@ -73,6 +75,34 @@ fn price_for(model: &str) -> Option<Price> {
         Price { input: 1.25, cached: 0.125, output: 10.0 }
     } else if m.contains("o3") {
         Price { input: 2.0, cached: 0.5, output: 8.0 }
+    // Família Gemini (o motor `agy` fala com ela). O slug do agy carrega o
+    // ESFORÇO no fim do id ("gemini-3.7-flash-high"), então o contains casa a
+    // família e o sufixo é ignorado — nenhum código genérico precisa saber
+    // que este motor embute esforço no modelo. Ordem: `-lite` ANTES da base
+    // ("gemini-3.5-flash-lite-low" casaria com "gemini-3.5-flash", e o lite é
+    // 3,6x mais barato no output). Sem estas linhas o Antigravity ficava
+    // inteiro fora do ledger (incidente 2026-08-16 §6): 5 turnos reais,
+    // ~7,3M tokens, ZERO linha em turn_costs.
+    // ⚠️ models.dev publica `cost.tiers` para o Pro (acima de ~200k de
+    // contexto o preço DOBRA); como o catálogo, o SEED ignora tiers — a
+    // estimativa erra pra BAIXO em turno de contexto longo, nunca pra cima.
+    } else if m.contains("gemini-3.7-flash") {
+        Price { input: 0.75, cached: 0.075, output: 3.75 }
+    } else if m.contains("gemini-3.6-flash") {
+        Price { input: 1.5, cached: 0.15, output: 7.5 }
+    } else if m.contains("gemini-3.5-flash-lite") {
+        Price { input: 0.3, cached: 0.03, output: 2.5 }
+    } else if m.contains("gemini-3.5-flash") {
+        Price { input: 1.5, cached: 0.15, output: 9.0 }
+    } else if m.contains("gemini-3.1-flash-lite") {
+        Price { input: 0.25, cached: 0.025, output: 1.5 }
+    } else if m.contains("gemini-3.1-pro") {
+        // models.dev só publica o id `gemini-3.1-pro-preview`; o slug que o
+        // `agy models` lista é `gemini-3.1-pro-{high,low}`. Mesmo modelo,
+        // mesmo preço publicado — o preview é o único id com preço.
+        Price { input: 2.0, cached: 0.2, output: 12.0 }
+    } else if m.contains("gemini-3-flash") {
+        Price { input: 0.5, cached: 0.05, output: 3.0 }
     } else if m.contains("fable") || m.contains("mythos") {
         // Claude Fable/Mythos 5 (cache 90% off, como o resto da família)
         Price { input: 10.0, cached: 1.0, output: 50.0 }
@@ -157,6 +187,41 @@ mod tests {
         assert_eq!(out_rate("gpt-5.3-codex"), 14.0);
         assert_eq!(out_rate("gpt-5.5-pro"), 180.0);
         assert_eq!(out_rate("gpt-5"), 10.0); // legado continua legado
+    }
+
+    /// ADR-047 — o Antigravity fala com a família Gemini e o SEED não tinha
+    /// NENHUMA linha google: todo turno do `agy` saía `Unknown` e o ledger não
+    /// via um token sequer (incidente 2026-08-16 §6). O slug do `agy` carrega o
+    /// esforço no fim ("-high"/"-medium"/"-low") e não pode cair na família
+    /// errada — mesmo risco do contains que os gpt-5.x já tinham.
+    #[test]
+    fn gemini_rows_survive_the_effort_suffix() {
+        assert_eq!(out_rate("gemini-3.7-flash-high"), 3.75);
+        assert_eq!(out_rate("gemini-3.6-flash-medium"), 7.5);
+        assert_eq!(out_rate("gemini-3.5-flash-low"), 9.0);
+        // lite é 3,6x mais barato que a base: o específico tem que vir antes
+        assert_eq!(out_rate("gemini-3.5-flash-lite-high"), 2.5);
+        assert_eq!(out_rate("gemini-3.1-flash-lite-low"), 1.5);
+        assert_eq!(out_rate("gemini-3.1-pro-high"), 12.0);
+        assert_eq!(out_rate("gemini-3-flash-preview"), 3.0);
+    }
+
+    /// Fixture REAL (ADR-016): o `result` do item #69 da conversa
+    /// ec1642c1-5328-409e-afc8-58e79a3cdca1, o turno que morreu no
+    /// `--print-timeout` do incidente de 2026-08-16 e não deixou rastro nenhum
+    /// no ledger. Números lidos do banco do usuário, não arredondados.
+    #[test]
+    fn incidente_2026_08_16_deixa_de_ser_invisivel() {
+        let u = NormalizedUsage {
+            input: 2_399_909,
+            cached_input: 2_101_766,
+            output: 11_098,
+        };
+        let (usd, src) = estimate("gemini-3.7-flash-high", &u);
+        assert!(matches!(src, CostSource::Estimated));
+        let usd = usd.expect("turno do agy passa a ter custo");
+        // (2.399.909-2.101.766)×0,75 + 2.101.766×0,075 + 11.098×3,75, por 1M
+        assert!((usd - 0.422_857_2).abs() < 1e-6, "custo estimado: {usd}");
     }
 
     #[test]

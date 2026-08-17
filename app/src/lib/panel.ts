@@ -208,24 +208,55 @@ export function ledgerWindows(
   return { today, week, month }
 }
 
+/** ADR-047 — o pedaço do ledger que o app NÃO sabe precificar: linha com
+ *  tokens e `costUsd` NULL (modelo fora da tabela de preço). Antes essas
+ *  linhas nem existiam e o consumo sumia; agora elas existem, e todo total em
+ *  US$ desta tela é uma soma PARCIAL enquanto isto for maior que zero. Quem
+ *  mostra o total imprime a ressalva ao lado (mesma regra do denominador à
+ *  vista do ADR-040) — somar zero no lugar do desconhecido seria a ficção que
+ *  o ADR-040 condenou. */
+export interface UnpricedSpend {
+  /** turnos com consumo medido e preço desconhecido. */
+  turns: number
+  /** tokens desses turnos (o que ficou fora da conta em US$). */
+  tokens: number
+}
+
+export function unpricedSpend(rows: LedgerRow[]): UnpricedSpend {
+  let turns = 0
+  let tokens = 0
+  for (const r of rows) {
+    if (r.costUsd != null) continue
+    turns += 1
+    tokens += r.tokens
+  }
+  return { turns, tokens }
+}
+
 export interface AgentSpend {
   agent: string
   costUsd: number
   tokens: number
   /** fração 0–1 do total (p/ a barra segmentada + ranking). */
   share: number
+  /** turnos deste agent sem preço (ADR-047): `costUsd` conta só o resto. */
+  unpricedTurns: number
 }
 
 /** Custo por agente (desc), com share do total. Agrupa por `agent`. */
 export function costByAgent(rows: LedgerRow[]): AgentSpend[] {
-  const by = new Map<string, { costUsd: number; tokens: number }>()
+  const by = new Map<
+    string,
+    { costUsd: number; tokens: number; unpricedTurns: number }
+  >()
   let total = 0
   for (const r of rows) {
     const c = r.costUsd ?? 0
     total += c
-    const cur = by.get(r.agent) ?? { costUsd: 0, tokens: 0 }
+    const cur = by.get(r.agent) ?? { costUsd: 0, tokens: 0, unpricedTurns: 0 }
     cur.costUsd += c
     cur.tokens += r.tokens
+    if (r.costUsd == null) cur.unpricedTurns += 1
     by.set(r.agent, cur)
   }
   return [...by.entries()]
@@ -234,6 +265,7 @@ export function costByAgent(rows: LedgerRow[]): AgentSpend[] {
       costUsd: v.costUsd,
       tokens: v.tokens,
       share: total > 0 ? v.costUsd / total : 0,
+      unpricedTurns: v.unpricedTurns,
     }))
     .sort((a, b) => b.costUsd - a.costUsd)
 }

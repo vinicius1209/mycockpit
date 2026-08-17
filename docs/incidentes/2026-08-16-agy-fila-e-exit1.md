@@ -575,3 +575,12 @@ ocorrências), então `estimate` cai no `None => (None, CostSource::Unknown)` da
 adapter é honesto por design (`adapters.rs:2202-2208`, "sem tabela não inventa número"), mas o
 efeito é que **todo o consumo do Antigravity é invisível no ledger de custo** — inclusive os
 ~4,2M de tokens deste incidente. Não é o defeito reportado; merece issue própria.
+
+> **RESOLVIDO em 16/08/2026 — ADR-047.** Duas correções independentes: (a) o SEED do
+> `pricing.rs` ganhou a família Gemini (fonte `models.dev/api.json`, datada), e o turno `#69`
+> desta conversa passa a custar **US$ 0,4229** (os 5 turnos somam ~US$ 1,30); (b) o guard
+> `cost_usd != null` saiu dos três writers e virou uma régua só, no `recordTurnCost`: **consumo
+> entra no ledger mesmo sem preço**, com `cost_usd` NULL e os tokens reais, e Painel, Auditoria
+> e faixa inferior passam a dizer "sem preço" em vez de somar zero. Nota de número: o consumo
+> total desta conversa foi de **7.350.378 tokens** em 5 turnos; os ~4,2M citados acima são só os
+> dois turnos que morreram no timeout.

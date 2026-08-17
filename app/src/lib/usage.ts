@@ -40,6 +40,27 @@ export function nextBaseline(echoed: CumulativeUsage): CumulativeUsage {
   }
 }
 
+/** ADR-047 — o que MERECE uma linha no ledger de custo.
+ *
+ *  Até aqui os três writers de `turn_costs` (chat, disputa, fase de missão)
+ *  gravavam só com `cost_usd != null`, e "não sei o preço" apagava o turno
+ *  inteiro: o Antigravity rodou 5 turnos e ~7,3M de tokens sem deixar UMA
+ *  linha (incidente 2026-08-16 §6). Consumo é fato medido; preço é dado
+ *  externo que pode faltar. Então a régua passa a ser: gravou tokens, entra —
+ *  com `costUsd` NULL, que é "não sei quanto custou", diferente de US$ 0,00.
+ *
+ *  O piso continua existindo: result sem custo E sem token nenhum não vira
+ *  linha (seria uma linha que não descreve consumo algum). */
+export function worthLedgerRow(r: {
+  costUsd: number | null | undefined
+  input: number | null | undefined
+  output: number | null | undefined
+  cache: number | null | undefined
+}): boolean {
+  if (r.costUsd != null) return true
+  return (r.input ?? 0) > 0 || (r.output ?? 0) > 0 || (r.cache ?? 0) > 0
+}
+
 /** Uma linha do ledger como está no banco (pré-correção = acumulado). */
 export interface RawCostRow {
   runId: string
@@ -87,17 +108,30 @@ export function planUsageRecompute(rows: RawCostRow[]): RecomputedCostRow[] {
         (r.input < prev.input ||
           r.output < prev.output ||
           r.cache < prev.cache ||
-          (r.costUsd ?? 0) < (prev.costUsd ?? 0))
+          // custo só depõe quando os DOIS lados têm preço: com linhas sem
+          // preço no meio (ADR-047), ler NULL como zero fingia "a thread
+          // reiniciou" e devolvia os tokens da linha INTEIROS ao turno.
+          (r.costUsd != null &&
+            prev.costUsd != null &&
+            r.costUsd < prev.costUsd))
       const base = prev && !restarted ? prev : null
       out.push({
         ...r,
         input: r.input - (base?.input ?? 0),
         output: r.output - (base?.output ?? 0),
         cache: r.cache - (base?.cache ?? 0),
+        // Linha anterior SEM preço (ADR-047): o delta de custo é desconhecido,
+        // e `- 0` cobraria o acumulado inteiro de novo. Fica null — "não sei",
+        // com os tokens do turno já corretos ao lado. Mesma escolha do ADR-033:
+        // errar pra baixo, nunca pra cima.
         costUsd:
           r.costUsd == null
             ? null
-            : Math.max(0, r.costUsd - (base?.costUsd ?? 0)),
+            : base == null
+              ? r.costUsd
+              : base.costUsd == null
+                ? null
+                : Math.max(0, r.costUsd - base.costUsd),
         raw: {
           costUsd: r.costUsd,
           input: r.input,

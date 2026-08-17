@@ -27,7 +27,8 @@ import { getVersion } from "@tauri-apps/api/app"
 import { UsagePill } from "@/components/layout/UsagePill"
 import { METER_TEXT } from "@/lib/meter"
 import { statusBuildItem, statusCostItem, type StatusItem } from "@/lib/statusBar"
-import { sessionCost, useActiveConv } from "@/store/chat"
+import { sessionCost, sessionUnpricedTurns } from "@/lib/sessionCost"
+import { useActiveConv } from "@/store/chat"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 
@@ -51,7 +52,15 @@ function Item({ item }: { item: StatusItem }) {
 function SessionCostItem() {
   const conv = useActiveConv()
   const limit = useApp((s) => s.settings.sessionCostLimit)
-  const item = statusCostItem(sessionCost(conv.items), limit)
+  const item = statusCostItem(
+    {
+      ...sessionCost(conv.items),
+      // ADR-047: turno sem preço não é turno de graça. A zona precisa saber
+      // que a soma é parcial pra não passar "US$ 0" (ou o vazio) por medida.
+      unpriced: sessionUnpricedTurns(conv.items),
+    },
+    limit,
+  )
   if (!item) return null
   return <Item item={item} />
 }

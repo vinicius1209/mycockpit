@@ -11,6 +11,7 @@ import {
   Swords,
   X,
 } from "lucide-react"
+import { toast } from "sonner"
 import { RichSelect } from "@/components/ui/RichSelect"
 import { Button } from "@/components/ui/button"
 import {
@@ -23,6 +24,7 @@ import {
 import { MicButton } from "@/components/chat/MicButton"
 import { useApp } from "@/store/app"
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
+import { problemaNoSlug } from "@/lib/modelSlug"
 import type { SlashCommand } from "@/lib/sources"
 import { commandBadges } from "@/lib/slashCommands"
 import type { Attachment } from "@/lib/attachments"
@@ -338,7 +340,13 @@ export function IdentityControls({
   }
   function confirmCustom() {
     const v = customDraft.trim()
-    if (v) onModelChange(v)
+    // Espelho da fronteira do Rust (`validate_model_slug`), aqui na ENTRADA: sem
+    // isto um id com rótulo colado virava estado, era persistido em
+    // `req_model` e só o spawn recusava — e a conversa ficava num beco, porque
+    // a releitura devolve o mesmo id quebrado.
+    const problema = v ? problemaNoSlug(v) : null
+    if (problema) toast.error(problema)
+    else if (v) onModelChange(v)
     setCustomEditing(false)
   }
 

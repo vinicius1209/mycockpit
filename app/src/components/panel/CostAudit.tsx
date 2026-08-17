@@ -15,9 +15,11 @@ import {
   costByProject,
   dailySpend,
   ledgerTokens,
+  unpricedSpend,
   windowRows,
   type LedgerRow,
 } from "@/lib/panel"
+import { UnpricedNote } from "@/components/panel/UnpricedNote"
 import { fmtCost, fmtTokens } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -83,6 +85,7 @@ export function CostAudit({
       byAgent: costByAgent(rows),
       byProject: costByProject(rows),
       daily: dailySpend(ledger, win === "30d" ? 30 : 14, now),
+      unpriced: unpricedSpend(rows),
     }
   }, [ledger, win])
 
@@ -125,6 +128,8 @@ export function CostAudit({
             </span>
           </div>
 
+          <UnpricedNote spend={view.unpriced} className="mt-1.5" />
+
           <div className="mt-4">
             <Bars data={view.daily} />
             <div className="mt-1 flex justify-between font-mono text-[11px] text-muted-foreground">
@@ -149,13 +154,27 @@ export function CostAudit({
                     {agentShort(a.agent)}
                     <span className="ml-2 font-mono text-[11px] font-normal text-muted-foreground">
                       {fmtTokens(a.tokens)} tok
+                      {a.unpricedTurns > 0
+                        ? ` · ${a.unpricedTurns} sem preço`
+                        : ""}
                     </span>
                   </span>
                   <span className="text-right font-mono text-[13px] tabular-nums">
-                    <b className="font-semibold">{fmtCost(a.costUsd)}</b>
-                    <span className="block text-[11px] text-muted-foreground">
-                      {Math.round(a.share * 100)}%
-                    </span>
+                    {/* agent cujo consumo inteiro está sem preço não vira
+                        "US$ 0,00": zero medido e desconhecido são estados
+                        diferentes (ADR-047). */}
+                    {a.costUsd <= 0 && a.unpricedTurns > 0 ? (
+                      <b className="font-normal text-muted-foreground">
+                        sem preço
+                      </b>
+                    ) : (
+                      <>
+                        <b className="font-semibold">{fmtCost(a.costUsd)}</b>
+                        <span className="block text-[11px] text-muted-foreground">
+                          {Math.round(a.share * 100)}%
+                        </span>
+                      </>
+                    )}
                   </span>
                 </div>
               ))}

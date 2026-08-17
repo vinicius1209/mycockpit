@@ -7,6 +7,7 @@ import { permissionNote } from "@/lib/permissionNote"
 import { useApp } from "@/store/app"
 import {
   PERMISSION_LABEL,
+  resolvePermission,
   setProjectPermissionEverywhere,
 } from "@/lib/permission"
 import type { PermissionMode, Project } from "@/lib/types"
@@ -55,13 +56,15 @@ export function ExecutionRow({
   const [identityOpen, setIdentityOpen] = useState(false)
   // ASSINA o store (não `getState()`): sem a subscrição, clicar no segmented
   // gravava o modo mas a linha não re-renderizava — o controle parecia morto.
-  // Mesma precedência do `effectivePermission`: config do .mycockpit vence o
-  // cache do projeto (o helper puro segue sendo a fonte da regra, testado).
+  // A precedência é a do `resolvePermission` (config do .mycockpit vence o cache
+  // do SQLite) e vem de lá, não copiada: o seletor é que é próprio desta faixa
+  // (ela lê o projeto ATIVO), a regra é da casa.
   const mode = useApp((s) =>
     project
-      ? (s.mycockpit[project.id]?.permission ??
-        s.projects.find((p) => p.id === project.id)?.permissionMode ??
-        "padrao")
+      ? resolvePermission(
+          s.mycockpit[project.id]?.permission,
+          s.projects.find((p) => p.id === project.id)?.permissionMode,
+        )
       : "padrao",
   )
   const note = convAgent ? permissionNote(convAgent, mode) : null

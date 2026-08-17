@@ -6,7 +6,7 @@ import type { FusionRun } from "@/store/fusion"
 import type { FusionOutcome } from "@/lib/retro"
 import type { DeliveryRecord } from "@/lib/recall"
 import type { CumulativeUsage } from "@/lib/usage"
-import { planUsageRecompute, recomputeSummary } from "@/lib/usage"
+import { planUsageRecompute, recomputeSummary, worthLedgerRow } from "@/lib/usage"
 
 const DB_URL = "sqlite:mycockpit.db" // DEVE bater com add_migrations no lib.rs
 
@@ -1420,9 +1420,9 @@ export interface LedgerEntry {
 /** Grava o custo de UM run: turno de chat linear, candidato de disputa OU
  *  tentativa de fase de missão (MH2.1 — o store/mission gera um run_id por
  *  tentativa). `INSERT OR REPLACE` por run_id: results parciais do mesmo run
- *  colapsam no total final (o último vence — o custo dos parciais do CLI é
- *  cumulativo). Best-effort — perder uma linha de custo não pode derrubar o
- *  turno. */
+ *  colapsam no total final (o último vence, o custo dos parciais é cumulativo).
+ *  O que VIRA linha se decide AQUI: entra tudo que consumiu, com preço ou com
+ *  `costUsd` NULL (ADR-047). Best-effort: perder linha não derruba o turno. */
 export async function recordTurnCost(r: {
   runId: string
   projectId: string
@@ -1436,7 +1436,7 @@ export async function recordTurnCost(r: {
   cache: number
 }): Promise<void> {
   const db = await getDb()
-  if (!db) return
+  if (!db || !worthLedgerRow(r)) return // sem preço E sem token: não é consumo
   try {
     await db.execute(
       "INSERT OR REPLACE INTO turn_costs (run_id, project_id, conv_id, agent, model, cost_usd, cost_source, input_tokens, output_tokens, cache_tokens, created_at, usage_basis) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
@@ -2824,12 +2824,12 @@ export async function deleteCard(id: string): Promise<void> {
 /** Custo por card v1 = soma de turn_costs por conv_id (cobre chat + disputas
  *  e, desde o MH2.1, também fases de missão — elas gravam turn_costs com o
  *  conv_id da conversa; SDD segue FORA, stage_runs não tem conv_id).
- *  `estimated` = algum custo sem proveniência 'reported' (COALESCE:
- *  cost_source NULL também conta como estimado — o "~" honesto). Erro PROPAGA
- *  (nada de catch silencioso em polling): o caller mantém o last-known. */
+ *  `estimated` = custo sem proveniência 'reported' (COALESCE: NULL conta, o
+ *  "~" honesto). `total: null` = tem turno e NENHUM com preço (ADR-047: 0 ali
+ *  carimbava "US$ 0,00" medido). Erro PROPAGA: o caller mantém o last-known. */
 export async function listCardCosts(
   convIds: string[],
-): Promise<Record<string, { total: number; estimated: boolean }>> {
+): Promise<Record<string, { total: number | null; estimated: boolean }>> {
   if (convIds.length === 0) return {}
   const db = await getDb()
   if (!db) return {}
@@ -2841,9 +2841,9 @@ export async function listCardCosts(
       `SELECT conv_id, SUM(cost_usd) AS total, MAX(CASE WHEN COALESCE(cost_source, '') != 'reported' THEN 1 ELSE 0 END) AS est FROM turn_costs WHERE conv_id IN (${placeholders}) GROUP BY conv_id`,
       convIds,
     )
-    const out: Record<string, { total: number; estimated: boolean }> = {}
+    const out: Record<string, { total: number | null; estimated: boolean }> = {}
     for (const r of rows) {
-      out[r.conv_id] = { total: r.total ?? 0, estimated: r.est === 1 }
+      out[r.conv_id] = { total: r.total ?? null, estimated: r.est === 1 }
     }
     return out
   } catch (e) {

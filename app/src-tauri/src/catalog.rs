@@ -134,10 +134,12 @@ fn extract(raw: &serde_json::Value) -> Vec<CatalogModel> {
     out
 }
 
-/// Consulta do pricing.rs: (a) id EXATO (case-insensitive), (b) senão prefixo
-/// em qualquer direção — id do catálogo prefixo do model consultado ou
-/// vice-versa — com o id mais LONGO vencendo ("gpt-5.6-terra-xyz" casa
-/// gpt-5.6-terra, não gpt-5.6). None = sem catálogo ou sem match (cai no SEED).
+/// Consulta do pricing.rs: (a) id EXATO (case-insensitive), (b) o modelo pedido
+/// ESTENDE um id do catálogo (sufixo de esforço do `agy`, data de snapshot do
+/// gpt) e aí o id mais LONGO vence ("gpt-5.6-terra-xyz" casa gpt-5.6-terra, não
+/// gpt-5.6), (c) o inverso — pedido mais CURTO que os ids publicados — só
+/// quando os candidatos NÃO discordam de preço. None = sem catálogo ou sem
+/// match (cai no SEED).
 pub fn lookup(model: &str) -> Option<CatalogModel> {
     ensure_loaded();
     let guard = read_lock();
@@ -149,13 +151,25 @@ fn lookup_in(list: &[CatalogModel], model: &str) -> Option<CatalogModel> {
     if let Some(c) = list.iter().find(|c| c.id.to_lowercase() == m) {
         return Some(c.clone());
     }
-    list.iter()
-        .filter(|c| {
-            let id = c.id.to_lowercase();
-            m.starts_with(&id) || id.starts_with(&m)
-        })
+    if let Some(c) = list
+        .iter()
+        .filter(|c| m.starts_with(&c.id.to_lowercase()))
         .max_by_key(|c| c.id.len())
-        .cloned()
+    {
+        return Some(c.clone());
+    }
+    // ADR-047: aqui NÃO existe "o mais específico". "gemini-3.1-flash" tem
+    // -lite (US$ 1,50 out), -image (US$ 60) e -live (US$ 4,50) publicados: o
+    // id mais longo é sorteio, e sorteio vira dólar inventado no ledger. Com
+    // os candidatos discordando de preço, devolver None é a resposta honesta —
+    // o SEED responde, e se ele também não souber o turno entra no ledger como
+    // tokens sem preço, que é o estado real.
+    let mut cands = list.iter().filter(|c| c.id.to_lowercase().starts_with(&m));
+    let first = cands.next()?;
+    let divergem = cands.any(|c| {
+        c.input != first.input || c.output != first.output || c.cache_read != first.cache_read
+    });
+    if divergem { None } else { Some(first.clone()) }
 }
 
 /// Baixa e reprocessa o catálogo (best-effort; o front chama de vez em quando).
@@ -218,6 +232,19 @@ mod tests {
             "gpt-5.6-terra": { "name": "GPT-5.6 Terra",
                 "cost": { "input": 2.5, "output": 15.0, "cache_read": 0.25 } }
         }},
+        "google": { "models": {
+            "gemini-3.7-flash": { "name": "Gemini 3.7 Flash",
+                "cost": { "input": 0.75, "output": 3.75, "cache_read": 0.075 },
+                "limit": { "context": 1048576 }, "release_date": "2026-08-13" },
+            "gemini-3.1-flash-lite": { "name": "Gemini 3.1 Flash Lite",
+                "cost": { "input": 0.25, "output": 1.5, "cache_read": 0.025 } },
+            "gemini-3.1-flash-image": { "name": "Gemini 3.1 Flash Image",
+                "cost": { "input": 0.5, "output": 60.0 } },
+            "gemini-3.1-pro-preview": { "name": "Gemini 3.1 Pro",
+                "cost": { "input": 2.0, "output": 12.0, "cache_read": 0.2 } },
+            "gemini-3.1-pro-preview-customtools": { "name": "Gemini 3.1 Pro (custom tools)",
+                "cost": { "input": 2.0, "output": 12.0, "cache_read": 0.2 } }
+        }},
         "mistral": { "models": {
             "mistral-max": { "name": "Max", "cost": { "input": 2.0, "output": 6.0 } }
         }}
@@ -233,7 +260,19 @@ mod tests {
         let mut ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
         ids.sort();
         // embedding (output 0) e provider mistral ficam de fora
-        assert_eq!(ids, ["claude-fable-5", "gpt-5.6", "gpt-5.6-terra"]);
+        assert_eq!(
+            ids,
+            [
+                "claude-fable-5",
+                "gemini-3.1-flash-image",
+                "gemini-3.1-flash-lite",
+                "gemini-3.1-pro-preview",
+                "gemini-3.1-pro-preview-customtools",
+                "gemini-3.7-flash",
+                "gpt-5.6",
+                "gpt-5.6-terra"
+            ]
+        );
         let fable = models.iter().find(|m| m.id == "claude-fable-5").unwrap();
         assert_eq!(fable.cache_read, Some(1.0));
         assert_eq!(fable.context, Some(300_000));
@@ -256,6 +295,33 @@ mod tests {
         // gpt-5.6-terra); o mais longo vence — a regressão do contains do seed.
         let hit = lookup_in(&models, "gpt-5.6-terra-2026").expect("match por prefixo");
         assert_eq!(hit.id, "gpt-5.6-terra");
+    }
+
+    /// ADR-047 — o slug do `agy` traz o esforço colado no id
+    /// ("gemini-3.7-flash-high"), e o catálogo publica só a família. É a via
+    /// (b): o pedido ESTENDE o id do catálogo.
+    #[test]
+    fn lookup_tolera_o_sufixo_de_esforco_do_agy() {
+        let models = fixture_models();
+        let hit = lookup_in(&models, "gemini-3.7-flash-high").expect("casa a família");
+        assert_eq!(hit.id, "gemini-3.7-flash");
+        assert_eq!(hit.output, 3.75);
+    }
+
+    /// ADR-047 — pedido mais CURTO que os ids publicados: o Google publica
+    /// -lite (US$ 1,50 out) e -image (US$ 60) sob o mesmo prefixo. Escolher o
+    /// id mais longo aqui era sortear um preço 40x maior; sem unanimidade a
+    /// resposta é "não sei" (cai no SEED, e sem SEED o turno vira tokens sem
+    /// preço no ledger).
+    #[test]
+    fn lookup_por_prefixo_invertido_so_vale_com_precos_unanimes() {
+        let models = fixture_models();
+        assert!(lookup_in(&models, "gemini-3.1-flash").is_none());
+        // dois ids, mesmo preço publicado → não há o que sortear
+        let hit = lookup_in(&models, "gemini-3.1-pro").expect("candidatos unânimes");
+        assert_eq!(hit.output, 12.0);
+        // e o vazio não casa o catálogo inteiro pelo id mais longo
+        assert!(lookup_in(&models, "").is_none());
     }
 
     #[test]

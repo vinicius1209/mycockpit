@@ -259,8 +259,8 @@ export const useFusion = create<FusionState>((set, get) => {
       }
     }
     // Ledger: custo do candidato (disputa é caminho disjunto do chat/missão →
-    // sem dupla contagem). REPLACE por runId colapsa parciais no total final.
-    if (e.type === "result" && e.cost_usd != null) {
+    // sem dupla contagem; sem preço entra NULL, ADR-047). REPLACE por runId.
+    if (e.type === "result") {
       const cand = get().byConv[convId]?.candidates.find((c) => c.id === candId)
       const projectId = useChat.getState().byId[convId]?.projectId
       if (cand && projectId) {

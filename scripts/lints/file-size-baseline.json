@@ -7,7 +7,7 @@
   },
   "arquivos": {
     "App.tsx": 719,
-    "components/chat/ChatPanel.tsx": 1526,
+    "components/chat/ChatPanel.tsx": 1522,
     "components/chat/LexicalComposer.tsx": 907,
     "components/chat/MessageList.tsx": 2782,
     "components/layout/ContextPanel.tsx": 857,
@@ -26,7 +26,7 @@
     "lib/mission.ts": 546,
     "lib/sdd.ts": 510,
     "lib/watchdog.ts": 607,
-    "store/chat.ts": 2646,
+    "store/chat.ts": 2624,
     "store/fusion.ts": 518,
     "store/interactions.ts": 705,
     "store/mission.ts": 1283

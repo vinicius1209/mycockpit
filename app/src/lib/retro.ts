@@ -219,6 +219,17 @@ export interface AgentCross {
   perDelivery: number | null
 }
 
+/** ADR-047 — turnos SEM preço por agent (o `costUsd` do cruzamento acima é só
+ *  o resto). Existe separado porque a linha do agent precisa dizer isso: o
+ *  motor que o app não sabe cobrar apareceria como o mais barato de todos. */
+export function unpricedByAgent(rows: LedgerRow[]): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const r of rows) {
+    if (r.costUsd == null) out.set(r.agent, (out.get(r.agent) ?? 0) + 1)
+  }
+  return out
+}
+
 /** Custo por agente CRUZADO com as entregas do mesmo agente. Sozinho, "o Codex
  *  gastou mais" não decide nada (pode ser volume, não ineficiência); ao lado
  *  das entregas dele, vira pergunta respondível. Agent que só aparece nas

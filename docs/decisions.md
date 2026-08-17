@@ -1562,6 +1562,83 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   regra dependesse do nome do motor, o teste não teria sobrevivido à troca —
   ele sobreviveu, que é a prova de que ela não depende.
 
+### ADR-046 — A fila do composer é do humano; retomada do app não vira mensagem sua ✅
+- **Contexto (16/08/2026, incidente `docs/incidentes/2026-08-16-agy-fila-e-exit1.md`,
+  Defeito 1):** conceder acesso a uma pasta bloqueada NO MEIO de um turno fez o
+  mesmo prompt rodar **duas vezes por inteiro**. Não é ruído de render: os itens
+  `#24` e `#48` da conversa `ec1642c1` têm texto byte a byte idêntico, ids
+  diferentes, 20 chamadas de ferramenta cada e `result` próprio cada. ~2,4M de
+  tokens a mais, num repositório onde o usuário tinha avisado no próprio prompt
+  que havia outro dev mexendo nos arquivos. A cadeia, toda provada contra o
+  banco: banner sem guarda de `running` → `allowBlockedDir` → `handleSend` com
+  turno vivo → `enqueue` na **fila do humano** → drenagem no `finally` →
+  segundo turno completo.
+- **A nuance que decide o conserto: reenviar É o projeto correto.** O gate de
+  diretório entra no `build_command` do **spawn** (`--add-dir`,
+  `src-tauri/src/adapters.rs`), então nenhuma pasta é emendada num processo
+  vivo. Resume nativo não resolve: o `agy` tem `sessionResume` e a usa, e
+  retomar sessão não muda flag. Só um turno NOVO nasce com a pasta. O erro
+  nunca foi reenviar; foi reenviar **com turno vivo** e **pela fila do
+  usuário**. O mecanismo fica.
+- **Decisão 1 — a superfície não oferece o gesto quando ele não cabe.** O
+  `BlockedDirBanner` ganhou a MESMA guarda que o vizinho imediato dele, o
+  `PlanPendingCard`, já tinha (`!running && !finalizing`): a assimetria entre os
+  dois era o bug. Mas o banner não some: com turno em voo ele perde o **botão** e
+  ganha uma linha de prazo ("o acesso às pastas é definido quando o turno começa,
+  então liberar agora não alcança este; dá pra liberar assim que ele terminar").
+  O bloqueio É real e está acontecendo agora, então esconder o aviso seria a
+  outra desonestidade; o que sai é a promessa. O aviso volta a ser acionável
+  sozinho no fim do turno, porque `blockedDir` só é zerado pelo `start` do turno
+  seguinte.
+- **Decisão 2 — retomada de sistema não é mensagem do humano, e a fronteira é o
+  compilador.** `conv.queued` (os chips "Na fila · enviam juntas ao terminar") é
+  lido por UMA superfície e ela é do usuário: o `×` dela chama `removeQueued`,
+  que além de tirar da fila **apaga os blobs dos anexos do disco**. No incidente
+  o usuário podia cancelar a engrenagem do app achando que cancelava algo dele,
+  ou apagar anexo de outra mensagem. Agora existe `lib/sendOrigin.ts`:
+  `OrigemDoEnvio = { autor: "humano" } | { autor: "sistema"; motivo }`, o
+  `enqueue` do store pede um `OrigemHumana` (tipo `Enfileirar`), e
+  `entraNaFilaDoHumano` é **type predicate**, de modo que o `enqueue` só é
+  alcançável dentro do ramo já provado. O `handleSend` perdeu o
+  `fromAutoResume` booleano e os defaults dos dois parâmetros anteriores: quem
+  envia **declara quem é**, ou não compila. Retomada com turno vivo é
+  descartada com aviso honesto (a pasta ESTÁ liberada, e vale no próximo envio).
+- **Decisão 3 — o gate virou UM, e ele tinha quatro cópias.** `handleSend` e
+  `sendFromDesk` (a mesa) tinham cada um dois ramos gêmeos de "turno em voo"
+  (guarda de entrada + re-checagem de corrida pós-preflight, "D2"), todos com
+  `enqueue` cru e nenhum com teste. Viraram `retidoPorTurnoEmVoo`
+  (`lib/sendGate.ts`), com o store REAL sob teste. A superfície da mesa tinha o
+  mesmo buraco latente no ramo D2 e fechou junto.
+- **Decisão 4 — não oferecer `--add-dir` para bloqueio que o `--add-dir` não
+  destrava.** O texto do incidente era `Permission denied for read_file(…).
+  Matches hardcoded system protection boundary rule.`: regra INTERNA do `agy`
+  protegendo o arquivo de configuração dele, que `--dangerously-skip-permissions`
+  e `--add-dir` não contornam (e é bom que não contornem). O `ACCESS_RE` casou
+  pelo genérico "permission denied" e o app gastou 5 minutos executando uma
+  correção impossível. Entrou `HARD_RULE_RE` em `lib/blockedDir.ts`, casando a
+  **frase** ("protection boundary", "system protection", "hard-coded …"), nunca
+  o fornecedor: listar `~/.gemini`/`~/.claude` seria fixar comportamento no
+  domínio de um CLI e envelheceria a cada motor novo. Falso negativo custa um
+  banner a menos (a pasta segue liberável à mão em Configurações); falso
+  positivo custava o turno inteiro de novo.
+- **O que NÃO entrou, de propósito:** uma fila separada "de sistema". Não há
+  retomada interna a enfileirar: o problema desaparece em vez de ganhar
+  infraestrutura. E o `--print-timeout` do Defeito 2 é outra frente (contrato
+  com o CLI, no Rust), não esta.
+- **Prova ao contrário, rodada nas cinco pontas** (o método do §10): revertendo
+  a guarda do resolvedor, 3 casos de `dirGate.test.ts` falham; revertendo só a
+  fronteira da fila, 3 casos (`dirGate` + `sendGate`); revertendo **as duas**, o
+  incidente reaparece inteiro e "o fim do turno não ressuscita o reenvio: o
+  prompt não roda duas vezes" falha com um turno despachado pela drenagem;
+  revertendo a guarda do banner, 1 caso; revertendo o `HARD_RULE_RE`, 2. O
+  payload do `blockedDir.test.ts` é o do item `#31` do banco, não fixture
+  inventada (ADR-016).
+- **Consequência de catraca:** o `allowBlockedDir` saiu do `ChatPanel.tsx` para
+  `lib/dirGate.ts` (é decisão com estado, prazo e caminho de falha, e no
+  componente não tinha teste nenhum) e o arquivo encolheu. O `store/chat.ts`
+  ficou no mesmo lugar: o `set` manual do `blockedDir` virou o `patch` que o
+  próprio store já expõe, e o que sobrou pagou a assinatura nova.
+
 ### ADR-045 — O teto de 5 minutos do `agy` era nosso, por omissão; e o desfecho de erro dele tinha explicação que a gente jogava fora ✅
 - **Contexto (16/08/2026, incidente `docs/incidentes/2026-08-16-agy-fila-e-exit1.md`):**
   o `agy -p` tem `--print-timeout`, com default `5m0s`, e o app **nunca passou
@@ -1615,3 +1692,81 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **Nota de escopo:** este ADR fecha só o Defeito 2 do incidente. O Defeito 1
   (o botão "Liberar e reenviar" disparando envio de usuário com turno em voo,
   que DUPLICOU este mesmo erro) é de outra frente e segue aberto aqui.
+
+### ADR-047 — Consumo sem preço vira LINHA no ledger; o silêncio era o pior dos dois erros ✅
+- **Contexto (16/08/2026, achado lateral do incidente do `agy`, §6):** o banco
+  real do usuário tinha **320 linhas de `claude-code`, 88 de `codex` e ZERO de
+  `agy`** em `turn_costs`. Não era subcontagem: era ausência. A cadeia, conferida
+  ponta a ponta: `pricing.rs` não tinha **nenhuma** linha google, então
+  `estimate()` devolvia `(None, Unknown)`; o adapter do `agy` é honesto por
+  design (`adapters.rs`, "sem tabela não inventa número") e mandava `cost_usd:
+  None`; e os três writers do ledger (`store/chat.ts`, `store/fusion.ts`,
+  `lib/mission.ts`) só gravavam `if (e.cost_usd != null)`. Resultado: a conversa
+  `ec1642c1` queimou **7.350.378 tokens em 5 turnos** (2 deles mortos no timeout
+  de 5 min do ADR-045) e não deixou UM registro. Painel, custo da sessão na
+  faixa e ledger mentiam **por omissão**, que é pior que um zero errado: não
+  havia sinal de que faltava algo.
+- **Decisão 1 — o SEED do `pricing.rs` ganha a família Gemini, com fonte e
+  data.** Sete linhas (`gemini-3.7-flash`, `3.6-flash`, `3.5-flash` e
+  `-lite`, `3.1-flash-lite`, `3.1-pro`, `3-flash`) conferidas contra
+  `models.dev/api.json` em 16/08/2026 — a MESMA fonte do catálogo dinâmico
+  (`catalog.rs`), não um número de memória. O turno `#69` do incidente passa a
+  custar **US$ 0,4229** (fixture real no teste). O SEED existe porque o catálogo
+  vivo é cache: o `gemini-3.7-flash` saiu em 13/08 e o catálogo do usuário era
+  de 12/08, ou seja, o modelo em uso era exatamente o que faltava. O sufixo de
+  esforço do `agy` (`-high`/`-medium`/`-low`) é absorvido pelo `contains` da
+  tabela: preço é por MODELO, e nenhum código genérico precisou saber que este
+  motor embute esforço no id.
+- **Decisão 2 — `cost_usd == None` deixa de significar "não houve consumo".**
+  Era a escolha ruim que o brief mandou reavaliar, e ela cai: a linha entra com
+  **`cost_usd` NULL e os tokens reais**. Quem decide o que vira linha passou a
+  ser UM lugar, o `recordTurnCost` (`lib/db.ts`), e não os três call sites — a
+  régua é `worthLedgerRow` (`lib/usage.ts`, puro e testado): tem preço OU tem
+  token, entra; sem preço e sem token nenhum, não (linha que não descreve
+  consumo só engordaria contagem). É a doutrina do ADR-040 aplicada ao ledger:
+  "não sei o preço" e "US$ 0,00" são estados diferentes, e o app não pode
+  escolher o segundo em silêncio.
+- **Decisão 3 — a UI passa a dizer o que ficou de fora, em vez de somar zero.**
+  `SUM(cost_usd)` ignora NULL, então nenhum total mudou de valor; o que muda é
+  que agora existe consumo fora dele, e isso é DITO: (a) `UnpricedNote`
+  (componente único, Painel + Auditoria) imprime "Fora do total: N turnos com X
+  tokens e preço desconhecido"; (b) no ranking por agente, motor sem preço
+  nenhum mostra **"sem preço"**, nunca "US$ 0,00" — senão o motor que o app não
+  sabe cobrar apareceria como o mais barato de todos; (c) a faixa inferior, que
+  simplesmente **não desenhava nada** numa sessão inteira sem preço, passa a
+  mostrar `sessão · sem preço` (o `absoluteTone` mantém o cinza do §2: valor
+  absoluto sem teto do usuário não sobe de tom); (d) `listCardCosts` devolve
+  `total: null` (era `?? 0`) quando nenhuma linha da conversa tem preço, o que
+  faz a entrega ser gravada com `costUsd: null` em vez de zero medido.
+- **Decisão 4 — o catálogo para de sortear preço quando o pedido é mais CURTO
+  que os ids publicados.** `catalog.rs` casava por prefixo nas duas direções com
+  "o id mais longo vence"; no espaço de nomes do Google isso é uma roleta:
+  `gemini-3.1-flash` tem `-lite` (US$ 1,50 out) e `-image` (US$ 60) publicados.
+  Agora a direção "pedido estende o id" continua valendo (é ela que absorve o
+  sufixo de esforço), e a direção inversa só responde se os candidatos NÃO
+  discordarem de preço. Sem unanimidade é `None` → SEED → e, se nem ele souber,
+  o turno entra como tokens sem preço. Na dúvida, nunca um dólar inventado.
+- **Consequência 1 — nenhuma média nova mentindo.** Varri os consumidores: não
+  existe `AVG` no repo, e nenhuma divisão usa CONTAGEM de linhas de `turn_costs`
+  como denominador (`perDay` divide pela janela, `perDelivery` por
+  `deliveries`). O único `COUNT(*)` sobre a tabela é o do `CostMaintenance`, e
+  ele filtra `usage_basis IS NULL` (linhas legadas) — as linhas novas nascem
+  carimbadas `delta` e ficam de fora. Nenhum caminho produz `NaN`: todos os
+  divisores já eram guardados.
+- **Consequência 2 — a reconstrução do ADR-033 fica correta com linha sem
+  preço.** `planUsageRecompute` lia `(costUsd ?? 0) < prev` como "a thread
+  reiniciou" e devolvia os tokens da linha INTEIROS ao turno; agora custo só
+  depõe quando os dois lados têm preço, e quando a linha anterior não tem, o
+  delta de custo sai `null` em vez de cobrar o acumulado de novo (mesma escolha
+  do ADR-033: errar pra baixo, nunca pra cima). Caminho hoje inalcançável (só
+  toca linhas legadas), corrigido porque estava errado.
+- **Limites conhecidos, todos declarados:** (a) `models.dev` publica `cost.tiers`
+  para o Gemini Pro (acima de ~200k de contexto o preço DOBRA) e nem o catálogo
+  nem o SEED leem tiers — a estimativa erra **pra baixo** em turno de contexto
+  longo; (b) `gemini-3.1-pro` usa o preço publicado sob o id
+  `gemini-3.1-pro-preview`, o único com preço no catálogo; (c) modelos que o
+  `agy` serve fora da família Gemini (`gpt-oss-120b-*`) seguem sem preço, e
+  agora isso APARECE em vez de sumir; (d) `fmtCost` continua sem "~" para
+  `cost_source: "unknown"` (com custo nulo ele devolve "" e nada é renderizado,
+  então não há mentira em pé) — `fmtMissionCost` e a faixa já tratam `unknown`
+  como estimado.

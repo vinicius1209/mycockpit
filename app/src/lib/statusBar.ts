@@ -61,17 +61,42 @@ export interface StatusItem {
  * §2. Nenhum limiar é inventado aqui.
  */
 export function statusCostItem(
-  cost: { total: number; estimated: boolean; turns: number },
+  cost: {
+    total: number
+    estimated: boolean
+    turns: number
+    /** ADR-047: turnos com consumo medido e preço desconhecido. */
+    unpriced?: number
+  },
   limit: number | null,
 ): StatusItem | null {
-  if (cost.turns < 2 || cost.total <= 0) return null
+  if (cost.turns < 2) return null
+  const unpriced = cost.unpriced ?? 0
+  // Sessão inteira sem preço: havia consumo e a faixa não dizia NADA (o
+  // modelo fora da tabela de preço apagava a zona). Agora ela diz o estado
+  // real, sem inventar dólar (ADR-047).
+  if (cost.total <= 0) {
+    if (unpriced <= 0) return null
+    return {
+      kind: "cost",
+      label: "sessão",
+      text: "sem preço",
+      title:
+        "Esta sessão consumiu tokens em modelo fora da tabela de preço. O consumo está no fio e no ledger; o valor em US$ o app não sabe, e não inventa.",
+      tone: absoluteTone(0, limit),
+    }
+  }
   return {
     kind: "cost",
     label: "sessão",
     text: fmtCost(cost.total, cost.estimated ? "estimated" : "reported"),
-    title: limit
-      ? `Custo acumulado desta sessão (soma dos turnos), contra o seu teto de ${fmtCost(limit)}`
-      : "Custo acumulado desta sessão (soma dos turnos). Defina um teto em Configurações ▸ Uso e custo pra ele avisar.",
+    title:
+      (limit
+        ? `Custo acumulado desta sessão (soma dos turnos), contra o seu teto de ${fmtCost(limit)}`
+        : "Custo acumulado desta sessão (soma dos turnos). Defina um teto em Configurações ▸ Uso e custo pra ele avisar.") +
+      (unpriced > 0
+        ? `. Fora desta soma: ${unpriced} turno${unpriced === 1 ? "" : "s"} com preço desconhecido`
+        : ""),
     tone: absoluteTone(cost.total, limit),
   }
 }

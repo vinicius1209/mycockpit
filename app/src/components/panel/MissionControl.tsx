@@ -46,7 +46,7 @@ import {
   type LedgerEntry,
   type RecentDelivery,
 } from "@/lib/db"
-import { ledgerTokens, windowRows } from "@/lib/panel"
+import { ledgerTokens, unpricedSpend, windowRows } from "@/lib/panel"
 import {
   agentCross,
   attributedShare,
@@ -55,12 +55,14 @@ import {
   perDay,
   perDelivery,
   showsPerDelivery,
+  unpricedByAgent,
   type FusionOutcome,
 } from "@/lib/retro"
 import { updateAvailable } from "@/lib/detect"
 import { fmtAgo, fmtCost, fmtTokens } from "@/lib/format"
 import { CostAudit } from "@/components/panel/CostAudit"
 import { CostHeatmap } from "@/components/panel/CostHeatmap"
+import { UnpricedNote } from "@/components/panel/UnpricedNote"
 import { SectionTitle } from "@/components/panel/SectionTitle"
 import { cn } from "@/lib/utils"
 
@@ -253,8 +255,14 @@ export function MissionControl() {
       tokens: ledgerTokens(rows),
       perDay: perDay(total, win),
       perDelivery: perDelivery(total, dels.length),
+      // ADR-047: o que consumiu tokens e não tem preço. Enquanto for > 0, o
+      // hero e TODO derivado desta tela são soma parcial, e a tela diz isso.
+      unpriced: unpricedSpend(rows),
+      unpricedByAgent: unpricedByAgent(rows),
     }
   }, [ledger, deliveries, fusions, win])
+
+  const semPreco = (agent: string) => view.unpricedByAgent.get(agent) ?? 0
 
   const projectNames = useMemo(
     () => new Map(projects.map((p) => [p.id, p.name])),
@@ -342,6 +350,8 @@ export function MissionControl() {
                 <span className="label-mono pb-1">em {win} dias</span>
               </div>
               <p className="mt-2 text-[13px] text-muted-foreground">{subline}</p>
+              {/* o hero é o que o app SABE cobrar; o resto, ADR-047: */}
+              <UnpricedNote spend={view.unpriced} className="mt-1" />
             </section>
 
             {/* 2. TRIO DERIVADO — cada um com o denominador à vista. O do meio
@@ -423,12 +433,18 @@ export function MissionControl() {
                         {agentShort(a.agent)}
                       </span>
                       <span className="shrink-0 font-mono text-[12px] text-muted-foreground tabular-nums">
-                        {fmtCost(a.costUsd)}
+                        {/* ADR-047: sem preço nenhum, o motor não desce a
+                            US$ 0,00 (viraria o mais barato do ranking). */}
+                        {a.costUsd <= 0 && semPreco(a.agent) > 0
+                          ? "sem preço"
+                          : fmtCost(a.costUsd)}
                       </span>
                       <span className="w-[210px] shrink-0 text-right font-mono text-[12px] text-faint tabular-nums">
-                        {a.perDelivery != null
-                          ? `${a.deliveries} entrega${a.deliveries === 1 ? "" : "s"} · ${fmtCost(a.perDelivery)} cada`
-                          : "sem entrega registrada"}
+                        {a.costUsd <= 0 && semPreco(a.agent) > 0
+                          ? `${semPreco(a.agent)} turno${semPreco(a.agent) === 1 ? "" : "s"} sem preço`
+                          : a.perDelivery != null
+                            ? `${a.deliveries} entrega${a.deliveries === 1 ? "" : "s"} · ${fmtCost(a.perDelivery)} cada`
+                            : "sem entrega registrada"}
                       </span>
                     </div>
                   ))}

@@ -323,10 +323,10 @@ export interface PhaseResult {
   budgetExceeded?: boolean
 }
 
-/** MH2.1 — campos de custo de UM evento result (o que o ledger precisa).
- *  Espelha o subset do AgentEvent result que chat/fusion já gravam. */
+/** MH2.1 — campos de custo de UM result (o subset do AgentEvent que o ledger
+ *  precisa). `costUsd` null = consumiu sem preço conhecido (ADR-047), nunca 0. */
 export interface PhaseCostEvent {
-  costUsd: number
+  costUsd: number | null
   costSource: CostSource | undefined
   input: number
   output: number
@@ -412,16 +412,16 @@ export async function runPhase(args: RunPhaseArgs): Promise<PhaseResult> {
         ...reduceItems(acc, e, { agent: args.agent, reqModel: args.model }),
       }
       if (e.type === "result") {
-        if (e.cost_usd != null) {
-          attemptCost = e.cost_usd
-          args.onCost?.(attempt, {
-            costUsd: e.cost_usd,
-            costSource: e.cost_source,
-            input: e.input_tokens,
-            output: e.output_tokens,
-            cache: e.cache_read + e.cache_creation,
-          })
-        }
+        // O TETO só conhece dinheiro (sem preço `attemptCost` não anda); o
+        // LEDGER conhece consumo, e a fase entra mesmo sem preço (ADR-047).
+        if (e.cost_usd != null) attemptCost = e.cost_usd
+        args.onCost?.(attempt, {
+          costUsd: e.cost_usd ?? null,
+          costSource: e.cost_source,
+          input: e.input_tokens,
+          output: e.output_tokens,
+          cache: e.cache_read + e.cache_creation,
+        })
         costSource = e.cost_source
         resultOk = e.ok
         // MH2.2 — corte intra-fase: o parcial cruzou o teto → cancela o run
