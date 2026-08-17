@@ -12,6 +12,7 @@
     --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
     --popover:#ffffff; --secondary:#f4f4f2; --muted-foreground:#5c6166;
     --accent:#f1f1ef; --faint:#8a9099;
+    --sel:rgba(0,0,0,.055); --sel-hover:rgba(0,0,0,.028);
     --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.14);
     --brass:#a9742b; --brass-soft:rgba(169,116,43,.12); --brass-fg:#fbf6ee;
     --st-idle:#8a9099; --st-running:#2f8fbf; --st-queued:#c1861f;
@@ -26,6 +27,7 @@
     --background:#0a0b0d; --rail:#0c0d10; --foreground:#e7e8ea; --card:#141619;
     --popover:#191c20; --secondary:#191c20; --muted-foreground:#9aa0a7;
     --accent:#1e2126; --faint:#687078;
+    --sel:rgba(255,255,255,.065); --sel-hover:rgba(255,255,255,.032);
     --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13);
     --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#1a1306;
     --st-idle:#687078; --st-running:#5bb8e8; --st-queued:#d99138;
@@ -70,14 +72,33 @@
   .winbar span{font-size:12px;color:var(--muted-foreground);margin-left:6px}
 
   .app{display:grid;grid-template-columns:186px 1fr;min-height:520px}
-  .rail{background:var(--rail);border-right:1px solid var(--border);padding:12px 10px;
+  /* A sidebar nao tem borda: o VAO e' o divisor (ADR-043 fase 2; no app o
+     `Sidebar.tsx` e' so `bg-rail`). */
+  .rail{background:var(--rail);padding:12px 10px;
     display:flex;flex-direction:column;gap:2px}
   .rail .grp{margin:10px 4px 4px}
-  .rail .it{font-size:12px;color:var(--muted-foreground);padding:5px 8px;border-radius:6px;
+  .rail .it{position:relative;font-size:12px;color:var(--muted-foreground);
+    padding:5px 22px 5px 14px;border-radius:6px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .rail .it.on{background:var(--accent);color:var(--foreground)}
-  .rail .it .d{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--st-running);
-    margin-right:7px;vertical-align:middle}
+  .rail .it:hover{background:var(--sel-hover)}
+  /* SELECAO NAO E' COR (ADR-043): preenchimento neutro `--sel` + peso 500 +
+     pip neutro de 3px no gutter (x=5). `--accent` e' o token de HOVER, nao o
+     de selecao, e era ele que estava aqui. */
+  .rail .it.on{background:var(--sel);color:var(--foreground);font-weight:500}
+  .rail .it.on::before{content:"";position:absolute;left:5px;top:50%;width:3px;height:3px;
+    border-radius:50%;background:color-mix(in srgb,var(--foreground) 80%,transparent);
+    transform:translateY(-50%)}
+  /* Estado mora no SLOT DIREITO, nunca no gutter (ADR-043 decisao 2), e
+     "rodando" e' o circulo do build 205 (`.conv-spin`), nao o ponto azul
+     parado que a decisao 3 rejeitou. */
+  .rail .it .spin{position:absolute;right:6px;top:50%;margin-top:-5.5px;
+    width:11px;height:11px;border-radius:999px;
+    border:1.5px solid color-mix(in srgb,var(--st-running) 26%,transparent);
+    border-top-color:var(--st-running);animation:conv-spin .9s linear infinite}
+  @keyframes conv-spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){
+    .rail .it .spin{animation:none;width:6px;height:6px;border-color:transparent;
+      background:var(--st-running);opacity:.85}}
 
   .col{display:flex;flex-direction:column;min-width:0;position:relative}
 
@@ -160,8 +181,10 @@
   .menu .hd{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
     padding:6px 8px 4px}
   .menu .row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;font-size:13px;text-align:left;width:100%}
-  .menu .row:hover{background:var(--accent)}
-  .menu .row.sel{background:var(--accent)}
+  /* Hover e selecao com DUAS opacidades do mesmo neutro (ADR-043); antes os
+     dois eram `--accent`, ou seja, o mesmo pixel pras duas perguntas. */
+  .menu .row:hover{background:var(--sel-hover)}
+  .menu .row.sel{background:var(--sel);font-weight:500}
   .menu .row .d{font-size:11px;color:var(--faint);margin-left:auto;font-family:var(--mono)}
   .menu .sep{height:1px;background:var(--border);margin:4px 0}
   .menu p{margin:0;padding:4px 8px 6px;font-size:11px;line-height:1.45;color:var(--muted-foreground)}
@@ -177,19 +200,26 @@
      Texto (título + descrição) começa todo no MESMO x, alinhado à esquerda; a
      coluna da direita é o INDICADOR DE ESTADO, e a FORMA dele diz a semântica:
      ✓ = escolha exclusiva (um dos três modos) · interruptor = modificador on/off.
-     Fundo é HOVER e só hover (ponteiro está aqui), nunca seleção: as duas coisas
-     precisavam de lugares diferentes pra não se confundirem. */
+     Escolhido = preenchimento `--sel` + peso 500; hover = `--sel-hover`, o mesmo
+     neutro em metade da opacidade (ADR-043). Nenhum dos dois é tinta de status. */
   .pmenu{width:268px;background:var(--popover);flex:0 0 auto;
     border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-pop);padding:5px}
   .pmenu .row{display:flex;align-items:flex-start;gap:10px;padding:7px 9px;border-radius:8px;
     width:100%;text-align:left}
-  .pmenu .row:hover{background:var(--accent)}
+  .pmenu .row:hover{background:var(--sel-hover)}
+  /* ADR-043: escolhido = preenchimento neutro `--sel` + peso 500. Hover e'
+     `--sel-hover` (~metade da opacidade: hover e' convite, selecao e' fato),
+     entao os dois nunca se confundem sem precisar de tinta. */
+  .pmenu .row.sel{background:var(--sel)}
+  .pmenu .row.sel .tx b{font-weight:500}
   .pmenu .tx{min-width:0;flex:1 1 auto;text-align:left}
-  .pmenu .tx b{display:flex;align-items:center;gap:5px;font:500 13px var(--sans);color:var(--foreground)}
+  .pmenu .tx b{display:flex;align-items:center;gap:5px;font:400 13px var(--sans);color:var(--foreground)}
   .pmenu .tx i{display:block;font-style:normal;font-size:11px;color:var(--muted-foreground);
     line-height:1.45;margin-top:2px}
   .pmenu .row.dang .tx b{color:var(--st-queued)}
-  .pmenu .mk{width:14px;height:14px;flex:0 0 auto;margin-top:3px;color:var(--brass)}
+  /* O visto e' a FORMA que diz "escolha exclusiva"; a cor dele e' neutra.
+     Brass marcando item escolhido e' exatamente o que o ADR-043 proibiu. */
+  .pmenu .mk{width:14px;height:14px;flex:0 0 auto;margin-top:3px;color:var(--foreground)}
   .pmenu .mk.off{visibility:hidden}
   .pmenu .sw{width:22px;height:13px;border-radius:999px;flex:0 0 auto;margin-top:3px;
     background:var(--border-strong);position:relative}
@@ -290,7 +320,7 @@
     <div class="app">
       <aside class="rail">
         <div class="grp label-mono">frota</div>
-        <div class="it on"><span class="d"></span>Despoluição do fio</div>
+        <div class="it on">Despoluição do fio<span class="spin"></span></div>
         <div class="it">Escala tipográfica</div>
         <div class="it">Catraca de tamanho</div>
         <div class="grp label-mono">atlas-commerce</div>
@@ -367,7 +397,7 @@
               <button class="chip hot" data-st="erro" title="O turno falhou, então dá para trocar o modelo e enviar de novo">
                 <svg width="12" height="12"><use href="#i-lock"/></svg>
                 <span class="nm">Claude Code ·</span>
-                <span style="color:var(--brass)">Opus 5</span>
+                <span style="font-weight:500">Opus 5</span>
                 <svg class="chev" width="13" height="13"><use href="#i-chev"/></svg></button>
 
               <span class="gap"></span>
@@ -427,7 +457,7 @@
       <button class="row"><span class="tx"><b>Só lê</b>
         <i>Lê arquivos e relata. Não escreve nem executa.</i></span>
         <svg class="mk off" viewBox="0 0 24 24"><use href="#i-check"/></svg></button>
-      <button class="row"><span class="tx"><b>Pede antes de mudar</b>
+      <button class="row sel"><span class="tx"><b>Pede antes de mudar</b>
         <i>Pergunta antes de escrever arquivo ou rodar comando.</i></span>
         <svg class="mk" viewBox="0 0 24 24"><use href="#i-check"/></svg></button>
       <button class="row dang"><span class="tx">
@@ -446,8 +476,9 @@
       <h3>O menu do controle de permissão<span class="nt">3</span></h3>
       <p>Uma coluna de leitura só: título e descrição começam no mesmo x, e o indicador de estado
       fica na direita, com a <b>forma dizendo a semântica</b>. ✓ é escolha exclusiva (um dos três
-      modos); o interruptor é o modificador, que liga junto com qualquer modo. O fundo é hover, e só
-      hover, então "onde está meu ponteiro" e "qual está valendo" nunca disputam o mesmo pixel.</p>
+      modos); o interruptor é o modificador, que liga junto com qualquer modo. O escolhido ganha preenchimento neutro (<code>--sel</code>) e peso 500; o hover é o mesmo
+      neutro em metade da opacidade (<code>--sel-hover</code>), porque hover é convite e seleção é
+      fato. Nenhum dos dois é tinta de status (ADR-043).</p>
       <p>É aqui que a honestidade cabe. As três opções ganham uma linha de efeito cada; o "Plano
       antes de executar" desce pra baixo do divisor porque é modificador do próximo turno, não um
       quarto modo (tratá-lo como aba irmã era parte da confusão); e o rodapé diz o escopo real:
