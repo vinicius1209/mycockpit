@@ -64,7 +64,7 @@ function UsageBar({ pct, wide = false }: { pct: number; wide?: boolean }) {
       aria-hidden
       className={cn(
         "relative h-1.5 shrink-0 overflow-hidden rounded-full bg-secondary/80",
-        wide ? "w-24" : "w-8",
+        wide ? "w-16" : "w-8",
       )}
     >
       <span
@@ -90,14 +90,6 @@ function ProviderCard({
   now: number
 }) {
   const usable = snap != null && snapshotUsable(snap, failure, now)
-  const worstPct =
-    usable && snap.windows.length > 0
-      ? Math.max(...snap.windows.map((w) => w.usedPercent))
-      : 0
-  // Régua ÚNICA (lib/meter, via usageTone): cinza <60 · âmbar 60-80 · vermelho
-  // 80+. Não se inventa limiar local — dois medidores discordando dentro do
-  // mesmo popover foi o que o §2 chamou de "duas réguas para o mesmo fato".
-  const tomPior = usable && snap.windows.length > 0 ? usageTone(worstPct) : "ok"
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border/40 bg-secondary/25 p-2.5 transition-colors hover:bg-secondary/35">
@@ -115,35 +107,11 @@ function ProviderCard({
             </span>
           ) : null}
         </div>
-        {/* Selo SÓ quando pede atenção. O "Disponível" em verde saiu: era
-            estado ambiente permanente em cor de status, que o §9 item 4 condena
-            e que foi removido do stepper do SDD no mesmo dia em que entrou
-            aqui. Provider dentro do normal não precisa de selo — a barra e o
-            percentual já dizem, e o que não é decisão recua.
-            Os limiares vêm da RÉGUA ÚNICA do app (lib/meter, via usageTone):
-            cinza <60 · âmbar 60-80 · vermelho 80+. O código original inventava
-            80/100 próprios, o que criava um segundo medidor discordando do
-            primeiro dentro do mesmo popover. */}
-        <div className="flex shrink-0 items-center gap-1.5">
-          {tomPior === "danger" ? (
-            <span className="rounded bg-st-error/15 px-1.5 py-0.5 text-[11px] font-semibold text-st-error">
-              No limite
-            </span>
-          ) : tomPior === "warn" ? (
-            <span className="rounded bg-st-warning/15 px-1.5 py-0.5 text-[11px] font-semibold text-st-warning">
-              Aquecendo
-            </span>
-          ) : null}
-          {/* PROCEDÊNCIA + idade. O `sourceLabel` tinha sido removido, e ele é
-              metade da honestidade do medidor: "de onde veio o número que está
-              na tela" (leitura da conta × statusline × leitura local). Sem ele,
-              um número de carona do terminal parece leitura oficial da conta. */}
-          {snap && (
-            <span className="text-[11px] text-muted-foreground/60">
-              {sourceLabel(snap.source)} · {fmtAge(snap.fetchedAt, now)}
-            </span>
-          )}
-        </div>
+        {snap && (
+          <span className="shrink-0 text-[11px] text-muted-foreground/60">
+            {sourceLabel(snap.source)} · {fmtAge(snap.fetchedAt, now)}
+          </span>
+        )}
       </div>
 
       {usable && snap.windows.length > 0 && (
@@ -151,18 +119,14 @@ function ProviderCard({
           {snap.windows.map((w) => {
             const resetRel = fmtResetIn(w.resetsAt, now)
             const resetAbs = fmtResetAbsolute(w.resetsAt, now)
+            const fullResetTooltip = resetRel
+              ? `${resetRel}${resetAbs ? ` (${resetAbs})` : ""}`
+              : undefined
             return (
               <div key={w.id} className="flex items-center gap-2 text-[11px]">
-                {/* O rótulo carrega a janela E, quando o provider tem pools
-                    separados, de QUEM ela é ("7 dias · Gemini" × "7 dias ·
-                    Claude and GPT" no agy; "7 dias · Fable" no claude). Com
-                    64px nenhum desses cabia e os dois pools ficavam
-                    indistinguíveis, que é justamente a mentira que o rótulo
-                    existe pra evitar. O `title` fica como rede pro caso de
-                    ainda truncar. */}
                 <span
                   title={w.label}
-                  className="w-28 shrink-0 truncate font-medium text-muted-foreground"
+                  className="w-36 shrink-0 truncate font-medium text-muted-foreground"
                 >
                   {w.label}
                 </span>
@@ -176,10 +140,10 @@ function ProviderCard({
                   {fmtPct(w.usedPercent)}
                 </span>
                 <span
-                  title={resetRel ? `${resetRel}${resetAbs ? ` (${resetAbs})` : ""}` : undefined}
-                  className="ml-auto shrink-0 font-mono text-muted-foreground/75 text-right"
+                  title={fullResetTooltip}
+                  className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground/75 text-right"
                 >
-                  {resetRel ? `${resetRel}${resetAbs ? ` (${resetAbs})` : ""}` : ""}
+                  {resetRel ?? ""}
                 </span>
               </div>
             )
@@ -292,7 +256,7 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
         side={compact ? "top" : "bottom"}
         align={compact ? "start" : "end"}
         sideOffset={8}
-        className="z-[120] w-[430px] p-2.5 space-y-2"
+        className="z-[120] w-[460px] p-3 space-y-2.5"
       >
         <div className="flex items-center justify-between px-1 pb-1 border-b border-border/40">
           <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
@@ -353,8 +317,7 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
 
         <div className="flex items-center justify-between px-1 pt-1 text-[11px] text-muted-foreground/60 border-t border-border/30">
           <span>Medição de carona & poll (sem custo de quota)</span>
-          <span>·</span>
-          <span>Atualização auto ~15 min</span>
+          <span>Auto ~15 min</span>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
