@@ -600,7 +600,7 @@ async fn fetch_agy_print(agent: &str) -> Result<UsageSnapshot, UsageFetchError> 
         let corpo = serde_json::from_str::<Value>(&stdout).ok();
         let motivo = corpo
             .as_ref()
-            .and_then(|v| agy_error_text(v))
+            .and_then(crate::adapters::agy_result_error)
             .or_else(|| {
                 let e = String::from_utf8_lossy(&out.stderr).trim().to_string();
                 (!e.is_empty()).then_some(e)
@@ -612,7 +612,7 @@ async fn fetch_agy_print(agent: &str) -> Result<UsageSnapshot, UsageFetchError> 
     }
     let payload: Value = serde_json::from_str(&stdout)
         .map_err(|e| UsageFetchError::new("protocol", format!("resposta não era JSON: {e}")))?;
-    if let Some(motivo) = agy_error_text(&payload) {
+    if let Some(motivo) = crate::adapters::agy_result_error(&payload) {
         return Err(UsageFetchError::new(classify_failure(&motivo), motivo));
     }
     let windows = parse_agy_usage(&payload);
@@ -633,26 +633,6 @@ async fn fetch_agy_print(agent: &str) -> Result<UsageSnapshot, UsageFetchError> 
         plan_type: None,
         fetched_at: now_ms(),
     })
-}
-
-/// A explicação do PRÓPRIO agy num desfecho de erro do print mode: `error`
-/// primeiro (é onde a razão mora — "timeout waiting for response", medido
-/// 16/08/2026), `response` como reserva. `status` que não é ERROR não tem
-/// motivo a extrair.
-pub fn agy_error_text(payload: &Value) -> Option<String> {
-    if payload.get("status").and_then(|x| x.as_str()) != Some("ERROR") {
-        return None;
-    }
-    ["error", "response"]
-        .iter()
-        .find_map(|k| {
-            payload
-                .get(*k)
-                .and_then(|x| x.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-        })
-        .map(str::to_string)
 }
 
 // ---------------------------------------------------------------------------
@@ -893,18 +873,22 @@ mod tests {
         // `error` — o campo que o relatório do incidente não conhecia.
         assert_eq!(erro.get("response").unwrap().as_str(), Some(""));
         assert_eq!(
-            agy_error_text(&erro).as_deref(),
+            crate::adapters::agy_result_error(&erro).as_deref(),
             Some("timeout waiting for response")
         );
         // SUCCESS não tem motivo a extrair.
         let ok: Value = serde_json::from_str(FIXTURE_AGY_USAGE).unwrap();
-        assert_eq!(agy_error_text(&ok), None);
+        assert_eq!(crate::adapters::agy_result_error(&ok), None);
         // ERROR sem nenhum dos dois campos: None honesto, sem frase inventada.
-        assert_eq!(agy_error_text(&json!({ "status": "ERROR" })), None);
+        assert_eq!(
+            crate::adapters::agy_result_error(&json!({ "status": "ERROR" })),
+            None
+        );
         // e o `response` serve de reserva quando o `error` não vem.
         assert_eq!(
-            agy_error_text(&json!({ "status": "ERROR", "response": "sem crédito" })).as_deref(),
-            Some("sem crédito")
+            crate::adapters::agy_result_error(&json!({ "status": "ERROR", "response": "x" }))
+                .as_deref(),
+            Some("x")
         );
     }
 

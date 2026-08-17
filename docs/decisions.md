@@ -1561,3 +1561,57 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   vírgula; mudou o exemplo, que passou pro `opencode` (não integrado). Se a
   regra dependesse do nome do motor, o teste não teria sobrevivido à troca —
   ele sobreviveu, que é a prova de que ela não depende.
+
+### ADR-045 — O teto de 5 minutos do `agy` era nosso, por omissão; e o desfecho de erro dele tinha explicação que a gente jogava fora ✅
+- **Contexto (16/08/2026, incidente `docs/incidentes/2026-08-16-agy-fila-e-exit1.md`):**
+  o `agy -p` tem `--print-timeout`, com default `5m0s`, e o app **nunca passou
+  a flag**. A única menção dela no repo era um comentário nosso em
+  `adapters.rs` tratando a consequência cosmética ("EOF sem `result`"). A
+  correlação na conversa do incidente, n=5: 113s ✅ · 158s ✅ · **305s ❌** ·
+  **304s ❌** · 257s ✅. Tudo acima de 300.000 ms morreu com exit 1, stderr
+  VAZIO e ~4,2M de tokens cobrados; nada abaixo morreu.
+- **Decisão 1 — passar `--print-timeout 60m`, e dizer alto que isso NÃO é uma
+  promessa de duração.** O app não promete teto de duração em lugar nenhum, e
+  a régua de "travou" continua sendo o **watchdog de silêncio** (10 min sem
+  item novo), que foi ensinado de propósito a não confundir trabalho longo com
+  travamento — missões rodam fases de 15 min de rotina. O teto aqui é só rede
+  anti-zumbi: alto o bastante pra nunca ser o gate normal, existente o
+  bastante pra que um `agy` de fato pendurado não vire processo eterno.
+- **Decisão 2 — a sintaxe foi TESTADA, não deduzida.** O relatório marcava
+  `60m` como não verificado. Verificado: `--print-timeout 60m` é aceito (exit
+  0), e `--print-timeout 60banana` é **recusado no parse** com exit 2 e
+  `unknown unit "banana"` (é `time.Duration` do Go). Isso importa mais do que
+  parece: valor torto aqui falha barulhento no ato, nunca degrada em silêncio
+  de volta pros 5 minutos.
+- **Decisão 3 — o `result` de erro passa a falar, e o campo certo não era o do
+  relatório.** O `map_result` do agy descartava o `response` com um raciocínio
+  válido só para `SUCCESS` (é a narração colada na resposta, e o fio já recebeu
+  o texto pelos steps). Para `ERROR` isso jogava fora a última coisa que o CLI
+  tinha a dizer. **O buraco de prova §5.1 do incidente está fechado, e o
+  relatório errou o alvo por metade:** forçando `--print-timeout 2s` num turno
+  real, o `response` do ERROR vem **vazio mesmo** — mas existe um campo irmão
+  que o relatório não conhecia, `error: "timeout waiting for response"`. O
+  extrator lê `error` primeiro e `response` como reserva; ERROR sem nenhum dos
+  dois devolve `None` honesto em vez de frase fabricada.
+- **Decisão 4 — nenhuma infra nova pro exit code genérico.** O relatório
+  propunha marcar `Result { ok: false }` como incidente terminal no runner pra
+  matar o "saiu com código 1" que vem por cima. Não foi preciso: o construtor
+  de incidente do fio (`messageNodes.ts`, `isGenericExitError`) **já** absorve
+  a frase de exit code quando o cluster tem uma causa real, e passa a mostrar a
+  razão do CLI no lugar dela — o mecanismo existia e estava esperando alguém
+  preencher o `text`. Fica registrado que o `agent.rs` não foi tocado, e por quê.
+- **Decisão 5 — `--log-file` NÃO entra.** Era a outra coisa que "tínhamos e
+  jogávamos fora". Com a Decisão 3, a explicação chega pelo canal estruturado
+  que já lemos; um arquivo de log nosso adicionaria ciclo de vida (onde grava,
+  quem limpa, quanto cresce) pra resolver um problema que deixou de existir.
+  Se aparecer falha do `agy` sem `error` e sem stderr, aí ele vira a próxima
+  peça — com um caso concreto na mão, não por precaução.
+- **Consequência — a mesma classe de bug NÃO está em pé nos outros motores, e
+  agora isso é teste.** `claude --help` (2.1.220) e `codex exec --help` (0.147)
+  não expõem flag de timeout nenhuma (o único teto do claude é
+  `--max-budget-usd`, que é dinheiro, não tempo). Conferido nesta máquina em
+  16/08/2026 e travado em `so_o_agy_tem_teto_de_duracao_a_desarmar`: se um
+  deles ganhar teto de duração amanhã, é esse teste que fica errado primeiro.
+- **Nota de escopo:** este ADR fecha só o Defeito 2 do incidente. O Defeito 1
+  (o botão "Liberar e reenviar" disparando envio de usuário com turno em voo,
+  que DUPLICOU este mesmo erro) é de outra frente e segue aberto aqui.

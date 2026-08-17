@@ -2095,6 +2095,36 @@ pub struct AgyAdapter {
     evidence: Option<crate::evidence::EvidenceSink>,
 }
 
+/// A explicação do PRÓPRIO agy num `result` de `status: ERROR`: `error`
+/// primeiro (é onde a razão mora), `response` como reserva.
+///
+/// Medido em 16/08/2026, forçando `--print-timeout 2s` num turno real: o
+/// `response` do ERROR vem VAZIO e o campo irmão `error` traz
+/// `"timeout waiting for response"` — com stderr vazio e exit 1. É o buraco de
+/// prova §5.1 do incidente 2026-08-16 fechado: a explicação existia, e num
+/// campo que o relatório não conhecia.
+///
+/// Mora aqui (e não no fetcher da janela de uso, que também a usa) porque o
+/// envelope `result` é o mesmo nos dois modos de saída do print — `json` e
+/// `stream-json` — e o dono do contrato de stream do agy é este adapter.
+/// `status` diferente de ERROR não tem motivo a extrair, e ERROR sem nenhum
+/// dos dois campos devolve `None` honesto em vez de frase fabricada.
+pub fn agy_result_error(result: &serde_json::Value) -> Option<String> {
+    if result.get("status").and_then(|x| x.as_str()) != Some("ERROR") {
+        return None;
+    }
+    ["error", "response"]
+        .iter()
+        .find_map(|k| {
+            result
+                .get(*k)
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+        })
+        .map(str::to_string)
+}
+
 impl AgyAdapter {
     /// Um `step_update` → eventos. É AQUI que a narração deixa de virar
     /// resposta: o texto sai amarrado ao SEU step, e o step de ferramenta que
@@ -2239,10 +2269,26 @@ impl AgyAdapter {
         }
         out.push(AgentEvent::Result {
             ok,
-            // text: None de propósito. O `result.response` é o blob do
-            // incidente (narração colada na resposta); o fio já recebeu o
-            // texto pelos steps, separado.
-            text: None,
+            // SUCCESS: `text` segue None de propósito — o `result.response` é o
+            // blob do incidente (narração colada na resposta) e o fio já
+            // recebeu o texto pelos steps, separado.
+            //
+            // ERROR: é a última coisa que o CLI tem a dizer, e a gente jogava
+            // fora. No incidente 2026-08-16 o usuário ficou só com "o agent
+            // `agy` saiu com código 1" porque o stderr veio VAZIO (agent.rs
+            // dá precedência ao stderr, então não houve desonestidade — não
+            // havia o que mostrar ALI). Havia aqui: medido em 16/08/2026,
+            // forçando `--print-timeout 2s` num turno real, o `response` do
+            // ERROR vem vazio MESMO, e a razão mora num campo irmão que o
+            // relatório não conhecia — `error: "timeout waiting for response"`.
+            // Daí `agy_result_error` olhar `error` primeiro e `response` como
+            // reserva.
+            //
+            // O item genérico do exit code NÃO precisa sumir aqui: com `text`
+            // preenchido, o construtor de incidente do fio já absorve o
+            // "saiu com código N" que vem depois (messageNodes.ts,
+            // `isGenericExitError`) e mostra a causa real no lugar dele.
+            text: if ok { None } else { agy_result_error(result) },
             cost_usd,
             cost_source,
             input_tokens: nu.input,
@@ -2291,6 +2337,30 @@ impl AgentAdapter for AgyAdapter {
             // resposta, que é o bug do inglês misturado descrito no topo.
             .arg("--output-format")
             .arg("stream-json")
+            // O `agy -p` tem teto PRÓPRIO, `--print-timeout`, com default de
+            // 5m0s — e a gente nunca passou a flag. Estourado, o processo morre
+            // com exit 1, stderr VAZIO e um `result` de `status: ERROR`,
+            // indistinguível de uma falha real. Incidente 2026-08-16: dois
+            // turnos de 5min04s mortos assim, ~4,2M de tokens cobrados e "saiu
+            // com código 1" na tela; na mesma conversa, tudo abaixo de 300s
+            // passou (113s, 158s, 257s) e tudo acima morreu.
+            //
+            // 60m NÃO é uma promessa de duração: o app não tem nenhuma, e a
+            // régua de "travou" é o watchdog de SILÊNCIO (lib/watchdog.ts,
+            // default 10 min sem item novo), que foi ensinado de propósito a
+            // não confundir trabalho longo com travamento. Aqui o teto existe
+            // só como rede anti-zumbi, alto o bastante pra nunca ser o gate
+            // normal — missões rodam fases de 15 min rotineiramente. claude
+            // 2.1.220 e codex 0.147 não têm flag equivalente (conferido no
+            // `--help` dos dois em 16/08/2026): o teto é só do agy, e agora ele
+            // fica no mesmo regime dos outros.
+            //
+            // A sintaxe é `time.Duration` do Go, validada NO PARSE: `60m` foi
+            // aceito nesta máquina e `60banana` foi recusado com exit 2 e
+            // `unknown unit "banana"` — ou seja, valor torto aqui viraria falha
+            // barulhenta no ato, não teto silencioso de volta pros 5m.
+            .arg("--print-timeout")
+            .arg("60m")
             // amarra o cwd real (senão o print mode edita o scratch, não o repo).
             .arg("--add-dir")
             .arg(&req.cwd)
@@ -3882,10 +3952,66 @@ mod tests {
         assert_eq!(fechamentos, 1, "um TextStop por step, no fim dele");
     }
 
+    /// Linha `result` REAL de um desfecho de ERRO do print mode, capturada em
+    /// 16/08/2026 forçando `--print-timeout 2s` num turno de verdade (exit 1,
+    /// stderr VAZIO). É a prova que faltava no §5.1 do incidente 2026-08-16:
+    /// o `response` vem vazio MESMO, e a razão está em `error`.
+    const AGY_RESULT_ERRO: &str = r#"{"event":"result","result":{"conversation_id":"83fedb99-22c9-408c-83a4-b550c705aa55","status":"ERROR","response":"","error":"timeout waiting for response","duration_seconds":0.041688,"num_turns":1,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0}}}"#;
+
+    /// No desfecho de ERRO, a última coisa que o CLI tem a dizer chega ao fio.
+    /// Antes o `Result` saía com `text: None` sempre e o usuário ficava só com
+    /// "o agent `agy` saiu com código 1" (incidente 2026-08-16) — e como o
+    /// stderr veio VAZIO, não havia nada a mostrar naquele caminho. Havia
+    /// neste.
+    #[test]
+    fn desfecho_de_erro_do_agy_leva_a_razao_dele_pro_fio() {
+        let cru: serde_json::Value = serde_json::from_str(AGY_RESULT_ERRO).unwrap();
+        assert_eq!(
+            cru.pointer("/result/response").unwrap().as_str(),
+            Some(""),
+            "a fixture só serve se o `response` do ERROR for mesmo vazio"
+        );
+        let mut a = AgyAdapter::default();
+        agy_linha(&mut a, AGY_INIT);
+        let evs = agy_linha(&mut a, AGY_RESULT_ERRO);
+        let (ok, text) = evs
+            .iter()
+            .find_map(|e| match e {
+                AgentEvent::Result { ok, text, .. } => Some((*ok, text.clone())),
+                _ => None,
+            })
+            .expect("o result fecha o turno");
+        assert!(!ok);
+        assert_eq!(text.as_deref(), Some("timeout waiting for response"));
+    }
+
+    /// E o extrator não fabrica frase quando o CLI não disse nada.
+    #[test]
+    fn erro_sem_texto_nenhum_nao_inventa_motivo() {
+        use serde_json::json;
+        // ERROR mudo: None honesto (o fallback do exit code é quem fala).
+        assert_eq!(agy_result_error(&json!({ "status": "ERROR" })), None);
+        assert_eq!(
+            agy_result_error(&json!({ "status": "ERROR", "error": "   ", "response": "" })),
+            None
+        );
+        // `response` é a reserva quando o `error` não vem.
+        assert_eq!(
+            agy_result_error(&json!({ "status": "ERROR", "response": "sem crédito" })).as_deref(),
+            Some("sem crédito")
+        );
+        // SUCCESS nunca entrega o blob por esta porta.
+        assert_eq!(
+            agy_result_error(&json!({ "status": "SUCCESS", "response": "narração colada" })),
+            None
+        );
+    }
+
     /// `result.response` É o blob do incidente (narração + resposta grudadas) —
-    /// a fixture prova. Por isso o `Result` sai com `text: None`: o fio já
-    /// recebeu o texto pelos steps, separado, e reenviar o blob desfaria a
-    /// separação toda.
+    /// a fixture prova. Por isso o `Result` de SUCESSO sai com `text: None`: o
+    /// fio já recebeu o texto pelos steps, separado, e reenviar o blob
+    /// desfaria a separação toda. (No ERRO a regra é outra, e é o caso acima:
+    /// lá o `response` vem vazio e o que importa é o `error`.)
     #[test]
     fn blob_do_result_nunca_vira_resposta() {
         let cru: serde_json::Value = serde_json::from_str(AGY_RESULT).unwrap();
@@ -4122,6 +4248,45 @@ mod tests {
         let mut a = AgyAdapter::default();
         let args = argv(&a.build_command(&req(Permission::Padrao, false)).unwrap());
         assert!(has_pair(&args, "--output-format", "stream-json"));
+    }
+
+    /// O teto de 5 MINUTOS que matava todo turno longo do agy (incidente
+    /// 2026-08-16). O default do `--print-timeout` é 5m0s e a gente nunca
+    /// passava a flag: 305s e 304s morreram com exit 1, 113s/158s/257s
+    /// passaram. Este teste existe pra que a flag não caia fora de novo —
+    /// perder o argumento aqui não quebra nada visível, só ressuscita o teto
+    /// em silêncio no primeiro turno de mais de 5 min.
+    #[test]
+    fn agy_manda_o_teto_de_print_mode_em_todo_turno() {
+        let mut a = AgyAdapter::default();
+        for (perm, plan) in [
+            (Permission::Padrao, false),
+            (Permission::Leitura, false),
+            (Permission::Padrao, true),
+        ] {
+            let args = argv(&a.build_command(&req(perm, plan)).unwrap());
+            assert!(
+                has_pair(&args, "--print-timeout", "60m"),
+                "sem --print-timeout o agy volta ao default de 5m0s: {args:?}"
+            );
+        }
+    }
+
+    /// Os OUTROS motores não têm a mesma classe de bug, e isso é declarado
+    /// aqui pra não virar folclore: `claude --help` (2.1.220) e
+    /// `codex exec --help` (0.147) não expõem NENHUMA flag de timeout
+    /// (conferido nesta máquina em 16/08/2026 — o único teto do claude é
+    /// `--max-budget-usd`, que é dinheiro, não tempo). Se um dia algum deles
+    /// ganhar teto de duração, o comando montado dele vai precisar da mesma
+    /// passada — e é este teste que vai estar errado primeiro.
+    #[test]
+    fn so_o_agy_tem_teto_de_duracao_a_desarmar() {
+        let mut claude = ClaudeAdapter::default();
+        let args = argv(&claude.build_command(&req(Permission::Padrao, false)).unwrap());
+        assert!(!args.iter().any(|a| a.contains("timeout")));
+        let mut codex = CodexAdapter::default();
+        let args = argv(&codex.build_command(&req(Permission::Padrao, false)).unwrap());
+        assert!(!args.iter().any(|a| a.contains("timeout")));
     }
 
     /// Matriz de anexo dos TRÊS adapters, num lugar só. GÊMEO do teste TS
