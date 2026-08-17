@@ -20,6 +20,7 @@ import {
   duePollAgents,
   fmtAge,
   fmtPct,
+  fmtResetAbsolute,
   fmtResetIn,
   markPollAttempt,
   nextPollDelayMs,
@@ -185,7 +186,7 @@ describe("seleção do provider da pill (conversa ativa)", () => {
 
   it("motor SEM fonte de janela no registry não exibe a janela de outro", () => {
     // O bug relatado: conversa do Antigravity mostrando `Claude 59%` na faixa.
-    // `agy` tem usageWindow: null — nada a medir, e vizinho não empresta.
+    // `agy` não tem uma janela percentual — nada a medir, e vizinho não empresta.
     // Pergunta por CAPABILITY (usageWindow), nunca pelo nome do motor.
     expect(agentDef("agy")?.usageWindow).toBeNull() // trava a premissa do caso
     const sel = pillWindow(
@@ -272,10 +273,10 @@ describe("quem entra no poll (duePollAgents)", () => {
     const detected = {
       "claude-code": probe(), // usagePoll "oauth": a conta responde sempre
       codex: probe(), // usagePoll "rpc": app-server read-only
-      agy: probe(), // sem fonte no registry
+      agy: probe(), // sem fonte percentual no registry
     }
-    // o claude ENTRA: era exatamente ele que nunca reportava, porque a
-    // statusline (push) não dispara nas conversas do app, que são headless.
+    // O Claude entra via OAuth: a statusline push não dispara nas conversas
+    // headless do app.
     expect(duePollAgents(true, detected, AGORA)).toEqual(["claude-code", "codex"])
   })
 
@@ -392,5 +393,25 @@ describe("registro de falha e store", () => {
     s.ingest(SNAP_CODEX)
     expect(useUsage.getState().failures.codex).toBeUndefined()
     expect(useUsage.getState().byAgent.codex).toEqual(SNAP_CODEX)
+  })
+})
+
+describe("horário absoluto do reset", () => {
+  const HOJE = new Date(2026, 7, 16, 14, 0, 0).getTime()
+
+  it("reset HOJE diz só a hora", () => {
+    const às2150 = new Date(2026, 7, 16, 21, 50, 0).getTime() / 1000
+    expect(fmtResetAbsolute(às2150, HOJE)).toBe("às 21:50")
+  })
+
+  it("reset em OUTRO dia carrega o dia — 'às 21:50' pelado afirmaria hoje", () => {
+    // A janela de 7 dias reseta a dias de distância: era o caso comum, e o
+    // formato antigo dizia "às 21:50" como se fosse hoje.
+    const em6dias = new Date(2026, 7, 22, 21, 50, 0).getTime() / 1000
+    expect(fmtResetAbsolute(em6dias, HOJE)).toBe("dia 22, 21:50")
+  })
+
+  it("sem reset conhecido não inventa horário", () => {
+    expect(fmtResetAbsolute(null, HOJE)).toBeNull()
   })
 })

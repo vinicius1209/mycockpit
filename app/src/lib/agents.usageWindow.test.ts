@@ -18,8 +18,7 @@ const MATRIZ: Record<string, "statusline" | "rpc" | null> = {
   // codex 0.146: account/rateLimits/read via app-server read-only (provado
   // na mão 12/08/2026).
   codex: "rpc",
-  // agy 1.1.12: só /credits (saldo de créditos, sem % de janela nem reset,
-  // verificado 12/08/2026) — saldo não é janela de uso.
+  // saldo absoluto de /credits não é uma janela percentual.
   agy: null,
 }
 

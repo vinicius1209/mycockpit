@@ -1,22 +1,28 @@
-// <UsagePill> — pill do medidor de janela de uso na barra superior (a feature
-// "9% used · 4h 22m" do estudo do Orca), com popover de detalhe por provider.
-// Fonte única: useUsage (snapshots com procedência) + a política de
-// lib/usageWindow. A pill fechada é CONTEXTUAL e NOMEADA: mostra o provider do
-// agent da CONVERSA ATIVA quando ele tem janela medida; sem medição do ativo,
-// cai pro pior global — e sempre com o nome do provider na frente do número
-// (um "30%" nu do Codex numa conversa Claude lia como se fosse o Claude).
-// Camadas de esconder (Orca):
+// <UsagePill> — pill do medidor de janela de uso na faixa inferior, com popover
+// de detalhe por provider. Fonte única: useUsage (snapshots com procedência) +
+// a política de lib/usageWindow.
+//
+// A pill fechada é CONTEXTUAL e NOMEADA: mostra o provider do agent da CONVERSA
+// ATIVA, e SÓ ele — vizinho não empresta número (ADR do build 201: conversa do
+// Antigravity exibindo "Claude 59%"). Sem conversa aberta, o pior global.
+//
+// Camadas de esconder (regra do Orca), que NÃO podem ser diluídas:
 //   1. motor sem capability nem aparece (usageWindowAgents);
 //   2. provider não-configurado/não-logado/sem dado: some;
 //   3. provider configurado FALHANDO: VISÍVEL com estado honesto ("falhando
 //      desde X"), senão a UI tremula entre aparecer e sumir;
 //   4. CTA de instalação dispensável, com o dispensado persistido.
-// Barra CINZA até 60% (uso normal não pede atenção), âmbar 60 a 80, vermelha
-// 80+ (constantes USAGE_WARN_PCT/USAGE_DANGER_PCT). Números em tabular-nums
-// com largura reservada; nome trunca antes do número.
+//
+// Régua de cor: a de lib/meter, a mesma do anel de contexto — cinza até 60,
+// âmbar 60 a 80, vermelho 80+. Números em tabular-nums com largura reservada.
+//
+// NÃO afirme aqui "suporte multi-agent (Claude, Codex, Antigravity)": o `agy`
+// tem `usageWindow: null` no registry, logo está fora do `duePollAgents` e a
+// pill se esconde nas conversas dele. Quando existir leitura da conta Google AI
+// Pro, o que muda é o REGISTRY e o Rust — não este comentário.
 
 import { useEffect, useState } from "react"
-import { Gauge, X } from "lucide-react"
+import { Gauge, RefreshCw, X } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,14 +30,17 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { agentDef } from "@/lib/agents"
 import { usageWindowAgents } from "@/lib/agentRoster"
+import { AgentLogo } from "@/components/common/AgentLogo"
 import { fmtTime } from "@/lib/format"
 import { METER_FILL, METER_TEXT } from "@/lib/meter"
 import {
   failureLabel,
   fmtAge,
   fmtPct,
+  fmtResetAbsolute,
   fmtResetIn,
   pillWindow,
+  refreshUsageNow,
   snapshotUsable,
   sourceLabel,
   usagePillLabel,
@@ -44,8 +53,6 @@ import { useChat } from "@/store/chat"
 import { useUsage } from "@/store/usage"
 import { cn } from "@/lib/utils"
 
-// Tabelas do medidor único do app (lib/meter): a pill e o anel de contexto
-// falam a mesma língua, não duas paletas parecidas.
 const TONE_BAR = METER_FILL
 const TONE_TEXT = METER_TEXT
 
@@ -56,69 +63,117 @@ function UsageBar({ pct, wide = false }: { pct: number; wide?: boolean }) {
     <span
       aria-hidden
       className={cn(
-        "relative h-1 shrink-0 overflow-hidden rounded-full bg-secondary",
+        "relative h-1.5 shrink-0 overflow-hidden rounded-full bg-secondary/80",
         wide ? "w-24" : "w-8",
       )}
     >
       <span
-        className={cn("absolute inset-y-0 left-0 rounded-full", TONE_BAR[tone])}
+        className={cn("absolute inset-y-0 left-0 rounded-full transition-all duration-300", TONE_BAR[tone])}
         style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
       />
     </span>
   )
 }
 
-/** Detalhe de UM provider no popover. */
-function ProviderRows({
+/** Card com detalhe de UM provider no popover. */
+function ProviderCard({
+  agentId,
   label,
   snap,
   failure,
   now,
 }: {
+  agentId: string
   label: string
   snap: UsageSnapshot | undefined
   failure: UsageFailure | undefined
   now: number
 }) {
   const usable = snap != null && snapshotUsable(snap, failure, now)
+  const worstPct =
+    usable && snap.windows.length > 0
+      ? Math.max(...snap.windows.map((w) => w.usedPercent))
+      : 0
+  // Régua ÚNICA (lib/meter, via usageTone): cinza <60 · âmbar 60-80 · vermelho
+  // 80+. Não se inventa limiar local — dois medidores discordando dentro do
+  // mesmo popover foi o que o §2 chamou de "duas réguas para o mesmo fato".
+  const tomPior = usable && snap.windows.length > 0 ? usageTone(worstPct) : "ok"
+
   return (
-    <div className="flex flex-col gap-1.5 px-2 py-1.5">
-      <div className="flex items-baseline gap-2">
-        <span className="min-w-0 truncate text-[12px] text-foreground">
-          {label}
-          {snap?.planType ? (
-            <span className="text-muted-foreground"> · plano {snap.planType}</span>
-          ) : null}
-        </span>
-        {snap && (
-          <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/70">
-            {sourceLabel(snap.source)} · {fmtAge(snap.fetchedAt, now)}
+    <div className="flex flex-col gap-2 rounded-lg border border-border/40 bg-secondary/25 p-2.5 transition-colors hover:bg-secondary/35">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="size-4 shrink-0 flex items-center justify-center">
+            <AgentLogo agent={agentId} />
+          </div>
+          <span className="truncate text-[12px] font-medium text-foreground">
+            {label}
           </span>
-        )}
+          {snap?.planType ? (
+            <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground border border-border/40">
+              {snap.planType}
+            </span>
+          ) : null}
+        </div>
+        {/* Selo SÓ quando pede atenção. O "Disponível" em verde saiu: era
+            estado ambiente permanente em cor de status, que o §9 item 4 condena
+            e que foi removido do stepper do SDD no mesmo dia em que entrou
+            aqui. Provider dentro do normal não precisa de selo — a barra e o
+            percentual já dizem, e o que não é decisão recua.
+            Os limiares vêm da RÉGUA ÚNICA do app (lib/meter, via usageTone):
+            cinza <60 · âmbar 60-80 · vermelho 80+. O código original inventava
+            80/100 próprios, o que criava um segundo medidor discordando do
+            primeiro dentro do mesmo popover. */}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {tomPior === "danger" ? (
+            <span className="rounded bg-st-error/15 px-1.5 py-0.5 text-[11px] font-semibold text-st-error">
+              No limite
+            </span>
+          ) : tomPior === "warn" ? (
+            <span className="rounded bg-st-warning/15 px-1.5 py-0.5 text-[11px] font-semibold text-st-warning">
+              Aquecendo
+            </span>
+          ) : null}
+          {/* PROCEDÊNCIA + idade. O `sourceLabel` tinha sido removido, e ele é
+              metade da honestidade do medidor: "de onde veio o número que está
+              na tela" (leitura da conta × statusline × leitura local). Sem ele,
+              um número de carona do terminal parece leitura oficial da conta. */}
+          {snap && (
+            <span className="text-[11px] text-muted-foreground/60">
+              {sourceLabel(snap.source)} · {fmtAge(snap.fetchedAt, now)}
+            </span>
+          )}
+        </div>
       </div>
-      {usable &&
-        snap.windows.map((w) => {
-          const reset = fmtResetIn(w.resetsAt, now)
-          return (
-            <div key={w.id} className="flex items-center gap-2">
-              <span className="w-12 shrink-0 text-[11px] text-muted-foreground">
-                {w.label}
-              </span>
-              <UsageBar pct={w.usedPercent} wide />
-              <span
-                className={cn(
-                  "min-w-[34px] shrink-0 text-right font-mono text-[11px] tabular-nums",
-                  TONE_TEXT[usageTone(w.usedPercent)],
-                )}
-              >
-                {fmtPct(w.usedPercent)}
-              </span>
-              <span className="min-w-0 truncate text-[11px] text-muted-foreground/70">
-                {reset ?? ""}
-              </span>
-            </div>
-          )
-        })}
+
+      {usable && snap.windows.length > 0 && (
+        <div className="flex flex-col gap-1.5 pt-0.5">
+          {snap.windows.map((w) => {
+            const resetRel = fmtResetIn(w.resetsAt, now)
+            const resetAbs = fmtResetAbsolute(w.resetsAt, now)
+            return (
+              <div key={w.id} className="flex items-center gap-2 text-[11px]">
+                <span className="w-16 shrink-0 truncate font-medium text-muted-foreground">
+                  {w.label}
+                </span>
+                <UsageBar pct={w.usedPercent} wide />
+                <span
+                  className={cn(
+                    "min-w-[34px] shrink-0 text-right font-mono tabular-nums",
+                    TONE_TEXT[usageTone(w.usedPercent)],
+                  )}
+                >
+                  {fmtPct(w.usedPercent)}
+                </span>
+                <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground/75">
+                  {resetRel ? `${resetRel}${resetAbs ? ` (${resetAbs})` : ""}` : ""}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {snap && !usable && (
         <p className="text-[11px] text-muted-foreground">
           Sem dados frescos, última leitura {fmtAge(snap.fetchedAt, now)}.
@@ -126,8 +181,7 @@ function ProviderRows({
       )}
       {failure && (
         <p className="text-[11px] text-st-error">
-          Falhando desde {fmtTime(failure.since)} ({failureLabel(failure.kind)}
-          ).
+          Falhando desde {fmtTime(failure.since)} ({failureLabel(failure.kind)}).
         </p>
       )}
     </div>
@@ -141,37 +195,39 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
   const setSettingsOpen = useApp((s) => s.setSettingsOpen)
   const byAgent = useUsage((s) => s.byAgent)
   const failures = useUsage((s) => s.failures)
-  // agent da conversa ativa (o mesmo que o composer mostra como identidade):
-  // é ele que decide QUAL provider a pill fechada prioriza.
   const activeAgent = useChat((s) =>
     s.activeId ? (s.byId[s.activeId]?.agent ?? null) : null,
   )
 
-  // idade/staleness passam sem evento de store: relógio local de 30s (mesma
-  // granularidade do tick do vigia), só pra re-render.
+  const [refreshing, setRefreshing] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000)
     return () => clearInterval(t)
   }, [])
 
+  const handleRefresh = async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    try {
+      await refreshUsageNow()
+      setNow(Date.now())
+    } finally {
+      setTimeout(() => setRefreshing(false), 500)
+    }
+  }
+
   if (!enabled) return null
   const sel = pillWindow(activeAgent, byAgent, failures, now)
   const failing = Object.keys(failures).length > 0
-  // nada medido e nada falhando: a pill SOME (não-configurado se esconde;
-  // configurado-com-erro fica visível no ramo abaixo).
   if (!sel && !failing) return null
 
   const providers = usageWindowAgents()
   const measurable = providers.filter(
     (d) => byAgent[d.id] != null || failures[d.id] != null,
   )
-  // CTA: provider de statusline ainda sem NENHUM snapshot (medidor não
-  // instalado ou sem turno desde o boot) — só aparece com a pill já viva
-  // (snapshots assentados) e some pra sempre se dispensado. Provider que está
-  // FALHANDO fica de fora: quem tem falha registrada já aparece com o motivo
-  // ("reautentique o CLI"), e mandar instalar statusline em cima disso seria
-  // apontar pro lugar errado (camada 3 do Orca vence a 4).
+
   const ctaAgents = ctaDismissed
     ? []
     : providers.filter(
@@ -185,6 +241,7 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
   const pillTitle = sel
     ? `Janela de uso do plano · ${agentDef(sel.agent)?.label ?? sel.agent}`
     : "Janela de uso do plano"
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -194,9 +251,6 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
           aria-label={pillTitle}
           className={cn(
             "pointer-events-auto hidden items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex",
-            // `compact` = dentro da faixa de 24px: sem cápsula, sem fundo, sem
-            // borda. Ali a pill é telemetria de fundo (11px mono, cinza), não
-            // um controle que pede clique — o detalhe continua a um clique.
             compact
               ? "-mx-1 h-5 rounded px-1 font-mono text-[11px] hover:bg-accent/50"
               : "rounded-full border bg-secondary/50 px-2.5 py-1 text-[12px]",
@@ -205,12 +259,8 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
           <Gauge className={compact ? "size-3" : "size-3.5"} aria-hidden />
           {sel ? (
             <>
-              {/* o DONO do número, sempre: percentual nu induzia a ler o
-                  número como sendo do agent da conversa. Trunca ANTES do
-                  número (largura do percentual é reservada). */}
               <span className="max-w-20 truncate">{usagePillLabel(sel.agent)}</span>
               <UsageBar pct={sel.window.usedPercent} />
-              {/* largura reservada: "100%" não desloca os vizinhos */}
               <span
                 className={cn(
                   "min-w-[34px] text-right font-mono tabular-nums",
@@ -225,42 +275,52 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
           )}
         </button>
       </DropdownMenuTrigger>
-      {/* sideOffset + z-[120]: o header da TitleBar é z-[110] (acima do
-          overlay de drag do decorum, ver TitleBar.tsx) — no z-50 padrão dos
-          dropdowns a borda de cima do popover sumia ATRÁS da faixa de
-          título. Acima do header + folga do trigger, nada é cortado.
-          Na faixa inferior o popover abre pra CIMA e alinhado à esquerda:
-          ancorado no canto de baixo, ele é a única direção com espaço. */}
       <DropdownMenuContent
         side={compact ? "top" : "bottom"}
         align={compact ? "start" : "end"}
         sideOffset={8}
-        className="z-[120] w-80 p-1.5"
+        className="z-[120] w-[390px] p-2.5 space-y-2"
       >
-        <p className="px-2 pt-1 pb-0.5 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
-          Janela de uso do plano
-        </p>
-        {measurable.map((d) => (
-          <ProviderRows
-            key={d.id}
-            label={d.label}
-            snap={byAgent[d.id]}
-            failure={failures[d.id]}
-            now={now}
-          />
-        ))}
+        <div className="flex items-center justify-between px-1 pb-1 border-b border-border/40">
+          <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
+            <Gauge className="size-3.5 text-brass" />
+            Janela de Uso do Plano
+          </span>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-secondary disabled:opacity-50"
+            title="Atualizar leituras agora"
+          >
+            <RefreshCw className={cn("size-3", refreshing && "animate-spin")} />
+            <span>{refreshing ? "Atualizando..." : "Atualizar"}</span>
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          {measurable.map((d) => (
+            <ProviderCard
+              key={d.id}
+              agentId={d.id}
+              label={d.label}
+              snap={byAgent[d.id]}
+              failure={failures[d.id]}
+              now={now}
+            />
+          ))}
+        </div>
+
         {ctaAgents.map((d) => (
           <div
             key={d.id}
             className="mt-1 flex items-center gap-2 rounded-md bg-secondary/40 px-2 py-1.5"
           >
             <span className="min-w-0 flex-1 text-[11px] text-muted-foreground">
-              Meça a janela do {d.label}: ative o medidor em Configurações
-              (Uso e custo).
+              Meça a janela do {d.label}: ative o medidor em Configurações (Uso e custo).
             </span>
             <button
               type="button"
-              // deep link: cai direto na seção do medidor, não na primeira.
               onClick={() => setSettingsOpen(true, "ledger")}
               className="shrink-0 rounded bg-brass px-2 py-0.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90"
             >
@@ -277,11 +337,11 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
             </button>
           </div>
         ))}
-        <p className="px-2 pt-1.5 pb-1 text-[11px] leading-snug text-muted-foreground/60">
-          Quanto da janela do seu plano já foi usada, por provider. Não é
-          custo em US$ nem o contexto da conversa (esse é o anel do composer):
-          medição de carona, nenhuma quota é consumida.
-        </p>
+
+        <div className="flex items-center justify-between px-1 pt-1 text-[11px] text-muted-foreground/60 border-t border-border/30">
+          <span>Medição de carona & poll (sem custo de quota)</span>
+          <span>Atualização auto ~15 min</span>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   )

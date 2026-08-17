@@ -523,8 +523,8 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // `/compact`… No manual command is required" (medido 14/08/2026). Sem
     // compactação nativa, o `/compactar` do app segue na renovação com recap.
     native_compact: false,
-    // agy 1.1.12: só `/credits` (saldo, sem % de janela nem reset —
-    // verificado 12/08/2026). Saldo de créditos NÃO é janela de uso: None.
+    // agy 1.1.13: `/credits` expõe saldo absoluto, sem percentual de janela
+    // nem reset. Saldo de créditos NÃO satisfaz o contrato de UsageWindow.
     usage_window: None,
     usage_window_poll: None,
     // agy 1.1.12: hooks documentados pelo próprio produto (doc embarcada
@@ -3543,7 +3543,7 @@ mod tests {
             capabilities_of("codex").unwrap().usage_window,
             Some(UsageWindowSource::CodexAppServer)
         );
-        // agy 1.1.12: só /credits (saldo, sem janela/reset) → sem fonte.
+        // agy: /credits expõe saldo, não percentual/reset de uma janela.
         assert_eq!(capabilities_of("agy").unwrap().usage_window, None);
 
         // …e QUEM O VIGIA PERGUNTA (o poll). O claude diverge de propósito: a

@@ -252,6 +252,29 @@ export function fmtResetIn(resetsAtSecs: number | null, now: number): string | n
   return hr > 0 ? `reseta em ${d}d ${hr}h` : `reseta em ${d}d`
 }
 
+/** Horário absoluto do reset no relógio local: "às 21:50" hoje, "dia 22, 21:50"
+ *  quando cai em outro dia.
+ *
+ *  O dia NÃO é enfeite: a janela de 7 dias reseta a DIAS de distância, e um
+ *  "às 21:50" pelado ali afirma hoje. Seria a mesma família do `US$ 0,000` —
+ *  formato preciso em cima de um fato que ele não sustenta. */
+export function fmtResetAbsolute(
+  resetsAtSecs: number | null,
+  now: number = Date.now(),
+): string | null {
+  if (resetsAtSecs == null) return null
+  const date = new Date(resetsAtSecs * 1000)
+  if (Number.isNaN(date.getTime())) return null
+  const hh = String(date.getHours()).padStart(2, "0")
+  const mm = String(date.getMinutes()).padStart(2, "0")
+  const hoje = new Date(now)
+  const mesmoDia =
+    date.getFullYear() === hoje.getFullYear() &&
+    date.getMonth() === hoje.getMonth() &&
+    date.getDate() === hoje.getDate()
+  return mesmoDia ? `às ${hh}:${mm}` : `dia ${date.getDate()}, ${hh}:${mm}`
+}
+
 /** Idade do dado: "agora" / "de 2min atrás" / "de 3h atrás" — a procedência
  *  temporal na cara, parte dos metadados honestos. */
 export function fmtAge(fetchedAt: number, now: number): string {
@@ -369,6 +392,46 @@ export function checkUsageWindowPoll(now: number = Date.now()): void {
         useUsage.getState().recordFailure(agent, kind, message, Date.now())
       })
   }
+}
+
+/** Disparo manual imediato de poll (botão Atualizar do popover).
+ *
+ *  Atalha a CADÊNCIA (é o humano pedindo agora, e esperar 15 min por um número
+ *  que ele está olhando seria teimosia), mas NÃO atalha o limite do provider.
+ *
+ *  A distinção entre as duas falhas "sem pressa" importa e é deliberada:
+ *  • `rate-limited` — PULA. Bater de novo num 429 pode estender o bloqueio, e o
+ *    usuário não conserta isso clicando; o cartão já mostra "falhando desde X
+ *    (limite atingido)", que é a resposta honesta.
+ *  • `auth` — TENTA. Quem acabou de logar no CLI clica exatamente pra
+ *    confirmar; pular aqui faria o botão parecer quebrado justo quando ele é
+ *    útil. */
+export async function refreshUsageNow(): Promise<void> {
+  if (!isTauri()) return
+  const settings = useApp.getState().settings
+  const detected = settings.detected
+  const failures = useUsage.getState().failures
+  const now = Date.now()
+  const promises: Promise<void>[] = []
+  for (const def of usageWindowAgents()) {
+    if (def.usagePoll == null) continue
+    const probe = detected[def.id]
+    if (!probe?.installed || probe.auth === "missing") continue
+    if (failures[def.id]?.kind === "rate-limited") continue
+    markPollAttempt(def.id, now)
+    const p = invoke<UsageSnapshot>("usage_fetch", { agent: def.id })
+      .then((snap) => {
+        recordPollResult(def.id, true, null, Date.now())
+        useUsage.getState().ingest(snap)
+      })
+      .catch((e) => {
+        const { kind, message } = parseFetchError(e)
+        recordPollResult(def.id, false, kind, Date.now())
+        useUsage.getState().recordFailure(def.id, kind, message, Date.now())
+      })
+    promises.push(p)
+  }
+  await Promise.allSettled(promises)
 }
 
 // ---------------------------------------------------------------------------
