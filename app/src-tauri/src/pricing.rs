@@ -173,6 +173,18 @@ mod tests {
         price_for(model).expect("modelo devia estar na tabela").output
     }
 
+    /// ADR-050 — modelo VAZIO (Codex sem `self.model`, depois que o adapter
+    /// parou de chutar "gpt-5.5") não pode casar catálogo nem SEED: `""` não
+    /// contém nenhuma das substrings da tabela, então cai no `else { None }`
+    /// do fim da cadeia. Sem preço, não turno de graça — `Unknown`, não US$ 0.
+    #[test]
+    fn modelo_vazio_nao_casa_preco_nenhum() {
+        assert!(price_for("").is_none());
+        let (usd, src) = estimate("", &NormalizedUsage { input: 100, cached_input: 0, output: 50 });
+        assert_eq!(usd, None);
+        assert!(matches!(src, CostSource::Unknown));
+    }
+
     /// A REGRESSÃO que motivou os testes: variantes 5.x novas caindo na linha
     /// legada "gpt-5" ($10 out) por causa do match por contains.
     #[test]

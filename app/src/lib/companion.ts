@@ -27,6 +27,8 @@ import {
   type LedgerEntry,
   type RecentDelivery,
 } from "@/lib/db"
+import { ledgerCostsForToday } from "@/lib/companionCosts"
+import type { UnpricedSpend } from "@/lib/panel"
 import { feedbackLesson } from "@/lib/learning"
 import { nativeNotify } from "@/lib/notify"
 import { hasAssistantReply } from "@/lib/presets"
@@ -142,9 +144,12 @@ export interface CompanionDelivery {
 }
 
 export interface CompanionCosts {
-  /** US$ de HOJE (ledger desde 0h local) + missões vivas (ainda fora do ledger). */
+  /** US$ de HOJE (ledger + missões vivas) — SÓ o que tem preço (ADR-047). */
   totalUsd: number
   byProject: Record<string, number>
+  /** O que ficou de fora de `totalUsd` por falta de preço. O cliente decide
+   *  como avisar; o app não some com o consumo. */
+  unpriced: UnpricedSpend
 }
 
 /** Agent utilizável num projeto + a conversa de MESA dele (quando já existe).
@@ -419,15 +424,10 @@ export function buildCompanionSnapshot(
     },
   )
 
-  // ── custos: ledger de hoje + missões VIVAS (não-done nunca entram no ledger;
-  // done viram delivery e já estão no ledger — somar de novo dobraria). ──
-  const byProject: Record<string, number> = {}
-  let totalUsd = 0
-  for (const e of extras.ledger) {
-    const c = e.costUsd ?? 0
-    totalUsd += c
-    byProject[e.projectId] = (byProject[e.projectId] ?? 0) + c
-  }
+  // ── custos: ledger de hoje (lib/companionCosts) + missões VIVAS (não-done
+  // nunca entram no ledger; done viram delivery e já estão lá — dobraria). ──
+  const { totalUsd: ledgerUsd, byProject, unpriced } = ledgerCostsForToday(extras.ledger)
+  let totalUsd = ledgerUsd
   for (const [convId, m] of Object.entries(missions.byConv)) {
     if (m.status === "done" || m.costTotal <= 0) continue
     totalUsd += m.costTotal
@@ -494,7 +494,7 @@ export function buildCompanionSnapshot(
       costUsd: d.costUsd,
       createdAt: d.createdAt,
     })),
-    costs: { totalUsd, byProject },
+    costs: { totalUsd, byProject, unpriced },
     projects,
     specialists,
   }

@@ -255,8 +255,12 @@ export type RoomSnapshot = {
   color?: string
   /** Agregado para luz da porta + badge do HUD. */
   agg: RoomAggregate
-  /** Custo acumulado do projeto (ledger + missões em voo). */
+  /** Custo acumulado do projeto (ledger + missões em voo) — só o que SABEMOS
+   *  cobrar (ADR-047). */
   costUsd: number
+  /** Turnos do ledger SEM preço (modelo fora da tabela): `costUsd` não os
+   *  conta, e `costUsd` sozinho mentiria por omissão sem isto ao lado. */
+  unpriced: { turns: number; tokens: number }
   desks: DeskSnapshot[]
   /** Kanban da missão do projeto (whiteboard) — a missão RODANDO; sem missão
    *  ativa, a mais recente conhecida (o quadro persiste após done). */

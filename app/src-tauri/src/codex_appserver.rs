@@ -423,7 +423,10 @@ pub fn map_notification(method: &str, params: &Value, st: &mut StreamState) -> V
                 output: 0,
             });
             // Codex não reporta USD → estima por tokens × tabela (igual ao exec).
-            let model = st.model.clone().unwrap_or_else(|| "gpt-5.5".to_string());
+            // `st.model` vem de `codex_cost_model` (requisitado → config.toml →
+            // `None`, nunca um chute) — string vazia não casa catálogo nem SEED,
+            // vira `(None, Unknown)` honesto em vez de gpt-5.5 inventado.
+            let model = st.model.clone().unwrap_or_default();
             let (cost_usd, cost_source) = crate::pricing::estimate(&model, &nu);
             vec![AgentEvent::Result {
                 ok: true,

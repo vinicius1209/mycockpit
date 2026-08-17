@@ -1866,3 +1866,68 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   e em "Liberado"): hierarquia legível, seleção neutra distinta do âmbar de
   risco, sem truncamento. `vitest` 2793/248, `cargo test` 450, 6 guardas,
   `build` 0, `e2e` 17/17.
+
+### ADR-050 — O agnosticismo, auditado: dois lugares que ainda faziam `?? 0`, e o modelo que o Codex inventava ✅
+- **Contexto (17/08/2026):** pedido de auditoria — "está funcional 100% pro
+  Antigravity? o que difere de Claude/Codex? algo mapeado e não implementado?"
+  — achou dois restos do ADR-047 que não tinham sido varridos (o ADR corrigiu
+  os TRÊS writers do ledger, não os agregadores que leem dele) e um bug
+  simétrico no Codex: falta de modelo virando um modelo INVENTADO, em vez de
+  falta de preço. Time de duas frentes (uma delegada, uma direta) pra fechar
+  os dois.
+- **Decisão 1 — `lib/companion.ts` (digest do celular) e `lib/fleet/derive.ts`
+  (custo por sala) paravam de tratar `costUsd == null` como US$ 0,00.** Mesma
+  doutrina do ADR-047, aplicada aos AGREGADORES que ele não tinha alcançado: a
+  soma conhecida (`totalUsd`/`room.costUsd`) continua ignorando NULL (é
+  aritmética correta pra "quanto sei que gastei"), mas agora vem sempre
+  acompanhada de um `unpriced` — turnos e tokens que ficaram de fora, nunca
+  silenciosos. `CompanionCosts.unpriced` e `RoomSnapshot.unpriced` são campos
+  NOVOS (aditivos — nada quebra em quem já lia o formato antigo).
+- **Extraído pra arquivo próprio, não por preferência — por catraca.** Os
+  quatro arquivos que a correção tocou (`companion.ts`, `companion.test.ts`,
+  `fleet/derive.ts`, `fleet/derive.test.ts`) já estavam CONGELADOS acima do
+  teto de tamanho (legado pré-ratchet) e a correção os empurrou mais pra cima.
+  A régua da casa aqui é inequívoca — "DIVIDA O ARQUIVO. Não suba o teto, não
+  edite a baseline à mão" — então a lógica PURA (ledger de entrada → total +
+  não-precificado) saiu pra `lib/companionCosts.ts` e `lib/fleet/ledgerAgg.ts`,
+  com teste dedicado em cada um. Os dois arquivos-mãe voltaram a bater
+  exatamente na baseline congelada.
+- **Decisão 2 — o Codex parou de inventar `"gpt-5.5"` quando não sabe o
+  modelo.** `codex_config_model()` (lê `~/.codex/config.toml`) e
+  `codex_cost_model()` (requisitado → config → nada) sempre devolveram uma
+  `String`, com um `.unwrap_or_else(|| "gpt-5.5".to_string())` no fundo de
+  tudo — sem CODEX_HOME, sem arquivo, sem a chave `model`, o adapter chutava
+  um modelo e cobrava em cima dele. Agora as duas funções devolvem
+  `Option<String>`, de ponta a ponta (os dois transportes, `exec` e
+  app-server): sem fonte nenhuma, `self.model` fica `None`, a string pro
+  `pricing::estimate` sai vazia, `price_for("")` não casa nada, e o turno
+  entra no ledger com `cost_usd` NULL — a mesma degradação honesta do
+  ADR-047, não um dólar preso a um modelo que ninguém escolheu.
+- **Medido antes de decidir (não presumido):** rodado `codex exec --json`
+  nesta máquina em 17/08/2026 sem `-m`, conferindo os quatro eventos do
+  stream (`thread.started`, `turn.started`, `item.completed`,
+  `turn.completed`) — nenhum carrega o modelo. Não existe fonte melhor que o
+  `config.toml` pra recuperar; sem ele, `None` é a resposta certa, não um
+  chute mais educado.
+- **O que NÃO era o bug:** os testes que já cobriam o delta acumulado
+  (ADR-033, `codex_segundo_turno_cobra_o_delta_e_nao_o_acumulado_da_thread` e
+  vizinhos) dependiam do default fixo pra ter preço > 0 e testar a subtração
+  de baseline. Corrigidos pra pedir modelo EXPLICITAMENTE (`r.model =
+  Some("gpt-5.5")`), porque o que eles provam é a subtração, não a resolução
+  de modelo — que ganhou teste próprio,
+  `codex_cost_model_pedido_venceconfig_venceninguem_nao_inventa`, cobrindo as
+  quatro camadas (nada → `None`; só config → usa; requisitado vence config;
+  config sem a chave `model` → ainda `None`) contra um `CODEX_HOME` de
+  scratch, nunca o do usuário. O `price_for("")` que a Decisão 2 se apoia
+  virava composição de peças já testadas (`catalog::lookup("")` do ADR-047 +
+  a cadeia SEED por `contains`, que nunca casa string vazia), sem prova
+  DIRETA — fechado com `modelo_vazio_nao_casa_preco_nenhum` em `pricing.rs`.
+- **Verificado:** `vitest` 2796/250, `cargo test` 452/452, 6 guardas, `tsc`
+  limpo, `build` 0, `e2e` 17/17. Terceiro item da auditoria (a flag
+  `--json-schema` do `agy`, vista em `docs/hooks-plan.md` mas nunca usada):
+  testada de verdade nesta máquina (schema aceito, schema com retry,
+  path/JSON inválidos) — é canal ORTOGONAL aos dois incidentes já resolvidos
+  (abre `result.structured_output`, mas não limpa o `result.response` sujo).
+  Achado com evidência real em `hooks-plan.md`, item 5 de "Achados que
+  contradisseram expectativas"; não implementado — sem consumidor no app
+  hoje.

@@ -129,6 +129,43 @@ maior (reescrever args da tool, injetar steps).
    responder rápido e devolver `"ask"` como default neutro (é o que preserva o
    comportamento nativo, incluindo o cache de "Always Allow"; `force_ask`
    ignora o cache).
+5. **`--json-schema` testado de verdade (agy 1.1.13, 17/08/2026) — é canal
+   ORTOGONAL aos dois incidentes já resolvidos, não a causa nem a cura deles.**
+   Medido com `agy -p "..." --output-format stream-json --json-schema
+   ./schema.json --disable-slash-commands`:
+   - **O que a flag faz:** força o MODELO a produzir um objeto que valide
+     contra o schema, e devolve esse objeto num campo NOVO do `result`,
+     `structured_output` — separado do `response` de sempre. Testado com
+     schema simples (aceito de primeira) e schema com `minItems: 3` que o
+     modelo errou na 1ª tentativa (1 item) e acertou na 2ª (`num_turns: 2` no
+     mesmo processo, um único `agy -p`) — o CLI faz o modelo TENTAR DE NOVO até
+     validar, não falha na 1ª rejeição.
+   - **`result.response` continua sujo.** No caso do retry, `response` veio com
+     a narração ("Olá! Como posso ajudar você hoje?") SEGUIDA dos dois JSONs
+     das duas tentativas concatenados — o mesmo blob que já fez o `Result` de
+     sucesso sair com `text: None` (ver `map_line` do `AgyAdapter`). A flag não
+     limpa isso; quem quiser o dado limpo usa `structured_output`, não
+     `response` com schema.
+   - **Falha ALTO, sem custo.** Path de schema inexistente e schema com JSON
+     malformado saem os dois com `exit 1` e mensagem clara no stderr ANTES de
+     qualquer turno rodar (`Error: invalid --json-schema: failed to read
+     schema file "..."`, `Error: invalid --json-schema: schema is not valid
+     JSON: ...`) — não gasta um token sequer com schema inválido.
+   - **O que NÃO testei:** o desfecho de um schema genuinamente
+     impossível de satisfazer (o candidato que tentei, um enum de valor fixo,
+     não é impossível — o modelo só copia a string do próprio schema). Não sei
+     se existe um teto de retries antes de desistir, nem se um desfecho assim
+     aparece em `result.error` (o mesmo campo do incidente 2026-08-16) ou como
+     `status: ERROR` genérico. Fica em aberto pra quem for implementar de
+     verdade.
+   - **Decisão: NÃO implementado agora.** Não resolve nenhum dos dois
+     problemas que já caçamos (blob do `response`, `error` escondido — os dois
+     têm solução própria, já em produção). O que abre é uma capability NOVA —
+     extrair um resumo/decisão ESTRUTURADA de um turno sem parsing de texto
+     livre — que não tem consumidor no app hoje. Vale revisitar se algum dia
+     precisarmos que o agy devolva, por exemplo, um veredito estruturado
+     (`{"aprovado": bool, "motivo": string}`) em vez de texto livre a
+     interpretar; até lá, documentado aqui em vez de virar pergunta recorrente.
 
 ## 2. Desenho agnóstico: capability no registry
 

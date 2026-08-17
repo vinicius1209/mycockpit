@@ -24,6 +24,7 @@ import {
 import { perfSpan } from "@/lib/fleet/perf"
 import { availability, type Availability } from "@/lib/agents"
 import { loadLedger } from "@/lib/db"
+import { aggregateLedgerByProject } from "@/lib/fleet/ledgerAgg"
 import type { ApprovalData } from "@/lib/interaction"
 import type { MissionPersona, MissionRun } from "@/lib/missionTypes"
 import { useApp } from "@/store/app"
@@ -107,8 +108,12 @@ let batons: NonNullable<OfficeSnapshot["batons"]> = []
 let arrivals: NonNullable<OfficeSnapshot["arrivals"]> = []
 /** Entregas ao Boss vivas (expiram em 30s). */
 let bossDeliveries: NonNullable<OfficeSnapshot["bossDeliveries"]> = []
-/** Cache do ledger de custo agregado por projectId (query async). */
-let ledgerByProject: Record<string, number> = {}
+/** Cache do ledger por projectId (query async): custo, e — à parte, nunca 0
+ *  (ADR-047) — o sem preço. */
+let ledgerCache: {
+  byProject: Record<string, number>
+  unpriced: Record<string, { turns: number; tokens: number }>
+} = { byProject: {}, unpriced: {} }
 
 // Interações pendentes: SEM cópia local — a fila é a do useInteractions
 // (fonte única; responder/resolver remove lá e o derive só lê).
@@ -128,7 +133,7 @@ export function _resetDeriveState(): void {
   batons = []
   arrivals = []
   bossDeliveries = []
-  ledgerByProject = {}
+  ledgerCache = { byProject: {}, unpriced: {} }
 }
 
 // ---------------------------------------------------------------------------
@@ -665,8 +670,8 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
       name: project.name,
       color: project.color ?? undefined,
       agg: roomAggregate(desks),
-      costUsd:
-        (ledgerByProject[project.id] ?? 0) + (missionCost[project.id] ?? 0),
+      costUsd: (ledgerCache.byProject[project.id] ?? 0) + (missionCost[project.id] ?? 0),
+      unpriced: ledgerCache.unpriced[project.id] ?? { turns: 0, tokens: 0 },
       desks,
       mission,
       war: warByProject.get(project.id),
@@ -690,12 +695,7 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
  *  custo ACUMULADO do projeto). */
 async function refreshLedger(): Promise<void> {
   try {
-    const entries = await loadLedger(0)
-    const agg: Record<string, number> = {}
-    for (const e of entries) {
-      agg[e.projectId] = (agg[e.projectId] ?? 0) + (e.costUsd ?? 0)
-    }
-    ledgerByProject = agg
+    ledgerCache = aggregateLedgerByProject(await loadLedger(0))
   } catch {
     // best-effort: mantém o cache anterior
   }

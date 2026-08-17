@@ -312,10 +312,12 @@ pub struct Capabilities {
     /// Expõe a JANELA DE USO do plano (% usado + reset, feature "9% used ·
     /// 4h 22m" do estudo do Orca — pipeline SEPARADO do custo em $). `None` =
     /// motor sem fonte auditada: a UI some com pill/toggle (degradação
-    /// honesta), nunca inventa percentual. agy 1.1.12: só existe `/credits`
-    /// (saldo de créditos, sem % de janela nem reset — verificado 12/08/2026)
-    /// → não é janela de uso, `None`. Espelho TS: `usageWindow` em
-    /// lib/agents.ts (teste-gêmeo agents.usageWindow.test.ts ↔
+    /// honesta), nunca inventa percentual. Exemplo do motivo caindo com nova
+    /// evidência: agy ficou em `None` até 16/08/2026 porque a única fonte
+    /// conhecida era `/credits` (saldo absoluto, sem % nem reset); caiu
+    /// quando o `/usage` foi auditado (ver `AGY_CAPS` abaixo — hoje é
+    /// `Some(AgyPrintCommand)`). Espelho TS: `usageWindow` em lib/agents.ts
+    /// (teste-gêmeo agents.usageWindow.test.ts ↔
     /// `matriz_usage_window_por_agent`).
     pub usage_window: Option<UsageWindowSource>,
     /// Dialeto que o POLL do vigia usa pra PERGUNTAR a janela agora
@@ -687,7 +689,8 @@ fn build_claude() -> Box<dyn AgentAdapter> {
 fn build_codex() -> Box<dyn AgentAdapter> {
     Box::new(CodexAdapter {
         // o stream do codex NÃO emite o modelo → lê do config p/ estimar custo
-        model: Some(codex_config_model()),
+        // (None = sem config nem chave `model`; SEM chute — ver `codex_config_model`)
+        model: codex_config_model(),
         evidence: None,
         // baseline e thread do run chegam no build_command (RunRequest).
         resume: None,
@@ -1600,7 +1603,10 @@ impl AgentAdapter for ClaudeAdapter {
 
 #[derive(Default)]
 pub struct CodexAdapter {
-    /// Modelo capturado do stream (p/ estimar custo; Codex não dá USD).
+    /// Modelo REQUISITADO (`req.model` em `build_command`), pra estimar custo
+    /// (Codex não dá USD). NÃO é capturado do stream: medido 17/08/2026, o
+    /// `codex exec --json` não reporta o modelo em evento nenhum — `None`
+    /// quando ninguém pediu, e o custo sai sem preço em vez de chutar.
     model: Option<String>,
     /// Evidência visual (B1): o exec só reporta imagem se o item trouxer um
     /// `result` com content MCP; sem isso, degrada honesto (vazio).
@@ -1790,8 +1796,22 @@ impl AgentAdapter for CodexAdapter {
                     cached_input: delta.cached_input,
                     output: delta.output,
                 };
-                // Codex NÃO dá USD → estima por tokens × tabela (default = config gpt-5.5)
-                let model = self.model.clone().unwrap_or_else(|| "gpt-5.5".to_string());
+                // Codex NÃO dá USD → estima por tokens × tabela, mas SÓ quando
+                // sabemos o modelo. `self.model` nasce de `codex_config_model()`
+                // (lê `~/.codex/config.toml`) em `build_codex()` e é sobrescrito
+                // por `req.model` em `build_command` quando o usuário pede um —
+                // mas antes desta correção, se NENHUM dos dois soubesse dizer,
+                // o adapter chutava um default fixo ("gpt-5.5") pra estimar em
+                // cima. Medido 17/08/2026 (`codex exec --json` sem `-m`,
+                // codex-cli 0.147.0): NENHUM evento do stream (`thread.started`,
+                // `turn.started`, `item.completed`, `turn.completed`) carrega o
+                // modelo — o stream não tem como corrigir o chute. Um dólar
+                // atribuído a um modelo que ninguém escolheu e que a gente não pode
+                // provar é pior que nenhum dólar. String vazia não casa
+                // catálogo nem SEED (`price_for("")`, testado) → `(None,
+                // Unknown)`, a mesma degradação honesta do ADR-047: o turno
+                // ainda entra no ledger, com os tokens reais e `cost_usd` NULL.
+                let model = self.model.clone().unwrap_or_default();
                 let (cost_usd, cost_source) = crate::pricing::estimate(&model, &nu);
                 let mut out = Vec::new();
                 // Footprint do contexto = NÍVEL, não soma: é o prompt DESTE
@@ -2544,9 +2564,14 @@ impl AgentAdapter for AgyAdapter {
     }
 }
 
-/// Modelo default do Codex (CODEX_HOME ou ~/.codex)/config.toml. O stream do
-/// `codex exec --json` NÃO expõe o modelo, então essa é a fonte robusta p/ custo.
-fn codex_config_model() -> String {
+/// Modelo default do Codex, lido de `(CODEX_HOME ou ~/.codex)/config.toml`. O
+/// stream do `codex exec --json` NÃO expõe o modelo (medido 17/08/2026: nenhum
+/// evento carrega o campo), então esta é a fonte mais robusta que existe p/
+/// custo — mas só quando o arquivo REALMENTE diz. `None` = não achou (sem
+/// `CODEX_HOME`/`HOME`, sem arquivo, sem parse, ou sem a chave `model`); antes
+/// disso caía num "gpt-5.5" chutado, um dólar atribuído a um modelo que
+/// ninguém confirmou. Sem fonte, sem preço — mesma doutrina do ADR-047.
+fn codex_config_model() -> Option<String> {
     let dir = std::env::var("CODEX_HOME")
         .map(PathBuf::from)
         .ok()
@@ -2562,18 +2587,14 @@ fn codex_config_model() -> String {
                 .and_then(|v| v.as_str())
                 .map(str::to_string)
         })
-        .unwrap_or_else(|| "gpt-5.5".to_string())
 }
 
 /// Modelo usado p/ ESTIMAR o custo do Codex (ele nunca reporta USD): o
-/// requisitado no envio vence; sem ele, o default do `~/.codex/config.toml`.
-/// Mesma regra dos dois transportes (`exec` e app-server).
+/// requisitado no envio vence; sem ele, o default do `~/.codex/config.toml`;
+/// sem os dois, `None` — nunca um chute. Mesma regra dos dois transportes
+/// (`exec` e app-server).
 pub fn codex_cost_model(requested: Option<&str>) -> Option<String> {
-    Some(
-        requested
-            .map(str::to_string)
-            .unwrap_or_else(codex_config_model),
-    )
+    requested.map(str::to_string).or_else(codex_config_model)
 }
 
 #[cfg(test)]
@@ -2615,9 +2636,49 @@ mod tests {
         args.windows(2).any(|w| w[0] == flag && w[1] == value)
     }
 
-    /// Regressão do bug real de 04/08: `codex exec resume` (0.146) NÃO aceita
-    /// `--add-dir` depois do subcomando ("unexpected argument"); a opção tem
-    /// que vir ANTES do `resume`. Turno de resume com pasta extra morria.
+    /// As três camadas de `codex_cost_model` — o buraco que deixava "gpt-5.5"
+    /// entrar sem fonte nenhuma (medido 17/08/2026).
+    #[test]
+    fn codex_cost_model_pedido_venceconfig_venceninguem_nao_inventa() {
+        // As três camadas de `codex_cost_model`, numa função só (SEQUENCIAL —
+        // `CODEX_HOME` é var de AMBIENTE do processo inteiro; duas dessas
+        // asserções em testes separados rodando em paralelo correriam). Nunca
+        // aponta pro `~/.codex/` real do usuário: sempre um dir de scratch.
+        let dir = std::env::temp_dir().join(format!(
+            "mycockpit-codex-cost-model-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let antigo = std::env::var("CODEX_HOME").ok();
+        unsafe {
+            std::env::set_var("CODEX_HOME", &dir);
+        }
+
+        // 1. Nem requisitado, nem config.toml (arquivo não existe): None —
+        //    nunca "gpt-5.5" chutado (o bug real, incidente medido 17/08/2026).
+        assert_eq!(codex_cost_model(None), None);
+
+        // 2. Sem requisição, config.toml TEM `model`: usa o do arquivo.
+        std::fs::write(dir.join("config.toml"), "model = \"gpt-5.6\"\n").unwrap();
+        assert_eq!(codex_cost_model(None), Some("gpt-5.6".to_string()));
+
+        // 3. Requisitado vence o config, mesmo com os dois presentes.
+        assert_eq!(codex_cost_model(Some("gpt-5.4")), Some("gpt-5.4".to_string()));
+
+        // 4. config.toml existe mas SEM a chave `model`: ainda None, não chuta.
+        std::fs::write(dir.join("config.toml"), "outra_chave = 1\n").unwrap();
+        assert_eq!(codex_cost_model(None), None);
+
+        unsafe {
+            match antigo {
+                Some(v) => std::env::set_var("CODEX_HOME", v),
+                None => std::env::remove_var("CODEX_HOME"),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn codex_add_dir_vem_antes_do_subcomando_resume() {
         let mut adapter = CodexAdapter::default();
@@ -3441,9 +3502,17 @@ mod tests {
 
     #[test]
     fn codex_segundo_turno_cobra_o_delta_e_nao_o_acumulado_da_thread() {
+        // Modelo EXPLÍCITO nos dois turnos: desde que o adapter parou de
+        // chutar "gpt-5.5" sem fonte, `CodexAdapter::default()` + `req()` sem
+        // `.model` dão `self.model: None` o turno inteiro → custo sai sem
+        // preço, o que mascararia a asserção de DELTA que este teste existe
+        // pra provar. O que se testa aqui é a subtração do baseline (ADR-033),
+        // não a resolução de modelo — essa tem teste próprio.
         // Turno 1: thread nova, sem baseline → o acumulado É o turno.
         let mut a1 = CodexAdapter::default();
-        a1.build_command(&req(Permission::Padrao, false)).unwrap();
+        let mut r1 = req(Permission::Padrao, false);
+        r1.model = Some("gpt-5.5".to_string());
+        a1.build_command(&r1).unwrap();
         a1.map_line(&serde_json::json!({ "type": "thread.started", "thread_id": "t-1" }));
         let evs1 = a1.map_line(&turn_completed(TURNO_1));
         let (i1, o1, c1, usd1, cum1) = result_of(&evs1);
@@ -3454,6 +3523,7 @@ mod tests {
         // baseline (é o que o front persistiu do `cumulative_usage`).
         let mut a2 = CodexAdapter::default();
         let mut r = req(Permission::Padrao, false);
+        r.model = Some("gpt-5.5".to_string());
         r.resume = Some("t-1".to_string());
         r.usage_baseline = Some(crate::agent::CumulativeUsage {
             input: TURNO_1.0,
@@ -3491,6 +3561,10 @@ mod tests {
     fn codex_thread_nova_descarta_o_baseline_em_vez_de_zerar_o_turno() {
         let mut a = CodexAdapter::default();
         let mut r = req(Permission::Padrao, false);
+        // modelo explícito: sem chute de default, custo sem modelo sai sem
+        // preço, e a asserção `usd > 0.0` deste teste é sobre o RESET do
+        // baseline, não sobre resolução de modelo.
+        r.model = Some("gpt-5.5".to_string());
         r.resume = Some("t-antiga".to_string());
         r.usage_baseline = Some(crate::agent::CumulativeUsage {
             input: 500_000,
