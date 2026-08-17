@@ -8,7 +8,9 @@
 
 import { useEffect, useState } from "react"
 import { FolderGit2, Timer, X } from "lucide-react"
+import { PENDING_DECISION } from "@/lib/attention"
 import { resumeBannerLabel } from "@/lib/autoResume"
+import { cn } from "@/lib/utils"
 
 /** Banner (acima do composer) quando um auto-resume está agendado: countdown ao
  *  vivo até o próximo reenvio, quantas tentativas restam, e as saídas (Cancelar /
@@ -39,7 +41,12 @@ export function AutoResumeBanner({
   const secs = Math.max(0, Math.ceil((nextAt - now) / 1000))
   const remaining = Math.max(0, maxTries - tries)
   return (
-    <div className="mb-2 flex items-center gap-2.5 rounded-lg border border-st-warning/40 bg-st-warning/10 px-3 py-2">
+    <div
+      className={cn(
+        "mb-2 flex items-center gap-2.5 rounded-lg border px-3 py-2",
+        PENDING_DECISION,
+      )}
+    >
       <Timer className="size-4 shrink-0 animate-pulse text-st-warning" />
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-foreground">
@@ -70,18 +77,32 @@ export function AutoResumeBanner({
 }
 
 /** Banner (acima do composer) quando o agent bateu no gate de diretório: um
- *  clique libera a pasta (--add-dir) e reenvia o pedido. Heurístico → dispensável. */
+ *  clique libera a pasta (--add-dir) e reenvia o pedido. Heurístico → dispensável.
+ *
+ *  `busy` = turno em voo. O botão SOME nesse estado, e não por capricho visual:
+ *  o gate de diretório é fixo no spawn, então liberar agora não alcança o
+ *  processo que já está rodando. Oferecer o gesto ali era prometer um conserto
+ *  que só existiria num turno novo, e no incidente 2026-08-16 o clique virou um
+ *  segundo turno completo (mesmo prompt, ~2,4M de tokens a mais). O aviso fica,
+ *  porque o bloqueio É real e está acontecendo; o que sai é a promessa. */
 export function BlockedDirBanner({
   dir,
+  busy = false,
   onAllow,
   onDismiss,
 }: {
   dir: string
+  busy?: boolean
   onAllow: () => void
   onDismiss: () => void
 }) {
   return (
-    <div className="mb-2 flex items-center gap-2.5 rounded-lg border border-st-warning/40 bg-st-warning/10 px-3 py-2">
+    <div
+      className={cn(
+        "mb-2 flex items-center gap-2.5 rounded-lg border px-3 py-2",
+        PENDING_DECISION,
+      )}
+    >
       <FolderGit2 className="size-4 shrink-0 text-st-warning" />
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-foreground">
@@ -90,13 +111,21 @@ export function BlockedDirBanner({
         <p className="truncate font-mono text-[11px] text-muted-foreground" title={dir}>
           {dir}
         </p>
+        {busy && (
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            O acesso às pastas é definido quando o turno começa, então liberar
+            agora não alcança este. Dá pra liberar assim que ele terminar.
+          </p>
+        )}
       </div>
-      <button
-        onClick={onAllow}
-        className="shrink-0 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
-      >
-        Liberar e reenviar
-      </button>
+      {!busy && (
+        <button
+          onClick={onAllow}
+          className="shrink-0 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
+        >
+          Liberar e reenviar
+        </button>
+      )}
       <button
         onClick={onDismiss}
         title="Dispensar"

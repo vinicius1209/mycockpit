@@ -9,6 +9,23 @@
 const ACCESS_RE =
   /(allowed director|outside (the )?(allowed|working|permitted)|not permitted|permission denied|--add-dir|add-dir|fora do diret[óo]rio|n[ãa]o permit|eacces|cannot access|not allowed to (access|read|write)|no access to|access denied)/i
 
+/** Bloqueios que o `--add-dir` NÃO destrava: regra INTERNA do próprio CLI
+ *  protegendo arquivos dele. Incidente 2026-08-16 (§2.4): o `agy` 1.1.13 recusou
+ *  `~/.gemini/antigravity-cli/settings.json` com *"Permission denied for
+ *  read_file(…). Matches hardcoded system protection boundary rule."* — o
+ *  `ACCESS_RE` casou pelo genérico "permission denied", o banner ofereceu
+ *  "Liberar e reenviar", e o app gastou 5 minutos e ~2,4M de tokens executando
+ *  uma correção impossível (o segundo turno morreu no mesmo bloqueio). O CLI se
+ *  defendendo sozinho é BOM; oferecer botão contra isso é que não é.
+ *
+ *  Casa a FRASE, não o fornecedor: um app agnóstico não pode decidir por
+ *  `~/.gemini` vs `~/.claude` (a lista envelheceria a cada CLI novo, e liberar
+ *  pasta de credencial de outro agente nunca é o conserto certo). Falso
+ *  negativo aqui custa um banner a menos, e a pasta segue liberável à mão em
+ *  Configurações; falso positivo custava o turno inteiro de novo. */
+const HARD_RULE_RE =
+  /(protection boundary|system protection|hard-?coded (system|security|protection|policy|rule))/i
+
 /** Extrai caminhos absolutos "limpos" (sem espaços/aspas) do texto. */
 function absPaths(text: string): string[] {
   const m = text.match(/\/[^\s'"`():,]+/g)
@@ -41,6 +58,8 @@ export function detectBlockedDir(
 ): string | null {
   if (!text || !projectRoot) return null
   if (!ACCESS_RE.test(text)) return null
+  // regra interna do CLI: o --add-dir não destrava, então não há o que oferecer.
+  if (HARD_RULE_RE.test(text)) return null
 
   const roots = [projectRoot, ...allowed].map((r) => r.replace(/\/+$/, ""))
   for (const raw of absPaths(text)) {

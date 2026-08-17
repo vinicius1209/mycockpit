@@ -43,3 +43,34 @@ describe("detectBlockedDir", () => {
     expect(detectBlockedDir("permission denied but no path here", ROOT)).toBeNull()
   })
 })
+
+describe("bloqueio que o --add-dir NÃO destrava (incidente 2026-08-16)", () => {
+  // Payload REAL, do item `#31` da conversa ec1642c1 (lido do banco). É o texto
+  // que o `agy` 1.1.13 devolveu ao tentar ler o arquivo de configuração DELE.
+  const REGRA_INTERNA =
+    "Permission denied for read_file(/Users/viniciusmachado/.gemini/antigravity-cli/settings.json). Matches hardcoded system protection boundary rule."
+
+  it("não oferece liberar quando a regra é do próprio CLI", () => {
+    // O ACCESS_RE casa por "permission denied" e o path está fora da raiz: sem
+    // esta segunda régua, o banner oferecia "Liberar e reenviar" e o app gastou
+    // 5 minutos e ~2,4M de tokens executando uma correção impossível.
+    expect(detectBlockedDir(REGRA_INTERNA, "/Users/viniciusmachado/projetos/mycockpit")).toBeNull()
+  })
+
+  it("as outras redações da mesma regra também não passam", () => {
+    for (const texto of [
+      "permission denied: /Users/vini/x/y.json violates system protection rules",
+      "cannot access /Users/vini/x/y.json (hard-coded security policy)",
+      "not permitted: /Users/vini/x/y.json matches protection boundary",
+    ]) {
+      expect(detectBlockedDir(texto, ROOT)).toBeNull()
+    }
+  })
+
+  it("mas o gate de diretório COMUM continua detectado", () => {
+    // A régua nova não pode comer o caso que o banner existe para resolver.
+    const texto =
+      "/Users/vini/projetos/backend/src/app.ts is outside the allowed directories"
+    expect(detectBlockedDir(texto, ROOT)).toBe("/Users/vini/projetos/backend/src")
+  })
+})

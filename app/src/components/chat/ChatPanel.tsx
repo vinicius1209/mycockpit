@@ -31,7 +31,15 @@ import {
   needsPersonaReinject,
   type ChatItem,
 } from "@/store/chat"
-import { writeMycockpitConfig } from "@/lib/mycockpit"
+import { allowBlockedDir } from "@/lib/dirGate"
+import { retidoPorTurnoEmVoo } from "@/lib/sendGate"
+import {
+  AUTO_RESUME,
+  ehAutoResume,
+  HUMANO,
+  PASTA_LIBERADA,
+  type OrigemDoEnvio,
+} from "@/lib/sendOrigin"
 import { useFusion } from "@/store/fusion"
 import { FusionBoard } from "@/components/fusion/FusionBoard"
 import { useMission } from "@/store/mission"
@@ -280,7 +288,8 @@ export function ChatPanel() {
     if (!queuedPrompt) return
     const text = queuedPrompt
     useChat.getState().queuePrompt(null)
-    void handleSend(text)
+    // ⌘K é gesto SEU: o prompt entra como mensagem do humano.
+    void handleSend(text, undefined, [], HUMANO)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queuedPrompt])
 
@@ -314,51 +323,30 @@ export function ChatPanel() {
   // destinationId = o agent escolhido no seletor (v0.2-α: o seam que descartava
   // o destino agora é threadado até o runAgent). Default 'claude-code'.
   // Phase 3 do extra_dirs: libera a pasta detectada (persiste no config.toml +
-  // memória) e REENVIA o último pedido do usuário — o novo turno nasce com
-  // --add-dir (o gate de diretório é fixo no spawn). Só resolve entre turnos.
-  async function allowBlockedDir(dir: string) {
+  // memória) e, SÓ com a conversa parada, reenvia o último pedido — o novo
+  // turno nasce com --add-dir (o gate de diretório é fixo no spawn). A decisão
+  // inteira, com o prazo de cada metade, mora em `lib/dirGate` (ADR-046).
+  function handleAllowBlockedDir(dir: string) {
     if (!project) return
-    const app = useApp.getState()
-    const cur = app.mycockpit[project.id]
-    if (cur?.extraDirs?.includes(dir)) {
-      // já liberado (corrida) → só limpa o aviso.
-      if (activeId) useChat.getState().clearBlockedDir(activeId)
-      return
-    }
-    const next = [...(cur?.extraDirs ?? []), dir]
-    try {
-      await writeMycockpitConfig(project.path, { extraDirs: next })
-    } catch {
-      toast.error("Não consegui salvar a pasta permitida no config.")
-      return
-    }
-    app.setMycockpit(project.id, {
-      exists: true,
-      permission: cur?.permission ?? project.permissionMode ?? "padrao",
-      helper: cur?.helper ?? "haiku",
-      mode: cur?.mode ?? "linear",
-      extraDirs: next,
+    void allowBlockedDir({
+      convId: activeId,
+      project,
+      dir,
+      // Reenvio é MECANISMO: entra com origem de SISTEMA e, por isso, jamais
+      // pode virar mensagem na fila do humano.
+      reenviar: (texto) => void handleSend(texto, undefined, [], PASTA_LIBERADA),
     })
-    if (activeId) useChat.getState().clearBlockedDir(activeId)
-    // reenvia o último pedido do usuário (novo turno, agora com acesso à pasta).
-    const items = useChat.getState().byId[activeId ?? ""]?.items ?? []
-    let lastUser = ""
-    for (let i = items.length - 1; i >= 0; i--) {
-      const it = items[i]
-      if (it.kind === "user") {
-        lastUser = it.text
-        break
-      }
-    }
-    toast.success("Pasta liberada. Reenviando o pedido…")
-    if (lastUser) void handleSend(lastUser)
   }
 
   async function handleSend(
     text: string,
-    cfg?: AgentRunConfig,
-    attachments: Attachment[] = [],
-    fromAutoResume = false,
+    cfg: AgentRunConfig | undefined,
+    attachments: Attachment[],
+    /** QUEM pediu este envio (ADR-046). Obrigatório de propósito, e por isso os
+     *  dois anteriores perderam o default: era um `fromAutoResume` booleano, e
+     *  o caminho que não se declarava (o botão de liberar pasta) enfileirou uma
+     *  retomada do app na fila do humano. Quem envia agora diz quem é. */
+    origem: OrigemDoEnvio,
     /** Conversa de ORIGEM. Quem RE-ENTRA (drenagem da fila, auto-resume) passa o
      *  convId do turno que terminou: esses envios disparam tempo depois e, lendo
      *  o foco, a fila digitada no projeto X ia parar na conversa aberta do
@@ -430,16 +418,15 @@ export function ChatPanel() {
         return
       }
     }
-    // Rodando/finalizando: em vez de descartar, ENFILEIRA. O CLI precisa sair de
-    // fato (flush da sessão) antes do próximo run; ao terminar, o finally junta as
-    // pendentes num único envio (resume). Coalescer evita N resumes em sequência.
-    if (conv.running || conv.finalizing) {
-      useChat.getState().enqueue(convId, text, attachments)
-      return
-    }
+    // Rodando/finalizando: mensagem SUA vai pra fila (o CLI precisa sair de fato
+    // antes do próximo run; ao terminar, o finally junta as pendentes num envio
+    // só). Retomada de SISTEMA não entra na fila do humano — a decisão e o porquê
+    // moram em `lib/sendGate` (ADR-046).
+    if (retidoPorTurnoEmVoo(convId, text, attachments, origem)) return
     // Um envio MANUAL (digitado/⌘K/fila) supersede um auto-resume agendado: cancela
     // o timer pra não disparar um resume redundante em cima do run que começa agora.
     // Se ESTE send É o próprio resume, não cancela (o loop já limpou/regravou o estado).
+    const fromAutoResume = ehAutoResume(origem)
     if (!fromAutoResume) useChat.getState().cancelAutoResume(convId)
     // novo run → invalida geração de sugestão pendente/em-voo desta conversa
     useChat.getState().invalidateSuggestions(convId)
@@ -540,13 +527,9 @@ export function ChatPanel() {
     }
     // D2 — corrida do await acima: outro envio pode ter passado pelas guardas
     // e iniciado um run enquanto o preflight rodava. Re-checa com estado
-    // FRESCO; run em andamento → ENFILEIRA (mesmo destino da guarda lá em
-    // cima), nunca um segundo run concorrente.
-    const fresh = useChat.getState().byId[convId]
-    if (fresh?.running || fresh?.finalizing) {
-      useChat.getState().enqueue(convId, text, attachments)
-      return
-    }
+    // FRESCO pelo MESMO gate da guarda lá em cima (era código gêmeo, e o gêmeo
+    // enfileirava retomada de sistema), nunca um segundo run concorrente.
+    if (retidoPorTurnoEmVoo(convId, text, attachments, origem)) return
     // "Planejar primeiro" é POR TURNO (não trava com a conv): o cfg do composer
     // carrega o toggle; envios sem cfg (⌘K, fila coalescida) leem o toggle da
     // conversa. Auto-resume nunca planeja (é continuação de execução).
@@ -836,7 +819,7 @@ export function ChatPanel() {
     if (all.length === 0) return false
     const { batch, rest } = splitQueueForAppCommand(all)
     for (const m of rest) {
-      useChat.getState().enqueue(convId, m.text, m.attachments)
+      useChat.getState().enqueue(convId, m.text, m.attachments, HUMANO)
     }
     // G2.2 — expande CADA pendente ANTES do join: `/comando` no meio do texto
     // coalescido era barra morta (a expansão do handleSend só olha o texto
@@ -860,7 +843,9 @@ export function ChatPanel() {
         batch.flatMap((q) => q.attachments).map((a) => [a.path, a]),
       ).values(),
     ]
-    void handleSend(texts.join("\n\n"), undefined, atts, false, convId)
+    // A fila é do humano, então a drenagem dela também é: o que sai daqui foi
+    // ele que digitou (ADR-046).
+    void handleSend(texts.join("\n\n"), undefined, atts, HUMANO, convId)
     return true
   }
 
@@ -977,7 +962,7 @@ export function ChatPanel() {
         message: `auto-resume: retomando (tentativa ${tries}/${settings.autoResumeMaxTries})`,
       })
       // alvo explícito: o timer dispara minutos depois, o foco já pode ser outro.
-      void handleSend(prompt, undefined, [], true, convId)
+      void handleSend(prompt, undefined, [], AUTO_RESUME, convId)
     }, verdict.delayMs)
     useChat.getState().setAutoResume(convId, {
       tries,
@@ -1151,7 +1136,7 @@ export function ChatPanel() {
     const prompt = buildExecutionPrompt(c.agent, c.pendingPlan.text)
     useChat.getState().clearPendingPlan(convId)
     useChat.getState().setPlanFirst(convId, false)
-    void handleSend(prompt)
+    void handleSend(prompt, undefined, [], HUMANO)
   }
 
   function handleStop() {
@@ -1292,7 +1277,7 @@ export function ChatPanel() {
                     `Retomar “${deferredLabel(tool.deferred)}” de onde parou? O que já foi executado volta do cache, sem pagar de novo.`,
                   )
                   if (!ok) return
-                  void handleSend(prompt)
+                  void handleSend(prompt, undefined, [], HUMANO)
                   return
                 }
                 if (tool.managedProcess) {
@@ -1317,6 +1302,9 @@ export function ChatPanel() {
                 if (!ok) return
                 void handleSend(
                   `Repita somente a etapa “${label}” do turno anterior. Reavalie o estado atual antes de executar para não duplicar efeitos já aplicados.`,
+                  undefined,
+                  [],
+                  HUMANO,
                 )
               }}
               onContinueWith={(a) => void handleContinueWith(a)}
@@ -1452,21 +1440,29 @@ export function ChatPanel() {
                 })
                 const prompt =
                   "O turno anterior parou num limite de uso/espera. Continue a tarefa pendente de onde parou (não repita o que já foi feito)."
-                void handleSend(prompt, undefined, [], true, activeId)
+                void handleSend(prompt, undefined, [], AUTO_RESUME, activeId)
               }}
             />
           )}
+          {/* `busy` alinha este banner ao vizinho PlanPendingCard: com turno em
+              voo o GESTO não é oferecido, porque o --add-dir é fixo no spawn e
+              não vale pro processo vivo. O AVISO fica (a pasta está barrando o
+              agente agora, isso é fato), e ele volta a ser acionável no fim do
+              turno, sem clique perdido no meio. Incidente 2026-08-16. */}
           {conv?.blockedDir && project && (
             <BlockedDirBanner
               dir={conv.blockedDir}
-              onAllow={() => void allowBlockedDir(conv.blockedDir!)}
+              busy={running || finalizing}
+              onAllow={() => handleAllowBlockedDir(conv.blockedDir!)}
               onDismiss={() =>
                 activeId && useChat.getState().clearBlockedDir(activeId)
               }
             />
           )}
           <CommandConsole
-            onSend={handleSend}
+            onSend={(text, cfg, attachments) =>
+              void handleSend(text, cfg, attachments, HUMANO)
+            }
             disabled={!project}
             running={running}
             finalizing={finalizing}

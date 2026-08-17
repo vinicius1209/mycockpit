@@ -25,6 +25,8 @@ import {
   recordInjectedLessons,
 } from "@/lib/learning"
 import { notifyTurnEnd } from "@/lib/notify"
+import { retidoPorTurnoEmVoo } from "@/lib/sendGate"
+import { AUTO_RESUME, HUMANO, type OrigemDoEnvio } from "@/lib/sendOrigin"
 import { extractPlanText, turnEndedOk } from "@/lib/planMode"
 import {
   hasAssistantReply,
@@ -204,11 +206,12 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
     toast("Missão em andamento. Pare a missão para enviar manualmente.")
     return
   }
-  // Rodando/finalizando: ENFILEIRA (o finally do turno corrente drena e
-  // coalesce — inclusive o turno disparado pela outra superfície).
-  if (conv.running || conv.finalizing) {
-    useChat.getState().enqueue(convId, text, attachments)
-    args.onAccepted?.("queued")
+  // Rodando/finalizando: mensagem SUA vai pra fila (o finally drena e coalesce);
+  // retomada automática NÃO, que a fila é do humano. Gate único, o mesmo do
+  // ChatPanel (ADR-046), e "queued" só é aceite do que foi mesmo enfileirado.
+  const origem: OrigemDoEnvio = args.fromAutoResume ? AUTO_RESUME : HUMANO
+  if (retidoPorTurnoEmVoo(convId, text, attachments, origem)) {
+    if (!args.fromAutoResume) args.onAccepted?.("queued")
     return
   }
   // envio manual supersede um auto-resume agendado nesta conversa; se ESTE
@@ -302,13 +305,10 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
     toast.error(dispatchBlock)
     return
   }
-  // D2 — corrida do await acima: outro envio pode ter iniciado um run durante
-  // o preflight. Re-checa FRESCO; rodando → enfileira (mesmo destino da guarda
-  // de cima), nunca um segundo run concorrente.
-  const fresh = useChat.getState().byId[convId]
-  if (fresh?.running || fresh?.finalizing) {
-    useChat.getState().enqueue(convId, text, attachments)
-    args.onAccepted?.("queued")
+  // D2 — corrida do await acima: outro envio pode ter iniciado um run durante o
+  // preflight. Re-checa FRESCO pelo MESMO gate de cima, nunca run concorrente.
+  if (retidoPorTurnoEmVoo(convId, text, attachments, origem)) {
+    if (!args.fromAutoResume) args.onAccepted?.("queued")
     return
   }
   // "Planejar primeiro" da CONVERSA (toggle ligado por qualquer superfície);
@@ -564,7 +564,7 @@ async function drainDeskQueued(
   if (all.length === 0) return false
   const { batch, rest } = splitQueueForAppCommand(all)
   for (const m of rest) {
-    useChat.getState().enqueue(convId, m.text, m.attachments)
+    useChat.getState().enqueue(convId, m.text, m.attachments, HUMANO)
   }
   // G2.2 — mesma disciplina do ChatPanel: expande CADA pendente ANTES do
   // join (`/comando` no meio do coalescido era barra morta). Com 1 item o

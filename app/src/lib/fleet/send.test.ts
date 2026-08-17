@@ -308,7 +308,7 @@ describe("sendFromDesk — guardas", () => {
     const onAccepted = vi.fn()
     arm(makeConv({ running: true }))
     await sendFromDesk({ ...args, onAccepted })
-    expect(chat.enqueue).toHaveBeenCalledWith("c1", "olá", [])
+    expect(chat.enqueue).toHaveBeenCalledWith("c1", "olá", [], { autor: "humano" })
     expect(runAgent).not.toHaveBeenCalled()
     expect(chat.start).not.toHaveBeenCalled()
     expect(onAccepted).toHaveBeenCalledWith("queued")
@@ -317,7 +317,7 @@ describe("sendFromDesk — guardas", () => {
   it("finalizando também enfileira (flush da sessão ainda em curso)", async () => {
     arm(makeConv({ finalizing: true }))
     await sendFromDesk(args)
-    expect(chat.enqueue).toHaveBeenCalledWith("c1", "olá", [])
+    expect(chat.enqueue).toHaveBeenCalledWith("c1", "olá", [], { autor: "humano" })
     expect(runAgent).not.toHaveBeenCalled()
   })
 
@@ -729,7 +729,7 @@ describe("sendFromDesk — persona do preset (S3)", () => {
       return { status: "none" as const }
     })
     await sendFromDesk({ ...args, onAccepted })
-    expect(chat.enqueue).toHaveBeenCalledWith("c1", "olá", [])
+    expect(chat.enqueue).toHaveBeenCalledWith("c1", "olá", [], { autor: "humano" })
     expect(onAccepted).toHaveBeenCalledWith("queued")
     expect(chat.start).not.toHaveBeenCalled()
     expect(runAgent).not.toHaveBeenCalled()

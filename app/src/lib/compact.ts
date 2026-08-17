@@ -25,6 +25,7 @@ import { agentDef, dispatchBlockReason } from "@/lib/agents"
 import { buildDoctrineBlock, decideDoctrine, readDoctrine } from "@/lib/doctrine"
 import { serializeContext } from "@/lib/fusion"
 import { hasAssistantReply, personaHandoffBlock } from "@/lib/presets"
+import { HUMANO } from "@/lib/sendOrigin"
 import { useApp } from "@/store/app"
 import { useChat, hasExecutorTurn, type ChatItem } from "@/store/chat"
 
@@ -171,7 +172,9 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
   // corrida (mesma classe do D2 dos sends): um turno pode ter começado entre a
   // interceptação e este ponto → volta pra fila, nunca um run concorrente.
   if (conv.running || conv.finalizing) {
-    chat.enqueue(args.convId, args.commandText)
+    // O /compactar é um gesto SEU (digitado no composer ou no ⌘K), então ele
+    // espera na fila do humano como qualquer mensagem sua (ADR-046).
+    chat.enqueue(args.convId, args.commandText, [], HUMANO)
     return
   }
   const agent = conv.agent

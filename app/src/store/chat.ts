@@ -44,6 +44,7 @@ import { moveByDelta, reorderByIds } from "@/lib/reorder"
 import { unseenBoundary } from "@/lib/unseen"
 import { clearPresetDriftWarning, warnPresetDrift } from "@/lib/presets"
 import { perfSpan } from "@/lib/fleet/perf"
+import type { Enfileirar } from "@/lib/sendOrigin"
 import type { DeferredWork, WorkEvent, ManagedProcess } from "@/lib/work"
 
 type ChatItemBody =
@@ -342,29 +343,9 @@ export function conversationPresence(
   }
 }
 
-/** Custo acumulado da sessão (soma dos turnos com `result`), consciência de
- *  gasto. Pula results SEGUIDOS de outro result (parciais da mesma invocação):
- *  somar os parciais inflava a sessão (US$120 num turno que custou US$31).
- *  `turns` conta os results finais (a UI só mostra o custo com ≥2 turnos). Puro,
- *  testável, fonte única do strip de custo (agora na barra de topo). */
-export function sessionCost(items: ChatItem[]): {
-  total: number
-  estimated: boolean
-  turns: number
-} {
-  let total = 0
-  let estimated = false
-  let turns = 0
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i]
-    if (it.kind !== "result" || items[i + 1]?.kind === "result") continue
-    turns++
-    total += it.costUsd ?? 0
-    if (it.costSource === "estimated" || it.costSource === "unknown")
-      estimated = true
-  }
-  return { total, estimated, turns }
-}
+/** Custo da sessão: mudou de casa (lib/sessionCost), re-exportado aqui porque
+ *  a fonte única do strip de custo sempre foi importada do store. */
+export { sessionCost } from "@/lib/sessionCost"
 
 /** Especialistas E3 (S3.2) — o próximo turno precisa RE-INJETAR a persona?
  *  DERIVADO de estado PERSISTIDO (sobrevive a restart), não de flag efêmera:
@@ -703,7 +684,9 @@ interface ChatState {
    *  "advice") daquela persona do fio + persiste. A persona sai da presença, que
    *  é DERIVADA (conversationPresence deixa de listar o convidado). */
   removeAdvice: (convId: string, personaId: string) => void
-  enqueue: (convId: string, text: string, attachments?: Attachment[]) => void
+  /** Empilha na fila do composer. Ela é DO HUMANO (ADR-046) e o 4º parâmetro é
+   *  a prova: retomada de sistema não é atribuível a `OrigemHumana`. */
+  enqueue: Enfileirar
   /** Esvazia a fila e devolve as mensagens pendentes (p/ coalescer no envio). */
   dequeueQueued: (convId: string) => QueuedMsg[]
   /** Remove UMA mensagem enfileirada (o X no chip da fila). */
@@ -2002,9 +1985,10 @@ export const useChat = create<ChatState>((set, get) => {
         if (eventAgent) useApp.getState().clearAgentLimited(eventAgent)
       }
       // Ledger de custo por turno (F: "hoje/7d" só via missões). Grava CADA
-      // result com custo — chat linear é caminho disjunto de missão/disputa, sem
+      // result que CONSUMIU, com preço ou sem (ADR-047: quem decide é o
+      // recordTurnCost) — chat linear é caminho disjunto de missão/disputa, sem
       // dupla contagem. REPLACE por run_id colapsa os parciais no total final.
-      if (e.type === "result" && e.cost_usd != null) {
+      if (e.type === "result") {
         const cur = get().byId[convId]
         if (cur?.runId) {
           void recordTurnCost({
@@ -2099,13 +2083,7 @@ export const useChat = create<ChatState>((set, get) => {
         if (cur && proj && !cur.blockedDir) {
           const allowed = useApp.getState().mycockpit[cur.projectId]?.extraDirs ?? []
           const dir = detectBlockedDir(e.text, proj.path, allowed)
-          if (dir) {
-            set((s) => {
-              const c = s.byId[convId]
-              if (!c) return {}
-              return { byId: { ...s.byId, [convId]: { ...c, blockedDir: dir } } }
-            })
-          }
+          if (dir) patch(convId, { blockedDir: dir })
         }
       }
       // Persistência incremental (sobrevive a interrupção mid-run):

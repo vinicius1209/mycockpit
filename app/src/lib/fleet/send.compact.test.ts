@@ -311,7 +311,9 @@ describe("sendFromDesk — /compactar com turno em andamento", () => {
     arm(makeConv({ running: true }))
     const onAccepted = vi.fn()
     await sendFromDesk({ ...args, onAccepted })
-    expect(h.chat.enqueue).toHaveBeenCalledWith("c1", "/compactar", [])
+    expect(h.chat.enqueue).toHaveBeenCalledWith("c1", "/compactar", [], {
+      autor: "humano",
+    })
     expect(onAccepted).toHaveBeenCalledWith("queued")
     expect(vi.mocked(runAgent)).not.toHaveBeenCalled()
   })

@@ -1,0 +1,78 @@
+// O BANNER NÃO OFERECE O GESTO QUANDO ELE NÃO CABE.
+//
+// O `BlockedDirBanner` era o único aviso acima do composer sem guarda de turno:
+// o vizinho imediato dele, o `PlanPendingCard`, já tinha `&& !running &&
+// !finalizing`. A assimetria custou o incidente 2026-08-16 — clicar em "Liberar
+// e reenviar" no meio de um turno fez o mesmo prompt rodar duas vezes por
+// inteiro (~2,4M de tokens a mais).
+//
+// O botão não podia funcionar ali por um motivo de arquitetura, não de gosto: o
+// `--add-dir` entra no `build_command` do SPAWN (`src-tauri/src/adapters.rs`),
+// então nenhuma pasta é emendada num processo vivo, nem com resume nativo.
+//
+// Renderização server-side (`renderToStaticMarkup`), o padrão do repo
+// (`InteractionHost.test.tsx`): a marcação destes banners é função pura das
+// props.
+import { renderToStaticMarkup } from "react-dom/server"
+import { describe, expect, it } from "vitest"
+import { BlockedDirBanner } from "@/components/chat/ComposerBanners"
+import { PENDING_DECISION } from "@/lib/attention"
+
+const PASTA = "/Users/viniciusmachado/.gemini/antigravity-cli"
+
+function montar(busy: boolean) {
+  return renderToStaticMarkup(
+    <BlockedDirBanner
+      dir={PASTA}
+      busy={busy}
+      onAllow={() => {}}
+      onDismiss={() => {}}
+    />,
+  )
+}
+
+describe("com turno em voo", () => {
+  it("o botão de liberar e reenviar NÃO aparece", () => {
+    expect(montar(true)).not.toContain("Liberar e reenviar")
+  })
+
+  it("o aviso FICA (o bloqueio está acontecendo agora)", () => {
+    const html = montar(true)
+    expect(html).toContain("barrado ao acessar uma pasta fora do projeto")
+    expect(html).toContain(PASTA)
+  })
+
+  it("e explica o prazo, sem prometer conserto neste turno", () => {
+    const html = montar(true)
+    expect(html).toContain("liberar")
+    expect(html).toContain("assim que ele terminar")
+    // Copy do §7: nada de travessão na prosa da UI.
+    expect(html).not.toContain("—")
+  })
+
+  it("a saída (dispensar) continua disponível", () => {
+    expect(montar(true)).toContain('aria-label="Dispensar aviso"')
+  })
+})
+
+describe("com a conversa parada", () => {
+  it("o gesto volta, porque agora ele nasce num turno novo", () => {
+    expect(montar(false)).toContain("Liberar e reenviar")
+  })
+
+  it("sem a nota de prazo (ela seria ruído: o botão funciona)", () => {
+    expect(montar(false)).not.toContain("assim que ele terminar")
+  })
+})
+
+describe("a tinta é a de decisão pendente, não a do gesto", () => {
+  it("o contêiner usa a receita única do lib/attention (ADR-043)", () => {
+    for (const parte of PENDING_DECISION.split(" ")) {
+      expect(montar(false)).toContain(parte)
+    }
+  })
+
+  it("o botão primário dentro dele continua brass (§2: brass é gesto)", () => {
+    expect(montar(false)).toContain("bg-brass")
+  })
+})
