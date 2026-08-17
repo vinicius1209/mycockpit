@@ -200,27 +200,13 @@ Regras de aplicação:
 - **Estado ambiente é cinza.** Dot/badge que fica na tela representando "a
   última vez deu certo" é cinza; verde é transição (marco), não decoração
   permanente.
-- **Modo de RISCO tem sinal ambiente; STATUS não.** Rótulo estático vira papel
-  de parede: você para de ver o que está sempre ali. Então o modo que executa
-  sem pedir ("Liberado") acende uma MOLDURA na área de conteúdo (ring âmbar de
-  1px, `ring-inset`, sem animação, `pointer-events-none` — `CLIMATE_FRAME_CLASS`
-  em `lib/climate.ts`). Rodando/concluído/falhou NÃO ganham moldura: já têm
-  lugar no fio e na linha viva, e moldura que qualquer estado acende deixa de
-  significar. A moldura tem **um dono só**, e o dono é o risco autorizado.
-  - **Autolimitado**: só o modo perigoso acende. Não existe clima de "Só lê"
-    nem de "Pede" — sinal que acende sempre não é sinal.
-  - **Colisão com o âmbar de DECISÃO**: decisão ganha. Com pedido pendente na
-    conversa ativa, o clima recolhe (`riskClimateOn`) — o âmbar da tela precisa
-    ser lido como "responde aqui". O modo segue DITO na linha de Execução
-    (segmented âmbar + triângulo), que é a fonte autoritativa; o clima é
-    lembrete, não é a verdade.
-  - **Colisão com o vermelho de FALHA**: falha não apaga o clima. Falha é
-    conteúdo (matiz próprio, dentro do fio) e o modo continua perigoso depois
-    dela; apagar a moldura ali mentiria sobre o próximo turno. Planos diferentes
-    (moldura × conteúdo), e o orçamento de tinta segue em 2 cores.
-  - **Escopo**: é da CONVERSA ATIVA, por herança do projeto dela (a permissão é
-    do projeto; ver `ExecutionRow.tsx`). Conversa de outro projeto na mesma
-    janela não contamina a moldura.
+- **Modo de RISCO é DITO, não emoldurado.** O modo que executa sem pedir
+  ("Liberado") vivia como uma moldura âmbar ambiente ao redor da janela
+  (`lib/climate.ts`, removida em 17/08/2026 — decisão consciente por
+  minimalismo, não bug). A fonte autoritativa continua sendo texto de verdade:
+  o segmented âmbar com o triângulo na linha de Execução (`ExecutionRow.tsx`),
+  por herança do projeto da conversa ativa. Se um sinal ambiente voltar a
+  fazer falta, é por ADR novo, não por reintroduzir a moldura como estava.
 - **Verde não identifica agent.** Cor de identidade não pode colidir com o
   vocabulário de status.
 - Diferença deliberada vs Orca: lá `--primary` é cinza e nada grita; aqui
@@ -315,7 +301,7 @@ nunca em big-bang):
   chip contornado, nem a barra sticky do `DiffPanel`, que ocluí com `bg-card`).
 - **Hairline de largura total só termina em ARESTA RETA** (ADR-043). Superfície
   com raio R tem `padding-inline ≥ R`. Numa janela de canto arredondado (o raio
-  real do macOS é **10px**, `lib/climate.ts`), faixa full-bleed com `border-t` e
+  real do macOS é **10px**, `titleBarStyle` Overlay), faixa full-bleed com `border-t` e
   fundo próprio é proibida: a reta morre no meio do arco, o retângulo de fundo é
   decepado, e o olho lê "recorte". Quem separa é o **inset do conteúdo** (8px na
   faixa de status, `AppShell.tsx`), e a faixa passa a ser o piso da janela.
@@ -387,10 +373,10 @@ proporcionalidade do Orca:
     linha viva do composer segue dona do agora.
   - **Sem carimbo, o slot cala** e o espaço fica reservado (a coluna não dança).
 - **Movimento é pra VIVO, e só pro que termina sozinho.** "Rodando" na sidebar é
-  uma esteira azul de 22×2px porque é evento em curso e o único estado da lista
-  que acaba por conta própria; ponto azul parado ali seria indistinguível de
-  ponto azul esquecido. Pela mesma régua, a moldura do modo Liberado NÃO pulsa
-  (condição permanente) e a falha NÃO pulsa (já aconteceu). Duas condições
+  um anel giratório de 11px (`.conv-spin`) porque é evento em curso e o único
+  estado da lista que acaba por conta própria; ponto azul parado ali seria
+  indistinguível de ponto azul esquecido. Pela mesma régua, a falha NÃO pulsa
+  (já aconteceu — matiz próprio, não animação). Duas condições
   inegociáveis pra qualquer movimento assim: `prefers-reduced-motion` degrada
   pra indicador **estático e visível** (não pra ausência de sinal), e a animação
   vive presa à PRESENÇA do elemento (CSS), nunca a um timer — assim ela morre

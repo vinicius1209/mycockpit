@@ -8,7 +8,6 @@ import { Toaster } from "@/components/ui/sonner"
 import { TitleBar } from "@/components/layout/TitleBar"
 import { StatusBar } from "@/components/layout/StatusBar"
 import { useProjectConfig } from "@/hooks/useProjectConfig"
-import { RiskClimate } from "@/components/chat/RiskClimate"
 import { DecisionStrip } from "@/components/decisions/DecisionStrip"
 import { CommandMenu } from "@/components/common/CommandMenu"
 import { GlobalInteractionHost } from "@/components/common/GlobalInteractionHost"
@@ -680,9 +679,6 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={300}>
         <div className="grain relative flex h-screen w-screen flex-col overflow-hidden bg-rail text-foreground">
-          {/* Moldura ambiente do modo Liberado: JANELA inteira, não o painel.
-              Regra, alcance e o porquê da subida: lib/climate. */}
-          <RiskClimate />
           <TitleBar />
           {/* A faixa "precisa de você" (ADR-040): CHROME, entre a barra do topo
               e o conteúdo, pra ser visível de dentro do Trabalho e não só do

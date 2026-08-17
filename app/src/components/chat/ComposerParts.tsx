@@ -476,10 +476,18 @@ export function ComposerActions({
           duas vezes em 11px. E o rastro de uso não a sustentava — nos 406
           turnos do banco não há um envio começando com "/". A barra continua
           funcionando; o que saiu foi o lembrete redundante. */}
-      <div className="ml-auto flex items-center gap-1.5">
-        {/* overlay="composer": o pill de gravação ancora na raiz relative do
-            CommandConsole e paira ACIMA do composer — a fileira não mexe. */}
-        <MicButton overlay="composer" />
+      {/* Ferramentas de entrada no canto esquerdo */}
+      <div className="flex items-center gap-1.5">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onAttach}
+          className="rounded-full text-muted-foreground hover:text-foreground"
+          title="Anexar arquivo"
+          aria-label="Anexar arquivo"
+        >
+          <Paperclip className="size-4" />
+        </Button>
         {onEspecialistas && (
           <Button
             variant="ghost"
@@ -492,16 +500,13 @@ export function ComposerActions({
             <Sparkles className="size-4" />
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onAttach}
-          className="rounded-full text-muted-foreground hover:text-foreground"
-          title="Anexar arquivo"
-          aria-label="Anexar arquivo"
-        >
-          <Paperclip className="size-4" />
-        </Button>
+        {/* overlay="composer": o pill de gravação ancora na raiz relative do
+            CommandConsole e paira ACIMA do composer — a fileira não mexe. */}
+        <MicButton overlay="composer" />
+      </div>
+
+      {/* Despacho no canto direito */}
+      <div className="ml-auto flex items-center gap-1.5">
         <SendSplit
           running={running}
           canSend={canSend}

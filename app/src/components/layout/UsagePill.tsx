@@ -162,7 +162,7 @@ function ProviderCard({
                     ainda truncar. */}
                 <span
                   title={w.label}
-                  className="w-24 shrink-0 truncate font-medium text-muted-foreground"
+                  className="w-28 shrink-0 truncate font-medium text-muted-foreground"
                 >
                   {w.label}
                 </span>
@@ -175,14 +175,9 @@ function ProviderCard({
                 >
                   {fmtPct(w.usedPercent)}
                 </span>
-                {/* O reset é o único do trio que pode ceder espaço: ele já
-                    vinha `shrink-0` num row de largura fixa, e "reseta em 6d
-                    12h (dia 22, 21:50)" transbordava o cartão em vez de
-                    encolher. Agora ele encolhe, com o texto inteiro no
-                    `title`. */}
                 <span
                   title={resetRel ? `${resetRel}${resetAbs ? ` (${resetAbs})` : ""}` : undefined}
-                  className="ml-auto min-w-0 truncate font-mono text-[11px] text-muted-foreground/75"
+                  className="ml-auto shrink-0 font-mono text-muted-foreground/75 text-right"
                 >
                   {resetRel ? `${resetRel}${resetAbs ? ` (${resetAbs})` : ""}` : ""}
                 </span>
@@ -297,7 +292,7 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
         side={compact ? "top" : "bottom"}
         align={compact ? "start" : "end"}
         sideOffset={8}
-        className="z-[120] w-[390px] p-2.5 space-y-2"
+        className="z-[120] w-[430px] p-2.5 space-y-2"
       >
         <div className="flex items-center justify-between px-1 pb-1 border-b border-border/40">
           <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
@@ -358,6 +353,7 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
 
         <div className="flex items-center justify-between px-1 pt-1 text-[11px] text-muted-foreground/60 border-t border-border/30">
           <span>Medição de carona & poll (sem custo de quota)</span>
+          <span>·</span>
           <span>Atualização auto ~15 min</span>
         </div>
       </DropdownMenuContent>

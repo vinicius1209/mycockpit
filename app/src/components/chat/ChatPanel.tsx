@@ -1208,9 +1208,6 @@ export function ChatPanel() {
 
   return (
     <section className="relative flex h-full w-full min-w-0 flex-col bg-background">
-      {/* O clima do modo Liberado SAIU daqui (build 202) e subiu pra raiz da
-          janela em App.tsx: emoldurando só este painel, ele parava na borda da
-          sidebar e da faixa de status e parecia cortado. Ver lib/climate. */}
       {!hasConversation && !missionActive && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-96 bg-[radial-gradient(62%_80%_at_50%_100%,var(--brass-soft),transparent_72%)] opacity-70" />
       )}

@@ -54,7 +54,7 @@ export function ComposerShell({
               "flex cursor-text flex-col rounded-2xl border bg-card transition-[box-shadow,border-color] duration-200",
               "shadow-[var(--shadow-pop)]",
               focused
-                ? "border-brass/70 shadow-[0_0_0_3px_var(--brass-soft),var(--shadow-pop)]"
+                ? "border-foreground/25 shadow-[0_0_0_1px_rgba(255,255,255,0.06),var(--shadow-pop)]"
                 : "hover:border-border-strong",
               cardClassName,
             )

@@ -9,9 +9,9 @@
 // Anatomia decidida:
 //   SEM hairline e SEM fundo próprio: a faixa É o piso da janela (ADR-043,
 //   Fase 3). Hairline de largura total só termina em aresta reta, e a janela
-//   do macOS é arredondada (raio real 10px, o mesmo que a moldura de risco
-//   teve que aprender em lib/climate.ts) — a borda morria no meio do arco, o
-//   retângulo de fundo era decepado, e o olho lia "recorte", não "moldura".
+//   do macOS é arredondada (raio real 10px, titleBarStyle Overlay) — a borda
+//   morria no meio do arco, o retângulo de fundo era decepado, e o olho lia
+//   "recorte", não "moldura".
 //   Quem separa agora é o inset de 8px do conteúdo, que deixa 8px de rail
 //   visível acima da faixa.
 //   `px-4` (16px ≥ raio 10px): o conteúdo começa DEPOIS do arco. Era px-3, e

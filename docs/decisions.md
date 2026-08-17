@@ -1770,3 +1770,29 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   `cost_source: "unknown"` (com custo nulo ele devolve "" e nada é renderizado,
   então não há mentira em pé) — `fmtMissionCost` e a faixa já tratam `unknown`
   como estimado.
+
+### ADR-048 — A moldura de risco sai da janela; "Liberado" volta a ser só texto ✅
+- **Contexto (17/08/2026):** o `af57bfc` desta mesma semana tinha acabado de
+  CONSERTAR a moldura âmbar do modo Liberado (`lib/climate.ts`,
+  `<RiskClimate />`) para emoldurar a janela inteira em vez do painel, fechando
+  a queixa "parece cortada". Na sessão seguinte o usuário editou o app à mão,
+  tirou `<RiskClimate />` do render de `App.tsx` e, perguntado, foi direto:
+  **"eu tirei, nao gostei, gosto de algo mais minimalista, profissional"**. Não
+  foi acidente nem regressão do conserto — é reversão de gosto sobre uma
+  feature que tinha acabado de funcionar certo. Mesma classe do ADR-043 (mock
+  decide o quê, o usuário decide se): a moldura era tecnicamente correta e
+  ainda assim não era o app que ele queria.
+- **Decisão — a moldura sai, o SINAL não.** Removido por completo: `<RiskClimate
+  />`, `lib/climate.ts` (`riskClimateOn`, `CLIMATE_FRAME_CLASS`) e os dois
+  testes — nada ficou órfão. O que NÃO saiu: o segmented âmbar com o triângulo
+  na linha de Execução (`ExecutionRow.tsx`) continua sendo a fonte autoritativa
+  de que o modo é "Liberado" — só o reforço ambiente (a moldura ao redor da
+  janela inteira) foi embora. Risco autorizado continua DITO; deixou de ser
+  também emoldurado.
+- **STYLEGUIDE.md corrigido, não só o código.** A doutrina "Modo de RISCO tem
+  sinal ambiente; STATUS não" (§2) documentava a moldura como regra da casa;
+  reescrita para "Modo de RISCO é DITO, não emoldurado", com a data e o motivo
+  (minimalismo, não bug) — se um sinal ambiente voltar a fazer falta, é por ADR
+  novo, não por reintroduzir a moldura como estava. As duas citações soltas de
+  `lib/climate.ts` (raio de 10px da janela, animação) foram reescritas para o
+  fato em si, sem apontar pra um arquivo que não existe mais.
