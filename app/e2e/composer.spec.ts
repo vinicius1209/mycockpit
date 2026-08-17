@@ -4,11 +4,11 @@ import { test, expect, type Page } from "@playwright/test"
 //
 // A regra pura do composer (o gate do envio, a identidade efetiva, a
 // precedência da permissão) tem teste unitário; a marcação em repouso é medida
-// por `renderToStaticMarkup` nos `CommandConsole.*.test.tsx`. O que nenhum dos
-// dois alcança é o GESTO: clicar no segmented e ver o clima da janela acender,
-// andar de modo com as setas (é um radiogroup, não três botões soltos), abrir a
-// linha de identidade no chevron, e digitar no editor Lexical de verdade até o
-// Enviar acender.
+// por `renderToStaticMarkup` nos `CommandConsole.*.test.tsx` e
+// `ExecutionRow.permissao.test.tsx`. O que nenhum dos dois alcança é o GESTO:
+// abrir o painel no letreiro, andar de modo com as setas dentro dele (é um
+// radiogroup, não três botões soltos), ligar "Planeja antes", e digitar no
+// editor Lexical de verdade até o Enviar acender.
 //
 // Mede-se no `dist/` buildado (mesmo modelo do `painel-abas.spec.ts`). Fora do
 // Tauri o app degrada pro caminho de demonstração — projeto seed, sem banco —,
@@ -16,9 +16,8 @@ import { test, expect, type Page } from "@playwright/test"
 // onde estes gestos moram. A gravação nas três camadas (store, SQLite,
 // `.mycockpit/config.toml`) é assunto de `lib/permission.test.ts`.
 
+const LETREIRO = 'button[aria-label="Como o próximo turno roda"]'
 const RADIOGROUP = '[aria-label="Permissões do projeto"]'
-/** A moldura do clima (lib/climate: `CLIMATE_FRAME_CLASS`). */
-const CLIMA = 'div[aria-hidden].ring-st-warning\\/30'
 
 async function abrirApp(page: Page) {
   await page.addInitScript(() => {
@@ -37,32 +36,35 @@ async function abrirApp(page: Page) {
     )
   })
   await page.goto("/", { waitUntil: "domcontentloaded" })
-  await expect(page.locator(RADIOGROUP)).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator(LETREIRO)).toBeVisible({ timeout: 10_000 })
 }
 
 const modo = (page: Page, nome: string) =>
   page.locator(`${RADIOGROUP} [role="radio"]`, { hasText: nome })
 
-test("o modo Liberado acende o clima da janela inteira, e sair dele apaga", async ({
+test("o painel nasce fechado e abre no letreiro, com os três blocos dentro", async ({
   page,
 }) => {
-  // A ligação de ponta a ponta que o `lib/climate` puro não prova: o segmented
-  // do composer é o único lugar onde o modo se troca, e a moldura âmbar é a
-  // promessa que o app faz na descrição do modo ("a tela inteira ganha moldura
-  // âmbar"). Se o fio entre os dois arrebentar, o usuário libera a máquina e
-  // nada na tela muda.
   await abrirApp(page)
-  await expect(modo(page, "Pede")).toHaveAttribute("aria-checked", "true")
-  await expect(page.locator(CLIMA)).toHaveCount(0)
+  const letreiro = page.locator(LETREIRO)
+  await expect(letreiro).toHaveAttribute("aria-expanded", "false")
+  // Fechado: nem a permissão, nem "Planeja antes", nem os seletores crus
+  // existem no DOM — o único sinal de fora é o modo escrito no próprio letreiro.
+  await expect(page.locator(RADIOGROUP)).toHaveCount(0)
+  await expect(page.getByRole("switch", { name: "Planejar primeiro" })).toHaveCount(0)
+  await expect(page.getByLabel("Agent")).toHaveCount(0)
+  await expect(page.getByLabel("Modelo")).toHaveCount(0)
 
-  await modo(page, "Liberado").click()
-  await expect(modo(page, "Liberado")).toHaveAttribute("aria-checked", "true")
-  await expect(page.locator(CLIMA)).toHaveCount(1)
+  await letreiro.click()
+  await expect(letreiro).toHaveAttribute("aria-expanded", "true")
+  await expect(page.locator(RADIOGROUP)).toBeVisible()
+  await expect(page.getByRole("switch", { name: "Planejar primeiro" })).toBeVisible()
+  await expect(page.getByLabel("Agent")).toBeVisible()
+  await expect(page.getByLabel("Modelo")).toBeVisible()
 
-  // E o clima é autolimitado: só o modo perigoso acende.
-  await modo(page, "Só lê").click()
-  await expect(modo(page, "Só lê")).toHaveAttribute("aria-checked", "true")
-  await expect(page.locator(CLIMA)).toHaveCount(0)
+  await letreiro.click()
+  await expect(letreiro).toHaveAttribute("aria-expanded", "false")
+  await expect(page.locator(RADIOGROUP)).toHaveCount(0)
 })
 
 test("as setas andam entre os modos (é um radiogroup, não três botões soltos)", async ({
@@ -73,39 +75,52 @@ test("as setas andam entre os modos (é um radiogroup, não três botões soltos
   // disto: sem ele o clique mandava o foco pro campo de texto e as setas
   // paravam de andar.
   await abrirApp(page)
+  await page.locator(LETREIRO).click()
   await modo(page, "Pede").focus()
-  await page.keyboard.press("ArrowRight")
+  await page.keyboard.press("ArrowDown")
   await expect(modo(page, "Liberado")).toHaveAttribute("aria-checked", "true")
+  await page.keyboard.press("ArrowUp")
+  await expect(modo(page, "Pede")).toHaveAttribute("aria-checked", "true")
+  await page.keyboard.press("ArrowUp")
+  await expect(modo(page, "Só lê")).toHaveAttribute("aria-checked", "true")
+  // Circular: da primeira posição, ↑ volta pra última.
+  await page.keyboard.press("ArrowUp")
+  await expect(modo(page, "Liberado")).toHaveAttribute("aria-checked", "true")
+  // ←/→ continuam funcionando (compatibilidade com o segmented horizontal
+  // antigo, que usava as mesmas teclas).
   await page.keyboard.press("ArrowLeft")
   await expect(modo(page, "Pede")).toHaveAttribute("aria-checked", "true")
-  await page.keyboard.press("ArrowLeft")
-  await expect(modo(page, "Só lê")).toHaveAttribute("aria-checked", "true")
-  // Circular: da primeira posição, ← volta pra última.
-  await page.keyboard.press("ArrowLeft")
-  await expect(modo(page, "Liberado")).toHaveAttribute("aria-checked", "true")
 })
 
-test("a linha de identidade nasce fechada e abre no chevron", async ({ page }) => {
+test("Planeja antes liga e desliga no clique, e sobrevive a trocar de permissão", async ({
+  page,
+}) => {
+  // O único controle do painel que é POR TURNO (não por conversa) e que não
+  // persiste em lugar nenhum (`store/chat.ts`, sem `persist`) — furo aberto no
+  // plano do colapso (docs/mocks/composer-README.md §7.1): sem nenhum teste,
+  // clicar aqui nunca foi provado.
   await abrirApp(page)
-  // Localizado pelo `title`: o nome acessível do botão é o RESUMO da identidade
-  // ("Claude Code · Opus 5"), que muda com a escolha do usuário — o title é o
-  // que descreve o controle.
-  const chevron = page.locator(
-    'button[title="Escolher agent, modelo e esforço"]',
-  )
-  await expect(chevron).toHaveAttribute("aria-expanded", "false")
-  // Fechada, o resumo é o que aparece; os seletores crus não existem no DOM.
-  await expect(page.getByLabel("Agent")).toHaveCount(0)
-  await expect(page.getByLabel("Modelo")).toHaveCount(0)
+  await page.locator(LETREIRO).click()
+  const toggle = page.getByRole("switch", { name: "Planejar primeiro" })
+  await expect(toggle).toHaveAttribute("aria-checked", "false")
 
-  await chevron.click()
-  await expect(chevron).toHaveAttribute("aria-expanded", "true")
-  await expect(page.getByLabel("Agent")).toBeVisible()
-  await expect(page.getByLabel("Modelo")).toBeVisible()
+  await toggle.click()
+  await expect(toggle).toHaveAttribute("aria-checked", "true")
+  // O letreiro ganha o rastro (ícone) mesmo depois de fechar o painel — é o
+  // único jeito de lembrar que um modificador por-turno está ligado.
+  await page.locator(LETREIRO).click() // fecha
+  await expect(
+    page.locator(`${LETREIRO} [aria-label="Planeja antes ligado"]`),
+  ).toBeVisible()
 
-  await chevron.click()
-  await expect(chevron).toHaveAttribute("aria-expanded", "false")
-  await expect(page.getByLabel("Agent")).toHaveCount(0)
+  // Mexer noutro controle do mesmo painel (a permissão) não derruba o toggle:
+  // são dois estados independentes, não um raio-x da última interação.
+  await page.locator(LETREIRO).click() // reabre
+  await modo(page, "Liberado").click()
+  await expect(toggle).toHaveAttribute("aria-checked", "true")
+
+  await toggle.click()
+  await expect(toggle).toHaveAttribute("aria-checked", "false")
 })
 
 test("o Enviar só acende quando há o que enviar", async ({ page }) => {
@@ -126,12 +141,12 @@ test("o Enviar só acende quando há o que enviar", async ({ page }) => {
   await expect(enviar).toBeDisabled()
 })
 
-test("clicar no cartão devolve o foco ao editor, e clicar na faixa NÃO", async ({
+test("clicar no cartão devolve o foco ao editor, e clicar no letreiro NÃO", async ({
   page,
 }) => {
   // Duas regras opostas na mesma caixa: o cartão inteiro é `cursor-text` e foca
-  // o editor; a faixa de execução barra a propagação, senão mexer na permissão
-  // roubava o foco e matava as setas do radiogroup.
+  // o editor; a faixa de execução barra a propagação, senão abrir o painel
+  // roubava o foco e fechava ele sozinho.
   await abrirApp(page)
   const editor = page.locator('[contenteditable="true"]').first()
   await page.locator('[aria-label="Anexar arquivo"]').hover()
@@ -139,6 +154,6 @@ test("clicar no cartão devolve o foco ao editor, e clicar na faixa NÃO", async
   await editor.click()
   await expect(editor).toBeFocused()
 
-  await modo(page, "Liberado").click()
+  await page.locator(LETREIRO).click()
   await expect(editor).not.toBeFocused()
 })

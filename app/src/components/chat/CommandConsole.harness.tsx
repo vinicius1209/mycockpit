@@ -218,11 +218,13 @@ export async function montar(
   )
 }
 
-/** O modo marcado no radiogroup de permissão, lido da marcação. */
+/** O modo mostrado no LETREIRO da linha de Execução (colapso do composer: os
+ *  botões `role="radio"` só existem com o painel aberto, inacessível em SSR —
+ *  o letreiro é quem mostra o modo SEMPRE, aberto ou fechado). */
 export function modoMarcado(html: string): string | null {
-  const botoes = html.match(/<button[^>]*role="radio"[^>]*>.*?<\/button>/g) ?? []
-  const on = botoes.find((b) => b.includes('aria-checked="true"'))
-  return on ? on.replace(/<[^>]*>/g, "").trim() : null
+  const m = html.match(/<button[^>]*aria-expanded="[^"]*"[^>]*>(.*?)<\/button>/s)
+  if (!m) return null
+  return m[1].replace(/<[^>]*>/g, "").trim() || null
 }
 
 /** O botão de `aria-label` dado está desabilitado? (null = não existe)

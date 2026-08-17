@@ -1,19 +1,21 @@
 // A FAIXA QUE DECIDE SE O AGENTE EXECUTA COMANDO NA SUA MÁQUINA.
 //
-// É o controle de maior consequência do app inteiro e estava sem um teste
-// sequer. O que se prova aqui é a LIGAÇÃO: `lib/permission` já tinha teste puro,
-// mas teste puro não impede o componente de contornar a função — e a faixa tinha
-// mesmo a precedência copiada inline. Então a asserção é sempre sobre a MARCAÇÃO
-// que o usuário vê (qual botão está marcado, qual está desabilitado, qual aviso
-// aparece), nunca sobre o helper isolado.
+// É o controle de maior consequência do app inteiro. Depois do colapso
+// (docs/mocks/composer-README.md), o segmented de 3 posições + o toggle
+// "Planeja antes" + o chevron de identidade viraram UM letreiro que abre um
+// painel inline — e o painel só existe com `useState` interno, inacessível a
+// partir de fora do componente. Então a fronteira de prova é a MESMA que já
+// valia pra identidade antes do colapso: o que renderToStaticMarkup prova é o
+// REPOUSO (painel fechado) e a MARCAÇÃO de cada estado; o GESTO de abrir o
+// painel e trocar de modo com o mouse/teclado precisa de DOM de verdade e mora
+// em `e2e/composer.spec.ts`.
 //
 // Renderização server-side (`renderToStaticMarkup`), que é o que o repo tem —
 // sem jsdom, sem testing-library. Com um porém que vale registrar: o zustand v5
 // em SSR devolve `getInitialState()`, NÃO o estado corrente (medido: um
 // `useApp.setState` antes do render não chega ao componente). Por isso o store é
 // MOCKADO aqui — sem isso o teste renderizaria sempre o estado de fábrica e
-// passaria dizendo nada. Gesto (clicar no segmented) precisa de DOM de verdade e
-// mora em `e2e/composer-permissao.spec.ts`.
+// passaria dizendo nada.
 import { renderToStaticMarkup } from "react-dom/server"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { PermissionMode, Project } from "@/lib/types"
@@ -76,12 +78,13 @@ function render(
   )
 }
 
-/** O modo marcado no radiogroup, lido do `aria-checked` da marcação. */
-function marcado(html: string): string | null {
-  const botoes = html.match(/<button[^>]*role="radio"[^>]*>.*?<\/button>/g) ?? []
-  const on = botoes.find((b) => b.includes('aria-checked="true"'))
-  if (!on) return null
-  return on.replace(/<[^>]*>/g, "").trim()
+/** O texto do LETREIRO (o único `<button>` sempre presente, fechado ou não —
+ *  os botões `role="radio"` só existem com o painel aberto, e o painel não
+ *  abre em SSR). Tags internas (ícones) são descartadas. */
+function letreiro(html: string): string {
+  const m = html.match(/<button[^>]*aria-expanded="[^"]*"[^>]*>(.*?)<\/button>/s)
+  if (!m) return ""
+  return m[1].replace(/<[^>]*>/g, "").trim()
 }
 
 beforeEach(() => {
@@ -89,34 +92,24 @@ beforeEach(() => {
   app.mycockpit = {}
 })
 
-describe("o modo que a faixa mostra é o que o próximo turno vai usar", () => {
+describe("o letreiro mostra o modo que o próximo turno vai usar", () => {
   it("sem config no disco, vale o cache do SQLite", () => {
     app.projects = [{ ...PROJETO, permissionMode: "leitura" }]
-    expect(marcado(render())).toBe("Só lê")
+    expect(letreiro(render())).toBe("Só lê")
   })
 
   it("o .mycockpit/config.toml VENCE o cache do SQLite", () => {
     // A divergência é real: o arquivo é versionado no git e editável à mão, o
-    // cache é derivado. Quem manda no spawn é o arquivo — se a faixa mostrasse
-    // o cache, ela estaria mentindo sobre o que o agente pode fazer.
+    // cache é derivado. Quem manda no spawn é o arquivo — se o letreiro mostrasse
+    // o cache, ele estaria mentindo sobre o que o agente pode fazer.
     app.projects = [{ ...PROJETO, permissionMode: "leitura" }]
     app.mycockpit = { [PROJETO.id]: config("liberado") }
-    expect(marcado(render())).toBe("Liberado")
+    expect(letreiro(render())).toBe("Liberado")
   })
 
   it("sem config e sem cache, cai em Pede — nunca fail-open pra Liberado", () => {
     app.projects = [{ ...PROJETO, permissionMode: undefined }]
-    expect(marcado(render())).toBe("Pede")
-  })
-
-  it("sem projeto ativo, os três botões ficam desabilitados", () => {
-    // `disabled={!project}`: sem projeto não há `.mycockpit` onde gravar, e um
-    // segmented clicável que não grava nada é o pior dos mundos — parece que
-    // você mudou o modo.
-    const html = render({ project: null })
-    const radios = html.match(/<button[^>]*role="radio"[^>]*>/g) ?? []
-    expect(radios).toHaveLength(3)
-    expect(radios.every((b) => b.includes("disabled"))).toBe(true)
+    expect(letreiro(render())).toBe("Pede")
   })
 
   it("trocar de projeto troca o modo mostrado (o modo é do PROJETO)", () => {
@@ -131,13 +124,13 @@ describe("o modo que a faixa mostra é o que o próximo turno vai usar", () => {
     }
     app.projects = [PROJETO, outro]
     app.mycockpit = { [PROJETO.id]: config("leitura") }
-    expect(marcado(render())).toBe("Só lê")
-    expect(marcado(render({ project: outro }))).toBe("Liberado")
+    expect(letreiro(render())).toBe("Só lê")
+    expect(letreiro(render({ project: outro }))).toBe("Liberado")
   })
 })
 
 describe("o modo perigoso se anuncia, e só ele", () => {
-  it("Liberado marcado acende o âmbar e o triângulo", () => {
+  it("Liberado acende o âmbar e o triângulo no letreiro", () => {
     app.mycockpit = { [PROJETO.id]: config("liberado") }
     const html = render()
     expect(html).toContain("bg-st-warning/15")
@@ -155,7 +148,7 @@ describe("o modo perigoso se anuncia, e só ele", () => {
 
 describe("a faixa não mente sobre QUANDO a troca passa a valer", () => {
   it("com turno em andamento, diz que a permissão vale no próximo envio", () => {
-    // O `--permission-mode` é fixo no spawn. Sem esta linha o segmented pareceria
+    // O `--permission-mode` é fixo no spawn. Sem esta linha o painel pareceria
     // agir agora, e é a promessa que a copy faz ao usuário.
     expect(render({ running: true })).toContain(
       "Turno em andamento: a permissão vale a partir do próximo envio.",
@@ -185,19 +178,32 @@ describe("quem OBEDECE ao modo é a CLI da conversa, não o projeto", () => {
   })
 })
 
-describe("a linha de identidade nasce fechada", () => {
-  it("em repouso, os seletores crus NÃO estão na marcação", () => {
-    const html = render()
-    expect(html).toContain('aria-expanded="false"')
-    expect(html).not.toContain("data-identidade")
-    // fechada, o resumo é que aparece
-    expect(html).toContain("Claude Code · Opus 5 · xhigh")
+describe("Planeja antes ligado deixa rastro no letreiro fechado", () => {
+  // Furo §7.1 do plano do colapso: é o único controle por-turno da faixa e não
+  // persiste. Sem ALGUM sinal fechado, ligar e esquecer é fácil.
+  it("ligado, o ícone extra aparece no letreiro", () => {
+    const html = render({ planFirst: true })
+    expect(html).toContain('aria-label="Planeja antes ligado"')
   })
 
-  it("travada, o cadeado explica por que os seletores não obedecem", () => {
+  it("desligado (default), o ícone não aparece", () => {
+    expect(render({ planFirst: false })).not.toContain("Planeja antes ligado")
+  })
+})
+
+describe("o painel nasce fechado", () => {
+  it("em repouso, nem os modos nem os seletores crus estão na marcação", () => {
+    const html = render()
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).not.toMatch(/role="radio"/)
+    expect(html).not.toContain("data-identidade")
+    // fechado, é o MODO que aparece no letreiro — não o resumo de identidade
+    // (ele só entra dentro do painel, que está fechado).
+    expect(html).not.toContain("Claude Code · Opus 5 · xhigh")
+  })
+
+  it("travada, o cadeado aparece no letreiro mesmo fechado", () => {
     const html = render({ identityLocked: true })
-    expect(html).toContain(
-      "Agent e modelo ficam fixos a partir do 1º envio desta conversa",
-    )
+    expect(html).toMatch(/<svg[^>]*class="[^"]*size-3 shrink-0 opacity-70/)
   })
 })

@@ -233,7 +233,6 @@ export const DEAD_TOKEN_RULES = [
       // Família "marco de turno/plano no fio" (ADR-037): máx. 1 por turno.
       "components/chat/MessageList.tsx": { max: 5, motivo: "marcos do fio (turno/plano concluído), ADR-037; +1 pelo `bg-st-success/10` da linha de ADIÇÃO do diff, que é domínio git" },
       "components/chat/ChatPanel.tsx": { max: 1, motivo: "marco de plano concluído" },
-      "components/chat/ExecutionRow.tsx": { max: 1, motivo: "marco de execução concluída" },
       "components/mission/MissionTimeline.tsx": { max: 4, motivo: "marco de fase da missão; +3 pelo nó `border/bg-st-success` da fase concluída e pelo `bg-st-success/15` do selo. TRIAGEM PENDENTE: o nó tem a MESMA forma do stepper do SddView que esta passada despintou, e a defesa dele (é marco no fio, não badge ambiente) merece decisão escrita antes de virar folclore" },
       // o verde do DESFECHO da missão veio inteiro da MissionTimeline quando o
       // resumo virou arquivo próprio: marco de plano concluído (ADR-037), não

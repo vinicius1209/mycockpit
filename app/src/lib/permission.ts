@@ -3,11 +3,23 @@ import { writeMycockpitConfig } from "@/lib/mycockpit"
 import { useApp, type ProjectConfig } from "@/store/app"
 import type { PermissionMode, Project } from "@/lib/types"
 
-/** Rótulo curto de cada modo (o segmented da linha de execução usa estes). */
+/** Rótulo curto de cada modo — vocabulário canônico (§7 STYLEGUIDE, "Liberado"
+ *  nunca vira sinônimo). É o que o letreiro da linha de Execução mostra
+ *  sempre, e o que a coluna esquerda do painel repete em negrito. */
 export const PERMISSION_LABEL: Record<PermissionMode, string> = {
   leitura: "Só lê",
   padrao: "Pede",
   liberado: "Liberado",
+}
+
+/** O que cada modo FAZ, por extenso — segunda linha de cada opção no painel
+ *  (ADR do colapso do composer). Não é sinônimo do rótulo canônico, é a frase
+ *  que ele já cumpria como `title` de cada botão do segmented antes do
+ *  colapso — só ficou visível em vez de só em hover. */
+export const PERMISSION_DESCRIPTION: Record<PermissionMode, string> = {
+  leitura: "O agente só lê e relata",
+  padrao: "O agente pede confirmação antes de agir",
+  liberado: "O agente executa e escreve sem pedir confirmação",
 }
 
 /** A PRECEDÊNCIA, escrita UMA vez: o `.mycockpit/config.toml` (aqui já em

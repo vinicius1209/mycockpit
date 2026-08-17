@@ -1796,3 +1796,73 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   novo, não por reintroduzir a moldura como estava. As duas citações soltas de
   `lib/climate.ts` (raio de 10px da janela, animação) foram reescritas para o
   fato em si, sem apontar pra um arquivo que não existe mais.
+
+### ADR-049 — O colapso do composer: permissão + planejar antes + identidade viram UM letreiro ✅
+- **Contexto (17/08/2026):** `docs/mocks/composer-README.md` (15/08) tinha
+  auditado três mocks (A/B/C) pro problema medido no banco real (406 turnos,
+  30 dias): agent/modelo trocam em 1,2%/0,7% dos turnos, permissão parada em
+  "liberado" em 5 de 5 projetos vivos, `/` com 0 usos reais — três controles
+  sempre visíveis (segmented de permissão, toggle "Planeja antes", chevron de
+  identidade) para decisões que travam no 1º envio ou nunca mudam. A
+  recomendação (§4.4) era o colapso do mock C, com o anel de contexto FORA da
+  faixa de status (é prospectivo, a faixa é ambiente — pergunta diferente) e o
+  `⌘.` rebaixado a bônus.
+- **Decisão — um letreiro só, revelado inline, sem portal.** `ExecutionRow.tsx`
+  perdeu o segmented de 3 posições, o botão solto do "Planeja antes" e o
+  chevron da identidade; no lugar, UM botão que mostra o modo de permissão
+  SEMPRE (nunca trunca — é o único sinal de risco que a tela dá, ADR-048) e
+  abre um painel com os três blocos, na ordem de consequência: permissão (lista
+  vertical, rótulo canônico + a descrição que já era `title` de cada botão do
+  segmented, agora visível), "Planejar primeiro" (`Switch` de verdade, brass
+  quando ligado — `lib/selection.ts` já documentava esta exceção), e os
+  seletores de agent/modelo/esforço de sempre. SEM portal, de propósito: o
+  próprio `ExecutionRow.tsx` já registrava que Select do Radix dentro de
+  dropdown/popover briga por foco (é por isso que a identidade nunca usou um);
+  a mesma revelação inline que já funcionava pra ela agora serve às três.
+- **A cor da seleção segue a régua do `lib/selection.ts`, não inventa uma
+  terceira.** "Só lê" e "Pede" selecionados usam `SELECTED_FILL` (neutro, como
+  qualquer linha de lista) — o que resolve de graça o bug que o audit do plano
+  tinha achado (`ExecutionRow.tsx:124` pintava "Só lê" de VERDE quando
+  selecionado, violação do §2 que ninguém tinha corrigido ainda). "Liberado"
+  segue âmbar sempre, mesmo selecionado — risco autorizado não é seleção,
+  exceção que o próprio `lib/selection.ts` já cravava antes desta passada só
+  não se aplicava porque o controle não era uma lista ainda.
+- **O furo §7.1 do plano (Planeja antes é por-turno, não persiste, e não tinha
+  NENHUMA medição) ganhou uma rede sem esperar dado que não existe: o letreiro
+  fechado mostra um ícone extra quando está ligado.** Não é o botão inteiro de
+  volta — é o resto do sinal, pra não ligar e esquecer um modificador que só
+  vale para o próximo envio.
+- **O que NÃO entrou:** o `⌘.` (nunca foi requisito, só bônus, e não há
+  registro central de atalhos no app — 7 arquivos usam `keydown` avulso); o
+  modelo RESOLVIDO no letreiro em vez do pedido (§2.3 do plano — "Opus (alias)"
+  continua mostrando o pedido, não o que a CLI de fato resolveu; é melhoria
+  independente do colapso, não bloqueante); e o anel de contexto NÃO desceu pra
+  faixa de status (a recomendação vencedora já dizia que não devia).
+- **Cobertura, antes de cortar:** o "furo maior" que o plano apontava (zero
+  teste de componente no composer) já tinha sido fechado num sprint anterior
+  (16/08, `ExecutionRow.permissao.test.tsx` + `composerIdentity.test.ts` +
+  `composer.spec.ts`) — o plano, escrito em 15/08, estava desatualizado nesse
+  ponto. O gap real que sobrou, medido lendo os testes existentes: "Planeja
+  antes" nunca tinha sido clicado em teste nenhum (`onTogglePlanFirst` sempre
+  um no-op). Fechado em `e2e/composer.spec.ts` antes do corte começar. Depois
+  do corte, `ExecutionRow.permissao.test.tsx` e `CommandConsole.permissao.test.tsx`
+  precisaram de reescrita: os botões `role="radio"` só existem com o painel
+  aberto, e SSR (`renderToStaticMarkup`, sem jsdom) não simula clique — a
+  fronteira de prova é a mesma que a identidade já usava antes do colapso
+  (repouso e marcação por SSR, gesto por Playwright em `e2e/composer.spec.ts`).
+  Um caso não sobreviveu à mudança de forma ("sem projeto, os 3 radios ficam
+  desabilitados" — inalcançável em SSR pós-colapso) e foi substituído por uma
+  asserção equivalente ainda alcançável (o letreiro cai em "Pede" e não
+  quebra); o guard de runtime (`pick()`: `if (!project) return`) continua no
+  código, só deixou de ter prova própria em SSR.
+- **Ratchets apertados como consequência, não como meta:** o arquivo perdeu o
+  único uso de `st-success` que tinha (a mancha verde do "Só lê" que o próprio
+  audit do plano tinha flagado) — a exceção em `scripts/lints/deadTokens.mjs`
+  saiu do mapa em vez de ficar em `max: 1` sem uso. `ExecutionRow.tsx` foi de
+  217 para ~290 linhas, folgado no teto de 700 — não precisou de arquivo
+  próprio como o plano original cogitava (a pressão de tamanho era em
+  `ComposerParts.tsx`, que não mudou de estrutura nesta passada).
+- **Verificado nos dois temas** (captura de tela, claro e escuro, painel aberto
+  e em "Liberado"): hierarquia legível, seleção neutra distinta do âmbar de
+  risco, sem truncamento. `vitest` 2793/248, `cargo test` 450, 6 guardas,
+  `build` 0, `e2e` 17/17.

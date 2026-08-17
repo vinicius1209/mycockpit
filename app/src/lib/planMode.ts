@@ -6,9 +6,16 @@
 import { agentDef } from "@/lib/agents"
 import type { ChatItem } from "@/store/chat"
 
-/** Tooltip do toggle no composer (fonte única p/ o botão). */
-export const PLAN_FIRST_TOOLTIP =
-  "Planejar primeiro: o agent propõe um plano e só executa depois da sua aprovação"
+/** Nome curto do toggle (visível na linha do painel). */
+export const PLAN_FIRST_LABEL = "Planejar primeiro"
+
+/** O que o toggle FAZ, por extenso (segunda linha da mesma). */
+export const PLAN_FIRST_DESCRIPTION =
+  "o agent propõe um plano e só executa depois da sua aprovação"
+
+/** Composição das duas — fonte única de quem só precisa da frase inteira
+ *  (ex.: `title` de um alvo que não tem as duas linhas). */
+export const PLAN_FIRST_TOOLTIP = `${PLAN_FIRST_LABEL}: ${PLAN_FIRST_DESCRIPTION}`
 
 /** true se o agent não tem resume (o plano vai embutido no prompt de execução,
  *  senão o agent não sabe o que aprovamos). H5: derivado da capability

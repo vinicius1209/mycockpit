@@ -58,14 +58,17 @@ describe("a faixa mostra o modo do projeto que VAI RODAR", () => {
     expect(modoMarcado(await montar())).toBe("Só lê")
   })
 
-  it("sem projeto nenhum, o segmented inteiro fica desabilitado", async () => {
-    // `disabled={!project}`: não há `.mycockpit` onde gravar. Segmented clicável
-    // que não grava nada é pior que segmented apagado — parece que mudou.
+  it("sem projeto nenhum, o letreiro cai em Pede e não quebra", async () => {
+    // Sem projeto não há `.mycockpit` onde gravar (`ExecutionRow` resolve
+    // `mode = "padrao"` direto, sem consultar o store) — o guard de verdade é
+    // em runtime (`pick()`: `if (!project) return`, os três botões do painel
+    // continuam `disabled={!project}`), mas o painel só existe com o clique
+    // que abre (o colapso do composer tirou o radiogroup do repouso). SSR
+    // prova o que o repouso mostra: nunca "Liberado" fantasma, sempre o
+    // fallback seguro. O clique disabled-que-não-clica é gesto — mora em
+    // `e2e/composer.spec.ts`.
     app.projects = []
-    const html = await montar()
-    const radios = html.match(/<button[^>]*role="radio"[^>]*>/g) ?? []
-    expect(radios).toHaveLength(3)
-    expect(radios.every((b) => b.includes("disabled"))).toBe(true)
+    expect(modoMarcado(await montar())).toBe("Pede")
   })
 })
 

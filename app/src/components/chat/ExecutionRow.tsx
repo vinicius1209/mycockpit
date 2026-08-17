@@ -1,11 +1,14 @@
 import { useState } from "react"
-import { ChevronDown, Lock, TriangleAlert } from "lucide-react"
+import { Check, ChevronDown, ListChecks, Lock, TriangleAlert } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ContextRing } from "@/components/chat/ContextRing"
-import { PLAN_FIRST_TOOLTIP } from "@/lib/planMode"
+import { PLAN_FIRST_DESCRIPTION, PLAN_FIRST_LABEL } from "@/lib/planMode"
 import { permissionNote } from "@/lib/permissionNote"
+import { SELECTED_FILL, UNSELECTED } from "@/lib/selection"
+import { Switch } from "@/components/ui/switch"
 import { useApp } from "@/store/app"
 import {
+  PERMISSION_DESCRIPTION,
   PERMISSION_LABEL,
   resolvePermission,
   setProjectPermissionEverywhere,
@@ -16,11 +19,19 @@ const MODES: PermissionMode[] = ["leitura", "padrao", "liberado"]
 
 /**
  * Linha de EXECUÇÃO — a faixa acima do campo de texto onde mora tudo que muda
- * *como* o próximo turno roda. Nasceu da revisão de UI: o composer tinha 13
- * alvos de clique do mesmo peso, quatro deles congelados desde o 1º envio, e o
- * controle de maior consequência (permissão) não estava lá — morava no painel
- * de contexto, a três cliques, e o composer só falava do assunto DEPOIS que
- * você tinha liberado, num selo passivo.
+ * *como* o próximo turno roda.
+ *
+ * Colapso (docs/mocks/composer-README.md): permissão, "Planeja antes" e
+ * identidade (agent/modelo/esforço) eram três alvos sempre visíveis — um
+ * segmented de 3 posições, um toggle, um chevron — para controles que a
+ * medição real (406 turnos, 30 dias) mostra travados no 1º envio ou parados
+ * há semanas. Viraram UM letreiro só: mostra o modo de permissão SEMPRE (é o
+ * sinal de maior consequência do app, ADR-048 — "modo de risco é DITO, não
+ * emoldurado" — e aqui é onde ele é dito), e abre inline o painel com as três
+ * decisões. Sem portal, de propósito: Select do Radix dentro de
+ * dropdown/popover briga por foco (documentado quando a identidade ainda era
+ * a única coisa atrás de um chevron); a mesma revelação inline que já
+ * funcionava pra ela agora serve às três.
  *
  * Regra de ocupação: aqui entra ESTADO que afeta o turno (permissão, planejar
  * primeiro, contexto, identidade). O que MODIFICA a mensagem (anexo, ditado) e
@@ -46,15 +57,16 @@ export function ExecutionRow({
   planFirst?: boolean
   onTogglePlanFirst?: () => void
   running?: boolean
-  /** Os seletores crus (preset/agent/modelo/esforço), revelados ao expandir. */
+  /** Os seletores crus (preset/agent/modelo/esforço), revelados dentro do painel. */
   identity: React.ReactNode
-  /** Resumo colapsado, ex. "Claude Code · Opus 5 · xhigh". */
+  /** Resumo de agent/modelo/esforço, mostrado só com o painel aberto (repouso
+   *  já diz o que importa mais: o modo). */
   identityLabel: string
   /** true = travados desde o 1º envio (o cadeado explica por quê). */
   identityLocked?: boolean
 }) {
-  const [identityOpen, setIdentityOpen] = useState(false)
-  // ASSINA o store (não `getState()`): sem a subscrição, clicar no segmented
+  const [panelOpen, setPanelOpen] = useState(false)
+  // ASSINA o store (não `getState()`): sem a subscrição, clicar no painel
   // gravava o modo mas a linha não re-renderizava — o controle parecia morto.
   // A precedência é a do `resolvePermission` (config do .mycockpit vence o cache
   // do SQLite) e vem de lá, não copiada: o seletor é que é próprio desta faixa
@@ -74,9 +86,16 @@ export function ExecutionRow({
     setProjectPermissionEverywhere(project, next)
   }
 
-  /** Setas ← → andam no segmented (é um radiogroup, não 3 botões soltos). */
+  /** Setas andam na lista de modos (é um radiogroup vertical, não 3 botões
+   *  soltos) — ↑/↓ é o par natural da lista; ←/→ segue funcionando por
+   *  compatibilidade com quem tinha o hábito do segmented horizontal antigo. */
   function onKey(e: React.KeyboardEvent) {
-    const delta = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0
+    const delta =
+      e.key === "ArrowDown" || e.key === "ArrowRight"
+        ? 1
+        : e.key === "ArrowUp" || e.key === "ArrowLeft"
+          ? -1
+          : 0
     if (!delta) return
     e.preventDefault()
     const i = MODES.indexOf(mode)
@@ -85,107 +104,65 @@ export function ExecutionRow({
 
   return (
     // stopPropagation: o cartão do ComposerShell foca o textarea a cada clique
-    // (focusRing). Sem barrar aqui, clicar no segmented mandava o foco pro campo
-    // de texto e as setas ←→ paravam de andar entre os modos.
+    // (focusRing). Sem barrar aqui, clicar no letreiro/painel mandava o foco pro
+    // campo de texto e as setas ↑↓ paravam de andar entre os modos.
     <div
       onClick={(e) => e.stopPropagation()}
       className="flex flex-col gap-1.5 px-3 pt-2.5"
     >
-      {/* A etiqueta "EXECUÇÃO" saiu daqui (build 210). Ela nomeava o grupo sem
-          acrescentar significado: cada botão já explica o efeito inteiro no
-          próprio `title` ("O agente só lê e relata", "…pede confirmação antes
-          de agir", "…executa e escreve sem pedir confirmação"), e o
-          `aria-label` do radiogroup já dá o nome ao grupo para quem lê por
-          leitor de tela. Pior, os dois nomes DIVERGIAM: o rótulo visível dizia
-          "Execução" e o acessível diz "Permissões do projeto" — dois nomes para
-          um controle só. Ficou o acessível, que é o mais exato.
-          §1 do STYLEGUIDE: o que não é estado nem decisão recua. */}
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-        <div
-          role="radiogroup"
-          aria-label="Permissões do projeto"
-          onKeyDown={onKey}
-          className="flex items-center gap-0.5 rounded-lg bg-secondary/70 p-0.5"
-        >
-          {MODES.map((m) => {
-            const on = m === mode
-            return (
-              <button
-                key={m}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                tabIndex={on ? 0 : -1}
-                disabled={!project}
-                onClick={() => pick(m)}
-                title={
-                  m === "liberado"
-                    ? "O agente executa e escreve sem pedir confirmação"
-                    : m === "leitura"
-                      ? "O agente só lê e relata"
-                      : "O agente pede confirmação antes de agir"
-                }
-                className={cn(
-                  "flex h-6 items-center gap-1 rounded-md px-2 text-[12px] transition-colors",
-                  !on && "text-muted-foreground hover:text-foreground",
-                  on && m === "liberado" && "bg-st-warning/15 text-st-warning",
-                  on && m === "leitura" && "bg-card text-st-success shadow-[var(--shadow-sm)]",
-                  on && m === "padrao" && "bg-card text-foreground shadow-[var(--shadow-sm)]",
-                )}
-              >
-                {m === "liberado" && on && <TriangleAlert className="size-3" />}
-                {PERMISSION_LABEL[m]}
-              </button>
-            )
-          })}
-        </div>
-
+      <div className="flex items-center gap-2">
+        {/* O LETREIRO — porta única pro painel de permissão + planejar antes +
+            identidade. Mostra o modo SEMPRE (nunca trunca, ADR-048): é o único
+            sinal de risco que a tela dá, então não pode virar redundância
+            escondida atrás do painel — precisa continuar lido de relance. */}
         <button
           type="button"
-          onClick={onTogglePlanFirst}
-          aria-pressed={!!planFirst}
-          title={PLAN_FIRST_TOOLTIP}
+          onClick={() => setPanelOpen((v) => !v)}
+          aria-expanded={panelOpen}
+          aria-haspopup="true"
+          // Estável (não muda com o modo): é o alvo que localiza o controle,
+          // o VALOR quem diz é o texto visível dentro dele.
+          aria-label="Como o próximo turno roda"
+          title={
+            panelOpen
+              ? "Fechar"
+              : "Permissão, planejar primeiro, agent, modelo e esforço"
+          }
           className={cn(
-            "flex h-6 items-center rounded-md px-2 text-[12px] transition-colors",
-            planFirst
-              ? "bg-brass/15 text-brass ring-1 ring-brass/40"
-              : "text-muted-foreground hover:text-foreground",
+            "flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium transition-colors",
+            mode === "liberado"
+              ? "bg-st-warning/15 text-st-warning"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
         >
-          Planeja antes
+          {mode === "liberado" && <TriangleAlert className="size-3 shrink-0" />}
+          {PERMISSION_LABEL[mode]}
+          {/* "Planeja antes" ligado é por-turno e não persiste (§7 furo 1 do
+              plano do colapso) — fácil de esquecer que está ativo se sumir de
+              vez do letreiro. Este ponto é o resto do sinal, sem reviver o
+              botão inteiro sempre visível. */}
+          {planFirst && (
+            <ListChecks
+              className="size-3 shrink-0 text-brass"
+              aria-label="Planeja antes ligado"
+            />
+          )}
+          {identityLocked && <Lock className="size-3 shrink-0 opacity-70" />}
+          <ChevronDown
+            className={cn(
+              "size-3 shrink-0 transition-transform",
+              panelOpen && "rotate-180",
+            )}
+          />
         </button>
 
         <div className="ml-auto flex items-center gap-1.5">
           <ContextRing />
-          <button
-            type="button"
-            onClick={() => setIdentityOpen((v) => !v)}
-            aria-expanded={identityOpen}
-            title={
-              identityLocked
-                ? "Agent e modelo ficam fixos a partir do 1º envio desta conversa"
-                : "Escolher agent, modelo e esforço"
-            }
-            className="flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            {/* Expandido, os seletores logo abaixo já dizem tudo — repetir o
-                rótulo aqui era a mesma informação duas vezes na mesma caixa. */}
-            {!identityOpen && (
-              <span className="max-w-[220px] truncate">{identityLabel}</span>
-            )}
-            {identityLocked && <Lock className="size-3 shrink-0 opacity-70" />}
-            <ChevronDown
-              className={cn(
-                "size-3 shrink-0 transition-transform",
-                identityOpen && "rotate-180",
-              )}
-            />
-          </button>
         </div>
       </div>
 
       {/* Aviso honesto: o gate é fixo no spawn. Trocar com turno em voo vale só
-          no próximo — sem esta linha o segmented pareceria agir agora. */}
+          no próximo — sem esta linha o painel pareceria agir agora. */}
       {running && (
         <p className="text-[11px] leading-snug text-muted-foreground">
           Turno em andamento: a permissão vale a partir do próximo envio.
@@ -204,12 +181,96 @@ export function ExecutionRow({
         </p>
       )}
 
-      {/* Identidade expandida INLINE (sem portal): Select do Radix dentro de
-          dropdown/popover briga por foco — aqui os seletores são os mesmos de
-          sempre, só revelados sob demanda. */}
-      {identityOpen && (
-        <div className="flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2">
-          {identity}
+      {/* O painel INTEIRO, revelado sob demanda (sem portal — ver cabeçalho do
+          arquivo). Três blocos, na ordem de consequência: permissão (o que
+          decide se o agente executa sozinho), planejar antes (modificador do
+          próximo turno), identidade (quem roda). */}
+      {panelOpen && (
+        <div className="flex flex-col gap-1 border-t border-border/60 pt-2">
+          <div
+            role="radiogroup"
+            aria-label="Permissões do projeto"
+            onKeyDown={onKey}
+            className="flex flex-col gap-0.5"
+          >
+            {MODES.map((m) => {
+              const on = m === mode
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  tabIndex={on ? 0 : -1}
+                  disabled={!project}
+                  onClick={() => pick(m)}
+                  className={cn(
+                    "flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
+                    on && m === "liberado"
+                      ? "border-transparent bg-st-warning/15 text-st-warning"
+                      : on
+                        ? SELECTED_FILL
+                        : UNSELECTED,
+                  )}
+                >
+                  <span className="flex flex-col gap-0">
+                    <span className="flex items-center gap-1.5 text-[12px] font-medium">
+                      {m === "liberado" && <TriangleAlert className="size-3 shrink-0" />}
+                      {PERMISSION_LABEL[m]}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-[11px]",
+                        on && m === "liberado"
+                          ? "text-st-warning/80"
+                          : "text-muted-foreground/70",
+                      )}
+                    >
+                      {PERMISSION_DESCRIPTION[m]}
+                    </span>
+                  </span>
+                  {on && <Check className="size-3.5 shrink-0" />}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="my-1 border-t border-border/60" />
+
+          <label className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5">
+            <span className="flex flex-col gap-0">
+              <span className="text-[12px] font-medium text-foreground">
+                {PLAN_FIRST_LABEL}
+              </span>
+              <span className="text-[11px] text-muted-foreground/70">
+                {PLAN_FIRST_DESCRIPTION}
+              </span>
+            </span>
+            <Switch
+              checked={!!planFirst}
+              onCheckedChange={() => onTogglePlanFirst?.()}
+              aria-label={PLAN_FIRST_LABEL}
+            />
+          </label>
+
+          <div className="my-1 border-t border-border/60" />
+
+          {/* Resumo textual (some quando os seletores crus já dizem tudo) +
+              os seletores em si — os mesmos de sempre, só revelados aqui em
+              vez de atrás do próprio chevron que existia só pra eles. Travado,
+              o porquê fica visível em vez de só no hover do cadeado — o mesmo
+              texto que o chip colapsado do composer já usa como `title`
+              (`ComposerParts.tsx`), repetido aqui de propósito: são duas
+              superfícies diferentes lendo o mesmo fato, não uma fonte só. */}
+          <p className="flex items-center gap-1.5 px-2 text-[11px] text-muted-foreground/70">
+            {identityLocked && <Lock className="size-3 shrink-0 opacity-70" />}
+            {identityLocked
+              ? "Agent e modelo ficam fixos a partir do 1º envio desta conversa"
+              : identityLabel}
+          </p>
+          <div className="flex flex-wrap items-center gap-1.5 px-2">
+            {identity}
+          </div>
         </div>
       )}
     </div>
