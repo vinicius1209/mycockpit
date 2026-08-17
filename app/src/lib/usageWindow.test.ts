@@ -186,11 +186,16 @@ describe("seleção do provider da pill (conversa ativa)", () => {
 
   it("motor SEM fonte de janela no registry não exibe a janela de outro", () => {
     // O bug relatado: conversa do Antigravity mostrando `Claude 59%` na faixa.
-    // `agy` não tem uma janela percentual — nada a medir, e vizinho não empresta.
-    // Pergunta por CAPABILITY (usageWindow), nunca pelo nome do motor.
-    expect(agentDef("agy")?.usageWindow).toBeNull() // trava a premissa do caso
+    // O COMPORTAMENTO travado aqui é "sem fonte, vizinho não empresta", e a
+    // pergunta é por CAPABILITY (usageWindow), nunca pelo nome do motor.
+    // O caso nasceu com o `agy` de cobaia porque ele era o motor sem fonte da
+    // época; em 16/08/2026 ele ganhou a fonte "print" e a cobaia passou pro
+    // `opencode` (ainda não integrado). A regra é a mesma, o exemplo é que
+    // mudou — se ela dependesse do nome do motor, este teste não teria
+    // sobrevivido à troca.
+    expect(agentDef("opencode")?.usageWindow).toBeNull() // trava a premissa
     const sel = pillWindow(
-      "agy",
+      "opencode",
       { "claude-code": SNAP_CLAUDE, codex: SNAP_CODEX },
       {},
       AGORA,
@@ -273,11 +278,17 @@ describe("quem entra no poll (duePollAgents)", () => {
     const detected = {
       "claude-code": probe(), // usagePoll "oauth": a conta responde sempre
       codex: probe(), // usagePoll "rpc": app-server read-only
-      agy: probe(), // sem fonte percentual no registry
+      agy: probe(), // usagePoll "print": `-p "/usage"` headless, custo zero
+      opencode: probe(), // sem fonte no registry: nada a perguntar
     }
     // O Claude entra via OAuth: a statusline push não dispara nas conversas
-    // headless do app.
-    expect(duePollAgents(true, detected, AGORA)).toEqual(["claude-code", "codex"])
+    // headless do app. O agy entrou em 16/08/2026 (antes era `null` porque a
+    // única fonte auditada era o /credits, saldo sem janela).
+    expect(duePollAgents(true, detected, AGORA)).toEqual([
+      "claude-code",
+      "codex",
+      "agy",
+    ])
   })
 
   it("medidor desligado = ninguém (o toggle esconde o mecanismo inteiro)", () => {
@@ -320,6 +331,7 @@ describe("procedência e falha legíveis", () => {
   it("cada fonte se apresenta em pt-BR, sem jargão de protocolo", () => {
     expect(sourceLabel("oauth")).toBe("leitura da conta")
     expect(sourceLabel("rpc")).toBe("leitura local")
+    expect(sourceLabel("print")).toBe("consulta ao CLI")
     expect(sourceLabel("statusline")).toBe("statusline")
     // fonte nova degrada pra ela mesma (fail-open no render)
     expect(sourceLabel("telepatia")).toBe("telepatia")

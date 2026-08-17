@@ -141,6 +141,21 @@ pub enum UsageWindowSource {
     /// sem quota). POLL: resposta real capturada 12/08/2026 (fixture em
     /// usage_window.rs) — só `primary` (janela 7d), `secondary: null`.
     CodexAppServer,
+    /// agy 1.1.13: `agy -p "/usage" --output-format json` — o CLI EXPANDE o
+    /// comando de cliente em modo print e devolve, além do TSV em `response`,
+    /// um bloco ESTRUTURADO em `command.data` (grupos × buckets, com `id`
+    /// estável, `window` e `remaining_fraction`). POLL headless, e o CUSTO É
+    /// ZERO: o mesmo payload volta com `num_turns: 0`, `duration_seconds: 0` e
+    /// `usage` inteiro zerado, `conversation_id` VAZIO — é consulta de cliente
+    /// ao backend, não abre turno nem conversa. Medido nesta máquina em
+    /// 16/08/2026 (exit 0, ~4,5s de parede; fixture real em usage_window.rs).
+    /// O `response` (TSV) é ignorado de propósito: percentual arredondado a
+    /// inteiro e sem id de bucket, ou seja, contrato pior que o `command.data`.
+    ///
+    /// Espelho TS: `"print"` (o mecanismo — sonda headless pelo modo print do
+    /// próprio CLI). Aqui o nome carrega o fornecedor porque é a convenção
+    /// deste enum: dialeto É domínio do fornecedor.
+    AgyPrintCommand,
 }
 
 /// Dialeto de instalação/protocolo de HOOKS de um motor (hooks-plan §2).
@@ -523,10 +538,15 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // `/compact`… No manual command is required" (medido 14/08/2026). Sem
     // compactação nativa, o `/compactar` do app segue na renovação com recap.
     native_compact: false,
-    // agy 1.1.13: `/credits` expõe saldo absoluto, sem percentual de janela
-    // nem reset. Saldo de créditos NÃO satisfaz o contrato de UsageWindow.
-    usage_window: None,
-    usage_window_poll: None,
+    // agy 1.1.13: era `None` porque o `/credits` só expõe saldo absoluto (sem
+    // percentual de janela nem reset). O motivo caiu em 16/08/2026: o `/usage`
+    // existe, o print mode o expande e devolve `command.data` com grupos ×
+    // buckets — fração restante exata, tipo de janela e reset por bucket, que
+    // é o contrato de UsageWindow inteiro. Custo ZERO (num_turns 0, usage
+    // zerado, conversation_id vazio: não abre turno nem conversa), então o
+    // poll entra na cadência normal. Payload real na fixture de usage_window.rs.
+    usage_window: Some(UsageWindowSource::AgyPrintCommand),
+    usage_window_poll: Some(UsageWindowSource::AgyPrintCommand),
     // agy 1.1.12: hooks documentados pelo próprio produto (doc embarcada
     // agy-customizations/docs/hooks.md) e vivos nesta máquina (grupo
     // "orca-status" em ~/.gemini/config/hooks.json, listado por `agy -p
@@ -3543,8 +3563,15 @@ mod tests {
             capabilities_of("codex").unwrap().usage_window,
             Some(UsageWindowSource::CodexAppServer)
         );
-        // agy: /credits expõe saldo, não percentual/reset de uma janela.
-        assert_eq!(capabilities_of("agy").unwrap().usage_window, None);
+        // agy 1.1.13: era None enquanto a única fonte conhecida era o
+        // `/credits` (saldo absoluto, sem percentual nem reset). O `/usage`
+        // derrubou o motivo em 16/08/2026: `command.data` traz grupos ×
+        // buckets com fração restante, tipo de janela e reset — o contrato
+        // inteiro — e sem consumir turno.
+        assert_eq!(
+            capabilities_of("agy").unwrap().usage_window,
+            Some(UsageWindowSource::AgyPrintCommand)
+        );
 
         // …e QUEM O VIGIA PERGUNTA (o poll). O claude diverge de propósito: a
         // statusline é push e só existe em sessão interativa (em `-p` o script
@@ -3557,7 +3584,12 @@ mod tests {
             capabilities_of("codex").unwrap().usage_window_poll,
             Some(UsageWindowSource::CodexAppServer)
         );
-        assert_eq!(capabilities_of("agy").unwrap().usage_window_poll, None);
+        // agy: a MESMA fonte responde ao poll — o `-p "/usage"` é a sonda, não
+        // há push nenhum a esperar.
+        assert_eq!(
+            capabilities_of("agy").unwrap().usage_window_poll,
+            Some(UsageWindowSource::AgyPrintCommand)
+        );
     }
 
     /// Teste-GÊMEO do espelho TS (`agents.modelList.test.ts`): quem sabe dizer

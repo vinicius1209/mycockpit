@@ -1493,3 +1493,71 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
     call site) com os três formatadores compartilhados em `sddFormat.ts`; o
     arquivo caiu para 1462 e a baseline desceu junto. Dividir, nunca subir o
     teto.
+
+### ADR-044 — O `agy` ganha janela de uso: a fonte é o comando de CLIENTE em modo print, e o contrato é o bloco estruturado ✅
+- **Contexto (16/08/2026):** o ADR-038 cravou `agy: usage_window = None` com um
+  motivo escrito e correto **para o que se sabia então**: a única fonte
+  auditada era o `/credits`, saldo absoluto, e saldo não é janela percentual.
+  O motivo caiu. O `agy` 1.1.13 tem `/usage`, o print mode o EXPANDE, e
+  `agy -p "/usage" --output-format json` devolve — medido nesta máquina, exit
+  0, ~4,5s de parede — um bloco **estruturado** em `command.data`: grupos ×
+  buckets, cada bucket com `id` estável, `window`, `remaining_fraction` e
+  `reset_time`. É o contrato de `UsageWindow` inteiro.
+- **Decisão 1 — a fonte nova é uma CAPABILITY, e o nome dela é o MECANISMO.**
+  Entra `UsageWindowSource::AgyPrintCommand` no registry (espelho TS `"print"`:
+  sonda headless pelo modo print do próprio CLI), com `usage_window` E
+  `usage_window_poll` preenchidos — no `agy` as duas colunas são a mesma fonte,
+  porque não há push nenhum a esperar. Teste-gêmeo
+  `matriz_usage_window_por_agent` ↔ `agents.usageWindow.test.ts` atualizado com
+  o motivo novo escrito nos dois lados; o contrato em loop
+  (`contrato_capabilities_x_comportamento_por_agent`) pegou sozinho a
+  incoerência quando a prova ao contrário mexeu só num dos campos.
+- **Decisão 2 — custo ZERO, e isso é medição, não fé.** O mesmo payload volta
+  com `num_turns: 0`, `duration_seconds: 0`, `usage` inteiro zerado e
+  `conversation_id` **vazio** — contra um turno de verdade do mesmo CLI, que
+  devolve um UUID. É comando de cliente: ele consulta o backend de quota e
+  volta, sem abrir turno nem sujar o histórico do usuário. Por isso a sonda
+  entra na cadência normal de poll (15 min, política do ADR-038) sem exceção
+  nenhuma. **Limite da prova:** a evidência é o payload; não inspecionamos o
+  armazenamento do `agy` (proibido, e é config de outro fornecedor).
+- **Decisão 3 — parse do `command.data`, NUNCA do `response`.** O `response`
+  traz o mesmo dado em TSV e é tentador. Ele é pior em duas coisas que não se
+  recuperam: o percentual já vem arredondado a inteiro ("97%") e não há `id` de
+  bucket, ou seja, nem precisão nem chave estável. Faltando `command.data`, a
+  degradação é **sem snapshot** — não se reconstrói medidor a partir de texto.
+  A conversão é `used = (1 - remaining_fraction) * 100`, sem arredondar em
+  lugar nenhum do pipeline: o CLI manda float sujo (0.9691848158836365 → 3,08%,
+  que o TSV mostraria como "97% restante"), o pipeline preserva e quem arredonda
+  é a UI, exatamente como já era com o 28.999999999999996 do claude.
+- **Decisão 4 — os dois pools aparecem, e o rótulo diz de quem é a janela.**
+  `weekly` = 10.080 min, `5h` = 300 min; `window` desconhecido degrada pro
+  próprio valor **sem** minutos inventados. Como Gemini e Claude/GPT são pools
+  SEPARADOS, mostrar só um mentiria — e dois "7 dias" sem dono seriam
+  indistinguíveis. O grupo entra no rótulo (`"7 dias · Gemini"`), que é a mesma
+  receita que o `weekly_scoped` do claude já usa (`"7 dias · Fable"`). O nome do
+  grupo é **dado do provider**, não copy nossa (mesmo tratamento do
+  `planType: "plus"` e dos rótulos de `agy models`); nossa é a janela, em pt-BR
+  e idêntica à dos outros motores. A coluna do rótulo no popover foi de 64px
+  para 96px e o reset passou a ceder espaço em vez de transbordar o cartão —
+  ele já vinha `shrink-0` num row de largura fixa e "reseta em 6d 12h (dia 22,
+  21:50)" estourava a borda desde antes desta frente.
+- **Decisão 5 — teto próprio e curto pra sonda.** `--print-timeout 15s` na
+  consulta (é consulta, não turno) com o teto de PROCESSO em 20s, o número que
+  as outras sondas da casa já usam. A ordem é deliberada: quem desiste primeiro
+  é o `agy`, com o `status: ERROR` e o `error` **dele** na tela, em vez de um
+  kill cego nosso sem explicação. Nada de `--disable-slash-commands` (é
+  justamente a expansão do `/usage` que faz a sonda existir), nem `--add-dir`,
+  `--dangerously-skip-permissions` ou `--sandbox`: consulta que não abre turno
+  não pede permissão nenhuma.
+- **Consequência 1 — um buraco de agnosticismo fechado de passagem.** O probe
+  de onboarding decidia "não há nada a instalar" por `usageWindow === "rpc"`,
+  enumerando dialeto em vez de perguntar a regra. Com a fonte nova o `agy`
+  cairia no ramo da statusline e o app iria perguntar `usage_statusline_status`
+  a um motor que nunca teve statusline. A regra passou a ser a verdadeira: só
+  PUSH precisa de script no config do usuário.
+- **Consequência 2 — um teste pré-existente trocou de cobaia, e o registro é
+  este.** O caso "motor SEM fonte não exibe a janela de outro" usava o `agy`
+  como exemplo de motor sem fonte. O comportamento travado não mudou uma
+  vírgula; mudou o exemplo, que passou pro `opencode` (não integrado). Se a
+  regra dependesse do nome do motor, o teste não teria sobrevivido à troca —
+  ele sobreviveu, que é a prova de que ela não depende.

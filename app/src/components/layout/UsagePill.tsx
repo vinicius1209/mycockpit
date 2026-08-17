@@ -153,7 +153,17 @@ function ProviderCard({
             const resetAbs = fmtResetAbsolute(w.resetsAt, now)
             return (
               <div key={w.id} className="flex items-center gap-2 text-[11px]">
-                <span className="w-16 shrink-0 truncate font-medium text-muted-foreground">
+                {/* O rótulo carrega a janela E, quando o provider tem pools
+                    separados, de QUEM ela é ("7 dias · Gemini" × "7 dias ·
+                    Claude and GPT" no agy; "7 dias · Fable" no claude). Com
+                    64px nenhum desses cabia e os dois pools ficavam
+                    indistinguíveis, que é justamente a mentira que o rótulo
+                    existe pra evitar. O `title` fica como rede pro caso de
+                    ainda truncar. */}
+                <span
+                  title={w.label}
+                  className="w-24 shrink-0 truncate font-medium text-muted-foreground"
+                >
                   {w.label}
                 </span>
                 <UsageBar pct={w.usedPercent} wide />
@@ -165,7 +175,15 @@ function ProviderCard({
                 >
                   {fmtPct(w.usedPercent)}
                 </span>
-                <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground/75">
+                {/* O reset é o único do trio que pode ceder espaço: ele já
+                    vinha `shrink-0` num row de largura fixa, e "reseta em 6d
+                    12h (dia 22, 21:50)" transbordava o cartão em vez de
+                    encolher. Agora ele encolhe, com o texto inteiro no
+                    `title`. */}
+                <span
+                  title={resetRel ? `${resetRel}${resetAbs ? ` (${resetAbs})` : ""}` : undefined}
+                  className="ml-auto min-w-0 truncate font-mono text-[11px] text-muted-foreground/75"
+                >
                   {resetRel ? `${resetRel}${resetAbs ? ` (${resetAbs})` : ""}` : ""}
                 </span>
               </div>

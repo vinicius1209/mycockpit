@@ -13,6 +13,9 @@
 //     CLI (claude_usage.rs). É a fonte principal do claude, porque a
 //     statusline dele não roda em headless e o app roda tudo headless.
 //   • "rpc" (POLL): probe read-only local do próprio CLI (codex app-server).
+//   • "print" (POLL): o próprio CLI em modo print respondendo um comando de
+//     CLIENTE (agy `-p "/usage"`), que consulta a quota sem abrir turno nem
+//     conversa. Sonda headless, custo zero (medido 16/08/2026).
 //   • "statusline" (PUSH): o script instalado posta pro receptor local a cada
 //     turno; aqui só chega o snapshot via evento `usage://snapshot`. Ingest
 //     OPORTUNISTA (carona quando o usuário usa o terminal), nunca a fonte.
@@ -47,7 +50,8 @@ export interface UsageWindowInfo {
 export interface UsageSnapshot {
   agent: string
   /** "oauth" (leitura da conta) | "statusline" (push de carona) | "rpc"
-   *  (poll read-only local) — a procedência que a UI mostra. */
+   *  (poll read-only local) | "print" (consulta headless ao CLI) — a
+   *  procedência que a UI mostra. */
   source: string
   windows: UsageWindowInfo[]
   planType: string | null
@@ -199,6 +203,8 @@ export function sourceLabel(source: string): string {
       return "leitura da conta"
     case "rpc":
       return "leitura local"
+    case "print":
+      return "consulta ao CLI"
     case "statusline":
       return "statusline"
     default:

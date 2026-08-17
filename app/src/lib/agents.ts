@@ -108,22 +108,20 @@ export interface AgentDef {
   nativeCompact: boolean
   /** Fonte da JANELA DE USO do plano (% usado + reset — espelho de
    *  `usage_window`, adapters.rs): "statusline" = PUSH (o script instalado
-   *  posta pro receptor local a cada turno), "rpc" = POLL (o app pergunta via
-   *  probe read-only, política em lib/usageWindow). null = motor sem fonte
-   *  auditada → a UI some com pill/toggle (4 camadas do Orca), nunca inventa
-   *  percentual. Teste-gêmeo: agents.usageWindow.test.ts ↔
-   *  `matriz_usage_window_por_agent` no Rust. */
-  usageWindow: "statusline" | "rpc" | null
+   *  posta pro receptor local a cada turno), "rpc" = POLL (probe read-only do
+   *  app-server), "print" = POLL (sonda headless pelo modo print do próprio
+   *  CLI). null = motor sem fonte auditada → a UI some com pill/toggle (4
+   *  camadas do Orca), nunca inventa percentual. Gêmeo:
+   *  agents.usageWindow.test.ts ↔ `matriz_usage_window_por_agent` no Rust. */
+  usageWindow: "statusline" | "rpc" | "print" | null
   /** Dialeto que o POLL do vigia usa pra PERGUNTAR a janela agora (espelho de
-   *  `usage_window_poll`, adapters.rs): "oauth" = leitura da conta do
-   *  provider, "rpc" = probe read-only do próprio CLI. null = o motor só
-   *  recebe push (nada a perguntar). Separado de `usageWindow` porque os dois
-   *  divergiram no claude: o que se INSTALA lá é a statusline, mas ela só
-   *  dispara em sessão interativa (em `-p` o script nunca roda) e o app roda
-   *  tudo em headless, então quem alimenta o medidor é a conta. Quem lê:
-   *  duePollAgents em lib/usageWindow. Teste-gêmeo: agents.usageWindow.test.ts
-   *  ↔ `matriz_usage_window_por_agent` no Rust. */
-  usagePoll: "oauth" | "rpc" | null
+   *  `usage_window_poll`): "oauth" = leitura da conta do provider, "rpc" =
+   *  probe read-only do CLI, "print" = o CLI em modo print respondendo um
+   *  comando de cliente. null = só recebe push, nada a perguntar. Separado de
+   *  `usageWindow` porque divergiram no claude: lá se INSTALA a statusline,
+   *  mas ela só roda em sessão interativa e o app é headless, então quem
+   *  alimenta o medidor é a conta. Lê: duePollAgents. Gêmeo no Rust. */
+  usagePoll: "oauth" | "rpc" | "print" | null
   /** Emite eventos de ciclo de vida a scripts externos (espelho de
    *  `hooks_status`, hooks-plan H1): habilita a instalação de hooks em
    *  Configurações e a presença de sessões EXTERNAS no Painel/tray. false =
@@ -294,8 +292,10 @@ export const AGENTS: AgentDef[] = [
     reportsCost: false,
     cumulativeUsage: true,
     nativeCompact: false,
-    usageWindow: null,
-    usagePoll: null,
+    // agy 1.1.13: `-p "/usage"` devolve `command.data` (grupos × buckets, com
+    // fração, janela e reset) e não gasta turno nenhum. Medido 16/08/2026.
+    usageWindow: "print",
+    usagePoll: "print",
     // agy 1.1.12: grupos nomeados em ~/.gemini/config/hooks.json (doc
     // embarcada + grupo vivo do Orca, 12/08/2026); Stop só roda ≥1.1.10 e o
     // instalador Rust confere a versão.

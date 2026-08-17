@@ -65,9 +65,12 @@ async function meterProbe(
 ): Promise<ProbeResult> {
   const defs = usageWindowAgents().filter((d) => detected[d.id]?.installed)
   if (defs.length === 0) return false
-  // fonte "rpc" é leitura local: não há nada a instalar, a capacidade já está
-  // de pé. Só a "statusline" precisa do script no config do usuário.
-  if (defs.some((d) => d.usageWindow === "rpc")) return true
+  // Só a "statusline" precisa de script no config do usuário; toda fonte de
+  // POLL (leitura local, consulta ao CLI, leitura da conta) já está de pé por
+  // existir. A regra é essa, e não uma lista de dialetos: enumerar "rpc" fazia
+  // o medidor perguntar `usage_statusline_status` a um motor que nunca teve
+  // statusline (o agy, quando ele ganhou fonte "print" em 16/08/2026).
+  if (defs.some((d) => d.usageWindow !== "statusline")) return true
   const results = await Promise.all(
     defs.map((d) =>
       withTimeout(

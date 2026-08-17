@@ -55,7 +55,7 @@
 //! e nunca é persistido por nós (lemos a credencial do CLI, não guardamos
 //! cópia).
 
-use crate::usage_window::{now_ms, UsageFetchError, UsageSnapshot, UsageWindow};
+use crate::usage_window::{now_ms, parse_iso8601_secs, UsageFetchError, UsageSnapshot, UsageWindow};
 use serde_json::Value;
 use std::fmt;
 use std::process::Stdio;
@@ -196,61 +196,6 @@ async fn read_credential() -> Result<ClaudeCredential, UsageFetchError> {
 // ---------------------------------------------------------------------------
 // Parsing (PURO, testado com o corpo REAL).
 // ---------------------------------------------------------------------------
-
-/// ISO 8601 do endpoint ("2026-08-12T22:50:00.380826+00:00" ou com "Z") →
-/// epoch em SEGUNDOS (a unidade que `UsageWindow::resets_at` já usa). Formato
-/// que não reconhecemos vira `None`: janela sem reset é honesta, reset
-/// inventado não.
-pub fn parse_iso8601_secs(s: &str) -> Option<i64> {
-    let s = s.trim();
-    let bytes = s.as_bytes();
-    if bytes.len() < 19 {
-        return None;
-    }
-    let num = |ini: usize, fim: usize| -> Option<i64> { s.get(ini..fim)?.parse::<i64>().ok() };
-    if bytes[4] != b'-' || bytes[7] != b'-' || (bytes[10] != b'T' && bytes[10] != b' ') {
-        return None;
-    }
-    let (y, mo, d) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
-    let (h, mi, sec) = (num(11, 13)?, num(14, 16)?, num(17, 19)?);
-    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || sec > 60 {
-        return None;
-    }
-    // Fuso: "Z" (ou ausente, que o endpoint sempre manda explícito) = UTC;
-    // "+HH:MM"/"-HH:MM" desloca. Fração de segundo é descartada de propósito
-    // (a granularidade do medidor é minuto).
-    let resto = &s[19..];
-    let offset_secs = match resto.rfind(['+', '-']) {
-        Some(pos) => {
-            let sinal = if resto.as_bytes()[pos] == b'+' { 1 } else { -1 };
-            let fuso = &resto[pos + 1..];
-            let (hh, mm) = match fuso.split_once(':') {
-                Some((hh, mm)) => (hh.parse::<i64>().ok()?, mm.parse::<i64>().ok()?),
-                None if fuso.len() == 4 => (
-                    fuso[..2].parse::<i64>().ok()?,
-                    fuso[2..].parse::<i64>().ok()?,
-                ),
-                None => return None,
-            };
-            sinal * (hh * 3600 + mm * 60)
-        }
-        None => 0,
-    };
-    Some(days_from_civil(y, mo, d) * 86_400 + h * 3600 + mi * 60 + sec - offset_secs)
-}
-
-/// Dias desde 1970-01-01 (algoritmo civil-from-days do Howard Hinnant, o mesmo
-/// que as libs de data usam; evita puxar dependência de calendário só por um
-/// campo de reset).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let mp = (m + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
-}
 
 /// `kind` do `limits[]` → (id, rótulo, minutos). Kind novo que a Anthropic
 /// inventar amanhã degrada pro próprio kind, sem minutos (fail-open no render:
