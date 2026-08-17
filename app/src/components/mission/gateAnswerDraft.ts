@@ -6,6 +6,7 @@ import {
   MAX_ATTACH_BYTES,
   MAX_ATTACH_COUNT,
   MAX_ATTACH_MB,
+  pastedTextToInsert,
   type Attachment,
 } from "@/lib/attachments"
 
@@ -96,6 +97,27 @@ export function clipboardAttachables(
     .filter((it) => it.kind === "file")
     .map((it) => it.getAsFile())
     .filter((f): f is File => !!f && attachableFile(f))
+}
+
+/** O que um paste na resposta do gate rende: os anexos E o texto que deve entrar
+ *  no rascunho. Espelha o `collectPaste` do composer (hooks/useAttachments) e,
+ *  como ele, é ENTRADA ÚNICA de propósito.
+ *
+ *  Existe porque a Sala de Decisão lia o `text/plain` CRU: copiar uma imagem do
+ *  próprio app põe no clipboard o File E o endereço `blob:tauri://…` do MESMO
+ *  recurso, e esse endereço entrava na resposta como se fosse texto do humano —
+ *  o incidente que o `pastedTextToInsert` existe pra fechar, e que esta
+ *  superfície não atravessava. Régua duplicada é assim que um conserto vale só
+ *  na metade das telas. */
+export function gatePaste(data: {
+  items: Iterable<{ kind: string; getAsFile: () => File | null }>
+  getData: (tipo: string) => string
+}): { files: File[]; text: string } {
+  const files = clipboardAttachables(data.items)
+  return {
+    files,
+    text: pastedTextToInsert(data.getData("text/plain"), files.length),
+  }
 }
 
 /** Salva File[] como Attachment[] respeitando os limites do backend (10 MB por

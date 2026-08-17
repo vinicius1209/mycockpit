@@ -13,15 +13,17 @@ import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useAwaiting } from "@/store/interactions"
 import { CLIMATE_FRAME_CLASS, riskClimateOn } from "@/lib/climate"
+import { resolvePermission } from "@/lib/permission"
 
 export function RiskClimate() {
   const activeId = useChat((s) => s.activeId)
   const projectId = useChat((s) => (s.activeId ? s.byId[s.activeId]?.projectId : null))
   const mode = useApp((s) =>
     projectId
-      ? (s.mycockpit[projectId]?.permission ??
-        s.projects.find((p) => p.id === projectId)?.permissionMode ??
-        "padrao")
+      ? resolvePermission(
+          s.mycockpit[projectId]?.permission,
+          s.projects.find((p) => p.id === projectId)?.permissionMode,
+        )
       : "padrao",
   )
   const awaiting = useAwaiting()

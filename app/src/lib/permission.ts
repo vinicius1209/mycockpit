@@ -10,13 +10,32 @@ export const PERMISSION_LABEL: Record<PermissionMode, string> = {
   liberado: "Liberado",
 }
 
+/** A PRECEDÊNCIA, escrita UMA vez: o `.mycockpit/config.toml` (aqui já em
+ *  memória) vence o cache do SQLite, e sem os dois o modo é "padrao" — nunca
+ *  fail-open pra "liberado".
+ *
+ *  Por que uma função em vez de um seletor compartilhado: as três superfícies
+ *  que leem o modo assinam fatias DIFERENTES do store (o segmented do composer
+ *  assina pelo projeto ATIVO, o clima ambiente pelo projeto da CONVERSA ativa, e
+ *  o despacho lê `getState()` no instante do envio). O seletor não dá pra
+ *  compartilhar; a REGRA dá — e é ela que não pode divergir, porque o Rust
+ *  resolve o spawn pelo arquivo, não pelo cache. */
+export function resolvePermission(
+  cfgPermission: PermissionMode | undefined,
+  cached: PermissionMode | undefined | null,
+): PermissionMode {
+  return cfgPermission ?? cached ?? "padrao"
+}
+
 /** Modo EFETIVO do projeto: o config em memória (.mycockpit) vence o cache do
  *  SQLite; sem os dois, "padrao". Mesma precedência que o ContextPanel já usava
  *  — extraída pra não divergir agora que dois lugares leem. */
 export function effectivePermission(project: Project | null): PermissionMode {
   if (!project) return "padrao"
-  const cfg = useApp.getState().mycockpit[project.id]
-  return cfg?.permission ?? project.permissionMode ?? "padrao"
+  return resolvePermission(
+    useApp.getState().mycockpit[project.id]?.permission,
+    project.permissionMode,
+  )
 }
 
 /** Troca a permissão do PROJETO nas TRÊS camadas que têm de concordar:

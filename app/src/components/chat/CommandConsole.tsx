@@ -18,6 +18,15 @@ import {
   NO_PRESET,
 } from "@/components/chat/ComposerParts"
 import { ExecutionRow } from "@/components/chat/ExecutionRow"
+import {
+  despachoDoEnter,
+  podeEnviar,
+  type EstadoDoComposer,
+} from "@/components/chat/composerSend"
+import {
+  identidadeEfetiva,
+  resumoDaIdentidade,
+} from "@/components/chat/composerIdentity"
 import { useSlashCommands } from "@/hooks/useSlashCommands"
 import { slashEmptyHint } from "@/lib/slashCommands"
 import { useAtMentions } from "@/hooks/useAtMentions"
@@ -37,7 +46,6 @@ import {
   DESTINATIONS,
   defaultModelFor,
   agentCaps,
-  agentModels,
   normalizeModelValue,
 } from "@/lib/agents"
 import { FusionLauncher } from "@/components/fusion/FusionLauncher"
@@ -145,6 +153,16 @@ export function CommandConsole({
   const suggesting = conv.suggesting
   const project = useActiveProject()
   const activeId = useChat((s) => s.activeId)
+  // A PERMISSÃO é do projeto DONO do fio, não do que está em foco — mesma regra
+  // que o despacho já segue (`resolveSendTarget`: "cwd, permissão e lições são
+  // os do fio, não os da tela"). O resto do composer (comandos "/", arquivos
+  // "@", personas) continua no foco, que é o inventário que você está olhando.
+  // Sem conversa hidratada, o foco é a melhor aproximação que existe.
+  const permProjectId = useChat((s) =>
+    s.activeId ? (s.byId[s.activeId]?.projectId ?? null) : null,
+  )
+  const permProject =
+    useApp((s) => s.projects.find((p) => p.id === permProjectId)) ?? project
 
   // conversa estabelecida trava no agent/modelo/effort dela; o seletor reflete.
   // Pareceres de conselheiro (advice) NÃO travam a identidade (Especialistas E1).
@@ -160,11 +178,18 @@ export function CommandConsole({
   // vale no outro.
   const [retryModel, setRetryModel] = useState<string | null>(null)
   useEffect(() => setRetryModel(null), [activeId, conv.agent])
-  const effectiveDest = locked ? conv.agent : destination
-  const effectiveModel = locked
-    ? (modelUnlocked ? retryModel : null) ?? conv.reqModel ?? "default"
-    : model
-  const effectiveEffort = locked ? (conv.effort ?? "default") : effort
+  // A regra (o que vale numa conversa nova, o que vale numa travada, e a saída
+  // de emergência) é pura e mora em composerIdentity.
+  const identidade = identidadeEfetiva({
+    travada: locked,
+    modeloDestravado: modelUnlocked,
+    escolhaDeEmergencia: retryModel,
+    conversa: { agent: conv.agent, reqModel: conv.reqModel, effort: conv.effort },
+    seletores: { agent: destination, model, effort },
+  })
+  const effectiveDest = identidade.agent
+  const effectiveModel = identidade.model
+  const effectiveEffort = identidade.effort
 
   // Carimbo do agent numa conversa que ainda NÃO tem um. O destino é estado
   // deste componente e SOBREVIVE à troca de conversa: escolher Antigravity e
@@ -257,19 +282,7 @@ export function CommandConsole({
     DESTINATIONS.find((d) => d.id === effectiveDest) ?? DESTINATIONS[0]
   // Resumo colapsado da identidade na linha de execução: os 4 seletores viraram
   // UMA legenda clicável (eles travam no 1º envio — são estado, não controle).
-  // "default" não vira texto: dizer "default" não informa nada a mais que o
-  // nome do agent já diz.
-  const identityLabel = [
-    dest.label,
-    effectiveModel !== "default"
-      ? (agentModels(effectiveDest).find((m) => m.value === effectiveModel)?.pill ??
-        agentModels(effectiveDest).find((m) => m.value === effectiveModel)?.label ??
-        effectiveModel)
-      : null,
-    effectiveEffort !== "default" ? effectiveEffort : null,
-  ]
-    .filter(Boolean)
-    .join(" · ")
+  const identityLabel = resumoDaIdentidade(identidade)
   // agent EFETIVO da conversa — a nota honesta por agent (permissionNote) precisa
   // saber QUEM vai obedecer (ou ignorar) o modo de permissão do projeto.
   const convAgent = hasExecutorTurn(conv.items) ? conv.agent : effectiveDest
@@ -279,15 +292,18 @@ export function CommandConsole({
     a.kind === "image" ? caps.image : a.kind === "pdf" ? caps.pdf : false,
   )
   // aceita um texto explícito porque o submit do editor chega com o texto
-  // recém-serializado (que pode estar 1 tick à frente do draft).
-  const canSendWith = (text: string) =>
-    (text.length > 0 || attachments.length > 0) &&
-    !disabled &&
-    !running &&
-    !finalizing &&
-    !missionRunning &&
-    allSupported
-  const canSend = canSendWith(value.trim())
+  // recém-serializado (que pode estar 1 tick à frente do draft). A REGRA mora
+  // em composerSend (pura, testada); aqui só se junta o estado.
+  const estadoDoComposer = (text: string): EstadoDoComposer => ({
+    texto: text,
+    anexos: attachments.length,
+    anexosSuportados: allSupported,
+    disabled: !!disabled,
+    running: !!running,
+    finalizing: !!finalizing,
+    missionRunning: !!missionRunning,
+  })
+  const canSend = podeEnviar(estadoDoComposer(value.trim()))
 
   // "Planejar primeiro" (por conversa, na store): NÃO trava com a conversa — é
   // um modo do PRÓXIMO envio, não config fixa do 1º run. Fica ligado até o
@@ -304,7 +320,7 @@ export function CommandConsole({
     // Só é true quando o humano ESCOLHEU outro modelo numa conversa travada
     // cuja última tentativa falhou. Sem a flag o despacho segue usando o modelo
     // do 1º run, como sempre (ver AgentRunConfig).
-    modelSwitched: modelUnlocked && retryModel !== null,
+    modelSwitched: identidade.trocouDeModelo,
   }
 
   /** Foca o editor do console (FocusBridgePlugin do Lexical). */
@@ -316,20 +332,11 @@ export function CommandConsole({
    *  passa o texto que acabou de serializar (MESMA string `@nome`). */
   function submit(overrideText?: string) {
     const text = (overrideText ?? value).trim()
-    // Turno em andamento: Enter ENFILEIRA (texto + anexos — deixar o anexo pra
-    // trás fazia a imagem "enviada" ficar órfã no composer e nunca ir junto).
-    // O handleSend detecta o running e empilha na fila.
-    if (running || finalizing) {
-      if ((!text && attachments.length === 0) || disabled || !allSupported)
-        return
-      onSend(text, effCfg, attachments)
-      setValue("")
-      setAttachments([])
-      resetHistory()
-      focusComposer()
-      return
-    }
-    if (!canSendWith(text)) return
+    if (despachoDoEnter(estadoDoComposer(text)) === "barrado") return
+    // UM caminho só para enviar e para ENFILEIRAR (turno em andamento): texto e
+    // anexos viajam sempre juntos, e o handleSend é quem detecta o turno em voo
+    // e empilha na fila. Eram dois ramos gêmeos aqui — e ramo gêmeo é como o
+    // anexo ficava pra trás, órfão no composer depois de a mensagem "sair".
     onSend(text, effCfg, attachments)
     setValue("")
     setAttachments([])
@@ -448,7 +455,7 @@ export function CommandConsole({
         }
         header={
           <ExecutionRow
-            project={project}
+            project={permProject}
             convAgent={convAgent}
             planFirst={planFirst}
             onTogglePlanFirst={() => {

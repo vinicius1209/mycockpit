@@ -26,12 +26,12 @@ import {
 import {
   answeredCount,
   attachableFile,
-  clipboardAttachables,
   draftAddAttachments,
   draftAppendText,
   draftRemoveAttachment,
   draftSetText,
   draftsToAnswers,
+  gatePaste,
   initGateDrafts,
   saveFilesAsAttachments,
   type GateDraft,
@@ -102,10 +102,12 @@ export function GateAnswerForm({
   // (F21), preserva o texto colado junto (F20) — mesmo caminho do composer.
   function handlePaste(i: number, e: React.ClipboardEvent<HTMLTextAreaElement>) {
     if (!isTauri() || !convId) return
-    const files = clipboardAttachables(e.clipboardData.items)
+    // Entrada ÚNICA (`gatePaste`): ela filtra os File anexáveis E decide o texto
+    // que os acompanha. Ler o `text/plain` cru aqui deixava o endereço
+    // `blob:tauri://…` do próprio anexo entrar na resposta como texto do humano.
+    const { files, text } = gatePaste(e.clipboardData)
     if (!files.length) return // texto puro → comportamento default
     e.preventDefault()
-    const text = e.clipboardData.getData("text/plain")
     if (text) setDrafts((cur) => draftAppendText(cur, i, text))
     void addFiles(i, files)
   }
