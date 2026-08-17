@@ -462,7 +462,16 @@ fn walk_files(base: &Path, dir: &Path, out: &mut Vec<String>, depth: usize) {
 pub fn list_project_files(path: String) -> Vec<String> {
     if let Some(s) = crate::proc::run_ok(
         "git",
-        &["-C", &path, "ls-files", "--cached", "--others", "--exclude-standard"],
+        &[
+            "-c",
+            "core.quotepath=false",
+            "-C",
+            &path,
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ],
         None,
     ) {
         let mut v: Vec<String> = s.lines().take(8000).map(str::to_string).collect();
