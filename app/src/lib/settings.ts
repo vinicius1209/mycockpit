@@ -122,7 +122,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   dictationHotkey: DEFAULT_DICTATION_HOTKEY,
   dictationVocab: [],
   autoResume: false,
-  autoResumeMaxTries: 5,
+  autoResumeMaxTries: 3,
   missionEnabled: false,
   missionPresets: DEFAULT_MISSION_PRESETS,
   onboarded: false,

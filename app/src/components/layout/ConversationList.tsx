@@ -8,6 +8,7 @@ import {
   Plus,
   Rocket,
   Swords,
+  Timer,
   Trash2,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -61,6 +62,27 @@ function useFinishedUnseen(): Map<string, "ok" | "error"> {
   for (const par of key ? key.split(",") : []) {
     const [id, st] = par.split(":")
     m.set(id, st === "error" ? "error" : "ok")
+  }
+  return m
+}
+
+/** Conversas paradas num limite de uso: "pending" enquanto o auto-resume tem
+ *  um reenvio agendado (calmo, automático — mesmo tom do Rocket de missão
+ *  rodando), "stuck" quando o turno bateu limite e NINGUÉM vai reenviar
+ *  sozinho (auto-resume desligado ou esgotou as tentativas — aí sim precisa
+ *  de você). Chave estável, mesmo padrão dos hooks acima. */
+function useLimitConvIds(): Map<string, "pending" | "stuck"> {
+  const key = useChat((s) =>
+    Object.entries(s.byId)
+      .filter(([, c]) => c.autoResume || (c.limitHitThisTurn && !c.running))
+      .map(([id, c]) => `${id}:${c.autoResume ? "pending" : "stuck"}`)
+      .sort()
+      .join(","),
+  )
+  const m = new Map<string, "pending" | "stuck">()
+  for (const par of key ? key.split(",") : []) {
+    const [id, st] = par.split(":")
+    m.set(id, st === "stuck" ? "stuck" : "pending")
   }
   return m
 }
@@ -135,6 +157,7 @@ export function ConversationList({ projectId }: { projectId: string }) {
   const deciding = useDecidingConvIds()
   const fusionAlive = useFusionConvIds()
   const missionRunning = useMissionRunningConvIds()
+  const limitState = useLimitConvIds()
   // Pedido pendente (permissão ou pergunta do ask_user): o turno DESTA conversa
   // está parado esperando você.
   const awaiting = useAwaiting()
@@ -231,13 +254,38 @@ export function ConversationList({ projectId }: { projectId: string }) {
         const hasFusion = fusionAlive.has(c.id)
         const hasMission = missionRunning.has(c.id)
         const isAwaiting = awaiting.convIds.has(c.id)
+        const limitStatus = limitState.get(c.id)
         const isEditing = editingId === c.id
         // À DIREITA do título, ANTES do slot: missão e disputa são TIPOS de
         // execução, não estado do turno. O estado do turno mora no slot, que
         // tem dono único (§6).
         const statusEl =
-          hasMission || hasFusion ? (
+          hasMission || hasFusion || limitStatus ? (
             <>
+              {limitStatus && (
+                <span
+                  className="grid size-3 shrink-0 place-items-center"
+                  title={
+                    limitStatus === "stuck"
+                      ? "Parou num limite de uso, precisa de você"
+                      : "Aguardando reset do limite, retomando automaticamente"
+                  }
+                >
+                  <Timer
+                    className={cn(
+                      "size-3",
+                      limitStatus === "stuck"
+                        ? "text-st-warning"
+                        : "text-muted-foreground/70",
+                    )}
+                    aria-label={
+                      limitStatus === "stuck"
+                        ? "limite atingido, precisa de você"
+                        : "aguardando reset do limite"
+                    }
+                  />
+                </span>
+              )}
               {hasMission && (
                 <span
                   className="grid size-3 shrink-0 place-items-center"

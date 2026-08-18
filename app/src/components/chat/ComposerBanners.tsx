@@ -6,16 +6,19 @@
 // Os dois falam a MESMA língua de aviso (st-warning em E0, saída em ghost):
 // pedem uma decisão sua, sem afirmar que o app já agiu.
 
-import { useEffect, useState } from "react"
 import { FolderGit2, Timer, X } from "lucide-react"
 import { PENDING_DECISION } from "@/lib/attention"
 import { resumeBannerLabel } from "@/lib/autoResume"
+import { fmtTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-/** Banner (acima do composer) quando um auto-resume está agendado: countdown ao
- *  vivo até o próximo reenvio, quantas tentativas restam, e as saídas (Cancelar /
- *  Retomar agora). Reusa o estilo st-warning do BlockedDirBanner. Um envio manual
- *  (ou o Stop) cancela o agendamento por fora deste componente. */
+/** Banner (acima do composer) quando um auto-resume está agendado: horário do
+ *  próximo reenvio (relógio via fmtTime, não contagem — mesmo formato HH:MM
+ *  do "Disponível novamente" do cartão de limite em MessageList, pra não
+ *  parecer que os dois relógios se contradizem), quantas tentativas restam, e
+ *  as saídas (Cancelar / Retomar agora). Reusa o estilo st-warning do
+ *  BlockedDirBanner. Um envio manual (ou o Stop) cancela o agendamento por
+ *  fora deste componente. */
 export function AutoResumeBanner({
   nextAt,
   tries,
@@ -33,12 +36,6 @@ export function AutoResumeBanner({
   onCancel: () => void
   onResumeNow: () => void
 }) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [])
-  const secs = Math.max(0, Math.ceil((nextAt - now) / 1000))
   const remaining = Math.max(0, maxTries - tries)
   return (
     <div
@@ -50,8 +47,8 @@ export function AutoResumeBanner({
       <Timer className="size-4 shrink-0 animate-pulse text-st-warning" />
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-foreground">
-          {resumeBannerLabel(reason)}, retomando automaticamente em{" "}
-          <span className="font-mono tabular-nums">{secs}s</span>{" "}
+          {resumeBannerLabel(reason)}, retomando automaticamente às{" "}
+          <span className="font-mono tabular-nums">{fmtTime(nextAt)}</span>{" "}
           <span className="text-muted-foreground">
             (tentativa {tries}/{maxTries}
             {remaining > 0 ? `, ${remaining} restante${remaining > 1 ? "s" : ""}` : ""})
