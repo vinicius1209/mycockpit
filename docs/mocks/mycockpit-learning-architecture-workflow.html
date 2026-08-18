@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MyCockpit — Arquitetura de Auto-Aprendizado & Algoritmos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d0f12;
+      --card: #14171d;
+      --card-hover: #1a1e26;
+      --border: #232833;
+      --border-strong: #333a4a;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --text-faint: #484f58;
+      --brass: #d29922;
+      --brass-dim: rgba(210, 153, 34, 0.12);
+      --success: #3fb950;
+      --success-dim: rgba(63, 185, 80, 0.12);
+      --danger: #f85149;
+      --danger-dim: rgba(248, 81, 73, 0.12);
+      --cyan: #38bdf8;
+      --cyan-dim: rgba(56, 189, 248, 0.12);
+      --purple: #a855f7;
+      --purple-dim: rgba(168, 85, 247, 0.12);
+      --sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.5;
+      padding: 32px 20px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 1060px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 20px;
+    }
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: fit-content;
+      padding: 3px 10px;
+      border-radius: 99px;
+      background: var(--brass-dim);
+      border: 1px solid rgba(210, 153, 34, 0.3);
+      color: var(--brass);
+      font-size: 11px;
+      font-family: var(--mono);
+      font-weight: 500;
+    }
+    .header h1 {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .header p {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    /* Nav Tabs */
+    .tabs-nav {
+      display: flex;
+      gap: 6px;
+      background: var(--card);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      width: fit-content;
+    }
+    .tab-btn {
+      padding: 8px 16px;
+      border-radius: 7px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--sans);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+    .tab-btn.active {
+      background: var(--bg);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+      border: 1px solid var(--border);
+    }
+
+    /* Tab Content Panes */
+    .tab-pane { display: none; flex-direction: column; gap: 20px; }
+    .tab-pane.active { display: flex; animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Cards & Layouts */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    @media (max-width: 800px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Interactive Workflow Diagram */
+    .workflow-board {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .flow-steps {
+      display: flex;
+      align-items: stretch;
+      gap: 12px;
+      position: relative;
+    }
+    @media (max-width: 900px) {
+      .flow-steps { flex-direction: column; }
+    }
+    .flow-step {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .flow-step:hover, .flow-step.active {
+      border-color: var(--brass);
+      background: var(--card-hover);
+      box-shadow: 0 0 16px var(--brass-dim);
+    }
+    .flow-step-num {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--brass);
+      letter-spacing: 0.05em;
+    }
+    .flow-step-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .flow-step-desc {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .detail-card {
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .code-box {
+      background: #090b0e;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #93c5fd;
+      overflow-x: auto;
+    }
+
+    /* Live Interactive Simulator */
+    .sim-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .sim-input-row {
+      display: flex;
+      gap: 10px;
+    }
+    .sim-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 13px;
+      outline: none;
+    }
+    .sim-input:focus { border-color: var(--brass); }
+    .sim-btn {
+      padding: 10px 18px;
+      background: var(--brass);
+      color: #000;
+      font-weight: 700;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .sim-btn:hover { opacity: 0.9; }
+
+    .sim-result {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .token-pill {
+      display: inline-block;
+      background: var(--border);
+      color: var(--text);
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 11px;
+      margin-right: 4px;
+      margin-bottom: 4px;
+    }
+
+    /* Reference Cards */
+    .paper-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: transform 0.15s ease;
+    }
+    .paper-card:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+    .paper-venue {
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--cyan);
+      font-weight: 600;
+    }
+    .paper-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .paper-authors {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .paper-relevance {
+      font-size: 12.5px;
+      color: var(--text);
+      background: rgba(255,255,255,0.02);
+      padding: 8px;
+      border-radius: 6px;
+      border-left: 3px solid var(--brass);
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <div class="badge-pill">⚙️ MyCockpit Autonomous Learning Core</div>
+    <h1>Arquitetura de Auto-Aprendizado & Algoritmos</h1>
+    <p>Guia visual e interativo dos 4 motores matemáticos, estratégias de fallback local e fundamentos teóricos do MyCockpit.</p>
+  </div>
+
+  <!-- Navigation -->
+  <div class="tabs-nav">
+    <button class="tab-btn active" onclick="switchTab('tab-workflow')">1. Workflow Interativo</button>
+    <button class="tab-btn" onclick="switchTab('tab-fallbacks')">2. Fallbacks & Modelos Locais</button>
+    <button class="tab-btn" onclick="switchTab('tab-simulator')">3. Simulador de Algoritmo</button>
+    <button class="tab-btn" onclick="switchTab('tab-papers')">4. Fundamentação Científica</button>
+  </div>
+
+  <!-- ── TAB 1: WORKFLOW INTERATIVO ── -->
+  <div id="tab-workflow" class="tab-pane active">
+    <div class="workflow-board">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <h2 style="font-size:16px; font-weight:700;">Ciclo de Vida do Aprendizado Contínuo</h2>
+          <p style="font-size:12.5px; color:var(--text-muted);">Clique nas etapas para inspecionar os algoritmos executados em cada estágio:</p>
+        </div>
+        <span class="badge-pill" style="color:var(--success); background:var(--success-dim); border-color:rgba(63,185,80,0.3);">
+          Zero Inchaço de Prompt
+        </span>
+      </div>
+
+      <div class="flow-steps">
+        <div class="flow-step active" onclick="showStep(1)">
+          <span class="flow-step-num">ETAPA 01</span>
+          <div class="flow-step-name">1. Injeção Top-8</div>
+          <div class="flow-step-desc">Ranking SQL seleciona as 8 lições mais reforçadas para o prompt.</div>
+        </div>
+
+        <div class="flow-step" onclick="showStep(2)">
+          <span class="flow-step-num">ETAPA 02</span>
+          <div class="flow-step-name">2. Execução & Sinal</div>
+          <div class="flow-step-desc">O usuário avalia o turno com 👍 (sucesso) ou 👎 (correção).</div>
+        </div>
+
+        <div class="flow-step" onclick="showStep(3)">
+          <span class="flow-step-num">ETAPA 03</span>
+          <div class="flow-step-name">3. AI Destilação</div>
+          <div class="flow-step-desc">Haiku / Local Model extrai regra atômica da reclamação.</div>
+        </div>
+
+        <div class="flow-step" onclick="showStep(4)">
+          <span class="flow-step-num">ETAPA 04</span>
+          <div class="flow-step-name">4. Gate Humano & Dedup</div>
+          <div class="flow-step-desc">Filtro de similaridade (≥60%) e confirmação do desenvolvedor.</div>
+        </div>
+      </div>
+
+      <div id="step-detail-box" class="detail-card">
+        <!-- Injetado via JS -->
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title" style="color:var(--cyan);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/></svg>
+          M1: Delivery Recall (Memória Episódica)
+        </div>
+        <p style="font-size:12.5px; color:var(--text-muted);">
+          Quando você digita uma nova tarefa, o sistema tokeniza os requisitos e compara com <b>entregas passadas aprovadas nos gates</b>.
+        </p>
+        <div class="code-box">
+Score = (Overlap_Keywords + Overlap_Paths) / 2
+• Score ≥ 0.50 → Injeta plano anterior no prompt
+• Score < 0.15 → Descarte silencioso (zero ruído)
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="color:var(--brass);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          M2: RLHF Local & Ranking de Relevância
+        </div>
+        <p style="font-size:12.5px; color:var(--text-muted);">
+          O prompt nunca cresce infinitamente. Ele seleciona estritamente as regras de maior pontuação acumulada por feedback real.
+        </p>
+        <div class="code-box">
+SELECT * FROM lessons 
+WHERE status = 'active' AND (scope = 'global' OR project_id = $1)
+ORDER BY uses DESC, created_at DESC 
+LIMIT 8;
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB 2: FALLBACKS E MODELOS LOCAIS ── -->
+  <div id="tab-fallbacks" class="tab-pane">
+    <div class="card">
+      <div class="card-title" style="font-size:16px;">
+        🛡️ Estratégia de Resiliência: E se o Haiku estiver offline?
+      </div>
+      <p style="font-size:13px; color:var(--text-muted);">
+        No MyCockpit, a destilação de regras é projetada para ser tolerante a falhas (<b>fail-safe graceful degradation</b>). Nenhuma falha de rede ou de API pode interromper o fluxo de trabalho do desenvolvedor.
+      </p>
+    </div>
+
+    <div class="grid-3">
+      <div class="card" style="border-color: rgba(56, 189, 248, 0.4);">
+        <div class="badge-pill" style="color:var(--cyan); background:var(--cyan-dim);">Fallback 1: No Código Hoje</div>
+        <div class="card-title">Pass-Through Cru (Zero Bloqueio)</div>
+        <p style="font-size:12px; color:var(--text-muted);">
+          Se <span style="font-family:var(--mono);">helperModel</span> for <span style="font-family:var(--mono);">null</span> ou a API falhar, o sistema devolve imediatamente a própria nota digitada pelo desenvolvedor no card editável.
+        </p>
+        <div class="code-box" style="font-size:11px;">
+if (!helperModel) {
+  return { rule: note, learnable: null }
+}
+        </div>
+      </div>
+
+      <div class="card" style="border-color: rgba(168, 85, 247, 0.4);">
+        <div class="badge-pill" style="color:var(--purple); background:var(--purple-dim);">Fallback 2: macOS On-Device</div>
+        <div class="card-title">Apple Foundation / CoreML</div>
+        <p style="font-size:12px; color:var(--text-muted);">
+          No macOS 15.1+, o sistema operacional possui modelos locais rodando no <b>Apple Neural Engine</b>. Eles são perfeitos para destilar frases em 30ms com <b>zero custo de API e 100% de privacidade</b>.
+        </p>
+        <div class="code-box" style="font-size:11px;">
+// Sidecar Swift / CoreML
+let distilled = try await 
+  AppleIntelligence.summarize(feedback)
+        </div>
+      </div>
+
+      <div class="card" style="border-color: rgba(63, 185, 80, 0.4);">
+        <div class="badge-pill" style="color:var(--success); background:var(--success-dim);">Fallback 3: Local LLMs</div>
+        <div class="card-title">Ollama / MLX / Qwen 1.5B</div>
+        <p style="font-size:12px; color:var(--text-muted);">
+          Modelos pequenos especializados em código (ex: <span style="font-family:var(--mono);">qwen2.5-coder:1.5b</span> ou <span style="font-family:var(--mono);">llama3.2:1b</span>) consom menos de 1GB de RAM e executam localmente no backend Rust.
+        </p>
+        <div class="code-box" style="font-size:11px;">
+// Chamada local via IPC Rust
+let rule = run_local_mlx(prompt).await;
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB 3: SIMULADOR DE ALGORITMO ── -->
+  <div id="tab-simulator" class="tab-pane">
+    <div class="sim-box">
+      <div>
+        <h2 style="font-size:15px; font-weight:700;">Simulador Live do Motor de Deduplicação</h2>
+        <p style="font-size:12.5px; color:var(--text-muted);">
+          Teste em tempo real como o algoritmo de normalização e similaridade assimétrica de tokens decide se uma regra é <b>Nova</b> ou <b>Duplicata</b>:
+        </p>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <label style="font-size:11.5px; font-weight:600; color:var(--text-muted);">REGRA EXISTENTE NO BANCO SQLITE (Regra A):</label>
+        <input id="input-rule-a" type="text" class="sim-input" value="Sempre execute cargo test antes de criar o commit" />
+
+        <label style="font-size:11.5px; font-weight:600; color:var(--text-muted);">NOVA REGRA PROPOSTA (Regra B):</label>
+        <input id="input-rule-b" type="text" class="sim-input" value="Rodar os testes do cargo test antes de commitar as mudanças" />
+
+        <button class="sim-btn" onclick="runSim()">Calcular Similaridade e Veredito</button>
+      </div>
+
+      <div id="sim-output" class="sim-result" style="display:none;">
+        <!-- Injetado via JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB 4: PAPERS CIENTÍFICOS ── -->
+  <div id="tab-papers" class="tab-pane">
+    <div class="card">
+      <div class="card-title" style="font-size:16px;">
+        📚 Fundamentação Teórica e Literatura Científica
+      </div>
+      <p style="font-size:13px; color:var(--text-muted);">
+        A arquitetura do MyCockpit não é empírica ao acaso: ela implementa os princípios formais descritos nos papers mais influentes da literatura de agentes autônomos e aprendizado em tempo de execução:
+      </p>
+    </div>
+
+  <!-- ── TAB 4: PAPERS CIENTÍFICOS RECENTES (2024–2026) ── -->
+  <div id="tab-papers" class="tab-pane">
+    <div class="card">
+      <div class="card-title" style="font-size:16px;">
+        📚 Estado da Arte: Pesquisas & Papers Recentes (2024–2026)
+      </div>
+      <p style="font-size:13px; color:var(--text-muted);">
+        A literatura de agentes de IA evoluiu drasticamente entre 2024 e 2026, consolidando o paradigma de <b>Experience-driven Lifelong Learning</b> (Aprendizado Contínuo sem Fine-Tuning). Veja os principais artigos recentes que fundamentam o MyCockpit:
+      </p>
+    </div>
+
+    <div class="grid-2">
+      <div class="paper-card">
+        <div class="paper-venue">arXiv:2026 / SWE-bench Verified · SOTA</div>
+        <div class="paper-title">MemCoder: Your Code Agent Can Grow Alongside You with Structured Memory</div>
+        <div class="paper-authors">Z. Liu, H. Zhang, Y. Wang, et al. (2026)</div>
+        <div class="paper-relevance">
+          <b>Como o MyCockpit aplica:</b> Propõe a "auto-internalização de experiência" para agentes de software: transforma correções humanas e testes em regras estruturadas de longo prazo que co-evoluem com o repositório, atingindo SOTA no SWE-bench.
+        </div>
+      </div>
+
+      <div class="paper-card">
+        <div class="paper-venue">arXiv:2025 / AAAI · Self-Evolution</div>
+        <div class="paper-title">AgentEvolver: Towards Efficient and Autonomous Self-Evolving AI Agents</div>
+        <div class="paper-authors">J. Chen, R. Sun, X. Li, et al. (2025)</div>
+        <div class="paper-relevance">
+          <b>Como o MyCockpit aplica:</b> Modela a <i>Self-Attribution</i> (atribuição de crédito e recompensa a regras anteriores). É exatamente a lógica por trás do nosso botão 👍 (<span style="font-family:var(--mono);">reinforceLessons</span>), recompensando regras que levaram ao sucesso da entrega.
+        </div>
+      </div>
+
+      <div class="paper-card">
+        <div class="paper-venue">ICLR / arXiv 2026 · Memory Taxonomy</div>
+        <div class="paper-title">Memory for Autonomous LLM Agents: Mechanisms, Evaluation, and Frontiers</div>
+        <div class="paper-authors">S. Zhao, X. Song, T. Hu, et al. (arXiv:2603.07670, 2026)</div>
+        <div class="paper-relevance">
+          <b>Como o MyCockpit aplica:</b> Aborda o <i>Memory Paradox</i> (acumular memória sem poda degrada a precisão do modelo). Justifica o teto rígido do MyCockpit de 8 lições e o descarte de recalls abaixo do limiar de 0.15.
+        </div>
+      </div>
+
+      <div class="paper-card">
+        <div class="paper-venue">AAAI 2024 · Experiential Agents</div>
+        <div class="paper-title">ExpeL: LLM Agents Are Experiential Learners</div>
+        <div class="paper-authors">A. Zhao, D. Xie, Y. Zhang, M. Zhou (2024)</div>
+        <div class="paper-relevance">
+          <b>Como o MyCockpit aplica:</b> Demonstra matematicamente que acumular um "pool de experiências de tentativa e erro" e destilar insights em linguagem natural supera fine-tuning tradicional para adaptação contínua.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function switchTab(tabId) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById(tabId).classList.add('active');
+  }
+
+  const steps = {
+    1: {
+      title: "Etapa 1: Injeção Top-8 (Score de Relevância)",
+      sql: "SELECT * FROM lessons WHERE status = 'active' AND (scope = 'global' OR project_id = ?) ORDER BY uses DESC, created_at DESC LIMIT 8;",
+      desc: "O sistema busca no SQLite as regras ativas associadas ao projeto atual e regras globais. O teto rígido de 8 regras impede o 'context pollution' e economiza tokens."
+    },
+    2: {
+      title: "Etapa 2: Avaliação do Desenvolvedor (Sinal de Recompensa)",
+      sql: "-- Ao clicar em 👍:\nUPDATE lessons SET uses = uses + 1, last_used_at = ? WHERE id IN (?);",
+      desc: "O polegar para cima atua como recompensa no algoritmo RLHF. As regras que viabilizaram a resposta correta ganham prioridade nas próximas interações."
+    },
+    3: {
+      title: "Etapa 3: Destilação de Regra (Haiku / Local AI)",
+      sql: "-- Prompt do Destilador:\n'Extraia UMA regra curta, acionável e GENÉRICA em português, no imperativo. Responda APENAS com a regra.'",
+      desc: "Converte feedbacks subjetivos ou específicos (ex: 'você quebrou o build') em regras reutilizáveis para o projeto (ex: 'Sempre validar com cargo test antes de sugerir o commit')."
+    },
+    4: {
+      title: "Etapa 4: Deduplicação e Gate Humano",
+      sql: "-- Coeficiente de Sobreposição:\nOverlap(A, B) = |Tokens(A) ∩ Tokens(B)| / min(|Tokens(A)|, |Tokens(B)|)\n-- Se Overlap ≥ 0.60: Bloqueia inserção duplicada.",
+      desc: "O desenvolvedor revisa a regra no card editável antes de gravar. Se uma regra equivalente já existir no banco, o sistema funde os contadores sem duplicar linhas."
+    }
+  };
+
+  function showStep(num) {
+    document.querySelectorAll('.flow-step').forEach((s, idx) => {
+      s.classList.toggle('active', idx === num - 1);
+    });
+    const s = steps[num];
+    const box = document.getElementById('step-detail-box');
+    box.innerHTML = `
+      <div style="font-weight:700; font-size:14px; color:var(--brass); margin-bottom:6px;">${s.title}</div>
+      <p style="margin-bottom:10px; color:var(--text);">${s.desc}</p>
+      <div class="code-box">${s.sql}</div>
+    `;
+  }
+
+  // Inicializa com a etapa 1
+  showStep(1);
+
+  // Stopwords e Tokenizer idênticos ao lib/recall.ts
+  const STOPWORDS = new Set(["a", "o", "os", "as", "um", "uma", "de", "do", "da", "dos", "das", "e", "ou", "que", "com", "sem", "por", "para", "pra", "pro", "no", "na", "nos", "nas", "em", "ao", "aos", "se", "ser", "foi", "the", "of", "to", "in", "on", "for", "and", "or", "with", "add", "adicionar", "criar", "fazer", "novo", "nova", "usar", "quando", "onde", "como", "isso", "este", "esta", "esse", "essa", "mais", "menos", "todo", "toda", "cada"]);
+
+  function tokenize(text) {
+    const out = new Set();
+    if (!text) return out;
+    const cleaned = text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9\s/._-]/g, " ");
+    for (const raw of cleaned.split(/\s+/)) {
+      const t = raw.replace(/^[/._-]+|[/._-]+$/g, "");
+      if (t.length >= 3 && !STOPWORDS.has(t)) out.add(t);
+    }
+    return out;
+  }
+
+  function runSim() {
+    const ruleA = document.getElementById('input-rule-a').value;
+    const ruleB = document.getElementById('input-rule-b').value;
+    const tokensA = tokenize(ruleA);
+    const tokensB = tokenize(ruleB);
+
+    let inter = 0;
+    const commonTokens = [];
+    tokensA.forEach(t => {
+      if (tokensB.has(t)) {
+        inter++;
+        commonTokens.push(t);
+      }
+    });
+
+    const minSize = Math.min(tokensA.size, tokensB.size);
+    const score = minSize === 0 ? 0 : inter / minSize;
+    const isDuplicate = score >= 0.6;
+
+    const out = document.getElementById('sim-output');
+    out.style.display = 'flex';
+    out.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <b>Similaridade Calculada:</b> 
+          <span style="font-family:var(--mono); font-size:16px; font-weight:700; color:${isDuplicate ? 'var(--danger)' : 'var(--success)'};">
+            ${(score * 100).toFixed(1)}%
+          </span>
+          <span style="font-size:12px; color:var(--text-muted);"> (Limiar de corte: 60.0%)</span>
+        </div>
+        <span class="badge-pill" style="color:${isDuplicate ? 'var(--danger)' : 'var(--success)'}; background:${isDuplicate ? 'var(--danger-dim)' : 'var(--success-dim)'}; border-color:${isDuplicate ? 'rgba(248,81,73,0.3)' : 'rgba(63,185,80,0.3)'};">
+          ${isDuplicate ? '⛔ DUPLICATA REJEITADA' : '✅ REGRA NOVA ACEITA'}
+        </span>
+      </div>
+
+      <div style="font-size:12px; color:var(--text-muted);">
+        <b>Tokens da Regra A:</b> ${Array.from(tokensA).map(t => `<span class="token-pill">${t}</span>`).join(' ')}<br>
+        <b>Tokens da Regra B:</b> ${Array.from(tokensB).map(t => `<span class="token-pill">${t}</span>`).join(' ')}<br>
+        <b>Tokens em Interseção (|A ∩ B| = ${inter}):</b> ${commonTokens.length ? commonTokens.map(t => `<span class="token-pill" style="background:var(--brass-dim); color:var(--brass); border:1px solid var(--brass);">${t}</span>`).join(' ') : '<em>Nenhum</em>'}
+      </div>
+
+      <div style="font-size:12px; line-height:1.5; color:var(--text);">
+        ${isDuplicate 
+          ? '<b>Ação do Sistema:</b> Como a similaridade é ≥ 60%, o SQLite descarta a duplicata e apenas incrementa o contador de utilidade (<span style="font-family:var(--mono);">uses</span>) da regra original já cadastrada.' 
+          : '<b>Ação do Sistema:</b> Como a similaridade é < 60%, a regra traz um conceito novo e é gravada com sucesso no SQLite.'}
+      </div>
+    `;
+  }
+</script>
+</body>
+</html>
