@@ -42,7 +42,6 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { SELECTED_FILL } from "@/lib/selection"
 import { DESTINATIONS } from "@/lib/agents"
-import type { AgentDef } from "@/lib/agentDefs"
 import { fmtCost, fmtDuration, fmtTime, fmtTokens } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
@@ -72,9 +71,10 @@ import { lineDiff, trimOuterContext, type DiffRow } from "@/lib/linediff"
 import { taskPlansOf, type AgentPlan } from "@/lib/tasks"
 import { openDeliveryDiff } from "@/lib/deliveryDiff"
 import { Markdown } from "@/components/common/Markdown"
-import { AgentLogo, agentLogoLabel } from "@/components/common/AgentLogo"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
-import { ActivityAge, Elapsed } from "@/components/chat/LiveTime"
+import { ActivityAge } from "@/components/chat/LiveTime"
+import { resolveExecutorIdentity } from "@/components/chat/executorIdentity"
+import { WorkingIndicator } from "@/components/chat/WorkingIndicator"
 import {
   reuseNodes,
   type IncidentNode,
@@ -104,14 +104,7 @@ import { shortDigest } from "@/lib/presets"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import { splitMentions } from "@/components/chat/mentions"
 import { usePresets } from "@/store/presets"
-import {
-  deferredLiveLine,
-  pendingDeferred,
-  useChat,
-  type ChatItem,
-} from "@/store/chat"
-import type { DeferredWork } from "@/lib/work"
-import { agentLabel } from "@/lib/agent"
+import { pendingDeferred, useChat, type ChatItem } from "@/store/chat"
 
 /** Máx. de linhas mostradas num bloco de diff (Edit/Write) antes de "… +N linhas". */
 const DIFF_MAX_LINES = 80
@@ -2370,114 +2363,6 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
   )
 }
 
-/** Identidade do EXECUTOR pro gutter (compartilhada entre o cabeçalho do grupo
- *  e o indicador de "trabalhando…", pra não duplicar a resolução): a
- *  persona-piloto quando a conversa tem preset resolvido na lista; senão o logo
- *  do code agent num círculo + o rótulo do produto. Puro dada a lista de presets.
- *
- *  `engine` é o selo do motor pro CABEÇALHO (work-hierarchy: "o provider mora no
- *  cabeçalho do agente"; background-status B2.3 tirou o selo repetido de cada
- *  nó). Só vem preenchido quando o nome exibido NÃO é o do motor — com persona
- *  pilotando, o motor ficaria invisível; sem persona, o nome já É o motor e
- *  repetir seria ruído. */
-export function resolveExecutorIdentity(
-  presets: AgentDef[],
-  agent: string,
-  presetId: string | null,
-): { gutter: React.ReactNode; name: string; engine: string | null } {
-  const pilot = presetId ? presets.find((p) => p.id === presetId) : undefined
-  if (pilot) {
-    return {
-      gutter: <AgentAvatar def={pilot} size={28} rounded />,
-      name: pilot.name,
-      engine: agentLabel(agent),
-    }
-  }
-  return {
-    gutter: (
-      <span className="grid size-7 place-items-center rounded-full border bg-card">
-        <AgentLogo agent={agent} className="size-4 text-muted-foreground" />
-      </span>
-    ),
-    name: agentLogoLabel(agent),
-    engine: null,
-  }
-}
-
-/** Indicador "trabalhando…" estilo Slack/typing: o avatar do executor no mesmo
- *  gutter das mensagens + "está trabalhando…" com dots escalonados + cronômetro.
- *  `finalizando…` mantém o formato (só troca o verbo). Com trabalho DIFERIDO
- *  vivo (deferred-work-plan D1.3), o rótulo fica honesto: o CLI segura o turno
- *  aberto enquanto o background task roda — o spinner mudo virava mentira.
- *
- *  É a ÚNICA superfície do "agora" (background-status B2.2): o nó no fio é
- *  marco/resultado, não um segundo painel vivo. Regras do layout, do estudo do
- *  Warp (B1'): o cronômetro é irmão do que anima (nunca dentro), tem largura
- *  reservada + `tabular-nums` + `shrink-0`, e quem trunca é o NOME (B2.1). */
-function WorkingIndicator({
-  agent,
-  presetId,
-  finalizing,
-  running,
-  startedAt,
-  deferred = [],
-}: {
-  agent: string
-  presetId: string | null
-  finalizing: boolean
-  running: boolean
-  startedAt: number | null
-  /** Trabalhos em background vivos (derivado de items, replay-safe). */
-  deferred?: DeferredWork[]
-}) {
-  const presets = usePresets((s) => s.list)
-  const { gutter, name, engine } = resolveExecutorIdentity(presets, agent, presetId)
-  const live = deferredLiveLine(deferred)
-  const label = live
-    ? live.text
-    : finalizing
-      ? "finalizando…"
-      : "está trabalhando…"
-  // O relógio pertence ao que está ESCRITO na linha: com background vivo é o
-  // trabalho nomeado (o turno zera o startedAt no `result`, e era justo aí que
-  // o cronômetro sumia); sem background, é o turno.
-  const since = live ? live.since : running ? startedAt : null
-  return (
-    <div className="flex gap-3">
-      <div className="w-7 shrink-0 pt-0.5">{gutter}</div>
-      <div className="min-w-0 flex-1">
-        <div className="mb-1 flex items-baseline gap-2">
-          <span className="text-[13px] font-medium text-foreground">{name}</span>
-          {engine && (
-            <span className="rounded border px-1 py-px text-[11px] text-muted-foreground">
-              {engine}
-            </span>
-          )}
-        </div>
-        <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted-foreground">
-          <span className="min-w-0 truncate" title={live ? live.detail : undefined}>
-            {label}
-          </span>
-          <span className="flex shrink-0 items-center gap-1" aria-hidden>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                className="animate-cockpit-pulse size-1.5 rounded-full bg-st-running/70"
-                style={{ animationDelay: `${i * 0.18}s` }}
-              />
-            ))}
-          </span>
-          {since != null && (
-            <Elapsed
-              since={since}
-              className="ml-1 min-w-[4.5rem] shrink-0 font-mono text-foreground/70"
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 /** Uma linha de grupo estilo Slack: avatar no gutter + cabeçalho (nome) UMA vez,
  *  e os corpos dos nós contíguos daquele autor indentados sob o mesmo gutter
@@ -2775,6 +2660,7 @@ export function MessageList({
           running={running}
           startedAt={startedAt}
           deferred={liveDeferred}
+          stalledSince={stalledSince}
         />
       )}
     </div>

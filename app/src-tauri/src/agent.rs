@@ -604,18 +604,29 @@ pub async fn run_agent(
     // sessão, ou conversa legada), em vez de ERRO o app recomeça SEM resume + avisa.
     // Nunca trava o turno. (A SessionNotFound já foi suprimida dentro do run_once.)
     if outcome.session_not_found && !outcome.cancelled {
+        // UM aviso só: antes disto o front mandava um SEGUNDO (+ toast) quando
+        // memory_fallback existia, e como isso é o caso comum os dois quase
+        // sempre apareciam empilhados dizendo a mesma coisa com pesos iguais
+        // (achado real do usuário, 18/08/2026). O fato de ter (ou não) memória
+        // pra recompor já é conhecido AQUI — não precisa de um segundo evento.
+        let used_memory = req.memory_fallback.is_some();
+        let message = if used_memory {
+            "Sessão anterior não encontrada; retomei com a memória do Frota."
+        } else {
+            "Sessão anterior não encontrada. Comecei uma nova."
+        };
         let _ = on_event.send(AgentEvent::Notice {
-            message: "Sessão anterior não encontrada. Comecei uma nova.".to_string(),
+            message: message.to_string(),
         });
         // "MyCockpit resume": avisa o front que o resume nativo falhou e o run
-        // recomeçou (ele mostra o aviso e ZERA o session_id da conversa). SÓ é
-        // emitido neste caminho — quando o resume funciona, nada disso acontece.
+        // recomeçou (ZERA o session_id da conversa). SÓ é emitido neste
+        // caminho — quando o resume funciona, nada disso acontece.
         let _ = app.emit(
             "resume://fallback",
             serde_json::json!({
                 "conv_id": conv_id,
                 "run_id": run_id,
-                "used_memory": req.memory_fallback.is_some(),
+                "used_memory": used_memory,
             }),
         );
         let mut req2 = req;

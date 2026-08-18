@@ -612,10 +612,13 @@ export default function App() {
   }, [])
 
   // MyCockpit resume: o motor avisa quando o resume NATIVO falhou e o run
-  // reiniciou fresh. Sempre zera a sessão morta da conversa (o novo run emite
-  // `session` e grava a nova). Se degradou COM a memória do cockpit
-  // (used_memory), marca o aviso na conversa + toast; sem fallback (ex. turno 1)
-  // não há o que avisar. Listener global: cobre runs em background também.
+  // reiniciou fresh. Zera a sessão morta da conversa (o novo run emite
+  // `session` e grava a nova). O aviso pro usuário (com ou sem memória do
+  // Frota) já vem como Notice do próprio motor (agent.rs/codex_appserver.rs)
+  // — este listener só cuida do estado, não duplica o aviso (antes mandava um
+  // segundo notice + toast dizendo quase a mesma coisa, empilhado em cima do
+  // que o motor já tinha avisado — achado real do usuário, 18/08/2026).
+  // Listener global: cobre runs em background também.
   useEffect(() => {
     if (!isTauri()) return
     let un: UnlistenFn | null = null
@@ -623,17 +626,10 @@ export default function App() {
     listen<{ conv_id: string; run_id: string; used_memory: boolean }>(
       "resume://fallback",
       (e) => {
-        const { conv_id, used_memory } = e.payload
+        const { conv_id } = e.payload
         const chat = useChat.getState()
         if (!chat.byId[conv_id]) return
         chat.clearSession(conv_id)
-        if (!used_memory) return
-        chat.handleEvent(conv_id, {
-          type: "notice",
-          message:
-            "Sessão nativa expirou; conversa retomada pela memória do Frota",
-        })
-        toast("Sessão nativa expirou; conversa retomada pela memória do Frota")
       },
     )
       .then((u) => {

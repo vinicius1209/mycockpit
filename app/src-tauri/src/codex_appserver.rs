@@ -837,13 +837,21 @@ pub async fn run(
                                 // thread NOVA + recap do front, o mesmo contrato do
                                 // `run_agent`. Se já era thread nova, é falha de start.
                                 if id == ID_THREAD && req.resume.is_some() {
+                                    // mesmo aviso único do run_agent (agent.rs) — ver
+                                    // comentário lá sobre o segundo aviso empilhado.
+                                    let used_memory = req.memory_fallback.is_some();
+                                    let message = if used_memory {
+                                        "Sessão anterior não encontrada; retomei com a memória do Frota."
+                                    } else {
+                                        "Sessão anterior não encontrada. Comecei uma nova."
+                                    };
                                     let _ = on_event.send(AgentEvent::Notice {
-                                        message: "Sessão anterior não encontrada. Comecei uma nova.".into(),
+                                        message: message.into(),
                                     });
                                     let _ = app.emit("resume://fallback", json!({
                                         "conv_id": conv_id,
                                         "run_id": run_id,
-                                        "used_memory": req.memory_fallback.is_some(),
+                                        "used_memory": used_memory,
                                     }));
                                     if let Some(fb) = &req.memory_fallback {
                                         prompt = format!("{fb}\n\n---\n\n{}", req.prompt);

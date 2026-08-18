@@ -4,7 +4,7 @@
 import { isValidElement, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-import { resolveExecutorIdentity } from "./MessageList"
+import { resolveExecutorIdentity } from "./executorIdentity"
 import type { AgentDef } from "@/lib/agentDefs"
 
 function persona(id: string, name: string): AgentDef {

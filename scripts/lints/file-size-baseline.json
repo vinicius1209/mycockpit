@@ -6,10 +6,10 @@
     "ts": 500
   },
   "arquivos": {
-    "App.tsx": 715,
+    "App.tsx": 711,
     "components/chat/ChatPanel.tsx": 1519,
     "components/chat/LexicalComposer.tsx": 907,
-    "components/chat/MessageList.tsx": 2782,
+    "components/chat/MessageList.tsx": 2668,
     "components/layout/ContextPanel.tsx": 857,
     "components/layout/Sidebar.tsx": 920,
     "components/scheduled/ScheduledView.tsx": 1113,
