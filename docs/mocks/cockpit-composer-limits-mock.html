@@ -3,44 +3,95 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>MyCockpit · Mock de Alta Fidelidade (Janela de Limites + Composer)</title>
+<title>MyCockpit · Mock de Alta Fidelidade (Janela de Limites + Composer) — reskin Linear</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..600&display=swap" rel="stylesheet" />
 <style>
+  /* ══════════════════════════════════════════════════════════════════════
+     RESKIN — Design system do Linear (styles.refero.design/style/90ce5883),
+     lido em 18/08/2026. Mesmos NOMES de variável do mock original (pra não
+     reescrever cada regra), VALORES trocados pelos tokens documentados.
+     Onde o Linear não cobre um caso nosso, o desvio fica anotado — fidelidade
+     não é forçar equivalência onde não existe.
+
+     Mapeamento (paleta):
+       --background → Void #08090a · --rail/--card → Carbon #0f1011
+       --popover → Obsidian #161718 · --border → Graphite #23252a (o HAIRLINE
+       que o documento pede no lugar de sombra) · --border-strong → Smoke
+       #383b3f · --foreground → Mist #d0d6e0 (o documento reserva Paper/#fff
+       pro que pede contraste MÁXIMO, não pro texto do dia a dia — voltou
+       como --foreground-max) · --muted-foreground → Fog #8a8f98 · --faint →
+       Ash #62666d · --brass (o ÚNICO acento cromático de gesto) → Acid Lime
+       #e4f222, com --brass-fg em Void (texto ESCURO sobre o lime, como o
+       botão primário do documento) · --st-running → Signal Teal #02b8cc ·
+       --st-success → Pulse Green #27a644 · --st-error → Coral Red #eb5757 ·
+       --id-violet → Iris Violet #6366f1.
+
+       DESVIO 1 — --st-queued (nosso "precisa de decisão"): o Linear não tem
+       amber nenhum na paleta. Fica Lavender #8b5cf6, o acento que sobrou sem
+       colidir com erro (Coral) nem identidade (Iris) — é o candidato mais
+       honesto, não uma tradução literal.
+       DESVIO 2 — tema claro: o documento não documenta um. O bloco abaixo é
+       inversão de julgamento nosso sobre os MESMOS tokens, não algo extraído
+       da fonte — o Linear é "midnight command center" de propósito, talvez
+       nem faça sentido ter claro.
+
+     Tipografia: Inter Variable (o `--sans` do documento) carregada via Google
+     Fonts — só porque isto é mock local, sem a restrição de CSP de um
+     Artifact; o app real não ganha uma dependência de rede por causa disto.
+     Berkeley Mono (a fonte técnica deles) é licenciada e não está nesta
+     máquina — cai pro Geist Mono, que já tínhamos.
+
+     Raio: vocabulário de QUATRO valores só (o documento proíbe 16px+ em
+     card) — --radius-sm 2px (badge), --radius-md 6px (botão/input),
+     --radius-lg 12px (card, era 10 no original — jeito do Linear cravar
+     "nunca mais que isto"), --radius-pill 9999px.
+  ══════════════════════════════════════════════════════════════════════ */
   :root {
-    color-scheme: light dark;
-    --background: #0a0b0d;
-    --rail: #0c0d10;
-    --foreground: #e7e8ea;
-    --card: #141619;
-    --popover: #16181d;
-    --secondary: #191c20;
-    --secondary-hover: #22262d;
-    --muted-foreground: #9aa0a7;
-    --accent: #1e2126;
-    --faint: #687078;
+    color-scheme: dark;
+    --background: #08090a;
+    --rail: #0f1011;
+    --foreground: #d0d6e0;
+    --foreground-max: #ffffff;
+    --card: #0f1011;
+    --popover: #161718;
+    --secondary: rgba(255,255,255,.05);
+    --secondary-hover: rgba(255,255,255,.08);
+    --muted-foreground: #8a8f98;
+    --accent: #23252a;
+    --faint: #62666d;
     --sel: rgba(255,255,255,.065);
     --sel-hover: rgba(255,255,255,.032);
-    --border: rgba(255,255,255,.08);
-    --border-strong: rgba(255,255,255,.14);
-    --brass: #e4a862;
-    --brass-soft: rgba(228,168,98,.14);
-    --brass-fg: #1a1306;
-    --st-idle: #687078;
-    --st-running: #5bb8e8;
-    --st-queued: #d99138;
-    --st-success: #5bd6a0;
-    --st-error: #f2766b;
-    --id-violet: #a48af0;
-    --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
-    --shadow-pop: 0 18px 48px -10px rgba(0,0,0,.75);
-    --radius: 10px;
-    --sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    --mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+    --border: #23252a;
+    --border-strong: #383b3f;
+    --brass: #e4f222;
+    --brass-soft: rgba(228,242,34,.14);
+    --brass-fg: #08090a;
+    --st-idle: #62666d;
+    --st-running: #02b8cc;
+    --st-queued: #8b5cf6;
+    --st-success: #27a644;
+    --st-error: #eb5757;
+    --id-violet: #6366f1;
+    --shadow-sm: rgba(0,0,0,.4) 0px 2px 4px;
+    --shadow-pop: rgba(8,9,10,.6) 0px 4px 32px;
+    --radius-sm: 2px;
+    --radius-md: 6px;
+    --radius-lg: 12px;
+    --radius-pill: 9999px;
+    --radius: var(--radius-lg);
+    --sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "Berkeley Mono", "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
   }
 
+  /* DESVIO 2 (ver cabeçalho): sem fonte no documento, é só a mesma lógica de
+     inversão que o mock original já fazia, agora em cima dos tokens do Linear. */
   :root[data-theme="light"] {
     --background: #fbfbfa;
     --rail: #f6f6f4;
     --foreground: #16181b;
+    --foreground-max: #08090a;
     --card: #ffffff;
     --popover: #ffffff;
     --secondary: #f4f4f2;
@@ -52,15 +103,19 @@
     --sel-hover: rgba(0,0,0,.028);
     --border: rgba(0,0,0,.09);
     --border-strong: rgba(0,0,0,.14);
-    --brass: #a9742b;
-    --brass-soft: rgba(169,116,43,.12);
-    --brass-fg: #fbf6ee;
+    --brass: #9aa616;
+    --brass-soft: rgba(154,166,22,.12);
+    --brass-fg: #08090a;
     --st-idle: #8a9099;
-    --st-running: #2f8fbf;
-    --st-queued: #c1861f;
-    --st-success: #1f9d6b;
-    --st-error: #cf4a3e;
-    --id-violet: #6d47b8;
+    --st-running: #027e8c;
+    /* Os três abaixo: DERIVADOS por mim (escurecer o tom do Linear até ficar
+       legível em fundo branco), não copiados do mock antigo — achado na
+       auditoria: a primeira versão desta linha tinha deixado os valores
+       PRÉ-Linear intactos por engano (id-violet velho, success/error velhos). */
+    --st-queued: #6b3fd4;
+    --st-success: #27a644;
+    --st-error: #c23d3d;
+    --id-violet: #4338ca;
     --shadow-sm: 0 1px 2px rgba(20,22,25,.08);
     --shadow-pop: 0 16px 44px -8px rgba(20,22,25,.22);
   }
@@ -73,6 +128,7 @@
     font: 13px/1.5 var(--sans);
     -webkit-font-smoothing: antialiased;
     padding: 24px 16px 80px;
+    font-feature-settings: "cv01" 1, "ss03" 1, "zero" 1;
   }
 
   button {
@@ -96,7 +152,7 @@
     padding: 12px 18px;
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
   }
   .mock-title {
@@ -112,7 +168,7 @@
     color: var(--brass);
     background: var(--brass-soft);
     padding: 2px 8px;
-    border-radius: 5px;
+    border-radius: var(--radius-sm);
     border: 1px solid color-mix(in srgb, var(--brass) 30%, transparent);
   }
   .mock-controls {
@@ -127,7 +183,7 @@
     padding: 5px 12px;
     background: var(--secondary);
     border: 1px solid var(--border);
-    border-radius: 7px;
+    border-radius: var(--radius-md);
     font-size: 12px;
     font-weight: 500;
     color: var(--foreground);
@@ -146,7 +202,7 @@
     margin: 0 auto;
     background: var(--background);
     border: 1px solid var(--border-strong);
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
     box-shadow: var(--shadow-pop);
     display: flex;
@@ -193,13 +249,13 @@
     gap: 2px;
     background: var(--card);
     padding: 2px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     margin: 0 auto;
   }
   .nav-tab {
     padding: 3px 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     font-size: 11px;
     font-weight: 500;
     color: var(--muted-foreground);
@@ -221,7 +277,7 @@
     background: var(--card);
     border: 1px solid var(--border);
     padding: 3px 9px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 11px;
     color: var(--muted-foreground);
   }
@@ -256,7 +312,7 @@
     align-items: center;
     gap: 8px;
     padding: 6px 8px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 12px;
     color: var(--muted-foreground);
   }
@@ -284,7 +340,7 @@
   .message-card {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     padding: 14px 16px;
     font-size: 13px;
     line-height: 1.6;
@@ -301,7 +357,7 @@
     font-size: 11px;
     background: var(--secondary);
     padding: 1px 5px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border);
   }
 
@@ -337,7 +393,7 @@
     padding: 2px 7px;
     background: var(--secondary);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     color: var(--foreground);
     font-size: 11px;
     font-weight: 500;
@@ -359,7 +415,7 @@
     gap: 3px;
     background: var(--secondary);
     border: 1px solid var(--border);
-    border-radius: 7px;
+    border-radius: var(--radius-md);
     padding: 2px;
   }
   .btn-react {
@@ -368,7 +424,7 @@
     justify-content: center;
     width: 26px;
     height: 22px;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     font-size: 12px;
     transition: all .15s ease;
   }
@@ -383,7 +439,7 @@
     align-items: center;
     gap: 5px;
     padding: 3px 9px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--secondary);
     border: 1px solid var(--border);
     font-size: 11px;
@@ -410,7 +466,7 @@
     padding: 10px 12px;
     background: color-mix(in srgb, var(--card) 95%, transparent);
     border: 1px solid var(--border-strong);
-    border-radius: 9px;
+    border-radius: var(--radius-lg);
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -434,14 +490,14 @@
     font-size: 12px;
     color: var(--muted-foreground);
     padding: 2px 4px;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
   }
   .btn-close-box:hover { color: var(--foreground); }
   .learning-input {
     width: 100%;
     background: var(--background);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 6px 10px;
     font-size: 12px;
     color: var(--foreground);
@@ -456,7 +512,7 @@
   }
   .btn-save-rule {
     padding: 4px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 11px;
     font-weight: 500;
     transition: all .15s ease;
@@ -493,7 +549,7 @@
     font-weight: 500;
     color: var(--muted-foreground);
     padding: 3px 8px;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
   }
   .panel-tab.active {
     color: var(--foreground);
@@ -513,7 +569,7 @@
   .composer-card {
     background: var(--card);
     border: 1px solid var(--border-strong);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
     display: flex;
     flex-direction: column;
@@ -564,7 +620,7 @@
     align-items: center;
     gap: 6px;
     padding: 4px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--secondary);
     border: 1px solid var(--border);
     font-size: 11px;
@@ -580,13 +636,13 @@
     border-color: var(--border-strong);
   }
   .composer-dropdown-btn.active-warning {
-    background: rgba(228, 168, 98, 0.12);
+    background: rgba(228, 242, 34, 0.12);
     color: var(--brass);
-    border-color: rgba(228, 168, 98, 0.28);
+    border-color: rgba(228, 242, 34, 0.28);
   }
   .composer-dropdown-btn.active-warning:hover {
-    background: rgba(228, 168, 98, 0.18);
-    border-color: rgba(228, 168, 98, 0.4);
+    background: rgba(228, 242, 34, 0.18);
+    border-color: rgba(228, 242, 34, 0.4);
   }
   /* "Planejar" ativo: mesmo valor de --brass do active-warning acima, nome
      PRÓPRIO de propósito — são conceitos diferentes (risco autorizado vs.
@@ -595,11 +651,11 @@
   .composer-dropdown-btn.active-plan {
     background: var(--brass-soft);
     color: var(--brass);
-    border-color: rgba(228, 168, 98, 0.28);
+    border-color: rgba(228, 242, 34, 0.28);
   }
   .composer-dropdown-btn.active-plan:hover {
-    background: rgba(228, 168, 98, 0.18);
-    border-color: rgba(228, 168, 98, 0.4);
+    background: rgba(228, 242, 34, 0.18);
+    border-color: rgba(228, 242, 34, 0.4);
   }
 
   /* Ícones Toggles */
@@ -609,7 +665,7 @@
     justify-content: center;
     width: 30px;
     height: 30px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--secondary);
     border: 1px solid var(--border);
     color: var(--muted-foreground);
@@ -632,7 +688,7 @@
     align-items: center;
     gap: 6px;
     padding: 3px 8px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--secondary);
     border: 1px solid var(--border);
     transition: all .15s ease;
@@ -660,7 +716,7 @@
     bottom: 44px;
     background: var(--popover);
     border: 1px solid var(--border-strong);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     box-shadow: var(--shadow-pop);
     padding: 10px;
     z-index: 110;
@@ -682,7 +738,7 @@
     flex-direction: column;
     width: 100%;
     padding: 6px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     text-align: left;
     transition: all .15s ease;
     border: 1px solid transparent;
@@ -696,9 +752,9 @@
     border-color: var(--border-strong);
   }
   .popover-menu-item.active-warning {
-    background: rgba(228, 168, 98, 0.12);
+    background: rgba(228, 242, 34, 0.12);
     color: var(--brass);
-    border-color: rgba(228, 168, 98, 0.28);
+    border-color: rgba(228, 242, 34, 0.28);
   }
 
   /* Anexos com Thumbnail */
@@ -714,7 +770,7 @@
     gap: 7px;
     background: var(--secondary);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 3px 8px 3px 4px;
     font-size: 11px;
     font-family: var(--mono);
@@ -768,7 +824,7 @@
   .icon-tool-btn {
     width: 30px;
     height: 30px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     display: grid;
     place-items: center;
     color: var(--muted-foreground);
@@ -787,7 +843,7 @@
   .btn-send-split {
     width: 30px;
     height: 30px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     display: grid;
     place-items: center;
     color: var(--muted-foreground);
@@ -797,12 +853,16 @@
     background: var(--secondary);
     color: var(--foreground);
   }
+  /* "Use #e4f222 exclusively for the single primary action per view" — o
+     Enviar é candidato óbvio: é O gesto que a tela inteira serve. Antes usava
+     --foreground/--background (preto/branco neutro); a doutrina do Linear
+     pede a cor de marca aqui, não em mais nenhum lugar do composer. */
   .btn-send-primary {
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: var(--foreground);
-    color: var(--background);
+    background: var(--brass);
+    color: var(--brass-fg);
     display: grid;
     place-items: center;
     transition: transform .1s ease, opacity .15s ease;
@@ -821,7 +881,7 @@
     padding: 5px 12px;
     background: var(--secondary);
     border: 1px solid var(--border);
-    border-radius: 20px;
+    border-radius: var(--radius-pill);
     font-size: 11.5px;
     color: var(--muted-foreground);
     transition: all .15s ease;
@@ -852,7 +912,7 @@
     align-items: center;
     gap: 7px;
     padding: 2px 8px;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     color: var(--muted-foreground);
     transition: all .15s ease;
   }
@@ -863,14 +923,14 @@
     width: 34px;
     height: 4px;
     background: var(--secondary);
-    border-radius: 99px;
+    border-radius: var(--radius-pill);
     overflow: hidden;
     position: relative;
   }
   .usage-bar-fill {
     position: absolute;
     top: 0; bottom: 0; left: 0;
-    border-radius: 99px;
+    border-radius: var(--radius-pill);
     background: var(--st-idle);
   }
 
@@ -882,7 +942,7 @@
     width: 430px; /* Largura ampliada para eliminar truncamentos */
     background: var(--popover);
     border: 1px solid var(--border-strong);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     box-shadow: var(--shadow-pop);
     padding: 12px;
     display: flex;
@@ -921,7 +981,7 @@
     font-size: 11px;
     color: var(--muted-foreground);
     padding: 2px 7px;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     transition: all .15s ease;
   }
   .btn-refresh:hover { background: var(--secondary); color: var(--foreground); }
@@ -937,7 +997,7 @@
   .provider-card {
     background: color-mix(in srgb, var(--secondary) 45%, transparent);
     border: 1px solid var(--border);
-    border-radius: 9px;
+    border-radius: var(--radius-lg);
     padding: 10px 11px;
     display: flex;
     flex-direction: column;
@@ -973,7 +1033,7 @@
     font-size: 10px;
     font-weight: 500;
     padding: 1px 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--secondary);
     color: var(--muted-foreground);
     border: 1px solid var(--border);
@@ -988,18 +1048,18 @@
     font-size: 10px;
     font-weight: 600;
     padding: 1px 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
   .status-badge.available {
-    background: rgba(91, 214, 160, 0.12);
+    background: rgba(39, 166, 68, 0.12);
     color: var(--st-success);
   }
   .status-badge.warming {
-    background: rgba(228, 168, 98, 0.15);
+    background: rgba(228, 242, 34, 0.15);
     color: var(--brass);
   }
   .status-badge.danger {
-    background: rgba(242, 118, 107, 0.15);
+    background: rgba(235, 87, 87, 0.15);
     color: var(--st-error);
   }
   .meta-age {
@@ -1029,7 +1089,7 @@
     font-size: 9.5px;
     font-weight: 500;
     padding: 0 4px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     background: var(--card);
     color: var(--faint);
     border: 1px solid var(--border);
@@ -1039,14 +1099,14 @@
     flex: 1;
     height: 5px;
     background: var(--secondary);
-    border-radius: 99px;
+    border-radius: var(--radius-pill);
     overflow: hidden;
     position: relative;
   }
   .metric-bar-fill {
     position: absolute;
     top: 0; bottom: 0; left: 0;
-    border-radius: 99px;
+    border-radius: var(--radius-pill);
     background: var(--st-idle);
     transition: width .3s ease;
   }
@@ -1331,7 +1391,7 @@
                 Fixo
               </span>
             </div>
-            <div style="padding: 6px; font-size: 11px; color: var(--brass); background: var(--brass-soft); border-radius: 6px; border: 1px solid var(--border-strong); margin-bottom: 4px;">
+            <div style="padding: 6px; font-size: 11px; color: var(--brass); background: var(--brass-soft); border-radius: var(--radius-md); border: 1px solid var(--border-strong); margin-bottom: 4px;">
               🔒 Modelo fixado para preservar a memória desta conversa.
             </div>
             <div style="display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 4px;">
@@ -1384,8 +1444,8 @@
             </div>
             
             <!-- Progress Bar -->
-            <div style="height: 6px; width: 100%; border-radius: 99px; background: var(--secondary); border: 1px solid var(--border); overflow: hidden; margin: 8px 0;">
-              <div style="height: 100%; width: 38%; background: var(--brass); border-radius: 99px;"></div>
+            <div style="height: 6px; width: 100%; border-radius: var(--radius-pill); background: var(--secondary); border: 1px solid var(--border); overflow: hidden; margin: 8px 0;">
+              <div style="height: 100%; width: 38%; background: var(--brass); border-radius: var(--radius-pill);"></div>
             </div>
 
             <!-- Rows -->

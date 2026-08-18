@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Painel · E · Retrospectiva — reskin Linear</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..600&display=swap" rel="stylesheet" />
+<style>
+  /* Tokens: mesmo reskin do Linear aplicado em cockpit-composer-limits-mock.html
+     (styles.refero.design/style/90ce5883, lido 18/08/2026). Mesmos NOMES de
+     variável do mock original, valores trocados pelos tokens documentados.
+     DESVIO 1 (--st-queued): Linear não tem amber; usa Lavender #8b5cf6/#6b3fd4.
+     DESVIO 2 (tema claro): não documentado pela fonte, é inversão nossa. */
+  :root{
+    color-scheme: light dark;
+    --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
+    --secondary:#f4f4f2; --muted-foreground:#5c6166; --accent:#f1f1ef; --faint:#8a9099;
+    --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.14);
+    --brass:#9aa616; --brass-soft:rgba(154,166,22,.12); --brass-fg:#08090a;
+    --st-idle:#8a9099; --st-running:#027e8c; --st-queued:#6b3fd4;
+    --st-success:#27a644; --st-error:#c23d3d; --id-violet:#4338ca;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 16px 44px -8px rgba(20,22,25,.22);
+    --lift:inset 0 1px 0 rgba(255,255,255,.6);
+    --radius-sm:2px; --radius-md:6px; --radius-lg:12px; --radius-pill:9999px;
+    --radius:var(--radius-lg);
+    --sans:"Inter Variable","Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Berkeley Mono","Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --background:#08090a; --rail:#0f1011; --foreground:#d0d6e0; --card:#0f1011;
+    --secondary:rgba(255,255,255,.05); --muted-foreground:#8a8f98; --accent:#23252a; --faint:#62666d;
+    --border:#23252a; --border-strong:#383b3f;
+    --brass:#e4f222; --brass-soft:rgba(228,242,34,.14); --brass-fg:#08090a;
+    --st-idle:#62666d; --st-running:#02b8cc; --st-queued:#8b5cf6;
+    --st-success:#27a644; --st-error:#eb5757; --id-violet:#6366f1;
+    --shadow-sm:rgba(0,0,0,.4) 0px 2px 4px;
+    --shadow-pop:rgba(8,9,10,.6) 0px 4px 32px;
+    --lift:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--background);color:var(--foreground);
+    font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased;
+    font-feature-settings:"cv01" 1,"ss03" 1,"zero" 1}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"liga" 0,"calt" 0}
+  .label-mono{font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+    font-size:11px;line-height:1;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+
+  /* ── chrome do mock (não é o app) ── */
+  .mockbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;
+    padding:10px 18px;background:color-mix(in srgb,var(--background) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+  .mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);
+    border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:var(--radius-md);padding:1px 7px}
+  .mockbar .dir{font-weight:600;color:var(--foreground);font-size:13px}
+  .mockbar nav{display:flex;gap:3px;margin-left:auto}
+  .mockbar nav a{color:var(--muted-foreground);text-decoration:none;padding:3px 10px;border-radius:var(--radius-md);font-weight:500}
+  .mockbar nav a:hover{background:var(--accent)}
+  .mockbar nav a.on{background:var(--brass-soft);color:var(--brass)}
+  .seg{display:flex;gap:2px;border:1px solid var(--border);border-radius:var(--radius-md);padding:2px}
+  .seg button{font-size:11px;padding:2px 9px;border-radius:var(--radius-md);color:var(--muted-foreground)}
+  .seg button.on{background:var(--accent);color:var(--foreground)}
+
+  .stage{max-width:1060px;margin:0 auto;padding:24px 20px 64px}
+  .thesis{font-size:13px;color:var(--muted-foreground);margin:0 2px 18px;max-width:760px}
+  .thesis b{color:var(--foreground);font-weight:600}
+
+  /* ── moldura ── */
+  .frame{background:var(--background);border:1px solid var(--border);border-radius:var(--radius-lg);
+    overflow:hidden;box-shadow:var(--shadow-pop)}
+  .winbar{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--rail);
+    border-bottom:1px solid var(--border)}
+  .winbar i{width:10px;height:10px;border-radius:50%;background:var(--border-strong);display:block}
+
+  .titlebar{display:flex;align-items:center;gap:10px;padding:7px 12px;background:var(--rail)}
+  .titlebar .proj{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground)}
+  .switcher{margin:0 auto;display:flex;align-items:center;gap:2px;border:1px solid var(--border);
+    background:color-mix(in srgb,var(--secondary) 60%,transparent);border-radius:var(--radius-pill);padding:2px}
+  .switcher button{display:flex;align-items:center;gap:5px;font-size:12px;padding:3px 12px;
+    border-radius:var(--radius-pill);color:var(--muted-foreground)}
+  .switcher button.on{background:var(--card);color:var(--foreground);box-shadow:var(--shadow-sm)}
+  .tbright{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted-foreground)}
+  .pill{display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:var(--radius-pill);
+    padding:2px 9px;font:11px var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+  .pill .bar{width:32px;height:4px;border-radius:var(--radius-sm);background:var(--secondary);position:relative;overflow:hidden}
+  .pill .bar b{position:absolute;inset:0 auto 0 0;border-radius:var(--radius-sm);
+    background:color-mix(in srgb,var(--muted-foreground) 45%,transparent)}
+  .bell{position:relative;display:grid;place-items:center;width:24px;height:24px;border-radius:var(--radius-md);color:var(--muted-foreground)}
+  .bell .n{position:absolute;top:-2px;right:-3px;min-width:14px;height:14px;padding:0 3px;border-radius:var(--radius-md);
+    background:var(--st-queued);color:var(--background);font:600 11px/14px var(--mono);text-align:center}
+  .dotmini{width:6px;height:6px;border-radius:50%;background:var(--st-queued);display:block}
+
+  /* faixa persistente do "precisa de você" */
+  .strip{display:flex;align-items:center;gap:10px;padding:7px 16px;font-size:13px;
+    border-top:1px solid color-mix(in srgb,var(--st-queued) 30%,transparent);
+    border-bottom:1px solid color-mix(in srgb,var(--st-queued) 30%,transparent);
+    background:color-mix(in srgb,var(--st-queued) 8%,transparent)}
+  .strip .t{color:var(--st-queued);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .strip .age{font:11px var(--mono);color:var(--st-queued);opacity:.85;font-variant-numeric:tabular-nums}
+
+  .btn{flex:0 0 auto;font-size:12px;font-weight:500;padding:3px 10px;border-radius:var(--radius-md);
+    border:1px solid var(--border-strong);color:var(--foreground)}
+  .btn:hover{background:var(--accent)}
+  .btn.primary{background:var(--brass);color:var(--brass-fg);border-color:transparent}
+  .btn.primary:hover{opacity:.9;background:var(--brass)}
+  .btn.ghost{border-color:transparent;color:var(--muted-foreground)}
+
+  /* ── a retrospectiva ── */
+  .panel{max-width:940px;margin:0 auto;padding:26px 32px 34px;display:flex;flex-direction:column;gap:26px}
+  .vhead{display:flex;align-items:center;gap:12px}
+  .vhead h2{margin:0;font:600 20px/1.2 var(--sans);letter-spacing:-.01em}
+  .vhead .seg{margin-left:auto}
+
+  .hero{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+  .hero .big{font:600 30px/1 var(--mono);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .hero .k{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);padding-bottom:3px}
+  .hero .sub{width:100%;margin:0;font-size:13px;color:var(--muted-foreground)}
+
+  .trio{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .stat{border-left:1px solid var(--border);padding:2px 0 2px 14px}
+  .stat .v{font:600 20px/1.2 var(--mono);font-variant-numeric:tabular-nums}
+  .stat .l{margin-top:3px;font-size:13px;color:var(--muted-foreground)}
+  .stat .c{margin-top:5px;font-size:11px;line-height:1.5;color:var(--faint)}
+
+  /* mapa de calor */
+  .hm{display:flex;flex-direction:column;gap:3px}
+  .hmrow{display:flex;align-items:center;gap:3px}
+  .hmrow .d{width:50px;flex:0 0 auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .hmrow .tot{width:56px;flex:0 0 auto;font:11px var(--mono);color:var(--faint);
+    font-variant-numeric:tabular-nums;text-align:right;padding-left:6px}
+  .cell{width:26px;height:16px;border-radius:var(--radius-md);flex:0 0 auto;
+    background:color-mix(in srgb,var(--muted-foreground) 8%,transparent)}
+  .hmhours{display:flex;align-items:center;gap:3px;margin-top:2px}
+  .hmhours .d{width:50px;flex:0 0 auto}
+  .hmhours .h{width:26px;flex:0 0 auto;font:11px var(--mono);color:var(--faint);text-align:center}
+  .hmlegend{display:flex;align-items:center;gap:14px;margin-top:10px;font-size:12px;color:var(--muted-foreground);flex-wrap:wrap}
+  .hmlegend .sw{display:inline-block;width:14px;height:10px;border-radius:var(--radius-sm);vertical-align:-1px;margin-right:5px}
+  .callout{margin-top:12px;display:flex;align-items:flex-start;gap:9px;padding:9px 12px;border-radius:var(--radius);
+    border:1px solid color-mix(in srgb,var(--st-queued) 34%,transparent);
+    background:color-mix(in srgb,var(--st-queued) 7%,transparent);font-size:13px}
+  .callout b{color:var(--st-queued);font-weight:600}
+
+  /* custo por agente */
+  .agents{display:flex;flex-direction:column;gap:9px}
+  .abar{display:flex;height:8px;border-radius:var(--radius-md);overflow:hidden;gap:2px}
+  .abar b{display:block;height:100%;border-radius:3px}
+  .arow{display:flex;align-items:center;gap:10px;font-size:13px}
+  .arow .sw{width:8px;height:8px;border-radius:var(--radius-sm);flex:0 0 auto}
+  .arow .nm{flex:1;min-width:0}
+  .arow .n{font:12px var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums;
+    min-width:96px;text-align:right}
+  .arow .per{font:12px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;
+    min-width:150px;text-align:right}
+
+  /* listas */
+  .rows{display:flex;flex-direction:column}
+  .row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:var(--radius-md);min-width:0}
+  .row:hover{background:var(--accent)}
+  .row .nm{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .proj{flex:0 0 auto;font-size:12px;color:var(--muted-foreground)}
+  .row .num{flex:0 0 auto;font:12px var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums;
+    min-width:64px;text-align:right}
+  .row .age{flex:0 0 auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;
+    min-width:56px;text-align:right}
+  .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--st-idle)}
+  .dot.sm{width:6px;height:6px}
+  .sec > h3{margin:0 0 9px;padding:0 2px}
+  .after{margin:8px 2px 0;font-size:13px;color:var(--muted-foreground)}
+  .after b{color:var(--foreground);font-weight:600}
+
+  .drawer{border-top:1px solid var(--border);padding-top:12px;display:flex;flex-direction:column;gap:2px}
+  .dline{display:flex;align-items:center;gap:9px;padding:5px 4px;border-radius:var(--radius-md);
+    font-size:13px;color:var(--muted-foreground);width:100%;text-align:left}
+  .dline:hover{background:var(--accent);color:var(--foreground)}
+  .dline .chev{color:var(--faint);font-size:10px;width:10px}
+  .dline .n{margin-left:auto;font:12px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+
+  /* ── anotações ── */
+  .nt{color:var(--brass);font:600 11px var(--mono);vertical-align:super;margin-left:4px;line-height:0;user-select:none}
+  .notes{margin-top:26px;padding:0 6px;font-size:13px;color:var(--muted-foreground)}
+  .notes h2{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 12px}
+  .notes ol{list-style:none;margin:0;padding:0;display:grid;gap:9px;max-width:780px}
+  .notes li{padding-left:26px;position:relative;line-height:1.55}
+  .notes li .nt{position:absolute;left:0;top:6px;vertical-align:baseline;margin:0}
+  .notes b{color:var(--foreground);font-weight:600}
+  @media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</head>
+<body>
+
+<header class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">Painel · E · Retrospectiva</span>
+  <nav>
+    <a href="painel-a.html">A</a>
+    <a href="painel-b.html">B</a>
+    <a href="painel-c.html">C</a>
+    <a href="painel-d.html">D</a>
+    <a class="on" href="painel-e.html">E</a>
+  </nav>
+  <div class="seg" id="theme">
+    <button data-t="light">claro</button>
+    <button data-t="dark">escuro</button>
+  </div>
+</header>
+
+<div class="stage">
+  <p class="thesis"><b>Tese:</b> o Painel para de disputar a urgência e vira <b>auditoria</b>:
+    poucos números, muito ar, e um mapa de onde o dinheiro queimou. A urgência sai da tela e vira
+    uma <b>faixa persistente</b>, visível em qualquer aba (①). Esta é a única das cinco telas que
+    usa o <b>banco medido</b>, não a cena: 16 conversas, 5 entregas, 1 aprendizado, US$ 6.260 em
+    30 dias. Retrospectiva com número de cenário é vaidade por definição.</p>
+
+  <div class="frame">
+    <div class="winbar"><i></i><i></i><i></i></div>
+    <div class="titlebar">
+      <span class="proj">▦ mycockpit ⌄</span>
+      <div class="switcher">
+        <button class="on">Painel</button>
+        <button>Trabalho <span class="dotmini"></span><span class="nt">②</span></button>
+        <button>Features</button>
+      </div>
+      <div class="tbright">
+        <span class="pill">Codex <span class="bar"><b style="width:30%"></b></span> 30% · 4 h 22 min</span>
+        <button class="bell">◈<span class="n">3</span></button>
+        <span>⚙</span>
+      </div>
+    </div>
+
+    <!-- ① a faixa que carrega a urgência -->
+    <div class="strip">
+      <span class="dot" style="background:var(--st-queued)"></span>
+      <span class="t">3 esperando você · 2 em voo · Codex em rate limit até 16:40<span class="nt">①</span></span>
+      <span class="age">a mais antiga há 4 h</span>
+      <button class="btn primary">Abrir</button>
+      <button class="btn ghost">⌄</button>
+    </div>
+
+    <div class="panel">
+
+      <div class="vhead">
+        <h2>Retrospectiva</h2>
+        <div class="seg">
+          <button>7 d</button>
+          <button class="on">30 d</button>
+        </div>
+      </div>
+
+      <!-- HERO -->
+      <div class="hero">
+        <span class="big">US$ 6.260</span>
+        <span class="k">em 30 dias<span class="nt">③</span></span>
+        <p class="sub">16 conversas · 5 entregas registradas · 2 disputas · 3 projetos</p>
+      </div>
+
+      <!-- TRIO DERIVADO -->
+      <div class="trio">
+        <div class="stat">
+          <div class="v">US$ 208,67</div>
+          <div class="l">por dia</div>
+          <div class="c">6.260 ÷ 30. O número de orçamento, o único que não depende de nada além do ledger.</div>
+        </div>
+        <div class="stat">
+          <div class="v">US$ 1.252</div>
+          <div class="l">por entrega registrada<span class="nt">④</span></div>
+          <div class="c">6.260 ÷ 5. Mede tanto eficiência quanto disciplina de registro: conversa que
+            virou código sem virar entrega não entra no denominador.</div>
+        </div>
+        <div class="stat">
+          <div class="v">US$ 47,20</div>
+          <div class="l">no lado descartado<span class="nt">⑤</span></div>
+          <div class="c">Soma dos turnos do agent que você não escolheu nas 2 disputas. É o único
+            desperdício que o app consegue provar.</div>
+        </div>
+      </div>
+
+      <!-- MAPA DE CALOR -->
+      <section class="sec">
+        <h3 class="label-mono">Onde o dinheiro queimou · 14 dias × hora<span class="nt">⑥</span></h3>
+        <div class="hm" id="hm"></div>
+        <div class="hmhours" id="hmh"></div>
+        <div class="hmlegend">
+          <span><span class="sw" style="background:color-mix(in srgb,var(--muted-foreground) 8%,transparent)"></span>sem gasto</span>
+          <span><span class="sw" style="background:color-mix(in srgb,var(--muted-foreground) 70%,transparent)"></span>até US$ 28/h</span>
+          <span><span class="sw" style="background:var(--st-queued)"></span>28 a 37</span>
+          <span><span class="sw" style="background:var(--st-error)"></span>37+</span>
+          <span class="mono">pico 46,10/h · 60% e 80% do pico, a régua de medidor do §2</span>
+        </div>
+        <div class="callout">
+          <span>⚠</span>
+          <span><b>Ontem, 01h às 04h: US$ 137,00 em 4 horas</b>, 82% do dia inteiro, com você
+            dormindo. É o pico que o sparkline dos outros mocks desenha sem explicar. Ver o turno →</span>
+        </div>
+      </section>
+
+      <!-- POR AGENTE -->
+      <section class="sec">
+        <h3 class="label-mono">Por agente · 30 dias</h3>
+        <div class="agents">
+          <div class="abar">
+            <b style="width:68%;background:var(--st-running)"></b>
+            <b style="width:32%;background:var(--brass)"></b>
+          </div>
+          <div class="arow"><span class="sw" style="background:var(--st-running)"></span>
+            <span class="nm">Codex</span><span class="n">US$ 4.256,80</span>
+            <span class="per">3 entregas · 1.418,93 cada<span class="nt">⑦</span></span></div>
+          <div class="arow"><span class="sw" style="background:var(--brass)"></span>
+            <span class="nm">Claude Code</span><span class="n">US$ 2.003,20</span>
+            <span class="per">2 entregas · 1.001,60 cada</span></div>
+        </div>
+      </section>
+
+      <!-- ENTREGAS -->
+      <section class="sec">
+        <h3 class="label-mono">As 5 entregas<span class="nt">⑧</span></h3>
+        <div class="rows">
+          <div class="row"><span class="dot sm"></span><span class="nm">Composer Lexical, cutover</span>
+            <span class="proj">mycockpit</span><span class="num">US$ 18,42</span><span class="age">há 2 h</span></div>
+          <div class="row"><span class="dot sm"></span><span class="nm">Rename inline na sidebar</span>
+            <span class="proj">mycockpit</span><span class="num">US$ 4,90</span><span class="age">há 5 h</span></div>
+          <div class="row"><span class="dot sm"></span><span class="nm">Digest semanal de leads</span>
+            <span class="proj">maclan</span><span class="num">US$ 31,08</span><span class="age">há 1 d</span></div>
+          <div class="row"><span class="dot sm"></span><span class="nm">Watchdog do tray, ticker único</span>
+            <span class="proj">mycockpit</span><span class="num">US$ 9,60</span><span class="age">há 6 d</span></div>
+          <div class="row"><span class="dot sm"></span><span class="nm">Ping honesto de conexão</span>
+            <span class="proj">mypeople</span><span class="num">US$ 12,30</span><span class="age">há 11 d</span></div>
+        </div>
+        <p class="after"><b>US$ 76,30 dos US$ 6.260 (1,2%)</b> estão atribuídos a uma entrega.
+          Os outros 98,8% estão em conversa que ninguém fechou. Isso não é um julgamento do
+          trabalho, é um diagnóstico do <b>denominador</b>.</p>
+      </section>
+
+      <!-- GAVETA -->
+      <div class="drawer">
+        <button class="dline"><span class="chev">›</span>Aprendizados<span class="nt">⑨</span><span class="n">1 regra ativa</span></button>
+        <button class="dline"><span class="chev">›</span>Tokens e auditoria por turno<span class="n">Configurações ▸ Uso e custo</span></button>
+        <button class="dline"><span class="chev">›</span>Projetos<span class="n">mycockpit · maclan · mypeople</span></button>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>Anotações</h2>
+    <ol>
+      <li><span class="nt">①</span> <b>É aqui que "o que precisa de mim" foi parar</b>, e sem isto a
+        direção é desonesta. Faixa de 30px, âmbar, <b>presente em todas as abas</b>, com contagem,
+        idade da mais antiga e o estado da frota. "Abrir" leva pra fila no Trabalho; o ⌄ recolhe
+        pra uma linha de 1px que continua âmbar (esconder a fila é decisão do usuário, e ela nunca
+        some de vez). <b>O preço está declarado</b>: 30px de altura cobrados em toda tela do app,
+        pra sempre, inclusive nas 16 conversas onde a área vertical é o produto. Se a faixa não
+        existir, E vira uma tela que responde só o passado, e o app perde o inbox.</li>
+      <li><span class="nt">②</span> O ponto âmbar na aba Trabalho é <b>redundância barata</b>, não
+        a solução. Badge sozinho diz "existe algo" e obriga a caçar em 16 conversas; ele só presta
+        acompanhado de um destino, que aqui é a faixa (①). Fora isso o app já tem o sino
+        (`InboxBell.tsx`) e ele continua: o que E não pode fazer é <b>terceirizar a urgência pro
+        tray do macOS</b>, que some em tela cheia e em segundo monitor.</li>
+      <li><span class="nt">③</span> O hero de 30px (STYLEGUIDE §3) <b>volta a ser o dinheiro</b>, e
+        aqui isso está certo: numa tela de auditoria, o gasto É a manchete. É o mesmo tipo do
+        Painel de hoje, na única tela onde ele não compete com uma decisão. A linha de baixo dá as
+        contagens em 13px, sem caixinhas.</li>
+      <li><span class="nt">④</span> Os três derivados usam a parada de 20px ("métrica de seção"),
+        nunca 30, e cada um carrega a <b>ressalva de método em 11px</b>. Número derivado sem o
+        denominador à vista é o começo de uma métrica que ninguém confere: US$ 1.252 por entrega
+        parece um veredito sobre os agents, e é sobretudo um veredito sobre o registro de
+        entregas.</li>
+      <li><span class="nt">⑤</span> O <b>lado descartado da disputa</b> é o único desperdício
+        demonstrável: os dois lados rodaram, um foi escolhido, o custo do outro está no ledger.
+        Com 2 disputas o número é pequeno; ele cresce se as disputas virarem rotina, e é aí que
+        essa linha vira decisão de verdade.</li>
+      <li><span class="nt">⑥</span> Heatmap de dias num app de uma pessoa é <b>teatro</b> se pintar
+        atividade: não existe streak pra manter nem público pra impressionar, e o app não mede
+        "sequência de dias" (não inventamos). Pintando <b>US$ por hora</b> ele deixa de ser vaidade
+        e vira detector de vazamento. O mapa é um medidor, então segue a régua de medidor do §2
+        (cinza até 60% do pico, âmbar 60 a 80, vermelho 80+), a mesma de `lib/meter.ts`. Sai do
+        ledger que já existe, que tem custo com timestamp.</li>
+      <li><span class="nt">⑦</span> Custo por agente sozinho não decide nada ("Codex gastou mais"
+        pode ser volume, não ineficiência). Ao lado das entregas do mesmo agent, ele vira uma
+        pergunta respondível. Cores de identidade categórica (§2): azul Codex, brass Claude, nunca
+        verde nem vermelho.</li>
+      <li><span class="nt">⑧</span> O brief pedia "entregas por semana" em gráfico. <b>Com 5
+        entregas em 30 dias, a lista É o gráfico</b>: barras de n=5 desenham ruído amostral com
+        cara de tendência. O gráfico entra quando o dado sustentar, e a régua fica escrita: só
+        acima de ~20 pontos no período.</li>
+      <li><span class="nt">⑨</span> O que <b>não</b> virou tile, de propósito: tokens absolutos
+        (número sem decisão, e incomparável entre motores com preços diferentes), contagem de
+        conversas, contagem de projetos e "1 aprendizado". Um "1" em 20px é vaidade com cara de
+        instrumento; viram linhas de gaveta com o número real. E não existe streak nesta tela.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  const root = document.documentElement;
+  function setTheme(t){
+    root.dataset.theme = t;
+    document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  }
+  setTheme(matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.getElementById('theme').addEventListener('click', e => {
+    if (e.target.dataset.t) setTheme(e.target.dataset.t);
+  });
+
+  /* ── mapa de calor ──
+     Totais por dia = os mesmos do sparkline de A/B/C, ancorados nos números
+     ditos em texto: hoje US$ 20,13 · ontem US$ 167,75 (▼88%) · 7 d US$ 673,92.
+     O perfil por hora é um turno de trabalho normal, exceto ONTEM, onde o
+     episódio noturno é literal. Nada de aleatório: o mock é determinístico. */
+  const DIAS = [
+    ["31/07", 48.50], ["01/08", 74.12], ["02/08", 39.91], ["03/08", 86.94],
+    ["04/08", 64.14], ["05/08", 99.77], ["06/08", 54.16], ["07/08", 78.39],
+    ["08/08", 131.13], ["09/08", 94.07], ["10/08", 68.41], ["11/08", 114.02],
+    ["12/08", 167.75], ["13/08", 20.13],
+  ];
+  // peso por hora de um dia comum (soma 84)
+  const PERFIL = [0,0,0,0,0,0,0,1,3,7,10,12,9,4,6,8,10,7,4,2,1,0,0,0];
+  const PESO = PERFIL.reduce((a,b)=>a+b,0);
+  // ontem, hora a hora (o vazamento das 01h às 04h)
+  const ONTEM = [0,41.0,46.1,34.6,15.3,0,0,0,2.1,4.4,6.2,8.0,5.1,2.0,1.2,0.9,0.8,0,0,0,0,0,0,0];
+  const PICO = 46.1;
+  const AMBAR = PICO * 0.6, VERMELHO = PICO * 0.8;
+
+  const hm = document.getElementById("hm");
+  DIAS.forEach(([label, total], i) => {
+    const horas = i === 12 ? ONTEM : PERFIL.map((w) => (total * w) / PESO);
+    const row = document.createElement("div");
+    row.className = "hmrow";
+    row.innerHTML = `<span class="d">${label}</span>`;
+    horas.forEach((v, h) => {
+      const c = document.createElement("span");
+      c.className = "cell";
+      if (v >= VERMELHO) c.style.background = "var(--st-error)";
+      else if (v >= AMBAR) c.style.background = "var(--st-queued)";
+      else if (v > 0) {
+        // rampa cinza: qualquer gasto tem que ser visível (piso 22%), e o topo
+        // da faixa cinza encosta em 78% sem virar "quase âmbar".
+        const k = Math.min(1, v / AMBAR);
+        c.style.background =
+          `color-mix(in srgb, var(--muted-foreground) ${Math.round(22 + k * 56)}%, transparent)`;
+      }
+      c.title = `${label}, ${String(h).padStart(2, "0")}h · US$ ${v.toFixed(2)}`;
+      row.appendChild(c);
+    });
+    const tot = document.createElement("span");
+    tot.className = "tot";
+    tot.textContent = total.toFixed(2);
+    row.appendChild(tot);
+    hm.appendChild(row);
+  });
+
+  const hmh = document.getElementById("hmh");
+  hmh.innerHTML = `<span class="d"></span>` +
+    Array.from({ length: 24 }, (_, h) =>
+      `<span class="h">${h % 6 === 0 ? String(h).padStart(2, "0") : ""}</span>`).join("");
+</script>
+</body>
+</html>

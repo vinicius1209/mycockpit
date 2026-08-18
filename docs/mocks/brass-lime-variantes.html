@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Comparação · acento lima do reskin Linear</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..600&display=swap" rel="stylesheet" />
+<style>
+  /* Três variantes do --brass no tema escuro, lado a lado, nos MESMOS
+     componentes reais que os outros mocks usam (.btn.primary, pílula,
+     tab ativa, badge). Contraste checado (WCAG, texto escuro em cima):
+     original 10.4:1 · A 10.4:1 · B 6.1:1 — as três passam AA folgado. */
+  :root {
+    color-scheme: dark;
+    --background: #08090a;
+    --card: #0f1011;
+    --foreground: #d0d6e0;
+    --muted-foreground: #8a8f98;
+    --border: #23252a;
+    --sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--background); color: var(--foreground); font: 14px/1.5 var(--sans); padding: 32px; }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  p.sub { color: var(--muted-foreground); font-size: 12.5px; margin: 0 0 28px; max-width: 640px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .col { border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .col h2 { font-size: 12.5px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 8px; }
+  .col .hex { font: 11px "SF Mono", Menlo, monospace; color: var(--muted-foreground); }
+  .swatch { width: 100%; height: 40px; border-radius: 6px; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  button { font: inherit; cursor: pointer; border: none; }
+  .btn-primary { padding: 6px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 500; color: var(--fg); background: var(--acc); }
+  .pill-live { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 9999px; font-size: 12px; font-weight: 500; color: var(--acc); background: color-mix(in srgb, var(--acc) 14%, transparent); border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); }
+  .pill-live i { width: 6px; height: 6px; border-radius: 50%; background: var(--acc); display: block; }
+  .tab { display: inline-flex; padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; }
+  .tab.on { background: color-mix(in srgb, var(--acc) 14%, transparent); color: var(--acc); }
+  .badge-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--acc); display: inline-block; }
+  .label { font-size: 11px; color: var(--muted-foreground); }
+</style>
+</head>
+<body>
+  <h1>Acento único do reskin Linear — três variantes, mesmos componentes</h1>
+  <p class="sub">Pedido: o lima original (#e4f222) pareceu "gritante" pro gosto minimalista/profissional. Duas variantes mais discretas, mesmo papel de acento único (botão primário, pílula "ao vivo", aba ativa, badge) — pra comparar em contexto, não em swatch isolado.</p>
+  <div class="grid">
+    <div class="col" style="--acc:#e4f222; --fg:#08090a;">
+      <h2>Original <span class="hex">#e4f222</span></h2>
+      <div class="swatch" style="background:var(--acc)"></div>
+      <div class="row"><button class="btn-primary">Enviar</button><span class="label">botão primário</span></div>
+      <div class="row"><span class="pill-live"><i></i>Liberado</span><span class="label">pílula de estado</span></div>
+      <div class="row"><span class="tab on">E</span><span class="label">aba ativa</span></div>
+      <div class="row"><span class="badge-dot"></span><span class="label">contraste texto escuro: 10.4:1</span></div>
+    </div>
+    <div class="col" style="--acc:#b5be37; --fg:#08090a;">
+      <h2>Variante A · lima discreta <span class="hex">#b5be37</span></h2>
+      <div class="swatch" style="background:var(--acc)"></div>
+      <div class="row"><button class="btn-primary">Enviar</button><span class="label">botão primário</span></div>
+      <div class="row"><span class="pill-live"><i></i>Liberado</span><span class="label">pílula de estado</span></div>
+      <div class="row"><span class="tab on">E</span><span class="label">aba ativa</span></div>
+      <div class="row"><span class="badge-dot"></span><span class="label">contraste texto escuro: 10.4:1</span></div>
+    </div>
+    <div class="col" style="--acc:#748a38; --fg:#08090a;">
+      <h2>Variante B · musgo <span class="hex">#748a38</span></h2>
+      <div class="swatch" style="background:var(--acc)"></div>
+      <div class="row"><button class="btn-primary">Enviar</button><span class="label">botão primário</span></div>
+      <div class="row"><span class="pill-live"><i></i>Liberado</span><span class="label">pílula de estado</span></div>
+      <div class="row"><span class="tab on">E</span><span class="label">aba ativa</span></div>
+      <div class="row"><span class="badge-dot"></span><span class="label">contraste texto escuro: 6.1:1</span></div>
+    </div>
+  </div>
+</body>
+</html>
