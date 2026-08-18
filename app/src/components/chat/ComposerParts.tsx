@@ -1,4 +1,3 @@
-import { useState } from "react"
 import {
   ArrowUp,
   ChevronDown,
@@ -11,7 +10,6 @@ import {
   Swords,
   X,
 } from "lucide-react"
-import { toast } from "sonner"
 import { RichSelect } from "@/components/ui/RichSelect"
 import { Button } from "@/components/ui/button"
 import {
@@ -21,10 +19,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { IdentityPicker } from "@/components/chat/IdentityPicker"
 import { MicButton } from "@/components/chat/MicButton"
 import { useApp } from "@/store/app"
-import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
-import { problemaNoSlug } from "@/lib/modelSlug"
+import { DESTINATIONS } from "@/lib/agents"
 import type { SlashCommand } from "@/lib/sources"
 import { commandBadges } from "@/lib/slashCommands"
 import type { Attachment } from "@/lib/attachments"
@@ -249,15 +247,11 @@ export function AgentSelect({
 // Sentinela do "Sem preset" no seletor de persona (S3.6) — nunca vira id real.
 export const NO_PRESET = "__none__"
 
-// Sentinela do "Modelo custom…" no select de modelo — NUNCA chega ao adapter:
-// escolher abre o input inline; só o id digitado (confirmado) vira o model.
-const CUSTOM_MODEL = "__custom__"
-/** Agents cujas CLIs aceitam id arbitrário via --model/-m (dia-1 de modelo). */
-const CUSTOM_MODEL_AGENTS = new Set(["claude-code", "codex"])
-
 /** IDENTIDADE do turno: preset (persona) + agent + modelo + esforço. Os
  *  quatro TRAVAM no 1º envio da conversa — o `CommandConsole` monta isto e
- *  entrega pronto em `ComposerActions.identityControls` (ADR-051). */
+ *  entrega pronto em `ComposerActions.identityControls` (ADR-051). Agent +
+ *  modelo + esforço vivem no `IdentityPicker` (popover único, cmdk); o preset
+ *  segue como `RichSelect` próprio, um nível acima da camada crua. */
 export function IdentityControls({
   presetValue,
   presetOptions,
@@ -292,63 +286,6 @@ export function IdentityControls({
   const lockTitle = locked
     ? "Agent e modelo ficam fixos a partir do 1º envio desta conversa"
     : undefined
-  const modelTitle = modelLocked
-    ? lockTitle
-    : locked
-      ? "O turno anterior falhou, então dá para trocar o modelo e enviar de novo"
-      : undefined
-
-  // "Modelo custom…" (claude-code/codex): id exato digitado num input inline.
-  // O select só muda quando o valor é confirmado (Enter); Esc/vazio cancela.
-  const [customEditing, setCustomEditing] = useState(false)
-  const [customDraft, setCustomDraft] = useState("")
-  const baseModels = agentModels(effectiveDest)
-  const supportsCustom = CUSTOM_MODEL_AGENTS.has(effectiveDest)
-  // valor atual fora da lista = modelo custom em uso → vira opção visível no
-  // select (senão o Radix não exibe o selecionado, inclusive em conv travada).
-  const isCustomValue =
-    effectiveModel !== "default" &&
-    !baseModels.some((o) => o.value === effectiveModel)
-  const modelOptions = supportsCustom
-    ? [
-        ...baseModels,
-        ...(isCustomValue
-          ? [
-              {
-                value: effectiveModel,
-                label: effectiveModel,
-                description: "Modelo custom",
-              },
-            ]
-          : []),
-        {
-          value: CUSTOM_MODEL,
-          label: "Modelo custom…",
-          description: "Digitar o id exato do modelo",
-        },
-      ]
-    : baseModels
-
-  function handleModelChange(v: string) {
-    if (v === CUSTOM_MODEL) {
-      setCustomDraft(isCustomValue ? effectiveModel : "")
-      setCustomEditing(true)
-      return
-    }
-    onModelChange(v)
-  }
-  function confirmCustom() {
-    const v = customDraft.trim()
-    // Espelho da fronteira do Rust (`validate_model_slug`), aqui na ENTRADA: sem
-    // isto um id com rótulo colado virava estado, era persistido em
-    // `req_model` e só o spawn recusava — e a conversa ficava num beco, porque
-    // a releitura devolve o mesmo id quebrado.
-    const problema = v ? problemaNoSlug(v) : null
-    if (problema) toast.error(problema)
-    else if (v) onModelChange(v)
-    setCustomEditing(false)
-  }
-
   return (
     <>
       {/* S3.6 — persona um nível ACIMA da camada crua: escolher um preset seta
@@ -372,59 +309,16 @@ export function IdentityControls({
           aria-label="Preset de persona"
         />
       )}
-      <AgentSelect
-        value={effectiveDest}
-        onValueChange={onDestChange}
-        disabled={locked}
-        title={lockTitle}
+      <IdentityPicker
+        effectiveDest={effectiveDest}
+        locked={locked}
+        onDestChange={onDestChange}
+        effectiveModel={effectiveModel}
+        modelLocked={modelLocked}
+        onModelChange={onModelChange}
+        effectiveEffort={effectiveEffort}
+        onEffortChange={onEffortChange}
       />
-
-      {customEditing ? (
-        <input
-          autoFocus
-          value={customDraft}
-          onChange={(e) => setCustomDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault()
-              confirmCustom()
-            } else if (e.key === "Escape") {
-              e.preventDefault()
-              setCustomEditing(false)
-            }
-          }}
-          onBlur={confirmCustom}
-          placeholder="id exato do modelo"
-          aria-label="Modelo custom"
-          className="h-8 w-44 rounded-md border border-border bg-secondary/40 px-2 font-mono text-[12px] text-foreground outline-none placeholder:font-sans placeholder:text-muted-foreground/60 focus:border-brass/50"
-        />
-      ) : (
-        <RichSelect
-          value={effectiveModel}
-          onValueChange={handleModelChange}
-          disabled={modelLocked}
-          title={modelTitle}
-          options={modelOptions}
-          triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
-          aria-label="Modelo"
-        />
-      )}
-
-      {/* Esforço só existe pra quem TEM o eixo. O agy embute o esforço no id do
-          modelo (`gemini-3.6-flash-low`), então `efforts` é vazio — e um
-          RichSelect sem opções renderizava uma pílula VAZIA e inútil no meio da
-          linha. Mesma guarda que o seletor de preset já tinha. */}
-      {agentEfforts(effectiveDest).length > 0 && (
-        <RichSelect
-          value={effectiveEffort}
-          onValueChange={onEffortChange}
-          disabled={locked}
-          title={lockTitle}
-          options={agentEfforts(effectiveDest)}
-          triggerClassName="h-8 gap-1 px-2.5 text-muted-foreground data-[size=default]:h-8"
-          aria-label="Esforço de raciocínio"
-        />
-      )}
     </>
   )
 }

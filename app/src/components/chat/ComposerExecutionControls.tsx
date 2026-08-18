@@ -7,7 +7,7 @@
 // do teto de 700 quando esses dois controles entraram nele) — DIVIDA O
 // ARQUIVO, não sobe o teto.
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ChevronDown, Eye, ListChecks, Lock, MessageSquareCode, ShieldAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -117,10 +117,14 @@ export function PermissionSelect({
  *  TEXTO puro (`resumoDaIdentidade`, sem "(alias)" — usa o `pill` curto, não o
  *  `label` de menu), sem ícone de fornecedor (você já está DENTRO da
  *  conversa; o ícone era redundância decorativa que só competia com o pixel
- *  que decide, a permissão). Clique revela os seletores crus INLINE, sem
- *  portal: `IdentityControls` usa `Select` do Radix (via `RichSelect`), e
- *  Select dentro de `DropdownMenu`/`Popover` briga por foco — o mesmo motivo
- *  que já tinha tirado a identidade de trás de um popover na ADR-049. */
+ *  que decide, a permissão). Clique revela um cartão ANCORADO no botão, sem
+ *  portal: `IdentityPicker` usa `cmdk` (não Radix `Select`), então não briga
+ *  por foco dentro de outro popover — o mesmo motivo que ADR-049 documentou
+ *  pra identidade nunca ter ficado atrás de um `DropdownMenu`/`Popover`
+ *  continua valendo, só que agora o filho É um cartão flutuante de verdade
+ *  (antes eram seletores soltos no fluxo normal do DOM, que não precisavam de
+ *  contexto de posicionamento próprio). Fecha-fora/Esc copiado de
+ *  `ContextRing.tsx`, mesma linha do rodapé. */
 export function IdentityDoor({
   label,
   locked,
@@ -131,8 +135,26 @@ export function IdentityDoor({
   children: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("mousedown", onDown)
+    document.addEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("mousedown", onDown)
+      document.removeEventListener("keydown", onKey)
+    }
+  }, [open])
+
   return (
-    <>
+    <div ref={wrapRef} className="relative">
       <Button
         variant="ghost"
         size="sm"
@@ -147,8 +169,12 @@ export function IdentityDoor({
           className={cn("size-3 shrink-0 transition-transform", open && "rotate-180")}
         />
       </Button>
-      {open && children}
-    </>
+      {open && (
+        <div className="absolute bottom-full left-0 z-20 mb-2 overflow-hidden rounded-xl border bg-popover shadow-[var(--shadow-pop)]">
+          {children}
+        </div>
+      )}
+    </div>
   )
 }
 

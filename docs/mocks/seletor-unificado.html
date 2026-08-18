@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mock · Seletor unificado (agent + modelo + effort)</title>
+<style>
+  /* Tokens: cópia fiel de app/src/index.css (:root claro · .dark escuro).
+     Ideia inspirada no seletor do Traycer (referência do usuário, 19/08/2026):
+     um popover só (busca + trilha de agent + lista de modelo + effort) em vez
+     dos 3 selects separados que o IdentityDoor de hoje abre. */
+  :root{
+    color-scheme: light dark;
+    --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
+    --secondary:#f4f4f2; --muted-foreground:#5c6166; --accent:#f1f1ef; --faint:#8a9099;
+    --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.14);
+    --brass:#a9742b; --brass-soft:rgba(169,116,43,.12); --brass-fg:#fbf6ee;
+    --sel:rgba(0,0,0,.055);
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 16px 44px -8px rgba(20,22,25,.22);
+    --radius:9px;
+    --sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --background:#0a0b0d; --rail:#0c0d10; --foreground:#e7e8ea; --card:#141619;
+    --secondary:#191c20; --muted-foreground:#9aa0a7; --accent:#1e2126; --faint:#687078;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13);
+    --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#1a1306;
+    --sel:rgba(255,255,255,.065);
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+    --shadow-pop:0 16px 44px -8px rgba(0,0,0,.55);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;height:100vh;display:flex;flex-direction:column;justify-content:flex-end;
+    background:var(--background);color:var(--foreground);
+    font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+  input{font:inherit;color:inherit;background:none;border:none;outline:none}
+
+  .mockbar{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;gap:14px;
+    padding:10px 18px;background:color-mix(in srgb,var(--background) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+  .mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);
+    border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:1px 7px}
+  .mockbar button.theme{margin-left:auto;border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--muted-foreground)}
+  .mockbar button.theme:hover{background:var(--accent)}
+  .note{position:fixed;top:44px;left:0;right:0;z-index:9;max-width:640px;margin:0 auto;
+    padding:8px 18px;font-size:12px;color:var(--muted-foreground);text-align:center}
+
+  .stage{max-width:720px;width:100%;margin:0 auto;padding:0 20px 24px;position:relative}
+
+  /* ── composer, só o rodapé, pro contexto ── */
+  .composer{border:1px solid var(--border);border-radius:12px;background:var(--card);
+    box-shadow:var(--shadow-sm);padding:10px 12px;display:flex;align-items:center;gap:8px}
+  .composer .ghost{flex:1;color:var(--faint);font-size:13px}
+  .composer .send{width:28px;height:28px;border-radius:999px;background:var(--secondary);
+    color:var(--faint);display:grid;place-items:center;flex:0 0 auto}
+
+  .identity-trigger{display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;
+    border-radius:7px;font-size:12px;font-weight:500;color:var(--muted-foreground);
+    border:1px solid transparent}
+  .identity-trigger:hover{background:var(--accent);color:var(--foreground)}
+  .identity-trigger.open{background:var(--accent);color:var(--foreground);border-color:var(--border)}
+  .identity-trigger svg{opacity:.7}
+
+  /* ── popover unificado ── */
+  .pop{position:absolute;bottom:56px;left:12px;width:520px;max-width:calc(100% - 24px);
+    background:var(--card);border:1px solid var(--border);border-radius:12px;
+    box-shadow:var(--shadow-pop);overflow:hidden;display:none}
+  .pop.open{display:block}
+
+  .pop .searchrow{display:flex;align-items:center;gap:8px;padding:10px 12px;
+    border-bottom:1px solid var(--border)}
+  .pop .searchrow svg{color:var(--faint);flex:0 0 auto}
+  .pop .searchrow input{flex:1;font-size:13px}
+  .pop .searchrow input::placeholder{color:var(--faint)}
+  .pop .searchrow .esc{font:10px var(--mono);color:var(--faint);border:1px solid var(--border);
+    border-radius:4px;padding:1px 5px}
+
+  .pop .body{display:flex;min-height:220px;max-height:320px}
+
+  .rail{flex:0 0 44px;border-right:1px solid var(--border);display:flex;flex-direction:column;
+    align-items:center;gap:4px;padding:8px 0;background:var(--rail)}
+  .rail button{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;
+    color:var(--muted-foreground);position:relative}
+  .rail button:hover{background:var(--accent);color:var(--foreground)}
+  .rail button.active{background:var(--brass-soft);color:var(--brass)}
+  .rail button .dot{position:absolute;left:-1px;top:50%;transform:translateY(-50%);
+    width:2px;height:16px;border-radius:2px;background:var(--brass);opacity:0}
+  .rail button.active .dot{opacity:1}
+  .rail .label{font-size:15px;font-weight:600}
+
+  .list{flex:1;overflow-y:auto;padding:6px}
+  .list .row{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:7px 9px;border-radius:7px;cursor:pointer}
+  .list .row:hover{background:var(--accent)}
+  .list .row.selected{background:var(--sel)}
+  .list .row .name{font-size:13px;font-weight:500}
+  .list .row .desc{font-size:11px;color:var(--muted-foreground);margin-top:1px}
+  .list .row .check{color:var(--brass);flex:0 0 auto;opacity:0}
+  .list .row.selected .check{opacity:1}
+  .list .empty{padding:24px 12px;text-align:center;font-size:12px;color:var(--faint)}
+
+  .pop .effortrow{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:8px 10px;
+    border-top:1px solid var(--border);background:var(--rail)}
+  .pop .effortrow .label{font:10px var(--mono);text-transform:uppercase;letter-spacing:.06em;
+    color:var(--faint);margin-right:4px}
+  .pop .effortrow button{padding:4px 9px;border-radius:6px;font-size:11.5px;color:var(--muted-foreground)}
+  .pop .effortrow button:hover{background:var(--accent);color:var(--foreground)}
+  .pop .effortrow button.active{background:var(--brass);color:var(--brass-fg);font-weight:500}
+  .pop .effortrow .none{font-size:11.5px;color:var(--faint);font-style:italic}
+</style>
+</head>
+<body>
+  <div class="mockbar">
+    <span class="tag">MOCK</span>
+    <span>Seletor unificado — não é o app</span>
+    <button class="theme" id="themeBtn">tema: escuro</button>
+  </div>
+  <p class="note">Referência: o seletor de modelo do Traycer (imagem enviada em 19/08/2026). Dados reais do catálogo (lib/curatedModels.ts) — nada inventado.</p>
+
+  <div class="stage">
+    <div class="pop" id="pop">
+      <div class="searchrow">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search" placeholder="Buscar modelo do Claude Code…" />
+        <span class="esc">esc</span>
+      </div>
+      <div class="body">
+        <div class="rail" id="rail"></div>
+        <div class="list" id="list"></div>
+      </div>
+      <div class="effortrow" id="effortrow"></div>
+    </div>
+
+    <div class="composer">
+      <span class="ghost">Peça algo ao seu time de agents…</span>
+      <button class="identity-trigger" id="trigger">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/></svg>
+        <span id="triggerLabel">Claude Code · Opus 5</span>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <span class="send">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </span>
+    </div>
+  </div>
+
+<script>
+  // Tema
+  const html = document.documentElement, themeBtn = document.getElementById('themeBtn');
+  html.setAttribute('data-theme', 'dark');
+  themeBtn.addEventListener('click', () => {
+    const t = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', t);
+    themeBtn.textContent = 'tema: ' + (t === 'dark' ? 'escuro' : 'claro');
+  });
+
+  // Dados reais (lib/curatedModels.ts, lib/agents.ts) — trimmados pro mock,
+  // sem inventar nome nem descrição.
+  const AGENTS = [
+    {
+      id: 'claude-code', label: 'Claude Code', glyph: 'C',
+      models: [
+        { value: 'default', label: 'Padrão', desc: 'Deixa o Claude Code escolher' },
+        { value: 'claude-opus-5[1m]', label: 'Opus 5', desc: 'Pin exato · o Opus mais novo, 1M nativo ($5/$25)' },
+        { value: 'claude-sonnet-5[1m]', label: 'Sonnet 5', desc: 'Pin exato · 1M nativo, rápido e equilibrado' },
+        { value: 'fable', label: 'Fable', desc: 'Topo de linha (Fable 5, ~2x o preço do Opus)' },
+        { value: 'claude-opus-4-8[1m]', label: 'Opus 4.8', desc: 'Pin da geração anterior (1M nativo)' },
+        { value: 'haiku', label: 'Haiku', desc: 'Mais rápido e barato (200k)' },
+      ],
+      efforts: [
+        { value: 'default', label: 'padrão' },
+        { value: 'low', label: 'low' },
+        { value: 'medium', label: 'medium' },
+        { value: 'high', label: 'high' },
+        { value: 'xhigh', label: 'xhigh' },
+        { value: 'max', label: 'max' },
+      ],
+      selectedModel: 'claude-opus-5[1m]', selectedEffort: 'default',
+    },
+    {
+      id: 'codex', label: 'Codex', glyph: 'X',
+      models: [
+        { value: 'default', label: 'Padrão', desc: 'Deixa o Codex escolher (hoje Sol)' },
+        { value: 'gpt-5.6-sol', label: 'Sol (5.6)', desc: 'Frontier da família 5.6 · o mais capaz' },
+        { value: 'gpt-5.6-terra', label: 'Terra (5.6)', desc: 'Equilíbrio qualidade/custo da 5.6' },
+        { value: 'gpt-5.6-luna', label: 'Luna (5.6)', desc: 'Leve e rápido, alto volume' },
+        { value: 'gpt-5.5', label: 'gpt-5.5', desc: 'Geração anterior, ainda forte' },
+        { value: 'gpt-5.4', label: 'gpt-5.4', desc: 'Equilibrado, metade do preço do 5.5' },
+        { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini', desc: 'Pequeno e rápido, alto volume' },
+      ],
+      efforts: [
+        { value: 'default', label: 'padrão' },
+        { value: 'minimal', label: 'minimal' },
+        { value: 'low', label: 'low' },
+        { value: 'medium', label: 'medium' },
+        { value: 'high', label: 'high' },
+        { value: 'xhigh', label: 'xhigh' },
+        { value: 'max', label: 'max' },
+        { value: 'ultra', label: 'ultra' },
+      ],
+      selectedModel: 'gpt-5.6-sol', selectedEffort: 'default',
+    },
+    {
+      id: 'agy', label: 'Antigravity', glyph: 'A',
+      models: [
+        { value: 'default', label: 'Padrão', desc: 'Deixa o agy escolher' },
+        { value: 'gemini-3.6-flash-high', label: 'Flash 3.6 (High)', desc: 'Mais capaz (Google)' },
+        { value: 'gemini-3.6-flash-medium', label: 'Flash 3.6 (Med)', desc: 'Equilíbrio (Google)' },
+        { value: 'gemini-3.6-flash-low', label: 'Flash 3.6 (Low)', desc: 'Rápido e barato (Google)' },
+        { value: 'gemini-3.1-pro-high', label: 'Gemini Pro (High)', desc: 'Mais capaz (Google)' },
+        { value: 'claude-sonnet-4-6', label: 'Sonnet', desc: 'Claude via cota Google' },
+        { value: 'gpt-oss-120b-medium', label: 'GPT-OSS 120B', desc: 'Modelo aberto da OpenAI via Google' },
+      ],
+      efforts: [], // agy não tem effort configurável (efforts: [] em agents.ts)
+      selectedModel: 'gemini-3.6-flash-high', selectedEffort: null,
+    },
+  ];
+
+  let activeAgentId = 'claude-code';
+  const pop = document.getElementById('pop');
+  const trigger = document.getElementById('trigger');
+  const triggerLabel = document.getElementById('triggerLabel');
+  const search = document.getElementById('search');
+  const rail = document.getElementById('rail');
+  const list = document.getElementById('list');
+  const effortrow = document.getElementById('effortrow');
+
+  function agent(id) { return AGENTS.find(a => a.id === id); }
+
+  function renderRail() {
+    rail.innerHTML = '';
+    AGENTS.forEach(a => {
+      const b = document.createElement('button');
+      b.className = a.id === activeAgentId ? 'active' : '';
+      b.title = a.label;
+      b.innerHTML = '<span class="dot"></span><span class="label">' + a.glyph + '</span>';
+      b.addEventListener('click', () => { activeAgentId = a.id; search.value = ''; renderAll(); search.focus(); });
+      rail.appendChild(b);
+    });
+  }
+
+  function renderList() {
+    const a = agent(activeAgentId);
+    const q = search.value.trim().toLowerCase();
+    const filtered = a.models.filter(m => m.label.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q));
+    list.innerHTML = '';
+    if (!filtered.length) {
+      list.innerHTML = '<div class="empty">Nenhum modelo bate com "' + search.value + '"</div>';
+      return;
+    }
+    filtered.forEach(m => {
+      const row = document.createElement('div');
+      row.className = 'row' + (m.value === a.selectedModel ? ' selected' : '');
+      row.innerHTML =
+        '<div><div class="name">' + m.label + '</div><div class="desc">' + m.desc + '</div></div>' +
+        '<svg class="check" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>';
+      row.addEventListener('click', () => { a.selectedModel = m.value; renderAll(); });
+      list.appendChild(row);
+    });
+  }
+
+  function renderEfforts() {
+    const a = agent(activeAgentId);
+    effortrow.innerHTML = '';
+    if (!a.efforts.length) {
+      effortrow.innerHTML = '<span class="none">Antigravity não tem effort configurável</span>';
+      return;
+    }
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = 'effort';
+    effortrow.appendChild(label);
+    a.efforts.forEach(e => {
+      const b = document.createElement('button');
+      b.className = e.value === a.selectedEffort ? 'active' : '';
+      b.textContent = e.label;
+      b.addEventListener('click', () => { a.selectedEffort = e.value; renderAll(); });
+      effortrow.appendChild(b);
+    });
+  }
+
+  function renderTrigger() {
+    const a = agent(activeAgentId);
+    const m = a.models.find(mm => mm.value === a.selectedModel);
+    const parts = [a.label];
+    if (m && m.value !== 'default') parts.push(m.label);
+    if (a.selectedEffort && a.selectedEffort !== 'default') parts.push(a.selectedEffort);
+    triggerLabel.textContent = parts.join(' · ');
+  }
+
+  function renderAll() {
+    renderRail();
+    search.placeholder = 'Buscar modelo do ' + agent(activeAgentId).label + '…';
+    renderList();
+    renderEfforts();
+    renderTrigger();
+  }
+
+  trigger.addEventListener('click', () => {
+    const willOpen = !pop.classList.contains('open');
+    pop.classList.toggle('open', willOpen);
+    trigger.classList.toggle('open', willOpen);
+    if (willOpen) search.focus();
+  });
+  // Clique dentro do popover não deve fechar (o de fora, sim) — mas os
+  // handlers internos RECONSTROEM o DOM (renderAll), então o e.target pode
+  // ficar desconectado da árvore antes deste listener no document rodar, e
+  // `pop.contains(e.target)` mentiria "false". stopPropagation no próprio
+  // popover evita o clique de chegar aqui, sem depender da ordem de mutação.
+  pop.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', (e) => {
+    if (!trigger.contains(e.target)) {
+      pop.classList.remove('open');
+      trigger.classList.remove('open');
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { pop.classList.remove('open'); trigger.classList.remove('open'); }
+  });
+  search.addEventListener('input', renderList);
+
+  renderAll();
+  pop.classList.add('open');
+  trigger.classList.add('open');
+</script>
+</body>
+</html>

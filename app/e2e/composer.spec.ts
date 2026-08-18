@@ -56,17 +56,26 @@ test("permissão e Planejar nascem visíveis; identidade nasce como UMA pílula 
   // com chrome próprio cada.
   await expect(page.locator(PERMISSAO_BTN)).toBeVisible()
   await expect(page.getByLabel("Planejar primeiro")).toBeVisible()
-  await expect(page.getByLabel("Agent")).toHaveCount(0)
-  await expect(page.getByLabel("Modelo")).toHaveCount(0)
+  await expect(page.getByRole("group", { name: "Agent" })).toHaveCount(0)
+  await expect(page.getByRole("combobox", { name: "Buscar modelo" })).toHaveCount(0)
 
   const identidade = page.locator('button[title="Agent, modelo e esforço"]')
   await expect(identidade).toBeVisible()
   // sem "(alias)" nem outro vocabulário de menu vazando pro repouso.
   await expect(identidade).not.toContainText("alias")
 
+  // seletor unificado (busca + trilha de agent + lista de modelo), não mais
+  // 3 selects separados. Escopado no group "Agent": o nome "Claude Code"
+  // também casa (substring) com a linha da sidebar e com o próprio trigger
+  // da pílula ("Claude Code · Opus"), então o locator solto é ambíguo.
   await identidade.click()
-  await expect(page.getByLabel("Agent")).toBeVisible()
-  await expect(page.getByLabel("Modelo")).toBeVisible()
+  const rail = page.getByRole("group", { name: "Agent" })
+  await expect(rail).toBeVisible()
+  await expect(rail.getByRole("button", { name: "Claude Code" })).toBeVisible()
+  await expect(rail.getByRole("button", { name: "Codex" })).toBeVisible()
+  await expect(rail.getByRole("button", { name: "Antigravity" })).toBeVisible()
+  await expect(page.getByRole("combobox", { name: "Buscar modelo" })).toBeVisible()
+  await expect(page.getByRole("listbox", { name: "Modelo" })).toBeVisible()
 })
 
 test("consegue selecionar e trocar a permissão do projeto", async ({
