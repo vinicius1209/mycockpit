@@ -33,6 +33,8 @@ import {
   Search,
   Square,
   Terminal,
+  ThumbsDown,
+  ThumbsUp,
   User,
   Wrench,
   X,
@@ -1310,15 +1312,15 @@ export interface FeedbackApi {
   ) => Promise<SaveLessonOutcome>
 }
 
-const TURN_REACTIONS = [
-  { emoji: "👍", label: "Gostei" },
-  { emoji: "🎯", label: "Preciso" },
-  { emoji: "🧠", label: "Boa análise" },
-  { emoji: "🧪", label: "Bem testado" },
-  { emoji: "⚡", label: "Eficiente" },
-  { emoji: "👎", label: "Precisa melhorar" },
-] as const
-const MORE_REACTIONS = ["🚀", "✨", "🔥", "💡", "🧹", "🐢", "⚠️", "❤️"] as const
+// A taxonomia de 5 sabores positivos (🎯🧠🧪⚡ + 👍) e as 8 reações extras do
+// "＋" nunca pesaram nada diferente no reforço: ChatPanel só checa
+// `reaction !== "👎"` pra decidir se reforça as lições (conferido no código,
+// não é achismo de estilo) — 6 botões coloridos + expansor eram ruído puro,
+// sensação de Slack numa superfície que quer ser console. Ficou o binário que
+// já era a única coisa que importava. Emoji como VALOR persistido continua o
+// mesmo (👍/👎), só o render virou ícone monocromático.
+const THUMB_UP = "👍"
+const THUMB_DOWN = "👎"
 
 /** UMA superfície de feedback por resultado de turno. Emoji é sinal leve;
  *  memória permanente exige nota → proposta editável → confirmação humana. */
@@ -1343,7 +1345,6 @@ function TurnFeedback({
   // veredito do juiz de learnability: false = pouco generalizável (avisa, não bloqueia).
   const [learnable, setLearnable] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
-  const [moreOpen, setMoreOpen] = useState(false)
 
   async function react(reaction: string) {
     const added = await api.onReact(resultId, reaction)
@@ -1398,61 +1399,36 @@ function TurnFeedback({
   return (
     <div className="mt-2 border-t border-border/45 pt-2">
       <div className="flex flex-wrap items-center gap-1">
-        {TURN_REACTIONS.map(({ emoji, label }) => {
-          const active = reactions.includes(emoji)
-          return (
-            <button
-              key={emoji}
-              type="button"
-              onClick={() => void react(emoji)}
-              aria-pressed={active}
-              title={label}
-              className={cn(
-                "rounded-full border px-1.5 py-0.5 text-[13px] leading-none transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                active ? SELECTED_FILL : "border-transparent bg-secondary/50",
-              )}
-            >
-              <span aria-hidden>{emoji}</span>
-              <span className="sr-only">{label}</span>
-            </button>
-          )
-        })}
         <button
           type="button"
-          onClick={() => setMoreOpen((open) => !open)}
-          aria-expanded={moreOpen}
-          aria-label="Mais reações"
-          className="rounded-full border border-transparent bg-secondary/50 px-1.5 py-0.5 text-[13px] leading-none text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          onClick={() => void react(THUMB_UP)}
+          aria-pressed={reactions.includes(THUMB_UP)}
+          title="Gostei"
+          className={cn(
+            "rounded-md p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+            reactions.includes(THUMB_UP)
+              ? SELECTED_FILL
+              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
         >
-          ＋
+          <ThumbsUp className="size-3.5" />
+          <span className="sr-only">Gostei</span>
         </button>
-        {(moreOpen ||
-          reactions.some((reaction) =>
-            (MORE_REACTIONS as readonly string[]).includes(reaction),
-          )) && (
-          <span className="flex items-center gap-0.5 rounded-full border bg-card p-0.5 shadow-sm">
-            {MORE_REACTIONS.filter(
-              (emoji) => moreOpen || reactions.includes(emoji),
-            ).map((emoji) => {
-              const active = reactions.includes(emoji)
-              return (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => void react(emoji)}
-                  aria-pressed={active}
-                  aria-label={`Reagir com ${emoji}`}
-                  className={cn(
-                    "rounded-full px-1 py-0.5 text-[13px] leading-none hover:bg-accent",
-                    active && "bg-sel",
-                  )}
-                >
-                  {emoji}
-                </button>
-              )
-            })}
-          </span>
-        )}
+        <button
+          type="button"
+          onClick={() => void react(THUMB_DOWN)}
+          aria-pressed={reactions.includes(THUMB_DOWN)}
+          title="Precisa melhorar"
+          className={cn(
+            "rounded-md p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+            reactions.includes(THUMB_DOWN)
+              ? SELECTED_FILL
+              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+        >
+          <ThumbsDown className="size-3.5" />
+          <span className="sr-only">Precisa melhorar</span>
+        </button>
         <button
           type="button"
           onClick={openAsk}
@@ -1577,72 +1553,85 @@ function TurnTelemetry({
   incidentTone?: "limit"
 }) {
   const hasUsage = it.usage && (it.usage.input > 0 || it.usage.output > 0)
+  const hasCache = it.usage && it.usage.cacheRead > 0
   // Caption de fim de turno: linha DISCRETA, alinhada ao conteúdo da mensagem
-  // (sem sangrar pro gutter, sem cartão). O dado continua todo lá — só que como
-  // legenda: custo em brass, "concluído" verde. flex-wrap + min-w-0 = sem scroll.
+  // (sem sangrar pro gutter, sem cartão). O dado continua todo lá — só que
+  // agrupado em 3 blocos lógicos (tempo&status · tokens&cache · modelo&custo),
+  // não 8 itens no mesmo "·" corrido — o olho escaneava a linha inteira pra
+  // achar o número que importava. Custo em brass, "concluído" verde.
   return (
-    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground/80">
-      <span
-        className={cn(
-          "flex items-center gap-1 font-medium",
-          it.ok
-            ? "text-st-success"
-            : incidentTone === "limit"
-              ? "text-st-warning"
-              : "text-st-error",
-        )}
-      >
-        {it.ok ? (
-          <Check className="size-3" />
-        ) : incidentTone === "limit" ? (
-          <Gauge className="size-3" />
-        ) : (
-          <AlertCircle className="size-3" />
-        )}
-        {it.ok ? "concluído" : incidentTone === "limit" ? "turno encerrado" : "erro"}
-      </span>
-      {it.durationMs != null && (
-        <>
-          <Sep />
-          <span className="tabular-nums">{fmtDuration(it.durationMs)}</span>
-        </>
-      )}
-      {hasUsage && (
-        <>
-          <Sep />
-          <span className="tabular-nums">
-            {fmtTokens(it.usage!.input)} ↓ · {fmtTokens(it.usage!.output)} ↑
-          </span>
-        </>
-      )}
-      {it.usage && it.usage.cacheRead > 0 && (
-        <>
-          <Sep />
-          <span className="tabular-nums">cache {fmtTokens(it.usage.cacheRead)}</span>
-        </>
-      )}
-      {it.model && (
-        <>
-          <Sep />
-          <span className="truncate">{it.model}</span>
-        </>
-      )}
-      {it.costUsd != null && (
-        <>
-          <Sep />
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/80">
+        <span className="flex items-center gap-1.5">
           <span
-            className="font-medium tabular-nums text-brass"
-            title={
-              it.costSource === "estimated"
-                ? "estimado: tokens × tabela de preço"
-                : undefined
-            }
+            className={cn(
+              "flex items-center gap-1 font-medium",
+              it.ok
+                ? "text-st-success"
+                : incidentTone === "limit"
+                  ? "text-st-warning"
+                  : "text-st-error",
+            )}
           >
-            {fmtCost(it.costUsd, it.costSource)}
+            {it.ok ? (
+              <Check className="size-3" />
+            ) : incidentTone === "limit" ? (
+              <Gauge className="size-3" />
+            ) : (
+              <AlertCircle className="size-3" />
+            )}
+            {it.ok ? "concluído" : incidentTone === "limit" ? "turno encerrado" : "erro"}
           </span>
-        </>
-      )}
-      {/* Entrega→diff em 1 clique: abre o diff do worktree no painel de Alterações. */}
+          {it.durationMs != null && (
+            <>
+              <Sep />
+              <span className="tabular-nums">{fmtDuration(it.durationMs)}</span>
+            </>
+          )}
+        </span>
+
+        {(hasUsage || hasCache) && (
+          <span className="flex items-center gap-1.5">
+            {hasUsage && (
+              <span className="tabular-nums">
+                {fmtTokens(it.usage!.input)} ↓ · {fmtTokens(it.usage!.output)} ↑
+              </span>
+            )}
+            {hasCache && (
+              <>
+                {hasUsage && <Sep />}
+                <span className="tabular-nums">
+                  cache {fmtTokens(it.usage!.cacheRead)}
+                </span>
+              </>
+            )}
+          </span>
+        )}
+
+        {(it.model || it.costUsd != null) && (
+          <span className="flex items-center gap-1.5">
+            {it.model && <span className="truncate">{it.model}</span>}
+            {it.costUsd != null && (
+              <>
+                {it.model && <Sep />}
+                <span
+                  className="font-medium tabular-nums text-brass"
+                  title={
+                    it.costSource === "estimated"
+                      ? "estimado: tokens × tabela de preço"
+                      : undefined
+                  }
+                >
+                  {fmtCost(it.costUsd, it.costSource)}
+                </span>
+              </>
+            )}
+          </span>
+        )}
+      </div>
+
+      {/* Entrega→diff em 1 clique: chip com borda, não texto solto no meio da
+          legenda — precisa parecer clicável antes de o usuário testar. */}
       {it.ok && (
         <button
           type="button"
@@ -1653,9 +1642,8 @@ function TurnTelemetry({
           }}
           title="Ver o diff desta entrega"
           aria-label="Ver o diff desta entrega"
-          className="flex items-center gap-1 transition-colors hover:text-foreground"
+          className="inline-flex w-fit items-center gap-1 rounded-md border border-border/50 px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
         >
-          <Sep />
           <FileDiff className="size-3" /> Diff
         </button>
       )}

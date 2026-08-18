@@ -221,6 +221,7 @@ describe("feedback terminal do turno", () => {
       }),
     )
     expect(html.match(/Transformar em aprendizado/g)).toHaveLength(1)
-    expect(html.match(/aria-pressed=/g)).toHaveLength(6)
+    // 👍/👎 só (a taxonomia de 6 reações foi removida — ver MessageList.tsx).
+    expect(html.match(/aria-pressed=/g)).toHaveLength(2)
   })
 })
