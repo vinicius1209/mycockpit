@@ -15,6 +15,7 @@ import {
   ClipboardCheck,
   Clock3,
   Command,
+  FileCode2,
   GitBranch,
   HardDrive,
   Inbox,
@@ -23,6 +24,7 @@ import {
   Radio,
   Route,
   ShieldCheck,
+  Terminal,
   Users,
   X,
 } from "lucide-react"
@@ -165,71 +167,63 @@ function FlightRecorder() {
           <span className="live-dot" />
           <span>MISSÃO EM CURSO</span>
         </div>
-        <span>DEMO FICTÍCIA · FRT–0217</span>
+        <span>ATLAS-COMMERCE · DEMO</span>
       </div>
 
-      <div className="recorder__title">
-        <span>Entrega</span>
-        <strong>Refinar onboarding</strong>
+      <div className="mission-live__head">
+        <div>
+          <span>Entrega</span>
+          <strong>Blindar a retomada do checkout</strong>
+        </div>
+        <span className="mission-live__agent"><i />Codex executando</span>
       </div>
 
-      <div className="route-map" aria-label="Rota da missão entre agentes">
-        <svg viewBox="0 0 600 164" preserveAspectRatio="none" aria-hidden="true">
-          <path className="route-map__rail" d="M30 101 C120 101 125 50 220 50 S315 121 395 121 S465 72 570 72" />
-          <motion.path
-            className="route-map__active"
-            d="M30 101 C120 101 125 50 220 50 S315 121 395 121 S465 72 570 72"
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: 2.8, delay: 0.7, ease: "easeInOut" }}
+      <div className="mission-live">
+        <section className="live-plan" aria-label="Plano vivo da missão demonstrativa">
+          <div className="live-plan__top"><span>PLANO VIVO</span><b>2 / 4</b></div>
+          <div className="live-plan__item is-done">
+            <span><Check /></span><div><b>Mapear falhas de retomada</b><small>6 cenários encontrados</small></div>
+          </div>
+          <div className="live-plan__item is-active">
+            <span><Radio /></span><div><b>Implementar idempotência</b><small>editando a recuperação do pagamento</small></div>
+          </div>
+          <motion.div
+            className="live-plan__progress"
+            initial={{ scaleX: 0.12 }}
+            animate={{ scaleX: 0.68 }}
+            transition={{ duration: 2.4, delay: 0.6, ease: "easeInOut" }}
           />
-        </svg>
+          <div className="live-plan__item">
+            <span>03</span><div><b>Cobrir regressões</b><small>aguardando implementação</small></div>
+          </div>
+          <div className="live-plan__item">
+            <span>04</span><div><b>Revisão de segurança</b><small>@aline após os testes</small></div>
+          </div>
+        </section>
 
-        <div className="route-stop route-stop--brief">
-          <span className="route-stop__node" />
-          <small>09:12</small>
-          <b>Brief</b>
-        </div>
-        <div className="route-stop route-stop--codex">
-          <span className="route-stop__node route-stop__node--cyan" />
-          <small>09:18</small>
-          <b>Codex</b>
-          <em>implementando</em>
-        </div>
-        <div className="route-stop route-stop--handoff">
-          <span className="route-stop__node route-stop__node--amber" />
-          <small>10:06</small>
-          <b>Revezamento</b>
-          <em>contexto preservado</em>
-        </div>
-        <div className="route-stop route-stop--claude">
-          <span className="route-stop__node route-stop__node--coral" />
-          <small>10:08</small>
-          <b>Claude Code</b>
-          <em>revisando</em>
-        </div>
-        <div className="route-stop route-stop--delivery">
-          <span className="route-stop__node route-stop__node--done">
-            <Check size={12} strokeWidth={3} />
-          </span>
-          <small>10:31</small>
-          <b>Entrega</b>
-        </div>
+        <section className="live-activity" aria-label="Atividade atual da missão demonstrativa">
+          <div className="live-activity__top"><span>AGORA</span><time>10:24:18</time></div>
+          <div className="activity-card activity-card--file">
+            <FileCode2 />
+            <div><small>ARQUIVO ALTERADO</small><b>src/checkout/recovery.ts</b></div>
+            <span>+38 −12</span>
+          </div>
+          <div className="code-slice" aria-hidden="true">
+            <span><i>+</i> const attempt = await claimPayment(id)</span>
+            <span><i>+</i> if (attempt.replayed) return attempt.result</span>
+            <span><i> </i> return resumeCheckout(attempt)</span>
+          </div>
+          <div className="activity-card activity-card--process">
+            <Terminal />
+            <div><small>PROCESSO</small><b>bun test checkout</b></div>
+            <span className="activity-ok">12 passaram</span>
+          </div>
+        </section>
       </div>
 
-      <div className="recorder__metrics">
-        <div>
-          <small>tempo de missão</small>
-          <strong>01h19</strong>
-        </div>
-        <div>
-          <small>trocas de agente</small>
-          <strong>01</strong>
-        </div>
-        <div>
-          <small>custo da entrega</small>
-          <strong>US$ 14,82</strong>
-        </div>
+      <div className="mission-live__foot">
+        <span><ShieldCheck />Liberação controlada</span>
+        <span>FRT–0217 · DADOS FICTÍCIOS</span>
       </div>
     </motion.div>
   )
@@ -844,7 +838,6 @@ function App() {
           <div className="beta-grid" aria-hidden="true" />
           <div className="section-shell beta-layout">
             <Fade className="beta-copy">
-              <HorizonMark />
               <span className="section-kicker section-kicker--dark">Primeira chamada</span>
               <h2>Ajude a construir<br />a cabine certa.</h2>
               <p>Estamos formando um grupo pequeno de builders para testar a Frota em projetos reais e influenciar o que entra primeiro.</p>
@@ -869,7 +862,7 @@ function App() {
 
       <footer className="site-footer">
         <div className="section-shell footer-inner">
-          <a className="brand brand--footer" href="#top"><HorizonMark compact /><span>Frota</span></a>
+          <a className="brand brand--footer" href="#top"><span>Frota</span></a>
           <p>O trabalho continua, mesmo quando o agente muda.</p>
           <span>Feito no Brasil · 2026</span>
         </div>

@@ -9,12 +9,33 @@ Objetivo único: gerar inscrições qualificadas para a beta privada
 - Revisão completa da narrativa e das alegações no código: concluída.
 - Build e lint: aprovados.
 - Servidor local: saudável.
-- Inspeção visual em navegador, desktop e mobile: pendente porque nenhuma
-  superfície de navegador estava conectada ao controlador nesta sessão.
+- Três capturas reais do navegador fornecidas pelo usuário: inspecionadas em
+  resolução original.
+- Controle direto do navegador, desktop e mobile: pendente porque a ferramenta
+  de conexão não está exposta nesta sessão.
 
 Esta separação importa: os julgamentos abaixo cobrem estratégia, copy,
 sequência e implementação. Layout final, quebras, contraste e sensação de
 scroll ainda precisam da passada visual real.
+
+## Segunda rodada visual
+
+As capturas de 2026-08-14 revelaram problemas que build/lint não detectam:
+
+- o gráfico curvo do hero parecia uma ilustração de dashboard, não trabalho real;
+- a headline da Cabine ocupava quatro linhas e empurrava a prova para fora da
+  área útil;
+- os controles da Cabine alinhavam pelo rodapé da janela, separando texto e tela;
+- o conteúdo interno do app estava pequeno demais para servir como prova;
+- o símbolo da Frota aparecia no header, no CTA final e novamente no footer.
+
+Correções aplicadas:
+
+- missão do hero refeita como plano vivo com arquivo, diff e processo de teste;
+- headline e espaçamento da Cabine reduzidos, controles alinhados pelo topo e
+  janela limitada a uma largura legível;
+- tipografia da demonstração ampliada e sidebar ocultada no mobile;
+- símbolo removido do CTA final e do footer; o header volta a ser o dono da marca.
 
 ## Avaliação por seção
 
