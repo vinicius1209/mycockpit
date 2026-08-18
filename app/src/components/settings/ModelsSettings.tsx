@@ -47,19 +47,47 @@ function rotulo(agent: string): string {
   return agentDef(agent)?.label ?? agent
 }
 
+/** `reason` (modelPromotion.retirementReason) cola nossa frase + o texto CRU
+ *  do fornecedor num parágrafo só, sem separador — o pt-BR e o inglês colado
+ *  do CLI ficavam indistinguíveis (achado real do usuário, 18/08/2026). O
+ *  campo `vendorNote` já guarda o mesmo texto cru, à parte; aqui só tiramos a
+ *  duplicata do `reason` pra render em duas linhas com tratamento diferente,
+ *  sem mexer na construção da string (que o aviso do sino também usa). */
+function splitVendorNote(
+  reason: string,
+  vendorNote: string | null,
+): { text: string; vendor: string | null } {
+  const v = vendorNote?.trim()
+  if (!v || !reason.includes(v)) return { text: reason, vendor: null }
+  const text = reason.replace(v, "").replace(/\s{2,}/g, " ").trim()
+  return { text, vendor: v }
+}
+
 /** Uma linha do ledger: o modelo, de quem é, e o MOTIVO por extenso. As ações
  *  entram como filhos (cada grupo tem as suas). */
 function ModelRow({
   p,
   price,
+  pending = false,
   children,
 }: {
   p: ModelProposal
   price: string | null
+  /** Esta linha pede SUA decisão agora (o grupo "Esperando você") — é a única
+   *  cor de atenção da tela (§2: âmbar = precisa de você), então as outras três
+   *  histórias (entrou sozinho, foi reprovado, você já aprovou) ficam neutras
+   *  de propósito: já têm desfecho, não competem pela mesma tinta. */
+  pending?: boolean
   children?: React.ReactNode
 }) {
   return (
-    <li className="flex items-start gap-3 rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">
+    <li
+      className={cn(
+        "flex items-start gap-3 rounded-lg border bg-secondary/20 px-3 py-2",
+        pending ? "border-st-warning/30" : "border-border/50",
+      )}
+    >
+
       <div className="min-w-0 flex-1">
         <div className="text-[13px] text-foreground">
           {p.label}{" "}
@@ -191,140 +219,150 @@ export function ModelsSettings() {
             Aposentadoria anunciada
           </BlockTitle>
           <ul className="flex flex-col gap-1.5">
-            {retirements.map((r) => (
-              <li
-                key={`${r.agent}:${r.value}`}
-                className="rounded-lg border border-st-warning/30 bg-secondary/20 px-3 py-2"
-              >
-                <div className="text-[13px] text-foreground">
-                  {r.value}{" "}
-                  <span className="text-muted-foreground">
-                    · {rotulo(r.agent)} · sucessor {r.successor}
-                  </span>
-                </div>
-                <div className="text-[12px] leading-snug text-muted-foreground">
-                  {r.reason}
-                </div>
-              </li>
-            ))}
+            {retirements.map((r) => {
+              const { text, vendor } = splitVendorNote(r.reason, r.vendorNote)
+              return (
+                <li
+                  key={`${r.agent}:${r.value}`}
+                  className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2"
+                >
+                  <div className="text-[13px] text-foreground">
+                    {r.value}{" "}
+                    <span className="text-muted-foreground">
+                      · {rotulo(r.agent)} · sucessor {r.successor}
+                    </span>
+                  </div>
+                  <div className="text-[12px] leading-snug text-muted-foreground">
+                    {text}
+                  </div>
+                  {vendor && (
+                    <div className="mt-1 rounded border border-border/40 bg-background/40 px-2 py-1 font-mono text-[11px] leading-snug text-faint">
+                      {vendor}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         </Block>
       )}
 
-      <BlockTitle hint="De onde cada modelo do seletor veio, o que ainda espera você e o que não passou. Nada some daqui sem motivo escrito.">
-        Modelos novos
-      </BlockTitle>
-      {!loaded ? (
-        <div className="flex items-center gap-2 py-2 text-[12px] text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" />
-          Conferindo o que já foi decidido...
-        </div>
-      ) : vazio ? (
-        <div className="rounded-lg border border-dashed border-border/60 px-3 py-4 text-center text-[12px] text-muted-foreground">
-          Nenhum modelo novo por aqui. Última verificação{" "}
-          {fmtCheckedAt(lastModelRound)}.
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {sozinhos.length > 0 && (
-            <div>
-              <div className="mb-1 text-[11px] text-muted-foreground">
-                Entraram sozinhos
+      <Block>
+        <BlockTitle hint="De onde cada modelo do seletor veio, o que ainda espera você e o que não passou. Nada some daqui sem motivo escrito.">
+          Modelos novos
+        </BlockTitle>
+        {!loaded ? (
+          <div className="flex items-center gap-2 py-2 text-[12px] text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin" />
+            Conferindo o que já foi decidido...
+          </div>
+        ) : vazio ? (
+          <div className="rounded-lg border border-dashed border-border/60 px-3 py-4 text-center text-[12px] text-muted-foreground">
+            Nenhum modelo novo por aqui. Última verificação{" "}
+            {fmtCheckedAt(lastModelRound)}.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {sozinhos.length > 0 && (
+              <div>
+                <div className="mb-1 text-[11px] text-muted-foreground">
+                  Entraram sozinhos
+                </div>
+                <ul className="flex flex-col gap-1.5">
+                  {sozinhos.map((p) => (
+                    <ModelRow key={p.id} p={p} price={precoDe(p)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void decide(p, "dismissed")}
+                      >
+                        Tirar do seletor
+                      </Button>
+                    </ModelRow>
+                  ))}
+                </ul>
               </div>
-              <ul className="flex flex-col gap-1.5">
-                {sozinhos.map((p) => (
-                  <ModelRow key={p.id} p={p} price={precoDe(p)}>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void decide(p, "dismissed")}
-                    >
-                      Tirar do seletor
-                    </Button>
-                  </ModelRow>
-                ))}
-              </ul>
-            </div>
-          )}
+            )}
 
-          {pendentes.length > 0 && (
-            <div>
-              <div className="mb-1 text-[11px] text-muted-foreground">
-                Esperando você
+            {pendentes.length > 0 && (
+              <div>
+                <div className="mb-1 text-[11px] font-medium text-st-warning">
+                  Esperando você
+                </div>
+                <ul className="flex flex-col gap-1.5">
+                  {pendentes.map((p) => (
+                    <ModelRow key={p.id} p={p} price={precoDe(p)} pending>
+                      <Button
+                        size="sm"
+                        className="bg-brass text-background hover:bg-brass hover:opacity-90"
+                        onClick={() => void decide(p, "active")}
+                      >
+                        Aprovar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void decide(p, "dismissed")}
+                      >
+                        Dispensar
+                      </Button>
+                    </ModelRow>
+                  ))}
+                </ul>
               </div>
-              <ul className="flex flex-col gap-1.5">
-                {pendentes.map((p) => (
-                  <ModelRow key={p.id} p={p} price={precoDe(p)}>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => void decide(p, "active")}
-                    >
-                      Aprovar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void decide(p, "dismissed")}
-                    >
-                      Dispensar
-                    </Button>
-                  </ModelRow>
-                ))}
-              </ul>
-            </div>
-          )}
+            )}
 
-          {reprovados.length > 0 && (
-            <div>
-              <div className="mb-1 text-[11px] text-muted-foreground">
-                Não entraram
+            {reprovados.length > 0 && (
+              <div>
+                <div className="mb-1 text-[11px] text-muted-foreground">
+                  Não entraram
+                </div>
+                <ul className="flex flex-col gap-1.5">
+                  {reprovados.map((p) => (
+                    <ModelRow key={p.id} p={p} price={precoDe(p)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void decide(p, "dismissed")}
+                      >
+                        Dispensar
+                      </Button>
+                    </ModelRow>
+                  ))}
+                </ul>
               </div>
-              <ul className="flex flex-col gap-1.5">
-                {reprovados.map((p) => (
-                  <ModelRow key={p.id} p={p} price={precoDe(p)}>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void decide(p, "dismissed")}
-                    >
-                      Dispensar
-                    </Button>
-                  </ModelRow>
-                ))}
-              </ul>
-            </div>
-          )}
+            )}
 
-          {aprovados.length > 0 && (
-            <div>
-              <div className="mb-1 text-[11px] text-muted-foreground">
-                Você aprovou
+            {aprovados.length > 0 && (
+              <div>
+                <div className="mb-1 text-[11px] text-muted-foreground">
+                  Você aprovou
+                </div>
+                <ul className="flex flex-col gap-1.5">
+                  {aprovados.map((p) => (
+                    <ModelRow key={p.id} p={p} price={precoDe(p)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void decide(p, "dismissed")}
+                      >
+                        Tirar do seletor
+                      </Button>
+                    </ModelRow>
+                  ))}
+                </ul>
               </div>
-              <ul className="flex flex-col gap-1.5">
-                {aprovados.map((p) => (
-                  <ModelRow key={p.id} p={p} price={precoDe(p)}>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void decide(p, "dismissed")}
-                    >
-                      Tirar do seletor
-                    </Button>
-                  </ModelRow>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-      <Note>
-        Verificar agora pergunta a lista viva de cada CLI, testa até 3
-        candidatos NOVOS por motor (um token cada, centavos) e confere o preço.
-        Quem passa nos três entra sozinho como OPÇÃO do seletor. O seu modelo
-        padrão nunca muda sozinho, e tirar do seletor é um clique. Sem gesto, a
-        mesma rodada acontece no máximo 1×/dia.
-      </Note>
+            )}
+          </div>
+        )}
+        <Note>
+          Verificar agora pergunta a lista viva de cada CLI, testa até 3
+          candidatos NOVOS por motor (um token cada, centavos) e confere o
+          preço. Quem passa nos três entra sozinho como OPÇÃO do seletor. O seu
+          modelo padrão nunca muda sozinho, e tirar do seletor é um clique.
+          Sem gesto, a mesma rodada acontece no máximo 1×/dia.
+        </Note>
+      </Block>
 
       <Block>
         <BlockTitle hint="A tabela de preços que o app usa pra estimar o custo de cada turno.">
