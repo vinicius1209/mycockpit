@@ -222,7 +222,7 @@ export async function montar(
  *  botões `role="radio"` só existem com o painel aberto, inacessível em SSR —
  *  o letreiro é quem mostra o modo SEMPRE, aberto ou fechado). */
 export function modoMarcado(html: string): string | null {
-  const m = html.match(/<button[^>]*aria-expanded="[^"]*"[^>]*>(.*?)<\/button>/s)
+  const m = html.match(/<button[^>]*aria-label="Permissões do projeto"[^>]*>(.*?)<\/button>/s)
   if (!m) return null
   return m[1].replace(/<[^>]*>/g, "").trim() || null
 }

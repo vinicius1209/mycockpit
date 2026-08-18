@@ -255,10 +255,9 @@ const CUSTOM_MODEL = "__custom__"
 /** Agents cujas CLIs aceitam id arbitrário via --model/-m (dia-1 de modelo). */
 const CUSTOM_MODEL_AGENTS = new Set(["claude-code", "codex"])
 
-/** IDENTIDADE do turno: preset (persona) + agent + modelo + esforço. Os quatro
- *  TRAVAM no 1º envio da conversa, então não moram mais no rodapé (onde ficavam
- *  ocupando o melhor espaço para exibir estado imutável) — a `ExecutionRow` os
- *  revela sob demanda atrás do chip colapsado. */
+/** IDENTIDADE do turno: preset (persona) + agent + modelo + esforço. Os
+ *  quatro TRAVAM no 1º envio da conversa — o `CommandConsole` monta isto e
+ *  entrega pronto em `ComposerActions.identityControls` (ADR-051). */
 export function IdentityControls({
   presetValue,
   presetOptions,
@@ -431,12 +430,12 @@ export function IdentityControls({
 }
 
 /**
- * Rodapé do composer — só o que MODIFICA a mensagem (ditado, anexo) e o que a
- * DESPACHA (o split de enviar). A identidade (preset/agent/modelo/esforço) e o
- * estado do turno (permissão, planejar, contexto) subiram pra `ExecutionRow`.
- *
- * Antes eram 13 alvos nesta linha, todos com o mesmo peso — e em tela estreita
- * cortava justamente os acionáveis, que ficavam à direita.
+ * Rodapé do composer: o que MODIFICA a mensagem (ditado, anexo), o que a
+ * DESPACHA (o split de enviar), e — desde a ADR-051, referência Paseo.sh —
+ * também permissão/planejar-antes/identidade, sempre visíveis (revertendo o
+ * colapso atrás de um letreiro só que a ADR-049 tinha medido e implementado).
+ * `identityControls`/`permissionControls`/`planFirstControls`/`contextRing`
+ * chegam prontos do `CommandConsole`, que é quem monta cada um.
  */
 export function ComposerActions({
   onFusion,
@@ -451,6 +450,10 @@ export function ComposerActions({
   stopTitle,
   onSubmit,
   canSend,
+  identityControls,
+  permissionControls,
+  planFirstControls,
+  contextRing,
 }: {
   onFusion: () => void
   fusionDisabled?: boolean
@@ -467,17 +470,15 @@ export function ComposerActions({
   stopTitle?: string
   onSubmit: () => void
   canSend: boolean
+  identityControls?: React.ReactNode
+  permissionControls?: React.ReactNode
+  planFirstControls?: React.ReactNode
+  contextRing?: React.ReactNode
 }) {
   const missionEnabled = useApp((s) => s.settings.missionEnabled)
   return (
     <>
-      {/* A dica "/ comandos" saiu daqui (build 210): era a MESMA frase do
-          placeholder uma linha acima ("Peça algo… ou / para comandos"), dita
-          duas vezes em 11px. E o rastro de uso não a sustentava — nos 406
-          turnos do banco não há um envio começando com "/". A barra continua
-          funcionando; o que saiu foi o lembrete redundante. */}
-      {/* Ferramentas de entrada no canto esquerdo */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -488,6 +489,9 @@ export function ComposerActions({
         >
           <Paperclip className="size-4" />
         </Button>
+        {identityControls}
+        {permissionControls}
+        {planFirstControls}
         {onEspecialistas && (
           <Button
             variant="ghost"
@@ -500,13 +504,12 @@ export function ComposerActions({
             <Sparkles className="size-4" />
           </Button>
         )}
-        {/* overlay="composer": o pill de gravação ancora na raiz relative do
-            CommandConsole e paira ACIMA do composer — a fileira não mexe. */}
+        {/* overlay="composer": o pill de gravação ancora na raiz relative do CommandConsole e paira ACIMA do composer — a fileira não mexe. */}
         <MicButton overlay="composer" />
       </div>
 
-      {/* Despacho no canto direito */}
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ml-auto flex items-center gap-1.5 shrink-0">
+        {contextRing}
         <SendSplit
           running={running}
           canSend={canSend}

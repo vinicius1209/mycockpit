@@ -15,7 +15,7 @@
     "components/scheduled/ScheduledView.tsx": 1113,
     "components/sdd/SddView.tsx": 1462,
     "components/settings/Especialistas.tsx": 829,
-    "lib/agents.ts": 545,
+    "lib/agents.ts": 533,
     "lib/companion.test.ts": 944,
     "lib/companion.ts": 1288,
     "lib/db.ts": 2869,

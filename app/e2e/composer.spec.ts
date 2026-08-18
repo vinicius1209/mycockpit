@@ -6,9 +6,9 @@ import { test, expect, type Page } from "@playwright/test"
 // precedência da permissão) tem teste unitário; a marcação em repouso é medida
 // por `renderToStaticMarkup` nos `CommandConsole.*.test.tsx` e
 // `ExecutionRow.permissao.test.tsx`. O que nenhum dos dois alcança é o GESTO:
-// abrir o painel no letreiro, andar de modo com as setas dentro dele (é um
-// radiogroup, não três botões soltos), ligar "Planeja antes", e digitar no
-// editor Lexical de verdade até o Enviar acender.
+// interagir com os seletores na barra inferior do composer, abrir os dropdowns
+// flutuantes (Radix Popover) sem deforma visual do card, ligar/desligar o
+// toggle "Planeja antes", e digitar no editor Lexical de verdade.
 //
 // Mede-se no `dist/` buildado (mesmo modelo do `painel-abas.spec.ts`). Fora do
 // Tauri o app degrada pro caminho de demonstração — projeto seed, sem banco —,
@@ -16,8 +16,7 @@ import { test, expect, type Page } from "@playwright/test"
 // onde estes gestos moram. A gravação nas três camadas (store, SQLite,
 // `.mycockpit/config.toml`) é assunto de `lib/permission.test.ts`.
 
-const LETREIRO = 'button[aria-label="Como o próximo turno roda"]'
-const RADIOGROUP = '[aria-label="Permissões do projeto"]'
+const PERMISSAO_BTN = 'button[aria-label="Permissões do projeto"]'
 
 async function abrirApp(page: Page) {
   await page.addInitScript(() => {
@@ -36,91 +35,60 @@ async function abrirApp(page: Page) {
     )
   })
   await page.goto("/", { waitUntil: "domcontentloaded" })
-  await expect(page.locator(LETREIRO)).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator(PERMISSAO_BTN)).toBeVisible({ timeout: 10_000 })
 }
 
+// `menuitemradio`, não `radio`: é um item de RADIOGROUP DENTRO DE MENU
+// (Radix `DropdownMenuRadioItem`), o papel ARIA correto pra essa combinação —
+// `role="radio"` sozinho seria menu com semântica errada pro teclado/leitor
+// de tela do Radix, que já gerencia isso pelo primitive certo.
 const modo = (page: Page, nome: string) =>
-  page.locator(`${RADIOGROUP} [role="radio"]`, { hasText: nome })
+  page.locator('[role="menuitemradio"]', { hasText: nome })
 
-test("o painel nasce fechado e abre no letreiro, com os três blocos dentro", async ({
+test("os seletores nascem visíveis na barra inferior do composer", async ({
   page,
 }) => {
   await abrirApp(page)
-  const letreiro = page.locator(LETREIRO)
-  await expect(letreiro).toHaveAttribute("aria-expanded", "false")
-  // Fechado: nem a permissão, nem "Planeja antes", nem os seletores crus
-  // existem no DOM — o único sinal de fora é o modo escrito no próprio letreiro.
-  await expect(page.locator(RADIOGROUP)).toHaveCount(0)
-  await expect(page.getByRole("switch", { name: "Planejar primeiro" })).toHaveCount(0)
-  await expect(page.getByLabel("Agent")).toHaveCount(0)
-  await expect(page.getByLabel("Modelo")).toHaveCount(0)
-
-  await letreiro.click()
-  await expect(letreiro).toHaveAttribute("aria-expanded", "true")
-  await expect(page.locator(RADIOGROUP)).toBeVisible()
-  await expect(page.getByRole("switch", { name: "Planejar primeiro" })).toBeVisible()
+  // Com o design inferior do mockup (Paseo.sh), todos os controles nascem
+  // visíveis no rodapé e não exigem expandir uma gaveta superior.
+  await expect(page.locator(PERMISSAO_BTN)).toBeVisible()
+  await expect(page.getByLabel("Planejar primeiro")).toBeVisible()
   await expect(page.getByLabel("Agent")).toBeVisible()
   await expect(page.getByLabel("Modelo")).toBeVisible()
-
-  await letreiro.click()
-  await expect(letreiro).toHaveAttribute("aria-expanded", "false")
-  await expect(page.locator(RADIOGROUP)).toHaveCount(0)
 })
 
-test("as setas andam entre os modos (é um radiogroup, não três botões soltos)", async ({
+test("consegue selecionar e trocar a permissão do projeto", async ({
   page,
 }) => {
-  // O teclado é a única via de quem não usa mouse pra mexer no controle de
-  // maior consequência do app. E o `stopPropagation` da faixa existe por causa
-  // disto: sem ele o clique mandava o foco pro campo de texto e as setas
-  // paravam de andar.
   await abrirApp(page)
-  await page.locator(LETREIRO).click()
-  await modo(page, "Pede").focus()
-  await page.keyboard.press("ArrowDown")
-  await expect(modo(page, "Liberado")).toHaveAttribute("aria-checked", "true")
-  await page.keyboard.press("ArrowUp")
-  await expect(modo(page, "Pede")).toHaveAttribute("aria-checked", "true")
-  await page.keyboard.press("ArrowUp")
-  await expect(modo(page, "Só lê")).toHaveAttribute("aria-checked", "true")
-  // Circular: da primeira posição, ↑ volta pra última.
-  await page.keyboard.press("ArrowUp")
-  await expect(modo(page, "Liberado")).toHaveAttribute("aria-checked", "true")
-  // ←/→ continuam funcionando (compatibilidade com o segmented horizontal
-  // antigo, que usava as mesmas teclas).
-  await page.keyboard.press("ArrowLeft")
-  await expect(modo(page, "Pede")).toHaveAttribute("aria-checked", "true")
-})
+  const btn = page.locator(PERMISSAO_BTN)
+  await expect(btn).toContainText("Pede") // default do seed é Pede
 
-test("Planeja antes liga e desliga no clique, e sobrevive a trocar de permissão", async ({
-  page,
-}) => {
-  // O único controle do painel que é POR TURNO (não por conversa) e que não
-  // persiste em lugar nenhum (`store/chat.ts`, sem `persist`) — furo aberto no
-  // plano do colapso (docs/mocks/composer-README.md §7.1): sem nenhum teste,
-  // clicar aqui nunca foi provado.
-  await abrirApp(page)
-  await page.locator(LETREIRO).click()
-  const toggle = page.getByRole("switch", { name: "Planejar primeiro" })
-  await expect(toggle).toHaveAttribute("aria-checked", "false")
+  await btn.click()
+  const dropdownMenu = page.locator('[role="menu"]')
+  await expect(dropdownMenu).toBeVisible()
+  // a descrição de cada modo (não só o nome) precisa estar lá — é o que o
+  // menu tem a mais do que o gatilho, e SSR não alcança (conteúdo portalizado).
+  await expect(dropdownMenu).toContainText("O agente executa e escreve sem pedir confirmação")
 
-  await toggle.click()
-  await expect(toggle).toHaveAttribute("aria-checked", "true")
-  // O letreiro ganha o rastro (ícone) mesmo depois de fechar o painel — é o
-  // único jeito de lembrar que um modificador por-turno está ligado.
-  await page.locator(LETREIRO).click() // fecha
-  await expect(
-    page.locator(`${LETREIRO} [aria-label="Planeja antes ligado"]`),
-  ).toBeVisible()
-
-  // Mexer noutro controle do mesmo painel (a permissão) não derruba o toggle:
-  // são dois estados independentes, não um raio-x da última interação.
-  await page.locator(LETREIRO).click() // reabre
+  // seleciona o modo "Liberado"
   await modo(page, "Liberado").click()
-  await expect(toggle).toHaveAttribute("aria-checked", "true")
+  await expect(dropdownMenu).not.toBeVisible()
+  await expect(btn).toContainText("Liberado")
+})
+
+test("Planejar primeiro liga e desliga no clique", async ({
+  page,
+}) => {
+  await abrirApp(page)
+  const toggle = page.getByLabel("Planejar primeiro")
+  await expect(toggle).not.toHaveClass(/text-brass/)
 
   await toggle.click()
-  await expect(toggle).toHaveAttribute("aria-checked", "false")
+  await expect(toggle).toHaveClass(/text-brass/)
+
+  await toggle.click()
+  await expect(toggle).not.toHaveClass(/text-brass/)
 })
 
 test("o Enviar só acende quando há o que enviar", async ({ page }) => {
@@ -141,12 +109,12 @@ test("o Enviar só acende quando há o que enviar", async ({ page }) => {
   await expect(enviar).toBeDisabled()
 })
 
-test("clicar no cartão devolve o foco ao editor, e clicar no letreiro NÃO", async ({
+test("clicar no cartão devolve o foco ao editor, e clicar nos botões do rodapé NÃO", async ({
   page,
 }) => {
   // Duas regras opostas na mesma caixa: o cartão inteiro é `cursor-text` e foca
-  // o editor; a faixa de execução barra a propagação, senão abrir o painel
-  // roubava o foco e fechava ele sozinho.
+  // o editor; os seletores do rodapé barram a propagação, senão interagir com os
+  // dropdowns focaria o editor e fecharia o menu.
   await abrirApp(page)
   const editor = page.locator('[contenteditable="true"]').first()
   await page.locator('[aria-label="Anexar arquivo"]').hover()
@@ -154,6 +122,6 @@ test("clicar no cartão devolve o foco ao editor, e clicar no letreiro NÃO", as
   await editor.click()
   await expect(editor).toBeFocused()
 
-  await page.locator(LETREIRO).click()
+  await page.locator(PERMISSAO_BTN).click()
   await expect(editor).not.toBeFocused()
 })

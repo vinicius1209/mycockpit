@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useActiveConv, useChat } from "@/store/chat"
-import { contextWindowFor } from "@/lib/agents"
+import { contextWindowFor } from "@/lib/contextWindow"
 import { compactActionHint, offersCompactAction } from "@/lib/compact"
 import { fmtTokens } from "@/lib/format"
 import { METER_TEXT, meterIsLoud, meterTone } from "@/lib/meter"

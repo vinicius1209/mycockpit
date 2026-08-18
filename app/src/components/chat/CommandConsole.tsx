@@ -8,6 +8,11 @@ import {
   type SetStateAction,
 } from "react"
 import { ComposerShell } from "@/components/chat/ComposerShell"
+import { ContextRing } from "@/components/chat/ContextRing"
+import {
+  PermissionSelect,
+  PlanFirstToggle,
+} from "@/components/chat/ComposerExecutionControls"
 import {
   SlashPopover,
   AttachmentChips,
@@ -18,15 +23,14 @@ import {
   NO_PRESET,
 } from "@/components/chat/ComposerParts"
 import { ExecutionRow } from "@/components/chat/ExecutionRow"
+import { resolvePermission, setProjectPermissionEverywhere } from "@/lib/permission"
+import type { PermissionMode } from "@/lib/types"
 import {
   despachoDoEnter,
   podeEnviar,
   type EstadoDoComposer,
 } from "@/components/chat/composerSend"
-import {
-  identidadeEfetiva,
-  resumoDaIdentidade,
-} from "@/components/chat/composerIdentity"
+import { identidadeEfetiva } from "@/components/chat/composerIdentity"
 import { useSlashCommands } from "@/hooks/useSlashCommands"
 import { slashEmptyHint } from "@/lib/slashCommands"
 import { useAtMentions } from "@/hooks/useAtMentions"
@@ -163,6 +167,14 @@ export function CommandConsole({
   )
   const permProject =
     useApp((s) => s.projects.find((p) => p.id === permProjectId)) ?? project
+  const permissionMode = useApp((s) =>
+    permProject
+      ? resolvePermission(
+          s.mycockpit[permProject.id]?.permission,
+          s.projects.find((p) => p.id === permProject.id)?.permissionMode,
+        )
+      : "padrao",
+  )
 
   // conversa estabelecida trava no agent/modelo/effort dela; o seletor reflete.
   // Pareceres de conselheiro (advice) NÃO travam a identidade (Especialistas E1).
@@ -280,9 +292,6 @@ export function CommandConsole({
   }
   const dest =
     DESTINATIONS.find((d) => d.id === effectiveDest) ?? DESTINATIONS[0]
-  // Resumo colapsado da identidade na linha de execução: os 4 seletores viraram
-  // UMA legenda clicável (eles travam no 1º envio — são estado, não controle).
-  const identityLabel = resumoDaIdentidade(identidade)
   // agent EFETIVO da conversa — a nota honesta por agent (permissionNote) precisa
   // saber QUEM vai obedecer (ou ignorar) o modo de permissão do projeto.
   const convAgent = hasExecutorTurn(conv.items) ? conv.agent : effectiveDest
@@ -455,17 +464,51 @@ export function CommandConsole({
         }
         header={
           <ExecutionRow
-            project={permProject}
-            convAgent={convAgent}
-            planFirst={planFirst}
-            onTogglePlanFirst={() => {
-              const id = useChat.getState().activeId
-              if (id) useChat.getState().setPlanFirst(id, !planFirst)
-            }}
             running={running}
-            identityLabel={identityLabel}
-            identityLocked={locked}
-            identity={
+            convAgent={convAgent}
+            mode={permissionMode}
+          />
+        }
+        footer={
+          <ComposerActions
+            stopTitle={deferredStopWarning(pendingDeferred(conv.items))}
+            onFusion={() => setFusionOpen(true)}
+            fusionDisabled={
+              !activeId || disabled || running || finalizing || missionRunning
+            }
+            fusionTitle={
+              activeId
+                ? "Disputar entre agents (candidatos read-only); o vencedor continua nesta conversa"
+                : "Sem conversa ativa; a disputa precisa de uma conversa de destino"
+            }
+            onMission={() => setMissionOpen(true)}
+            missionDisabled={disabled || running || finalizing || missionRunning}
+            onAttach={attach}
+            onEspecialistas={onOpenEspecialistas}
+            running={running}
+            onStop={onStop}
+            onSubmit={submit}
+            canSend={canSend}
+            contextRing={<ContextRing />}
+            planFirstControls={
+              <PlanFirstToggle
+                active={planFirst}
+                onToggle={() => {
+                  const id = useChat.getState().activeId
+                  if (id) useChat.getState().setPlanFirst(id, !planFirst)
+                }}
+              />
+            }
+            permissionControls={
+              <PermissionSelect
+                value={permissionMode}
+                onValueChange={(nextMode: PermissionMode) => {
+                  if (permProject) setProjectPermissionEverywhere(permProject, nextMode)
+                }}
+                disabled={!permProject}
+              />
+            }
+            identityControls={
               <IdentityControls
                 presetValue={effectivePreset}
                 presetOptions={presetOptions}
@@ -496,28 +539,6 @@ export function CommandConsole({
                 }}
               />
             }
-          />
-        }
-        footer={
-          <ComposerActions
-            stopTitle={deferredStopWarning(pendingDeferred(conv.items))}
-            onFusion={() => setFusionOpen(true)}
-            fusionDisabled={
-              !activeId || disabled || running || finalizing || missionRunning
-            }
-            fusionTitle={
-              activeId
-                ? "Disputar entre agents (candidatos read-only); o vencedor continua nesta conversa"
-                : "Sem conversa ativa; a disputa precisa de uma conversa de destino"
-            }
-            onMission={() => setMissionOpen(true)}
-            missionDisabled={disabled || running || finalizing || missionRunning}
-            onAttach={attach}
-            onEspecialistas={onOpenEspecialistas}
-            running={running}
-            onStop={onStop}
-            onSubmit={submit}
-            canSend={canSend}
           />
         }
       />

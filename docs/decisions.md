@@ -1931,3 +1931,76 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   Achado com evidência real em `hooks-plan.md`, item 5 de "Achados que
   contradisseram expectativas"; não implementado — sem consumidor no app
   hoje.
+
+### ADR-051 — O colapso da ADR-049 reverte: permissão/planejar/identidade voltam ao rodapé, sempre visíveis ✅
+- **Contexto (17-18/08/2026):** a ADR-049 tinha colapsado permissão + "Planeja
+  antes" + identidade atrás de UM letreiro clicável, com medição própria (406
+  turnos: agent/modelo trocam em 1,2%/0,7%, permissão parada em "liberado" em
+  5/5 projetos). Enquanto essa ADR ainda estava fresca, uma sessão do próprio
+  Antigravity rodando DENTRO do app — pilotada pelo usuário, referência visual
+  de outro produto (Paseo.sh) — reescreveu `ExecutionRow`, `CommandConsole` e
+  `ComposerParts` pra tirar os três controles de trás do letreiro e devolvê-los
+  ao rodapé, sempre visíveis: `PermissionSelect` (dropdown com ícone+cor por
+  modo), `PlanFirstToggle` (botão com rótulo), `IdentityControls` (inalterado,
+  só mudou de lugar). O letreiro e o painel inline da ADR-049 saíram por
+  completo; `ExecutionRow` ficou reduzido a avisos contextuais (turno em voo,
+  CLI que ignora o modo).
+- **Não foi decisão minha, e não tenho a favor dela a mesma medição que
+  sustentou a ADR-049.** É julgamento de produto do usuário, informado por
+  referência visual externa — registro aqui é DOCUMENTAR a reversão, não
+  justificá-la com dado que não existe. O oposto do que a ADR-049 fez (que
+  tinha 30 dias de banco real por trás) é honesto de admitir: esta decisão
+  pesou "o que combina com a referência" mais do que "o que o histórico deste
+  usuário pede". Isso não a torna errada — só torna a base de evidência
+  diferente, e vale saber disso ao revisitar.
+- **O que a revisão pós-reversão achou, e corrigiu nesta mesma passada
+  (17/08/2026, a review pedida pelo usuário: "faça um code review... me
+  retorne se está tudo devidamente bem feito"):**
+  1. **Ratchet de tamanho furado** — `ComposerParts.tsx` (774, teto 700) e
+     `lib/agents.ts` (558, baseline 545). `PermissionSelect`/`PlanFirstToggle`
+     saíram pra `ComposerExecutionControls.tsx`; `contextWindowFor` saiu pra
+     `lib/contextWindow.ts`. Nenhum teto subiu, nenhuma baseline foi editada
+     à mão — os dois arquivos-mãe voltaram a bater exatamente no limite.
+  2. **`PermissionSelect` tinha zero teste próprio** — a cobertura específica
+     de "Liberado acende âmbar, e só ele" (que a ADR-049 tinha) não tinha
+     equivalente na nova localização. Fechado em
+     `ComposerExecutionControls.test.tsx` (repouso, SSR) + uma linha nova no
+     e2e (`composer.spec.ts`) verificando a descrição de cada modo dentro do
+     dropdown ABERTO, que é conteúdo portalizado e SSR não alcança.
+  3. **Acessibilidade: o dropdown de permissão forçava `role="radio"` numa
+     `DropdownMenuItem` comum**, em vez de usar `DropdownMenuRadioGroup`/
+     `DropdownMenuRadioItem` do Radix — que já existem no `dropdown-menu.tsx`
+     da casa e implementam o comportamento de teclado certo. Trocado pelos
+     primitives reais; o papel ARIA correto pra item-radio DENTRO de um menu é
+     `menuitemradio`, não `radio` solto — o e2e (`modo()`) foi atualizado
+     pro seletor certo.
+  4. **`contextWindowFor` ganhou 4 famílias novas (Gemini/gpt-oss/GPT/Fable)
+     sem fonte nem teste** — quebra do padrão "medido, não presumido" que
+     sustentou a sessão inteira. Investigado ponto a ponto: `gemini-3.7-flash`
+     é a ÚNICA cifra confirmada contra o catálogo desta casa (`catalog.rs`,
+     `limit.context: 1_048_576`); as demais (Gemini Pro 2M, gpt-oss 200k, GPT-
+     classe 272k) ficam como estimativa por conhecimento geral, agora
+     DECLARADA como tal no comentário — honesto sobre o nível de confiança em
+     vez de apresentar chute como fato. **E um bug de verdade**: o branch
+     `fable` era código MORTO — todo id real de Fable (`claude-fable-5`) já
+     contém "claude" e nunca alcançava o branch abaixo; removido, com teste
+     provando que `claude-fable-5` cai no branch certo. `curatedModels.ts`
+     documenta que Fable 5 tem 1M como DEFAULT (sem sufixo `[1m]`) — o branch
+     `claude` genérico ainda não reflete isso; furo pré-existente, fora do
+     escopo desta passada, deixado anotado no comentário da função.
+  5. **Comentários explicativos tinham sumido sem substituto** (o "por quê"
+     do `overlay="composer"` no `MicButton`, o `stopTitle` do Parar, o
+     propósito do atalho ✦) — restaurados. Dois comentários de
+     `ComposerParts.tsx` ficaram FACTUALMENTE ERRADOS pela reversão (diziam
+     que identidade/permissão "subiram pra `ExecutionRow`" — o oposto do que
+     o código agora faz) — corrigidos pra apontar pra esta ADR.
+  6. **"Planejar primeiro" tinha perdido o rótulo visível** (virou ícone puro
+     com tooltip só no hover) — é o único controle do rodapé com frequência
+     de uso DESCONHECIDA (furo §7.1 do `composer-README.md`); reduzir a
+     descoberta dele sem dado novo era o risco que o próprio plano da ADR-049
+     já tinha avisado. `PlanFirstToggle` agora mostra o texto "Planejar"
+     sempre, não só no hover.
+- **Verificado depois de tudo:** `tsc` 0, `vitest` (com 15 testes novos), 6
+  guardas, `build` 0, `e2e` 17/17 (a checagem inicial rodou 12 falsos-falhos
+  por ruído de porta/processo concorrente — refeita limpa, confirmou 17/17
+  reprodutível).

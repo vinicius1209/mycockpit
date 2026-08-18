@@ -227,7 +227,7 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
           title={pillTitle}
           aria-label={pillTitle}
           className={cn(
-            "pointer-events-auto hidden items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex",
+            "pointer-events-auto hidden items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring/50 sm:flex",
             compact
               ? "-mx-1 h-5 rounded px-1 font-mono text-[11px] hover:bg-accent/50"
               : "rounded-full border bg-secondary/50 px-2.5 py-1 text-[12px]",
@@ -257,6 +257,7 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
         align={compact ? "start" : "end"}
         sideOffset={8}
         className="z-[120] w-[460px] p-3 space-y-2.5"
+        onCloseAutoFocus={(e) => e.preventDefault()}
       >
         <div className="flex items-center justify-between px-1 pb-1 border-b border-border/40">
           <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
