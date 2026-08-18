@@ -16,9 +16,9 @@ import appIcon from "@/assets/app-icon.png"
 import { isTauri } from "@/lib/db"
 import { addProjectViaDialog } from "@/lib/projects"
 import { useApp } from "@/store/app"
-import { cn } from "@/lib/utils"
 import { AgentStep } from "./AgentStep"
 import { NotificationStep } from "./NotificationStep"
+import { StepDots } from "./StepDots"
 import { ThemeStep } from "./ThemeStep"
 import {
   FLOW_VERSION,
@@ -71,25 +71,6 @@ function SkipConfirm({
           </Button>
         </div>
       </div>
-    </div>
-  )
-}
-
-/** Bolinhas do progresso: uma por passo VISÍVEL. Passo condicional que sumiu
- *  não deixa bolinha morta pra trás. */
-function StepDots({ total, index }: { total: number; index: number }) {
-  return (
-    <div className="flex items-center gap-1.5" aria-hidden>
-      {Array.from({ length: total }, (_, i) => (
-        <span
-          key={i}
-          className={cn(
-            "h-1 rounded-full transition-all",
-            // "Onde eu estou" é largura + peso, não tinta (§2).
-            i === index ? "w-4 bg-foreground" : "w-1 bg-border",
-          )}
-        />
-      ))}
     </div>
   )
 }

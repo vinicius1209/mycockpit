@@ -14,7 +14,7 @@ import { GlobalInteractionHost } from "@/components/common/GlobalInteractionHost
 import { LightboxOverlay } from "@/components/chat/Lightbox"
 import { SettingsDialog } from "@/components/settings/SettingsDialog"
 import { ConfirmHost } from "@/components/common/confirm"
-import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard"
+import { OnboardingGate } from "@/components/onboarding/OnboardingGate"
 import { startDictationHotkey } from "@/lib/dictationHotkey"
 import { AppShell } from "@/components/layout/AppShell"
 import { useApp } from "@/store/app"
@@ -702,9 +702,9 @@ export default function App() {
         <LightboxOverlay />
         <SettingsDialog />
         <ConfirmHost />
-        {/* Onboarding: overlay full-screen no 1º run (onboarded=false). O boot
-            de projetos segue por baixo; finish grava onboarded=true. */}
-        {!onboarded && <OnboardingWizard />}
+        {/* Onboarding: overlay full-screen no 1º run (onboarded=false), tour
+            depois wizard. O boot de projetos segue por baixo; finish grava onboarded=true. */}
+        {!onboarded && <OnboardingGate />}
       </TooltipProvider>
     </QueryClientProvider>
   )
