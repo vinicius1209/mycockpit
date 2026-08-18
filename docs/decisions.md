@@ -2004,3 +2004,40 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   guardas, `build` 0, `e2e` 17/17 (a checagem inicial rodou 12 falsos-falhos
   por ruído de porta/processo concorrente — refeita limpa, confirmou 17/17
   reprodutível).
+
+### ADR-052 — A identidade (agent/modelo/esforço) colapsa numa pílula de texto; sem ícone de fornecedor no composer ✅
+- **Contexto (18/08/2026):** usuário comparou o app real com referências de
+  mercado (Traycer, e uma terceira ferramenta com subagents) e com o próprio
+  mock (`docs/mocks/cockpit-composer-limits-mock.html`, já ajustado nesta
+  mesma conversa): "ainda não ficou legal". A ADR-051 tinha devolvido
+  permissão/planejar/identidade ao rodapé, mas identidade continuou como
+  QUATRO pílulas com chrome próprio cada (preset, agent, modelo, esforço) —
+  nenhuma referência faz isso, todas comprimem em uma pílula de texto.
+- **Decisão 1 — identidade vira UMA pílula, `IdentityDoor`
+  (`ComposerExecutionControls.tsx`).** Mostra `resumoDaIdentidade()` — função
+  que já existia (`composerIdentity.ts`, escrita junto com a ADR-049 e órfã
+  desde a ADR-051 reverter quem a chamava) e já resolvia os dois problemas
+  certos: usa o `pill` curto do modelo, não o `label` de menu (mata o
+  vazamento "Opus **(alias)**" que estava solto na tela de maior frequência
+  de leitura do app), e omite "default" (dizer o óbvio não informa nada).
+  Clique revela os seletores crus (`IdentityControls`, inalterado) INLINE,
+  sem portal — a mesma razão da ADR-049: `RichSelect` usa `Select` do Radix,
+  e `Select` dentro de `DropdownMenu`/`Popover` briga por foco.
+- **Decisão 2 — sem ícone de fornecedor na pílula, nem no popover de
+  detalhe do mock.** Julgamento do usuário, e concordo com a razão: o ícone
+  de agent tem valor ESCANEANDO uma lista (a árvore de conversas, onde ele
+  fica — não mudou) porque o olho precisa diferenciar sem ler texto; dentro
+  do composer você já ESTÁ na conversa, já sabe qual agent é — o ícone virava
+  redundância decorativa competindo por atenção com o pixel que decide de
+  verdade (a permissão). Removido do mock primeiro (iteração de baixo risco,
+  o usuário aprovou), depois do código real.
+- **O que NÃO colapsou, por decisão explícita, dos dois lados:**
+  "Liberado" continua pílula própria com ícone+cor+palavra (é o único sinal
+  de risco vivo da tela — ADR-048); "Planejar" continua com o texto
+  "Planejar" visível, não só ícone (frequência de uso desconhecida, furo
+  §7.1 do plano do colapso — esconder o que não tem dado é a aposta errada).
+- **Verificado:** rodagem real do app (screenshot antes/depois) confirma o
+  texto colapsado sem "(alias)" e sem quebra de linha na faixa; `tsc` 0,
+  `vitest` 2801/252 (sem regressão), 6 guardas, `build` 0, `e2e` 17/17 (um
+  teste reescrito pra provar o gesto novo: pílula fechada não expõe
+  "Agent"/"Modelo" no DOM, abre no clique, nunca contém "alias").

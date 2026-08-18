@@ -45,14 +45,26 @@ async function abrirApp(page: Page) {
 const modo = (page: Page, nome: string) =>
   page.locator('[role="menuitemradio"]', { hasText: nome })
 
-test("os seletores nascem visíveis na barra inferior do composer", async ({
+test("permissão e Planejar nascem visíveis; identidade nasce como UMA pílula de texto e abre no clique", async ({
   page,
 }) => {
   await abrirApp(page)
-  // Com o design inferior do mockup (Paseo.sh), todos os controles nascem
-  // visíveis no rodapé e não exigem expandir uma gaveta superior.
+  // Permissão e "Planejar" são os dois controles com sinal vivo (risco
+  // autorizado; modificador por-turno sem dado de uso) — ficam sempre à
+  // vista. Agent/modelo/esforço TRAVAM no 1º envio (medido: trocam em
+  // 0,7%-1,2% dos turnos) — moram atrás de UMA porta, não quatro pílulas
+  // com chrome próprio cada.
   await expect(page.locator(PERMISSAO_BTN)).toBeVisible()
   await expect(page.getByLabel("Planejar primeiro")).toBeVisible()
+  await expect(page.getByLabel("Agent")).toHaveCount(0)
+  await expect(page.getByLabel("Modelo")).toHaveCount(0)
+
+  const identidade = page.locator('button[title="Agent, modelo e esforço"]')
+  await expect(identidade).toBeVisible()
+  // sem "(alias)" nem outro vocabulário de menu vazando pro repouso.
+  await expect(identidade).not.toContainText("alias")
+
+  await identidade.click()
   await expect(page.getByLabel("Agent")).toBeVisible()
   await expect(page.getByLabel("Modelo")).toBeVisible()
 })

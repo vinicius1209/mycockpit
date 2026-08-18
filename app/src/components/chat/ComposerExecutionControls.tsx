@@ -7,7 +7,8 @@
 // do teto de 700 quando esses dois controles entraram nele) — DIVIDA O
 // ARQUIVO, não sobe o teto.
 
-import { Eye, ListChecks, MessageSquareCode, ShieldAlert } from "lucide-react"
+import { useState } from "react"
+import { ChevronDown, Eye, ListChecks, Lock, MessageSquareCode, ShieldAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -109,6 +110,45 @@ export function PermissionSelect({
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/** A porta pra agent/modelo/esforço (e preset, quando existe): UMA pílula de
+ *  TEXTO puro (`resumoDaIdentidade`, sem "(alias)" — usa o `pill` curto, não o
+ *  `label` de menu), sem ícone de fornecedor (você já está DENTRO da
+ *  conversa; o ícone era redundância decorativa que só competia com o pixel
+ *  que decide, a permissão). Clique revela os seletores crus INLINE, sem
+ *  portal: `IdentityControls` usa `Select` do Radix (via `RichSelect`), e
+ *  Select dentro de `DropdownMenu`/`Popover` briga por foco — o mesmo motivo
+ *  que já tinha tirado a identidade de trás de um popover na ADR-049. */
+export function IdentityDoor({
+  label,
+  locked,
+  children,
+}: {
+  label: string
+  locked?: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title="Agent, modelo e esforço"
+        className="h-8 gap-1.5 px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <span className="max-w-[220px] truncate">{label}</span>
+        {locked && <Lock className="size-3 shrink-0 opacity-70" />}
+        <ChevronDown
+          className={cn("size-3 shrink-0 transition-transform", open && "rotate-180")}
+        />
+      </Button>
+      {open && children}
+    </>
   )
 }
 

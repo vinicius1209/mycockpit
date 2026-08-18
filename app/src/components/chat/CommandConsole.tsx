@@ -10,9 +10,11 @@ import {
 import { ComposerShell } from "@/components/chat/ComposerShell"
 import { ContextRing } from "@/components/chat/ContextRing"
 import {
+  IdentityDoor,
   PermissionSelect,
   PlanFirstToggle,
 } from "@/components/chat/ComposerExecutionControls"
+import { resumoDaIdentidade } from "@/components/chat/composerIdentity"
 import {
   SlashPopover,
   AttachmentChips,
@@ -509,35 +511,37 @@ export function CommandConsole({
               />
             }
             identityControls={
-              <IdentityControls
-                presetValue={effectivePreset}
-                presetOptions={presetOptions}
-                onPresetChange={handlePresetChange}
-                effectiveDest={effectiveDest}
-                locked={locked}
-                onDestChange={(v) => {
-                  setDestination(v)
-                  setModel(defaultModelFor(v))
-                  setEffort("default")
-                  clearPresetOnManualChange()
-                  // carimba na conversa VAZIA: sem isto a escolha ficava só
-                  // neste estado local até o 1º envio, e a sidebar mostrava o
-                  // logo do default. No-op se já tem itens (agent travado).
-                  if (activeId) useChat.getState().setConversationAgent(activeId, v)
-                }}
-                effectiveModel={effectiveModel}
-                modelLocked={locked && !modelUnlocked}
-                onModelChange={(v) => {
-                  if (locked) setRetryModel(v)
-                  else setModel(v)
-                  clearPresetOnManualChange()
-                }}
-                effectiveEffort={effectiveEffort}
-                onEffortChange={(v) => {
-                  setEffort(v)
-                  clearPresetOnManualChange()
-                }}
-              />
+              <IdentityDoor label={resumoDaIdentidade(identidade)} locked={locked}>
+                <IdentityControls
+                  presetValue={effectivePreset}
+                  presetOptions={presetOptions}
+                  onPresetChange={handlePresetChange}
+                  effectiveDest={effectiveDest}
+                  locked={locked}
+                  onDestChange={(v) => {
+                    setDestination(v)
+                    setModel(defaultModelFor(v))
+                    setEffort("default")
+                    clearPresetOnManualChange()
+                    // carimba na conversa VAZIA: sem isto a escolha ficava só
+                    // neste estado local até o 1º envio, e a sidebar mostrava o
+                    // logo do default. No-op se já tem itens (agent travado).
+                    if (activeId) useChat.getState().setConversationAgent(activeId, v)
+                  }}
+                  effectiveModel={effectiveModel}
+                  modelLocked={locked && !modelUnlocked}
+                  onModelChange={(v) => {
+                    if (locked) setRetryModel(v)
+                    else setModel(v)
+                    clearPresetOnManualChange()
+                  }}
+                  effectiveEffort={effectiveEffort}
+                  onEffortChange={(v) => {
+                    setEffort(v)
+                    clearPresetOnManualChange()
+                  }}
+                />
+              </IdentityDoor>
             }
           />
         }

@@ -1,0 +1,1791 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MyCockpit · Mock de Alta Fidelidade (Janela de Limites + Composer)</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --background: #0a0b0d;
+    --rail: #0c0d10;
+    --foreground: #e7e8ea;
+    --card: #141619;
+    --popover: #16181d;
+    --secondary: #191c20;
+    --secondary-hover: #22262d;
+    --muted-foreground: #9aa0a7;
+    --accent: #1e2126;
+    --faint: #687078;
+    --sel: rgba(255,255,255,.065);
+    --sel-hover: rgba(255,255,255,.032);
+    --border: rgba(255,255,255,.08);
+    --border-strong: rgba(255,255,255,.14);
+    --brass: #e4a862;
+    --brass-soft: rgba(228,168,98,.14);
+    --brass-fg: #1a1306;
+    --st-idle: #687078;
+    --st-running: #5bb8e8;
+    --st-queued: #d99138;
+    --st-success: #5bd6a0;
+    --st-error: #f2766b;
+    --id-violet: #a48af0;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+    --shadow-pop: 0 18px 48px -10px rgba(0,0,0,.75);
+    --radius: 10px;
+    --sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  :root[data-theme="light"] {
+    --background: #fbfbfa;
+    --rail: #f6f6f4;
+    --foreground: #16181b;
+    --card: #ffffff;
+    --popover: #ffffff;
+    --secondary: #f4f4f2;
+    --secondary-hover: #eaeae6;
+    --muted-foreground: #5c6166;
+    --accent: #f1f1ef;
+    --faint: #8a9099;
+    --sel: rgba(0,0,0,.055);
+    --sel-hover: rgba(0,0,0,.028);
+    --border: rgba(0,0,0,.09);
+    --border-strong: rgba(0,0,0,.14);
+    --brass: #a9742b;
+    --brass-soft: rgba(169,116,43,.12);
+    --brass-fg: #fbf6ee;
+    --st-idle: #8a9099;
+    --st-running: #2f8fbf;
+    --st-queued: #c1861f;
+    --st-success: #1f9d6b;
+    --st-error: #cf4a3e;
+    --id-violet: #6d47b8;
+    --shadow-sm: 0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop: 0 16px 44px -8px rgba(20,22,25,.22);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #050608;
+    color: var(--foreground);
+    font: 13px/1.5 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    padding: 24px 16px 80px;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+  }
+  svg { display: block; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ── Header de Controle do Mock ── */
+  .mock-header {
+    max-width: 1200px;
+    margin: 0 auto 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+  }
+  .mock-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .mock-tag {
+    font: 600 11px var(--mono);
+    letter-spacing: .1em;
+    color: var(--brass);
+    background: var(--brass-soft);
+    padding: 2px 8px;
+    border-radius: 5px;
+    border: 1px solid color-mix(in srgb, var(--brass) 30%, transparent);
+  }
+  .mock-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .btn-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--foreground);
+    transition: all .15s ease;
+  }
+  .btn-pill:hover { background: var(--secondary-hover); }
+  .btn-pill.active {
+    background: var(--brass-soft);
+    color: var(--brass);
+    border-color: var(--brass);
+  }
+
+  /* ── Janela do App ── */
+  .window {
+    max-width: 1200px;
+    margin: 0 auto;
+    background: var(--background);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: var(--shadow-pop);
+    display: flex;
+    flex-direction: column;
+    height: 820px;
+    position: relative;
+  }
+
+  /* Titlebar */
+  .titlebar {
+    height: 38px;
+    background: var(--rail);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    user-select: none;
+    gap: 14px;
+  }
+  .traffic-lights {
+    display: flex;
+    gap: 8px;
+  }
+  .traffic-light {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+  .tl-red { background: #ff5f56; }
+  .tl-yellow { background: #ffbd2e; }
+  .tl-green { background: #27c93f; }
+
+  .window-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .nav-tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--card);
+    padding: 2px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    margin: 0 auto;
+  }
+  .nav-tab {
+    padding: 3px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+  .nav-tab.active {
+    background: var(--secondary);
+    color: var(--foreground);
+  }
+
+  .titlebar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .search-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 3px 9px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--muted-foreground);
+  }
+
+  /* App Layout */
+  .app-body {
+    display: grid;
+    grid-template-columns: 210px 1fr 260px;
+    flex: 1;
+    min-height: 0;
+    position: relative;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    background: var(--rail);
+    border-right: 1px solid var(--border);
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .sidebar-section-title {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--faint);
+    letter-spacing: .08em;
+    padding: 0 8px;
+  }
+  .sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--muted-foreground);
+  }
+  .sidebar-item:hover { background: var(--sel-hover); color: var(--foreground); }
+  .sidebar-item.active { background: var(--sel); color: var(--foreground); font-weight: 500; }
+
+  /* Chat Main */
+  .chat-main {
+    display: flex;
+    flex-direction: column;
+    background: var(--background);
+    padding: 16px 24px;
+    overflow-y: auto;
+    position: relative;
+  }
+
+  .messages-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding-bottom: 20px;
+  }
+
+  .message-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--foreground);
+    box-shadow: var(--shadow-sm);
+  }
+  .message-card ul {
+    margin: 6px 0;
+    padding-left: 18px;
+  }
+  .message-card li { margin-bottom: 4px; }
+  .code-inline {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--secondary);
+    padding: 1px 5px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  /* ── TELEMETRIA E FEEDBACK DO TURNO REFINADOS ── */
+  .turn-summary-footer {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .turn-telemetry-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px;
+    font-size: 11.5px;
+    color: var(--muted-foreground);
+  }
+  .status-concluido {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--st-success);
+    font-weight: 600;
+  }
+  .sep-dot { color: var(--faint); opacity: 0.6; }
+  .btn-diff-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--foreground);
+    font-size: 11px;
+    font-weight: 500;
+    transition: all .15s ease;
+  }
+  .btn-diff-link:hover {
+    background: var(--secondary-hover);
+    border-color: var(--border-strong);
+  }
+
+  .feedback-action-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .reaction-buttons {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 2px;
+  }
+  .btn-react {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 22px;
+    border-radius: 5px;
+    font-size: 12px;
+    transition: all .15s ease;
+  }
+  .btn-react:hover { background: var(--card); }
+  .btn-react.active {
+    background: var(--card);
+    box-shadow: 0 1px 2px rgba(0,0,0,.2);
+    transform: scale(1.06);
+  }
+  .btn-learn-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted-foreground);
+    transition: all .15s ease;
+  }
+  .btn-learn-trigger:hover {
+    background: var(--secondary-hover);
+    color: var(--foreground);
+    border-color: var(--border-strong);
+  }
+  .learn-saved-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--st-success);
+    margin-left: auto;
+  }
+  .learn-saved-badge.hidden { display: none; }
+
+  .learning-expansion {
+    margin-top: 6px;
+    padding: 10px 12px;
+    background: color-mix(in srgb, var(--card) 95%, transparent);
+    border: 1px solid var(--border-strong);
+    border-radius: 9px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: var(--shadow-sm);
+    animation: fadeIn .15s ease;
+  }
+  .learning-expansion.hidden { display: none; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+  .learning-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .learning-title {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+  .btn-close-box {
+    font-size: 12px;
+    color: var(--muted-foreground);
+    padding: 2px 4px;
+    border-radius: 4px;
+  }
+  .btn-close-box:hover { color: var(--foreground); }
+  .learning-input {
+    width: 100%;
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--foreground);
+    outline: none;
+    font-family: var(--sans);
+  }
+  .learning-input:focus { border-color: var(--border-strong); }
+  .learning-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-save-rule {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    transition: all .15s ease;
+  }
+  .btn-save-rule.primary {
+    background: var(--foreground);
+    color: var(--background);
+  }
+  .btn-save-rule.primary:hover { opacity: .9; }
+  .btn-save-rule.secondary {
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+  }
+  .btn-save-rule.secondary:hover { background: var(--secondary-hover); }
+
+  /* Right Panel */
+  .context-panel {
+    background: var(--rail);
+    border-left: 1px solid var(--border);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .panel-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+  .panel-tab {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
+  .panel-tab.active {
+    color: var(--foreground);
+    background: var(--secondary);
+  }
+
+  /* ── COMPOSER MODERNO MELHORADO (Paseo.sh Inspired) ── */
+  .composer-wrapper {
+    position: relative;
+    width: 100%;
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .composer-card {
+    background: var(--card);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    overflow: visible; /* Permitir que os popovers flutuem para fora */
+    position: relative;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .composer-card:focus-within {
+    border-color: rgba(255, 255, 255, 0.22);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), var(--shadow-sm);
+  }
+  :root[data-theme="light"] .composer-card:focus-within {
+    border-color: rgba(0, 0, 0, 0.28);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), var(--shadow-sm);
+  }
+
+  /* Status Bar de Subagentes (Inspiração Paseo.sh) */
+  .composer-subagents-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: color-mix(in srgb, var(--rail) 60%, transparent);
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted-foreground);
+    user-select: none;
+  }
+  .subagents-chevron {
+    color: var(--faint);
+    transition: transform .15s ease;
+  }
+  .subagents-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--faint);
+    margin-left: auto;
+  }
+  .subagents-dot.active {
+    background: var(--st-running);
+    box-shadow: 0 0 8px var(--st-running);
+  }
+
+  /* Botões Seletores Dropdown (Estilo inline paseo.sh) */
+  .composer-dropdown-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    transition: all .15s ease;
+    height: 30px;
+    user-select: none;
+  }
+  .composer-dropdown-btn:hover {
+    background: var(--secondary-hover);
+    color: var(--foreground);
+    border-color: var(--border-strong);
+  }
+  .composer-dropdown-btn.active-warning {
+    background: rgba(228, 168, 98, 0.12);
+    color: var(--brass);
+    border-color: rgba(228, 168, 98, 0.28);
+  }
+  .composer-dropdown-btn.active-warning:hover {
+    background: rgba(228, 168, 98, 0.18);
+    border-color: rgba(228, 168, 98, 0.4);
+  }
+  /* "Planejar" ativo: mesmo valor de --brass do active-warning acima, nome
+     PRÓPRIO de propósito — são conceitos diferentes (risco autorizado vs.
+     interruptor de ajuste) que só coincidem em cor NESTE mock; no app real
+     são tokens distintos (st-warning × brass). */
+  .composer-dropdown-btn.active-plan {
+    background: var(--brass-soft);
+    color: var(--brass);
+    border-color: rgba(228, 168, 98, 0.28);
+  }
+  .composer-dropdown-btn.active-plan:hover {
+    background: rgba(228, 168, 98, 0.18);
+    border-color: rgba(228, 168, 98, 0.4);
+  }
+
+  /* Ícones Toggles */
+  .composer-icon-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    color: var(--muted-foreground);
+    transition: all .15s ease;
+  }
+  .composer-icon-toggle:hover {
+    background: var(--secondary-hover);
+    color: var(--foreground);
+    border-color: var(--border-strong);
+  }
+  .composer-icon-toggle.active {
+    background: var(--brass-soft);
+    color: var(--brass);
+    border-color: var(--brass);
+  }
+
+  /* Anel de Contexto da Sessão (Cursor / Paseo.sh) */
+  .context-ring-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    transition: all .15s ease;
+    height: 30px;
+  }
+  .context-ring-btn:hover {
+    background: var(--secondary-hover);
+    border-color: var(--border-strong);
+  }
+  .context-pct-label {
+    font-size: 11px;
+    font-family: var(--mono);
+    font-weight: 600;
+    color: var(--muted-foreground);
+  }
+  .context-ring-svg {
+    width: 14px;
+    height: 14px;
+    transform: rotate(-90deg);
+  }
+
+  /* Popovers Absolutos Flutuantes */
+  .composer-popover {
+    position: absolute;
+    bottom: 44px;
+    background: var(--popover);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    box-shadow: var(--shadow-pop);
+    padding: 10px;
+    z-index: 110;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    animation: popoverSlideUp .15s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .composer-popover.hidden {
+    display: none !important;
+  }
+  @keyframes popoverSlideUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .popover-menu-item {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: 6px 10px;
+    border-radius: 6px;
+    text-align: left;
+    transition: all .15s ease;
+    border: 1px solid transparent;
+  }
+  .popover-menu-item:hover {
+    background: var(--secondary);
+    border-color: var(--border);
+  }
+  .popover-menu-item.active {
+    background: var(--sel);
+    border-color: var(--border-strong);
+  }
+  .popover-menu-item.active-warning {
+    background: rgba(228, 168, 98, 0.12);
+    color: var(--brass);
+    border-color: rgba(228, 168, 98, 0.28);
+  }
+
+  /* Anexos com Thumbnail */
+  .attachment-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px 2px;
+  }
+  .attachment-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 8px 3px 4px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--foreground);
+  }
+  .thumb-preview {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: #343b44;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    color: #fff;
+  }
+  .btn-remove-att {
+    color: var(--muted-foreground);
+    font-size: 14px;
+    margin-left: 2px;
+  }
+  .btn-remove-att:hover { color: var(--st-error); }
+
+  /* Input Textarea */
+  .composer-input {
+    width: 100%;
+    min-height: 56px;
+    max-height: 200px;
+    background: transparent;
+    border: none;
+    padding: 10px 14px;
+    font: 13.5px/1.6 var(--sans);
+    color: var(--foreground);
+    resize: none;
+    outline: none;
+  }
+  .composer-input::placeholder { color: var(--faint); }
+
+  /* Bottom Actions Bar (Equilibrado Esquerda vs Direita) */
+  .composer-bottombar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px 8px;
+    position: relative;
+  }
+  .composer-tools-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .icon-tool-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    color: var(--muted-foreground);
+    transition: all .15s ease;
+  }
+  .icon-tool-btn:hover {
+    background: var(--secondary);
+    color: var(--foreground);
+  }
+
+  .composer-send-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-send-split {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    color: var(--muted-foreground);
+    transition: all .15s ease;
+  }
+  .btn-send-split:hover {
+    background: var(--secondary);
+    color: var(--foreground);
+  }
+  .btn-send-primary {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--foreground);
+    color: var(--background);
+    display: grid;
+    place-items: center;
+    transition: transform .1s ease, opacity .15s ease;
+  }
+  .btn-send-primary:hover { opacity: .9; transform: scale(1.04); }
+
+  /* Quick action suggestion chips */
+  .suggestion-chips {
+    display: flex;
+    gap: 8px;
+  }
+  .chip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 11.5px;
+    color: var(--muted-foreground);
+    transition: all .15s ease;
+  }
+  .chip-btn:hover {
+    background: var(--secondary-hover);
+    color: var(--foreground);
+    border-color: var(--border-strong);
+  }
+
+  /* ── STATUS BAR & POPOVER DE LIMITES REFINADO ── */
+  .statusbar {
+    height: 26px;
+    background: var(--rail);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted-foreground);
+    user-select: none;
+    position: relative;
+  }
+
+  .status-pill-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: var(--muted-foreground);
+    transition: all .15s ease;
+  }
+  .status-pill-btn:hover { background: var(--secondary); color: var(--foreground); }
+  .status-pill-btn.open { background: var(--secondary); color: var(--foreground); }
+
+  .usage-bar-mini {
+    width: 34px;
+    height: 4px;
+    background: var(--secondary);
+    border-radius: 99px;
+    overflow: hidden;
+    position: relative;
+  }
+  .usage-bar-fill {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    border-radius: 99px;
+    background: var(--st-idle);
+  }
+
+  /* ── POPOVER DE LIMITES (Janela de Uso do Plano) ── */
+  .limits-popover {
+    position: absolute;
+    bottom: 34px;
+    left: 14px;
+    width: 430px; /* Largura ampliada para eliminar truncamentos */
+    background: var(--popover);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    box-shadow: var(--shadow-pop);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 100;
+    transition: all .2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .limits-popover.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(8px);
+  }
+
+  .popover-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2px 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .popover-header-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-refresh {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--muted-foreground);
+    padding: 2px 7px;
+    border-radius: 5px;
+    transition: all .15s ease;
+  }
+  .btn-refresh:hover { background: var(--secondary); color: var(--foreground); }
+  .btn-refresh.spinning svg { animation: spin 1s linear infinite; }
+  @keyframes spin { 100% { transform: rotate(360deg); } }
+
+  /* Provider Cards */
+  .provider-cards-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .provider-card {
+    background: color-mix(in srgb, var(--secondary) 45%, transparent);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 10px 11px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    transition: background .15s ease;
+  }
+  .provider-card:hover {
+    background: color-mix(in srgb, var(--secondary) 75%, transparent);
+  }
+
+  .provider-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .provider-ident {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .provider-logo {
+    width: 15px;
+    height: 15px;
+    display: grid;
+    place-items: center;
+  }
+  .provider-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+  .plan-badge {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--secondary);
+    color: var(--muted-foreground);
+    border: 1px solid var(--border);
+  }
+
+  .provider-status-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .status-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .status-badge.available {
+    background: rgba(91, 214, 160, 0.12);
+    color: var(--st-success);
+  }
+  .status-badge.warming {
+    background: rgba(228, 168, 98, 0.15);
+    color: var(--brass);
+  }
+  .status-badge.danger {
+    background: rgba(242, 118, 107, 0.15);
+    color: var(--st-error);
+  }
+  .meta-age {
+    font-size: 10px;
+    color: var(--faint);
+  }
+
+  /* Metric Rows */
+  .metric-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .metric-label-box {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 120px; /* Largura ajustada para caber sub-tags */
+    flex-shrink: 0;
+  }
+  .metric-duration {
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+  .sub-tag {
+    font-size: 9.5px;
+    font-weight: 500;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: var(--card);
+    color: var(--faint);
+    border: 1px solid var(--border);
+  }
+
+  .metric-bar-container {
+    flex: 1;
+    height: 5px;
+    background: var(--secondary);
+    border-radius: 99px;
+    overflow: hidden;
+    position: relative;
+  }
+  .metric-bar-fill {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    border-radius: 99px;
+    background: var(--st-idle);
+    transition: width .3s ease;
+  }
+  .metric-bar-fill.warm { background: var(--brass); }
+  .metric-bar-fill.danger { background: var(--st-error); }
+
+  .metric-pct {
+    width: 32px;
+    text-align: right;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    flex-shrink: 0;
+  }
+  .metric-pct.warm { color: var(--brass); }
+  .metric-pct.danger { color: var(--st-error); }
+
+  .metric-reset-text {
+    width: 140px; /* Não trunca mais! */
+    text-align: right;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--muted-foreground);
+    flex-shrink: 0;
+  }
+  .metric-reset-text b {
+    color: var(--foreground);
+    font-weight: 500;
+  }
+
+  .popover-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 2px 0;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--faint);
+  }
+</style>
+</head>
+<body>
+
+<!-- Header do Mock -->
+<header class="mock-header">
+  <div class="mock-title">
+    <span class="mock-tag">MOCKUP DE ALTA FIDELIDADE</span>
+    <span>Proposta de Melhorias · Janela de Limites + Composer</span>
+  </div>
+  <div class="mock-controls">
+    <button id="toggle-theme" class="btn-pill">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
+      Alternar Tema
+    </button>
+    <button id="toggle-popover" class="btn-pill active">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      Exibir Popover de Limites
+    </button>
+  </div>
+</header>
+
+<!-- Moldura Principal da Aplicação -->
+<main class="window">
+  <!-- Titlebar -->
+  <div class="titlebar">
+    <div class="traffic-lights">
+      <div class="traffic-light tl-red"></div>
+      <div class="traffic-light tl-yellow"></div>
+      <div class="traffic-light tl-green"></div>
+    </div>
+    <div class="window-title">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+      projetos
+    </div>
+    <div class="nav-tabs">
+      <div class="nav-tab">Painel</div>
+      <div class="nav-tab active">Trabalho</div>
+      <div class="nav-tab">Features</div>
+    </div>
+    <div class="titlebar-actions">
+      <div class="search-badge">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        Buscar ⌘K
+      </div>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div class="app-body">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-section-title">GERAL</div>
+      <div class="sidebar-item">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Agendado
+      </div>
+      <div class="sidebar-item">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+        Planos de voo
+      </div>
+      <div class="sidebar-section-title" style="margin-top: 10px;">PROJETOS</div>
+      <div class="sidebar-item">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        meuingresso3.0
+      </div>
+      <div class="sidebar-item active">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        mycockpit
+      </div>
+    </aside>
+
+    <!-- Chat / Workspace Central -->
+    <section class="chat-main">
+      <div class="messages-area">
+        <div class="message-card">
+          <p style="margin-top:0;"><b>Implementação e testes concluídos:</b></p>
+          <ul>
+            <li><b>Redesign de limites:</b> cards modulares com logos oficiais de provedor e relógio absoluto.</li>
+            <li><b>Antigravity / Google AI Pro:</b> integração ativa via probe <span class="code-inline">agy /credits</span>.</li>
+            <li><b>Zero truncamento:</b> colunas recalculadas para acomodar durações e resets sem reticências.</li>
+          </ul>
+
+          <!-- Linha de Telemetria e Resumo do Turno Refinada -->
+          <div class="turn-summary-footer">
+            <div class="turn-telemetry-row">
+              <span class="status-concluido">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                concluído
+              </span>
+              <span class="sep-dot">·</span>
+              <span class="mono">5min 13s</span>
+              <span class="sep-dot">·</span>
+              <span class="mono">1.6M ↓ · 3.8k ↑</span>
+              <span class="sep-dot">·</span>
+              <span class="mono">cache 1.4M</span>
+              <span class="sep-dot">·</span>
+              <span>gemini-3.7-flash-high</span>
+              <span class="sep-dot">·</span>
+              <span class="mono" style="color: var(--brass);">~US$ 0,277</span>
+              <span class="sep-dot">·</span>
+              <button class="btn-diff-link">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M12 12v6"/></svg>
+                Diff (4)
+              </button>
+            </div>
+
+            <!-- Barra de Feedback e Aprendizado Minimalista -->
+            <div class="feedback-action-bar">
+              <div class="reaction-buttons">
+                <button id="btn-thumb-up" class="btn-react" title="Gostei (reforça as regras aplicadas no SQLite)">
+                  👍
+                </button>
+                <button id="btn-thumb-down" class="btn-react" title="Precisa melhorar (abre formulário de correção)">
+                  👎
+                </button>
+              </div>
+
+              <button id="btn-open-learn" class="btn-learn-trigger" title="Transformar aprendizado em regra de projeto/global">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.42 10.922a1 1 0 0 0-.019-.838L12.83 2.18a2 2 0 0 0-1.66 0L2.6 10.084a1 1 0 0 0 0 1.832l8.57 7.908a2 2 0 0 0 1.66 0l8.57-7.908a1 1 0 0 0 .02-.994Z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/></svg>
+                Transformar em aprendizado
+              </button>
+
+              <span id="learn-saved-badge" class="learn-saved-badge hidden">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Regra gravada no SQLite!
+              </span>
+            </div>
+
+            <!-- Input expansível de Aprendizado -->
+            <div id="learning-box" class="learning-expansion hidden">
+              <div class="learning-header">
+                <span class="learning-title">O que funcionou ou precisa mudar para os próximos turnos?</span>
+                <button id="btn-close-learn" class="btn-close-box">✕</button>
+              </div>
+              <input id="learning-input-text" type="text" class="learning-input" placeholder="Ex: Sempre validar com cargo test antes de criar o commit..." />
+              <div class="learning-actions">
+                <button id="btn-save-project-rule" class="btn-save-rule primary">Salvar regra de projeto</button>
+                <button id="btn-save-global-rule" class="btn-save-rule secondary">Salvar como global</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── COMPOSER MODERNO ── -->
+      <div class="composer-wrapper">
+        <div class="composer-card">
+          <!-- Status Bar de Subagentes (Inspiração Paseo.sh) -->
+          <div class="composer-subagents-bar">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="subagents-chevron"><path d="m9 18 6-6-6-6"/></svg>
+            <span>1 subagent · 1 running</span>
+            <span class="subagents-dot active"></span>
+          </div>
+
+          <!-- Anexo com Mini-Thumbnail Visual Real -->
+          <div class="attachment-row">
+            <div class="attachment-pill">
+              <div class="thumb-preview">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+              </div>
+              <span>image.png</span>
+              <button class="btn-remove-att">×</button>
+            </div>
+          </div>
+
+          <!-- Input Textarea -->
+          <textarea class="composer-input" rows="2" placeholder="Peça algo… ou / para comandos">veja como ficou a implementação. Algum outro item voce observa que poderiamos melhorar?</textarea>
+
+          <!-- Bottom Bar com Distribuição Equilibrada -->
+          <div class="composer-bottombar">
+            <!-- Esquerda: Ferramentas de Entrada e Seletores Inline (Paseo.sh) -->
+            <div class="composer-tools-left">
+              <!-- Botão de Anexo (+) -->
+              <button class="icon-tool-btn" title="Anexar arquivo ou imagem">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+
+              <!-- Seletor de Modelo — SEM ícone de agent: você já está DENTRO da
+                   conversa, já sabe qual agent é; o nome do modelo já diz o
+                   resto. O ícone existia como marca do fornecedor e só
+                   competia por atenção com o pixel que decide (permissão). -->
+              <button id="model-select-btn" class="composer-dropdown-btn">
+                <span>Gemini 3.5 Flash (High)</span>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:-2px;"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+
+              <!-- Seletor de Permissão (Liberado com aviso âmbar ativo por padrão) -->
+              <button id="permission-select-btn" class="composer-dropdown-btn active-warning">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span id="permission-btn-label">Liberado</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+
+              <!-- Toggle Planejar Primeiro — rótulo VISÍVEL de propósito: é o
+                   único controle da faixa com frequência de uso DESCONHECIDA
+                   (nenhuma telemetria grava o toggle); esconder atrás de
+                   hover reduziria a descoberta de algo que já não temos dado
+                   nenhum sobre. -->
+              <button id="plan-toggle-btn" class="composer-dropdown-btn active-plan" title="Planejar primeiro: o agente propõe um plano e só executa depois da sua aprovação">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+                <span>Planejar</span>
+              </button>
+
+              <!-- Marketplace/Especialistas -->
+              <button class="icon-tool-btn" title="Invocar Especialistas (Marketplace)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+              </button>
+            </div>
+
+            <!-- Direita: Despacho, Envio e Contexto da Sessão (Cursor) -->
+            <div class="composer-send-right">
+              <!-- Uso do Contexto da Sessão (ContextRing) -->
+              <button id="context-ring-btn" class="context-ring-btn" title="Uso do contexto da sessão: 38% · Clique para detalhes">
+                <span class="context-pct-label">38%</span>
+                <svg viewBox="0 0 20 20" class="context-ring-svg">
+                  <circle cx="10" cy="10" r="8" fill="none" stroke-width="2.5" stroke="var(--border)"></circle>
+                  <circle cx="10" cy="10" r="8" fill="none" stroke-width="2.5" stroke="var(--brass)" stroke-linecap="round" stroke-dasharray="19.1 50.3"></circle>
+                </svg>
+              </button>
+
+              <!-- Gravador de Áudio -->
+              <button class="icon-tool-btn" title="Gravar áudio / Ditado">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+              </button>
+
+              <!-- Enviar -->
+              <button class="btn-send-primary" title="Enviar (⏎)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- POPOVERS DE SELEÇÃO ABSOLUTOS FLUTUANTES (Radix Style) -->
+          <!-- 1. Seletor de Modelo Popover -->
+          <div id="model-popover" class="composer-popover hidden" style="left: 40px; width: 320px;">
+            <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); padding: 4px 6px; display: flex; align-items: center; justify-content: space-between;">
+              <span>Configuração de Modelo</span>
+              <span style="color: var(--brass); display: flex; align-items: center; gap: 4px;">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                Fixo
+              </span>
+            </div>
+            <div style="padding: 6px; font-size: 11px; color: var(--brass); background: var(--brass-soft); border-radius: 6px; border: 1px solid var(--border-strong); margin-bottom: 4px;">
+              🔒 Modelo fixado para preservar a memória desta conversa.
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 4px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11.5px;">
+                <span style="color: var(--muted-foreground);">Preset</span>
+                <span style="font-weight: 500;">Sem preset</span>
+              </div>
+              <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11.5px;">
+                <span style="color: var(--muted-foreground);">Agente</span>
+                <span style="font-weight: 500;">Antigravity</span>
+              </div>
+              <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11.5px;">
+                <span style="color: var(--muted-foreground);">Modelo</span>
+                <span style="font-weight: 500;">Gemini 3.5 Flash</span>
+              </div>
+              <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11.5px;">
+                <span style="color: var(--muted-foreground);">Esforço (Effort)</span>
+                <span style="font-weight: 500; color: var(--st-running);">High</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Seletor de Permissão Popover -->
+          <div id="permission-popover" class="composer-popover hidden" style="left: 180px; width: 340px;">
+            <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); padding: 4px 6px;">Permissões do Projeto</div>
+            <div class="popover-menu-list" style="display: flex; flex-direction: column; gap: 2px;">
+              <button class="popover-menu-item" data-mode="leitura">
+                <div style="font-weight: 500; font-size: 12px; display: flex; align-items: center; gap: 4px;">Só lê</div>
+                <div style="font-size: 10.5px; color: var(--muted-foreground);">O agente só lê e relata</div>
+              </button>
+              <button class="popover-menu-item" data-mode="padrao">
+                <div style="font-weight: 500; font-size: 12px; display: flex; align-items: center; gap: 4px;">Pede</div>
+                <div style="font-size: 10.5px; color: var(--muted-foreground);">O agente pede confirmação antes de agir</div>
+              </button>
+              <button class="popover-menu-item active-warning" data-mode="liberado">
+                <div style="font-weight: 500; font-size: 12px; display: flex; align-items: center; gap: 4px;">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  Liberado
+                </div>
+                <div style="font-size: 10.5px; color: var(--brass);">O agente executa e escreve sem pedir confirmação</div>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3. Uso do Contexto Popover -->
+          <div id="context-popover" class="composer-popover hidden" style="right: 48px; width: 290px;">
+            <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 2px 4px 0;">
+              <span style="font-size: 13px; font-weight: 600; color: var(--foreground);">Contexto da Sessão</span>
+              <span style="font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--brass);">38%</span>
+            </div>
+            
+            <!-- Progress Bar -->
+            <div style="height: 6px; width: 100%; border-radius: 99px; background: var(--secondary); border: 1px solid var(--border); overflow: hidden; margin: 8px 0;">
+              <div style="height: 100%; width: 38%; background: var(--brass); border-radius: 99px;"></div>
+            </div>
+
+            <!-- Rows -->
+            <div style="display: flex; flex-direction: column; gap: 6px; font-size: 12px; padding: 4px 2px;">
+              <div style="display: flex; justify-content: space-between;">
+                <span style="color: var(--muted-foreground);">Modelo</span>
+                <span style="font-family: var(--mono); font-size: 11px;">Gemini 3.5 Flash</span>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span style="color: var(--muted-foreground);">Janela Base</span>
+                <span>1M tokens</span>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span style="color: var(--muted-foreground);">Tokens em Uso</span>
+                <span style="font-weight: 500;">~380k tokens</span>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span style="color: var(--muted-foreground);">Tokens Livres</span>
+                <span style="font-weight: 500; color: var(--muted-foreground);">~620k tokens</span>
+              </div>
+            </div>
+
+            <div style="margin-top: 6px; border-top: 1px solid var(--border); padding-top: 6px;">
+              <button class="btn-pill" style="width: 100%; justify-content: center; font-size: 11px; padding: 6px;" onclick="alert('Compactando contexto...')">
+                Compactar contexto
+              </button>
+              <p style="margin-top: 6px; font-size: 10px; color: var(--faint); line-height: 1.4;">
+                Quando encher, o CLI compacta a conversa sozinho: o histórico antigo vira resumo e o turno segue.
+              </p>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Chips de Sugestões com Micro-Ícones -->
+        <div class="suggestion-chips">
+          <button class="chip-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            Explicar o projeto
+          </button>
+          <button class="chip-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m13 2-2 10h5l-6 10 2-10H7l6-10Z"/></svg>
+            Rodar os testes
+          </button>
+          <button class="chip-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+            Criar uma branch
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Context Panel Direita -->
+    <aside class="context-panel">
+      <div class="panel-tabs">
+        <div class="panel-tab">Contexto</div>
+        <div class="panel-tab">Alterações 5</div>
+        <div class="panel-tab active">Plano</div>
+      </div>
+      <div style="font-size: 11.5px; color: var(--faint);">
+        Sem plano ativo nesta conversa. Quando o agente criar tarefas, a checklist aparece aqui.
+      </div>
+    </aside>
+  </div>
+
+  <!-- ── STATUS BAR INFERIOR ── -->
+  <footer class="statusbar">
+    <!-- Trigger do Popover de Limites -->
+    <button id="trigger-btn" class="status-pill-btn open">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      <span>agy</span>
+      <div class="usage-bar-mini">
+        <div class="usage-bar-fill" style="width: 3%;"></div>
+      </div>
+      <span>3%</span>
+    </button>
+
+    <span style="margin-left: 14px;">sessão <b>sem preço</b></span>
+    <span style="margin-left: auto;">local · v0.1.0-t212</span>
+
+    <!-- ── POPOVER DE LIMITES REFINADO (LARGURA 430px SEM TRUNCAMENTOS) ── -->
+    <div id="limits-popover" class="limits-popover">
+      <!-- Popover Header -->
+      <div class="popover-header">
+        <span class="popover-header-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brass)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          Janela de Uso do Plano
+        </span>
+        <button id="refresh-btn" class="btn-refresh" title="Forçar leitura imediata de todos os provedores">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+          <span>Atualizar</span>
+        </button>
+      </div>
+
+      <!-- Lista de Cards por Provedor -->
+      <div class="provider-cards-list">
+        <!-- 1. Claude Code Card -->
+        <div class="provider-card">
+          <div class="provider-card-header">
+            <div class="provider-ident">
+              <div class="provider-logo">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="#D97757"><path d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"/></svg>
+              </div>
+              <span class="provider-name">Claude Code</span>
+              <span class="plan-badge">pro</span>
+            </div>
+            <div class="provider-status-meta">
+              <span class="status-badge available">Disponível</span>
+              <span class="meta-age">leitura da conta · agora</span>
+            </div>
+          </div>
+          <!-- Rows -->
+          <div class="metric-row">
+            <div class="metric-label-box">
+              <span class="metric-duration">5 horas</span>
+            </div>
+            <div class="metric-bar-container">
+              <div class="metric-bar-fill" style="width: 38%;"></div>
+            </div>
+            <span class="metric-pct">38%</span>
+            <span class="metric-reset-text">reseta em <b>2h 15m</b></span>
+          </div>
+          <div class="metric-row">
+            <div class="metric-label-box">
+              <span class="metric-duration">7 dias</span>
+            </div>
+            <div class="metric-bar-container">
+              <div class="metric-bar-fill" style="width: 4%;"></div>
+            </div>
+            <span class="metric-pct">4%</span>
+            <span class="metric-reset-text">reseta em <b>3d 12h</b></span>
+          </div>
+        </div>
+
+        <!-- 2. Codex Card -->
+        <div class="provider-card">
+          <div class="provider-card-header">
+            <div class="provider-ident">
+              <div class="provider-logo">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z"/></svg>
+              </div>
+              <span class="provider-name">Codex</span>
+              <span class="plan-badge">plus</span>
+            </div>
+            <div class="provider-status-meta">
+              <span class="status-badge warming">Aquecendo</span>
+              <span class="meta-age">leitura local · agora</span>
+            </div>
+          </div>
+          <!-- Rows -->
+          <div class="metric-row">
+            <div class="metric-label-box">
+              <span class="metric-duration">7 dias</span>
+            </div>
+            <div class="metric-bar-container">
+              <div class="metric-bar-fill warm" style="width: 64%;"></div>
+            </div>
+            <span class="metric-pct warm">64%</span>
+            <span class="metric-reset-text">reseta em <b>2d 18h</b></span>
+          </div>
+        </div>
+
+        <!-- 3. Antigravity Card (Google AI Pro) com Sub-tags Claras -->
+        <div class="provider-card">
+          <div class="provider-card-header">
+            <div class="provider-ident">
+              <div class="provider-logo">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z"/></svg>
+              </div>
+              <span class="provider-name">Antigravity</span>
+              <span class="plan-badge">AI Pro</span>
+            </div>
+            <div class="provider-status-meta">
+              <span class="status-badge available">Disponível</span>
+              <span class="meta-age">consulta ao CLI · agora</span>
+            </div>
+          </div>
+          <!-- Rows com Sub-tags Elegantes -->
+          <div class="metric-row">
+            <div class="metric-label-box">
+              <span class="metric-duration">7 dias</span>
+              <span class="sub-tag">Gemini</span>
+            </div>
+            <div class="metric-bar-container">
+              <div class="metric-bar-fill" style="width: 3%;"></div>
+            </div>
+            <span class="metric-pct">3%</span>
+            <span class="metric-reset-text">reseta em <b>2d 08h</b></span>
+          </div>
+          <div class="metric-row">
+            <div class="metric-label-box">
+              <span class="metric-duration">5 horas</span>
+              <span class="sub-tag">Gemini</span>
+            </div>
+            <div class="metric-bar-container">
+              <div class="metric-bar-fill" style="width: 0%;"></div>
+            </div>
+            <span class="metric-pct">0%</span>
+            <span class="metric-reset-text">reseta em <b>4h 50m</b></span>
+          </div>
+          <div class="metric-row">
+            <div class="metric-label-box">
+              <span class="metric-duration">7 dias</span>
+              <span class="sub-tag">Claude+Google</span>
+            </div>
+            <div class="metric-bar-container">
+              <div class="metric-bar-fill" style="width: 0%;"></div>
+            </div>
+            <span class="metric-pct">0%</span>
+            <span class="metric-reset-text">reseta em <b>6d 21h</b></span>
+          </div>
+          <div class="metric-row">
+            <div class="metric-label-box">
+              <span class="metric-duration">5 horas</span>
+              <span class="sub-tag">Claude+Google</span>
+            </div>
+            <div class="metric-bar-container">
+              <div class="metric-bar-fill" style="width: 0%;"></div>
+            </div>
+            <span class="metric-pct">0%</span>
+            <span class="metric-reset-text">reseta em <b>4h 50m</b></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Popover Footer -->
+      <div class="popover-footer">
+        <span>Medição de carona & poll (sem custo de quota)</span>
+        <span>·</span>
+        <span>Atualização auto ~15 min</span>
+      </div>
+    </div>
+  </footer>
+</main>
+
+<script>
+  // Interatividade do Mock
+  const popover = document.getElementById('limits-popover');
+  const triggerBtn = document.getElementById('trigger-btn');
+  const togglePopoverBtn = document.getElementById('toggle-popover');
+  const toggleThemeBtn = document.getElementById('toggle-theme');
+  const refreshBtn = document.getElementById('refresh-btn');
+
+  function togglePopover() {
+    const isHidden = popover.classList.toggle('hidden');
+    triggerBtn.classList.toggle('open', !isHidden);
+    togglePopoverBtn.classList.toggle('active', !isHidden);
+  }
+
+  triggerBtn.addEventListener('click', togglePopover);
+  togglePopoverBtn.addEventListener('click', togglePopover);
+
+  toggleThemeBtn.addEventListener('click', () => {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  });
+
+  refreshBtn.addEventListener('click', () => {
+    refreshBtn.classList.add('spinning');
+    setTimeout(() => {
+      refreshBtn.classList.remove('spinning');
+    }, 800);
+  });
+
+  // --- NOVOS CONTROLES INLINE E POPUPS (PASEO / CURSOR) ---
+  const modelSelectBtn = document.getElementById('model-select-btn');
+  const modelPopover = document.getElementById('model-popover');
+  const permissionSelectBtn = document.getElementById('permission-select-btn');
+  const permissionPopover = document.getElementById('permission-popover');
+  const planToggleBtn = document.getElementById('plan-toggle-btn');
+  const contextRingBtn = document.getElementById('context-ring-btn');
+  const contextPopover = document.getElementById('context-popover');
+
+  // Fechar todos os popovers
+  function closeAllPopovers() {
+    modelPopover.classList.add('hidden');
+    permissionPopover.classList.add('hidden');
+    contextPopover.classList.add('hidden');
+  }
+
+  // Toggle Popovers
+  modelSelectBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = modelPopover.classList.contains('hidden');
+    closeAllPopovers();
+    if (isHidden) modelPopover.classList.remove('hidden');
+  });
+
+  permissionSelectBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = permissionPopover.classList.contains('hidden');
+    closeAllPopovers();
+    if (isHidden) permissionPopover.classList.remove('hidden');
+  });
+
+  contextRingBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = contextPopover.classList.contains('hidden');
+    closeAllPopovers();
+    if (isHidden) contextPopover.classList.remove('hidden');
+  });
+
+  // Fechar ao clicar fora
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.composer-popover') && 
+        !e.target.closest('.composer-dropdown-btn') && 
+        !e.target.closest('.context-ring-btn')) {
+      closeAllPopovers();
+    }
+  });
+
+  // Seleção de Permissão
+  document.querySelectorAll('#permission-popover .popover-menu-item').forEach(item => {
+    item.addEventListener('click', () => {
+      // Remover classes de ativo de todas as opções do menu
+      document.querySelectorAll('#permission-popover .popover-menu-item').forEach(btn => {
+        btn.classList.remove('active', 'active-warning');
+      });
+
+      const mode = item.getAttribute('data-mode');
+      
+      // Icones SVG para cada permissão
+      const iconWarning = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+      const iconPede = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+      const iconSóLê = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+
+      if (mode === 'liberado') {
+        item.classList.add('active-warning');
+        permissionSelectBtn.classList.add('active-warning');
+        permissionSelectBtn.innerHTML = `${iconWarning} <span id="permission-btn-label">Liberado</span> <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>`;
+      } else if (mode === 'padrao') {
+        item.classList.add('active');
+        permissionSelectBtn.classList.remove('active-warning');
+        permissionSelectBtn.innerHTML = `${iconPede} <span id="permission-btn-label">Pede</span> <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>`;
+      } else {
+        item.classList.add('active');
+        permissionSelectBtn.classList.remove('active-warning');
+        permissionSelectBtn.innerHTML = `${iconSóLê} <span id="permission-btn-label">Só lê</span> <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>`;
+      }
+
+      closeAllPopovers();
+    });
+  });
+
+  // Toggle de Planejar antes
+  planToggleBtn.addEventListener('click', () => {
+    planToggleBtn.classList.toggle('active-plan');
+  });
+
+  // Feedback & Learning Box Interactivity
+  const btnThumbUp = document.getElementById('btn-thumb-up');
+  const btnThumbDown = document.getElementById('btn-thumb-down');
+  const btnOpenLearn = document.getElementById('btn-open-learn');
+  const learningBox = document.getElementById('learning-box');
+  const btnCloseLearn = document.getElementById('btn-close-learn');
+  const btnSaveProj = document.getElementById('btn-save-project-rule');
+  const btnSaveGlobal = document.getElementById('btn-save-global-rule');
+  const learnSavedBadge = document.getElementById('learn-saved-badge');
+  const learningInput = document.getElementById('learning-input-text');
+
+  btnThumbUp?.addEventListener('click', () => {
+    btnThumbUp.classList.toggle('active');
+    btnThumbDown.classList.remove('active');
+    learningBox.classList.add('hidden');
+  });
+
+  btnThumbDown?.addEventListener('click', () => {
+    btnThumbDown.classList.toggle('active');
+    btnThumbUp.classList.remove('active');
+    if (btnThumbDown.classList.contains('active')) {
+      learningBox.classList.remove('hidden');
+      learningInput.placeholder = "O que faltou ou deveria mudar para corrigir o agente?";
+      learningInput.focus();
+    } else {
+      learningBox.classList.add('hidden');
+    }
+  });
+
+  btnOpenLearn?.addEventListener('click', () => {
+    learningBox.classList.toggle('hidden');
+    if (!learningBox.classList.contains('hidden')) {
+      learningInput.placeholder = "Ex: Sempre validar com cargo test antes de criar o commit...";
+      learningInput.focus();
+    }
+  });
+
+  btnCloseLearn?.addEventListener('click', () => {
+    learningBox.classList.add('hidden');
+  });
+
+  function handleSaveRule() {
+    learningBox.classList.add('hidden');
+    learnSavedBadge.classList.remove('hidden');
+    setTimeout(() => {
+      learnSavedBadge.classList.add('hidden');
+    }, 3000);
+  }
+
+  btnSaveProj?.addEventListener('click', handleSaveRule);
+  btnSaveGlobal?.addEventListener('click', handleSaveRule);
+</script>
+</body>
+</html>
