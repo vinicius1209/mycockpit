@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Barra de resumo do turno · C · Ficha expansível</title>
+<style>
+  :root{
+    color-scheme: light dark;
+    --bg:#f2f0eb; --panel:#faf9f6; --card:#ffffff;
+    --text:#232019; --body:#3a362d; --muted:#726c60; --faint:#a49d8f;
+    --border:rgba(38,32,20,.11); --border-strong:rgba(38,32,20,.19);
+    --brass:#96682c; --brass-soft:rgba(150,104,44,.1);
+    --red:#bb4038; --red-soft:rgba(187,64,56,.08);
+    --green:#4c7a4a;
+    --hover:rgba(38,32,20,.045);
+    --sans:-apple-system,"SF Pro Text",system-ui,"Segoe UI",sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d0e10; --panel:#131418; --card:#181a1f;
+    --text:#eae8e3; --body:#cfccc4; --muted:#98948a; --faint:#635f57;
+    --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.17);
+    --brass:#dfa763; --brass-soft:rgba(223,167,99,.12);
+    --red:#ee7a6e; --red-soft:rgba(238,122,110,.1);
+    --green:#7fb87a;
+    --hover:rgba(255,255,255,.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0d0e10; --panel:#131418; --card:#181a1f;
+      --text:#eae8e3; --body:#cfccc4; --muted:#98948a; --faint:#635f57;
+      --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.17);
+      --brass:#dfa763; --brass-soft:rgba(223,167,99,.12);
+      --red:#ee7a6e; --red-soft:rgba(238,122,110,.1);
+      --green:#7fb87a;
+      --hover:rgba(255,255,255,.05);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+
+  .mockbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:10px 18px;
+    background:color-mix(in srgb, var(--bg) 90%, transparent);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--border);font-size:12px;color:var(--muted)}
+  .mockbar .tag{font:600 9.5px var(--mono);letter-spacing:.16em;color:var(--brass);border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:2px 7px}
+  .mockbar .dir{font-weight:600;color:var(--text)}
+  .mockbar nav{display:flex;gap:3px;margin-left:auto}
+  .mockbar nav a{color:var(--muted);text-decoration:none;padding:3px 10px;border-radius:6px;font-weight:500}
+  .mockbar nav a:hover{background:var(--hover)}
+  .mockbar nav a.on{background:var(--brass-soft);color:var(--brass)}
+  .tseg{display:flex;gap:2px;border:1px solid var(--border);border-radius:7px;padding:2px}
+  .tseg button{font-size:10.5px;padding:2px 8px;border-radius:5px;color:var(--muted)}
+  .tseg button.on{background:var(--hover);color:var(--text)}
+
+  .stage{max-width:760px;margin:0 auto;padding:26px 20px 64px}
+  .thesis{font-size:12.5px;color:var(--muted);margin:0 2px 18px;max-width:660px}
+  .thesis b{color:var(--text);font-weight:600}
+
+  .frame{background:var(--panel);border:1px solid var(--border);border-radius:15px;overflow:hidden;
+    box-shadow:0 1px 2px rgba(0,0,0,.04),0 12px 32px -18px rgba(0,0,0,.18)}
+  .thread{padding:28px 32px}
+
+  .msg{display:flex;gap:12px;margin-bottom:16px}
+  .gutter{width:28px;flex:0 0 auto;padding-top:1px}
+  .av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:600}
+  .av.user{background:var(--hover);color:var(--muted);border:1px solid var(--border)}
+  .av.agent{background:var(--card);border:1px solid var(--border-strong);color:var(--muted);font-size:13px}
+  .body{min-width:0;flex:1}
+  .hd{font-size:13px;font-weight:600;margin-bottom:2px}
+  .hd .time{font-weight:400;color:var(--faint);font-size:11px;margin-left:7px}
+  .body p{margin:2px 0 10px;font-size:13.5px;color:var(--body)}
+  .body ul{margin:6px 0 10px;padding-left:19px;font-size:13.5px;color:var(--body)}
+  .body li{margin-bottom:4px}
+  .body code{font:12px var(--mono);background:var(--hover);border-radius:4px;padding:1px 5px}
+
+  .shellrow{display:flex;align-items:center;gap:8px;padding:6px 9px;margin:6px 0 12px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;color:var(--muted)}
+  .shellrow .ck{color:var(--muted)}
+  .shellrow .lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .shellrow .meta{font:11px var(--mono);color:var(--faint);flex:0 0 auto}
+
+  /* ===== resumo mínimo (status · tempo · custo) + disclosure pro resto ===== */
+  .turn{border-top:1px solid var(--border);padding-top:9px;margin-top:2px}
+  .row1{display:flex;align-items:center;gap:9px}
+  .ok{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:500;color:var(--green)}
+  .sep{color:var(--faint);opacity:.6;font-size:11px}
+  .num{font:11px var(--mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+  .cost{font:11px var(--mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+
+  .actbar{display:flex;align-items:center;gap:1px;margin-left:auto}
+  .iconbtn{display:grid;place-items:center;width:24px;height:24px;border-radius:6px;color:var(--faint)}
+  .iconbtn:hover{background:var(--hover);color:var(--text)}
+  .iconbtn svg{width:13px;height:13px}
+  .actsep{width:1px;height:14px;background:var(--border-strong);margin:0 4px}
+
+  /* disclosure — mesmo padrão do "Detalhes técnicos" do incidente (reuso, não invenção) */
+  details.dtl{margin-top:5px}
+  details.dtl summary{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--faint);cursor:pointer;list-style:none;width:fit-content}
+  details.dtl summary::-webkit-details-marker{display:none}
+  details.dtl summary:hover{color:var(--muted)}
+  details.dtl summary .chev{width:9px;height:9px;transition:transform .15s;flex:0 0 auto}
+  details.dtl[open] summary .chev{transform:rotate(90deg)}
+  details.dtl .dbody{display:flex;flex-wrap:wrap;gap:5px 9px;margin-top:6px;padding:7px 9px;border-radius:7px;background:var(--hover);font-size:11px;color:var(--muted)}
+  details.dtl .dbody .num{color:var(--muted)}
+
+  .composerwrap{padding:0 32px 26px}
+  .composer{border:1px solid var(--border-strong);background:var(--card);border-radius:14px;padding:13px 14px 10px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .ph{color:var(--faint);font-size:13.5px}
+  .cbar{display:flex;align-items:center;gap:8px;margin-top:14px}
+  .chip{font-size:11px;border:1px solid var(--border);border-radius:999px;padding:2.5px 10px;color:var(--muted)}
+  .stop{margin-left:auto;width:29px;height:29px;border-radius:50%;background:var(--brass);display:grid;place-items:center}
+  .stop::before{content:"";width:9px;height:9px;border-radius:2px;background:var(--panel)}
+
+  .nt{color:var(--brass);font:600 11px var(--mono);vertical-align:super;margin-left:3px;line-height:0;cursor:default;user-select:none}
+  .notes{margin-top:22px;padding:0 6px;font-size:12.5px;color:var(--muted)}
+  .notes h2{font:600 10px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin:0 0 10px}
+  .notes ol{list-style:none;margin:0;padding:0;display:grid;gap:7px;max-width:660px}
+  .notes li{padding-left:24px;position:relative;line-height:1.5}
+  .notes li .nt{position:absolute;left:0;top:5px;vertical-align:baseline}
+  .notes b{color:var(--text);font-weight:600}
+</style>
+</head>
+<body>
+
+<header class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">Barra de resumo do turno · C · Ficha expansível</span>
+  <nav>
+    <a href="turno-resumo-a.html">A</a>
+    <a href="turno-resumo-b.html">B</a>
+    <a class="on" href="turno-resumo-c.html">C</a>
+  </nav>
+  <div class="tseg">
+    <button data-v="auto" class="on" onclick="setTheme('auto')">auto</button>
+    <button data-v="light" onclick="setTheme('light')">claro</button>
+    <button data-v="dark" onclick="setTheme('dark')">escuro</button>
+  </div>
+</header>
+
+<main class="stage">
+  <p class="thesis"><b>Tese:</b> nem todo número pesa igual toda vez — status, tempo e custo são o que o olho escaneia; tokens/cache/modelo são detalhe de auditoria. A linha 1 fica só com os três primeiros + ações (ícone, herdado de B)<span class="nt">①</span>; o resto entra no MESMO <code>&lt;details&gt;</code> que "Detalhes técnicos" já usa no cartão de incidente<span class="nt">②</span> — reuso de um padrão que já existe, não uma peça nova.</p>
+
+  <section class="frame">
+    <div class="thread">
+
+      <div class="msg">
+        <div class="gutter"><span class="av user">V</span></div>
+        <div class="body">
+          <div class="hd">Você <span class="time">16:56</span></div>
+          <p>pode pausar o docker do projeto, para deixar o macbook mais leve</p>
+        </div>
+      </div>
+
+      <div class="msg">
+        <div class="gutter"><span class="av agent">◈</span></div>
+        <div class="body">
+          <div class="hd">Claude Code <span class="time">16:57</span></div>
+          <p>Vou parar o Supabase local (para além de pausar, libera RAM e CPU) e também fechar o emulador e o Metro, que são pesados e fui eu que subi.</p>
+
+          <div class="shellrow">
+            <span class="ck">✓</span>
+            <span class="lbl">Stop emulator, Metro and Supabase local</span>
+            <span class="meta">1 shell · 14s</span>
+          </div>
+
+          <p>Pronto. Tudo do ambiente local encerrado:</p>
+          <ul>
+            <li><b>Emulador:</b> encerrado.</li>
+            <li><b>Metro:</b> já estava fora.</li>
+            <li><b>Supabase local:</b> parado. Os dados ficam preservados no volume do Docker, então quando precisar é só <code>supabase start</code> no diretório do projeto que volta tudo.</li>
+          </ul>
+          <p>Isso libera a maior parte da carga. Nada de produção foi tocado, e o trabalho todo já está mergeado e no ar.</p>
+
+          <div class="turn">
+            <div class="row1">
+              <span class="ok">✓ concluído</span>
+              <span class="sep">·</span>
+              <span class="num">49s</span>
+              <span class="sep">·</span>
+              <span class="cost">US$ 2,97</span>
+              <div class="actbar">
+                <button class="iconbtn" title="Ver o diff desta entrega"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3v5h5M6 3h8l6 6v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/></svg></button>
+                <span class="actsep"></span>
+                <button class="iconbtn" title="Gostei"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v12M15 5.88 14 10h6.29a2 2 0 0 1 1.94 2.5l-2.34 9A2 2 0 0 1 17.94 23H7a2 2 0 0 1-2-2V12a2 2 0 0 1 2-2h1.35a1 1 0 0 0 .87-.51L14 3a2 2 0 0 1 2 2z"/></svg></button>
+                <button class="iconbtn" title="Precisa melhorar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 14V2M9 18.12 10 14H3.71a2 2 0 0 1-1.94-2.5l2.34-9A2 2 0 0 1 6.06 1H17a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-1.35a1 1 0 0 0-.87.51L10 21a2 2 0 0 1-2-2z"/></svg></button>
+                <button class="iconbtn" title="Transformar em aprendizado"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c0 1.1 2.7 2 6 2s6-.9 6-2v-5"/></svg></button>
+              </div>
+            </div>
+            <details class="dtl">
+              <summary><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg> tokens · modelo</summary>
+              <div class="dbody">
+                <span class="num">3↓·1.4k↑</span>
+                <span class="sep">·</span>
+                <span class="num">cache 308k</span>
+                <span class="sep">·</span>
+                <span>claude-opus-4-8</span>
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <div class="composerwrap">
+    <div class="composer">
+      <div class="ph">Peça algo… ou / para comandos</div>
+      <div class="cbar">
+        <span class="chip">Claude Code</span>
+        <span class="chip" style="margin-left:auto;color:var(--brass);border-color:color-mix(in srgb,var(--brass) 40%,transparent);background:var(--brass-soft)">Liberado</span>
+        <div class="stop"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>Notas</h2>
+    <ol>
+      <li><span class="nt">①</span> <b>Custo cinza, ações em ícone</b> — os mesmos dois ajustes de A/B, aplicados aqui também.</li>
+      <li><span class="nt">②</span> <b>Disclosure, não invenção.</b> O cartão de incidente (mesmo arquivo, função vizinha) já abre "Detalhes técnicos" atrás de um <code>&lt;summary&gt;</code> cinza com chevron — aqui os 3 dados menos escaneados (tokens, cache, modelo) entram no MESMO componente. Custo real: maior risco das três direções (2 estados por turno em vez de 1), maior ganho de silêncio (a linha 1 fica do tamanho do "concluído · 49s" que já existe nos incidentes).</li>
+    </ol>
+  </div>
+</main>
+
+<script>
+  function setTheme(v){
+    document.querySelectorAll('.tseg button').forEach(b=>b.classList.toggle('on', b.dataset.v===v));
+    if(v==='auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', v);
+    localStorage.setItem('mock-theme', v);
+  }
+  setTheme(localStorage.getItem('mock-theme') || 'auto');
+</script>
+</body>
+</html>

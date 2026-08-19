@@ -220,7 +220,9 @@ describe("feedback terminal do turno", () => {
         feedback,
       }),
     )
-    expect(html.match(/Transformar em aprendizado/g)).toHaveLength(1)
+    // botão ícone-só: title (tooltip) + sr-only (nome acessível), mesmo padrão
+    // já usado nos botões de reação (👍/👎, ver MessageList.tsx TurnActions).
+    expect(html.match(/Transformar em aprendizado/g)).toHaveLength(2)
     // 👍/👎 só (a taxonomia de 6 reações foi removida — ver MessageList.tsx).
     expect(html.match(/aria-pressed=/g)).toHaveLength(2)
   })

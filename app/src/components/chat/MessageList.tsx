@@ -1322,19 +1322,22 @@ export interface FeedbackApi {
 const THUMB_UP = "👍"
 const THUMB_DOWN = "👎"
 
-/** UMA superfície de feedback por resultado de turno. Emoji é sinal leve;
- *  memória permanente exige nota → proposta editável → confirmação humana. */
-function TurnFeedback({
-  resultId,
-  agentTurn,
-  reactions,
+/** Ações de fim de turno — diff, reação e "virar aprendizado" — ícone-só, lado
+ *  a lado com `TurnTelemetry` na MESMA linha (mock B, `turno-resumo-README.md`).
+ *  Emoji é sinal leve; memória permanente exige nota → proposta editável →
+ *  confirmação humana. */
+function TurnActions({
+  it,
+  feedbackText,
   api,
 }: {
-  resultId: string
-  agentTurn: string
-  reactions: string[]
+  it: Extract<ChatItem, { kind: "result" }>
+  feedbackText?: string
   api: FeedbackApi
 }) {
+  const resultId = it.id
+  const agentTurn = feedbackText ?? it.text ?? ""
+  const reactions = it.reactions ?? []
   // "idle" | "ask" (input inline) | "card" (propor regra) | "done"
   const [mode, setMode] = useState<"idle" | "ask" | "card" | "done">("idle")
   const [selectedReaction, setSelectedReaction] = useState<string | null>(
@@ -1397,8 +1400,26 @@ function TurnFeedback({
   }
 
   return (
-    <div className="mt-2 border-t border-border/45 pt-2">
-      <div className="flex flex-wrap items-center gap-1">
+    <>
+      <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        {it.ok && (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                const convId = useChat.getState().activeId
+                if (!convId) return
+                void openDeliveryDiff({ convId, text: it.text ?? "" })
+              }}
+              title="Ver o diff desta entrega"
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <FileDiff className="size-3.5" />
+              <span className="sr-only">Ver o diff desta entrega</span>
+            </button>
+            <span className="mx-0.5 h-3.5 w-px bg-border/60" aria-hidden />
+          </>
+        )}
         <button
           type="button"
           onClick={() => void react(THUMB_UP)}
@@ -1432,108 +1453,114 @@ function TurnFeedback({
         <button
           type="button"
           onClick={openAsk}
-          className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-brass"
+          title="Transformar em aprendizado"
+          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-brass focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          <GraduationCap className="size-3.5" /> Transformar em aprendizado
+          <GraduationCap className="size-3.5" />
+          <span className="sr-only">Transformar em aprendizado</span>
         </button>
         {mode === "done" && (
-          <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-st-success">
+          <span className="ml-1 inline-flex items-center gap-1 text-[11px] text-st-success">
             <Check className="size-3" /> Regra salva
           </span>
         )}
       </div>
 
+      {/* muda de propriedade (legenda de leitura → formulário editável): a
+          hairline é permitida aqui pelo §4 do STYLEGUIDE mesmo sem ela ser o
+          padrão do resto da barra. `basis-full` força a nova linha dentro do
+          mesmo flex-wrap da legenda, sem precisar subir estado pro pai. */}
       {mode === "ask" && (
-        <div className="mt-2 flex items-center gap-1.5">
-        <input
-          autoFocus
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void propose()
-            if (e.key === "Escape") setMode("idle")
-          }}
-          placeholder={
-            selectedReaction === "👎"
-              ? "O que faltou ou deveria mudar?"
-              : "O que funcionou e deve se repetir?"
-          }
-          className="min-w-0 flex-1 rounded-md border bg-background/60 px-2 py-1 text-[12px] outline-none focus:border-brass/60"
-        />
-        <button
-          onClick={() => void propose()}
-          disabled={busy || !note.trim()}
-          className="shrink-0 rounded-md bg-brass px-2 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
-        >
-          {busy ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            "Propor aprendizado"
-          )}
-        </button>
-        <button
-          onClick={() => setMode("idle")}
-          aria-label="Cancelar"
-          className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
-        >
-          <X className="size-3.5" />
-        </button>
-      </div>
-      )}
-
-      {mode === "card" && (
-      <div
-        className={cn(
-          "mt-1.5 flex flex-col gap-2 rounded-lg border p-2.5",
-          learnable === false
-            ? "border-st-warning/40 bg-st-warning/5"
-            : "border-brass/40 bg-brass/5",
-        )}
-      >
-        {learnable === false ? (
-          <div className="flex items-start gap-1.5 text-[11px] text-st-warning">
-            <AlertTriangle className="mt-px size-3.5 shrink-0" /> Isso parece
-            pouco generalizável, nada óbvio pra virar regra. Salve só se for
-            mesmo uma preferência durável.
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <GraduationCap className="size-3.5 text-brass" /> Aprendizado
-            proposto, confirme antes de tornar permanente
-          </div>
-        )}
-        <textarea
-          value={rule}
-          onChange={(e) => setRule(e.target.value)}
-          rows={2}
-          className="w-full resize-none rounded-md border bg-background/60 px-2 py-1.5 text-[13px] leading-snug outline-none focus:border-brass/60"
-        />
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="mt-1.5 flex w-full basis-full items-center gap-1.5 border-t border-border/40 pt-2">
+          <input
+            autoFocus
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void propose()
+              if (e.key === "Escape") setMode("idle")
+            }}
+            placeholder={
+              selectedReaction === "👎"
+                ? "O que faltou ou deveria mudar?"
+                : "O que funcionou e deve se repetir?"
+            }
+            className="min-w-0 flex-1 rounded-md border bg-background/60 px-2 py-1 text-[12px] outline-none focus:border-brass/60"
+          />
           <button
-            onClick={() => void commit("project")}
-            disabled={busy || !rule.trim()}
-            className="rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+            onClick={() => void propose()}
+            disabled={busy || !note.trim()}
+            className="shrink-0 rounded-md bg-brass px-2 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
           >
-            Salvar regra
-          </button>
-          <button
-            onClick={() => void commit("global")}
-            disabled={busy || !rule.trim()}
-            className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-[12px] transition-colors hover:bg-accent disabled:opacity-40"
-          >
-            <Globe2 className="size-3.5" /> Salvar como global
+            {busy ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              "Propor aprendizado"
+            )}
           </button>
           <button
             onClick={() => setMode("idle")}
-            className="rounded-md px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Cancelar"
+            className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
           >
-            Descartar
+            <X className="size-3.5" />
           </button>
-          {busy && <Loader2 className="size-3.5 animate-spin text-brass" />}
         </div>
-      </div>
       )}
-    </div>
+
+      {mode === "card" && (
+        <div
+          className={cn(
+            "mt-1.5 flex w-full basis-full flex-col gap-2 rounded-lg border p-2.5",
+            learnable === false
+              ? "border-st-warning/40 bg-st-warning/5"
+              : "border-brass/40 bg-brass/5",
+          )}
+        >
+          {learnable === false ? (
+            <div className="flex items-start gap-1.5 text-[11px] text-st-warning">
+              <AlertTriangle className="mt-px size-3.5 shrink-0" /> Isso parece
+              pouco generalizável, nada óbvio pra virar regra. Salve só se for
+              mesmo uma preferência durável.
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <GraduationCap className="size-3.5 text-brass" /> Aprendizado
+              proposto, confirme antes de tornar permanente
+            </div>
+          )}
+          <textarea
+            value={rule}
+            onChange={(e) => setRule(e.target.value)}
+            rows={2}
+            className="w-full resize-none rounded-md border bg-background/60 px-2 py-1.5 text-[13px] leading-snug outline-none focus:border-brass/60"
+          />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => void commit("project")}
+              disabled={busy || !rule.trim()}
+              className="rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+            >
+              Salvar regra
+            </button>
+            <button
+              onClick={() => void commit("global")}
+              disabled={busy || !rule.trim()}
+              className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-[12px] transition-colors hover:bg-accent disabled:opacity-40"
+            >
+              <Globe2 className="size-3.5" /> Salvar como global
+            </button>
+            <button
+              onClick={() => setMode("idle")}
+              className="rounded-md px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Descartar
+            </button>
+            {busy && <Loader2 className="size-3.5 animate-spin text-brass" />}
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -1542,9 +1569,13 @@ function toastDuplicate() {
   toast("Já existe uma regra parecida, não salvei de novo.")
 }
 
-/** Telemetria de fim de turno como INSTRUMENTO (não linha cinza corrida): o dado
- *  mais denso do app — tempo, tokens por direção, cache, custo — em células
- *  rotuladas, com o custo promovido a brass. */
+/** Legenda de fim de turno: UMA linha discreta (tempo&status · tokens&cache ·
+ *  modelo&custo), não 8 itens soltos no mesmo "·" corrido. Custo em cinza, NÃO
+ *  brass (§2 do STYLEGUIDE: custo nunca é gesto — valor absoluto sem teto do
+ *  usuário fica cinza até ele definir um limite em Config ▸ Uso e custo). As
+ *  ações (Diff, reação, aprendizado) moram em `TurnActions`, lado a lado com
+ *  esta legenda na MESMA linha — ver `docs/mocks/turno-resumo-README.md`
+ *  (mock B): a barra empilhava 3 linhas por turno, sempre visíveis; virou 1. */
 function TurnTelemetry({
   it,
   incidentTone,
@@ -1554,98 +1585,73 @@ function TurnTelemetry({
 }) {
   const hasUsage = it.usage && (it.usage.input > 0 || it.usage.output > 0)
   const hasCache = it.usage && it.usage.cacheRead > 0
-  // Caption de fim de turno: linha DISCRETA, alinhada ao conteúdo da mensagem
-  // (sem sangrar pro gutter, sem cartão). O dado continua todo lá — só que
-  // agrupado em 3 blocos lógicos (tempo&status · tokens&cache · modelo&custo),
-  // não 8 itens no mesmo "·" corrido — o olho escaneava a linha inteira pra
-  // achar o número que importava. Custo em brass, "concluído" verde.
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/80">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/80">
+      <span className="flex items-center gap-1.5">
+        <span
+          className={cn(
+            "flex items-center gap-1 font-medium",
+            it.ok
+              ? "text-st-success"
+              : incidentTone === "limit"
+                ? "text-st-warning"
+                : "text-st-error",
+          )}
+        >
+          {it.ok ? (
+            <Check className="size-3" />
+          ) : incidentTone === "limit" ? (
+            <Gauge className="size-3" />
+          ) : (
+            <AlertCircle className="size-3" />
+          )}
+          {it.ok ? "concluído" : incidentTone === "limit" ? "turno encerrado" : "erro"}
+        </span>
+        {it.durationMs != null && (
+          <>
+            <Sep />
+            <span className="tabular-nums">{fmtDuration(it.durationMs)}</span>
+          </>
+        )}
+      </span>
+
+      {(hasUsage || hasCache) && (
         <span className="flex items-center gap-1.5">
-          <span
-            className={cn(
-              "flex items-center gap-1 font-medium",
-              it.ok
-                ? "text-st-success"
-                : incidentTone === "limit"
-                  ? "text-st-warning"
-                  : "text-st-error",
-            )}
-          >
-            {it.ok ? (
-              <Check className="size-3" />
-            ) : incidentTone === "limit" ? (
-              <Gauge className="size-3" />
-            ) : (
-              <AlertCircle className="size-3" />
-            )}
-            {it.ok ? "concluído" : incidentTone === "limit" ? "turno encerrado" : "erro"}
-          </span>
-          {it.durationMs != null && (
+          {hasUsage && (
+            <span className="tabular-nums">
+              {fmtTokens(it.usage!.input)} ↓ · {fmtTokens(it.usage!.output)} ↑
+            </span>
+          )}
+          {hasCache && (
             <>
-              <Sep />
-              <span className="tabular-nums">{fmtDuration(it.durationMs)}</span>
+              {hasUsage && <Sep />}
+              <span className="tabular-nums">
+                cache {fmtTokens(it.usage!.cacheRead)}
+              </span>
             </>
           )}
         </span>
+      )}
 
-        {(hasUsage || hasCache) && (
-          <span className="flex items-center gap-1.5">
-            {hasUsage && (
-              <span className="tabular-nums">
-                {fmtTokens(it.usage!.input)} ↓ · {fmtTokens(it.usage!.output)} ↑
+      {(it.model || it.costUsd != null) && (
+        <span className="flex items-center gap-1.5">
+          {it.model && <span className="truncate">{it.model}</span>}
+          {it.costUsd != null && (
+            <>
+              {it.model && <Sep />}
+              <span
+                className="font-medium tabular-nums"
+                title={
+                  it.costSource === "estimated"
+                    ? "estimado: tokens × tabela de preço"
+                    : undefined
+                }
+              >
+                {fmtCost(it.costUsd, it.costSource)}
               </span>
-            )}
-            {hasCache && (
-              <>
-                {hasUsage && <Sep />}
-                <span className="tabular-nums">
-                  cache {fmtTokens(it.usage!.cacheRead)}
-                </span>
-              </>
-            )}
-          </span>
-        )}
-
-        {(it.model || it.costUsd != null) && (
-          <span className="flex items-center gap-1.5">
-            {it.model && <span className="truncate">{it.model}</span>}
-            {it.costUsd != null && (
-              <>
-                {it.model && <Sep />}
-                <span
-                  className="font-medium tabular-nums text-brass"
-                  title={
-                    it.costSource === "estimated"
-                      ? "estimado: tokens × tabela de preço"
-                      : undefined
-                  }
-                >
-                  {fmtCost(it.costUsd, it.costSource)}
-                </span>
-              </>
-            )}
-          </span>
-        )}
-      </div>
-
-      {/* Entrega→diff em 1 clique: chip com borda, não texto solto no meio da
-          legenda — precisa parecer clicável antes de o usuário testar. */}
-      {it.ok && (
-        <button
-          type="button"
-          onClick={() => {
-            const convId = useChat.getState().activeId
-            if (!convId) return
-            void openDeliveryDiff({ convId, text: it.text ?? "" })
-          }}
-          title="Ver o diff desta entrega"
-          aria-label="Ver o diff desta entrega"
-          className="inline-flex w-fit items-center gap-1 rounded-md border border-border/50 px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
-        >
-          <FileDiff className="size-3" /> Diff
-        </button>
+            </>
+          )}
+        </span>
       )}
     </div>
   )
@@ -1917,11 +1923,14 @@ function IncidentCard({
         )}
 
         {incident.result && (
-          <div className="mt-2.5 border-t border-border/45 pt-2">
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border/45 pt-2">
             <TurnTelemetry
               it={incident.result}
               incidentTone={limited ? "limit" : undefined}
             />
+            {feedback && (
+              <TurnActions it={incident.result} feedbackText={feedbackText} api={feedback} />
+            )}
           </div>
         )}
 
@@ -1950,17 +1959,6 @@ function IncidentCard({
           </details>
         )}
       </div>
-
-      {incident.result && feedback && (
-        <div className="border-t border-border/45 px-3.5 py-2">
-          <TurnFeedback
-            resultId={incident.result.id}
-            agentTurn={feedbackText ?? incident.result.text ?? ""}
-            reactions={incident.result.reactions ?? []}
-            api={feedback}
-          />
-        </div>
-      )}
     </div>
   )
 }
@@ -2112,15 +2110,10 @@ const MessageItem = memo(function MessageItem({
           </div>
         </div>
       )}
-      <TurnTelemetry it={it} />
-      {feedback && (
-        <TurnFeedback
-          resultId={it.id}
-          agentTurn={feedbackText ?? it.text ?? ""}
-          reactions={it.reactions ?? []}
-          api={feedback}
-        />
-      )}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <TurnTelemetry it={it} />
+        {feedback && <TurnActions it={it} feedbackText={feedbackText} api={feedback} />}
+      </div>
     </div>
   )
 })
