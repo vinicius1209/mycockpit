@@ -1016,7 +1016,7 @@ export function ScheduledView() {
             empty state — um CTA só na tela). A limitação honesta virou o ⓘ. */}
         <header className="flex items-center gap-2">
           <Clock className="size-3.5 text-brass" />
-          <h1 className="label-mono">Agendado</h1>
+          <h1 className="label-mono">Agendamentos</h1>
           {schedules.length > 0 && (
             <span className="text-[12px] text-muted-foreground/70 tabular-nums">
               {schedules.length}
@@ -1042,7 +1042,7 @@ export function ScheduledView() {
               className="ml-2 text-muted-foreground/70 hover:text-foreground"
               onClick={() => setScheduledOpen(false)}
               title="Fechar"
-              aria-label="Fechar Agendado"
+              aria-label="Fechar Agendamentos"
             >
               <X className="size-4" />
             </Button>

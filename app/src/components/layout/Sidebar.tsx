@@ -516,7 +516,7 @@ function ScheduledEntry() {
     <div>
       <button
         onClick={() => setScheduledOpen(true)}
-        aria-label="Abrir Agendado"
+        aria-label="Abrir Agendamentos"
         className={cn(
           "group relative flex w-full items-center gap-2.5 rounded-md py-2 pr-2 pl-3 text-left transition-colors",
           // Mesma receita única de "selecionado" das linhas da árvore (§2).
@@ -546,7 +546,7 @@ function ScheduledEntry() {
               : "text-muted-foreground group-hover:text-foreground",
           )}
         >
-          Agendado
+          Agendamentos
         </span>
         {nextAt != null && (
           // "Quando?" tem UM idioma nesta árvore, e ele é neutro: a Fase 1 pôs
