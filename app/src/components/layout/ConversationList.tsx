@@ -30,7 +30,7 @@ import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { useAwaiting } from "@/store/interactions"
 import { useMission } from "@/store/mission"
-import type { ConversationMeta } from "@/lib/db"
+import type { ConversationMeta } from "@/lib/db/conversations"
 
 /** Ids das conversas rodando, como string estável (só muda em transição de run
  * , não a cada delta de streaming, evitando re-render da sidebar inteira). */

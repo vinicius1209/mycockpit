@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { toast } from "sonner"
 import { runAgent } from "@/lib/agent"
 import { RENEWAL_INSTRUCTION } from "@/lib/compact"
-import type { ConversationMeta } from "@/lib/db"
+import type { ConversationMeta } from "@/lib/db/conversations"
 import { readDoctrine } from "@/lib/doctrine"
 import { readProjectCommands, type SlashCommand } from "@/lib/sources"
 import { HISTORY_OPEN } from "@/lib/trust"
@@ -42,8 +42,8 @@ vi.mock("@/lib/agent", () => ({
 vi.mock("@/lib/autoResume", () => ({
   wantsAutoResume: vi.fn(() => ({ resume: false, delayMs: 0, reason: "" })),
 }))
-vi.mock("@/lib/db", () => ({
-  isTauri: () => true,
+vi.mock("@/lib/db", () => ({ isTauri: () => true }))
+vi.mock("@/lib/db/conversations", () => ({
   listConversations: vi.fn(async () => null),
 }))
 vi.mock("@/lib/handoff", () => ({

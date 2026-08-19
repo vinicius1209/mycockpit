@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { searchConversations, type ConvSearchHit } from "@/lib/db"
+import { searchConversations, type ConvSearchHit } from "@/lib/db/conversations"
 import {
   FileText,
   FolderGit2,

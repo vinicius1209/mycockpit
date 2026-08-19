@@ -19,11 +19,13 @@ vi.mock("@/lib/sources", () => ({
 
 vi.mock("@/lib/db", () => ({
   isTauri: () => false,
-  saveConversation: vi.fn(async () => {}),
   saveFusionRun: vi.fn(async () => {}),
   loadPendingFusion: vi.fn(async () => null),
   clearPendingFusion: vi.fn(async () => {}),
   recordTurnCost: vi.fn(async () => {}),
+}))
+vi.mock("@/lib/db/conversations", () => ({
+  saveConversation: vi.fn(async () => {}),
 }))
 
 vi.mock("@/lib/doctrine", () => ({

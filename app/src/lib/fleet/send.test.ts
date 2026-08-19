@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { toast } from "sonner"
 import { cancelAgent, runAgent } from "@/lib/agent"
 import { wantsAutoResume } from "@/lib/autoResume"
-import { listConversations, type ConversationMeta } from "@/lib/db"
+import { listConversations, type ConversationMeta } from "@/lib/db/conversations"
 import { buildDoctrineBlock, doctrineFingerprint, readDoctrine } from "@/lib/doctrine"
 import { buildLearningBlocks, markLessonsUsed } from "@/lib/learning"
 import { notifyTurnEnd } from "@/lib/notify"
@@ -59,8 +59,8 @@ vi.mock("@/lib/autoResume", async (io) => ({
   ...(await io<typeof import("@/lib/autoResume")>()),
   wantsAutoResume: vi.fn(() => ({ resume: false, delayMs: 0, reason: "" })),
 }))
-vi.mock("@/lib/db", () => ({
-  isTauri: () => true,
+vi.mock("@/lib/db", () => ({ isTauri: () => true }))
+vi.mock("@/lib/db/conversations", () => ({
   listConversations: vi.fn(async () => null),
 }))
 vi.mock("@/lib/handoff", () => ({

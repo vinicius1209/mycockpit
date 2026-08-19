@@ -25,6 +25,7 @@ import {
   isAliasRequest,
   resolutionNotice,
 } from "@/lib/modelResolution"
+import { recordTurnCost, isTauri } from "@/lib/db"
 import {
   listConversations as dbList,
   loadConversation as dbLoad,
@@ -36,10 +37,8 @@ import {
   setConversationWorktree as dbSetWorktree,
   setConversationPreset as dbSetPreset,
   persistConversationOrder as dbPersistConvOrder,
-  recordTurnCost,
-  isTauri,
   type ConversationMeta,
-} from "@/lib/db"
+} from "@/lib/db/conversations"
 import { moveByDelta, reorderByIds } from "@/lib/reorder"
 import { unseenBoundary } from "@/lib/unseen"
 import { clearPresetDriftWarning, warnPresetDrift } from "@/lib/presets"
@@ -1248,6 +1247,7 @@ export const useChat = create<ChatState>((set, get) => {
             presetId: conv?.presetId ?? null,
             presetDigest: conv?.presetDigest ?? null,
             presetName,
+            contextTokens: conv?.contextTokens ?? undefined, // antes só em memória (ContextRing)
           }
     set((s) =>
       s.byId[convId] ? {} : { byId: { ...s.byId, [convId]: state } },
@@ -1795,9 +1795,8 @@ export const useChat = create<ChatState>((set, get) => {
       const title = `${src?.title ?? loaded?.title ?? "Conversa"} (cópia)`
       const newId = uid()
       // sessão NULL de propósito: a cópia não herda a sessão do CLI (resume
-      // conflitaria); os items viram histórico visível, o próximo turno é fresh.
-      // model NULL idem: o resolvido pertence à sessão antiga.
-      await dbSave(newId, owner, title, null, items, [], agent, reqModel, effort, null)
+      // conflitaria); model e contextTokens NULL idem — pertencem à sessão antiga.
+      await dbSave(newId, owner, title, null, items, [], agent, reqModel, effort, null, null)
       if (src?.color != null) await dbSetColor(newId, src.color)
       set((s) => {
         const meta: ConversationMeta = {
@@ -1857,6 +1856,7 @@ export const useChat = create<ChatState>((set, get) => {
         c.reqModel,
         c.effort,
         c.model,
+        c.contextTokens ?? null,
       )
       endSpan()
       const now = Date.now()

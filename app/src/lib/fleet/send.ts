@@ -11,14 +11,10 @@ import { agentLabel, cancelAgent, runAgent } from "@/lib/agent"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
 import type { Attachment } from "@/lib/attachments"
 import { resumePrompt, wantsAutoResume } from "@/lib/autoResume"
-import { isTauri, listConversations, type ConversationMeta } from "@/lib/db"
+import { isTauri } from "@/lib/db"
+import { listConversations, type ConversationMeta } from "@/lib/db/conversations"
 import { prepareHybridHandoff } from "@/lib/handoff"
-import {
-  buildDoctrineBlock,
-  decideDoctrine,
-  doctrineFingerprint,
-  readDoctrine,
-} from "@/lib/doctrine"
+import { buildDoctrineBlock, decideDoctrine, doctrineFingerprint, readDoctrine } from "@/lib/doctrine"
 import {
   buildLearningBlocks,
   markLessonsUsed,

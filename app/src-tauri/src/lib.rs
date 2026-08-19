@@ -445,6 +445,17 @@ pub fn run() {
             sql: "ALTER TABLE mcp_bindings ADD COLUMN browser INTEGER NOT NULL DEFAULT 0;",
             kind: MigrationKind::Up,
         },
+        // O anel de contexto do composer (ContextRing.tsx) só vivia em memória
+        // (evento context_usage do motor) — fechar o app ou trocar de conversa
+        // e voltar apagava o número, mesmo numa conversa com contexto pesado
+        // de verdade. NULL = nunca rodou turno nesta linha (nada a mostrar,
+        // não é zero).
+        Migration {
+            version: 36,
+            description: "conversations_context_tokens",
+            sql: "ALTER TABLE conversations ADD COLUMN context_tokens INTEGER;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

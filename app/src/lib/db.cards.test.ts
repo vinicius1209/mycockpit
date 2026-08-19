@@ -218,12 +218,12 @@ import {
   assertCardTransition,
   closeCard,
   createCard,
-  deleteConversation,
   linkCardConversation,
   listCards,
   setCardState,
   updateCard,
 } from "@/lib/db"
+import { deleteConversation } from "@/lib/db/conversations"
 
 /** Semeia uma linha direto no fake (pra estados que exigiriam N transições). */
 function seed(over: Partial<FakeCardRow> = {}): FakeCardRow {

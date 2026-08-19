@@ -7,8 +7,14 @@ vi.mock("@/lib/db", async (importOriginal) => {
   return {
     ...original,
     isTauri: () => false,
-    saveConversation: vi.fn(async () => {}),
     recordTurnCost: vi.fn(async () => {}),
+  }
+})
+vi.mock("@/lib/db/conversations", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/db/conversations")>()
+  return {
+    ...original,
+    saveConversation: vi.fn(async () => {}),
   }
 })
 

@@ -11,6 +11,8 @@ import { useChat, type ChatItem, type ConvState } from "./chat"
 
 vi.mock("@/lib/db", () => ({
   isTauri: () => false,
+}))
+vi.mock("@/lib/db/conversations", () => ({
   listConversations: vi.fn(async () => null),
   // o carimbo do agent persiste (linha vazia, sem histórico a atropelar), então
   // o mock precisa cobrir o caminho do persist — senão vira unhandled rejection.

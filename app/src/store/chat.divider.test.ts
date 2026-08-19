@@ -7,6 +7,8 @@ import { useChat, type ChatItem, type ConvState } from "./chat"
 
 vi.mock("@/lib/db", () => ({
   isTauri: () => false,
+}))
+vi.mock("@/lib/db/conversations", () => ({
   listConversations: vi.fn(async () => null),
   loadConversation: vi.fn(async () => null),
   saveConversation: vi.fn(async () => {}),
