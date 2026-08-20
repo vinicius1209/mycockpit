@@ -293,13 +293,16 @@ export function ContextPanel() {
     if (delivery) setTab("alteracoes")
   }, [delivery])
 
-  /** "Pedir correção": prefill no composer da conversa + foco com o cursor no
-   *  fim (mesmo helper do App: focusConsoleComposer). Consome a intenção. */
+  // Prefill + foco, usado por "Pedir correção" (P3) e pelos comentários do diff.
+  function prefillComposer(convId: string, text: string) {
+    useChat.getState().setDraft(convId, text)
+    setTimeout(focusConsoleComposer, 120)
+  }
+
   function requestDeliveryFix() {
     if (!delivery) return
-    useChat.getState().setDraft(delivery.convId, fixPrefill(delivery.text))
+    prefillComposer(delivery.convId, fixPrefill(delivery.text))
     useApp.getState().clearDeliveryDiff()
-    setTimeout(focusConsoleComposer, 120)
   }
 
   function closeDeliveryDiff() {
@@ -326,8 +329,7 @@ export function ContextPanel() {
     }
     if (!running) jumpedOnRun.current = false
   }, [running])
-  // items da conversa ativa SÓ quando a aba Plano está visível (evita re-render
-  // do painel inteiro a cada delta de streaming nas outras abas).
+  // items da conversa ativa SÓ com a aba Plano visível (evita re-render nas outras).
   const planItems = useChat((s) =>
     tab === "plano" && s.activeId ? s.byId[s.activeId]?.items : undefined,
   )
@@ -463,12 +465,9 @@ export function ContextPanel() {
   })()
 
   return (
-    // CARTÃO FLUTUANTE (E1): o painel deixou de ser uma coluna colada na
-    // parede do cartão de conteúdo e virou superfície própria — `bg-card` +
-    // raio + `--shadow-sm`, e NENHUMA borda. A proibição do §4 é de borda
-    // aninhada, não de raio: superfície que se separa por cor + raio não conta
-    // como cartão-dentro-de-cartão. Em troca, a proibição fica mais forte —
-    // nada aqui dentro pode ter hairline de largura total (ADR-043, Fase 2).
+    // CARTÃO FLUTUANTE (E1): superfície própria (`bg-card` + raio + `--shadow-sm`,
+    // sem borda) — a proibição do §4 é de borda aninhada, não de raio, mas em
+    // troca fica mais forte: nada aqui dentro pode ter hairline de largura total.
     <aside className="reveal-right flex h-full w-full flex-col overflow-hidden rounded-xl bg-card shadow-[var(--shadow-sm),var(--lift)]">
       {/* `@container`: a tira decide rótulo × ícone pela largura REAL do painel
           (redimensionável), não por breakpoint de janela — ver `TabBtn`. */}
@@ -506,6 +505,7 @@ export function ContextPanel() {
           delivery={delivery}
           onRequestFix={requestDeliveryFix}
           onCloseDelivery={closeDeliveryDiff}
+          onSendToComposer={(text) => activeConvId && prefillComposer(activeConvId, text)}
         />
       ) : tab === "plano" ? (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">

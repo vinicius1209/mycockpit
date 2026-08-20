@@ -21,7 +21,10 @@ import {
   type GitDiff,
   type PrContext,
 } from "@/lib/git"
+import { composeDiffComments, staleComments } from "@/lib/deliveryDiff"
 import { cn } from "@/lib/utils"
+import { DiffLineRow, useDiffComments, type DiffCommentApi } from "./DiffPanel/comments"
+import { DiffCommentsFooter } from "./DiffPanel/sendBar"
 
 const STATUS_META: Record<
   string,
@@ -42,15 +45,21 @@ export function DiffPanel({
   delivery,
   onRequestFix,
   onCloseDelivery,
+  onSendToComposer,
 }: {
   cwd: string
   delivery?: { text: string } | null
   onRequestFix?: () => void
   onCloseDelivery?: () => void
+  /** Prefill do composer com os comentários soltos no diff (gate humano — não
+   *  envia sozinho, só propõe o texto composto). */
+  onSendToComposer?: (text: string) => void
 }) {
   const [diff, setDiff] = useState<GitDiff | null>(null)
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState<Set<string>>(new Set())
+  const commentApi = useDiffComments()
+  const commentCount = Object.keys(commentApi.comments).length
 
   function reload() {
     setLoading(true)
@@ -61,12 +70,19 @@ export function DiffPanel({
   }
   useEffect(() => {
     reload()
+    // Trocar de `cwd` (outra conversa/worktree) INVALIDA os comentários: eles
+    // são ancorados por caminho+linha do diff ANTERIOR, e mandar pro agente
+    // "arquivo.ts:42" de OUTRO repositório é pior que perder o rascunho.
+    commentApi.clear()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd])
 
   const files = diff?.files ?? []
   const totalAdd = files.reduce((s, f) => s + f.additions, 0)
   const totalDel = files.reduce((s, f) => s + f.deletions, 0)
+  // Comentários que perderam a linha (o agente mexeu no arquivo e o reload
+  // trouxe outro conteúdo): não somem, vão pra tira de órfãos do rodapé.
+  const stale = staleComments(Object.values(commentApi.comments), files)
 
   // Barra STICKY (branch + stat + refresh): fica no topo enquanto a lista rola.
   // bg sólido (sem backdrop-blur, que custa por-frame e travaria o scroll longo).
@@ -161,11 +177,24 @@ export function DiffPanel({
                       return n
                     })
                   }
+                  commentApi={commentApi}
                 />
               ))}
             </div>
           )}
           </div>
+          <DiffCommentsFooter
+            total={commentCount}
+            stale={stale}
+            onRemove={commentApi.remove}
+            onDiscard={commentApi.clear}
+            onSend={() => {
+              const todos = Object.values(commentApi.comments)
+              const staleIds = new Set(stale.map((c) => c.id))
+              onSendToComposer?.(composeDiffComments(todos, staleIds))
+              commentApi.clear()
+            }}
+          />
           <ShipBar cwd={cwd} hasChanges={files.length > 0} onDone={reload} />
         </>
       )}
@@ -512,10 +541,12 @@ function FileBlock({
   file,
   open,
   onToggle,
+  commentApi,
 }: {
   file: DiffFile
   open: boolean
   onToggle: () => void
+  commentApi: DiffCommentApi
 }) {
   const st = STATUS_META[file.status] ?? STATUS_META.modified
   const cut = file.path.lastIndexOf("/")
@@ -568,36 +599,12 @@ function FileBlock({
                   {h.header}
                 </div>
                 {h.lines.map((ln, li) => (
-                  <div
+                  <DiffLineRow
                     key={li}
-                    className={cn(
-                      "flex whitespace-pre",
-                      ln.type === "add" && "bg-st-success/[0.10]",
-                      ln.type === "del" && "bg-st-error/[0.10]",
-                    )}
-                  >
-                    <span className="w-9 shrink-0 border-r border-border/40 px-1 text-right text-muted-foreground/35 tabular-nums select-none">
-                      {ln.oldNo ?? ""}
-                    </span>
-                    <span className="w-9 shrink-0 border-r border-border/40 px-1 text-right text-muted-foreground/35 tabular-nums select-none">
-                      {ln.newNo ?? ""}
-                    </span>
-                    <span
-                      className={cn(
-                        "w-4 shrink-0 text-center select-none",
-                        ln.type === "add"
-                          ? "text-st-success"
-                          : ln.type === "del"
-                            ? "text-st-error"
-                            : "text-transparent",
-                      )}
-                    >
-                      {ln.type === "add" ? "+" : ln.type === "del" ? "−" : " "}
-                    </span>
-                    <span className="pr-3 pl-1 text-foreground/85">
-                      {ln.text || " "}
-                    </span>
-                  </div>
+                    ln={ln}
+                    path={file.path}
+                    api={commentApi}
+                  />
                 ))}
               </div>
             ))}

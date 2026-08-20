@@ -243,7 +243,8 @@ export const DEAD_TOKEN_RULES = [
       "components/sdd/SddView.tsx": { max: 8, motivo: "marcos de etapa do SDD (spec/plan/tasks concluídos); +1 pelo `border-st-success/40` do mesmo marco. O `bg-st-success` do stepper NÃO está aqui: virou cinza em 15/08/2026 (§9 item 4)" },
       "components/layout/InboxBell.tsx": { max: 2, motivo: "marco de item do inbox resolvido" },
       // Família "domínio git": `+N` e linha de adição têm cor própria (§2).
-      "components/layout/DiffPanel.tsx": { max: 6, motivo: "adições do diff (domínio git tem cor própria); +1 pelo `bg-st-success/[0.10]` da linha adicionada" },
+      "components/layout/DiffPanel.tsx": { max: 4, motivo: "adições do diff (domínio git tem cor própria); apertado de 6→4 quando a linha do hunk (2 usos) mudou pra DiffPanel/comments.tsx" },
+      "components/layout/DiffPanel/comments.tsx": { max: 2, motivo: "mesma família de DiffPanel.tsx: `bg-st-success/[0.10]` (fundo da linha ADD) e `text-st-success` (sinal `+`) da linha do hunk, extraídos de lá pro comentário inline" },
       // Triagem fina deixada de fora da passada de 12/08/2026, de propósito
       // (§9 item 4): aqui o cinza colapsaria uma distinção que a tela precisa.
       "components/chat/TaskChecklist.tsx": { max: 1, motivo: "§9 item 4: triagem de check por linha adiada de propósito" },

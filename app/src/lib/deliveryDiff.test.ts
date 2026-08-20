@@ -31,8 +31,12 @@ vi.mock("sonner", () => ({
 import {
   FIX_PREFILL_MAX,
   NO_DIFF_MESSAGE,
+  composeDiffComments,
+  diffLineKey,
   fixPrefill,
   openDeliveryDiff,
+  staleComments,
+  type DiffComment,
 } from "./deliveryDiff"
 import { useApp } from "@/store/app"
 import { useChat, type ConvState } from "@/store/chat"
@@ -191,5 +195,140 @@ describe("fixPrefill — prefill do Pedir correção", () => {
 
   it("entrega vazia não quebra o formato", () => {
     expect(fixPrefill("")).toBe("Sobre a entrega: \nCorrija: ")
+  })
+})
+
+describe("composeDiffComments — prefill dos comentários soltos no diff", () => {
+  const comment = (over: Partial<DiffComment> = {}): DiffComment => ({
+    id: "1",
+    path: "app/src/foo.ts",
+    side: "new",
+    lineNo: 42,
+    codeText: "const x = 1",
+    note: "isso aqui tá errado",
+    ...over,
+  })
+
+  it("sem comentários, não compõe nada", () => {
+    expect(composeDiffComments([])).toBe("")
+  })
+
+  it("um comentário: local (path:linha), trecho citado e a nota", () => {
+    const out = composeDiffComments([comment()])
+    expect(out).toContain("Comentários no diff:")
+    expect(out).toContain("app/src/foo.ts:42")
+    expect(out).toContain("const x = 1")
+    expect(out).toContain("→ isso aqui tá errado")
+  })
+
+  it("linha deletada (sem newNo): cita só o path, sem ':null'", () => {
+    const out = composeDiffComments([comment({ lineNo: null })])
+    expect(out).toContain("app/src/foo.ts\n")
+    expect(out).not.toContain("null")
+  })
+
+  it("vários comentários mantêm a ordem e ficam em blocos separados", () => {
+    const out = composeDiffComments([
+      comment({ id: "1", path: "a.ts", lineNo: 1, note: "primeiro" }),
+      comment({ id: "2", path: "b.ts", lineNo: 2, note: "segundo" }),
+    ])
+    expect(out.indexOf("a.ts:1")).toBeLessThan(out.indexOf("b.ts:2"))
+    expect(out.indexOf("primeiro")).toBeLessThan(out.indexOf("segundo"))
+  })
+})
+
+describe("staleComments — comentário que perdeu a linha", () => {
+  const linha = (over: Partial<{ type: "add" | "del" | "ctx"; oldNo: number | null; newNo: number | null; text: string }> = {}) => ({
+    type: "add" as const,
+    oldNo: null,
+    newNo: 42,
+    text: "const x = 1",
+    ...over,
+  })
+  const arquivo = (lines: ReturnType<typeof linha>[]) => [
+    { path: "a.ts", hunks: [{ lines }] },
+  ]
+  const c = (over: Partial<DiffComment> = {}): DiffComment => ({
+    id: diffLineKey("a.ts", "new", 42),
+    path: "a.ts",
+    side: "new",
+    lineNo: 42,
+    codeText: "const x = 1",
+    note: "arruma isso",
+    ...over,
+  })
+
+  it("linha intacta: nada é órfão", () => {
+    expect(staleComments([c()], arquivo([linha()]))).toEqual([])
+  })
+
+  it("MESMO número, texto mudou: vira órfão (era o bug do badge na linha errada)", () => {
+    const files = arquivo([linha({ text: "const x = 999" })])
+    expect(staleComments([c()], files).map((x) => x.id)).toEqual([c().id])
+  })
+
+  it("linha sumiu do diff: vira órfão", () => {
+    expect(staleComments([c()], arquivo([]))).toHaveLength(1)
+  })
+
+  it("arquivo inteiro sumiu do diff: vira órfão", () => {
+    expect(staleComments([c()], [])).toHaveLength(1)
+  })
+
+  it("mesma linha noutro ARQUIVO não salva o comentário", () => {
+    const files = [{ path: "outro.ts", hunks: [{ lines: [linha()] }] }]
+    expect(staleComments([c()], files)).toHaveLength(1)
+  })
+
+  it("hunk re-recortado (mesma linha, outra posição) NÃO vira órfão", () => {
+    // duas linhas de contexto antes: em chave posicional o índice mudaria.
+    const files = [
+      {
+        path: "a.ts",
+        hunks: [
+          {
+            lines: [
+              linha({ type: "ctx", oldNo: 40, newNo: 40, text: "ctx a" }),
+              linha({ type: "ctx", oldNo: 41, newNo: 41, text: "ctx b" }),
+              linha(),
+            ],
+          },
+        ],
+      },
+    ]
+    expect(staleComments([c()], files)).toEqual([])
+  })
+
+  it("comentário em linha DELETADA casa pelo lado antigo", () => {
+    const del = linha({ type: "del", oldNo: 7, newNo: null, text: "sumiu" })
+    const comentario = c({
+      id: diffLineKey("a.ts", "old", 7),
+      side: "old",
+      lineNo: 7,
+      codeText: "sumiu",
+    })
+    expect(staleComments([comentario], arquivo([del]))).toEqual([])
+  })
+})
+
+describe("composeDiffComments — marcação de órfão", () => {
+  const c: DiffComment = {
+    id: "a.ts@new:42",
+    path: "a.ts",
+    side: "new",
+    lineNo: 42,
+    codeText: "const x = 1",
+    note: "arruma",
+  }
+
+  it("comentário vivo não ganha aviso", () => {
+    expect(composeDiffComments([c])).not.toContain("mudou depois")
+  })
+
+  it("órfão avisa que a linha mudou, mas mantém a citação", () => {
+    const out = composeDiffComments([c], new Set([c.id]))
+    expect(out).toContain("a linha mudou depois do comentário")
+    expect(out).toContain("const x = 1")
+    expect(out).toContain("→ arruma")
   })
 })
