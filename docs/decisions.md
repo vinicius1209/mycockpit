@@ -2091,3 +2091,79 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   round-trip do caminho entre `create_worktree` e `worktree list --porcelain`
   batendo texto a texto (é dele que depende saber quem está solto). `tsc` 0,
   `cargo check` 0, `vitest` 2899/260, 6 guardas.
+
+### ADR-054 — Abrir no editor: probe por BUNDLE, CLI de dentro do .app (M1) ✅
+- **Contexto (20/08/2026):** `competitors-maestri.md` ranqueou "abrir no editor"
+  como altíssimo valor / baixíssimo custo, e o grep confirmou: `vscode://`,
+  `zed://`, `cursor://` não existiam em lugar NENHUM do repo. A matéria-prima já
+  estava toda pronta (path do projeto, worktree por conversa, diff com arquivo e
+  linha). Faltava só o gesto. Cockpit de decisão não é IDE — nem o Maestri,
+  100% nativo, construiu editor embutido; fez o atalho.
+- **Decisão 1 — probe por bundle `.app`, não por binário no PATH.** Medido nesta
+  máquina: `zed` existia só como ALIAS do shell, e processo filho não vê alias —
+  o editor instalado ficaria invisível. O que sempre existe é o `.app`. No Linux
+  é o binário no PATH, aí sim.
+- **Decisão 2 — CLI de DENTRO do bundle, não URL scheme.** O `code`/`cursor` do
+  shell depende de o usuário ter instalado o comando; o scheme depende de
+  registro no SO e não dá pra conferir antes de tentar. O binário dentro do
+  `.app` (`Contents/Resources/app/bin/code`, `Contents/MacOS/cli`) está lá
+  sempre que o app está, aceita linha documentada, e a falha vira mensagem.
+- **Decisão 3 — contenção obrigatória.** O front manda `project_path` + caminho
+  RELATIVO, e o Rust canonicaliza e exige `starts_with`. Sem isso um `rel` de
+  `../../.ssh/id_rsa` abriria a chave do usuário no editor. Mesmo espírito do
+  `contained` de evidence.rs, e coberto por teste.
+- **Decisão 4 — o alvo é o PROJETO, e o botão é UM por painel.** A primeira
+  versão pôs um ícone por LINHA de arquivo no diff (hover) que abria aquele
+  arquivo na primeira linha alterada. Rodou, e o usuário reprovou as duas coisas
+  no mesmo teste: o hover pipocando em cada linha polui a lista, e abrir o
+  arquivo sozinho entrega uma **janela órfã** — sem árvore, sem language server,
+  sem busca. Medido no Zed: `cli <dir> <arq>:<n>` abre o projeto E pula pra
+  linha; `cli <arq>:<n>` não abre projeto nenhum. Então a raiz vai SEMPRE junto,
+  o botão mora no cabeçalho de Alterações (ação sobre o conjunto, ao lado do
+  refresh) e `firstChangedLine` saiu — código morto é pior que código ausente.
+  O `rel`/`line` continuam no contrato do Rust porque focar um arquivo DENTRO do
+  projeto aberto é grátis quando alguém precisar.
+- **Decisão 5 — sem seção em Configurações.** Um editor: clicar abre. Vários:
+  clique esquerdo abre no preferido e o botão DIREITO escolhe outro, virando a
+  preferência. Um trigger de dropdown no mesmo botão roubaria o clique esquerdo,
+  que precisa fazer a coisa óbvia. Sem editor detectado o botão não existe (§5,
+  degradação honesta) — nada de item cinza prometendo o que a máquina não faz.
+- **Custo estrutural pago:** `Sidebar.tsx` estava EXATAMENTE no teto (815). O
+  item novo no menu do projeto exigiu dividir o arquivo, não subir o teto:
+  `ProjectRow` (+ `ProjectFolder` e `PROJECT_DND`, que só existem pra ela) saiu
+  pra `Sidebar/ProjectRow.tsx`, e o Sidebar caiu pra 586 e SAIU da baseline.
+- **Verificado:** `cargo test` 459, `tsc` 0, `vitest` 2911/262, 6 guardas.
+
+### ADR-055 — Recibo de turno: prazo, e só em background (M2) ✅
+- **Contexto (20/08/2026):** `notify.ts` dizia literalmente `"turno concluído"` /
+  `"turno falhou"`. O momento de maior atenção do dia — o agente terminou — não
+  carregava conteúdo nenhum. O Ombro do Maestri prova que esse instante merece
+  texto; a FORMA deles (janela flutuante) fica de fora, já são 3 canais e nenhum
+  silencioso (ADR-013), um quarto seria ruído. O que faltava era a alma.
+- **Decisão 1 — prazo, não espera (escolha do usuário entre 3 opções).** O
+  resumo vem de uma chamada ao helper. Esperar sem limite fura "nenhum canal
+  silencioso": helper travado = aviso que nunca sai. `turnReceipt` corre contra
+  `RECEIPT_DEADLINE_MS` (3s) e o desfecho ruim é a frase de hoje, nunca o
+  silêncio. Resposta vazia, curta demais ("Ok.") ou explodida também caem lá.
+- **Decisão 2 — só em turno de BACKGROUND.** No primeiro plano você acabou de
+  ver o turno acontecer no fio; resumir seria contar o que você leu. E a chamada
+  custa — limitar ao turno que rodou longe dos seus olhos é onde ela se paga.
+  Efeito colateral bom: turno em primeiro plano não espera nada.
+- **Decisão 3 — com recibo, "turno concluído" SAI.** A linha do sistema é curta;
+  gastar metade dela repetindo o óbvio (se veio recibo, concluiu) é desperdício.
+  Com ERRO o desfecho fica, porque aí ele é a informação principal.
+- **Decisão 4 — feed empilhado DEPOIS do recibo.** Empilhar cedo e remendar
+  exigiria um patch no store e abriria a janela em que o sino diz uma coisa e a
+  nativa diz outra. O feed é durável; o atraso de ≤3s ninguém percebe.
+- **Mesmo knob de sempre:** `helperModel: null` (global ou no `config.toml` do
+  projeto, com a MESMA precedência das sugestões) = recibo desligado, custo zero,
+  e o código nem chega a montar prompt.
+- **Fora do escopo, com motivo:** tray e Companion não consomem o feed de fim de
+  turno (o Companion usa `nativeNotify` pra assunto próprio), então "todos os
+  canais" do plano original virou os dois que de fato carregam turno: nativa e
+  sino.
+- **Custo estrutural pago:** `notify.ts` passou de 500 com o recibo. Dividido em
+  TRANSPORTE (`notify/native.ts` — permissão, plugin, fallback por osascript) e
+  EVENTOS (`notify.ts` — turno, gate, missão). `nativeNotify` é re-exportado pela
+  porta antiga: extração não é motivo pra mexer em call site.
+- **Verificado:** `tsc` 0, `vitest` 2924/263, 6 guardas.
