@@ -641,6 +641,8 @@ pub fn run() {
             git::git_worktree_pulse,
             git::create_worktree,
             git::remove_worktree,
+            git::list_worktrees,
+            git::delete_worktree_branch,
             git::git_commit,
             git::git_create_pr,
             git::pr_context,

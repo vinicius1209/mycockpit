@@ -26,7 +26,7 @@
     "lib/mission.ts": 546,
     "lib/sdd.ts": 510,
     "lib/watchdog.ts": 607,
-    "store/chat.ts": 2575,
+    "store/chat.ts": 2507,
     "store/fusion.ts": 518,
     "store/interactions.ts": 705,
     "store/mission.ts": 1283

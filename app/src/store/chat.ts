@@ -3,11 +3,7 @@ import { toast } from "sonner"
 import type { AgentEvent, CostSource } from "@/lib/agent"
 import { suggest } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
-import {
-  deleteAttachment,
-  revokeAttachmentUrl,
-  wipeAttachments,
-} from "@/lib/attachments"
+import { deleteAttachment, revokeAttachmentUrl } from "@/lib/attachments"
 import { deriveTitle } from "@/lib/convTitle"
 import { detectBlockedDir } from "@/lib/blockedDir"
 import {
@@ -31,7 +27,6 @@ import {
   loadConversation as dbLoad,
   createConversation as dbCreate,
   saveConversation as dbSave,
-  deleteConversation as dbDelete,
   renameConversation as dbRename,
   setConversationColor as dbSetColor,
   setConversationWorktree as dbSetWorktree,
@@ -41,12 +36,13 @@ import {
 } from "@/lib/db/conversations"
 import { moveByDelta, reorderByIds } from "@/lib/reorder"
 import { unseenBoundary } from "@/lib/unseen"
-import { clearPresetDriftWarning, warnPresetDrift } from "@/lib/presets"
+import { warnPresetDrift } from "@/lib/presets"
 import { perfSpan } from "@/lib/fleet/perf"
 import type { Enfileirar } from "@/lib/sendOrigin"
 import type { DeferredWork, WorkEvent, ManagedProcess } from "@/lib/work"
 import { duplicateConversationImpl, forkConversationAtImpl } from "@/store/chat/clone"
 import { markNotesSentImpl } from "@/store/chat/notes"
+import { removeConversationImpl } from "@/store/chat/remove"
 
 type ChatItemBody =
   | {
@@ -1518,74 +1514,10 @@ export const useChat = create<ChatState>((set, get) => {
       if (owner) await ensureLoaded(owner, id)
     },
 
-    removeConversation: async (id) => {
-      // Missão/disputa da conversa morrem JUNTO: sem a conversa elas seguiriam
-      // rodando invisíveis (fora da sidebar e do snapshot da tray, que
-      // subcontaria `running` e deixaria o "Sair" matar o trabalho sem
-      // confirmação). Import dinâmico: mission/fusion importam este módulo.
-      try {
-        const [{ useMission }, { useFusion }] = await Promise.all([
-          import("@/store/mission"),
-          import("@/store/fusion"),
-        ])
-        useMission.getState().abort(id)
-        useFusion.getState().abort(id) // no-op fora de running/judging
-        useFusion.getState().discard(id) // limpa board + pending do DB
-      } catch {
-        // best-effort: a deleção da conversa segue mesmo assim
-      }
-      // Mira a conversa pelo id ÚNICO → deleta só a linha certa no DB e some do
-      // array do projeto DONO dela (mesmo que seja um projeto NÃO-ativo). O
-      // projeto ativo e as outras conversas ficam intactos.
-      // Cancela o persist throttled pendente ANTES do DELETE: um snapshot
-      // atrasado re-inseriria a linha deletada (UPSERT) = conversa-zumbi.
-      cancelPersist(id)
-      // follow-up S3: o episódio de aviso de drift morre com a conversa (a
-      // entrada no Map de módulo não fica órfã).
-      clearPresetDriftWarning(id)
-      await dbDelete(id)
-      // E1 (S1.2): o dbDelete devolveu o card ligado pro backlog no banco
-      // (conversation_id = NULL) — re-hidrata o store do board pra UI refletir.
-      void import("@/store/cards")
-        .then((m) => m.useCards.getState().load())
-        .catch(() => {})
-      void wipeAttachments(id) // apaga os blobs da conversa (privacidade imediata)
-      const before = get()
-      const wasActive = before.activeId === id
-      // projeto DONO da conversa removida (pode não ser o ativo)
-      const owner =
-        projectOfConv(before.conversationsByProject, id) ?? before.projectId
-      set((s) => {
-        const rest = { ...s.byId }
-        delete rest[id]
-        const conversationsByProject = { ...s.conversationsByProject }
-        if (owner && conversationsByProject[owner]) {
-          conversationsByProject[owner] = conversationsByProject[owner].filter(
-            (c) => c.id !== id,
-          )
-        }
-        // Só recria o espelho se o DONO for o projeto ATIVO; owner ≠ ativo
-        // mantém a REFERÊNCIA (um filter no-op criaria ref nova à toa e
-        // re-renderizaria leitores do projeto ativo sem mudança real).
-        const mirror =
-          owner != null && owner === s.projectId
-            ? (conversationsByProject[owner] ??
-              s.conversations.filter((c) => c.id !== id))
-            : s.conversations
-        return { byId: rest, conversationsByProject, conversations: mirror }
-      })
-      // Se a removida não era a ATIVA (ex.: excluiu de um projeto não-ativo),
-      // nada mais a fazer — o painel ativo segue como estava.
-      if (!wasActive) return
-      const remaining = get().conversations
-      if (remaining.length > 0) {
-        await get().switchConversation(remaining[0].id)
-      } else if (owner) {
-        await get().newConversation(owner)
-      } else {
-        set({ activeId: null })
-      }
-    },
+    // Corpo em store/chat/remove.ts junto da lista inteira do que morre com a
+    // conversa (missão, disputa, card, anexo, worktree). `cancelPersist` viaja
+    // por parâmetro: é closure daqui, sobre o mapa de timers deste criador.
+    removeConversation: (id) => removeConversationImpl(get, set, id, cancelPersist),
 
     renameConversation: async (id, title) => {
       const t = title.trim()

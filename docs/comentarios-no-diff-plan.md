@@ -1,7 +1,11 @@
 # Comentários no diff — âncora honesta (plano)
 
-> Status: **F0 ✅ · F1 ✅ · F3 ✅ (todos 19/08/2026)** · F2 aguarda decisão
-> de produto (não é conserto).
+> Status: **F0 ✅ · F1 ✅ · F3 ✅ (todos 19/08/2026)** · **F2 ✅ (20/08/2026,
+> ADR-053)** — decidido pela **B** (fork isola sempre), a pedido do usuário
+> ("quero que seja um fork de verdade assim como é no Orca ou Paseo"), com a
+> contrapartida que a B exige: worktree e branch morrem com a conversa, e o que
+> sobra aparece na faixa de status. Ver o §F2 abaixo, que registra a
+> recomendação original e por que ela mudou.
 > Nasceu da revisão de 19/08/2026 sobre a leva "fork + comentário no diff +
 > Frota" (inspirada em Orca/Paseo, ver `competitors-orca.md`). O comentário
 > inline no diff foi entregue em `DiffPanel/comments.tsx` + `deliveryDiff.ts`;
@@ -105,6 +109,15 @@ Três saídas, com o custo honesto de cada uma:
 já faz exatamente isso e é reversível. B só se o uso real provar que o segundo
 gesto incomoda; aí entra como "Forkar e isolar", opção explícita, nunca
 default silencioso que enche o repo de worktree órfão.
+
+> **Desfecho (20/08/2026, ADR-053):** foi **B**, por decisão do usuário. E a
+> ressalva escrita acima estava certa: um dia depois, o próprio repo do projeto
+> tinha `mycockpit/05b6b458` com a pasta já removida e o branch vivo. Então a B
+> só ficou de pé quando ganhou o que faltava: `remove_worktree` apaga o branch
+> com `branch -d` (o git segura o que tem trabalho), a conversa apagada leva o
+> worktree junto, e o que sobra vira item na faixa de status com diálogo pra
+> recolher. A lição: **quem cria automático precisa recolher automático**. Sem
+> isso, "B" não era uma opção, era um vazamento com nome bonito.
 
 ## F3 — Título de fork acumula ✅
 

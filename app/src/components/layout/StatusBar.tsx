@@ -30,12 +30,16 @@ import {
   statusBuildItem,
   statusCostItem,
   statusUpdateItem,
+  statusWorktreeItem,
   type StatusItem,
 } from "@/lib/statusBar"
 import { sessionCost, sessionUnpricedTurns } from "@/lib/sessionCost"
 import { labelOf, useUpdates } from "@/lib/updates"
-import { useActiveConv } from "@/store/chat"
-import { useApp } from "@/store/app"
+import { looseWorktrees } from "@/lib/worktrees"
+import { WorktreesDialog } from "@/components/layout/WorktreesDialog"
+import { useActiveConv, useChat } from "@/store/chat"
+import { useWorktrees } from "@/store/worktrees"
+import { useActiveProject, useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 
 /** Um item de telemetria: etiqueta em sussurro + valor tabular. */
@@ -81,6 +85,62 @@ function UpdateItem() {
   return <Item item={item} />
 }
 
+/**
+ * Worktrees soltos do projeto ATIVO. Constata na faixa, detalha no diálogo.
+ *
+ * Lê a store (dono único do git aqui) e cruza com os `worktreePath` de TODAS as
+ * conversas — inclusive de outros projetos, porque uma conversa de qualquer
+ * projeto apontando pra aquela pasta ainda é alguém usando.
+ *
+ * `refresh` roda na troca de projeto e mais nada: worktree solto não muda
+ * sozinho. Um poll gastaria processo de git pra confirmar um número parado.
+ */
+function WorktreeItem() {
+  const [open, setOpen] = useState(false)
+  const project = useActiveProject()
+  const entries = useWorktrees((s) => (project ? s.byProject[project.id] : undefined))
+  const refresh = useWorktrees((s) => s.refresh)
+  // Objeto CRU no seletor: derivar a lista aqui dentro criaria array novo a
+  // cada render e o zustand re-renderizaria em laço.
+  const porProjeto = useChat((s) => s.conversationsByProject)
+
+  // Dependência nos CAMPOS, não no objeto: `useActiveProject` devolve o item
+  // do array de projetos, que é recriado a cada mexida em Configurações —
+  // depender do objeto spawnaria git a cada uma delas, pra confirmar o mesmo
+  // número.
+  const projectId = project?.id ?? null
+  const projectPath = project?.path ?? null
+  useEffect(() => {
+    if (projectId && projectPath) void refresh(projectId, projectPath)
+  }, [projectId, projectPath, refresh])
+
+  if (!project || !entries) return null
+  const usados = Object.values(porProjeto).flatMap((cs) =>
+    cs.map((c) => c.worktreePath),
+  )
+  const loose = looseWorktrees(entries, usados)
+  const item = statusWorktreeItem(loose.length)
+  if (!item) return null
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded transition-colors hover:text-foreground"
+      >
+        <Item item={item} />
+      </button>
+      <WorktreesDialog
+        open={open}
+        onOpenChange={setOpen}
+        projectId={project.id}
+        projectPath={project.path}
+        loose={loose}
+      />
+    </>
+  )
+}
+
 function BuildItem() {
   const [version, setVersion] = useState<string | null>(null)
   useEffect(() => {
@@ -114,13 +174,16 @@ export function StatusBar() {
       <UsagePill compact />
       <SessionCostItem />
 
-      {/* DIREITA — só dado que já existia. Hoje: o build em execução, herdado
-          do rodapé da sidebar (lá ele sumia junto com a sidebar fechada).
-          Branch/alterações NÃO entra nesta passada: o diff é carregado por
-          efeito local do ContextPanel/DiffPanel e não há fonte compartilhada;
-          criar uma segunda leitura de git pra encher a faixa daria dois donos
-          pro mesmo número. */}
+      {/* DIREITA — o build em execução, herdado do rodapé da sidebar (lá ele
+          sumia junto com a sidebar fechada), e os worktrees soltos.
+          Branch/alterações continua FORA, e o motivo segue de pé: o diff é
+          carregado por efeito local do ContextPanel/DiffPanel, então uma
+          segunda leitura de git pra encher a faixa daria dois donos pro mesmo
+          número. Worktree solto passa por essa mesma régua em vez de furá-la —
+          ninguém mais mostra esse dado, e quem lê o git é UM (store/worktrees),
+          não um efeito de tela. */}
       <div className="ml-auto flex items-center gap-3">
+        <WorktreeItem />
         <UpdateItem />
         <BuildItem />
       </div>

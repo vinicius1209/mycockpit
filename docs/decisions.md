@@ -2041,3 +2041,53 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   `vitest` 2801/252 (sem regressão), 6 guardas, `build` 0, `e2e` 17/17 (um
   teste reescrito pra provar o gesto novo: pílula fechada não expõe
   "Agent"/"Modelo" no DOM, abre no clique, nunca contém "alias").
+
+### ADR-053 — Quem cria worktree sozinho, recolhe sozinho ✅
+- **Contexto (20/08/2026):** o `comentarios-no-diff-plan.md` §F2 avaliou três
+  saídas pro fork e recomendou a **C** (fork normal + "Isolar" no menu),
+  registrando por escrito o custo da **B**: "`removeWorktree` recusa com
+  mudança não-commitada → lixo que só sai na mão" e "nunca default silencioso
+  que enche o repo de worktree órfão". A pedido do usuário ("quero que seja um
+  fork de verdade assim como é no Orca ou Paseo"), o que entrou em `clone.ts`
+  foi a **B**, silenciosa — e sem a contrapartida que a B exige. O vazamento
+  não era teórico: o próprio repo do projeto tinha `mycockpit/05b6b458`
+  apontando pra um commit de 13/08, com a pasta já removida e o branch vivo.
+- **Diagnóstico:** `remove_worktree` tirava a pasta e deixava o branch (isso
+  era deliberado, pra preservar trabalho), e `deleteConversation` não tocava em
+  worktree nenhum. Enquanto isolar era gesto deliberado, o lixo era raro e
+  consciente. Com o fork isolando sozinho, virou acúmulo invisível.
+- **Decisão 1 — o branch morre junto com a pasta, e é o GIT que decide.**
+  `remove_worktree` (git.rs) lê o branch DO worktree antes de remover (não
+  reconstrói o nome a partir do caminho: adivinhar branch pra apagar é erro sem
+  desfazer), remove a pasta, e só então roda `branch -d` — nunca `-D`, e só no
+  prefixo `mycockpit/`. As duas recusas do git viram features: mudança
+  não-commitada aborta tudo; commit que o HEAD não tem segura o branch. Devolve
+  `{ branch, branchRemoved }` pro front poder CONTAR o desfecho.
+- **Decisão 2 — worktree entra na lista do que morre com a conversa.**
+  `removeConversation` saiu de `store/chat.ts` (2575→2507, no teto do ratchet)
+  pra `store/chat/remove.ts`, junto de missão, disputa, card, persist pendente e
+  anexos. A regra que rege a lista inteira: nada continua VIVO e INVISÍVEL
+  depois que a conversa some — missão órfã, anexo órfão e worktree órfão são o
+  mesmo defeito com roupas diferentes.
+- **Decisão 3 — fala só quando SOBRA.** Branch apagado é o desfecho esperado e
+  já anunciado no diálogo de confirmação (que agora avisa, quando a conversa
+  está isolada, que o worktree e o branch vão junto): repetir no fim seria
+  barulho. Branch que ficou, ou pasta que o git segurou, vira aviso com nome e
+  caminho — senão volta a ser exatamente o lixo invisível que motivou tudo isto.
+- **Decisão 4 — o que já vazou tem lugar durável: a faixa de status.**
+  `statusWorktreeItem` entra na lista FECHADA de `lib/statusBar.ts` com o
+  argumento escrito no módulo: é ambiente (verdade permanente sobre o projeto,
+  sem cronômetro, não muda sozinho), não PEDE nada (constata; clicar abre
+  detalhe, como a UsagePill), e sem ele o toast avisaria uma vez e sumiria.
+  "Branch/alterações" continua FORA pelo motivo de sempre — dois donos pro mesmo
+  número —, e worktree solto passa por essa régua em vez de furá-la: quem lê o
+  git é UM (`store/worktrees.ts`, sob demanda, sem poll), e ninguém mais mostra
+  esse dado. `WorktreesDialog` lista pasta+branch e só oferece "Recolher" pra
+  quem não tem commit próprio; com trabalho, mostra o NÚMERO de commits (é o que
+  faz o usuário ir buscar em vez de achar que travou) e nenhum botão.
+- **Verificado:** semântica do git conferida em repo de teste nos três casos
+  (nada commitado → branch apagado; agente commitou → `-d` recusa e o branch
+  sobrevive; mudança não-commitada → `worktree remove` recusa e a pasta fica), e
+  round-trip do caminho entre `create_worktree` e `worktree list --porcelain`
+  batendo texto a texto (é dele que depende saber quem está solto). `tsc` 0,
+  `cargo check` 0, `vitest` 2899/260, 6 guardas.

@@ -5,6 +5,7 @@ import {
   statusBuildItem,
   statusCostItem,
   statusUpdateItem,
+  statusWorktreeItem,
 } from "./statusBar"
 
 describe("statusBarAccepts (a fronteira faixa × linha viva)", () => {
@@ -13,7 +14,11 @@ describe("statusBarAccepts (a fronteira faixa × linha viva)", () => {
     expect(statusBarAccepts("cost")).toBe(true)
     expect(statusBarAccepts("build")).toBe(true)
     expect(statusBarAccepts("update")).toBe(true)
-    expect(STATUS_BAR_KINDS).toHaveLength(4)
+    expect(statusBarAccepts("worktree")).toBe(true)
+    // O número é tripwire de propósito: mexer nele é assinar embaixo. Cada
+    // entrada nova precisa do argumento escrito no módulo, não da conveniência
+    // de quem tem um dado sobrando e uma faixa vazia na frente.
+    expect(STATUS_BAR_KINDS).toHaveLength(5)
   })
 
   it("recusa o AGORA do turno: a linha viva não sai do composer", () => {
@@ -100,5 +105,25 @@ describe("statusUpdateItem", () => {
     const item = statusUpdateItem(["Codex", "Claude Code"])
     expect(item?.text).toBe("atualizando 2…")
     expect(item?.title).toBe("Em andamento: Codex, Claude Code")
+  })
+})
+
+describe("statusWorktreeItem", () => {
+  it("nada solto, a zona não desenha nada (sem 'ok' nem zero)", () => {
+    expect(statusWorktreeItem(0)).toBeNull()
+    expect(statusWorktreeItem(-1)).toBeNull()
+  })
+
+  it("um solto não vira '1 worktrees'", () => {
+    expect(statusWorktreeItem(1)?.text).toBe("1 worktree solto")
+  })
+
+  it("vários viram contagem", () => {
+    expect(statusWorktreeItem(3)?.text).toBe("3 worktrees soltos")
+  })
+
+  it("tom cinza SEMPRE: sobra de worktree não é urgência (§2)", () => {
+    expect(statusWorktreeItem(1)?.tone).toBe("ok")
+    expect(statusWorktreeItem(99)?.tone).toBe("ok")
   })
 })

@@ -22,7 +22,7 @@ import { fmtCost } from "@/lib/format"
 import { shortVersion } from "@/lib/version"
 
 /** O que a faixa aceita hospedar. Lista FECHADA (ver o cabeçalho). */
-export const STATUS_BAR_KINDS = ["usage", "cost", "build", "update"] as const
+export const STATUS_BAR_KINDS = ["usage", "cost", "build", "update", "worktree"] as const
 export type StatusKind = (typeof STATUS_BAR_KINDS)[number]
 
 /**
@@ -142,6 +142,36 @@ export function statusUpdateItem(runningLabels: string[]): StatusItem | null {
     label: "",
     text,
     title: `Em andamento: ${runningLabels.join(", ")}`,
+    tone: "ok",
+  }
+}
+
+/**
+ * Worktrees do projeto que nenhuma conversa reivindica.
+ *
+ * POR QUE ISTO PODE ENTRAR NUMA LISTA FECHADA (o cabeçalho exige o argumento,
+ * não a conveniência):
+ *
+ * - É AMBIENTE no sentido exato do cabeçalho — verdade permanente sobre o
+ *   projeto enquanto você trabalha, igual à janela do plano e ao build. Não
+ *   narra turno, não tem cronômetro, não muda sozinho.
+ * - Não PEDE. Pedido de permissão segura a missão e mora no card de interação;
+ *   isto só CONSTATA. Clicar abre detalhe, do mesmo jeito que a UsagePill
+ *   ambiente abre o dela. Nada bloqueia, nada pisca.
+ * - Se ficasse fora, voltaria a ser o que era: pasta e branch acumulando sem
+ *   ninguém saber. Um toast avisa uma vez e some; isto é o estado durável.
+ *
+ * Tom `ok` (cinza) SEMPRE: sobra de worktree não é urgência, e o §2 não deixa
+ * cor virar opinião. `null` = nada solto, e a zona não desenha nada.
+ */
+export function statusWorktreeItem(loose: number): StatusItem | null {
+  if (loose <= 0) return null
+  return {
+    kind: "worktree",
+    label: "",
+    text: loose === 1 ? "1 worktree solto" : `${loose} worktrees soltos`,
+    title:
+      "Worktrees isolados que nenhuma conversa usa mais. Clique pra ver e recolher os que não têm trabalho próprio.",
     tone: "ok",
   }
 }

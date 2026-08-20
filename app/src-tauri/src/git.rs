@@ -184,12 +184,150 @@ pub async fn create_worktree(
         .map_err(|e| e.to_string())?
 }
 
-/// Remove o worktree de uma conversa. SEM --force: se houver mudança não-commitada,
-/// o git recusa e a gente preserva o trabalho (o branch continua no repo).
+/// Um branch `mycockpit/*` do projeto e o que ele carrega.
+///
+/// Só o que o COCKPIT criou entra aqui: branch de fora do prefixo é do usuário
+/// e não é da nossa conta listar, muito menos oferecer pra apagar.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeEntry {
+    pub branch: String,
+    /// Pasta do worktree, se ainda existir uma checada nesse branch. `None` =
+    /// só o branch sobrou (a pasta já foi, na mão ou por remoção parcial).
+    pub path: Option<String>,
+    /// Commits que este branch tem e o HEAD não. `0` = recolher não perde nada,
+    /// e é exatamente a condição que o `branch -d` verifica sozinho.
+    pub own_commits: u32,
+}
+
+/// Enumera os branches `mycockpit/*` do projeto e o worktree de cada um.
+///
+/// Fonte ÚNICA do número que a faixa mostra. A faixa recusou "branch/alterações"
+/// justamente por não ter dono único (dois efeitos lendo git dariam dois donos
+/// pro mesmo número, ver o cabeçalho de StatusBar.tsx); este comando existe pra
+/// que o dono seja um só.
+/// branch -> pasta, a partir do `worktree list --porcelain`.
+///
+/// Separado do comando porque é a única lógica daqui que dá pra testar sem
+/// repo: o resto é git falando. O porcelain vem em blocos separados por linha
+/// em branco (`worktree <path>`, `HEAD <sha>`, `branch refs/heads/<nome>`), e
+/// um worktree em HEAD solto não traz linha `branch` nenhuma.
+fn parse_worktree_paths(porcelain: &str) -> std::collections::HashMap<String, String> {
+    let mut pasta = std::collections::HashMap::new();
+    let mut atual: Option<String> = None;
+    for linha in porcelain.lines() {
+        if let Some(p) = linha.strip_prefix("worktree ") {
+            atual = Some(p.to_string());
+        } else if let Some(r) = linha.strip_prefix("branch refs/heads/") {
+            // `take` de propósito: o path pertence a UM bloco. Sem isso, um
+            // worktree em HEAD solto herdaria o caminho do bloco anterior.
+            if let Some(p) = atual.take() {
+                pasta.insert(r.to_string(), p);
+            }
+        }
+    }
+    pasta
+}
+
 #[tauri::command]
-pub async fn remove_worktree(project_path: String, path: String) -> Result<(), String> {
+pub async fn list_worktrees(project_path: String) -> Vec<WorktreeEntry> {
     tauri::async_runtime::spawn_blocking(move || {
-        run_git(&project_path, &["worktree", "remove", &path]).map(|_| ())
+        let pasta = parse_worktree_paths(
+            &git(&project_path, &["worktree", "list", "--porcelain"]).unwrap_or_default(),
+        );
+        let refs = git(
+            &project_path,
+            &[
+                "for-each-ref",
+                "--format=%(refname:short)",
+                "refs/heads/mycockpit/",
+            ],
+        )
+        .unwrap_or_default();
+        refs.lines()
+            .map(str::trim)
+            .filter(|b| !b.is_empty())
+            .map(|branch| {
+                let own_commits = git(&project_path, &["rev-list", "--count", &format!("HEAD..{branch}")])
+                    .and_then(|s| s.trim().parse::<u32>().ok())
+                    .unwrap_or(0);
+                WorktreeEntry {
+                    branch: branch.to_string(),
+                    path: pasta.get(branch).cloned(),
+                    own_commits,
+                }
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Apaga um branch `mycockpit/*` que não tem worktree. Serve o caso em que a
+/// pasta já foi e só o branch sobrou — aí `worktree remove` não tem o que
+/// remover, mas o lixo continua no repositório.
+///
+/// `-d`, nunca `-D`: o git recusa branch com commit que o HEAD não tem. O front
+/// não precisa confiar na própria contagem — a última palavra é do git.
+#[tauri::command]
+pub async fn delete_worktree_branch(project_path: String, branch: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !branch.starts_with("mycockpit/") {
+            return Err("só dá pra apagar branch criado pelo cockpit".into());
+        }
+        run_git(&project_path, &["branch", "-d", &branch]).map(|_| ())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Desfecho de uma remoção: o front precisa disso pra CONTAR o que aconteceu.
+/// Tirar a pasta e deixar o branch em silêncio foi o vazamento real — a main
+/// tree acumulava `mycockpit/*` que ninguém sabia que existia.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeRemoval {
+    /// Branch que o worktree ocupava (None = não deu pra ler, ex.: HEAD solto).
+    pub branch: Option<String>,
+    /// Apagado? `false` com `branch` preenchido = tinha commit que o HEAD não
+    /// tem, e o git segurou (trabalho preservado, não é falha).
+    pub branch_removed: bool,
+}
+
+/// Remove o worktree de uma conversa E o branch que ele ocupava.
+///
+/// Duas recusas do git são features aqui, não obstáculos:
+/// - `worktree remove` SEM `--force`: mudança não-commitada aborta tudo e o
+///   trabalho fica onde está (o Err sobe pro front dizer isso).
+/// - `branch -d` (nunca `-D`): commit que o HEAD não tem segura o branch. Como
+///   o fork nasce no HEAD, o caso comum (nada commitado) apaga limpo, e o caso
+///   que importa (o agente commitou) nunca some por descuido.
+///
+/// O nome do branch é LIDO do worktree antes de remover, não reconstruído a
+/// partir do caminho: adivinhar nome de branch pra apagar é o tipo de erro que
+/// não tem desfazer. E só apagamos o prefixo que nós criamos.
+#[tauri::command]
+pub async fn remove_worktree(
+    project_path: String,
+    path: String,
+) -> Result<WorktreeRemoval, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let branch = git(&path, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty() && s != "HEAD");
+        run_git(&project_path, &["worktree", "remove", &path])?;
+        // Depois da remoção, sempre: o git recusa apagar branch que está
+        // checado num worktree vivo.
+        let branch_removed = match branch.as_deref() {
+            Some(b) if b.starts_with("mycockpit/") => {
+                run_git(&project_path, &["branch", "-d", b]).is_ok()
+            }
+            _ => false,
+        };
+        Ok(WorktreeRemoval {
+            branch,
+            branch_removed,
+        })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -559,5 +697,57 @@ mod pulse_tests {
         // "não sei" NUNCA pode ser lido como "não mudou": string vazia é o
         // sinal de ignorância, e o TS não liga o aviso sem impressão digital.
         assert_eq!(worktree_pulse_sync("/caminho/que/nao/existe/mycockpit"), "");
+    }
+}
+
+#[cfg(test)]
+mod worktree_tests {
+    use super::*;
+
+    /// Formato real, copiado de `git worktree list --porcelain` no repo do
+    /// próprio projeto (main + dois worktrees de ferramentas de fora).
+    const PORCELAIN: &str = "\
+worktree /Users/v/projetos/mycockpit
+HEAD 12c802a3188cb1b0c4aeef02c9942525e5fcd5e4
+branch refs/heads/main
+
+worktree /Users/v/projetos/mycockpit/.mycockpit/worktrees/aaa11111
+HEAD daa89e4d3bcbc9e7b037f2257bbe7264d59871db
+branch refs/heads/mycockpit/aaa11111
+";
+
+    #[test]
+    fn liga_cada_branch_a_pasta_do_proprio_bloco() {
+        let m = parse_worktree_paths(PORCELAIN);
+        assert_eq!(m.get("main").map(String::as_str), Some("/Users/v/projetos/mycockpit"));
+        assert_eq!(
+            m.get("mycockpit/aaa11111").map(String::as_str),
+            Some("/Users/v/projetos/mycockpit/.mycockpit/worktrees/aaa11111")
+        );
+    }
+
+    #[test]
+    fn head_solto_nao_herda_o_caminho_do_bloco_anterior() {
+        // O erro caro: sem o `take`, o worktree detached emprestaria o path do
+        // bloco de cima e um worktree VIVO seria listado como solto.
+        let entrada = "\
+worktree /repo/wt-detached
+HEAD abc123
+
+worktree /repo/wt-com-branch
+HEAD def456
+branch refs/heads/mycockpit/bbb22222
+";
+        let m = parse_worktree_paths(entrada);
+        assert_eq!(m.len(), 1);
+        assert_eq!(
+            m.get("mycockpit/bbb22222").map(String::as_str),
+            Some("/repo/wt-com-branch")
+        );
+    }
+
+    #[test]
+    fn saida_vazia_nao_quebra() {
+        assert!(parse_worktree_paths("").is_empty());
     }
 }

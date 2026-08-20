@@ -3,6 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core"
 import { isTauri } from "@/lib/db"
+import type { WorktreeEntry } from "@/lib/worktrees"
 
 export type DiffLineType = "add" | "del" | "ctx"
 
@@ -47,6 +48,8 @@ export interface WorktreeInfo {
   branch: string
 }
 
+export type { WorktreeEntry } from "@/lib/worktrees"
+
 /** Cria (ou reusa) um worktree isolado pra uma conversa. O cockpit dirige. */
 export async function createWorktree(
   projectPath: string,
@@ -55,12 +58,46 @@ export async function createWorktree(
   return invoke<WorktreeInfo>("create_worktree", { projectPath, convId })
 }
 
-/** Remove o worktree de uma conversa (sem --force; preserva se houver mudança). */
+/** Desfecho da remoção — o branch some junto ou fica, e o front conta qual foi. */
+export interface WorktreeRemoval {
+  branch: string | null
+  branchRemoved: boolean
+}
+
+/** Remove o worktree de uma conversa E o branch dele (sem --force, sem -D: o
+ *  git segura se houver trabalho, e a recusa vira Err/`branchRemoved: false`). */
 export async function removeWorktree(
   projectPath: string,
   path: string,
+): Promise<WorktreeRemoval> {
+  return invoke<WorktreeRemoval>("remove_worktree", { projectPath, path })
+}
+
+/** Branches `mycockpit/*` do projeto + a pasta e os commits de cada um. Fonte
+ *  ÚNICA do número de worktrees soltos (o cruzamento fica em lib/worktrees). */
+export async function listWorktrees(projectPath: string): Promise<WorktreeEntry[]> {
+  return invoke<WorktreeEntry[]>("list_worktrees", { projectPath })
+}
+
+/** Apaga um branch `mycockpit/*` órfão (a pasta já foi; só o branch sobrou).
+ *  O Rust recusa fora do prefixo e usa `-d`, então o git tem a última palavra. */
+export async function deleteWorktreeBranch(
+  projectPath: string,
+  branch: string,
 ): Promise<void> {
-  return invoke("remove_worktree", { projectPath, path })
+  return invoke("delete_worktree_branch", { projectPath, branch })
+}
+
+/**
+ * O que dizer depois de remover. Puro porque é a única parte disto que dá pra
+ * testar sem git de verdade — e porque a frase é o produto: um branch que
+ * SOBREVIVEU precisa ser dito, senão volta a ser o lixo invisível que motivou
+ * tudo isto.
+ */
+export function worktreeRemovalNote(r: WorktreeRemoval): string | null {
+  if (!r.branch) return null
+  if (r.branchRemoved) return `Branch ${r.branch} apagado junto.`
+  return `Branch ${r.branch} ficou: tem commit que a base não tem.`
 }
 
 /** Stage tudo + commit no cwd. Devolve o SHA curto. Ação local. */

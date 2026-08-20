@@ -23,7 +23,8 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { confirm } from "@/lib/confirm"
-import { createWorktree, removeWorktree } from "@/lib/git"
+import { createWorktree, removeWorktree, worktreeRemovalNote } from "@/lib/git"
+import { useWorktrees } from "@/store/worktrees"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
@@ -198,10 +199,15 @@ export function ConversationList({ projectId }: { projectId: string }) {
   }
 
   // conversa é HARD-DELETE (sem desfazer) → sempre confirma antes.
-  async function askDeleteConv(id: string, title: string | null) {
+  // Conversa isolada leva o worktree junto (store/chat/remove.ts), e isso
+  // aparece ANTES do clique: apagar uma conversa que também apaga um branch é
+  // mais do que o usuário pediu se ele não foi avisado.
+  async function askDeleteConv(id: string, title: string | null, wt: string | null) {
     const ok = await confirm({
       title: "Excluir conversa?",
-      description: `"${title ?? "Nova conversa"}": o histórico e os anexos são apagados. Não dá pra desfazer.`,
+      description: wt
+        ? `"${title ?? "Nova conversa"}": o histórico e os anexos são apagados, e o worktree isolado volta pro repositório (o branch some junto se não tiver commit). Não dá pra desfazer.`
+        : `"${title ?? "Nova conversa"}": o histórico e os anexos são apagados. Não dá pra desfazer.`,
       confirmLabel: "Excluir",
       danger: true,
     })
@@ -209,13 +215,18 @@ export function ConversationList({ projectId }: { projectId: string }) {
   }
 
   // v2.5 — isola a conversa num worktree (o cockpit cria) ou volta pra o projeto.
+  // Nos dois sentidos relê a lista de worktrees: sem isso, um isolamento
+  // removido continuaria na leitura antiga E sem conversa dona, ou seja,
+  // apareceria na faixa como "solto" sendo que já não existe.
   async function toggleWorktree(id: string, wt: string | null) {
     if (!project) return
+    const releitura = () =>
+      void useWorktrees.getState().refresh(project.id, project.path)
     if (wt) {
       try {
-        await removeWorktree(project.path, wt)
+        const nota = worktreeRemovalNote(await removeWorktree(project.path, wt))
         setWorktree(id, null)
-        toast.success("Isolamento removido")
+        toast.success("Isolamento removido", nota ? { description: nota } : undefined)
       } catch (e) {
         // git recusa sem --force se houver mudança não-commitada (preserva o trabalho)
         toast.error(
@@ -233,6 +244,7 @@ export function ConversationList({ projectId }: { projectId: string }) {
         toast.error(typeof e === "string" ? e : "Falha ao isolar")
       }
     }
+    releitura()
   }
 
   return (
@@ -498,7 +510,7 @@ export function ConversationList({ projectId }: { projectId: string }) {
               <ContextMenuItem
                 variant="destructive"
                 disabled={isRunning}
-                onSelect={() => void askDeleteConv(c.id, c.title)}
+                onSelect={() => void askDeleteConv(c.id, c.title, c.worktreePath)}
               >
                 <Trash2 /> Excluir
               </ContextMenuItem>
