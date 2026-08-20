@@ -22,7 +22,7 @@ import { fmtCost } from "@/lib/format"
 import { shortVersion } from "@/lib/version"
 
 /** O que a faixa aceita hospedar. Lista FECHADA (ver o cabeçalho). */
-export const STATUS_BAR_KINDS = ["usage", "cost", "build"] as const
+export const STATUS_BAR_KINDS = ["usage", "cost", "build", "update"] as const
 export type StatusKind = (typeof STATUS_BAR_KINDS)[number]
 
 /**
@@ -117,6 +117,31 @@ export function statusBuildItem(version: string | null): StatusItem {
     label: "",
     text: short ? `local · ${short}` : "local",
     title: version ? `Build em execução: v${version}` : "Build local (sem versão carimbada)",
+    tone: "ok",
+  }
+}
+
+/**
+ * Job de update de CLI em andamento (Configurações ▸ CLIs instaladas).
+ * Substitui o toast flutuante "Atualizando…" (que sobrevivia ao fechar do
+ * modal e reaparecia por cima do chat): é estado AMBIENTE — verdadeiro
+ * enquanto o job roda, independente de qual tela o usuário está vendo — então
+ * mora aqui, não num popup. O desfecho (sucesso/erro) continua sendo um toast
+ * de um clique só, em `lib/updates.ts` — isso não muda.
+ *
+ * `null` = nenhum job rodando: a zona não desenha nada.
+ */
+export function statusUpdateItem(runningLabels: string[]): StatusItem | null {
+  if (runningLabels.length === 0) return null
+  const text =
+    runningLabels.length === 1
+      ? `atualizando ${runningLabels[0]}…`
+      : `atualizando ${runningLabels.length}…`
+  return {
+    kind: "update",
+    label: "",
+    text,
+    title: `Em andamento: ${runningLabels.join(", ")}`,
     tone: "ok",
   }
 }

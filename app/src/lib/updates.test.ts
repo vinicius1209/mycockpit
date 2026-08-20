@@ -1,6 +1,7 @@
-// Jobs de update de CLI como estado GLOBAL (lib/updates): toast com id
-// ESTÁVEL por agent (o loading e o desfecho usam o MESMO id — era o bug dos
-// toasts empilhados), dedupe no gesto (a trava real é no backend), desfecho na
+// Jobs de update de CLI como estado GLOBAL (lib/updates): job RODANDO não
+// gera toast (mora na faixa de status, ver lib/statusBar), só o DESFECHO
+// (sucesso/erro/inalterado) vira toast, com id ESTÁVEL por agent — nunca
+// empilha. Dedupe no gesto (a trava real é no backend), desfecho na
 // transição running→ok/failed e re-hidratação por snapshot que NÃO re-anuncia
 // job terminado em sessão antiga do modal.
 
@@ -85,24 +86,25 @@ beforeEach(() => {
 })
 
 describe("id estável do toast", () => {
-  it("o loading e o desfecho usam o MESMO id (nunca empilha)", () => {
+  it("job RODANDO não gera toast; só o desfecho, com id estável", () => {
     _handleUpdateEvent(evt({ phase: "started" }))
-    _handleUpdateEvent(evt({ phase: "finished", ok: true }))
+    expect(toast).not.toHaveBeenCalled()
+    expect(toast.loading).not.toHaveBeenCalled()
 
-    const id = updateToastId("codex")
-    expect(toast.loading).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(toast.loading).mock.calls[0][1]).toMatchObject({ id })
+    _handleUpdateEvent(evt({ phase: "finished", ok: true }))
     expect(toast.success).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(toast.success).mock.calls[0][1]).toMatchObject({ id })
+    expect(vi.mocked(toast.success).mock.calls[0][1]).toMatchObject({
+      id: updateToastId("codex"),
+    })
   })
 
-  it("re-hidratar com o MESMO job vivo não re-cria o toast de loading", async () => {
+  it("re-hidratar com o MESMO job vivo não gera toast nenhum", async () => {
     _handleUpdateEvent(evt({ phase: "started" }))
-    expect(toast.loading).toHaveBeenCalledTimes(1)
     // reabrir o modal → hydrate devolve o job ainda running.
     vi.mocked(invoke).mockResolvedValueOnce([job()])
     await hydrateUpdateJobs()
-    expect(toast.loading).toHaveBeenCalledTimes(1) // continua UM só
+    expect(toast.loading).not.toHaveBeenCalled()
+    expect(toast.success).not.toHaveBeenCalled()
     expect(useUpdates.getState().byAgent.codex.status).toBe("running")
   })
 })
@@ -227,14 +229,11 @@ describe("re-hidratação por snapshot (update_jobs)", () => {
 })
 
 describe("startUpdate (gesto do usuário)", () => {
-  it("dispara o job, mostra o loading e espelha o snapshot devolvido", async () => {
+  it("dispara o job, sem loading, e espelha o snapshot devolvido", async () => {
     vi.mocked(invoke).mockResolvedValueOnce(job())
     await startUpdate("codex")
     expect(invoke).toHaveBeenCalledWith("update_agent", { agent: "codex" })
-    expect(toast.loading).toHaveBeenCalledWith(
-      "Atualizando Codex…",
-      expect.objectContaining({ id: updateToastId("codex") }),
-    )
+    expect(toast.loading).not.toHaveBeenCalled()
     expect(useUpdates.getState().byAgent.codex.status).toBe("running")
   })
 

@@ -4,6 +4,7 @@ import {
   statusBarAccepts,
   statusBuildItem,
   statusCostItem,
+  statusUpdateItem,
 } from "./statusBar"
 
 describe("statusBarAccepts (a fronteira faixa × linha viva)", () => {
@@ -11,7 +12,8 @@ describe("statusBarAccepts (a fronteira faixa × linha viva)", () => {
     expect(statusBarAccepts("usage")).toBe(true)
     expect(statusBarAccepts("cost")).toBe(true)
     expect(statusBarAccepts("build")).toBe(true)
-    expect(STATUS_BAR_KINDS).toHaveLength(3)
+    expect(statusBarAccepts("update")).toBe(true)
+    expect(STATUS_BAR_KINDS).toHaveLength(4)
   })
 
   it("recusa o AGORA do turno: a linha viva não sai do composer", () => {
@@ -79,5 +81,24 @@ describe("statusBuildItem", () => {
     const item = statusBuildItem(null)
     expect(item.text).toBe("local")
     expect(item.text).not.toContain("v")
+  })
+})
+
+describe("statusUpdateItem", () => {
+  it("sem job rodando, a zona não desenha nada", () => {
+    expect(statusUpdateItem([])).toBeNull()
+  })
+
+  it("um job rodando nomeia o agent", () => {
+    const item = statusUpdateItem(["Codex"])
+    expect(item?.kind).toBe("update")
+    expect(item?.text).toBe("atualizando Codex…")
+    expect(item?.title).toBe("Em andamento: Codex")
+  })
+
+  it("mais de um job rodando vira contagem, com os nomes no tooltip", () => {
+    const item = statusUpdateItem(["Codex", "Claude Code"])
+    expect(item?.text).toBe("atualizando 2…")
+    expect(item?.title).toBe("Em andamento: Codex, Claude Code")
   })
 })

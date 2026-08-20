@@ -1,15 +1,18 @@
 // Estado GLOBAL dos jobs de update dos CLIs (painel "CLIs instaladas").
 //
 // Por que store global, e não estado do SettingsDialog (incidente 2026-07):
-// o botão "Atualizar" usava `busy` local do componente + `toast.loading`
-// ANÔNIMO por clique. Cada clique disparava um `update_agent` novo (N `brew
-// upgrade` concorrentes brigando pelo lock do brew), os toasts "Atualizando…"
-// empilhavam duplicados, e fechar o modal matava o estado enquanto a Promise
-// seguia viva. O job agora é do APP: o Rust (update.rs) deduplica e roda em
-// background; aqui a gente só espelha o estado (fonte única = registry do
-// Rust) e dá um toast com id ESTÁVEL por agent (`update:<agent>`), promovido
-// de loading pra success/error no desfecho — nunca empilha, e fechar/reabrir
-// o modal não cria outro.
+// o botão "Atualizar" usava `busy` local do componente + toast ANÔNIMO por
+// clique. Cada clique disparava um `update_agent` novo (N `brew upgrade`
+// concorrentes brigando pelo lock do brew), e fechar o modal matava o estado
+// enquanto a Promise seguia viva. O job agora é do APP: o Rust (update.rs)
+// deduplica e roda em background; aqui a gente só espelha o estado (fonte
+// única = registry do Rust).
+//
+// O job RODANDO não gera toast (virava popup flutuante sobrevivendo ao
+// fechar do modal, por cima do chat — ver `statusUpdateItem` em
+// lib/statusBar: é estado ambiente, mora na faixa de status). Só o DESFECHO
+// (sucesso/erro/inalterado) vira toast, com id ESTÁVEL por agent
+// (`update:<agent>`) — nunca empilha, e fechar/reabrir o modal não cria outro.
 //
 // Fail-open: se o listener de `update://event` falhar, o polling de segurança
 // (update_jobs a cada 5s enquanto houver job vivo) e a re-hidratação ao abrir
@@ -66,7 +69,7 @@ const AGENT_LABELS: Record<string, string> = {
   agy: "Antigravity",
 }
 
-function labelOf(agent: string): string {
+export function labelOf(agent: string): string {
   return AGENT_LABELS[agent] ?? agent
 }
 
@@ -162,13 +165,8 @@ function applyJob(job: UpdateJob, source: "event" | "snapshot"): void {
   useUpdates.setState((s) => ({ byAgent: { ...s.byAgent, [job.agent]: job } }))
 
   if (job.status === "running") {
-    // toast único por episódio: só quando o job APARECE rodando (re-hidratar
-    // com o mesmo job vivo não re-cria/ressuscita o toast).
-    if (prev?.status !== "running") {
-      toast.loading(`Atualizando ${labelOf(job.agent)}…`, {
-        id: updateToastId(job.agent),
-      })
-    }
+    // Sem toast de "rodando": esse estado mora na faixa de status (ambiente,
+    // sobrevive a trocar de tela) — ver `statusUpdateItem` em lib/statusBar.
     ensurePolling()
     return
   }
@@ -242,7 +240,6 @@ export async function startUpdate(agent: string): Promise<void> {
   if (prev?.status === "running") return
   const label = labelOf(agent)
   const id = updateToastId(agent)
-  toast.loading(`Atualizando ${label}…`, { id })
   try {
     const job = await invoke<UpdateJob>("update_agent", { agent })
     applyJob(job, "event")

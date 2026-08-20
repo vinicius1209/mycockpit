@@ -26,8 +26,14 @@ import { useEffect, useState } from "react"
 import { getVersion } from "@tauri-apps/api/app"
 import { UsagePill } from "@/components/layout/UsagePill"
 import { METER_TEXT } from "@/lib/meter"
-import { statusBuildItem, statusCostItem, type StatusItem } from "@/lib/statusBar"
+import {
+  statusBuildItem,
+  statusCostItem,
+  statusUpdateItem,
+  type StatusItem,
+} from "@/lib/statusBar"
 import { sessionCost, sessionUnpricedTurns } from "@/lib/sessionCost"
+import { labelOf, useUpdates } from "@/lib/updates"
 import { useActiveConv } from "@/store/chat"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
@@ -61,6 +67,16 @@ function SessionCostItem() {
     },
     limit,
   )
+  if (!item) return null
+  return <Item item={item} />
+}
+
+function UpdateItem() {
+  const byAgent = useUpdates((s) => s.byAgent)
+  const running = Object.values(byAgent)
+    .filter((j) => j.status === "running")
+    .map((j) => labelOf(j.agent))
+  const item = statusUpdateItem(running)
   if (!item) return null
   return <Item item={item} />
 }
@@ -105,6 +121,7 @@ export function StatusBar() {
           criar uma segunda leitura de git pra encher a faixa daria dois donos
           pro mesmo número. */}
       <div className="ml-auto flex items-center gap-3">
+        <UpdateItem />
         <BuildItem />
       </div>
     </footer>
