@@ -6,6 +6,7 @@ beforeEach(() => {
     viewMode: "linear",
     scheduledOpen: false,
     flightPlansOpen: false,
+    fleetOpen: false,
     activeProjectId: "project-a",
   })
 })
@@ -38,5 +39,30 @@ describe("workspaces globais", () => {
 
     expect(useApp.getState().activeProjectId).toBe("project-b")
     expect(useApp.getState().flightPlansOpen).toBe(false)
+  })
+
+  it("Frota é mutuamente exclusiva com Agendado e Planos de voo", () => {
+    useApp.getState().setScheduledOpen(true)
+    useApp.getState().setFleetOpen(true)
+    expect(useApp.getState().fleetOpen).toBe(true)
+    expect(useApp.getState().scheduledOpen).toBe(false)
+
+    useApp.getState().setFlightPlansOpen(true)
+    expect(useApp.getState().flightPlansOpen).toBe(true)
+    expect(useApp.getState().fleetOpen).toBe(false)
+
+    useApp.getState().setFleetOpen(true)
+    expect(useApp.getState().fleetOpen).toBe(true)
+    expect(useApp.getState().flightPlansOpen).toBe(false)
+  })
+
+  it("trocar de superfície/projeto também fecha a Frota", () => {
+    useApp.getState().setFleetOpen(true)
+    useApp.getState().setViewMode("painel")
+    expect(useApp.getState().fleetOpen).toBe(false)
+
+    useApp.getState().setFleetOpen(true)
+    useApp.getState().setActiveProject("project-b")
+    expect(useApp.getState().fleetOpen).toBe(false)
   })
 })

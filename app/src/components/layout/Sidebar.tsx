@@ -9,14 +9,12 @@ import {
   ChevronRight,
   ArrowUp,
   ArrowDown,
-  Clock,
   Loader2,
   Trash2,
   Pencil,
   Copy,
   Archive,
   ArchiveRestore,
-  Route,
   Search,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -32,11 +30,15 @@ import {
 } from "@/components/ui/context-menu"
 import { ColorSubmenu } from "@/components/layout/ColorSubmenu"
 import { ConversationList } from "@/components/layout/ConversationList"
+import {
+  FleetEntry,
+  FlightPlansEntry,
+  ScheduledEntry,
+} from "@/components/layout/Sidebar/globalEntries"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useAwaiting } from "@/store/interactions"
 import { useSchedules } from "@/store/schedules"
-import { fmtUntilShort, nextScheduled } from "@/lib/schedules"
 import {
   loadSddPlans,
   stageLabel,
@@ -494,114 +496,6 @@ function SddFeatureList({ project }: { project: Project }) {
   )
 }
 
-/** F7 — seção GLOBAL "Agendado" no topo da sidebar (acima de PROJETOS,
- *  discreta): coleção cross-projeto das automações do F6. Clique abre a view
- *  no lugar do conteúdo principal (useApp.scheduledOpen — estado próprio, não
- *  mexe no switcher). Badge = próxima execução ("2h"), refrescada a cada 60s. */
-function ScheduledEntry() {
-  // selector devolve PRIMITIVO (number|null) — estável entre snapshots.
-  const nextAt = useSchedules(
-    (s) => nextScheduled(s.schedules)?.nextRun ?? null,
-  )
-  const active = useApp((s) => s.scheduledOpen)
-  const setScheduledOpen = useApp((s) => s.setScheduledOpen)
-  // re-render de minuto SÓ quando há badge (o rótulo relativo não pode mofar).
-  const [, setTick] = useState(0)
-  useEffect(() => {
-    if (nextAt == null) return
-    const t = setInterval(() => setTick((n) => n + 1), 60_000)
-    return () => clearInterval(t)
-  }, [nextAt])
-  return (
-    <div>
-      <button
-        onClick={() => setScheduledOpen(true)}
-        aria-label="Abrir Agendamentos"
-        className={cn(
-          "group relative flex w-full items-center gap-2.5 rounded-md py-2 pr-2 pl-3 text-left transition-colors",
-          // Mesma receita única de "selecionado" das linhas da árvore (§2).
-          active ? "bg-sel" : "hover:bg-sel-hover",
-        )}
-      >
-        {active && (
-          <span className="absolute top-1/2 left-[5px] size-[3px] -translate-y-1/2 rounded-full bg-foreground/80" />
-        )}
-        <span className="grid size-5 shrink-0 place-items-center">
-          {/* Ícone ativo NÃO é brass: brass é gesto, e "selecionado" perdeu o
-              canal cromático inteiro (ADR-043). */}
-          <Clock
-            className={cn(
-              "size-4",
-              active ? "text-foreground" : "text-muted-foreground/70",
-            )}
-          />
-        </span>
-        <span
-          className={cn(
-            "min-w-0 flex-1 truncate text-[13px]",
-            // S3.6 — ativo em foreground (brass 13px sobre a superfície de
-            // seleção reprova AA no claro)
-            active
-              ? "font-medium text-foreground"
-              : "text-muted-foreground group-hover:text-foreground",
-          )}
-        >
-          Agendamentos
-        </span>
-        {nextAt != null && (
-          // "Quando?" tem UM idioma nesta árvore, e ele é neutro: a Fase 1 pôs
-          // o tempo relativo da conversa em mono cinza no slot direito, e a
-          // próxima execução responde a mesma pergunta na mesma coluna.
-          <span className="shrink-0 font-mono text-[11px] tabular-nums text-faint">
-            {fmtUntilShort(nextAt - Date.now())}
-          </span>
-        )}
-      </button>
-    </div>
-  )
-}
-
-function FlightPlansEntry() {
-  const active = useApp((s) => s.flightPlansOpen)
-  const setFlightPlansOpen = useApp((s) => s.setFlightPlansOpen)
-  const count = useApp((s) => s.settings.missionPresets.length)
-  return (
-    <button
-      onClick={() => setFlightPlansOpen(true)}
-      aria-label="Abrir Planos de voo"
-      className={cn(
-        "group relative flex w-full items-center gap-2.5 rounded-md py-2 pr-2 pl-3 text-left transition-colors",
-        active ? "bg-sel" : "hover:bg-sel-hover",
-      )}
-    >
-      {active && (
-        <span className="absolute top-1/2 left-[5px] size-[3px] -translate-y-1/2 rounded-full bg-foreground/80" />
-      )}
-      <span className="grid size-5 shrink-0 place-items-center">
-        <Route
-          className={cn(
-            "size-4",
-            active ? "text-foreground" : "text-muted-foreground/70",
-          )}
-        />
-      </span>
-      <span
-        className={cn(
-          "min-w-0 flex-1 truncate text-[13px]",
-          active
-            ? "font-medium text-foreground"
-            : "text-muted-foreground group-hover:text-foreground",
-        )}
-      >
-        Planos de voo
-      </span>
-      <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">
-        {count}
-      </span>
-    </button>
-  )
-}
-
 function GlobalEntries() {
   return (
     <div className="px-2 pt-2">
@@ -609,6 +503,7 @@ function GlobalEntries() {
         <span className="label-mono">Geral</span>
       </div>
       <div className="space-y-0.5">
+        <FleetEntry />
         <ScheduledEntry />
         <FlightPlansEntry />
       </div>

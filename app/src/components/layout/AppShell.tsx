@@ -10,6 +10,7 @@ import { ChatPanel } from "@/components/chat/ChatPanel"
 import { MissionControl } from "@/components/panel/MissionControl"
 import { SddView } from "@/components/sdd/SddView"
 import { ScheduledView } from "@/components/scheduled/ScheduledView"
+import { FleetView } from "@/components/fleet/FleetView"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -37,7 +38,8 @@ export function AppShell() {
   const viewMode = useApp((s) => s.viewMode)
   const scheduledOpen = useApp((s) => s.scheduledOpen)
   const flightPlansOpen = useApp((s) => s.flightPlansOpen)
-  const coberto = scheduledOpen || flightPlansOpen
+  const fleetOpen = useApp((s) => s.fleetOpen)
+  const coberto = scheduledOpen || flightPlansOpen || fleetOpen
 
   return (
     // `pb-2`: o INSET de 8px do conteúdo (ADR-043, Fase 3). Vale pras DUAS
@@ -66,8 +68,8 @@ export function AppShell() {
           <ResizablePanelGroup orientation="horizontal" className="h-full">
             <ResizablePanel id="chat" defaultSize="70%" minSize="42%">
               <div className="h-full overflow-hidden rounded-xl border bg-background shadow-[var(--shadow-pop)]">
-                {/* F7: a view global "Agendado" cobre o conteúdo via estado
-                    próprio — o switcher de superfícies fica como está.
+                {/* F7: as views globais (Agendado, Planos de voo, Frota) cobrem o
+                    conteúdo via estado próprio — o switcher de superfícies fica como está.
                     Painel e Trabalho ficam SEMPRE MONTADOS (toggle por CSS):
                     desmontar/remontar a árvore do chat (markdown gigante) a
                     cada troca de aba travava o main thread — o memo dos itens
@@ -96,6 +98,8 @@ export function AppShell() {
                   </Suspense>
                 ) : scheduledOpen ? (
                   <ScheduledView />
+                ) : fleetOpen ? (
+                  <FleetView />
                 ) : viewMode === "sdd" ? (
                   <SddView />
                 ) : null}

@@ -41,6 +41,10 @@ interface AppState {
   /** Editor global dos Planos de voo. Assim como Agendado, ocupa o centro sem
    *  fingir ser uma superfície de projeto e não persiste entre boots. */
   flightPlansOpen: boolean
+  /** Rollup "Frota": tudo que está RODANDO agora, em qualquer projeto — o
+   *  Fio Vivo é por sessão, isto é o cross-sessão. Mesma família de Agendado/
+   *  Planos de voo: cobre o centro via estado próprio, não persiste. */
+  fleetOpen: boolean
   /** A fila "Precisam de você" está expandida abaixo da faixa do chrome?
    *  (ADR-040) Não persiste: decisão pendente não se dispensa entre boots, e a
    *  faixa some sozinha quando a fila esvazia. */
@@ -99,6 +103,8 @@ interface AppState {
   setScheduledOpen: (v: boolean) => void
   /** Abre/fecha o workspace global de Planos de voo. */
   setFlightPlansOpen: (v: boolean) => void
+  /** Abre/fecha o rollup global "Frota". */
+  setFleetOpen: (v: boolean) => void
   /** Abre/fecha a fila de decisões pendentes da faixa do chrome. */
   setDecisionsOpen: (v: boolean) => void
   setReady: (v: boolean) => void
@@ -181,6 +187,7 @@ export const useApp = create<AppState>()(
       viewMode: "linear",
       scheduledOpen: false,
       flightPlansOpen: false,
+      fleetOpen: false,
       decisionsOpen: false,
       ready: false,
       mycockpit: {},
@@ -204,7 +211,12 @@ export const useApp = create<AppState>()(
         set((s) => ({ projects: [p, ...s.projects], activeProjectId: p.id })),
       // trocar de projeto é navegação → fecha qualquer workspace global.
       setActiveProject: (id) =>
-        set({ activeProjectId: id, scheduledOpen: false, flightPlansOpen: false }),
+        set({
+          activeProjectId: id,
+          scheduledOpen: false,
+          flightPlansOpen: false,
+          fleetOpen: false,
+        }),
       setProjectPermission: (id, mode) =>
         set((s) => ({
           projects: s.projects.map((p) =>
@@ -256,16 +268,24 @@ export const useApp = create<AppState>()(
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       // o switcher não conhece os workspaces globais; trocar de superfície os fecha.
       setViewMode: (viewMode) =>
-        set({ viewMode, scheduledOpen: false, flightPlansOpen: false }),
+        set({ viewMode, scheduledOpen: false, flightPlansOpen: false, fleetOpen: false }),
       setScheduledOpen: (scheduledOpen) =>
         set({
           scheduledOpen,
           flightPlansOpen: scheduledOpen ? false : get().flightPlansOpen,
+          fleetOpen: scheduledOpen ? false : get().fleetOpen,
         }),
       setFlightPlansOpen: (flightPlansOpen) =>
         set({
           flightPlansOpen,
           scheduledOpen: flightPlansOpen ? false : get().scheduledOpen,
+          fleetOpen: flightPlansOpen ? false : get().fleetOpen,
+        }),
+      setFleetOpen: (fleetOpen) =>
+        set({
+          fleetOpen,
+          scheduledOpen: fleetOpen ? false : get().scheduledOpen,
+          flightPlansOpen: fleetOpen ? false : get().flightPlansOpen,
         }),
       // a faixa é chrome: expandir a fila NÃO troca de superfície nem fecha
       // workspace nenhum (ela existe por cima do que você já estava fazendo).

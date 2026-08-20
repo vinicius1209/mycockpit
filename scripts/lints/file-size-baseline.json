@@ -11,7 +11,7 @@
     "components/chat/LexicalComposer.tsx": 907,
     "components/chat/MessageList.tsx": 2649,
     "components/layout/ContextPanel.tsx": 857,
-    "components/layout/Sidebar.tsx": 920,
+    "components/layout/Sidebar.tsx": 815,
     "components/scheduled/ScheduledView.tsx": 1113,
     "components/sdd/SddView.tsx": 1462,
     "components/settings/Especialistas.tsx": 829,
