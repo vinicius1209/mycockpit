@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import {
   buildItems,
-  firstIncomplete,
   guideProgress,
   guideView,
   isComplete,
@@ -205,29 +204,6 @@ describe("decisão de exibição (guideView)", () => {
         probes: { agent: true, project: true },
       }),
     ).toBeNull()
-  })
-})
-
-describe("onde o clique pousa", () => {
-  it("no primeiro item incompleto", () => {
-    const items = buildItems(TUDO, {
-      agent: true,
-      project: true,
-      meter: false,
-      hooks: false,
-      companion: false,
-    })
-    expect(firstIncomplete(items)?.id).toBe("meter")
-  })
-
-  it("não sei conta como incompleto (é onde o usuário deve olhar)", () => {
-    const items = buildItems(NADA, { agent: null, project: true })
-    expect(firstIncomplete(items)?.id).toBe("agent")
-  })
-
-  it("tudo feito não tem para onde ir", () => {
-    const items = buildItems(NADA, { agent: true, project: true })
-    expect(firstIncomplete(items)).toBeNull()
   })
 })
 

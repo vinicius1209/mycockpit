@@ -7,22 +7,27 @@
 //   • some SOZINHA ao completar (dismissal é pra quem não quer os opcionais);
 //   • cada item é marcado por PROBE do estado real, com teto de tempo:
 //     leitura travada mantém o guia visível em vez de escondê-lo pra sempre;
-//   • clicar abre no primeiro item incompleto.
+//   • clicar mostra a LISTA inteira (cada item já é a explicação — "o que
+//     desbloqueia", não o nome da feature); escolher um item navega até ele.
+//     Antes o clique pulava direto pro primeiro incompleto, sem checklist
+//     nenhuma — "4/5" sem UMA tela que dissesse qual item era o 5º.
 
 import { useCallback, useEffect, useState } from "react"
+import { Check, Circle } from "lucide-react"
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { addProjectViaDialog } from "@/lib/projects"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 import {
-  firstIncomplete,
   guideView,
   ringDash,
+  type GuideItem,
   type ProbeMap,
 } from "./setupItems"
 import { capabilitiesOf, runProbes } from "./setupProbes"
@@ -109,24 +114,20 @@ export function SetupGuide() {
   const view = guideView({ probes, caps, ready, dismissed, onboarded })
   if (!view) return null
 
-  const next = firstIncomplete(view.items)
-
-  function open() {
-    if (!next) return
-    if (next.target.kind === "add-project") {
+  function openItem(item: GuideItem) {
+    if (item.target.kind === "add-project") {
       void addProjectViaDialog()
       return
     }
-    setSettingsOpen(true, next.target.section)
+    setSettingsOpen(true, item.target.section)
   }
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <button
           type="button"
-          onClick={open}
-          title={next ? next.label : undefined}
+          title="O que falta configurar"
           className={cn(
             "flex h-[34px] w-full shrink-0 items-center gap-2.5 border-t px-3 text-left",
             "transition-colors hover:bg-accent",
@@ -140,14 +141,58 @@ export function SetupGuide() {
             {view.done}/{view.total}
           </span>
         </button>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        side="top"
+        align="start"
+        // O trigger é w-full (a largura inteira da sidebar); alinhar por
+        // "center" devolvia o cálculo do Radix colado na borda mesmo assim
+        // (a colisão contra a lateral vencia a centralização). `alignOffset`
+        // + `collisionPadding` são determinísticos: SEMPRE essa folga da
+        // borda, sem depender da largura do trigger nem da colisão.
+        alignOffset={12}
+        collisionPadding={12}
+        sideOffset={8}
+        className="w-64"
+        // Radix devolve o foco pro trigger ao fechar (padrão de acessibilidade
+        // dele) — o outline nativo do browser nesse botão w-full h-[34px] lia
+        // como uma barra azul cortando a linha inteira. Mesma supressão já
+        // usada em UsagePill/ContextMenuContent da sidebar: sem isso, TODO
+        // menu fechado nesta lateral deixaria o mesmo rastro.
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
+        {/* Sem cabeçalho: o gatilho logo abaixo já diz "Configuração 4/5" —
+            repetir o rótulo dentro do popover era eco, não orientação. */}
+        {view.items.map((item) => {
+          const done = item.state === "done"
+          return (
+            <DropdownMenuItem
+              key={item.id}
+              disabled={done}
+              onSelect={() => openItem(item)}
+              className={cn(
+                "flex items-start gap-2 whitespace-normal",
+                done && "opacity-60",
+              )}
+            >
+              {done ? (
+                <Check className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+              ) : (
+                <Circle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/50" />
+              )}
+              <span className={cn("text-[12px]", done && "line-through")}>
+                {item.label}
+              </span>
+            </DropdownMenuItem>
+          )
+        })}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
           onSelect={() => setSettings({ setupGuideDismissed: true })}
         >
           Esconder da barra lateral
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

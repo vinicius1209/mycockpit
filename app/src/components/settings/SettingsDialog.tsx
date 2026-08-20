@@ -233,6 +233,18 @@ export function SettingsDialog() {
         // de preset de 3 colunas truncava tudo). Agora ~700px de conteúdo, com
         // teto por viewport pra não estourar telas baixas.
         className="flex h-[min(88vh,640px)] w-[92vw] max-w-[900px] gap-0 overflow-hidden rounded-xl border-border/60 p-0 shadow-[var(--shadow-pop)] sm:max-w-[900px]"
+        onOpenAutoFocus={(e) => {
+          // Foco padrão do Radix vai pro 1º botão do rail (Aparência) — errado
+          // num deep link (guia de setup, tray, medidor, paleta): o dialog abre
+          // já mostrando a seção pedida, mas o anel de foco ficava preso no 1º
+          // item, incoerente com o conteúdo exibido. Resolve igual ao efeito de
+          // deep link, sem depender do timing dele.
+          e.preventDefault()
+          const resolved = resolveSection(requested, available)
+          const root = e.currentTarget as HTMLElement | null
+          const el = root?.querySelector<HTMLElement>(`[data-section="${resolved}"]`)
+          el?.focus()
+        }}
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Configurações</DialogTitle>
@@ -248,6 +260,7 @@ export function SettingsDialog() {
               {sections.map((s) => (
                 <button
                   key={s.id}
+                  data-section={s.id}
                   onClick={() => setSection(s.id)}
                   className={cn(
                     // denso na lateral (régua de ~34px do STYLEGUIDE §8)

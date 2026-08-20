@@ -128,14 +128,6 @@ export function isComplete(items: readonly GuideItem[]): boolean {
   return items.every((i) => i.state === "done")
 }
 
-/** Onde o clique pousa: o primeiro item que não está feito. "unknown" conta
- *  como não feito (é onde o usuário deve olhar). null = nada a fazer. */
-export function firstIncomplete(
-  items: readonly GuideItem[],
-): GuideItem | null {
-  return items.find((i) => i.state !== "done") ?? null
-}
-
 /** A linha aparece? Pronto, incompleto e não dispensado. Sai sozinha ao
  *  completar (não precisa de dismissal pra isso), e leitura travada mantém
  *  ela VISÍVEL em vez de sumir para sempre. */
