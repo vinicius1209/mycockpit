@@ -75,7 +75,8 @@ vi.mock("@/lib/presets", () => ({
     ),
   ),
 }))
-vi.mock("@/lib/transcript", () => ({
+vi.mock("@/lib/transcript", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/transcript")>()),
   renderTranscript: vi.fn(() => "# transcript"),
   exportConvContext: vi.fn(async () => ".mycockpit/context/conv.md"),
   buildMemoryPrompt: vi.fn(

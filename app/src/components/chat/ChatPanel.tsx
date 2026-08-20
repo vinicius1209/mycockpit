@@ -8,6 +8,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { toast } from "sonner"
+import { withNotes } from "@/lib/notes"
 import { cn } from "@/lib/utils"
 import { taskPlansOf } from "@/lib/tasks"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
@@ -27,7 +28,6 @@ import {
   deferredLabel,
   deferredResumePrompt,
   executorItems,
-  hasExecutorTurn,
   needsPersonaReinject,
   type ChatItem,
 } from "@/store/chat"
@@ -57,6 +57,7 @@ import {
   renderTranscript,
   exportConvContext,
   buildMemoryPrompt,
+  shouldInlineMemory,
   buildResumeFallback,
   shouldAttachResumeFallback,
 } from "@/lib/transcript"
@@ -572,14 +573,10 @@ export function ChatPanel() {
     // M2: injeta as lições relevantes (projeto + globais) no PROMPT, não na
     // bolha visível. Best-effort: qualquer falha envia sem o bloco.
     //
-    // NÃO condicionar a `viewMode`: este handleSend É o turno linear (Fusion e
-    // Mission têm dispatchers próprios e nunca passam por aqui), então o
-    // viewMode era só um proxy — e um proxy ERRADO, porque é valor de TELA
-    // capturado no closure da render. Enfileirar na conversa A, trocar de
-    // superfície e deixar o turno terminar drenava a fila no alvo certo (a
-    // frente do sendTarget consertou isso) mas SEM as lições, só porque a tela
-    // tinha mudado. O `sendFromDesk` (lib/fleet/send) já injetava sem condição
-    // — agora os dois caminhos concordam.
+    // NÃO condicionar a `viewMode`: este handleSend É o turno linear, então o
+    // viewMode era proxy ERRADO (valor de TELA capturado no closure) — deixar
+    // o turno terminar em outra superfície drenava a fila SEM as lições. O
+    // `sendFromDesk` já injetava sem condição; agora os dois concordam.
     // Comandos "/" honestos por fonte×motor: só conversa claude-code com
     // comando de fonte claude viaja CRU (o CLI interpreta nativamente); o
     // resto expande AQUI — em codex/agy o /nome literal era texto que o motor
@@ -663,6 +660,7 @@ export function ChatPanel() {
       !!lessonsBlock || !!broughtAdvice || !!doctrineBlock || !!personaBlock,
     )
     // cascata (de dentro pra fora): lições → parecer → doutrina → persona.
+    promptText = withNotes(convId, conv.items, promptText)
     if (lessonsBlock) promptText = `${lessonsBlock}\n\n---\n\n${promptText}`
     if (broughtAdvice) promptText = `${broughtAdvice}\n\n---\n\n${promptText}`
     if (doctrineBlock) promptText = `${doctrineBlock}\n\n${promptText}`
@@ -713,10 +711,9 @@ export function ChatPanel() {
     // projeto e aponta o caminho (o agent PUXA se precisar de mais). Motores
     // com resume não ganham isso em turno normal (o resume já resolve).
     // Best-effort de ponta a ponta: falha no export → só o recap.
+    // Regra única em lib/transcript (vivia duplicada aqui e no fleet/send).
     if (
-      !wheelSwitch &&
-      !(engineDef(agent)?.sessionResume ?? false) &&
-      hasExecutorTurn(conv.items)
+      shouldInlineMemory({ agent, items: conv.items, sessionId, hasReply, wheelSwitch })
     ) {
       let pointer: string | null = null
       try {

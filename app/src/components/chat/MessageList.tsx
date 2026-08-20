@@ -11,7 +11,6 @@ import {
 } from "react"
 import {
   AlertCircle,
-  AlertTriangle,
   ArrowRightLeft,
   Ban,
   Bot,
@@ -19,13 +18,10 @@ import {
   ChevronRight,
   Copy,
   CornerDownRight,
-  FileDiff,
   FilePen,
   FileText,
   Gauge,
   Globe,
-  Globe2,
-  GraduationCap,
   ListChecks,
   Loader2,
   MessageSquareQuote,
@@ -33,8 +29,6 @@ import {
   Search,
   Square,
   Terminal,
-  ThumbsDown,
-  ThumbsUp,
   User,
   Wrench,
   X,
@@ -42,7 +36,6 @@ import {
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import { SELECTED_FILL } from "@/lib/selection"
 import { DESTINATIONS } from "@/lib/agents"
 import { fmtCost, fmtDuration, fmtTime, fmtTokens } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
@@ -71,7 +64,8 @@ import { EVIDENCE_MISSING, evidenceName, evidenceUrl } from "@/lib/evidence"
 import { useLightbox, type LightboxImage } from "@/store/lightbox"
 import { lineDiff, trimOuterContext, type DiffRow } from "@/lib/linediff"
 import { taskPlansOf, type AgentPlan } from "@/lib/tasks"
-import { openDeliveryDiff } from "@/lib/deliveryDiff"
+import { TurnNoteBlock } from "@/components/chat/TurnNote"
+import { TurnActions } from "@/components/chat/TurnActions"
 import { Markdown } from "@/components/common/Markdown"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { ActivityAge } from "@/components/chat/LiveTime"
@@ -94,6 +88,7 @@ import {
   type ToolTreeNode,
 } from "@/components/chat/toolTree"
 import { buildNodesMemo, type NodesMemo } from "@/components/chat/nodesMemo"
+import { placeNotes } from "@/lib/notes"
 import { groupByAuthor, groupTs, type MessageGroup } from "@/components/chat/messageGroups"
 import {
   feedbackTextByResult,
@@ -852,14 +847,11 @@ function ToolGroupStatus({
   return <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
 }
 
-/** Registro de voo: UMA caption por burst — e, assentado, UMA linha por grupo
- * (despoluição do fio, direção B): o resumo é a informação (contagem, duração
- * congelada, culpada nomeada na falha); o detalhe fica a um clique.
- *
- * `memo`: o grupo assentado não muda quando um token cai na bolha viva de outro
- * turno. Só vale porque `tools` chega com identidade preservada (`reuseNodes`) e
- * `onStop`/`onRetry` chegam estáveis (`useStableHandler`) — sem os dois, este
- * `memo` seria decoração, que foi exatamente o defeito diagnosticado. */
+/** Registro de voo: UMA caption por burst — e, assentado, UMA linha por grupo:
+ * o resumo é a informação (contagem, duração congelada, culpada na falha); o
+ * detalhe fica a um clique. `memo` só vale porque `tools` chega com identidade
+ * preservada (`reuseNodes`) e `onStop`/`onRetry` estáveis (`useStableHandler`)
+ * — sem os dois, o `memo` seria decoração, o defeito já diagnosticado antes. */
 const ToolGroup = memo(function ToolGroup({
   tools,
   active = false,
@@ -1263,10 +1255,8 @@ function AttachmentThumb({
   )
 }
 
-/** Selo do anexo: prova (ou falta dela) de que o agent ABRIU o arquivo.
- *  No Claude e no agy o anexo é um ponteiro — o modelo decide abrir —, então
- *  "respondeu" nunca significou "olhou". O rastro já existia no fio (a chamada
- *  da ferramenta de leitura); isto só o mostra. */
+/** Selo do anexo: prova de que o agent ABRIU o arquivo (Claude/agy tratam o
+ *  anexo como ponteiro — "respondeu" nunca significou "olhou"). */
 function ReadBadge({ read }: { read: { text: string; warn: boolean } | null }) {
   if (!read) return null
   return (
@@ -1312,270 +1302,11 @@ export interface FeedbackApi {
   ) => Promise<SaveLessonOutcome>
 }
 
-// A taxonomia de 5 sabores positivos (🎯🧠🧪⚡ + 👍) e as 8 reações extras do
-// "＋" nunca pesaram nada diferente no reforço: ChatPanel só checa
-// `reaction !== "👎"` pra decidir se reforça as lições (conferido no código,
-// não é achismo de estilo) — 6 botões coloridos + expansor eram ruído puro,
-// sensação de Slack numa superfície que quer ser console. Ficou o binário que
-// já era a única coisa que importava. Emoji como VALOR persistido continua o
-// mesmo (👍/👎), só o render virou ícone monocromático.
-const THUMB_UP = "👍"
-const THUMB_DOWN = "👎"
-
-/** Ações de fim de turno — diff, reação e "virar aprendizado" — ícone-só, lado
- *  a lado com `TurnTelemetry` na MESMA linha (mock B, `turno-resumo-README.md`).
- *  Emoji é sinal leve; memória permanente exige nota → proposta editável →
- *  confirmação humana. */
-function TurnActions({
-  it,
-  feedbackText,
-  api,
-}: {
-  it: Extract<ChatItem, { kind: "result" }>
-  feedbackText?: string
-  api: FeedbackApi
-}) {
-  const resultId = it.id
-  const agentTurn = feedbackText ?? it.text ?? ""
-  const reactions = it.reactions ?? []
-  // "idle" | "ask" (input inline) | "card" (propor regra) | "done"
-  const [mode, setMode] = useState<"idle" | "ask" | "card" | "done">("idle")
-  const [selectedReaction, setSelectedReaction] = useState<string | null>(
-    reactions.at(-1) ?? null,
-  )
-  const [note, setNote] = useState("")
-  const [rule, setRule] = useState("")
-  // veredito do juiz de learnability: false = pouco generalizável (avisa, não bloqueia).
-  const [learnable, setLearnable] = useState<boolean | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  async function react(reaction: string) {
-    const added = await api.onReact(resultId, reaction)
-    setSelectedReaction(added ? reaction : null)
-  }
-
-  function openAsk() {
-    const negative = selectedReaction === "👎"
-    setNote(
-      negative
-        ? ""
-        : selectedReaction
-          ? `O que funcionou com ${selectedReaction} e deve se repetir: `
-          : "",
-    )
-    setMode("ask")
-  }
-
-  // input enviado → destila (Haiku ou cru) e mostra o card editável (gate humano).
-  async function propose() {
-    const n = note.trim()
-    if (!n) return
-    setBusy(true)
-    try {
-      const candidate = await api.distill(agentTurn, n)
-      setRule(candidate.rule)
-      setLearnable(candidate.learnable)
-      setMode("card")
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function commit(scope: "global" | "project") {
-    const r = rule.trim()
-    if (!r) return
-    setBusy(true)
-    try {
-      const r2 = await api.save(r, scope, selectedReaction)
-      setMode(r2 === "salva" ? "done" : "idle")
-      if (r2 === "duplicata") toastDuplicate()
-      if (r2 === "erro") {
-        toast.error("Não consegui salvar a regra.", {
-          description: "O detalhe está no console. Sua regra NÃO foi gravada.",
-        })
-      }
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <>
-      <div className="ml-auto flex shrink-0 items-center gap-0.5">
-        {it.ok && (
-          <>
-            <button
-              type="button"
-              onClick={() => {
-                const convId = useChat.getState().activeId
-                if (!convId) return
-                void openDeliveryDiff({ convId, text: it.text ?? "" })
-              }}
-              title="Ver o diff desta entrega"
-              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-            >
-              <FileDiff className="size-3.5" />
-              <span className="sr-only">Ver o diff desta entrega</span>
-            </button>
-            <span className="mx-0.5 h-3.5 w-px bg-border/60" aria-hidden />
-          </>
-        )}
-        <button
-          type="button"
-          onClick={() => void react(THUMB_UP)}
-          aria-pressed={reactions.includes(THUMB_UP)}
-          title="Gostei"
-          className={cn(
-            "rounded-md p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-            reactions.includes(THUMB_UP)
-              ? SELECTED_FILL
-              : "text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
-        >
-          <ThumbsUp className="size-3.5" />
-          <span className="sr-only">Gostei</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => void react(THUMB_DOWN)}
-          aria-pressed={reactions.includes(THUMB_DOWN)}
-          title="Precisa melhorar"
-          className={cn(
-            "rounded-md p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-            reactions.includes(THUMB_DOWN)
-              ? SELECTED_FILL
-              : "text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
-        >
-          <ThumbsDown className="size-3.5" />
-          <span className="sr-only">Precisa melhorar</span>
-        </button>
-        <button
-          type="button"
-          onClick={openAsk}
-          title="Transformar em aprendizado"
-          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-brass focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-        >
-          <GraduationCap className="size-3.5" />
-          <span className="sr-only">Transformar em aprendizado</span>
-        </button>
-        {mode === "done" && (
-          <span className="ml-1 inline-flex items-center gap-1 text-[11px] text-st-success">
-            <Check className="size-3" /> Regra salva
-          </span>
-        )}
-      </div>
-
-      {/* muda de propriedade (legenda de leitura → formulário editável): a
-          hairline é permitida aqui pelo §4 do STYLEGUIDE mesmo sem ela ser o
-          padrão do resto da barra. `basis-full` força a nova linha dentro do
-          mesmo flex-wrap da legenda, sem precisar subir estado pro pai. */}
-      {mode === "ask" && (
-        <div className="mt-1.5 flex w-full basis-full items-center gap-1.5 border-t border-border/40 pt-2">
-          <input
-            autoFocus
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void propose()
-              if (e.key === "Escape") setMode("idle")
-            }}
-            placeholder={
-              selectedReaction === "👎"
-                ? "O que faltou ou deveria mudar?"
-                : "O que funcionou e deve se repetir?"
-            }
-            className="min-w-0 flex-1 rounded-md border bg-background/60 px-2 py-1 text-[12px] outline-none focus:border-brass/60"
-          />
-          <button
-            onClick={() => void propose()}
-            disabled={busy || !note.trim()}
-            className="shrink-0 rounded-md bg-brass px-2 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
-          >
-            {busy ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              "Propor aprendizado"
-            )}
-          </button>
-          <button
-            onClick={() => setMode("idle")}
-            aria-label="Cancelar"
-            className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-3.5" />
-          </button>
-        </div>
-      )}
-
-      {mode === "card" && (
-        <div
-          className={cn(
-            "mt-1.5 flex w-full basis-full flex-col gap-2 rounded-lg border p-2.5",
-            learnable === false
-              ? "border-st-warning/40 bg-st-warning/5"
-              : "border-brass/40 bg-brass/5",
-          )}
-        >
-          {learnable === false ? (
-            <div className="flex items-start gap-1.5 text-[11px] text-st-warning">
-              <AlertTriangle className="mt-px size-3.5 shrink-0" /> Isso parece
-              pouco generalizável, nada óbvio pra virar regra. Salve só se for
-              mesmo uma preferência durável.
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <GraduationCap className="size-3.5 text-brass" /> Aprendizado
-              proposto, confirme antes de tornar permanente
-            </div>
-          )}
-          <textarea
-            value={rule}
-            onChange={(e) => setRule(e.target.value)}
-            rows={2}
-            className="w-full resize-none rounded-md border bg-background/60 px-2 py-1.5 text-[13px] leading-snug outline-none focus:border-brass/60"
-          />
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              onClick={() => void commit("project")}
-              disabled={busy || !rule.trim()}
-              className="rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
-            >
-              Salvar regra
-            </button>
-            <button
-              onClick={() => void commit("global")}
-              disabled={busy || !rule.trim()}
-              className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-[12px] transition-colors hover:bg-accent disabled:opacity-40"
-            >
-              <Globe2 className="size-3.5" /> Salvar como global
-            </button>
-            <button
-              onClick={() => setMode("idle")}
-              className="rounded-md px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Descartar
-            </button>
-            {busy && <Loader2 className="size-3.5 animate-spin text-brass" />}
-          </div>
-        </div>
-      )}
-    </>
-  )
-}
-
-/** Aviso leve de duplicata: dedup preferível a ruído (nunca grava 2 regras iguais). */
-function toastDuplicate() {
-  toast("Já existe uma regra parecida, não salvei de novo.")
-}
 
 /** Legenda de fim de turno: UMA linha discreta (tempo&status · tokens&cache ·
- *  modelo&custo), não 8 itens soltos no mesmo "·" corrido. Custo em cinza, NÃO
- *  brass (§2 do STYLEGUIDE: custo nunca é gesto — valor absoluto sem teto do
- *  usuário fica cinza até ele definir um limite em Config ▸ Uso e custo). As
- *  ações (Diff, reação, aprendizado) moram em `TurnActions`, lado a lado com
- *  esta legenda na MESMA linha — ver `docs/mocks/turno-resumo-README.md`
- *  (mock B): a barra empilhava 3 linhas por turno, sempre visíveis; virou 1. */
+ *  modelo&custo). Custo em cinza, NÃO brass (§2: custo nunca é gesto — fica
+ *  cinza até o usuário definir um teto em Config ▸ Uso e custo). As ações
+ *  moram em `TurnActions`, lado a lado (mock B de `turno-resumo-README.md`). */
 function TurnTelemetry({
   it,
   incidentTone,
@@ -1709,11 +1440,9 @@ function formatIncidentReset(hint: string): string {
 }
 
 /** Linha de CHEGADA do conselheiro (Especialistas E1): enquanto o parecer não
- *  resolve (`conv.advising` setado), a persona "entra no fio" no lugar onde o
- *  parecer vai cair, estilo Slack — avatar + nome + "está lendo o contexto…"
- *  com dots pulsando. Some quando o item `advice` chega. Resolve o AgentDef pelo
- *  id do advising (fallback: nome) na lista de presets; fail-soft: sem persona,
- *  avatar genérico com seed no id/nome, não quebra. */
+ *  resolve (`conv.advising` setado), a persona "entra no fio" estilo Slack —
+ *  avatar + nome + "está lendo o contexto…" com dots pulsando; some quando o
+ *  item `advice` chega. Fail-soft: sem persona resolvida, avatar genérico. */
 function AdviceArrivalRow({
   advising,
 }: {
@@ -1825,7 +1554,7 @@ function AdviceCard({ item }: { item: Extract<ChatItem, { kind: "advice" }> }) {
           onClick={() => {
             const convId = useChat.getState().activeId
             if (!convId) return
-            useChat.getState().dismissAdvice(convId, item.id)
+            useChat.getState().removeThreadItem(convId, item.id)
           }}
           className="rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
         >
@@ -2041,8 +1770,7 @@ const MessageItem = memo(function MessageItem({
     return <Markdown text={it.text} />
   }
 
-  // Tools são agrupadas por buildNodes/ToolGroup. Este guard só torna a união
-  // exaustiva caso um item cru chegue aqui por histórico legado.
+  // Tools agrupadas por buildNodes/ToolGroup; este guard só fecha a união.
   if (it.kind === "tool") return null
 
   if (it.kind === "error") {
@@ -2096,6 +1824,13 @@ const MessageItem = memo(function MessageItem({
 
   if (it.kind === "advice") {
     return <AdviceCard item={it} />
+  }
+
+  if (it.kind === "note") {
+    const convId = useChat.getState().activeId
+    return convId ? (
+      <TurnNoteBlock convId={convId} id={it.id} text={it.text} />
+    ) : null
   }
 
   return (
@@ -2443,7 +2178,7 @@ function useStableNodes(items: ChatItem[]): Node[] {
   const memo = useRef<NodesMemo | null>(null)
   return useMemo(() => {
     const prev = memo.current
-    const next = buildNodesMemo(prev, items)
+    const next = buildNodesMemo(prev, placeNotes(items))
     memo.current = next
     return prev ? reuseNodes(prev.nodes, next.nodes, next.rebuiltFrom) : next.nodes
   }, [items])
@@ -2465,14 +2200,11 @@ function useStableAttReads(
   }, [items, agent, running, from])
 }
 
-/** Callback com IDENTIDADE fixa que sempre chama a versão mais recente.
- *
- *  Os handlers chegam do ChatPanel como literais inline: identidade nova a cada
- *  render do pai, que re-renderiza a cada token. Passados assim, atravessam o
- *  `memo` do `ToolLine`/`ToolGroup` e o anulam. Como só são invocados por gesto
- *  do usuário (parar, repetir), ler a versão corrente de um ref é idêntico em
- *  comportamento. `undefined` continua `undefined`: a ausência do handler é o
- *  que esconde o botão, e isso não pode virar uma função de mentira. */
+/** Callback com IDENTIDADE fixa que sempre chama a versão mais recente. Os
+ *  handlers chegam do ChatPanel como literais inline (identidade nova a cada
+ *  render do pai) e atravessam o `memo` do `ToolLine`/`ToolGroup`; como só são
+ *  invocados por gesto do usuário, ler a versão corrente de um ref é idêntico
+ *  em comportamento. `undefined` continua `undefined` (não vira função de mentira). */
 function useStableHandler<T>(
   fn: ((arg: T) => void) | undefined,
 ): ((arg: T) => void) | undefined {

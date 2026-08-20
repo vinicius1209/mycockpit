@@ -91,11 +91,11 @@ describe("Trazer pro Executor (bring/take)", () => {
   })
 })
 
-describe("Dispensar (dismissAdvice)", () => {
+describe("Dispensar (removeThreadItem)", () => {
   it("remove só o item de parecer do fio", () => {
     const user: ChatItem = { kind: "user", id: "u1", text: "oi" }
     useChat.setState({ byId: { c1: conv({ items: [user, advice("a1")] }) } })
-    useChat.getState().dismissAdvice("c1", "a1")
+    useChat.getState().removeThreadItem("c1", "a1")
     const items = useChat.getState().byId.c1.items
     expect(items).toHaveLength(1)
     expect(items[0].id).toBe("u1")

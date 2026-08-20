@@ -5,6 +5,7 @@ import {
   memoryPointerLine,
   buildResumeFallback,
   shouldAttachResumeFallback,
+  shouldInlineMemory,
   toolImagesNote,
   RESUME_FALLBACK_NOTE,
 } from "./transcript"
@@ -187,5 +188,64 @@ describe("toolImagesNote + capturas no transcript (G3.3)", () => {
     // tool sem imagem segue sem menção nenhuma
     expect(md).toContain("- tool `Read` — src/a.ts\n")
     expect(md).not.toContain("src/a.ts (0")
+  })
+})
+
+describe("shouldInlineMemory (a memória entra no corpo do prompt?)", () => {
+  const fio: ChatItem[] = [user("antes"), text("respondi")]
+  const base = { items: fio, hasReply: true, wheelSwitch: false }
+
+  it("FORK: motor com resume e SEM sessão leva a memória", () => {
+    // O fork copia o fio pro nosso banco mas NÃO herda a sessão do CLI — sem
+    // isto o agente começa cego num fio que a tela mostra cheio.
+    expect(
+      shouldInlineMemory({ ...base, agent: "claude-code", sessionId: null }),
+    ).toBe(true)
+  })
+
+  it("sessão viva NÃO leva (o resume nativo já carrega)", () => {
+    expect(
+      shouldInlineMemory({ ...base, agent: "claude-code", sessionId: "sess" }),
+    ).toBe(false)
+  })
+
+  it("conversa nova (sem resposta de assistant) não leva envelope nenhum", () => {
+    // senão o 1º envio mandaria uma "memória" contendo só a própria pergunta.
+    expect(
+      shouldInlineMemory({
+        agent: "claude-code",
+        items: [user("primeira")],
+        hasReply: false,
+        sessionId: null,
+        wheelSwitch: false,
+      }),
+    ).toBe(false)
+  })
+
+  it("troca de backend fica de fora (o fio viaja no envelope do revezamento)", () => {
+    expect(
+      shouldInlineMemory({
+        ...base,
+        agent: "claude-code",
+        sessionId: null,
+        wheelSwitch: true,
+      }),
+    ).toBe(false)
+  })
+
+  it("motor SEM resume leva em todo turno, com ou sem sessão", () => {
+    // `opencode` é um dos únicos com sessionResume:false no registry — agy
+    // MIGROU pro resume nativo, então não serve mais de exemplo aqui.
+    expect(shouldInlineMemory({ ...base, agent: "opencode", sessionId: null })).toBe(true)
+    expect(shouldInlineMemory({ ...base, agent: "opencode", sessionId: "x" })).toBe(true)
+  })
+
+  it("motor com resume: os 3 agents entregues (claude/codex/agy) dependem da sessão", () => {
+    // Guarda de registry: se algum deles perder `sessionResume`, este teste cai
+    // e obriga a revisitar a regra em vez de mudar o comportamento em silêncio.
+    for (const agent of ["claude-code", "codex", "agy"]) {
+      expect(shouldInlineMemory({ ...base, agent, sessionId: "viva" })).toBe(false)
+      expect(shouldInlineMemory({ ...base, agent, sessionId: null })).toBe(true)
+    }
   })
 })

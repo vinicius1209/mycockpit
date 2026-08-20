@@ -14,7 +14,6 @@ import {
   resolveFirstTurnPersona,
   warnPresetDrift,
 } from "@/lib/presets"
-import { agentDef } from "@/lib/agents"
 import { exportConvContext } from "@/lib/transcript"
 import type { ChatItem, ConvState, QueuedMsg } from "@/store/chat"
 import {
@@ -122,16 +121,15 @@ vi.mock("@/lib/presets", () => ({
     ),
   ),
 }))
-vi.mock("@/lib/transcript", () => ({
+vi.mock("@/lib/transcript", async (importOriginal) => ({
+  // Predicados puros: implementação REAL (mock deles = segunda verdade).
+  ...(await importOriginal<typeof import("@/lib/transcript")>()),
   renderTranscript: vi.fn(() => "# transcript"),
   exportConvContext: vi.fn(async () => ".mycockpit/context/conv.md"),
   buildMemoryPrompt: vi.fn(
     (_items: unknown, pointer: string | null, prompt: string) =>
       `[memória-agy|${pointer ?? "sem-ponteiro"}] ${prompt}`,
   ),
-  // regra da real (pura), do REGISTRY e nunca do nome (era `agent !== "agy"`):
-  shouldAttachResumeFallback: vi.fn((a: string, i: unknown[], sid: string | null) =>
-    Boolean(agentDef(a)?.sessionResume && i.length > 0 && sid != null)),
   buildResumeFallback: vi.fn(() => "[fallback-resume]"),
 }))
 vi.mock("@/store/chat", () => ({
@@ -446,7 +444,8 @@ describe("sendFromDesk — coreografia do run", () => {
 
   it("H1: claude recebe a doutrina pelo canal SYSTEM em todo turno, corpo limpo", async () => {
     comDoutrina("- Testes em pt-BR.")
-    arm(makeConv({ items: [user("antes"), assistant("respondi")] }))
+    // sessionId: o cenário É mid-sessão ("todo turno"); sem ele seria um fork.
+    arm(makeConv({ items: [user("antes"), assistant("respondi")], sessionId: "s" }))
     await sendFromDesk(args)
     const call = vi.mocked(runAgent).mock.calls[0]
     expect(call[5]).toBe("olá")
@@ -465,6 +464,7 @@ describe("sendFromDesk — coreografia do run", () => {
         agent: "codex",
         items: [user("antes"), assistant("respondi")],
         injected: { doctrine: atual },
+        sessionId: "sess-viva", // "resume carrega" exige sessão viva
       }),
     )
     await sendFromDesk({ ...args, agent: "codex" })

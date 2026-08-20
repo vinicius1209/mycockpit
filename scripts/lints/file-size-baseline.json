@@ -7,9 +7,9 @@
   },
   "arquivos": {
     "App.tsx": 711,
-    "components/chat/ChatPanel.tsx": 1519,
+    "components/chat/ChatPanel.tsx": 1516,
     "components/chat/LexicalComposer.tsx": 907,
-    "components/chat/MessageList.tsx": 2649,
+    "components/chat/MessageList.tsx": 2381,
     "components/layout/ContextPanel.tsx": 857,
     "components/layout/Sidebar.tsx": 815,
     "components/scheduled/ScheduledView.tsx": 1113,
@@ -26,7 +26,7 @@
     "lib/mission.ts": 546,
     "lib/sdd.ts": 510,
     "lib/watchdog.ts": 607,
-    "store/chat.ts": 2624,
+    "store/chat.ts": 2575,
     "store/fusion.ts": 518,
     "store/interactions.ts": 705,
     "store/mission.ts": 1283

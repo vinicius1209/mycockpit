@@ -277,6 +277,13 @@ function contextEntries(items: ChatItem[]): string[] {
         `\nParecer de ${it.personaName} (conselheiro, só leitura): ${it.text}`,
       )
       i++
+    } else if (it.kind === "note") {
+      // Nota do humano: voz DISTINTA da do assistente e enquadrada como
+      // direção, não como mais uma fala — senão ela se dilui no recap e o
+      // agente a lê como conversa. Mesmo motivo do parecer acima: sem esta
+      // entrada a nota some de tudo que serializa a conversa.
+      out.push(`\nNota do usuário (direção, não é fala do agente): ${it.text}`)
+      i++
     } else if (it.kind === "tool") {
       let j = i
       const digests: string[] = []

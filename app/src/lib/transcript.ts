@@ -8,7 +8,7 @@
 import { invoke } from "@tauri-apps/api/core"
 import { agentDef } from "@/lib/agents"
 import { serializeContext, toolDigest } from "@/lib/fusion"
-import type { ChatItem } from "@/store/chat"
+import { hasExecutorTurn, type ChatItem } from "@/store/chat"
 
 export interface TranscriptMeta {
   /** Agent da conversa (id do registry; vira o rótulo longo no cabeçalho). */
@@ -79,6 +79,11 @@ export function renderTranscript(
           it.text,
         )
         break
+      case "note":
+        // Atribuída e enquadrada, igual ao parecer: quem lê precisa saber que
+        // é DIREÇÃO do humano sobre o turno anterior, não fala do agente.
+        lines.push("", "## Nota do usuário (direção sobre o turno acima)", "", it.text)
+        break
       // result: o texto final já veio no item "text"; não duplica.
       default:
         break
@@ -136,6 +141,36 @@ export function shouldAttachResumeFallback(
 ): boolean {
   const resume = agentDef(agent)?.sessionResume ?? false
   return resume && items.length > 0 && sessionId != null
+}
+
+/**
+ * A memória do fio entra no CORPO do prompt? Duas portas, com predicados
+ * deliberadamente diferentes — e é isso que este predicado existe pra manter
+ * junto, porque a regra vivia duplicada nas DUAS superfícies de envio
+ * (ChatPanel.handleSend e lib/fleet/send) e divergir aqui é silencioso.
+ *
+ *  • Motor SEM `sessionResume`: todo turno é sessão fresca, então basta haver
+ *    turno de executor (comportamento histórico, inalterado).
+ *  • Motor COM resume mas SEM sessão — o FORK, e a sessão derrubada: o
+ *    histórico existe só no NOSSO banco, o CLI não tem o que retomar. Aqui
+ *    exigimos resposta de assistant de verdade (`hasReply`), senão o 1º envio
+ *    de uma conversa nova mandaria um envelope de "memória" contendo apenas a
+ *    própria pergunta que está sendo feita.
+ *
+ * `wheelSwitch` (troca de backend) fica FORA das duas: lá o fio viaja no
+ * envelope híbrido do revezamento, que é outro caminho.
+ */
+export function shouldInlineMemory(p: {
+  agent: string
+  items: ChatItem[]
+  sessionId: string | null
+  hasReply: boolean
+  wheelSwitch: boolean
+}): boolean {
+  if (p.wheelSwitch) return false
+  const resume = agentDef(p.agent)?.sessionResume ?? false
+  if (!resume) return hasExecutorTurn(p.items)
+  return p.sessionId == null && p.hasReply
 }
 
 /** Texto do `memoryFallback` (claude/codex): recap curto (~3k) + ponteiro pro

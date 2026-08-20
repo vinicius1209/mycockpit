@@ -11,6 +11,7 @@ import { agentLabel, cancelAgent, runAgent } from "@/lib/agent"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
 import type { Attachment } from "@/lib/attachments"
 import { resumePrompt, wantsAutoResume } from "@/lib/autoResume"
+import { withNotes } from "@/lib/notes"
 import { isTauri } from "@/lib/db"
 import { listConversations, type ConversationMeta } from "@/lib/db/conversations"
 import { prepareHybridHandoff } from "@/lib/handoff"
@@ -43,6 +44,7 @@ import { runCompactTurn } from "@/lib/compact"
 import { readProjectCommands } from "@/lib/sources"
 import {
   buildMemoryPrompt,
+  shouldInlineMemory,
   buildResumeFallback,
   exportConvContext,
   renderTranscript,
@@ -345,15 +347,12 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
       )
   }
   args.onAccepted?.("started")
-  // M2: injeta as lições relevantes (projeto + globais) no PROMPT, não na
-  // bolha visível — mesma injeção do handleSend no Linear. Best-effort:
-  // qualquer falha envia sem o bloco. Os ids injetados vão pro registro por
-  // conversa (recordInjectedLessons) — o 👍 do dock/companion (P6) reforça
-  // pelo MESMO caminho do ChatPanel (feedbackLesson → reinforceLessons).
-  // Comandos "/" honestos por fonte×motor — MESMA regra do handleSend do
-  // ChatPanel: só conversa claude-code com comando de fonte claude viaja cru;
-  // o resto expande aqui (codex/agy ignoram o /nome literal). A bolha mostra
-  // o que você digitou; a expansão entra só no prompt.
+  // M2: lições no PROMPT, não na bolha (mesma injeção do handleSend).
+  // Best-effort; os ids vão pro registro por conversa (recordInjectedLessons),
+  // e o 👍 do dock/companion reforça pelo MESMO caminho do ChatPanel.
+  // Comandos "/" por fonte×motor (mesma regra do handleSend): só claude-code
+  // com comando de fonte claude viaja cru; o resto expande aqui. A bolha
+  // mostra o que você digitou; a expansão entra só no prompt.
   const sendText = await expandDraftForAgent(text, projectPath, agent)
   let lessonsBlock: string | null = null
   try {
@@ -422,6 +421,8 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
     !!lessonsBlock || !!doctrineBlock || !!personaBlock,
   )
   // cascata (de dentro pra fora): lições → doutrina → persona.
+  // Notas do humano: antes das lições (o mais específico fica perto do pedido).
+  promptText = withNotes(convId, conv.items, promptText)
   if (lessonsBlock) promptText = `${lessonsBlock}\n\n---\n\n${promptText}`
   if (doctrineBlock) promptText = `${doctrineBlock}\n\n${promptText}`
   // S3.2 — troca de volante com sessão fresca (backend novo): o fio até aqui
@@ -462,10 +463,9 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   // nome): todo turno é sessão fresca → injeta a memória da conversa no prompt
   // (recap + export do transcript pleno + ponteiro). Best-effort de ponta a
   // ponta: falha no export → só o recap.
+  // Regra única em lib/transcript (vivia duplicada aqui e no ChatPanel).
   if (
-    !wheelSwitch &&
-    !(engineDef(agent)?.sessionResume ?? false) &&
-    hasExecutorTurn(conv.items)
+    shouldInlineMemory({ agent, items: conv.items, sessionId, hasReply, wheelSwitch })
   ) {
     let pointer: string | null = null
     try {

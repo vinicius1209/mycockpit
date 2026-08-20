@@ -45,6 +45,8 @@ import { clearPresetDriftWarning, warnPresetDrift } from "@/lib/presets"
 import { perfSpan } from "@/lib/fleet/perf"
 import type { Enfileirar } from "@/lib/sendOrigin"
 import type { DeferredWork, WorkEvent, ManagedProcess } from "@/lib/work"
+import { duplicateConversationImpl, forkConversationAtImpl } from "@/store/chat/clone"
+import { markNotesSentImpl } from "@/store/chat/notes"
 
 type ChatItemBody =
   | {
@@ -110,6 +112,9 @@ type ChatItemBody =
       reactions?: string[]
     }
   | { kind: "error"; id: string; message: string }
+  /** Nota do HUMANO ancorada num item (`anchorId`). Modelo A: viaja SEMPRE —
+   *  recap + transcript (docs/notas-no-fio-plan.md), senão é decoração. */
+  | { kind: "note"; id: string; text: string; anchorId: string; sent?: boolean }
   | { kind: "cancelled"; id: string }
   | { kind: "notice"; id: string; message: string }
   /** Limite de uso/cota do agent atingido: cartão acionável (revezamento). */
@@ -224,16 +229,12 @@ function clipWorkName(name: string, max: number): string {
 
 /** O que a LINHA VIVA (rodapé do fio, junto do composer) diz sobre o trabalho em
  *  background (background-status B2.2/B2.5). Um lugar canônico pro "agora":
- *  - nenhum trabalho vivo → null (quem fala é o verbo do turno; motor que não
- *    reporta background simplesmente não produz linha, não mente);
- *  - um → "trabalho em background · <nome>";
- *  - N   → "N trabalhos em background · <mais recente>" (nome atrás de nome
- *    empilhado foi o que quebrou a linha nos builds 181/182).
- *  `since` é o instante do trabalho NOMEADO na linha: o cronômetro pertence ao
- *  que está escrito, e o turno perde o `startedAt` no `result` (é justo no
- *  estado "finalizando com background vivo" que o relógio sumia).
- *  `detail` lista todos os nomes pro title/tooltip — o detalhe de verdade abre
- *  no Fio Vivo. Puro e testável. */
+ *  nada vivo → null (não mente); um → "trabalho em background · <nome>";
+ *  N → "N trabalhos em background · <mais recente>" (nome atrás de nome
+ *  empilhado quebrou a linha nos builds 181/182).
+ *  `since` é o instante do trabalho NOMEADO: o cronômetro pertence ao que está
+ *  escrito, e o turno perde o `startedAt` no `result`.
+ *  `detail` lista os nomes pro tooltip (o detalhe abre no Fio Vivo). Puro. */
 export interface LiveWorkLine {
   text: string
   since: number
@@ -490,7 +491,7 @@ export interface ConvState {
   injected?: Record<string, string>
 }
 
-interface ChatState {
+export interface ChatState {
   projectId: string | null
   activeId: string | null
   /** Metas das conversas do projeto ATIVO. Espelho de conversationsByProject[projectId]
@@ -593,6 +594,9 @@ interface ChatState {
   dropNativeSession: (convId: string) => void
   /** Duplica a conversa (copia o histórico; sessão nova, sem resume). */
   duplicateConversation: (id: string) => Promise<void>
+  /** Fork a partir de um turno: cópia CURADA (só até `uptoItemId`), sessão
+   *  nova, sem resume. No-op se o item não estiver no fio carregado. */
+  forkConversationAt: (id: string, uptoItemId: string) => Promise<void>
   persist: (convId: string) => Promise<void>
   /** Anexa itens PRONTOS ao fio da conversa e persiste (marcos da missão, M2).
    *  EXIGE a conversa carregada em byId (ensureConversationLoaded antes) —
@@ -678,7 +682,10 @@ interface ChatState {
   /** Especialistas E1: consome e limpa os pareceres pendentes (no envio). */
   takePendingAdvice: (convId: string) => string | null
   /** Especialistas E1: "Dispensar" — remove o item de parecer do fio + persiste. */
-  dismissAdvice: (convId: string, id: string) => void
+  /** Carimba notas como ENTREGUES ao agente (não repetir no próximo prompt). */
+  markNotesSent: (convId: string, ids: string[]) => void
+  /** Tira UM item do fio pelo id e persiste (parecer dispensado, nota tirada). */
+  removeThreadItem: (convId: string, id: string) => void
   /** Especialistas E3 — "tirar da conversa": remove TODOS os pareceres (kind
    *  "advice") daquela persona do fio + persiste. A persona sai da presença, que
    *  é DERIVADA (conversationPresence deixa de listar o convidado). */
@@ -703,14 +710,14 @@ interface ChatState {
   ) => Promise<void>
 }
 
-function uid(): string {
+export function uid(): string {
   return crypto.randomUUID()
 }
 
 /** Acha a chave (projectId) cujo array de metas contém `convId`. Como o id de
  *  conversa é ÚNICO globalmente, no máximo um projeto casa → miramos a conversa
  *  EXATA, sem risco de mexer no projeto errado. */
-function projectOfConv(
+export function projectOfConv(
   map: Record<string, ConversationMeta[]>,
   convId: string,
 ): string | undefined {
@@ -740,7 +747,7 @@ function patchConvMeta(
   }
 }
 
-function emptyConv(projectId: string): ConvState {
+export function emptyConv(projectId: string): ConvState {
   return {
     projectId,
     agent: "claude-code",
@@ -851,16 +858,11 @@ export function reduceItems(
     // H2, delta em streaming: acumula na bolha corrente (cria se não houver).
     case "text_delta": {
       if (c.streamingTextId) {
-        // A bolha viva é o item mais RECENTE do fio, e este é o reducer mais
-        // quente do app (roda por token). O `items.map` de antes pagava uma
-        // varredura do fio inteiro — closure, comparação de id e teste de kind
-        // em cada um dos milhares de itens — para trocar UM. Busca de trás pra
-        // frente (acha na 1ª iteração no caso normal) e troca só o índice alvo.
-        //
-        // A imutabilidade que o React precisa continua a mesma: array novo,
-        // item novo. O que NÃO muda é a identidade dos outros itens, que já era
-        // preservada pelo `map` (ele devolvia `it`) e vários memos a jusante
-        // dependem disso. Shape de `items` intocado.
+        // Reducer mais quente do app (roda por token): o `items.map` de antes
+        // varria o fio inteiro pra trocar UM item. Busca de trás pra frente
+        // (acha na 1ª iteração no caso normal) e troca só o índice alvo.
+        // Imutabilidade igual (array novo, item novo) e identidade dos OUTROS
+        // itens preservada — vários memos a jusante dependem disso.
         let alvo = -1
         for (let i = c.items.length - 1; i >= 0; i--) {
           if (c.items[i].id === c.streamingTextId) {
@@ -1775,62 +1777,9 @@ export const useChat = create<ChatState>((set, get) => {
       )
     },
 
-    duplicateConversation: async (id) => {
-      // Duplica no MESMO projeto da conversa-fonte (acha pelo id único), não
-      // necessariamente o ativo. A cópia entra no array daquele projeto.
-      const before = get()
-      const owner =
-        projectOfConv(before.conversationsByProject, id) ?? before.projectId
-      if (!owner) return
-      const src = before.conversationsByProject[owner]?.find((c) => c.id === id)
-      const loaded = await dbLoad(id)
-      if (loaded === "corrupt") return // não duplica linha corrompida
-      const items = markOrphanedProcesses(
-        loaded?.items ?? get().byId[id]?.items ?? [],
-      )
-      const agent = loaded?.agent ?? get().byId[id]?.agent ?? "claude-code"
-      const rawReqModel = loaded?.reqModel ?? get().byId[id]?.reqModel ?? null
-      const reqModel = normalizeModelValue(agent, rawReqModel)
-      const effort = loaded?.effort ?? get().byId[id]?.effort ?? null
-      const title = `${src?.title ?? loaded?.title ?? "Conversa"} (cópia)`
-      const newId = uid()
-      // sessão NULL de propósito: a cópia não herda a sessão do CLI (resume
-      // conflitaria); model e contextTokens NULL idem — pertencem à sessão antiga.
-      await dbSave(newId, owner, title, null, items, [], agent, reqModel, effort, null, null)
-      if (src?.color != null) await dbSetColor(newId, src.color)
-      set((s) => {
-        const meta: ConversationMeta = {
-          id: newId,
-          title,
-          updatedAt: Date.now(),
-          color: src?.color ?? null,
-          worktreePath: null,
-          // a cópia já nasce gravada com este agent no DB (dbSave acima)
-          agent,
-        }
-        const nextList = [...(s.conversationsByProject[owner] ?? []), meta]
-        return {
-          activeId: newId,
-          projectId: owner,
-          conversationsByProject: {
-            ...s.conversationsByProject,
-            [owner]: nextList,
-          },
-          conversations: owner === s.projectId ? nextList : s.conversations,
-          byId: {
-            ...s.byId,
-            [newId]: {
-              ...emptyConv(owner),
-              items,
-              agent,
-              reqModel,
-              effort,
-              sessionId: null,
-            },
-          },
-        }
-      })
-    },
+    duplicateConversation: (id) => duplicateConversationImpl(get, set, id),
+    forkConversationAt: (id, uptoItemId) =>
+      forkConversationAtImpl(get, set, id, uptoItemId),
 
     persist: async (convId) => {
       const c = get().byId[convId]
@@ -2476,7 +2425,9 @@ export const useChat = create<ChatState>((set, get) => {
       return block
     },
 
-    dismissAdvice: (convId, id) => {
+    markNotesSent: (convId, ids) => markNotesSentImpl(get, set, convId, ids),
+
+    removeThreadItem: (convId, id) => {
       const cur = get().byId[convId]
       if (!cur) return
       patch(convId, { items: cur.items.filter((it) => it.id !== id) })
@@ -2484,7 +2435,7 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     // S3 (E3) — tirar da conversa: remove TODOS os pareceres daquela persona (a
-    // presença é derivada, então some da barra). Mesma escrita do dismissAdvice,
+    // presença é derivada, então some da barra). Mesma escrita do removeThreadItem,
     // filtrando por personaId em vez de por id do item.
     removeAdvice: (convId, personaId) => {
       const cur = get().byId[convId]

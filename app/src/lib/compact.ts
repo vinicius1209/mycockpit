@@ -11,9 +11,10 @@
 //   sessão nativa NOVA do MESMO motor, prompt de retomada = recap comprimido
 //   (serializeContext, moldura H3) + doutrina por decideDoctrine(freshSession)
 //   + persona carimbada. O fio (items) continua o MESMO; só o sessionId renova.
-// - Motor sem `sessionResume` (agy): NADA a compactar — cada turno já é sessão
+// - Motor sem `sessionResume`: NADA a compactar — cada turno já é sessão
 //   fresca e o recap do fio já viaja a cada envio (buildMemoryPrompt). Renovar
-//   seria teatro pago; a resposta é honesta.
+//   seria teatro pago; a resposta é honesta. (Este caso NÃO é mais o agy: ele
+//   migrou pro resume nativo; hoje só `opencode` e `model` caem aqui.)
 //
 // As duas superfícies de envio (ChatPanel.handleSend e lib/fleet/send)
 // interceptam o /compactar ANTES da expansão de .md e chamam runCompactTurn —
