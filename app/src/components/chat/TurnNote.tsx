@@ -10,25 +10,48 @@
 // nota privada: esconder parte do fio criaria uma segunda verdade.
 
 import { useState } from "react"
-import { PenLine, X } from "lucide-react"
+import { Check, PenLine, X } from "lucide-react"
 import { useChat } from "@/store/chat"
 import { cn } from "@/lib/utils"
 
-/** O bloco de uma nota já gravada, ancorado sob o turno que ela comenta. */
+/**
+ * O bloco de uma nota já gravada, ancorado sob o turno que ela comenta.
+ *
+ * PENDENTE vs ENTREGUE é a informação que faltava. A caixa promete "o agente
+ * vai ler", mas a entrega só acontece no PRÓXIMO envio (`withNotes`): uma nota
+ * escrita e nunca seguida de envio nunca chega, e antes disso ela era
+ * pixel-a-pixel idêntica a uma que já tinha chegado. Promessa sem estado é
+ * promessa que o usuário não tem como cobrar.
+ *
+ * E por que a diferença é MATIZ, não animação: o §6 reserva movimento pro que
+ * está vivo E termina sozinho. Nota pendente não termina sozinha — ela espera
+ * VOCÊ mandar a próxima mensagem. É o mesmo caso da falha, que o §6 resolveu
+ * com "matiz próprio, não animação" depois de já ter pulsado uma vez.
+ */
 export function TurnNoteBlock({
   convId,
   id,
   text,
+  sent,
 }: {
   convId: string
   id: string
   text: string
+  sent?: boolean
 }) {
+  const Icone = sent ? Check : PenLine
   return (
-    <div className="group/nota mt-1.5 flex items-start gap-2 rounded-lg border border-border/55 bg-secondary/25 px-3 py-2">
-      <PenLine className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
+    <div
+      className={cn(
+        "group/nota mt-1.5 flex items-start gap-2 rounded-lg border px-3 py-2 transition-colors",
+        sent ? "border-border/30 bg-secondary/15" : "border-border/55 bg-secondary/25",
+      )}
+    >
+      <Icone className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
       <div className="min-w-0 flex-1">
-        <div className="text-[11px] text-muted-foreground/70">Sua nota</div>
+        <div className="text-[11px] text-muted-foreground/70">
+          {sent ? "Sua nota · entregue ao agente" : "Sua nota · vai no próximo envio"}
+        </div>
         <p
           data-selectable
           className="text-[13px] leading-snug break-words whitespace-pre-wrap text-foreground/90"

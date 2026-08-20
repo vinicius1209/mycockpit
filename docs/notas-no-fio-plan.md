@@ -133,3 +133,21 @@ prompt de todo mundo.
   aparecia lá embaixo e a âncora virava promessa não cumprida.
 - Extrações forçadas pela catraca, todas com recorte real: `TurnActions.tsx`
   (MessageList 2649 → 2381), `store/chat/notes.ts`, `TurnNote.tsx`.
+
+## N4 — a nota diz em que pé está ✅ (20/08/2026)
+
+O que faltava depois do N3: a caixa de escrever promete "o agente vai ler", mas
+a entrega só acontece no PRÓXIMO envio. Uma nota escrita e nunca seguida de
+envio nunca chega — e, até aqui, ela era pixel-a-pixel idêntica a uma que já
+tinha chegado. Promessa sem estado é promessa que o usuário não tem como
+cobrar.
+
+`TurnNoteBlock` passou a receber `sent` e a dizer, no lugar do rótulo fixo
+"Sua nota": **"vai no próximo envio"** ou **"entregue ao agente"** (com ✓).
+
+**Por que a diferença é MATIZ e não animação**, mesmo com o pedido explícito de
+"algo mais dinâmico": o §6 do STYLEGUIDE reserva movimento pro que está vivo **e
+termina sozinho**. Nota pendente não termina sozinha — ela espera VOCÊ mandar a
+próxima mensagem. É exatamente o caso da falha, que já pulsou uma vez e o §6
+resolveu com "matiz próprio, não animação". A transição de cor (`transition-colors`)
+fica, porque cor que muda não é esteira que finge vida.

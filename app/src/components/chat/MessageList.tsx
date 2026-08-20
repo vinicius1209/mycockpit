@@ -1829,7 +1829,7 @@ const MessageItem = memo(function MessageItem({
   if (it.kind === "note") {
     const convId = useChat.getState().activeId
     return convId ? (
-      <TurnNoteBlock convId={convId} id={it.id} text={it.text} />
+      <TurnNoteBlock convId={convId} id={it.id} text={it.text} sent={it.sent} />
     ) : null
   }
 
