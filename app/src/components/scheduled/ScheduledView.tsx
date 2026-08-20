@@ -1015,7 +1015,7 @@ export function ScheduledView() {
             CTA só quando já existe automação (com lista vazia ele vive no
             empty state — um CTA só na tela). A limitação honesta virou o ⓘ. */}
         <header className="flex items-center gap-2">
-          <Clock className="size-3.5 text-brass" />
+          <Clock className="size-3.5 text-muted-foreground" /> {/* §2: nunca brass */}
           <h1 className="label-mono">Agendamentos</h1>
           {schedules.length > 0 && (
             <span className="text-[12px] text-muted-foreground/70 tabular-nums">
@@ -1071,7 +1071,7 @@ export function ScheduledView() {
                   data-testid={`schedule-template-${t.id}`}
                   className="flex flex-col items-start gap-1.5 rounded-lg border border-border/70 bg-card/50 px-3 py-2.5 text-left transition-colors hover:border-brass/50 hover:bg-accent/40"
                 >
-                  <t.icon className="size-3.5 text-brass" />
+                  <t.icon className="size-3.5 text-muted-foreground" /> {/* §2: nunca brass */}
                   <span className="text-[13px] font-medium text-foreground">
                     {t.name}
                   </span>

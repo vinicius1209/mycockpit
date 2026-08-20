@@ -317,7 +317,7 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
         ))}
 
         <div className="flex items-center justify-between px-1 pt-1 text-[11px] text-muted-foreground/60 border-t border-border/30">
-          <span>Medição de carona & poll (sem custo de quota)</span>
+          <span>Não consome sua quota</span>
           <span>Auto ~15 min</span>
         </div>
       </DropdownMenuContent>
