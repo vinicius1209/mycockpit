@@ -19,6 +19,7 @@ mod companion;
 mod context;
 mod context_gateway;
 mod detect;
+mod editor;
 mod evidence;
 mod fsx;
 mod git;
@@ -643,6 +644,8 @@ pub fn run() {
             git::remove_worktree,
             git::list_worktrees,
             git::delete_worktree_branch,
+            editor::detect_editors,
+            editor::open_in_editor,
             git::git_commit,
             git::git_create_pr,
             git::pr_context,

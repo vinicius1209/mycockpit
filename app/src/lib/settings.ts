@@ -43,6 +43,11 @@ export interface GlobalSettings {
    *  já some sozinho ao completar; isto é pra quem não quer os itens opcionais
    *  (dismissal persistido, §5.4 do STYLEGUIDE). */
   setupGuideDismissed: boolean
+  /** Editor escolhido pra "abrir no editor" (M1). null = usa o primeiro
+   *  detectado. Não tem seção própria em Configurações de propósito: com um
+   *  editor só a pergunta não existe, e com vários quem escolhe é o próprio
+   *  menu do botão, no momento em que a escolha importa. */
+  preferredEditor: string | null
   /** Fechar a janela mantém o motor vivo e acessível pela barra de menus. */
   keepInTrayOnClose: boolean
   /** Dedupe persistido do aviso educativo exibido no primeiro hide. */
@@ -127,6 +132,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   missionPresets: DEFAULT_MISSION_PRESETS,
   onboarded: false,
   setupGuideDismissed: false,
+  preferredEditor: null,
   keepInTrayOnClose: true,
   trayCloseHintShown: false,
   detected: {},

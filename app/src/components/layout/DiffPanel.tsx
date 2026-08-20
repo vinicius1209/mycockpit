@@ -22,6 +22,7 @@ import {
   type PrContext,
 } from "@/lib/git"
 import { composeDiffComments, staleComments } from "@/lib/deliveryDiff"
+import { OpenInEditor } from "@/components/common/OpenInEditor"
 import { cn } from "@/lib/utils"
 import { DiffLineRow, useDiffComments, type DiffCommentApi } from "./DiffPanel/comments"
 import { DiffCommentsFooter } from "./DiffPanel/sendBar"
@@ -36,6 +37,11 @@ const STATUS_META: Record<
   renamed: { label: "R", title: "renomeado", cls: "text-brass" },
 }
 
+// (M1) O "abrir no editor" vive no CABEÇALHO, um por painel, e abre o PROJETO.
+// Nasceu como ícone por linha de arquivo, revertido em 20/08/2026: o hover
+// pipocando em cada linha poluía a lista, e abrir o arquivo solto entregava uma
+// janela órfã sem árvore nem language server. Quem quer ver a mudança usa o
+// diff; quem vai ao editor quer o projeto aberto.
 /** Painel de alterações: diff da working tree do `cwd` (v1: não-commitado vs HEAD +
  *  arquivos novos). Lista por arquivo, colapsável; expande pros hunks.
  *  `delivery` (P3 — Entrega→diff): o painel abriu pelo clique numa entrega —
@@ -104,6 +110,9 @@ export function DiffPanel({
         {totalAdd > 0 && <span className="text-st-success">+{totalAdd}</span>}
         {totalDel > 0 && <span className="text-st-error">−{totalDel}</span>}
       </span>
+      {/* Um por painel, ao lado do refresh: os dois são ação sobre o CONJUNTO,
+          não sobre uma linha. `rel` vazio = a raiz — abre o projeto. */}
+      <OpenInEditor projectPath={cwd} rel="" alvo="o projeto" />
       <button
         onClick={reload}
         className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
