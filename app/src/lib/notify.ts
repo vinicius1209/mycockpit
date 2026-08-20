@@ -1,108 +1,32 @@
-import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from "@tauri-apps/plugin-notification"
-import { invoke } from "@tauri-apps/api/core"
-import { toast } from "sonner"
+// Os EVENTOS de notificação do produto: turno terminou, gate abriu, missão
+// travou. O transporte até o SO (permissão, plugin, fallback por osascript)
+// mora em lib/notify/native.ts desde que este arquivo passou do teto.
+
 import { useChat } from "@/store/chat"
 import { useApp } from "@/store/app"
 import { useNotifs } from "@/store/notifications"
 import { agentLabel } from "@/lib/agent"
-import { isTauri } from "@/lib/db"
+import { receiptBody, turnReceipt } from "@/lib/turnReceipt"
+import { clipTitle, nativeNotify } from "@/lib/notify/native"
+// A porta de entrada continua sendo `@/lib/notify`: quem já importava
+// `nativeNotify` daqui (App, onboarding, companion) não precisa saber que o
+// transporte mudou de arquivo. Extração não é motivo pra mexer em call site.
+export { nativeNotify } from "@/lib/notify/native"
 
-/** Truncamento defensivo de título em notificação nativa (follow-up S2): o
- *  Notification Center corta sem avisar; melhor cortar NÓS com reticências
- *  do que deixar o SO engolir o resto do corpo. */
-function clipTitle(title: string, max = 80): string {
-  const t = title.trim()
-  return t.length > max ? `${t.slice(0, max)}…` : t
-}
-
-/** Já avisamos que a notificação do SO não está disponível? (1× por sessão — o
- *  aviso é informação, não alarme recorrente.) */
-let nativeBlockedWarned = false
-
-/** Notificação NATIVA do SO. Nunca derruba nada: sem autorização, o feed do sino
- *  e a tray continuam sendo o sinal.
+/**
+ * Chamado no fim de UM turno (finally do run). Empilha no feed e, se a conversa
+ * não é a ativa (rodou em background), dispara a notificação nativa.
  *
- *  ⚠️ Isto FALHA em builds ad-hoc: o macOS só registra um app no Notification
- *  Center quando ele consegue pedir autorização, e app não assinado com
- *  identidade real costuma ser recusado direto — verificado nesta máquina, o
- *  `dev.vinicius.mycockpit` não aparece em `com.apple.ncprefs` nem no db do
- *  usernoted, ou seja NENHUMA nativa foi entregue até hoje. O `catch` vazio
- *  fazia isso parecer "a feature não existe"; agora avisa uma vez e segue. */
-/** Por onde a notificação saiu — o botão de teste das Configurações mostra isto.
- *  "nativo" = plugin do SO (nome/ícone do Frota); "osascript" = fallback (chega
- *  como Script Editor); "falhou" = nenhum dos dois passou. */
-export type NotifyPath = "nativo" | "osascript" | "falhou" | "fora-do-app"
-
-export async function nativeNotify(
-  title: string,
-  body: string,
-): Promise<NotifyPath> {
-  if (!isTauri()) return "fora-do-app"
-  try {
-    let granted = await isPermissionGranted()
-    if (!granted) granted = (await requestPermission()) === "granted"
-    if (granted) {
-      sendNotification({ title, body })
-      return "nativo"
-    }
-    return await fallbackNotify(title, body, "sem autorização do sistema")
-  } catch (e) {
-    return await fallbackNotify(
-      title,
-      body,
-      e instanceof Error ? e.message : String(e),
-    )
-  }
-}
-
-/** Plano B: `osascript`, que usa a autorização do Script Editor (concedida) em
- *  vez da nossa (que o macOS recusa por causa da assinatura ad-hoc — ver
- *  src-tauri/src/osnotify.rs). A notificação sai atribuída ao Script Editor, não
- *  ao Frota: feio, mas CHEGA. O texto vai como argv, nunca interpolado no
- *  AppleScript (seria injeção — título de conversa é entrada não confiável).
+ * (M2) Turno em background ganha RECIBO: uma frase do que o agente fez, no
+ * corpo da nativa e do item do feed. É async por causa disso, e os chamadores
+ * seguem sem esperar — nada no fim do run depende deste retorno.
  *
- *  Só quando os DOIS caminhos falham é que avisamos que não há aviso — senão o
- *  toast apareceria em todo turno concluído. */
-async function fallbackNotify(
-  title: string,
-  body: string,
-  why: string,
-): Promise<NotifyPath> {
-  try {
-    await invoke("notify_via_osascript", { title, body })
-    if (!nativeBlockedWarned) {
-      nativeBlockedWarned = true
-      console.warn(
-        `[notify] plugin nativo indisponível (${why}); usando osascript (a notificação aparece como "Script Editor")`,
-      )
-    }
-    return "osascript"
-  } catch (e) {
-    warnNativeBlocked(`${why}; osascript também falhou: ${String(e)}`)
-    return "falhou"
-  }
-}
-
-/** Deixa rastro da indisponibilidade UMA vez: console (pro log) + toast (pra
- *  você). Sem isto o sintoma é "o app não me avisa" e a causa fica invisível. */
-function warnNativeBlocked(reason: string) {
-  if (nativeBlockedWarned) return
-  nativeBlockedWarned = true
-  console.warn(`[notify] nenhuma notificação de SO disponível: ${reason}`)
-  toast("Avisos do sistema indisponíveis; use o sino e o ícone da bandeja.", {
-    description:
-      "Nem o plugin nativo nem o osascript entregaram. O feed no app continua funcionando.",
-    duration: 8000,
-  })
-}
-
-/** Chamado no fim de UM turno (finally do run). Empilha no feed e, se a conversa
- *  não é a ativa (rodou em background), dispara a notificação nativa. */
-export function notifyTurnEnd(convId: string, agent: string) {
+ * O feed é empilhado DEPOIS do recibo, não antes: empilhar cedo e remendar
+ * depois exigiria um patch no store e deixaria a janela em que o sino diz uma
+ * coisa e a nativa diz outra. O atraso é o do prazo (≤3s) e o feed é durável,
+ * então ninguém percebe. No primeiro plano não há recibo nem espera nenhuma.
+ */
+export async function notifyTurnEnd(convId: string, agent: string) {
   const chat = useChat.getState()
   const c = chat.byId[convId]
   if (!c) return
@@ -118,21 +42,39 @@ export function notifyTurnEnd(convId: string, agent: string) {
   const proj = useApp.getState().projects.find((p) => p.id === c.projectId)
   const errored = last?.kind === "error" || last?.kind === "limit"
 
+  // Background = você não estava olhando. É o único caso que merece recibo (no
+  // primeiro plano o fio já te contou) e o único que paga a chamada extra.
+  const background = chat.activeId !== convId
+  const recibo = background
+    ? await turnReceipt({
+        helperModel: helperModelDe(c.projectId),
+        cwd: c.worktreePath ?? proj?.path ?? "",
+        items: c.items,
+      })
+    : null
+
   useNotifs.getState().push({
     kind: errored ? "run_error" : "run_done",
     title,
     subtitle: `${agentLabel(agent)}${proj ? ` · ${proj.name}` : ""}`,
+    body: recibo ?? undefined,
     projectId: c.projectId,
     convId,
   })
 
   // só incomoda com a nativa quando você NÃO estava olhando essa conversa.
-  if (chat.activeId !== convId) {
-    void nativeNotify(
-      "Frota",
-      `${clipTitle(title)} · ${errored ? "turno falhou" : "turno concluído"}`,
-    )
+  if (background) {
+    void nativeNotify("Frota", receiptBody(clipTitle(title), errored, recibo))
   }
+}
+
+/** Helper efetivo do projeto: o `.mycockpit/config.toml` vence o default
+ *  global, MESMA precedência das sugestões (dois donos dariam dois custos e
+ *  duas respostas pra uma configuração só). `null` = recibo desligado. */
+function helperModelDe(projectId: string): string | null {
+  const app = useApp.getState()
+  const cfg = app.mycockpit[projectId]
+  return cfg ? cfg.helper : app.settings.helperModel
 }
 
 /** Chamado UMA vez quando um GATE humano abre (a missão pausou aguardando as

@@ -614,6 +614,15 @@ export function InboxBell() {
                             ? "turno parado"
                             : "turno concluído"}
                   </span>
+                  {/* (M2) O recibo: o que o turno FEZ. Linha própria porque é a
+                      única informação aqui que não é rótulo — e `line-clamp-2`
+                      em vez de truncar, senão a frase morre na terceira palavra
+                      e vira enfeite. Só existe em turno que rodou em background. */}
+                  {n.body && (
+                    <span className="line-clamp-2 w-full pl-[22px] text-[11px] text-foreground/75">
+                      {n.body}
+                    </span>
+                  )}
                 </DropdownMenuItem>
               ))
             )}

@@ -794,7 +794,7 @@ export function ChatPanel() {
         // Não notifica/sugere ainda — o loop ainda não terminou de verdade.
       } else {
         // turno (e a fila) concluídos → notifica + sugestões.
-        notifyTurnEnd(convId, agent)
+        void notifyTurnEnd(convId, agent)
         useChat.getState().scheduleSuggestions(convId)
       }
     }
@@ -968,7 +968,7 @@ export function ChatPanel() {
       reason: verdict.reason,
       timer,
     })
-    notifyTurnEnd(convId, agent)
+    void notifyTurnEnd(convId, agent)
     return true
   }
 
@@ -1116,7 +1116,7 @@ export function ChatPanel() {
     } finally {
       useChat.getState().finish(convId)
       void useChat.getState().persist(convId)
-      notifyTurnEnd(convId, target)
+      void notifyTurnEnd(convId, target)
       useChat.getState().scheduleSuggestions(convId)
     }
   }

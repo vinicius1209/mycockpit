@@ -18,6 +18,10 @@ export interface Notification {
   kind: NotifKind
   title: string
   subtitle: string
+  /** (M2) O que o turno FEZ, quando ele rodou em background e o helper
+   *  respondeu a tempo. Opcional: item antigo (já persistido) e turno de
+   *  primeiro plano simplesmente não têm — e o sino não desenha linha vazia. */
+  body?: string
   projectId: string
   convId?: string
   ts: number

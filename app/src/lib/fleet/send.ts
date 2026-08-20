@@ -537,7 +537,7 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
       // ligado: reenvio agendado (banner/notify saem do scheduler). Segura as
       // sugestões — o loop ainda não terminou de verdade.
     } else {
-      notifyTurnEnd(convId, agent)
+      void notifyTurnEnd(convId, agent)
       useChat.getState().scheduleSuggestions(convId)
     }
   }
@@ -769,7 +769,7 @@ export async function continueInAgent(
   } finally {
     useChat.getState().finish(convId)
     void useChat.getState().persist(convId)
-    notifyTurnEnd(convId, targetAgent)
+    void notifyTurnEnd(convId, targetAgent)
     useChat.getState().scheduleSuggestions(convId)
   }
 }
@@ -831,7 +831,7 @@ function maybeScheduleDeskAutoResume(args: DeskSendArgs, agent: string): boolean
     reason: verdict.reason,
     timer,
   })
-  notifyTurnEnd(convId, agent)
+  void notifyTurnEnd(convId, agent)
   return true
 }
 
