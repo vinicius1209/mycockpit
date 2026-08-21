@@ -9,6 +9,7 @@ import { writeMycockpitConfig } from "@/lib/mycockpit"
 import { useApp } from "@/store/app"
 import type { Project } from "@/lib/types"
 import {
+  PERMISSION_DESCRIPTION,
   PERMISSION_LABEL,
   effectivePermission,
   setProjectPermissionEverywhere,
@@ -99,11 +100,20 @@ describe("setProjectPermissionEverywhere", () => {
 })
 
 describe("PERMISSION_LABEL", () => {
-  it("cobre os três modos com rótulo curto (o segmented não tem espaço)", () => {
+  it("cobre os QUATRO modos com rótulo curto (o controle não tem espaço)", () => {
+    // `auto` entrou no M2 dos modos de sessão: o Rust já o aceitava e o
+    // agendamento já o usava; só a conversa não tinha como escolher.
     expect(PERMISSION_LABEL).toEqual({
       leitura: "Só lê",
       padrao: "Pede",
+      auto: "Auto",
       liberado: "Liberado",
     })
+  })
+
+  it("todo modo tem descrição (o menu mostra as duas linhas)", () => {
+    for (const m of Object.keys(PERMISSION_LABEL) as (keyof typeof PERMISSION_LABEL)[]) {
+      expect(PERMISSION_DESCRIPTION[m]?.length ?? 0).toBeGreaterThan(10)
+    }
   })
 })

@@ -3,6 +3,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type SetStateAction,
@@ -11,8 +12,6 @@ import { ComposerShell } from "@/components/chat/ComposerShell"
 import { ContextRing } from "@/components/chat/ContextRing"
 import {
   IdentityDoor,
-  PermissionSelect,
-  PlanFirstToggle,
 } from "@/components/chat/ComposerExecutionControls"
 import { resumoDaIdentidade } from "@/components/chat/composerIdentity"
 import {
@@ -26,7 +25,6 @@ import {
 } from "@/components/chat/ComposerParts"
 import { ExecutionRow } from "@/components/chat/ExecutionRow"
 import { resolvePermission, setProjectPermissionEverywhere } from "@/lib/permission"
-import type { PermissionMode } from "@/lib/types"
 import {
   despachoDoEnter,
   podeEnviar,
@@ -46,6 +44,9 @@ import {
   pendingDeferred,
 } from "@/store/chat"
 import { lastExecutorTurnFailed } from "@/lib/turnOutcome"
+import { ModeSelect } from "@/components/chat/ModeSelect"
+import { modoEfetivo, modosOferecidos, wireDoModo } from "@/lib/agentModes"
+import { useAgentModes } from "@/store/agentModes"
 import { useApp, useActiveProject } from "@/store/app"
 import type { Attachment } from "@/lib/attachments"
 import {
@@ -320,6 +321,19 @@ export function CommandConsole({
   // um modo do PRÓXIMO envio, não config fixa do 1º run. Fica ligado até o
   // usuário desligar (ou até aprovar um plano, que desliga sozinho).
   const planFirst = !!conv.planFirst
+  // Modos que o motor ATIVO anuncia E o app sabe explicar. A sonda tem dono
+  // único (store/agentModes) e é pedida uma vez por sessão.
+  const modosSondados = useAgentModes((s) => s.byAgent[effectiveDest])
+  const ensureModos = useAgentModes((s) => s.ensure)
+  useEffect(() => {
+    ensureModos([effectiveDest])
+  }, [ensureModos, effectiveDest])
+  const modosDoMotor = useMemo(
+    // `null` quando a sonda não respondeu: cai na lista curada em vez de sumir
+    // com o controle de permissão (ver `modosOferecidos`).
+    () => modosOferecidos(effectiveDest, modosSondados?.known ? modosSondados.ids : null),
+    [effectiveDest, modosSondados],
+  )
 
   // config EFETIVO (numa conv travada = o do 1º run, exibido nos pills), nunca o
   // estado local cru, que sobra de outra conv e não reseta na troca.
@@ -492,22 +506,24 @@ export function CommandConsole({
             onSubmit={submit}
             canSend={canSend}
             contextRing={<ContextRing />}
-            planFirstControls={
-              <PlanFirstToggle
-                active={planFirst}
-                onToggle={() => {
-                  const id = useChat.getState().activeId
-                  if (id) useChat.getState().setPlanFirst(id, !planFirst)
-                }}
-              />
-            }
+            // M2: UM controle. Escolher plano liga o `planFirst` da conversa;
+            // escolher qualquer outro define a permissão do projeto E desliga o
+            // plano — os dois destinos que o par de controles tinha, agora atrás
+            // de um gesto só. O escopo diferente (projeto × conversa) é o que o
+            // M3 resolve; aqui ele só deixou de ser DOIS botões.
             permissionControls={
-              <PermissionSelect
-                value={permissionMode}
-                onValueChange={(nextMode: PermissionMode) => {
-                  if (permProject) setProjectPermissionEverywhere(permProject, nextMode)
-                }}
+              <ModeSelect
+                modes={modosDoMotor}
+                value={modoEfetivo(permissionMode, planFirst)}
                 disabled={!permProject}
+                onChange={(def) => {
+                  const id = useChat.getState().activeId
+                  const w = wireDoModo(def.canonico, permissionMode)
+                  if (id) useChat.getState().setPlanFirst(id, w.planFirst)
+                  if (permProject && !w.planFirst) {
+                    setProjectPermissionEverywhere(permProject, w.permission)
+                  }
+                }}
               />
             }
             identityControls={

@@ -1,7 +1,12 @@
 export type AgentStatus = "idle" | "running" | "queued" | "success" | "error"
 
 /** Política de permissão por projeto (vira flags do claude, ver agent-runner.md §7). */
-export type PermissionMode = "leitura" | "padrao" | "liberado"
+/** Modo de permissão do PROJETO. `auto` entrou em 21/08/2026 (M2 dos modos de
+ *  sessão): o Rust já o aceitava e o agendamento já o usava, mas a conversa não
+ *  tinha como escolher — era o mesmo eixo com vocabulários diferentes por
+ *  superfície. Acrescentar valor é compatível: config.toml e banco antigos
+ *  continuam válidos, e `auto` só aparece se você escolher. */
+export type PermissionMode = "leitura" | "padrao" | "auto" | "liberado"
 
 export interface Project {
   id: string

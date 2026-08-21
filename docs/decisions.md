@@ -2272,3 +2272,38 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   frente, e ela é a que mexe no eixo de segurança de verdade.
 - **Verificado:** `cargo test` 469 (+ prova real `--ignored` contra os três
   binários), `tsc` 0, `vitest` 2987/270, 6 guardas, 20 e2e.
+
+### ADR-058 — Um controle de modo, e o que a interseção quase apagou ✅
+- **Contexto (21/08/2026):** M2 do `modos-de-sessao-plan`. O composer tinha
+  permissão + toggle "Planejar", fingindo dois eixos. Não são: o `adapters.rs`
+  já substituía o `--permission-mode` no turno de plano, com um braço vazio no
+  match só pra isso, e no ACP `plan` é um valor da lista de modos.
+- **Decisão 1 — `ModeSelect` único**, com as opções do motor ATIVO e o
+  `enforcement` visível. Essa última parte é o ganho menos óbvio e o mais
+  honesto: "só lê" no Codex é sandbox do sistema operacional, no agy seria um
+  pedido no prompt. Mesmo botão, garantias diferentes — e a diferença sumia.
+- **Decisão 2 — `Auto` alcançável da conversa.** O Rust já aceitava (o
+  `Permission::parse` tem o braço) e o agendamento já usava; só o seletor não
+  oferecia. Acrescentar valor ao `PermissionMode` é compatível: `config.toml` e
+  banco antigos seguem válidos.
+- **Decisão 3 — a UI fala em id de motor, o fio continua o mesmo.** `wireDoModo`
+  traduz pro contrato que o Rust já valida (`permission` + `plan_first`). O
+  caminho de enforcement não mudou, então esta mudança não tinha COMO afrouxar —
+  e há teste cobrando isso na tabela real (`naoAlarga`).
+- **Dois defeitos que os testes pegaram, e que mudaram o modelo:**
+  1. **A interseção com a sonda apagava o controle.** Sonda sem resposta ⇒ lista
+     vazia ⇒ o seletor de permissão SUMIA da tela. Ficar sem controle é pior que
+     ficar com lista velha; `modosOferecidos(agent, null)` passa a devolver a
+     curadoria inteira, que é o que o app já mandava antes da sonda existir.
+  2. **A interseção apagava o modo EMULADO.** "Só lê" no Claude é
+     `--disallowedTools`, não `--permission-mode`; o agy não manda `--mode` pra
+     nada. Entrou o `probeId`: só o que o app REPASSA precisa ser confirmado pelo
+     motor. Sem isso, o agy teria ficado sem NENHUM controle de permissão.
+- **O que morreu junto:** `PermissionSelect` e `PlanFirstToggle` foram apagados,
+  não deixados "por via das dúvidas". Componente sem chamador é pior que
+  componente ausente — alguém reusa achando que ainda vale.
+- **Pendente (M3):** o escopo ainda é duplo por dentro — plano liga o
+  `planFirst` da CONVERSA, os outros definem a permissão do PROJETO. São os
+  mesmos dois destinos de antes, agora atrás de um gesto só.
+- **Verificado:** `tsc` 0, `vitest` 2994, 6 guardas, `e2e` 21/21 (o spec do
+  composer reescrito pro controle único, incluindo o caso de `Auto` existir).

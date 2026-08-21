@@ -16,7 +16,10 @@ import { test, expect, type Page } from "@playwright/test"
 // onde estes gestos moram. A gravação nas três camadas (store, SQLite,
 // `.mycockpit/config.toml`) é assunto de `lib/permission.test.ts`.
 
-const PERMISSAO_BTN = 'button[aria-label="Permissões do projeto"]'
+// M2: permissão e "Planejar" viraram UM controle de MODO. O par antigo fingia
+// dois eixos que o motor sempre tratou como um só (o `adapters.rs` substituía o
+// `--permission-mode` no turno de plano).
+const MODO_BTN = 'button[aria-label="Modo de execução do agente"]'
 
 async function abrirApp(page: Page) {
   await page.addInitScript(() => {
@@ -35,7 +38,7 @@ async function abrirApp(page: Page) {
     )
   })
   await page.goto("/", { waitUntil: "domcontentloaded" })
-  await expect(page.locator(PERMISSAO_BTN)).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator(MODO_BTN)).toBeVisible({ timeout: 10_000 })
 }
 
 // `menuitemradio`, não `radio`: é um item de RADIOGROUP DENTRO DE MENU
@@ -45,17 +48,17 @@ async function abrirApp(page: Page) {
 const modo = (page: Page, nome: string) =>
   page.locator('[role="menuitemradio"]', { hasText: nome })
 
-test("permissão e Planejar nascem visíveis; identidade nasce como UMA pílula de texto e abre no clique", async ({
+test("o MODO nasce visível; identidade nasce como UMA pílula de texto e abre no clique", async ({
   page,
 }) => {
   await abrirApp(page)
-  // Permissão e "Planejar" são os dois controles com sinal vivo (risco
-  // autorizado; modificador por-turno sem dado de uso) — ficam sempre à
+  // O modo é o controle com sinal vivo (risco autorizado) e fica sempre à
   // vista. Agent/modelo/esforço TRAVAM no 1º envio (medido: trocam em
   // 0,7%-1,2% dos turnos) — moram atrás de UMA porta, não quatro pílulas
   // com chrome próprio cada.
-  await expect(page.locator(PERMISSAO_BTN)).toBeVisible()
-  await expect(page.getByLabel("Planejar primeiro")).toBeVisible()
+  await expect(page.locator(MODO_BTN)).toBeVisible()
+  // "Planejar" deixou de ser botão próprio: virou uma opção do menu de modo.
+  await expect(page.getByLabel("Planejar primeiro")).toHaveCount(0)
   await expect(page.getByRole("group", { name: "Agent" })).toHaveCount(0)
   await expect(page.getByRole("combobox", { name: "Buscar modelo" })).toHaveCount(0)
 
@@ -78,11 +81,9 @@ test("permissão e Planejar nascem visíveis; identidade nasce como UMA pílula 
   await expect(page.getByRole("listbox", { name: "Modelo" })).toBeVisible()
 })
 
-test("consegue selecionar e trocar a permissão do projeto", async ({
-  page,
-}) => {
+test("consegue selecionar e trocar o modo do projeto", async ({ page }) => {
   await abrirApp(page)
-  const btn = page.locator(PERMISSAO_BTN)
+  const btn = page.locator(MODO_BTN)
   await expect(btn).toContainText("Pede") // default do seed é Pede
 
   await btn.click()
@@ -90,26 +91,41 @@ test("consegue selecionar e trocar a permissão do projeto", async ({
   await expect(dropdownMenu).toBeVisible()
   // a descrição de cada modo (não só o nome) precisa estar lá — é o que o
   // menu tem a mais do que o gatilho, e SSR não alcança (conteúdo portalizado).
-  await expect(dropdownMenu).toContainText("O agente executa e escreve sem pedir confirmação")
+  await expect(dropdownMenu).toContainText("Age sem perguntar e sem freio")
+  // E quem SEGURA o modo, que é o dado que sumia quando os três motores
+  // dividiam o mesmo botão.
+  await expect(dropdownMenu).toContainText("modo da CLI")
 
-  // seleciona o modo "Liberado"
   await modo(page, "Liberado").click()
   await expect(dropdownMenu).not.toBeVisible()
   await expect(btn).toContainText("Liberado")
 })
 
-test("Planejar primeiro liga e desliga no clique", async ({
+test("Planejar virou um MODO, não um toggle ao lado", async ({ page }) => {
+  await abrirApp(page)
+  const btn = page.locator(MODO_BTN)
+  await btn.click()
+  await modo(page, "Planejar").click()
+  await expect(btn).toContainText("Planejar")
+
+  // E sai de lá escolhendo outro modo — o mesmo gesto, sem segundo botão.
+  // Espera o menu FECHAR antes de reabrir: a camada de dismiss do Radix ainda
+  // está montada logo após o select e engole o clique seguinte no gatilho.
+  // Determinístico, e não `waitForTimeout` — o que a gente espera é o estado.
+  await expect(page.locator('[role="menu"]')).toHaveCount(0)
+  await btn.click()
+  await modo(page, "Pede").click()
+  await expect(btn).toContainText("Pede")
+})
+
+test("o motor decide a lista: `Auto` existe no Claude e não no Codex", async ({
   page,
 }) => {
+  // `Auto` estava inalcançável da conversa antes do M2 (existia no Rust e no
+  // agendamento, não no seletor). E a lista deixou de ser a mesma pros três.
   await abrirApp(page)
-  const toggle = page.getByLabel("Planejar primeiro")
-  await expect(toggle).not.toHaveClass(/text-brass/)
-
-  await toggle.click()
-  await expect(toggle).toHaveClass(/text-brass/)
-
-  await toggle.click()
-  await expect(toggle).not.toHaveClass(/text-brass/)
+  await page.locator(MODO_BTN).click()
+  await expect(modo(page, "Auto")).toBeVisible()
 })
 
 test("o Enviar só acende quando há o que enviar", async ({ page }) => {
@@ -143,6 +159,6 @@ test("clicar no cartão devolve o foco ao editor, e clicar nos botões do rodap�
   await editor.click()
   await expect(editor).toBeFocused()
 
-  await page.locator(PERMISSAO_BTN).click()
+  await page.locator(MODO_BTN).click()
   await expect(editor).not.toBeFocused()
 })

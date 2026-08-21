@@ -1,6 +1,6 @@
 # Modos de sessão — um eixo só, declarado por motor (plano)
 
-> Status: **M0 ✅ · M0.5 ✅ · M1 ✅ (21/08/2026)** · M2–M4 pendentes. Nasceu da ADR-056, que
+> Status: **M0 ✅ · M0.5 ✅ · M1 ✅ · M2 ✅ (21/08/2026)** · M3–M4 pendentes. Nasceu da ADR-056, que
 > fechou o gate de plano e deixou registrado o que ficou torto: o ACP trata plano
 > como MODO DE SESSÃO e nós tratamos como flag por turno. Ao investigar, o
 > problema é maior que o plano.
@@ -165,7 +165,7 @@ planejamento) em vez de desligar um booleano paralelo.
 - O braço vazio do `plan_first` em `adapters.rs:954` **morre** — plano vira um
   id de modo como qualquer outro.
 
-### M2 — Um controle só no composer
+### M2 ✅ — Um controle só no composer
 - O seletor de permissão e o toggle "Planejar" viram um seletor de modo, com os
   valores do motor ATIVO (trocar de agent troca a lista, como já acontece com
   modelo e esforço).
@@ -245,6 +245,25 @@ O aviso de modos **não tem dispensar**, diferente do de update e do de modelo:
 dispensa é pra aviso que você resolveu, e este só some quando a curadoria
 alcança o motor. Deixar dispensar reproduziria o silêncio que criou o problema.
 
-**Pendente e consciente:** nada disso mexeu no composer ainda (M2). O seletor
-continua sendo permissão + toggle de planejar, e o `Auto` segue inalcançável da
-conversa. A rede está montada; a troca é a próxima frente.
+**M2** — `ModeSelect.tsx` substitui o par "permissão + toggle Planejar". As
+opções vêm do motor ATIVO, o `enforcement` fica visível ("sandbox do sistema" ×
+"modo da CLI" × "só um pedido no prompt"), e o `Auto` deixou de ser inalcançável
+da conversa (o Rust já o aceitava; só a UI não oferecia).
+
+Dois defeitos que os testes existentes pegaram, e que valem registro porque a
+correção mudou o modelo:
+
+1. **A interseção com a sonda apagava o controle.** Com a sonda sem resposta
+   (browser, binário fora do PATH, formato de ajuda mudado) a lista ficava vazia
+   e o seletor de permissão SUMIA. Ficar sem controle é pior que ficar com uma
+   lista velha: `modosOferecidos(agent, null)` agora devolve a curadoria
+   inteira, que é o que o app já mandava antes da sonda existir.
+2. **A interseção apagava o modo EMULADO.** "Só lê" no Claude não é
+   `--permission-mode` nenhum (é `--disallowedTools`), e o agy não usa `--mode`
+   pra nada. Filtrar por descoberta tirava os dois. Entrou o `probeId`: só o que
+   o app REPASSA precisa ser confirmado pelo motor; o que ele emula não.
+
+**Pendente e consciente:** o modo ainda tem escopos diferentes por dentro —
+escolher plano liga o `planFirst` da CONVERSA, escolher outro define a permissão
+do PROJETO. São os mesmos dois destinos de antes, agora atrás de um gesto só. É
+o M3 que unifica o escopo.

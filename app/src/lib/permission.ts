@@ -9,6 +9,7 @@ import type { PermissionMode, Project } from "@/lib/types"
 export const PERMISSION_LABEL: Record<PermissionMode, string> = {
   leitura: "Só lê",
   padrao: "Pede",
+  auto: "Auto",
   liberado: "Liberado",
 }
 
@@ -19,6 +20,7 @@ export const PERMISSION_LABEL: Record<PermissionMode, string> = {
 export const PERMISSION_DESCRIPTION: Record<PermissionMode, string> = {
   leitura: "O agente só lê e relata",
   padrao: "O agente pede confirmação antes de agir",
+  auto: "Age sem perguntar, com o freio de segurança da própria CLI",
   liberado: "O agente executa e escreve sem pedir confirmação",
 }
 
