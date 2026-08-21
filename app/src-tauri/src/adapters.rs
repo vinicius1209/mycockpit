@@ -2111,6 +2111,19 @@ pub struct AgyAdapter {
     /// Um step de texto está aberto? Fecha com TextStop quando o step encerra,
     /// pro próximo bloco não colar no anterior.
     text_open: bool,
+    /// Posição monotônica no stream deste RUN. O `step_index` do agy é
+    /// global à conversa retomada; esta régua local deixa a decisão terminal
+    /// comparar apenas fatos observados no turno corrente.
+    stream_position: u64,
+    /// Step de resposta que está recebendo deltas e se ele já trouxe texto.
+    /// ACTIVE e DONE chegam em linhas diferentes para a mesma resposta.
+    response_step: Option<String>,
+    response_step_has_text: bool,
+    /// A última resposta utilizável que chegou a DONE e a última ferramenta
+    /// observada neste run. Uma resposta DONE posterior à ferramenta é a prova
+    /// de que uma falha local foi absorvida pelo próprio agente.
+    last_completed_response_position: Option<u64>,
+    last_tool_position: Option<u64>,
     /// Sink de evidência visual de tool_result (browser-plan B1).
     evidence: Option<crate::evidence::EvidenceSink>,
 }
@@ -2146,10 +2159,29 @@ pub fn agy_result_error(result: &serde_json::Value) -> Option<String> {
 }
 
 impl AgyAdapter {
+    /// O `result.status` do agy 1.1.13 fica contaminado depois de uma falha de
+    /// ferramenta numa conversa retomada: o mesmo ERROR reaparece em turnos
+    /// seguintes que entregaram resposta válida. A evidência autoritativa do
+    /// TURNO é a ordem dos steps novos: resposta com texto, DONE, depois da
+    /// última ferramenta. Sem essa prova (timeout, transporte cortado, tool
+    /// falhou e não houve resposta posterior), o ERROR continua terminal.
+    fn completed_answer_after_last_tool(&self) -> bool {
+        match (
+            self.last_completed_response_position,
+            self.last_tool_position,
+        ) {
+            (Some(response), Some(tool)) => response > tool,
+            (Some(_), None) => true,
+            _ => false,
+        }
+    }
+
     /// Um `step_update` → eventos. É AQUI que a narração deixa de virar
     /// resposta: o texto sai amarrado ao SEU step, e o step de ferramenta que
     /// vem logo depois entra como cartão entre um texto e outro.
     fn map_step(&mut self, step: &serde_json::Value) -> Vec<AgentEvent> {
+        self.stream_position = self.stream_position.saturating_add(1);
+        let position = self.stream_position;
         let state = step.get("state").and_then(|x| x.as_str()).unwrap_or("");
         let kind = step.get("step_type").and_then(|x| x.as_str()).unwrap_or("");
         // O step_index é o ÚNICO id estável do agy (não há id de tool call): é
@@ -2162,6 +2194,10 @@ impl AgyAdapter {
         let mut out = Vec::new();
         match kind {
             "agent_response" => {
+                if self.response_step.as_deref() != Some(id.as_str()) {
+                    self.response_step = Some(id.clone());
+                    self.response_step_has_text = false;
+                }
                 // Contexto é NÍVEL (prompt da última chamada de modelo), e só o
                 // agent_response é chamada de modelo — checkpoint é auxiliar.
                 if let Some(u) = step.get("usage") {
@@ -2173,6 +2209,7 @@ impl AgyAdapter {
                 }
                 if let Some(t) = step.get("text_delta").and_then(|x| x.as_str()) {
                     if !t.is_empty() {
+                        self.response_step_has_text = true;
                         self.text_open = true;
                         out.push(AgentEvent::TextDelta {
                             text: t.to_string(),
@@ -2186,8 +2223,25 @@ impl AgyAdapter {
                     self.text_open = false;
                     out.push(AgentEvent::TextStop);
                 }
+                if state != "ACTIVE" {
+                    // `DONE`, e não "qualquer estado terminal": o agy fecha o
+                    // step de resposta em ERROR também (mesma régua do ramo de
+                    // ferramenta logo abaixo, que já exige DONE). Aceitar ERROR
+                    // aqui invertia o conserto — uma resposta cortada por
+                    // rate limit, sem ferramenta nenhuma no turno, virava
+                    // "prova de recuperação" e pintava de VERDE um turno que
+                    // falhou de verdade. O cartão vermelho mentindo foi o bug
+                    // original; o verde mentindo é pior, porque ninguém volta
+                    // pra conferir um turno que diz que deu certo.
+                    if state == "DONE" && self.response_step_has_text {
+                        self.last_completed_response_position = Some(position);
+                    }
+                    self.response_step = None;
+                    self.response_step_has_text = false;
+                }
             }
             "tool" => {
+                self.last_tool_position = Some(position);
                 let info = step.get("tool_info");
                 let name = step
                     .get("tool_name")
@@ -2276,7 +2330,16 @@ impl AgyAdapter {
             Some(m) => crate::pricing::estimate(m, &nu),
             None => (None, CostSource::Unknown),
         };
-        let ok = result.get("status").and_then(|x| x.as_str()) != Some("ERROR");
+        let provider_failed =
+            result.get("status").and_then(|x| x.as_str()) == Some("ERROR");
+        // `ERROR` + resposta final utilizável posterior à última ferramenta
+        // significa "concluído com aviso". O contrato normalizado ainda é
+        // booleano, então ele sai `ok: true`; a falha local NÃO some: já foi
+        // emitida como ToolResult(false) no Fio Vivo. Isso também neutraliza o
+        // ERROR antigo que o agy repete nos próximos `--conversation`.
+        let recovered_with_answer =
+            provider_failed && self.completed_answer_after_last_tool();
+        let ok = !provider_failed || recovered_with_answer;
         let mut out = Vec::new();
         if self.text_open {
             self.text_open = false;
@@ -4057,6 +4120,93 @@ mod tests {
             .expect("o result fecha o turno");
         assert!(!ok);
         assert_eq!(text.as_deref(), Some("timeout waiting for response"));
+    }
+
+    /// Incidente real de 20/08/2026: `manage_task(kill)` perdeu a corrida para
+    /// o timer, que já estava DONE. O tool_result continua vermelho e auditável,
+    /// mas uma resposta final posterior prova que o turno terminou. O agy ainda
+    /// fechou com ERROR; elevá-lo a falha geral fez o cartão vermelho mentir.
+    #[test]
+    fn erro_local_seguido_de_resposta_final_nao_vira_falha_geral() {
+        const TOOL_ERROR: &str = r#"{"event":"step_update","step_update":{"step_index":108,"state":"ERROR","step_type":"tool","tool_name":"manage_task","tool_info":{"parameters":{"Action":"kill","TaskId":"task-104"},"error":{"type":"TOOL_ERROR","message":"cannot kill task \"task-104\": task is not running (status: DONE)"}}}}"#;
+        const FINAL_DONE: &str = r#"{"event":"step_update","step_update":{"step_index":109,"state":"DONE","step_type":"agent_response","text_delta":"Relatório final entregue.","usage":{"input_tokens":10,"output_tokens":4,"cache_read_tokens":0}}}"#;
+        const STICKY_RESULT: &str = r#"{"event":"result","result":{"status":"ERROR","response":"Relatório final entregue.","error":"cannot kill task \"task-104\": task is not running (status: DONE)","usage":{"input_tokens":10,"output_tokens":4,"cache_read_tokens":0}}}"#;
+
+        let mut a = AgyAdapter::default();
+        agy_linha(&mut a, AGY_INIT);
+        let tool = agy_linha(&mut a, TOOL_ERROR);
+        assert!(matches!(
+            tool.as_slice(),
+            [AgentEvent::ToolResult { ok: false, .. }]
+        ));
+        agy_linha(&mut a, FINAL_DONE);
+        let result = agy_linha(&mut a, STICKY_RESULT);
+        assert!(matches!(
+            result.iter().find(|e| matches!(e, AgentEvent::Result { .. })),
+            Some(AgentEvent::Result {
+                ok: true,
+                text: None,
+                ..
+            })
+        ));
+    }
+
+    /// Nas retomadas seguintes o agy repetiu o erro do timer sem nenhuma nova
+    /// tool falhar. Resposta DONE deste run vence estado acumulado da conversa.
+    #[test]
+    fn erro_sticky_de_turno_anterior_nao_contamina_resposta_nova() {
+        const FINAL_DONE: &str = r#"{"event":"step_update","step_update":{"step_index":120,"state":"DONE","step_type":"agent_response","text_delta":"A nova solicitação foi concluída.","usage":{"input_tokens":20,"output_tokens":6,"cache_read_tokens":10}}}"#;
+        const STICKY_RESULT: &str = r#"{"event":"result","result":{"status":"ERROR","response":"A nova solicitação foi concluída.","error":"cannot kill task \"task-104\": task is not running (status: DONE)","usage":{"input_tokens":20,"output_tokens":6,"cache_read_tokens":10}}}"#;
+
+        let mut a = AgyAdapter::default();
+        agy_linha(&mut a, AGY_INIT);
+        agy_linha(&mut a, FINAL_DONE);
+        let result = agy_linha(&mut a, STICKY_RESULT);
+        assert!(matches!(
+            result.iter().find(|e| matches!(e, AgentEvent::Result { .. })),
+            Some(AgentEvent::Result { ok: true, .. })
+        ));
+    }
+
+    /// O contrário do conserto acima, e o risco que ele abriu: uma resposta
+    /// que FALHOU não é prova de recuperação. O agy fecha o step de resposta em
+    /// ERROR igual ao de ferramenta, então aceitar "qualquer estado terminal"
+    /// pintava de verde um turno cortado no meio (rate limit, transporte) sem
+    /// ferramenta nenhuma envolvida. Cartão vermelho mentindo já era ruim;
+    /// verde mentindo é pior, porque ninguém volta pra conferir.
+    #[test]
+    fn resposta_que_terminou_em_erro_nao_conta_como_recuperacao() {
+        const RESP_ERROR: &str = r#"{"event":"step_update","step_update":{"step_index":7,"state":"ERROR","step_type":"agent_response","text_delta":"Comecei a responder e","usage":{"input_tokens":5,"output_tokens":2,"cache_read_tokens":0}}}"#;
+        const RESULT: &str = r#"{"event":"result","result":{"status":"ERROR","response":"","error":"resource exhausted","usage":{"input_tokens":5,"output_tokens":2,"cache_read_tokens":0}}}"#;
+
+        let mut a = AgyAdapter::default();
+        agy_linha(&mut a, AGY_INIT);
+        agy_linha(&mut a, RESP_ERROR);
+        let result = agy_linha(&mut a, RESULT);
+        assert!(matches!(
+            result.iter().find(|e| matches!(e, AgentEvent::Result { .. })),
+            Some(AgentEvent::Result { ok: false, .. })
+        ));
+    }
+
+    /// Narração anterior à ferramenta não é resposta final. Se a tool
+    /// falha e o stream termina sem nova resposta, o erro continua terminal.
+    #[test]
+    fn erro_de_ferramenta_sem_resposta_posterior_continua_terminal() {
+        const RESULT: &str = r#"{"event":"result","result":{"status":"ERROR","response":"","error":"Permission denied for read_file","usage":{"input_tokens":1,"output_tokens":1,"cache_read_tokens":0}}}"#;
+        let mut a = AgyAdapter::default();
+        agy_linha(&mut a, AGY_INIT);
+        agy_linha(&mut a, AGY_STEP_NARRACAO);
+        agy_linha(&mut a, AGY_STEP_TOOL_ERROR);
+        let result = agy_linha(&mut a, RESULT);
+        assert!(matches!(
+            result.iter().find(|e| matches!(e, AgentEvent::Result { .. })),
+            Some(AgentEvent::Result {
+                ok: false,
+                text: Some(_),
+                ..
+            })
+        ));
     }
 
     /// E o extrator não fabrica frase quando o CLI não disse nada.
