@@ -2,6 +2,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { emit } from "@tauri-apps/api/event"
 import type { PermissionMode, Project } from "@/lib/types"
+import type { MainTab } from "@/lib/mainTabs"
 import { type GlobalSettings, DEFAULT_SETTINGS } from "@/lib/settings"
 import {
   isTauri,
@@ -34,6 +35,14 @@ interface AppState {
    *  saíram do produto ("fusion", "office") migram para "linear" no persist
    *  (v3/v4) — nunca abrimos num modo que não existe. */
   viewMode: "painel" | "linear" | "sdd"
+  /** Aba aberta DENTRO da superfície Trabalho (docs/abas-no-principal-plan.md).
+   *  União discriminada, igual à do Paseo, porque ela aguenta ganhar variante
+   *  (terminal, arquivo, PR) sem retrabalho — mas hoje são DUAS e só.
+   *
+   *  NÃO persiste, de propósito: reabrir o app numa tela de diff que você não
+   *  lembra de ter aberto é pior que reabrir na conversa. Aba é gesto da
+   *  sessão, não preferência. */
+  mainTab: MainTab
   /** F7 — view GLOBAL "Agendado" aberta? Estado PRÓPRIO (não é um viewMode):
    *  quando true, ela cobre o conteúdo principal; qualquer navegação (trocar
    *  superfície/projeto) fecha. Não persiste. */
@@ -99,6 +108,10 @@ interface AppState {
   toggleSidebar: () => void
   toggleContext: () => void
   setViewMode: (m: "painel" | "linear" | "sdd") => void
+  /** Abre (ou refoca) a aba do diff, opcionalmente já num arquivo. */
+  openDiffTab: (focusPath?: string) => void
+  /** Volta pra conversa. A aba do diff deixa de existir, não fica escondida. */
+  closeDiffTab: () => void
   /** Abre/fecha a view global "Agendado" (F7). */
   setScheduledOpen: (v: boolean) => void
   /** Abre/fecha o workspace global de Planos de voo. */
@@ -185,6 +198,7 @@ export const useApp = create<AppState>()(
       sidebarOpen: true,
       contextOpen: true,
       viewMode: "linear",
+      mainTab: { kind: "conversa" },
       scheduledOpen: false,
       flightPlansOpen: false,
       fleetOpen: false,
@@ -269,6 +283,20 @@ export const useApp = create<AppState>()(
       // o switcher não conhece os workspaces globais; trocar de superfície os fecha.
       setViewMode: (viewMode) =>
         set({ viewMode, scheduledOpen: false, flightPlansOpen: false, fleetOpen: false }),
+      // Cada pedido ganha um selo próprio (`focusSeq`). Sem ele, clicar DE
+      // NOVO no mesmo arquivo era no-op: o efeito que rola até ele depende do
+      // `focusPath`, a string não mudava, e quem tinha rolado pra longe não
+      // voltava. Pedir a mesma coisa duas vezes é pedido, não repetição.
+      openDiffTab: (focusPath) =>
+        set((s) => ({
+          mainTab: {
+            kind: "diff",
+            focusPath,
+            focusSeq:
+              (s.mainTab.kind === "diff" ? (s.mainTab.focusSeq ?? 0) : 0) + 1,
+          },
+        })),
+      closeDiffTab: () => set({ mainTab: { kind: "conversa" } }),
       setScheduledOpen: (scheduledOpen) =>
         set({
           scheduledOpen,

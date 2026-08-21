@@ -208,6 +208,26 @@
     text-rendering: optimizeLegibility;
     overflow: hidden; /* o app shell controla o scroll por painel */
   }
+  /* REGRA DO ESQUELETO: os containers do shell CORTAM, nunca ROLAM.
+     Quem rola é sempre uma zona que pediu pra rolar (a lista do diff, o fio, a
+     sidebar) — nunca a moldura em volta dela.
+
+     `clip`, e não `hidden`: os dois escondem a barra, mas `hidden` continua
+     sendo um scroll container e aceita `scrollTop` por script. Foi assim que um
+     `scrollIntoView` lá dentro do diff empurrou centro + contexto pra fora da
+     vista, sem barra nenhuma pra trazer de volta (builds #241–#243). `clip` não
+     tem scrollTop pra empurrar.
+
+     O `!important` existe porque `react-resizable-panels` escreve overflow
+     inline no Panel e não repassa className — não dá pra vencer por classe.
+     A regra cobre a CADEIA inteira, não só o `#main`: parar num nível só deixa
+     o mesmo defeito reaparecer um degrau acima. */
+  .grain,
+  [data-slot="resizable-panel-group"],
+  [data-slot="resizable-panel"]#main,
+  [data-slot="resizable-panel"]#main > div {
+    overflow: clip !important;
+  }
   html.tray-surface,
   html.tray-surface body,
   html.tray-surface #root {

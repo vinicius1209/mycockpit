@@ -20,7 +20,7 @@ import {
   StageBadge,
   TabBtn,
 } from "@/components/layout/contextPanelChrome"
-import { DiffPanel } from "@/components/layout/DiffPanel"
+import { DiffIndex } from "@/components/layout/DiffIndex"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { deriveTasks } from "@/lib/tasks"
 import {
@@ -500,12 +500,11 @@ export function ContextPanel() {
           </p>
         </div>
       ) : tab === "alteracoes" ? (
-        <DiffPanel
+        <DiffIndex
           cwd={activeWorktree ?? project.path}
           delivery={delivery}
           onRequestFix={requestDeliveryFix}
           onCloseDelivery={closeDeliveryDiff}
-          onSendToComposer={(text) => activeConvId && prefillComposer(activeConvId, text)}
         />
       ) : tab === "plano" ? (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">

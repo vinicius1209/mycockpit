@@ -1,6 +1,6 @@
 # Abas no painel principal — o diff ganha largura (plano)
 
-> Status: **proposta, nada implementado** (20/08/2026). Nasceu do teste do build
+> Status: **implementado e promovido no build #248** (21/08/2026). Nasceu do teste do build
 > #238: o usuário abriu um arquivo na aba Alterações e o diff apareceu espremido
 > numa coluna de ~390px, cortando linha no meio. Palavras dele: "olha que
 > experiência ruim, sem formatação, sem espaço, fica meio inútil".
@@ -47,12 +47,13 @@ diff; somos o único que não dá.
 2. **Duas camadas de navegação na mesma região é risco real.** Já existe o
    switcher central (modo = que espaço). Uma tira de abas somaria um segundo
    nível (aba = que superfície dentro do trabalho). O Paseo não tem os dois: lá
-   o nível de cima é o workspace, na sidebar. Mitigação: **a tira só existe com
-   ≥2 abas**. Com só a conversa aberta — o estado padrão — não há tira nenhuma,
-   e a tela fica idêntica à de hoje.
+   o nível de cima é o workspace, na sidebar. A decisão de produto posterior é
+   tratar **Conversa como âncora permanente**, com um + discreto de ações. Assim
+   uma aba transitória pode entrar e sair sem fazer a navegação inteira piscar.
 3. **A ADR-037 apostou o contrário** ("o passado recolhe, o vivo respira") e
    listou "canvas infinito como superfície" no *não trazer*. Aba não é canvas:
-   é limitada, nomeada e fechável, e some quando fica sozinha. Mas isto é uma
+   é limitada, nomeada e fechável; a tira fixa ancora a conversa, enquanto as
+   demais abas somem quando fechadas. Mas isto é uma
    releitura consciente daquela aposta, registrada aqui para não ser uma
    revogação em silêncio.
 
@@ -80,7 +81,8 @@ reabrir na conversa. Aba é gesto da sessão, não preferência.
 - `store/app`: `mainTab: MainTab`, `openDiffTab(focusPath?)`, `closeDiffTab()`.
 - `components/layout/MainTabs.tsx`: a tira. Reusa a régua visual do `TabBtn`
   (`contextPanelChrome.tsx`), que já degrada para ícone em container estreito.
-  **Não renderiza nada com uma aba só.**
+  **Conversa fica sempre visível** e o + oferece Nova tarefa, Duplicar conversa,
+  Fork do último turno e Todos os comandos.
 - `AppShell.tsx`: dentro do cartão do `id="chat"`, a tira acima e as superfícies
   alternando por `hidden` — o padrão que já está lá, não um novo.
 - Fechar a aba (× ou Esc) volta pra conversa. Trocar de conversa **mantém** a
@@ -118,8 +120,8 @@ uso real mostrar travada — com número medido, não por precaução.
 ## O que NÃO fazer
 
 - **Não** persistir a aba aberta (ver o modelo).
-- **Não** renderizar a tira com uma aba só: chrome permanente para um item é
-  exatamente o que o §1 do STYLEGUIDE manda recuar.
+- **Não** fazer a tira aparecer e desaparecer junto com Alterações: Conversa e
+  o + são a âncora estável da superfície Trabalho.
 - **Não** desmontar a conversa ao trocar de aba: a restrição 1 é medida, não
   teórica.
 - **Não** abrir a aba sozinha ao fim de um turno. O painel direito já tem a
@@ -131,7 +133,8 @@ uso real mostrar travada — com número medido, não por precaução.
 
 ## Definition of done
 
-- Com uma aba, a tela é pixel a pixel a de hoje (a tira não existe).
+- Com uma aba, Conversa e o + continuam visíveis; abrir/fechar Alterações não
+  desloca nem remove essa âncora.
 - Clicar num arquivo em Alterações abre a aba já naquele arquivo.
 - Trocar de aba não remonta o `ChatPanel` (verificável: o scroll do fio e o
   estado do composer sobrevivem à ida e volta).

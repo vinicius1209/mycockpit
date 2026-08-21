@@ -244,7 +244,9 @@ export const DEAD_TOKEN_RULES = [
       "components/sdd/SddView.tsx": { max: 8, motivo: "marcos de etapa do SDD (spec/plan/tasks concluídos); +1 pelo `border-st-success/40` do mesmo marco. O `bg-st-success` do stepper NÃO está aqui: virou cinza em 15/08/2026 (§9 item 4)" },
       "components/layout/InboxBell.tsx": { max: 2, motivo: "marco de item do inbox resolvido" },
       // Família "domínio git": `+N` e linha de adição têm cor própria (§2).
-      "components/layout/DiffPanel.tsx": { max: 4, motivo: "adições do diff (domínio git tem cor própria); apertado de 6→4 quando a linha do hunk (2 usos) mudou pra DiffPanel/comments.tsx" },
+      "components/layout/DiffPanel.tsx": { max: 2, motivo: "adições do diff (domínio git tem cor própria); 6→4 quando a linha do hunk foi pra DiffPanel/comments.tsx, 4→2 quando a coluna virou DiffIndex.tsx (F1.3) e levou a barra de totais junto" },
+      "components/layout/DiffIndex.tsx": { max: 3, motivo: "mesma família: `+N` do total da barra, `+N` por arquivo da lista, e o `A` de arquivo novo herdado do STATUS_META" },
+      "components/layout/DiffPanel/parts.tsx": { max: 1, motivo: "mesma família: a letra `A` (arquivo novo) do STATUS_META, compartilhado entre a coluna e a aba" },
       "components/layout/DiffPanel/comments.tsx": { max: 2, motivo: "mesma família de DiffPanel.tsx: `bg-st-success/[0.10]` (fundo da linha ADD) e `text-st-success` (sinal `+`) da linha do hunk, extraídos de lá pro comentário inline" },
       // Triagem fina deixada de fora da passada de 12/08/2026, de propósito
       // (§9 item 4): aqui o cinza colapsaria uma distinção que a tela precisa.
