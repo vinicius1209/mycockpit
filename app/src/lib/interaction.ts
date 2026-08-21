@@ -5,7 +5,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event"
  *  (aprovar comando, responder pergunta estruturada, aprovar plano — futuro). Uma
  *  abstração, N `kind`s. O turno FICA PAUSADO até `answerInteraction`. Espelha o
  *  §Contrato de docs/interactive-input.md. */
-export type InteractionKind = "approval" | "question"
+export type InteractionKind = "approval" | "question" | "plan"
 
 /** Pedido normalizado emitido pelo backend no evento `interaction://request`.
  *  `data` varia por `kind` (ver ApprovalData / QuestionData). */
@@ -24,6 +24,40 @@ export interface InteractionRequest {
   kind: InteractionKind
   /** payload específico do kind (ApprovalData | QuestionData). */
   data: unknown
+}
+
+/**
+ * `data` de um gate de plano (kind="plan") — o "aprovar plano" que este arquivo
+ * já previa como futuro.
+ *
+ * DIFERENTE dos outros dois em uma coisa que muda o código: ele é LOCAL. Não há
+ * run pausado do outro lado esperando — em headless (`-p`) o turno de plano
+ * termina antes de existir alguém pra perguntar, e o `ExitPlanMode` interativo
+ * do Claude não existe nesse modo (ver o comentário no adapters.rs). Então
+ * quem pergunta e quem responde são o app; nada é enviado ao backend.
+ *
+ * Por que mesmo assim entra NA FILA: é aqui que mora tudo que faz uma decisão
+ * pendente ser vista — ponto na sidebar, sino, tray, nativa, Companion,
+ * fail-closed. O gate de plano ficou fora disso desde sempre, e por isso podia
+ * te esperar em silêncio. O Paseo chegou na mesma conclusão: lá o plano é um
+ * `AgentPermissionRequestKind`, irmão de `tool` e `question`.
+ */
+export interface PlanData {
+  /** Conversa dona — o `run_id` não serve aqui: o run já terminou. */
+  convId: string
+  /** Item `planGate` do fio que este pedido representa (o registro histórico). */
+  gateId: string
+  /** O plano proposto, pra quem mostra o pedido fora da conversa (sino,
+   *  Companion) poder dizer do que se trata. */
+  text: string
+}
+
+/** Resposta a um gate de plano. `keepPlanning` = recusa que CONTINUA o
+ *  planejamento (opção 3 do Claude Code), com o motivo indo pro agente. */
+export interface PlanAnswer {
+  decision: "approved" | "keepPlanning"
+  /** Motivo da recusa, mandado ao agente. Vazio = recusa sem explicação. */
+  reason?: string
 }
 
 /** `data` de um pedido de aprovação granular (kind="approval"). Mantém o shape que
@@ -87,7 +121,7 @@ export interface QuestionAnswer {
 }
 
 /** Qualquer resposta (por kind). */
-export type InteractionAnswer = ApprovalAnswer | QuestionAnswer
+export type InteractionAnswer = ApprovalAnswer | QuestionAnswer | PlanAnswer
 
 /** Escuta os pedidos de interação pendente (evento global do backend). Retorna o
  *  unlisten. O turno do agente fica bloqueado até responder via `answerInteraction`.

@@ -51,12 +51,8 @@ import { InlineInteractions } from "@/components/chat/InteractionHost"
 import { runAgent, cancelAgent, agentLabel } from "@/lib/agent"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
 import { prepareHybridHandoff } from "@/lib/handoff"
-import {
-  buildExecutionPrompt,
-  extractPlanText,
-  pendingPlanGate,
-  turnEndedOk,
-} from "@/lib/planMode"
+import { decidePlanGateAndSend } from "@/lib/planGate"
+import { extractPlanText, turnEndedOk } from "@/lib/planMode"
 import {
   renderTranscript,
   exportConvContext,
@@ -1129,21 +1125,14 @@ export function ChatPanel() {
   // normal, SEM plan_first; o toggle da conversa desliga sozinho). claude/codex
   // continuam via resume (o contexto do plano já está na sessão); agy não tem
   // resume → o prompt embute o texto do plano aprovado.
-  function handleApprovePlan(id: string) {
+  // As duas decisões do gate de plano: a regra mora em lib/planGate (carimbar,
+  // tirar da fila, sair ou não do modo plano); daqui vai só o envio.
+  function decidirPlano(id: string, decision: "approve" | "keepPlanning") {
     const convId = useChat.getState().activeId
     if (!convId) return
-    const c = useChat.getState().byId[convId]
-    if (!c || c.running || c.finalizing) return
-    const gate = pendingPlanGate(c.items)
-    // Só o gate que está NA MESA: o id vem do fio renderizado, e entre o clique
-    // e aqui pode ter chegado turno novo.
-    if (!gate || gate.id !== id) return
-    const prompt = buildExecutionPrompt(c.agent, gate.text)
-    // Carimba ANTES de enviar: o envio empurra um `user` no fio, e a partir dele
-    // o gate deixaria de estar pendente sem nunca dizer que foi aprovado.
-    useChat.getState().decidePlanGate(convId, id, "approved")
-    useChat.getState().setPlanFirst(convId, false)
-    void handleSend(prompt, undefined, [], HUMANO)
+    decidePlanGateAndSend(convId, id, decision, (prompt) => {
+      void handleSend(prompt, undefined, [], HUMANO)
+    })
   }
 
   function handleStop() {
@@ -1259,7 +1248,14 @@ export function ChatPanel() {
               unseenDividerId={conv.unseenDividerId}
               // Só oferece o gesto quando ele funcionaria: com turno em voo o
               // envio da aprovação seria enfileirado e o cartão mentiria.
-              onApprovePlan={running || finalizing ? undefined : handleApprovePlan}
+              onApprovePlan={
+                running || finalizing ? undefined : (id) => decidirPlano(id, "approve")
+              }
+              onKeepPlanning={
+                running || finalizing
+                  ? undefined
+                  : (id) => decidirPlano(id, "keepPlanning")
+              }
               onStop={(tool) => {
                 if (tool.managedProcess) {
                   void stopManagedProcess(tool.managedProcess.id).catch((error) =>

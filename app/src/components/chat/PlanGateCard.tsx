@@ -12,20 +12,29 @@
 // aprovar ou descartar o cartão não some, vira uma linha dizendo o que você
 // decidiu. "Eu autorizei esse plano?" passa a ter resposta.
 
-import { ClipboardList, Check, X } from "lucide-react"
+import { ClipboardList, Check, X, RotateCcw } from "lucide-react"
 import type { PlanGateItem } from "@/lib/planMode"
 
 /** Decidido: uma linha discreta, no lugar onde a decisão aconteceu. Não é mais
- *  um cartão de ação — é registro, e registro não compete por atenção. */
-function Decidido({ decision }: { decision: "approved" | "discarded" }) {
-  const aprovado = decision === "approved"
-  const Icone = aprovado ? Check : X
+ *  um cartão de ação — é registro, e registro não compete por atenção.
+ *
+ *  `superseded` NÃO diz "por você": você não descartou, você continuou
+ *  planejando e o turno seguinte trouxe outro plano. Botar seu nome numa
+ *  decisão que você não tomou é o tipo de mentirinha que envenena histórico. */
+function Decidido({
+  decision,
+}: {
+  decision: "approved" | "discarded" | "superseded"
+}) {
+  const meta = {
+    approved: { Icone: Check, texto: "Plano aprovado por você" },
+    discarded: { Icone: X, texto: "Plano recusado por você" },
+    superseded: { Icone: RotateCcw, texto: "Plano substituído por outro" },
+  }[decision]
   return (
     <div className="flex items-center gap-2 px-1 text-[12px] text-muted-foreground">
-      <Icone className="size-3.5 shrink-0" />
-      <span>
-        {aprovado ? "Plano aprovado por você" : "Plano descartado por você"}
-      </span>
+      <meta.Icone className="size-3.5 shrink-0" />
+      <span>{meta.texto}</span>
     </div>
   )
 }
@@ -54,11 +63,15 @@ export function PlanGateCard({
       </div>
       {onApprove && onDiscard && (
         <div className="mt-2.5 flex items-center justify-end gap-2">
+          {/* "Continuar planejando", e não "Descartar": nos CLIs a recusa NÃO
+              é beco sem saída — o modelo é avisado e segue planejando (opção 3
+              do Claude Code). O nosso descartava calado, e o agente nunca ficava
+              sabendo que você rejeitou. */}
           <button
             onClick={onDiscard}
             className="rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
           >
-            Descartar
+            Continuar planejando
           </button>
           <button
             onClick={onApprove}

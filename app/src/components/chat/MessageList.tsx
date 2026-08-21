@@ -1562,10 +1562,12 @@ const MessageItem = memo(function MessageItem({
   feedbackText,
   reads,
   onApprovePlan,
+  onKeepPlanning,
 }: {
   item: ChatItem
-  /** Aprovar o plano proposto (id do item). Ausente = não dá pra agir agora. */
+  /** Decidir o gate de plano. Ausentes = não dá pra agir agora. */
   onApprovePlan?: (id: string) => void
+  onKeepPlanning?: (id: string) => void
   feedback?: FeedbackApi | null
   feedbackText?: string
   /** Selo de leitura por PATH de anexo, SÓ os deste item (só itens do usuário
@@ -1699,20 +1701,12 @@ const MessageItem = memo(function MessageItem({
   }
 
   if (it.kind === "planGate") {
-    // Descartar é carimbo puro (store); aprovar precisa ENVIAR, e quem sabe
-    // enviar nesta conversa é o ChatPanel — daí a callback, mesmo caminho do
-    // `onContinueWith`. Sem ela o cartão informa e não oferece botão.
+    // As duas decisões ENVIAM um turno (lib/planGate), daí as callbacks.
     return (
       <PlanGateCard
         item={it}
         onApprove={onApprovePlan && (() => onApprovePlan(it.id))}
-        onDiscard={
-          onApprovePlan &&
-          (() => {
-            const convId = useChat.getState().activeId
-            if (convId) useChat.getState().decidePlanGate(convId, it.id, "discarded")
-          })
-        }
+        onDiscard={onKeepPlanning && (() => onKeepPlanning(it.id))}
       />
     )
   }
@@ -1797,6 +1791,7 @@ interface NodeCtx {
   /** Aprovar o plano proposto: precisa ENVIAR, e quem sabe enviar nesta
    *  conversa é o ChatPanel. Ausente = o cartão do gate só informa. */
   onApprovePlan?: (id: string) => void
+  onKeepPlanning?: (id: string) => void
 }
 
 /** O transcript registra que o plano nasceu e como terminou; a checklist viva
@@ -1948,6 +1943,7 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
           feedbackText={ctx.feedbackByResult.get(n.item.id)}
           reads={ctx.attReads.get(n.item.id)}
           onApprovePlan={ctx.onApprovePlan}
+          onKeepPlanning={ctx.onKeepPlanning}
         />
         <ContinueRow
           current={ctx.agent}
@@ -1963,6 +1959,7 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
       feedback={ctx.feedbackByResult.has(n.item.id) ? ctx.feedback : null}
       feedbackText={ctx.feedbackByResult.get(n.item.id)}
       onApprovePlan={ctx.onApprovePlan}
+      onKeepPlanning={ctx.onKeepPlanning}
       reads={ctx.attReads.get(n.item.id)}
     />
   )
@@ -2117,6 +2114,7 @@ export function MessageList({
   onRetry,
   onContinueWith,
   onApprovePlan,
+  onKeepPlanning,
   feedback,
 }: {
   items: ChatItem[]
@@ -2147,6 +2145,7 @@ export function MessageList({
   /** Aprovar o plano proposto (id do item `planGate`): o gesto ENVIA, e quem
    *  sabe enviar nesta conversa é o ChatPanel. */
   onApprovePlan?: (id: string) => void
+  onKeepPlanning?: (id: string) => void
   /** Loop de feedback do Linear (M2). null/undefined fora do Linear. */
   feedback?: FeedbackApi | null
 }) {
@@ -2216,6 +2215,7 @@ export function MessageList({
     onRetry: stableRetry,
     onContinueWith,
     onApprovePlan,
+    onKeepPlanning,
   }
   return (
     <div className="mx-auto flex w-full max-w-[760px] min-w-0 flex-col gap-5 px-8 py-8">

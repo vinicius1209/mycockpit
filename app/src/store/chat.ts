@@ -114,7 +114,7 @@ type ChatItemBody =
   | { kind: "note"; id: string; text: string; anchorId: string; sent?: boolean }
   /** Plano proposto num turno `plan_first`. `decision` ausente = ainda na mesa.
    *  Por que é item e não campo: store/chat/planGate.ts. */
-  | { kind: "planGate"; id: string; text: string; decision?: "approved" | "discarded" }
+  | { kind: "planGate"; id: string; text: string; decision?: "approved" | "discarded" | "superseded" }
   | { kind: "cancelled"; id: string }
   | { kind: "notice"; id: string; message: string }
   /** Limite de uso/cota do agent atingido: cartão acionável (revezamento). */
@@ -631,7 +631,7 @@ export interface ChatState {
   decidePlanGate: (
     convId: string,
     id: string,
-    decision: "approved" | "discarded",
+    decision: "approved" | "discarded" | "superseded",
   ) => void
   /** Registra um resume automático agendado (banner + timer). */
   setAutoResume: (convId: string, s: ConvState["autoResume"]) => void

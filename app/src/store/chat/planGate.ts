@@ -20,13 +20,27 @@ type Set = (fn: (s: ChatState) => Partial<ChatState>) => void
 /** Fim de um turno `plan_first` que deu certo: o plano entra no fio esperando
  *  decisão. Sem `decision` = ainda na mesa (ver `pendingPlanGate`). */
 export function pushPlanGateImpl(get: Get, set: Set, convId: string, text: string) {
+  const id = uid()
   set((s) => {
     const cur = s.byId[convId]
     if (!cur) return {}
-    const item: ChatItem = { kind: "planGate", id: uid(), text }
+    const item: ChatItem = { kind: "planGate", id, text }
     return { byId: { ...s.byId, [convId]: { ...cur, items: [...cur.items, item] } } }
   })
   void get().persist(convId)
+  // O gate entra na FILA de interações junto: é dela que vêm o ponto na
+  // sidebar, o sino, a tray, a nativa e o Companion. Antes o cartão existia só
+  // na tela da conversa aberta — podia te esperar em silêncio (lib/planGate).
+  //
+  // Import DINÂMICO, mesma razão do mission/fusion em store/chat/remove.ts:
+  // `store/interactions` importa `store/chat` de volta, e um import estático
+  // fecharia o ciclo (foi assim que a suíte da missão quebrou com
+  // "window is not defined" — o ciclo puxava o módulo errado no boot).
+  void import("@/lib/planGate").then((m) => {
+    m.enqueuePlanGate(convId, id, text)
+    // E o plano anterior desta conversa, se havia, foi SUPERADO por este.
+    m.supersedeOldGates(convId, id)
+  })
 }
 
 /**
@@ -42,7 +56,7 @@ export function decidePlanGateImpl(
   set: Set,
   convId: string,
   id: string,
-  decision: "approved" | "discarded",
+  decision: "approved" | "discarded" | "superseded",
 ) {
   set((s) => {
     const cur = s.byId[convId]
@@ -60,4 +74,7 @@ export function decidePlanGateImpl(
     return { byId: { ...s.byId, [convId]: { ...cur, items } } }
   })
   void get().persist(convId)
+  // Decidido = sai da fila. Sem isto o ponto de "precisa de você" ficaria aceso
+  // depois de você já ter decidido.
+  void import("@/lib/planGate").then((m) => m.dequeuePlanGate(id))
 }

@@ -2167,3 +2167,63 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   EVENTOS (`notify.ts` — turno, gate, missão). `nativeNotify` é re-exportado pela
   porta antiga: extração não é motivo pra mexer em call site.
 - **Verificado:** `tsc` 0, `vitest` 2924/263, 6 guardas.
+
+### ADR-056 — O gate de plano é pedido pendente, não cartão solto ✅
+- **Contexto (21/08/2026):** relato do usuário — pediu um plano ao agy, o cartão
+  de aprovar/negar apareceu, e depois de reabrir o app não havia nem o pedido nem
+  rastro de que ele existiu. A investigação achou DOIS defeitos, um por vez.
+- **Defeito 1 — durabilidade.** `pendingPlan` era campo de `ConvState`, estado de
+  RUNTIME: não há coluna `pending_plan` nem menção em `lib/db/conversations.ts`.
+  Medi a hipótese óbvia antes de aceitar: trocar de conversa NÃO perde (o
+  `ensureLoaded` não relê quem já está em `byId`, e não há eviction). Quem perdia
+  era reiniciar o app. O banco da conversa real confirmou o pior: 31 `tool`, 2
+  `user`, 2 `text`, 2 `result` — nada sobre o plano.
+- **Decisão 1 — vira `kind: "planGate"` em `items`.** Zero migração (o `items` já
+  é blob JSON gravado pelo `dbSave`, mesmo caminho das notas) e a decisão vira
+  HISTÓRICO: aprovar/recusar carimba sem apagar. "Eu autorizei esse plano?" passa
+  a ter resposta. O transcript emite a DECISÃO (não o texto do plano, que já está
+  acima como fala do agente), então ela viaja no fork e no handoff.
+- **Defeito 2 — o gate era invisível para a infraestrutura.** Busca por
+  `planGate`/`pendingPlan` em `store/interactions`, `notify.ts`, `InboxBell` e
+  `companion.ts`: ZERO ocorrências. Construímos ponto na sidebar, sino, tray,
+  nativa, Companion e fail-closed para decisões pendentes — e deixamos de fora
+  justamente a mais cara. Ela podia esperar em silêncio numa conversa fechada.
+- **Decisão 2 — entra na fila como `kind: "plan"`.** O contrato em
+  `lib/interaction.ts` já previa isso por escrito ("aprovar plano — futuro"), e o
+  Paseo chegou ao mesmo desenho: lá plano é um `AgentPermissionRequestKind`,
+  irmão de `tool` e `question`. Diferença que muda o código: o gate é **local** —
+  não há run pausado do outro lado, então `answer` não fala com o backend.
+- **Decisão 3 — recusar CONTINUA o planejamento.** "Descartar" era beco sem
+  saída: carimbava e o agente nunca sabia que você rejeitou. Virou "Continuar
+  planejando", que manda um turno novo enquadrado (`keepPlanningPrompt`) com o
+  motivo — a opção 3 do `ExitPlanMode` do Claude Code. Aprovar SAI do modo plano
+  (como autorizar a saída no CLI); recusar mantém, então a resposta é outro plano.
+- **Decisão 4 — `superseded` como terceiro desfecho.** Mandar outra coisa em vez
+  de decidir não é aprovar nem descartar: o `planFirst` segue ligado e o turno
+  seguinte traz outro plano. O gate antigo é carimbado `superseded` (e a copy diz
+  "substituído por outro", nunca "por você" — pôr seu nome numa decisão que você
+  não tomou envenena o histórico).
+- **Decisão 5 — o vigia NÃO expira gate de plano.** `checkUnattendedInteractions`
+  existe pra destravar run pausado; o gate não pausa run nenhum (nasce com o
+  turno já encerrado), e auto-negar seria descartar o plano em silêncio — o
+  sumiço que tudo isto veio consertar. O filtro estreita o tipo pra que `notify`
+  não precise fingir que sabe lidar com "plan".
+- **O QUE NÃO DÁ PRA IGUALAR AOS CLIs, e é consciente:** o **bloqueio**. No
+  Claude Code interativo o `ExitPlanMode` é modal — você responde antes de
+  digitar. Em headless (`-p`) o turno de plano TERMINA antes de existir alguém
+  pra perguntar, e o próprio `adapters.rs` já registrava que "ExitPlanMode não
+  existe no headless". Então o nosso gate é assíncrono por construção. Quem
+  tentar "tornar modal" vai bater nisto: não é preguiça, é o modo headless.
+  A enforcement também varia por motor e isso é honesto: Codex tem sandbox de OS
+  (`read-only`), Claude tem `--permission-mode plan`, agy tem só prefixo de
+  prompt ("melhor esforço documentado" no adaptador).
+- **Fica em aberto, maior que este conserto:** o ACP trata plano como MODO DE
+  SESSÃO (`session-modes#plan`, que o Paseo implementa) e nós tratamos como flag
+  por turno. Alinhar o modelo inteiro é outra frente.
+- **Custo estrutural pago, cinco divisões e nenhum teto subido:** `AdviceCard`+
+  `AdviceArrivalRow` → `AdviceInThread.tsx` (MessageList 2381→2275),
+  `PlanGateCard` em arquivo próprio (ChatPanel 1516→1482), ações → `store/chat/
+  planGate.ts` (chat.ts 2539→2505), o split de visibilidade → `store/interactions/
+  split.ts` (705→640) e o vigia de pedido sem resposta → `lib/unattendedWatch.ts`
+  (watchdog 607→500, saiu da baseline).
+- **Verificado:** `tsc` 0, `vitest` 2956/268, 6 guardas, 20 e2e.
