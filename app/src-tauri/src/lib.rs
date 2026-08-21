@@ -32,6 +32,7 @@ mod mcp_control;
 mod mcp_proxy;
 mod model_list;
 mod model_smoke;
+mod modes;
 mod mycockpit;
 mod osnotify;
 mod path;
@@ -646,6 +647,7 @@ pub fn run() {
             git::delete_worktree_branch,
             editor::detect_editors,
             editor::open_in_editor,
+            modes::detect_modes,
             git::git_commit,
             git::git_create_pr,
             git::pr_context,
