@@ -83,9 +83,37 @@ describe("agendamento → modo", () => {
 })
 
 describe("fase de missão → modo", () => {
-  it("`auto` é auto, em qualquer projeto", () => {
-    expect(modeFromAutonomy("auto", "leitura")).toBe("auto")
-    expect(modeFromAutonomy("auto", "liberado")).toBe("auto")
+  it("`auto` CLAMPA: só morde no modo que pausa", () => {
+    // Este teste nasceu ERRADO na primeira versão do M0 — afirmava
+    // `modeFromAutonomy("auto", "leitura") === "auto"`, ou seja, ligar
+    // autonomia numa fase daria escrita a um projeto read-only. A produção
+    // (`phasePermission`) sempre clampou; a rede é que estava frouxa, e o M4
+    // pegou ao unificar as duas.
+    expect(modeFromAutonomy("auto", "padrao")).toBe("auto")
+    expect(modeFromAutonomy("auto", "leitura")).toBe("leitura")
+    expect(modeFromAutonomy("auto", "liberado")).toBe("liberado")
+  })
+
+  it("autonomia NÃO solta escrita em projeto que não escreve", () => {
+    // A invariante certa, e ela precisou de duas tentativas: "nunca alarga" é
+    // FORTE DEMAIS aqui, porque subir de "Pede" pra "Auto" é justamente o que o
+    // toggle existe pra fazer. O que não pode é escrever onde o projeto não
+    // escreve.
+    expect(ehDesassistido(modeFromAutonomy("auto", "leitura"))).toBe(false)
+    expect(ehDesassistido(modeFromAutonomy("inherit", "leitura"))).toBe(false)
+  })
+
+  it("`inherit` nunca alarga, em nenhum projeto", () => {
+    // Herdar é herdar: aqui a régua forte VALE, porque não há gesto do usuário.
+    for (const proj of ["leitura", "padrao", "liberado"] as PermissionVocab[]) {
+      expect(naoAlarga(proj, modeFromAutonomy("inherit", proj)), proj).toBe(true)
+    }
+  })
+
+  it("`auto` sobe no máximo UM degrau, e só a partir do que pausa", () => {
+    expect(modeFromAutonomy("auto", "padrao")).toBe("auto") // o ponto do toggle
+    expect(modeFromAutonomy("auto", "leitura")).toBe("leitura") // clampado
+    expect(modeFromAutonomy("auto", "liberado")).toBe("liberado") // no-op
   })
 
   it("`inherit` usa o modo do PROJETO, não um default chutado", () => {

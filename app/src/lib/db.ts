@@ -1,5 +1,6 @@
 import Database from "@tauri-apps/plugin-sql"
 import type { Project } from "@/lib/types"
+import type { SchedulePermission } from "@/lib/sessionMode"
 import type { ConvRef } from "@/lib/attachments"
 import type { FusionRun } from "@/store/fusion"
 import type { FusionOutcome } from "@/lib/retro"
@@ -1834,11 +1835,8 @@ export async function listPresets(): Promise<AgentPreset[]> {
 // não envenena o processo). A recorrência é um JSON string discriminado
 // (lib/schedules.Recurrence); o DB não interpreta.
 
-/** Permissão de uma automação. 'liberado' NUNCA existe aqui — nem no tipo. */
-/** Permissão de uma automação. "liberado" segue FORA de propósito: bypass total
- *  numa execução sem ninguém na frente não tem quem segure um erro. "auto" é o
- *  meio-termo — roda sem pedir, mas com o freio de cada CLI (ver ADR-023). */
-export type SchedulePermission = "leitura" | "padrao" | "auto"
+/** Definido no eixo (lib/sessionMode), reexportado pela porta de sempre. */
+export type { SchedulePermission }
 
 /** Tipo do schedule (S4.3): "agent" roda runAgent numa conversa nova (o fluxo
  *  F6 original); "lead" chama proposePlan — sem conversa, sem clamp extra (o

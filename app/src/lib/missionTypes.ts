@@ -8,6 +8,7 @@
 import type { CostSource } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import type { ChatItem } from "@/store/chat"
+import { modeFromAutonomy, type PermissionVocab } from "@/lib/sessionMode"
 
 export type MissionPersona = "planner" | "executor" | "reviewer"
 
@@ -95,11 +96,13 @@ export function phasePermission(
   projectPermission: string,
   phase: Pick<MissionPhaseDef, "autonomy">,
 ): string {
-  if (phase.autonomy !== "auto") return projectPermission
-  // auto só "morde" no Padrão (o modo que pausa); nos demais é no-op clampado.
-  return projectPermission === "padrao" || projectPermission === ""
-    ? "auto"
-    : projectPermission
+  // Tradução ÚNICA (M4): a régua mora em lib/sessionMode, junto das outras
+  // três. Duas cópias divergiam em silêncio — e divergiram: a primeira versão
+  // do `modeFromAutonomy` não clampava, e teria soltado escrita em projeto
+  // read-only quando esta função passasse a delegar.
+  // `""` (projeto sem modo gravado) é `padrao`, como o `Permission::parse`.
+  const base = (projectPermission || "padrao") as PermissionVocab
+  return modeFromAutonomy(phase.autonomy ?? "inherit", base)
 }
 
 /** Ids que o loop de correção gera (`fix-<n>-<missionId>`,

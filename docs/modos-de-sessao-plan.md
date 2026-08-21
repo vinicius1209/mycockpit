@@ -1,6 +1,6 @@
 # Modos de sessão — um eixo só, declarado por motor (plano)
 
-> Status: **M0 ✅ · M0.5 ✅ · M1 ✅ · M2 ✅ · M3 ✅ (21/08/2026)** · M4 pendente. Nasceu da ADR-056, que
+> Status: **CONCLUÍDO — M0 ✅ · M0.5 ✅ · M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ (21/08/2026)**. Nasceu da ADR-056, que
 > fechou o gate de plano e deixou registrado o que ficou torto: o ACP trata plano
 > como MODO DE SESSÃO e nós tratamos como flag por turno. Ao investigar, o
 > problema é maior que o plano.
@@ -179,7 +179,7 @@ planejamento) em vez de desligar um booleano paralelo.
 - Aprovar o plano **troca o modo** de volta; recusar mantém — o comportamento
   que a ADR-056 já implementou, agora expresso no modelo em vez de num booleano.
 
-### M4 — Agendamento e missão no mesmo eixo
+### M4 ✅ — Agendamento e missão no mesmo eixo
 - `SchedulePermission` e a autonomia por fase passam a usar os mesmos ids.
   Enquanto isso não acontece, M0 garante que os três convivem sem divergir.
 
@@ -282,5 +282,35 @@ liberada que o padrão do projeto — é o modelo dos CLIs (você troca de modo 
 sessão) e foi a régua que você pediu. Quem quiser guardrail usa o
 `.mycockpit/config.toml`, que continua vencendo o cache.
 
-**Pendente (M4):** agendamento e autonomia de fase ainda têm vocabulário
-próprio. A rede do M0 é o que segura os três convivendo sem divergir.
+**M4** — os dois vocabulários que sobravam entraram no eixo:
+
+- `SchedulePermission` virou `Extract<SessionMode, "leitura"|"padrao"|"auto">`
+  e mudou de casa (mora no eixo, o `db.ts` reexporta). O teto do agendamento
+  deixou de ser conselho no comentário e virou **garantia de tipo**: o
+  compilador recusa qualquer id que o eixo não conheça.
+- `phasePermission` deixou de ter clamp próprio e delega pro `modeFromAutonomy`.
+  Uma tradução, não duas.
+
+### E o M4 achou um bug NA REDE DO M0
+
+As duas cópias divergiam, e a errada era a minha:
+
+```
+phasePermission("leitura", {autonomy:"auto"})  ->  "leitura"   (produção, clampa)
+modeFromAutonomy("auto", "leitura")            ->  "auto"      (a rede, soltava)
+```
+
+Ou seja: a rede que existia pra impedir afrouxamento **afrouxava**. Se o M4
+tivesse migrado a produção pra ela sem comparar, missão em projeto read-only
+teria ganhado escrita sem pedir. O teste do M0 até codificava o erro
+("`auto` é auto, em qualquer projeto").
+
+A invariante certa precisou de duas tentativas, e vale registrar as duas:
+
+1. `naoAlarga(projeto, resultado)` para toda combinação — **forte demais**.
+   Subir de "Pede" para "Auto" é exatamente o que o toggle existe pra fazer.
+2. A certa: **`inherit` nunca alarga** (não há gesto do usuário), e **`auto`
+   não solta escrita em projeto que não escreve**.
+
+Lição pro resto: rede de segurança também precisa ser conferida contra a
+produção, não só escrita antes dela.

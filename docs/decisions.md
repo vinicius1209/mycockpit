@@ -2336,3 +2336,28 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   comentário para caber, que é o antipadrão que a própria catraca existe pra
   impedir.
 - **Verificado:** `cargo test` 469, `tsc` 0, `vitest` 3000, 6 guardas, e2e 21/21.
+
+### ADR-060 — Um eixo só, e a rede que estava frouxa (M4) ✅
+- **Contexto (21/08/2026):** último passo do `modos-de-sessao-plan`. Sobravam
+  dois vocabulários fora do eixo: `SchedulePermission` (`leitura|padrao|auto`) e
+  a autonomia por fase de missão (`auto|inherit`).
+- **Decisão 1 — o teto do agendamento vira TIPO.** `SchedulePermission` passou a
+  ser `Extract<SessionMode, "leitura"|"padrao"|"auto">` e mora no eixo (o
+  `db.ts` reexporta pela porta de sempre). "liberado nunca existe aqui" era
+  comentário; agora o compilador recusa.
+- **Decisão 2 — uma tradução, não duas.** `phasePermission` tinha o clamp
+  próprio e passou a delegar pro `modeFromAutonomy`.
+- **O achado que justifica o passo inteiro:** as duas cópias DIVERGIAM, e a
+  errada era a rede do M0. `phasePermission("leitura", auto)` devolvia
+  `"leitura"` (clampa); `modeFromAutonomy("auto", "leitura")` devolvia `"auto"`.
+  A rede escrita para impedir afrouxamento **afrouxava** — e o teste do M0
+  codificava o erro por extenso. Migrar a produção pra ela sem comparar teria
+  dado escrita sem pedir a missões de projeto read-only.
+- **A invariante certa precisou de duas tentativas, e as duas ficam registradas:**
+  (1) "nunca alarga em nenhuma combinação" é FORTE DEMAIS — subir de "Pede" pra
+  "Auto" é o propósito do toggle; (2) a certa é `inherit` nunca alarga (não há
+  gesto do usuário) e `auto` não solta escrita em projeto que não escreve.
+- **Lição de processo:** rede de segurança precisa ser conferida CONTRA a
+  produção, não só escrita antes dela. A minha passou três fases sem ninguém
+  comparar, porque nada a usava ainda.
+- **Verificado:** `cargo test` 469, `tsc` 0, `vitest` 3003, 6 guardas, e2e 21/21.

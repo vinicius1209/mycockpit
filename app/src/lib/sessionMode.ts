@@ -48,10 +48,19 @@ export const PERMISSIVIDADE: Record<SessionMode, number> = {
 
 /** Vocabulário da conversa/projeto (`lib/types.ts`). */
 export type PermissionVocab = "leitura" | "padrao" | "liberado"
-/** Vocabulário do agendamento (`lib/db.ts`). Note o `auto` que a conversa não
- *  tem, e a ausência do `liberado` que ela tem — os dois conjuntos nunca foram
- *  o mesmo. */
-export type ScheduleVocab = "leitura" | "padrao" | "auto"
+/**
+ * Vocabulário do agendamento — SUBCONJUNTO do eixo, não lista paralela (M4).
+ * O `Extract` amarra os dois: o compilador recusa id que o eixo não conheça, e
+ * acrescentar modo aqui em cima não cria valor órfão lá.
+ *
+ * `liberado` fica FORA de propósito: bypass total numa execução sem ninguém na
+ * frente não tem quem segure um erro; `auto` é o meio-termo (ADR-023). O teto é
+ * TIPADO, não conselho no comentário.
+ */
+export type ScheduleVocab = Extract<SessionMode, "leitura" | "padrao" | "auto">
+
+/** Nome que o banco e a UI de automações usam pro mesmo conjunto. */
+export type SchedulePermission = ScheduleVocab
 /** Vocabulário da fase de missão (`lib/missionDraft.ts`). `inherit` não é um
  *  modo: é "usa o do projeto". */
 export type AutonomyVocab = "auto" | "inherit"
@@ -77,12 +86,20 @@ export function modeFromSchedule(p: ScheduleVocab): SessionMode {
 /**
  * Fase de missão → modo. `inherit` precisa do modo do PROJETO pra resolver — sem
  * ele não há resposta, e chutar seria justamente o fail-open que o §9 proíbe.
+ *
+ * `auto` CLAMPA, e este detalhe quase passou batido: ligar autonomia numa fase
+ * NÃO libera escrita num projeto que está em "Só lê". Ele só "morde" no modo
+ * que pausa (`padrao`) — nos demais é no-op. A primeira versão desta função
+ * devolvia `"auto"` sempre, e teria dado permissão de escrita a missões de
+ * projeto read-only na hora em que o M4 migrasse a tradução pra cá. Quem
+ * segurava era o `phasePermission`, que hoje delega pra este ponto único.
  */
 export function modeFromAutonomy(
   autonomy: AutonomyVocab,
   doProjeto: PermissionVocab,
 ): SessionMode {
-  return autonomy === "auto" ? "auto" : doProjeto
+  if (autonomy !== "auto") return doProjeto
+  return doProjeto === "padrao" ? "auto" : doProjeto
 }
 
 /**
