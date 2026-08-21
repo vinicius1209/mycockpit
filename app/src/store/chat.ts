@@ -1,17 +1,10 @@
 import { create } from "zustand"
 import { toast } from "sonner"
 import type { AgentEvent, CostSource } from "@/lib/agent"
-import { suggest } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { deleteAttachment, revokeAttachmentUrl } from "@/lib/attachments"
 import { deriveTitle } from "@/lib/convTitle"
 import { detectBlockedDir } from "@/lib/blockedDir"
-import {
-  SUGGEST_PROMPT,
-  SUGGEST_DEBOUNCE_MS,
-  buildContext,
-  parseSuggestions,
-} from "@/lib/suggestions"
 import { getAgentDef } from "@/lib/agentDefs"
 import { useApp } from "@/store/app"
 import type { FusionCandidate } from "@/store/fusion"
@@ -21,7 +14,7 @@ import {
   isAliasRequest,
   resolutionNotice,
 } from "@/lib/modelResolution"
-import { recordTurnCost, isTauri } from "@/lib/db"
+import { recordTurnCost } from "@/lib/db"
 import {
   listConversations as dbList,
   loadConversation as dbLoad,
@@ -43,6 +36,12 @@ import type { DeferredWork, WorkEvent, ManagedProcess } from "@/lib/work"
 import { duplicateConversationImpl, forkConversationAtImpl } from "@/store/chat/clone"
 import { markNotesSentImpl } from "@/store/chat/notes"
 import { removeConversationImpl } from "@/store/chat/remove"
+import { setSessionModeImpl } from "@/store/chat/sessionMode"
+import {
+  generateSuggestionsImpl,
+  invalidateSuggestionsImpl,
+  scheduleSuggestionsImpl,
+} from "@/store/chat/suggestions"
 import { decidePlanGateImpl, pushPlanGateImpl } from "@/store/chat/planGate"
 
 type ChatItemBody =
@@ -435,6 +434,8 @@ export interface ConvState {
    *  plano, ou manualmente no toggle do composer. Efêmero (não persiste). */
   planFirst?: boolean
   /** Plano PENDENTE de aprovação (turno plan_first terminou): guarda o texto
+  /** Modo desta conversa (store/chat/sessionMode). `null` = herda o projeto. */
+  sessionMode?: import("@/lib/sessionMode").SessionMode | null
   /** true se um `limit_reached` bateu no turno CORRENTE (limite da CLI). Alimenta
    *  a detecção FORTE do auto-resume no fim do turno. Zerado a cada novo run. */
   limitHitThisTurn?: boolean
@@ -622,7 +623,11 @@ export interface ChatState {
   /** Dispensa o aviso de pasta bloqueada desta conversa. */
   clearBlockedDir: (convId: string) => void
   /** Liga/desliga o "Planejar primeiro" desta conversa (toggle do composer). */
-  setPlanFirst: (convId: string, v: boolean) => void
+  /** Define o modo desta conversa; `null` volta a herdar o projeto. */
+  setSessionMode: (
+    convId: string,
+    mode: NonNullable<ConvState["sessionMode"]> | null,
+  ) => void
   /** Higiene de injeção (H2/H4): carimba o fingerprint da última injeção de
    *  uma chave ("doctrine" | "mcp") no ledger efêmero da conversa. */
   recordInjectedFingerprint: (convId: string, key: string, fp: string) => void
@@ -1153,9 +1158,7 @@ function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
 export const useChat = create<ChatState>((set, get) => {
   // Sugestões: estado de orquestração por convId (espelha byId). Vive no closure
   // do creator, a store é singleton, então a sugestão sobrevive a remount do
-  // painel. suggestTimer = debounce; suggestGen = token de invalidação.
-  const suggestTimer: Record<string, ReturnType<typeof setTimeout>> = {}
-  const suggestGen: Record<string, number> = {}
+  // painel. O debounce e o token de invalidação vivem em store/chat/suggestions.
 
   // Token de geração do openProject (M1): um openProject(A) LENTO em voo não
   // pode clobrar um clique posterior (openProject(B) ou switchConversation).
@@ -1250,6 +1253,7 @@ export const useChat = create<ChatState>((set, get) => {
             presetDigest: conv?.presetDigest ?? null,
             presetName,
             contextTokens: conv?.contextTokens ?? undefined, // antes só em memória (ContextRing)
+            sessionMode: (conv?.sessionMode as ConvState["sessionMode"]) ?? null,
           }
     set((s) =>
       s.byId[convId] ? {} : { byId: { ...s.byId, [convId]: state } },
@@ -1272,68 +1276,10 @@ export const useChat = create<ChatState>((set, get) => {
     setSuggestions: (convId, suggestions) => patch(convId, { suggestions }),
     setSuggesting: (convId, suggesting) => patch(convId, { suggesting }),
 
-    // novo run → invalida geração de sugestão pendente/em-voo desta conversa
-    invalidateSuggestions: (convId) => {
-      suggestGen[convId] = (suggestGen[convId] ?? 0) + 1
-      clearTimeout(suggestTimer[convId])
-    },
-
-    // Debounce: agenda a geração ~700ms após o turno. Um novo run cancela o timer
-    // (e bumpa o token via invalidateSuggestions), então rajadas de prompts não
-    // geram sugestões intermediárias.
-    scheduleSuggestions: (convId) => {
-      clearTimeout(suggestTimer[convId])
-      suggestTimer[convId] = setTimeout(() => {
-        void get().generateSuggestions(convId)
-      }, SUGGEST_DEBOUNCE_MS)
-    },
-
-    // Gera sugestões contextuais após o turno (fire-and-forget; degrada pros chips).
-    generateSuggestions: async (convId) => {
-      if (!isTauri()) return
-      const c = get().byId[convId]
-      if (!c || c.running || c.finalizing) return // run em andamento → não gera
-      if (!c.items.some((it) => it.kind === "text")) return
-      const proj = useApp.getState().projects.find((p) => p.id === c.projectId)
-      if (!proj) {
-        console.warn("[sugestões] projeto não encontrado p/ convId", convId, c.projectId)
-        return
-      }
-      // modelo helper por projeto (.mycockpit/config.toml); default haiku, null = off
-      const cfg = useApp.getState().mycockpit[c.projectId]
-      // projeto define no config.toml → vence; senão, o default global (Settings).
-      const helperModel = cfg ? cfg.helper : useApp.getState().settings.helperModel
-      if (!helperModel) return
-      // token desta geração: se um novo run começar enquanto geramos, descartamos.
-      const myGen = suggestGen[convId] ?? 0
-      get().setSuggesting(convId, true)
-      try {
-        const raw = await suggest(
-          helperModel,
-          proj.path,
-          `${SUGGEST_PROMPT}\n\nConversa recente:\n${buildContext(c.items)}`,
-        )
-        // descarta se um novo run começou enquanto gerava (anti-concorrência)
-        if ((suggestGen[convId] ?? 0) !== myGen) return
-        const list = parseSuggestions(raw)
-        if (!list.length) {
-          console.warn("[sugestões] resposta sem JSON parseável:", raw)
-        }
-        const after = get().byId[convId]
-        if (list.length && after && !after.running) {
-          get().setSuggestions(convId, list)
-          // persiste p/ as sugestões sobreviverem a fechar/minimizar/reabrir
-          void get().persist(convId)
-        }
-      } catch (e) {
-        console.warn("[sugestões] erro ao gerar:", e)
-      } finally {
-        // só limpa o "buscando…" se ainda formos a geração corrente
-        if ((suggestGen[convId] ?? 0) === myGen) {
-          get().setSuggesting(convId, false)
-        }
-      }
-    },
+    // Debounce, token de invalidação e geração em store/chat/suggestions.
+    invalidateSuggestions: (convId) => invalidateSuggestionsImpl(convId),
+    scheduleSuggestions: (convId) => scheduleSuggestionsImpl(get, convId),
+    generateSuggestions: (convId) => generateSuggestionsImpl(get, convId),
 
     openProject: async (projectId) => {
       const gen = ++openGen
@@ -1742,6 +1688,7 @@ export const useChat = create<ChatState>((set, get) => {
         c.effort,
         c.model,
         c.contextTokens ?? null,
+        c.sessionMode ?? null,
       )
       endSpan()
       const now = Date.now()
@@ -2202,12 +2149,8 @@ export const useChat = create<ChatState>((set, get) => {
         return { byId: { ...s.byId, [convId]: { ...cur, blockedDir: null } } }
       }),
 
-    setPlanFirst: (convId, v) =>
-      set((s) => {
-        const cur = s.byId[convId]
-        if (!cur || !!cur.planFirst === v) return {}
-        return { byId: { ...s.byId, [convId]: { ...cur, planFirst: v } } }
-      }),
+    // Corpo em store/chat/sessionMode.ts, com o porquê do escopo.
+    setSessionMode: (convId, mode) => setSessionModeImpl(get, set, convId, mode),
 
     recordInjectedFingerprint: (convId, key, fp) =>
       set((s) => {

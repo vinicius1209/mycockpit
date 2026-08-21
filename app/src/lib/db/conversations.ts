@@ -153,6 +153,8 @@ interface ConvLoadRow {
   preset_id: string | null
   preset_digest: string | null
   context_tokens: number | null // ContextRing; NULL = nunca rodou turno aqui
+  /** Modo desta conversa. NULL = herda o do projeto (≠ "sem modo"). */
+  session_mode: string | null
 }
 
 /** `null` = conversa não existe; `"corrupt"` = a linha EXISTE mas o JSON não
@@ -173,11 +175,13 @@ export async function loadConversation(
   presetId: string | null
   presetDigest: string | null
   contextTokens: number | null
+  /** `null` = herda o modo do projeto. */
+  sessionMode: string | null
 } | null | "corrupt"> {
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ConvLoadRow[]>(
-    "SELECT session_id, items, title, suggestions, agent, req_model, effort, model, worktree_path, preset_id, preset_digest, context_tokens FROM conversations WHERE id = $1",
+    "SELECT session_id, items, title, suggestions, agent, req_model, effort, model, worktree_path, preset_id, preset_digest, context_tokens, session_mode FROM conversations WHERE id = $1",
     [id],
   )
   if (!rows.length) return null
@@ -197,6 +201,7 @@ export async function loadConversation(
       presetId: rows[0].preset_id ?? null,
       presetDigest: rows[0].preset_digest ?? null,
       contextTokens: rows[0].context_tokens,
+      sessionMode: rows[0].session_mode,
     }
   } catch {
     return "corrupt"
@@ -249,6 +254,8 @@ export async function saveConversation(
   effort: string | null,
   model: string | null,
   contextTokens: number | null,
+  /** `null` = herda o projeto. Ver a migração 37. */
+  sessionMode: string | null,
 ): Promise<void> {
   const db = await getDb()
   if (!db) return
@@ -256,7 +263,7 @@ export async function saveConversation(
   // da lista do projeto); o ON CONFLICT não toca nela — a ordem manual (S1.2)
   // sobrevive aos saves de linha inteira, igual color/worktree/preset.
   await db.execute(
-    "INSERT INTO conversations (id, project_id, title, session_id, items, suggestions, agent, req_model, effort, model, context_tokens, created_at, updated_at, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM conversations WHERE project_id = $2)) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, suggestions = excluded.suggestions, agent = excluded.agent, req_model = excluded.req_model, effort = excluded.effort, model = excluded.model, context_tokens = excluded.context_tokens, updated_at = excluded.updated_at",
+    "INSERT INTO conversations (id, project_id, title, session_id, items, suggestions, agent, req_model, effort, model, context_tokens, session_mode, created_at, updated_at, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM conversations WHERE project_id = $2)) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, suggestions = excluded.suggestions, agent = excluded.agent, req_model = excluded.req_model, effort = excluded.effort, model = excluded.model, context_tokens = excluded.context_tokens, session_mode = excluded.session_mode, updated_at = excluded.updated_at",
     [
       id,
       projectId,
@@ -269,6 +276,7 @@ export async function saveConversation(
       effort,
       model,
       contextTokens,
+      sessionMode,
       Date.now(),
     ],
   )

@@ -81,7 +81,10 @@ async function commitClonedConversation(
   srcColor: string | null,
 ): Promise<string> {
   const newId = uid()
-  await dbSave(newId, owner, title, null, items, [], agent, reqModel, effort, null, null)
+    // Modo NÃO viaja na cópia: a nova conversa nasce herdando o projeto. Clonar
+  // um fio que estava em "Liberado" para um fork novo seria carregar permissão
+  // sem você pedir.
+  await dbSave(newId, owner, title, null, items, [], agent, reqModel, effort, null, null, null)
   if (srcColor != null) await dbSetColor(newId, srcColor)
   set((s) => {
     const meta: ConversationMeta = {

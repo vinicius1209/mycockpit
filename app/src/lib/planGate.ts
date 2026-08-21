@@ -112,9 +112,10 @@ export function decidePlanGateAndSend(
   if (decision === "approve") {
     useChat.getState().decidePlanGate(convId, gateId, "approved")
     // Aprovar SAI do modo plano — igual ao Claude Code, onde autorizar a saída
-    // do planejamento muda o modo da sessão. Recusar mantém: você continua
-    // planejando, e o próximo turno é outro plano.
-    useChat.getState().setPlanFirst(convId, false)
+    // do planejamento muda o modo da sessão. `null` devolve a conversa ao modo
+    // do PROJETO em vez de chutar um valor: quem trabalha em "Só lê" não pode
+    // sair do plano em "Pede" sem ter pedido. Recusar mantém o plano.
+    useChat.getState().setSessionMode(convId, null)
     send(buildExecutionPrompt(c.agent, gate.text))
   } else {
     useChat.getState().decidePlanGate(convId, gateId, "discarded")

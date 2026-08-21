@@ -1,6 +1,6 @@
 # Modos de sessão — um eixo só, declarado por motor (plano)
 
-> Status: **M0 ✅ · M0.5 ✅ · M1 ✅ · M2 ✅ (21/08/2026)** · M3–M4 pendentes. Nasceu da ADR-056, que
+> Status: **M0 ✅ · M0.5 ✅ · M1 ✅ · M2 ✅ · M3 ✅ (21/08/2026)** · M4 pendente. Nasceu da ADR-056, que
 > fechou o gate de plano e deixou registrado o que ficou torto: o ACP trata plano
 > como MODO DE SESSÃO e nós tratamos como flag por turno. Ao investigar, o
 > problema é maior que o plano.
@@ -174,7 +174,7 @@ planejamento) em vez de desligar um booleano paralelo.
   não é a mesma garantia que no Codex, e esconder isso é o tipo de silêncio que
   esta casa já pagou caro.
 
-### M3 — Modo é de SESSÃO
+### M3 ✅ — Modo é de SESSÃO
 - `sessionMode` na conversa (persistido), com o projeto dando o default.
 - Aprovar o plano **troca o modo** de volta; recusar mantém — o comportamento
   que a ADR-056 já implementou, agora expresso no modelo em vez de num booleano.
@@ -263,7 +263,24 @@ correção mudou o modelo:
    pra nada. Filtrar por descoberta tirava os dois. Entrou o `probeId`: só o que
    o app REPASSA precisa ser confirmado pelo motor; o que ele emula não.
 
-**Pendente e consciente:** o modo ainda tem escopos diferentes por dentro —
-escolher plano liga o `planFirst` da CONVERSA, escolher outro define a permissão
-do PROJETO. São os mesmos dois destinos de antes, agora atrás de um gesto só. É
-o M3 que unifica o escopo.
+**M3** — o modo virou da CONVERSA, persistido (migração 37, `session_mode`
+nullable: NULL = herda o projeto, que é diferente de "sem modo").
+
+Três coisas caíram junto:
+
+- **O "Planejar" passou a sobreviver ao restart.** Ele só vivia em memória (não
+  havia coluna), então ligar e reabrir o app desligava sozinho — a mesma classe
+  de sumiço silencioso do `pendingPlan` (ADR-056), achada de novo aqui.
+- **Mudar o modo parou de mexer no projeto inteiro.** O controle antigo escrevia
+  a permissão do PROJETO — todas as conversas dele junto — sem nunca dizer isso.
+- **O default do projeto ganhou gesto próprio** ("Usar como padrão deste
+  projeto", no mesmo menu). Sem ele haveria regressão: o composer era o ÚNICO
+  lugar do app que definia a permissão do projeto.
+
+**Escopo decidido:** o projeto é DEFAULT, não teto. Uma conversa pode estar mais
+liberada que o padrão do projeto — é o modelo dos CLIs (você troca de modo na
+sessão) e foi a régua que você pediu. Quem quiser guardrail usa o
+`.mycockpit/config.toml`, que continua vencendo o cache.
+
+**Pendente (M4):** agendamento e autonomia de fase ainda têm vocabulário
+próprio. A rede do M0 é o que segura os três convivendo sem divergir.

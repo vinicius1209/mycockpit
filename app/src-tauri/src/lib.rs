@@ -458,6 +458,20 @@ pub fn run() {
             sql: "ALTER TABLE conversations ADD COLUMN context_tokens INTEGER;",
             kind: MigrationKind::Up,
         },
+        // M3 dos modos de sessão: o modo passa a ser da CONVERSA, e o do
+        // projeto vira o DEFAULT de quem nasce. NULL = herda o projeto (não é
+        // "sem modo"), e é por isso que a coluna nasce nullable em vez de com
+        // um default: um valor aqui significa "esta conversa decidiu".
+        //
+        // De quebra conserta um sumiço silencioso: o "Planejar primeiro" só
+        // vivia em memória (não havia coluna), então ligar e reiniciar o app
+        // desligava sozinho.
+        Migration {
+            version: 37,
+            description: "conversations_session_mode",
+            sql: "ALTER TABLE conversations ADD COLUMN session_mode TEXT;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

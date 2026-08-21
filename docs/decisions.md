@@ -2307,3 +2307,32 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   mesmos dois destinos de antes, agora atrás de um gesto só.
 - **Verificado:** `tsc` 0, `vitest` 2994, 6 guardas, `e2e` 21/21 (o spec do
   composer reescrito pro controle único, incluindo o caso de `Auto` existir).
+
+### ADR-059 — Modo é da conversa; o projeto é default, não teto ✅
+- **Contexto (21/08/2026):** M3. Depois do M2 o composer tinha UM controle, mas
+  por dentro ainda escrevia em dois lugares: plano ligava o `planFirst` da
+  CONVERSA, os outros modos mudavam a permissão do PROJETO.
+- **Decisão 1 — `session_mode` na conversa (migração 37), nullable.** NULL =
+  herda o projeto, e isso é diferente de "sem modo" — por isso a coluna nasce
+  sem default. Aprovar o plano grava NULL (volta a herdar) em vez de chutar um
+  valor: quem trabalha em "Só lê" não pode sair do planejamento em "Pede".
+- **Decisão 2 — o projeto é DEFAULT, não TETO.** Uma conversa pode ficar mais
+  liberada que o padrão do projeto. É o modelo dos CLIs (trocar de modo dentro
+  da sessão) e a régua que o usuário pediu explicitamente. Quem quiser guardrail
+  usa o `.mycockpit/config.toml`, que segue vencendo o cache do SQLite.
+- **Decisão 3 — definir o default virou gesto próprio** ("Usar como padrão deste
+  projeto", no mesmo menu). Sem isso haveria REGRESSÃO: o composer era o único
+  lugar do app que escrevia a permissão do projeto. E o gesto separado deixa os
+  dois escopos explícitos, que é o que faltava.
+- **Bug achado no caminho:** o "Planejar primeiro" NÃO sobrevivia a restart —
+  `planFirst` só vivia em memória, sem coluna. Terceira ocorrência da mesma
+  classe nesta semana (worktree órfão, `pendingPlan`, agora este): decisão do
+  humano morando em estado de runtime. A migração 37 fecha esta.
+- **O clone NÃO leva o modo:** fork/duplicar nasce herdando o projeto. Carregar
+  "Liberado" para um fio novo seria permissão que ninguém pediu.
+- **Custo estrutural pago:** `store/chat/sessionMode.ts` (a ação) e
+  `store/chat/suggestions.ts` (debounce + token + geração, recorte fechado com
+  memória própria). `chat.ts` 2505 → 2448 — e desta vez parei de raspar
+  comentário para caber, que é o antipadrão que a própria catraca existe pra
+  impedir.
+- **Verificado:** `cargo test` 469, `tsc` 0, `vitest` 3000, 6 guardas, e2e 21/21.

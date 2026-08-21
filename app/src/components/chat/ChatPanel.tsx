@@ -531,10 +531,10 @@ export function ChatPanel() {
     // FRESCO pelo MESMO gate da guarda lá em cima (era código gêmeo, e o gêmeo
     // enfileirava retomada de sistema), nunca um segundo run concorrente.
     if (retidoPorTurnoEmVoo(convId, text, attachments, origem)) return
-    // "Planejar primeiro" é POR TURNO (não trava com a conv): o cfg do composer
-    // carrega o toggle; envios sem cfg (⌘K, fila coalescida) leem o toggle da
-    // conversa. Auto-resume nunca planeja (é continuação de execução).
-    const planFirst = !fromAutoResume && (cfg?.planFirst ?? !!conv.planFirst)
+    // M3: modo é da CONVERSA (persistido); o `cfg` do composer vence quando
+    // existe. Auto-resume nunca planeja (é continuação de execução).
+    const planFirst =
+      !fromAutoResume && (cfg?.planFirst ?? conv.sessionMode === "plan")
     const runId = crypto.randomUUID()
     // sessão fresca quando o volante trocou de backend (o resume nativo do agent
     // anterior não vale pro novo); senão o resume normal da conversa.

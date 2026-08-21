@@ -45,7 +45,7 @@ import {
 } from "@/store/chat"
 import { lastExecutorTurnFailed } from "@/lib/turnOutcome"
 import { ModeSelect } from "@/components/chat/ModeSelect"
-import { modoEfetivo, modosOferecidos, wireDoModo } from "@/lib/agentModes"
+import { modosOferecidos, wireDoModo } from "@/lib/agentModes"
 import { useAgentModes } from "@/store/agentModes"
 import { useApp, useActiveProject } from "@/store/app"
 import type { Attachment } from "@/lib/attachments"
@@ -320,7 +320,10 @@ export function CommandConsole({
   // "Planejar primeiro" (por conversa, na store): NÃO trava com a conversa — é
   // um modo do PRÓXIMO envio, não config fixa do 1º run. Fica ligado até o
   // usuário desligar (ou até aprovar um plano, que desliga sozinho).
-  const planFirst = !!conv.planFirst
+  // M3: o modo é da CONVERSA; o projeto dá o default de quem não decidiu.
+  const modoDaConversa = conv.sessionMode ?? null
+  const modoAtual = modoDaConversa ?? permissionMode
+  const planFirst = modoAtual === "plan"
   // Modos que o motor ATIVO anuncia E o app sabe explicar. A sonda tem dono
   // único (store/agentModes) e é pedida uma vez por sessão.
   const modosSondados = useAgentModes((s) => s.byAgent[effectiveDest])
@@ -506,24 +509,27 @@ export function CommandConsole({
             onSubmit={submit}
             canSend={canSend}
             contextRing={<ContextRing />}
-            // M2: UM controle. Escolher plano liga o `planFirst` da conversa;
-            // escolher qualquer outro define a permissão do projeto E desliga o
-            // plano — os dois destinos que o par de controles tinha, agora atrás
-            // de um gesto só. O escopo diferente (projeto × conversa) é o que o
-            // M3 resolve; aqui ele só deixou de ser DOIS botões.
+            // M3: escolher o modo mexe NESTA conversa. O projeto virou o
+            // DEFAULT de quem nasce, e definir esse default é um gesto próprio
+            // dentro do mesmo menu — os dois escopos existiam antes, escondidos
+            // atrás de um controle que mudava o projeto sem dizer.
             permissionControls={
               <ModeSelect
                 modes={modosDoMotor}
-                value={modoEfetivo(permissionMode, planFirst)}
+                value={modoAtual}
                 disabled={!permProject}
                 onChange={(def) => {
                   const id = useChat.getState().activeId
-                  const w = wireDoModo(def.canonico, permissionMode)
-                  if (id) useChat.getState().setPlanFirst(id, w.planFirst)
-                  if (permProject && !w.planFirst) {
-                    setProjectPermissionEverywhere(permProject, w.permission)
-                  }
+                  if (id) useChat.getState().setSessionMode(id, def.canonico)
                 }}
+                onDefinirPadrao={
+                  permProject
+                    ? () => {
+                        const w = wireDoModo(modoAtual, permissionMode)
+                        setProjectPermissionEverywhere(permProject, w.permission)
+                      }
+                    : undefined
+                }
               />
             }
             identityControls={

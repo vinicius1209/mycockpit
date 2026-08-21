@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -50,12 +51,18 @@ export function ModeSelect({
   modes,
   value,
   onChange,
+  onDefinirPadrao,
   disabled,
 }: {
   /** Já filtrados: motor anuncia E o app sabe explicar. */
   modes: AgentModeDef[]
   value: SessionMode
+  /** Muda o modo DESTA conversa (M3). */
   onChange: (def: AgentModeDef) => void
+  /** Grava o modo atual como default do PROJETO. Ausente = sem projeto.
+   *  Existe como gesto separado porque são escopos diferentes, e o controle
+   *  antigo mudava o projeto inteiro sem nunca dizer isso. */
+  onDefinirPadrao?: () => void
   disabled?: boolean
 }) {
   // Sem modos curados pro motor ativo (hoje: agy) o controle NÃO aparece. Um
@@ -134,6 +141,17 @@ export function ModeSelect({
             )
           })}
         </DropdownMenuRadioGroup>
+        {onDefinirPadrao && (
+          <>
+            <DropdownMenuSeparator className="my-1" />
+            <DropdownMenuItem
+              onSelect={onDefinirPadrao}
+              className="rounded-md p-2 text-[12px] text-muted-foreground"
+            >
+              Usar como padrão deste projeto
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
