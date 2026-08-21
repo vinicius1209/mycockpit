@@ -84,6 +84,22 @@ export function renderTranscript(
         // é DIREÇÃO do humano sobre o turno anterior, não fala do agente.
         lines.push("", "## Nota do usuário (direção sobre o turno acima)", "", it.text)
         break
+      case "planGate":
+        // O DESFECHO, não o plano: o texto dele já está logo acima, como fala
+        // do assistente, e repetir gastaria janela de contexto duas vezes. O
+        // que só existe aqui é a decisão do humano — e ela muda o que o agente
+        // deve fazer a seguir, então precisa viajar no fork e no handoff.
+        if (it.decision === "approved") {
+          lines.push("", "## O usuário APROVOU o plano acima e mandou executar")
+        } else if (it.decision === "discarded") {
+          lines.push("", "## O usuário DESCARTOU o plano acima")
+        } else {
+          lines.push(
+            "",
+            "## Plano acima proposto e AINDA NÃO decidido pelo usuário (não execute)",
+          )
+        }
+        break
       // result: o texto final já veio no item "text"; não duplica.
       default:
         break

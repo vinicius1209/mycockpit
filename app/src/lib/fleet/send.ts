@@ -517,14 +517,14 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   } finally {
     useChat.getState().finish(convId)
     void useChat.getState().persist(convId)
-    // Gate de plano: turno plan_first terminou BEM → arma o card "Aprovar e
-    // executar" (mesma captura do ChatPanel; o card renderiza em qualquer
-    // superfície que leia pendingPlan).
+    // Gate de plano: turno plan_first terminou BEM → grava o plano NO FIO
+    // esperando decisão (mesma captura do ChatPanel; o cartão renderiza em
+    // qualquer superfície que desenhe o fio, e agora sobrevive ao restart).
     if (planFirst) {
       const after = useChat.getState().byId[convId]
       const planText =
         after && turnEndedOk(after.items) ? extractPlanText(after.items) : null
-      if (planText) useChat.getState().setPendingPlan(convId, planText)
+      if (planText) useChat.getState().pushPlanGate(convId, planText)
     }
     // Fila: junta as mensagens digitadas durante o turno num ÚNICO reenvio —
     // em LOTES (drainDeskQueued): um builtin do app no meio quebra o

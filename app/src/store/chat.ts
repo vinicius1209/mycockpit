@@ -43,6 +43,7 @@ import type { DeferredWork, WorkEvent, ManagedProcess } from "@/lib/work"
 import { duplicateConversationImpl, forkConversationAtImpl } from "@/store/chat/clone"
 import { markNotesSentImpl } from "@/store/chat/notes"
 import { removeConversationImpl } from "@/store/chat/remove"
+import { decidePlanGateImpl, pushPlanGateImpl } from "@/store/chat/planGate"
 
 type ChatItemBody =
   | {
@@ -111,6 +112,9 @@ type ChatItemBody =
   /** Nota do HUMANO ancorada num item (`anchorId`). Modelo A: viaja SEMPRE —
    *  recap + transcript (docs/notas-no-fio-plan.md), senão é decoração. */
   | { kind: "note"; id: string; text: string; anchorId: string; sent?: boolean }
+  /** Plano proposto num turno `plan_first`. `decision` ausente = ainda na mesa.
+   *  Por que é item e não campo: store/chat/planGate.ts. */
+  | { kind: "planGate"; id: string; text: string; decision?: "approved" | "discarded" }
   | { kind: "cancelled"; id: string }
   | { kind: "notice"; id: string; message: string }
   /** Limite de uso/cota do agent atingido: cartão acionável (revezamento). */
@@ -431,9 +435,6 @@ export interface ConvState {
    *  plano, ou manualmente no toggle do composer. Efêmero (não persiste). */
   planFirst?: boolean
   /** Plano PENDENTE de aprovação (turno plan_first terminou): guarda o texto
-   *  final do assistente (p/ agents sem resume, o prompt de execução embute).
-   *  Limpo ao aprovar, descartar, ou qualquer novo envio. Efêmero. */
-  pendingPlan?: { text: string }
   /** true se um `limit_reached` bateu no turno CORRENTE (limite da CLI). Alimenta
    *  a detecção FORTE do auto-resume no fim do turno. Zerado a cada novo run. */
   limitHitThisTurn?: boolean
@@ -625,10 +626,13 @@ export interface ChatState {
   /** Higiene de injeção (H2/H4): carimba o fingerprint da última injeção de
    *  uma chave ("doctrine" | "mcp") no ledger efêmero da conversa. */
   recordInjectedFingerprint: (convId: string, key: string, fp: string) => void
-  /** Registra o plano pendente de aprovação (fim de um turno plan_first). */
-  setPendingPlan: (convId: string, text: string) => void
-  /** Limpa o plano pendente (aprovar, descartar, ou novo envio manual). */
-  clearPendingPlan: (convId: string) => void
+  /** Grava o plano proposto no fio e carimba a decisão nele (store/chat/planGate). */
+  pushPlanGate: (convId: string, text: string) => void
+  decidePlanGate: (
+    convId: string,
+    id: string,
+    decision: "approved" | "discarded",
+  ) => void
   /** Registra um resume automático agendado (banner + timer). */
   setAutoResume: (convId: string, s: ConvState["autoResume"]) => void
   /** Cancela/limpa o auto-resume agendado (para o timer). Chamar ao enviar
@@ -1838,7 +1842,6 @@ export const useChat = create<ChatState>((set, get) => {
               // concluído sai sozinho, sem exigir que você troque de conversa.
               finishedUnseen: undefined,
               unseenDividerId: undefined, // o turno novo encerra a visita "novas mensagens"
-              pendingPlan: undefined, // e o plano pendente (envio manual supersede)
               limitHitThisTurn: false, // e o sinal de limite do turno anterior
               resetHint: null,
               stalledSince: undefined, // e o episódio de turno mudo
@@ -2218,15 +2221,10 @@ export const useChat = create<ChatState>((set, get) => {
         }
       }),
 
-    setPendingPlan: (convId, text) =>
-      patch(convId, { pendingPlan: { text } }),
-
-    clearPendingPlan: (convId) =>
-      set((s) => {
-        const cur = s.byId[convId]
-        if (!cur || !cur.pendingPlan) return {}
-        return { byId: { ...s.byId, [convId]: { ...cur, pendingPlan: undefined } } }
-      }),
+    // Corpo em store/chat/planGate.ts, junto do porquê de o gate ser ITEM.
+    pushPlanGate: (convId, text) => pushPlanGateImpl(get, set, convId, text),
+    decidePlanGate: (convId, id, decision) =>
+      decidePlanGateImpl(get, set, convId, id, decision),
 
     setAutoResume: (convId, autoResume) => patch(convId, { autoResume }),
 

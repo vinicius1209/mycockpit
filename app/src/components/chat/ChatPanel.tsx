@@ -3,7 +3,6 @@ import {
   ArrowDown,
   Check,
   ChevronDown,
-  ClipboardList,
   ListChecks,
   Loader2,
 } from "lucide-react"
@@ -52,7 +51,12 @@ import { InlineInteractions } from "@/components/chat/InteractionHost"
 import { runAgent, cancelAgent, agentLabel } from "@/lib/agent"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
 import { prepareHybridHandoff } from "@/lib/handoff"
-import { buildExecutionPrompt, extractPlanText, turnEndedOk } from "@/lib/planMode"
+import {
+  buildExecutionPrompt,
+  extractPlanText,
+  pendingPlanGate,
+  turnEndedOk,
+} from "@/lib/planMode"
 import {
   renderTranscript,
   exportConvContext,
@@ -778,7 +782,7 @@ export function ChatPanel() {
         const after = useChat.getState().byId[convId]
         const planText =
           after && turnEndedOk(after.items) ? extractPlanText(after.items) : null
-        if (planText) useChat.getState().setPendingPlan(convId, planText)
+        if (planText) useChat.getState().pushPlanGate(convId, planText)
       }
       // Fila: junta as mensagens digitadas durante o turno num ÚNICO envio
       // (resume) — em LOTES: um builtin do app no meio quebra o coalescimento
@@ -1125,13 +1129,19 @@ export function ChatPanel() {
   // normal, SEM plan_first; o toggle da conversa desliga sozinho). claude/codex
   // continuam via resume (o contexto do plano já está na sessão); agy não tem
   // resume → o prompt embute o texto do plano aprovado.
-  function handleApprovePlan() {
+  function handleApprovePlan(id: string) {
     const convId = useChat.getState().activeId
     if (!convId) return
     const c = useChat.getState().byId[convId]
-    if (!c?.pendingPlan || c.running || c.finalizing) return
-    const prompt = buildExecutionPrompt(c.agent, c.pendingPlan.text)
-    useChat.getState().clearPendingPlan(convId)
+    if (!c || c.running || c.finalizing) return
+    const gate = pendingPlanGate(c.items)
+    // Só o gate que está NA MESA: o id vem do fio renderizado, e entre o clique
+    // e aqui pode ter chegado turno novo.
+    if (!gate || gate.id !== id) return
+    const prompt = buildExecutionPrompt(c.agent, gate.text)
+    // Carimba ANTES de enviar: o envio empurra um `user` no fio, e a partir dele
+    // o gate deixaria de estar pendente sem nunca dizer que foi aprovado.
+    useChat.getState().decidePlanGate(convId, id, "approved")
     useChat.getState().setPlanFirst(convId, false)
     void handleSend(prompt, undefined, [], HUMANO)
   }
@@ -1247,6 +1257,9 @@ export function ChatPanel() {
               advising={conv.advising}
               stalledSince={conv.stalledSince}
               unseenDividerId={conv.unseenDividerId}
+              // Só oferece o gesto quando ele funcionaria: com turno em voo o
+              // envio da aprovação seria enfileirado e o cartão mentiria.
+              onApprovePlan={running || finalizing ? undefined : handleApprovePlan}
               onStop={(tool) => {
                 if (tool.managedProcess) {
                   void stopManagedProcess(tool.managedProcess.id).catch((error) =>
@@ -1405,14 +1418,6 @@ export function ChatPanel() {
               Com a missão rodando o card mora na MissionTimeline (fase
               corrente) — não duplica aqui. */}
           {activeId && !missionInline && <InlineInteractions convId={activeId} />}
-          {conv?.pendingPlan && !running && !finalizing && (
-            <PlanPendingCard
-              onApprove={handleApprovePlan}
-              onDiscard={() =>
-                activeId && useChat.getState().clearPendingPlan(activeId)
-              }
-            />
-          )}
           {conv?.autoResume && (
             <AutoResumeBanner
               nextAt={conv.autoResume.nextAt}
@@ -1479,38 +1484,3 @@ export function ChatPanel() {
  *  o turno plan_first terminou e o plano proposto está logo acima no fio.
  *  Aprovar dispara o turno de execução; Descartar só limpa o estado (a conversa
  *  segue normal). Visual no padrão dos cards de decisão (InteractionHost). */
-function PlanPendingCard({
-  onApprove,
-  onDiscard,
-}: {
-  onApprove: () => void
-  onDiscard: () => void
-}) {
-  return (
-    <div className="mb-2 rounded-lg border border-brass/40 bg-brass/[0.07] px-3 py-2.5">
-      <div className="flex items-center gap-2">
-        <ClipboardList className="size-4 shrink-0 text-brass" />
-        {/* Sem emoji aqui: o ClipboardList ao lado já é o ícone do card (havia
-            uma prancheta duplicada, componente + 📋, coladas na mesma linha). */}
-        <p className="min-w-0 flex-1 text-[13px] text-foreground">
-          <span className="font-medium">Plano proposto</span>, aguardando sua
-          aprovação. O agent só executa o que está escrito acima.
-        </p>
-      </div>
-      <div className="mt-2.5 flex items-center justify-end gap-2">
-        <button
-          onClick={onDiscard}
-          className="rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
-        >
-          Descartar
-        </button>
-        <button
-          onClick={onApprove}
-          className="rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
-        >
-          Aprovar e executar
-        </button>
-      </div>
-    </div>
-  )
-}

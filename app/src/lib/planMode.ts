@@ -6,6 +6,9 @@
 import { agentDef } from "@/lib/agents"
 import type { ChatItem } from "@/store/chat"
 
+/** O item do fio que representa o plano proposto e a decisão sobre ele. */
+export type PlanGateItem = Extract<ChatItem, { kind: "planGate" }>
+
 /** Nome curto do toggle (visível na linha do painel). */
 export const PLAN_FIRST_LABEL = "Planejar primeiro"
 
@@ -58,4 +61,25 @@ export function extractPlanText(items: ChatItem[]): string | null {
 export function turnEndedOk(items: ChatItem[]): boolean {
   const last = items[items.length - 1]
   return last?.kind === "result" && last.ok
+}
+
+/**
+ * O gate que ainda está NA MESA, ou `null`.
+ *
+ * Duas condições, e a segunda é a que evita mentir: (1) ninguém decidiu ainda,
+ * e (2) você não mandou outra coisa depois. Mandar outro pedido não é aprovar
+ * nem descartar — é seguir em frente —, então o cartão sai da tela sem carimbar
+ * uma decisão que você não tomou. O item fica no fio como plano proposto e não
+ * decidido, que é a verdade.
+ *
+ * Deriva do fio em vez de viver num campo: era exatamente por ser campo de
+ * runtime (`pendingPlan`) que a aprovação sumia no restart, sem deixar rastro.
+ */
+export function pendingPlanGate(items: readonly ChatItem[]): PlanGateItem | null {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]
+    if (it.kind === "user") return null
+    if (it.kind === "planGate") return it.decision ? null : it
+  }
+  return null
 }

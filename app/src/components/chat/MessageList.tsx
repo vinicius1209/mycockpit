@@ -17,7 +17,6 @@ import {
   Check,
   ChevronRight,
   Copy,
-  CornerDownRight,
   FilePen,
   FileText,
   Gauge,
@@ -96,9 +95,9 @@ import {
   tsForGroups,
   windowStartIndex,
 } from "@/components/chat/threadWindow"
-import { buildAdviceHandoffBlock } from "@/lib/advisor"
-import { shortDigest } from "@/lib/presets"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
+import { AdviceArrivalRow, AdviceCard } from "@/components/chat/AdviceInThread"
+import { PlanGateCard } from "@/components/chat/PlanGateCard"
 import { splitMentions } from "@/components/chat/mentions"
 import { usePresets } from "@/store/presets"
 import { pendingDeferred, useChat, type ChatItem } from "@/store/chat"
@@ -276,6 +275,7 @@ const ToolLine = memo(function ToolLine({
   namedWork?: ReadonlySet<string>
   onStop?: (tool: ToolItem) => void
   onRetry?: (tool: ToolItem) => void
+  onApprovePlan?: (id: string) => void
 }) {
   const { item, children } = node
   const active =
@@ -728,6 +728,7 @@ function ToolNodeList({
   namedWork?: ReadonlySet<string>
   onStop?: (tool: ToolItem) => void
   onRetry?: (tool: ToolItem) => void
+  onApprovePlan?: (id: string) => void
 }) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const activeNodes = live
@@ -867,6 +868,7 @@ const ToolGroup = memo(function ToolGroup({
   stalledSince?: number
   onStop?: (tool: ToolItem) => void
   onRetry?: (tool: ToolItem) => void
+  onApprovePlan?: (id: string) => void
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const manuallyToggled = useRef(false)
@@ -1439,146 +1441,6 @@ function formatIncidentReset(hint: string): string {
     .replace(/America\/Sao_Paulo/i, "horário de São Paulo")
 }
 
-/** Linha de CHEGADA do conselheiro (Especialistas E1): enquanto o parecer não
- *  resolve (`conv.advising` setado), a persona "entra no fio" estilo Slack —
- *  avatar + nome + "está lendo o contexto…" com dots pulsando; some quando o
- *  item `advice` chega. Fail-soft: sem persona resolvida, avatar genérico. */
-function AdviceArrivalRow({
-  advising,
-}: {
-  advising: { id: string; name: string }
-}) {
-  const persona = usePresets((s) =>
-    s.list.find((p) => p.id === advising.id || p.name === advising.name),
-  )
-  return (
-    <div className="flex gap-3 animate-cockpit-rise">
-      <div className="w-7 shrink-0 pt-0.5">
-        <AgentAvatar
-          def={persona}
-          seed={persona ? undefined : advising.id || advising.name}
-          size={28}
-          rounded
-        />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="mb-1 flex items-baseline gap-2">
-          <span className="text-[13px] font-medium text-brass">
-            {persona?.name ?? advising.name}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-          <span>está lendo o contexto</span>
-          <span className="flex items-center gap-1" aria-hidden>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                className="animate-cockpit-pulse size-1.5 rounded-full bg-brass/70"
-                style={{ animationDelay: `${i * 0.18}s` }}
-              />
-            ))}
-          </span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** Parecer de um CONSELHEIRO (Especialistas E1): item atribuído à persona,
- *  visualmente distinto de uma ação do executor (borda brass, cabeçalho com o
- *  nome + selo "parecer · só leitura"). Carimba persona@version + digest curto
- *  (auditoria/drift). Ações: "Trazer pro Executor" (injeta o parecer no próximo
- *  turno) e "Dispensar" (remove o item). Sem volante/piloto (isso é Sprint 3). */
-function AdviceCard({ item }: { item: Extract<ChatItem, { kind: "advice" }> }) {
-  // Avatar com a identidade REAL da persona (estilo/seed do arquivo) quando ela
-  // ainda existe na lista; senão, a seed cai no id/nome carimbados no parecer
-  // (a persona pode ter sido apagada — o parecer histórico não perde a cara).
-  const persona = usePresets((s) =>
-    s.list.find((p) => p.id === item.personaId),
-  )
-  // S3.2 — "passar o volante": só oferecido quando a persona ainda existe, NÃO
-  // é já quem pilota (um piloto por vez) e não há turno em voo (senão passWheel
-  // no-opa e o gesto ficaria sem efeito). Gesto humano e explícito.
-  const isPilot = useChat((s) =>
-    s.activeId ? s.byId[s.activeId]?.presetId === item.personaId : false,
-  )
-  const turnBusy = useChat((s) => {
-    const c = s.activeId ? s.byId[s.activeId] : undefined
-    return !!c?.running || !!c?.finalizing
-  })
-  const canPassWheel = !!persona && !isPilot && !turnBusy
-  return (
-    <div className="group/msg rounded-lg border border-brass/40 bg-brass/[0.05] px-3.5 py-3">
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        {/* avatar + nome da persona vivem no cabeçalho do grupo (gutter Slack);
-            aqui fica só a natureza do bloco (selo) + o carimbo de versão. */}
-        <MessageSquareQuote className="size-4 shrink-0 text-brass" />
-        <span className="rounded-full border border-brass/40 bg-brass/10 px-2 py-0.5 text-[11px] font-medium text-brass">
-          parecer · só leitura
-        </span>
-        <span
-          className="ml-auto font-mono text-[11px] text-muted-foreground/70"
-          title="Persona e versão que opinaram (carimbo de auditoria/drift)"
-        >
-          v{item.personaVersion} · {shortDigest(item.digest)}
-        </span>
-      </div>
-      <div data-selectable className="text-[14px]">
-        <Markdown text={item.text} />
-      </div>
-      <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2">
-        {canPassWheel && (
-          <button
-            onClick={() => {
-              const convId = useChat.getState().activeId
-              if (!convId) return
-              // só anuncia quando a troca efetivou (passWheel no-opa em turno em
-              // voo / já piloto) — sem gesto sem efeito passando por concluído.
-              void useChat
-                .getState()
-                .passWheel(convId, item.personaId, persona!.name)
-                .then((ok) => {
-                  if (ok)
-                    toast(
-                      `${item.personaName} vai pilotar o próximo turno (a doutrina viaja no envio).`,
-                    )
-                })
-            }}
-            title="Trocar o piloto: a próxima ação da conversa passa a ser desta persona"
-            className="mr-auto inline-flex items-center gap-1.5 rounded-md border border-brass/40 px-2.5 py-1 text-[12px] text-brass transition-colors hover:bg-brass/10"
-          >
-            <CornerDownRight className="size-3.5" /> Passar o volante
-          </button>
-        )}
-        <button
-          onClick={() => {
-            const convId = useChat.getState().activeId
-            if (!convId) return
-            useChat.getState().removeThreadItem(convId, item.id)
-          }}
-          className="rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
-        >
-          Dispensar
-        </button>
-        <button
-          onClick={() => {
-            const convId = useChat.getState().activeId
-            if (!convId) return
-            useChat
-              .getState()
-              .bringAdviceToExecutor(convId, buildAdviceHandoffBlock(item))
-            toast(
-              `Parecer de ${item.personaName} vai como contexto no próximo turno.`,
-            )
-          }}
-          className="rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
-        >
-          Trazer pro Executor
-        </button>
-      </div>
-    </div>
-  )
-}
 
 /** Um término vira UM instrumento acionável. Limite é estado operacional
  * esperado (âmbar); vermelho fica reservado para falha real. O texto cru do
@@ -1699,8 +1561,11 @@ const MessageItem = memo(function MessageItem({
   feedback,
   feedbackText,
   reads,
+  onApprovePlan,
 }: {
   item: ChatItem
+  /** Aprovar o plano proposto (id do item). Ausente = não dá pra agir agora. */
+  onApprovePlan?: (id: string) => void
   feedback?: FeedbackApi | null
   feedbackText?: string
   /** Selo de leitura por PATH de anexo, SÓ os deste item (só itens do usuário
@@ -1833,6 +1698,25 @@ const MessageItem = memo(function MessageItem({
     ) : null
   }
 
+  if (it.kind === "planGate") {
+    // Descartar é carimbo puro (store); aprovar precisa ENVIAR, e quem sabe
+    // enviar nesta conversa é o ChatPanel — daí a callback, mesmo caminho do
+    // `onContinueWith`. Sem ela o cartão informa e não oferece botão.
+    return (
+      <PlanGateCard
+        item={it}
+        onApprove={onApprovePlan && (() => onApprovePlan(it.id))}
+        onDiscard={
+          onApprovePlan &&
+          (() => {
+            const convId = useChat.getState().activeId
+            if (convId) useChat.getState().decidePlanGate(convId, it.id, "discarded")
+          })
+        }
+      />
+    )
+  }
+
   return (
     <div className="rounded-lg border border-border/55 bg-card/35 px-3 py-2.5">
       {!it.ok && it.text && (
@@ -1910,6 +1794,9 @@ interface NodeCtx {
   onStop?: (tool: ToolItem) => void
   onRetry?: (tool: ToolItem) => void
   onContinueWith?: (agent: string) => void
+  /** Aprovar o plano proposto: precisa ENVIAR, e quem sabe enviar nesta
+   *  conversa é o ChatPanel. Ausente = o cartão do gate só informa. */
+  onApprovePlan?: (id: string) => void
 }
 
 /** O transcript registra que o plano nasceu e como terminou; a checklist viva
@@ -2060,6 +1947,7 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
           }
           feedbackText={ctx.feedbackByResult.get(n.item.id)}
           reads={ctx.attReads.get(n.item.id)}
+          onApprovePlan={ctx.onApprovePlan}
         />
         <ContinueRow
           current={ctx.agent}
@@ -2074,6 +1962,7 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
       item={n.item}
       feedback={ctx.feedbackByResult.has(n.item.id) ? ctx.feedback : null}
       feedbackText={ctx.feedbackByResult.get(n.item.id)}
+      onApprovePlan={ctx.onApprovePlan}
       reads={ctx.attReads.get(n.item.id)}
     />
   )
@@ -2227,6 +2116,7 @@ export function MessageList({
   onStop,
   onRetry,
   onContinueWith,
+  onApprovePlan,
   feedback,
 }: {
   items: ChatItem[]
@@ -2254,6 +2144,9 @@ export function MessageList({
   onRetry?: (tool: ToolItem) => void
   /** Revezamento: continuar a conversa em outro agent (limite/erro). */
   onContinueWith?: (agent: string) => void
+  /** Aprovar o plano proposto (id do item `planGate`): o gesto ENVIA, e quem
+   *  sabe enviar nesta conversa é o ChatPanel. */
+  onApprovePlan?: (id: string) => void
   /** Loop de feedback do Linear (M2). null/undefined fora do Linear. */
   feedback?: FeedbackApi | null
 }) {
@@ -2322,6 +2215,7 @@ export function MessageList({
     onStop: stableStop,
     onRetry: stableRetry,
     onContinueWith,
+    onApprovePlan,
   }
   return (
     <div className="mx-auto flex w-full max-w-[760px] min-w-0 flex-col gap-5 px-8 py-8">
