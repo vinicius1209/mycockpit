@@ -2227,3 +2227,48 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   split.ts` (705→640) e o vigia de pedido sem resposta → `lib/unattendedWatch.ts`
   (watchdog 607→500, saiu da baseline).
 - **Verificado:** `tsc` 0, `vitest` 2956/268, 6 guardas, 20 e2e.
+
+### ADR-057 — Modo é dado do motor, não constante nossa ✅
+- **Contexto (21/08/2026):** a ADR-056 deixou registrado que o ACP trata plano
+  como modo de sessão e nós como flag por turno. Ao planejar o alinhamento eu
+  escrevi "estático é o certo, nenhuma CLI reporta os próprios modos". O usuário
+  perguntou: *"por que estático? os modos podem mudar do dia pra noite"*. Fui
+  verificar em vez de defender, e a resposta é que eu estava errado.
+- **A prova, medida nos binários da máquina:** as três CLIs enumeram os próprios
+  modos no `--help`, e a defasagem JÁ tinha acontecido nas três. `claude 2.1.220`
+  tem `manual` e `dontAsk` — dois modos que o app nunca conheceu (o comentário do
+  código dizia "validado 2.1.209"). `codex 0.147.0` contra "validado 0.144.4".
+  E o `agy 1.1.17` **tem** `--mode plan`, que a gente decidiu não usar num teste
+  de julho/2026, quando ele ainda não existia.
+- **O defeito real não era a lista velha — era a defasagem MUDA.** Nenhuma das
+  três deu sintoma. É isso que o trabalho conserta.
+- **Decisão 1 — sonda, não constante** (`src-tauri/src/modes.rs`). Mesmo padrão
+  do `model_list.rs`, pelo mesmo motivo: dado que muda do lado de fora não vive
+  numa constante. Parser puro por motor (o do Claude precisa juntar três linhas),
+  timeout curto, e falha vira `known: false` — "não sei" é diferente de "não tem
+  modo", e confundir os dois faria a UI esconder o seletor.
+- **Decisão 2 — descoberta dá o NOME, não o RISCO.** Este é o eixo de segurança:
+  oferecer `dontAsk` porque o `--help` o cita, sem saber o quanto libera, é
+  fail-open com nome bonito. Então a curadoria (`lib/agentModes.ts`) é separada
+  da sonda, e vale a regra: `descoberto ∩ curado` vira opção; `descoberto \
+  curado` e `curado \ descoberto` viram AVISO.
+- **Decisão 3 — o aviso do modo que SUMIU é o mais urgente.** Id que saiu do
+  `--help` continua sendo enviado até alguém reparar, e aí o erro chega como
+  falha de turno em vez de aviso.
+- **Decisão 4 — sem dispensar.** Diferente do aviso de update e do de modelo,
+  este não tem "dispensar": dispensa é pra o que você já resolveu, e este só some
+  quando a curadoria alcança o motor. Deixar dispensar reproduziria exatamente o
+  silêncio que criou o problema.
+- **Decisão 5 — a rede antes da refatoração** (`lib/sessionMode.ts`, M0). O app
+  tem QUATRO vocabulários pro mesmo eixo (conversa, agendamento, Rust, e o
+  `planFirst` ortogonal aos três). A tradução virou função pura com régua de
+  permissividade, e a invariante "nenhuma migração pode ALARGAR" virou teste em
+  vez de promessa. Zero mudança de comportamento nesta fase, de propósito.
+- **Estado honesto do agy:** curadoria VAZIA com nota. Ele anuncia `--mode`, o
+  app não manda a flag (emula planejamento por prefixo de prompt), e a decisão de
+  não adotar precisa de revalidação. O aviso no sino é o que cobra isso.
+- **Pendente (M2–M4):** o composer ainda tem permissão + toggle de planejar, e o
+  `Auto` segue inalcançável da conversa. A rede está montada; a troca é a próxima
+  frente, e ela é a que mexe no eixo de segurança de verdade.
+- **Verificado:** `cargo test` 469 (+ prova real `--ignored` contra os três
+  binários), `tsc` 0, `vitest` 2987/270, 6 guardas, 20 e2e.

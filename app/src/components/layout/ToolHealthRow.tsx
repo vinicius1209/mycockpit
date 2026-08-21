@@ -3,6 +3,7 @@ import {
   CircleSlash,
   Download,
   LogIn,
+  SlidersHorizontal,
   Sparkles,
   X,
 } from "lucide-react"
@@ -95,6 +96,15 @@ function linha(item: ToolHealthItem): {
       alarme: false,
       title: `Atualização do ${item.label} disponível`,
       detail: `v${item.current ?? "?"} → v${item.latest ?? "?"} · Atualizar em Configurações ▸ Agentes na máquina`,
+    }
+  if (item.kind === "modes")
+    return {
+      // Sem alarme: o cardápio de modos mudar não impede trabalhar. Inflar o
+      // sino aqui tiraria peso do que de fato bloqueia (CLI deslogada).
+      icon: <SlidersHorizontal className="size-3.5 shrink-0 text-muted-foreground" />,
+      alarme: false,
+      title: `Modos do ${item.label} mudaram`,
+      detail: item.detail,
     }
   return {
     icon:

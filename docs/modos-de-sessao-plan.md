@@ -1,6 +1,6 @@
 # Modos de sessão — um eixo só, declarado por motor (plano)
 
-> Status: **proposta, nada implementado** (21/08/2026). Nasceu da ADR-056, que
+> Status: **M0 ✅ · M0.5 ✅ · M1 ✅ (21/08/2026)** · M2–M4 pendentes. Nasceu da ADR-056, que
 > fechou o gate de plano e deixou registrado o que ficou torto: o ACP trata plano
 > como MODO DE SESSÃO e nós tratamos como flag por turno. Ao investigar, o
 > problema é maior que o plano.
@@ -138,7 +138,7 @@ planejamento) em vez de desligar um booleano paralelo.
 
 ## Fases
 
-### M0 — Inventário e rede de segurança (antes de qualquer refatoração)
+### M0 ✅ — Inventário e rede de segurança (antes de qualquer refatoração)
 - Tabela dos 4 vocabulários → valor canônico, escrita como **função pura com
   teste por valor**. É a rede: nenhuma linha de UI muda nesta fase.
 - Teste que trava a invariante 1: para cada valor antigo, o modo resolvido não
@@ -146,7 +146,7 @@ planejamento) em vez de desligar um booleano paralelo.
 - Fixture de upgrade: projeto com `config.toml` antigo, agendamento antigo e
   missão antiga abrindo no modo certo.
 
-### M0.5 — A sonda de modos
+### M0.5 ✅ — A sonda de modos
 - Comando Rust que roda o `--help` do motor e extrai os ids (parse por motor: o
   Claude lista em `(choices: …)`, o Codex em `[possible values: …]`, o agy entre
   parênteses no `--mode`). Cache por versão do binário, timeout curto, falha =
@@ -156,7 +156,7 @@ planejamento) em vez de desligar um booleano paralelo.
 - **Revalidar o `--mode plan` do agy nesta fase** — a decisão de não usar é de
   julho e o binário mudou.
 
-### M1 — O registry declara a SEMÂNTICA dos modos
+### M1 ✅ — O registry declara a SEMÂNTICA dos modos
 - `AgentModeDef[]` por motor em `lib/agents.ts`, ao lado das outras
   capabilities. O registry é a CURADORIA (o que cada id significa e o quanto
   libera), não a fonte da lista — a lista vem da sonda do M0.5.
@@ -210,3 +210,41 @@ planejamento) em vez de desligar um booleano paralelo.
   por valor, para os quatro vocabulários.
 - Nenhum valor migra para algo mais permissivo. Teste explícito.
 - `tsc` 0, suíte verde, 6 guardas, e2e verde.
+
+## Como ficou (21/08/2026)
+
+**M0** — `lib/sessionMode.ts`: os quatro vocabulários viram um eixo, com a régua
+de `PERMISSIVIDADE` que torna a invariante de segurança verificável
+(`naoAlarga`). 16 testes, incluindo os casos que dariam errado calados:
+`inherit` de fase não vira `auto`, e o agendamento não alcança `liberado`.
+
+**M0.5** — `src-tauri/src/modes.rs`: parser PURO por motor (o do Claude junta
+três linhas, porque a ajuda quebra a lista), `known: false` quando não dá pra
+ler, e uma prova real `#[ignore]` contra os binários da máquina. Rodando nos
+três instalados:
+
+```
+claude-code  ["acceptEdits","auto","bypassPermissions","manual","dontAsk","plan"]
+codex        ["read-only","workspace-write","danger-full-access"]
+agy          ["accept-edits","plan"]
+```
+
+**M1** — `lib/agentModes.ts`: a curadoria do que o app SABE EXPLICAR, espelhando
+o que o `adapters.rs` faz hoje. E o cruzamento que faltava:
+
+- `manual` e `dontAsk` do Claude ficam **de fora de propósito** — o app nunca os
+  mandou e ninguém validou o que liberam. Viram AVISO na seção Ferramentas do
+  sino, que é onde "o cardápio mudou" já mora.
+- `agy` tem curadoria VAZIA com nota: ele anuncia `--mode`, o app não manda a
+  flag (emula por prompt), e a decisão de não adotar é de julho/2026 com um
+  binário que já mudou.
+- Modo que SUMIU do motor também é aviso — é o mais urgente dos dois, porque a
+  flag continua sendo enviada até alguém reparar.
+
+O aviso de modos **não tem dispensar**, diferente do de update e do de modelo:
+dispensa é pra aviso que você resolveu, e este só some quando a curadoria
+alcança o motor. Deixar dispensar reproduziria o silêncio que criou o problema.
+
+**Pendente e consciente:** nada disso mexeu no composer ainda (M2). O seletor
+continua sendo permissão + toggle de planejar, e o `Auto` segue inalcançável da
+conversa. A rede está montada; a troca é a próxima frente.

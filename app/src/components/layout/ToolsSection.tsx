@@ -30,18 +30,28 @@ import {
 import { modelNews } from "@/lib/modelPromotion"
 import {
   blockingToolCount,
+  modeDriftItems,
   modelHealthItems,
   toolHealthItems,
   type ToolAuthItem,
+  type ToolModeDriftItem,
   type ToolModelNewsItem,
   type ToolUpdateItem,
 } from "@/lib/toolHealth"
+import {
+  MODOS_CURADOS,
+  driftDeModos,
+  frasesDoDrift,
+} from "@/lib/agentModes"
+import { useAgentModes } from "@/store/agentModes"
 import { useApp } from "@/store/app"
 
 export interface ToolsSectionState {
   authItems: ToolAuthItem[]
   updateItems: ToolUpdateItem[]
   modelItems: ToolModelNewsItem[]
+  /** Divergência entre os modos que o motor anuncia e os que o app explica. */
+  modeItems: ToolModeDriftItem[]
   /** agent → quando o limite volta (texto pronto do store). */
   limited: Record<string, string | null>
   limitedIds: string[]
@@ -119,16 +129,46 @@ export function useToolsSection(): ToolsSectionState {
     [setSettings, modelNewsDismissed],
   )
 
+  // Modos: mesma família da notícia de modelo (o cardápio mudou), zero no
+  // badge. A sonda tem dono próprio (store/agentModes) e é pedida UMA vez.
+  const modosPorAgente = useAgentModes((s) => s.byAgent)
+  const ensureModos = useAgentModes((s) => s.ensure)
+  useEffect(() => {
+    ensureModos(Object.keys(MODOS_CURADOS))
+  }, [ensureModos])
+  const modeItems = useMemo(
+    () =>
+      modeDriftItems(
+        Object.keys(MODOS_CURADOS).map((agent) => {
+          const m = modosPorAgente[agent]
+          // `known: false` vira `null`: "não consegui perguntar" não pode virar
+          // "sumiram todos os modos" na cara do usuário.
+          return {
+            agent,
+            frases: frasesDoDrift(
+              agent,
+              driftDeModos(agent, m?.known ? m.ids : null),
+            ),
+          }
+        }),
+      ),
+    [modosPorAgente],
+  )
+
   const limitedIds = Object.keys(limited)
   return {
     authItems: items.filter((i) => i.kind === "auth"),
     updateItems: items.filter((i) => i.kind === "update"),
     modelItems,
+    modeItems,
     limited,
     limitedIds,
     blockedTools: blockingToolCount(items),
     hasSection:
-      items.length > 0 || limitedIds.length > 0 || modelItems.length > 0,
+      items.length > 0 ||
+      limitedIds.length > 0 ||
+      modelItems.length > 0 ||
+      modeItems.length > 0,
     dismissUpdate,
     dismissModelNews,
     reloadModels,
@@ -191,6 +231,17 @@ export function ToolsSection({
           item={item}
           onOpen={() => openSettings("models")}
           onDismiss={() => state.dismissModelNews(item)}
+        />
+      ))}
+      {/* Modos: SEM dispensar, de propósito. Dispensa é pra aviso que você já
+          resolveu; este só some quando a curadoria alcança o motor (ou o motor
+          volta atrás). Deixar dispensar seria o mesmo silêncio que deixou o
+          `manual`/`dontAsk` passarem batidos. */}
+      {state.modeItems.map((item) => (
+        <ToolHealthRow
+          key={item.id}
+          item={item}
+          onOpen={() => openSettings("machine")}
         />
       ))}
     </>

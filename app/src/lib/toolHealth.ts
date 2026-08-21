@@ -65,7 +65,22 @@ export interface ToolModelNewsItem extends ToolHealthBase {
   detail: string
 }
 
-export type ToolHealthItem = ToolAuthItem | ToolUpdateItem | ToolModelNewsItem
+/** (M1 dos modos de sessão) O cardápio de MODOS do motor divergiu do que o app
+ *  sabe explicar. Mesma família das notícias de modelo — não pede decisão, diz
+ *  que o mundo mudou — e mora aqui pelo mesmo motivo: era a ausência deste
+ *  aviso que deixou o `manual`/`dontAsk` do Claude passarem batidos e o
+ *  `--mode plan` do agy envelhecer sem revalidação. */
+export interface ToolModeDriftItem extends ToolHealthBase {
+  kind: "modes"
+  id: string
+  detail: string
+}
+
+export type ToolHealthItem =
+  | ToolAuthItem
+  | ToolUpdateItem
+  | ToolModelNewsItem
+  | ToolModeDriftItem
 
 /** Guardas de tipo pra quem separa a lista por seção (o `filter` sozinho não
  *  estreita a união, e estreitar é o que deixa `latest` legível no update). */
@@ -74,6 +89,9 @@ export function isAuthItem(i: ToolHealthItem): i is ToolAuthItem {
 }
 export function isUpdateItem(i: ToolHealthItem): i is ToolUpdateItem {
   return i.kind === "update"
+}
+export function isModeDriftItem(i: ToolHealthItem): i is ToolModeDriftItem {
+  return i.kind === "modes"
 }
 export function isModelNewsItem(i: ToolHealthItem): i is ToolModelNewsItem {
   return i.kind === "models"
@@ -164,6 +182,29 @@ export function modelHealthItems(
     detail: n.detail,
     blocking: false,
   }))
+}
+
+/**
+ * Divergência de modos → itens do sino. Um item por FRASE, e não por motor: o
+ * "sumiu" e o "novo" do mesmo motor são urgências diferentes (um quebra turno,
+ * o outro é ignorância) e merecem linhas separadas.
+ *
+ * `blocking: false` sempre: nada aqui impede trabalhar, e inflar o badge com
+ * "seu Claude tem 2 modos novos" tiraria peso do que de fato bloqueia.
+ */
+export function modeDriftItems(
+  porAgente: ReadonlyArray<{ agent: string; frases: readonly string[] }>,
+): ToolModeDriftItem[] {
+  return porAgente.flatMap(({ agent, frases }) =>
+    frases.map((detail, i) => ({
+      agent,
+      label: agentDef(agent)?.label ?? agent,
+      kind: "modes" as const,
+      id: `modes:${agent}:${i}`,
+      detail,
+      blocking: false,
+    })),
+  )
 }
 
 /** Quanto a saúde das ferramentas soma no badge do sino.
