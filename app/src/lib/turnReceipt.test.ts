@@ -6,6 +6,7 @@
 
 import { describe, expect, it, vi } from "vitest"
 import {
+  fraseDoTurno,
   parseReceipt,
   receiptBody,
   turnReceipt,
@@ -73,6 +74,43 @@ describe("receiptBody", () => {
     const b = receiptBody("Refatorar", true, "Parou no teste de borda")
     expect(b).toContain("turno falhou")
     expect(b).toContain("Parou no teste de borda")
+  })
+})
+
+describe("fraseDoTurno", () => {
+  it("com recibo, a frase É o recibo", () => {
+    expect(fraseDoTurno("Extraiu o parser e cobriu o caso vazio.", true)).toBe(
+      "Extraiu o parser e cobriu o caso vazio.",
+    )
+  })
+
+  it("sem recibo, cai no desfecho — nunca linha vazia", () => {
+    expect(fraseDoTurno(null, true)).toBe("turno concluído")
+    expect(fraseDoTurno(null, false)).toBe("turno falhou")
+  })
+
+  it("recibo VENCE o desfecho até quando o turno falhou", () => {
+    // Aqui difere do `receiptBody` de propósito: lá a linha do sistema mantém
+    // "turno falhou" na frente porque é o dado principal de uma linha só. Nesta
+    // superfície o cartão já mostra a falha (o rótulo ao lado), então repetir
+    // gastaria a única linha de texto que existe.
+    expect(fraseDoTurno("Parou no lint da linha 40.", false)).toBe(
+      "Parou no lint da linha 40.",
+    )
+  })
+
+  it("é a MESMA frase na bandeja e no celular", () => {
+    // O ponto do R3: a regra estava escrita duas vezes, em dois runtimes (TSX
+    // e o HTML estático servido ao aparelho). Uma função, uma frase.
+    const casos: [string | null, boolean][] = [
+      ["fez", true],
+      [null, true],
+      [null, false],
+    ]
+    for (const [r, ok] of casos) {
+      expect(fraseDoTurno(r, ok)).toBe(fraseDoTurno(r, ok))
+      expect(fraseDoTurno(r, ok)).not.toBe("")
+    }
   })
 })
 

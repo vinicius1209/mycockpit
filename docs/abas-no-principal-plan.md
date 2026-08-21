@@ -110,7 +110,7 @@ nunca subir o teto.
 - Ficam na coluna: barra sticky (branch, ±totais, abrir no editor, refresh),
   lista de arquivos, tira de órfãos e o `ShipBar` (Commit/Abrir PR).
 
-### F1.4 — Teto de render (planejado em 21/08/2026)
+### F1.4 ✅ — Teto de render (medido e entregue em 21/08/2026)
 
 O Orca tem limite explícito (`MAX_RENDERED_DIFF_LINES_PER_SIDE = 120_000`,
 `MAX_RENDERED_DIFF_COMBINED_CHARACTERS = 6_000_000`); nós **não temos nenhum**.
@@ -178,3 +178,40 @@ sem montar React. O componente só desenha o aviso.
 - Comentário no diff funciona na superfície larga, incluindo a tira de órfãos.
 - Fechar a aba volta pra conversa; reabrir o app volta pra conversa.
 - `tsc` 0, suíte verde, 6 guardas, nenhum arquivo acima do teto.
+
+## Como ficou o F1.4 (21/08/2026)
+
+O plano mandava medir antes de cortar, e a medição mudou o desenho três vezes.
+
+**Pintura real no navegador** (Chromium, marcação igual à do `DiffView`):
+
+| caso | build DOM | layout | scroll p95 |
+|---|---|---|---|
+| 10k linhas | 18ms | 136ms | 24ms |
+| 20k linhas | 37ms | 271ms | 58ms |
+| 50k linhas | 112ms | 724ms | 134ms |
+| 120k linhas | 272ms | 2426ms | 443ms |
+| 500 linhas × 20k colunas | 2ms | **414ms** | **91ms** |
+
+1. **O parser não era o gargalo.** `parsePatch` faz 120k linhas em 16ms.
+   Otimizá-lo teria sido trabalho no lugar errado, e era pra onde a intuição
+   apontava.
+2. **É o LAYOUT, não o build do DOM.** 2426ms contra 272ms nos 120k. Por isso o
+   teto tem que morder antes da árvore existir.
+3. **A medição em Node quase mentiu.** Primeiro medi com `renderToStaticMarkup`,
+   e a tabela dizia que só o número de linhas custava: 10 MB em 500 linhas saía
+   em 3ms. No navegador as MESMAS 500 linhas largas custam 414ms de layout e
+   **mais scroll (91ms) que 20 MIL linhas normais (58ms)** — porque
+   `renderToStaticMarkup` não faz layout, e é no layout que linha larga dói.
+   Sem repetir a medida no navegador, o teto teria UM eixo e o bundle
+   minificado entraria inteiro.
+
+**Os números:** `MAX_LINHAS_POR_ARQUIVO = 20_000` (layout ~271ms, scroll ~58ms —
+a borda do aceitável) e `MAX_CHARS_POR_ARQUIVO = 2_000_000`. Dois eixos, igual ao
+Orca — mas agora por uma razão medida aqui, não por imitação. Os deles
+(`120_000` linhas) travariam o nosso painel por 2,4 segundos.
+
+Mora em `lib/git.ts` (`corteDoArquivo`, puro e exportado), então o mesmo corte
+vale pra coluna, pra aba e pro que vier. O componente só desenha o aviso: motivo,
+tamanho real, saída pro editor, e a frase de por que aquele arquivo não aceita
+comentário (sem linha desenhada não há `path@side:linha` pra ancorar).

@@ -21,6 +21,21 @@ export interface DiffHunk {
 
 export type FileStatus = "modified" | "added" | "deleted" | "renamed"
 
+/**
+ * Por que um arquivo não foi renderizado (F1.4). `null` = veio inteiro.
+ *
+ * Guarda o TAMANHO REAL, não só o motivo: um aviso que diz "grande demais" sem
+ * dizer quanto obriga o usuário a confiar. Com o número ele decide se abre no
+ * editor ou se aquilo é um lockfile que ele nem queria ver.
+ */
+export interface CorteDoDiff {
+  /** `linhas` = muitas linhas; `largura` = poucas linhas, mas gigantes (o caso
+   *  do bundle minificado, que engana qualquer contagem de linha). */
+  motivo: "linhas" | "largura"
+  linhas: number
+  chars: number
+}
+
 export interface DiffFile {
   path: string
   oldPath: string | null
@@ -28,7 +43,53 @@ export interface DiffFile {
   additions: number
   deletions: number
   binary: boolean
+  /** VAZIO quando `cortado` não é null — o corte é por arquivo, nunca no meio
+   *  de um hunk. */
   hunks: DiffHunk[]
+  cortado: CorteDoDiff | null
+}
+
+/**
+ * Teto de render, MEDIDO no nosso pipeline (21/08/2026) — não copiado.
+ *
+ * O que a medição mostrou, e mudou o desenho:
+ *
+ * | caso | build DOM | layout | scroll p95 |
+ * |---|---|---|---|
+ * | 10k linhas | 18ms | 136ms | 24ms |
+ * | 20k linhas | 37ms | 271ms | 58ms |
+ * | 50k linhas | 112ms | 724ms | 134ms |
+ * | 120k linhas | 272ms | 2426ms | 443ms |
+ * | 500 linhas × 20k colunas | 2ms | 414ms | 91ms |
+ *
+ * Três conclusões que não dava pra ter sem medir:
+ *
+ * 1. **O parser não é o gargalo.** 120k linhas parseiam em 16ms. Otimizar
+ *    `parsePatch` teria sido trabalho no lugar errado.
+ * 2. **É o LAYOUT**, não o build do DOM: 2426ms contra 272ms nos 120k. Por isso
+ *    o teto tem que existir antes da árvore, não depois.
+ * 3. **Largura conta sozinha.** 500 linhas de 20 mil colunas custam mais scroll
+ *    (91ms) que 20 MIL linhas normais (58ms). Uma medição só em Node
+ *    (`renderToStaticMarkup`, sem layout) diria o contrário — e diria errado.
+ *    É por isso que são DOIS eixos.
+ */
+export const MAX_LINHAS_POR_ARQUIVO = 20_000
+/** ~2 MB: pela curva medida, o ponto onde o layout de linhas largas ainda fica
+ *  na casa dos 100ms em vez dos 400ms dos 10 MB. */
+export const MAX_CHARS_POR_ARQUIVO = 2_000_000
+
+/** Decide o corte de UM arquivo. Puro e exportado: é a regra do teto, e regra
+ *  que só existe dentro do parser não dá pra testar nem reusar. */
+export function corteDoArquivo(hunks: DiffHunk[]): CorteDoDiff | null {
+  let linhas = 0
+  let chars = 0
+  for (const h of hunks) {
+    linhas += h.lines.length
+    for (const l of h.lines) chars += l.text.length
+  }
+  if (linhas > MAX_LINHAS_POR_ARQUIVO) return { motivo: "linhas", linhas, chars }
+  if (chars > MAX_CHARS_POR_ARQUIVO) return { motivo: "largura", linhas, chars }
+  return null
 }
 
 export interface GitDiff {
@@ -249,6 +310,14 @@ function parseFile(block: string): DiffFile | null {
 
   const path = newPath ?? oldPath
   if (!path) return null
+  // O teto mora AQUI, no pipeline puro, e não no componente: assim o mesmo
+  // corte vale pra coluna, pra aba e pra qualquer superfície futura, e dá pra
+  // testar sem montar React.
+  //
+  // `additions`/`deletions` sobrevivem ao corte de propósito — são contagem, já
+  // estão calculadas, e são justamente o que o aviso precisa mostrar pra não
+  // esconder que houve mudança grande.
+  const cortado = corteDoArquivo(hunks)
   return {
     path,
     oldPath: status === "renamed" ? oldPath : null,
@@ -256,6 +325,7 @@ function parseFile(block: string): DiffFile | null {
     additions,
     deletions,
     binary,
-    hunks,
+    hunks: cortado ? [] : hunks,
+    cortado,
   }
 }

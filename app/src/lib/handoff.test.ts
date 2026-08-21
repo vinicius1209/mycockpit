@@ -82,6 +82,7 @@ describe("ContextEnvelope", () => {
         deletions: 0,
         binary: false,
         hunks: [],
+        cortado: null,
       })),
     }
     const envelope = buildContextEnvelope({

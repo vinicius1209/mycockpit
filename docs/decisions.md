@@ -2455,3 +2455,53 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   não `number`.
 - **Verificado:** `tsc` 0, `vitest` 3027, 6 guardas (baseline APERTADA), e2e
   21/21, `cargo check` 0.
+
+### ADR-064 — Uma frase, dois runtimes: o R3 que o plano não podia prever ✅
+- **Contexto (21/08/2026):** o R3 era condicional — extrair um formatador de
+  recibo SÓ se as quatro superfícies divergissem em copy. Com R1/R2 entregues,
+  deu pra olhar em vez de supor.
+- **Não eram quatro divergindo.** Eram DUAS iguais (bandeja e Companion, a mesma
+  expressão escrita em dois lugares) e duas diferentes por MOTIVO: a nativa
+  derruba o "turno concluído" quando há recibo, porque a linha do sistema é curta
+  e cara; o sino não formata frase nenhuma (é estrutura). Unificar as quatro
+  teria apagado uma decisão fingindo corrigir um descuido.
+- **`fraseDoTurno` mora colada no `receiptBody`**, mesmo arquivo, com o
+  comentário dizendo por que as duas NÃO são uma. Em arquivos distantes elas
+  voltariam a convergir por acidente.
+- **O plano era impossível como escrito, e o motivo importa:** o cliente do
+  Companion é HTML estático com `<script>` puro servido pelo Rust — sem bundler,
+  ele não importa `lib/`. A saída foi mandar a frase JÁ PRONTA no snapshot
+  (`CompanionTurn.frase`): o aparelho renderiza em vez de reimplementar a regra.
+  Sem risco de versão desencontrada, porque a página é servida pelo mesmo
+  binário que monta o snapshot.
+- **Custo:** `lib/companion.ts` estourou a catraca de novo; saiu
+  `lib/companionTypes.ts` (só tipos, zero comportamento). Vale como fronteira
+  além do tamanho: é o contrato que o celular precisa respeitar sem conseguir
+  importar.
+
+### ADR-065 — O teto do diff: o que a medição em Node quase me fez errar ✅
+- **Contexto (21/08/2026):** não tínhamos teto de render nenhum. O Orca tem
+  (`120_000` linhas, `6_000_000` caracteres), e o caminho fácil era copiar.
+- **Medi primeiro, e o parser estava inocente.** `parsePatch` faz 120k linhas em
+  16ms. A intuição apontava pro parser; o custo está no LAYOUT (2426ms nos 120k,
+  contra 272ms de build de DOM).
+- **O erro que quase entrou.** A primeira medição foi em Node com
+  `renderToStaticMarkup`, e a tabela dizia que só o número de LINHAS custava: 10
+  MB em 500 linhas saía em 3ms. Conclusão: um eixo só, linhas. **Errado.**
+  Repetindo no navegador, as mesmas 500 linhas de 20 mil colunas custam 414ms de
+  layout e mais scroll (91ms) que 20 MIL linhas normais (58ms) —
+  `renderToStaticMarkup` não faz layout, e é no layout que linha larga dói. Um
+  bundle minificado teria passado inteiro pelo teto de um eixo só.
+- **A lição do método:** medir no runtime errado é pior que não medir, porque
+  produz um número com aparência de evidência. O harness em Node não estava
+  "aproximando" o navegador — estava medindo outra coisa.
+- **Os números, nossos:** `MAX_LINHAS_POR_ARQUIVO = 20_000` (layout ~271ms,
+  scroll p95 ~58ms) e `MAX_CHARS_POR_ARQUIVO = 2_000_000`. Dois eixos como o
+  Orca, mas por razão medida aqui: os 120k deles travariam o nosso painel por 2,4
+  segundos.
+- **O corte FALA.** Arquivo cortado mostra motivo, tamanho real e a saída pro
+  editor. Esconder mudança grande num painel que existe pra mostrar o que mudou é
+  pior que travar, porque travar pelo menos é visível. E ele diz que não aceita
+  comentário: sem linha desenhada não há `path@side:linha` pra ancorar, e deixar
+  o gesto falhar calado seria fail-open.
+- **Verificado:** `tsc` 0, `vitest` 3039, 6 guardas, e2e 21/21, `cargo check` 0.

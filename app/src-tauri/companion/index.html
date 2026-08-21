@@ -574,12 +574,13 @@ var MOCK_SNAP = {
   ],
   lastTurns: [
     { convId: "c1", projectId: "p1", projectName: "mycockpit", title: "Revisar o parser do diff",
-      receipt: "Extraiu o parser pra lib/ e cobriu o caso vazio.", ok: true, at: Date.now() - 4 * 60000 },
+      receipt: "Extraiu o parser pra lib/ e cobriu o caso vazio.",
+      frase: "Extraiu o parser pra lib/ e cobriu o caso vazio.", ok: true, at: Date.now() - 4 * 60000 },
     // sem recibo: o cliente cai no desfecho (helper desligado / prazo estourado)
     { convId: "c2", projectId: "p2", projectName: "site-maclan", title: "Ajustar o CSS do herói",
-      receipt: null, ok: true, at: Date.now() - 40 * 60000 },
+      receipt: null, frase: "turno concluído", ok: true, at: Date.now() - 40 * 60000 },
     { convId: "c3", projectId: "p1", projectName: "mycockpit", title: "Subir o worker",
-      receipt: null, ok: false, at: Date.now() - 3 * 3600000 }
+      receipt: null, frase: "turno falhou", ok: false, at: Date.now() - 3 * 3600000 }
   ],
   deliveries: [
     { projectId: "p1", projectName: "mycockpit", task: "Corrigir crash do ditado", agent: "claude-code", costUsd: 1.12, createdAt: Date.now() - 2 * 3600000 },
@@ -1256,10 +1257,11 @@ function renderLastTurns() {
   var host = $("#lastTurns");
   if (!ts.length) { host.innerHTML = '<div class="empty">Nenhum turno encerrado ainda.</div>'; return; }
   host.innerHTML = ts.map(function (t) {
-    // Sem recibo cai no desfecho: turno de primeiro plano, helper desligado ou
-    // prazo estourado nao geram frase (ADR-055). Nunca card mudo.
-    var frase = t.receipt || (t.ok ? "turno concluído" : "turno falhou");
-    return '<div class="card dl"><span class="task">' + esc(frase) +
+    // A frase vem PRONTA do desktop (fraseDoTurno, lib/turnReceipt): sem
+    // recibo ela ja e o desfecho — turno de primeiro plano, helper desligado
+    // ou prazo estourado nao geram frase (ADR-055). Nunca card mudo, e a regra
+    // mora num lugar so em vez de ser reescrita aqui.
+    return '<div class="card dl"><span class="task">' + esc(t.frase) +
       '<div class="meta">' + [t.projectName ? esc(t.projectName) : null, esc(t.title), esc(ago(t.at))].filter(Boolean).join(" · ") + '</div></span>' +
       (t.ok ? "" : '<span class="cost">falhou</span>') + '</div>';
   }).join("");

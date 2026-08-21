@@ -91,6 +91,7 @@ describe("changedFilesRef", () => {
           deletions: 1,
           binary: false,
           hunks: [],
+          cortado: null,
         },
       ]),
     )

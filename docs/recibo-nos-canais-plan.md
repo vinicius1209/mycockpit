@@ -1,6 +1,6 @@
 # O recibo de turno nos outros canais (plano)
 
-> Status: **R1 ✅ · R2 ✅ (21/08/2026)** · R3 pendente. Fecha o que a ADR-055
+> Status: **R1 ✅ · R2 ✅ · R3 ✅ (21/08/2026)** — plano fechado. Fecha o que a ADR-055
 > deixou explicitamente de fora: o recibo (M2 do estudo do Maestri) chega na
 > notificação nativa e no sino, mas não na tray nem no Companion.
 
@@ -62,7 +62,7 @@ nesses casos a linha cai no que já existe ("turno concluído").
 - **Reusar o corte de `CompanionDelivery`**: ele já resolve projeto+agente+custo
   por entrega; a seção nova é irmã, não uma segunda invenção.
 
-### R3 — Uma frase, um lugar (só se R1/R2 provarem que vale)
+### R3 ✅ — Uma frase, um lugar (só se R1/R2 provarem que vale)
 Hoje a frase do desfecho é montada em `receiptBody` (nativa) e de novo no sino,
 e R1/R2 seriam a terceira e a quarta. Se as quatro divergirem em copy, o mesmo
 turno passa a ser descrito de quatro jeitos. Extrair um formatador puro DEPOIS
@@ -140,3 +140,38 @@ e o throttle é estado de módulo (`Map` de timers). Deixá-lo em qualquer lado
 fecharia um ciclo de import — a mesma armadilha que já custou um
 `window is not defined` em teste aqui. Virou `lib/companionPing.ts`, sem dono
 entre os dois.
+
+## Como ficou o R3 (21/08/2026)
+
+O R3 era condicional ("só se R1/R2 provarem que vale"), e com as quatro
+superfícies na mesa a resposta foi mais precisa do que a pergunta:
+
+| superfície | o que faz | igual às outras? |
+|---|---|---|
+| nativa (`receiptBody`) | linha ÚNICA do sistema, com título embutido | **não, e de propósito** |
+| sino | estrutura (title/subtitle/body), não frase | não formata frase |
+| bandeja (`TrayPopover`) | `receipt ?? desfecho` | **idêntica ao celular** |
+| Companion (`index.html`) | `receipt \|\| desfecho` | **idêntica à bandeja** |
+
+Ou seja: **não eram quatro divergindo, eram duas iguais e duas diferentes por
+motivo.** A nativa derruba o "turno concluído" quando há recibo porque a linha do
+sistema é curta e cara; a bandeja e o celular NÃO derrubam, porque ali a frase é
+a única linha de texto que existe. Extrair uma função só pras quatro teria
+apagado uma diferença que é decisão, não descuido.
+
+`fraseDoTurno(receipt, ok)` nasceu colada no `receiptBody`, no mesmo arquivo, com
+o comentário explicando por que as duas NÃO são uma. Distantes, elas voltariam a
+convergir por acidente.
+
+**A parte que o plano não previa:** o cliente do Companion é HTML estático com
+`<script>` puro, servido pelo Rust. Ele **não consegue** importar `lib/` — não
+tem bundler. Então "uma função pras duas" era impossível como escrito. A saída
+foi mandar a frase JÁ PRONTA no snapshot (`CompanionTurn.frase`), montada no
+desktop: o aparelho renderiza em vez de reimplementar. `receipt` e `ok` seguem no
+payload pra quem quiser tratar erro diferente. Sem risco de versão desencontrada
+— a página é servida pelo mesmo binário que monta o snapshot.
+
+**Custo estrutural:** `lib/companion.ts` estourou a catraca de novo (+8 linhas).
+Saiu `lib/companionTypes.ts` — só tipos, zero comportamento, o corte mais barato
+que existe. E ele vale como fronteira além do tamanho: é exatamente o contrato
+que o cliente do celular precisa respeitar sem conseguir importar.

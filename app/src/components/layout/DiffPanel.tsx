@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { ChevronRight, GitBranch, Loader2, RefreshCw } from "lucide-react"
-import { loadGitDiff, type DiffFile, type GitDiff } from "@/lib/git"
+import {
+  loadGitDiff,
+  type CorteDoDiff,
+  type DiffFile,
+  type GitDiff,
+} from "@/lib/git"
 import { composeDiffComments, staleComments } from "@/lib/deliveryDiff"
 import { OpenInEditor } from "@/components/common/OpenInEditor"
 import { cn } from "@/lib/utils"
@@ -148,6 +153,7 @@ export function DiffPanel({
                 <FileBlock
                   key={f.path}
                   file={f}
+                  cwd={cwd}
                   open={open.has(f.path)}
                   onToggle={() =>
                     setOpen((s) => {
@@ -190,14 +196,59 @@ function Empty({ children }: { children: ReactNode }) {
   )
 }
 
+/**
+ * O arquivo que o teto cortou (F1.4).
+ *
+ * Regra que desenha o componente: diff cortado tem que DIZER que foi cortado,
+ * com o tamanho real e uma saída. Esconder mudança grande é o pior desfecho
+ * possível num painel cuja função é mostrar o que mudou — pior que travar,
+ * porque travar pelo menos é visível.
+ *
+ * Não oferece comentário, e diz por quê: comentário ancora em
+ * `path@side:linha`, e sem linha renderizada não há onde ancorar. Deixar o
+ * gesto disponível pra falhar calado seria fail-open.
+ */
+function DiffCortado({
+  corte,
+  cwd,
+  path,
+}: {
+  corte: CorteDoDiff
+  cwd: string
+  path: string
+}) {
+  const mb = corte.chars / 1e6
+  const porque =
+    corte.motivo === "linhas"
+      ? `${corte.linhas.toLocaleString("pt-BR")} linhas`
+      : `linhas muito longas (${mb.toFixed(1)} MB em ${corte.linhas.toLocaleString("pt-BR")} linhas)`
+  return (
+    <div className="flex flex-col gap-2 border-t border-border/60 bg-background/40 px-4 py-3">
+      <p className="text-[12px] text-muted-foreground">
+        Diff grande demais para desenhar aqui: {porque}. O painel travaria por
+        segundos, então ele não foi renderizado. A mudança está lá, inteira.
+      </p>
+      <div className="flex items-center gap-3">
+        <OpenInEditor projectPath={cwd} rel={path} alvo="o arquivo" />
+        <span className="text-[11px] text-muted-foreground/60">
+          Sem comentário neste arquivo: não há linha desenhada para ancorar.
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function FileBlock({
   file,
+  cwd,
   open,
   onToggle,
   commentApi,
   refFoco,
 }: {
   file: DiffFile
+  /** Raiz do projeto — só o arquivo CORTADO usa, pra oferecer a saída. */
+  cwd: string
   open: boolean
   onToggle: () => void
   commentApi: DiffCommentApi
@@ -247,6 +298,8 @@ function FileBlock({
           <p className="border-t border-border/60 bg-background/40 px-4 py-2 text-[12px] text-muted-foreground">
             Arquivo binário, sem diff de texto.
           </p>
+        ) : file.cortado ? (
+          <DiffCortado corte={file.cortado} cwd={cwd} path={file.path} />
         ) : (
           <div className="overflow-x-auto border-t border-border/60 bg-background/40 font-mono text-[12px] leading-[1.55]">
             {file.hunks.map((h, hi) => (

@@ -80,6 +80,27 @@ export function receiptBody(
 }
 
 /**
+ * A frase do turno onde ela aparece SOZINHA, abaixo do título: a bandeja e o
+ * Companion (R1/R2). Uma linha, sem o título embutido — quem chama já o mostrou.
+ *
+ * Mora coladinha no `receiptBody` de propósito. As duas parecem candidatas a
+ * virar uma função só, e NÃO são — a diferença é deliberada e some se as duas
+ * ficarem em arquivos distantes:
+ *
+ * - o `receiptBody` monta a linha ÚNICA e curta do sistema operacional, então
+ *   com recibo ele DERRUBA o "turno concluído" (o recibo já prova que concluiu,
+ *   e a linha é cara);
+ * - aqui a linha é só a frase, e o desfecho é o FALLBACK — quando não houve
+ *   recibo, ele é a única coisa que sobrou pra dizer.
+ *
+ * O que era duplicação de verdade: este par de palavras estava escrito nas duas
+ * superfícies separadamente, uma em TSX e outra no HTML servido ao celular.
+ */
+export function fraseDoTurno(receipt: string | null, ok: boolean): string {
+  return receipt ?? (ok ? "turno concluído" : "turno falhou")
+}
+
+/**
  * Pede o resumo ao helper, desistindo no prazo.
  *
  * O `race` não CANCELA a chamada perdedora — o custo dela já foi pago quando

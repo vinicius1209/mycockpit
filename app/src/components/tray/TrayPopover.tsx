@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { fraseDoTurno } from "@/lib/turnReceipt"
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
@@ -306,8 +307,7 @@ export function TrayPopover() {
                   {snapshot.lastTurn.title}
                 </p>
                 <p className="mt-0.5 line-clamp-2 max-w-[15rem] text-[11px] text-foreground/75">
-                  {snapshot.lastTurn.receipt ??
-                    (snapshot.lastTurn.ok ? "turno concluído" : "turno falhou")}
+                  {fraseDoTurno(snapshot.lastTurn.receipt, snapshot.lastTurn.ok)}
                 </p>
                 <p className="mt-1 text-[11px] text-muted-foreground/60">
                   {relativo(snapshot.lastTurn.at, now)}
