@@ -11,6 +11,7 @@
 // `dbSave` já grava, então a durabilidade vem de graça — e a decisão vira
 // HISTÓRICO em vez de estado que some.
 
+import { deFundo } from "@/lib/deFundo"
 import type { ChatItem, ChatState } from "@/store/chat"
 import { uid } from "@/store/chat"
 
@@ -36,11 +37,23 @@ export function pushPlanGateImpl(get: Get, set: Set, convId: string, text: strin
   // `store/interactions` importa `store/chat` de volta, e um import estático
   // fecharia o ciclo (foi assim que a suíte da missão quebrou com
   // "window is not defined" — o ciclo puxava o módulo errado no boot).
-  void import("@/lib/planGate").then((m) => {
-    m.enqueuePlanGate(convId, id, text)
-    // E o plano anterior desta conversa, se havia, foi SUPERADO por este.
-    m.supersedeOldGates(convId, id)
-  })
+  //
+  // `deFundo` porque um `void` puro deixa a promessa INOBSERVÁVEL: foi assim
+  // que o CI ficou vermelho intermitente (a promessa acordava depois do
+  // teardown do vitest). Continua não-bloqueante; agora é contável.
+  void deFundo(
+    import("@/lib/planGate")
+      .then((m) => {
+        m.enqueuePlanGate(convId, id, text)
+        // E o plano anterior desta conversa, se havia, foi SUPERADO por este.
+        m.supersedeOldGates(convId, id)
+      })
+      // Falhar aqui é o gate te esperando em SILÊNCIO — exatamente o bug que
+      // este código existe pra matar. Então grita, não engole.
+      .catch((e) => {
+        console.error("[planGate] não consegui enfileirar o gate:", e)
+      }),
+  )
 }
 
 /**
@@ -76,5 +89,11 @@ export function decidePlanGateImpl(
   void get().persist(convId)
   // Decidido = sai da fila. Sem isto o ponto de "precisa de você" ficaria aceso
   // depois de você já ter decidido.
-  void import("@/lib/planGate").then((m) => m.dequeuePlanGate(id))
+  void deFundo(
+    import("@/lib/planGate")
+      .then((m) => m.dequeuePlanGate(id))
+      .catch((e) => {
+        console.error("[planGate] não consegui tirar o gate da fila:", e)
+      }),
+  )
 }

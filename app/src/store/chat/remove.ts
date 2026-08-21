@@ -15,6 +15,7 @@
 // não criam ciclo de import em runtime.
 
 import { toast } from "sonner"
+import { deFundo } from "@/lib/deFundo"
 import type { ChatState } from "@/store/chat"
 import { projectOfConv } from "@/store/chat"
 import { wipeAttachments } from "@/lib/attachments"
@@ -127,9 +128,11 @@ export async function removeConversationImpl(
   await dbDelete(id)
   // E1 (S1.2): o dbDelete devolveu o card ligado pro backlog no banco
   // (conversation_id = NULL) — re-hidrata o store do board pra UI refletir.
-  void import("@/store/cards")
-    .then((m) => m.useCards.getState().load())
-    .catch(() => {})
+  void deFundo(
+    import("@/store/cards")
+      .then((m) => m.useCards.getState().load())
+      .catch(() => {}),
+  )
   void wipeAttachments(id) // apaga os blobs da conversa (privacidade imediata)
   const wasActive = before.activeId === id
   // projeto DONO da conversa removida (pode não ser o ativo)

@@ -2417,3 +2417,41 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   de uma linha, e turno sem projeto entraria mudo. Melhor fora que ambíguo.
 - **Verificado:** `tsc` 0, `vitest` 3019, 6 guardas (baseline APERTADA, não
   afrouxada), e2e 21/21.
+
+### ADR-063 — Trabalho de fundo que ninguém consegue esperar não é assíncrono, é invisível ✅
+- **Contexto (21/08/2026):** CI vermelho intermitente com
+  `EnvironmentTeardownError: Cannot load react ... after the environment was
+  torn down`. Duas runs falharam (M2 e R2) com runs VERDES no meio, enquanto a
+  suíte passava 3019/3019 no Mac.
+- **Não era o runner.** O convite era culpar máquina lenta — e a carga fantasma
+  já ensinou que "flake sob carga" nunca é explicação. Era
+  `void import("@/lib/planGate").then(...)` disparado de dentro de uma ação
+  SÍNCRONA do store: ninguém segurava a promessa, o teste acabava, o vitest
+  derrubava o ambiente, e a promessa acordava depois. No Mac o grafo de módulos
+  estava quente e ela ganhava a corrida; no runner, às vezes, não.
+- **O import dinâmico está CERTO onde está** — é o que quebra o ciclo
+  `store/chat → lib/planGate → store/interactions → store/chat`, o mesmo que já
+  custou um "window is not defined" na suíte de missão. O errado era o `void`
+  puro.
+- **`lib/deFundo.ts`:** a promessa passa a ser CONTÁVEL sem deixar de ser
+  não-bloqueante (um `Set.add`/`Set.delete` em produção, semântica idêntica), e
+  `src/test/setup.ts` drena no `afterEach` de TODOS os testes. A corrida deixa de
+  existir por construção, não por sorte de timing.
+- **Classe, não ocorrência.** Eram QUATRO sítios com a mesma forma (planGate ×2,
+  cards no `start` e no transplante, cards no `remove`). Só um tinha mordido; os
+  outros três eram a mesma bomba com pavio mais longo.
+- **O gate ganhou voz:** o `.then` do planGate não tinha `.catch`. Falhar ali é o
+  gate te esperando em silêncio — exatamente o bug que ADR-058 existe pra matar.
+  Agora grita.
+- **Erro meu no caminho, registrado:** a primeira versão do teste do laço
+  realimentava com `Promise.resolve().then(...)` infinito e travou o processo.
+  Não testava o guard — afogava o event loop em microtasks. O guard protege
+  contra laço; contra bomba de microtask não protege nada, e não é papel dele.
+- **Custo estrutural:** `store/chat.ts` estourou a catraca por 5 linhas. Saiu
+  `store/chat/ordem.ts` — as duas ações de ordenação eram gêmeas linha a linha,
+  diferindo só na função que calcula a lista nova, e o espelho duplo
+  (`conversationsByProject` + `conversations` do projeto ativo) agora é escrito
+  uma vez só. O compilador ainda apertou um tipo no caminho: `delta` é `1 | -1`,
+  não `number`.
+- **Verificado:** `tsc` 0, `vitest` 3027, 6 guardas (baseline APERTADA), e2e
+  21/21, `cargo check` 0.

@@ -23,7 +23,7 @@
     "lib/fleet/send.ts": 853,
     "lib/mission.ts": 546,
     "lib/sdd.ts": 510,
-    "store/chat.ts": 2448,
+    "store/chat.ts": 2425,
     "store/fusion.ts": 518,
     "store/interactions.ts": 640,
     "store/mission.ts": 1283

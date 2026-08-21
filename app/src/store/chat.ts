@@ -24,10 +24,8 @@ import {
   setConversationColor as dbSetColor,
   setConversationWorktree as dbSetWorktree,
   setConversationPreset as dbSetPreset,
-  persistConversationOrder as dbPersistConvOrder,
   type ConversationMeta,
 } from "@/lib/db/conversations"
-import { moveByDelta, reorderByIds } from "@/lib/reorder"
 import { unseenBoundary } from "@/lib/unseen"
 import { warnPresetDrift } from "@/lib/presets"
 import { perfSpan } from "@/lib/fleet/perf"
@@ -42,6 +40,11 @@ import {
   invalidateSuggestionsImpl,
   scheduleSuggestionsImpl,
 } from "@/store/chat/suggestions"
+import { deFundo } from "@/lib/deFundo"
+import {
+  moveConversationImpl,
+  reorderConversationsImpl,
+} from "@/store/chat/ordem"
 import { decidePlanGateImpl, pushPlanGateImpl } from "@/store/chat/planGate"
 
 type ChatItemBody =
@@ -1526,41 +1529,11 @@ export const useChat = create<ChatState>((set, get) => {
     // S1.2 — ordem manual das conversas de UM projeto. A lista exibida É a
     // persistida: no-op do helper (mesma referência) não grava nada; mudança
     // atualiza o mapa + o espelho do projeto ativo e renumera o sort_order.
-    reorderConversations: (projectId, dragId, overId) => {
-      const cur = get().conversationsByProject[projectId]
-      if (!cur) return
-      const next = reorderByIds(cur, dragId, overId)
-      if (next === cur) return
-      set((s) => ({
-        conversationsByProject: {
-          ...s.conversationsByProject,
-          [projectId]: next,
-        },
-        conversations: projectId === s.projectId ? next : s.conversations,
-      }))
-      void dbPersistConvOrder(
-        projectId,
-        next.map((c) => c.id),
-      )
-    },
+    reorderConversations: (projectId, dragId, overId) =>
+      reorderConversationsImpl(get, set, projectId, dragId, overId),
 
-    moveConversation: (projectId, id, delta) => {
-      const cur = get().conversationsByProject[projectId]
-      if (!cur) return
-      const next = moveByDelta(cur, id, delta)
-      if (next === cur) return
-      set((s) => ({
-        conversationsByProject: {
-          ...s.conversationsByProject,
-          [projectId]: next,
-        },
-        conversations: projectId === s.projectId ? next : s.conversations,
-      }))
-      void dbPersistConvOrder(
-        projectId,
-        next.map((c) => c.id),
-      )
-    },
+    moveConversation: (projectId, id, delta) =>
+      moveConversationImpl(get, set, projectId, id, delta),
 
     // S3.6 — seleção de preset no composer (conversa ainda destravada). O
     // digest fica null até o 1º run: só a persona INJETADA carimba versão.
@@ -1745,9 +1718,11 @@ export const useChat = create<ChatState>((set, get) => {
       // E1 (S1.4): o turno resolve o agent da conversa → espelha no card
       // ligado (assignee_agent). Import dinâmico: cards importa este módulo.
       // Best-effort: falha do espelho não pode travar o turno.
-      void import("@/store/cards")
-        .then((m) => m.useCards.getState().noteConversationAgent(convId, agent))
-        .catch(() => {})
+      void deFundo(
+        import("@/store/cards")
+          .then((m) => m.useCards.getState().noteConversationAgent(convId, agent))
+          .catch(() => {}),
+      )
       set((s) => {
         // conversa ainda não carregada do disco: NUNCA fabrica um estado vazio,
         // o persist (UPSERT de linha inteira) sobrescreveria o histórico.
@@ -1850,13 +1825,15 @@ export const useChat = create<ChatState>((set, get) => {
       // O espelho do card e o drift da persona só acompanham um target que
       // realmente abriu sessão. Antes disso a conversa continua sob o source.
       if (committingTransplant && beforeEvent) {
-        void import("@/store/cards")
-          .then((m) =>
-            m.useCards
-              .getState()
-              .noteConversationAgent(convId, pendingTarget),
-          )
-          .catch(() => {})
+        void deFundo(
+          import("@/store/cards")
+            .then((m) =>
+              m.useCards
+                .getState()
+                .noteConversationAgent(convId, pendingTarget),
+            )
+            .catch(() => {}),
+        )
         if (beforeEvent.presetId && beforeEvent.presetDigest) {
           const path =
             useApp

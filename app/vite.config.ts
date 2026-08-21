@@ -38,6 +38,11 @@ export default defineConfig({
       "../scripts/**/*.{test,spec}.?(c|m)[jt]s?(x)",
     ],
     exclude: ["**/node_modules/**", "**/dist/**", "**/e2e/**"],
+    // Drena o trabalho de fundo no fim de CADA teste (src/test/setup.ts). É o
+    // que impede uma promessa disparada com `void` de acordar depois do
+    // teardown do ambiente — o EnvironmentTeardownError que deixava o CI
+    // vermelho de forma intermitente enquanto a suíte passava no Mac.
+    setupFiles: ["./src/test/setup.ts"],
   },
   // Tauri expects a fixed dev port and doesn't need to clear the screen.
   clearScreen: false,
