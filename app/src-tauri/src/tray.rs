@@ -52,6 +52,22 @@ pub struct TrayLastRun {
     pub at: i64,
 }
 
+/// O último turno de CONVERSA. Vizinho do `TrayLastRun` e DIFERENTE dele: aquele
+/// é a última AUTOMAÇÃO (tabela `schedules`). Os dois na mesma tela precisam de
+/// copy que os separe — "última execução" com dois significados é ruído, não
+/// informação.
+///
+/// `receipt` ausente é normal: recibo só existe para turno de background com o
+/// helper respondendo a tempo (ADR-055). Quem desenha cai no desfecho.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TrayLastTurn {
+    pub title: String,
+    pub receipt: Option<String>,
+    pub ok: bool,
+    pub at: i64,
+}
+
 /// Sessão EXTERNA de CLI (hooks-plan H1): o tray só OBSERVA — linha
 /// informativa, sem ação (não somos donos da sessão).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -75,6 +91,10 @@ pub struct TraySnapshot {
     pub decision_project_id: Option<String>,
     pub next_schedule: Option<TraySchedule>,
     pub last_run: Option<TrayLastRun>,
+    /// Último turno de conversa (≠ `last_run`, que é automação). `default` p/
+    /// snapshots antigos.
+    #[serde(default)]
+    pub last_turn: Option<TrayLastTurn>,
     pub enabled_schedules: u32,
     /// Trabalhos DIFERIDOS do provider vivos (tool `Workflow`/background task,
     /// deferred-work-plan D1.4): morrem junto com o quit — o diálogo de saída

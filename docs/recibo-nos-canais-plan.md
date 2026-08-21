@@ -1,6 +1,6 @@
 # O recibo de turno nos outros canais (plano)
 
-> Status: **proposta, nada implementado** (21/08/2026). Fecha o que a ADR-055
+> Status: **R1 ✅ (21/08/2026)** · R2–R3 pendentes. Fecha o que a ADR-055
 > deixou explicitamente de fora: o recibo (M2 do estudo do Maestri) chega na
 > notificação nativa e no sino, mas não na tray nem no Companion.
 
@@ -45,7 +45,7 @@ nesses casos a linha cai no que já existe ("turno concluído").
 
 ## Fases
 
-### R1 — Tray: a última CONVERSA, ao lado da última automação
+### R1 ✅ — Tray: a última CONVERSA, ao lado da última automação
 - `TraySnapshot` ganha `last_turn: { title, receipt, ok, at } | null`, montado do
   feed do sino (o item `run_done`/`run_error` mais recente com `convId`).
 - **Nomear os dois de forma que não se confundam.** Hoje `lastRun` é
@@ -85,3 +85,24 @@ de ver os quatro em uso — antes disso é abstração no escuro.
 - Turno sem recibo aparece com o desfecho de sempre, sem buraco na tela.
 - Nenhuma tabela nova, nenhum evento novo.
 - `tsc` 0, suíte verde, 6 guardas.
+
+## Como ficou o R1 (21/08/2026)
+
+`lib/lastTurn.ts` — puro, 8 testes. A peneira que importa é o `convId`: o feed
+carrega desfecho de MISSÃO e notícia de ferramenta no mesmo balde, e um "último
+turno" mostrando missão concluída estaria dizendo outra coisa com a mesma frase.
+
+**Onde ele aparece foi a decisão melhor do que a planejada.** A empty state da
+tray dizia *"Inicie uma tarefa ou aguarde a próxima automação"* — instrução
+genérica, zero informação. Com nada em voo, o útil não é instrução: é **o que
+acabou de acontecer**. Então o recibo tomou esse lugar (título, frase, "há N
+min"), e a instrução volta só quando não há turno nenhum.
+
+Sem recibo, cai no desfecho ("turno concluído"/"turno falhou") — nunca linha
+vazia. E a última AUTOMAÇÃO segue sendo o pontinho da linha de agendamentos,
+com nome próprio: os dois nunca dividem a mesma frase.
+
+**Custo estrutural:** o `App.tsx` estava acima do teto e a montagem do snapshot
+saiu para `lib/traySnapshot.ts` — recorte fechado, porque tudo ali lê
+`getState()` e não depende de props, hooks nem árvore de render. O App ficou com
+o QUANDO (deps + relógio de minuto); o QUE a bandeja mostra mora no módulo.

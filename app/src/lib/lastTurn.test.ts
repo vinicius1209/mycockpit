@@ -1,0 +1,67 @@
+// Qual é "o último turno" para a tray e o Companion.
+//
+// A peneira do `convId` é o que impede a frase de mentir: o feed carrega
+// desfecho de MISSÃO e notícia de ferramenta no mesmo balde, e mostrar missão
+// concluída sob o rótulo "último turno" seria dizer outra coisa.
+
+import { describe, expect, it } from "vitest"
+import { ultimoTurno, type ItemDeFeed } from "./lastTurn"
+
+const turno = (ts: number, over: Partial<ItemDeFeed> = {}): ItemDeFeed => ({
+  kind: "run_done",
+  title: `turno ${ts}`,
+  convId: "c1",
+  ts,
+  ...over,
+})
+
+describe("ultimoTurno", () => {
+  it("feed vazio não inventa turno", () => {
+    expect(ultimoTurno([])).toBeNull()
+  })
+
+  it("pega o mais recente, não o último da lista", () => {
+    // A ordem do feed não é contrato; o carimbo é.
+    const f = [turno(300), turno(100), turno(200)]
+    expect(ultimoTurno(f)?.title).toBe("turno 300")
+  })
+
+  it("o recibo vem quando existe", () => {
+    const f = [turno(1, { body: "Extraiu o parser pra lib/" })]
+    expect(ultimoTurno(f)?.receipt).toBe("Extraiu o parser pra lib/")
+  })
+
+  it("sem recibo é `null`, não string vazia", () => {
+    // Turno de primeiro plano / helper desligado / prazo estourado. Quem mostra
+    // cai no desfecho — e `""` passaria por um `if` como se houvesse texto.
+    expect(ultimoTurno([turno(1)])?.receipt).toBeNull()
+    expect(ultimoTurno([turno(1, { body: "   " })])?.receipt).toBeNull()
+  })
+
+  it("erro é turno também, marcado como tal", () => {
+    const u = ultimoTurno([turno(1, { kind: "run_error", title: "falhou" })])
+    expect(u?.ok).toBe(false)
+  })
+
+  it("item SEM convId não é turno de conversa", () => {
+    // Desfecho de missão usa o mesmo `kind`; sem esta peneira a tray diria
+    // "último turno" mostrando uma missão.
+    expect(ultimoTurno([turno(9, { convId: undefined })])).toBeNull()
+  })
+
+  it("outros tipos do feed não entram", () => {
+    const f: ItemDeFeed[] = [
+      { kind: "gate", title: "g", convId: "c1", ts: 99 },
+      { kind: "approval", title: "a", convId: "c1", ts: 98 },
+      turno(1),
+    ]
+    expect(ultimoTurno(f)?.title).toBe("turno 1")
+  })
+
+  it("turno velho continua sendo o último (quem julga é quem lê)", () => {
+    // Cortar por idade esconderia o único dado disponível. A tray mostra o
+    // instante junto.
+    const ontem = Date.now() - 30 * 60 * 60 * 1000
+    expect(ultimoTurno([turno(ontem)])).not.toBeNull()
+  })
+})

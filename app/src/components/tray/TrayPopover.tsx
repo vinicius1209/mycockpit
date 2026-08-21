@@ -28,6 +28,7 @@ const EMPTY: TraySnapshot = {
   decisionProjectId: null,
   nextSchedule: null,
   lastRun: null,
+  lastTurn: null,
   enabledSchedules: 0,
   deferred: 0,
   external: [],
@@ -48,6 +49,17 @@ function elapsed(startedAt: number | null, now: number): string {
   if (min < 60) return `${min} min`
   const h = Math.floor(min / 60)
   return `${h}h ${min % 60}min`
+}
+
+/** "há N" de um instante no PASSADO. Irmão do `elapsed` (que mede um turno em
+ *  voo), separado porque a frase é outra: lá é duração, aqui é distância. */
+function relativo(at: number, now: number): string {
+  const min = Math.max(0, Math.floor((now - at) / 60_000))
+  if (min < 1) return "agora mesmo"
+  if (min < 60) return `há ${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `há ${h}h`
+  return `há ${Math.floor(h / 24)}d`
 }
 
 function ActivityCard({
@@ -283,9 +295,29 @@ export function TrayPopover() {
               <Circle className="size-3 text-st-idle" />
             </span>
             <p className="text-[12px] font-medium">Nenhuma tarefa em voo</p>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Inicie uma tarefa ou aguarde a próxima automação.
-            </p>
+            {/* Com nada rodando, o útil não é a instrução genérica que estava
+                aqui ("inicie uma tarefa…") — é O QUE ACABOU DE ACONTECER. O
+                recibo vem do feed do sino quando existe; sem ele, o desfecho.
+                Turno é CONVERSA: a última automação continua sendo o pontinho
+                da linha de agendamentos, com nome próprio. */}
+            {snapshot.lastTurn ? (
+              <>
+                <p className="mt-1.5 max-w-[15rem] truncate text-[11px] text-muted-foreground">
+                  {snapshot.lastTurn.title}
+                </p>
+                <p className="mt-0.5 line-clamp-2 max-w-[15rem] text-[11px] text-foreground/75">
+                  {snapshot.lastTurn.receipt ??
+                    (snapshot.lastTurn.ok ? "turno concluído" : "turno falhou")}
+                </p>
+                <p className="mt-1 text-[11px] text-muted-foreground/60">
+                  {relativo(snapshot.lastTurn.at, now)}
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Inicie uma tarefa ou aguarde a próxima automação.
+              </p>
+            )}
           </div>
         )}
       </section>

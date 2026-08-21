@@ -24,6 +24,8 @@ export interface TrayExternalSession {
   lastSeen: number
 }
 
+import type { UltimoTurno } from "@/lib/lastTurn"
+
 export interface TraySnapshot {
   running: number
   /** Total do que espera VOCÊ: disputas para escolher + pedidos bloqueantes
@@ -43,6 +45,8 @@ export interface TraySnapshot {
   decisionProjectId: string | null
   nextSchedule: { name: string; at: number; relative: string } | null
   lastRun: { name: string; status: string; at: number } | null
+  /** Último turno de CONVERSA — vizinho do `lastRun`, que é automação. */
+  lastTurn: UltimoTurno | null
   enabledSchedules: number
   /** Trabalhos DIFERIDOS do provider vivos (Workflow/background task): o
    *  diálogo nativo de saída avisa que eles morrem junto (D1.4). */
