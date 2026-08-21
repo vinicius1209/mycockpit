@@ -61,10 +61,28 @@ export interface AgentModeDef {
   planning?: boolean
 }
 
+/** Um modo que o motor anuncia e o app decidiu NÃO usar, com a prova. */
+export interface ModoRecusado {
+  /** Por que não adotamos. */
+  motivo: string
+  /** Versão do binário em que isso foi CONFERIDO. É a chave da validade: numa
+   *  versão diferente a decisão volta a ser pergunta, porque o motor pode ter
+   *  consertado. Sem isto o "não adotado" viraria dogma. */
+  validadoEm: string
+}
+
 export interface ModeCuration {
   /** Ids que o app MANDA. Vazio não é "o motor não tem modo": é "o app não usa
    *  os que ele tem" — e a `nota` explica. */
   defs: AgentModeDef[]
+  /**
+   * O TERCEIRO estado, que faltava: nem curado nem desconhecido — conhecido e
+   * recusado, com data e versão.
+   *
+   * Sem ele o aviso do sino só tinha dois tons ("some" ou "avisa pra sempre"),
+   * e uma revalidação já feita ficava sendo cobrada como descuido.
+   */
+  naoAdotado?: Record<string, ModoRecusado>
   nota?: string
 }
 
@@ -162,6 +180,27 @@ export const MODOS_CURADOS: Record<string, ModeCuration> = {
   // `--dangerously-skip-permissions`. Por isso nenhuma opção tem `probeId` — o
   // que o binário anuncia não confirma nem desmente o que o app faz.
   agy: {
+    naoAdotado: {
+      // Revalidado em 21/08/2026, com o binário na máquina. O `--mode plan`
+      // sozinho CRIOU o arquivo que o prompt pediu, e o próprio agy explicou:
+      // "como você utilizou o comando /plan mas solicitou execução imediata,
+      // os artefatos de planejamento foram gerados retroativamente". Ou seja,
+      // executa e documenta depois — segue consultivo, como na 1.1.2.
+      //
+      // No mesmo teste, a emulação do app (prefixo de prompt + --sandbox)
+      // NÃO escreveu: entregou o plano com seção de riscos. O caminho que
+      // parece mais fraco segura melhor que o modo nativo.
+      plan: {
+        motivo:
+          "consultivo: no teste o agy executou a escrita e só depois gerou o " +
+          "plano. A emulação por prompt do app segurou, o `--mode plan` não.",
+        validadoEm: "1.1.17",
+      },
+      "accept-edits": {
+        motivo: "o app já resolve edição pelo próprio gate; a flag não acrescenta.",
+        validadoEm: "1.1.17",
+      },
+    },
     defs: [
       {
         id: "plan",
@@ -230,6 +269,10 @@ export interface ModeDrift {
   novos: string[]
   /** A gente manda e o motor não anuncia mais (vai falhar no próximo turno). */
   sumidos: string[]
+  /** Recusado numa versão ANTERIOR à instalada: a decisão venceu e vira
+   *  pergunta de novo. Vazio quando a versão bate (decisão ainda vale) — é
+   *  isso que impede o aviso de virar cobrança eterna. */
+  revalidar: string[]
 }
 
 /**
@@ -246,22 +289,42 @@ export interface ModeDrift {
 export function driftDeModos(
   agent: string,
   descobertos: readonly string[] | null,
+  /** Versão instalada do binário (do snapshot da detecção). `null` = não sei,
+   *  e aí nenhuma decisão vence — acusar sem saber a versão seria alarme. */
+  versaoInstalada: string | null = null,
 ): ModeDrift {
-  if (!descobertos) return { novos: [], sumidos: [] }
+  if (!descobertos) return { novos: [], sumidos: [], revalidar: [] }
+  const recusados = MODOS_CURADOS[agent]?.naoAdotado ?? {}
   // Só o que o app REPASSA entra no drift: id emulado não existe no motor por
   // definição, e acusá-lo como "sumido" seria alarme por construção.
   const curados = (MODOS_CURADOS[agent]?.defs ?? [])
     .map((d) => d.probeId)
     .filter((id): id is string => !!id)
   return {
-    novos: descobertos.filter((id) => !curados.includes(id)),
+    // Recusado NÃO é novidade: já foi olhado. Só sai do silêncio se a versão
+    // mudou (abaixo).
+    novos: descobertos.filter((id) => !curados.includes(id) && !recusados[id]),
     sumidos: curados.filter((id) => !descobertos.includes(id)),
+    revalidar: descobertos.filter(
+      (id) =>
+        recusados[id] &&
+        versaoInstalada != null &&
+        recusados[id].validadoEm !== versaoInstalada,
+    ),
   }
 }
 
 /** Frase do aviso, ou `null` quando não há nada a dizer. */
 export function frasesDoDrift(agent: string, drift: ModeDrift): string[] {
   const out: string[] = []
+  if (drift.revalidar.length > 0) {
+    const r = MODOS_CURADOS[agent]?.naoAdotado ?? {}
+    for (const id of drift.revalidar) {
+      out.push(
+        `${agent}: \`${id}\` foi recusado na versão ${r[id]?.validadoEm} e o motor mudou de versão. Vale testar de novo.`,
+      )
+    }
+  }
   if (drift.sumidos.length > 0) {
     out.push(
       `${agent}: o app ainda manda ${drift.sumidos.join(", ")}, que o motor não anuncia mais.`,

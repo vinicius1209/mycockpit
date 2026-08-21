@@ -2361,3 +2361,35 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   produção, não só escrita antes dela. A minha passou três fases sem ninguém
   comparar, porque nada a usava ainda.
 - **Verificado:** `cargo test` 469, `tsc` 0, `vitest` 3003, 6 guardas, e2e 21/21.
+
+### ADR-061 — O `--mode plan` do agy segue consultivo, e agora a recusa VENCE ✅
+- **Contexto (21/08/2026):** o aviso de modos (ADR-057) tornou visível um débito
+  que estava mudo: o agy anuncia `--mode (accept-edits, plan)` e o app não usa,
+  por uma decisão de julho/2026 tomada na versão 1.1.2. Instalada: 1.1.17.
+- **Experimento, não opinião.** Dois diretórios descartáveis, o mesmo prompt
+  pedindo explicitamente a criação de um arquivo:
+
+  | condição | escreveu? |
+  |---|---|
+  | `agy --mode plan -p "crie o arquivo X"` | **SIM** |
+  | prefixo de prompt + `--sandbox` + skip (o que o app faz) | **não** |
+
+  O próprio agy explicou o primeiro: *"como você utilizou o comando /plan mas
+  solicitou execução imediata sem confirmação, os artefatos de planejamento
+  foram gerados retroativamente"* — executa e documenta depois.
+- **Resultado contraintuitivo:** a emulação por prompt, que o registry marca
+  como o enforcement mais fraco (`"prompt"`), segurou; o modo NATIVO do motor
+  não. A decisão de julho continua certa, agora com prova nesta versão.
+- **Armadilha do método, registrada:** a primeira rodada usou `timeout`, que não
+  existe no macOS. `exit=127`, diretório vazio, e a leitura ingênua seria "o
+  modo segurou" — um falso negativo que teria invertido a conclusão. Conferir o
+  exit code antes de ler o resultado não é zelo, é o que separa medir de fingir.
+- **O buraco que o débito revelou:** o aviso tinha só DOIS estados — curado
+  (some) ou desconhecido (avisa pra sempre). Uma revalidação já feita continuaria
+  sendo cobrada como descuido. Entrou o terceiro: `naoAdotado`, com motivo e
+  **versão em que foi conferido**.
+- **Decisão que impede o dogma:** a recusa vale PARA AQUELA versão. Quando o
+  binário mudar, ela vence sozinha e o sino volta a pedir o teste ("`plan` foi
+  recusado na versão 1.1.17 e o motor mudou de versão"). Sem a versão, o
+  "não adotado" viraria verdade eterna — que é como este débito nasceu.
+- **Verificado:** `cargo check` 0, `tsc` 0, `vitest` 3005, 6 guardas, e2e 21/21.

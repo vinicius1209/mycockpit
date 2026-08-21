@@ -97,23 +97,38 @@ describe("modosOferecidos — só o que o motor tem E a gente explica", () => {
 
 describe("driftDeModos", () => {
   it("claude 2.1.220: dois modos novos, nenhum sumido", () => {
-    expect(driftDeModos("claude-code", CLAUDE_REAL)).toEqual({
+    expect(driftDeModos("claude-code", CLAUDE_REAL, "2.1.220")).toEqual({
       novos: ["manual", "dontAsk"],
       sumidos: [],
+      revalidar: [],
     })
   })
 
   it("codex: em dia", () => {
-    expect(driftDeModos("codex", CODEX_REAL)).toEqual({ novos: [], sumidos: [] })
+    expect(driftDeModos("codex", CODEX_REAL)).toEqual({ novos: [], sumidos: [], revalidar: [] })
   })
 
-  it("agy: o que ele anuncia é novidade, e nada é acusado de sumido", () => {
-    // Nenhuma opção do agy tem `probeId`, então `sumidos` é vazio por
-    // construção — acusar id emulado de ter sumido seria alarme automático.
-    expect(driftDeModos("agy", AGY_REAL)).toEqual({
-      novos: ["accept-edits", "plan"],
+  it("agy: o que ele anuncia foi TESTADO e recusado, então não é novidade", () => {
+    // 21/08/2026, agy 1.1.17: o `--mode plan` sozinho ESCREVEU o arquivo, e o
+    // próprio agy disse que gerou o plano "retroativamente". A emulação do app
+    // (prefixo + --sandbox) não escreveu. Decisão registrada, não ignorância.
+    expect(driftDeModos("agy", AGY_REAL, "1.1.17")).toEqual({
+      novos: [],
       sumidos: [],
+      revalidar: [],
     })
+  })
+
+  it("versão NOVA do motor faz a recusa vencer e virar pergunta de novo", () => {
+    // O que impede a decisão de virar dogma: ela vale PARA AQUELA versão.
+    expect(driftDeModos("agy", AGY_REAL, "1.2.0").revalidar).toEqual([
+      "accept-edits",
+      "plan",
+    ])
+  })
+
+  it("sem saber a versão, nenhuma recusa vence (não inventa alarme)", () => {
+    expect(driftDeModos("agy", AGY_REAL, null).revalidar).toEqual([])
   })
 
   it("modo que SUMIU do motor é acusado", () => {
@@ -128,28 +143,29 @@ describe("driftDeModos", () => {
   it("sonda que NÃO leu (null) não acusa nada", () => {
     // "Não consegui perguntar" ≠ "sumiram todos". Acusar aqui encheria a tela
     // de alarme falso toda vez que o binário não estivesse no PATH.
-    expect(driftDeModos("codex", null)).toEqual({ novos: [], sumidos: [] })
+    expect(driftDeModos("codex", null)).toEqual({ novos: [], sumidos: [], revalidar: [] })
   })
 })
 
 describe("frasesDoDrift", () => {
   it("cala quando não há drift", () => {
-    expect(frasesDoDrift("codex", { novos: [], sumidos: [] })).toEqual([])
+    expect(frasesDoDrift("codex", { novos: [], sumidos: [], revalidar: [] })).toEqual([])
   })
 
   it("o SUMIDO vem primeiro (é o que quebra turno)", () => {
-    const f = frasesDoDrift("codex", { novos: ["x"], sumidos: ["y"] })
+    const f = frasesDoDrift("codex", { novos: ["x"], sumidos: ["y"], revalidar: [] })
     expect(f[0]).toContain("não anuncia mais")
   })
 
-  it("o novo do agy carrega a nota que explica o vazio", () => {
-    const f = frasesDoDrift("agy", { novos: ["plan"], sumidos: [] })
-    expect(f[0]).toContain("revalidar")
+  it("recusa vencida pede revalidação NOMEANDO a versão em que foi testada", () => {
+    const f = frasesDoDrift("agy", { novos: [], sumidos: [], revalidar: ["plan"] })
+    expect(f[0]).toContain("1.1.17")
+    expect(f[0]).toContain("testar de novo")
   })
 
   it("nomeia os ids, nunca só a contagem", () => {
     // "2 modos novos" manda você caçar quais; o nome resolve na hora.
-    const f = frasesDoDrift("claude-code", { novos: ["manual", "dontAsk"], sumidos: [] })
+    const f = frasesDoDrift("claude-code", { novos: ["manual", "dontAsk"], sumidos: [], revalidar: [] })
     expect(f[0]).toContain("manual")
     expect(f[0]).toContain("dontAsk")
   })

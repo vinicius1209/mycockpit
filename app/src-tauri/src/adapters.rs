@@ -2396,10 +2396,21 @@ impl AgentAdapter for AgyAdapter {
     fn build_command(&mut self, req: &RunRequest) -> Result<Command, String> {
         let mut cmd = Command::new("agy");
         // "Planejar primeiro" no agy é EMULAÇÃO POR PROMPT + --sandbox, sem
-        // garantia dura: o `--mode plan` do agy 1.1.2 é CONSULTIVO e FUROU no
-        // teste de 2026-07 (criou e executou arquivos no scratch com
-        // --dangerously-skip-permissions em headless) → NÃO usamos --mode plan.
-        // Melhor esforço documentado; o gate real de execução é o nosso, na UI.
+        // garantia dura: o `--mode plan` é CONSULTIVO e FUROU no teste de
+        // 2026-07 (agy 1.1.2) → NÃO usamos --mode plan.
+        //
+        // REVALIDADO em 21/08/2026 na 1.1.17, com os dois lados medidos:
+        //   `agy --mode plan -p "crie o arquivo X"`   → CRIOU o arquivo
+        //   prefixo de prompt + --sandbox (o daqui)   → não criou
+        // O próprio agy explicou: "como você utilizou o comando /plan mas
+        // solicitou execução imediata, os artefatos de planejamento foram
+        // gerados retroativamente" — executa e documenta depois. O caminho que
+        // PARECE mais fraco segura melhor que o modo nativo do motor.
+        //
+        // A recusa está registrada COM VERSÃO em lib/agentModes.ts
+        // (`naoAdotado`), então ela vence sozinha quando o binário mudar e o
+        // sino volta a pedir o teste. Melhor esforço documentado; o gate real
+        // de execução é o nosso, na UI.
         let mut prompt = if req.plan_first {
             format!(
                 "MODO PLANEJAMENTO: NÃO crie nem edite arquivos, NÃO execute comandos com efeito. Apenas apresente o plano de implementação passo a passo, com arquivos e riscos.\n\nTarefa: {}",

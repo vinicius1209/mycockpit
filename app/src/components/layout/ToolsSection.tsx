@@ -143,16 +143,24 @@ export function useToolsSection(): ToolsSectionState {
           const m = modosPorAgente[agent]
           // `known: false` vira `null`: "não consegui perguntar" não pode virar
           // "sumiram todos os modos" na cara do usuário.
+          //
+          // A VERSÃO instalada (do mesmo snapshot que a Frota lê) é o que faz
+          // uma recusa vencer: modo testado e rejeitado fica calado enquanto o
+          // binário for aquele, e volta a perguntar quando ele muda.
           return {
             agent,
             frases: frasesDoDrift(
               agent,
-              driftDeModos(agent, m?.known ? m.ids : null),
+              driftDeModos(
+                agent,
+                m?.known ? m.ids : null,
+                detected[agent]?.version ?? null,
+              ),
             ),
           }
         }),
       ),
-    [modosPorAgente],
+    [modosPorAgente, detected],
   )
 
   const limitedIds = Object.keys(limited)
