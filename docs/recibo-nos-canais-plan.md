@@ -1,0 +1,87 @@
+# O recibo de turno nos outros canais (plano)
+
+> Status: **proposta, nada implementado** (21/08/2026). Fecha o que a ADR-055
+> deixou explicitamente de fora: o recibo (M2 do estudo do Maestri) chega na
+> notificação nativa e no sino, mas não na tray nem no Companion.
+
+## Correção do diagnóstico anterior
+
+Eu disse que "nenhum dos dois consome o feed de fim de turno". Meio certo, e a
+metade errada muda o desenho:
+
+- **A tray JÁ TEM um `lastRun`** (`TraySnapshot.last_run`: `name`, `status`,
+  `at`). Só que ele é o último **AGENDAMENTO**, montado em `App.tsx:460` a
+  partir da tabela `schedules` — não o último turno de conversa. Ou seja: existe
+  um vizinho com nome quase igual, e isso é risco de leitura ("última execução"
+  significando duas coisas diferentes).
+- **O cliente do Companion é NOSSO** (`app/src-tauri/companion/index.html` +
+  `core.js`, servido ao celular). Então dá pra fechar as duas pontas — não é
+  caso de "adicionar campo e torcer para o cliente renderizar".
+
+## A boa notícia: o estado durável já existe
+
+O recibo não precisa de armazenamento novo. Ele já é gravado no feed do sino
+como `body` do item `run_done`/`run_error` (`store/notifications.ts`), que é
+persistido. Tray e Companion são SNAPSHOTS — e o feed é exatamente a fonte de
+verdade que um snapshot precisa.
+
+Isso derruba a parte cara do trabalho: não há evento novo, nem canal novo, nem
+sincronização. É leitura.
+
+## A restrição que desenha o resto
+
+Recibo só existe para turno de **background**, e só quando o helper responde
+dentro de 3s (ADR-055). Então os dois canais vão mostrar recibo em PARTE dos
+turnos, e precisam degradar sem parecer quebrados.
+
+Isso alinha melhor do que parece:
+
+- **Tray**: você olha a bandeja justamente quando a janela não está na frente —
+  que é quando o recibo é gerado.
+- **Companion**: você está no celular, longe da máquina. Idem.
+
+Onde NÃO alinha, e o plano assume: turno de primeiro plano não gera recibo, e
+nesses casos a linha cai no que já existe ("turno concluído").
+
+## Fases
+
+### R1 — Tray: a última CONVERSA, ao lado da última automação
+- `TraySnapshot` ganha `last_turn: { title, receipt, ok, at } | null`, montado do
+  feed do sino (o item `run_done`/`run_error` mais recente com `convId`).
+- **Nomear os dois de forma que não se confundam.** Hoje `lastRun` é
+  agendamento; a linha nova é conversa. Se a tray mostrar "última execução" duas
+  vezes com significados diferentes, o ganho vira ruído — a copy precisa dizer
+  *automação* × *conversa*, não "run".
+- Sem recibo, mostra o desfecho como hoje. Nunca linha vazia.
+
+### R2 — Companion: o turno recém-terminado
+- `CompanionSnapshot` ganha `lastTurns: CompanionTurn[]` (os N mais recentes,
+  com `receipt` opcional). Plural porque no celular você chega DEPOIS: um só
+  responde "e agora?", vários respondem "o que aconteceu enquanto eu não estava".
+- Render em `companion/core.js`, na mesma gramática das seções que já existem.
+- **Reusar o corte de `CompanionDelivery`**: ele já resolve projeto+agente+custo
+  por entrega; a seção nova é irmã, não uma segunda invenção.
+
+### R3 — Uma frase, um lugar (só se R1/R2 provarem que vale)
+Hoje a frase do desfecho é montada em `receiptBody` (nativa) e de novo no sino,
+e R1/R2 seriam a terceira e a quarta. Se as quatro divergirem em copy, o mesmo
+turno passa a ser descrito de quatro jeitos. Extrair um formatador puro DEPOIS
+de ver os quatro em uso — antes disso é abstração no escuro.
+
+## O que NÃO fazer
+
+- **Não** gerar recibo para turno de primeiro plano só para encher os canais: a
+  chamada custa, e a ADR-055 já decidiu isso com motivo.
+- **Não** criar um quinto canal. A ADR-013 fixou 3 canais e nenhum silencioso;
+  isto é enriquecer os que existem, não somar mais um.
+- **Não** deixar a tray com duas linhas chamadas "última execução".
+- **Não** persistir nada novo. Se a resposta parecer "precisa de tabela", o
+  desenho está errado — o feed já é a memória.
+
+## Definition of done
+
+- Tray mostra o último turno da CONVERSA, distinguível da última automação.
+- Companion mostra os turnos recentes, com recibo quando existe.
+- Turno sem recibo aparece com o desfecho de sempre, sem buraco na tela.
+- Nenhuma tabela nova, nenhum evento novo.
+- `tsc` 0, suíte verde, 6 guardas.

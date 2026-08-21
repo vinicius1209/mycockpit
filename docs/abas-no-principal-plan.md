@@ -110,12 +110,49 @@ nunca subir o teto.
 - Ficam na coluna: barra sticky (branch, ±totais, abrir no editor, refresh),
   lista de arquivos, tira de órfãos e o `ShipBar` (Commit/Abrir PR).
 
-### F1.4 — Teto de render (condicional, não bloqueia)
+### F1.4 — Teto de render (planejado em 21/08/2026)
+
 O Orca tem limite explícito (`MAX_RENDERED_DIFF_LINES_PER_SIDE = 120_000`,
 `MAX_RENDERED_DIFF_COMBINED_CHARACTERS = 6_000_000`); nós **não temos nenhum**.
-Hoje o acordeão esconde o problema porque quase ninguém expande arquivo gigante
-numa coluna estreita. Uma superfície larga convida exatamente isso. Entra se o
-uso real mostrar travada — com número medido, não por precaução.
+Antes da aba, o acordeão numa coluna estreita escondia o problema — ninguém
+expande arquivo gigante ali. A superfície larga convida exatamente isso.
+
+**Escala, medida:** um patch de 120k linhas dá **~8 MB de texto**; 50k dá 3,4 MB;
+10k dá 0,67 MB. Os números do Orca caem justo nessa faixa, o que sugere que eles
+mediram algo parecido — mas número de outra casa não é medida nossa.
+
+#### A ordem importa: MEDIR antes de cortar
+
+O erro fácil aqui é copiar `120_000` do Orca e chamar de decisão. Nosso pipeline
+é outro (`parsePatch` em `lib/git.ts` + render por linha em React, com o `memo`
+por item), então o ponto onde ele dobra é NOSSO, não deles.
+
+1. **Onde dobra.** Medir três coisas separadas com patches sintéticos crescentes
+   (1k → 10k → 50k → 120k linhas): tempo de `parsePatch`, tempo até a primeira
+   pintura, e responsividade do scroll. São gargalos diferentes e o teto tem que
+   mirar o primeiro que chega.
+2. **Qual eixo corta.** Linhas, caracteres, ou os dois (o Orca usa os dois: um
+   arquivo de 500 linhas de 20 mil colunas passa no teste de linha e mata o
+   render). A medida decide.
+3. **Só então o número.**
+
+#### O que o teto NÃO pode fazer
+
+- **Sumir com o arquivo.** Diff cortado tem que DIZER que foi cortado, com o
+  tamanho real e um caminho de saída (abrir no editor — o gesto já existe,
+  ADR-054). Esconder mudança grande é o pior desfecho possível num painel cuja
+  função é mostrar o que mudou.
+- **Cortar no meio de um hunk sem marcar.** O corte é por arquivo, e o arquivo
+  cortado aparece na lista com o motivo.
+- **Valer para o COMENTÁRIO.** Comentário ancora em `path@side:linha`; se a
+  linha não foi renderizada, não há onde ancorar. O arquivo cortado não oferece
+  comentário — e diz por quê, em vez de deixar o gesto falhar calado.
+
+#### Onde o teto mora
+
+No pipeline PURO (`lib/git.ts`), não no componente: assim o mesmo corte vale
+para a coluna, para a aba e para qualquer superfície futura, e dá pra testar
+sem montar React. O componente só desenha o aviso.
 
 ## O que NÃO fazer
 
