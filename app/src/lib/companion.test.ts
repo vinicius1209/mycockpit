@@ -17,10 +17,10 @@ import { useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 import {
   buildCompanionSnapshot,
-  handleCompanionAction,
   startCompanionBridge,
   stopCompanionBridge,
 } from "./companion"
+import { handleCompanionAction } from "./companionAction"
 
 // Ponte do Tauri mocada (o módulo empurra via invoke e escuta via listen).
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => {}) }))

@@ -13,7 +13,7 @@ import { useChat, type ConvState } from "@/store/chat"
 import { useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 import { usePresets } from "@/store/presets"
-import { handleCompanionAction } from "./companion"
+import { handleCompanionAction } from "./companionAction"
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => {}) }))
 vi.mock("@tauri-apps/api/event", () => ({

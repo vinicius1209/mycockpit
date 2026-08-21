@@ -15,7 +15,8 @@ import { useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 import { usePresets } from "@/store/presets"
 import type { AgentDef } from "@/lib/agentDefs"
-import { buildCompanionSnapshot, handleCompanionAction } from "./companion"
+import { buildCompanionSnapshot } from "./companion"
+import { handleCompanionAction } from "./companionAction"
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => {}) }))
 vi.mock("@tauri-apps/api/event", () => ({

@@ -1,6 +1,6 @@
 # O recibo de turno nos outros canais (plano)
 
-> Status: **R1 ✅ (21/08/2026)** · R2–R3 pendentes. Fecha o que a ADR-055
+> Status: **R1 ✅ · R2 ✅ (21/08/2026)** · R3 pendente. Fecha o que a ADR-055
 > deixou explicitamente de fora: o recibo (M2 do estudo do Maestri) chega na
 > notificação nativa e no sino, mas não na tray nem no Companion.
 
@@ -54,7 +54,7 @@ nesses casos a linha cai no que já existe ("turno concluído").
   *automação* × *conversa*, não "run".
 - Sem recibo, mostra o desfecho como hoje. Nunca linha vazia.
 
-### R2 — Companion: o turno recém-terminado
+### R2 ✅ — Companion: o turno recém-terminado
 - `CompanionSnapshot` ganha `lastTurns: CompanionTurn[]` (os N mais recentes,
   com `receipt` opcional). Plural porque no celular você chega DEPOIS: um só
   responde "e agora?", vários respondem "o que aconteceu enquanto eu não estava".
@@ -106,3 +106,37 @@ com nome próprio: os dois nunca dividem a mesma frase.
 saiu para `lib/traySnapshot.ts` — recorte fechado, porque tudo ali lê
 `getState()` e não depende de props, hooks nem árvore de render. O App ficou com
 o QUANDO (deps + relógio de minuto); o QUE a bandeja mostra mora no módulo.
+
+## Como ficou o R2 (21/08/2026)
+
+`turnosRecentes(feed, max = 5)` na mesma `lib/lastTurn.ts` do R1, e a peneira
+ganhou um segundo furo: além do `convId` (que já separava turno de desfecho de
+MISSÃO), agora exige `projectId`. O motivo é do celular, não do desktop — lá o
+aparelho não tem como resolver de que projeto veio a linha, e "Revisar o parser"
+sem projeto ao lado é uma frase que não ajuda ninguém que está longe da máquina.
+Turno sem projeto resolvível não entra em vez de entrar mudo.
+
+Cinco, não um: no celular você chega DEPOIS. Um só responde "e agora?"; a lista
+responde "o que aconteceu enquanto eu não estava" — que é a pergunta que se faz
+ao pegar o telefone.
+
+O cliente (`companion/index.html`) segue a gramática de `renderDeliveries()`
+inteira, inclusive o dedupe por assinatura: sem recibo, cai em "turno
+concluído"/"turno falhou". A seção entrou ENTRE "Em execução" e "Entregas
+recentes", e a ordem de render passou a espelhar o DOM — precisa de você → agora
+→ acabou → entregue. O mock de desenvolvimento ganhou os três casos (com recibo,
+sem recibo, falhou) pra que o degradado seja visível sem precisar de máquina.
+
+**Custo estrutural, e ele tinha um recado.** `lib/companion.ts` (1288 linhas,
+788 acima do teto) estourou a baseline com ~26 linhas. A fronteira do corte não
+foi escolhida: o arquivo já a tinha desenhado com os próprios banners de seção.
+Saiu `lib/companionAction.ts` — a metade de ESCRITA (o que o celular manda
+fazer, e o veredito fail-closed de cada ação); ficou em `companion.ts` a metade
+de LEITURA (montar o snapshot). Que a divisão tenha caído exatamente em
+leitura × escrita, sem ninguém planejar, é o sinal de que o arquivo já eram dois.
+
+O ping de "conversa mudou" foi o único fio atravessado: as duas metades pingam,
+e o throttle é estado de módulo (`Map` de timers). Deixá-lo em qualquer lado
+fecharia um ciclo de import — a mesma armadilha que já custou um
+`window is not defined` em teste aqui. Virou `lib/companionPing.ts`, sem dono
+entre os dois.

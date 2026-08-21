@@ -5,7 +5,7 @@
 // concluída sob o rótulo "último turno" seria dizer outra coisa.
 
 import { describe, expect, it } from "vitest"
-import { ultimoTurno, type ItemDeFeed } from "./lastTurn"
+import { turnosRecentes, ultimoTurno, type ItemDeFeed } from "./lastTurn"
 
 const turno = (ts: number, over: Partial<ItemDeFeed> = {}): ItemDeFeed => ({
   kind: "run_done",
@@ -63,5 +63,35 @@ describe("ultimoTurno", () => {
     // instante junto.
     const ontem = Date.now() - 30 * 60 * 60 * 1000
     expect(ultimoTurno([turno(ontem)])).not.toBeNull()
+  })
+})
+
+describe("turnosRecentes", () => {
+  it("do mais novo pro mais velho", () => {
+    const f = [turno(100, { projectId: "p" }), turno(300, { projectId: "p" }), turno(200, { projectId: "p" })]
+    expect(turnosRecentes(f).map((t) => t.at)).toEqual([300, 200, 100])
+  })
+
+  it("corta no teto — o celular é resumo, não histórico", () => {
+    const f = Array.from({ length: 20 }, (_, i) => turno(i, { projectId: "p" }))
+    expect(turnosRecentes(f, 3)).toHaveLength(3)
+  })
+
+  it("exige projectId: o celular não resolve projeto sozinho", () => {
+    // Sem as stores do lado de lá, um turno sem endereço vira card mudo.
+    expect(turnosRecentes([turno(1)])).toEqual([])
+  })
+
+  it("mesma peneira do singular: sem convId não é turno de conversa", () => {
+    expect(turnosRecentes([turno(1, { projectId: "p", convId: undefined })])).toEqual([])
+  })
+
+  it("erro entra na lista, marcado", () => {
+    const t = turnosRecentes([turno(1, { projectId: "p", kind: "run_error" })])
+    expect(t[0].ok).toBe(false)
+  })
+
+  it("feed vazio devolve lista vazia (a seção mostra o próprio vazio)", () => {
+    expect(turnosRecentes([])).toEqual([])
   })
 })

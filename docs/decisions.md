@@ -2393,3 +2393,27 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   recusado na versão 1.1.17 e o motor mudou de versão"). Sem a versão, o
   "não adotado" viraria verdade eterna — que é como este débito nasceu.
 - **Verificado:** `cargo check` 0, `tsc` 0, `vitest` 3005, 6 guardas, e2e 21/21.
+
+### ADR-062 — O Companion já eram dois arquivos; o recibo só mostrou onde ✅
+- **Contexto (21/08/2026):** o R2 (turnos recentes no celular) precisava de ~26
+  linhas em `lib/companion.ts`, que estava com 1288 — 788 acima do teto de 500
+  e congelado na baseline. A catraca barrou, como devia.
+- **A fronteira não foi escolhida, foi lida.** O arquivo já tinha banners de
+  seção próprios, e o corte caiu inteiro em um deles: `companionAction.ts` levou
+  o que o celular MANDA FAZER (lançar tarefa, responder interação, parar turno)
+  + o veredito fail-closed de cada ação; `companion.ts` ficou com o que o
+  celular LÊ (montar o snapshot). Nenhum símbolo atravessou o corte — sinal de
+  que a divisão já existia e só não tinha nome.
+- **Por que isso importa além do tamanho:** a metade de escrita é onde o §9
+  precisa valer (ação vinda de fora da máquina não pode ser aceita em silêncio
+  nem respondida com otimismo). Ela agora é um arquivo que se lê inteiro.
+- **O único fio atravessado virou módulo sem dono.** As duas metades pingam
+  "conversa mudou", e o throttle é estado de módulo (`Map` de timers). Colocá-lo
+  em qualquer um dos dois fecharia um ciclo de import — a mesma armadilha que já
+  custou um `window is not defined` em teste neste repo. Saiu `companionPing.ts`,
+  que ninguém importa de volta.
+- **A peneira do R2 ganhou um segundo furo:** além do `convId` do R1, exige
+  `projectId`. Não é rigor gratuito — no celular não há como resolver o projeto
+  de uma linha, e turno sem projeto entraria mudo. Melhor fora que ambíguo.
+- **Verificado:** `tsc` 0, `vitest` 3019, 6 guardas (baseline APERTADA, não
+  afrouxada), e2e 21/21.

@@ -26,7 +26,15 @@ export interface ItemDeFeed {
   title: string
   body?: string
   convId?: string
+  projectId?: string
   ts: number
+}
+
+/** O mesmo turno, com o endereço que um canal REMOTO precisa (o celular não
+ *  tem as stores pra resolver projeto a partir do id sozinho). */
+export interface TurnoRecente extends UltimoTurno {
+  convId: string
+  projectId: string
 }
 
 /**
@@ -40,6 +48,40 @@ export interface ItemDeFeed {
  * tray mostra o instante junto, então quem lê decide se ainda importa. Inventar
  * um corte ("só das últimas 2h") esconderia o único dado que havia.
  */
+/**
+ * Os N turnos de conversa mais recentes, do mais novo pro mais velho.
+ *
+ * PLURAL de propósito, e a diferença com o `ultimoTurno` é de pergunta: na
+ * bandeja você olha de relance e quer "e agora?"; no celular você chega DEPOIS
+ * e quer "o que aconteceu enquanto eu não estava". Um item só responderia a
+ * primeira pergunta nos dois lugares.
+ *
+ * `max` existe pra isto não virar log: o celular é resumo, não histórico — quem
+ * quer o histórico abre o app.
+ */
+export function turnosRecentes(
+  feed: readonly ItemDeFeed[],
+  max = 5,
+): TurnoRecente[] {
+  return feed
+    .filter(
+      (it) =>
+        (it.kind === "run_done" || it.kind === "run_error") &&
+        !!it.convId &&
+        !!it.projectId,
+    )
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, max)
+    .map((it) => ({
+      convId: it.convId!,
+      projectId: it.projectId!,
+      title: it.title,
+      receipt: it.body?.trim() || null,
+      ok: it.kind === "run_done",
+      at: it.ts,
+    }))
+}
+
 export function ultimoTurno(feed: readonly ItemDeFeed[]): UltimoTurno | null {
   let melhor: ItemDeFeed | null = null
   for (const it of feed) {
