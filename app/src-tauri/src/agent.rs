@@ -840,14 +840,14 @@ fn confina_se_prometido(
         Err(crate::sandbox::SemPerfil::ModoEscreve) => return (cmd, None),
         Err(crate::sandbox::SemPerfil::NadaParaProteger) => {
             let _ = on_event.send(AgentEvent::Notice {
-                message: "Somente-leitura sem confinamento do sistema: não consegui montar o perfil para este diretório. O motor segue segurando sozinho.".to_string(),
+                message: "Somente-leitura sem confinamento do sistema: não montei o perfil para este diretório. O motor segue segurando sozinho.".to_string(),
             });
             return (cmd, None);
         }
     };
     if !crate::sandbox::disponivel() {
         let _ = on_event.send(AgentEvent::Notice {
-            message: "Somente-leitura sem confinamento do sistema: `sandbox-exec` não está disponível aqui. O motor segue segurando sozinho.".to_string(),
+            message: "Somente-leitura sem confinamento do sistema: o sandbox-exec não existe nesta máquina. O motor segue segurando sozinho.".to_string(),
         });
         return (cmd, None);
     }

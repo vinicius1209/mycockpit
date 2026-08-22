@@ -268,3 +268,40 @@ e afirmar o que não se sabe seria o mesmo pecado do rótulo sem dente.
 
 E o caminho feliz não vira ruído: turno confinado que PRODUZIU saída é
 `Irrelevante` — sem isso a funcionalidade viraria aviso em todo turno de leitura.
+
+## O S3 testado com agentes REAIS (22/08/2026)
+
+Não dava pra clicar no app, mas dava pra rodar o caminho de produção inteiro.
+Projeto temporário com git, perfil montado exatamente como o `agent.rs` monta,
+e a tarefa mais hostil possível: **mandar o agente EDITAR um arquivo**.
+
+| motor | arquivo | stdout | stderr | veredito |
+|---|---|---|---|---|
+| claude (em `acceptEdits`, modo de ESCRITA) | **intacto** | narrou a falha | **vazio** | Irrelevante |
+| agy, tarefa de escrita | **intacto** | **vazio** | sem assinatura | **SilencioSuspeito** |
+| agy, tarefa de leitura | — | produziu | — | Irrelevante |
+
+**O sandbox segurou até um modo de ESCRITA.** Pedi `--permission-mode acceptEdits`
+ao claude e mandei editar; ele não conseguiu, e escreveu na resposta: *"assim que
+a escrita for liberada, aplico na hora"*. É a prova mais direta de que a garantia
+saiu do motor e foi pro sistema.
+
+**Duas realidades que os testes agora travam:**
+
+- **O claude NARRA em vez de vazar stderr.** O veredito certo ali é
+  `Irrelevante`: o usuário já foi informado pelo próprio agente, e uma segunda
+  frase nossa seria eco. Isso é MEDIDA, não omissão — o teste existe pra impedir
+  que alguém "melhore" o classificador fazendo `Negou` disparar aqui.
+- **O agy só emudece.** Mesma tarefa, arquivo intacto, stdout vazio, stderr sem
+  assinatura, `exit 0`. E na tarefa de LEITURA, sob o mesmo sandbox, ele produz
+  normalmente. Ou seja: o emudecimento É o sintoma, e é o único que ele dá — que
+  é exatamente por que o `SilencioSuspeito` precisou existir.
+
+### E olhar a tela pegou um defeito que teste nenhum pegaria
+
+Renderizei as quatro frases na marcação real do `notice`. Os backticks de
+`` `sandbox-exec` `` apareciam LITERAIS: aquela linha renderiza `{message}` como
+texto puro, sem markdown. Eu tinha escrito markdown numa superfície que não
+interpreta. As frases também estavam longas demais para uma linha que, pelo §1,
+deve recuar — foram encurtadas, e a mais importante (`Negou`) passou a caber em
+uma linha só.

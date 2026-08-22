@@ -246,13 +246,13 @@ pub fn frase(v: Veredito) -> Option<&'static str> {
     match v {
         Veredito::Irrelevante => None,
         Veredito::RunnerFalhou => Some(
-            "O confinamento do sistema não pôde ser aplicado neste turno, e o turno não rodou protegido. Isso é falha do Frota, não do agente.",
+            "Não consegui aplicar o confinamento neste turno: ele rodou sem proteção. Falha do Frota, não do agente.",
         ),
         Veredito::Negou => Some(
-            "O agente tentou escrever no projeto e o sistema barrou, porque este turno está em somente-leitura.",
+            "O agente tentou escrever e o sistema barrou: este turno está em somente-leitura.",
         ),
         Veredito::SilencioSuspeito => Some(
-            "O turno terminou sem erro e sem produzir nada, rodando confinado. Isso costuma ser o motor engolindo um bloqueio: desconfie do resultado.",
+            "Terminou sem erro e sem produzir nada, rodando confinado. Desconfie: costuma ser o motor engolindo um bloqueio.",
         ),
     }
 }
@@ -566,6 +566,31 @@ mod tests {
             assert!(frase(v).is_some(), "{v:?} sem frase");
         }
         assert!(frase(Veredito::Irrelevante).is_none());
+    }
+
+    #[test]
+    fn o_claude_barrado_NARRA_em_vez_de_vazar_stderr() {
+        // MEDIDO em 22/08/2026 com turno real: mandei o claude editar um arquivo
+        // (em `acceptEdits`, modo de ESCRITA) sob o perfil de produção. O
+        // arquivo não mudou, o stderr veio VAZIO, e ele mesmo explicou na
+        // resposta ("assim que a escrita for liberada, aplico na hora").
+        //
+        // Então o veredito CERTO aqui é `Irrelevante`: o usuário já foi
+        // informado pelo próprio agente, e uma segunda frase nossa seria eco.
+        // Este teste existe pra impedir que alguém "melhore" o classificador
+        // fazendo `Negou` disparar aqui — não é omissão, é medida.
+        assert_eq!(classifica(true, "", true, true), Veredito::Irrelevante);
+    }
+
+    #[test]
+    fn o_agy_barrado_NAO_narra_e_NAO_vaza__so_emudece() {
+        // MEDIDO no mesmo dia, mesmo perfil, mesma tarefa de escrita:
+        //   arquivo intacto · stdout VAZIO · stderr sem assinatura · exit 0
+        // E na tarefa de LEITURA, sob o mesmo sandbox, ele produz normalmente
+        // (3 bytes pra "diga apenas OK"). Ou seja: o emudecimento é o sintoma do
+        // bloqueio, e é o ÚNICO sintoma que ele dá.
+        assert_eq!(classifica(true, "", true, false), Veredito::SilencioSuspeito);
+        assert_eq!(classifica(true, "", true, true), Veredito::Irrelevante);
     }
 
     #[test]
