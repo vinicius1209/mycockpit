@@ -95,7 +95,7 @@ denylist protege **o seu projeto**, não protege `~/Documents`. É menos do que
 - **O `.git` merece linha própria:** "Só lê" que deixa reescrever histórico não
   é só lê.
 
-### S2 — Envolver o spawn, e SÓ nos modos que prometem não escrever
+### S2 ✅ — Envolver o spawn, e SÓ nos modos que prometem não escrever (22/08/2026)
 - O `adapters.rs` passa a envelopar o comando em `sandbox-exec -f <perfil>`
   quando o modo é `leitura`/`plan`/`fusionRo`. Nos modos que escrevem, nada muda
   — sandbox ali seria teatro.
@@ -182,3 +182,50 @@ a prova (`#[ignore]`, padrão do `modes.rs`) garante que o `sandbox-exec` aceita
 o texto E que ele bloqueia de fato. Perfil sintaticamente lindo que não compila
 protege exatamente nada — e falharia ABERTO. Verificado: escrita recusada com o
 conteúdo intacto, leitura funcionando.
+
+## Como ficou o S2 (22/08/2026)
+
+**A costura é UMA.** Os três adapters têm `Command::new` próprio, mas todos
+passam por `agent.rs:574` (e o retry em 641). Envolver ali, e não em três
+lugares, é o que impede um motor novo nascer sem confinamento por esquecimento.
+
+E o ponto exato importa: o `build_command` devolve o comando **antes** do
+`run_once` configurar stdio. Por isso o `envelopa` só precisa preservar
+programa, argumentos, cwd e ambiente — não tem como perder o que ainda não foi
+posto. Num ponto mais tarde, o envelope teria que reconstruir pipes.
+
+### A decisão que eu revi antes de escrever
+
+Eu tinha dito que recusaria o turno quando o `sandbox-exec` faltasse. **Estava
+errado, e o motivo é simples:** hoje "Só lê" já roda sem sandbox nenhum. Passar
+a bloquear seria uma REGRESSÃO — tiraria do usuário algo que ele tem hoje, numa
+máquina onde nada mudou.
+
+O §9 proíbe seguir **em silêncio** com menos garantia. Seguir **avisando** cumpre
+a regra sem quebrar ninguém. Então cada caminho de falha emite um `Notice` com o
+motivo, e o selo do S4 é onde isso vira tela permanente em vez de aviso de turno.
+
+Três caminhos, três frases distintas (o motivo viaja, não só o fato):
+perfil não montável para este diretório · `sandbox-exec` indisponível ·
+perfil não gravável.
+
+### Detalhes que a escrita revelou
+
+- **`extra_dirs` entram no perfil.** O usuário pediu "Só lê", não "só lê o
+  projeto principal". Proteger a raiz e deixar a pasta irmã liberada por
+  `--add-dir` aberta seria um buraco exatamente onde ele concedeu acesso de
+  propósito.
+- **A remoção de env é copiada como remoção.** `get_envs()` devolve `None` para
+  variável que o adapter APAGOU. Copiar só as presentes desfaria a decisão dele
+  pelas costas.
+- **`LimpaPerfil` é guarda RAII, não `remove_file` no fim.** O run pode sair por
+  `?` no meio, que é justamente onde a limpeza no fim não roda. Perfil é arquivo
+  por turno: sem isso, `/tmp` cresce em silêncio.
+
+### A prova de ponta
+
+`prova_real_o_agente_nao_escreve_no_projeto` usa o caminho de produção inteiro —
+`Alvo` montado como o `agent.rs` monta, `perfil_macos`, `envelopa` — contra um
+processo que tenta escrever. Resultado: bloqueio, arquivo intacto, e o stderr
+capturado (`Operation not permitted`) fica impresso no teste **como insumo do
+S3**, que é quem vai traduzir isso em frase pro usuário.

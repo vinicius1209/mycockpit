@@ -572,6 +572,8 @@ pub async fn run_agent(
 
     let resume_was = req.resume.is_some();
     let cmd = adapter.build_command(&req)?;
+    let (cmd, perfil_sb) = confina_se_prometido(cmd, &req, &run_id, &on_event);
+    let _limpa = perfil_sb.map(LimpaPerfil);
     let mut outcome = match run_once(
         cmd,
         resume_was,
@@ -639,6 +641,10 @@ pub async fn run_agent(
         req2.prompt = restart_prompt(req2.memory_fallback.as_deref(), &req2.prompt);
         let mut adapter2 = adapters::resolve(&agent)?;
         let cmd2 = adapter2.build_command(&req2)?;
+        let (cmd2, perfil_sb2) = confina_se_prometido(cmd2, &req2, &run_id, &on_event);
+        // O perfil do run reiniciado tem vida própria: o `?` abaixo pode sair
+        // antes da limpeza do fim, e um .sb esquecido em /tmp por turno somaria.
+        let _limpa2 = perfil_sb2.map(LimpaPerfil);
         outcome = match run_once(
             cmd2,
             false,
@@ -776,6 +782,67 @@ fn emit_mcp_announced(app: &tauri::AppHandle, conv_id: &str, announced: &Option<
 /// com fallback de memória (recap + ponteiro pro transcript, montado pelo front),
 /// ele vem ANTES do prompt original, separado por `---`; sem fallback, o prompt
 /// original segue intacto (comportamento antigo). Puro de propósito (testável).
+/// Apaga o perfil do sandbox quando o run acaba — inclusive quando ele acaba por
+/// `?` no meio do caminho, que é justamente onde um `remove_file` no fim não
+/// rodaria. Perfil é arquivo por turno; sem isto, /tmp cresce em silêncio.
+struct LimpaPerfil(std::path::PathBuf);
+impl Drop for LimpaPerfil {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Envolve o comando no sandbox quando o modo PROMETE que o agente não escreve.
+///
+/// Devolve `(comando, perfil_no_disco)` — o perfil precisa sobreviver até o
+/// `exec`, então quem chama segura o `LimpaPerfil` até o fim do run.
+///
+/// **Rebaixa falando alto, nunca em silêncio.** Recusar o turno quando o
+/// `sandbox-exec` falta seria uma REGRESSÃO: hoje "Só lê" já roda sem sandbox
+/// nenhum, e passar a bloquear tiraria do usuário algo que ele tem. O §9 proíbe
+/// seguir EM SILÊNCIO com menos garantia — seguir AVISANDO cumpre a regra sem
+/// quebrar ninguém. O selo `completa`/`parcial` do S4 é onde isso vira tela.
+fn confina_se_prometido(
+    cmd: tokio::process::Command,
+    req: &adapters::RunRequest,
+    run_id: &str,
+    on_event: &tauri::ipc::Channel<AgentEvent>,
+) -> (tokio::process::Command, Option<std::path::PathBuf>) {
+    let alvo = crate::sandbox::Alvo {
+        raiz: req.cwd.clone(),
+        worktree: None,
+        // As pastas liberadas por `--add-dir` entram: o usuário pediu "Só lê",
+        // não "só lê o projeto principal". Proteger a raiz e deixar a pasta irmã
+        // aberta seria um buraco exatamente onde ele concedeu acesso de propósito.
+        extras: req.extra_dirs.clone(),
+    };
+    let perfil = match crate::sandbox::perfil_macos(req.permission, &alvo) {
+        Ok(p) => p,
+        // Modo de escrita: ausência LEGÍTIMA de sandbox, sem aviso nenhum.
+        Err(crate::sandbox::SemPerfil::ModoEscreve) => return (cmd, None),
+        Err(crate::sandbox::SemPerfil::NadaParaProteger) => {
+            let _ = on_event.send(AgentEvent::Notice {
+                message: "Somente-leitura sem confinamento do sistema: não consegui montar o perfil para este diretório. O motor segue segurando sozinho.".to_string(),
+            });
+            return (cmd, None);
+        }
+    };
+    if !crate::sandbox::disponivel() {
+        let _ = on_event.send(AgentEvent::Notice {
+            message: "Somente-leitura sem confinamento do sistema: `sandbox-exec` não está disponível aqui. O motor segue segurando sozinho.".to_string(),
+        });
+        return (cmd, None);
+    }
+    let path = std::env::temp_dir().join(format!("frota-sb-{run_id}.sb"));
+    if let Err(e) = std::fs::write(&path, perfil) {
+        let _ = on_event.send(AgentEvent::Notice {
+            message: format!("Somente-leitura sem confinamento do sistema: não consegui gravar o perfil ({e}). O motor segue segurando sozinho."),
+        });
+        return (cmd, None);
+    }
+    (crate::sandbox::envelopa(cmd, &path), Some(path))
+}
+
 fn restart_prompt(memory_fallback: Option<&str>, original: &str) -> String {
     match memory_fallback {
         Some(fallback) => format!("{fallback}\n\n---\n\n{original}"),

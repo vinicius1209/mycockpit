@@ -39,6 +39,7 @@
 //! spawn é o S2; distinguir "negou" de "quebrou" é o S3.
 
 use crate::adapters::Permission;
+use tokio::process::Command;
 
 /// Modos em que o Frota PROMETE que o agente não escreve. Só eles ganham
 /// sandbox: em `Padrao`/`Auto`/`Liberado` o agente DEVE escrever, e confinar ali
@@ -49,7 +50,7 @@ pub fn confina(p: Permission) -> bool {
 
 /// O que o perfil protege. Campo a campo porque cada um tem um motivo próprio,
 /// e uma lista solta de strings esconderia o motivo na primeira leitura.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Alvo {
     /// Raiz do projeto: o que você está pedindo pro agente NÃO tocar.
     pub raiz: String,
@@ -57,6 +58,11 @@ pub struct Alvo {
     /// raiz (o `mycockpit/<id>` do git), então precisa de linha própria — sem
     /// ela, "Só lê" numa conversa isolada não protegeria nada.
     pub worktree: Option<String>,
+    /// Pastas extras que o usuário LIBEROU pro agente (`--add-dir`). Entram no
+    /// perfil pelo motivo mais direto possível: ele pediu "Só lê", não "só lê o
+    /// projeto principal". Proteger a raiz e deixar a pasta irmã aberta seria um
+    /// buraco exatamente onde ele concedeu acesso de propósito.
+    pub extras: Vec<String>,
 }
 
 /// Um caminho é seguro pra entrar no perfil?
@@ -101,6 +107,11 @@ pub fn perfil_macos(p: Permission, alvo: &Alvo) -> Result<String, SemPerfil> {
             caminhos.push(w);
         }
     }
+    for e in &alvo.extras {
+        if utilizavel(e) && !caminhos.contains(&e.as_str()) {
+            caminhos.push(e);
+        }
+    }
     if caminhos.is_empty() {
         return Err(SemPerfil::NadaParaProteger);
     }
@@ -116,12 +127,53 @@ pub fn perfil_macos(p: Permission, alvo: &Alvo) -> Result<String, SemPerfil> {
     Ok(s)
 }
 
+/// Este SO tem como confinar? `false` = a garantia não existe aqui, e quem
+/// chama precisa DIZER isso (S4) em vez de fingir que confinou.
+pub fn disponivel() -> bool {
+    cfg!(target_os = "macos") && std::path::Path::new("/usr/bin/sandbox-exec").exists()
+}
+
+/// Reescreve o comando como `sandbox-exec -f <perfil> <programa> <args…>`.
+///
+/// Reconstrói em vez de mutar porque `Command` não deixa trocar o programa. O
+/// que é preservado — e a lista é o contrato: **programa, argumentos, cwd e
+/// variáveis de ambiente**. O stdio NÃO entra aqui de propósito: quem configura
+/// pipe é o `run_once`, DEPOIS do `build_command`, então envolver neste ponto
+/// não tem como perder o que ainda não foi posto.
+///
+/// A ordem `-f perfil` antes do programa importa: tudo que vem depois do perfil
+/// é o comando confinado, inclusive as flags dele.
+pub fn envelopa(cmd: Command, perfil: &std::path::Path) -> Command {
+    let base = cmd.as_std();
+    let mut novo = Command::new("sandbox-exec");
+    novo.arg("-f").arg(perfil).arg(base.get_program());
+    for a in base.get_args() {
+        novo.arg(a);
+    }
+    if let Some(d) = base.get_current_dir() {
+        novo.current_dir(d);
+    }
+    for (k, v) in base.get_envs() {
+        match v {
+            Some(v) => {
+                novo.env(k, v);
+            }
+            // `None` = o adapter REMOVEU a variável. Copiar como remoção mantém
+            // a decisão dele; ignorar aqui a desfaria pelas costas.
+            None => {
+                novo.env_remove(k);
+            }
+        }
+    }
+    novo
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn alvo(raiz: &str) -> Alvo {
-        Alvo { raiz: raiz.into(), worktree: None }
+        Alvo { raiz: raiz.into(), ..Default::default() }
     }
 
     #[test]
@@ -165,6 +217,7 @@ mod tests {
         let a = Alvo {
             raiz: "/repo".into(),
             worktree: Some("/wt/mycockpit/abc".into()),
+            ..Default::default()
         };
         let p = perfil_macos(Permission::Leitura, &a).unwrap();
         assert!(p.contains("\"/repo\""));
@@ -173,7 +226,7 @@ mod tests {
 
     #[test]
     fn worktree_igual_a_raiz_nao_duplica() {
-        let a = Alvo { raiz: "/repo".into(), worktree: Some("/repo".into()) };
+        let a = Alvo { raiz: "/repo".into(), worktree: Some("/repo".into()), ..Default::default() };
         let p = perfil_macos(Permission::Leitura, &a).unwrap();
         assert_eq!(p.matches("(subpath \"/repo\")").count(), 1);
     }
@@ -206,7 +259,7 @@ mod tests {
     fn raiz_invalida_com_worktree_valido_ainda_protege_o_worktree() {
         // Perder um alvo não pode derrubar o outro: a conversa isolada é
         // exatamente onde o agente está trabalhando.
-        let a = Alvo { raiz: "".into(), worktree: Some("/wt/x".into()) };
+        let a = Alvo { raiz: "".into(), worktree: Some("/wt/x".into()), ..Default::default() };
         let p = perfil_macos(Permission::Leitura, &a).unwrap();
         assert!(p.contains("\"/wt/x\""));
     }
@@ -258,6 +311,105 @@ mod tests {
         assert!(leitura.status.success(), "o sandbox bloqueou a LEITURA");
         assert_eq!(String::from_utf8_lossy(&leitura.stdout), "original");
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn argv(c: &Command) -> Vec<String> {
+        let std = c.as_std();
+        std::iter::once(std.get_program().to_string_lossy().to_string())
+            .chain(std.get_args().map(|a| a.to_string_lossy().to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn o_envelope_poe_o_perfil_ANTES_do_programa() {
+        // Tudo que vem depois do `-f <perfil>` é o comando confinado, flags
+        // inclusive. Inverter a ordem faria o sandbox-exec ler a flag do agente
+        // como se fosse dele.
+        let mut c = Command::new("claude");
+        c.args(["-p", "oi"]);
+        let e = envelopa(c, std::path::Path::new("/tmp/p.sb"));
+        assert_eq!(
+            argv(&e),
+            vec!["sandbox-exec", "-f", "/tmp/p.sb", "claude", "-p", "oi"]
+        );
+    }
+
+    #[test]
+    fn o_envelope_preserva_o_cwd() {
+        // Perder o cwd mandaria o agente trabalhar no diretório errado — falha
+        // muito pior que a que o sandbox veio evitar.
+        let mut c = Command::new("codex");
+        c.current_dir("/repo");
+        let e = envelopa(c, std::path::Path::new("/tmp/p.sb"));
+        assert_eq!(
+            e.as_std().get_current_dir().map(|p| p.to_string_lossy().to_string()),
+            Some("/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn o_envelope_preserva_env_E_a_REMOCAO_de_env() {
+        // Variável removida pelo adapter é decisão dele (ex.: apagar um token do
+        // ambiente). Copiar só as presentes desfaria a remoção pelas costas.
+        let mut c = Command::new("agy");
+        c.env("FROTA_X", "1");
+        c.env_remove("NODE_OPTIONS");
+        let e = envelopa(c, std::path::Path::new("/tmp/p.sb"));
+        let envs: Vec<_> = e
+            .as_std()
+            .get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().to_string(),
+                    v.map(|x| x.to_string_lossy().to_string()),
+                )
+            })
+            .collect();
+        assert!(envs.contains(&("FROTA_X".to_string(), Some("1".to_string()))));
+        assert!(envs.contains(&("NODE_OPTIONS".to_string(), None)));
+    }
+
+    /// A prova de PONTA do S2: o perfil que o Frota monta pro cwd real de um
+    /// projeto barra um agente de verdade tentando escrever.
+    ///
+    /// Vale mais que a prova do S1 porque usa o caminho de produção inteiro:
+    /// `Alvo` montado como o `agent.rs` monta, `perfil_macos`, `envelopa`, e um
+    /// binário de agente instalado. Se algum elo mentir, aqui aparece.
+    ///
+    /// `cargo test -p app_lib sandbox -- --ignored --nocapture`
+    #[test]
+    #[ignore = "roda um agente real desta máquina; prova de ponta do S2"]
+    fn prova_real_o_agente_nao_escreve_no_projeto() {
+        let dir = std::env::temp_dir().join("frota-sandbox-ponta");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let raiz = dir.canonicalize().unwrap().to_string_lossy().to_string();
+        std::fs::write(format!("{raiz}/alvo.txt"), "original").unwrap();
+
+        let perfil = perfil_macos(Permission::Leitura, &alvo(&raiz)).unwrap();
+        let pf = dir.join("p.sb");
+        std::fs::write(&pf, &perfil).unwrap();
+
+        // O mesmo envelope da produção, com o agente instalado mais barato de
+        // rodar: um `sh` fazendo o que um agente desobediente faria.
+        let mut c = Command::new("sh");
+        c.args(["-c", &format!("echo ESTRAGADO > {raiz}/alvo.txt")]);
+        c.current_dir(&raiz);
+        let envelopado = envelopa(c, &pf);
+
+        let saida = std::process::Command::new(envelopado.as_std().get_program())
+            .args(envelopado.as_std().get_args())
+            .current_dir(&raiz)
+            .output()
+            .unwrap();
+
+        assert!(!saida.status.success(), "a escrita passou pelo envelope");
+        assert_eq!(
+            std::fs::read_to_string(format!("{raiz}/alvo.txt")).unwrap(),
+            "original"
+        );
+        println!("stderr do bloqueio (insumo do S3): {}", String::from_utf8_lossy(&saida.stderr).trim());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
