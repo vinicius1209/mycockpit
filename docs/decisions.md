@@ -2505,3 +2505,41 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   comentário: sem linha desenhada não há `path@side:linha` pra ancorar, e deixar
   o gesto falhar calado seria fail-open.
 - **Verificado:** `tsc` 0, `vitest` 3039, 6 guardas, e2e 21/21, `cargo check` 0.
+
+### ADR-066 — Melhoria visual sem medida vira regressão: o review do agy ✅
+- **Contexto (22/08/2026):** o agy entregou 5 ajustes visuais (24 linhas). `tsc`
+  0, suíte verde, 6 guardas passando. Duas das cinco eram regressões — o que
+  passa em guarda não é o que preocupa.
+- **`DiffIndex`: a mudança cortava justamente o que vinha promover.** Trocar a
+  ordem pra "nome primeiro, diretório depois" está certo (padrão VSCode/GitHub);
+  perder o `shrink-0` do nome, não. Com os dois `truncate`, ambos encolhem.
+  MEDIDO no navegador, coluna de 260px: nome cortado (`scrollWidth >
+  clientWidth`) no layout novo, nunca cortado no antigo. Quem cede tem que ser o
+  diretório.
+- **`formatDisplayPath` colapsava caminhos distintos.** Guardando só o último
+  segmento, `~/projetos/clientes/acme/apps/web` e `~/projetos/pessoal/blog/apps/web`
+  viravam ambos `~/…/web` — numa lista cuja função é dizer QUAIS diretórios
+  estão liberados. A cauda agora CRESCE enquanto couber: preserva o que
+  distingue, não o que sobra.
+- **E a regra estava ao contrário nos extremos:** se o candidato abreviado ainda
+  passasse do limite, ela devolvia o caminho INTEIRO. Encurtava o caminho médio
+  e não encurtava o longo. Agora devolve o elidido de qualquer jeito, e o
+  `truncate` do CSS (que é width-aware, coisa que contagem de caractere nunca
+  será) resolve o resto. Os dois trabalham juntos: um escolhe O QUE preservar, o
+  outro resolve a largura real.
+- **Latente, corrigido junto:** caminho relativo ganhava uma barra inventada na
+  frente (`projetos/x` → `/projetos/…/x`), afirmando um caminho absoluto que não
+  existe. Hoje `extraDirs` vem de seletor, então não mordia — mas era contrato
+  não escrito.
+- **A causa comum das duas:** função pura em `lib/` entregue SEM teste. É onde a
+  casa testa tudo, e os três defeitos acima aparecem no primeiro caso escrito.
+  `utils.test.ts` nasceu com eles nomeados pelo defeito, não pela feature.
+- **`text-faint opacity-80` revertido.** O `index.css:59` diz que `--st-idle` é
+  `var(--faint)` e "por definição não pode divergir". Empilhar opacity criava uma
+  segunda resposta pra "quão apagado" que nenhuma guarda pega. Se o rótulo deve
+  recuar mais, isso é token novo.
+- **Commit sólido MANTIDO** (`bg-primary` é token, eleger a ação principal do
+  painel faz sentido); só a transição voltou a ser de superfície
+  (`transition-colors` + `hover:bg-primary/90`) em vez de apagar o botão inteiro,
+  texto incluso.
+- **Verificado:** `tsc` 0, `vitest` 3049, 6 guardas, e2e 21/21, `cargo check` 0.

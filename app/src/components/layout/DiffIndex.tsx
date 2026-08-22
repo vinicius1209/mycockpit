@@ -156,9 +156,15 @@ export function DiffIndex({
                       >
                         {st.label}
                       </span>
-                      <span className="flex min-w-0 flex-1 items-baseline font-mono text-[12px]">
-                        <span className="truncate text-muted-foreground/55">{dir}</span>
-                        <span className="shrink-0 text-foreground/90">{base}</span>
+                      <span className="flex min-w-0 flex-1 items-baseline gap-1.5 font-mono text-[12px]">
+                        {/* `shrink-0` no NOME: com os dois encolhendo, largura
+                            estreita cortava justamente o que esta mudança veio
+                            promover (medido: nome cortado numa coluna de
+                            260px). Quem cede é o diretório. */}
+                        <span className="shrink-0 font-medium text-foreground/90">{base}</span>
+                        {dir && (
+                          <span className="truncate text-[11px] text-muted-foreground/55">{dir}</span>
+                        )}
                       </span>
                       <span className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] tabular-nums">
                         {f.additions > 0 && (

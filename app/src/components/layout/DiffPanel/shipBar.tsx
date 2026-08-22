@@ -125,7 +125,7 @@ export function ShipBar({
               setCommitting(true)
             }}
             disabled={!hasChanges}
-            className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-[12px] font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 disabled:opacity-40"
           >
             <Check className="size-3.5" /> Commit
           </button>

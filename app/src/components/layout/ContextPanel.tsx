@@ -58,7 +58,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog"
 import { writeMycockpitConfig } from "@/lib/mycockpit"
 import { fmtBytes } from "@/lib/format"
 import { isTauri } from "@/lib/db"
-import { cn, shortPath } from "@/lib/utils"
+import { cn, formatDisplayPath, shortPath } from "@/lib/utils"
 
 /** Linha de arquivo de instrução, 3 estados (presente/ausente), sem cheque. */
 function FileRow({
@@ -566,7 +566,7 @@ export function ContextPanel() {
                           className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/90"
                           title={dir}
                         >
-                          {dir}
+                          {formatDisplayPath(dir)}
                         </span>
                         <button
                           onClick={() =>
