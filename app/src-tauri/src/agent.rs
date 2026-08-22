@@ -573,6 +573,7 @@ pub async fn run_agent(
     let resume_was = req.resume.is_some();
     let cmd = adapter.build_command(&req)?;
     let (cmd, perfil_sb) = confina_se_prometido(cmd, &req, &run_id, &on_event);
+    let confinou = perfil_sb.is_some();
     let _limpa = perfil_sb.map(LimpaPerfil);
     let mut outcome = match run_once(
         cmd,
@@ -669,6 +670,23 @@ pub async fn run_agent(
         let _ = on_event.send(AgentEvent::Cancelled);
     } else if let Some(event) = process_failure_fallback(&*adapter, &agent, &outcome) {
         let _ = on_event.send(event);
+    }
+    // S3 — o veredito do confinamento, ANTES do Done: sem ele, um bloqueio do
+    // sistema chega na tela como "turno falhou" e o usuário fica sem saber que
+    // foi o "Só lê" dele funcionando. É a frase que separa a funcionalidade boa
+    // da irritante.
+    //
+    // `confinado` é o perfil ter sido REALMENTE aplicado, não o modo ter pedido:
+    // quando o `sandbox-exec` faltou, o turno rodou solto e nada aqui se aplica.
+    if let Some(frase) = crate::sandbox::frase(crate::sandbox::classifica(
+        confinou,
+        &outcome.stderr,
+        outcome.success,
+        outcome.emitiu_saida,
+    )) {
+        let _ = on_event.send(AgentEvent::Notice {
+            message: frase.to_string(),
+        });
     }
     let _ = on_event.send(AgentEvent::Done { code: outcome.code });
     Ok(())
@@ -856,6 +874,12 @@ struct Outcome {
     success: bool,
     code: Option<i32>,
     stderr: String,
+    /// O run chegou a EMITIR alguma coisa do stream do motor?
+    ///
+    /// Não é telemetria: é o único sinal que separa "confinado e trabalhou" de
+    /// "confinado e engoliu o bloqueio em silêncio" (o caso agy da fase 0, que
+    /// sai com exit 0, stdout vazio e stderr sem assinatura nenhuma).
+    emitiu_saida: bool,
     session_not_found: bool,
     /// O stream já publicou uma causa terminal acionável (`Error` ou
     /// `LimitReached`). O exit code continua em `Done`, mas não pode fabricar um
@@ -956,6 +980,7 @@ async fn run_once(
     // H1, o `notify` é registrado/desregistrado no run_agent (RunGuard); aqui só
     // escutamos o sinal. Reusar o MESMO Arc entre as tentativas retém o cancel.
     let mut cancelled = false;
+    let mut emitiu_saida = false;
     let mut session_not_found = false;
     let mut terminal_incident = false;
     loop {
@@ -978,7 +1003,8 @@ async fn run_once(
                                 continue;
                             }
                             terminal_incident |= is_terminal_incident(&ev);
-                            let _ = on_event.send(ev);
+                            emitiu_saida = true;
+            let _ = on_event.send(ev);
                         }
                     }
                     Ok(None) => break, // EOF, processo terminou
@@ -998,6 +1024,7 @@ async fn run_once(
     if !cancelled {
         for ev in adapter.on_close() {
             terminal_incident |= is_terminal_incident(&ev);
+            emitiu_saida = true;
             let _ = on_event.send(ev);
         }
     }
@@ -1020,6 +1047,7 @@ async fn run_once(
         success: status.success(),
         code: status.code(),
         stderr: stderr_text,
+        emitiu_saida,
         session_not_found,
         terminal_incident,
     })
@@ -1431,6 +1459,7 @@ mod tests {
             success: false,
             code: Some(1),
             stderr: "erro secundário do processo".into(),
+            emitiu_saida: true,
             session_not_found: false,
             terminal_incident: true,
         };
@@ -1446,6 +1475,7 @@ mod tests {
             success: false,
             code: Some(1),
             stderr: "You've hit your session limit · resets 1:50pm (America/Sao_Paulo)".into(),
+            emitiu_saida: true,
             session_not_found: false,
             terminal_incident: false,
         };
@@ -1467,6 +1497,7 @@ mod tests {
             success: false,
             code: Some(17),
             stderr: String::new(),
+            emitiu_saida: true,
             session_not_found: false,
             terminal_incident: false,
         };

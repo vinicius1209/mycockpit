@@ -168,6 +168,95 @@ pub fn envelopa(cmd: Command, perfil: &std::path::Path) -> Command {
     novo
 }
 
+// ───────────────────────────────── S3: "o sandbox negou" × "o agente quebrou"
+
+/// O que aconteceu com um turno confinado.
+///
+/// Existe porque sem isto TODO bloqueio parece bug do Frota: o usuário pede
+/// "Só lê", o agente tenta escrever, o sistema recusa, o turno morre — e a tela
+/// diz "turno falhou". A frase certa não é um enfeite; é a diferença entre a
+/// funcionalidade ser boa e ser irritante.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Veredito {
+    /// Nada aqui é do sandbox. A falha (se houve) é de outra natureza.
+    Irrelevante,
+    /// O `sandbox-exec` falhou ANTES de rodar o comando (perfil não compilou,
+    /// arquivo sumiu). Isto é defeito NOSSO, não do agente, e não pode ser
+    /// contado como "o agente foi barrado" — seria culpar o inocente.
+    RunnerFalhou,
+    /// O sandbox rodou e NEGOU uma operação. O confinamento funcionou.
+    Negou,
+    /// Confinado, saiu com SUCESSO e não produziu nada.
+    ///
+    /// É o caso do agy, medido na fase 0: `exit 0`, stdout vazio, stderr sem
+    /// assinatura nenhuma. Ele não falha — finge que funcionou. Tratar isso como
+    /// sucesso seria entregar um "Só lê" que silenciosamente não faz nada, que é
+    /// a pior degradação possível porque é invisível.
+    SilencioSuspeito,
+}
+
+/// Assinaturas do SEATBELT (macOS). Por backend, não uma união genérica: o
+/// Landlock do S5 fala outro dialeto, e uma lista só passaria a "reconhecer"
+/// no macOS frases que só existem no Linux — reconhecimento falso é pior que
+/// nenhum, porque a frase que o usuário lê fica errada com confiança.
+const SEATBELT_RUNNER: &[&str] = &[
+    "sandbox-exec:",
+    "sandbox_apply",
+    "failed to compile",
+    "unable to open profile",
+];
+const SEATBELT_NEGOU: &[&str] = &["operation not permitted", "os error 1"];
+
+fn contem(hay: &str, agulhas: &[&str]) -> bool {
+    let h = hay.to_lowercase();
+    agulhas.iter().any(|a| h.contains(a))
+}
+
+/// Classifica o fim de um turno.
+///
+/// `confinado` vem de quem lançou: sem sandbox, nada aqui se aplica — e checar
+/// isso PRIMEIRO evita que um "operation not permitted" vindo do próprio
+/// trabalho do agente (tentar escrever em `/etc`, por exemplo) seja lido como
+/// bloqueio nosso.
+pub fn classifica(
+    confinado: bool,
+    stderr: &str,
+    sucesso: bool,
+    emitiu_saida: bool,
+) -> Veredito {
+    if !confinado {
+        return Veredito::Irrelevante;
+    }
+    // Falha do runner ANTES da negação: as duas podem aparecer no mesmo stderr,
+    // e a do runner é mais específica (e é nossa culpa).
+    if contem(stderr, SEATBELT_RUNNER) {
+        return Veredito::RunnerFalhou;
+    }
+    if contem(stderr, SEATBELT_NEGOU) {
+        return Veredito::Negou;
+    }
+    if sucesso && !emitiu_saida {
+        return Veredito::SilencioSuspeito;
+    }
+    Veredito::Irrelevante
+}
+
+/// A frase que o usuário lê. `None` = não há nada a dizer sobre sandbox.
+pub fn frase(v: Veredito) -> Option<&'static str> {
+    match v {
+        Veredito::Irrelevante => None,
+        Veredito::RunnerFalhou => Some(
+            "O confinamento do sistema não pôde ser aplicado neste turno, e o turno não rodou protegido. Isso é falha do Frota, não do agente.",
+        ),
+        Veredito::Negou => Some(
+            "O agente tentou escrever no projeto e o sistema barrou, porque este turno está em somente-leitura.",
+        ),
+        Veredito::SilencioSuspeito => Some(
+            "O turno terminou sem erro e sem produzir nada, rodando confinado. Isso costuma ser o motor engolindo um bloqueio: desconfie do resultado.",
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -411,6 +500,80 @@ mod tests {
         );
         println!("stderr do bloqueio (insumo do S3): {}", String::from_utf8_lossy(&saida.stderr).trim());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── S3: distinguir quem falhou
+
+    #[test]
+    fn sem_confinamento_nada_e_do_sandbox() {
+        // Um "operation not permitted" pode vir do trabalho do próprio agente
+        // (tentar escrever em /etc). Sem sandbox, ler isso como bloqueio NOSSO
+        // poria uma frase errada com toda a confiança.
+        assert_eq!(
+            classifica(false, "Operation not permitted", false, true),
+            Veredito::Irrelevante
+        );
+    }
+
+    #[test]
+    fn negacao_do_sandbox_e_reconhecida() {
+        assert_eq!(
+            classifica(true, "sh: /repo/x.txt: Operation not permitted", false, false),
+            Veredito::Negou
+        );
+    }
+
+    #[test]
+    fn falha_do_RUNNER_vence_a_negacao() {
+        // As duas assinaturas podem estar no mesmo stderr. A do runner é mais
+        // específica E é culpa NOSSA — contá-la como "o agente foi barrado"
+        // culparia o inocente e esconderia um defeito do Frota.
+        let mix = "sandbox-exec: failed to compile profile\nOperation not permitted";
+        assert_eq!(classifica(true, mix, false, false), Veredito::RunnerFalhou);
+    }
+
+    #[test]
+    fn o_silencio_do_agy_e_SUSPEITO_nao_sucesso() {
+        // Medido na fase 0: exit 0, stdout vazio, stderr sem assinatura. Tratar
+        // como sucesso entregaria um "Só lê" que silenciosamente não faz nada.
+        assert_eq!(
+            classifica(true, "", true, false),
+            Veredito::SilencioSuspeito
+        );
+    }
+
+    #[test]
+    fn turno_confinado_que_PRODUZIU_nao_e_suspeito() {
+        // O caminho feliz do "Só lê": leu, respondeu, não escreveu. Se este caso
+        // virasse aviso, a funcionalidade viraria ruído em todo turno.
+        assert_eq!(classifica(true, "", true, true), Veredito::Irrelevante);
+    }
+
+    #[test]
+    fn falha_comum_confinada_nao_vira_sandbox() {
+        // Agente que morreu por erro de rede não pode ganhar a frase do bloqueio.
+        assert_eq!(
+            classifica(true, "error: connection reset by peer", false, true),
+            Veredito::Irrelevante
+        );
+    }
+
+    #[test]
+    fn toda_causa_de_sandbox_TEM_frase() {
+        // Veredito sem frase seria diagnóstico que morre no log — o oposto do
+        // que o S3 existe pra fazer.
+        for v in [Veredito::RunnerFalhou, Veredito::Negou, Veredito::SilencioSuspeito] {
+            assert!(frase(v).is_some(), "{v:?} sem frase");
+        }
+        assert!(frase(Veredito::Irrelevante).is_none());
+    }
+
+    #[test]
+    fn as_assinaturas_sao_case_insensitive() {
+        assert_eq!(
+            classifica(true, "OPERATION NOT PERMITTED", false, false),
+            Veredito::Negou
+        );
     }
 
     #[test]

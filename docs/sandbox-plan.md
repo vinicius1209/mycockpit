@@ -103,7 +103,7 @@ denylist protege **o seu projeto**, não protege `~/Documents`. É menos do que
   compilar, o turno NÃO roda em modo permissivo silenciosamente. Ou avisa e
   recusa, ou avisa e rebaixa — mas avisa.
 
-### S3 — Distinguir "o sandbox negou" de "o agente quebrou"
+### S3 ✅ — Distinguir "o sandbox negou" de "o agente quebrou" (22/08/2026)
 É a fase que cumpre a condição do usuário, e a que o DSH nos ensina:
 assinaturas de stderr POR backend (`Operation not permitted`, `os error 1`,
 `sandbox-exec: ...`), não uma união genérica.
@@ -229,3 +229,42 @@ perfil não gravável.
 processo que tenta escrever. Resultado: bloqueio, arquivo intacto, e o stderr
 capturado (`Operation not permitted`) fica impresso no teste **como insumo do
 S3**, que é quem vai traduzir isso em frase pro usuário.
+
+## Como ficou o S3 (22/08/2026)
+
+`classifica(confinado, stderr, sucesso, emitiu_saida) -> Veredito` + `frase()`.
+Puro, 9 testes. Emitido como `Notice` ANTES do `Done`, senão o bloqueio chega na
+tela como "turno falhou" e o usuário não descobre que foi o "Só lê" dele
+FUNCIONANDO.
+
+### As quatro decisões que o classificador carrega
+
+- **`confinado` é checado PRIMEIRO.** Um "operation not permitted" pode vir do
+  trabalho do próprio agente (tentar escrever em `/etc`). Sem sandbox aplicado,
+  lê-lo como bloqueio nosso poria uma frase errada com toda a confiança.
+- **`confinou` = o perfil foi mesmo aplicado**, não "o modo pediu". Quando o
+  `sandbox-exec` faltou e o turno rodou solto (S2), nada aqui se aplica.
+- **Falha do RUNNER vence a negação.** As duas assinaturas podem estar no mesmo
+  stderr. A do runner é mais específica E é culpa NOSSA — contá-la como "o
+  agente foi barrado" culparia o inocente e esconderia um defeito do Frota. A
+  frase diz isso com todas as letras: *"Isso é falha do Frota, não do agente."*
+- **Assinaturas POR BACKEND, não uma união.** `SEATBELT_RUNNER` e
+  `SEATBELT_NEGOU` têm nome de backend de propósito: o Landlock do S5 fala outro
+  dialeto, e uma lista só passaria a "reconhecer" no macOS frases que só existem
+  no Linux. Reconhecimento falso é pior que nenhum, porque a frase fica errada
+  com confiança.
+
+### O silêncio do agy virou sinal
+
+`Outcome` ganhou `emitiu_saida`. Não é telemetria: é o único jeito de separar
+"confinado e trabalhou" de "confinado e engoliu o bloqueio". O agy sai com
+`exit 0`, stdout vazio e stderr sem assinatura nenhuma — **ele não falha, finge
+que funcionou**.
+
+`SilencioSuspeito` existe só por causa dele, e a frase é deliberadamente
+desconfiada em vez de afirmativa (*"costuma ser o motor engolindo um
+bloqueio: desconfie do resultado"*): não temos como PROVAR que foi bloqueio,
+e afirmar o que não se sabe seria o mesmo pecado do rótulo sem dente.
+
+E o caminho feliz não vira ruído: turno confinado que PRODUZIU saída é
+`Irrelevante` — sem isso a funcionalidade viraria aviso em todo turno de leitura.
