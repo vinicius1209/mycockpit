@@ -38,6 +38,7 @@ mod osnotify;
 mod path;
 mod pricing;
 mod proc;
+mod sandbox;
 mod sdd;
 mod skills;
 mod sources;
