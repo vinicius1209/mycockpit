@@ -2543,3 +2543,29 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   (`transition-colors` + `hover:bg-primary/90`) em vez de apagar o botão inteiro,
   texto incluso.
 - **Verificado:** `tsc` 0, `vitest` 3049, 6 guardas, e2e 21/21, `cargo check` 0.
+
+### ADR-067 — A linha do arquivo errou TRÊS vezes; agora tem medida ✅
+- **Contexto (22/08/2026):** o usuário mandou print do índice de Alterações com
+  o contador verde (`+124`) pintado POR CIMA do nome do arquivo
+  (`console-2026-08-06T18-49-27-114Z.log`). O defeito era do meu fix da ADR-066.
+- **As três tentativas, cada uma criando a seguinte:**
+  1. original: `dir` truncando, `base` com `shrink-0`. Nome nunca cortava, mas
+     nome LONGO transbordava e colidia com o contador (o print).
+  2. o agy: os dois truncando. Nada colidia, mas o NOME era cortado numa coluna
+     de 260px — o dado que a linha existe pra mostrar.
+  3. meu fix da ADR-066: voltei o `shrink-0` pro nome. Consertei (2) e
+     reintroduzi (1). **Eu tinha medido só o caso do agy**, não o caso longo.
+- **A correção certa é uma ESCADA, não uma escolha:** `shrink-[9999]` no
+  diretório (cede tudo antes de o nome perder um pixel), `truncate` no nome
+  (último recurso), `overflow-hidden` no meio (rede: nada pinta por cima do
+  contador). Medido nos três casos × três larguras.
+- **A lição do método:** medir UM caso e generalizar é o mesmo erro do
+  `renderToStaticMarkup` na ADR-065 — número com aparência de evidência. Ali o
+  runtime estava errado; aqui o conjunto de casos estava incompleto.
+- **Virou peça e virou teste.** `FilePathLabel` em `DiffPanel/parts.tsx` (o
+  arquivo já existia com o comentário prevendo exatamente isto: "duas cópias
+  divergiriam em silêncio"), e o `DiffPanel` ainda tinha uma TERCEIRA cópia do
+  `splitPath` inline. O `e2e/diff-linha-arquivo.spec.ts` IMPORTA as classes de
+  `parts.tsx` em vez de reescrevê-las — reescrever testaria a cópia. Verificado
+  que morde: reintroduzindo o `shrink-0`, falha com `longo @ 240px`.
+- **Verificado:** `tsc` 0, `vitest` 3049, 6 guardas, e2e 22/22, `cargo check` 0.

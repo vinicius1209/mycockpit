@@ -26,7 +26,7 @@ import { OpenInEditor } from "@/components/common/OpenInEditor"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 import { ShipBar } from "./DiffPanel/shipBar"
-import { STATUS_META, splitPath } from "./DiffPanel/parts"
+import { FilePathLabel, STATUS_META } from "./DiffPanel/parts"
 
 export function DiffIndex({
   cwd,
@@ -135,7 +135,6 @@ export function DiffIndex({
               <div className="flex flex-col pb-2">
                 {files.map((f) => {
                   const st = STATUS_META[f.status] ?? STATUS_META.modified
-                  const { dir, base } = splitPath(f.path)
                   const aberto = f.path === abertoNaAba
                   return (
                     <button
@@ -156,16 +155,7 @@ export function DiffIndex({
                       >
                         {st.label}
                       </span>
-                      <span className="flex min-w-0 flex-1 items-baseline gap-1.5 font-mono text-[12px]">
-                        {/* `shrink-0` no NOME: com os dois encolhendo, largura
-                            estreita cortava justamente o que esta mudança veio
-                            promover (medido: nome cortado numa coluna de
-                            260px). Quem cede é o diretório. */}
-                        <span className="shrink-0 font-medium text-foreground/90">{base}</span>
-                        {dir && (
-                          <span className="truncate text-[11px] text-muted-foreground/55">{dir}</span>
-                        )}
-                      </span>
+                      <FilePathLabel path={f.path} />
                       <span className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] tabular-nums">
                         {f.additions > 0 && (
                           <span className="text-st-success">+{f.additions}</span>

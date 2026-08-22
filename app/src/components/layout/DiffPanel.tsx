@@ -10,7 +10,7 @@ import { composeDiffComments, staleComments } from "@/lib/deliveryDiff"
 import { OpenInEditor } from "@/components/common/OpenInEditor"
 import { cn } from "@/lib/utils"
 import { DiffLineRow, useDiffComments, type DiffCommentApi } from "./DiffPanel/comments"
-import { STATUS_META } from "./DiffPanel/parts"
+import { FilePathLabel, STATUS_META } from "./DiffPanel/parts"
 import { DiffCommentsFooter } from "./DiffPanel/sendBar"
 
 // (M1) O "abrir no editor" vive no CABEÇALHO, um por painel, e abre o PROJETO.
@@ -256,9 +256,6 @@ function FileBlock({
   refFoco?: React.RefObject<HTMLDivElement | null>
 }) {
   const st = STATUS_META[file.status] ?? STATUS_META.modified
-  const cut = file.path.lastIndexOf("/")
-  const dir = cut >= 0 ? file.path.slice(0, cut + 1) : ""
-  const base = cut >= 0 ? file.path.slice(cut + 1) : file.path
   return (
     <div ref={refFoco} className="border-b border-border/60">
       <button
@@ -277,13 +274,7 @@ function FileBlock({
         >
           {st.label}
         </span>
-        <span
-          className="flex min-w-0 flex-1 items-baseline font-mono text-[12px]"
-          title={file.path}
-        >
-          <span className="truncate text-muted-foreground/55">{dir}</span>
-          <span className="shrink-0 text-foreground/90">{base}</span>
-        </span>
+        <FilePathLabel path={file.path} />
         <span className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] tabular-nums">
           {file.additions > 0 && (
             <span className="text-st-success">+{file.additions}</span>
