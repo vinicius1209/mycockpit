@@ -140,16 +140,10 @@ export function ProjectRow({
           }}
           className={cn(
             "group relative flex w-full items-center rounded-md transition-colors",
-            // SELEÇÃO NÃO É COR (§2, ADR-043): preenchimento neutro + pip.
+            // SELEÇÃO NÃO É COR (§2, ADR-043): preenchimento neutro + peso.
             active ? "bg-sel" : "hover:bg-sel-hover",
           )}
         >
-          {/* Gutter (x=5px): dono único da seleção, a MESMA receita da conversa
-              e da feature. Era uma barra brass de 2,5px, a 1,2° de matiz do
-              âmbar que significa "isto executa sem pedir". */}
-          {active && (
-            <span className="absolute top-1/2 left-[5px] size-[3px] -translate-y-1/2 rounded-full bg-foreground/80" />
-          )}
           {editing ? (
             <div className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-2 pl-3">
               <ProjectFolder color={project.color} status={status} awaiting={awaiting} />

@@ -114,8 +114,7 @@ de ninguém.
 Regras de aplicação:
 
 - **SELEÇÃO NÃO É COR. Uma receita só, no app inteiro** (ADR-043):
-  **preenchimento neutro `--sel` + peso 500 + pip neutro de 3px no gutter**
-  (x=5px da superfície). Nenhuma tinta de status, nenhuma barra de acento,
+  **preenchimento neutro `--sel` + peso 500** (texto `foreground`). Nenhuma tinta de status, nenhuma barra de acento,
   nenhum sublinhado colorido, nenhum ícone tingido por estar ativo. Hover é
   `--sel-hover` (~metade da opacidade: hover é convite, seleção é fato) e o
   texto do item selecionado é `foreground` (S3.6).
@@ -128,11 +127,16 @@ Regras de aplicação:
     escuro. Não havia nem regra consistente a aprender. Num app cuja doutrina é
     aprovação humana, a tinta de "isto executa sem pedir" não pode ser prima da
     tinta de "esta linha está selecionada".
-  - **Sem gutter, sem pip.** O pip é o marcador do GUTTER de lista/árvore. Numa
-    tira horizontal de abas não existe gutter, então o que sobra da receita é
-    **preenchimento + peso** (`ContextPanel`/`contextPanelChrome.tsx`: aba ativa
-    é `bg-sel` + `foreground`). Pip em aba seria um marcador sem coluna pra
-    morar; sublinhado colorido continua proibido.
+  - **O pip do gutter SAIU em 23/08/2026.** A receita era "preenchimento + peso
+    + pip de 3px no gutter", e o pip existia só na sidebar (aba nunca teve, por
+    não haver gutter). Duas razões pra tirar: o usuário achou o pontinho ruído
+    visual, e o `lib/selection.ts` — a receita em CÓDIGO, que é quem manda —
+    **nunca listou o pip**: ele estava só neste guia. Guia e código divergiam, e
+    a divergência tinha um dono errado.
+    - **O núcleo da ADR-043 não muda:** seleção continua sem COR, que era o
+      ponto (o âmbar fazia dois trabalhos, marcar seleção e significar perigo).
+      Tirar um marcador neutro não devolve tinta pra nada.
+    - Sublinhado colorido e barra de acento continuam proibidos.
   - **Exceção fechada: controle segmentado** (o comutador da barra superior e a
     linha de Execução) não é lista; segue em E1 (`bg-card` + `--shadow-sm`),
     como já é. E o "Liberado" âmbar do segmentado de Execução continua onde

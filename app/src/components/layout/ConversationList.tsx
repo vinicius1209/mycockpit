@@ -366,9 +366,9 @@ export function ConversationList({ projectId }: { projectId: string }) {
                 // Cor-rótulo tinge a LINHA INTEIRA, SEMPRE (pedido do usuário,
                 // 04/08: a versão anterior degradava pra bolinha na linha ativa
                 // e a cor "sumia" justo na conversa aberta, duplicando sinal).
-                // Na ativa/dim a cor MISTURA com o preenchimento de seleção; o
-                // que diz "você está aqui" é o pip no gutter, que a lavagem não
-                // alcança. Fora delas, lavagem sobre transparente.
+                // Na ativa/dim a cor MISTURA com o preenchimento de seleção;
+                // quem diz "você está aqui" é o preenchimento + o peso, que a
+                // lavagem não apaga. Fora delas, lavagem sobre transparente.
                 style={
                   c.color
                     ? {
@@ -383,14 +383,7 @@ export function ConversationList({ projectId }: { projectId: string }) {
                     : undefined
                 }
               >
-                {/* Gutter: dono ÚNICO da seleção. Pip neutro de 3px no x=5, a
-                    mesma receita do projeto e da feature. Onde havia uma barra
-                    brass de 2,5px, que gastava a tinta de "perigo" pra dizer
-                    "você está aqui" (ADR-043). */}
-                {isFull && (
-                  <span className="absolute top-1/2 left-[5px] size-[3px] -translate-y-1/2 rounded-full bg-foreground/80" />
-                )}
-                {isEditing ? (
+                                {isEditing ? (
                   <div className="flex min-w-0 flex-1 items-center py-2 pr-2 pl-10">
                     <input
                       ref={editInputRef}
