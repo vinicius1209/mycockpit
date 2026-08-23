@@ -1,4 +1,9 @@
 import {
+  StepDot,
+  ToolGroupStatus,
+  type StepStatus,
+} from "@/components/chat/statusGlyphs"
+import {
   Fragment,
   memo,
   useCallback,
@@ -22,7 +27,6 @@ import {
   Gauge,
   Globe,
   ListChecks,
-  Loader2,
   MessageSquareQuote,
   RotateCcw,
   Search,
@@ -30,7 +34,6 @@ import {
   Terminal,
   User,
   Wrench,
-  X,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
@@ -215,39 +218,6 @@ function UnifiedDiff({ rows }: { rows: DiffRow[] }) {
   )
 }
 
-/** Status de uma ação técnica. `recorded` é histórico antigo/adapter sem
- * resultado: neutro, nunca finge que ainda está pendente. */
-type StepStatus = "ok" | "error" | "running" | "recorded"
-
-function StepDot({
-  status,
-  ancestor = false,
-}: {
-  status: StepStatus
-  /** Este passo em execução tem OUTRO passo em execução abaixo dele. */
-  ancestor?: boolean
-}) {
-  // Sucesso é o caso comum: ponto NEUTRO (paleta A da despoluição — a tinta
-  // sobra pra falha e pro que gira). Um tom acima do `recorded` pra distinguir
-  // "concluiu bem" de "sem resultado registrado".
-  if (status === "ok")
-    return <span className="size-[7px] shrink-0 rounded-full bg-muted-foreground/45" />
-  if (status === "error")
-    return <span className="size-[7px] shrink-0 rounded-full bg-st-error" />
-  // UM indicador vivo por linhagem (§2, orçamento de tinta): quem gira é o
-  // passo MAIS PROFUNDO em execução, porque é ele o "agora". O ancestral
-  // continua dizendo que o ramo está vivo, com o mesmo tom e sem movimento —
-  // três spinners empilhados narravam o mesmo trabalho três vezes.
-  if (status === "running" && ancestor)
-    return <span className="size-[7px] shrink-0 rounded-full bg-st-running/60" />
-  // Passo em execução GIRA (mesmo vocabulário do ToolGroupStatus): "girando =
-  // este passo executando". O dot pulsante fica reservado ao rodapé
-  // "trabalhando" (batimento do turno + cronômetro) — os dois sinais deixam de
-  // ser dois pontos azuis idênticos.
-  if (status === "running")
-    return <Loader2 className="size-3 shrink-0 animate-spin text-st-running" />
-  return <span className="size-[7px] shrink-0 rounded-full bg-muted-foreground/25" />
-}
 
 /** Tool call como LINHA (círculo de status + ícone + rótulo + meta), colapsável.
  *  A prosa do agent é o conteúdo; a ferramenta é rodapé, não caixa. `active` =
@@ -397,8 +367,8 @@ const ToolLine = memo(function ToolLine({
             "group/step flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-[5px] text-left text-[13px] transition-colors",
             expandable && "hover:bg-accent/40",
             p.emphasis === "warning" && status !== "error" && "text-brass",
-            // passo em execução PULA da sequência: leve tinta st-running.
-            status === "running" && "bg-st-running/[0.06]",
+            // passo em execução com sutil destaque neutro
+            status === "running" && "bg-accent/30",
           )}
         >
         <span
@@ -747,10 +717,9 @@ function ToolNodeList({
   // tempo — a cronologia completa volta ao abrir o stub).
   const failedNodes = settledNodes.filter(branchHasFailure)
   const okNodes = settledNodes.filter((node) => !failedNodes.includes(node))
-  // Em voo, o histórico ok recolhe a partir de 2 (comportamento existente);
-  // assentado com falha, TODA concluída vira stub — quem expandiu quer a culpada.
+  // Em voo, recolhe só com nó ATIVO; sem nó ativo, todas rendem direto (sem acordeão duplo).
   const foldOk = live
-    ? okNodes.length >= 2
+    ? okNodes.length >= 2 && activeNodes.length > 0
     : failedNodes.length > 0 && okNodes.length >= 1
   const summary = summarizeToolGroup(
     okNodes.map((node) => node.item),
@@ -827,26 +796,6 @@ function ToolNodeList({
   )
 }
 
-function ToolGroupStatus({
-  state,
-}: {
-  state: ReturnType<typeof summarizeToolGroup>["state"]
-}) {
-  if (state === "running")
-    return <Loader2 className="size-3.5 shrink-0 animate-spin text-st-running" />
-  if (state === "error")
-    return <X className="size-3.5 shrink-0 text-st-error" aria-hidden="true" />
-  // Check CINZA (paleta A): a forma segue dizendo "concluiu", sem competir com
-  // a falha (vermelha) e com o vivo (st-running) pela atenção.
-  if (state === "ok")
-    return (
-      <Check
-        className="size-3.5 shrink-0 text-muted-foreground/60"
-        aria-hidden="true"
-      />
-    )
-  return <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
-}
 
 /** Registro de voo: UMA caption por burst — e, assentado, UMA linha por grupo:
  * o resumo é a informação (contagem, duração congelada, culpada na falha); o
@@ -1045,8 +994,8 @@ const ToolGroup = memo(function ToolGroup({
         data-work-root
         aria-expanded={open}
         className={cn(
-          "group/activity flex w-full items-center gap-2 rounded-md border-l-2 border-l-transparent px-1.5 py-1.5 text-left text-[12px] transition-colors hover:bg-accent/35 focus-visible:border-l-brass focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-          live && "border-l-st-running bg-st-running/[0.045]",
+          "group/activity flex w-full items-center gap-2 rounded-md border-l-2 border-l-transparent px-1.5 py-1.5 text-left text-[12px] transition-colors hover:bg-accent/35 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
+          live && "border-l-foreground/30 bg-accent/20",
           digest.state === "error"
             ? "text-st-error"
             : digest.state === "running"

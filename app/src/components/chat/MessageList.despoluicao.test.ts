@@ -270,10 +270,15 @@ describe("MessageList · posse do nome é da ENTIDADE, e desce pela subárvore",
     // eram 3 na mesma linhagem (cabeçalho + tool_use + nó do trabalho); agora
     // o cabeçalho representa o grupo (recolhido é o único sinal) e, dentro da
     // árvore, só o passo mais profundo em execução gira.
-    const spinners = html.match(/animate-spin text-st-running/g) ?? []
+    const spinners = html.match(/animate-spin/g) ?? []
     expect(spinners).toHaveLength(2)
-    // o ancestral vivo não some: continua dizendo que o ramo está aceso
-    expect(html).toContain("rounded-full bg-st-running/60")
+    // o ancestral vivo não some: continua dizendo que o ramo está aceso — agora
+    // por CONTRASTE (cinza forte contra os irmãos apagados), não por tinta.
+    expect(html).toContain("rounded-full bg-foreground/45")
+    // §2.2 — dentro do FIO o vivo é movimento, nunca cor. Esta é a asserção que
+    // impede a tinta de voltar: um agente futuro pode achar que azul "ajuda a
+    // ver", e o guia sozinho não o impediria.
+    expect(html).not.toContain("st-running")
   })
 
   it("filho sem identidade (histórico sem tool_use_id) não herda posse: mantém o nome", () => {

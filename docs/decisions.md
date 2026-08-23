@@ -2660,8 +2660,20 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   explicitamente) e é o único sinal quando o projeto está retraído; o grupo de
   ferramenta no fio vai a cinza. Duas decisões opostas sobre a mesma cor, e
   agora as duas derivam de uma regra só.
-- **Consequência aberta, não escondida:** três sítios no fio ainda usam
-  `st-running` (o ponto do ramo aceso e dois spinners, em `MessageList`), e um
-  teste de despoluição AFIRMA essas cores. Migrar exige tocar arquivo de outro
-  dev em voo, então fica anotado aqui em vez de feito às pressas — a regra
-  existe pra que a migração aconteça com quem está com o arquivo na mão.
+- **Migração completada em 23/08/2026, quando o outro dev soltou o arquivo.**
+  Os quatro sítios restantes do fio saíram do `st-running`: os dois spinners
+  viraram `text-muted-foreground` (o GIRO já diz "rodando"), o ponto do ramo
+  aceso virou `bg-foreground/45` — ele não gira de propósito (seria o terceiro
+  spinner narrando o mesmo trabalho), então diz "aceso" por CONTRASTE contra os
+  irmãos apagados — e o pulso do `WorkingIndicator` idem. O âmbar do `stalled`
+  FICOU: travado não é "vivo", é aviso, e isso é outro eixo.
+- **O teste da despoluição virou a guarda da regra.** Ele afirmava as cores
+  (`animate-spin text-st-running`); agora afirma o comportamento
+  (`animate-spin`, 2 ocorrências) MAIS um `expect(html).not.toContain("st-running")`.
+  É esta última linha que impede a tinta de voltar: um agente futuro pode achar
+  que o azul "ajuda a ver", e o guia sozinho não o impediria.
+- **Um conserto de acessibilidade junto:** o outro dev tinha removido o
+  `focus-visible:ring` do cabeçalho do grupo pra matar o anel dourado. Isso
+  matava o anel PARA O TECLADO também. Devolvido — o §2.1 já apaga o anel no
+  mouse sem custar navegação por Tab, e ele não sabia porque a sessão dele
+  começou antes.

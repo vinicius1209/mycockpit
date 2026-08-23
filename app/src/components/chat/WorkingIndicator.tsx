@@ -83,7 +83,10 @@ export function WorkingIndicator({
                   "size-1.5 rounded-full",
                   stalled
                     ? "bg-st-warning/70"
-                    : "animate-cockpit-pulse bg-st-running/70",
+                    // §2.2: a linha "trabalhando" mora DENTRO do fio, então o
+                    // vivo dela é o pulso, não a tinta. O âmbar do `stalled` fica:
+                    // travado não é "vivo", é aviso, e isso é outro eixo.
+                    : "animate-cockpit-pulse bg-foreground/45",
                 )}
                 style={stalled ? undefined : { animationDelay: `${i * 0.18}s` }}
               />
