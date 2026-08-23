@@ -85,10 +85,40 @@ claro+escuro) e por linha nesta tabela — nunca hex cru em componente.
 | **Verde** (marco raro) | `st-success` | No fio: marco de TURNO/PLANO/gesto — máx. **1 por turno** (caption "concluído", "Plano concluído", "Regra salva", ADR-037). Fora do fio: check "probe passou" em Configurações/Onboarding (verde exige probe, `SettingsDialog.tsx`) | Sucesso por linha de ferramenta; estado ambiente permanente (badge/dot "ok" que fica na tela); identidade visual de agent; texto corrido |
 | **Âmbar** (precisa de você / risco autorizado) | `st-warning` (= `st-queued`), `st-warning-foreground` | Fila, gate, aviso que pede decisão, o **cartão do fluxo de aprovação** e o contador de pendências do sino, e o modo "Liberado" (risco autorizado fica visível) | Qualquer coisa que não seja decisão pendente, fila, gate ou risco autorizado. Seleção não é âmbar **nem brass**: seleção não é cor (ADR-043). Também não é progresso normal nem substituto do vermelho em falha real |
 | **Vermelho** (falha + destruição) | `st-error`, `destructive` | Falha consumada (marco vermelho, linha culpada) e ação destrutiva ("Parar", excluir, revogar) | Caminho de saída (Cancelar/fechar/voltar é ghost, sem cor); ênfase; aviso não-fatal (âmbar) |
-| **Azul** (vivo) | `st-running` | O que roda AGORA: pulse do dot, esteira de telemetria, linha viva | Qualquer coisa parada; link; decoração |
+| **Azul** (vivo) | `st-running` | O que roda AGORA **no CHROME** (ver §2.2): ponto do projeto, bandeja, seção de missões, linha viva do rodapé | Qualquer coisa parada; link; decoração; **o corpo do fio e o output de ferramenta** (lá o vivo é movimento, §2.2) |
 | **Brass** (gesto) | `brass`, `brass-soft`, `ring` (= `brass`) | Ação primária/sensível, foco **de teclado** (`--ring`, ver §2.1), marca | **Marcar item selecionado em lista, árvore ou aba** (isso é preenchimento neutro + peso + pip, sem tinta — ADR-043); texto pequeno sobre a superfície de seleção no tema claro (3.56:1 < AA, regra S3.6); ícone ilustrativo/empty state; medidor saudável; tinta de "importância" genérica |
 | **Cores de diff/git** | `hljs-addition/deletion`, `git-open`, `git-merged` | SÓ dentro do domínio git: `+N −N`, linhas de diff abertas (evidência), estado de PR do GitHub | Qualquer semântica fora de git; sucesso/erro geral |
 | **Identidade de agent** (categórica) | `brass` (Claude), `st-running` (Codex), `id-violet` (Antigravity) | Cor de série em gráfico/legenda de custo por agente | Verde e vermelho (colidem com status); pintar estado com a cor da identidade |
+
+### 2.2 Onde o VIVO é cor, e onde é movimento
+
+**Regra:** `st-running` (azul) vive no **chrome**. No **conteúdo** — o fio da
+conversa e o output das ferramentas — "rodando" é dito por **movimento em
+cinza**, nunca por tinta.
+
+| superfície | o que você está fazendo ali | quem carrega o "vivo" |
+|---|---|---|
+| sidebar, bandeja, missões, linha viva do rodapé | **varrendo** de relance: "o que está acontecendo?" | **cor** (`st-running`) |
+| fio da conversa, grupos e output de ferramenta | **trabalhando**: lendo, mandando prompt, chamando especialista, aprovando plano | **movimento** (spinner cinza) |
+
+**Por que a divisão é essa** (usuário, 23/08/2026): *"na conversa, no output não
+precisa de cores vivas — eu preciso literalmente interagir com os agentes,
+mandar prompts, chamar especialistas, aprovar planos. Agora dentro do sidebar,
+da interface em si, aí são outros 500."*
+
+A regra antiga (`st-running` = "o que roda agora") não distinguia superfície, e
+por isso mandava pintar de azul dentro do fio — onde a tinta disputa atenção com
+o texto, que é o trabalho. Fora do fio ela não disputa com nada: é justamente o
+que faz a linha saltar numa lista de dez projetos.
+
+**Não é "tirar o sinal do fio".** É trocar o canal: um spinner cinza girando já
+diz "rodando" (é o que o CLI dos agentes faz), e continua obedecendo o §6 —
+movimento só pro que está VIVO e termina sozinho. O que sai é a tinta, não a
+informação.
+
+**Fronteira, pra não virar julgamento:** chrome é o que fica FORA do fio
+rolável (sidebar, barra superior, rodapé de status, bandeja, popovers de
+sistema). Conteúdo é o que rola dentro dele.
 
 ### 2.1 O anel de foco só acende no TECLADO
 

@@ -2633,3 +2633,35 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   transporte seguem com flags fixas no código. Fica anotado: dado que muda do
   lado de fora não pode viver numa constante — e ainda vive em dois lugares.
 - **Verificado:** `cargo` 497, `tsc` 0, 7 guardas.
+
+### ADR-070 — O azul vivo é do CHROME; no fio, vivo é movimento ✅
+- **Contexto (23/08/2026):** um segundo dev, trabalhando no `MessageList` a
+  pedido do usuário ("algo bem minimalista mesmo, sem cores, sem nada, igual o
+  CLI dos agentes"), tirou o `st-running` do grupo de ferramenta vivo. A mudança
+  estava certa e o GUIA não sabia: o §2 dizia `st-running` = "o que roda AGORA",
+  sem distinguir superfície. Do jeito que estava, o próximo agente recolocaria o
+  azul citando o §2 — com razão, do ponto de vista dele.
+- **A regra que o usuário formulou, e é melhor que a anterior:** o azul vivo
+  pertence onde você VARRE para saber, não onde você TRABALHA. *"Na conversa, no
+  output não precisa de cores vivas — eu preciso interagir com os agentes,
+  mandar prompts, chamar especialistas, aprovar planos. Agora dentro do sidebar,
+  da interface em si, aí são outros 500."*
+- **Chrome × conteúdo**, e a fronteira é física pra não virar julgamento: chrome
+  é o que fica FORA do fio rolável; conteúdo é o que rola dentro dele.
+- **O que muda não é a informação, é o CANAL.** No fio, "rodando" passa a ser
+  dito por movimento em cinza — que é o que o CLI dos agentes faz, e que já
+  obedece o §6 (movimento só pro que está vivo e termina sozinho). Sai a tinta,
+  fica o sinal.
+- **Por que a regra velha errava:** dentro do fio a tinta disputa atenção com o
+  texto, que é o trabalho. Fora do fio ela não disputa com nada — é justamente o
+  que faz uma linha saltar numa lista de dez projetos. A mesma cor tem valor
+  oposto nas duas superfícies, e a regra antiga tratava as duas igual.
+- **O caso que provou:** o ponto azul da pasta FICA (o usuário pediu
+  explicitamente) e é o único sinal quando o projeto está retraído; o grupo de
+  ferramenta no fio vai a cinza. Duas decisões opostas sobre a mesma cor, e
+  agora as duas derivam de uma regra só.
+- **Consequência aberta, não escondida:** três sítios no fio ainda usam
+  `st-running` (o ponto do ramo aceso e dois spinners, em `MessageList`), e um
+  teste de despoluição AFIRMA essas cores. Migrar exige tocar arquivo de outro
+  dev em voo, então fica anotado aqui em vez de feito às pressas — a regra
+  existe pra que a migração aconteça com quem está com o arquivo na mão.
