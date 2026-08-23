@@ -2714,3 +2714,27 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   causa, e NÃO foram tocados. Um remédio não provado espalhado por toda a UI é
   como se perde a chance de saber se ele funciona. Se o anel da sidebar parar de
   congelar, o mesmo tratamento se justifica no resto — aí com evidência.
+
+### ADR-072 — Review geral: o que eu deixei pela metade e o que eu quebrei ✅
+- **Contexto (23/08/2026):** varredura das 8 mudanças do dia (minhas e as do
+  segundo dev), pedida antes de promover. Achou dois defeitos MEUS.
+- **1. O pip saiu pela metade.** Removi de conversa e projeto (ADR-043 revisada)
+  e esqueci as entradas GLOBAIS da sidebar — Frota, Agendamentos, Planos de voo
+  — e mais um sítio no `Sidebar`. Quatro pips sobrando. A varredura por classe
+  (`left-[5px] size-[3px]`) achou em segundos o que a leitura não achou: quando
+  a receita é uma string, procure pela string.
+- **2. O `border-color: inherit` da regra do §2.1 estava errado, e foi MEDIDO.**
+  Num input com `focus-visible:border-brass`, clicar deixava a borda com a cor
+  do PAI — medido: `rgb(255,0,0)` num pai vermelho — em vez da borda normal.
+  - **A correção não é ajustar o `inherit`, é não tocar na borda.** A queixa era
+    o ANEL. Campo de texto mostrando que está focado é comportamento desktop
+    CERTO: você precisa saber onde vai digitar. Regra apaga só o anel agora,
+    verificado nos dois eixos (borda correta no mouse E no teclado; anel some no
+    mouse, acende no Tab).
+  - **A lição é sobre a forma do remédio:** `border-color: inherit` é
+    instrumento cego — ele não "restaura", ele impõe o valor do pai. Anular uma
+    propriedade sem saber pra QUE valor voltar é como se conserta um sintoma
+    criando outro em lugar mais escondido.
+- **O que o review CONFIRMOU estar completo:** nenhum `st-running` restante no
+  fio (§2.2 aplicada inteira), nenhum anel removido à mão fora do §2.1, e a
+  época da janela cobrindo os cinco sítios de animação infinita.

@@ -224,9 +224,6 @@ function SddFeatureList({ project }: { project: Project }) {
                 selected ? "bg-sel" : "hover:bg-sel-hover",
               )}
             >
-              {selected && (
-                <span className="absolute top-1/2 left-[5px] size-[3px] -translate-y-1/2 rounded-full bg-foreground/80" />
-              )}
               <button
                 onClick={() => setSddFocus(plan.slug)}
                 title={plan.slug}

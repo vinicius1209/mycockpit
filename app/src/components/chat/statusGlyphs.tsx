@@ -10,6 +10,7 @@
 // vez de caçar três `Loader2` no meio de 2.200.
 
 import { Check, Loader2, X } from "lucide-react"
+import { useEpocaDaJanela } from "@/lib/janelaViva"
 import type { summarizeToolGroup } from "@/lib/toolGroup"
 
 /** Status de uma ação técnica. `recorded` é histórico antigo/adapter sem
@@ -24,6 +25,9 @@ export function StepDot({
   /** Este passo em execução tem OUTRO passo em execução abaixo dele. */
   ancestor?: boolean
 }) {
+  // Remonta quando a janela volta de uma oclusão do macOS (ADR-071): o
+  // WKWebView repinta o último quadro sem retomar o giro.
+  const epoca = useEpocaDaJanela()
   // Sucesso é o caso comum: ponto NEUTRO (paleta A da despoluição — a tinta
   // sobra pra falha e pro que gira). Um tom acima do `recorded` pra distinguir
   // "concluiu bem" de "sem resultado registrado".
@@ -45,7 +49,12 @@ export function StepDot({
   // "trabalhando" (batimento do turno + cronômetro) — os dois sinais deixam de
   // ser dois pontos azuis idênticos.
   if (status === "running")
-    return <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
+    return (
+      <Loader2
+        key={epoca}
+        className="size-3 shrink-0 animate-spin text-muted-foreground"
+      />
+    )
   return <span className="size-[7px] shrink-0 rounded-full bg-muted-foreground/25" />
 }
 
@@ -54,8 +63,14 @@ export function ToolGroupStatus({
 }: {
   state: ReturnType<typeof summarizeToolGroup>["state"]
 }) {
+  const epoca = useEpocaDaJanela()
   if (state === "running")
-    return <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+    return (
+      <Loader2
+        key={epoca}
+        className="size-3.5 shrink-0 animate-spin text-muted-foreground"
+      />
+    )
   if (state === "error")
     return <X className="size-3.5 shrink-0 text-st-error" aria-hidden="true" />
   // Check CINZA (paleta A): a forma segue dizendo "concluiu", sem competir com

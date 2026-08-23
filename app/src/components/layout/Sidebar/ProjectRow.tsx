@@ -27,6 +27,7 @@ import {
 import { ColorSubmenu } from "@/components/layout/ColorSubmenu"
 import { OpenProjectInEditorItem } from "@/components/common/OpenInEditor"
 import { useApp } from "@/store/app"
+import { useEpocaDaJanela } from "@/lib/janelaViva"
 import type { AgentStatus, Project } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -43,6 +44,8 @@ function ProjectFolder({
    *  pendente (os dois param o turno). */
   awaiting?: boolean
 }) {
+  // ADR-071: só o âmbar precisa — o ponto azul de "rodando" é estático.
+  const epoca = useEpocaDaJanela()
   return (
     <span className="relative grid size-5 shrink-0 place-items-center">
       <Folder
@@ -55,6 +58,7 @@ function ProjectFolder({
           humano); rodando é presença calma → dot estático. */}
       {awaiting ? (
         <span
+          key={epoca}
           title="Este projeto parou esperando você"
           className="animate-cockpit-pulse absolute -top-0.5 -right-0.5 size-2 rounded-full bg-st-warning ring-2 ring-rail"
         />

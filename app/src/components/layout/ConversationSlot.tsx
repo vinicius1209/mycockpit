@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react"
 import { fmtAgo } from "@/lib/format"
-import { janelaEpoca, subscribeJanela } from "@/lib/janelaViva"
+import { useEpocaDaJanela } from "@/lib/janelaViva"
 import { minuteNow, subscribeMinute } from "@/lib/minuteTick"
 import {
   fmtQuando,
@@ -44,7 +44,7 @@ export function ConversationSlot({
   const agora = useSyncExternalStore(subscribeMinute, minuteNow, minuteNow)
   // Época da janela: muda SÓ quando a janela volta a ser vista. Ver
   // `lib/janelaViva.ts` pro que foi descartado com medida antes de chegar aqui.
-  const epoca = useSyncExternalStore(subscribeJanela, janelaEpoca, janelaEpoca)
+  const epoca = useEpocaDaJanela()
   const estado = slotEstado({ pede, rodando, falhou })
 
   if (estado === "rodando") {
@@ -72,6 +72,7 @@ export function ConversationSlot({
     return (
       <span className={SLOT} title={TITULO.pede}>
         <span
+          key={epoca}
           className="animate-cockpit-pulse size-1.5 rounded-full bg-st-warning"
           aria-label="esperando você"
           role="img"

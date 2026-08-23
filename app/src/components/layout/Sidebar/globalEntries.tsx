@@ -43,9 +43,6 @@ export function ScheduledEntry() {
           active ? "bg-sel" : "hover:bg-sel-hover",
         )}
       >
-        {active && (
-          <span className="absolute top-1/2 left-[5px] size-[3px] -translate-y-1/2 rounded-full bg-foreground/80" />
-        )}
         <span className="grid size-5 shrink-0 place-items-center">
           {/* Ícone ativo NÃO é brass: brass é gesto, e "selecionado" perdeu o
               canal cromático inteiro (ADR-043). */}
@@ -94,9 +91,6 @@ export function FlightPlansEntry() {
         active ? "bg-sel" : "hover:bg-sel-hover",
       )}
     >
-      {active && (
-        <span className="absolute top-1/2 left-[5px] size-[3px] -translate-y-1/2 rounded-full bg-foreground/80" />
-      )}
       <span className="grid size-5 shrink-0 place-items-center">
         <Route
           className={cn(
@@ -141,9 +135,6 @@ export function FleetEntry() {
         active ? "bg-sel" : "hover:bg-sel-hover",
       )}
     >
-      {active && (
-        <span className="absolute top-1/2 left-[5px] size-[3px] -translate-y-1/2 rounded-full bg-foreground/80" />
-      )}
       <span className="grid size-5 shrink-0 place-items-center">
         <Rocket
           className={cn(

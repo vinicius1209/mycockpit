@@ -4,6 +4,7 @@
 import { ActivityAge, Elapsed } from "@/components/chat/LiveTime"
 import { resolveExecutorIdentity } from "@/components/chat/executorIdentity"
 import type { DeferredWork } from "@/lib/work"
+import { useEpocaDaJanela } from "@/lib/janelaViva"
 import { cn } from "@/lib/utils"
 import { deferredLiveLine } from "@/store/chat"
 import { usePresets } from "@/store/presets"
@@ -42,6 +43,8 @@ export function WorkingIndicator({
    *  de silêncio sem sinal nenhum na linha). */
   stalledSince?: number
 }) {
+  // ADR-071: os dots voltam a pulsar quando a janela reaparece.
+  const epoca = useEpocaDaJanela()
   const presets = usePresets((s) => s.list)
   const { gutter, name, engine } = resolveExecutorIdentity(presets, agent, presetId)
   const live = deferredLiveLine(deferred)
@@ -78,7 +81,7 @@ export function WorkingIndicator({
           <span className="flex shrink-0 items-center gap-1" aria-hidden>
             {[0, 1, 2].map((i) => (
               <span
-                key={i}
+                key={`${epoca}:${i}`}
                 className={cn(
                   "size-1.5 rounded-full",
                   stalled

@@ -34,6 +34,8 @@
 // saltaria pra zero periodicamente mesmo com tudo funcionando. Aqui o número só
 // muda quando a janela volta — em uso normal ele nunca muda, e o custo é zero.
 
+import { useSyncExternalStore } from "react"
+
 let epoca = 0
 const ouvintes = new Set<() => void>()
 
@@ -76,4 +78,20 @@ export function janelaEpoca(): number {
 /** Só para teste. */
 export function _baterJanela(): void {
   bater()
+}
+
+/**
+ * A época, pra usar como `key` em elemento que ANIMA continuamente.
+ *
+ * Hook e não `useSyncExternalStore` solto em cada componente porque são cinco
+ * sítios: o anel da sidebar, os dois spinners do fio, o pulso do "trabalhando"
+ * e o ponto de "esperando você". Cinco cópias da mesma assinatura divergiriam
+ * na primeira mudança — é a razão do `lib/selection.ts` e do `lib/meter.ts`.
+ *
+ * Só faz sentido em animação INFINITA. Animação que termina sozinha (o
+ * `reveal`, o `rise`) não pode ganhar `key` disto: ela REPLAYARIA a cada volta
+ * da janela, e aí o remédio vira o sintoma.
+ */
+export function useEpocaDaJanela(): number {
+  return useSyncExternalStore(subscribeJanela, janelaEpoca, janelaEpoca)
 }

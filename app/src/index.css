@@ -588,12 +588,18 @@ pre,
  * botão recém-clicado — o que o usuário chamou de "aplicação web disfarçada de
  * desktop". App nativo não contorna o que você clica.
  *
- * `lib/modalidade.ts` carimba a última intenção REAL no <html>; aqui o anel é
- * apagado enquanto ela for mouse. Fail-safe deliberado: sem o atributo (SSR,
+ * `lib/modalidade.ts` carimba a última intenção REAL no <html>; aqui o ANEL é
+ * apagado enquanto ela for mouse.
+ *
+ * Apaga só o anel, NUNCA a borda — e isto foi medido. A primeira versão trazia
+ * um `border-color: inherit` junto, e num input com `focus-visible:border-brass`
+ * o clique deixava a borda com a cor do PAI (medido: vermelho, num pai
+ * vermelho), não com a borda normal. Fora que campo de texto mostrando que está
+ * focado é comportamento desktop CERTO: você precisa saber onde vai digitar. A
+ * queixa era o anel, e é só nele que se mexe. Fail-safe deliberado: sem o atributo (SSR,
  * rastreador não montado) o seletor não casa e o anel do Tailwind fica como
  * está — ninguém perde acessibilidade porque um script não rodou. */
 :root[data-modalidade="mouse"] *:focus-visible {
   --tw-ring-shadow: 0 0 #0000 !important;
   box-shadow: none !important;
-  border-color: inherit;
 }
