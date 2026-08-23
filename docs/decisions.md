@@ -2738,3 +2738,32 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **O que o review CONFIRMOU estar completo:** nenhum `st-running` restante no
   fio (§2.2 aplicada inteira), nenhum anel removido à mão fora do §2.1, e a
   época da janela cobrindo os cinco sítios de animação infinita.
+
+### ADR-073 — Trocar de MODELO no meio é seguro; trocar de MOTOR é handoff ✅
+- **Pergunta do usuário (23/08/2026):** *"por que não dá pra trocar o modelo e o
+  agent no meio da conversa, só quando falha?"*
+- **A razão que existia, e continua valendo pro AGENT:** cada CLI guarda a
+  sessão dela por um id próprio e nenhuma retoma a da outra. Trocar de motor não
+  é mudar parâmetro, é **handoff** — o `beginTransplant` abre sessão NOVA com
+  recap + ponteiro. Um seletor sugere reversibilidade barata; handoff não é
+  reversível.
+- **A razão que NÃO existia pro MODELO.** Trocar de modelo dentro do mesmo agent
+  preserva a sessão: o `--resume` segue valendo, o histórico continua no CLI.
+  E é o que Claude Code, Codex e agy permitem no meio da conversa (`/model`) —
+  nossa trava era mais rígida que a dos motores que orquestramos. Ela existia só
+  por ter nascido colada à do agent, onde a razão é real.
+- **O que mudou:** `modelUnlocked` deixou de ser "o último turno falhou" e passou
+  a ser `!running && !finalizing`. O caso de emergência virou um SUBCASO de "pode
+  trocar quando não está em voo", não uma regra própria. O `!running` fica porque
+  o modelo é flag de SPAWN, igual à permissão: vale do próximo envio.
+- **E a troca não pode ser MUDA.** `notaDeTrocaDeModelo` põe uma linha no fio
+  ("opus → sonnet, vale deste turno em diante"). Sem ela o histórico passaria a
+  mentir — a conversa pareceria ter rodado inteira num modelo só — e o custo por
+  token mudaria sem aviso. Destravar sem marcar teria criado um problema pior
+  que o que resolveu.
+- **Verificado que persiste:** o `start` grava `reqModel`, então a escolha vale
+  nos turnos seguintes; não é preciso re-escolher a cada envio.
+- **Custo estrutural:** `ChatPanel` estourou a catraca; saiu
+  `components/chat/autoResumeAgendar.ts`. O `handleSend` entra como PARÂMETRO em
+  vez de import — o módulo de retomada não precisa conhecer o composer, e a
+  dependência anda no sentido certo.

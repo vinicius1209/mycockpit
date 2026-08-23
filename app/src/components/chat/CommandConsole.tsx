@@ -43,7 +43,6 @@ import {
   hasExecutorTurn,
   pendingDeferred,
 } from "@/store/chat"
-import { lastExecutorTurnFailed } from "@/lib/turnOutcome"
 import { ModeSelect } from "@/components/chat/ModeSelect"
 import { lerConfinamento, SEM_CONFINAMENTO } from "@/lib/confinamento"
 import { modosOferecidos, wireDoModo } from "@/lib/agentModes"
@@ -190,11 +189,14 @@ export function CommandConsole({
   // Pareceres de conselheiro (advice) NÃO travam a identidade (Especialistas E1).
   // (Computado ANTES dos hooks: o popover "/" descobre comandos POR AGENT.)
   const locked = hasExecutorTurn(conv.items)
-  // SAÍDA DE EMERGÊNCIA (lib/turnOutcome.ts): depois de um turno que FALHOU o
-  // modelo, e só ele, destrava. Turno em andamento não conta — não se troca o
-  // motor no meio do voo.
-  const modelUnlocked =
-    lastExecutorTurnFailed(conv.items) && !conv.running && !conv.finalizing
+  // O MODELO destrava sempre que a conversa não está em voo. Trocar de modelo
+  // dentro do mesmo agent PRESERVA a sessão (o `--resume` segue valendo), e é o
+  // que os três motores permitem no meio da conversa (`/model`). O que não
+  // destrava é o AGENT: ali a troca é handoff, não seletor.
+  //
+  // `!running && !finalizing` porque o modelo é flag de SPAWN, igual à
+  // permissão: o processo já subiu com ela. Vale do próximo envio.
+  const modelUnlocked = !conv.running && !conv.finalizing
   // A escolha de emergência tem estado PRÓPRIO (o `model` cru sobra de outra
   // conversa). Zera ao trocar de conversa ou de agent: modelo de um motor não
   // vale no outro.

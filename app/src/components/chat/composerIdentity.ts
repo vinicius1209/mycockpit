@@ -31,8 +31,9 @@ export interface EntradaDaIdentidade {
   travada: boolean
   /** O último turno de executor FALHOU e nada está em voo (`lastExecutorTurnFailed`). */
   modeloDestravado: boolean
-  /** O modelo escolhido na saída de emergência (estado próprio, zerado ao trocar
-   *  de conversa ou de agent). */
+  /** O modelo escolhido DEPOIS do 1º envio (estado próprio, zerado ao trocar de
+   *  conversa ou de agent). Antes de 23/08/2026 isto só valia como saída de
+   *  emergência; hoje vale sempre — ver `identidadeEfetiva`. */
   escolhaDeEmergencia: string | null
   /** O que a conversa carimbou no 1º run. */
   conversa: { agent: string; reqModel: string | null; effort: string | null }
@@ -48,9 +49,23 @@ export interface EntradaDaIdentidade {
  * e "exibir estado", e confundir as duas foi o que fez o composer prometer um
  * modelo que o despacho ia descartar.
  *
- * A exceção é o MODELO depois de um turno que falhou: sem ela a conversa vira
- * um beco (slug inválido, modelo sem acesso, teto da conta → reenviar repete o
- * mesmo erro). O agent segue travado mesmo assim.
+ * A exceção é o MODELO, e ela deixou de ser "de emergência" em 23/08/2026.
+ *
+ * O que mudou: trocar de modelo DENTRO do mesmo agent preserva a sessão. O
+ * `--resume` continua valendo, o histórico continua no CLI, nada se perde — e é
+ * o que Claude Code, Codex e agy deixam fazer no meio da conversa (`/model`). A
+ * trava antiga era mais rígida que os motores que a gente orquestra, sem razão
+ * técnica: ela só existia porque nasceu junto com a do AGENT, onde a razão é
+ * real.
+ *
+ * A razão real (que continua valendo pro agent): trocar de MOTOR no meio não é
+ * mudar um parâmetro, é HANDOFF. Cada CLI guarda a sessão dela por um id
+ * próprio e nenhuma retoma a da outra, então o `beginTransplant` abre sessão
+ * NOVA com recap + ponteiro pro histórico exportado. Um seletor sugere
+ * reversibilidade barata; handoff não é reversível.
+ *
+ * O caso de emergência (turno que falhou) continua coberto — ele virou um
+ * subcaso de "pode trocar quando não está em voo", não uma regra própria.
  */
 export function identidadeEfetiva(e: EntradaDaIdentidade): IdentidadeEfetiva {
   if (!e.travada) {
@@ -61,12 +76,14 @@ export function identidadeEfetiva(e: EntradaDaIdentidade): IdentidadeEfetiva {
       trocouDeModelo: false,
     }
   }
-  const emergencia = e.modeloDestravado ? e.escolhaDeEmergencia : null
+  // `modeloDestravado` hoje significa "não está em voo" (o motor não aceita
+  // trocar o modelo de um processo que já subiu — a flag foi no spawn).
+  const escolhido = e.modeloDestravado ? e.escolhaDeEmergencia : null
   return {
     agent: e.conversa.agent,
-    model: emergencia ?? e.conversa.reqModel ?? "default",
+    model: escolhido ?? e.conversa.reqModel ?? "default",
     effort: e.conversa.effort ?? "default",
-    trocouDeModelo: emergencia !== null,
+    trocouDeModelo: escolhido !== null,
   }
 }
 
@@ -88,4 +105,26 @@ export function resumoDaIdentidade(id: IdentidadeEfetiva): string {
   ]
     .filter(Boolean)
     .join(" · ")
+}
+
+/**
+ * A linha que registra a troca de modelo NO FIO.
+ *
+ * Existe porque destravar a troca cria um risco novo: sem marca, o histórico
+ * passa a MENTIR — a conversa parece ter rodado inteira num modelo só, e quem
+ * ler depois ("por que esse trecho ficou pior?") não tem como saber. O custo
+ * também some do olho: o preço por token muda no meio e nada avisa.
+ *
+ * `null` quando não houve troca — ausência de evento, não frase vazia.
+ *
+ * Puro: quem decide POR QUE trocou é o humano; aqui só se escreve o que houve.
+ */
+export function notaDeTrocaDeModelo(
+  anterior: string | null,
+  novo: string | null,
+): string | null {
+  const de = anterior ?? "default"
+  const para = novo ?? "default"
+  if (de === para) return null
+  return `Modelo trocado nesta conversa: ${de} → ${para}. Vale deste turno em diante.`
 }

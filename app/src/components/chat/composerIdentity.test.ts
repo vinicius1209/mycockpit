@@ -6,7 +6,7 @@
 // estabelecida mostraria o modelo de OUTRA conversa — e o usuário mandaria um
 // turno achando que trocou algo.
 import { describe, expect, it } from "vitest"
-import { identidadeEfetiva, resumoDaIdentidade } from "./composerIdentity"
+import { notaDeTrocaDeModelo, identidadeEfetiva, resumoDaIdentidade } from "./composerIdentity"
 
 /** Os seletores mostrando uma escolha qualquer, sobrando de outra conversa. */
 const SELETORES = {
@@ -185,5 +185,26 @@ describe("o resumo da faixa diz o que importa e cala o resto", () => {
         trocouDeModelo: false,
       }),
     ).not.toMatch(/undefined|NaN/)
+  })
+})
+
+describe("notaDeTrocaDeModelo", () => {
+  it("registra a troca com os dois lados", () => {
+    expect(notaDeTrocaDeModelo("opus", "sonnet")).toBe(
+      "Modelo trocado nesta conversa: opus → sonnet. Vale deste turno em diante.",
+    )
+  })
+
+  it("mesmo modelo NÃO gera linha", () => {
+    // Sem isto o fio ganharia um aviso por turno — ruído que ensina a ignorar.
+    expect(notaDeTrocaDeModelo("opus", "opus")).toBeNull()
+    expect(notaDeTrocaDeModelo(null, null)).toBeNull()
+  })
+
+  it("`null` vira 'default' em vez de sumir da frase", () => {
+    // "trocado: → sonnet" não diz de onde saiu. O nome do estado importa mais
+    // que a elegância da frase.
+    expect(notaDeTrocaDeModelo(null, "sonnet")).toContain("default → sonnet")
+    expect(notaDeTrocaDeModelo("opus", null)).toContain("opus → default")
   })
 })

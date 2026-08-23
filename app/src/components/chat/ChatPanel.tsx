@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { modoEfetivoDoSpawn, permissaoDoSpawn } from "@/lib/sessionMode"
+import { notaDeTrocaDeModelo } from "@/components/chat/composerIdentity"
+import { maybeScheduleAutoResume } from "@/components/chat/autoResumeAgendar"
 import { ArrowDown } from "lucide-react"
 import { toast } from "sonner"
 import { withNotes } from "@/lib/notes"
@@ -55,7 +57,6 @@ import {
   buildResumeFallback,
   shouldAttachResumeFallback,
 } from "@/lib/transcript"
-import { resumePrompt, wantsAutoResume } from "@/lib/autoResume"
 import { resolveSendTarget } from "@/lib/sendTarget"
 import { notifyTurnEnd } from "@/lib/notify"
 import type { Attachment } from "@/lib/attachments"
@@ -432,6 +433,15 @@ export function ChatPanel() {
     const locked = execItems.length > 0
     let agent = locked ? conv.agent : (cfg?.agent ?? "claude-code")
     let model = locked && !cfg?.modelSwitched ? conv.reqModel : (cfg?.model ?? null)
+    // Trocar de modelo no meio é permitido (a sessão do CLI sobrevive), mas não
+    // pode ser MUDO: sem esta linha o histórico passa a dizer que a conversa
+    // rodou inteira num modelo só, e o custo por token muda sem aviso.
+    if (locked) {
+      const nota = notaDeTrocaDeModelo(conv.reqModel, model)
+      if (nota) {
+        useChat.getState().handleEvent(convId, { type: "notice", message: nota })
+      }
+    }
     let effort = locked ? conv.effort : (cfg?.effort ?? null)
     // S3.3 — persona do preset SÓ no 1º turno (!locked). FAIL-CLOSED: preset
     // quebrado (apagado, sem personality, skill fora do inventário do projeto)
@@ -771,7 +781,7 @@ export function ChatPanel() {
       // fio em foco.
       if (await drainQueued(convId, agent, project.path)) {
         // fila drenada: o próximo lote já está em voo (ou de volta na fila).
-      } else if (maybeScheduleAutoResume(convId, agent)) {
+      } else if (maybeScheduleAutoResume(convId, agent, handleSend)) {
         // turno bateu num rate limit / "vou tentar depois" e o auto-resume está
         // ligado: agendamos um reenvio automático (banner mostra o countdown).
         // Não notifica/sugere ainda — o loop ainda não terminou de verdade.
@@ -900,60 +910,6 @@ export function ChatPanel() {
     }
   }
 
-  // Auto-revive: se o turno recém-encerrado pede resume (limite da CLI OU o texto
-  // final combina padrões de retry/espera) E a opção está ligada, agenda um
-  // reenvio automático via setTimeout. O prompt é mínimo: o resume nativo já
-  // carrega o fio; se ele expirou, o memoryFallback injeta recap + ponteiro.
-  // Repetir o handoff inteiro aqui só queimava tokens. Cada resume é um run PAGO → o cap
-  // (autoResumeMaxTries) protege; o banner mostra quantas tentativas restam.
-  // Retorna true se agendou (o caller pula notify/sugestões).
-  function maybeScheduleAutoResume(convId: string, agent: string): boolean {
-    const settings = useApp.getState().settings
-    if (!settings.autoResume) return false
-    const conv = useChat.getState().byId[convId]
-    if (!conv || conv.corrupt) return false
-    // já esgotou o cap num loop anterior deste turno → para.
-    const prevTries = conv.autoResume?.tries ?? 0
-    if (prevTries >= settings.autoResumeMaxTries) {
-      useChat.getState().cancelAutoResume(convId)
-      return false
-    }
-    const verdict = wantsAutoResume(
-      conv.items,
-      { hit: !!conv.limitHitThisTurn, resetHint: conv.resetHint },
-      prevTries,
-    )
-    if (!verdict.resume) {
-      // turno concluiu SEM sinal de resume → sucesso: encerra o loop.
-      useChat.getState().cancelAutoResume(convId)
-      return false
-    }
-    const tries = prevTries + 1
-    const timer = setTimeout(() => {
-      const c = useChat.getState().byId[convId]
-      // corrida: usuário pode ter cancelado/enviado algo antes do disparo.
-      if (!c?.autoResume) return
-      if (c.running || c.finalizing) return
-      // o reenvio conta o gatilho REAL: afirmar "limite de uso" num resume
-      // heurístico manda o agente caçar um limite que nunca existiu.
-      const prompt = resumePrompt(verdict.reason)
-      useChat.getState().handleEvent(convId, {
-        type: "notice",
-        message: `auto-resume: retomando (tentativa ${tries}/${settings.autoResumeMaxTries})`,
-      })
-      // alvo explícito: o timer dispara minutos depois, o foco já pode ser outro.
-      void handleSend(prompt, undefined, [], AUTO_RESUME, convId)
-    }, verdict.delayMs)
-    useChat.getState().setAutoResume(convId, {
-      tries,
-      maxTries: settings.autoResumeMaxTries,
-      nextAt: Date.now() + verdict.delayMs,
-      reason: verdict.reason,
-      timer,
-    })
-    void notifyTurnEnd(convId, agent)
-    return true
-  }
 
   // Revezamento: continua a MESMA conversa em OUTRO agent (limite/erro do
   // atual). O contexto vai por preâmbulo determinístico (handoff, tail-biased);
