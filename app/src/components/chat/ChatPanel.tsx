@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { modoEfetivoDoSpawn, permissaoDoSpawn } from "@/lib/sessionMode"
 import {
   ArrowDown,
   Check,
@@ -14,6 +15,7 @@ import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { Especialistas } from "@/components/settings/Especialistas"
 import { MessageList } from "@/components/chat/MessageList"
+import { useFeedbackDoFio } from "@/components/chat/feedbackDoFio"
 import { PresenceBar } from "@/components/chat/PresenceBar"
 import {
   AutoResumeBanner,
@@ -72,9 +74,6 @@ import { isTauri, listConvRefs } from "@/lib/db"
 import {
   buildLearningBlocks,
   markLessonsUsed,
-  reinforceLessons,
-  distillCandidate,
-  saveLesson,
 } from "@/lib/learning"
 import { presentTool } from "@/lib/toolview"
 import {
@@ -535,6 +534,13 @@ export function ChatPanel() {
     // existe. Auto-resume nunca planeja (é continuação de execução).
     const planFirst =
       !fromAutoResume && (cfg?.planFirst ?? conv.sessionMode === "plan")
+    // M3, o ÚLTIMO METRO: o modo da conversa tem que chegar no PROCESSO.
+    // Até 23/08/2026 daqui saía `project.permissionMode` e o chip da conversa
+    // não alcançava o spawn — conversa nova em "Liberado" pedia permissão, e
+    // "Só lê" não confinava (o sandbox decide pelo mesmo valor).
+    const permissaoDoTurno = permissaoDoSpawn(
+      modoEfetivoDoSpawn(conv.sessionMode, project.permissionMode),
+    )
     const runId = crypto.randomUUID()
     // sessão fresca quando o volante trocou de backend (o resume nativo do agent
     // anterior não vale pro novo); senão o resume normal da conversa.
@@ -757,7 +763,7 @@ export function ChatPanel() {
         promptText,
         cwd,
         sessionId,
-        project.permissionMode ?? "padrao",
+        permissaoDoTurno,
         attachments,
         (e) => useChat.getState().handleEvent(convId, e),
         planFirst,
@@ -1103,7 +1109,11 @@ export function ChatPanel() {
         prepared.prompt,
         cwd,
         null, // sessão fresca no novo agent
-        project.permissionMode ?? "padrao",
+        // Mesmo último metro do envio normal: trocar de motor no meio da
+        // conversa não pode rebaixar o modo que a conversa escolheu.
+        permissaoDoSpawn(
+          modoEfetivoDoSpawn(fresh?.sessionMode, project.permissionMode),
+        ),
         [],
         (e) => useChat.getState().handleEvent(convId, e),
         false,
@@ -1158,49 +1168,12 @@ export function ChatPanel() {
   // Loop de feedback do Linear (M2): só no modo Linear e com projeto ativo.
   // Resolve o helper (Haiku) na mesma regra das sugestões: cfg do projeto vence,
   // senão o default global; null = destilação desligada (grava o texto cru).
-  const feedback = useMemo(() => {
-    if (viewMode !== "linear" || !project) return null
-    const cfg = useApp.getState().mycockpit[project.id]
-    const helperModel = cfg
-      ? cfg.helper
-      : useApp.getState().settings.helperModel
-    const cwd = conv?.worktreePath ?? project.path
-    return {
-      onReact: async (resultId: string, reaction: string) => {
-        const convId = useChat.getState().activeId
-        if (!convId) return false
-        const added = await useChat
-          .getState()
-          .toggleTurnReaction(convId, resultId, reaction)
-        // Reação positiva no ÚLTIMO resultado reforça as lições que realmente
-        // foram injetadas nesse turno. Resultado histórico não usa o ref atual.
-        const results = useChat
-          .getState()
-          .byId[convId]?.items.filter((it) => it.kind === "result")
-        const isLatest = results?.at(-1)?.id === resultId
-        if (added && reaction !== "👎" && isLatest) {
-          const ids = injectedLessonsRef.current[convId] ?? []
-          if (ids.length) await reinforceLessons(ids)
-        }
-        return added
-      },
-      distill: (agentTurn: string, userNote: string) =>
-        distillCandidate({ cwd, helperModel, agentTurn, userNote }),
-      save: (
-        rule: string,
-        scope: "global" | "project",
-        reaction?: string | null,
-      ) =>
-        saveLesson({
-          projectId: project.id,
-          rule,
-          scope,
-          source: reaction ? `feedback:${reaction}` : "feedback:note",
-        }),
-    }
-    // conv.worktreePath entra p/ o cwd acompanhar o worktree da conversa ativa.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, project?.id, project?.path, conv?.worktreePath])
+  const feedback = useFeedbackDoFio(
+    viewMode,
+    project,
+    conv,
+    injectedLessonsRef,
+  )
 
   return (
     <section className="relative flex h-full w-full min-w-0 flex-col bg-background">

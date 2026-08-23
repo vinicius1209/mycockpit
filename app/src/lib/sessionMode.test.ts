@@ -13,6 +13,8 @@ import {
   modeFromAutonomy,
   modeFromConversation,
   modeFromSchedule,
+  modoEfetivoDoSpawn,
+  permissaoDoSpawn,
   naoAlarga,
   type PermissionVocab,
   type SessionMode,
@@ -158,5 +160,72 @@ describe("ehDesassistido", () => {
     expect(ehDesassistido("leitura")).toBe(false)
     expect(ehDesassistido("plan")).toBe(false)
     expect(ehDesassistido("fusionRo")).toBe(false)
+  })
+})
+
+describe("o último metro: do chip até o processo", () => {
+  it("a CONVERSA vence o projeto", () => {
+    // O bug de 23/08/2026: conversa nova em "Liberado", processo nascendo com o
+    // modo do PROJETO. O chip mostrava um valor que nunca chegava ao spawn.
+    expect(modoEfetivoDoSpawn("liberado", "padrao")).toBe("liberado")
+    expect(modoEfetivoDoSpawn("leitura", "liberado")).toBe("leitura")
+  })
+
+  it("sem modo na conversa, HERDA o projeto (null ≠ 'sem modo')", () => {
+    expect(modoEfetivoDoSpawn(null, "liberado")).toBe("liberado")
+    expect(modoEfetivoDoSpawn(undefined, "leitura")).toBe("leitura")
+  })
+
+  it("sem os dois, o default é o que PEDE — nunca o que libera", () => {
+    // Fail-closed: ausência de configuração não pode virar permissão ampla.
+    expect(modoEfetivoDoSpawn(null, null)).toBe("padrao")
+  })
+
+  it("`plan` viaja como LEITURA, porque planejar não edita", () => {
+    // O planFirst continua indo junto; a permissão que o acompanha é a mais
+    // apertada que não quebra o turno.
+    expect(permissaoDoSpawn("plan")).toBe("leitura")
+  })
+
+  it("`fusionRo` usa o nome que o Rust entende", () => {
+    // Vocabulário do backend é "fusion-ro"; mandar "fusionRo" seria erro de
+    // parse na fronteira — e o enum do Rust é exaustivo, então viraria falha do
+    // turno em vez de fail-open.
+    expect(permissaoDoSpawn("fusionRo")).toBe("fusion-ro")
+  })
+
+  it("os demais atravessam 1:1", () => {
+    for (const m of ["leitura", "padrao", "auto", "liberado"] as const) {
+      expect(permissaoDoSpawn(m)).toBe(m)
+    }
+  })
+
+  it("nenhuma tradução AFROUXA o que o usuário escolheu", () => {
+    for (const m of TODOS) {
+      const saida = permissaoDoSpawn(m)
+      const comoModo = (saida === "fusion-ro" ? "fusionRo" : saida) as SessionMode
+      expect(naoAlarga(m, comoModo), m).toBe(true)
+    }
+  })
+})
+
+describe("o caso do usuário, 23/08/2026", () => {
+  it("conversa NOVA em Liberado, projeto em Pede → o processo nasce LIBERADO", () => {
+    // Relato: conversa nova aberta em "Liberado", sem trocar nada durante o
+    // turno, e o Claude pedindo permissão a cada Bash. O chip lia
+    // `conv.sessionMode`; o spawn mandava `project.permissionMode`.
+    expect(permissaoDoSpawn(modoEfetivoDoSpawn("liberado", "padrao"))).toBe(
+      "liberado",
+    )
+  })
+
+  it("e o inverso, que é o lado PERIGOSO: Só lê na conversa CONFINA", () => {
+    // O mesmo desencontro deixava o sandbox (S1-S4) inerte: ele decide pelo
+    // `req.permission`, então escolher "Só lê" no chip não confinava nada a
+    // menos que o PROJETO já estivesse em leitura. Garantia de segurança
+    // pendurada em controle desconectado é pior que nenhuma — ela é exibida.
+    expect(permissaoDoSpawn(modoEfetivoDoSpawn("leitura", "liberado"))).toBe(
+      "leitura",
+    )
   })
 })

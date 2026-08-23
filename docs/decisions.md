@@ -2569,3 +2569,38 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   `parts.tsx` em vez de reescrevê-las — reescrever testaria a cópia. Verificado
   que morde: reintroduzindo o `shrink-0`, falha com `longo @ 240px`.
 - **Verificado:** `tsc` 0, `vitest` 3049, 6 guardas, e2e 22/22, `cargo check` 0.
+
+### ADR-068 — O eixo de modo tinha tudo, menos o último metro ✅
+- **Contexto (23/08/2026):** o usuário abriu uma conversa NOVA em "Liberado",
+  sem trocar nada durante o turno, e o Claude pediu permissão a cada Bash.
+- **Meu primeiro diagnóstico estava ERRADO.** Respondi que ele tinha trocado o
+  modo com o turno em voo, e que a flag é fixa no spawn — explicação plausível,
+  e o app até mostra "vale a partir do próximo envio". Ele corrigiu: conversa
+  nova, do zero, nada trocado. Aí virou investigação de verdade.
+- **O bug:** `ChatPanel` mandava `project.permissionMode ?? "padrao"` pro
+  `runAgent`. O `conv.sessionMode` — o valor que o chip escreve e mostra — era
+  lido em EXATAMENTE dois lugares: desenhar o chip e derivar o `planFirst`.
+  Nenhum deles chegava ao processo.
+- **O M0–M4 construiu o eixo inteiro e não ligou a ponta.** Teve rede de testes
+  (M0), sonda do motor (M0.5), curadoria (M1), controle único (M2), persistência
+  com migração (M3) e unificação (M4) — e nada disso perguntava *"o valor chega
+  no processo?"*. Cada fase testou a sua metade; a costura entre a última e o
+  spawn não era de ninguém.
+- **E contaminava o sandbox (S1–S4).** O confinamento decide pelo
+  `req.permission`, que vinha do projeto: escolher "Só lê" no chip NÃO confinava
+  nada, a menos que o projeto inteiro já estivesse em leitura. Garantia de
+  segurança pendurada num controle desconectado é pior que garantia nenhuma —
+  porque ela é exibida.
+- **Por que existe permissão no PROJETO:** ela é *default*, não teto (ADR-059).
+  Serve pra conversa nova em projeto sensível nascer segura sem ninguém lembrar;
+  a conversa manda em si mesma. O bug fazia parecer que o projeto governava.
+- **A correção é uma função pura com nome:** `modoEfetivoDoSpawn` (conversa
+  vence projeto, ausência dos dois cai em "padrao" — fail-closed) +
+  `permissaoDoSpawn` (eixo → vocabulário do Rust). Nos dois sítios de spawn,
+  incluindo o transplante de motor: trocar de CLI no meio não pode rebaixar o
+  modo escolhido.
+- **O compilador achou um resto do M0 no caminho:** `PermissionVocab` se
+  descreve como "vocabulário da conversa/projeto" e lista TRÊS valores, enquanto
+  o `PermissionMode` do `lib/types.ts` tem QUATRO — o `auto` do projeto não
+  cabia. Quem cedeu foi o tipo estreito.
+- **Verificado:** `tsc` 0, `vitest` 3070, 7 guardas, e2e 23/23, `cargo` 494.

@@ -118,3 +118,56 @@ export function naoAlarga(antes: SessionMode, depois: SessionMode): boolean {
 export function ehDesassistido(m: SessionMode): boolean {
   return PERMISSIVIDADE[m] >= PERMISSIVIDADE.auto
 }
+
+/**
+ * O modo que o SPAWN vai usar: conversa vence projeto, projeto é o default.
+ *
+ * # O bug que esta função existe pra matar (23/08/2026)
+ *
+ * O M3 fez o modo virar da CONVERSA e persistir. O M4 unificou o eixo. E o
+ * `ChatPanel` continuou mandando `project.permissionMode ?? "padrao"` pro
+ * `runAgent` — o último metro nunca foi ligado.
+ *
+ * O sintoma que o usuário viu: conversa NOVA aberta em "Liberado", e o Claude
+ * pedindo permissão a cada Bash. O chip mostrava o modo da conversa; o processo
+ * nascia com o do projeto. `conv.sessionMode` era lido em exatamente dois
+ * lugares — desenhar o chip e derivar o `planFirst` — e em nenhum deles chegava
+ * ao spawn.
+ *
+ * **E contaminava o sandbox.** O confinamento decide pelo `req.permission`, que
+ * vinha do projeto: escolher "Só lê" no chip NÃO confinava, a menos que o
+ * projeto inteiro já estivesse em leitura. Uma garantia de segurança pendurada
+ * num controle desconectado é pior que nenhuma, porque ela é exibida.
+ *
+ * A lição, e ela se repete: construir o eixo não é ligá-lo. O M0–M4 tinha rede,
+ * teste e ADR — e nada disso perguntava "o valor chega no processo?".
+ */
+export function modoEfetivoDoSpawn(
+  daConversa: SessionMode | null | undefined,
+  /**
+   * O modo do projeto. Tipado como `SessionMode` e NÃO como `PermissionVocab`
+   * porque o compilador achou uma inconsistência do M0 ao ligar isto: o
+   * `PermissionVocab` se descreve como "vocabulário da conversa/projeto", mas
+   * lista três valores enquanto o `PermissionMode` do `lib/types.ts` tem
+   * QUATRO — o `auto` do projeto não cabia nele. Projeto em "auto" é
+   * configuração legítima, então quem tem que ceder é o tipo estreito.
+   */
+  doProjeto: SessionMode | null | undefined,
+): SessionMode {
+  return daConversa ?? doProjeto ?? "padrao"
+}
+
+/**
+ * Eixo → vocabulário que o Rust aceita (`Permission::parse`).
+ *
+ * `plan` NÃO é permissão: ele é ortogonal e viaja no `planFirst`. Traduzir aqui
+ * exige dizer sob QUE permissão o plano roda — e a resposta é a mais apertada
+ * que não quebra o turno, porque planejar não escreve.
+ */
+export function permissaoDoSpawn(m: SessionMode): string {
+  if (m === "fusionRo") return "fusion-ro"
+  // Planejar não edita: a permissão que acompanha é a de leitura. O `planFirst`
+  // continua indo junto, e é ele que o adapter usa pra montar o modo de plano.
+  if (m === "plan") return "leitura"
+  return m
+}
