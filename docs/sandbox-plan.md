@@ -115,7 +115,7 @@ assinaturas de stderr POR backend (`Operation not permitted`, `os error 1`,
   com `exit 0` e produção vazia sob sandbox precisa ser tratado como
   SUSPEITO — silêncio não é sucesso.
 
-### S4 — O selo honesto: `completa` × `parcial`
+### S4 ✅ — O selo honesto: `completa` × `parcial` (22/08/2026)
 Roubado do DSH (`docs/subsystems/sandbox.md`), e aqui vale mais ainda porque a
 nossa é denylist:
 
@@ -305,3 +305,49 @@ texto puro, sem markdown. Eu tinha escrito markdown numa superfície que não
 interpreta. As frases também estavam longas demais para uma linha que, pelo §1,
 deve recuar — foram encurtadas, e a mais importante (`Negou`) passou a caber em
 uma linha só.
+
+## Como ficou o S4 (22/08/2026) — e o buraco que ele revelou no S2
+
+### O buraco: o turno de PLANO não estava confinado
+
+Antes de escrever o selo, fui conferir o que ele ia prometer — e descobri que o
+`confina(Permission)` não enxergava o `plan_first`, que é um booleano SEPARADO
+no `RunRequest`.
+
+Ou seja: um turno de plano com permissão `Padrao` rodava **solto**. O sandbox
+blindava tudo **menos o incidente que motivou o trabalho inteiro** — a ADR-061,
+onde `agy --mode plan -p "crie o arquivo X"` criou o arquivo.
+
+`confina(p, plan_first)` agora inclui o plano, inclusive sobre permissão de
+escrita (`Liberado` + plano confina): planejar VENCE a permissão no turno, que é
+o que o `adapters.rs` já faz ao substituir o `--permission-mode` e o que o
+`modeFromConversation` já devolve no front. Dois testes novos, nomeados pelo
+incidente.
+
+**A lição:** o S4 não era "só a tela". Escrever o que se promete obriga a
+verificar o que se cumpre — e foi só ao redigir a promessa que o furo apareceu.
+
+### O selo
+
+`sandbox_confinamento` (Rust) devolve `Selo::Parcial` + a nota, ou `Ausente`. O
+front lê UMA vez por sessão (depende da máquina, não do turno) e o `ModeSelect`
+troca a nota do motor pela do selo **só nos modos que prometem não escrever**.
+
+- **"Parcial" é palavra exata, não modéstia.** A política é denylist (fase 0):
+  protege o projeto, não o disco. Dizer "completa" seria repetir, com a nossa
+  assinatura, o rótulo sem dente que o sandbox veio consertar.
+- **O selo VENCE a nota do motor.** Com sandbox ligado, manter "só um pedido no
+  prompt" no agy descreveria o freio ANTIGO enquanto o novo é que está valendo.
+- **Modo de escrita nunca ganha selo**, mesmo com sandbox disponível. Insinuar
+  garantia onde o `confina()` recusa seria a mentira mais perigosa da tela.
+- **O default é pessimista.** Fora do Tauri, ou se o `invoke` falhar, o selo é
+  `ausente`. Não conseguir perguntar NÃO vira "tem sandbox".
+
+### A decisão saiu do JSX por causa do teste
+
+`notaDeQuemSegura()` é função pura em `lib/confinamento.ts`, não um ternário no
+componente. Motivo prático: o conteúdo do dropdown **não sai no
+`renderToStaticMarkup`** (ele só renderiza aberto), então inline a regra ficaria
+sem teste nenhum — e ela é do eixo de segurança, onde "sem sintoma" é o pior
+lugar pra deixar um erro. 4 testes cobrindo a decisão; o que fica sem cobertura
+automática é só a interpolação no JSX.

@@ -663,6 +663,7 @@ pub fn run() {
             editor::detect_editors,
             editor::open_in_editor,
             modes::detect_modes,
+            sandbox::sandbox_confinamento,
             git::git_commit,
             git::git_create_pr,
             git::pr_context,

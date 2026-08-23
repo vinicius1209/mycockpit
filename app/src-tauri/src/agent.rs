@@ -834,7 +834,7 @@ fn confina_se_prometido(
         // aberta seria um buraco exatamente onde ele concedeu acesso de propósito.
         extras: req.extra_dirs.clone(),
     };
-    let perfil = match crate::sandbox::perfil_macos(req.permission, &alvo) {
+    let perfil = match crate::sandbox::perfil_macos(req.permission, req.plan_first, &alvo) {
         Ok(p) => p,
         // Modo de escrita: ausência LEGÍTIMA de sandbox, sem aviso nenhum.
         Err(crate::sandbox::SemPerfil::ModoEscreve) => return (cmd, None),

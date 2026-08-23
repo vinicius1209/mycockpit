@@ -48,3 +48,24 @@ describe("ModeSelect", () => {
     expect(render("liberado", so)).toContain("Modo")
   })
 })
+
+describe("o selo do confinamento (S4)", () => {
+  const comSelo = (value: SessionMode) =>
+    renderToStaticMarkup(
+      createElement(ModeSelect, {
+        modes: CLAUDE,
+        value,
+        onChange: () => {},
+        confinamento: {
+          selo: "parcial" as const,
+          nota: "o sistema barra escrita no projeto",
+        },
+      }),
+    )
+
+  it("o selo NÃO vaza pro gatilho fechado", () => {
+    // O gatilho é o rótulo do modo; encher ele de garantia transformaria um
+    // controle em um aviso permanente.
+    expect(comSelo("leitura")).not.toContain("confinamento parcial")
+  })
+})

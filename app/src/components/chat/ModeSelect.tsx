@@ -27,6 +27,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { AgentModeDef } from "@/lib/agentModes"
+import {
+  notaDeQuemSegura,
+  SEM_CONFINAMENTO,
+  type Confinamento,
+} from "@/lib/confinamento"
 import type { SessionMode } from "@/lib/sessionMode"
 import { cn } from "@/lib/utils"
 
@@ -53,6 +58,7 @@ export function ModeSelect({
   onChange,
   onDefinirPadrao,
   disabled,
+  confinamento = SEM_CONFINAMENTO,
 }: {
   /** Já filtrados: motor anuncia E o app sabe explicar. */
   modes: AgentModeDef[]
@@ -64,6 +70,11 @@ export function ModeSelect({
    *  antigo mudava o projeto inteiro sem nunca dizer isso. */
   onDefinirPadrao?: () => void
   disabled?: boolean
+  /** O que o SANDBOX DO FROTA garante nesta máquina (S4). Quando presente, ele
+   *  substitui a nota do motor nos modos que prometem não escrever — porque aí
+   *  quem segura passa a ser o sistema, e dizer "modo da CLI" seria descrever o
+   *  freio antigo enquanto o novo é que está valendo. */
+  confinamento?: Confinamento
 }) {
   // Sem modos curados pro motor ativo (hoje: agy) o controle NÃO aparece. Um
   // seletor vazio prometeria escolha que não existe, e o aviso do sino já conta
@@ -133,9 +144,18 @@ export function ModeSelect({
                   {m.description}
                 </div>
                 {/* Quem segura. Fica na linha de baixo, em sussurro: é o dado
-                    que separa uma garantia de um pedido educado. */}
+                    que separa uma garantia de um pedido educado.
+                    Com confinamento do Frota, o selo VENCE a nota do motor nos
+                    modos que prometem não escrever — e diz "parcial" de
+                    propósito: a política é denylist, protege o projeto e não o
+                    disco. Prometer "completa" aqui seria repetir, com a nossa
+                    assinatura, o rótulo sem dente que o sandbox veio consertar. */}
                 <div className="text-[11px] text-muted-foreground/60">
-                  {ENFORCEMENT_NOTA[m.enforcement]}
+                  {notaDeQuemSegura(
+                    m.canonico,
+                    confinamento,
+                    ENFORCEMENT_NOTA[m.enforcement],
+                  )}
                 </div>
               </DropdownMenuRadioItem>
             )

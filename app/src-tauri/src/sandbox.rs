@@ -44,8 +44,18 @@ use tokio::process::Command;
 /// Modos em que o Frota PROMETE que o agente não escreve. Só eles ganham
 /// sandbox: em `Padrao`/`Auto`/`Liberado` o agente DEVE escrever, e confinar ali
 /// seria teatro que quebra turno legítimo.
-pub fn confina(p: Permission) -> bool {
-    matches!(p, Permission::Leitura | Permission::FusionRo)
+///
+/// **`plan_first` entra, e a primeira versão disto esquecia dele.** O plano é
+/// promessa de não editar — e é EXATAMENTE o caso da ADR-061, onde
+/// `agy --mode plan -p "crie o arquivo X"` criou o arquivo. Deixar o turno de
+/// plano fora do confinamento seria blindar tudo menos o incidente que motivou
+/// o trabalho inteiro.
+///
+/// Vale mesmo com permissão de escrita (`Liberado` + plano): planejar VENCE a
+/// permissão neste turno — é o que o `adapters.rs` já faz ao substituir o
+/// `--permission-mode`, e o que o `modeFromConversation` do front já devolve.
+pub fn confina(p: Permission, plan_first: bool) -> bool {
+    plan_first || matches!(p, Permission::Leitura | Permission::FusionRo)
 }
 
 /// O que o perfil protege. Campo a campo porque cada um tem um motivo próprio,
@@ -92,8 +102,12 @@ pub enum SemPerfil {
 /// `(allow default)` seguido de `(deny file-write* ...)` é a DENYLIST que a
 /// medida exigiu. A ordem importa no Seatbelt: a última regra que casa vence,
 /// então os `deny` vêm depois do `allow default`.
-pub fn perfil_macos(p: Permission, alvo: &Alvo) -> Result<String, SemPerfil> {
-    if !confina(p) {
+pub fn perfil_macos(
+    p: Permission,
+    plan_first: bool,
+    alvo: &Alvo,
+) -> Result<String, SemPerfil> {
+    if !confina(p, plan_first) {
         return Err(SemPerfil::ModoEscreve);
     }
     let mut caminhos: Vec<&str> = Vec::new();
@@ -166,6 +180,51 @@ pub fn envelopa(cmd: Command, perfil: &std::path::Path) -> Command {
         }
     }
     novo
+}
+
+// ─────────────────────────────────────────── S4: o selo honesto do que garante
+
+/// O que o confinamento REALMENTE garante nesta máquina.
+///
+/// Existe porque a alternativa é a tela prometer o que a denylist não entrega.
+/// O `ModeSelect` diz "sandbox do sistema" para o Codex desde sempre — se o
+/// Frota passasse a dizer a mesma coisa sem qualificar, estaria repetindo o
+/// problema que veio consertar, só que com a nossa assinatura.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Selo {
+    /// Não há confinamento do Frota aqui. Quem segura é o motor, como antes.
+    Ausente,
+    /// O sistema barra escrita no PROJETO. Parcial de propósito, e a palavra é
+    /// exata: a denylist não cobre o resto do disco. Chamar isto de "completa"
+    /// seria a mentira confortável.
+    Parcial,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Confinamento {
+    pub selo: Selo,
+    /// Frase curta pro seletor. Vazia quando `Ausente` — quem não garante nada
+    /// não ganha linha na tela.
+    pub nota: &'static str,
+}
+
+/// Estado do confinamento nesta máquina, pro front decidir o que mostrar.
+pub fn confinamento() -> Confinamento {
+    if disponivel() {
+        Confinamento {
+            selo: Selo::Parcial,
+            nota: "o sistema barra escrita no projeto",
+        }
+    } else {
+        Confinamento { selo: Selo::Ausente, nota: "" }
+    }
+}
+
+#[tauri::command]
+pub fn sandbox_confinamento() -> Confinamento {
+    confinamento()
 }
 
 // ───────────────────────────────── S3: "o sandbox negou" × "o agente quebrou"
@@ -269,17 +328,35 @@ mod tests {
     fn so_os_modos_que_prometem_nao_escrever_sao_confinados() {
         // Sandbox em modo de escrita seria teatro: quebra turno legítimo e não
         // protege nada que o usuário tenha pedido pra proteger.
-        assert!(confina(Permission::Leitura));
-        assert!(confina(Permission::FusionRo));
-        assert!(!confina(Permission::Padrao));
-        assert!(!confina(Permission::Auto));
-        assert!(!confina(Permission::Liberado));
+        assert!(confina(Permission::Leitura, false));
+        assert!(confina(Permission::FusionRo, false));
+        assert!(!confina(Permission::Padrao, false));
+        assert!(!confina(Permission::Auto, false));
+        assert!(!confina(Permission::Liberado, false));
+    }
+
+    #[test]
+    fn o_TURNO_DE_PLANO_e_confinado__foi_ele_que_motivou_tudo() {
+        // ADR-061: `agy --mode plan -p "crie o arquivo X"` CRIOU o arquivo. Se o
+        // plano ficasse de fora, o sandbox blindaria tudo menos o incidente que
+        // originou o trabalho. A primeira versão do `confina` esquecia disto.
+        assert!(confina(Permission::Padrao, true));
+        // e vale mesmo com permissão de escrita: planejar VENCE a permissão no
+        // turno, que é o que o adapters.rs já faz com o --permission-mode.
+        assert!(confina(Permission::Liberado, true));
+        assert!(confina(Permission::Auto, true));
+    }
+
+    #[test]
+    fn plano_gera_perfil_de_verdade_e_nao_so_uma_flag() {
+        let p = perfil_macos(Permission::Padrao, true, &alvo("/repo")).unwrap();
+        assert!(p.contains("(deny file-write* (subpath \"/repo\"))"));
     }
 
     #[test]
     fn modo_de_escrita_nao_gera_perfil() {
         assert_eq!(
-            perfil_macos(Permission::Padrao, &alvo("/x/y")),
+            perfil_macos(Permission::Padrao, false, &alvo("/x/y")),
             Err(SemPerfil::ModoEscreve)
         );
     }
@@ -288,7 +365,7 @@ mod tests {
     fn o_perfil_e_denylist_nao_allowlist() {
         // A medida mandou: allowlist quebra 2 de 3 motores, e o agy quebra em
         // SILÊNCIO. Se este teste virar allowlist um dia, foi regressão.
-        let p = perfil_macos(Permission::Leitura, &alvo("/repo")).unwrap();
+        let p = perfil_macos(Permission::Leitura, false, &alvo("/repo")).unwrap();
         assert!(p.contains("(allow default)"));
         assert!(p.contains("(deny file-write* (subpath \"/repo\"))"));
     }
@@ -297,7 +374,7 @@ mod tests {
     fn o_git_ganha_linha_propria() {
         // Num worktree o `.git` é ARQUIVO apontando pro repo principal, fora do
         // subpath da raiz. Sem esta linha, "Só lê" deixaria reescrever histórico.
-        let p = perfil_macos(Permission::Leitura, &alvo("/repo")).unwrap();
+        let p = perfil_macos(Permission::Leitura, false, &alvo("/repo")).unwrap();
         assert!(p.contains("(deny file-write* (subpath \"/repo/.git\"))"));
     }
 
@@ -308,7 +385,7 @@ mod tests {
             worktree: Some("/wt/mycockpit/abc".into()),
             ..Default::default()
         };
-        let p = perfil_macos(Permission::Leitura, &a).unwrap();
+        let p = perfil_macos(Permission::Leitura, false, &a).unwrap();
         assert!(p.contains("\"/repo\""));
         assert!(p.contains("\"/wt/mycockpit/abc\""));
     }
@@ -316,7 +393,7 @@ mod tests {
     #[test]
     fn worktree_igual_a_raiz_nao_duplica() {
         let a = Alvo { raiz: "/repo".into(), worktree: Some("/repo".into()), ..Default::default() };
-        let p = perfil_macos(Permission::Leitura, &a).unwrap();
+        let p = perfil_macos(Permission::Leitura, false, &a).unwrap();
         assert_eq!(p.matches("(subpath \"/repo\")").count(), 1);
     }
 
@@ -325,11 +402,11 @@ mod tests {
         // Fail-closed: melhor não ter perfil do que ter um que protege o lugar
         // errado achando que protege o certo.
         assert_eq!(
-            perfil_macos(Permission::Leitura, &alvo("")),
+            perfil_macos(Permission::Leitura, false, &alvo("")),
             Err(SemPerfil::NadaParaProteger)
         );
         assert_eq!(
-            perfil_macos(Permission::Leitura, &alvo("repo/relativo")),
+            perfil_macos(Permission::Leitura, false, &alvo("repo/relativo")),
             Err(SemPerfil::NadaParaProteger)
         );
     }
@@ -339,7 +416,7 @@ mod tests {
         // Uma aspa fecharia o s-expression e poderia ABRIR o perfil inteiro.
         // Perfil malformado é pior que nenhum: parece que está protegendo.
         assert_eq!(
-            perfil_macos(Permission::Leitura, &alvo("/re\"po")),
+            perfil_macos(Permission::Leitura, false, &alvo("/re\"po")),
             Err(SemPerfil::NadaParaProteger)
         );
     }
@@ -349,7 +426,7 @@ mod tests {
         // Perder um alvo não pode derrubar o outro: a conversa isolada é
         // exatamente onde o agente está trabalhando.
         let a = Alvo { raiz: "".into(), worktree: Some("/wt/x".into()), ..Default::default() };
-        let p = perfil_macos(Permission::Leitura, &a).unwrap();
+        let p = perfil_macos(Permission::Leitura, false, &a).unwrap();
         assert!(p.contains("\"/wt/x\""));
     }
 
@@ -371,7 +448,7 @@ mod tests {
         let alvo_txt = format!("{raiz}/arquivo.txt");
         std::fs::write(&alvo_txt, "original").unwrap();
 
-        let perfil = perfil_macos(Permission::Leitura, &alvo(&raiz)).unwrap();
+        let perfil = perfil_macos(Permission::Leitura, false, &alvo(&raiz)).unwrap();
         let pf = dir.join("perfil.sb");
         let mut f = std::fs::File::create(&pf).unwrap();
         f.write_all(perfil.as_bytes()).unwrap();
@@ -476,7 +553,7 @@ mod tests {
         let raiz = dir.canonicalize().unwrap().to_string_lossy().to_string();
         std::fs::write(format!("{raiz}/alvo.txt"), "original").unwrap();
 
-        let perfil = perfil_macos(Permission::Leitura, &alvo(&raiz)).unwrap();
+        let perfil = perfil_macos(Permission::Leitura, false, &alvo(&raiz)).unwrap();
         let pf = dir.join("p.sb");
         std::fs::write(&pf, &perfil).unwrap();
 
@@ -603,7 +680,7 @@ mod tests {
 
     #[test]
     fn o_perfil_e_um_s_expression_balanceado() {
-        let p = perfil_macos(Permission::Leitura, &alvo("/repo")).unwrap();
+        let p = perfil_macos(Permission::Leitura, false, &alvo("/repo")).unwrap();
         assert_eq!(
             p.matches('(').count(),
             p.matches(')').count(),

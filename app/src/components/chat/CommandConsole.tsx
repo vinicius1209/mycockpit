@@ -45,6 +45,7 @@ import {
 } from "@/store/chat"
 import { lastExecutorTurnFailed } from "@/lib/turnOutcome"
 import { ModeSelect } from "@/components/chat/ModeSelect"
+import { lerConfinamento, SEM_CONFINAMENTO } from "@/lib/confinamento"
 import { modosOferecidos, wireDoModo } from "@/lib/agentModes"
 import { useAgentModes } from "@/store/agentModes"
 import { useApp, useActiveProject } from "@/store/app"
@@ -134,6 +135,12 @@ export function CommandConsole({
   // sddCreateRequested): skip do valor inicial, abre a cada bump.
   const missionReq = useApp((s) => s.missionLaunchRequested)
   const fusionReq = useApp((s) => s.fusionLaunchRequested)
+  // S4 — o que o sandbox do Frota garante NESTA máquina. Lido uma vez: a
+  // resposta depende do sistema, não do turno.
+  const [confinamento, setConfinamento] = useState(SEM_CONFINAMENTO)
+  useEffect(() => {
+    void lerConfinamento().then(setConfinamento)
+  }, [])
   const missionReqSeen = useRef(missionReq)
   const fusionReqSeen = useRef(fusionReq)
   useEffect(() => {
@@ -517,6 +524,7 @@ export function CommandConsole({
               <ModeSelect
                 modes={modosDoMotor}
                 value={modoAtual}
+                confinamento={confinamento}
                 disabled={!permProject}
                 onChange={(def) => {
                   const id = useChat.getState().activeId
