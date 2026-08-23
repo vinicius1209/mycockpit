@@ -574,3 +574,26 @@ pre,
     "calt" 0,
     "dlig" 0;
 }
+
+/* ANEL DE FOCO: só no teclado (§2.1).
+ *
+ * O anel é brass por decisão do §2 ("Brass = gesto: ação primária/sensível,
+ * foco, marca") e ele CONTINUA — teclado precisa ver onde está. O que muda é
+ * QUANDO ele acende.
+ *
+ * Medido em 23/08/2026 no dist/ buildado: abrir um dropdown do Radix com o
+ * mouse e fechar com o mouse deixava o gatilho em `:focus-visible`, porque o
+ * Radix devolve o foco por código e o navegador herda o "modo teclado" da
+ * navegação que rolou DENTRO do menu. Resultado: contorno dourado piscando num
+ * botão recém-clicado — o que o usuário chamou de "aplicação web disfarçada de
+ * desktop". App nativo não contorna o que você clica.
+ *
+ * `lib/modalidade.ts` carimba a última intenção REAL no <html>; aqui o anel é
+ * apagado enquanto ela for mouse. Fail-safe deliberado: sem o atributo (SSR,
+ * rastreador não montado) o seletor não casa e o anel do Tailwind fica como
+ * está — ninguém perde acessibilidade porque um script não rodou. */
+:root[data-modalidade="mouse"] *:focus-visible {
+  --tw-ring-shadow: 0 0 #0000 !important;
+  box-shadow: none !important;
+  border-color: inherit;
+}

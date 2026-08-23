@@ -27,8 +27,16 @@ describe("permissionNote", () => {
     expect(n?.text).toMatch(/Planejar primeiro/)
   })
 
-  it("agy em Leitura avisa que o confinamento é best-effort", () => {
-    expect(permissionNote("agy", "leitura")?.tone).toBe("warn")
+  it("agy em Leitura NÃO avisa mais: o sandbox do Frota confina de verdade", () => {
+    // O aviso nasceu quando "Só lê" no agy era um pedido no prompt. Desde
+    // 22/08/2026 quem segura é o sistema (docs/sandbox-plan.md), provado com
+    // turno real: mandado editar, o agy não escreveu. Manter o "best-effort"
+    // enganaria PRA BAIXO — assustaria justamente onde a garantia ficou forte.
+    //
+    // Quem conta o que "Só lê" garante passou a ser o selo do ModeSelect, que
+    // sabe se o sandbox existe NESTA máquina. Esta função só recebe agent e
+    // modo; ela não tem como saber, e por isso cala.
+    expect(permissionNote("agy", "leitura")).toBeNull()
   })
 
   it("Liberado não gera nota: os três agents cumprem (ninguém pergunta)", () => {

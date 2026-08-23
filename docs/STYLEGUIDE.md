@@ -75,9 +75,41 @@ claro+escuro) e por linha nesta tabela — nunca hex cru em componente.
 | **Âmbar** (precisa de você / risco autorizado) | `st-warning` (= `st-queued`), `st-warning-foreground` | Fila, gate, aviso que pede decisão, o **cartão do fluxo de aprovação** e o contador de pendências do sino, e o modo "Liberado" (risco autorizado fica visível) | Qualquer coisa que não seja decisão pendente, fila, gate ou risco autorizado. Seleção não é âmbar **nem brass**: seleção não é cor (ADR-043). Também não é progresso normal nem substituto do vermelho em falha real |
 | **Vermelho** (falha + destruição) | `st-error`, `destructive` | Falha consumada (marco vermelho, linha culpada) e ação destrutiva ("Parar", excluir, revogar) | Caminho de saída (Cancelar/fechar/voltar é ghost, sem cor); ênfase; aviso não-fatal (âmbar) |
 | **Azul** (vivo) | `st-running` | O que roda AGORA: pulse do dot, esteira de telemetria, linha viva | Qualquer coisa parada; link; decoração |
-| **Brass** (gesto) | `brass`, `brass-soft`, `ring` (= `brass`) | Ação primária/sensível, foco (`--ring`), marca | **Marcar item selecionado em lista, árvore ou aba** (isso é preenchimento neutro + peso + pip, sem tinta — ADR-043); texto pequeno sobre a superfície de seleção no tema claro (3.56:1 < AA, regra S3.6); ícone ilustrativo/empty state; medidor saudável; tinta de "importância" genérica |
+| **Brass** (gesto) | `brass`, `brass-soft`, `ring` (= `brass`) | Ação primária/sensível, foco **de teclado** (`--ring`, ver §2.1), marca | **Marcar item selecionado em lista, árvore ou aba** (isso é preenchimento neutro + peso + pip, sem tinta — ADR-043); texto pequeno sobre a superfície de seleção no tema claro (3.56:1 < AA, regra S3.6); ícone ilustrativo/empty state; medidor saudável; tinta de "importância" genérica |
 | **Cores de diff/git** | `hljs-addition/deletion`, `git-open`, `git-merged` | SÓ dentro do domínio git: `+N −N`, linhas de diff abertas (evidência), estado de PR do GitHub | Qualquer semântica fora de git; sucesso/erro geral |
 | **Identidade de agent** (categórica) | `brass` (Claude), `st-running` (Codex), `id-violet` (Antigravity) | Cor de série em gráfico/legenda de custo por agente | Verde e vermelho (colidem com status); pintar estado com a cor da identidade |
+
+### 2.1 O anel de foco só acende no TECLADO
+
+**Regra:** o anel (`--ring`, que é brass) aparece quando o foco chegou por
+tecla. Depois de clique, não aparece — nem no botão clicado, nem no gatilho que
+recebe o foco de volta quando um menu fecha.
+
+**Por que virou regra (23/08/2026).** O usuário reclamou duas vezes: primeiro
+num diálogo ("parece bug de focus do radix ui"), depois no seletor de modo
+("acho feio, parece aplicação web disfarçada de desktop"). A segunda frase é o
+diagnóstico: **app nativo não contorna o que você acabou de clicar.**
+
+**Não era percepção, era medida.** No `dist/` buildado: abrir um dropdown do
+Radix com o mouse e fechar com o mouse deixava o gatilho em `:focus-visible`.
+O `:focus-visible` do navegador não protege este caso — o Radix devolve o foco
+ao gatilho por CÓDIGO, e o foco programático herda o "modo teclado" da navegação
+que aconteceu DENTRO do menu. Interação sem uma tecla sequer, anel aceso.
+
+**Como:** `lib/modalidade.ts` carimba a última intenção real em
+`<html data-modalidade>`, e o CSS apaga o anel enquanto ela for `mouse`.
+`pointerdown` marca mouse; **só teclas de NAVEGAÇÃO** marcam teclado — digitar
+no composer não é navegar, e trocaria a modalidade sem ninguém ter saído do
+lugar (o defeito voltaria por outra porta).
+
+**O que NÃO fazer:** apagar o anel de vez. Teclado precisa ver onde está, e a
+`e2e/anel-de-foco.spec.ts` cobra as DUAS metades — some no mouse, acende no
+Tab. Guarda que só testa o sintoma reclamado convida a "consertar" removendo
+acessibilidade.
+
+**Fail-safe:** sem o atributo (SSR, rastreador não montado) o seletor não casa e
+o anel fica como o Tailwind põe. Script que não rodou nunca tira acessibilidade
+de ninguém.
 
 Regras de aplicação:
 

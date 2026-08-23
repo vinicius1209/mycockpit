@@ -1,4 +1,5 @@
 import { useEffect } from "react"
+import { rastrearModalidade } from "@/lib/modalidade"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { toast } from "sonner"
@@ -193,6 +194,11 @@ export default function App() {
   }, [])
 
   // P2 — vigia de turno mudo: avisa quando um turno running fica sem produzir.
+  // O anel de foco só acende quando você TABULA (docs/STYLEGUIDE.md §2.1).
+  // Sem isto, o Radix devolvendo o foco por código acende o contorno dourado
+  // depois de um clique — medido, e é o que faz o app parecer web.
+  useEffect(() => rastrearModalidade(), [])
+
   useEffect(() => startTurnWatchdog(), [])
 
   // Medidor de janela de uso: hidrata os snapshots vivos do backend e assina
