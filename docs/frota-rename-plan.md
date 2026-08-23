@@ -1,6 +1,6 @@
 # Plano de migração de marca — MyCockpit → Frota
 
-Status: proposta executável  
+Status: **fase de MARCA VISÍVEL entregue em 22/08/2026** (guarda no CI). As fases de identificador e persistência seguem deliberadamente adiadas — ver "O que NÃO foi feito, e por quê".  
 Escopo: marca pública, app, empacotamento, documentação, compatibilidade e ambiente de demonstração
 
 ## Decisão
@@ -267,3 +267,54 @@ Antes de copiar um ativo para `landing/public/`:
 Nenhuma etapa apaga ou renomeia dados existentes. Toda migração de persistência
 é copiar → validar → alternar, mantendo a origem intacta até uma versão posterior
 e com comando documentado de retorno.
+
+## O que foi feito em 22/08/2026 — e o que deliberadamente NÃO foi
+
+### Feito: a marca que o usuário lê
+
+Treze strings viraram Frota: copy de UI (Configurações, o cartão de pausa do
+agente), prompts enviados a agentes (doutrina, renovação de sessão), rótulos de
+MCP e o cabeçalho de handoff. Zero ocorrência de `MyCockpit` restou em string
+fora de comentário.
+
+**Duas foram verificadas antes de trocar**, porque pareciam copy e podiam ser
+contrato:
+
+- `"## Continuidade MyCockpit"` (handoff) — é só ESCRITO, nunca lido de volta.
+  Seguro.
+- `MISSION_PLAN_FORMAT = "mycockpit.flight-plan"` — é o formato PERSISTIDO dos
+  planos de voo em disco. **Não mudou.** Só a frase de erro ao lado dele mudou.
+
+### Feito: a guarda (`scripts/check-marca.mjs`, 7ª)
+
+O plano pedia "qualquer nova ocorrência fora da allowlist falha no CI". A
+implementação achou um caminho melhor que allowlist: **varrer só `MyCockpit` com
+maiúsculas**. Todos os identificadores persistidos são minúsculos
+(`mycockpit.db`, `.mycockpit/`, `dev.vinicius.mycockpit`,
+`mycockpit.flight-plan`), então ficam de fora **por construção** — não por uma
+lista que alguém precisa lembrar de manter, e que envelhece calada.
+
+Verificado que morde (reintroduzir uma string reprova) e que os três
+identificadores não geram falso positivo.
+
+### NÃO feito: o bundle identifier — e eu estava errado sobre isso
+
+Eu havia recomendado trocar `dev.vinicius.mycockpit` "enquanto é barato, porque
+depois do primeiro usuário pagante vira migração". **O plano já dizia o
+contrário, e a razão dele é melhor:** trocar o identifier custa a MESMA migração
+agora ou depois, porque ele define onde ficam o banco, as permissões e o
+Keychain. E ele é invisível ao usuário — não há ganho de marca nenhum em mexer.
+
+Ou seja: não há relógio correndo ali. O relógio estava no que aparece, e isso
+foi feito hoje.
+
+### Achado de brinde: uma guarda não rodava no CI
+
+Ao registrar a 7ª, a contagem não bateu: `bun run check` tinha 7 scripts, o CI
+listava 6. **A `paletaCrua` rodava no Mac e não no CI** — uma cor crua passaria
+por um CI verde. O job lista as guardas UMA A UMA, então a agregada do
+`package.json` não protege ninguém lá. Corrigido.
+
+**A lição é sobre a forma da guarda, não sobre o esquecimento:** uma lista
+duplicada em dois lugares diverge, e diverge em silêncio. Só apareceu porque
+alguém foi contar.

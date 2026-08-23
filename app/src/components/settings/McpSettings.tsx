@@ -567,7 +567,7 @@ export function McpSettings() {
                 />
               ) : (
                 <div className="mt-2 text-[11px] text-muted-foreground">
-                  MCP interno, criado e limitado por run pelo MyCockpit.
+                  MCP interno, criado e limitado por run pelo Frota.
                 </div>
               )}
             </article>

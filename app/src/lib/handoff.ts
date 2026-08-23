@@ -218,7 +218,7 @@ export function renderHybridHandoff(
   if (doctrineBlock) parts.push(doctrineBlock)
 
   const state = [
-    "## Continuidade MyCockpit",
+    "## Continuidade Frota",
     "",
     `Você está assumindo no ${envelope.target_agent} uma conversa iniciada no ${envelope.source_agent}, no MESMO diretório/worktree.`,
     "Os arquivos no disco são a fonte de verdade. Não refaça trabalho já materializado.",

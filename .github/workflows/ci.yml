@@ -27,8 +27,12 @@ jobs:
         run: node scripts/check-dead-tokens.mjs
       - name: movimento do "rodando" (§6)
         run: node scripts/lints/rodandoMotion.mjs
+      - name: paleta crua (§2 · cor só por token)
+        run: node scripts/lints/paletaCrua.mjs
       - name: barra de acento (§2 · seleção não é cor)
         run: node scripts/check-barra-de-acento.mjs
+      - name: marca (o produto se chama Frota)
+        run: node scripts/check-marca.mjs
 
   frontend:
     runs-on: ubuntu-latest

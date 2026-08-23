@@ -110,7 +110,7 @@ export function renewalNotice(agent: string): string {
 /** Instrução fixa da retomada (fica FORA da moldura H3 do recap): a sessão é
  *  nova, o fio é o mesmo, e o turno só confirma a retomada. */
 export const RENEWAL_INSTRUCTION =
-  "Renovação de sessão do MyCockpit para liberar contexto: a conversa do bloco acima continua AQUI, nesta sessão nova. Não repita trabalho já feito. Responda em uma linha confirmando que retomou o contexto e aguarde o próximo pedido."
+  "Renovação de sessão do Frota para liberar contexto: a conversa do bloco acima continua AQUI, nesta sessão nova. Não repita trabalho já feito. Responda em uma linha confirmando que retomou o contexto e aguarde o próximo pedido."
 
 /** Prompt da renovação: identidade → regras → recap emoldurado → instrução.
  *  Puro (o caller resolve persona/doutrina pelos canais certos). */

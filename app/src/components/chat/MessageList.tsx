@@ -1464,8 +1464,8 @@ function IncidentCard({
     ? "Limite desta sessão atingido"
     : "Não foi possível concluir esta execução"
   const description = limited
-    ? "O agente precisa de uma pausa. O MyCockpit preservou seu histórico, contexto e arquivos."
-    : "O MyCockpit preservou a conversa e os arquivos para você tentar novamente ou continuar com outro agente."
+    ? "O agente precisa de uma pausa. O Frota preservou seu histórico, contexto e arquivos."
+    : "O Frota preservou a conversa e os arquivos para você tentar novamente ou continuar com outro agente."
 
   return (
     <div

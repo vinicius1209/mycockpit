@@ -97,7 +97,7 @@ function HooksRow({ def }: { def: AgentDef }) {
       setError(null)
       toast.success(
         cmd === "hooks_uninstall"
-          ? "Hooks desativados, as entradas do MyCockpit foram removidas do config."
+          ? "Hooks desativados, as entradas do Frota foram removidas do config."
           : jaEstava
             ? `Hooks do ${def.label} reescritos na versão atual do script.`
             : `Hooks ativados. Sessões do ${def.label} abertas no terminal passam a aparecer no Painel e no tray.`,

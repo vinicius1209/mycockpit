@@ -286,7 +286,7 @@ export function parseMissionPlan(raw: string):
     value.version !== MISSION_PLAN_EXPORT_VERSION ||
     !isRecord(value.plan)
   ) {
-    return { ok: false, error: "Este arquivo não é um Plano de voo do MyCockpit." }
+    return { ok: false, error: "Este arquivo não é um Plano de voo do Frota." }
   }
   const rawPlan = value.plan
   if (

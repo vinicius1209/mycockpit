@@ -552,7 +552,7 @@ UsagePill (`DropdownMenuContent` z-50 sob o header z-[110]) → `z-[120]` +
 
 ## 10. Guarda automática (ratchet de lints)
 
-Este guia deixou de depender de memória: cinco scripts rodam na CI (job
+Este guia deixou de depender de memória: sete scripts rodam na CI (job
 `guardas` do `.github/workflows/ci.yml`, separado dos testes) e localmente por
 `cd app && bun run check`. A ideia é a do Buzz (`docs/study-buzz.md`, item B1):
 **passada de despoluição sem guarda re-fragmenta em poucos sprints**. Código
@@ -564,6 +564,7 @@ nosso; só as regras vieram de lá.
 | `scripts/check-file-size-ratchet.mjs` | legibilidade (arquivo grande esconde bug) | um arquivo passa do teto do tipo (500 linhas `.ts` · 700 `.tsx` · 900 teste) ou cresce acima do congelado em `scripts/lints/file-size-baseline.json` |
 | `scripts/check-dead-tokens.mjs` | §2, §4 e §7 | volta `shadow-md/lg/xl/2xl`; aparece `st-success` em **qualquer** propriedade (`text-`, `bg-`, `border-`, `ring-`… e `var(--st-success)` cru) além do declarado por arquivo; entra travessão "—" em prosa de UI |
 | `scripts/lints/rodandoMotion.mjs` | §6, o único estado que se move | a `.conv-spin` perde a animação de CSS ou o bloco `prefers-reduced-motion` que a degrada num ponto sólido visível |
+| `scripts/check-marca.mjs` | o nome do produto | volta `MyCockpit` numa string que o usuário lê ou que vai no prompt de um agente. Só varre a forma com MAIÚSCULAS e ignora comentário: os identificadores persistidos (`mycockpit.db`, `.mycockpit/`, `mc.app`, `dev.vinicius.mycockpit`, `mycockpit.flight-plan`) são minúsculos e ficam de fora POR CONSTRUÇÃO, não por allowlist que alguém precisa lembrar de manter |
 | `scripts/check-barra-de-acento.mjs` | §2, seleção não é cor | volta o filete tingido de seleção: elemento `absolute` de dimensão ≤ 3px, colado numa aresta (`left-0`, `inset-x-0`, `-bottom-px`…), com `bg-brass` ou `bg-st-*`. Pega as duas formas, a barra vertical da sidebar (Fase 1) e o sublinhado da aba (Fase 2) |
 
 Regras de convívio (as três valem mais que a conveniência do momento):

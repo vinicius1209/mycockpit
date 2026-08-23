@@ -297,10 +297,10 @@ describe("optimisticBindingUpdate", () => {
   })
 })
 
-describe("login do MyCockpit no MCP (A1)", () => {
+describe("login do Frota no MCP (A1)", () => {
   it("cada estado tem a sua copy, e nenhuma promete conexão que não existe", () => {
-    expect(mcpAuthLabel("sem-login")).toBe("sem login do MyCockpit")
-    expect(mcpAuthLabel("conectado")).toBe("conectado pelo MyCockpit")
+    expect(mcpAuthLabel("sem-login")).toBe("sem login do Frota")
+    expect(mcpAuthLabel("conectado")).toBe("conectado pelo Frota")
     expect(mcpAuthLabel("expirado")).toBe("sessão expirada")
   })
 
@@ -367,13 +367,13 @@ describe("proxy MCP autenticado (A2)", () => {
     expect(mcpPortabilityNotices(streamServer, true)[0].kind).toBe("native-only")
   })
 
-  it("a linha por agent diz que o MyCockpit roteia, em vez de negar", () => {
+  it("a linha por agent diz que o Frota roteia, em vez de negar", () => {
     const state = { compatible: false, health: "auth-required" as const }
     expect(mcpAgentStatusLabel(oauthServer, state, false)).toBe(
       "sem roteamento (nativo do CLI)",
     )
     expect(mcpAgentStatusLabel(oauthServer, state, true)).toBe(
-      "roteado pelo MyCockpit",
+      "roteado pelo Frota",
     )
   })
 })

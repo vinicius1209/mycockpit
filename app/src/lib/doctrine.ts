@@ -72,7 +72,7 @@ export function buildDoctrineBlock(content: string): string | null {
   const corpo = cortou ? texto.slice(0, DOCTRINE_MAX_CHARS) : texto
   const lines = [
     `<doutrina fonte="${DOCTRINE_PATH}">`,
-    "Estas são as regras deste projeto, definidas pelo humano no MyCockpit. Valem do primeiro ao último turno e têm precedência sobre hábitos gerais seus.",
+    "Estas são as regras deste projeto, definidas pelo humano no Frota. Valem do primeiro ao último turno e têm precedência sobre hábitos gerais seus.",
     "",
     corpo,
   ]

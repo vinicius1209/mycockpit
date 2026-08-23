@@ -182,7 +182,7 @@ const NATIVE_CAUSE: Record<McpNativeReason, string> = {
   oauth:
     "Login próprio do CLI (OAuth): o token fica no keychain de quem autenticou, então não dá pra rotear pra outro agent.",
   stream:
-    "Transporte SSE/WebSocket: a sessão é mantida pelo CLI de origem, o MyCockpit não a repassa pra outro agent.",
+    "Transporte SSE/WebSocket: a sessão é mantida pelo CLI de origem, o Frota não a repassa pra outro agent.",
   "headers-helper":
     "Cabeçalho gerado por um helper do CLI de origem: o comando roda dentro dele e a credencial não viaja.",
 }
@@ -261,7 +261,7 @@ export function mcpAgentStatusLabel(
 ): string {
   if (state.compatible) return mcpHealthLabel(state.health)
   if (autenticadoPeloApp && server.nativeReason === "oauth") {
-    return "roteado pelo MyCockpit"
+    return "roteado pelo Frota"
   }
   return server.nativeReason ? "sem roteamento (nativo do CLI)" : "não suportado"
 }
@@ -307,8 +307,8 @@ export async function mcpOauthLogout(
 }
 
 const AUTH_LABEL: Record<McpAuthState, string> = {
-  "sem-login": "sem login do MyCockpit",
-  conectado: "conectado pelo MyCockpit",
+  "sem-login": "sem login do Frota",
+  conectado: "conectado pelo Frota",
   expirado: "sessão expirada",
 }
 
@@ -331,7 +331,7 @@ export function mcpAuthHint(
   now: number = Date.now(),
 ): string {
   if (status.state === "sem-login") {
-    return "O MyCockpit pode fazer o login deste MCP e guardar o token no Keychain deste Mac."
+    return "O Frota pode fazer o login deste MCP e guardar o token no Keychain deste Mac."
   }
   if (status.state === "expirado") {
     return "A sessão venceu e não foi possível renovar. Entre de novo."
