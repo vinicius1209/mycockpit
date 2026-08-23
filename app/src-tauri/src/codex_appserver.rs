@@ -553,10 +553,22 @@ pub async fn probe_once(
 ) -> Result<Value, ProbeError> {
     const ID_PROBE: i64 = 2;
     let mut cmd = Command::new("codex");
-    cmd.args(["-s", "read-only", "-a", "untrusted", "app-server"])
+    // `-a never` e não `untrusted`: o codex 0.149 REMOVEU o valor `untrusted`
+    // da flag (`possible values: on-request, never`) e a CLI passou a recusar
+    // subir — o medidor de uso ficou "falhando desde 23:41" sem dizer por quê.
+    //
+    // Trocar aqui NÃO afrouxa turno nenhum, e isso foi verificado: a política de
+    // aprovação real viaja no `approvalPolicy` de CADA `thread/start`, e o
+    // protocolo CONTINUA aceitando `"untrusted"` ali (testado nesta versão,
+    // com o processo subido em `-a never`). A flag da CLI é só o default do
+    // processo; quem manda no turno é o parâmetro.
+    cmd.args(["-s", "read-only", "-a", "never", "app-server"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        // O stderr era `null`, e foi por isso que a falha chegou na tela como
+        // "resposta inesperada": a CLI escreveu `invalid value 'untrusted'` e a
+        // gente descartou. Mesma lição da ADR-045 — não jogue fora o motivo.
+        .stderr(Stdio::piped())
         .kill_on_drop(true);
     let mut child = cmd.spawn().map_err(|e| {
         ProbeError::new("spawn", format!("não consegui subir o codex app-server: {e}"))
@@ -569,6 +581,11 @@ pub async fn probe_once(
         .stdout
         .take()
         .ok_or_else(|| ProbeError::new("spawn", "app-server sem stdout"))?;
+    // Guarda o stderr pra ANEXAR ao erro. Quando a CLI recusa uma flag ela
+    // morre em silêncio no protocolo (nenhum JSON sai) e escreve o motivo AQUI;
+    // sem isto, "invalid value 'untrusted'" virava "app-server encerrou antes
+    // de responder", que não aponta pra lugar nenhum.
+    let erro_da_cli = child.stderr.take();
 
     let run = async {
         for msg in [
@@ -625,7 +642,47 @@ pub async fn probe_once(
             ))
         });
     let _ = child.kill().await;
-    out
+    // Só lê o stderr no caminho de FALHA: no sucesso ele é ruído, e ler sempre
+    // pagaria por um dado que ninguém usa.
+    match out {
+        Ok(v) => Ok(v),
+        Err(e) => Err(match erro_da_cli {
+            Some(se) => {
+                let mut buf = String::new();
+                let mut linhas = BufReader::new(se).lines();
+                while let Ok(Some(l)) = linhas.next_line().await {
+                    buf.push_str(&l);
+                    buf.push('\n');
+                    if buf.len() > 2000 {
+                        break; // CLI tagarela não vira despejo de memória
+                    }
+                }
+                let motivo = primeira_linha_util(&buf);
+                if motivo.is_empty() {
+                    e
+                } else {
+                    ProbeError::new(e.kind, format!("{} ({motivo})", e.message))
+                }
+            }
+            None => e,
+        }),
+    }
+}
+
+/// A primeira linha do stderr que EXPLICA alguma coisa, cortada.
+///
+/// Pura e curta de propósito: o stderr de uma CLI que recusou flag traz a linha
+/// útil no topo e um "For more information, try --help" embaixo. Despejar tudo
+/// numa mensagem de UI trocaria um erro mudo por um erro ilegível.
+fn primeira_linha_util(stderr: &str) -> String {
+    for l in stderr.lines() {
+        let t = l.trim();
+        if t.is_empty() || t.starts_with("For more information") {
+            continue;
+        }
+        return t.chars().take(160).collect();
+    }
+    String::new()
 }
 
 fn app_server_command(req: &RunRequest) -> Command {
@@ -989,6 +1046,31 @@ mod tests {
     /// O achado que motivou o módulo: `on-request` NÃO pergunta (o modelo só
     /// escala se o sandbox barrar). O Padrão TEM que ir de `untrusted`, senão o
     /// gate volta a ser uma promessa vazia.
+    #[test]
+    fn primeira_linha_util_pega_a_que_explica() {
+        // O caso real de 23/08/2026: o codex 0.149 recusou a flag e escreveu
+        // isto. A gente descartava, e a tela dizia só "resposta inesperada".
+        let real = "error: invalid value 'untrusted' for '--ask-for-approval <APPROVAL_POLICY>'\n  [possible values: on-request, never]\n\nFor more information, try '--help'.\n";
+        assert_eq!(
+            primeira_linha_util(real),
+            "error: invalid value 'untrusted' for '--ask-for-approval <APPROVAL_POLICY>'"
+        );
+    }
+
+    #[test]
+    fn primeira_linha_util_pula_o_rodape_inutil() {
+        // "For more information" sozinho não explica nada; promovê-lo a motivo
+        // seria trocar um erro mudo por um erro que finge falar.
+        assert_eq!(primeira_linha_util("\n\nFor more information, try '--help'.\n"), "");
+        assert_eq!(primeira_linha_util(""), "");
+    }
+
+    #[test]
+    fn primeira_linha_util_corta_linha_gigante() {
+        let g = "x".repeat(500);
+        assert_eq!(primeira_linha_util(&g).len(), 160);
+    }
+
     #[test]
     fn padrao_usa_untrusted_o_unico_que_pergunta() {
         let (approval, sandbox) = policy(Permission::Padrao, &[]);

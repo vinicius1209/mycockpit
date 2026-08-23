@@ -18,7 +18,9 @@
 //!     comando de statusline nunca roda (provado empiricamente), e o app roda
 //!     todas as conversas em headless. Por isso ela é ingest OPORTUNISTA
 //!     (carona quando o usuário usa o terminal), nunca a fonte principal.
-//!   • codex 0.146 — `codex -s read-only -a untrusted app-server` responde
+//!   • codex 0.146→0.149 — `codex -s read-only -a never app-server` responde
+//!     (a 0.149 REMOVEU o valor `untrusted` da flag e a sonda parou de subir;
+//!      o `approvalPolicy` do turno segue aceitando `untrusted` no PROTOCOLO)
 //!     `account/rateLimits/read` (fixture real abaixo; diferente do estudo do
 //!     Orca, hoje só vem `primary` com a janela de 7d — `secondary: null`;
 //!     a realidade manda). POLL read-only local, sem quota.

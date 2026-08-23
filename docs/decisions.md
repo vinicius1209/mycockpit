@@ -2604,3 +2604,32 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   o `PermissionMode` do `lib/types.ts` tem QUATRO — o `auto` do projeto não
   cabia. Quem cedeu foi o tipo estreito.
 - **Verificado:** `tsc` 0, `vitest` 3070, 7 guardas, e2e 23/23, `cargo` 494.
+
+### ADR-069 — O medidor do Codex caiu por uma flag removida, e o motivo estava no lixo ✅
+- **Sintoma (23/08/2026):** "Codex — Falhando desde 23:41 (resposta inesperada)"
+  no popover da janela de uso. Claude e Antigravity normais.
+- **A causa:** o **codex 0.149.0 REMOVEU o valor `untrusted`** de
+  `--ask-for-approval` (`possible values: on-request, never`). A sonda subia
+  `codex -s read-only -a untrusted app-server`, a CLI recusava a flag e morria
+  antes de falar protocolo.
+- **O susto que não se confirmou, e valeu conferir:** `untrusted` aparece em
+  DUAS superfícies — a flag da CLI e o `approvalPolicy` de cada `thread/start`.
+  Se o protocolo também tivesse derrubado, o Codex teria **parado de perguntar**
+  no modo "Pede", que é regressão silenciosa de segurança. Testado nesta versão:
+  o `thread/start` com `"untrusted"` CONTINUA sendo aceito, inclusive com o
+  processo subido em `-a never`. A flag da CLI é só o default do processo; quem
+  manda no turno é o parâmetro.
+- **O segundo defeito, e é o que doeu:** `stderr(Stdio::null())`. A CLI escreveu
+  `invalid value 'untrusted' for '--ask-for-approval'` — a resposta exata — e a
+  gente JOGOU FORA. O usuário recebeu "resposta inesperada", que não aponta pra
+  lugar nenhum, e a investigação começou do zero.
+  - Agora o stderr é capturado e a primeira linha ÚTIL vira sufixo do erro.
+  - `primeira_linha_util` pula o `"For more information, try --help"` e corta em
+    160: despejar o stderr inteiro trocaria um erro mudo por um ilegível.
+  - **Mesma lição da ADR-045**, e o fato de repetir é o achado: descartar
+    `stderr` "porque é ruído" tem custo que só aparece no dia da falha.
+- **Terceiro drift em uma semana** (modos das CLIs, `--mode plan` do agy, agora
+  esta flag). O M0.5 criou sonda pro eixo de MODOS; o medidor de uso e o
+  transporte seguem com flags fixas no código. Fica anotado: dado que muda do
+  lado de fora não pode viver numa constante — e ainda vive em dois lugares.
+- **Verificado:** `cargo` 497, `tsc` 0, 7 guardas.
