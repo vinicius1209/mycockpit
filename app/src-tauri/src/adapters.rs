@@ -158,6 +158,17 @@ pub enum UsageWindowSource {
     AgyPrintCommand,
 }
 
+/// Fonte do MEDIDOR DE CONTEXTO da conversa (não confundir com
+/// `UsageWindowSource`, que é a cota do plano da conta). `Stream` significa
+/// que o próprio transporte publica o footprint da última chamada. O Codex em
+/// `exec` só publica o acumulado da thread; nele o runner consulta o rollout
+/// depois do turno e lê `last_token_usage` + `model_context_window`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ContextUsageSource {
+    Stream,
+    CodexRollout,
+}
+
 /// Dialeto de instalação/protocolo de HOOKS de um motor (hooks-plan §2).
 /// Mesmo padrão do `CommandSource`/`UsageWindowSource`: o enum confina o
 /// "como" (formato do config, shape do payload, forma da resposta síncrona —
@@ -309,6 +320,10 @@ pub struct Capabilities {
     /// `native_compact` exige `session_resume` (o caminho nativo É "resume +
     /// /compact").
     pub native_compact: bool,
+    /// Como obter o footprint da ÚLTIMA chamada para o anel de contexto.
+    /// Nunca aponta para o total acumulado do turno/thread. `None` = o motor
+    /// não oferece medição confiável e a UI não inventa percentual.
+    pub context_usage: Option<ContextUsageSource>,
     /// Expõe a JANELA DE USO do plano (% usado + reset, feature "9% used ·
     /// 4h 22m" do estudo do Orca — pipeline SEPARADO do custo em $). `None` =
     /// motor sem fonte auditada: a UI some com pill/toggle (degradação
@@ -394,6 +409,7 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     // claude 2.1.220: `-p --resume <sid> "/compact"` processa o comando em
     // modo print (empírico 04/08/2026; §7.1 do agent-runner).
     native_compact: true,
+    context_usage: Some(ContextUsageSource::Stream),
     // claude 2.1.220: a statusline recebe `rate_limits` no stdin por turno
     // (payload real capturado 12/08/2026 — fixture em usage_window.rs).
     usage_window: Some(UsageWindowSource::ClaudeStatusline),
@@ -448,6 +464,9 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     // codex 0.146: `/compact` é comando do TUI; `codex exec` não expõe
     // (help verificado 04/08/2026) → compactar = renovação de sessão app-side.
     native_compact: false,
+    // O `turn.completed.usage` do exec é acumulado da THREAD e não serve de
+    // nível. O runner lê o `last_token_usage` do rollout depois do turno.
+    context_usage: Some(ContextUsageSource::CodexRollout),
     // codex 0.146: `account/rateLimits/read` no app-server read-only devolve
     // usedPercent + resetsAt (provado na mão 12/08/2026, fixture em
     // usage_window.rs).
@@ -540,6 +559,7 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // `/compact`… No manual command is required" (medido 14/08/2026). Sem
     // compactação nativa, o `/compactar` do app segue na renovação com recap.
     native_compact: false,
+    context_usage: Some(ContextUsageSource::Stream),
     // agy 1.1.13: era `None` porque o `/credits` só expõe saldo absoluto (sem
     // percentual de janela nem reset). O motivo caiu em 16/08/2026: o `/usage`
     // existe, o print mode o expande e devolve `command.data` com grupos ×
@@ -1449,7 +1469,10 @@ impl AgentAdapter for ClaudeAdapter {
                             + usage_u64(Some(u), "cache_read_input_tokens")
                             + usage_u64(Some(u), "cache_creation_input_tokens");
                         if tokens > 0 {
-                            out.push(AgentEvent::ContextUsage { tokens });
+                            out.push(AgentEvent::ContextUsage {
+                                tokens,
+                                window_tokens: None,
+                            });
                         }
                     }
                 }
@@ -1814,19 +1837,11 @@ impl AgentAdapter for CodexAdapter {
                 let model = self.model.clone().unwrap_or_default();
                 let (cost_usd, cost_source) = crate::pricing::estimate(&model, &nu);
                 let mut out = Vec::new();
-                // Footprint do contexto = NÍVEL, não soma: é o prompt DESTE
-                // turno (`input_tokens` já inclui a parte cacheada, convenção
-                // da API da OpenAI — por isso não somamos cached, que contaria
-                // o cache duas vezes). Com o contador acumulado, o nível só
-                // aparece na diferença; somar acumulados faria o anel crescer
-                // pra sempre (62k depois de dois turnos triviais de 17k).
-                // Mesma leitura do transporte app-server, que já usa o
-                // `tokenUsage.last`. Assimetria consciente: custo SOMA deltas,
-                // contexto é o ÚLTIMO delta.
-                let ctx = nu.input;
-                if ctx > 0 {
-                    out.push(AgentEvent::ContextUsage { tokens: ctx });
-                }
+                // IMPORTANTE: o delta acima é o TOTAL processado pelas várias
+                // chamadas do turno, não o footprint da última chamada. Num
+                // turno com tools ele pode ultrapassar a janela várias vezes.
+                // O runner publica o contexto depois, lendo `last_token_usage`
+                // do rollout (capability ContextUsageSource::CodexRollout).
                 out.push(AgentEvent::Result {
                     ok: true,
                     text: None,
@@ -2348,6 +2363,7 @@ impl AgyAdapter {
         if self.context_tokens > 0 {
             out.push(AgentEvent::ContextUsage {
                 tokens: self.context_tokens,
+                window_tokens: None,
             });
         }
         out.push(AgentEvent::Result {
@@ -3567,13 +3583,6 @@ mod tests {
         }
     }
 
-    fn ctx_of(evs: &[AgentEvent]) -> Option<u64> {
-        evs.iter().find_map(|e| match e {
-            AgentEvent::ContextUsage { tokens } => Some(*tokens),
-            _ => None,
-        })
-    }
-
     #[test]
     fn codex_segundo_turno_cobra_o_delta_e_nao_o_acumulado_da_thread() {
         // Modelo EXPLÍCITO nos dois turnos: desde que o adapter parou de
@@ -3621,14 +3630,10 @@ mod tests {
             "custo do 2º turno saiu do acumulado (US$ {usd2:.4}); esperado ~US$ 0,0106"
         );
         assert!(usd1 > 0.0 && usd2 > 0.0);
-        // contexto é NÍVEL: o prompt do turno (input já inclui o cacheado),
-        // não a soma dos prompts da thread.
-        assert_eq!(ctx_of(&evs1), Some(17494));
-        assert_eq!(
-            ctx_of(&evs2),
-            Some(17511),
-            "o anel de contexto mostra o prompt DESTE turno, não o acumulado"
-        );
+        // O delta é gasto DO TURNO e pode somar várias chamadas. Não vira
+        // ContextUsage: o runner lê o footprint da última chamada no rollout.
+        assert!(!evs1.iter().any(|e| matches!(e, AgentEvent::ContextUsage { .. })));
+        assert!(!evs2.iter().any(|e| matches!(e, AgentEvent::ContextUsage { .. })));
     }
 
     #[test]
@@ -3674,7 +3679,7 @@ mod tests {
         assert_eq!(usd, 0.0);
         // e o acumulado cru continua indo pro front (a verdade do provider).
         assert_eq!(cum.map(|c| c.input), Some(TURNO_1.0));
-        assert_eq!(ctx_of(&evs), None, "sem prompt novo, sem anel novo");
+        assert!(!evs.iter().any(|e| matches!(e, AgentEvent::ContextUsage { .. })));
     }
 
     /// O Claude reporta usage E custo POR TURNO: dois results idênticos
@@ -3729,6 +3734,24 @@ mod tests {
         // fechando a diferença ao token). Antes era `false` porque a 1.1.9 não
         // reportava usage nenhum, não porque o número fosse por turno.
         assert!(capabilities_of("agy").unwrap().cumulative_usage);
+    }
+
+    /// Teste-GÊMEO de `agents.contextUsage.test.ts`: de onde vem o footprint
+    /// da última chamada. A cota da conta (`usage_window`) é outro contrato.
+    #[test]
+    fn matriz_context_usage_por_agent() {
+        assert_eq!(
+            capabilities_of("claude-code").unwrap().context_usage,
+            Some(ContextUsageSource::Stream)
+        );
+        assert_eq!(
+            capabilities_of("codex").unwrap().context_usage,
+            Some(ContextUsageSource::CodexRollout)
+        );
+        assert_eq!(
+            capabilities_of("agy").unwrap().context_usage,
+            Some(ContextUsageSource::Stream)
+        );
     }
 
     /// Teste-GÊMEO do espelho TS (`agents.telemetry.test.ts`): quem narra o
@@ -4384,7 +4407,7 @@ mod tests {
         let ctx = agy_linha(&mut a, AGY_RESULT)
             .iter()
             .find_map(|e| match e {
-                AgentEvent::ContextUsage { tokens } => Some(*tokens),
+                AgentEvent::ContextUsage { tokens, .. } => Some(*tokens),
                 _ => None,
             })
             .expect("o anel de contexto tem número");

@@ -49,7 +49,11 @@ export type AgentEvent =
       output_file: string | null
       progress: unknown
     }
-  | { type: "context_usage"; tokens: number }
+  /** Footprint da última chamada. A janela vem do runtime quando ele informa;
+   *  null permite fallback de catálogo explicitamente marcado como estimado. */
+  | { type: "context_usage"; tokens: number; window_tokens: number | null }
+  /** A fonte esperada falhou; limpa snapshot velho em vez de mostrá-lo como atual. */
+  | { type: "context_unavailable" }
   | { type: "limit_reached"; message: string; reset_hint: string | null }
   /** Fim de turno com telemetria. Tokens e custo são SEMPRE do TURNO — quando
    *  o motor só sabe reportar o acumulado da thread, o runner já subtraiu o

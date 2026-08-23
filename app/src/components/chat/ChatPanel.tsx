@@ -1,17 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { modoEfetivoDoSpawn, permissaoDoSpawn } from "@/lib/sessionMode"
-import {
-  ArrowDown,
-  Check,
-  ChevronDown,
-  ListChecks,
-  Loader2,
-} from "lucide-react"
+import { ArrowDown } from "lucide-react"
 import { toast } from "sonner"
 import { withNotes } from "@/lib/notes"
-import { cn } from "@/lib/utils"
-import { taskPlansOf } from "@/lib/tasks"
-import { TaskChecklist } from "@/components/chat/TaskChecklist"
+import { LivePlanCard } from "@/components/chat/LivePlanCard"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { Especialistas } from "@/components/settings/Especialistas"
 import { MessageList } from "@/components/chat/MessageList"
@@ -140,6 +132,9 @@ export function ChatPanel() {
   const conv = useActiveConv()
   const openProject = useChat((s) => s.openProject)
   const viewMode = useApp((s) => s.viewMode)
+  const planDetailedInSidebar = useApp(
+    (s) => s.contextOpen && s.contextPanelTab === "plano",
+  )
   const scrollRef = useRef<HTMLDivElement>(null)
   // Lições injetadas no ÚLTIMO turno desta conversa (p/ o 👍 reforçar — bump).
   // Ref keyed por convId; efêmero, não persiste (é só o alvo do reforço leve).
@@ -213,24 +208,6 @@ export function ChatPanel() {
     if (!activeId || !missionBootCwd) return
     void detectInterrupted(activeId, missionBootCwd)
   }, [activeId, missionBootCwd, missionActive, detectInterrupted])
-
-  // Plano vivo canônico: somente o plano do pedido corrente aparece junto ao
-  // composer. Planos anteriores viram marcos compactos no transcript.
-  // A derivação é a MESMA que o MessageList consome (taskPlansOf memoiza por
-  // identidade do array): quem chegar primeiro no frame calcula, o outro lê.
-  const livePlan = useMemo(() => taskPlansOf(items).live, [items])
-  const tasks = livePlan?.tasks ?? []
-  const doneTasks = tasks.filter((t) => t.status === "completed").length
-  const currentTask = tasks.find((t) => t.status === "in_progress")
-  const nextTask = tasks.find((t) => t.status === "pending")
-  const [planOpen, setPlanOpen] = useState(false)
-  const showPlan =
-    tasks.length > 0 && livePlan != null && (running || finalizing)
-  useEffect(() => {
-    // Um plano recém-publicado é o instrumento principal do voo: nasce aberto
-    // (como a referência aprovada) e continua recolhível pelo usuário.
-    setPlanOpen(livePlan != null)
-  }, [livePlan?.id])
 
   // Abre o projeto ao trocar: carrega as conversas e a mais recente (Sprint 2).
   const projectId = project?.id ?? null
@@ -1318,66 +1295,12 @@ export function ChatPanel() {
             <ArrowDown className="size-3.5" /> Rolar pro fim
           </button>
         )}
-        {showPlan && (
-          <div className="mx-auto mb-2 max-w-[760px] px-8">
-            <div className="overflow-hidden rounded-lg border bg-card/95 shadow-[var(--shadow-pop)]">
-              <button
-                onClick={() => setPlanOpen((o) => !o)}
-                onKeyDown={(event) => {
-                  if (event.key === "ArrowRight" && !planOpen) {
-                    event.preventDefault()
-                    setPlanOpen(true)
-                  } else if (event.key === "ArrowLeft" && planOpen) {
-                    event.preventDefault()
-                    setPlanOpen(false)
-                  } else if (event.key === "ArrowDown" && planOpen) {
-                    event.preventDefault()
-                    event.currentTarget.parentElement
-                      ?.querySelector<HTMLElement>("[data-work-task]")
-                      ?.focus()
-                  }
-                }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px]"
-              >
-                {currentTask && (running || finalizing) ? (
-                  <Loader2 className="size-3.5 shrink-0 animate-spin text-brass" />
-                ) : !nextTask ? (
-                  <Check className="size-3.5 shrink-0 text-st-success" />
-                ) : (
-                  <ListChecks className="size-3.5 shrink-0 text-brass" />
-                )}
-                <span className="truncate text-foreground/85">
-                  {currentTask
-                    ? currentTask.active
-                      ? currentTask.active
-                      : currentTask.title
-                    : nextTask
-                      ? `Próxima: ${nextTask.title}`
-                      : "Plano concluído"}
-                </span>
-                <span className="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
-                  {doneTasks}/{tasks.length}
-                </span>
-                <ChevronDown
-                  className={cn(
-                    "size-3.5 shrink-0 text-muted-foreground transition-transform",
-                    planOpen && "rotate-180",
-                  )}
-                />
-              </button>
-              {planOpen && (
-                <div className="max-h-56 overflow-y-auto border-t px-3 py-2">
-                  {!currentTask && nextTask && (
-                    <p className="mb-1.5 px-1 text-[11px] text-muted-foreground/70">
-                      O agente ainda não informou qual etapa está em andamento.
-                    </p>
-                  )}
-                  <TaskChecklist tasks={tasks} dense />
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        <LivePlanCard
+          items={items}
+          running={running}
+          finalizing={finalizing}
+          detailInSidebar={planDetailedInSidebar}
+        />
         {/* px-8 casa a borda do composer com o texto do transcript (que usa
             max-w-[760px] + px-8) — sem isso o composer estoura ~64px pras laterais. */}
         <div className="mx-auto max-w-[760px] px-8">

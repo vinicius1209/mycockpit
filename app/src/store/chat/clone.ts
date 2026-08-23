@@ -67,9 +67,9 @@ export function cloneTitle(
   }
 }
 
-/** Núcleo comum: grava uma cópia nova no DB e a torna ativa. Sessão/model/
- *  contextTokens NULL de propósito — a cópia não herda a sessão do CLI da
- *  origem (resume conflitaria). O título já chega pronto (ver `cloneTitle`). */
+/** Núcleo comum: grava uma cópia nova no DB e a torna ativa. Sessão/model e
+ *  contexto ficam NULL: a cópia não herda a sessão do CLI da origem
+ *  (resume conflitaria). O título já chega pronto (ver `cloneTitle`). */
 async function commitClonedConversation(
   set: Set,
   owner: string,
@@ -81,10 +81,25 @@ async function commitClonedConversation(
   srcColor: string | null,
 ): Promise<string> {
   const newId = uid()
-    // Modo NÃO viaja na cópia: a nova conversa nasce herdando o projeto. Clonar
+  // Modo NÃO viaja na cópia: a nova conversa nasce herdando o projeto. Clonar
   // um fio que estava em "Liberado" para um fork novo seria carregar permissão
   // sem você pedir.
-  await dbSave(newId, owner, title, null, items, [], agent, reqModel, effort, null, null, null)
+  await dbSave(
+    newId,
+    owner,
+    title,
+    null,
+    items,
+    [],
+    agent,
+    reqModel,
+    effort,
+    null,
+    null,
+    null,
+    null,
+    null,
+  )
   if (srcColor != null) await dbSetColor(newId, srcColor)
   set((s) => {
     const meta: ConversationMeta = {

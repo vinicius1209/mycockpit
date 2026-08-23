@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react"
 import { fmtAgo } from "@/lib/format"
+import { janelaEpoca, subscribeJanela } from "@/lib/janelaViva"
 import { minuteNow, subscribeMinute } from "@/lib/minuteTick"
 import {
   fmtQuando,
@@ -41,12 +42,29 @@ export function ConversationSlot({
   updatedAt: number | null | undefined
 }) {
   const agora = useSyncExternalStore(subscribeMinute, minuteNow, minuteNow)
+  // Época da janela: muda SÓ quando a janela volta a ser vista. Ver
+  // `lib/janelaViva.ts` pro que foi descartado com medida antes de chegar aqui.
+  const epoca = useSyncExternalStore(subscribeJanela, janelaEpoca, janelaEpoca)
   const estado = slotEstado({ pede, rodando, falhou })
 
   if (estado === "rodando") {
     return (
       <span className={SLOT} title={TITULO.rodando}>
-        <span className="conv-spin" aria-label="turno rodando" role="img" />
+        {/* `key` na ÉPOCA: quando a janela volta de uma oclusão do macOS, o
+            WKWebView pode repintar o último quadro sem retomar a animação — o
+            anel fica parado num ângulo qualquer até algo forçar recálculo de
+            estilo. Trocar a chave remonta o elemento, e animação de elemento
+            novo começa do zero, sempre.
+
+            Em uso normal a época NUNCA muda, então isto custa zero: não é um
+            `setInterval` mascarando o problema, é um empurrão no único momento
+            em que ele aparece. */}
+        <span
+          key={epoca}
+          className="conv-spin"
+          aria-label="turno rodando"
+          role="img"
+        />
       </span>
     )
   }

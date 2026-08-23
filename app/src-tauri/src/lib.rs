@@ -473,6 +473,23 @@ pub fn run() {
             sql: "ALTER TABLE conversations ADD COLUMN session_mode TEXT;",
             kind: MigrationKind::Up,
         },
+        // Janela efetiva da sessão, quando o próprio runtime a informa. Nunca
+        // é derivada do consumo (foi essa inferência que fabricou "1M").
+        Migration {
+            version: 38,
+            description: "conversations_context_window",
+            sql: "ALTER TABLE conversations ADD COLUMN context_window INTEGER;",
+            kind: MigrationKind::Up,
+        },
+        // Procedência do snapshot: `last_call` ou `unavailable`. NULL é
+        // deliberadamente legado/não confiável — context_tokens gravado antes
+        // desta migração pode ser o total processado no turno do Codex.
+        Migration {
+            version: 39,
+            description: "conversations_context_basis",
+            sql: "ALTER TABLE conversations ADD COLUMN context_basis TEXT;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

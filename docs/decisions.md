@@ -2677,3 +2677,40 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   matava o anel PARA O TECLADO também. Devolvido — o §2.1 já apaga o anel no
   mouse sem custar navegação por Tab, e ele não sabia porque a sessão dele
   começou antes.
+
+### ADR-071 — O anel que congela: o que foi DESCARTADO importa mais que o conserto ✅
+- **Sintoma (23/08/2026):** *"o pill trava em alguma posição e só volta a se
+  mexer quando eu ativo ou dou foco na conversa"*, com dois anéis parados na
+  sidebar.
+- **A pista que orientou tudo:** "trava em ALGUMA posição". Animação que
+  REINICIA trava perto de 0°; travar num ângulo arbitrário é assinatura de
+  SUSPENSÃO. Isso descartou metade das hipóteses antes de qualquer medida.
+- **Descartado com medida** (fica registrado pra ninguém refazer):
+  | hipótese | como caiu |
+  |---|---|
+  | CSS que suspende render (`content-visibility`, `contain`, `will-change`) | não existe nenhum no app |
+  | ticker de minuto | snapshot estável, não remonta elemento |
+  | reordenação da lista durante o turno | a ordem é MANUAL (`sort_order`), não muda no turno |
+  | suspensão do WebKit em segundo plano | MEDIDO no motor: a animação continua com a página em background |
+  | `prefers-reduced-motion` vencendo o override | MEDIDO com o CSS COMPILADO: o `.conv-spin` vence e degrada pra ponto sólido, que não é o que se vê |
+  | `overflow: clip` que eu mesmo pus dias atrás | MEDIDO nos quatro modos de overflow: nenhum congela |
+- **O que sobra e explica cada detalhe: oclusão de janela do macOS.** Janela
+  coberta vira ocluída, o WKWebView suspende a renderização, e ao reaparecer
+  repinta o último quadro sem necessariamente retomar a animação até que algo
+  force recálculo de estilo — clicar numa conversa é exatamente esse "algo".
+  Casa com o ângulo arbitrário, com a volta ao interagir, com o "às vezes"
+  (depende de a janela ter sido coberta) e com não reproduzir em motor headless,
+  que não tem janela pra ocluir.
+- **Honestidade sobre o estado:** isto NÃO está provado. Não consigo instrumentar
+  a janela real de dentro daqui. É a única hipótese que sobrou de pé depois de
+  seis medições, o que é diferente de ser demonstrada.
+- **O conserto é uma ÉPOCA, e o desenho recusa o atalho.** `lib/janelaViva.ts`
+  incrementa um número quando a janela VOLTA (`focus`/`visibilitychange`), e o
+  `key` do anel usa esse número: elemento novo, animação do zero. Em uso normal
+  a época **nunca muda** — não é um `setInterval` remontando de tempos em tempos,
+  que "resolveria" mascarando e faria o anel saltar pra zero periodicamente
+  mesmo com tudo funcionando.
+- **Escopo deliberadamente estreito:** os spinners do fio sofreriam da mesma
+  causa, e NÃO foram tocados. Um remédio não provado espalhado por toda a UI é
+  como se perde a chance de saber se ele funciona. Se o anel da sidebar parar de
+  congelar, o mesmo tratamento se justifica no resto — aí com evidência.

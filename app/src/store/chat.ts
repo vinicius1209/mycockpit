@@ -46,6 +46,13 @@ import {
   reorderConversationsImpl,
 } from "@/store/chat/ordem"
 import { decidePlanGateImpl, pushPlanGateImpl } from "@/store/chat/planGate"
+import {
+  EMPTY_CONTEXT_SNAPSHOT,
+  contextSnapshotArgs,
+  hydrateContextSnapshot,
+  reduceContextSnapshot,
+  type ContextSnapshotState,
+} from "@/lib/contextSnapshot"
 
 type ChatItemBody =
   | {
@@ -373,7 +380,7 @@ export interface QueuedMsg {
 }
 
 /** Estado de UMA conversa, vive em byId[convId]; runs em background escrevem aqui. */
-export interface ConvState {
+export interface ConvState extends ContextSnapshotState {
   projectId: string
   /** Agent que roda esta conversa (claude-code|codex|…), trava no 1º run. */
   agent: string
@@ -393,8 +400,6 @@ export interface ConvState {
   /** Linha corrompida no banco (JSON não parseou): envio e persist BLOQUEADOS
    *  pra não sobrescrever dados ainda recuperáveis via SQLite. */
   corrupt?: boolean
-  /** Footprint atual do contexto (tokens do prompt da última chamada), o anel. */
-  contextTokens?: number
   items: ChatItem[]
   sessionId: string | null
   model: string | null
@@ -780,24 +785,18 @@ export function emptyConv(projectId: string): ConvState {
 
 const EMPTY_CONV = emptyConv("")
 
-/** Higiene da sessão nativa num transplante (achado #3): a sessão do agent
- *  anterior não vale pro novo, e o resolvido (model) + o anel (contextTokens)
- *  dele também não — desde a v24 o model persiste, então um transplante que
- *  falha ANTES do novo `session` gravaria o modelo/anel do backend antigo numa
- *  conversa cujo agent já é o novo. Fonte única de beginTransplant (revezamento)
- *  e dropNativeSession (S3.2, passar o volante entre backends). */
+/** Sessão, modelo e contexto são um snapshot indivisível no transplante/drop. */
 const TRANSPLANT_SESSION_RESET = {
   sessionId: null,
   model: null,
-  contextTokens: undefined,
+  ...EMPTY_CONTEXT_SNAPSHOT,
 } as const
 
-/** Campos de CONTEÚDO de uma conversa, o que o reducer de itens lê/escreve.
- *  Usado pelo Linear (via reduceEvent) e por cada lane do Fusion. */
+/** Campos que o reducer de itens usa no Linear e nas lanes do Fusion. */
 export type ItemReducible = Pick<
   ConvState,
-  "items" | "streamingTextId" | "model" | "sessionId" | "startedAt" | "contextTokens"
->
+  "items" | "streamingTextId" | "model" | "sessionId" | "startedAt"
+> & ContextSnapshotState
 
 /** Contexto opcional do run pro reducer validar pedido×resolvido no init da
  *  sessão (lib/modelResolution). Sem ctx, comporta como sempre (sem checagem). */
@@ -816,6 +815,8 @@ export function reduceItems(
    *  Injetável nos testes; default Date.now() em produção. */
   now: number = Date.now(),
 ): Partial<ItemReducible> {
+  const contextSnapshot = reduceContextSnapshot(e)
+  if (contextSnapshot) return contextSnapshot
   switch (e.type) {
     case "session": {
       // Divergência DURA pedido×resolvido → notice no fio (não bloqueia; a
@@ -1063,9 +1064,6 @@ export function reduceItems(
         streamingTextId: null,
       }
     }
-    // footprint do contexto (anel): só atualiza o número, sem item.
-    case "context_usage":
-      return { contextTokens: e.tokens }
     // limite de uso/cota: cartão ACIONÁVEL no fio (o revezamento mora nele).
     case "limit_reached":
       return {
@@ -1255,7 +1253,7 @@ export const useChat = create<ChatState>((set, get) => {
             presetId: conv?.presetId ?? null,
             presetDigest: conv?.presetDigest ?? null,
             presetName,
-            contextTokens: conv?.contextTokens ?? undefined, // antes só em memória (ContextRing)
+            ...hydrateContextSnapshot(conv || null),
             sessionMode: (conv?.sessionMode as ConvState["sessionMode"]) ?? null,
           }
     set((s) =>
@@ -1660,7 +1658,7 @@ export const useChat = create<ChatState>((set, get) => {
         c.reqModel,
         c.effort,
         c.model,
-        c.contextTokens ?? null,
+        ...contextSnapshotArgs(c),
         c.sessionMode ?? null,
       )
       endSpan()
@@ -1871,7 +1869,9 @@ export const useChat = create<ChatState>((set, get) => {
         // uma sessão confirmada não há anel novo para comprometer; preserve o
         // footprint da origem para retry.
         const reduced =
-          !committingTransplant && pending && e.type === "context_usage"
+          !committingTransplant &&
+          pending &&
+          (e.type === "context_usage" || e.type === "context_unavailable")
             ? {}
             : reduceEvent(eventView, e)
         return {

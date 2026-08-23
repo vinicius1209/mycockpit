@@ -266,11 +266,11 @@ export function ContextPanel() {
   const [status, setStatus] = useState<Status>("loading")
   const [expanded, setExpanded] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
-  // Referência do agente (personas/specs/memórias/instruções) COLAPSADA por
-  // padrão: é consulta rara, não deve dominar o painel. Abre sob demanda.
+  // Referência do agente nasce COLAPSADA: é consulta rara, abre sob demanda.
   const [showAgentCtx, setShowAgentCtx] = useState(false)
   const [detail, setDetail] = useState<DetailTarget | null>(null)
-  const [tab, setTab] = useState<"contexto" | "alteracoes" | "plano">("contexto")
+  const tab = useApp((s) => s.contextPanelTab)
+  const setTab = useApp((s) => s.setContextPanelTab)
   // Enquanto o agente TRABALHA o que interessa é o que ele mexeu — ajuste é
   // coisa de antes de começar. Ao entrar em run, o painel vai pra Alterações uma
   // vez; depois disso a sua escolha manda (não sequestra a aba a cada turno).
@@ -291,7 +291,7 @@ export function ContextPanel() {
     deliveryDiff && deliveryDiff.convId === activeConvId ? deliveryDiff : null
   useEffect(() => {
     if (delivery) setTab("alteracoes")
-  }, [delivery])
+  }, [delivery, setTab])
 
   // Prefill + foco, usado por "Pedir correção" (P3) e pelos comentários do diff.
   function prefillComposer(convId: string, text: string) {
@@ -328,7 +328,7 @@ export function ContextPanel() {
       setTab("alteracoes")
     }
     if (!running) jumpedOnRun.current = false
-  }, [running])
+  }, [running, setTab])
   // items da conversa ativa SÓ com a aba Plano visível (evita re-render nas outras).
   const planItems = useChat((s) =>
     tab === "plano" && s.activeId ? s.byId[s.activeId]?.items : undefined,

@@ -206,7 +206,14 @@ pub enum AgentEvent {
     /// input + cache lido + cache criado). Alimenta o anel de contexto.
     ContextUsage {
         tokens: u64,
+        /// Janela efetiva informada pelo runtime nesta sessão. `None` = o
+        /// provider não informou; o front pode usar catálogo, mas marca como
+        /// estimativa. Nunca se infere a janela a partir do próprio consumo.
+        window_tokens: Option<u64>,
     },
+    /// O motor deveria medir contexto, mas a fonte confiável não respondeu.
+    /// Limpa o snapshot anterior para ele não parecer a medição deste turno.
+    ContextUnavailable,
     /// Limite de uso/cota do CLI atingido: vira cartão ACIONÁVEL (revezamento)
     /// em vez de erro morto. `reset_hint` = trecho com a hora do reset, se veio.
     LimitReached {
@@ -666,6 +673,45 @@ pub async fn run_agent(
         };
     }
 
+    // Snapshot de contexto no FIM do turno, governado pela capability. O
+    // runner não compara nome de agent: `Stream` exige que o transporte tenha
+    // publicado; `CodexRollout` consulta o dialeto do rollout porque o JSONL do
+    // exec só oferece o total acumulado da thread. Falha da fonte limpa o
+    // snapshot anterior — dado velho com cara de atual é pior que "indisponível".
+    if outcome.success && !outcome.cancelled {
+        match caps.context_usage {
+            Some(adapters::ContextUsageSource::Stream) if !outcome.context_reported => {
+                let _ = on_event.send(AgentEvent::ContextUnavailable);
+            }
+            Some(adapters::ContextUsageSource::CodexRollout) => {
+                let snapshot = match outcome.session_id.as_deref() {
+                    Some(thread_id) => crate::codex_appserver::probe_thread_context(thread_id).await,
+                    None => Err(crate::codex_appserver::ProbeError {
+                        kind: "protocol",
+                        message: "o stream terminou sem identificar a thread".into(),
+                    }),
+                };
+                match snapshot {
+                    Ok(snapshot) => {
+                        let _ = on_event.send(AgentEvent::ContextUsage {
+                            tokens: snapshot.tokens,
+                            window_tokens: Some(snapshot.window_tokens),
+                        });
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "medidor de contexto: fonte pós-turno indisponível ({}): {}",
+                            error.kind,
+                            error.message
+                        );
+                        let _ = on_event.send(AgentEvent::ContextUnavailable);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     if outcome.cancelled {
         let _ = on_event.send(AgentEvent::Cancelled);
     } else if let Some(event) = process_failure_fallback(&*adapter, &agent, &outcome) {
@@ -885,6 +931,11 @@ struct Outcome {
     /// `LimitReached`). O exit code continua em `Done`, mas não pode fabricar um
     /// segundo incidente visual para a mesma falha.
     terminal_incident: bool,
+    /// Sessão confirmada pelo stream desta tentativa (necessária para sondas
+    /// pós-turno que consultam estado do provider sem depender do nome).
+    session_id: Option<String>,
+    /// O transporte publicou um snapshot de contexto confiável durante o run.
+    context_reported: bool,
 }
 
 /// Fallback terminal do runner. A classificação das frases continua no adapter;
@@ -983,6 +1034,8 @@ async fn run_once(
     let mut emitiu_saida = false;
     let mut session_not_found = false;
     let mut terminal_incident = false;
+    let mut session_id = None;
+    let mut context_reported = false;
     loop {
         tokio::select! {
             line = reader.next_line() => {
@@ -1002,6 +1055,10 @@ async fn run_once(
                                 }
                                 continue;
                             }
+                            if let AgentEvent::Session { session_id: id, .. } = &ev {
+                                session_id = Some(id.clone());
+                            }
+                            context_reported |= matches!(ev, AgentEvent::ContextUsage { .. });
                             terminal_incident |= is_terminal_incident(&ev);
                             emitiu_saida = true;
             let _ = on_event.send(ev);
@@ -1023,6 +1080,10 @@ async fn run_once(
     // Flush de itens pendentes (begin sem end) só no fim normal, não no cancel.
     if !cancelled {
         for ev in adapter.on_close() {
+            if let AgentEvent::Session { session_id: id, .. } = &ev {
+                session_id = Some(id.clone());
+            }
+            context_reported |= matches!(ev, AgentEvent::ContextUsage { .. });
             terminal_incident |= is_terminal_incident(&ev);
             emitiu_saida = true;
             let _ = on_event.send(ev);
@@ -1050,6 +1111,8 @@ async fn run_once(
         emitiu_saida,
         session_not_found,
         terminal_incident,
+        session_id,
+        context_reported,
     })
 }
 
@@ -1462,6 +1525,8 @@ mod tests {
             emitiu_saida: true,
             session_not_found: false,
             terminal_incident: true,
+            session_id: None,
+            context_reported: false,
         };
 
         assert!(process_failure_fallback(&*adapter, "claude-code", &outcome).is_none());
@@ -1478,6 +1543,8 @@ mod tests {
             emitiu_saida: true,
             session_not_found: false,
             terminal_incident: false,
+            session_id: None,
+            context_reported: false,
         };
 
         assert!(matches!(
@@ -1500,6 +1567,8 @@ mod tests {
             emitiu_saida: true,
             session_not_found: false,
             terminal_incident: false,
+            session_id: None,
+            context_reported: false,
         };
 
         assert!(matches!(

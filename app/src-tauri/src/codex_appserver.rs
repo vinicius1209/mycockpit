@@ -32,7 +32,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::Emitter;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, Command};
 use tokio::sync::{Mutex, Notify};
 
@@ -409,14 +409,22 @@ pub fn map_notification(method: &str, params: &Value, st: &mut StreamState) -> V
                 output: get("outputTokens"),
             };
             let ctx = nu.input.max(nu.cached_input);
+            let window_tokens = params
+                .pointer("/tokenUsage/modelContextWindow")
+                .and_then(Value::as_u64)
+                .filter(|n| *n > 0);
             st.last_usage = Some(nu);
             if ctx > 0 {
-                vec![AgentEvent::ContextUsage { tokens: ctx }]
+                vec![AgentEvent::ContextUsage {
+                    tokens: ctx,
+                    window_tokens,
+                }]
             } else {
                 vec![]
             }
         }
         "turn/completed" => {
+            let had_usage = st.last_usage.is_some();
             let nu = st.last_usage.take().unwrap_or(NormalizedUsage {
                 input: 0,
                 cached_input: 0,
@@ -428,7 +436,11 @@ pub fn map_notification(method: &str, params: &Value, st: &mut StreamState) -> V
             // vira `(None, Unknown)` honesto em vez de gpt-5.5 inventado.
             let model = st.model.clone().unwrap_or_default();
             let (cost_usd, cost_source) = crate::pricing::estimate(&model, &nu);
-            vec![AgentEvent::Result {
+            let mut out = Vec::new();
+            if !had_usage || nu.input.max(nu.cached_input) == 0 {
+                out.push(AgentEvent::ContextUnavailable);
+            }
+            out.push(AgentEvent::Result {
                 ok: true,
                 text: None,
                 cost_usd,
@@ -443,7 +455,8 @@ pub fn map_notification(method: &str, params: &Value, st: &mut StreamState) -> V
                 // thread no `turn.completed`. Este caminho já é por turno →
                 // nada a acumular, nada a devolver como baseline.
                 cumulative_usage: None,
-            }]
+            });
+            out
         }
         // Ruído de infraestrutura do app-server (subida de MCP, rate limits, hooks,
         // status de thread…): não vira evento. NÃO é "descartar em silêncio" — o
@@ -526,6 +539,14 @@ fn request(id: i64, method: &str, params: Value) -> Value {
 pub struct ProbeError {
     pub kind: &'static str,
     pub message: String,
+}
+
+/// Snapshot confiável do contexto corrente de uma thread Codex. Os dois
+/// campos vêm do mesmo evento `token_count` gravado pelo runtime no rollout.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ThreadContext {
+    pub tokens: u64,
+    pub window_tokens: u64,
 }
 
 impl ProbeError {
@@ -667,6 +688,105 @@ pub async fn probe_once(
             None => e,
         }),
     }
+}
+
+/// Lê o footprint da ÚLTIMA chamada de uma thread criada pelo `codex exec`.
+///
+/// O JSONL público do exec só entrega `turn.completed.usage`, que é o total da
+/// THREAD e serve para custo, não para o medidor. O app-server conhece o path
+/// do rollout sem carregar os turnos (`thread/read includeTurns:false`); o
+/// arquivo, por sua vez, guarda `last_token_usage` e `model_context_window` no
+/// evento `token_count`. Se qualquer elo faltar, devolve erro e o chamador
+/// publica `ContextUnavailable` em vez de reaproveitar um número antigo.
+pub async fn probe_thread_context(thread_id: &str) -> Result<ThreadContext, ProbeError> {
+    let result = probe_once(
+        "thread/read",
+        json!({ "threadId": thread_id, "includeTurns": false }),
+        5,
+    )
+    .await?;
+    let raw_path = result
+        .pointer("/thread/path")
+        .or_else(|| result.get("path"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| ProbeError::new("protocol", "thread/read respondeu sem path"))?;
+    let path = std::path::PathBuf::from(raw_path);
+    let valid_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.ends_with(".jsonl") && n.contains(thread_id));
+    if !path.is_absolute() || !valid_name {
+        return Err(ProbeError::new(
+            "protocol",
+            "thread/read respondeu com path de rollout inválido",
+        ));
+    }
+    let tail = rollout_tail(&path, 4 * 1024 * 1024).await?;
+    parse_thread_context(&tail).ok_or_else(|| {
+        ProbeError::new(
+            "protocol",
+            "rollout sem last_token_usage e model_context_window válidos",
+        )
+    })
+}
+
+async fn rollout_tail(path: &std::path::Path, max_bytes: u64) -> Result<String, ProbeError> {
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|e| ProbeError::new("io", format!("não consegui abrir o rollout: {e}")))?;
+    let len = file
+        .metadata()
+        .await
+        .map_err(|e| ProbeError::new("io", format!("não consegui medir o rollout: {e}")))?
+        .len();
+    let start = len.saturating_sub(max_bytes);
+    file.seek(std::io::SeekFrom::Start(start))
+        .await
+        .map_err(|e| ProbeError::new("io", format!("não consegui ler o rollout: {e}")))?;
+    let mut bytes = Vec::with_capacity((len - start).min(max_bytes) as usize);
+    file.read_to_end(&mut bytes)
+        .await
+        .map_err(|e| ProbeError::new("io", format!("não consegui ler o rollout: {e}")))?;
+    if start > 0 {
+        if let Some(first_line_end) = bytes.iter().position(|b| *b == b'\n') {
+            bytes.drain(..=first_line_end);
+        }
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Tail de rollout → último snapshot utilizável. Anda de trás para frente:
+/// qualquer evento posterior irrelevante não encobre a medição final.
+fn parse_thread_context(tail: &str) -> Option<ThreadContext> {
+    for line in tail.lines().rev() {
+        let Ok(value) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if value.pointer("/payload/type").and_then(Value::as_str) != Some("token_count") {
+            continue;
+        }
+        let payload = value.get("payload")?;
+        let tokens = payload
+            .pointer("/info/last_token_usage/input_tokens")
+            .or_else(|| payload.pointer("/last_token_usage/input_tokens"))
+            .and_then(Value::as_u64);
+        let window_tokens = payload
+            .pointer("/info/model_context_window")
+            .or_else(|| payload.get("model_context_window"))
+            .and_then(Value::as_u64);
+        if let (Some(tokens), Some(window_tokens)) = (tokens, window_tokens) {
+            if tokens > 0 && window_tokens > 0 {
+                return Some(ThreadContext {
+                    tokens,
+                    window_tokens,
+                });
+            }
+        }
+        // É o token_count mais recente, mas está incompleto/zerado. Voltar a
+        // um snapshot anterior faria dado velho parecer atual.
+        return None;
+    }
+    None
 }
 
 /// A primeira linha do stderr que EXPLICA alguma coisa, cortada.
@@ -1362,12 +1482,21 @@ mod tests {
         let mut st = StreamState::new(Some("gpt-5.5".into()));
         let ctx = map_notification(
             "thread/tokenUsage/updated",
-            &json!({ "tokenUsage": { "last": {
-                "inputTokens": 21459, "cachedInputTokens": 13056, "outputTokens": 309
-            }}}),
+            &json!({ "tokenUsage": {
+                "last": {
+                    "inputTokens": 21459, "cachedInputTokens": 13056, "outputTokens": 309
+                },
+                "modelContextWindow": 258400
+            }}),
             &mut st,
         );
-        assert!(matches!(ctx[0], AgentEvent::ContextUsage { tokens: 21459 }));
+        assert!(matches!(
+            ctx[0],
+            AgentEvent::ContextUsage {
+                tokens: 21459,
+                window_tokens: Some(258400)
+            }
+        ));
         let end = map_notification("turn/completed", &json!({}), &mut st);
         match &end[0] {
             AgentEvent::Result {
@@ -1382,6 +1511,54 @@ mod tests {
             }
             _ => panic!("esperava Result"),
         }
+    }
+
+    #[test]
+    fn fim_sem_usage_declara_contexto_indisponivel() {
+        let mut st = StreamState::new(None);
+        let end = map_notification("turn/completed", &json!({}), &mut st);
+        assert!(matches!(end[0], AgentEvent::ContextUnavailable));
+        assert!(matches!(end[1], AgentEvent::Result { .. }));
+    }
+
+    #[test]
+    fn rollout_usa_last_e_janela_do_mesmo_snapshot_nunca_o_total() {
+        let tail = [
+            json!({
+                "type": "event_msg",
+                "payload": { "type": "token_count", "info": {
+                    "total_token_usage": { "input_tokens": 1_540_542 },
+                    "last_token_usage": { "input_tokens": 211_547 },
+                    "model_context_window": 258_400
+                }}
+            }),
+            json!({ "type": "event_msg", "payload": { "type": "task_complete" } }),
+        ]
+        .into_iter()
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+        assert_eq!(
+            parse_thread_context(&tail),
+            Some(ThreadContext {
+                tokens: 211_547,
+                window_tokens: 258_400,
+            })
+        );
+    }
+
+    #[test]
+    fn rollout_sem_last_confiavel_nao_promove_total_acumulado() {
+        let tail = json!({
+            "type": "event_msg",
+            "payload": { "type": "token_count", "info": {
+                "total_token_usage": { "input_tokens": 1_540_542 },
+                "last_token_usage": null,
+                "model_context_window": 258_400
+            }}
+        })
+        .to_string();
+        assert_eq!(parse_thread_context(&tail), None);
     }
 
     #[test]

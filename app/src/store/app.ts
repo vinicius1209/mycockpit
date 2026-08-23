@@ -13,6 +13,7 @@ import {
 import { moveByDelta, reorderByIds } from "@/lib/reorder"
 
 type Theme = "dark" | "light"
+export type ContextPanelTab = "contexto" | "alteracoes" | "plano"
 
 /** Config por projeto (espelho resolvido de .mycockpit/config.toml, Fase 1). */
 export interface ProjectConfig {
@@ -29,6 +30,9 @@ interface AppState {
   theme: Theme
   sidebarOpen: boolean
   contextOpen: boolean
+  /** Aba do painel direito. Efêmera, mas compartilhada porque o card de plano
+   *  junto ao composer precisa saber quando a checklist já está aberta ali. */
+  contextPanelTab: ContextPanelTab
   /** Superfície do centro (F4): Painel (home cross-projeto), Trabalho (chat
    *  Linear) ou Features (SDD). A disputa Fusion vive dentro da conversa via
    *  ⚔️ do composer, não é um modo. Valores persistidos de modos que já
@@ -107,6 +111,7 @@ interface AppState {
   toggleTheme: () => void
   toggleSidebar: () => void
   toggleContext: () => void
+  setContextPanelTab: (tab: ContextPanelTab) => void
   setViewMode: (m: "painel" | "linear" | "sdd") => void
   /** Abre (ou refoca) a aba do diff, opcionalmente já num arquivo. */
   openDiffTab: (focusPath?: string) => void
@@ -197,6 +202,7 @@ export const useApp = create<AppState>()(
       theme: "dark",
       sidebarOpen: true,
       contextOpen: true,
+      contextPanelTab: "contexto",
       viewMode: "linear",
       mainTab: { kind: "conversa" },
       scheduledOpen: false,
@@ -280,6 +286,7 @@ export const useApp = create<AppState>()(
           return { theme }
         }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+      setContextPanelTab: (contextPanelTab) => set({ contextPanelTab }),
       // o switcher não conhece os workspaces globais; trocar de superfície os fecha.
       setViewMode: (viewMode) =>
         set({ viewMode, scheduledOpen: false, flightPlansOpen: false, fleetOpen: false }),
