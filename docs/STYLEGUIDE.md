@@ -44,6 +44,17 @@ Duas consequências que valem mais que a preferência de quem estiver editando:
   próxima crítica boa parece teimosia nossa, e a resposta a ela vira uma
   discussão de estética em vez do que ela deveria ser: uma proposta de mudar o
   contrato.
+- **Aponte arquivo e SÍMBOLO, nunca `arquivo:linha`** (23/08/2026). O guia tinha
+  19 referências com número de linha, e a auditoria achou duas já apodrecidas:
+  o antigo ponteiro pro `store/chat.ts` caiu num `return out`, e o do `SettingsDialog.tsx` apontava
+  para **depois do fim** de um arquivo de 672 linhas. As demais estavam "dentro
+  do range", o que não prova nada — só que o arquivo é comprido o bastante.
+  - **A causa é estrutural, não descuido:** a catraca do §10 obriga a DIVIDIR
+    arquivo, então os números se movem toda semana por desenho. Uma referência
+    que envelhece sozinha é pior que nenhuma: ela manda o leitor pro lugar
+    errado com a autoridade do guia.
+  - Nome de símbolo (`deferredLiveLine`, `SELECTED_FILL`) é greppável e
+    sobrevive à divisão. Quando não houver símbolo, o arquivo sozinho basta.
 
 ## 1. A tese
 
@@ -71,7 +82,7 @@ claro+escuro) e por linha nesta tabela — nunca hex cru em componente.
 | Papel | Tokens | Use para | **NÃO use para** |
 |---|---|---|---|
 | **Cinza** (saudável/neutro) | `foreground`, `muted-foreground`, `faint`, `border`, `sel`, `sel-hover` | Texto, sucesso comum (check de ferramenta, dot concluído), metadado em sussurro mono, **item selecionado em lista/árvore (`sel`)**, tudo que está simplesmente OK | Suavizar erro ou atenção ("cinza escuro" não é vermelho educado); esconder falha |
-| **Verde** (marco raro) | `st-success` | No fio: marco de TURNO/PLANO/gesto — máx. **1 por turno** (caption "concluído", "Plano concluído", "Regra salva", ADR-037). Fora do fio: check "probe passou" em Configurações/Onboarding (verde exige probe, `SettingsDialog.tsx:249`) | Sucesso por linha de ferramenta; estado ambiente permanente (badge/dot "ok" que fica na tela); identidade visual de agent; texto corrido |
+| **Verde** (marco raro) | `st-success` | No fio: marco de TURNO/PLANO/gesto — máx. **1 por turno** (caption "concluído", "Plano concluído", "Regra salva", ADR-037). Fora do fio: check "probe passou" em Configurações/Onboarding (verde exige probe, `SettingsDialog.tsx`) | Sucesso por linha de ferramenta; estado ambiente permanente (badge/dot "ok" que fica na tela); identidade visual de agent; texto corrido |
 | **Âmbar** (precisa de você / risco autorizado) | `st-warning` (= `st-queued`), `st-warning-foreground` | Fila, gate, aviso que pede decisão, o **cartão do fluxo de aprovação** e o contador de pendências do sino, e o modo "Liberado" (risco autorizado fica visível) | Qualquer coisa que não seja decisão pendente, fila, gate ou risco autorizado. Seleção não é âmbar **nem brass**: seleção não é cor (ADR-043). Também não é progresso normal nem substituto do vermelho em falha real |
 | **Vermelho** (falha + destruição) | `st-error`, `destructive` | Falha consumada (marco vermelho, linha culpada) e ação destrutiva ("Parar", excluir, revogar) | Caminho de saída (Cancelar/fechar/voltar é ghost, sem cor); ênfase; aviso não-fatal (âmbar) |
 | **Azul** (vivo) | `st-running` | O que roda AGORA: pulse do dot, esteira de telemetria, linha viva | Qualquer coisa parada; link; decoração |
@@ -262,15 +273,15 @@ etiqueta técnica, número). O display serif do design-system nunca embarcou
 | **11** | Etiqueta e metadado: `.label-mono`, sussurro mono, contadores, timestamps | duração, `+N −N`, badges |
 | **12** | Secundário denso: linhas de sidebar, tabelas densas, tooltips | lista de conversas |
 | **13** | Corpo de UI: linhas de painel, botões, forms, títulos de card | padrão quando em dúvida |
-| **14** | Prosa de leitura: mensagens do chat, markdown, descrições longas | `Markdown.tsx:178` |
+| **14** | Prosa de leitura: mensagens do chat, markdown, descrições longas | `Markdown.tsx` |
 
 **Exceção hero (declarada e fechada — 3 paradas, todas com papel único):**
 
 | px | Papel | Hoje |
 |---|---|---|
-| **20** | Título de view / métrica de seção | `SddView.tsx:679`, `MissionControl.tsx:123` (derivado) e `:327` (título da view) |
-| **30** | Métrica de painel (custo, frota) | `CostAudit.tsx:118`, `MissionControl.tsx:355` |
-| **38** | Saudação do estado vazio | `ChatPanel.tsx:1296` |
+| **20** | Título de view / métrica de seção | `SddView.tsx`, `MissionControl.tsx` (derivado) e `:327` (título da view) |
+| **30** | Métrica de painel (custo, frota) | `CostAudit.tsx`, `MissionControl.tsx` |
+| **38** | Saudação do estado vazio | `ChatPanel.tsx` |
 
 Regras decidíveis:
 
@@ -358,18 +369,18 @@ Regra de disclosure do app inteiro (absorvida do Orca, agora nossa):
 1. **Capability ausente some com o toggle.** Motor sem a capability não mostra
    o item NEM o controle de ligar (nada de toggle morto). A decisão vem do
    registry, nunca de nome de agent (ex.: compactar/resume em
-   `ChatPanel.tsx:452,729`).
+   `ChatPanel.tsx`).
 2. **Não-configurado esconde; configurado-com-erro FICA.** Feature que o
    usuário nunca ligou não ocupa tela; feature que ele ligou e quebrou fica
    visível com o erro dito ("Servidor fora do ar…",
-   `CompanionSettings.tsx:217`) — senão a UI tremula e mente.
+   `CompanionSettings.tsx`) — senão a UI tremula e mente.
 3. **CTA só depois do estado assentar.** Botão/aviso que depende de probe ou
    snapshot só aparece quando a leitura terminou; check verde exige probe real
-   (`SettingsDialog.tsx:249`). Nunca CTA piscando enquanto carrega.
+   (`SettingsDialog.tsx`). Nunca CTA piscando enquanto carrega.
 4. **Dismissal é persistido.** O que o usuário dispensou não volta no próximo
-   boot (`dismissed` em `db.ts:1091`, fila do inbox em `inbox.ts:120`). E
+   boot (`dismissed` em `db.ts`, fila do inbox em `inbox.ts`). E
    dispensa nunca é aprovação disfarçada: dismiss de permissão nega
-   (fail-closed, `interaction.ts:134`).
+   (fail-closed, `interaction.ts`).
 
 ## 6. Movimento e tempo
 
@@ -382,11 +393,11 @@ proporcionalidade do Orca:
   congelada só no fim; **nunca "0s"** (antes de 1s não mostra nada). No web é
   `tabular-nums` + largura mínima + `shrink-0` (B2.1).
 - **Quem cede é o NOME, nunca o tempo** (R5): rótulo trunca (no texto E no
-  CSS, `store/chat.ts:204`) antes de empurrar o cronômetro.
+  CSS, `store/chat.ts`) antes de empurrar o cronômetro.
 - **Gerúndio no vivo, pretérito no marco** (R4): a linha viva fala "subindo o
   servidor…"; o fio registra "servidor subiu · 3s" com tempo congelado.
 - **Agregada + detalhe** (R5): N trabalhos viram "N trabalhos em background ·
-  <mais recente>" (`deferredLiveLine`, `store/chat.ts:232`); nome atrás de
+  <mais recente>" (`deferredLiveLine`, `store/chat.ts`); nome atrás de
   nome empilhado é proibido. Detalhe mora numa superfície só (Fio Vivo).
 - **Dono único do agora** (B2.2/ADR-037): a linha viva do rodapé é a ÚNICA
   superfície com relógio vivo; grupo vivo mostra no máximo "atividade há Xs".
@@ -433,7 +444,7 @@ pt-BR, voz direta, minúscula técnica nos metadados.
 - **Honestidade**: nunca implicar que o app agiu, observou ou sabe algo sem
   estado real por trás. "Rodando" falso é proibido; contagem sem fonte única é
   proibida; o aviso diz o preço da ação ("interrompe o turno completo e o
-  trabalho em background morre junto", `MessageList.tsx:511`).
+  trabalho em background morre junto", `MessageList.tsx`).
 - **Tempo verbal**: gerúndio só no que está vivo; pretérito no marco. Nunca
   pretérito em coisa que ainda roda nem gerúndio em coisa que acabou.
 - **Caminho de saída nunca é destrutivo**: Cancelar/fechar/voltar é ghost, sem
@@ -442,7 +453,7 @@ pt-BR, voz direta, minúscula técnica nos metadados.
   "descartar".
 - **Sem travessão "—" em prosa de UI** (vírgula, ponto ou parênteses; "·" e
   "→" ok). Única forma tolerada: "—" sozinho como glifo de valor ausente numa
-  célula (`SettingsDialog.tsx:362`).
+  célula (`SettingsDialog.tsx`).
 - **Vocabulário canônico** (as palavras do produto; não inventar sinônimo):
   - **Frota** — o nome do app; **frota** — o conjunto de agents/trabalhos.
   - **turno** — uma rodada de execução (prompt → resultado).
@@ -568,7 +579,7 @@ Status abaixo, com o que sobrou de propósito.
    (`lib/mission`, `lib/handoff`, `lib/skills`, `lib/trust`, `lib/transcript`,
    `lib/doctrine`) ficou como está, porque ali o "—" é entrada do agent, não
    prosa de UI. (Os `file:line` citados na auditoria original tinham drift:
-   `CompanionSettings.tsx:217` e `SettingsDialog.tsx:774` não tinham travessão
+   `CompanionSettings.tsx` e `SettingsDialog.tsx` não tinham travessão
    nenhum.)
 8. ✅ **Hero divergente pro mesmo papel** — 34px → 30px (métrica de painel do
    Mission Control) e 19px → 20px (Readout do Mission Control e da

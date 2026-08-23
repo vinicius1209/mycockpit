@@ -33,6 +33,8 @@ jobs:
         run: node scripts/check-barra-de-acento.mjs
       - name: marca (o produto se chama Frota)
         run: node scripts/check-marca.mjs
+      - name: guia sem arquivo:linha (§0)
+        run: node scripts/check-guia-sem-linha.mjs
 
   frontend:
     runs-on: ubuntu-latest
