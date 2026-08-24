@@ -40,7 +40,6 @@ import { confirm } from "@/lib/confirm"
 import { SELECTED_FILL, UNSELECTED } from "@/lib/selection"
 import { agentModels, defaultModelFor, LEAGUE_AGENTS } from "@/lib/agents"
 import type {
-  ScheduleKind,
   SchedulePermission,
   ScheduleRecord,
   ScheduleRunRecord,
@@ -203,10 +202,12 @@ function ScheduleRow({
             <span className="min-w-0 truncate text-[13px] font-medium text-foreground">
               {s.name}
             </span>
-            {/* S4.3: schedule do lead — proposta de triagem, nunca despacho */}
+            {/* Automação LEGADA do lead: o tipo saiu (ADR-078), mas a linha
+                salva continua no banco. Ela é marcada e NUNCA roda — some
+                daqui só quando você excluir. */}
             {s.kind === "lead" && (
-              <span className="shrink-0 rounded bg-secondary px-1.5 py-px text-[11px] tracking-wide text-muted-foreground">
-                lead
+              <span className="shrink-0 rounded bg-st-warning/15 px-1.5 py-px text-[11px] tracking-wide text-st-warning">
+                tipo removido
               </span>
             )}
             {/* concluída ≠ pausada ≠ sem próxima: confundir os três faria o
@@ -571,9 +572,9 @@ function NewScheduleDialog({
 
   const [name, setName] = useState("")
   const [projectId, setProjectId] = useState<string>("")
-  // S4.3: tipo da automação — "agent" (prompt num agent de código) ou "lead"
-  // (proposta de triagem do board; sem agent/modelo/prompt/permissão).
-  const [kind, setKind] = useState<ScheduleKind>("agent")
+  // Só existe UM tipo de automação: prompt num agent de código. O tipo
+  // "Proposta do lead" saiu (ADR-078) — ele lia os cards de um board que não
+  // tem mais como criar card, então rodava, não produzia nada e reportava OK.
   const [agent, setAgent] = useState("claude-code")
   const [model, setModel] = useState(defaultModelFor("claude-code"))
   const [prompt, setPrompt] = useState("")
@@ -592,7 +593,6 @@ function NewScheduleDialog({
     if (!open) return
     setName(template?.name ?? "")
     setProjectId(activeProjectId ?? projects[0]?.id ?? "")
-    setKind("agent")
     setAgent("claude-code")
     setModel(defaultModelFor("claude-code"))
     setPrompt(template?.prompt ?? "")
@@ -643,8 +643,7 @@ function NewScheduleDialog({
     !saving &&
     name.trim().length > 0 &&
     projectId.length > 0 &&
-    // lead não tem prompt: o texto é montado pelo proposePlan na hora.
-    (kind === "lead" || prompt.trim().length > 0) &&
+    prompt.trim().length > 0 &&
     recurrence != null
 
   async function handleSave() {
@@ -654,7 +653,6 @@ function NewScheduleDialog({
       await createSchedule({
         name,
         projectId,
-        kind,
         agent,
         model: model === "default" ? null : model,
         prompt,
@@ -709,40 +707,6 @@ function NewScheduleDialog({
             />
           </div>
 
-          {/* S4.3: tipo da automação. Lead esconde agent/modelo/prompt/
-              permissão: ele não roda agent de código, só escreve a proposta. */}
-          <div className="flex flex-col gap-1.5">
-            <label className={fieldLabel}>Tipo</label>
-            <div className="flex items-center gap-1.5">
-              {(
-                [
-                  ["agent", "Agent no projeto", "roda um prompt num agent de código"],
-                  ["lead", "Proposta do lead", "triagem do board, nada é despachado"],
-                ] as const
-              ).map(([k, label, hint]) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => setKind(k)}
-                  title={hint}
-                  className={cn(
-                    "rounded-md border px-2.5 py-1 text-[12px] transition-colors",
-                    kind === k ? SELECTED_FILL : UNSELECTED,
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {kind === "lead" && (
-              <p className="text-[11px] text-muted-foreground/70">
-                O lead lê os cards abertos do board do projeto e escreve uma
-                proposta de triagem na fila Precisam de você. Nada é
-                despachado sem você.
-              </p>
-            )}
-          </div>
-
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <label className={fieldLabel}>Projeto</label>
@@ -759,32 +723,30 @@ function NewScheduleDialog({
                 </SelectContent>
               </Select>
             </div>
-            {kind === "agent" && (
-              <div className="flex flex-col gap-1.5">
-                <label className={fieldLabel}>Agent</label>
-                <Select
-                  value={agent}
-                  onValueChange={(a) => {
-                    setAgent(a)
-                    setModel(defaultModelFor(a))
-                  }}
-                >
-                  <SelectTrigger size="sm" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LEAGUE_AGENTS.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div className="flex flex-col gap-1.5">
+              <label className={fieldLabel}>Agent</label>
+              <Select
+                value={agent}
+                onValueChange={(a) => {
+                  setAgent(a)
+                  setModel(defaultModelFor(a))
+                }}
+              >
+                <SelectTrigger size="sm" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LEAGUE_AGENTS.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          {kind === "agent" && agentModels(agent).length > 0 && (
+          {agentModels(agent).length > 0 && (
             <div className="flex flex-col gap-1.5">
               <label className={fieldLabel}>Modelo</label>
               <Select value={model} onValueChange={setModel}>
@@ -802,18 +764,16 @@ function NewScheduleDialog({
             </div>
           )}
 
-          {kind === "agent" && (
-            <div className="flex flex-col gap-1.5">
-              <label className={fieldLabel}>Prompt</label>
-              <Textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                rows={3}
-                placeholder="Resuma as PRs abertas e as falhas de CI. Não altere nada."
-                className="min-h-[72px] rounded-md border border-input bg-transparent px-3 py-2 text-[13px]"
-              />
-            </div>
-          )}
+          <div className="flex flex-col gap-1.5">
+            <label className={fieldLabel}>Prompt</label>
+            <Textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={3}
+              placeholder="Resuma as PRs abertas e as falhas de CI. Não altere nada."
+              className="min-h-[72px] rounded-md border border-input bg-transparent px-3 py-2 text-[13px]"
+            />
+          </div>
 
           <div className="flex flex-col gap-1.5">
             <label className={fieldLabel}>Recorrência</label>
@@ -911,7 +871,6 @@ function NewScheduleDialog({
             ) : null}
           </div>
 
-          {kind === "agent" && (
           <div className="flex flex-col gap-1.5">
             <label className={fieldLabel}>Permissão</label>
             <div className="flex items-center gap-1.5">
@@ -947,7 +906,6 @@ function NewScheduleDialog({
               expira sozinho e o turno morre, não há quem aprove às 3h.
             </p>
           </div>
-          )}
         </div>
 
     </AppDialog>

@@ -2929,3 +2929,38 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   máquina" por escrito, nunca herda em silêncio.
 - **Verificado:** `cargo` 510 (4 novos), `tsc` 0, `vitest` 3127 (6 novos),
   8 guardas + os testes da própria guarda (27).
+
+### ADR-078 — "Proposta do lead" sai: um no-op vestido de sucesso ✅
+- **Contexto (24/08/2026):** o usuário viu o tipo no dialog de automação e
+  perguntou se ele não referenciava uma feature de board que não existe mais.
+  Referenciava. Verificado no código:
+  - `proposePlan` lê os cards ABERTOS do board;
+  - **nenhuma UI cria card** — `createCard` é importado no store e não é
+    chamado de lugar nenhum, `BoardLane` não existe mais; só `InboxBell` e
+    `DecisionStrip` ainda LEEM cards;
+  - e o `scheduleEngine` dizia, por escrito: *"proposePlan devolve null com
+    board vazio — a execução rodou bem mesmo assim: status **ok**"*.
+- **O defeito não era "feature morta", era pior:** dava pra agendar uma
+  automação diária que rodava todo dia, não produzia nada e **registrava
+  sucesso**. Um no-op verde é pior que um erro — o erro pelo menos avisa.
+- **O jeito preguiçoso de remover seria o desfecho mais perigoso.** Tratar
+  `kind` antigo como "agent" faria uma automação que não fazia NADA passar a
+  **despachar um agent de código**, com prompt vazio, no horário, sem ninguém
+  ter pedido. A linha legada é **desligada uma vez**, com a causa escrita, e
+  fica na lista (marcada "tipo removido") até você excluir — some da vista só
+  por gesto seu. Cinco testes fixam isso, e o primeiro é o do desfecho perigoso.
+- **Some o PRODUTOR, ficam os LEITORES.** `lib/lead.ts` foi removido (único
+  chamador de produção era o branch do schedule). Mas `listOpenProposals` segue
+  vivo no `inbox.ts`: quem já tem proposta gravada continua vendo na fila
+  "Precisam de você". Apagar o leitor faria linhas existentes sumirem em
+  silêncio — o oposto da regra da casa.
+  - `insertProposal` fica: é o primitivo com que os testes exercitam o caminho
+    de LEITURA que ainda roda (ordenação, dismiss, supersede). Remover o writer
+    custaria cobertura de comportamento vivo.
+- **A coluna `kind` e a tabela `lead_proposals` NÃO são derrubadas.** Migração
+  destrutiva sem necessidade; e a linha legada precisa continuar legível pra
+  poder ser desligada com a causa.
+- **A catraca de tamanho apertou sozinha:** `ScheduledView.tsx` caiu de 1113 pra
+  1071, e a baseline desceu junto (`--update`). Ela só aperta — foi a primeira
+  vez nesta sessão que ela mordeu na direção boa.
+- **Verificado:** `tsc` 0, `vitest` 3124, 8 guardas.

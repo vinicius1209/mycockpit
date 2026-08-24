@@ -16,12 +16,12 @@
 import { runAgent } from "@/lib/agent"
 import { buildDoctrineBlock, readDoctrine } from "@/lib/doctrine"
 import { dispatchBlockReason, normalizeModelValue } from "@/lib/agents"
-import { proposePlan } from "@/lib/lead"
 import {
   insertScheduleRun,
   listSchedules,
   markScheduleCompleted,
   markScheduleRun,
+  setScheduleEnabled,
   setScheduleNextRun,
   type ScheduleRecord,
 } from "@/lib/db"
@@ -112,46 +112,38 @@ export async function dispatchSchedule(
       await setScheduleNextRun(s.id, next)
     }
 
-    // ── S4.3: schedule do LEAD chama proposePlan em vez de runAgent ──
-    // Sem conversa criada, sem preflight de CLI e sem clamp extra de
-    // permissão: o lead não roda agent de código — é o helper one-shot que
-    // só escreve uma proposta persistida (o despacho segue humano no board).
-    // O clamp "automação nunca roda liberado" do fluxo agent fica intocado.
+    // ── Automação LEGADA do tipo "lead" ──────────────────────────────
+    // O tipo saiu (ADR-078): ele lia os cards abertos de um board que não tem
+    // mais como criar card, então rodava, não produzia nada e reportava OK —
+    // um no-op vestido de sucesso, pior que um erro.
+    //
+    // A linha salva no banco NÃO é convertida em automação de agent. Converter
+    // seria o pior desfecho possível: uma automação que não fazia nada passaria
+    // a DESPACHAR um agent de código, com prompt vazio, sem você ter pedido.
+    // Ela é desligada uma vez, com a causa escrita, e fica na lista até você
+    // excluir — some da vista só por gesto seu.
     if (s.kind === "lead") {
       const startedAt = Date.now()
-      let ok = false
-      // D2 da revisão: a causa REAL vai pro sino (helper desligado, claude
-      // ausente/deslogado, invoke falhou...) — mesmo padrão do caminho manual
-      // do BoardLane, que mostra e.message no toast. Fallback genérico só
-      // quando a mensagem vem vazia.
-      let failMsg = ""
-      try {
-        // proposePlan devolve null com board vazio/helper mudo — a execução
-        // rodou bem mesmo assim (não havia o que propor): status ok.
-        await proposePlan(s.projectId || undefined)
-        ok = true
-      } catch (e) {
-        failMsg = (e instanceof Error ? e.message : String(e ?? "")).trim()
-        console.warn("[schedules] proposta do lead falhou", e)
-      }
+      const motivo =
+        "O tipo \u201cProposta do lead\u201d foi removido: ele dependia do board, que não existe mais. Esta automação foi desligada e não vai rodar."
       await insertScheduleRun({
         id: crypto.randomUUID(),
         scheduleId: s.id,
         startedAt,
-        status: ok ? "ok" : "failed",
+        status: "failed",
         cost: null,
         convId: null,
       })
-      await markScheduleRun(s.id, startedAt, ok ? "ok" : "failed")
-      if (!ok) {
-        useNotifs.getState().push({
-          kind: "run_error",
-          title: `Automação falhou: ${s.name}`,
-          subtitle:
-            failMsg || "O lead não conseguiu escrever a proposta.",
-          projectId: s.projectId,
-        })
-      }
+      await markScheduleRun(s.id, startedAt, "failed")
+      // next_run null junto: desligar sem limpar o calendário deixaria a
+      // automação com um horário futuro que nunca chega.
+      await setScheduleEnabled(s.id, false, null)
+      useNotifs.getState().push({
+        kind: "run_error",
+        title: `Automação desligada: ${s.name}`,
+        subtitle: motivo,
+        projectId: s.projectId,
+      })
       return
     }
 

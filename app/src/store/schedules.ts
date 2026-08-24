@@ -9,7 +9,6 @@ import {
   listSchedules,
   rescheduleSchedule,
   setScheduleEnabled,
-  type ScheduleKind,
   type SchedulePermission,
   type ScheduleRecord,
   type ScheduleRunRecord,
@@ -24,8 +23,6 @@ import { dispatchSchedule } from "@/lib/scheduleEngine"
 export interface NewScheduleInput {
   name: string
   projectId: string
-  /** S4.3: "lead" agenda proposePlan (sem agent/prompt); default "agent". */
-  kind?: ScheduleKind
   agent: string
   model: string | null
   prompt: string
@@ -70,24 +67,19 @@ export const useSchedules = create<SchedulesState>((set, get) => ({
     ) {
       throw new Error("O horário escolhido já passou")
     }
-    const kind: ScheduleKind = input.kind === "lead" ? "lead" : "agent"
     const s: ScheduleRecord = {
       id: crypto.randomUUID(),
       name: input.name.trim(),
       projectId: input.projectId,
-      kind,
-      // schedule do lead não roda agent de código: normaliza os campos do
-      // fluxo agent pra valores neutros e auto-descritivos no banco.
-      agent: kind === "lead" ? "lead" : input.agent,
-      model: kind === "lead" ? null : input.model,
-      prompt: kind === "lead" ? "" : input.prompt.trim(),
+      // Só se CRIA "agent". "lead" segue existindo no tipo e no banco porque
+      // linhas antigas precisam continuar LEGÍVEIS pra serem desligadas com a
+      // causa escrita (ADR-078) — o que sumiu foi o produtor, não o leitor.
+      kind: "agent",
+      agent: input.agent,
+      model: input.model,
+      prompt: input.prompt.trim(),
       // regra dura: só leitura|padrao chega aqui (o tipo já barra 'liberado').
-      permission:
-        kind === "lead"
-          ? "leitura"
-          : input.permission === "padrao"
-            ? "padrao"
-            : "leitura",
+      permission: input.permission === "padrao" ? "padrao" : "leitura",
       recurrence: JSON.stringify(input.recurrence),
       enabled: true,
       nextRun: computeNextRun(input.recurrence, new Date()),
