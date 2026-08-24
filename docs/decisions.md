@@ -3161,3 +3161,46 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   importa.
 - **Verificado:** `tsc` 0, `vitest` 3149 (16 novos), 8 guardas, e2e 27/27,
   `cargo` 515.
+
+### ADR-084 — F5: o cronômetro morre, a reconstrução do cache aparece ✅
+- **Contexto (24/08/2026):** última fase do `telas-de-configuracao-plan`. O Orca
+  mostra um **cronômetro** até o cache do prompt expirar. O plano dizia, com
+  todas as letras, que a fase **começava por medir** — e a medida derrubou o
+  cronômetro e achou outra coisa.
+- **O cronômetro morre.** O TTL do cache é **configuração do provedor** (5 min
+  no padrão da Anthropic, 1h no modo estendido), não algo que a gente observe.
+  Um relógio contando um prazo que nós chutamos **pareceria dado e seria
+  invenção** — o mesmo erro do `3_000` herdado no orçamento da memória. Segunda
+  vez nesta semana que "medir antes" mata uma fase inteira (a 1ª foi o C3).
+- **O que a medida achou.** Nos transcripts reais desta máquina:
+  | | tokens | % dos tokens de cache |
+  |---|---|---|
+  | cache **lido** | 5.542.749.751 | 96,5% |
+  | cache **reconstruído** | 201.004.177 | **3,5%** |
+  Pelo preço relativo (ler ≈ 0,1× o input, reconstruir ≈ 1,25× — doze vezes
+  mais por token), a reconstrução é **~31% do custo de cache**. A fatia
+  pequena em tokens é a cara em dinheiro.
+- **E o recibo mostrava só a leitura.** `cacheCreation` chegava ao front, ficava
+  no `usage` do item, e **não era exibido em lugar nenhum**. A parte cara era
+  invisível. Mesma família do recibo mudo e do selo escondido: o dado existia e
+  ninguém contava.
+- **Uma medição minha foi CONFUNDIDA, e vale registrar.** Eu correlacionei
+  "gap desde o turno anterior" com custo e vi o custo subir bonito com o gap.
+  Só que `created_at` é o FIM do turno, então gap ≈ **duração**, não
+  ociosidade: turno longo custa mais por ser longo. A tabela era convincente e
+  não provava nada. Descartada.
+- **A catraca de tamanho me fez recuar de um erro de escopo, e ela estava
+  certa.** Eu tinha começado a persistir a divisão em `turn_costs` (migração 40
+  + threading por 4 call sites). A guarda acusou 6 arquivos legados crescendo —
+  e o custo real que ela expôs era outro: **eu estava construindo persistência
+  para um leitor que não existe.** Não há tela de ledger que consuma a divisão.
+  Revertido; fica no plano, para quando houver consumidor.
+- **O que entrou:** a linha `+22k reconstruído` no recibo do turno, em âmbar,
+  **só quando houve** — linha que aparece sempre ninguém lê. O bloco de tokens
+  saiu do `MessageList` para `turnoTokens.tsx`, e o arquivo **encolheu** de 2224
+  para 2207 linhas: a catraca apertou junto.
+- **Campo ausente ≠ zero.** Item de transcript antigo pode não ter
+  `cacheCreation`; ali 0 significa "não mostro nada", nunca "afirmo que foi
+  zero". Coberto por teste, junto com valor negativo de motor confuso.
+- **Verificado:** `tsc` 0, `vitest` 3153 (4 novos), 8 guardas, e2e 27/27,
+  `cargo` 515.

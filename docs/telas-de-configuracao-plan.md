@@ -1,8 +1,18 @@
 # As telas de configuração, depois de olhar o Orca (plano)
 
-> Status: **F1–F4 e F6 ENTREGUES (24/08/2026)**. Falta só o F5, que começa por
-> medir. Ver ADR-075 (as duas primeiras correções), 077 (F1), 079 (F2),
-> 080 (F3), 081 (F4) e 083 (F6).
+> Status: **PLANO CONCLUÍDO (24/08/2026)** — F1 a F6. Ver ADR-075 (as duas
+> primeiras correções), 077 (F1), 079 (F2), 080 (F3), 081 (F4), 083 (F6) e
+> 084 (F5).
+>
+> **O F5 saiu diferente do que estava escrito, e o plano previa isso.** Ele
+> mandava MEDIR antes, e a medida matou o cronômetro (o TTL é configuração do
+> provedor, não observável) e achou outra coisa: a reconstrução de cache é 3,5%
+> dos tokens e ~31% do custo, e o recibo mostrava só a leitura.
+>
+> **Fica para quando houver consumidor:** persistir a divisão do cache em
+> `turn_costs` (hoje `cache_tokens` é a SOMA). Comecei e recuei — não existe
+> tela de ledger que leia a divisão, e a catraca de tamanho expôs o custo de
+> construir persistência sem leitor.
 >
 > **Uma frase deste plano estava errada e o código corrigiu:** eu escrevi
 > "parcial: 2 de 3 motores" no F2. O selo é da MÁQUINA e "parcial" é sobre

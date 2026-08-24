@@ -37,9 +37,10 @@ import {
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
+import { TurnoTokens } from "@/components/chat/turnoTokens"
 import { cn } from "@/lib/utils"
 import { DESTINATIONS } from "@/lib/agents"
-import { fmtCost, fmtDuration, fmtTime, fmtTokens } from "@/lib/format"
+import { fmtCost, fmtDuration, fmtTime } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
 import { attachmentReadsByItem, type ReadLabels } from "@/lib/attachmentRead"
@@ -1265,8 +1266,6 @@ function TurnTelemetry({
   it: Extract<ChatItem, { kind: "result" }>
   incidentTone?: "limit"
 }) {
-  const hasUsage = it.usage && (it.usage.input > 0 || it.usage.output > 0)
-  const hasCache = it.usage && it.usage.cacheRead > 0
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/80">
       <span className="flex items-center gap-1.5">
@@ -1297,23 +1296,7 @@ function TurnTelemetry({
         )}
       </span>
 
-      {(hasUsage || hasCache) && (
-        <span className="flex items-center gap-1.5">
-          {hasUsage && (
-            <span className="tabular-nums">
-              {fmtTokens(it.usage!.input)} ↓ · {fmtTokens(it.usage!.output)} ↑
-            </span>
-          )}
-          {hasCache && (
-            <>
-              {hasUsage && <Sep />}
-              <span className="tabular-nums">
-                cache {fmtTokens(it.usage!.cacheRead)}
-              </span>
-            </>
-          )}
-        </span>
-      )}
+      <TurnoTokens usage={it.usage} />
 
       {(it.model || it.costUsd != null) && (
         <span className="flex items-center gap-1.5">
