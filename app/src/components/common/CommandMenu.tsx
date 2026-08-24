@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { searchConversations, type ConvSearchHit } from "@/lib/db/conversations"
 import {
   FileText,
@@ -32,6 +32,11 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { SkillDraftDialog } from "@/components/skills/SkillDraftDialog"
 import { onOpenCommandMenu } from "@/lib/commandMenu"
 import { draftSkill, type SkillDraft } from "@/lib/skills"
+import {
+  SETTINGS_SECTIONS,
+  casaBusca,
+  secoesDisponiveis,
+} from "@/components/settings/sections"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 
@@ -101,6 +106,17 @@ export function CommandMenu() {
 
   // Busca full-text no histórico (≥3 chars, debounce 250ms, cross-projeto).
   const [query, setQuery] = useState("")
+  // Sem termo NÃO despeja as 17 seções na paleta: a lista de comandos vira
+  // ruído e some o que a pessoa abriu a paleta pra fazer. Elas aparecem quando
+  // alguém procura.
+  const secoesComBusca = useMemo(() => {
+    const termo = query.trim()
+    if (termo.length < 2) return []
+    const pool = new Set(secoesDisponiveis())
+    return SETTINGS_SECTIONS.filter(
+      (sec) => pool.has(sec.id) && casaBusca(sec, termo),
+    )
+  }, [query])
   const [hits, setHits] = useState<ConvSearchHit[]>([])
   useEffect(() => {
     if (!open) {
@@ -297,6 +313,42 @@ export function CommandMenu() {
                 Configurações
               </CommandItem>
             </CommandGroup>
+
+            {/* Cada SEÇÃO de Configurações é um destino da paleta. Substitui a
+                caixa de busca própria do concorrente: com 17 seções, busca
+                dedicada é conforto; cair direto na seção pela paleta que já
+                existe é quase todo o valor, sem tela nova.
+
+                O casamento usa as palavras que a seção DECLARA (`busca`), não
+                só o rótulo — digitar "microfone" tem que achar Ditado, e
+                "microfone" não aparece em lugar nenhum do título. A lista de
+                seções é a MESMA do rail (secoesDisponiveis): destino que o
+                build não tem não vira resultado. */}
+            {secoesComBusca.length > 0 && (
+              <CommandGroup heading="Configurações">
+                {secoesComBusca.map((sec) => (
+                  <CommandItem
+                    key={sec.id}
+                    className={ITEM}
+                    // O `query` entra no `value` — mesmo idioma do grupo de
+                    // busca no histórico, logo acima. Quem já filtrou foi o
+                    // `casaBusca`; sem o termo aqui, o filtro PRÓPRIO do cmdk
+                    // derrubaria o item (ele não sabe das palavras declaradas,
+                    // e "microfone" não aparece no rótulo "Ditado").
+                    value={`${query} config:${sec.id}`}
+                    onSelect={() => run(() => setSettingsOpen(true, sec.id))}
+                  >
+                    <sec.icon aria-hidden />
+                    <span className="min-w-0 truncate">{sec.label}</span>
+                    {sec.question && (
+                      <span className="ml-auto hidden min-w-0 truncate pl-3 text-[12px] text-muted-foreground sm:block">
+                        {sec.question}
+                      </span>
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
           </CommandList>
         </Command>
       </DialogContent>

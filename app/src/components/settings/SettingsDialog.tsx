@@ -21,7 +21,8 @@ import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useApp } from "@/store/app"
-import { hooksAgents, usageWindowAgents } from "@/lib/agentRoster"
+import { usageWindowAgents } from "@/lib/agentRoster"
+import { lerGhStatus } from "@/lib/github"
 import {
   aplicarKeepAwake,
   KEEP_AWAKE_OPTIONS,
@@ -51,10 +52,11 @@ import {
   SELECT_TRIGGER,
 } from "@/components/settings/parts"
 import {
-  SETTINGS_SECTIONS,
   resolveSection,
   sectionDef,
+  precisaDeAtencao,
   sectionsByGroup,
+  secoesDisponiveis,
   type SectionId,
 } from "@/components/settings/sections"
 import { cn } from "@/lib/utils"
@@ -94,12 +96,24 @@ export function SettingsDialog() {
   )
   // 1ª camada de esconder: build sem nenhum motor com hooks não mostra a seção
   // (nem o toggle). A decisão vem do registry de capabilities, nunca de nome.
-  const available = useMemo(
-    () =>
-      SETTINGS_SECTIONS.filter(
-        (s) => s.id !== "hooks" || hooksAgents().length > 0,
-      ).map((s) => s.id),
-    [],
+  // A MESMA lista que a paleta ⌘K usa (secoesDisponiveis): seção escondida no
+  // rail e alcançável pela paleta seria um destino fantasma.
+  const available = useMemo(() => secoesDisponiveis(), [])
+  // Fatos do rail. `gh` é lido ao ABRIR (dois comandos locais, ~ms) e começa
+  // como undefined, que significa "ainda não olhei" — e não olhar nunca pinta
+  // alarme. `detected` já mora no store, de graça.
+  const [ghDoRail, setGhDoRail] = useState<
+    { installed: boolean; contas: number } | undefined
+  >(undefined)
+  useEffect(() => {
+    if (!open) return
+    void lerGhStatus().then((g) =>
+      setGhDoRail({ installed: g.installed, contas: g.accounts.length }),
+    )
+  }, [open])
+  const fatosDoRail = useMemo(
+    () => ({ detected: settings.detected, gh: ghDoRail }),
+    [settings.detected, ghDoRail],
   )
   const hasUsageMeter = useMemo(() => usageWindowAgents().length > 0, [])
   const [section, setSection] = useState<SectionId>(() =>
@@ -169,7 +183,26 @@ export function SettingsDialog() {
                   <span className="grid size-5 shrink-0 place-items-center">
                     <s.icon className="size-4" />
                   </span>
-                  {s.label}
+                  <span className="min-w-0 truncate">{s.label}</span>
+                  {/* Selo à DIREITA e em caixa alta: é estado da seção, não
+                      parte do nome dela. Dentro do título ("Missões (beta)")
+                      ele não podia ser lido nem estilizado como estado. */}
+                  {s.badge && (
+                    <span className="ml-auto shrink-0 rounded bg-secondary px-1 py-px text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                      {s.badge}
+                    </span>
+                  )}
+                  {/* Ponto de atenção: coisa meio-configurada que VOCÊ pode
+                      consertar (CLI deslogada, gh sem conta). Nunca capacidade
+                      ausente por escolha nem limitação da máquina — ponto que
+                      não apaga ensina a ignorar o ponto. */}
+                  {precisaDeAtencao(s.id, fatosDoRail) && (
+                    <span
+                      className={cn("size-1.5 shrink-0 rounded-full bg-st-warning", !s.badge && "ml-auto")}
+                      title="Precisa de atenção"
+                      aria-label="Precisa de atenção"
+                    />
+                  )}
                 </button>
               ))}
             </div>

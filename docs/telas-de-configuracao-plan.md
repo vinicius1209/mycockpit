@@ -1,8 +1,13 @@
 # As telas de configuração, depois de olhar o Orca (plano)
 
-> Status: proposto em 24/08/2026, a partir de uma comparação tela a tela entre
-> seis telas de Configurações do Orca e as nossas. As duas primeiras correções
-> já saíram (ADR-075); o resto está aqui, em ordem de retorno.
+> Status: **F1–F4 e F6 ENTREGUES (24/08/2026)**. Falta só o F5, que começa por
+> medir. Ver ADR-075 (as duas primeiras correções), 077 (F1), 079 (F2),
+> 080 (F3), 081 (F4) e 083 (F6).
+>
+> **Uma frase deste plano estava errada e o código corrigiu:** eu escrevi
+> "parcial: 2 de 3 motores" no F2. O selo é da MÁQUINA e "parcial" é sobre
+> ESCOPO. Registrado no ADR-079 porque errar por não ter lido é o tipo de coisa
+> que vale ficar escrita.
 >
 > Referências apontam **arquivo e símbolo**, nunca `arquivo:linha` — a catraca
 > do §10 obriga a dividir arquivo, então número de linha apodrece por desenho.

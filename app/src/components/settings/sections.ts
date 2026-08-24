@@ -31,6 +31,7 @@ import {
   Sparkles,
   Waypoints,
 } from "lucide-react"
+import { hooksAgents } from "@/lib/agentRoster"
 
 export type SectionId =
   | "appearance"
@@ -70,6 +71,18 @@ export interface SettingsSection {
   question: string | null
   icon: typeof Bot
   group: GroupId
+  /** Selo curto no rail (`BETA`, `OPCIONAL`). Fora do título de propósito:
+   *  "Missões (beta)" carregava o estado dentro do texto, e aí ele não podia
+   *  ser estilizado nem lido como estado. */
+  badge?: string
+  /** O que o usuário pode DIGITAR pra chegar aqui — nomes concretos do que a
+   *  seção contém, não sinônimos do título.
+   *
+   *  Obrigatório de propósito: é o que transforma a regra editorial "cada seção
+   *  responde UMA pergunta" em algo verificável. Seção que não consegue listar
+   *  o que tem dentro é seção que virou depósito, e foi assim que "CLIs
+   *  instaladas" acumulou medidor, hooks e curador de modelos. */
+  busca: string[]
 }
 
 export const SETTINGS_GROUPS: { id: GroupId; label: string }[] = [
@@ -88,6 +101,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     question: "Como o app se parece e o que ele lembra entre reinícios.",
     icon: Palette,
     group: "interface",
+    busca: ["tema", "escuro", "claro", "cor", "fonte", "densidade", "aparência"],
   },
   {
     id: "tray",
@@ -96,6 +110,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     question: "O que acontece ao fechar a janela e o que o instrumento mostra.",
     icon: PanelTop,
     group: "interface",
+    busca: ["tray", "barra de menus", "menubar", "fechar janela", "ícone", "dock"],
   },
   {
     id: "new-chats",
@@ -104,6 +119,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     question: "Com o que uma conversa nova começa: agent, modelo e esforço.",
     icon: Bot,
     group: "conversas",
+    busca: ["agent padrão", "modelo padrão", "esforço", "nova conversa", "default"],
   },
   {
     id: "autopilot",
@@ -113,6 +129,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "O que o app faz sozinho enquanto ninguém olha: retomar, vigiar e responder.",
     icon: Radar,
     group: "conversas",
+    busca: ["auto-revive", "rate limit", "retomar", "vigia", "acordado", "sono", "dormir", "caffeinate"],
   },
   {
     id: "presets",
@@ -121,6 +138,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     question: null,
     icon: Users,
     group: "conversas",
+    busca: ["persona", "especialista", "piloto", "preset"],
   },
   {
     id: "suggestions",
@@ -129,6 +147,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     question: "Qual modelo escreve as sugestões automáticas do composer.",
     icon: Sparkles,
     group: "conversas",
+    busca: ["sugestão", "helper", "haiku", "composer"],
   },
   {
     id: "dictation",
@@ -137,14 +156,17 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     question: "Falar no lugar de digitar, em pt-BR e sem sair da máquina.",
     icon: Mic,
     group: "conversas",
+    busca: ["microfone", "mic", "voz", "ditado", "atalho", "vocabulário", "fala", "push-to-talk"],
   },
   {
     id: "missions",
     label: "Missões",
-    title: "Missões (beta)",
+    title: "Missões",
+    badge: "beta",
     question: "Cada missão executa um plano de voo salvo, em fases com gates.",
     icon: Waypoints,
     group: "conversas",
+    busca: ["missão", "plano de voo", "fase", "gate"],
   },
   {
     id: "machine",
@@ -153,6 +175,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     question: "Quais CLIs de agent existem aqui, em que versão e logadas ou não.",
     icon: Cpu,
     group: "agentes",
+    busca: ["claude", "codex", "antigravity", "agy", "cli", "versão", "instalar", "atualizar", "login", "path"],
   },
   {
     id: "sandbox",
@@ -162,6 +185,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "O que o sistema operacional barra quando um agente roda aqui, e em quais modos.",
     icon: ShieldCheck,
     group: "agentes",
+    busca: ["sandbox", "confinamento", "seatbelt", "sandbox-exec", "escrita", "segurança", "modo"],
   },
   {
     id: "models",
@@ -170,6 +194,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     question: "Quais modelos entram no seletor dos agents e quanto custam.",
     icon: Layers,
     group: "agentes",
+    busca: ["modelo", "opus", "sonnet", "gpt", "gemini", "preço", "token", "catálogo"],
   },
   {
     id: "hooks",
@@ -179,6 +204,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "Sessões abertas fora do app aparecendo no Painel e no tray, só de leitura.",
     icon: SquareTerminal,
     group: "agentes",
+    busca: ["hook", "terminal", "statusline", "sessão externa"],
   },
   {
     id: "ledger",
@@ -188,6 +214,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "Quanto da janela do plano já foi usada e quanto os turnos custaram em US$.",
     icon: CircleDollarSign,
     group: "agentes",
+    busca: ["custo", "dólar", "gasto", "limite", "janela de uso", "plano", "ledger"],
   },
   {
     id: "github",
@@ -197,6 +224,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "Qual CLI e quais contas o app usa para PRs e checks, e qual está ativa.",
     icon: GitPullRequest,
     group: "conexoes",
+    busca: ["gh", "github", "pr", "pull request", "conta", "merge", "checks", "repositório"],
   },
   {
     id: "integrations",
@@ -205,6 +233,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     question: null,
     icon: Network,
     group: "conexoes",
+    busca: ["mcp", "servidor", "integração", "ferramenta externa"],
   },
   {
     id: "companion",
@@ -213,6 +242,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     question: "Ver e responder os agents pelo celular, na mesma rede local.",
     icon: Smartphone,
     group: "conexoes",
+    busca: ["celular", "mobile", "telefone", "qr", "lan", "rede", "companion"],
   },
   {
     id: "about",
@@ -221,6 +251,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     question: null,
     icon: Info,
     group: "app",
+    busca: ["versão", "sobre", "onboarding", "refazer"],
   },
 ]
 
@@ -271,6 +302,70 @@ export function sectionsByGroup(available?: readonly SectionId[]): {
       (s) => s.group === group.id && pool.has(s.id),
     ),
   })).filter((entry) => entry.sections.length > 0)
+}
+
+/** As seções que ESTE BUILD tem, já filtradas por capability.
+ *
+ *  Mora aqui e não no dialog porque agora existem DOIS consumidores — o rail e
+ *  a paleta ⌘K — e a regra tem que ser a mesma nos dois. Seção escondida no
+ *  rail e alcançável pela paleta seria um destino fantasma. */
+export function secoesDisponiveis(): SectionId[] {
+  return SETTINGS_SECTIONS.filter(
+    (s) => s.id !== "hooks" || hooksAgents().length > 0,
+  ).map((s) => s.id)
+}
+
+/** O termo casa com a seção? Junta rótulo, título, a pergunta e as palavras
+ *  declaradas — sem acento e em minúsculas, porque ninguém digita "vocabulário"
+ *  com acento numa busca apressada. */
+export function casaBusca(s: SettingsSection, termo: string): boolean {
+  const normaliza = (t: string) =>
+    t
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+  const alvo = normaliza(
+    [s.label, s.title, s.question ?? "", ...s.busca].join(" "),
+  )
+  return normaliza(termo)
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((palavra) => alvo.includes(palavra))
+}
+
+/** Os fatos que o rail consulta pra decidir onde pintar "precisa de atenção".
+ *  Campos OPCIONAIS de propósito: ausente = ainda não olhamos, e não olhar
+ *  nunca pode virar alarme. */
+export interface FatosDoRail {
+  detected?: Record<string, { installed: boolean; auth: string }>
+  gh?: { installed: boolean; contas: number }
+}
+
+/**
+ * A seção precisa de atenção?
+ *
+ * A REGRA, e ela é a decisão inteira desta função: atenção é **coisa
+ * meio-configurada que VOCÊ pode consertar**. Não é capacidade ausente por
+ * escolha, e não é limitação da máquina.
+ *
+ *   CLI instalada e DESLOGADA  → atenção. Você instalou, falta terminar.
+ *   CLI não instalada          → não. Talvez você não queira aquele motor.
+ *   `gh` instalado e sem conta → atenção. Mesma lógica.
+ *   `gh` ausente               → não. É opcional; o resto do app funciona.
+ *   máquina sem sandbox        → NUNCA. É fato do sistema, não tem o que
+ *                                consertar, e um ponto que não apaga é pior
+ *                                que ponto nenhum: ensina a ignorar o ponto.
+ */
+export function precisaDeAtencao(id: SectionId, f: FatosDoRail): boolean {
+  if (id === "machine") {
+    return Object.values(f.detected ?? {}).some(
+      (p) => p.installed && p.auth === "missing",
+    )
+  }
+  if (id === "github") {
+    return f.gh ? f.gh.installed && f.gh.contas === 0 : false
+  }
+  return false
 }
 
 /** Metadados de uma seção (título/pergunta do cabeçalho). */

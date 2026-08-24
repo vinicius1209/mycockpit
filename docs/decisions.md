@@ -3118,3 +3118,46 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   chrome inteiro — exatamente o que o desenho recusa. Sem ele, ⌘+ significa a
   mesma coisa em todo lugar. Ele estava certo.
 - **Verificado:** `tsc` 0, `vitest` 3133, 8 guardas, e2e **27/27** (2 novos).
+
+### ADR-083 — F6: o rail ganha busca, selo e estado (e a busca não é o ponto) ✅
+- **Contexto (24/08/2026):** última fase do `telas-de-configuracao-plan`.
+- **Não construímos caixa de busca própria.** O Orca tem uma, com pontuação em
+  camadas — e **34 seções**. Nós temos 17: ali busca é necessidade, aqui é
+  conforto. As seções viraram destino da paleta `⌘K` que já existe: quase todo
+  o valor, sem tela nova e sem uma segunda caixa de busca no app.
+- **O valor real é o efeito de SEGUNDA ORDEM.** O campo `busca` é obrigatório
+  no tipo, então toda seção precisa **declarar o que tem dentro**. Isso
+  transforma a regra editorial "cada seção responde UMA pergunta" em algo
+  verificável: seção que não consegue listar o próprio conteúdo é seção que
+  virou depósito — foi assim que "CLIs instaladas" acumulou medidor de uso,
+  hooks de terminal e curador de modelos (build 191). Dois testes cobrem isso:
+  mínimo de 3 palavras por seção, e nenhuma seção com a lista IDÊNTICA à de
+  outra.
+- **O caso que motivou o campo:** digitar "microfone" tem que achar **Ditado**,
+  e "microfone" não aparece em lugar nenhum do rótulo nem da pergunta. Sem
+  declaração, a busca só acharia sinônimos do título — inútil.
+- **A regra de capability virou uma só.** `secoesDisponiveis()` saiu do dialog
+  para o registro, porque agora tem DOIS consumidores. Seção escondida no rail
+  e alcançável pela paleta seria um destino fantasma.
+- **O `query` entra no `value` do item**, mesmo idioma do grupo de busca no
+  histórico logo acima: quem filtrou foi o `casaBusca`, e sem o termo ali o
+  filtro PRÓPRIO do cmdk derrubaria o item (ele não conhece as palavras
+  declaradas).
+- **Selo fora do título.** "Missões (beta)" carregava o estado dentro do nome,
+  onde ele não podia ser lido nem estilizado como estado. Virou `badge`.
+- **O ponto de atenção, e a regra é a decisão inteira:** atenção é **coisa
+  meio-configurada que VOCÊ pode consertar**.
+  | fato | ponto? | por quê |
+  |---|---|---|
+  | CLI instalada e deslogada | **sim** | você instalou, falta terminar |
+  | CLI não instalada | não | talvez você não queira aquele motor |
+  | `gh` instalado sem conta | **sim** | mesma lógica |
+  | `gh` ausente | não | opcional; o resto do app funciona |
+  | máquina sem sandbox | **nunca** | não há o que consertar |
+  | auth `unknown` | não | não saber ≠ estar quebrado |
+  | ainda não olhamos | não | o pior ponto é o que aparece antes de saber |
+- **"Ponto que não apaga ensina a ignorar o ponto"** — é por isso que a máquina
+  sem sandbox não pinta nada. Um alarme permanente queima o próximo, que
+  importa.
+- **Verificado:** `tsc` 0, `vitest` 3149 (16 novos), 8 guardas, e2e 27/27,
+  `cargo` 515.
