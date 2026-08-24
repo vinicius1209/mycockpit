@@ -2844,3 +2844,40 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   removeu (permissão do PROJETO chegando no spawn no lugar da da CONVERSA).
   Permissão no Frota é por conversa, decidida no último metro. Não regredir.
 - **Verificado:** `cargo` 506, `tsc` 0, `vitest` 3121 (9 novos), 8 guardas.
+
+### ADR-076 — O modal borrado e o modal cortado eram a MESMA linha ✅
+- **Contexto (24/08/2026):** o usuário relatou que o modal "Nova automação"
+  *"parece que está com um bug de foco... bem embaçado"*. Fui medir a geometria
+  num navegador de verdade (e2e), porque suspeita visual não vira diagnóstico.
+- **A causa é uma só, e produz dois defeitos diferentes.** O `DialogContent`
+  centralizava com `top-50% left-50%` + `translate: -50% -50%`, sem `max-h`:
+  | medida (modal aberto, janela 720px) | valor |
+  |---|---|
+  | altura do dialog | **807,625px** |
+  | translate vertical resultante | **-403,8125px** ← fracionário |
+  | `top` final | **-43,8125px** ← cortado em cima |
+  | `bottom` | além da janela ← cortado embaixo |
+  | `scrollHeight > clientHeight` | **false** ← nem rolando alcançava |
+- **1. O embaçado:** metade de uma altura ÍMPAR é offset fracionário; o elemento
+  é rasterizado fora da grade de pixels e TODO o texto dentro dele borra. Como a
+  altura vem do CONTEÚDO, o defeito ia e vinha conforme o formulário — por isso
+  parecia intermitente, "bug de foco".
+- **2. O corte:** 807px de formulário numa janela de 720px, centrado por
+  translate e sem `max-h`, ficava com título e botão de confirmar FORA da vista
+  e **sem scroll nenhum** para alcançá-los. Este era o defeito mais grave, e
+  ninguém tinha reportado.
+- **A pista que o `getComputedStyle` escondia:** `transform` lia **"none"**.
+  Tailwind v4 usa a propriedade `translate`, separada de `transform` — quem
+  procurasse pelo suspeito óbvio não acharia nada e concluiria que não era isso.
+- **Correção:** centralização por FLEX (`wrapper que rola` + `min-h-full
+  items-center`). Conteúdo baixo fica centrado; conteúdo alto empurra o wrapper e
+  ROLA. Sem translate, sem meio-pixel. O scroll ficou no WRAPPER de propósito:
+  `overflow` no próprio Content brigaria com o `overflow-hidden` que as
+  Configurações declaram para ter scroll interno próprio.
+- **Verificado depois:** `translate: none`, `top: 16` (inteiro), topo não
+  cortado, wrapper com `scrollHeight 840 > clientHeight 720` — o que passa do
+  fim virou alcançável.
+- **Virou e2e (`dialog-centralizado`), não confiança:** a prova é geometria
+  medida, porque string de classe passa em teste de unidade e ainda assim pode
+  ser anulada por outra regra — e aqui o culpado nem aparecia no lugar óbvio.
+- **Verificado:** `tsc` 0, `vitest` 3121, 8 guardas, e2e **25/25** (2 novos).

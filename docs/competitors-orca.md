@@ -7,6 +7,9 @@
 > aqui, o destilado com file:line dos pontos-chave. Nada foi copiado — o que
 > se absorve são REGRAS.
 
+> Leitura focada no Chat UI experimental e sua comparação com nossa execução
+> headless: [`orca-chat-ui-vs-mycockpit-headless.md`](./orca-chat-ui-vs-mycockpit-headless.md).
+
 ## O que o Orca é
 
 Wrapper de terminal (node-pty) com **daemon destacado** próprio que mantém um

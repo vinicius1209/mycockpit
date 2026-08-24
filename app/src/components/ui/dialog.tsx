@@ -58,17 +58,46 @@ function DialogContent({
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
-      <DialogPrimitive.Content
-        data-slot="dialog-content"
-        className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-[var(--shadow-pop)] duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
-          className
-        )}
-        {...props}
+      {/* CENTRALIZAÇÃO POR FLEX, não por translate(-50%,-50%). Duas razões,
+          as duas MEDIDAS no navegador (e2e dialog-centralizado):
+
+          1. TEXTO EMBAÇADO. Com `translate: -50% -50%`, metade de uma altura
+             ÍMPAR vira offset FRACIONÁRIO (medido: altura 807,625 → -403,8125px),
+             o elemento é rasterizado fora da grade de pixels e TODO o texto
+             dentro dele sai borrado. Como a altura vem do conteúdo, o defeito
+             ia e vinha conforme o formulário — parecia "bug de foco".
+             (Em Tailwind v4 isso é a propriedade `translate`, não `transform`:
+             `getComputedStyle().transform` diz "none" e esconde a pista.)
+
+          2. DIALOG ALTO ERA CORTADO NOS DOIS LADOS, SEM SCROLL. Centrado por
+             translate e sem `max-h`, um form de 807px numa janela de 720px
+             ficava com `top: -43,8` e `bottom` além da tela: cabeçalho e botão
+             de confirmar fora da vista, e `scrollHeight === clientHeight`, ou
+             seja, nem rolando dava pra alcançar.
+
+          O padrão abaixo (wrapper que rola + `min-h-full items-center`) resolve
+          os dois: conteúdo baixo fica centrado; conteúdo alto empurra o wrapper
+          e ROLA, em vez de ser cortado. O scroll fica no WRAPPER de propósito —
+          `overflow` no próprio Content brigaria com o `overflow-hidden` que as
+          Configurações declaram pra ter scroll interno próprio. */}
+      <div
+        data-slot="dialog-viewport"
+        className="fixed inset-0 z-50 overflow-y-auto"
       >
-        {children}
-        {showCloseButton && <DialogCloseX />}
-      </DialogPrimitive.Content>
+        <div className="flex min-h-full items-center justify-center p-4">
+          <DialogPrimitive.Content
+            data-slot="dialog-content"
+            className={cn(
+              "relative grid w-full max-w-[calc(100%-2rem)] gap-4 rounded-lg border bg-background p-6 shadow-[var(--shadow-pop)] duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+              className
+            )}
+            {...props}
+          >
+            {children}
+            {showCloseButton && <DialogCloseX />}
+          </DialogPrimitive.Content>
+        </div>
+      </div>
     </DialogPortal>
   )
 }
