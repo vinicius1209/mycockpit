@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mock · Configurações ▸ Serviços (uma seção, N provedores)</title>
+<style>
+  :root{
+    color-scheme: light dark;
+    --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
+    --secondary:#f4f4f2; --muted-foreground:#5c6166; --accent:#f1f1ef; --faint:#8a9099;
+    --border:rgba(0,0,0,.09); --brass:#a9742b; --brass-soft:rgba(169,116,43,.12); --brass-fg:#fbf6ee;
+    --warn:#b4791f; --warn-soft:rgba(180,121,31,.13); --ok:#3f7d52; --ok-soft:rgba(63,125,82,.12);
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --background:#0a0b0d; --rail:#0c0d10; --foreground:#e7e8ea; --card:#141619;
+    --secondary:#191c20; --muted-foreground:#9aa0a7; --accent:#1e2126; --faint:#687078;
+    --border:rgba(255,255,255,.08); --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#1a1306;
+    --warn:#e0a33f; --warn-soft:rgba(224,163,63,.14); --ok:#6cc38a; --ok-soft:rgba(108,195,138,.13);
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--background);color:var(--foreground);
+    font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased;
+    display:flex;flex-direction:column;align-items:center;padding:64px 20px 40px}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+
+  .mockbar{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;gap:14px;
+    padding:10px 18px;background:color-mix(in srgb,var(--background) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+  .mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);
+    border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:1px 7px}
+  .mockbar button.theme{margin-left:auto;border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--muted-foreground)}
+
+  .wrap{width:100%;max-width:800px;display:flex;gap:0;border:1px solid var(--border);border-radius:12px;
+    overflow:hidden;background:var(--card);box-shadow:var(--shadow-sm);min-height:460px}
+  .railcol{flex:0 0 190px;background:var(--rail);border-right:1px solid var(--border);padding:10px 8px}
+  .railcol .g{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
+    padding:10px 8px 5px}
+  .railcol a{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:7px;
+    font-size:13px;color:var(--muted-foreground);text-decoration:none}
+  .railcol a.on{background:var(--accent);color:var(--foreground)}
+  .railcol .ic{width:16px;text-align:center;opacity:.8}
+  .conteudo{flex:1;padding:16px 18px;min-width:0}
+
+  h2{font-size:14px;font-weight:600;margin:0}
+  .sub{font-size:12px;color:var(--muted-foreground);margin-top:2px}
+  .head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
+  .head .act{font-size:12px;color:var(--muted-foreground);white-space:nowrap}
+
+  .card{border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden}
+  .card .topo{display:flex;align-items:center;gap:10px;padding:11px 13px;
+    background:color-mix(in srgb,var(--secondary) 45%,transparent)}
+  .card .topo .nome{font-size:13px;font-weight:500}
+  .card .topo .versao{font:11px var(--mono);color:var(--faint)}
+  .card .topo .selo{margin-left:auto;font:600 9.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;
+    border-radius:4px;padding:2px 7px}
+  .selo.ok{color:var(--ok);background:var(--ok-soft)}
+  .selo.falta{color:var(--warn);background:var(--warn-soft)}
+  .selo.nao{color:var(--faint);background:color-mix(in srgb,var(--faint) 12%,transparent)}
+  .card .corpo{padding:11px 13px;border-top:1px solid var(--border)}
+  .card .desc{font-size:12px;color:var(--muted-foreground);margin-bottom:10px;line-height:1.5}
+
+  .conta{display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:8px;
+    border:1px solid transparent}
+  .conta:hover{background:var(--accent)}
+  .conta .u{font:12.5px var(--mono)}
+  .conta .ativa{font:600 9.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;
+    color:var(--brass);background:var(--brass-soft);border-radius:4px;padding:2px 6px}
+  .conta .acao{margin-left:auto;opacity:0;font-size:11.5px;color:var(--muted-foreground);
+    border:1px solid var(--border);border-radius:6px;padding:3px 10px}
+  .conta:hover .acao{opacity:1}
+  .conta.sel{border-color:var(--border);background:color-mix(in srgb,var(--brass) 5%,transparent)}
+
+  .aviso{margin-top:9px;font-size:11.5px;color:var(--muted-foreground);line-height:1.5;
+    border-left:2px solid var(--warn);padding-left:9px}
+  .aviso b{color:var(--warn);font-weight:600}
+
+  code{font:11.5px var(--mono);background:var(--secondary);border-radius:4px;padding:1px 5px}
+  .btn{border:1px solid var(--border);border-radius:7px;padding:4px 11px;font-size:12px;color:var(--muted-foreground)}
+  .vazio{border:1px dashed var(--border);border-radius:10px;padding:14px;text-align:center;
+    font-size:12px;color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="mockbar">
+  <span class="tag">MOCK</span>
+  <span>Configurações ▸ Serviços — uma seção, N provedores</span>
+  <button class="theme" id="t">tema: escuro</button>
+</div>
+
+<div class="wrap">
+  <div class="railcol">
+    <div class="g">Agentes e uso</div>
+    <a href="#"><span class="ic">▣</span> Agentes na máquina</a>
+    <a href="#"><span class="ic">◈</span> Confinamento</a>
+    <a href="#"><span class="ic">▤</span> Modelos</a>
+    <a href="#"><span class="ic">▥</span> Sessões no terminal</a>
+    <a href="#"><span class="ic">$</span> Uso e custo</a>
+    <div class="g">Conexões</div>
+    <!-- ANTES: uma entrada por FORNECEDOR ("GitHub"). O rail cresceria um item
+         por vendor. AGORA: uma entrada por PERGUNTA. -->
+    <a href="#" class="on"><span class="ic">⇄</span> Serviços</a>
+    <a href="#"><span class="ic">⊞</span> Integrações MCP</a>
+    <a href="#"><span class="ic">▢</span> Companion</a>
+    <div class="g">App</div>
+    <a href="#"><span class="ic">ⓘ</span> Sobre</a>
+  </div>
+
+  <div class="conteudo">
+    <div class="head">
+      <div>
+        <h2>Serviços</h2>
+        <div class="sub">Serviços externos que o app usa, e com qual conta.</div>
+      </div>
+      <button class="act">↻ Verificar agora</button>
+    </div>
+
+    <div class="card">
+      <div class="topo">
+        <span class="nome">GitHub</span>
+        <span class="versao">gh v2.76.1</span>
+        <span class="selo ok">conectado</span>
+      </div>
+      <div class="corpo">
+        <div class="desc">Pull requests, checks e merge. O app usa a conta ativa; se um PR não for
+          visível por ela, tenta as outras antes de desistir.</div>
+
+        <div class="conta sel">
+          <span class="u">vinicius1209</span><span class="ativa">ativa</span>
+          <span class="acao" style="opacity:.35">em uso</span>
+        </div>
+        <div class="conta">
+          <span class="u">viniimachadoprime</span>
+          <button class="acao">Tornar ativa</button>
+        </div>
+
+        <!-- A CONSEQUÊNCIA fica na tela, não escondida. Trocar aqui roda
+             `gh auth switch`, que é global: vale pro seu terminal também. -->
+        <div class="aviso">
+          <b>Trocar aqui vale pro seu terminal também.</b> O app roda
+          <code>gh auth switch</code>, e a conta ativa é do <code>gh</code>, não do Frota.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="topo">
+        <span class="nome">GitLab</span>
+        <span class="selo nao">não instalado</span>
+      </div>
+      <div class="corpo">
+        <div class="desc">Merge requests e pipelines pela CLI <code>glab</code>. O app funciona
+          sem ela; só não lê MR nem pipeline.</div>
+        <button class="btn">Copiar <code>brew install glab</code></button>
+      </div>
+    </div>
+
+    <div class="vazio">
+      Outro serviço aqui no futuro entra como mais um cartão — sem item novo no menu.
+    </div>
+  </div>
+</div>
+
+<script>
+  const r=document.documentElement,b=document.getElementById("t");
+  r.dataset.theme="dark";
+  b.onclick=()=>{const d=r.dataset.theme==="dark";r.dataset.theme=d?"light":"dark";
+    b.textContent="tema: "+(d?"claro":"escuro")};
+</script>
+</body>
+</html>
