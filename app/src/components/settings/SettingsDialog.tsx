@@ -21,7 +21,6 @@ import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useApp } from "@/store/app"
-import { DESTINATIONS, agentModels, agentEfforts, normalizeModelValue } from "@/lib/agents"
 import { hooksAgents, usageWindowAgents } from "@/lib/agentRoster"
 import { MissionSettings } from "@/components/settings/MissionSettings"
 import { CompanionSettings } from "@/components/settings/CompanionSettings"
@@ -31,6 +30,7 @@ import { SessionCostLimit } from "@/components/settings/SessionCostLimit"
 import { UsageMeterSettings } from "@/components/settings/UsageMeterSettings"
 import { HooksSettings } from "@/components/settings/HooksSettings"
 import { MachineAgents } from "@/components/settings/MachineAgents"
+import { NewChatDefaults } from "@/components/settings/NewChatDefaults"
 import { ModelsSettings } from "@/components/settings/ModelsSettings"
 import { EspecialistasContent } from "@/components/settings/Especialistas"
 import { restartOnboarding } from "@/components/onboarding/persistence"
@@ -38,7 +38,6 @@ import {
   Block,
   BlockTitle,
   Field,
-  Note,
   SectionHeader,
   SELECT_TRIGGER,
 } from "@/components/settings/parts"
@@ -342,70 +341,7 @@ export function SettingsDialog() {
             </div>
           )}
 
-          {section === "new-chats" && (
-            <div>
-              <Header id="new-chats" />
-              <div className="divide-y divide-border/50">
-                <Field label="Agent" hint="Pré-selecionado ao abrir uma conversa nova.">
-                  <RichSelect
-                    value={settings.defaultAgent}
-                    onValueChange={(v) =>
-                      // troca de agent → zera modelo/effort p/ o default do novo agent
-                      setSettings({
-                        defaultAgent: v,
-                        defaultModel: null,
-                        defaultEffort: null,
-                      })
-                    }
-                    options={DESTINATIONS.filter((d) => d.available).map((d) => ({
-                      value: d.id,
-                      label: d.label,
-                      description: d.description,
-                    }))}
-                    triggerClassName={SELECT_TRIGGER}
-                    aria-label="Agent default"
-                  />
-                </Field>
-                <Field label="Modelo">
-                  {/* normaliza o persistido: id que saiu do picker (o3,
-                      gpt-5.3-codex) exibiria "Padrão" mentiroso no trigger
-                      enquanto os envios continuariam com o valor morto. */}
-                  <RichSelect
-                    value={
-                      normalizeModelValue(
-                        settings.defaultAgent,
-                        settings.defaultModel,
-                      ) ?? "default"
-                    }
-                    onValueChange={(v) =>
-                      setSettings({ defaultModel: v === "default" ? null : v })
-                    }
-                    options={agentModels(settings.defaultAgent)}
-                    triggerClassName={SELECT_TRIGGER}
-                    aria-label="Modelo default"
-                  />
-                </Field>
-                {agentEfforts(settings.defaultAgent).length > 0 && (
-                  <Field label="Esforço">
-                    <RichSelect
-                      value={settings.defaultEffort ?? "default"}
-                      onValueChange={(v) =>
-                        setSettings({ defaultEffort: v === "default" ? null : v })
-                      }
-                      options={agentEfforts(settings.defaultAgent)}
-                      triggerClassName={SELECT_TRIGGER}
-                      aria-label="Effort default"
-                    />
-                  </Field>
-                )}
-              </div>
-              <Note>
-                Conversas já iniciadas mantêm o config do 1º envio; isto vale só
-                para novas. Quais modelos aparecem nesta lista é assunto da
-                seção Modelos.
-              </Note>
-            </div>
-          )}
+          {section === "new-chats" && <NewChatDefaults />}
 
           {section === "autopilot" && (
             <div>

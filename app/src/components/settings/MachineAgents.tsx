@@ -20,6 +20,7 @@ import {
   crossChannelNote,
   detectAgents,
   latestLabel,
+  notaDeCopias,
   refreshAgyModels,
   toProbeMap,
   updateAvailable,
@@ -35,7 +36,7 @@ import { useApp } from "@/store/app"
 import { Note, SectionHeader } from "@/components/settings/parts"
 import { fmtCheckedAt } from "@/components/settings/format"
 import { sectionDef } from "@/components/settings/sections"
-import { cn } from "@/lib/utils"
+import { cn, formatDisplayPath } from "@/lib/utils"
 
 /** Agents que a seção lista (na ordem), com o rótulo do checklist. */
 const AGENT_TOOLS: { id: string; label: string; sub: string }[] = [
@@ -103,7 +104,6 @@ export function MachineAgents() {
           const probe = detected[tool.id]
           const hasUpdate = probe ? updateAvailable(probe) : false
           const cmd = UPDATE_COMMANDS[tool.id]
-          const job = updateJobs[tool.id]
           // spinning = o job DESTE agent está vivo; disabled = qualquer job
           // vivo (um update por vez — dois brew brigam pelo lock).
           const { spinning, disabled } = updateButtonState(updateJobs, tool.id)
@@ -113,6 +113,8 @@ export function MachineAgents() {
           // canal cruzado: outro canal tem versão maior que o teto do canal
           // do binário — informação pra decisão humana, sem botão.
           const channelNote = probe ? crossChannelNote(probe) : null
+          // cópias duplicadas no PATH: do probe (persistido), não do job.
+          const copias = probe ? notaDeCopias(probe) : null
           return (
             <li
               key={tool.id}
@@ -181,15 +183,21 @@ export function MachineAgents() {
                   </div>
                 )}
                 {/* Honestidade sobre instalações duplicadas: o "atualizei e não
-                    mudou nada" quase sempre é o app gerenciando uma cópia
-                    diferente da que o shell do usuário resolve (brew × nvm). */}
-                {job && job.otherPaths.length > 0 && (
+                    mudou nada" quase sempre é o app usando uma cópia diferente
+                    da que o shell do usuário resolve (brew × nvm).
+
+                    Vem do PROBE, não do job: é fato da máquina, e no job só
+                    existia depois de rodar um update e sumia no reinício.
+                    O caminho é elidido pela CAUDA (formatDisplayPath) — o
+                    truncate do CSS cortava justo o fim, que é a parte que
+                    distingue as cópias; a lista inteira fica no title. */}
+                {copias && (
                   <div
                     className="truncate text-[11px] text-st-warning"
-                    title={[job.managedPath, ...job.otherPaths].join("\n")}
+                    title={copias.todos.join("\n")}
                   >
-                    {job.otherPaths.length + 1} instalações no PATH · o app
-                    gerencia {job.managedPath}
+                    {copias.total} cópias no PATH · o app usa e atualiza{" "}
+                    {formatDisplayPath(copias.binPath, 40)}
                   </div>
                 )}
               </div>

@@ -34,6 +34,14 @@ pub struct DetectedTool {
     pub alt_latest: Option<String>,
     #[serde(rename = "altChannel")]
     pub alt_channel: Option<String>,
+    /// Path REAL (canonizado) da cópia que VENCE no PATH do app — é a que o
+    /// spawn roda (`Command::new("claude")`) e a que o updater atualiza
+    /// (`resolve_bin`, o mesmo `command -v`). None = não resolvido.
+    #[serde(rename = "binPath")]
+    pub bin_path: Option<String>,
+    /// Demais cópias no PATH, além da vencedora. Vazio = instalação única.
+    #[serde(rename = "otherPaths")]
+    pub other_paths: Vec<String>,
 }
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(6);
@@ -58,6 +66,8 @@ fn tool(
         latest_channel: None,
         alt_latest: None,
         alt_channel: None,
+        bin_path: None,
+        other_paths: Vec::new(),
     }
 }
 
@@ -213,6 +223,27 @@ async fn latest_brew(name: &str) -> Option<String> {
     parse_formula_stable(&fetch_json(&format!("https://formulae.brew.sh/api/formula/{name}.json")).await?)
 }
 
+/// Quem vence no PATH e quem mais está lá. Mora na DETECÇÃO, não no updater:
+/// "instalei duas vezes" é fato da MÁQUINA, verdadeiro antes de qualquer
+/// atualização e depois de fechar o app. Enquanto isso só era calculado dentro
+/// do job de update, o aviso aparecia justamente quando não fazia falta (logo
+/// após um update bem-sucedido) e sumia quando fazia (numa máquina que nunca
+/// rodou update pelo app, e em todo reinício — o job vive em memória).
+///
+/// Mesma resolução do spawn e do updater (`command -v` + canonicalize), então
+/// `bin_path` é literalmente o binário que roda. Best-effort: falha vira
+/// None/vazio e nunca derruba a detecção.
+async fn fill_paths(t: &mut DetectedTool, bin: &str) {
+    if !t.installed {
+        return;
+    }
+    let Some(managed) = crate::update::resolve_bin(bin).await else {
+        return;
+    };
+    t.other_paths = crate::update::other_paths_of(crate::update::which_all(bin).await, &managed);
+    t.bin_path = Some(managed);
+}
+
 /// `latest` honesto pro agent: canal do BINÁRIO GERENCIADO (classify do
 /// update.rs sobre o path real) manda; o outro canal vira alt_latest — só
 /// informação, nunca botão. Preenche direto no DetectedTool.
@@ -314,14 +345,23 @@ async fn probe_simple(id: &str, bin: &str) -> DetectedTool {
 /// resultados. agy/git/swiftc: sem fonte pública conhecida → latest = None.
 #[tauri::command]
 pub async fn detect_agents() -> Vec<DetectedTool> {
-    let (mut claude, mut codex, agy, git, swiftc) = tokio::join!(
+    let (mut claude, mut codex, mut agy, git, swiftc) = tokio::join!(
         probe_claude(),
         probe_codex(),
         probe_agy(),
         probe_simple("git", "git"),
         probe_simple("swiftc", "swiftc"),
     );
+    // `latest` (rede) e `paths` (disco) em joins separados porque o borrow
+    // checker não deixa a mesma ferramenta ser emprestada mut duas vezes no
+    // mesmo join. agy entra só no segundo: não tem `latest` (sem fonte pública
+    // conhecida), mas as cópias no PATH são fato local e valem pra ele igual.
     tokio::join!(fill_latest(&mut claude, "claude"), fill_latest(&mut codex, "codex"));
+    tokio::join!(
+        fill_paths(&mut claude, "claude"),
+        fill_paths(&mut codex, "codex"),
+        fill_paths(&mut agy, "agy"),
+    );
     vec![claude, codex, agy, git, swiftc]
 }
 

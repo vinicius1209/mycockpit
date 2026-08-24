@@ -2800,3 +2800,47 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   pergunta do usuário — não um teste, não uma guarda — foi o que a derrubou.
   Verificar o que o motor JÁ FAZ tem que vir antes de decidir o que a gente faz.
 - **Verificado:** `cargo` 506, `tsc` 0, `vitest` 3112, 8 guardas, e2e 23/23.
+
+### ADR-075 — A máquina sabe, a tela não dizia (duas correções da mesma família) ✅
+- **Contexto (24/08/2026):** comparando as telas de Configurações do Orca com as
+  nossas, dois fatos que o Frota JÁ APURA não chegavam a quem decide com eles.
+- **1. "N instalações no PATH" morava no lugar errado.** O aviso só era calculado
+  dentro de `run_update_job` (`update.rs`), a partir de `which_all`. Consequência:
+  ele aparecia **depois** de rodar um update pelo app — justamente quando não
+  fazia falta — e sumia quando fazia, porque `UpdateJobs` vive em memória e morre
+  no reinício. Numa máquina que nunca atualizou pelo app, o fato nunca existia.
+  - **Correção:** `bin_path` + `other_paths` entram em `DetectedTool` e são
+    preenchidos por `fill_paths` na DETECÇÃO (1×/dia, persistido em `detected`).
+    Duas cópias no PATH é fato da MÁQUINA, verdadeiro antes de qualquer update.
+  - **A copy também estava errada, e essa era a parte pior:** dizia *"o app
+    gerencia X"*. A pergunta de quem lê é *"qual delas roda?"*, e a resposta
+    exigia o leitor saber que gerenciar == rodar. Como `bin_path` sai do mesmo
+    `command -v` que o spawn (`Command::new("claude")`) e que `resolve_bin`, a
+    frase honesta é **"o app usa e atualiza X"**.
+  - O caminho agora elide pela CAUDA (`formatDisplayPath`): o `truncate` do CSS
+    cortava o fim, que é exatamente o que distingue `/opt/homebrew/...` de
+    `~/.nvm/...`. Mesma lição do nome de arquivo no DiffPanel.
+- **2. O agent padrão podia não existir.** `Configurações ▸ Novas conversas`
+  montava a lista de `DESTINATIONS.filter(d => d.available)`. `available` é flag
+  do CATÁLOGO ("não é 'em breve'"), não "existe aqui". Dava pra eleger como
+  padrão um agent que a seção **Agentes na máquina**, dois cliques ao lado,
+  sabe que não está instalado — e a falha só aparecia no primeiro envio da
+  conversa seguinte, longe da causa. Mesma família do ADR-068: a decisão do
+  humano descolada da verdade que a decide.
+  - **Correção:** `estadoNaMaquina(id, detected)` cruza com o probe. Ausente
+    desabilita a opção; e se o padrão JÁ SALVO ficou ausente, o aviso fica
+    **fora** do dropdown — dentro, só quem abrisse a lista descobriria, e o
+    trigger fechado seguiria exibindo um nome que não roda.
+- **O terceiro estado é o que impede o defeito pior.** `estadoNaMaquina` devolve
+  `desconhecido`, não `ausente`, quando não há probe. Numa instalação nova o
+  mapa `detected` vem VAZIO, e tratar vazio como ausente desabilitaria os três
+  agents de uma vez: o app afirmando que nada está instalado justamente antes de
+  ter olhado. Ausência de prova não é prova de ausência.
+- **A guarda de tamanho mordeu e estava certa:** `SettingsDialog.tsx` foi a 702
+  de 700. A regra da casa é DIVIDIR — nasceu `NewChatDefaults.tsx`, e o corte foi
+  natural porque essa era a única seção do arquivo com lógica própria.
+- **O que NÃO copiamos do Orca, e por quê:** o `Agent Permissions · Yolo|Manual`
+  deles é preferência GLOBAL do cliente. É exatamente o bug que o ADR-068
+  removeu (permissão do PROJETO chegando no spawn no lugar da da CONVERSA).
+  Permissão no Frota é por conversa, decidida no último metro. Não regredir.
+- **Verificado:** `cargo` 506, `tsc` 0, `vitest` 3121 (9 novos), 8 guardas.

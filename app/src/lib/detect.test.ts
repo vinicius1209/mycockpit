@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest"
 import {
   commandForChannel,
   crossChannelNote,
+  estadoNaMaquina,
   latestLabel,
+  notaDeCopias,
   toProbeMap,
   updateAvailable,
   type DetectedTool,
@@ -170,5 +172,72 @@ describe("commandForChannel — comando de update do CANAL detectado (G3.2)", ()
   it("agent sem comando conhecido (agy) → null em qualquer canal", () => {
     expect(commandForChannel("agy", "npm")).toBeNull()
     expect(commandForChannel("agy", "homebrew")).toBeNull()
+  })
+})
+
+describe("notaDeCopias (cópias duplicadas no PATH, vindas do probe)", () => {
+  const brew = "/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude"
+  const nvm = "/Users/v/.nvm/versions/node/v22.3.0/bin/claude"
+
+  it("duas cópias: conta o total e aponta a que vence", () => {
+    const n = notaDeCopias({ binPath: brew, otherPaths: [nvm] })
+    expect(n).toEqual({ total: 2, binPath: brew, todos: [brew, nvm] })
+  })
+
+  it("a vencedora encabeça a lista completa (é ela que roda)", () => {
+    const n = notaDeCopias({ binPath: brew, otherPaths: [nvm, "/usr/local/bin/claude"] })
+    expect(n?.total).toBe(3)
+    expect(n?.todos[0]).toBe(brew)
+  })
+
+  it("instalação única → sem aviso (aviso que aparece sempre não é lido)", () => {
+    expect(notaDeCopias({ binPath: brew, otherPaths: [] })).toBeNull()
+  })
+
+  it("probe GRAVADO ANTES desta versão não vira 'instalação única' falsa", () => {
+    // campos ausentes = não sabemos, e não saber nunca vira afirmação.
+    expect(notaDeCopias({})).toBeNull()
+    expect(notaDeCopias({ binPath: null, otherPaths: undefined })).toBeNull()
+  })
+
+  it("path não resolvido, mesmo com outras cópias → sem aviso", () => {
+    // sem saber QUAL vence, a frase não responde a pergunta que ela existe
+    // pra responder; meia-verdade aqui é pior que silêncio.
+    expect(notaDeCopias({ binPath: null, otherPaths: [nvm] })).toBeNull()
+  })
+})
+
+describe("estadoNaMaquina (o que a máquina diz, para quem decide com isso)", () => {
+  const probe = (installed: boolean) => ({
+    installed,
+    version: installed ? "2.1.241" : null,
+    auth: "ok" as const,
+    detail: null,
+    latest: null,
+    checkedAt: 1,
+  })
+
+  it("probe instalado → instalado", () => {
+    expect(estadoNaMaquina("claude-code", { "claude-code": probe(true) })).toBe(
+      "instalado",
+    )
+  })
+
+  it("probe que diz installed:false → ausente (é o único jeito de virar ausente)", () => {
+    expect(estadoNaMaquina("codex", { codex: probe(false) })).toBe("ausente")
+  })
+
+  it("mapa VAZIO (instalação nova, nunca detectou) → desconhecido, nunca ausente", () => {
+    // o defeito que esta regra impede: o app desabilitar os três agents de uma
+    // vez e afirmar que nada está instalado justamente antes de ter olhado.
+    expect(estadoNaMaquina("claude-code", {})).toBe("desconhecido")
+    expect(estadoNaMaquina("codex", {})).toBe("desconhecido")
+    expect(estadoNaMaquina("agy", {})).toBe("desconhecido")
+  })
+
+  it("agent fora do mapa, com o mapa cheio de outros → desconhecido", () => {
+    expect(estadoNaMaquina("agy", { "claude-code": probe(true) })).toBe(
+      "desconhecido",
+    )
   })
 })

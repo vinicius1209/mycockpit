@@ -26,6 +26,10 @@ export interface DetectedTool {
   latestChannel: string | null
   altLatest: string | null
   altChannel: string | null
+  /** Path real da cópia que vence no PATH (a que o app roda E atualiza). */
+  binPath: string | null
+  /** Demais cópias no PATH. Vazio = instalação única. */
+  otherPaths: string[]
 }
 
 /** Snapshot leve por ferramenta, persistido em GlobalSettings.detected. */
@@ -39,6 +43,10 @@ export interface AgentProbe {
   latestChannel?: string | null
   altLatest?: string | null
   altChannel?: string | null
+  /** Opcionais porque snapshot GRAVADO ANTES desta versão não os tem — probe
+   *  antigo não vira "instalação única" falsa, vira "não sei" (sem frase). */
+  binPath?: string | null
+  otherPaths?: string[]
   checkedAt: number
 }
 
@@ -145,6 +153,50 @@ export function crossChannelNote(p: {
   return `o canal ${p.altChannel} tem v${p.altLatest}; este binário é ${p.latestChannel} (teto v${p.latest})`
 }
 
+/** Aviso de cópias duplicadas no PATH, a partir do PROBE (fato da máquina,
+ *  persistido) e não do job de update (memória, morre no reinício).
+ *
+ *  A frase responde a pergunta de quem lê ("qual delas roda?"), não a do app
+ *  ("qual eu gerencio"): `binPath` sai do mesmo `command -v` que o spawn usa,
+ *  então a que o app atualiza é literalmente a que executa. Dizer "gerencia"
+ *  deixava o leitor concluir sozinho, e a conclusão errada é justamente a que
+ *  o aviso existe pra evitar.
+ *
+ *  null quando não há o que avisar: instalação única, probe velho (campos
+ *  ausentes) ou path não resolvido. Aviso que aparece sempre não é lido. */
+export function notaDeCopias(p: {
+  binPath?: string | null
+  otherPaths?: string[]
+}): { total: number; binPath: string; todos: string[] } | null {
+  const outros = p.otherPaths ?? []
+  if (!p.binPath || outros.length === 0) return null
+  return {
+    total: outros.length + 1,
+    binPath: p.binPath,
+    todos: [p.binPath, ...outros],
+  }
+}
+
+/** O que a máquina diz sobre um agent, para quem precisa DECIDIR com isso.
+ *
+ *  "desconhecido" é um estado de primeira classe, e é o que impede o pior
+ *  defeito possível aqui: numa instalação nova (ou logo depois de limpar o
+ *  storage) o mapa `detected` vem VAZIO, e tratar vazio como "ausente"
+ *  desabilitaria os três agents de uma vez — o app afirmando que nada está
+ *  instalado justamente quando ainda não olhou. Ausência de prova não é prova
+ *  de ausência: só o probe que EXISTE e diz `installed: false` vira "ausente".
+ */
+export type EstadoNaMaquina = "instalado" | "ausente" | "desconhecido"
+
+export function estadoNaMaquina(
+  id: string,
+  detected: Record<string, AgentProbe>,
+): EstadoNaMaquina {
+  const probe = detected[id]
+  if (!probe) return "desconhecido"
+  return probe.installed ? "instalado" : "ausente"
+}
+
 /** Roda a detecção (comando Rust em paralelo). Fora do Tauri devolve []. */
 export async function detectAgents(): Promise<DetectedTool[]> {
   if (!isTauri()) return []
@@ -171,6 +223,8 @@ export function toProbeMap(
       latestChannel: t.latestChannel ?? null,
       altLatest: t.altLatest ?? null,
       altChannel: t.altChannel ?? null,
+      binPath: t.binPath ?? null,
+      otherPaths: t.otherPaths ?? [],
       checkedAt: now,
     }
   }

@@ -288,7 +288,7 @@ pub(crate) async fn resolve_bin(bin: &str) -> Option<String> {
 
 /// TODOS os paths do binário no PATH do app (`which -a`), na ordem do PATH.
 /// Vazio em qualquer falha (honestidade best-effort, nunca trava o job).
-async fn which_all(bin: &str) -> Vec<String> {
+pub(crate) async fn which_all(bin: &str) -> Vec<String> {
     let Ok(Ok(out)) = timeout(
         RESOLVE_TIMEOUT,
         Command::new("sh")
@@ -310,7 +310,7 @@ async fn which_all(bin: &str) -> Vec<String> {
 
 /// Paths ALÉM do gerenciado: remove do `which -a` toda entrada que canoniza pro
 /// mesmo arquivo do managed (symlink brew → Caskroom conta como o mesmo).
-fn other_paths_of(all: Vec<String>, managed_canonical: &str) -> Vec<String> {
+pub(crate) fn other_paths_of(all: Vec<String>, managed_canonical: &str) -> Vec<String> {
     all.into_iter()
         .filter(|p| {
             let canon = std::fs::canonicalize(p)
