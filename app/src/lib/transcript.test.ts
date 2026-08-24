@@ -76,11 +76,16 @@ describe("buildMemoryPrompt (agy sem resume)", () => {
 
   it("recap + ponteiro + separador + pedido, nesta ordem", () => {
     const p = buildMemoryPrompt(items, ".mycockpit/context/abc.md", "agora estiliza")
-    expect(p).toContain("Contexto da conversa até aqui:")
-    expect(p).toContain("· tool Edit: src/App.tsx")
+    // G1: o cabeçalho passou a nomear O QUE está ali, não a posição.
+    expect(p).toContain("O QUE VOCÊ PEDIU:")
+    // G1: o caminho tocado continua no recap — é o fato de maior sinal por byte
+    // —, mas agora numa linha de ALVOS únicos em vez de uma entrada por chamada.
+    // 47 edições em 3 arquivos são 3 caminhos, não 47 linhas.
+    expect(p).toContain("ONDE O TRABALHO TOCOU")
+    expect(p).toContain("src/App.tsx")
     expect(p).toContain(memoryPointerLine(".mycockpit/context/abc.md"))
     expect(p.endsWith("\n\n---\n\nagora estiliza")).toBe(true)
-    const recapIdx = p.indexOf("Contexto da conversa")
+    const recapIdx = p.indexOf("O QUE VOCÊ PEDIU")
     const ptrIdx = p.indexOf("Memória completa desta conversa")
     const askIdx = p.indexOf("agora estiliza")
     expect(recapIdx).toBeLessThan(ptrIdx)
@@ -97,8 +102,9 @@ describe("buildMemoryPrompt (agy sem resume)", () => {
     const many: ChatItem[] = [user("pedido")]
     for (let i = 0; i < 300; i++) many.push(text(`r${i}: ${"y".repeat(100)}`, `t${i}`))
     const p = buildMemoryPrompt(many, null, "continua")
-    // recap cortado (marcador presente) e bem menor que o transcript pleno
-    expect(p).toContain("itens omitidos")
+    // G1: o corte é DECLARADO por categoria, no fim, em vez de um marcador
+    // único no meio — truncagem que parece íntegra é pior que a óbvia.
+    expect(p).toContain("NÃO ESTÁ AQUI")
     expect(p.length).toBeLessThanOrEqual(4_500)
   })
 })
@@ -138,10 +144,10 @@ describe("buildResumeFallback (memoryFallback do motor)", () => {
 
   it("recap + ponteiro + linha de continuidade, nesta ordem", () => {
     const f = buildResumeFallback(items, ".mycockpit/context/abc.md")
-    expect(f).toContain("Contexto da conversa até aqui:")
+    expect(f).toContain("O QUE VOCÊ PEDIU:")
     expect(f).toContain(memoryPointerLine(".mycockpit/context/abc.md"))
     expect(f.endsWith(RESUME_FALLBACK_NOTE)).toBe(true)
-    const recapIdx = f.indexOf("Contexto da conversa")
+    const recapIdx = f.indexOf("O QUE VOCÊ PEDIU")
     const ptrIdx = f.indexOf("Memória completa desta conversa")
     const noteIdx = f.indexOf(RESUME_FALLBACK_NOTE)
     expect(recapIdx).toBeLessThan(ptrIdx)
@@ -158,7 +164,7 @@ describe("buildResumeFallback (memoryFallback do motor)", () => {
     const many: ChatItem[] = [user("pedido")]
     for (let i = 0; i < 300; i++) many.push(text(`r${i}: ${"y".repeat(100)}`, `t${i}`))
     const f = buildResumeFallback(many, null)
-    expect(f).toContain("itens omitidos")
+    expect(f).toContain("NÃO ESTÁ AQUI")
     expect(f.length).toBeLessThanOrEqual(3_500)
   })
 })

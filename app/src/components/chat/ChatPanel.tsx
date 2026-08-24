@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { modoEfetivoDoSpawn, permissaoDoSpawn } from "@/lib/sessionMode"
+import { contextWindowFor } from "@/lib/contextWindow"
+import { drainQueued } from "@/components/chat/drenarFila"
 import { notaDeTrocaDeModelo } from "@/components/chat/composerIdentity"
 import { maybeScheduleAutoResume } from "@/components/chat/autoResumeAgendar"
 import { ArrowDown } from "lucide-react"
@@ -90,14 +92,10 @@ import {
 import {
   expandDraftForAgent,
   expandPendingForTarget,
-  expandQueuedForJoin,
   findAppCommand,
-  parseSlashInvocation,
   reexpandIfEmbedded,
-  splitQueueForAppCommand,
 } from "@/lib/slashCommands"
 import { runCompactTurn } from "@/lib/compact"
-import { readProjectCommands } from "@/lib/sources"
 import { serializeContext } from "@/lib/fusion"
 import { listAgentDefs, type AgentDef } from "@/lib/agentDefs"
 import {
@@ -420,7 +418,7 @@ export function ChatPanel() {
         projectPath: project.path,
         commandText: text,
         drainQueue: () => {
-          void drainQueued(convId, conv.agent, project.path)
+          void drainQueued(convId, conv.agent, project.path, handleSend)
         },
       })
       return
@@ -717,7 +715,14 @@ export function ChatPanel() {
       } catch {
         pointer = null
       }
-      promptText = buildMemoryPrompt(conv.items, pointer, promptText)
+      promptText = buildMemoryPrompt(
+        conv.items,
+        pointer,
+        promptText,
+        // Orçamento derivado da janela DESTE modelo (G1). O modelo resolvido
+        // vence o pedido: é o que o CLI de fato abriu.
+        contextWindowFor(conv.model ?? conv.reqModel),
+      )
     }
     // MyCockpit resume (claude/codex): a conversa pertence ao cockpit, não à
     // CLI. Quando o envio VAI tentar resume nativo (conv com itens + sessionId),
@@ -735,7 +740,11 @@ export function ChatPanel() {
         } catch {
           pointer = null
         }
-        memoryFallback = buildResumeFallback(conv.items, pointer)
+        memoryFallback = buildResumeFallback(
+          conv.items,
+          pointer,
+          contextWindowFor(conv.model ?? conv.reqModel),
+        )
       } catch {
         memoryFallback = null
       }
@@ -779,7 +788,7 @@ export function ChatPanel() {
       // sugestões. `convId` explícito: a fila é DESTA conversa e o turno pode
       // terminar com o usuário já noutro projeto — sem o alvo, o envio caía no
       // fio em foco.
-      if (await drainQueued(convId, agent, project.path)) {
+      if (await drainQueued(convId, agent, project.path, handleSend)) {
         // fila drenada: o próximo lote já está em voo (ou de volta na fila).
       } else if (maybeScheduleAutoResume(convId, agent, handleSend)) {
         // turno bateu num rate limit / "vou tentar depois" e o auto-resume está
@@ -800,44 +809,6 @@ export function ChatPanel() {
    *  drena de novo, na ordem digitada. Sem builtin: um lote só, com anexos de
    *  todos os itens (dedup por path — o dedup por hash do backend pode repetir
    *  o mesmo blob). true = despachou algo. */
-  async function drainQueued(
-    convId: string,
-    agent: string,
-    projectPath: string,
-  ): Promise<boolean> {
-    const all = useChat.getState().dequeueQueued(convId)
-    if (all.length === 0) return false
-    const { batch, rest } = splitQueueForAppCommand(all)
-    for (const m of rest) {
-      useChat.getState().enqueue(convId, m.text, m.attachments, HUMANO)
-    }
-    // G2.2 — expande CADA pendente ANTES do join: `/comando` no meio do texto
-    // coalescido era barra morta (a expansão do handleSend só olha o texto
-    // inteiro). Com 1 item só, segue intacto (o próprio handleSend expande,
-    // inclusive o cru nativo). Fail-open: inventário indisponível → os textos
-    // seguem como digitados.
-    let texts = batch.map((q) => q.text).filter(Boolean)
-    if (texts.length > 1 && texts.some((t) => parseSlashInvocation(t.trim()))) {
-      try {
-        const commands = await readProjectCommands(projectPath, agent)
-        texts = expandQueuedForJoin(texts, commands, agent)
-      } catch (e) {
-        console.warn(
-          "inventário de comandos indisponível; fila segue como texto",
-          e,
-        )
-      }
-    }
-    const atts = [
-      ...new Map(
-        batch.flatMap((q) => q.attachments).map((a) => [a.path, a]),
-      ).values(),
-    ]
-    // A fila é do humano, então a drenagem dela também é: o que sai daqui foi
-    // ele que digitou (ADR-046).
-    void handleSend(texts.join("\n\n"), undefined, atts, HUMANO, convId)
-    return true
-  }
 
   // Especialistas E1 — consulta de conselheiro: grava SEU pedido no fio
   // (endereçado à persona), monta o prompt (persona + contexto serializado da

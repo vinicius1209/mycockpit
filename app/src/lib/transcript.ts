@@ -7,7 +7,9 @@
 
 import { invoke } from "@tauri-apps/api/core"
 import { agentDef } from "@/lib/agents"
-import { serializeContext, toolDigest } from "@/lib/fusion"
+import { memoriaDaConversa } from "@/lib/memoriaDaConversa"
+import { orcamentoDaMemoria } from "@/lib/orcamentoDaMemoria"
+import { toolDigest } from "@/lib/fusion"
 import { hasExecutorTurn, type ChatItem } from "@/store/chat"
 
 export interface TranscriptMeta {
@@ -121,7 +123,9 @@ export function memoryPointerLine(relPath: string): string {
   return `Memória completa desta conversa (leia se precisar de mais contexto): ${relPath}`
 }
 
-/** Orçamento do recap injetado no prompt do agy (menor que o do Fusion). */
+/** @deprecated Constante herdada, mantida só pra quem ainda importa. O
+ *  orçamento agora é DERIVADO da janela do modelo e da frequência
+ *  (`lib/orcamentoDaMemoria.ts`) — ver por que em `docs/memoria-de-conversa-plan.md`. */
 export const AGY_RECAP_BUDGET = 4_000
 
 /** Prompt de um turno do agy (sem resume): recap curto da conversa + ponteiro
@@ -130,14 +134,24 @@ export function buildMemoryPrompt(
   items: ChatItem[],
   pointer: string | null,
   prompt: string,
+  /** Janela do modelo, pra derivar o orçamento (G1). `null` cai no piso —
+   *  o app não inventa porcentagem de janela que não conhece. */
+  janelaTokens: number | null = null,
 ): string {
-  const parts = [serializeContext(items, AGY_RECAP_BUDGET)]
+  // G1: seleção por SIGNIFICADO, não por posição. O `serializeContext` gastava
+  // o orçamento em telemetria (90% dos bytes são `tool`) e perdia o miolo.
+  const parts = [
+    memoriaDaConversa(items, orcamentoDaMemoria(janelaTokens, "porTurno")).texto,
+  ]
   if (pointer) parts.push(memoryPointerLine(pointer))
   return `${parts.join("\n\n")}\n\n---\n\n${prompt}`
 }
 
 /** Orçamento do recap do fallback de resume (claude/codex): curto — o motor
  *  SÓ prepende ao prompt se o resume nativo falhar no restart. */
+/** @deprecated Ver `AGY_RECAP_BUDGET`. Este número era `3_000` sem origem
+ *  conhecida — 0,5% da janela do Claude — e virou o PISO do orçamento derivado,
+ *  que é o único papel que ele sempre desempenhou bem. */
 export const RESUME_FALLBACK_BUDGET = 3_000
 
 /** Frase de continuidade do fallback (fecha o bloco de memória). */
@@ -195,8 +209,13 @@ export function shouldInlineMemory(p: {
 export function buildResumeFallback(
   items: ChatItem[],
   pointer: string | null,
+  /** Janela do modelo. Ver `buildMemoryPrompt`. */
+  janelaTokens: number | null = null,
 ): string {
-  const parts = [serializeContext(items, RESUME_FALLBACK_BUDGET)]
+  const parts = [
+    memoriaDaConversa(items, orcamentoDaMemoria(janelaTokens, "transplante"))
+      .texto,
+  ]
   if (pointer) parts.push(memoryPointerLine(pointer))
   parts.push(RESUME_FALLBACK_NOTE)
   return parts.join("\n\n")

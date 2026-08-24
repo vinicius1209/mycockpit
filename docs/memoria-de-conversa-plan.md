@@ -99,7 +99,7 @@ preço.** Vale pra dizer o que NÃO é mais verdade.
 
 ## Fases
 
-### G1 — Orçamento por SIGNIFICADO (sem grafo, sem ML)
+### G1 ✅ — Orçamento por SIGNIFICADO (23/08/2026)
 
 Substituir "30% início + 70% fim" por uma alocação declarada:
 
@@ -169,3 +169,62 @@ não mover essa agulha não valeu.
 - **Não** deixar a projeção mentir. Todo recorte declara o que cortou — foi
   parecer completo que fez o recap de hoje passar despercebido.
 - **Não** construir grafo que só comprime. Sem `supersedes`, é índice caro.
+
+## Como ficou o G1 (23/08/2026)
+
+`lib/memoriaDaConversa.ts` + `lib/orcamentoDaMemoria.ts`, ligados no
+`buildMemoryPrompt` e no `buildResumeFallback`.
+
+### O resultado, nas conversas reais desta máquina
+
+| conversa | itens | HOJE (3k, posicional) | G1 (orçamento derivado) | chars usados |
+|---|---|---|---|---|
+| 0ae552bf | 175 | 1/2 pedidos | **2/2** | 3.312 |
+| 16b3735b | 1885 | 1/34 | **34/34** | 11.000 |
+| 1d0ce136 | 285 | 4/17 | **17/17** | 21.246 |
+| 20e1f62d | 621 | 1/8 | **8/8** | 4.888 |
+
+100% da intenção humana preservada nas quatro. E o algoritmo **não enche o
+orçamento**: usa 3k–21k de um teto de 60k. Orçamento é limite, não meta.
+
+### O orçamento deixou de ser herdado
+
+Pergunta do usuário: *"quem define orçamento? de onde você tira esses números?"*.
+Resposta honesta: eu herdei `3_000` e não questionei. Pesquisa feita:
+
+| fonte | limiar | cauda retida |
+|---|---|---|
+| DeepSeek Harness (`compaction-basic`, código no disco) | `thresholdRatio` 0,80 | `retainRatio` **0,16** |
+| Claude Code (recomendação pública) | **0,70–0,75** | — |
+| Deep Agents / LangChain | — | **0,10** |
+| literatura de "context rot" | degrada em 0,70–0,80 | — |
+
+Convergência: são **razões da janela**, nunca constantes. `3_000` chars ≈ 1k
+tokens ≈ **0,5%** da janela do Claude — errado por uma ordem de grandeza, e sem
+restrição que o sustentasse (não a janela, não o custo, não a qualidade).
+
+**Onde o nosso caso difere e comporta mais:** todas essas fontes descrevem
+auto-compactação — comprimir uma sessão que JÁ encheu a janela. A nossa memória
+entra numa janela VAZIA. Não disputamos espaço com nada.
+
+**E frequência é o eixo que o número único escondia.** O `3_000` era usado num
+evento que acontece uma vez por conversa; o recap do agy viaja em TODO turno.
+Um número só pra duas frequências erra nos dois sentidos.
+
+### Três defeitos que os testes acharam, e um deles era de segurança
+
+- **Estourava o orçamento** (3111 num teto de 3000): o rodapé de cortes era
+  empurrado fora da conta. Projeção que fura o próprio limite pra dizer que
+  respeita limites é a pior forma de mentir.
+- **Descartava pedidos** quando nem encurtados cabiam — contradizendo o próprio
+  princípio do arquivo ("34 intenções pela metade reconstroem a conversa; 5
+  inteiras, não"). O teto por pedido virou ADAPTATIVO.
+- **Perdi a MOLDURA do H3.** O `serializeContext` passava por `frameHistory()`;
+  o meu não. Isso é regressão de segurança — instrução plantada no histórico
+  voltaria a ser texto solto de prompt. Quem pegou foi o `trust.test.ts` da casa,
+  meses depois de alguém ter escrito aquela rede. **É exatamente o que uma
+  guarda deve fazer.**
+
+E um acerto do teste ANTIGO: ele exigia `src/App.tsx` no recap, e estava certo —
+o caminho tocado é o fato de maior sinal por byte. Nasceu a linha "ONDE O
+TRABALHO TOCOU", com alvos ÚNICOS (47 edições em 3 arquivos = 3 caminhos).
