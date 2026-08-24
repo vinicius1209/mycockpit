@@ -8,7 +8,7 @@
   "components/settings/McpAgentRows.tsx": 1,
   "components/settings/McpSettings.tsx": 7,
   "components/settings/MissionSettings.tsx": 1,
-  "components/settings/ModelsSettings.tsx": 3,
+  "components/settings/ModelsSettings.tsx": 1,
   "components/settings/PresetSettings.tsx": 4,
   "components/settings/ProjectBrowserCard.tsx": 2,
   "components/settings/SessionCostLimit.tsx": 1,

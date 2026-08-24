@@ -3291,3 +3291,44 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   é livre, o código é governado — e é bom que a fronteira tenha sintoma.
 - **Verificado:** `cargo` 516 (1 novo), `tsc` 0, `vitest` 3154, **9 guardas**,
   e2e 27/27.
+
+### ADR-087 — Modelos: a tela passa a responder a pergunta do próprio título ✅
+- **Contexto (24/08/2026):** o usuário abriu a seção no build #275 e disse *"que
+  confusão esse UX, difícil de entender"*. O diagnóstico não é estético.
+- **A tela prometia uma coisa e mostrava outra.** O subtítulo dizia *"quais
+  modelos entram no seletor dos agents"* e a tela **nunca listava os modelos do
+  seletor** — mostrava só EVENTOS (aposentou, entrou sozinho, espera você, não
+  passou), em três níveis de hierarquia com três estilos de rótulo. Era o
+  **changelog, não o estado**: você abria pra saber o que tem e saía sabendo o
+  que mudou.
+- **Eu errei o número que sustentava a minha própria recomendação.** Escrevi no
+  README dos mocks que eram "9 modelos, cabem sem abas". São **27** (8 Claude
+  Code, 7 Codex, 12 Antigravity). Com 27, lista chapada é rolagem — e a
+  recomendação caiu junto com o número. Contar antes de recomendar teria custado
+  um comando.
+- **Também errei o MÉTODO, e o usuário sentiu antes de mim.** Mandei duas telas
+  (A e B) e perguntei "qual você prefere?", o que é empurrar a decisão de design
+  pra ele. Ele voltou confuso, com razão. Refeito como **um mock só, hoje ×
+  proposta lado a lado, com os dados REAIS do banco desta máquina**.
+- **Como ficou:**
+  1. **Precisam de você** primeiro, único bloco com peso, e **some quando
+     vazio** — bloco que aparece sempre ninguém lê.
+  2. **No seu seletor · 27** — um cartão por agent, fechado, contagem no
+     cabeçalho. Mesmo vocabulário (`Card`/`CardHead`/`Selo`) da seção Serviços.
+  3. **A aposentadoria mora na LINHA do modelo**, não num bloco no topo: é ao
+     lado do modelo que você usaria que ela muda a decisão. O cabeçalho do
+     cartão conta quantas há, pra ver sem abrir.
+  4. **Histórico** num `<details>` fechado — "nada some daqui sem motivo
+     escrito" continua valendo, agora sem ocupar a tela.
+- **A decisão saiu do JSX** pra `lib/seletorDeModelos`, com 10 testes. Três
+  regras que erram em silêncio:
+  - **casar aposentadoria por `agent` + `value`, nunca só por `value`**:
+    `default` existe nos três motores, e casar só pelo id marcaria o `default`
+    do Claude como aposentado porque o do Codex está;
+  - **só o modelo que entrou por PROPOSTA tem "tirar"**: o da lista curada não
+    entrou por decisão sua, e o botão prometeria um gesto que não existe;
+  - **`decidedAt` é 0 em linha antiga** e cai no `createdAt` — zero viraria
+    "1970" no topo do histórico.
+- **A catraca de superfícies apertou sozinha (3 → 1)**, que é exatamente o
+  comportamento pelo qual ela existe: a seção migrou e o limite acompanhou.
+- **Verificado:** `tsc` 0, `vitest` 3164 (10 novos), 9 guardas, e2e 27/27.

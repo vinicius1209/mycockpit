@@ -12,7 +12,7 @@
 // conferir o preço. É a única coisa aqui que gasta quota, e o rodapé diz isso.
 
 import { useCallback, useEffect, useState } from "react"
-import { Loader2, RotateCcw } from "lucide-react"
+import { ChevronRight, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { agentDef } from "@/lib/agents"
@@ -31,8 +31,23 @@ import {
   type ModelRetirement,
 } from "@/lib/modelLedger"
 import { useApp } from "@/store/app"
-import { Block, BlockTitle, Note, SectionHeader } from "@/components/settings/parts"
+import {
+  Block,
+  BlockTitle,
+  Card,
+  CardBody,
+  CardHead,
+  Note,
+  SectionHeader,
+  Selo,
+} from "@/components/settings/parts"
 import { fmtCheckedAt } from "@/components/settings/format"
+import {
+  historicoDeModelos,
+  seletorDoAgente,
+  totalDeModelos,
+} from "@/lib/seletorDeModelos"
+import { LEAGUE_DESTINATIONS, agentModels, defaultModelFor } from "@/lib/agents"
 import { sectionDef } from "@/components/settings/sections"
 import { cn } from "@/lib/utils"
 
@@ -47,21 +62,6 @@ function rotulo(agent: string): string {
   return agentDef(agent)?.label ?? agent
 }
 
-/** `reason` (modelPromotion.retirementReason) cola nossa frase + o texto CRU
- *  do fornecedor num parágrafo só, sem separador — o pt-BR e o inglês colado
- *  do CLI ficavam indistinguíveis (achado real do usuário, 18/08/2026). O
- *  campo `vendorNote` já guarda o mesmo texto cru, à parte; aqui só tiramos a
- *  duplicata do `reason` pra render em duas linhas com tratamento diferente,
- *  sem mexer na construção da string (que o aviso do sino também usa). */
-function splitVendorNote(
-  reason: string,
-  vendorNote: string | null,
-): { text: string; vendor: string | null } {
-  const v = vendorNote?.trim()
-  if (!v || !reason.includes(v)) return { text: reason, vendor: null }
-  const text = reason.replace(v, "").replace(/\s{2,}/g, " ").trim()
-  return { text, vendor: v }
-}
 
 /** Uma linha do ledger: o modelo, de quem é, e o MOTIVO por extenso. As ações
  *  entram como filhos (cada grupo tem as suas). */
@@ -113,12 +113,13 @@ function ModelRow({
 export function ModelsSettings() {
   const catalogCount = useApp((s) => s.settings.catalogCount)
   const lastCatalogRefresh = useApp((s) => s.settings.lastCatalogRefresh)
-  const lastModelRound = useApp((s) => s.settings.lastModelRound)
   const [rows, setRows] = useState<ModelProposal[]>([])
   const [retirements, setRetirements] = useState<ModelRetirement[]>([])
   const [catalog, setCatalog] = useState<CatalogModel[]>([])
   // Nada de vazio prematuro: "nenhum modelo" só aparece depois da leitura.
-  const [loaded, setLoaded] = useState(false)
+  // Qual cartão de agent está aberto. Todos fechados por padrão: a pergunta
+  // "quantos eu tenho" se responde pelo cabeçalho, sem abrir nada.
+  const [aberto, setAberto] = useState<Record<string, boolean>>({})
   const [checking, setChecking] = useState(false)
 
   const load = useCallback(async () => {
@@ -130,7 +131,6 @@ export function ModelsSettings() {
     setRows(p)
     setRetirements(r)
     setCatalog(c)
-    setLoaded(true)
   }, [])
 
   useEffect(() => {
@@ -182,19 +182,17 @@ export function ModelsSettings() {
   const precoDe = (p: ModelProposal) =>
     fmtCatalogPrice(catalogEntryFor(catalog, p.agent, p.value))
 
-  const sozinhos = rows.filter(
-    (r) => r.status === "active" && r.decidedBy === "app",
-  )
-  const aprovados = rows.filter(
-    (r) => r.status === "active" && r.decidedBy === "human",
-  )
   const pendentes = rows.filter((r) => r.status === "proposed")
-  const reprovados = rows.filter((r) => r.status === "rejected")
-  const vazio =
-    sozinhos.length === 0 &&
-    aprovados.length === 0 &&
-    pendentes.length === 0 &&
-    reprovados.length === 0
+  const seletores = LEAGUE_DESTINATIONS.map((d) =>
+    seletorDoAgente(
+      d.id,
+      agentModels(d.id),
+      defaultModelFor(d.id),
+      retirements,
+      rows,
+    ),
+  )
+  const historico = historicoDeModelos(rows, retirements)
 
   return (
     <div>
@@ -213,156 +211,137 @@ export function ModelsSettings() {
         }
       />
 
-      {retirements.length > 0 && (
+      {/* 1. O ÚNICO bloco com peso, e ele SOME quando não há nada esperando.
+             Bloco que aparece sempre ninguém lê. */}
+      {pendentes.length > 0 && (
         <Block>
-          <BlockTitle hint="O fornecedor anunciou o fim destes modelos. Eles continuam funcionando e ninguém os tira do seu seletor; a troca é sua.">
-            Aposentadoria anunciada
+          <BlockTitle hint="Passaram no teste de 1 token e o preço confere. Entram no seletor só se você quiser.">
+            Precisam de você · {pendentes.length}
           </BlockTitle>
           <ul className="flex flex-col gap-1.5">
-            {retirements.map((r) => {
-              const { text, vendor } = splitVendorNote(r.reason, r.vendorNote)
-              return (
-                <li
-                  key={`${r.agent}:${r.value}`}
-                  className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2"
+            {pendentes.map((p) => (
+              <ModelRow key={p.id} p={p} price={precoDe(p)} pending>
+                <Button
+                  size="sm"
+                  className="bg-brass text-background hover:bg-brass hover:opacity-90"
+                  onClick={() => void decide(p, "active")}
                 >
-                  <div className="text-[13px] text-foreground">
-                    {r.value}{" "}
-                    <span className="text-muted-foreground">
-                      · {rotulo(r.agent)} · sucessor {r.successor}
-                    </span>
-                  </div>
-                  <div className="text-[12px] leading-snug text-muted-foreground">
-                    {text}
-                  </div>
-                  {vendor && (
-                    <div className="mt-1 rounded border border-border/40 bg-background/40 px-2 py-1 font-mono text-[11px] leading-snug text-faint">
-                      {vendor}
-                    </div>
-                  )}
-                </li>
-              )
-            })}
+                  Adicionar
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void decide(p, "dismissed")}>
+                  Não
+                </Button>
+              </ModelRow>
+            ))}
           </ul>
         </Block>
       )}
 
+      {/* 2. A RESPOSTA DA PERGUNTA DO TÍTULO — e ela não existia. A tela
+             prometia "quais modelos entram no seletor" e mostrava só eventos.
+             Um cartão por agent, fechado: são 27 modelos ao todo (medido), e
+             lista chapada viraria rolagem. */}
       <Block>
-        <BlockTitle hint="De onde cada modelo do seletor veio, o que ainda espera você e o que não passou. Nada some daqui sem motivo escrito.">
-          Modelos novos
+        <BlockTitle hint="O que aparece no seletor de cada conversa. Tirar vale só pro que entrou por decisão sua.">
+          No seu seletor · {totalDeModelos(seletores)}
         </BlockTitle>
-        {!loaded ? (
-          <div className="flex items-center gap-2 py-2 text-[12px] text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
-            Conferindo o que já foi decidido...
-          </div>
-        ) : vazio ? (
-          <div className="rounded-lg border border-dashed border-border/60 px-3 py-4 text-center text-[12px] text-muted-foreground">
-            Nenhum modelo novo por aqui. Última verificação{" "}
-            {fmtCheckedAt(lastModelRound)}.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {sozinhos.length > 0 && (
-              <div>
-                <div className="mb-1 text-[11px] text-muted-foreground">
-                  Entraram sozinhos
-                </div>
-                <ul className="flex flex-col gap-1.5">
-                  {sozinhos.map((p) => (
-                    <ModelRow key={p.id} p={p} price={precoDe(p)}>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void decide(p, "dismissed")}
+        <div className="flex flex-col gap-1.5">
+          {seletores.map((s) => (
+            <Card key={s.agent}>
+              <button
+                type="button"
+                onClick={() =>
+                  setAberto((a) => ({ ...a, [s.agent]: !a[s.agent] }))
+                }
+                className="w-full text-left transition-colors hover:bg-accent/40"
+                aria-expanded={!!aberto[s.agent]}
+              >
+                <CardHead
+                  nome={rotulo(s.agent)}
+                  meta={`${s.linhas.length} modelos`}
+                  selo={
+                    s.aposentando > 0 ? (
+                      <Selo tom="atencao">{s.aposentando} aposentando</Selo>
+                    ) : undefined
+                  }
+                  acao={
+                    <ChevronRight
+                      className={cn(
+                        "size-3.5 text-muted-foreground transition-transform",
+                        aberto[s.agent] && "rotate-90",
+                      )}
+                    />
+                  }
+                />
+              </button>
+              {aberto[s.agent] && (
+                <CardBody>
+                  <ul className="flex flex-col gap-0.5">
+                    {s.linhas.map((l) => (
+                      <li
+                        key={l.value}
+                        className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/50"
                       >
-                        Tirar do seletor
-                      </Button>
-                    </ModelRow>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {pendentes.length > 0 && (
-              <div>
-                <div className="mb-1 text-[11px] font-medium text-st-warning">
-                  Esperando você
-                </div>
-                <ul className="flex flex-col gap-1.5">
-                  {pendentes.map((p) => (
-                    <ModelRow key={p.id} p={p} price={precoDe(p)} pending>
-                      <Button
-                        size="sm"
-                        className="bg-brass text-background hover:bg-brass hover:opacity-90"
-                        onClick={() => void decide(p, "active")}
-                      >
-                        Aprovar
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void decide(p, "dismissed")}
-                      >
-                        Dispensar
-                      </Button>
-                    </ModelRow>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {reprovados.length > 0 && (
-              <div>
-                <div className="mb-1 text-[11px] text-muted-foreground">
-                  Não entraram
-                </div>
-                <ul className="flex flex-col gap-1.5">
-                  {reprovados.map((p) => (
-                    <ModelRow key={p.id} p={p} price={precoDe(p)}>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void decide(p, "dismissed")}
-                      >
-                        Dispensar
-                      </Button>
-                    </ModelRow>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {aprovados.length > 0 && (
-              <div>
-                <div className="mb-1 text-[11px] text-muted-foreground">
-                  Você aprovou
-                </div>
-                <ul className="flex flex-col gap-1.5">
-                  {aprovados.map((p) => (
-                    <ModelRow key={p.id} p={p} price={precoDe(p)}>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void decide(p, "dismissed")}
-                      >
-                        Tirar do seletor
-                      </Button>
-                    </ModelRow>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
-        <Note>
-          Verificar agora pergunta a lista viva de cada CLI, testa até 3
-          candidatos NOVOS por motor (um token cada, centavos) e confere o
-          preço. Quem passa nos três entra sozinho como OPÇÃO do seletor. O seu
-          modelo padrão nunca muda sozinho, e tirar do seletor é um clique.
-          Sem gesto, a mesma rodada acontece no máximo 1×/dia.
-        </Note>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-mono text-[12px] text-foreground">
+                            {l.value}
+                          </div>
+                          <div className="truncate text-[11px] text-muted-foreground">
+                            {/* A APOSENTADORIA MORA NA LINHA DO MODELO, não num
+                                bloco no topo: é aqui que ela muda a decisão. */}
+                            {l.aposentando
+                              ? l.aposentando.sucessor
+                                ? `O fornecedor vai aposentar. Sucessor: ${l.aposentando.sucessor}`
+                                : "O fornecedor vai aposentar."
+                              : l.description}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {l.padrao && <Selo tom="neutro">padrão</Selo>}
+                          {l.aposentando && <Selo tom="atencao">aposentando</Selo>}
+                          {l.removivelPor && (
+                            <button
+                              type="button"
+                              onClick={() => void decide(l.removivelPor!, "dismissed")}
+                              className="rounded-md border px-2 py-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                            >
+                              tirar
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </CardBody>
+              )}
+            </Card>
+          ))}
+        </div>
       </Block>
+
+      {/* 3. O CHANGELOG sai da frente sem deixar de existir: "nada some daqui
+             sem motivo escrito" continua valendo, agora fechado. */}
+      {historico.length > 0 && (
+        <Block>
+          <details>
+            <summary className="cursor-pointer text-[12px] text-muted-foreground marker:text-faint">
+              Histórico de mudanças · {historico.length}
+            </summary>
+            <ul className="mt-2 flex flex-col gap-1">
+              {historico.map((e) => (
+                <li key={e.chave} className="flex gap-2.5 text-[12px] text-muted-foreground">
+                  <span className="shrink-0 font-mono text-[11px] text-faint">
+                    {fmtCheckedAt(e.quando)}
+                  </span>
+                  <span className="min-w-0">
+                    {rotulo(e.agent)}: {e.texto}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </Block>
+      )}
 
       <Block>
         <BlockTitle hint="A tabela de preços que o app usa pra estimar o custo de cada turno.">
