@@ -37,7 +37,7 @@ import { UsageMeterSettings } from "@/components/settings/UsageMeterSettings"
 import { HooksSettings } from "@/components/settings/HooksSettings"
 import { MachineAgents } from "@/components/settings/MachineAgents"
 import { NewChatDefaults } from "@/components/settings/NewChatDefaults"
-import { GitHubCard } from "@/components/settings/GitHubCard"
+import { ServicosSettings } from "@/components/settings/ServicosSettings"
 import { ConfinamentoCard } from "@/components/settings/ConfinamentoCard"
 import { DictationSettings } from "@/components/settings/DictationSettings"
 import { ModelsSettings } from "@/components/settings/ModelsSettings"
@@ -500,7 +500,7 @@ export function SettingsDialog() {
 
           {section === "sandbox" && <ConfinamentoCard />}
 
-          {section === "github" && <GitHubCard />}
+          {section === "services" && <ServicosSettings />}
 
           {section === "models" && <ModelsSettings />}
 

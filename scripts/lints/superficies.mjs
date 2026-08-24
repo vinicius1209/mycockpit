@@ -32,8 +32,18 @@
  * problema. Teste idem.
  */
 
-/** Uma superfície de cartão: raio + borda no mesmo `className`. */
-const CARTAO = /className="[^"]*\brounded-(?:md|lg|xl)\b[^"]*\bborder\b[^"]*"/g;
+/** Uma superfície de cartão: raio GRANDE + borda no mesmo `className`.
+ *
+ *  `rounded-md` fica FORA, e a distinção não é arbitrária — foi medida. Naquele
+ *  raio o que existe no repo é CONTROLE: input de custo, chip de agent, bloco
+ *  de código copiável, alerta de uma linha. Exigir primitivo de cartão para um
+ *  campo de texto é a guarda pedindo a coisa errada, e guarda que pede errado
+ *  ensina a ignorar guarda.
+ *
+ *  A régua é a do §4: raio pequeno é controle, raio grande é superfície.
+ *  (Descoberto sendo a primeira vítima dela: a versão anterior acusou o
+ *  `ServicosSettings` por ter um `<code>` copiável e dois botões.) */
+const CARTAO = /className="[^"]*\brounded-(?:lg|xl)\b[^"]*\bborder\b[^"]*"/g;
 
 /** Um selo: caixa alta + espaçamento de letra, a forma do rótulo de estado. */
 const SELO = /className="[^"]*\btracking-wide\b[^"]*\buppercase\b[^"]*"/g;

@@ -154,10 +154,9 @@ pub struct GhStatus {
     pub accounts: Vec<GhAccount>,
 }
 
-/// Leitura pura, sem efeito colateral: NUNCA roda `auth login` nem
-/// `auth switch`. Trocar a conta ativa global do usuário a partir do app é
-/// efeito fora do nosso quintal — o `run_gh_any_account` existe exatamente
-/// para não precisar disso.
+/// Leitura pura, sem efeito colateral. O único comando com efeito neste módulo
+/// é o `gh_switch_account`, e ele é gesto EXPLÍCITO do usuário — nunca algo que
+/// aconteça por abrir uma tela.
 #[tauri::command]
 pub async fn gh_status() -> GhStatus {
     let version = match timeout(
@@ -189,6 +188,53 @@ pub async fn gh_status() -> GhStatus {
         version,
         accounts,
     }
+}
+
+/// Aceita SOMENTE o formato de login do GitHub: alfanumérico e hífen, até 39
+/// caracteres, sem hífen nas pontas. Defesa em profundidade — o nome vai como
+/// arg posicional (nunca shell), então isto não é a única barreira; é a mesma
+/// disciplina do `validate_pr_url`.
+fn login_valido(u: &str) -> bool {
+    !u.is_empty()
+        && u.len() <= 39
+        && !u.starts_with('-')
+        && !u.ends_with('-')
+        && u.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
+/// Troca a conta ATIVA do `gh`.
+///
+/// Este é o único comando deste módulo com efeito colateral fora do app, e ele
+/// existe porque o usuário pediu: *"poder alterar isso durante o uso do projeto,
+/// em vez de usar linha de comando"*.
+///
+/// O argumento que me fez recusar isto antes ("mexer no ambiente global é fora
+/// do nosso quintal") não se sustentava: em *Agentes na máquina* o app já roda
+/// `npm i -g` e `brew upgrade` no clique do usuário, que é bem mais invasivo
+/// que trocar de conta. O cuidado real não é recusar — é DIZER a consequência,
+/// e ela está na tela ao lado do botão.
+///
+/// Duas travas: o login precisa ter forma válida E precisa ser uma conta que
+/// JÁ ESTÁ logada. Trocar para um nome que o `gh` não conhece deixaria você sem
+/// conta ativa nenhuma, no seu terminal, por causa de um clique aqui.
+#[tauri::command]
+pub async fn gh_switch_account(user: String) -> Result<(), String> {
+    if !login_valido(&user) {
+        return Err("nome de conta inválido".to_string());
+    }
+    let status = gh_auth_status_raw()
+        .await
+        .ok_or_else(|| "não consegui ler as contas do gh".to_string())?;
+    if !parse_gh_accounts(&status).iter().any(|u| u == &user) {
+        return Err(format!("a conta {user} não está logada no gh"));
+    }
+    run_gh(
+        &["auth", "switch", "--user", &user],
+        Duration::from_secs(10),
+        None,
+    )
+    .await
+    .map(|_| ())
 }
 
 /// Roda `gh` tentando TODAS as identidades logadas: 1º a conta ativa (keyring);
@@ -336,6 +382,24 @@ mod tests {
         // `gh auth status` deslogado sai com código != 0 e texto de erro: a
         // lista fica vazia, e quem distingue "sem CLI" é o `installed`.
         assert!(parse_gh_status("You are not logged into any GitHub hosts.").is_empty());
+    }
+
+    #[test]
+    fn login_valido_recusa_o_que_nao_e_login() {
+        assert!(login_valido("vinicius1209"));
+        assert!(login_valido("vini-machado"));
+        // Vazio, hífen na ponta e comprimento acima do limite do GitHub.
+        assert!(!login_valido(""));
+        assert!(!login_valido("-vini"));
+        assert!(!login_valido("vini-"));
+        assert!(!login_valido(&"a".repeat(40)));
+        // Tentativas de injeção: o nome vai como arg posicional, então isto é
+        // defesa em profundidade — mas defesa em profundidade que passa não é
+        // defesa nenhuma.
+        assert!(!login_valido("vini; rm -rf /"));
+        assert!(!login_valido("vini --user outro"));
+        assert!(!login_valido("../../etc/passwd"));
+        assert!(!login_valido("vini$(whoami)"));
     }
 
     #[test]

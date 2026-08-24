@@ -232,7 +232,6 @@ export const DEAD_TOKEN_RULES = [
       // sem nenhum arquivo descer, alguém está pintando verde novo.
       "components/settings/parts.tsx": { max: 3, motivo: "tom `ok` do vocabulário de superfície: 1 no mapa de texto + 2 no mapa de selo (fundo e texto). Único lugar onde o verde de PROBE é definido; as seções passam `tom`, não classe" },
       "components/settings/MachineAgents.tsx": { max: 2, motivo: "probe de agent na máquina passou" },
-      "components/settings/GitHubCard.tsx": { max: 1, motivo: "probe do gh passou: `gh --version` E `gh auth status` rodaram de verdade e devolveram conta ativa. UM só — a confirmação de 'copiei o comando' foi despintada na mesma passada, porque cópia de texto é estado ambiente, não marco nem probe" },
       // A linha por agent saiu de McpSettings.tsx para McpAgentRows.tsx (a
       // catraca de tamanho); o verde é o MESMO e continua sendo probe real.
       "components/settings/McpAgentRows.tsx": { max: 1, motivo: "probe de servidor MCP passou" },

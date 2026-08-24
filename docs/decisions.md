@@ -3249,3 +3249,45 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   desenhado pra eles.
 - **Verificado:** `tsc` 0, `vitest` 3153, **9 guardas** (a nova entrou na CI),
   e2e 27/27.
+
+### ADR-086 — "GitHub" vira "Serviços", e a tela deixa de só ler ✅
+- **Contexto (24/08/2026):** o usuário abriu o build #275 e desmontou a seção em
+  duas frases. *"Esse item novo ficou exclusivo no menu GitHub, qual o sentido?
+  Se amanhã eu quiser um novo app para integrar?"* e *"não consigo mudar, não
+  faço nada? apenas leio?"*. As duas críticas eram certas.
+- **Erro 1 — seção por FORNECEDOR.** O rail cresceria um item por vendor. O
+  agravante: eu tinha escrito a crítica certa na análise do Orca (eles têm UM
+  painel `Integrations` com cartão por provedor) e **construí o contrário**.
+  Agora a seção é a PERGUNTA ("quais serviços externos o app usa, e com qual
+  conta") e o fornecedor é o CARTÃO. Provedor novo entra do lado, sem item novo.
+  - `github` entrou em `LEGACY_SECTION_IDS` → `services`: tray, paleta e estado
+    salvo podem carregar o id velho por tempo indeterminado, e id órfão nunca
+    vira tela branca.
+- **Erro 2 — a tela só lia**, e o argumento que usei para isso não se sustenta.
+  Eu escrevi que rodar `gh auth switch` seria "efeito fora do nosso quintal". A
+  refutação estava no próprio repo: em *Agentes na máquina* o app **já roda**
+  `npm i -g` e `brew upgrade` no clique do usuário. Instalar pacote global é
+  muito mais invasivo que trocar de conta. Recusar ali era **incoerência
+  disfarçada de princípio**.
+  - O cuidado real não é recusar, é **dizer a consequência**: trocar aqui vale
+    pro terminal também, porque a conta ativa é do `gh`. A frase fica na tela,
+    ao lado do botão, não num tooltip.
+  - Duas travas no Rust: forma de login válida (alfanumérico + hífen, ≤39, sem
+    hífen nas pontas) **e** a conta precisa já estar logada. Trocar para um nome
+    que o `gh` não conhece deixaria o usuário sem conta ativa nenhuma, no
+    terminal dele, por causa de um clique aqui.
+- **O incidente aconteceu AO VIVO enquanto isto era escrito.** Um `git push`
+  falhou com "repository not found" porque a conta ativa havia mudado para a
+  errada. Verificado que **não foi o app** (`grep auth switch` no código: zero
+  na época). É exatamente o caso que a seção existe pra resolver, e ele apareceu
+  15 minutos depois da entrega dela.
+- **A guarda de superfícies pegou o MEU arquivo novo**, e ao olhar o que ela
+  pegou descobri que **ela estava larga demais**: acusava um `<code>` copiável e
+  dois botões. Medido: em `rounded-md` o que existe no repo é CONTROLE (input,
+  chip, bloco de código, alerta de uma linha). A régua virou a do §4 — raio
+  pequeno é controle, raio grande é superfície — e a baseline caiu de 46 para
+  37 na mesma passada. Guarda que pede a coisa errada ensina a ignorar guarda.
+- **A escala tipográfica pegou `12.5px` e `11.5px`** que vieram do mock. O mock
+  é livre, o código é governado — e é bom que a fronteira tenha sintoma.
+- **Verificado:** `cargo` 516 (1 novo), `tsc` 0, `vitest` 3154, **9 guardas**,
+  e2e 27/27.

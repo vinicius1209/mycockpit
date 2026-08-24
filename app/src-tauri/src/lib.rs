@@ -688,6 +688,7 @@ pub fn run() {
             github::gh_pr_view,
             github::gh_pr_merge,
             github::gh_status,
+            github::gh_switch_account,
             mcp_control::discover_mcp_servers,
             mcp_control::set_mcp_binding,
             mcp_control::check_mcp_server,

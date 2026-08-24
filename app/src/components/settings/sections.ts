@@ -48,7 +48,7 @@ export type SectionId =
   | "hooks"
   | "ledger"
   | "integrations"
-  | "github"
+  | "services"
   | "companion"
   | "about"
 
@@ -217,14 +217,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     busca: ["custo", "dólar", "gasto", "limite", "janela de uso", "plano", "ledger"],
   },
   {
-    id: "github",
-    label: "GitHub",
-    title: "GitHub",
-    question:
-      "Qual CLI e quais contas o app usa para PRs e checks, e qual está ativa.",
+    id: "services",
+    label: "Serviços",
+    title: "Serviços",
+    question: "Quais serviços externos o app usa, e com qual conta.",
     icon: GitPullRequest,
     group: "conexoes",
-    busca: ["gh", "github", "pr", "pull request", "conta", "merge", "checks", "repositório"],
+    busca: ["gh", "github", "pr", "pull request", "conta", "merge", "checks", "repositório", "serviço", "integração", "gitlab"],
   },
   {
     id: "integrations",
@@ -265,6 +264,9 @@ export const LEGACY_SECTION_IDS: Record<string, SectionId> = {
   tools: "machine",
   // "agents" rotulava os PADRÕES de nova conversa, não os agents da máquina.
   agents: "new-chats",
+  // "github" era uma seção por FORNECEDOR: o rail cresceria um item por vendor
+  // (ADR-086). Virou "services", com o provedor como CARTÃO.
+  github: "services",
 }
 
 const KNOWN = new Set<string>(SETTINGS_SECTIONS.map((s) => s.id))
@@ -362,7 +364,7 @@ export function precisaDeAtencao(id: SectionId, f: FatosDoRail): boolean {
       (p) => p.installed && p.auth === "missing",
     )
   }
-  if (id === "github") {
+  if (id === "services") {
     return f.gh ? f.gh.installed && f.gh.contas === 0 : false
   }
   return false

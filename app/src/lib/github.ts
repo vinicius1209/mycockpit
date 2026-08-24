@@ -50,6 +50,14 @@ export const GH_INSTALL_COMMAND = "brew install gh"
  *  é gesto humano, e o app não tem como (nem deve) conduzir o fluxo OAuth. */
 export const GH_LOGIN_COMMAND = "gh auth login"
 
+/** Troca a conta ATIVA do `gh`. Efeito GLOBAL: vale pro terminal também, e a
+ *  tela diz isso ao lado do botão. Err com a mensagem do `gh` quando falha —
+ *  nunca silêncio, porque o usuário acabou de pedir uma mudança. */
+export async function trocarContaGh(user: string): Promise<void> {
+  if (!isTauri()) return
+  await invoke("gh_switch_account", { user })
+}
+
 export type DiagnosticoGh =
   | { estado: "sem-cli"; comando: string }
   | { estado: "sem-conta"; comando: string }

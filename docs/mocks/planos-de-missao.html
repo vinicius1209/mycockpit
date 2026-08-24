@@ -1,0 +1,1046 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mock · Planos de missão — MyCockpit</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --background: #fbfbfa;
+      --rail: #f6f6f4;
+      --foreground: #16181b;
+      --card: #ffffff;
+      --secondary: #f4f4f2;
+      --muted: #5c6166;
+      --faint: #8a9099;
+      --accent: #f1f1ef;
+      --border: rgba(0, 0, 0, .09);
+      --border-strong: rgba(0, 0, 0, .14);
+      --sel: rgba(0, 0, 0, .055);
+      --sel-hover: rgba(0, 0, 0, .028);
+      --brass: #a9742b;
+      --brass-soft: rgba(169, 116, 43, .12);
+      --brass-fg: #fbf6ee;
+      --running: #2f8fbf;
+      --warning: #c1861f;
+      --success: #1f9d6b;
+      --error: #cf4a3e;
+      --shadow-sm: 0 1px 2px rgba(20, 22, 25, .08);
+      --shadow-pop: 0 18px 60px -18px rgba(20, 22, 25, .28);
+      --sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+      --radius: 9px;
+    }
+
+    :root[data-theme="dark"] {
+      --background: #0a0b0d;
+      --rail: #0c0d10;
+      --foreground: #e7e8ea;
+      --card: #141619;
+      --secondary: #191c20;
+      --muted: #9aa0a7;
+      --faint: #687078;
+      --accent: #1e2126;
+      --border: rgba(255, 255, 255, .08);
+      --border-strong: rgba(255, 255, 255, .13);
+      --sel: rgba(255, 255, 255, .065);
+      --sel-hover: rgba(255, 255, 255, .032);
+      --brass: #e4a862;
+      --brass-soft: rgba(228, 168, 98, .14);
+      --brass-fg: #1a1306;
+      --running: #5bb8e8;
+      --warning: #d99138;
+      --success: #5bd6a0;
+      --error: #f2766b;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, .35);
+      --shadow-pop: 0 18px 60px -18px rgba(0, 0, 0, .72);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-width: 320px; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--brass) 7%, transparent), transparent 42%),
+        var(--background);
+      color: var(--foreground);
+      font: 13px/1.45 var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, input, textarea, select { font: inherit; }
+    button { color: inherit; }
+    button, summary { -webkit-tap-highlight-color: transparent; }
+    button:focus-visible, summary:focus-visible, textarea:focus-visible, select:focus-visible {
+      outline: 2px solid var(--brass);
+      outline-offset: 2px;
+    }
+    svg { display: block; }
+
+    .mono {
+      font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "liga" 0, "calt" 0;
+    }
+
+    .label {
+      font: 11px/1 var(--mono);
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      color: var(--faint);
+    }
+
+    .mockbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 18px;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--background) 86%, transparent);
+      backdrop-filter: blur(14px);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .mock-tag {
+      padding: 2px 7px;
+      border: 1px solid color-mix(in srgb, var(--brass) 42%, transparent);
+      border-radius: 5px;
+      color: var(--brass);
+      font: 600 11px/1.4 var(--mono);
+      letter-spacing: .1em;
+    }
+
+    .mockbar strong { color: var(--foreground); font-weight: 550; }
+    .mockbar .spacer { flex: 1; }
+
+    .mock-control {
+      min-height: 28px;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .mock-control:hover { background: var(--accent); color: var(--foreground); }
+
+    .stage { padding: 18px; }
+
+    .window {
+      width: min(1580px, 100%);
+      height: min(900px, calc(100vh - 80px));
+      min-height: 720px;
+      margin: 0 auto;
+      overflow: hidden;
+      border: 1px solid var(--border-strong);
+      border-radius: 14px;
+      background: var(--background);
+      box-shadow: var(--shadow-pop);
+    }
+
+    .titlebar {
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--rail);
+    }
+
+    .traffic { display: flex; gap: 7px; }
+    .traffic i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+    .traffic i:nth-child(1) { background: #ff5f57; }
+    .traffic i:nth-child(2) { background: #febc2e; }
+    .traffic i:nth-child(3) { background: #28c840; }
+
+    .brand { margin-left: 4px; font-weight: 600; }
+    .title-nav { margin: 0 auto; display: flex; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 9px; }
+    .title-nav span { padding: 4px 12px; border-radius: 6px; color: var(--muted); font-size: 12px; }
+    .title-nav .active { background: var(--accent); color: var(--foreground); }
+    .title-actions { display: flex; align-items: center; gap: 6px; }
+    .icon-button {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .icon-button:hover { background: var(--accent); color: var(--foreground); }
+    .icon-button svg { width: 15px; height: 15px; }
+
+    .app {
+      height: calc(100% - 52px);
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+    }
+
+    .sidebar {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 10px 12px;
+      border-right: 1px solid var(--border);
+      background: var(--rail);
+    }
+
+    .side-label { margin: 2px 8px 7px; }
+    .nav-stack { display: grid; gap: 2px; }
+    .nav-item {
+      width: 100%;
+      min-height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 10px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+      cursor: pointer;
+    }
+    .nav-item:hover { background: var(--sel-hover); color: var(--foreground); }
+    .nav-item.active { background: var(--sel); color: var(--foreground); font-weight: 550; }
+    .nav-item svg { width: 16px; height: 16px; color: var(--faint); }
+    .nav-item.active svg { color: var(--foreground); }
+    .nav-item .count { margin-left: auto; color: var(--faint); font: 11px var(--mono); }
+
+    .projects-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 22px 8px 8px;
+    }
+    .project {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 38px;
+      padding: 7px 10px;
+      border-radius: 7px;
+      color: var(--muted);
+    }
+    .project.open { background: var(--sel); color: var(--foreground); }
+    .project .folder { width: 16px; height: 13px; border: 1px solid currentColor; border-radius: 3px; }
+    .user-row { margin-top: auto; display: flex; align-items: center; gap: 9px; padding: 10px 8px 2px; }
+    .avatar { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--secondary); color: var(--muted); font: 11px var(--mono); }
+
+    .workspace {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--background);
+    }
+
+    .page-head {
+      min-height: 112px;
+      display: flex;
+      align-items: flex-start;
+      gap: 24px;
+      padding: 22px 28px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .page-head .copy { min-width: 0; max-width: 760px; }
+    .page-head h1 { margin: 5px 0 4px; font-size: 20px; line-height: 1.25; letter-spacing: -.015em; font-weight: 620; }
+    .page-head p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .page-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-top: 12px; }
+
+    .button {
+      min-height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 6px 11px;
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      background: transparent;
+      color: var(--foreground);
+      font-size: 12px;
+      font-weight: 520;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .button:hover { background: var(--accent); }
+    .button.primary { border-color: transparent; background: var(--brass); color: var(--brass-fg); }
+    .button.primary:hover { filter: brightness(.96); }
+    .button.ghost { border-color: transparent; color: var(--muted); }
+    .button.ghost:hover { color: var(--foreground); }
+    .button svg { width: 14px; height: 14px; }
+
+    .popover-wrap { position: relative; }
+    .menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      z-index: 20;
+      width: 190px;
+      padding: 5px;
+      border: 1px solid var(--border-strong);
+      border-radius: 9px;
+      background: var(--card);
+      box-shadow: var(--shadow-pop);
+    }
+    .menu[hidden] { display: none; }
+    .menu button { width: 100%; padding: 7px 9px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); text-align: left; cursor: pointer; }
+    .menu button:hover { background: var(--accent); color: var(--foreground); }
+    .menu .danger { color: var(--error); }
+    .menu .divider { height: 1px; margin: 4px 5px; background: var(--border); }
+
+    .plan-layout {
+      min-height: 0;
+      flex: 1;
+      display: grid;
+      grid-template-columns: 278px minmax(520px, 780px);
+      justify-content: center;
+      gap: 32px;
+      overflow: auto;
+      padding: 24px 30px 38px;
+    }
+
+    .library { min-width: 0; align-self: start; }
+    .library-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .text-action { border: 0; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+    .text-action:hover { color: var(--foreground); }
+    .plan-list { display: grid; gap: 5px; }
+    .plan-card {
+      width: 100%;
+      padding: 11px 12px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+      cursor: pointer;
+    }
+    .plan-card:hover { background: var(--sel-hover); }
+    .plan-card.active { background: var(--sel); color: var(--foreground); }
+    .plan-card .name { display: flex; align-items: center; gap: 8px; font-weight: 560; color: var(--foreground); }
+    .plan-card .route-glyph { width: 15px; height: 15px; color: var(--faint); }
+    .plan-card .purpose { margin-top: 5px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+    .plan-card .meta { margin-top: 7px; color: var(--faint); font: 11px var(--mono); }
+
+    .library-note {
+      margin-top: 18px;
+      padding: 11px 12px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--secondary) 58%, transparent);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .library-note strong { color: var(--foreground); font-weight: 550; }
+
+    .plan-detail { min-width: 0; }
+    .detail-head { display: flex; align-items: flex-start; gap: 18px; margin-bottom: 18px; }
+    .detail-copy { min-width: 0; flex: 1; }
+    .detail-head h2 { margin: 0; font-size: 14px; font-weight: 620; }
+    .detail-head p { margin: 4px 0 0; max-width: 620px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .saved { display: flex; align-items: center; gap: 5px; color: var(--faint); font: 11px var(--mono); white-space: nowrap; }
+    .saved svg { width: 13px; height: 13px; }
+    .saved.flash { color: var(--success); }
+
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      margin-bottom: 18px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: color-mix(in srgb, var(--card) 45%, transparent);
+    }
+    .summary-item { padding: 10px 12px; border-left: 1px solid var(--border); }
+    .summary-item:first-child { border-left: 0; }
+    .summary-item .k { color: var(--faint); font: 11px var(--mono); }
+    .summary-item .v { margin-top: 3px; color: var(--foreground); font-size: 12px; }
+
+    .section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 0 2px 8px; }
+    .section-head .hint { color: var(--faint); font-size: 11px; }
+
+    .route {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: color-mix(in srgb, var(--card) 62%, transparent);
+    }
+    .phase { position: relative; border-top: 1px solid var(--border); }
+    .phase:first-child { border-top: 0; }
+    .phase-head {
+      width: 100%;
+      min-height: 68px;
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) auto 20px;
+      align-items: center;
+      gap: 11px;
+      padding: 10px 14px;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .phase-head:hover { background: var(--sel-hover); }
+    .phase-marker {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      position: relative;
+      z-index: 1;
+      border: 1px solid var(--border-strong);
+      border-radius: 50%;
+      background: var(--card);
+      color: var(--muted);
+      font: 11px var(--mono);
+    }
+    .phase:not(:last-child) .phase-marker::after {
+      content: "";
+      position: absolute;
+      top: 27px;
+      left: 13px;
+      width: 1px;
+      height: 41px;
+      background: var(--border-strong);
+    }
+    .phase-main { min-width: 0; }
+    .phase-name { font-size: 13px; font-weight: 600; color: var(--foreground); }
+    .phase-purpose { margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .engine { min-width: 132px; text-align: right; }
+    .engine .agent { color: var(--foreground); font-size: 12px; }
+    .engine .model { margin-top: 2px; color: var(--faint); font: 11px var(--mono); }
+    .chevron { width: 15px; height: 15px; color: var(--faint); transition: transform .16s ease; }
+    .phase.open .chevron { transform: rotate(180deg); }
+    .phase-body { padding: 0 14px 14px 59px; }
+    .phase-body[hidden] { display: none; }
+    .phase-fields {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 7px;
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--secondary);
+    }
+    .field .k { color: var(--faint); font: 11px var(--mono); }
+    .field .v { margin-top: 4px; color: var(--foreground); font-size: 12px; }
+    .criteria { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 11px; }
+    .criteria .k { color: var(--faint); font: 11px var(--mono); }
+    .criteria p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .phase-actions { display: flex; gap: 9px; margin-top: 10px; }
+    .phase-actions button { border: 0; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+    .phase-actions button:hover { color: var(--foreground); }
+
+    .add-phase {
+      width: 100%;
+      min-height: 38px;
+      border: 0;
+      border-top: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .add-phase:hover { background: var(--sel-hover); color: var(--foreground); }
+
+    .rules { margin-top: 24px; }
+    .rules-surface { overflow: hidden; border: 1px solid var(--border); border-radius: 10px; }
+    .rule-row {
+      min-height: 45px;
+      display: grid;
+      grid-template-columns: 180px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 14px;
+      padding: 8px 12px;
+      border-top: 1px solid var(--border);
+    }
+    .rule-row:first-child { border-top: 0; }
+    .rule-row .name { color: var(--foreground); font-size: 12px; }
+    .rule-row .why { color: var(--faint); font-size: 11px; }
+    .rule-value {
+      padding: 4px 8px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .rule-value:hover { background: var(--accent); color: var(--foreground); }
+
+    details.advanced { margin-top: 12px; }
+    details.advanced summary {
+      list-style: none;
+      padding: 8px 2px;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    details.advanced summary::-webkit-details-marker { display: none; }
+    details.advanced summary::before { content: "›"; display: inline-block; margin-right: 8px; color: var(--faint); transition: transform .16s ease; }
+    details.advanced[open] summary::before { transform: rotate(90deg); }
+    .advanced-body { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 2px 0 10px; }
+    .advanced-box { padding: 10px 11px; border-radius: 8px; background: var(--secondary); }
+    .advanced-box .k { color: var(--faint); font: 11px var(--mono); }
+    .advanced-box .v { margin-top: 4px; color: var(--muted); font-size: 12px; }
+
+    .snapshot-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      margin-top: 14px;
+      padding: 10px 11px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--secondary) 62%, transparent);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .snapshot-note svg { width: 14px; height: 14px; flex: 0 0 auto; margin-top: 1px; color: var(--faint); }
+    .snapshot-note strong { color: var(--foreground); font-weight: 550; }
+
+    dialog {
+      width: min(680px, calc(100vw - 32px));
+      padding: 0;
+      overflow: hidden;
+      border: 1px solid var(--border-strong);
+      border-radius: 12px;
+      background: var(--card);
+      color: var(--foreground);
+      box-shadow: var(--shadow-pop);
+    }
+    dialog::backdrop { background: rgba(0, 0, 0, .54); backdrop-filter: blur(3px); }
+    .dialog-head { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+    .dialog-head h3 { margin: 0; font-size: 14px; font-weight: 620; }
+    .dialog-head p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+    .dialog-head .icon-button { margin-left: auto; }
+    .dialog-body { padding: 18px; }
+    .dialog-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); }
+    .form-label { display: grid; gap: 6px; margin-bottom: 14px; color: var(--muted); font-size: 11px; }
+    .form-label select, .form-label textarea {
+      width: 100%;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      background: var(--background);
+      color: var(--foreground);
+    }
+    .form-label select { min-height: 36px; padding: 0 10px; }
+    .form-label textarea { min-height: 110px; resize: vertical; padding: 10px 11px; line-height: 1.5; }
+    .launch-summary { padding: 11px 12px; border-radius: 8px; background: var(--secondary); }
+    .launch-summary .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .launch-summary .name { font-weight: 580; }
+    .launch-summary .meta { color: var(--faint); font: 11px var(--mono); }
+    .mini-route { margin-top: 8px; color: var(--muted); font-size: 12px; }
+
+    .template-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .template {
+      min-height: 105px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+      cursor: pointer;
+    }
+    .template:hover { background: var(--sel-hover); }
+    .template.selected { border-color: var(--border-strong); background: var(--sel); }
+    .template strong { display: block; color: var(--foreground); font-size: 13px; }
+    .template span { display: block; margin-top: 4px; font-size: 12px; line-height: 1.45; }
+    .template em { display: block; margin-top: 9px; color: var(--faint); font: normal 11px var(--mono); }
+
+    .toast {
+      position: fixed;
+      right: 24px;
+      bottom: 22px;
+      z-index: 80;
+      max-width: 340px;
+      padding: 10px 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 9px;
+      background: var(--card);
+      color: var(--foreground);
+      box-shadow: var(--shadow-pop);
+      font-size: 12px;
+      transform: translateY(14px);
+      opacity: 0;
+      pointer-events: none;
+      transition: .18s ease;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+
+    .rationale {
+      width: min(1100px, calc(100% - 36px));
+      margin: 18px auto 50px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .rationale article { padding: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+    .rationale .n { color: var(--faint); font: 11px var(--mono); }
+    .rationale h4 { margin: 7px 0 3px; color: var(--foreground); font-size: 12px; font-weight: 600; }
+    .rationale p { margin: 0; }
+
+    @media (max-width: 1120px) {
+      .app { grid-template-columns: 210px minmax(0, 1fr); }
+      .plan-layout { grid-template-columns: 235px minmax(480px, 1fr); gap: 22px; padding-inline: 22px; justify-content: stretch; }
+      .page-head { padding-inline: 22px; }
+      .rationale { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 850px) {
+      .window { height: auto; min-height: 0; }
+      .title-nav, .sidebar { display: none; }
+      .app { display: block; }
+      .workspace { min-height: 760px; }
+      .page-head { flex-direction: column; gap: 12px; }
+      .page-actions { margin-left: 0; padding-top: 0; }
+      .plan-layout { display: block; overflow: visible; }
+      .library { margin-bottom: 24px; }
+      .plan-list { grid-template-columns: repeat(3, 1fr); }
+      .plan-card .purpose { display: none; }
+      .summary-strip { grid-template-columns: 1fr; }
+      .summary-item { border-left: 0; border-top: 1px solid var(--border); }
+      .summary-item:first-child { border-top: 0; }
+    }
+
+    @media (max-width: 620px) {
+      .mockbar .desc, .brand, .title-actions { display: none; }
+      .stage { padding: 8px; }
+      .window { border-radius: 10px; }
+      .page-head, .plan-layout { padding-inline: 15px; }
+      .plan-list, .template-grid, .advanced-body { grid-template-columns: 1fr; }
+      .phase-head { grid-template-columns: 32px minmax(0, 1fr) 18px; }
+      .engine { grid-column: 2; text-align: left; }
+      .chevron { grid-column: 3; grid-row: 1 / span 2; }
+      .phase-body { padding-left: 15px; }
+      .phase-fields, .criteria { grid-template-columns: 1fr 1fr; }
+      .rule-row { grid-template-columns: 1fr auto; }
+      .rule-row .why { display: none; }
+      .rationale { grid-template-columns: 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="mockbar">
+    <span class="mock-tag">MOCK</span>
+    <span class="desc"><strong>Planos de missão</strong> · proposta “rota primeiro”</span>
+    <span class="spacer"></span>
+    <button class="mock-control" id="themeToggle" type="button">Tema: escuro</button>
+  </div>
+
+  <main class="stage">
+    <section class="window" aria-label="Mock do MyCockpit">
+      <header class="titlebar">
+        <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+        <span class="brand">motrip</span>
+        <nav class="title-nav" aria-label="Modos principais">
+          <span>Painel</span><span class="active">Trabalho</span><span>Features</span>
+        </nav>
+        <div class="title-actions">
+          <button class="icon-button" type="button" aria-label="Buscar" title="Buscar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg>
+          </button>
+          <button class="icon-button" type="button" aria-label="Configurações" title="Configurações">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.5 4.7a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.15.37.36.7.6 1 .29.32.68.5 1.1.5h.1v4h-.1A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="app">
+        <aside class="sidebar" aria-label="Navegação principal">
+          <div class="label side-label">Geral</div>
+          <nav class="nav-stack">
+            <button class="nav-item" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 18h16M6 18V9l6-5 6 5v9M9 18v-5h6v5"/></svg>
+              Frota
+            </button>
+            <button class="nav-item" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg>
+              Agendamentos
+            </button>
+            <button class="nav-item active" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h5a3 3 0 0 1 3 3v1M16 14v-4M16 14h-5a3 3 0 0 0-3 3v1"/></svg>
+              Planos de missão <span class="count">3</span>
+            </button>
+          </nav>
+
+          <div class="projects-head"><span class="label">Projetos 6</span><span aria-hidden="true">＋</span></div>
+          <div class="project open"><span class="folder"></span><span>motrip</span><span style="margin-left:auto;color:var(--faint)">⌄</span></div>
+          <div class="project"><span class="folder"></span><span>meuingresso3.0</span></div>
+          <div class="project"><span class="folder"></span><span>mycockpit</span></div>
+          <div class="project"><span class="folder"></span><span>prime-sales-hub</span></div>
+
+          <div class="user-row"><span class="avatar">V</span><span>Vinicius</span></div>
+        </aside>
+
+        <section class="workspace">
+          <header class="page-head">
+            <div class="copy">
+              <span class="label">Missões · Biblioteca</span>
+              <h1>Planos de missão</h1>
+              <p>Prepare times reutilizáveis para tarefas recorrentes. Cada missão decola com uma cópia do plano, então o que já está em execução não muda.</p>
+            </div>
+            <div class="page-actions">
+              <button class="button primary" id="usePlan" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 19 14-7L5 5l2 7-2 7Z"/><path d="M7 12h12"/></svg>
+                Usar em uma missão
+              </button>
+              <div class="popover-wrap">
+                <button class="icon-button" id="moreButton" type="button" aria-label="Mais ações" aria-expanded="false">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
+                </button>
+                <div class="menu" id="moreMenu" hidden>
+                  <button type="button" data-toast="Plano duplicado no mock.">Duplicar plano</button>
+                  <button type="button" data-toast="Exportação simulada.">Exportar JSON</button>
+                  <button type="button" data-toast="Importação simulada.">Importar plano</button>
+                  <div class="divider"></div>
+                  <button type="button" data-toast="Modelos de fábrica restaurados no mock.">Restaurar modelos</button>
+                  <button type="button" class="danger" data-toast="Exclusão não executada: este é um mock.">Excluir plano</button>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <div class="plan-layout">
+            <aside class="library">
+              <div class="library-head">
+                <span class="label">Seus planos</span>
+                <button class="text-action" id="newPlan" type="button">＋ Novo plano</button>
+              </div>
+              <div class="plan-list" id="planList">
+                <button class="plan-card active" type="button" data-plan="feature">
+                  <span class="name">
+                    <svg class="route-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h5a3 3 0 0 1 3 3v2M16 13v1a2 2 0 0 1-2 2H9a3 3 0 0 0-3 3"/></svg>
+                    Feature completa
+                  </span>
+                  <span class="purpose">Planejar, implementar e revisar uma entrega de ponta a ponta.</span>
+                  <span class="meta">3 fases · teto US$ 25</span>
+                </button>
+                <button class="plan-card" type="button" data-plan="ui">
+                  <span class="name">
+                    <svg class="route-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h5a3 3 0 0 1 3 3v2M16 13v1a2 2 0 0 1-2 2H9a3 3 0 0 0-3 3"/></svg>
+                    UI primeiro
+                  </span>
+                  <span class="purpose">Explorar a interface antes de consolidar a implementação.</span>
+                  <span class="meta">3 fases · teto US$ 15</span>
+                </button>
+                <button class="plan-card" type="button" data-plan="economico">
+                  <span class="name">
+                    <svg class="route-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h5a3 3 0 0 1 3 3v2M16 13v1a2 2 0 0 1-2 2H9a3 3 0 0 0-3 3"/></svg>
+                    Econômico
+                  </span>
+                  <span class="purpose">Resolver tarefas claras com uma rota enxuta e custo limitado.</span>
+                  <span class="meta">3 fases · teto US$ 5</span>
+                </button>
+              </div>
+              <div class="library-note"><strong>Plano não é missão.</strong> Ele prepara a rota. A missão é uma execução concreta dentro de uma conversa e de um worktree.</div>
+            </aside>
+
+            <article class="plan-detail">
+              <header class="detail-head">
+                <div class="detail-copy">
+                  <h2 id="planName">Feature completa</h2>
+                  <p id="planDescription">Para entregas que precisam de uma abordagem pensada, implementação cuidadosa e uma última revisão independente.</p>
+                  <button class="text-action" id="editDescription" type="button" style="margin-top:7px">Editar nome e descrição</button>
+                </div>
+                <span class="saved" id="savedState">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 12 4 4L19 6"/></svg>
+                  Salvo agora
+                </span>
+              </header>
+
+              <div class="summary-strip" aria-label="Resumo do plano">
+                <div class="summary-item"><div class="k">ROTA</div><div class="v" id="phaseCount">3 fases em sequência</div></div>
+                <div class="summary-item"><div class="k">INTERVENÇÃO</div><div class="v" id="gateSummary">Você aprova após planejar</div></div>
+                <div class="summary-item"><div class="k">LIMITE</div><div class="v mono" id="costSummary">US$ 25 por missão</div></div>
+              </div>
+
+              <section>
+                <div class="section-head"><span class="label">Rota da missão</span><span class="hint">Clique em uma fase para ajustar</span></div>
+                <div class="route" id="route"></div>
+              </section>
+
+              <section class="rules">
+                <div class="section-head"><span class="label">Regras do plano</span></div>
+                <div class="rules-surface">
+                  <div class="rule-row">
+                    <span class="name">Gate humano</span>
+                    <span class="why">Quando a missão deve esperar por você</span>
+                    <button class="rule-value" type="button" data-toggle-gate>Após planejar⌄</button>
+                  </div>
+                  <div class="rule-row">
+                    <span class="name">Teto de custo</span>
+                    <span class="why">A missão para antes de ultrapassar o valor</span>
+                    <button class="rule-value mono" type="button" data-toast="Edição de teto simulada.">US$ 25⌄</button>
+                  </div>
+                </div>
+
+                <details class="advanced">
+                  <summary>Configurações avançadas</summary>
+                  <div class="advanced-body">
+                    <div class="advanced-box"><div class="k">FALHA DE FASE</div><div class="v">Tentar novamente até o limite definido na própria fase.</div></div>
+                    <div class="advanced-box"><div class="k">CRITÉRIOS</div><div class="v">Entrada e saída são enviadas aos agents como checklists verificáveis.</div></div>
+                  </div>
+                </details>
+
+                <div class="snapshot-note">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+                  <span><strong>Alterações valem para as próximas missões.</strong> Uma missão em execução continua usando a cópia do plano com que decolou.</span>
+                </div>
+              </section>
+            </article>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <section class="rationale" aria-label="Decisões demonstradas no mock">
+    <article><span class="n">01</span><h4>Missão explícita</h4><p>O nome da superfície explica sua relação com a execução; a metáfora de voo fica como identidade, não como pré-requisito.</p></article>
+    <article><span class="n">02</span><h4>Rota que escala</h4><p>A lista vertical continua legível com três ou doze fases e não promete ramificações que o motor ainda não executa.</p></article>
+    <article><span class="n">03</span><h4>Detalhe sob demanda</h4><p>O primeiro olhar responde quem faz o quê. Modelo, esforço, tentativas e critérios aparecem em um clique.</p></article>
+    <article><span class="n">04</span><h4>Um próximo passo</h4><p>“Usar em uma missão” transforma o plano em trabalho. Importar, restaurar e excluir saem da hierarquia principal.</p></article>
+  </section>
+
+  <dialog id="launchDialog">
+    <div class="dialog-head">
+      <div><h3>Nova missão</h3><p>O plano vira uma cópia independente dentro da conversa escolhida.</p></div>
+      <button class="icon-button" type="button" data-close="launchDialog" aria-label="Fechar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <label class="form-label">Projeto e conversa
+        <select><option>motrip · Nova conversa</option><option>mycockpit · Conversa atual</option><option>prime-sales-hub · Nova conversa</option></select>
+      </label>
+      <label class="form-label">O que esta missão deve entregar?
+        <textarea placeholder="Descreva a tarefa, o resultado esperado e qualquer restrição importante."></textarea>
+      </label>
+      <div class="launch-summary">
+        <div class="top"><span class="name" id="launchPlanName">Feature completa</span><span class="meta" id="launchPlanMeta">3 fases · teto US$ 25</span></div>
+        <div class="mini-route" id="launchRoute">Planejar → Implementar → Revisar</div>
+      </div>
+    </div>
+    <div class="dialog-foot"><button class="button ghost" type="button" data-close="launchDialog">Cancelar</button><button class="button primary" id="launchMission" type="button">Lançar missão</button></div>
+  </dialog>
+
+  <dialog id="newDialog">
+    <div class="dialog-head">
+      <div><h3>Novo plano</h3><p>Comece pelo tipo de trabalho. A rota pode ser ajustada depois.</p></div>
+      <button class="icon-button" type="button" data-close="newDialog" aria-label="Fechar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <div class="template-grid">
+        <button class="template selected" type="button"><strong>Entrega completa</strong><span>Planejar, implementar e revisar antes de concluir.</span><em>3 fases sugeridas</em></button>
+        <button class="template" type="button"><strong>Interface primeiro</strong><span>Explorar a experiência visual antes da implementação final.</span><em>3 fases sugeridas</em></button>
+        <button class="template" type="button"><strong>Rota econômica</strong><span>Modelos mais econômicos e teto baixo para tarefas claras.</span><em>3 fases sugeridas</em></button>
+        <button class="template" type="button"><strong>Começar em branco</strong><span>Monte uma sequência própria, uma fase por vez.</span><em>1 fase inicial</em></button>
+      </div>
+    </div>
+    <div class="dialog-foot"><button class="button ghost" type="button" data-close="newDialog">Cancelar</button><button class="button primary" id="createPlan" type="button">Criar plano</button></div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const plans = {
+      feature: {
+        name: "Feature completa",
+        description: "Para entregas que precisam de uma abordagem pensada, implementação cuidadosa e uma última revisão independente.",
+        cost: 25,
+        gate: "Você aprova após planejar",
+        gateShort: "Após planejar",
+        phases: [
+          { name: "Planejar", purpose: "Define a abordagem, os riscos e os critérios de conclusão.", role: "Planejador", agent: "Claude Code", model: "Opus", effort: "Padrão", retries: 1, entry: "Pedido e contexto do projeto disponíveis", exit: "Plano executável e dúvidas explícitas" },
+          { name: "Implementar", purpose: "Executa o plano no worktree e valida a alteração.", role: "Executor", agent: "Codex", model: "Padrão", effort: "Padrão", retries: 2, entry: "Plano aprovado", exit: "Código implementado e verificações executadas" },
+          { name: "Revisar", purpose: "Confere o diff, os testes e a aderência ao pedido.", role: "Revisor", agent: "Claude Code", model: "Opus", effort: "Padrão", retries: 1, entry: "Implementação concluída", exit: "Entrega aprovada ou correção solicitada" }
+        ]
+      },
+      ui: {
+        name: "UI primeiro",
+        description: "Para trabalhos em que a experiência precisa ser explorada e validada visualmente antes de consolidar o código.",
+        cost: 15,
+        gate: "Você aprova após o mock",
+        gateShort: "Após o mock",
+        phases: [
+          { name: "Definir experiência", purpose: "Transforma o pedido em direção visual e fluxo de uso.", role: "Planejador", agent: "Claude Code", model: "Sonnet", effort: "Padrão", retries: 1, entry: "Objetivo e público conhecidos", exit: "Direção visual justificável" },
+          { name: "Construir interface", purpose: "Produz e valida a superfície visual antes da integração final.", role: "Executor", agent: "Antigravity", model: "Padrão", effort: "Padrão", retries: 2, entry: "Direção aprovada", exit: "Interface navegável e revisada visualmente" },
+          { name: "Revisar", purpose: "Verifica clareza, consistência e fidelidade à direção.", role: "Revisor", agent: "Claude Code", model: "Sonnet", effort: "Padrão", retries: 1, entry: "Interface pronta", exit: "Experiência aprovada ou ajustes claros" }
+        ]
+      },
+      economico: {
+        name: "Econômico",
+        description: "Para tarefas bem definidas que ainda se beneficiam de planejamento e revisão, com um teto de custo mais restrito.",
+        cost: 5,
+        gate: "O agent decide se precisa de você",
+        gateShort: "Quando necessário",
+        phases: [
+          { name: "Planejar", purpose: "Confirma o caminho mais curto e os pontos de risco.", role: "Planejador", agent: "Claude Code", model: "Sonnet", effort: "Baixo", retries: 1, entry: "Tarefa delimitada", exit: "Plano curto e verificável" },
+          { name: "Executar", purpose: "Realiza a mudança com o menor ciclo necessário.", role: "Executor", agent: "Codex", model: "Padrão", effort: "Baixo", retries: 1, entry: "Plano pronto", exit: "Mudança implementada" },
+          { name: "Conferir", purpose: "Faz uma última conferência objetiva antes de concluir.", role: "Revisor", agent: "Claude Code", model: "Sonnet", effort: "Baixo", retries: 1, entry: "Mudança pronta", exit: "Sem regressões evidentes" }
+        ]
+      }
+    };
+
+    const route = document.getElementById("route");
+    const planName = document.getElementById("planName");
+    const planDescription = document.getElementById("planDescription");
+    const phaseCount = document.getElementById("phaseCount");
+    const gateSummary = document.getElementById("gateSummary");
+    const costSummary = document.getElementById("costSummary");
+    const launchPlanName = document.getElementById("launchPlanName");
+    const launchPlanMeta = document.getElementById("launchPlanMeta");
+    const launchRoute = document.getElementById("launchRoute");
+    const savedState = document.getElementById("savedState");
+    let activePlan = "feature";
+
+    function phaseTemplate(phase, index, last) {
+      return `
+        <div class="phase" data-phase="${index}">
+          <button class="phase-head" type="button" aria-expanded="false">
+            <span class="phase-marker">${String(index + 1).padStart(2, "0")}</span>
+            <span class="phase-main"><span class="phase-name">${phase.name}</span><span class="phase-purpose">${phase.purpose}</span></span>
+            <span class="engine"><span class="agent">${phase.agent}</span><span class="model">${phase.model}</span></span>
+            <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m7 10 5 5 5-5"/></svg>
+          </button>
+          <div class="phase-body" hidden>
+            <div class="phase-fields">
+              <div class="field"><div class="k">PAPEL</div><div class="v">${phase.role}</div></div>
+              <div class="field"><div class="k">AGENT</div><div class="v">${phase.agent}</div></div>
+              <div class="field"><div class="k">MODELO · INTENSIDADE</div><div class="v">${phase.model} · ${phase.effort}</div></div>
+              <div class="field"><div class="k">TENTATIVAS</div><div class="v">${phase.retries}</div></div>
+            </div>
+            <div class="criteria">
+              <div><div class="k">ANTES DE COMEÇAR</div><p>${phase.entry}</p></div>
+              <div><div class="k">PARA CONCLUIR</div><p>${phase.exit}</p></div>
+            </div>
+            <div class="phase-actions"><button type="button" data-toast="Editor completo simulado.">Editar detalhes</button><button type="button" data-toast="Fase duplicada no mock.">Duplicar fase</button><button type="button" data-toast="Use as alças na implementação para reordenar.">Reordenar</button></div>
+          </div>
+        </div>
+        ${last ? '<button class="add-phase" type="button" data-toast="Nova fase adicionada no mock.">＋ Adicionar fase</button>' : ''}`;
+    }
+
+    function renderPlan(id) {
+      activePlan = id;
+      const p = plans[id];
+      planName.textContent = p.name;
+      planDescription.textContent = p.description;
+      phaseCount.textContent = `${p.phases.length} fases em sequência`;
+      gateSummary.textContent = p.gate;
+      costSummary.textContent = `US$ ${p.cost} por missão`;
+      launchPlanName.textContent = p.name;
+      launchPlanMeta.textContent = `${p.phases.length} fases · teto US$ ${p.cost}`;
+      launchRoute.textContent = p.phases.map(phase => phase.name).join(" → ");
+      route.innerHTML = p.phases.map((phase, index) => phaseTemplate(phase, index, index === p.phases.length - 1)).join("");
+      document.querySelectorAll(".plan-card").forEach(card => card.classList.toggle("active", card.dataset.plan === id));
+      document.querySelector("[data-toggle-gate]").textContent = `${p.gateShort}⌄`;
+      document.querySelectorAll(".rule-value.mono").forEach(button => button.textContent = `US$ ${p.cost}⌄`);
+      bindRoute();
+    }
+
+    function bindRoute() {
+      route.querySelectorAll(".phase-head").forEach(button => {
+        button.addEventListener("click", () => {
+          const phase = button.closest(".phase");
+          const body = phase.querySelector(".phase-body");
+          const willOpen = body.hidden;
+          route.querySelectorAll(".phase").forEach(other => {
+            other.classList.remove("open");
+            other.querySelector(".phase-body").hidden = true;
+            other.querySelector(".phase-head").setAttribute("aria-expanded", "false");
+          });
+          if (willOpen) {
+            phase.classList.add("open");
+            body.hidden = false;
+            button.setAttribute("aria-expanded", "true");
+          }
+        });
+      });
+      route.querySelectorAll("[data-toast]").forEach(bindToastButton);
+    }
+
+    const toast = document.getElementById("toast");
+    let toastTimer;
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 2200);
+    }
+    function bindToastButton(button) { button.addEventListener("click", event => { event.stopPropagation(); showToast(button.dataset.toast); }); }
+    document.querySelectorAll("[data-toast]").forEach(bindToastButton);
+
+    document.getElementById("planList").addEventListener("click", event => {
+      const card = event.target.closest(".plan-card");
+      if (card) renderPlan(card.dataset.plan);
+    });
+
+    const themeToggle = document.getElementById("themeToggle");
+    themeToggle.addEventListener("click", () => {
+      const root = document.documentElement;
+      const dark = root.dataset.theme === "dark";
+      root.dataset.theme = dark ? "light" : "dark";
+      themeToggle.textContent = `Tema: ${dark ? "claro" : "escuro"}`;
+    });
+
+    const moreButton = document.getElementById("moreButton");
+    const moreMenu = document.getElementById("moreMenu");
+    moreButton.addEventListener("click", event => {
+      event.stopPropagation();
+      moreMenu.hidden = !moreMenu.hidden;
+      moreButton.setAttribute("aria-expanded", String(!moreMenu.hidden));
+    });
+    document.addEventListener("click", event => {
+      if (!moreMenu.contains(event.target) && event.target !== moreButton) {
+        moreMenu.hidden = true;
+        moreButton.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    const launchDialog = document.getElementById("launchDialog");
+    const newDialog = document.getElementById("newDialog");
+    document.getElementById("usePlan").addEventListener("click", () => launchDialog.showModal());
+    document.getElementById("newPlan").addEventListener("click", () => newDialog.showModal());
+    document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => document.getElementById(button.dataset.close).close()));
+    document.getElementById("launchMission").addEventListener("click", () => { launchDialog.close(); showToast(`Missão com “${plans[activePlan].name}” lançada no mock.`); });
+    document.getElementById("createPlan").addEventListener("click", () => { newDialog.close(); showToast("Plano criado no mock. Nenhum dado real foi alterado."); });
+    document.querySelectorAll(".template").forEach(button => button.addEventListener("click", () => {
+      document.querySelectorAll(".template").forEach(item => item.classList.remove("selected"));
+      button.classList.add("selected");
+    }));
+
+    document.getElementById("editDescription").addEventListener("click", () => {
+      showToast("Edição de nome e descrição simulada.");
+      savedState.classList.add("flash");
+      savedState.lastChild.textContent = " Salvo agora";
+      setTimeout(() => savedState.classList.remove("flash"), 900);
+    });
+    document.querySelector("[data-toggle-gate]").addEventListener("click", () => showToast("Seletor de gate simulado."));
+
+    [launchDialog, newDialog].forEach(dialog => dialog.addEventListener("click", event => {
+      if (event.target === dialog) dialog.close();
+    }));
+
+    renderPlan("feature");
+  </script>
+</body>
+</html>

@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest"
 import {
   SETTINGS_SECTIONS,
   casaBusca,
+  resolveSection,
   precisaDeAtencao,
   secoesDisponiveis,
   sectionDef,
@@ -25,7 +26,7 @@ describe("casaBusca — o que a pessoa digita chega na seção certa", () => {
     expect(acha("microfone")).toContain("dictation")
     expect(acha("caffeinate")).toContain("autopilot")
     expect(acha("seatbelt")).toContain("sandbox")
-    expect(acha("pull request")).toContain("github")
+    expect(acha("pull request")).toContain("services")
   })
 
   it("ignora acento e caixa (ninguém digita acento numa busca apressada)", () => {
@@ -122,16 +123,16 @@ describe("precisaDeAtencao — o que merece um ponto no rail", () => {
   })
 
   it("gh instalado e SEM conta: atenção. gh ausente: não", () => {
-    expect(precisaDeAtencao("github", { gh: { installed: true, contas: 0 } })).toBe(true)
+    expect(precisaDeAtencao("services", { gh: { installed: true, contas: 0 } })).toBe(true)
     // ausente é capacidade opcional, e o resto do app funciona igual.
-    expect(precisaDeAtencao("github", { gh: { installed: false, contas: 0 } })).toBe(false)
-    expect(precisaDeAtencao("github", { gh: { installed: true, contas: 2 } })).toBe(false)
+    expect(precisaDeAtencao("services", { gh: { installed: false, contas: 0 } })).toBe(false)
+    expect(precisaDeAtencao("services", { gh: { installed: true, contas: 2 } })).toBe(false)
   })
 
   it("ANTES de olhar não pinta nada (fatos ausentes = silêncio)", () => {
     // O pior ponto possível é o que aparece enquanto o app ainda não sabe.
     expect(precisaDeAtencao("machine", {})).toBe(false)
-    expect(precisaDeAtencao("github", {})).toBe(false)
+    expect(precisaDeAtencao("services", {})).toBe(false)
   })
 
   it("máquina sem sandbox NUNCA pinta ponto", () => {
@@ -144,5 +145,13 @@ describe("precisaDeAtencao — o que merece um ponto no rail", () => {
     for (const id of ["appearance", "ledger", "presets", "about"] as const) {
       expect(precisaDeAtencao(id, { detected: { codex: probe(true, "missing") } })).toBe(false)
     }
+  })
+})
+
+describe("o id antigo da seção não vira tela branca", () => {
+  it("deep link com 'github' cai em Serviços (LEGACY_SECTION_IDS)", () => {
+    // A seção por FORNECEDOR virou seção por PERGUNTA (ADR-086). Tray, paleta
+    // e estado salvo podem carregar o id velho por tempo indeterminado.
+    expect(resolveSection("github")).toBe("services")
   })
 })
