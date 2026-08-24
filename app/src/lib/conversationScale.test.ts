@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest"
 import {
+  CONVERSATION_COLUMN_WIDTH,
+  CONVERSATION_SCALES,
   conversationScaleAction,
+  conversationColumnStyle,
   conversationScalePercent,
   normalizeConversationScale,
   scaleFromShortcut,
@@ -65,5 +68,21 @@ describe("escala de leitura da conversa", () => {
     expect(normalizeConversationScale(Number.NaN)).toBe(1)
     expect(normalizeConversationScale(1.27)).toBe(1.3)
     expect(conversationScalePercent(1.3)).toBe("130%")
+  })
+
+  it("a largura da coluna NÃO se compensa pela escala (era compensação dupla)", () => {
+    // A regra é contraintuitiva e por isso precisa de teste: em Chrome
+    // moderno a porcentagem já resolve contra o contentor ajustado pelo zoom,
+    // então `100 / scale` pinta 950px a 80% (transbordando o pai de 760) e
+    // 585px a 130% (coluna encolhendo). Medido com elementFromPoint.
+    for (const requested of CONVERSATION_SCALES) {
+      const estilo = conversationColumnStyle(requested)
+      expect(estilo.width).toBe("100%")
+      expect(estilo.zoom).toBe(normalizeConversationScale(requested))
+    }
+  })
+
+  it("a coluna física é declarada UMA vez, sem escala dentro", () => {
+    expect(CONVERSATION_COLUMN_WIDTH).toBe(760)
   })
 })

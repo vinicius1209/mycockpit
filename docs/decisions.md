@@ -3074,3 +3074,47 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   preferência fica sem efeito — degradação silenciosa de propósito, porque um
   toast por boot seria ruído sobre algo que ninguém conserta dali.
 - **Verificado:** `cargo` 515 (5 novos), `tsc` 0, `vitest` 3132, 8 guardas.
+
+### ADR-082 — Zoom do fio: a aritmética estava certa e a coluna mudava mesmo assim ✅
+- **Contexto (24/08/2026):** revisão do trabalho de outro dev sobre o zoom de
+  leitura da conversa. O refactor dele separou em duas caixas — a de fora com a
+  coluna física de 760px, a de dentro com o `zoom` — e trouxe teste de unidade
+  provando `widthPercent * scale === 100`.
+- **A aritmética estava certa e a coluna mudava mesmo assim.** Medido no
+  navegador com `elementFromPoint` (coordenada VISUAL), pai de 760px:
+  | escala | pintado | efeito |
+  |---|---|---|
+  | 0,8 | **950px** | transborda o pai |
+  | 1,0 | 760px | ok |
+  | 1,3 | **585px** | coluna encolhe |
+  Zoom para LER melhor entregando linha mais curta é o oposto do pedido.
+- **A causa:** em Chrome moderno o `zoom` é padronizado, e porcentagem resolve
+  contra o bloco contentor **já ajustado pelo zoom do próprio elemento**. Um pai
+  de 760px vira contentor de 950px para um filho com `zoom: 0.8`. Logo
+  `width: 100%` já pinta 760, e `100 / scale` compensa **duas vezes**.
+- **Por que ninguém tinha visto:** a versão de uma div só tinha
+  `max-width: 760 / scale`, e era o CLAMP que entregava os 760 — a largura
+  percentual já estava errada, e invisível. Mover o teto pra um pai sem zoom
+  tirou o clamp de cena e revelou o erro nos dois sentidos. **O refactor não
+  introduziu o bug; ele o desenterrou.**
+- **A ferramenta de medida era metade do problema.** `getBoundingClientRect`
+  responde no espaço SEM zoom: dizia "950" com o elemento ocupando 760 na tela.
+  Só `elementFromPoint` varrendo o eixo x responde onde a tinta caiu. Foi por
+  isso que o defeito passou por unidade e por revisão.
+- **Correção:** `conversationColumnStyle` devolve `width: "100%"` — sem
+  compensação. A regra é contraintuitiva o bastante pra ter comentário longo e
+  dois testes: o de unidade fixa `width: "100%"` (quebra se alguém reintroduzir
+  o inverso) e o e2e mede a tinta.
+- **O e2e tem um segundo caso que prova que ele MORDE:** reproduz a versão
+  errada e exige que ela falhe. Sem isso, o primeiro teste passaria até se
+  alguém removesse o zoom inteiro.
+- **Escopo honesto:** o e2e cobre o CONTRATO DE CSS reproduzido, não a fiação do
+  componente — o transcript só renderiza com conversa real, e semear isso
+  custaria mais do que vale. Quem cobre a fiação é o teste de unidade. Está
+  escrito no cabeçalho do arquivo.
+- **O resto do trabalho do outro dev entra como está**, e um pedaço dele eu ia
+  questionar e estava errado: remover o guard de "conversa visível" do atalho.
+  **Com** o guard, ⌘+ numa tela sem conversa vazaria pro WebView e ampliaria o
+  chrome inteiro — exatamente o que o desenho recusa. Sem ele, ⌘+ significa a
+  mesma coisa em todo lugar. Ele estava certo.
+- **Verificado:** `tsc` 0, `vitest` 3133, 8 guardas, e2e **27/27** (2 novos).

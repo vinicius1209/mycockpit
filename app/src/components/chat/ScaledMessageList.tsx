@@ -1,25 +1,37 @@
 import type { ComponentProps } from "react"
 import { MessageList } from "@/components/chat/MessageList"
-import { normalizeConversationScale } from "@/lib/conversationScale"
+import {
+  CONVERSATION_COLUMN_WIDTH,
+  conversationColumnStyle,
+} from "@/lib/conversationScale"
 import { useApp } from "@/store/app"
 
-/** Aplica zoom só ao transcript. A largura inversa conserva a coluna física de
- *  760px e faz o texto refluir como no browser, sem ampliar o chrome/composer. */
+/** Zoom SÓ no transcript: o texto cresce, o chrome e o composer não.
+ *
+ *  Duas caixas, e cada uma tem um trabalho:
+ *   - a de FORA guarda a coluna física de 760px e NÃO tem zoom;
+ *   - a de DENTRO tem o zoom, e `width: 100%` — sem compensar pela escala.
+ *
+ *  A largura não se compensa porque, em Chrome moderno, porcentagem já resolve
+ *  contra o contentor ajustado pelo zoom. Compensar seria compensar duas vezes,
+ *  e foi medido quebrando nos dois sentidos (ver `conversationColumnStyle`).
+ *  Se alguém voltar a escrever `100 / scale` aqui, o teste da coluna quebra. */
 export function ScaledMessageList(props: ComponentProps<typeof MessageList>) {
-  const scale = useApp((s) =>
-    normalizeConversationScale(s.settings.conversationScale),
-  )
+  // O selector devolve PRIMITIVO estável; objeto novo aqui faria o Zustand
+  // notificar a cada leitura e poderia criar loop de render.
+  const persistedScale = useApp((s) => s.settings.conversationScale)
+  const estilo = conversationColumnStyle(persistedScale)
   return (
     <div
-      data-conversation-scale={scale}
-      style={{
-        width: `${100 / scale}%`,
-        maxWidth: `${760 / scale}px`,
-        zoom: scale,
-      }}
-      className="mx-auto min-w-0"
+      className="mx-auto w-full min-w-0"
+      style={{ maxWidth: `${CONVERSATION_COLUMN_WIDTH}px` }}
     >
-      <MessageList {...props} />
+      <div
+        data-conversation-scale={estilo.zoom}
+        style={estilo}
+      >
+        <MessageList {...props} />
+      </div>
     </div>
   )
 }
