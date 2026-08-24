@@ -3204,3 +3204,48 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   zero". Coberto por teste, junto com valor negativo de motor confuso.
 - **Verificado:** `tsc` 0, `vitest` 3153 (4 novos), 8 guardas, e2e 27/27,
   `cargo` 515.
+
+### ADR-085 — Um vocabulário de superfície, e a catraca que faz a migração acontecer ✅
+- **Contexto (24/08/2026):** o usuário gostou do padrão do mock de Serviços
+  (cartões, separações, agrupamento) e perguntou o que importa: *"daria pra
+  estudarmos se o nosso código fonte está bem escrito e componentizado?"*
+- **A resposta é NÃO nesta camada, e ela é medível.** Em
+  `components/settings`, para dois conceitos:
+  | conceito | implementações distintas |
+  |---|---|
+  | cartão (raio + borda) | **19** |
+  | selo / rótulo caixa-alta | **17** |
+  Mais fragmentação de raio (`rounded-md`/`-lg`/`-xl`) e de borda (`/50`, `/60`,
+  sem opacidade). **46 superfícies escritas à mão em 18 arquivos.**
+- **A causa não é desleixo, é lacuna de vocabulário.** `parts.tsx` deu as peças
+  de ESTRUTURA (`SectionHeader`, `BlockTitle`, `Field`, `Note`) e nunca as de
+  SUPERFÍCIE. Sem lugar onde se ancorar, cada seção inventa a sua — e eu fiz
+  exatamente isso hoje, escrevendo o selo do rail duplicando um que já existia
+  dois arquivos ao lado.
+- **`ui/badge.tsx` existia e NINGUÉM usava.** Um primitivo do shadcn parado
+  enquanto 17 selos eram feitos à mão: o default dele (raio de pílula, escala de
+  tamanho do Tailwind) não bate com a medida da casa (raio de canto, px do §3).
+  Primitivo que não serve não é usado, e não ser usado não o remove.
+- **Entrou:** `Card`, `CardHead`, `CardBody`, `Row`, `Selo`, `Consequencia`,
+  `TomTexto` em `parts.tsx`.
+- **O tom é PROPRIEDADE, não classe solta**, e isso tem consequência de guarda:
+  o verde de probe passa a ser declarado UMA vez, no vocabulário, em vez de uma
+  exceção por arquivo. `ConfinamentoCard` migrou e a exceção dele **apertou de
+  2 para 1** na mesma passada — a guarda de verde chegou a avisar sozinha
+  (*"usa 1 de 2 permitidos, aperte o número"*). A conta certa daquele mapa passa
+  a ser a SOMA: cada seção que migra desce, e o total cai.
+- **A peça que faz a migração acontecer é a CATRACA, não a boa intenção.**
+  `check-superficies` congela as 46 e o número **só desce**; arquivo NOVO nasce
+  em zero. Proibir de uma vez quebraria 15 seções e ninguém migra 15 seções numa
+  tarde — o débito ficaria proibido e portanto ignorado. Mesma mecânica da
+  catraca de tamanho, e pelo mesmo motivo.
+- **Semear ≠ apertar.** O `--update` recusa subida, mas precisava saber criar a
+  baseline na primeira vez; a distinção é explícita (`baseline vazia = nascendo`)
+  em vez de um carimbo que aceitaria qualquer crescimento.
+- **Provado que morde**, nos dois sentidos que importam: arquivo existente que
+  cresce falha, e arquivo NOVO com superfície à mão falha com "limite 0".
+- **Escopo é `components/settings` e só.** O fio e o painel têm superfícies com
+  outras necessidades; arrastá-los pra cá imporia um vocabulário que não foi
+  desenhado pra eles.
+- **Verificado:** `tsc` 0, `vitest` 3153, **9 guardas** (a nova entrou na CI),
+  e2e 27/27.

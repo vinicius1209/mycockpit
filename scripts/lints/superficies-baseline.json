@@ -1,0 +1,20 @@
+{
+  "components/settings/CompanionSettings.tsx": 2,
+  "components/settings/ConfinamentoCard.tsx": 1,
+  "components/settings/CostMaintenance.tsx": 1,
+  "components/settings/DictationSettings.tsx": 1,
+  "components/settings/Especialistas.tsx": 7,
+  "components/settings/GitHubCard.tsx": 5,
+  "components/settings/HooksSettings.tsx": 1,
+  "components/settings/MachineAgents.tsx": 1,
+  "components/settings/McpAgentRows.tsx": 1,
+  "components/settings/McpSettings.tsx": 7,
+  "components/settings/MissionSettings.tsx": 1,
+  "components/settings/ModelsSettings.tsx": 3,
+  "components/settings/NewChatDefaults.tsx": 1,
+  "components/settings/PresetSettings.tsx": 4,
+  "components/settings/ProjectBrowserCard.tsx": 2,
+  "components/settings/SessionCostLimit.tsx": 2,
+  "components/settings/SettingsDialog.tsx": 3,
+  "components/settings/UsageMeterSettings.tsx": 3
+}

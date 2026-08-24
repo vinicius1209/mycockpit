@@ -17,7 +17,7 @@
 // lá repetiria o defeito do build 191, que o arquivo de seções documenta.
 
 import { useEffect, useState } from "react"
-import { Check, Loader2, Minus, ShieldAlert } from "lucide-react"
+import { Check, Loader2, Minus } from "lucide-react"
 import {
   linhasDeConfinamento,
   lerConfinamento,
@@ -25,7 +25,15 @@ import {
   SEM_CONFINAMENTO,
   type Confinamento,
 } from "@/lib/confinamento"
-import { Note, SectionHeader } from "@/components/settings/parts"
+import {
+  Card,
+  CardHead,
+  CardBody,
+  Note,
+  Row,
+  SectionHeader,
+  Selo,
+} from "@/components/settings/parts"
 import { sectionDef } from "@/components/settings/sections"
 
 export function ConfinamentoCard() {
@@ -57,53 +65,47 @@ export function ConfinamentoCard() {
       ) : (
         <>
           {/* O resumo. Cada número aqui é contado das linhas abaixo. */}
-          <div className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-3">
-            <div className="flex items-start gap-3">
-              <span className="mt-px shrink-0">
-                {resumo.temSandbox ? (
-                  <Check className="size-4 text-st-success" />
+          <Card>
+            <CardHead
+              nome={
+                resumo.temSandbox
+                  ? `${resumo.confinados} de ${resumo.total} modos passam pelo sandbox`
+                  : "Sem confinamento do sistema"
+              }
+              selo={
+                resumo.temSandbox ? (
+                  <Selo tom="ok">parcial</Selo>
                 ) : (
-                  <ShieldAlert className="size-4 text-st-warning" />
-                )}
-              </span>
-              <div className="min-w-0">
-                <div className="text-[13px] text-foreground">
-                  {resumo.temSandbox
-                    ? `Confinamento parcial: ${resumo.confinados} de ${resumo.total} modos passam pelo sandbox do sistema`
-                    : "Sem confinamento do sistema nesta máquina"}
-                </div>
-                <div className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
-                  {resumo.temSandbox
-                    ? "“Parcial” é a palavra exata: o sistema barra escrita no projeto, não no resto do disco. Chamar isso de completo seria a mentira confortável."
-                    : "O sandbox-exec não foi encontrado aqui. Quem segura o agente continua sendo o motor, como antes do sandbox existir."}
-                </div>
-              </div>
-            </div>
-          </div>
+                  <Selo tom="atencao">ausente</Selo>
+                )
+              }
+            />
+            <CardBody>
+              <p className="text-[12px] leading-snug text-muted-foreground">
+                {resumo.temSandbox
+                  ? "“Parcial” é a palavra exata: o sistema barra escrita no projeto, não no resto do disco. Chamar isso de completo seria a mentira confortável."
+                  : "O sandbox-exec não foi encontrado aqui. Quem segura o agente continua sendo o motor, como antes do sandbox existir."}
+              </p>
+            </CardBody>
+          </Card>
 
           <ul className="mt-3 flex flex-col gap-1.5">
             {linhas.map((l) => (
-              <li
+              <Row
                 key={l.modo}
-                className="flex items-center gap-3 rounded-lg border border-border/50 bg-secondary/20 px-3 py-2"
-              >
-                <span className="shrink-0">
-                  {l.confinado ? (
+                glifo={
+                  l.confinado ? (
                     <Check className="size-4 text-st-success" />
                   ) : (
                     // Traço, não X: "não confinado" no modo que escreve é o
-                    // desenho funcionando, não uma falha. Vermelho ali ensinaria
-                    // o usuário a ignorar o vermelho.
+                    // desenho funcionando, não uma falha. Vermelho ali
+                    // ensinaria o usuário a ignorar o vermelho.
                     <Minus className="size-4 text-muted-foreground/60" />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] text-foreground">{l.rotulo}</div>
-                  <div className="text-[12px] leading-snug text-muted-foreground">
-                    {l.frase}
-                  </div>
-                </div>
-              </li>
+                  )
+                }
+                titulo={l.rotulo}
+                dica={l.frase}
+              />
             ))}
           </ul>
         </>

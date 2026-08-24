@@ -224,7 +224,13 @@ export const DEAD_TOKEN_RULES = [
       // Família "probe real": verde só depois que a checagem rodou de verdade.
       "components/settings/CompanionSettings.tsx": { max: 2, motivo: "probe do companion passou (doutrina 'verde exige probe'): o dot 'servidor no ar' + o check da lista" },
       "components/settings/HooksSettings.tsx": { max: 1, motivo: "probe de hook passou" },
-      "components/settings/ConfinamentoCard.tsx": { max: 2, motivo: "probe do sandbox passou: o Rust conferiu `sandbox-exec` no disco. Mesma forma do CompanionSettings — o check do RESUMO + o check da linha confinada. O 'não confinado' é traço cinza, não X: no modo que escreve isso é o desenho funcionando, e vermelho ali ensinaria a ignorar vermelho" },
+      "components/settings/ConfinamentoCard.tsx": { max: 1, motivo: "probe do sandbox passou: o Rust conferiu `sandbox-exec` no disco. Era 2; o verde do RESUMO virou <Selo tom=\"ok\">, então sobrou só o check da linha confinada. O 'não confinado' é traço cinza, não X: no modo que escreve isso é o desenho funcionando, e vermelho ali ensinaria a ignorar vermelho" },
+      // O verde do VOCABULÁRIO, não de uma tela. `Selo tom="ok"` e `TomTexto`
+      // existem pra que o probe verde seja declarado UMA vez, aqui, em vez de
+      // uma exceção por arquivo. A conta certa deste mapa é a SOMA: cada seção
+      // que migra perde o verde dela, e o total desce. Se este número subir
+      // sem nenhum arquivo descer, alguém está pintando verde novo.
+      "components/settings/parts.tsx": { max: 3, motivo: "tom `ok` do vocabulário de superfície: 1 no mapa de texto + 2 no mapa de selo (fundo e texto). Único lugar onde o verde de PROBE é definido; as seções passam `tom`, não classe" },
       "components/settings/MachineAgents.tsx": { max: 2, motivo: "probe de agent na máquina passou" },
       "components/settings/GitHubCard.tsx": { max: 1, motivo: "probe do gh passou: `gh --version` E `gh auth status` rodaram de verdade e devolveram conta ativa. UM só — a confirmação de 'copiei o comando' foi despintada na mesma passada, porque cópia de texto é estado ambiente, não marco nem probe" },
       // A linha por agent saiu de McpSettings.tsx para McpAgentRows.tsx (a
