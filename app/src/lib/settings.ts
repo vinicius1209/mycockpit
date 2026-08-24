@@ -33,6 +33,11 @@ export interface GlobalSettings {
    *  comportamento que existia antes). Guardamos o UID e não o nome: nome muda
    *  com o idioma do SO e se repete entre dois headsets iguais. */
   dictationDevice: string | null
+  /** Segurar o sono da máquina: "on" sempre · "agent" enquanto um agente
+   *  trabalha (default) · "off" nunca. O default é "agent" porque é o único
+   *  que só cobra bateria quando há trabalho de verdade em voo — e é
+   *  exatamente aí que dormir custa um turno já pago. */
+  keepAwake: "on" | "agent" | "off"
   /** Auto-revive: quando o turno termina num rate limit / "vou tentar depois",
    *  reenvia sozinho (após o reset) até concluir de verdade ou bater o cap.
    *  OPT-IN (default false) porque cada resume é um run pago. */
@@ -135,6 +140,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   dictationHotkey: DEFAULT_DICTATION_HOTKEY,
   dictationVocab: [],
   dictationDevice: null,
+  keepAwake: "agent",
   autoResume: false,
   autoResumeMaxTries: 3,
   missionEnabled: false,

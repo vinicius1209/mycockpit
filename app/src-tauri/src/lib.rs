@@ -18,6 +18,7 @@ mod codex_appserver;
 mod companion;
 mod context;
 mod context_gateway;
+mod despertador;
 mod detect;
 mod editor;
 mod evidence;
@@ -705,6 +706,7 @@ pub fn run() {
             tray::set_tray_preferences,
             tray::tray_action,
             tray::force_quit,
+            despertador::set_keep_awake,
             stt::stt_devices,
             stt::stt_start,
             stt::stt_stop,
@@ -735,7 +737,12 @@ pub fn run() {
             // Saída do app com run em voo: mata os CLIs de agent (senão ficam
             // órfãos rodando headless, editando repo e gastando, sem UI).
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
-                app_handle.state::<agent::RunRegistry>().kill_all();
+                let reg = app_handle.state::<agent::RunRegistry>();
+                reg.kill_all();
+                // Cinto E suspensório: o `caffeinate -w <pid>` já sai sozinho
+                // quando o app morre, mas soltar explicitamente aqui deixa a
+                // intenção legível e não depende de o `-w` existir sempre.
+                reg.2.solta();
                 app_handle
                     .state::<std::sync::Arc<work_gateway::ProcessRegistry>>()
                     .kill_all();

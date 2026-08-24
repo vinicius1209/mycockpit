@@ -3039,3 +3039,38 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   dois arquivos; refiz com casamento de parênteses.
 - **Verificado:** `swiftc` limpo + `--selftest` 10/10, `cargo` 510, `tsc` 0,
   `vitest` 3132, 8 guardas, e2e 25/25.
+
+### ADR-081 — F4: segurar o sono, e a trava com relógio de morte próprio ✅
+- **Contexto (24/08/2026):** missão de 4 fases às 3h da manhã que morre porque o
+  Mac dormiu. É falha que o app pode evitar, e o trabalho perdido não volta —
+  o turno já foi pago.
+- **`caffeinate -i -w <nosso pid>`, e NÃO uma asserção IOKit.**
+  `IOPMAssertionCreateWithName` daria o mesmo sem subprocesso, com um risco que
+  esta casa já conhece: a asserção vive no `powerd` e só morre se ALGUÉM lembrar
+  de liberá-la. App morto a `kill -9` deixaria o Mac sem dormir para sempre, e o
+  usuário não teria como ligar isso ao Frota. Mesma família do processo órfão do
+  incidente da carga fantasma. O `-w <pid>` é o **relógio de morte próprio**: o
+  `caffeinate` observa o nosso processo e sai sozinho quando ele morre, de
+  qualquer jeito que morra. **A trava não pode sobreviver a quem a pediu.**
+- **A trava mora no `RunGuard`**, o RAII que já tira o run do registry em TODA
+  saída — sucesso, erro, os `?` de early-return e o cancel. Foi o único ponto
+  que eu procurei: trava de energia solta só no caminho feliz é trava vazada.
+  Por isso o `Despertador` virou campo do `RunRegistry`, e não outra `State`
+  para alguém lembrar de atualizar nos mesmos dois pontos.
+- **O default é `agent`, e a escolha é discutível o suficiente pra ficar
+  escrita.** `on` cobra bateria o tempo todo; `off` deixa o defeito de pé.
+  `agent` só segura enquanto há run VIVO — exatamente quando dormir custa um
+  turno pago. É a única das três que não cobra nada quando não há trabalho.
+- **Valor corrompido cai em `agent`, nunca em `on`.** Gastar bateria do usuário
+  é decisão dele, não de um parse que falhou.
+- **A preferência é reaplicada no boot.** Ela mora no front (persistida) e quem
+  segura é o Rust, que nasce no default a cada abertura: sem reaplicar, quem
+  escolheu "Nunca" voltaria a segurar o sono no reinício seguinte sem ter
+  mudado nada.
+- **Fica na seção "Vigias e automação"**, cuja pergunta é literalmente "o que o
+  app faz sozinho enquanto ninguém olha".
+- **Honesto sobre o limite:** só impede sono por OCIOSIDADE; fechar a tampa
+  continua dormindo, e a copy diz isso. Fora do macOS o spawn falha e a
+  preferência fica sem efeito — degradação silenciosa de propósito, porque um
+  toast por boot seria ruído sobre algo que ninguém conserta dali.
+- **Verificado:** `cargo` 515 (5 novos), `tsc` 0, `vitest` 3132, 8 guardas.

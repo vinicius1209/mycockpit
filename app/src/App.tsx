@@ -18,6 +18,7 @@ import { ConfirmHost } from "@/components/common/confirm"
 import { OnboardingGate } from "@/components/onboarding/OnboardingGate"
 import { startDictationHotkey } from "@/lib/dictationHotkey"
 import { AppShell } from "@/components/layout/AppShell"
+import { aplicarKeepAwake } from "@/lib/keepAwake"
 import { useApp } from "@/store/app"
 import { pendingDeferred, useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
@@ -110,6 +111,13 @@ export default function App() {
     [],
   )
 
+  // A preferência de sono é do FRONT (persistida) mas quem segura é o Rust, que
+  // nasce no default a cada boot. Sem reaplicar aqui, quem escolheu "Nunca"
+  // voltaria a segurar o sono no próximo reinício sem ter mudado nada.
+  useEffect(() => {
+    void aplicarKeepAwake(useApp.getState().settings.keepAwake)
+  }, [])
+
   // Zoom de LEITURA do fio, com os atalhos de navegador. Listener em capture:
   // o composer pode estar focado, mas ⌘+/⌘-/⌘0 pertencem ao chrome, nunca ao
   // texto. `scaleFromShortcut` consome o default do WebView para ele não ampliar
@@ -117,13 +125,6 @@ export default function App() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const app = useApp.getState()
-      const conversationVisible =
-        app.viewMode === "linear" &&
-        app.mainTab.kind === "conversa" &&
-        !app.scheduledOpen &&
-        !app.flightPlansOpen &&
-        !app.fleetOpen
-      if (!conversationVisible) return
       const next = scaleFromShortcut(event, app.settings.conversationScale)
       if (next == null) return
       app.setSettings({ conversationScale: next })

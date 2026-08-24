@@ -24,7 +24,18 @@ use tokio::sync::Notify;
 pub struct RunRegistry(
     pub Mutex<HashMap<String, Arc<Notify>>>,
     pub Mutex<HashMap<String, u32>>,
+    /// A trava de sono (ADR-081). Mora AQUI porque o ciclo de vida dela é
+    /// exatamente o dos runs — e assim ela é reavaliada nos mesmos dois pontos
+    /// em que o mapa muda, incluindo o `RunGuard`, que dispara em toda saída.
+    pub crate::despertador::Despertador,
 );
+
+impl RunRegistry {
+    /// Quantos runs vivos. É a contagem que decide a trava de sono.
+    pub fn ativos(&self) -> usize {
+        self.0.lock().map(|m| m.len()).unwrap_or(0)
+    }
+}
 
 impl RunRegistry {
     /// SIGKILL em todos os processos de agent vivos (hook de saída do app).
@@ -74,6 +85,10 @@ impl Drop for RunGuard<'_> {
         if let Ok(mut pids) = self.registry.1.lock() {
             pids.remove(self.run_id);
         }
+        // A trava de sono cai JUNTO com o run, aqui e não no caminho feliz:
+        // este Drop roda no sucesso, no erro, no `?` e no cancel. Soltar só
+        // quando dá certo é como uma trava vaza.
+        self.registry.2.reavalia(self.registry.ativos());
     }
 }
 
@@ -336,6 +351,9 @@ pub async fn run_agent(
         registry: registry.inner(),
         run_id: &run_id,
     };
+    // Com o run já no mapa: se o modo for "enquanto um agente trabalha", é
+    // agora que a máquina para de poder dormir.
+    registry.2.reavalia(registry.ativos());
     // anexos: rel→abs + descarta sumidos; particiona por capacidade do agent.
     let (live, missing) = attachments::resolve_live(&app, attachments);
     let (used, unsupported): (Vec<_>, Vec<_>) = live

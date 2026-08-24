@@ -22,6 +22,11 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useApp } from "@/store/app"
 import { hooksAgents, usageWindowAgents } from "@/lib/agentRoster"
+import {
+  aplicarKeepAwake,
+  KEEP_AWAKE_OPTIONS,
+  type KeepAwake,
+} from "@/lib/keepAwake"
 import { MissionSettings } from "@/components/settings/MissionSettings"
 import { CompanionSettings } from "@/components/settings/CompanionSettings"
 import { McpSettings } from "@/components/settings/McpSettings"
@@ -41,6 +46,7 @@ import {
   Block,
   BlockTitle,
   Field,
+  Note,
   SectionHeader,
   SELECT_TRIGGER,
 } from "@/components/settings/parts"
@@ -308,6 +314,31 @@ export function SettingsDialog() {
           {section === "autopilot" && (
             <div>
               <Header id="autopilot" />
+              {/* Sono da máquina: o caso real é a missão de 4 fases às 3h que
+                  morre porque o Mac dormiu. Fica AQUI porque a pergunta da
+                  seção é "o que o app faz sozinho enquanto ninguém olha", e
+                  segurar o sono é exatamente isso. */}
+              <div className="divide-y divide-border/50">
+                <Field
+                  label="Manter o computador acordado"
+                  hint="Dormir no meio de um turno perde o trabalho e o turno já foi pago."
+                >
+                  <RichSelect
+                    value={settings.keepAwake}
+                    onValueChange={(v) => {
+                      setSettings({ keepAwake: v as KeepAwake })
+                      void aplicarKeepAwake(v as KeepAwake)
+                    }}
+                    options={KEEP_AWAKE_OPTIONS}
+                    triggerClassName={SELECT_TRIGGER}
+                    aria-label="Manter o computador acordado"
+                  />
+                </Field>
+              </div>
+              <Note>
+                Só impede o sono por OCIOSIDADE; fechar a tampa continua
+                dormindo. Fora do macOS a preferência fica sem efeito.
+              </Note>
               <BlockTitle hint="Quando o turno para num limite de uso, o app reenvia sozinho depois do reset. Cada tentativa é um run pago.">
                 Auto-revive em rate limit
               </BlockTitle>
