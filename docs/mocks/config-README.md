@@ -11,55 +11,44 @@ Abrir: `open docs/mocks/config-modelos-a.html` (idem `-b` e `config-servicos`).
 
 ---
 
-## 1. Modelos — o diagnóstico antes das opções
+## 1. Modelos — um mock só, `config-modelos.html`
 
-A tela de hoje promete, no próprio subtítulo, *"quais modelos entram no seletor
-dos agents"* — e **nunca lista os modelos do seletor**. Ela mostra só EVENTOS:
+**As duas opções A/B foram apagadas.** Eu tinha mandado duas telas e a pergunta
+"qual você prefere?", o que é empurrar a decisão de design pra você. E as duas
+partiam de uma contagem ERRADA.
 
-- aposentadoria anunciada
-- entraram sozinhos
-- esperando você
-- não passaram
-- catálogo de preços
+### O erro que eu corrigi ao medir
 
-Ou seja: **é o changelog, não o estado.** Você abre pra saber o que tem e sai
-sabendo o que mudou. E para ler isso são três níveis de hierarquia (bloco →
-subgrupo → linha) com três estilos de rótulo diferentes, mais um parágrafo denso
-no rodapé explicando o que o botão faz.
+Eu escrevi que eram "9 modelos, cabem sem abas". São **27**:
 
-O defeito não é feiura: é que **a pergunta do título fica sem resposta**.
+| agent | modelos |
+|---|---|
+| Claude Code | 8 |
+| Codex | 7 |
+| Antigravity | **12** |
 
-### A — "estado primeiro" (`config-modelos-a.html`)
+Com 27, lista chapada vira rolagem — o argumento que eu usei pra recomendar a
+opção A caiu junto com o número.
 
-1. **No seu seletor** — a resposta da pergunta, primeira coisa na tela. Por agent,
-   com preço e o padrão marcado. "Tirar" aparece no hover.
-2. **Precisam de você** — o único bloco com peso visual, e **some quando está
-   vazio**. Bloco que aparece sempre ninguém lê.
-3. **Histórico de mudanças** — o changelog inteiro, `<details>` fechado. Continua
-   auditável ("nada some daqui sem motivo escrito"), mas sai da frente.
+### O diagnóstico (esse continua valendo)
 
-O modelo aposentando aparece **na própria linha dele**, dentro do seletor, não
-num bloco separado no topo — é lá que a informação importa.
+A tela promete no subtítulo *"quais modelos entram no seletor dos agents"* e
+**nunca lista os modelos do seletor**. Mostra só EVENTOS: aposentou, entrou
+sozinho, espera você, não passou. É o changelog, não o estado — você abre pra
+saber o que tem e sai sabendo o que mudou.
 
-### B — "um agent por vez" (`config-modelos-b.html`)
+### A proposta
 
-Uma trilha de agents no topo (Claude / Codex / Antigravity) e a lista daquele
-agent embaixo, com "esperando você" acima de "no seletor".
+O mock mostra **hoje × proposta lado a lado**, com os SEUS dados lidos do banco
+(as 2 propostas pendentes do Codex e as 2 aposentadorias são reais).
 
-**O argumento a favor:** é o mesmo caminho mental do composer, onde você já
-escolhe o agent antes do modelo. E o pino de "precisa de você" na trilha é o
-mesmo vocabulário do ponto no rail.
-
-**O argumento contra:** esconde dois terços da informação atrás de um clique, e
-"quantos modelos eu tenho no total" deixa de ser respondível de relance.
-
-### Minha recomendação
-
-**A**, com uma peça do B: a trilha do B só compensa se a lista crescer muito. Hoje
-são 9 modelos ao todo — cabem na tela sem abas, e A responde a pergunta do
-título sem clique nenhum. Se um dia forem 40, B vira a resposta certa.
-
----
+1. **Precisam de você** primeiro, e é o único bloco com peso. Some quando vazio.
+2. **No seu seletor · 27** — um cartão por agent, fechado, com a contagem no
+   cabeçalho. É a resposta da pergunta do título, e o vocabulário de cartão é o
+   mesmo que você aprovou em Serviços.
+3. **A aposentadoria mora na LINHA do modelo**, não num bloco no topo: é ali que
+   ela muda a sua decisão, ao lado do modelo que você usaria.
+4. **Histórico** fechado no rodapé. Continua auditável, sai da frente.
 
 ## 2. Serviços — aqui eu errei duas vezes, e as duas você apontou
 

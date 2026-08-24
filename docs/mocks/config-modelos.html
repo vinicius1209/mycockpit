@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mock · Configurações ▸ Modelos (hoje × proposta, dados reais)</title>
+<style>
+  :root{
+    color-scheme: light dark;
+    --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
+    --secondary:#f4f4f2; --muted-foreground:#5c6166; --accent:#f1f1ef; --faint:#8a9099;
+    --border:rgba(0,0,0,.09); --brass:#a9742b; --brass-soft:rgba(169,116,43,.12); --brass-fg:#fbf6ee;
+    --warn:#b4791f; --warn-soft:rgba(180,121,31,.13); --ok:#3f7d52; --ok-soft:rgba(63,125,82,.12);
+    --sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --background:#0a0b0d; --rail:#0c0d10; --foreground:#e7e8ea; --card:#141619;
+    --secondary:#191c20; --muted-foreground:#9aa0a7; --accent:#1e2126; --faint:#687078;
+    --border:rgba(255,255,255,.08); --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#1a1306;
+    --warn:#e0a33f; --warn-soft:rgba(224,163,63,.14); --ok:#6cc38a; --ok-soft:rgba(108,195,138,.13);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--background);color:var(--foreground);
+    font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased;padding:78px 20px 48px}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+
+  .mockbar{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;gap:14px;
+    padding:10px 18px;background:color-mix(in srgb,var(--background) 90%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+  .mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);
+    border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:1px 7px}
+  .mockbar button.theme{margin-left:auto;border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--muted-foreground)}
+
+  .lado{display:grid;grid-template-columns:1fr 1fr;gap:22px;max-width:1160px;margin:0 auto;align-items:start}
+  @media (max-width:1000px){.lado{grid-template-columns:1fr}}
+  .col{min-width:0}
+  .colhead{display:flex;align-items:center;gap:9px;margin-bottom:12px;padding-bottom:9px;border-bottom:1px solid var(--border)}
+  .colhead .q{font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;
+    border-radius:4px;padding:2px 7px}
+  .q.hoje{color:var(--muted-foreground);background:var(--secondary)}
+  .q.nova{color:var(--brass);background:var(--brass-soft)}
+  .colhead .t{font-size:12px;color:var(--muted-foreground)}
+
+  h2{font-size:14px;font-weight:600;margin:0}
+  .sub{font-size:12px;color:var(--muted-foreground);margin-top:2px;line-height:1.45}
+  .head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+  .head .act{font-size:12px;color:var(--muted-foreground);white-space:nowrap}
+  .lbl{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin:16px 0 7px}
+  .lbl:first-child{margin-top:0}
+  .lbl.quente{color:var(--warn)}
+
+  /* ── cartão (o vocabulário que você aprovou) ── */
+  .card{border:1px solid var(--border);border-radius:9px;background:color-mix(in srgb,var(--secondary) 45%,transparent);
+    margin-bottom:8px;overflow:hidden}
+  .card .topo{display:flex;align-items:center;gap:9px;padding:9px 11px;width:100%;text-align:left}
+  .card .topo:hover{background:var(--accent)}
+  .card .topo .nome{font-size:13px;font-weight:500}
+  .card .topo .n{font-size:11px;color:var(--faint)}
+  .card .topo .chev{margin-left:auto;color:var(--faint);font-size:10px;transition:transform .15s}
+  .card.open .topo .chev{transform:rotate(90deg)}
+  .card .corpo{display:none;border-top:1px solid var(--border);padding:6px}
+  .card.open .corpo{display:block}
+  .selo{font:600 9.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;border-radius:4px;padding:2px 6px}
+  .selo.ok{color:var(--ok);background:var(--ok-soft)}
+  .selo.warn{color:var(--warn);background:var(--warn-soft)}
+  .selo.brass{color:var(--brass);background:var(--brass-soft)}
+
+  .lin{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:7px}
+  .lin:hover{background:var(--accent)}
+  .lin .id{font:12px var(--mono)}
+  .lin .d{font-size:11px;color:var(--muted-foreground);margin-top:1px}
+  .lin .dir{margin-left:auto;display:flex;align-items:center;gap:7px;flex:0 0 auto}
+  .lin .x{opacity:0;font-size:11px;color:var(--muted-foreground);border:1px solid var(--border);border-radius:6px;padding:2px 8px}
+  .lin:hover .x{opacity:1}
+
+  .decidir{border:1px solid color-mix(in srgb,var(--warn) 42%,var(--border));border-radius:9px;
+    background:color-mix(in srgb,var(--warn) 6%,transparent);overflow:hidden;margin-bottom:8px}
+  .decidir .topo{display:flex;align-items:center;gap:9px;padding:9px 11px}
+  .decidir .topo .nome{font-size:13px;font-weight:500}
+  .decidir .cand{display:flex;align-items:center;gap:9px;padding:8px 11px;border-top:1px solid var(--border)}
+  .decidir .cand .id{font:12px var(--mono)}
+  .decidir .cand .d{font-size:11px;color:var(--muted-foreground);margin-top:1px}
+  .decidir .cand .btns{margin-left:auto;display:flex;gap:6px;flex:0 0 auto}
+  .btn{border:1px solid var(--border);border-radius:7px;padding:4px 11px;font-size:12px;color:var(--muted-foreground)}
+  .btn.primary{background:var(--brass);color:var(--brass-fg);border-color:transparent;font-weight:500}
+
+  details.hist{margin-top:12px;border-top:1px solid var(--border);padding-top:10px}
+  details.hist summary{cursor:pointer;font-size:12px;color:var(--muted-foreground);list-style:none}
+  details.hist summary::-webkit-details-marker{display:none}
+  details.hist summary::before{content:"▸ ";color:var(--faint)}
+  details.hist[open] summary::before{content:"▾ "}
+  .ev{display:flex;gap:9px;align-items:baseline;padding:4px 0;font-size:12px;color:var(--muted-foreground)}
+  .ev .q2{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+  .ev .id{font:11.5px var(--mono);color:var(--foreground)}
+
+  .rodape{margin-top:16px;font-size:12px;color:var(--muted-foreground);line-height:1.5;
+    border-top:1px solid var(--border);padding-top:10px}
+  .rodape b{font-weight:500;color:var(--foreground)}
+  .prosa{font-size:12px;color:var(--muted-foreground);line-height:1.5;margin:8px 0}
+  .mono{font-family:var(--mono);font-size:11.5px}
+  .cinza{border:1px solid var(--border);border-radius:8px;background:var(--secondary);padding:9px 11px;margin-bottom:7px}
+  .cinza .id{font:12px var(--mono)}
+  .cinza .d{font-size:11px;color:var(--muted-foreground);margin-top:2px}
+  .cinza .cod{font:10.5px var(--mono);color:var(--faint);margin-top:6px;line-height:1.45}
+  .nota{max-width:1160px;margin:0 auto 20px;font-size:12px;color:var(--muted-foreground);line-height:1.55}
+  .nota b{color:var(--foreground);font-weight:500}
+</style>
+</head>
+<body>
+<div class="mockbar">
+  <span class="tag">MOCK</span>
+  <span>Configurações ▸ Modelos — <b>o que existe hoje</b> × <b>a proposta</b>, com os seus dados reais</span>
+  <button class="theme" id="t">tema: escuro</button>
+</div>
+
+<div class="nota">
+  <b>Corrigindo o que eu te disse antes:</b> eu tinha afirmado “são 9 modelos, cabem sem abas”.
+  São <b>27</b> — 8 no Claude Code, 7 no Codex e 12 no Antigravity. Com 27, a lista chapada
+  vira rolagem, e a proposta abaixo agrupa por agent em cartões (fechados por padrão).
+  As duas propostas pendentes e as duas aposentadorias são as suas, lidas do banco.
+</div>
+
+<div class="lado">
+  <!-- ─────────────── HOJE ─────────────── -->
+  <div class="col">
+    <div class="colhead"><span class="q hoje">hoje</span><span class="t">o que está no build #275</span></div>
+
+    <div class="head">
+      <div>
+        <h2>Modelos</h2>
+        <div class="sub">Quais modelos entram no seletor dos agents e quanto custam.</div>
+      </div>
+      <button class="act">↻ Verificar agora</button>
+    </div>
+
+    <div class="lbl">Aposentadoria anunciada</div>
+    <div class="prosa">O fornecedor anunciou o fim destes modelos. Eles continuam funcionando e ninguém os tira do seu seletor; a troca é sua.</div>
+    <div class="cinza">
+      <div class="id">gpt-5.4 · Codex · sucessor gpt-5.6-terra</div>
+      <div class="d">O CLI anuncia que este modelo será aposentado e indica gpt-5.6-terra no lugar.</div>
+      <div class="cod">GPT-5.4 will be deprecated soon Codex now uses GPT-5.6 Terra in place of GPT-5.4. Switch to GPT-5.6 Terra to continue.</div>
+    </div>
+    <div class="cinza">
+      <div class="id">gpt-5.4-mini · Codex · sucessor gpt-5.6-luna</div>
+      <div class="d">O CLI anuncia que este modelo será aposentado e indica gpt-5.6-luna no lugar.</div>
+      <div class="cod">GPT-5.4 Mini will be deprecated soon Codex now uses GPT-5.6 Luna in place of GPT-5.4 Mini. Switch to GPT-5.6 Luna to continue.</div>
+    </div>
+
+    <div class="lbl">Modelos novos</div>
+    <div class="prosa">De onde cada modelo do seletor veio, o que ainda espera você e o que não passou. Nada some daqui sem motivo escrito.</div>
+    <div class="lbl quente" style="margin-top:8px">Esperando você</div>
+    <div class="cinza" style="display:flex;align-items:center;gap:10px">
+      <div><div class="id">Grande Contexto · Codex · gpt-5.6</div>
+        <div class="d">Contexto massivo para análises longas, custo mais alto. $5 in · $30 out por 1M tokens</div></div>
+      <div style="margin-left:auto;display:flex;gap:6px;flex:0 0 auto"><button class="btn primary">Aprovar</button><button class="btn">Dispensar</button></div>
+    </div>
+    <div class="cinza" style="display:flex;align-items:center;gap:10px">
+      <div><div class="id">Rápido Econômico · Codex · gpt-realtime-2.1</div>
+        <div class="d">Mais barato, melhor para uso em tempo real. $4 in · $24 out por 1M tokens</div></div>
+      <div style="margin-left:auto;display:flex;gap:6px;flex:0 0 auto"><button class="btn primary">Aprovar</button><button class="btn">Dispensar</button></div>
+    </div>
+    <div class="prosa">Verificar agora pergunta a lista viva de cada CLI, testa até 3 candidatos NOVOS por motor (um token cada, centavos) e confere o preço. Quem passa nos três entra sozinho como OPÇÃO do seletor. O seu modelo padrão nunca muda sozinho, e tirar do seletor é um clique. Sem gesto, a mesma rodada acontece no máximo 1×/dia.</div>
+
+    <div class="lbl">Catálogo de preços</div>
+    <div class="prosa">A tabela de preços que o app usa pra estimar o custo de cada turno.</div>
+
+    <div class="rodape" style="border-color:color-mix(in srgb,var(--warn) 40%,transparent)">
+      <b>O problema:</b> o subtítulo promete “quais modelos entram no seletor” e a tela
+      <b>nunca lista os modelos do seletor</b>. Ela mostra só EVENTOS. Você abre pra saber o
+      que tem e sai sabendo o que mudou.
+    </div>
+  </div>
+
+  <!-- ─────────────── PROPOSTA ─────────────── -->
+  <div class="col">
+    <div class="colhead"><span class="q nova">proposta</span><span class="t">estado primeiro, agrupado em cartões</span></div>
+
+    <div class="head">
+      <div>
+        <h2>Modelos</h2>
+        <div class="sub">Quais modelos você tem no seletor de cada agent, e quanto custam.</div>
+      </div>
+      <button class="act">↻ Verificar agora</button>
+    </div>
+
+    <!-- 1. O ÚNICO bloco com peso. Some quando não há nada esperando. -->
+    <div class="lbl quente">Precisam de você · 2</div>
+    <div class="decidir">
+      <div class="topo"><span class="nome">Codex</span><span class="selo warn">2 novos</span></div>
+      <div class="cand">
+        <div><div class="id">gpt-5.6 · Grande Contexto</div>
+          <div class="d">Contexto massivo para análises longas · $5 / $30 por 1M</div></div>
+        <div class="btns"><button class="btn primary">Adicionar</button><button class="btn">Não</button></div>
+      </div>
+      <div class="cand">
+        <div><div class="id">gpt-realtime-2.1 · Rápido Econômico</div>
+          <div class="d">Mais barato, bom pra tempo real · $4 / $24 por 1M</div></div>
+        <div class="btns"><button class="btn primary">Adicionar</button><button class="btn">Não</button></div>
+      </div>
+    </div>
+
+    <!-- 2. A RESPOSTA DA PERGUNTA DO TÍTULO: um cartão por agent, fechado. -->
+    <div class="lbl">No seu seletor · 27</div>
+
+    <div class="card">
+      <button class="topo" data-c="c"><span class="nome">Claude Code</span><span class="n">8 modelos</span>
+        <span class="chev">▶</span></button>
+      <div class="corpo">
+        <div class="lin"><div><div class="id">default</div><div class="d">Deixa o Claude Code escolher</div></div>
+          <div class="dir"><span class="selo brass">padrão</span><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">claude-opus-5[1m]</div><div class="d">Pin exato · o Opus mais novo, 1M nativo</div></div>
+          <div class="dir"><span class="n">$5 / $25</span><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">claude-sonnet-5[1m]</div><div class="d">Pin exato · 1M nativo, rápido e equilibrado</div></div>
+          <div class="dir"><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">fable</div><div class="d">Topo de linha (~2× o preço do Opus)</div></div>
+          <div class="dir"><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">claude-opus-4-8[1m]</div><div class="d">Pin da geração anterior</div></div>
+          <div class="dir"><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">opus</div><div class="d">Alias · o CLI decide a versão, pode divergir</div></div>
+          <div class="dir"><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">sonnet</div><div class="d">Alias · o CLI decide a versão</div></div>
+          <div class="dir"><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">haiku</div><div class="d">Mais rápido e barato (200k)</div></div>
+          <div class="dir"><button class="x">tirar</button></div></div>
+      </div>
+    </div>
+
+    <div class="card open">
+      <button class="topo" data-c="x"><span class="nome">Codex</span><span class="n">7 modelos</span>
+        <span class="selo warn">2 aposentando</span><span class="chev">▶</span></button>
+      <div class="corpo">
+        <div class="lin"><div><div class="id">default</div><div class="d">Deixa o Codex escolher (hoje Sol)</div></div>
+          <div class="dir"><span class="selo brass">padrão</span><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">gpt-5.6-sol</div><div class="d">Frontier da família 5.6 · o mais capaz</div></div>
+          <div class="dir"><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">gpt-5.6-terra</div><div class="d">Equilíbrio qualidade/custo da 5.6</div></div>
+          <div class="dir"><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">gpt-5.6-luna</div><div class="d">Leve e rápido, alto volume</div></div>
+          <div class="dir"><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">gpt-5.5</div><div class="d">Geração anterior, ainda forte</div></div>
+          <div class="dir"><button class="x">tirar</button></div></div>
+        <!-- A APOSENTADORIA MORA NA LINHA DO MODELO, não num bloco no topo:
+             é aqui que ela muda a sua decisão. -->
+        <div class="lin"><div><div class="id">gpt-5.4</div><div class="d">O Codex vai aposentar. Sucessor: <span class="mono">gpt-5.6-terra</span></div></div>
+          <div class="dir"><span class="selo warn">aposentando</span><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">gpt-5.4-mini</div><div class="d">O Codex vai aposentar. Sucessor: <span class="mono">gpt-5.6-luna</span></div></div>
+          <div class="dir"><span class="selo warn">aposentando</span><button class="x">tirar</button></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <button class="topo" data-c="g"><span class="nome">Antigravity</span><span class="n">12 modelos</span>
+        <span class="chev">▶</span></button>
+      <div class="corpo">
+        <div class="lin"><div><div class="id">default</div><div class="d">Deixa o agy escolher</div></div>
+          <div class="dir"><span class="selo brass">padrão</span><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">gemini-3.6-flash-high</div><div class="d">Mais capaz (Google)</div></div>
+          <div class="dir"><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">gemini-3.1-pro-high</div><div class="d">Mais capaz (Google)</div></div>
+          <div class="dir"><button class="x">tirar</button></div></div>
+        <div class="lin"><div><div class="id">claude-opus-4-6-thinking</div><div class="d">Claude mais capaz, via cota Google</div></div>
+          <div class="dir"><button class="x">tirar</button></div></div>
+        <div class="lin" style="color:var(--faint)"><div><div class="id">… e mais 8</div></div></div>
+      </div>
+    </div>
+
+    <!-- 3. O CHANGELOG sai da frente, sem deixar de ser auditável. -->
+    <details class="hist">
+      <summary>Histórico de mudanças</summary>
+      <div style="padding-top:8px">
+        <div class="ev"><span class="q2">hoje 08:12</span><span>Codex anunciou o fim de <span class="id">gpt-5.4</span> e <span class="id">gpt-5.4-mini</span></span></div>
+        <div class="ev"><span class="q2">hoje 08:12</span><span><span class="id">gpt-5.6</span> e <span class="id">gpt-realtime-2.1</span> passaram no teste e esperam você</span></div>
+      </div>
+    </details>
+
+    <div class="rodape">
+      <b>Verificar agora</b> pergunta a lista viva de cada CLI e testa até 3 candidatos novos
+      por motor, gastando um token em cada. Roda sozinho 1×/dia. O seu modelo padrão nunca
+      muda sem você.
+    </div>
+  </div>
+</div>
+
+<script>
+  const r=document.documentElement,b=document.getElementById("t");
+  r.dataset.theme="dark";
+  b.onclick=()=>{const d=r.dataset.theme==="dark";r.dataset.theme=d?"light":"dark";
+    b.textContent="tema: "+(d?"claro":"escuro")};
+  document.querySelectorAll(".card .topo").forEach(x=>x.onclick=()=>
+    x.parentElement.classList.toggle("open"));
+</script>
+</body>
+</html>
