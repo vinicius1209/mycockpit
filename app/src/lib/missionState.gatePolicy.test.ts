@@ -4,10 +4,11 @@
 // (o motor normaliza; nada quebra).
 import { describe, expect, it } from "vitest"
 import type { MissionRun } from "@/lib/missionTypes"
+import { snapshotMissionPlan } from "@/lib/missionPlans"
 import { parseRunState, runToState } from "./missionState"
 
 function runOf(over: Partial<MissionRun> = {}): MissionRun {
-  return {
+  const run: MissionRun = {
     id: "m1",
     convId: "c1",
     presetName: "Feature completa · personalizado",
@@ -52,6 +53,45 @@ function runOf(over: Partial<MissionRun> = {}): MissionRun {
     startedAt: 1,
     ...over,
   }
+  const snapshot = snapshotMissionPlan({
+    id: "feature",
+    revision: 1,
+    name: run.presetName,
+    phases: run.phases.map((phase) => phase.def),
+    maxCostUsd: run.maxCostUsd,
+    ...(run.gatePolicy ? { gatePolicy: run.gatePolicy } : {}),
+  })
+  run.phases[0] = {
+    ...run.phases[0],
+    visitId: "visit-plan",
+    nodeId: "node-plan",
+    enteredViaEdgeId: null,
+    outcome: "success",
+  }
+  run.phases[1] = {
+    ...run.phases[1],
+    visitId: "visit-build",
+    nodeId: "node-build",
+    enteredViaEdgeId: "edge-node-plan-node-build",
+  }
+  run.execution = {
+    version: 2,
+    planId: snapshot.id,
+    planRevision: snapshot.revision!,
+    planSnapshot: snapshot,
+    transitions: [
+      {
+        edgeId: "edge-node-plan-node-build",
+        sourceNodeId: "node-plan",
+        targetNodeId: "node-build",
+        sourceVisit: 0,
+        targetVisit: 1,
+        outcome: "success",
+        at: 2,
+      },
+    ],
+  }
+  return run
 }
 
 describe("runToState + parseRunState — gatePolicy no preset efetivo", () => {
@@ -62,7 +102,7 @@ describe("runToState + parseRunState — gatePolicy no preset efetivo", () => {
     expect(parsed?.preset.gatePolicy).toBe("nunca")
   })
 
-  it("run sem política: o campo NÃO entra no arquivo (legado limpo = 'agente' implícito)", () => {
+  it("run sem política: o campo não entra no arquivo e implica 'agente'", () => {
     const state = runToState(runOf())
     expect("gatePolicy" in state.preset).toBe(false)
     const parsed = parseRunState(JSON.stringify(state))

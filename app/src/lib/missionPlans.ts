@@ -1,7 +1,5 @@
-// PLANOS DE VOO: contrato puro entre a biblioteca visual e o motor de Mission.
-// O runtime atual é linear; por isso o canvas v1 só produz uma cadeia válida e
-// toda mudança de ordem atualiza `preset.phases`, que o motor já executa. O
-// schema do grafo fica desacoplado do React Flow para poder virar plugin/API.
+// PLANOS DE VOO: contrato puro entre biblioteca, autoria e runtime. `phases`
+// configura os agents; `graph` é a topologia canônica que a missão executa.
 
 import type {
   MissionPhaseDef,
@@ -10,6 +8,7 @@ import type {
   MissionPlanNode,
   MissionPreset,
 } from "@/lib/missionTypes"
+import { validateMissionGraph } from "@/lib/missionGraph"
 
 export const MISSION_PLAN_FORMAT = "mycockpit.flight-plan"
 export const MISSION_PLAN_EXPORT_VERSION = 1
@@ -37,8 +36,8 @@ function defaultPosition(index: number): { x: number; y: number } {
   return { x: START_X + index * X_GAP, y: START_Y }
 }
 
-/** Reconstrói uma cadeia a partir da ordem executável, preservando as posições
- *  de nós já existentes. Usado ao adicionar/remover/reordenar fases. */
+/** Cria a topologia linear inicial. Depois disso, um grafo existente nunca é
+ *  reconstruído implicitamente: branches e retornos pertencem ao usuário. */
 export function graphFromPhases(
   phases: MissionPhaseDef[],
   previous?: MissionPlanGraph | null,
@@ -64,26 +63,53 @@ export function graphFromPhases(
   }
 }
 
-/** Ativa o canvas sem alterar a rota que já funciona hoje. */
+/** Ativa a projeção visual sem destruir a topologia já desenhada. */
 export function enableGraphMode(preset: MissionPreset): MissionPreset {
   return {
     ...preset,
     mode: "graph",
-    graph: graphFromPhases(preset.phases, preset.graph),
+    graph: preset.graph ?? graphFromPhases(preset.phases),
   }
 }
 
-/** Mantém a topologia visual sincronizada com a projeção linear executável. */
+/** Reconcilia configuração e topologia sem reescrever conexões. Em Rota, a
+ *  ordem é a intenção e gera uma cadeia. Em Fluxo visual, novos nós entram
+ *  desconectados e precisam ser ligados explicitamente. */
 export function syncMissionPlan(preset: MissionPreset): MissionPreset {
-  if (missionPlanMode(preset) !== "graph") return preset
+  if (missionPlanMode(preset) === "linear") {
+    return { ...preset, graph: graphFromPhases(preset.phases, preset.graph) }
+  }
+  if (!preset.graph) return { ...preset, graph: graphFromPhases(preset.phases) }
+  const phaseIds = new Set(preset.phases.map((phase) => phase.id))
+  const existingByPhase = new Map(
+    preset.graph.nodes.map((node) => [node.phaseId, node]),
+  )
+  const nodes = preset.phases.map(
+    (phase, index) =>
+      existingByPhase.get(phase.id) ?? {
+        id: nodeId(phase.id),
+        phaseId: phase.id,
+        position: defaultPosition(index),
+      },
+  )
+  const nodeIds = new Set(nodes.map((node) => node.id))
   return {
     ...preset,
-    graph: graphFromPhases(preset.phases, preset.graph),
+    graph: {
+      ...preset.graph,
+      nodes,
+      edges: preset.graph.edges.filter(
+        (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target),
+      ),
+      entryNodeId:
+        preset.graph.entryNodeId && nodeIds.has(preset.graph.entryNodeId)
+          ? preset.graph.entryNodeId
+          : nodes.find((node) => phaseIds.has(node.phaseId))?.id ?? null,
+    },
   }
 }
 
-/** Reordena a rota real. O canvas nunca persiste uma topologia que o motor
- *  linear não consiga executar. */
+/** Reordena a projeção Rota. No Fluxo visual a topologia permanece intacta. */
 export function moveMissionPhase(
   preset: MissionPreset,
   from: number,
@@ -106,7 +132,10 @@ export function moveMissionPhase(
   return {
     ...preset,
     phases,
-    graph: graphFromPhases(phases),
+    graph:
+      missionPlanMode(preset) === "linear"
+        ? graphFromPhases(phases)
+        : preset.graph,
   }
 }
 
@@ -128,8 +157,35 @@ export function updateMissionNodePositions(
   }
 }
 
-/** Diagnóstico defensivo para JSON importado. O editor v1 exige cadeia única,
- *  todos os nós alcançáveis e uma fase correspondente por nó. */
+/** Snapshot profundo que será congelado no lançamento. A topologia passa a
+ *  existir até para planos criados na projeção Rota. */
+export function snapshotMissionPlan(preset: MissionPreset): MissionPreset {
+  const graph = preset.graph ?? graphFromPhases(preset.phases)
+  return {
+    ...preset,
+    revision: preset.revision ?? 1,
+    phases: preset.phases.map((phase) => ({
+      ...phase,
+      ...(phase.entryCriteria
+        ? { entryCriteria: [...phase.entryCriteria] }
+        : {}),
+      ...(phase.exitCriteria ? { exitCriteria: [...phase.exitCriteria] } : {}),
+      ...(phase.appendedInFlight
+        ? { appendedInFlight: { ...phase.appendedInFlight } }
+        : {}),
+    })),
+    graph: {
+      ...graph,
+      nodes: graph.nodes.map((node) => ({
+        ...node,
+        position: { ...node.position },
+      })),
+      edges: graph.edges.map((edge) => ({ ...edge })),
+    },
+  }
+}
+
+/** Diagnóstico defensivo do contrato realmente executável. */
 export function validateMissionPlan(preset: MissionPreset): string[] {
   if (!preset.id.trim()) return ["O plano precisa de um identificador."]
   if (!preset.name.trim()) return ["O plano precisa de um nome."]
@@ -141,55 +197,13 @@ export function validateMissionPlan(preset: MissionPreset): string[] {
     }
     phaseIds.add(phase.id)
   }
-  if (missionPlanMode(preset) === "linear") return []
-  const graph = preset.graph
+  const graph = preset.graph ?? graphFromPhases(preset.phases)
   if (!graph || graph.version !== 1) return ["O canvas do plano está ausente ou incompatível."]
-  if (graph.nodes.length !== preset.phases.length) {
-    return ["O canvas e a lista de fases estão fora de sincronia."]
-  }
-  const nodeIds = new Set<string>()
-  const nodeById = new Map<string, MissionPlanNode>()
-  for (const node of graph.nodes) {
-    if (!node.id || nodeIds.has(node.id) || !phaseIds.has(node.phaseId)) {
-      return ["O canvas contém nós duplicados ou sem fase correspondente."]
-    }
-    nodeIds.add(node.id)
-    nodeById.set(node.id, node)
-  }
-  if (!graph.entryNodeId || !nodeById.has(graph.entryNodeId)) {
-    return ["O canvas precisa de um nó de entrada válido."]
-  }
-  const outgoing = new Map<string, string>()
-  const incoming = new Set<string>()
-  for (const edge of graph.edges) {
-    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
-      return ["O canvas contém uma conexão para um nó inexistente."]
-    }
-    if (edge.condition !== "success") {
-      return ["O motor atual aceita somente conexões de sucesso."]
-    }
-    if (outgoing.has(edge.source) || incoming.has(edge.target)) {
-      return ["O motor atual aceita uma única rota, sem ramificações."]
-    }
-    outgoing.set(edge.source, edge.target)
-    incoming.add(edge.target)
-  }
-  const visited = new Set<string>()
-  let cursor: string | undefined = graph.entryNodeId
-  while (cursor) {
-    if (visited.has(cursor)) return ["Loops ainda não são executáveis neste motor."]
-    visited.add(cursor)
-    cursor = outgoing.get(cursor)
-  }
-  if (visited.size !== graph.nodes.length || graph.edges.length !== graph.nodes.length - 1) {
-    return ["Todos os nós precisam formar uma única rota conectada."]
-  }
-  return []
+  return validateMissionGraph(graph, preset.phases)
 }
 
 export function serializeMissionPlan(preset: MissionPreset): string {
-  const normalized =
-    missionPlanMode(preset) === "graph" ? syncMissionPlan(preset) : preset
+  const normalized = snapshotMissionPlan(preset)
   return JSON.stringify(
     {
       format: MISSION_PLAN_FORMAT,
@@ -292,6 +306,10 @@ export function parseMissionPlan(raw: string):
   if (
     typeof rawPlan.id !== "string" ||
     typeof rawPlan.name !== "string" ||
+    (rawPlan.revision !== undefined &&
+      (typeof rawPlan.revision !== "number" ||
+        !Number.isInteger(rawPlan.revision) ||
+        rawPlan.revision < 1)) ||
     (rawPlan.description !== undefined && typeof rawPlan.description !== "string") ||
     (rawPlan.mode !== undefined && rawPlan.mode !== "linear" && rawPlan.mode !== "graph") ||
     (rawPlan.maxCostUsd !== null &&
@@ -314,9 +332,6 @@ export function parseMissionPlan(raw: string):
     ? { ok: false, error: issues[0] }
     : {
         ok: true,
-        // A projeção `phases` é a execução real na v1. Canonicalizar as
-        // arestas importadas evita um JSON válido desenhar ordem diferente da
-        // que o missionEngine rodaria.
-        plan: missionPlanMode(plan) === "graph" ? syncMissionPlan(plan) : plan,
+        plan: snapshotMissionPlan(plan),
       }
 }

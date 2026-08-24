@@ -1,9 +1,5 @@
-// MH1.1 — LACUNAS do clamp de MAX_REVIEW_LOOPS (mission-hardening-plan):
-// (1) reprovação na re-review da RODADA 2 não pode abrir rodada 3 — o clamp é
-// ESTRUTURAL (nenhuma fase nova apendada, nenhum runPhase extra), não só a
-// ressalva no fim; (2) o clamp precisa valer ATRAVÉS de um crash: missão
-// retomada na re-review final, com as rodadas JÁ esgotadas antes do crash,
-// não pode re-armar o loop e pagar rodadas extras.
+// Contrato v2: o plano desenha o retorno reviewer → executor e o histórico de
+// transições aplica maxTraversals=2. O runtime nunca inventa fases corretivas.
 //
 // Modelado no mission.resume.test.ts (FS fake do run-state, round-trip real
 // runToState→JSON→parseRunState) e no mission.review.test.ts (pareceres no
@@ -11,8 +7,15 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { PhaseResult } from "@/lib/mission"
-import type { MissionPhaseDef, MissionPreset } from "@/lib/missionTypes"
-import type { MissionRunState } from "@/lib/missionState"
+import type {
+  MissionPhaseDef,
+  MissionPreset,
+  MissionTransition,
+} from "@/lib/missionTypes"
+import {
+  RUN_STATE_VERSION,
+  type MissionRunState,
+} from "@/lib/missionState"
 import type { ChatItem } from "@/store/chat"
 
 const h = vi.hoisted(() => ({
@@ -109,8 +112,62 @@ function phaseDef(over: Partial<MissionPhaseDef> = {}): MissionPhaseDef {
   }
 }
 
-function preset(phases: MissionPhaseDef[]): MissionPreset {
-  return { id: "t", name: "Teste", phases, maxCostUsd: null }
+function preset(phases: [MissionPhaseDef, MissionPhaseDef]): MissionPreset {
+  const [executor, reviewer] = phases
+  return {
+    id: "t",
+    revision: 1,
+    name: "Teste",
+    mode: "graph",
+    phases,
+    graph: {
+      version: 1,
+      entryNodeId: `node-${executor.id}`,
+      nodes: phases.map((phase, index) => ({
+        id: `node-${phase.id}`,
+        phaseId: phase.id,
+        position: { x: index * 240, y: 0 },
+      })),
+      edges: [
+        {
+          id: "executor-reviewer",
+          source: `node-${executor.id}`,
+          target: `node-${reviewer.id}`,
+          condition: "success",
+          // Também é interna ao ciclo; três idas cobrem a execução inicial e
+          // as duas correções permitidas.
+          maxTraversals: 3,
+        },
+        {
+          id: "reviewer-executor",
+          source: `node-${reviewer.id}`,
+          target: `node-${executor.id}`,
+          condition: "failure",
+          maxTraversals: 2,
+        },
+      ],
+    },
+    maxCostUsd: null,
+  }
+}
+
+function transition(
+  edgeId: string,
+  sourceNodeId: string,
+  targetNodeId: string,
+  sourceVisit: number,
+  targetVisit: number,
+  outcome: "success" | "failure",
+): MissionTransition {
+  return {
+    edgeId,
+    sourceNodeId,
+    targetNodeId,
+    sourceVisit,
+    targetVisit,
+    outcome,
+    at: targetVisit + 1,
+  }
 }
 
 function textItem(text: string): ChatItem {
@@ -152,14 +209,14 @@ beforeEach(() => {
   useMission.setState({ byConv: {}, interrupted: {} })
 })
 
-describe("MH1.1 · clamp de MAX_REVIEW_LOOPS é estrutural", () => {
-  it("reprovação na re-review da rodada 2 NÃO abre rodada 3: nenhuma fase nova, nenhum runPhase extra", async () => {
+describe("grafo v2 · retorno do reviewer limitado", () => {
+  it("duas voltas são executadas e a terceira reprovação esgota a aresta, sem fase inventada", async () => {
     h.results = [
       ok(0.5), // executor
       reprova("NÃO APROVADO: falta o teste do caso vazio em src/sync.ts."),
-      ok(0.3), // Corrigir (rodada 1)
+      ok(0.3), // executor, visita 3
       reprova("Ainda não está aprovado: o retry segue sem teste de regressão."),
-      ok(0.3), // Corrigir (rodada 2)
+      ok(0.3), // executor, visita 5
       reprova("NÃO APROVADO: o caso de erro de rede continua sem cobertura."),
     ]
     await launch(
@@ -171,68 +228,75 @@ describe("MH1.1 · clamp de MAX_REVIEW_LOOPS é estrutural", () => {
 
     const r = run()
     expect(r.status).toBe("done")
-    // o clamp segurou: exatamente 2 rodadas (4 fases apendadas), nunca uma 3ª
+    // A aresta de retorno foi consumida duas vezes, nunca uma terceira.
     expect(h.calls).toHaveLength(6)
     expect(r.phases.map((p) => p.def.label)).toEqual([
       "Executar",
       "Revisar",
-      "Corrigir (rodada 1)",
-      "Revisar (rodada 1)",
-      "Corrigir (rodada 2)",
-      "Revisar (rodada 2)",
+      "Executar",
+      "Revisar",
+      "Executar",
+      "Revisar",
     ])
-    // e o desfecho é a RESSALVA (não uma rodada extra escondida)
+    expect(
+      r.execution?.transitions.filter(
+        (item) => item.edgeId === "reviewer-executor",
+      ),
+    ).toHaveLength(2)
+    // O snapshot continua sendo o plano que decolou: duas defs, sem append.
+    expect(r.execution?.planSnapshot.phases.map((phase) => phase.label)).toEqual([
+      "Executar",
+      "Revisar",
+    ])
     expect(r.reviewCaveat?.rounds).toBe(2)
   })
 
-  // A PROMESSA do plano (MH1.1 + MH4.2): o clamp limita custo/loop — e um
-  // crash no meio da re-review final não pode "zerar o contador". O run-state
-  // (lib/missionState.ts) persiste o preset EFETIVO (com as fases corretivas
-  // apendadas), mas NÃO persiste reviewLoops/lastReview (store/mission.ts:546
-  // e :554 renascem zerados no launch da retomada) — se este teste ficar
-  // VERMELHO, é essa perda que ele está provando.
-  it("retomada pós-crash na re-review final com rodadas ESGOTADAS: reprovar de novo vira ressalva, nunca rodadas extras", async () => {
+  it("retomada v2 na terceira visita do reviewer conserva as duas travessias já consumidas", async () => {
     const build = phaseDef({ id: "build", label: "Executar" })
     const review = phaseDef({ id: "review", label: "Revisar", persona: "reviewer" })
-    // preset EFETIVO persistido antes do crash: 2 rodadas já apendadas (ids no
-    // formato real `fix-<n>-<missionId.slice(0,6)>`, store/mission.ts:948).
     const mid = "m-crash-1234"
-    const short = mid.slice(0, 6)
-    const fix = (n: number): MissionPhaseDef => ({
-      ...build,
-      id: `fix-${n}-${short}`,
-      label: `Corrigir (rodada ${n})`,
-      instructions: "O reviewer NÃO aprovou. Corrija exatamente estes pontos…",
-    })
-    const rereview = (n: number): MissionPhaseDef => ({
-      ...review,
-      id: `rereview-${n}-${short}`,
-      label: `Revisar (rodada ${n})`,
-    })
+    const snapshot = preset([build, review])
+    const transitions: MissionTransition[] = [
+      transition("executor-reviewer", "node-build", "node-review", 0, 1, "success"),
+      transition("reviewer-executor", "node-review", "node-build", 1, 2, "failure"),
+      transition("executor-reviewer", "node-build", "node-review", 2, 3, "success"),
+      transition("reviewer-executor", "node-review", "node-build", 3, 4, "failure"),
+      transition("executor-reviewer", "node-build", "node-review", 4, 5, "success"),
+    ]
+    const visits: MissionRunState["phases"] = [
+      { def: build, visitId: `${mid}:visit:0`, nodeId: "node-build", enteredViaEdgeId: null, outcome: "success", status: "done", costUsd: 0.5 },
+      { def: review, visitId: `${mid}:visit:1`, nodeId: "node-review", enteredViaEdgeId: "executor-reviewer", outcome: "failure", status: "done", costUsd: 0.1 },
+      { def: build, visitId: `${mid}:visit:2`, nodeId: "node-build", enteredViaEdgeId: "reviewer-executor", outcome: "success", status: "done", costUsd: 0.3 },
+      { def: review, visitId: `${mid}:visit:3`, nodeId: "node-review", enteredViaEdgeId: "executor-reviewer", outcome: "failure", status: "done", costUsd: 0.1 },
+      { def: build, visitId: `${mid}:visit:4`, nodeId: "node-build", enteredViaEdgeId: "reviewer-executor", outcome: "success", status: "done", costUsd: 0.3 },
+      { def: review, visitId: `${mid}:visit:5`, nodeId: "node-review", enteredViaEdgeId: "executor-reviewer", status: "running", costUsd: 0 },
+    ]
     const state: MissionRunState = {
-      version: 1,
+      version: RUN_STATE_VERSION,
       missionId: mid,
       dir: ".mycockpit/missions/m-crash",
       convId: CONV,
       task: "tarefa",
-      preset: {
-        id: "t",
-        name: "Teste",
-        phases: [build, review, fix(1), rereview(1), fix(2), rereview(2)],
-        maxCostUsd: null,
+      preset: snapshot,
+      execution: {
+        version: 2,
+        planId: snapshot.id,
+        planRevision: snapshot.revision ?? 1,
+        planSnapshot: snapshot,
+        transitions,
       },
-      current: 5, // crash DURANTE a re-review da rodada 2 (a última possível)
-      phases: [
-        { status: "done", costUsd: 0.5 },
-        { status: "done", costUsd: 0.1 },
-        { status: "done", costUsd: 0.3 },
-        { status: "done", costUsd: 0.1 },
-        { status: "done", costUsd: 0.3 },
-        { status: "running", costUsd: 0 },
-      ],
+      current: 5,
+      phases: visits,
       costTotal: 1.3,
       maxCostUsd: null,
       gateDecisions: null,
+      gate: null,
+      recovery: null,
+      reviewLoops: 2,
+      lastReview: {
+        approved: false,
+        feedback: "Ainda não está aprovado: o retry segue sem teste de regressão.",
+      },
       status: "running",
       updatedAt: 123,
     }
@@ -240,18 +304,18 @@ describe("MH1.1 · clamp de MAX_REVIEW_LOOPS é estrutural", () => {
     await useMission.getState().detectInterrupted(CONV, CWD)
     expect(useMission.getState().interrupted[CONV]).toBeDefined()
 
-    // a re-review re-roda (comportamento documentado) e reprova DE NOVO.
+    // A visita corrente caiu durante o CLI e re-roda; nenhuma visita anterior
+    // nem transição já persistida é paga novamente.
     h.results = [
       reprova("NÃO APROVADO: o retry segue engolindo a exceção em src/sync.ts."),
     ]
     useMission.getState().resumeInterrupted(CONV, "proj1", CWD, "padrao")
     await waitFor(() => run()?.status === "done")
 
-    // rodadas esgotadas ANTES do crash seguem esgotadas: só a re-review
-    // re-rodou — sem "Corrigir (rodada 1)" duplicado, sem custo extra de loop.
     expect(h.calls).toHaveLength(1)
     expect(run().phases).toHaveLength(6)
-    // e o desfecho é HONESTO: done com a ressalva carregando o parecer.
+    expect(run().execution?.transitions).toEqual(transitions)
+    expect(run().execution?.planSnapshot.phases).toHaveLength(2)
     expect(run().reviewCaveat).toBeTruthy()
     expect(run().reviewCaveat?.feedback).toContain("NÃO APROVADO")
   })

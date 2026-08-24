@@ -33,13 +33,14 @@
 >   casca fina que executa efeitos (runPhase/persist/notices/notify/ledger) sob
 >   comando do motor. Pré-requisito do M3 (paralelismo).
 >
-> **Atualização (ago/2026) — Planos de voo.** `MissionPreset` passa a ser o
-> template reutilizável chamado **Plano de voo**; `MissionRun` continua sendo a
-> execução concreta. Presets legados seguem lineares sem migração. O canvas v1
-> persiste um `MissionPlanGraph` versionado, permite organizar e reordenar nós,
-> importar/exportar JSON e configurar critérios de entrada/saída. A topologia
-> executável ainda é uma cadeia única — o limite e a evolução estão descritos
-> em [`mission-flight-plans.md`](./mission-flight-plans.md).
+> **Atualização (24 ago 2026) — Planos de voo executáveis.** `MissionPreset` é
+> o template reutilizável e `MissionRun` a execução concreta. A Missão congela
+> o grafo escolhido no lançamento e percorre branches `success`/`failure`,
+> fallback `always` e ciclos limitados. Rota e Fluxo visual são duas projeções
+> de autoria do mesmo contrato. As seções v1 abaixo permanecem como histórico;
+> a arquitetura vigente está em
+> [`mission-flight-plans.md`](./mission-flight-plans.md) e
+> [`mission-graph-engine-v2.md`](./mission-graph-engine-v2.md).
 
 ## TL;DR (a recomendação)
 

@@ -1,6 +1,5 @@
-// CONTRATO do modo Mission (docs/mission-mode.md): time configurável
-// papel→agent/modelo rodando como pipeline SEQUENCIAL dentro do Linear.
-// Feature independente do SDD (decisão de produto 2026-07-12).
+// CONTRATO de Missões e Planos de voo: fases configuram os agents; o grafo
+// determina a rota serial executada. Feature independente do SDD.
 // Este arquivo é a fonte de verdade dos tipos — UI, store e settings
 // importam daqui; NÃO importar componentes/stores aqui (sem ciclos).
 // (só `import type` — apagados na compilação, sem ciclo em runtime.)
@@ -12,8 +11,7 @@ import { modeFromAutonomy, type PermissionVocab } from "@/lib/sessionMode"
 
 export type MissionPersona = "planner" | "executor" | "reviewer"
 
-/** Forma de autoria do plano. Ausente = "linear" para manter todos os
- *  presets persistidos antes do canvas executáveis sem migração. */
+/** Projeção de autoria preferida. O runtime sempre executa o mesmo grafo. */
 export type MissionPlanMode = "linear" | "graph"
 
 /** O canvas persiste somente coordenadas e topologia. A configuração do agent
@@ -24,9 +22,7 @@ export interface MissionPlanNode {
   position: { x: number; y: number }
 }
 
-/** Condições já fazem parte do contrato exportável. O executor v1 cria apenas
- *  arestas `success` numa linha única; failure/always e limites de travessia
- *  ficam reservados para ramificações e loops do motor de grafo. */
+/** Resultado funcional que habilita uma conexão. `always` é fallback. */
 export type MissionPlanEdgeCondition = "success" | "failure" | "always"
 
 export interface MissionPlanEdge {
@@ -35,7 +31,7 @@ export interface MissionPlanEdge {
   target: string
   condition: MissionPlanEdgeCondition
   label?: string
-  /** Obrigatório no futuro quando uma aresta fechar um ciclo. */
+  /** Obrigatório em toda aresta interna de um ciclo. */
   maxTraversals?: number
 }
 
@@ -45,6 +41,32 @@ export interface MissionPlanGraph {
   entryNodeId: string | null
   nodes: MissionPlanNode[]
   edges: MissionPlanEdge[]
+}
+
+/** Resultado funcional de uma visita. Falhas de infraestrutura não entram
+ *  aqui: elas pausam em recovery e reexecutam a mesma visita. */
+export type MissionNodeOutcome = "success" | "failure"
+
+/** Aresta efetivamente consumida pelo runtime. Índices de visita são
+ *  monotônicos e permanecem únicos mesmo quando um ciclo volta ao mesmo nó. */
+export interface MissionTransition {
+  edgeId: string
+  sourceNodeId: string
+  targetNodeId: string
+  sourceVisit: number
+  targetVisit: number
+  outcome: MissionNodeOutcome
+  at: number
+}
+
+/** Snapshot e trilha do grafo que esta missão executa. Toda missão lançada
+ *  pelo runtime v2 preenche este bloco; a UI nunca relê o plano das Settings. */
+export interface MissionGraphExecution {
+  version: 2
+  planId: string
+  planRevision: number
+  planSnapshot: MissionPreset
+  transitions: MissionTransition[]
 }
 
 /** Definição de UMA fase do pipeline (parte do preset, editável). */
@@ -63,17 +85,14 @@ export interface MissionPhaseDef {
   effort: string | null
   /** Instrução específica da fase (opcional; soma ao template da persona). */
   instructions?: string
-  /** Condições que o agent deve conferir antes de começar. No motor linear v1
-   *  são guardrails semânticos injetados no prompt; não mudam a topologia. */
+  /** Guardrails semânticos injetados no prompt; não mudam a topologia. */
   entryCriteria?: string[]
   /** Checklist explícito que a fase precisa satisfazer antes do handoff. */
   exitCriteria?: string[]
   /** Tentativas máximas da fase (1 = sem retry). */
   maxRetries: number
-  /** PROCEDÊNCIA: esta fase NÃO estava no plano que decolou — o motor a
-   *  acrescentou durante o voo (rodada de correção do revisor, `round`, no
-   *  instante `at`). Ausente = fase do plano lançado. Viaja no def → sobrevive
-   *  ao run-state e à retomada sem migração (mesma regra do `autonomy`). */
+  /** Marcador histórico de runs criados antes do grafo v2. O runtime atual
+   *  nunca acrescenta fases durante o voo. */
   appendedInFlight?: { round: number; at: number }
   /** Autonomia DESTA fase (por membro do time). "auto" = roda sem pedir
    *  permissão, com o freio de segurança do CLI (claude classificador, codex
@@ -168,13 +187,14 @@ export type MissionGatePolicy = "agente" | "sempre-apos-planejar" | "nunca"
 /** Um time salvo (global nas Settings; ad-hoc no launch). */
 export interface MissionPreset {
   id: string
+  /** Incrementada ao salvar mudanças estruturais. Ausente é normalizado para 1. */
+  revision?: number
   name: string
   /** Descrição curta exibida na biblioteca e transportada no export. */
   description?: string
-  /** Editor preferido deste template. Ausente = linear (retrocompatível). */
+  /** Editor preferido deste template. Ausente é normalizado como Rota. */
   mode?: MissionPlanMode
-  /** Representação visual/versionada. `phases` segue sendo a projeção
-   *  executável enquanto o motor aceita apenas uma rota linear. */
+  /** Topologia canônica executada; `phases` configura os nós referenciados. */
   graph?: MissionPlanGraph
   phases: MissionPhaseDef[]
   /** Teto de custo da missão em US$ (null = sem teto). RISCO Nº1 do design. */
@@ -194,6 +214,14 @@ export type MissionPhaseStatus =
 /** Estado de execução de UMA fase (runtime, não persiste no preset). */
 export interface MissionPhaseRun {
   def: MissionPhaseDef
+  /** Identidade da visita. O mesmo nodeId pode aparecer mais de uma vez. */
+  visitId?: string
+  /** Nó do snapshot que originou esta visita. */
+  nodeId?: string
+  /** Aresta usada para entrar nesta visita; null na entrada do plano. */
+  enteredViaEdgeId?: string | null
+  /** Resultado funcional que decidiu a próxima transição. */
+  outcome?: MissionNodeOutcome
   status: MissionPhaseStatus
   /** Tentativa corrente (1-based; > 1 = houve retry). */
   attempt: number
@@ -321,110 +349,8 @@ export interface MissionRun {
   /** MH3.3 — política de gate do preset EFETIVO do launch (viaja no run pra
    *  o run-state serializar e a retomada preservar). Ausente = "agente". */
   gatePolicy?: MissionGatePolicy
+  /** Contrato executável congelado no lançamento e histórico de transições. */
+  execution?: MissionGraphExecution
 }
 
-/** Presets de fábrica (espelham categorias do OMO, sem keyword-magic). */
-export const DEFAULT_MISSION_PRESETS: MissionPreset[] = [
-  {
-    id: "feature",
-    name: "Feature completa",
-    maxCostUsd: 25,
-    phases: [
-      {
-        id: "plan",
-        label: "Planejar",
-        persona: "planner",
-        agent: "claude-code",
-        model: "opus",
-        effort: null,
-        maxRetries: 1,
-      },
-      {
-        id: "build",
-        label: "Executar",
-        persona: "executor",
-        agent: "codex",
-        model: null,
-        effort: null,
-        maxRetries: 2,
-      },
-      {
-        id: "review",
-        label: "Revisar",
-        persona: "reviewer",
-        agent: "claude-code",
-        model: "opus",
-        effort: null,
-        maxRetries: 1,
-      },
-    ],
-  },
-  {
-    id: "ui-first",
-    name: "UI-first",
-    maxCostUsd: 15,
-    phases: [
-      {
-        id: "plan",
-        label: "Planejar",
-        persona: "planner",
-        agent: "claude-code",
-        model: "sonnet",
-        effort: null,
-        maxRetries: 1,
-      },
-      {
-        id: "ui",
-        label: "Executar UI",
-        persona: "executor",
-        agent: "agy",
-        model: null,
-        effort: null,
-        maxRetries: 2,
-      },
-      {
-        id: "review",
-        label: "Revisar",
-        persona: "reviewer",
-        agent: "claude-code",
-        model: "sonnet",
-        effort: null,
-        maxRetries: 1,
-      },
-    ],
-  },
-  {
-    id: "barato",
-    name: "Econômico",
-    maxCostUsd: 5,
-    phases: [
-      {
-        id: "plan",
-        label: "Planejar",
-        persona: "planner",
-        agent: "claude-code",
-        model: "sonnet",
-        effort: null,
-        maxRetries: 1,
-      },
-      {
-        id: "build",
-        label: "Executar",
-        persona: "executor",
-        agent: "codex",
-        model: null,
-        effort: null,
-        maxRetries: 1,
-      },
-      {
-        id: "review",
-        label: "Revisar",
-        persona: "reviewer",
-        agent: "claude-code",
-        model: "sonnet",
-        effort: null,
-        maxRetries: 1,
-      },
-    ],
-  },
-]
+export { DEFAULT_MISSION_PRESETS } from "@/lib/missionDefaults"

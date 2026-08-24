@@ -1,8 +1,5 @@
-// A correção do revisor entra LOGO DEPOIS da fase que reprovou, não no fim da
-// fila. O defeito só aparece com o revisor NO MEIO do plano (nos três presets
-// de fábrica ele é a última fase, e aí as duas posições coincidem): com o
-// apêndice no fim, as fases seguintes rodavam em cima de um trabalho JÁ
-// reprovado e a correção chegava depois de tudo.
+// Contrato v2: com o reviewer no meio, `failure` retorna ao executor e somente
+// `success` libera a cauda. A ordem vem do grafo congelado, sem fases apendadas.
 //
 // Aqui a prova é FIM-A-FIM (a suíte pura mora em lib/missionEngine.test.ts):
 // a ORDEM REAL de execução das fases, a coerência do índice `current` e do
@@ -13,7 +10,11 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { PhaseResult } from "@/lib/mission"
-import type { MissionPhaseDef, MissionPreset } from "@/lib/missionTypes"
+import type {
+  MissionPhaseDef,
+  MissionPlanEdge,
+  MissionPreset,
+} from "@/lib/missionTypes"
 import type { MissionRunState } from "@/lib/missionState"
 import type { ChatItem } from "@/store/chat"
 
@@ -111,8 +112,28 @@ function phaseDef(over: Partial<MissionPhaseDef> = {}): MissionPhaseDef {
   }
 }
 
-function preset(phases: MissionPhaseDef[]): MissionPreset {
-  return { id: "t", name: "Teste", phases, maxCostUsd: null }
+function preset(
+  phases: MissionPhaseDef[],
+  edges: MissionPlanEdge[],
+): MissionPreset {
+  return {
+    id: "t",
+    revision: 1,
+    name: "Teste",
+    mode: "graph",
+    phases,
+    graph: {
+      version: 1,
+      entryNodeId: `node-${phases[0].id}`,
+      nodes: phases.map((phase, index) => ({
+        id: `node-${phase.id}`,
+        phaseId: phase.id,
+        position: { x: index * 240, y: 0 },
+      })),
+      edges,
+    },
+    maxCostUsd: null,
+  }
 }
 
 function textItem(text: string): ChatItem {
@@ -133,12 +154,67 @@ function aprova(texto: string): PhaseResult {
 
 /** Plano de 4 fases com o revisor NO MEIO (fase 2 de 4). */
 function planoComRevisorNoMeio(): MissionPreset {
-  return preset([
-    phaseDef({ id: "build", label: "Migrar o schema" }),
-    phaseDef({ id: "review", label: "Revisar o schema", persona: "reviewer" }),
-    phaseDef({ id: "port", label: "Portar o checkout" }),
-    phaseDef({ id: "hist", label: "Portar o histórico" }),
-  ])
+  return preset(
+    [
+      phaseDef({ id: "build", label: "Migrar o schema" }),
+      phaseDef({ id: "review", label: "Revisar o schema", persona: "reviewer" }),
+      phaseDef({ id: "port", label: "Portar o checkout" }),
+      phaseDef({ id: "hist", label: "Portar o histórico" }),
+    ],
+    [
+      {
+        id: "build-review",
+        source: "node-build",
+        target: "node-review",
+        condition: "success",
+        maxTraversals: 3,
+      },
+      {
+        id: "review-build",
+        source: "node-review",
+        target: "node-build",
+        condition: "failure",
+        maxTraversals: 2,
+      },
+      {
+        id: "review-port",
+        source: "node-review",
+        target: "node-port",
+        condition: "success",
+      },
+      {
+        id: "port-hist",
+        source: "node-port",
+        target: "node-hist",
+        condition: "success",
+      },
+    ],
+  )
+}
+
+function planoComRevisorNoFim(): MissionPreset {
+  return preset(
+    [
+      phaseDef({ id: "build", label: "Executar" }),
+      phaseDef({ id: "review", label: "Revisar", persona: "reviewer" }),
+    ],
+    [
+      {
+        id: "build-review",
+        source: "node-build",
+        target: "node-review",
+        condition: "success",
+        maxTraversals: 3,
+      },
+      {
+        id: "review-build",
+        source: "node-review",
+        target: "node-build",
+        condition: "failure",
+        maxTraversals: 2,
+      },
+    ],
+  )
 }
 
 function launch(pre: MissionPreset): Promise<void> {
@@ -164,12 +240,12 @@ beforeEach(() => {
   useMission.setState({ byConv: {}, interrupted: {} })
 })
 
-describe("posição da correção · revisor no MEIO do plano", () => {
-  it("a correção roda ANTES das fases seguintes do plano (elas não rodam mais sobre o que foi reprovado)", async () => {
+describe("rota explícita · revisor no MEIO do plano", () => {
+  it("failure retorna ao executor antes da cauda; success libera as fases seguintes", async () => {
     h.results = [
       ok(0.5), // 0 Migrar o schema
       reprova("NÃO APROVADO: a migração perde os contratos vigentes."),
-      ok(0.3), // Corrigir (rodada 1)
+      ok(0.3), // Migrar o schema, segunda visita
       aprova("APROVADO. A migração preserva os contratos."),
       ok(0.2), // Portar o checkout
       ok(0.2), // Portar o histórico
@@ -181,22 +257,22 @@ describe("posição da correção · revisor no MEIO do plano", () => {
     expect(r.phases.map((p) => p.def.label)).toEqual([
       "Migrar o schema",
       "Revisar o schema",
-      "Corrigir (rodada 1)",
-      "Revisar (rodada 1)",
+      "Migrar o schema",
+      "Revisar o schema",
       "Portar o checkout",
       "Portar o histórico",
     ])
     // a ORDEM REAL de execução segue os índices do plano já corrigido: as duas
     // fases da cauda rodam por ÚLTIMO, depois da correção aprovada.
     expect(ordemExecutada()).toEqual([0, 1, 2, 3, 4, 5])
-    // a fase corretiva levou o parecer como instrução (é ela que corrige)
+    // A segunda visita do executor recebe o parecer pelo handoff/fallback.
     expect(h.calls[2].prompt).toContain("perde os contratos vigentes")
     // desfecho limpo: a última revisão aprovou
     expect(r.reviewCaveat ?? null).toBeNull()
     expect(r.current).toBe(6)
   })
 
-  it("o run persistido acompanha a inserção no meio: preset efetivo, status por fase e `current` continuam paralelos", async () => {
+  it("o run-state mantém o snapshot original e um ledger cronológico de visitas", async () => {
     h.results = [
       ok(0.5),
       reprova("NÃO APROVADO: a migração perde os contratos vigentes."),
@@ -208,22 +284,40 @@ describe("posição da correção · revisor no MEIO do plano", () => {
     await launch(planoComRevisorNoMeio())
 
     const st = parseRunState(h.disk.get(CWD)!)!
-    expect(st.preset.phases.map((p) => p.label)).toEqual([
+    expect(st.execution?.planSnapshot.phases.map((p) => p.label)).toEqual([
       "Migrar o schema",
       "Revisar o schema",
-      "Corrigir (rodada 1)",
-      "Revisar (rodada 1)",
       "Portar o checkout",
       "Portar o histórico",
     ])
-    // uma linha de status por fase, na MESMA ordem, todas concluídas
+    expect(st.preset.phases.map((p) => p.label)).toEqual([
+      "Migrar o schema",
+      "Revisar o schema",
+      "Portar o checkout",
+      "Portar o histórico",
+    ])
+    expect(st.phases.map((visit) => visit.def?.label)).toEqual([
+      "Migrar o schema",
+      "Revisar o schema",
+      "Migrar o schema",
+      "Revisar o schema",
+      "Portar o checkout",
+      "Portar o histórico",
+    ])
     expect(st.phases).toHaveLength(6)
     expect(st.phases.every((p) => p.status === "done")).toBe(true)
     expect(st.current).toBe(6)
     expect(st.reviewLoops).toBe(1)
+    expect(st.execution?.transitions.map((item) => item.edgeId)).toEqual([
+      "build-review",
+      "review-build",
+      "build-review",
+      "review-port",
+      "port-hist",
+    ])
   })
 
-  it("retomada de um plano que cresceu no meio: continua na fase corrente do arquivo, sem re-rodar as anteriores nem reordenar o plano", async () => {
+  it("retoma a visita de cauda já criada pela transição, sem repetir o reviewer", async () => {
     h.results = [
       ok(0.5),
       reprova("NÃO APROVADO: a migração perde os contratos vigentes."),
@@ -231,20 +325,27 @@ describe("posição da correção · revisor no MEIO do plano", () => {
       aprova("APROVADO. Os contratos seguem válidos."),
     ]
     await launch(planoComRevisorNoMeio())
-    // a missão terminou; o disco guarda o plano de 6 fases. Forjamos o crash
-    // logo depois da correção aprovada (fase 4 = Portar o checkout, running).
+    // Forjamos o crash depois de review-port pousar com a visita 4, mas antes de
+    // o CLI de Portar o checkout concluir. A transição não pode ser repetida.
     const feito = parseRunState(h.disk.get(CWD)!)!
     const crash: MissionRunState = {
       ...feito,
       current: 4,
-      phases: [
-        { status: "done", costUsd: 0.5 },
-        { status: "done", costUsd: 0.1 },
-        { status: "done", costUsd: 0.3 },
-        { status: "done", costUsd: 0.1 },
-        { status: "running", costUsd: 0 },
-        { status: "queued", costUsd: 0 },
-      ],
+      execution: {
+        ...feito.execution!,
+        transitions: feito.execution!.transitions.slice(0, 4),
+      },
+      phases: feito.phases.slice(0, 5).map((visit, index) =>
+        index === 4
+          ? {
+              ...visit,
+              status: "running" as const,
+              outcome: undefined,
+              costUsd: 0,
+              endedAt: undefined,
+            }
+          : visit,
+      ),
       costTotal: 1,
       status: "running",
     }
@@ -258,38 +359,38 @@ describe("posição da correção · revisor no MEIO do plano", () => {
     useMission.getState().resumeInterrupted(CONV, "proj1", CWD, "padrao")
     await vi.waitFor(() => expect(run()?.status).toBe("done"))
 
-    // só as duas fases que faltavam rodaram, e nos índices que já tinham
+    // Só a visita corrente e a sucessora rodam; o reviewer já transicionado não.
     expect(ordemExecutada()).toEqual([4, 5])
     expect(run().phases.map((p) => p.def.label)).toEqual([
       "Migrar o schema",
       "Revisar o schema",
-      "Corrigir (rodada 1)",
-      "Revisar (rodada 1)",
+      "Migrar o schema",
+      "Revisar o schema",
       "Portar o checkout",
       "Portar o histórico",
     ])
+    expect(
+      run().execution?.transitions.filter(
+        (item) => item.edgeId === "review-port",
+      ),
+    ).toHaveLength(1)
   })
 })
 
-describe("posição da correção · revisor na ÚLTIMA fase", () => {
-  it("plano de fábrica (revisor por último): a correção continua no fim, porque ali o fim É logo depois do revisor", async () => {
+describe("rota explícita · revisor na ÚLTIMA fase", () => {
+  it("o retorno repete as defs originais e a aprovação termina a missão", async () => {
     h.results = [
       ok(0.5), // Executar
       reprova("NÃO APROVADO: o handler engole a exceção em src/sync.ts."),
       ok(0.3), // Corrigir (rodada 1)
       aprova("APROVADO. O handler propaga a exceção."),
     ]
-    await launch(
-      preset([
-        phaseDef({ id: "build", label: "Executar" }),
-        phaseDef({ id: "review", label: "Revisar", persona: "reviewer" }),
-      ]),
-    )
+    await launch(planoComRevisorNoFim())
     expect(run().phases.map((p) => p.def.label)).toEqual([
       "Executar",
       "Revisar",
-      "Corrigir (rodada 1)",
-      "Revisar (rodada 1)",
+      "Executar",
+      "Revisar",
     ])
     expect(ordemExecutada()).toEqual([0, 1, 2, 3])
   })

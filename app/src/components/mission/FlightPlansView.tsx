@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input"
 import { RichSelect } from "@/components/ui/RichSelect"
 import { Textarea } from "@/components/ui/textarea"
 import { MissionPlanCanvas } from "@/components/mission/MissionPlanCanvas"
+import { LinearRouteEditor } from "@/components/mission/LinearRouteEditor"
 import { useApp } from "@/store/app"
 import { LEAGUE_DESTINATIONS, agentEfforts, agentModels } from "@/lib/agents"
 import { confirm } from "@/lib/confirm"
@@ -158,8 +159,10 @@ export function FlightPlansView() {
   const setSettings = useApp((state) => state.setSettings)
   const setFlightPlansOpen = useApp((state) => state.setFlightPlansOpen)
   const importInput = useRef<HTMLInputElement>(null)
-  const [selectedPlanId, setSelectedPlanId] = useState(presets[0]?.id ?? null)
-  const [selectedPhaseId, setSelectedPhaseId] = useState(
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(
+    presets[0]?.id ?? null,
+  )
+  const [selectedPhaseId, setSelectedPhaseId] = useState<string | null>(
     presets[0]?.phases[0]?.id ?? null,
   )
 
@@ -188,8 +191,18 @@ export function FlightPlansView() {
 
   function patchPlan(next: MissionPreset) {
     if (selectedPlanIndex < 0) return
+    const current = presets[selectedPlanIndex]
+    const versioned = {
+      ...next,
+      revision:
+        (next.revision ?? 0) > (current.revision ?? 1)
+          ? next.revision
+          : (current.revision ?? 1) + 1,
+    }
     savePresets(
-      presets.map((plan, index) => (index === selectedPlanIndex ? next : plan)),
+      presets.map((plan, index) =>
+        index === selectedPlanIndex ? versioned : plan,
+      ),
     )
   }
 
@@ -384,7 +397,7 @@ export function FlightPlansView() {
                           {plan.name || "Plano sem nome"}
                         </span>
                         <span className="mt-1 block truncate font-mono text-[11px] text-muted-foreground">
-                          {plan.phases.length} trechos · {planMode === "graph" ? "canvas" : "linear"}
+                          {plan.phases.length} trechos · {planMode === "graph" ? "fluxo" : "rota"}
                         </span>
                       </span>
                     </div>
@@ -401,11 +414,11 @@ export function FlightPlansView() {
           <div className="shrink-0 space-y-1.5 border-t p-2">
             <Button variant="secondary" size="sm" className="w-full justify-start" onClick={() => addPlan("graph")}>
               <Route className="size-3.5 text-brass" />
-              Novo no canvas
+              Novo fluxo visual
             </Button>
             <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground" onClick={() => addPlan("linear")}>
               <ListTree className="size-3.5" />
-              Novo linear
+              Nova rota
             </Button>
           </div>
         </aside>
@@ -439,7 +452,7 @@ export function FlightPlansView() {
                     )}
                   >
                     <ListTree className="size-3.5" />
-                    Linear
+                    Rota
                   </button>
                   <button
                     type="button"
@@ -453,7 +466,7 @@ export function FlightPlansView() {
                     )}
                   >
                     <Route className="size-3.5" />
-                    Canvas
+                    Fluxo visual
                   </button>
                 </div>
                 <Button variant="outline" size="sm" onClick={addPhase}>
@@ -462,15 +475,25 @@ export function FlightPlansView() {
                 </Button>
               </div>
 
-              <div className="min-h-0 flex-1 p-3">
-                <MissionPlanCanvas
-                  preset={selectedPlan}
-                  onChange={patchPlan}
-                  selectedPhaseId={selectedPhaseId}
-                  onSelectPhase={setSelectedPhaseId}
-                  interactive={mode === "graph"}
-                  className="h-full rounded-xl"
-                />
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                {mode === "linear" ? (
+                  <LinearRouteEditor
+                    preset={selectedPlan}
+                    onChange={patchPlan}
+                    selectedPhaseId={selectedPhaseId}
+                    onSelectPhase={setSelectedPhaseId}
+                    className="mx-auto max-w-3xl px-2 py-3"
+                  />
+                ) : (
+                  <MissionPlanCanvas
+                    preset={selectedPlan}
+                    onChange={patchPlan}
+                    selectedPhaseId={selectedPhaseId}
+                    onSelectPhase={setSelectedPhaseId}
+                    interactive
+                    className="h-full min-h-[34rem] rounded-xl"
+                  />
+                )}
               </div>
 
               <div className="flex h-10 shrink-0 items-center justify-between gap-3 border-t px-4">
@@ -481,7 +504,7 @@ export function FlightPlansView() {
                     <AlertTriangle className="size-3.5 shrink-0 text-st-warning" />
                   )}
                   <span className="truncate text-[11px] text-muted-foreground">
-                    {errors[0] ?? "Rota válida para o motor linear de Mission."}
+                    {errors[0] ?? "Este mapa está pronto para ser executado por uma Missão."}
                   </span>
                 </div>
                 <span className={cn("font-mono text-[11px] uppercase", missionEnabled ? "text-st-success" : "text-muted-foreground")}>
@@ -655,11 +678,11 @@ export function FlightPlansView() {
               <Route className="mx-auto size-8 text-brass/60" />
               <h2 className="mt-4 text-[14px] font-medium">Desenhe sua primeira rota</h2>
               <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-                Comece no canvas para montar um time visual ou use o modo linear para uma sequência simples.
+                Comece no Fluxo visual para desenhar decisões ou use Rota para uma sequência simples.
               </p>
               <div className="mt-4 flex justify-center gap-2">
-                <Button size="sm" onClick={() => addPlan("graph")}><Route className="size-3.5" />Canvas</Button>
-                <Button size="sm" variant="outline" onClick={() => addPlan("linear")}><ListTree className="size-3.5" />Linear</Button>
+                <Button size="sm" onClick={() => addPlan("graph")}><Route className="size-3.5" />Fluxo visual</Button>
+                <Button size="sm" variant="outline" onClick={() => addPlan("linear")}><ListTree className="size-3.5" />Rota</Button>
               </div>
             </div>
           </div>

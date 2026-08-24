@@ -1,94 +1,146 @@
-# Planos de voo — fundação do Workflow Engine
+# Planos de voo — workflows visuais executáveis
 
-Data: 2026-08-04
+Data: 2026-08-24
 
-## Vocabulário do produto
+## Decisão de produto
 
-- **Plano de voo**: template reutilizável e exportável. Define a rota, o time,
-  os agents/modelos, os critérios e os limites.
-- **Missão**: uma execução concreta de uma versão do plano numa conversa e num
-  worktree.
-- **Fase/nó**: um papel (`planner`, `executor` ou `reviewer`) associado a um
-  code agent, modelo, effort, retries e guardrails.
-- **Time**: os membros configurados nas fases. O time pertence ao plano, mas
-  não é sinônimo do plano: a rota também carrega ordem, gates e orçamento.
+**Plano de voo** é o workflow reutilizável; **Missão** é uma execução concreta
+desse workflow em uma conversa e um worktree. Ao lançar uma Missão, a pessoa
+escolhe o Plano de voo. O app congela uma cópia profunda da revisão escolhida e
+executa exatamente aquele mapa até o pouso.
 
-## Compatibilidade
+> O mapa desenhado é o mapa percorrido.
 
-`MissionPreset.mode` é opcional. Ausente significa `linear`, portanto todos os
-presets já salvos no `mc.app` continuam funcionando sem migração. O runtime
-segue consumindo `preset.phases`; o canvas v1 mantém essa projeção sincronizada
-com o grafo e não cria estado paralelo de execução.
+O runtime não acrescenta fases corretivas escondidas e não relê o plano global
+durante o voo. Correções, retornos e caminhos alternativos precisam estar
+desenhados antes do lançamento.
+
+O contrato detalhado do interpretador, da persistência e dos limites está em
+[`mission-graph-engine-v2.md`](./mission-graph-engine-v2.md).
+
+## Modelo de domínio
+
+- `MissionPreset.phases`: configuração de cada membro do time: papel, code
+  agent, modelo, effort, retries, instruções e critérios.
+- `MissionPreset.graph`: topologia canônica: entrada, nós, conexões, condições
+  e limites de travessia.
+- `MissionPreset.mode`: preferência de autoria (`linear` ou `graph`), não um
+  motor diferente.
+- `MissionRun.execution.planSnapshot`: cópia imutável do plano no lançamento.
+- `MissionRun.phases`: ledger cronológico das visitas. Um mesmo nó aparece
+  novamente quando um retorno é percorrido.
+- `MissionRun.execution.transitions`: audit trail das conexões consumidas.
 
 ```text
-Plano linear ─┐
-              ├─ preset.phases ─ missionEngine ─ MissionRun
-Plano canvas ─┘
+Plano escolhido
+  ├── fases: configuração dos agents
+  └── grafo: rota executável
+             │ snapshot profundo
+             ▼
+Missão
+  ├── visitas cronológicas
+  ├── transições percorridas
+  ├── gate/recovery pendente
+  └── custo, teto e desfecho
 ```
 
-Essa escolha permite evoluir a autoria sem reescrever de uma vez o budget
-hard, recovery por limite, gates humanos, retomada, handoffs e o loop de
-correção que já estão provados no motor atual.
+## Execução
 
-## Contrato do canvas v1
+O interpretador é serial e determinístico:
 
-`MissionPlanGraph` é um schema de domínio independente do React Flow:
+1. começa no `entryNodeId`;
+2. executa o agent configurado para a fase do nó;
+3. traduz a entrega em `success` ou `failure`;
+4. escolhe primeiro uma conexão da condição exata e depois `always` como
+   fallback;
+5. persiste transição e próxima visita antes de iniciar o próximo agent;
+6. termina com sucesso quando um resultado `success` não possui saída;
+7. encerra com erro quando um resultado `failure` não possui rota.
 
-- `version: 1`;
-- `entryNodeId`;
-- nós que referenciam uma `MissionPhaseDef` por `phaseId` e guardam posição;
-- arestas com `condition` (`success`, `failure`, `always`), rótulo opcional e
-  `maxTraversals` reservado para loops limitados.
+Para reviewers, `APROVADO` é `success` e reprovação é `failure`. Os planos de
+fábrica já desenham `Revisar → Corrigir → Revisar`, com no máximo duas
+travessias por conexão cíclica. Quando o retorno de revisão esgota, a entrega
+termina com ressalva explícita.
 
-O editor entregue habilita somente uma cadeia de arestas `success`. É possível:
+Retry e recovery não são branches funcionais. Retry pertence à visita;
+rate-limit, crédito ou indisponibilidade do CLI abrem recovery e reexecutam a
+mesma visita com a escolha do usuário. O teto global continua soberano.
 
-- criar um plano linear ou diretamente no canvas;
-- abrir um plano linear existente no canvas sem mudar sua execução;
-- arrastar nós para organizar o mapa;
-- reordenar a rota com os controles do nó selecionado — isso muda a ordem real
-  em `preset.phases`;
-- editar agent, modelo, effort, tentativas, gate e teto;
-- definir critérios de entrada e saída por fase; eles são injetados no prompt
-  como checklists verificáveis;
-- duplicar, importar e exportar o plano em JSON versionado.
+Interromper uma fase manualmente conserva a fase como `aborted`, segura a
+Missão e, se a pessoa mandar continuar, segue pela rota de sucesso. Parar a
+Missão permanece um gesto terminal separado.
 
-## Superfície de autoria
+## Validação estrutural
 
-“Planos de voo” é um workspace global do MyCockpit, acessível em **Geral ▸
-Planos de voo** na barra lateral. A autoria não acontece dentro do modal de
-Configurações: a biblioteca ocupa a coluna esquerda, o canvas é o instrumento
-central e o nó selecionado alimenta um único inspetor na direita.
+Salvar e lançar são bloqueados quando o grafo viola qualquer invariante:
 
-**Configurações ▸ Missões** mantém apenas o toggle do recurso e um atalho para a
-prancheta. Essa separação é visual, não arquitetural: workspace, launcher e
-runtime continuam lendo o mesmo `GlobalSettings.missionPresets`, sem duplicar
-estado e sem criar uma segunda aplicação.
+- IDs de fases, nós e conexões únicos;
+- vínculo exato de uma fase para um nó;
+- entrada válida e todos os nós alcançáveis;
+- source e target existentes;
+- no máximo uma conexão por condição em cada nó;
+- ao menos um término possível por sucesso;
+- toda conexão interna de ciclo com `maxTraversals` inteiro e positivo.
 
-## Limite honesto da v1
+Além dos limites declarados no plano, o interpretador possui uma barreira de
+100 visitas por Missão.
 
-Ramificações e loops ainda não são executados. Um JSON importado com fan-out,
-ciclo, nó desconectado ou condição diferente de `success` é rejeitado com uma
-mensagem explícita. Liberar isso apenas na UI faria o plano parecer executável
-sem que budget, recovery, gate e retomada soubessem qual aresta percorrer.
+## Autoria
 
-O próximo marco do motor deve trocar o contador `current` por um cursor de nó e
-registrar cada transição no run-state. Antes de habilitar a conexão livre no
-canvas, precisa definir:
+### Rota
 
-1. contrato de avaliação de critérios/condições sem depender de texto mágico;
-2. limite obrigatório por ciclo (`maxTraversals`) e budget global;
-3. semântica de recovery e retry por nó versus por aresta;
-4. retomada determinística após crash com histórico de transições;
-5. política de merge quando ramos paralelos voltarem ao mesmo nó.
+Editor vertical para uma sequência simples. Permite adicionar, remover,
+selecionar e reordenar fases. A alteração reconstrói deliberadamente a cadeia
+`success` porque, nessa projeção, a ordem é a execução.
+
+Se o plano tiver condição, branch, retorno, rótulo de conexão ou limite, Rota
+fica somente leitura. Assim, editar uma lista nunca apaga uma decisão criada no
+Fluxo visual.
+
+### Fluxo visual
+
+Canvas conectável para posicionar nós e criar/remover conexões. Ao selecionar
+uma conexão, a pessoa define `Concluiu`, `Falhou` ou `Sempre` e o limite de
+travessias. O inspetor de fase continua sendo a única fonte para configurar o
+agent.
+
+A mesma topologia alimenta Rota, Fluxo visual, launcher e runtime; não existe
+um segundo estado escondido no React Flow.
+
+### Missão em voo
+
+A timeline inclui um mapa somente leitura do snapshot. Nós visitados, nó
+corrente, falhas, conexões percorridas e contadores de retorno explicam a rota;
+a lista cronológica abaixo preserva cada visita, custo e resultado.
+
+## Persistência e retomada
+
+O `run-state.json` v2 guarda snapshot, identidade de cada visita, transições,
+cursor, custos, parecer, gate e recovery pendentes. Na retomada:
+
+- uma transição já persistida não é repetida;
+- gate aguarda resposta sem reexecutar a visita anterior;
+- recovery conserva e reexecuta a visita atual;
+- uma queda durante um agent pode reexecutar aquela visita.
+
+O app não promete `exactly-once` para efeitos externos produzidos pelo CLI.
 
 ## Arquivos principais
 
-- `app/src/lib/missionTypes.ts`: tipos persistidos e schema do grafo;
-- `app/src/lib/missionPlans.ts`: compatibilidade, sincronização, validação e
-  import/export;
-- `app/src/components/mission/MissionPlanCanvas.tsx`: adapter visual;
-- `app/src/components/mission/FlightPlansView.tsx`: workspace de autoria;
-- `app/src/components/settings/MissionSettings.tsx`: toggle e acesso ao
-  workspace;
-- `app/src/lib/mission.ts`: critérios injetados no prompt;
-- `app/src/lib/missionEngine.ts`: motor linear preservado.
+- `app/src/lib/missionGraph.ts`: validação e interpretador puros;
+- `app/src/lib/missionGraphRuntime.ts`: snapshot e resolução de visitas;
+- `app/src/lib/missionGraphRunInit.ts`: criação/retomada do ledger;
+- `app/src/lib/missionGraphRunTransition.ts`: adaptação do resultado ao store;
+- `app/src/lib/missionState.ts`: persistência v2;
+- `app/src/store/mission.ts`: efeitos de execução e checkpoints;
+- `app/src/components/mission/LinearRouteEditor.tsx`: autoria Rota;
+- `app/src/components/mission/MissionPlanCanvas.tsx`: autoria Fluxo visual;
+- `app/src/components/mission/MissionRunGraph.tsx`: mapa em voo;
+- `app/src/components/mission/MissionLauncher.tsx`: escolha e validação do plano.
+
+## Escopo deliberadamente fora
+
+- execução paralela e merge de ramos;
+- condições livres baseadas em texto de LLM;
+- gate como nó de primeira classe;
+- semântica distribuída `exactly-once` para subprocessos e efeitos externos.

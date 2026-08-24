@@ -47,7 +47,7 @@ import { MissionPhaseRow } from "@/components/mission/PhaseRow"
 import { cn } from "@/lib/utils"
 import { agentCaps, agentDef } from "@/lib/agents"
 import { fmtCost } from "@/lib/format"
-import { missionPlanMode } from "@/lib/missionPlans"
+import { missionPlanMode, validateMissionPlan } from "@/lib/missionPlans"
 
 // Sentinela do seletor de time quando as fases foram editadas inline. Nunca
 // chega ao store — o launch monta o preset efetivo com as fases do rascunho.
@@ -136,6 +136,10 @@ export function MissionLauncher({
     ? (agentDef(firstAgent)?.label ?? firstAgent)
     : "o agent da fase 1"
   const allSupported = attachmentsSupported(attachments, caps)
+  const effectiveDraft = preset
+    ? { ...preset, phases, maxCostUsd: capUsd, gatePolicy }
+    : null
+  const planIssues = effectiveDraft ? validateMissionPlan(effectiveDraft) : []
 
   const canLaunch =
     !!preset &&
@@ -144,13 +148,14 @@ export function MissionLauncher({
     !!project &&
     !!activeId &&
     !missionRunning &&
-    allSupported
+    allSupported &&
+    planIssues.length === 0
 
   const presetOptions = useMemo(() => {
     const opts = presets.map((p) => ({
       value: p.id,
       label: p.name,
-      description: `${missionPlanMode(p) === "graph" ? "Canvas" : "Linear"} · ${p.phases.length} fases${
+      description: `${missionPlanMode(p) === "graph" ? "Fluxo visual" : "Rota"} · ${p.phases.length} fases${
         p.maxCostUsd != null ? ` · teto ${fmtCost(p.maxCostUsd)}` : ""
       }`,
     }))
@@ -186,6 +191,7 @@ export function MissionLauncher({
       phases,
       maxCostUsd: capUsd,
       gatePolicy,
+      sourcePlan: preset ?? undefined,
     })
     if (!res.ok) {
       setSaveError(SAVE_PRESET_ERROR_COPY[res.error])
@@ -427,6 +433,11 @@ export function MissionLauncher({
                 </button>
               )}
             </div>
+            {planIssues.length > 0 && (
+              <p className="mt-1.5 text-[12px] text-st-error">
+                Este plano não pode decolar: {planIssues[0]}
+              </p>
+            )}
 
             {/* MH3.1 — input inline do nome do time (nunca window.prompt);
                 Esc fecha SÓ o input, Enter salva; erro honesto embaixo. */}

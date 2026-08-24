@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Background,
   BackgroundVariant,
@@ -13,9 +13,13 @@ import {
   type NodeProps,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { CheckCircle2, Route } from "lucide-react"
+import { CheckCircle2, Route, Trash2 } from "lucide-react"
 import { useApp } from "@/store/app"
-import type { MissionPersona, MissionPreset } from "@/lib/missionTypes"
+import type {
+  MissionPersona,
+  MissionPlanEdgeCondition,
+  MissionPreset,
+} from "@/lib/missionTypes"
 import {
   enableGraphMode,
   updateMissionNodePositions,
@@ -129,12 +133,13 @@ function toFlowEdges(preset: MissionPreset): Edge[] {
     type: "smoothstep",
     markerEnd: { type: MarkerType.ArrowClosed, color: "var(--brass)" },
     style: { stroke: "var(--brass)", strokeWidth: 1.4 },
+    label: `${edge.condition === "success" ? "concluiu" : edge.condition === "failure" ? "falhou" : "sempre"}${edge.maxTraversals ? ` · máx. ${edge.maxTraversals}` : ""}`,
+    labelStyle: { fill: "var(--muted-foreground)", fontSize: 10 },
   }))
 }
 
-/** Canvas operacional do motor linear: pan/zoom/drag de layout e seleção do nó
- *  cujo inspetor controla a ordem real. Conexões são somente leitura por
- *  enquanto — assim toda edição continua executável pelo engine de Mission. */
+/** Projeção visual do grafo executável: layout, seleção e conexões pertencem ao
+ *  contrato de domínio, sem tipos do React Flow vazando para o runtime. */
 export function MissionPlanCanvas({
   preset,
   onChange,
@@ -154,6 +159,7 @@ export function MissionPlanCanvas({
   const [internalSelectedPhaseId, setInternalSelectedPhaseId] = useState(
     preset.phases[0]?.id ?? null,
   )
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const selectedPhaseId =
     controlledSelectedPhaseId === undefined
       ? internalSelectedPhaseId
@@ -183,6 +189,65 @@ export function MissionPlanCanvas({
     (phase) => phase.id === selectedPhaseId,
   )
   const selected = selectedIndex >= 0 ? preset.phases[selectedIndex] : null
+  const graph = enableGraphMode(preset).graph!
+  const selectedEdge = graph.edges.find((edge) => edge.id === selectedEdgeId)
+
+  const connect = useCallback(
+    (connection: { source: string | null; target: string | null }) => {
+      if (!interactive || !connection.source || !connection.target) return
+      if (connection.source === connection.target) return
+      const withGraph = enableGraphMode(preset)
+      const id = `edge-${connection.source}-${connection.target}-${crypto.randomUUID().slice(0, 6)}`
+      onChange({
+        ...withGraph,
+        revision: (withGraph.revision ?? 1) + 1,
+        graph: {
+          ...withGraph.graph!,
+          edges: [
+            ...withGraph.graph!.edges,
+            {
+              id,
+              source: connection.source,
+              target: connection.target,
+              condition: "success",
+            },
+          ],
+        },
+      })
+      setSelectedEdgeId(id)
+    },
+    [interactive, onChange, preset],
+  )
+
+  function patchSelectedEdge(patch: {
+    condition?: MissionPlanEdgeCondition
+    maxTraversals?: number
+  }) {
+    if (!selectedEdge) return
+    onChange({
+      ...preset,
+      revision: (preset.revision ?? 1) + 1,
+      graph: {
+        ...graph,
+        edges: graph.edges.map((edge) =>
+          edge.id === selectedEdge.id ? { ...edge, ...patch } : edge,
+        ),
+      },
+    })
+  }
+
+  function removeSelectedEdge() {
+    if (!selectedEdge) return
+    onChange({
+      ...preset,
+      revision: (preset.revision ?? 1) + 1,
+      graph: {
+        ...graph,
+        edges: graph.edges.filter((edge) => edge.id !== selectedEdge.id),
+      },
+    })
+    setSelectedEdgeId(null)
+  }
 
   function selectPhase(phaseId: string) {
     setInternalSelectedPhaseId(phaseId)
@@ -203,15 +268,15 @@ export function MissionPlanCanvas({
           </span>
           <div className="min-w-0">
             <div className="text-[12px] font-medium text-foreground">
-              Rota linear executável
+              Fluxo visual executável
             </div>
             <div className="text-[11px] text-muted-foreground">
-              {preset.phases.length} nós · {Math.max(0, preset.phases.length - 1)} conexões
+              {preset.phases.length} nós · {graph.edges.length} conexões
             </div>
           </div>
         </div>
         <span className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
-          {interactive ? "layout livre" : "ordem protegida"}
+          {interactive ? "conexões definem a execução" : "somente leitura"}
         </span>
       </div>
 
@@ -224,6 +289,9 @@ export function MissionPlanCanvas({
           nodeTypes={NODE_TYPES}
           onNodesChange={onNodesChange}
           onNodeClick={(_, node) => selectPhase(node.data.phaseId)}
+          onPaneClick={() => setSelectedEdgeId(null)}
+          onEdgeClick={(_, edge) => setSelectedEdgeId(edge.id)}
+          onConnect={connect}
           onNodeDragStop={(_, node) => {
             if (!interactive) return
             onChange(
@@ -233,7 +301,7 @@ export function MissionPlanCanvas({
             )
           }}
           nodesDraggable={interactive}
-          nodesConnectable={false}
+          nodesConnectable={interactive}
           deleteKeyCode={null}
           fitView
           fitViewOptions={{ padding: 0.25, maxZoom: 1.05 }}
@@ -256,12 +324,66 @@ export function MissionPlanCanvas({
       </div>
 
       <div className="flex min-h-10 items-center gap-2 border-t border-border/60 bg-secondary/15 px-3 py-2">
-        <CheckCircle2 className="size-3.5 shrink-0 text-st-success" />
-        <span className="min-w-0 truncate text-[11px] text-muted-foreground">
-          {selected
-            ? `${selected.label || "Fase sem nome"} selecionada · ${interactive ? "arraste para organizar o mapa; a ordem de execução fica no inspetor." : "ative Canvas para organizar livremente."}`
-            : "Selecione um nó para mudar sua posição na rota."}
-        </span>
+        {selectedEdge && interactive ? (
+          <>
+            <span className="font-mono text-[11px] text-muted-foreground">Quando</span>
+            {(["success", "failure", "always"] as const).map((condition) => (
+              <button
+                key={condition}
+                type="button"
+                onClick={() => patchSelectedEdge({ condition })}
+                className={cn(
+                  "h-6 rounded px-2 text-[11px] transition-colors",
+                  selectedEdge.condition === condition
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {condition === "success"
+                  ? "Concluiu"
+                  : condition === "failure"
+                    ? "Falhou"
+                    : "Sempre"}
+              </button>
+            ))}
+            <label className="ml-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              Limite
+              <input
+                type="number"
+                min={1}
+                value={selectedEdge.maxTraversals ?? ""}
+                onChange={(event) => {
+                  const value = event.target.value
+                  patchSelectedEdge({
+                    maxTraversals: value
+                      ? Math.max(1, Number(value) || 1)
+                      : undefined,
+                  })
+                }}
+                placeholder="—"
+                className="h-6 w-14 rounded border bg-background px-1.5 font-mono text-[11px] text-foreground outline-none focus:border-brass/50"
+                aria-label="Limite de travessias da conexão"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={removeSelectedEdge}
+              className="ml-auto grid size-7 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-st-error"
+              aria-label="Remover conexão"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          </>
+        ) : (
+          <>
+            <CheckCircle2 className="size-3.5 shrink-0 text-st-success" />
+            <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+              {selected
+                ? `${selected.label || "Fase sem nome"} selecionada · ${interactive ? "arraste ou conecte as portas; selecione uma conexão para definir o resultado." : "abra o Fluxo visual para editar conexões."}`
+                : "Selecione um nó ou uma conexão para editar o fluxo."}
+            </span>
+          </>
+        )}
       </div>
     </div>
   )

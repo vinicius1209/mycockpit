@@ -1,20 +1,11 @@
-// O plano de voo cresce em VOO quando o revisor reprova (o motor acrescenta
-// Corrigir + Revisar). O crescimento é correto; o SILÊNCIO é que era o defeito:
-// "fase 2 de 4" virava "fase 2 de 6" no mesmo render, sem uma palavra, e o
-// número novo ia assim pro banco.
-//
-// Este arquivo prova os dois registros que fecham o silêncio no motor:
-// (1) o MARCO no fio, com autor, causa, o que entrou, onde e de quanto pra
-// quanto; (2) a PROCEDÊNCIA carimbada na def das fases acrescentadas, que é o
-// que sustenta a marca na tela e o contador com os dois números.
-//
-// Modelado no mission.budgetNotice.test.ts (conversa semeada pro fio, só o
-// runPhase mocado) com os pareceres no formato real do template do reviewer.
+// O grafo v2 não inventa fases no meio do voo. Correção e re-review pertencem
+// ao Plano de voo congelado no lançamento; o que cresce é somente o ledger
+// cronológico de VISITAS quando uma aresta de retorno é atravessada.
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { PhaseResult } from "@/lib/mission"
 import type { MissionPhaseDef, MissionPreset } from "@/lib/missionTypes"
-import { phaseProvenance, planCounts } from "@/lib/missionTypes"
+import { phaseProvenance } from "@/lib/missionTypes"
 
 const h = vi.hoisted(() => ({
   results: [] as PhaseResult[],
@@ -94,14 +85,36 @@ function aprova(texto: string): PhaseResult {
   return ok(0.1, [textItem(texto)])
 }
 
-/** Revisor NO MEIO: 4 fases no lançamento, duas delas depois do revisor. */
+/** Revisor no meio, com retorno explícito para uma fase de correção. */
 function planoComRevisorNoMeio(): MissionPreset {
-  return preset([
+  const phases = [
     phaseDef({ id: "build", label: "Migrar o schema" }),
     phaseDef({ id: "review", label: "Revisar o schema", persona: "reviewer" }),
+    phaseDef({ id: "fix", label: "Corrigir" }),
     phaseDef({ id: "port", label: "Portar o checkout" }),
     phaseDef({ id: "hist", label: "Portar o histórico" }),
-  ])
+  ]
+  return {
+    ...preset(phases),
+    revision: 1,
+    mode: "graph",
+    graph: {
+      version: 1,
+      entryNodeId: "node-build",
+      nodes: phases.map((phase, index) => ({
+        id: `node-${phase.id}`,
+        phaseId: phase.id,
+        position: { x: 80 + index * 220, y: phase.id === "fix" ? 260 : 80 },
+      })),
+      edges: [
+        { id: "build-review", source: "node-build", target: "node-review", condition: "success" },
+        { id: "review-port", source: "node-review", target: "node-port", condition: "success" },
+        { id: "review-fix", source: "node-review", target: "node-fix", condition: "failure", maxTraversals: 2 },
+        { id: "fix-review", source: "node-fix", target: "node-review", condition: "success", maxTraversals: 2 },
+        { id: "port-hist", source: "node-port", target: "node-hist", condition: "success" },
+      ],
+    },
+  }
 }
 
 function seedConv() {
@@ -165,8 +178,8 @@ beforeEach(() => {
   seedConv()
 })
 
-describe("o plano cresceu · o marco no fio", () => {
-  it("reprovação acrescenta fases → marco com o autor, a causa, o que entrou, onde e os dois números", async () => {
+describe("rota de correção declarada", () => {
+  it("uma reprovação percorre Corrigir e volta ao mesmo nó de revisão", async () => {
     h.results = [
       ok(0.5),
       reprova("NÃO APROVADO: a migração perde os contratos vigentes."),
@@ -177,23 +190,25 @@ describe("o plano cresceu · o marco no fio", () => {
     ]
     await launch(planoComRevisorNoMeio())
 
-    const marco = notices().find((m) => m.includes("O plano de voo cresceu"))
-    expect(marco).toBeTruthy()
-    // quem mudou e por quê
-    expect(marco).toContain("o revisor reprovou a fase 2 (Revisar o schema)")
-    expect(marco).toContain("o motor acrescentou")
-    // o que entrou
-    expect(marco).toContain("Corrigir (rodada 1)")
-    expect(marco).toContain("Revisar (rodada 1)")
-    // onde entrou (é a correção do outro defeito, e o texto não pode mentir)
-    expect(marco).toContain("logo depois dela")
-    // de quanto pra quanto: o denominador não muda calado
-    expect(marco).toContain("O plano foi de 4 para 6 fases.")
-    // sem travessão em prosa de UI (regra do STYLEGUIDE)
-    expect(marco).not.toContain("—")
+    expect(run().phases.map((phase) => phase.def.label)).toEqual([
+      "Migrar o schema",
+      "Revisar o schema",
+      "Corrigir",
+      "Revisar o schema",
+      "Portar o checkout",
+      "Portar o histórico",
+    ])
+    expect(run().execution?.transitions.map((transition) => transition.edgeId)).toEqual([
+      "build-review",
+      "review-fix",
+      "fix-review",
+      "review-port",
+      "port-hist",
+    ])
+    expect(notices().some((m) => m.includes("O plano de voo cresceu"))).toBe(false)
   })
 
-  it("duas rodadas → dois marcos, cada um com o salto da SUA rodada (4→6 e 6→8)", async () => {
+  it("duas reprovações atravessam o ciclo duas vezes, sem alterar o snapshot", async () => {
     h.results = [
       ok(0.5),
       reprova("NÃO APROVADO: perde os contratos vigentes."),
@@ -206,11 +221,18 @@ describe("o plano cresceu · o marco no fio", () => {
     ]
     await launch(planoComRevisorNoMeio())
 
-    const marcos = notices().filter((m) => m.includes("O plano de voo cresceu"))
-    expect(marcos).toHaveLength(2)
-    expect(marcos[0]).toContain("O plano foi de 4 para 6 fases.")
-    expect(marcos[1]).toContain("O plano foi de 6 para 8 fases.")
-    expect(marcos[1]).toContain("Corrigir (rodada 2)")
+    expect(run().phases.map((phase) => phase.def.label)).toEqual([
+      "Migrar o schema",
+      "Revisar o schema",
+      "Corrigir",
+      "Revisar o schema",
+      "Corrigir",
+      "Revisar o schema",
+      "Portar o checkout",
+      "Portar o histórico",
+    ])
+    expect(run().execution?.planSnapshot.phases).toHaveLength(5)
+    expect(run().execution?.transitions.filter((transition) => transition.edgeId === "review-fix")).toHaveLength(2)
   })
 
   it("revisor aprovou → nenhum marco de crescimento (aviso falso é ruído)", async () => {
@@ -220,12 +242,12 @@ describe("o plano cresceu · o marco no fio", () => {
     expect(notices().some((m) => m.includes("O plano de voo cresceu"))).toBe(
       false,
     )
-    expect(planCounts(run().phases.map((p) => p.def)).appended).toBe(0)
+    expect(run().phases).toHaveLength(4)
   })
 })
 
-describe("o plano cresceu · a procedência na fase", () => {
-  it("só as fases acrescentadas carregam o carimbo, e o contador sabe dizer com quantas a missão decolou", async () => {
+describe("snapshot e procedência", () => {
+  it("nenhuma visita é carimbada como fase inventada durante o voo", async () => {
     h.results = [
       ok(0.5),
       reprova("NÃO APROVADO: a migração perde os contratos vigentes."),
@@ -234,17 +256,16 @@ describe("o plano cresceu · a procedência na fase", () => {
       ok(0.2),
       ok(0.2),
     ]
-    const antes = Date.now()
     await launch(planoComRevisorNoMeio())
 
     const defs = run().phases.map((p) => p.def)
-    expect(
-      defs.filter((d) => phaseProvenance(d) !== null).map((d) => d.label),
-    ).toEqual(["Corrigir (rodada 1)", "Revisar (rodada 1)"])
-    const carimbo = phaseProvenance(defs[2])!
-    expect(carimbo.round).toBe(1)
-    expect(carimbo.at).toBeGreaterThanOrEqual(antes)
-    // o contador honesto: 6 agora, 4 no lançamento
-    expect(planCounts(defs)).toEqual({ total: 6, launched: 4, appended: 2 })
+    expect(defs.every((def) => phaseProvenance(def) === null)).toBe(true)
+    expect(run().execution?.planSnapshot.phases.map((phase) => phase.label)).toEqual([
+      "Migrar o schema",
+      "Revisar o schema",
+      "Corrigir",
+      "Portar o checkout",
+      "Portar o histórico",
+    ])
   })
 })

@@ -7,7 +7,6 @@ import { cancelAgent } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import type {
   GateAnswer,
-  MissionPhaseDef,
   MissionPhaseRun,
   MissionPreset,
   MissionRun,
@@ -69,10 +68,14 @@ import {
   failureTransition,
   finalCaveat,
   gateTransition,
-  initEngine,
   nextTransition,
   rerunBudget,
 } from "@/lib/missionEngine"
+import {
+  continueInterruptedMissionVisit,
+  routeCompletedMissionVisit,
+} from "@/lib/missionGraphRunTransition"
+import { initializeMissionGraphRun } from "@/lib/missionGraphRunInit"
 import {
   changedFilesRef,
   formatPriorHandoffs,
@@ -81,7 +84,7 @@ import {
 } from "@/lib/missionHandoff"
 import { ensureMissionCwd } from "@/lib/missionWorktree"
 import { clearUnattendedRun, markUnattendedRun } from "@/lib/unattendedRuns"
-import { handoffFileName, missionDir, missionSlug } from "@/lib/missionPaths"
+import { handoffFileName } from "@/lib/missionPaths"
 import { expandDraftForAgent } from "@/lib/slashCommands"
 import {
   ensureMissionsGitignore,
@@ -180,11 +183,6 @@ function isActive(status: MissionStatus): boolean {
   return status === "running"
 }
 
-/** Cria o registro de fase (MissionPhaseRun) em estado inicial (fila). */
-function queuedRun(def: MissionPhaseDef): MissionPhaseRun {
-  return { def, status: "queued", attempt: 1, costUsd: 0, startedAt: null }
-}
-
 /** runId estável por fase p/ cancelamento (index-based, uma missão por conv). */
 function phaseRunId(missionId: string, phaseIdx: number): string {
   return `${missionId}::phase-${phaseIdx}`
@@ -229,11 +227,14 @@ export const useMission = create<MissionState>((set, get) => {
    *  o writeRunState já engole falhas; persistir nunca segura nem derruba a
    *  missão. `gateDecisions` = bloco de gate respondido destinado à fase
    *  `current` (sobrevive ao restart; gate PENDENTE não — a fase re-roda). */
-  const persist = (convId: string, gateDecisions?: string | null) => {
+  const persist = (
+    convId: string,
+    gateDecisions?: string | null,
+  ): Promise<void> => {
     const run = get().byConv[convId]
     const cwd = missionCwd.get(convId)
-    if (!run || !cwd) return
-    void writeRunState(
+    if (!run || !cwd) return Promise.resolve()
+    const checkpoint = writeRunState(
       cwd,
       runToState(run, gateDecisions, missionReview.get(convId)),
     )
@@ -246,6 +247,7 @@ export const useMission = create<MissionState>((set, get) => {
     // índice no banco (histórico navegável): espelha o marco. Disco = artefatos;
     // banco = índice durável. Best-effort — falha nunca derruba a missão.
     indexMission(convId)
+    return checkpoint
   }
 
   /** Espelha a missão no índice `missions` do banco (upsert). projectId vem da
@@ -300,9 +302,7 @@ export const useMission = create<MissionState>((set, get) => {
       const entry = get().interrupted[convId]
       if (!entry) return
       const st = entry.state
-      // preset EFETIVO reconstruído do arquivo: fases (corrigidas/apendadas
-      // até o crash) + teto. O launch com `resume` faz o resto — fases feitas
-      // entram como done e a corrente re-roda dos handoffs do disco.
+      // O snapshot do arquivo, não o plano global atual, governa a retomada.
       const preset: MissionPreset = { ...st.preset, maxCostUsd: st.maxCostUsd }
       void get().launch(
         convId,
@@ -351,84 +351,34 @@ export const useMission = create<MissionState>((set, get) => {
       const existing = get().byConv[convId]
       if (existing && isActive(existing.status)) return
 
-      // JANELA de duplo-start FECHADA (ressalva do gate MH3+MH4): a guarda
-      // acima é síncrona, mas o run só entrava em byConv DEPOIS do IO de
-      // preparação (worktree/doutrina) — duplo-clique em "Retomar"/"Lançar"
-      // passava duas vezes pela guarda e pagava fases em dobro com o MESMO
-      // missionId. Por isso o run é construído e SEMEADO em byConv AQUI, sem
-      // NENHUM await antes deste set: o segundo launch bate na guarda. O card
-      // de retomada sai no mesmo instante síncrono (resumeInterrupted duplo
-      // também morre na guarda); se a preparação falhar, a semente é removida
-      // e o card volta — nunca fica um "rodando" falso pra trás.
-      //
-      // MÁQUINA DE FASES (MH4.1): o estado puro do pipeline mora no motor
-      // (lib/missionEngine) — preset efetivo, fase corrente, memória do loop
-      // de revisão, matéria-prima da entrega. O launch vira casca: executa os
-      // efeitos (runPhase/persist/notices/notify/ledger) sob as transições.
-      // RETOMADA (P1): o initEngine começa na fase corrente do arquivo (gate
-      // respondido com a fase done avança 1 — nunca re-paga fase concluída) e
-      // re-hidrata reviewLoops/lastReview (clamp sobrevive a crash).
-      let engine = initEngine(preset, resume)
-      const startPhase = engine.current
-      // retomada preserva o missionId (continuidade dos marcos e do arquivo).
-      const missionId = resume?.missionId ?? crypto.randomUUID()
-      // pasta ISOLADA por missão: na retomada, a do arquivo; fresca, um slug
-      // novo (data + id curto + tarefa) → nunca sobrescreve outra missão.
-      const dir = resume?.dir ?? missionDir(missionSlug(task, missionId, Date.now()))
-      const run: MissionRun = {
-        id: missionId,
+      // Snapshot e semente entram no store antes do primeiro await: isso fecha
+      // a janela de duplo clique sem deixar um run fantasma se o preparo falhar.
+      const initialized = initializeMissionGraphRun({
         convId,
-        presetName: preset.name,
+        preset,
         task,
-        dir,
-        phases: preset.phases.map((def, idx) => ({
-          def,
-          // retomada: fases < current entram como done com o custo do arquivo.
-          status: resume && idx < startPhase ? "done" : "queued",
-          attempt: 1,
-          costUsd:
-            resume && idx < startPhase ? (resume.phases[idx]?.costUsd ?? 0) : 0,
-          // procedência/fim vêm do arquivo: sem eles a fase retomada mostraria
-          // um custo sem fonte (que a UI trata como não-medido) e nenhuma
-          // duração — honesto nos dois casos, e melhor que inventar.
-          costSource:
-            resume && idx < startPhase
-              ? resume.phases[idx]?.costSource
-              : undefined,
-          startedAt: null,
-          endedAt:
-            resume && idx < startPhase
-              ? (resume.phases[idx]?.endedAt ?? null)
-              : null,
-        })),
-        current: startPhase,
-        // costTotal retomado soma ao teto corretamente (checkBudget usa ele).
-        costTotal: resume?.costTotal ?? 0,
-        // teto do preset EFETIVO: o launcher pode ter sobrescrito o teto (e as
-        // fases) editados no dialog — mesmo caminho, nada além do preset viaja.
-        maxCostUsd: preset.maxCostUsd,
-        status: "running",
-        startedAt: Date.now(),
-        // MH3.3 — a política de gate do preset efetivo viaja no run: o
-        // run-state serializa e a retomada preserva (ausente = "agente").
-        gatePolicy: preset.gatePolicy,
+        resume,
+        newMissionId: crypto.randomUUID(),
+        now: Date.now(),
+        visitNonce: () => crypto.randomUUID().slice(0, 8),
+      })
+      if (!initialized.ok) {
+        await recordHistory(convId, [
+          noticeItem(`Missão não lançada: ${initialized.error}`),
+        ])
+        return
       }
-      // card de retomada capturado ANTES da semente: se a preparação falhar,
-      // ele volta (a oferta não pode sumir por um launch que nem largou).
+      preset = initialized.preset
+      let engine = initialized.engine
+      const { run, missionId, dir, startPhase } = initialized
       const priorInterrupted = get().interrupted[convId]
       set((s) => {
-        // consumiu a retomada (ou relançou por cima) → o card sai da conversa.
         const interrupted = { ...s.interrupted }
         delete interrupted[convId]
         return { byConv: { ...s.byConv, [convId]: run }, interrupted }
       })
 
-      // cwd (MH1.4): worktree da conversa se houver; sem worktree a missão
-      // CRIA um antes de rodar (mesmo mecanismo do toggle da sidebar) — o
-      // subtítulo do launcher promete isolamento e o launch entrega. Falha na
-      // criação nunca é silenciosa: ou o usuário confirma rodar na pasta do
-      // projeto, ou a missão não larga. Retomada nunca muda o cwd (run-state e
-      // handoffs já moram onde a missão começou).
+      // Retomada preserva o cwd; launch novo garante worktree ou pede fallback.
       const conv = useChat.getState().byId[convId]
       const ensured = await ensureMissionCwd({
         convId,
@@ -437,8 +387,6 @@ export const useMission = create<MissionState>((set, get) => {
         resume: !!resume,
       })
       if (!ensured.ok) {
-        // limpa a semente honestamente: a missão NÃO largou — nada de run
-        // "running" fantasma em byConv, e o card de retomada volta se havia.
         set((s) => {
           const byConv = { ...s.byConv }
           if (byConv[convId]?.id === missionId) delete byConv[convId]
@@ -455,8 +403,6 @@ export const useMission = create<MissionState>((set, get) => {
       }
       const cwd = ensured.cwd
       if (ensured.created) {
-        // liga o worktree na conversa (mesmo efeito do toggle da sidebar): o
-        // chat, o diff e a retomada passam a enxergar o isolamento.
         useChat.getState().setWorktree(convId, cwd)
         await recordHistory(convId, [
           noticeItem(
@@ -531,26 +477,61 @@ export const useMission = create<MissionState>((set, get) => {
       // marco em disco: início (ou retomada) — o pipeline agora sobrevive.
       persist(convId, resume?.gateDecisions ?? null)
 
-      // itens da fase anterior (p/ fallback do handoff) — o diff sai do worktree.
+      // Estado efêmero dos handoffs entre visitas.
       let prevItems: ChatItem[] = []
-      // (preset efetivo mutável, reviewLoops/lastReview, corrections e a
-      // matéria-prima da entrega migraram pro MissionEngineState — o motor
-      // decide; aqui só sobra o plumbing de efeito.)
-      // Gate humano: bloco de decisões do usuário — SÓ a fase seguinte ao gate
-      // recebe (zera depois de usar).
-      // (retomada: um gate RESPONDIDO antes do crash sobrevive via arquivo e é
-      // reinjetado na fase corrente; anexos de gate não sobrevivem.)
       let gateDecisions: string | null = resume?.gateDecisions ?? null
-      // Gate rico: anexos das respostas (já filtrados pelo agentCaps da próxima
-      // fase no answerGate) — mesma regra: SÓ a fase seguinte recebe.
       let gateAttachments: Attachment[] = []
-      // MH2.1 — ledger por TENTATIVA: cada invocação do runPhase (fase nova ou
-      // re-run de recovery) ganha um número, e cada tentativa interna dele é
-      // uma linha própria em turn_costs (gasto próprio; retry descartado NÃO
-      // regrava o gasto de outra tentativa — results parciais do MESMO run
-      // colapsam via REPLACE por run_id, custo cumulativo do CLI). O nonce
-      // torna o run_id único ENTRE launches (retomada pós-crash nunca
-      // sobrescreve linhas já gravadas pelo processo anterior).
+
+      // Gate v2 espera no checkpoint sem repetir a visita anterior.
+      if (resume?.gate) {
+        const pending = resume.gate
+        const answers = await new Promise<GateAnswer[] | null>((resolve) => {
+          gateWaiters.set(missionId, resolve)
+        })
+        gateWaiters.delete(missionId)
+        const live = get().byConv[convId]
+        if (!live || live.status !== "running" || answers === null) return
+        gateDecisions = buildGateDecisionsBlock(
+          pending.questions,
+          answers.map((answer) => answer.text),
+        )
+        const nextIndex = pending.phase + 1
+        const nextAgent = engine.phases[nextIndex]?.agent ?? ""
+        gateAttachments = splitGateAttachments(
+          answers,
+          agentCaps(nextAgent),
+        ).kept
+        engine = { ...engine, current: nextIndex }
+        patchConv(convId, { gate: null, current: nextIndex })
+        await persist(convId, gateDecisions)
+      }
+
+      // Recovery v2 troca o motor e conserva a mesma visita.
+      if (resume?.recovery) {
+        const choice = await new Promise<RecoveryChoice | null>((resolve) => {
+          recoveryWaiters.set(missionId, resolve)
+        })
+        recoveryWaiters.delete(missionId)
+        const live = get().byConv[convId]
+        if (!live || live.status !== "running") return
+        if (!choice) {
+          const reason = resume.recovery.error || "recuperação abandonada"
+          patchConv(convId, { recovery: null, status: "error" })
+          await recordError(convId, reason, "falha")
+          await persist(convId)
+          return
+        }
+        engine = applyRecoveryChoice(engine, choice)
+        patchPhase(convId, engine.current, (phase) => ({
+          ...phase,
+          def: engine.phases[engine.current],
+          status: "queued",
+          error: undefined,
+        }))
+        patchConv(convId, { recovery: null })
+        await persist(convId, gateDecisions)
+      }
+      // Nonce mantém o ledger de custo único entre launches e retomadas.
       let costInvocation = 0
       const costNonce = Date.now().toString(36)
 
@@ -560,9 +541,7 @@ export const useMission = create<MissionState>((set, get) => {
         const now = get().byConv[convId]
         if (!now || now.status !== "running") return
 
-        // transição de entrada (motor): budget HARD antes de gastar na
-        // próxima fase (risco nº1 do design). "finish" não ocorre aqui — o
-        // while garante fase pendente.
+        // Budget hard antes de iniciar a visita.
         const step = nextTransition(engine, now.costTotal, now.maxCostUsd)
         if (step.kind === "teto") {
           patchConv(convId, { status: "error", current: i })
@@ -651,22 +630,11 @@ export const useMission = create<MissionState>((set, get) => {
         // marco em disco: transição de fase (current = i, fase running).
         persist(convId, gateBlockForPhase)
 
-        // ── RECUPERAÇÃO: re-roda a MESMA fase i (mesmo prompt, sem i++) quando a
-        // falha é RECUPERÁVEL (limite/rate-limit/crédito) e o usuário escolhe
-        // outro agent. Espelha o gate: pausa em recovery e aguarda a escolha. O
-        // custo é REAL a cada tentativa (soma todas), o prompt não muda entre
-        // elas — só o agent/modelo/effort da def da fase corrente.
+        // Recovery reexecuta esta visita; custo acumula em cada tentativa.
         let result: PhaseResult
         while (true) {
           const cur = engine.phases[i]
-          // Run DESASSISTIDO por FASE (MH1.2, ADR-021): a missão roda sozinha
-          // entre gates — um pedido de permissão/pergunta sem resposta
-          // congelaria a fase pra sempre (o backend espera sem timeout,
-          // approval.rs). Marcada, o vigia (lib/watchdog) responde fail-closed
-          // passado settings.unattendedAnswerAfterMin; o clear no finally é o
-          // "cancelamento do timer" (padrão scheduleEngine). Missão com você
-          // na frente não precisa de distinção: o limiar é em minutos — quem
-          // está olhando responde antes.
+          // O watchdog mantém a missão desassistida viva entre gates.
           const phaseRun = phaseRunId(missionId, i)
           // MH2.2 — teto RESTANTE pra esta invocação: o corte intra-fase usa o
           // custo já acumulado da missão (fases + tentativas anteriores).
@@ -705,11 +673,7 @@ export const useMission = create<MissionState>((set, get) => {
                   items,
                   lastOutputAt: Date.now(),
                 } as MissionPhaseRun)),
-              // MH2.1 — CADA fase grava turn_costs no result (fonte única do
-              // Painel/cards), INCLUSIVE quando a missão vai abortar/estourar
-              // depois: grava aqui, no ponto em que o custo é conhecido.
-              // Best-effort (recordTurnCost engole falha) e uma linha por
-              // tentativa: o run_id carrega nonce+invocação+attempt.
+              // Uma linha de ledger por tentativa, inclusive em falha/teto.
               onCost: (attempt, c) => {
                 void recordTurnCost({
                   runId: `${phaseRun}::${costNonce}-${inv}-${attempt}`,
@@ -794,15 +758,30 @@ export const useMission = create<MissionState>((set, get) => {
             const depois = get().byConv[convId]
             if (!depois || depois.status !== "running" || segue !== true) return
             patchConv(convId, { hold: null })
-            engine = advance(engine)
-            persist(convId)
+            const continuation = continueInterruptedMissionVisit({
+              engine,
+              run: depois,
+              phaseIndex: i,
+              nextVisitId: `${missionId}:visit:${i + 1}:${crypto.randomUUID().slice(0, 8)}`,
+              at: Date.now(),
+            })
+            if (continuation.kind === "error") {
+              patchConv(convId, { status: "error", current: i })
+              await recordError(convId, continuation.reason, "falha")
+              await persist(convId)
+              return
+            }
+            engine = continuation.engine
+            patchConv(convId, continuation.patch)
+            await persist(convId)
             // `continue fases`, não `break`: o resto da iteração é sobre uma
             // fase que TERMINOU, e esta foi morta (o break pularia uma fase).
             continue fases
           }
 
-          // falha NÃO-recuperável (bug, timeout, cancel) → kill atual: a fase e a
-          // missão vão a error e o loop morre (comportamento herdado).
+          // Falha funcional depois dos retries: registra o resultado da visita
+          // e deixa o grafo decidir se existe uma rota `failure`. Infraestrutura
+          // recuperável e teto já foram tratados acima e nunca viram branch.
           if (fail.kind === "falha") {
             patchPhase(convId, i, (ph) => ({
               ...ph,
@@ -812,10 +791,7 @@ export const useMission = create<MissionState>((set, get) => {
               endedAt: Date.now(),
               error: fail.error,
             }))
-            patchConv(convId, { status: "error", current: i })
-            await recordError(convId, fail.reason, "falha")
-            persist(convId)
-            return
+            break
           }
 
           // falha RECUPERÁVEL → PAUSA em recovery e aguarda a escolha do usuário.
@@ -921,7 +897,7 @@ export const useMission = create<MissionState>((set, get) => {
             get().byConv[convId]?.phases[i]?.costUsd ?? result.costUsd
           const marks: ChatItem[] = [
             noticeItem(
-              `Fase ${i + 1}/${engine.phases.length} · ${engine.phases[i].label} (${engine.phases[i].agent}) · concluída · US$ ${phCost.toFixed(2)}`,
+              `Fase ${i + 1}/${engine.phases.length} · ${engine.phases[i].label} (${engine.phases[i].agent}) · ${result.ok ? "concluída" : "falhou; avaliando rota"} · US$ ${phCost.toFixed(2)}`,
             ),
           ]
           const summary = phaseText(result.items)
@@ -935,12 +911,14 @@ export const useMission = create<MissionState>((set, get) => {
           await recordHistory(convId, marks)
         }
 
-        // transições pós-fase (motor, MH4.1): matéria-prima da entrega (plano
-        // do 1º planner, agent do 1º executor — pode ter trocado na
-        // recuperação), veredito do reviewer (MH1.1: a última revisão decide a
-        // ressalva) e o loop de correção do M2 (executor corretivo + re-review
-        // até MAX_REVIEW_LOOPS, sempre sob o teto checado no topo do while).
-        const doneStep = afterPhaseDone(engine, result.items, missionId)
+        // Captura entrega/veredito; correções existem somente no grafo.
+        const doneStep = afterPhaseDone(
+          engine,
+          result.items,
+          missionId,
+          Date.now(),
+          false,
+        )
         engine = doneStep.state
         if (doneStep.review) {
           // espelho vivo do persist: o próximo marco grava o veredito fresco
@@ -950,34 +928,48 @@ export const useMission = create<MissionState>((set, get) => {
             last: doneStep.review,
           })
         }
-        if (doneStep.correction) {
-          const corr = doneStep.correction
-          // POSIÇÃO (corr.at): as corretivas entram LOGO DEPOIS do revisor que
-          // reprovou, não no fim da fila — senão as fases seguintes rodariam em
-          // cima de um trabalho já reprovado. A inserção é toda ADIANTE de
-          // `current` (= i), então o índice da fase corrente, os handoffs já
-          // gravados (nomeados pelo índice) e os runId das fases passadas
-          // seguem válidos; o run e o preset efetivo andam paralelos.
+
+        const graphStep = routeCompletedMissionVisit({
+          engine,
+          run: get().byConv[convId],
+          phaseIndex: i,
+          resultOk: result.ok,
+          failureReason: result.ok ? undefined : result.error,
+          review: doneStep.review,
+          nextVisitId: `${missionId}:visit:${i + 1}:${crypto.randomUUID().slice(0, 8)}`,
+          at: Date.now(),
+        })
+        patchPhase(convId, i, (phase) => ({
+          ...phase,
+          outcome: graphStep.outcome,
+        }))
+        if (graphStep.kind === "error") {
+          patchConv(convId, { status: "error", current: i })
+          await recordError(convId, graphStep.reason, "falha")
+          await persist(convId)
+          return
+        }
+        engine = graphStep.engine
+        if (graphStep.kind === "review-caveat") {
+          missionReview.set(convId, {
+            loops: graphStep.reviewLoops,
+            last: doneStep.review,
+          })
+          break fases
+        }
+        if (graphStep.kind === "advance") {
+          if (doneStep.review && !doneStep.review.approved) {
+            missionReview.set(convId, {
+              loops: graphStep.reviewLoops,
+              last: doneStep.review,
+            })
+          }
           patchConv(convId, (cur) => ({
-            phases: [
-              ...cur.phases.slice(0, corr.at),
-              queuedRun(corr.corrective),
-              queuedRun(corr.rereview),
-              ...cur.phases.slice(corr.at),
-            ],
+            phases: [...cur.phases, graphStep.nextRun],
+            execution: graphStep.execution,
           }))
-          // marco em disco: preset efetivo mudou (fases corretivas inseridas).
-          persist(convId)
-          // O DENOMINADOR NÃO CRESCE CALADO: "fase 3 de 4" vira "fase 3 de 6"
-          // no mesmo render, e o número novo vai pro banco. O crescimento é
-          // correto (missão que acha problema tem que corrigir); o silêncio
-          // não era. O marco diz quem mudou, por quê, o que entrou, onde e de
-          // quanto pra quanto. A fase acrescentada leva a procedência no def.
-          await recordHistory(convId, [
-            noticeItem(
-              `O plano de voo cresceu · o revisor reprovou a fase ${i + 1} (${engine.phases[i].label}), e o motor acrescentou ${corr.corrective.label} e ${corr.rereview.label} logo depois dela. O plano foi de ${corr.before} para ${corr.after} fases.`,
-            ),
-          ])
+          // Transição + visita pousam antes do próximo agent.
+          await persist(convId)
         }
 
         // ── GATE HUMANO: a fase deixou perguntas em aberto e HÁ próxima fase →
@@ -1006,12 +998,8 @@ export const useMission = create<MissionState>((set, get) => {
           const stillRunning = get().byConv[convId]
           if (!stillRunning || stillRunning.status !== "running") return
           patchConv(convId, { gate: { phase: i, questions } })
-          // marco em disco: gate ABERTO. O gate pendente NÃO sobrevive a
-          // restart (retomar re-roda a fase corrente do zero — ela re-pergunta
-          // se precisar); o marco mantém current/custos frescos no arquivo.
+          // Gate aberto faz parte do checkpoint v2.
           persist(convId)
-          // notificação nativa: o gate ABRIU — a missão está parada esperando
-          // você, em qualquer modo/app em background. 1 por gate (só aqui).
           {
             const projName =
               useApp.getState().projects.find((p) => p.id === projectId)?.name ??
@@ -1062,8 +1050,7 @@ export const useMission = create<MissionState>((set, get) => {
             )
           }
           await recordHistory(convId, marks)
-          // marco em disco: gate RESPONDIDO — as decisões sobrevivem a restart
-          // (reinjetadas na fase corrente ao retomar).
+          // Decisões são reinjetadas na visita seguinte mesmo após restart.
           persist(convId, gateDecisions)
         }
 

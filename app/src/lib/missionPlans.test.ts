@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { DEFAULT_MISSION_PRESETS } from "@/lib/missionDefaults"
 import type { MissionPhaseDef, MissionPreset } from "@/lib/missionTypes"
 import {
   enableGraphMode,
@@ -7,6 +8,7 @@ import {
   moveMissionPhase,
   parseMissionPlan,
   serializeMissionPlan,
+  snapshotMissionPlan,
   updateMissionNodePositions,
   validateMissionPlan,
 } from "./missionPlans"
@@ -33,6 +35,16 @@ function preset(): MissionPreset {
 }
 
 describe("Planos de voo", () => {
+  it("mantém todos os planos de fábrica executáveis", () => {
+    expect(
+      DEFAULT_MISSION_PRESETS.map((plan) => [plan.name, validateMissionPlan(plan)]),
+    ).toEqual([
+      ["Feature completa", []],
+      ["UI-first", []],
+      ["Econômico", []],
+    ])
+  })
+
   it("trata presets legados sem mode como lineares", () => {
     expect(missionPlanMode(preset())).toBe("linear")
     expect(validateMissionPlan(preset())).toEqual([])
@@ -50,14 +62,13 @@ describe("Planos de voo", () => {
     expect(validateMissionPlan(plan)).toEqual([])
   })
 
-  it("reordenar nós muda a projeção que o motor linear executa", () => {
+  it("reordenar a lista no Fluxo visual não reescreve a topologia", () => {
     const moved = moveMissionPhase(enableGraphMode(preset()), 2, 1)
     expect(moved.phases.map((p) => p.id)).toEqual(["plan", "review", "build"])
     expect(moved.graph?.edges.map((e) => [e.source, e.target])).toEqual([
-      ["node-plan", "node-review"],
-      ["node-review", "node-build"],
+      ["node-plan", "node-build"],
+      ["node-build", "node-review"],
     ])
-    expect(moved.graph?.nodes.map((n) => n.position.x)).toEqual([56, 304, 552])
   })
 
   it("preserva posições do canvas ao sincronizar a rota", () => {
@@ -81,15 +92,26 @@ describe("Planos de voo", () => {
     }
   })
 
-  it("rejeita grafo ramificado enquanto o motor ainda é linear", () => {
+  it("aceita ramificação determinística por sucesso e falha", () => {
     const plan = enableGraphMode(preset())
     plan.graph!.edges.push({
       id: "branch",
       source: "node-plan",
       target: "node-review",
-      condition: "success",
+      condition: "failure",
     })
-    expect(validateMissionPlan(plan)[0]).toContain("sem ramificações")
+    expect(validateMissionPlan(plan)).toEqual([])
+  })
+
+  it("snapshot é profundo e preserva a topologia escolhida", () => {
+    const original = enableGraphMode(preset())
+    original.revision = 4
+    const snapshot = snapshotMissionPlan(original)
+    original.phases[0].label = "mudou"
+    original.graph!.edges[0].target = "node-review"
+    expect(snapshot.revision).toBe(4)
+    expect(snapshot.phases[0].label).toBe("plan")
+    expect(snapshot.graph?.edges[0].target).toBe("node-build")
   })
 
   it("rejeita import com fase incompleta antes de chegar à UI", () => {

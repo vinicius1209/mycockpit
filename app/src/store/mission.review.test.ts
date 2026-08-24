@@ -92,7 +92,60 @@ function phaseDef(over: Partial<MissionPhaseDef> = {}): MissionPhaseDef {
 }
 
 function preset(phases: MissionPhaseDef[]): MissionPreset {
-  return { id: "t", name: "Teste", phases, maxCostUsd: null }
+  const reviewerIndex = phases.findIndex((phase) => phase.persona === "reviewer")
+  const executor = phases
+    .slice(0, reviewerIndex)
+    .reverse()
+    .find((phase) => phase.persona === "executor")
+  if (reviewerIndex < 0 || !executor) {
+    return { id: "t", name: "Teste", phases, maxCostUsd: null }
+  }
+  const correction: MissionPhaseDef = {
+    ...executor,
+    id: "fix",
+    label: "Corrigir",
+  }
+  const declaredPhases = [...phases, correction]
+  const reviewer = phases[reviewerIndex]
+  return {
+    id: "t",
+    revision: 1,
+    name: "Teste",
+    mode: "graph",
+    phases: declaredPhases,
+    maxCostUsd: null,
+    graph: {
+      version: 1,
+      entryNodeId: `node-${phases[0].id}`,
+      nodes: declaredPhases.map((phase, index) => ({
+        id: `node-${phase.id}`,
+        phaseId: phase.id,
+        position: { x: 80 + index * 220, y: phase.id === "fix" ? 260 : 80 },
+      })),
+      edges: [
+        ...phases.slice(0, -1).map((phase, index) => ({
+          id: `success-${phase.id}-${phases[index + 1].id}`,
+          source: `node-${phase.id}`,
+          target: `node-${phases[index + 1].id}`,
+          condition: "success" as const,
+        })),
+        {
+          id: "review-failure-fix",
+          source: `node-${reviewer.id}`,
+          target: "node-fix",
+          condition: "failure",
+          maxTraversals: 2,
+        },
+        {
+          id: "fix-success-review",
+          source: "node-fix",
+          target: `node-${reviewer.id}`,
+          condition: "success",
+          maxTraversals: 2,
+        },
+      ],
+    },
+  }
 }
 
 function textItem(text: string): ChatItem {
@@ -296,9 +349,9 @@ describe("MH1.1 · done com ressalva quando o revisor não aprova", () => {
     )
 
     const r = run()
-    // o loop rodou (fases corretivas apendadas) e terminou aprovado, sem ressalva
+    // a rota declarada rodou e terminou aprovada, sem ressalva
     expect(r.phases.length).toBe(4)
-    expect(r.phases[2].def.label).toBe("Corrigir (rodada 1)")
+    expect(r.phases[2].def.label).toBe("Corrigir")
     expect(r.reviewCaveat ?? null).toBeNull()
   })
 })

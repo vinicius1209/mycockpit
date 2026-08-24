@@ -1,5 +1,5 @@
 // Missão sobrevive a restart (P1 confiabilidade): o pipeline persiste um
-// snapshot em .mission/run-state.json no worktree a cada MARCO; no boot, uma
+// snapshot v2 em .mycockpit/missions/<id>/run-state.json a cada MARCO; no boot, uma
 // conversa cujo arquivo ficou `running` SEM run em memória ganha a oferta de
 // RETOMADA (retomar re-roda da fase corrente com os custos anteriores somados;
 // descartar marca abandoned e não re-oferece). Modelado no
@@ -100,6 +100,34 @@ function preset(
   return { id: "t", name: "Teste", phases, maxCostUsd }
 }
 
+/** Snapshot executável que o modo linear materializa antes de decolar. */
+function linearSnapshot(
+  phases: MissionPhaseDef[],
+  maxCostUsd: number | null = null,
+): MissionPreset {
+  const nodes = phases.map((phase, index) => ({
+    id: `node-${phase.id}`,
+    phaseId: phase.id,
+    position: { x: 56 + index * 248, y: 92 },
+  }))
+  return {
+    ...preset(phases, maxCostUsd),
+    revision: 1,
+    mode: "linear",
+    graph: {
+      version: 1,
+      entryNodeId: nodes[0]?.id ?? null,
+      nodes,
+      edges: nodes.slice(0, -1).map((node, index) => ({
+        id: `edge-${node.id}-${nodes[index + 1].id}`,
+        source: node.id,
+        target: nodes[index + 1].id,
+        condition: "success",
+      })),
+    },
+  }
+}
+
 function ok(costUsd = 0): PhaseResult {
   return { ok: true, items: [], costUsd, costSource: undefined }
 }
@@ -110,17 +138,50 @@ function seededState(over: Partial<MissionRunState> = {}): MissionRunState {
     phaseDef({ id: "plan", label: "Planejar", persona: "planner" }),
     phaseDef({ id: "build", label: "Executar" }),
   ]
+  const maxCostUsd = over.maxCostUsd ?? null
+  const snapshot = linearSnapshot(phases, maxCostUsd)
+  const transition = {
+    edgeId: "edge-node-plan-node-build",
+    sourceNodeId: "node-plan",
+    targetNodeId: "node-build",
+    sourceVisit: 0,
+    targetVisit: 1,
+    outcome: "success" as const,
+    at: 122,
+  }
   return {
-    version: 1,
+    version: 2,
     missionId: "m-interrompida",
     dir: ".mycockpit/missions/m-interrompida",
     convId: CONV,
     task: "tarefa retomada",
-    preset: { id: "t", name: "Teste", phases, maxCostUsd: null },
+    preset: snapshot,
+    execution: {
+      version: 2,
+      planId: snapshot.id,
+      planRevision: snapshot.revision!,
+      planSnapshot: snapshot,
+      transitions: [transition],
+    },
     current: 1,
     phases: [
-      { status: "done", costUsd: 0.4 },
-      { status: "running", costUsd: 0 },
+      {
+        def: phases[0],
+        visitId: "visit-plan-0",
+        nodeId: "node-plan",
+        enteredViaEdgeId: null,
+        outcome: "success",
+        status: "done",
+        costUsd: 0.4,
+      },
+      {
+        def: phases[1],
+        visitId: "visit-build-1",
+        nodeId: "node-build",
+        enteredViaEdgeId: transition.edgeId,
+        status: "running",
+        costUsd: 0,
+      },
     ],
     costTotal: 0.4,
     maxCostUsd: null,
@@ -186,12 +247,37 @@ describe("persistência do pipeline nos marcos (run-state.json no worktree)", ()
     // estado final no disco: fim normal marca done (terminal — não re-oferece).
     const st = diskState()
     expect(st).not.toBeNull()
-    expect(st!.version).toBe(1)
+    expect(st!.version).toBe(2)
     expect(st!.convId).toBe(CONV)
     expect(st!.status).toBe("done")
     expect(st!.costTotal).toBeCloseTo(0.5, 5)
     expect(st!.phases.map((p) => p.status)).toEqual(["done", "done"])
     expect(st!.preset.phases).toHaveLength(2)
+    expect(st!.execution?.planSnapshot).toEqual(st!.preset)
+    expect(st!.execution?.planSnapshot).toMatchObject({
+      revision: 1,
+      graph: {
+        entryNodeId: "node-a",
+        nodes: [{ id: "node-a" }, { id: "node-b" }],
+        edges: [
+          {
+            id: "edge-node-a-node-b",
+            source: "node-a",
+            target: "node-b",
+            condition: "success",
+          },
+        ],
+      },
+    })
+    expect(st!.execution?.transitions).toHaveLength(1)
+    expect(st!.execution?.transitions[0]).toMatchObject({
+      edgeId: "edge-node-a-node-b",
+      sourceNodeId: "node-a",
+      targetNodeId: "node-b",
+      sourceVisit: 0,
+      targetVisit: 1,
+      outcome: "success",
+    })
   })
 
   it("fim normal limpa: arquivo done não re-oferece retomada no boot", async () => {
@@ -216,6 +302,8 @@ describe("detecção no boot (card de retomada)", () => {
     expect(entry.state.current).toBe(1)
     expect(entry.state.task).toBe("tarefa retomada")
     expect(entry.state.preset.phases).toHaveLength(2)
+    expect(entry.state.execution?.planSnapshot.graph?.nodes).toHaveLength(2)
+    expect(entry.state.execution?.transitions).toHaveLength(1)
   })
 
   it("missão em memória (qualquer status) ⇒ não oferece", async () => {
@@ -287,17 +375,15 @@ describe("retomada (re-roda da fase corrente, custos anteriores somados)", () =>
   it("gate respondido com a fase do gate JÁ done: NÃO re-paga a fase — avança e injeta as decisões na PRÓXIMA", async () => {
     // Estado real do marco "gate respondido": current AINDA na fase do gate
     // (o i++ vem depois do persist), fase done, decisões destinadas à seguinte.
-    seed(
-      seededState({
-        current: 0,
-        phases: [
-          { status: "done", costUsd: 0.4 },
-          { status: "queued", costUsd: 0 },
-        ],
-        gateDecisions:
-          "## Decisões do usuário (gate humano)\n1. P: qual lib?\n   R: usar zod",
-      }),
-    )
+    const state = seededState({
+      current: 0,
+      gateDecisions:
+        "## Decisões do usuário (gate humano)\n1. P: qual lib?\n   R: usar zod",
+    })
+    // O runtime v2 grava atomicamente a transição e a visita de destino antes
+    // de abrir o gate; o source continua em current até a resposta pousar.
+    state.phases[1].status = "queued"
+    seed(state)
     await useMission.getState().detectInterrupted(CONV, CWD)
     h.results = [ok(0.2)]
     useMission.getState().resumeInterrupted(CONV, "proj1", CWD, "padrao")

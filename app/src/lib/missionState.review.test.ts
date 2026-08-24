@@ -1,8 +1,5 @@
-// MH1.1 fix — a memória do loop de revisão SOBREVIVE a crash: runToState grava
-// reviewLoops/lastReview/reviewCaveat em cada marco e parseRunState re-hidrata.
-// Arquivo LEGADO (gravado antes dos campos) não perde o clamp: as fases
-// corretivas já apendadas no preset efetivo carregam a rodada no id
-// (`fix-N-*`/`rereview-N-*`) e o parse DERIVA o reviewLoops delas.
+// A memória do loop de revisão sobrevive a crash no snapshot v2. Run-state v1
+// não migra: o projeto ainda está em construção e o contrato novo é intencional.
 
 import { describe, expect, it } from "vitest"
 import type { MissionPhaseDef, MissionRun } from "@/lib/missionTypes"
@@ -85,9 +82,7 @@ describe("run-state · memória do loop de revisão (MH1.1 fix)", () => {
     expect(back?.reviewCaveat).toBeNull()
   })
 
-  it("arquivo LEGADO sem os campos: deriva reviewLoops das fases corretivas do preset (ids reais fix-N/rereview-N)", () => {
-    // run-state como o código PRÉ-FIX gravava: preset efetivo com as rodadas
-    // apendadas, mas sem reviewLoops/lastReview — a rodada mora só nos ids.
+  it("run-state v1 é recusado sem migração silenciosa", () => {
     const legado = {
       version: 1,
       missionId: "m-crash-1234",
@@ -123,8 +118,7 @@ describe("run-state · memória do loop de revisão (MH1.1 fix)", () => {
       updatedAt: 123,
     }
     const back = parseRunState(JSON.stringify(legado))
-    expect(back?.reviewLoops).toBe(2) // clamp NÃO re-arma na retomada
-    expect(back?.lastReview).toBeNull()
+    expect(back).toBeNull()
   })
 
   it("lixo nos campos novos não derruba o parse (defaults honestos)", () => {

@@ -196,6 +196,8 @@ export function saveDraftAsPreset(input: {
   phases: MissionPhaseDef[]
   maxCostUsd: number | null
   gatePolicy?: MissionGatePolicy
+  /** Plano que originou o rascunho. Preserva a topologia ao salvar uma cópia. */
+  sourcePlan?: MissionPreset
   id?: string
 }):
   | { ok: true; presets: MissionPreset[]; preset: MissionPreset }
@@ -204,7 +206,24 @@ export function saveDraftAsPreset(input: {
   if (error) return { ok: false, error }
   const preset: MissionPreset = {
     id: input.id ?? `preset-${Math.random().toString(36).slice(2, 8)}`,
+    revision: 1,
     name: input.name.trim(),
+    ...(input.sourcePlan?.description
+      ? { description: input.sourcePlan.description }
+      : {}),
+    ...(input.sourcePlan?.mode ? { mode: input.sourcePlan.mode } : {}),
+    ...(input.sourcePlan?.graph
+      ? {
+          graph: {
+            ...input.sourcePlan.graph,
+            nodes: input.sourcePlan.graph.nodes.map((node) => ({
+              ...node,
+              position: { ...node.position },
+            })),
+            edges: input.sourcePlan.graph.edges.map((edge) => ({ ...edge })),
+          },
+        }
+      : {}),
     phases: clonePhases(input.phases),
     maxCostUsd: input.maxCostUsd,
     gatePolicy: normalizeGatePolicy(input.gatePolicy),

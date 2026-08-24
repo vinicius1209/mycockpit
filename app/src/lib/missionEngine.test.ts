@@ -64,7 +64,7 @@ function stepDone(
   engine: MissionEngineState,
   items: ChatItem[],
 ): ReturnType<typeof afterPhaseDone> {
-  return afterPhaseDone(engine, items, MISSION_ID)
+  return afterPhaseDone(engine, items, MISSION_ID, Date.now(), true)
 }
 
 describe("loop de correção · rodada N abre fix + rereview", () => {
@@ -223,6 +223,7 @@ describe("loop de correção · ONDE a correção entra na fila", () => {
       [textItem("NÃO APROVADO: perde os contratos vigentes.")],
       MISSION_ID,
       AGORA,
+      true,
     )
     expect(done.correction?.corrective.appendedInFlight).toEqual({
       round: 1,
@@ -245,6 +246,7 @@ describe("loop de correção · ONDE a correção entra na fila", () => {
       [textItem("Ainda não está aprovado: falta o rollback.")],
       MISSION_ID,
       AGORA + 60_000,
+      true,
     )
     expect(round2.correction?.rereview.appendedInFlight).toEqual({
       round: 2,

@@ -1,47 +1,42 @@
-// ESTADO PERSISTENTE do pipeline de missão (P1 confiabilidade): o run vive em
-// memória (store/mission.ts byConv) e morria com o app. Gravamos um snapshot em
-// `.mycockpit/missions/<slug>/run-state.json` — pasta ISOLADA por missão (ver
-// lib/missionPaths.ts; antes era `.mission/run-state.json` fixo, que missões no
-// mesmo cwd sobrescreviam) — a cada MARCO: início, transição de fase, gate
-// aberto/respondido, recovery, fim. No boot, o ponteiro por conversa
-// (activePointerPath) aponta o dir da missão; se o run-state lá está `running`
-// SEM missão em memória, a conversa ganha o card de RETOMADA.
-//
-// Decisões documentadas:
-// - Best-effort SEMPRE: falha de escrita/leitura NUNCA derruba a missão.
-// - Gate/recovery pendentes NÃO sobrevivem ao restart: retomar re-roda a fase
-//   corrente do zero (ela re-pergunta se precisar). Um gate já RESPONDIDO
-//   sobrevive via `gateDecisions` (bloco destinado à fase `current`).
-// - Anexos do launcher (fase 1) não sobrevivem — o contexto real está no
-//   worktree/handoffs, que são a fonte da retomada.
-// - Fim normal NÃO apaga o arquivo: marca `done` (audit trail barato; a
-//   detecção só oferece retomada para `running`).
+// Snapshot v2 da missão em `.mycockpit/missions/<slug>/run-state.json`.
+// Congela plano, visitas, transições, gate e recovery a cada marco. Persistência
+// é best-effort: falha de IO nunca derruba o run.
 
 import { invoke } from "@tauri-apps/api/core"
 import type { CostSource } from "@/lib/agent"
 import { activePointerPath, runStatePath } from "@/lib/missionPaths"
+import { snapshotMissionPlan } from "@/lib/missionPlans"
+import { validMissionRunLedger } from "@/lib/missionStateGraph"
 import type {
+  MissionGate,
+  MissionGraphExecution,
+  MissionNodeOutcome,
+  MissionPhaseDef,
   MissionPhaseStatus,
   MissionPreset,
+  MissionRecovery,
   MissionReviewCaveat,
   MissionRun,
   MissionStatus,
+  MissionTransition,
 } from "@/lib/missionTypes"
 
-export const RUN_STATE_VERSION = 1
+export const RUN_STATE_VERSION = 2
 
-/** Status do arquivo: os do run + "abandoned" (usuário descartou a retomada). */
 export type RunStateStatus = MissionStatus | "abandoned"
 
-/** Snapshot persistido de UMA fase (a def viaja no preset efetivo, paralela). */
+/** Uma visita persistida. `def` viaja junto porque loops podem visitar o mesmo
+ *  nó mais de uma vez e recovery pode trocar o agent apenas naquela visita. */
 export interface RunStatePhase {
+  /** Sempre escrito no v2; opcional só para fixtures internas. */
+  def?: MissionPhaseDef
+  visitId?: string
+  nodeId?: string
+  enteredViaEdgeId?: string | null
+  outcome?: MissionNodeOutcome
   status: MissionPhaseStatus
   costUsd: number
-  /** Procedência do custo (ver MissionPhaseRun.costSource). Ausente em
-   *  arquivo gravado antes do campo: a retomada mostra "—", nunca zero. */
   costSource?: CostSource
-  /** Fim congelado da fase. Ausente em arquivo legado ⇒ a retomada não exibe
-   *  duração daquela fase (Warp R6: some o sinal, fica o espaço). */
   endedAt?: number
   error?: string
 }
@@ -50,82 +45,83 @@ export interface RunStatePhase {
 export interface MissionRunState {
   version: number
   missionId: string
-  /** Pasta RELATIVA (sob o cwd) desta missão — ex.:
-   *  `.mycockpit/missions/<slug>`. Isola os artefatos de cada missão; o boot
-   *  lê o run-state DAQUI (via ponteiro da conversa). */
   dir: string
-  /** Dono do arquivo: só ESTA conversa pode retomar (o cwd pode ser a pasta do
-   *  projeto quando não há worktree — o convId evita oferta cruzada). */
   convId: string
   task: string
-  /** Preset EFETIVO no momento do marco: fases já corrigidas pela recuperação
-   *  e/ou apendadas pelo loop de correção, + teto. */
+  /** Snapshot original do plano. O ledger cronológico fica em `phases`. */
   preset: MissionPreset
+  /** Sempre escrito no JSON v2; opcional só para fixtures internas. */
+  execution?: MissionGraphExecution
   current: number
   phases: RunStatePhase[]
   costTotal: number
   maxCostUsd: number | null
-  /** Gate já RESPONDIDO cujas decisões pertencem à fase `current` (a próxima a
-   *  rodar). Reinjetado no prompt ao retomar. null = nada pendente. */
   gateDecisions?: string | null
-  /** MH1.1 fix — memória do loop de revisão ATRAVÉS de crash: rodadas de
-   *  correção já disparadas. Sem isto a retomada re-armava o clamp de
-   *  MAX_REVIEW_LOOPS (até 4 fases extras pagas) e duplicava ids `fix-N`.
-   *  Ausente (arquivo legado) ⇒ o parse DERIVA das fases corretivas do preset
-   *  efetivo (ids `fix-N-*`/`rereview-N-*` já persistidos). */
+  /** Interações pendentes são parte do checkpoint v2. */
+  gate?: MissionGate | null
+  recovery?: MissionRecovery | null
   reviewLoops?: number
-  /** Veredito da ÚLTIMA fase de revisão antes do marco (decide a ressalva do
-   *  desfecho se nenhum reviewer re-rodar após a retomada). null = não houve. */
   lastReview?: RunStateReview | null
-  /** Audit trail do desfecho com ressalva (marco terminal `done`). */
   reviewCaveat?: MissionReviewCaveat | null
   status: RunStateStatus
   updatedAt: number
 }
 
-/** Veredito persistido de uma fase de revisão (espelho do lastReview do loop). */
 export interface RunStateReview {
   approved: boolean
   feedback: string
 }
 
-/** Estado vivo do loop de revisão que o store passa ao serializar um marco. */
 export interface ReviewLoopState {
   loops: number
   last: RunStateReview | null
 }
 
-/** Entrada de missão interrompida detectada no boot (store.interrupted). */
 export interface InterruptedMission {
   state: MissionRunState
   cwd: string
 }
 
-/** Serializa o run em memória num snapshot persistível. `review` = estado vivo
- *  do loop de revisão (loops disparados + último veredito) — sem ele, um crash
- *  na re-review final re-armava o clamp na retomada. */
+/** Serializa o run em memória num snapshot persistível. */
 export function runToState(
   run: MissionRun,
   gateDecisions?: string | null,
   review?: ReviewLoopState | null,
 ): MissionRunState {
+  const fallbackPlan = snapshotMissionPlan({
+    id: run.id,
+    revision: 1,
+    name: run.presetName,
+    phases: run.phases.map((p) => p.def),
+    maxCostUsd: run.maxCostUsd,
+    ...(run.gatePolicy ? { gatePolicy: run.gatePolicy } : {}),
+  })
+  const execution: MissionGraphExecution = cloneJson(
+    run.execution ?? {
+      version: 2,
+      planId: fallbackPlan.id,
+      planRevision: fallbackPlan.revision ?? 1,
+      planSnapshot: fallbackPlan,
+      transitions: [],
+    },
+  )
   return {
     version: RUN_STATE_VERSION,
     missionId: run.id,
     dir: run.dir,
     convId: run.convId,
     task: run.task,
-    preset: {
-      id: run.id,
-      name: run.presetName,
-      phases: run.phases.map((p) => p.def),
-      maxCostUsd: run.maxCostUsd,
-      // MH3.3 — a política sobrevive ao restart (retomada reconstrói o preset
-      // efetivo daqui; ausente = "agente", como sempre).
-      ...(run.gatePolicy ? { gatePolicy: run.gatePolicy } : {}),
-    },
+    preset: cloneJson(execution.planSnapshot),
+    execution,
     current: run.current,
-    phases: run.phases.map((p) => ({
+    phases: run.phases.map((p, index) => ({
+      def: cloneJson(p.def),
+      visitId: p.visitId ?? `${run.id}:visit:${index}`,
+      nodeId: p.nodeId ?? `node-${p.def.id}`,
+      enteredViaEdgeId: p.enteredViaEdgeId ?? null,
+      ...((p.outcome ?? inferredOutcome(p.status))
+        ? { outcome: p.outcome ?? inferredOutcome(p.status)! }
+        : {}),
       status: p.status,
       costUsd: p.costUsd,
       ...(p.costSource ? { costSource: p.costSource } : {}),
@@ -135,6 +131,8 @@ export function runToState(
     costTotal: run.costTotal,
     maxCostUsd: run.maxCostUsd,
     gateDecisions: gateDecisions ?? null,
+    gate: run.gate ? cloneJson(run.gate) : null,
+    recovery: run.recovery ? cloneJson(run.recovery) : null,
     reviewLoops: review?.loops ?? 0,
     lastReview: review?.last ?? null,
     reviewCaveat: run.reviewCaveat ?? null,
@@ -143,10 +141,17 @@ export function runToState(
   }
 }
 
-/** Fontes de custo aceitas no parse (lixo/ausente ⇒ campo some, e a tela cai
- *  em "—" em vez de tratar um número sem procedência como medido). */
-const COST_SOURCES: CostSource[] = ["reported", "estimated", "unknown"]
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
 
+function inferredOutcome(status: MissionPhaseStatus): MissionNodeOutcome | null {
+  if (status === "done") return "success"
+  if (status === "error") return "failure"
+  return null
+}
+
+const COST_SOURCES: CostSource[] = ["reported", "estimated", "unknown"]
 const STATUSES: RunStateStatus[] = [
   "running",
   "done",
@@ -154,19 +159,129 @@ const STATUSES: RunStateStatus[] = [
   "aborted",
   "abandoned",
 ]
+const PHASE_STATUSES: MissionPhaseStatus[] = [
+  "queued",
+  "running",
+  "done",
+  "error",
+  "aborted",
+]
 
-/** Rodadas de correção DERIVADAS do preset efetivo: as fases corretivas já
- *  apendadas carregam a rodada no id (`fix-N-*`/`rereview-N-*`,
- *  store/mission.ts) — o maior N é o reviewLoops no momento do marco. É o
- *  caminho de MIGRAÇÃO dos run-states gravados antes do campo `reviewLoops`
- *  existir: sem derivar, a retomada re-armava o clamp de MAX_REVIEW_LOOPS. */
-function derivedReviewLoops(preset: MissionPreset): number {
-  let max = 0
-  for (const p of preset.phases) {
-    const m = /^(?:fix|rereview)-(\d+)-/.exec(p.id)
-    if (m) max = Math.max(max, Number(m[1]))
+function record(v: unknown): Record<string, unknown> | null {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : null
+}
+
+function validPhaseDef(v: unknown): v is MissionPhaseDef {
+  const o = record(v)
+  if (!o) return false
+  const lists = [o.entryCriteria, o.exitCriteria]
+  const appended = o.appendedInFlight
+  return (
+    typeof o.id === "string" && !!o.id &&
+    typeof o.label === "string" &&
+    (o.persona === "planner" || o.persona === "executor" || o.persona === "reviewer") &&
+    typeof o.agent === "string" && !!o.agent &&
+    (o.model === null || typeof o.model === "string") &&
+    (o.effort === null || typeof o.effort === "string") &&
+    typeof o.maxRetries === "number" && Number.isFinite(o.maxRetries) && o.maxRetries >= 1 &&
+    (o.instructions === undefined || typeof o.instructions === "string") &&
+    lists.every((x) => x === undefined || (Array.isArray(x) && x.every((s) => typeof s === "string"))) &&
+    (o.autonomy === undefined || o.autonomy === "auto" || o.autonomy === "inherit") &&
+    (appended === undefined || (!!record(appended) &&
+      typeof record(appended)!.round === "number" && typeof record(appended)!.at === "number"))
+  )
+}
+
+function validGraph(v: unknown): boolean {
+  if (v === undefined) return true
+  const o = record(v)
+  if (!o || o.version !== 1 || (o.entryNodeId !== null && typeof o.entryNodeId !== "string")) return false
+  if (!Array.isArray(o.nodes) || !Array.isArray(o.edges)) return false
+  return o.nodes.every((n) => {
+    const x = record(n), p = record(x?.position)
+    return !!x && !!p && typeof x.id === "string" && typeof x.phaseId === "string" &&
+      typeof p.x === "number" && Number.isFinite(p.x) && typeof p.y === "number" && Number.isFinite(p.y)
+  }) && o.edges.every((e) => {
+    const x = record(e)
+    return !!x && typeof x.id === "string" && typeof x.source === "string" && typeof x.target === "string" &&
+      (x.condition === "success" || x.condition === "failure" || x.condition === "always") &&
+      (x.label === undefined || typeof x.label === "string") &&
+      (x.maxTraversals === undefined || (typeof x.maxTraversals === "number" && Number.isInteger(x.maxTraversals) && x.maxTraversals >= 1))
+  })
+}
+
+function parsePreset(v: unknown): MissionPreset | null {
+  const o = record(v)
+  if (!o || typeof o.id !== "string" || !o.id || typeof o.name !== "string") return null
+  if (!Array.isArray(o.phases) || o.phases.length === 0 || !o.phases.every(validPhaseDef)) return null
+  if (o.maxCostUsd !== null && (typeof o.maxCostUsd !== "number" || !Number.isFinite(o.maxCostUsd) || o.maxCostUsd < 0)) return null
+  if (o.revision !== undefined && (typeof o.revision !== "number" || !Number.isInteger(o.revision) || o.revision < 1)) return null
+  if (o.description !== undefined && typeof o.description !== "string") return null
+  if (o.mode !== undefined && o.mode !== "linear" && o.mode !== "graph") return null
+  if (o.mode === "graph" && o.graph === undefined) return null
+  if (!validGraph(o.graph)) return null
+  if (o.gatePolicy !== undefined && o.gatePolicy !== "agente" && o.gatePolicy !== "sempre-apos-planejar" && o.gatePolicy !== "nunca") return null
+  return cloneJson(o as unknown as MissionPreset)
+}
+
+function parseTransition(v: unknown): MissionTransition | null {
+  const o = record(v)
+  if (!o || typeof o.edgeId !== "string" || !o.edgeId || typeof o.sourceNodeId !== "string" ||
+      typeof o.targetNodeId !== "string" || !Number.isInteger(o.sourceVisit) || !Number.isInteger(o.targetVisit) ||
+      (o.sourceVisit as number) < 0 || (o.targetVisit as number) < 0 ||
+      (o.outcome !== "success" && o.outcome !== "failure") ||
+      typeof o.at !== "number" || !Number.isFinite(o.at) || o.at < 0) return null
+  return cloneJson(o as unknown as MissionTransition)
+}
+
+function parseExecution(v: unknown): MissionGraphExecution | null {
+  if (v === undefined) return null
+  const o = record(v)
+  const snapshot = parsePreset(o?.planSnapshot)
+  if (!o || o.version !== 2 || typeof o.planId !== "string" || !o.planId ||
+      !Number.isInteger(o.planRevision) || (o.planRevision as number) < 1 || !snapshot ||
+      o.planId !== snapshot.id || o.planRevision !== (snapshot.revision ?? 1) || !Array.isArray(o.transitions)) return null
+  const transitions = o.transitions.map(parseTransition)
+  if (transitions.some((t) => t === null)) return null
+  return { version: 2, planId: o.planId, planRevision: o.planRevision as number,
+    planSnapshot: snapshot, transitions: transitions as MissionTransition[] }
+}
+
+function parseStatePhase(v: unknown, fallback: MissionPhaseDef | undefined, missionId: string, index: number): RunStatePhase | null {
+  const o = record(v)
+  if (!o || !PHASE_STATUSES.includes(o.status as MissionPhaseStatus)) return null
+  const def = validPhaseDef(o.def) ? cloneJson(o.def) : fallback ? cloneJson(fallback) : null
+  if (!def) return null
+  if (o.outcome !== undefined && o.outcome !== "success" && o.outcome !== "failure") return null
+  if (o.enteredViaEdgeId !== undefined && o.enteredViaEdgeId !== null && typeof o.enteredViaEdgeId !== "string") return null
+  const status = o.status as MissionPhaseStatus
+  const outcome = (o.outcome as MissionNodeOutcome | undefined) ?? inferredOutcome(status)
+  return {
+    def,
+    visitId: typeof o.visitId === "string" && o.visitId ? o.visitId : `${missionId}:visit:${index}`,
+    nodeId: typeof o.nodeId === "string" && o.nodeId ? o.nodeId : `node-${def.id}`,
+    enteredViaEdgeId: typeof o.enteredViaEdgeId === "string" ? o.enteredViaEdgeId : null,
+    ...(outcome ? { outcome } : {}),
+    status,
+    costUsd: typeof o.costUsd === "number" && Number.isFinite(o.costUsd) && o.costUsd >= 0 ? o.costUsd : 0,
+    ...(COST_SOURCES.includes(o.costSource as CostSource) ? { costSource: o.costSource as CostSource } : {}),
+    ...(typeof o.endedAt === "number" && o.endedAt > 0 ? { endedAt: o.endedAt } : {}),
+    ...(typeof o.error === "string" && o.error ? { error: o.error } : {}),
   }
-  return max
+}
+
+function validGate(v: unknown): v is MissionGate {
+  const o = record(v)
+  return !!o && Number.isInteger(o.phase) && (o.phase as number) >= 0 &&
+    Array.isArray(o.questions) && o.questions.every((q) => typeof q === "string")
+}
+
+function validRecovery(v: unknown): v is MissionRecovery {
+  const o = record(v)
+  return !!o && Number.isInteger(o.phase) && (o.phase as number) >= 0 &&
+    typeof o.error === "string" && typeof o.message === "string"
 }
 
 /** Normaliza o veredito persistido (lixo/ausente ⇒ null). */
@@ -189,9 +304,7 @@ function parseCaveat(v: unknown): MissionReviewCaveat | null {
   return { rounds: o.rounds, feedback: o.feedback }
 }
 
-/** Parse TOLERANTE do run-state.json: valida o esqueleto (versão, ids, preset
- *  com fases, status conhecido) e normaliza os numéricos. null = inaproveitável
- *  (o chamador simplesmente não oferece retomada). */
+/** Parse defensivo do v2. Arquivos v1 não migram. */
 export function parseRunState(raw: string): MissionRunState | null {
   if (!raw || !raw.trim()) return null
   let obj: unknown
@@ -204,54 +317,38 @@ export function parseRunState(raw: string): MissionRunState | null {
   const o = obj as Record<string, unknown>
   if (o.version !== RUN_STATE_VERSION) return null
   if (typeof o.missionId !== "string" || !o.missionId) return null
-  // Sem `dir` = run-state legado (era do `.mission/` fixo, pré-isolamento): não
-  // dá pra localizar com segurança e essas missões já estavam sujeitas à
-  // sobrescrita — não oferece retomada (null), sem quebrar nada.
   if (typeof o.dir !== "string" || !o.dir) return null
   if (typeof o.convId !== "string" || !o.convId) return null
   if (typeof o.task !== "string") return null
-  const preset = o.preset as MissionPreset | undefined
-  if (
-    !preset ||
-    typeof preset !== "object" ||
-    !Array.isArray(preset.phases) ||
-    preset.phases.length === 0
-  ) {
-    return null
-  }
+  const preset = parsePreset(o.preset)
+  if (!preset) return null
+  const execution = parseExecution(o.execution)
+  if (!execution) return null
   const status = o.status as RunStateStatus
   if (!STATUSES.includes(status)) return null
-  const phases: RunStatePhase[] = Array.isArray(o.phases)
-    ? (o.phases as RunStatePhase[]).map((p) => ({
-        status: p?.status ?? "queued",
-        costUsd: typeof p?.costUsd === "number" ? p.costUsd : 0,
-        ...(COST_SOURCES.includes(p?.costSource as CostSource)
-          ? { costSource: p.costSource }
-          : {}),
-        ...(typeof p?.endedAt === "number" && p.endedAt > 0
-          ? { endedAt: p.endedAt }
-          : {}),
-        ...(typeof p?.error === "string" && p.error ? { error: p.error } : {}),
-      }))
-    : []
+  if (!Array.isArray(o.phases)) return null
+  const parsedPhases = o.phases.map((p, i) => parseStatePhase(p, preset.phases[i], o.missionId as string, i))
+  if (parsedPhases.some((p) => p === null)) return null
+  const visits = parsedPhases as RunStatePhase[]
+  if (!validMissionRunLedger(execution, visits)) return null
+  if (o.gate != null && !validGate(o.gate)) return null
+  if (o.recovery != null && !validRecovery(o.recovery)) return null
   return {
     version: RUN_STATE_VERSION,
     missionId: o.missionId,
     dir: o.dir,
     convId: o.convId,
     task: o.task,
-    preset,
-    current: typeof o.current === "number" ? o.current : 0,
-    phases,
-    costTotal: typeof o.costTotal === "number" ? o.costTotal : 0,
-    maxCostUsd: typeof o.maxCostUsd === "number" ? o.maxCostUsd : null,
+    preset: cloneJson(execution.planSnapshot),
+    execution,
+    current: Number.isInteger(o.current) && (o.current as number) >= 0 ? o.current as number : 0,
+    phases: visits,
+    costTotal: typeof o.costTotal === "number" && Number.isFinite(o.costTotal) && o.costTotal >= 0 ? o.costTotal : 0,
+    maxCostUsd: typeof o.maxCostUsd === "number" && Number.isFinite(o.maxCostUsd) && o.maxCostUsd >= 0 ? o.maxCostUsd : null,
     gateDecisions: typeof o.gateDecisions === "string" ? o.gateDecisions : null,
-    // arquivo legado (pré-campo): deriva das fases corretivas do preset — a
-    // memória do clamp sobrevive mesmo a run-states antigos.
-    reviewLoops:
-      typeof o.reviewLoops === "number" && o.reviewLoops >= 0
-        ? o.reviewLoops
-        : derivedReviewLoops(preset),
+    gate: o.gate == null ? null : cloneJson(o.gate as unknown as MissionGate),
+    recovery: o.recovery == null ? null : cloneJson(o.recovery as unknown as MissionRecovery),
+    reviewLoops: typeof o.reviewLoops === "number" && o.reviewLoops >= 0 ? o.reviewLoops : 0,
     lastReview: parseReview(o.lastReview),
     reviewCaveat: parseCaveat(o.reviewCaveat),
     status,

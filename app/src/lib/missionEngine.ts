@@ -7,9 +7,8 @@
 //   entre-fases ──nextTransition──▶ run | teto | finish
 //   fase falhou ──failureTransition──▶ teto-fase | falha | recovery
 //   recovery    ──applyRecoveryChoice/rerunBudget──▶ re-run da MESMA fase
-//   fase ok     ──afterPhaseDone──▶ veredito do reviewer + rodada de correção
-//                                   (fix-N + rereview-N LOGO APÓS o revisor que
-//                                   reprovou, clamp MAX_REVIEW_LOOPS)
+//   fase ok     ──afterPhaseDone──▶ captura/veredito do reviewer
+//   resultado  ──missionGraphRunTransition──▶ próxima visita do grafo
 //   pós-fase    ──gateTransition──▶ gate | notice | none (política do preset)
 //   fim         ──finalCaveat──▶ done limpo | done com ressalva (MH1.1)
 //
@@ -46,13 +45,11 @@ export const MAX_REVIEW_LOOPS = 2
  *  (preset efetivo, fase corrente, memória do loop de revisão, matéria-prima da
  *  entrega). O store guarda UMA instância por launch e aplica as transições. */
 export interface MissionEngineState {
-  /** Preset EFETIVO: fases do launch + corretivas INSERIDAS pelo loop de
-   *  revisão logo depois do revisor que reprovou + defs trocadas pela
-   *  recuperação. */
+  /** Definições das visitas já materializadas, em ordem cronológica. */
   phases: MissionPhaseDef[]
   /** Índice da fase corrente (aponta além do fim quando acabou). */
   current: number
-  /** Rodadas de correção já disparadas (clamp de MAX_REVIEW_LOOPS). */
+  /** Travessias de reprovação já consumidas no caminho do reviewer. */
   reviewLoops: number
   /** Veredito da ÚLTIMA fase de revisão (decide a ressalva do desfecho). */
   lastReview: RunStateReview | null
@@ -274,6 +271,9 @@ export function afterPhaseDone(
   /** Instante do carimbo de procedência das fases acrescentadas (injetável
    *  em teste; o motor segue puro em relação ao resto). */
   now: number = Date.now(),
+  /** Compatibilidade isolada de testes do motor linear antigo. O produto
+   *  nunca habilita expansão dinâmica: correções pertencem ao grafo. */
+  expandCorrection: boolean = false,
 ): PhaseDoneTransition {
   const i = state.current
   const def = state.phases[i]
@@ -293,6 +293,9 @@ export function afterPhaseDone(
     feedback: phaseText(items),
   }
   next = { ...next, lastReview: review }
+  if (!expandCorrection) {
+    return { state: next, review, correction: null }
+  }
   if (review.approved || next.reviewLoops >= MAX_REVIEW_LOOPS) {
     return { state: next, review, correction: null }
   }

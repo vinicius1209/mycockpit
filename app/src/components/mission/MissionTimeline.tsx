@@ -13,6 +13,7 @@ import { PhaseLive } from "@/components/mission/PhaseLive"
 import { PhaseReceiptBlock } from "@/components/mission/PhaseReceipt"
 import { HoldCard } from "@/components/mission/HoldCard"
 import { DoneSummary } from "@/components/mission/DoneSummary"
+import { MissionRunGraph } from "@/components/mission/MissionRunGraph"
 import { GateCard } from "@/components/mission/GateCard"
 import { RecoveryCard } from "@/components/mission/RecoveryCard"
 import {
@@ -502,7 +503,7 @@ export function MissionTimeline({ convId }: { convId: string }) {
               {held ? (
                 <>
                   <span className="size-1.5 rounded-full bg-st-warning" />
-                  segurando · fase {Math.min(mission.current + 1, n)}/{n}
+                  segurando · visita {Math.min(mission.current + 1, n)}/{n}
                 </>
               ) : gated ? (
                 <>
@@ -512,12 +513,12 @@ export function MissionTimeline({ convId }: { convId: string }) {
               ) : inRecovery ? (
                 <>
                   <span className="animate-cockpit-pulse size-1.5 rounded-full bg-st-warning" />
-                  pausada · limite na fase {Math.min(mission.current + 1, n)}/{n}
+                  pausada · limite na visita {Math.min(mission.current + 1, n)}/{n}
                 </>
               ) : running ? (
                 <>
                   <span className="animate-cockpit-pulse size-1.5 rounded-full bg-st-running" />
-                  em voo · fase {Math.min(mission.current + 1, n)}/{n}
+                  em voo · visita {Math.min(mission.current + 1, n)}/{n}
                 </>
               ) : mission.status === "done" ? (
                 mission.reviewCaveat ? "✓ concluída com ressalva" : "✓ concluída"
@@ -604,6 +605,8 @@ export function MissionTimeline({ convId }: { convId: string }) {
           </button>
         )}
       </div>
+
+      <MissionRunGraph mission={mission} className="mt-4" />
 
       {/* R8 — A RÉGUA: uma linha que NÃO rola, com a posição, o denominador
           declarado e o que vem a seguir. É a única concessão à tese do painel
