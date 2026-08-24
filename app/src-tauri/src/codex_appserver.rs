@@ -232,6 +232,19 @@ fn map_item_started(item: &Value) -> Vec<AgentEvent> {
             input: json!({ "query": text_of("query") }),
             parent_tool_id: None,
         }],
+        // AUTO-COMPACTAÇÃO do codex. Descoberta no binário 0.149: o system
+        // prompt dele diz "when you run out of context, the conversation is
+        // automatically summarized for you", há a chave
+        // `auto_compact_token_limit`, e o item chega como `ContextCompactionItem`
+        // (aqui, camelCase, como os irmãos).
+        //
+        // Isto CAÍA no `_ => vec![]`: a conversa era compactada, o modelo perdia
+        // detalhe e você não ficava sabendo. O claude já avisava (compact_boundary,
+        // ADR-015) — a diferença entre os motores era invisível, que é o defeito
+        // que o §2.2 e o selo do sandbox vêm corrigindo em outros eixos.
+        "contextCompaction" => vec![AgentEvent::Notice {
+            message: "Contexto cheio: o Codex resumiu a conversa sozinho — o detalhe antigo virou resumo.".to_string(),
+        }],
         _ => vec![],
     }
 }
@@ -1585,5 +1598,27 @@ mod tests {
             "usage limit reached"
         );
         assert_eq!(error_message(&json!({})), "o turno do codex falhou");
+    }
+
+    #[test]
+    fn codex_avisa_quando_compacta_sozinho() {
+        // Descoberto no binário 0.149 (24/08/2026): o system prompt do codex diz
+        // "when you run out of context, the conversation is automatically
+        // summarized for you", e o item chega como `ContextCompactionItem`.
+        //
+        // Isto caía no `_ => vec![]`: a conversa era compactada e você não
+        // ficava sabendo. Só o claude avisava, e a diferença entre motores era
+        // invisível — a mesma família do `enforcement` antes do sandbox.
+        let evs = map_item_started(&json!({ "id": "i1", "type": "contextCompaction" }));
+        assert!(
+            evs.iter().any(|e| matches!(e, AgentEvent::Notice { message } if message.contains("resumiu a conversa"))),
+            "sem aviso de compactação"
+        );
+    }
+
+    #[test]
+    fn codex_sem_compactacao_nao_inventa_aviso() {
+        let evs = map_item_started(&json!({ "id": "i1", "type": "webSearch", "query": "x" }));
+        assert!(!evs.iter().any(|e| matches!(e, AgentEvent::Notice { .. })));
     }
 }

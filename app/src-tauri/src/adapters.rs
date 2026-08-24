@@ -2105,6 +2105,9 @@ fn map_codex_item(
 //     emulação por prompt + `--sandbox`.
 #[derive(Default)]
 pub struct AgyAdapter {
+    /// Já avisamos que o agy compactou neste run? O `compaction_info` acompanha
+    /// os steps seguintes, e repetir viraria eco a cada linha.
+    avisou_compactacao: bool,
     /// Modelo requisitado (p/ o rótulo no Session e p/ estimar o custo).
     /// None = default do agy, e aí o custo sai sem estimativa (honesto).
     model: Option<String>,
@@ -2321,6 +2324,38 @@ impl AgyAdapter {
     /// O `result` fecha o turno. Duas armadilhas medidas em 14/08/2026:
     /// `response` é a concatenação narração+resposta (não usamos), e `usage` é
     /// o ACUMULADO DA CONVERSA (ADR-033) — o que sai daqui é o DELTA.
+    /// AUTO-COMPACTAÇÃO do agy → linha no fio.
+    ///
+    /// Descoberta no binário 1.1.19 (24/08/2026): há o protobuf
+    /// `exa.jetski_cortex_pb.CompactionInfo`, o campo serializado
+    /// `json:"compaction_info,omitempty"` e o cabeçalho de prompt
+    /// `# Resuming from a compaction`. Ou seja, o agy compacta sozinho, como o
+    /// claude e o codex.
+    ///
+    /// Isto era INVISÍVEL: o claude avisava (`compact_boundary`, ADR-015) e os
+    /// outros dois não. Mesma família de defeito do `enforcement` antes do
+    /// sandbox — um motor tem o sinal, os outros não, e a diferença não aparece.
+    ///
+    /// Aceita as duas grafias porque o campo vem de protobuf (snake) mas o
+    /// serializador pode emitir camel; checar só uma seria apostar na versão.
+    /// UMA vez por run: o `compaction_info` acompanha os steps seguintes, e
+    /// repetir viraria eco a cada linha.
+    fn aviso_de_compactacao(&mut self, step: &serde_json::Value) -> Vec<AgentEvent> {
+        if self.avisou_compactacao {
+            return vec![];
+        }
+        let tem = ["compaction_info", "compactionInfo"]
+            .iter()
+            .any(|k| step.get(*k).is_some_and(|v| !v.is_null()));
+        if !tem {
+            return vec![];
+        }
+        self.avisou_compactacao = true;
+        vec![AgentEvent::Notice {
+            message: "Contexto cheio: o Antigravity resumiu a conversa sozinho — o detalhe antigo virou resumo.".to_string(),
+        }]
+    }
+
     fn map_result(&mut self, result: &serde_json::Value) -> Vec<AgentEvent> {
         let usage = result.get("usage");
         // `input_tokens` do agy EXCLUI o cache; o `CumulativeUsage` do app é
@@ -2572,7 +2607,11 @@ impl AgentAdapter for AgyAdapter {
                         .unwrap_or(0),
                 }]
             }
-            ("step_update", Some(step)) => self.map_step(step),
+            ("step_update", Some(step)) => {
+                let mut out = self.aviso_de_compactacao(step);
+                out.extend(self.map_step(step));
+                out
+            }
             ("result", Some(result)) => self.map_result(result),
             // `command_result` (resposta de `/comando` nativo, ex. `/credits`)
             // e qualquer evento novo: surfaça em vez de descartar.
@@ -4010,6 +4049,11 @@ mod tests {
     /// `init` — id da conversa, cwd e as 56 tools que o agy expõe.
     const AGY_INIT: &str = r#"{"event":"init","conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","init":{"cwd":"/private/tmp/agyprobe","tools":["ask_permission","ask_question","browser_click_element","browser_drag_pixel_to_pixel","browser_get_dom","browser_get_network_request","browser_input","browser_list_network_requests","browser_mouse_down","browser_mouse_up","browser_move_mouse","browser_press_key","browser_refresh_page","browser_resize_window","browser_scroll","browser_scroll_dom","browser_select_option","browser_subagent","call_mcp_tool","capture_browser_console_logs","capture_browser_screenshot","click_browser_pixel","command_status","define_subagent","delete_knowledge","execute_browser_javascript","find_by_name","finish","generate_image","grep_search","invoke_subagent","list_browser_pages","list_dir","list_permissions","list_resources","manage_inbox","manage_subagents","manage_task","multi_replace_file_content","notebook_edit","notebook_execution","open_browser_url","read_browser_page","read_resource","read_url_content","replace_file_content","run_command","schedule","search_web","sed_file","send_command_input","send_message","view_file","wait","wait_5_seconds","write_to_file"],"permission_mode":"request-review"}}"#;
     /// Steps de infra do começo do turno: não pintam nada na UI.
+    /// Step com `compaction_info`: o agy compactou a conversa sozinho. O campo
+    /// vem do protobuf `CompactionInfo` (`json:"compaction_info,omitempty"`,
+    /// binário 1.1.19).
+    const AGY_STEP_COMPACTADO: &str = r#"{"event":"step_update","step_update":{"conversation_id":"a1","step_index":9,"state":"DONE","step_type":"agent_response","text_delta":"ok","compaction_info":{"compacted_at_step_indices":[3,4,5]}}}"#;
+
     const AGY_STEP_USER_INPUT: &str = r#"{"event":"step_update","step_update":{"conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","step_index":0,"state":"DONE","step_type":"user_input"}}"#;
     const AGY_STEP_INFRA: &str = r#"{"event":"step_update","step_update":{"conversation_id":"a165239c-dde9-493c-a60c-ccf5ac0ccffb","step_index":1,"state":"DONE","step_type":"unknown","duration_seconds":0.001105}}"#;
     /// A NARRAÇÃO: fala que ANTECEDE a ferramenta. Em texto puro era isto que
@@ -4051,6 +4095,37 @@ mod tests {
     /// step, fechada por TextStop, e o cartão da ferramenta entra entre ela e a
     /// resposta. Deixa de ser cabeçalho da resposta e vira o que sempre foi:
     /// o que o agent disse antes de agir.
+    #[test]
+    fn agy_avisa_quando_compacta_sozinho() {
+        // Os TRÊS motores auto-compactam (medido nos binários em 24/08/2026),
+        // mas só o claude avisava. A conversa perdia detalhe em silêncio nos
+        // outros dois, e você só descobria quando o agente "esquecia" algo.
+        let mut a = AgyAdapter::default();
+        let eventos = agy_linha(&mut a, AGY_STEP_COMPACTADO);
+        assert!(
+            eventos.iter().any(|e| matches!(e, AgentEvent::Notice { message } if message.contains("resumiu a conversa"))),
+            "sem aviso de compactação (eventos: {})", eventos.len()
+        );
+    }
+
+    #[test]
+    fn agy_avisa_UMA_vez_por_run() {
+        // O `compaction_info` acompanha os steps SEGUINTES: sem dedupe, o fio
+        // ganharia uma linha idêntica por step até o fim do turno.
+        let mut a = AgyAdapter::default();
+        let n1 = agy_linha(&mut a, AGY_STEP_COMPACTADO).iter().filter(|e| matches!(e, AgentEvent::Notice { .. })).count();
+        let n2 = agy_linha(&mut a, AGY_STEP_COMPACTADO).iter().filter(|e| matches!(e, AgentEvent::Notice { .. })).count();
+        assert_eq!((n1, n2), (1, 0), "o aviso repetiu");
+    }
+
+    #[test]
+    fn agy_sem_compactacao_nao_inventa_aviso() {
+        // Aviso que aparece sem o fato é pior que ausência: ensina a ignorar.
+        let mut a = AgyAdapter::default();
+        let evs = agy_linha(&mut a, AGY_STEP_NARRACAO);
+        assert!(!evs.iter().any(|e| matches!(e, AgentEvent::Notice { .. })));
+    }
+
     #[test]
     fn narracao_de_acao_nao_cola_na_resposta() {
         let mut a = AgyAdapter::default();

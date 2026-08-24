@@ -1,8 +1,8 @@
 # Compactar quando não há ninguém pra clicar (plano)
 
-> Status: proposto em 24/08/2026. Nasceu da pergunta: *"como estamos hoje
-> trabalhando com janela de contexto? isso é calculado corretamente? estamos
-> compactando?"*
+> Status: **C3 MORTO e C4 promovido a centro (24/08/2026)** — o usuário
+> perguntou *"mas os code agents sozinhos não fazem auto compact?"* e a resposta
+> derrubou metade do plano. Ver "A pergunta que matou o C3". C1/C2 seguem de pé.
 
 ## O que a auditoria achou
 
@@ -145,3 +145,57 @@ o custo muda, o contexto muda, e o histórico não registra.
 Pegar a conversa de 1885 itens medida no G1, rodá-la como fase de missão até
 estourar, e verificar que: (a) o estouro é reconhecido, (b) compacta uma vez,
 (c) a fase termina, (d) o fio diz que compactou. Sem os quatro, a fase não valeu.
+
+## A pergunta que matou o C3 (24/08/2026)
+
+*"Mas os code agents sozinhos não fazem auto compact quando chega num
+determinado nível?"*
+
+Fui verificar nos binários, e **os três fazem**:
+
+| motor | evidência (medida no binário) |
+|---|---|
+| **claude-code** | `autoCompactEnabled`/`Window`/`Threshold`, default LIGADO (2.1.219) |
+| **codex** | system prompt: *"when you run out of context, the conversation is automatically summarized for you"* + chave `auto_compact_token_limit` + item `ContextCompactionItem` (0.149) |
+| **agy** | protobuf `exa.jetski_cortex_pb.CompactionInfo`, campo `json:"compaction_info,omitempty"`, prompt `# Resuming from a compaction` (1.1.19) |
+
+**O C3 (pressão preventiva feita por nós) morreu, e ainda bem.** Ele
+reimplementaria de fora, com dado PIOR, o que o motor já faz por dentro: o CLI
+mede o contexto real; nós temos estimativa por catálogo. Trabalho que parece
+progresso.
+
+**Convergência que vale registrar:** o Codex diz ao próprio modelo *"you will
+see all prior user requests"*. É exatamente o princípio do G1 — preservar toda a
+intenção humana — ao qual cheguei medindo bytes, sem saber disso. Duas casas
+chegando na mesma regra por caminhos independentes é o melhor sinal de que ela
+está certa.
+
+## O buraco VERDADEIRO: visibilidade
+
+Nós avisávamos quando o **claude** compactava (`compact_boundary`, ADR-015). Nos
+outros dois, a conversa perdia detalhe **em silêncio** — você só descobriria
+quando o agente "esquecesse" algo.
+
+É a mesma família de defeito que a semana inteira vem corrigindo em outros
+eixos: **um motor tem o sinal, os outros não, e a diferença é invisível.** Igual
+ao `enforcement` do modo antes do sandbox; igual ao selo `parcial`.
+
+### ✅ Entregue em 24/08/2026
+
+- **codex**: o item `contextCompaction` caía no `_ => vec![]`. Agora vira Notice.
+- **agy**: o `compaction_info` do step vira Notice, UMA vez por run — o campo
+  acompanha os steps seguintes e repetir viraria eco a cada linha.
+- Aceitas as duas grafias (`compaction_info` / `compactionInfo`): o campo vem de
+  protobuf (snake) mas o serializador pode emitir camel, e apostar numa só seria
+  apostar na versão.
+- 5 testes novos, incluindo os dois que garantem que o aviso **não** aparece sem
+  o fato — aviso que aparece sempre é aviso que ninguém lê.
+
+## O plano que sobra
+
+- **C1** (reconhecer estouro) — segue. Serve pro caso em que a auto-compactação
+  do motor NÃO bastou: aí é falha real, e a missão precisa distinguir isso de
+  rate limit.
+- **C2** (estouro vira falha recuperável, com remédio próprio) — segue.
+- ~~C3 (pressão preventiva)~~ — **morto**, ver acima.
+- **C4** (dizer que compactou) — **entregue**, e virou o centro do trabalho.

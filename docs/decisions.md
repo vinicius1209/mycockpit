@@ -2767,3 +2767,36 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   `components/chat/autoResumeAgendar.ts`. O `handleSend` entra como PARÂMETRO em
   vez de import — o módulo de retomada não precisa conhecer o composer, e a
   dependência anda no sentido certo.
+
+### ADR-074 — Os três motores auto-compactam; o que faltava era CONTAR ✅
+- **Contexto (24/08/2026):** eu tinha escrito um plano com uma fase de "pressão
+  preventiva" — o Frota compactaria a conversa antes de estourar, no trabalho
+  desassistido. O usuário perguntou: *"mas os code agents sozinhos não fazem
+  auto compact?"*
+- **Fazem, os três. Medido nos binários:**
+  | motor | evidência |
+  |---|---|
+  | claude-code | `autoCompactEnabled`, default LIGADO (2.1.219) |
+  | codex | system prompt "the conversation is automatically summarized for you" + `auto_compact_token_limit` + `ContextCompactionItem` (0.149) |
+  | agy | protobuf `CompactionInfo`, `json:"compaction_info"`, prompt `# Resuming from a compaction` (1.1.19) |
+- **A fase morreu, e ainda bem.** Ela reimplementaria de fora, com dado PIOR, o
+  que o motor faz por dentro: o CLI mede o contexto real; nós temos estimativa
+  por catálogo. É o tipo de trabalho que parece progresso.
+- **O buraco era outro, e melhor:** só o claude AVISAVA (`compact_boundary`,
+  ADR-015). Nos outros dois a conversa perdia detalhe em silêncio, e o usuário só
+  descobriria quando o agente "esquecesse" algo. Mesma família do `enforcement`
+  antes do sandbox — um motor tem o sinal, os outros não, e a diferença não
+  aparece.
+- **Entregue:** o `contextCompaction` do codex saiu do `_ => vec![]`; o
+  `compaction_info` do agy vira Notice UMA vez por run (o campo acompanha os
+  steps seguintes; repetir viraria eco). As duas grafias do campo são aceitas —
+  ele vem de protobuf (snake) mas o serializador pode emitir camel, e apostar
+  numa só seria apostar na versão.
+- **Convergência que vale registrar:** o system prompt do codex instrui o modelo
+  que *"you will see all prior user requests"* — exatamente o princípio do G1
+  (preservar toda a intenção humana), ao qual cheguei medindo bytes sem saber
+  disso. Duas casas na mesma regra por caminhos independentes.
+- **A lição de método:** eu ia construir sobre uma premissa não verificada. Uma
+  pergunta do usuário — não um teste, não uma guarda — foi o que a derrubou.
+  Verificar o que o motor JÁ FAZ tem que vir antes de decidir o que a gente faz.
+- **Verificado:** `cargo` 506, `tsc` 0, `vitest` 3112, 8 guardas, e2e 23/23.
