@@ -59,12 +59,51 @@ fn sidecar_path() -> Result<std::path::PathBuf, String> {
     Err("sidecar de ditado não encontrado (o build compila com swiftc)".into())
 }
 
+/// Um microfone que o sistema oferece. `uid` é o identificador ESTÁVEL do
+/// CoreAudio (é ele que a preferência guarda): o nome muda com o idioma do SO e
+/// se repete entre dois headsets iguais, então guardar nome daria a preferência
+/// apontando pro device errado.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct MicDevice {
+    pub uid: String,
+    pub name: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ListaDeDevices {
+    devices: Vec<MicDevice>,
+}
+
+/// Lista os microfones de ENTRADA. Lista vazia em qualquer falha: a UI então
+/// mostra só "padrão do sistema", que é o comportamento que sempre existiu —
+/// nunca uma lista inventada.
+#[tauri::command]
+pub async fn stt_devices() -> Vec<MicDevice> {
+    let Ok(bin) = sidecar_path() else {
+        return Vec::new();
+    };
+    let out = match tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        Command::new(bin).arg("--list-devices").output(),
+    )
+    .await
+    {
+        Ok(Ok(o)) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+    serde_json::from_slice::<ListaDeDevices>(&out.stdout)
+        .map(|l| l.devices)
+        .unwrap_or_default()
+}
+
 /// Abre o microfone e começa a transcrever (on-device, pt-BR). `vocab` são os
 /// termos do projeto injetados no reconhecedor, a vantagem sobre ditado genérico.
+/// `device`: UID do microfone escolhido; None/vazio = padrão do sistema.
 #[tauri::command]
 pub async fn stt_start(
     app: tauri::AppHandle,
     vocab: Vec<String>,
+    device: Option<String>,
     session: tauri::State<'_, SttSession>,
 ) -> Result<(), String> {
     let mut guard = session.0.lock().await;
@@ -75,6 +114,13 @@ pub async fn stt_start(
     let mut cmd = Command::new(bin);
     if !vocab.is_empty() {
         cmd.arg("--vocab").arg(vocab.join(","));
+    }
+    // Device sumido NÃO é tratado aqui: o sidecar cai no padrão do sistema e
+    // emite `warn`, que já viaja até a UI. Validar antes duplicaria a regra em
+    // dois lugares que podem discordar — e o sidecar é quem sabe a verdade no
+    // instante em que abre o microfone.
+    if let Some(uid) = device.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+        cmd.arg("--device").arg(uid);
     }
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())

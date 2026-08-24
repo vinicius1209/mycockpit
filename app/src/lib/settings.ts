@@ -29,6 +29,10 @@ export interface GlobalSettings {
   dictationHotkey: string | null
   /** Termos extras de vocabulário do ditado (somados aos fixos do MicButton). */
   dictationVocab: string[]
+  /** UID do microfone escolhido. null = padrão do sistema (o único
+   *  comportamento que existia antes). Guardamos o UID e não o nome: nome muda
+   *  com o idioma do SO e se repete entre dois headsets iguais. */
+  dictationDevice: string | null
   /** Auto-revive: quando o turno termina num rate limit / "vou tentar depois",
    *  reenvia sozinho (após o reset) até concluir de verdade ou bater o cap.
    *  OPT-IN (default false) porque cada resume é um run pago. */
@@ -130,6 +134,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   dictationEnabled: true,
   dictationHotkey: DEFAULT_DICTATION_HOTKEY,
   dictationVocab: [],
+  dictationDevice: null,
   autoResume: false,
   autoResumeMaxTries: 3,
   missionEnabled: false,

@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { getVersion } from "@tauri-apps/api/app"
-import { Minus, Plus, RotateCcw, X } from "lucide-react"
+import { Minus, Plus, RotateCcw } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -33,6 +33,7 @@ import { MachineAgents } from "@/components/settings/MachineAgents"
 import { NewChatDefaults } from "@/components/settings/NewChatDefaults"
 import { GitHubCard } from "@/components/settings/GitHubCard"
 import { ConfinamentoCard } from "@/components/settings/ConfinamentoCard"
+import { DictationSettings } from "@/components/settings/DictationSettings"
 import { ModelsSettings } from "@/components/settings/ModelsSettings"
 import { EspecialistasContent } from "@/components/settings/Especialistas"
 import { restartOnboarding } from "@/components/onboarding/persistence"
@@ -50,11 +51,6 @@ import {
   sectionsByGroup,
   type SectionId,
 } from "@/components/settings/sections"
-import {
-  DEFAULT_DICTATION_HOTKEY,
-  captureHotkey,
-  formatHotkey,
-} from "@/lib/dictationHotkey"
 import { cn } from "@/lib/utils"
 import {
   CONVERSATION_SCALES,
@@ -71,113 +67,6 @@ const HELPER_OPTIONS = [
   { value: "opus", label: "Opus", description: "Máxima qualidade" },
 ]
 
-/** Campo "Atalho do ditado": mostra o combo formatado e grava um novo — em
- *  modo captura o PRÓXIMO keydown com ≥1 modificador vira o combo (validação
- *  em captureHotkey, pura); Esc cancela. Listener em CAPTURE + stopPropagation
- *  pra tecla nenhuma vazar pro dialog (Esc fecharia as Configurações). */
-function HotkeyField() {
-  const combo = useApp((s) => s.settings.dictationHotkey)
-  const enabled = useApp((s) => s.settings.dictationEnabled)
-  const setSettings = useApp((s) => s.setSettings)
-  const [capturing, setCapturing] = useState(false)
-  const [warn, setWarn] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!capturing) return
-    const onKey = (e: KeyboardEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      if (e.code === "Escape") {
-        setCapturing(false)
-        setWarn(null)
-        return
-      }
-      const r = captureHotkey(e)
-      if (r.kind === "pending") return // só modificador — segue esperando
-      if (r.kind === "needs-modifier") {
-        setWarn("Use ao menos um modificador: ⌥, ⌃, ⇧ ou ⌘.")
-        return
-      }
-      if (r.kind === "reserved") {
-        setWarn("⌘K é a paleta de comandos do app, escolha outro combo.")
-        return
-      }
-      setSettings({ dictationHotkey: r.combo })
-      setCapturing(false)
-      setWarn(null)
-    }
-    window.addEventListener("keydown", onKey, true)
-    return () => window.removeEventListener("keydown", onKey, true)
-  }, [capturing, setSettings])
-
-  // fora do modo captura o aviso não fica pendurado
-  useEffect(() => {
-    if (!capturing) setWarn(null)
-  }, [capturing])
-
-  return (
-    <div className="py-3">
-      <div className="text-[13px] text-foreground">Atalho do ditado</div>
-      <div className="mb-2 text-[12px] leading-snug text-muted-foreground">
-        Toque alterna o ditado; segurar é push-to-talk (solta, insere).
-      </div>
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            "inline-flex h-8 min-w-[130px] items-center justify-center rounded-md border bg-secondary/40 px-2.5 font-mono text-[13px]",
-            capturing
-              ? "border-ring text-foreground motion-safe:animate-pulse"
-              : combo
-                ? "text-foreground"
-                : "text-muted-foreground",
-          )}
-          aria-live="polite"
-        >
-          {capturing
-            ? "pressione o combo…"
-            : combo
-              ? formatHotkey(combo)
-              : "desativado"}
-        </span>
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={!enabled}
-          onClick={() => setCapturing((c) => !c)}
-        >
-          {capturing ? "Cancelar (Esc)" : "Gravar atalho"}
-        </Button>
-      </div>
-      <div className="mt-1.5 flex items-center gap-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          className="text-muted-foreground"
-          disabled={!enabled || combo === DEFAULT_DICTATION_HOTKEY}
-          onClick={() => {
-            setCapturing(false)
-            setSettings({ dictationHotkey: DEFAULT_DICTATION_HOTKEY })
-          }}
-        >
-          Restaurar padrão
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="text-muted-foreground"
-          disabled={!enabled || combo === null}
-          onClick={() => {
-            setCapturing(false)
-            setSettings({ dictationHotkey: null })
-          }}
-        >
-          Desativar
-        </Button>
-      </div>
-      {warn && <div className="mt-1.5 text-[12px] text-st-warning">{warn}</div>}
-    </div>
-  )
-}
 
 /** Cabeçalho padrão de uma seção do registro (título + a pergunta dela). */
 function Header({ id }: { id: SectionId }) {
@@ -210,7 +99,6 @@ export function SettingsDialog() {
   const [section, setSection] = useState<SectionId>(() =>
     resolveSection(null, available),
   )
-  const [vocabDraft, setVocabDraft] = useState("")
   const [version, setVersion] = useState("")
 
   useEffect(() => {
@@ -225,15 +113,6 @@ export function SettingsDialog() {
     clearRequested()
   }, [open, requested, available, clearRequested])
 
-  function addVocab() {
-    const t = vocabDraft.trim()
-    if (!t || settings.dictationVocab.includes(t)) {
-      setVocabDraft("")
-      return
-    }
-    setSettings({ dictationVocab: [...settings.dictationVocab, t] })
-    setVocabDraft("")
-  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -545,81 +424,7 @@ export function SettingsDialog() {
             </div>
           )}
 
-          {section === "dictation" && (
-            <div>
-              <Header id="dictation" />
-              <div className="divide-y divide-border/50">
-                <Field
-                  label="Ativar ditado"
-                  hint="Mostra o botão de microfone no composer."
-                >
-                  <Switch
-                    checked={settings.dictationEnabled}
-                    onCheckedChange={(v) => setSettings({ dictationEnabled: v })}
-                    aria-label="Ativar ditado"
-                  />
-                </Field>
-                <HotkeyField />
-                <div className="py-3">
-                  <div className="text-[13px] text-foreground">
-                    Vocabulário personalizado
-                  </div>
-                  <div className="mb-2 text-[12px] leading-snug text-muted-foreground">
-                    Termos que o reconhecedor costuma errar (nomes de serviços,
-                    siglas). Somados aos termos fixos.
-                  </div>
-                  <div className="flex gap-2">
-                    <Input
-                      value={vocabDraft}
-                      onChange={(e) => setVocabDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault()
-                          addVocab()
-                        }
-                      }}
-                      placeholder="ex.: cadastro-pessoa-gateway"
-                      className="h-8 text-[13px]"
-                      disabled={!settings.dictationEnabled}
-                    />
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={addVocab}
-                      disabled={!settings.dictationEnabled || !vocabDraft.trim()}
-                    >
-                      Adicionar
-                    </Button>
-                  </div>
-                  {settings.dictationVocab.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {settings.dictationVocab.map((t) => (
-                        <span
-                          key={t}
-                          className="flex items-center gap-1.5 rounded-md border bg-secondary/50 px-2 py-1 text-[12px] text-foreground/80"
-                        >
-                          {t}
-                          <button
-                            onClick={() =>
-                              setSettings({
-                                dictationVocab: settings.dictationVocab.filter(
-                                  (x) => x !== t,
-                                ),
-                              })
-                            }
-                            className="text-muted-foreground hover:text-st-error"
-                            aria-label={`Remover ${t}`}
-                          >
-                            <X className="size-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+          {section === "dictation" && <DictationSettings />}
 
           {section === "missions" && <MissionSettings />}
 

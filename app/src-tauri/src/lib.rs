@@ -705,6 +705,7 @@ pub fn run() {
             tray::set_tray_preferences,
             tray::tray_action,
             tray::force_quit,
+            stt::stt_devices,
             stt::stt_start,
             stt::stt_stop,
             stt::stt_cancel,

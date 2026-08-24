@@ -47,6 +47,7 @@
 // drain curto com o mic AINDA aberto (os últimos buffers chegam ao request) →
 // endAudio() → engine.stop()/removeTap → passada de arquivo.
 
+import CoreAudio
 import AVFoundation
 import Foundation
 import Speech
@@ -109,6 +110,10 @@ func moreComplete(_ candidate: String, _ best: String) -> String {
 var vocab: [String] = []
 var selfcheck = false
 var selftest = false
+/// UID do microfone escolhido nas Configurações. nil = o padrão do sistema,
+/// que era o ÚNICO comportamento possível antes disto.
+var deviceUID: String? = nil
+var listDevices = false
 var args = Array(CommandLine.arguments.dropFirst())
 while !args.isEmpty {
     let a = args.removeFirst()
@@ -121,6 +126,11 @@ while !args.isEmpty {
         selfcheck = true
     } else if a == "--selftest" {
         selftest = true
+    } else if a == "--device", !args.isEmpty {
+        let v = args.removeFirst().trimmingCharacters(in: .whitespaces)
+        deviceUID = v.isEmpty ? nil : v
+    } else if a == "--list-devices" {
+        listDevices = true
     }
 }
 
@@ -173,6 +183,81 @@ func runSelfTest() -> Int32 {
     }
     emit(["selftest": "moreComplete", "cases": cases.count, "failures": failures])
     return failures == 0 ? 0 : 1
+}
+
+// ---- CoreAudio: enumerar e ESCOLHER o microfone ───────────────────────────
+//
+// O AVAudioEngine sempre abre o device de ENTRADA PADRÃO DO SISTEMA. Quem usa
+// headset e tem a webcam como padrão do SO ditava com o microfone errado e não
+// tinha onde consertar dentro do app. Escolher exige descer pro CoreAudio: a
+// lista vem do HAL e a escolha é uma propriedade da audio unit do inputNode.
+
+struct MicDevice {
+    let id: AudioDeviceID
+    let uid: String
+    let name: String
+}
+
+private func propertyString(_ id: AudioDeviceID, _ selector: AudioObjectPropertySelector) -> String? {
+    var addr = AudioObjectPropertyAddress(
+        mSelector: selector,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain)
+    var size = UInt32(MemoryLayout<CFString?>.size)
+    var value: CFString? = nil
+    let status = withUnsafeMutablePointer(to: &value) {
+        AudioObjectGetPropertyData(id, &addr, 0, nil, &size, $0)
+    }
+    guard status == noErr, let v = value else { return nil }
+    return v as String
+}
+
+/// Um device conta como microfone quando tem ao menos UM canal de ENTRADA.
+/// Sem esse filtro a lista viria cheia de saídas de áudio, e escolher uma delas
+/// daria um ditado que não grava nada.
+private func hasInputChannels(_ id: AudioDeviceID) -> Bool {
+    var addr = AudioObjectPropertyAddress(
+        mSelector: kAudioDevicePropertyStreamConfiguration,
+        mScope: kAudioObjectPropertyScopeInput,
+        mElement: kAudioObjectPropertyElementMain)
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(id, &addr, 0, nil, &size) == noErr, size > 0 else {
+        return false
+    }
+    let raw = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+    defer { raw.deallocate() }
+    guard AudioObjectGetPropertyData(id, &addr, 0, nil, &size, raw) == noErr else { return false }
+    let list = UnsafeMutableAudioBufferListPointer(raw.assumingMemoryBound(to: AudioBufferList.self))
+    for buffer in list where buffer.mNumberChannels > 0 { return true }
+    return false
+}
+
+func inputDevices() -> [MicDevice] {
+    var addr = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDevices,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain)
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(
+        AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size) == noErr, size > 0
+    else { return [] }
+    let count = Int(size) / MemoryLayout<AudioDeviceID>.size
+    var ids = [AudioDeviceID](repeating: 0, count: count)
+    guard AudioObjectGetPropertyData(
+        AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &ids) == noErr
+    else { return [] }
+    return ids.compactMap { id in
+        guard hasInputChannels(id),
+              let uid = propertyString(id, kAudioDevicePropertyDeviceUID),
+              let name = propertyString(id, kAudioObjectPropertyName)
+        else { return nil }
+        return MicDevice(id: id, uid: uid, name: name)
+    }
+}
+
+if listDevices {
+    emit(["devices": inputDevices().map { ["uid": $0.uid, "name": $0.name] }])
+    exit(0)
 }
 
 if selftest {
@@ -411,6 +496,36 @@ func startUtterance() {
 // E → arquivo da sessão (regra 2: a verdade vem do arquivo).
 let engine = AVAudioEngine()
 let input = engine.inputNode
+
+// A ESCOLHA DO MICROFONE VEM ANTES DE LER O FORMATO — e a ordem é o detalhe
+// que faz isto funcionar. `outputFormat(forBus:)` descreve o device que está
+// aberto AGORA; trocar o device depois deixaria tap, arquivo e reconhecedor
+// configurados com a taxa/canais do microfone errado.
+//
+// Device salvo que sumiu (headset desconectado) NÃO é erro fatal: cai no padrão
+// do sistema e AVISA, pelo mesmo canal `warn` que a passada de arquivo usa —
+// "nunca substitui o texto, só explica de onde ele veio". Ficar mudo aqui seria
+// a versão áudio da compactação silenciosa: você ditaria pelo mic errado sem
+// nunca saber por quê.
+if let alvo = deviceUID {
+    let disponiveis = inputDevices()
+    if let achado = disponiveis.first(where: { $0.uid == alvo }) {
+        var id = achado.id
+        let status = AudioUnitSetProperty(
+            input.audioUnit!,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &id,
+            UInt32(MemoryLayout<AudioDeviceID>.size))
+        if status != noErr {
+            emit(["warn": "não consegui abrir o microfone “\(achado.name)”; usando o padrão do sistema"])
+        }
+    } else {
+        emit(["warn": "o microfone escolhido não está conectado; usando o padrão do sistema"])
+    }
+}
+
 let format = input.outputFormat(forBus: 0)
 
 let audioFileLock = NSLock()

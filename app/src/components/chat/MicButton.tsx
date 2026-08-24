@@ -65,6 +65,7 @@ export function MicButton({
   const enabled = useApp((s) => s.settings.dictationEnabled)
   const hotkey = useApp((s) => s.settings.dictationHotkey)
   const vocab = useApp((s) => s.settings.dictationVocab)
+  const device = useApp((s) => s.settings.dictationDevice)
   const [state, setState] = useState<MicState>("idle")
   const [since, setSince] = useState(0)
   const [partial, setPartial] = useState("")
@@ -99,7 +100,7 @@ export function MicButton({
     }
     go("starting")
     try {
-      await sttStart(buildVocab(project?.name, vocab))
+      await sttStart(buildVocab(project?.name, vocab), device)
       setSince(Date.now())
       go("rec")
     } catch (e) {

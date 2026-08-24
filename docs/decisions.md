@@ -2997,3 +2997,45 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   "quais CLIs existem aqui"; esta responde outra pergunta. Enfiar lá repetiria
   o defeito do build 191 que o próprio `sections.ts` documenta.
 - **Verificado:** `tsc` 0, `vitest` 3132 (8 novos), 8 guardas.
+
+### ADR-080 — F3: escolher o microfone (e o caso do headset que sumiu) ✅
+- **Contexto (24/08/2026):** o `AVAudioEngine` do sidecar sempre abriu o device
+  de ENTRADA PADRÃO DO SISTEMA. Não havia como escolher outro dentro do app.
+- **A lista real desta máquina mostra por que isso importa mais do que parecia:**
+  `BlackHole 2ch`, `Microfone (MacBook Pro)`, `Microsoft Teams Audio`, `Perssua`
+  — **três dos quatro são virtuais/loopback**. Se o padrão do SO for um deles, o
+  ditado grava silêncio e o usuário não tem pista do porquê. O problema não é
+  só "gravei pelo mic errado", é "gravei por um device que não capta voz".
+- **Não era um campo, era CoreAudio.** `AVAudioEngine` não expõe seleção: a
+  lista vem do HAL (`kAudioHardwarePropertyDevices`, filtrando quem tem canal de
+  ENTRADA — sem esse filtro a lista viria cheia de saídas, e escolher uma daria
+  um ditado que não grava nada) e a escolha é
+  `kAudioOutputUnitProperty_CurrentDevice` na audio unit do `inputNode`.
+- **A ORDEM é o detalhe que faz funcionar.** A escolha do device vem ANTES de
+  `input.outputFormat(forBus:)`. Aquele formato descreve o device aberto AGORA;
+  trocar depois deixaria tap, arquivo da sessão e reconhecedor configurados com
+  taxa e canais do microfone errado.
+- **Guardamos o UID, nunca o nome.** Nome muda com o idioma do sistema e se
+  repete entre dois headsets iguais — a preferência apontaria pro device errado.
+- **O caso que decide se ficou honesto é o headset DESCONECTADO.** O sidecar cai
+  no padrão do sistema e **avisa**, pelo mesmo canal `warn` da passada de
+  arquivo ("nunca substitui o texto, só explica de onde ele veio"). Ficar mudo
+  aqui seria a versão áudio da compactação silenciosa: você ditaria pelo mic
+  errado sem nunca saber por quê.
+  - E a validação NÃO é duplicada no Rust de propósito: quem sabe a verdade é o
+    sidecar, no instante em que abre o microfone. Duas regras em dois lugares
+    podem discordar.
+  - Nas Configurações o device sumido vira opção própria, marcada
+    "Microfone desconectado". Sumir com ele faria o seletor exibir "Padrão do
+    sistema" enquanto a preferência gravada diz outra coisa.
+- **O que NÃO copiamos do Orca:** `Speech Model` (não se aplica — o
+  reconhecimento é do sistema, não escolhemos modelo) e
+  `Dictation Mode: Toggle|Hold` (o nosso `HotkeyField` já resolve os dois no
+  mesmo gesto: toque alterna, segurar é push-to-talk). Um ajuste a menos é
+  vitória, não lacuna.
+- **A guarda de tamanho mordeu de novo** (`SettingsDialog` 763/700) e o corte foi
+  o mesmo critério da 1ª vez: nasceu `DictationSettings.tsx`, a seção que passou
+  a ter lógica própria. Na 1ª tentativa eu cortei no `)}` errado e quebrei os
+  dois arquivos; refiz com casamento de parênteses.
+- **Verificado:** `swiftc` limpo + `--selftest` 10/10, `cargo` 510, `tsc` 0,
+  `vitest` 3132, 8 guardas, e2e 25/25.
