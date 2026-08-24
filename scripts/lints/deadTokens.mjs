@@ -225,6 +225,7 @@ export const DEAD_TOKEN_RULES = [
       "components/settings/CompanionSettings.tsx": { max: 2, motivo: "probe do companion passou (doutrina 'verde exige probe'): o dot 'servidor no ar' + o check da lista" },
       "components/settings/HooksSettings.tsx": { max: 1, motivo: "probe de hook passou" },
       "components/settings/MachineAgents.tsx": { max: 2, motivo: "probe de agent na máquina passou" },
+      "components/settings/GitHubCard.tsx": { max: 1, motivo: "probe do gh passou: `gh --version` E `gh auth status` rodaram de verdade e devolveram conta ativa. UM só — a confirmação de 'copiei o comando' foi despintada na mesma passada, porque cópia de texto é estado ambiente, não marco nem probe" },
       // A linha por agent saiu de McpSettings.tsx para McpAgentRows.tsx (a
       // catraca de tamanho); o verde é o MESMO e continua sendo probe real.
       "components/settings/McpAgentRows.tsx": { max: 1, motivo: "probe de servidor MCP passou" },

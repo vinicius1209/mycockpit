@@ -2881,3 +2881,51 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   medida, porque string de classe passa em teste de unidade e ainda assim pode
   ser anulada por outra regra — e aqui o culpado nem aparecia no lugar óbvio.
 - **Verificado:** `tsc` 0, `vitest` 3121, 8 guardas, e2e **25/25** (2 novos).
+
+### ADR-077 — F1: o cartão do GitHub (o diagnóstico existia e morria no Rust) ✅
+- **Contexto (24/08/2026):** primeira fase do `telas-de-configuracao-plan`. O app
+  já usava o `gh` (cards de PR, checks, merge) e já sabia ler TODAS as contas
+  logadas — `run_gh_any_account` tenta cada identidade via
+  `gh auth token --user X` e **nunca** troca a conta ativa global do terminal.
+  Isso é mais do que o cartão do concorrente sabe fazer, e não aparecia em tela
+  nenhuma: `grep GitHub` nas Configurações não devolvia uma linha.
+- **O custo já foi pago nesta máquina:** "repository not found" num repo que
+  EXISTE, porque a conta ativa era a errada. O app tinha o diagnóstico dentro do
+  Rust e não contava.
+- **Quatro estados, não dois, porque cada um tem remédio DIFERENTE:**
+  | estado | remédio |
+  |---|---|
+  | `sem-cli` | `brew install gh` |
+  | `sem-conta` | `gh auth login` |
+  | `sem-ativa` | nenhum: o app ADMITE que não sabe |
+  | `ok` | a lista das contas, com a ativa marcada |
+  Colapsar `sem-cli` e `sem-conta` num "não conectado" manda o usuário rodar o
+  comando errado — é o que um selo booleano faz.
+- **`sem-ativa` parece impossível e é o mais importante.** O `gh` sempre marca
+  uma ativa; o estado existe pro dia em que o formato mudar sob nós (drift
+  silencioso, 5ª ocorrência na casa). Aí a tela diz "não sei qual está ativa"
+  em vez de eleger a primeira — chute silencioso reintroduziria o incidente que
+  a tela existe pra evitar, agora com a autoridade da interface.
+- **Leitura pura, sem efeito colateral:** `gh_status` NUNCA roda `auth login`
+  nem `auth switch`. O card mostra e copia o comando; quem executa é o humano,
+  num terminal. Mexer na conta ativa global a partir do app é efeito fora do
+  nosso quintal, e `run_gh_any_account` existe justamente pra não precisar.
+- **Parser único.** `parse_gh_status` virou a única leitura do
+  `gh auth status`, e `parse_gh_accounts` passou a derivar dele. Dois leitores
+  do mesmo formato foi exatamente como o seletor de modelos do agy apodreceu.
+  A fixture do teste é o output REAL desta máquina (duas contas, a 1ª ativa) —
+  parser de formato alheio que só vê exemplo sintético passa no teste e falha
+  na máquina.
+- **`gh auth status` sai com código != 0 quando não há conta logada**, e esse é
+  um dos estados que a tela precisa exibir. Por isso a leitura tolera exit code:
+  exigir sucesso transformaria "não logado" em "não sei".
+- **A guarda de verde mordeu, e metade dela estava certa.** Dois `st-success`:
+  o do probe (declarável, `gh --version` e `gh auth status` rodaram de verdade)
+  e o de "copiei o comando" — que **virou cinza**, porque cópia de texto é o
+  mais ambiente dos estados, nem marco nem probe. O ratchet ganhou entrada de 1,
+  com o motivo escrito.
+- **Fica para depois (no plano):** conta por PROJETO. Se entrar, entra com
+  escopo explícito — projeto sem preferência diz "usando a conta ativa da
+  máquina" por escrito, nunca herda em silêncio.
+- **Verificado:** `cargo` 510 (4 novos), `tsc` 0, `vitest` 3127 (6 novos),
+  8 guardas + os testes da própria guarda (27).

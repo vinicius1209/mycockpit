@@ -71,6 +71,10 @@ import { agentDef } from "@/lib/agents"
 import { reloadActiveProposals } from "@/lib/modelCurator"
 import { runDailyModelMaintenance } from "@/lib/modelRound"
 import { BROWSER_DEMO_PROJECTS } from "@/lib/demoProjects"
+import {
+  conversationScalePercent,
+  scaleFromShortcut,
+} from "@/lib/conversationScale"
 
 /** Intervalo mínimo entre checagens de update dos agents (1x/dia). */
 const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
@@ -105,6 +109,32 @@ export default function App() {
       }),
     [],
   )
+
+  // Zoom de LEITURA do fio, com os atalhos de navegador. Listener em capture:
+  // o composer pode estar focado, mas ⌘+/⌘-/⌘0 pertencem ao chrome, nunca ao
+  // texto. `scaleFromShortcut` consome o default do WebView para ele não ampliar
+  // sidebar, composer e dialogs junto com a conversa.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const app = useApp.getState()
+      const conversationVisible =
+        app.viewMode === "linear" &&
+        app.mainTab.kind === "conversa" &&
+        !app.scheduledOpen &&
+        !app.flightPlansOpen &&
+        !app.fleetOpen
+      if (!conversationVisible) return
+      const next = scaleFromShortcut(event, app.settings.conversationScale)
+      if (next == null) return
+      app.setSettings({ conversationScale: next })
+      toast(`Fonte da conversa: ${conversationScalePercent(next)}`, {
+        id: "conversation-scale",
+        duration: 1400,
+      })
+    }
+    window.addEventListener("keydown", onKey, true)
+    return () => window.removeEventListener("keydown", onKey, true)
+  }, [])
 
   useEffect(() => {
     let cancelled = false

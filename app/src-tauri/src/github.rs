@@ -62,17 +62,133 @@ async fn run_gh(args: &[&str], dur: Duration, token: Option<&str>) -> Result<Str
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// Extrai os usuários logados do output de `gh auth status` (linhas
-/// "… account <nome> (keyring)"). Separado do subprocess p/ ser testável.
+/// Uma identidade logada no `gh`, e se ela é a ATIVA.
+///
+/// `active` é o campo que resolve o incidente mais comum de conta múltipla:
+/// "repository not found" num repo que existe, porque a conta ativa não o
+/// enxerga. Com uma conta só, saber o nome basta; com duas, saber QUAL está
+/// ativa é a informação inteira.
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+pub struct GhAccount {
+    pub user: String,
+    pub active: bool,
+}
+
+/// Parser ÚNICO do `gh auth status`. O formato real (gh 2.x):
+///
+/// ```text
+///   ✓ Logged in to github.com account vinicius1209 (keyring)
+///   - Active account: true
+/// ```
+///
+/// A flag vem na linha SEGUINTE ao nome, então cada "Active account:" pertence
+/// à última conta vista. Separado do subprocess p/ ser testável com o output
+/// real, e é o único parser deste formato de propósito — dois leitores da mesma
+/// saída foi como o seletor de modelos do agy apodreceu (ver detect.rs).
+fn parse_gh_status(status: &str) -> Vec<GhAccount> {
+    let mut out: Vec<GhAccount> = Vec::new();
+    for l in status.lines() {
+        if let Some((_, rest)) = l.split_once(" account ") {
+            if let Some(name) = rest.split_whitespace().next() {
+                if !name.is_empty() {
+                    out.push(GhAccount {
+                        user: name.to_string(),
+                        active: false,
+                    });
+                }
+            }
+        } else if let Some((_, rest)) = l.split_once("Active account:") {
+            if rest.trim() == "true" {
+                if let Some(last) = out.last_mut() {
+                    last.active = true;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Só os nomes, na ordem do output — é o que `run_gh_any_account` consome.
 fn parse_gh_accounts(status: &str) -> Vec<String> {
-    status
-        .lines()
-        .filter_map(|l| {
-            let (_, rest) = l.split_once(" account ")?;
-            let name = rest.split_whitespace().next()?;
-            (!name.is_empty()).then(|| name.to_string())
-        })
-        .collect()
+    parse_gh_status(status).into_iter().map(|a| a.user).collect()
+}
+
+/// Output do `gh auth status` como TEXTO, tolerando exit code != 0.
+///
+/// `gh auth status` sai com código != 0 quando NENHUMA conta está logada — e
+/// esse é justamente um dos estados que a tela precisa exibir. Exigir sucesso
+/// aqui transformaria "não logado" em "não sei".
+async fn gh_auth_status_raw() -> Option<String> {
+    let out = timeout(
+        Duration::from_secs(4),
+        Command::new("gh").args(["auth", "status"]).output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+    Some(format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    ))
+}
+
+/// Extrai "2.62.0" de "gh version 2.62.0 (2024-...)". None se não reconhecer —
+/// nunca devolve a linha crua como se fosse versão.
+fn parse_gh_version(out: &str) -> Option<String> {
+    let (_, rest) = out.split_once("gh version ")?;
+    let v = rest.split_whitespace().next()?;
+    (!v.is_empty()).then(|| v.to_string())
+}
+
+/// O que a MÁQUINA diz sobre o `gh`, para a tela de Conexões.
+///
+/// Três estados distintos porque cada um tem um remédio diferente: sem CLI
+/// (instalar), com CLI e sem conta (logar), com conta (dizer quais e qual é a
+/// ativa). Colapsar isso num booleano "conectado" é o que faz a tela do
+/// concorrente não conseguir explicar o "repository not found".
+#[derive(serde::Serialize)]
+pub struct GhStatus {
+    pub installed: bool,
+    pub version: Option<String>,
+    pub accounts: Vec<GhAccount>,
+}
+
+/// Leitura pura, sem efeito colateral: NUNCA roda `auth login` nem
+/// `auth switch`. Trocar a conta ativa global do usuário a partir do app é
+/// efeito fora do nosso quintal — o `run_gh_any_account` existe exatamente
+/// para não precisar disso.
+#[tauri::command]
+pub async fn gh_status() -> GhStatus {
+    let version = match timeout(
+        Duration::from_secs(4),
+        Command::new("gh").arg("--version").output(),
+    )
+    .await
+    {
+        Ok(Ok(o)) if o.status.success() => {
+            parse_gh_version(&String::from_utf8_lossy(&o.stdout))
+        }
+        // ENOENT (não instalado) e timeout caem aqui igual; a distinção vem do
+        // `installed` abaixo, que só é true quando houve versão reconhecida.
+        _ => None,
+    };
+    if version.is_none() {
+        return GhStatus {
+            installed: false,
+            version: None,
+            accounts: Vec::new(),
+        };
+    }
+    let accounts = gh_auth_status_raw()
+        .await
+        .map(|s| parse_gh_status(&s))
+        .unwrap_or_default();
+    GhStatus {
+        installed: true,
+        version,
+        accounts,
+    }
 }
 
 /// Roda `gh` tentando TODAS as identidades logadas: 1º a conta ativa (keyring);
@@ -86,18 +202,8 @@ async fn run_gh_any_account(args: &[&str], dur: Duration) -> Result<String, Stri
     };
     // `gh auth status` sai com código != 0 em cenários parciais → lê o output
     // mesmo em "falha" rodando via output() direto (run_gh exigiria sucesso).
-    let status = match timeout(
-        Duration::from_secs(4),
-        Command::new("gh").args(["auth", "status"]).output(),
-    )
-    .await
-    {
-        Ok(Ok(o)) => format!(
-            "{}{}",
-            String::from_utf8_lossy(&o.stdout),
-            String::from_utf8_lossy(&o.stderr)
-        ),
-        _ => return Err(first_err),
+    let Some(status) = gh_auth_status_raw().await else {
+        return Err(first_err);
     };
     for user in parse_gh_accounts(&status) {
         let Ok(token) =
@@ -195,5 +301,51 @@ mod tests {
         let s = "github.com\n  ✓ Logged in to github.com account alice (keyring)\n  - Active account: true\n  ✓ Logged in to github.com account bob-work (keyring)\n";
         assert_eq!(parse_gh_accounts(s), vec!["alice", "bob-work"]);
         assert!(parse_gh_accounts("nada logado").is_empty());
+    }
+
+    /// Output REAL do `gh` 2.x nesta máquina (duas contas, a 1ª ativa). Fixture
+    /// copiada da saída de verdade, não inventada: parser de formato de outro
+    /// programa que só vê exemplo sintético passa no teste e falha na máquina.
+    const AUTH_STATUS_REAL: &str = "github.com\n  \u{2713} Logged in to github.com account vinicius1209 (keyring)\n  - Active account: true\n  - Git operations protocol: ssh\n  - Token: gho_************************************\n  - Token scopes: 'admin:public_key', 'gist', 'read:org', 'repo', 'workflow'\n\n  \u{2713} Logged in to github.com account viniimachadoprime (keyring)\n  - Active account: false\n  - Git operations protocol: ssh\n  - Token: gho_************************************\n  - Token scopes: 'admin:public_key', 'gist', 'read:org', 'repo'\n";
+
+    #[test]
+    fn parse_status_marca_a_conta_ativa() {
+        let contas = parse_gh_status(AUTH_STATUS_REAL);
+        assert_eq!(contas.len(), 2);
+        assert_eq!(contas[0].user, "vinicius1209");
+        assert!(contas[0].active);
+        assert_eq!(contas[1].user, "viniimachadoprime");
+        // A que NÃO está ativa é o ponto: é a que causa "repository not found"
+        // num repo que existe. Marcá-la como ativa seria pior que não marcar.
+        assert!(!contas[1].active);
+    }
+
+    #[test]
+    fn active_account_nunca_vaza_pra_conta_anterior() {
+        // "Active account: false" da 2ª conta não pode desmarcar a 1ª, e um
+        // "true" órfão (sem conta antes) não pode explodir nem inventar conta.
+        let s = "  - Active account: true\n  \u{2713} Logged in to github.com account solo (keyring)\n  - Active account: false\n";
+        let contas = parse_gh_status(s);
+        assert_eq!(contas.len(), 1);
+        assert_eq!(contas[0].user, "solo");
+        assert!(!contas[0].active);
+    }
+
+    #[test]
+    fn sem_conta_logada_nao_e_o_mesmo_que_sem_gh() {
+        // `gh auth status` deslogado sai com código != 0 e texto de erro: a
+        // lista fica vazia, e quem distingue "sem CLI" é o `installed`.
+        assert!(parse_gh_status("You are not logged into any GitHub hosts.").is_empty());
+    }
+
+    #[test]
+    fn parse_version_reconhece_ou_desiste() {
+        assert_eq!(
+            parse_gh_version("gh version 2.62.0 (2024-11-14)\nhttps://github.com/cli/cli"),
+            Some("2.62.0".to_string())
+        );
+        // Formato irreconhecível NUNCA vira "versão" com a linha crua dentro.
+        assert_eq!(parse_gh_version("alguma outra coisa"), None);
+        assert_eq!(parse_gh_version(""), None);
     }
 }

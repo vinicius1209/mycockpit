@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { getVersion } from "@tauri-apps/api/app"
-import { RotateCcw, X } from "lucide-react"
+import { Minus, Plus, RotateCcw, X } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -31,6 +31,7 @@ import { UsageMeterSettings } from "@/components/settings/UsageMeterSettings"
 import { HooksSettings } from "@/components/settings/HooksSettings"
 import { MachineAgents } from "@/components/settings/MachineAgents"
 import { NewChatDefaults } from "@/components/settings/NewChatDefaults"
+import { GitHubCard } from "@/components/settings/GitHubCard"
 import { ModelsSettings } from "@/components/settings/ModelsSettings"
 import { EspecialistasContent } from "@/components/settings/Especialistas"
 import { restartOnboarding } from "@/components/onboarding/persistence"
@@ -54,6 +55,13 @@ import {
   formatHotkey,
 } from "@/lib/dictationHotkey"
 import { cn } from "@/lib/utils"
+import {
+  CONVERSATION_SCALES,
+  DEFAULT_CONVERSATION_SCALE,
+  conversationScalePercent,
+  normalizeConversationScale,
+  stepConversationScale,
+} from "@/lib/conversationScale"
 
 const HELPER_OPTIONS = [
   { value: "off", label: "Desligado", description: "Sem sugestões automáticas" },
@@ -185,6 +193,9 @@ export function SettingsDialog() {
   const toggleTheme = useApp((s) => s.toggleTheme)
   const settings = useApp((s) => s.settings)
   const setSettings = useApp((s) => s.setSettings)
+  const conversationScale = normalizeConversationScale(
+    settings.conversationScale,
+  )
   // 1ª camada de esconder: build sem nenhum motor com hooks não mostra a seção
   // (nem o toggle). A decisão vem do registry de capabilities, nunca de nome.
   const available = useMemo(
@@ -295,6 +306,77 @@ export function SettingsDialog() {
                     onCheckedChange={() => toggleTheme()}
                     aria-label="Tema claro"
                   />
+                </Field>
+                <Field
+                  label="Tamanho das conversas"
+                  hint="Só o fio muda. Atalhos: ⌘/Ctrl +, ⌘/Ctrl − e ⌘/Ctrl 0."
+                >
+                  <div
+                    role="group"
+                    aria-label="Tamanho das conversas"
+                    className="flex items-center gap-1"
+                  >
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      title="Diminuir fonte (⌘/Ctrl −)"
+                      aria-label="Diminuir fonte da conversa"
+                      disabled={conversationScale === CONVERSATION_SCALES[0]}
+                      onClick={() =>
+                        setSettings({
+                          conversationScale: stepConversationScale(
+                            conversationScale,
+                            -1,
+                          ),
+                        })
+                      }
+                    >
+                      <Minus className="size-3.5" />
+                    </Button>
+                    <output
+                      aria-live="polite"
+                      className="w-12 text-center font-mono text-[12px] tabular-nums text-foreground"
+                    >
+                      {conversationScalePercent(conversationScale)}
+                    </output>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      title="Aumentar fonte (⌘/Ctrl +)"
+                      aria-label="Aumentar fonte da conversa"
+                      disabled={
+                        conversationScale ===
+                        CONVERSATION_SCALES[CONVERSATION_SCALES.length - 1]
+                      }
+                      onClick={() =>
+                        setSettings({
+                          conversationScale: stepConversationScale(
+                            conversationScale,
+                            1,
+                          ),
+                        })
+                      }
+                    >
+                      <Plus className="size-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      title="Restaurar 100% (⌘/Ctrl 0)"
+                      aria-label="Restaurar tamanho da conversa"
+                      disabled={conversationScale === DEFAULT_CONVERSATION_SCALE}
+                      onClick={() =>
+                        setSettings({
+                          conversationScale: DEFAULT_CONVERSATION_SCALE,
+                        })
+                      }
+                    >
+                      <RotateCcw className="size-3.5" />
+                    </Button>
+                  </div>
                 </Field>
                 <div className="pt-3 text-[12px] leading-snug text-muted-foreground">
                   Sidebar, painel de contexto e o modo (Linear/SDD) também
@@ -545,6 +627,8 @@ export function SettingsDialog() {
           {section === "integrations" && <McpSettings />}
 
           {section === "machine" && <MachineAgents />}
+
+          {section === "github" && <GitHubCard />}
 
           {section === "models" && <ModelsSettings />}
 

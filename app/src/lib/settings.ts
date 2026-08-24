@@ -9,6 +9,9 @@ import { DEFAULT_DICTATION_HOTKEY } from "@/lib/dictationHotkey"
 // que o webview do Tauri guarda em disco entre reinícios). Distinto do config
 // POR-PROJETO (.mycockpit/config.toml), que segue vivendo no ContextPanel.
 export interface GlobalSettings {
+  /** Escala de leitura do transcript (0.8–1.6). Não altera chrome nem composer;
+   *  atalhos padrão: ⌘/Ctrl +, ⌘/Ctrl - e ⌘/Ctrl 0. */
+  conversationScale: number
   /** Agent pré-selecionado ao abrir uma conversa nova. */
   defaultAgent: string
   /** Modelo default (null = default do agent, "default"). */
@@ -119,6 +122,7 @@ export interface GlobalSettings {
 }
 
 export const DEFAULT_SETTINGS: GlobalSettings = {
+  conversationScale: 1,
   defaultAgent: "claude-code",
   defaultModel: "claude-opus-5[1m]",
   defaultEffort: null,

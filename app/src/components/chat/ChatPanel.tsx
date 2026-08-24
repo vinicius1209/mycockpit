@@ -10,7 +10,7 @@ import { withNotes } from "@/lib/notes"
 import { LivePlanCard } from "@/components/chat/LivePlanCard"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { Especialistas } from "@/components/settings/Especialistas"
-import { MessageList } from "@/components/chat/MessageList"
+import { ScaledMessageList } from "@/components/chat/ScaledMessageList"
 import { useFeedbackDoFio } from "@/components/chat/feedbackDoFio"
 import { PresenceBar } from "@/components/chat/PresenceBar"
 import {
@@ -1113,7 +1113,7 @@ export function ChatPanel() {
             key={activeId ?? "none"}
             className="animate-in fade-in-0 duration-300 ease-out"
           >
-            <MessageList
+            <ScaledMessageList
               items={items}
               running={running}
               finalizing={finalizing}

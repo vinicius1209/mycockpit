@@ -19,6 +19,7 @@ import {
   Info,
   Layers,
   Mic,
+  GitPullRequest,
   Network,
   PanelTop,
   Palette,
@@ -44,6 +45,7 @@ export type SectionId =
   | "hooks"
   | "ledger"
   | "integrations"
+  | "github"
   | "companion"
   | "about"
 
@@ -175,6 +177,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "Quanto da janela do plano já foi usada e quanto os turnos custaram em US$.",
     icon: CircleDollarSign,
     group: "agentes",
+  },
+  {
+    id: "github",
+    label: "GitHub",
+    title: "GitHub",
+    question:
+      "Qual CLI e quais contas o app usa para PRs e checks, e qual está ativa.",
+    icon: GitPullRequest,
+    group: "conexoes",
   },
   {
     id: "integrations",
