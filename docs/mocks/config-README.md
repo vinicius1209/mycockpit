@@ -7,7 +7,7 @@
 > **Nada aqui está implementado.** São propostas para você aprovar, recusar ou
 > misturar antes de virar código.
 
-Abrir: `open docs/mocks/config-modelos-a.html` (idem `-b` e `config-servicos`).
+Abrir: `open docs/mocks/config-modelos.html` (idem `config-servicos.html`).
 
 ---
 
@@ -85,12 +85,13 @@ problema — o selo é discreto demais.)*
 
 ---
 
-## O que eu preciso de você
+## Onde cada um está
 
-1. **Modelos: A, B, ou uma mistura?**
-2. **Serviços: fecho a seção "GitHub" e abro "Serviços" com cartões?** (a seção
-   `github` vira legado em `LEGACY_SECTION_IDS`, então deep link antigo não
-   quebra)
-3. **Trocar conta pelo app: pode?** Com o aviso da consequência na tela.
-
-Nada disso entra em código antes da sua resposta.
+- **Serviços — ✅ ENTREGUE** (ADR-086). A seção "GitHub" fechou, "Serviços" abriu
+  com cartão por provedor, e trocar a conta ativa passou a ser um clique, com a
+  consequência escrita ao lado. O id `github` virou legado, então deep link
+  antigo continua chegando em algum lugar.
+- **Modelos — aguardando você.** O mock está lado a lado com o build de hoje.
+  A pergunta agora é uma só: **essa proposta serve, ou tem algo nela que
+  atrapalha?** Não precisa escolher entre variantes; se algum pedaço não fechar,
+  eu mudo o pedaço.
