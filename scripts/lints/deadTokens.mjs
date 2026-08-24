@@ -224,6 +224,7 @@ export const DEAD_TOKEN_RULES = [
       // Família "probe real": verde só depois que a checagem rodou de verdade.
       "components/settings/CompanionSettings.tsx": { max: 2, motivo: "probe do companion passou (doutrina 'verde exige probe'): o dot 'servidor no ar' + o check da lista" },
       "components/settings/HooksSettings.tsx": { max: 1, motivo: "probe de hook passou" },
+      "components/settings/ConfinamentoCard.tsx": { max: 2, motivo: "probe do sandbox passou: o Rust conferiu `sandbox-exec` no disco. Mesma forma do CompanionSettings — o check do RESUMO + o check da linha confinada. O 'não confinado' é traço cinza, não X: no modo que escreve isso é o desenho funcionando, e vermelho ali ensinaria a ignorar vermelho" },
       "components/settings/MachineAgents.tsx": { max: 2, motivo: "probe de agent na máquina passou" },
       "components/settings/GitHubCard.tsx": { max: 1, motivo: "probe do gh passou: `gh --version` E `gh auth status` rodaram de verdade e devolveram conta ativa. UM só — a confirmação de 'copiei o comando' foi despintada na mesma passada, porque cópia de texto é estado ambiente, não marco nem probe" },
       // A linha por agent saiu de McpSettings.tsx para McpAgentRows.tsx (a

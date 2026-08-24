@@ -24,6 +24,7 @@ import {
   PanelTop,
   Palette,
   Radar,
+  ShieldCheck,
   Smartphone,
   SquareTerminal,
   Users,
@@ -41,6 +42,7 @@ export type SectionId =
   | "dictation"
   | "missions"
   | "machine"
+  | "sandbox"
   | "models"
   | "hooks"
   | "ledger"
@@ -150,6 +152,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     title: "Agentes na máquina",
     question: "Quais CLIs de agent existem aqui, em que versão e logadas ou não.",
     icon: Cpu,
+    group: "agentes",
+  },
+  {
+    id: "sandbox",
+    label: "Confinamento",
+    title: "Confinamento",
+    question:
+      "O que o sistema operacional barra quando um agente roda aqui, e em quais modos.",
+    icon: ShieldCheck,
     group: "agentes",
   },
   {

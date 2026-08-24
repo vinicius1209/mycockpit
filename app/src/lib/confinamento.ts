@@ -12,6 +12,7 @@
 
 import { invoke } from "@tauri-apps/api/core"
 import { isTauri } from "@/lib/db"
+import { PERMISSIVIDADE, type SessionMode } from "@/lib/sessionMode"
 
 export type Selo = "ausente" | "parcial"
 
@@ -54,6 +55,80 @@ export function notaDeQuemSegura(
     return `confinamento parcial: ${confinamento.nota}`
   }
   return notaDoMotor
+}
+
+/** Uma linha do quadro de confinamento: um modo do eixo canônico e o que o
+ *  SISTEMA garante nele nesta máquina. */
+export interface LinhaDeConfinamento {
+  modo: SessionMode
+  rotulo: string
+  confinado: boolean
+  /** A frase da linha. Quando `confinado`, o que o sistema barra; quando não,
+   *  POR QUE não — e os dois "não" são diferentes (máquina sem sandbox × modo
+   *  que escreve por definição). Sem isso, "não confinado" viraria um traço
+   *  mudo e o leitor concluiria a causa errada. */
+  frase: string
+}
+
+/** Rótulos do EIXO CANÔNICO, não do vocabulário de um motor.
+ *
+ *  Deliberadamente separados dos `label` de `agentModes`: lá o rótulo é o que
+ *  aquele CLI chama a opção dele ("Só lê" no claude, "Planejar" no codex), e
+ *  aqui a pergunta é sobre a máquina, que não tem motor. Fossem os mesmos, um
+ *  motor renomear a opção dele mudaria o texto de uma tela que não fala dele. */
+const ROTULO: Record<SessionMode, string> = {
+  plan: "Planejar",
+  leitura: "Só lê",
+  fusionRo: "Fusão (só lê)",
+  padrao: "Padrão",
+  auto: "Auto",
+  liberado: "Liberado",
+}
+
+/**
+ * O quadro inteiro, uma linha por modo, do menos ao mais permissivo.
+ *
+ * `confinado` exige as DUAS condições: a máquina ter o sandbox E o modo
+ * prometer escrita zero. Separar assim é o ponto — sem a 1ª, um modo que
+ * "ganharia selo" apareceria confinado numa máquina que não confina nada.
+ */
+export function linhasDeConfinamento(c: Confinamento): LinhaDeConfinamento[] {
+  const temSandbox = c.selo === "parcial"
+  return (Object.keys(ROTULO) as SessionMode[])
+    .sort((a, b) => PERMISSIVIDADE[a] - PERMISSIVIDADE[b])
+    .map((modo) => {
+      const prometeZero = ganhaSelo(modo)
+      const confinado = temSandbox && prometeZero
+      return {
+        modo,
+        rotulo: ROTULO[modo],
+        confinado,
+        frase: confinado
+          ? c.nota
+          : prometeZero
+            ? "sem sandbox nesta máquina: quem segura é o motor"
+            : "o modo escreve, então não há escrita pra barrar",
+      }
+    })
+}
+
+/** O resumo do topo. DERIVADO das linhas, nunca um estado à parte: se as
+ *  linhas mudarem, o resumo muda junto por construção — é o único jeito de ele
+ *  não poder mentir. */
+export interface ResumoDoConfinamento {
+  temSandbox: boolean
+  confinados: number
+  total: number
+}
+
+export function resumoDoConfinamento(
+  linhas: LinhaDeConfinamento[],
+): ResumoDoConfinamento {
+  return {
+    temSandbox: linhas.some((l) => l.confinado),
+    confinados: linhas.filter((l) => l.confinado).length,
+    total: linhas.length,
+  }
 }
 
 let cache: Confinamento | null = null

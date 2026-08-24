@@ -32,6 +32,7 @@ import { HooksSettings } from "@/components/settings/HooksSettings"
 import { MachineAgents } from "@/components/settings/MachineAgents"
 import { NewChatDefaults } from "@/components/settings/NewChatDefaults"
 import { GitHubCard } from "@/components/settings/GitHubCard"
+import { ConfinamentoCard } from "@/components/settings/ConfinamentoCard"
 import { ModelsSettings } from "@/components/settings/ModelsSettings"
 import { EspecialistasContent } from "@/components/settings/Especialistas"
 import { restartOnboarding } from "@/components/onboarding/persistence"
@@ -627,6 +628,8 @@ export function SettingsDialog() {
           {section === "integrations" && <McpSettings />}
 
           {section === "machine" && <MachineAgents />}
+
+          {section === "sandbox" && <ConfinamentoCard />}
 
           {section === "github" && <GitHubCard />}
 

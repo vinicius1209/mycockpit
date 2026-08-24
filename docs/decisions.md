@@ -2964,3 +2964,36 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   1071, e a baseline desceu junto (`--update`). Ela só aperta — foi a primeira
   vez nesta sessão que ela mordeu na direção boa.
 - **Verificado:** `tsc` 0, `vitest` 3124, 8 guardas.
+
+### ADR-079 — F2: o selo do sandbox sai do popover e vira quadro ✅
+- **Contexto (24/08/2026):** o S4 entregou o selo de confinamento e ele aparecia
+  em UM lugar — dentro do popover do chip de modo, no composer. Não havia tela
+  onde você perguntasse *"esta máquina está protegida?"* e recebesse resposta.
+  Conceito à frente, superfície atrás.
+- **Meu próprio plano estava errado numa frase, e a leitura do código corrigiu.**
+  Eu tinha escrito *"parcial: 2 de 3 motores"*. Falso: o selo é da MÁQUINA
+  (`disponivel()` = macOS + `sandbox-exec` no disco), e "parcial" é sobre
+  ESCOPO — o sistema barra escrita no projeto, não no resto do disco. Motor não
+  entra na conta.
+- **A informação que ninguém via é POR MODO.** Só `plan`, `leitura` e `fusionRo`
+  passam pelo sandbox (`ganhaSelo`); os outros escrevem por definição, então não
+  há escrita a barrar. Isso é derivável e não estava em lugar nenhum.
+- **O mecanismo veio do Orca, e é o único das seis telas que eu realmente
+  invejei:** no `ComputerUsePane` deles o resumo é `total - concedidas` —
+  DERIVADO das linhas, nunca um estado à parte. Aqui `resumoDoConfinamento` conta
+  as linhas. Não existe caminho em que o topo diga "protegido" e as linhas digam
+  o contrário; um teste fixa exatamente essa impossibilidade.
+- **`confinado` exige DUAS condições**, e separá-las é o ponto: a máquina ter o
+  sandbox E o modo prometer escrita zero. Sem a primeira, um modo que "ganharia
+  selo" apareceria confinado numa máquina que não confina nada — a promessa
+  falsa que o módulo inteiro existe pra impedir.
+- **Os dois "não confinado" têm causas diferentes, e a frase diz qual.** Modo de
+  escrita zero em máquina sem sandbox é culpa da máquina; modo que escreve com
+  sandbox presente é o desenho funcionando. Um traço mudo faria o leitor concluir
+  a causa errada.
+- **Traço cinza, não X, no não-confinado.** Vermelho no modo que escreve
+  ensinaria o usuário a ignorar vermelho.
+- **Seção própria, não bloco em "Agentes na máquina".** Aquela seção responde
+  "quais CLIs existem aqui"; esta responde outra pergunta. Enfiar lá repetiria
+  o defeito do build 191 que o próprio `sections.ts` documenta.
+- **Verificado:** `tsc` 0, `vitest` 3132 (8 novos), 8 guardas.
