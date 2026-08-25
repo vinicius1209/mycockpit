@@ -3332,3 +3332,39 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **A catraca de superfícies apertou sozinha (3 → 1)**, que é exatamente o
   comportamento pelo qual ela existe: a seção migrou e o limite acompanhou.
 - **Verificado:** `tsc` 0, `vitest` 3164 (10 novos), 9 guardas, e2e 27/27.
+
+### ADR-088 — Missão concluída travava a conversa: um booleano com nome mentiroso ✅
+- **Relato (25/08/2026):** *"tenho uma missão concluída na tela, consigo enviar
+  mensagens no composer, porém não consigo ver nada dessas mensagens."*
+- **A causa é um nome.** `missionActive` no `ChatPanel` era
+  `!!byConv[convId]` — ou seja **"esta conversa TEM uma missão"**, não "a missão
+  está ativa". O próprio store documenta que o registro fica em memória depois
+  do fim (*"qualquer status: rodando OU timeline visível"*).
+- **Por que o sintoma é justamente o pior:** o ENVIO olhava
+  `status === "running"` (já `false` numa missão concluída) e liberava o
+  composer; o FIO olhava `missionActive` (ainda `true`) e nunca voltava a
+  renderizar. Duas perguntas diferentes respondidas por um booleano só, e as
+  duas respostas discordando. A mensagem era enviada, gravada, cobrada — e
+  invisível.
+- **A regra que faltava, agora escrita e testada** (`vistaDaConversa`):
+  | pergunta | efeito |
+  |---|---|
+  | tem missão nesta conversa? | a TIMELINE aparece (registro do episódio) |
+  | a missão está RODANDO? | ela TOMA a tela, o fio recua |
+  Terminal (`done`/`error`/`aborted`) mantém a timeline **e** devolve o fio: a
+  missão virou história, e história não bloqueia conversa.
+- **Não duplica o resumo**, e isso foi verificado antes de mudar: no fim normal
+  a missão NÃO grava marco de conclusão no fio (o `patchConv({status:"done"})`
+  não chama `recordHistory`), então o resumo existe num lugar só — a timeline.
+  Era exatamente a preocupação que o comentário original citava para suprimir o
+  fio, e ela só valia enquanto a missão rodava.
+- **A regressão que a correção NÃO pode reintroduzir** está fixada em teste:
+  missão SEM conversa não mostra o "Boa tarde" — o card flutuando sobre a
+  timeline foi o defeito que a supressão original veio consertar.
+- **O `missionActive` deixou de existir.** Manter o nome corrigido seria
+  convidar o próximo leitor ao mesmo erro; quem decide agora é uma função com
+  quatro saídas nomeadas.
+- **A catraca de tamanho mordeu** (`ChatPanel` 1305 → 1313) e me obrigou a
+  enxugar o que eu tinha escrito a mais, inclusive um comentário que descrevia a
+  regra ANTIGA da barra de presença. Voltou a 1305.
+- **Verificado:** `tsc` 0, `vitest` 3203 (7 novos), 9 guardas, e2e 27/27.

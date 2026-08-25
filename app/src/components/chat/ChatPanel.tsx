@@ -11,6 +11,7 @@ import { LivePlanCard } from "@/components/chat/LivePlanCard"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { Especialistas } from "@/components/settings/Especialistas"
 import { ScaledMessageList } from "@/components/chat/ScaledMessageList"
+import { vistaDaConversa } from "@/components/chat/vistaDaConversa"
 import { useFeedbackDoFio } from "@/components/chat/feedbackDoFio"
 import { PresenceBar } from "@/components/chat/PresenceBar"
 import {
@@ -176,14 +177,13 @@ export function ChatPanel() {
   const finalizing = conv.finalizing
   const activeId = useChat((s) => s.activeId)
   const fusionActive = useFusion((s) => (activeId ? !!s.byConv[activeId] : false))
-  const missionActive = useMission((s) =>
-    activeId ? !!s.byConv[activeId] : false,
+  // O STATUS, não um booleano (ADR-088; o porquê em `vistaDaConversa`).
+  const missionStatus = useMission((s) =>
+    activeId ? (s.byConv[activeId]?.status ?? null) : null,
   )
   // Missão RODANDO nesta conversa: trava o envio manual (as fases rodam no mesmo
   // worktree; um run paralelo embolaria o diff/handoff — aresta do M2).
-  const missionRunning = useMission((s) =>
-    activeId ? s.byConv[activeId]?.status === "running" : false,
-  )
+  const missionRunning = missionStatus === "running"
   // Aprovações contextuais: a MissionTimeline hospeda o card inline enquanto o
   // bloco da fase corrente está na tela; fora disso (linear/gate/done) o card
   // entra aqui, acima do composer. Nunca os dois — mesma régua nos dois lados.
@@ -206,7 +206,7 @@ export function ChatPanel() {
   useEffect(() => {
     if (!activeId || !missionBootCwd) return
     void detectInterrupted(activeId, missionBootCwd)
-  }, [activeId, missionBootCwd, missionActive, detectInterrupted])
+  }, [activeId, missionBootCwd, missionStatus, detectInterrupted])
 
   // Abre o projeto ao trocar: carrega as conversas e a mais recente (Sprint 2).
   const projectId = project?.id ?? null
@@ -1078,17 +1078,17 @@ export function ChatPanel() {
     conv,
     injectedLessonsRef,
   )
+  const vista = vistaDaConversa({ temConversa: hasConversation, missao: missionStatus })
 
   return (
     <section className="relative flex h-full w-full min-w-0 flex-col bg-background">
-      {!hasConversation && !missionActive && (
+      {vista.boasVindas && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-96 bg-[radial-gradient(62%_80%_at_50%_100%,var(--brass-soft),transparent_72%)] opacity-70" />
       )}
 
-      {/* S3.3 — barra de presença: participantes + quem pilota. Só aparece com
-          conversa aberta e fora da missão (que toma a tela). Derivada, some
-          sozinha em conversa crua sem preset nem convidados. */}
-      {hasConversation && !missionActive && <PresenceBar />}
+      {/* S3.3 — barra de presença: participantes + quem pilota. Recua enquanto
+          a missão RODA (ela toma a tela) e volta quando ela termina. */}
+      {vista.presenca && <PresenceBar />}
 
       <div
         ref={scrollRef}
@@ -1100,13 +1100,13 @@ export function ChatPanel() {
             timeline cobre a missão inteira — os marcos persistidos no fio
             (recordHistory do store/mission.ts) só aparecem SEM run (restart),
             senão o resumo sairia duplicado na mesma tela. */}
-        {activeId && missionActive && <MissionTimeline convId={activeId} />}
+        {activeId && vista.timeline && <MissionTimeline convId={activeId} />}
         {/* Retomada (P1): card acima do fio quando o restart engoliu a missão —
             "Missão interrompida na fase X/N — Retomar · Descartar". */}
-        {activeId && !missionActive && missionInterrupted && (
+        {activeId && !vista.timeline && missionInterrupted && (
           <MissionResumeCard convId={activeId} />
         )}
-        {hasConversation && !missionActive ? (
+        {vista.fio ? (
           // key no activeId → o fade só replica ao TROCAR de conversa (não a cada
           // token do streaming, que mantém o mesmo activeId).
           <div
@@ -1191,7 +1191,7 @@ export function ChatPanel() {
               feedback={feedback}
             />
           </div>
-        ) : missionActive ? null : (
+        ) : !vista.boasVindas ? null : (
           <div className="mx-auto flex min-h-full max-w-[760px] flex-col items-center justify-center px-6 py-10">
             <div className="animate-cockpit-rise text-center">
               <Reticle className="mx-auto mb-6 size-8" />
