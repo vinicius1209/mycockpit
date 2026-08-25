@@ -26,7 +26,10 @@ describe("reconcileMissionPresets", () => {
     }
     const result = reconcileMissionPresets([oldFactory, custom])
     const upgraded = result.find((plan) => plan.id === oldFactory.id)
-    expect(upgraded?.revision).toBe(2)
+    // DERIVA do plano de fábrica, não do literal: fixar "2" amarrava o teste
+    // ao FACTORY_REVISION do dia e ele quebrava no próximo bump por motivo
+    // nenhum (quebrou no bump para 3).
+    expect(upgraded?.revision).toBe(DEFAULT_MISSION_PRESETS[0].revision)
     expect(upgraded?.graph?.nodes).toHaveLength(4)
     expect(result.find((plan) => plan.id === custom.id)).toBe(custom)
   })

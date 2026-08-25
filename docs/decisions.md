@@ -3443,3 +3443,47 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   (US$ 0,5695, no dia seguinte) é o turno que o usuário mandou depois da missão
   e não viu. Recibo do defeito do ADR-088.
 - **Verificado:** `tsc` 0, `vitest` 3213 (8 novos), 9 guardas.
+
+### ADR-091 — O UI-first ganha olho: critérios de UI no preset, não persona nova ✅
+- **Contexto (25/08/2026):** o usuário rodou uma missão de landing page e a v2
+  saiu pior que a v1. A auditoria achou onde, e não foi no plano.
+- **O plano estava CERTO.** O `planner` decidiu, com todas as letras, *"grande
+  prova visual do produto"* e *"o revezamento visível é a assinatura da v2"* —
+  61% do custo da missão (US$ 3,21 de 5,23) foi pensar, e pensou bem.
+- **A entrega violou a decisão central do próprio plano e passou.** Medido
+  abrindo as duas no navegador: a v1 tem duas colunas com um mock rico do
+  produto funcionando; a v2 é coluna única centralizada **sem nenhuma imagem de
+  produto na dobra**. E a headline da v1 (*"Troque o agente. Não recomece o
+  trabalho."*) foi rebaixada a caixa de citação decorativa na v2 — o melhor
+  ativo da página virou enfeite.
+- **Por que passou:** os critérios que os dois revisores REGISTRARAM no handoff
+  foram, literalmente, `bun run lint`, `bun run build`, `git diff --check` e
+  vazamento de dados reais. **Ninguém abriu a página.** O gate tinha um
+  compilador, não um olho.
+- **A raiz está na persona**, e ela é honesta sobre o que é: *"rode `git diff`
+  para ver o CÓDIGO real"*. Num fluxo de UI isso é metade do trabalho, e a
+  outra metade não estava escrita em lugar nenhum.
+- **Não criamos preset novo nem persona nova** (pedido explícito do usuário). O
+  mecanismo já existia e estava vazio: `instructions` e `exitCriteria` POR FASE,
+  que o `buildPhasePrompt` já injeta em "## Instruções desta fase" e
+  "## Critérios de saída". O `ui-first` passou a preenchê-los:
+  | fase | o que passou a exigir |
+  |---|---|
+  | Planejar | a versão atual é RÉGUA; nomear o que não pode piorar |
+  | Executar UI | prova visual na dobra; a promessa é headline, não citação |
+  | Revisar | ABRIR o resultado, comparar lado a lado, julgar contra as DECISÕES |
+- **Por que no preset e não na persona:** "suba o servidor e compare a dobra" é
+  instrução de fluxo de UI, não de revisão em geral. Na persona ela viraria
+  ruído em toda missão de backend. Aqui é o lugar certo, não um meio-termo.
+- **Os testes fixam a REGRA, nunca a redação** (texto é copy e muda): existe
+  critério falando de dobra, o revisor é mandado abrir, a versão anterior
+  aparece como régua, e nenhum critério é rótulo de uma palavra.
+- **Efeito colateral do bump para `FACTORY_REVISION = 3`:** um teste do outro
+  dev fixava `expect(revision).toBe(2)`, o literal do dia. Passou a DERIVAR do
+  plano de fábrica — amarrar teste a um número que sobe por desenho é quebrá-lo
+  por motivo nenhum.
+- **O preset SALVO do usuário não recebe isto, e está correto:** o `ui-first`
+  dele é customizado (planner trocado para `codex/gpt-5.6-sol` em `effort: max`)
+  e a proteção do ADR-089 o preserva. É literalmente o plano que aquela correção
+  salvou de ser sobrescrito, um dia antes.
+- **Verificado:** `tsc` 0, `vitest` 3219 (6 novos), 9 guardas.
