@@ -45,6 +45,7 @@ import {
 } from "@/store/chat"
 import { ModeSelect } from "@/components/chat/ModeSelect"
 import { lerConfinamento, SEM_CONFINAMENTO } from "@/lib/confinamento"
+import { textoDoEnvio } from "@/lib/textoDoEnvio"
 import { modosOferecidos, wireDoModo } from "@/lib/agentModes"
 import { useAgentModes } from "@/store/agentModes"
 import { useApp, useActiveProject } from "@/store/app"
@@ -367,8 +368,11 @@ export function CommandConsole({
 
   /** Envio único: o botão chama sem argumento (lê o draft); o Enter do editor
    *  passa o texto que acabou de serializar (MESMA string `@nome`). */
-  function submit(overrideText?: string) {
-    const text = (overrideText ?? value).trim()
+  // `unknown` de propósito: o botão é `onClick={onSubmit}`, então o React passa
+  // o MouseEvent aqui. Quem separa string de evento é `textoDoEnvio` (ADR-092),
+  // e não a memória de quem escreve o próximo call site.
+  function submit(overrideText?: unknown) {
+    const text = textoDoEnvio(overrideText, value)
     if (despachoDoEnter(estadoDoComposer(text)) === "barrado") return
     // UM caminho só para enviar e para ENFILEIRAR (turno em andamento): texto e
     // anexos viajam sempre juntos, e o handleSend é quem detecta o turno em voo

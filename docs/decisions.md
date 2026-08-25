@@ -3487,3 +3487,42 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   e a proteção do ADR-089 o preserva. É literalmente o plano que aquela correção
   salvou de ser sobrescrito, um dia antes.
 - **Verificado:** `tsc` 0, `vitest` 3219 (6 novos), 9 guardas.
+
+### ADR-092 — O botão Enviar nunca funcionou; o Enter escondeu isso ✅
+- **Relato (25/08/2026):** *"montei um prompt grande com 5 imagens e não consigo
+  enviar, clico no botão e nada acontece"* — e a frase que resolveu o caso veio
+  logo depois: **"funcionou com o enter, mas o botão direto não"**.
+- **Não era limite.** O usuário perguntou se havia teto de caracteres. Não há
+  limite de texto no composer; o de anexos é 8 por mensagem e 10 MB por arquivo,
+  ambos com toast quando estouram. Cinco imagens passam folgado.
+- **A causa é uma assinatura que dois call sites leem diferente:**
+  ```ts
+  function submit(overrideText?: string) {
+    const text = (overrideText ?? value).trim()
+  ```
+  O Enter chama `submit(textoDoEditor)` — string, funciona. O botão é
+  `onClick={onSubmit}`, e aí **o React passa o MouseEvent como 1º argumento**. O
+  `??` só cai no fallback em `null`/`undefined`, e evento é truthy: `.trim()`
+  num MouseEvent lança `TypeError`, o handler do React engole, e o clique não
+  faz nada. **Silenciosamente.**
+- **Dois call sites, não um:** o botão primário e o item "Enviar" do dropdown
+  ao lado dele. Os dois passavam evento.
+- **Quebrado desde o ADR-051**, quando `onSubmit={submit}` entrou na linha de
+  execução. Ninguém viu por um motivo que vale registrar: **Enter é o gesto
+  natural de quem digita**, e o botão só é procurado quando o prompt fica grande
+  demais pra confiar na tecla. O caminho menos usado escondeu o defeito por
+  semanas.
+- **A correção não é `() => submit()` no call site.** Isso conserta os dois de
+  hoje e deixa o próximo cair no mesmo buraco. `submit` passou a aceitar
+  `unknown` e delegar para `textoDoEnvio(override, value)`, cuja regra é: **só
+  string vence o valor do composer**; evento, número, array ou `undefined` caem
+  no `value`, e nada lança. O call site deixa de precisar lembrar.
+- **String VAZIA é escolha, não ausência:** o editor mandar `""` significa "não
+  há texto" e não pode ressuscitar um `value` que o composer ainda não limpou.
+  Coberto por teste, junto com os tipos-lixo.
+- **O que este defeito ensina sobre a suíte:** o harness do composer é SSR
+  (`renderToStaticMarkup`), então ele confere MARCAÇÃO — que o botão acende e
+  apaga — e nunca CLIQUE. Um botão que renderiza certo e não funciona passa
+  inteiro por ele. A proteção aqui é estrutural (a função pura), não o teste de
+  componente que a bancada não consegue escrever.
+- **Verificado:** `tsc` 0, `vitest` 3225 (6 novos), 9 guardas.
