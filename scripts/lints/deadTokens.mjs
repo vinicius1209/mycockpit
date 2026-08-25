@@ -241,13 +241,12 @@ export const DEAD_TOKEN_RULES = [
       "components/chat/MessageList.tsx": { max: 4, motivo: "marcos do fio (turno/plano concluído), ADR-037; +1 pelo `bg-st-success/10` da linha de ADIÇÃO do diff, que é domínio git. Apertado de 5→4 quando o 'Regra salva' saiu pro TurnActions.tsx" },
       "components/chat/TurnActions.tsx": { max: 1, motivo: "marco de MEMÓRIA gravada ('Regra salva' do 🎓): regra durável salva é evento raro e verificado, não estado ambiente. Veio do MessageList na extração de 19/08/2026" },
       "components/chat/LivePlanCard.tsx": { max: 1, motivo: "marco de plano concluído, extraído do ChatPanel" },
-      "components/mission/MissionTimeline.tsx": { max: 4, motivo: "marco de fase da missão; +3 pelo nó `border/bg-st-success` da fase concluída e pelo `bg-st-success/15` do selo. TRIAGEM PENDENTE: o nó tem a MESMA forma do stepper do SddView que esta passada despintou, e a defesa dele (é marco no fio, não badge ambiente) merece decisão escrita antes de virar folclore" },
+      "components/mission/MissionTimeline.tsx": { max: 3, motivo: "marco verificado da visita concluída no diário de bordo; a antiga estação verde e sua espinha foram removidas" },
       // o verde do DESFECHO da missão veio inteiro da MissionTimeline quando o
       // resumo virou arquivo próprio: marco de plano concluído (ADR-037), não
       // verde novo.
       "components/mission/DoneSummary.tsx": { max: 3, motivo: "marco de missão concluída; +1 pelo `bg-st-success/[0.05]` do fundo do mesmo marco" },
       "components/mission/FlightPlansView.tsx": { max: 2, motivo: "marco de plano de voo concluído" },
-      "components/mission/MissionPlanCanvas.tsx": { max: 1, motivo: "marco de fase concluída no canvas" },
       "components/sdd/SddView.tsx": { max: 8, motivo: "marcos de etapa do SDD (spec/plan/tasks concluídos); +1 pelo `border-st-success/40` do mesmo marco. O `bg-st-success` do stepper NÃO está aqui: virou cinza em 15/08/2026 (§9 item 4)" },
       "components/layout/InboxBell.tsx": { max: 2, motivo: "marco de item do inbox resolvido" },
       // Família "domínio git": `+N` e linha de adição têm cor própria (§2).

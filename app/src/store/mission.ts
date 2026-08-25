@@ -222,11 +222,8 @@ export const useMission = create<MissionState>((set, get) => {
       phases: cur.phases.map((ph, i) => (i === phaseIdx ? fn(ph) : ph)),
     }))
 
-  /** Persiste o snapshot do pipeline no worktree (run-state.json) — chamado em
-   *  cada MARCO (início/fase/gate/recovery/fim). BEST-EFFORT e fire-and-forget:
-   *  o writeRunState já engole falhas; persistir nunca segura nem derruba a
-   *  missão. `gateDecisions` = bloco de gate respondido destinado à fase
-   *  `current` (sobrevive ao restart; gate PENDENTE não — a fase re-roda). */
+  /** Persiste o checkpoint a cada marco sem interromper a missão. Falhas ficam
+   *  visíveis em `checkpointWarning`; gates pendentes reexecutam após restart. */
   const persist = (
     convId: string,
     gateDecisions?: string | null,
@@ -234,20 +231,22 @@ export const useMission = create<MissionState>((set, get) => {
     const run = get().byConv[convId]
     const cwd = missionCwd.get(convId)
     if (!run || !cwd) return Promise.resolve()
+    const runId = run.id
     const checkpoint = writeRunState(
       cwd,
       runToState(run, gateDecisions, missionReview.get(convId)),
     )
-    // ponteiro em CADA marco (não só no launch): se a escrita do launch falhou
-    // transitoriamente, um marco seguinte reabilita a retomada — a
-    // confiabilidade do ponteiro passa a igualar a do run-state (arquivo minúsculo,
-    // conteúdo constante {dir}). Fecha o achado da revisão (retomada dependia de
-    // um único write best-effort no launch).
-    void writeActivePointer(cwd, convId, run.dir)
-    // índice no banco (histórico navegável): espelha o marco. Disco = artefatos;
-    // banco = índice durável. Best-effort — falha nunca derruba a missão.
+    // Regrava o ponteiro a cada marco para recuperar uma falha transitória no launch.
+    const pointer = writeActivePointer(cwd, convId, run.dir)
+    // Disco guarda os artefatos; o banco mantém o índice navegável.
     indexMission(convId)
-    return checkpoint
+    return Promise.all([checkpoint, pointer]).then(([stateError, pointerError]) => {
+      const warning = stateError ?? pointerError
+      const live = get().byConv[convId]
+      if (live?.id === runId && (live.checkpointWarning ?? null) !== warning) {
+        patchConv(convId, { checkpointWarning: warning })
+      }
+    })
   }
 
   /** Espelha a missão no índice `missions` do banco (upsert). projectId vem da
@@ -442,14 +441,9 @@ export const useMission = create<MissionState>((set, get) => {
         (await readDoctrine(projectPath)).content,
       )
 
-      // ponteiro da conversa → dir desta missão, pro boot achar o run-state sem
-      // varrer o FS (as pastas de missão são gitignoradas). Best-effort.
-      void writeActivePointer(cwd, convId, dir)
       // garante que os artefatos fiquem FORA do git mesmo num worktree fresco
       // (o onboarding pode não ter semeado o .mycockpit/.gitignore ali).
       void ensureMissionsGitignore(cwd)
-      // índice no banco desde a largada (status=running aparece no histórico).
-      indexMission(convId)
 
       // marco: largada no fio da conversa (task + resumo do preset). O launcher
       // já garantiu byId (ensureConversationLoaded) — Escritório e Trabalho.
@@ -459,7 +453,7 @@ export const useMission = create<MissionState>((set, get) => {
         resume
           ? [
               noticeItem(
-                `⟳ Missão retomada na fase ${startPhase + 1}/${preset.phases.length} · preset ${preset.name}`,
+                `⟳ Missão retomada na visita ${startPhase + 1} · ${engine.phases[startPhase]?.label ?? "fase atual"} · preset ${preset.name}`,
               ),
             ]
           : [
@@ -470,7 +464,7 @@ export const useMission = create<MissionState>((set, get) => {
                 attachments: attachments.length ? attachments : undefined,
               },
               noticeItem(
-                `🚀 Missão iniciada · preset ${preset.name} · ${preset.phases.length} fases`,
+                `🚀 Missão iniciada · preset ${preset.name} · ${preset.phases.length} ${preset.phases.length === 1 ? "fase" : "fases"}`,
               ),
             ],
       )
@@ -897,7 +891,7 @@ export const useMission = create<MissionState>((set, get) => {
             get().byConv[convId]?.phases[i]?.costUsd ?? result.costUsd
           const marks: ChatItem[] = [
             noticeItem(
-              `Fase ${i + 1}/${engine.phases.length} · ${engine.phases[i].label} (${engine.phases[i].agent}) · ${result.ok ? "concluída" : "falhou; avaliando rota"} · US$ ${phCost.toFixed(2)}`,
+              `Visita ${i + 1} · ${engine.phases[i].label} (${engine.phases[i].agent}) · ${result.ok ? "concluída" : "falhou; avaliando rota"} · US$ ${phCost.toFixed(2)}`,
             ),
           ]
           const summary = phaseText(result.items)

@@ -81,7 +81,7 @@ export function PhaseReceiptBlock({
         </span>
       </button>
       {open && (
-        <div className="mt-2 border-l border-border pl-3">
+        <div className="mt-2 rounded-lg bg-secondary/25 px-3 py-2.5">
           {feed.length > 0 ? (
             feed.map((row) => (
               <div

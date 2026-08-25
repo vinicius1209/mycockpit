@@ -133,6 +133,11 @@ durante a execução de um agent, a mesma visita é oferecida para reexecução.
 há promessa de `exactly-once` para efeitos externos do CLI; essa limitação deve
 ser explícita na interface.
 
+Os checkpoints e o ponteiro de retomada são gravados de forma serial e atômica
+a cada marco. Uma falha de I/O não derruba o agent em execução, mas deixa de ser
+silenciosa: a missão recebe `checkpointWarning` e a UI mostra **retomada sem
+garantia** até uma gravação posterior restabelecer os dois arquivos.
+
 ## Autoria
 
 ### Rota
@@ -148,11 +153,25 @@ Canvas conectável com criação e remoção de arestas. A conexão possui condi
 rótulo e, quando participa de ciclo, limite de travessias. Erros estruturais
 bloqueiam salvar e lançar; avisos permanecem informativos.
 
+O término bem-sucedido, implícito no contrato do motor, é materializado como
+**Missão concluída** para a rota não terminar visualmente no vazio. Retornos
+usam portas paralelas e rótulos semânticos; **Reorganizar** reaplica o layout
+serial sem alterar a topologia executável.
+
+Planos de fábrica carregam `factoryRevision`. Uma atualização automática só
+substitui uma base intacta; se `revision` for maior que `factoryRevision`, o
+plano foi personalizado e permanece intocado.
+
 ### Durante o voo
 
 O mapa mostra nó atual, arestas percorridas e contagem de retornos. A timeline
-abaixo continua cronológica e registra cada visita separadamente. O mapa explica
-**a estrutura**; a timeline prova **o que aconteceu**.
+abaixo virou um **diário de bordo** cronológico e registra cada visita
+separadamente, sem repetir o grafo numa segunda espinha vertical. O mapa explica
+**a estrutura**; o diário prova **o que aconteceu**.
+
+Como o grafo cria visitas sob demanda, a UI não apresenta denominadores falsos
+como `visita 1/1` ou `fase 1 de 1`. O cabeçalho usa o ordinal real da visita e o
+mapa informa quantas fases distintas já foram alcançadas.
 
 ## Estado da entrega
 
@@ -160,4 +179,6 @@ O contrato, persistência v2, runner serial, escolha no launcher, autoria Rota e
 Fluxo visual e mapa da missão em voo estão implementados. A validação
 automatizada fica registrada pelos testes de `missionGraph`,
 `missionGraphRuntime`, `missionState`, `missionPlans` e pelas suítes do store de
-Missões.
+Missões. A apresentação do grafo é testada isoladamente em
+`missionGraphPresentation`; a reconciliação de fábrica e as falhas de checkpoint
+têm suítes próprias.

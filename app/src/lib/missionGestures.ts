@@ -72,18 +72,9 @@ export function interruptPrice(agentId: string): string {
   return `o ${nome} não retoma sessão: re-rodar significa a fase inteira do zero`
 }
 
-/** O preço de PARAR a missão, lido do ESTADO (ele escala com o plano): numa
- *  missão de 3 fases cancela uma; numa de 12 cancela cinco e joga fora o que já
- *  foi gasto. Nunca escrito à mão no componente. */
-export function stopPrice(args: {
-  current: number
-  total: number
-  costLabel: string
-}): string {
-  const restantes = Math.max(0, args.total - args.current - 1)
-  const fila =
-    restantes === 0
-      ? "não sobra nenhuma fase na fila"
-      : `cancela ${restantes} ${restantes === 1 ? "fase" : "fases"} na fila`
-  return `${fila}, e o gasto até aqui (${args.costLabel}) não volta`
+/** O preço de PARAR a missão em um grafo. O ledger só materializa a próxima
+ * visita depois de resolver a atual, portanto contar "fases restantes" seria
+ * uma precisão falsa. */
+export function stopPrice(args: { costLabel: string }): string {
+  return `a rota restante não será executada, e o gasto até aqui (${args.costLabel}) não volta`
 }

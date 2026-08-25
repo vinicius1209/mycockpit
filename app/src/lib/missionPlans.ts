@@ -23,6 +23,8 @@ export interface MissionPlanExport {
 const X_GAP = 248
 const START_X = 56
 const START_Y = 92
+const GRAPH_X_GAP = 224
+const GRAPH_Y_GAP = 192
 
 export function missionPlanMode(preset: MissionPreset): MissionPlanMode {
   return preset.mode === "graph" ? "graph" : "linear"
@@ -152,6 +154,58 @@ export function updateMissionNodePositions(
       nodes: withGraph.graph!.nodes.map((node) => ({
         ...node,
         position: positions[node.phaseId] ?? node.position,
+      })),
+    },
+  }
+}
+
+/** Auto-layout semântico do grafo serial. Success/always avançam pela rota
+ * principal; failure abre uma faixa abaixo da origem. Retornos encontram um nó
+ * já posicionado e não o deslocam, preservando a leitura do ciclo. */
+export function autoLayoutMissionPlan(preset: MissionPreset): MissionPreset {
+  const withGraph = enableGraphMode(preset)
+  const graph = withGraph.graph!
+  if (!graph.entryNodeId) return withGraph
+  const positions = new Map<string, { x: number; y: number }>([
+    [graph.entryNodeId, { x: START_X, y: START_Y }],
+  ])
+  const occupied = new Set([`${START_X}:${START_Y}`])
+  const queue = [graph.entryNodeId]
+  while (queue.length > 0) {
+    const sourceId = queue.shift()!
+    const source = positions.get(sourceId)!
+    const outgoing = graph.edges
+      .filter((edge) => edge.source === sourceId)
+      .sort((a, b) => {
+        const rank = { success: 0, always: 1, failure: 2 }
+        return rank[a.condition] - rank[b.condition]
+      })
+    for (const edge of outgoing) {
+      if (positions.has(edge.target)) continue
+      let next =
+        edge.condition === "failure"
+          ? { x: source.x, y: source.y + GRAPH_Y_GAP }
+          : { x: source.x + GRAPH_X_GAP, y: source.y }
+      while (occupied.has(`${next.x}:${next.y}`)) {
+        next = { ...next, y: next.y + GRAPH_Y_GAP }
+      }
+      positions.set(edge.target, next)
+      occupied.add(`${next.x}:${next.y}`)
+      queue.push(edge.target)
+    }
+  }
+  return {
+    ...withGraph,
+    revision: (withGraph.revision ?? 1) + 1,
+    graph: {
+      ...graph,
+      nodes: graph.nodes.map((node, index) => ({
+        ...node,
+        position:
+          positions.get(node.id) ?? {
+            x: START_X + index * GRAPH_X_GAP,
+            y: START_Y + GRAPH_Y_GAP * 2,
+          },
       })),
     },
   }
@@ -310,6 +364,10 @@ export function parseMissionPlan(raw: string):
       (typeof rawPlan.revision !== "number" ||
         !Number.isInteger(rawPlan.revision) ||
         rawPlan.revision < 1)) ||
+    (rawPlan.factoryRevision !== undefined &&
+      (typeof rawPlan.factoryRevision !== "number" ||
+        !Number.isInteger(rawPlan.factoryRevision) ||
+        rawPlan.factoryRevision < 1)) ||
     (rawPlan.description !== undefined && typeof rawPlan.description !== "string") ||
     (rawPlan.mode !== undefined && rawPlan.mode !== "linear" && rawPlan.mode !== "graph") ||
     (rawPlan.maxCostUsd !== null &&

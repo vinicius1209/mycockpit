@@ -3368,3 +3368,42 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   enxugar o que eu tinha escrito a mais, inclusive um comentário que descrevia a
   regra ANTIGA da barra de presença. Voltou a 1305.
 - **Verificado:** `tsc` 0, `vitest` 3203 (7 novos), 9 guardas, e2e 27/27.
+
+### ADR-089 — Review do motor de grafo v2, e uma perda de dados latente ✅
+- **Contexto (25/08/2026):** o outro dev entregou o v2 do motor de missões como
+  grafo (23 arquivos + 4 novos). Review pedido pelo usuário antes de commitar.
+- **O que estava bom, e vale dizer:**
+  - **A projeção visual não contamina o executável.** `missionGraphPresentation`
+    deriva terminais de sucesso, rótulos e portas **para a UI**, e o snapshot que
+    o motor roda continua com fases, nós e conexões. Separação certa.
+  - **As duas guardas que ele tocou foram APERTADAS**, nunca afrouxadas:
+    o verde da `MissionTimeline` caiu de 4 → 3 e o da `MissionPlanCanvas` foi
+    **removido**; a baseline de tamanho do `store/mission.ts` desceu 1270 → 1264.
+  - Ele **resolveu uma TRIAGEM PENDENTE** que estava pendurada na exceção de
+    verde desde 15/08 ("o nó tem a mesma forma do stepper que despintamos, e a
+    defesa dele merece decisão escrita antes de virar folclore") — removendo o
+    nó. Débito conhecido fechado em vez de herdado.
+  - O plano (`mission-graph-engine-v2.md`) foi atualizado junto com o código.
+- **O defeito que o review achou: `reconcileMissionPresets` destruía a edição do
+  usuário, em silêncio.** A função decide se um plano salvo é substituído pela
+  versão de fábrica, e a base de comparação era inferida assim:
+  ```
+  baseRevision = plan.factoryRevision ?? plan.revision ?? 0
+  customized   = (plan.revision ?? baseRevision) > baseRevision
+  ```
+  Num plano **legado** (salvo antes de `factoryRevision` existir) a base saía do
+  PRÓPRIO `revision` — então `customized` dava `false` **para qualquer edição**.
+  Reproduzido: plano legado editado (`revision: 2`, nome customizado) contra
+  fábrica futura (`factoryRevision: 3`) → o nome do usuário virou o da fábrica.
+- **Latente, não presente:** com `FACTORY_REVISION = 2` de hoje, um legado
+  editado está em `revision ≥ 2` e escapa. O estrago dispara no PRÓXIMO bump.
+  É o pior tipo de bug pra achar depois: some do radar até a versão seguinte.
+- **A correção é uma linha, e a régua veio do código:** `patchPlan` sobe o
+  `revision` em TODA edição, e plano de fábrica legado nasceu em 1. Logo
+  `baseRevision = plan.factoryRevision ?? 1`, e `> 1` separa editado de intacto.
+- **A trava NÃO podia ser "sem `factoryRevision`, nunca atualiza"**, que era a
+  saída fail-closed óbvia: **todos** os planos que existem hoje são legados, e a
+  feature inteira não faria nada. Os dois casos viraram teste — o que preserva a
+  edição e o que ainda entrega a atualização.
+- **Verificado:** `tsc` 0, `vitest` 3205 (2 novos no review), `cargo` 516,
+  9 guardas, e2e 27/27.

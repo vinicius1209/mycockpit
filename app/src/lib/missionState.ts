@@ -396,15 +396,17 @@ export async function writeActivePointer(
   cwd: string,
   convId: string,
   dir: string,
-): Promise<void> {
+): Promise<string | null> {
   try {
     await invoke("write_mission_state", {
       cwd,
       relPath: activePointerPath(convId),
       content: JSON.stringify({ dir } satisfies ActivePointer),
     })
+    return null
   } catch (err) {
     console.warn("[missão] falha ao gravar ponteiro de missão ativa:", err)
+    return "não foi possível gravar o ponteiro da missão ativa"
   }
 }
 
@@ -465,7 +467,7 @@ export async function ensureMissionsGitignore(cwd: string): Promise<void> {
  *  Rust roda em thread pool — sem a corrente, duas escritas próximas poderiam
  *  pousar fora de ordem (um snapshot `running` velho por cima do `done`/`aborted`
  *  terminal ⇒ o boot re-ofereceria retomada de missão encerrada). */
-const writeChain = new Map<string, Promise<void>>()
+const writeChain = new Map<string, Promise<string | null>>()
 
 /** Grava o snapshot no worktree (escrita atômica no Rust, serializada por cwd
  *  na ordem das chamadas). BEST-EFFORT: falha vira warn no console e a missão
@@ -473,18 +475,20 @@ const writeChain = new Map<string, Promise<void>>()
 export function writeRunState(
   cwd: string,
   state: MissionRunState,
-): Promise<void> {
+): Promise<string | null> {
   // serializa AGORA (snapshot do marco), grava na vez dela.
   const content = JSON.stringify(state, null, 2)
   const relPath = runStatePath(state.dir)
   // corrente por ARQUIVO (cwd+dir): missões diferentes no mesmo cwd têm dirs
   // distintos e não competem; a ordem só importa dentro da MESMA missão.
   const key = `${cwd}::${relPath}`
-  const next = (writeChain.get(key) ?? Promise.resolve()).then(async () => {
+  const next = (writeChain.get(key) ?? Promise.resolve(null)).then(async () => {
     try {
       await invoke("write_mission_state", { cwd, relPath, content })
+      return null
     } catch (err) {
       console.warn("[missão] falha ao persistir run-state no worktree:", err)
+      return "não foi possível gravar o checkpoint da missão"
     }
   })
   writeChain.set(key, next)

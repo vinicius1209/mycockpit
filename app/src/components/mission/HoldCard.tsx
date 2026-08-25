@@ -6,13 +6,13 @@
 
 export function HoldCard({
   reason,
-  phaseNumber,
+  visitNumber,
   nextLabel,
   price,
   onRelease,
 }: {
   reason: "pedido" | "interrompida"
-  phaseNumber: number
+  visitNumber: number
   /** Rótulo da próxima fase; null no fim do plano. */
   nextLabel: string | null
   price: string
@@ -20,18 +20,17 @@ export function HoldCard({
 }) {
   const interrompida = reason === "interrompida"
   return (
-    <div className="relative mb-4">
-      <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 rounded-full border-2 border-st-warning bg-st-warning" />
+    <div className="mb-3">
       <div className="rounded-[9px] border border-st-warning/45 bg-st-warning/[0.06] px-3 py-2.5">
         <div className="text-[13px] font-semibold text-st-warning">
           {interrompida
-            ? `Fase ${phaseNumber} interrompida por você`
-            : `Segurando no fim da fase ${phaseNumber}`}
+            ? `Visita ${visitNumber} interrompida por você`
+            : `Segurando no fim da visita ${visitNumber}`}
         </div>
         <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
           {interrompida
-            ? "O processo morreu. O que ela escreveu continua no worktree, e a fase ficou incompleta."
-            : "A fase terminou normal. A próxima não começa sem você."}
+            ? "O processo morreu. O que ele escreveu continua no worktree, e a visita ficou incompleta."
+            : "A visita terminou normalmente. A próxima não começa sem você."}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button

@@ -189,14 +189,14 @@ describe("histórico da missão persiste na conversa (marcos via appendItems)", 
     )
     expect(notices()[0]).toContain("Missão iniciada")
     expect(notices()[0]).toContain("preset Teste")
-    expect(notices()[0]).toContain("1 fases")
+    expect(notices()[0]).toContain("1 fase")
   })
 
-  it("fase concluída grava notice (label/agent/custo) + resumo da fase (phaseText)", async () => {
+  it("visita concluída grava notice sem inventar denominador futuro", async () => {
     h.results = [ok(0.5, [textItem("resumo do plano")])]
     await launch(preset([phaseDef({ label: "Planejar", agent: "codex" })]))
 
-    const phaseNotice = notices().find((m) => m.startsWith("Fase 1/1"))
+    const phaseNotice = notices().find((m) => m.startsWith("Visita 1 ·"))
     expect(phaseNotice).toContain("Planejar")
     expect(phaseNotice).toContain("codex")
     expect(phaseNotice).toContain("US$ 0.50")

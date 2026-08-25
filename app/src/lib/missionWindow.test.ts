@@ -4,8 +4,8 @@
 // cobre o plano inteiro e nenhum stub aparece.
 
 import { describe, expect, it } from "vitest"
-import { missionRuler, missionWindow, neverCollapses } from "./missionWindow"
-import type { MissionPhaseRun, MissionRun } from "./missionTypes"
+import { missionWindow, neverCollapses } from "./missionWindow"
+import type { MissionPhaseRun } from "./missionTypes"
 
 function fase(
   id: string,
@@ -33,22 +33,6 @@ function fase(
 
 function plano(n: number): MissionPhaseRun[] {
   return Array.from({ length: n }, (_, i) => fase(`f${i + 1}`))
-}
-
-function missao(phases: MissionPhaseRun[], current: number): MissionRun {
-  return {
-    id: "m",
-    convId: "c",
-    presetName: "p",
-    task: "t",
-    dir: "d",
-    phases,
-    current,
-    costTotal: 0,
-    maxCostUsd: null,
-    status: "running",
-    startedAt: 0,
-  }
 }
 
 const tipos = (rows: ReturnType<typeof missionWindow>) =>
@@ -182,40 +166,5 @@ describe("as quatro exceções que nunca agregam", () => {
     const ps = plano(12)
     ps[4] = fase("f5", { status: "error" })
     expect(tipos(missionWindow(ps, 6))).toContain("f4")
-  })
-})
-
-describe("régua · a linha que não rola", () => {
-  it("diz onde a missão está e o que vem a seguir", () => {
-    const r = missionRuler(missao(plano(12), 6))
-    expect(r.position).toBe("fase 7 de 12")
-    expect(r.next).toBe("próxima: f8")
-    expect(r.queued).toBe("+4 na fila")
-  })
-
-  it("o denominador NÃO troca calado: declara com quantas decolou", () => {
-    const ps = plano(12)
-    ps[10] = fase("fix-1-abc")
-    ps[11] = fase("rereview-1-abc")
-    expect(missionRuler(missao(ps, 6)).launched).toBe("lançou com 10")
-  })
-
-  it("plano intocado não gasta uma linha declarando o óbvio", () => {
-    expect(missionRuler(missao(plano(3), 1)).launched).toBeNull()
-  })
-
-  it("na última fase não inventa próxima nem fila", () => {
-    const r = missionRuler(missao(plano(3), 2))
-    expect(r.next).toBeNull()
-    expect(r.queued).toBeNull()
-  })
-
-  it("não existe barra de percentual (ela recuaria sozinha)", () => {
-    expect(Object.keys(missionRuler(missao(plano(12), 6)))).toEqual([
-      "position",
-      "launched",
-      "next",
-      "queued",
-    ])
   })
 })

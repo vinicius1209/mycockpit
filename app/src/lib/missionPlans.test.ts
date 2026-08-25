@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { DEFAULT_MISSION_PRESETS } from "@/lib/missionDefaults"
 import type { MissionPhaseDef, MissionPreset } from "@/lib/missionTypes"
 import {
+  autoLayoutMissionPlan,
   enableGraphMode,
   graphFromPhases,
   missionPlanMode,
@@ -80,6 +81,20 @@ describe("Planos de voo", () => {
       x: 420,
       y: 180,
     })
+  })
+
+  it("reorganiza o caminho feliz na horizontal e a correção abaixo da revisão", () => {
+    const laidOut = autoLayoutMissionPlan(DEFAULT_MISSION_PRESETS[0])
+    const byPhase = new Map(
+      laidOut.graph?.nodes.map((node) => [node.phaseId, node.position]),
+    )
+    expect(byPhase.get("plan")?.y).toBe(byPhase.get("build")?.y)
+    expect(byPhase.get("build")?.y).toBe(byPhase.get("review")?.y)
+    expect(byPhase.get("build")?.x).toBeLessThan(byPhase.get("review")!.x)
+    expect(byPhase.get("build-fix")?.x).toBe(byPhase.get("review")?.x)
+    expect(byPhase.get("build-fix")!.y).toBeGreaterThan(
+      byPhase.get("review")!.y,
+    )
   })
 
   it("exporta e importa o contrato versionado", () => {

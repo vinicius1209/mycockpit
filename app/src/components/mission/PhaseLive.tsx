@@ -103,8 +103,8 @@ function QuietEngine({ phase, now }: { phase: MissionPhaseRun; now: number }) {
   return (
     <div
       className={cn(
-        "mt-2.5 rounded-[9px] border px-3 py-2.5",
-        v.stalled ? "border-st-warning/45 bg-st-warning/[0.06]" : "border-border",
+        "mt-3 rounded-lg bg-background/45 px-3 py-2.5",
+        v.stalled && "bg-st-warning/[0.06] ring-1 ring-st-warning/45",
       )}
     >
       <div
@@ -174,7 +174,7 @@ export function PhaseLive({
   const stalled = repeticao != null
   const preco = interruptPrice(phase.def.agent)
   return (
-    <div className="mt-2 pl-1">
+    <div className="mt-3">
       {repeticao && (
         <RepeatWarningCard
           warning={repeticao}
@@ -184,7 +184,7 @@ export function PhaseLive({
       )}
       {narrates ? (
         feed.length > 0 ? (
-          <div className="flex flex-col border-l border-border pl-3">
+          <div className="flex flex-col rounded-lg bg-background/45 px-3 py-2">
             {feed.map((row) => (
               <FeedLine key={row.id} row={row} stalled={stalled} />
             ))}
@@ -192,7 +192,7 @@ export function PhaseLive({
         ) : (
           // slot reservado e VAZIO: o motor narra, mas ainda não narrou nada.
           // Antes daqui saía "preparando…", que anunciava ignorância como fato.
-          <div className="border-l border-border pl-3 text-[12px] text-faint">
+          <div className="rounded-lg bg-background/45 px-3 py-2 text-[12px] text-faint">
             nenhuma ação reportada ainda
           </div>
         )
@@ -213,7 +213,7 @@ export function PhaseLive({
           "Pausar" não aparece porque não existe (R7); o preço de interromper é
           por motor e está escrito ao lado, antes do clique. */}
       {(onToggleHold || onInterrupt) && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-l border-border pl-3">
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-1">
           {onToggleHold && (
             <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-muted-foreground">
               <input

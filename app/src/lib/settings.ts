@@ -1,7 +1,6 @@
-import {
-  type MissionPreset,
-  DEFAULT_MISSION_PRESETS,
-} from "@/lib/missionTypes"
+import type { MissionPreset } from "@/lib/missionTypes"
+import { DEFAULT_MISSION_PRESETS } from "@/lib/missionDefaults"
+import { snapshotMissionPlan } from "@/lib/missionPlans"
 import type { AgentProbe } from "@/lib/detect"
 import { DEFAULT_DICTATION_HOTKEY } from "@/lib/dictationHotkey"
 
@@ -166,4 +165,44 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   sessionCostLimit: null,
   usageMeterCtaDismissed: false,
   observedResolutions: {},
+}
+
+/** Atualiza somente planos de fábrica intactos. `factoryRevision` registra a
+ * base recebida; `revision` maior prova que houve edição e bloqueia substituição.
+ * Assim uma evolução não depende do gesto destrutivo "Restaurar". */
+export function reconcileMissionPresets(
+  value: unknown,
+  factoryPresets: readonly MissionPreset[] = DEFAULT_MISSION_PRESETS,
+): MissionPreset[] {
+  const stored = Array.isArray(value)
+    ? value.filter(
+        (plan): plan is MissionPreset =>
+          !!plan && typeof plan === "object" && typeof plan.id === "string",
+      )
+    : []
+  const factoryById = new Map(
+    factoryPresets.map((plan) => [plan.id, plan]),
+  )
+  const seen = new Set<string>()
+  const reconciled = stored.map((plan) => {
+    seen.add(plan.id)
+    const factory = factoryById.get(plan.id)
+    if (!factory) return plan
+    // Plano LEGADO (salvo antes de `factoryRevision` existir) nasceu na base 1.
+    // Herdar a base do próprio `revision` fazia toda edição parecer intacta:
+    // um plano legado editado (revision 2) tinha base 2, `customized` dava
+    // false, e a fábrica seguinte o SUBSTITUÍA em silêncio. Como `patchPlan`
+    // sobe o revision em TODA edição, `> 1` é o que separa editado de intacto.
+    const baseRevision = plan.factoryRevision ?? 1
+    const customized = (plan.revision ?? 1) > baseRevision
+    return !customized && baseRevision < (factory.factoryRevision ?? 1)
+      ? snapshotMissionPlan(factory)
+      : plan
+  })
+  for (const factory of factoryPresets) {
+    if (!seen.has(factory.id)) reconciled.push(snapshotMissionPlan(factory))
+  }
+  return reconciled.length > 0
+    ? reconciled
+    : factoryPresets.map(snapshotMissionPlan)
 }

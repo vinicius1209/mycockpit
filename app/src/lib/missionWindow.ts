@@ -1,4 +1,4 @@
-// A JANELA VIVA e a RÉGUA (R9 e R8 do docs/mocks/missao-README.md).
+// A JANELA VIVA (R9 do docs/mocks/missao-README.md).
 //
 // A primeira rodada dos mocks assumiu 3 fases porque era o que o print mostrava,
 // e 3 é um número gentil. Nada no código garante 3: `addPhase` não tem teto, o
@@ -29,9 +29,7 @@ import { fmtDuration } from "@/lib/format"
 import { costAbility, fmtMissionCost, missionCostCoverage } from "@/lib/missionCost"
 import {
   phaseProvenance,
-  planCounts,
   type MissionPhaseRun,
-  type MissionRun,
 } from "@/lib/missionTypes"
 
 export interface PhaseRow {
@@ -171,40 +169,4 @@ export function missionWindow(
   }
   despeja("futuro")
   return rows
-}
-
-// ── A RÉGUA (R8): uma linha que NÃO rola ─────────────────────────────────────
-//
-// É a única concessão da direção A à tese de B, e é a parte de B que sobrevive:
-// posição, denominador declarado e o que vem a seguir. Sem estações, sem
-// seleção, sem barra de percentual (uma barra que RECUA sozinha, de 60% pra
-// 50% quando duas fases foram apendadas, é pior que não ter barra).
-
-export interface MissionRuler {
-  /** "fase 7 de 12". */
-  position: string
-  /** "lançou com 10", ou null quando o plano é o mesmo que decolou. */
-  launched: string | null
-  /** "próxima: Portar o histórico de faturas", ou null no fim. */
-  next: string | null
-  /** "+4 na fila", ou null quando não sobra fila além da próxima. */
-  queued: string | null
-}
-
-export function missionRuler(mission: MissionRun): MissionRuler {
-  const n = mission.phases.length
-  const cur = Math.min(Math.max(0, mission.current), Math.max(0, n - 1))
-  const counts = planCounts(mission.phases.map((p) => p.def))
-  const restantes = Math.max(0, n - cur - 2)
-  return {
-    position: `fase ${cur + 1} de ${n}`,
-    launched: counts.appended > 0 ? `lançou com ${counts.launched}` : null,
-    next: mission.phases[cur + 1]
-      ? `próxima: ${mission.phases[cur + 1].def.label}`
-      : null,
-    queued:
-      restantes > 0
-        ? `+${restantes} na fila`
-        : null,
-  }
 }

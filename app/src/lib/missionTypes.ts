@@ -189,6 +189,9 @@ export interface MissionPreset {
   id: string
   /** Incrementada ao salvar mudanças estruturais. Ausente é normalizado para 1. */
   revision?: number
+  /** Revisão da fábrica da qual este plano partiu. Se `revision` a supera, o
+   *  plano foi personalizado e não pode ser substituído automaticamente. */
+  factoryRevision?: number
   name: string
   /** Descrição curta exibida na biblioteca e transportada no export. */
   description?: string
@@ -351,6 +354,9 @@ export interface MissionRun {
   gatePolicy?: MissionGatePolicy
   /** Contrato executável congelado no lançamento e histórico de transições. */
   execution?: MissionGraphExecution
+  /** Falha transitória ao gravar o checkpoint/ponteiro. A missão continua, mas
+   * a UI precisa declarar que a retomada após fechar o app não está garantida. */
+  checkpointWarning?: string | null
 }
 
 export { DEFAULT_MISSION_PRESETS } from "@/lib/missionDefaults"

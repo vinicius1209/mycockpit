@@ -14,18 +14,23 @@ import "@xyflow/react/dist/style.css"
 import { Check, ChevronDown, CircleDashed, Route, X } from "lucide-react"
 import type {
   MissionPhaseRun,
-  MissionPlanEdge,
   MissionPlanGraph,
   MissionPreset,
   MissionRun,
   MissionTransition,
 } from "@/lib/missionTypes"
+import {
+  missionVisualEdgeHandles,
+  missionVisualEdgeLabel,
+  missionVisualTerminals,
+} from "@/lib/missionGraphPresentation"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/store/app"
 
 type RunNodeState = "current" | "done" | "failed" | "unvisited"
 
 interface RunNodeData extends Record<string, unknown> {
+  kind: "phase"
   order: number
   label: string
   persona: string
@@ -34,6 +39,14 @@ interface RunNodeData extends Record<string, unknown> {
 }
 
 type RunNode = Node<RunNodeData, "missionRun">
+
+interface RunTerminalData extends Record<string, unknown> {
+  kind: "terminal"
+  state: "done" | "unvisited"
+}
+
+type RunTerminalNode = Node<RunTerminalData, "missionRunTerminal">
+type RunCanvasNode = RunNode | RunTerminalNode
 
 const PERSONA_LABEL = {
   planner: "PLANEJADOR",
@@ -80,19 +93,23 @@ function MissionRunNode({ data }: NodeProps<RunNode>) {
       aria-label={`${data.label}: ${STATE_LABEL[data.state]}`}
     >
       <Handle
+        id="target-left"
         type="target"
         position={Position.Left}
         className="!size-px !border-0 !bg-transparent !opacity-0"
       />
-      <div className="flex items-center justify-between border-b border-border/60 px-2.5 py-1.5">
+      <Handle id="target-right" type="target" position={Position.Right} className="!size-px !border-0 !bg-transparent !opacity-0" />
+      <Handle id="target-top-in" type="target" position={Position.Top} className="!left-[36%] !size-px !border-0 !bg-transparent !opacity-0" />
+      <Handle id="target-bottom-return" type="target" position={Position.Bottom} className="!left-[64%] !size-px !border-0 !bg-transparent !opacity-0" />
+      <div className="flex items-center justify-between px-2.5 pt-2 pb-0.5">
         <span className="font-mono text-[11px] tracking-[0.12em] text-muted-foreground">
-          TRECHO {String(data.order + 1).padStart(2, "0")}
+          FASE {String(data.order + 1).padStart(2, "0")}
         </span>
         <span className="text-[11px] tracking-wide text-muted-foreground">
           {data.persona}
         </span>
       </div>
-      <div className="px-2.5 py-2">
+      <div className="px-2.5 pt-1 pb-2.5">
         <div className="truncate text-[13px] font-medium text-foreground">
           {data.label}
         </div>
@@ -110,15 +127,40 @@ function MissionRunNode({ data }: NodeProps<RunNode>) {
         </div>
       </div>
       <Handle
+        id="source-right"
         type="source"
         position={Position.Right}
         className="!size-px !border-0 !bg-transparent !opacity-0"
       />
+      <Handle id="source-left" type="source" position={Position.Left} className="!size-px !border-0 !bg-transparent !opacity-0" />
+      <Handle id="source-bottom-out" type="source" position={Position.Bottom} className="!left-[36%] !size-px !border-0 !bg-transparent !opacity-0" />
+      <Handle id="source-top-return" type="source" position={Position.Top} className="!left-[64%] !size-px !border-0 !bg-transparent !opacity-0" />
     </div>
   )
 }
 
-const NODE_TYPES = { missionRun: MissionRunNode }
+function MissionRunTerminalNode({ data }: NodeProps<RunTerminalNode>) {
+  const done = data.state === "done"
+  return (
+    <div
+      className={cn(
+        "flex w-36 items-center gap-2 rounded-full border px-3 py-2 shadow-sm",
+        done
+          ? "border-border-strong bg-secondary/40 text-foreground"
+          : "border-border/70 bg-card text-muted-foreground opacity-60",
+      )}
+    >
+      <Handle id="target-left" type="target" position={Position.Left} className="!size-px !border-0 !bg-transparent !opacity-0" />
+      <Check className="size-3.5 shrink-0" aria-hidden="true" />
+      <span className="text-[12px] font-medium">Concluída</span>
+    </div>
+  )
+}
+
+const NODE_TYPES = {
+  missionRun: MissionRunNode,
+  missionRunTerminal: MissionRunTerminalNode,
+}
 
 function nodeIdForVisit(
   visit: MissionPhaseRun,
@@ -142,49 +184,12 @@ function closedVisit(visit: MissionPhaseRun): boolean {
   return visit.status === "done" || failedVisit(visit)
 }
 
-function cyclicEdge(graph: MissionPlanGraph, edge: MissionPlanEdge): boolean {
-  if (edge.source === edge.target) return true
-  const neighbors = new Map<string, string[]>()
-  for (const candidate of graph.edges) {
-    const targets = neighbors.get(candidate.source) ?? []
-    targets.push(candidate.target)
-    neighbors.set(candidate.source, targets)
-  }
-  const pending = [edge.target]
-  const seen = new Set<string>()
-  while (pending.length > 0) {
-    const nodeId = pending.pop()!
-    if (nodeId === edge.source) return true
-    if (seen.has(nodeId)) continue
-    seen.add(nodeId)
-    pending.push(...(neighbors.get(nodeId) ?? []))
-  }
-  return false
-}
-
-function edgeLabel(
-  edge: MissionPlanEdge,
-  graph: MissionPlanGraph,
-  traversals: number,
-): string | undefined {
-  const condition =
-    edge.condition === "failure"
-      ? "Falhou"
-      : edge.condition === "always"
-        ? "Sempre"
-        : undefined
-  const base = edge.label?.trim() || condition
-  if (!cyclicEdge(graph, edge)) return base
-  const counter = `${traversals}/${edge.maxTraversals ?? "∞"}`
-  return base ? `${base} · ${counter}` : `Retorno · ${counter}`
-}
-
 function buildRunMap(
   mission: MissionRun,
   snapshot: MissionPreset,
   graph: MissionPlanGraph,
   transitions: readonly MissionTransition[],
-): { nodes: RunNode[]; edges: Edge[]; reached: number } {
+): { nodes: RunCanvasNode[]; edges: Edge[]; reached: number } {
   const visitsByNode = new Map<string, MissionPhaseRun[]>()
   for (const visit of mission.phases) {
     const nodeId = nodeIdForVisit(visit, graph)
@@ -205,7 +210,7 @@ function buildRunMap(
     : null
   let reached = 0
 
-  const nodes: RunNode[] = graph.nodes.flatMap((node, graphIndex) => {
+  const phaseNodes: RunCanvasNode[] = graph.nodes.flatMap((node, graphIndex) => {
     const phase = snapshot.phases.find(
       (candidate) => candidate.id === node.phaseId,
     )
@@ -234,6 +239,7 @@ function buildRunMap(
         selectable: false,
         draggable: false,
         data: {
+          kind: "phase" as const,
           order: phaseIndex >= 0 ? phaseIndex : graphIndex,
           label: phase.label || "Trecho sem nome",
           persona: PERSONA_LABEL[phase.persona],
@@ -243,6 +249,29 @@ function buildRunMap(
       },
     ]
   })
+
+  const lastVisit = mission.phases.at(-1)
+  const lastNodeId = lastVisit ? nodeIdForVisit(lastVisit, graph) : null
+  const terminalNodes: RunCanvasNode[] = missionVisualTerminals(graph).map(
+    (terminal) => ({
+      id: terminal.id,
+      type: "missionRunTerminal" as const,
+      position: terminal.position,
+      selectable: false,
+      draggable: false,
+      connectable: false,
+      data: {
+        kind: "terminal" as const,
+        state:
+          mission.status === "done" &&
+          !mission.reviewCaveat &&
+          lastVisit?.outcome === "success" &&
+          lastNodeId === terminal.sourceNodeId
+            ? "done"
+            : "unvisited",
+      },
+    }),
+  )
 
   const traversalCount = new Map<string, number>()
   for (const transition of transitions) {
@@ -255,14 +284,17 @@ function buildRunMap(
     const traversals = traversalCount.get(edge.id) ?? 0
     const traversed = traversals > 0
     const stroke = traversed ? "var(--foreground)" : "var(--border-strong)"
+    const handles = missionVisualEdgeHandles(graph, edge)
     return {
       id: edge.id,
       source: edge.source,
       target: edge.target,
+      sourceHandle: handles.sourceHandle,
+      targetHandle: handles.targetHandle,
       type: "smoothstep",
       selectable: false,
       focusable: false,
-      label: edgeLabel(edge, graph, traversals),
+      label: missionVisualEdgeLabel(graph, edge, traversals),
       markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
       style: {
         stroke,
@@ -279,7 +311,44 @@ function buildRunMap(
       labelBgBorderRadius: 4,
     }
   })
-  return { nodes, edges, reached }
+  const terminalEdges: Edge[] = missionVisualTerminals(graph).map((terminal) => {
+    const traversed =
+      mission.status === "done" &&
+      !mission.reviewCaveat &&
+      lastVisit?.outcome === "success" &&
+      lastNodeId === terminal.sourceNodeId
+    const stroke = traversed ? "var(--foreground)" : "var(--border-strong)"
+    return {
+      id: `mission-terminal-edge:${terminal.sourceNodeId}`,
+      source: terminal.sourceNodeId,
+      target: terminal.id,
+      sourceHandle: "source-right",
+      targetHandle: "target-left",
+      type: "smoothstep",
+      selectable: false,
+      focusable: false,
+      label: "Aprovado",
+      markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
+      style: {
+        stroke,
+        strokeWidth: traversed ? 1.7 : 1,
+        strokeDasharray: traversed ? undefined : "4 5",
+        opacity: traversed ? 0.8 : 0.5,
+      },
+      labelStyle: {
+        fill: "var(--muted-foreground)",
+        fontSize: 11,
+      },
+      labelBgStyle: { fill: "var(--card)", fillOpacity: 0.94 },
+      labelBgPadding: [4, 2] as [number, number],
+      labelBgBorderRadius: 4,
+    }
+  })
+  return {
+    nodes: [...phaseNodes, ...terminalNodes],
+    edges: [...edges, ...terminalEdges],
+    reached,
+  }
 }
 
 export function MissionRunGraph({
@@ -337,7 +406,7 @@ export function MissionRunGraph({
             </span>
           </span>
           <span className="mt-1 block text-[11px] text-muted-foreground">
-            {map.reached} de {graph.nodes.length} trechos percorridos ·{" "}
+            {map.reached} de {graph.nodes.length} fases alcançadas ·{" "}
             {transitionCount} {transitionCount === 1 ? "transição" : "transições"}
           </span>
         </span>
@@ -351,13 +420,13 @@ export function MissionRunGraph({
       </button>
 
       {open && (
-        <div id={regionId} className="border-t border-border/60">
+        <div id={regionId}>
           <div
-            className="h-[250px] w-full bg-secondary/10"
+            className="h-[290px] w-full bg-secondary/10"
             role="img"
             aria-label="Mapa somente leitura da rota executada pela missão"
           >
-            <ReactFlow<RunNode>
+            <ReactFlow<RunCanvasNode>
               className="h-full w-full"
               colorMode={theme}
               nodes={map.nodes}
@@ -387,7 +456,7 @@ export function MissionRunGraph({
               />
             </ReactFlow>
           </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/60 px-3 py-2 text-[11px] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 bg-secondary/20 px-3 py-2 text-[11px] text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span className="w-5 border-t-2 border-foreground/65" />
               caminho percorrido

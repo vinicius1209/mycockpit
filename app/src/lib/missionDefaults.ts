@@ -5,10 +5,15 @@ import type {
   MissionPreset,
 } from "@/lib/missionTypes"
 
+const FACTORY_REVISION = 2
+
 /** Planos de fábrica já desenham o retorno do reviewer. O runtime não inventa
  * `fix-N`: a mesma fase Corrigir pode ser visitada até duas vezes. */
 function defaultReviewWorkflow(base: MissionPreset): MissionPreset {
   const reviewer = base.phases.find((phase) => phase.persona === "reviewer")
+  const reviewerIndex = base.phases.findIndex(
+    (phase) => phase.persona === "reviewer",
+  )
   const executor = [...base.phases]
     .reverse()
     .find((phase) => phase.persona === "executor")
@@ -26,8 +31,8 @@ function defaultReviewWorkflow(base: MissionPreset): MissionPreset {
     phaseId: phase.id,
     position:
       phase.id === correction.id
-        ? { x: Math.max(0, (base.phases.length - 2) * 248), y: 260 }
-        : { x: index * 248, y: 92 },
+        ? { x: Math.max(0, reviewerIndex) * 224, y: 284 }
+        : { x: index * 224, y: 92 },
   }))
   const mainEdges: MissionPlanEdge[] = base.phases
     .slice(0, -1)
@@ -39,7 +44,8 @@ function defaultReviewWorkflow(base: MissionPreset): MissionPreset {
     }))
   return {
     ...base,
-    revision: 1,
+    revision: FACTORY_REVISION,
+    factoryRevision: FACTORY_REVISION,
     mode: "graph",
     phases,
     graph: {

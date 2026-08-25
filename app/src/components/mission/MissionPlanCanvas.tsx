@@ -21,13 +21,20 @@ import type {
   MissionPreset,
 } from "@/lib/missionTypes"
 import {
+  autoLayoutMissionPlan,
   enableGraphMode,
   updateMissionNodePositions,
 } from "@/lib/missionPlans"
+import {
+  missionVisualEdgeHandles,
+  missionVisualEdgeLabel,
+  missionVisualTerminals,
+} from "@/lib/missionGraphPresentation"
 import { cn } from "@/lib/utils"
 import { SELECTED_ON_SURFACE } from "@/lib/selection"
 
 interface PhaseNodeData extends Record<string, unknown> {
+  kind: "phase"
   phaseId: string
   order: number
   label: string
@@ -39,6 +46,14 @@ interface PhaseNodeData extends Record<string, unknown> {
 }
 
 type PhaseNode = Node<PhaseNodeData, "missionPhase">
+
+interface TerminalNodeData extends Record<string, unknown> {
+  kind: "terminal"
+  sourceNodeId: string
+}
+
+type TerminalNode = Node<TerminalNodeData, "missionTerminal">
+type CanvasNode = PhaseNode | TerminalNode
 
 const PERSONA_LABEL: Record<MissionPersona, string> = {
   planner: "PLANNER",
@@ -55,19 +70,23 @@ function MissionPhaseNode({ data, selected }: NodeProps<PhaseNode>) {
       )}
     >
       <Handle
+        id="target-left"
         type="target"
         position={Position.Left}
         className="!size-2.5 !border-2 !border-card !bg-brass"
       />
-      <div className="flex items-center justify-between border-b border-border/60 px-2.5 py-1.5">
+      <Handle id="target-right" type="target" position={Position.Right} isConnectable={false} className="!size-px !border-0 !bg-transparent !opacity-0" />
+      <Handle id="target-top-in" type="target" position={Position.Top} isConnectable={false} className="!left-[36%] !size-px !border-0 !bg-transparent !opacity-0" />
+      <Handle id="target-bottom-return" type="target" position={Position.Bottom} isConnectable={false} className="!left-[64%] !size-px !border-0 !bg-transparent !opacity-0" />
+      <div className="flex items-center justify-between px-2.5 pt-2 pb-0.5">
         <span className="font-mono text-[11px] tracking-[0.14em] text-brass">
-          TRECHO {String(data.order + 1).padStart(2, "0")}
+          FASE {String(data.order + 1).padStart(2, "0")}
         </span>
         <span className="text-[11px] tracking-wide text-muted-foreground">
           {PERSONA_LABEL[data.persona]}
         </span>
       </div>
-      <div className="px-2.5 py-2">
+      <div className="px-2.5 pt-1 pb-2.5">
         <div className="truncate text-[13px] font-medium text-foreground">
           {data.label || "Fase sem nome"}
         </div>
@@ -84,23 +103,46 @@ function MissionPhaseNode({ data, selected }: NodeProps<PhaseNode>) {
         )}
       </div>
       <Handle
+        id="source-right"
         type="source"
         position={Position.Right}
         className="!size-2.5 !border-2 !border-card !bg-brass"
       />
+      <Handle id="source-left" type="source" position={Position.Left} isConnectable={false} className="!size-px !border-0 !bg-transparent !opacity-0" />
+      <Handle id="source-bottom-out" type="source" position={Position.Bottom} isConnectable={false} className="!left-[36%] !size-px !border-0 !bg-transparent !opacity-0" />
+      <Handle id="source-top-return" type="source" position={Position.Top} isConnectable={false} className="!left-[64%] !size-px !border-0 !bg-transparent !opacity-0" />
     </div>
   )
 }
 
-const NODE_TYPES = { missionPhase: MissionPhaseNode }
+function MissionTerminalNode() {
+  return (
+    <div className="flex w-40 items-center gap-2.5 rounded-full border border-brass/35 bg-brass/[0.06] px-3 py-2 text-brass shadow-sm">
+      <Handle
+        id="target-left"
+        type="target"
+        position={Position.Left}
+        isConnectable={false}
+        className="!size-px !border-0 !bg-transparent !opacity-0"
+      />
+      <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
+      <span className="text-[12px] font-medium">Missão concluída</span>
+    </div>
+  )
+}
+
+const NODE_TYPES = {
+  missionPhase: MissionPhaseNode,
+  missionTerminal: MissionTerminalNode,
+}
 
 function toFlowNodes(
   preset: MissionPreset,
   selectedPhaseId?: string | null,
-): PhaseNode[] {
+): CanvasNode[] {
   const graph = enableGraphMode(preset).graph!
   const phases = new Map(preset.phases.map((phase) => [phase.id, phase]))
-  return graph.nodes.flatMap((node) => {
+  const phaseNodes: CanvasNode[] = graph.nodes.flatMap((node) => {
     const phase = phases.get(node.phaseId)
     if (!phase) return []
     const order = preset.phases.findIndex((candidate) => candidate.id === phase.id)
@@ -111,6 +153,7 @@ function toFlowNodes(
         position: node.position,
         selected: phase.id === selectedPhaseId,
         data: {
+          kind: "phase" as const,
           phaseId: phase.id,
           order,
           label: phase.label,
@@ -123,19 +166,63 @@ function toFlowNodes(
       },
     ]
   })
+  const terminalNodes: CanvasNode[] = missionVisualTerminals(graph).map(
+    (terminal) => ({
+      id: terminal.id,
+      type: "missionTerminal" as const,
+      position: terminal.position,
+      selectable: false,
+      draggable: false,
+      connectable: false,
+      data: {
+        kind: "terminal" as const,
+        sourceNodeId: terminal.sourceNodeId,
+      },
+    }),
+  )
+  return [...phaseNodes, ...terminalNodes]
 }
 
 function toFlowEdges(preset: MissionPreset): Edge[] {
-  return enableGraphMode(preset).graph!.edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
+  const graph = enableGraphMode(preset).graph!
+  const executable = graph.edges.map((edge) => {
+    const handles = missionVisualEdgeHandles(graph, edge)
+    const loop = edge.maxTraversals !== undefined
+    const stroke = loop ? "var(--st-warning)" : "var(--brass)"
+    return {
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: handles.sourceHandle,
+      targetHandle: handles.targetHandle,
+      type: "smoothstep",
+      markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
+      style: { stroke, strokeWidth: 1.4 },
+      label: missionVisualEdgeLabel(graph, edge),
+      labelStyle: { fill: "var(--muted-foreground)", fontSize: 10 },
+      labelBgStyle: { fill: "var(--card)", fillOpacity: 0.94 },
+      labelBgPadding: [4, 2] as [number, number],
+      labelBgBorderRadius: 4,
+    }
+  })
+  const terminals: Edge[] = missionVisualTerminals(graph).map((terminal) => ({
+    id: `mission-terminal-edge:${terminal.sourceNodeId}`,
+    source: terminal.sourceNodeId,
+    target: terminal.id,
+    sourceHandle: "source-right",
+    targetHandle: "target-left",
     type: "smoothstep",
+    selectable: false,
+    focusable: false,
     markerEnd: { type: MarkerType.ArrowClosed, color: "var(--brass)" },
     style: { stroke: "var(--brass)", strokeWidth: 1.4 },
-    label: `${edge.condition === "success" ? "concluiu" : edge.condition === "failure" ? "falhou" : "sempre"}${edge.maxTraversals ? ` · máx. ${edge.maxTraversals}` : ""}`,
+    label: "Aprovado",
     labelStyle: { fill: "var(--muted-foreground)", fontSize: 10 },
+    labelBgStyle: { fill: "var(--card)", fillOpacity: 0.94 },
+    labelBgPadding: [4, 2] as [number, number],
+    labelBgBorderRadius: 4,
   }))
+  return [...executable, ...terminals]
 }
 
 /** Projeção visual do grafo executável: layout, seleção e conexões pertencem ao
@@ -165,7 +252,7 @@ export function MissionPlanCanvas({
       ? internalSelectedPhaseId
       : controlledSelectedPhaseId
   const graphSignature = JSON.stringify(enableGraphMode(preset).graph)
-  const [nodes, setNodes, onNodesChange] = useNodesState<PhaseNode>(
+  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(
     toFlowNodes(preset, selectedPhaseId),
   )
   const edges = useMemo(() => toFlowEdges(preset), [preset])
@@ -190,6 +277,7 @@ export function MissionPlanCanvas({
   )
   const selected = selectedIndex >= 0 ? preset.phases[selectedIndex] : null
   const graph = enableGraphMode(preset).graph!
+  const terminals = missionVisualTerminals(graph)
   const selectedEdge = graph.edges.find((edge) => edge.id === selectedEdgeId)
 
   const connect = useCallback(
@@ -271,29 +359,42 @@ export function MissionPlanCanvas({
               Fluxo visual executável
             </div>
             <div className="text-[11px] text-muted-foreground">
-              {preset.phases.length} nós · {graph.edges.length} conexões
+              {preset.phases.length} fases · {terminals.length}{" "}
+              {terminals.length === 1 ? "saída de sucesso" : "saídas de sucesso"}
             </div>
           </div>
         </div>
         <span className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
-          {interactive ? "conexões definem a execução" : "somente leitura"}
+          {interactive ? (
+            <button
+              type="button"
+              onClick={() => onChange(autoLayoutMissionPlan(preset))}
+              className="rounded px-2 py-1 transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              Reorganizar
+            </button>
+          ) : (
+            "somente leitura"
+          )}
         </span>
       </div>
 
       <div className="min-h-64 w-full flex-1 bg-[radial-gradient(circle_at_50%_45%,var(--brass-soft),transparent_48%)]">
-        <ReactFlow<PhaseNode>
+        <ReactFlow<CanvasNode>
           className="h-full w-full"
           colorMode={theme}
           nodes={nodes}
           edges={edges}
           nodeTypes={NODE_TYPES}
           onNodesChange={onNodesChange}
-          onNodeClick={(_, node) => selectPhase(node.data.phaseId)}
+          onNodeClick={(_, node) => {
+            if (node.data.kind === "phase") selectPhase(node.data.phaseId)
+          }}
           onPaneClick={() => setSelectedEdgeId(null)}
           onEdgeClick={(_, edge) => setSelectedEdgeId(edge.id)}
           onConnect={connect}
           onNodeDragStop={(_, node) => {
-            if (!interactive) return
+            if (!interactive || node.data.kind !== "phase") return
             onChange(
               updateMissionNodePositions(preset, {
                 [node.data.phaseId]: node.position,
@@ -376,7 +477,7 @@ export function MissionPlanCanvas({
           </>
         ) : (
           <>
-            <CheckCircle2 className="size-3.5 shrink-0 text-st-success" />
+            <CheckCircle2 className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 truncate text-[11px] text-muted-foreground">
               {selected
                 ? `${selected.label || "Fase sem nome"} selecionada · ${interactive ? "arraste ou conecte as portas; selecione uma conexão para definir o resultado." : "abra o Fluxo visual para editar conexões."}`

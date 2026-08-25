@@ -3,7 +3,11 @@ import { persist } from "zustand/middleware"
 import { emit } from "@tauri-apps/api/event"
 import type { PermissionMode, Project } from "@/lib/types"
 import type { MainTab } from "@/lib/mainTabs"
-import { type GlobalSettings, DEFAULT_SETTINGS } from "@/lib/settings"
+import {
+  type GlobalSettings,
+  DEFAULT_SETTINGS,
+  reconcileMissionPresets,
+} from "@/lib/settings"
 import {
   isTauri,
   renameProject as dbRenameProject,
@@ -396,10 +400,17 @@ export const useApp = create<AppState>()(
       // quando o schema cresce entre versões).
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppState>
+        const persistedSettings = (p.settings ?? {}) as Partial<GlobalSettings>
         return {
           ...current,
           ...p,
-          settings: { ...current.settings, ...(p.settings ?? {}) },
+          settings: {
+            ...current.settings,
+            ...persistedSettings,
+            missionPresets: reconcileMissionPresets(
+              persistedSettings.missionPresets,
+            ),
+          },
         }
       },
       // DOM ↔ estado ao reidratar (o pre-mount do main.tsx já evitou o flash).

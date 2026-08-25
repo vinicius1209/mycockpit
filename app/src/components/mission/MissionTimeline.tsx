@@ -18,8 +18,6 @@ import { GateCard } from "@/components/mission/GateCard"
 import { RecoveryCard } from "@/components/mission/RecoveryCard"
 import {
   phaseProvenance,
-  planCounts,
-  planGrowthNote,
   type MissionPhaseRun,
   type MissionRun,
 } from "@/lib/missionTypes"
@@ -30,7 +28,7 @@ import { fmtCost, fmtDuration, fmtTime } from "@/lib/format"
 import { fmtMissionCost, missionCostState, phaseCostState } from "@/lib/missionCost"
 import { queuedGranularityNote } from "@/lib/missionQuiet"
 import { stopPrice } from "@/lib/missionGestures"
-import { missionRuler, missionWindow } from "@/lib/missionWindow"
+import { missionWindow } from "@/lib/missionWindow"
 import { cn } from "@/lib/utils"
 import { PENDING_DECISION } from "@/lib/attention"
 
@@ -82,11 +80,11 @@ export function missionHostsInline(m: MissionRun | undefined | null): boolean {
   return cur?.status === "running"
 }
 
-/** Uma fase como estação no plano de voo (nó na espinha + linha). */
+/** Uma visita no diário de bordo. O grafo acima já mostra a rota; repetir uma
+ * espinha vertical aqui criava uma segunda estrutura concorrente. */
 function PhaseNode({
   p,
   active,
-  last,
   now,
   index,
   cwd,
@@ -100,7 +98,6 @@ function PhaseNode({
 }: {
   p: MissionPhaseRun
   active: boolean
-  last: boolean
   /** O agora, injetado: um relógio vivo só na tela (B2.2). */
   now: number
   /** Índice da fase no plano (o handoff dela é nomeado por ele). */
@@ -144,19 +141,52 @@ function PhaseNode({
   const granularity =
     p.status === "queued" ? queuedGranularityNote(p.def.agent) : null
   return (
-    <div className="relative mb-4 last:mb-0">
-      {/* nó */}
-      <span
-        className={cn(
-          "absolute top-[11px] -left-[28px] z-[1] size-3.5 rounded-full border-2 bg-card",
-          nodeState === "done" && "border-st-success bg-st-success",
-          nodeState === "run" &&
-            "border-st-running bg-st-running shadow-[0_0_0_4px_color-mix(in_srgb,var(--st-running)_20%,transparent)]",
-          nodeState === "error" && "border-st-error bg-st-error",
-          nodeState === "pending" && "border-border-strong",
-        )}
-      />
-      <div className={cn("flex items-center gap-2.5", nodeState === "pending" && "opacity-50")}>
+    <section
+      className={cn(
+        "mb-3 rounded-xl px-4 py-3 last:mb-0",
+        nodeState === "run" && "bg-secondary/35 ring-1 ring-border/70",
+        nodeState === "done" && "bg-secondary/15",
+        nodeState === "error" && "bg-st-error/[0.05] ring-1 ring-st-error/30",
+        nodeState === "pending" && "bg-secondary/10 opacity-55",
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+        <span
+          className={cn(
+            "grid size-5 shrink-0 place-items-center rounded-full bg-background/70 text-[11px]",
+            nodeState === "done" && "text-st-success",
+            nodeState === "run" && "text-st-running",
+            nodeState === "error" && "text-st-error",
+            nodeState === "pending" && "text-muted-foreground",
+          )}
+          aria-label={
+            nodeState === "done"
+              ? "Concluída"
+              : nodeState === "run"
+                ? "Em execução"
+                : nodeState === "error"
+                  ? "Falhou"
+                  : "Na fila"
+          }
+        >
+          {nodeState === "done" ? (
+            "✓"
+          ) : nodeState === "error" ? (
+            "×"
+          ) : (
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                nodeState === "run"
+                  ? "animate-cockpit-pulse bg-st-running motion-reduce:animate-none"
+                  : "bg-muted-foreground/45",
+              )}
+            />
+          )}
+        </span>
+        <span className="font-mono text-[11px] tracking-[0.12em] text-faint">
+          VISITA {String(index + 1).padStart(2, "0")}
+        </span>
         {/* IDENTIDADE UMA VEZ POR CONTEXTO (ADR-037): motor e modelo são
             escritos AQUI e em lugar nenhum abaixo. O "Claude · Claude · Opus 5"
             do build 193 saía do bloco vivo, que repetia o shortLabel antes do
@@ -226,8 +256,7 @@ function PhaseNode({
           onInterrupt={onInterrupt}
         />
       )}
-      {!last && <span className="sr-only">↓</span>}
-    </div>
+    </section>
   )
 }
 
@@ -244,13 +273,9 @@ export function MissionResumeCard({ convId }: { convId: string }) {
   const project = useActiveProject()
   if (!entry || !project) return null
   const st = entry.state
-  const n = st.preset.phases.length
-  const cur = Math.min(Math.max(0, st.current), n - 1)
-  const phaseLabel = st.preset.phases[cur]?.label ?? "?"
-  // o plano persistido pode ter crescido antes do crash: o card diz "3/6" de
-  // uma missão que decolou com 4, e quem for retomar precisa saber disso aqui,
-  // não depois de relançar.
-  const growth = planGrowthNote(planCounts(st.preset.phases))
+  const n = st.phases.length
+  const cur = Math.min(Math.max(0, st.current), Math.max(0, n - 1))
+  const phaseLabel = st.phases[cur]?.def?.label ?? "?"
   return (
     <div className="mx-auto w-full max-w-[760px] px-8 pt-6">
       {/* A missão está PARADA até você escolher retomar ou descartar, com
@@ -265,9 +290,8 @@ export function MissionResumeCard({ convId }: { convId: string }) {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[13px] font-semibold">
-                Missão interrompida na fase {cur + 1}/{n} · {phaseLabel}
+                Missão interrompida na visita {cur + 1} · {phaseLabel}
               </span>
-              {growth && <ProvenanceMark>{growth}</ProvenanceMark>}
             </div>
             <div className="text-[12px] text-muted-foreground">
               O app fechou com a missão em voo, e o worktree e os handoffs
@@ -355,12 +379,7 @@ export function MissionTimeline({ convId }: { convId: string }) {
   const held = running && mission.hold != null
   const n = mission.phases.length
   const cur = Math.min(mission.current, n - 1)
-  // O denominador CRESCE em voo (o revisor reprova, o motor acrescenta a
-  // correção), e o crescimento é correto. O que não pode é trocar calado: o
-  // contador passa a carregar os dois números, com o de lançamento ao lado.
-  const growth = planGrowthNote(planCounts(mission.phases.map((p) => p.def)))
   const total = missionCostState(mission.costTotal, mission.phases)
-  const ruler = missionRuler(mission)
   // A JANELA VIVA: com 3 fases ela cobre o plano inteiro e nenhum stub aparece;
   // com 12, é ela que impede a fase viva de sair da tela.
   const rows = missionWindow(mission.phases, cur, {
@@ -383,101 +402,77 @@ export function MissionTimeline({ convId }: { convId: string }) {
    *  recuperação). Extraído do map porque agora quem decide QUEM aparece é a
    *  janela viva (lib/missionWindow), não a lista inteira. */
   const renderFase = (p: MissionPhaseRun, i: number) => (
-          <div key={p.def.id}>
-            <PhaseNode
-              p={p}
-              active={running && !gated && i === cur}
-              last={i === n - 1}
-              now={now}
-              index={i}
-              cwd={cwd}
-              dir={mission.dir}
-              receiptOpen={manuallyOpen.has(i)}
-              onToggleReceipt={() =>
-                setManuallyOpen((prev) => {
-                  const next = new Set(prev)
-                  if (next.has(i)) next.delete(i)
-                  else next.add(i)
-                  return next
-                })
-              }
-              holdRequested={
-                running && !gated && i === cur
-                  ? mission.hold?.reason === "pedido"
-                  : undefined
-              }
-              onToggleHold={
-                running && !gated && i === cur
-                  ? (on) => holdAfterPhase(convId, on)
-                  : undefined
-              }
-              onInterrupt={
-                running && !gated && i === cur && !mission.hold
-                  ? () => interruptPhase(convId)
-                  : undefined
-              }
-              interactions={
-                running && !gated && i === cur ? inlineReqs : undefined
-              }
-            />
-            {inRecovery && mission.recovery!.phase === i && (
-              <div className="relative mb-4">
-                <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 animate-cockpit-pulse rounded-full border-2 border-st-warning bg-st-warning shadow-[0_0_0_4px_color-mix(in_srgb,var(--st-warning)_20%,transparent)]" />
-                <div className="flex items-center gap-2.5">
-                  <span className="text-[14px] font-semibold text-st-warning">
-                    Precisa de você
-                  </span>
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    a fase {i + 1} parou por limite
-                  </span>
-                </div>
-                <RecoveryCard
-                  convId={convId}
-                  recovery={mission.recovery!}
-                  failedAgent={p.def.agent}
-                  onResolve={resolveRecovery}
-                  onAbort={abortRecovery}
-                />
-              </div>
-            )}
-            {running && mission.hold?.phase === i && (
-              <HoldCard
-                reason={mission.hold.reason}
-                phaseNumber={i + 1}
-                nextLabel={mission.phases[i + 1]?.def.label ?? null}
-                price={stopPrice({ current: i, total: n, costLabel: total.value })}
-                onRelease={() => releaseHold(convId)}
-              />
-            )}
-            {gated && mission.gate!.phase === i && (
-              <div className="relative mb-4">
-                <span className="absolute top-[11px] -left-[28px] z-[1] size-3.5 animate-cockpit-pulse rounded-full border-2 border-brass bg-brass shadow-[0_0_0_4px_var(--brass-soft)]" />
-                <div className="flex items-center gap-2.5">
-                  <span className="text-[14px] font-semibold text-brass">
-                    Precisa de você
-                  </span>
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    {mission.gate!.questions.length}{" "}
-                    {mission.gate!.questions.length === 1
-                      ? "decisão pendente"
-                      : "decisões pendentes"}
-                  </span>
-                </div>
-                <GateCard
-                  convId={convId}
-                  questions={mission.gate!.questions}
-                  nextAgent={
-                    mission.phases[mission.gate!.phase + 1]?.def.agent ?? null
-                  }
-                  onContinue={(answers) => answerGate(convId, answers)}
-                />
-              </div>
-            )}
-          </div>
+    <div key={p.visitId ?? `${p.def.id}:${i}`}>
+      <PhaseNode
+        p={p}
+        active={running && !gated && i === cur}
+        now={now}
+        index={i}
+        cwd={cwd}
+        dir={mission.dir}
+        receiptOpen={manuallyOpen.has(i)}
+        onToggleReceipt={() =>
+          setManuallyOpen((prev) => {
+            const next = new Set(prev)
+            if (next.has(i)) next.delete(i)
+            else next.add(i)
+            return next
+          })
+        }
+        holdRequested={
+          running && !gated && i === cur
+            ? mission.hold?.reason === "pedido"
+            : undefined
+        }
+        onToggleHold={
+          running && !gated && i === cur
+            ? (on) => holdAfterPhase(convId, on)
+            : undefined
+        }
+        onInterrupt={
+          running && !gated && i === cur && !mission.hold
+            ? () => interruptPhase(convId)
+            : undefined
+        }
+        interactions={running && !gated && i === cur ? inlineReqs : undefined}
+      />
+      {inRecovery && mission.recovery!.phase === i && (
+        <div className="mb-3">
+          <RecoveryCard
+            convId={convId}
+            recovery={mission.recovery!}
+            failedAgent={p.def.agent}
+            onResolve={resolveRecovery}
+            onAbort={abortRecovery}
+          />
+        </div>
+      )}
+      {running && mission.hold?.phase === i && (
+        <HoldCard
+          reason={mission.hold.reason}
+          visitNumber={i + 1}
+          nextLabel={mission.phases[i + 1]?.def.label ?? null}
+          price={stopPrice({ costLabel: total.value })}
+          onRelease={() => releaseHold(convId)}
+        />
+      )}
+      {gated && mission.gate!.phase === i && (
+        <div className="mb-3">
+          <GateCard
+            convId={convId}
+            questions={mission.gate!.questions}
+            nextAgent={
+              mission.phases[mission.gate!.phase + 1]?.def.agent ?? null
+            }
+            onContinue={(answers) => answerGate(convId, answers)}
+          />
+        </div>
+      )}
+    </div>
   )
 
   return (
-    <div className="mx-auto w-full max-w-[760px] px-8 pt-6 pb-4">
+    <div className="mx-auto w-full max-w-[900px] px-8 pt-6 pb-4">
       {/* cabeçalho: estado + tarefa + medidor de combustível */}
       <div className="flex flex-wrap items-start gap-x-5 gap-y-3">
         <div className="min-w-0 flex-1">
@@ -503,7 +498,7 @@ export function MissionTimeline({ convId }: { convId: string }) {
               {held ? (
                 <>
                   <span className="size-1.5 rounded-full bg-st-warning" />
-                  segurando · visita {Math.min(mission.current + 1, n)}/{n}
+                  segurando · visita {Math.max(1, mission.current + 1)}
                 </>
               ) : gated ? (
                 <>
@@ -513,12 +508,12 @@ export function MissionTimeline({ convId }: { convId: string }) {
               ) : inRecovery ? (
                 <>
                   <span className="animate-cockpit-pulse size-1.5 rounded-full bg-st-warning" />
-                  pausada · limite na visita {Math.min(mission.current + 1, n)}/{n}
+                  pausada · limite na visita {Math.max(1, mission.current + 1)}
                 </>
               ) : running ? (
                 <>
                   <span className="animate-cockpit-pulse size-1.5 rounded-full bg-st-running" />
-                  em voo · visita {Math.min(mission.current + 1, n)}/{n}
+                  em voo · visita {Math.max(1, mission.current + 1)}
                 </>
               ) : mission.status === "done" ? (
                 mission.reviewCaveat ? "✓ concluída com ressalva" : "✓ concluída"
@@ -526,9 +521,14 @@ export function MissionTimeline({ convId }: { convId: string }) {
                 mission.status === "error" ? "falhou" : "abortada"
               )}
             </span>
-            {/* o denominador não muda calado: quando o plano cresceu no voo, o
-                número de lançamento fica ao lado do de agora */}
-            {growth && <ProvenanceMark>{growth}</ProvenanceMark>}
+            {mission.checkpointWarning && (
+              <span
+                className="rounded-full bg-st-warning/15 px-2.5 py-1 font-mono text-[11px] text-st-warning"
+                title={mission.checkpointWarning}
+              >
+                retomada sem garantia
+              </span>
+            )}
           </div>
           <h2 className="mt-1.5 flex items-center gap-2 text-[14px] font-semibold tracking-[-0.01em]">
             <Rocket className="size-4 shrink-0 text-brass" />
@@ -608,40 +608,14 @@ export function MissionTimeline({ convId }: { convId: string }) {
 
       <MissionRunGraph mission={mission} className="mt-4" />
 
-      {/* R8 — A RÉGUA: uma linha que NÃO rola, com a posição, o denominador
-          declarado e o que vem a seguir. É a única concessão à tese do painel
-          de voo, e é uma linha: sem estações, sem seleção e SEM barra de
-          percentual (uma barra que recua sozinha, de 60% pra 50% quando duas
-          fases foram apendadas, é pior que não ter barra). Só aparece em voo,
-          que é quando "onde estou" é pergunta. */}
-      {running && (
-        <div className="sticky top-0 z-[5] -mx-8 mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-border bg-background/90 px-8 py-2 text-[12px] text-muted-foreground backdrop-blur">
-          <span className="font-mono text-[13px] font-semibold tabular-nums text-foreground">
-            {ruler.position}
-          </span>
-          {ruler.launched && (
-            <ProvenanceMark>{ruler.launched}</ProvenanceMark>
-          )}
-          {ruler.next && (
-            <span className="min-w-0 truncate">{ruler.next}</span>
-          )}
-          {ruler.queued && (
-            <span className="shrink-0 font-mono text-[11px] tabular-nums text-faint">
-              {ruler.queued}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* plano de voo (espinha vertical); o GATE entra como estação logo após
-          a fase que deixou as perguntas */}
-      <div className="relative mt-6 pl-[34px] before:absolute before:top-3.5 before:bottom-5 before:left-3 before:w-0.5 before:bg-border">
+      {/* Diário de bordo: o mapa acima já explica a topologia. Aqui cada visita
+          mostra atividade e recibo sem desenhar uma segunda rota vertical. */}
+      <div className="mt-5">
         {rows.map((row) =>
           row.kind === "stub" ? (
             // R9 — o stub É um recibo, não uma contagem, e declara o que
             // engoliu. Clicar abre as fases que ele cobre (nenhuma some).
-            <div key={`stub-${row.side}-${row.indexes[0]}`} className="relative mb-4">
-              <span className="absolute top-[9px] -left-[26px] z-[1] size-2.5 rounded-full border border-border-strong bg-background" />
+            <div key={`stub-${row.side}-${row.indexes[0]}`} className="mb-3">
               <button
                 type="button"
                 onClick={() =>
@@ -651,7 +625,7 @@ export function MissionTimeline({ convId }: { convId: string }) {
                     return next
                   })
                 }
-                className="flex w-full min-w-0 items-center gap-2.5 text-left"
+                className="flex w-full min-w-0 items-center gap-2.5 rounded-lg bg-secondary/10 px-3 py-2 text-left transition-colors hover:bg-secondary/20"
               >
                 <span className="shrink-0 text-[13px] font-medium text-muted-foreground">
                   {row.label}

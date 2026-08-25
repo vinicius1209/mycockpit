@@ -48,22 +48,16 @@ describe("preço de interromper (por motor, do registry)", () => {
   })
 })
 
-describe("preço de parar (lido do ESTADO, porque escala com o plano)", () => {
-  it("numa missão de 3 na fase 1, cancela duas", () => {
-    expect(stopPrice({ current: 0, total: 3, costLabel: "US$ 2,07" })).toContain(
-      "cancela 2 fases",
+describe("preço de parar em uma rota de grafo", () => {
+  it("não inventa quantas visitas ainda existirão", () => {
+    expect(stopPrice({ costLabel: "US$ 2,07" })).toContain(
+      "a rota restante não será executada",
     )
   })
 
-  it("numa missão de 12 na fase 7, cancela cinco (o preço escala)", () => {
-    const p = stopPrice({ current: 6, total: 12, costLabel: "US$ 13,28" })
-    expect(p).toContain("cancela 5 fases")
+  it("mantém explícito que o gasto realizado não volta", () => {
+    const p = stopPrice({ costLabel: "US$ 13,28" })
+    expect(p).toContain("não volta")
     expect(p).toContain("US$ 13,28")
-  })
-
-  it("na última fase não há fila a cancelar, e o texto não inventa uma", () => {
-    expect(stopPrice({ current: 2, total: 3, costLabel: "US$ 1,00" })).toContain(
-      "não sobra nenhuma fase na fila",
-    )
   })
 })
