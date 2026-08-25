@@ -1038,6 +1038,80 @@ fn discover_claude(project_path: &str) -> Vec<DiscoveredServer> {
     out
 }
 
+fn codex_home_dir() -> Option<PathBuf> {
+    std::env::var("CODEX_HOME")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| Path::new(&h).join(".codex"))
+        })
+}
+
+fn expand_home_path(input: &str) -> String {
+    if let Ok(home) = std::env::var("HOME") {
+        if input == "~" {
+            return home;
+        }
+        if let Some(rest) = input.strip_prefix("~/") {
+            return format!("{home}/{rest}");
+        }
+        if input.contains("${HOME}") {
+            return input.replace("${HOME}", &home);
+        }
+        if input.contains("$HOME") {
+            return input.replace("$HOME", &home);
+        }
+    }
+    input.to_string()
+}
+
+fn normalize_codex_launch(server_name: &str, launch: &mut McpLaunchConfig) {
+    let Some(codex_home) = codex_home_dir() else {
+        return;
+    };
+    normalize_codex_launch_in(&codex_home, server_name, launch);
+}
+
+/// A regra, com o HOME injetado. Separada do `codex_home_dir()` pra ser testável
+/// sem mexer em variável de ambiente: teste que faz `set_var` corre em paralelo
+/// com os outros na mesma thread pool e vira flake por construção (a casa já
+/// tem esse padrão no adapters.rs, com salvar/restaurar — aqui dá pra evitar).
+fn normalize_codex_launch_in(
+    codex_home: &Path,
+    server_name: &str,
+    launch: &mut McpLaunchConfig,
+) {
+    if let Some(cmd) = &launch.command {
+        let path = Path::new(cmd);
+        if !path.is_absolute() {
+            let clean_cmd = cmd.strip_prefix("./").unwrap_or(cmd);
+            let candidate_server_dir = codex_home.join(server_name).join(clean_cmd);
+            let candidate_home = codex_home.join(clean_cmd);
+            if candidate_server_dir.exists() {
+                launch.command = Some(candidate_server_dir.to_string_lossy().to_string());
+                if launch
+                    .cwd
+                    .as_deref()
+                    .is_none_or(|cwd| cwd == "." || !Path::new(cwd).is_absolute())
+                {
+                    launch.cwd = Some(codex_home.join(server_name).to_string_lossy().to_string());
+                }
+            } else if candidate_home.exists() {
+                launch.command = Some(candidate_home.to_string_lossy().to_string());
+                if launch
+                    .cwd
+                    .as_deref()
+                    .is_none_or(|cwd| cwd == "." || !Path::new(cwd).is_absolute())
+                {
+                    launch.cwd = Some(codex_home.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+}
+
 async fn discover_codex(project_path: &str) -> Result<Vec<DiscoveredServer>, String> {
     let cwd = project_path.to_string();
     let output = tokio::task::spawn_blocking(move || {
@@ -1052,7 +1126,8 @@ async fn discover_codex(project_path: &str) -> Result<Vec<DiscoveredServer>, Str
         .into_iter()
         .filter_map(|item| {
             let name = item.get("name")?.as_str()?.to_string();
-            let launch = parse_launch(item.get("transport")?)?;
+            let mut launch = parse_launch(item.get("transport")?)?;
+            normalize_codex_launch(&name, &mut launch);
             Some(DiscoveredServer {
                 id: server_id("codex", "user", &name),
                 name,
@@ -1576,20 +1651,22 @@ fn redact_probe_detail(config: &McpLaunchConfig, text: String) -> String {
 }
 
 async fn probe_stdio(config: &McpLaunchConfig, project_path: &str) -> ProbeOutcome {
-    let Some(program) = &config.command else {
+    let Some(program_raw) = &config.command else {
         return ProbeOutcome {
             status: "unavailable".into(),
             detail: Some("command ausente".into()),
             tool_names: Vec::new(),
         };
     };
-    let mut cmd = Command::new(program);
-    cmd.args(&config.args)
+    let program = expand_home_path(program_raw);
+    let mut cmd = Command::new(&program);
+    let args: Vec<String> = config.args.iter().map(|a| expand_home_path(a)).collect();
+    cmd.args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let cwd = config
-        .cwd
+    let cwd_expanded = config.cwd.as_deref().map(expand_home_path);
+    let cwd = cwd_expanded
         .as_deref()
         .filter(|cwd| Path::new(cwd).is_absolute())
         .unwrap_or(project_path);
@@ -3051,4 +3128,103 @@ done
         assert_eq!(result.status, "healthy");
         assert_eq!(result.tool_names, vec!["inspect", "search"]);
     }
+
+    /// O normalizador REESCREVE o caminho do comando que vai ser executado, e
+    /// entrou sem teste. Com o HOME injetado dá pra cobrir sem `set_var`.
+    fn launch_com_comando(cmd: &str) -> McpLaunchConfig {
+        McpLaunchConfig {
+            transport: "stdio".into(),
+            command: Some(cmd.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn normaliza_comando_relativo_na_pasta_do_servidor() {
+        let tmp = std::env::temp_dir().join(format!("mc-codex-{}", std::process::id()));
+        let dir = tmp.join("meu-mcp");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("run.sh"), "#!/bin/sh\n").unwrap();
+
+        let mut launch = launch_com_comando("./run.sh");
+        normalize_codex_launch_in(&tmp, "meu-mcp", &mut launch);
+
+        // O comando vira absoluto E o cwd passa a ser a pasta do servidor: sem
+        // isso o probe rodaria com o cwd do projeto e não acharia o binário.
+        assert_eq!(launch.command, Some(dir.join("run.sh").to_string_lossy().to_string()));
+        assert_eq!(launch.cwd, Some(dir.to_string_lossy().to_string()));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn comando_absoluto_nao_e_tocado() {
+        let mut launch = launch_com_comando("/usr/bin/node");
+        normalize_codex_launch_in(Path::new("/tmp/qualquer"), "x", &mut launch);
+        // Caminho que o usuário deu explicitamente é decisão dele.
+        assert_eq!(launch.command, Some("/usr/bin/node".to_string()));
+        assert_eq!(launch.cwd, None);
+    }
+
+    #[test]
+    fn comando_que_nao_existe_no_home_do_codex_fica_como_esta() {
+        let mut launch = launch_com_comando("npx");
+        normalize_codex_launch_in(Path::new("/tmp/nao-existe-mc"), "x", &mut launch);
+        // `npx` resolve pelo PATH. Reescrever pra um caminho que não existe
+        // trocaria "funciona" por "command not found".
+        assert_eq!(launch.command, Some("npx".to_string()));
+    }
+
+    #[test]
+    fn cwd_absoluto_do_usuario_e_preservado() {
+        let tmp = std::env::temp_dir().join(format!("mc-codex-cwd-{}", std::process::id()));
+        let dir = tmp.join("srv");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("run.sh"), "#!/bin/sh\n").unwrap();
+
+        let mut launch = launch_com_comando("./run.sh");
+        launch.cwd = Some("/opt/escolhido".into());
+        normalize_codex_launch_in(&tmp, "srv", &mut launch);
+
+        // O comando é resolvido, mas o cwd que o usuário escolheu manda.
+        assert!(launch.command.unwrap().ends_with("srv/run.sh"));
+        assert_eq!(launch.cwd, Some("/opt/escolhido".to_string()));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn expande_home_path_corretamente() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/fake".into());
+        assert_eq!(expand_home_path("~/bin/tool"), format!("{home}/bin/tool"));
+        assert_eq!(expand_home_path("${HOME}/bin/tool"), format!("{home}/bin/tool"));
+        assert_eq!(expand_home_path("$HOME/bin/tool"), format!("{home}/bin/tool"));
+        assert_eq!(expand_home_path("/opt/bin/tool"), "/opt/bin/tool");
+    }
+
+    #[test]
+    fn normaliza_launch_relativo_do_codex() {
+        let temp = std::env::temp_dir().join(format!("mc-codex-launch-test-{}", std::process::id()));
+        let codex_dir = temp.join(".codex");
+        let server_dir = codex_dir.join("computer-use");
+        std::fs::create_dir_all(&server_dir).unwrap();
+        let bin_path = server_dir.join("SkyClient");
+        std::fs::write(&bin_path, b"fake").unwrap();
+
+        std::env::set_var("CODEX_HOME", codex_dir.to_str().unwrap());
+
+        let mut launch = McpLaunchConfig {
+            transport: "stdio".into(),
+            command: Some("./SkyClient".into()),
+            cwd: Some(".".into()),
+            ..Default::default()
+        };
+
+        normalize_codex_launch("computer-use", &mut launch);
+
+        assert_eq!(launch.command.as_deref(), Some(bin_path.to_str().unwrap()));
+        assert_eq!(launch.cwd.as_deref(), Some(server_dir.to_str().unwrap()));
+
+        std::env::remove_var("CODEX_HOME");
+        let _ = std::fs::remove_dir_all(&temp);
+    }
 }
+

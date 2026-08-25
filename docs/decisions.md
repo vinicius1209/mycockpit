@@ -3526,3 +3526,29 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   inteiro por ele. A proteção aqui é estrutural (a função pura), não o teste de
   componente que a bancada não consegue escrever.
 - **Verificado:** `tsc` 0, `vitest` 3225 (6 novos), 9 guardas.
+
+### ADR-093 — MCP do Codex: comando relativo resolvido, e a costura pra testar ✅
+- **Contexto (25/08/2026):** o outro dev entregou a descoberta de MCP do Codex
+  resolvendo comando RELATIVO contra `$CODEX_HOME` (ou `~/.codex`) e expandindo
+  `~`, `$HOME` e `${HOME}` em comando, args e cwd antes da sonda.
+- **O problema real que isso resolve:** o `codex mcp list` devolve entradas com
+  `command: "./run.sh"` e `cwd: "."`. Sondar isso a partir do diretório do
+  PROJETO não acha binário nenhum, e o servidor aparecia indisponível sem motivo
+  visível. Agora o caminho é resolvido contra a casa do Codex, e o `cwd` só é
+  reescrito quando o usuário não escolheu um absoluto.
+- **A revisão achou um buraco de cobertura, não um defeito.** `expand_home_path`
+  veio com teste; `normalize_codex_launch` **não** — e é ela que REESCREVE o
+  caminho do comando que vai ser executado.
+- **A saída não foi mexer em variável de ambiente no teste.** A casa já tem esse
+  padrão (`adapters.rs` salva/seta/restaura `CODEX_HOME`), mas teste que faz
+  `set_var` divide processo com os outros na mesma pool e vira flake por
+  construção. Abri uma costura: `normalize_codex_launch_in(codex_home, …)` com o
+  HOME injetado, e o wrapper que lê o ambiente ficou de uma linha.
+- **Os quatro casos que passaram a ter teste são os que erram calado:**
+  | caso | o que se protege |
+  |---|---|
+  | relativo com arquivo na pasta do servidor | vira absoluto **e** o `cwd` acompanha |
+  | comando ABSOLUTO | não é tocado: caminho explícito é decisão do usuário |
+  | `npx` (não existe na casa do Codex) | fica como está — reescrever trocaria "funciona" por "command not found" |
+  | `cwd` absoluto escolhido pelo usuário | preservado, mesmo com o comando resolvido |
+- **Verificado:** `cargo` 522 (4 novos), `tsc` 0, `vitest` 3225, 9 guardas.
