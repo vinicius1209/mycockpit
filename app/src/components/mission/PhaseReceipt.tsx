@@ -13,6 +13,8 @@ import { useEffect, useState } from "react"
 import { buildPhaseFeed } from "@/lib/missionAction"
 import { readHandoff, type HandoffDoc } from "@/lib/missionHandoff"
 import { handoffFileName } from "@/lib/missionPaths"
+import { cruzarArquivos, ehRuidoDoMotor } from "@/lib/arquivosDeclarados"
+import { loadGitDiff } from "@/lib/git"
 import { phaseReceipt, receiptLine } from "@/lib/missionReceipt"
 import type { MissionPhaseRun } from "@/lib/missionTypes"
 import { cn } from "@/lib/utils"
@@ -41,6 +43,23 @@ function usePhaseHandoff(
   return doc
 }
 
+/** Os caminhos que o GIT viu mudar no worktree. `null` = ainda não perguntei ou
+ *  não é repo — e "não sei" nunca pode virar acusação de omissão. */
+function useDiffDoWorktree(open: boolean, cwd: string): string[] | null {
+  const [paths, setPaths] = useState<string[] | null>(null)
+  useEffect(() => {
+    if (!open || !cwd) return
+    let vivo = true
+    void loadGitDiff(cwd).then((d) => {
+      if (vivo) setPaths(d.isRepo ? d.files.map((f) => f.path) : null)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [open, cwd])
+  return paths
+}
+
 export function PhaseReceiptBlock({
   phase,
   index,
@@ -58,6 +77,14 @@ export function PhaseReceiptBlock({
 }) {
   const r = phaseReceipt(phase)
   const doc = usePhaseHandoff(open, cwd, dir, index, phase.def.persona)
+  const diff = useDiffDoWorktree(open, cwd)
+  // Sem diff (não perguntei / não é repo) a lista sai VAZIA: silêncio, nunca
+  // "você escondeu". O ruído do próprio motor (.mycockpit/) fica de fora.
+  const naoDeclarados = diff
+    ? cruzarArquivos(doc?.files_touched ?? [], diff).naoDeclarados.filter(
+        (f) => !ehRuidoDoMotor(f),
+      )
+    : []
   const feed = open ? buildPhaseFeed(phase.items) : []
   return (
     <div className="mt-1 ml-[2px]">
@@ -137,6 +164,31 @@ export function PhaseReceiptBlock({
                   {f}
                 </code>
               ))}
+            </div>
+          )}
+          {/* O que MUDOU e ninguém declarou. `files_touched` é o agente falando
+              de si mesmo; o worktree é git. Numa missão real os handoffs
+              declararam 20 arquivos e deixaram de fora uma dependência nova
+              (playwright) e 3,8 MB de PNG — com o revisor escrevendo "não há
+              nada bloqueante" ao lado (ADR-090). Não é acusação de má-fé:
+              instalar dependência é efeito colateral honesto de fazer o
+              trabalho. O defeito é o silêncio. */}
+          {naoDeclarados.length > 0 && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+              <span className="label-mono text-st-warning">mudou sem constar</span>
+              {naoDeclarados.slice(0, 8).map((f) => (
+                <code
+                  key={f}
+                  className="rounded bg-st-warning/12 px-1.5 py-0.5 font-mono text-[11px] text-st-warning"
+                >
+                  {f}
+                </code>
+              ))}
+              {naoDeclarados.length > 8 && (
+                <span className="text-[11px] text-muted-foreground">
+                  +{naoDeclarados.length - 8}
+                </span>
+              )}
             </div>
           )}
         </div>

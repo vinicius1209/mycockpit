@@ -3407,3 +3407,39 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   edição e o que ainda entrega a atualização.
 - **Verificado:** `tsc` 0, `vitest` 3205 (2 novos no review), `cargo` 516,
   9 guardas, e2e 27/27.
+
+### ADR-090 — O recibo mostrava o agente falando de si mesmo ✅
+- **Contexto (25/08/2026):** auditoria forense de uma missão real, pedida pelo
+  usuário. A orquestração estava **correta** — 5 visitas, todas as transições
+  legais pelo grafo, o ciclo de revisão disparou e convergiu em 1 volta, e os
+  custos das fases somam EXATAMENTE o `costTotal` (5,231816275).
+- **O furo estava no que a tela conta.** Os 5 handoffs declararam 20 arquivos.
+  O worktree tinha **três mudanças que nenhum deles citou**:
+  | não declarado | o que era |
+  |---|---|
+  | `landing/package.json` + `bun.lock` | **`playwright ^1.62.1`**, dependência NOVA |
+  | `landing/screenshots_v2/` | **3,8 MB** de PNG |
+  E o revisor final escreveu *"não há mais nada bloqueante encontrado nesta
+  revisão"* com tudo isso ao lado.
+- **A entrega já estava certa**, e vale separar: `recordDelivery` usa o diff do
+  git como fonte PRIMÁRIA e só cai no `files_touched` como fallback. O registro
+  durável nunca mentiu. Quem lia a versão auto-declarada era o HUMANO, na tela.
+- **`files_touched` é o agente falando de si mesmo.** A missão roda dentro de um
+  worktree git: a verdade estava a um `git status` de distância e o recibo não
+  perguntava.
+- **A regra é "silêncio", não "acusação".** Instalar dependência e gerar
+  artefato são efeitos colaterais honestos de fazer o trabalho — o defeito é
+  ninguém contar. Por isso o rótulo é **"mudou sem constar"**, e por isso:
+  - diff ausente (não perguntei ainda, ou não é repo) → lista **vazia**, nunca
+    "você escondeu". Não saber jamais vira acusação.
+  - `.mycockpit/` fica fora: o handoff da própria fase mora ali e apareceria em
+    TODA missão. Aviso que aparece sempre ensina a ignorar o aviso.
+- **Achados menores da mesma auditoria:** o aviso de abertura promete
+  "N fases" usando a contagem de NÓS, e o grafo com ciclo rodou 5 visitas sobre
+  4 nós; e não existe `startedAt` por fase no run-state (só `endedAt`), então as
+  durações exibidas incluem o tempo ocioso entre fases. Nenhum dos dois foi
+  corrigido aqui — ficam anotados.
+- **Confirmado pelo ledger, de quebra:** a 6ª linha de `turn_costs` da conversa
+  (US$ 0,5695, no dia seguinte) é o turno que o usuário mandou depois da missão
+  e não viu. Recibo do defeito do ADR-088.
+- **Verificado:** `tsc` 0, `vitest` 3213 (8 novos), 9 guardas.
