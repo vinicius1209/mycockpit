@@ -53,6 +53,11 @@ describe("fumaça de um token por agent (espelho do registry Rust)", () => {
   })
 
   it("a lista de motores testáveis sai do registry, nunca de nome fixo", () => {
-    expect(modelSmokeAgents().map((a) => a.id)).toEqual(["claude-code", "codex", "agy"])
+    expect(modelSmokeAgents().map((a) => a.id)).toEqual([
+      "claude-code",
+      "codex",
+      "agy",
+      "opencode",
+    ])
   })
 })

@@ -147,7 +147,7 @@ export interface AgentDef {
    *  proposto, e slug aposentado vira estado explicado (o codex entrega a
    *  aposentadoria por escrito), nunca sumiço silencioso. Teste-gêmeo:
    *  agents.modelList.test.ts ↔ `matriz_lista_de_modelos_por_agent` no Rust. */
-  listsModels: "agy-models" | "codex-app-server" | null
+  listsModels: "agy-models" | "codex-app-server" | "opencode-models" | null
   /** Dialeto da FUMAÇA DE UM TOKEN (espelho de `model_smoke`, M2 do
    *  model-autonomy-plan): dá pra testar um slug neste motor com uma chamada
    *  mínima e ler o desfecho (ok · auth-rejected · unknown-slug ·
@@ -156,7 +156,7 @@ export interface AgentDef {
    *  gasta quota de propósito: só roda por gesto ou agenda, nunca em laço nem
    *  no boot (o freio vive no Rust, model_smoke.rs). Teste-gêmeo:
    *  agents.modelSmoke.test.ts ↔ `matriz_fumaca_de_modelo_por_agent`. */
-  modelSmoke: "claude-print-json" | "codex-exec-json" | "agy-print-json" | null
+  modelSmoke: "claude-print-json" | "codex-exec-json" | "agy-print-json" | "opencode-run-json" | null
 }
 
 
@@ -336,8 +336,8 @@ export const AGENTS: AgentDef[] = [
     hooksStatus: false,
     hooksPermission: false,
     hookDialect: null,
-    listsModels: null,
-    modelSmoke: null,
+    listsModels: "opencode-models",
+    modelSmoke: "opencode-run-json",
   },
   {
     id: "model",

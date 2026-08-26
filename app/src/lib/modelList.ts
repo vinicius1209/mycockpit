@@ -11,7 +11,11 @@
 
 import { invoke } from "@tauri-apps/api/core"
 import { agentDef, dedupeModelOptions } from "@/lib/agents"
-import { AGY_MODELS, type AgentModelOption } from "@/lib/curatedModels"
+import {
+  AGY_MODELS,
+  OPENCODE_MODELS,
+  type AgentModelOption,
+} from "@/lib/curatedModels"
 
 /** Um modelo que o CLI declara conhecer (espelho de `ModelListEntry`). */
 export interface ModelListEntry {
@@ -114,6 +118,34 @@ export function agyModelOptions(
     vivos.push(curado.get(value) ?? { value, label: (label ?? "").trim() || value })
   }
   return dedupeModelOptions([AGY_MODELS[0], ...vivos])
+}
+
+/** `opencode models` → opções do seletor.
+ *
+ *  Diferente do agy: aqui o `id` É o dialeto do `-m` (`provider/model`) e não
+ *  há lista curada pra casar rótulo — o CLI não manda rótulo nenhum. O rótulo
+ *  vem do Rust já partido (modelo) com o provedor na descrição, porque com 88
+ *  modelos em 4 provedores saber DE QUEM é o modelo é metade da escolha.
+ *
+ *  A curada de casa entra só pra preservar a sentinela "Padrão" na frente e
+ *  reaproveitar descrição que já escrevemos pros ids conhecidos. */
+export function openCodeModelOptions(
+  entries: ReadonlyArray<{ id: string; label?: string | null; description?: string | null }>,
+): AgentModelOption[] {
+  const curado = new Map(OPENCODE_MODELS.map((o) => [o.value, o]))
+  const vivos: AgentModelOption[] = []
+  for (const { id, label, description } of entries) {
+    const value = (id ?? "").trim()
+    if (!value || /\s/.test(value)) continue
+    vivos.push(
+      curado.get(value) ?? {
+        value,
+        label: (label ?? "").trim() || value,
+        description: (description ?? "").trim() || undefined,
+      },
+    )
+  }
+  return dedupeModelOptions([OPENCODE_MODELS[0], ...vivos])
 }
 
 /** Este motor sabe se listar? (espelho puro do registry, sem tocar no backend) */

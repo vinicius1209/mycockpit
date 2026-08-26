@@ -3627,3 +3627,45 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   spawn é o estrago que a matriz gêmea existe pra impedir) e `native_compact`
   (a doc anuncia o evento; o stream do `run` não foi visto emitindo).
 - **Verificado:** `cargo` 533 (7 novos), `tsc` 0, `vitest` 3228, 9 guardas.
+
+### ADR-096 — F4: a lista viva do OpenCode, e o OpenRouter por dentro ✅
+- **Contexto (26/08/2026):** o pedido do usuário tinha duas metades — "aproveitar
+  outras assinaturas" e "suporte ao OpenRouter". Esta fase entrega as duas com
+  um mecanismo só.
+- **O OpenRouter entra POR DENTRO do OpenCode, e essa é a decisão que economiza
+  um subsistema.** O caminho ingênuo seria um cliente HTTP nosso, com chave,
+  catálogo, preço e classificação de erro próprios. O OpenCode já fala
+  OpenRouter (BYOK), então para o Frota **OpenRouter é um provedor do
+  OpenCode**: mesma sonda, mesmo adapter, mesmo ledger. Um provedor a mais custa
+  um `providers login`; um cliente novo custaria um subsistema.
+  - O parser preserva isso por construção: `openrouter/anthropic/claude-4` corta
+    na PRIMEIRA barra, então o `id` fica inteiro (é o que o `-m` aceita) e o
+    rótulo mantém `anthropic/claude-4`. Coberto por teste.
+- **`opencode models` virou fonte viva** (`OpenCodeModelsSubcommand`). Vale mais
+  aqui que no agy: a lista depende de QUAIS credenciais existem, e isso muda sem
+  o app saber — conectar o OpenRouter faz modelos aparecerem sem tocar em código.
+  Lista vazia NÃO apaga a curada: sem provedor conectado o CLI devolve pouco, e
+  zerar o seletor seria pior que a lista de casa.
+- **A guarda "quem lista modelos precisa saber testá-los" mordeu, e estava
+  certa.** Eu tinha ligado a listagem sem o dialeto de fumaça: o curador
+  passaria a ver 88 modelos e não conseguiria verificar nenhum antes de
+  oferecer.
+- **O dialeto de fumaça precisou dos DOIS fluxos, e isso foi medido:**
+  | sinal | onde sai | veredito |
+  |---|---|---|
+  | `step_finish` | stdout (NDJSON) | ok |
+  | `Insufficient balance` (401) | stdout | **unreachable** — o slug existe, quem recusou foi o provedor |
+  | `ProviderModelNotFoundError` | **stderr**, com stdout VAZIO | unknown-slug |
+  O `run_capture` da casa só olha stderr quando o stdout está vazio e devolve
+  `Unreachable`; com ele, "modelo que não existe" viraria "não sei" — que é
+  justamente a pergunta que o curador faz. Por isso `smoke_opencode` tem captura
+  própria.
+  - As três frases foram CAPTURADAS na máquina, nenhuma inventada (ADR-016).
+- **O cartão de Serviços ganhou o OpenCode**, e ali ele não é motor: é
+  credencial. Lê o probe que a detecção já faz (nenhum comando novo) e mostra os
+  provedores conectados, com o caminho pra somar outro. Como no `gh auth login`,
+  o app MOSTRA o comando e não conduz o fluxo.
+- **A guarda de travessão pegou um caso que ela mesma documenta:** o carve-out de
+  `console.*` não alcança chamada quebrada em várias linhas com interpolação. A
+  linha voltou a caber numa só, igual à do agy.
+- **Verificado:** `cargo` 542 (9 novos), `tsc` 0, `vitest` 3228, 9 guardas.

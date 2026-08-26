@@ -115,6 +115,7 @@ impl ModelListError {
 pub(crate) fn source_id(source: ModelListSource) -> &'static str {
     match source {
         ModelListSource::AgyModelsSubcommand => "agy-models",
+        ModelListSource::OpenCodeModelsSubcommand => "opencode-models",
         ModelListSource::CodexAppServer => "codex-app-server",
     }
 }
@@ -212,6 +213,78 @@ fn next_cursor(result: &Value) -> Option<String> {
 // Sondas por dialeto (o ÚNICO lugar que conhece o "como" de cada fornecedor).
 // ---------------------------------------------------------------------------
 
+/// stdout de `opencode models` → entradas. Formato real (1.17.9): UMA LINHA
+/// por modelo, no dialeto `provider/model`, sem rótulo e sem TAB.
+///
+/// O `id` guarda a linha INTEIRA porque é exatamente isso que o `-m` aceita;
+/// partir e remontar depois seria inventar uma tradução onde não há nenhuma. O
+/// rótulo fica com o nome do modelo e o provedor vira descrição — com 88
+/// modelos em 4 provedores, saber DE QUEM é o modelo é metade da escolha, e o
+/// provedor sem credencial falha com 401 (a seção Serviços é onde isso aparece).
+pub(crate) fn parse_opencode_models(stdout: &str) -> Vec<ModelListEntry> {
+    let mut out = Vec::new();
+    for line in stdout.lines() {
+        let line = line.trim_end_matches('\r').trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((provider, model)) = line.split_once('/') else {
+            // Linha sem `/` não é modelo (é log/ruído do CLI): não vira entrada
+            // inventada e não some calada.
+            log::warn!("model_list: linha de `opencode models` sem provider/: {line}");
+            continue;
+        };
+        if provider.trim().is_empty() || model.trim().is_empty() {
+            log::warn!("model_list: linha de `opencode models` incompleta: {line}");
+            continue;
+        }
+        out.push(ModelListEntry {
+            id: line.to_string(),
+            label: model.trim().to_string(),
+            description: Some(format!("via {}", provider.trim())),
+            hidden: false,
+            // `opencode models` não marca default nem aposentadoria: o default
+            // é do config do usuário, e inventar aqui seria afirmar por ele.
+            is_default: false,
+            superseded_by: None,
+            retirement_note: None,
+        });
+    }
+    out
+}
+
+async fn probe_opencode() -> Result<Vec<ModelListEntry>, ModelListError> {
+    let mut cmd = tokio::process::Command::new("opencode");
+    cmd.arg("models")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let out = tokio::time::timeout(Duration::from_secs(PROBE_TIMEOUT_SECS), cmd.output())
+        .await
+        .map_err(|_| {
+            ModelListError::new(
+                "timeout",
+                format!("`opencode models` não respondeu em {PROBE_TIMEOUT_SECS}s"),
+            )
+        })?
+        .map_err(|e| {
+            ModelListError::new("spawn", format!("não consegui rodar `opencode models`: {e}"))
+        })?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(ModelListError::new(
+            "protocol",
+            if err.is_empty() {
+                "`opencode models` falhou sem mensagem".to_string()
+            } else {
+                err
+            },
+        ));
+    }
+    Ok(parse_opencode_models(&String::from_utf8_lossy(&out.stdout)))
+}
+
 async fn probe_agy() -> Result<Vec<ModelListEntry>, ModelListError> {
     let mut cmd = tokio::process::Command::new("agy");
     cmd.arg("models")
@@ -286,6 +359,7 @@ pub async fn model_list(agent: String) -> Result<ModelListing, ModelListError> {
     // `_ =>` mudo e virar "motor sem fonte".
     let models = match source {
         Some(ModelListSource::AgyModelsSubcommand) => probe_agy().await?,
+        Some(ModelListSource::OpenCodeModelsSubcommand) => probe_opencode().await?,
         Some(ModelListSource::CodexAppServer) => probe_codex().await?,
         None => {
             return Err(ModelListError::new(
@@ -477,6 +551,53 @@ gpt-oss-120b-medium\tGPT-OSS 120B (Medium)
             next_cursor(&json!({"nextCursor": "abc"})).as_deref(),
             Some("abc")
         );
+    }
+
+    /// Saída REAL do `opencode models` (1.17.9): uma linha por `provider/model`.
+    #[test]
+    fn opencode_models_le_provider_e_modelo() {
+        let out = parse_opencode_models(
+            "opencode-go/kimi-k3\ngoogle/gemini-2.5-pro\nopenai/gpt-5.6-sol\n",
+        );
+        assert_eq!(out.len(), 3);
+        // O `id` guarda a LINHA INTEIRA: é exatamente o que o `-m` aceita.
+        assert_eq!(out[0].id, "opencode-go/kimi-k3");
+        assert_eq!(out[0].label, "kimi-k3");
+        assert_eq!(out[0].description.as_deref(), Some("via opencode-go"));
+        assert_eq!(out[1].id, "google/gemini-2.5-pro");
+    }
+
+    #[test]
+    fn opencode_models_ignora_linha_sem_provider() {
+        // Ruído/log do CLI não vira modelo inventado (e vai pro log, não some).
+        let out = parse_opencode_models("carregando...\ngoogle/gemini-2.5-flash\n\n");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].id, "google/gemini-2.5-flash");
+    }
+
+    #[test]
+    fn opencode_models_recusa_linha_incompleta() {
+        // "google/" e "/modelo" não descrevem modelo nenhum.
+        assert!(parse_opencode_models("google/\n/gemini\n").is_empty());
+    }
+
+    #[test]
+    fn opencode_models_nao_inventa_default_nem_aposentadoria() {
+        // O default é do config do usuário; marcar aqui seria afirmar por ele.
+        let out = parse_opencode_models("google/gemini-2.5-pro\n");
+        assert!(!out[0].is_default);
+        assert!(out[0].superseded_by.is_none());
+        assert!(out[0].retirement_note.is_none());
+    }
+
+    #[test]
+    fn opencode_models_preserva_barra_no_nome_do_modelo() {
+        // `split_once` parte na PRIMEIRA barra: um id com barra no meio
+        // (provider/familia/modelo) mantém o resto inteiro no rótulo.
+        let out = parse_opencode_models("openrouter/anthropic/claude-4\n");
+        assert_eq!(out[0].id, "openrouter/anthropic/claude-4");
+        assert_eq!(out[0].label, "anthropic/claude-4");
+        assert_eq!(out[0].description.as_deref(), Some("via openrouter"));
     }
 
     #[test]

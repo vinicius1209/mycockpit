@@ -3,6 +3,7 @@ import { isTauri } from "@/lib/db"
 import { setDynamicModels } from "@/lib/agents"
 import {
   agyModelOptions,
+  openCodeModelOptions,
   fetchModelList,
   toListFailure,
   type ModelListFailure,
@@ -257,6 +258,25 @@ export async function refreshAgyModels(): Promise<ModelListFailure | null> {
   } catch (e) {
     const falha = toListFailure(e)
     console.warn(`agy models: lista viva indisponível (${falha.kind}) — ${falha.message}`)
+    return falha
+  }
+}
+
+/** O mesmo para o OpenCode. Vale MAIS aqui que no agy: a lista dele depende de
+ *  QUAIS credenciais existem (`opencode providers list`), e isso muda sem o app
+ *  saber — conectar o OpenRouter faz modelos aparecerem sem tocar em código.
+ *  Lista vazia NÃO apaga a curada: sem provedor conectado o `opencode models`
+ *  devolve pouco ou nada, e zerar o seletor seria pior que a lista de casa. */
+export async function refreshOpenCodeModels(): Promise<ModelListFailure | null> {
+  if (!isTauri()) return null
+  try {
+    const listing = await fetchModelList("opencode")
+    if (listing.models.length > 0)
+      setDynamicModels("opencode", openCodeModelOptions(listing.models))
+    return null
+  } catch (e) {
+    const falha = toListFailure(e)
+    console.warn(`opencode models: lista viva indisponível (${falha.kind}) — ${falha.message}`)
     return falha
   }
 }

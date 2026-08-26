@@ -52,6 +52,6 @@ describe("lista viva de modelos por agent (espelho do registry Rust)", () => {
   })
 
   it("a lista de motores sondáveis sai do registry, nunca de nome fixo", () => {
-    expect(modelListingAgents().map((a) => a.id)).toEqual(["codex", "agy"])
+    expect(modelListingAgents().map((a) => a.id)).toEqual(["codex", "agy", "opencode"])
   })
 })

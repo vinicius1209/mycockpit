@@ -207,6 +207,8 @@ pub enum ModelListSource {
     /// não existe: "flags provided but not defined"). Saída real capturada
     /// nesta máquina em 14/08/2026 — fixture em model_list.rs.
     AgyModelsSubcommand,
+    /// `opencode models` — uma linha por `provider/model`, sem rótulo.
+    OpenCodeModelsSubcommand,
     /// codex 0.147: JSON-RPC `model/list` no MESMO canal app-server que o
     /// medidor de uso já abre (`codex -s read-only -a untrusted app-server` →
     /// initialize → initialized → método; sonda local, NENHUMA quota). A
@@ -249,6 +251,12 @@ pub enum ModelSmokeDialect {
     /// a known model or custom model in settings", capturado 14/08/2026) — a
     /// fumaça de slug inválido no agy custa zero.
     AgyPrintJson,
+    /// opencode 1.17.9: `opencode run --format json -m <slug> "<prompt>"`.
+    /// Precisa dos DOIS fluxos: o sucesso e a recusa de crédito saem em NDJSON
+    /// no stdout, mas o slug inexistente sai no STDERR como
+    /// `ProviderModelNotFoundError` (capturado 26/08/2026) — e é justamente
+    /// essa a distinção que o curador existe pra fazer.
+    OpenCodeRunJson,
 }
 
 /// Capabilities do agent-runner.md §2, materializada (G1.1 do
@@ -737,8 +745,11 @@ pub const OPENCODE_CAPS: Capabilities = Capabilities {
     hooks_status: false,
     hooks_permission: false,
     hook_dialect: None,
-    lists_models: None,
-    model_smoke: None,
+    // `opencode models`: 88 linhas nesta máquina, em 4 provedores. A lista viva
+    // é a única fonte honesta — o que aparece depende de QUAIS credenciais
+    // existem, e isso muda sem o app saber.
+    lists_models: Some(ModelListSource::OpenCodeModelsSubcommand),
+    model_smoke: Some(ModelSmokeDialect::OpenCodeRunJson),
 };
 
 /// Adapter do OpenCode: `opencode run --format json`.

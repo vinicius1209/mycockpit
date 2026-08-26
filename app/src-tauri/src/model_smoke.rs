@@ -509,6 +509,80 @@ async fn smoke_agy(model: &str) -> SmokeReading {
     }
 }
 
+/// Lê o desfecho de um `opencode run --format json`. Recebe os DOIS fluxos
+/// porque o motor os usa para coisas diferentes, medido em 26/08/2026:
+///
+///   • stdout, NDJSON: `step_finish` = turno fechou; `{"type":"error"}` carrega
+///     a recusa do provedor (ex. `Insufficient balance`, 401);
+///   • stderr: slug inexistente vira log com `ProviderModelNotFoundError`, e o
+///     stdout fica VAZIO.
+///
+/// Sem olhar o stderr, "modelo que não existe" viraria `unreachable` ("não
+/// sei") em vez de `unknown-slug` — e é exatamente essa a pergunta do curador.
+pub(crate) fn read_opencode(stdout: &str, stderr: &str) -> SmokeReading {
+    for line in stdout.lines() {
+        let Ok(v) = serde_json::from_str::<Value>(line.trim()) else {
+            continue;
+        };
+        match v.get("type").and_then(|t| t.as_str()) {
+            Some("step_finish") => return SmokeReading::new(SmokeOutcome::Ok, "turno concluído"),
+            Some("error") => {
+                let msg = v
+                    .get("error")
+                    .and_then(|e| e.get("data"))
+                    .and_then(|d| d.get("message"))
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("erro sem mensagem");
+                return SmokeReading::new(SmokeOutcome::Unreachable, primeira_linha(msg));
+            }
+            _ => {}
+        }
+    }
+    // Só a frase REAL vira veredito (ADR-016): esta foi capturada na máquina.
+    if stderr.contains("ProviderModelNotFoundError") {
+        return SmokeReading::new(
+            SmokeOutcome::UnknownSlug,
+            "o opencode não conhece este modelo neste provedor",
+        );
+    }
+    SmokeReading::new(
+        SmokeOutcome::Unreachable,
+        if stderr.trim().is_empty() {
+            "o opencode saiu sem dizer nada".to_string()
+        } else {
+            primeira_linha(stderr)
+        },
+    )
+}
+
+async fn smoke_opencode(model: &str) -> SmokeReading {
+    let mut cmd = tokio::process::Command::new("opencode");
+    cmd.args(["run", "--format", "json", "-m", model, SMOKE_PROMPT])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    // Captura PRÓPRIA (não o `run_capture`): aquele só olha stderr quando o
+    // stdout está vazio, e aqui os dois carregam vereditos diferentes.
+    let out = match tokio::time::timeout(Duration::from_secs(CALL_TIMEOUT_SECS), cmd.output()).await
+    {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => {
+            return SmokeReading::new(SmokeOutcome::Unreachable, format!("não consegui rodar: {e}"))
+        }
+        Err(_) => {
+            return SmokeReading::new(
+                SmokeOutcome::Unreachable,
+                format!("o CLI não respondeu em {CALL_TIMEOUT_SECS}s"),
+            )
+        }
+    };
+    read_opencode(
+        &String::from_utf8_lossy(&out.stdout),
+        &String::from_utf8_lossy(&out.stderr),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Comandos.
 // ---------------------------------------------------------------------------
@@ -574,6 +648,7 @@ pub async fn model_smoke(
             ModelSmokeDialect::ClaudePrintJson => smoke_claude(&model).await,
             ModelSmokeDialect::CodexExecJson => smoke_codex(&model, &cwd).await,
             ModelSmokeDialect::AgyPrintJson => smoke_agy(&model).await,
+            ModelSmokeDialect::OpenCodeRunJson => smoke_opencode(&model).await,
         };
         let catalog_context = crate::catalog::lookup(&model).and_then(|m| m.context);
         let reading = apply_context_check(reading, catalog_context);
@@ -852,13 +927,17 @@ mod tests {
     #[ignore = "spawna os CLIs reais e gasta um token por candidato"]
     async fn fumaca_real_nesta_maquina() {
         let cwd = std::env::temp_dir();
-        let casos: [(&str, &str); 6] = [
+        let casos: [(&str, &str); 8] = [
             ("claude-code", "haiku"),
             ("claude-code", "claude-naoexiste-9-9"),
             ("codex", "gpt-5.6-luna"),
             ("codex", "gpt-9.9-naoexiste"),
             ("agy", "gemini-3.7-flash-low"),
             ("agy", "gemini-9.9-naoexiste"),
+            // OpenCode usa o dialeto `provider/model`, então o par de teste
+            // precisa do provedor junto — slug sem provedor nem chega ao motor.
+            ("opencode", "google/gemini-2.5-flash-lite"),
+            ("opencode", "google/modelo-que-nao-existe"),
         ];
         for (agent, model) in casos {
             let dialect = capabilities_of(agent)
@@ -868,6 +947,7 @@ mod tests {
                 ModelSmokeDialect::ClaudePrintJson => smoke_claude(model).await,
                 ModelSmokeDialect::CodexExecJson => smoke_codex(model, &cwd).await,
                 ModelSmokeDialect::AgyPrintJson => smoke_agy(model).await,
+                ModelSmokeDialect::OpenCodeRunJson => smoke_opencode(model).await,
             };
             eprintln!(
                 "{agent:<12} {model:<24} → {:?}  ctx={:?}  canonical={:?}\n             {}",
@@ -877,6 +957,42 @@ mod tests {
                 primeira_linha(&r.detail)
             );
         }
+    }
+
+    // ── OpenCode: as três saídas abaixo foram CAPTURADAS na máquina em
+    //    26/08/2026, não inventadas.
+    #[test]
+    fn opencode_step_finish_e_sucesso() {
+        let stdout = r#"{"type":"step_start","sessionID":"ses_x","part":{}}
+{"type":"step_finish","sessionID":"ses_x","part":{"reason":"stop","tokens":{"input":5499,"output":1,"reasoning":212,"cache":{"read":36220,"write":0}},"cost":0.0009973}}"#;
+        let r = read_opencode(stdout, "");
+        assert!(matches!(r.outcome, SmokeOutcome::Ok));
+    }
+
+    #[test]
+    fn opencode_slug_inexistente_vem_do_STDERR() {
+        // O caso que motivou a captura própria: stdout VAZIO e o veredito no
+        // stderr. Sem olhar lá, isto viraria "unreachable" (não sei) em vez de
+        // "unknown-slug" — e é essa a pergunta que o curador faz.
+        let stderr = r#"[08:33:59.261] ERROR (#10945): failed { ref: "err_4670685c", error: { providerID: "google", modelID: "modelo-que-nao-existe", suggestions: [], _tag: "ProviderModelNotFoundError" } }"#;
+        let r = read_opencode("", stderr);
+        assert!(matches!(r.outcome, SmokeOutcome::UnknownSlug));
+    }
+
+    #[test]
+    fn opencode_recusa_do_provedor_e_unreachable_nao_slug_ruim() {
+        // Saldo zerado no `opencode-go` (401). O slug EXISTE; quem recusou foi
+        // o provedor. Marcar como slug ruim tiraria do seletor um modelo bom.
+        let stdout = r#"{"type":"error","sessionID":"ses_x","error":{"name":"APIError","data":{"message":"Insufficient balance. Manage your billing here: https://opencode.ai/workspace/x/billing","statusCode":401,"isRetryable":false}}}"#;
+        let r = read_opencode(stdout, "");
+        assert!(matches!(r.outcome, SmokeOutcome::Unreachable));
+        assert!(r.detail.contains("Insufficient balance"));
+    }
+
+    #[test]
+    fn opencode_sem_saida_nenhuma_nao_acusa_o_slug() {
+        let r = read_opencode("", "");
+        assert!(matches!(r.outcome, SmokeOutcome::Unreachable));
     }
 
     #[test]

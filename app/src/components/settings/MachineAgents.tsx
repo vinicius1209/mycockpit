@@ -22,6 +22,7 @@ import {
   latestLabel,
   notaDeCopias,
   refreshAgyModels,
+  refreshOpenCodeModels,
   toProbeMap,
   updateAvailable,
   UPDATE_COMMANDS,
@@ -69,7 +70,9 @@ export function MachineAgents() {
     if (tools.length > 0)
       setSettings({ detected: toProbeMap(tools, now), lastUpdateCheck: now })
     else setSettings({ lastUpdateCheck: now })
-    await refreshAgyModels() // modelos dinâmicos do agy: leitura da máquina
+    // Listas vivas dos motores que sabem se listar: leitura da máquina, sem
+    // quota. As duas em paralelo — uma não deve esperar a outra.
+    await Promise.all([refreshAgyModels(), refreshOpenCodeModels()])
     setChecking(false)
   }
 
