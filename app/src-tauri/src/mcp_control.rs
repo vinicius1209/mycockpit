@@ -1585,7 +1585,7 @@ pub async fn install_mcp_in_agent(
                 .launch
                 .as_ref()
                 .ok_or_else(|| "este MCP não tem config de launch para instalar".to_string())?;
-            Some(crate::mcp_instalacao::spec_de(&server.name, launch)?)
+            Some(crate::mcp_instalacao::spec_de(&agent, &server.name, launch)?)
         } else {
             None
         };
@@ -1605,7 +1605,7 @@ pub async fn install_mcp_in_agent(
             .launch
             .as_ref()
             .ok_or_else(|| "este MCP não tem config de launch para instalar".to_string())?;
-        let spec = crate::mcp_instalacao::spec_de(&server.name, launch)?;
+        let spec = crate::mcp_instalacao::spec_de(&agent, &server.name, launch)?;
         crate::mcp_instalacao::install_argv(&agent, &spec)
     } else {
         crate::mcp_instalacao::uninstall_argv(&agent, &server.name)

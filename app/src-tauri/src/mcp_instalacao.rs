@@ -113,6 +113,21 @@ pub fn uninstall_argv(agent: &str, nome: &str) -> Option<Vec<String>> {
     }
 }
 
+/// O CLI deste motor autentica um MCP OAuth sozinho?
+///
+/// Medido em 26/08/2026 nos dois: `opencode mcp` tem `auth`, `logout` e
+/// `debug`, e o `McpRemoteConfig` deles tem campo `oauth`. O `agy mcp` tem só
+/// `add|remove|list|enable|disable`, e a entrada que ele grava é
+/// `serverUrl` + `headers` + `disabled`: **não há onde a credencial morar**.
+///
+/// Isto decide se instalar um MCP OAuth é ajuda ou armadilha. O login do FROTA
+/// não viaja (é a regra do ADR-100, vista do outro lado): o proxy do app é
+/// alcançado por socket efêmero mais o caminho do binário do Frota NESTA
+/// máquina, e nenhuma das duas coisas cabe num arquivo que sobrevive ao run.
+pub fn cli_autentica_mcp(agent: &str) -> bool {
+    matches!(agent, "opencode")
+}
+
 /// Converte um servidor DESCOBERTO no que o CLI do agent precisa receber.
 ///
 /// `Err` quando a conversão exigiria um segredo que o app não tem. A entrada de
@@ -121,7 +136,21 @@ pub fn uninstall_argv(agent: &str, nome: &str) -> Option<Vec<String>> {
 /// isso ao `agy mcp add` instalaria um servidor que falha na primeira chamada,
 /// e o usuário veria "instalado" com o servidor quebrado. Dizer que não dá, e
 /// nomear o que falta, é melhor que instalar mentindo.
-pub fn spec_de(nome: &str, launch: &crate::mcp_control::McpLaunchConfig) -> Result<McpSpec, String> {
+pub fn spec_de(
+    agent: &str,
+    nome: &str,
+    launch: &crate::mcp_control::McpLaunchConfig,
+) -> Result<McpSpec, String> {
+    // MCP com OAuth num CLI que não sabe autenticar = servidor instalado que
+    // falha na primeira chamada, com a tela dizendo "instalado". O login do
+    // app não cobre esse buraco: ele vive num proxy que morre com o run.
+    if launch.oauth.is_some() && !cli_autentica_mcp(agent) {
+        return Err(format!(
+            "este MCP usa OAuth e o CLI do {agent} não tem como guardar essa \
+             credencial. O login do Frota não viaja: ele vale dentro da missão, \
+             não num config que sobrevive a ela."
+        ));
+    }
     let mut faltando: Vec<String> = Vec::new();
     if !launch.env_vars.is_empty() {
         faltando.extend(launch.env_vars.iter().cloned());
@@ -493,7 +522,7 @@ mod tests {
         l.command = Some("npx".into());
         l.args = vec!["-y".into(), "srv".into()];
         l.env.insert("MODO".into(), "leitura".into());
-        let s = spec_de("fs", &l).unwrap();
+        let s = spec_de("agy", "fs", &l).unwrap();
         assert_eq!(s.nome, "fs");
         assert_eq!(s.env, vec![("MODO".to_string(), "leitura".to_string())]);
         assert!(matches!(s.alvo, McpAlvo::Stdio { .. }));
@@ -501,7 +530,7 @@ mod tests {
         let mut h = launch("http");
         h.url = Some("https://x/mcp".into());
         h.http_headers.insert("X-Cliente".into(), "frota".into());
-        let s = spec_de("api", &h).unwrap();
+        let s = spec_de("agy", "api", &h).unwrap();
         assert_eq!(s.headers, vec![("X-Cliente".to_string(), "frota".to_string())]);
     }
 
@@ -513,23 +542,23 @@ mod tests {
         let mut l = launch("stdio");
         l.command = Some("npx".into());
         l.env_vars = vec!["GITHUB_TOKEN".into()];
-        let erro = spec_de("gh", &l).unwrap_err();
+        let erro = spec_de("agy", "gh", &l).unwrap_err();
         assert!(erro.contains("GITHUB_TOKEN"), "nomeia o que falta: {erro}");
         assert!(erro.contains("não guarda"), "diz de quem é o limite: {erro}");
 
         let mut h = launch("http");
         h.url = Some("https://x/mcp".into());
         h.bearer_token_env_var = Some("API_TOKEN".into());
-        assert!(spec_de("api", &h).unwrap_err().contains("API_TOKEN"));
+        assert!(spec_de("agy", "api", &h).unwrap_err().contains("API_TOKEN"));
     }
 
     #[test]
     fn config_incompleta_nao_vira_comando_pela_metade() {
         // stdio sem comando e http sem url não têm o que instalar. Melhor o
         // erro aqui que um argv truncado chegando no CLI.
-        assert!(spec_de("x", &launch("stdio")).is_err());
-        assert!(spec_de("x", &launch("http")).is_err());
-        assert!(spec_de("x", &launch("sse")).unwrap_err().contains("sse"));
+        assert!(spec_de("agy", "x", &launch("stdio")).is_err());
+        assert!(spec_de("agy", "x", &launch("http")).is_err());
+        assert!(spec_de("agy", "x", &launch("sse")).unwrap_err().contains("sse"));
     }
 
     fn http(nome: &str, url: &str) -> McpSpec {
@@ -623,6 +652,42 @@ mod tests {
         // estava editando. Só arquivo VAZIO nasce do zero.
         assert!(merge_opencode_json("{ isto não é json", "mcx-a", None).is_err());
         assert!(merge_opencode_json("   ", "mcx-a", Some(&http("mcx-a", "https://x"))).is_ok());
+    }
+
+    #[test]
+    fn oauth_so_e_instalado_em_cli_que_sabe_autenticar() {
+        // F5. O login do Frota NÃO viaja: o proxy do app é alcançado por
+        // socket efêmero + o caminho do binário do Frota nesta máquina.
+        // Nenhuma das duas coisas cabe num config que sobrevive ao run, e o
+        // caminho do binário seria exatamente o "fixo aqui" proibido.
+        let mut l = launch("http");
+        l.url = Some("https://x/mcp".into());
+        l.oauth = Some(crate::mcp_auth::OauthConfig {
+            client_id: "c1".into(),
+            callback_port: 8976,
+            auth_server_metadata_url: None,
+            resource: "https://x/mcp".into(),
+        });
+
+        // agy: a entrada que ele grava é serverUrl + headers + disabled, e o
+        // `agy mcp` não tem subcomando de auth. Instalar ali daria um servidor
+        // que falha na primeira chamada, com a tela dizendo "instalado".
+        let erro = spec_de("agy", "prime", &l).unwrap_err();
+        assert!(erro.contains("OAuth"), "diz a causa: {erro}");
+        assert!(erro.contains("não viaja"), "diz por que o login não cobre: {erro}");
+
+        // opencode: tem `mcp auth|logout|debug` e campo `oauth` no schema.
+        // Ali instalar é ajuda, não armadilha.
+        assert!(spec_de("opencode", "prime", &l).is_ok());
+    }
+
+    #[test]
+    fn sem_oauth_a_regra_do_f5_nao_atrapalha_ninguem() {
+        // Guarda do outro lado: servidor comum continua instalável nos dois.
+        let mut l = launch("http");
+        l.url = Some("https://x/mcp".into());
+        assert!(spec_de("agy", "simples", &l).is_ok());
+        assert!(spec_de("opencode", "simples", &l).is_ok());
     }
 
     #[test]

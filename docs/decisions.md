@@ -3975,3 +3975,31 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   que o arquivo é versionado e que só a entrada do Frota é tocada, que é
   exatamente o que o merge cumpre.
 - **Verificado:** `cargo` 564 (6 novos), `tsc` 0, `vitest` 3249, 10 guardas.
+
+### ADR-106 — F5: o proxy do app não cabe fora do run, e isso é estrutural ✅
+- **Contexto (26/08/2026):** última fase do
+  `docs/mcp-qualquer-agent-plan.md`. A pergunta era se o login do Frota (o
+  proxy da A2) alcança os escopos novos, agora que `PorProjeto` e `Global`
+  existem no vocabulário.
+- **A resposta é estrutural, e fecha em vez de adiar.** O proxy é endereçado
+  por duas coisas: um **socket efêmero**, que morre com o run, e o **caminho do
+  binário do Frota nesta máquina** (`std::env::current_exe`). Persistir isso num
+  arquivo que sobrevive à missão gravaria um endereço morto E um caminho de
+  máquina, que são exatamente as duas coisas que o plano proíbe. Não é falta de
+  trabalho: é o desenho dizendo até onde vai.
+- **A regra que saiu daí, e que faltava:** instalar um MCP OAuth num CLI que não
+  sabe autenticar sozinho é armadilha, não ajuda. O servidor apareceria
+  "instalado" e falharia na primeira chamada, que é a combinação que esta casa
+  já recusou duas vezes hoje (ADR-104 e ADR-105).
+- **Medido nos dois, e a diferença é real:** o `opencode mcp` tem
+  `auth|logout|debug` e o `McpRemoteConfig` deles tem campo `oauth`, então lá
+  existe onde a credencial morar. O `agy mcp` tem só
+  `add|remove|list|enable|disable`, e a entrada que ele grava é
+  `serverUrl` + `headers` + `disabled`: **não há campo de credencial nenhum**.
+- **`spec_de` passou a recusar OAuth no agy**, com a frase que diz o motivo
+  certo: *"o login do Frota não viaja: ele vale dentro da missão, não num config
+  que sobrevive a ela"*. É o ADR-100 visto do outro lado — lá o login do CLI não
+  chegava ao app; aqui o login do app não chega ao CLI. Guarda dos dois lados:
+  servidor SEM oauth continua instalável nos dois motores.
+- **O plano fechou.** F1 a F5 entregues, builds #286 a #290.
+- **Verificado:** `cargo` 566 (2 novos), `tsc` 0, `vitest` 3249, 10 guardas.

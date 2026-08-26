@@ -107,10 +107,32 @@ desfazer pelo mesmo caminho. Nada acontece sem clique.
 Merge só do bloco do app no `opencode.json`, com aviso de que o arquivo é do
 repositório.
 
-### F5 — O proxy do app, onde ele cabe
-O `roteavel_por_proxy` (login do Frota) hoje só vale para escopo `PorRun`.
-Revisar o que ele significa nos outros escopos, agora que eles existem no
-vocabulário.
+### F5 ✅ — O proxy do app, onde ele cabe (26/08/2026)
+
+**A resposta é estrutural, e fecha a pergunta em vez de adiar:** o proxy do app
+só alcança escopo `PorRun`, e não por falta de trabalho.
+
+Ele é endereçado por duas coisas: um **socket efêmero**, que morre com o run, e
+o **caminho do binário do Frota nesta máquina**. Persistir isso num arquivo que
+sobrevive à missão gravaria um endereço morto e um caminho de máquina, que são
+exatamente as duas coisas que este plano proíbe.
+
+**Daí sai a regra que faltava:** instalar um MCP OAuth num CLI que não sabe
+autenticar sozinho é armadilha, não ajuda. O servidor apareceria "instalado" e
+falharia na primeira chamada. Medido nos dois:
+
+| motor | autentica MCP sozinho? | evidência |
+|---|---|---|
+| OpenCode | **sim** | `opencode mcp auth\|logout\|debug`, e campo `oauth` no `McpRemoteConfig` |
+| Antigravity | **não** | `agy mcp` só tem `add\|remove\|list\|enable\|disable`, e a entrada gravada é `serverUrl` + `headers` + `disabled`: sem lugar para a credencial |
+
+Então `spec_de` recusa OAuth no agy, dizendo que o login do Frota **não viaja**:
+ele vale dentro da missão, não num config que sobrevive a ela. No opencode
+passa, porque lá existe onde guardar.
+
+## Estado
+
+Todas as fases entregues (F1 a F5), builds #286 a #290.
 
 ## Definition of done
 
