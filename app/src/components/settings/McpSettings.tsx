@@ -559,9 +559,6 @@ export function McpSettings() {
                   browser={browser.status}
                   busyKeys={busyKeys}
                   checkingKeys={checkingKeys}
-                  autenticadoPeloApp={
-                    authByServer[server.id]?.state === "conectado"
-                  }
                   onUpdate={(s, st, patch) => void update(s, st, patch)}
                   onCheck={(s, st) => void check(s, st)}
                 />

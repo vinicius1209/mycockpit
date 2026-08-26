@@ -316,7 +316,17 @@ impl DiscoveredServer {
 #[serde(rename_all = "camelCase")]
 pub struct McpAgentState {
     pub agent: String,
+    /// Compatível NATIVAMENTE: portável + capability do agent. Continua
+    /// significando só isso, e é por isso que não basta pra decidir a tela.
     pub compatible: bool,
+    /// Roteável pelo proxy local porque QUEM autenticou foi o app (login do
+    /// Frota num MCP OAuth/HTTP, sem segredo literal).
+    ///
+    /// Existe porque a tela mentia: o rótulo já dizia "roteado pelo Frota" e o
+    /// interruptor seguia preso em `compatible`, que para OAuth é sempre
+    /// `false`. O planejador do run JÁ raciocinava com `roteavel_por_proxy`;
+    /// quem não sabia era o portão do binding e o estado que chega na UI.
+    pub roteavel_pelo_app: bool,
     pub enabled: bool,
     pub required: bool,
     /// Binding marcado para dirigir o navegador do projeto (B2.2).
@@ -900,6 +910,17 @@ fn subir_proxy(
 /// bloquear e o servidor passa a ser roteável pros DOIS motores através do
 /// proxy local. Decisão por CAPABILITY (`managed_mcp`), nunca por nome de
 /// agent. Sem login, devolve `false` e o comportamento é o de sempre.
+/// Este agent PODE usar este servidor? Nativamente (portável + capability) OU
+/// pelo proxy local, quando quem autenticou foi o app.
+///
+/// Existe porque a regra estava escrita em dois lugares com respostas
+/// diferentes: o planejador do run já somava as duas vias, e os portões do
+/// binding só olhavam a nativa. Resultado na tela: "roteado pelo Frota" com o
+/// interruptor preso, e um erro de "não suporta" se ele fosse liberado.
+fn utilizavel_por(server: &DiscoveredServer, agent: &str) -> bool {
+    server.compatible(agent) || roteavel_por_proxy(server, agent)
+}
+
 fn roteavel_por_proxy(server: &DiscoveredServer, agent: &str) -> bool {
     // A existência da credencial é injetada para o teste fixar os DOIS lados da
     // regra sem depender do Keychain da máquina.
@@ -1295,6 +1316,7 @@ fn agent_state(
     McpAgentState {
         agent: agent.into(),
         compatible: server.compatible(agent),
+        roteavel_pelo_app: roteavel_por_proxy(server, agent),
         enabled: binding.is_some(),
         required: binding.as_ref().is_some_and(|b| b.0),
         browser: binding.as_ref().is_some_and(|b| b.2),
@@ -1562,7 +1584,7 @@ pub async fn set_mcp_binding(
         .iter()
         .find(|server| server.id == server_id)
         .ok_or_else(|| "servidor não encontrado na descoberta atual".to_string())?;
-    if !server.compatible(&agent) {
+    if !utilizavel_por(server, &agent) {
         return Err(if !server.portable() {
             "config não portável: mova valores literais/extensões nativas para wrapper, Keychain ou env ref".into()
         } else {
@@ -1934,7 +1956,7 @@ pub async fn check_mcp_server(
         .iter()
         .find(|server| server.id == server_id)
         .ok_or_else(|| "servidor não encontrado".to_string())?;
-    if !server.compatible(&agent) && server.source != "mycockpit" {
+    if !utilizavel_por(server, &agent) && server.source != "mycockpit" {
         return Err(format!("{agent} não é compatível com este servidor"));
     }
     let outcome = probe(server, &project_path).await;
@@ -2282,6 +2304,49 @@ mod tests {
                 "com login, {agent} deve rotear pelo proxy"
             );
         }
+    }
+
+    /// O bug que o usuário viu: fez o login, os TRÊS viraram "roteado pelo
+    /// Frota" e nenhum interruptor destravou.
+    ///
+    /// Eram duas mentiras em sentidos opostos, e esta é a guarda das duas.
+    /// Claude e Codex ficaram travados podendo rodar. E o Agy foi prometido
+    /// sem poder: `managed_mcp` dele é `false` porque o CLI só configura MCP
+    /// por arquivo GLOBAL, sem flag por-run (ver AGY_CAPS). Nenhum login
+    /// conserta isso, e o rótulo dizia que sim.
+    #[test]
+    fn login_do_app_destrava_quem_roteia_e_nao_promete_quem_nao_roteia() {
+        let raw = json!({
+            "type": "http",
+            "url": "https://tsxtyuyjmouuyzkzwdtz.supabase.co/functions/v1/mcp",
+            "oauth": { "clientId": "c1", "callbackPort": 8976 }
+        });
+        let server = DiscoveredServer {
+            id: "s1".into(),
+            name: "prime-mcp".into(),
+            source: "mcp.json".into(),
+            scope: "project".into(),
+            source_agent: None,
+            enabled: true,
+            managed: true,
+            launch: parse_launch(&raw),
+        };
+        // A causa do interruptor preso: nativamente NENHUM dos três serve.
+        for agent in ["claude-code", "codex", "agy"] {
+            assert!(!server.compatible(agent), "{agent} não é nativo aqui");
+        }
+        // Com login, quem tem `managed_mcp` passa a poder de verdade.
+        for agent in ["claude-code", "codex"] {
+            assert!(
+                roteavel_por_proxy_com(&server, agent, || true),
+                "com login, {agent} deve destravar"
+            );
+        }
+        // O Agy NÃO. E não é falta de login: é falta de capability.
+        assert!(
+            !roteavel_por_proxy_com(&server, "agy", || true),
+            "agy não roteia MCP gerenciado nem com login (config global por arquivo)"
+        );
     }
 
     #[test]
@@ -2764,6 +2829,8 @@ mod tests {
             agent_states: vec![McpAgentState {
                 agent: "codex".into(),
                 compatible: true,
+                // nativo já basta; o proxy não precisa entrar neste fixture.
+                roteavel_pelo_app: false,
                 enabled: bound,
                 required: false,
                 browser: false,

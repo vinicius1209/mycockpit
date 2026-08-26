@@ -3778,3 +3778,36 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   "No available formula or cask". Receita que ninguém executou é chute com cara
   de fato. Corrigido pro `homebrew/core` (`brew install opencode`).
 - **Verificado:** `cargo` 545 (3 novos), `tsc` 0, `vitest` 3238, 9 guardas.
+
+### ADR-100 — o login do MCP mentia dos DOIS lados ✅
+- **Contexto (26/08/2026):** o usuário perguntou por que não conseguia ligar o
+  `prime-mcp` no Antigravity. Fez o login do Frota, os TRÊS motores viraram
+  "roteado pelo Frota"… e nenhum interruptor destravou.
+- **O rótulo sabia do login; o interruptor, não.** `mcpAgentStatusLabel` recebia
+  `autenticadoPeloApp` e dizia "roteado pelo Frota"; o `Switch` ao lado lia
+  `disabled={!state.compatible}`, e `compatible` num MCP OAuth é **sempre
+  false** por construção. A tela afirmava uma coisa e o controle vizinho fazia
+  outra. Pior: se o interruptor fosse liberado, o binding morreria no backend,
+  que também só olhava `compatible`.
+- **A regra já existia, escrita em dois lugares com respostas diferentes.** O
+  planejador do run usava `roteavel_por_proxy` (transporte HTTP, bloco OAuth,
+  sem segredo literal, credencial no Keychain, capability `managed_mcp`); os
+  portões do binding e o estado que chega na UI usavam só a via nativa. Agora
+  há `utilizavel_por` = nativo **ou** proxy, nos três portões.
+- **A segunda mentira era no sentido oposto, e é a da pergunta:** o rótulo
+  prometia "roteado pelo Frota" **também pro Agy**, que não roteia MCP
+  gerenciado de jeito nenhum. Não é falta de login: `AGY_CAPS.managed_mcp` é
+  `false` porque o CLI configura MCP por arquivo **global**, sem flag por-run
+  (documentado no próprio AGY_CAPS). Nenhum login conserta, e o app dizia que
+  sim.
+- **O conserto tira a regra do front.** `roteavelPeloApp` passa a vir do
+  backend, por (servidor × agent), e vira o **único** gate da linha: rótulo,
+  interruptor e botão de testar saem do MESMO fato. A regra que morava no front
+  era mais grosseira (olhava só `nativeReason === "oauth"` + login) e por isso
+  prometia SSE e segredo literal que o proxy recusa.
+- **O campo é opcional no TS de propósito:** snapshot serializado antes desta
+  versão não o tem, e ausência precisa significar "não sei, não libera", nunca
+  `true` por descuido. Tem teste só pra isso.
+- **Efeito na tela:** Claude e Codex destravam de verdade; o Agy volta a dizer
+  "sem roteamento (nativo do CLI)", que é a verdade.
+- **Verificado:** `cargo` 546, `tsc` 0, `vitest` 3241, 9 guardas.

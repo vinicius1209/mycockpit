@@ -17,7 +17,14 @@ export type McpNativeReason = "oauth" | "stream" | "headers-helper"
 
 export interface McpAgentState {
   agent: "claude-code" | "codex" | "agy"
+  /** Compatível NATIVAMENTE (portável + capability). Sozinho não decide a
+   *  tela: um MCP OAuth é sempre `false` aqui e ainda assim pode ser usado. */
   compatible: boolean
+  /** O proxy do app roteia este servidor para este agent porque QUEM
+   *  autenticou foi o Frota. Vem do backend (`roteavel_por_proxy`), que é
+   *  quem sabe do transporte, do segredo literal e da credencial no Keychain.
+   *  Opcional porque estado SERIALIZADO antes desta versão não tem o campo. */
+  roteavelPeloApp?: boolean
   enabled: boolean
   required: boolean
   /** Binding marcado para dirigir o navegador do projeto: o plano do run
@@ -249,20 +256,31 @@ export function mcpPortabilityNotices(
   return notices
 }
 
+/** O agent pode usar este servidor? Nativamente OU pelo proxy do app.
+ *
+ *  É o ÚNICO gate da linha: interruptor e botão de testar saem daqui. Antes o
+ *  interruptor lia `compatible` cru enquanto o rótulo já contava com o login,
+ *  então a tela dizia "roteado pelo Frota" com o controle preso. Um elemento
+ *  dizia uma coisa e o vizinho fazia outra. */
+export function mcpAgentUtilizavel(
+  state: Pick<McpAgentState, "compatible" | "roteavelPeloApp">,
+): boolean {
+  return state.compatible || state.roteavelPeloApp === true
+}
+
 /** Rótulo da linha por agent. "não suportado" sozinho mente num servidor
  *  nativo-apenas: ele funciona no CLI que o definiu, o que não existe é o
  *  roteamento gerenciado para os outros agents. */
 export function mcpAgentStatusLabel(
   server: Pick<McpServer, "nativeReason">,
-  state: Pick<McpAgentState, "compatible" | "health">,
-  /** Com login do app, um servidor OAuth passa a ser roteado pelo proxy, então
-   *  dizer "sem roteamento" mentiria. */
-  autenticadoPeloApp = false,
+  state: Pick<McpAgentState, "compatible" | "roteavelPeloApp" | "health">,
 ): string {
   if (state.compatible) return mcpHealthLabel(state.health)
-  if (autenticadoPeloApp && server.nativeReason === "oauth") {
-    return "roteado pelo Frota"
-  }
+  // "roteado pelo Frota" agora sai do MESMO campo que libera o interruptor,
+  // e não de uma regra paralela no front. A antiga olhava só
+  // `nativeReason === "oauth"` + login, sem saber de transporte SSE nem de
+  // segredo literal: dizia "roteado" para casos que o proxy recusa.
+  if (state.roteavelPeloApp) return "roteado pelo Frota"
   return server.nativeReason ? "sem roteamento (nativo do CLI)" : "não suportado"
 }
 

@@ -8,6 +8,7 @@ import { AlertTriangle, CheckCircle2, KeyRound, Loader2, RefreshCcw, XCircle } f
 import { Switch } from "@/components/ui/switch"
 import {
   mcpAgentStatusLabel,
+  mcpAgentUtilizavel,
   type McpAgentState,
   type McpFallback,
   type McpHealthStatus,
@@ -45,7 +46,6 @@ export function McpAgentRows({
   browser,
   busyKeys,
   checkingKeys,
-  autenticadoPeloApp,
   onUpdate,
   onCheck,
 }: {
@@ -53,7 +53,6 @@ export function McpAgentRows({
   browser: BrowserStatus | null
   busyKeys: ReadonlySet<string>
   checkingKeys: ReadonlySet<string>
-  autenticadoPeloApp: boolean
   onUpdate: (
     server: McpServer,
     state: McpAgentState,
@@ -73,13 +72,17 @@ export function McpAgentRows({
         const checkBusy = busyKeys.has(`check:${key}`)
         const verifying = checkingKeys.has(key)
         const browserNotice = browserRowNotice(state, browser)
+        // Um gate só pra linha inteira: interruptor, botão de testar e rótulo
+        // saem do MESMO fato. Era a divergência entre eles que fazia a tela
+        // prometer "roteado pelo Frota" com o controle travado.
+        const utilizavel = mcpAgentUtilizavel(state)
         return (
           <div key={agent.id} className="px-2.5 py-1.5">
             <div className="flex min-h-10 items-center gap-2">
               <Switch
                 checked={state.enabled}
                 onCheckedChange={(enabled) => onUpdate(server, state, { enabled })}
-                disabled={!state.compatible || writeBusy}
+                disabled={!utilizavel || writeBusy}
                 aria-label={`Usar ${server.name} no ${agent.label}`}
               />
               <span className="w-12 text-[12px] text-foreground">
@@ -97,7 +100,7 @@ export function McpAgentRows({
                 <span className="truncate">
                   {verifying
                     ? "verificando…"
-                    : mcpAgentStatusLabel(server, state, autenticadoPeloApp)}
+                    : mcpAgentStatusLabel(server, state)}
                 </span>
               </span>
               {state.enabled && (
@@ -152,7 +155,7 @@ export function McpAgentRows({
                   </select>
                 </>
               )}
-              {state.compatible && (
+              {utilizavel && (
                 <button
                   onClick={() => onCheck(server, state)}
                   disabled={writeBusy || checkBusy || verifying}

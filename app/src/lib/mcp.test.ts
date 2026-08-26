@@ -3,6 +3,7 @@ import {
   applyAgentPatch,
   initialMcpProjectId,
   mcpAgentStatusLabel,
+  mcpAgentUtilizavel,
   mcpAuthActionLabel,
   mcpAuthHint,
   mcpAuthLabel,
@@ -368,12 +369,45 @@ describe("proxy MCP autenticado (A2)", () => {
   })
 
   it("a linha por agent diz que o Frota roteia, em vez de negar", () => {
-    const state = { compatible: false, health: "auth-required" as const }
-    expect(mcpAgentStatusLabel(oauthServer, state, false)).toBe(
-      "sem roteamento (nativo do CLI)",
-    )
-    expect(mcpAgentStatusLabel(oauthServer, state, true)).toBe(
-      "roteado pelo Frota",
-    )
+    const health = "auth-required" as const
+    expect(
+      mcpAgentStatusLabel(oauthServer, {
+        compatible: false,
+        roteavelPeloApp: false,
+        health,
+      }),
+    ).toBe("sem roteamento (nativo do CLI)")
+    expect(
+      mcpAgentStatusLabel(oauthServer, {
+        compatible: false,
+        roteavelPeloApp: true,
+        health,
+      }),
+    ).toBe("roteado pelo Frota")
+  })
+
+  it("o interruptor segue o MESMO fato que o rótulo", () => {
+    // O bug: o rótulo já dizia "roteado pelo Frota" e o interruptor continuava
+    // preso, porque lia `compatible` cru (que num MCP OAuth é sempre false).
+    // Dizer "roteado" e não deixar ligar é a tela contradizendo a si mesma.
+    const roteado = {
+      compatible: false,
+      roteavelPeloApp: true,
+      health: "auth-required" as const,
+    }
+    expect(mcpAgentStatusLabel(oauthServer, roteado)).toBe("roteado pelo Frota")
+    expect(mcpAgentUtilizavel(roteado)).toBe(true)
+  })
+
+  it("sem login o interruptor continua preso, e o rótulo concorda", () => {
+    const preso = { compatible: false, roteavelPeloApp: false }
+    expect(mcpAgentUtilizavel(preso)).toBe(false)
+  })
+
+  it("estado gravado ANTES deste campo não vira 'roteável' por omissão", () => {
+    // `roteavelPeloApp` é opcional porque snapshot antigo não o tem. Ausente
+    // tem de significar "não sei, então não libera", nunca `true` por descuido.
+    expect(mcpAgentUtilizavel({ compatible: false })).toBe(false)
+    expect(mcpAgentUtilizavel({ compatible: true })).toBe(true)
   })
 })
