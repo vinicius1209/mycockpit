@@ -167,3 +167,32 @@ export const CODEX_EFFORTS: AgentModelOption[] = [
   { value: "max", label: "max", description: "Fundo máximo (só família 5.6)" },
   { value: "ultra", label: "ultra", description: "Máximo + subagentes (Sol/Terra; pesa na cota)" },
 ]
+
+/** OpenCode (1.17.9). O dialeto é `provider/model` — é assim que
+ *  `opencode models` lista e é o que o `-m` aceita.
+ *
+ *  Lista CURADA e curta de propósito: a máquina tem 88 modelos em 4 provedores,
+ *  e despejar todos aqui seria o seletor virando catálogo. A lista viva entra
+ *  pelo `opencode models` no F4 do plano; até lá, os que valem por provedor.
+ *
+ *  Cada provedor depende de credencial PRÓPRIA (`opencode providers list`):
+ *  modelo de provedor não conectado falha com 401, e a seção Serviços é onde
+ *  isso aparece. */
+export const OPENCODE_MODELS: AgentModelOption[] = [
+  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o OpenCode escolher" },
+  { value: "google/gemini-2.5-flash-lite", label: "Gemini Flash Lite", description: "Rápido e barato (conta Google)" },
+  { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro", description: "Mais capaz (conta Google)" },
+  { value: "openai/gpt-5.6-sol", label: "Sol (5.6)", description: "Frontier da OpenAI, pela conta ChatGPT" },
+  { value: "opencode-go/kimi-k3", label: "Kimi K3", description: "Plano OpenCode Go (US$ 10/mês)" },
+  { value: "opencode-go/minimax-m3", label: "MiniMax M3", description: "Plano OpenCode Go" },
+  { value: "opencode-go/qwen3.8-max", label: "Qwen 3.8 Max", description: "Plano OpenCode Go" },
+]
+
+/** `--variant` do OpenCode: esforço de raciocínio, e o próprio --help diz que
+ *  é ESPECÍFICO DO PROVEDOR. Modelo que não entende o variant ignora. */
+export const OPENCODE_EFFORTS: AgentModelOption[] = [
+  { value: "default", label: "Padrão", pill: "effort", description: "Padrão do modelo" },
+  { value: "minimal", label: "minimal", description: "Mínimo" },
+  { value: "high", label: "high", description: "Raciocina mais fundo" },
+  { value: "max", label: "max", description: "Esforço máximo" },
+]

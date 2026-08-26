@@ -36,6 +36,9 @@ const MATRIZ: Record<
   // continuou a conversa (step_index 6→8 e o modelo lembrou o turno anterior,
   // medido 14/08/2026).
   agy: { systemChannel: false, sessionResume: true, contextMcp: false },
+  // OpenCode: `-s <id>` / `--continue` / `--fork` medidos no --help. Sem canal
+  // de sistema e sem MCP nosso ainda (o CLI tem `opencode mcp`, não ligamos).
+  opencode: { systemChannel: false, sessionResume: true, contextMcp: false },
 }
 
 describe("canais e continuidade por agent (espelho das capabilities do Rust)", () => {

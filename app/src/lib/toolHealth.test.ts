@@ -86,9 +86,9 @@ describe("toolHealthItems, o que entra na lista", () => {
   })
 
   it("agent que o app não integra não gera item nem com probe deslogado", () => {
-    // opencode está no registry como available:false: o app não sabe dirigi-lo,
+    // `model` está no registry como available:false: o app não sabe dirigi-lo,
     // então cobrar login dele seria cobrar uma ação sem destino.
-    expect(toolHealthItems({ opencode: probe({ auth: "missing" }) })).toEqual([])
+    expect(toolHealthItems({ model: probe({ auth: "missing" }) })).toEqual([])
   })
 
   it("a mesma CLI deslogada E com update gera os dois itens (estados independentes)", () => {

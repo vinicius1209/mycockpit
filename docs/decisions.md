@@ -3592,3 +3592,38 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   (`agents.ts` já está acima do teto, congelado em 533). O porquê vive no plano;
   o código fica com o dado.
 - **Verificado:** `cargo` 527 (5 novos), `tsc` 0, `vitest` 3225, 9 guardas.
+
+### ADR-095 — F2: o adapter do OpenCode, e o que a suíte cobrou ✅
+- **Contexto (26/08/2026):** segunda fase do `opencode-openrouter-plan`. O motor
+  passa a RODAR: `OpenCodeAdapter` + a linha no `SPECS`, e `available: true`.
+- **Medi o stream real antes de escrever uma linha de mapeamento**, e o binário
+  desta máquina não coopera: `opencode run` falha com o banco fora de sincronia.
+  A saída foi um `XDG_DATA_HOME` isolado com o `auth.json` **por symlink** —
+  banco novo migra limpo, e nenhuma credencial foi copiada pra lugar nenhum.
+- **O stream é NDJSON, exatamente o transporte que o loop já lê:**
+  `{type, timestamp, sessionID, part}`, com `step_start`, `text`, `step_finish`
+  e `error`.
+- **Três medidas que decidiram o mapeamento, e as três erram calado:**
+  | medida | consequência |
+  |---|---|
+  | `total = input + cache.read + output + reasoning` (5499+36220+1+212 = 41932) | **`input` EXCLUI o cache** — convenção do agy, não do claude. O mapeamento soma, senão o ledger subestimaria o turno em 36k tokens |
+  | dois turnos com `--continue`: `input` 5499 e 5515, custos independentes | **NÃO é cumulativo**. Sem baseline, sem a maquinaria do ADR-033 |
+  | `opencode run` falhou com **exit code 0** | o desfecho vem do EVENTO `error`, nunca do processo. Se o `ok` viesse do exit, a falha passaria por sucesso com texto vazio |
+- **`cache.write` chega preenchido**, e nenhum outro motor entrega isso: é o
+  campo que alimenta o "+N reconstruído" do ADR-084.
+- **A suíte cobrou o roster em SEIS lugares**, e cada cobrança era uma guarda
+  fazendo o trabalho dela: matriz de anexo, matriz de canais, registry do Rust,
+  roster do Companion (2×) e o recibo de missão. "Agent novo não passa batido"
+  é literalmente o nome de uma delas.
+- **O fixture de "motor sem capacidade" mudou de dono.** Onze arquivos de teste
+  usavam `opencode` como espécime de motor zerado — o que sempre foi frágil:
+  quebrou no dia em que ele virou produto. Passou a ser `model` ("Modelo
+  direto"), que é placeholder de OUTRO conceito e continua zerado por desenho.
+  - Tentei um id inventado e não serve: `agentDef` inexistente cai em "motor
+    FORA do registry, não sei o que ele reporta", que é outra frase — e as duas
+    são honestas, por isso o código as separa.
+- **O que ficou `false` de propósito:** `caps.image` (o `-f` aceita arquivo, mas
+  ida-e-volta de imagem não foi medida, e chip que promete e é descartado no
+  spawn é o estrago que a matriz gêmea existe pra impedir) e `native_compact`
+  (a doc anuncia o evento; o stream do `run` não foi visto emitindo).
+- **Verificado:** `cargo` 533 (7 novos), `tsc` 0, `vitest` 3228, 9 guardas.

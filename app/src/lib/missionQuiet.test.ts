@@ -47,7 +47,7 @@ describe("quem narra ação por ação (capability, nunca nome)", () => {
     expect(narratesActions("claude-code")).toBe(true)
     expect(narratesActions("codex")).toBe(true)
     expect(narratesActions("agy")).toBe(true)
-    expect(narratesActions("opencode")).toBe(false)
+    expect(narratesActions("model")).toBe(false)
   })
 
   it("motor fora do registry não promete narração", () => {
@@ -57,7 +57,7 @@ describe("quem narra ação por ação (capability, nunca nome)", () => {
 
 describe("declaração da fase NA FILA (a quietude vira contrato)", () => {
   it("motor que não reporta nada avisa antes de rodar", () => {
-    expect(queuedGranularityNote("opencode")).toBe("não reporta ações nem custo")
+    expect(queuedGranularityNote("model")).toBe("não reporta ações nem custo")
   })
 
   // O agy saiu deste ramo e entrou no do codex: narra ação a ação, mas não

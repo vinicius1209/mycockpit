@@ -694,6 +694,196 @@ fn extract_reset_hint(msg: &str) -> Option<String> {
     (!hint.is_empty()).then(|| hint.to_string())
 }
 
+
+/// OpenCode 1.17.9 — capabilities MEDIDAS no stream real (26/08/2026), não na
+/// documentação. O que foi verificado rodando `opencode run --format json`:
+///
+///   • envelope NDJSON `{type, timestamp, sessionID, part}` — um objeto por
+///     linha, exatamente o transporte que o loop compartilhado já lê;
+///   • `step_finish.part.cost` vem do CLI ⇒ `reports_cost: true`;
+///   • `tokens.cache` traz **read E write** (nenhum outro motor entrega os
+///     dois — claude reporta e a gente só lia read; codex e agy mandam 0);
+///   • **NÃO é cumulativo**: dois turnos na mesma sessão (`--continue`) deram
+///     `input` 5499 e 5515, custos independentes. Se fosse acumulado o 2º
+///     viria ~11k. Sem baseline, sem a maquinaria do ADR-033;
+///   • `total = input + cache.read + output + reasoning` (conferido:
+///     5499+36220+1+212 = 41932) ⇒ **`input` EXCLUI o cache**, convenção do
+///     agy, não a do claude. O mapeamento soma, como o agy faz.
+///
+/// O que fica `false` porque NÃO foi medido em uso, mesmo a doc prometendo:
+/// MCP, canal de sistema, compactação nativa e janela de uso. O CLI faz mais;
+/// a flag diz o que o APP já usa.
+pub const OPENCODE_CAPS: Capabilities = Capabilities {
+    work_mcp: false,
+    context_mcp: false,
+    managed_mcp: false,
+    mcp_launch_cwd: false,
+    inline_interaction: false,
+    deferred_work: false,
+    native_slash: false,
+    command_sources: &[],
+    // `-s <id>` / `--continue` / `--fork`, medidos no --help.
+    session_resume: true,
+    system_channel: false,
+    structured_output: true,
+    reports_cost: true,
+    cumulative_usage: false,
+    // A doc anuncia `session.next.compaction.started`, mas o stream do `run`
+    // não foi observado emitindo — fica false até alguém ver acontecer.
+    native_compact: false,
+    context_usage: None,
+    usage_window: None,
+    usage_window_poll: None,
+    hooks_status: false,
+    hooks_permission: false,
+    hook_dialect: None,
+    lists_models: None,
+    model_smoke: None,
+};
+
+/// Adapter do OpenCode: `opencode run --format json`.
+///
+/// O motor é um MULTIPLICADOR de credencial (OAuth com Copilot, SuperGrok,
+/// GitLab Duo, OpenAI e Anthropic), então o valor dele não é ser "mais um
+/// modelo" — é alcançar assinatura que o Frota não alcança sozinho.
+#[derive(Default)]
+pub struct OpenCodeAdapter {
+    /// Texto acumulado dos blocos `text` do turno, pro `Result`.
+    texto: String,
+    /// Última contagem vista no `step_finish`. O turno pode ter vários steps;
+    /// vale o ÚLTIMO, e não a soma, porque cada step já reporta o total dele.
+    ultimo_step: Option<(u64, u64, u64, u64, Option<f64>)>,
+    /// Falhou? O `error` vem como evento, e o exit code NÃO serve: medido
+    /// saindo **0 em falha** (banco local fora de sincronia).
+    erro: Option<String>,
+}
+
+impl AgentAdapter for OpenCodeAdapter {
+    fn id(&self) -> &'static str {
+        "opencode"
+    }
+
+    fn capabilities(&self) -> &'static Capabilities {
+        &OPENCODE_CAPS
+    }
+
+    fn build_command(&mut self, req: &RunRequest) -> Result<Command, String> {
+        let mut cmd = Command::new("opencode");
+        cmd.arg("run").arg("--format").arg("json");
+        // `--dir` é o diretório do run; o `current_dir` acompanha porque o
+        // resto do loop (sandbox, worktree) raciocina em cima dele.
+        cmd.arg("--dir").arg(&req.cwd).current_dir(&req.cwd);
+        if let Some(m) = &req.model {
+            // O dialeto é `provider/model` — é assim que `opencode models` lista.
+            cmd.arg("-m").arg(m);
+        }
+        if let Some(e) = &req.effort {
+            cmd.arg("--variant").arg(e);
+        }
+        if let Some(r) = &req.resume {
+            cmd.arg("-s").arg(r);
+        }
+        // Anexo NATIVO, um `-f` por arquivo (o agy não tem isto).
+        for a in &req.attachments {
+            cmd.arg("-f").arg(&a.path);
+        }
+        // Só existe o bypass tudo-ou-nada; não há granularidade de modo. Por
+        // isso o `enforcement` deste motor é `flag`, nunca `sandbox`, e a UI
+        // precisa dizer isso (F3 do plano).
+        if matches!(req.permission, Permission::Liberado) {
+            cmd.arg("--dangerously-skip-permissions");
+        }
+        cmd.arg(&req.prompt);
+        Ok(cmd)
+    }
+
+    fn map_line(&mut self, v: &serde_json::Value) -> Vec<AgentEvent> {
+        let tipo = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+        let part = v.get("part");
+        match tipo {
+            "step_start" => {
+                let sid = v.get("sessionID").and_then(|s| s.as_str()).unwrap_or("");
+                if sid.is_empty() {
+                    return Vec::new();
+                }
+                vec![AgentEvent::Session {
+                    session_id: sid.to_string(),
+                    model: None,
+                    tools: 0,
+                }]
+            }
+            "text" => {
+                let t = part
+                    .and_then(|p| p.get("text"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                if t.is_empty() {
+                    return Vec::new();
+                }
+                self.texto.push_str(t);
+                vec![AgentEvent::Text { text: t.to_string() }]
+            }
+            "step_finish" => {
+                if let Some(p) = part {
+                    let tk = p.get("tokens");
+                    let n = |k: &str| {
+                        tk.and_then(|t| t.get(k)).and_then(|x| x.as_u64()).unwrap_or(0)
+                    };
+                    let cache = tk.and_then(|t| t.get("cache"));
+                    let c = |k: &str| {
+                        cache.and_then(|x| x.get(k)).and_then(|x| x.as_u64()).unwrap_or(0)
+                    };
+                    self.ultimo_step = Some((
+                        // input + cache.read: o `input` do opencode EXCLUI o
+                        // cache (medido), e o nosso contrato INCLUI.
+                        n("input") + c("read"),
+                        n("output"),
+                        c("read"),
+                        c("write"),
+                        p.get("cost").and_then(|x| x.as_f64()),
+                    ));
+                }
+                Vec::new()
+            }
+            "error" => {
+                let msg = v
+                    .get("error")
+                    .and_then(|e| e.get("data"))
+                    .and_then(|d| d.get("message"))
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("o opencode falhou sem detalhe");
+                self.erro = Some(msg.to_string());
+                vec![AgentEvent::Error { message: msg.to_string() }]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn on_close(&mut self) -> Vec<AgentEvent> {
+        let (input, output, cache_read, cache_creation, cost) =
+            self.ultimo_step.unwrap_or((0, 0, 0, 0, None));
+        vec![AgentEvent::Result {
+            // O desfecho vem do EVENTO, nunca do exit code: medido saindo 0
+            // numa falha real (banco local fora de sincronia).
+            ok: self.erro.is_none(),
+            text: (!self.texto.is_empty()).then(|| self.texto.clone()),
+            cost_usd: cost,
+            cost_source: if cost.is_some() {
+                CostSource::Reported
+            } else {
+                CostSource::Unknown
+            },
+            input_tokens: input,
+            output_tokens: output,
+            cache_read,
+            cache_creation,
+            // Reporta por TURNO (medido em dois turnos da mesma sessão): nada
+            // a acumular, nada de baseline.
+            cumulative_usage: None,
+        }]
+    }
+}
+
 /// UMA entrada do registry: id + capabilities + construtor. O array `SPECS` é
 /// o ÚNICO lugar do código genérico que conhece nomes de agent (G1.1) —
 /// adicionar um motor = escrever o adapter e UMA linha aqui.
@@ -720,11 +910,15 @@ fn build_codex() -> Box<dyn AgentAdapter> {
 fn build_agy() -> Box<dyn AgentAdapter> {
     Box::<AgyAdapter>::default()
 }
+fn build_opencode() -> Box<dyn AgentAdapter> {
+    Box::<OpenCodeAdapter>::default()
+}
 
-static SPECS: [AgentSpec; 3] = [
+static SPECS: [AgentSpec; 4] = [
     AgentSpec { id: "claude-code", caps: &CLAUDE_CAPS, build: build_claude },
     AgentSpec { id: "codex", caps: &CODEX_CAPS, build: build_codex },
     AgentSpec { id: "agy", caps: &AGY_CAPS, build: build_agy },
+    AgentSpec { id: "opencode", caps: &OPENCODE_CAPS, build: build_opencode },
 ];
 
 /// Id canônico: string vazia = claude-code (convenção histórica das conversas
@@ -5072,6 +5266,106 @@ mod tests {
 
     /// A factory canonicaliza "" → claude-code (conversas antigas) e recusa
     /// desconhecido; capabilities_of segue a MESMA regra (fonte única).
+    // ── OpenCode: as linhas abaixo são o stream REAL capturado em 26/08/2026
+    //    (`opencode run --format json -m google/gemini-2.5-flash-lite`).
+    fn oc_linha(j: &str) -> serde_json::Value {
+        serde_json::from_str(j).unwrap()
+    }
+
+    const OC_STEP_FINISH: &str = r#"{"type":"step_finish","timestamp":1787707798576,"sessionID":"ses_x","part":{"id":"prt_1","reason":"stop","messageID":"msg_1","sessionID":"ses_x","type":"step-finish","tokens":{"total":41932,"input":5499,"output":1,"reasoning":212,"cache":{"write":0,"read":36220}},"cost":0.0009973}}"#;
+
+    #[test]
+    fn opencode_soma_o_cache_no_input() {
+        // O `input` do opencode EXCLUI o cache (medido: total 41932 =
+        // input 5499 + cache.read 36220 + output 1 + reasoning 212), e o nosso
+        // contrato INCLUI. Sem a soma, o ledger subestimaria o turno em 36k.
+        let mut a = OpenCodeAdapter::default();
+        a.map_line(&oc_linha(OC_STEP_FINISH));
+        let ev = a.on_close();
+        match &ev[0] {
+            AgentEvent::Result { input_tokens, cache_read, output_tokens, .. } => {
+                assert_eq!(*input_tokens, 5499 + 36220);
+                assert_eq!(*cache_read, 36220);
+                assert_eq!(*output_tokens, 1);
+            }
+            _ => panic!("esperava Result"),
+        }
+    }
+
+    #[test]
+    fn opencode_reporta_custo_e_a_escrita_de_cache() {
+        let mut a = OpenCodeAdapter::default();
+        a.map_line(&oc_linha(OC_STEP_FINISH));
+        match &a.on_close()[0] {
+            AgentEvent::Result { cost_usd, cost_source, cache_creation, .. } => {
+                assert_eq!(*cost_usd, Some(0.0009973));
+                assert!(matches!(cost_source, CostSource::Reported));
+                // `cache.write` existe e é 0 aqui; nenhum outro motor entrega
+                // este campo, e é ele que alimenta o "+N reconstruído".
+                assert_eq!(*cache_creation, 0);
+            }
+            _ => panic!("esperava Result"),
+        }
+    }
+
+    #[test]
+    fn opencode_nao_acumula_entre_turnos() {
+        // Medido em dois turnos da mesma sessão: cada step_finish traz o total
+        // DAQUELE turno. `cumulative_usage: None` é o que impede o front de
+        // subtrair baseline que não existe.
+        let mut a = OpenCodeAdapter::default();
+        a.map_line(&oc_linha(OC_STEP_FINISH));
+        match &a.on_close()[0] {
+            AgentEvent::Result { cumulative_usage, .. } => assert!(cumulative_usage.is_none()),
+            _ => panic!("esperava Result"),
+        }
+    }
+
+    #[test]
+    fn opencode_desfecho_vem_do_evento_nao_do_exit_code() {
+        // O CLI foi medido saindo com **exit 0 numa falha real** (banco local
+        // fora de sincronia). Se o `ok` viesse do processo, a falha passaria
+        // por sucesso com texto vazio.
+        let erro = r#"{"type":"error","timestamp":1,"sessionID":"ses_x","error":{"name":"APIError","data":{"message":"Insufficient balance.","statusCode":401,"isRetryable":false}}}"#;
+        let mut a = OpenCodeAdapter::default();
+        let evs = a.map_line(&oc_linha(erro));
+        assert!(matches!(&evs[0], AgentEvent::Error { message } if message.contains("Insufficient")));
+        match &a.on_close()[0] {
+            AgentEvent::Result { ok, .. } => assert!(!ok),
+            _ => panic!("esperava Result"),
+        }
+    }
+
+    #[test]
+    fn opencode_junta_o_texto_dos_blocos() {
+        let mut a = OpenCodeAdapter::default();
+        for t in ["ok", " e mais"] {
+            let j = format!(
+                r#"{{"type":"text","timestamp":1,"sessionID":"ses_x","part":{{"type":"text","text":"{t}"}}}}"#
+            );
+            a.map_line(&oc_linha(&j));
+        }
+        match &a.on_close()[0] {
+            AgentEvent::Result { text, .. } => assert_eq!(text.as_deref(), Some("ok e mais")),
+            _ => panic!("esperava Result"),
+        }
+    }
+
+    #[test]
+    fn opencode_turno_sem_step_finish_nao_inventa_numero() {
+        // Turno que morre antes de reportar: zero é o que sabemos, e o custo
+        // fica Unknown em vez de US$ 0,00 (que seria "de graça").
+        let mut a = OpenCodeAdapter::default();
+        match &a.on_close()[0] {
+            AgentEvent::Result { cost_usd, cost_source, input_tokens, .. } => {
+                assert_eq!(*cost_usd, None);
+                assert!(matches!(cost_source, CostSource::Unknown));
+                assert_eq!(*input_tokens, 0);
+            }
+            _ => panic!("esperava Result"),
+        }
+    }
+
     #[test]
     fn registry_canonicaliza_vazio_e_recusa_desconhecido() {
         assert!(std::ptr::eq(
@@ -5083,9 +5377,11 @@ mod tests {
         // validação de fronteira NÃO canonicaliza: "" não é binding válido.
         assert!(!is_registered(""));
         assert!(is_registered("claude-code"));
+        // A lista é EXATA de propósito: motor novo não entra sem alguém
+        // reparar. O opencode entrou em 26/08/2026 (ADR-095).
         assert_eq!(
             registered_agents().collect::<Vec<_>>(),
-            vec!["claude-code", "codex", "agy"]
+            vec!["claude-code", "codex", "agy", "opencode"]
         );
     }
 }

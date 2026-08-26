@@ -37,7 +37,7 @@ describe("preço de interromper (por motor, do registry)", () => {
   })
 
   it("motor que NÃO retoma perde a fase inteira, e o texto diz isso", () => {
-    const p = interruptPrice("opencode")
+    const p = interruptPrice("model")
     expect(p).toContain("não retoma sessão")
     expect(p).toContain("fase inteira do zero")
   })

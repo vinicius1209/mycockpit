@@ -101,7 +101,7 @@ describe("os stubs são RECIBO, não contagem", () => {
 
   it("o passado confessa quando engoliu fase sem custo medido", () => {
     const ps = plano(12)
-    ps[0] = fase("f1", { status: "done", startedAt: 0, endedAt: 1000 }, "opencode")
+    ps[0] = fase("f1", { status: "done", startedAt: 0, endedAt: 1000 }, "model")
     ps[1] = fase("f2", {
       status: "done",
       costUsd: 1,
@@ -120,7 +120,7 @@ describe("os stubs são RECIBO, não contagem", () => {
 
   it("o futuro declara o que a agregação não pode esconder", () => {
     const ps = plano(12)
-    ps[10] = fase("f11", {}, "opencode")
+    ps[10] = fase("f11", {}, "model")
     const stub = missionWindow(ps, 6).find(
       (r) => r.kind === "stub" && r.side === "futuro",
     ) as Extract<ReturnType<typeof missionWindow>[number], { kind: "stub" }>

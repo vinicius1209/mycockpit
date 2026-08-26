@@ -358,12 +358,12 @@ describe("buildCompanionSnapshot", () => {
       {
         id: "p1",
         name: "alpha",
-        agents: [{ agent: "claude-code" }, { agent: "codex" }, { agent: "agy" }],
+        agents: [{ agent: "claude-code" }, { agent: "codex" }, { agent: "agy" }, { agent: "opencode" }],
       },
       {
         id: "p2",
         name: "beta",
-        agents: [{ agent: "claude-code" }, { agent: "codex" }, { agent: "agy" }],
+        agents: [{ agent: "claude-code" }, { agent: "codex" }, { agent: "agy" }, { agent: "opencode" }],
       },
     ])
   })
@@ -388,7 +388,7 @@ describe("buildCompanionSnapshot", () => {
     expect(p1?.agents).toEqual([
       { agent: "claude-code", deskConvId: "d-new", deskTitle: "Mesa · Claude Code" },
       { agent: "codex", deskConvId: "d-cx", deskTitle: "Mesa · Codex" },
-      { agent: "agy" },
+      { agent: "agy" }, { agent: "opencode" },
     ])
     // p2 sem metas carregadas → agents sem mesa (a ponte carrega lazy depois)
     const p2 = snap.projects.find((p) => p.id === "p2")

@@ -57,7 +57,7 @@ describe("capacidade de medir custo (lida do registry, nunca do nome)", () => {
   })
 
   it("motor sem stream e sem dólar: não existe número", () => {
-    expect(costAbility("opencode")).toBe("nenhuma")
+    expect(costAbility("model")).toBe("nenhuma")
   })
 
   it("motor fora do registry não é acusado de não medir", () => {
@@ -92,15 +92,15 @@ describe("estado do custo de uma fase", () => {
   })
 
   it("fase NA FILA de motor que não mede já avisa antes de rodar", () => {
-    const st = phaseCostState(fase("opencode", "queued"))
+    const st = phaseCostState(fase("model", "queued"))
     expect(st.kind).toBe("nao-mede")
     expect(st.value).toBe("não mede")
-    expect(st.hint).toContain("OpenCode")
+    expect(st.hint).toContain("Modelo direto")
     expect(st.hint).toContain("não reporta custo")
   })
 
   it("fase de motor que não mede NUNCA vira zero, mesmo com costUsd 0", () => {
-    const st = phaseCostState(fase("opencode", "done", 0))
+    const st = phaseCostState(fase("model", "done", 0))
     expect(st.kind).toBe("nao-mede")
     expect(st.value).not.toContain("0")
   })
@@ -136,7 +136,7 @@ describe("estado do custo de uma fase", () => {
 describe("cobertura do total da missão", () => {
   const missao = [
     fase("claude-code", "done", 2.07, "reported"),
-    fase("opencode", "done", 0),
+    fase("model", "done", 0),
     fase("codex", "queued"),
   ]
 
@@ -168,8 +168,8 @@ describe("cobertura do total da missão", () => {
 
   it("missão inteira em motor que não mede diz isso, não mostra zero", () => {
     const st = missionCostState(0, [
-      fase("opencode", "done", 0),
-      fase("opencode", "done", 0),
+      fase("model", "done", 0),
+      fase("model", "done", 0),
     ])
     expect(st.kind).toBe("pendente")
     expect(st.value).toBe("—")

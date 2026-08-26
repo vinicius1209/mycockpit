@@ -89,12 +89,12 @@ describe("recibo de motor que não narra", () => {
   // integrado — a decisão sai da capability, nunca do nome.
   it("diz 'sem ações relatadas' em vez de fingir zero ações", () => {
     const r = phaseReceipt(
-      fase({ startedAt: 0, endedAt: 483_000, items: [] }, "opencode"),
+      fase({ startedAt: 0, endedAt: 483_000, items: [] }, "model"),
     )
     expect(r.impact).toBe("sem ações relatadas")
     expect(r.cost).toBe("não mede")
     expect(receiptLine(r)).toBe(
-      "sem ações relatadas · 8min 03s · não mede · OpenCode",
+      "sem ações relatadas · 8min 03s · não mede · Modelo direto",
     )
   })
 })

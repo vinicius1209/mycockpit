@@ -124,7 +124,7 @@ describe("availability", () => {
   })
 
   it("agent que o app não integra é not-integrated, com ou sem probe", () => {
-    expect(availability("opencode", {})).toBe("not-integrated")
+    expect(availability("model", {})).toBe("not-integrated")
     expect(availability("desconhecido", { desconhecido: probe() })).toBe(
       "not-integrated",
     )
@@ -159,7 +159,7 @@ describe("dispatchBlockReason", () => {
   })
 
   it("agent não integrado bloqueia", () => {
-    expect(dispatchBlockReason("opencode", {})).toContain("não é integrado")
+    expect(dispatchBlockReason("model", {})).toContain("não é integrado")
   })
 
   it("ready passa; auth incerta (inclusive SEM probe) também passa — degradação honesta", () => {

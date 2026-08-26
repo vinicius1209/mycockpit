@@ -224,10 +224,10 @@ describe("passo dos agentes", () => {
 
   it("agent não integrado não entra em lista nenhuma", () => {
     const { found, others } = partitionAgents(AGENTS, {
-      opencode: probe({ installed: true }),
+      model: probe({ installed: true }),
     })
-    expect(found.map((d) => d.id)).not.toContain("opencode")
-    expect(others.map((d) => d.id)).not.toContain("opencode")
+    expect(found.map((d) => d.id)).not.toContain("model")
+    expect(others.map((d) => d.id)).not.toContain("model")
   })
 
   it("sem probe nenhum, ninguém é destaque (destaque exige detecção)", () => {

@@ -24,7 +24,7 @@ describe("buildExecutionPrompt", () => {
   })
   it("motor sem resume: embute o texto do plano no prompt", () => {
     const plan = "1. criar arquivo\n2. rodar testes"
-    expect(buildExecutionPrompt("opencode", plan)).toBe(
+    expect(buildExecutionPrompt("model", plan)).toBe(
       `Plano aprovado — execute-o agora:\n\n${plan}`,
     )
   })
@@ -33,7 +33,7 @@ describe("buildExecutionPrompt", () => {
     // do registry (ou sem resume declarado) não pode apostar num resume que
     // nunca provou — sem o embed, o turno de execução rodaria sem saber o que
     // foi aprovado (perda silenciosa; embutir de novo é só redundância barata).
-    expect(buildExecutionPrompt("opencode", "plano")).toBe(
+    expect(buildExecutionPrompt("model", "plano")).toBe(
       "Plano aprovado — execute-o agora:\n\nplano",
     )
   })
@@ -41,7 +41,7 @@ describe("buildExecutionPrompt", () => {
 
 describe("needsPlanEmbedded (capability sessionResume, H5)", () => {
   it("motor sem resume e desconhecido embutem; quem retoma, não", () => {
-    expect(needsPlanEmbedded("opencode")).toBe(true)
+    expect(needsPlanEmbedded("model")).toBe(true)
     expect(needsPlanEmbedded("motor-novo")).toBe(true)
     expect(needsPlanEmbedded("claude-code")).toBe(false)
     expect(needsPlanEmbedded("codex")).toBe(false)

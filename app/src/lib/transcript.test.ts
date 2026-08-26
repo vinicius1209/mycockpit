@@ -131,7 +131,7 @@ describe("shouldAttachResumeFallback (MyCockpit resume)", () => {
   })
 
   it("motor sem resume nunca anexa (não há resume que possa falhar)", () => {
-    expect(shouldAttachResumeFallback("opencode", items, "sess-1")).toBe(false)
+    expect(shouldAttachResumeFallback("model", items, "sess-1")).toBe(false)
   })
 })
 
@@ -242,8 +242,8 @@ describe("shouldInlineMemory (a memória entra no corpo do prompt?)", () => {
   it("motor SEM resume leva em todo turno, com ou sem sessão", () => {
     // `opencode` é um dos únicos com sessionResume:false no registry — agy
     // MIGROU pro resume nativo, então não serve mais de exemplo aqui.
-    expect(shouldInlineMemory({ ...base, agent: "opencode", sessionId: null })).toBe(true)
-    expect(shouldInlineMemory({ ...base, agent: "opencode", sessionId: "x" })).toBe(true)
+    expect(shouldInlineMemory({ ...base, agent: "model", sessionId: null })).toBe(true)
+    expect(shouldInlineMemory({ ...base, agent: "model", sessionId: "x" })).toBe(true)
   })
 
   it("motor com resume: os 3 agents entregues (claude/codex/agy) dependem da sessão", () => {

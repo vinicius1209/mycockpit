@@ -74,8 +74,8 @@ describe("shouldInjectDoctrine (decisão por capability, H1/H5)", () => {
   })
 
   it("motor sem resume recebe em TODO turno (o recap não carrega o prefixo)", () => {
-    expect(shouldInjectDoctrine("opencode", true, true)).toBe(true)
-    expect(shouldInjectDoctrine("opencode", false, false)).toBe(true)
+    expect(shouldInjectDoctrine("model", true, true)).toBe(true)
+    expect(shouldInjectDoctrine("model", false, false)).toBe(true)
   })
 
   it("motor desconhecido: todo turno (fail-open da doutrina, sem prometer resume)", () => {
