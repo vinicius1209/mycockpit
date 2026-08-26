@@ -160,6 +160,162 @@ pub fn spec_de(nome: &str, launch: &crate::mcp_control::McpLaunchConfig) -> Resu
     })
 }
 
+/// O arquivo do projeto tem comentário (ou o app não sabe afirmar que não tem)?
+///
+/// `//` dentro de string NÃO conta, e isso não é detalhe: toda URL `https://`
+/// tem duas barras. Um detector ingênuo acusaria comentário em todo arquivo com
+/// um `url`, e o app passaria a recusar escrever em quase tudo. Por isso o
+/// varredor respeita aspas e escape.
+fn tem_comentario(texto: &str) -> bool {
+    let b = texto.as_bytes();
+    let mut i = 0;
+    let mut em_string = false;
+    while i < b.len() {
+        match b[i] {
+            b'\\' if em_string => i += 1,
+            b'"' => em_string = !em_string,
+            b'/' if !em_string && i + 1 < b.len() && (b[i + 1] == b'/' || b[i + 1] == b'*') => {
+                return true
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
+
+/// A entrada JSON que o opencode espera, na forma EXATA do `config.json` deles
+/// (`McpLocalConfig` / `McpRemoteConfig`, ambos `additionalProperties: false`,
+/// então campo a mais é config inválida).
+fn entrada_opencode(spec: &McpSpec) -> serde_json::Value {
+    use serde_json::json;
+    match &spec.alvo {
+        McpAlvo::Stdio { comando, args } => {
+            let mut cmd = vec![comando.clone()];
+            cmd.extend(args.iter().cloned());
+            let mut v = json!({ "type": "local", "command": cmd, "enabled": true });
+            if !spec.env.is_empty() {
+                // A chave é `environment`, não `env`: o schema é fechado.
+                v["environment"] = serde_json::Value::Object(
+                    spec.env
+                        .iter()
+                        .map(|(k, val)| (k.clone(), serde_json::Value::String(val.clone())))
+                        .collect(),
+                );
+            }
+            v
+        }
+        McpAlvo::Http { url } => {
+            let mut v = json!({ "type": "remote", "url": url, "enabled": true });
+            if !spec.headers.is_empty() {
+                v["headers"] = serde_json::Value::Object(
+                    spec.headers
+                        .iter()
+                        .map(|(k, val)| (k.clone(), serde_json::Value::String(val.clone())))
+                        .collect(),
+                );
+            }
+            v
+        }
+    }
+}
+
+/// Escreve (ou remove) a entrada do app no JSON do PROJETO, preservando tudo
+/// que não é nosso. `entrada: None` remove.
+///
+/// Este arquivo é do REPOSITÓRIO do usuário e pode estar versionado, então a
+/// régua aqui é mais dura que a de um arquivo efêmero:
+///
+/// 1. **Comentário faz recusar.** O `opencode.json` aceita comentário
+///    (`allowComments` no schema deles) e nenhum serializador JSON preserva
+///    isso. Reescrever apagaria texto que a pessoa escreveu, num arquivo que
+///    ela versiona. Melhor recusar e dizer.
+/// 2. **Só a nossa chave muda.** Entradas de MCP que o usuário criou ficam
+///    intactas, e qualquer outra chave do arquivo também.
+/// 3. **Conferência depois de serializar.** Se alguma chave que existia antes
+///    sumiu, o resultado é descartado com erro em vez de gravado.
+pub fn merge_opencode_json(
+    atual: &str,
+    nome: &str,
+    entrada: Option<&McpSpec>,
+) -> Result<String, String> {
+    let vazio = atual.trim().is_empty();
+    if !vazio && tem_comentario(atual) {
+        return Err(
+            "o opencode.json deste projeto tem comentários, e gravar apagaria \
+             eles. Adicione a entrada à mão na chave `mcp`."
+                .into(),
+        );
+    }
+    let mut raiz: serde_json::Value = if vazio {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(atual).map_err(|e| format!("opencode.json inválido: {e}"))?
+    };
+    let antes = raiz.clone();
+    let obj = raiz
+        .as_object_mut()
+        .ok_or("opencode.json não é um objeto JSON")?;
+    let mcp = obj
+        .entry("mcp")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or("a chave `mcp` do opencode.json não é um objeto")?;
+    match entrada {
+        Some(spec) => {
+            mcp.insert(nome.to_string(), entrada_opencode(spec));
+        }
+        None => {
+            mcp.remove(nome);
+        }
+    }
+    // Chave `mcp` que ficou vazia por remoção sai junto: não deixamos lixo
+    // nosso no arquivo de quem nos hospedou.
+    if obj.get("mcp").is_some_and(|m| m.as_object().is_some_and(|o| o.is_empty())) {
+        obj.remove("mcp");
+    }
+    let saida = serde_json::to_string_pretty(&raiz).map_err(|e| e.to_string())? + "\n";
+    conferir_preservacao(&antes, &saida, nome)?;
+    Ok(saida)
+}
+
+/// Nada que era do usuário pode ter sumido. Roda DEPOIS de serializar, sobre o
+/// texto que seria gravado: é a diferença entre acreditar no merge e verificar.
+fn conferir_preservacao(antes: &serde_json::Value, saida: &str, nosso: &str) -> Result<(), String> {
+    let depois: serde_json::Value =
+        serde_json::from_str(saida).map_err(|e| format!("o JSON gerado não relê: {e}"))?;
+    let (Some(a), Some(d)) = (antes.as_object(), depois.as_object()) else {
+        return Ok(());
+    };
+    for (k, v) in a {
+        if k == "mcp" {
+            let (Some(ma), Some(md)) = (
+                v.as_object(),
+                depois.get("mcp").and_then(|x| x.as_object()),
+            ) else {
+                // A chave `mcp` só pode sumir se ela era SÓ nossa e foi removida.
+                if v.as_object().is_some_and(|o| o.keys().all(|k| k == nosso)) {
+                    continue;
+                }
+                return Err("o merge perderia entradas de MCP do usuário".into());
+            };
+            for (nome, entrada) in ma {
+                if nome == nosso {
+                    continue;
+                }
+                if md.get(nome) != Some(entrada) {
+                    return Err(format!("o merge alteraria o MCP `{nome}`, que não é nosso"));
+                }
+            }
+            continue;
+        }
+        if d.get(k) != Some(v) {
+            return Err(format!("o merge perderia a chave `{k}` do opencode.json"));
+        }
+    }
+    Ok(())
+}
+
 fn argv_agy_add(spec: &McpSpec) -> Vec<String> {
     let mut v: Vec<String> = vec!["agy".into(), "mcp".into(), "add".into()];
     // Flags primeiro, sempre. Medido: `agy mcp add --header "K: V" nome url`
@@ -374,6 +530,99 @@ mod tests {
         assert!(spec_de("x", &launch("stdio")).is_err());
         assert!(spec_de("x", &launch("http")).is_err());
         assert!(spec_de("x", &launch("sse")).unwrap_err().contains("sse"));
+    }
+
+    fn http(nome: &str, url: &str) -> McpSpec {
+        McpSpec {
+            nome: nome.into(),
+            alvo: McpAlvo::Http { url: url.into() },
+            headers: vec![],
+            env: vec![],
+        }
+    }
+
+    #[test]
+    fn escreve_a_entrada_na_forma_exata_do_schema_deles() {
+        // `McpLocalConfig` e `McpRemoteConfig` são `additionalProperties:
+        // false`: campo a mais é config INVÁLIDA, não campo ignorado.
+        let saida = merge_opencode_json("", "mcx-a", Some(&stdio("mcx-a", "npx", &["srv"]))).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&saida).unwrap();
+        assert_eq!(v["mcp"]["mcx-a"]["type"], "local");
+        assert_eq!(v["mcp"]["mcx-a"]["command"][0], "npx");
+        assert_eq!(v["mcp"]["mcx-a"]["command"][1], "srv");
+
+        let saida = merge_opencode_json("", "mcx-b", Some(&http("mcx-b", "https://x/mcp"))).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&saida).unwrap();
+        assert_eq!(v["mcp"]["mcx-b"]["type"], "remote");
+        assert_eq!(v["mcp"]["mcx-b"]["url"], "https://x/mcp");
+    }
+
+    #[test]
+    fn preserva_o_que_e_do_usuario_no_arquivo_do_repositorio() {
+        let antes = r#"{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["algum-plugin@latest"],
+  "mcp": { "meu-servidor": { "type": "local", "command": ["meu"] } }
+}"#;
+        let saida =
+            merge_opencode_json(antes, "mcx-novo", Some(&http("mcx-novo", "https://x/mcp"))).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&saida).unwrap();
+        // Chaves vizinhas intactas.
+        assert_eq!(v["$schema"], "https://opencode.ai/config.json");
+        assert_eq!(v["plugin"][0], "algum-plugin@latest");
+        // MCP do usuário intacto, byte a byte no conteúdo.
+        assert_eq!(v["mcp"]["meu-servidor"]["command"][0], "meu");
+        // E o nosso entrou ao lado.
+        assert_eq!(v["mcp"]["mcx-novo"]["type"], "remote");
+    }
+
+    #[test]
+    fn remover_tira_so_o_nosso_e_nao_deixa_lixo() {
+        let antes = r#"{"mcp":{"meu":{"type":"local","command":["m"]},"mcx-a":{"type":"remote","url":"https://x"}}}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_opencode_json(antes, "mcx-a", None).unwrap()).unwrap();
+        assert!(v["mcp"]["mcx-a"].is_null(), "o nosso saiu");
+        assert_eq!(v["mcp"]["meu"]["command"][0], "m", "o do usuário ficou");
+
+        // Quando só havia o nosso, a chave `mcp` sai junto: sem lixo no
+        // arquivo de quem nos hospedou.
+        let so_nosso = r#"{"$schema":"s","mcp":{"mcx-a":{"type":"remote","url":"https://x"}}}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_opencode_json(so_nosso, "mcx-a", None).unwrap()).unwrap();
+        assert!(v.get("mcp").is_none(), "chave vazia não fica: {v}");
+        assert_eq!(v["$schema"], "s");
+    }
+
+    #[test]
+    fn arquivo_com_comentario_faz_recusar_em_vez_de_apagar() {
+        // O schema deles declara `allowComments`. Nenhum serializador JSON
+        // preserva comentário, e este arquivo é do repositório do usuário:
+        // gravar apagaria texto que ela escreveu e talvez versionou.
+        let com = "{\n  // o servidor da equipe\n  \"mcp\": {}\n}";
+        let erro = merge_opencode_json(com, "mcx-a", Some(&http("mcx-a", "https://x"))).unwrap_err();
+        assert!(erro.contains("comentários"), "diz o motivo: {erro}");
+        assert!(erro.contains("à mão"), "diz o que fazer: {erro}");
+        assert!(merge_opencode_json("{\n  /* bloco */\n}", "mcx-a", None).is_err());
+    }
+
+    #[test]
+    fn barra_dupla_dentro_de_string_nao_e_comentario() {
+        // Toda URL https:// tem duas barras. Um detector ingênuo recusaria
+        // gravar em praticamente todo arquivo real.
+        let antes = r#"{"$schema":"https://opencode.ai/config.json","mcp":{"u":{"type":"remote","url":"https://x/mcp"}}}"#;
+        assert!(!tem_comentario(antes));
+        let saida = merge_opencode_json(antes, "mcx-a", Some(&http("mcx-a", "https://y"))).unwrap();
+        assert!(saida.contains("mcx-a"));
+        // E escape dentro de string também não confunde o varredor.
+        assert!(!tem_comentario(r#"{"a":"diz \" e depois // nada"}"#));
+    }
+
+    #[test]
+    fn json_invalido_nao_vira_arquivo_novo_por_cima() {
+        // Arquivo quebrado é do usuário: sobrescrever seria destruir o que ele
+        // estava editando. Só arquivo VAZIO nasce do zero.
+        assert!(merge_opencode_json("{ isto não é json", "mcx-a", None).is_err());
+        assert!(merge_opencode_json("   ", "mcx-a", Some(&http("mcx-a", "https://x"))).is_ok());
     }
 
     #[test]

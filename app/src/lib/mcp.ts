@@ -287,13 +287,35 @@ export type McpEscopo = "por-run" | "por-projeto" | "global" | "nenhum"
  *  como está e posso ligar/desligar"; oferecer um sem saber é a mesma classe de
  *  mentira do ADR-100, só que na direção oposta.
  *  `nada` = sem receita conhecida; a linha só informa. */
-export type GestoDaLinha = "interruptor" | "acao-no-cli" | "nada"
+export type GestoDaLinha =
+  | "interruptor"
+  | "acao-no-cli"
+  | "acao-no-projeto"
+  | "nada"
 
 export function gestoDaLinha(
   state: Pick<McpAgentState, "compatible" | "roteavelPeloApp" | "escopo">,
 ): GestoDaLinha {
   if (mcpAgentUtilizavel(state)) return "interruptor"
-  return state.escopo === "global" ? "acao-no-cli" : "nada"
+  if (state.escopo === "global") return "acao-no-cli"
+  if (state.escopo === "por-projeto") return "acao-no-projeto"
+  return "nada"
+}
+
+/** A frase da ação, e a consequência dela, por gesto. São DIFERENTES de
+ *  propósito: escrever na config global do CLI e escrever num arquivo do
+ *  repositório do usuário não são o mesmo risco, e quem lê decide melhor
+ *  sabendo qual dos dois vai acontecer. */
+export function rotuloDaAcao(gesto: GestoDaLinha): string | null {
+  if (gesto === "acao-no-cli") return "Instalar no CLI"
+  if (gesto === "acao-no-projeto") return "Instalar no projeto"
+  return null
+}
+
+export function consequenciaDaAcao(gesto: GestoDaLinha): string | null {
+  if (gesto === "acao-no-cli") return CONSEQUENCIA_ESCOPO_GLOBAL
+  if (gesto === "acao-no-projeto") return CONSEQUENCIA_ESCOPO_PROJETO
+  return null
 }
 
 /** O que muda no mundo quando a pessoa aceita a ação. Aparece ANTES do clique,
@@ -301,6 +323,14 @@ export function gestoDaLinha(
 export const CONSEQUENCIA_ESCOPO_GLOBAL =
   "Vale para todos os projetos e continua depois da missão. Quem escreve é o " +
   "CLI do agent, no lugar que ele escolher nesta máquina."
+
+/** Escrever aqui mexe num arquivo que é do REPOSITÓRIO de quem usa, e que
+ *  pode estar versionado. Isso precisa estar dito antes do clique: o commit
+ *  seguinte carrega a mudança junto, e ninguém gosta de descobrir isso no
+ *  `git diff`. */
+export const CONSEQUENCIA_ESCOPO_PROJETO =
+  "Escreve no opencode.json deste projeto, que é um arquivo do seu " +
+  "repositório e pode estar versionado. Só a entrada do Frota é tocada."
 
 /** Rótulo da linha por agent. "não suportado" sozinho mente num servidor
  *  nativo-apenas: ele funciona no CLI que o definiu, o que não existe é o

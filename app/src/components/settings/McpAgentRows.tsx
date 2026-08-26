@@ -7,8 +7,9 @@
 import { AlertTriangle, CheckCircle2, KeyRound, Loader2, RefreshCcw, XCircle } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import {
-  CONSEQUENCIA_ESCOPO_GLOBAL,
+  consequenciaDaAcao,
   gestoDaLinha,
+  rotuloDaAcao,
   mcpAgentStatusLabel,
   mcpAgentUtilizavel,
   type McpAgentState,
@@ -87,6 +88,8 @@ export function McpAgentRows({
         // no CLI do usuário, e interruptor comunica "eu sei e controlo".
         const gesto = gestoDaLinha(state)
         const instalando = instalandoKeys.has(key)
+        const acao = rotuloDaAcao(gesto)
+        const consequencia = consequenciaDaAcao(gesto)
         return (
           <div key={agent.id} className="px-2.5 py-1.5">
             <div className="flex min-h-10 items-center gap-2">
@@ -166,17 +169,17 @@ export function McpAgentRows({
                   </select>
                 </>
               )}
-              {gesto === "acao-no-cli" && (
+              {acao && (
                 <button
                   onClick={() => onInstalarNoCli(server, state)}
                   disabled={instalando}
-                  title={CONSEQUENCIA_ESCOPO_GLOBAL}
+                  title={consequencia ?? undefined}
                   className="shrink-0 rounded bg-background/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
                 >
                   {instalando ? (
                     <Loader2 className="size-3 animate-spin" />
                   ) : (
-                    "Instalar no CLI"
+                    acao
                   )}
                 </button>
               )}
@@ -196,9 +199,9 @@ export function McpAgentRows({
                 </button>
               )}
             </div>
-            {gesto === "acao-no-cli" && (
+            {consequencia && (
               <div className="pb-1 pl-[3.25rem] text-[11px] leading-snug text-muted-foreground">
-                {CONSEQUENCIA_ESCOPO_GLOBAL}
+                {consequencia}
               </div>
             )}
             {browserNotice && (

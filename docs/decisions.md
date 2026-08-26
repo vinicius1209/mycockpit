@@ -3941,3 +3941,37 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   o `agy mcp add` é). Se um dia pedir input, é melhor falhar na hora que
   pendurar o app esperando alguém que não está lá.
 - **Verificado:** `cargo` 558, `tsc` 0, `vitest` 3247, 10 guardas.
+
+### ADR-105 — F4: escrever no opencode.json sem estragar o repositório ✅
+- **Contexto (26/08/2026):** F4 do `docs/mcp-qualquer-agent-plan.md`. O opencode
+  tem escopo `PorProjeto`, e o CLI dele grava no global (ADR-103), então aqui
+  quem escreve é o app. O arquivo é do REPOSITÓRIO do usuário, e pode estar
+  versionado: a régua é mais dura que a de um arquivo efêmero.
+- **Formas lidas do `config.json` deles**, não inventadas: `McpLocalConfig`
+  (`type:"local"`, `command:[]`, `environment`, `enabled`) e `McpRemoteConfig`
+  (`type:"remote"`, `url`, `headers`). Os dois são `additionalProperties:
+  false`, então campo a mais não é ignorado, é **config inválida**.
+- **O achado que decidiu o desenho:** o schema declara `allowComments` e
+  `allowTrailingCommas`. **O `opencode.json` é JSONC**, e nenhum serializador
+  JSON preserva comentário. Reescrever apagaria texto que a pessoa escreveu num
+  arquivo que ela versiona. Por isso o merge **recusa** quando acha comentário,
+  e diz o que fazer à mão.
+- **O detector respeita aspas, e isso não é detalhe:** toda URL `https://` tem
+  duas barras. Um detector ingênuo acusaria comentário em praticamente todo
+  arquivo real, e o app passaria a recusar escrever em quase tudo. Tem teste
+  com URL e com aspas escapadas.
+- **Três garantias no merge, e a terceira é a que importa:** (1) só a chave do
+  app muda; (2) chave `mcp` que ficou vazia sai junto, sem deixar lixo nosso;
+  (3) **conferência DEPOIS de serializar**, sobre o texto que seria gravado — se
+  alguma chave do usuário sumiu ou algum MCP dele mudou, o resultado é
+  descartado com erro em vez de gravado. É a diferença entre acreditar no merge
+  e verificar.
+- **JSON inválido não vira arquivo novo por cima.** Arquivo quebrado é do
+  usuário e pode estar no meio de uma edição; sobrescrever seria destruir o
+  trabalho dele. Só arquivo VAZIO nasce do zero.
+- **A tela ganhou um gesto PRÓPRIO**, não o mesmo do escopo global: escrever na
+  config do CLI e escrever num arquivo do repositório não são o mesmo risco, e
+  juntar os dois faria a frase mentir num dos casos. "Instalar no projeto" avisa
+  que o arquivo é versionado e que só a entrada do Frota é tocada, que é
+  exatamente o que o merge cumpre.
+- **Verificado:** `cargo` 564 (6 novos), `tsc` 0, `vitest` 3249, 10 guardas.

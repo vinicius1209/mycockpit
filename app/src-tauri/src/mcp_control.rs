@@ -1571,6 +1571,35 @@ pub async fn install_mcp_in_agent(
         .iter()
         .find(|s| s.id == server_id)
         .ok_or_else(|| "servidor não encontrado na descoberta atual".to_string())?;
+    let via = crate::mcp_instalacao::instalacao_de(&agent)
+        .ok_or_else(|| format!("{agent} não tem receita de instalação de MCP"))?;
+
+    // Escopo de PROJETO: o app escreve, porque o CLI do opencode grava no
+    // global (medido) e daria escopo errado calado. O nome do arquivo é
+    // relativo ao diretório, então continua sem nada fixo de máquina.
+    if let crate::mcp_instalacao::McpInstalacao::ArquivoDoProjeto(arquivo) = via {
+        let destino = std::path::Path::new(&project_path).join(arquivo);
+        let atual = std::fs::read_to_string(&destino).unwrap_or_default();
+        let spec = if instalar {
+            let launch = server
+                .launch
+                .as_ref()
+                .ok_or_else(|| "este MCP não tem config de launch para instalar".to_string())?;
+            Some(crate::mcp_instalacao::spec_de(&server.name, launch)?)
+        } else {
+            None
+        };
+        let novo =
+            crate::mcp_instalacao::merge_opencode_json(&atual, &server.name, spec.as_ref())?;
+        std::fs::write(&destino, novo)
+            .map_err(|e| format!("não consegui gravar {}: {e}", destino.display()))?;
+        return Ok(format!(
+            "{} {} em {arquivo} (arquivo deste projeto)",
+            server.name,
+            if instalar { "instalado" } else { "removido" }
+        ));
+    }
+
     let argv = if instalar {
         let launch = server
             .launch

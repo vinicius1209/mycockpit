@@ -6,6 +6,9 @@ import {
   mcpAgentUtilizavel,
   gestoDaLinha,
   CONSEQUENCIA_ESCOPO_GLOBAL,
+  CONSEQUENCIA_ESCOPO_PROJETO,
+  rotuloDaAcao,
+  consequenciaDaAcao,
   mcpAuthActionLabel,
   mcpAuthHint,
   mcpAuthLabel,
@@ -467,12 +470,32 @@ describe("proxy MCP autenticado (A2)", () => {
     ).toBe("interruptor")
   })
 
+  it("escopo de projeto tem gesto PRÓPRIO, não o mesmo do global", () => {
+    // Escrever na config global do CLI e escrever num arquivo do repositório
+    // do usuário não são o mesmo risco. Juntar os dois num gesto só faria a
+    // tela dizer a consequência errada em um dos casos.
+    const gesto = gestoDaLinha({ compatible: false, escopo: "por-projeto" })
+    expect(gesto).toBe("acao-no-projeto")
+    expect(rotuloDaAcao(gesto)).toBe("Instalar no projeto")
+    expect(consequenciaDaAcao(gesto)).toBe(CONSEQUENCIA_ESCOPO_PROJETO)
+    expect(consequenciaDaAcao("acao-no-cli")).toBe(CONSEQUENCIA_ESCOPO_GLOBAL)
+    expect(CONSEQUENCIA_ESCOPO_PROJETO).not.toBe(CONSEQUENCIA_ESCOPO_GLOBAL)
+  })
+
+  it("a consequência do projeto avisa que o arquivo é versionado", () => {
+    // O commit seguinte carrega a mudança junto. Descobrir isso no `git diff`
+    // é a pior hora.
+    expect(CONSEQUENCIA_ESCOPO_PROJETO).toContain("repositório")
+    expect(CONSEQUENCIA_ESCOPO_PROJETO).toContain("versionado")
+    // E promete o limite que o merge de fato cumpre (ADR-105).
+    expect(CONSEQUENCIA_ESCOPO_PROJETO).toContain("Só a entrada do Frota")
+  })
+
   it("escopo sem receita não inventa gesto", () => {
-    // por-projeto ainda não tem escrita (é o F4); estado antigo não tem campo.
-    expect(
-      gestoDaLinha({ compatible: false, escopo: "por-projeto" }),
-    ).toBe("nada")
     expect(gestoDaLinha({ compatible: false })).toBe("nada")
+    expect(rotuloDaAcao("nada")).toBeNull()
+    expect(consequenciaDaAcao("nada")).toBeNull()
+    expect(rotuloDaAcao("interruptor")).toBeNull()
   })
 
   it("a consequência do escopo global é dita ANTES do clique", () => {
