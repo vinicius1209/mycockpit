@@ -182,20 +182,40 @@ e a UI precisa dizer isso — é a mesma disciplina do ADR que expôs o
 | pendentes | `GET /api/session/{sessionID}/permission` (devolve `{data:[…]}`) |
 | regra por sessão | `POST /session` aceita `permission: [{ permission, pattern, action }]`, `action ∈ allow\|deny\|ask` |
 
-**Por que parou aqui, e não é preguiça:** não dá pra fechar um round-trip de
-permissão nesta máquina, e a causa é uma tenaz de dois lados.
+**A máquina foi destravada em 26/08/2026** (o usuário autorizou reinstalar):
+binário 1.17.9 → **1.18.21**, plugin `oh-my-openagent` removido do config, e o
+`opencode.db` movido pra `opencode.db.quebrado-20260826` (**não apagado**; 418
+MB, 474 sessões, recuperável por `opencode import` a partir de um `export`). O
+`auth.json` ficou intocado e as três credenciais seguem lá. Turno real medido
+depois disso: `text: "oi-frota"`, `cost: 0.000942`. **O adapter do F2 está
+validado de ponta a ponta.**
 
-- **Com o data dir do usuário:** há credencial (OpenAI, Google, opencode-go
-  em `~/.local/share/opencode/auth.json`), mas o banco está quebrado — o turno
-  morre em `replacement_seq` antes de qualquer ferramenta ser chamada.
-- **Com data dir limpo** (`XDG_DATA_HOME` no scratchpad): o schema nasce são,
-  e aí **não há credencial nenhuma** — `providers list` devolve `0 credentials`,
-  e todo `-m` vira `Model not found`. Sem provedor não há turno, sem turno não
-  há ferramenta, sem ferramenta não há permissão a pedir.
-- **A saída óbvia é a proibida:** juntar as duas metades significa copiar o
-  `auth.json` do usuário pro meu diretório de teste. Credencial dele não se
-  move pra conveniência de teste minha, e o próprio plano já dizia que o
-  `~/.local/share/opencode/` não se toca.
+**Com a máquina sã, a medição inverteu o desenho do F3.** A pergunta certa não
+era "como falar com o `serve`", era "o `run` já não resolve?". Rodando com
+`{"permission":{"bash":"ask"}}` no `opencode.json` do projeto:
+
+```
+! permission requested: bash (echo oi-frota); auto-rejecting
+```
+
+**O `opencode run` não pergunta: ele AUTO-REJEITA.** E faz duas coisas piores
+que falhar:
+
+1. O aviso sai no **stderr como texto humano com ANSI**, não como evento no
+   stream JSON. Quem lê o stdout estruturado não vê nada.
+2. O turno grava `"The user rejected permission to use this specific tool
+   call."` — **atribuindo ao humano uma recusa que a máquina tomou sozinha**.
+
+Isso confirma a arquitetura do plano (o `serve` É necessário pro modo que
+pergunta) mas por um motivo diferente do escrito: não é que o `run` esteja
+doente, é que ele é **estruturalmente incapaz** de ter canal de permissão.
+
+**O que foi consertado agora, sem esperar o F3:** o `tool_use` caía no
+`_ => vazio` do `map_line`, nenhum evento nascia, e o `on_close` reportava
+`ok:true` sobre um turno com TODA ferramenta barrada. Sucesso falso, e por cima
+com a mentira do fornecedor no registro. O adapter agora distingue "a pessoa
+recusou" de "ninguém foi perguntado" (guarda dos dois lados: com bypass ligado,
+a frase do opencode fica de pé).
 
 **Um terceiro achado, que muda o desenho quando o F3 voltar:** o agente padrão
 vem com `permission: "*" → allow`. O canal existe e fica **mudo** — nenhum
@@ -204,14 +224,14 @@ vem com `permission: "*" → allow`. O canal existe e fica **mudo** — nenhum
 Frota, que teria de mandar o ruleset na criação da sessão. Isso é escolha de
 UX que ninguém tomou ainda, e não é detalhe de implementação.
 
-**O que fazer quando destravar:** o reparo do banco é gesto do usuário
-(reinstalar o opencode ou apagar o `opencode.db`, com as sessões dele junto —
-por isso não é nossa mão). Com o banco são e as credenciais no lugar, os quatro
-passos são: sessão com ruleset `ask` → prompt → capturar o `asked` → responder
-`once` e ver o turno seguir. Enquanto isso não roda, escrever o transporte
-seria código contra um contrato que só foi LIDO, e esta sessão já mostrou três
-vezes o que acontece com contrato lido e não medido (o exit 0 do `run`, o token
-que não era cumulativo, o `input` que excluía cache).
+**O que ainda falta, e é onde o F3 recomeça:** o `POST /api/session/{id}/prompt`
+admite o prompt (`admittedSeq`) e **não executa** — zero mensagem, zero evento,
+zero log, com credencial e banco sãos. O caminho legado
+(`POST /session/{id}/message`) pendura igual. Ou falta um passo de "drenar a
+fila" que o `/doc` não deixa óbvio, ou esses endpoints querem outra coisa. É
+ISSO que precisa ser medido antes de escrever `opencode_server.rs`, e é barato:
+subir o `serve`, mandar um prompt e descobrir o que o TUI dele faz que a gente
+não está fazendo.
 
 ### F4 — Modelos e OpenRouter
 

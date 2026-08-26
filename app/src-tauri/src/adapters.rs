@@ -752,6 +752,27 @@ pub const OPENCODE_CAPS: Capabilities = Capabilities {
     model_smoke: Some(ModelSmokeDialect::OpenCodeRunJson),
 };
 
+/// O `opencode run` sem bypass **não pergunta: auto-rejeita**, e grava no turno
+/// `"The user rejected permission to use this specific tool call."` (medido em
+/// 26/08/2026). A frase é do fornecedor e atribui ao HUMANO uma recusa que a
+/// máquina tomou sozinha. Esta função separa as duas: só é "recusa sem
+/// pergunta" quando o bypass NÃO foi passado. Com bypass ligado, uma recusa que
+/// chegue veio de regra do próprio opencode, e a frase dele fica de pé.
+fn rejeicao_sem_pergunta(bypass: bool, status: &str, erro: &str) -> bool {
+    !bypass && status == "error" && erro.contains("rejected permission")
+}
+
+/// O que o app diz no lugar da frase do fornecedor. Precisa responder o que a
+/// pessoa vai perguntar ("recusei?") e o que fazer agora.
+fn mensagem_de_rejeicao_sem_pergunta(tool: &str) -> String {
+    format!(
+        "o opencode recusou `{tool}` sozinho, sem perguntar a ninguém. Este motor \
+         só tem o bypass tudo-ou-nada: fora do modo Liberado ele auto-rejeita toda \
+         ferramenta, e registra a recusa como se fosse sua. Rode em Liberado ou \
+         escolha outro motor enquanto o canal de permissão não existe."
+    )
+}
+
 /// Adapter do OpenCode: `opencode run --format json`.
 ///
 /// O motor é um MULTIPLICADOR de credencial (OAuth com Copilot, SuperGrok,
@@ -767,6 +788,13 @@ pub struct OpenCodeAdapter {
     /// Falhou? O `error` vem como evento, e o exit code NÃO serve: medido
     /// saindo **0 em falha** (banco local fora de sincronia).
     erro: Option<String>,
+    /// Passamos o `--dangerously-skip-permissions` neste turno?
+    ///
+    /// Sem ele o `opencode run` **não pergunta: ele auto-rejeita** (medido em
+    /// 26/08/2026 — o CLI escreve `permission requested: bash (…);
+    /// auto-rejecting` no stderr, como texto humano, e segue). Guardar isto é
+    /// o que permite distinguir "a pessoa recusou" de "ninguém foi perguntado".
+    bypass: bool,
 }
 
 impl AgentAdapter for OpenCodeAdapter {
@@ -801,7 +829,8 @@ impl AgentAdapter for OpenCodeAdapter {
         // Só existe o bypass tudo-ou-nada; não há granularidade de modo. Por
         // isso o `enforcement` deste motor é `flag`, nunca `sandbox`, e a UI
         // precisa dizer isso (F3 do plano).
-        if matches!(req.permission, Permission::Liberado) {
+        self.bypass = matches!(req.permission, Permission::Liberado);
+        if self.bypass {
             cmd.arg("--dangerously-skip-permissions");
         }
         cmd.arg(&req.prompt);
@@ -855,6 +884,27 @@ impl AgentAdapter for OpenCodeAdapter {
                     ));
                 }
                 Vec::new()
+            }
+            // A ferramenta recusada SEM ninguém ter sido perguntado. Sem este
+            // braço o turno passava calado: o `tool_use` caía no `_ => vazio`,
+            // nenhum evento `error` nascia, e o `on_close` reportava `ok:true`
+            // sobre um turno onde toda ferramenta foi barrada. Sucesso falso.
+            "tool_use" => {
+                let st = part.and_then(|p| p.get("state"));
+                let status =
+                    st.and_then(|s| s.get("status")).and_then(|s| s.as_str()).unwrap_or("");
+                let err =
+                    st.and_then(|s| s.get("error")).and_then(|s| s.as_str()).unwrap_or("");
+                if !rejeicao_sem_pergunta(self.bypass, status, err) {
+                    return Vec::new();
+                }
+                let tool = part
+                    .and_then(|p| p.get("tool"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("a ferramenta");
+                let msg = mensagem_de_rejeicao_sem_pergunta(tool);
+                self.erro = Some(msg.clone());
+                vec![AgentEvent::Error { message: msg }]
             }
             "error" => {
                 let msg = v
@@ -5330,6 +5380,59 @@ mod tests {
             AgentEvent::Result { cumulative_usage, .. } => assert!(cumulative_usage.is_none()),
             _ => panic!("esperava Result"),
         }
+    }
+
+    /// Linha REAL medida em 26/08/2026 rodando `opencode run --format json`
+    /// num projeto com `{"permission":{"bash":"ask"}}`. O CLI não perguntou:
+    /// escreveu `permission requested: bash (echo oi-frota); auto-rejecting`
+    /// no stderr e gravou a recusa no turno como se fosse do humano.
+    const OC_TOOL_REJEITADA: &str = r#"{"type":"tool_use","timestamp":1,"sessionID":"ses_x","part":{"type":"tool","tool":"bash","callID":"MOAVmRhdsF528uLA","state":{"status":"error","input":{"command":"echo oi-frota"},"error":"The user rejected permission to use this specific tool call.","time":{"start":1,"end":2}}}}"#;
+
+    #[test]
+    fn opencode_nao_deixa_a_rejeicao_automatica_passar_calada() {
+        // Antes deste braço o `tool_use` caía no `_ => vazio`: nenhum evento
+        // nascia, nenhum `erro` era marcado, e o turno fechava `ok:true` com
+        // TODA ferramenta barrada. É o sucesso falso que a casa não aceita.
+        let mut a = OpenCodeAdapter::default();
+        a.bypass = false;
+        let evs = a.map_line(&oc_linha(OC_TOOL_REJEITADA));
+        let AgentEvent::Error { message } = &evs[0] else {
+            panic!("esperava Error")
+        };
+        assert!(message.contains("bash"), "diz QUAL ferramenta: {message}");
+        assert!(
+            message.contains("sem perguntar"),
+            "desmente a frase do fornecedor: {message}"
+        );
+        match &a.on_close()[0] {
+            AgentEvent::Result { ok, .. } => assert!(!ok, "turno barrado não é sucesso"),
+            _ => panic!("esperava Result"),
+        }
+    }
+
+    #[test]
+    fn opencode_com_bypass_nao_reescreve_recusa_que_e_do_motor() {
+        // Com `--dangerously-skip-permissions` ligado, uma recusa que chegue
+        // veio de regra do próprio opencode. Aí a frase dele está de pé, e
+        // inventar "ninguém te perguntou" seria o app mentindo na outra
+        // direção. Guarda dos DOIS lados.
+        let mut a = OpenCodeAdapter::default();
+        a.bypass = true;
+        assert!(a.map_line(&oc_linha(OC_TOOL_REJEITADA)).is_empty());
+        match &a.on_close()[0] {
+            AgentEvent::Result { ok, .. } => assert!(ok),
+            _ => panic!("esperava Result"),
+        }
+    }
+
+    #[test]
+    fn opencode_ferramenta_que_deu_certo_nao_vira_erro() {
+        // Só a recusa SEM pergunta é reescrita; `tool_use` normal segue mudo.
+        let ok_json = r#"{"type":"tool_use","timestamp":1,"sessionID":"ses_x","part":{"type":"tool","tool":"bash","callID":"c1","state":{"status":"completed","input":{"command":"echo oi"},"output":"oi"}}}"#;
+        let mut a = OpenCodeAdapter::default();
+        a.bypass = false;
+        assert!(a.map_line(&oc_linha(ok_json)).is_empty());
+        assert!(a.erro.is_none());
     }
 
     #[test]

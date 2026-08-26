@@ -70,7 +70,11 @@ export const INSTALL_COMMANDS: Record<string, string> = {
   "claude-code": "npm i -g @anthropic-ai/claude-code",
   codex: "brew install codex",
   agy: "https://antigravity.google/cli",
-  opencode: "brew install sst/tap/opencode",
+  // `sst/tap/opencode` estava aqui e NÃO EXISTE ("No available formula or cask
+  // with the name"). A receita vinha do repositório do fornecedor, não de um
+  // `brew info` — e receita que ninguém rodou é chute com cara de fato. O
+  // opencode está no homebrew/core, então o nome simples resolve.
+  opencode: "brew install opencode",
 }
 
 /** Comandos por agent×CANAL — espelho do plano por canal do update.rs (o

@@ -3740,3 +3740,41 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **O que JÁ funciona sem o F3:** o OpenCode roda pelo `run --format json`
   (F2), com custo e cache separados, e o `--dangerously-skip-permissions`
   cobre o modo liberado. O que falta é o modo que PERGUNTA.
+
+### ADR-099 — a máquina destravou, e o `run` revelou que MENTE sobre a recusa ✅
+- **Contexto (26/08/2026):** com autorização do usuário, o opencode foi
+  reinstalado. Binário 1.17.9 → **1.18.21**, plugin `oh-my-openagent` fora do
+  config, `opencode.db` **movido** (não apagado) pra `opencode.db.quebrado-20260826`.
+  O `auth.json` ficou intocado e as três credenciais seguem lá. O banco velho
+  tinha a última migração de 07/06/2026: quase três meses sem migrar, e o
+  binário novo não migra sozinho.
+- **O F2 está validado de ponta a ponta:** turno real devolveu
+  `text: "oi-frota"` e `cost: 0.000942`. O adapter que enviamos funciona.
+- **A medição inverteu o desenho do F3.** A pergunta certa não era "como falar
+  com o `serve`", era "o `run` já não resolve?". Com
+  `{"permission":{"bash":"ask"}}` no projeto, o CLI respondeu:
+  `! permission requested: bash (echo oi-frota); auto-rejecting`.
+- **O `opencode run` não pergunta: ele AUTO-REJEITA**, e faz duas coisas piores
+  que falhar. (1) O aviso sai no **stderr como texto humano com ANSI**, não como
+  evento no stream JSON: quem lê o stdout estruturado não vê nada. (2) O turno
+  grava `"The user rejected permission to use this specific tool call."`,
+  **atribuindo ao humano uma recusa que a máquina tomou sozinha**.
+- **O defeito que isso expôs no NOSSO código:** o `tool_use` caía no
+  `_ => vazio` do `map_line`. Nenhum evento nascia, nenhum erro era marcado, e o
+  `on_close` reportava `ok:true` sobre um turno com TODA ferramenta barrada.
+  Sucesso falso, e por cima com a mentira do fornecedor no registro.
+- **O conserto separa as duas coisas:** `rejeicao_sem_pergunta(bypass, status,
+  erro)` só reescreve quando o bypass NÃO foi passado. Com
+  `--dangerously-skip-permissions` ligado, uma recusa que chegue veio de regra
+  do próprio opencode e a frase dele fica de pé. Guarda dos dois lados, um teste
+  para cada, mais um terceiro provando que ferramenta bem-sucedida segue muda.
+  Os dois caminhos foram medidos no binário real (com bypass:
+  `status: completed`, `output: oi-frota`).
+- **Isso confirma a arquitetura do plano por outro motivo:** o `serve` É
+  necessário pro modo que pergunta, mas não porque o `run` esteja doente, e sim
+  porque ele é **estruturalmente incapaz** de ter canal de permissão.
+- **`brew install sst/tap/opencode` não existe.** Estava no `INSTALL_COMMANDS`,
+  veio do repositório do fornecedor e nunca foi rodado: `brew info` devolve
+  "No available formula or cask". Receita que ninguém executou é chute com cara
+  de fato. Corrigido pro `homebrew/core` (`brew install opencode`).
+- **Verificado:** `cargo` 545 (3 novos), `tsc` 0, `vitest` 3238, 9 guardas.
