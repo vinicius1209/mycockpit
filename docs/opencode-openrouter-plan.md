@@ -74,15 +74,28 @@ mandam `cache_creation: 0` sempre. O OpenCode alimentaria a linha
 E `AssistantMessage` ainda carrega `providerID`, `modelID`, `variant`, `finish`
 e `error` — procedência completa por turno.
 
-### 4. O `run` está QUEBRADO nesta máquina, e o `serve` não
+### 4. O banco quebrado derruba os DOIS transportes (corrigido em 26/08/2026)
 
 ```
 SQLiteError: no such column: replacement_seq
 ```
 
 O banco local (`~/.local/share/opencode/opencode.db`) está fora de sincronia com
-o binário. `opencode run` falha **com exit code 0** (!); `opencode serve` sobe
-normal e responde.
+o binário. `opencode run` falha **com exit code 0** (!).
+
+**A frase original desta seção dizia "e o `serve` não". Estava errada, e o erro
+importava:** era ela que justificava eleger o `serve` como transporte primário.
+Medido no F3, com a mesma stack trace:
+
+```
+SessionPrompt.createUserMessage → SessionContextEpoch.requestReplacement
+  → SQLiteError: no such column: replacement_seq   (HTTP 500)
+```
+
+O `serve` **sobe e responde metadado** — cria sessão, lista modelos, serve o
+`/doc`. O que ele não faz é **rodar um turno**: o prompt bate no mesmo
+`replacement_seq`. O que parecia "um transporte são e outro doente" é um banco
+doente sob os dois.
 
 Isto não é curiosidade: é requisito. A integração precisa **reconhecer estado
 local quebrado** e dizer isso, em vez de mostrar "sem resposta". E o exit 0 numa
@@ -148,7 +161,7 @@ spawn → porta → SSE → mapeamento de eventos → `AgentEvent`.
 Mapeamento direto do que já medimos. O `Result` sai com `cost` reportado e a
 divisão de cache preenchida de verdade.
 
-### F3 — Permissão de verdade, e o eixo de modos
+### F3 ⏸ — Permissão de verdade: contrato lido, round-trip BLOQUEADO (26/08/2026)
 
 O `permission.v2.asked` é um canal REAL. Isso coloca o OpenCode acima do `agy`
 no eixo de enforcement: ele **pergunta**, não só promete no prompt.
@@ -157,6 +170,48 @@ O que NÃO temos: granularidade de modo. Só existe o `--dangerously-skip-permis
 que é tudo-ou-nada. Então `enforcement` do OpenCode é `flag`, nunca `sandbox`,
 e a UI precisa dizer isso — é a mesma disciplina do ADR que expôs o
 `enforcement` no seletor de modo.
+
+**O contrato foi lido do `/doc` do binário 1.17.9 e está aqui, inteiro:**
+
+| peça | valor medido |
+|---|---|
+| evento | `permission.v2.asked` · `properties: { id ^per, sessionID ^ses, action, resources[], save[], metadata, source }` |
+| `source` | `{ type: "tool", messageID, callID }` — dá pra casar a pergunta com a chamada |
+| responder | `POST /api/session/{sessionID}/permission/{requestID}/reply` |
+| corpo | `{ reply: "once" \| "always" \| "reject", message?: string }` |
+| pendentes | `GET /api/session/{sessionID}/permission` (devolve `{data:[…]}`) |
+| regra por sessão | `POST /session` aceita `permission: [{ permission, pattern, action }]`, `action ∈ allow\|deny\|ask` |
+
+**Por que parou aqui, e não é preguiça:** não dá pra fechar um round-trip de
+permissão nesta máquina, e a causa é uma tenaz de dois lados.
+
+- **Com o data dir do usuário:** há credencial (OpenAI, Google, opencode-go
+  em `~/.local/share/opencode/auth.json`), mas o banco está quebrado — o turno
+  morre em `replacement_seq` antes de qualquer ferramenta ser chamada.
+- **Com data dir limpo** (`XDG_DATA_HOME` no scratchpad): o schema nasce são,
+  e aí **não há credencial nenhuma** — `providers list` devolve `0 credentials`,
+  e todo `-m` vira `Model not found`. Sem provedor não há turno, sem turno não
+  há ferramenta, sem ferramenta não há permissão a pedir.
+- **A saída óbvia é a proibida:** juntar as duas metades significa copiar o
+  `auth.json` do usuário pro meu diretório de teste. Credencial dele não se
+  move pra conveniência de teste minha, e o próprio plano já dizia que o
+  `~/.local/share/opencode/` não se toca.
+
+**Um terceiro achado, que muda o desenho quando o F3 voltar:** o agente padrão
+vem com `permission: "*" → allow`. O canal existe e fica **mudo** — nenhum
+`permission.v2.asked` sai a menos que alguém instale uma regra `ask`. Ou seja,
+"o OpenCode pergunta" não é fato herdado do CLI: é **decisão de produto** do
+Frota, que teria de mandar o ruleset na criação da sessão. Isso é escolha de
+UX que ninguém tomou ainda, e não é detalhe de implementação.
+
+**O que fazer quando destravar:** o reparo do banco é gesto do usuário
+(reinstalar o opencode ou apagar o `opencode.db`, com as sessões dele junto —
+por isso não é nossa mão). Com o banco são e as credenciais no lugar, os quatro
+passos são: sessão com ruleset `ask` → prompt → capturar o `asked` → responder
+`once` e ver o turno seguir. Enquanto isso não roda, escrever o transporte
+seria código contra um contrato que só foi LIDO, e esta sessão já mostrou três
+vezes o que acontece com contrato lido e não medido (o exit 0 do `run`, o token
+que não era cumulativo, o `input` que excluía cache).
 
 ### F4 — Modelos e OpenRouter
 

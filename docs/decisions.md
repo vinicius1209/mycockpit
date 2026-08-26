@@ -3708,3 +3708,35 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   e invisível.
 - **Verificado:** `cargo` 542, `tsc` 0, `vitest` 3238 (10 novos), 9 guardas,
   e2e 27/27.
+
+### ADR-098 — F3 parou no contrato, e o motivo foi medido ⏸
+- **Contexto (26/08/2026):** F3 é o canal de permissão do OpenCode via
+  `opencode serve` + SSE. O contrato foi lido inteiro do `/doc` do binário
+  1.17.9 e está no plano (evento, corpo da resposta, endpoint, ruleset).
+- **O plano dizia que o `serve` estava são, e não estava.** A seção F0 afirmava
+  *"`opencode run` falha; `opencode serve` sobe normal e responde"* — e era
+  ESSA frase que elegia o serve como transporte primário. Medido: o prompt do
+  serve bate no MESMO `no such column: replacement_seq`
+  (`createUserMessage → requestReplacement`, HTTP 500). O serve responde
+  metadado (cria sessão, lista modelo, serve o `/doc`); ele não roda turno.
+  Não são dois transportes, um são e um doente — é um banco doente sob os dois.
+- **Não dá pra fechar o round-trip nesta máquina, e a tenaz tem dois lados:**
+  com o data dir do usuário há credencial e o banco quebra; com data dir limpo
+  o schema nasce são e `providers list` devolve **0 credentials**, então todo
+  `-m` vira `Model not found` e não há turno. Juntar as metades exigiria copiar
+  o `auth.json` dele pro meu diretório de teste — credencial não se move por
+  conveniência de teste, e o plano já proibia tocar no `~/.local/share/opencode/`.
+- **Terceiro achado, que muda o desenho:** o agente padrão vem com
+  `permission: "*" → allow`. O canal existe e fica **MUDO** — nenhum
+  `permission.v2.asked` sai sem alguém instalar regra `ask`. Logo "o OpenCode
+  pergunta" não é fato herdado do CLI: é decisão de produto do Frota, que teria
+  de mandar o ruleset ao criar a sessão. Ninguém tomou essa decisão ainda.
+- **Por que parar é a escolha certa:** escrever o transporte agora é código
+  contra contrato só LIDO. Esta sessão inverteu a leitura por medida três
+  vezes (o `run` saindo 0 em falha, o token que não era cumulativo, o `input`
+  que excluía cache). O que ficou registrado no plano é reaproveitável
+  integralmente; o que falta é um banco são na máquina, e o reparo é gesto do
+  usuário — apagar o `opencode.db` leva as sessões dele junto.
+- **O que JÁ funciona sem o F3:** o OpenCode roda pelo `run --format json`
+  (F2), com custo e cache separados, e o `--dangerously-skip-permissions`
+  cobre o modo liberado. O que falta é o modo que PERGUNTA.
