@@ -30,6 +30,7 @@ mod hook_sessions;
 mod hooks_install;
 mod mcp_auth;
 mod mcp_control;
+mod mcp_instalacao;
 mod mcp_proxy;
 mod model_list;
 mod model_smoke;

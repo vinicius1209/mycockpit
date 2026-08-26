@@ -37,6 +37,8 @@ jobs:
         run: node scripts/check-guia-sem-linha.mjs
       - name: superfícies das Configurações (catraca)
         run: node scripts/check-superficies.mjs
+      - name: config de agent (nada fixo desta máquina)
+        run: node scripts/check-config-de-agent.mjs
 
   frontend:
     runs-on: ubuntu-latest

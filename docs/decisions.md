@@ -3879,3 +3879,37 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   F3 o gesto humano pro escopo Global, F4 o por-projeto do opencode, F5 revisa
   o proxy do app nos escopos novos).
 - **Verificado:** `cargo` 547, `tsc` 0, `vitest` 3243, 9 guardas.
+
+### ADR-103 — F2: instalar MCP pelo CLI do agent, e a guarda que protege isso ✅
+- **Contexto (26/08/2026):** F2 do `docs/mcp-qualquer-agent-plan.md`, sob a
+  restrição do usuário de que nada pode ser fixo nesta máquina.
+- **Medido no `agy 1.1.21`, rodando cada forma** (em `HOME` isolado, para não
+  escrever na config real): `agy mcp add` funciona **sem interação**, stdio e
+  http; `--header "Chave: Valor"` (dois pontos, não `=`); `--env K=v`; flags
+  obrigatoriamente ANTES do nome; `--` antes do comando funciona sempre, então
+  é emitido SEMPRE (uniformizar mata a classe de bug do comando com hífen);
+  `agy mcp remove <nome>` desinstala. O CLI escreve o arquivo dele sozinho, que
+  é exatamente o ponto: o app não sabe nem quer saber onde.
+- **A exceção, descoberta por um acidente meu:** rodei `opencode mcp add` de
+  dentro de um projeto e ele gravou no config **GLOBAL** do usuário. Ou seja,
+  **o CLI do opencode não escreve no escopo que ele mesmo LÊ** (a leitura por
+  projeto foi provada no ADR-102). Usar o CLI ali daria escopo global calado, o
+  oposto do que a tela promete. Por isso `opencode` é `ArquivoDoProjeto`. A
+  entrada que criei sem querer no `~/.config/opencode/opencode.json` foi
+  removida na hora, e o arquivo voltou ao estado exato de antes.
+- **A regra fina, que o acidente afiou:** config de USUÁRIO vai pelo CLI (o
+  caminho é do fornecedor e varia por máquina); config de PROJETO é escrita
+  pelo app pelo NOME do arquivo (`opencode.json`), que é relativo ao diretório
+  escolhido e portanto portátil por definição. Tem teste cobrando que o nome
+  guardado não contenha `/`.
+- **`instalacao_de` decide pelo ESCOPO, não por `match` de nome** (G1.1): motor
+  novo com escopo conhecido já entra certo. Só o `PorProjeto` precisa saber
+  QUAL arquivo, e aí é dialeto de fornecedor como o resto do módulo.
+- **A guarda `check-config-de-agent`** (a 10ª) barra caminho de config de agent
+  virar STRING no código Rust de produção. Comentário segue permitido de
+  propósito: explicar onde o fornecedor guarda é documentação legítima, e
+  vários ADRs dependem disso; o que mata é o caminho ser executado. Fixture de
+  teste é ignorada (captura saída real do CLI, que às vezes cita o caminho).
+  **Testada nos dois sentidos:** com um caminho plantado ela falha com exit 1 e
+  aponta arquivo e linha.
+- **Verificado:** `cargo` 555 (8 novos), `tsc` 0, `vitest` 3243, 10 guardas.
