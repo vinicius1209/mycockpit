@@ -161,7 +161,7 @@ spawn → porta → SSE → mapeamento de eventos → `AgentEvent`.
 Mapeamento direto do que já medimos. O `Result` sai com `cost` reportado e a
 divisão de cache preenchida de verdade.
 
-### F3 ⏸ — Permissão de verdade: contrato lido, round-trip BLOQUEADO (26/08/2026)
+### F3 — Permissão de verdade: DESTRAVADO pelo ACP (26/08/2026)
 
 O `permission.v2.asked` é um canal REAL. Isso coloca o OpenCode acima do `agy`
 no eixo de enforcement: ele **pergunta**, não só promete no prompt.
@@ -224,14 +224,50 @@ vem com `permission: "*" → allow`. O canal existe e fica **mudo** — nenhum
 Frota, que teria de mandar o ruleset na criação da sessão. Isso é escolha de
 UX que ninguém tomou ainda, e não é detalhe de implementação.
 
-**O que ainda falta, e é onde o F3 recomeça:** o `POST /api/session/{id}/prompt`
-admite o prompt (`admittedSeq`) e **não executa** — zero mensagem, zero evento,
-zero log, com credencial e banco sãos. O caminho legado
-(`POST /session/{id}/message`) pendura igual. Ou falta um passo de "drenar a
-fila" que o `/doc` não deixa óbvio, ou esses endpoints querem outra coisa. É
-ISSO que precisa ser medido antes de escrever `opencode_server.rs`, e é barato:
-subir o `serve`, mandar um prompt e descobrir o que o TUI dele faz que a gente
-não está fazendo.
+**O `serve` foi o caminho errado, e a pista veio de um processo órfão.** Ao
+limpar os testes sobrou um `opencode acp` que não era meu: era do **Zed**. O
+editor dirige o opencode por **ACP** (Agent Client Protocol), JSON-RPC sobre
+stdio, e não pela API HTTP.
+
+**Medido ponta a ponta em 26/08/2026, e funciona:**
+
+```
+--> session/prompt
+<== session/update  tool_call
+<== PEDIDO session/request_permission id=0
+      toolCall: { title: "echo oi-frota", kind: "execute", status: "pending" }
+      options:  [ allow_once | allow_always | reject_once ]
+<-- {"result":{"outcome":{"outcome":"selected","optionId":"once"}}}
+<== session/update  tool_call_update status=completed  "oi-frota\n"
+<== session/update  agent_message_chunk "A saída é: `oi-frota`"
+<-- {"result":{"stopReason":"end_turn","usage":{…,"cachedReadTokens":4085}}}
+```
+
+O turno PARA, espera, e segue quando a resposta chega. É exatamente o que esta
+fase pedia, e o `serve` nunca entregou.
+
+**O ACP ganha do `serve` em tudo que importa aqui**, e ainda por cima não é
+dialeto de um fornecedor: é protocolo padrão, então quem falar ACP entra sem
+tradução nova.
+
+| o que | `run --format json` | `serve` (HTTP) | **ACP** |
+|---|---|---|---|
+| pedido de permissão | auto-rejeita e culpa o humano | contrato existe, turno nunca executou | **pausa de verdade** |
+| texto | bloco inteiro | idem | streaming |
+| raciocínio | não | sim | `agent_thought_chunk` |
+| desfecho | exit 0 mentiroso | `session.idle` | `stopReason` |
+| custo | por step | por mensagem | usage com cache separado |
+
+**Entregue:** `acp.rs`, a camada PURA de tradução (classificar mensagem, ler o
+pedido de permissão, montar a resposta, mapear `session/update` para os eventos
+da casa, somar o usage). Testada contra os payloads REAIS capturados, sem subir
+processo. **Falta** o transporte (spawn + stdio + fila de pedidos), que é a
+fase seguinte.
+
+**A armadilha que o teste fixa:** `session/request_permission` tem `id`, ou
+seja, é PEDIDO e exige resposta. Tratá-lo como notificação pendura o turno para
+sempre, esperando um humano que nunca foi chamado. Foi o que aconteceu na
+primeira tentativa aqui.
 
 ### F4 — Modelos e OpenRouter
 

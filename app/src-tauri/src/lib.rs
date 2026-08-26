@@ -7,6 +7,7 @@ use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 #[cfg(target_os = "macos")]
 const TRAFFIC_LIGHTS_Y: f32 = 37.0;
 
+mod acp;
 mod adapters;
 mod agent;
 mod approval;

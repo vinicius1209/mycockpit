@@ -4003,3 +4003,40 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   servidor SEM oauth continua instalável nos dois motores.
 - **O plano fechou.** F1 a F5 entregues, builds #286 a #290.
 - **Verificado:** `cargo` 566 (2 novos), `tsc` 0, `vitest` 3249, 10 guardas.
+
+### ADR-107 — o canal de permissão do OpenCode existe, e é ACP ✅
+- **Contexto (26/08/2026):** o F3 do `docs/opencode-openrouter-plan.md` estava
+  parado com o contrato lido e o round-trip impossível: o
+  `POST /api/session/{id}/prompt` do `serve` admitia o prompt e **nunca
+  executava**, mesmo com banco e credencial sãos.
+- **A pista veio de um processo órfão.** Ao limpar os testes sobrou um
+  `opencode acp` que não era meu: era do **Zed**. O editor não usa a API HTTP,
+  usa **ACP** (Agent Client Protocol), JSON-RPC sobre stdio. Eu estava
+  investigando o transporte errado.
+- **Medido ponta a ponta, e funciona:** o turno PARA num
+  `session/request_permission`, com `toolCall` (título já formatado, `kind`,
+  `rawInput`) e as opções `allow_once | allow_always | reject_once`. Respondendo
+  `{"outcome":{"outcome":"selected","optionId":"once"}}`, a ferramenta executou
+  (`tool_call_update status=completed`, saída `oi-frota`), o texto streamou e o
+  turno fechou em `stopReason: end_turn` com usage trazendo `cachedReadTokens`
+  separado. **É exatamente o que a fase pedia, e o `serve` nunca entregou.**
+- **O ACP ganha do `serve` em tudo que importa aqui** (permissão real, streaming,
+  raciocínio, desfecho honesto, cache separado) e ainda **não é dialeto de um
+  fornecedor**: é protocolo padrão, então quem falar ACP entra sem tradução
+  nova. Por isso o módulo se chama `acp`, não `opencode_algo`.
+- **A armadilha que virou teste:** `session/request_permission` tem `id`, logo é
+  PEDIDO e exige resposta. Tratá-lo como notificação **pendura o turno para
+  sempre**, esperando um humano que nunca foi chamado — foi o que aconteceu na
+  primeira tentativa aqui, e o `session/prompt` voltou `null` depois de 120s.
+- **`cancelled` não é `reject`.** O ACP tem palavra própria para "ninguém
+  decidiu", e o app usa ela quando a missão aborta. Juntar as duas repetiria o
+  defeito do ADR-099, onde o registro dizia que o humano recusou sem terem
+  perguntado a ele.
+- **Entregue a camada PURA, de propósito, antes do spawn.** A tradução é onde os
+  erros de protocolo moram, e ela pode ser testada contra os payloads REAIS
+  capturados sem subir processo nenhum. Também decidido ali: raciocínio não vira
+  texto do assistente, e só o DESFECHO da ferramenta vira `ToolResult` (o
+  `in_progress` chega várias vezes com a saída crescendo).
+- **Falta** o transporte (spawn + stdio + fila de pedidos), que é a fase
+  seguinte.
+- **Verificado:** `cargo` 575 (9 novos), `tsc` 0, 10 guardas.
