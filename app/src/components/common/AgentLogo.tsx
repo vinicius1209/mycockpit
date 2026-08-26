@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils"
 
 /**
  * Logos OFICIAIS de cada code agent, do produto e não da empresa: Claude Code,
- * Codex e Antigravity.
+ * Codex, Antigravity e OpenCode.
  *
  * POR QUE VENDORIZADO e não como dependência: os SVGs vêm da coleção
  * `@lobehub/icons` (MIT, github.com/lobehub/lobe-icons), que tem 903 ícones e
@@ -24,6 +24,7 @@ export const AGENT_LOGO_LABEL: Record<string, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
   agy: "Antigravity",
+  opencode: "OpenCode",
 }
 
 function Claude({ className }: { className?: string }) {
@@ -52,6 +53,24 @@ function Antigravity({ className }: { className?: string }) {
 
 /** Logo do agent. `null` para agent sem logo conhecido — não inventa símbolo
  *  (a lição do "C": marca que precisa de legenda não é marca). */
+/** OpenCode. Geometria do `opencode.ai/favicon.svg` (canvas 512 oficial), com
+ *  os preenchimentos adaptados a `currentColor` — mesma regra do Codex e do
+ *  Antigravity aqui: monocromático obedece ao tema. O `viewBox` de 512 fica
+ *  como está; ele escala, e reencaixar a mão é como marca vira desenho torto. */
+function OpenCode({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 512 512" className={className} aria-hidden="true" fill="none">
+      <path d="M320 224V352H192V224H320Z" fill="currentColor" fillOpacity="0.28" />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
 export function AgentLogo({
   agent,
   className,
@@ -63,6 +82,7 @@ export function AgentLogo({
   if (agent === "claude-code" || agent === "") return <Claude className={cls} />
   if (agent === "codex") return <Codex className={cls} />
   if (agent === "agy") return <Antigravity className={cls} />
+  if (agent === "opencode") return <OpenCode className={cls} />
   return null
 }
 

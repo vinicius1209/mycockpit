@@ -17,6 +17,7 @@
 // budget*, unattended*, worktree, history…) são o contrato. Nada de efeito
 // aqui dentro: sem awaits, sem stores, sem invoke — só decisão.
 
+import { recoveryMessage } from "@/lib/cotaDoTurno"
 import type { ChatItem } from "@/store/chat"
 import type {
   MissionGatePolicy,
@@ -31,7 +32,6 @@ import {
   gateOutcome,
   isRecoverableFailure,
   phaseText,
-  recoveryMessage,
   reviewerApproved,
   type GateOutcome,
   type PhaseResult,
@@ -146,6 +146,11 @@ export function failureTransition(
   result: PhaseResult,
   phaseIndex: number,
   maxCostUsd: number | null,
+  /** Quem ACABOU de rodar. Opcional pra não quebrar chamador antigo; com ele,
+   *  o card de recuperação nomeia a COTA que estourou em vez de dizer só
+   *  "escolha outro agent" — que parou de significar "outra cota" quando o
+   *  OpenCode entrou (ver `lib/cotaDoTurno`). */
+  deQuem?: { agent: string; model: string | null },
 ): FailureTransition {
   if (result.budgetExceeded) {
     const teto = maxCostUsd ?? 0
@@ -164,7 +169,7 @@ export function failureTransition(
   return {
     kind: "recovery",
     error: result.error ?? "falha recuperável",
-    message: recoveryMessage(result),
+    message: recoveryMessage(result, deQuem),
     abandonReason:
       result.error ?? "fase parou por limite (recuperação abandonada)",
   }

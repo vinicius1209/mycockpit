@@ -173,7 +173,7 @@ mesma sonda, mesmo adapter, mesmo ledger.
 - Configurar chave: o app MOSTRA o caminho (`opencode providers login`), não
   conduz o fluxo — mesma regra do `gh auth login` no cartão de Serviços.
 
-### F5 — Rever o aviso de limite e o handoff, agora com 4 candidatos
+### F5 ✅ — O aviso de limite com 4 candidatos (26/08/2026)
 
 O pedido explícito. O que muda com um 4º motor:
 
@@ -181,10 +181,10 @@ O pedido explícito. O que muda com um 4º motor:
   Hoje, se o Claude bate no limite, trocar pro Codex pode bater no limite do
   Codex. O `opencode-go` é plano SEPARADO (US$ 10/mês) e não divide cota com
   nenhum dos três. É o melhor destino de fuga que o app pode ter.
-- **`usageWindow: null`**, então o medidor não mostra janela pra ele. Isso é
-  honesto, mas incompleto: o `opencode-go` TEM teto em dólar. Antes de prometer
-  medidor, medir se `opencode stats` expõe isso de forma consumível — e se não
-  expuser, dizer "sem medidor" em vez de inventar barra.
+- **`usageWindow: null` CONFIRMADO por medida.** `opencode stats` devolve
+  histórico (US$ 111,50 em 198 dias, 471 sessões), não janela: sem cota, sem
+  reset, sem percentual. Não há barra a mostrar, e inventar uma era o risco que
+  esta fase existia pra evitar.
 - **O handoff melhora sozinho** no que já existe: o `-s <id>`/`--fork` dá
   retomada de sessão nativa, e o `session.next.context.updated` dá o número real
   do contexto — o que hoje é estimativa por catálogo.

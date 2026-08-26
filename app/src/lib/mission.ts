@@ -512,15 +512,6 @@ export function isRecoverableFailure(result: PhaseResult): boolean {
   return false
 }
 
-/** Mensagem humana do card de recuperação: explica a pausa e o que fazer. O
- *  sinal FORTE (limit) e o heurístico têm textos levemente diferentes. */
-export function recoveryMessage(result: PhaseResult): string {
-  const hitLimit = result.items.some((it) => it.kind === "limit")
-  const base = hitLimit
-    ? "A fase bateu num limite de uso do agent."
-    : "A fase parou por limite de uso, espera ou crédito."
-  return `${base} Escolha outro agent/modelo para retomar de onde parou (o worktree e o handoff já estão prontos).`
-}
 
 // ── Budget ──
 

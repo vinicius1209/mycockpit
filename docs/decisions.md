@@ -3669,3 +3669,42 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   `console.*` não alcança chamada quebrada em várias linhas com interpolação. A
   linha voltou a caber numa só, igual à do agy.
 - **Verificado:** `cargo` 542 (9 novos), `tsc` 0, `vitest` 3228, 9 guardas.
+
+### ADR-097 — F5: "outro agent" parou de significar "outra cota" ✅
+- **Contexto (26/08/2026):** o usuário pediu para rever o aviso de limite "agora
+  que teremos um novo candidato". A revisão achou que o 4º motor não só
+  acrescenta uma saída — ele **quebra a premissa** do card de recuperação.
+- **A premissa antiga era verdadeira por construção:** cada motor tinha um dono
+  de cota (claude→anthropic, codex→openai, agy→google), então "escolha outro
+  agent" ERA "escolha outra cota". O card podia dizer isso e estar certo.
+- **O OpenCode quebra isso, e para melhor:** ele alcança vários provedores, e
+  alguns são os MESMOS que os outros motores usam. `opencode` com modelo
+  `openai/*` consome a assinatura do ChatGPT — **a mesma do Codex**. Trocar de
+  um pro outro num rate limit manda o usuário bater na mesma porta, e o app
+  teria oferecido isso de cara limpa.
+- **A pergunta certa deixou de ser "qual agent?" e passou a ser "qual PROVEDOR
+  paga?"** (`provedorDaCota`). No OpenCode a resposta vem do dialeto
+  `provider/model`, não do motor.
+- **O que a função NÃO sabe, e admite:** OpenCode sem modelo escolhido devolve
+  `null` (quem decide é o config dele); e dois provedores distintos podem cobrar
+  da mesma conta num BYOK, o que ninguém tem como ver daqui. Por isso
+  `competemPelaMesmaCota` devolve `false` quando não sabe — **bloquear por
+  ignorância deixaria o usuário sem saída num limite que talvez nem existisse do
+  outro lado**.
+- **O `opencode-go` é a primeira cota realmente separada** do roster: não divide
+  com nenhum dos três. Coberto por teste, um por motor.
+- **`usageWindow: null` foi CONFIRMADO por medida, não por preguiça.**
+  `opencode stats` devolve histórico (US$ 111,50 em 198 dias, 471 sessões), não
+  janela: sem cota, sem reset, sem percentual. Não há barra a mostrar. Era
+  exatamente o "prometer barra sem medir" que o plano proibia.
+- **`recoveryMessage` mudou de arquivo, e a catraca foi quem forçou o desenho
+  certo:** `lib/mission.ts` está congelado acima do teto, então a função foi
+  morar em `lib/cotaDoTurno`, junto da regra de que ela passou a depender. O
+  `mission.ts` ENCOLHEU de 546 pra 537 e a baseline apertou junto.
+- **O logo do OpenCode entrou** com a geometria do `opencode.ai/favicon.svg`
+  adaptada a `currentColor`, seguindo a regra escrita no próprio `AgentLogo`:
+  logo do PRODUTO, vendorizado, monocromático obedece ao tema. Sem ele o motor
+  ficaria fora da trilha do composer, que filtra por quem tem logo — disponível
+  e invisível.
+- **Verificado:** `cargo` 542, `tsc` 0, `vitest` 3238 (10 novos), 9 guardas,
+  e2e 27/27.

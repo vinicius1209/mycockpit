@@ -21,7 +21,7 @@
     "lib/fleet/derive.ts": 806,
     "lib/fleet/send.test.ts": 995,
     "lib/fleet/send.ts": 853,
-    "lib/mission.ts": 546,
+    "lib/mission.ts": 537,
     "lib/sdd.ts": 510,
     "store/chat.ts": 2425,
     "store/fusion.ts": 518,

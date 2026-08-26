@@ -710,7 +710,7 @@ export const useMission = create<MissionState>((set, get) => {
           // transição de falha (motor): teto intra-fase (MH2.2) vem ANTES do
           // recuperável — o cancel do corte pode deixar rastro de "limite" no
           // transcript e teto estourado nunca vira card de recuperação.
-          const fail = failureTransition(result, i, after.maxCostUsd)
+          const fail = failureTransition(result, i, after.maxCostUsd, engine.phases[i])
           if (fail.kind === "teto-fase") {
             // MESMO desfecho do check entre fases (error de teto), com o
             // notice dizendo ONDE mordeu.
