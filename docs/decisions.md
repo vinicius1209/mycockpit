@@ -3811,3 +3811,37 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **Efeito na tela:** Claude e Codex destravam de verdade; o Agy volta a dizer
   "sem roteamento (nativo do CLI)", que é a verdade.
 - **Verificado:** `cargo` 546, `tsc` 0, `vitest` 3241, 9 guardas.
+
+### ADR-101 — "não suportado" era falso, e quem desmentiu foi o próprio agy ✅
+- **Contexto (26/08/2026):** o usuário perguntou ao agy se ele tinha suporte a
+  MCP. Resposta do CLI: *"Sim, o Antigravity tem suporte completo a MCP, tanto
+  para servidores locais (Stdio) quanto remotos"*, e o motivo de não ter usado
+  era só o `mcp_config.json` estar vazio. **O CLI está certo e o Frota estava
+  escrevendo "não suportado" na tela.**
+- **Medido no binário, não na conversa** (agy **1.1.21**, nossa evidência
+  documentava a 1.1.13): existe `agy mcp add|remove|list|enable|disable`, com
+  `--type stdio|http`, `--header` e `--env`. O `mcp_config.json` do usuário
+  está vazio (0 bytes) e `agy mcp list` diz "No MCP servers configured",
+  batendo com a resposta do CLI.
+- **O que NÃO mudou, e é o que decide a capability:** `agy mcp add` não tem
+  flag de escopo, então escreve no config GLOBAL, e o `agy --help` da 1.1.21
+  segue sem opção de MCP por-run. Testado também config por PROJETO
+  (`.gemini/config/mcp_config.json` no cwd): **ignorado**. Logo
+  `managed_mcp: false` continua CORRETO; o que estava velho era a evidência.
+- **A distinção que faltava, e que a copy atropelava:** `managed_mcp: false`
+  quer dizer *"o Frota não roteia MCP para este motor"*, jamais *"este motor
+  não fala MCP"*. A tela juntava as duas e escolhia a frase errada. Agora
+  `roteiaMcpGerenciado` vem do backend e a linha diz **"sem roteamento do Frota
+  (configure no CLI)"**: nomeia de quem é o limite e aponta o caminho que
+  funciona.
+- **A frase nova ganha do `nativeReason`** quando as duas valem: o limite do
+  MOTOR é o fato dominante e o único acionável (logar no app não ajudaria em
+  nada). Guarda dos dois lados: quem roteia mantém as frases antigas.
+- **Sobre escopo por-run no agy** (pergunta do usuário: dá pra criar essa
+  camada?): medido que `HOME` reposiciona o config (`agy mcp list` enxerga o
+  `mcp_config.json` do HOME falso) e que `ANTIGRAVITY_EXECUTABLE_DATA_DIR`
+  **não**. Mas o token OAuth mora em `~/.gemini/antigravity-cli/`, dentro da
+  MESMA árvore: trocar `HOME` cru derruba o login, e `HOME` afeta todo o
+  processo (git, ssh, npm), não só o agy. Registrado como opção com custo, não
+  como caminho aberto.
+- **Verificado:** `cargo` 546, `tsc` 0, `vitest` 3243, 9 guardas.

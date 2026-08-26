@@ -25,6 +25,11 @@ export interface McpAgentState {
    *  quem sabe do transporte, do segredo literal e da credencial no Keychain.
    *  Opcional porque estado SERIALIZADO antes desta versão não tem o campo. */
   roteavelPeloApp?: boolean
+  /** Este MOTOR aceita MCP gerenciado pelo app (capability `managed_mcp`)?
+   *  `false` significa "o Frota não roteia MCP para ele", NUNCA "ele não fala
+   *  MCP": o agy fala, tem `agy mcp add` desde a 1.1.13, e o que falta é
+   *  escopo por-run (a config dele é global e permanente). */
+  roteiaMcpGerenciado?: boolean
   enabled: boolean
   required: boolean
   /** Binding marcado para dirigir o navegador do projeto: o plano do run
@@ -273,7 +278,10 @@ export function mcpAgentUtilizavel(
  *  roteamento gerenciado para os outros agents. */
 export function mcpAgentStatusLabel(
   server: Pick<McpServer, "nativeReason">,
-  state: Pick<McpAgentState, "compatible" | "roteavelPeloApp" | "health">,
+  state: Pick<
+    McpAgentState,
+    "compatible" | "roteavelPeloApp" | "roteiaMcpGerenciado" | "health"
+  >,
 ): string {
   if (state.compatible) return mcpHealthLabel(state.health)
   // "roteado pelo Frota" agora sai do MESMO campo que libera o interruptor,
@@ -281,6 +289,13 @@ export function mcpAgentStatusLabel(
   // `nativeReason === "oauth"` + login, sem saber de transporte SSE nem de
   // segredo literal: dizia "roteado" para casos que o proxy recusa.
   if (state.roteavelPeloApp) return "roteado pelo Frota"
+  // O motor que não aceita MCP gerenciado NÃO é "não suportado": o CLI dele
+  // fala MCP muito bem, o que falta é o app conseguir escopar por run. Chamar
+  // isso de "não suportado" foi o próprio agy que desmentiu, dizendo ao
+  // usuário que tem suporte completo. A frase agora diz de quem é o limite.
+  if (state.roteiaMcpGerenciado === false) {
+    return "sem roteamento do Frota (configure no CLI)"
+  }
   return server.nativeReason ? "sem roteamento (nativo do CLI)" : "não suportado"
 }
 

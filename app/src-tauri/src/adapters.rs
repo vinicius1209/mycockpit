@@ -507,13 +507,21 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
 /// estruturado, usage e resume — três campos que estavam `false` por versão
 /// velha, não por medição. Cada campo abaixo cita a evidência e a data.
 pub const AGY_CAPS: Capabilities = Capabilities {
-    // agy 1.1.13: FALA MCP por dentro (a tool `call_mcp_tool` está na lista de
-    // 56 tools do evento `init`, capturado 14/08/2026), mas a configuração é
-    // GLOBAL e só por arquivo (`~/.gemini/config/mcp_config.json`) — o
-    // `--help` da 1.1.13 não tem nenhuma flag de config MCP por-run. Injetar
-    // servidor nosso exigiria reescrever o config do usuário, o oposto de
-    // "por-run". Fica false: o mc-work/mc-context nunca são prometidos, e o
-    // control plane de MCPs externos não roteia este motor.
+    // agy 1.1.21 (medido 26/08/2026): o motor SUPORTA MCP, e desde a 1.1.13
+    // ganhou CLI própria (`agy mcp add|remove|list|enable|disable`, stdio e
+    // http, com `--header` e `--env`). A evidência de antes ("só por arquivo,
+    // sem CLI") está velha e foi trocada por esta.
+    //
+    // O que NÃO mudou é o que decide este campo: `agy mcp add` não tem flag de
+    // escopo, então escreve no config GLOBAL
+    // (`~/.gemini/config/mcp_config.json`), e o `agy --help` da 1.1.21 segue
+    // sem qualquer opção de MCP por-run. Injetar servidor nosso exigiria
+    // reescrever (e depois desfazer) a config permanente do usuário, o oposto
+    // de "por-run" e um efeito colateral que a casa não aceita.
+    //
+    // Portanto: `managed_mcp: false` significa "o FROTA não roteia MCP para
+    // este motor", NUNCA "este motor não fala MCP". Quem escreve copy a partir
+    // deste campo tem de dizer a primeira frase (ver `mcpAgentStatusLabel`).
     work_mcp: false,
     context_mcp: false,
     managed_mcp: false,

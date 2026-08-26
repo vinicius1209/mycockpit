@@ -327,6 +327,13 @@ pub struct McpAgentState {
     /// `false`. O planejador do run JÁ raciocinava com `roteavel_por_proxy`;
     /// quem não sabia era o portão do binding e o estado que chega na UI.
     pub roteavel_pelo_app: bool,
+    /// Este MOTOR aceita MCP gerenciado pelo app (capability `managed_mcp`)?
+    ///
+    /// `false` quer dizer "o Frota não roteia MCP para ele", e NUNCA "ele não
+    /// fala MCP". O agy fala (tem até `agy mcp add`), só que a config dele é
+    /// global e permanente, então não há como injetar por run. A tela precisa
+    /// deste campo pra não chamar isso de "não suportado", que é falso.
+    pub roteia_mcp_gerenciado: bool,
     pub enabled: bool,
     pub required: bool,
     /// Binding marcado para dirigir o navegador do projeto (B2.2).
@@ -1317,6 +1324,8 @@ fn agent_state(
         agent: agent.into(),
         compatible: server.compatible(agent),
         roteavel_pelo_app: roteavel_por_proxy(server, agent),
+        roteia_mcp_gerenciado: crate::adapters::capabilities_of(agent)
+            .is_some_and(|caps| caps.managed_mcp),
         enabled: binding.is_some(),
         required: binding.as_ref().is_some_and(|b| b.0),
         browser: binding.as_ref().is_some_and(|b| b.2),
@@ -2831,6 +2840,7 @@ mod tests {
                 compatible: true,
                 // nativo já basta; o proxy não precisa entrar neste fixture.
                 roteavel_pelo_app: false,
+                roteia_mcp_gerenciado: true,
                 enabled: bound,
                 required: false,
                 browser: false,

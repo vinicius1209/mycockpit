@@ -404,6 +404,40 @@ describe("proxy MCP autenticado (A2)", () => {
     expect(mcpAgentUtilizavel(preso)).toBe(false)
   })
 
+  it("motor que não roteia não é chamado de 'não suportado'", () => {
+    // O agy DESMENTIU o app: perguntado, respondeu que tem suporte completo a
+    // MCP (stdio e http), e está certo. O que falta é escopo por-run, porque a
+    // config dele é global. O limite é do Frota, e a frase tem de dizer isso.
+    const agy = {
+      compatible: false,
+      roteiaMcpGerenciado: false,
+      health: "unchecked" as const,
+    }
+    expect(mcpAgentStatusLabel({ nativeReason: null }, agy)).toBe(
+      "sem roteamento do Frota (configure no CLI)",
+    )
+    // Vale também quando o servidor TEM causa nativa: o limite do motor é o
+    // fato dominante, e é o único acionável (não adianta logar no app).
+    expect(mcpAgentStatusLabel({ nativeReason: "oauth" }, agy)).toBe(
+      "sem roteamento do Frota (configure no CLI)",
+    )
+  })
+
+  it("motor que roteia mantém as frases antigas", () => {
+    // Guarda do outro lado: a frase nova não pode vazar pra quem roteia.
+    const capaz = {
+      compatible: false,
+      roteiaMcpGerenciado: true,
+      health: "unchecked" as const,
+    }
+    expect(mcpAgentStatusLabel({ nativeReason: "oauth" }, capaz)).toBe(
+      "sem roteamento (nativo do CLI)",
+    )
+    expect(mcpAgentStatusLabel({ nativeReason: null }, capaz)).toBe(
+      "não suportado",
+    )
+  })
+
   it("estado gravado ANTES deste campo não vira 'roteável' por omissão", () => {
     // `roteavelPeloApp` é opcional porque snapshot antigo não o tem. Ausente
     // tem de significar "não sei, então não libera", nunca `true` por descuido.
