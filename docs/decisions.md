@@ -3913,3 +3913,31 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   **Testada nos dois sentidos:** com um caminho plantado ela falha com exit 1 e
   aponta arquivo e linha.
 - **Verificado:** `cargo` 555 (8 novos), `tsc` 0, `vitest` 3243, 10 guardas.
+
+### ADR-104 — F3: escopo global ganha AÇÃO, não interruptor ✅
+- **Contexto (26/08/2026):** F3 do `docs/mcp-qualquer-agent-plan.md`, o gesto
+  humano para instalar MCP num motor de escopo global (hoje o agy).
+- **A decisão de desenho, e o motivo:** a linha do agy **não** ganha
+  interruptor. Interruptor comunica *"eu sei como está e controlo"*, e o app
+  **não sabe** o que já existe no `agy mcp list` do usuário. Mostrar um seria a
+  mesma classe de mentira do ADR-100, só que na direção oposta: ali o rótulo
+  prometia e o controle negava; aqui o controle prometeria um estado que
+  ninguém consultou. Escopo global ganha **ação**, e `gestoDaLinha` é a função
+  pura que decide isso (com teste dos três casos).
+- **A consequência aparece ANTES do clique**, não depois: "vale para todos os
+  projetos e continua depois da missão; quem escreve é o CLI do agent, no lugar
+  que ele escolher nesta máquina". Escopo global não se desfaz no fim do run, e
+  quem lê precisa saber alcance E duração. Teste cobra as três partes da frase.
+- **Sem estado otimista, de propósito.** O padrão da casa é aplicar na hora e
+  reverter no erro, mas aqui não há o que aplicar: a única verdade é a frase
+  que o CLI devolver. O toast mostra **a voz do CLI** ("Added MCP server …"),
+  e no erro mostra o stderr dele, nunca um "não deu certo" nosso.
+- **A conversão recusa em vez de instalar quebrado.** Servidor descoberto
+  costuma guardar REFERÊNCIA de segredo, não valor (`env_vars`,
+  `bearerTokenEnvVar`, `envHttpHeaders`). Repassar isso instalaria um servidor
+  que falha na primeira chamada, e a tela diria "instalado". `spec_de` recusa,
+  NOMEIA o que falta e manda instalar pelo CLI, onde as variáveis existem.
+- **`stdin` fechado no spawn:** o comando tem de ser não-interativo (medido que
+  o `agy mcp add` é). Se um dia pedir input, é melhor falhar na hora que
+  pendurar o app esperando alguém que não está lá.
+- **Verificado:** `cargo` 558, `tsc` 0, `vitest` 3247, 10 guardas.

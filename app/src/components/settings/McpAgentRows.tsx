@@ -7,6 +7,8 @@
 import { AlertTriangle, CheckCircle2, KeyRound, Loader2, RefreshCcw, XCircle } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import {
+  CONSEQUENCIA_ESCOPO_GLOBAL,
+  gestoDaLinha,
   mcpAgentStatusLabel,
   mcpAgentUtilizavel,
   type McpAgentState,
@@ -48,6 +50,8 @@ export function McpAgentRows({
   checkingKeys,
   onUpdate,
   onCheck,
+  onInstalarNoCli,
+  instalandoKeys,
 }: {
   server: McpServer
   browser: BrowserStatus | null
@@ -61,6 +65,9 @@ export function McpAgentRows({
     >,
   ) => void
   onCheck: (server: McpServer, state: McpAgentState) => void
+  /** Gesto humano do escopo global: roda o comando do CLI do agent. */
+  onInstalarNoCli: (server: McpServer, state: McpAgentState) => void
+  instalandoKeys: ReadonlySet<string>
 }) {
   return (
     <div className="mt-3 divide-y divide-border/40 rounded-lg border border-border/50 bg-background/30">
@@ -76,6 +83,10 @@ export function McpAgentRows({
         // saem do MESMO fato. Era a divergência entre eles que fazia a tela
         // prometer "roteado pelo Frota" com o controle travado.
         const utilizavel = mcpAgentUtilizavel(state)
+        // Escopo global não ganha interruptor: o app não sabe o que já existe
+        // no CLI do usuário, e interruptor comunica "eu sei e controlo".
+        const gesto = gestoDaLinha(state)
+        const instalando = instalandoKeys.has(key)
         return (
           <div key={agent.id} className="px-2.5 py-1.5">
             <div className="flex min-h-10 items-center gap-2">
@@ -155,6 +166,20 @@ export function McpAgentRows({
                   </select>
                 </>
               )}
+              {gesto === "acao-no-cli" && (
+                <button
+                  onClick={() => onInstalarNoCli(server, state)}
+                  disabled={instalando}
+                  title={CONSEQUENCIA_ESCOPO_GLOBAL}
+                  className="shrink-0 rounded bg-background/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                >
+                  {instalando ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    "Instalar no CLI"
+                  )}
+                </button>
+              )}
               {utilizavel && (
                 <button
                   onClick={() => onCheck(server, state)}
@@ -171,6 +196,11 @@ export function McpAgentRows({
                 </button>
               )}
             </div>
+            {gesto === "acao-no-cli" && (
+              <div className="pb-1 pl-[3.25rem] text-[11px] leading-snug text-muted-foreground">
+                {CONSEQUENCIA_ESCOPO_GLOBAL}
+              </div>
+            )}
             {browserNotice && (
               <div className="flex items-start gap-1.5 pb-1 pl-[3.25rem] text-[11px] leading-snug text-st-warning">
                 <AlertTriangle className="mt-px size-3.5 shrink-0" />

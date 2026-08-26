@@ -298,6 +298,17 @@ impl McpEscopo {
         matches!(self, McpEscopo::PorRun)
     }
 
+    /// Rótulo estável para o front. Não é `Debug`: nome de variante muda com
+    /// refactor, e a tela não pode quebrar por causa disso.
+    pub fn rotulo(self) -> &'static str {
+        match self {
+            McpEscopo::PorRun => "por-run",
+            McpEscopo::PorProjeto => "por-projeto",
+            McpEscopo::Global => "global",
+            McpEscopo::Nenhum => "nenhum",
+        }
+    }
+
     /// O CLI fala MCP, mesmo que o app não consiga escopar. É a distinção que
     /// faltava: "o Frota não roteia" nunca é "o motor não suporta".
     pub fn cli_fala_mcp(self) -> bool {

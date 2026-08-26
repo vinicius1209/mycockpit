@@ -4,6 +4,8 @@ import {
   initialMcpProjectId,
   mcpAgentStatusLabel,
   mcpAgentUtilizavel,
+  gestoDaLinha,
+  CONSEQUENCIA_ESCOPO_GLOBAL,
   mcpAuthActionLabel,
   mcpAuthHint,
   mcpAuthLabel,
@@ -436,6 +438,50 @@ describe("proxy MCP autenticado (A2)", () => {
     expect(mcpAgentStatusLabel({ nativeReason: null }, capaz)).toBe(
       "não suportado",
     )
+  })
+
+  it("escopo global oferece AÇÃO, nunca interruptor", () => {
+    // Interruptor comunica "eu sei como está e controlo". O app NÃO sabe o que
+    // já existe no `agy mcp list` do usuário, então mostrar um seria a mesma
+    // classe de mentira do ADR-100, na direção oposta.
+    expect(
+      gestoDaLinha({
+        compatible: false,
+        roteavelPeloApp: false,
+        escopo: "global",
+      }),
+    ).toBe("acao-no-cli")
+  })
+
+  it("quem o app controla de verdade continua com interruptor", () => {
+    expect(
+      gestoDaLinha({ compatible: true, escopo: "por-run" }),
+    ).toBe("interruptor")
+    // E roteado pelo proxy do app também: ali o app sabe e controla.
+    expect(
+      gestoDaLinha({
+        compatible: false,
+        roteavelPeloApp: true,
+        escopo: "por-run",
+      }),
+    ).toBe("interruptor")
+  })
+
+  it("escopo sem receita não inventa gesto", () => {
+    // por-projeto ainda não tem escrita (é o F4); estado antigo não tem campo.
+    expect(
+      gestoDaLinha({ compatible: false, escopo: "por-projeto" }),
+    ).toBe("nada")
+    expect(gestoDaLinha({ compatible: false })).toBe("nada")
+  })
+
+  it("a consequência do escopo global é dita ANTES do clique", () => {
+    // Escopo global não se desfaz no fim do run. Quem lê precisa saber os dois
+    // fatos: alcance (todos os projetos) e duração (continua depois).
+    expect(CONSEQUENCIA_ESCOPO_GLOBAL).toContain("todos os projetos")
+    expect(CONSEQUENCIA_ESCOPO_GLOBAL).toContain("continua depois")
+    // E de quem é a mão que escreve, que é o ponto do ADR-103.
+    expect(CONSEQUENCIA_ESCOPO_GLOBAL).toContain("CLI do agent")
   })
 
   it("estado gravado ANTES deste campo não vira 'roteável' por omissão", () => {

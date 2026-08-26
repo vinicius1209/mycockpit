@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Loader2, RefreshCcw, Server, ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
+import { invoke } from "@tauri-apps/api/core"
 import { Button } from "@/components/ui/button"
 import { PillSelect } from "@/components/ui/PillSelect"
 import { useApp } from "@/store/app"
@@ -82,6 +83,10 @@ export function McpSettings() {
   const [checkingKeys, setCheckingKeys] = useState<ReadonlySet<string>>(
     new Set(),
   )
+  // Instalação no CLI do agent em voo (escopo global). Separado do busyKeys
+  // porque não é write de binding: é comando externo, e o desfecho é a frase
+  // que o CLI devolver.
+  const [instalando, setInstalando] = useState<ReadonlySet<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   // Login do PRÓPRIO app nos MCPs com OAuth (A1). Só existe para servidores
   // cuja config declara o bloco `oauth`; os demais nem mostram a linha.
@@ -360,6 +365,37 @@ export function McpSettings() {
     }
   }
 
+  /** Gesto humano do escopo global (F3): roda o comando do CLI do agent.
+   *
+   *  Não há estado otimista aqui de propósito. O app NÃO sabe o que já está
+   *  instalado no CLI do usuário, então não tem o que "aplicar antes e
+   *  confirmar depois": a única verdade é a frase que o CLI devolver, e é ela
+   *  que aparece no toast. */
+  async function instalarNoCli(server: McpServer, state: McpAgentState) {
+    if (!project) return
+    const key = `${server.id}:${state.agent}`
+    if (instalando.has(key)) return
+    setInstalando((s) => new Set(s).add(key))
+    try {
+      const dito = await invoke<string>("install_mcp_in_agent", {
+        projectPath: project.path,
+        serverId: server.id,
+        agent: state.agent,
+        instalar: true,
+      })
+      // A voz do CLI é a evidência; o app não reescreve o que ele disse.
+      toast.success(dito || `${server.name} instalado no ${state.agent}`)
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setInstalando((s) => {
+        const n = new Set(s)
+        n.delete(key)
+        return n
+      })
+    }
+  }
+
   if (!project) {
     return (
       <div className="rounded-lg border border-border/60 bg-secondary/20 p-4 text-[13px] text-muted-foreground">
@@ -560,6 +596,8 @@ export function McpSettings() {
                   busyKeys={busyKeys}
                   checkingKeys={checkingKeys}
                   onUpdate={(s, st, patch) => void update(s, st, patch)}
+                  onInstalarNoCli={(s, st) => void instalarNoCli(s, st)}
+                  instalandoKeys={instalando}
                   onCheck={(s, st) => void check(s, st)}
                 />
               ) : (

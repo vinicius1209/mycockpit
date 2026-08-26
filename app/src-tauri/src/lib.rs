@@ -692,6 +692,7 @@ pub fn run() {
             github::gh_switch_account,
             mcp_control::discover_mcp_servers,
             mcp_control::set_mcp_binding,
+            mcp_control::install_mcp_in_agent,
             mcp_control::check_mcp_server,
             mcp_control::mcp_bindings_summary,
             mcp_auth::mcp_oauth_login,

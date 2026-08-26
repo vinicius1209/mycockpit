@@ -30,6 +30,9 @@ export interface McpAgentState {
    *  MCP": o agy fala, tem `agy mcp add` desde a 1.1.13, e o que falta é
    *  escopo por-run (a config dele é global e permanente). */
   roteiaMcpGerenciado?: boolean
+  /** Escopo de MCP do motor. Opcional porque estado gravado antes desta versão
+   *  não o tem, e aí a linha não oferece gesto nenhum (em vez de chutar). */
+  escopo?: McpEscopo
   enabled: boolean
   required: boolean
   /** Binding marcado para dirigir o navegador do projeto: o plano do run
@@ -272,6 +275,32 @@ export function mcpAgentUtilizavel(
 ): boolean {
   return state.compatible || state.roteavelPeloApp === true
 }
+
+/** Escopo de MCP do motor, espelho de `McpEscopo` (adapters.rs). */
+export type McpEscopo = "por-run" | "por-projeto" | "global" | "nenhum"
+
+/** O gesto que a linha oferece.
+ *
+ *  `interruptor` = o app controla o estado e sabe qual é (escopo por run).
+ *  `acao-no-cli` = o app NÃO sabe o que já está instalado no CLI do usuário,
+ *  então oferece uma ação, nunca um interruptor. Interruptor comunica "eu sei
+ *  como está e posso ligar/desligar"; oferecer um sem saber é a mesma classe de
+ *  mentira do ADR-100, só que na direção oposta.
+ *  `nada` = sem receita conhecida; a linha só informa. */
+export type GestoDaLinha = "interruptor" | "acao-no-cli" | "nada"
+
+export function gestoDaLinha(
+  state: Pick<McpAgentState, "compatible" | "roteavelPeloApp" | "escopo">,
+): GestoDaLinha {
+  if (mcpAgentUtilizavel(state)) return "interruptor"
+  return state.escopo === "global" ? "acao-no-cli" : "nada"
+}
+
+/** O que muda no mundo quando a pessoa aceita a ação. Aparece ANTES do clique,
+ *  porque escopo global não se desfaz sozinho no fim do run. */
+export const CONSEQUENCIA_ESCOPO_GLOBAL =
+  "Vale para todos os projetos e continua depois da missão. Quem escreve é o " +
+  "CLI do agent, no lugar que ele escolher nesta máquina."
 
 /** Rótulo da linha por agent. "não suportado" sozinho mente num servidor
  *  nativo-apenas: ele funciona no CLI que o definiu, o que não existe é o

@@ -113,6 +113,53 @@ pub fn uninstall_argv(agent: &str, nome: &str) -> Option<Vec<String>> {
     }
 }
 
+/// Converte um servidor DESCOBERTO no que o CLI do agent precisa receber.
+///
+/// `Err` quando a conversão exigiria um segredo que o app não tem. A entrada de
+/// origem costuma guardar REFERÊNCIA, não valor (`env_vars` lista nomes,
+/// `bearerTokenEnvVar` aponta uma variável, `envHttpHeaders` idem): repassar
+/// isso ao `agy mcp add` instalaria um servidor que falha na primeira chamada,
+/// e o usuário veria "instalado" com o servidor quebrado. Dizer que não dá, e
+/// nomear o que falta, é melhor que instalar mentindo.
+pub fn spec_de(nome: &str, launch: &crate::mcp_control::McpLaunchConfig) -> Result<McpSpec, String> {
+    let mut faltando: Vec<String> = Vec::new();
+    if !launch.env_vars.is_empty() {
+        faltando.extend(launch.env_vars.iter().cloned());
+    }
+    if let Some(v) = &launch.bearer_token_env_var {
+        faltando.push(v.clone());
+    }
+    faltando.extend(launch.env_http_headers.values().cloned());
+    if !faltando.is_empty() {
+        faltando.sort();
+        faltando.dedup();
+        return Err(format!(
+            "este MCP depende de valores que o Frota não guarda ({}). \
+             Instale pelo CLI do agent, onde essas variáveis existem.",
+            faltando.join(", ")
+        ));
+    }
+    let alvo = match launch.transport.as_str() {
+        "stdio" => McpAlvo::Stdio {
+            comando: launch
+                .command
+                .clone()
+                .ok_or("config stdio sem comando: nada a instalar")?,
+            args: launch.args.clone(),
+        },
+        "http" => McpAlvo::Http {
+            url: launch.url.clone().ok_or("config http sem url: nada a instalar")?,
+        },
+        outro => return Err(format!("transporte {outro} não tem receita de instalação")),
+    };
+    Ok(McpSpec {
+        nome: nome.to_string(),
+        alvo,
+        headers: launch.http_headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+        env: launch.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+    })
+}
+
 fn argv_agy_add(spec: &McpSpec) -> Vec<String> {
     let mut v: Vec<String> = vec!["agy".into(), "mcp".into(), "add".into()];
     // Flags primeiro, sempre. Medido: `agy mcp add --header "K: V" nome url`
@@ -275,6 +322,58 @@ mod tests {
             panic!("esperava arquivo de projeto")
         };
         assert!(!arq.contains('/'), "guardamos nome, nunca caminho: {arq}");
+    }
+
+    fn launch(transport: &str) -> crate::mcp_control::McpLaunchConfig {
+        crate::mcp_control::McpLaunchConfig {
+            transport: transport.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn converte_stdio_e_http_com_o_que_e_literal() {
+        let mut l = launch("stdio");
+        l.command = Some("npx".into());
+        l.args = vec!["-y".into(), "srv".into()];
+        l.env.insert("MODO".into(), "leitura".into());
+        let s = spec_de("fs", &l).unwrap();
+        assert_eq!(s.nome, "fs");
+        assert_eq!(s.env, vec![("MODO".to_string(), "leitura".to_string())]);
+        assert!(matches!(s.alvo, McpAlvo::Stdio { .. }));
+
+        let mut h = launch("http");
+        h.url = Some("https://x/mcp".into());
+        h.http_headers.insert("X-Cliente".into(), "frota".into());
+        let s = spec_de("api", &h).unwrap();
+        assert_eq!(s.headers, vec![("X-Cliente".to_string(), "frota".to_string())]);
+    }
+
+    #[test]
+    fn segredo_por_referencia_recusa_em_vez_de_instalar_quebrado() {
+        // A entrada de origem guarda o NOME da variável, não o valor. Instalar
+        // assim daria "instalado" na tela com o servidor falhando na primeira
+        // chamada, que é a pior combinação possível.
+        let mut l = launch("stdio");
+        l.command = Some("npx".into());
+        l.env_vars = vec!["GITHUB_TOKEN".into()];
+        let erro = spec_de("gh", &l).unwrap_err();
+        assert!(erro.contains("GITHUB_TOKEN"), "nomeia o que falta: {erro}");
+        assert!(erro.contains("não guarda"), "diz de quem é o limite: {erro}");
+
+        let mut h = launch("http");
+        h.url = Some("https://x/mcp".into());
+        h.bearer_token_env_var = Some("API_TOKEN".into());
+        assert!(spec_de("api", &h).unwrap_err().contains("API_TOKEN"));
+    }
+
+    #[test]
+    fn config_incompleta_nao_vira_comando_pela_metade() {
+        // stdio sem comando e http sem url não têm o que instalar. Melhor o
+        // erro aqui que um argv truncado chegando no CLI.
+        assert!(spec_de("x", &launch("stdio")).is_err());
+        assert!(spec_de("x", &launch("http")).is_err());
+        assert!(spec_de("x", &launch("sse")).unwrap_err().contains("sse"));
     }
 
     #[test]

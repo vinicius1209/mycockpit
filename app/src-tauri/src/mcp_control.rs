@@ -334,6 +334,11 @@ pub struct McpAgentState {
     /// global e permanente, então não há como injetar por run. A tela precisa
     /// deste campo pra não chamar isso de "não suportado", que é falso.
     pub roteia_mcp_gerenciado: bool,
+    /// Escopo de MCP deste motor, em minúsculas ("por-run", "por-projeto",
+    /// "global", "nenhum"). A tela precisa dele pra oferecer o gesto certo:
+    /// escopo global não tem interruptor, tem AÇÃO, porque o app não sabe o
+    /// que já está instalado no CLI do usuário e fingir que sabe seria pior.
+    pub escopo: String,
     pub enabled: bool,
     pub required: bool,
     /// Binding marcado para dirigir o navegador do projeto (B2.2).
@@ -1326,6 +1331,9 @@ fn agent_state(
         roteavel_pelo_app: roteavel_por_proxy(server, agent),
         roteia_mcp_gerenciado: crate::adapters::capabilities_of(agent)
             .is_some_and(|caps| caps.mcp_escopo.por_run()),
+        escopo: crate::adapters::capabilities_of(agent)
+            .map(|caps| caps.mcp_escopo.rotulo().to_string())
+            .unwrap_or_else(|| "nenhum".into()),
         enabled: binding.is_some(),
         required: binding.as_ref().is_some_and(|b| b.0),
         browser: binding.as_ref().is_some_and(|b| b.2),
@@ -1538,6 +1546,65 @@ fn upsert_binding(
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Instala (ou desinstala) um MCP no CLI de um agent de escopo GLOBAL.
+///
+/// É o gesto HUMANO do F3: nada aqui acontece sozinho, e a tela diz antes o
+/// que vai acontecer (vale pra todos os projetos, e continua depois do run).
+/// O app não escreve arquivo nenhum: quem escreve é o CLI do agent, no lugar
+/// que ELE escolher naquela máquina (ADR-103).
+///
+/// Devolve a frase do PRÓPRIO CLI em caso de sucesso ("Added MCP server …"),
+/// porque ela é a evidência do que aconteceu. Em caso de falha devolve o que
+/// ele escreveu no stderr, nunca um "não deu certo" nosso.
+#[tauri::command]
+pub async fn install_mcp_in_agent(
+    project_path: String,
+    server_id: String,
+    agent: String,
+    instalar: bool,
+) -> Result<String, String> {
+    validate_agent(&agent)?;
+    let servers = discover_live(&project_path).await;
+    let server = servers
+        .iter()
+        .find(|s| s.id == server_id)
+        .ok_or_else(|| "servidor não encontrado na descoberta atual".to_string())?;
+    let argv = if instalar {
+        let launch = server
+            .launch
+            .as_ref()
+            .ok_or_else(|| "este MCP não tem config de launch para instalar".to_string())?;
+        let spec = crate::mcp_instalacao::spec_de(&server.name, launch)?;
+        crate::mcp_instalacao::install_argv(&agent, &spec)
+    } else {
+        crate::mcp_instalacao::uninstall_argv(&agent, &server.name)
+    }
+    .ok_or_else(|| format!("{agent} não instala MCP por comando de CLI"))?;
+
+    let (bin, resto) = argv.split_first().ok_or("comando vazio")?;
+    let saida = tokio::process::Command::new(bin)
+        .args(resto)
+        // stdin fechado: o comando tem de ser não-interativo. Medido que o
+        // `agy mcp add` é; se algum dia pedir input, é melhor falhar na hora
+        // que pendurar o app esperando alguém que não está lá.
+        .stdin(std::process::Stdio::null())
+        .output()
+        .await
+        .map_err(|e| format!("não consegui rodar `{bin}`: {e}"))?;
+    let stdout = String::from_utf8_lossy(&saida.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&saida.stderr).trim().to_string();
+    if !saida.status.success() {
+        // A voz do CLI vale mais que a nossa aqui: ele sabe por que recusou.
+        let motivo = if !stderr.is_empty() { stderr } else { stdout };
+        return Err(if motivo.is_empty() {
+            format!("`{bin}` falhou sem dizer o motivo")
+        } else {
+            motivo
+        });
+    }
+    Ok(if stdout.is_empty() { stderr } else { stdout })
 }
 
 #[tauri::command]
@@ -2841,6 +2908,7 @@ mod tests {
                 // nativo já basta; o proxy não precisa entrar neste fixture.
                 roteavel_pelo_app: false,
                 roteia_mcp_gerenciado: true,
+                escopo: "por-run".into(),
                 enabled: bound,
                 required: false,
                 browser: false,
