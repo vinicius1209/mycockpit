@@ -43,6 +43,7 @@ const AGENT_TOOLS: { id: string; label: string; sub: string }[] = [
   { id: "claude-code", label: "Claude Code", sub: "CLI da Anthropic" },
   { id: "codex", label: "Codex", sub: "CLI da OpenAI" },
   { id: "agy", label: "Antigravity", sub: "CLI do Google" },
+  { id: "opencode", label: "OpenCode", sub: "CLI da sst · multi-provedor" },
 ]
 
 export function MachineAgents() {

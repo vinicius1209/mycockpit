@@ -315,7 +315,7 @@ export const AGENTS: AgentDef[] = [
     kind: "agent",
     available: false,
     hint: "em breve",
-    description: "Ainda não integrado",
+    description: "Multi-provedor: reaproveita assinaturas por OAuth",
     caps: { image: false, pdf: false },
     models: [],
     efforts: [],

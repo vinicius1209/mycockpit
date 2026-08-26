@@ -3552,3 +3552,43 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   | `npx` (não existe na casa do Codex) | fica como está — reescrever trocaria "funciona" por "command not found" |
   | `cwd` absoluto escolhido pelo usuário | preservado, mesmo com o comando resolvido |
 - **Verificado:** `cargo` 522 (4 novos), `tsc` 0, `vitest` 3225, 9 guardas.
+
+### ADR-094 — F1 do OpenCode: o motor aparece, e o plano errou duas vezes ✅
+- **Contexto (25/08/2026):** primeira fase do `opencode-openrouter-plan`. A
+  fase 0 mediu o binário instalado (1.17.9) e a documentação; esta entrega o
+  reconhecimento na máquina.
+- **Entregue:** `probe_opencode` no `detect.rs` e a linha em "Agentes na
+  máquina", com versão e **quais provedores** estão conectados.
+- **A auth do OpenCode não é booleana, e isso é o ponto.** Ele é um
+  MULTIPLICADOR de credencial: faz OAuth com Copilot, SuperGrok, GitLab Duo,
+  OpenAI e Anthropic. O que importa não é "logado sim/não", é QUANTOS provedores
+  existem — é isso que decide quantos modelos o seletor terá. Zero credencial =
+  instalado e inútil, e isso é `missing`, nunca `ok`.
+  - Medido nesta máquina: **3 credenciais** (`OpenAI` oauth, `Google` oauth,
+    `OpenCode Go` api) e **88 modelos**, que o Frota não enxergava.
+  - O parser lê as LINHAS, não o rodapé "3 credentials": contar o que se leu é
+    o que permite dizer QUAIS, não só quantos. E o corte nome/tipo é pela
+    ÚLTIMA palavra — "OpenCode Go api" partido pela primeira daria nome
+    "OpenCode" e tipo "Go api".
+- **O plano estava errado em duas frases, e a SUÍTE foi quem apontou.**
+  1. Ele mandava ligar `available: true` com as capabilities medidas — e a
+     própria seção "o que NÃO fazer" do mesmo documento proibia isso. Liguei, e
+     **22 testes quebraram**. O motivo é bom: `opencode` era o fixture de "motor
+     do registry SEM capacidade nenhuma", e o código distingue isso de "motor
+     FORA do registry, não sei o que ele reporta". São duas frases diferentes e
+     as duas honestas.
+     - A lição que fica: **flag do registro significa "o APP conta com isso"**,
+       não "o fornecedor suporta". O CLI faz muito mais; o app ainda não usa.
+  2. Ele pedia detectar o banco quebrado já no F1. Toda forma barata disso passa
+     por fuçar o schema PRIVADO do opencode (`replacement_seq`), que muda quando
+     eles quiserem. Medido: `db "SELECT 1"`, `stats` (469 sessões) e `models`
+     passam; só o `run` falha. Foi pro F2, onde o erro existe e pode ser
+     classificado — mesma disciplina do `sandbox.rs`.
+- **Tentei trocar o fixture por um id falso e voltei atrás.** Um `agentDef`
+  inexistente cai em "fora do registry", que é outra mensagem. O fixture PRECISA
+  ser um motor do registry com tudo zerado — e `opencode` volta a sê-lo
+  enquanto o adapter não existe. Reverti os 9 arquivos de teste.
+- **A catraca de tamanho custou o comentário** que eu queria deixar no registro
+  (`agents.ts` já está acima do teto, congelado em 533). O porquê vive no plano;
+  o código fica com o dado.
+- **Verificado:** `cargo` 527 (5 novos), `tsc` 0, `vitest` 3225, 9 guardas.

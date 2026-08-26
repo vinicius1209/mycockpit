@@ -56,6 +56,9 @@ export const UPDATE_COMMANDS: Record<string, string | null> = {
   "claude-code": "npm i -g @anthropic-ai/claude-code",
   codex: "brew upgrade codex",
   agy: null,
+  // OpenCode se atualiza sozinho (`opencode upgrade`), mas o brew é o canal
+  // desta máquina e é ele que o `command -v` resolve.
+  opencode: "brew upgrade opencode",
 }
 
 /** Como INSTALAR cada CLI, pra quem ainda não tem nenhuma (passo 1 do
@@ -66,6 +69,7 @@ export const INSTALL_COMMANDS: Record<string, string> = {
   "claude-code": "npm i -g @anthropic-ai/claude-code",
   codex: "brew install codex",
   agy: "https://antigravity.google/cli",
+  opencode: "brew install sst/tap/opencode",
 }
 
 /** Comandos por agent×CANAL — espelho do plano por canal do update.rs (o

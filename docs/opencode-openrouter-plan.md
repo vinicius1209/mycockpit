@@ -116,16 +116,28 @@ não é.
 
 ### F0 ✅ — Medir (feito, é o corpo deste documento)
 
-### F1 — O motor aparece, honesto sobre o que ainda não faz
+### F1 ✅ — O motor aparece na máquina (25/08/2026)
 
-`DESTINATIONS` já tem a entrada `opencode` com `available: false` e
-`hint: "em breve"`. Vira `available: true` com as capabilities **medidas**, não
-otimistas: `reportsCost: true`, `sessionResume: true`, `structuredOutput: true`,
-`nativeCompact: true`, `caps.image: true` (o `-f` aceita), `usageWindow: null`.
+**Corrigi duas coisas que este plano dizia errado, e a suíte foi quem apontou.**
 
-Entra também na detecção (`detect.rs`), com a versão e o **estado do banco** —
-porque um CLI instalado e com banco quebrado não é "instalado", e o selo verde
-exige probe que passou.
+1. **`available` continua `false`.** O texto original mandava ligar as
+   capabilities medidas, e a própria seção "o que NÃO fazer" proibia. A suíte
+   decidiu: as flags do registro significam **"o APP conta com isso"**, não "o
+   fornecedor suporta". Ligá-las sem adapter quebrou 22 testes, e por um motivo
+   certo — `opencode` era o fixture de "motor do registry sem capacidade
+   nenhuma", e o código distingue isso de "motor fora do registry, não sei o que
+   ele reporta". Duas frases diferentes, as duas honestas.
+2. **Sem sonda de banco.** O plano pedia detectar o banco quebrado no F1. Toda
+   forma barata de fazer isso passa por fuçar o schema PRIVADO do opencode
+   (`replacement_seq`), que muda quando eles quiserem. Medido: `db "SELECT 1"`,
+   `stats` (469 sessões) e `models` passam; só o `run` falha. O reconhecimento
+   vai pro F2, onde o erro existe e pode ser classificado — mesma disciplina do
+   `sandbox.rs` separando "sandbox negou" de "agente quebrou".
+
+**Entregue:** `probe_opencode` no `detect.rs` (versão + credenciais), a linha em
+"Agentes na máquina", `agent_bin`, e os comandos de instalar/atualizar. A auth
+aqui NÃO é booleana: conta QUANTOS provedores existem, porque é isso que decide
+quantos modelos o seletor terá. Zero credencial = instalado e inútil = `missing`.
 
 ### F2 — O adapter, pelo `serve`
 

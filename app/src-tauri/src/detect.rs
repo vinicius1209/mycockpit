@@ -115,6 +115,7 @@ pub(crate) fn agent_bin(agent: &str) -> Option<&'static str> {
         "claude-code" => Some("claude"),
         "codex" => Some("codex"),
         "agy" => Some("agy"),
+        "opencode" => Some("opencode"),
         _ => None,
     }
 }
@@ -331,6 +332,78 @@ async fn probe_agy() -> DetectedTool {
     tool("agy", true, version, auth, None)
 }
 
+/// Credenciais que o `opencode providers list` reporta. O formato (1.17.9), já
+/// sem ANSI:
+///
+/// ```text
+/// ┌  Credentials ~/.local/share/opencode/auth.json
+/// ●  OpenAI oauth
+/// ●  Google oauth
+/// └  3 credentials
+/// ```
+///
+/// Lemos as LINHAS `●`, não o rodapé "N credentials": o rodapé é um número que
+/// já vem contado, e contar de novo o que se leu é o que permite dizer QUAIS
+/// provedores existem, não só quantos. Puro e testável com a saída real.
+fn parse_opencode_credentials(text: &str) -> Vec<(String, String)> {
+    text.lines()
+        .filter_map(|l| {
+            let sem_ansi = strip_ansi(l);
+            let corpo = sem_ansi.trim().strip_prefix('\u{25cf}')?.trim();
+            // "OpenCode Go api" → o TIPO é a última palavra; o nome pode ter
+            // espaço, e partir pela primeira quebraria "OpenCode Go".
+            let (nome, tipo) = corpo.rsplit_once(char::is_whitespace)?;
+            let nome = nome.trim();
+            (!nome.is_empty() && !tipo.is_empty())
+                .then(|| (nome.to_string(), tipo.to_string()))
+        })
+        .collect()
+}
+
+/// Remove sequências ANSI. O `opencode` colore a saída mesmo sem TTY.
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            for c2 in chars.by_ref() {
+                if c2.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// OpenCode (1.17.9): 4º motor e MULTIPLICADOR de credencial — ele fala com
+/// provedores por OAuth (Copilot, SuperGrok, GitLab Duo…) que o Frota não
+/// alcança sozinho.
+///
+/// A auth aqui NÃO é booleana como nos outros: o que importa é QUANTOS
+/// provedores existem, porque é isso que decide quantos modelos o seletor terá.
+/// Zero credencial = instalado e inútil, e isso é `missing`, não `ok`.
+async fn probe_opencode() -> DetectedTool {
+    let Some((true, version)) = version_probe("opencode").await else {
+        return tool("opencode", false, None, "missing", None);
+    };
+    match run("opencode", &["providers", "list"]).await {
+        Some((_, out)) => {
+            let creds = parse_opencode_credentials(&out);
+            if creds.is_empty() {
+                return tool("opencode", true, version, "missing", Some("nenhum provedor conectado".into()));
+            }
+            let nomes: Vec<&str> = creds.iter().map(|(n, _)| n.as_str()).collect();
+            tool("opencode", true, version, "ok", Some(nomes.join(", ")))
+        }
+        // Comando não respondeu: instalado, mas não sei se dá pra usar. O selo
+        // verde exige probe que passou (doutrina do MachineAgents).
+        None => tool("opencode", true, version, "unknown", None),
+    }
+}
+
 async fn probe_simple(id: &str, bin: &str) -> DetectedTool {
     match version_probe(bin).await {
         Some((true, version)) => tool(id, true, version, "na", None),
@@ -345,10 +418,11 @@ async fn probe_simple(id: &str, bin: &str) -> DetectedTool {
 /// resultados. agy/git/swiftc: sem fonte pública conhecida → latest = None.
 #[tauri::command]
 pub async fn detect_agents() -> Vec<DetectedTool> {
-    let (mut claude, mut codex, mut agy, git, swiftc) = tokio::join!(
+    let (mut claude, mut codex, mut agy, mut opencode, git, swiftc) = tokio::join!(
         probe_claude(),
         probe_codex(),
         probe_agy(),
+        probe_opencode(),
         probe_simple("git", "git"),
         probe_simple("swiftc", "swiftc"),
     );
@@ -361,8 +435,9 @@ pub async fn detect_agents() -> Vec<DetectedTool> {
         fill_paths(&mut claude, "claude"),
         fill_paths(&mut codex, "codex"),
         fill_paths(&mut agy, "agy"),
+        fill_paths(&mut opencode, "opencode"),
     );
-    vec![claude, codex, agy, git, swiftc]
+    vec![claude, codex, agy, opencode, git, swiftc]
 }
 
 // A lista de modelos do agy NÃO mora mais aqui. Havia dois leitores de
@@ -377,6 +452,55 @@ pub async fn detect_agents() -> Vec<DetectedTool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Saída REAL do `opencode providers list` (1.17.9) desta máquina, com os
+    /// códigos ANSI que ele emite mesmo sem TTY. Fixture copiada, não inventada.
+    const PROVIDERS_REAL: &str = "\u{1b}[0m\n\u{250c}  Credentials \u{1b}[90m~/.local/share/opencode/auth.json\n\u{2502}\n\u{25cf}  OpenAI \u{1b}[90moauth\n\u{2502}\n\u{25cf}  Google \u{1b}[90moauth\n\u{2502}\n\u{25cf}  OpenCode Go \u{1b}[90mapi\n\u{2502}\n\u{2514}  3 credentials\n";
+
+    #[test]
+    fn le_as_credenciais_da_saida_real() {
+        let creds = parse_opencode_credentials(PROVIDERS_REAL);
+        assert_eq!(
+            creds,
+            vec![
+                ("OpenAI".to_string(), "oauth".to_string()),
+                ("Google".to_string(), "oauth".to_string()),
+                // Nome com ESPAÇO: partir pela primeira quebra daria "OpenCode"
+                // com tipo "Go api". O corte é pela ÚLTIMA.
+                ("OpenCode Go".to_string(), "api".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn sem_credencial_nenhuma_devolve_vazio() {
+        // Instalado e sem provedor é um estado real: o motor existe e não serve
+        // pra nada. Vazio aqui vira `auth: missing`, nunca `ok`.
+        let vazio = "\u{250c}  Credentials ~/.local/share/opencode/auth.json\n\u{2514}  0 credentials\n";
+        assert!(parse_opencode_credentials(vazio).is_empty());
+    }
+
+    #[test]
+    fn ignora_o_rodape_e_o_cabecalho() {
+        // O rodapé "3 credentials" tem número e palavra e casaria num parser
+        // frouxo; ele NÃO começa com o marcador.
+        let creds = parse_opencode_credentials(PROVIDERS_REAL);
+        assert!(!creds.iter().any(|(n, _)| n.contains("credential")));
+        assert!(!creds.iter().any(|(n, _)| n.contains("Credentials")));
+    }
+
+    #[test]
+    fn strip_ansi_nao_come_texto_util() {
+        assert_eq!(strip_ansi("\u{1b}[90mOpenAI\u{1b}[0m oauth"), "OpenAI oauth");
+        assert_eq!(strip_ansi("sem cor"), "sem cor");
+    }
+
+    #[test]
+    fn opencode_tem_binario_conhecido() {
+        // Sem isto, `detected_version("opencode")` devolveria None e qualquer
+        // gate por versão trataria o motor como ausente.
+        assert_eq!(agent_bin("opencode"), Some("opencode"));
+    }
 
     // ---- última por canal: parses com fixtures REAIS das APIs ----------------
 
