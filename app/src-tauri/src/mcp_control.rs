@@ -291,13 +291,13 @@ impl DiscoveredServer {
 
     fn compatible(&self, agent: &str) -> bool {
         // Decisão por capability (G1.1), nunca por nome: roteável só pra agent
-        // com `managed_mcp`; e `cwd` no launch só pra quem documenta o campo
+        // com escopo POR RUN; e `cwd` no launch só pra quem documenta o campo
         // (`mcp_launch_cwd`, hoje só o Codex) — o schema JSON do Claude não tem
         // `cwd` e o campo sumiria em silêncio no handoff.
         let Some(caps) = crate::adapters::capabilities_of(agent) else {
             return false;
         };
-        if !caps.managed_mcp || !self.portable() {
+        if !caps.mcp_escopo.por_run() || !self.portable() {
             return false;
         }
         caps.mcp_launch_cwd || self.launch.as_ref().is_some_and(|c| c.cwd.is_none())
@@ -327,7 +327,7 @@ pub struct McpAgentState {
     /// `false`. O planejador do run JÁ raciocinava com `roteavel_por_proxy`;
     /// quem não sabia era o portão do binding e o estado que chega na UI.
     pub roteavel_pelo_app: bool,
-    /// Este MOTOR aceita MCP gerenciado pelo app (capability `managed_mcp`)?
+    /// Este MOTOR aceita MCP gerenciado pelo app (escopo POR RUN)?
     ///
     /// `false` quer dizer "o Frota não roteia MCP para ele", e NUNCA "ele não
     /// fala MCP". O agy fala (tem até `agy mcp add`), só que a config dele é
@@ -915,7 +915,7 @@ fn subir_proxy(
 ///
 /// É a virada da A2: com credencial nossa, o `native_reason: oauth` para de
 /// bloquear e o servidor passa a ser roteável pros DOIS motores através do
-/// proxy local. Decisão por CAPABILITY (`managed_mcp`), nunca por nome de
+/// proxy local. Decisão por CAPABILITY (`mcp_escopo`), nunca por nome de
 /// agent. Sem login, devolve `false` e o comportamento é o de sempre.
 /// Este agent PODE usar este servidor? Nativamente (portável + capability) OU
 /// pelo proxy local, quando quem autenticou foi o app.
@@ -944,7 +944,7 @@ fn roteavel_por_proxy_com(
     let Some(caps) = crate::adapters::capabilities_of(agent) else {
         return false;
     };
-    if !caps.managed_mcp || !server.managed {
+    if !caps.mcp_escopo.por_run() || !server.managed {
         return false;
     }
     let Some(launch) = server.launch.as_ref() else {
@@ -1325,7 +1325,7 @@ fn agent_state(
         compatible: server.compatible(agent),
         roteavel_pelo_app: roteavel_por_proxy(server, agent),
         roteia_mcp_gerenciado: crate::adapters::capabilities_of(agent)
-            .is_some_and(|caps| caps.managed_mcp),
+            .is_some_and(|caps| caps.mcp_escopo.por_run()),
         enabled: binding.is_some(),
         required: binding.as_ref().is_some_and(|b| b.0),
         browser: binding.as_ref().is_some_and(|b| b.2),
@@ -1502,8 +1502,8 @@ fn validate_enable_from_registry(server: &RegistryServer, agent: &str) -> Result
                 .into(),
         );
     }
-    // Capability, não nome: agent sem `managed_mcp` (hoje o agy) não roteia.
-    if !crate::adapters::capabilities_of(agent).is_some_and(|c| c.managed_mcp) {
+    // Capability, não nome: agent sem escopo por-run não roteia por aqui.
+    if !crate::adapters::capabilities_of(agent).is_some_and(|c| c.mcp_escopo.por_run()) {
         return Err(format!("{agent} ainda não suporta este MCP"));
     }
     Ok(())
@@ -2306,7 +2306,7 @@ mod tests {
             );
         }
         // Com login, os DOIS motores passam a poder — a decisão é por
-        // capability (`managed_mcp`), nunca por nome de agent.
+        // capability (`mcp_escopo`), nunca por nome de agent.
         for agent in ["claude-code", "codex"] {
             assert!(
                 roteavel_por_proxy_com(&server, agent, || true),
@@ -2320,7 +2320,7 @@ mod tests {
     ///
     /// Eram duas mentiras em sentidos opostos, e esta é a guarda das duas.
     /// Claude e Codex ficaram travados podendo rodar. E o Agy foi prometido
-    /// sem poder: `managed_mcp` dele é `false` porque o CLI só configura MCP
+    /// sem poder: o escopo dele é Global porque o CLI só configura MCP
     /// por arquivo GLOBAL, sem flag por-run (ver AGY_CAPS). Nenhum login
     /// conserta isso, e o rótulo dizia que sim.
     #[test]
@@ -2344,7 +2344,7 @@ mod tests {
         for agent in ["claude-code", "codex", "agy"] {
             assert!(!server.compatible(agent), "{agent} não é nativo aqui");
         }
-        // Com login, quem tem `managed_mcp` passa a poder de verdade.
+        // Com login, quem tem escopo por-run passa a poder de verdade.
         for agent in ["claude-code", "codex"] {
             assert!(
                 roteavel_por_proxy_com(&server, agent, || true),

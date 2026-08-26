@@ -269,14 +269,55 @@ pub enum ModelSmokeDialect {
 /// allow(dead_code): é um REGISTRY declarativo — parte dos campos é consumida
 /// só pelo teste de contrato e pelo espelho TS (lib/agents.ts), e G2/G3 do
 /// plano consultam o resto. Declarar tudo agora é o ponto (a dívida do §2).
+/// Até onde o app consegue instalar um MCP externo num motor, e por quanto
+/// tempo aquilo dura. Medido motor a motor em 26/08/2026 (ver cada CAPS).
+///
+/// A ordem importa e é do mais contido para o mais invasivo: quanto mais
+/// abaixo, mais do estado do usuário o app precisaria tocar para instalar.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum McpEscopo {
+    /// A config vai junto com o spawn e morre com ele. Isolamento perfeito:
+    /// duas missões simultâneas não se veem.
+    PorRun,
+    /// A config mora num arquivo do PROJETO. Dura depois do run e pode estar
+    /// versionada no repositório do usuário, então instalar ali é um gesto
+    /// diferente de instalar por run.
+    PorProjeto,
+    /// A config é GLOBAL do CLI: vale para todos os projetos e continua depois
+    /// do run. Nunca se escreve nisso em silêncio.
+    Global,
+    /// O CLI não fala MCP.
+    Nenhum,
+}
+
+impl McpEscopo {
+    /// O control plane de MCPs externos (bindings, proxy, profiles) só sabe
+    /// operar com isolamento por run. Os demais escopos existem no vocabulário
+    /// para a tela dizer a verdade e para o F2 instalar pelo CLI do agent.
+    pub fn por_run(self) -> bool {
+        matches!(self, McpEscopo::PorRun)
+    }
+
+    /// O CLI fala MCP, mesmo que o app não consiga escopar. É a distinção que
+    /// faltava: "o Frota não roteia" nunca é "o motor não suporta".
+    pub fn cli_fala_mcp(self) -> bool {
+        !matches!(self, McpEscopo::Nenhum)
+    }
+}
+
 #[allow(dead_code)]
 pub struct Capabilities {
     /// Fala MCP e recebe o `mc-work` (processos longos + planos vivos).
     pub work_mcp: bool,
     /// Recebe o `mc-context` (memória read-only por MCP).
     pub context_mcp: bool,
-    /// Roteável pelo control plane de MCPs EXTERNOS (bindings/profiles).
-    pub managed_mcp: bool,
+    /// Até ONDE o app consegue instalar um MCP externo neste motor.
+    ///
+    /// Era `managed_mcp: bool`, e o bool colapsava QUATRO realidades em duas.
+    /// Foi dessa perda que saíram dois bugs de copy seguidos (ADR-100 e
+    /// ADR-101): "não roteável pelo app" virava "não suportado" na tela, sobre
+    /// um CLI que fala MCP muito bem. Escopo é a palavra que a realidade tem.
+    pub mcp_escopo: McpEscopo,
     /// O config MCP nativo aceita `cwd` no launch (só o Codex documenta; o
     /// schema JSON do Claude não tem o campo — não prometer o que some).
     pub mcp_launch_cwd: bool,
@@ -402,7 +443,8 @@ pub struct Capabilities {
 pub const CLAUDE_CAPS: Capabilities = Capabilities {
     work_mcp: true,
     context_mcp: true,
-    managed_mcp: true,
+    // claude 2.1.220: config MCP injetada no spawn, morre com o processo.
+    mcp_escopo: McpEscopo::PorRun,
     mcp_launch_cwd: false,
     inline_interaction: true,
     deferred_work: true,
@@ -454,7 +496,8 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
 pub const CODEX_CAPS: Capabilities = Capabilities {
     work_mcp: true,
     context_mcp: true,
-    managed_mcp: true,
+    // codex 0.146: idem, config por run no exec.
+    mcp_escopo: McpEscopo::PorRun,
     mcp_launch_cwd: true,
     inline_interaction: false,
     deferred_work: false,
@@ -519,12 +562,12 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // reescrever (e depois desfazer) a config permanente do usuário, o oposto
     // de "por-run" e um efeito colateral que a casa não aceita.
     //
-    // Portanto: `managed_mcp: false` significa "o FROTA não roteia MCP para
-    // este motor", NUNCA "este motor não fala MCP". Quem escreve copy a partir
-    // deste campo tem de dizer a primeira frase (ver `mcpAgentStatusLabel`).
+    // Portanto o escopo é `Global`, que significa "o FROTA não escopa MCP
+    // aqui", NUNCA "este motor não fala MCP". Quem escreve copy a partir deste
+    // campo tem de dizer a primeira frase (ver `mcpAgentStatusLabel`).
     work_mcp: false,
     context_mcp: false,
-    managed_mcp: false,
+    mcp_escopo: McpEscopo::Global,
     mcp_launch_cwd: false,
     inline_interaction: false,
     // agy 1.1.13: o stream tem `step_type: "tool"`, mas nada que sobreviva ao
@@ -732,7 +775,12 @@ fn extract_reset_hint(msg: &str) -> Option<String> {
 pub const OPENCODE_CAPS: Capabilities = Capabilities {
     work_mcp: false,
     context_mcp: false,
-    managed_mcp: false,
+    // opencode 1.18.21 (medido 26/08/2026): a chave `mcp` do `opencode.json`
+    // do DIRETÓRIO vale. Provado dos dois lados: dentro do projeto o
+    // `opencode mcp list` mostra o servidor, fora dele diz "No MCP servers
+    // configured". Escopo de projeto real, sem truque. Existe também
+    // `opencode mcp add`, que é por onde o F2 vai instalar.
+    mcp_escopo: McpEscopo::PorProjeto,
     mcp_launch_cwd: false,
     inline_interaction: false,
     deferred_work: false,
@@ -5291,8 +5339,8 @@ mod tests {
             );
             assert_eq!(
                 blob.contains("mcx-claude-hostinger"),
-                caps.managed_mcp,
-                "{agent}: managed_mcp declarado ≠ MCP externo do plano no comando"
+                caps.mcp_escopo.por_run(),
+                "{agent}: escopo por-run declarado ≠ MCP externo do plano no comando"
             );
             // G3.1 — a arena do Fusion não renderiza trabalho diferido: motor
             // com `deferred_work` tem a tool Workflow SUPRIMIDA no spawn do
@@ -5505,5 +5553,40 @@ mod tests {
             registered_agents().collect::<Vec<_>>(),
             vec!["claude-code", "codex", "agy", "opencode"]
         );
+    }
+
+    /// A tabela de escopo de MCP, medida motor a motor em 26/08/2026.
+    ///
+    /// Está aqui porque o bool que existia antes (`managed_mcp`) colapsava
+    /// estas quatro respostas em duas, e a tela passou a mentir duas vezes
+    /// (ADR-100 e ADR-101). Se alguém mudar um valor destes sem medir de novo,
+    /// este teste quebra e pede a medição junto.
+    #[test]
+    fn o_escopo_de_mcp_de_cada_motor_e_o_que_foi_medido() {
+        use McpEscopo::*;
+        let escopo = |a: &str| capabilities_of(a).unwrap().mcp_escopo;
+        // Config injetada no spawn: morre com o run, missões não se veem.
+        assert_eq!(escopo("claude-code"), PorRun);
+        assert_eq!(escopo("codex"), PorRun);
+        // `opencode.json` do DIRETÓRIO (provado dos dois lados: dentro do
+        // projeto o `opencode mcp list` vê, fora não).
+        assert_eq!(escopo("opencode"), PorProjeto);
+        // `agy mcp add` não tem flag de escopo; config por projeto foi testada
+        // e é IGNORADA. Vale para todos os projetos, e dura.
+        assert_eq!(escopo("agy"), Global);
+
+        // O control plane só opera com isolamento por run, e é isso que os
+        // portões continuam perguntando. Nada mudou de comportamento aqui.
+        assert!(escopo("claude-code").por_run() && escopo("codex").por_run());
+        assert!(!escopo("agy").por_run() && !escopo("opencode").por_run());
+
+        // A distinção que o bool não tinha, e que a copy atropelava: NÃO
+        // rotear pelo app é diferente de não falar MCP. Os quatro falam.
+        for agent in registered_agents() {
+            assert!(
+                escopo(agent).cli_fala_mcp(),
+                "{agent}: nenhum motor do registry pode ser chamado de 'não suporta MCP'"
+            );
+        }
     }
 }

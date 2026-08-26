@@ -3845,3 +3845,37 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   processo (git, ssh, npm), não só o agy. Registrado como opção com custo, não
   como caminho aberto.
 - **Verificado:** `cargo` 546, `tsc` 0, `vitest` 3243, 9 guardas.
+
+### ADR-102 — MCP em qualquer máquina: o bool virou escopo (F1) ✅
+- **Contexto (26/08/2026):** o usuário fixou a restrição que manda no desenho:
+  *"o Frota vai ser instalado em outras máquinas, então nada pode ser fixo
+  aqui"*, e pediu o caminho certo pra MCP funcionar em qualquer code agent.
+- **Auditoria antes de propor:** os `/Users/<nome>/...` do código estão TODOS em
+  fixture de teste; caminho de produção sai de `$HOME` e binário de
+  `command -v`. A base já era portátil, e o plano não podia sujá-la.
+- **O erro de modelagem:** `managed_mcp: bool` colapsava QUATRO realidades em
+  duas, e foi dessa perda que saíram os dois bugs de copy seguidos (ADR-100 e
+  ADR-101). Agora é `McpEscopo`, e cada motor declara o que foi MEDIDO:
+  claude e codex `PorRun` (config no spawn), **opencode `PorProjeto`**, **agy
+  `Global`**.
+- **As duas medições novas que fecham a tabela:** o `opencode` honra a chave
+  `mcp` do `opencode.json` do DIRETÓRIO, provado dos dois lados (dentro do
+  projeto o `opencode mcp list` mostra o servidor, fora diz "No MCP servers
+  configured"). E o `agy mcp add` (1.1.21) não tem flag de escopo: config por
+  projeto foi testada e é IGNORADA.
+- **A decisão que resolve a portabilidade, e vai pro F2:** instalar pelo **CLI
+  do próprio agent** (`agy mcp add`, `opencode mcp add`), nunca por caminho que
+  o app adivinha. O caminho do config é conhecimento do fornecedor, muda com
+  versão e sistema; guardá-lo é criar exatamente o "fixo aqui" que foi
+  proibido. Rodar o comando deles é portátil por construção.
+- **Comportamento não mudou:** os quatro portões do control plane passaram a
+  perguntar `mcp_escopo.por_run()`, que devolve o mesmo que o bool devolvia. A
+  suíte inteira passou sem tocar em nenhum teste de comportamento.
+- **A tabela virou guarda:** um teste fixa o escopo de cada motor e cobra
+  medição de quem mudar. E cobra, para TODO motor do registry, que
+  `cli_fala_mcp()` seja verdadeiro: nenhum dos quatro pode ser chamado de "não
+  suporta MCP", que é o erro que o ADR-101 consertou na copy.
+- **Plano completo:** `docs/mcp-qualquer-agent-plan.md` (F2 instala pelo CLI,
+  F3 o gesto humano pro escopo Global, F4 o por-projeto do opencode, F5 revisa
+  o proxy do app nos escopos novos).
+- **Verificado:** `cargo` 547, `tsc` 0, `vitest` 3243, 9 guardas.
