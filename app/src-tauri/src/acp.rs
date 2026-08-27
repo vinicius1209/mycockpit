@@ -142,6 +142,34 @@ pub fn resposta_de_cancelamento(id: &Value) -> Value {
     })
 }
 
+/// A resposta do humano (contrato da UI, `{allow, message?}`) virando escolha
+/// ACP, DENTRO do que o agente ofereceu.
+///
+/// A regra que faz esta função existir: **o app não inventa `optionId`**. Os
+/// nomes `once`/`always`/`reject` são o que este binário oferece hoje, não uma
+/// garantia do protocolo — o ACP manda a lista justamente porque ela varia.
+/// Mandar um id que não estava na lista é pedir um erro do agente no meio do
+/// turno, com o humano já tendo decidido.
+///
+/// Quando nada corresponde, o desfecho é `cancelled`, não um "allow" qualquer:
+/// escolher por conta própria seria decidir no lugar de quem foi perguntado.
+pub fn escolher_opcao(answer: &Value, opcoes: &[OpcaoDePermissao]) -> Value {
+    let allow = answer.get("allow").and_then(|x| x.as_bool()).unwrap_or(false);
+    // Preferência EXATA primeiro, e só depois a família. `allow_once` é o
+    // default deliberado do "sim": conceder para sempre é decisão maior, e
+    // ninguém pediu isso ao clicar em permitir uma vez.
+    let exato = if allow { "allow_once" } else { "reject_once" };
+    let familia = if allow { "allow" } else { "reject" };
+    let escolhida = opcoes
+        .iter()
+        .find(|o| o.tipo == exato)
+        .or_else(|| opcoes.iter().find(|o| o.tipo.starts_with(familia)));
+    match escolhida {
+        Some(o) => serde_json::json!({ "outcome": "selected", "optionId": o.id }),
+        None => serde_json::json!({ "outcome": "cancelled" }),
+    }
+}
+
 /// Traduz um `session/update` para os eventos da casa. Vazio = update que não
 /// tem correspondente aqui (o ACP tem mais vocabulário que a nossa timeline, e
 /// silêncio é melhor que evento inventado).
@@ -291,6 +319,58 @@ mod tests {
         assert!(ler_pedido_de_permissao(&json!(1), &json!({"options":[]})).is_none());
     }
 
+    fn opcoes_reais() -> Vec<OpcaoDePermissao> {
+        let params = &v(PEDIDO)["params"];
+        ler_pedido_de_permissao(&json!(0), params).unwrap().opcoes
+    }
+
+    #[test]
+    fn permitir_uma_vez_e_o_default_do_sim() {
+        // Conceder PARA SEMPRE é decisão maior, e ninguém pediu isso ao clicar
+        // em permitir. O "sim" tem de cair no menor escopo oferecido.
+        let e = escolher_opcao(&json!({"allow": true}), &opcoes_reais());
+        assert_eq!(e["optionId"], "once");
+        assert_eq!(e["outcome"], "selected");
+
+        let e = escolher_opcao(&json!({"allow": false}), &opcoes_reais());
+        assert_eq!(e["optionId"], "reject");
+    }
+
+    #[test]
+    fn o_app_nao_inventa_optionId_que_o_agente_nao_ofereceu() {
+        // `once`/`always`/`reject` são o que ESTE binário oferece hoje, não uma
+        // garantia do protocolo: o ACP manda a lista justamente porque varia.
+        // Mandar id de fora dá erro do agente no meio do turno, com o humano já
+        // tendo decidido.
+        let so_sempre = vec![OpcaoDePermissao {
+            id: "sempre-liberado".into(),
+            tipo: "allow_always".into(),
+            rotulo: "Always".into(),
+        }];
+        // Sem `allow_once`, cai na família — mas no id que ELE ofereceu.
+        assert_eq!(
+            escolher_opcao(&json!({"allow": true}), &so_sempre)["optionId"],
+            "sempre-liberado"
+        );
+        // E negar, sem nenhuma opção de negar, não vira "allow" por descuido.
+        let e = escolher_opcao(&json!({"allow": false}), &so_sempre);
+        assert_eq!(e["outcome"], "cancelled");
+        assert!(e["optionId"].is_null(), "não escolhe por conta própria: {e}");
+    }
+
+    #[test]
+    fn resposta_ausente_ou_estranha_nega() {
+        // Fail-closed: o contrato da UI é `{allow}`, e o que não afirma "sim"
+        // não é "sim". Vale pro shutdown do run, que responde sem `allow`.
+        for a in [json!({}), json!({"allow": null}), json!({"allow": "sim"})] {
+            assert_eq!(
+                escolher_opcao(&a, &opcoes_reais())["optionId"],
+                "reject",
+                "resposta {a} tinha de negar"
+            );
+        }
+    }
+
     #[test]
     fn classifica_as_tres_formas_do_cano() {
         assert!(matches!(
@@ -344,6 +424,32 @@ mod tests {
         };
         assert!(!ok);
         assert_eq!(text, "", "content null não vira pânico nem texto inventado");
+    }
+
+    #[test]
+    fn aqui_a_frase_do_fornecedor_e_VERDADE_e_nao_se_reescreve() {
+        // Fecha o círculo com o ADR-099, e é a razão mais forte pra preferir
+        // ACP ao `run`.
+        //
+        // No `run --format json` o CLI auto-rejeita e grava "The user rejected
+        // permission…" sem ter perguntado a ninguém: ali a frase é MENTIRA, e o
+        // adapter a reescreve. No ACP o humano foi perguntado de verdade e
+        // decidiu, então a MESMA frase é honesta e tem de passar intacta.
+        //
+        // Esta guarda existe porque a correção do ADR-099 é tentadora de
+        // generalizar. Aplicá-la aqui faria o app desmentir uma recusa que o
+        // usuário realmente tomou, que é o erro simétrico.
+        let negado = json!({"update":{"sessionUpdate":"tool_call_update","toolCallId":"t1","status":"failed",
+            "content":[{"type":"content","content":{"type":"text",
+            "text":"The user rejected permission to use this specific tool call."}}]}});
+        let AgentEvent::ToolResult { ok, text, .. } = &mapear_update(&negado)[0] else {
+            panic!("esperava ToolResult")
+        };
+        assert!(!ok);
+        assert_eq!(
+            text, "The user rejected permission to use this specific tool call.",
+            "no ACP a recusa É do humano: a frase passa como veio"
+        );
     }
 
     #[test]

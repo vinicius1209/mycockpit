@@ -4040,3 +4040,31 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **Falta** o transporte (spawn + stdio + fila de pedidos), que é a fase
   seguinte.
 - **Verificado:** `cargo` 575 (9 novos), `tsc` 0, 10 guardas.
+
+### ADR-108 — a decisão do humano cabe no que o agente ofereceu ✅
+- **Contexto (26/08/2026):** completa a camada pura do ACP (ADR-107) com a peça
+  que faltava: traduzir a resposta da UI (`{allow, message?}`, contrato que o
+  `codex_appserver` já usa) numa escolha do protocolo.
+- **A regra que faz a função existir: o app NÃO inventa `optionId`.** Os nomes
+  `once`/`always`/`reject` são o que ESTE binário oferece hoje, não garantia do
+  protocolo — o ACP manda a lista justamente porque ela varia. Mandar um id de
+  fora dá erro do agente no meio do turno, com o humano já tendo decidido.
+  Quando nada corresponde, o desfecho é `cancelled`, nunca um "allow" escolhido
+  por conta própria.
+- **"Permitir uma vez" é o default do sim.** Conceder PARA SEMPRE é decisão
+  maior, e ninguém pediu isso ao clicar em permitir. O sim cai no menor escopo
+  oferecido, e só desce pra família (`allow_*`) se o exato não estiver na lista.
+- **Fail-closed no que não afirma sim:** resposta sem `allow`, com `null` ou com
+  tipo errado nega. Vale inclusive pro shutdown do run, que responde sem o campo.
+- **O caminho de NEGAR foi medido no binário, e fecha o círculo do ADR-099.**
+  Respondendo `reject`, o opencode devolve `status: failed` com
+  `"The user rejected permission to use this specific tool call."` — **a mesma
+  frase** que no `run` era mentira. Lá o CLI auto-rejeitava sem perguntar e o
+  adapter precisa desmentir; aqui o humano decidiu de verdade, então a frase é
+  honesta e passa intacta.
+- **Isso virou guarda**, porque a correção do ADR-099 é tentadora de
+  generalizar: aplicá-la ao ACP faria o app desmentir uma recusa que o usuário
+  realmente tomou, que é o erro simétrico.
+- **Falta** o transporte (spawn + laço de stdio + fila de pedidos ligada ao
+  `DirectInteractions`, que já espera humano sem timeout).
+- **Verificado:** `cargo` 579 (4 novos), 10 guardas.
