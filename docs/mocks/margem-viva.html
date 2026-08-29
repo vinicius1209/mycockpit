@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A margem do fio · três estados</title>
+<style>
+  /* Tokens: cópia fiel de app/src/index.css. Nenhum hex fora daqui. */
+  :root{
+    color-scheme: light dark;
+    --background:#fbfbfa; --rail:#f6f6f4; --foreground:#16181b; --card:#ffffff;
+    --popover:#ffffff; --secondary:#f4f4f2; --muted-foreground:#5c6166;
+    --accent:#f1f1ef; --faint:#8a9099;
+    --sel:rgba(0,0,0,.055); --sel-hover:rgba(0,0,0,.028);
+    --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.14);
+    --brass:#a9742b; --brass-soft:rgba(169,116,43,.12); --brass-fg:#fbf6ee;
+    --st-idle:#8a9099; --st-running:#2f8fbf; --st-queued:#c1861f;
+    --st-success:#1f9d6b; --st-error:#cf4a3e; --id-violet:#6d47b8;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18);
+    --radius:9px;
+    --sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"]{
+    --background:#0a0b0d; --rail:#0c0d10; --foreground:#e7e8ea; --card:#141619;
+    --popover:#191c20; --secondary:#191c20; --muted-foreground:#9aa0a7;
+    --accent:#1e2126; --faint:#687078;
+    --sel:rgba(255,255,255,.065); --sel-hover:rgba(255,255,255,.032);
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13);
+    --brass:#e4a862; --brass-soft:rgba(228,168,98,.14); --brass-fg:#1a1306;
+    --st-idle:#687078; --st-running:#5bb8e8; --st-queued:#d99138;
+    --st-success:#5bd6a0; --st-error:#f2766b; --id-violet:#a48af0;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+    --shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--background);color:var(--foreground);
+    font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .label-mono{font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+    font-size:11px;line-height:1;color:var(--muted-foreground)}
+
+  /* ── chrome do mock ── */
+  .mockbar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:10px 18px;background:color-mix(in srgb,var(--background) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+  .mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);
+    border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:1px 7px}
+  .mockbar .dir{font-weight:600;color:var(--foreground);font-size:13px}
+  .seg{display:flex;gap:2px;border:1px solid var(--border);border-radius:7px;padding:2px}
+  .seg button{font-size:11px;padding:3px 9px;border-radius:5px;color:var(--muted-foreground);white-space:nowrap}
+  .seg button.on{background:var(--accent);color:var(--foreground)}
+  .mockbar .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .legend{max-width:1240px;margin:14px auto 0;padding:0 18px;font-size:12px;color:var(--muted-foreground)}
+  .legend b{color:var(--foreground);font-weight:600}
+
+  /* ── janela do app ── */
+  .win{width:1512px;height:860px;margin:16px auto 40px;border-radius:10px;overflow:hidden;
+    background:var(--background);border:1px solid var(--border-strong);box-shadow:var(--shadow-pop);
+    display:flex;flex-direction:column;position:relative}
+  .titlebar{height:52px;display:flex;align-items:center;gap:10px;padding:0 10px 0 14px;flex:0 0 auto}
+  .lights{display:flex;gap:8px}
+  .lights i{width:12px;height:12px;border-radius:50%;display:block}
+  .lights i:nth-child(1){background:#ff5f57}.lights i:nth-child(2){background:#febc2e}
+  .lights i:nth-child(3){background:#28c840}
+  .proj{font-weight:500;font-size:13px;padding:2px 6px}
+  .modes{margin:0 auto;display:flex;gap:2px;background:var(--secondary);border-radius:8px;padding:3px}
+  .modes button{font-size:12px;padding:3px 12px;border-radius:6px;color:var(--muted-foreground)}
+  .modes button.on{background:var(--card);color:var(--foreground);box-shadow:var(--shadow-sm)}
+  .chip{display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:8px;
+    padding:4px 9px;font-size:12px;color:var(--muted-foreground)}
+
+  .body{flex:1;display:flex;min-height:0}
+  .side{width:19%;flex:0 0 auto;background:var(--rail);border-right:1px solid var(--border);
+    display:flex;flex-direction:column;padding:0 12px 10px;font-size:13px}
+  .side .grp{margin:12px 0 6px}
+  .side .row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:7px}
+  .side .row.on{background:var(--sel)}
+  .side .row.sub{padding-left:16px;color:var(--muted-foreground);font-size:12px}
+  .side .foot{margin-top:auto;display:flex;align-items:center;gap:9px;padding:8px}
+  .av{width:22px;height:22px;border-radius:50%;background:var(--secondary);display:grid;place-items:center;
+    font-size:11px;font-weight:600;color:var(--muted-foreground)}
+
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .painel{flex:1;min-height:0;display:flex}
+  .fio{flex:1;min-width:0;display:flex;flex-direction:column;padding:8px 8px 0}
+  .sheet{flex:1;min-height:0;background:var(--card);border:1px solid var(--border);border-radius:10px;
+    display:flex;flex-direction:column;overflow:hidden;position:relative}
+  .tabs{height:42px;display:flex;align-items:center;gap:6px;padding:0 12px;flex:0 0 auto}
+  .tab{display:flex;align-items:center;gap:7px;font-size:12px;padding:5px 10px;border-radius:8px;background:var(--secondary)}
+  .thread{flex:1;overflow:hidden;position:relative;display:flex}
+  .col{max-width:760px;width:760px;margin:0 auto;padding:14px 32px 0}
+  .col p{margin:0 0 12px}
+  .col .code{font:12px var(--mono);background:var(--secondary);border-radius:4px;padding:1px 5px}
+  .col h4{margin:6px 0 8px;font-size:13px;font-weight:600}
+  .col ol{margin:0 0 12px;padding-left:20px}
+  .col li{margin-bottom:8px}
+  .recibo{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:9px;
+    padding:8px 10px;font-size:11px;color:var(--muted-foreground);margin-top:10px}
+  .composer{flex:0 0 auto;padding:0 0 14px}
+  .composer .box{max-width:760px;margin:0 auto;background:var(--card);border:1px solid var(--border);
+    border-radius:14px;box-shadow:var(--shadow-sm);padding:12px 14px 9px}
+  .composer .ph{color:var(--faint);font-size:13px;margin-bottom:12px}
+  .composer .tools{display:flex;align-items:center;gap:10px;color:var(--muted-foreground);font-size:12px}
+  .composer .send{margin-left:auto;width:26px;height:26px;border-radius:50%;background:var(--secondary);
+    display:grid;place-items:center}
+  .status{height:26px;flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:0 16px;
+    font:11px var(--mono);color:var(--muted-foreground)}
+  .status .right{margin-left:auto;color:var(--faint)}
+
+  /* ══════════ A MARGEM ══════════ */
+  .margem{position:absolute;left:0;top:0;bottom:0;width:calc((100% - 760px)/2);
+    display:flex;flex-direction:column;gap:10px;padding:16px 12px;overflow:hidden}
+  .win.sem-margem .margem{display:none}
+
+  /* régua (o que já existe) */
+  .regua{display:flex;flex-direction:column;align-items:flex-start;gap:5px;padding:2px 0}
+  .regua i{display:block;height:4px;width:10px;border-radius:2px;
+    background:color-mix(in srgb,var(--muted-foreground) 35%,transparent)}
+  .regua i.u{background:color-mix(in srgb,var(--brass) 50%,transparent)}
+  .regua i.on{background:var(--brass);width:18px}
+
+  /* módulo genérico da margem */
+  .mod{display:flex;flex-direction:column;gap:6px}
+  .mod .cab{display:flex;align-items:center;gap:6px;font:600 10px var(--mono);
+    letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+  .mod .cab .n{margin-left:auto;font-weight:400}
+
+  /* blast radius */
+  .arq{display:flex;align-items:center;gap:6px;font:11px var(--mono);color:var(--muted-foreground)}
+  .arq .nome{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--foreground)}
+  .arq .d{font-size:10px;color:var(--st-success)}
+  .arq .r{font-size:10px;color:var(--st-error)}
+  .arq .dot{width:5px;height:5px;border-radius:50%;background:var(--st-running);flex:0 0 auto}
+  .arq .dot.q{background:color-mix(in srgb,var(--muted-foreground) 40%,transparent)}
+
+  /* o olho */
+  .olho{border-radius:8px;overflow:hidden;background:var(--secondary);position:relative;
+    aspect-ratio:16/10;display:grid;place-items:center}
+  .olho .tela{position:absolute;inset:0;background:
+    linear-gradient(180deg,#1e2430 0 22px, #0f1116 22px 100%)}
+  .olho .barra{position:absolute;top:5px;left:8px;right:8px;height:12px;border-radius:6px;
+    background:rgba(255,255,255,.10)}
+  .olho .conteudo{position:absolute;left:12px;right:12px;top:34px;display:flex;flex-direction:column;gap:5px}
+  .olho .conteudo span{display:block;height:6px;border-radius:3px;background:rgba(255,255,255,.14)}
+  .olho .conteudo span:nth-child(2){width:70%}
+  .olho .conteudo span:nth-child(3){width:52%}
+  .olho .conteudo span:nth-child(4){width:80%;background:rgba(91,184,232,.35)}
+  .olho .selo{position:absolute;left:6px;bottom:6px;font:10px var(--mono);
+    background:rgba(0,0,0,.55);color:#fff;border-radius:4px;padding:1px 5px}
+  .olho .term{position:absolute;inset:0;background:#0d0f13;padding:8px;
+    font:10px/1.5 var(--mono);color:#9fb3c8;overflow:hidden}
+  .olho .term b{color:#5bd6a0;font-weight:400}
+  .olho .term u{color:#e4a862;text-decoration:none}
+
+  /* capacidades */
+  .cap{display:flex;flex-wrap:wrap;gap:4px}
+  .cap span{font:10px var(--mono);border-radius:5px;padding:2px 6px;
+    background:var(--secondary);color:var(--muted-foreground)}
+  .cap span.on{background:var(--brass-soft);color:var(--brass)}
+
+  /* frota (outros runs) */
+  .fogo{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted-foreground)}
+  .fogo .dot{width:6px;height:6px;border-radius:50%;background:var(--st-running);flex:0 0 auto}
+  .fogo .dot.w{background:var(--st-queued)}
+  .fogo .nome{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--foreground)}
+  .fogo .t{font:10px var(--mono);color:var(--faint)}
+
+  /* mapa do repo (treemap) */
+  .mapa{display:grid;grid-template-columns:repeat(6,1fr);gap:2px}
+  .mapa i{display:block;aspect-ratio:1;border-radius:2px;background:var(--secondary)}
+  .mapa i.t1{background:color-mix(in srgb,var(--st-running) 30%,var(--secondary))}
+  .mapa i.t2{background:color-mix(in srgb,var(--st-running) 60%,var(--secondary))}
+  .mapa i.t3{background:var(--st-running)}
+
+  .oculto{display:none !important}
+</style>
+</head>
+<body>
+
+<div class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">A margem do fio</span>
+  <div class="seg" id="variantes">
+    <button data-v="hoje" class="on">Hoje</button>
+    <button data-v="ocioso">Ocioso</button>
+    <button data-v="rodando">Rodando</button>
+    <button data-v="bloqueado">Bloqueado</button>
+    <button data-v="excesso">O excesso</button>
+  </div>
+  <div class="right">
+    <div class="seg" id="larguras">
+      <button data-w="1512" class="on">14" (1512)</button>
+      <button data-w="1280">13" (1280)</button>
+      <button data-w="1920">27" (1920)</button>
+    </div>
+    <div class="seg" id="temas">
+      <button data-t="light" class="on">Claro</button>
+      <button data-t="dark">Escuro</button>
+    </div>
+  </div>
+</div>
+
+<p class="legend" id="legenda"></p>
+
+<div class="win" id="win">
+  <div class="titlebar">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="proj" style="margin-left:6px">motrip</div>
+    <div class="modes"><button>Painel</button><button class="on">Trabalho</button><button>Features</button></div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <div class="chip">⌕ Buscar ⌘K</div>
+      <div class="chip">▤ Notas</div>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="side">
+      <div class="grp label-mono">Geral</div>
+      <div class="row">✈︎ Frota</div>
+      <div class="row">◷ Agendamentos</div>
+      <div class="row">⇄ Planos de voo</div>
+      <div class="grp label-mono">Projetos 6</div>
+      <div class="row on">▾ motrip</div>
+      <div class="row sub on">https://umsalve.com/salve-s…</div>
+      <div class="row sub">+ Nova tarefa</div>
+      <div class="row">▸ meuingresso3.0</div>
+      <div class="row">▸ mycockpit</div>
+      <div class="row">▸ sicredi</div>
+      <div class="row">▸ prime-sales-hub</div>
+      <div class="foot"><span class="av">V</span><span>Vinicius</span></div>
+    </div>
+
+    <div class="main">
+      <div class="painel">
+        <div class="fio">
+          <div class="sheet">
+            <div class="tabs"><div class="tab">▢ Conversa</div><span style="color:var(--faint)">+</span></div>
+            <div class="thread">
+
+              <!-- ════ A MARGEM ════ -->
+              <div class="margem" id="margem">
+                <!-- régua: existe em todas as variantes -->
+                <div class="regua" id="mod-regua">
+                  <i></i><i class="u"></i><i></i><i></i><i class="u"></i><i></i>
+                  <i></i><i class="u"></i><i></i><i class="on"></i>
+                </div>
+
+                <!-- blast radius -->
+                <div class="mod oculto" id="mod-arquivos">
+                  <div class="cab">Tocando agora <span class="n">7</span></div>
+                  <div class="arq"><span class="dot"></span><span class="nome">extract-idea/index.ts</span><span class="d">+42</span></div>
+                  <div class="arq"><span class="dot"></span><span class="nome">AIService.ts</span><span class="d">+18</span><span class="r">−6</span></div>
+                  <div class="arq"><span class="dot q"></span><span class="nome">20260823_ideas.sql</span><span class="d">+31</span></div>
+                  <div class="arq"><span class="dot q"></span><span class="nome">ShellRoute.tsx</span><span class="d">+4</span><span class="r">−4</span></div>
+                  <div class="arq" style="color:var(--faint)"><span class="dot q"></span><span class="nome">+3 arquivos</span></div>
+                </div>
+
+                <!-- o olho -->
+                <div class="mod oculto" id="mod-olho">
+                  <div class="cab">O que ele vê <span class="n">agora</span></div>
+                  <div class="olho">
+                    <div class="tela"></div>
+                    <div class="barra"></div>
+                    <div class="conteudo"><span></span><span></span><span></span><span></span></div>
+                    <div class="selo">supabase.com/dashboard</div>
+                    <div class="selo" style="left:auto;right:6px;background:rgba(169,116,43,.85)">assumir</div>
+                  </div>
+                </div>
+
+                <!-- o olho, versão terminal -->
+                <div class="mod oculto" id="mod-olho-term">
+                  <div class="cab">Processo <span class="n">dev</span></div>
+                  <div class="olho">
+                    <div class="term">
+                      <div>vite v6.0.1 <b>ready</b> in 412 ms</div>
+                      <div>➜ Local: <u>http://localhost:5173/</u></div>
+                      <div>[plugin] rebuilding…</div>
+                      <div><b>✓</b> 1284 modules</div>
+                      <div>hmr update /src/App.tsx</div>
+                    </div>
+                    <div class="selo">npm run dev · 4min</div>
+                  </div>
+                </div>
+
+                <!-- capacidades em uso -->
+                <div class="mod oculto" id="mod-cap">
+                  <div class="cab">Em uso</div>
+                  <div class="cap">
+                    <span class="on">plan</span><span class="on">skill: sdd</span>
+                    <span>mcp: supabase</span><span class="on">subagente ×2</span>
+                  </div>
+                </div>
+
+                <!-- mapa do repo -->
+                <div class="mod oculto" id="mod-mapa">
+                  <div class="cab">Onde ele mexeu</div>
+                  <div class="mapa">
+                    <i></i><i class="t1"></i><i></i><i></i><i></i><i></i>
+                    <i class="t2"></i><i class="t3"></i><i class="t1"></i><i></i><i></i><i></i>
+                    <i></i><i class="t1"></i><i></i><i></i><i class="t1"></i><i></i>
+                    <i></i><i></i><i></i><i></i><i></i><i></i>
+                  </div>
+                  <div class="arq" style="color:var(--faint);font-size:10px">
+                    <span class="nome">supabase/functions · 4 de 6</span>
+                  </div>
+                </div>
+
+                <!-- a decisão pendente -->
+                <div class="mod oculto" id="mod-decisao">
+                  <div class="cab" style="color:var(--brass)">Espera você</div>
+                  <div style="border:1px solid color-mix(in srgb,var(--brass) 40%,transparent);
+                              background:var(--brass-soft);border-radius:8px;padding:8px">
+                    <div style="font-size:11px;color:var(--foreground);line-height:1.45">
+                      Rodar <span class="code" style="font-size:10px">supabase db push</span>
+                      no projeto de produção?
+                    </div>
+                    <div style="display:flex;gap:4px;margin-top:8px">
+                      <span style="font:10px var(--mono);background:var(--brass);color:var(--brass-fg);
+                                   border-radius:5px;padding:2px 7px">permitir</span>
+                      <span style="font:10px var(--mono);background:var(--secondary);
+                                   border-radius:5px;padding:2px 7px">negar</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- régua semântica (âncoras nomeadas) -->
+                <div class="mod oculto" id="mod-ancoras">
+                  <div class="cab">Marcos</div>
+                  <div class="arq"><span class="dot q" style="background:var(--st-success)"></span><span class="nome">plano aprovado</span></div>
+                  <div class="arq"><span class="dot q"></span><span class="nome">1º edit em extract-idea</span></div>
+                  <div class="arq"><span class="dot q" style="background:var(--st-error)"></span><span class="nome">teste falhou</span></div>
+                  <div class="arq"><span class="dot q"></span><span class="nome">migration escrita</span></div>
+                </div>
+
+                <!-- a frota -->
+                <div class="mod oculto" id="mod-frota">
+                  <div class="cab">Outros fogos <span class="n">2</span></div>
+                  <div class="fogo" title="prime-sales-hub · Go live virada · Codex gpt-5.6">
+                    <span class="dot"></span><span class="nome">Go live virada</span><span class="t">8min</span>
+                  </div>
+                  <div class="arq" style="padding-left:12px;color:var(--faint);font-size:10px">
+                    <span class="nome">prime-sales-hub · codex</span>
+                  </div>
+                  <div class="fogo" title="mycockpit · revisar a margem · Claude Opus">
+                    <span class="dot w"></span><span class="nome">revisar a margem</span><span class="t">espera</span>
+                  </div>
+                  <div class="arq" style="padding-left:12px;color:var(--faint);font-size:10px">
+                    <span class="nome">mycockpit · claude</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col">
+                <h4>O que falta pra rodar:</h4>
+                <ol>
+                  <li><b>Colar a migration</b> — o SQL está inteiro em
+                    <span class="code">supabase/migrations/20260823120000_ideas.sql</span>,
+                    pronto pro SQL Editor do Dashboard.</li>
+                  <li><span class="code">MAPBOX_ACCESS_TOKEN</span> <b>como secret da edge function</b> — o
+                    token existe no <span class="code">.env</span> do app, mas a
+                    <span class="code">extract-idea</span> lê do ambiente do Deno.</li>
+                  <li><b>Deploy:</b> <span class="code">supabase functions deploy extract-idea</span>.</li>
+                </ol>
+                <p>Não dei push, <span class="code">main</span> local está 13 commits à frente do remoto.</p>
+                <div class="recibo">
+                  <span style="color:var(--st-success)">✓ concluído</span>
+                  <span>17min 56s</span><span>194 ↓ · 68k ↑</span><span>cache 8.5M</span>
+                  <span style="margin-left:auto">claude-opus-5 · US$ 7,35</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="composer">
+              <div class="box">
+                <div class="ph">Peça algo… ou / para comandos</div>
+                <div class="tools"><span>◍</span><span>Claude Code · Opus · medium</span>
+                  <span style="background:var(--brass-soft);color:var(--brass);border-radius:6px;padding:2px 8px">Liberado</span>
+                  <div class="send">↑</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="status">
+        <span>◐ Claude</span><span>80%</span><span>sessão US$ 7,87</span>
+        <span class="right">local · v0.1.0-t310</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const win = document.getElementById("win")
+  const legenda = document.getElementById("legenda")
+  const MODULOS = ["mod-arquivos","mod-olho","mod-olho-term","mod-cap","mod-mapa","mod-frota"]
+
+  const VARIANTES = {
+    hoje: {
+      mostra: [],
+      texto: "<b>Hoje.</b> Só a régua. Em 1512 sem painel direito sobram 232px de cada lado; COM o painel, 49px — quase nada. Qualquer desenho que EXIJA largura já nasceu errado."
+    },
+    ocioso: {
+      mostra: ["mod-ancoras"],
+      texto: "<b>Ocioso.</b> A régua ganha nome: em vez de turnos anônimos, os MARCOS do fio (plano aprovado, 1º edit, teste falhou). É a evolução conservadora — e a pesquisa diz que é provavelmente a certa, porque minimapa anônimo é o caso canônico de periferia ignorada."
+    },
+    rodando: {
+      mostra: ["mod-arquivos","mod-olho-term"],
+      texto: "<b>Rodando.</b> As duas perguntas de quem tem um agente solto: <b>até onde ele foi?</b> (arquivos tocados, agrupados) e <b>o que ele está vendo?</b> (o PTY do processo, que JÁ streama no store e não tem tela nenhuma hoje). Nada aqui narra tempo — o relógio é do composer."
+    },
+    bloqueado: {
+      mostra: ["mod-decisao"],
+      texto: "<b>Bloqueado.</b> Quando o turno para esperando você, a margem esvazia e mostra SÓ a decisão. É o único estado em que ela pede algo — e por isso é o único com cor."
+    },
+    excesso: {
+      mostra: ["mod-arquivos","mod-olho","mod-cap","mod-mapa","mod-frota"],
+      texto: "<b>O excesso, de propósito.</b> Tudo ligado ao mesmo tempo: raio, olho, capacidades, mapa e a frota. É assim que vira o <i>audit noise</i> do Antigravity — e é por isso que a proposta é um SLOT que troca com o estado, não um rail que acumula."
+    },
+  }
+
+  function setVariante(v) {
+    const cfg = VARIANTES[v]
+    for (const id of MODULOS) {
+      document.getElementById(id).classList.toggle("oculto", !cfg.mostra.includes(id))
+    }
+    legenda.innerHTML = cfg.texto
+    document.querySelectorAll("#variantes button").forEach(b => b.classList.toggle("on", b.dataset.v === v))
+  }
+  function setLargura(w) {
+    win.style.width = w + "px"
+    // Régua e módulos por LARGURA do fio, não da janela — é o contêiner que
+    // manda (a mesma lição do ADR-111).
+    const fio = w * 0.81
+    const gutter = (fio - 760) / 2
+    win.classList.toggle("sem-margem", gutter < 38)
+    document.querySelectorAll("#larguras button").forEach(b => b.classList.toggle("on", b.dataset.w === String(w)))
+    const nota = document.getElementById("nota-largura")
+    if (nota) nota.textContent = `gutter ≈ ${Math.round(gutter)}px`
+  }
+  document.querySelectorAll("#variantes button").forEach(b => b.onclick = () => setVariante(b.dataset.v))
+  document.querySelectorAll("#larguras button").forEach(b => b.onclick = () => setLargura(+b.dataset.w))
+  document.querySelectorAll("#temas button").forEach(b => b.onclick = () => {
+    document.documentElement.dataset.theme = b.dataset.t
+    document.querySelectorAll("#temas button").forEach(x => x.classList.toggle("on", x === b))
+  })
+
+  const hash = (location.hash || "#hoje").slice(1).split(",")
+  if (hash.includes("dark")) {
+    document.documentElement.dataset.theme = "dark"
+    document.querySelectorAll("#temas button").forEach(x => x.classList.toggle("on", x.dataset.t === "dark"))
+  }
+  const larg = hash.find(h => /^\d+$/.test(h))
+  setLargura(larg ? +larg : 1512)
+  setVariante(Object.keys(VARIANTES).includes(hash[0]) ? hash[0] : "hoje")
+</script>
+</body>
+</html>
