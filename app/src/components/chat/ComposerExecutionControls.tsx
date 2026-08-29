@@ -59,7 +59,7 @@ export function IdentityDoor({
     <div ref={wrapRef} className="relative">
       <Button
         variant="ghost"
-        size="sm"
+        size="padrao"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         title="Agent, modelo e esforço"

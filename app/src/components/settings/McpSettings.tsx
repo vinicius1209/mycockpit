@@ -417,7 +417,7 @@ export function McpSettings() {
           </p>
         </div>
         <Button
-          size="sm"
+          size="padrao"
           variant="ghost"
           onClick={() => void load()}
           disabled={loading}
@@ -539,7 +539,7 @@ export function McpSettings() {
                         )}
                       </span>
                       <Button
-                        size="sm"
+                        size="padrao"
                         variant={
                           authByServer[server.id]?.state === "conectado"
                             ? "ghost"

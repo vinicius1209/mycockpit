@@ -132,7 +132,7 @@ export function WorktreesPainel({
                       </span>
                     ) : w.clean ? (
                       <Button
-                        size="sm"
+                        size="padrao"
                         variant="outline"
                         className="h-7 shrink-0 text-[12px]"
                         disabled={ocupado === w.branch}

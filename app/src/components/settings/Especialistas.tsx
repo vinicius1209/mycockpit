@@ -197,18 +197,18 @@ function DetailView({
         </p>
       </div>
       <div className="flex items-center gap-2 border-t border-border/60 px-6 py-3">
-        <Button size="sm" variant="ghost" onClick={onBack} className="mr-auto">
+        <Button size="padrao" variant="ghost" onClick={onBack} className="mr-auto">
           <ArrowLeft className="size-3.5" /> Voltar
         </Button>
         <Button
-          size="sm"
+          size="padrao"
           variant="ghost"
           onClick={onRemove}
           className="text-muted-foreground hover:text-st-error"
         >
           <Trash2 className="size-3.5" /> Excluir
         </Button>
-        <Button size="sm" onClick={onEdit}>
+        <Button size="padrao" onClick={onEdit}>
           <Pencil className="size-3.5" /> Editar
         </Button>
       </div>
@@ -374,7 +374,7 @@ function CreateView({
               />
               <div className="flex flex-col gap-1.5">
                 <Button
-                  size="sm"
+                  size="padrao"
                   variant="outline"
                   onClick={() => set("avatarSalt", form.avatarSalt + 1)}
                   className="w-fit"
@@ -461,7 +461,7 @@ function CreateView({
                 aria-label="Novo item da rubrica"
               />
               <Button
-                size="sm"
+                size="padrao"
                 variant="outline"
                 onClick={addRubrica}
                 disabled={!rubDraft.trim()}
@@ -597,10 +597,10 @@ function CreateView({
       </div>
 
       <div className="flex items-center gap-2 border-t border-border/60 px-6 py-3">
-        <Button size="sm" variant="ghost" onClick={onBack} className="mr-auto">
+        <Button size="padrao" variant="ghost" onClick={onBack} className="mr-auto">
           <ArrowLeft className="size-3.5" /> Voltar
         </Button>
-        <Button size="sm" onClick={() => void salvar()} disabled={!canCreate(form) || saving}>
+        <Button size="padrao" onClick={() => void salvar()} disabled={!canCreate(form) || saving}>
           {editing ? "Salvar versão" : "Criar especialista"}
         </Button>
       </div>
@@ -714,7 +714,7 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
-                    size="sm"
+                    size="padrao"
                     onClick={() => void instalarEquipe()}
                     disabled={installing}
                   >
@@ -722,7 +722,7 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
                     {installing ? "Instalando…" : "Instalar equipe inicial"}
                   </Button>
                   <Button
-                    size="sm"
+                    size="padrao"
                     variant="ghost"
                     onClick={() => setView({ kind: "create", editId: null })}
                   >
@@ -755,14 +755,14 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
                 duplicar o "Criar especialista". */}
             {list.length > 0 && (
               <Button
-                size="sm"
+                size="padrao"
                 onClick={() => setView({ kind: "create", editId: null })}
               >
                 <Plus className="size-3.5" /> Criar especialista
               </Button>
             )}
             {onClose && (
-              <Button size="sm" variant="ghost" onClick={onClose}>
+              <Button size="padrao" variant="ghost" onClick={onClose}>
                 Fechar
               </Button>
             )}
@@ -784,7 +784,7 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
             <p className="text-[13px] text-muted-foreground">
               Esse especialista não está mais na lista.
             </p>
-            <Button size="sm" variant="outline" onClick={backToList}>
+            <Button size="padrao" variant="outline" onClick={backToList}>
               Voltar
             </Button>
           </div>

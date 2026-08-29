@@ -222,13 +222,13 @@ export function ModelsSettings() {
             {pendentes.map((p) => (
               <ModelRow key={p.id} p={p} price={precoDe(p)} pending>
                 <Button
-                  size="sm"
+                  size="padrao"
                   className="bg-brass text-background hover:bg-brass hover:opacity-90"
                   onClick={() => void decide(p, "active")}
                 >
                   Adicionar
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => void decide(p, "dismissed")}>
+                <Button size="padrao" variant="ghost" onClick={() => void decide(p, "dismissed")}>
                   Não
                 </Button>
               </ModelRow>

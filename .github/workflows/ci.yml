@@ -39,6 +39,8 @@ jobs:
         run: node scripts/check-superficies.mjs
       - name: primitivas de superfície (§12 · vendor só em components/ui)
         run: node scripts/check-primitivas.mjs
+      - name: geometria de controle (§13 · catraca)
+        run: node scripts/check-geometria-de-controle.mjs
       - name: config de agent (nada fixo desta máquina)
         run: node scripts/check-config-de-agent.mjs
 

@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { controle } from "@/components/ui/controle"
 import { useStickyNotes, selectNotesFor } from "@/store/stickyNotes"
 import { useChat } from "@/store/chat"
 import { useApp } from "@/store/app"
@@ -66,7 +67,10 @@ function IconBtn({
       disabled={disabled}
       title={title}
       aria-label={title}
-      className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+      className={cn(
+        controle("chip", { quadrado: true }),
+        "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40",
+      )}
     >
       {children}
     </button>
@@ -102,7 +106,10 @@ function EscopoPill({
           ? `Mover para "${ROTULO_DE_ESCOPO[proximo]}"`
           : "Sem conversa ativa: esta nota é do projeto"
       }
-      className="flex shrink-0 items-center gap-1 rounded-md bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors enabled:hover:bg-accent enabled:hover:text-foreground disabled:cursor-default"
+      className={cn(
+        controle("chip"),
+        "bg-secondary font-medium text-muted-foreground transition-colors enabled:hover:bg-accent enabled:hover:text-foreground disabled:cursor-default",
+      )}
     >
       <Icone className="size-3" />
       <span>{ROTULO_DE_ESCOPO[escopo]}</span>
@@ -138,8 +145,14 @@ function NovaNota({
     )
   const classe =
     variant === "icone"
-      ? "grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      : "mt-4 flex items-center gap-1.5 rounded-lg border border-border/80 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-accent"
+      ? cn(
+          controle("chip", { quadrado: true }),
+          "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+        )
+      : cn(
+          controle("compacto"),
+          "mt-4 border border-border/80 bg-background font-medium text-foreground transition-colors hover:bg-accent",
+        )
 
   if (!temConversa) {
     return (
@@ -234,7 +247,10 @@ function FolhaVazia({
           <button
             type="button"
             onClick={desfazer.acao}
-            className="mt-4 flex items-center gap-1.5 rounded-lg border border-border/80 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:bg-accent"
+            className={cn(
+              controle("compacto"),
+              "mt-4 border border-border/80 bg-background font-medium text-foreground transition-colors hover:bg-accent",
+            )}
           >
             {desfazer.rotulo}
           </button>

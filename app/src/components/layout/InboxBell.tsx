@@ -330,7 +330,7 @@ export function InboxBell() {
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icone-padrao"
           className="pointer-events-auto text-muted-foreground hover:text-foreground"
           title="Notificações"
           aria-label="Notificações"

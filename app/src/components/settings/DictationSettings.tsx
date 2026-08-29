@@ -96,7 +96,7 @@ function HotkeyField() {
               : "desativado"}
         </span>
         <Button
-          size="sm"
+          size="padrao"
           variant="secondary"
           disabled={!enabled}
           onClick={() => setCapturing((c) => !c)}
@@ -106,7 +106,7 @@ function HotkeyField() {
       </div>
       <div className="mt-1.5 flex items-center gap-2">
         <Button
-          size="sm"
+          size="padrao"
           variant="ghost"
           className="text-muted-foreground"
           disabled={!enabled || combo === DEFAULT_DICTATION_HOTKEY}
@@ -118,7 +118,7 @@ function HotkeyField() {
           Restaurar padrão
         </Button>
         <Button
-          size="sm"
+          size="padrao"
           variant="ghost"
           className="text-muted-foreground"
           disabled={!enabled || combo === null}
@@ -255,7 +255,7 @@ export function DictationSettings() {
                 disabled={!enabled}
               />
               <Button
-                size="sm"
+                size="padrao"
                 variant="secondary"
                 onClick={addVocab}
                 disabled={!enabled || !vocabDraft.trim()}

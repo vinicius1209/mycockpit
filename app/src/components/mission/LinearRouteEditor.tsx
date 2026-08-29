@@ -250,7 +250,7 @@ export function LinearRouteEditor({
           </p>
         </div>
         {!readOnly && phases.length > 0 && (
-          <Button variant="outline" size="sm" onClick={addPhase}>
+          <Button variant="outline" size="padrao" onClick={addPhase}>
             <Plus className="size-3.5" />
             Adicionar fase
           </Button>
@@ -270,7 +270,7 @@ export function LinearRouteEditor({
               Adicione a primeira fase para definir quem começa a missão.
             </p>
             {!readOnly && (
-              <Button size="sm" className="mt-4" onClick={addPhase}>
+              <Button size="padrao" className="mt-4" onClick={addPhase}>
                 <Plus className="size-3.5" />
                 Adicionar primeira fase
               </Button>
@@ -327,7 +327,7 @@ export function LinearRouteEditor({
                       <Button
                         type="button"
                         variant="ghost"
-                        size="icon-xs"
+                        size="icone-chip"
                         disabled={index === 0}
                         onClick={() => movePhase(index, -1)}
                         title="Mover fase para cima"
@@ -338,7 +338,7 @@ export function LinearRouteEditor({
                       <Button
                         type="button"
                         variant="ghost"
-                        size="icon-xs"
+                        size="icone-chip"
                         disabled={index === phases.length - 1}
                         onClick={() => movePhase(index, 1)}
                         title="Mover fase para baixo"
@@ -349,7 +349,7 @@ export function LinearRouteEditor({
                       <Button
                         type="button"
                         variant="ghost"
-                        size="icon-xs"
+                        size="icone-chip"
                         disabled={phases.length <= 1}
                         onClick={() => removePhase(index)}
                         title="Remover fase"

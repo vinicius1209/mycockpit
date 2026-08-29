@@ -52,7 +52,7 @@ export function NotificationStep() {
             janelinha que aparecer.
           </div>
           <Button
-            size="sm"
+            size="padrao"
             variant={ok ? "outline" : "default"}
             disabled={state === "testing"}
             onClick={() => void sendTest()}

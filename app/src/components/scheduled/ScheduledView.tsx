@@ -478,11 +478,11 @@ function RescheduleDialog({
       }
       footer={
         <>
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" size="padrao" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
           <Button
-            size="sm"
+            size="padrao"
             disabled={!future || saving}
             onClick={() => void handleSave()}
           >
@@ -686,10 +686,10 @@ function NewScheduleDialog({
       description="Um prompt que roda sozinho no projeto, no horário que você definir."
       footer={
         <>
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" size="padrao" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button size="sm" disabled={!canSave} onClick={() => void handleSave()}>
+          <Button size="padrao" disabled={!canSave} onClick={() => void handleSave()}>
             Criar automação
           </Button>
         </>
@@ -989,14 +989,14 @@ export function ScheduledView() {
           </span>
           <div className="ml-auto flex items-center gap-1.5">
             {schedules.length > 0 && (
-              <Button size="sm" onClick={() => openDialog(null)}>
+              <Button size="padrao" onClick={() => openDialog(null)}>
                 <Plus className="size-3.5" />
                 Nova automação
               </Button>
             )}
             <Button
               variant="ghost"
-              size="icon-sm"
+              size="icone-padrao"
               className="ml-2 text-muted-foreground/70 hover:text-foreground"
               onClick={() => setScheduledOpen(false)}
               title="Fechar"

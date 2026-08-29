@@ -93,7 +93,7 @@ export function CostMaintenance() {
             </div>
             {!nada && (
               <Button
-                size="sm"
+                size="padrao"
                 variant="secondary"
                 disabled={busy}
                 onClick={() => void recompute()}

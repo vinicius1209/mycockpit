@@ -202,7 +202,7 @@ export function FusionLauncher({
               Já há uma disputa nesta conversa.
             </span>
           )}
-          <Button size="sm" disabled={!canLaunch} onClick={launch}>
+          <Button size="padrao" disabled={!canLaunch} onClick={launch}>
             <Swords className="size-3.5" />
             Disputar
           </Button>

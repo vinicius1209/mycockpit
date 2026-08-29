@@ -239,7 +239,7 @@ export function MicButton({
       <Button
         ref={btnRef}
         variant="ghost"
-        size="icon-sm"
+        size="icone-padrao"
         onClick={() => void (state === "idle" ? start() : null)}
         className="rounded-full text-muted-foreground hover:text-foreground"
         title={

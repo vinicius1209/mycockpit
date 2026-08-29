@@ -503,7 +503,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
             </div>
             <Button
               variant="ghost"
-              size="icon-sm"
+              size="icone-padrao"
               className="text-muted-foreground hover:text-foreground"
               onClick={onAddProject}
               title="Adicionar projeto"
@@ -525,7 +525,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                   <p className="text-[13px] text-muted-foreground">
                     Nenhum projeto ainda.
                   </p>
-                  <Button variant="outline" size="sm" onClick={onAddProject}>
+                  <Button variant="outline" size="padrao" onClick={onAddProject}>
                     <Plus className="size-4" />
                     Adicionar projeto
                   </Button>
@@ -590,7 +590,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
         </div>
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icone-padrao"
           className="text-muted-foreground hover:text-foreground"
           onClick={toggleTheme}
           title="Alternar tema"

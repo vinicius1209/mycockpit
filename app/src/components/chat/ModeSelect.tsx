@@ -88,7 +88,7 @@ export function ModeSelect({
       <DropdownMenuTrigger asChild disabled={disabled}>
         <Button
           variant="ghost"
-          size="sm"
+          size="padrao"
           className={cn(
             "h-8 gap-1.5 px-2.5 text-[12px] font-medium transition-colors",
             perigoso

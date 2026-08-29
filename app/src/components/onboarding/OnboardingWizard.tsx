@@ -63,10 +63,10 @@ function SkipConfirm({
           Sobre.
         </p>
         <div className="mt-3 flex items-center justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={onSkip}>
+          <Button variant="ghost" size="padrao" onClick={onSkip}>
             Pular
           </Button>
-          <Button ref={ref} size="sm" onClick={onKeepGoing}>
+          <Button ref={ref} size="padrao" onClick={onKeepGoing}>
             Continuar
           </Button>
         </div>
@@ -234,7 +234,7 @@ export function OnboardingWizard() {
             {index > 0 && (
               <Button
                 variant="ghost"
-                size="sm"
+                size="padrao"
                 onClick={goBack}
                 className="gap-1.5 text-muted-foreground"
               >
@@ -247,14 +247,14 @@ export function OnboardingWizard() {
             {!last && (
               <Button
                 variant="ghost"
-                size="sm"
+                size="padrao"
                 onClick={() => close("skip")}
                 className="text-muted-foreground"
               >
                 Pular para o projeto
               </Button>
             )}
-            <Button size="sm" onClick={goNext} className="gap-1.5">
+            <Button size="padrao" onClick={goNext} className="gap-1.5">
               {last ? (
                 <>
                   <FolderPlus className="size-3.5" />

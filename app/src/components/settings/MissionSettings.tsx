@@ -69,7 +69,7 @@ export function MissionSettings() {
               </div>
             </div>
             <Button
-              size="sm"
+              size="padrao"
               variant="secondary"
               className="mt-4 w-full justify-center"
               onClick={openFlightPlans}

@@ -125,7 +125,7 @@ export function TitleBar() {
       <div className="pointer-events-none flex min-w-0 items-center gap-1.5 pl-20">
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icone-padrao"
           className="pointer-events-auto shrink-0 text-muted-foreground hover:text-foreground"
           onClick={toggleSidebar}
           title="Alternar projetos"
@@ -176,7 +176,7 @@ export function TitleBar() {
         <InboxBell />
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icone-padrao"
           className="pointer-events-auto text-muted-foreground hover:text-foreground"
           onClick={() => setSettingsOpen(true)}
           title="Configurações"
@@ -187,7 +187,7 @@ export function TitleBar() {
         <BarDivider />
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icone-padrao"
           className="pointer-events-auto text-muted-foreground hover:text-foreground"
           onClick={toggleContext}
           title="Alternar contexto"

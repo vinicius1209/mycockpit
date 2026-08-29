@@ -240,7 +240,7 @@ export function CompanionSettings() {
                     </div>
                     <div className="flex shrink-0 gap-1.5">
                       <Button
-                        size="sm"
+                        size="padrao"
                         variant="secondary"
                         disabled={busyId === p.id}
                         onClick={() => void decide(p.id, false)}
@@ -248,7 +248,7 @@ export function CompanionSettings() {
                         Recusar
                       </Button>
                       <Button
-                        size="sm"
+                        size="padrao"
                         disabled={busyId === p.id}
                         onClick={() => void decide(p.id, true)}
                       >
@@ -327,7 +327,7 @@ export function CompanionSettings() {
                               </div>
                             </div>
                             <Button
-                              size="sm"
+                              size="padrao"
                               variant={armedId === d.id ? "destructive" : "secondary"}
                               disabled={busyId === d.id}
                               onClick={() => void revoke(d.id, false)}
@@ -349,7 +349,7 @@ export function CompanionSettings() {
                               </div>
                             </div>
                             <Button
-                              size="sm"
+                              size="padrao"
                               variant={armedId === "legacy" ? "destructive" : "secondary"}
                               disabled={busyId === "legacy"}
                               onClick={() => void revoke("legacy", true)}

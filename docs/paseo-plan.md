@@ -25,8 +25,8 @@ superfícies) repetiria o mesmo erro num lugar novo.
 | # | frente | origem | estado |
 |---|---|---|---|
 | **D1** | Tabela de superfícies + primitiva `ui/popover.tsx` | PA2 | **feito** (§12, build 311) |
-| **D2** | Geometria de controle fechada, com guarda | PA3 | **próxima** |
-| **D3** | Alinhamento óptico e a regra de borda afiada | lacunas 3 e 4 | a fazer |
+| **D2** | Geometria de controle fechada, com guarda | PA3 | **feito** (§13, build 314) |
+| **D3** | Alinhamento óptico e a regra de borda afiada | lacunas 3 e 4 | **próxima** |
 | **X1** | `isAvailable()` antes de oferecer motor | PA9 | a fazer |
 | **X2** | Sentinela `{{{prompt}}}` no registry | PA7 | a fazer |
 | **F1** | Adotar sessão externa | PA1 | a fazer |
@@ -100,12 +100,38 @@ Inventário do que existe hoje (arquivos que importam cada primitiva):
 
 ---
 
-## D2 — Geometria de controle (esboço)
+## D2 — Geometria de controle
 
-Fechar altura/padding/fonte de controle como o §3 fechou tipografia: níveis
-nomeados, nada de `h-6 px-2 text-[11px]` à mão. A regra que fecha, deles:
-*"never shrink a control's font or padding locally to fit a context"*. Guarda
-no mesmo molde do `check-type-scale.mjs`. Especificado quando D1 fechar.
+### O defeito, medido
+**43 combinações distintas** de altura/padding/fonte em 75 arquivos. E a
+surpresa: o app já havia convergido numa escada de 4px sem saber. `px-2.5 py-1`
+(39×), `px-2 py-1.5` (17×), `px-3 py-1.5` (16×) e `px-2 py-1` (13×) dão 24, 28 e
+32px de altura final. Faltava o nome, não a régua.
+
+Do lado do `<Button>`: 3 degraus mortos (`lg` 4 usos, `icon` e `icon-lg` zero) e
+o de 28px, o mais escrito à mão, não existia. **89 arquivos escrevem `<button>`
+à mão; 34 importam `<Button>`** — daí a escada precisar de duas portas.
+
+### Definição de pronto — cumprida em 29/08/2026
+- §13 com quatro degraus nomeados por PAPEL, não por camiseta. ✓
+- `components/ui/controle.ts` como fonte única, e `button.tsx` derivando dela. ✓
+- 99 call sites migrados; o tipo-união do `size` cobrou cada um. ✓
+- `controle()` como segunda porta, pro botão à mão. ✓
+- Catraca `check-geometria-de-controle.mjs`: 182 controles em 70 arquivos
+  congelados, só desce, arquivo novo nasce em zero. ✓
+- `check` 12/12 · `tsc -b` limpo · 3481 testes · build 314. ✓
+
+### O que a frente achou de quebra
+1. **A base do `<Button>` tinha `text-sm` (14px)**, e o §3 diz que botão é corpo
+   de UI, 13px. Os 143 botões do app estavam 1px acima da escala, e ninguém via
+   porque a violação morava dentro de `components/ui/`, fora do alcance da
+   guarda de tipografia. Agora a fonte vem do degrau.
+2. **`gap`, `rounded` e `text-` viviam na base E no degrau**, sobrevivendo só
+   pela ordem do twMerge. Classe que só existe por ordem de merge é classe que
+   ninguém consegue ler; saíram da base.
+3. **O codemod foi ganancioso** e renomeou o `size` de `AppDialog` e
+   `SelectTrigger` junto. O `tsc -b` cobrou os oito, um por um. Escala com tipo
+   fechado é o que torna renomear em massa seguro.
 
 ## D3 — Alinhamento e borda (esboço)
 

@@ -180,7 +180,7 @@ export function AddProjectDialog() {
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size="padrao"
               onClick={handlePickPath}
               className="h-9 shrink-0 gap-1.5 text-[12px]"
             >
@@ -235,7 +235,7 @@ export function AddProjectDialog() {
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="padrao"
             onClick={() => setOpen(false)}
             disabled={submitting}
             className="text-[12px]"
@@ -244,7 +244,7 @@ export function AddProjectDialog() {
           </Button>
           <Button
             type="submit"
-            size="sm"
+            size="padrao"
             disabled={!path.trim() || submitting}
             className="gap-1.5 text-[12px]"
           >

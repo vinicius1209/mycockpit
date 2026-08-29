@@ -24,6 +24,7 @@
 import { useEffect, useState } from "react"
 import { Gauge, RefreshCw, X } from "lucide-react"
 import { PainelDaFaixa } from "@/components/layout/statusBarChrome"
+import { controle } from "@/components/ui/controle"
 import { agentDef } from "@/lib/agents"
 import { usageWindowAgents } from "@/lib/agentRoster"
 import { AgentLogo } from "@/components/common/AgentLogo"
@@ -236,7 +237,10 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
           type="button"
           onClick={handleRefresh}
           disabled={refreshing}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
+          className={cn(
+            controle("chip"),
+            "text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50",
+          )}
           title="Atualizar leituras agora"
         >
           <RefreshCw className={cn("size-3", refreshing && "animate-spin")} />

@@ -326,7 +326,7 @@ export function MissionLauncher({
               <div className="flex items-center gap-0.5 px-2 pb-2">
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icone-padrao"
                   onClick={() => void attach()}
                   className="rounded-full text-muted-foreground hover:text-foreground"
                   title="Anexar arquivo (insere @caminho; cole imagem/PDF direto no texto)"
@@ -466,11 +466,11 @@ export function MissionLauncher({
                     className="h-7 flex-1 rounded-md border bg-background px-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-brass/50"
                     autoFocus
                   />
-                  <Button size="sm" className="h-7" onClick={saveAsTeam}>
+                  <Button size="padrao" className="h-7" onClick={saveAsTeam}>
                     Salvar
                   </Button>
                   <Button
-                    size="sm"
+                    size="padrao"
                     variant="ghost"
                     className="h-7 text-muted-foreground"
                     onClick={() => {
@@ -587,7 +587,7 @@ export function MissionLauncher({
               Já há uma missão rodando nesta conversa.
             </span>
           )}
-          <Button size="sm" disabled={!canLaunch} onClick={launch}>
+          <Button size="padrao" disabled={!canLaunch} onClick={launch}>
             <Rocket className="size-3.5" />
             Lançar missão
           </Button>

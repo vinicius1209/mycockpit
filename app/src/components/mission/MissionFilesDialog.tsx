@@ -151,7 +151,7 @@ export function MissionFilesDialog({
                 </span>
                 {selected && canPromote(selected) && (
                   <Button
-                    size="sm"
+                    size="padrao"
                     variant="outline"
                     className="h-7 gap-1.5 text-[12px]"
                     onClick={() => void promote(selected)}

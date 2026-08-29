@@ -375,7 +375,7 @@ export function ComposerActions({
       <div className="flex flex-wrap items-center gap-1.5">
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icone-padrao"
           onClick={onAttach}
           className="rounded-full text-muted-foreground hover:text-foreground"
           title="Anexar arquivo"
@@ -389,7 +389,7 @@ export function ComposerActions({
         {onEspecialistas && (
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icone-padrao"
             onClick={onEspecialistas}
             className="rounded-full text-muted-foreground hover:text-foreground"
             title="Especialistas"
@@ -461,7 +461,7 @@ function SendSplit({
     return (
       <Button
         variant="destructive"
-        size="icon-sm"
+        size="icone-padrao"
         onClick={onStop}
         className="rounded-full"
         aria-label="Parar"
@@ -482,7 +482,7 @@ function SendSplit({
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icone-padrao"
             aria-label="Outras formas de enviar"
             title="Outras formas de enviar (disputa, missão)"
             className="rounded-full text-muted-foreground hover:text-foreground"
@@ -530,7 +530,7 @@ function SendSplit({
       </DropdownMenu>
       {/* O primário: idêntico ao que sempre foi (mesma Button/size/raio). */}
       <Button
-        size="icon-sm"
+        size="icone-padrao"
         onClick={onSubmit}
         disabled={!canSend}
         className="rounded-full"

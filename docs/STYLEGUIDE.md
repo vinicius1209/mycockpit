@@ -538,6 +538,8 @@ Checklist:
   [ ] Superfície: §12 (a primitiva certa pro gesto; vendor só em
       components/ui; nenhum comportamento de primitiva desarmado na mão;
       divergência resolvida por parâmetro, não por superfície nova)
+  [ ] Controle: §13 (altura de um dos quatro degraus; ícone acompanhando o
+      degrau; nenhuma fonte ou padding encolhido localmente pra caber)
 Veredito: aprovado | aprovado com ressalvas | reprovado
 ```
 
@@ -633,7 +635,7 @@ UsagePill (`DropdownMenuContent` z-50 sob o header z-[110]) → `z-[120]` +
 
 ## 10. Guarda automática (ratchet de lints)
 
-Este guia deixou de depender de memória: **onze** scripts rodam na CI (job
+Este guia deixou de depender de memória: **doze** scripts rodam na CI (job
 `guardas` do `.github/workflows/ci.yml`, separado dos testes) e localmente por
 `cd app && bun run check`. A ideia é a do Buzz (`docs/study-buzz.md`, item B1):
 **passada de despoluição sem guarda re-fragmenta em poucos sprints**. Código
@@ -647,6 +649,7 @@ nosso; só as regras vieram de lá.
 | `scripts/lints/rodandoMotion.mjs` | §6, o único estado que se move | a `.conv-spin` perde a animação de CSS ou o bloco `prefers-reduced-motion` que a degrada num ponto sólido visível |
 | `scripts/check-marca.mjs` | o nome do produto | volta `MyCockpit` numa string que o usuário lê ou que vai no prompt de um agente. Só varre a forma com MAIÚSCULAS e ignora comentário: os identificadores persistidos (`mycockpit.db`, `.mycockpit/`, `mc.app`, `dev.vinicius.mycockpit`, `mycockpit.flight-plan`) são minúsculos e ficam de fora POR CONSTRUÇÃO, não por allowlist que alguém precisa lembrar de manter |
 | `scripts/check-primitivas.mjs` | §12, a primitiva certa | um consumidor importa `radix-ui`/`@radix-ui/*` fora de `components/ui/`, ou monta um `DropdownMenuContent` sem nenhum item de menu (painel vestido de lista de comandos) |
+| `scripts/check-geometria-de-controle.mjs` | §13, a escada de controle | um arquivo passa do número de controles à mão congelado em `scripts/lints/geometria-baseline.json`, ou um arquivo novo nasce com geometria própria. Catraca: o número só desce, e `--update` recusa apertar enquanto houver arquivo acima |
 | `scripts/check-superficies.mjs` | o vocabulário de cartão e selo das Configurações | uma seção inventa a enésima string de cartão em vez de usar o vocabulário. É catraca: o número por arquivo só desce, e arquivo novo nasce em zero |
 | `scripts/lints/paletaCrua.mjs` | §2, cor vem de token | entra cor crua do Tailwind (`bg-amber-500`, `text-emerald-400`) em vez de token da casa |
 | `scripts/check-guia-sem-linha.mjs` | este documento | volta referência `arquivo:linha` no guia. A catraca do §10 move números por desenho, então referência com linha apodrece sozinha e manda o leitor pro lugar errado com a autoridade do guia. Nome de símbolo é greppável e sobrevive à divisão |
@@ -800,3 +803,58 @@ arquivo.
 
 **Guarda:** `scripts/check-primitivas.mjs` (§10). Sem baseline, de propósito: o
 repositório já está em zero, e congelar zero é a própria regra.
+
+## 13. Geometria de controle
+
+O §3 fechou o tamanho da LETRA. Este fecha o tamanho do que se APERTA.
+
+**Quatro degraus. Não adicione um quinto.**
+
+| Degrau | Altura | Fonte | Ícone | Papel |
+|---|---|---|---|---|
+| **`chip`** | 24px | 11 | 12px | chrome denso: faixa de status, cabeçalho de painel, pill |
+| **`compacto`** | 28px | 12 | 14px | secundário dentro de um painel: filtro, aba, ação de linha |
+| **`padrao`** | 32px | 13 | 16px | o controle de superfície. Na dúvida, é este |
+| **`destaque`** | 36px | 13 | 16px | ação primária de dialog e de formulário |
+
+A escada mora em `components/ui/controle.ts` e tem duas portas:
+
+```tsx
+<Button size="padrao">                          // o controle inteiro
+className={cn(controle("chip"), "…")}           // botão à mão em chrome denso
+className={cn(controle("chip", { quadrado: true }), "…")}   // só ícone
+```
+
+A segunda porta existe porque **89 arquivos escrevem `<button>` à mão** e só 34
+importam `<Button>`. Escada que só o `<Button>` conhece não é escada do app.
+
+Regras decidíveis:
+
+- **Nunca encolha a fonte ou o padding de um controle localmente pra ele
+  caber.** Se o contexto pede menor, ou o degrau certo é outro, ou o degrau
+  está faltando. `h-6 px-2 text-[11px]` escrito à mão é sempre um dos dois.
+- **Degrau novo exige ADR e linha nesta tabela**, como tamanho de fonte novo
+  exige no §3. Não existe exceção no script.
+- **O ícone acompanha o degrau.** Ícone fora de escala é o jeito mais fácil de
+  a escada parecer errada estando certa.
+- **Ícone puro não é controle.** 12 a 16px (`size-3`, `size-3.5`, `size-4`) é
+  glifo dentro de um controle, e não tem degrau próprio.
+
+**Por que quatro, e o que saiu (29/08/2026).** A varredura achou **43
+combinações distintas** de altura/padding/fonte em 75 arquivos, e a surpresa foi
+que o app já havia convergido numa escada de 4px sem saber: `px-2.5 py-1` (39×),
+`px-2 py-1.5` (17×), `px-3 py-1.5` (16×) e `px-2 py-1` (13×) dão 24, 28 e 32px
+de altura final. Faltava o nome, não a régua.
+
+Do lado do `<Button>`, a escala tinha três degraus mortos (`lg` com 4 usos,
+`icon` e `icon-lg` com zero) e **não tinha o de 28px**, que é o que o app mais
+escreve à mão. `lg` saiu porque *"ação primária, porém maior"* não é papel: é a
+mesma regra do §3, onde ênfase se faz com peso e não com tamanho. Os nomes
+deixaram de ser camiseta (`sm`/`lg`) e passaram a dizer o papel, porque degrau
+que não se sabe nomear é degrau que se escolhe por aparência.
+
+**Guarda:** `scripts/check-geometria-de-controle.mjs` (§10). É **catraca**, não
+proibição: 182 controles à mão em 70 arquivos entraram congelados, o número por
+arquivo só desce, e arquivo novo nasce em zero — que é a metade que importa,
+porque é por onde a divergência entra. Proibir de uma vez quebraria 70 arquivos,
+e guarda que pede o impossível ensina a ignorar guarda.

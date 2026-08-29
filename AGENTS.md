@@ -74,10 +74,13 @@ se erram, então estão inline:
    resto das props** (`{...resto}` antes do `className` próprio). Se ele
    engolir, nada quebra no compilador e tudo quebra na tela: o gatilho não
    abre, ou o painel fica transparente.
-3. **A escala tipográfica é fechada:** 11, 12, 13, 14 de corpo; 20, 30, 38 de
-   exceção declarada. Meio-pixel não existe. Ênfase acima de 14 se faz com
-   peso, não com tamanho. Classe nomeada do Tailwind (`text-sm`) só dentro de
-   `components/ui/`.
+3. **Duas escalas fechadas, e nenhuma se contorna localmente.** Fonte (§3):
+   11, 12, 13, 14 de corpo, mais 20/30/38 de exceção declarada; meio-pixel não
+   existe; ênfase acima de 14 se faz com peso. Controle (§13): quatro degraus
+   com nome, `chip` 24px · `compacto` 28px · `padrao` 32px · `destaque` 36px,
+   via `<Button size>` ou `controle("chip")` de `components/ui/controle`.
+   Nunca encolha fonte ou padding de um controle pra ele caber: ou o degrau
+   certo é outro, ou está faltando, e degrau novo entra por ADR.
 4. **Três elevações, não invente a quarta.** `shadow-md/lg/xl/2xl` são
    proibidos em componente do app.
 5. **Copy em pt-BR, sem travessão "—".** Use vírgula, ponto, parênteses; "·" e
@@ -115,5 +118,6 @@ uma guarda dispara, a saída diz o arquivo, a linha e o alvo.
 - Despachar trabalho sem gesto humano, ou criar daemon fora do app.
 - Introduzir TanStack Query em superfície que segue store + efeito.
 - Mexer em número de migração sem conferir a máxima real no `lib.rs`.
+- Editar uma baseline de catraca pra cima (`file-size`, `geometria`).
 - Escrever "MyCockpit" em string que a pessoa lê ou que vai num prompt.
 - Commitar sem que a pessoa tenha pedido.

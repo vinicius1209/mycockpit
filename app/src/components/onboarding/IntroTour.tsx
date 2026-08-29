@@ -207,7 +207,7 @@ export function IntroTour({ onDone }: { onDone: () => void }) {
             {index > 0 && (
               <Button
                 variant="ghost"
-                size="sm"
+                size="padrao"
                 onClick={goBack}
                 className="text-muted-foreground"
               >
@@ -219,14 +219,14 @@ export function IntroTour({ onDone }: { onDone: () => void }) {
             {!last && (
               <Button
                 variant="ghost"
-                size="sm"
+                size="padrao"
                 onClick={onDone}
                 className="text-muted-foreground"
               >
                 Pular introdução
               </Button>
             )}
-            <Button size="sm" onClick={goNext} className="gap-1.5">
+            <Button size="padrao" onClick={goNext} className="gap-1.5">
               {last ? "Ir para a configuração" : "Continuar"}
               <ArrowRight className="size-3.5" />
             </Button>

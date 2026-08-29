@@ -162,7 +162,7 @@ export function CandidateLane({
           {deciding && !failed && (
             <div className="flex shrink-0 justify-end border-t px-5 py-3">
               <Button
-                size="sm"
+                size="padrao"
                 variant={userPicked ? "default" : "outline"}
                 onClick={onChoose}
               >
@@ -304,7 +304,7 @@ export function FusionVerdict({
         </button>
         {!unavailable && (
           <Button
-            size="sm"
+            size="padrao"
             disabled={!selected}
             onClick={onConfirm}
             title={

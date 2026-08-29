@@ -334,11 +334,11 @@ export function FlightPlansView() {
             className="hidden"
             onChange={(event) => void importPlan(event)}
           />
-          <Button variant="ghost" size="sm" onClick={() => importInput.current?.click()}>
+          <Button variant="ghost" size="padrao" onClick={() => importInput.current?.click()}>
             <Upload className="size-3.5" />
             Importar
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => void restoreDefaults()}>
+          <Button variant="ghost" size="padrao" onClick={() => void restoreDefaults()}>
             <RotateCcw className="size-3.5" />
             Restaurar
           </Button>
@@ -412,11 +412,11 @@ export function FlightPlansView() {
             )}
           </div>
           <div className="shrink-0 space-y-1.5 border-t p-2">
-            <Button variant="secondary" size="sm" className="w-full justify-start" onClick={() => addPlan("graph")}>
+            <Button variant="secondary" size="padrao" className="w-full justify-start" onClick={() => addPlan("graph")}>
               <Route className="size-3.5 text-brass" />
               Novo fluxo visual
             </Button>
-            <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground" onClick={() => addPlan("linear")}>
+            <Button variant="ghost" size="padrao" className="w-full justify-start text-muted-foreground" onClick={() => addPlan("linear")}>
               <ListTree className="size-3.5" />
               Nova rota
             </Button>
@@ -469,7 +469,7 @@ export function FlightPlansView() {
                     Fluxo visual
                   </button>
                 </div>
-                <Button variant="outline" size="sm" onClick={addPhase}>
+                <Button variant="outline" size="padrao" onClick={addPhase}>
                   <Plus className="size-3.5" />
                   Nó
                 </Button>
@@ -658,13 +658,13 @@ export function FlightPlansView() {
                     />
                   </label>
                   <div className="grid grid-cols-3 gap-1 pt-1">
-                    <Button variant="ghost" size="sm" onClick={() => downloadPlan(selectedPlan)} title="Exportar plano">
+                    <Button variant="ghost" size="padrao" onClick={() => downloadPlan(selectedPlan)} title="Exportar plano">
                       <Download className="size-3.5" />
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={duplicateSelected} title="Duplicar plano">
+                    <Button variant="ghost" size="padrao" onClick={duplicateSelected} title="Duplicar plano">
                       <Copy className="size-3.5" />
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => void removeSelected()} title="Excluir plano" className="hover:text-st-error">
+                    <Button variant="ghost" size="padrao" onClick={() => void removeSelected()} title="Excluir plano" className="hover:text-st-error">
                       <Trash2 className="size-3.5" />
                     </Button>
                   </div>
@@ -681,8 +681,8 @@ export function FlightPlansView() {
                 Comece no Fluxo visual para desenhar decisões ou use Rota para uma sequência simples.
               </p>
               <div className="mt-4 flex justify-center gap-2">
-                <Button size="sm" onClick={() => addPlan("graph")}><Route className="size-3.5" />Fluxo visual</Button>
-                <Button size="sm" variant="outline" onClick={() => addPlan("linear")}><ListTree className="size-3.5" />Rota</Button>
+                <Button size="padrao" onClick={() => addPlan("graph")}><Route className="size-3.5" />Fluxo visual</Button>
+                <Button size="padrao" variant="outline" onClick={() => addPlan("linear")}><ListTree className="size-3.5" />Rota</Button>
               </div>
             </div>
           </div>

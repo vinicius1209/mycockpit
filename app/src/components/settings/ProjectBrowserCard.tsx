@@ -129,7 +129,7 @@ export function ProjectBrowserCard({
           </div>
         </div>
         <Button
-          size="sm"
+          size="padrao"
           variant={status?.session ? "ghost" : "secondary"}
           onClick={() => void toggle(!status?.session)}
           disabled={busy || (!status?.session && !status?.binary)}

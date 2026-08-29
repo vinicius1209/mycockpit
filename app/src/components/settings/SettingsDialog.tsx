@@ -238,7 +238,7 @@ export function SettingsDialog() {
                     <Button
                       type="button"
                       variant="outline"
-                      size="icon-sm"
+                      size="icone-padrao"
                       title="Diminuir fonte (⌘/Ctrl −)"
                       aria-label="Diminuir fonte da conversa"
                       disabled={conversationScale === CONVERSATION_SCALES[0]}
@@ -262,7 +262,7 @@ export function SettingsDialog() {
                     <Button
                       type="button"
                       variant="outline"
-                      size="icon-sm"
+                      size="icone-padrao"
                       title="Aumentar fonte (⌘/Ctrl +)"
                       aria-label="Aumentar fonte da conversa"
                       disabled={
@@ -283,7 +283,7 @@ export function SettingsDialog() {
                     <Button
                       type="button"
                       variant="ghost"
-                      size="icon-sm"
+                      size="icone-padrao"
                       title="Restaurar 100% (⌘/Ctrl 0)"
                       aria-label="Restaurar tamanho da conversa"
                       disabled={conversationScale === DEFAULT_CONVERSATION_SCALE}

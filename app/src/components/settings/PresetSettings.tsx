@@ -227,7 +227,7 @@ export function PresetSettings() {
                 </div>
               </div>
               <Button
-                size="icon-sm"
+                size="icone-padrao"
                 variant="ghost"
                 onClick={() => setDraft(draftFrom(p))}
                 aria-label={`Editar ${p.name}`}
@@ -237,7 +237,7 @@ export function PresetSettings() {
                 <Pencil className="size-3.5" />
               </Button>
               <Button
-                size="icon-sm"
+                size="icone-padrao"
                 variant="ghost"
                 onClick={() => void usePresets.getState().remove(p.id)}
                 aria-label={`Excluir ${p.name}`}
@@ -376,10 +376,10 @@ export function PresetSettings() {
               {draft.id ? " · salvar cria uma versão nova" : ""}
             </span>
             <div className="ml-auto flex items-center gap-1.5">
-              <Button size="sm" variant="ghost" onClick={() => setDraft(null)}>
+              <Button size="padrao" variant="ghost" onClick={() => setDraft(null)}>
                 Cancelar
               </Button>
-              <Button size="sm" onClick={() => void save()} disabled={!canSave}>
+              <Button size="padrao" onClick={() => void save()} disabled={!canSave}>
                 {draft.id ? "Salvar versão" : "Criar preset"}
               </Button>
             </div>
