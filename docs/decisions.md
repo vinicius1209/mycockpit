@@ -4432,6 +4432,60 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **Verificado:** `cargo` 582 (3 novos), `tsc -b` limpo, `vitest` 3428,
   `bun run check` 10 guardas.
 
+### ADR-117 — o papel do post-it vira VIVO, e o pin sai ✅
+- **Contexto (28/08/2026):** três incômodos do usuário na mesma frase — "não
+  vejo sentido em fixar", "a posição é estranha", "as cores". A posição virou
+  outra conversa (a gaveta ficou onde estava, ver o adendo); estas duas aqui
+  fecharam.
+- **O pin SAIU, e o argumento é medido no próprio desenho:** com ≤2 notas ele
+  não fazia efeito NENHUM (o anel tinha saído da gaveta no ADR-112, por ser
+  cortado pelo `overflow` e redundante com o cabeçalho); com lista, ele só criava
+  uma terceira seção pra ordenar o que a data já ordena. Saíram o botão, a faixa
+  "Fixadas" e o campo. A régua de ordem passou a ser só recência.
+- **O papel virou VIVO, e isso REVISA o ADR-109.** A tinta surda a 10% foi
+  escolhida pra não disputar com o vocabulário de estado do §2 — e o efeito
+  colateral foi que cinco cores viraram cinco cinzas: a nota é o único lugar do
+  app onde a cor é ESCOLHA do humano, e sussurrada ela não escolhia nada.
+- **Três regras que a paleta cobra, e duas delas só apareceram no mock:**
+  1. **Papel vivo carrega tinta própria** (`--note-fg`, molde de
+     `--brass`/`--brass-fg`): a letra é quase-preta nos DOIS temas. Letra que
+     segue o tema some no papel claro do modo escuro. A nota deixa de herdar o
+     tema e vira ilha invertida.
+  2. **O papel do tema escuro NÃO é o claro escurecido — é o claro com menos
+     CROMA** (−28%, luz quase intacta). Escurecer parecia óbvio (neon em tela
+     preta cega) e REPROVA na medida: o rosa escurecido cai a **3,61:1** contra
+     a tinta, abaixo do mínimo pra corpo de texto.
+  3. **Contraste é medido, não julgado no olho.** Metadado e ícone a 62% do
+     preto reprovam (3,10:1 no rosa); a 82% o pior papel dá 4,79:1. O botão do
+     rodapé deixou de ser preto translúcido (que comia o papel) e virou etiqueta
+     clara, 11,76:1 no pior caso.
+
+| | claro | corpo | meta | escuro | corpo | meta |
+|---|---|---|---|---|---|---|
+| sol | `#ffb020` | 9,51 | 6,47 | `#daa23a` | 7,63 | 5,49 |
+| limão | `#d8df2a` | 12,02 | 7,69 | `#bec341` | 9,17 | 6,30 |
+| verde | `#93c523` | 8,49 | 5,93 | `#8db03c` | 6,96 | 5,09 |
+| rosa | `#ff63a6` | 6,28 | 4,79 | `#da6c98` | 5,45 | 4,22 |
+| coral | `#ff7a59` | 6,78 | 5,05 | `#da7b62` | 5,79 | 4,44 |
+
+- **A contenção que mantém o §2 de pé:** papel vivo só existe DENTRO da gaveta,
+  que é superfície convocada. O chrome do app segue quieto, e `text-note-<matiz>`
+  continua proibido — a tinta é UMA, com contraste medido. O teste que antes
+  dizia "nenhuma variante emite `text-note-*`" foi reescrito pra afirmar a regra
+  nova sem afrouxar a antiga.
+- **Quem veste o papel é a FOLHA, não o cartão.** Papel colorido dentro de
+  superfície branca seria cartão-em-cartão de cor (§4). E a coluna redefine
+  `--foreground`/`--muted-foreground`/`--background` dentro dela: em vez de
+  trocar `text-muted-foreground` em catorze lugares do cartão, todo filho passa
+  a escrever com a tinta do papel sem saber que mudou de fundo — e o mesmo
+  cartão continua servindo fora da gaveta.
+- **Adendo do mesmo dia — apagar deixou de parecer fechar.** O gesto de excluir
+  usava um ✕ IDÊNTICO ao ✕ que fecha a gaveta, a dois centímetros dele: mesma
+  forma, mesmo peso, um fecha e o outro DESTRÓI. Virou lixeira, com confirmação
+  destrutiva que nomeia a nota e avisa dos anexos. Nota é texto que você
+  escreveu e o app não tem desfazer.
+- **Verificado:** `tsc -b` limpo, `vitest` 3426, `bun run check` 10 guardas.
+
 ### ADR-118 — o cockpit passa a ver o que não é dele (e o fio passa a SEGUIR) ✅
 - **Contexto (28/08/2026):** medido na máquina do autor — **~500 MB parados** em
   três sessões de CLI esquecidas: uma de 11 dias, uma de 7, e uma pilha do Xirp

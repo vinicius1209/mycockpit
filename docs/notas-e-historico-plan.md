@@ -1,10 +1,25 @@
 # Notas, coluna larga e histórico do fio — plano
 
-> Status: **R ✅ · N1–N3 ✅ · N5 ✅ · L, H, P, N6, N7 propostas**. Sprint 1 fechado
-> em 28/08/2026 sob revisão do `mycockpit-reviewer`; os débitos aceitos estão
-> nomeados no fim da seção da Frente N. Entregáveis de desenho que este plano
-> consome: `docs/mocks/notas-apple.html` (5 variantes) e
-> `docs/mocks/notas-README.md` (análise). Build de referência: t295.
+> Status (29/08/2026, build t310, tudo na `main`):
+>
+> | frente | estado |
+> |---|---|
+> | **R** — régua por container query | ✅ ADR-111 |
+> | **N1–N3** — gaveta A + B, escopo explícito | ✅ ADR-112, com débito nomeado |
+> | **N5** — a nota chega no agente pelo `@` | ✅ ADR-114 |
+> | **N6** — anexo na nota | ✅ ADR-116 |
+> | **N7.1/7.2** — `@` ranqueado + índice | ✅ ADR-115 |
+> | **M** — a máquina na faixa de status | ✅ ADR-118 |
+> | **P** — post-it: tinta viva | ✅ ADR-117 (a paleta entrou; a MESA de post-its não) |
+> | **N7.3/7.4** — símbolo e menção resolvida | proposta |
+> | **L** — bloco largo escapa da coluna | proposta |
+> | **H** — o trilho vira histórico do fio | proposta (a de maior valor) |
+>
+> Entregáveis de desenho que este plano consome:
+> `docs/mocks/notas-apple.html` (5 variantes) e `docs/mocks/notas-README.md`.
+>
+> **Fora deste plano, mas da mesma leva:** ADR-119 (review do "Adicionar
+> projeto") e ADR-120 (a pasta do projeto pode sumir).
 >
 > **Frentes vivas que este plano NÃO toca** e das quais só depende por leitura:
 > MISSÃO (`components/mission/*`), envio (`lib/fleet/send`), motores
@@ -51,9 +66,13 @@ olhando (`#d` × `#d,forte`).
 
 ## Frente N — a gaveta de notas (A + B)
 
-Hoje: `StickyNotesDock.tsx:68` é `fixed right-4 top-14 bottom-16 w-84`, altura
-cheia sempre, ancorada em nada, e por ser `fixed` abre por cima do painel de
-contexto quando os dois estão abertos.
+O que ela ERA quando esta frente abriu (ADR-112 fechou): `fixed right-4 top-14
+bottom-16 w-84`, altura cheia sempre, ancorada em nada, e por ser `fixed`
+abrindo por cima do painel de contexto.
+
+Decisões posteriores que o plano registra pra não serem refeitas: a aba "Notas"
+ao lado de "Conversa" foi **descartada** (aba é por conversa, e a nota pode ser
+de projeto), e o post-it arrastável continua sendo a frente P, não a gaveta.
 
 ### N1 — a gaveta cabe no que tem dentro
 - Sai `fixed … bottom-16`; entra popover **ancorado no chip** (`TitleBar.tsx:175`),
@@ -114,7 +133,7 @@ seção "Notas do humano" ali dá **pull** — o agente consulta quando quiser, 
 custo por turno. É a metade barata da integração e a que sobrevive a troca de
 motor.
 
-## Frente N6 — anexo na nota (proposta)
+## Frente N6 — anexo na nota ✅ (28/08/2026, ADR-116)
 
 Você quer colar imagem na nota. O app já sabe fazer isso: `saveAttachment` grava
 o blob em `app_data_dir/attachments/<convId>/<hash>.<ext>` e **só o metadado
@@ -138,7 +157,7 @@ de nota, no mesmo molde do `ConvRef`.
 - **Miniatura vem do Rust**, como a evidência já faz; o front não redimensiona.
 - O teto de 10 MB por arquivo já existe no backend e vale aqui.
 
-## Frente N7 — o "@" à altura de uma ADE (proposta)
+## Frente N7 — o "@" à altura de uma ADE (1 e 2 ✅ ADR-115; 3 e 4 propostas)
 
 Hoje o `@` já tem três seções (Especialistas · Notas · Arquivos), pill atômico e
 serialização estável. O que falta pra ele ser ferramenta de verdade:
@@ -163,7 +182,7 @@ serialização estável. O que falta pra ele ser ferramenta de verdade:
 Ordem sugerida: (1) e (2) juntos — são a mesma passada e resolvem o incômodo
 diário; (4) depois; (3) só com demanda provada.
 
-## Frente M — a máquina, na faixa de status (proposta)
+## Frente M — a máquina, na faixa de status ✅ (28/08/2026, ADR-118)
 
 O cockpit é cego para o que ele não spawnou. Medido em 28/08/2026 na máquina
 do autor: **~500 MB parados** em três sessões de CLI esquecidas (11 dias, 7
@@ -203,7 +222,7 @@ Ambos são fato, não heurística de humor.
 que o problema), adotar processo alheio como "gerenciado", ou esconder o que
 não entendeu.
 
-## Frente P — post-it como MODO (tinta VIVA, decidida em 28/08/2026)
+## Frente P — post-it como MODO (tinta ✅ ADR-117; a MESA continua proposta)
 
 Decisão tomada: **papel vivo de verdade**, na referência de post-it clássico
 (amarelo-ouro, limão, verde, rosa-choque, coral) — não a tinta surda do
@@ -271,7 +290,7 @@ nunca o desenho principal.
 
 ---
 
-## Frente R — a régua × o trilho (bug pequeno, achado no mock)
+## Frente R — a régua × o trilho ✅ (28/08/2026, ADR-111)
 
 `TurnScrubber.tsx:279` decide aparecer por `lg:` — breakpoint de **viewport** —
 enquanto o espaço de que ela precisa é o do **contêiner**. Tela larga com painel
