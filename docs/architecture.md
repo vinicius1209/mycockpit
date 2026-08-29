@@ -1,93 +1,121 @@
-# Arquitetura
+# Arquitetura atual
 
-## Visão geral (alvo)
+> Documento vivo, revisado em 29/08/2026. Para comportamento por agente, as
+> fontes executáveis são `app/src-tauri/src/adapters.rs` e o espelho
+> `app/src/lib/agents.ts`. Planos e matrizes datadas explicam decisões, mas não
+> substituem esses registries.
 
+## Mapa geral
+
+```text
+React 19 (Painel | Trabalho | Features)
+        │
+        ├── zustand: navegação, transcript, execuções e estado de UI
+        ├── SQLite: projetos, conversas, rascunhos, custo e artefatos
+        │
+        └── Tauri IPC + Channel
+                    │
+              Runner Rust
+                    │
+        ┌───────────┼───────────────┐
+        │           │               │
+   adapters     MCP control     serviços locais
+        │       + gateways      git, fs, tray,
+        │                       Companion, STT
+        ▼
+Claude Code · Codex · Antigravity · OpenCode
 ```
-                UI React (chat-centro)
-                       │  Tauri IPC / Channels
-        ┌──────────────┴───────────────┐
-        │                              │
-   Chat Engine                  Mission / Workflow Engine
-        │                              │
-   Agent Registry  ──────────────► Permission System (por projeto)
-        │
-   Agent Runner (trait)  ── adapters: ClaudeCode | Codex | OpenCode | Aider
-        │
-   Process Manager (Rust): spawn + parse (v0.1)  /  PTY + tmux (v0.2+)
-        │
-────────────────────────────────────────────────────────
-   claude · codex · opencode · aider · (depois) docker · git · MCP
-```
 
-A UI **só conhece eventos normalizados** (ver [`agent-runner.md`](./agent-runner.md)).
-Ela nunca fala o "dialeto" de um agent específico — isso é trabalho do adapter.
+A UI conhece eventos normalizados, nunca o stream particular de um fornecedor.
+O adapter traduz a saída da CLI e declara capacidades; componentes genéricos
+consultam o registry, não comparam ids de agentes.
 
-### Fundação atual do Workflow Engine
+## Superfícies e navegação
 
-O primeiro contrato do Workflow Engine já existe dentro do Mission. Um **Plano
-de voo** é um template reutilizável (`MissionPreset`) e uma **Missão** é a
-execução concreta desse template numa conversa/worktree. Presets antigos sem
-metadado continuam sendo `linear`; planos com `mode: "graph"` carregam um
-`MissionPlanGraph` versionado, independente da biblioteca visual.
+As três superfícies permanentes estão em
+`app/src/components/layout/titleBarModes.ts`:
 
-Na v1 do canvas, o grafo é uma cadeia única válida por construção. Reordenar os
-nós atualiza `preset.phases`, portanto o mesmo `missionEngine.ts` executa tanto
-o editor linear quanto o canvas. Ramificações, condições diferentes de
-`success` e loops já têm lugar no schema de arestas, mas o import os rejeita
-até o executor de grafo oferecer semântica de budget, recovery e retomada para
-essas transições. Detalhes em [`mission-flight-plans.md`](./mission-flight-plans.md).
+| Superfície | Objeto principal |
+|---|---|
+| **Painel** | retrospectiva de custo e entregas |
+| **Trabalho** | conversas e execução dos agentes |
+| **Features** | especificação e entrega com gates |
 
-A autoria vive numa superfície global própria, **Planos de voo**, mas permanece
-dentro do mesmo app e sobre a mesma fonte persistida
-(`GlobalSettings.missionPresets`). Configurações apenas habilita Missions e abre
-esse workspace; não mantém um segundo editor concorrente.
+Agendamentos, Planos de voo e Frota são workspaces globais. Conversas podem
+continuar executando quando outra superfície ou outro projeto está visível; a
+sidebar e a faixa de status exibem o estado real sem transformar seleção em
+atividade.
 
-## Decisão central do v0.1: CLI subprocess + `stream-json`
+## Donos de estado no frontend
 
-No v0.1, o backend Rust do Tauri **executa o binário `claude`** com
-`-p --output-format stream-json --verbose` e parseia o JSONL. Não embutimos o
-Claude Agent SDK (que é TS/Python) — isso exigiria um *sidecar* Node.
-
-**Por quê CLI subprocess e não o SDK?**
-
-| | CLI subprocess (escolhido) | Agent SDK (sidecar Node) |
+| Estado | Dono | Regra |
 |---|---|---|
-| Dependência | só o `claude` (já instalado) | + runtime Node embutido |
-| Eventos | JSONL via stdout | objetos tipados |
-| Permissão mid-run | flags (`--allowedTools`, `--permission-mode`) | callback `canUseTool`, hooks |
-| Complexidade | baixa | média/alta |
-| Quando reconsiderar | — | se precisarmos de callback de permissão rico/interativo |
+| projeto, configurações e navegação | `store/app.ts` | configuração global e seleção de superfície |
+| transcript, sessão e execução da conversa | `store/chat.ts` | estado operacional; não recebe digitação do composer |
+| texto e anexos ainda não enviados | `store/composerDrafts.ts` | durável por conversa; persiste em `conversation_drafts` |
+| permissões e perguntas pendentes | `store/interactions.ts` | uma fila real compartilhada pela UI e pelo Companion |
+| notas | `store/stickyNotes.ts` | só entram no prompt por menção ou gesto explícito |
+| missões, disputas, cards e worktrees | stores próprias | não duplicar esses estados no chat |
 
-> O SDK volta à mesa quando a política de permissão precisar de **aprovação
-> interativa fina mid-run** (M5+). Até lá, flags resolvem.
+Zustand + efeitos é o padrão das superfícies atuais. Existe um
+`QueryClientProvider` na raiz, mas ele não é fonte de verdade dessas stores e
+não autoriza introduzir TanStack Query numa superfície que já segue store +
+efeito.
 
-## Por que não há terminal embutido no v0.1
+## Fluxo de uma conversa
 
-Eventos estruturados (`tool_use` + output) viram cartões no chat. Sem necessidade de
-emulador de terminal. Detalhe no `PLAN.md` §5.3.
+1. O composer lê e grava `useComposerDrafts` para o `activeId`.
+2. O gesto de enviar resolve projeto, cwd, permissão, agente, modelo e anexos.
+3. O frontend inicia o turno em `store/chat.ts`; `agent.rs` abre a CLI e envia
+   `AgentEvent` normalizado por `Channel`.
+4. O reducer anexa eventos ao transcript e persiste `conversations.items`.
+5. Só depois do envio aceito o rascunho é limpo. Trocar de conversa ou reiniciar
+   o app não apaga texto nem anexos pendentes.
 
-## Quando o terminal/PTY entra (v0.2+)
+O scroll do Trabalho pertence a `useChatScroll.ts`. Ele observa o wrapper real
+do transcript recebido por `contentRef`, porque a régua de turnos e a timeline
+podem precedê-lo e o wrapper keyed muda a cada conversa. Não use
+`firstElementChild` nem `scrollIntoView` para reconstruir essa âncora. Ver
+ADR-122.
 
-Para agents **sem** saída estruturada (ex.: Aider) ou para um terminal interativo real:
+## Runner e adapters
 
-- **`portable-pty` (Rust) + xterm.js + Tauri Channel** — stack provado para embutir
-  terminal. Para "um agent por vez", o *exit do processo* já sinaliza "done".
-- **tmux *control mode* (`-C`/`-CC`)** — adicionar quando quisermos **persistência**
-  (agents sobrevivem a fechar/reabrir o app, *detach/reattach*) e **multiplexação**
-  de vários painéis com eventos de ciclo de vida (`%output`, `%window-add`, `%exit`…).
-  Libs Rust: `tmux_interface`, `tmux-lib`. Prior art: **TmuxCC** (monitora agents de IA
-  em painéis tmux), e a integração `tmux -CC` do iTerm2.
-  - Limite: control mode dá **ciclo de vida**, não estado semântico ("agent terminou de
-    pensar"); e o `%output` é byte cru → ainda precisa de xterm.js para renderizar.
+- `app/src-tauri/src/agent.rs`: ciclo de vida do processo, Channel e eventos.
+- `app/src-tauri/src/adapters.rs`: trait, capabilities e tradução dos streams.
+- `app/src/lib/agents.ts`: espelho usado pela UI, com testes-gêmeos de contrato.
+- `app/src-tauri/src/mcp_control.rs`: registry, bindings, health e transporte
+  MCP efetivo por projeto e agente.
+- `app/src-tauri/src/work_gateway.rs`: processos longos iniciados por ferramenta
+  e telemetria de trabalho.
+
+O contrato conceitual e a evidência histórica por versão estão em
+[`agent-runner.md`](./agent-runner.md). Matrizes datadas precisam ser verificadas
+novamente antes de alterar uma capability.
 
 ## Persistência
 
-SQLite local (Zustand para estado de UI, TanStack Query para dados assíncronos):
-- `projects` (path, nome, contexto lido, política de permissão)
-- `conversations` / `messages` (com referência a `session_id` do agent)
-- `agent_sessions` (id nativo do agent + metadados para `--resume`)
+O banco é SQLite local. Migrações canônicas vivem em
+`app/src-tauri/src/lib.rs`, com um statement por versão. Tabelas acessadas ou
+criadas pelo frontend usam funções `ensure*Tables`; o helper `addColumn` mora em
+`app/src/lib/db/schema.ts` e é re-exportado por `app/src/lib/db.ts`.
 
-## Dependências externas (assumidas presentes)
+Entidades centrais:
 
-`claude` CLI autenticado. O `Runner.detect()` deve checar presença + versão e avisar a UI
-cedo se faltar (em vez de falhar no meio de uma tarefa).
+- `projects`: caminho, política e ordenação;
+- `conversations`: transcript serializado, sessão, agente, modelo e contexto;
+- `conversation_drafts`: texto, anexos e atualização do rascunho por conversa;
+- `turn_costs`: ledger de custo por turno;
+- `missions`, `deliveries`, `stage_runs`: execução e evidência das Features;
+- `mcp_servers`, `mcp_bindings`, `mcp_health`: control plane MCP.
+
+O app é local-first. Identificadores como `mycockpit.db`, `.mycockpit/`,
+`mc.app` e `dev.vinicius.mycockpit` permanecem por compatibilidade e não são a
+marca pública.
+
+## Regras de extensão
+
+- Capability nova entra nos registries Rust e TypeScript, com teste-gêmeo.
+- Evento desconhecido vira `Unknown`; pré-condição ausente aborta o efeito.
+- Estado de execução, custo e decisão tem uma fonte única.
+- Mudança estrutural recebe ADR em `docs/decisions.md`.
+- Mudança visível segue `docs/STYLEGUIDE.md` antes da implementação.

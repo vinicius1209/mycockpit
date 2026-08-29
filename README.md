@@ -1,123 +1,100 @@
-<div align="center">
-  <img src="docs/assets/icon.png" width="128" alt="MyCockpit — horizonte artificial" />
+# Frota
 
-  # MyCockpit
+Frota é um cockpit desktop, local-first, para conduzir agentes de código com o
+estado real do trabalho à vista. O app organiza conversas, decisões pendentes,
+alterações, custo, missões e evidências sem esconder o gesto humano que inicia
+ou aprova uma ação.
 
-  **Cockpit local-first para orquestrar as CLIs de code agents que você já tem instaladas — com custo por entrega, disputa multi-agent e pipeline spec-driven.**
-</div>
+O produto é Tauri 2 + React 19 + TypeScript, com backend Rust, estado de UI em
+zustand e persistência SQLite via `@tauri-apps/plugin-sql`. Ele usa as CLIs já
+instaladas e autenticadas na máquina; credenciais e histórico permanecem
+locais.
 
-![Plataforma](https://img.shields.io/badge/plataforma-macOS-black?logo=apple)
-![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
-![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
-![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
-![Status](https://img.shields.io/badge/status-v0.1-orange)
+## Superfícies atuais
 
-<!-- Para atualizar o screenshot: rode o app (bun run tauri dev), capture a janela
-     principal (⌘⇧4 + espaço no macOS) e salve como docs/screenshot.png. -->
-![MyCockpit](docs/screenshot.png)
+| Superfície | Papel |
+|---|---|
+| **Painel** | retrospectiva de custo e entregas, sem fingir atividade |
+| **Trabalho** | conversas, diffs, planos vivos, decisões, notas e execução dos agentes |
+| **Features** | planejamento e entrega spec-driven com gates de verificação |
 
-## O que é
+Planos de voo, Agendamentos e Frota são workspaces globais abertos sobre essas
+superfícies. Especialistas aconselham ou pilotam dentro do mesmo conceito de
+agente; a decisão final continua sendo humana.
 
-<img src="docs/assets/mascote.png" width="110" align="right" alt="Copiloto — o mascote do MyCockpit" />
+## Agentes
 
-MyCockpit é um app desktop (Tauri 2 + React 19 + TypeScript) que vira a **única janela** para trabalhar com Claude Code, Codex e Antigravity — as CLIs que você já instalou e autenticou na sua máquina. Em vez de N abas de terminal, você abre um projeto e conversa com os agents em cartões, com diffs inline e custo visível. O diferencial: **custo por ENTREGA** (US$/feature, do PRD ao merge), **disputa multi-agent com juiz** e um **pipeline spec-driven com gates de verificação** antes do PR.
+O registry atual oferece adapters para:
 
-## Features
+- Claude Code
+- Codex
+- Antigravity (`agy`)
+- OpenCode
 
-| | Feature | Descrição |
-|---|---|---|
-| 💬 | **Linear** | Chat com resume, revezamento entre providers com memória híbrida, fila, diffs inline e custo por turno/sessão. |
-| ⚔️ | **Fusion** | Vários agents disputam a mesma tarefa; um juiz avalia e o vencedor é promovido. |
-| 📋 | **SDD** | Pipeline spec-driven: PRD → SPEC → implementação → gates de verificação → PR, com custo por entrega. |
-| 🤖 | **Multi-CLI** | Claude Code, Codex e Antigravity (agy) via adapters; OpenCode em breve. |
-| 🔌 | **MCP Control Plane** | Registry sanitizado, health check, bindings por projeto/agent e configuração efêmera por run. |
-| 🌿 | **Worktrees** | Cada conversa pode rodar num git worktree isolado, sem sujar sua árvore principal. |
-| 📥 | **Inbox de decisões** | Perguntas dos agents chegam num inbox central, com notificações nativas do macOS. |
-| 🎙️ | **Ditado pt-BR** | Fala → prompt 100% local (on-device), via sidecar Swift — nada sai da máquina. |
-| 💡 | **Sugestões contextuais** | Um modelo helper sugere próximos passos com base no contexto da conversa. |
-| ⌘K | **Command palette** | Busca full-text em conversas e ações rápidas. |
-| ⚙️ | **Config persistente** | Configurações por projeto em `.mycockpit/config.toml` + backup automático do banco SQLite. |
+Capacidade nunca é inferida pelo nome do fornecedor. O backend declara o
+contrato em `app/src-tauri/src/adapters.rs`, a UI mantém o espelho em
+`app/src/lib/agents.ts`, e testes de contrato impedem divergência silenciosa.
 
-## Começando
+## Arquitetura em um minuto
 
-### Pré-requisitos
+```mermaid
+flowchart LR
+    UI["React 19<br/>zustand"] -->|"Tauri IPC + Channel"| RUN["Runner Rust"]
+    RUN --> REG["Registry de capabilities"]
+    REG --> CLIS["Claude · Codex · agy · OpenCode"]
+    RUN --> EVT["AgentEvent normalizado"]
+    EVT --> UI
+    UI <--> DB[("SQLite local")]
+    RUN --> MCP["MCP Control Plane"]
+```
 
-- [bun](https://bun.sh)
-- Rust toolchain (`cargo`) — backend Tauri
-- Xcode Command Line Tools com `swiftc` — compila o sidecar de ditado (`mycockpit-stt`)
-- Pelo menos **uma CLI de agent instalada e autenticada**: `claude`, `codex` ou `agy`
+A UI renderiza eventos normalizados e degrada de forma honesta quando um
+adapter não oferece determinada capacidade. Conversas persistem o transcript;
+rascunhos não enviados são uma entidade separada, por conversa, e nunca entram
+no prompt antes do envio.
 
-O MyCockpit **não pede API key**: ele usa as CLIs (e assinaturas) que você já tem.
+O mapa detalhado e os donos de estado estão em
+[`docs/architecture.md`](./docs/architecture.md). O contrato dos adapters está
+em [`docs/agent-runner.md`](./docs/agent-runner.md).
 
-### Rodando
+## Desenvolvimento
+
+Pré-requisitos: Bun, toolchain Rust e Xcode Command Line Tools no macOS. Para
+usar um agente, a CLI correspondente precisa estar instalada e autenticada.
 
 ```bash
 cd app
 bun install
-bun run tauri dev   # sobe o Vite + a janela Tauri
+bun run tauri dev
 ```
 
-### Testes
+Validação completa exigida pelo repositório:
 
 ```bash
 cd app
-bun run test        # vitest
+bun run test
+bunx tsc -b --force
+bun run check
+
+cd src-tauri
+cargo test
 ```
 
-### Build
+O build de pacote pode ser feito com `cd app && bun run tauri build`. O canal
+numerado e a promoção para `/Applications/Frota.app` vivem em
+`scripts/build.sh` e na skill `/build`.
 
-O jeito recomendado é o canal de builds via skill do Claude Code (na raiz do repo):
+## Para agentes e contribuidores
 
-```
-/build            # gera um build de teste numerado em builds/test/
-/build promote    # oficializa: copia pra /Applications e cria a tag oficial-N
-/build list       # histórico de builds
-```
+Leia [`AGENTS.md`](./AGENTS.md) inteiro antes de editar. Ele é a fonte única das
+leis do repositório e aponta os documentos canônicos por assunto:
 
-Sem o skill, o build direto funciona também: `cd app && bun run tauri build`.
+- [`docs/STYLEGUIDE.md`](./docs/STYLEGUIDE.md), linguagem visual;
+- [`docs/decisions.md`](./docs/decisions.md), decisões estruturais;
+- [`docs/architecture.md`](./docs/architecture.md), arquitetura atual;
+- `docs/*-plan.md`, histórico e plano de cada frente, sempre respeitando os
+  blocos de correção/status no topo.
 
-## Arquitetura em 60 segundos
-
-```mermaid
-flowchart LR
-    UI["Front React 19<br/>zustand + TanStack Query"] -->|"comandos Tauri"| RS["Backend Rust<br/>(src-tauri)"]
-    RS --> CP["MCP Control Plane<br/>registry + health + policy"]
-    CP --> AD["Adapters<br/>trait AgentAdapter"]
-    AD --> CC["claude"]
-    AD --> CX["codex"]
-    AD --> AG["agy"]
-    RS --> DB[("SQLite<br/>conversas, custo, inbox")]
-    RS --> CFG[".mycockpit/config.toml<br/>config por projeto"]
-    RS --> STT["sidecar Swift<br/>ditado on-device"]
-```
-
-Cada CLI é envelopada por um adapter (`app/src-tauri/src/adapters.rs`) que traduz o stream de saída para um formato único de eventos. O front nunca fala com as CLIs direto — só via comandos Tauri.
-
-## Agents suportados
-
-| Agent | CLI | Status |
-|---|---|---|
-| Claude Code | `claude` | ✅ Saída estruturada (stream-json) |
-| Codex | `codex` | ✅ Saída estruturada |
-| Antigravity | `agy` | ✅ Não-estruturado (texto) |
-| OpenCode | `opencode` | 🔜 Planejado |
-
-## Filosofia
-
-- **Local-first.** Conversas, config e banco vivem na sua máquina. O ditado roda on-device.
-- **BYO assinaturas.** Você usa as CLIs e planos que já paga; o app nunca vira intermediário de billing.
-- **Camada fina.** O cockpit orquestra e mostra — não reinventa terminal, git ou memória de contexto.
-
-## Roadmap
-
-- Onboarding de primeira instalação (detecção das CLIs, setup guiado)
-- Instalador DMG
-- Multi-projeto em paralelo
-
----
-
-Docs de arquitetura e decisões em [`docs/`](./docs/) — comece por
-[`docs/architecture.md`](./docs/architecture.md),
-[`docs/agent-runner.md`](./docs/agent-runner.md),
-[`docs/context-handoff.md`](./docs/context-handoff.md) e
-[`docs/mcp-control-plane.md`](./docs/mcp-control-plane.md).
+O nome público é Frota. Identificadores persistidos como `mycockpit.db`,
+`.mycockpit/`, `mc.app` e `dev.vinicius.mycockpit` são contratos legados
+intencionais e não devem ser renomeados sem uma migração de compatibilidade.

@@ -1,10 +1,15 @@
-# Plano de ação — padrões do MyPeople no MyCockpit
+# Plano de ação, padrões do MyPeople na Frota
+
+> **Correção de leitura (29/08/2026):** o nome público atual é Frota e os
+> agentes auxiliares são `frota-dev`, `frota-tester` e `frota-reviewer`.
+> Para arquitetura e regras correntes, comece por `AGENTS.md` e
+> `architecture.md`; este arquivo preserva o estudo histórico da frente.
 
 > Backlog scrum derivado do estudo do projeto `~/projetos/mypeople` (runtime
 > self-hosted que orquestra Claude/Codex/Grok como um time via board + Boss
 > sempre-ligado). Data: 2026-07-22.
 >
-> **Premissa que guia tudo:** o MyCockpit NÃO copia o Boss autônomo sempre-ligado
+> **Premissa que guia tudo:** a Frota NÃO copia o Boss autônomo sempre-ligado
 > do MyPeople (fere o local-first, o app fecha e a missão morre com ele, você é o
 > piloto). Portamos as peças que cabem na ideia atual (board de intenção, personas
 > versionadas, ownership, watchdog in-app, auth honesta) e trocamos o despacho
@@ -14,7 +19,7 @@
 
 ## Contexto: onde já estamos (não construir o que existe)
 
-| Peça do MyPeople | Já temos no MyCockpit | Gap real |
+| Peça do MyPeople | Já temos na Frota | Gap real |
 |---|---|---|
 | Board de prioridades | `Painel/MissionControl` (fila "PRECISAM DE VOCÊ", ENTREGAS, FROTA) | falta a **unidade durável de INTENÇÃO** (card que nasce antes do trabalho e sobrevive à conversa) |
 | Ping de eventos | inbox via `interaction://request` + notificações + companion WS | nenhum, reusar |
@@ -508,9 +513,9 @@ raiz):
 
 | Agent | Papel | Quando usar |
 |---|---|---|
-| `mycockpit-dev` | implementa stories | 1 story (ou 1 sprint pequeno) por vez |
-| `mycockpit-tester` | escreve/roda os testes de aceite | depois do dev, antes do review |
-| `mycockpit-reviewer` | bate a Definition of Done + guardas | último gate antes do merge |
+| `frota-dev` | implementa stories | 1 story (ou 1 sprint pequeno) por vez |
+| `frota-tester` | escreve/roda os testes de aceite | depois do dev, antes do review |
+| `frota-reviewer` | bate a Definition of Done + guardas | último gate antes do merge |
 
 **Ordem de despacho** (1 branch por sprint, review entre elas):
 

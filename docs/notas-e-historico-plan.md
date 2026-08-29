@@ -358,10 +358,10 @@ de custo e privacidade, nunca ponto de partida: miramos Linux também
 | 4 | **H1–H2** (histórico) | dev + tester → reviewer | Depende de nada novo; H2 reusa `turnReceipt` |
 | 5 | **H3–H4 · P** | a decidir | H3 pede knob de custo; P pede a decisão do §2 |
 
-- **`mycockpit-dev`** implementa por story, lendo este plano inteiro.
-- **`mycockpit-tester`** escreve os testes pt-BR de cada DoD (núcleos puros
+- **`frota-dev`** implementa por story, lendo este plano inteiro.
+- **`frota-tester`** escreve os testes pt-BR de cada DoD (núcleos puros
   primeiro: `tituloEPreview`, agrupamento por tempo, marcos do histórico).
-- **`mycockpit-reviewer`** é o gate de fim de frente: bate a DoD e as guardas da
+- **`frota-reviewer`** é o gate de fim de frente: bate a DoD e as guardas da
   casa (fail-closed, humano-only, agnosticismo, catraca de tamanho, §2/§3/§4).
 
 **Uma frente por vez no mesmo arquivo.** N e H tocam superfícies distintas e

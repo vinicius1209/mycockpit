@@ -1,10 +1,10 @@
 ---
 name: build
-description: Canal de builds do MyCockpit. "/build" gera um build de teste numerado; "/build promote [N]" oficializa (Applications + tag); "/build list" mostra o histórico.
+description: Canal de builds da Frota. "/build" gera um build de teste numerado; "/build promote [N]" oficializa (Applications + tag); "/build list" mostra o histórico.
 disable-model-invocation: true
 ---
 
-## Canal de builds do MyCockpit
+## Canal de builds da Frota
 
 Você opera o canal de builds (`scripts/build.sh`, na raiz do repo `~/projetos/mycockpit`). Argumento recebido: $ARGUMENTS
 
@@ -19,7 +19,7 @@ Você opera o canal de builds (`scripts/build.sh`, na raiz do repo `~/projetos/m
 
 1. `./scripts/build.sh test` (em background; acompanhe a saída).
 2. Ao terminar, VERIFIQUE o artefato:
-   - `builds/test/latest/` contém `Frota.app` (o app foi renomeado de MyCockpit pra Frota), `meta.json` e `mycockpit.db.backup`;
+   - `builds/test/latest/` contém `Frota.app`, `meta.json` e `mycockpit.db.backup` (nome legado do banco, preservado por compatibilidade);
    - sidecar do ditado presente: `Frota.app/Contents/MacOS/mycockpit-stt`;
    - versão certa: `plutil -p builds/test/latest/Frota.app/Contents/Info.plist | grep ShortVersion` deve mostrar `X.Y.Z-test.N`.
 3. Reporte número, sha, dirty ou não, versão e caminho. Ofereça `open builds/test/latest/Frota.app` pro usuário testar.

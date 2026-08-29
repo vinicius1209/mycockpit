@@ -18,10 +18,17 @@ pede a próxima decisão.
 
 | onde | o quê |
 |---|---|
+| `README.md` | visão atual do produto e caminho de entrada para gente nova |
+| `docs/architecture.md` | mapa vivo de superfícies, donos de estado e fronteiras Rust/TS |
+| `docs/agent-runner.md` | contrato normalizado e histórico de evidência dos adapters; capabilities atuais moram no registry |
 | `docs/STYLEGUIDE.md` | design canônico. Consulte ANTES de mexer em UI |
 | `docs/decisions.md` | as ADRs. Toda decisão estrutural vira uma |
 | `docs/*-plan.md` | o plano da frente. Blocos de correção no topo mandam sobre o texto original |
 | `scripts/lints/` | as guardas automáticas do guia |
+
+Planos registram a evolução da frente e podem conservar alternativas antigas.
+Eles não substituem o código atual nem uma ADR posterior: primeiro leia o bloco
+de correção/status no topo, depois confira `docs/decisions.md` e os call sites.
 
 ## As leis
 
@@ -40,7 +47,8 @@ pede a próxima decisão.
   confirma é a pessoa.
 - **Migrações** só via `Migration` em `src-tauri/src/lib.rs`, um statement por
   migração, e **confira a versão máxima real no arquivo** antes de numerar.
-  Tabela nova de frontend: `ensure*Tables(db)` + `addColumn` em `src/lib/db.ts`.
+  Tabela nova de frontend: `ensure*Tables(db)` + `addColumn` de
+  `src/lib/db/schema.ts` (re-exportado por `src/lib/db.ts`).
 - **Árvore compartilhada.** Outra frente pode estar em andamento na working
   tree. Toque só no que é da sua tarefa, nunca reverta o que não é seu, e
   **nunca afrouxe um teste existente** — se ele quebrou, o refactor está errado.
@@ -52,6 +60,12 @@ pede a próxima decisão.
 - **Watchdog**: um ticker único em `src/lib/watchdog.ts` (subscribe coalescido +
   interval). Estender, nunca duplicar. Um aviso por episódio, via `Map` de
   módulo.
+- **Chat**: `useChat` é estado operacional e transcript; texto e anexos ainda
+  não enviados pertencem a `useComposerDrafts`, persistidos por conversa em
+  `conversation_drafts`. Nada de reintroduzir `drafts` no chat ou limpar anexo
+  ao trocar de conversa. O scroll observa o wrapper real do transcript via
+  `contentRef`; não volte a inferi-lo com `firstElementChild` nem use
+  `scrollIntoView` em superfícies flexíveis (ADR-122).
 - **Testes**: vitest ao lado do código, casos em pt-BR descrevendo
   comportamento, `now` injetável, reset de módulo no `beforeEach` (padrão de
   `watchdog.test.ts`). **Fixture com payload REAL**, colhido de stream ou

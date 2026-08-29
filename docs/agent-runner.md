@@ -1,9 +1,11 @@
-# Agent Runner — a abstração de extensão
+# Agent Runner, contrato e evidência dos adapters
 
-> **Objetivo:** desenhar a costura (*seam*) que permite adicionar Codex, OpenCode e Aider
-> no v0.2 **sem reescrever** o caminho do Claude Code do v0.1. Mesmo havendo um só agent
-> no v0.1, **ele já é o primeiro adapter desta abstração.** Respeitar isto agora é o que
-> evita retrabalho depois.
+> **Como ler este documento em 29/08/2026:** a abstração descrita aqui foi
+> implementada e hoje cobre Claude Code, Codex, Antigravity e OpenCode. As
+> assinaturas e matrizes abaixo preservam o raciocínio e as provas datadas; não
+> são uma API para copiar. A fonte executável atual é
+> `app/src-tauri/src/adapters.rs`, com espelho de UI em
+> `app/src/lib/agents.ts` e testes-gêmeos nos dois lados.
 
 ## Princípio
 
@@ -15,10 +17,10 @@ adapter; a UI não muda.
 saída nativa do agent  ──[adapter]──►  AgentEvent normalizado  ──►  UI (cartões no chat)
 ```
 
-## 1. Modelo de eventos normalizados
+## 1. Modelo conceitual de eventos normalizados
 
-Este é o **contrato de renderização**. É a parte mais estável do sistema — pense bem
-antes de mudar.
+Este recorte explica a intenção do contrato. Confira o enum real `AgentEvent`
+em `app/src-tauri/src/agent.rs` antes de mudar campos ou serialização.
 
 ```rust
 enum AgentEvent {
@@ -42,7 +44,11 @@ enum AgentEvent {
 Regra de ouro (a mesma do spike M0): **evento desconhecido vira `Unknown`, nunca um
 crash.** Isso mantém o app vivo quando o CLI muda de formato.
 
-## 2. A trait `AgentRunner`
+## 2. A trait conceitual
+
+O código abaixo é o desenho que originou a trait. A assinatura vigente é
+`AgentAdapter` em `adapters.rs`; capabilities novas entram ali e no espelho TS,
+nunca só neste documento.
 
 ```rust
 trait AgentRunner {
@@ -76,28 +82,34 @@ struct Capabilities {
 Channel). A UI **degrada graciosamente** conforme `capabilities` (ex.: esconde o painel
 de custo se `reports_usage == false`).
 
-## 3. Duas estratégias de execução por baixo
+## 3. Estratégias de execução atuais
 
 | Estratégia | Como | Para quem |
 |---|---|---|
-| **StructuredAdapter** | `spawn` do CLI com saída JSON → parse → `AgentEvent` | Claude Code, Codex, OpenCode |
-| **PtyAdapter** | `spawn` em PTY (`portable-pty`) → bytes crus como `AssistantText`/`ToolCallOutput`; `Done` no exit | Aider, ou qualquer agent sem JSON |
+| **CLI estruturada** | `spawn` headless, parse do stream nativo e emissão de `AgentEvent` | Claude Code, Codex, Antigravity e fallback do OpenCode |
+| **Canal especializado** | protocolo próprio encapsulado pelo mesmo adapter | app-server do Codex e ACP do OpenCode quando aplicável |
 
-A `trait` é a mesma; muda só o "motor" interno do adapter.
+Não há terminal/PTY genérico embutido como caminho atual de agente. Se ele for
+introduzido no futuro, precisa declarar a perda de telemetria sem fabricar
+ações técnicas.
 
-## 4. Matriz de capacidades (mid-2026, confirmar por versão)
+## 4. Matriz de presença atual
 
-| Agent | binário | structured | resume | perm callback | estratégia |
-|---|---|---|---|---|---|
-| **Claude Code** | `claude` | ✅ `stream-json` | ✅ `--resume` | ✅ (SDK `canUseTool` / flags) | Structured |
-| **Codex** (OpenAI) | `codex` | ✅ `exec --json` | ⚠️ parcial | ⚠️ limitado | Structured |
-| **OpenCode** | `opencode` | ✅ `run --format json` | ❓ a confirmar | ❓ a confirmar | Structured |
-| **Aider** | `aider` | ❌ (sem JSON estruturado) | ❌ | ❌ | **PTY** |
+| Agent | binário | adapter atual |
+|---|---|---|
+| **Claude Code** | `claude` | `ClaudeAdapter` |
+| **Codex** | `codex` | `CodexAdapter` + app-server onde a capability pede |
+| **Antigravity** | `agy` | `AgyAdapter` |
+| **OpenCode** | `opencode` | `OpenCodeAdapter` + ACP quando disponível |
 
-> Claude Code é o mais rico → por isso é o primeiro. Aider é o mais pobre → entra por PTY,
-> com eventos grosseiros (`Started` → `AssistantText(final)` em chunks → `Done` no exit).
+Esta tabela confirma presença, não capability. Para `session_resume`, anexos,
+MCP, custo, uso, hooks, modelos ou compactação, consulte os registries e a
+evidência por versão na seção 7.1.
 
-## 5. Mapeamento por adapter (nativo → normalizado)
+## 5. Mapeamentos históricos por adapter (nativo → normalizado)
+
+Os exemplos abaixo registram como a normalização nasceu. CLIs mudam; valide o
+parser e os fixtures atuais antes de reutilizar um nome de evento.
 
 ### Claude Code (`claude -p --output-format stream-json --verbose`)
 | Nativo | Normalizado |
@@ -126,7 +138,7 @@ A `trait` é a mesma; muda só o "motor" interno do adapter.
 | `message.part.updated` (`thinking`/`reasoning`/`text`) | `Thinking` / `AssistantText` |
 | evento de fim | `Done` |
 
-### Aider (PTY)
+### Aider (PTY, desenho histórico não implementado)
 | Nativo | Normalizado |
 |---|---|
 | processo inicia | `SessionStarted` (id sintético) |
@@ -135,7 +147,7 @@ A `trait` é a mesma; muda só o "motor" interno do adapter.
 
 ## 6. Empacotamento dos "plugins"
 
-- **v0.1 / v0.2: adapters são módulos Rust compilados** num *registry*. Simples e
+- **Hoje, adapters são módulos Rust compilados** num *registry*. Simples e
   type-safe. Não há protocolo externo ainda.
 - **Mas defina o schema JSON dos eventos normalizados desde já** (espelho do enum §1).
   Assim, um futuro **protocolo de plugin externo** vira *drop-in*: um agent descrito por
@@ -155,7 +167,13 @@ Manifesto futuro (forma esperada):
 }
 ```
 
-## 7. Política de permissão (por projeto)
+## 7. Modelo original de permissão e diário de evidências
+
+Esta seção é cronológica. Ela contém hipóteses antigas seguidas de correções
+empíricas mais novas, por isso não deve ser lida como uma tabela corrente. Para
+implementar ou revisar permissões, use `PermissionMode`/`Capabilities` do Rust,
+o espelho TS e os testes de contrato; use o diário abaixo para entender por que
+o contrato chegou ao estado atual.
 
 ```rust
 struct PermissionPolicy {
@@ -173,11 +191,10 @@ struct PermissionPolicy {
     sandboxa** (achado validado no M0 — ver `stream-json-notes.md`). Gating fino mid-run
     exige o callback `canUseTool` do Agent SDK.
   - Outros → melhor esforço conforme a capacidade.
-  - **PTY (Aider)** → ⚠️ não dá para interceptar mid-run; mitigar com *worktree* (v0.3)
-    e/ou config nativa do agent. **Documentar esse limite na UI.**
+  - **PTY (Aider)** era uma proposta de extensão, nunca virou adapter do produto.
 - Default são (M5): `AcceptEdits` + **Bash pergunta** (`ask_on: ["Bash"]`).
 
-### 7.1 Realidade por agent — o que cada CLI REALMENTE faz (verificado 2026-07)
+### 7.1 Diário de evidências por versão (mais novo vence)
 
 O seletor de Permissões é do **projeto**, mas quem obedece é a CLI da conversa — e
 elas divergem. Versões auditadas: claude 2.1.219, codex-cli 0.144.6, agy 1.1.7.
@@ -305,7 +322,11 @@ que não existe. Não há `mcp-server`/`app-server`/ACP na 1.1.7. O gate que val
 ele é o nosso, por turno: **"Planejar primeiro"**. A UI diz isso na cara
 (`lib/permissionNote.ts`) em vez de fingir um contrato uniforme.
 
-### 7.2 Anexos (imagem e PDF) por agent — verificado 2026-07
+### 7.2 Evidência histórica de anexos (imagem e PDF)
+
+Os gates atuais são `supports_attachment` em `adapters.rs` e `caps` em
+`agents.ts`. Esta tabela explica provas que motivaram o contrato; a ausência de
+um agente aqui não significa ausência de suporte atual.
 
 | | imagem | PDF | mecanismo |
 |---|---|---|---|
@@ -332,7 +353,10 @@ perderíamos o resize automático do `Read`, e porque o caminho é não-document
 um dia aparecer relato de "mandei imagem e o Claude ignorou", o gatilho está pronto:
 `--input-format stream-json` exige `--output-format stream-json`, que exige `--verbose`.
 
-### 7.3 Contexto do projeto: quem lê o quê (e o que o app injeta)
+### 7.3 Evolução da injeção de contexto
+
+Este registro antecede o quarto adapter. A regra atual é por capability e está
+no código; nomes de fornecedores abaixo descrevem a evidência da época.
 
 A instrução era a única camada do contexto **não agnóstica**: cada CLI lê o arquivo do
 próprio fornecedor, e o app nunca injetou nenhum deles — só os inventariava no painel.
@@ -391,12 +415,11 @@ retomada, memória sintética do agy) viaja emoldurado em
 bloco é dado, não pedido (`lib/trust.ts`). O conteúdo nunca é reescrito — a
 defesa é a moldura.
 
-## 8. Perguntas em aberto (para futuros devs)
+## 8. Checklist para evoluir um adapter
 
-1. Semântica exata de *resume* do Codex e do OpenCode (confirmar com a doc/versão).
-2. Vale embutir o Claude Agent SDK (sidecar Node) quando precisarmos de callback de
-   permissão rico, ou um esquema de aprovação baseado em flags + re-run basta?
-3. Como representar *file diffs* de forma uniforme entre agents que reportam `FileChanged`
-   e os que não reportam (PTY) — `git diff` da worktree como fonte da verdade?
-4. Streaming de `tool_use` *input* parcial (`input_json_delta`) — renderizar ao vivo ou
-   só no `ToolCallStarted` completo?
+1. Confirme a versão real do CLI e capture payload ou argv real.
+2. Altere `Capabilities` no Rust e o espelho TS na mesma frente.
+3. Adicione teste-gêmeo de contrato e fixture do stream real.
+4. Defina a degradação quando a capability estiver ausente.
+5. Atualize este diário apenas como evidência; comportamento corrente continua
+   pertencendo ao registry e aos testes.

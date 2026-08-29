@@ -1,4 +1,4 @@
-# STYLEGUIDE — MyCockpit (Frota)
+# STYLEGUIDE — Frota
 
 > O doc canônico de design do app. Congela as regras da despoluição (ADR-037,
 > background-status B1'/B2, lições Orca/Xirp) antes que divirjam. Em regra de
