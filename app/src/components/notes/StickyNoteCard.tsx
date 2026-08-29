@@ -283,7 +283,7 @@ export function StickyNoteCard({
             onClick={() => setTargetMenuOpen((o) => !o)}
             className={cn(
               "flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium transition-colors",
-              "bg-background/50 hover:bg-background/80 text-foreground/85 border border-border/40",
+              "bg-background/50 hover:bg-background/80 text-foreground/85 border",
             )}
             title="Agente de destino da nota"
           >
@@ -501,7 +501,7 @@ export function StickyNoteCard({
       )}
 
       {/* Barra de Ações Inteligentes do Cockpit (Footer) */}
-      <div className="mt-2 flex items-center justify-between border-t border-border/30 pt-2 text-[11px]">
+      <div className="mt-2 flex items-center justify-between border-t border-border/40 pt-2 text-[11px]">
         {/* Status / Ação de Edição */}
         <div className="flex items-center gap-1.5 text-muted-foreground/70">
           {/* Na folha o botão "Editar" é redundante: o corpo inteiro já abre a

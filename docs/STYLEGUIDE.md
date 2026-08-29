@@ -383,6 +383,19 @@ nunca em big-bang):
   fundo próprio é proibida: a reta morre no meio do arco, o retângulo de fundo é
   decepado, e o olho lê "recorte". Quem separa é o **inset do conteúdo** (8px na
   faixa de status, `AppShell.tsx`), e a faixa passa a ser o piso da janela.
+- **O filete tem DOIS papéis, e o set é fechado.** `border` (ou
+  `border-border`, cheia) é a ARESTA de uma superfície; `border-border/40` é o
+  DIVISOR dentro dela. Não existe terceiro degrau. A varredura de 29/08/2026
+  achou **14 cores de borda distintas**, sendo oito opacidades da mesma cor
+  (/30 /40 /45 /50 /55 /60 /70 /80) — e separando por uso elas viram exatamente
+  esses dois papéis, com `border` cheia vencendo por 327 usos. Ninguém escolheu
+  oito degraus: cada um escolheu o que estava perto. Guarda:
+  `scripts/check-filete.mjs` (§10), catraca.
+- **Borda de coisa única está errada.** Um elemento com borda que envolve UMA
+  coisa ou é um cartão de uma linha (e então use o cartão), ou não precisa de
+  borda. É um teste mais fácil de aplicar em review do que "não aninhe bordas",
+  e pega o caso que a regra de aninhamento deixa passar: a borda solta que não
+  agrupa nada.
 - **Divisor é último recurso.** Seções de um mesmo painel se separam por
   **proximidade assimétrica: 24px acima do título, 8px abaixo** (razão 3:1) —
   `Section` em `components/layout/contextPanelChrome.tsx` é a implementação, e
@@ -528,8 +541,12 @@ Checklist:
   [ ] Cards-em-cards: BORDA aninhada é proibida (borda com raio dentro de
       borda com raio). Separar por cor + raio, sem hairline, é permitido (§4);
       dentro de uma superfície assim, divisor só por mudança de propriedade
-  [ ] Alinhamento: números de coluna à direita e alinhados; nada fora do
-      grid de 4px; largura pré-reservada pro que muda
+  [ ] Filete: §4 (só `border` pra aresta e `border-border/40` pra divisor;
+      nenhuma borda envolvendo uma coisa só)
+  [ ] Alinhamento: §14 (trilhos pelo glifo e não pela caixa, os mesmos em
+      todas as linhas do cartão; números de coluna à direita e alinhados;
+      nada fora do grid de 4px; largura pré-reservada pro que muda; ajuste
+      óptico declarado como óptico)
   [ ] Movimento/tempo: regras do §6 (cronômetro, gerúndio/pretérito, dono
       único do agora, sem status inventado)
   [ ] Copy: §7 (honestidade, vocabulário canônico, sem travessão em prosa)
@@ -635,7 +652,7 @@ UsagePill (`DropdownMenuContent` z-50 sob o header z-[110]) → `z-[120]` +
 
 ## 10. Guarda automática (ratchet de lints)
 
-Este guia deixou de depender de memória: **doze** scripts rodam na CI (job
+Este guia deixou de depender de memória: **treze** scripts rodam na CI (job
 `guardas` do `.github/workflows/ci.yml`, separado dos testes) e localmente por
 `cd app && bun run check`. A ideia é a do Buzz (`docs/study-buzz.md`, item B1):
 **passada de despoluição sem guarda re-fragmenta em poucos sprints**. Código
@@ -650,6 +667,7 @@ nosso; só as regras vieram de lá.
 | `scripts/check-marca.mjs` | o nome do produto | volta `MyCockpit` numa string que o usuário lê ou que vai no prompt de um agente. Só varre a forma com MAIÚSCULAS e ignora comentário: os identificadores persistidos (`mycockpit.db`, `.mycockpit/`, `mc.app`, `dev.vinicius.mycockpit`, `mycockpit.flight-plan`) são minúsculos e ficam de fora POR CONSTRUÇÃO, não por allowlist que alguém precisa lembrar de manter |
 | `scripts/check-primitivas.mjs` | §12, a primitiva certa | um consumidor importa `radix-ui`/`@radix-ui/*` fora de `components/ui/`, ou monta um `DropdownMenuContent` sem nenhum item de menu (painel vestido de lista de comandos) |
 | `scripts/check-geometria-de-controle.mjs` | §13, a escada de controle | um arquivo passa do número de controles à mão congelado em `scripts/lints/geometria-baseline.json`, ou um arquivo novo nasce com geometria própria. Catraca: o número só desce, e `--update` recusa apertar enquanto houver arquivo acima |
+| `scripts/check-filete.mjs` | §4, os dois papéis do filete | aparece cor de borda fora do set fechado (`border`/`border-border` pra aresta, `border-border/40` pra divisor) acima do congelado em `scripts/lints/filete-baseline.json`. Catraca: só desce, arquivo novo nasce em zero, e a saída nomeia cada token a migrar |
 | `scripts/check-superficies.mjs` | o vocabulário de cartão e selo das Configurações | uma seção inventa a enésima string de cartão em vez de usar o vocabulário. É catraca: o número por arquivo só desce, e arquivo novo nasce em zero |
 | `scripts/lints/paletaCrua.mjs` | §2, cor vem de token | entra cor crua do Tailwind (`bg-amber-500`, `text-emerald-400`) em vez de token da casa |
 | `scripts/check-guia-sem-linha.mjs` | este documento | volta referência `arquivo:linha` no guia. A catraca do §10 move números por desenho, então referência com linha apodrece sozinha e manda o leitor pro lugar errado com a autoridade do guia. Nome de símbolo é greppável e sobrevive à divisão |
@@ -858,3 +876,34 @@ proibição: 182 controles à mão em 70 arquivos entraram congelados, o número
 arquivo só desce, e arquivo novo nasce em zero — que é a metade que importa,
 porque é por onde a divergência entra. Proibir de uma vez quebraria 70 arquivos,
 e guarda que pede o impossível ensina a ignorar guarda.
+
+## 14. Alinhamento
+
+**As coisas se alinham pelos GLIFOS, não pelas caixas.**
+
+Alinhamento óptico ganha da aritmética quando o glifo discorda da própria caixa
+delimitadora. Um ícone com muito ar interno, um numeral com sobra à direita, um
+"J" com barriga: todos ficam certos na matemática e tortos no olho. O olho é
+quem julga.
+
+Regras decidíveis:
+
+- **Escolha os trilhos a partir do CONTEÚDO**, não da caixa: a aresta esquerda
+  do ícone, a direita do último glifo. Depois segure os MESMOS trilhos em todas
+  as linhas do cartão. Uma linha fora do trilho faz o cartão inteiro parecer
+  desleixado, mesmo com as outras nove perfeitas.
+- **Área de clique cresce pra FORA, nunca move o conteúdo.** Um botão que
+  precisa de mais alvo ganha padding negativo ou pseudo-elemento; se ele empurra
+  o rótulo, o trilho quebrou pra ganhar 4px de mouse.
+- **Ajuste óptico se declara.** Quando o número não é redondo porque o olho
+  pediu, escreva no código que é óptico. Sem isso, o próximo passa a limpo,
+  "corrige" pro valor redondo, e o desalinhamento volta com aparência de
+  arrumação.
+- **Número que muda alinha à direita e reserva largura** (§3, `tabular-nums`).
+  Isto já é regra, e é o caso mais comum de trilho quebrando sozinho em runtime.
+
+**Esta seção não tem guarda automática, de propósito.** Alinhamento óptico não é
+um literal a procurar: é uma relação entre duas caixas que só o olho fecha. Ela
+mora na rubrica do §8 e no review, e a honestidade sobre isso importa — guarda
+inventada pra parecer rigorosa é pior que ausência de guarda, porque dá
+sensação de cobertura onde não há.

@@ -120,7 +120,7 @@ export function LinhaDoPainel({
   return (
     <div
       className={cn(
-        "flex items-center gap-2 rounded-lg border border-border/40 bg-secondary/25 px-2.5 py-2 transition-colors hover:bg-secondary/35",
+        "flex items-center gap-2 rounded-lg border bg-secondary/25 px-2.5 py-2 transition-colors hover:bg-secondary/35",
         className,
       )}
     >

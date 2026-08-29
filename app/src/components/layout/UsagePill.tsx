@@ -89,7 +89,7 @@ function ProviderCard({
   const usable = snap != null && snapshotUsable(snap, failure, now)
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border/40 bg-secondary/25 p-2.5 transition-colors hover:bg-secondary/35">
+    <div className="flex flex-col gap-2 rounded-lg border bg-secondary/25 p-2.5 transition-colors hover:bg-secondary/35">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <div className="size-4 shrink-0 flex items-center justify-center">
@@ -99,7 +99,7 @@ function ProviderCard({
             {label}
           </span>
           {snap?.planType ? (
-            <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground border border-border/40">
+            <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground border">
               {snap.planType}
             </span>
           ) : null}

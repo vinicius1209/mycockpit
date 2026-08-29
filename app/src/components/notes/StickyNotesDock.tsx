@@ -151,7 +151,7 @@ function NovaNota({
         )
       : cn(
           controle("compacto"),
-          "mt-4 border border-border/80 bg-background font-medium text-foreground transition-colors hover:bg-accent",
+          "mt-4 border bg-background font-medium text-foreground transition-colors hover:bg-accent",
         )
 
   if (!temConversa) {
@@ -249,7 +249,7 @@ function FolhaVazia({
             onClick={desfazer.acao}
             className={cn(
               controle("compacto"),
-              "mt-4 border border-border/80 bg-background font-medium text-foreground transition-colors hover:bg-accent",
+              "mt-4 border bg-background font-medium text-foreground transition-colors hover:bg-accent",
             )}
           >
             {desfazer.rotulo}

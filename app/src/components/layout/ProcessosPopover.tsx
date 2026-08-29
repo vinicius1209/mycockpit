@@ -38,7 +38,7 @@ function Linha({
       {/* Órfã é FATO (pai morto), não suspeita — por isso é a única marca
           escrita; "parada" já está dita pela idade. */}
       {p.orfao && (
-        <span className="rounded border border-border/40 bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+        <span className="rounded border bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
           órfã
         </span>
       )}

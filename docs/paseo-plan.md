@@ -26,8 +26,8 @@ superfícies) repetiria o mesmo erro num lugar novo.
 |---|---|---|---|
 | **D1** | Tabela de superfícies + primitiva `ui/popover.tsx` | PA2 | **feito** (§12, build 311) |
 | **D2** | Geometria de controle fechada, com guarda | PA3 | **feito** (§13, build 314) |
-| **D3** | Alinhamento óptico e a regra de borda afiada | lacunas 3 e 4 | **próxima** |
-| **X1** | `isAvailable()` antes de oferecer motor | PA9 | a fazer |
+| **D3** | Alinhamento óptico e a regra de borda afiada | lacunas 3 e 4 | **feito** (§14 + §4, build 315) |
+| **X1** | `isAvailable()` antes de oferecer motor | PA9 | **próxima** |
 | **X2** | Sentinela `{{{prompt}}}` no registry | PA7 | a fazer |
 | **F1** | Adotar sessão externa | PA1 | a fazer |
 | **F2** | Espelho headless do terminal (destrava o M1 da margem) | PA8 | a fazer |
@@ -133,12 +133,36 @@ o de 28px, o mais escrito à mão, não existia. **89 arquivos escrevem `<button
    `SelectTrigger` junto. O `tsc -b` cobrou os oito, um por um. Escala com tipo
    fechado é o que torna renomear em massa seguro.
 
-## D3 — Alinhamento e borda (esboço)
+## D3 — Alinhamento e borda
 
-Duas regras curtas, sem guarda automática (não são literais a procurar):
-alinhar por glifo e não por caixa, com o ajuste óptico comentado como óptico; e
-o teste de borda afiado (*"single-thing borders are wrong"*). Entram no §4 e na
-rubrica do §8.
+### O defeito, medido
+A metade da BORDA acabou sendo mensurável, ao contrário do que este esboço
+previa: **14 cores de borda distintas** em `app/src`, sendo **oito opacidades da
+mesma cor** (/30 /40 /45 /50 /55 /60 /70 /80). Ninguém escolheu oito degraus,
+cada um escolheu o que estava perto.
+
+Separando por USO, os oito viram dois papéis limpos: `border-t`/`border-l`
+(divisor interno) usa /30 /40 /45, e o contorno de superfície usa /50 a /80. E o
+app já tinha um vencedor por larga margem no segundo, `border` cheia com 327
+usos, que é exatamente a receita que o §4 escreveu. **É a terceira vez seguida
+que o app convergiu e a doutrina não percebeu** (a escada de 4px na D2, a
+primitiva ausente na D1).
+
+### Definição de pronto — cumprida em 29/08/2026
+- §4 ganhou o set fechado do filete (aresta e divisor, só) e o teste de borda
+  afiado: *"borda de coisa única está errada"*. ✓
+- §14 novo: alinhamento pelo glifo, trilhos vindos do conteúdo, área de clique
+  crescendo pra fora, ajuste óptico declarado como óptico. ✓
+- Catraca `check-filete.mjs`: 132 filetes fora do set em 50 arquivos, e a saída
+  NOMEIA cada token a migrar, não só a contagem. ✓
+- Seis arquivos desta sessão já migrados, apertando a catraca de saída. ✓
+- `check` 13/13 · `tsc -b` limpo · 3488 testes · build 315. ✓
+
+### A parte que NÃO ganhou guarda, e por quê
+O §14 é doutrina de review, sem lint. Alinhamento óptico não é um literal a
+procurar: é uma relação entre duas caixas que só o olho fecha. Escrevi isso no
+próprio §14 porque guarda inventada pra parecer rigorosa é pior que ausência de
+guarda, dá sensação de cobertura onde não há.
 
 ## X1 — `isAvailable()` antes de oferecer (esboço)
 

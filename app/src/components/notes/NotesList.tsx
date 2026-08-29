@@ -40,7 +40,7 @@ export function NotesList({
   const vazia = grupos.length === 0
 
   return (
-    <div className="flex w-[214px] shrink-0 flex-col border-r border-border/60 bg-secondary/30">
+    <div className="flex w-[214px] shrink-0 flex-col border-r border-border/40 bg-secondary/30">
       <div className="shrink-0 p-2.5 pb-1.5">
         <label className="flex items-center gap-1.5 rounded-md bg-secondary px-2 py-1 text-[12px] text-muted-foreground focus-within:ring-[3px] focus-within:ring-ring/50">
           <Search className="size-3 shrink-0" />

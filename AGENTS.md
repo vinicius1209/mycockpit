@@ -59,7 +59,7 @@ pede a próxima decisão.
 
 ## Antes de escrever UI
 
-Toda mudança visível segue `docs/STYLEGUIDE.md`. Estas cinco são as que mais
+Toda mudança visível segue `docs/STYLEGUIDE.md`. Estas seis são as que mais
 se erram, então estão inline:
 
 1. **Nunca importe `radix-ui` cru fora de `components/ui/`.** Se falta uma
@@ -82,8 +82,14 @@ se erram, então estão inline:
    Nunca encolha fonte ou padding de um controle pra ele caber: ou o degrau
    certo é outro, ou está faltando, e degrau novo entra por ADR.
 4. **Três elevações, não invente a quarta.** `shadow-md/lg/xl/2xl` são
-   proibidos em componente do app.
-5. **Copy em pt-BR, sem travessão "—".** Use vírgula, ponto, parênteses; "·" e
+   proibidos em componente do app. E o filete tem só dois papéis: `border`
+   (aresta de superfície) e `border-border/40` (divisor interno). Opacidade
+   intermediária é deriva, não decisão.
+5. **Alinhe pelo GLIFO, não pela caixa** (§14). Escolha os trilhos a partir do
+   conteúdo e segure os mesmos em todas as linhas do cartão; área de clique
+   cresce pra fora, nunca move o conteúdo; e se o ajuste foi óptico, escreva no
+   código que foi óptico, senão o próximo "corrige" pro valor redondo.
+6. **Copy em pt-BR, sem travessão "—".** Use vírgula, ponto, parênteses; "·" e
    "→" são permitidos. Rótulo descreve o resultado para a pessoa, não o alvo
    interno ("Mostrar na pasta", nunca "Mostrar no Finder": também somos Linux).
 
