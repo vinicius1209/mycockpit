@@ -24,8 +24,8 @@ superfícies) repetiria o mesmo erro num lugar novo.
 
 | # | frente | origem | estado |
 |---|---|---|---|
-| **D1** | Tabela de superfícies + primitiva `ui/popover.tsx` | PA2 | **em andamento** |
-| **D2** | Geometria de controle fechada, com guarda | PA3 | a fazer |
+| **D1** | Tabela de superfícies + primitiva `ui/popover.tsx` | PA2 | **feito** (§12, build 311) |
+| **D2** | Geometria de controle fechada, com guarda | PA3 | **próxima** |
 | **D3** | Alinhamento óptico e a regra de borda afiada | lacunas 3 e 4 | a fazer |
 | **X1** | `isAvailable()` antes de oferecer motor | PA9 | a fazer |
 | **X2** | Sentinela `{{{prompt}}}` no registry | PA7 | a fazer |
@@ -75,16 +75,28 @@ Inventário do que existe hoje (arquivos que importam cada primitiva):
 4. **Guarda** `scripts/check-superficies.mjs`: `radix-ui` cru fora de
    `components/ui/` é erro, e menu-como-painel é erro nomeado.
 
-### Definição de pronto
+### Definição de pronto — cumprida em 29/08/2026
 
-- `§12` escrito, com a tabela e o critério, e citado na rubrica do `§8`.
-- `ui/popover.tsx` existe e é a única porta para painel ancorado.
-- `StickyNotesTrigger` e `PainelDaFaixa` usam a mesma primitiva; o
-  `onCloseAutoFocus` some ou fica com motivo novo escrito.
-- Guarda no `bun run check`, com teste vitest ao lado (padrão do §10).
-- ADR registrando a régua, porque ela muda decisão futura.
-- `bun run check` 11/11, `tsc -b` limpo, vitest verde, sem regressão visual nas
-  duas superfícies tocadas.
+- `§12` escrito, com a tabela e o critério, e citado na rubrica do `§8`. ✓
+- `ui/popover.tsx` existe e é a única porta para painel ancorado. ✓
+- `StickyNotesTrigger`, `PainelDaFaixa` e `UsagePill` usam a mesma primitiva. ✓
+- O `onCloseAutoFocus` saiu dos dois lugares, com o motivo escrito: o anel já é
+  resolvido no app inteiro por `lib/modalidade.ts` (§2.1), então era remédio
+  local para doença curada, e custava a devolução de foco que o teclado precisa. ✓
+- Guarda `scripts/check-primitivas.mjs` no `bun run check`, com teste vitest ao
+  lado usando o código REAL removido como fixture. ✓
+- `bun run check` 11/11 · `tsc -b` limpo · 3472 testes (+7) · build 311. ✓
+
+### O que a frente achou de quebra
+
+1. **A guarda da faixa tinha um escape que legitimava a divergência.** Ela
+   aceitava "usa o chrome OU repete a geometria dele", e o `UsagePill` morava
+   nessa fresta, recriando cabeçalho, geometria e rodapé por fora. A diferença
+   real era só `side`/`align`; virou parâmetro, e a guarda perdeu o "ou".
+2. **A CI rodava `tsc --noEmit` enquanto o build roda `tsc -b`.** É a fresta por
+   onde já passou um erro (`node:fs` num teste). Corrigida para `tsc -b --force`.
+3. **O §10 do guia dizia "sete scripts" e listava seis, com onze no
+   `package.json`.** A tabela agora tem as onze linhas.
 
 ---
 

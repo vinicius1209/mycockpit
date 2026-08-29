@@ -34,19 +34,18 @@ describe("o idioma do painel da faixa", () => {
     }
   })
 
-  it("ou usam o chrome, ou repetem a geometria dele", () => {
-    // O `UsagePill` não usa o componente porque o gatilho dele é a própria
-    // pill, com estado de leitura dentro. Ele paga o preço de repetir a
-    // geometria — e este teste é quem cobra que ela continue a MESMA.
+  it("todos usam o chrome, sem exceção", () => {
+    // Este teste já teve uma fresta: aceitava "usa o chrome OU repete a
+    // geometria dele", e o `UsagePill` vivia dentro dela, com a justificativa
+    // de que o gatilho era a própria pill. A justificativa não se sustentava
+    // (o chrome recebe o gatilho por `children`); a diferença real era só
+    // `side`/`align`, que agora são parâmetro. Guarda com escape opcional
+    // legitima a divergência que ela existe pra impedir.
     for (const arquivo of PAINEIS_DA_FAIXA) {
       const fonte = FONTES[arquivo]
-      const usaChrome = fonte.includes("PainelDaFaixa")
-      const repeteGeometria =
-        fonte.includes("sideOffset={8}") && fonte.includes('side="top"')
-      expect(
-        usaChrome || repeteGeometria,
-        `${arquivo} não usa o PainelDaFaixa nem repete a geometria dele`,
-      ).toBe(true)
+      expect(fonte, `${arquivo} não usa o PainelDaFaixa`).toContain(
+        "PainelDaFaixa",
+      )
     }
   })
 

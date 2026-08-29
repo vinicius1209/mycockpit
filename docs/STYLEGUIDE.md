@@ -535,6 +535,9 @@ Checklist:
   [ ] Copy: §7 (honestidade, vocabulário canônico, sem travessão em prosa)
   [ ] Botão direito: §11 (nenhum menu do motor; menu do app pela primitiva
       única; nenhum item que não faz; campo de texto ganha do container)
+  [ ] Superfície: §12 (a primitiva certa pro gesto; vendor só em
+      components/ui; nenhum comportamento de primitiva desarmado na mão;
+      divergência resolvida por parâmetro, não por superfície nova)
 Veredito: aprovado | aprovado com ressalvas | reprovado
 ```
 
@@ -630,7 +633,7 @@ UsagePill (`DropdownMenuContent` z-50 sob o header z-[110]) → `z-[120]` +
 
 ## 10. Guarda automática (ratchet de lints)
 
-Este guia deixou de depender de memória: sete scripts rodam na CI (job
+Este guia deixou de depender de memória: **onze** scripts rodam na CI (job
 `guardas` do `.github/workflows/ci.yml`, separado dos testes) e localmente por
 `cd app && bun run check`. A ideia é a do Buzz (`docs/study-buzz.md`, item B1):
 **passada de despoluição sem guarda re-fragmenta em poucos sprints**. Código
@@ -643,6 +646,11 @@ nosso; só as regras vieram de lá.
 | `scripts/check-dead-tokens.mjs` | §2, §4 e §7 | volta `shadow-md/lg/xl/2xl`; aparece `st-success` em **qualquer** propriedade (`text-`, `bg-`, `border-`, `ring-`… e `var(--st-success)` cru) além do declarado por arquivo; entra travessão "—" em prosa de UI |
 | `scripts/lints/rodandoMotion.mjs` | §6, o único estado que se move | a `.conv-spin` perde a animação de CSS ou o bloco `prefers-reduced-motion` que a degrada num ponto sólido visível |
 | `scripts/check-marca.mjs` | o nome do produto | volta `MyCockpit` numa string que o usuário lê ou que vai no prompt de um agente. Só varre a forma com MAIÚSCULAS e ignora comentário: os identificadores persistidos (`mycockpit.db`, `.mycockpit/`, `mc.app`, `dev.vinicius.mycockpit`, `mycockpit.flight-plan`) são minúsculos e ficam de fora POR CONSTRUÇÃO, não por allowlist que alguém precisa lembrar de manter |
+| `scripts/check-primitivas.mjs` | §12, a primitiva certa | um consumidor importa `radix-ui`/`@radix-ui/*` fora de `components/ui/`, ou monta um `DropdownMenuContent` sem nenhum item de menu (painel vestido de lista de comandos) |
+| `scripts/check-superficies.mjs` | o vocabulário de cartão e selo das Configurações | uma seção inventa a enésima string de cartão em vez de usar o vocabulário. É catraca: o número por arquivo só desce, e arquivo novo nasce em zero |
+| `scripts/lints/paletaCrua.mjs` | §2, cor vem de token | entra cor crua do Tailwind (`bg-amber-500`, `text-emerald-400`) em vez de token da casa |
+| `scripts/check-guia-sem-linha.mjs` | este documento | volta referência `arquivo:linha` no guia. A catraca do §10 move números por desenho, então referência com linha apodrece sozinha e manda o leitor pro lugar errado com a autoridade do guia. Nome de símbolo é greppável e sobrevive à divisão |
+| `scripts/check-config-de-agent.mjs` | o produto roda em OUTRAS máquinas | entra caminho fixo de config de um CLI no código. Onde cada motor guarda config é conhecimento do fornecedor, muda com a versão, e já mudou uma vez aqui |
 | `scripts/check-barra-de-acento.mjs` | §2, seleção não é cor | volta o filete tingido de seleção: elemento `absolute` de dimensão ≤ 3px, colado numa aresta (`left-0`, `inset-x-0`, `-bottom-px`…), com `bg-brass` ou `bg-st-*`. Pega as duas formas, a barra vertical da sidebar (Fase 1) e o sublinhado da aba (Fase 2) |
 
 Regras de convívio (as três valem mais que a conveniência do momento):
@@ -731,3 +739,64 @@ Regras decidíveis:
   "Mostrar no Finder": o produto também é Linux.
 
 Superfície nova com menu de contexto entra por este caminho ou não entra.
+
+## 12. Qual superfície usar
+
+**Antes de montar superfície nova, ache quem já faz esse gesto e use a mesma
+primitiva.** Duas superfícies que fazem a mesma coisa semântica de jeitos
+diferentes significam que uma delas está errada.
+
+A régua tem duas perguntas, nesta ordem. A primeira decide sozinha:
+
+> **1. Preciso PARAR o app pra obter uma decisão?**
+> Se sim, é modal. Se não, é ancorado. Ver o que está solto na máquina não para
+> nada; apagar uma nota para.
+>
+> **2. Isto é uma lista de COMANDOS, ou é conteúdo?**
+> Comando aciona e fecha. Conteúdo se lê, se rola, às vezes se digita.
+
+| Se é… | A primitiva | Exemplo no app |
+|---|---|---|
+| "tem certeza?" destrutivo | `common/confirm` | apagar nota, matar sessão |
+| decisão que precisa parar o app | `ui/app-dialog` | Configurações, Especialistas |
+| lista de comandos, ancorada | `ui/dropdown-menu` | "Nova nota: da conversa · do projeto" |
+| lista de comandos, no cursor | `ui/context-menu` (§11) | botão direito |
+| **conteúdo ancorado, sem interromper** | **`ui/popover`** | gaveta de notas, painel da faixa |
+| escolha entre valores de um campo | `ui/select` · `ui/RichSelect` · `ui/PillSelect` | modelo, motor |
+| busca sobre muitos itens | `ui/command` | ⌘K, menu de `@` |
+| o nome do que o ícone já diz | `ui/tooltip` | ícone sem rótulo |
+
+Regras decidíveis:
+
+- **A primitiva mora em `components/ui/`, sempre.** Importar `radix-ui` (ou
+  `@radix-ui/*`) de um consumidor é sintoma de primitiva faltando: crie a
+  primitiva. Consumidor não tem onde carregar a decisão de elevação, movimento
+  e teclado, então cada um decide de novo, diferente.
+- **Menu sem item de menu não é menu.** `DropdownMenu` traz roving tabindex,
+  typeahead e foco devolvido ao gatilho, porque é uma lista de comandos. Um
+  painel de dados vestido de menu se denuncia sozinho: o consumidor começa a
+  desarmar comportamento na mão (`onCloseAutoFocus`, `onOpenAutoFocus`,
+  `stopPropagation` no teclado). Cada desarme desses é a régua dizendo que a
+  primitiva está errada.
+- **Quem é `asChild` REPASSA as props, ou não é nada.** Componente que vira o
+  gatilho ou o conteúdo de uma primitiva recebe do Radix o `className` da
+  superfície, o `ref` do posicionamento e os `data-state`/`data-side` de que a
+  animação depende. Componente que engole essas props compila, renderiza e sai
+  errado em silêncio: o gatilho vira decoração que não abre nada, e o painel
+  vira uma superfície transparente flutuando sobre o fio (build 311). A receita
+  é `{...resto}` antes do `className` próprio, e `cn(base, className)` por
+  último.
+- **Divergência vira PARÂMETRO, não superfície nova.** Se o seu caso difere só
+  em lado, alinhamento ou largura, isso é prop do componente compartilhado. O
+  `UsagePill` passou meses reconstruindo o painel da faixa inteiro (cabeçalho,
+  geometria, rodapé) porque `side` variava com `compact`.
+- **Guarda com escape opcional legitima a divergência que ela deveria impedir.**
+  A versão anterior da guarda da faixa aceitava "usa o chrome **ou** repete a
+  geometria"; era por essa porta que o segundo idioma entrava.
+
+Isto vale para superfície NOVA e para superfície tocada. Migração em big-bang
+não é exigida — mas quem encosta num arquivo divergente converge aquele
+arquivo.
+
+**Guarda:** `scripts/check-primitivas.mjs` (§10). Sem baseline, de propósito: o
+repositório já está em zero, e congelar zero é a própria regra.

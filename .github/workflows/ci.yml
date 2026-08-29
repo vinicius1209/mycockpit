@@ -37,6 +37,8 @@ jobs:
         run: node scripts/check-guia-sem-linha.mjs
       - name: superfícies das Configurações (catraca)
         run: node scripts/check-superficies.mjs
+      - name: primitivas de superfície (§12 · vendor só em components/ui)
+        run: node scripts/check-primitivas.mjs
       - name: config de agent (nada fixo desta máquina)
         run: node scripts/check-config-de-agent.mjs
 
@@ -48,8 +50,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
+      # `-b`, e não `--noEmit`: o build usa `-b`, e a diferença já deixou passar
+      # um erro (teste importando `node:fs`, que o tsconfig de `src/` não
+      # conhece). Guarda que roda um comando diferente do build guarda outra
+      # coisa.
       - name: typecheck
-        run: bunx tsc --noEmit
+        run: bunx tsc -b --force
       - name: lint
         run: bun run lint
       - name: testes

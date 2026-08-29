@@ -18,13 +18,25 @@
 // O que NÃO muda de idioma: pergunta destrutiva continua em confirm modal. Ela
 // interrompe de propósito — e quem abre o confirm fecha o painel antes, porque
 // dois surfaces disputando foco é briga que ninguém ganha.
+//
+// 29/08/2026: a primitiva passou a ser `ui/popover` (§12). Antes isto era um
+// `DropdownMenu`, que traz semântica de lista de COMANDOS (roving tabindex,
+// typeahead) para um painel de dados que não quer nenhuma das duas.
+//
+// Junto saiu o `onCloseAutoFocus` prevenido, e vale dizer por quê: ele estava
+// ali para apagar o anel âmbar que acendia no item da faixa ao fechar, mas esse
+// problema já é resolvido no app inteiro por `lib/modalidade.ts` (§2.1: o anel
+// só acende quando o foco chegou por tecla, INCLUSIVE no gatilho que recebe o
+// foco de volta). Era remédio local para doença já curada, e cobrava caro:
+// devolver o foco ao gatilho é o comportamento certo pra quem navega por
+// teclado, e nós o desligávamos.
 
 import type { ReactNode } from "react"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
 export interface PainelDaFaixaProps {
@@ -42,6 +54,12 @@ export interface PainelDaFaixaProps {
   nota?: ReactNode
   /** Largura: o conteúdo manda, e o padrão serve pra lista curta. */
   largura?: string
+  /** O lado de onde o painel sai. O padrão é `top`, porque a faixa mora no
+   *  rodapé; a pill de uso também aparece fora dela e precisa apontar pra
+   *  baixo. Existe pra que essa diferença seja um PARÂMETRO, e não o motivo
+   *  de alguém recriar o painel inteiro por fora. */
+  side?: "top" | "bottom" | "left" | "right"
+  align?: "start" | "center" | "end"
   conteudo: ReactNode
 }
 
@@ -54,20 +72,19 @@ export function PainelDaFaixa({
   acao,
   nota,
   largura = "w-[420px]",
+  side = "top",
+  align = "end",
   conteudo,
 }: PainelDaFaixaProps) {
   return (
-    <DropdownMenu open={open} onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-      <DropdownMenuContent
-        // `top`/`end`: a faixa mora embaixo, à direita. O painel sobe dela.
-        side="top"
-        align="end"
-        sideOffset={8}
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>{children}</PopoverTrigger>
+      <PopoverContent
+        // `top`/`end` por padrão: a faixa mora embaixo, à direita, e o painel
+        // sobe dela.
+        side={side}
+        align={align}
         className={cn("z-[120] space-y-2.5 p-3", largura)}
-        // Sem isto o Radix devolve o foco ao item da faixa ao fechar, e o anel
-        // âmbar acende num item que ninguém está operando.
-        onCloseAutoFocus={(e) => e.preventDefault()}
       >
         <div className="flex items-center justify-between border-b border-border/40 px-1 pb-1">
           <span className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
@@ -80,8 +97,8 @@ export function PainelDaFaixa({
         {conteudo}
 
         {nota && <div className="px-1 text-[11px] text-muted-foreground">{nota}</div>}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </PopoverContent>
+    </Popover>
   )
 }
 

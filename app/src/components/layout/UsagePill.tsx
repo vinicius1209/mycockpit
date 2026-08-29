@@ -23,11 +23,7 @@
 
 import { useEffect, useState } from "react"
 import { Gauge, RefreshCw, X } from "lucide-react"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { PainelDaFaixa } from "@/components/layout/statusBarChrome"
 import { agentDef } from "@/lib/agents"
 import { usageWindowAgents } from "@/lib/agentRoster"
 import { AgentLogo } from "@/components/common/AgentLogo"
@@ -178,6 +174,10 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
 
   const [refreshing, setRefreshing] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  // O `PainelDaFaixa` é controlado (os irmãos precisam fechar por fora, ao
+  // abrir um confirm). Aqui ninguém fecha de fora ainda, mas o estado mora no
+  // mesmo lugar dos outros: painel da faixa tem UM contrato.
+  const [aberto, setAberto] = useState(false)
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000)
@@ -220,14 +220,85 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
     : "Janela de uso do plano"
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <PainelDaFaixa
+      open={aberto}
+      onOpenChange={setAberto}
+      titulo="Janela de Uso do Plano"
+      icone={<Gauge className="size-3.5" />}
+      // A pill vive na faixa quando `compact`, e solta acima dela quando não:
+      // são as duas ÚNICAS coisas que a distinguem dos outros painéis, e agora
+      // elas são parâmetro em vez de motivo pra recriar o painel por fora.
+      side={compact ? "top" : "bottom"}
+      align={compact ? "start" : "end"}
+      largura="w-[460px]"
+      acao={
         <button
           type="button"
-          title={pillTitle}
-          aria-label={pillTitle}
-          className={cn(
-            "pointer-events-auto hidden items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring/50 sm:flex",
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
+          title="Atualizar leituras agora"
+        >
+          <RefreshCw className={cn("size-3", refreshing && "animate-spin")} />
+          <span>{refreshing ? "Atualizando..." : "Atualizar"}</span>
+        </button>
+      }
+      nota={
+        <span className="flex items-center justify-between">
+          <span>Não consome sua quota</span>
+          <span>Auto ~15 min</span>
+        </span>
+      }
+      conteudo={
+        <>
+          <div className="space-y-2">
+            {measurable.map((d) => (
+              <ProviderCard
+                key={d.id}
+                agentId={d.id}
+                label={d.label}
+                snap={byAgent[d.id]}
+                failure={failures[d.id]}
+                now={now}
+              />
+            ))}
+          </div>
+
+          {ctaAgents.map((d) => (
+            <div
+              key={d.id}
+              className="mt-1 flex items-center gap-2 rounded-md bg-secondary/40 px-2 py-1.5"
+            >
+              <span className="min-w-0 flex-1 text-[11px] text-muted-foreground">
+                Meça a janela do {d.label}: ative o medidor em Configurações (Uso e custo).
+              </span>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(true, "ledger")}
+                className="shrink-0 rounded bg-brass px-2 py-0.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90"
+              >
+                Abrir
+              </button>
+              <button
+                type="button"
+                title="Dispensar este aviso"
+                aria-label="Dispensar o aviso de instalação do medidor"
+                onClick={() => setSettings({ usageMeterCtaDismissed: true })}
+                className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          ))}
+        </>
+      }
+    >
+      <button
+        type="button"
+        title={pillTitle}
+        aria-label={pillTitle}
+        className={cn(
+          "pointer-events-auto hidden items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring/50 sm:flex",
             compact
               ? "-mx-1 h-5 rounded px-1 font-mono text-[11px] hover:bg-accent/50"
               : "rounded-full border bg-secondary/50 px-2.5 py-1 text-[12px]",
@@ -250,81 +321,7 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
           ) : (
             <span className="text-st-error">sem leitura</span>
           )}
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        // Mesma casca do `PainelDaFaixa` (statusBarChrome): a faixa tem UM
-        // idioma pro clique. Este aqui não usa o componente porque o gatilho
-        // dele é a própria pill (com estado interno de leitura), mas o
-        // cabeçalho, o lado e o offset são os mesmos — se divergirem, é bug.
-        side={compact ? "top" : "bottom"}
-        align={compact ? "start" : "end"}
-        sideOffset={8}
-        className="z-[120] w-[460px] space-y-2.5 p-3"
-        onCloseAutoFocus={(e) => e.preventDefault()}
-      >
-        <div className="flex items-center justify-between px-1 pb-1 border-b border-border/40">
-          <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
-            <Gauge className="size-3.5 text-brass" />
-            Janela de Uso do Plano
-          </span>
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-secondary disabled:opacity-50"
-            title="Atualizar leituras agora"
-          >
-            <RefreshCw className={cn("size-3", refreshing && "animate-spin")} />
-            <span>{refreshing ? "Atualizando..." : "Atualizar"}</span>
-          </button>
-        </div>
-
-        <div className="space-y-2">
-          {measurable.map((d) => (
-            <ProviderCard
-              key={d.id}
-              agentId={d.id}
-              label={d.label}
-              snap={byAgent[d.id]}
-              failure={failures[d.id]}
-              now={now}
-            />
-          ))}
-        </div>
-
-        {ctaAgents.map((d) => (
-          <div
-            key={d.id}
-            className="mt-1 flex items-center gap-2 rounded-md bg-secondary/40 px-2 py-1.5"
-          >
-            <span className="min-w-0 flex-1 text-[11px] text-muted-foreground">
-              Meça a janela do {d.label}: ative o medidor em Configurações (Uso e custo).
-            </span>
-            <button
-              type="button"
-              onClick={() => setSettingsOpen(true, "ledger")}
-              className="shrink-0 rounded bg-brass px-2 py-0.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90"
-            >
-              Abrir
-            </button>
-            <button
-              type="button"
-              title="Dispensar este aviso"
-              aria-label="Dispensar o aviso de instalação do medidor"
-              onClick={() => setSettings({ usageMeterCtaDismissed: true })}
-              className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <X className="size-3" />
-            </button>
-          </div>
-        ))}
-
-        <div className="flex items-center justify-between px-1 pt-1 text-[11px] text-muted-foreground/60 border-t border-border/30">
-          <span>Não consome sua quota</span>
-          <span>Auto ~15 min</span>
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </button>
+    </PainelDaFaixa>
   )
 }

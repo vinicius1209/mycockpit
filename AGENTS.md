@@ -59,7 +59,7 @@ pede a próxima decisão.
 
 ## Antes de escrever UI
 
-Toda mudança visível segue `docs/STYLEGUIDE.md`. Estas quatro são as que mais
+Toda mudança visível segue `docs/STYLEGUIDE.md`. Estas cinco são as que mais
 se erram, então estão inline:
 
 1. **Nunca importe `radix-ui` cru fora de `components/ui/`.** Se falta uma
@@ -70,13 +70,17 @@ se erram, então estão inline:
    Consequência da regra: **duas superfícies que fazem a mesma coisa semântica
    de jeitos diferentes significam que uma delas está errada.** Antes de montar
    superfície nova, procure quem já faz esse gesto e use a mesma primitiva.
-2. **A escala tipográfica é fechada:** 11, 12, 13, 14 de corpo; 20, 30, 38 de
+2. **Componente usado com `asChild` precisa repassar `className`, `ref` e o
+   resto das props** (`{...resto}` antes do `className` próprio). Se ele
+   engolir, nada quebra no compilador e tudo quebra na tela: o gatilho não
+   abre, ou o painel fica transparente.
+3. **A escala tipográfica é fechada:** 11, 12, 13, 14 de corpo; 20, 30, 38 de
    exceção declarada. Meio-pixel não existe. Ênfase acima de 14 se faz com
    peso, não com tamanho. Classe nomeada do Tailwind (`text-sm`) só dentro de
    `components/ui/`.
-3. **Três elevações, não invente a quarta.** `shadow-md/lg/xl/2xl` são
+4. **Três elevações, não invente a quarta.** `shadow-md/lg/xl/2xl` são
    proibidos em componente do app.
-4. **Copy em pt-BR, sem travessão "—".** Use vírgula, ponto, parênteses; "·" e
+5. **Copy em pt-BR, sem travessão "—".** Use vírgula, ponto, parênteses; "·" e
    "→" são permitidos. Rótulo descreve o resultado para a pessoa, não o alvo
    interno ("Mostrar na pasta", nunca "Mostrar no Finder": também somos Linux).
 

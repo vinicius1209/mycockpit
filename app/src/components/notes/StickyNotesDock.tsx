@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useMemo, useState, type ComponentProps, type ReactNode } from "react"
 import {
   ChevronLeft,
   ChevronRight,
@@ -244,7 +244,17 @@ function FolhaVazia({
   )
 }
 
-export interface StickyNotesDockViewProps {
+/**
+ * A gaveta é o `asChild` do `PopoverContent` (§12): a `<aside>` com landmark É
+ * a superfície, em vez de morar dentro de mais uma.
+ *
+ * Por isso ela estende as props de `aside` e as REPASSA. O Radix entrega aqui o
+ * `className` da superfície E2, o `ref` do posicionamento e os `data-state` /
+ * `data-side` de que a animação depende. Componente que engole essas props vira
+ * um painel transparente sem borda, flutuando sobre o fio — foi exatamente o
+ * defeito do build 311.
+ */
+export interface StickyNotesDockViewProps extends ComponentProps<"aside"> {
   open: boolean
   notes: readonly StickyNote[]
   /** Projeto ativo: é ele que separa "Deste projeto" de "De todos os
@@ -296,6 +306,8 @@ export function StickyNotesDockView({
   onInsertIntoPrompt,
   onPromoteToTask,
   onPromoteToRule,
+  className,
+  ...superficie
 }: StickyNotesDockViewProps) {
   const agora = useMemo(() => agoraProp ?? Date.now(), [agoraProp])
 
@@ -344,12 +356,21 @@ export function StickyNotesDockView({
   return (
     <aside
       aria-label="Bloco de Notas"
+      {...superficie}
       className={cn(
-        // E2 e só E2 (§4): a gaveta é a superfície flutuante, e nada lá dentro
-        // tem sombra própria. `max-h` com teto de viewport + altura do
-        // CONTEÚDO: painel de 1 nota tem tamanho de 1 nota.
-        "flex max-h-[min(27rem,var(--radix-popover-content-available-height,27rem))] overflow-hidden rounded-xl border border-border/80 bg-popover text-popover-foreground shadow-[var(--shadow-pop)]",
+        // A superfície E2 vem da primitiva (`ui/popover`, §12), que monta esta
+        // `aside` com `asChild`: aqui fica só o que é da gaveta. Repetir borda,
+        // fundo ou sombra aqui NÃO é redundância inofensiva — o `Slot` do Radix
+        // CONCATENA as duas listas de classe em vez de resolvê-las com
+        // `twMerge`, então classe repetida vira disputa de ordem no CSS.
+        //
+        // E2 e só E2 (§4): nada lá dentro tem sombra própria. `max-h` com teto
+        // de viewport + altura do CONTEÚDO: painel de 1 nota tem tamanho de 1
+        // nota.
+        "flex max-h-[min(27rem,var(--radix-popover-content-available-height,27rem))] overflow-hidden",
         comLista ? "w-[560px]" : "w-84",
+        // Por último: a superfície do `PopoverContent` vence o que for igual.
+        className,
       )}
     >
       {comLista && (
@@ -492,7 +513,7 @@ export function StickyNotesDockView({
 }
 
 /** Container conectado à store */
-export function StickyNotesDock() {
+export function StickyNotesDock(superficie: ComponentProps<"aside">) {
   const dockOpen = useStickyNotes((s) => s.dockOpen)
   const setDockOpen = useStickyNotes((s) => s.setDockOpen)
   const notes = useStickyNotes((s) => s.notes)
@@ -549,6 +570,9 @@ export function StickyNotesDock() {
 
   return (
     <StickyNotesDockView
+      // A superfície vem do `PopoverContent` via `asChild` e atravessa o
+      // container sem ser tocada: className, ref e os `data-*` de estado.
+      {...superficie}
       open={dockOpen}
       notes={notes}
       activeProjectId={projectId}

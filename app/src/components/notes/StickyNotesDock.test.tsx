@@ -50,6 +50,28 @@ function render(props: Partial<Parameters<typeof StickyNotesDockView>[0]> = {}) 
 }
 
 describe("StickyNotesDockView", () => {
+  /**
+   * A gaveta é o `asChild` do `PopoverContent` (§12), e quem é `asChild`
+   * REPASSA as props. Este teste existe porque a versão que não repassava
+   * compilou, renderizou e foi pro build 311 como um painel TRANSPARENTE
+   * flutuando sobre o fio: sem borda, sem fundo, com o texto da conversa
+   * aparecendo por baixo. `tsc` não viu, a suíte não viu, e o defeito só
+   * apareceu no olho de quem abriu o app.
+   */
+  it("repassa a superfície que o PopoverContent entrega por asChild", () => {
+    const html = render({
+      className: "bg-popover shadow-[var(--shadow-pop)]",
+      // Os `data-*` vêm do Radix em runtime, não da assinatura: entram por
+      // spread para o TS não cobrar uma prop declarada que ninguém escreve.
+      ...({ "data-state": "open", "data-side": "bottom" } as Record<string, string>),
+    })
+    expect(html).toContain("bg-popover")
+    expect(html).toContain('data-state="open"')
+    expect(html).toContain('data-side="bottom"')
+    // E o que é da gaveta continua lá: repassar não é substituir.
+    expect(html).toContain('aria-label="Bloco de Notas"')
+  })
+
   it("não renderiza nada quando open é false", () => {
     const html = renderToStaticMarkup(
       createElement(StickyNotesDockView, { open: false, notes: [] }),

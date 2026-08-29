@@ -10,7 +10,11 @@
  */
 
 import { useLayoutEffect, useMemo, useState, type ComponentProps } from "react"
-import { Popover as PopoverPrimitive } from "radix-ui"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { StickyNote as StickyIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useStickyNotes, selectNotesFor } from "@/store/stickyNotes"
@@ -120,49 +124,50 @@ export function StickyNotesToggle({ className }: { className?: string }) {
   }, [dockOpen])
 
   return (
-    <PopoverPrimitive.Root open={dockOpen} onOpenChange={setDockOpen}>
+    <Popover open={dockOpen} onOpenChange={setDockOpen}>
       {/* Sem `onToggle`: quem alterna aqui é o próprio `Trigger` do Radix.
           Passar o gesto da store JUNTO faria os dois dispararem no mesmo
           clique e a gaveta abriria e fecharia no mesmo frame. */}
-      <PopoverPrimitive.Trigger asChild>
+      <PopoverTrigger asChild>
         <StickyNotesToggleView
           open={dockOpen}
           count={activeNotesCount}
           className={className}
         />
-      </PopoverPrimitive.Trigger>
-      <PopoverPrimitive.Portal>
-        {/* z-[120]: a TitleBar é z-[110], e no z padrão a borda de cima do
-            popover ficaria ATRÁS da faixa de título (mesmo tropeço do sino).
-            A superfície E2 é da `aside`; aqui é só posicionamento. */}
-        <PopoverPrimitive.Content
-          align="end"
-          sideOffset={8}
-          collisionPadding={8}
-          collisionBoundary={limite ?? undefined}
-          // `sticky="always"`, e não o "partial" padrão: o padrão instala um
-          // `limitShift` que trava o deslocamento assim que a gaveta ia
-          // "descolar" do chip — na prática ela parava com a borda direita na
-          // borda ESQUERDA do chip, ainda dentro do painel. Aqui a fronteira é
-          // que manda; a gaveta pode descolar do chip, cobrir o painel não pode.
-          sticky="always"
-          className="z-[120] outline-none"
-          // A gaveta é lugar de ESCREVER: devolver o foco pro chip a cada
-          // abertura roubaria o cursor de quem abriu pra digitar. O foco entra
-          // no conteúdo e o Esc devolve pro gatilho, que é o padrão do Radix.
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          // UM Esc, UM efeito. O Radix escuta em CAPTURA no document, então o
-          // Esc que o editor da nota trata pra descartar o rascunho chegava
-          // aqui também e fechava a gaveta inteira no mesmo gesto — dois
-          // contratos disputando a mesma tecla. Com editor aberto a gaveta se
-          // cala; o segundo Esc, já fora do editor, fecha normalmente.
-          onEscapeKeyDown={(e) => {
-            if (escapeVemDoEditorDeNota(e.target)) e.preventDefault()
-          }}
-        >
-          <StickyNotesDock />
-        </PopoverPrimitive.Content>
-      </PopoverPrimitive.Portal>
-    </PopoverPrimitive.Root>
+      </PopoverTrigger>
+      {/* `asChild`: a gaveta é uma `<aside>` com landmark, então ela É a
+          superfície em vez de morar dentro de mais uma. O E2 vem da primitiva
+          (§12); a `aside` acrescenta só o que é dela (largura, altura,
+          overflow).
+
+          z-[120]: a TitleBar é z-[110], e no z padrão a borda de cima do painel
+          ficaria ATRÁS da faixa de título (mesmo tropeço do sino). */}
+      <PopoverContent
+        asChild
+        align="end"
+        collisionBoundary={limite ?? undefined}
+        // `sticky="always"`, e não o "partial" padrão: o padrão instala um
+        // `limitShift` que trava o deslocamento assim que a gaveta ia
+        // "descolar" do chip — na prática ela parava com a borda direita na
+        // borda ESQUERDA do chip, ainda dentro do painel. Aqui a fronteira é
+        // que manda; a gaveta pode descolar do chip, cobrir o painel não pode.
+        sticky="always"
+        className="z-[120]"
+        // A gaveta é lugar de ESCREVER: devolver o foco pro chip a cada
+        // abertura roubaria o cursor de quem abriu pra digitar. O foco entra
+        // no conteúdo e o Esc devolve pro gatilho, que é o padrão do Radix.
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        // UM Esc, UM efeito. O Radix escuta em CAPTURA no document, então o
+        // Esc que o editor da nota trata pra descartar o rascunho chegava
+        // aqui também e fechava a gaveta inteira no mesmo gesto — dois
+        // contratos disputando a mesma tecla. Com editor aberto a gaveta se
+        // cala; o segundo Esc, já fora do editor, fecha normalmente.
+        onEscapeKeyDown={(e) => {
+          if (escapeVemDoEditorDeNota(e.target)) e.preventDefault()
+        }}
+      >
+        <StickyNotesDock />
+      </PopoverContent>
+    </Popover>
   )
 }
