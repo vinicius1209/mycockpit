@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MyCockpit · UX revisão — como fazer diferente</title>
+<style>
+/* ═══════════════════════════════════════════
+   TOKENS — cópia fiel de app/src/index.css
+   dark / light via data-theme
+   ═══════════════════════════════════════════ */
+:root{
+  color-scheme:light dark;
+  --background:#fbfbfa;--rail:#f6f6f4;--foreground:#16181b;--card:#ffffff;
+  --secondary:#f4f4f2;--muted-foreground:#5c6166;--accent:#f1f1ef;--faint:#8a9099;
+  --border:rgba(0,0,0,.09);--border-strong:rgba(0,0,0,.14);
+  --brass:#a9742b;--brass-soft:rgba(169,116,43,.12);--brass-fg:#fbf6ee;
+  --st-idle:#8a9099;--st-running:#2f8fbf;--st-queued:#c1861f;
+  --st-success:#1f9d6b;--st-error:#cf4a3e;--id-violet:#6d47b8;
+  --shadow-sm:0 1px 2px rgba(20,22,25,.08);--shadow-pop:0 12px 40px -8px rgba(20,22,25,.18);
+  --lift:inset 0 1px 0 rgba(255,255,255,.6);
+  --radius:9px;
+  --sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"Geist Mono Variable",ui-monospace,"SF Mono",Menlo,monospace;
+}
+:root[data-theme="dark"]{
+  --background:#0a0b0d;--rail:#0c0d10;--foreground:#e7e8ea;--card:#141619;
+  --secondary:#191c20;--muted-foreground:#9aa0a7;--accent:#1e2126;--faint:#687078;
+  --border:rgba(255,255,255,.08);--border-strong:rgba(255,255,255,.13);
+  --brass:#e4a862;--brass-soft:rgba(228,168,98,.14);--brass-fg:#1a1306;
+  --st-idle:#687078;--st-running:#5bb8e8;--st-queued:#d99138;
+  --st-success:#5bd6a0;--st-error:#f2766b;--id-violet:#a48af0;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.35);--shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);
+  --lift:inset 0 1px 0 rgba(255,255,255,.05);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:13px/1.5 var(--sans);-webkit-font-smoothing:antialiased;background:var(--background);color:var(--foreground)}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"liga" 0,"calt" 0}
+.label-mono{font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;font-size:11px;line-height:1;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+
+/* ═══════════ CHROME DO MOCK ═══════════ */
+.mockbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:9px 16px;background:color-mix(in srgb,var(--background) 88%,transparent);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--border);font-size:12px;color:var(--muted-foreground)}
+.mockbar .tag{font:600 11px var(--mono);letter-spacing:.14em;color:var(--brass);border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);border-radius:5px;padding:1px 7px}
+.mockbar .dir{font-weight:600;color:var(--foreground);font-size:13px}
+.mockbar nav{display:flex;gap:3px;margin-left:auto}
+.mockbar nav a{color:var(--muted-foreground);text-decoration:none;padding:3px 9px;border-radius:6px;font-weight:500}
+.mockbar nav a:hover{background:var(--accent)}
+.mockbar nav a.on{background:var(--brass-soft);color:var(--brass)}
+.seg{display:flex;gap:2px;border:1px solid var(--border);border-radius:7px;padding:2px}
+.seg button{font-size:11px;padding:2px 8px;border-radius:5px;color:var(--muted-foreground);white-space:nowrap}
+.seg button.on{background:var(--accent);color:var(--foreground)}
+.seg button.on:focus-visible{outline:2px solid var(--brass);outline-offset:-2px}
+.thesis{font-size:13px;color:var(--muted-foreground);margin:0 2px 18px;max-width:900px}
+.thesis b{color:var(--foreground);font-weight:600}
+.kbd{font-family:var(--mono);font-size:11px;background:var(--secondary);border:1px solid var(--border);border-radius:4px;padding:0 4px;color:var(--muted-foreground)}
+
+/* ═══════════ FRAME ═══════════ */
+.stage{max-width:1140px;margin:0 auto;padding:24px 20px 64px}
+.frame{background:var(--background);border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:var(--shadow-pop)}
+.winbar{display:flex;align-items:center;gap:7px;padding:9px 14px;background:var(--rail);border-bottom:1px solid var(--border)}
+.winbar i{width:11px;height:11px;border-radius:50%;display:inline-block}
+.winbar i:nth-child(1){background:#ef5350}
+.winbar i:nth-child(2){background:#fbbf24}
+.winbar i:nth-child(3){background:#4ade80}
+.winbar .title{margin-left:8px;font-weight:600;font-size:13px;color:var(--foreground);flex:1}
+.app{display:grid;gap:0}
+.app.two{grid-template-columns:232px 1fr}
+.app.three{grid-template-columns:224px 1fr 296px}
+
+/* ═══════════ SIDEBAR ═══════════ */
+.sidebar{border-right:1px solid var(--border);background:var(--rail);padding:6px 0;overflow-y:auto}
+.sg{font:600 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);padding:10px 12px 4px;display:flex;align-items:center;justify-content:space-between}
+.sg .add{width:20px;height:20px;border-radius:5px;color:var(--muted-foreground);display:flex;align-items:center;justify-content:center}
+.sg .add:hover{background:var(--accent)}
+.it{display:flex;align-items:center;gap:7px;padding:5px 12px;font-size:13px;cursor:pointer;color:var(--foreground);white-space:nowrap;overflow:hidden}
+.it:hover{background:var(--accent)}
+.it.on{background:var(--brass-soft);color:var(--brass)}
+.it .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.it .dot.run{background:var(--st-running);box-shadow:0 0 0 2px color-mix(in srgb,var(--st-running) 30%,transparent)}
+.it .dot.idle{background:var(--st-idle)}
+.it .dot.wait{background:var(--st-queued)}
+.it .name{flex:1;overflow:hidden;text-overflow:ellipsis}
+.it .tag{font-family:var(--mono);font-size:10px;color:var(--faint);flex-shrink:0}
+.it .time{font-family:var(--mono);font-size:10px;color:var(--faint);flex-shrink:0}
+.it .badge{font-family:var(--mono);font-size:10px;background:var(--accent);color:var(--muted-foreground);border-radius:8px;padding:0 6px;line-height:18px;flex-shrink:0}
+.subs{porder:none}
+.sub{padding-left:24px;gap:6px}
+.sub .it{padding:4px 12px;font-size:12px}
+.sub .it .dot{width:6px;height:6px}
+
+/* ═══════════ MAIN / INSPECTOR ═══════════ */
+.main{display:flex;flex-direction:column;overflow-y:auto;min-height:420px}
+.inspector{border-left:1px solid var(--border);background:var(--rail);padding:10px 12px;overflow-y:auto;font-size:12px}
+.inspector h4{font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:12px 0 6px}
+.inspector h4:first-child{margin-top:0}
+.inspector .kv{display:grid;grid-template-columns:72px 1fr;gap:3px 8px}
+.inspector .kv dt{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+.inspector .kv dd{margin:0;color:var(--muted-foreground);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inspector .kv dd.mono{font-family:var(--mono);font-size:11px}
+.inspector .row{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--border)}
+.inspector .row:last-child{border:none}
+.inspector .row .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inspector .row .act{font-size:10px;color:var(--st-running);cursor:pointer}
+.inspector .empty{padding:14px 0;text-align:center;color:var(--faint);font-size:12px}
+
+/* ═══════════ TABS / COMPOSER ═══════════ */
+.tabs{display:flex;align-items:center;gap:2px;padding:0 14px;border-bottom:1px solid var(--border);background:var(--rail)}
+.tabs button{font-size:12px;padding:7px 12px;color:var(--muted-foreground);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs button.on{color:var(--foreground);border-bottom-color:var(--brass);font-weight:600}
+.tabbar{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border)}
+.tabbar .t{font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill{font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:5px;border:1px solid var(--border);color:var(--muted-foreground);background:var(--secondary)}
+.pill.active{border-color:var(--brass);color:var(--brass);background:var(--brass-soft)}
+.chat{padding:10px 14px;display:flex;flex-direction:column;gap:10px}
+.msg{font-size:14px;line-height:1.55;padding-left:14px;border-left:2px solid var(--border)}
+.msg .who{font-size:12px;font-weight:600;color:var(--muted-foreground);margin-bottom:3px}
+.msg .who .ag{color:var(--brass);font-family:var(--mono);font-size:11px;margin-left:6px}
+.msg p{margin:0}
+.msg code{font-family:var(--mono);font-size:12px;background:var(--secondary);padding:0 3px;border-radius:3px}
+.msg p strong{color:var(--foreground)}
+.msg.dim{opacity:.7}
+.toolrow{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:var(--secondary);font-size:12px}
+.toolrow .dot{width:8px;height:8px;border-radius:50%}
+.toolrow .tk{font-family:var(--mono);font-size:11px;color:var(--muted-foreground)}
+.toolrow .tk.ok{color:var(--st-success)}
+.banner{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border:1px solid var(--st-queued);border-radius:9px;background:color-mix(in srgb,var(--st-queued) 8%,transparent)}
+.banner .ico{color:var(--st-queued);font-weight:700;flex-shrink:0}
+.banner .txt{flex:1;font-size:13px}
+.banner .txt b{color:var(--foreground)}
+.banner .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.btn{font-size:12px;font-weight:500;padding:4px 11px;border-radius:7px;border:1px solid var(--border-strong);color:var(--foreground);background:var(--secondary);white-space:nowrap}
+.btn:hover{background:var(--accent)}
+.btn.primary{background:var(--brass);color:var(--brass-fg);border-color:transparent}
+.btn.danger{border-color:color-mix(in srgb,var(--st-error) 45%,transparent);color:var(--st-error)}
+.btn.danger:hover{background:color-mix(in srgb,var(--st-error) 10%,transparent)}
+.btn.amber{border-color:var(--st-queued);color:var(--st-queued)}
+.chevron{color:var(--faint);font-size:10px}
+.plan{font-size:13px;border:1px solid var(--border);border-radius:9px;background:var(--secondary);overflow:hidden}
+.plan .hd{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border)}
+.plan .hd .n{font-weight:600}
+.plan .hd .meta{font-family:var(--mono);font-size:11px;color:var(--muted-foreground)}
+.plan .bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.plan .bar .fill{height:100%;background:var(--st-running);border-radius:2px}
+.plan .rows{padding:6px 12px;display:flex;flex-direction:column;gap:3px}
+.plan .row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;font-size:12px}
+.plan .row.active{background:var(--brass-soft);color:var(--brass)}
+.plan .row.done{color:var(--muted-foreground)}
+.plan .row .ch{width:14px;height:14px;border-radius:3px;border:1px solid var(--border);flex-shrink:0}
+.plan .row.active .ch{background:var(--brass);border-color:var(--brass)}
+.plan .row .ch.done{background:var(--st-success);border-color:var(--st-success)}
+.plan .row .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plan .row .agent{font-family:var(--mono);font-size:10px;color:var(--faint)}
+.composer{border-top:1px solid var(--border);background:var(--rail);padding:8px 14px}
+.composer .row{display:flex;gap:8px;align-items:center}
+.composer textarea{flex:1;background:var(--background);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font:13px var(--sans);color:var(--foreground);resize:none;min-height:36px}
+.composer textarea:focus{border-color:var(--brass);outline:none}
+.composer .actions{display:flex;gap:4px}
+.composer .actions button{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--muted-foreground)}
+.composer .actions button:hover{background:var(--accent)}
+.composer .actions button:focus-visible{outline:2px solid var(--brass)}
+.composer .chip{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:5px;border:1px solid var(--border);background:var(--secondary);color:var(--muted-foreground);white-space:nowrap}
+.composer .chip .sep{color:var(--faint)}
+.composer .quick{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.composer .quick span{font-size:11px;padding:3px 9px;border-radius:6px;border:1px solid var(--border);color:var(--muted-foreground);cursor:pointer}
+.composer .quick span:hover{background:var(--accent)}
+.queue{font-size:10px;color:var(--muted-foreground);font-family:var(--mono)}
+
+/* ═══════════ FUSION ═══════════ */
+.fusion-hdr{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.fusion-hdr .st{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:5px;background:var(--brass-soft);color:var(--brass)}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:12px 14px}
+.card3{border:1px solid var(--border);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.card3 .head{display:flex;align-items:center;gap:8px}
+.card3 .head .av{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:12px}
+.card3 .head .nm{flex:1;font-weight:600;font-size:13px}
+.card3 .stat{font-size:11px;color:var(--muted-foreground)}
+.card3 .stat b{color:var(--foreground)}
+.card3 .scores{display:flex;flex-direction:column;gap:4px}
+.card3 .score{display:flex;align-items:center;gap:6px;font-size:11px}
+.card3 .score .lbl{width:60px;color:var(--muted-foreground)}
+.card3 .score .bar{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.card3 .score .bar .fill{height:100%;border-radius:3px}
+.card3 .card-acts{display:flex;gap:6px;margin-top:auto}
+.judge{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--border);border-top:none;border-radius:0 0 10px 10px;background:var(--secondary);flex-wrap:wrap}
+.judge .verdict{flex:1;font-size:13px}
+.judge .verdict b{color:var(--brass)}
+.judge .hint{font-size:11px;color:var(--muted-foreground)}
+
+/* ═══════════ INBOX ═══════════ */
+.inbox-list{display:flex;flex-direction:column;gap:8px;padding:12px 14px}
+.inbox-card{border:1px solid var(--border);border-radius:9px;padding:10px 12px;display:flex;gap:12px;align-items:flex-start}
+.inbox-card.pending{border-left:3px solid var(--st-queued)}
+.inbox-card.resolved{opacity:.55;border-left:3px solid var(--st-idle)}
+.inbox-card .q{flex:1;font-size:13px}
+.inbox-card .q b{color:var(--foreground)}
+.inbox-card .meta{font-size:11px;color:var(--muted-foreground);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap}
+.inbox-card .meta .tag{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:4px;background:var(--secondary);color:var(--muted-foreground)}
+.inbox-card .choices{display:flex;gap:6px;flex-wrap:wrap}
+.inbox-card .choices label{font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:5px;cursor:pointer;color:var(--muted-foreground)}
+.inbox-card .choices label:hover{background:var(--accent)}
+.inbox-card .actions{display:flex;gap:6px;margin-top:6px}
+.inbox-card .time{font-family:var(--mono);font-size:10px;color:var(--faint);white-space:nowrap}
+
+/* ═══════════ PAINEL ═══════════ */
+.painel-hdr{display:flex;align-items:baseline;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.painel-hdr h2{font-size:20px;font-weight:700}
+.painel-hdr .sub{font-size:12px;color:var(--muted-foreground)}
+.painel-hdr .toggle{display:flex;gap:2px;margin-left:auto;border:1px solid var(--border);border-radius:7px;padding:2px}
+.painel-hdr .toggle button{font-size:11px;padding:3px 8px;border-radius:5px;color:var(--muted-foreground)}
+.painel-hdr .toggle button.on{background:var(--accent);color:var(--foreground)}
+.hero{display:flex;align-items:baseline;gap:12px;padding:18px 14px;border-bottom:1px solid var(--border)}
+.hero .num{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums}
+.hero .badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:5px;background:color-mix(in srgb,var(--st-success) 12%,transparent);color:var(--st-success)}
+.hero .honest{font-size:11px;color:var(--muted-foreground);flex-basis:100%}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px 14px}
+.metric{border:1px solid var(--border);border-radius:9px;padding:10px 12px;position:relative}
+.metric .lbl{font-size:11px;color:var(--muted-foreground);margin-bottom:4px}
+.metric .val{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+.metric .note{font-size:10px;color:var(--faint);margin-top:4px}
+.metric [data-tip]{position:relative;cursor:help}
+.metric [data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);background:var(--foreground);color:var(--background);font-size:10px;padding:5px 8px;border-radius:5px;white-space:normal;width:220px;line-height:1.4;z-index:20;pointer-events:none}
+.insights{padding:12px 14px;border-bottom:1px solid var(--border)}
+.insights h3{font-size:13px;font-weight:600;margin-bottom:8px}
+.insight{display:flex;align-items:flex-start;gap:10px;padding:8px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer}
+.insight:hover{background:var(--accent)}
+.insight .arrow{color:var(--st-running);flex-shrink:0;margin-top:1px}
+.insight .body{flex:1;font-size:12px}
+.insight .body b{color:var(--foreground)}
+.insight .go{font-size:10px;color:var(--st-running);white-space:nowrap;align-self:center}
+.heatmap{padding:12px 14px;border-bottom:1px solid var(--border)}
+.heatmap h3{font-size:13px;font-weight:600;margin-bottom:8px}
+.heatmap .grid{display:grid;gap:2px}
+.heatmap .cell{aspect-ratio:1;border-radius:2px;cursor:pointer;position:relative}
+.heatmap .cell:hover{outline:2px solid var(--brass);outline-offset:-1px;z-index:5}
+.heatmap .cell [data-tip]{display:none}
+.heatmap .cell:hover [data-tip]{display:block;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);background:var(--foreground);color:var(--background);font-size:10px;padding:4px 6px;border-radius:4px;white-space:nowrap;z-index:20}
+.heatmap .row-labels{display:flex;flex-direction:column;justify-content:space-around;gap:2px}
+.heatmap .row-labels span{font-size:9px;color:var(--faint);text-align:right;font-family:var(--mono)}
+.heatmap .col-labels{display:grid;gap:2px;margin-bottom:3px}
+.heatmap .col-labels span{font-size:9px;color:var(--faint);text-align:center;font-family:var(--mono)}
+.heatmap .day-total{font-family:var(--mono);font-size:9px;color:var(--faint);text-align:center;width:40px;flex-shrink:0}
+.agents{display:flex;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.agent{display:flex;align-items:center;gap:8px}
+.agent .av{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:11px}
+.agent .info{flex:1}
+.agent .info .nm{font-size:12px;font-weight:600}
+.agent .info .sub{font-size:10px;color:var(--muted-foreground)}
+.agent .pct{font-family:var(--mono);font-size:12px;font-weight:600}
+.table{padding:12px 14px}
+.table h3{font-size:13px;font-weight:600;margin-bottom:8px}
+.table .row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px}
+.table .row:last-child{border:none}
+.table .row .c1{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.table .row .c2{font-family:var(--mono);font-size:11px;color:var(--muted-foreground)}
+.table .row .c3{font-family:var(--mono);font-size:11px;color:var(--st-running)}
+
+/* ═══════════ FROTA ═══════════ */
+.frota-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:12px 14px}
+.fcard{border:1px solid var(--border);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.fcard .head{display:flex;align-items:center;gap:8px}
+.fcard .head .av{width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px}
+.fcard .head .nm{flex:1;font-weight:600;font-size:14px}
+.fcard .head .pill{font-size:10px}
+.fcard .meta{font-size:12px;color:var(--muted-foreground);display:flex;flex-direction:column;gap:3px}
+.fcard .meta .meta-row{display:flex;justify-content:space-between}
+.fcard .meta .meta-row .v{font-family:var(--mono);color:var(--foreground)}
+.fcard .bar{height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.fcard .bar .fill{height:100%;border-radius:3px}
+.fcard .acts{display:flex;gap:6px;margin-top:auto}
+.fcard .soon{opacity:.45;position:relative}
+.fcard .soon::after{content:"em breve";position:absolute;top:8px;right:10px;font-family:var(--mono);font-size:10px;color:var(--faint)}
+.frota-footer{padding:10px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--muted-foreground)}
+
+/* ═══════════ NOTAS ═══════════ */
+.notas-overlay{display:grid;grid-template-columns:1fr 380px;border:1px solid var(--border);border-radius:10px;overflow:hidden;min-height:420px}
+.notas-overlay .chat{padding:8px 12px}
+.notas-overlay .chat .dim{opacity:.4}
+.notas-panel{border-left:1px solid var(--border);background:var(--rail);display:flex;flex-direction:column}
+.notas-panel .hdr{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)}
+.notas-panel .hdr h3{flex:1;font-weight:600;font-size:14px}
+.notas-panel .hdr input{flex:1;background:var(--background);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px;color:var(--foreground)}
+.notas-panel .list{flex:1;overflow-y:auto;padding:8px 12px;display:flex;flex-direction:column;gap:6px}
+.notas-panel .note{border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:pointer}
+.notas-panel .note.on{border-color:var(--brass);background:var(--brass-soft)}
+.notas-panel .note .t{font-size:13px;font-weight:600;margin-bottom:2px}
+.notas-panel .note .p{font-size:11px;color:var(--muted-foreground);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.notas-panel .note .tags{display:flex;gap:4px;margin-top:4px}
+.notas-panel .note .tags span{font-size:9px;font-family:var(--mono);padding:1px 5px;border-radius:3px;background:var(--secondary);color:var(--muted-foreground)}
+.notas-panel .note .ins{font-size:9px;color:var(--st-running);margin-top:4px;display:flex;align-items:center;gap:4px}
+.notas-panel .editor{border-top:1px solid var(--border);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.notas-panel .editor input{background:var(--background);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:13px;color:var(--foreground)}
+.notas-panel .editor textarea{background:var(--background);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:12px;color:var(--foreground);resize:none;height:60px}
+.notas-panel .editor .acts{display:flex;justify-content:flex-end}
+.notas-empty{padding:20px 12px;text-align:center;font-size:12px;color:var(--muted-foreground);display:flex;flex-direction:column;gap:6px;align-items:center}
+.notas-empty h3{font-weight:600;color:var(--foreground)}
+
+/* ═══════════ NOTAS DE DESIGN ═══════════ */
+.notes{margin-top:24px;padding:0 2px}
+.notes h2{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:22px 0 12px}
+.notes ol{list-style:none;padding:0;display:grid;gap:8px;max-width:960px}
+.notes li{padding-left:28px;position:relative;line-height:1.6;font-size:13px;color:var(--muted-foreground)}
+.notes li .nt{position:absolute;left:0;top:1px;width:20px;height:20px;border-radius:5px;background:var(--brass);color:var(--brass-fg);font:700 10px var(--mono);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px}
+.notes li b{color:var(--foreground);font-weight:600}
+.notes li code{font-family:var(--mono);font-size:12px;color:var(--foreground)}
+
+/* tooltip genérico */
+[data-tip]{position:relative}
+
+/* ═══════════ RESPONSIVO ═══════════ */
+@media(max-width:1100px){
+  .app.three{grid-template-columns:1fr}
+  .app.three .inspector{border-left:none;border-top:1px solid var(--border)}
+  .grid3{grid-template-columns:1fr}
+  .frota-grid{grid-template-columns:1fr}
+  .metrics{grid-template-columns:1fr}
+  .notas-overlay{grid-template-columns:1fr}
+  .notas-panel{border-left:none;border-top:1px solid var(--border)}
+}
+</style>
+</head>
+<body>
+
+<div class="mockbar">
+  <span class="tag">MOCK</span>
+  <span class="dir">UX revisão · como fazer diferente</span>
+  <nav>
+    <a href="ux-revisao.html#s-trabalho" class="on" data-go="s-trabalho">Trabalho</a>
+    <a href="ux-revisao.html#s-fusion" data-go="s-fusion">Fusion</a>
+    <a href="ux-revisao.html#s-inbox" data-go="s-inbox">Inbox</a>
+    <a href="ux-revisao.html#s-painel" data-go="s-painel">Painel</a>
+    <a href="ux-revisao.html#s-frota" data-go="s-frota">Frota</a>
+    <a href="ux-revisao.html#s-notas" data-go="s-notas">Notas</a>
+  </nav>
+  <div class="seg"><button id="theme" data-theme="dark">tema</button></div>
+</div>
+
+<div class="stage">
+<p class="thesis"><b>Tese:</b> as telas a seguir tomam o mesmo DOM, os mesmos tokens e os mesmos
+dados do MyCockpit — e mudam apenas <b>decisões de UX</b>. Cada seção é uma variação
+independente; as notas (①…⑨) abaixo de cada frame explicam <b>o que mudou, onde, e por
+quê</b>. Os agents mantêm suas cores: <b style="color:#5bb8e8">Codex</b>, <b style="color:#e4a862">Claude Code</b>, <b style="color:#a48af0">Antigravity</b>.</p>
+
+<!-- ════════════════════ TELA 1: TRABALHO ════════════════════ -->
+<section class="screen active" id="s-trabalho">
+<div class="frame">
+  <div class="winbar"><i></i><i></i><i></i><span class="title">mycockpit · planeje uma nova forma de usar o OpenCode via ACP</span></div>
+  <div class="app three">
+    <!-- sidebar -->
+    <aside class="sidebar">
+      <div class="sg">Geral <span style="opacity:.6">Frota</span></div>
+      <div class="it"><span class="dot idle"></span><span class="name">Frota</span><span class="badge">1</span></div>
+      <div class="it"><span class="dot idle"></span><span class="name">Agendamentos</span></div>
+      <div class="it"><span class="dot idle"></span><span class="name">Planos de voo</span><span class="badge">3</span></div>
+      <div class="sg">Projetos <span style="opacity:.6">7</span> <span class="add" data-tip="+ nova tarefa">+</span></div>
+      <div class="it"><span class="dot idle"></span><span class="name">motrip</span></div>
+      <div class="it"><span class="dot idle"></span><span class="name">meuingresso3.0</span></div>
+      <div class="it on"><span class="dot idle"></span><span class="name">mycockpit</span><span class="badge">2</span></div>
+      <div class="sub">
+        <div class="it"><span class="dot idle"></span><span class="name">landing page</span><span class="tag">claude</span><span class="time">14/08</span></div>
+        <div class="it"><span class="dot idle"></span><span class="name">estudo sobre a arquitetura</span><span class="tag">codex</span><span class="time">3d</span></div>
+        <div class="it"><span class="dot idle"></span><span class="name">[feat] hiperlink</span><span class="tag">codex</span><span class="time">1d</span></div>
+        <div class="it"><span class="dot idle"></span><span class="name">[feat] sticky notes</span><span class="tag">codex</span><span class="time">1d</span></div>
+        <div class="it on"><span class="dot run"></span><span class="name">planeje uma nova forma de ut…</span><span class="tag">codex</span><span class="time">1m 47s</span></div>
+      </div>
+      <div class="sg">Projetos <span class="add" data-tip="Novo projeto">+</span></div>
+      <div class="it"><span class="dot idle"></span><span class="name">sicredi</span></div>
+      <div class="it"><span class="dot idle"></span><span class="name">projetos</span></div>
+      <div class="it"><span class="dot idle"></span><span class="name">workout-jejum</span></div>
+      <div class="it"><span class="dot idle"></span><span class="name">prime-sales-hub</span></div>
+      <div class="it"><span class="dot idle"></span><span class="name">Arquivados</span><span class="badge">3</span></div>
+      <div class="it" style="border-top:1px solid var(--border);margin-top:4px;padding-top:8px"><span class="dot idle"></span><span class="name">Vinícius</span></div>
+    </aside>
+    <!-- main -->
+    <div class="main">
+      <div class="tabs">
+        <button class="on">Painel</button><button>Trabalho</button><button>Features</button>
+      </div>
+      <div class="tabbar">
+        <span class="t">Conversa · planeje uma nova forma de usar o OpenCode via ACP</span>
+        <span class="pill">worktree</span>
+        <span class="pill active">Linear</span><span class="pill">Fusion</span><span class="pill">SDD</span>
+      </div>
+      <div class="chat">
+        <div class="banner">
+          <span class="ico">!</span>
+          <div class="txt"><b>Codex quer executar comandos</b> no seu worktree: <code>git worktree add …</code>
+            + 2 comandos de sistema.<br>Esta é a primeira vez que ele pede essa operação no projeto.</div>
+          <div class="acts">
+            <button class="btn primary">Permitir uma vez</button>
+            <button class="btn amber">Sempre neste projeto</button>
+            <button class="btn" data-tip="Lista os comandos exatos que o agente quer rodar">Ver comandos ▾</button>
+          </div>
+        </div>
+        <div class="msg"><div class="who">Você <span class="ag">ACP · Alta</span></div><p>Audite o estado atual e preservar todas as mudanças do projeto.</p></div>
+        <div class="toolrow"><span class="dot run"></span><span class="tk">Inspecionar alterações no worktree</span><span class="tk ok">✓</span><span class="tk">2 leituras concluídas · 4s</span></div>
+        <div class="toolrow"><span class="dot run"></span><span class="tk">Verificar estado do git</span><span class="tk ok">✓</span><span class="tk">1 leitura concluída · 2s</span></div>
+        <div class="msg dim"><div class="who">Codex <span class="ag">Sol 5.6 · alta</span></div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px">
+            <div><b>O que a auditoria confirmou</b>
+              <ul style="margin:4px 0 0 16px;display:flex;flex-direction:column;gap:3px">
+                <li>Worktree criado a partir de <code>main</code> — nenhuma mudança em <code>main</code> será tocada.</li>
+                <li>3 arquivos modificados em <code>src/</code>, 2 arquivos novos untracked.</li>
+                <li>Nenhum risco de merge: branches limpas, CI passando.</li>
+              </ul>
+            </div>
+            <div style="border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--secondary)">
+              <b>Decisão de desenho</b> · qual caminho seguir?
+              <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
+                <button class="btn">① Manter tudo in-place (sem commit)</button>
+                <button class="btn">② Commit atômico com changelog</button>
+                <button class="btn">③ Squash dos 3 arquivos em 1</button>
+              </div>
+            </div>
+            <div><b>Próximos caminhos</b>
+              <ol style="margin:4px 0 0 16px;display:flex;flex-direction:column;gap:3px">
+                <li>Gerar <code>.mycockpit/plan.md</code> com as fases</li>
+                <li>Rodar <code>bun run test</code> antes de qualquer commit</li>
+                <li>Solicitar aprovação manual para <code>push</code></li>
+              </ol>
+            </div>
+          </div>
+        </div>
+        <div class="plan">
+          <div class="hd"><span class="n">Plano · OpenCode via ACP</span><span class="meta">1 / 7 · <button class="btn" style="padding:1px 7px;font-size:10px">Editar</button></span></div>
+          <div class="bar"><div class="fill" style="width:14.28%"></div></div>
+          <div class="rows">
+            <div class="row active"><span class="ch"></span><span class="name">Auditar estado atual e preservar mudanças</span><span class="agent">Codex</span></div>
+            <div class="row done"><span class="ch done"></span><span class="name">Gerar plano.md</span><span class="agent">—</span></div>
+            <div class="row done"><span class="ch done"></span><span class="name">Revisar e aprovar</span><span class="agent">—</span></div>
+            <div class="row"><span class="ch"></span><span class="name">Implementar hiperlink</span><span class="agent">—</span></div>
+            <div class="row"><span class="ch"></span><span class="name">Implementar sticky notes</span><span class="agent">—</span></div>
+            <div class="row"><span class="ch"></span><span class="name">Rodar testes</span><span class="agent">—</span></div>
+            <div class="row"><span class="ch"></span><span class="name">Merge e close do worktree</span><span class="agent">—</span></div>
+          </div>
+        </div>
+        <div class="toolrow" style="background:color-mix(in srgb,var(--st-running) 6%,transparent)"><span class="dot run"></span><span class="tk">Codex está trabalhando</span><span class="cl" style="margin-left:auto;font-family:var(--mono);font-size:11px">1m 47s</span>
+          <button class="btn" style="padding:2px 8px;font-size:11px">⏸</button>
+          <button class="btn danger" style="padding:2px 8px;font-size:11px">⏹</button></div>
+      </div>
+      <div class="composer">
+        <div class="row">
+          <span class="chip"><span class="sep">Codex ·</span> Sol 5.6 <span class="sep">·</span> high</span>
+          <span class="chip"><span class="sep">Permissões:</span> sob demanda ▾</span>
+          <span class="chip"><span class="sep">Contexto:</span> 11% do custo do plano</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+          <textarea placeholder="Enfileirar próxima mensagem…" rows="1"></textarea>
+          <div class="actions">
+            <button data-tip="Anexar arquivo">📎</button>
+            <button data-tip="Aplicar ideia">✦</button>
+            <button data-tip="Ditar (on-device)">🎙</button>
+            <button data-tip="Parar turno">⏹</button>
+          </div>
+          <button class="btn primary" style="margin-left:auto">Enviar</button>
+        </div>
+        <div class="quick"><span>✦ Explicar o projeto</span><span>✦ Rodar os testes</span><span>✦ Criar uma branch</span></div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px"><span class="queue">2 mensagens na fila</span><span style="font-size:10px;color:var(--faint)">v0.1.0-t304 · 1 worktree</span></div>
+      </div>
+    </div>
+    <!-- inspector -->
+    <aside class="inspector">
+      <h4>Sessão</h4>
+      <div class="kv"><dt>Agente</dt><dd class="mono" style="color:#e4a862">Codex</dd></div>
+      <div class="kv"><dt>Modelo</dt><dd class="mono">Sol 5.6</dd></div>
+      <div class="kv"><dt>Worktree</dt><dd><a href="#" style="color:var(--st-running);text-decoration:none">isolada · abrir ▸</a></dd></div>
+      <div class="kv"><dt>Custo</dt><dd class="mono">US$ 1,24</dd></div>
+      <div class="kv"><dt>Tokens</dt><dd class="mono">184k</dd></div>
+      <h4>Arquivos alterados</h4>
+      <div class="row"><span class="nm" style="font-family:var(--mono);font-size:11px">src/ACP.md</span><span class="act">▸</span></div>
+      <div class="row"><span class="nm" style="font-family:var(--mono);font-size:11px">src/hyperlink.ts</span><span class="act">▸</span></div>
+      <div class="row"><span class="nm" style="font-family:var(--mono);font-size:11px">src/sticky.ts</span><span class="act">▸</span></div>
+      <h4>Decisões pendentes</h4>
+      <div class="row"><span class="nm">Qual caminho seguir?</span><span class="act">▸</span></div>
+      <h4>Notas relacionadas</h4>
+      <div class="row"><span class="nm">[feat] hiperlink · contexto</span><span class="act">inserir ▸</span></div>
+      <h4>Outline da resposta</h4>
+      <div style="font-size:11px;color:var(--muted-foreground);display:flex;flex-direction:column;gap:2px">
+        <span>① Confirmar worktree</span><span>② 3 arquivos modificados</span><span>③ Decisão de desenho</span><span>④ Próximos caminhos</span>
+      </div>
+    </aside>
+  </div>
+</div>
+<div class="notes"><h2>Notas de design</h2><ol>
+<li><span class="nt">1</span> <b>Plano sem duplicação</b>: o título do card é <b>"Plano · OpenCode via ACP · 1/7"</b>, enquanto a Fase 1 é o item <b>"Auditar estado atual e preservar mudanças"</b> — cada elemento tem um papel, sem sobreposição. As fases futuras ficam em lista checável compacta (não duplicam o header).</li>
+<li><span class="nt">2</span> <b>Permissão como ação</b>: em vez de um microcopy técnico ("o valor vale a partir do próximo envio"), o banner oferece <b>três ações explícitas</b> — "Permitir uma vez", "Sempre neste projeto", "Ver comandos". O operador decide, não lê log.</li>
+<li><span class="nt">3</span> <b>Resposta estruturada em decisões</b>: o texto do agente foi reorganizado em <b>heading → bullets → bloco de decisão numerado → próximos passos numerados</b>. Cada seção escaneável substitui a parede de texto. O agente oferece opções, não apenas narrativa.</li>
+<li><span class="nt">4</span> <b>Inspector no espaço morto</b>: a coluna direita (antes vazia) agora hospeda <b>Contexto da sessão</b> — agente, worktree, custo, tokens, arquivos alterados, decisões pendentes e o outline da resposta. Telemetria útil sem poluir a conversa.</li>
+<li><span class="nt">5</span> <b>Hierarquia da sidebar</b>: cada sub-item agora carrega <b>dot de status</b> + <b>tag do agente</b> + <b>tempo</b> — distinguindo projeto, conversa e tarefa num mesmo viewport sem depender só da indentação.</li>
+<li><span class="nt">6</span> <b>Composer com estado legível</b>: cada chip de contexto agora tem <b>label</b> explícito (modelo · permissões · % do plano); os ícones ganham <b>tooltip</b>; o estado da fila e do worktree aparecem no rodapé do composer, e não como jargão no statusbar.</li>
+</ol></div>
+</section>
+
+<!-- ════════════════════ TELA 2: FUSION ════════════════════ -->
+<section class="screen" id="s-fusion">
+<div class="frame">
+  <div class="winbar"><i></i><i></i><i></i><span class="title">mycockpit · planeje uma nova forma de usar o OpenCode via ACP</span></div>
+  <div class="fusion-hdr">
+    <span class="t">Disputa · planeje uma nova forma de usar o OpenCode via ACP</span>
+    <span class="st">3 concorrentes</span>
+    <span class="pill">juiz: Claude Code</span>
+    <span class="pill" style="color:var(--st-success);border-color:var(--st-success)">SPEC.md como critério</span>
+  </div>
+  <div class="grid3">
+    <div class="card3">
+      <div class="head"><div class="av" style="background:#5bb8e8">Cx</div><span class="nm">Codex</span><span class="pill">Sol 5.6</span></div>
+      <div class="stat">Concluído em <b>4m 12s</b> · US$ 2,14 · <span class="tk">+312 −48 · 6 arquivos</span></div>
+      <div class="scores">
+        <div class="score"><span class="lbl">Correção</span><span class="bar"><span class="fill" style="width:92%;background:#5bb8e8"></span></span><span class="pct">92%</span></div>
+        <div class="score"><span class="lbl">Simplicidade</span><span class="bar"><span class="fill" style="width:78%;background:#5bb8e8"></span></span><span class="pct">78%</span></div>
+        <div class="score"><span class="lbl">Alinhamento</span><span class="bar"><span class="fill" style="width:88%;background:#5bb8e8"></span></span><span class="pct">88%</span></div>
+      </div>
+      <div class="card-acts"><button class="btn">Ver diff</button><button class="btn primary">Promover</button></div>
+    </div>
+    <div class="card3" style="border-color:var(--brass)">
+      <div class="head"><div class="av" style="background:#e4a862">Cl</div><span class="nm">Claude Code</span><span class="pill">Opus 4</span></div>
+      <div class="stat">Concluído em <b>6m 01s</b> · US$ 2,98 · <span class="tk">+421 −92 · 8 arquivos</span></div>
+      <div class="scores">
+        <div class="score"><span class="lbl">Correção</span><span class="bar"><span class="fill" style="width:97%;background:#e4a862"></span></span><span class="pct">97%</span></div>
+        <div class="score"><span class="lbl">Simplicidade</span><span class="bar"><span class="fill" style="width:95%;background:#e4a862"></span></span><span class="pct">95%</span></div>
+        <div class="score"><span class="lbl">Alinhamento</span><span class="bar"><span class="fill" style="width:91%;background:#e4a862"></span></span><span class="pct">91%</span></div>
+      </div>
+      <div class="card-acts"><button class="btn">Ver diff</button><button class="btn primary">Promover</button></div>
+    </div>
+    <div class="card3">
+      <div class="head"><div class="av" style="background:#a48af0">Ag</div><span class="nm">Antigravity</span><span class="pill">Flash 3.6</span></div>
+      <div class="stat">Concluído em <b>9m 44s</b> · US$ 1,30 · <span class="tk">+188 −31 · 3 arquivos</span></div>
+      <div class="scores">
+        <div class="score"><span class="lbl">Correção</span><span class="bar"><span class="fill" style="width:64%;background:#a48af0"></span></span><span class="pct">64%</span></div>
+        <div class="score"><span class="lbl">Simplicidade</span><span class="bar"><span class="fill" style="width:82%;background:#a48af0"></span></span><span class="pct">82%</span></div>
+        <div class="score"><span class="lbl">Alinhamento</span><span class="bar"><span class="fill" style="width:71%;background:#a48af0"></span></span><span class="pct">71%</span></div>
+      </div>
+      <div class="card-acts"><button class="btn">Ver diff</button><button class="btn primary">Promover</button></div>
+    </div>
+  </div>
+  <div class="judge">
+    <div class="verdict"><b>Veredito</b>: Claude Code vence por 95% em simplicidade e 97% em correção — <b>cobre os edge cases que o SPEC.md exige</b> e mantém a refatoração mínima.</div>
+    <div class="hint">Custo total da disputa: <b>US$ 6,42</b> · <span class="pill" data-tip="Só vale a pena se a tarefa final justificar o gasto. O app recomenda disputar a partir de tarefas ≥ US$ 50 de valor estimado">disputa ≥ US$ 50</span></div>
+    <button class="btn primary">Promover Claude</button>
+    <button class="btn danger">Descartar tudo</button>
+  </div>
+</div>
+<div class="notes"><h2>Notas de design</h2><ol>
+<li><span class="nt">1</span> <b>Veredito explicável</b>: o juiz não diz só "ganhou", mas <b>qual critério pesou</b> (simplicidade 95%, correção 97% vs o SPEC.md) — o operador confia no veredito e pode rebater. O veredito é o ponto de decisão, não a tela inteira.</li>
+<li><span class="nt">2</span> <b>Custo da disputa visível</b>: US$ 6,42 na barra do juiz, com uma nota de retorno ("só vale a pena ≥ US$ 50"). Disputa é um gasto de decisão — precisa de economia, não de sigilo.</li>
+<li><span class="nt">3</span> <b>Comparação por critérios, não por texto corrido</b>: cada card mostra três barras (correção / simplicidade / alinhamento) lado a lado — escaneável em um olhar e sem narrativa inflacionada.</li>
+<li><span class="nt">4</span> <b>Diferença por agente com identidade real</b>: Codex (azul), Claude Code (âmbar), Antigravity (violeta) — as cores do STYLEGUIDE. Cor não é status; é marca.</li>
+</ol></div>
+</section>
+
+<!-- ════════════════════ TELA 3: INBOX ════════════════════ -->
+<section class="screen" id="s-inbox">
+<div class="frame">
+  <div class="winbar"><i></i><i></i><i></i><span class="title">mycockpit · Inbox</span></div>
+  <div class="painel-hdr">
+    <h2>Inbox</h2>
+    <span class="sub">4 decisões esperando você · a mais antiga há 2h</span>
+    <span class="pill" style="color:var(--st-success);border-color:var(--st-success)">notificações nativas ativas</span>
+  </div>
+  <div class="inbox-list">
+    <div class="inbox-card pending">
+      <div class="q"><b>Qual framework para o hiperlink?</b><br><span style="font-size:12px;color:var(--muted-foreground)">O agent propôs <code>hyperfetch</code>, <code>fetch API</code> ou <code>Zod + fetch</code> — cada um afeta o bundle e o runtime. O SPEC.md diz "resolução de URL sem runtime pesado".</span></div>
+      <div class="meta"><span class="tag">Codex · Sol 5.6</span><span class="tag">meuingresso3.0</span><span class="time">há 2h</span></div>
+      <div class="choices"><label><input type="radio" style="margin-right:4px" name="q1"> hyperfetch</label><label><input type="radio" style="margin-right:4px" name="q1"> fetch API</label><label><input type="radio" style="margin-right:4px" name="q1"> Zod + fetch</label></div>
+      <div class="actions"><button class="btn primary">Responder</button><button class="btn">Abrir conversa</button></div>
+    </div>
+    <div class="inbox-card pending">
+      <div class="q"><b>Permitir <code>Bash npm publish</code>?</b><br><span style="font-size:12px;color:var(--muted-foreground)">A tarefa de deploy pede publicação direta no registry. O agent ainda não tem permissão.</span></div>
+      <div class="meta"><span class="tag" style="color:#5bb8e8">Codex</span><span class="tag">prime-sales-hub</span><span class="time">há 1h 12min</span></div>
+      <div class="choices"><label><input type="radio" style="margin-right:4px" name="q2"> Permitir esta vez</label><label><input type="radio" style="margin-right:4px" name="q2"> Sempre neste projeto</label><label><input type="radio" style="margin-right:4px" name="q2"> Recusar</label></div>
+      <div class="actions"><button class="btn primary">Responder</button><button class="btn">Abrir conversa</button></div>
+    </div>
+    <div class="inbox-card pending">
+      <div class="q"><b>Modelo para a análise de risco?</b><br><span style="font-size:12px;color:var(--muted-foreground)">O agent precisa de um rubric; o usuário já tem um documento interno.</span></div>
+      <div class="meta"><span class="tag" style="color:#a48af0">Antigravity</span><span class="tag">motrip</span><span class="time">há 34min</span></div>
+      <div class="choices"><label><input type="radio" style="margin-right:4px" name="q3"> Usar rubric existente</label><label><input type="radio" style="margin-right:4px" name="q3"> Criar novo</label></div>
+      <div class="actions"><button class="btn primary">Responder</button><button class="btn">Abrir conversa</button></div>
+    </div>
+    <div class="inbox-card resolved">
+      <div class="q"><span style="text-decoration:line-through"><b>Qual branch base para o PR?</b> — respondido: <code>main</code>.</span></div>
+      <div class="meta"><span class="tag">Claude Code</span><span class="tag">mycockpit</span><span class="time">há 45min</span><span style="color:var(--st-success)">✓ resolvido</span></div>
+      <div class="actions"><button class="btn" disabled style="opacity:.6">Ver conversa</button></div>
+    </div>
+  </div>
+</div>
+<div class="notes"><h2>Notas de design</h2><ol>
+<li><span class="nt">1</span> <b>Pergunta com contexto suficiente</b>: cada card traz a pergunta <b>e o trecho do SPEC</b> que a fundamenta — o operador decide com informação, sem precisar abrir a conversa para entender o porquê.</li>
+<li><span class="nt">2</span> <b>SLA e urgência visíveis</b>: tempo decorrido ("há 2h", "há 1h 12min") ao lado do card — pressão justa para o operador, sem alarme desnecessário.</li>
+<li><span class="nt">3</span> <b>Ações de 1 clique</b>: radio buttons inline + "Responder" + "Abrir conversa". Não há navegação obrigatória — a decisão pode ser tomada na própria lista.</li>
+<li><span class="nt">4</span> <b>Card resolvido esmaecido</b> e marcado "✓ resolvido" — o passado recolhe (§1 STYLEGUIDE), o vivo respira.</li>
+</ol></div>
+</section>
+
+<!-- ════════════════════ TELA 4: PAINEL ════════════════════ -->
+<section class="screen" id="s-painel">
+<div class="frame">
+  <div class="winbar"><i></i><i></i><i></i><span class="title">mycockpit · Painel</span></div>
+  <div class="painel-hdr">
+    <h2>Painel</h2>
+    <span class="sub">30 dias · 17 conversas · 7 projetos</span>
+    <div class="toggle"><button class="on" data-range="7d">7d</button><button data-range="30d">30d</button></div>
+  </div>
+  <div class="hero">
+    <span class="num">US$ 5.928,47</span>
+    <span class="badge">▲ 12% vs período anterior</span>
+    <span class="honest" data-tip="2 turnos com 18,6M tokens tiveram preço desconhecido. O app excluiu esses turnos do total em vez de inventar um custo. O consumo está medido; o preço, não.">Excluídos do total: 2 turnos com preço desconhecido — o app não inventa.</span>
+  </div>
+  <div class="metrics">
+    <div class="metric" data-tip="Total ÷ 30 dias. Não depende de entregas registradas — é o consumo bruto medido pelo ledger."><div class="lbl">Por dia</div><div class="val">US$ 197,62</div><div class="note">média móvel 7d: US$ 184,30</div></div>
+    <div class="metric" data-tip="US$ 5.928,47 ÷ 1 entrega registrada. Número frágil: a métrica só melhora quando as entregas forem registradas automaticamente."><div class="lbl">Por entrega</div><div class="val">US$ 5.928,47</div><div class="note">1 entrega registrada · <a href="#" style="color:var(--st-running);text-decoration:none">ativar detecção por merge ▸</a></div></div>
+    <div class="metric" data-tip="Nenhuma disputa foi julgada no período; não há base para apontar desperdício. Não é 'nada' por omissão — é 'nada porque ninguém disputou'."><div class="lbl">Lado descartado</div><div class="val">—</div><div class="note">nenhuma disputa julgada</div></div>
+  </div>
+  <div class="insights">
+    <h3>O que eu faria com estes dados</h3>
+    <div class="insight"><span class="arrow">→</span><div class="body"><b>00h–01h concentra seus picos</b> (37% do dia 27/08). <br><span style="font-size:11px;color:var(--muted-foreground)">Suas conversas noturnas custam o dobro da média.</span></div><span class="go">Ver 3 conversas ▸</span></div>
+    <div class="insight"><span class="arrow">→</span><div class="body"><b>1 entrega em 17 conversas</b> — ou o registro é manual, ou conversas não viram entrega.<br><span style="font-size:11px;color:var(--muted-foreground)">O custo por entrega só faz sentido com mais dados.</span></div><span class="go">Ativar registro por merge ▸</span></div>
+    <div class="insight"><span class="arrow">→</span><div class="body"><b>Codex responde por 75% do gasto</b>, mas só 1 entrega foi registrada.<br><span style="font-size:11px;color:var(--muted-foreground)">Pergunta: está gerando valor ou apenas volume?</span></div><span class="go">Comparar custo/entrega ▸</span></div>
+  </div>
+  <div class="heatmap" id="heatmap-panel">
+    <h3>ONDE O DINHEIRO QUEIMOU · 14 DIAS × HORA</h3>
+    <div id="heatmap-grid"></div>
+  </div>
+  <div class="agents">
+    <div class="agent"><div class="av" style="background:#5bb8e8">Cx</div><div class="info"><div class="nm">Codex</div><div class="sub">Sol 5.6</div></div><div class="pct" style="color:#5bb8e8">75%</div><div class="info"><div class="sub">US$ 4.443,79 · sem entrega</div></div></div>
+    <div class="agent"><div class="av" style="background:#e4a862">Cl</div><div class="info"><div class="nm">Claude Code</div><div class="sub">Opus 4</div></div><div class="pct" style="color:#e4a862">24,7%</div><div class="info"><div class="sub">US$ 1.465,88 · sem entrega</div></div></div>
+    <div class="agent"><div class="av" style="background:#a48af0">Ag</div><div class="info"><div class="nm">Antigravity</div><div class="sub">Flash 3.6</div></div><div class="pct" style="color:#a48af0">0,3%</div><div class="info"><div class="sub">US$ 18,80 · sem entrega</div></div></div>
+  </div>
+  <div class="table">
+    <h3>Entregas · 30 dias</h3>
+    <div class="row"><span class="c1">meuingresso3.0 · redesign de checkout</span><span class="c2">US$ 5.928,47</span><span class="c3">1 · 27/08</span></div>
+    <div class="row" style="border-bottom:none;color:var(--faint);font-size:12px">Nenhuma outra entrega registrada no período.</div>
+  </div>
+</div>
+<div class="notes"><h2>Notas de design</h2><ol>
+<li><span class="nt">1</span> <b>Nome consistente</b>: a aba diz <b>"Painel"</b> e o título da view também é <b>"Painel"</b> — nenhuma ambiguidade com "Retrospectiva".</li>
+<li><span class="nt">2</span> <b>Comparativo temporal</b>: o hero agora exibe <b>"▲ 12% vs período anterior"</b> — sem comparativo, o número sozinho não diz se está bem ou mal.</li>
+<li><span class="nt">3</span> <b>Métricas com proveniência</b>: cada card tem um tooltip que explica <b>o que está medindo e o que não está</b> — o operador sabe a margem de confiança do número.</li>
+<li><span class="nt">4</span> <b>Insight → ação</b>: cada insight tem um botão "Ver ▸" / "Ativar ▸" — dados sem próximo passo são ruído. Aqui, o dado vira trabalho.</li>
+<li><span class="nt">5</span> <b>Heatmap interativo</b>: cada célula tem tooltip com custo por hora <b>e</b> abre as conversas daquela hora ao clicar — o mapa deixa de ser decoração e vira navegação.</li>
+<li><span class="nt">6</span> <b>Honestidade compactada</b>: a nota ("o app não inventa") vira um tooltip — mantém a tese, mas não compete em largura com o número.</li>
+</ol></div>
+</section>
+
+<!-- ════════════════════ TELA 5: FROTA ════════════════════ -->
+<section class="screen" id="s-frota">
+<div class="frame">
+  <div class="winbar"><i></i><i></i><i></i><span class="title">mycockpit · Frota</span></div>
+  <div class="fusion-hdr">
+    <span class="t">Frota · 3 agents</span>
+    <span class="st">1 em turno agora</span>
+    <span class="pill" data-tip="Assinatura do plano (Claude, Codex, Antigravity) — o app não cobra, só mostra o consumo dentro do que você já paga">plano ativo</span>
+  </div>
+  <div class="frota-grid">
+    <div class="fcard">
+      <div class="head"><div class="av" style="background:#e4a862">Cl</div><span class="nm">Claude Code</span><span class="pill active">Em turno</span></div>
+      <div class="meta">
+        <div class="meta-row"><span>Modelo</span><span class="v">Opus 4</span></div>
+        <div class="meta-row"><span>Sessões hoje</span><span class="v">3</span></div>
+        <div class="meta-row"><span>Custo hoje</span><span class="v">US$ 4,12</span></div>
+        <div class="meta-row"><span>Consumo do plano</span><span class="v">11%</span></div>
+      </div>
+      <div class="bar"><div class="fill" style="width:11%;background:#e4a862"></div></div>
+      <div class="acts"><button class="btn primary">Nova conversa</button><button class="btn">Configurar</button></div>
+    </div>
+    <div class="fcard">
+      <div class="head"><div class="av" style="background:#5bb8e8">Cx</div><span class="nm">Codex</span><span class="pill">Ocioso</span></div>
+      <div class="meta">
+        <div class="meta-row"><span>Modelo</span><span class="v">GPT-5.1</span></div>
+        <div class="meta-row"><span>Sessões hoje</span><span class="v">1</span></div>
+        <div class="meta-row"><span>Custo hoje</span><span class="v">US$ 1,84</span></div>
+        <div class="meta-row"><span>Consumo do plano</span><span class="v">11%</span></div>
+      </div>
+      <div class="bar"><div class="fill" style="width:11%;background:#5bb8e8"></div></div>
+      <div class="acts"><button class="btn primary">Nova conversa</button><button class="btn">Configurar</button></div>
+    </div>
+    <div class="fcard">
+      <div class="head"><div class="av" style="background:#a48af0">Ag</div><span class="nm">Antigravity</span><span class="pill">Ocioso</span></div>
+      <div class="meta">
+        <div class="meta-row"><span>Modelo</span><span class="v">Flash 3.6</span></div>
+        <div class="meta-row"><span>Sessões hoje</span><span class="v">0</span></div>
+        <div class="meta-row"><span>Custo hoje</span><span class="v">US$ 0,00</span></div>
+        <div class="meta-row"><span>Consumo do plano</span><span class="v">0%</span></div>
+      </div>
+      <div class="bar"><div class="fill" style="width:0%;background:#a48af0"></div></div>
+      <div class="acts"><button class="btn primary">Nova conversa</button><button class="btn">Configurar</button></div>
+    </div>
+    <div class="fcard soon">
+      <div class="head"><div class="av" style="background:#9ca3af">O1</div><span class="nm">OpenCode</span><span class="pill">em breve</span></div>
+      <div class="meta"><div class="meta-row"><span>Status</span><span class="v">aguardando adapter ACP</span></div></div>
+      <div class="acts"><button class="btn" disabled style="opacity:.6">Configurar</button></div>
+    </div>
+  </div>
+  <div class="frota-footer">Renovação do plano em 4 dias · US$ 5.928,47 gastos no período · <a href="#" style="color:var(--st-running);text-decoration:none">ver por projeto ▸</a></div>
+</div>
+<div class="notes"><h2>Notas de design</h2><ol>
+<li><span class="nt">1</span> <b>Plano e assinatura visíveis</b>: a Frota mostra o consumo como percentual do plano — a dor real do usuário é "quanto do meu plano já gastei", não só "quanto gastei".</li>
+<li><span class="nt">2</span> <b>Estado operacional num relance</b>: Em turno / Ocioso com badge, sem clicar — a linha do tempo é a tese da Frota (§1 STYLEGUIDE).</li>
+<li><span class="nt">3</span> <b>Ação primária clara</b>: "Nova conversa" é o botão principal em cada card; "Configurar" é secundário. O operador sabe o que fazer sem ler.</li>
+<li><span class="nt">4</span> <b>OpenCode como "em breve"</b>: não é escondido — está na grid, ativo visualmente, com "em breve" e disabled. O roadmap é parte da navegação, não um segredo.</li>
+</ol></div>
+</section>
+
+<!-- ════════════════════ TELA 6: NOTAS ════════════════════ -->
+<section class="screen" id="s-notas">
+<div class="frame">
+  <div class="winbar"><i></i><i></i><i></i><span class="title">mycockpit · Bloco de Notas</span></div>
+  <div class="notas-overlay">
+    <div class="chat dim">
+      <div class="msg"><div class="who">Você <span class="ag">ACP</span></div><p>Audite o estado atual e preservar todas as mudanças do projeto.</p></div>
+      <div class="msg dim"><div class="who">Codex <span class="ag">Sol 5.6</span></div><p>Vou delegar a varredura e comparar com os testes que já cobrem esses módulos.</p></div>
+      <div class="toolrow"><span class="dot run"></span><span class="tk">Inspecionar alterações no worktree</span><span class="tk ok">✓</span><span class="tk">2 leituras concluídas · 4s</span></div>
+      <div style="margin-top:auto"></div>
+      <div class="composer" style="border:none;border-top:1px solid var(--border)">
+        <div class="row"><textarea placeholder="Enfileirar próxima mensagem…" rows="1"></textarea><button class="btn primary" style="margin-left:auto">Enviar</button></div>
+      </div>
+    </div>
+    <aside class="notas-panel">
+      <div class="hdr"><h3>Bloco de Notas</h3><input placeholder="Buscar nota…"></div>
+      <div class="list">
+        <div class="note on">
+          <div class="t">Contexto para o hiperlink</div>
+          <div class="p">Decisão sobre o framework de resolução de URL — o SPEC.md exige runtime leve. O Codex sugeriu três opções que precisam de validação.</div>
+          <div class="tags"><span>hyperlink</span><span>decisão</span><span>Codex</span></div>
+          <div class="ins">inserir no prompt ⧉</div>
+        </div>
+        <div class="note">
+          <div class="t">Notas sobre arquitetura</div>
+          <div class="p">Estudo sobre a arquitetura do projeto mycockpit — padrões de adapter e stream-json observados.</div>
+          <div class="tags"><span>arquitetura</span></div>
+          <div class="ins">inserir no prompt ⧉</div>
+        </div>
+        <div class="note">
+          <div class="t">Lembrete de pipeline</div>
+          <div class="p">Gates de verificação antes do PR: lint, testes, diff automático, registro de entrega.</div>
+          <div class="tags"><span>SDD</span><span>pipeline</span></div>
+          <div class="ins">inserir no prompt ⧉</div>
+        </div>
+      </div>
+      <div class="editor">
+        <input placeholder="Título da nota…">
+        <textarea placeholder="Pensamentos, snippets e lembretes anotados para usar quando quiser no prompt…"></textarea>
+        <div class="acts"><button class="btn">Criar nota</button></div>
+      </div>
+    </aside>
+  </div>
+</div>
+<div class="notes"><h2>Notas de design</h2><ol>
+<li><span class="nt">1</span> <b>Largura proporcional</b>: o painel de notas ocupa ~380px sobre a conversa — espaço suficiente para ler, mas sem devorar a tela. Não há um full-width empty state desperdiçando área.</li>
+<li><span class="nt">2</span> <b>Um CTA só</b>: o "+ Nova nota" existe uma única vez, no editor — sem duplicar com o empty state. O custo cognitivo é um, não dois.</li>
+<li><span class="nt">3</span> <b>Ação principal é "inserir no prompt"</b>: cada nota lista esse operador — a nota existe para alimentar a conversa, não para ser um arquivo morto.</li>
+<li><span class="nt">4</span> <b>Notas no inspector da conversa</b>: na tela de Trabalho (variação ①) as notas relacionadas aparecem no inspector — aqui, o painel lateral é a visão completa, mas o mesmo dado entra no fluxo.</li>
+</ol></div>
+</section>
+</div><!-- /stage -->
+
+<script>
+/* ── Switcher de telas ── */
+document.querySelectorAll('[data-go]').forEach(function(b){
+  b.addEventListener('click', function(e){
+    e.preventDefault();
+    document.querySelectorAll('.screen').forEach(function(s){s.classList.remove('active')});
+    var t = document.getElementById(b.dataset.go);
+    if(t) t.classList.add('active');
+    document.querySelectorAll('.mockbar nav a').forEach(function(a){a.classList.remove('on')});
+    b.classList.add('on');
+  });
+});
+
+/* ── Tema toggle (demo — o app é dark-first) ── */
+var themeBtn = document.getElementById('theme');
+themeBtn.addEventListener('click', function(){
+  var d = document.documentElement.getAttribute('data-theme');
+  var next = d === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  themeBtn.textContent = next === 'dark' ? 'tema' : 'tema';
+});
+
+/* ── Heatmap determinístico (14 dias × 24h) ── */
+(function(){
+  var container = document.getElementById('heatmap-grid');
+  if(!container) return;
+  /* totais diários em US$ cuja soma ≈ 5.928 */
+  var days = ['15/08','16/08','17/08','18/08','19/08','20/08','21/08','22/08','23/08','24/08','25/08','26/08','27/08','28/08'];
+  var totals = [412,387,523,341,298,432,561,367,334,476,405,468,623,298];
+  /* picos forçados: dia 2 (17/08) hora 12; dia 12 (27/08) hora 0 */
+  var peaks = {}; peaks['2-12'] = 0.95; peaks['12-0'] = 1; peaks['12-18'] = 0.7; peaks['2-18'] = 0.6;
+  function value(d,h){
+    var seed = Math.sin(d*127.1 + h*311.7) * 43758.5453;
+    var base = (seed - Math.floor(seed)) * 0.6 + 0.1;
+    var k = d+'-'+h;
+    if(peaks[k]) base = peaks[k];
+    return base * (totals[d] / 24);
+  }
+  var n = 14;
+  var colors = [0,12,24,36,48,60];
+  function tint(b){
+    if(b<.1) return 'var(--secondary)';
+    if(b<.25) return 'color-mix(in srgb, var(--st-running) 20%, transparent)';
+    if(b<.4) return 'color-mix(in srgb, var(--st-running) 40%, transparent)';
+    if(b<.6) return 'color-mix(in srgb, var(--st-queued) 45%, transparent)';
+    if(b<.8) return 'color-mix(in srgb, var(--st-queued) 65%, transparent)';
+    return 'color-mix(in srgb, var(--st-error) 70%, transparent)';
+  }
+  /* labels das colunas */
+  var colLabels = document.createElement('div');
+  colLabels.className = 'col-labels';
+  colLabels.style.gridTemplateColumns = '32px repeat('+n+', 1fr) 40px';
+  var corner = document.createElement('span');
+  colLabels.appendChild(corner);
+  for(var h=0;h<24;h+=3){
+    var sp = document.createElement('span'); sp.textContent = String(h).padStart(2,'0');
+    colLabels.appendChild(sp);
+  }
+  var last = document.createElement('span'); last.textContent = 'tot.';
+  colLabels.appendChild(last);
+  container.appendChild(colLabels);
+  for(var d=0;d<n;d++){
+    var row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:32px repeat('+n+', 1fr) 40px;gap:2px;align-items:center';
+    var lab = document.createElement('span'); lab.textContent = days[d]; lab.style.cssText = 'font-size:9px;color:var(--faint);font-family:var(--mono);text-align:right';
+    row.appendChild(lab);
+    for(var h=0;h<24;h++){
+      var cell = document.createElement('div');
+      cell.className = 'cell';
+      var b = value(d,h);
+      cell.style.background = tint(b);
+      var cost = b.toFixed(2);
+      var title = days[d]+' '+String(h).padStart(2,'0')+':00 · US$ '+cost;
+      if(b > .45) title += ' · ver conversas';
+      cell.setAttribute('data-tip', title);
+      row.appendChild(cell);
+    }
+    var tot = document.createElement('span'); tot.className = 'day-total'; tot.textContent = '$'+totals[d];
+    row.appendChild(tot);
+    container.appendChild(row);
+  }
+})();
+</script>
+</body>
+</html>
