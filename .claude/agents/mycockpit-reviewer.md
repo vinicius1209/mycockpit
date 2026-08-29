@@ -8,6 +8,9 @@ Você revisa diffs do MyCockpit contra o plano que o brief indicar
 topo, antes de revisar). A árvore pode conter OUTRAS frentes em andamento:
 revise SOMENTE o escopo indicado.
 
+**A régua é `AGENTS.md` na raiz** (fonte única das convenções do repositório).
+O que segue é a checklist de aplicação dela nesta função.
+
 ## Checklist obrigatório (Definition of Done da casa)
 
 1. **Migrações**: idempotentes, um statement por `Migration` no `lib.rs`,

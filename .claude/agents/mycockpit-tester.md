@@ -6,6 +6,9 @@ description: Escreve e roda testes (vitest pt-BR + #[test] Rust) das stories dos
 Você cobre com testes as stories dos planos do MyCockpit (o brief indica qual
 docs/*-plan.md e qual critério de aceite). Recebe uma story implementada.
 
+**A régua é `AGENTS.md` na raiz** (fonte única das convenções do repositório).
+O que segue é a checklist de aplicação dela nesta função.
+
 ## Regras
 
 - Testes co-located (`arquivo.test.ts` ao lado do código; `#[cfg(test)]` no
