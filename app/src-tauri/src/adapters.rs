@@ -67,6 +67,42 @@ pub struct RunRequest {
     pub usage_baseline: Option<crate::agent::CumulativeUsage>,
 }
 
+/// Contrato de transporte do prompt na CLI. Não é capability de produto: a UI
+/// não toma decisão com este dado. É conhecimento do fornecedor que cada
+/// adapter declara para o teste de contrato conferir o `argv` montado.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CliPromptContract {
+    /// O prompt é o último argumento, imediatamente após o separador indicado.
+    TrailingAfterSeparator(&'static str),
+    /// O prompt vem imediatamente após a flag indicada, e ainda há argumentos depois.
+    AfterFlagBeforeTrailingArgs(&'static str),
+}
+
+impl CliPromptContract {
+    /// Guarda estrutural do caminho de produção. O teste de contrato faz a
+    /// cobrança mais forte (valor exato e ocorrência única); aqui basta impedir
+    /// o spawn quando a forma declarada deixou de existir, sem expor o prompt.
+    fn validate(self, agent: &str, cmd: &Command) -> Result<(), String> {
+        let args: Vec<_> = cmd.as_std().get_args().collect();
+        let valid = match self {
+            Self::TrailingAfterSeparator(separator) => {
+                args.len() >= 2 && args[args.len() - 2] == std::ffi::OsStr::new(separator)
+            }
+            Self::AfterFlagBeforeTrailingArgs(flag) => args
+                .iter()
+                .position(|arg| *arg == std::ffi::OsStr::new(flag))
+                .is_some_and(|index| index + 2 < args.len()),
+        };
+        if valid {
+            Ok(())
+        } else {
+            Err(format!(
+                "falha interna ao montar `{agent}`: o comando viola o contrato de transporte do prompt ({self:?})"
+            ))
+        }
+    }
+}
+
 /// Política de permissão POR RUN, parseada UMA vez na fronteira (run_agent).
 /// Enum EXAUSTIVO: valor desconhecido é erro na entrada, nunca fail-open
 /// (antes um typo caía no `_ =>` dos adapters e ganhava permissão de ESCRITA).
@@ -667,10 +703,23 @@ pub trait AgentAdapter: Send {
     /// (`contrato_capabilities_x_comportamento_por_agent`) cobra que a
     /// declaração corresponda ao comando que o build_command monta.
     fn capabilities(&self) -> &'static Capabilities;
+    /// Como esta CLI transporta o prompt no `argv`. SEM default de propósito:
+    /// adapter novo precisa declarar a convenção, e o teste genérico confere se
+    /// o comando realmente obedece a ela.
+    fn cli_prompt_contract(&self) -> CliPromptContract;
     /// Monta o `Command` (binário + flags). O loop compartilhado null-a o stdin
     /// e pipa stdout/stderr, o adapter NÃO cuida disso. `&mut self`: o adapter
     /// pode fixar estado do run (ex. Codex guarda o modelo requisitado p/ custo).
     fn build_command(&mut self, req: &RunRequest) -> Result<Command, String>;
+    /// Caminho do runner: monta e valida a forma declarada antes de qualquer
+    /// spawn. Centraliza a guarda sem centralizar a sintaxe do fornecedor.
+    fn build_validated_command(&mut self, req: &RunRequest) -> Result<Command, String> {
+        let contract = self.cli_prompt_contract();
+        let agent = self.id();
+        let cmd = self.build_command(req)?;
+        contract.validate(agent, &cmd)?;
+        Ok(cmd)
+    }
     /// Mapeia uma linha JSON do stream → 0..N eventos normalizados. `&mut self`
     /// permite guardar estado de parsing (correlação begin/end de ferramentas).
     fn map_line(&mut self, v: &serde_json::Value) -> Vec<AgentEvent>;
@@ -886,6 +935,10 @@ impl AgentAdapter for OpenCodeAdapter {
         &OPENCODE_CAPS
     }
 
+    fn cli_prompt_contract(&self) -> CliPromptContract {
+        CliPromptContract::TrailingAfterSeparator("--")
+    }
+
     fn build_command(&mut self, req: &RunRequest) -> Result<Command, String> {
         let mut cmd = Command::new("opencode");
         cmd.arg("run").arg("--format").arg("json");
@@ -913,7 +966,10 @@ impl AgentAdapter for OpenCodeAdapter {
         if self.bypass {
             cmd.arg("--dangerously-skip-permissions");
         }
-        cmd.arg(&req.prompt);
+        // OpenCode 1.18.21: o parser junta `args.message` com `args["--"]`.
+        // Sem o separador, pedido iniciado por hífen vira opção desconhecida
+        // antes do handler; com ele, segue como texto (probe local 29/08/2026).
+        cmd.arg("--").arg(&req.prompt);
         Ok(cmd)
     }
 
@@ -1242,6 +1298,10 @@ impl AgentAdapter for ClaudeAdapter {
 
     fn capabilities(&self) -> &'static Capabilities {
         &CLAUDE_CAPS
+    }
+
+    fn cli_prompt_contract(&self) -> CliPromptContract {
+        CliPromptContract::TrailingAfterSeparator("--")
     }
 
     fn set_evidence_sink(&mut self, sink: crate::evidence::EvidenceSink) {
@@ -1992,6 +2052,10 @@ impl AgentAdapter for CodexAdapter {
 
     fn capabilities(&self) -> &'static Capabilities {
         &CODEX_CAPS
+    }
+
+    fn cli_prompt_contract(&self) -> CliPromptContract {
+        CliPromptContract::TrailingAfterSeparator("--")
     }
 
     fn set_evidence_sink(&mut self, sink: crate::evidence::EvidenceSink) {
@@ -2785,6 +2849,10 @@ impl AgentAdapter for AgyAdapter {
         &AGY_CAPS
     }
 
+    fn cli_prompt_contract(&self) -> CliPromptContract {
+        CliPromptContract::AfterFlagBeforeTrailingArgs("-p")
+    }
+
     fn build_command(&mut self, req: &RunRequest) -> Result<Command, String> {
         let mut cmd = Command::new("agy");
         // "Planejar primeiro" no agy é EMULAÇÃO POR PROMPT + --sandbox, sem
@@ -3104,6 +3172,87 @@ mod tests {
     /// O par `--flag valor` aparece no argv (adjacente, na ordem)?
     fn has_pair(args: &[String], flag: &str, value: &str) -> bool {
         args.windows(2).any(|w| w[0] == flag && w[1] == value)
+    }
+
+    /// Confere o contrato declarado contra os argumentos REAIS, sem achatar o
+    /// `argv` numa string (espaços e quebras dentro do prompt são um argumento só).
+    fn assert_prompt_contract(
+        agent: &str,
+        contract: CliPromptContract,
+        args: &[String],
+        prompt: &str,
+    ) {
+        let positions: Vec<_> = args
+            .iter()
+            .enumerate()
+            .filter_map(|(index, arg)| (arg == prompt).then_some(index))
+            .collect();
+        assert_eq!(
+            positions.len(),
+            1,
+            "{agent}: o prompt precisa aparecer exatamente uma vez no argv; veio {args:?}"
+        );
+        let index = positions[0];
+        let previous = index.checked_sub(1).and_then(|i| args.get(i));
+
+        match contract {
+            CliPromptContract::TrailingAfterSeparator(separator) => {
+                assert_eq!(
+                    index + 1,
+                    args.len(),
+                    "{agent}: nenhuma flag pode vir depois do prompt; veio {args:?}"
+                );
+                assert_eq!(
+                    previous.map(String::as_str),
+                    Some(separator),
+                    "{agent}: o prompt precisa vir imediatamente após {separator:?}; veio {args:?}"
+                );
+            }
+            CliPromptContract::AfterFlagBeforeTrailingArgs(flag) => {
+                assert_eq!(
+                    previous.map(String::as_str),
+                    Some(flag),
+                    "{agent}: o prompt precisa vir imediatamente após {flag:?}; veio {args:?}"
+                );
+                assert!(
+                    index + 1 < args.len(),
+                    "{agent}: o contrato exige argumentos depois do prompt; veio {args:?}"
+                );
+            }
+        }
+    }
+
+    /// X2 — todo adapter registrado declara a convenção de prompt, e a linha
+    /// montada precisa obedecer à declaração. O marcador contém espaços,
+    /// quebra e texto parecido com flag para impedir teste por `join`.
+    #[test]
+    fn contrato_de_posicao_do_prompt_por_agent() {
+        const PROMPT: &str = "--- PROMPT X2 com espaços\n-p continua sendo texto";
+
+        for agent in registered_agents() {
+            let mut r = req(Permission::Padrao, false);
+            r.prompt = PROMPT.to_string();
+            let mut adapter = resolve(agent).unwrap();
+            let contract = adapter.cli_prompt_contract();
+            let args = argv(&adapter.build_validated_command(&r).unwrap());
+            assert_prompt_contract(agent, contract, &args, PROMPT);
+        }
+    }
+
+    /// A guarda de produção é fail-closed: forma divergente não chega ao spawn.
+    #[test]
+    fn guarda_recusa_forma_que_diverge_do_contrato_de_prompt() {
+        let mut trailing = Command::new("motor");
+        trailing.args(["--", "pedido", "--json"]);
+        assert!(CliPromptContract::TrailingAfterSeparator("--")
+            .validate("motor", &trailing)
+            .is_err());
+
+        let mut middle = Command::new("motor");
+        middle.args(["--json", "-p", "pedido"]);
+        assert!(CliPromptContract::AfterFlagBeforeTrailingArgs("-p")
+            .validate("motor", &middle)
+            .is_err());
     }
 
     /// As três camadas de `codex_cost_model` — o buraco que deixava "gpt-5.5"
@@ -5131,7 +5280,7 @@ mod tests {
     fn agy_anexo_entra_no_valor_do_p_e_libera_a_pasta() {
         let mut a = AgyAdapter::default();
         let args = argv(
-            &a.build_command(&req_com_anexo(
+            &a.build_validated_command(&req_com_anexo(
                 AttachmentKind::Image,
                 "/tmp/anexos/c1/abc.png",
                 "image/png",
@@ -5149,6 +5298,77 @@ mod tests {
         assert!(has_pair(&args, "--add-dir", "/tmp/anexos/c1"));
         // e o --add-dir do cwd continua lá (o agy edita o repo real por causa dele)
         assert!(args.iter().filter(|x| *x == "--add-dir").count() >= 2);
+    }
+
+    /// Claude transporta o anexo por referência dentro do prompt. Além do path,
+    /// a pasta precisa ser liberada e o prompt final continua atrás de `--`.
+    #[test]
+    fn claude_anexo_entra_no_prompt_final_e_libera_a_pasta() {
+        let mut a = ClaudeAdapter::default();
+        let args = argv(
+            &a.build_validated_command(&req_com_anexo(
+                AttachmentKind::Image,
+                "/tmp/anexos/c1/abc.png",
+                "image/png",
+            ))
+            .unwrap(),
+        );
+        let prompt = args.last().expect("prompt final do Claude");
+        assert!(prompt.starts_with("faça X"), "prompt original preservado");
+        assert!(
+            prompt.contains("/tmp/anexos/c1/abc.png"),
+            "o path precisa chegar dentro do prompt; veio: {prompt}"
+        );
+        assert!(has_pair(&args, "--add-dir", "/tmp/anexos/c1"));
+        assert_eq!(args.get(args.len() - 2).map(String::as_str), Some("--"));
+    }
+
+    /// Codex usa transporte nativo: o path viaja em `-i`, não é injetado no
+    /// texto, e o `--` impede o `-i` variádico de consumir o prompt.
+    #[test]
+    fn codex_anexo_viaja_em_i_sem_mudar_o_prompt_final() {
+        let mut a = CodexAdapter::default();
+        let args = argv(
+            &a.build_validated_command(&req_com_anexo(
+                AttachmentKind::Image,
+                "/tmp/anexos/c1/abc.png",
+                "image/png",
+            ))
+            .unwrap(),
+        );
+        assert!(has_pair(&args, "-i", "/tmp/anexos/c1/abc.png"));
+        assert_eq!(args.last().map(String::as_str), Some("faça X"));
+        assert_eq!(args.get(args.len() - 2).map(String::as_str), Some("--"));
+        assert!(
+            !args.last().unwrap().contains("/tmp/anexos/c1/abc.png"),
+            "o transporte nativo não deve duplicar o path no prompt"
+        );
+    }
+
+    /// O composer aceita uma imagem como mensagem inteira. Os três transports
+    /// suportados precisam conservar um carrier mesmo quando o texto é vazio.
+    #[test]
+    fn turno_so_com_anexo_conserva_o_carrier_do_prompt() {
+        let mut r = req_com_anexo(
+            AttachmentKind::Image,
+            "/tmp/anexos/c1/abc.png",
+            "image/png",
+        );
+        r.prompt.clear();
+
+        let mut claude = ClaudeAdapter::default();
+        let claude_args = argv(&claude.build_validated_command(&r).unwrap());
+        assert!(claude_args.last().unwrap().contains("/tmp/anexos/c1/abc.png"));
+
+        let mut codex = CodexAdapter::default();
+        let codex_args = argv(&codex.build_validated_command(&r).unwrap());
+        assert!(has_pair(&codex_args, "-i", "/tmp/anexos/c1/abc.png"));
+        assert_eq!(codex_args.last().map(String::as_str), Some(""));
+
+        let mut agy = AgyAdapter::default();
+        let agy_args = argv(&agy.build_validated_command(&r).unwrap());
+        let prompt = &agy_args[agy_args.iter().position(|arg| arg == "-p").unwrap() + 1];
+        assert!(prompt.contains("/tmp/anexos/c1/abc.png"));
     }
 
     #[test]
@@ -5292,6 +5512,7 @@ mod tests {
                 .iter()
                 .find(|arg| arg.contains("faça X"))
                 .expect("o prompt sempre chega ao comando");
+            assert_prompt_contract(agent, a.cli_prompt_contract(), &args, prompt_arg);
             assert!(
                 !prompt_arg.contains("DOUTRINA-DO-CONTRATO"),
                 "{agent}: o adapter nunca dobra system prompt no corpo (isso é papel do runner)"

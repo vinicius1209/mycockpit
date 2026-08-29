@@ -4618,3 +4618,43 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   já nasce apontando pro vazio é criar o defeito em vez de evitá-lo.
 - **Verificado:** `cargo` 593 (1 novo), `tsc -b` limpo, `vitest` 3464 (4 novos),
   `bun run check` 10 guardas.
+
+### ADR-121 — posição do prompt é contrato do adapter, não comentário ✅
+- **Contexto (29/08/2026):** os quatro transports CLI precisam de duas formas
+  de posição. Claude, Codex e OpenCode deixam o prompt por último atrás de `--`;
+  Agy põe `-p <prompt>` no meio, antes das demais flags. A ordem já falhou
+  silenciosamente no Claude, quando flags posteriores ao separador viraram
+  texto, e continua delicada no Agy, onde anexos precisam ser incorporados antes
+  de o valor de `-p` entrar no `Command`.
+- **A auditoria corrigiu o próprio OpenCode.** O adapter o tratava como último
+  posicional sem separador, e pedido iniciado por hífen virava opção desconhecida.
+  O fonte oficial 1.18.21 incorpora `args["--"]` ao pedido; probe local, travado
+  antes de qualquer chamada por um diretório inexistente, confirmou que `--`
+  entra no handler e que a forma antiga cai na ajuda. O fallback ganhou o
+  separador em vez de eternizar o defeito na declaração.
+- **Todo adapter CLI passa a declarar um `CliPromptContract`, sem default.** A
+  declaração é interna ao Rust porque a UI não monta `argv` nem decide produto
+  com esse dado. Adapter novo não compila sem escolher a convenção, e um teste
+  único percorre o registry para cobrar prompt exato, ocorrência única e ordem.
+  O runner ainda valida a forma antes de cada spawn desse fallback e falha
+  fechado sem incluir o texto do pedido no erro.
+- **A montagem continua local ao fornecedor.** Foi recusado o helper que sempre
+  adicionaria o prompt no fim: ele quebraria o Agy, que ainda precisa acrescentar
+  output format, timeout, diretórios, sessão, modelo e sandbox depois do pedido.
+  O contrato torna a diferença executável pela CI sem fingir que as sintaxes são
+  iguais.
+- **Anexo é uma dimensão independente.** Claude e Agy citam o path no prompt e
+  liberam a pasta; Codex usa `-i <path>` e preserva o texto. Cada transporte tem
+  teste próprio. Inferir anexo da posição do prompt codificaria uma regra falsa.
+- **Vazio é medido depois do filtro de anexos.** A Frota aceita turno só com
+  imagem ou PDF, então texto vazio com arquivo vivo e suportado continua válido.
+  Sem texto e sem anexo utilizável, o runner aborta antes do spawn. O carrier não
+  é omitido: com stdin fechado, isso poderia selecionar modo interativo.
+- **PA4 continua independente.** ACP/app-server envia o prompt em payload
+  estruturado, não em posição de linha de comando. A X2 endurece o fallback CLI;
+  não torna provider configurável e não cria espelho TypeScript sem consumidor.
+- **Verificado:** `cargo` 599 (6 novos; 7 provas reais ignoradas por desenho),
+  `vitest` 3496, `tsc -b` limpo, `bun run check` 13 guardas. No OpenCode
+  1.18.21 com `opencode/mimo-v2.5-free`, o fallback completou dois turnos reais,
+  inclusive um prompt iniciado por `--`, com resposta exata, exit 0 e custo
+  reportado como zero.

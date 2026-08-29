@@ -1,138 +1,187 @@
-# X2 — Onde o prompt entra na linha de comando
+# X2: contrato do prompt nos transports CLI
 
-> Spec para leitura, não para execução. Escrita em 29/08/2026 depois de ler os
-> quatro adapters. Nada foi implementado.
+> Implementada e verificada em 29/08/2026 depois da leitura dos adapters da
+> Frota e dos padrões usados por Paseo, Orca e Buzz. Esta versão substitui a
+> proposta original do helper que anexaria todo prompt no fim do comando.
 
-## O problema, em uma frase
+## Resultado esperado
 
-Cada motor recebe o prompt de um jeito, e esse "jeito" hoje só existe como
-**código espalhado dentro de quatro `build_command` de ~200 linhas cada**, com
-as regras de ordem escritas em comentário.
+Cada adapter CLI declara como transporta o prompt, e um teste único percorre o
+registry para provar que o `argv` montado obedece à declaração. A regra deixa de
+existir apenas dentro de `build_command` longos e de comentários que a CI não
+consegue cobrar.
 
-## Como está hoje (medido, não lembrado)
+O caminho de produção também valida a forma declarada antes de cada spawn do
+fallback CLI. Se um ramo futuro divergir, o efeito é bloqueado sem incluir o
+texto do prompt no erro.
 
-| motor | como o prompt entra | onde |
+A X2 endurece o fallback CLI atual. Ela não cria provider configurável e não é
+pré-requisito da PA4, cujo transporte principal é ACP/JSON-RPC.
+
+## O problema real
+
+| motor | transporte do prompt | posição no `argv` |
 |---|---|---|
-| **claude** | `-p` como flag, e o texto no fim atrás de `--` | último argumento |
-| **codex** | só `--` e o texto | último argumento |
-| **opencode** | posicional puro, sem `--` | último argumento |
-| **agy** | `-p <texto>`, os dois grudados | **no meio**, antes das outras flags |
+| Claude | `-p` ativa print mode; `-- <texto>` carrega o pedido | último |
+| Codex | `-- <texto>` | último |
+| OpenCode | `-- <texto>` | último |
+| Agy | `-p <texto>` | no meio, antes das demais flags |
 
-Quatro CLIs, quatro convenções. Nenhuma errada: é o que cada fornecedor
-escolheu.
+Essa ordem já causou falha silenciosa. No Claude, flags colocadas depois de
+`-- <prompt>` viraram parte do pedido e o stream estruturado desapareceu. No
+Agy, renderizar os anexos depois de adicionar o valor de `-p` produz um comando
+válido, mas o path não chega ao motor.
 
-## Por que isso já custou
+Durante a execução da X2 apareceu um terceiro caso. O adapter do OpenCode
+enviava o posicional sem separador, então um pedido iniciado por hífen era
+interpretado como opção e recusado antes do turno. No OpenCode 1.18.21, o
+[parser oficial](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/cli/cmd/run.ts#L119-L135)
+aceita `--` e o
+[handler](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/cli/cmd/run.ts#L264-L282)
+incorpora explicitamente `args["--"]` ao pedido. Um
+probe local com diretório inexistente confirmou os dois lados sem chamar modelo:
+com separador chegou à validação do diretório; sem ele mostrou ajuda por opção
+desconhecida. A X2 corrige esse `argv` em vez de declarar a fragilidade como
+contrato.
 
-**Um bug real (e9f7b737).** No claude, o `--` encerra o parsing de opções. A
-linha estava saindo `-- <prompt> --output-format stream-json`, então o
-`--output-format` virou *texto do prompt* em vez de flag. O CLI caiu em modo
-texto, o app esperava JSON, e a UI ficou sem output. Nada falhou, nada logou:
-só não apareceu nada.
+## O que a comparação externa ensinou
 
-**Uma armadilha viva.** Anexos são injetados dentro da string do prompt. No
-**agy** o `render_attachments` tem que rodar **antes** do `cmd.arg("-p")`,
-porque o texto já vai grudado na flag. No **codex** é o oposto: o texto vai no
-fim, então dá pra montar depois. Inverter a ordem no agy não dá erro — **o
-anexo simplesmente some**.
+- O sentinela de prompt do Paseo é adequado a perfis escritos pelo usuário. Na
+  Frota, o registry é Rust compilado e os adapters também montam sessão, MCP,
+  permissões, anexos e canais de sistema; trocar isso por template de string
+  reduziria a segurança de tipos.
+- O Orca declara modos de invocação distintos. Isso reforça que a semântica do
+  fornecedor deve ser tipada, não inferida de comentários.
+- O Buzz separa transports CLI e ACP. Em ACP, o prompt viaja no payload de
+  `session/prompt`, não numa posição de `argv`; portanto, o contrato desta X2
+  não deve ser estendido artificialmente à PA4.
 
-Hoje as duas regras vivem em comentário. Comentário não roda na CI.
+## Decisão
 
-## A ideia que o Paseo dá
+### 1. Contrato interno e obrigatório no Rust
 
-Eles resolvem com um sentinela. O perfil declara a linha inteira, com um
-marcador no lugar do texto:
-
-```
-claude {{{prompt}}}
-opencode --prompt={{{prompt}}}
-```
-
-E têm uma regra fina junto: **argumento que só existe pra carregar o prompt é
-descartado quando não há prompt.** Sem isso, um `opencode --prompt=` vazio vira
-uma flag quebrada.
-
-## O que cabe aqui, e o que não cabe
-
-**Não copiar o formato de string.** O sentinela deles resolve um problema que
-nós não temos: no Paseo o *usuário* escreve perfis num JSON, então precisa de
-uma sintaxe que um não-programador consiga expressar. Nosso registry é Rust
-compilado, e o `build_command` faz muito mais que posicionar o prompt (anexos,
-permissão, canal de sistema, MCP, resume de sessão). Trocar tudo isso por
-template de string seria perder tipo e ganhar string.
-
-**Copiar a ideia por trás.** Que é: *a posição do prompt é conhecimento do
-FORNECEDOR, e conhecimento de fornecedor mora num lugar declarado, não
-espalhado.* É a mesma regra que o app já aplica em `INSTALL_COMMANDS` e
-`UPDATE_COMMANDS`.
-
-## A proposta
-
-### 1. O adapter DECLARA onde o prompt entra
-
-Um dado no contrato, ao lado das outras capabilities. Algo como:
+O trait `AgentAdapter` passa a exigir:
 
 ```rust
-enum PosicaoDoPrompt {
-    /// último argumento, atrás de `--`     → claude, codex
-    UltimoAtrasDeSeparador,
-    /// último argumento, sem separador     → opencode
-    UltimoPosicional,
-    /// grudado numa flag: `-p <texto>`     → agy
-    ColadoNaFlag(&'static str),
+fn cli_prompt_contract(&self) -> CliPromptContract;
+```
+
+Sem implementação default. Um adapter novo não compila enquanto não declarar
+uma destas formas:
+
+```rust
+enum CliPromptContract {
+    TrailingAfterSeparator(&'static str),
+    AfterFlagBeforeTrailingArgs(&'static str),
 }
 ```
 
-### 2. Um helper único aplica a declaração
+Mapeamento atual:
 
-Uma função que recebe o `Command` montado, o texto final do prompt e a
-declaração, e faz a colocação. O `build_command` de cada adapter deixa de
-posicionar o prompt na mão e passa a chamar esse helper **no fim**.
+| motor | declaração |
+|---|---|
+| Claude | `TrailingAfterSeparator("--")` |
+| Codex | `TrailingAfterSeparator("--")` |
+| OpenCode | `TrailingAfterSeparator("--")` |
+| Agy | `AfterFlagBeforeTrailingArgs("-p")` |
 
-### 3. A ordem dos anexos vira regra derivada, não comentário
+O dado fica apenas no Rust. A UI não monta comandos nem decide o que oferecer
+com base nessa informação, então um espelho TypeScript criaria teste-gêmeo sem
+consumidor.
 
-A declaração já responde a pergunta que hoje mora no comentário: se o prompt
-está **colado numa flag**, os anexos precisam entrar no texto antes; se ele é o
-**último argumento**, tanto faz. O helper pode assumir isso, em vez de cada
-adapter lembrar.
+### 2. A montagem continua no adapter
 
-### 4. Um teste de contrato em loop
+Não haverá helper que sempre adiciona o prompt ao fim. Ele mudaria o comando do
+Agy, onde `-p <prompt>` precisa vir antes de `--output-format`, timeout, diretório,
+sessão, modelo e sandbox.
 
-O padrão já existe na casa (`contrato_capabilities_x_comportamento_por_agent`).
-Para cada motor do registry, montar um comando e afirmar:
+O contrato é uma declaração verificável, não um compositor universal. Cada
+adapter continua dono da sintaxe do fornecedor e o teste acusa divergência
+entre a declaração e o comando real.
 
-- o prompt aparece **exatamente uma vez** na linha
-- nenhuma flag aparece **depois** do prompt quando a posição é "último"
-- com anexo, o path do anexo está **dentro** do texto que foi entregue
-- sem prompt, nenhum argumento órfão sobra (a regra prompt-only do Paseo)
+### 3. O teste trabalha com `argv`, não com uma linha achatada
 
-Esse teste é o item mais valioso da frente. Ele teria pegado o e9f7b737.
+Para cada item de `registered_agents()` o teste monta um pedido marcador e
+confere:
 
-## O que esta frente NÃO resolve
+- o prompt é um argumento exato e aparece uma única vez;
+- contratos `Trailing*` deixam o prompt como último argumento;
+- `TrailingAfterSeparator` põe o separador imediatamente antes do prompt;
+- `AfterFlagBeforeTrailingArgs` põe a flag imediatamente antes e conserva
+  argumentos posteriores.
 
-Ela **não** vai fazer motor novo entrar sem release. Isso é a PA4 (provider ACP
-por config), e é outra frente. O que a X2 faz é deixar a matriz de casos
-especiais pronta pra receber a PA4 quando ela vier — hoje um provider definido
-por config não teria onde declarar essa informação.
+O marcador contém espaço, quebra de linha e texto parecido com flag. Assim o
+teste não pode passar por acidente usando `args.join(" ")`.
 
-## Tamanho e risco
+No runner, `build_validated_command` aplica uma guarda estrutural mais curta
+antes de cada spawn do fallback CLI, inclusive no restart após resume ausente.
+A CI continua sendo a prova forte de valor exato e ocorrência única; a guarda
+de produção impede executar um comando cuja forma contradiz a declaração.
 
-**Pequeno em linhas, delicado em ordem.** Não muda comportamento nenhum: o
-objetivo é que a linha de comando gerada continue **byte a byte igual** para os
-quatro motores. O teste de contrato é escrito antes, contra a linha atual, e é
-ele quem prova que nada mudou.
+### 4. Anexos têm contrato separado
 
-Risco real: o `build_command` do claude tem ramos (`--permission-prompt-tool` só
-no Padrão, `--add-dir` com anexos, canal de sistema por run). Mexer na
-montagem sem cobrir os ramos é como o e9f7b737 nasceu. A ordem de trabalho é
-teste primeiro, refactor depois.
+Posição do prompt não determina transporte do anexo:
 
-## Pergunta aberta para você decidir
+| motor | transporte do anexo |
+|---|---|
+| Claude | path dentro do prompt + `--add-dir <pasta>` |
+| Codex | `-i <path>`; o texto do prompt fica intacto |
+| Agy | path dentro do valor de `-p` + `--add-dir <pasta>` |
+| OpenCode | capability continua desligada até o suporte ser medido ponta a ponta |
 
-O `PosicaoDoPrompt` deve morar no **registry de capabilities** (junto com
-`sessionResume`, `systemChannel` etc., com espelho em TypeScript e teste-gêmeo),
-ou é detalhe interno do Rust que o front nunca precisa saber?
+Há testes específicos para cada transporte suportado. No Codex, eles também
+seguram o `--` entre o `-i` variádico e o prompt. No Agy, seguram a renderização
+do path antes de o valor de `-p` ser adicionado.
 
-Minha leitura: **é interno.** O front nunca monta linha de comando, e capability
-existe pra UI decidir o que oferecer. Colocar no espelho TS seria pagar o
-teste-gêmeo por um dado que ninguém do outro lado lê. Mas se a PA4 vier, isso
-muda: aí o usuário declara, e o que o usuário declara precisa ser visível.
+### 5. Vazio significa ausência de conteúdo efetivo
+
+A Frota permite que uma imagem ou PDF seja a mensagem inteira. Por isso,
+`prompt.trim().is_empty()` não é erro sozinho.
+
+Na fronteira do runner:
+
+- texto não vazio é válido;
+- texto vazio com ao menos um anexo vivo e suportado é válido;
+- texto vazio sem anexo utilizável é recusado antes do spawn.
+
+O argumento do prompt não é omitido em turnos só com anexo. O runner fecha o
+stdin; remover o carrier poderia selecionar modo interativo ou deixar uma CLI
+esperando entrada.
+
+## Fora de escopo
+
+- transformar `build_command` em templates de string;
+- expor este detalhe como capability de UI;
+- provar parsing interno de cada binário apenas inspecionando `Command`;
+- tornar providers instaláveis sem release;
+- modelar prompts de ACP/app-server como posição de CLI.
+
+## Critérios de aceite
+
+1. Os quatro adapters implementam o método obrigatório.
+2. O teste de contrato percorre o registry e valida os argumentos em ordem; a
+   guarda de produção recusa forma divergente antes do spawn.
+3. Testes separados cobrem anexos de Claude, Codex e Agy.
+4. O backend recusa pedido sem texto e sem anexo utilizável, preservando envio
+   só com anexo.
+5. Claude, Codex e Agy conservam a ordem existente; OpenCode ganha apenas o
+   separador que protege prompts iniciados por hífen.
+6. `bun run check`, `bun run test`, `bunx tsc -b --force` e `cargo test` passam.
+
+## Risco residual
+
+O teste prova a estrutura produzida pela Frota, não que uma versão futura do
+binário continue aceitando a mesma sintaxe. Mudança de parser do fornecedor
+continua exigindo fixture ou probe real da versão correspondente. A vantagem é
+que qualquer alteração nossa de ordem passa a falhar localmente na CI.
+
+## Verificação da entrega
+
+- `cargo test`: 599 aprovados, 7 provas reais ignoradas por desenho;
+- `bun run test`: 3.496 aprovados;
+- `bunx tsc -b --force`: limpo;
+- `bun run check`: 13 guardas aprovadas;
+- OpenCode 1.18.21 com `opencode/mimo-v2.5-free`: duas execuções reais no
+  fallback, uma com prompt comum e outra com o próprio prompt iniciado por
+  `--`; ambas devolveram o marcador exato, stream JSON completo, exit 0 e custo
+  reportado como zero.

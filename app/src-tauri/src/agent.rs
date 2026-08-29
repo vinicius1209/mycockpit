@@ -283,6 +283,15 @@ pub enum AgentEvent {
 
 /// Roda um agent de código na pasta `cwd` e streama eventos normalizados via Channel.
 /// `agent` seleciona o adapter (claude-code / codex / opencode).
+fn validate_run_content(prompt: &str, usable_attachments: usize) -> Result<(), String> {
+    if prompt.trim().is_empty() && usable_attachments == 0 {
+        return Err(
+            "o pedido está vazio. Escreva uma instrução ou anexe um arquivo suportado.".to_string(),
+        );
+    }
+    Ok(())
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn run_agent(
@@ -372,6 +381,10 @@ pub async fn run_agent(
             ),
         });
     }
+    // A UI permite turno só com anexo: texto vazio é legítimo quando ao menos
+    // um arquivo vivo e suportado chega ao adapter. Sem nenhum conteúdo útil,
+    // aborta antes do spawn; stdin é null e omitir o prompt mudaria o modo da CLI.
+    validate_run_content(&prompt, used.len())?;
     // F23: marca a conversa como ativa p/ o GC não apagar os blobs durante o run.
     active.insert(&conv_id);
     let _active_guard = ActiveGuard {
@@ -624,7 +637,7 @@ pub async fn run_agent(
     }
 
     let resume_was = req.resume.is_some();
-    let cmd = adapter.build_command(&req)?;
+    let cmd = adapter.build_validated_command(&req)?;
     let (cmd, perfil_sb) = confina_se_prometido(cmd, &req, &run_id, &on_event);
     let confinou = perfil_sb.is_some();
     let _limpa = perfil_sb.map(LimpaPerfil);
@@ -694,7 +707,7 @@ pub async fn run_agent(
         // p/ o run recomeçado não esquecer a conversa. Sem fallback, prompt intacto.
         req2.prompt = restart_prompt(req2.memory_fallback.as_deref(), &req2.prompt);
         let mut adapter2 = adapters::resolve(&agent)?;
-        let cmd2 = adapter2.build_command(&req2)?;
+        let cmd2 = adapter2.build_validated_command(&req2)?;
         let (cmd2, perfil_sb2) = confina_se_prometido(cmd2, &req2, &run_id, &on_event);
         // O perfil do run reiniciado tem vida própria: o `?` abaixo pode sair
         // antes da limpeza do fim, e um .sb esquecido em /tmp por turno somaria.
@@ -1276,8 +1289,19 @@ pub async fn suggest(model: String, cwd: String, prompt: String) -> Result<Strin
 mod tests {
     use super::{
         claude_oneshot, compose_mcp_preamble, process_failure_fallback, restart_prompt,
-        AgentEvent, Outcome,
+        validate_run_content, AgentEvent, Outcome,
     };
+
+    /// X2 — vazio significa ausência de conteúdo efetivo, não ausência de
+    /// texto: a Frota aceita uma imagem/PDF como a mensagem inteira.
+    #[test]
+    fn pedido_vazio_so_passa_quando_ha_anexo_util() {
+        assert!(validate_run_content("faça X", 0).is_ok());
+        assert!(validate_run_content("", 1).is_ok());
+        assert!(validate_run_content("  \n\t", 2).is_ok());
+        assert!(validate_run_content("", 0).is_err());
+        assert!(validate_run_content("  \n\t", 0).is_err());
+    }
 
     /// S4 (revisão D1): `--tools ""` NÃO cobre MCP — o one-shot com
     /// `no_mcp=true` TEM que carregar o strict-mcp-config vazio, senão um MCP
