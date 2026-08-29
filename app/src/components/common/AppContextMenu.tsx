@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { readText } from "@tauri-apps/plugin-clipboard-manager"
+import { revealItemInDir } from "@tauri-apps/plugin-opener"
 import { toast } from "sonner"
 
 import {
@@ -20,6 +21,9 @@ import {
 import { instalarGuardaDoMenuNativo } from "@/lib/nativeMenu"
 import { copyText } from "@/lib/clipboard"
 import { openConvImage, revealConvImage } from "@/lib/evidence"
+import { openInEditor, pickEditor } from "@/lib/editors"
+import { useEditors } from "@/store/editors"
+import { useApp } from "@/store/app"
 import { isTauri } from "@/lib/db"
 
 /**
@@ -127,11 +131,13 @@ const TIPOS_SEM_TEXTO = new Set([
 function sondar(e: MouseEvent): { sonda: Sonda; img: HTMLImageElement | null } {
   const el = e.target instanceof Element ? e.target : null
   const img = acharImagem(el)
+  const arquivo = acharArquivo(el)
   return {
     img,
     sonda: {
       editavel: sondarEditavel(el),
       imagem: img ? descreverImagem(img) : null,
+      arquivo,
       bloco: sondarBloco(el),
       selecao: (window.getSelection()?.toString() ?? "").trim(),
     },
@@ -166,6 +172,17 @@ function descreverImagem(img: HTMLImageElement): Sonda["imagem"] {
   const caixa = img.closest<HTMLElement>("[data-ctx-imagem]")
   const path = caixa?.dataset.ctxImagem
   return { path: path || null, nome: img.alt || "imagem" }
+}
+
+function acharArquivo(el: Element | null): Sonda["arquivo"] {
+  const caixa = el?.closest<HTMLElement>("[data-ctx-arquivo]")
+  if (!caixa) return null
+  const rel = caixa.dataset.ctxArquivo
+  if (!rel) return null
+  const abs = caixa.dataset.ctxArquivoAbs || undefined
+  const lineRaw = caixa.dataset.ctxArquivoLinha
+  const line = lineRaw ? parseInt(lineRaw, 10) : null
+  return { rel, abs, line: line && !isNaN(line) && line > 0 ? line : null }
 }
 
 function sondarEditavel(el: Element | null): Sonda["editavel"] {
@@ -262,12 +279,12 @@ async function executar(
         document.execCommand("copy")
         return
       }
-      if (alvo.tipo === "bloco") await copyText(alvo.selecao)
+      if (alvo.tipo === "bloco" || alvo.tipo === "arquivo") await copyText(alvo.selecao)
       else if (alvo.tipo === "selecao") await copyText(alvo.texto)
       return
 
     case "copiar-bloco":
-      if (alvo.tipo === "bloco") await copyText(alvo.texto)
+      if (alvo.tipo === "bloco" || alvo.tipo === "arquivo") await copyText(alvo.texto)
       return
 
     case "copiar-imagem":
@@ -289,6 +306,61 @@ async function executar(
         toast.error("Não consegui mostrar na pasta (o arquivo ainda existe?)")
       })
       return
+
+    case "abrir-arquivo": {
+      if (alvo.tipo !== "arquivo") return
+      const state = useApp.getState()
+      const project = state.projects.find((p) => p.id === state.activeProjectId)
+      const projectPath = project?.path ?? ""
+      // O menu pode ser a PRIMEIRA superfície a precisar de editor nesta
+      // sessão (clique direito num chip sem nunca ter passado o mouse por um).
+      // Sem o `ensure`, `detected` seria `null` e o usuário levava um "nenhum
+      // editor detectado" que só dizia que ninguém tinha perguntado ainda.
+      useEditors.getState().ensure()
+      const detected = useEditors.getState().detected ?? []
+      const preferred = state.settings.preferredEditor
+      const escolhido = pickEditor(detected, preferred)
+      if (!escolhido) {
+        toast.error("Nenhum editor de código detectado nesta máquina")
+        return
+      }
+      await openInEditor({
+        editor: escolhido.id,
+        projectPath,
+        rel: alvo.rel,
+        line: alvo.line,
+      }).catch((err) => {
+        console.error("[menu] não consegui abrir no editor", err)
+        toast.error(typeof err === "string" ? err : "Não consegui abrir no editor")
+      })
+      return
+    }
+
+    case "copiar-caminho-relativo": {
+      if (alvo.tipo !== "arquivo") return
+      const texto = alvo.line ? `${alvo.rel}:${alvo.line}` : alvo.rel
+      await copyText(texto)
+      toast.success("Caminho relativo copiado")
+      return
+    }
+
+    case "copiar-caminho-absoluto": {
+      if (alvo.tipo !== "arquivo") return
+      const base = alvo.abs || alvo.rel
+      const texto = alvo.line ? `${base}:${alvo.line}` : base
+      await copyText(texto)
+      toast.success("Caminho copiado")
+      return
+    }
+
+    case "revelar-arquivo": {
+      if (alvo.tipo !== "arquivo" || !alvo.abs) return
+      await revealItemInDir(alvo.abs).catch((err) => {
+        console.error("[menu] não consegui mostrar na pasta", err)
+        toast.error("Não consegui mostrar na pasta (o arquivo ainda existe?)")
+      })
+      return
+    }
 
     case "selecionar-tudo":
       restaurarFoco(foco)

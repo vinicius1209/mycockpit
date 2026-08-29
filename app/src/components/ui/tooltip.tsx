@@ -46,7 +46,11 @@ function TooltipContent({
         {...props}
       >
         {children}
-        <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px] bg-foreground fill-foreground" />
+        {/* `bg-inherit`/`fill-inherit`: a seta pega a superfície DO BALÃO, não
+            uma cor fixa. Pintada em `bg-foreground` ela só combinava com a
+            receita escura padrão — quem trocasse a superfície (a régua de
+            turnos trocou) ganhava um losango preto mordendo a primeira linha. */}
+        <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px] bg-inherit fill-transparent" />
       </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>
   )

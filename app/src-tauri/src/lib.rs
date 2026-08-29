@@ -721,6 +721,8 @@ pub fn run() {
             attachments::read_attachment,
             attachments::gc_attachments,
             attachments::wipe_conv_attachments,
+            attachments::save_note_attachment,
+            attachments::wipe_note_attachments,
             evidence::read_evidence,
             evidence::open_conv_image,
             evidence::reveal_conv_image,

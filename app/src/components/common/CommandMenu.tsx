@@ -11,6 +11,7 @@ import {
   Plus,
   Settings,
   Sparkles,
+  StickyNote,
   SunMoon,
 } from "lucide-react"
 import {
@@ -39,6 +40,7 @@ import {
 } from "@/components/settings/sections"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
+import { useStickyNotes } from "@/store/stickyNotes"
 
 const ACTIONS = [
   {
@@ -220,6 +222,15 @@ export function CommandMenu() {
                   </KbdGroup>
                 </CommandItem>
               )}
+              <CommandItem
+                className={ITEM}
+                onSelect={() =>
+                  run(() => useStickyNotes.getState().toggleDock())
+                }
+              >
+                <StickyNote aria-hidden />
+                Bloco de notas
+              </CommandItem>
               {ACTIONS.map((a) => (
                 <CommandItem
                   key={a.label}

@@ -14,7 +14,7 @@ export function isMentionableFile(f: string): boolean {
  *  resolve avatar por nome via usePresets; arquivo leva ícone). O `kind`
  *  viaja como data do item do beautiful-mentions e agrupa o menu
  *  (Especialistas antes de Arquivos). */
-export type LexicalAtItem = { value: string; kind: "agent" | "file" }
+export type LexicalAtItem = { value: string; kind: "agent" | "file" | "nota" }
 
 /** Montagem PURA dos itens do "@": personas primeiro, arquivos depois
  *  (contíguos — o menu insere o cabeçalho na troca de kind), arquivos passando
@@ -24,9 +24,14 @@ export type LexicalAtItem = { value: string; kind: "agent" | "file" }
 export function buildLexicalAtItems(
   names: string[],
   files: string[],
+  notas: string[] = [],
 ): LexicalAtItem[] {
   return [
     ...names.map((n) => ({ value: n, kind: "agent" as const })),
+    // Notas ANTES dos arquivos: são poucas e são suas; a lista de arquivos do
+    // projeto tem centenas e empurraria a nota pra fora da primeira tela do
+    // menu (o corte por query e o teto de itens são do beautiful-mentions).
+    ...notas.map((n) => ({ value: n, kind: "nota" as const })),
     ...files
       .filter(isMentionableFile)
       .map((f) => ({ value: f, kind: "file" as const })),

@@ -11,7 +11,7 @@ import { agentLabel, cancelAgent, runAgent } from "@/lib/agent"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
 import type { Attachment } from "@/lib/attachments"
 import { resumePrompt, wantsAutoResume } from "@/lib/autoResume"
-import { withNotes } from "@/lib/notes"
+import { comporCascata } from "@/lib/fleet/promptCascade"
 import { isTauri } from "@/lib/db"
 import { listConversations, type ConversationMeta } from "@/lib/db/conversations"
 import { prepareHybridHandoff } from "@/lib/handoff"
@@ -37,7 +37,6 @@ import {
   expandQueuedForJoin,
   findAppCommand,
   parseSlashInvocation,
-  reexpandIfEmbedded,
   splitQueueForAppCommand,
 } from "@/lib/slashCommands"
 import { runCompactTurn } from "@/lib/compact"
@@ -409,22 +408,19 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   // identidade primeiro, depois as regras — mesma ordem da cascata do corpo.
   const systemPrompt =
     [systemPersona, doctrine.system].filter(Boolean).join("\n\n") || null
-  // Review gate G2 — MESMA correção do ChatPanel: com bloco a prepender
-  // (doutrina/lições/persona), o pedido deixa de ser o prompt inteiro e o
-  // comando nativo cru viraria barra morta atrás do bloco. Re-expande com
-  // `embedded` só nesse caso; sem blocos, o cru nativo segue valendo.
-  let promptText = await reexpandIfEmbedded(
-    sendText,
-    text,
+  // Ordem das camadas e re-expansão do comando nativo: `promptCascade.ts`.
+  let promptText = await comporCascata({
+    convId,
+    projectId,
     projectPath,
     agent,
-    !!lessonsBlock || !!doctrineBlock || !!personaBlock,
-  )
-  // cascata (de dentro pra fora): lições → doutrina → persona.
-  // Notas do humano: antes das lições (o mais específico fica perto do pedido).
-  promptText = withNotes(convId, conv.items, promptText)
-  if (lessonsBlock) promptText = `${lessonsBlock}\n\n---\n\n${promptText}`
-  if (doctrineBlock) promptText = `${doctrineBlock}\n\n${promptText}`
+    items: conv.items,
+    sendText,
+    text,
+    personaBlock,
+    lessonsBlock,
+    doctrineBlock,
+  })
   // S3.2 — troca de volante com sessão fresca (backend novo): o fio até aqui
   // viaja no envelope híbrido (mesma memória/pointers do revezamento).
   if (wheelSwitch) {

@@ -574,6 +574,14 @@ export default function App() {
             host global — MessageList existe em Linear e Painel e o
             overlay é um só. Fechado renderiza null. */}
         <LightboxOverlay />
+        {/* Bloco de notas: NÃO tem mais host aqui. A gaveta virou popover
+            ancorado no chip "Notas" e mora junto do gatilho, na TitleBar
+            (`StickyNotesToggle`). O host global existia porque dentro do
+            ChatPanel a gaveta morria no `hidden` que o AppShell aplica fora do
+            viewMode linear; a TitleBar é chrome e está montada em TODA
+            superfície, então ela cobre o mesmo alcance sem `fixed` por cima do
+            layout. O ⌘K segue abrindo pela store (`dockOpen` controla o
+            popover). */}
         <SettingsDialog />
         <ConfirmHost />
         {/* Onboarding: overlay full-screen no 1º run (onboarded=false), tour

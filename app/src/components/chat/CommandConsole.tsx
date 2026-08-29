@@ -34,6 +34,9 @@ import { identidadeEfetiva } from "@/components/chat/composerIdentity"
 import { useSlashCommands } from "@/hooks/useSlashCommands"
 import { slashEmptyHint } from "@/lib/slashCommands"
 import { useAtMentions } from "@/hooks/useAtMentions"
+import { useStickyNotes, selectNotesFor } from "@/store/stickyNotes"
+import { itensDeNota } from "@/components/notes/noteMention"
+import { arquivosTocados } from "@/lib/mentionRank"
 import { usePromptHistory } from "@/hooks/usePromptHistory"
 import { useAttachments } from "@/hooks/useAttachments"
 import {
@@ -247,6 +250,14 @@ export function CommandConsole({
   // arquivos do projeto prontos na montagem (cache por projeto) — o menu "@"
   // do editor precisa deles quando abrir.
   const at = useAtMentions({ project })
+  // N5 — as notas do escopo visível viram endereço `@nota/slug`. A leitura é
+  // por seletor (só o array de notas), então mudar o rascunho não re-renderiza
+  // por causa daqui.
+  const notasDaStore = useStickyNotes((s) => s.notes)
+  const notasVisiveis = useMemo(
+    () => selectNotesFor(notasDaStore, { projectId: project?.id, convId: activeId ?? undefined }),
+    [notasDaStore, project?.id, activeId],
+  )
   const history = usePromptHistory({ conv, activeId, value, setValue })
   const att = useAttachments({ activeId, setValue, focus: focusComposer })
 
@@ -401,6 +412,24 @@ export function CommandConsole({
   // abaixo, gateado só por showSlash). O "@" de arquivos vai por prop
   // (mentionFiles, listagem do useAtMentions).
   // popover "/" efetivo: o showSlash do hook, suprimido com pill presente.
+  // N5 — endereços mencionáveis das notas do escopo visível. `itensDeNota` é
+  // puro e a lista é pequena (dezenas), então o memo aqui é sobre a store, não
+  // sobre trabalho pesado: o que ele evita é remontar array a cada tecla.
+  // N7 — o que ESTA conversa tocou. A dep é o TAMANHO do fio, não o array: uma
+  // tool call é sempre um item novo, então o conjunto só pode mudar quando o
+  // fio cresce. Com o array como dep, cada token do streaming remontaria o Set
+  // varrendo a conversa inteira.
+  const arquivosDaConversa = useMemo(
+    () => arquivosTocados(conv?.items ?? [], project?.path ?? ""),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [conv?.items.length, project?.path],
+  )
+
+  const enderecosDeNota = useMemo(
+    () => itensDeNota(notasVisiveis).map((i) => i.value),
+    [notasVisiveis],
+  )
+
   const slashOpen = showSlash && !hasCommandPill
   const slashBridge = {
     active: slashOpen,
@@ -436,6 +465,8 @@ export function CommandConsole({
         placeholder={placeholder}
         mentionNames={presets.map((p) => p.name)}
         mentionFiles={projectFiles}
+        mentionNotes={enderecosDeNota}
+        mentionTouched={arquivosDaConversa}
         className={CONSOLE_INPUT_CLASS}
         registerFocus={(fn) => {
           lexicalFocus.current = fn

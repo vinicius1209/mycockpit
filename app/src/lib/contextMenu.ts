@@ -41,6 +41,18 @@ export type Alvo =
    * pixels que estão na tela.
    */
   | { tipo: "imagem"; path: string | null; nome: string }
+  /**
+   * Arquivo de código citado em mensagem (chip de código ou link file://).
+   * Permite abrir no editor, copiar caminho relativo/completo ou revelar na pasta.
+   */
+  | {
+      tipo: "arquivo"
+      rel: string
+      abs?: string
+      line: number | null
+      texto: string
+      selecao: string
+    }
   /** Texto selecionado em superfície não editável, fora de mensagem. */
   | { tipo: "selecao"; texto: string }
 
@@ -53,6 +65,10 @@ export type ItemId =
   | "copiar-imagem"
   | "abrir-imagem"
   | "revelar-imagem"
+  | "abrir-arquivo"
+  | "copiar-caminho-relativo"
+  | "copiar-caminho-absoluto"
+  | "revelar-arquivo"
 
 /** Divisor. Nunca sobra nas pontas nem dobra (ver `limpaDivisores`). */
 export const DIVISOR = "divisor" as const
@@ -91,6 +107,10 @@ export const ROTULOS: Record<ItemId, string> = {
   // Neutro de propósito: o produto é Mac E Linux, e "Finder" mentiria no
   // segundo. "Pasta" vale nos dois.
   "revelar-imagem": "Mostrar na pasta",
+  "abrir-arquivo": "Abrir no editor",
+  "copiar-caminho-relativo": "Copiar caminho relativo",
+  "copiar-caminho-absoluto": "Copiar caminho completo",
+  "revelar-arquivo": "Mostrar na pasta",
 }
 
 /** Tira divisor das pontas e colapsa divisor repetido. */
@@ -150,6 +170,20 @@ export function itensPara(alvo: Alvo | null, rec: Recursos): LinhaMenu[] {
     ])
   }
 
+  if (alvo.tipo === "arquivo") {
+    const temAbs = Boolean(alvo.abs)
+    return limpaDivisores([
+      ...(alvo.selecao ? (["copiar"] as LinhaMenu[]) : []),
+      DIVISOR,
+      "abrir-arquivo",
+      "copiar-caminho-relativo",
+      ...(temAbs ? (["copiar-caminho-absoluto"] as LinhaMenu[]) : []),
+      ...(temAbs && rec.revelar ? (["revelar-arquivo"] as LinhaMenu[]) : []),
+      DIVISOR,
+      ...(alvo.texto ? (["copiar-bloco"] as LinhaMenu[]) : []),
+    ])
+  }
+
   return alvo.texto ? ["copiar"] : []
 }
 
@@ -165,6 +199,11 @@ export type Sonda = {
     temConteudo: boolean
   } | null
   imagem: { path: string | null; nome: string } | null
+  arquivo: {
+    rel: string
+    abs?: string
+    line: number | null
+  } | null
   bloco: { texto: string } | null
   /** Seleção de texto vigente na janela, já aparada. */
   selecao: string
@@ -178,6 +217,16 @@ export type Sonda = {
 export function alvoDe(s: Sonda): Alvo | null {
   if (s.editavel) return { tipo: "editavel", ...s.editavel }
   if (s.imagem) return { tipo: "imagem", ...s.imagem }
+  if (s.arquivo) {
+    return {
+      tipo: "arquivo",
+      rel: s.arquivo.rel,
+      abs: s.arquivo.abs,
+      line: s.arquivo.line,
+      texto: s.bloco?.texto ?? s.arquivo.rel,
+      selecao: s.selecao,
+    }
+  }
   if (s.bloco) return { tipo: "bloco", texto: s.bloco.texto, selecao: s.selecao }
   if (s.selecao) return { tipo: "selecao", texto: s.selecao }
   return null

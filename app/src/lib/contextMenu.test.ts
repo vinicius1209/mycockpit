@@ -15,6 +15,7 @@ const NADA: Recursos = { colar: false, revelar: false }
 const sondaVazia: Sonda = {
   editavel: null,
   imagem: null,
+  arquivo: null,
   bloco: null,
   selecao: "",
 }
@@ -125,6 +126,59 @@ describe("itensPara · imagem", () => {
   })
 })
 
+describe("itensPara · arquivo de código", () => {
+  const arqComAbs: Alvo = {
+    tipo: "arquivo",
+    rel: "src/lib/agents.ts",
+    abs: "/Users/v/proj/src/lib/agents.ts",
+    line: 42,
+    texto: "bloco da mensagem",
+    selecao: "",
+  }
+
+  const arqRelPuro: Alvo = {
+    tipo: "arquivo",
+    rel: "cacheDoTurno.ts",
+    line: null,
+    texto: "bloco",
+    selecao: "",
+  }
+
+  it("com caminho absoluto oferece abrir, copiar caminhos e mostrar na pasta", () => {
+    expect(itensPara(arqComAbs, TUDO)).toEqual([
+      "abrir-arquivo",
+      "copiar-caminho-relativo",
+      "copiar-caminho-absoluto",
+      "revelar-arquivo",
+      DIVISOR,
+      "copiar-bloco",
+    ])
+  })
+
+  it("sem caminho absoluto não oferece copiar absoluto nem mostrar na pasta", () => {
+    expect(itensPara(arqRelPuro, TUDO)).toEqual([
+      "abrir-arquivo",
+      "copiar-caminho-relativo",
+      DIVISOR,
+      "copiar-bloco",
+    ])
+  })
+
+  it("com seleção de texto sobre o arquivo inclui copiar seleção", () => {
+    const arqComSel: Alvo = { ...arqComAbs, selecao: "agents" }
+    expect(itensPara(arqComSel, TUDO)).toEqual([
+      "copiar",
+      DIVISOR,
+      "abrir-arquivo",
+      "copiar-caminho-relativo",
+      "copiar-caminho-absoluto",
+      "revelar-arquivo",
+      DIVISOR,
+      "copiar-bloco",
+    ])
+  })
+})
+
 describe("itensPara · seleção solta e área vazia", () => {
   it("texto selecionado fora de bloco oferece só copiar", () => {
     expect(itensPara({ tipo: "selecao", texto: "abc" }, TUDO)).toEqual(["copiar"])
@@ -147,6 +201,7 @@ describe("itensPara · higiene do divisor", () => {
       { tipo: "editavel", senha: false, somenteLeitura: false, temSelecao: true, temConteudo: true },
       { tipo: "bloco", texto: "a", selecao: "" },
       { tipo: "imagem", path: "/a", nome: "a" },
+      { tipo: "arquivo", rel: "a.ts", line: null, texto: "a", selecao: "" },
       { tipo: "selecao", texto: "a" },
     ]
     for (const alvo of alvos) {
@@ -169,6 +224,7 @@ describe("rótulos", () => {
       { tipo: "editavel", senha: false, somenteLeitura: false, temSelecao: true, temConteudo: true },
       { tipo: "bloco", texto: "a", selecao: "b" },
       { tipo: "imagem", path: "/a", nome: "a" },
+      { tipo: "arquivo", rel: "a.ts", abs: "/a.ts", line: 10, texto: "a", selecao: "b" },
       { tipo: "selecao", texto: "a" },
     ]
     for (const alvo of alvos) {
@@ -186,6 +242,7 @@ describe("rótulos", () => {
 
   it("'Mostrar na pasta' não diz Finder, porque o produto também é Linux", () => {
     expect(ROTULOS["revelar-imagem"]).not.toMatch(/finder/i)
+    expect(ROTULOS["revelar-arquivo"]).not.toMatch(/finder/i)
   })
 })
 
@@ -195,6 +252,7 @@ describe("alvoDe · precedência", () => {
       ...sondaVazia,
       editavel: { senha: false, somenteLeitura: false, temSelecao: false, temConteudo: true },
       imagem: { path: "/a", nome: "a" },
+      arquivo: { rel: "a.ts", line: null },
       bloco: { texto: "m" },
       selecao: "s",
     })
@@ -208,6 +266,23 @@ describe("alvoDe · precedência", () => {
       bloco: { texto: "m" },
     })
     expect(alvo?.tipo).toBe("imagem")
+  })
+
+  it("arquivo ganha do bloco genérico", () => {
+    const alvo = alvoDe({
+      ...sondaVazia,
+      arquivo: { rel: "src/a.ts", abs: "/p/src/a.ts", line: 12 },
+      bloco: { texto: "mensagem inteira" },
+      selecao: "sel",
+    })
+    expect(alvo).toEqual({
+      tipo: "arquivo",
+      rel: "src/a.ts",
+      abs: "/p/src/a.ts",
+      line: 12,
+      texto: "mensagem inteira",
+      selecao: "sel",
+    })
   })
 
   it("bloco carrega a seleção junto, pra oferecer as duas cópias", () => {

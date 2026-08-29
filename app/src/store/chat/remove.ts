@@ -25,6 +25,7 @@ import { removeWorktree, worktreeRemovalNote } from "@/lib/git"
 import { isTauri } from "@/lib/db"
 import { useApp } from "@/store/app"
 import { useWorktrees } from "@/store/worktrees"
+import { useStickyNotes } from "@/store/stickyNotes"
 
 type Get = () => ChatState
 type Set = (fn: (s: ChatState) => Partial<ChatState>) => void
@@ -134,6 +135,12 @@ export async function removeConversationImpl(
       .catch(() => {}),
   )
   void wipeAttachments(id) // apaga os blobs da conversa (privacidade imediata)
+  // Notas presas a esta conversa: sem isto elas ficam com um `convId` que não
+  // casa com nada — invisíveis em qualquer escopo e impossíveis de apagar pela
+  // UI, ocupando o localStorage pra sempre. É a regra do topo deste arquivo
+  // aplicada a mais um dono: nada continua vivo e INVISÍVEL depois que a
+  // conversa some.
+  useStickyNotes.getState().clearConversationNotes(id)
   const wasActive = before.activeId === id
   // projeto DONO da conversa removida (pode não ser o ativo)
   const owner = projectOfConv(before.conversationsByProject, id) ?? before.projectId

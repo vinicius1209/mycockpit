@@ -112,6 +112,26 @@ pub fn conv_dir(app: &AppHandle, conv_id: &str) -> Result<PathBuf, String> {
     Ok(attachments_root(app)?.join(sanitize_conv_id(conv_id)))
 }
 
+/// Pasta das notas, DENTRO da raiz de anexos: `attachments/notes/<noteId>/`.
+///
+/// Morar aqui dentro não é acaso — é o que faz `delete_attachment`,
+/// `read_attachment` e o object URL do front funcionarem sem uma linha nova:
+/// os três só exigem que o caminho esteja sob a raiz de anexos.
+///
+/// E o GC por-conversa **não** varre isto por CONSTRUÇÃO: `is_conv_dir_name`
+/// exige nome de 32 ou 36 chars hex, e "notes" não é. A nota tem ciclo de vida
+/// próprio (ela sobrevive à conversa e pode nem ter uma), então ser varrida
+/// pela régua da conversa apagaria anexo vivo — em silêncio, que é o pior jeito.
+const DIR_DE_NOTAS: &str = "notes";
+
+pub fn notes_root(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(attachments_root(app)?.join(DIR_DE_NOTAS))
+}
+
+pub fn note_dir(app: &AppHandle, note_id: &str) -> Result<PathBuf, String> {
+    Ok(notes_root(app)?.join(sanitize_conv_id(note_id)))
+}
+
 /// Escrita atômica (.tmp + rename) com permissão 0600, evita blob meio-escrito.
 fn write_atomic(abs: &Path, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
@@ -219,22 +239,63 @@ pub(crate) fn save_to_disk(
     let ext = ext_for_mime(&mime).ok_or_else(|| format!("tipo não suportado: {mime}"))?;
 
     let dir = conv_dir(app, conv_id)?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let rel = format!("attachments/{}", sanitize_conv_id(conv_id));
+    gravar_em(app, &dir, &rel, name, &mime, ext, bytes, active)
+}
+
+/// A gravação em si, já com MIME e extensão decididos: dedup por hash, escrita
+/// atômica e teto do cache. Existe separada porque a NOTA grava pelo mesmo
+/// caminho que a conversa — validação, sniff e allowlist são as mesmas, só a
+/// pasta muda. Duplicar isso seria duplicar a allowlist, que é justamente o que
+/// não pode divergir.
+#[allow(clippy::too_many_arguments)]
+fn gravar_em(
+    app: &AppHandle,
+    dir: &Path,
+    rel: &str,
+    name: &str,
+    mime: &str,
+    ext: &str,
+    bytes: &[u8],
+    active: &ActiveConvs,
+) -> Result<Attachment, String> {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let fname = format!("{}.{ext}", hash16(bytes));
     let abs = dir.join(&fname);
     if !abs.exists() {
-        // dedup por-conversa: mesmo conteúdo → mesmo arquivo, não reescreve.
+        // dedup por pasta: mesmo conteúdo → mesmo arquivo, não reescreve.
         write_atomic(&abs, bytes)?;
     }
     enforce_cap(app, active)?;
 
     Ok(Attachment {
-        path: format!("attachments/{}/{}", sanitize_conv_id(conv_id), fname),
+        path: format!("{rel}/{fname}"),
         name: name.to_string(),
-        kind: classify(&mime),
-        mime,
+        kind: classify(mime),
+        mime: mime.to_string(),
         bytes: bytes.len() as u64,
     })
+}
+
+/// Mesmo núcleo, pasta da NOTA.
+pub(crate) fn save_note_to_disk(
+    app: &AppHandle,
+    note_id: &str,
+    name: &str,
+    declared_mime: Option<String>,
+    bytes: &[u8],
+    active: &ActiveConvs,
+) -> Result<Attachment, String> {
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err(format!("\"{name}\" excede {} MB", MAX_BYTES / 1024 / 1024));
+    }
+    let mime = sniff(bytes)
+        .or(declared_mime)
+        .ok_or_else(|| "não consegui identificar o tipo do arquivo".to_string())?;
+    let ext = ext_for_mime(&mime).ok_or_else(|| format!("tipo não suportado: {mime}"))?;
+    let dir = note_dir(app, note_id)?;
+    let rel = format!("attachments/{DIR_DE_NOTAS}/{}", sanitize_conv_id(note_id));
+    gravar_em(app, &dir, &rel, name, &mime, ext, bytes, active)
 }
 
 // ---------------- comandos Tauri ----------------
@@ -470,6 +531,29 @@ fn lru_evict(
     }
 }
 
+/// Varre a pasta das notas removendo o que não pertence a nota viva nenhuma.
+fn gc_notas(root: &Path, valid: &[String], s: &mut GcSummary) {
+    if !root.exists() || valid.is_empty() {
+        return;
+    }
+    let vivos: HashSet<String> = valid.iter().map(|id| sanitize_conv_id(id)).collect();
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let p = e.path();
+        let name = e.file_name().to_string_lossy().to_string();
+        if !p.is_dir() || !is_conv_dir_name(&name) || vivos.contains(&name) {
+            continue;
+        }
+        let (size, _) = dir_size_mtime(&p);
+        if std::fs::remove_dir_all(&p).is_ok() {
+            s.freed_bytes += size;
+            s.removed_dirs += 1;
+        }
+    }
+}
+
 /// Varre UMA raiz de blobs por-conversa (`attachments/` ou `evidence/`) com a
 /// política ÚNICA do cache: tmp-sweep + órfãs (conversa deletada, só com lista
 /// de refs não-vazia, F1) + TTL pelo `updated_at` AUTORITATIVO da conversa +
@@ -532,6 +616,11 @@ fn gc_root(
 pub async fn gc_attachments(
     app: AppHandle,
     valid_convs: Vec<ConvRef>,
+    // Ids das notas VIVAS. Lista vazia não apaga nada (mesma guarda do F1 das
+    // conversas): "não recebi a lista" e "não há nota nenhuma" são
+    // indistinguíveis aqui, e apagar no primeiro caso seria destruir dado por
+    // causa de um front que ainda não montou.
+    valid_notes: Vec<String>,
     active: tauri::State<'_, ActiveConvs>,
 ) -> Result<GcSummary, String> {
     let root = attachments_root(&app)?;
@@ -557,6 +646,10 @@ pub async fn gc_attachments(
     let now = now_ms();
     gc_root(&root, &valid, &updated, active.inner(), now, &mut s);
     gc_root(&ev_root, &valid, &updated, active.inner(), now, &mut s);
+    // Notas: régua PRÓPRIA, e só a de órfã. Nota não tem `updated_at`
+    // autoritativo no banco (ela vive no front) e não tem run ativo, então TTL
+    // e LRU não se aplicam — o que se aplica é "a nota não existe mais".
+    gc_notas(&notes_root(&app)?, &valid_notes, &mut s);
     // o meta mora na raiz de anexos; garante a pasta caso só evidence/ exista.
     let _ = std::fs::create_dir_all(&root);
     let _ = std::fs::write(&meta, now_ms().to_string());
@@ -654,10 +747,91 @@ mod tests {
         assert_eq!(s.removed_dirs, 0);
         let _ = std::fs::remove_dir_all(&root);
     }
+
+
+    const NOTA_VIVA: &str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const NOTA_MORTA: &str = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+
+    /// Fixture da pasta de notas: duas notas com um blob cada.
+    fn fixture_notas(tag: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("mc-notas-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for nota in [NOTA_VIVA, NOTA_MORTA] {
+            let dir = root.join(nota);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("abc123.png"), b"png-fake").unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn gc_de_nota_leva_a_orfa_e_preserva_a_viva() {
+        let root = fixture_notas("orfa");
+        let mut s = GcSummary::default();
+        gc_notas(&root, &[NOTA_VIVA.to_string()], &mut s);
+        assert!(root.join(NOTA_VIVA).exists(), "nota viva perdeu o anexo");
+        assert!(!root.join(NOTA_MORTA).exists(), "nota morta ficou com blob órfão");
+        assert_eq!(s.removed_dirs, 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn lista_vazia_de_notas_nao_apaga_nada() {
+        // "não recebi a lista" e "não há nota nenhuma" são indistinguíveis
+        // aqui. Apagar no primeiro caso destruiria dado por causa de um front
+        // que ainda não montou — mesma guarda do F1 das conversas.
+        let root = fixture_notas("vazia");
+        let mut s = GcSummary::default();
+        gc_notas(&root, &[], &mut s);
+        assert!(root.join(NOTA_VIVA).exists());
+        assert!(root.join(NOTA_MORTA).exists());
+        assert_eq!(s.removed_dirs, 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_pasta_de_notas_nao_e_varrida_pela_regua_da_CONVERSA() {
+        // A garantia que faz o desenho inteiro funcionar: o GC por-conversa
+        // varre a raiz de anexos, e a pasta "notes" mora lá dentro. Ela
+        // sobrevive porque não TEM nome de conversa — se alguém afrouxar o
+        // `is_conv_dir_name`, os anexos de todas as notas somem em silêncio no
+        // próximo boot.
+        assert!(!is_conv_dir_name(DIR_DE_NOTAS));
+    }
 }
 
 /// Apaga TODOS os anexos de uma conversa (ao deletá-la), reclaim + privacidade
 /// imediatos. Síncrono e sem depender do GC throttled.
+/// Salva bytes colados numa NOTA. Mesma validação, mesmo sniff, mesma
+/// allowlist e mesmo teto da conversa — só a pasta muda.
+#[tauri::command]
+pub async fn save_note_attachment(
+    app: AppHandle,
+    note_id: String,
+    name: String,
+    declared_mime: String,
+    bytes: Vec<u8>,
+    active: tauri::State<'_, ActiveConvs>,
+) -> Result<Attachment, String> {
+    let declared = if declared_mime.is_empty() {
+        None
+    } else {
+        Some(declared_mime)
+    };
+    save_note_to_disk(&app, &note_id, &name, declared, &bytes, active.inner())
+}
+
+/// Apaga os anexos de UMA nota (ao deletar a nota). Espelha o
+/// `wipe_conv_attachments`: quem morre leva os blobs junto, na hora.
+#[tauri::command]
+pub async fn wipe_note_attachments(app: AppHandle, note_id: String) -> Result<(), String> {
+    let dir = note_dir(&app, &note_id)?;
+    if dir.exists() {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn wipe_conv_attachments(app: AppHandle, conv_id: String) -> Result<(), String> {
     let dir = conv_dir(&app, &conv_id)?;
@@ -673,4 +847,5 @@ pub async fn wipe_conv_attachments(app: AppHandle, conv_id: String) -> Result<()
         let _ = std::fs::remove_dir_all(&ev);
     }
     Ok(())
+
 }

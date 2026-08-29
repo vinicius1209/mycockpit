@@ -11,6 +11,8 @@ import { LivePlanCard } from "@/components/chat/LivePlanCard"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { Especialistas } from "@/components/settings/Especialistas"
 import { ScaledMessageList } from "@/components/chat/ScaledMessageList"
+import { TurnScrubber } from "@/components/chat/TurnScrubber"
+import { useChatScroll } from "@/components/chat/useChatScroll"
 import { vistaDaConversa } from "@/components/chat/vistaDaConversa"
 import { useFeedbackDoFio } from "@/components/chat/feedbackDoFio"
 import { PresenceBar } from "@/components/chat/PresenceBar"
@@ -63,10 +65,9 @@ import {
 import { resolveSendTarget } from "@/lib/sendTarget"
 import { notifyTurnEnd } from "@/lib/notify"
 import type { Attachment } from "@/lib/attachments"
-import { gcAttachments } from "@/lib/attachments"
-import { BYTES_PER_MB } from "@/lib/format"
+import { useAttachmentGc } from "@/hooks/useAttachmentGc"
 import type { AgentRunConfig } from "@/lib/types"
-import { isTauri, listConvRefs } from "@/lib/db"
+import { isTauri } from "@/lib/db"
 import {
   buildLearningBlocks,
   markLessonsUsed,
@@ -135,7 +136,6 @@ export function ChatPanel() {
   const planDetailedInSidebar = useApp(
     (s) => s.contextOpen && s.contextPanelTab === "plano",
   )
-  const scrollRef = useRef<HTMLDivElement>(null)
   // Lições injetadas no ÚLTIMO turno desta conversa (p/ o 👍 reforçar — bump).
   // Ref keyed por convId; efêmero, não persiste (é só o alvo do reforço leve).
   const injectedLessonsRef = useRef<Record<string, string[]>>({})
@@ -154,28 +154,19 @@ export function ChatPanel() {
       unlisten?.()
     }
   }, [])
-  // segue o fim só quando você já está lá; se subiu pra ler, não puxa de volta.
-  const [atBottom, setAtBottom] = useState(true)
-  // Atalho ✦ do composer: abre o marketplace de Especialistas SOBRE a conversa
-  // (reusa o wrapper Especialistas; o X/Esc do AppDialog fecham). Chamar uma
-  // persona segue pelo @ do composer.
   const [especialistasOpen, setEspecialistasOpen] = useState(false)
-
-  function onScroll() {
-    const el = scrollRef.current
-    if (!el) return
-    setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
-  }
-  function scrollToBottom() {
-    const el = scrollRef.current
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
-    setAtBottom(true)
-  }
 
   const items = conv.items
   const running = conv.running
   const finalizing = conv.finalizing
   const activeId = useChat((s) => s.activeId)
+
+  const { scrollRef, atBottom, onScroll, scrollToBottom, setAtBottom } = useChatScroll({
+    activeId,
+    items,
+    running,
+  })
+
   const fusionActive = useFusion((s) => (activeId ? !!s.byConv[activeId] : false))
   // O STATUS, não um booleano (ADR-088; o porquê em `vistaDaConversa`).
   const missionStatus = useMission((s) =>
@@ -214,50 +205,6 @@ export function ChatPanel() {
     void openProject(projectId)
   }, [projectId, openProject])
 
-  // Autoscroll conforme a conversa cresce, MAS só se você já está no fim (senão
-  // ler mensagens antigas seria interrompido a cada evento). O "tick" do
-  // streaming entra nas deps: items.length não muda a cada text_delta, sem ele
-  // o follow morria em respostas longas (achado do aval).
-  const last = items[items.length - 1]
-  const streamTick = last && last.kind === "text" ? last.text.length : 0
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el && atBottom) el.scrollTo({ top: el.scrollHeight, behavior: "auto" })
-  }, [items.length, streamTick, running, atBottom])
-
-  // Ao trocar de conversa, volta a seguir o fim E aterrissa nele JÁ (S1.1):
-  // o container de scroll não é remontado no switch, então sem o scrollTo
-  // explícito uma troca entre fios de altura parecida herdaria o scrollTop
-  // antigo (o autoscroll acima só dispara quando alguma dep muda). Dentro da
-  // mesma visita o scroll manual segue respeitado (regra do atBottom).
-  useEffect(() => {
-    setAtBottom(true)
-    const el = scrollRef.current
-    if (!el) return
-    el.scrollTo({ top: el.scrollHeight, behavior: "auto" })
-    // O fio pinta em 2 passos (nós pesados: diffs, evidências, timeline), e o
-    // scrollHeight do 1º frame subestima a altura final — a tela "aterrissava
-    // no meio" ao voltar pra uma conversa com o agente trabalhando. Reancora
-    // no próximo frame E quando o conteúdo cresce (ResizeObserver), até o
-    // usuário rolar (o atBottom deixa de valer e o observer é desligado).
-    let alive = true
-    const land = () => {
-      if (!alive || !scrollRef.current) return
-      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight })
-    }
-    requestAnimationFrame(land)
-    const ro = new ResizeObserver(() => {
-      if (useChat.getState().activeId === activeId) land()
-    })
-    if (el.firstElementChild) ro.observe(el.firstElementChild)
-    const stop = window.setTimeout(() => ro.disconnect(), 1500)
-    return () => {
-      alive = false
-      ro.disconnect()
-      window.clearTimeout(stop)
-    }
-  }, [activeId])
-
   // ⌘K (ou outra UI) pode enfileirar um prompt → dispara aqui.
   const queuedPrompt = useChat((s) => s.queuedPrompt)
   useEffect(() => {
@@ -269,25 +216,8 @@ export function ChatPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queuedPrompt])
 
-  // GC dos anexos no boot (throttled 1×/24h no backend). F1: só roda se as refs
-  // vierem não-null (null = falha → não arrisca o orphan-sweep com lista vazia).
-  useEffect(() => {
-    if (!isTauri()) return
-    void (async () => {
-      const refs = await listConvRefs()
-      if (!refs) return
-      try {
-        const r = await gcAttachments(refs)
-        if (r.freed_bytes > 0) {
-          toast(
-            `Cache de anexos: ${(r.freed_bytes / BYTES_PER_MB).toFixed(1)} MB liberados`,
-          )
-        }
-      } catch {
-        // GC é best-effort
-      }
-    })()
-  }, [])
+  // GC do cache de blobs no boot (conversas + notas): hooks/useAttachmentGc.
+  useAttachmentGc()
 
   // Caso 2, restaura uma disputa de Fusion PENDENTE (esperando decisão) ao abrir
   // a conversa, pra não perder o que já rodou + foi pago.
@@ -1090,10 +1020,10 @@ export function ChatPanel() {
           a missão RODA (ela toma a tela) e volta quando ela termina. */}
       {vista.presenca && <PresenceBar />}
 
+      {/* `@container`: a régua de turnos cabe pela largura do FIO, não da janela. */}
       <div
-        ref={scrollRef}
-        onScroll={onScroll}
-        className="relative flex-1 overflow-x-hidden overflow-y-auto"
+        ref={scrollRef} onScroll={onScroll}
+        className="@container relative flex-1 overflow-x-hidden overflow-y-auto"
       >
         {/* Missão TOMA a tela: renderiza primeiro e suprime o empty state (antes
             ela flutuava como card sobre o "Boa tarde"). Com run em MEMÓRIA a
@@ -1106,12 +1036,16 @@ export function ChatPanel() {
         {activeId && !vista.timeline && missionInterrupted && (
           <MissionResumeCard convId={activeId} />
         )}
+        {/* Régua de turnos: ela mesma se ancora no gutter, FORA do fluxo. */}
+        {vista.fio && hasConversation && (
+          <TurnScrubber items={items} scrollRef={scrollRef} />
+        )}
         {vista.fio ? (
           // key no activeId → o fade só replica ao TROCAR de conversa (não a cada
           // token do streaming, que mantém o mesmo activeId).
           <div
             key={activeId ?? "none"}
-            className="animate-in fade-in-0 duration-300 ease-out"
+            className="animate-in fade-in-0 duration-75 ease-out"
           >
             <ScaledMessageList
               items={items}

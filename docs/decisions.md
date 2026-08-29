@@ -4068,3 +4068,366 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **Falta** o transporte (spawn + laço de stdio + fila de pedidos ligada ao
   `DirectInteractions`, que já espera humano sem timeout).
 - **Verificado:** `cargo` 579 (4 novos), 10 guardas.
+
+### ADR-109 — a tinta do post-it se separa do status pela SATURAÇÃO, não pela matiz ✅
+- **Contexto (27/08/2026):** o bloco de notas nasceu com 5 cores em Tailwind cru
+  (`amber-500/8`, `emerald-950/20`, `indigo-400`…) e o `check:paleta` reprovou
+  com 39 ocorrências. O §2 é vocabulário fechado: cor nova entra por token com
+  par claro/escuro e linha na tabela.
+- **A tentativa óbvia falhou, e o motivo importa.** Dar hue livre pra cada uma
+  das 5 não dá: a roda já está tomada. Âmbar tem dono só desde o ADR-043
+  (decisão pendente / fila / risco autorizado), verde é marco raro, vermelho é
+  falha, azul é o vivo do chrome, `id-violet` é identidade de agent. `sand`
+  (âmbar) e `sage` (verde) — os dois nomes do desenho original — caíam
+  exatamente em cima dos dois papéis mais protegidos do guia.
+- **A regra que resolve: as tintas de papel são SURDAS.** O que separa
+  `note-teal` (#5f8f92) de `st-success` (#1f9d6b) não é a matiz, é a
+  saturação — um é tinta de papel, o outro é sinal. Nenhum `note-*` chega perto
+  da vivacidade de um `st-*`, nos dois temas. Isso deixa o hue livre pra ser
+  pista de categoria sem virar signo de estado.
+- **A contenção que faz a regra valer: `note-*` só pinta SUPERFÍCIE.** Fundo
+  (`/10`), borda (`/30`) e a bolinha do seletor. **Texto nunca** — letra
+  colorida é o que faria a tinta disputar leitura com o vocabulário do §2. Tem
+  teste segurando (`StickyNoteCard.test.tsx`: nenhuma variante emite
+  `text-note-*`).
+- **`sage` foi removida** em vez de reaproveitada: verde a 10% ainda é verde, e
+  a nota não tem por que dizer "concluído". Entrou `teal` no lugar. Nota antiga
+  com `color: "sage"` no localStorage cai no papel padrão pelo fallback que já
+  existia — sem migração, porque a feature nunca saiu daqui.
+- **A tinta não sinaliza urgência.** Quem quer destacar uma nota usa o PIN, que
+  é `ring-brass` e já é o gesto do produto. Cor de papel é rótulo do humano.
+- **Verificado:** `tsc` 0, `vitest` 3294, `bun run check` 10 guardas verdes.
+
+### ADR-110 — a régua de turnos CABE; minimapa que rola não é mapa ✅
+- **Contexto (27/08/2026):** em fio longo (~30 turnos) a régua do gutter
+  aparecia cortada no topo, encostada na barra de abas, e lida como código de
+  barras ao lado da barra de rolagem real. Três causas, todas no mesmo lugar:
+  `max-h-[60vh]` mede a JANELA, e o container do fio perde a barra de abas em
+  cima e o composer embaixo (o chute erra pra mais, e sobra por fora);
+  `overflow-y-auto` dava à régua uma **segunda barra de rolagem**; e `top-1/2`
+  em `sticky` resolve a porcentagem contra o bloco container, não contra o
+  viewport de rolagem, então a origem também saía do lugar.
+- **A régua agora mede o espaço real** (`clientHeight` do container +
+  `ResizeObserver`) e o **passo** entre marcadores encolhe de 18px até um piso
+  de 7px pra caber. Nada de rolagem interna: o valor de um minimapa é dizer
+  "onde estou no TODO", e ele evapora no instante em que o mapa precisa ser
+  rolado pra ser visto.
+- **Quando nem o piso cabe, ela CONDENSA e diz que condensou.** Faixas
+  contíguas de tamanho igual (a posição continua proporcional ao fio, senão
+  deixa de ser mapa), representadas pelo **turno do usuário** da faixa quando
+  existe — é o que a pessoa procura ao voltar no fio ("onde foi que eu pedi
+  isso?"). O hover carrega "Faixa de N turnos · leva ao começo": marcador que
+  engole 4 turnos e finge ser 1 mentiria sobre onde o clique leva.
+- **O `IntersectionObserver` passou a olhar TODOS os turnos**, não só os
+  marcadores pintados. Observando apenas os representantes, o marcador ativo
+  congelaria enquanto a pessoa rola DENTRO de uma faixa condensada.
+- **A superfície virou hover.** A pílula era `bg-card/60` + hairline sobre
+  `bg-background`: invisível, e o que sobrava na tela era o traço solto. Agora
+  em repouso ela é só o traço, e a superfície acende no hover — sem hairline,
+  que é o que o §4 pede pra não fazer cartão-em-cartão.
+- **Verificado:** `tsc` 0, `vitest` 3300 (6 novos em `TurnScrubber.test.ts`,
+  incluindo a invariante "cabe na altura" varrida em 6 tamanhos de fio × 3
+  alturas), `bun run check` 10 guardas verdes.
+- **A seta do tooltip virou herdeira da superfície** (`components/ui/tooltip.tsx`).
+  Ela era `bg-foreground` fixa, o que só casa com a receita escura padrão — e a
+  régua é o único lugar do app que troca a superfície do balão, então o hover
+  dela ganhava um losango preto grudado mordendo a primeira linha. Agora é
+  `bg-inherit` (a seta pega o fundo do balão) + `fill-transparent` (o polígono
+  do SVG some; quem desenha o losango é a caixa rotacionada, não o `fill`, e
+  `inherit` ali cairia no preto inicial do SVG). O balão da régua ficou sem
+  hairline pela mesma razão: com borda, a seta herdada vira aba saindo do
+  cartão. Somou um atraso próprio de 280ms — com o passo apertado, o provider
+  global de 0ms virava metralhadora de balão enquanto o ponteiro cruzava a
+  régua.
+
+### ADR-111 — a régua só existe quando o GUTTER existe (viewport ≠ contêiner) ✅
+- **Contexto (28/08/2026):** o mock das Notas (`docs/mocks/notas-apple.html`,
+  variantes `#c` e `#e`) expôs de lado um defeito que não era das notas: com o
+  painel direito aberto numa janela larga, a régua de turnos pintava por cima do
+  texto. Ela decidia por `lg:` — breakpoint de **VIEWPORT** — enquanto o espaço
+  de que precisa é o do **CONTÊINER** de rolagem do fio.
+- **A decisão virou container query** (`@container` no container de rolagem,
+  `@min-[…]` na régua), o mesmo molde que o `TabBtn` do painel direito já usava.
+  Ou seja: a régua não pergunta "que tamanho tem a janela", pergunta "sobra
+  gutter aqui dentro".
+- **O limiar é 848, e o 848 não é a conta óbvia.** `760` (coluna) + `38×2`
+  (gutter dos DOIS lados, porque a coluna é `mx-auto`) + `12` de barra de
+  rolagem. A folga da barra existe porque o container query resolve contra a
+  caixa que **ainda conta a barra**; sem ela, no limiar exato o trilho entrava
+  ~6px na caixa da coluna.
+- **A premissa dos 12px estava documentada errada na primeira tentativa, e o
+  erro é instrutivo:** o comentário culpava `::-webkit-scrollbar { width: 9px }`
+  (`index.css:498`), mas quem manda é o `scrollbar-width: thin` declarado logo
+  acima — o Chromium ignora a largura do `::-webkit-` quando ele existe, e
+  `thin` são os 11px que a medição pegou. O número estava certo por acidente.
+  Pior: o pior caso medido é o do DESENVOLVIMENTO. Em produção isto roda em
+  WKWebView e WebKitGTK, onde a barra é overlay e não come largura — a folga
+  sobra na plataforma real, que é o lado certo pra errar.
+- **Mudança de comportamento, declarada:** o `lg:` era 1024px de janela, que com
+  a sidebar dava ~816px de fio — gutter de 28px contra os 38px que a régua
+  ocupa. Ou seja, ela aparecia e **já pintava dentro da coluna**. Agora só entra
+  a partir de ~1047px de janela. Em janelas entre 1024 e 1047 a régua deixa de
+  aparecer: isso é o defeito indo embora, não regressão.
+- **Duas guardas, porque a decisão mora no CSS e CSS não tem tipo.**
+  `cabeRegua` + `CLASSE_VISIBILIDADE_REGUA` amarram o número TS↔CSS; um teste lê
+  o fonte do `ChatPanel.tsx` e exige o `@container` (sem ele, `@min-[…]` nunca
+  casa e a régua sumiria **para sempre, em silêncio**); e um terceiro amarra
+  `GUTTER_REGUA = 38` às três classes que o produzem (`left-2` + `px-1.5` +
+  `w-4.5`) — trocar `w-4.5` por `w-6` deslocaria o gutter real com a suíte
+  inteira verde.
+- **O fonte entra por `import.meta.glob(?raw)`, nunca por `node:fs`.** A
+  primeira versão da guarda usava `node:fs`, passou no `vitest` e no
+  `tsc --noEmit`, e **quebrou o `tsc -b`** — que é o que a build roda. O
+  tsconfig do `src/` não tem os tipos do node de propósito. Isso é regra, não
+  acidente: teste que lê fonte usa o mecanismo do Vite (padrão de
+  `janelaViva.test.ts`).
+- **Armadilha registrada:** `container-type: inline-size` computa
+  `contain: layout`, o que faz do container de rolagem o bloco contentor de
+  qualquer `position: fixed` descendente. Hoje não quebra nada (varrido), mas o
+  próximo `fixed` dentro do fio vai se ancorar ali, não no viewport.
+- **Verificado:** `tsc -b` limpo, `vitest` 3366, `bun run check` 10 guardas,
+  `test:e2e` 27.
+
+### ADR-112 — a gaveta de notas cabe no que tem dentro, e diz de quem é cada nota ✅
+- **Contexto (28/08/2026):** a gaveta nasceu `fixed right-4 top-14 bottom-16`:
+  altura CHEIA sempre, ancorada em nada, e por ser `fixed` abria **por cima** do
+  painel de contexto. Com 1 nota, uma lousa de 600px com um post-it no topo.
+  Cinco desenhos foram ao mock (`docs/mocks/notas-README.md`); ganhou o **A**
+  (lista + folha), com **B** (folha solta) como degradação.
+- **O gatilho fica na barra de título, e isso é consequência do MODELO, não de
+  gosto.** `selectNotesFor` aceita nota da conversa OU global do projeto —
+  escopo misto. Pendurar na aba "Conversa" prometeria escopo de conversa e
+  mentiria para as globais; e a gaveta existe em Painel e Features, onde aquela
+  aba não existe. O escopo entra DENTRO, em seções ("Desta conversa" / "Do
+  projeto"), que é a regra que Configurações já aplica: explícito, nunca
+  herdado em silêncio. O `handleCreateNote` deixou de carimbar `convId` sozinho:
+  o escopo vem do gesto.
+- **≤2 notas: a lista SOME.** Painel de 1 nota tem tamanho de 1 nota (§5). O
+  limiar é constante nomeada e testada, não número solto no JSX.
+- **O host global do `App.tsx` saiu** e a gaveta virou popover na `TitleBar` —
+  que é chrome incondicional, montada em toda superfície. O ⌘K continua
+  alcançando (ele mexe em `dockOpen`, que controla o `Popover.Root`).
+- **"Nunca cobre o painel direito" virou MECANISMO MEDIDO**, não constante: a
+  fronteira de colisão é o cartão do centro (`data-notes-boundary`), porque o
+  painel é redimensionável e nenhuma largura decorada serviria. E `sticky="always"`,
+  não o `"partial"` padrão: o padrão instala um `limitShift` que parava a gaveta
+  com a borda direita na borda ESQUERDA do chip, ainda dentro do painel. **A
+  gaveta pode descolar do chip; cobrir o painel não pode** — é escolha de
+  desenho, e está aqui pra ninguém "consertar" de volta.
+- **A guarda que o gate cobrou:** `collisionBoundary` cai em `undefined` quando
+  não acha o atributo, e `undefined` é a fronteira do VIEWPORT — o defeito
+  original de volta, em silêncio. Um teste-contrato exige o atributo no
+  `AppShell` E o seletor na gaveta. Mesma classe de falha que a ADR-111 fechou;
+  as duas frentes correram em paralelo e só uma tinha aprendido a lição.
+- **Um Esc, um efeito.** O editor da nota trata `Escape` pra descartar o
+  rascunho, e o Radix escuta em CAPTURA no `document`: o mesmo toque descartava
+  a edição **e** fechava a gaveta. Com editor aberto a gaveta se cala; o segundo
+  Esc fecha.
+- **O falso vazio, que é o defeito mais grave da leva porque a tela MENTIA:**
+  buscar `zzz` com 20 notas fazia a folha dizer "Nenhuma nota ainda / Criar
+  primeira nota" ao lado da coluna dizendo, certo, "Nenhuma nota com esse
+  texto". Agora são três vazios com copy própria (`motivoDeVazio` +
+  `COPY_DE_VAZIO`, puros e testados), e **o gesto segue o motivo**: criar só
+  quando não existe nota; nos outros dois o que resolve é desfazer o recorte.
+- **A causa de fundo do falso vazio era arquitetural:** `busca` e `escolhida`
+  eram `useState` da View, então nenhum caminho de busca era renderizável em
+  teste. Subiram pro container; a View seguiu pura (o `renderToStaticMarkup`
+  congela estado inicial — é a armadilha do `getInitialState`), e os três casos
+  que faltavam entraram.
+- **Débito aceito, com nome:** (1) a fronteira é capturada quando a gaveta abre
+  e **não** recalcula ao arrastar a alça do `ResizablePanelGroup` (não é resize
+  de janela, nem scroll de ancestral, nem movimento do chip); (2) `w-[560px]` é
+  largura fixa contra fronteira variável — com o painel no máximo numa janela de
+  ~1200px a gaveta transborda, porque não há middleware de `size`.
+- **A tinta continua surda (ADR-109).** A cor viva de post-it está decidida e
+  medida, mas é a frente P do plano e não entrou aqui: cor viva só existirá na
+  MESA, nunca na gaveta.
+- **Verificado:** `tsc -b` limpo, `vitest` 3366, `bun run check` 10 guardas.
+- **Adendo (28/08/2026, revisão na tela):** a folha estava vestindo a roupa do
+  cartão. O reuso do `StickyNoteCard` foi decisão certa (não duplicar
+  editor/pin/prompt/cor), mas o `flat` só tirava elevação — a nota seguia
+  pintando **tinta de papel** dentro do popover branco (cartão-em-cartão de
+  cor, §4), o conteúdo saía **cru** (a folha era a única superfície das notas
+  onde a primeira linha não virava título) e o rodapé oferecia "Editar" ao lado
+  de um corpo que já edita no clique. Os três caíram: `flat` agora tira também
+  a tinta (a cor sobrevive onde ela é RÓTULO — a bolinha do seletor e o ponto da
+  linha da lista), `folhaDaNota` sobe a primeira linha a título deixando o resto
+  **cru** pro markdown (a lista colapsa o resto num preview; a folha não tem
+  essa restrição, e colapsar ali seria destruir a nota pra caber num lugar que
+  cabe), e "Editar" some na folha. `vitest` 3374.
+- **Segundo adendo (28/08/2026), e ele corrige o adendo anterior.** Tirar a
+  tinta do cartão resolveu o cartão-em-cartão e criou outro defeito: no desenho
+  B (sem lista) a nota virou **branco no branco**, sem contraste nenhum, porque
+  ali não há coluna de que a folha se separe. A saída não é devolver o cartão
+  colorido: é a **gaveta VESTIR a tinta**. Sem lista, a superfície é uma só e
+  ela é o papel; com a lista aberta a folha volta a ser neutra, porque ali quem
+  separa é a coluna. Junto caiu o **anel do pin dentro da gaveta**: ele nascia
+  no limite da área rolável e saía com as pontas cortadas, e era sinal repetido
+  (o pin já está aceso no cabeçalho, e a lista tem seção "Fixadas") — sinal
+  repetido que ainda por cima aparece quebrado é pior que sinal nenhum. No
+  cartão solto o anel continua. `vitest` 3377.
+
+### ADR-113 — a nota sabe de quem ela é, e o alvo dela vem do registry ✅
+- **Contexto (28/08/2026):** revisão da arquitetura da gaveta, pedida depois da
+  entrega do sprint 1. Quatro defeitos, todos de DADO — a camada de render
+  estava boa, a de modelo não.
+- **O alvo da nota comparava nome de agent, que é a regra mais dura da casa.**
+  `StickyNoteTarget` era união fixa (`"claude" | "codex" | "agy" | "opencode"`)
+  escrita à mão em DOIS arquivos de UI, e já estava errada: o registry chama de
+  `claude-code` o que a nota chamava de `claude`, e o `model` não existia pra
+  ela. Agent novo entrava no `adapters.rs` e no `agents.ts` e a gaveta seguia
+  sem saber. Agora o alvo é **id do registry**, a lista sai de `DESTINATIONS`, e
+  `noteTargets.ts` guarda a única exceção: um mapa de apelido antigo
+  (`claude → claude-code`) que existe pra nota gravada ontem não perder o
+  destino hoje. Ele **encolhe, nunca cresce**.
+- **Alvo desconhecido cai em "Geral", não some.** Nota que desaparece porque o
+  destino envelheceu é a pior falha possível aqui: ela não avisa.
+- **"Do projeto" era mentira, e o campo que faltava era `projectId`.** A nota só
+  tinha `convId`; a que não tinha conversa era rotulada "Do projeto" e aparecia
+  em TODOS os projetos. Agora projeto é filtro de verdade, e o escopo tem TRÊS
+  valores porque três é o que existe: "Desta conversa", "Deste projeto" e
+  **"De todos os projetos"** — que é o que as notas antigas SÃO. Elas não somem
+  (o escopo é legítimo e vira feature); elas passam a se chamar pelo que são.
+  Zero migração: campo ausente já significa o terceiro escopo.
+- **`selectNotesFor` virou objeto em vez de posicional.** São três dimensões, e
+  `selectNotesFor(notes, undefined, "c1")` seria um convite a trocar projeto por
+  conversa sem o tipo reclamar. A troca de assinatura pegou os 7 pontos de
+  chamada em `tsc`, que é o comportamento desejado de uma mudança de semântica.
+- **Nota órfã por construção.** `clearConversationNotes` existia na store e
+  **ninguém chamava**: apagar uma conversa deixava as notas dela com um `convId`
+  que não casa com nada — invisíveis em todo escopo e sem gesto que as apague.
+  Ligado ao `store/chat/remove.ts`, cuja doutrina no topo do arquivo já dizia
+  isto: *nada pode continuar vivo e INVISÍVEL depois que a conversa some*.
+- **A catraca cobrou e o arquivo foi DIVIDIDO** (702 > 700): o gatilho saiu para
+  `StickyNotesTrigger.tsx`. É recorte fechado — ancoragem, fronteira de colisão
+  e gesto de abrir de um lado; conteúdo da gaveta do outro. E a guarda do
+  `data-notes-boundary` **pagou por si na hora**: foi ela que apontou o seletor
+  mudando de casa.
+- **O que este ADR NÃO faz, e é o buraco que sobra:** o alvo agora é um dado
+  correto, mas continua sendo só um filtro de lista — nenhuma nota alcança o
+  agente sozinha. A única ponte é o botão "Prompt", que cola no rascunho. A
+  entrega de verdade está desenhada na frente **N5** do plano e depende de
+  decisão de produto, porque muda o que sai da máquina.
+- **Verificado:** `tsc -b` limpo, `vitest` 3384, `bun run check` 10 guardas.
+
+### ADR-114 — a nota chega no agente por ENDEREÇO, não por gatilho ✅
+- **Contexto (28/08/2026):** a ADR-113 deixou o alvo da nota correto como dado e
+  inútil como contrato — nenhuma nota alcançava o agente sozinha. Três gatilhos
+  foram postos na mesa (automático pelo pin · botão explícito · assumir que é
+  rótulo). O humano recusou o automático e pediu **o `@`**: mencionar a nota
+  como se menciona um arquivo.
+- **`@nota/<slug>`, no idioma que o composer já fala.** O `@` já tinha
+  Especialistas e Arquivos com pill atômico e serialização estável; notas viram
+  a terceira seção. Nada de mecanismo novo — uma seção a mais no que existe.
+- **Slug, e não título cru, por uma razão técnica que morde:** o matcher do `@`
+  quebra o token em espaço e em `:` (`AT_PUNCTUATION`), então "Runbook da
+  migração" viraria três menções quebradas. O `/` sobrevive de propósito (é o
+  que permite `@src/lib/…`) e é o separador. Título repetido ganha sufixo do id:
+  endereço ambíguo mandaria a nota errada **sem erro e sem aviso**.
+- **O conteúdo é resolvido no ENVIO, não na inserção.** Você endereça, edita a
+  nota, manda: vai a versão nova. O botão da nota passou a inserir o mesmo
+  endereço em vez de colar o texto — colar congelava uma cópia que envelhecia em
+  silêncio. Um mecanismo, duas portas.
+- **Menção que não resolve NÃO some.** Nota apagada ou renomeada deixa o
+  `@nota/slug` visível no prompt: o agente lê um endereço que não achou, que é a
+  verdade, em vez de receber um texto a menos sem ninguém notar.
+- **Sem carimbo de "entregue", ao contrário da nota do FIO.** Aquela se acumula
+  sozinha e precisa do `sent` pra não voltar todo turno; esta só vai quando você
+  a endereça, e mencionar duas vezes é decisão, não bug.
+- **Custo zero pra quem não usa:** sem `@nota/` no texto, o envio nem lê a lista
+  de notas.
+- **Camada:** a composição mora na store e não em `lib/fleet/send.ts` porque
+  **nenhum arquivo de `lib/` importa de `components/` neste repo** — e o núcleo
+  da menção vive com o resto das notas. A store já é a ponte (ela também importa
+  de `components/notes`), e o envio importa store desde sempre.
+- **Perf, junto:** a store ganhou `partialize`. Sem ele o zustand serializava o
+  estado INTEIRO a cada `set`, então abrir e fechar a gaveta reescrevia o array
+  de notas todo no `localStorage` — trabalho síncrono na thread principal por um
+  bool que nem faz falta entre sessões.
+- **A catraca cobrou DOIS arquivos e os dois foram divididos**, não afrouxados:
+  o menu do `@` saiu do `LexicalComposer` (907 → **739**) para
+  `ComposerMentionsMenu.tsx`, e a cascata do prompt saiu do `send.ts`
+  (853 → **849**) para `promptCascade.ts` — que agora é o único lugar onde a
+  ORDEM das camadas (notas → lições → doutrina, do mais específico ao mais
+  durável) está escrita, junto da re-expansão do comando nativo que depende
+  dela. A baseline só desceu.
+- **Verificado:** `tsc -b` limpo, `vitest` 3402 (18 novos no núcleo da menção),
+  `bun run check` 10 guardas.
+
+### ADR-115 — o "@" ranqueia por RELEVÂNCIA, e o índice deixa de ser refeito a cada tecla ✅
+- **Contexto (28/08/2026):** o menu do `@` filtrava a lista CRUA por substring,
+  na ordem do disco. `@send` devolvia `docs/legacy/sender/README.md` antes de
+  `lib/fleet/send.ts`, e a listagem inteira (teto de **8000** arquivos no
+  `list_project_files`) era varrida a cada tecla — refazendo `split("/")` e
+  `toLowerCase()` de cada caminho.
+- **A costura era da própria lib:** o `lexical-beautiful-mentions` aceita
+  `onSearch` no lugar de `items`. Com ele, quem filtra E ordena é código nosso.
+- **Ordem por COMPARADOR EXPLÍCITO, não por peso mágico.** Cinco perguntas, cada
+  uma testável: (1) casou no NOME ou só no caminho — você digita o que quer
+  abrir, não a pasta onde ele mora; (2) a conversa TOCOU este arquivo; (3) que
+  tipo é (Especialista e Nota antes de Arquivo: são poucos e são seus); (4) qual
+  o caminho mais curto; (5) quem veio antes — desempate **estável**, sem o qual
+  a lista embaralha entre teclas.
+- **O tocado NÃO atravessa classe de casamento.** Relevância recente não compra
+  qualidade de casamento: arquivo tocado que só casa no caminho continua atrás
+  de um que casa no nome. Tem teste, porque é a tentação óbvia de quem for
+  "melhorar" o rank depois.
+- **O sinal de "tocado" vem das TOOL CALLS, não da prosa** (`arquivosTocados`):
+  varrer texto atrás de caminho traria falso positivo de qualquer menção casual
+  e empurraria o arquivo errado pro topo. Caminho de fora do projeto sai — o
+  `@` nem o oferece.
+- **O índice é montado uma vez por LISTA, nunca por consulta** (`useMentionSearch`),
+  e os tocados entram por ref: recriar a função de busca no meio da digitação
+  faria a lib refazer a consulta e piscar o menu. `searchDelay={0}` porque o
+  trabalho é síncrono sobre índice pronto — atrasar só somaria latência.
+- **A catraca cobrou e o resultado é o melhor tipo:** o `LexicalComposer.tsx`
+  **saiu da baseline** (907 → **695**, abaixo do teto de 700). Saíram o pill e o
+  menu de menção pra `ComposerMentionsMenu.tsx` — ficam juntos porque respondem
+  a mesma pergunta, como uma menção se PARECE — e a ponte pro ranqueamento
+  virou `hooks/useMentionSearch.ts`. Uma exceção a menos no arquivo de catraca.
+- **Verificado:** `tsc -b` limpo, `vitest` 3423 (21 novos), `bun run check` 10
+  guardas, `test:e2e` 27.
+
+### ADR-116 — anexo na nota: o byte no disco, o metadado na nota, e a pasta que o GC não varre ✅
+- **Contexto (28/08/2026):** pedido direto — colar imagem na nota. O app já
+  sabia guardar blob (`saveAttachment` grava em `attachments/<convId>/` e só o
+  metadado trafega no JS), mas a nota não é da conversa: ela pode ser do
+  projeto ou de todos, e sobrevive à conversa que estava aberta quando nasceu.
+- **A armadilha, e ela apaga DADO em silêncio:** o `gc_attachments` remove toda
+  pasta sob a raiz de anexos cujo nome não seja de uma conversa viva. Anexo de
+  nota guardado como `attachments/<noteId>/` sumiria no próximo boot, sem erro
+  e sem aviso.
+- **A saída aproveita uma propriedade que já existia:** `is_conv_dir_name` exige
+  nome de 32 ou 36 chars hex. A pasta `attachments/notes/` **não passa nessa
+  régua**, então o GC por-conversa a ignora por CONSTRUÇÃO — e, por morar dentro
+  da raiz de anexos, `delete_attachment`, `read_attachment` e o object URL do
+  front funcionam sem uma linha nova. Tem teste em Rust fixando exatamente
+  isso: se alguém afrouxar o `is_conv_dir_name`, os anexos de todas as notas
+  somem no boot seguinte.
+- **Régua PRÓPRIA pra nota, e só a de órfã** (`gc_notas`): nota não tem
+  `updated_at` autoritativo no banco (vive no front) nem run ativo, então TTL e
+  LRU não se aplicam. O que se aplica é "a nota não existe mais". Lista vazia
+  não apaga nada — mesma guarda F1 das conversas: "não recebi a lista" e "não
+  há nota nenhuma" são indistinguíveis, e apagar no primeiro caso destruiria
+  dado por causa de um front que ainda não montou.
+- **Uma gravação só.** `gravar_em` foi extraído do `save_to_disk`: validação de
+  tamanho, sniff de MIME, allowlist, dedup por hash, escrita atômica e teto do
+  cache são os MESMOS da conversa — só a pasta muda. Duplicar isso duplicaria a
+  allowlist, que é justamente o que não pode divergir.
+- **O byte nunca entra na store.** A gaveta persiste em `localStorage`, que
+  guarda string e tem cota de ~5 MB: base64 ali estouraria a cota e
+  serializaria megabytes de forma síncrona na thread principal a cada mudança.
+  A nota guarda `{path, name, kind, mime, bytes}` — tem teste afirmando o
+  conjunto de chaves, porque a tentação de "só encostar o base64" é real.
+- **Object URL só da nota ABERTA**, revogado no cleanup; a LISTA diz "1 anexo"
+  em texto e nunca resolve URL — seriam N blobs presos na memória, um por linha
+  visível.
+- **Blob morre com a nota, na hora** (`wipeNoteAttachments` no `deleteNote` e no
+  `clearConversationNotes`), sem depender do GC throttled — mesmo contrato do
+  wipe da conversa.
+- **A catraca cobrou o `ChatPanel` e o resultado foi bom:** o GC do boot virou
+  `hooks/useAttachmentGc.ts` (1257 → **1239**). É tarefa de manutenção que não
+  tinha nada a ver com a conversa na tela; só precisava de um lugar que monta
+  uma vez.
+- **Verificado:** `cargo` 582 (3 novos), `tsc -b` limpo, `vitest` 3428,
+  `bun run check` 10 guardas.

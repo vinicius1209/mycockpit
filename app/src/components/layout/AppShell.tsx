@@ -124,6 +124,14 @@ export function AppShell() {
               <div
                 // Alvo do e2e que mede o vazamento do #241 (layout-cartao.spec).
                 data-testid="cartao-centro"
+                // Fronteira de colisão da gaveta de notas (frente N, N1): o
+                // popover do chip "Notas" pode flutuar sobre o FIO (custo
+                // assumido do desenho A), mas não sobre o painel direito. Este
+                // cartão é exatamente "tudo menos o painel", e é a única fonte
+                // honesta da largura: o painel é redimensionável, então
+                // constante nenhuma serviria (é a mesma lição da frente R —
+                // mede-se o CONTÊINER, nunca o viewport).
+                data-notes-boundary=""
                 // `clip` e não `hidden` pela regra do esqueleto (index.css): moldura
                 // corta, nunca rola. `hidden` aceitaria `scrollTop` e deixaria a
                 // tira de abas ser empurrada pra fora por um scroll de dentro.

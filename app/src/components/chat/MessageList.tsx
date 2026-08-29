@@ -75,7 +75,6 @@ import { ActivityAge } from "@/components/chat/LiveTime"
 import { resolveExecutorIdentity } from "@/components/chat/executorIdentity"
 import { WorkingIndicator } from "@/components/chat/WorkingIndicator"
 import {
-  reuseNodes,
   type IncidentNode,
   type Node,
   type ToolItem,
@@ -90,8 +89,7 @@ import {
   NO_NAMED_WORK,
   type ToolTreeNode,
 } from "@/components/chat/toolTree"
-import { buildNodesMemo, type NodesMemo } from "@/components/chat/nodesMemo"
-import { placeNotes } from "@/lib/notes"
+import { hiddenNodeCount, useStableNodes } from "@/components/chat/useStableNodes"
 import { groupByAuthor, groupTs, type MessageGroup } from "@/components/chat/messageGroups"
 import {
   feedbackTextByResult,
@@ -108,8 +106,6 @@ import { pendingDeferred, useChat, type ChatItem } from "@/store/chat"
 
 /** Máx. de linhas mostradas num bloco de diff (Edit/Write) antes de "… +N linhas". */
 const DIFF_MAX_LINES = 80
-/** Máx. de nós renderizados numa conversa longa (o resto atrás do botão). */
-const CHAT_WINDOW = 150
 
 const KIND_ICON: Record<ToolKind, LucideIcon> = {
   bash: Terminal,
@@ -1967,7 +1963,7 @@ function GroupRow({
   }
 
   return (
-    <div className="flex gap-3">
+    <div id={`msg-group-${group.key}`} data-turn-key={group.key} className="flex scroll-mt-6 gap-3">
       <div className="w-7 shrink-0 pt-0.5">{gutter}</div>
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-baseline gap-2">
@@ -1989,18 +1985,6 @@ function GroupRow({
   )
 }
 
-/** Nós de render com a IDENTIDADE preservada entre frames (`reuseNodes`) e
- *  reconstruídos só na FAIXA que o token mexeu (`nodesMemo`) — abaixo de
- *  `rebuiltFrom` os nós já SÃO os do frame anterior, e a dobra nem passa lá. */
-function useStableNodes(items: ChatItem[]): Node[] {
-  const memo = useRef<NodesMemo | null>(null)
-  return useMemo(() => {
-    const prev = memo.current
-    const next = buildNodesMemo(prev, placeNotes(items))
-    memo.current = next
-    return prev ? reuseNodes(prev.nodes, next.nodes, next.rebuiltFrom) : next.nodes
-  }, [items])
-}
 
 /** Selos de leitura por item, com identidade preservada (ver
  *  `attachmentReadsByItem`) e escopados à fatia que a janela mostra. */
@@ -2096,7 +2080,7 @@ export function MessageList({
   // TUDO — com diffs abertos por padrão o DOM explodia. Mostra os últimos
   // CHAT_WINDOW nós (agrupamento preservado) + botão pra revelar o histórico.
   const [showAll, setShowAll] = useState(false)
-  const hiddenCount = showAll ? 0 : Math.max(0, nodes.length - CHAT_WINDOW)
+  const hiddenCount = hiddenNodeCount(nodes.length, showAll)
   const visible = useMemo(
     () => (hiddenCount > 0 ? nodes.slice(hiddenCount) : nodes),
     [nodes, hiddenCount],
@@ -2188,9 +2172,7 @@ export function MessageList({
           />
         </Fragment>
       ))}
-
       {advising && <AdviceArrivalRow advising={advising} />}
-
       {(running || finalizing) && (
         <WorkingIndicator
           agent={agent}

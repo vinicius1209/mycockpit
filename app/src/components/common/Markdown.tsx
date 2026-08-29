@@ -1,11 +1,22 @@
-import { memo, useRef, useState, type ReactNode } from "react"
-import ReactMarkdown from "react-markdown"
+import { memo, useEffect, useRef, useState, type ReactNode } from "react"
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
 import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeHighlight from "rehype-highlight"
 import { Check, Copy } from "lucide-react"
+import { openUrl } from "@tauri-apps/plugin-opener"
+import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { copyText } from "@/lib/clipboard"
+import { openInEditor, pickEditor } from "@/lib/editors"
+import {
+  formatFileTooltip,
+  isFileMention,
+  isWebUrl,
+  parseFileTarget,
+} from "@/lib/fileLink"
+import { useEditors } from "@/store/editors"
+import { useActiveProject, useApp } from "@/store/app"
 
 /** Botão de copiar no canto, aparece no hover. `group` = classe do grupo pai
  *  (group/code, group/table…) pra só aparecer no hover DAQUELE bloco. */
@@ -111,6 +122,159 @@ function QuoteBlock({ children }: { children?: ReactNode }) {
   )
 }
 
+function MarkdownLink({
+  children,
+  href,
+}: {
+  children?: ReactNode
+  href?: string
+}) {
+  const project = useActiveProject()
+  const detected = useEditors((s) => s.detected)
+  const ensure = useEditors((s) => s.ensure)
+  const preferred = useApp((s) => s.settings.preferredEditor)
+
+  useEffect(() => {
+    ensure()
+  }, [ensure])
+
+  const target = parseFileTarget(href, project?.path)
+  const isWeb = isWebUrl(href)
+  const editor = pickEditor(detected ?? [], preferred)
+
+  const handleClick = (e: React.MouseEvent) => {
+    // Guarda de seleção: se o usuário estava arrastando pra selecionar texto, não navega
+    const sel = window.getSelection()?.toString()
+    if (sel && sel.trim().length > 0) return
+
+    if (isWeb && href) {
+      e.preventDefault()
+      void openUrl(href).catch((err) => {
+        console.error("[markdown] não consegui abrir url", err)
+        toast.error("Não consegui abrir o link no navegador")
+      })
+      return
+    }
+
+    if (target) {
+      e.preventDefault()
+      if (!editor) {
+        toast.error("Nenhum editor de código detectado nesta máquina")
+        return
+      }
+      void openInEditor({
+        editor: editor.id,
+        projectPath: project?.path ?? "",
+        rel: target.rel,
+        line: target.line,
+      }).catch((err) => {
+        console.error("[markdown] não consegui abrir no editor", err)
+        toast.error(typeof err === "string" ? err : "Não consegui abrir no editor")
+      })
+    }
+  }
+
+  const title = target
+    ? formatFileTooltip(target.rel, target.line, editor?.label)
+    : isWeb
+      ? `Abrir ${href} no navegador`
+      : undefined
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      onClick={handleClick}
+      title={title}
+      data-ctx-arquivo={target?.rel}
+      data-ctx-arquivo-abs={target?.abs}
+      data-ctx-arquivo-linha={target?.line ?? undefined}
+      className="cursor-pointer text-brass underline underline-offset-2 transition-opacity hover:opacity-80"
+    >
+      {children}
+    </a>
+  )
+}
+
+function MarkdownInlineCode({
+  className,
+  children,
+}: {
+  className?: string
+  children?: ReactNode
+}) {
+  const text = typeof children === "string" ? children : String(children ?? "")
+  const isFile = isFileMention(text)
+  const project = useActiveProject()
+  const detected = useEditors((s) => s.detected)
+  const ensure = useEditors((s) => s.ensure)
+  const preferred = useApp((s) => s.settings.preferredEditor)
+
+  useEffect(() => {
+    if (isFile) ensure()
+  }, [isFile, ensure])
+
+  const editor = pickEditor(detected ?? [], preferred)
+  const target = isFile ? parseFileTarget(text, project?.path) : null
+
+  if (target) {
+    const handleClick = (e: React.MouseEvent) => {
+      const sel = window.getSelection()?.toString()
+      if (sel && sel.trim().length > 0) return
+      e.preventDefault()
+      if (!editor) {
+        toast.error("Nenhum editor de código detectado nesta máquina")
+        return
+      }
+      void openInEditor({
+        editor: editor.id,
+        projectPath: project?.path ?? "",
+        rel: target.rel,
+        line: target.line,
+      }).catch((err) => {
+        console.error("[markdown] não consegui abrir no editor", err)
+        toast.error(typeof err === "string" ? err : "Não consegui abrir no editor")
+      })
+    }
+
+    const title = formatFileTooltip(target.rel, target.line, editor?.label)
+
+    return (
+      <code
+        onClick={handleClick}
+        title={title}
+        data-ctx-arquivo={target.rel}
+        data-ctx-arquivo-abs={target.abs}
+        data-ctx-arquivo-linha={target.line ?? undefined}
+        className={cn(
+          "cursor-pointer rounded bg-brass/10 px-1 py-0.5 font-mono text-[13px] text-brass underline-offset-2 transition-colors hover:bg-brass/20 hover:underline",
+          className,
+        )}
+      >
+        {children}
+      </code>
+    )
+  }
+
+  return (
+    <code
+      className={cn(
+        "rounded bg-secondary px-1 py-0.5 font-mono text-[13px]",
+        className,
+      )}
+    >
+      {children}
+    </code>
+  )
+}
+
+/** Permite esquemas seguros como file:// além dos defaults do react-markdown. */
+function customUrlTransform(url: string): string {
+  if (/^file:\/\//i.test(url)) return url
+  return defaultUrlTransform(url)
+}
+
 const mdComponents: Components = {
   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
   ul: ({ children }) => (
@@ -119,16 +283,7 @@ const mdComponents: Components = {
   ol: ({ children }) => (
     <ol className="mb-2 ml-4 list-decimal space-y-1">{children}</ol>
   ),
-  a: ({ children, href }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="text-brass underline underline-offset-2"
-    >
-      {children}
-    </a>
-  ),
+  a: ({ children, href }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
   h1: ({ children }) => (
     <h3 className="mt-2 mb-1 text-[14px] font-semibold">{children}</h3>
@@ -146,11 +301,7 @@ const mdComponents: Components = {
     // Preserva a className do rehype-highlight (hljs / language-*) senão o
     // âncora .hljs do tema não aplica e o bloco fica sem cor.
     if (block) return <code className={cn("font-mono", className)}>{children}</code>
-    return (
-      <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[13px]">
-        {children}
-      </code>
-    )
+    return <MarkdownInlineCode className={className}>{children}</MarkdownInlineCode>
   },
   blockquote: ({ children }) => <QuoteBlock>{children}</QuoteBlock>,
   hr: () => <hr className="my-3 border-border/60" />,
@@ -179,6 +330,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        urlTransform={customUrlTransform}
         // detect: highlight também blocos SEM linguagem (```) — agents muitas
         // vezes não anotam a linguagem e ficariam monocromáticos sem isto.
         rehypePlugins={[[rehypeHighlight, { detect: true }]]}

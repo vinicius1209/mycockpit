@@ -6,9 +6,8 @@
     "ts": 500
   },
   "arquivos": {
-    "components/chat/ChatPanel.tsx": 1305,
-    "components/chat/LexicalComposer.tsx": 907,
-    "components/chat/MessageList.tsx": 2207,
+    "components/chat/ChatPanel.tsx": 1239,
+    "components/chat/MessageList.tsx": 2189,
     "components/layout/ContextPanel.tsx": 856,
     "components/scheduled/ScheduledView.tsx": 1071,
     "components/sdd/SddView.tsx": 1462,
@@ -20,7 +19,7 @@
     "lib/fleet/derive.test.ts": 1042,
     "lib/fleet/derive.ts": 806,
     "lib/fleet/send.test.ts": 995,
-    "lib/fleet/send.ts": 853,
+    "lib/fleet/send.ts": 849,
     "lib/mission.ts": 537,
     "lib/sdd.ts": 510,
     "store/chat.ts": 2425,

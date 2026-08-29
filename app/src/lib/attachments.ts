@@ -65,11 +65,39 @@ export async function deleteAttachment(path: string): Promise<void> {
   await invoke("delete_attachment", { path })
 }
 
-/** GC do cache (boot). `validConvs` = ConvRef[] autoritativo do DB. */
+/** GC do cache (boot). `validConvs` = ConvRef[] autoritativo do DB;
+ *  `validNotes` = ids das notas vivas (elas têm ciclo de vida próprio e a
+ *  pasta delas não é varrida pela régua da conversa). Lista vazia dos dois
+ *  lados não apaga nada — "não recebi" e "não existe" são indistinguíveis. */
 export async function gcAttachments(
   validConvs: ConvRef[],
+  validNotes: string[] = [],
 ): Promise<GcSummary> {
-  return invoke<GcSummary>("gc_attachments", { validConvs })
+  return invoke<GcSummary>("gc_attachments", { validConvs, validNotes })
+}
+
+/** Salva bytes colados numa NOTA (mesma validação/allowlist da conversa). */
+export async function saveNoteAttachment(
+  noteId: string,
+  name: string,
+  declaredMime: string,
+  bytes: Uint8Array,
+): Promise<Attachment> {
+  return invoke<Attachment>("save_note_attachment", {
+    noteId,
+    name,
+    declaredMime,
+    bytes: Array.from(bytes),
+  })
+}
+
+/** Apaga os blobs de uma nota (ao deletá-la). */
+export async function wipeNoteAttachments(noteId: string): Promise<void> {
+  await invoke("wipe_note_attachments", { noteId })
+  const prefixo = `attachments/notes/${noteId}/`
+  for (const path of [...urlCache.keys()]) {
+    if (path.startsWith(prefixo)) revokeAttachmentUrl(path)
+  }
 }
 
 /** Apaga todos os anexos de uma conversa (ao deletá-la). */

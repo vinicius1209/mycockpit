@@ -89,6 +89,7 @@ claro+escuro) e por linha nesta tabela — nunca hex cru em componente.
 | **Brass** (gesto) | `brass`, `brass-soft`, `ring` (= `brass`) | Ação primária/sensível, foco **de teclado** (`--ring`, ver §2.1), marca | **Marcar item selecionado em lista, árvore ou aba** (isso é preenchimento neutro + peso + pip, sem tinta — ADR-043); texto pequeno sobre a superfície de seleção no tema claro (3.56:1 < AA, regra S3.6); ícone ilustrativo/empty state; medidor saudável; tinta de "importância" genérica |
 | **Cores de diff/git** | `hljs-addition/deletion`, `git-open`, `git-merged` | SÓ dentro do domínio git: `+N −N`, linhas de diff abertas (evidência), estado de PR do GitHub | Qualquer semântica fora de git; sucesso/erro geral |
 | **Identidade de agent** (categórica) | `brass` (Claude), `st-running` (Codex), `id-violet` (Antigravity) | Cor de série em gráfico/legenda de custo por agente | Verde e vermelho (colidem com status); pintar estado com a cor da identidade |
+| **Papel do post-it** (categórica, escolhida pelo humano — ADR-117) | `note-sand`, `note-lime`, `note-teal`, `note-rose`, `note-slate` + a tinta `note-fg` | **A superfície da folha, CHEIA** (papel vivo, não véu a 10%) e a bolinha do seletor. A letra sobre ela é `note-fg`, nunca a matiz | Qualquer superfície **fora da gaveta de notas** — a contenção é essa, e é ela que impede o papel vivo de disputar com o vocabulário de estado; e `text-note-<matiz>`, que continua proibido (a tinta é UMA, com contraste medido) |
 
 ### 2.2 Onde o VIVO é cor, e onde é movimento
 

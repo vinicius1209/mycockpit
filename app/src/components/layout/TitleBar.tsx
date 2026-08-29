@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { Separator } from "@/components/ui/separator"
 import { InboxBell } from "@/components/layout/InboxBell"
+import { StickyNotesToggle } from "@/components/notes/StickyNotesTrigger"
 import { MODES } from "@/components/layout/titleBarModes"
 import { useApp, useActiveProject } from "@/store/app"
 import {
@@ -171,6 +172,7 @@ export function TitleBar() {
             telemetria ambiente tem uma casa só, e a barra do topo fica com
             navegação e gesto. */}
         <SearchChip />
+        <StickyNotesToggle className="pointer-events-auto" />
         <InboxBell />
         <Button
           variant="ghost"
