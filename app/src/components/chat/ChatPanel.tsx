@@ -16,10 +16,6 @@ import { useChatScroll } from "@/components/chat/useChatScroll"
 import { vistaDaConversa } from "@/components/chat/vistaDaConversa"
 import { useFeedbackDoFio } from "@/components/chat/feedbackDoFio"
 import { PresenceBar } from "@/components/chat/PresenceBar"
-import {
-  AutoResumeBanner,
-  BlockedDirBanner,
-} from "@/components/chat/ComposerBanners"
 import { Reticle } from "@/components/common/Wordmark"
 import { useActiveProject, useApp } from "@/store/app"
 import {
@@ -51,6 +47,8 @@ import {
 import { InlineInteractions } from "@/components/chat/InteractionHost"
 import { runAgent, cancelAgent, agentLabel } from "@/lib/agent"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
+import { avisoDeMotorAusente } from "@/lib/detect"
+import { BannersDoComposer } from "@/components/chat/BannersDoComposer"
 import { prepareHybridHandoff } from "@/lib/handoff"
 import { decidePlanGateAndSend } from "@/lib/planGate"
 import { extractPlanText, turnEndedOk } from "@/lib/planMode"
@@ -133,6 +131,11 @@ export function ChatPanel() {
   const conv = useActiveConv()
   const openProject = useChat((s) => s.openProject)
   const viewMode = useApp((s) => s.viewMode)
+  const detectados = useApp((s) => s.settings.detected)
+  // `null` enquanto a detecção não rodou: aviso que depende de probe só
+  // aparece depois da leitura terminar (§5 camada 3). A regra mora em
+  // `avisoDeMotorAusente`, não aqui.
+  const motorAusente = conv ? avisoDeMotorAusente(conv.agent, detectados) : null
   const planDetailedInSidebar = useApp(
     (s) => s.contextOpen && s.contextPanelTab === "plano",
   )
@@ -1171,46 +1174,17 @@ export function ChatPanel() {
               Com a missão rodando o card mora na MissionTimeline (fase
               corrente) — não duplica aqui. */}
           {activeId && !missionInline && <InlineInteractions convId={activeId} />}
-          {conv?.autoResume && (
-            <AutoResumeBanner
-              nextAt={conv.autoResume.nextAt}
-              tries={conv.autoResume.tries}
-              maxTries={conv.autoResume.maxTries}
-              reason={conv.autoResume.reason}
-              onCancel={() =>
-                activeId && useChat.getState().cancelAutoResume(activeId)
-              }
-              onResumeNow={() => {
-                if (!activeId) return
-                const c = useChat.getState().byId[activeId]
-                if (!c?.autoResume) return
-                clearTimeout(c.autoResume.timer)
-                // dispara imediatamente reprogramando p/ agora (0ms).
-                useChat.getState().setAutoResume(activeId, {
-                  ...c.autoResume,
-                  nextAt: Date.now(),
-                })
-                const prompt =
-                  "O turno anterior parou num limite de uso/espera. Continue a tarefa pendente de onde parou (não repita o que já foi feito)."
-                void handleSend(prompt, undefined, [], AUTO_RESUME, activeId)
-              }}
-            />
-          )}
-          {/* `busy` alinha este banner ao vizinho PlanPendingCard: com turno em
-              voo o GESTO não é oferecido, porque o --add-dir é fixo no spawn e
-              não vale pro processo vivo. O AVISO fica (a pasta está barrando o
-              agente agora, isso é fato), e ele volta a ser acionável no fim do
-              turno, sem clique perdido no meio. Incidente 2026-08-16. */}
-          {conv?.blockedDir && project && (
-            <BlockedDirBanner
-              dir={conv.blockedDir}
-              busy={running || finalizing}
-              onAllow={() => handleAllowBlockedDir(conv.blockedDir!)}
-              onDismiss={() =>
-                activeId && useChat.getState().clearBlockedDir(activeId)
-              }
-            />
-          )}
+          <BannersDoComposer
+            conv={conv}
+            activeId={activeId}
+            temProjeto={!!project}
+            busy={running || finalizing}
+            motorAusente={motorAusente}
+            onReenviar={(prompt) =>
+              void handleSend(prompt, undefined, [], AUTO_RESUME, activeId ?? undefined)
+            }
+            onLiberarPasta={handleAllowBlockedDir}
+          />
           <CommandConsole
             onSend={(text, cfg, attachments) =>
               void handleSend(text, cfg, attachments, HUMANO)

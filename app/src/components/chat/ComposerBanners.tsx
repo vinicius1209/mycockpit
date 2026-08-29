@@ -6,11 +6,13 @@
 // Os dois falam a MESMA língua de aviso (st-warning em E0, saída em ghost):
 // pedem uma decisão sua, sem afirmar que o app já agiu.
 
-import { FolderGit2, Timer, X } from "lucide-react"
+import { Copy, FolderGit2, PackageX, Timer, X } from "lucide-react"
 import { PENDING_DECISION } from "@/lib/attention"
 import { resumeBannerLabel } from "@/lib/autoResume"
 import { fmtTime } from "@/lib/format"
+import { controle } from "@/components/ui/controle"
 import { cn } from "@/lib/utils"
+import type { AvisoDeMotorAusente } from "@/lib/detect"
 
 /** Banner (acima do composer) quando um auto-resume está agendado: horário do
  *  próximo reenvio (relógio via fmtTime, não contagem — mesmo formato HH:MM
@@ -131,6 +133,80 @@ export function BlockedDirBanner({
       >
         <X className="size-3.5" />
       </button>
+    </div>
+  )
+}
+
+/**
+ * Banner: o motor escolhido não está NESTA máquina.
+ *
+ * Ele diz antes, não depois. O Rust já falhava honesto ("não consegui executar
+ * o agent X. Ele está instalado e no PATH?"), mas só depois de você escrever o
+ * prompt inteiro e mandar. O app tinha as duas metades da resposta desde o boot
+ * (a detecção e a receita de instalação) e não as juntava.
+ *
+ * NÃO bloqueia o envio, e isso é decisão: o probe é um retrato do boot, e o
+ * spawn é a verdade. Se você acabou de instalar o motor, um app que se recusa a
+ * tentar estaria mentindo com mais confiança que o probe tem. Ele avisa e sai
+ * da frente.
+ *
+ * Sem `onDismiss`: dispensar um aviso que descreve o estado ATUAL da máquina
+ * só o traria de volta no próximo render. Quem o dispensa de verdade é instalar
+ * o motor, ou escolher outro.
+ */
+export function MotorAusenteBanner({
+  label,
+  aviso,
+  onCopiar,
+}: {
+  label: string
+  aviso: AvisoDeMotorAusente
+  onCopiar?: (comando: string) => void
+}) {
+  return (
+    <div className={cn("mb-2 flex items-center gap-2.5 rounded-lg border px-3 py-2", PENDING_DECISION)}>
+      <PackageX className="size-4 shrink-0 text-st-warning" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] text-foreground">
+          O {label} não foi encontrado nesta máquina.
+        </p>
+        {aviso.comando ? (
+          <p className="truncate font-mono text-[11px] text-muted-foreground" title={aviso.comando}>
+            {aviso.comando}
+          </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">
+            Não conheço a receita de instalação dele, então não vou chutar uma.
+          </p>
+        )}
+      </div>
+      {aviso.comando && !aviso.ehLink && (
+        <button
+          type="button"
+          onClick={() => onCopiar?.(aviso.comando as string)}
+          title="Copiar o comando de instalação"
+          className={cn(
+            controle("chip"),
+            "bg-secondary font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+          )}
+        >
+          <Copy className="size-3" />
+          Copiar
+        </button>
+      )}
+      {aviso.comando && aviso.ehLink && (
+        <a
+          href={aviso.comando}
+          target="_blank"
+          rel="noreferrer"
+          className={cn(
+            controle("chip"),
+            "bg-secondary font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+          )}
+        >
+          Abrir
+        </a>
+      )}
     </div>
   )
 }

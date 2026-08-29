@@ -284,3 +284,39 @@ export async function refreshOpenCodeModels(): Promise<ModelListFailure | null> 
     return falha
   }
 }
+
+/**
+ * O aviso de "este motor não está nesta máquina", pronto pra UI.
+ *
+ * Existe porque o app JÁ sabia as duas metades e não juntava: a detecção roda
+ * no boot e vive em `settings.detected`, e `INSTALL_COMMANDS` guarda a receita
+ * de cada CLI. Sem o elo, você escolhia o motor, escrevia o prompt inteiro,
+ * mandava, e só então o Rust respondia "não consegui executar o agent X. Ele
+ * está instalado e no PATH?". A resposta era honesta e chegava tarde.
+ *
+ * Duas honestidades ficam nas regras, não na copy:
+ *
+ *  1. **Só "ausente" avisa.** `desconhecido` (probe que não rodou, boot antes
+ *     da detecção terminar, fora do Tauri) devolve `null`. É o §5 camada 3:
+ *     aviso que depende de probe só aparece depois que a leitura terminou,
+ *     senão a UI pisca e mente.
+ *  2. **Sem receita, sem chute.** Motor fora do `INSTALL_COMMANDS` devolve
+ *     `comando: null`, e a UI diz que não conhece a receita em vez de inventar
+ *     uma (foi assim que `sst/tap/opencode`, uma fórmula que não existe, viveu
+ *     no código).
+ */
+export interface AvisoDeMotorAusente {
+  /** Comando de shell ou URL de instalação. `null` = sem receita conhecida. */
+  comando: string | null
+  /** A receita é um endereço pra abrir, não um comando pra colar. */
+  ehLink: boolean
+}
+
+export function avisoDeMotorAusente(
+  id: string,
+  detected: Record<string, AgentProbe>,
+): AvisoDeMotorAusente | null {
+  if (estadoNaMaquina(id, detected) !== "ausente") return null
+  const comando = INSTALL_COMMANDS[id] ?? null
+  return { comando, ehLink: comando != null && /^https?:\/\//.test(comando) }
+}

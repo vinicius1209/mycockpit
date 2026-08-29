@@ -27,8 +27,8 @@ superfícies) repetiria o mesmo erro num lugar novo.
 | **D1** | Tabela de superfícies + primitiva `ui/popover.tsx` | PA2 | **feito** (§12, build 311) |
 | **D2** | Geometria de controle fechada, com guarda | PA3 | **feito** (§13, build 314) |
 | **D3** | Alinhamento óptico e a regra de borda afiada | lacunas 3 e 4 | **feito** (§14 + §4, build 315) |
-| **X1** | `isAvailable()` antes de oferecer motor | PA9 | **próxima** |
-| **X2** | Sentinela `{{{prompt}}}` no registry | PA7 | a fazer |
+| **X1** | `isAvailable()` antes de oferecer motor | PA9 | **feito** (build 316) |
+| **X2** | Sentinela `{{{prompt}}}` no registry | PA7 | **próxima** |
 | **F1** | Adotar sessão externa | PA1 | a fazer |
 | **F2** | Espelho headless do terminal (destrava o M1 da margem) | PA8 | a fazer |
 
@@ -164,12 +164,52 @@ procurar: é uma relação entre duas caixas que só o olho fecha. Escrevi isso 
 próprio §14 porque guarda inventada pra parecer rigorosa é pior que ausência de
 guarda, dá sensação de cobertura onde não há.
 
-## X1 — `isAvailable()` antes de oferecer (esboço)
+## X1 — Dizer antes, não depois
 
-O Paseo lista perfil de terminal sem checar instalação e entrega
-"command not found". Nós temos quatro motores; o registry precisa responder
-"está instalado?" antes de a UI oferecer. Encosta na camada 1 do §5
-(capability ausente some).
+### O que a medição mudou no plano
+O esboço supunha que copiaríamos o defeito do Paseo. **Não copiamos**: o nosso
+falha honesto (`"não consegui executar o agent X. Ele está instalado e no
+PATH?"`, em `agent.rs`), enquanto o deles entrega um "command not found" cru.
+
+O defeito nosso é outro, e é de MOMENTO: a resposta honesta chega **depois** de
+você escolher o motor, escrever o prompt inteiro e mandar. E o app já tinha as
+duas metades desde o boot, sem nunca juntá-las:
+
+- `detectAgents()` roda no boot e guarda o retrato em `settings.detected`
+- `INSTALL_COMMANDS` guarda a receita de instalação de cada CLI
+- `estadoNaMaquina()` já devolve `instalado | ausente | desconhecido`
+
+Faltava o elo. **É a quarta vez seguida que a peça já existia** (a primitiva na
+D1, a escada na D2, os dois papéis do filete na D3).
+
+### O que foi feito
+- `avisoDeMotorAusente()` em `lib/detect.ts`: o elo, com as duas honestidades
+  como REGRA e não como copy.
+- `MotorAusenteBanner`: diz o motor, mostra a receita e copia o comando.
+- O trilho do `IdentityPicker` esmaece o motor ausente e explica no `title`.
+- `BannersDoComposer`: os três avisos acima do composer num lugar só.
+
+### As decisões que valem mais que o código
+1. **Não bloqueia o envio.** O probe é um retrato do boot; o spawn é a verdade.
+   Recusar-se a tentar seria o app mentindo com mais confiança do que o probe
+   tem. Se você acabou de instalar o motor, ele funciona e o banner some no
+   próximo boot.
+2. **`desconhecido` não avisa.** Sem probe (boot antes da detecção, fora do
+   Tauri), devolve `null`. É o §5 camada 3: senão o banner apareceria no boot e
+   sumiria um segundo depois, tendo mentido pra quem tem o motor instalado.
+3. **Sem receita, sem chute.** Motor fora do `INSTALL_COMMANDS` diz que não
+   conhece a receita. Foi assim que `sst/tap/opencode`, uma fórmula que não
+   existe, viveu no código.
+4. **Sem "dispensar".** Dispensar um aviso que descreve o estado atual da
+   máquina só o traria de volta no render seguinte.
+
+### O que a frente achou de quebra
+A catraca de tamanho disparou no `ChatPanel` (1261 contra 1239). Dividi, como
+manda o §10 — e a divisão achou um motivo melhor que o número: os três banners
+disputam o mesmo espaço, e quem escrever o quarto precisa vê-los juntos pra
+saber onde ele entra na ordem (agendado → vai falhar → está falhando).
+
+`check` 13/13 · `tsc -b` limpo · 3496 testes · build 316.
 
 ## X2 — Sentinela `{{{prompt}}}` (esboço)
 

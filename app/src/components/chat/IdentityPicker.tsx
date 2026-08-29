@@ -20,6 +20,7 @@ import {
 import { AgentLogo, AGENT_LOGO_LABEL, agentLogoLabel } from "@/components/common/AgentLogo"
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
 import { problemaNoSlug } from "@/lib/modelSlug"
+import { estadoNaMaquina } from "@/lib/detect"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 
@@ -55,6 +56,7 @@ export function IdentityPicker({
   onEffortChange: (v: string) => void
 }) {
   const limited = useApp((s) => s.limitedAgents)
+  const detectados = useApp((s) => s.settings.detected)
   const [customEditing, setCustomEditing] = useState(false)
   const [customDraft, setCustomDraft] = useState("")
 
@@ -150,6 +152,11 @@ export function IdentityPicker({
               const isActive = d.id === effectiveDest
               const isLimited = d.id in limited
               const hint = limited[d.id]
+              // "ausente" só quando o probe EXISTE e diz que não achou; sem
+              // detecção o motor aparece normal (§5 camada 3). E a marca é
+              // opacidade, não cor: pelo §2, "não instalado" é informação, e
+              // o vocabulário de cor fica reservado pro que exige decisão.
+              const ausente = estadoNaMaquina(d.id, detectados) === "ausente"
               return (
                 <button
                   key={d.id}
@@ -164,6 +171,7 @@ export function IdentityPicker({
                         ? `limite atingido, volta ${hint}`
                         : "limite de uso atingido"
                       : d.description,
+                    ausente ? "não encontrado nesta máquina" : null,
                   ]
                     .filter(Boolean)
                     .join(" · ")}
@@ -175,7 +183,10 @@ export function IdentityPicker({
                       : "hover:bg-accent hover:text-foreground",
                   )}
                 >
-                  <AgentLogo agent={d.id} className="size-4" />
+                  <AgentLogo
+                    agent={d.id}
+                    className={cn("size-4", ausente && !isActive && "opacity-40")}
+                  />
                   {isLimited && (
                     <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-st-warning" />
                   )}

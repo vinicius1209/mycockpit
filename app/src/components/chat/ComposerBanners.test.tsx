@@ -13,9 +13,13 @@
 // Renderização server-side (`renderToStaticMarkup`), o padrão do repo
 // (`InteractionHost.test.tsx`): a marcação destes banners é função pura das
 // props.
+import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-import { BlockedDirBanner } from "@/components/chat/ComposerBanners"
+import {
+  BlockedDirBanner,
+  MotorAusenteBanner,
+} from "@/components/chat/ComposerBanners"
 import { PENDING_DECISION } from "@/lib/attention"
 
 const PASTA = "/Users/viniciusmachado/.gemini/antigravity-cli"
@@ -74,5 +78,41 @@ describe("a tinta é a de decisão pendente, não a do gesto", () => {
 
   it("o botão primário dentro dele continua brass (§2: brass é gesto)", () => {
     expect(montar(false)).toContain("bg-brass")
+  })
+})
+
+describe("MotorAusenteBanner", () => {
+  it("mostra o comando quando a receita é conhecida", () => {
+    const html = renderToStaticMarkup(
+      createElement(MotorAusenteBanner, {
+        label: "Codex",
+        aviso: { comando: "brew install codex", ehLink: false },
+      }),
+    )
+    expect(html).toContain("Codex")
+    expect(html).toContain("brew install codex")
+    expect(html).toContain("Copiar")
+  })
+
+  it("oferece ABRIR, não copiar, quando a receita é um endereço", () => {
+    const html = renderToStaticMarkup(
+      createElement(MotorAusenteBanner, {
+        label: "Antigravity",
+        aviso: { comando: "https://antigravity.google/cli", ehLink: true },
+      }),
+    )
+    expect(html).toContain("Abrir")
+    expect(html).not.toContain(">Copiar<")
+  })
+
+  it("sem receita, diz que não conhece em vez de chutar uma", () => {
+    const html = renderToStaticMarkup(
+      createElement(MotorAusenteBanner, {
+        label: "Motor novo",
+        aviso: { comando: null, ehLink: false },
+      }),
+    )
+    expect(html).toContain("não vou chutar")
+    expect(html).not.toContain("Copiar")
   })
 })
