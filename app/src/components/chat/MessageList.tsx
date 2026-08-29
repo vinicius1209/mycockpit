@@ -89,7 +89,7 @@ import {
   NO_NAMED_WORK,
   type ToolTreeNode,
 } from "@/components/chat/toolTree"
-import { hiddenNodeCount, useStableNodes } from "@/components/chat/useStableNodes"
+import { hiddenNodeCount, useJanelaProgressiva, useStableNodes } from "@/components/chat/useStableNodes"
 import { groupByAuthor, groupTs, type MessageGroup } from "@/components/chat/messageGroups"
 import {
   feedbackTextByResult,
@@ -2076,11 +2076,11 @@ export function MessageList({
   // paralelo: no restore o diferido vira interrompido e a linha some sozinha.
   const liveDeferred = useMemo(() => pendingDeferred(items), [items])
 
-  // Janela de renderização: conversa longa (já vimos 665KB de items) renderizava
-  // TUDO — com diffs abertos por padrão o DOM explodia. Mostra os últimos
-  // CHAT_WINDOW nós (agrupamento preservado) + botão pra revelar o histórico.
+  // Janela de renderização (política e porquês em `useStableNodes`): a cauda
+  // primeiro, o teto depois, e `showAll` revela o histórico inteiro.
   const [showAll, setShowAll] = useState(false)
-  const hiddenCount = hiddenNodeCount(nodes.length, showAll)
+  const janela = useJanelaProgressiva()
+  const hiddenCount = hiddenNodeCount(nodes.length, showAll, janela)
   const visible = useMemo(
     () => (hiddenCount > 0 ? nodes.slice(hiddenCount) : nodes),
     [nodes, hiddenCount],
