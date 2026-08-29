@@ -147,6 +147,18 @@ function MarkdownLink({
     const sel = window.getSelection()?.toString()
     if (sel && sel.trim().length > 0) return
 
+    // Nada que não seja http/https segue o comportamento padrão do anchor.
+    //
+    // Este markdown vem do AGENTE, e o `customUrlTransform` deixa `file://`
+    // passar de propósito (é como o caminho de arquivo chega até aqui). Sem
+    // esta linha, um `[x](file:///etc/passwd)` — ou qualquer caminho FORA do
+    // projeto, que o `parseFileTarget` corretamente recusa — não caía em
+    // nenhum dos dois ramos abaixo, ninguém chamava `preventDefault`, e a
+    // webview recebia a URL pra abrir sozinha (o app não declara CSP nem
+    // guarda de navegação). Quem abre arquivo aqui somos nós, sempre; quando
+    // não dá pra abrir, o desfecho é não fazer nada.
+    if (!isWeb) e.preventDefault()
+
     if (isWeb && href) {
       e.preventDefault()
       void openUrl(href).catch((err) => {
