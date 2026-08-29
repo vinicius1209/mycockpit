@@ -253,10 +253,14 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
+        // Mesma casca do `PainelDaFaixa` (statusBarChrome): a faixa tem UM
+        // idioma pro clique. Este aqui não usa o componente porque o gatilho
+        // dele é a própria pill (com estado interno de leitura), mas o
+        // cabeçalho, o lado e o offset são os mesmos — se divergirem, é bug.
         side={compact ? "top" : "bottom"}
         align={compact ? "start" : "end"}
         sideOffset={8}
-        className="z-[120] w-[460px] p-3 space-y-2.5"
+        className="z-[120] w-[460px] space-y-2.5 p-3"
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
         <div className="flex items-center justify-between px-1 pb-1 border-b border-border/40">

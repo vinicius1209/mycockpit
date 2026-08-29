@@ -13,7 +13,7 @@ function ScrollArea({
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
-      className={cn("relative", className)}
+      className={cn("group/scroll relative", className)}
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
@@ -37,19 +37,24 @@ function ScrollBar({
     <ScrollAreaPrimitive.ScrollAreaScrollbar
       data-slot="scroll-area-scrollbar"
       orientation={orientation}
+      // Sutil por padrão, presente quando você precisa. A barra some do
+      // caminho (fica em 0 de opacidade) e acende no hover da área ou enquanto
+      // a rolagem acontece — o `data-state=visible` do Radix é quem sabe disso.
+      // Antes ela era um filete permanente de 10px com `bg-border` cheio: peso
+      // de cromo numa lista que a pessoa lê, não opera.
       className={cn(
-        "flex touch-none p-px transition-colors select-none",
-        orientation === "vertical" &&
-          "h-full w-2.5 border-l border-l-transparent",
-        orientation === "horizontal" &&
-          "h-2.5 flex-col border-t border-t-transparent",
+        "flex touch-none p-0.5 opacity-0 transition-opacity duration-200 select-none",
+        "hover:opacity-100 data-[state=visible]:opacity-100",
+        "group-hover/scroll:opacity-60",
+        orientation === "vertical" && "h-full w-2",
+        orientation === "horizontal" && "h-2 flex-col",
         className
       )}
       {...props}
     >
       <ScrollAreaPrimitive.ScrollAreaThumb
         data-slot="scroll-area-thumb"
-        className="relative flex-1 rounded-full bg-border"
+        className="relative flex-1 rounded-full bg-foreground/20 transition-colors hover:bg-foreground/35"
       />
     </ScrollAreaPrimitive.ScrollAreaScrollbar>
   )

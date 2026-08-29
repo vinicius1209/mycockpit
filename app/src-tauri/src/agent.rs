@@ -595,6 +595,34 @@ pub async fn run_agent(
         }
     }
 
+    // OpenCode em Padrão: ACP bidirecional. O transporte histórico `run`
+    // auto-rejeita ferramentas sem consultar o usuário; ACP pausa e encaminha
+    // a decisão para os cards de interação do MyCockpit. Anexos ainda usam o
+    // `-f` auditado do transporte antigo até serem embutidos no prompt ACP.
+    if agent == "opencode"
+        && matches!(permission, adapters::Permission::Padrao)
+        && req.attachments.is_empty()
+    {
+        let out = crate::opencode_acp::run(
+            &app, &run_id, &req, &on_event, &notify, registry.inner(),
+            pending_approvals.inner().clone(),
+        ).await;
+        match out.startup_error {
+            None => {
+                emit_mcp_announced(&app, &conv_id, &announced_fp);
+                if out.cancelled { let _ = on_event.send(AgentEvent::Cancelled); }
+                let _ = on_event.send(AgentEvent::Done { code: Some(0) });
+                return Ok(());
+            }
+            Some(error) => {
+                log::warn!("OpenCode ACP indisponível ({error}); caindo no `opencode run`");
+                let _ = on_event.send(AgentEvent::Notice {
+                    message: format!("ACP do OpenCode indisponível ({error}); segui no transporte antigo, sem pedido de permissão neste turno."),
+                });
+            }
+        }
+    }
+
     let resume_was = req.resume.is_some();
     let cmd = adapter.build_command(&req)?;
     let (cmd, perfil_sb) = confina_se_prometido(cmd, &req, &run_id, &on_event);

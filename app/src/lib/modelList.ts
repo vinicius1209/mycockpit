@@ -127,8 +127,8 @@ export function agyModelOptions(
  *  vem do Rust já partido (modelo) com o provedor na descrição, porque com 88
  *  modelos em 4 provedores saber DE QUEM é o modelo é metade da escolha.
  *
- *  A curada de casa entra só pra preservar a sentinela "Padrão" na frente e
- *  reaproveitar descrição que já escrevemos pros ids conhecidos. */
+ *  A lista local preserva somente a sentinela "Padrão": modelos reais nunca
+ *  são fixados no bundle. */
 export function openCodeModelOptions(
   entries: ReadonlyArray<{ id: string; label?: string | null; description?: string | null }>,
 ): AgentModelOption[] {

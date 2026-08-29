@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-  PERTO_DO_FIM_PX,
-  SILENCIO_DE_REFLOW_MS,
-  TETO_DE_ANCORAGEM_MS,
-  ehGestoDeLeitura,
-  pertoDoFim,
-} from "./useChatScroll"
+import { PERTO_DO_FIM_PX, ehGestoDeLeitura, pertoDoFim } from "./useChatScroll"
 
 describe("pertoDoFim", () => {
   it("no fim exato conta como fim", () => {
@@ -55,15 +49,21 @@ describe("ehGestoDeLeitura", () => {
   })
 })
 
-describe("a janela de ancoragem", () => {
-  it("fecha por SILÊNCIO, e o teto é a rede de segurança", () => {
-    // O prazo fixo de 800ms era o defeito: bastava pra fio curto e não bastava
-    // pra um com imagem e diff, que aterrissava no meio. Agora o que encerra é
-    // o layout parar de mexer; o teto só existe pra conteúdo que nunca para
-    // (gif, iframe, imagem que tenta de novo).
-    expect(SILENCIO_DE_REFLOW_MS).toBeLessThan(TETO_DE_ANCORAGEM_MS)
-    // Silêncio curto o bastante pra não segurar a rolagem do usuário depois
-    // que a tela assentou.
-    expect(SILENCIO_DE_REFLOW_MS).toBeLessThanOrEqual(500)
+describe("a política de seguir", () => {
+  it("chegar ao fim é o gesto que RELIGA o seguir", () => {
+    // O par do gesto de leitura. Sem ele, quem subisse pra ler uma vez teria
+    // que reabrir a conversa pra voltar a ser levado junto.
+    expect(pertoDoFim({ scrollHeight: 1000, scrollTop: 800, clientHeight: 200 })).toBe(
+      true,
+    )
+  })
+
+  it("subir pra ler tira do fim, e é só isso que a POSIÇÃO decide", () => {
+    // Desligar o seguir por posição era o defeito: o fio parava sozinho no
+    // meio do turno porque a linha de ferramenta cresce depois de chegar, e o
+    // crescimento empurrava o fim pra fora sem ninguém ter pedido nada.
+    expect(
+      pertoDoFim({ scrollHeight: 5000, scrollTop: 100, clientHeight: 800 }),
+    ).toBe(false)
   })
 })

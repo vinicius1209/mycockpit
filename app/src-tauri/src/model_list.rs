@@ -253,9 +253,70 @@ pub(crate) fn parse_opencode_models(stdout: &str) -> Vec<ModelListEntry> {
     out
 }
 
+/// `opencode models --verbose` alterna `provider/model` e um objeto JSON
+/// multilinha. Além do rótulo, esse objeto diz se o modelo produz texto e sabe
+/// chamar ferramentas. Só esses modelos são oferta de CODE AGENT: embeddings e
+/// geradores de imagem continuam no catálogo do fornecedor, não no composer.
+pub(crate) fn parse_opencode_models_verbose(stdout: &str) -> Vec<ModelListEntry> {
+    let mut lines = stdout.lines().peekable();
+    let mut out = Vec::new();
+    while let Some(raw_id) = lines.next() {
+        let id = raw_id.trim();
+        if id.is_empty() || !id.contains('/') { continue; }
+        while lines.peek().is_some_and(|line| line.trim().is_empty()) { lines.next(); }
+        if !lines.peek().is_some_and(|line| line.trim_start().starts_with('{')) { continue; }
+        let mut json_text = String::new();
+        let mut depth: i64 = 0;
+        let mut started = false;
+        for line in lines.by_ref() {
+            json_text.push_str(line);
+            json_text.push('\n');
+            // A saída medida só traz strings comuns; serde valida o objeto no
+            // fim. O balanço serve apenas para achar seu limite no stream.
+            depth += line.chars().filter(|c| *c == '{').count() as i64;
+            depth -= line.chars().filter(|c| *c == '}').count() as i64;
+            started = true;
+            if depth == 0 { break; }
+        }
+        if !started { continue; }
+        let Ok(meta) = serde_json::from_str::<Value>(&json_text) else {
+            log::warn!("model_list: metadata verbose inválida para {id}");
+            continue;
+        };
+        let active = meta.get("status").and_then(Value::as_str).unwrap_or("active") == "active";
+        let tools = meta.pointer("/capabilities/toolcall").and_then(Value::as_bool).unwrap_or(false);
+        let text_out = meta.pointer("/capabilities/output/text").and_then(Value::as_bool).unwrap_or(false);
+        if !active || !tools || !text_out { continue; }
+
+        let provider = meta.get("providerID").and_then(Value::as_str)
+            .or_else(|| id.split_once('/').map(|x| x.0)).unwrap_or("opencode");
+        let name = meta.get("name").and_then(Value::as_str)
+            .or_else(|| id.split_once('/').map(|x| x.1)).unwrap_or(id);
+        let mut facts = vec![format!("via {provider}"), "ferramentas".into()];
+        if meta.pointer("/capabilities/reasoning").and_then(Value::as_bool) == Some(true) {
+            facts.push("raciocínio".into());
+        }
+        if meta.pointer("/capabilities/input/image").and_then(Value::as_bool) == Some(true) {
+            facts.push("imagem".into());
+        }
+        if let Some(context) = meta.pointer("/limit/context").and_then(Value::as_u64) {
+            let display = if context >= 1_000_000 { format!("{}M", context / 1_000_000) }
+                else if context >= 1_000 { format!("{}k", context / 1_000) }
+                else { context.to_string() };
+            facts.push(format!("contexto {display}"));
+        }
+        out.push(ModelListEntry {
+            id: id.to_string(), label: name.to_string(),
+            description: Some(facts.join(" · ")), hidden: false,
+            is_default: false, superseded_by: None, retirement_note: None,
+        });
+    }
+    out
+}
+
 async fn probe_opencode() -> Result<Vec<ModelListEntry>, ModelListError> {
     let mut cmd = tokio::process::Command::new("opencode");
-    cmd.arg("models")
+    cmd.args(["models", "--verbose"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -282,7 +343,15 @@ async fn probe_opencode() -> Result<Vec<ModelListEntry>, ModelListError> {
             },
         ));
     }
-    Ok(parse_opencode_models(&String::from_utf8_lossy(&out.stdout)))
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let rich = parse_opencode_models_verbose(&stdout);
+    // Compatibilidade com CLIs anteriores: se `--verbose` for aceito mas não
+    // tiver o framing medido, a lista simples ainda é melhor que apagar tudo.
+    Ok(if stdout.lines().any(|line| line.trim() == "{") {
+        rich
+    } else {
+        parse_opencode_models(&stdout)
+    })
 }
 
 async fn probe_agy() -> Result<Vec<ModelListEntry>, ModelListError> {
@@ -598,6 +667,32 @@ gpt-oss-120b-medium\tGPT-OSS 120B (Medium)
         assert_eq!(out[0].id, "openrouter/anthropic/claude-4");
         assert_eq!(out[0].label, "anthropic/claude-4");
         assert_eq!(out[0].description.as_deref(), Some("via openrouter"));
+    }
+
+    #[test]
+    fn opencode_verbose_oferece_so_modelo_de_agente() {
+        let fixture = r#"nvidia/moonshotai/kimi-k3
+{
+  "id":"moonshotai/kimi-k3", "providerID":"nvidia", "name":"Kimi K3",
+  "status":"active", "limit":{"context":1000000},
+  "capabilities":{"reasoning":true,"toolcall":true,"input":{"image":true},"output":{"text":true}}
+}
+nvidia/baai/bge-m3
+{
+  "id":"baai/bge-m3", "providerID":"nvidia", "name":"BGE M3", "status":"active",
+  "capabilities":{"toolcall":false,"output":{"text":true}}
+}
+nvidia/black-forest-labs/flux
+{
+  "id":"black-forest-labs/flux", "providerID":"nvidia", "name":"Flux", "status":"active",
+  "capabilities":{"toolcall":false,"output":{"text":false}}
+}
+"#;
+        let models = parse_opencode_models_verbose(fixture);
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].id, "nvidia/moonshotai/kimi-k3");
+        assert_eq!(models[0].label, "Kimi K3");
+        assert_eq!(models[0].description.as_deref(), Some("via nvidia · ferramentas · raciocínio · imagem · contexto 1M"));
     }
 
     #[test]

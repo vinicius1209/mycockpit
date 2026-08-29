@@ -31,6 +31,11 @@ import {
 } from "@/components/layout/Sidebar/globalEntries"
 import { ProjectRow } from "@/components/layout/Sidebar/ProjectRow"
 import { useApp } from "@/store/app"
+import {
+  COPY_DA_PASTA,
+  conferirPastas,
+  type PastasComProblema,
+} from "@/lib/pastaDoProjeto"
 import { useChat } from "@/store/chat"
 import { useAwaiting } from "@/store/interactions"
 import { useSchedules } from "@/store/schedules"
@@ -414,6 +419,17 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   const viewMode = useApp((s) => s.viewMode)
   const theme = useApp((s) => s.theme)
   const toggleTheme = useApp((s) => s.toggleTheme)
+
+  // A pasta de cada projeto ainda existe? Confere no boot e quando a lista de
+  // CAMINHOS muda (adicionar/arquivar) — não a cada render, e nunca em laço:
+  // pasta não some sozinha enquanto você olha pra tela. Quem move pelo Finder
+  // vê na próxima abertura, que é quando ele iria usar o projeto de novo.
+  const [pastasComProblema, setPastasComProblema] = useState<PastasComProblema>({})
+  const caminhos = projects.map((p) => p.path).join("|")
+  useEffect(() => {
+    const lista = caminhos ? caminhos.split("|") : []
+    void conferirPastas(lista).then(setPastasComProblema)
+  }, [caminhos])
   const loadProjectConversations = useChat((s) => s.loadProjectConversations)
   // Árvore INDEPENDENTE (Finder/VS Code): `expanded` guarda os projetos ABERTOS
   // — vários ao mesmo tempo, DESATRELADO do ativo. Em memória (ok no v1).
@@ -497,7 +513,11 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
             </Button>
           </header>
 
-          <ScrollArea className="flex-1">
+          {/* `min-h-0` é o que prende o rodapé embaixo. Sem ele, um item de
+              flex column não encolhe abaixo do próprio conteúdo (`min-height:
+              auto`): a área de projetos crescia com a lista, empurrava o
+              rodapé pra fora e o avatar descia junto com a rolagem. */}
+          <ScrollArea className="min-h-0 flex-1">
             <div className="flex flex-col gap-0.5 px-2 pb-2">
               {projects.length === 0 ? (
                 <div className="mt-10 flex flex-col items-center gap-3 px-4 text-center">
@@ -521,6 +541,11 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                         runningProjects.has(p.id) ? "running" : (p.status ?? "idle")
                       }
                       awaiting={awaitingProjects.has(p.id)}
+                      problemaNaPasta={
+                        pastasComProblema[p.path]
+                          ? COPY_DA_PASTA[pastasComProblema[p.path]]
+                          : undefined
+                      }
                       canMoveUp={idx > 0}
                       canMoveDown={idx < projects.length - 1}
                       onSelect={() => {

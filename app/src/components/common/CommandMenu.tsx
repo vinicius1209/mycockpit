@@ -291,6 +291,15 @@ export function CommandMenu() {
             )}
 
             <CommandGroup heading="Projetos">
+              <CommandItem
+                className={ITEM}
+                onSelect={() =>
+                  run(() => useApp.getState().setAddProjectOpen(true))
+                }
+              >
+                <Plus aria-hidden />
+                Adicionar projeto
+              </CommandItem>
               {projects.map((p) => (
                 <CommandItem
                   key={p.id}

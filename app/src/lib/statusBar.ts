@@ -22,7 +22,19 @@ import { fmtCost } from "@/lib/format"
 import { shortVersion } from "@/lib/version"
 
 /** O que a faixa aceita hospedar. Lista FECHADA (ver o cabeçalho). */
-export const STATUS_BAR_KINDS = ["usage", "cost", "build", "update", "worktree"] as const
+export const STATUS_BAR_KINDS = [
+  "usage",
+  "cost",
+  "build",
+  "update",
+  "worktree",
+  // Processo de motor que NÃO é nosso, parado ou órfão. Entra por decisão, não
+  // por conveniência: é ambiente (verdade enquanto você trabalha), não narra o
+  // agora de nenhum turno e é irmão do `worktree` — os dois contam RECURSO
+  // DEIXADO PARA TRÁS. E, como todos os outros, some sozinho quando não há o
+  // que dizer.
+  "processos",
+] as const
 export type StatusKind = (typeof STATUS_BAR_KINDS)[number]
 
 /**
@@ -164,6 +176,29 @@ export function statusUpdateItem(runningLabels: string[]): StatusItem | null {
  * Tom `ok` (cinza) SEMPRE: sobra de worktree não é urgência, e o §2 não deixa
  * cor virar opinião. `null` = nada solto, e a zona não desenha nada.
  */
+/**
+ * Sessões de motor esquecidas na máquina.
+ *
+ * `null` quando não há nenhuma — sem "0 processos", sem divisor órfão. E o
+ * TOM não sobe: parado não é falha, é ambiente. Quem decide o que fazer é o
+ * humano, no painel que o clique abre.
+ */
+export function statusProcessosItem(p: {
+  parados: number
+  orfaos: number
+}): StatusItem | null {
+  const total = p.parados + p.orfaos
+  if (total <= 0) return null
+  const orfaos = p.orfaos > 0 ? `, ${p.orfaos} órfã${p.orfaos > 1 ? "s" : ""}` : ""
+  return {
+    kind: "processos",
+    label: "",
+    text: total === 1 ? "1 sessão parada" : `${total} sessões paradas`,
+    title: `Sessões de agent rodando fora do app${orfaos}. Clique pra ver idade, memória e encerrar as que não servem mais.`,
+    tone: "ok",
+  }
+}
+
 export function statusWorktreeItem(loose: number): StatusItem | null {
   if (loose <= 0) return null
   return {

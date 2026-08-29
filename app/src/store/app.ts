@@ -96,9 +96,12 @@ interface AppState {
    *  via resolveSection (id órfão cai numa seção válida). Efêmera: o dialog
    *  consome e limpa, senão a próxima abertura pularia pra cá de novo. */
   settingsSection: string | null
+  /** Modal de adicionar projeto aberto? */
+  addProjectOpen: boolean
 
   setProjects: (p: Project[]) => void
   addProject: (p: Project) => void
+  setAddProjectOpen: (v: boolean) => void
   setActiveProject: (id: string | null) => void
   setProjectPermission: (id: string, mode: PermissionMode) => void
   /** Renomeia o projeto (store + persiste no banco). */
@@ -225,6 +228,7 @@ export const useApp = create<AppState>()(
       settings: DEFAULT_SETTINGS,
       settingsOpen: false,
       settingsSection: null,
+      addProjectOpen: false,
 
       setProjects: (projects) =>
         set((s) => ({
@@ -233,6 +237,7 @@ export const useApp = create<AppState>()(
         })),
       addProject: (p) =>
         set((s) => ({ projects: [p, ...s.projects], activeProjectId: p.id })),
+      setAddProjectOpen: (addProjectOpen) => set({ addProjectOpen }),
       // trocar de projeto é navegação → fecha qualquer workspace global.
       setActiveProject: (id) =>
         set({

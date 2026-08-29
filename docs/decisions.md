@@ -4431,3 +4431,136 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   uma vez.
 - **Verificado:** `cargo` 582 (3 novos), `tsc -b` limpo, `vitest` 3428,
   `bun run check` 10 guardas.
+
+### ADR-118 — o cockpit passa a ver o que não é dele (e o fio passa a SEGUIR) ✅
+- **Contexto (28/08/2026):** medido na máquina do autor — **~500 MB parados** em
+  três sessões de CLI esquecidas: uma de 11 dias, uma de 7, e uma pilha do Xirp
+  de 17 dias com `tmux` **órfão** (`ppid=1`) segurando um worktree. Nenhuma
+  queimava CPU, e uma delas **reverteu um arquivo no meio do trabalho**. O
+  cockpit, que existe pra dizer o que está acontecendo, não dizia nada disso.
+- **O app já cuida bem do que É dele:** `RunRegistry` mapeia `run_id → pid`,
+  `kill_all` roda na saída (Cmd-Q no meio de um run deixaria claude/codex
+  editando o repo headless) e o `RunGuard` é `Drop`, então limpa em erro e
+  panic. O buraco não era de gestão, era de **visão**.
+- **A faixa inferior é a casa certa, pela régua dela mesma.** `statusBar.ts`
+  aceita AMBIENTE — "o que é verdade enquanto você trabalha" — e já hospeda
+  `worktree`. Sessão esquecida é o mesmo gênero: **recurso deixado para trás**.
+  A lista é FECHADA e o teste tem tripwire de tamanho; mexer nele é assinar
+  embaixo, e esta ADR é a assinatura.
+- **Só se OLHA aqui; matar é gesto humano, um a um**, com confirmação e com o
+  alvo dito na cara (`pid`, idade, memória). Nada de "limpar tudo": um botão que
+  mata cinco coisas transforma um engano em cinco. E **nada de limpeza no boot**
+  — app que mata processo sozinho ao abrir é pior que o problema.
+- **O `kill` revarre antes de matar.** Entre a tela e o clique o pid pode ter
+  morrido e sido reciclado pelo sistema; sem revarrer, um clique atrasado
+  mataria um processo QUALQUER que herdou o número.
+- **O run do próprio app não aparece na lista.** Ele tem dono na tela e morre
+  junto; listá-lo seria o cockpit denunciando a si mesmo, e a primeira reação
+  de quem lesse seria matar o próprio turno.
+- **"Motor" é o EXECUTÁVEL, não substring:** `grep claude` não é sessão do
+  Claude. Sem isso a própria varredura entraria na lista que ela produz.
+- **Órfã conta sempre; parada conta por idade** (24h). E órfã antiga conta UMA
+  vez — senão o número da faixa ficaria maior que a lista do painel.
+- **O IDIOMA da faixa virou UM, e isso saiu de duas correções do usuário.**
+  Primeiro ele apontou que o painel novo abria dialog enquanto o medidor de uso
+  subia um painel ancorado; depois perguntou por que não refatorar o vizinho e
+  criar o padrão. Ele estava certo nas duas: a diferença não tinha decisão por
+  trás, era só quem copiou qual vizinho. Nasceu o `PainelDaFaixa`
+  (`statusBarChrome.tsx`, no molde do `contextPanelChrome`), e os três itens
+  clicáveis da faixa passaram a falar a mesma língua — o `WorktreesDialog`
+  virou `WorktreesPainel`. Um teste segura: nenhum painel da faixa importa
+  `ui/dialog`, e quem não usa o componente (o `UsagePill`, cujo gatilho é a
+  própria pill) tem que repetir a MESMA geometria.
+- **O painel é POPOVER, não dialog — e isso saiu de uma correção do usuário.**
+  A primeira versão copiou o `WorktreesDialog` e abriu um dialog centrado, que
+  escurece o app inteiro pra mostrar telemetria de ambiente. O idioma certo da
+  faixa é o do `UsagePill`: um painel que SOBE do item clicado, sem tirar você
+  da conversa. E o achado maior é que a faixa tinha **dois idiomas pro mesmo
+  gesto** — o dialog dos worktrees é o que ficou fora do padrão, e alinha
+  quando for tocado. O confirm de encerrar FECHA o painel antes de perguntar:
+  modal disputando foco com popover aberto é briga que ninguém ganha, e a
+  pergunta destrutiva merece a tela inteira.
+
+**No mesmo commit, o fio passou a SEGUIR de verdade.** O conserto anterior
+(ADR-110 desta leva) trocou "cancelar por posição" por "cancelar por gesto", mas
+manteve uma janela de ancoragem com prazo — e o prazo era o defeito seguinte: as
+linhas de FERRAMENTA crescem depois de chegar (o resultado volta, o bloco mede,
+o diff abre), e nenhuma delas é item novo. Passados os 800ms, cada crescimento
+empurrava o fim pra fora da tela e o fio parava sozinho no meio do turno.
+Agora: um `ResizeObserver` **permanente** segura o fim enquanto você estiver
+seguindo, o gesto de leitura solta, e **voltar ao fim volta a seguir** — o par
+simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
+
+**Verificado:** `cargo` 592 (6 novos), `tsc -b` limpo, `vitest` 3450,
+`bun run check` 10 guardas.
+
+### ADR-119 — review do "Adicionar projeto": dois defeitos que só apareciam quando dava errado ✅
+- **Contexto (28/08/2026):** revisão pedida sobre a feature de outro dev (o
+  diálogo de adicionar projeto). O grosso está bom — separar
+  `pickProjectDirectory` de `createProject` foi o que permitiu o diálogo
+  existir, o `INSERT OR IGNORE` + restauração de arquivado está correto, a
+  paleta é a canônica que já existia e o nome derivado da pasta só sobrescreve
+  enquanto o humano não digitou. Os dois defeitos moravam nos caminhos que
+  ninguém exercita à mão.
+- **Projeto fantasma quando o banco não grava.** `insertProject` devolve
+  `false` também quando NÃO HÁ banco; aí `findProjectByPath` devolve `null`, e o
+  código seguia pro caminho feliz: metia o projeto na store e dizia "Projeto
+  adicionado". Ele evaporava no restart — exatamente o id fantasma que o
+  `findProjectByPath` foi escrito pra evitar, reintroduzido pelo fallthrough.
+  Agora falha alto e devolve `null`.
+- **Re-adicionar apagava a cor do projeto.** `const color = opts.color ?? null`
+  fazia a guarda seguinte (`if (color !== undefined)`) ser SEMPRE verdadeira, e
+  o diálogo nasce sem cor escolhida: abrir e confirmar uma pasta já cadastrada
+  chamava `setProjectColor(id, null)`. O que provou ser descuido e não decisão é
+  a linha logo abaixo, do nome, que tinha a guarda certa (`if
+  (opts.name.trim())`). A correção deu significado ao tipo: **`undefined` = não
+  mexi; `null` = escolhi sem cor** — e o diálogo passou a nascer em `undefined`.
+  Escolher "sem cor" explicitamente continua limpando, e tem teste dizendo isso.
+- **Os dois entraram como TESTE antes da correção**, e falhavam contra o código
+  velho. Defeito de caminho de erro que ninguém reproduz à mão só existe de
+  verdade quando a suíte o segura.
+- **§4, cartão dentro de cartão:** a pré-visualização era um cartão com borda
+  dentro de outro cartão com borda, dentro do diálogo — três hairlines
+  aninhadas. Virou uma superfície só; e a linha de dentro perdeu a borda também
+  por FIDELIDADE, porque ela imita uma linha da sidebar, e linha de sidebar não
+  tem contorno. Saiu junto o `shadow-xs`, que não é do vocabulário do §4.
+- **Uma correção de produto, não de código:** re-adicionar uma pasta já
+  cadastrada caía em "Projeto atualizado" — eu clico em ADICIONAR e o app EDITA
+  um projeto existente em silêncio. Agora o diálogo avisa ANTES ("essa pasta já
+  é o projeto X; confirmar atualiza o nome e a cor dele, não cria um segundo") e
+  o botão passa a dizer **Atualizar projeto**. A ação é a mesma; o que mudou é
+  ela não mentir sobre o que vai fazer.
+- **Verificado:** `tsc -b` limpo, `vitest` 3461 (3 novos), `bun run check` 10
+  guardas.
+
+### ADR-120 — a pasta do projeto pode sumir, e o app passa a dizer isso ✅
+- **Contexto (29/08/2026):** o projeto aponta pra uma pasta que o usuário move,
+  renomeia ou apaga pelo Finder, sem o app saber. Ele seguia na lista como se
+  estivesse tudo bem, e o erro só aparecia quando alguém tentava RODAR algo: o
+  agent nascia num `cwd` inexistente e morria com uma mensagem do CLI, longe da
+  causa. Diagnóstico caro pra uma verdade que um `stat` responde.
+- **A régua é a do §5: não-configurado esconde; configurado com ERRO fica.** O
+  projeto continua na lista, clicável (você pode querer ver as conversas dele),
+  com o nome esmaecido e um selo **"pasta sumiu"** — e o motivo no tooltip.
+  Sumir da lista seria pior: quem cadastrou aquilo merece saber por que parou de
+  funcionar.
+- **Dois problemas, duas frases.** "Não existe mais neste caminho" manda
+  procurar; "existe, mas não é uma pasta" manda olhar o que está bem ali. Uma
+  frase só faria o usuário caçar o que não sumiu. Tem teste exigindo que as duas
+  sejam diferentes.
+- **Confere em LOTE e só devolve o que está errado.** São `stat`s baratos; uma
+  ida ao backend por projeto responderia N vezes a mesma pergunta, e o caso
+  normal (nada quebrado) não custa tráfego nenhum.
+- **Quando confere:** no boot e quando a lista de CAMINHOS muda. Não a cada
+  render, e nunca em laço — pasta não some sozinha enquanto você olha pra tela.
+  Quem move pelo Finder vê na próxima abertura, que é quando ele ia usar o
+  projeto de novo.
+- **"Não sei" não vira "quebrado".** Sem backend (ou com a chamada falhando), a
+  resposta é lista vazia: marcar projeto bom como quebrado por falha NOSSA seria
+  pior que o silêncio. Tem teste segurando isso, senão o app não cadastraria
+  projeto nenhum em dev web.
+- **O diálogo confere ANTES de criar.** O picker garante a pasta no instante do
+  clique, mas entre escolher e confirmar cabe um `mv` — cadastrar um projeto que
+  já nasce apontando pro vazio é criar o defeito em vez de evitá-lo.
+- **Verificado:** `cargo` 593 (1 novo), `tsc -b` limpo, `vitest` 3464 (4 novos),
+  `bun run check` 10 guardas.

@@ -14,6 +14,7 @@ import { CommandMenu } from "@/components/common/CommandMenu"
 import { GlobalInteractionHost } from "@/components/common/GlobalInteractionHost"
 import { LightboxOverlay } from "@/components/chat/Lightbox"
 import { SettingsDialog } from "@/components/settings/SettingsDialog"
+import { AddProjectDialog } from "@/components/layout/AddProjectDialog"
 import { ConfirmHost } from "@/components/common/confirm"
 import { OnboardingGate } from "@/components/onboarding/OnboardingGate"
 import { startDictationHotkey } from "@/lib/dictationHotkey"
@@ -66,6 +67,7 @@ import {
   toProbeMap,
   updateAvailable,
   refreshAgyModels,
+  refreshOpenCodeModels,
   UPDATE_COMMANDS,
 } from "@/lib/detect"
 import { agentDef } from "@/lib/agents"
@@ -174,8 +176,9 @@ export default function App() {
   // curador semanal, rodada de modelos); a NOTIFICAÇÃO segue com dedupe.
   useEffect(() => {
     if (!isTauri()) return
-    // modelos reais do `agy models` → cache dinâmico (barato, todo boot).
-    void refreshAgyModels()
+    // modelos reais dos CLIs → cache dinâmico (barato, todo boot). OpenCode é
+    // especialmente importante: a lista muda quando uma credencial muda.
+    void Promise.all([refreshAgyModels(), refreshOpenCodeModels()])
     // modelos aprovados do curador → cache do picker (barato, todo boot).
     void reloadActiveProposals()
     const last = useApp.getState().settings.lastUpdateCheck ?? 0
@@ -583,6 +586,7 @@ export default function App() {
             layout. O ⌘K segue abrindo pela store (`dockOpen` controla o
             popover). */}
         <SettingsDialog />
+        <AddProjectDialog />
         <ConfirmHost />
         {/* Onboarding: overlay full-screen no 1º run (onboarded=false), tour
             depois wizard. O boot de projetos segue por baixo; finish grava onboarded=true. */}

@@ -22,7 +22,7 @@
 // terminal também, porque a conta ativa é do `gh`. Isso fica na tela, ao lado
 // do botão, não num tooltip.
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Check, Loader2, Copy, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -42,6 +42,8 @@ import {
   Selo,
 } from "@/components/settings/parts"
 import { sectionDef } from "@/components/settings/sections"
+import { OpenCodeProvidersCard } from "@/components/settings/OpenCodeProvidersCard"
+import { detectAgents, refreshOpenCodeModels, toProbeMap } from "@/lib/detect"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 
@@ -198,96 +200,28 @@ function CartaoGitHub({
   )
 }
 
-/** OpenCode como SERVIÇO, não como motor.
- *
- *  Ele aparece em "Agentes na máquina" como CLI; aqui a pergunta é outra e é a
- *  que o usuário fez: *"quero aproveitar de outras assinaturas"*. O OpenCode
- *  faz OAuth com GitHub Copilot, xAI SuperGrok, GitLab Duo, OpenAI e Anthropic,
- *  e API-key com OpenRouter e qualquer BYOK — então cada credencial dele é uma
- *  assinatura que o Frota passa a alcançar sem escrever adapter nenhum.
- *
- *  É por isso que o OpenRouter entra POR DENTRO daqui e não ao lado: um cliente
- *  HTTP nosso custaria chave, catálogo, preço e erro próprios; um provedor a
- *  mais do OpenCode custa um `providers login`.
- *
- *  Lê o PROBE que a detecção já faz (nenhum comando novo): `detail` traz os
- *  nomes dos provedores conectados. */
-function CartaoOpenCode() {
-  const probe = useApp((s) => s.settings.detected["opencode"])
-  const provedores = (probe?.detail ?? "")
-    .split(",")
-    .map((p) => p.trim())
-    .filter(Boolean)
-
-  const selo = !probe
-    ? <Selo>não verificado</Selo>
-    : !probe.installed
-      ? <Selo>não instalado</Selo>
-      : provedores.length > 0
-        ? <Selo tom="ok">conectado</Selo>
-        : <Selo tom="atencao">falta configurar</Selo>
-
-  return (
-    <Card>
-      <CardHead
-        nome="OpenCode"
-        meta={probe?.installed ? `opencode v${probe.version ?? "?"}` : undefined}
-        selo={selo}
-      />
-      <CardBody>
-        <p className="mb-2 text-[12px] leading-snug text-muted-foreground">
-          Cada provedor conectado aqui vira modelo no seletor. Ele fala OAuth com
-          Copilot, SuperGrok, GitLab Duo, OpenAI e Anthropic, e chave de API com
-          OpenRouter.
-        </p>
-
-        {!probe?.installed ? (
-          <Comando cmd="brew install sst/tap/opencode" />
-        ) : provedores.length === 0 ? (
-          <>
-            <p className="text-[12px] leading-snug text-muted-foreground">
-              Nenhum provedor conectado: o motor está instalado e sem nada pra
-              oferecer.
-            </p>
-            <Comando cmd="opencode providers login" />
-          </>
-        ) : (
-          <>
-            <ul className="flex flex-col gap-0.5">
-              {provedores.map((nome) => (
-                <li key={nome} className="flex items-center gap-2 px-2 py-1">
-                  <span className="font-mono text-[13px] text-foreground">{nome}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-[12px] leading-snug text-muted-foreground">
-              Para somar outro provedor (OpenRouter, Copilot, SuperGrok), rode o
-              login num terminal: o fluxo é interativo e o app não conduz.
-            </p>
-            <Comando cmd="opencode providers login" />
-          </>
-        )}
-      </CardBody>
-    </Card>
-  )
-}
-
 export function ServicosSettings() {
   const [status, setStatus] = useState<GhStatus>(GH_DESCONHECIDO)
   // "ainda não olhei" é estado próprio: sem ele o primeiro frame afirmaria
   // "gh não instalado" (o default pessimista) em toda abertura da seção.
   const [lendo, setLendo] = useState(true)
+  const [refreshToken, setRefreshToken] = useState(0)
+  const setSettings = useApp((s) => s.setSettings)
   const def = sectionDef("services")
 
-  async function verificar() {
+  const verificar = useCallback(async () => {
     setLendo(true)
-    setStatus(await lerGhStatus())
+    const [gh, tools] = await Promise.all([lerGhStatus(), detectAgents()])
+    setStatus(gh)
+    if (tools.length) setSettings({ detected: toProbeMap(tools, Date.now()) })
+    await refreshOpenCodeModels()
+    setRefreshToken((value) => value + 1)
     setLendo(false)
-  }
+  }, [setSettings])
 
   useEffect(() => {
     void verificar()
-  }, [])
+  }, [verificar])
 
   return (
     <div>
@@ -318,7 +252,7 @@ export function ServicosSettings() {
       ) : (
         <>
           <CartaoGitHub status={status} onMudou={() => void verificar()} />
-          <CartaoOpenCode />
+          <OpenCodeProvidersCard refreshToken={refreshToken} onChanged={verificar} />
         </>
       )}
 

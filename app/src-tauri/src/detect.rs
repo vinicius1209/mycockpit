@@ -345,39 +345,6 @@ async fn probe_agy() -> DetectedTool {
 /// Lemos as LINHAS `●`, não o rodapé "N credentials": o rodapé é um número que
 /// já vem contado, e contar de novo o que se leu é o que permite dizer QUAIS
 /// provedores existem, não só quantos. Puro e testável com a saída real.
-fn parse_opencode_credentials(text: &str) -> Vec<(String, String)> {
-    text.lines()
-        .filter_map(|l| {
-            let sem_ansi = strip_ansi(l);
-            let corpo = sem_ansi.trim().strip_prefix('\u{25cf}')?.trim();
-            // "OpenCode Go api" → o TIPO é a última palavra; o nome pode ter
-            // espaço, e partir pela primeira quebraria "OpenCode Go".
-            let (nome, tipo) = corpo.rsplit_once(char::is_whitespace)?;
-            let nome = nome.trim();
-            (!nome.is_empty() && !tipo.is_empty())
-                .then(|| (nome.to_string(), tipo.to_string()))
-        })
-        .collect()
-}
-
-/// Remove sequências ANSI. O `opencode` colore a saída mesmo sem TTY.
-fn strip_ansi(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '\u{1b}' {
-            for c2 in chars.by_ref() {
-                if c2.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
 /// OpenCode (1.17.9): 4º motor e MULTIPLICADOR de credencial — ele fala com
 /// provedores por OAuth (Copilot, SuperGrok, GitLab Duo…) que o Frota não
 /// alcança sozinho.
@@ -389,18 +356,17 @@ async fn probe_opencode() -> DetectedTool {
     let Some((true, version)) = version_probe("opencode").await else {
         return tool("opencode", false, None, "missing", None);
     };
-    match run("opencode", &["providers", "list"]).await {
-        Some((_, out)) => {
-            let creds = parse_opencode_credentials(&out);
+    match crate::opencode_auth::list().await {
+        Ok(creds) => {
             if creds.is_empty() {
                 return tool("opencode", true, version, "missing", Some("nenhum provedor conectado".into()));
             }
-            let nomes: Vec<&str> = creds.iter().map(|(n, _)| n.as_str()).collect();
+            let nomes: Vec<&str> = creds.iter().map(|c| c.provider.as_str()).collect();
             tool("opencode", true, version, "ok", Some(nomes.join(", ")))
         }
         // Comando não respondeu: instalado, mas não sei se dá pra usar. O selo
         // verde exige probe que passou (doutrina do MachineAgents).
-        None => tool("opencode", true, version, "unknown", None),
+        Err(_) => tool("opencode", true, version, "unknown", None),
     }
 }
 
@@ -459,17 +425,8 @@ mod tests {
 
     #[test]
     fn le_as_credenciais_da_saida_real() {
-        let creds = parse_opencode_credentials(PROVIDERS_REAL);
-        assert_eq!(
-            creds,
-            vec![
-                ("OpenAI".to_string(), "oauth".to_string()),
-                ("Google".to_string(), "oauth".to_string()),
-                // Nome com ESPAÇO: partir pela primeira quebra daria "OpenCode"
-                // com tipo "Go api". O corte é pela ÚLTIMA.
-                ("OpenCode Go".to_string(), "api".to_string()),
-            ]
-        );
+        let creds = crate::opencode_auth::parse_credentials(PROVIDERS_REAL);
+        assert_eq!(creds.iter().map(|c| c.provider.as_str()).collect::<Vec<_>>(), vec!["OpenAI", "Google", "OpenCode Go"]);
     }
 
     #[test]
@@ -477,22 +434,16 @@ mod tests {
         // Instalado e sem provedor é um estado real: o motor existe e não serve
         // pra nada. Vazio aqui vira `auth: missing`, nunca `ok`.
         let vazio = "\u{250c}  Credentials ~/.local/share/opencode/auth.json\n\u{2514}  0 credentials\n";
-        assert!(parse_opencode_credentials(vazio).is_empty());
+        assert!(crate::opencode_auth::parse_credentials(vazio).is_empty());
     }
 
     #[test]
     fn ignora_o_rodape_e_o_cabecalho() {
         // O rodapé "3 credentials" tem número e palavra e casaria num parser
         // frouxo; ele NÃO começa com o marcador.
-        let creds = parse_opencode_credentials(PROVIDERS_REAL);
-        assert!(!creds.iter().any(|(n, _)| n.contains("credential")));
-        assert!(!creds.iter().any(|(n, _)| n.contains("Credentials")));
-    }
-
-    #[test]
-    fn strip_ansi_nao_come_texto_util() {
-        assert_eq!(strip_ansi("\u{1b}[90mOpenAI\u{1b}[0m oauth"), "OpenAI oauth");
-        assert_eq!(strip_ansi("sem cor"), "sem cor");
+        let creds = crate::opencode_auth::parse_credentials(PROVIDERS_REAL);
+        assert!(!creds.iter().any(|c| c.provider.contains("credential")));
+        assert!(!creds.iter().any(|c| c.provider.contains("Credentials")));
     }
 
     #[test]

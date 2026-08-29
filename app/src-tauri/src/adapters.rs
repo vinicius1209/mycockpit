@@ -840,6 +840,19 @@ fn mensagem_de_rejeicao_sem_pergunta(tool: &str) -> String {
     )
 }
 
+/// Limite do OpenCode/provider. O NVIDIA NIM devolve literalmente "Too Many
+/// Requests" (429), sem as palavras `rate limit`; se isso virar erro genérico,
+/// o usuário procura defeito na chave quando na verdade precisa esperar/trocar.
+pub fn opencode_limit(msg: &str) -> Option<LimitHit> {
+    let lower = msg.to_ascii_lowercase();
+    (lower.contains("too many requests")
+        || lower.contains("rate limit")
+        || lower.contains("rate_limit")
+        || lower.contains("quota")
+        || lower.contains("out of credits"))
+    .then(|| LimitHit { reset_hint: extract_reset_hint(msg) })
+}
+
 /// Adapter do OpenCode: `opencode run --format json`.
 ///
 /// O motor é um MULTIPLICADOR de credencial (OAuth com Copilot, SuperGrok,
@@ -981,7 +994,13 @@ impl AgentAdapter for OpenCodeAdapter {
                     .and_then(|m| m.as_str())
                     .unwrap_or("o opencode falhou sem detalhe");
                 self.erro = Some(msg.to_string());
-                vec![AgentEvent::Error { message: msg.to_string() }]
+                match opencode_limit(msg) {
+                    Some(hit) => vec![AgentEvent::LimitReached {
+                        message: msg.to_string(),
+                        reset_hint: hit.reset_hint,
+                    }],
+                    None => vec![AgentEvent::Error { message: msg.to_string() }],
+                }
             }
             _ => Vec::new(),
         }
@@ -5515,6 +5534,15 @@ mod tests {
             AgentEvent::Result { ok, .. } => assert!(!ok),
             _ => panic!("esperava Result"),
         }
+    }
+
+    #[test]
+    fn opencode_429_vira_limite_acionavel() {
+        // Resposta REAL do NVIDIA NIM no teste do Kimi K3 (28/08/2026).
+        let erro = r#"{"type":"error","error":{"data":{"message":"AI_APICallError: Too Many Requests"}}}"#;
+        let mut adapter = OpenCodeAdapter::default();
+        let events = adapter.map_line(&oc_linha(erro));
+        assert!(matches!(&events[0], AgentEvent::LimitReached { message, .. } if message.contains("Too Many Requests")));
     }
 
     #[test]

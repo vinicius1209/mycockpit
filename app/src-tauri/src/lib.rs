@@ -20,6 +20,7 @@ mod companion;
 mod context;
 mod context_gateway;
 mod despertador;
+mod processos;
 mod detect;
 mod editor;
 mod evidence;
@@ -38,6 +39,8 @@ mod model_smoke;
 mod modes;
 mod mycockpit;
 mod osnotify;
+mod opencode_auth;
+mod opencode_acp;
 mod path;
 mod pricing;
 mod proc;
@@ -633,6 +636,10 @@ pub fn run() {
             agent::judge,
             context::read_project_context,
             detect::detect_agents,
+            opencode_auth::opencode_credentials,
+            opencode_auth::opencode_login_api_key,
+            opencode_auth::opencode_login_oauth,
+            opencode_auth::opencode_logout,
             update::update_agent,
             update::update_jobs,
             usage_window::usage_snapshots,
@@ -721,6 +728,9 @@ pub fn run() {
             attachments::read_attachment,
             attachments::gc_attachments,
             attachments::wipe_conv_attachments,
+            processos::listar_processos_de_motor,
+            processos::matar_processo_de_motor,
+            processos::conferir_pastas,
             attachments::save_note_attachment,
             attachments::wipe_note_attachments,
             evidence::read_evidence,

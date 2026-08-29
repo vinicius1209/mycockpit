@@ -4,6 +4,7 @@ import {
   statusBarAccepts,
   statusBuildItem,
   statusCostItem,
+  statusProcessosItem,
   statusUpdateItem,
   statusWorktreeItem,
 } from "./statusBar"
@@ -15,10 +16,14 @@ describe("statusBarAccepts (a fronteira faixa × linha viva)", () => {
     expect(statusBarAccepts("build")).toBe(true)
     expect(statusBarAccepts("update")).toBe(true)
     expect(statusBarAccepts("worktree")).toBe(true)
+    // ADR-118: sessão de motor esquecida na máquina. Irmã do `worktree` — as
+    // duas contam RECURSO DEIXADO PARA TRÁS, e nenhuma narra o agora de um
+    // turno.
+    expect(statusBarAccepts("processos")).toBe(true)
     // O número é tripwire de propósito: mexer nele é assinar embaixo. Cada
     // entrada nova precisa do argumento escrito no módulo, não da conveniência
     // de quem tem um dado sobrando e uma faixa vazia na frente.
-    expect(STATUS_BAR_KINDS).toHaveLength(5)
+    expect(STATUS_BAR_KINDS).toHaveLength(6)
   })
 
   it("recusa o AGORA do turno: a linha viva não sai do composer", () => {
@@ -125,5 +130,30 @@ describe("statusWorktreeItem", () => {
   it("tom cinza SEMPRE: sobra de worktree não é urgência (§2)", () => {
     expect(statusWorktreeItem(1)?.tone).toBe("ok")
     expect(statusWorktreeItem(99)?.tone).toBe("ok")
+  })
+})
+
+describe("statusProcessosItem", () => {
+  it("sem sessão esquecida, a zona não desenha NADA", () => {
+    // Mesma regra do custo abaixo de 2 turnos: nada de "0 processos" nem
+    // divisor órfão numa faixa que existe pra ser lida de canto de olho.
+    expect(statusProcessosItem({ parados: 0, orfaos: 0 })).toBeNull()
+  })
+
+  it("conta paradas e órfãs juntas, e diz das órfãs no tooltip", () => {
+    const item = statusProcessosItem({ parados: 2, orfaos: 1 })!
+    expect(item.text).toBe("3 sessões paradas")
+    expect(item.title).toContain("1 órfã")
+  })
+
+  it("o tom NÃO sobe: parado é ambiente, não é falha", () => {
+    // Subir de tom aqui seria a faixa pedindo decisão — e ela não pede nada.
+    expect(statusProcessosItem({ parados: 9, orfaos: 4 })!.tone).toBe("ok")
+  })
+
+  it("singular sem plural forçado", () => {
+    expect(statusProcessosItem({ parados: 1, orfaos: 0 })!.text).toBe(
+      "1 sessão parada",
+    )
   })
 })

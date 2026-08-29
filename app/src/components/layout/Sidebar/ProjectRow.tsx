@@ -85,6 +85,7 @@ export function ProjectRow({
   expanded,
   status,
   awaiting = false,
+  problemaNaPasta,
   canMoveUp,
   canMoveDown,
   onSelect,
@@ -101,6 +102,10 @@ export function ProjectRow({
   /** S1.2 — bordas da lista (desabilita "Mover para cima/baixo" no menu). */
   canMoveUp: boolean
   canMoveDown: boolean
+  /** A pasta sumiu (ou não é pasta). Fica VISÍVEL com o motivo dito — §5:
+   *  não-configurado esconde, configurado com ERRO fica. Some da lista seria
+   *  pior: quem cadastrou merece saber por que parou de funcionar. */
+  problemaNaPasta?: string
   onSelect: () => void
   onToggle: () => void
   onDelete: () => void
@@ -179,11 +184,25 @@ export function ProjectRow({
                   container. Path saiu da linha → vira tooltip (menos ruído). */}
               <ProjectFolder color={project.color} status={status} awaiting={awaiting} />
               <span
-                className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground"
-                title={project.path}
+                className={cn(
+                  "min-w-0 flex-1 truncate text-[13px] font-medium",
+                  // Nome esmaecido + selo: o projeto continua clicável (você
+                  // pode querer conferir as conversas dele), mas a linha para
+                  // de afirmar que está tudo bem.
+                  problemaNaPasta ? "text-muted-foreground" : "text-foreground",
+                )}
+                title={problemaNaPasta ? `${problemaNaPasta}\n${project.path}` : project.path}
               >
                 {project.name}
               </span>
+              {problemaNaPasta && (
+                <span
+                  title={problemaNaPasta}
+                  className="shrink-0 rounded bg-st-error/15 px-1.5 py-0.5 text-[11px] font-medium text-st-error"
+                >
+                  pasta sumiu
+                </span>
+              )}
             </button>
           )}
           {/* S1.4 — arquivamento saiu da linha (mora SÓ no context menu): a

@@ -22,21 +22,28 @@
 //   se esconde sozinho, e o que sobra é fundo.
 //   11px mono, `tabular-nums`, cinza. Tom só sobe por régua do §2.
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { getVersion } from "@tauri-apps/api/app"
 import { UsagePill } from "@/components/layout/UsagePill"
 import { METER_TEXT } from "@/lib/meter"
 import {
   statusBuildItem,
   statusCostItem,
+  statusProcessosItem,
   statusUpdateItem,
   statusWorktreeItem,
   type StatusItem,
 } from "@/lib/statusBar"
+import { ProcessosPopover } from "@/components/layout/ProcessosPopover"
+import {
+  listarProcessos,
+  resumirProcessos,
+  type ProcessoDeMotor,
+} from "@/lib/processos"
 import { sessionCost, sessionUnpricedTurns } from "@/lib/sessionCost"
 import { labelOf, useUpdates } from "@/lib/updates"
 import { looseWorktrees } from "@/lib/worktrees"
-import { WorktreesDialog } from "@/components/layout/WorktreesDialog"
+import { WorktreesPainel } from "@/components/layout/WorktreesPainel"
 import { useActiveConv, useChat } from "@/store/chat"
 import { useWorktrees } from "@/store/worktrees"
 import { useActiveProject, useApp } from "@/store/app"
@@ -122,22 +129,61 @@ function WorktreeItem() {
   const item = statusWorktreeItem(loose.length)
   if (!item) return null
   return (
-    <>
+    <WorktreesPainel
+      open={open}
+      onOpenChange={setOpen}
+      projectId={project.id}
+      projectPath={project.path}
+      loose={loose}
+    >
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        className="rounded transition-colors hover:text-foreground"
+        className="rounded outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
       >
         <Item item={item} />
       </button>
-      <WorktreesDialog
-        open={open}
-        onOpenChange={setOpen}
-        projectId={project.id}
-        projectPath={project.path}
-        loose={loose}
-      />
-    </>
+    </WorktreesPainel>
+  )
+}
+
+/**
+ * Sessões de motor rodando FORA do app.
+ *
+ * Poll de 5 minutos, e não menos: sessão esquecida é um estado que se mede em
+ * dias — perguntar de segundo em segundo gastaria um `ps` por nada. A primeira
+ * leitura é no boot, porque é lá que o dado costuma ser mais feio (o que
+ * sobrou de ontem).
+ */
+function ProcessosItem() {
+  const [open, setOpen] = useState(false)
+  const [lista, setLista] = useState<ProcessoDeMotor[]>([])
+
+  const recarregar = useCallback(() => {
+    void listarProcessos().then(setLista)
+  }, [])
+
+  useEffect(() => {
+    recarregar()
+    const id = window.setInterval(recarregar, 5 * 60 * 1000)
+    return () => window.clearInterval(id)
+  }, [recarregar])
+
+  const item = statusProcessosItem(resumirProcessos(lista))
+  if (!item) return null
+  return (
+    <ProcessosPopover
+      open={open}
+      onOpenChange={setOpen}
+      lista={lista}
+      onMudou={recarregar}
+    >
+      <button
+        type="button"
+        className="rounded outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
+      >
+        <Item item={item} />
+      </button>
+    </ProcessosPopover>
   )
 }
 
@@ -183,6 +229,7 @@ export function StatusBar() {
           ninguém mais mostra esse dado, e quem lê o git é UM (store/worktrees),
           não um efeito de tela. */}
       <div className="ml-auto flex items-center gap-3">
+        <ProcessosItem />
         <WorktreeItem />
         <UpdateItem />
         <BuildItem />

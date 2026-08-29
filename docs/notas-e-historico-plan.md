@@ -163,6 +163,46 @@ serialização estável. O que falta pra ele ser ferramenta de verdade:
 Ordem sugerida: (1) e (2) juntos — são a mesma passada e resolvem o incômodo
 diário; (4) depois; (3) só com demanda provada.
 
+## Frente M — a máquina, na faixa de status (proposta)
+
+O cockpit é cego para o que ele não spawnou. Medido em 28/08/2026 na máquina
+do autor: **~500 MB parados** em três sessões de CLI esquecidas (11 dias, 7
+dias e uma pilha do Xirp de 17 dias com o `tmux` **órfão**, `ppid=1`, segurando
+um worktree). Nenhuma queimava CPU — e uma delas **reverteu um arquivo no meio
+do trabalho**, que é o custo que ninguém mede.
+
+**O que o app já faz certo, e não é isto:** o que ele spawna, ele mata.
+`RunRegistry` mapeia `run_id → pid`, `kill_all()` roda na saída (Cmd-Q no meio
+de um run deixaria claude/codex editando o repo headless) e o `RunGuard` é um
+`Drop`, então limpa em erro e panic também. O buraco não é de gestão do que é
+dele — é de **visão** do que não é.
+
+**Por que a faixa inferior é a casa certa, pela régua dela mesma**
+(`lib/statusBar.ts`): a faixa é AMBIENTE — "o que é verdade enquanto você
+trabalha". Processo estranho rodando é exatamente isso, e a lista já hospeda
+`worktree`, que é o mesmo gênero: **recurso deixado para trás**.
+
+**As três regras que o desenho tem que respeitar, e elas vêm do módulo:**
+
+1. `STATUS_BAR_KINDS` é lista **FECHADA**. O cabeçalho do arquivo é explícito:
+   sinal novo entra "por decisão explícita, não por conveniência de quem tem um
+   dado sobrando e uma faixa vazia na frente". Então `processos` entra por ADR,
+   com linha na lista — não de contrabando.
+2. **A faixa não pede nada e não pisca.** O indicador mora lá; MATAR mora atrás
+   de um clique que abre painel (padrão que a faixa já usa). Nunca em lote,
+   nunca automático, e com o que vai morrer dito na cara — matar processo alheio
+   é destruir trabalho de alguém sem saber.
+3. **Sem nada estranho, a zona não desenha NADA.** Nem "0 processos", nem
+   divisor órfão — a mesma regra que o custo já segue abaixo de 2 turnos.
+
+**O que conta como "estranho":** motor conhecido (`claude`, `codex`, `agy`,
+`opencode`) + um dos dois sinais duros — `ppid=1` (órfão) ou parado há dias.
+Ambos são fato, não heurística de humor.
+
+**Não fazer:** limpeza no boot (app que mata processo sozinho ao abrir é pior
+que o problema), adotar processo alheio como "gerenciado", ou esconder o que
+não entendeu.
+
 ## Frente P — post-it como MODO (tinta VIVA, decidida em 28/08/2026)
 
 Decisão tomada: **papel vivo de verdade**, na referência de post-it clássico

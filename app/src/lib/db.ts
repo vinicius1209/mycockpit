@@ -115,7 +115,7 @@ export async function insertProject(p: Project): Promise<boolean> {
   // sort_order = MIN-1: projeto novo entra no TOPO (comportamento herdado do
   // created_at DESC), sem atropelar a ordem manual dos existentes (S1.2).
   const res = await db.execute(
-    "INSERT OR IGNORE INTO projects (id, name, path, created_at, has_claude_md, has_agents_md, permission_mode, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT COALESCE(MIN(sort_order), 1) - 1 FROM projects))",
+    "INSERT OR IGNORE INTO projects (id, name, path, created_at, has_claude_md, has_agents_md, permission_mode, color, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT COALESCE(MIN(sort_order), 1) - 1 FROM projects))",
     [
       p.id,
       p.name,
@@ -123,7 +123,7 @@ export async function insertProject(p: Project): Promise<boolean> {
       p.createdAt,
       p.hasClaudeMd ? 1 : 0,
       p.hasAgentsMd ? 1 : 0,
-      p.permissionMode ?? "padrao",
+      p.permissionMode ?? "padrao", p.color ?? null,
     ],
   )
   return (res?.rowsAffected ?? 0) > 0
