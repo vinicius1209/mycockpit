@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, type SetStateAction } from "react"
 import { toast } from "sonner"
 import { open } from "@tauri-apps/plugin-dialog"
 import { isTauri } from "@/lib/db"
@@ -12,6 +12,9 @@ import {
   deleteAttachment,
   revokeAttachmentUrl,
 } from "@/lib/attachments"
+import { useComposerDrafts } from "@/store/composerDrafts"
+
+const EMPTY_ATTACHMENTS: Attachment[] = []
 
 /** O que um paste rende: os anexos E o texto que deve entrar no composer.
  *  Entrada ÚNICA (os dois donos chamam esta, não as peças) — a regra do texto
@@ -50,15 +53,15 @@ type PasteLikeEvent = {
 /**
  * Anexos pendentes do composer: paste (captura síncrona dos File antes do await,
  * F21), file-picker do Tauri (insere @path) e remoção (libera o object URL junto
- * do blob). Reseta na troca de conversa. Dois donos: o console (editor Lexical,
- * que roteia o paste via addFiles e foca via `focus`) e o MissionLauncher
- * (textarea próprio, via `textareaRef` + onPaste).
+ * do blob). No console, texto + anexos formam o rascunho persistido da
+ * conversa; no MissionLauncher, o estado é local e zera na troca.
  */
 export function useAttachments({
   activeId,
   setValue,
   textareaRef,
   focus,
+  conversationDraft = false,
 }: {
   activeId: string | null
   setValue: React.Dispatch<React.SetStateAction<string>>
@@ -66,13 +69,35 @@ export function useAttachments({
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>
   /** Foco programático sem textarea (o editor Lexical do console). */
   focus?: () => void
+  conversationDraft?: boolean
 }) {
-  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [localAttachments, setLocalAttachments] = useState<Attachment[]>([])
+  const persistedAttachments = useComposerDrafts((s) =>
+    conversationDraft && activeId
+      ? (s.byConv[activeId]?.attachments ?? EMPTY_ATTACHMENTS)
+      : EMPTY_ATTACHMENTS,
+  )
+  const loadDraft = useComposerDrafts((s) => s.load)
+  const attachments = conversationDraft ? persistedAttachments : localAttachments
 
-  // trocar de conversa zera os anexos pendentes (F19)
+  function setAttachments(next: SetStateAction<Attachment[]>) {
+    if (conversationDraft && activeId) {
+      const current = useComposerDrafts.getState().byConv[activeId]?.attachments ?? []
+      useComposerDrafts
+        .getState()
+        .setAttachments(activeId, typeof next === "function" ? next(current) : next)
+      return
+    }
+    setLocalAttachments(next)
+  }
+
   useEffect(() => {
-    setAttachments([])
-  }, [activeId])
+    if (conversationDraft) {
+      if (activeId) void loadDraft(activeId)
+      return
+    }
+    setLocalAttachments([])
+  }, [activeId, conversationDraft, loadDraft])
 
   function removeAttachment(path: string) {
     setAttachments((a) => a.filter((x) => x.path !== path))

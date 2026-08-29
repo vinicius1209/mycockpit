@@ -70,6 +70,14 @@ describe("MessageList · grupo assentado com falha (a falha não se esconde)", (
     expect(html).not.toContain("Verificar o estado do repositório")
     expect(html).not.toContain("Inspecionar alterações")
   })
+
+  it("usa um glifo por linha e deixa o vermelho fora do texto técnico", () => {
+    const html = render(items)
+    expect(html).not.toContain("bg-st-error")
+    expect(html).toContain('class="truncate text-foreground">Gerar PDF')
+    expect(html).not.toContain("border-l-2")
+    expect(html).not.toContain("bg-accent/20")
+  })
 })
 
 describe("MessageList · concluído recolhe pra UMA linha com tempo congelado", () => {

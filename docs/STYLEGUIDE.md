@@ -89,7 +89,7 @@ claro+escuro) e por linha nesta tabela — nunca hex cru em componente.
 | **Brass** (gesto) | `brass`, `brass-soft`, `ring` (= `brass`) | Ação primária/sensível, foco **de teclado** (`--ring`, ver §2.1), marca | **Marcar item selecionado em lista, árvore ou aba** (isso é preenchimento neutro + peso + pip, sem tinta — ADR-043); texto pequeno sobre a superfície de seleção no tema claro (3.56:1 < AA, regra S3.6); ícone ilustrativo/empty state; medidor saudável; tinta de "importância" genérica |
 | **Cores de diff/git** | `hljs-addition/deletion`, `git-open`, `git-merged` | SÓ dentro do domínio git: `+N −N`, linhas de diff abertas (evidência), estado de PR do GitHub | Qualquer semântica fora de git; sucesso/erro geral |
 | **Identidade de agent** (categórica) | `brass` (Claude), `st-running` (Codex), `id-violet` (Antigravity) | Cor de série em gráfico/legenda de custo por agente | Verde e vermelho (colidem com status); pintar estado com a cor da identidade |
-| **Papel do post-it** (categórica, escolhida pelo humano — ADR-117) | `note-sand`, `note-lime`, `note-teal`, `note-rose`, `note-slate` + a tinta `note-fg` | **A superfície da folha, CHEIA** (papel vivo, não véu a 10%) e a bolinha do seletor. A letra sobre ela é `note-fg`, nunca a matiz | Qualquer superfície **fora da gaveta de notas** — a contenção é essa, e é ela que impede o papel vivo de disputar com o vocabulário de estado; e `text-note-<matiz>`, que continua proibido (a tinta é UMA, com contraste medido) |
+| **Categoria de nota** (escolhida pelo humano — ADR-123 revisa ADR-117) | `note-sand`, `note-lime`, `note-teal`, `note-rose`, `note-slate` | O ponto da nota na lista e o seletor de categoria | Fundo da folha, texto, chrome ou estado. A nota usa a superfície e a tipografia neutras do app; cor identifica, não ocupa área |
 
 ### 2.2 Onde o VIVO é cor, e onde é movimento
 
@@ -405,6 +405,15 @@ nunca em big-bang):
   como irmão direto de seção de painel é o padrão que isto proíbe: eram 7 no
   `ContextPanel`, todos correndo de parede a parede enquanto o conteúdo
   respirava 20px.
+- **Atividade no fio e plano vivo são E0, nunca cartão.** Cabeçalho, linha e
+  checklist usam um trilho neutro contínuo, sem borda envolvente, sombra ou
+  fundo permanente. Cada linha técnica tem **um** slot de glifo: enquanto roda,
+  ele mostra estado; assentada, mostra o tipo da ação. Falha pode tingir o glifo
+  e o resumo do grupo, não a linha inteira. O detalhe aberto separa por fundo +
+  raio, sem hairline aninhado (ADR-123).
+- **A gaveta de uma nota prioriza escrita.** Largura alvo de 440px (limitada
+  pelo viewport), carimbo em 11px mono, escopo em `chip` e editor com mínimo de
+  160px. A categoria colorida mora no ponto/seletor, nunca no fundo da folha.
 
 ## 5. As quatro camadas de esconder
 
@@ -463,6 +472,9 @@ proporcionalidade do Orca:
     de 7 dias, porque "34d" é ruído fingindo precisão. **Nunca segundos**: a
     linha viva do composer segue dona do agora.
   - **Sem carimbo, o slot cala** e o espaço fica reservado (a coluna não dança).
+  - **Rascunho não ocupa o slot.** Texto ou anexo ainda não enviado é metadado
+    neutro (`Rascunho`) entre o título e o slot. Continua visível mesmo se o
+    turno roda, pois responde "há algo seu esperando envio?", não "quando?".
 - **Movimento é pra VIVO, e só pro que termina sozinho.** "Rodando" na sidebar é
   um anel giratório de 11px (`.conv-spin`) porque é evento em curso e o único
   estado da lista que acaba por conta própria; ponto azul parado ali seria
@@ -607,8 +619,8 @@ Status abaixo, com o que sobrou de propósito.
    propósito** (e deve continuar): probe real em Configurações/Onboarding
    (doutrina "verde exige probe"), marco de turno/plano no fio (ADR-037),
    `+N` e linhas de adição do domínio git. Restam ~49 usos de `st-success`,
-   quase todos nessas três famílias; a triagem fina de check por linha de
-   ferramenta (`TaskChecklist`, `Markdown`, `FusionBoard`) e do badge
+   quase todos nessas três famílias; a triagem fina restante de check por linha
+   (`Markdown`, `FusionBoard`) e do badge
    "ativa/arquivada" do `LearningSection` ficou de fora — lá o cinza colapsaria
    uma distinção que a tela precisa manter.
    **Consequência registrada**: no `StatusDot` (mapa de 5 estados, não ternário
@@ -700,8 +712,8 @@ Regras de convívio (as três valem mais que a conveniência do momento):
 
 O que ficou registrado como exceção hoje: o verde declarado do §2 (probe real
 em Configurações/Onboarding, marco de turno/plano no fio, `+N` do domínio git)
-mais a triagem que o §9 item 4 adiou de propósito (`TaskChecklist`,
-`Markdown`, `FusionBoard`, badge do `LearningSection`); e o travessão de
+mais a triagem que o §9 item 4 adiou de propósito (`Markdown`, `FusionBoard`,
+badge do `LearningSection`); e o travessão de
 **texto de prompt** (`lib/mission`, `handoff`, `missionHandoff`, `skills`,
 `learning`, `planMode`, `doctrine`, `transcript`, `trust`), que é entrada do
 agent e não prosa de UI (§9 item 7). Saída de `console.*` também não é copy de

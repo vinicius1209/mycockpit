@@ -60,6 +60,15 @@ describe("LivePlanCard", () => {
     expect(html).toContain('aria-label="Etapas do plano"')
   })
 
+  it("é um trilho E0 neutro, não outro cartão sobre o composer", () => {
+    const html = render(active)
+    expect(html).toContain("border-l border-border/40")
+    expect(html).not.toContain("shadow-")
+    expect(html).not.toContain("bg-card")
+    expect(html).not.toContain("text-brass")
+    expect(html).not.toContain("text-st-success")
+  })
+
   it("vira apenas resumo quando a checklist já está aberta no painel Plano", () => {
     const html = render(active, true)
     expect(html).toContain('data-plan-detail="sidebar"')

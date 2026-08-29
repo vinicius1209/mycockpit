@@ -99,7 +99,6 @@ function cenarioBase() {
       ],
     },
     byId: { cx: conversa("px", { runId: RUN, running: true }) },
-    drafts: {},
     queuedPrompt: null,
   })
   useApp.setState({

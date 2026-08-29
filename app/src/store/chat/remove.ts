@@ -26,6 +26,7 @@ import { isTauri } from "@/lib/db"
 import { useApp } from "@/store/app"
 import { useWorktrees } from "@/store/worktrees"
 import { useStickyNotes } from "@/store/stickyNotes"
+import { useComposerDrafts } from "@/store/composerDrafts"
 
 type Get = () => ChatState
 type Set = (fn: (s: ChatState) => Partial<ChatState>) => void
@@ -141,6 +142,7 @@ export async function removeConversationImpl(
   // aplicada a mais um dono: nada continua vivo e INVISÍVEL depois que a
   // conversa some.
   useStickyNotes.getState().clearConversationNotes(id)
+  useComposerDrafts.getState().forget(id)
   const wasActive = before.activeId === id
   // projeto DONO da conversa removida (pode não ser o ativo)
   const owner = projectOfConv(before.conversationsByProject, id) ?? before.projectId

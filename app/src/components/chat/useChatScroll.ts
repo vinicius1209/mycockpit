@@ -75,6 +75,7 @@ export function useChatScroll({
   running: boolean
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null)
   const [atBottom, setAtBottom] = useState(true)
   // Espelho do estado pro efeito de autoscroll não depender DELE: com `atBottom`
   // na lista de deps, voltar pro fim disparava um `scrollTo` instantâneo que
@@ -144,18 +145,21 @@ export function useChatScroll({
   // conversa e o fim escorregava pra fora da tela no meio do turno.
   useEffect(() => {
     const el = scrollRef.current
-    if (!el) return
+    if (!el || !contentEl) return
     const ro = new ResizeObserver(() => {
       if (!seguindoRef.current) return
       const atual = scrollRef.current
-      if (atual) atual.scrollTo({ top: atual.scrollHeight, behavior: "auto" })
+      // O callback pode ter sido enfileirado antes da troca de conversa.
+      if (atual && useChat.getState().activeId === activeId)
+        atual.scrollTo({ top: atual.scrollHeight, behavior: "auto" })
     })
-    // O primeiro filho é o conteúdo (é ele que cresce); o container cobre
-    // redimensionamento de janela e abertura de painel.
-    if (el.firstElementChild) ro.observe(el.firstElementChild)
+    // Observa o wrapper EXATO do transcript. `firstElementChild` não serve:
+    // a régua de turnos e a timeline podem vir antes dele, e na troca o wrapper
+    // keyed é substituído. O callback-ref entrega o nó novo e religa este efeito.
+    ro.observe(contentEl)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [activeId, contentEl])
 
   // Trocar de conversa (ou os itens chegarem do disco) aterrissa no fim e
   // volta a seguir. Não há mais janela de ancoragem com prazo: quem segura o
@@ -180,5 +184,5 @@ export function useChatScroll({
     return () => window.cancelAnimationFrame(rafId)
   }, [activeId, vazio])
 
-  return { scrollRef, atBottom, onScroll, scrollToBottom, setAtBottom }
+  return { scrollRef, contentRef: setContentEl, atBottom, onScroll, scrollToBottom, setAtBottom }
 }

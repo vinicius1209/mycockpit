@@ -39,6 +39,7 @@ import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { TurnoTokens } from "@/components/chat/turnoTokens"
 import { cn } from "@/lib/utils"
+import { controle } from "@/components/ui/controle"
 import { DESTINATIONS } from "@/lib/agents"
 import { fmtCost, fmtDuration, fmtTime } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
@@ -361,45 +362,46 @@ const ToolLine = memo(function ToolLine({
           aria-expanded={expandable ? open : undefined}
           tabIndex={-1}
           className={cn(
-            "group/step flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-[5px] text-left text-[13px] transition-colors",
-            expandable && "hover:bg-accent/40",
-            p.emphasis === "warning" && status !== "error" && "text-brass",
-            // passo em execução com sutil destaque neutro
-            status === "running" && "bg-accent/30",
+            controle("compacto"),
+            "group/step flex min-w-0 flex-1 text-left transition-colors",
+            expandable && "hover:bg-sel-hover",
+            p.emphasis === "warning" && status !== "error" && "text-st-warning",
           )}
         >
         <span
-          className="grid size-3.5 shrink-0 place-items-center"
+          className="grid size-4 shrink-0 place-items-center"
           title={status === "recorded" ? "sem resultado registrado" : undefined}
         >
-          <StepDot
-            status={status}
-            ancestor={hasRunningDescendant(node, activeToolId)}
-          />
-        </span>
-        <Icon
-          className={cn(
-            "size-3.5 shrink-0",
-            failed
-              ? "text-st-error"
-              : p.emphasis === "warning" || p.kind === "edit" || p.kind === "write"
-                ? "text-brass"
-                : "text-muted-foreground",
+          {status === "running" ? (
+            <StepDot status={status} ancestor={hasRunningDescendant(node, activeToolId)} />
+          ) : (
+            <Icon
+              className={cn(
+                "size-3.5",
+                failed
+                  ? "text-st-error"
+                  : status === "ok"
+                    ? "text-muted-foreground/55"
+                    : p.emphasis === "warning"
+                      ? "text-st-warning"
+                      : "text-muted-foreground/70",
+              )}
+            />
           )}
-        />
+        </span>
         <span
           className={cn(
             "truncate",
             // estado no PRÓPRIO rótulo (não só no ponto): concluído assenta,
             // em execução fica pleno → a sequência ganha ritmo de progresso.
             failed
-              ? "text-st-error"
+              ? "text-foreground"
               : status === "ok"
                 ? "text-foreground/55"
                 : status === "running"
                   ? "text-foreground"
                   : p.emphasis === "warning"
-                    ? "text-brass"
+                    ? "text-st-warning"
                     : "text-foreground/75",
           )}
         >
@@ -472,9 +474,9 @@ const ToolLine = memo(function ToolLine({
         </div>
       )}
       {open && (
-        <div className="ml-[7px] border-l border-border/45 pl-2.5">
+        <div className="ml-2 border-l border-border/40 pl-2.5">
           {p.kind === "agent" && p.detail && (
-            <div className="mt-1 mb-1.5 overflow-hidden rounded-md border border-border/55 bg-secondary/10">
+            <div className="mt-1 mb-1.5 overflow-hidden rounded-md bg-secondary/20">
               <button
                 type="button"
                 onClick={() => setBriefingOpen((value) => !value)}
@@ -508,7 +510,7 @@ const ToolLine = memo(function ToolLine({
             resultText ||
             item.agentSummary ||
             (item.result && onRetry)) && (
-            <div className="mt-1 mb-1.5 overflow-hidden rounded-md border border-border/60 bg-secondary/20">
+            <div className="mt-1 mb-1.5 overflow-hidden rounded-md bg-secondary/20">
               {p.kind !== "agent" && p.detail && (
                 <div>
                   <div className="flex items-center">
@@ -560,7 +562,7 @@ const ToolLine = memo(function ToolLine({
                   className={cn(
                     p.kind !== "agent" &&
                       p.detail &&
-                      "border-t border-border/50",
+                      "border-t border-border/40",
                   )}
                 >
                   <p className="px-2 pt-2 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
@@ -577,7 +579,7 @@ const ToolLine = memo(function ToolLine({
                 </div>
               )}
               {resultText && (
-                <div className="border-t border-border/50 p-2">
+                <div className="border-t border-border/40 p-2">
                   <p className="mb-1 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
                     {failed ? "Erro" : "Saída"}
                   </p>
@@ -593,7 +595,7 @@ const ToolLine = memo(function ToolLine({
                 </div>
               )}
               {item.agentSummary && (
-                <div className="border-t border-border/50 p-2">
+                <div className="border-t border-border/40 p-2">
                   <p className="mb-1 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
                     Retorno do agente
                   </p>
@@ -606,7 +608,7 @@ const ToolLine = memo(function ToolLine({
                 </div>
               )}
               {item.deferred?.outputFile && item.deferred.status !== "running" && (
-                <div className="border-t border-border/50 p-2">
+                <div className="border-t border-border/40 p-2">
                   <p className="mb-1 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
                     Resultado em disco
                   </p>
@@ -625,7 +627,7 @@ const ToolLine = memo(function ToolLine({
               {item.result &&
                 onRetry &&
                 (!item.deferred || item.deferred.status === "interrupted") && (
-                  <div className="flex items-center justify-end gap-1.5 border-t border-border/50 px-2 py-1.5">
+                  <div className="flex items-center justify-end gap-1.5 border-t border-border/40 px-2 py-1.5">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -991,14 +993,14 @@ const ToolGroup = memo(function ToolGroup({
         data-work-root
         aria-expanded={open}
         className={cn(
-          "group/activity flex w-full items-center gap-2 rounded-md border-l-2 border-l-transparent px-1.5 py-1.5 text-left text-[12px] transition-colors hover:bg-accent/35 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
-          live && "border-l-foreground/30 bg-accent/20",
+          controle("compacto"),
+          "group/activity flex w-full text-left transition-colors hover:bg-sel-hover focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
           digest.state === "error"
             ? "text-st-error"
             : digest.state === "running"
               ? "text-foreground"
               : digest.emphasis === "warning"
-                ? "text-brass"
+                ? "text-st-warning"
                 : digest.emphasis === "quiet"
                   ? "text-muted-foreground/75"
                   : "text-muted-foreground",
@@ -1062,7 +1064,7 @@ const ToolGroup = memo(function ToolGroup({
         <div
           role="tree"
           aria-label="Fio Vivo da execução"
-          className="mt-0.5 ml-[7px] flex flex-col gap-px border-l border-border/40 pl-2.5"
+          className="mt-0.5 ml-2 flex flex-col gap-px border-l border-border/40 pl-2.5"
         >
           <ToolNodeList
             nodes={forest}
@@ -1722,9 +1724,7 @@ interface NodeCtx {
   onKeepPlanning?: (id: string) => void
 }
 
-/** O transcript registra que o plano nasceu e como terminou; a checklist viva
- * mora exclusivamente junto ao composer. Assim o plano não disputa atenção
- * consigo mesmo em dois pontos da tela. */
+/** O transcript registra o plano; a checklist viva mora junto ao composer. */
 function PlanMilestone({
   plan,
   live,
@@ -1764,7 +1764,7 @@ function PlanMilestone({
           <ListChecks
             className={cn(
               "size-3.5 shrink-0",
-              live ? "text-brass" : "text-muted-foreground/65",
+              "text-muted-foreground/65",
             )}
           />
         )}
@@ -1782,7 +1782,7 @@ function PlanMilestone({
         )}
       </button>
       {open && (
-        <div className="mt-1 ml-[7px] border-l border-border/45 py-1 pl-3">
+        <div className="mt-1 ml-[7px] border-l border-border/40 py-1 pl-3">
           <TaskChecklist tasks={plan.tasks} dense />
         </div>
       )}

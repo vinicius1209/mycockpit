@@ -12,11 +12,10 @@ const h = vi.hoisted(() => ({
     newConversation: vi.fn(async (_projectId: string) => "conv-nova"),
     openProject: vi.fn(async () => {}),
     switchConversation: vi.fn(async () => {}),
-    // TAREFA 3: o dispatch deixa a intenção do card como RASCUNHO do composer.
-    setDraft: vi.fn(),
     // sentinela anti auto-send: o dispatch NUNCA dispara turno sozinho.
     send: vi.fn(),
   },
+  drafts: { setText: vi.fn() },
   app: {
     // projetos VIVOS do app: a guarda de projeto arquivado do dispatch (B1)
     // consulta esta lista — cards de projeto fora dela não despacham.
@@ -58,6 +57,9 @@ vi.mock("@/store/chat", () => ({
   useChat: { getState: () => h.chat },
   hasExecutorTurn: (items: { kind: string }[]) => items.some((it) => it.kind !== "advice"),
   executorItems: (items: { kind: string }[]) => items.filter((it) => it.kind !== "advice"),
+}))
+vi.mock("@/store/composerDrafts", () => ({
+  useComposerDrafts: { getState: () => h.drafts },
 }))
 vi.mock("@/store/app", () => ({ useApp: { getState: () => h.app } }))
 
@@ -247,7 +249,7 @@ describe("cards (E1): dispatch por gesto humano", () => {
     ])
     await useCards.getState().dispatch("c1")
     // formato natural de pedido: título na 1ª linha, body após linha em branco
-    expect(h.chat.setDraft).toHaveBeenCalledWith(
+    expect(h.drafts.setText).toHaveBeenCalledWith(
       "conv-nova",
       "Refatorar login\n\nCritérios:\n- MFA",
     )
@@ -258,7 +260,7 @@ describe("cards (E1): dispatch por gesto humano", () => {
   it("dispatch de card sem body rascunha só o título", async () => {
     seedStore([card({ state: "backlog", title: "Só a intenção", body: null })])
     await useCards.getState().dispatch("c1")
-    expect(h.chat.setDraft).toHaveBeenCalledWith("conv-nova", "Só a intenção")
+    expect(h.drafts.setText).toHaveBeenCalledWith("conv-nova", "Só a intenção")
     expect(h.chat.send).not.toHaveBeenCalled()
   })
 

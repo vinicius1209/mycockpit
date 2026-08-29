@@ -4,6 +4,7 @@
 // ledger, presets, cards...) fica em db.ts.
 
 import { getDb, ensureBoardTables } from "@/lib/db"
+import { ensureComposerDraftTables } from "@/lib/db/schema"
 import type { ChatItem } from "@/store/chat"
 import type { ContextBasis } from "@/lib/contextSnapshot"
 
@@ -33,6 +34,8 @@ export interface ConversationMeta {
    *  Permite achar "a conversa da mesa" de cada agent (ensureDeskConversation,
    *  lib/fleet/send — o Companion usa) sem carregar cada linha. */
   agent: string | null
+  /** Há texto ou anexo não enviado, sem carregar o histórico inteiro. */
+  hasDraft?: boolean
 }
 
 interface ConvListRow {
@@ -42,6 +45,7 @@ interface ConvListRow {
   color: string | null
   worktree_path: string | null
   agent: string | null
+  has_draft: number
 }
 
 /** Lista as conversas de um projeto na ordem MANUAL (S1.2; fallback: criação,
@@ -51,8 +55,13 @@ export async function listConversations(
 ): Promise<ConversationMeta[] | null> {
   const db = await getDb()
   if (!db) return null
+  await ensureComposerDraftTables(db)
   const rows = await db.select<ConvListRow[]>(
-    "SELECT id, title, updated_at, color, worktree_path, agent FROM conversations WHERE project_id = $1 ORDER BY (sort_order IS NULL), sort_order ASC, created_at ASC",
+    `SELECT c.id, c.title, c.updated_at, c.color, c.worktree_path, c.agent,
+            EXISTS(SELECT 1 FROM conversation_drafts d WHERE d.conversation_id = c.id) AS has_draft
+       FROM conversations c
+      WHERE c.project_id = $1
+      ORDER BY (c.sort_order IS NULL), c.sort_order ASC, c.created_at ASC`,
     [projectId],
   )
   return rows.map((r) => ({
@@ -62,6 +71,7 @@ export async function listConversations(
     color: r.color ?? null,
     worktreePath: r.worktree_path ?? null,
     agent: r.agent ?? null,
+    hasDraft: r.has_draft === 1,
   }))
 }
 

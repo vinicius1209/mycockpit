@@ -143,7 +143,6 @@ beforeEach(() => {
     conversations: [],
     conversationsByProject: {},
     byId: {},
-    drafts: {},
     queuedPrompt: null,
   })
   useMission.setState({ byConv: {} })

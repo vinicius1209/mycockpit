@@ -89,7 +89,7 @@ describe("StickyNotesDockView", () => {
     const html = render({ notes: duasNotas })
     expect(html).not.toContain("fixed")
     expect(html).not.toContain("bottom-16")
-    expect(html).toContain("max-h-[min(27rem")
+    expect(html).toContain("max-h-[min(32rem")
   })
 
   describe(`com menos de ${LIMIAR_DA_LISTA} notas (desenho B)`, () => {
@@ -177,9 +177,9 @@ describe("StickyNotesDockView", () => {
       notes: [nota({ id: "z", content: "Vale em todo projeto" })],
       activeConvId: "c1",
     })
-    expect(daConversa).toContain("Desta conversa")
-    expect(doProjeto).toContain("Deste projeto")
-    expect(deTodos).toContain("De todos os projetos")
+    expect(daConversa).toContain(">Conversa<")
+    expect(doProjeto).toContain(">Projeto<")
+    expect(deTodos).toContain(">Todos<")
   })
 })
 
@@ -190,6 +190,15 @@ describe("StickyNotesToggleView", () => {
     )
     expect(html).toContain("Notas")
     expect(html).toContain("3")
+  })
+
+  it("aberto usa seleção neutra, sem transformar estado em tinta", () => {
+    const html = renderToStaticMarkup(
+      createElement(StickyNotesToggleView, { open: true, count: 1 }),
+    )
+    expect(html).toContain("bg-sel")
+    expect(html).not.toContain("bg-brass")
+    expect(html).not.toContain("text-brass")
   })
 })
 
@@ -255,24 +264,20 @@ describe("a fronteira de colisão da gaveta", () => {
   })
 })
 
-describe("a folha veste o papel", () => {
-  it("a superfície da folha usa a tinta da nota aberta", () => {
-    // Não é o cartão que se pinta: papel colorido dentro de superfície branca
-    // seria cartão-em-cartão de cor (§4). A coluna inteira vira o papel.
+describe("a folha deixa o texto comandar", () => {
+  it("a cor aparece uma vez como marcador, não como fundo da superfície", () => {
     const html = render({
       notes: [nota({ id: "só", color: "rose", content: "uma nota só" })],
     })
-    expect(html).toContain("bg-note-rose")
+    expect(html.split("bg-note-rose")).toHaveLength(2)
   })
 
-  it("a tinta do TEXTO vem junto, senão a letra some no tema escuro", () => {
-    // A coluna redefine `--foreground`/`--muted-foreground` pra tinta do papel:
-    // é o que faz o cartão inteiro escrever certo sem trocar classe nenhuma.
+  it("mantém a tipografia no tema do app", () => {
     const html = render({
       notes: [nota({ id: "só", color: "sand", content: "uma nota só" })],
     })
-    expect(html).toContain("--foreground:var(--note-fg)")
-    expect(html).toContain("--muted-foreground")
+    expect(html).not.toContain("--foreground:var(--note-fg)")
+    expect(html).not.toContain("text-note-fg")
   })
 
   it("sem nota aberta não há papel nenhum", () => {

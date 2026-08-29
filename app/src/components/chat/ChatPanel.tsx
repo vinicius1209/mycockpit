@@ -164,7 +164,7 @@ export function ChatPanel() {
   const finalizing = conv.finalizing
   const activeId = useChat((s) => s.activeId)
 
-  const { scrollRef, atBottom, onScroll, scrollToBottom, setAtBottom } = useChatScroll({
+  const { scrollRef, contentRef, atBottom, onScroll, scrollToBottom, setAtBottom } = useChatScroll({
     activeId,
     items,
     running,
@@ -1044,9 +1044,9 @@ export function ChatPanel() {
           <TurnScrubber items={items} scrollRef={scrollRef} />
         )}
         {vista.fio ? (
-          // key no activeId → o fade só replica ao TROCAR de conversa (não a cada
-          // token do streaming, que mantém o mesmo activeId).
+          // key no activeId → fade só ao TROCAR de conversa, não a cada token.
           <div
+            ref={contentRef}
             key={activeId ?? "none"}
             className="animate-in fade-in-0 duration-75 ease-out"
           >

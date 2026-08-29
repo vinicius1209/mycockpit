@@ -27,7 +27,7 @@ describe("StickyNoteCard", () => {
     expect(html).toContain("Geral")
   })
 
-  it("pinta cada tinta com o token note-* dela, e só na superfície", () => {
+  it("mantém a cor escolhida no marcador categórico", () => {
     const sandHtml = renderToStaticMarkup(
       createElement(StickyNoteCard, { note: { ...mockNote, color: "sand" } }),
     )
@@ -38,17 +38,14 @@ describe("StickyNoteCard", () => {
     expect(tealHtml).toContain("bg-note-teal")
   })
 
-  it("o papel vivo carrega TINTA PRÓPRIA, e ela é a mesma em todo papel", () => {
-    // Substitui a regra do ADR-109 ("note-* nunca pinta texto"). Sobre papel
-    // vivo a letra não pode seguir o tema — sumiria no escuro. Ela vem do par
-    // `--note-fg`, que é UM só: a cor do papel muda, a da tinta não, senão
-    // cada nota teria um contraste diferente e nenhum medido.
+  it("a categoria não pinta a folha nem a tipografia", () => {
     for (const color of ["sand", "slate", "teal", "indigo", "rose"] as const) {
       const html = renderToStaticMarkup(
         createElement(StickyNoteCard, { note: { ...mockNote, color } }),
       )
-      expect(html).toContain("text-note-fg")
-      // e nenhuma MATIZ vira cor de letra: `text-note-sand` continua proibido.
+      const raiz = html.slice(0, html.indexOf(">"))
+      expect(raiz).not.toContain("bg-note-")
+      expect(html).not.toContain("text-note-fg")
       for (const hue of ["sand", "slate", "teal", "indigo", "rose"]) {
         expect(html).not.toContain(`text-note-${hue}`)
       }
@@ -86,7 +83,8 @@ describe("a folha (flat) é FOLHA, não cartão", () => {
     const naGaveta = renderToStaticMarkup(
       createElement(StickyNoteCard, { note: comTitulo, flat: true }),
     )
-    expect(raiz(solto)).toContain("bg-note-")
+    expect(raiz(solto)).toContain("bg-card")
+    expect(raiz(solto)).not.toContain("bg-note-")
     expect(raiz(naGaveta)).not.toContain("bg-note-")
     expect(naGaveta).toContain("bg-note-sand")
   })

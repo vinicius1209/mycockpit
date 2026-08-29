@@ -61,7 +61,6 @@ function seed(metaAgent: string | null, items: ChatItem[] = []) {
       },
     ],
     byId: { [CONV]: conv({ items }) },
-    drafts: {},
   })
 }
 

@@ -4,7 +4,7 @@
 //   - texto com Enter=envia / Shift+Enter=quebra linha (semântica do console);
 //   - `@` menção ATÔMICA (pill via lexical-beautiful-mentions) com o nosso
 //     menu (AgentAvatar + nome, seção "Especialistas");
-//   - draft por conversa: a fonte da verdade segue a string em useChat.drafts —
+//   - draft por conversa: a fonte da verdade segue useComposerDrafts —
 //     o editor serializa a cada mudança e reconstrói quando o valor muda por
 //     fora (troca de conversa, sugestão, limpeza pós-envio);
 //   - serialização = a MESMA string que o handleSend espera (menção → `@nome`),

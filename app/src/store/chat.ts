@@ -509,8 +509,6 @@ export interface ChatState {
   conversationsByProject: Record<string, ConversationMeta[]>
   /** Estado de cada conversa carregada (Sprint 4, runs em background). */
   byId: Record<string, ConvState>
-  /** Rascunho não-enviado por conversa, sobrevive a trocar de modo/conversa. */
-  drafts: Record<string, string>
   /** Prompt enfileirado por outra UI (ex.: ⌘K) p/ o ChatPanel disparar. */
   queuedPrompt: string | null
 
@@ -710,8 +708,6 @@ export interface ChatState {
   dequeueQueued: (convId: string) => QueuedMsg[]
   /** Remove UMA mensagem enfileirada (o X no chip da fila). */
   removeQueued: (convId: string, index: number) => void
-  /** Atualiza o rascunho (input não-enviado) de uma conversa. */
-  setDraft: (convId: string, text: string) => void
   /** Fusion: add o balão do usuário à conversa + marca running (turno visível). */
   beginFusion: (convId: string, text: string, attachments: Attachment[]) => void
   /** Fusion: promove o vencedor, anexa os itens dele + assume sessão/agent.
@@ -1267,7 +1263,6 @@ export const useChat = create<ChatState>((set, get) => {
     conversations: [],
     conversationsByProject: {},
     byId: {},
-    drafts: {},
     queuedPrompt: null,
 
     // a closure ensureLoaded exposta como action (mesma semântica, zero seleção)
@@ -2297,9 +2292,6 @@ export const useChat = create<ChatState>((set, get) => {
       })
       void get().persist(convId)
     },
-
-    setDraft: (convId, text) =>
-      set((s) => ({ drafts: { ...s.drafts, [convId]: text } })),
 
     enqueue: (convId, text, attachments = []) =>
       set((s) => {

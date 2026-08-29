@@ -240,7 +240,6 @@ export const DEAD_TOKEN_RULES = [
       // Família "marco de turno/plano no fio" (ADR-037): máx. 1 por turno.
       "components/chat/MessageList.tsx": { max: 4, motivo: "marcos do fio (turno/plano concluído), ADR-037; +1 pelo `bg-st-success/10` da linha de ADIÇÃO do diff, que é domínio git. Apertado de 5→4 quando o 'Regra salva' saiu pro TurnActions.tsx" },
       "components/chat/TurnActions.tsx": { max: 1, motivo: "marco de MEMÓRIA gravada ('Regra salva' do 🎓): regra durável salva é evento raro e verificado, não estado ambiente. Veio do MessageList na extração de 19/08/2026" },
-      "components/chat/LivePlanCard.tsx": { max: 1, motivo: "marco de plano concluído, extraído do ChatPanel" },
       "components/mission/MissionTimeline.tsx": { max: 3, motivo: "marco verificado da visita concluída no diário de bordo; a antiga estação verde e sua espinha foram removidas" },
       // o verde do DESFECHO da missão veio inteiro da MissionTimeline quando o
       // resumo virou arquivo próprio: marco de plano concluído (ADR-037), não
@@ -254,9 +253,7 @@ export const DEAD_TOKEN_RULES = [
       "components/layout/DiffIndex.tsx": { max: 3, motivo: "mesma família: `+N` do total da barra, `+N` por arquivo da lista, e o `A` de arquivo novo herdado do STATUS_META" },
       "components/layout/DiffPanel/parts.tsx": { max: 1, motivo: "mesma família: a letra `A` (arquivo novo) do STATUS_META, compartilhado entre a coluna e a aba" },
       "components/layout/DiffPanel/comments.tsx": { max: 2, motivo: "mesma família de DiffPanel.tsx: `bg-st-success/[0.10]` (fundo da linha ADD) e `text-st-success` (sinal `+`) da linha do hunk, extraídos de lá pro comentário inline" },
-      // Triagem fina deixada de fora da passada de 12/08/2026, de propósito
-      // (§9 item 4): aqui o cinza colapsaria uma distinção que a tela precisa.
-      "components/chat/TaskChecklist.tsx": { max: 1, motivo: "§9 item 4: triagem de check por linha adiada de propósito" },
+      // Triagem fina restante da passada de 12/08/2026 (§9 item 4).
       "components/common/Markdown.tsx": { max: 1, motivo: "§9 item 4: triagem de check por linha adiada de propósito" },
       "components/fusion/FusionBoard.tsx": { max: 1, motivo: "§9 item 4: triagem de check por linha adiada de propósito" },
       "components/layout/LearningSection.tsx": { max: 3, motivo: "§9 item 4: badge ativa/arquivada, cinza colapsaria a distinção; +1 pelo fundo do mesmo badge. TRIAGEM PENDENTE: o `hover:text-st-success` do botão Promover não é marco nem probe, é verde de afordância" },

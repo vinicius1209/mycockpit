@@ -106,10 +106,14 @@ export const app = {
 
 export const chat = {
   activeId: CONV as string | null,
-  drafts: {} as Record<string, string>,
   byId: {} as Record<string, ConvState>,
   conversations: [] as { id: string; agent: string | null }[],
   projectId: PROJ_DONO as string | null,
+}
+
+export const composerDrafts = {
+  byConv: {} as Record<string, { text: string; attachments: Attachment[] }>,
+  loaded: {} as Record<string, true>,
 }
 
 /** O que o composer MANDOU enviar (texto, config do run, anexos). */
@@ -127,7 +131,8 @@ export function resetarBancada() {
   app.limitedAgents = {}
   app.settings = { ...SETTINGS_PADRAO }
   chat.activeId = CONV
-  chat.drafts = {}
+  composerDrafts.byConv = {}
+  composerDrafts.loaded = {}
   chat.byId = { [CONV]: conversa() }
   chat.conversations = [{ id: CONV, agent: "claude-code" }]
   chat.projectId = PROJ_DONO
@@ -154,7 +159,6 @@ vi.mock("@/store/app", async (orig) => {
 vi.mock("@/store/chat", async (orig) => {
   const real = await orig<typeof import("@/store/chat")>()
   const acoes = {
-    setDraft: vi.fn(),
     setConversationAgent: vi.fn(),
     setConversationPreset: vi.fn(),
     setPlanFirst: vi.fn(),
@@ -167,6 +171,24 @@ vi.mock("@/store/chat", async (orig) => {
       { getState: () => ({ ...chat, ...acoes }) },
     ),
     useActiveConv: () => (chat.activeId ? chat.byId[chat.activeId] : undefined) ?? conversa(),
+  }
+})
+
+vi.mock("@/store/composerDrafts", async (orig) => {
+  const real = await orig<typeof import("@/store/composerDrafts")>()
+  const actions = {
+    load: vi.fn(async () => {}),
+    setText: vi.fn(),
+    setAttachments: vi.fn(),
+    clear: vi.fn(),
+  }
+  return {
+    ...real,
+    useComposerDrafts: Object.assign(
+      (selector: (s: typeof composerDrafts & typeof actions) => unknown) =>
+        selector({ ...composerDrafts, ...actions }),
+      { getState: () => ({ ...composerDrafts, ...actions }) },
+    ),
   }
 })
 

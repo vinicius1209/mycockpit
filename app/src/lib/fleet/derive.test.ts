@@ -16,6 +16,7 @@ import type {
 import type { Project } from "@/lib/types"
 import { useApp } from "@/store/app"
 import { useChat, type ChatItem, type ConvState } from "@/store/chat"
+import { useComposerDrafts } from "@/store/composerDrafts"
 import {
   useFusion,
   type FusionCandidate,
@@ -197,9 +198,9 @@ beforeEach(() => {
     conversations: [],
     conversationsByProject: {},
     byId: {},
-    drafts: {},
     queuedPrompt: null,
   })
+  useComposerDrafts.setState({ byConv: {}, loaded: {} })
   useMission.setState({ byConv: {} })
   useFusion.setState({ byConv: {} })
   useApp.setState({ projects: [projeto("p1")], limitedAgents: {} })
@@ -832,10 +833,9 @@ describe("startDeriving", () => {
     // foto inicial imediata
     expect(vistos).toHaveLength(1)
 
-    // mudanças que NÃO alteram o snapshot (drafts) ⇒ derive coalescido no
-    // trailing edge, JSON igual ⇒ nenhum callback novo
-    useChat.setState({ drafts: { c1: "rascunho" } })
-    useChat.setState({ drafts: { c1: "rascunho maior" } })
+    // Rascunho tem store própria: digitar não acorda o escritório.
+    useComposerDrafts.getState().setText("c1", "rascunho")
+    useComposerDrafts.getState().setText("c1", "rascunho maior")
     await vi.advanceTimersByTimeAsync(150)
     expect(vistos).toHaveLength(1)
 
@@ -867,8 +867,8 @@ describe("startDeriving", () => {
     // nem a foto inicial: oculto não há cena pra atualizar
     expect(vistos).toHaveLength(0)
 
-    // digitação (drafts) e mudança REAL de estado: nada agenda enquanto inativo
-    useChat.setState({ drafts: { c1: "d" } })
+    // digitação e mudança REAL de estado: nada agenda enquanto inativo
+    useComposerDrafts.getState().setText("c1", "d")
     useChat.setState({
       byId: { c1: conversa("p1", "claude-code", { running: true, runId: "r-1" }) },
     })

@@ -32,6 +32,7 @@ import { useFusion } from "@/store/fusion"
 import { useAwaiting } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 import type { ConversationMeta } from "@/lib/db/conversations"
+import { hasComposerDraft, useComposerDrafts } from "@/store/composerDrafts"
 
 /** Ids das conversas rodando, como string estável (só muda em transição de run
  * , não a cada delta de streaming, evitando re-render da sidebar inteira). */
@@ -118,6 +119,21 @@ function useMissionRunningConvIds(): Set<string> {
   return new Set(key ? key.split(",") : [])
 }
 
+/** Presença conhecida em sessão. Inclui `false` pra vencer a meta do boot
+ * depois que um rascunho persistido é enviado/limpo. */
+function useDraftPresence(): Map<string, boolean> {
+  const key = useComposerDrafts((s) =>
+    Object.keys(s.loaded)
+      .map((id) => `${id}:${hasComposerDraft(s.byConv[id]) ? 1 : 0}`)
+      .sort()
+      .join(","),
+  )
+  const out = new Map<string, boolean>()
+  for (const pair of key ? key.split(",") : [])
+    out.set(pair.slice(0, -2), pair.endsWith(":1"))
+  return out
+}
+
 // Array vazio ESTÁVEL (module-level): o selector abaixo NÃO pode retornar um `[]`
 // novo a cada chamada — o useSyncExternalStore do React 18 detecta referência
 // nova a cada snapshot e entra em loop infinito ("getSnapshot should be cached"),
@@ -159,6 +175,7 @@ export function ConversationList({ projectId }: { projectId: string }) {
   const fusionAlive = useFusionConvIds()
   const missionRunning = useMissionRunningConvIds()
   const limitState = useLimitConvIds()
+  const draftPresence = useDraftPresence()
   // Pedido pendente (permissão ou pergunta do ask_user): o turno DESTA conversa
   // está parado esperando você.
   const awaiting = useAwaiting()
@@ -267,6 +284,9 @@ export function ConversationList({ projectId }: { projectId: string }) {
         const hasMission = missionRunning.has(c.id)
         const isAwaiting = awaiting.convIds.has(c.id)
         const limitStatus = limitState.get(c.id)
+        const hasDraft = draftPresence.has(c.id)
+          ? draftPresence.get(c.id)!
+          : !!c.hasDraft
         const isEditing = editingId === c.id
         // À DIREITA do título, ANTES do slot: missão e disputa são TIPOS de
         // execução, não estado do turno. O estado do turno mora no slot, que
@@ -434,6 +454,14 @@ export function ConversationList({ projectId }: { projectId: string }) {
                     <span className="min-w-0 flex-1 truncate">
                       {c.title ?? "Nova conversa"}
                     </span>
+                    {hasDraft && (
+                      <span
+                        className="shrink-0 text-[11px] text-faint"
+                        title="Há texto ou anexos não enviados nesta conversa"
+                      >
+                        Rascunho
+                      </span>
+                    )}
                     {/* S3.2 — worktree é CONTEXTO, não seleção nem marca: sai
                         do brass (que fica pra gesto e marca) e vira muted. */}
                     {c.worktreePath && (

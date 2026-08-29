@@ -14,6 +14,7 @@ import { DiffPanel } from "@/components/layout/DiffPanel"
 import { focusConsoleComposer } from "@/lib/focusComposer"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
+import { useComposerDrafts } from "@/store/composerDrafts"
 
 export function DiffTab({
   focusPath,
@@ -50,7 +51,7 @@ export function DiffTab({
       // outro lado é esconder o resultado do próprio gesto.
       onSendToComposer={(text) => {
         if (!activeConvId) return
-        useChat.getState().setDraft(activeConvId, text)
+        useComposerDrafts.getState().setText(activeConvId, text)
         useApp.getState().closeDiffTab()
         setTimeout(focusConsoleComposer, 120)
       }}

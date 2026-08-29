@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it } from "vitest"
 import {
   CONV,
   chat,
+  composerDrafts,
   conversa,
   desabilitado,
   fila,
@@ -18,6 +19,10 @@ import {
 
 beforeEach(resetarBancada)
 
+function rascunho(text: string) {
+  composerDrafts.byConv = { [CONV]: { text, attachments: [] } }
+}
+
 describe("o botão primário acende só quando há o que enviar", () => {
   it("composer vazio: Enviar desabilitado", () => {
     return montar().then((html) =>
@@ -26,22 +31,42 @@ describe("o botão primário acende só quando há o que enviar", () => {
   })
 
   it("com rascunho, Enviar acende", async () => {
-    chat.drafts = { [CONV]: "roda os testes" }
+    rascunho("roda os testes")
     expect(desabilitado(await montar(), "Enviar")).toBe(false)
   })
 
+  it("anexo persistido reaparece no composer da conversa", async () => {
+    composerDrafts.byConv = {
+      [CONV]: {
+        text: "",
+        attachments: [
+          {
+            path: `attachments/${CONV}/print.png`,
+            name: "print-pendente.png",
+            kind: "image",
+            mime: "image/png",
+            bytes: 42,
+          },
+        ],
+      },
+    }
+    const html = await montar()
+    expect(html).toContain("print-pendente.png")
+    expect(desabilitado(html, "Enviar")).toBe(false)
+  })
+
   it("rascunho só de espaços não acende (o trim é o mesmo do envio)", async () => {
-    chat.drafts = { [CONV]: "   \n  " }
+    rascunho("   \n  ")
     expect(desabilitado(await montar(), "Enviar")).toBe(true)
   })
 
   it("composer desabilitado pelo dono: nem com rascunho", async () => {
-    chat.drafts = { [CONV]: "roda os testes" }
+    rascunho("roda os testes")
     expect(desabilitado(await montar({ disabled: true }), "Enviar")).toBe(true)
   })
 
   it("missão em andamento trava o envio manual", async () => {
-    chat.drafts = { [CONV]: "roda os testes" }
+    rascunho("roda os testes")
     const html = await montar({ missionRunning: true })
     expect(desabilitado(html, "Enviar")).toBe(true)
     expect(html).toContain(
@@ -52,7 +77,7 @@ describe("o botão primário acende só quando há o que enviar", () => {
 
 describe("com turno em voo o primário vira PARAR", () => {
   it("running: some o Enviar, entra o Parar", async () => {
-    chat.drafts = { [CONV]: "roda os testes" }
+    rascunho("roda os testes")
     const html = await montar({ running: true })
     expect(desabilitado(html, "Enviar")).toBeNull()
     expect(desabilitado(html, "Parar")).toBe(false)
@@ -129,7 +154,7 @@ describe("o placeholder conta o estado certo", () => {
     // As duas coisas podem valer ao mesmo tempo (missão lançada pelo Launchpad
     // com um turno linear já em voo). O placeholder sempre disse "pare a missão";
     // o Enter é que empilhava assim mesmo. Aqui os dois falam a mesma língua.
-    chat.drafts = { [CONV]: "roda os testes" }
+    rascunho("roda os testes")
     const html = await montar({ running: true, missionRunning: true })
     expect(html).toContain("Missão em andamento")
     expect(html).not.toContain("Enfileirar próxima mensagem…")
@@ -140,7 +165,7 @@ describe("o placeholder conta o estado certo", () => {
 describe("sem conversa ativa o composer não some, mas não despacha", () => {
   it("o Enviar continua apagado mesmo com rascunho de outra conversa", async () => {
     chat.activeId = null
-    chat.drafts = { [CONV]: "roda os testes" }
+    rascunho("roda os testes")
     expect(desabilitado(await montar(), "Enviar")).toBe(true)
   })
 })

@@ -151,7 +151,6 @@ function cenarioBase() {
       c1: conversa("p1", { runId: "r-1", running: true }),
       c2: conversa("p2", { runId: "r-2", running: true }),
     },
-    drafts: {},
     queuedPrompt: null,
   })
   useMission.setState({ byConv: {} })

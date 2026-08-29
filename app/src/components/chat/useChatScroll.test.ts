@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest"
 import { PERTO_DO_FIM_PX, ehGestoDeLeitura, pertoDoFim } from "./useChatScroll"
 
+const source = Object.values(
+  import.meta.glob("./useChatScroll.ts", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+)[0] as string
+
 describe("pertoDoFim", () => {
   it("no fim exato conta como fim", () => {
     expect(pertoDoFim({ scrollHeight: 1000, scrollTop: 800, clientHeight: 200 })).toBe(
@@ -65,5 +73,13 @@ describe("a política de seguir", () => {
     expect(
       pertoDoFim({ scrollHeight: 5000, scrollTop: 100, clientHeight: 800 }),
     ).toBe(false)
+  })
+})
+
+describe("o alvo do observador de crescimento", () => {
+  it("é o transcript explícito, não o primeiro filho acidental do scroller", () => {
+    expect(source).toContain("ro.observe(contentEl)")
+    expect(source).toContain("contentRef: setContentEl")
+    expect(source).not.toContain("ro.observe(el.firstElementChild)")
   })
 })

@@ -64,6 +64,7 @@ import { MissionLauncher } from "@/components/mission/MissionLauncher"
 import type { AgentRunConfig } from "@/lib/types"
 import { usePresets } from "@/store/presets"
 import { isTauri } from "@/lib/db"
+import { useComposerDrafts } from "@/store/composerDrafts"
 
 // O editor Lexical (+lexical +beautiful-mentions, ~82 kB gzip) segue LAZY
 // mesmo sendo o único composer: o chunk baixa em paralelo ao boot e o main
@@ -103,19 +104,21 @@ export function CommandConsole({
   /** Atalho ✦ do composer: abre o marketplace de Especialistas sobre a conversa. */
   onOpenEspecialistas?: () => void
 }) {
-  // Rascunho por-conversa na store → sobrevive a trocar de modo/conversa (não some
-  // no desmonte do componente). Isolado por seletor: escrever não re-renderiza quem
-  // mais escuta o useChat.
-  const value = useChat((s) => (s.activeId ? (s.drafts[s.activeId] ?? "") : ""))
+  const activeId = useChat((s) => s.activeId)
+  // Texto + anexos são uma entidade durável por conversa. A store própria
+  // isola a digitação do estado operacional do chat e da telemetria da Frota.
+  const value = useComposerDrafts((s) =>
+    activeId ? (s.byConv[activeId]?.text ?? "") : "",
+  )
   // assina igual ao setter do useState (aceita string OU updater) p/ os hooks.
   const setValue = useCallback((v: SetStateAction<string>) => {
     const id = useChat.getState().activeId
     if (!id) return
     const next =
       typeof v === "function"
-        ? v(useChat.getState().drafts[id] ?? "")
+        ? v(useComposerDrafts.getState().byConv[id]?.text ?? "")
         : v
-    useChat.getState().setDraft(id, next)
+    useComposerDrafts.getState().setText(id, next)
   }, [])
   // defaults de novas conversas vêm das configurações globais (Settings).
   const settings = useApp((s) => s.settings)
@@ -169,7 +172,6 @@ export function CommandConsole({
   const suggestions = conv.suggestions
   const suggesting = conv.suggesting
   const project = useActiveProject()
-  const activeId = useChat((s) => s.activeId)
   // A PERMISSÃO é do projeto DONO do fio, não do que está em foco — mesma regra
   // que o despacho já segue (`resolveSendTarget`: "cwd, permissão e lições são
   // os do fio, não os da tela"). O resto do composer (comandos "/", arquivos
@@ -259,7 +261,12 @@ export function CommandConsole({
     [notasDaStore, project?.id, activeId],
   )
   const history = usePromptHistory({ conv, activeId, value, setValue })
-  const att = useAttachments({ activeId, setValue, focus: focusComposer })
+  const att = useAttachments({
+    activeId,
+    setValue,
+    focus: focusComposer,
+    conversationDraft: true,
+  })
 
   const {
     commands,
@@ -273,7 +280,7 @@ export function CommandConsole({
   const { files: projectFiles } = at
   const { histIdx, setHistIdx, resetHistory, userPrompts, recallPrev, recallNext } =
     history
-  const { attachments, setAttachments, removeAttachment, addFiles, attach } = att
+  const { attachments, removeAttachment, addFiles, attach } = att
 
   // S3.6 — presets (personas): a seleção mora na CONVERSA (conv.presetId), não
   // em estado local — o handleSend e a mesa leem de lá. Escolher um preset
@@ -390,8 +397,7 @@ export function CommandConsole({
     // e empilha na fila. Eram dois ramos gêmeos aqui — e ramo gêmeo é como o
     // anexo ficava pra trás, órfão no composer depois de a mensagem "sair".
     onSend(text, effCfg, attachments)
-    setValue("")
-    setAttachments([])
+    if (activeId) useComposerDrafts.getState().clear(activeId)
     resetHistory()
     focusComposer()
   }

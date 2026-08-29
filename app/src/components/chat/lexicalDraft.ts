@@ -1,7 +1,7 @@
 // Ponte draft (string) ↔ conteúdo Lexical do composer da conversa (FASE 1).
 //
 // A fonte da verdade do rascunho continua sendo a STRING por conversa em
-// `useChat.drafts` (a mesma que o CommandConsole/textarea usa) — o editor
+// `useComposerDrafts` (a mesma que o CommandConsole usa) — o editor
 // Lexical é uma view: serializa pra essa string a cada mudança e reconstrói
 // a partir dela quando o valor muda por fora (troca de conversa, sugestão,
 // limpeza pós-envio).

@@ -14,8 +14,9 @@ import { cn } from "@/lib/utils"
 import { controle } from "@/components/ui/controle"
 import { useStickyNotes, selectNotesFor } from "@/store/stickyNotes"
 import { useChat } from "@/store/chat"
+import { useComposerDrafts } from "@/store/composerDrafts"
 import { useApp } from "@/store/app"
-import { COLOR_STYLES, StickyNoteCard } from "@/components/notes/StickyNoteCard"
+import { StickyNoteCard } from "@/components/notes/StickyNoteCard"
 import { NotesList } from "@/components/notes/NotesList"
 import {
   ROTULO_DE_ESCOPO,
@@ -40,11 +41,10 @@ import {
 } from "@/components/ui/dropdown-menu"
 import type { StickyNote, StickyNoteTarget } from "@/components/notes/types"
 
-/** Data por extenso do cabeçalho da folha ("27 de agosto, 21:12"). Aqui a nota
- *  é UMA e a largura é de 346px: cabe a data inteira, e ela diz mais que "8h". */
-const DATA_LONGA = new Intl.DateTimeFormat("pt-BR", {
+/** Carimbo compacto: contexto temporal, não título da nota. */
+const DATA_CURTA = new Intl.DateTimeFormat("pt-BR", {
   day: "numeric",
-  month: "long",
+  month: "short",
   hour: "2-digit",
   minute: "2-digit",
 })
@@ -95,24 +95,26 @@ function EscopoPill({
 }) {
   const proximo: EscopoDeNota = escopo === "conversa" ? "projeto" : "conversa"
   const podeTrocar = !!onMudar && (proximo === "projeto" || temConversa)
-  const Icone = escopo === "conversa" ? MessageSquare : FolderGit2
+  const rotulo =
+    escopo === "conversa" ? "Conversa" : escopo === "todos" ? "Todos" : "Projeto"
   return (
     <button
       type="button"
       disabled={!podeTrocar}
       onClick={() => onMudar?.(proximo)}
       title={
-        podeTrocar
-          ? `Mover para "${ROTULO_DE_ESCOPO[proximo]}"`
-          : "Sem conversa ativa: esta nota é do projeto"
+        !onMudar
+          ? `Escopo: ${ROTULO_DE_ESCOPO[escopo]}`
+          : podeTrocar
+            ? `Mover para "${ROTULO_DE_ESCOPO[proximo]}"`
+            : "Sem conversa ativa: esta nota é do projeto"
       }
       className={cn(
         controle("chip"),
-        "bg-secondary font-medium text-muted-foreground transition-colors enabled:hover:bg-accent enabled:hover:text-foreground disabled:cursor-default",
+        "font-medium text-muted-foreground transition-colors enabled:hover:bg-sel-hover enabled:hover:text-foreground disabled:cursor-default",
       )}
     >
-      <Icone className="size-3" />
-      <span>{ROTULO_DE_ESCOPO[escopo]}</span>
+      <span>{rotulo}</span>
     </button>
   )
 }
@@ -383,8 +385,10 @@ export function StickyNotesDockView({
         // E2 e só E2 (§4): nada lá dentro tem sombra própria. `max-h` com teto
         // de viewport + altura do CONTEÚDO: painel de 1 nota tem tamanho de 1
         // nota.
-        "flex max-h-[min(27rem,var(--radix-popover-content-available-height,27rem))] overflow-hidden",
-        comLista ? "w-[560px]" : "w-84",
+        "flex max-h-[min(32rem,var(--radix-popover-content-available-height,32rem))] overflow-hidden",
+        comLista
+          ? "w-[min(640px,calc(100vw-24px))]"
+          : "w-[min(440px,calc(100vw-24px))]",
         // Por último: a superfície do `PopoverContent` vence o que for igual.
         className,
       )}
@@ -402,45 +406,14 @@ export function StickyNotesDockView({
         />
       )}
 
-      {/* A FOLHA é o papel — nos DOIS desenhos.
-          Não é o cartão que se pinta: papel colorido dentro de superfície
-          branca seria cartão-em-cartão de cor (§4), e no desenho B sobrava uma
-          nota branca num popover branco, sem contraste nenhum.
-
-          As variáveis abaixo são o pulo do gato. Em vez de trocar
-          `text-muted-foreground` em catorze lugares do cartão, a coluna
-          REDEFINE o significado delas aqui dentro: todo filho passa a escrever
-          com a tinta do papel sem saber que mudou de fundo, e o mesmo cartão
-          continua servindo, igualzinho, fora da gaveta. */}
-      <div
-        className={cn(
-          "flex min-w-0 flex-1 flex-col",
-          selecionada && COLOR_STYLES[selecionada.color ?? "sand"].card,
-        )}
-        style={
-          selecionada
-            ? ({
-                "--foreground": "var(--note-fg)",
-                "--muted-foreground":
-                  "color-mix(in srgb, var(--note-fg) 72%, transparent)",
-                // Chip e caixa de texto sobre papel viram ETIQUETA CLARA: preto
-                // translúcido comia o papel e virava borrão.
-                "--background": "color-mix(in srgb, #fff 62%, transparent)",
-                "--secondary": "color-mix(in srgb, #fff 55%, transparent)",
-                "--accent": "color-mix(in srgb, #fff 45%, transparent)",
-                "--border": "color-mix(in srgb, var(--note-fg) 18%, transparent)",
-              } as React.CSSProperties)
-            : undefined
-        }
-      >
-        <div className="flex shrink-0 items-center gap-2 px-2.5 py-2 text-[11px] text-muted-foreground">
+      {/* A cor identifica a nota na lista e no seletor; o texto fica dono da
+          folha neutra, sem disputar com uma superfície inteira saturada. */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-[11px] text-faint">
           {selecionada ? (
             <>
-              {/* A data CEDE espaço, o escopo e as ações não. No desenho B a
-                  faixa ainda carrega o `‹ 1/2 ›`, e ali a data por extenso é a
-                  única coisa que pode encolher sem esconder um gesto. */}
-              <span className="min-w-0 truncate tabular-nums">
-                {DATA_LONGA.format(new Date(selecionada.updatedAt))}
+              <span className="min-w-0 truncate font-mono tabular-nums">
+                {DATA_CURTA.format(new Date(selecionada.updatedAt))}
               </span>
               <EscopoPill
                 escopo={escopoDaNota(selecionada, activeConvId)}
@@ -494,7 +467,7 @@ export function StickyNotesDockView({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-2.5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
           {selecionada ? (
             <StickyNoteCard
               // A chave é o id da nota: trocar de nota na folha tem que
@@ -573,9 +546,9 @@ export function StickyNotesDock(superficie: ComponentProps<"aside">) {
       return
     }
     const endereco = mencaoDaNota(nota, notes)
-    const atual = useChat.getState().drafts[activeId] ?? ""
+    const atual = useComposerDrafts.getState().byConv[activeId]?.text ?? ""
     const proximo = atual.trim() ? `${atual} ${endereco}` : endereco
-    useChat.getState().setDraft(activeId, proximo)
+    useComposerDrafts.getState().setText(activeId, proximo)
   }
 
   // "Promover pra tarefa" e "promover pra regra" ainda não existem: não há

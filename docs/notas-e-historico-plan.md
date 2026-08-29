@@ -1,5 +1,10 @@
 # Notas, coluna larga e histórico do fio — plano
 
+> **Correção de direção (29/08/2026, ADR-123):** a paleta continua existindo,
+> mas a tinta cheia da frente P saiu. Cor de nota virou marcador categórico; a
+> folha voltou a ser neutra e a gaveta de uma nota cresceu para privilegiar o
+> editor. Este bloco manda sobre as propostas de "papel vivo" abaixo.
+
 > Status (29/08/2026, build t310, tudo na `main`):
 >
 > | frente | estado |
@@ -10,7 +15,7 @@
 > | **N6** — anexo na nota | ✅ ADR-116 |
 > | **N7.1/7.2** — `@` ranqueado + índice | ✅ ADR-115 |
 > | **M** — a máquina na faixa de status | ✅ ADR-118 |
-> | **P** — post-it: tinta viva | ✅ ADR-117 (a paleta entrou; a MESA de post-its não) |
+> | **P** — categoria de nota | ✅ ADR-123 revisa ADR-117 (paleta como marcador) |
 > | **N7.3/7.4** — símbolo e menção resolvida | proposta |
 > | **L** — bloco largo escapa da coluna | proposta |
 > | **H** — o trilho vira histórico do fio | proposta (a de maior valor) |
@@ -56,11 +61,8 @@
    sobretudo **persistir e mostrar** o que já se calcula, e a linha do tempo
    determinística nem modelo precisa.
 
-**Fica aberto (decisão do humano, não do plano):** a saturação da tinta do
-post-it (frente P). 22% é a régua do ADR-109; 48% lê como post-it de verdade e
-faz a nota virar o elemento mais colorido da tela, disputando com o vocabulário
-de estado do §2. Isso é decisão do guia, e o mock existe pra ela ser tomada
-olhando (`#d` × `#d,forte`).
+**Fechado pelo ADR-123:** a saturação deixa de disputar o corpo da nota. A cor
+permanece inteira apenas no ponto e no seletor, onde funciona como categoria.
 
 ---
 

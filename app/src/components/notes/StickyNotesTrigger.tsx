@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/popover"
 import { StickyNote as StickyIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { controle } from "@/components/ui/controle"
+import { SELECTED_FILL, UNSELECTED } from "@/lib/selection"
 import { useStickyNotes, selectNotesFor } from "@/store/stickyNotes"
 import { useChat } from "@/store/chat"
 import { useApp } from "@/store/app"
@@ -49,10 +51,9 @@ export function StickyNotesToggleView({
       // gatilho morriam aqui e a gaveta não abria.
       {...resto}
       className={cn(
-        "relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[12px] font-medium transition-colors",
-        open
-          ? "border-brass/50 bg-brass/10 text-brass-fg dark:text-brass"
-          : "border-border/60 bg-background/50 text-muted-foreground hover:bg-accent hover:text-foreground",
+        controle("padrao"),
+        "relative gap-1.5 border transition-colors",
+        open ? SELECTED_FILL : UNSELECTED,
         className,
       )}
     >
@@ -60,12 +61,7 @@ export function StickyNotesToggleView({
       <span>Notas</span>
       {count > 0 && (
         <span
-          className={cn(
-            "grid h-4 min-w-4 place-items-center rounded-full px-1 text-[11px] font-bold leading-none",
-            open
-              ? "bg-brass text-brass-fg"
-              : "bg-muted-foreground/20 text-foreground",
-          )}
+          className="grid h-4 min-w-4 place-items-center rounded-full bg-muted-foreground/15 px-1 text-[11px] font-medium leading-none text-foreground"
         >
           {count}
         </span>

@@ -35,6 +35,7 @@ import { LearningSection } from "@/components/layout/LearningSection"
 import { MissionsSection } from "@/components/layout/MissionsSection"
 import { useActiveProject, useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
+import { useComposerDrafts } from "@/store/composerDrafts"
 import type { ProjectConfig } from "@/store/app"
 import { readProjectContext } from "@/lib/context"
 import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/context"
@@ -283,8 +284,7 @@ export function ContextPanel() {
         : undefined
       )?.find((c) => c.id === s.activeId)?.worktreePath ?? null,
   )
-  // P3 — Entrega→diff em 1 clique: a intenção emitida (Central/strip de result)
-  // só vale enquanto a conversa dela é a ativa; ao bater, abre a aba Alterações.
+  // P3: Entrega→diff só vale enquanto a conversa dela é a ativa.
   const activeConvId = useChat((s) => s.activeId)
   const deliveryDiff = useApp((s) => s.deliveryDiff)
   const delivery =
@@ -293,9 +293,9 @@ export function ContextPanel() {
     if (delivery) setTab("alteracoes")
   }, [delivery, setTab])
 
-  // Prefill + foco, usado por "Pedir correção" (P3) e pelos comentários do diff.
+  // Prefill + foco de “Pedir correção” (P3) e dos comentários do diff.
   function prefillComposer(convId: string, text: string) {
-    useChat.getState().setDraft(convId, text)
+    useComposerDrafts.getState().setText(convId, text)
     setTimeout(focusConsoleComposer, 120)
   }
 

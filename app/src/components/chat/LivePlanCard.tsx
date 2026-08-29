@@ -3,6 +3,7 @@ import { Check, ChevronDown, ListChecks, Loader2 } from "lucide-react"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { taskPlansOf } from "@/lib/tasks"
 import { cn } from "@/lib/utils"
+import { controle } from "@/components/ui/controle"
 import type { ChatItem } from "@/store/chat"
 
 /** Instrumento vivo do turno, junto ao composer. A checklist pode aparecer aqui
@@ -50,8 +51,8 @@ export function LivePlanCard({
   }
 
   return (
-    <div className="mx-auto mb-2 max-w-[760px] px-8">
-      <div className="overflow-hidden rounded-lg border bg-card/95 shadow-[var(--shadow-pop)]">
+    <div className="mx-auto mb-1 max-w-[760px] px-8">
+      <div>
         <button
           type="button"
           onClick={() => setCollapsedPlanId(open ? livePlan.id : null)}
@@ -61,14 +62,17 @@ export function LivePlanCard({
           aria-controls={detailInSidebar ? undefined : checklistId}
           data-plan-detail={detailInSidebar ? "sidebar" : "composer"}
           title={detailInSidebar ? "Etapas abertas no painel Plano" : undefined}
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] disabled:cursor-default"
+          className={cn(
+            controle("compacto"),
+            "flex w-full text-left transition-colors hover:bg-sel-hover disabled:cursor-default disabled:hover:bg-transparent",
+          )}
         >
           {current && (running || finalizing) ? (
-            <Loader2 className="size-3.5 shrink-0 animate-spin text-brass" />
+            <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
           ) : !next ? (
-            <Check className="size-3.5 shrink-0 text-st-success" />
+            <Check className="size-3.5 shrink-0 text-muted-foreground/60" />
           ) : (
-            <ListChecks className="size-3.5 shrink-0 text-brass" />
+            <ListChecks className="size-3.5 shrink-0 text-muted-foreground/60" />
           )}
           <span className="truncate text-foreground/85">
             {current
@@ -92,7 +96,7 @@ export function LivePlanCard({
         {open && !detailInSidebar && (
           <div
             id={checklistId}
-            className="max-h-56 overflow-y-auto border-t px-3 py-2"
+            className="ml-[7px] max-h-56 overflow-y-auto border-l border-border/40 py-1 pl-3"
           >
             {!current && next && (
               <p className="mb-1.5 px-1 text-[11px] text-muted-foreground/70">

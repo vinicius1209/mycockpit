@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react"
 import {
-  Sparkles,
   ListPlus,
   GraduationCap,
   Copy,
@@ -11,6 +10,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { controle } from "@/components/ui/controle"
 import { copyText } from "@/lib/clipboard"
 import { confirm } from "@/lib/confirm"
 import { saveNoteAttachment, type Attachment } from "@/lib/attachments"
@@ -40,8 +40,7 @@ export interface StickyNoteCardProps {
   /**
    * A nota é a FOLHA de uma superfície flutuante (a gaveta), não um cartão
    * solto sobre o fio. Tira borda e sombra próprias: cartão dentro de popover é
-   * hairline aninhado, e o §4 fecha essa porta (ADR-043). O que separa a folha
-   * do resto da gaveta passa a ser cor + raio, sem filete.
+   * hairline aninhado, e o §4 fecha essa porta (ADR-043).
    */
   flat?: boolean
   className?: string
@@ -50,50 +49,30 @@ export interface StickyNoteCardProps {
 /**
  * Tinta de papel do post-it (ADR-117, que revisa o ADR-109).
  *
- * O papel é VIVO: post-it de verdade, não sussurro a 10%. A nota é o único
- * lugar do app onde a cor é ESCOLHA do humano, e sussurrada ela não escolhia
- * nada — cinco tons quase iguais.
- *
- * A regra que substitui a antiga ("`note-*` nunca pinta texto"): sobre papel
- * vivo a letra NÃO pode seguir o tema, senão some no escuro. Cada papel vem com
- * a tinta no par `--note-fg` (mesmo molde de `--brass`/`--brass-fg`): a nota
- * deixa de herdar o tema e vira ilha invertida.
- *
- * E a contenção que mantém o §2 de pé: papel vivo só existe DENTRO da gaveta,
- * que é superfície convocada. O chrome do app segue quieto e o vocabulário de
- * estado (`st-*`) não passa a disputar atenção com rótulo de papel.
+ * A cor é categórica e escolhida pela pessoa, mas não cobre mais a folha: ela
+ * aparece no ponto da lista e no seletor sem competir com o texto.
  */
 export const COLOR_STYLES: Record<
   StickyNoteColor,
-  { card: string; border: string; dot: string; label: string }
+  { dot: string; label: string }
 > = {
   sand: {
-    card: "bg-note-sand text-note-fg",
-    border: "border-note-sand/60",
     dot: "bg-note-sand",
     label: "Sol",
   },
   slate: {
-    card: "bg-note-slate text-note-fg",
-    border: "border-note-slate/60",
     dot: "bg-note-slate",
     label: "Coral",
   },
   teal: {
-    card: "bg-note-teal text-note-fg",
-    border: "border-note-teal/60",
     dot: "bg-note-teal",
     label: "Verde",
   },
   indigo: {
-    card: "bg-note-indigo text-note-fg",
-    border: "border-note-indigo/60",
     dot: "bg-note-indigo",
     label: "Limão",
   },
   rose: {
-    card: "bg-note-rose text-note-fg",
-    border: "border-note-rose/60",
     dot: "bg-note-rose",
     label: "Rosa",
   },
@@ -257,24 +236,13 @@ export function StickyNoteCard({
   return (
     <div
       className={cn(
-        // Elevação tem 3 níveis e só 3 (§4): post-it em repouso é E1, e sobe
-        // pra E2 no hover. Sombra montada à mão não tem par claro/escuro.
-        // `flat` = a nota já está DENTRO de uma superfície E2 (a gaveta): ali
-        // ela não tem elevação própria nenhuma, senão vira cartão em cartão.
-        "group/sticky relative flex flex-col rounded-xl p-3.5 transition-all duration-150",
-        // `flat` = a nota está DENTRO da gaveta, que já é a superfície. Ali ela
-        // não tem elevação NEM tinta próprias: papel colorido dentro de um
-        // popover branco é cartão-em-cartão de cor, e a folha do desenho A é
-        // papel limpo. A cor não some da vida — ela continua na bolinha do
-        // seletor aqui e no ponto da linha da lista, que é onde ela é RÓTULO.
-        !flat && "border shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-pop)]",
-        !flat && theme.card,
-        !flat && theme.border,
+        "group/sticky relative flex flex-col",
+        !flat && "rounded-xl border bg-card p-3.5 shadow-[var(--shadow-sm)]",
         className,
       )}
     >
       {/* Cabeçalho do Post-it */}
-      <div className="flex items-center justify-between gap-1.5 pb-2 text-[11px]">
+      <div className="flex items-center justify-between gap-1.5 pb-1 text-[11px]">
         {/* Seletor de Agente Alvo */}
         <div className="relative">
           <button
@@ -282,8 +250,8 @@ export function StickyNoteCard({
             disabled={readOnly}
             onClick={() => setTargetMenuOpen((o) => !o)}
             className={cn(
-              "flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium transition-colors",
-              "bg-background/50 hover:bg-background/80 text-foreground/85 border",
+              controle("chip"),
+              "gap-1 font-medium text-muted-foreground transition-colors hover:bg-sel-hover hover:text-foreground",
             )}
             title="Agente de destino da nota"
           >
@@ -339,7 +307,10 @@ export function StickyNoteCard({
               <button
                 type="button"
                 onClick={() => setPaletteOpen((o) => !o)}
-                className="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
+                className={cn(
+                  controle("chip", { quadrado: true }),
+                  "text-muted-foreground transition-colors hover:bg-sel-hover hover:text-foreground",
+                )}
                 title="Mudar cor do post-it"
               >
                 <span className={cn("size-2.5 rounded-full border border-black/10 dark:border-white/10", theme.dot)} />
@@ -398,7 +369,10 @@ export function StickyNoteCard({
                 })
                 if (ok) onDelete()
               }}
-              className="grid size-5 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-destructive/15 hover:text-destructive"
+              className={cn(
+                controle("chip", { quadrado: true }),
+                "text-muted-foreground/60 transition-colors hover:bg-destructive/15 hover:text-destructive",
+              )}
               title="Apagar nota"
               aria-label="Apagar nota"
             >
@@ -409,7 +383,7 @@ export function StickyNoteCard({
       </div>
 
       {/* Corpo da Nota (Markdown ou Textarea de Edição) */}
-      <div className="min-h-[64px] flex-1 py-1">
+      <div className="flex-1 py-1">
         {isEditing ? (
           <div className="flex flex-col gap-1.5">
             <textarea
@@ -424,14 +398,14 @@ export function StickyNoteCard({
               onPaste={handlePaste}
               onBlur={saveAndExit}
               placeholder="Clique para anotar algo (o que lembrar, código, ideias)..."
-              rows={3}
+              rows={7}
               className={cn(
-                "w-full resize-none rounded-lg border-0 bg-background/60 p-2.5 text-[13px] leading-relaxed",
-                "text-foreground outline-none ring-1 ring-border/60 focus:ring-brass/60 placeholder:text-muted-foreground/50",
+                "min-h-40 w-full resize-y rounded-md border-0 bg-secondary/45 px-3 py-2 text-[13px] leading-relaxed",
+                "text-foreground outline-none focus:ring-2 focus:ring-ring/60 placeholder:text-muted-foreground/50",
               )}
             />
-            <div className="flex items-center justify-between px-1 text-[11px] text-muted-foreground/70">
-              <span>⌘⏎ ou clique fora para salvar · Esc cancela</span>
+            <div className="flex items-center justify-between text-[11px] text-faint">
+              <span>⌘⏎ salva · Esc cancela</span>
               <button
                 type="button"
                 onMouseDown={(e) => {
@@ -448,8 +422,8 @@ export function StickyNoteCard({
           <div
             onClick={() => !readOnly && setIsEditing(true)}
             className={cn(
-              "group/content min-h-[48px] cursor-text rounded-lg p-1.5 text-[13px] leading-relaxed transition-colors",
-              !readOnly && "hover:bg-background/35",
+              "group/content min-h-28 cursor-text rounded-md py-1.5 text-[13px] leading-relaxed transition-colors",
+              !readOnly && "hover:bg-sel-hover",
             )}
             title={readOnly ? undefined : "Clique para editar"}
           >
@@ -500,8 +474,7 @@ export function StickyNoteCard({
         />
       )}
 
-      {/* Barra de Ações Inteligentes do Cockpit (Footer) */}
-      <div className="mt-2 flex items-center justify-between border-t border-border/40 pt-2 text-[11px]">
+      <div className="mt-1 flex items-center justify-between pt-1 text-[11px]">
         {/* Status / Ação de Edição */}
         <div className="flex items-center gap-1.5 text-muted-foreground/70">
           {/* Na folha o botão "Editar" é redundante: o corpo inteiro já abre a
@@ -528,13 +501,12 @@ export function StickyNoteCard({
               type="button"
               onClick={handlePromptInsert}
               className={cn(
-                "flex items-center gap-1 rounded-md px-2 py-1 font-medium transition-colors",
-                "bg-brass/10 hover:bg-brass/20 text-brass-fg dark:text-brass",
+                controle("compacto"),
+                "font-medium text-foreground transition-colors hover:bg-sel-hover",
               )}
               title="Inserir conteúdo desta nota no prompt atual"
             >
-              <Sparkles className="size-3" />
-              <span>Prompt</span>
+              <span>Usar no prompt</span>
             </button>
           )}
 

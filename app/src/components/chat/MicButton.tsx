@@ -14,6 +14,7 @@ import { useChat } from "@/store/chat"
 import { useApp, useActiveProject } from "@/store/app"
 import { DESTINATIONS } from "@/lib/agents"
 import { isTauri } from "@/lib/db"
+import { useComposerDrafts } from "@/store/composerDrafts"
 
 /** Termos que ditado genérico erra: os nomes da casa + do projeto vão como
  *  contextualStrings pro reconhecedor (a vantagem sobre o Wispr). */
@@ -86,10 +87,10 @@ export function MicButton({
     }
     const convId = useChat.getState().activeId
     if (!convId) return
-    const cur = useChat.getState().drafts[convId] ?? ""
-    useChat
+    const cur = useComposerDrafts.getState().byConv[convId]?.text ?? ""
+    useComposerDrafts
       .getState()
-      .setDraft(convId, cur ? `${cur.replace(/\s+$/, "")} ${text}` : text)
+      .setText(convId, cur ? `${cur.replace(/\s+$/, "")} ${text}` : text)
   }
 
   async function start() {

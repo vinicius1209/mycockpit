@@ -25,6 +25,7 @@ import {
 } from "@/lib/db"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
+import { useComposerDrafts } from "@/store/composerDrafts"
 
 /** Card no STORE = registro do banco + sinais transitórios de sessão. O vigia
  *  (S2.2) marca `stalledSince` aqui, espelhando o `stalledSince` da conversa:
@@ -325,12 +326,9 @@ export const useCards = create<CardsState>((set, get) => {
         // O card É o pedido: a conversa nova nasce com título+body no COMPOSER
         // como RASCUNHO, nunca auto-send — despacho é gesto humano, o usuário
         // revisa/complementa e envia (auto-send dispararia um turno com
-        // modelo/permissão default sem revisão). O rascunho mora no useChat
-        // (drafts por conversa, memória de sessão): no caminho remoto
-        // (dispatch_card via companion) ele espera no desktop enquanto o
-        // processo viver; após restart se perde — drafts não são persistidos,
-        // e tudo bem (o card segue inteiro no board).
-        useChat.getState().setDraft(convId, cardDraft(card))
+        // modelo/permissão default sem revisão). O rascunho é durável: no
+        // dispatch remoto ele espera no desktop mesmo depois de um restart.
+        useComposerDrafts.getState().setText(convId, cardDraft(card))
         return convId
       } finally {
         dispatching.delete(id)

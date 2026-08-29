@@ -4658,3 +4658,60 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   1.18.21 com `opencode/mimo-v2.5-free`, o fallback completou dois turnos reais,
   inclusive um prompt iniciado por `--`, com resposta exata, exit 0 e custo
   reportado como zero.
+
+### ADR-122 — rascunho é entidade durável, e a âncora observa o fio real ✅
+- **Contexto (29/08/2026):** trocar de conversa apagava anexos ainda não
+  enviados; o texto sobrevivia só na memória da sessão e não havia sinal na
+  árvore. Na mesma superfície, uma conversa longa ainda podia abrir no meio
+  mesmo depois do conserto de ancoragem.
+- **A causa do scroll era identidade de nó, não posição.** O observador seguia
+  `firstElementChild`, mas a régua de turnos ou a timeline podem vir antes do
+  transcript. Além disso, o wrapper com `key={activeId}` é substituído na troca.
+  Agora o wrapper entrega uma ref explícita ao hook; nó novo religa o
+  `ResizeObserver`, e callback atrasado confere a conversa ativa antes de rolar.
+- **Rascunho virou entidade própria:** `conversation_drafts` guarda texto,
+  metadados dos anexos e `updated_at`, separado de `items`. Nada entra no fio ou
+  no prompt antes do gesto de enviar. A store do composer isola digitação do
+  estado operacional do chat, grava com debounce e mantém cada conversa viva
+  na troca; limpar ou enviar remove a linha.
+- **Anexo pendente participa do ciclo de vida.** O blob já morava por conversa;
+  agora a referência também persiste. O GC usa o maior timestamp entre a
+  conversa e seu rascunho, portanto não apaga o anexo de um rascunho recente
+  só porque o último turno da conversa é antigo.
+- **A árvore diz “Rascunho” em cinza.** É metadado antes do slot de 36px, nunca
+  uma nova cor nem concorrente da ordem `pede > rodando > falhou > quando`.
+  Texto e anexo sem texto acendem o mesmo sinal; limpar apaga na hora.
+- **Migração:** v40, um statement, mais `ensureComposerDraftTables` com
+  `addColumn` idempotente para banco de teste/dev e upgrade interrompido.
+- **Verificado:** testes focados de scroll, persistência e composer, além das
+  suítes completas listadas na entrega desta frente.
+
+### ADR-123 — o fio vira diário de bordo e a nota devolve espaço ao texto ✅
+- **Contexto (29/08/2026):** a comparação visual com o Paseo mostrou que o
+  Frota repetia atividade com cartão, fundo, filete, dois ícones, cor e recuo.
+  O plano vivo repetia a elevação do composer; na gaveta, data, dois cabeçalhos
+  e papel inteiro saturado comprimiam a área de escrita.
+- **A atividade vira E0.** Grupo e plano vivo perdem cartão, sombra, fundo
+  permanente e filete de estado. Um trilho neutro organiza o detalhe aberto.
+  Linha técnica passa a ter um único glifo: movimento ocupa o slot enquanto há
+  execução; depois, o ícone do tipo ocupa o mesmo lugar. A falha continua
+  impossível de esconder, mas vermelho fica no glifo e no resumo, não pinta a
+  linha inteira.
+- **O plano continua junto ao composer, sem competir com ele.** A checklist
+  preserva disclosure, teclado e verdade dos `TaskUpdate`, porém usa checks e
+  spinner cinza. Não há novo dono do agora nem atividade inferida.
+- **A cor da nota vira categoria, e isto revisa o ADR-117.** Os tokens continuam
+  no ponto da lista e no seletor, onde distinguem notas; saem do fundo e da
+  tipografia. O papel vivo era memorável no lugar errado: ocupava mais pixels
+  que qualquer estado operacional da janela.
+- **A gaveta de uma nota cresce para 440px, limitada pelo viewport.** Data vira
+  carimbo curto de 11px mono, escopo perde ícone decorativo, controles seguem a
+  escada canônica e o editor ganha mínimo de 160px. A ação diz `Usar no prompt`
+  e não precisa de brilho para explicar o resultado.
+- **Identidade:** a referência não foi copiada. O Frota preserva sua assinatura
+  de cockpit no trilho operacional contínuo; Geist carrega prosa, Geist Mono
+  carrega telemetria, e canvas/ink/muted/hairline formam a base. Cor fica para
+  falha, decisão e categorias escolhidas pela pessoa.
+- **Verificação:** testes de apresentação seguram seleção neutra, categoria sem
+  fundo e tipografia do tema. Suítes completas e inspeção renderizada constam na
+  entrega do commit.

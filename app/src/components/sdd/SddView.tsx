@@ -29,6 +29,7 @@ import { useActiveProject, useApp } from "@/store/app"
 import { runAgent } from "@/lib/agent"
 import { buildDoctrineBlock, readDoctrine } from "@/lib/doctrine"
 import { reduceItems, useChat, type ChatItem } from "@/store/chat"
+import { useComposerDrafts } from "@/store/composerDrafts"
 import { Markdown } from "@/components/common/Markdown"
 import { readTextFile } from "@/lib/sources"
 import { fmtCost } from "@/lib/format"
@@ -193,8 +194,7 @@ export function SddView() {
     }
   }
 
-  // "Explorar (discovery)": discovery é CONVERSA → abre no Linear com o composer
-  // pré-preenchido (/discovery <semente>). Você revisa e envia, sem gasto surpresa.
+  // Discovery abre no Linear com rascunho revisável, nunca auto-send.
   async function exploreDiscovery() {
     if (!project) return
     const desc = featDesc.trim()
@@ -203,7 +203,7 @@ export function SddView() {
     setFeatDesc("")
     await useChat.getState().newConversation(project.id)
     const convId = useChat.getState().activeId
-    if (convId) useChat.getState().setDraft(convId, `/discovery ${desc}`)
+    if (convId) useComposerDrafts.getState().setText(convId, `/discovery ${desc}`)
     useApp.getState().setViewMode("linear")
   }
 

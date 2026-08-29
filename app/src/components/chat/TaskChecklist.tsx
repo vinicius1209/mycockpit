@@ -13,16 +13,16 @@ function TaskRow({ task, first }: { task: AgentTask; first: boolean }) {
         aria-expanded={task.description ? open : undefined}
         tabIndex={first ? 0 : -1}
         className={cn(
-          "flex w-full items-start gap-2 rounded px-1 py-[3px] text-left text-[13px]",
-          task.description && "hover:bg-accent/40",
+          "flex w-full items-start gap-1.5 rounded px-1 py-1 text-left text-[12px]",
+          task.description && "hover:bg-sel-hover",
         )}
         title={task.description ?? undefined}
       >
         <span className="mt-0.5 grid size-3.5 shrink-0 place-items-center">
           {task.status === "completed" ? (
-            <Check className="size-3.5 text-st-success" />
+            <Check className="size-3.5 text-muted-foreground/60" />
           ) : task.status === "in_progress" ? (
-            <Loader2 className="size-3.5 animate-spin text-brass" />
+            <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
           ) : (
             <Circle className="size-2.5 text-muted-foreground/40" />
           )}
@@ -31,7 +31,7 @@ function TaskRow({ task, first }: { task: AgentTask; first: boolean }) {
           className={cn(
             "min-w-0 flex-1 leading-snug break-words",
             task.status === "completed"
-              ? "text-muted-foreground line-through decoration-border"
+              ? "text-muted-foreground"
               : task.status === "in_progress"
                 ? "text-foreground"
                 : "text-foreground/75",

@@ -496,6 +496,19 @@ pub fn run() {
             sql: "ALTER TABLE conversations ADD COLUMN context_basis TEXT;",
             kind: MigrationKind::Up,
         },
+        // Rascunho é entidade própria: não entra no fio até o gesto de enviar,
+        // mas texto e anexos sobrevivem à troca de conversa e ao restart.
+        Migration {
+            version: 40,
+            description: "create_conversation_drafts",
+            sql: "CREATE TABLE IF NOT EXISTS conversation_drafts ( \
+                    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE, \
+                    text TEXT NOT NULL DEFAULT '', \
+                    attachments TEXT NOT NULL DEFAULT '[]', \
+                    updated_at INTEGER NOT NULL DEFAULT 0 \
+                  );",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

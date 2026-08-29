@@ -7,6 +7,9 @@ import type { FusionOutcome } from "@/lib/retro"
 import type { DeliveryRecord } from "@/lib/recall"
 import type { CumulativeUsage } from "@/lib/usage"
 import { planUsageRecompute, recomputeSummary, worthLedgerRow } from "@/lib/usage"
+import { addColumn, ensureComposerDraftTables } from "@/lib/db/schema"
+
+export { addColumn } from "@/lib/db/schema"
 
 const DB_URL = "sqlite:mycockpit.db" // DEVE bater com add_migrations no lib.rs
 
@@ -472,18 +475,6 @@ export type LessonScope = "global" | "project"
  *  prompt; `candidate` fica só na auditoria (derivada do loop do Mission, ainda
  *  não promovida); `archived` foi retirada mas é reversível. */
 export type LessonStatus = "active" | "candidate" | "archived"
-
-/** ALTER idempotente: engole SÓ "duplicate column" (coluna já existe, re-run).
- *  Qualquer OUTRO erro (ex.: 'database is locked' transitório) PROPAGA — senão
- *  o schema fica sem a coluna e o cache fixaria o estado envenenado. */
-export async function addColumn(db: Database, sql: string): Promise<void> {
-  try {
-    await db.execute(sql)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    if (!/duplicate column/i.test(msg)) throw e
-  }
-}
 
 async function ensureLearningTables(db: Database): Promise<void> {
   if (!learningReady) {
@@ -2571,8 +2562,12 @@ export async function listConvRefs(): Promise<ConvRef[] | null> {
   const db = await getDb()
   if (!db) return null
   try {
+    await ensureComposerDraftTables(db)
     const rows = await db.select<{ id: string; updated_at: number }[]>(
-      "SELECT id, updated_at FROM conversations",
+      `SELECT c.id,
+              max(c.updated_at, coalesce(d.updated_at, c.updated_at)) AS updated_at
+         FROM conversations c
+         LEFT JOIN conversation_drafts d ON d.conversation_id = c.id`,
     )
     return rows.map((r) => ({ id: r.id, updated_at: r.updated_at }))
   } catch {

@@ -71,26 +71,14 @@
   --git-open: #1a7f37;
   --git-merged: #8250df;
 
-  /* papel do post-it (categórico, escolhido pelo humano — ADR-109).
-     O que separa estes tokens do vocabulário de estado é a SATURAÇÃO, não a
-     matiz: a roda já está cheia (âmbar tem dono só desde o ADR-043, verde é
-     marco raro, azul é o vivo do chrome, vermelho é falha) e não sobrou hue
-     livre pra 5 cores. Todos são tintas SURDAS de propósito — ao lado de um
-     `st-success` (#1f9d6b) ou de um `brass` (#a9742b), que são vivos, um
-     #5f8f92 não se confunde. Por isso o §2 amarra o uso à SUPERFÍCIE do
-     post-it (fundo, borda, bolinha do seletor) e proíbe texto. */
-  /* Papel de post-it (ADR-117). Vivo de propósito: a nota é o único lugar onde
-     a cor é ESCOLHA do humano, e sussurrada ela não escolhia nada.
-     A tinta do texto vem no par `-fg` — sobre papel colorido a letra não pode
-     seguir o tema, senão some no escuro. Contraste MEDIDO (WCAG) contra o
-     papel: corpo ≥ 6,2:1 e metadado (82% da tinta) ≥ 4,7:1 no pior caso. */
+  /* Categoria de nota (ADR-123 revisa ADR-117). A cor ocupa só pontos e
+     amostras: identifica sem transformar a folha no elemento mais ruidoso. */
   --note-sand: #ffb020;
   --note-lime: #d8df2a;
   --note-teal: #93c523;
   --note-rose: #ff63a6;
   --note-slate: #ff7a59;
   --note-indigo: #d8df2a;
-  --note-fg: #1c1a14;
 
   /* tipografia */
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
@@ -167,7 +155,6 @@
   --note-rose: #da6c98;
   --note-slate: #da7b62;
   --note-indigo: #bec341;
-  --note-fg: #1c1a14;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-pop: 0 12px 40px -8px rgba(0, 0, 0, 0.55);
@@ -214,7 +201,6 @@
   --color-git-open: var(--git-open);
   --color-git-merged: var(--git-merged);
 
-  --color-note-fg: var(--note-fg);
   --color-note-lime: var(--note-lime);
   --color-note-slate: var(--note-slate);
   --color-note-sand: var(--note-sand);
