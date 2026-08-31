@@ -130,6 +130,8 @@ describe("DynamicHud Component", () => {
       }),
     )
     expect(html).toContain("rounded-b-[13px] border-x border-b")
+    expect(html).toContain("dark h-full w-full overflow-hidden bg-hud-shell")
+    expect(html).not.toContain("bg-popover")
     expect(html).not.toContain("rounded-[13px]")
     expect(html).not.toContain("p-1")
   })
@@ -151,6 +153,8 @@ describe("DynamicHud Component", () => {
       }),
     )
     expect(html).toContain("rounded-l-[13px] border-y border-l")
+    expect(html).toContain("dark h-full w-full overflow-hidden bg-hud-shell")
+    expect(html).not.toContain("bg-popover")
     expect(html).toContain("viewBox=\"0 0 44 44\"")
     expect(html).toContain("lucide-circle")
     expect(html).not.toContain("writing-mode")

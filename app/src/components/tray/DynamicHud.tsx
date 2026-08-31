@@ -252,10 +252,9 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.16 }}
           className={cn(
-            "dynamic-hud-shell h-full w-full overflow-hidden",
-            notch
-              ? "dark rounded-b-[13px] border-x border-b bg-hud-shell text-popover-foreground"
-              : "bg-popover text-popover-foreground shadow-[var(--shadow-pop)]",
+            "dynamic-hud-shell dark h-full w-full overflow-hidden bg-hud-shell text-popover-foreground",
+            !notch && "shadow-[var(--shadow-pop)]",
+            position === "notch" && "rounded-b-[13px] border-x border-b",
             position === "island" && "rounded-b-[13px] border-x border-b",
             position === "left" && "rounded-r-[13px] border-y border-r",
             position === "right" && "rounded-l-[13px] border-y border-l",

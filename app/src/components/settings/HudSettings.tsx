@@ -90,7 +90,7 @@ export function HudSettings() {
     <div className="border-t border-border/40 pt-1">
       <Field
         label="Instrumento fora da barra"
-        hint="Mantém o estado real da frota visível na tela, sem abrir outro app ou navegador."
+        hint="Mantém o estado real da frota visível; o casco permanece preto em qualquer tema."
       >
         <Switch
           checked={settings.hudEnabled}

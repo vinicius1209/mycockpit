@@ -5104,3 +5104,16 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   física realmente ocupada, em vez de inferir um layout compacto global.
 - **Escopo:** posição, forma e hit target mudam juntos. Snapshot, hover nativo,
   ações, foco, automações, execução, contexto, tools e limites não mudam.
+
+### ADR-137 - o instrumento flutuante é preto absoluto em qualquer tela ✅
+- **Correção de linguagem (31/08/2026):** a ADR-134 restringia o `hud-shell`
+  ao notch físico e deixava ilha, laterais e base seguirem o tema do app. No
+  tema claro, o mesmo instrumento virava uma peça branca ao mudar de monitor e
+  deixava de pertencer visualmente à integração com o notch.
+- **Decisão:** todo presenter flutuante usa `hud-shell` (`#000000`) e força o
+  vocabulário escuro, independentemente do tema da janela principal ou de a
+  tela informar um recorte físico. Ilha, esquerda, direita e base variam forma
+  e conteúdo compacto, não a cor do casco.
+- **Fronteira:** o preto pertence somente ao instrumento flutuante. Popover da
+  barra de menus, dialogs, cartões e o restante do app continuam obedecendo ao
+  tema escolhido pela pessoa. Nenhuma ação, execução ou capacidade muda.
