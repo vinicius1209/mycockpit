@@ -34,9 +34,9 @@ describe("ultimoTurno", () => {
       }),
     ]
     const atual = ultimoTurno(f, (convId, projectId) =>
-      convId === "c1" && projectId === "p1" ? "revisão de branches" : null,
+      convId === "c1" && projectId === "p1" ? "Revisão de branches" : null,
     )
-    expect(atual?.title).toBe("revisão de branches")
+    expect(atual?.title).toBe("Revisão de branches")
   })
 
   it("mantém o título do feed quando a conversa não está carregada", () => {

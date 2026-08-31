@@ -5215,7 +5215,7 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 
 ### ADR-142 - recibo é histórico, título de conversa é estado vigente ✅
 - **Incidente real (31/08/2026):** o título da conversa foi corrigido para
-  `revisão de branches` no SQLite, mas o HUD continuou mostrando a cópia antiga
+  `Revisão de branches` no SQLite, mas o HUD continuou mostrando a cópia antiga
   `revisao de branches` guardada no feed de notificações. A build e o processo
   instalados estavam corretos; duas fontes legítimas respondiam perguntas
   diferentes com o mesmo campo.
