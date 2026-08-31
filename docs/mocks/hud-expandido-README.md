@@ -8,7 +8,7 @@ O instrumento mede 540 × 320 e fica acoplado ao topo da tela. A pessoa quer
 entender em segundos o que está vivo e agir sem abrir a janela principal. A
 cena é a do incidente visual enviado em 31/08/2026, sem dado inventado:
 
-- 1 tarefa em voo, `revisao de branches`, projeto Maclan, 16 min;
+- 1 tarefa em voo, `revisão de branches`, projeto Maclan, 16 min;
 - detalhe vivo `Redigindo resposta`;
 - nenhuma automação, 0 ativas;
 - Codex observado no terminal, ocioso;
